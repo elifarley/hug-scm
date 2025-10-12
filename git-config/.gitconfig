@@ -220,24 +220,6 @@
   #  Working directory (w-*)
   # ═══════════════════════════════════════════════════════════════════
 
-  # Quick changes summary (new lightweight command)
-  w-changes = "!f() { \
-    test \"$1\" = '-h' -o \"$1\" = '--help' && { \
-      printf 'w changes: Quick summary of working changes\n' >&2; \
-      printf 'Usage: hug w changes\n' >&2; \
-      return 1; \
-    }; \
-    \
-    if git diff --quiet; then \
-      printf '✅ No unstaged changes\n' >&2; \
-    else \
-      local files=$(git diff --name-only | wc -l); \
-      local insertions=$(git diff --numstat | awk '{sum += $1} END {print sum}'); \
-      local deletions=$(git diff --numstat | awk '{sum += $2} END {print sum}'); \
-      printf '📝 Working dir changes: %d files, +%d/-%d lines\n' \"$files\" \"$insertions\" \"$deletions\" >&2; \
-    fi; \
-  }; f"
-
   # Safe backup of changes
   w-backup = "!f() { \
     local message=\"WIP: Auto-backup before destructive operation\"; \
