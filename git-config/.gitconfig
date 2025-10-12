@@ -511,6 +511,10 @@
   }; f"
 
   tpull = "!f() { \
+    git fetch --tags; \
+  }; f"
+
+  tpullf = "!f() { \
     git fetch --tags --prune --prune-tags --force; \
   }; f"
 
