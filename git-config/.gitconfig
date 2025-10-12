@@ -360,9 +360,9 @@
   # ============================================================================
 
   # No untracked files shown
-  s = !git statusbase -uno \"$@\"
+  sl = !git statusbase -uno \"$@\"
   # Untracked files are also shown
-  sa = !git statusbase --long \"$@\"
+  sla = !git statusbase --long \"$@\"
 
   # Show status with patch of staged changes
   ss = "!f() { \

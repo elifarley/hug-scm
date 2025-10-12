@@ -17,7 +17,6 @@ case "${1:-}" in
   backup)       shift; git w-backup "$@" ;;
   restore)      shift; git w-restore "$@" ;;
   get)          shift; git w-get "$@" ;;
-  changes)      shift; git w-changes "$@" ;;
   --dry-run)    shift; git w-dry-run "$@" ;;
   *)             printf 'Usage: hug w <command> [args]\n' >&2;
                  printf 'Commands:\n' >&2;

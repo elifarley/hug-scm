@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Quick changes summary
 test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
-  printf 'w changes: Quick summary of working and staged changes\n' >&2
-  printf 'Usage: hug w changes\n' >&2
+  printf 's: Quick summary of working and staged changes\n' >&2
+  printf 'Usage: hug s\n' >&2
   exit 1
 }
 
