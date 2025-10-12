@@ -3,17 +3,46 @@ set -euo pipefail
 
 # Quick changes summary
 test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
-  printf 'w changes: Quick summary of working changes\n' >&2
+  printf 'w changes: Quick summary of working and staged changes\n' >&2
   printf 'Usage: hug w changes\n' >&2
   exit 1
 }
 
-if git diff --quiet; then
-  printf '✅ No unstaged changes\n' >&2
-else
-  files=$(git diff --name-only | wc -l)
-  insertions=$(git diff --numstat | awk '{sum += $1} END {print sum}')
-  deletions=$(git diff --numstat | awk '{sum += $2} END {print sum}')
-  printf '📝 Working dir changes: %d files, +%d/-%d lines\n' "$files" "$insertions" "$deletions" >&2
+unstaged_files=0 unstaged_insertions=0 unstaged_deletions=0
+staged_files=0 staged_insertions=0 staged_deletions=0
+if ! git diff --quiet; then
+  unstaged_files=$(git diff --name-only | wc -l)
+  unstaged_insertions=$(git diff --numstat | awk '{sum += $1} END {print sum}')
+  unstaged_deletions=$(git diff --numstat | awk '{sum += $2} END {print sum}')
 fi
+
+if ! git diff --quiet --cached; then
+  staged_files=$(git diff --cached --name-only | wc -l)
+  staged_insertions=$(git diff --cached --numstat | awk '{sum += $1} END {print sum}')
+  staged_deletions=$(git diff --cached --numstat | awk '{sum += $2} END {print sum}')
+fi
+
+# Color codes
+RED=$(tput setaf 1)    # Red for unstaged
+GREEN=$(tput setaf 2)  # Green for staged
+RESET=$(tput sgr0)     # Reset color
+
+# Build output components
+unstaged_output=""
+staged_output=""
+
+if [[ $unstaged_files -eq 0 ]]; then
+  unstaged_output="✅ Clean (Unstaged)"
+else
+  unstaged_output="${RED}📝 $unstaged_files files, +$unstaged_insertions/-$unstaged_deletions lines (Unstaged)${RESET}"
+fi
+
+if [[ $staged_files -eq 0 ]]; then
+  staged_output="✅ Clean (Staged)"
+else
+  staged_output="${GREEN}📦 $staged_files files, +$staged_insertions/-$staged_deletions lines (Staged)${RESET}"
+fi
+
+# Combine with separator
+printf '%s │ %s\n' "$unstaged_output" "$staged_output" >&2
 
