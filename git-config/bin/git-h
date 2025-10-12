@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# git-h - HEAD command gateway
+# Part of the Hug tool suite
+
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+case "${1:-}" in
+  back)          shift; git h-back "$@" ;;
+  undo)          shift; git h-undo "$@" ;;
+  rollback)      shift; git h-rollback "$@" ;;
+  rewind)        shift; git h-rewind "$@" ;;
+  *)             printf 'Usage: hug h <command> [args]\n' >&2
+                 printf 'Commands:\n' >&2
+                 printf '  back          Move HEAD back, keep staged\n' >&2
+                 printf '  undo          Move HEAD back, unstage changes\n' >&2
+                 printf '  rollback      Rollback commit, preserve local work\n' >&2
+                 printf '  rewind        Rewind to clean state (destructive)\n' >&2
+esac

@@ -1,0 +1,8 @@
+#!/bin/bash
+# Part of the Hug tool suite
+
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+test "${1:-}" = help && exec git hughelp "${@:2}"
+
+exec git "$@"

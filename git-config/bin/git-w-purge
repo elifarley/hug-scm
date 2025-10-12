@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: hug w purge [OPTIONS] <path> [<path>...]
+
+Remove untracked and/or ignored files for the given paths.
+
+Options:
+  -u, --untracked  Remove untracked files (default when no flags provided)
+  -i, --ignored    Remove ignored files
+      --dry-run    Show what would be removed without deleting anything
+  -h, --help       Show this help
+
+Notes:
+  • Requires at least one path argument.
+  • Use `hug w purge-all` for repository-wide scope.
+  • Paths that are tracked will produce an error.
+EOF
+}
+
+error() {
+  printf 'Error: %s\n' "$1" >&2
+}
+
+dedupe_array() {
+  local -n __array_ref=$1
+  local -A __seen=()
+  local -a __unique=()
+  local item
+  for item in "${__array_ref[@]}"; do
+    [[ -z "$item" ]] && continue
+    if [[ -z "${__seen[$item]+_}" ]]; then
+      __seen["$item"]=1
+      __unique+=("$item")
+    fi
+  done
+  __array_ref=("${__unique[@]}")
+}
+
+dry_run=false
+target_untracked=false
+target_ignored=false
+flags_explicit=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -u|--untracked)
+      target_untracked=true
+      flags_explicit=true
+      shift
+      ;;
+    -i|--ignored)
+      target_ignored=true
+      flags_explicit=true
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      error "unknown option: $1"
+      usage >&2
+      exit 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if ! $flags_explicit; then
+  target_untracked=true
+fi
+
+if [[ $# -lt 1 ]]; then
+  error "this command requires at least one path (or use 'git w purge-all')"
+  usage >&2
+  exit 2
+fi
+
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  error "not inside a git repository"
+  exit 1
+fi
+
+paths=("$@")
+
+declare -a untracked_paths=()
+declare -a ignored_paths=()
+
+while IFS= read -r -d '' entry; do
+  [[ -z "$entry" ]] && continue
+  status=${entry:0:2}
+  path=${entry:3}
+  case "$status" in
+    '??')
+      untracked_paths+=("$path")
+      ;;
+    '!!')
+      ignored_paths+=("$path")
+      ;;
+    *)
+      error "path '$path' is tracked or has staged changes; purge operates on untracked/ignored only"
+      exit 1
+      ;;
+  esac
+done < <(git status --porcelain=v1 --ignored=matching -z -- "${paths[@]}" 2>/dev/null || true)
+
+dedupe_array untracked_paths
+dedupe_array ignored_paths
+
+(( ${#untracked_paths[@]} == 0 )) && (( ${#ignored_paths[@]} == 0 )) && {
+  printf 'Nothing to purge for the specified paths.\n'
+  exit 0
+}
+
+print_list() {
+  local title=$1
+  shift
+  printf '%s (%d):\n' "$title" "$#"
+  local item
+  for item in "$@"; do
+    printf '  %s\n' "$item"
+  done
+}
+
+if $dry_run; then
+  printf 'Dry run: the following files/directories would be removed\n'
+  if $target_untracked && [[ ${#untracked_paths[@]} -gt 0 ]]; then
+    print_list '  Untracked' "${untracked_paths[@]}"
+  fi
+  if $target_ignored && [[ ${#ignored_paths[@]} -gt 0 ]]; then
+    print_list '  Ignored' "${ignored_paths[@]}"
+  fi
+  exit 0
+fi
+
+remove_with_clean() {
+  local mode=$1
+  shift
+  git clean "$mode" -d -- "$@"
+}
+
+if $target_untracked && $target_ignored; then
+  combined=("${untracked_paths[@]}" "${ignored_paths[@]}")
+  dedupe_array combined
+  if [[ ${#combined[@]} -gt 0 ]]; then
+    remove_with_clean -f -x "${combined[@]}"
+    print_list 'Removed (untracked + ignored)' "${combined[@]}"
+  fi
+else
+  if $target_untracked && [[ ${#untracked_paths[@]} -gt 0 ]]; then
+    remove_with_clean -f "${untracked_paths[@]}"
+    print_list 'Removed untracked' "${untracked_paths[@]}"
+  fi
+  if $target_ignored && [[ ${#ignored_paths[@]} -gt 0 ]]; then
+    remove_with_clean -f -X "${ignored_paths[@]}"
+    print_list 'Removed ignored' "${ignored_paths[@]}"
+  fi
+fi
+
+exit 0

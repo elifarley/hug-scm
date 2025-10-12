@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: hug w purge-all [OPTIONS]
+
+Remove untracked and/or ignored files across the entire repository.
+
+Options:
+  -u, --untracked  Remove untracked files (default when no flags provided)
+  -i, --ignored    Remove ignored files
+      --dry-run    Show what would be removed without deleting anything
+  -f, --force      Skip confirmation prompt
+  -h, --help       Show this help
+
+Notes:
+  • Combine -u and -i to remove both untracked and ignored content.
+  • Without flags, only untracked files are removed.
+EOF
+}
+
+error() {
+  printf 'Error: %s\n' "$1" >&2
+}
+
+confirm() {
+  local prompt=$1 expected=$2 reply
+  read -r -p "$prompt" reply
+  if [[ "$reply" != "$expected" ]]; then
+    printf 'Cancelled.\n'
+    exit 1
+  fi
+}
+
+dry_run=false
+force=false
+target_untracked=false
+target_ignored=false
+flags_explicit=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -u|--untracked)
+      target_untracked=true
+      flags_explicit=true
+      shift
+      ;;
+    -i|--ignored)
+      target_ignored=true
+      flags_explicit=true
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    -f|--force)
+      force=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      error "unknown option: $1"
+      usage >&2
+      exit 2
+      ;;
+    *)
+      error "positional arguments are not accepted (use 'git w purge' for path-specific)"
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if ! $flags_explicit; then
+  target_untracked=true
+fi
+
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  error "not inside a git repository"
+  exit 1
+fi
+
+build_preview() {
+  local preview_cmd=("git" "clean" "-n" "-d")
+  if $target_untracked && $target_ignored; then
+    preview_cmd+=("-x")
+  elif $target_ignored; then
+    preview_cmd+=("-X")
+  fi
+  "${preview_cmd[@]}" 2>/dev/null
+}
+
+preview_output=$(build_preview)
+if [[ -z "$preview_output" ]]; then
+  printf 'Nothing to purge in the selected scope.\n'
+  exit 0
+fi
+
+if $dry_run; then
+  printf 'Dry run: %s\n' "$(printf '\n%s' "$preview_output")"
+  exit 0
+fi
+
+if ! $force; then
+  printf '⚠ About to remove the following:\n%s\n' "$preview_output"
+  confirm 'Type "purge-all" to confirm: ' 'purge-all'
+fi
+
+run_cmd=("git" "clean" "-f" "-d")
+if $target_untracked && $target_ignored; then
+  run_cmd+=("-x")
+elif $target_ignored; then
+  run_cmd+=("-X")
+fi
+
+"${run_cmd[@]}"
+exit 0

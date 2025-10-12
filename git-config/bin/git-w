@@ -1,0 +1,38 @@
+#!/bin/bash
+# git-w - Working directory command gateway
+# Part of the Hug tool suite
+
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+case "${1:-}" in 
+  diff)         shift; git sw "$@" ;;
+  discard)      shift; git w-discard "$@" ;;
+  discard-all)  shift; git w-discard-all "$@" ;;
+  purge)        shift; git w-purge "$@" ;;
+  purge-all)    shift; git w-purge-all "$@" ;;
+  wipe)         shift; git w-wipe "$@" ;;
+  wipe-all)     shift; git w-wipe-all "$@" ;;
+  zap)          shift; git w-zap "$@" ;;
+  zap-all)      shift; git w-zap-all "$@" ;;
+  backup)       shift; git w-backup "$@" ;;
+  restore)      shift; git w-restore "$@" ;;
+  get)          shift; git w-get "$@" ;;
+  changes)      shift; git w-changes "$@" ;;
+  --dry-run)    shift; git w-dry-run "$@" ;;
+  *)             printf 'Usage: hug w <command> [args]\n' >&2;
+                 printf 'Commands:\n' >&2;
+                 printf '  diff         Show status with working changes\n' >&2;
+                 printf '  discard      Discard changes to     tracked files\n' >&2;
+                 printf '  discard-all  Discard changes to ALL tracked files\n' >&2;
+                 printf '  wipe         Wipe changes to specific files\n' >&2;
+                 printf '  wipe-all     Wipe changes to ALL tracked files\n' >&2;
+                 printf '  purge        Remove     untracked/ignored files\n' >&2;
+                 printf '  purge-all    Remove ALL untracked/ignored files\n' >&2;
+                 printf '  zap          Factory reset on specific files\n' >&2;
+                 printf '  zap-all      Factory reset on      ALL files\n' >&2;
+                 printf '  backup       Stash changes safely\n' >&2;
+                 printf '  restore      Restore stashed changes\n' >&2;
+                 printf '  get          Get files from specific commit\n' >&2;
+                 printf '  changes      Quick working changes summary\n' >&2;
+                 printf '  --dry-run    Show what would happen\n' >&2 ;;
+esac; 

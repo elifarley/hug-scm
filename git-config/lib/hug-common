@@ -1,0 +1,53 @@
+#!/b/bash
+# shellcheck shell=dash
+# This file is a library to be sourced by shell scripts
+
+# Color codes for output
+readonly RED='\033[0;31m'
+readonly YELLOW='\033[1;33m'
+readonly GREEN='\033[0;32m'
+readonly BLUE='\033[0;34m'
+readonly NC='\033[0m' # No Color
+
+# Helper functions
+error() {
+    printf "${RED}❌ Error:${NC} %s\n" "$1" >&2
+    exit 1
+}
+
+warning() {
+    printf "${YELLOW}⚠️  Warning:${NC} %s\n" "$1" >&2
+}
+
+info() {
+    printf "${BLUE}ℹ️  Info:${NC} %s\n" "$1" >&2
+}
+
+success() {
+    printf "${GREEN}✅ Success:${NC} %s\n" "$1" >&2
+}
+
+dedupe_array() {
+  local -n __array_ref=$1
+  local -A __seen=()
+  local -a __unique=()
+  local item
+  for item in "${__array_ref[@]}"; do
+    [[ -z "$item" ]] && continue
+    if [[ -z "${__seen[$item]+_}" ]]; then
+      __seen["$item"]=1
+      __unique+=("$item")
+    fi
+  done
+  __array_ref=("${__unique[@]}")
+}
+
+print_list() {
+  local title=$1
+  shift
+  printf '%s (%d):\n' "$title" "$#"
+  local item
+  for item in "$@"; do
+    printf '  %s\n' "$item"
+  done
+}

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# Smart help that suggests related commands
+# Usage: hug help [prefix]
+test $# -eq 0 && {
+  echo "Available command groups:"
+  echo '  a*  - Add to staging area'
+  echo '  b*  - Branch operations'
+  echo '  c*  - Commit operations'
+  echo '  f*  - File operations'
+  echo '  h*  - HEAD operations'
+  echo '  l*  - Log/history operations'
+  echo '  p*  - Push / pull operations'
+  echo '  s*  - Status operations'
+  echo ' sh*  - SHow operations'
+  echo '  t*  - Tag operations'
+  echo '  w*  - Working dir operations'
+  echo ''
+  echo "Use 'hug help [prefix]' to see commands with that prefix"
+  exit 1
+}
+prefix="$1"
+
+exact=$(git config --get "alias.$prefix" 2>/dev/null)
+if [ -n "$exact" ]; then
+  git $prefix -h; echo
+fi
+
+echo "Commands starting with '$prefix':"
+git config --list | grep "^alias\\.$prefix" | cut -c 7- | sort | while IFS== read -r name def; do
+  if [ "$name" != "$prefix" ]; then
+    echo "  hug $name"
+  fi
+done

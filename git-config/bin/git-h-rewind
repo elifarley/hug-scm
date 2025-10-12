@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+. "$CMD_BASE/../lib/hug-common"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+# Rewind to a specific commit (DESTRUCTIVE: discards history + changes)
+# Usage: hug h-rewind <commit>
+#   hug h-rewind HEAD~5  → go back 5 commits
+#   hug h-rewind a1b2c3  → rewind to specific commit
+test $# -eq 0 -o "$1" = '-h' -o "$1" = '--help' && { \
+  printf 'h-rewind: Rewind to a commit, discarding everything after (DESTRUCTIVE)\n' >&2
+  printf 'Usage: hug h rewind <commit>\n' >&2
+  printf '  hug h rewind HEAD~5  → go back 5 commits\n' >&2
+  printf '  hug h rewind a1b2c3  → rewind to specific commit\n' >&2
+  printf 'Warning: Discards commits and all uncommitted changes!\n' >&2
+  return 1
+}
+
+target="$1"
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  printf '❌ You have uncommitted changes!\n' >&2
+  printf '   Use "hug w backup" to save them first\n' >&2
+  printf '   Use "hug w wipe-all" to discard them\n' >&2
+  return 1
+fi
+
+printf 'Will rewind to %s and discard all commits after it\n' "$target" >&2
+printf 'Commits to be discarded:\n' >&2
+git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
+printf '\n' >&2
+
+printf '⚠️  This is PERMANENT and cannot be undone!\n' >&2
+read -p 'Type "rewind" to confirm: ' confirm
+[ "$confirm" = "rewind" ] || { printf 'Cancelled\n' >&2; return 1; }
+
+printf 'Rewinding to %s...\n' "$target" >&2
+git reset --hard "$target"
+printf 'Rewind complete. Repository is now at %s\n' "$(git rev-parse --short "$target")" >&2
+

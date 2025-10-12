@@ -1,0 +1,29 @@
+{
+  "name": "Hug SCM Sandbox",
+
+  // Use a standard Linux image that includes git and other common tools.
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+
+  "postCreateCommand": "/workspaces/hug-scm/install.sh; git clone https://github.com/PIC16B/git-practice.git demo && echo \"Welcome to the Hug SCM sandbox! Type \\'hug help\\' to get started.\"",
+  // Keep the terminal open after the postCreateCommand runs.
+  "postCreateCommand.interactive": true,
+
+  // Customize the VS Code UI within the Codespace
+  "customizations": {
+    "vscode": {
+      "settings": {
+        // Automatically open a terminal when the Codespace starts
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "bash",
+            "icon": "terminal-bash"
+          }
+        }
+      },
+      "extensions": [
+        // Optional: Add extensions that might be useful
+      ]
+    }
+  }
+}

@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: hug w zap [OPTIONS] <path> [<path>...]
+
+Discard tracked changes and purge untracked/ignored files for the specified paths.
+
+Options:
+  -u               Target unstaged changes (tracked) AND untracked files
+  -s               Target staged changes (tracked)
+  -i               Target ignored files
+      --dry-run    Show what would be affected without applying changes
+  -h, --help       Show this help
+
+Semantics:
+  • By default (no flags) zap == discard -us + purge -ui (full cleanup).
+  • When flags are supplied, only the corresponding categories are affected.
+  • Requires at least one path; use `hug w zap-all` for repository-wide scope.
+EOF
+}
+
+error() {
+  printf 'Error: %s\n' "$1" >&2
+}
+
+dry_run=false
+# tracked controls
+tracked_unstaged=false
+tracked_staged=false
+tracked_flags_specified=false
+
+# untracked controls
+target_untracked=false
+target_ignored=false
+untracked_flags_specified=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      opt=$1
+      shift
+      # expand combined short flags (e.g., -us)
+      opt=${opt#-}
+      for ((i=0; i<${#opt}; ++i)); do
+        char=${opt:i:1}
+        case "$char" in
+          u)
+            tracked_unstaged=true
+            target_untracked=true
+            tracked_flags_specified=true
+            untracked_flags_specified=true
+            ;;
+          s)
+            tracked_staged=true
+            tracked_flags_specified=true
+            ;;
+          i)
+            target_ignored=true
+            untracked_flags_specified=true
+            ;;
+          *)
+            error "unknown option: -$char"
+            usage >&2
+            exit 2
+            ;;
+        esac
+      done
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ $# -lt 1 ]]; then
+  error "this command requires at least one path (or use 'git w zap-all')"
+  usage >&2
+  exit 2
+fi
+
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  error "not inside a git repository"
+  exit 1
+fi
+
+paths=("$@")
+
+if ! $tracked_flags_specified; then
+  tracked_unstaged=true
+  tracked_staged=true
+fi
+
+if ! $untracked_flags_specified; then
+  target_untracked=true
+  target_ignored=true
+fi
+
+if $tracked_unstaged || $tracked_staged; then
+  discard_cmd=(git w discard)
+  $dry_run && discard_cmd+=(--dry-run)
+  $tracked_unstaged && discard_cmd+=(-u)
+  $tracked_staged && discard_cmd+=(-s)
+  discard_cmd+=(-- "${paths[@]}")
+  "${discard_cmd[@]}"
+fi
+
+if $target_untracked || $target_ignored; then
+  purge_cmd=(git w purge)
+  $dry_run && purge_cmd+=(--dry-run)
+  $target_untracked && purge_cmd+=(-u)
+  $target_ignored && purge_cmd+=(-i)
+  purge_cmd+=(-- "${paths[@]}")
+  "${purge_cmd[@]}"
+fi
+
+exit 0

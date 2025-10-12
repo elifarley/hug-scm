@@ -1,0 +1,306 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+. "$CMD_BASE/../lib/hug-common"
+
+# git-w-wipe-all - Wipe all changes to tracked files (staged + unstaged)
+# Part of the Hug tool suite
+# Usage: hug w wipe-all [--dry-run] [-f|--force]
+
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Convenience alias: wipe-all == discard-all staged + unstaged
+# exec hug w discard-all -u -s "$@"
+
+confirm() {
+    local message="$1"
+    local expected="$2"
+    local response
+
+    while true; do
+        read -p "$message" response
+        case "$response" in
+            "$expected") return 0 ;;
+            [Qq]|[Qq][Uu][Ii][Tt]|[Cc][Aa][Nn][Cc][Ee][Ll])
+                printf "Cancelled.\n" >&2
+                exit 0
+                ;;
+            *)
+                printf "Invalid response. Please type '%s' or 'cancel': " "$expected" >&2
+                ;;
+        esac
+    done
+}
+
+# Show help
+show_help() {
+    cat << EOF
+w-wipe-all: Wipe all changes to tracked files (staged + unstaged)
+
+USAGE:
+    hug w wipe-all [--dry-run] [-f|--force]
+
+DESCRIPTION:
+    Remove ALL staged and unstaged changes to tracked files.
+    This resets your working directory to match the last commit.
+    Does NOT affect untracked files.
+
+OPTIONS:
+    --dry-run      Show what would be wiped without doing it
+    -f, --force    Wipe without confirmation prompts
+
+EXAMPLES:
+    hug w-wipe-all                 # Wipe all tracked changes
+    hug w-wipe-all --dry-run       # Preview what would be wiped
+    hug w-wipe-all --force         # Wipe without confirmation
+
+SAFETY REQUIREMENTS:
+    • This is a HIGHLY DESTRUCTIVE operation
+    • All staged and unstaged changes will be permanently lost
+    • Untracked files are NOT affected
+    • Use 'hug w-backup' to save changes first
+
+SEE ALSO:
+    hug w-wipe          Wipe changes to specific files
+    hug w-purge         Remove untracked files
+    hug clean-all       Complete working directory reset
+    hug w-backup        Backup changes before destructive operations
+
+EOF
+}
+
+# Get all files with changes
+get_files_with_changes() {
+    local staged_files
+    local unstaged_files
+    local all_files
+
+    staged_files=$(git diff --cached --name-only)
+    unstaged_files=$(git diff --name-only)
+
+    if [ -n "$staged_files" ] && [ -n "$unstaged_files" ]; then
+        # Combine and deduplicate
+        all_files=$(echo -e "$staged_files\n$unstaged_files" | sort -u)
+    elif [ -n "$staged_files" ]; then
+        all_files="$staged_files"
+    elif [ -n "$unstaged_files" ]; then
+        all_files="$unstaged_files"
+    else
+        all_files=""
+    fi
+
+    echo "$all_files"
+}
+
+# Show detailed file information
+show_file_details() {
+    local files="$1"
+    local staged_count=0
+    local unstaged_count=0
+    local both_count=0
+
+    printf '\nDetailed file analysis:\n' >&2
+
+    while IFS= read -r file; do
+        [ -z "$file" ] && continue
+
+        local has_staged=false
+        local has_unstaged=false
+
+        # Check if file has staged changes
+        if git diff --cached --quiet "$file" 2>/dev/null; then
+            has_staged=false
+        else
+            has_staged=true
+            staged_count=$((staged_count + 1))
+        fi
+
+        # Check if file has unstaged changes
+        if git diff --quiet "$file" 2>/dev/null; then
+            has_unstaged=false
+        else
+            has_unstaged=true
+            unstaged_count=$((unstaged_count + 1))
+        fi
+
+        # Display file status
+        if [ "$has_staged" = true ] && [ "$has_unstaged" = true ]; then
+            printf '  📝 %s (staged + unstaged)\n' "$file" >&2
+            both_count=$((both_count + 1))
+        elif [ "$has_staged" = true ]; then
+            printf '  📋 %s (staged only)\n' "$file" >&2
+        elif [ "$has_unstaged" = true ]; then
+            printf '  ✏️  %s (unstaged only)\n' "$file" >&2
+        fi
+    done <<< "$files"
+
+    printf '\nSummary:\n' >&2
+    printf '  Files with staged changes: %d\n' "$staged_count" >&2
+    printf '  Files with unstaged changes: %d\n' "$unstaged_count" >&2
+    printf '  Files with both: %d\n' "$both_count" >&2
+    printf '  Total files to wipe: %d\n' "$(echo "$files" | wc -l)" >&2
+}
+
+# Show preview of changes for each file
+show_change_previews() {
+    local files="$1"
+    local preview_lines=10
+
+    printf '\nPreview of changes to be wiped:\n' >&2
+    printf '(Showing first %d lines of each file)\n' "$preview_lines" >&2
+
+    while IFS= read -r file; do
+        [ -z "$file" ] && continue
+
+        printf '\n─ %s ─\n' "$file" >&2
+
+        # Show staged changes if any
+        if ! git diff --cached --quiet "$file" 2>/dev/null; then
+            printf '📋 Staged changes:\n' >&2
+            git diff --cached "$file" | head -"$preview_lines" >&2 || true
+            if [ $(git diff --cached "$file" | wc -l) -gt $preview_lines ]; then
+                printf '─ (truncated, showing first %d lines) ─\n' "$preview_lines" >&2
+            fi
+        fi
+
+        # Show unstaged changes if any
+        if ! git diff --quiet "$file" 2>/dev/null; then
+            printf '✏️  Unstaged changes:\n' >&2
+            git diff "$file" | head -"$preview_lines" >&2 || true
+            if [ $(git diff "$file" | wc -l) -gt $preview_lines ]; then
+                printf '─ (truncated, showing first %d lines) ─\n' "$preview_lines" >&2
+            fi
+        fi
+    done <<< "$files"
+}
+
+# Perform the wipe operation
+perform_wipe() {
+    local force="$1"
+
+    printf 'Wiping all tracked changes...\n' >&2
+
+    # First unstage all staged changes
+    local staged_files
+    staged_files=$(git diff --cached --name-only)
+    if [ -n "$staged_files" ]; then
+        printf '  Unstaging files...\n' >&2
+        if ! git restore --staged . 2>/dev/null; then
+            # Fallback for older git versions
+            git reset HEAD
+        fi
+        printf '  Unstaged %d files\n' "$(echo "$staged_files" | wc -l)" >&2
+    fi
+
+    # Then discard all working changes
+    local unstaged_files
+    unstaged_files=$(git diff --name-only)
+    if [ -n "$unstaged_files" ]; then
+        printf '  Discarding changes...\n' >&2
+        if ! git restore . 2>/dev/null; then
+            # Fallback for older git versions
+            git checkout -- .
+        fi
+        printf '  Discarded changes to %d files\n' "$(echo "$unstaged_files" | wc -l)" >&2
+    fi
+
+    success "Successfully wiped all tracked changes"
+}
+
+# Main function
+main() {
+    local dry_run=false
+    local force=false
+
+    # Parse command line arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --dry-run)
+                dry_run=true
+                shift
+                ;;
+            -f|--force)
+                force=true
+                shift
+                ;;
+            -h|--help|help)
+                show_help
+                exit 0
+                ;;
+            "")
+                # No argument, continue
+                shift
+                ;;
+            *)
+                error "Unknown option: $1
+       Use 'git w-wipe-all --help' for usage information"
+                ;;
+        esac
+    done
+
+    # Validate environment
+    check_git_repo
+
+    # Get files with changes
+    local files_with_changes
+    files_with_changes=$(get_files_with_changes)
+
+    # Check if there's anything to wipe
+    if [ -z "$files_with_changes" ]; then
+        if [ "$dry_run" = false ]; then
+            success "No tracked changes to wipe"
+        fi
+        exit 0
+    fi
+
+    # Show what will be affected
+    printf '🚨 w-wipe-all: Reset all tracked files to last commit\n' >&2
+    printf 'Files with changes to wipe:\n' >&2
+    echo "$files_with_changes" | sed 's/^/  /' >&2
+
+    # Show detailed information
+    show_file_details "$files_with_changes"
+
+    # Handle dry run mode
+    if [ "$dry_run" = true ]; then
+        printf '\n🔍 Dry run mode - no changes will be made\n' >&2
+        show_change_previews "$files_with_changes"
+        exit 0
+    fi
+
+    # Show preview unless force mode
+    if [ "$force" = false ]; then
+        show_change_previews "$files_with_changes"
+    fi
+
+    # Safety warnings
+    printf '\n' >&2
+    warning "This will PERMANENTLY discard ALL changes to the files above!"
+    warning "Staged changes will be unstaged and discarded"
+    warning "Unstaged changes will be discarded"
+    info "Untracked files will NOT be affected"
+
+    # Get confirmation unless force mode
+    if [ "$force" = false ]; then
+        printf '\n' >&2
+        confirm "Type \"wipe-all\" to confirm this operation: " "wipe-all"
+    else
+        printf '\n⚡ Force mode enabled - proceeding without confirmation\n' >&2
+    fi
+
+    # Perform the wipe
+    perform_wipe "$force"
+
+    # Final status check
+    printf '\n' >&2
+    local final_changes
+    final_changes=$(get_files_with_changes)
+    if [ -z "$final_changes" ]; then
+        success "Working directory is now clean"
+    else
+        warning "Some files still have changes (this shouldn't happen):"
+        echo "$final_changes" | sed 's/^/  /' >&2
+    fi
+}
+
+# Run main function with all arguments
+main "$@"

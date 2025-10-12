@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+. "$CMD_BASE/../lib/hug-common"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+# Take back commits but keep everything ready: HEAD goes back, keeps changes staged
+# Usage: hug h-back [N|COMMIT]
+#   hug h-back        → undo last commit, keep changes staged
+#   hug h-back 3      → undo last 3 commits, keep changes staged
+#   hug h-back a1b2c3 → reset to specific commit, keep changes staged
+case "${1:-}" in
+  -h|--help)
+    printf 'back: Move HEAD back, keep changes staged (non-destructive)\n' >&2
+    printf 'Usage: hug h back [N|COMMIT]\n' >&2
+    printf '  hug h back        → undo last commit\n' >&2
+    printf '  hug h back 3      → undo last 3 commits\n' >&2
+    printf '  hug h back a1b2c3 → reset to specific commit\n' >&2
+    exit 1;;
+  '') target='HEAD~1' ;;
+  [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$1" ;;
+  *) target="$1" ;;
+esac
+git reset --soft "$target"
+

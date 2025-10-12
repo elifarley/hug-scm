@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+. "$CMD_BASE/../lib/hug-common"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+usage() {
+  cat <<'EOF'
+Usage: hug w discard-all [OPTIONS]
+
+Discard tracked changes across the entire repository.
+
+Options:
+  -u, --unstaged   Discard unstaged changes (default when no flags provided)
+  -s, --staged     Discard staged changes
+      --dry-run    Show what would be discarded without applying changes
+  -f, --force      Skip confirmation prompt
+  -h, --help       Show this help
+
+Notes:
+  • Without flags, only unstaged changes are discarded.
+  • Combine -u and -s to discard both staged and unstaged changes.
+EOF
+}
+
+error() {
+  printf 'Error: %s\n' "$1" >&2
+}
+
+confirm() {
+  local prompt=$1 expected=$2 reply
+  read -r -p "$prompt" reply
+  if [[ "$reply" != "$expected" ]]; then
+    printf 'Cancelled.\n'
+    exit 1
+  fi
+}
+
+dedupe_array() {
+  local -n __array_ref=$1
+  local -A __seen=()
+  local -a __unique=()
+  local item
+  for item in "${__array_ref[@]}"; do
+    [[ -z "$item" ]] && continue
+    if [[ -z "${__seen[$item]+_}" ]]; then
+      __seen["$item"]=1
+      __unique+=("$item")
+    fi
+  done
+  __array_ref=("${__unique[@]}")
+}
+
+dry_run=false
+force=false
+target_unstaged=false
+target_staged=false
+flags_explicit=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -u|--unstaged)
+      target_unstaged=true
+      flags_explicit=true
+      shift
+      ;;
+    -s|--staged)
+      target_staged=true
+      flags_explicit=true
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    -f|--force)
+      force=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      error "unknown option: $1"
+      usage >&2
+      exit 2
+      ;;
+    *)
+      error "positional arguments are not accepted (use 'git w discard' for path-specific)"
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if ! $flags_explicit; then
+  target_unstaged=true
+fi
+
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  error "not inside a git repository"
+  exit 1
+fi
+
+declare -a unstaged_paths=()
+declare -a staged_paths=()
+
+if $target_unstaged; then
+  mapfile -t unstaged_paths < <(git diff --name-only 2>/dev/null || true)
+  dedupe_array unstaged_paths
+fi
+
+if $target_staged; then
+  mapfile -t staged_paths < <(git diff --cached --name-only 2>/dev/null || true)
+  dedupe_array staged_paths
+fi
+
+if [[ ${#unstaged_paths[@]} -eq 0 && ${#staged_paths[@]} -eq 0 ]]; then
+  printf 'Working tree already clean for the selected scope.\n'
+  exit 0
+fi
+
+print_list() {
+  local title=$1
+  shift
+  printf '%s (%d):\n' "$title" "$#"
+  local item
+  for item in "$@"; do
+    printf '  %s\n' "$item"
+  done
+}
+
+if $dry_run; then
+  printf 'Dry run: the following changes would be discarded\n'
+  if [[ ${#staged_paths[@]} -gt 0 ]]; then
+    print_list '  Staged paths' "${staged_paths[@]}"
+  fi
+  if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
+    print_list '  Unstaged paths' "${unstaged_paths[@]}"
+  fi
+  exit 0
+fi
+
+if ! $force; then
+  printf '⚠ About to discard tracked changes:\n'
+  if [[ ${#staged_paths[@]} -gt 0 ]]; then
+    print_list '  Staged paths' "${staged_paths[@]}"
+  fi
+  if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
+    print_list '  Unstaged paths' "${unstaged_paths[@]}"
+  fi
+  confirm 'Type "discard-all" to confirm: ' 'discard-all'
+fi
+
+if [[ ${#staged_paths[@]} -gt 0 ]]; then
+  git restore --staged --source=HEAD -- "${staged_paths[@]}"
+  print_list 'Discarded staged changes from' "${staged_paths[@]}"
+fi
+
+if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
+  git restore --worktree --source=HEAD -- "${unstaged_paths[@]}"
+  print_list 'Discarded unstaged changes from' "${unstaged_paths[@]}"
+fi
+
+exit 0

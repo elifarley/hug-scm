@@ -1,0 +1,81 @@
+#!/b/bash
+# shellcheck shell=dash
+# This file is a library to be sourced by shell scripts
+
+# Check if we're in a git repository
+check_git_repo() {
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        error "Not in a git repository"
+    fi
+}
+
+# Validate commit exists
+validate_commit() {
+    local commit="$1"
+    if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
+        error "Commit '$commit' does not exist"
+    fi
+}
+
+# Check if working tree is clean
+check_working_tree_clean() {
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        local unstaged_count
+        local staged_count
+        unstaged_count=$(git diff --name-only | wc -l)
+        staged_count=$(git diff --cached --name-only | wc -l)
+
+        error "Working tree is not clean!
+       Unstaged changes: $unstaged_count files
+       Staged changes: $staged_count files
+
+       Solutions:
+       • Use 'git w-backup' to save changes first
+       • Use 'git w-discard-all' to discard changes
+       • Use 'git w-discard <file>' for specific files"
+    fi
+}
+
+# Check file in target commit
+check_file_in_commit() {
+    local commit="$1"
+    local file="$2"
+
+    if ! git cat-file -e "$commit:$file" 2>/dev/null; then
+        error "File '$file' does not exist in commit $commit"
+    fi
+}
+
+# Preview changes for specific files
+preview_file_changes() {
+    local commit="$1"
+    local file="$2"
+
+    printf "─ %s ─\n" "$file" >&2
+    if git diff --no-index -- "$file" <(git show "$commit:$file") 2>/dev/null | head -20 >&2; then
+        printf "─ (showing first 20 lines) ─\n\n" >&2
+    else
+        printf "─ (binary file or no changes) ─\n\n" >&2
+    fi
+}
+
+# Check file has staged changes
+check_file_staged() {
+    local file="$1"
+
+    if ! git diff --cached --quiet "$file" 2>/dev/null; then
+        error "File '$file' has staged changes
+       Use 'git us $file' to unstage first"
+    fi
+}
+
+# Check file has unstaged changes
+check_file_unstaged() {
+    local file="$1"
+
+    if ! git diff --quiet "$file" 2>/dev/null; then
+        error "File '$file' has unstaged changes
+       Use 'git w-discard $file' to discard changes first"
+    fi
+}
+

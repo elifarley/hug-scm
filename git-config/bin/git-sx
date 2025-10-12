@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+# w-changes: quick working tree summary (staged, unstaged, untracked, ignored)
+
+set -euo pipefail
+
+show_help() {
+  cat <<'EOF'
+w-changes: Quick summary of working tree changes
+
+Usage:
+  w-changes [--no-color] [--help]
+
+Options:
+  --no-color   Disable ANSI color output
+  -h, --help   Show this help message
+
+Displays counts of staged, unstaged, untracked, and ignored items, along with
+aggregate line insertions/deletions and a short list of affected paths.
+EOF
+}
+
+# ---------- option parsing ----------
+want_color=true
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-color)
+      want_color=false
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      printf 'Error: unknown option: %s\n' "$1" >&2
+      show_help >&2
+      exit 2
+      ;;
+  esac
+done
+
+# ---------- repo guard ----------
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  printf 'Error: not inside a git repository.\n' >&2
+  exit 1
+fi
+
+# ---------- color palette ----------
+if $want_color && [[ -t 1 ]]; then
+  BOLD=$'\033[1m'
+  DIM=$'\033[2m'
+  FG_GREEN=$'\033[32m'
+  FG_YELLOW=$'\033[33m'
+  FG_RED=$'\033[31m'
+  FG_CYAN=$'\033[36m'
+  FG_MAGENTA=$'\033[35m'
+  RESET=$'\033[0m'
+else
+  BOLD= DIM= FG_GREEN= FG_YELLOW= FG_RED= FG_CYAN= FG_MAGENTA= RESET=
+fi
+
+# ---------- helpers ----------
+aggregate_diff() {
+  # $1: "staged" or "unstaged"
+  local mode=$1
+  local stats
+  if [[ "$mode" == "staged" ]]; then
+    stats=$(git diff --cached --numstat | awk 'BEGIN{f=0;i=0;d=0} NF{f++; i+=$1; d+=$2} END{printf "%d %d %d\n", f, i, d}')
+  else
+    stats=$(git diff --numstat | awk 'BEGIN{f=0;i=0;d=0} NF{f++; i+=$1; d+=$2} END{printf "%d %d %d\n", f, i, d}')
+  fi
+  read -r files ins del <<<"${stats:-"0 0 0"}"
+  printf '%s' "$files $ins $del"
+}
+
+capture_names() {
+  # $1 mode, $2 count limit
+  local mode=$1 limit=$2
+  local cmd=()
+  if [[ "$mode" == "staged" ]]; then
+    cmd=(git diff --cached --name-only)
+  else
+    cmd=(git diff --name-only)
+  fi
+  "${cmd[@]}" | awk -v lim="$limit" 'NF {paths[count++]=$0} END {for(i=0;i<(count<lim?count:lim);i++) printf "%s\n", paths[i]; if(count>lim) printf "… (+%d more)\n", count-lim}'
+}
+
+print_top_list() {
+  local title=$1; shift
+  local content=("$@")
+  if [[ ${#content[@]} -eq 0 ]]; then
+    return
+  fi
+  printf '  %s%s%s\n' "$DIM" "$title" "$RESET"
+  local item
+  for item in "${content[@]}"; do
+    printf '    • %s\n' "$item"
+  done
+}
+
+# ---------- staged & unstaged stats ----------
+read -r staged_files staged_ins staged_del <<<"$(aggregate_diff staged)"
+read -r unstaged_files unstaged_ins unstaged_del <<<"$(aggregate_diff unstaged)"
+
+mapfile -t staged_samples < <(capture_names staged 5)
+mapfile -t unstaged_samples < <(capture_names unstaged 5)
+
+# ---------- untracked & ignored ----------
+declare -a untracked_paths=()
+declare -a ignored_paths=()
+
+while IFS= read -r -d '' entry; do
+  [[ -z "$entry" ]] && continue
+  status=${entry:0:2}
+  path=${entry:3}
+  case "$status" in
+    '??') untracked_paths+=("$path") ;;
+    '!!') ignored_paths+=("$path") ;;
+  esac
+done < <(git status --porcelain=v1 -z --ignored=matching --untracked-files=all)
+
+TOP_LIMIT=5
+summarize_paths() {
+  local -n arr=$1
+  local limit=$2
+  local count=${#arr[@]}
+  if (( count == 0 )); then
+    return
+  fi
+  local output=()
+  local cap=$(( count < limit ? count : limit ))
+  local i
+  for (( i=0; i<cap; ++i )); do
+    output+=("    • ${arr[i]}")
+  done
+  if (( count > cap )); then
+    output+=("    • … (+$((count - cap)) more)")
+  fi
+  printf '%s\n' "${output[@]}"
+}
+
+# ---------- display ----------
+total_changes=$(( staged_files + unstaged_files + ${#untracked_paths[@]} + ${#ignored_paths[@]} ))
+
+if (( total_changes == 0 )); then
+  printf '%s%sWorking tree is clean.%s\n' "$FG_GREEN" "$BOLD" "$RESET"
+  exit 0
+fi
+
+printf '%s%sWorking tree snapshot%s\n' "$BOLD" "$FG_CYAN" "$RESET"
+printf '  %-10s : %3d file(s)  +%d  -%d\n' "${FG_MAGENTA}Staged${RESET}" "$staged_files" "$staged_ins" "$staged_del"
+printf '  %-10s : %3d file(s)  +%d  -%d\n' "${FG_YELLOW}Unstaged${RESET}" "$unstaged_files" "$unstaged_ins" "$unstaged_del"
+printf '  %-10s : %3d item(s)\n' "${FG_RED}Untracked${RESET}" "${#untracked_paths[@]}"
+printf '  %-10s : %3d item(s)\n' "${DIM}Ignored${RESET}" "${#ignored_paths[@]}"
+printf '\n'
+
+print_top_list "Top staged paths" "${staged_samples[@]}"
+print_top_list "Top unstaged paths" "${unstaged_samples[@]}"
+
+if (( ${#untracked_paths[@]} > 0 )); then
+  printf '  %sUntracked samples%s\n' "$DIM" "$RESET"
+  summarize_paths untracked_paths "$TOP_LIMIT"
+fi
+
+if (( ${#ignored_paths[@]} > 0 )); then
+  printf '  %sIgnored samples%s\n' "$DIM" "$RESET"
+  summarize_paths ignored_paths "$TOP_LIMIT"
+fi
+
+printf '\n%sTip:%s Use %shug s%s for details, or %shug ss%s to inspect changes.\n' \
+  "$DIM" "$RESET" "$FG_CYAN" "$RESET" "$FG_CYAN" "$RESET"
+

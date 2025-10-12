@@ -1,0 +1,750 @@
+# In ~/.gitconfig:
+# [include]
+#   path = $HUG_HOME/.gitconfig
+#
+# [user]
+#   name = <name>
+#   email = <email>
+
+[include]
+    path = $HUG_HOME/.delta.gitconfig
+
+[commit]
+    verbose = true
+
+[pull]
+  rebase = true
+
+[pretty]
+    log1        = %C(yellow)%h%C(reset) %C(blue)%ad%C(reset) %C(magenta)[%an]%C(reset)%C(auto)%d%C(reset) %s
+    log1reldate = %C(yellow)%h%C(reset) %C(blue)%ad (%cr)%C(reset) %C(magenta)[%an]%C(reset)%C(auto)%d%C(reset) %s
+    logbody     = %C(yellow)%h%C(reset) %C(blue)%ad (%cr)%C(reset) %C(magenta)[%an]%C(reset)%C(auto)%d%C(reset)%n%s%C(reset)%n%b
+    stash       = %C(yellow)%gd%Creset %C(cyan)(%cr)%Creset %s
+
+[alias]
+  # ============================================================================
+  # Discoverability
+  # ============================================================================
+
+  # Show all aliases (optionally search with: hug alias <pattern>)
+  alias = !git config --list | grep ^alias\\. | cut -c 7- | grep -Ei --color \"$1\" "#"
+
+  # ============================================================================
+  # LOGGING
+  # ============================================================================
+
+  # Log one-line with graph and decorations
+  l = log --oneline --graph --decorate --color
+
+  # Log one-line with date, author and message
+  ll = log --graph --pretty=log1 --date=short
+
+  # All branches
+  la = "!f() { git ll --all \"$@\"; }; f"
+
+  # Log commits to a file
+  llf = "!f() { \
+    test $# -eq 0 -o \"$1\" = '-h' -o \"$1\" = '--help' && { \
+      printf 'llf: Log commits to a file.\n-p: show patches.\nUsage: git llf <file> [-p]' >&2; return 1; }; \
+    t=\"$1\"; shift; \
+    git ll \"$@\" --follow -- \"$GIT_PREFIX$t\"; \
+  }; f"
+
+  # Search commits by message
+  lf = "!f() { \
+    test $# -eq 0 -o \"$1\" = '-h' && { \
+      printf '\nlf: Search commits by MESSAGE.\n-i: Ignore case.\n-p: Show patches.\n--all: Consider ALL branches.\nUsage: git lf <search-term> [-ip] [--all]' >&2; return 1; }; \
+    t=\"$1\"; shift; \
+    git ll --grep=\"$t\" \"$@\"; \
+  }; f"
+
+  # Ex: Search in specific file
+  # git lc "getUserById" -- src/users.js
+  lc = "!f() { \
+    test $# -eq 0 -o \"$1\" = '-h' && { \
+      printf '\nlc: Search commits by CODE CHANGES in diff.\n-i: Ignore case.\n-p: Show patches.\n--all: Consider ALL branches.\n-- file: Restrict to a file.\nUsage: hug lc <search-term> [-ip] [--all] [-- file]' >&2; return 1; }; \
+    t=\"$1\"; shift; \
+    git ll -S \"$t\" \"$@\"; \
+  }; f"
+
+  # Search commits by RegEx changes
+  lcr = "!f() { \
+    test $# -eq 0 -o \"$1\" = '-h' && { \
+      printf '\nlcr: Search commits by RegEx CODE CHANGES in diff.\n-i: Ignore case.\n-p: Show patches.\n--all: Consider ALL branches.\n-- file: Restrict to a file.\nUsage: hug lcr <RegEx> [-ip] [--all] [-- file]' >&2; return 1; }; \
+    t=\"$1\"; shift; \
+    git ll -G \"$t\" \"$@\"; \
+  }; f"
+
+  # Commits by specific author
+  lau = "!f() { t=\"${1:?(Search commits by AUTHOR) Missing search term}\"; shift; git ll --author=\"$t\" \"$@\"; }; f"
+
+  # Commits in date range
+  ld = "!f() { git ll --since=\"$1\" --until=\"${2:-now}\"; }; f"
+
+  # File history with patches (-p)
+  lp = "!f() { git ll -p \"$@\"; }; f"
+
+  # ============================================================================
+  # FILE INSPECTION
+  # ============================================================================
+
+  # Complete file history with diffs (follows renames)
+  fl = log --follow -p --
+
+  # Compact file history (follows renames)
+  fh = log --follow --oneline --
+
+  # Who changed what line (usage: git blame <file>)
+  fblame = blame -w -C -C -C # w: Ignore whitespace changes; CCC: Detect code moved/copied within/across files (3 levels deep)
+
+  # Short blame with just author and line (usage: git bls <file>)
+  fb = blame -w -C -C -C --line-porcelain
+
+  # List all contributors to a file (usage: git contributors <file>)
+  fcon = "!f() { git log --follow --pretty=format:'%an <%ae>' -- \"$1\" | sort -u; }; f"
+
+  # File change statistics (usage: git file-stats <file>)
+  fs = log --follow --stat --
+
+  # Count commits per author for a file (usage: git file-authors <file>)
+  fa = "!f() { git log --follow --format='%an' -- \"$1\" | sort | uniq -c | sort -rn; }; f"
+
+  # Show when file was added (usage: git file-born <file>)
+  fborn = log --follow --diff-filter=A --find-renames=40% --
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  STAGING (a*)
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Stage tracked files, or specific files if provided
+  # Usage:
+  #   hug a           → stage all tracked files (updates only)
+  #   hug a .         → stage current directory
+  #   hug a <file>... → stage specific files
+  a = "!f() { \
+    if [ $# -eq 0 ]; then \
+      git add -u; \
+    else \
+      git add \"$@\"; \
+    fi; \
+  }; f"
+
+  # Stage everything (tracked + untracked + deletions)
+  # Usage: hug aa
+  aa = add -A
+
+  # Invoke interactive add menu
+  ai = add --interactive
+
+  # Add patches interactively (no commit)
+  ap = add --patch
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  UNSTAGING / Undo Staging (us*)
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Unstage specific files (most common - shortest alias)
+  # Usage: hug us <file> [<file2> ...]
+  us = "!f() { \
+    test $# -eq 0 -o \"$1\" = '-h' -o \"$1\" = '--help' && { \
+      printf 'us: UnStage specific files.\nUsage: hug us <file1> [<file2> ...]' >&2; return 1; }; \
+    git restore --staged \"$@\"; \
+  }; f"
+
+  # Unstage all files (nuclear option)
+  # Usage: hug usa
+  usa = reset HEAD
+
+  # Stop tracking files but keep them locally
+  # Usage: hug untrack <file> [<file2> ...]
+  # Common use: hug untrack .env (after accidentally committing secrets)
+  untrack = "!f() { \
+    test $# -eq 0 -o \"$1\" = '-h' -o \"$1\" = '--help' && { \
+      printf 'untrack: Stop tracking files but keep them locally\n' >&2; \
+      printf 'Usage: hug untrack <file> [<file2> ...]\n' >&2; \
+      printf 'Example: hug untrack .env config.local.json\n' >&2; \
+      return 1; \
+    }; \
+    git rm --cached \"$@\"; \
+  }; f"
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  Head (h*)
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Undo commits and unstage their changes (but keep in working dir)
+  # Usage: git h-undo [N|COMMIT]
+  #   git h-undo        → undo last commit, unstage changes
+  #   git h-undo 3      → undo last 3 commits, unstage changes
+  #   git h-undo a1b2c3 → reset to specific commit, unstage changes
+  h-undo = "!f() { \
+    case \"${1:-}\" in \
+      '-h'|'--help') \
+        printf 'h-undo: Move HEAD back, unstage changes (non-destructive)\n' >&2; \
+        printf 'Usage: hug undo [N|COMMIT]\n' >&2; \
+        printf '  hug h undo        → undo last commit, unstage\n' >&2; \
+        printf '  hug h undo 3      → undo last 3 commits, unstage\n' >&2; \
+        printf '  hug h undo a1b2c3 → reset to specific commit, unstage\n' >&2; \
+        return 1;; \
+      '') target='HEAD~1' ;; \
+      [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target=\"HEAD~$1\" ;; \
+      *) target=\"$1\" ;; \
+    esac; \
+    git reset --mixed \"$target\"; \
+  }; f"
+
+  # Forget commits and their changes (local changes preserved)
+  # Usage: hug h-rollback [N|COMMIT]
+  #   hug h rollback        → forget last commit and its changes
+  #   hug h rollback 3      → forget last 3 commits and their changes
+  #   hug h rollback a1b2c3 → forget commits back to specific commit
+  # Note: Aborts if local changes would be lost
+  h-rollback = "!f() { \
+    case \"${1:-}\" in \
+      '-h'|'--help') \
+        printf 'forget: Discard commits and their changes (local work protected)\n' >&2; \
+        printf 'Usage: hug forget [N|COMMIT]\n' >&2; \
+        printf '  hug h rollback        → forget last commit\n' >&2; \
+        printf '  hug h rollback 3      → forget last 3 commits\n' >&2; \
+        printf '  hug h rollback a1b2c3 → forget back to specific commit\n' >&2; \
+        printf 'Note: Aborts if local changes would be overwritten\n' >&2; \
+        return 1;; \
+      '') target='HEAD~1' ;; \
+      [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target=\"HEAD~$1\" ;; \
+      *) target=\"$1\" ;; \
+    esac; \
+    git reset --keep \"$target\"; \
+  }; f"
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  Working directory (w-*)
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Quick changes summary (new lightweight command)
+  w-changes = "!f() { \
+    test \"$1\" = '-h' -o \"$1\" = '--help' && { \
+      printf 'w changes: Quick summary of working changes\n' >&2; \
+      printf 'Usage: hug w changes\n' >&2; \
+      return 1; \
+    }; \
+    \
+    if git diff --quiet; then \
+      printf '✅ No unstaged changes\n' >&2; \
+    else \
+      local files=$(git diff --name-only | wc -l); \
+      local insertions=$(git diff --numstat | awk '{sum += $1} END {print sum}'); \
+      local deletions=$(git diff --numstat | awk '{sum += $2} END {print sum}'); \
+      printf '📝 Working dir changes: %d files, +%d/-%d lines\n' \"$files\" \"$insertions\" \"$deletions\" >&2; \
+    fi; \
+  }; f"
+
+  # Safe backup of changes
+  w-backup = "!f() { \
+    local message=\"WIP: Auto-backup before destructive operation\"; \
+    \
+    while [ $# -gt 0 ]; do \
+      case \"$1\" in \
+        -m|--message) message=\"$2\"; shift 2 ;; \
+        -h|--help) \
+          printf 'w backup: Stash changes safely\n' >&2; \
+          printf 'Usage: hug w backup [-m \"message\"]\n' >&2; \
+          printf '  -m, --message  Custom stash message\n' >&2; \
+          return 1 ;; \
+        *) printf 'Unknown option: %s\n' \"$1\" >&2; return 1 ;; \
+      esac; \
+    done; \
+    \
+    if git diff --quiet && git diff --cached --quiet; then \
+      printf 'No changes to backup\n' >&2; \
+      return 0; \
+    fi; \
+    \
+    git stash push -m \"$message\"; \
+      printf 'Changes backed up safely\n' >&2; \
+    printf 'Use \"hug s pop\" to restore when needed\n' >&2; \
+  }; f"
+
+  # ──────────────────────────────────────────────────────────────────
+  #  COMMITS (c*)
+  # ──────────────────────────────────────────────────────────────────
+
+  # Commit staged files.
+  # Suggest alternate command if no staged files found.
+  c = "!f() { \
+    test \"$1\" = '-h' -o \"$1\" = '--help' && { \
+      printf 'c: Commit staged files.\n'; \
+      printf 'See also:\n  hug ca\n'; \
+      return 1; \
+    }; \
+    test -z \"$(git diff --cached --name-only)\" && {\
+      echo \"No staged changes. Use 'hug ca' to commit all tracked changes\"; return 1; \
+    }; \
+    git commit \"$@\"; \
+  }; f"
+
+  # Commit tracked files
+  ca = commit -a
+
+  # Commit tracked + untracked + deletions
+  caa = "!f() { \
+    test \"$1\" = '-h' -o \"$1\" = '--help' && { \
+      printf 'caa: Commit tracked + untracked + deletions.\n'; \
+      printf 'See also:\n'; \
+      printf '  hug c\n'; \
+      printf '  hug ca\n'; \
+      return 1; \
+    }; \
+    git aa && git c \"$@\"; \
+  }; f"
+
+  # Modify (amend) last commit with staged changes only
+  cm = commit --amend
+
+  # Modify (amend) last commit with all tracked changes
+  cma = commit -a --amend
+
+  # ──────────────────────────────────────────────────────────────────
+  #  INTERACTIVE COMMITS
+  # ──────────────────────────────────────────────────────────────────
+
+  # Commit patches interactively (most common workflow)
+  # Stages hunks interactively, then commits
+  cii = "!f() { \
+    git add --patch && \
+    git status -sb && \
+    printf '\n' && \
+    git diff --cached --stat && \
+    printf '\nCommit message: ' && \
+    read -r msg && \
+    test -n \"$msg\" && git commit -m \"$msg\" || { \
+      printf 'Aborted (empty message)\n' >&2; return 1; \
+    }; \
+  }; f"
+
+  # Full interactive staging menu (git add -i wrapper)
+  cim = "!git add --interactive && git s && git c"
+
+  # Outgoing changes: what will be pushed to upstream
+  o = !git cherry -v @{upstream} && git s && git diff --stat @{u}..HEAD
+
+  # ============================================================================
+  # STASH
+  # ============================================================================
+
+  # Quick stash: tracked files only, auto-generated message
+  ssave = stash push
+
+  # Save with message and include untracked files (usage: git ssave "message")
+  ssavea = "!f() { git stash push -u -m \"${1:?Usage: ssavea '<message>'}\"; }; f"
+
+  # Stash everything including ignored files
+  ssavefull = stash push -a
+
+  # List stashes with beautiful formatting
+  sls = stash list --pretty=stash
+
+  # Preview stash contents with full diff (usage: git speek [stash@{n}])
+  speek = "!f() { git stash show -p ${1:-stash@{0}}; }; f"
+
+  # Summary of stash changes (usage: git sshow [stash@{n}])
+  sshow = "!f() { git stash show ${1:-stash@{0}}; }; f"
+
+  # Apply stash and keep it in list (usage: git sapply [stash@{n}])
+  sapply = "!f() { git stash apply ${1:-stash@{0}}; }; f"
+
+  # Apply stash and remove from list (usage: git spop [stash@{n}])
+  spopf = "!f() { git stash pop ${1:-stash@{0}}; }; f"
+
+  # Interactive pop: preview before applying
+  spop = "!bash -c 'git stash show -p && read -p \"Apply this stash? (y/n) \" -n 1 -r && echo && [[ $REPLY =~ ^[Yy]$ ]] && git stash pop'"
+
+  # Drop specific stash (usage: git sdrop [stash@{n}])
+  sdrop = "!f() { git stash drop ${1:-stash@{0}}; }; f"
+
+  # Create branch from stash (usage: git sbranch <branch-name> [stash@{n}])
+  sbranch = "!f() { git stash branch \"$1\" ${2:-stash@{0}}; }; f"
+
+  # Clear all stashes (use with caution!)
+  sclear = stash clear
+
+  # WIP workflow: commit everything as work-in-progress
+  wip = "!git aa && git commit -m 'WIP'"
+
+  # Undo WIP: reset soft to remove WIP commit
+  unwip = "!git log -1 --format='%s' | grep -q '^WIP$' && git reset --soft HEAD~1 || echo 'No WIP commit found'"
+
+  # ============================================================================
+  #  Status (s?) & SHow object info (sh*)
+  # ============================================================================
+
+  # No untracked files shown
+  s = !git statusbase -uno \"$@\"
+  # Untracked files are also shown
+  sa = !git statusbase --long \"$@\"
+
+  # Show status with patch of staged changes
+  ss = "!f() { \
+    test \"$1\" = '-h' && { \
+      printf '\nss: Show status with patch of staged changes.\nUsage: hug ss [file]' >&2; return 1; }; \
+    if test $# -eq 0; then \
+      printf '─────────────────── Staged changes:\n'; \
+      git diff --cached; \
+      git diff --cached --stat; \
+    else \
+      t=\"$1\"; shift; \
+      printf '─────────────────── Staged changes for FILE:\n'; \
+      git diff --cached \"$@\" -- \"${GIT_PREFIX}$t\"; \
+      git diff --cached --stat \"$@\" -- \"${GIT_PREFIX}$t\"; \
+    fi; \
+    git s; \
+  }; f"
+
+  # Show status with patch of working dir changes
+  sw = "!f() { \
+    test \"$1\" = '-h' && { \
+      printf '\nsw: Show status with patch of working dir changes.\nUsage: hug sw [file]' >&2; return 1; }; \
+    if test $# -eq 0; then \
+      printf '─────────────────── Working dir changes:\n'; \
+      git diff; \
+      git diff --stat; \
+    else \
+      t=\"$1\"; shift; \
+      printf '─────────────────── Working dir changes for FILE:\n'; \
+      git diff \"$@\" -- \"${GIT_PREFIX}$t\"; \
+      git diff --stat \"$@\" -- \"${GIT_PREFIX}$t\"; \
+    fi; \
+    git s; \
+  }; f"
+
+  # Show specific commit (defaults to last) with list of changed files
+  sh = log -1 --stat --pretty=logbody --date=human-local
+  # Show specific commit (defaults to last) with patch
+  shp = show --pretty=logbody --date=human-local
+  # Show files changed in a commit (usage: hug shc <commit-hash>)
+  shc  = diff-tree --no-commit-id --name-only -r
+  # Show file diff in a commit
+  shf = "!f() { \
+    test $# -eq 0 -o \"$1\" = '-h' && { \
+      printf '\nshf: Show file at a commit (with patch).\nUsage: hug shf <file>' >&2; return 1; }; \
+    t=\"$1\"; shift; \
+    git shp \"$@\" -- \"$GIT_PREFIX$t\"; \
+  }; f"
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  TAG MANAGEMENT (t*)
+  # ═══════════════════════════════════════════════════════════════════
+
+  # List tags matching pattern (usage: hug t "v1.*")
+  t = "!f() { git tag -l \"${1:-*}\"; }; f"
+
+  # Create lightweight tag (default)
+  # Usage: hug tc v1.0 [<commit>]
+  tc = "!f() { \
+    test $# -eq 0 && { printf 'Usage: hug tc <tag> [<commit>]\n' >&2; return 1; }; \
+    git tag \"$@\"; \
+  }; f"
+
+  # Create annotated tag
+  # Usage: hug ta v1.0 "Release version 1.0"
+  ta = "!f() { \
+    test $# -eq 0 && { printf 'Usage: hug ta <tag> [<message>]\n' >&2; return 1; }; \
+    tag=\"$1\"; shift; \
+    msg=\"${*:-Annotated tag $tag}\"; \
+    git tag -a \"$tag\" -m \"$msg\"; \
+  }; f"
+
+  # Show tag details (usage: hug ts v1.0)
+  ts = "!f() { \
+    test $# -eq 0 && { printf 'Usage: hug ts <tag>\n' >&2; return 1; }; \
+    git show \"$1\"; \
+  }; f"
+
+  # Rename tag (changes name, keeps same commit)
+  # Usage: hug tr v1.0 v1.0.1
+  tr = "!f() { \
+    test $# -lt 2 && { printf 'Usage: hug tr <old-tag> <new-tag>\n' >&2; return 1; }; \
+    old=\"$1\"; new=\"$2\"; \
+    git rev-parse \"$old\" >/dev/null 2>&1 || { \
+      printf 'Error: tag \"%s\" does not exist\n' \"$old\" >&2; return 1; \
+    }; \
+    commit=\"$(git rev-list -n 1 \"$old\")\"; \
+    git tag \"$new\" \"$commit\" && git tag -d \"$old\" && \
+    printf 'Tag \"%s\" renamed to \"%s\"\n' \"$old\" \"$new\"; \
+  }; f"
+
+  # Move tag (changes target commit, keeps same name)
+  # Usage: hug tm v1.0 [<new-commit>]
+  #   hug tm v1.0           → move to HEAD
+  #   hug tm v1.0 a1b2c3d   → move to specific commit
+  tm = "!f() { \
+    test $# -eq 0 && { printf 'Usage: git tm <tag> [<new-commit>]\n' >&2; return 1; }; \
+    tag=\"$1\"; \
+    new_commit=\"${2:-HEAD}\"; \
+    git rev-parse \"$tag\" >/dev/null 2>&1 || { \
+      printf 'Error: tag \"%s\" does not exist\n' \"$tag\" >&2; return 1; \
+    }; \
+    old_commit=\"$(git rev-list -n 1 \"$tag\")\"; \
+    git tag -f \"$tag\" \"$new_commit\" && \
+    printf 'Tag \"%s\" moved:\n  %s → %s\n' \"$tag\" \"${old_commit:0:7}\" \"$(git rev-parse --short \"$new_commit\")\"; \
+  }; f"
+
+  # Move and re-annotate
+  # Usage: hug tma v1.0 "New message" [<new-commit>]
+  tma = "!f() { \
+    test $# -lt 2 && { printf 'Usage: git tma <tag> <message> [<new-commit>]\n' >&2; return 1; }; \
+    tag=\"$1\"; msg=\"$2\"; new_commit=\"${3:-HEAD}\"; \
+    git rev-parse \"$tag\" >/dev/null 2>&1 || { \
+      printf 'Error: tag \"%s\" does not exist\n' \"$tag\" >&2; return 1; \
+    }; \
+    old_commit=\"$(git rev-list -n 1 \"$tag\")\"; \
+    git tag -f -a \"$tag\" -m \"$msg\" \"$new_commit\" && \
+    printf 'Tag \"%s\" moved and re-annotated:\n  %s → %s\n' \"$tag\" \"${old_commit:0:7}\" \"$(git rev-parse --short \"$new_commit\")\"; \
+  }; f"
+
+  # Push tags to remote
+  tpush = "!f() { \
+    if [ $# -eq 0 ]; then \
+      git push --tags; \
+    else \
+      git push origin \"$@\"; \
+    fi; \
+  }; f"
+
+  tpull = "!f() { \
+    git fetch --tags --prune --prune-tags --force; \
+  }; f"
+
+  # Delete local tag
+  tdel = "!f() { \
+    test $# -eq 0 && { printf 'Usage: hug td <tag>\n' >&2; return 1; }; \
+    git tag -d \"$1\"; \
+  }; f"
+
+  # Delete remote tag
+  tdelr = "!f() { \
+    test $# -eq 0 && { printf 'Usage: hug tdr <tag>\n' >&2; return 1; }; \
+    git push origin --delete \"$1\"; \
+  }; f"
+
+  # Checkout tag
+  tco = "!f() { \
+    test $# -eq 0 && { printf 'Usage: hug tco <tag>\n' >&2; return 1; }; \
+    git checkout \"$1\"; \
+  }; f"
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  TAG QUERIES (tw*)
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Show 'Tags Which Contain' a commit (commit is in tag's history)
+  # Usage: hug twc [<commit>]  (defaults to HEAD)
+  twc = "!f() { \
+    commit=\"${1:-HEAD}\"; \
+    git tag --contains \"$commit\"; \
+  }; f"
+
+  # Show 'Tags Which Point' directly at an object (exact match)
+  # Usage: hug twp [<object>]  (defaults to HEAD)
+  twp = "!f() { \
+    object=\"${1:-HEAD}\"; \
+    git tag --points-at \"$object\"; \
+  }; f"
+
+  # ============================================================================
+  # BRANCHING
+  # ============================================================================
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  BRANCH NAVIGATION (most common → shortest)
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Switch to existing branch (MOST COMMON - deserves shortest alias)
+  # Usage: hug b <branch>
+  b = switch
+
+  # Go back to previous branch (like 'cd -')
+  # Usage: hug bs
+  bs = switch -
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  BRANCH LISTING
+  # ═══════════════════════════════════════════════════════════════════
+
+  # List local branches
+  bl = branch
+
+  # List all branches (local + remote)
+  bla = branch -a
+
+  # List remote branches only
+  blr = branch -r
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  BRANCH CREATION / MODIFICATION
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Create and switch to new branch
+  # Usage: hug bc <branch-name>
+  bc = switch -c
+
+  # Rename current branch
+  # Usage: hug br <new-name>
+  br = branch -m
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  BRANCH DELETION
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Delete local branch (safe: only if merged)
+  # Usage: hug bdel <branch>
+  bdel = branch -d
+
+  # Force delete local branch (dangerous: deletes even if unmerged)
+  # Usage: hug bdelf <branch>
+  bdelf = branch -D
+
+  # Delete remote branch
+  # Usage: hug bdelr <branch>
+  bdelr = "!f() { \
+    test $# -eq 0 -o \"$1\" = '-h' && { \
+      printf 'bdelr: Delete remote branch\n' >&2; \
+      printf 'Usage: hug bdelr <branch>\n' >&2; \
+      return 1; \
+    }; \
+    git push origin --delete \"$1\"; \
+  }; f"
+
+  # Create a new branch from a specific existing branch:
+  #! br <new> <existing>
+  #! switch <new>
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  BRANCH QUERIES (bw*)
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Show 'Branches Which Contain' a commit (commit is in branch's history)
+  # Usage: hug bwc [<commit>]  (defaults to HEAD)
+  bwc = "!f() { \
+    commit=\"${1:-HEAD}\"; \
+    git branch --contains \"$commit\"; \
+  }; f"
+
+  # Show 'Branches Which Point' directly at an object (exact match)
+  # Usage: hug bwp [<object>]  (defaults to HEAD)
+  bwp = "!f() { \
+    object=\"${1:-HEAD}\"; \
+    git branch --points-at \"$object\"; \
+  }; f"
+
+  # Which branches DON'T contain this commit?
+  # Usage: hug bwnc [<commit>]  (defaults to HEAD)
+  bwnc = "!f() { \
+    commit=\"${1:-HEAD}\"; \
+    git branch --no-contains \"$commit\"; \
+  }; f"
+
+  # Which branches are merged into HEAD?
+  bwm = "!f() { \
+    commit=\"${1:-HEAD}\"; \
+    git branch --merged \"$commit\"; \
+  }; f"
+
+  # Which branches are NOT merged into HEAD?
+  bwnm = "!f() { \
+    commit=\"${1:-HEAD}\"; \
+    git branch --no-merged \"$commit\"; \
+  }; f"
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  REBASE OPERATIONS
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Rebase current branch onto another branch
+  # Usage: hug rb <branch>
+  #   hug rb main       → rebase current branch onto main
+  #   hug rb origin/main → rebase onto remote main
+  rb = rebase
+
+  # Rebase interactive (clean up commits)
+  # Usage: hug rbi [commit]
+  #   hug rbi           → interactive rebase from root
+  #   hug rbi HEAD~5    → interactive rebase last 5 commits
+  #   hug rbi main      → interactive rebase since main
+  rbi = "!f() { \
+    if [ $# -eq 0 ]; then \
+      git rebase -i --root; \
+    else \
+      git rebase -i \"$1\"; \
+    fi; \
+  }; f"
+
+  # Continue rebase after resolving conflicts
+  rbc = rebase --continue
+
+  # Abort rebase (go back to before rebase)
+  rba = rebase --abort
+
+  # Skip current commit during rebase
+  rbs = rebase --skip
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  MERGE OPERATIONS
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Squash-merge branch into current branch (doesn't commit)
+  # Usage: git m <branch>; g c
+  m = merge --squash
+
+  # Merge with fast-forward only (fails if not possible)
+  # Usage: git mff <branch>
+  mff = merge --ff-only
+
+  # Merge with no fast-forward (always create merge commit)
+  # Usage: git mnf <branch>
+  mkeep = merge --no-ff
+
+  # Abort merge (go back to before merge)
+  ma = merge --abort
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  PUSH / PULL BRANCHES
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Push current branch and set upstream tracking
+  # Usage: hug bpush
+  bpush = "!f() { \
+    branch=\"$(git branch --show-current)\"; \
+    git push -u origin \"$branch\"; \
+  }; f"
+
+  # Push current branch and set upstream tracking
+  # Usage: hug bpushf
+  bpushf = "!f() { \
+    branch=\"$(git branch --show-current)\"; \
+    git push --force-with-lease -u origin \"$branch\"; \
+  }; f"
+
+  # Push current branch and set upstream tracking
+  # Usage: hug bpush-unsafe
+  bpush-unsafe = "!f() { \
+    branch=\"$(git branch --show-current)\"; \
+    git push --force -u origin \"$branch\"; \
+  }; f"
+
+  # Pull with rebase (cleaner than merge)
+  # Usage: hug pullr
+  bpull = pull --rebase
+
+  # Pull and update all remote tracking branches
+  # Usage: hug pullall
+  pullall = pull --all
+
+  # ============================================================================
+  # UTILITIES
+  # ============================================================================
+
+  # Show object type (usage: hug type <object>)
+  type = cat-file -t
+
+  # Show object contents (usage: hug dump <object>)
+  dump = cat-file -p

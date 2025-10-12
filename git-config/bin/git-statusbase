@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Enhanced status: shows latest commit hash + message, then status
+
+git rev-parse --git-dir > /dev/null 2>&1 || { echo 'Not a git repository' >&2; return 1; }
+printf '📍HEAD: %s 🌿' $(git rev-parse --short HEAD)
+git -c color.ui=always status -sb "$@" | sed -E 's/##\s*//'
+git w changes

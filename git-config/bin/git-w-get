@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite
+# w-get - Get file contents from specific commit (without staging)
+# Usage: hug w get <commit> [file1] [file2] ...
+
+show_help() { cat << EOF
+w-get: Reset file contents to specific commit (without staging)
+
+USAGE:
+    hug w get <commit> [file1] [file2] ...
+
+DESCRIPTION:
+    Reset files to their state in a specific commit without staging changes.
+    This is a destructive operation that overwrites working tree files.
+
+OPTIONS:
+    <commit>        Target commit hash, branch, or reference
+    [file...]       Specific files to reset (optional)
+                    If omitted, ALL files will be reset
+
+EXAMPLES:
+    hug w get a1b2c3              Reset ALL files to commit a1b2c3
+    hug w get HEAD~5 file.js      Reset specific file to 5 commits ago
+    hug w get main src/app.js     Reset file to main branch state
+
+SAFETY REQUIREMENTS:
+    • Working tree must be clean (no uncommitted changes)
+    • Files must not have staged changes
+    • Files must exist in the target commit
+
+SEE ALSO:
+    hug w backup        Backup changes before destructive operations
+    hug w discard       Discard unstaged changes
+    hug w dry-run       Preview operations before executing
+
+EOF
+}
+
+confirm() {
+    local message="$1"
+    local expected="$2"
+    local response
+
+    while true; do
+        read -p "$message" response
+        case "$response" in
+            "$expected") return 0 ;;
+            [Qq]|[Qq][Uu][Ii][Tt]|[Cc][Aa][Nn][Cc][Ee][Ll])
+                printf "Cancelled.\n" >&2
+                exit 0
+                ;;
+            *)
+                printf "Invalid response. Please type '%s' or 'cancel': " "$expected" >&2
+                ;;
+        esac
+    done
+}
+
+# Reset all files to commit
+reset_all_files() {
+    local commit="$1"
+    local commit_short
+
+    commit_short=$(git rev-parse --short "$commit")
+
+    printf "Will reset ALL files to commit %s (%s)\n" "$commit" "$commit_short" >&2
+
+    # Check cleanliness
+    check_working_tree_clean
+
+    # Show what will change
+    local changed_files
+    changed_files=$(git diff --name-only "$commit" HEAD)
+
+    printf "Files that will be modified:\n" >&2
+    if [ -n "$changed_files" ]; then
+        echo "$changed_files" | sed 's/^/  /' >&2
+    else
+        printf "  (no changes from current HEAD)\n" >&2
+    fi
+
+    printf "\n" >&2
+
+    # Show files to be deleted
+    local files_to_delete
+    files_to_delete=$(git ls-tree -r --name-only "$commit" | comm -13 <(git ls-tree -r --name-only HEAD) -)
+
+    if [ -n "$files_to_delete" ]; then
+        printf "Files that will be DELETED:\n" >&2
+        echo "$files_to_delete" | sed 's/^/  /' >&2
+        printf "\n" >&2
+    fi
+
+    # Show files to be added
+    local files_to_add
+    files_to_add=$(git ls-tree -r --name-only HEAD | comm -23 <(git ls-tree -r --name-only "$commit") -)
+
+    if [ -n "$files_to_add" ]; then
+        printf "Files that will be ADDED:\n" >&2
+        echo "$files_to_add" | sed 's/^/  /' >&2
+        printf "\n" >&2
+    fi
+
+    # Confirmation
+    warning "This will overwrite ALL files to their state in $commit_short"
+    confirm "Type \"reset\" to confirm: " "reset"
+
+    # Perform the reset
+    printf "Resetting all files to %s...\n" "$commit" >&2
+
+    # First, remove files that don't exist in target commit
+    if [ -n "$files_to_delete" ]; then
+        echo "$files_to_delete" | xargs rm -f
+    fi
+
+    # Then restore files from target commit
+    git restore --source="$commit" --staged --worktree . 2>/dev/null || {
+        # Fallback for older git versions
+        git read-tree "$commit"
+        git checkout-index -a -f
+    }
+
+    success "All files reset to $commit_short"
+}
+
+# Reset specific files
+reset_specific_files() {
+    local commit="$1"
+    shift
+    local files=("$@")
+    local commit_short
+
+    commit_short=$(git rev-parse --short "$commit")
+
+    printf "Will reset files to commit %s (%s):\n" "$commit" "$commit_short" >&2
+
+    local files_to_reset=()
+
+    # Validate each file
+    for file in "${files[@]}"; do
+        printf "Checking %s...\n" "$file" >&2
+
+        # Check if file exists in target commit
+        check_file_in_commit "$commit" "$file"
+
+        # Check for staged changes
+        check_file_staged "$file"
+
+        # Check for unstaged changes
+        check_file_unstaged "$file"
+
+        files_to_reset+=("$file")
+    done
+
+    # Show what will be reset
+    if [ ${#files_to_reset[@]} -gt 0 ]; then
+        printf "\nFiles to be reset:\n" >&2
+        printf "  %s\n" "${files_to_reset[@]}" >&2
+
+        # Show diff preview
+        printf "\nPreview of changes:\n" >&2
+        for file in "${files_to_reset[@]}"; do
+            preview_file_changes "$commit" "$file"
+        done
+
+        # Confirmation
+        warning "This will overwrite the files above"
+        confirm "Reset these files? (y/N) " "y"
+
+        # Perform the reset
+        printf "Resetting files...\n" >&2
+        git restore --source="$commit" --worktree "${files_to_reset[@]}"
+
+        success "Files reset to $commit_short"
+    else
+        info "No files to reset"
+    fi
+}
+
+# Main function
+main() {
+    check_git_repo
+
+    # Parse arguments
+    case "${1:-}" in
+        -h|--help|help)
+            show_help
+            exit 0
+            ;;
+        "")
+            error "Missing commit argument
+       Usage: hug w-get <commit> [file...]
+       Use 'hug w-get --help' for more information"
+            ;;
+        *)
+            commit="$1"
+            shift
+            ;;
+    esac
+
+    # Validate commit
+    validate_commit "$commit"
+
+    # Determine operation mode
+    if [ $# -eq 0 ]; then
+        # Reset ALL files
+        reset_all_files "$commit"
+    else
+        # Reset specific files
+        reset_specific_files "$commit" "$@"
+    fi
+}
+
+# Run main function with all arguments
+main "$@"

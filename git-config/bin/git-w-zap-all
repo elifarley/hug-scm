@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+. "$CMD_BASE/../lib/hug-common"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+usage() {
+  cat <<'EOF'
+Usage: hug w zap-all [OPTIONS]
+
+Discard tracked changes and purge untracked/ignored files across the repository.
+
+Options:
+  -u               Target unstaged changes (tracked) AND untracked files
+  -s               Target staged changes (tracked)
+  -i               Target ignored files
+      --dry-run    Show what would be affected without applying changes
+  -f, --force      Skip confirmation prompt
+  -h, --help       Show this help
+
+Semantics:
+  • By default (no flags) zap-all == `w discard-all -us` + `w purge-all -ui`.
+  • When flags are supplied, only the corresponding categories are affected.
+EOF
+}
+
+confirm() {
+  local prompt=$1 expected=$2 reply
+  read -r -p "$prompt" reply
+  if [[ "$reply" != "$expected" ]]; then
+    printf 'Cancelled.\n'
+    exit 1
+  fi
+}
+
+dry_run=false
+force=false
+
+tracked_unstaged=false
+tracked_staged=false
+tracked_flags_specified=false
+
+target_untracked=false
+target_ignored=false
+untracked_flags_specified=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    -f|--force)
+      force=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      opt=${1#-}
+      shift
+      for ((i=0; i<${#opt}; ++i)); do
+        char=${opt:i:1}
+        case "$char" in
+          u)
+            tracked_unstaged=true
+            target_untracked=true
+            tracked_flags_specified=true
+            untracked_flags_specified=true
+            ;;
+          s)
+            tracked_staged=true
+            tracked_flags_specified=true
+            ;;
+          i)
+            target_ignored=true
+            untracked_flags_specified=true
+            ;;
+          *)
+            error "unknown option: -$char"
+            usage >&2
+            exit 2
+            ;;
+        esac
+      done
+      ;;
+    *)
+      error "positional arguments are not accepted (zap-all affects the entire repository)"
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+check_git_repo
+
+if ! $tracked_flags_specified; then
+  tracked_unstaged=true
+  tracked_staged=true
+fi
+
+if ! $untracked_flags_specified; then
+  target_untracked=true
+  target_ignored=true
+fi
+
+# No-op? If nothing selected, exit gracefully.
+if ! $tracked_unstaged && ! $tracked_staged && ! $target_untracked && ! $target_ignored; then
+  printf 'Nothing selected for zap-all.\n'
+  exit 0
+fi
+
+run_preview() {
+  local done=false
+  if $tracked_unstaged || $tracked_staged; then
+    discard_preview=(hug w discard-all --dry-run)
+    $tracked_unstaged && discard_preview+=(-u)
+    $tracked_staged && discard_preview+=(-s)
+    "${discard_preview[@]}"
+    done=true
+  fi
+  if $target_untracked || $target_ignored; then
+    purge_preview=(hug w purge-all --dry-run)
+    $target_untracked && purge_preview+=(-u)
+    $target_ignored && purge_preview+=(-i)
+    "${purge_preview[@]}"
+    done=true
+  fi
+  $done || printf 'Nothing to do.\n'
+}
+
+if $dry_run; then
+  run_preview
+  exit 0
+fi
+
+if ! $force; then
+  printf '🚨⚠ About to run zap-all with the following effects:\n'
+  run_preview
+  confirm 'Type "zap-all" to confirm: ' 'zap-all'
+fi
+
+if $tracked_unstaged || $tracked_staged; then
+  discard_cmd=(hug w discard-all --force)
+  $tracked_unstaged && discard_cmd+=(-u)
+  $tracked_staged && discard_cmd+=(-s)
+  "${discard_cmd[@]}"
+fi
+
+if $target_untracked || $target_ignored; then
+  purge_cmd=(hug w purge-all --force)
+  $target_untracked && purge_cmd+=(-u)
+  $target_ignored && purge_cmd+=(-i)
+  "${purge_cmd[@]}"
+fi
+
+exit 0
