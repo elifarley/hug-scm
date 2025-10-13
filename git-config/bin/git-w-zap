@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-set -euo pipefail
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite
 
 usage() {
   cat <<'EOF'
@@ -19,10 +23,6 @@ Semantics:
   • When flags are supplied, only the corresponding categories are affected.
   • Requires at least one path; use `hug w zap-all` for repository-wide scope.
 EOF
-}
-
-error() {
-  printf 'Error: %s\n' "$1" >&2
 }
 
 dry_run=false
@@ -92,10 +92,8 @@ if [[ $# -lt 1 ]]; then
   exit 2
 fi
 
-if ! git rev-parse --git-dir >/dev/null 2>&1; then
-  error "not inside a git repository"
-  exit 1
-fi
+# Early exit if not in Git repo
+check_git_repo
 
 paths=("$@")
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-. "$CMD_BASE/../lib/hug-common"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
 # Part of the Hug tool suite
 
 usage() {
@@ -23,10 +24,6 @@ Notes:
 EOF
 }
 
-error() {
-  printf 'Error: %s\n' "$1" >&2
-}
-
 confirm() {
   local prompt=$1 expected=$2 reply
   read -r -p "$prompt" reply
@@ -34,21 +31,6 @@ confirm() {
     printf 'Cancelled.\n'
     exit 1
   fi
-}
-
-dedupe_array() {
-  local -n __array_ref=$1
-  local -A __seen=()
-  local -a __unique=()
-  local item
-  for item in "${__array_ref[@]}"; do
-    [[ -z "$item" ]] && continue
-    if [[ -z "${__seen[$item]+_}" ]]; then
-      __seen["$item"]=1
-      __unique+=("$item")
-    fi
-  done
-  __array_ref=("${__unique[@]}")
 }
 
 dry_run=false
@@ -98,10 +80,8 @@ if ! $flags_explicit; then
   target_unstaged=true
 fi
 
-if ! git rev-parse --git-dir >/dev/null 2>&1; then
-  error "not inside a git repository"
-  exit 1
-fi
+# Early exit if not in Git repo
+check_git_repo
 
 declare -a unstaged_paths=()
 declare -a staged_paths=()
@@ -120,16 +100,6 @@ if [[ ${#unstaged_paths[@]} -eq 0 && ${#staged_paths[@]} -eq 0 ]]; then
   printf 'Working tree already clean for the selected scope.\n'
   exit 0
 fi
-
-print_list() {
-  local title=$1
-  shift
-  printf '%s (%d):\n' "$title" "$#"
-  local item
-  for item in "$@"; do
-    printf '  %s\n' "$item"
-  done
-}
 
 if $dry_run; then
   printf 'Dry run: the following changes would be discarded\n'

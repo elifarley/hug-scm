@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# w-changes: quick working tree summary (staged, unstaged, untracked, ignored)
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
-set -euo pipefail
+# Part of the Hug tool suite
+
+# w-changes: quick working tree summary (staged, unstaged, untracked, ignored)
 
 show_help() {
   cat <<'EOF'
@@ -39,11 +43,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# ---------- repo guard ----------
-if ! git rev-parse --git-dir >/dev/null 2>&1; then
-  printf 'Error: not inside a git repository.\n' >&2
-  exit 1
-fi
+# Early exit if not in Git repo
+check_git_repo
+
 
 # ---------- color palette ----------
 if $want_color && [[ -t 1 ]]; then
