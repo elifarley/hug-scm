@@ -78,17 +78,20 @@ unstaged_output=""
 staged_output=""
 
 if [[ $unstaged_files -eq 0 ]]; then
-  unstaged_output="✅ Clean (Unstaged)"
+  unstaged_output="📝 - (Unstaged)"
 else
   unstaged_output="${RED}📝 $unstaged_files files, +$unstaged_insertions/-$unstaged_deletions lines (Unstaged)${NC}"
 fi
 
 if [[ $staged_files -eq 0 ]]; then
-  staged_output="✅ Clean (Staged)"
+  staged_output="📦 - (Staged)"
 else
   staged_output="${GREEN}📦 $staged_files files, +$staged_insertions/-$staged_deletions lines (Staged)${NC}"
 fi
 
+uncommitted_output=''
+# If no uncommitted changes at all, don't show uncommitted output
+(( staged_files + unstaged_files )) && uncommitted_output=" │ $unstaged_output │ $staged_output"
 # Combine and print full status line
-printf '%s %s 🌿%s │ %s │ %s\n' "$head_emoji" "$hash_colored" "$status_colored" "$unstaged_output" "$staged_output" >&2
+printf '%s %s 🌿%s%s\n' "$head_emoji" "$hash_colored" "$status_colored" "$uncommitted_output" >&2
 
