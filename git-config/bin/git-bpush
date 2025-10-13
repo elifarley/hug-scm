@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+# Push current branch and set upstream tracking
+# Usage: hug bpush
+branch="$(git branch --show-current)"
+git push -u origin "$branch"
