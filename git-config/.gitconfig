@@ -172,50 +172,6 @@
   #  Head (h*)
   # ═══════════════════════════════════════════════════════════════════
 
-  # Undo commits and unstage their changes (but keep in working dir)
-  # Usage: git h-undo [N|COMMIT]
-  #   git h-undo        → undo last commit, unstage changes
-  #   git h-undo 3      → undo last 3 commits, unstage changes
-  #   git h-undo a1b2c3 → reset to specific commit, unstage changes
-  h-undo = "!f() { \
-    case \"${1:-}\" in \
-      '-h'|'--help') \
-        printf 'h-undo: Move HEAD back, unstage changes (non-destructive)\n' >&2; \
-        printf 'Usage: hug undo [N|COMMIT]\n' >&2; \
-        printf '  hug h undo        → undo last commit, unstage\n' >&2; \
-        printf '  hug h undo 3      → undo last 3 commits, unstage\n' >&2; \
-        printf '  hug h undo a1b2c3 → reset to specific commit, unstage\n' >&2; \
-        return 1;; \
-      '') target='HEAD~1' ;; \
-      [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target=\"HEAD~$1\" ;; \
-      *) target=\"$1\" ;; \
-    esac; \
-    git reset --mixed \"$target\"; \
-  }; f"
-
-  # Forget commits and their changes (local changes preserved)
-  # Usage: hug h-rollback [N|COMMIT]
-  #   hug h rollback        → forget last commit and its changes
-  #   hug h rollback 3      → forget last 3 commits and their changes
-  #   hug h rollback a1b2c3 → forget commits back to specific commit
-  # Note: Aborts if local changes would be lost
-  h-rollback = "!f() { \
-    case \"${1:-}\" in \
-      '-h'|'--help') \
-        printf 'forget: Discard commits and their changes (local work protected)\n' >&2; \
-        printf 'Usage: hug forget [N|COMMIT]\n' >&2; \
-        printf '  hug h rollback        → forget last commit\n' >&2; \
-        printf '  hug h rollback 3      → forget last 3 commits\n' >&2; \
-        printf '  hug h rollback a1b2c3 → forget back to specific commit\n' >&2; \
-        printf 'Note: Aborts if local changes would be overwritten\n' >&2; \
-        return 1;; \
-      '') target='HEAD~1' ;; \
-      [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target=\"HEAD~$1\" ;; \
-      *) target=\"$1\" ;; \
-    esac; \
-    git reset --keep \"$target\"; \
-  }; f"
-
   # ═══════════════════════════════════════════════════════════════════
   #  Working directory (w-*)
   # ═══════════════════════════════════════════════════════════════════

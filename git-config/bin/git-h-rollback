@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+# Part of the Hug tool suite
+
+# Rollback commits and their changes (local changes preserved)
+# Usage: hug h rollback [N|COMMIT]
+#   hug h rollback        → rollback last commit and its changes
+#   hug h rollback 3      → rollback last 3 commits and their changes
+#   hug h rollback a1b2c3 → rollback commits back to specific commit
+# Note: Aborts if local changes would be lost
+case "${1:-}" in \
+  '-h'|'--help') \
+    printf 'h rollback: Discard commits and their changes (local work protected)\n' >&2
+    printf 'Usage: hug h rollback [N|COMMIT]\n' >&2
+    printf '  hug h rollback        → rollback last commit\n' >&2
+    printf '  hug h rollback 3      → rollback last 3 commits\n' >&2
+    printf '  hug h rollback a1b2c3 → rollback back to specific commit\n' >&2
+    printf 'Note: Aborts if local changes would be overwritten\n' >&2
+    return 1;;
+  '') target='HEAD~1' ;;
+  [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$1" ;;
+  *) target="$1" ;;
+esac
+git reset --keep "$target"

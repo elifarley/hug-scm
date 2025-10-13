@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+# Part of the Hug tool suite
+
+# Undo commits and unstage their changes (but keep in working dir)
+# Usage: hug h undo [N|COMMIT]
+#   hug h undo        → undo last commit, unstage changes
+#   hug h undo 3      → undo last 3 commits, unstage changes
+#   hug h undo a1b2c3 → reset to specific commit, unstage changes
+case "${1:-}" in \
+  '-h'|'--help') \
+    printf 'h undo: Move HEAD back, unstage changes (non-destructive)\n' >&2
+    printf 'Usage: hug h undo [N|COMMIT]\n' >&2
+    printf '  hug h undo        → undo last commit, unstage\n' >&2
+    printf '  hug h undo 3      → undo last 3 commits, unstage\n' >&2
+    printf '  hug h undo a1b2c3 → reset to specific commit, unstage\n' >&2
+    return 1;;
+  '') target='HEAD~1' ;;
+  [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$1" ;;
+  *) target="$1" ;;
+esac
+git reset --mixed "$target"

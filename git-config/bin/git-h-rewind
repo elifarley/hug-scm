@@ -38,4 +38,3 @@ read -p 'Type "rewind" to confirm: ' confirm
 printf 'Rewinding to %s...\n' "$target" >&2
 git reset --hard "$target"
 printf 'Rewind complete. Repository is now at %s\n' "$(git rev-parse --short "$target")" >&2
-
