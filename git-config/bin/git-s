@@ -8,6 +8,45 @@ test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
   exit 1
 }
 
+# Color codes (moved up for status line)
+YELLOW=$(tput setaf 3)
+RED=$(tput setaf 1)    # Red for unstaged
+GREEN=$(tput setaf 2)  # Green for staged
+RESET=$(tput sgr0)     # Reset color
+
+# HEAD status line (inspired by hug sl)
+hash=$(git rev-parse --short HEAD)
+branch=$(git branch --show-current 2>/dev/null || echo "(detached HEAD)")
+upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
+if [ -n "$upstream" ]; then
+  status="${branch}...${upstream}"
+  counts=$(git rev-list --left-right --count HEAD...@{u} 2>/dev/null || echo "0	0")
+  left_count=$(echo "$counts" | cut -f1)
+  right_count=$(echo "$counts" | cut -f2)
+  indicators=""
+  if [ "$left_count" != "0" ] || [ "$right_count" != "0" ]; then
+    ahead_part=""
+    behind_part=""
+    [ "$left_count" != "0" ] && ahead_part="ahead ${GREEN}${left_count}${RESET}"
+    [ "$right_count" != "0" ] && behind_part="behind ${RED}${right_count}${RESET}"
+    sep=""
+    [ -n "$ahead_part" ] && [ -n "$behind_part" ] && sep=", "
+    indicators="[${ahead_part}${sep}${behind_part}]"
+    status="${status} ${indicators}"
+  fi
+  local_part="${GREEN}${branch}${RESET}"
+  upstream_part="${RED}${upstream}${RESET}"
+  status_colored="${local_part}...${upstream_part}"
+  if [ -n "$indicators" ]; then
+    status_colored="${status_colored} ${indicators}"
+  fi
+else
+  status="$branch"
+  status_colored="${GREEN}${status}${RESET}"
+fi
+hash_colored="${YELLOW}${hash}${RESET}"
+printf "📍HEAD: %s 🌿%s │ " "$hash_colored" "$status_colored" >&2
+
 unstaged_files=0 unstaged_insertions=0 unstaged_deletions=0
 staged_files=0 staged_insertions=0 staged_deletions=0
 if ! git diff --quiet; then
@@ -22,10 +61,7 @@ if ! git diff --quiet --cached; then
   staged_deletions=$(git diff --cached --numstat | awk '{sum += $2} END {print sum}')
 fi
 
-# Color codes
-RED=$(tput setaf 1)    # Red for unstaged
-GREEN=$(tput setaf 2)  # Green for staged
-RESET=$(tput sgr0)     # Reset color
+# (colors defined earlier)
 
 # Build output components
 unstaged_output=""
