@@ -10,16 +10,16 @@ Works as a universal language to control the underlying SCM tool yo use.
 Installation • Quick Start • Commands • Philosophy
 
 ## Table of Contents
-- What is Hug?
-- Why Hug?
-- Installation
-- Quick Start
-- Command Reference
-- Philosophy
-- Contributing
-- License
+- [What is Hug?](#what-is-hug)
+- [Why Hug?](#why-hug)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Command Reference](#command-reference)
+- [Philosophy](#philosophy)
+- [Roadmap](#roadmap)
+- [License](#license)
 
-## What is Hug?
+## What is Hug? {#what-is-hug}
 
 Hug SCM is a humane interface layer for version control systems, starting with Git. It transforms the complex, often intimidating Git commands into an intuitive, predictable language that feels natural to developers.
 
@@ -31,7 +31,7 @@ With Hug, you get:
 - Rich feedback and previews before destructive actions
 - Multi-VCS support (Git now, Mercurial and others coming soon)
 
-## Why Hug?
+## Why Hug? {#why-hug}
 Git is powerful but its learning curve can be brutal. Hug fixes that by:
 
 ✅ Making common operations trivial
@@ -50,7 +50,7 @@ Commands are grouped logically: `h*` for `HEAD` operations, `w*` for working dir
 
 Complex operations become one-liners: `hug w zap-all` for a complete "factory reset" of your local working directory.
 
-## Quick Start
+## Quick Start {#quick-start}
 
 ### Basic Workflow
 
@@ -94,7 +94,7 @@ hug w purge
 hug w get a1b2c3 file.js
 ```
 
-## Command Reference
+## Command Reference {#command-reference}
 
 ### Command Groups
 
@@ -216,9 +216,7 @@ hug tp                # Push tags to remote`
 
 </details>
 
----
-
-## Philosophy
+## Philosophy {#philosophy}
 
 ### 1. **Brevity Hierarchy**
 
@@ -252,9 +250,7 @@ hug tp                # Push tags to remote`
 -   Built-in help with examples
 -   Smart completion with partial matching
 
----
-
-## Roadmap
+## Roadmap {#roadmap}
 
 -    **Mercurial Support** - Full compatibility with `hg` commands
 -    **Sapling Support** - Meta's next-gen VCS
