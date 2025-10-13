@@ -7,8 +7,8 @@
 #   hug h rollback 3      → rollback last 3 commits and their changes
 #   hug h rollback a1b2c3 → rollback commits back to specific commit
 # Note: Aborts if local changes would be lost
-case "${1:-}" in \
-  '-h'|'--help') \
+case "${1:-}" in
+  '-h'|'--help')
     printf 'h rollback: Discard commits and their changes (local work protected)\n' >&2
     printf 'Usage: hug h rollback [N|COMMIT]\n' >&2
     printf '  hug h rollback        → rollback last commit\n' >&2

@@ -50,6 +50,12 @@
     git ll \"$@\" --follow -- \"$GIT_PREFIX$t\"; \
   }; f"
 
+  # Complete file log with diffs (follows renames)
+  llfp = "!f() { f=\"$1\"; shift; git llf \"$f\" -p \"$@\"; }; f"
+
+  # File change statistics (usage: git file-stats <file>)
+  llfs = "!f() { f=\"$1\"; shift; git llf \"$f\" --stat \"$@\"; }; f"
+
   # Search commits by message
   lf = "!f() { \
     test $# -eq 0 -o \"$1\" = '-h' && { \
@@ -88,12 +94,6 @@
   # FILE INSPECTION
   # ============================================================================
 
-  # Complete file history with diffs (follows renames)
-  fl = log --follow -p --
-
-  # Compact file history (follows renames)
-  fh = log --follow --oneline --
-
   # Who changed what line (usage: git blame <file>)
   fblame = blame -w -C -C -C # w: Ignore whitespace changes; CCC: Detect code moved/copied within/across files (3 levels deep)
 
@@ -103,14 +103,11 @@
   # List all contributors to a file (usage: git contributors <file>)
   fcon = "!f() { git log --follow --pretty=format:'%an <%ae>' -- \"$1\" | sort -u; }; f"
 
-  # File change statistics (usage: git file-stats <file>)
-  fs = log --follow --stat --
-
   # Count commits per author for a file (usage: git file-authors <file>)
   fa = "!f() { git log --follow --format='%an' -- \"$1\" | sort | uniq -c | sort -rn; }; f"
 
   # Show when file was added (usage: git file-born <file>)
-  fborn = log --follow --diff-filter=A --find-renames=40% --
+  fborn = log --pretty=logbody --follow --diff-filter=A --find-renames=40% --
 
   # ═══════════════════════════════════════════════════════════════════
   #  STAGING (a*)

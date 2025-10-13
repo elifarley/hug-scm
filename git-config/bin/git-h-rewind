@@ -8,7 +8,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Usage: hug h-rewind <commit>
 #   hug h-rewind HEAD~5  → go back 5 commits
 #   hug h-rewind a1b2c3  → rewind to specific commit
-test $# -eq 0 -o "$1" = '-h' -o "$1" = '--help' && { \
+test "${1:--h}" = '-h' -o "${1:-}" = '--help' && {
   printf 'h-rewind: Rewind to a commit, discarding everything after (DESTRUCTIVE)\n' >&2
   printf 'Usage: hug h rewind <commit>\n' >&2
   printf '  hug h rewind HEAD~5  → go back 5 commits\n' >&2
