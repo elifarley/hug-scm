@@ -41,7 +41,6 @@ else
   status_colored="${GREEN}${status}${NC}"
 fi
 hash_colored="${YELLOW}${hash}${NC}"
-printf "📍HEAD: %s 🌿%s │ " "$hash_colored" "$status_colored" >&2
 
 unstaged_files=0 unstaged_insertions=0 unstaged_deletions=0
 staged_files=0 staged_insertions=0 staged_deletions=0
@@ -56,6 +55,19 @@ if ! git diff --quiet --cached; then
   staged_insertions=$(git diff --cached --numstat | awk '{sum += $1} END {print sum}')
   staged_deletions=$(git diff --cached --numstat | awk '{sum += $2} END {print sum}')
 fi
+
+# Determine HEAD color based on changes
+if [ "$unstaged_files" -gt 0 ] && [ "$staged_files" -eq 0 ]; then
+  head_color="${RED}"
+elif [ "$staged_files" -gt 0 ] && [ "$unstaged_files" -eq 0 ]; then
+  head_color="${GREEN}"
+elif [ "$unstaged_files" -gt 0 ] && [ "$staged_files" -gt 0 ]; then
+  head_color="${YELLOW}"
+else
+  head_color=""
+fi
+head_colored="${head_color}HEAD${NC}"
+head_emoji="📍${head_colored}:"
 
 # Build output components
 unstaged_output=""
@@ -73,6 +85,6 @@ else
   staged_output="${GREEN}📦 $staged_files files, +$staged_insertions/-$staged_deletions lines (Staged)${NC}"
 fi
 
-# Combine with separator
-printf '%s │ %s\n' "$unstaged_output" "$staged_output" >&2
+# Combine and print full status line
+printf '%s %s 🌿%s │ %s │ %s\n' "$head_emoji" "$hash_colored" "$status_colored" "$unstaged_output" "$staged_output" >&2
 
