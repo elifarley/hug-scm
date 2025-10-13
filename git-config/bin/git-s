@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+. "$CMD_BASE/../lib/hug-common"
 set -euo pipefail
 
 # Quick changes summary
@@ -7,12 +9,6 @@ test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
   printf 'Usage: hug s\n' >&2
   exit 1
 }
-
-# Color codes (moved up for status line)
-YELLOW=$(tput setaf 3)
-RED=$(tput setaf 1)    # Red for unstaged
-GREEN=$(tput setaf 2)  # Green for staged
-RESET=$(tput sgr0)     # Reset color
 
 # HEAD status line (inspired by hug sl)
 hash=$(git rev-parse --short HEAD)
@@ -27,24 +23,24 @@ if [ -n "$upstream" ]; then
   if [ "$left_count" != "0" ] || [ "$right_count" != "0" ]; then
     ahead_part=""
     behind_part=""
-    [ "$left_count" != "0" ] && ahead_part="ahead ${GREEN}${left_count}${RESET}"
-    [ "$right_count" != "0" ] && behind_part="behind ${RED}${right_count}${RESET}"
+    [ "$left_count" != "0" ] && ahead_part="ahead ${GREEN}${left_count}${NC}"
+    [ "$right_count" != "0" ] && behind_part="behind ${RED}${right_count}${NC}"
     sep=""
     [ -n "$ahead_part" ] && [ -n "$behind_part" ] && sep=", "
     indicators="[${ahead_part}${sep}${behind_part}]"
     status="${status} ${indicators}"
   fi
-  local_part="${GREEN}${branch}${RESET}"
-  upstream_part="${RED}${upstream}${RESET}"
+  local_part="${GREEN}${branch}${NC}"
+  upstream_part="${RED}${upstream}${NC}"
   status_colored="${local_part}...${upstream_part}"
   if [ -n "$indicators" ]; then
     status_colored="${status_colored} ${indicators}"
   fi
 else
   status="$branch"
-  status_colored="${GREEN}${status}${RESET}"
+  status_colored="${GREEN}${status}${NC}"
 fi
-hash_colored="${YELLOW}${hash}${RESET}"
+hash_colored="${YELLOW}${hash}${NC}"
 printf "📍HEAD: %s 🌿%s │ " "$hash_colored" "$status_colored" >&2
 
 unstaged_files=0 unstaged_insertions=0 unstaged_deletions=0
@@ -61,8 +57,6 @@ if ! git diff --quiet --cached; then
   staged_deletions=$(git diff --cached --numstat | awk '{sum += $2} END {print sum}')
 fi
 
-# (colors defined earlier)
-
 # Build output components
 unstaged_output=""
 staged_output=""
@@ -70,13 +64,13 @@ staged_output=""
 if [[ $unstaged_files -eq 0 ]]; then
   unstaged_output="✅ Clean (Unstaged)"
 else
-  unstaged_output="${RED}📝 $unstaged_files files, +$unstaged_insertions/-$unstaged_deletions lines (Unstaged)${RESET}"
+  unstaged_output="${RED}📝 $unstaged_files files, +$unstaged_insertions/-$unstaged_deletions lines (Unstaged)${NC}"
 fi
 
 if [[ $staged_files -eq 0 ]]; then
   staged_output="✅ Clean (Staged)"
 else
-  staged_output="${GREEN}📦 $staged_files files, +$staged_insertions/-$staged_deletions lines (Staged)${RESET}"
+  staged_output="${GREEN}📦 $staged_files files, +$staged_insertions/-$staged_deletions lines (Staged)${NC}"
 fi
 
 # Combine with separator
