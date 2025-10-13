@@ -5,9 +5,9 @@ Try it now:
 
 A humane, intuitive interface for Git and other version control systems.
 
-Works as a universal language to control the underlying SCM tool yo use.
+Works as a universal language to control the underlying SCM tool you use.
 
-Installation • Quick Start • Commands • Philosophy
+Hug transforms complex and forgettable Git commands into a simple, predictable language that feels natural to use, keeping you focused on your code, not on wrestling with version control.
 
 ## Table of Contents
 - [What is Hug?](#what-is-hug)
@@ -19,9 +19,10 @@ Installation • Quick Start • Commands • Philosophy
 - [Roadmap](#roadmap)
 - [License](#license)
 
-## What is Hug? {#what-is-hug}
+## What is Hug?
 
-Hug SCM is a humane interface layer for version control systems, starting with Git. It transforms the complex, often intimidating Git commands into an intuitive, predictable language that feels natural to developers.
+Hug SCM is a humane interface layer for version control systems, but currently only works with Git.
+It transforms the complex, often intimidating Git commands into an intuitive, predictable language that feels natural to developers.
 
 With Hug, you get:
 
@@ -29,10 +30,10 @@ With Hug, you get:
 - Progressive safety (shorter = safer, longer = more powerful)
 - Consistent patterns across all operations
 - Rich feedback and previews before destructive actions
-- Multi-VCS support (Git now, Mercurial and others coming soon)
+- Multi-VCS support (Git now, Mercurial and others coming later)
 
-## Why Hug? {#why-hug}
-Git is powerful but its learning curve can be brutal. Hug fixes that by:
+## Why Hug?
+While Git is incredibly powerful, its command syntax can be inconsistent and difficult to remember. Hug smooths out these rough edges.
 
 ✅ Making common operations trivial
 
@@ -50,7 +51,7 @@ Commands are grouped logically: `h*` for `HEAD` operations, `w*` for working dir
 
 Complex operations become one-liners: `hug w zap-all` for a complete "factory reset" of your local working directory.
 
-## Quick Start {#quick-start}
+## Quick Start
 
 ### Basic Workflow
 
@@ -82,16 +83,19 @@ hug w zap-all    # Complete cleanup across the entire repository
 # Oops, made bad changes to a file?
 hug w discard file.js
 
-# Need to undo the last commit but keep changes?
+# Need to undo the last commit but keep changes staged?
+# Hug, Head movement: Back
 hug h back
 
 # Want to see what changed in a specific file?
+# Hug, Status: Working dir (meaning unstaged changes)
 hug sw file.js
 
 # Clean up build artifacts?
 hug w purge
 
 # Get a file from an old commit?
+# Hug, Working dir: Get from <commit> the file <file>
 hug w get a1b2c3 file.js
 
 # Preview a destructive operation
@@ -101,10 +105,11 @@ hug w zap-all --dry-run
 hug w zap-all -f
 
 # Undo last 3 commits, unstage changes
+# Hug, Head movement: UNDO last 3 commits
 hug h undo 3
 ```
 
-## Installation {#installation}
+## Installation
 
 1. **Clone the Repo**:
    ```shell
@@ -116,23 +121,14 @@ hug h undo 3
    ```shell
    ./install.sh
    ```
-   This sets up symlinks in `~/.local/bin` (or equivalent) and includes the `.gitconfig`.
 
-3. **Activate Git Config** (optional, for aliases):
-   ```shell
-   source git-config/activate
-   ```
-   Or add to your shell profile: `[include] path = $HUG_HOME/.gitconfig` in `~/.gitconfig`.
-
-4. **Verify**:
+3. **Verify**:
    ```shell
    hug s  # Should show status summary
-   hug --help  # List available commands
+   hug help  # List available commands
    ```
 
 **Dependencies**: Bash, Git 2.23+ (for `git restore`). Works on Linux/macOS.
-
-**Uninstall**: Remove symlinks from `~/.local/bin` and exclude `.gitconfig`.
 
 ---
 
@@ -143,11 +139,9 @@ hug h undo 3
 - **Backup First**: Always `hug w backup` before destructive ops.
 - **Explore**: Run `hug alias` to see all Git aliases enabled by Hug.
 
-For full Git integration, see the `.gitconfig` file for 100+ productivity aliases.
-
 ---
 
-## Command Reference {#command-reference}
+## Command Reference
 
 ### Command Groups
 
@@ -155,10 +149,10 @@ Prefix|Category|Description
 -|-|-
 `h*`|HEAD Operations|Move HEAD, undo commits
 `w*`|Working Directory|Discard, wipe, purge, zap changes
-`s*`|Status & Staging|View status, stage/unstage
+`s*`|Status & Staging|View status
 `b*`|Branching|Create, switch, manage branches
 `t*`|Tagging|Create, manage tags
-`l*`|Logging|View history, search commits
+`l*`|Logging|View history, list matching commits for a search term
 
 ### Core Commands
 
@@ -168,7 +162,7 @@ Prefix|Category|Description
 hug h back [N|commit]     # Move HEAD back, keep changes staged (non-destructive)
 hug h undo [N|commit]     # Move HEAD back, unstage changes (non-destructive)
 hug h rollback [N|commit] # Rollback commits and their changes (preserves local work)
-hug h rewind <commit>     # Destructive rewind to clean state (discards history and changes)
+hug h rewind <commit>     # Destructive rewind to clean state (discards history and changes, but keeps current untracked files)
 ```
 
 #### 🧹 Working Directory (`w`)
@@ -248,12 +242,9 @@ hug llf <file>        # Log commits to a specific file (add -p for patches)
 #### File Inspection (`f*`)
 
 ```shell
-hug fl <file>         # Full file history with diffs (follows renames)
-hug fh <file>         # Compact file history (follows renames)
 hug fblame <file>     # Blame with whitespace/copy detection
 hug fb <file>         # Short blame (author and line only)
 hug fcon <file>       # List all contributors to a file
-hug fs <file>         # File change statistics
 hug fa <file>         # Count commits per author for a file
 hug fborn <file>      # Show when file was added
 ```
@@ -277,7 +268,7 @@ hug sclear            # Clear all stashes
 #### Tagging (`t*`)
 
 ```shell
-hug t [pattern]       # List tags (matching pattern)
+hug t [pattern]       # Tags (List tags (matching pattern))
 hug tc <tag> [commit] # Create lightweight tag
 hug ta <tag> "msg"    # Create annotated tag
 hug ts <tag>          # Show tag details
@@ -297,8 +288,8 @@ hug twp [object]      # Tags which point to object (default HEAD)
 #### Branching (`b*`) - Additional Details
 
 ```shell
-hug blr               # List remote branches only
-hug br <new-name>     # Rename current branch
+hug blr               # Branch: List Remote (List remote branches only)
+hug br <new-name>     # Branch: Rename (Rename current branch)
 hug bwc [commit]      # Branches which contain commit (default HEAD)
 hug bwp [object]      # Branches which point to object (default HEAD)
 hug bwnc [commit]     # Branches which do not contain commit
@@ -309,11 +300,11 @@ hug bwnm [commit]     # Branches not merged into commit
 #### Commits (`c*`)
 
 ```shell
-hug c [msg]           # Commit staged changes
-hug ca [msg]          # Commit all tracked changes
-hug caa [msg]         # Commit everything (tracked + untracked + deletions)
-hug cm [msg]          # Amend last commit with staged changes
-hug cma [msg]         # Amend last commit with all tracked changes
+hug c [-m msg]        # Commit (staged changes)
+hug ca [-m msg]       # Commit: All (all tracked changes)
+hug caa [-m msg]      # Commit: All All (tracked + untracked + deletions)
+hug cm [-m msg]       # Commit: Modify (Amend last commit with staged changes)
+hug cma [-m msg]      # Commit: Modify (Amend last commit with all tracked changes)
 hug cii               # Interactive patch commit (add --patch then commit)
 hug cim               # Full interactive staging and commit
 ```
@@ -335,9 +326,9 @@ hug ma                # Abort merge
 #### Push/Pull (`bpush`, etc.)
 
 ```shell
-hug bpush             # Push current branch and set upstream
-hug bpushf            # Force push with lease and set upstream
-hug bpush-unsafe      # Unsafe force push and set upstream
+hug bpush             # Branch: Push (Push current branch and set upstream)
+hug bpushf            # Branch: Push-Force (Force push with lease and set upstream)
+hug bpush-unsafe      # Branch: Push-unsafe (Unsafe force push and set upstream)
 hug bpull             # Pull with rebase
 hug pullall           # Pull from all remotes
 ```
@@ -357,17 +348,18 @@ hug untrack <files>   # Stop tracking files but keep locally
 #### Status & Show (`s*`, `sh*`)
 
 ```shell
-hug sl                # Status without untracked files
-hug sla               # Full status with untracked files
-hug sh [commit]       # Show commit with stat (default last)
-hug shp [commit]      # Show commit with patch
-hug shc <commit>      # Files changed in commit
-hug shf <file> [commit] # Show file diff in commit
+hug s                 # Status
+hug sl                # Status: List (without untracked files)
+hug sla               # Status: List All (Full status with untracked files)
+hug sh [commit]       # SHow [commit] (with stat; default: last)
+hug shp [commit]      # SHow: with Patch (commit with patch)
+hug shc <commit>      # SHow: Changed files (Files changed in commit)
+hug shf <file> [commit] # SHow: File at [commit] (File diff in commit)
 ```
 
 </details>
 
-## Philosophy {#philosophy}
+## Philosophy
 
 ### 1. **Brevity Hierarchy**
 
@@ -401,7 +393,7 @@ hug shf <file> [commit] # Show file diff in commit
 -   Built-in help with examples
 -   Smart completion with partial matching
 
-## Roadmap {#roadmap}
+## Roadmap
 
 -    **Mercurial Support** - Full compatibility with `hg` commands
 -    **Sapling Support** - Meta's next-gen VCS
@@ -414,7 +406,7 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
-## License {#license}
+## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 

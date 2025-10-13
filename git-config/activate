@@ -1,4 +1,5 @@
 . "$HOME"/.hug-scm
 export HUG_HOME PATH="$PATH:$HUG_HOME/bin"
 alias h=hug
+alias g=hug
 
