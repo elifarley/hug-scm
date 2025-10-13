@@ -67,12 +67,13 @@ hug c            # Commit staged changes
 hug ca           # Commit all tracked changes
 
 # Branch operations
-hug b feature    # Create and switch to new branch
+hug bc feature   # Create and switch to new branch
 hug bs           # Switch back to previous branch
 
 # Working directory cleanup
 hug w backup     # Stash current work safely
-hug w zap        # Complete cleanup (reset + purge)
+hug w zap        # Complete cleanup (reset + purge) for specific files
+hug w zap-all    # Complete cleanup across the entire repository
 ```
 
 ### Common Scenarios
@@ -92,6 +93,15 @@ hug w purge
 
 # Get a file from an old commit?
 hug w get a1b2c3 file.js
+
+# Preview a destructive operation
+hug w zap-all --dry-run
+
+# Force a cleanup without prompts
+hug w zap-all -f
+
+# Undo last 3 commits, unstage changes
+hug h undo 3
 ```
 
 ## Installation {#installation}
@@ -210,53 +220,141 @@ hug bdel <branch>    # Delete branch`
 ### Full Command List
 
 <details>
-
 <summary>Click to expand all commands</summary>
 
-#### Logging & History
-
+#### Logging & History (`l*`)
 
 ```shell
-`hug l                 # Log one-line with graph
-hug ll                # Log with date, author, message
-hug la                # All branches
-hug lf <term>         # Search commits by message
-hug lc <code>         # Search commits by code changes`
-
+hug l                 # One-line log with graph and decorations
+hug ll                # Log with date, author, and message (short date)
+hug la                # Log all branches
+hug lf <term>         # Search commits by message (add -i for case-insensitive)
+hug lc <code>         # Search commits by code changes in diff
+hug lcr <regex>       # Search commits by regex in code changes
+hug lau <author>      # Commits by specific author
+hug ld <since> <until># Commits in date range
+hug lp                # Log with patches
+hug llf <file>        # Log commits to a specific file (add -p for patches)
 ```
 
-#### File Operations
+#### File Inspection (`f*`)
 
 ```shell
-`hug fl <file>         # Full file history with diffs
-hug fh <file>         # Compact file history
-hug fblame <file>     # Who changed what line
-hug fcon <file>       # List contributors to file`
-
+hug fl <file>         # Full file history with diffs (follows renames)
+hug fh <file>         # Compact file history (follows renames)
+hug fblame <file>     # Blame with whitespace/copy detection
+hug fb <file>         # Short blame (author and line only)
+hug fcon <file>       # List all contributors to a file
+hug fs <file>         # File change statistics
+hug fa <file>         # Count commits per author for a file
+hug fborn <file>      # Show when file was added
 ```
 
-#### Stashing
-
+#### Stashing (`s*` for stash, but note `s` is also status)
 
 ```shell
-`hug ssave             # Quick stash
-hug ssavea "msg"      # Stash with message
-hug sls               # List stashes
-hug spop              # Pop stash with preview
-hug sclear            # Clear all stashes`
-
+hug ssave             # Quick stash (tracked files only)
+hug ssavea "msg"      # Stash with message and untracked files
+hug ssavefull         # Stash everything including ignored files
+hug sls               # List stashes with formatting
+hug speek [stash]     # Preview stash contents with full diff
+hug sshow [stash]     # Summary of stash changes
+hug sapply [stash]    # Apply stash and keep it
+hug spop [stash]      # Pop stash (with interactive preview)
+hug sdrop [stash]     # Drop specific stash
+hug sbranch <branch> [stash] # Create branch from stash
+hug sclear            # Clear all stashes
 ```
 
-#### Tagging
-
+#### Tagging (`t*`)
 
 ```shell
-`hug t "pattern"       # List tags matching pattern
-hug tc <tag>          # Create lightweight tag
+hug t [pattern]       # List tags (matching pattern)
+hug tc <tag> [commit] # Create lightweight tag
 hug ta <tag> "msg"    # Create annotated tag
 hug ts <tag>          # Show tag details
-hug tp                # Push tags to remote`
+hug tr <old> <new>    # Rename tag
+hug tm <tag> [commit] # Move tag to new commit (default HEAD)
+hug tma <tag> "msg" [commit] # Move and re-annotate tag
+hug tpush [tags]      # Push tags to remote (or all if no args)
+hug tpull             # Fetch tags from remote
+hug tpullf            # Force fetch and prune tags
+hug tdel <tag>        # Delete local tag
+hug tdelr <tag>       # Delete remote tag
+hug tco <tag>         # Checkout tag
+hug twc [commit]      # Tags which contain commit (default HEAD)
+hug twp [object]      # Tags which point to object (default HEAD)
+```
 
+#### Branching (`b*`) - Additional Details
+
+```shell
+hug blr               # List remote branches only
+hug br <new-name>     # Rename current branch
+hug bwc [commit]      # Branches which contain commit (default HEAD)
+hug bwp [object]      # Branches which point to object (default HEAD)
+hug bwnc [commit]     # Branches which do not contain commit
+hug bwm [commit]      # Branches merged into commit (default HEAD)
+hug bwnm [commit]     # Branches not merged into commit
+```
+
+#### Commits (`c*`)
+
+```shell
+hug c [msg]           # Commit staged changes
+hug ca [msg]          # Commit all tracked changes
+hug caa [msg]         # Commit everything (tracked + untracked + deletions)
+hug cm [msg]          # Amend last commit with staged changes
+hug cma [msg]         # Amend last commit with all tracked changes
+hug cii               # Interactive patch commit (add --patch then commit)
+hug cim               # Full interactive staging and commit
+```
+
+#### Rebase & Merge (`r*`, `m*`)
+
+```shell
+hug rb <branch>       # Rebase current onto branch
+hug rbi [commit]      # Interactive rebase (default root)
+hug rbc               # Continue rebase
+hug rba               # Abort rebase
+hug rbs               # Skip commit in rebase
+hug m <branch>        # Squash-merge branch (no commit)
+hug mff <branch>      # Merge with fast-forward only
+hug mkeep <branch>    # Merge with no fast-forward (create commit)
+hug ma                # Abort merge
+```
+
+#### Push/Pull (`bpush`, etc.)
+
+```shell
+hug bpush             # Push current branch and set upstream
+hug bpushf            # Force push with lease and set upstream
+hug bpush-unsafe      # Unsafe force push and set upstream
+hug bpull             # Pull with rebase
+hug pullall           # Pull from all remotes
+```
+
+#### Utilities
+
+```shell
+hug o                 # Outgoing changes (what will be pushed)
+hug wip               # Commit everything as WIP
+hug unwip             # Undo last WIP commit
+hug alias [pattern]   # List all aliases (search with pattern)
+hug type <object>     # Show object type
+hug dump <object>     # Show object contents
+hug untrack <files>   # Stop tracking files but keep locally
+```
+
+#### Status & Show (`s*`, `sh*`)
+
+```shell
+hug sl                # Status without untracked files
+hug sla               # Full status with untracked files
+hug sh [commit]       # Show commit with stat (default last)
+hug shp [commit]      # Show commit with patch
+hug shc <commit>      # Files changed in commit
+hug shf <file> [commit] # Show file diff in commit
 ```
 
 </details>
