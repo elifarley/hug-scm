@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # git-w - Working directory command gateway
 # Part of the Hug tool suite
 

@@ -203,34 +203,8 @@
   #  COMMITS (c*)
   # ──────────────────────────────────────────────────────────────────
 
-  # Commit staged files.
-  # Suggest alternate command if no staged files found.
-  c = "!f() { \
-    test \"$1\" = '-h' -o \"$1\" = '--help' && { \
-      printf 'c: Commit staged files.\n'; \
-      printf 'See also:\n  hug ca\n'; \
-      return 1; \
-    }; \
-    test -z \"$(git diff --cached --name-only)\" && {\
-      echo \"No staged changes. Use 'hug ca' to commit all tracked changes\"; return 1; \
-    }; \
-    git commit \"$@\"; \
-  }; f"
-
   # Commit tracked files
   ca = commit -a
-
-  # Commit tracked + untracked + deletions
-  caa = "!f() { \
-    test \"$1\" = '-h' -o \"$1\" = '--help' && { \
-      printf 'caa: Commit tracked + untracked + deletions.\n'; \
-      printf 'See also:\n'; \
-      printf '  hug c\n'; \
-      printf '  hug ca\n'; \
-      return 1; \
-    }; \
-    git aa && git c \"$@\"; \
-  }; f"
 
   # Modify (amend) last commit with staged changes only
   cm = commit --amend
