@@ -61,11 +61,13 @@ hug s
 
 # Stage changes (smart defaults)
 hug a            # Stage tracked changes
-hug aa           # Stage everything including new files
+hug aa           # Stage everything including untracked (new) files
 
 # Commit with context
 hug c            # Commit staged changes
 hug ca           # Commit all tracked changes
+hug caa          # Commit all tracked & untracked changes
+hug cc <commit>  # Clone a Commit on top of 'HEAD'
 
 # Branch operations
 hug bc feature   # Create and switch to new branch

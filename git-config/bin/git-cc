@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+# Cherry-pick (copy) a commit onto HEAD.
+# Usage: hug cc <commit> [options]
+test "${1:--h}" = '-h' -o "${1:-}" = '--help' && {
+  printf 'cc: Commit Clone / Commit Cherry-pick / Carbon Copy (copy a commit onto HEAD)\n'
+  printf 'Usage: hug cc <commit> [options]\n'
+  printf 'Examples:\n'
+  printf '  hug cc a1b2c3\n'
+  printf '  hug cc HEAD~2\n'
+  printf '\nTo edit the new commit message after cherry-pick:\n'
+  printf '  hug cm\n'
+  exit 1
+}
+
+git cherry-pick "$@"
