@@ -15,7 +15,7 @@ case "${1:-}" in
     printf '  hug h rollback 3      → rollback last 3 commits\n' >&2
     printf '  hug h rollback a1b2c3 → rollback back to specific commit\n' >&2
     printf 'Note: Aborts if local changes would be overwritten\n' >&2
-    return 1;;
+    exit 1;;
   '') target='HEAD~1' ;;
   [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$1" ;;
   *) target="$1" ;;

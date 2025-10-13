@@ -19,7 +19,7 @@ confirm() {
     while true; do
         read -p "$message" response
         case "$response" in
-            "$expected") return 0 ;;
+            "$expected") exit 0 ;;
             [Qq]|[Qq][Uu][Ii][Tt]|[Cc][Aa][Nn][Cc][Ee][Ll])
                 printf "Cancelled.\n" >&2
                 exit 0
