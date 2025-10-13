@@ -94,6 +94,49 @@ hug w purge
 hug w get a1b2c3 file.js
 ```
 
+## Installation {#installation}
+
+1. **Clone the Repo**:
+   ```shell
+   git clone https://github.com/elifarley/hug-scm.git
+   cd hug-scm
+   ```
+
+2. **Install** (run from repo root):
+   ```shell
+   ./install.sh
+   ```
+   This sets up symlinks in `~/.local/bin` (or equivalent) and includes the `.gitconfig`.
+
+3. **Activate Git Config** (optional, for aliases):
+   ```shell
+   source git-config/activate
+   ```
+   Or add to your shell profile: `[include] path = $HUG_HOME/.gitconfig` in `~/.gitconfig`.
+
+4. **Verify**:
+   ```shell
+   hug s  # Should show status summary
+   hug --help  # List available commands
+   ```
+
+**Dependencies**: Bash, Git 2.23+ (for `git restore`). Works on Linux/macOS.
+
+**Uninstall**: Remove symlinks from `~/.local/bin` and exclude `.gitconfig`.
+
+---
+
+## Quick Start Tips
+
+- **No Git Knowledge Needed**: Hug handles the complexity; focus on intent.
+- **Dry-Run Everything**: Add `--dry-run` to preview (e.g., `hug w zap-all --dry-run`).
+- **Backup First**: Always `hug w backup` before destructive ops.
+- **Explore**: Run `hug alias` to see all Git aliases enabled by Hug.
+
+For full Git integration, see the `.gitconfig` file for 100+ productivity aliases.
+
+---
+
 ## Command Reference {#command-reference}
 
 ### Command Groups
@@ -258,4 +301,12 @@ hug tp                # Push tags to remote`
 -   \[\] **AI Integration** - Smart commit suggestions
 -    **GUI Frontend** - Visual interface for complex operations
 -   \[\] **Plugin System** - Custom command extensions
+
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
+
+## License {#license}
+
+MIT License - see [LICENSE](LICENSE) for details.
 
