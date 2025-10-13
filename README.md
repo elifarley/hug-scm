@@ -181,17 +181,19 @@ hug w zap-all [-u|-s|-i]           # Complete cleanup`
 
 #### 📊 Status & Staging (`s`)
 
-
 ```shell
-`hug s                # Quick status
-hug sa               # Status with untracked files
-hug ss               # Status with staged changes
-hug sw               # Status with working changes
-# Staging
-hug a [files]        # Stage tracked files
-hug aa               # Stage everything
-hug us <files>       # Unstage files`
+hug s                # Quick summary of staged/unstaged changes
+hug sl               # Status without untracked files
+hug sla              # Full status with untracked files
 
+hug ss [file]        # Status with staged changes preview
+hug sw [file]        # Status with working dir changes preview
+
+# Staging
+hug a [files]        # Stage tracked files (or all if no args)
+hug aa               # Stage everything (tracked + untracked + deletions)
+hug us <files>       # Unstage specific files
+hug usa              # Unstage all files
 ```
 
 #### 🌿 Branching (`b`)
