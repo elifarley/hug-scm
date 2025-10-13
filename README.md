@@ -9,6 +9,8 @@ Works as a universal language to control the underlying SCM tool you use.
 
 Hug transforms complex and forgettable Git commands into a simple, predictable language that feels natural to use, keeping you focused on your code, not on wrestling with version control.
 
+[![asciicast](https://asciinema.org/a/748667.svg)](https://asciinema.org/a/748667)
+
 ## Table of Contents
 - [What is Hug?](#what-is-hug)
 - [Why Hug?](#why-hug)
