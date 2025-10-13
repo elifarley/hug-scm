@@ -164,57 +164,65 @@ Prefix|Category|Description
 
 #### 📍 HEAD Operations (`h`)
 
-
 ```shell
-`hug h back [N|commit]      # Move HEAD back, keep staged
-hug h undo [N|commit]      # Move HEAD back, unstage changes  hug h rollback [N|commit]  # Rollback commit, preserve local work
-hug h rewind commit        # Destructive rewind to clean state`
+hug h back [N|commit]     # Move HEAD back, keep changes staged (non-destructive)
+hug h undo [N|commit]     # Move HEAD back, unstage changes (non-destructive)
+hug h rollback [N|commit] # Rollback commits and their changes (preserves local work)
+hug h rewind <commit>     # Destructive rewind to clean state (discards history and changes)
 ```
 
 #### 🧹 Working Directory (`w`)
 
 ```shell
-`# Discard changes
-hug w discard [-u|-s] <files>     # Discard unstaged/staged changes
-hug w discard-all [-u|-s]         # Discard across repo
-# Wipe changes (staged + unstaged)
-hug w wipe <files>                 # Complete file reset
-hug w wipe-all                     # Reset all tracked files
-# Remove files
-hug w purge [-u|-i] <files>        # Remove untracked/ignored files
-hug w purge-all [-u|-i]            # Remove across repo
-# Nuclear option
-hug w zap [-u|-s|-i] <files>       # Discard + purge
-hug w zap-all [-u|-s|-i]           # Complete cleanup`
+# Discard changes
+hug w discard [-u|-s] <files>     # Discard unstaged/staged changes for specific files
+hug w discard-all [-u|-s]         # Discard across entire repo
 
+# Wipe changes (staged + unstaged)
+hug w wipe <files>                # Complete reset for specific files
+hug w wipe-all                    # Reset all tracked files to last commit
+
+# Remove untracked/ignored files
+hug w purge [-u|-i] <files>       # Remove untracked/ignored for specific paths
+hug w purge-all [-u|-i]           # Remove across entire repo
+
+# Nuclear option: discard + purge
+hug w zap [-u|-s|-i] <files>      # Full cleanup for specific paths
+hug w zap-all [-u|-s|-i]          # Complete repo cleanup
+
+# Utility
+hug w backup [-m "msg"]           # Safe stash of changes
+hug w get <commit> [files]        # Restore files from specific commit
 ```
 
 #### 📊 Status & Staging (`s`)
 
 ```shell
-hug s                # Quick summary of staged/unstaged changes
-hug sl               # Status without untracked files
-hug sla              # Full status with untracked files
+hug s                       # Quick summary of staged/unstaged changes
+hug sl                      # Status without untracked files
+hug sla                     # Full status with untracked files
 
-hug ss [file]        # Status with staged changes preview
-hug sw [file]        # Status with working dir changes preview
+hug ss [file]               # Status with staged changes preview
+hug sw [file]               # Status with working dir changes preview
 
 # Staging
-hug a [files]        # Stage tracked files (or all if no args)
-hug aa               # Stage everything (tracked + untracked + deletions)
-hug us <files>       # Unstage specific files
-hug usa              # Unstage all files
+hug a [files]               # Stage tracked files (or all if no args)
+hug aa                      # Stage everything (tracked + untracked + deletions)
+hug us <files>              # Unstage specific files
+hug usa                     # Unstage all files
 ```
 
 #### 🌿 Branching (`b`)
 
 ```shell
-`hug b <branch>       # Switch to branch
-hug bs               # Switch back to previous branch
-hug bc <branch>      # Create and switch
-hug bl               # List branches
-hug bdel <branch>    # Delete branch`
-
+hug b <branch>              # Switch to existing branch
+hug bs                      # Switch back to previous branch
+hug bc <branch>             # Create and switch to new branch
+hug bl                      # List local branches
+hug bla                     # List all branches (local + remote)
+hug bdel <branch>           # Safe delete local branch (if merged)
+hug bdelf <branch>          # Force delete local branch
+hug bdelr <branch>          # Delete remote branch
 ```
 
 ### Full Command List
