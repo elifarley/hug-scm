@@ -3,7 +3,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 # Commit tracked + untracked + deletions
-test "$1" = '-h' -o "$1" = '--help' && {
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
   printf 'caa: Commit tracked + untracked + deletions.\n'
   printf 'See also:\n'
   printf '  hug c\n'

@@ -4,7 +4,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # Commit staged files.
 # Suggest alternate command if no staged files found.
-test "$1" = '-h' -o "$1" = '--help' && {
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
   printf 'c: Commit staged files.\n'
   printf 'See also:\n  hug ca\n'
   exit 1
