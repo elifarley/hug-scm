@@ -56,18 +56,22 @@ if ! git diff --quiet --cached; then
   staged_deletions=$(git diff --cached --numstat | awk '{sum += $2} END {print sum}')
 fi
 
-# Determine HEAD color based on changes
+# Determine HEAD color and ball emoji based on changes
 if [ "$unstaged_files" -gt 0 ] && [ "$staged_files" -eq 0 ]; then
   head_color="${RED}"
+  ball_emoji="🔴"
 elif [ "$staged_files" -gt 0 ] && [ "$unstaged_files" -eq 0 ]; then
   head_color="${GREEN}"
+  ball_emoji="🟢"
 elif [ "$unstaged_files" -gt 0 ] && [ "$staged_files" -gt 0 ]; then
   head_color="${YELLOW}"
+  ball_emoji="🟡"
 else
   head_color=""
+  ball_emoji="⚫"
 fi
 head_colored="${head_color}HEAD${NC}"
-head_emoji="📍${head_colored}:"
+head_emoji="${ball_emoji} ${head_colored}:"
 
 # Build output components
 unstaged_output=""
