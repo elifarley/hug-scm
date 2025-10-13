@@ -20,15 +20,47 @@ test $# -eq 0 && {
   exit 1
 }
 prefix="$1"
+dir=$(dirname "$0")
 
-exact=$(git config --get "alias.$prefix" 2>/dev/null)
-if [ -n "$exact" ]; then
-  git $prefix -h; echo
+# Show help for exact command if exists (script preferred over alias)
+if command -v "git-$prefix" > /dev/null 2>&1; then
+  echo
+  "git-$prefix" --help
+  echo
+elif [ -n "$(git config --get "alias.$prefix" 2>/dev/null)" ]; then
+  git $prefix -h
+  echo
 fi
 
 echo "Commands starting with '$prefix':"
-git config --list | grep "^alias\\.$prefix" | cut -c 7- | sort | while IFS== read -r name def; do
-  if [ "$name" != "$prefix" ]; then
-    echo "  hug $name"
+
+# Collect Git aliases starting with prefix (exclude exact prefix)
+aliases=()
+while IFS== read -r name def; do
+  if [ "$name" != "$prefix" ] && [[ "$name" == ${prefix}* ]]; then
+    aliases+=("$name")
   fi
-done
+done < <(git config --list | grep "^alias\.${prefix}" | cut -c 7- | sort)
+
+# Collect script commands starting with prefix (exclude exact prefix)
+scripts=()
+if [ -d "$dir" ]; then
+  for f in "$dir"/git-${prefix}*; do
+    if [ -f "$f" ]; then
+      script_name=$(basename "$f" | sed 's/^git-//')
+      if [ "$script_name" != "$prefix" ]; then
+        scripts+=("$script_name")
+      fi
+    fi
+  done
+fi
+
+# Combine, sort unique, and print
+all_commands=($(printf '%s\n' "${aliases[@]}" "${scripts[@]}" | sort -u))
+if [ ${#all_commands[@]} -eq 0 ]; then
+  echo "  (none)"
+else
+  for cmd in "${all_commands[@]}"; do
+    echo "  hug $cmd"
+  done
+fi
