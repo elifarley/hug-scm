@@ -624,13 +624,6 @@
   # ═══════════════════════════════════════════════════════════════════
 
   # Push current branch and set upstream tracking
-  # Usage: hug bpush
-  bpush = "!f() { \
-    branch=\"$(git branch --show-current)\"; \
-    git push -u origin \"$branch\"; \
-  }; f"
-
-  # Push current branch and set upstream tracking
   # Usage: hug bpushf
   bpushf = "!f() { \
     branch=\"$(git branch --show-current)\"; \
