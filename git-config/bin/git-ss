@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Part of the Hug tool suite
+set -euo pipefail
+
+test "${1:-}" = '-h' && {
+  printf '\nss: Show status with patch of staged changes.\nUsage: hug ss [file]' >&2
+  exit 1
+}
+if test $# -eq 0; then
+  printf '─────────────────── Staged changes:\n'
+  git diff --cached
+  git diff --cached --stat
+else
+  t="$1"; shift
+  printf '─────────────────── Staged changes for FILE:\n'
+  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+  git diff --cached "$@" -- "${GIT_PREFIX}$t"
+  git diff --cached --stat "$@" -- "${GIT_PREFIX}$t"
+fi
+git s

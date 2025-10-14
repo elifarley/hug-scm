@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Part of the Hug tool suite
+set -euo pipefail
+
+test "${1:-}" = '-h' && {
+  printf '\nsw: Show status with patch of working dir changes.\nUsage: hug sw [file]' >&2
+  exit 1
+}
+if test $# -eq 0; then \
+  printf '─────────────────── Working dir changes:\n'
+  git diff HEAD
+  git diff HEAD --stat
+else \
+  t="$1"; shift
+  printf '─────────────────── Working dir changes for FILE:\n'
+  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+  git diff "$@" HEAD -- "${GIT_PREFIX}$t"
+  git diff "$@" HEAD --stat -- "${GIT_PREFIX}$t"
+fi
+git s

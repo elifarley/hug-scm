@@ -199,9 +199,11 @@ hug w get <commit> [files]        # Restore files from specific commit
 hug s                       # Quick summary of staged/unstaged changes
 hug sl                      # Status without untracked files
 hug sla                     # Full status with untracked files
+hug sli                     # Status with list of ignored files
 
-hug ss [file]               # Status with staged changes preview
-hug sw [file]               # Status with working dir changes preview
+hug ss [file]               # Status with staged changes patch
+hug su [file]               # Status with unstaged changes patch
+hug sw [file]               # Status with working dir changes patch (staged and unstaged)
 
 # Staging
 hug a [files]               # Stage tracked files (or all if no args)
@@ -413,3 +415,4 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+

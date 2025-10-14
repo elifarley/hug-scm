@@ -288,47 +288,19 @@
   unwip = "!git log -1 --format='%s' | grep -q '^WIP$' && git reset --soft HEAD~1 || echo 'No WIP commit found'"
 
   # ============================================================================
-  #  Status (s?) & SHow object info (sh*)
+  #  Status (s?)
   # ============================================================================
 
   # No untracked files shown
   sl = !git statusbase -uno \"$@\"
   # Untracked files are also shown
   sla = !git statusbase --long \"$@\"
+  # Untracked files are also shown
+  sli = !git ls-files --others --ignored --exclude-standard && git s \"$@\"
 
-  # Show status with patch of staged changes
-  ss = "!f() { \
-    test \"$1\" = '-h' && { \
-      printf '\nss: Show status with patch of staged changes.\nUsage: hug ss [file]' >&2; return 1; }; \
-    if test $# -eq 0; then \
-      printf '─────────────────── Staged changes:\n'; \
-      git diff --cached; \
-      git diff --cached --stat; \
-    else \
-      t=\"$1\"; shift; \
-      printf '─────────────────── Staged changes for FILE:\n'; \
-      git diff --cached \"$@\" -- \"${GIT_PREFIX}$t\"; \
-      git diff --cached --stat \"$@\" -- \"${GIT_PREFIX}$t\"; \
-    fi; \
-    git s; \
-  }; f"
-
-  # Show status with patch of working dir changes
-  sw = "!f() { \
-    test \"$1\" = '-h' && { \
-      printf '\nsw: Show status with patch of working dir changes.\nUsage: hug sw [file]' >&2; return 1; }; \
-    if test $# -eq 0; then \
-      printf '─────────────────── Working dir changes:\n'; \
-      git diff; \
-      git diff --stat; \
-    else \
-      t=\"$1\"; shift; \
-      printf '─────────────────── Working dir changes for FILE:\n'; \
-      git diff \"$@\" -- \"${GIT_PREFIX}$t\"; \
-      git diff --stat \"$@\" -- \"${GIT_PREFIX}$t\"; \
-    fi; \
-    git s; \
-  }; f"
+  # ============================================================================
+  # SHow object info (sh*)
+  # ============================================================================
 
   # Show specific commit (defaults to last) with list of changed files
   sh = log -1 --stat --pretty=logbody --date=human-local

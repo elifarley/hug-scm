@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Part of the Hug tool suite
+set -euo pipefail
+
+test "${1:-}" = '-h' && {
+  printf '\nsu: Show status with patch of unstaged changes.\nUsage: hug su [file]' >&2
+  exit 1
+}
+if test $# -eq 0; then \
+  printf '─────────────────── Unstaged changes:\n'
+  git diff
+  git diff --stat
+else \
+  t="$1"; shift
+  printf '─────────────────── Unstaged changes for FILE:\n'
+  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+  git diff "$@" -- "${GIT_PREFIX}$t"
+  git diff --stat "$@" -- "${GIT_PREFIX}$t"
+fi
+git s
