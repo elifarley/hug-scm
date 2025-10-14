@@ -27,9 +27,9 @@ _hug() {
     mapfile -t aliases < <(
         {
             git config --get-regexp '^alias\.' 2>/dev/null || true
-        }
-        | sed -E 's/^alias\.([^=]+)=.*/\1/'
-        | sed '/^$/d'
+        } \
+        | sed -E 's/^alias\.([^=]+)=.*/\1/' \
+        | sed '/^$/d' \
         | sort -u
     )
 
