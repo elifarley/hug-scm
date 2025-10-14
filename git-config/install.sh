@@ -30,6 +30,7 @@ EOF
 cat <<EOF
 Hug has been installed.
 Open a new terminal and type 'hug help' to learn more about Hug.
+Bash completions for hug subcommands are now available (requires bash-completion package installed).
 To use it in the current terminal, type:
 
 source $HUG_HOME/activate

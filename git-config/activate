@@ -3,3 +3,7 @@ export HUG_HOME PATH="$PATH:$HUG_HOME/bin"
 alias h=hug
 alias g=hug
 
+# Hug bash completion
+if [[ -r "$HUG_HOME/completions/hug-completion.bash" ]]; then
+  source "$HUG_HOME/completions/hug-completion.bash"
+fi

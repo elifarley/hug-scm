@@ -3,4 +3,5 @@
 
 test "${1:-help}" = help && exec git hughelp "${@:2}"
 
+# GIT_TRACE_SETUP=1 to show diagnostic messages
 exec git "$@"
