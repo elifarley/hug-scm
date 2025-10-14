@@ -4,7 +4,7 @@ _hug() {
     local cur prev words cword
     _init_completion -n =: || return
 
-    local hug_path dir scripts aliases all_commands subcmd
+    local hug_path dir scripts aliases all_commands subcmd raw_aliases branch_pattern ref_candidates
 
     hug_path=$(command -v hug 2>/dev/null)
     if [[ -z "$hug_path" ]]; then
@@ -24,11 +24,18 @@ _hug() {
     done
 
     # Collect all git aliases (gracefully handle non-repo), filter empties
+    raw_aliases=$(git config --name-only --get-regexp '^alias\.' 2>/dev/null || true)
+    if [[ -z "$raw_aliases" ]]; then
+        raw_aliases=$(
+            git config --get-regexp '^alias\.' 2>/dev/null \
+                | sed -E 's/^alias\.([^[:space:]]+).*/alias.\1/' \
+                || true
+        )
+    fi
+
     mapfile -t aliases < <(
-        {
-            git config --get-regexp '^alias\.' 2>/dev/null || true
-        } \
-        | sed -E 's/^alias\.([^=]+)=.*/\1/' \
+        printf '%s\n' "$raw_aliases" \
+        | sed 's/^alias\.//' \
         | sed '/^$/d' \
         | sort -u
     )
@@ -81,7 +88,18 @@ _hug() {
         b*|branch|co|checkout)
             # Branch completion (local branches, handles spaces, filter empties)
             if git rev-parse --git-dir > /dev/null 2>&1; then
-                mapfile -t COMPREPLY < <(git branch --list "${cur}*" 2>/dev/null | sed 's/^\* \?//' | sed '/^$/d')
+                branch_pattern="$cur"
+                if [[ -z "$branch_pattern" ]]; then
+                    branch_pattern="*"
+                else
+                    branch_pattern="${branch_pattern}*"
+                fi
+
+                mapfile -t COMPREPLY < <(
+                    git branch --list "$branch_pattern" 2>/dev/null \
+                    | sed 's/^\* \?//' \
+                    | sed '/^$/d'
+                )
             else
                 COMPREPLY=()
             fi
@@ -92,7 +110,12 @@ _hug() {
             ;;
         h)
             # Fallback ref completion for partial HEAD gateway
-            COMPREPLY=( $(compgen -W "$(git for-each-ref --format='%(refname:short)' refs/ 2>/dev/null || true)" -- "$cur" ) )
+            if git rev-parse --git-dir > /dev/null 2>&1; then
+                ref_candidates=$(git for-each-ref --format='%(refname:short)' refs/ 2>/dev/null || true)
+                COMPREPLY=( $(compgen -W "$ref_candidates" -- "$cur" ) )
+            else
+                COMPREPLY=()
+            fi
             ;;
         *)
             COMPREPLY=()
