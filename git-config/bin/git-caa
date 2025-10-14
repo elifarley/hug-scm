@@ -11,4 +11,4 @@ test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
   exit 1
 }
 
-git aa && git c "$@"
+hug aa && hug c "$@"

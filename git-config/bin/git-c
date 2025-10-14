@@ -18,18 +18,21 @@ OPTIONS:
 
 DESCRIPTION:
   This command commits only the staged changes (use 'hug a' to stage files first).
-  If no changes are staged, it suggests using 'hug ca' (commit all) instead.
-  Common options include -m for a commit message, -v for verbose, --amend to amend the last commit, etc.
+  If no changes are staged, consider using 'hug ca' (commit all) instead.
+  Common options include -m for a commit message, -v for verbose, etc.
 
 EXAMPLES:
   hug a file.txt          # Stage a file
   hug c -m "Add feature"  # Commit staged file with message
-  hug c --amend           # Amend the last commit with staged changes
   hug c -v                # Verbose commit
+
+SEE ALSO:
+  hug ca : For committing all changes (staged and unstaged)
+  hug cm : For modifying the last commit with staged changes.
+  hug cma: For modifying the last commit with ALL tracked changes.
 
 FURTHER READING:
   See 'git commit --help' for full Git documentation.
-  For committing all changes (staged and unstaged), use 'hug ca'.
 EOF
 }
 

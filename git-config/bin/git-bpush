@@ -124,6 +124,11 @@ EOF
 # Early exit if not in Git repo
 check_git_repo
 
+branch="$(git branch --show-current)"
+if [ -z "$branch" ]; then
+  error "Cannot determine the current branch (detached HEAD?)."
+fi
+
 update=false
 force_safe=false
 force_unsafe=false
@@ -272,11 +277,6 @@ else
     should_set_upstream=true
     printf "Setting upstream tracking to '%s/%s'...\n" "$remote" "$branch"
   fi
-fi
-
-branch="$(git branch --show-current)"
-if [ -z "$branch" ]; then
-  error "Cannot determine the current branch (detached HEAD?)."
 fi
 
 if has_upstream_for_target "$remote" "$branch"; then
