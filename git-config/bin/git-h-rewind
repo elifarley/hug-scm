@@ -25,23 +25,16 @@ SEE ALSO:
 EOF
 }
 
-test "${1:--h}" = '-h' -o "${1:-}" = '--help' && {
-  printf 'h-rewind: Rewind to a commit, discarding everything after (DESTRUCTIVE)\n' >&2
-  printf 'Usage: hug h rewind <commit>\n' >&2
-  printf '  hug h rewind HEAD~5  → go back 5 commits\n' >&2
-  printf '  hug h rewind a1b2c3  → rewind to specific commit\n' >&2
-  printf 'Warning: Discards commits and all uncommitted changes!\n' >&2
-  exit 1
-}
+case "${1:-}" in
+  -h|--help)
+    show_help
+    exit 0
+    ;;
+  '') target='HEAD~1' ;;
+  [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$1" ;;
+  *) target="$1" ;;
+esac
 
-target="$1"
-
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  printf '❌ You have uncommitted changes!\n' >&2
-  printf '   Use "hug w backup" to save them first\n' >&2
-  printf '   Use "hug w wipe-all" to discard them\n' >&2
-  exit 1
-fi
 
 printf 'Will rewind to %s and discard all commits after it\n' "$target" >&2
 printf 'Commits to be discarded:\n' >&2
