@@ -1,20 +1,33 @@
 #!/usr/bin/env sh
 # Part of the Hug tool suite
 
-# Rollback commits and their changes (local changes preserved)
-# Usage: hug h rollback [N|COMMIT]
-#   hug h rollback        → rollback last commit and its changes
-#   hug h rollback 3      → rollback last 3 commits and their changes
-#   hug h rollback a1b2c3 → rollback commits back to specific commit
-# Note: Aborts if local changes would be lost
+show_help() {
+    cat << EOF
+h rollback: Take back commits along with their changes: HEAD goes back, their changes are LOST, local changes are preserved.
+
+USAGE:
+    hug h rollback [N|COMMIT]
+
+DESCRIPTION:
+    Deletes the specified commits and moves the HEAD back.
+    Changes introduced by the removed commits are REMOVED from the working directory and LOST.
+    Working directory IS affected, but local changes are kept intact.
+    It's safe to use this command if you want to keep your local changes, but want to get rid of the changes introduced by the specified commits.
+    Note: Aborts if local changes would be lost.
+
+EXAMPLES:
+    hug h rollback        # rollback last commit and its changes
+    hug h rollback 3      # rollback last 3 commits and their changes
+    hug h rollback a1b2c3 # rollback commits AFTER specified commit, along with their changes
+
+SEE ALSO:
+    hug h back          Take back commits and keep their changes staged.
+EOF
+}
+
 case "${1:-}" in
   '-h'|'--help')
-    printf 'h rollback: Discard commits and their changes (local work protected)\n' >&2
-    printf 'Usage: hug h rollback [N|COMMIT]\n' >&2
-    printf '  hug h rollback        → rollback last commit\n' >&2
-    printf '  hug h rollback 3      → rollback last 3 commits\n' >&2
-    printf '  hug h rollback a1b2c3 → rollback back to specific commit\n' >&2
-    printf 'Note: Aborts if local changes would be overwritten\n' >&2
+    show_help
     exit 1;;
   '') target='HEAD~1' ;;
   [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$1" ;;
