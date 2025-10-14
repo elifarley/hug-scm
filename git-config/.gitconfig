@@ -600,20 +600,6 @@
   #  PUSH / PULL BRANCHES
   # ═══════════════════════════════════════════════════════════════════
 
-  # Push current branch and set upstream tracking
-  # Usage: hug bpushf
-  bpushf = "!f() { \
-    branch=\"$(git branch --show-current)\"; \
-    git push --force-with-lease -u origin \"$branch\"; \
-  }; f"
-
-  # Push current branch and set upstream tracking
-  # Usage: hug bpush-unsafe
-  bpush-unsafe = "!f() { \
-    branch=\"$(git branch --show-current)\"; \
-    git push --force -u origin \"$branch\"; \
-  }; f"
-
   # Pull with rebase (cleaner than merge)
   # Usage: hug pullr
   bpull = pull --rebase

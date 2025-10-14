@@ -17,6 +17,8 @@ USAGE:
 
 OPTIONS:
   -u, --update   Update the URL of an existing remote when needed.
+  -f, --force    Force-push (using git --force-with-lease)
+      --unsafe   Force-push, unsafe (using git --force)
   -h, --help     Show this help message and exit.
 
 DESCRIPTION:
@@ -87,13 +89,12 @@ find_remote_by_url() {
   return 1
 }
 
-# Push current branch and set upstream tracking
-# Usage: hug bpush [--update] [remote-name] | [url] | [remote-name url]
-
 # Early exit if not in Git repo
 check_git_repo
 
 update=false
+force_safe=false
+force_unsafe=false
 positional_args=()
 
 while (($#)); do
@@ -104,6 +105,12 @@ while (($#)); do
       ;;
     -u|--update)
       update=true
+      ;;
+    -f|--force)
+      force_safe=true
+      ;;
+    --unsafe)
+      force_unsafe=true
       ;;
     --)
       shift
@@ -122,6 +129,10 @@ while (($#)); do
   esac
   shift || break
 done
+
+if $force_safe && $force_unsafe; then
+  usage_error "Cannot specify both --force and --unsafe."
+fi
 
 set -- "${positional_args[@]}"
 
@@ -199,5 +210,15 @@ if [ -z "$branch" ]; then
   error "Cannot determine the current branch (detached HEAD?)."
 fi
 
-printf "Pushing branch '%s' to remote '%s' with upstream tracking...\n" "$branch" "$remote"
-git push -u "$remote" "$branch"
+push_args=("-u")
+if $force_unsafe; then
+  push_args+=("--force")
+  printf "Force-pushing branch '%s' to remote '%s' with upstream tracking (unsafe)...\n" "$branch" "$remote"
+elif $force_safe; then
+  push_args+=("--force-with-lease")
+  printf "Force-pushing branch '%s' to remote '%s' with upstream tracking (safe)...\n" "$branch" "$remote"
+else
+  printf "Pushing branch '%s' to remote '%s' with upstream tracking...\n" "$branch" "$remote"
+fi
+push_args+=("$remote" "$branch")
+git push "${push_args[@]}"

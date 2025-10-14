@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Part of the Hug tool suite
+
+# Alias for hug bpush --force
+exec hug bpush --force "$@"
