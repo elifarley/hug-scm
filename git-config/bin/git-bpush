@@ -5,103 +5,199 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
+show_help() {
+  cat <<'EOF'
+hug bpush: Push the current branch and set upstream tracking.
+
+USAGE:
+  hug bpush [OPTIONS]
+  hug bpush [OPTIONS] <remote-name>
+  hug bpush [OPTIONS] <url>
+  hug bpush [OPTIONS] <remote-name> <url>
+
+OPTIONS:
+  -u, --update   Update the URL of an existing remote when needed.
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  Without arguments the command pushes to the 'origin' remote. Supplying a
+  single URL will create or update a matching remote and push to it. Supplying
+  both a remote name and URL allows you to explicitly manage the remote.
+
+EXAMPLES:
+  hug bpush
+  hug bpush upstream
+  hug bpush git@github.com:owner/repo.git
+  hug bpush --update origin https://github.com/owner/repo
+EOF
+}
+
+error() {
+  printf 'hug bpush: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+usage_error() {
+  printf 'hug bpush: %s\n\n' "$1" >&2
+  show_help >&2
+  exit 1
+}
+
+remote_exists() {
+  local name="$1"
+  git remote | grep -qxF "$name"
+}
+
+derive_remote_name() {
+  local url="$1"
+  local trimmed="${url%/}"
+  local name
+  name="$(basename "$trimmed" .git)"
+  if [ -z "$name" ]; then
+    name="origin"
+  fi
+  printf '%s\n' "$name"
+}
+
+is_url() {
+  [[ "$1" =~ ^(git@|ssh://|https?://|git://|file://).*(\.git)?$ ]]
+}
+
+normalize_url() {
+  local u="$1"
+  u="${u%/}"
+  if [[ "$u" != *.git ]]; then
+    u="${u}.git"
+  fi
+  printf '%s\n' "$u"
+}
+
+find_remote_by_url() {
+  local target="$1"
+  local remote candidate
+  while IFS= read -r remote; do
+    while IFS= read -r candidate; do
+      candidate="$(normalize_url "$candidate")"
+      if [ "$candidate" = "$target" ]; then
+        printf '%s\n' "$remote"
+        return 0
+      fi
+    done < <(git remote get-url --all "$remote")
+  done < <(git remote)
+  return 1
+}
+
 # Push current branch and set upstream tracking
 # Usage: hug bpush [--update] [remote-name] | [url] | [remote-name url]
 
 # Early exit if not in Git repo
 check_git_repo
 
-# Normalize function (reuse for URLs)
-normalize_url() {
-  local u="$1"
-  u="${u%/}"  # Strip trailing /
-  if [[ "$u" != *.git ]]; then
-    u="${u}.git"
-  fi
-  echo "$u"
-}
-
-# Flag parsing (simple: check if --update is first arg or anywhere; shift if present)
 update=false
-if [ "${1:-}" = "--update" ]; then
-  update=true
-  shift
-fi
+positional_args=()
 
-# Determine remote
+while (($#)); do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -u|--update)
+      update=true
+      ;;
+    --)
+      shift
+      while (($#)); do
+        positional_args+=("$1")
+        shift
+      done
+      break
+      ;;
+    -*)
+      usage_error "Unknown option '$1'."
+      ;;
+    *)
+      positional_args+=("$1")
+      ;;
+  esac
+  shift || break
+done
+
+set -- "${positional_args[@]}"
+
 remote="origin"
-if [ $# -eq 0 ]; then
-  :  # Use default
-elif [ $# -eq 1 ]; then
-  arg="$1"
-  if [[ "$arg" =~ ^(git@|https?://).*(\.git)?$ ]]; then
-    # 1 arg: URL mode - check existing, derive if not
-    url=$(normalize_url "$arg")
-    existing_remote=$(git remote -v | grep -F "$url" | awk '{print $1}' | head -1)
-    if [ -n "$existing_remote" ]; then
-      remote="$existing_remote"
-      echo "Using existing remote: $remote"
-    else
-      # Derive name
-      derived=$(basename "$url" .git)
-      if [ -z "$derived" ]; then derived="origin"; fi
-      if git remote | grep -q "^$derived$"; then
-        if $update; then
-          echo "Updating URL for existing '$derived'"
-          git remote set-url "$derived" "$url"
-          remote="$derived"
+
+case $# in
+  0)
+    if ! remote_exists "$remote"; then
+      usage_error "No remote specified and default remote 'origin' does not exist."
+    fi
+    ;;
+  1)
+    arg="$1"
+    if is_url "$arg"; then
+      url="$(normalize_url "$arg")"
+      if existing_remote="$(find_remote_by_url "$url")"; then
+        remote="$existing_remote"
+        printf "Using existing remote '%s' (%s)\n" "$remote" "$url"
+      else
+        derived="$(derive_remote_name "$url")"
+        if remote_exists "$derived"; then
+          if $update; then
+            printf "Updating URL for existing remote '%s'\n" "$derived"
+            git remote set-url "$derived" "$url"
+            remote="$derived"
+          else
+            usage_error "Derived remote name '$derived' already exists but points to a different URL. Use --update or provide a remote name."
+          fi
         else
-          echo "Error: Derived name '$derived' exists but doesn't match URL. Use --update or specify name."
-          exit 1
+          if [ -z "$(git remote)" ]; then
+            derived="origin"
+          fi
+          printf "Adding remote '%s' for %s\n" "$derived" "$url"
+          git remote add "$derived" "$url"
+          remote="$derived"
         fi
-      else
-        # No conflict: add as derived (or origin if no remotes)
-        if ! git remote >/dev/null 2>&1; then
-          derived="origin"
-        fi
-        echo "Adding derived remote '$derived' for $url"
-        git remote add "$derived" "$url"
-        remote="$derived"
-      fi
-    fi
-  else
-    # 1 arg: Assume remote name (explicit mode)
-    remote="$arg"
-    if ! git remote | grep -q "^$remote$"; then
-      echo "Error: Remote '$remote' not found."
-      exit 1
-    fi
-  fi
-elif [ $# -eq 2 ]; then
-  # 2 args: name + URL (explicit mode)
-  remote="$1"
-  url=$(normalize_url "$2")
-  if ! [[ "$remote" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-    echo "Error: Invalid remote name '$remote'."
-    exit 1
-  fi
-  if git remote | grep -q "^$remote$"; then
-    existing_url=$(git remote get-url "$remote")
-    existing_url=$(normalize_url "$existing_url")
-    if [ "$existing_url" != "$url" ]; then
-      if $update; then
-        echo "Updating URL for '$remote' to $url"
-        git remote set-url "$remote" "$url"
-      else
-        echo "Error: Remote '$remote' points to '$existing_url', not '$url'. Use --update."
-        exit 1
       fi
     else
-      echo "Validated remote: $remote"
+      remote="$arg"
+      if ! remote_exists "$remote"; then
+        error "Remote '$remote' not found."
+      fi
     fi
-  else
-    echo "Adding remote '$remote' for $url"
-    git remote add "$remote" "$url"
-  fi
-else
-  echo "Error: Usage: git-bpush [--update] [remote-name] | [url] | [remote-name url]"
-  exit 1
-fi
+    ;;
+  2)
+    remote="$1"
+    url="$(normalize_url "$2")"
+    if ! [[ "$remote" =~ ^[A-Za-z0-9._-]+$ ]]; then
+      usage_error "Invalid remote name '$remote'."
+    fi
+    if remote_exists "$remote"; then
+      existing_url="$(normalize_url "$(git remote get-url --all "$remote" | head -n1)")"
+      if [ "$existing_url" != "$url" ]; then
+        if $update; then
+          printf "Updating URL for '%s' to %s\n" "$remote" "$url"
+          git remote set-url "$remote" "$url"
+        else
+          usage_error "Remote '$remote' points to '$existing_url', not '$url'. Use --update."
+        fi
+      else
+        printf "Remote '%s' already points to %s\n" "$remote" "$url"
+      fi
+    else
+      printf "Adding remote '%s' for %s\n" "$remote" "$url"
+      git remote add "$remote" "$url"
+    fi
+    ;;
+  *)
+    usage_error "Too many positional arguments."
+    ;;
+esac
 
 branch="$(git branch --show-current)"
+if [ -z "$branch" ]; then
+  error "Cannot determine the current branch (detached HEAD?)."
+fi
+
+printf "Pushing branch '%s' to remote '%s' with upstream tracking...\n" "$branch" "$remote"
 git push -u "$remote" "$branch"
