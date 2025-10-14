@@ -106,7 +106,12 @@ _hug() {
             ;;
         h-back|h-undo|h-rollback|h-rewind)
             # Ref completion for known HEAD subcommands
-            COMPREPLY=( $(compgen -W "$(git for-each-ref --format='%(refname:short)' refs/ 2>/dev/null || true)" -- "$cur" ) )
+            if git rev-parse --git-dir > /dev/null 2>&1; then
+                ref_candidates=$(git for-each-ref --format='%(refname:short)' refs/ 2>/dev/null || true)
+                COMPREPLY=( $(compgen -W "$ref_candidates" -- "$cur" ) )
+            else
+                COMPREPLY=()
+            fi
             ;;
         h)
             # Fallback ref completion for partial HEAD gateway
