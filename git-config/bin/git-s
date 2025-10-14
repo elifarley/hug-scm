@@ -98,5 +98,11 @@ fi
 uncommitted_output=''
 # If no uncommitted changes at all, don't show uncommitted output
 (( staged_files + unstaged_files )) && uncommitted_output=" │ $unstaged_output │ $staged_output"
+
+untracked_count=$(git ls-files --others --exclude-standard | wc -l)
+ignored_count=$(  git ls-files --others --exclude-standard --ignored | wc -l)
+non_tracked_output=''
+(( untracked_count + ignored_count )) && non_tracked_output=" │ ${MAGENTA}U$untracked_count$NC ${GREY}I$ignored_count$NC"
+
 # Combine and print full status line
-printf '%s %s 🌿%s%s\n' "$head_emoji" "$hash_colored" "$status_colored" "$uncommitted_output" >&2
+printf '%s %s 🌿%s%s%s\n' "$head_emoji" "$hash_colored" "$status_colored" "$uncommitted_output" "$non_tracked_output" >&2
