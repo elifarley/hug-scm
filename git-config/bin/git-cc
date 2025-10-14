@@ -10,9 +10,10 @@ test "${1:--h}" = '-h' -o "${1:-}" = '--help' && {
   printf 'Examples:\n'
   printf '  hug cc a1b2c3\n'
   printf '  hug cc HEAD~2\n'
+  printf '  hug cc HEAD~2..HEAD~1\n'
   printf '\nTo edit the new commit message after cherry-pick:\n'
   printf '  hug cm\n'
   exit 1
 }
 
-git cherry-pick "$@"
+git cherry-pick -x "$@"
