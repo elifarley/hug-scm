@@ -4,10 +4,27 @@ CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
-# Rewind to a specific commit (DESTRUCTIVE: discards history + changes)
-# Usage: hug h-rewind <commit>
-#   hug h-rewind HEAD~5  → go back 5 commits
-#   hug h-rewind a1b2c3  → rewind to specific commit
+show_help() {
+    cat << EOF
+h rewind: Moves HEAD back, deleting commits, their changes, AND local changes.
+
+USAGE:
+    hug h rewind [N|COMMIT]
+
+DESCRIPTION:
+    Deletes the specified commits and moves the HEAD back.
+    Changes introduced by the removed commits are REMOVED from the working directory and LOST.
+    Working directory IS affected: ALL uncommitted changes are lost (but untracked and ignored files are preserved).
+    It's equivalent to `hug back; hug wipe-all`.
+
+EXAMPLES:
+    hug h rewind a1b2c3 # rewind to the specified commit
+
+SEE ALSO:
+    hug h back          Take back commits and keep their changes staged.
+EOF
+}
+
 test "${1:--h}" = '-h' -o "${1:-}" = '--help' && {
   printf 'h-rewind: Rewind to a commit, discarding everything after (DESTRUCTIVE)\n' >&2
   printf 'Usage: hug h rewind <commit>\n' >&2
