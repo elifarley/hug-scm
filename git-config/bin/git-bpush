@@ -19,6 +19,7 @@ OPTIONS:
   -u, --update   Update the URL of an existing remote when needed.
   -f, --force    Force-push (using git --force-with-lease)
       --unsafe   Force-push, unsafe (using git --force)
+  -t, --track    Set or switch upstream tracking to the target remote (default: preserve existing unless auto-setup applies).
   -h, --help     Show this help message and exit.
 
 DESCRIPTION:
@@ -89,12 +90,44 @@ find_remote_by_url() {
   return 1
 }
 
+get_upstream_remote() {
+  local upstream
+  if upstream="$(git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null)"; then
+    # Extract remote from upstream ref (e.g., "refs/remotes/origin/main" -> "origin")
+    printf '%s\n' "${upstream#refs/remotes/}" | cut -d/ -f1
+    return 0
+  fi
+  return 1
+}
+
+has_upstream_for_target() {
+  local target_remote="$1"
+  local target_branch="$2"
+  local current_upstream
+  if current_upstream="$(git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null)"; then
+    [[ "$current_upstream" == "refs/remotes/$target_remote/$target_branch" ]]
+  else
+    return 1
+  fi
+}
+
+suggest_setup() {
+  cat <<'EOF' >&2
+No upstream tracking or 'origin' remote found. Suggestions:
+  - Add and push to 'origin': hug bpush origin <url>
+  - Push to an existing remote with tracking: hug bpush -t <remote>
+  - Or push to a new remote with tracking: hug bpush -t <remote> <url>
+EOF
+  exit 1
+}
+
 # Early exit if not in Git repo
 check_git_repo
 
 update=false
 force_safe=false
 force_unsafe=false
+track=false
 positional_args=()
 
 while (($#)); do
@@ -111,6 +144,9 @@ while (($#)); do
       ;;
     --unsafe)
       force_unsafe=true
+      ;;
+    -t|--track)
+      track=true
       ;;
     --)
       shift
@@ -137,16 +173,28 @@ fi
 set -- "${positional_args[@]}"
 
 remote="origin"
+is_url_arg=false
+is_remote_name_arg=false
 
 case $# in
   0)
-    if ! remote_exists "$remote"; then
-      usage_error "No remote specified and default remote 'origin' does not exist."
+    if upstream_remote="$(get_upstream_remote)"; then
+      remote="$upstream_remote"
+      printf "Pushing to existing upstream remote '%s'...\n" "$remote"
+      should_set_upstream=false
+    elif remote_exists "origin"; then
+      remote="origin"
+      printf "No upstream; pushing to default 'origin'...\n"
+      should_set_upstream=true
+    else
+      error "No upstream or 'origin' remote. See suggestions below."
+      suggest_setup
     fi
     ;;
   1)
     arg="$1"
     if is_url "$arg"; then
+      is_url_arg=true
       url="$(normalize_url "$arg")"
       if existing_remote="$(find_remote_by_url "$url")"; then
         remote="$existing_remote"
@@ -171,6 +219,7 @@ case $# in
         fi
       fi
     else
+      is_remote_name_arg=true
       remote="$arg"
       if ! remote_exists "$remote"; then
         error "Remote '$remote' not found."
@@ -205,20 +254,50 @@ case $# in
     ;;
 esac
 
+# Determine if we should set upstream (-u)
+should_set_upstream=false
+has_upstream=false
+if get_upstream_remote >/dev/null 2>&1; then
+  has_upstream=true
+  if ! has_upstream_for_target "$remote" "$branch"; then
+    # Has upstream but not for this target
+    if $track; then
+      should_set_upstream=true
+      printf "Switching upstream tracking to '%s/%s'...\n" "$remote" "$branch"
+    fi
+  fi
+else
+  # No upstream at all
+  if $track || ($is_remote_name_arg && [ $# -eq 1 ]) || ([ $# -eq 0 ] && [ "$remote" = "origin" ]); then
+    should_set_upstream=true
+    printf "Setting upstream tracking to '%s/%s'...\n" "$remote" "$branch"
+  fi
+fi
+
 branch="$(git branch --show-current)"
 if [ -z "$branch" ]; then
   error "Cannot determine the current branch (detached HEAD?)."
 fi
 
-push_args=("-u")
+if has_upstream_for_target "$remote" "$branch"; then
+  printf "Pushing to existing upstream '%s/%s'...\n" "$remote" "$branch"
+fi
+
+push_args=()
+if $should_set_upstream; then
+  push_args+=("-u")
+fi
 if $force_unsafe; then
   push_args+=("--force")
-  printf "Force-pushing branch '%s' to remote '%s' with upstream tracking (unsafe)...\n" "$branch" "$remote"
+  tracking_note="$( $should_set_upstream && echo ' with upstream tracking' || echo '' )"
+  printf "Force-pushing branch '%s' to remote '%s' (unsafe)%s...\n" "$branch" "$remote" "$tracking_note"
 elif $force_safe; then
   push_args+=("--force-with-lease")
-  printf "Force-pushing branch '%s' to remote '%s' with upstream tracking (safe)...\n" "$branch" "$remote"
+  tracking_note="$( $should_set_upstream && echo ' with upstream tracking' || echo '' )"
+  printf "Force-pushing branch '%s' to remote '%s' (safe)%s...\n" "$branch" "$remote" "$tracking_note"
 else
-  printf "Pushing branch '%s' to remote '%s' with upstream tracking...\n" "$branch" "$remote"
+  tracking_note="$( $should_set_upstream && echo ' with upstream tracking' || echo '' )"
+  printf "Pushing branch '%s' to remote '%s'%s...\n" "$branch" "$remote" "$tracking_note"
 fi
 push_args+=("$remote" "$branch")
 git push "${push_args[@]}"
