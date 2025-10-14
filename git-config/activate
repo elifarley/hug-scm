@@ -7,3 +7,5 @@ alias g=hug
 if [[ -r "$HUG_HOME/completions/hug-completion.bash" ]]; then
   source "$HUG_HOME/completions/hug-completion.bash"
 fi
+
+complete -F _hug h
