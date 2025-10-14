@@ -24,16 +24,23 @@ _hug() {
     done
 
     # Collect all git aliases (gracefully handle non-repo), filter empties
-    mapfile -t aliases < <(git config --get-regexp '^alias\.' 2>/dev/null || true | cut -d '.' -f2 | cut -d '=' -f1 | grep -v '^$' | sort -u)
+    mapfile -t aliases < <(
+        {
+            git config --get-regexp '^alias\.' 2>/dev/null || true
+        }
+        | sed -E 's/^alias\.([^=]+)=.*/\1/'
+        | sed '/^$/d'
+        | sort -u
+    )
 
     # Filter empties in scripts
-    mapfile -t scripts < <(printf '%s\n' "${scripts[@]}" | grep -v '^$' | sort -u)
+    mapfile -t scripts < <(printf '%s\n' "${scripts[@]}" | sed '/^$/d' | sort -u)
 
     # Combine unique, add 'help' explicitly
-    mapfile -t all_commands < <(printf '%s\n' "help" "${scripts[@]}" "${aliases[@]}" | sort -u | grep -v '^$')
+    mapfile -t all_commands < <(printf '%s\n' "help" "${scripts[@]}" "${aliases[@]}" | sort -u | sed '/^$/d')
 
     if [[ $cword -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "${all_commands[*]}" -- $cur ) )
+        COMPREPLY=( $(compgen -W "${all_commands[*]}" -- "$cur" ) )
         return 0
     fi
 
@@ -50,10 +57,10 @@ _hug() {
         done
 
         # Filter empties
-        mapfile -t gateway_cmds < <(printf '%s\n' "${gateway_cmds[@]}" | grep -v '^$' | sort -u)
+        mapfile -t gateway_cmds < <(printf '%s\n' "${gateway_cmds[@]}" | sed '/^$/d' | sort -u)
 
         if [[ ${#gateway_cmds[@]} -gt 0 ]]; then
-            COMPREPLY=( $(compgen -W "${gateway_cmds[*]}" -- $cur ) )
+            COMPREPLY=( $(compgen -W "${gateway_cmds[*]}" -- "$cur" ) )
             return 0
         fi
     fi
@@ -61,7 +68,7 @@ _hug() {
     # Special completion for 'hug help [prefix]' (for cword >=2)
     if [[ "$subcmd" == "help" ]]; then
         local help_opts="a b c f h l p s sh t w"
-        COMPREPLY=( $(compgen -W "$help_opts" -- $cur ) )
+        COMPREPLY=( $(compgen -W "$help_opts" -- "$cur" ) )
         return 0
     fi
 
@@ -69,23 +76,23 @@ _hug() {
     case "$subcmd" in
         sw|add|rm|mv|ss)
             # File completion for known file-taking commands
-            COMPREPLY=( $(compgen -f -- $cur ) )
+            COMPREPLY=( $(compgen -f -- "$cur" ) )
             ;;
         b*|branch|co|checkout)
             # Branch completion (local branches, handles spaces, filter empties)
             if git rev-parse --git-dir > /dev/null 2>&1; then
-                mapfile -t COMPREPLY < <(git branch --list "${cur}*" 2>/dev/null | sed 's/^\* \?//' | grep -v '^$')
+                mapfile -t COMPREPLY < <(git branch --list "${cur}*" 2>/dev/null | sed 's/^\* \?//' | sed '/^$/d')
             else
                 COMPREPLY=()
             fi
             ;;
         h-back|h-undo|h-rollback|h-rewind)
             # Ref completion for known HEAD subcommands
-            COMPREPLY=( $(compgen -W "$(git for-each-ref --format='%(refname:short)' refs/ 2>/dev/null || true)" -- $cur ) )
+            COMPREPLY=( $(compgen -W "$(git for-each-ref --format='%(refname:short)' refs/ 2>/dev/null || true)" -- "$cur" ) )
             ;;
         h)
             # Fallback ref completion for partial HEAD gateway
-            COMPREPLY=( $(compgen -W "$(git for-each-ref --format='%(refname:short)' refs/ 2>/dev/null || true)" -- $cur ) )
+            COMPREPLY=( $(compgen -W "$(git for-each-ref --format='%(refname:short)' refs/ 2>/dev/null || true)" -- "$cur" ) )
             ;;
         *)
             COMPREPLY=()
