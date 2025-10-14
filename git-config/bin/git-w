@@ -5,7 +5,6 @@
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 case "${1:-}" in 
-  diff)         shift; git sw "$@" ;;
   discard)      shift; git w-discard "$@" ;;
   discard-all)  shift; git w-discard-all "$@" ;;
   purge)        shift; git w-purge "$@" ;;
@@ -20,15 +19,14 @@ case "${1:-}" in
   --dry-run)    shift; git w-dry-run "$@" ;;
   *)             printf 'Usage: hug w <command> [args]\n' >&2;
                  printf 'Commands:\n' >&2;
-                 printf '  diff         Show status with working changes\n' >&2;
-                 printf '  discard      Discard changes to     tracked files\n' >&2;
-                 printf '  discard-all  Discard changes to ALL tracked files\n' >&2;
-                 printf '  wipe         Wipe changes to specific files\n' >&2;
-                 printf '  wipe-all     Wipe changes to ALL tracked files\n' >&2;
-                 printf '  purge        Remove     untracked/ignored files\n' >&2;
-                 printf '  purge-all    Remove ALL untracked/ignored files\n' >&2;
-                 printf '  zap          Factory reset on specific files\n' >&2;
-                 printf '  zap-all      Factory reset on      ALL files\n' >&2;
+                 printf '  discard      Discard changes (Unstaged / Staged) on some tracked files\n' >&2;
+                 printf '  discard-all  Discard changes (Unstaged / Staged) on ALL  tracked files\n' >&2;
+                 printf '  wipe         Wipe both Unstaged + Staged changes on some tracked files\n' >&2;
+                 printf '  wipe-all     Wipe both Unstaged + Staged changes on ALL  tracked files\n' >&2;
+                 printf '  purge        Remove     Untracked / Ignored files\n' >&2;
+                 printf '  purge-all    Remove ALL Untracked / Ignored files\n' >&2;
+                 printf '  zap          Factory reset on some files\n' >&2;
+                 printf '  zap-all      Factory reset on ALL  files\n' >&2;
                  printf '  backup       Stash changes safely\n' >&2;
                  printf '  restore      Restore stashed changes\n' >&2;
                  printf '  get          Get files from specific commit\n' >&2;

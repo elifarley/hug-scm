@@ -1,48 +1,27 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/../lib/hug-common"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # git-w-wipe-all - Wipe all changes to tracked files (staged + unstaged)
 # Part of the Hug tool suite
 # Usage: hug w wipe-all [--dry-run] [-f|--force]
 
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
-
 # Convenience alias: wipe-all == discard-all staged + unstaged
 # exec hug w discard-all -u -s "$@"
-
-confirm() {
-    local message="$1"
-    local expected="$2"
-    local response
-
-    while true; do
-        read -p "$message" response
-        case "$response" in
-            "$expected") exit 0 ;;
-            [Qq]|[Qq][Uu][Ii][Tt]|[Cc][Aa][Nn][Cc][Ee][Ll])
-                printf "Cancelled.\n" >&2
-                exit 0
-                ;;
-            *)
-                printf "Invalid response. Please type '%s' or 'cancel': " "$expected" >&2
-                ;;
-        esac
-    done
-}
 
 # Show help
 show_help() {
     cat << EOF
-w-wipe-all: Wipe all changes to tracked files (staged + unstaged)
+w-wipe-all: Wipe all uncommitted changes to tracked files (staged + unstaged)
 
 USAGE:
     hug w wipe-all [--dry-run] [-f|--force]
 
 DESCRIPTION:
-    Remove ALL staged and unstaged changes to tracked files.
-    This resets your working directory to match the last commit.
-    Does NOT affect untracked files.
+    Remove ALL uncommitted changes (staged and unstaged) on tracked files.
+    This resets your working directory to match HEAD for tracked files.
+    Does NOT affect untracked nor ignored files.
 
 OPTIONS:
     --dry-run      Show what would be wiped without doing it
@@ -66,6 +45,26 @@ SEE ALSO:
     hug w-backup        Backup changes before destructive operations
 
 EOF
+}
+
+confirm() {
+    local message="$1"
+    local expected="$2"
+    local response
+
+    while true; do
+        read -p "$message" response
+        case "$response" in
+            "$expected") exit 0 ;;
+            [Qq]|[Qq][Uu][Ii][Tt]|[Cc][Aa][Nn][Cc][Ee][Ll])
+                printf "Cancelled.\n" >&2
+                exit 0
+                ;;
+            *)
+                printf "Invalid response. Please type '%s' or 'cancel': " "$expected" >&2
+                ;;
+        esac
+    done
 }
 
 # Get all files with changes

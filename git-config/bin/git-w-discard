@@ -21,6 +21,8 @@ Notes:
   • Requires at least one path argument.
   • Use `hug w discard-all` for repository-wide scope.
   • Defaults to unstaged changes only unless -s is supplied as well.
+See also:
+  • `w wipe` (to discard both staged and unstaged uncommitted changes)
 EOF
 }
 

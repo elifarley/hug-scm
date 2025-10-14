@@ -9,7 +9,8 @@ usage() {
   cat <<'EOF'
 Usage: hug w discard-all [OPTIONS]
 
-Discard tracked changes across the entire repository.
+Discard uncommitted changes on all tracked files across the entire working directory.
+All tracked files will match HEAD.
 
 Options:
   -u, --unstaged   Discard unstaged changes (default when no flags provided)
@@ -21,6 +22,8 @@ Options:
 Notes:
   • Without flags, only unstaged changes are discarded.
   • Combine -u and -s to discard both staged and unstaged changes.
+See also:
+  • `w wipe-all` (to discard both staged and unstaged uncommitted changes)
 EOF
 }
 
