@@ -1,17 +1,76 @@
 #!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
 # Part of the Hug tool suite
 
-# Commit staged files.
-# Suggest alternate command if no staged files found.
-test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
-  printf 'c: Commit staged files.\n'
-  printf 'See also:\n  hug ca\n'
+show_help() {
+  cat <<'EOF'
+hug c: Commit staged changes.
+
+USAGE:
+  hug c [OPTIONS]
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+  (All other options are passed directly to 'git commit')
+
+DESCRIPTION:
+  This command commits only the staged changes (use 'hug a' to stage files first).
+  If no changes are staged, it suggests using 'hug ca' (commit all) instead.
+  Common options include -m for a commit message, -v for verbose, --amend to amend the last commit, etc.
+
+EXAMPLES:
+  hug a file.txt          # Stage a file
+  hug c -m "Add feature"  # Commit staged file with message
+  hug c --amend           # Amend the last commit with staged changes
+  hug c -v                # Verbose commit
+
+FURTHER READING:
+  See 'git commit --help' for full Git documentation.
+  For committing all changes (staged and unstaged), use 'hug ca'.
+EOF
+}
+
+error() {
+  printf 'hug c: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+usage_error() {
+  printf 'hug c: %s\n\n' "$1" >&2
+  show_help >&2
   exit 1
 }
 
-test -z "$(git diff --cached --name-only)" && {
-  echo "No staged changes. Use 'hug ca' to commit all tracked changes"
+# Early exit if not in Git repo
+check_git_repo
+
+# Simple arg parsing: handle --help, pass rest to git commit
+while (($#)); do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      # Pass all other args to git commit
+      break
+      ;;
+  esac
+  shift
+done
+
+# Check for staged changes
+if [ -z "$(git diff --cached --name-only 2>/dev/null)" ]; then
+  printf "No staged changes found.\n\n"
+  printf "Suggestions:\n"
+  printf "  - Stage files with 'hug a <files>' or 'hug aa' (all).\n"
+  printf "  - To commit all changes (staged + unstaged), use 'hug ca'.\n"
+  printf "  - For an empty commit, use 'hug c --allow-empty'.\n"
   exit 1
-}
+fi
+
+printf "Committing staged changes...\n"
 git commit "$@"
