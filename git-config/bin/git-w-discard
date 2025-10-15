@@ -3,6 +3,15 @@ CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
+confirm() {
+  local prompt=$1 expected=$2 reply
+  read -r -p "$prompt" reply
+  if [[ "$reply" != "$expected" ]]; then
+    printf 'Cancelled.\n'
+    exit 1
+  fi
+}
+
 # Part of the Hug tool suite
 
 usage() {
@@ -15,6 +24,7 @@ Options:
   -u, --unstaged   Discard unstaged changes only (default when no flags provided)
   -s, --staged     Discard staged changes only (unstaged changes are preserved)
       --dry-run    Show what would be discarded without applying changes
+  -f, --force      Skip confirmation prompt
   -h, --help       Show this help
 
 Notes:
@@ -31,6 +41,7 @@ dry_run=false
 target_unstaged=false
 target_staged=false
 flags_explicit=false
+force=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -46,6 +57,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run)
       dry_run=true
+      shift
+      ;;
+    -f|--force)
+      force=true
       shift
       ;;
     -h|--help)
@@ -167,6 +182,26 @@ if $dry_run; then
     printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
   fi
   exit 0
+fi
+
+if ! $force; then
+  printf '⚠ About to discard the following changes:\n'
+  if [[ ${#staged_paths[@]} -gt 0 ]]; then
+    if $target_staged && ! $target_unstaged; then
+      printf '  Staged paths (unstaged changes in these files would be preserved):\n'
+    else
+      printf '  Staged paths:\n'
+    fi
+    print_list '    ' "${staged_paths[@]}"
+  fi
+  if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
+    printf '  Unstaged paths:\n'
+    print_list '    ' "${unstaged_paths[@]}"
+  fi
+  if $target_staged && $target_unstaged; then
+    printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
+  fi
+  confirm 'Type "discard" to confirm: ' 'discard'
 fi
 
 # Handle both targets: Simple full discard to HEAD for union of affected paths
