@@ -102,8 +102,10 @@ fi
 
 # Main orchestrator for staged-only mode: Loops over files, checks flags, delegates to sub-functions
 handle_staged_only() {
-  local -a staged_paths=("$@")  # Expand array from args
-  local repo_root="$1"  # First arg: repo_root (simplified; no map param needed)
+  local repo_root="$1"  # First arg: repo_root (passed explicitly)
+  shift  # Consume root, leaving paths as remaining args
+
+  local -a staged_paths=("$@")  # Now captures only the expanded paths array
 
   for file in "${staged_paths[@]}"; do
     local has_unstaged_flag=false
@@ -129,7 +131,7 @@ handle_staged_only() {
       continue
     fi
 
-    # Complex case: Has unstaged changes—handle patch reversal
+    # Complex case: Has unstaged changes—handle patch reversal (or merge-file from previous fix)
     local failed_patch=""  # Temp for failure output (scoped to complex path)
     if ! discard_staged_with_unstaged "$file" "$repo_root" failed_patch; then
       exit 1  # Propagate failure (prints already done in sub-function)
@@ -192,6 +194,6 @@ fi
 
 # Handle staged only: remove staged delta while preserving unstaged edits
 if $target_staged && ! $target_unstaged; then
-  handle_staged_only "${staged_paths[@]}" "$repo_root"
+  handle_staged_only "$repo_root" "${staged_paths[@]}"
   exit 0
 fi
