@@ -36,6 +36,10 @@ Type "hug s # Now shows both staged and unstaged on the same file" Sleep 100ms E
 Sleep 100ms Type "# 'S1 U1': 1 staged, 1 unstaged change in example.txt" Sleep 100ms Enter
 Sleep 2s
 
+Type "hug sl # List uncommitted changes (no untracked files shown)" Sleep 100ms Enter
+Sleep 100ms Type "# Shows modified files with status" Sleep 100ms Enter
+Sleep 2s
+
 Type "hug ss # Show diff for staged changes" Sleep 100ms Enter
 Sleep 100ms Type "# Shows the diff of what was staged (first change)" Sleep 100ms Enter
 Sleep 3s
