@@ -79,3 +79,224 @@ check_file_unstaged() {
     fi
 }
 
+# Detects if the staged changes for a file are binary (returns true/false)
+is_binary_staged() {
+  local file="$1"
+  local added deleted
+  local diff_numstat
+
+  diff_numstat="$(git diff --cached --numstat -- "$file" 2>/dev/null || true)"
+  if [[ -n $diff_numstat ]]; then
+    IFS=$'\t' read -r added deleted _ <<<"$diff_numstat"
+    [[ $added == "-" && $deleted == "-" ]]
+  else
+    false  # No staged changes, not binary
+  fi
+}
+
+discard_all_unstaged() {
+  local dry_run=false
+  # Check for --dry-run flag (passed as first argument if present)
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    dry_run=true
+    shift  # Remove the flag
+  fi
+
+  # Ensure we're in a Git repo
+  check_git_repo
+
+  # Check if there are any unstaged changes (modified tracked files)
+  local -a affected_files=()
+  mapfile -t affected_files < <(git diff --name-only 2>/dev/null || true)
+  dedupe_array affected_files
+
+  if [[ ${#affected_files[@]} -eq 0 ]]; then
+    printf 'No unstaged changes to discard in the repository.\n'
+    return 0
+  fi
+
+  if $dry_run; then
+    printf 'Dry run: Would discard unstaged changes from the following files:\n'
+    print_list '  ' "${affected_files[@]}"
+    return 0
+  fi
+
+  # Perform the discard: Restore working tree to index repo-wide (preserves staged)
+  # Using git checkout for reliability; equivalent to git restore --source=: --worktree .
+  if ! git checkout -- . 2>/dev/null; then  # Suppress per-file output; check exit code
+    error "Failed to discard all unstaged changes. Check for submodules or permissions."
+  fi
+
+  printf 'Discarded all unstaged changes from the repository (preserving staged changes).\n'
+  print_list 'Affected files:' "${affected_files[@]}"
+}
+
+discard_unstaged() {
+  local -n paths_ref="$1"  # Nameref to capture the array passed as the first argument (e.g., unstaged_paths)
+  shift  # Remove the array name from arguments, leaving any extras if needed (though not used here)
+
+  if [[ ${#paths_ref[@]} -eq 0 ]]; then
+    return 0  # Nothing to do; early exit
+  fi
+
+  check_git_repo
+
+  if ! git checkout -- "${paths_ref[@]}" 2>/dev/null; then  # Discard unstaged: working tree to index; suppress warnings, check exit
+    error "Failed to discard unstaged changes for the specified paths. Check for submodules or permissions."
+  fi
+
+  print_list 'Discarded unstaged changes from (preserving staged)' "${paths_ref[@]}"
+}
+
+discard_all_uncommitted_changes() {
+  local dry_run=false
+  # Optional first arg: --dry-run (for preview without changes)
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    dry_run=true
+  fi
+
+  # Ensure we're in a Git repo
+  check_git_repo
+
+  # Collect unique affected files: staged + unstaged changes (tracked only)
+  local -a affected_files=()
+  mapfile -t affected_files < <(git diff --name-only --cached . 2>/dev/null || true)
+  local -a unstaged_files=()
+  mapfile -t unstaged_files < <(git diff --name-only . 2>/dev/null || true)
+  # Union into affected_files
+  affected_files+=("${unstaged_files[@]}")
+  dedupe_array affected_files  # From your libraries; removes duplicates
+
+  if [[ ${#affected_files[@]} -eq 0 ]]; then
+    if ! $dry_run; then
+      printf 'No uncommitted changes to discard in the repository.\n'
+    fi
+    return 0
+  fi
+
+  if $dry_run; then
+    printf 'Dry run: Would discard all uncommitted changes from the following files:\n'
+    print_list '  ' "${affected_files[@]}"
+    return 0
+  fi
+
+  # Perform the full repo-wide discard (staged + unstaged) to HEAD
+  if ! git reset --hard HEAD; then
+    error "Failed to discard all uncommitted changes. If submodules are dirty, run: git submodule foreach --recursive git reset --hard HEAD"
+  fi
+
+  printf 'Successfully discarded all uncommitted changes in the repository.\n'
+  print_list 'Affected files:' "${affected_files[@]}"
+  return 0
+}
+
+discard_uncommitted_changes() {
+  local -n target_files_ref="$1"  # Nameref to the array of target paths (caller provides union/deduped list)
+  local dry_run=false
+  # Optional second arg: --dry-run (for preview without changes)
+  if [[ "${2:-}" == "--dry-run" ]]; then
+    dry_run=true
+  fi
+
+  # Ensure we're in a Git repo
+  check_git_repo
+
+  if [[ ${#target_files_ref[@]} -eq 0 ]]; then
+    if ! $dry_run; then
+      printf 'No uncommitted changes to discard for the specified paths.\n'
+    fi
+    return 0
+  fi
+
+  if $dry_run; then
+    printf 'Dry run: Would discard all uncommitted changes from the following paths:\n'
+    print_list '  ' "${target_files_ref[@]}"
+    return 0
+  fi
+
+  # Perform the full discard to HEAD (staged + unstaged)
+  if ! git restore --source=HEAD --staged --worktree -- "${target_files_ref[@]}"; then
+    error "Failed to discard uncommitted changes for the specified paths. Check for conflicts or submodules."
+  fi
+
+  print_list 'Discarded all uncommitted changes from' "${target_files_ref[@]}"
+  return 0
+}
+
+# Discards staged changes for a file with no unstaged changes (simple case)
+discard_staged_no_unstaged() {
+  local file="$1"
+  if ! git restore --source=HEAD --staged --worktree -- "$file"; then
+    error "Failed to discard staged changes for '$file' (no unstaged)."
+  fi
+  printf 'Discarded staged changes from %s\n' "$file"
+}
+
+# Discards staged changes for a file with unstaged changes (non-binary, non-symlink)
+# Handles patch creation, reset, apply (with fallback), cleanup, and errors.
+# Params: file, repo_root, staged_patch (output var for failure paths)
+discard_staged_with_unstaged() {
+  local file="$1"
+  local repo_root="$2"
+  local -n staged_patch_ref="$3"  # Nameref for output on failure (optional)
+
+  local local_file="$repo_root/$file"
+  local staged_patch
+  local sanitized_patch=""
+
+  # Create staged patch
+  staged_patch=$(mktemp -t hug-staged.XXXXXX.patch)
+  trap 'rm -f "'"$staged_patch"'" "'"$sanitized_patch"'"' RETURN  # Cleanup on success/early exit
+
+  if ! git diff --cached --binary -- "$file" > "$staged_patch"; then
+    trap - RETURN
+    rm -f "$staged_patch"
+    error "Failed to capture staged patch for '$file'."
+  fi
+
+  # Reset index to HEAD
+  if ! git reset HEAD -- "$file"; then
+    trap - RETURN
+    rm -f "$staged_patch"
+    error "Failed to reset index entry for '$file'."
+  fi
+
+  local success=false
+  if git apply --reverse --3way --ignore-whitespace --whitespace=nowarn "$staged_patch"; then
+    success=true
+  else
+    sanitized_patch=$(mktemp -t hug-staged-clean.XXXXXX.patch)
+    awk 'NR==2 && /^index / {next} {print}' "$staged_patch" > "$sanitized_patch"
+    if git apply --reverse --ignore-whitespace --whitespace=nowarn "$sanitized_patch"; then
+      success=true
+    fi
+  fi
+
+  if $success; then
+    trap - RETURN  # Disable trap; rm handled below
+    rm -f "$staged_patch"
+    [[ -n $sanitized_patch ]] && rm -f "$sanitized_patch"
+    printf 'Discarded staged changes from %s (unstaged preserved)\n' "$file"
+    return 0
+  else
+    # Failure: Preserve files, disable trap, print guidance
+    trap - RETURN
+    # Set output var for caller if provided
+    if [[ -n "${staged_patch_ref+set}" ]]; then
+      staged_patch_ref="$staged_patch"
+    fi
+    printf 'Failed to strip staged changes from %s.\n' "$file" >&2
+    printf '  • Saved staged diff:    %s\n' "$staged_patch" >&2
+    if [[ -n $sanitized_patch ]]; then
+      printf '  • Sanitized patch copy: %s\n' "$sanitized_patch" >&2
+    fi
+    printf 'You can try manually:\n' >&2
+    printf '  git apply --reverse --3way --ignore-whitespace "%s"\n' "$staged_patch" >&2
+    if [[ -n $sanitized_patch ]]; then
+      printf '  or git apply --reverse --ignore-whitespace "%s"\n' "$sanitized_patch" >&2
+    fi
+    printf 'To restore the original staged change if needed:\n' >&2
+    printf '  git apply "%s"\n  git add -- "%s"\n' "$staged_patch" "$file" >&2
+    return 1  # Non-zero for caller to handle (e.g., exit)
+  fi
+}

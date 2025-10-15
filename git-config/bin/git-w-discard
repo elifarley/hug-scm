@@ -100,6 +100,43 @@ if [[ ${#unstaged_paths[@]} -eq 0 && ${#staged_paths[@]} -eq 0 ]]; then
   exit 0
 fi
 
+# Main orchestrator for staged-only mode: Loops over files, checks flags, delegates to sub-functions
+handle_staged_only() {
+  local -a staged_paths=("$@")  # Expand array from args
+  local repo_root="$1"  # First arg: repo_root (simplified; no map param needed)
+
+  for file in "${staged_paths[@]}"; do
+    local has_unstaged_flag=false
+    # Direct access to global has_unstaged assoc array (no nameref needed)
+    if [[ -n "${has_unstaged[$file]+set}" ]]; then
+      has_unstaged_flag=true
+    fi
+
+    # Early errors for unsafe cases
+    if $has_unstaged_flag && is_binary_staged "$file"; then
+      error "Cannot safely discard staged changes for binary path '$file' while preserving unstaged changes. Please stash or commit the unstaged content first."
+    fi
+
+    local local_file="$repo_root/$file"
+    if $has_unstaged_flag && is_symlink "$local_file"; then
+      error "Cannot safely discard staged changes for symbolic link '$file' while preserving unstaged changes. Please stash or commit the unstaged content first."
+    fi
+
+    # Delegate based on unstaged flag (simple case first)
+    if ! $has_unstaged_flag; then
+      # Simple case: No unstaged changes—direct discard
+      discard_staged_no_unstaged "$file"
+      continue
+    fi
+
+    # Complex case: Has unstaged changes—handle patch reversal
+    local failed_patch=""  # Temp for failure output (scoped to complex path)
+    if ! discard_staged_with_unstaged "$file" "$repo_root" failed_patch; then
+      exit 1  # Propagate failure (prints already done in sub-function)
+    fi
+  done
+}
+
 # For staged-only mode, prepare a map of files with unstaged changes (compute if needed)
 declare -A has_unstaged
 if $target_staged && ! $target_unstaged && [[ $dry_run == false ]]; then
@@ -137,100 +174,24 @@ if $target_staged && $target_unstaged; then
     affected_paths+=("$path")
   done
   dedupe_array affected_paths
-  if [[ ${#affected_paths[@]} -gt 0 ]]; then
-    git restore --source=HEAD --staged --worktree -- "${affected_paths[@]}"
-    print_list 'Discarded all (staged and unstaged) changes from' "${affected_paths[@]}"
-  fi
+
+  # Optional: Pass --dry-run if global $dry_run is true
+  local dry_arg=""
+  [[ $dry_run == true ]] && dry_arg="--dry-run"
+
+  discard_uncommitted_changes affected_paths "$dry_arg"
   exit 0
+
 fi
 
 # Handle unstaged only: Restore WD to index (preserves staged)
 if $target_unstaged && ! $target_staged; then
-  if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
-    git restore --worktree --source=: -- "${unstaged_paths[@]}"
-    print_list 'Discarded unstaged changes from (preserving staged)' "${unstaged_paths[@]}"
-  fi
+  discard_unstaged unstaged_paths # Pass the array name; function handles the rest
   exit 0
 fi
 
 # Handle staged only: remove staged delta while preserving unstaged edits
 if $target_staged && ! $target_unstaged; then
-  for file in "${staged_paths[@]}"; do
-    local_file="$repo_root/$file"
-    has_unstaged_flag=false
-    if [[ -n "${has_unstaged[$file]+set}" ]]; then
-      has_unstaged_flag=true
-    fi
-
-    diff_numstat="$(git diff --cached --numstat -- "$file" 2>/dev/null || true)"
-    added=""
-    deleted=""
-    if [[ -n $diff_numstat ]]; then
-      IFS=$'\t' read -r added deleted _ <<<"$diff_numstat"
-    fi
-    is_binary=false
-    if [[ $added == "-" && $deleted == "-" ]]; then
-      is_binary=true
-    fi
-
-    if $has_unstaged_flag && $is_binary; then
-      error "Cannot safely discard staged changes for binary path '$file' while preserving unstaged changes. Please stash or commit the unstaged content first."
-    fi
-
-    if $has_unstaged_flag && ! $is_binary; then
-      if [[ -L "$local_file" ]]; then
-        error "Cannot safely discard staged changes for symbolic link '$file' while preserving unstaged changes. Please stash or commit the unstaged content first."
-      fi
-
-      unstaged_patch=$(mktemp -t hug-unstaged.XXXXXX)
-      # Ensure the patch file is cleaned up on exit or error
-      # Using a trap for robust cleanup, even if the script exits unexpectedly.
-      trap 'rm -f "'"$unstaged_patch"'"' RETURN
-
-      # Generate a patch containing ONLY the unstaged changes
-      if ! git diff -- "$file" > "$unstaged_patch"; then
-        # This should only fail on very unusual errors.
-        trap - RETURN # Disable trap before erroring out
-        rm -f "$unstaged_patch"
-        error "Failed to generate unstaged patch for '$file'."
-      fi
-
-      # Reset the file completely to HEAD (both index and working tree).
-      # This wipes out both staged and unstaged changes.
-      if ! git restore --source=HEAD --staged --worktree -- "$file"; then
-        trap - RETURN
-        rm -f "$unstaged_patch"
-        error "Failed to reset '$file' to HEAD."
-      fi
-
-      # Apply the previously saved unstaged changes back onto the clean file.
-      # This results in HEAD + unstaged, which is the desired state.
-      if ! git apply --reject --whitespace=nowarn "$unstaged_patch"; then
-        # If git apply fails with conflicts, it creates .rej files.
-        # We check for them to give a more helpful error message.
-        if [[ -f "${local_file}.rej" ]]; then
-          rm -f "${local_file}.rej"
-          trap - RETURN
-          rm -f "$unstaged_patch"
-          error "Failed to apply unstaged changes to '$file'. There might be complex conflicts. Please resolve manually."
-        fi
-        # Other non-merge-conflict errors from git apply
-        trap - RETURN
-        rm -f "$unstaged_patch"
-        error "Failed to apply unstaged patch to '$file'."
-      fi
-
-      # The patch was applied successfully. Clean up is handled by the trap.
-      trap - RETURN # Explicitly remove trap now that we're done with the file.
-      rm -f "$unstaged_patch"
-
-      printf 'Discarded staged changes from %s (unstaged preserved)\n' "$file"
-
-    elif ! $has_unstaged_flag; then
-      # No unstaged changes, simply reset the file completely to HEAD.
-      git restore --source=HEAD --staged --worktree -- "$file"
-      printf 'Discarded staged changes from %s\n' "$file"
-    fi
-  done
+  handle_staged_only "${staged_paths[@]}" "$repo_root"
   exit 0
 fi

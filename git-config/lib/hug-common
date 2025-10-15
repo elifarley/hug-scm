@@ -56,3 +56,9 @@ print_list() {
     printf '  %s\n' "$item"
   done
 }
+
+# Checks if a local file path is a symlink (returns true/false)
+is_symlink() {
+  local local_file="$1"
+  [[ -L "$local_file" ]]
+}
