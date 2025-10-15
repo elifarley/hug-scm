@@ -233,79 +233,77 @@ discard_staged_no_unstaged() {
 }
 
 # Discards staged changes for a file with unstaged changes (non-binary, non-symlink)
-# Uses 3-way merge to apply reverse staged (base=index to other=HEAD) to WD, favoring WD.
-# Params: file, repo_root, failed_tmp (output var for failure, optional)
+# Generates unstaged patch pre-reset, resets to HEAD, applies patch to preserve unstaged.
+# Params: file, repo_root, failed_patch (output var for failure paths, optional)
 discard_staged_with_unstaged() {
   local file="$1"
   local repo_root="$2"
-  local -n failed_tmp_ref="$3"  # Nameref for output on failure (optional)
+  local -n failed_patch_ref="$3"  # Nameref for output on failure (optional)
 
   local local_file="$repo_root/$file"
-  local current_tmp base_tmp other_tmp
-  local status
+  local unstaged_patch sanitized_patch=""
 
-  # Create temps
-  current_tmp=$(mktemp -t hug-discard-current.XXXXXX)
-  base_tmp=$(mktemp -t hug-discard-base.XXXXXX)
-  other_tmp=$(mktemp -t hug-discard-other.XXXXXX)
-  trap 'rm -f "'"$current_tmp"'" "'"$base_tmp"'" "'"$other_tmp"'"' RETURN  # Cleanup on success
+  # Generate unstaged patch BEFORE any reset (from current index to WD)
+  unstaged_patch=$(mktemp -t hug-unstaged.XXXXXX.patch)
+  trap 'rm -f "'"$unstaged_patch"'" "'"$sanitized_patch"'"' RETURN  # Cleanup on success
 
-  # Copy WD to current
-  if ! cp "$local_file" "$current_tmp"; then
+  if ! git diff -- "$file" > "$unstaged_patch"; then
     trap - RETURN
-    rm -f "$current_tmp" "$base_tmp" "$other_tmp"
-    error "Failed to copy working tree for '$file'."
+    rm -f "$unstaged_patch"
+    error "Failed to capture unstaged patch for '$file'."
   fi
 
-  # Base: Original index content (staged version)
-  if ! git show ":$file" > "$base_tmp" 2>/dev/null; then
-    : > "$base_tmp"  # Empty if no index entry (rare, but safe)
-  fi
-
-  # Other: HEAD content
-  if git rev-parse --verify "HEAD:$file" >/dev/null 2>&1; then
-    if ! git show "HEAD:$file" > "$other_tmp"; then
-      trap - RETURN
-      rm -f "$current_tmp" "$base_tmp" "$other_tmp"
-      error "Failed to read HEAD content for '$file'."
-    fi
-  else
-    : > "$other_tmp"  # Empty if new file
-  fi
-
-  # 3-way merge: Apply base→other (reverse staged) to current, favor current (--ours) on conflicts
-  if ! git merge-file --ours --quiet "$current_tmp" "$base_tmp" "$other_tmp"; then
-    status=$?
-    if (( status > 1 )); then  # >1 = fatal error (e.g., I/O, format)
-      trap - RETURN
-      rm -f "$current_tmp" "$base_tmp" "$other_tmp"
-      error "Failed to merge for '$file' (exit $status). Check file format or permissions."
-    fi
-    # Status 1 = conflicts, but --ours should auto-resolve; if not, warn but proceed (favoring WD)
-    printf 'Warning: Conflicts resolved favoring working tree for %s.\n' "$file" >&2
-  fi
-
-  # Reset index to HEAD (discard staged)
-  if ! git restore --source=HEAD --staged -- "$file"; then
+  # Reset both index and WD to HEAD (discard staged + temp WD to "1")
+  if ! git restore --source=HEAD --staged --worktree -- "$file"; then
     trap - RETURN
-    rm -f "$current_tmp" "$base_tmp" "$other_tmp"
-    error "Failed to reset staged changes for '$file'."
+    rm -f "$unstaged_patch"
+    error "Failed to reset '$file' to HEAD."
   fi
 
-  # Overwrite WD with merged result (HEAD + unstaged)
-  mkdir -p "$(dirname "$local_file")"
-  if [[ -e "$local_file" && ! -f "$local_file" ]]; then  # Handle non-files (e.g., dirs, but rare)
-    rm -f "$local_file"
-  fi
-  if [[ -s "$current_tmp" ]]; then
-    cat "$current_tmp" > "$local_file"
+  local success=false
+  # Apply unstaged patch to clean WD (handles missing staged context via 3way/fuzz)
+  if git apply --3way --ignore-whitespace --whitespace=nowarn "$unstaged_patch" 2>/dev/null; then
+    success=true
   else
-    rm -f "$local_file"  # Empty result
+    # Fallback: Sanitized (no index line) for relaxed matching
+    sanitized_patch=$(mktemp -t hug-unstaged-clean.XXXXXX.patch)
+    awk 'NR==2 && /^index / {next} {print}' "$unstaged_patch" > "$sanitized_patch"
+    if git apply --ignore-whitespace --whitespace=nowarn --reject "$sanitized_patch" 2>/dev/null; then
+      # Check for .rej files (conflicts); if any, clean and fail
+      if [[ -f "${local_file}.rej" ]]; then
+        rm -f "${local_file}.rej"
+        success=false
+      else
+        success=true
+      fi
+    fi
   fi
 
-  # Cleanup and success
-  trap - RETURN
-  rm -f "$current_tmp" "$base_tmp" "$other_tmp"
-  printf 'Discarded staged changes from %s (unstaged preserved)\n' "$file"
-  return 0
+  if $success; then
+    trap - RETURN
+    rm -f "$unstaged_patch"
+    [[ -n $sanitized_patch ]] && rm -f "$sanitized_patch"
+    printf 'Discarded staged changes from %s (unstaged preserved)\n' "$file"
+    return 0
+  else
+    # Failure: Preserve files, print guidance
+    trap - RETURN
+    if [[ -n "${failed_patch_ref+set}" ]]; then
+      failed_patch_ref="$unstaged_patch"  # Provide original patch for manual
+    fi
+    printf 'Failed to preserve unstaged changes for %s.\n' "$file" >&2
+    printf '  • Saved unstaged diff: %s\n' "$unstaged_patch" >&2
+    if [[ -n $sanitized_patch ]]; then
+      printf '  • Sanitized patch: %s\n' "$sanitized_patch" >&2
+    fi
+    printf 'You can try manually after resetting:\n' >&2
+    printf '  git restore --source=HEAD --staged --worktree -- "%s"\n' "$file" >&2
+    printf '  git apply --3way --ignore-whitespace "%s"\n' "$unstaged_patch" >&2
+    if [[ -n $sanitized_patch ]]; then
+      printf '  or git apply --ignore-whitespace --reject "%s"\n' "$sanitized_patch" >&2
+    fi
+    printf 'To restore original state:\n' >&2
+    printf '  git cherry-pick --abort  # or manual un-reset\n' "$file" >&2  # Approximate
+    return 1
+  fi
 }
