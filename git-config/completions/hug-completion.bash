@@ -72,6 +72,71 @@ _hug() {
         fi
     fi
 
+    # Handle completion for 'w' gateway subcommands (cword >= 3)
+    if [[ $cword -ge 3 && ${words[1]} == "w" ]]; then
+        local partial_sub="${words[2]}"
+
+        # If cword == 3, possibly completing the subcommand
+        if [[ $cword -eq 3 ]]; then
+            local matching_subs=()
+            for f in "$dir"/git-w-${partial_sub}*; do
+                if [[ -x "$f" ]]; then
+                    local gname=$(basename "$f" | sed "s/^git-w-//")
+                    matching_subs+=("$gname")
+                fi
+            done
+
+            # Filter and unique
+            mapfile -t matching_subs < <(printf '%s\n' "${matching_subs[@]}" | sort -u | sed '/^$/d')
+
+            if [[ ${#matching_subs[@]} -gt 0 ]]; then
+                COMPREPLY=( $(compgen -W "${matching_subs[*]}" -- "$cur" ) )
+                return 0
+            fi
+        fi
+
+        # Assume subcommand is complete, complete for effective
+        local effective_subcmd="w-${words[2]}"
+        if [[ -x "$dir/git-${effective_subcmd}" ]]; then
+            local opts=""
+            local arg_type=""
+
+            case "${words[2]}" in
+                discard)
+                    opts="-u --unstaged -s --staged --dry-run -h --help"
+                    arg_type="f"
+                    ;;
+            esac
+
+            if [[ $cur == -* ]]; then
+                if [[ -n "$opts" ]]; then
+                    local opt_matches=( $(compgen -W "$opts" -- "$cur" ) )
+                    if [[ ${#opt_matches[@]} -gt 0 ]]; then
+                        COMPREPLY=( "${opt_matches[@]}" )
+                        return 0
+                    fi
+                    # No matching options, return empty
+                    COMPREPLY=()
+                    return 0
+                fi
+            else
+                # Non-option arg completion
+                if [[ -n "$arg_type" ]]; then
+                    case "$arg_type" in
+                        f)
+                            if git rev-parse --git-dir > /dev/null 2>&1; then
+                                COMPREPLY=( $( { git diff --name-only --relative "${cur}*" 2>/dev/null || true; git diff --cached --name-only --relative "${cur}*" 2>/dev/null || true; } | sort -u ) )
+                            else
+                                COMPREPLY=()
+                            fi
+                            return 0
+                            ;;
+                    esac
+                fi
+            fi
+        fi
+    fi
+
     # Special completion for 'hug help [prefix]' (for cword >=2)
     if [[ "$subcmd" == "help" ]]; then
         local help_opts="a b c f h l p s sh t w"
