@@ -20,7 +20,8 @@ Options:
   -h, --help       Show this help
 
 Notes:
-  • Without flags, only unstaged changes are discarded.
+  • Without flags, only unstaged changes are discarded (staged changes preserved).
+  • Use --staged to discard only staged changes (unstaged changes preserved).
   • Combine -u and -s to discard both staged and unstaged changes.
 See also:
   • `w wipe-all` (to discard both staged and unstaged uncommitted changes)
@@ -83,57 +84,73 @@ if ! $flags_explicit; then
   target_unstaged=true
 fi
 
-# Early exit if not in Git repo
 check_git_repo
 
-declare -a unstaged_paths=()
-declare -a staged_paths=()
+if $dry_run || ! $force; then
+  declare -a unstaged_paths=() staged_paths=()
+  empty=true
+  if $target_unstaged; then
+    mapfile -t unstaged_paths < <(git diff --name-only 2>/dev/null || true)
+    dedupe_array unstaged_paths
+    [[ ${#unstaged_paths[@]} -gt 0 ]] && empty=false
+  fi
+  if $target_staged; then
+    mapfile -t staged_paths < <(git diff --cached --name-only 2>/dev/null || true)
+    dedupe_array staged_paths
+    [[ ${#staged_paths[@]} -gt 0 ]] && empty=false
+  fi
+  if $empty; then
+    printf 'Working tree already clean for the selected scope.\n'
+    exit 0
+  fi
 
-if $target_unstaged; then
-  mapfile -t unstaged_paths < <(git diff --name-only 2>/dev/null || true)
-  dedupe_array unstaged_paths
-fi
+  if $dry_run; then
+    printf 'Dry run: the following changes would be discarded\n'
+    if [[ ${#staged_paths[@]} -gt 0 ]]; then
+      staged_label='  Staged paths'
+      if $target_staged && ! $target_unstaged; then
+        staged_label='  Staged paths (unstaged changes in these files would be preserved)'
+      fi
+      printf '%s:\n' "$staged_label"
+      print_list '    ' "${staged_paths[@]}"
+    fi
+    if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
+      printf '  Unstaged paths:\n'
+      print_list '    ' "${unstaged_paths[@]}"
+    fi
+    if $target_staged && $target_unstaged; then
+      printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
+    fi
+    exit 0
+  fi
 
-if $target_staged; then
-  mapfile -t staged_paths < <(git diff --cached --name-only 2>/dev/null || true)
-  dedupe_array staged_paths
-fi
-
-if [[ ${#unstaged_paths[@]} -eq 0 && ${#staged_paths[@]} -eq 0 ]]; then
-  printf 'Working tree already clean for the selected scope.\n'
-  exit 0
-fi
-
-if $dry_run; then
-  printf 'Dry run: the following changes would be discarded\n'
+  # Confirmation preview
+  printf '⚠ About to discard the following changes:\n'
   if [[ ${#staged_paths[@]} -gt 0 ]]; then
-    print_list '  Staged paths' "${staged_paths[@]}"
+    staged_label='  Staged paths'
+    if $target_staged && ! $target_unstaged; then
+      staged_label='  Staged paths (unstaged changes in these files would be preserved)'
+    fi
+    printf '%s:\n' "$staged_label"
+    print_list '    ' "${staged_paths[@]}"
   fi
   if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
-    print_list '  Unstaged paths' "${unstaged_paths[@]}"
+    printf '  Unstaged paths:\n'
+    print_list '    ' "${unstaged_paths[@]}"
   fi
-  exit 0
-fi
-
-if ! $force; then
-  printf '⚠ About to discard tracked changes:\n'
-  if [[ ${#staged_paths[@]} -gt 0 ]]; then
-    print_list '  Staged paths' "${staged_paths[@]}"
-  fi
-  if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
-    print_list '  Unstaged paths' "${unstaged_paths[@]}"
+  if $target_staged && $target_unstaged; then
+    printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
   fi
   confirm 'Type "discard-all" to confirm: ' 'discard-all'
 fi
 
-if [[ ${#staged_paths[@]} -gt 0 ]]; then
-  git restore --staged --source=HEAD -- "${staged_paths[@]}"
-  print_list 'Discarded staged changes from' "${staged_paths[@]}"
-fi
-
-if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
-  git restore --worktree --source=HEAD -- "${unstaged_paths[@]}"
-  print_list 'Discarded unstaged changes from' "${unstaged_paths[@]}"
+# Execution
+if $target_staged && $target_unstaged; then
+  discard_all_uncommitted_changes
+elif $target_unstaged; then
+  discard_all_unstaged
+elif $target_staged; then
+  discard_all_staged
 fi
 
 exit 0

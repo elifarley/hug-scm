@@ -336,3 +336,74 @@ discard_staged_with_unstaged() {
     return 1
   fi
 }
+
+discard_all_staged() {
+  local dry_run=false
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    dry_run=true
+    shift
+  fi
+
+  check_git_repo
+
+  local -a staged_paths=()
+  mapfile -t staged_paths < <(git diff --cached --name-only 2>/dev/null || true)
+  dedupe_array staged_paths
+
+  if [[ ${#staged_paths[@]} -eq 0 ]]; then
+    if ! $dry_run; then
+      printf 'No staged changes to discard in the repository.\n'
+    fi
+    return 0
+  fi
+
+  if $dry_run; then
+    printf 'Dry run: Would discard staged changes from the following files (unstaged preserved):\n'
+    for file in "${staged_paths[@]}"; do
+      printf '  %s\n' "$file"
+    done
+    return 0
+  fi
+
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel)"
+
+  # Compute has_unstaged only for staged paths
+  declare -A has_unstaged
+  local -a temp_unstaged_paths=()
+  mapfile -t temp_unstaged_paths < <(git diff --name-only -- "${staged_paths[@]}" 2>/dev/null || true)
+  dedupe_array temp_unstaged_paths
+  for file in "${temp_unstaged_paths[@]}"; do
+    has_unstaged["$file"]=true
+  done
+
+  for file in "${staged_paths[@]}"; do
+    local has_unstaged_flag=false
+    if [[ -n "${has_unstaged[$file]+set}" ]]; then
+      has_unstaged_flag=true
+    fi
+
+    # Early errors for unsafe cases
+    if $has_unstaged_flag && is_binary_staged "$file"; then
+      error "Cannot safely discard staged changes for binary path '$file' while preserving unstaged changes. Please stash or commit the unstaged content first."
+    fi
+
+    local local_file="$repo_root/$file"
+    if $has_unstaged_flag && is_symlink "$local_file"; then
+      error "Cannot safely discard staged changes for symbolic link '$file' while preserving unstaged changes. Please stash or commit the unstaged content first."
+    fi
+
+    if ! $has_unstaged_flag; then
+      discard_staged_no_unstaged "$file"
+      continue
+    fi
+
+    local failed_patch=""
+    if ! discard_staged_with_unstaged "$file" "$repo_root" failed_patch; then
+      exit 1
+    fi
+  done
+
+  printf 'Successfully discarded all staged changes in the repository (unstaged preserved where applicable).\n'
+  return 0
+}
