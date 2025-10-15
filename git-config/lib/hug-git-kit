@@ -233,7 +233,7 @@ discard_staged_no_unstaged() {
 }
 
 # Discards staged changes for a file with unstaged changes (non-binary, non-symlink)
-# Generates unstaged patch pre-reset, resets to HEAD, applies patch to preserve unstaged.
+# Generates unstaged patch pre-reset, resets to HEAD, applies with fallbacks (including fuzz patch).
 # Params: file, repo_root, failed_patch (output var for failure paths, optional)
 discard_staged_with_unstaged() {
   local file="$1"
@@ -241,69 +241,98 @@ discard_staged_with_unstaged() {
   local -n failed_patch_ref="$3"  # Nameref for output on failure (optional)
 
   local local_file="$repo_root/$file"
-  local unstaged_patch sanitized_patch=""
+  local unstaged_patch sanitized_patch rej_file=""
 
   # Generate unstaged patch BEFORE any reset (from current index to WD)
   unstaged_patch=$(mktemp -t hug-unstaged.XXXXXX.patch)
-  trap 'rm -f "'"$unstaged_patch"'" "'"$sanitized_patch"'"' RETURN  # Cleanup on success
+  sanitized_patch=$(mktemp -t hug-unstaged-clean.XXXXXX.patch)  # Pre-create for consistency
+  trap 'rm -f "'"$unstaged_patch"'" "'"$sanitized_patch"'" "$rej_file"' RETURN  # Cleanup on success
 
   if ! git diff -- "$file" > "$unstaged_patch"; then
     trap - RETURN
-    rm -f "$unstaged_patch"
+    rm -f "$unstaged_patch" "$sanitized_patch"
     error "Failed to capture unstaged patch for '$file'."
   fi
+
+  # Sanitize patch (remove index line for relaxed fallbacks)
+  awk 'NR==2 && /^index / {next} {print}' "$unstaged_patch" > "$sanitized_patch"
 
   # Reset both index and WD to HEAD (discard staged + temp WD to "1")
   if ! git restore --source=HEAD --staged --worktree -- "$file"; then
     trap - RETURN
-    rm -f "$unstaged_patch"
+    rm -f "$unstaged_patch" "$sanitized_patch"
     error "Failed to reset '$file' to HEAD."
   fi
 
   local success=false
-  # Apply unstaged patch to clean WD (handles missing staged context via 3way/fuzz)
+  # Primary: Git 3-way apply (uses patch blob refs)
   if git apply --3way --ignore-whitespace --whitespace=nowarn "$unstaged_patch" 2>/dev/null; then
     success=true
   else
-    # Fallback: Sanitized (no index line) for relaxed matching
-    sanitized_patch=$(mktemp -t hug-unstaged-clean.XXXXXX.patch)
-    awk 'NR==2 && /^index / {next} {print}' "$unstaged_patch" > "$sanitized_patch"
+    # Fallback 1: Git 2-way with reject (native, but strict)
     if git apply --ignore-whitespace --whitespace=nowarn --reject "$sanitized_patch" 2>/dev/null; then
-      # Check for .rej files (conflicts); if any, clean and fail
-      if [[ -f "${local_file}.rej" ]]; then
-        rm -f "${local_file}.rej"
-        success=false
+      # Check for .rej (rejected hunk)
+      rej_file="${local_file}.rej"
+      if [[ -f "$rej_file" ]]; then
+        rm -f "$rej_file"
       else
         success=true
+      fi
+    else
+      # Fallback 2: Standard 'patch' command with fuzz (forgiving for missing context)
+      if command -v patch >/dev/null 2>&1; then
+        if patch -p1 --forward --fuzz=3 --ignore-whitespace < "$sanitized_patch" 2>/dev/null; then
+          # Check for .rej (rejected)
+          rej_file="${local_file}.rej"
+          if [[ -f "$rej_file" ]]; then
+            rm -f "$rej_file"
+          else
+            success=true
+          fi
+        fi
       fi
     fi
   fi
 
   if $success; then
     trap - RETURN
-    rm -f "$unstaged_patch"
-    [[ -n $sanitized_patch ]] && rm -f "$sanitized_patch"
+    rm -f "$unstaged_patch" "$sanitized_patch" "$rej_file"
     printf 'Discarded staged changes from %s (unstaged preserved)\n' "$file"
     return 0
   else
-    # Failure: Preserve files, print guidance
+    # Failure: Preserve files, print guidance (clean any markers if present)
     trap - RETURN
+    # Clean conflict markers if inserted (simple regex replace)
+    if grep -q '<<<<<<<' "$local_file" 2>/dev/null; then
+      sed -i '/^<<<<<<< ours/,/^>>>>>>> theirs/d' "$local_file"  # Remove markers, keep original WD content
+      printf 'Warning: Removed conflict markers from %s (manual resolution needed).\n' "$file" >&2
+    fi
     if [[ -n "${failed_patch_ref+set}" ]]; then
       failed_patch_ref="$unstaged_patch"  # Provide original patch for manual
     fi
     printf 'Failed to preserve unstaged changes for %s.\n' "$file" >&2
     printf '  • Saved unstaged diff: %s\n' "$unstaged_patch" >&2
-    if [[ -n $sanitized_patch ]]; then
-      printf '  • Sanitized patch: %s\n' "$sanitized_patch" >&2
+    printf '  • Sanitized patch: %s\n' "$sanitized_patch" >&2
+    # Print sanitized patch contents for immediate inspection
+    printf '\nSanitized patch contents (the unstaged changes that failed to be preserved):\n' >&2
+    cat "$sanitized_patch" >&2
+    printf '\n' >&2
+    # If .rej exists (from --reject), explain and print it
+    rej_file="${local_file}.rej"
+    if [[ -f "$rej_file" ]]; then
+      printf '  • Rejected hunk file: %s (contains parts of the patch that could not be applied automatically)\n' "$rej_file" >&2
+      printf 'Rejected hunk contents:\n' >&2
+      cat "$rej_file" >&2
+      printf '\nTo resolve: Edit the rejected hunk into %s manually, then remove the .rej file.\n' "$local_file" >&2
     fi
     printf 'You can try manually after resetting:\n' >&2
     printf '  git restore --source=HEAD --staged --worktree -- "%s"\n' "$file" >&2
     printf '  git apply --3way --ignore-whitespace "%s"\n' "$unstaged_patch" >&2
-    if [[ -n $sanitized_patch ]]; then
-      printf '  or git apply --ignore-whitespace --reject "%s"\n' "$sanitized_patch" >&2
-    fi
-    printf 'To restore original state:\n' >&2
-    printf '  git cherry-pick --abort  # or manual un-reset\n' "$file" >&2  # Approximate
+    printf '  or patch -p1 --fuzz=3 --ignore-whitespace < "%s"\n' "$sanitized_patch" >&2
+    printf 'If conflicts persist, resolve the .rej file manually.\n' >&2
+    printf 'To restore original state (before command):\n' >&2
+    printf '  git checkout HEAD -- "%s"  # or git restore --source=HEAD --staged --worktree -- "%s"\n' "$file" "$file" >&2
+    printf '  Then re-stage and re-add unstaged manually.\n' >&2
     return 1
   fi
 }

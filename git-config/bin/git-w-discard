@@ -178,7 +178,7 @@ if $target_staged && $target_unstaged; then
   dedupe_array affected_paths
 
   # Optional: Pass --dry-run if global $dry_run is true
-  local dry_arg=""
+  dry_arg=""
   [[ $dry_run == true ]] && dry_arg="--dry-run"
 
   discard_uncommitted_changes affected_paths "$dry_arg"
