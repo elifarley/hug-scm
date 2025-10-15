@@ -106,6 +106,10 @@ _hug() {
                     opts="-u --unstaged -s --staged --dry-run -h --help"
                     arg_type="f"
                     ;;
+                discard-all)
+                    opts="-u --unstaged -s --staged --dry-run -f --force -h --help"
+                    arg_type=""
+                    ;;
             esac
 
             if [[ $cur == -* ]]; then
