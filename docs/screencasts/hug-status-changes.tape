@@ -6,50 +6,44 @@ Require hug
 Set Shell "fish"
 Set FontSize 24
 Set Width 940
-Set Height 500
+Set Height 1000
 Set Margin 0
 Set Theme "Afterglow"
 
 Hide
-Type '#PS1="> "' Enter
-Type 'cd /tmp/demo' Enter
+Type 'xxx_PS1="> "' Enter
+Type 'cd /tmp/demo && hug zap-all -f' Enter
 Type "clear" Enter
-# Assume a clean git repo with no changes
-Type 'echo "initial content" > example.txt' Enter
-Sleep 100 ms
 Show
 
-Set TypingSpeed 40ms
-Type "hug s # Initial status: no changes" Sleep 100ms Enter
-Sleep 2s
+Set TypingSpeed 20ms
+Type@60ms "hug sl # sl is for (S)tatus + (L)ist uncommitted" Sleep 100ms Enter
+Sleep 3s
+Type@0s '#' Enter
+Type 'echo "Will be STAGED" > example.txt' Enter
+Type@60ms "hug a example.txt # (A)dd file to staging area" Sleep 100ms Enter
+Sleep 100 ms
+Type@60ms "hug sl # Now shows 1 staged change" Sleep 100ms Enter
+Sleep 3s
 
-Type "echo 'first change' >> example.txt" Sleep 100ms Enter
-Type "hug a example.txt # Stage the file" Sleep 100ms Enter
+Type@0s '#' Enter
+Type "echo 'This will stay UNstaged' >> example.txt" Sleep 100ms Enter
 Sleep 200ms
-Type "hug s # Now shows 1 staged change" Sleep 100ms Enter
-Sleep 100ms Type "# Green 'S1': 1 (S)taged file" Sleep 100ms Enter
-Sleep 2s
+Type@60ms "hug sl # Now shows both staged and unstaged on the same file" Sleep 100ms Enter
+Sleep 3s
 
-Type "echo 'second unstaged change' >> example.txt" Sleep 100ms Enter
-Sleep 200ms
-Type "hug s # Now shows both staged and unstaged on the same file" Sleep 100ms Enter
-Sleep 100ms Type "# 'S1 U1': 1 staged, 1 unstaged change in example.txt" Sleep 100ms Enter
-Sleep 2s
-
-Type "hug sl # List uncommitted changes (no untracked files shown)" Sleep 100ms Enter
-Sleep 100ms Type "# Shows modified files with status" Sleep 100ms Enter
-Sleep 2s
-
-Type "hug ss # Show diff for staged changes" Sleep 100ms Enter
+Type@0s '#' Enter
+Type@60ms "hug ss # (S)tatus + (S)taged changes" Sleep 100ms Enter
 Sleep 100ms Type "# Shows the diff of what was staged (first change)" Sleep 100ms Enter
 Sleep 3s
 
-Type "hug su # Show diff for unstaged changes" Sleep 100ms Enter
+Type@0s '#' Enter
+Type@60ms "hug su # (S)tatus + (U)nstaged changes" Sleep 100ms Enter
 Sleep 100ms Type "# Shows the diff of unstaged changes (second change)" Sleep 100ms Enter
 Sleep 3s
 
-Type "hug sw # Show diff for working directory changes (staged + unstaged)" Sleep 100ms Enter
+Type@0s '#' Enter
+Type@60ms "hug sw # (S)tatus + (W)orking directory changes (staged + unstaged)" Sleep 100ms Enter
 Sleep 100ms Type "# Shows the full diff from HEAD (both changes combined)" Sleep 100ms Enter
-Sleep 3s
-
 Sleep 10s
+
