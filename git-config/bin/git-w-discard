@@ -12,15 +12,16 @@ Usage: hug w discard [OPTIONS] <path> [<path>...]
 Discard tracked changes for the given paths.
 
 Options:
-  -u, --unstaged   Discard unstaged changes (default when no flags provided)
-  -s, --staged     Discard staged changes
+  -u, --unstaged   Discard unstaged changes only (default when no flags provided)
+  -s, --staged     Discard staged changes only (unstaged changes are preserved)
       --dry-run    Show what would be discarded without applying changes
   -h, --help       Show this help
 
 Notes:
   • Requires at least one path argument.
   • Use `hug w discard-all` for repository-wide scope.
-  • Defaults to unstaged changes only unless -s is supplied as well.
+  • When discarding staged changes, any unstaged changes in those files are preserved (WD = committed + unstaged).
+  • When discarding both, all uncommitted changes are discarded (WD and index = committed).
 See also:
   • `w wipe` (to discard both staged and unstaged uncommitted changes)
 EOF
@@ -77,6 +78,7 @@ if [[ $# -lt 1 ]]; then
 fi
 
 check_git_repo
+repo_root="$(git rev-parse --show-toplevel)"
 
 paths=("$@")
 
@@ -98,25 +100,137 @@ if [[ ${#unstaged_paths[@]} -eq 0 && ${#staged_paths[@]} -eq 0 ]]; then
   exit 0
 fi
 
+# For staged-only mode, prepare a map of files with unstaged changes (compute if needed)
+declare -A has_unstaged
+if $target_staged && ! $target_unstaged && [[ $dry_run == false ]]; then
+  mapfile -t temp_unstaged_paths < <(git diff --name-only -- "${paths[@]}" 2>/dev/null || true)
+  dedupe_array temp_unstaged_paths
+  for file in "${temp_unstaged_paths[@]}"; do
+    has_unstaged["$file"]=true
+  done
+fi
+
 if $dry_run; then
   printf 'Dry run: the following changes would be discarded\n'
   if [[ ${#staged_paths[@]} -gt 0 ]]; then
-    print_list '  Staged paths' "${staged_paths[@]}"
+    if $target_staged && ! $target_unstaged; then
+      printf '  Staged paths (unstaged changes in these files would be preserved):\n'
+    else
+      printf '  Staged paths:\n'
+    fi
+    print_list '    ' "${staged_paths[@]}"
   fi
   if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
-    print_list '  Unstaged paths' "${unstaged_paths[@]}"
+    printf '  Unstaged paths:\n'
+    print_list '    ' "${unstaged_paths[@]}"
+  fi
+  if $target_staged && $target_unstaged; then
+    printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
   fi
   exit 0
 fi
 
-if [[ ${#staged_paths[@]} -gt 0 ]]; then
-  git restore --staged --source=HEAD -- "${staged_paths[@]}"
-  print_list 'Discarded staged changes from' "${staged_paths[@]}"
+# Handle both targets: Simple full discard to HEAD for union of affected paths
+if $target_staged && $target_unstaged; then
+  declare -a affected_paths=("${unstaged_paths[@]}")
+  for path in "${staged_paths[@]}"; do
+    affected_paths+=("$path")
+  done
+  dedupe_array affected_paths
+  if [[ ${#affected_paths[@]} -gt 0 ]]; then
+    git restore --source=HEAD --staged --worktree -- "${affected_paths[@]}"
+    print_list 'Discarded all (staged and unstaged) changes from' "${affected_paths[@]}"
+  fi
+  exit 0
 fi
 
-if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
-  git restore --worktree --source=HEAD -- "${unstaged_paths[@]}"
-  print_list 'Discarded unstaged changes from' "${unstaged_paths[@]}"
+# Handle unstaged only: Restore WD to index (preserves staged)
+if $target_unstaged && ! $target_staged; then
+  if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
+    git restore --worktree --source=: -- "${unstaged_paths[@]}"
+    print_list 'Discarded unstaged changes from (preserving staged)' "${unstaged_paths[@]}"
+  fi
+  exit 0
 fi
 
-exit 0
+# Handle staged only: remove staged delta while preserving unstaged edits
+if $target_staged && ! $target_unstaged; then
+  for file in "${staged_paths[@]}"; do
+    local_file="$repo_root/$file"
+    has_unstaged_flag=false
+    if [[ -n "${has_unstaged[$file]+set}" ]]; then
+      has_unstaged_flag=true
+    fi
+
+    diff_numstat="$(git diff --cached --numstat -- "$file" 2>/dev/null || true)"
+    added=""
+    deleted=""
+    if [[ -n $diff_numstat ]]; then
+      IFS=$'\t' read -r added deleted _ <<<"$diff_numstat"
+    fi
+    is_binary=false
+    if [[ $added == "-" && $deleted == "-" ]]; then
+      is_binary=true
+    fi
+
+    if $has_unstaged_flag && $is_binary; then
+      error "Cannot safely discard staged changes for binary path '$file' while preserving unstaged changes. Please stash or commit the unstaged content first."
+    fi
+
+    if $has_unstaged_flag && ! $is_binary; then
+      if [[ -L "$local_file" ]]; then
+        error "Cannot safely discard staged changes for symbolic link '$file' while preserving unstaged changes. Please stash or commit the unstaged content first."
+      fi
+
+      unstaged_patch=$(mktemp -t hug-unstaged.XXXXXX)
+      # Ensure the patch file is cleaned up on exit or error
+      # Using a trap for robust cleanup, even if the script exits unexpectedly.
+      trap 'rm -f "'"$unstaged_patch"'"' RETURN
+
+      # Generate a patch containing ONLY the unstaged changes
+      if ! git diff -- "$file" > "$unstaged_patch"; then
+        # This should only fail on very unusual errors.
+        trap - RETURN # Disable trap before erroring out
+        rm -f "$unstaged_patch"
+        error "Failed to generate unstaged patch for '$file'."
+      fi
+
+      # Reset the file completely to HEAD (both index and working tree).
+      # This wipes out both staged and unstaged changes.
+      if ! git restore --source=HEAD --staged --worktree -- "$file"; then
+        trap - RETURN
+        rm -f "$unstaged_patch"
+        error "Failed to reset '$file' to HEAD."
+      fi
+
+      # Apply the previously saved unstaged changes back onto the clean file.
+      # This results in HEAD + unstaged, which is the desired state.
+      if ! git apply --reject --whitespace=nowarn "$unstaged_patch"; then
+        # If git apply fails with conflicts, it creates .rej files.
+        # We check for them to give a more helpful error message.
+        if [[ -f "${local_file}.rej" ]]; then
+          rm -f "${local_file}.rej"
+          trap - RETURN
+          rm -f "$unstaged_patch"
+          error "Failed to apply unstaged changes to '$file'. There might be complex conflicts. Please resolve manually."
+        fi
+        # Other non-merge-conflict errors from git apply
+        trap - RETURN
+        rm -f "$unstaged_patch"
+        error "Failed to apply unstaged patch to '$file'."
+      fi
+
+      # The patch was applied successfully. Clean up is handled by the trap.
+      trap - RETURN # Explicitly remove trap now that we're done with the file.
+      rm -f "$unstaged_patch"
+
+      printf 'Discarded staged changes from %s (unstaged preserved)\n' "$file"
+
+    elif ! $has_unstaged_flag; then
+      # No unstaged changes, simply reset the file completely to HEAD.
+      git restore --source=HEAD --staged --worktree -- "$file"
+      printf 'Discarded staged changes from %s\n' "$file"
+    fi
+  done
+  exit 0
+fi
