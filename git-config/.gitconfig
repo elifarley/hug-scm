@@ -40,28 +40,14 @@
   ll = log --graph --pretty=log1 --date=short
 
   # All branches
-  la = "!f() { git ll --all \"$@\"; }; f"
-
-  # Log commits to a file
-  llf = "!f() { \
-    test $# -eq 0 -o \"$1\" = '-h' -o \"$1\" = '--help' && { \
-      printf 'llf: Log commits to a file.\n-p: show patches.\nUsage: git llf <file> [-p]' >&2; return 1; }; \
-    t=\"$1\"; shift; \
-    git ll \"$@\" --follow -- \"$GIT_PREFIX$t\"; \
-  }; f"
-
-  # Complete file log with diffs (follows renames)
-  llfp = "!f() { f=\"$1\"; shift; git llf \"$f\" -p \"$@\"; }; f"
-
-  # File change statistics (usage: git file-stats <file>)
-  llfs = "!f() { f=\"$1\"; shift; git llf \"$f\" --stat \"$@\"; }; f"
+  la = "!f() { hug ll --all \"$@\"; }; f"
 
   # Search commits by message
   lf = "!f() { \
     test $# -eq 0 -o \"$1\" = '-h' && { \
-      printf '\nlf: Search commits by MESSAGE.\n-i: Ignore case.\n-p: Show patches.\n--all: Consider ALL branches.\nUsage: git lf <search-term> [-ip] [--all]' >&2; return 1; }; \
+      printf 'hug lf: Search commits by MESSAGE.\n-i: Ignore case.\n-p: Show patches.\n--all: Consider ALL branches.\nUsage: git lf <search-term> [-ip] [--all]' >&2; return 1; }; \
     t=\"$1\"; shift; \
-    git ll --grep=\"$t\" \"$@\"; \
+    hug ll --grep=\"$t\" \"$@\"; \
   }; f"
 
   # Ex: Search in specific file
@@ -173,6 +159,7 @@
   undo = h undo
   rollback = h rollback
   rewind = h rewind
+  files = h files
 
   # ═══════════════════════════════════════════════════════════════════
   #  Working directory (w-*)

@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << EOF
+hug h files: Preview files touched by commits you'd rewind/back (HEAD range).
+
+USAGE:
+    hug h files [N|COMMIT] [OPTIONS]
+
+OPTIONS:
+    --stat     Show aggregate line stats per file
+    -h, --help Show this help
+
+DESCRIPTION:
+    Lists unique files changed in the range (default: last 1 commit).
+    Use before 'h back N' or 'h rewind COMMIT' to see affected files.
+
+EXAMPLES:
+    hug h files 3          # Files in last 3 commits
+    hug h files main       # Files changed after 'main' to HEAD
+    hug h files --stat     # With stats (default range)
+
+SEE ALSO:
+    h back    : Actually perform the rewind (keep staged)
+    h rewind  : Destructive rewind
+EOF
+}
+
+with_stat=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) show_help; exit 0 ;;
+    --stat) with_stat=true; shift ;;
+    *) break ;;
+  esac
+done
+
+target="${1:-HEAD~1}"
+if [[ "$target" =~ ^[1-9][0-9]*$ ]]; then
+  start_point="HEAD~$target"
+else
+  start_point="$target"
+fi
+range="$start_point..HEAD"
+
+check_git_repo
+if ! git rev-parse --verify "$start_point" >/dev/null 2>&1; then
+  error "Invalid target '$target' (use N or commit ref)"
+fi
+
+files=$(git log --name-only --pretty=format: "$range" | grep -v '^$' | sort -u)
+if [[ -z "$files" ]]; then
+  info "No files touched in range $range."
+  exit 0
+fi
+
+count=$(echo "$files" | wc -l)
+warning "These $count files would be affected by moving HEAD to $start_point (e.g., via 'h back' or 'h rewind')."
+
+if $with_stat; then
+  echo "$files" | while read -r file; do
+    stats=$(git diff --stat "$range" -- "$file" 2>/dev/null | tail -1 || echo "(no stats)")
+    printf "  ${GREEN}%s${NC} %s\n" "$file" "$stats"
+  done
+else
+  echo "$files" | sed 's/^/  /'
+fi

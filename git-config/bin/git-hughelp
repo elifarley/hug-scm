@@ -42,6 +42,16 @@ while IFS== read -r name def; do
   fi
 done < <(git config --list | grep "^alias\.${prefix}" | cut -c 7- | sort)
 
+# If prefix is 'l', add tips for common file history queries
+if [[ "$prefix" == "l" ]]; then
+  echo ""
+  echo "Tips for file history (use with llf/llfp/llfs):"
+  echo "  llf <file> -1     # Most recent commit touching file"
+  echo "  llf <file> -N     # Last N commits for file"
+  echo "  llfp <file> -1    # Patch of most recent change"
+  echo "  llfs <file> -1    # Stats for most recent"
+fi
+
 # Collect script commands starting with prefix (exclude exact prefix)
 scripts=()
 if [ -d "$dir" ]; then
@@ -63,4 +73,15 @@ else
   for cmd in "${all_commands[@]}"; do
     echo "  hug $cmd"
   done
+fi
+
+# Special handling for gateways like h, w, etc. - add subcommands if prefix is a gateway
+if [[ "$prefix" == "h" ]]; then
+  echo ""
+  echo "h* subcommands (HEAD operations):"
+  echo "  back     - Move HEAD back, keep staged"
+  echo "  files    - Preview files touched by commits to rewind"
+  echo "  rollback - Rollback commit, preserve local work"
+  echo "  rewind   - Rewind to clean state (destructive)"
+  echo "  undo     - Move HEAD back, unstage changes"
 fi
