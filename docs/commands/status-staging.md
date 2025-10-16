@@ -11,7 +11,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
   - **Description**: Quick colored summary of staged/unstaged changes (no untracked files).
   - **Example**: `hug s` (always safe, no args).
 
-- `hug sl`: **S**tatus + **L**ist of uncommitted files)
+- ```hug sl`: **S**tatus + **L**ist of uncommitted files)``
   - **Description**: Status without untracked files (Git-like).
   - **Example**: `hug sl`
 
