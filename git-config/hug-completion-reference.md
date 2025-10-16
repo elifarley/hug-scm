@@ -228,7 +228,7 @@ Subcommands (gateway to specific scripts):
 - `hughelp [<prefix>]`: Smart help for prefix. Args: `[<prefix>]` (optional). No options.
 
 ## 3. General Completion Rules
-- **Files/Paths**: Complete from `git ls-files --cached --others --exclude-standard` or `git status --porcelain=v1 --name-only`.
+- **Files/Paths**: Complete using prefix match for unmodified tracked + substring match for modified and untracked (focus on active changes)
 - **Commits/Refs**: Complete from `git rev-parse --symbolic-full-name --branches --tags --remotes` or hashes via `git rev-list --all --abbrev-ref=short`.
 - **Branches**: `git branch --list`.
 - **Tags**: `git tag --list`.
