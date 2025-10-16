@@ -7,7 +7,23 @@
     description: "Documentation for Hug, a Humane Git CLI",
     themeConfig: {
       search: {
-        provider: 'local'
+        provider: 'local',
+        options: {
+          translations: {
+            button: {
+              buttonText: 'Search Hug commands and docs...'
+            },
+            modal: {
+              searchBox: {
+                leftPlaceholder: 'Search for commands or guides'
+              },
+              noResultsText: {
+                noResultsText: 'No results found for',
+                suggestedQueryText: 'Try searching for'
+              }
+            }
+          }
+        }
       },
       nav: [
         { text: 'Home', link: '/' },
