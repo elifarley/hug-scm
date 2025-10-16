@@ -19,7 +19,8 @@ Dive into detailed guides for command groups:
 - [Branching (b*): Switch, list, and manage branches](/commands/branching)
 - [Commits (c*): Create and amend commits](/commands/commits)
 - [Logging (l*): Search and view history](/commands/logging)
-
+- [File Inspection (f*): Analyze file authorship and history](/commands/file-inspection)
+ 
 ### Tips for Common Queries
 - **Most recent commit touching a file**: Use `hug llf <file> -1` to get the latest commit modifying a specific file (handles renames with `--follow`). For multiple files, run separately and compare timestamps, or use `hug llf file1 -1` and `hug llf file2 -1`.
 - **Last N commits for a file**: `hug llf <file> -N` (e.g., `-2` for last 2). Use `hug llfp <file> -1` for patches or `hug llfs <file> -1` for changes.

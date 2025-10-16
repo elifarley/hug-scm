@@ -132,7 +132,7 @@ These commands show the history of changes to a specific file, following renames
 - **Last N commits for a file**: `hug llf <file> -N` (e.g., `-2` for last 2). Use `hug llfs <file> -1` for stats or `hug llfp <file> -1` for patches.
 - **Search history by file changes**: Combine with `lf` or `lc` for message/code searches restricted to file touches, e.g., `hug lc "TODO" -- file.txt`.
 - Pipe to pager for long outputs: `hug ll | less`.
-- For line-level inspection (blame), see [File Inspection aliases](https://github.com/your-repo/.gitconfig) like `hug fblame <file>`.
+- For line-level inspection (blame), see [File Inspection](/commands/file-inspection) like `hug fblame <file>`.
 - Use `hug la` or `hug ll --all` to search across branches.
 
 Pair logging with [Status & Staging](/commands/status-staging) to inspect changes, or [HEAD Operations](/commands/head) to undo based on history.

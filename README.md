@@ -157,6 +157,7 @@ Prefix|Category|Description
 `b*`|Branching|Create, switch, manage branches
 `t*`|Tagging|Create, manage tags
 `l*`|Logging|View history, list matching commits for a search term
+`f*`|File Inspection|Analyze file authorship and history (blame, contributors)
 
 ### Core Commands
 
