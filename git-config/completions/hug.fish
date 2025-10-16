@@ -11,7 +11,7 @@ complete -c hug -n 'test (count $argv) -eq 2; and test $argv[2] = h' -f -a "back
 complete -c hug -n 'test (count $argv) -gt 3; and contains -- $argv[2] back undo rollback rewind; and string match -qrv -- "^-" $argv[-1]' -f -a "(begin
     set -l prefix $argv[-1]
     set -l prefix_regex (string escape --style=regex -- $prefix)
-    if string match -qr \"^[0-9]+$\" -- $prefix
+    if string match -qr '^[0-9]+$' -- $prefix
         printf '%s\n' 1 2 3 4 5 6 7 8 9 10
     else
         string match -r \"^$prefix_regex\" -- (string replace -r '^[* ] ' '' -- (git branch --list 2>/dev/null))
@@ -31,23 +31,23 @@ complete -c hug -n 'test (count $argv) -gt 3; and test $argv[2] = backup; and te
 complete -c hug -n 'test (count $argv) -eq 3; and test $argv[2] = get' -f -a "(git log --oneline --format='%h' 2>/dev/null | string split ' ' | string match -v '' | string match -r '^$argv[3].*'; or git branch --list $argv[3]* 2>/dev/null; or git tag --list $argv[3]* 2>/dev/null | sort -u)"
 
 # Options for 'w discard/discards-all/etc.' (hug w discard <TAB>)
-complete -c hug -n 'test (count $argv) -eq 3; and contains -- $argv[2] discard discard-all purge purge-all wipe wipe-all zap zap-all; and string match -q '^-' $argv[3]' -f -a "-h --help --dry-run -f --force"
-complete -c hug -n 'test (count $argv) -eq 3; and contains -- $argv[2] purge purge-all; and string match -q '^-' $argv[3]' -f -s u -l untracked -d "Untracked files only"
-complete -c hug -n 'test (count $argv) -eq 3; and contains -- $argv[2] purge purge-all; and string match -q '^-' $argv[3]' -f -s i -l ignored -d "Ignored files only"
-complete -c hug -n 'test (count $argv) -eq 3; and contains -- $argv[2] discard discard-all; and string match -q '^-' $argv[3]' -f -s u -l unstaged -d "Unstaged changes only"
-complete -c hug -n 'test (count $argv) -eq 3; and contains -- $argv[2] discard discard-all; and string match -q '^-' $argv[3]' -f -s s -l staged -d "Staged changes only"
+complete -c hug -n 'test (count $argv) -eq 3; and contains -- $argv[2] discard discard-all purge purge-all wipe wipe-all zap zap-all; and string match -q "-*" $argv[3]' -f -a "-h --help --dry-run -f --force"
+complete -c hug -n 'test (count $argv) -eq 3; and contains -- $argv[2] purge purge-all; and string match -q "-*" $argv[3]' -f -s u -l untracked -d "Untracked files only"
+complete -c hug -n 'test (count $argv) -eq 3; and contains -- $argv[2] purge purge-all; and string match -q "-*" $argv[3]' -f -s i -l ignored -d "Ignored files only"
+complete -c hug -n 'test (count $argv) -eq 3; and contains -- $argv[2] discard discard-all; and string match -q "-*" $argv[3]' -f -s u -l unstaged -d "Unstaged changes only"
+complete -c hug -n 'test (count $argv) -eq 3; and contains -- $argv[2] discard discard-all; and string match -q "-*" $argv[3]' -f -s s -l staged -d "Staged changes only"
 
 # Files/paths for 'w' subcommands (e.g., hug w discard <files>)
 complete -c hug -n 'test (count $argv) -gt 4; and test $argv[2] = w; and contains -- $argv[3] discard discard-all purge purge-all wipe wipe-all zap zap-all; and string match -qrv -- "^-" $argv[-1]' -f -a "(git ls-files --others --exclude-standard -- $argv[-1]* 2>/dev/null; or git status --porcelain=v1 --name-only | string match -r '^$argv[-1].*' 2>/dev/null | sort -u)"
 
 # Branch completion for branch-related commands (e.g., hug b <TAB>)
-complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null)'; and contains -- $argv[2] b bc br bdel bdelf bdelr sbranch' -f -a "(git branch --list $argv[-1]* 2>/dev/null | string replace -r '^[* ] ' '' | string match -v '^$' | sort -u)"
+complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null); and contains -- $argv[2] b bc br bdel bdelf bdelr sbranch' -f -a "(git branch --list $argv[-1]* 2>/dev/null | string replace -r '^[* ] ' '' | string match -v '^$' | sort -u)"
 
 # Tag completion for tag-related commands (e.g., hug t <TAB>)
-complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null)'; and contains -- $argv[2] t tc ta ts tr tm tma tdel tdelr tco' -f -a "(git tag --list $argv[-1]* 2>/dev/null | sort -u)"
+complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null); and contains -- $argv[2] t tc ta ts tr tm tma tdel tdelr tco' -f -a "(git tag --list $argv[-1]* 2>/dev/null | sort -u)"
 
 # File completion for file-taking commands (e.g., hug a <TAB>, hug fblame <TAB>)
-complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null)'; and contains -- $argv[2] a us llf llfp llfs fblame fb fcon fa fborn shf ss su sw' -f -a "(git ls-files -- $argv[-1]* 2>/dev/null; or git status --porcelain=v1 --name-only | string match -r '^$argv[-1].*' 2>/dev/null | sort -u)"
+complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null); and contains -- $argv[2] a us llf llfp llfs fblame fb fcon fa fborn shf ss su sw' -f -a "(git ls-files -- $argv[-1]* 2>/dev/null; or git status --porcelain=v1 --name-only | string match -r '^$argv[-1].*' 2>/dev/null | sort -u)"
 
 # Ref/commit completion for log/show/cherry-pick/HEAD commands (e.g., hug l <TAB> for partial hashes, hug cc <TAB>)
 complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null)'; and contains -- $argv[2] l ll la lf lc lcr lau ld lp sh shp shc sl sla sli cc h-back h-undo h-rollback h-rewind' -f -a "(begin
