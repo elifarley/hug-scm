@@ -8,10 +8,10 @@ complete -c hug -f -a "a aa ai ap alias b bs bl bla blr bc br bdel bdelf bdelr b
 complete -c hug -n 'test (count $argv) -eq 2; and test $argv[2] = h' -f -a "back undo rollback rewind"
 
 # Args for 'h' subcommands (e.g., hug h back <TAB> for refs/numbers)
-complete -c hug -n 'test (count $argv) -gt 3; and contains -- $argv[2] back undo rollback rewind; and string match -qrv -- "^-" $argv[-1]' -f -a "(begin
+complete -c hug -n 'test (count $argv) -gt 3; and contains -- $argv[2] back undo rollback rewind; and string match -q -r -v -- "^-" $argv[-1]' -f -a "(begin
     set -l prefix $argv[-1]
     set -l prefix_regex (string escape --style=regex -- $prefix)
-    if string match -qr '^[0-9]+$' -- $prefix
+    if string match -q -r '^[0-9]+$' -- $prefix
         printf '%s\n' 1 2 3 4 5 6 7 8 9 10
     else
         string match -r \"^$prefix_regex\" -- (string replace -r '^[* ] ' '' -- (git branch --list 2>/dev/null))
@@ -38,7 +38,7 @@ complete -c hug -n 'test (count $argv) -eq 3; and contains -- $argv[2] discard d
 complete -c hug -n 'test (count $argv) -eq 3; and contains -- $argv[2] discard discard-all; and string match -q "-*" $argv[3]' -f -s s -l staged -d "Staged changes only"
 
 # Files/paths for 'w' subcommands (e.g., hug w discard <files>)
-complete -c hug -n 'test (count $argv) -gt 4; and test $argv[2] = w; and contains -- $argv[3] discard discard-all purge purge-all wipe wipe-all zap zap-all; and string match -qrv -- "^-" $argv[-1]' -f -a "(git ls-files --others --exclude-standard -- $argv[-1]* 2>/dev/null; or git status --porcelain=v1 --name-only | string match -r '^$argv[-1].*' 2>/dev/null | sort -u)"
+complete -c hug -n 'test (count $argv) -gt 4; and test $argv[2] = w; and contains -- $argv[3] discard discard-all purge purge-all wipe wipe-all zap zap-all; and string match -q -r -v -- "^-" $argv[-1]' -f -a "(git ls-files --others --exclude-standard -- $argv[-1]* 2>/dev/null; or git status --porcelain=v1 --name-only | string match -r '^$argv[-1].*' 2>/dev/null | sort -u)"
 
 # Branch completion for branch-related commands (e.g., hug b <TAB>)
 complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null); and contains -- $argv[2] b bc br bdel bdelf bdelr sbranch' -f -a "(git branch --list $argv[-1]* 2>/dev/null | string replace -r '^[* ] ' '' | string match -v '^$' | sort -u)"
@@ -51,7 +51,7 @@ complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null); and contains 
 
 # Ref/commit completion for log/show/cherry-pick/HEAD commands (e.g., hug l <TAB> for partial hashes, hug cc <TAB>)
 complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null)'; and contains -- $argv[2] l ll la lf lc lcr lau ld lp sh shp shc sl sla sli cc h-back h-undo h-rollback h-rewind' -f -a "(begin
-    if string match -qr '^[0-9a-f]{3,}$' $argv[-1]
+    if string match -q -r '^[0-9a-f]{3,}$' -- $argv[-1]
         git rev-list --all --abbrev-commit 2>/dev/null | string match -r '^$argv[-1]'
     else
         git branch --list $argv[-1]* 2>/dev/null; or git tag --list $argv[-1]* 2>/dev/null; or git rev-list --all --abbrev-ref=short 2>/dev/null | sort -u
