@@ -16,6 +16,6 @@ Dive into detailed guides for command groups:
 - [HEAD Operations (h*): Undo and rewind commits](/commands/head)
 - [Working Directory (w*): Clean up changes](/commands/working-dir)
 - [Status & Staging (s*, a*): View and stage files](/commands/status-staging)
-- [Branching (b*): Manage branches](/commands/branching)
+- [Branching (b*): Switch, list, and manage branches](/commands/branching)
 - [Commits (c*): Create and amend commits](/commands/commits)
 - [Logging (l*): Search and view history](/commands/logging)

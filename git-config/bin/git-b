@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat <<'EOF'
+hug b: Switch to a local branch, with interactive detailed menu if no args supplied.
+
+USAGE:
+  hug b [branch]
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  If a branch name is provided, switches to it directly.
+  If no arguments are given, displays a numbered interactive menu of local branches.
+  Each entry shows: branch name (short hash) [upstream tracking info], followed by the commit subject.
+  The current branch is highlighted in green and marked with *. Select by number to switch.
+
+EXAMPLES:
+  hug b main               # Switch directly to main
+  hug b                    # Show interactive menu for selection
+
+SEE ALSO:
+  hug bll : Detailed non-interactive branch list
+  hug bc  : Create and switch to a new branch
+
+FURTHER READING:
+  See 'git switch --help' and 'git for-each-ref --help'.
+EOF
+}
+
+# Early exit if not in Git repo
+check_git_repo
+
+# Simple arg parsing: handle --help, pass rest to git commit
+while (($#)); do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      # Pass all other args to git commit
+      break
+      ;;
+  esac
+  shift
+done
+
+if [ $# -eq 0 ]; then
+  # Compute branch details
+  declare -a branches=() hashes=() subjects=() tracks=()
+  max_len=""
+  current_branch=""
+  selected_branch=""
+  if ! compute_local_branch_details branches hashes subjects tracks max_len current_branch; then
+    printf "No local branches found.\n" >&2
+    exit 1
+  fi
+
+  # Print interactive menu and get selection
+  print_interactive_branch_menu selected_branch branches hashes subjects tracks "$max_len" "$current_branch"
+  git switch "$selected_branch"
+else
+  git switch "$@"
+fi

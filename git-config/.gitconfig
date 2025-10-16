@@ -448,10 +448,6 @@
   #  BRANCH NAVIGATION (most common → shortest)
   # ═══════════════════════════════════════════════════════════════════
 
-  # Switch to existing branch (MOST COMMON - deserves shortest alias)
-  # Usage: hug b <branch>
-  b = switch
-
   # Go back to previous branch (like 'cd -')
   # Usage: hug bs
   bs = switch -
