@@ -1,3 +1,45 @@
-.idea
 .aid*
 
+### Core Project Outputs ###
+# Vite build output directory
+dist/
+.temp/
+.cache/
+cache/
+
+### Development Artifacts ###
+# Vite dev server cache (critical for HMR performance)
+.vite/
+# npm dependencies (NEVER commit this)
+node_modules/
+# Local environment variables (keep .env.example!)
+.env.local
+# Environment-specific local files (e.g., .env.staging.local)
+.env.*.local
+
+### Testing & Linting ###
+coverage/
+# NYC test coverage artifacts
+.nyc_output/
+# Jest transformer cache
+jest-cache/
+
+### IDE & Editor ###
+# User-specific VS Code settings (share .vscode/extensions.json instead!)
+.vscode/**/settings.json
+# ✅ Keep this to standardize dev tooling
+!.vscode/extensions.json
+# JetBrains IDE (WebStorm/IntelliJ)
+.idea/
+# Sublime Text
+*.sublime-workspace
+# Vim swap files
+*.swp
+
+### OS & Misc. ###
+# macOS metadata
+.DS_Store
+# Windows thumbnail cache
+Thumbs.db
+# npm error logs
+npm-debug.log*

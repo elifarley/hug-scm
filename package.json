@@ -1,0 +1,15 @@
+{
+  "name": "hug-docs",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "docs:deploy": "vitepress build docs && gh-pages -d docs/.vitepress/dist"
+  },
+  "devDependencies": {
+    "vitepress": "^1.3.0",
+    "gh-pages": "^6.1.1"
+  }
+}
