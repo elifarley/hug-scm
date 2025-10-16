@@ -5,12 +5,23 @@ complete -c hug -f -a "(begin
     set -l scripts
     set -l dir (dirname (which hug))
     for f in $dir/git-*
-        if test -x $f -a (basename $f | sed 's/^git-//' | sed '/hughelp/d') != ''
-            set scripts $scripts (basename $f | sed 's/^git-//')
+        if test -x $f
+            set name (basename $f | string replace -r '^git-(.+)\\.' '$1')
+            if test $name != 'hughelp' -a (string length $name) -gt 0
+                set scripts $scripts $name
+            end
         end
     end
-    set -l raw_aliases (git config --name-only --get-regexp '^alias\\.' 2>/dev/null | sed 's/^alias\\.//' | sed '/^$/d' | sort -u)
-    echo 'help' $scripts $raw_aliases | sort -u | sed '/^$/d'
+    set -l raw_aliases (git config --name-only --get-regexp '^alias\\.' 2>/dev/null)
+    set -l processed_aliases
+    for alias in $raw_aliases
+        set alias (string replace -r '^alias\.(.+)' '$1' $alias)
+        if test (string length $alias) -gt 0
+            set processed_aliases $processed_aliases $alias
+        end
+    end
+    set -l unique_aliases (printf '%s\n' $processed_aliases | sort -u)
+    printf '%s\n' help $scripts $unique_aliases | sort -u | string match -v '^$'
 end)"
 
 # Gateway subcommands (e.g., hug h <TAB>, hug w <TAB>)
@@ -20,10 +31,13 @@ complete -c hug -n '__fish_use_subcommand' -f -a "(begin
     set -l gateway_cmds
     for f in $dir/git-$subcmd-*
         if test -x $f
-            set gateway_cmds $gateway_cmds (basename $f | sed \"s/^git-$subcmd-//\")
+            set name (basename $f | string replace -r '^git-$subcmd-(.+)\\.' '$1')
+            if test (string length $name) -gt 0
+                set gateway_cmds $gateway_cmds $name
+            end
         end
     end
-    echo $gateway_cmds | tr ' ' '\n' | sort -u | sed '/^$/d'
+    printf '%s\n' $gateway_cmds | sort -u | string match -v '^$'
 end)"
 
 # Specific w gateway subcommands (e.g., hug w discard <TAB>)
@@ -33,10 +47,13 @@ complete -c hug -n 'test $argv[2] = "w"' -f -a "(begin
     set -l matching_subs
     for f in $dir/git-w-$partial_sub*
         if test -x $f
-            set matching_subs $matching_subs (basename $f | sed 's/^git-w-//')
+            set name (basename $f | string replace -r '^git-w-(.+)\\.' '$1')
+            if test (string length $name) -gt 0
+                set matching_subs $matching_subs $name
+            end
         end
     end
-    echo $matching_subs | tr ' ' '\n' | sort -u | sed '/^$/d'
+    printf '%s\n' $matching_subs | sort -u | string match -v '^$'
 end)"
 
 # Options for specific subcommands
@@ -53,10 +70,10 @@ complete -c hug -n 'test $argv[2] = "w"; and test $argv[3] = "discard-all"' -s f
 complete -c hug -n 'test $argv[2] = "w"; and test $argv[3] = "discard-all"' -s h -l help -f -d "Show help"
 
 # File completion for commands that take paths (e.g., w discard <files>)
-complete -c hug -n 'test $argv[2] = "w"; and contains -- $argv[3] discard discard-all sw add rm mv ss' -f -a "(git diff --name-only --relative (string join ' ' $argv[4..-1])* 2>/dev/null; or git diff --cached --name-only --relative (string join ' ' $argv[4..-1])* 2>/dev/null) | sort -u"
+complete -c hug -n 'test $argv[2] = "w"; and contains -- $argv[3] discard discard-all sw add rm mv ss' -f -a "(git diff --name-only --relative (string join ' ' $argv[4..-1])* 2>/dev/null; or git diff --cached --name-only --relative (string join ' ' $argv[4..-1])* 2>/dev/null | sort -u)"
 
 # Branch completion for branch-related commands
-complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null)'; and contains -- $argv[2] b* branch co checkout' -f -a "(git branch --list $argv[-1]* 2>/dev/null | sed 's/^[* ] //' | sed '/^$/d')"
+complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null)'; and contains -- $argv[2] b* branch co checkout' -f -a "(git branch --list $argv[-1]* 2>/dev/null | string replace -r '^[* ] ' '' | string match -v '^$')"
 
 # Ref completion for HEAD-related commands
 complete -c hug -n 'test -n (git rev-parse --git-dir 2>/dev/null)'; and contains -- $argv[2] h-back h-undo h-rollback h-rewind h' -f -a "(git for-each-ref --format='%(refname:short)' refs/ 2>/dev/null)"
