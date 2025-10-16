@@ -10,7 +10,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
 - `hug fblame <file>`
     - **Description**: Detailed blame showing author, date, and line content for each line in the file. Ignores whitespace changes and detects moved/copied code
       across files (up to 3 levels).
-    - **Usage**:
+    - **Example**:
       ```
       hug fblame src/app.js    # Blame for app.js
       ```
@@ -18,7 +18,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
     - **Git Equivalent**: `git blame -w -C -C -C <file>`
 - `hug fb <file>`
     - **Description**: Short blame output with just author and line number (porcelain format for scripting).
-    - **Usage**:
+    - **Example**:
       ```
       hug fb README.md         # Short blame for README.md
       ```
@@ -28,7 +28,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
 ## Contributor Analysis
 - `hug fcon <file>`
     - **Description**: List all unique contributors (authors with email) to a file, following renames.
-    - **Usage**:
+    - **Example**:
       ```
       hug fcon docs/index.md   # Contributors to index.md
       ```
@@ -36,7 +36,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
     - **Git Equivalent**: `git log --follow --pretty=format:'%an <%ae>' -- <file> | sort -u`
 - `hug fa <file>`
     - **Description**: Count commits per author for a file (sorted by count descending), following renames.
-    - **Usage**:
+    - **Example**:
       ```
       hug fa lib/utils.js      # Author commit counts for utils.js
       ```

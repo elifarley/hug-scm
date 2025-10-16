@@ -6,7 +6,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 
 - `hug l [options]`
   - **Description**: One-line log with graph visualization and branch decorations for a concise history overview.
-  - **Usage**:
+  - **Example**:
     ```
     hug l              # Current branch history
     hug l --all        # All branches
@@ -16,7 +16,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 
 - `hug ll [options]`
   - **Description**: Detailed log with graph, short date, author, decorations, and full commit message.
-  - **Usage**:
+  - **Example**:
     ```
     hug ll             # Current branch detailed history
     hug ll --all       # All branches
@@ -26,12 +26,12 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 
 - `hug la [options]`
   - **Description**: Log across all branches (alias for `hug ll --all`).
-  - **Usage**: `hug la`
+  - **Example**: `hug la`
   - **Safety**: Read-only.
 
 - `hug lp [options]`
   - **Description**: Detailed log including patches/diffs for each commit.
-  - **Usage**:
+  - **Example**:
     ```
     hug lp             # Patches for current branch
     hug lp -3          # Last 3 commits with patches
@@ -61,7 +61,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
     - `-i`: Ignore case.
     - `-p`: Show patches.
     - `--all`: All branches.
-  - **Usage**:
+  - **Example**:
     ```
     hug lc "getUserById"              # Search code changes
     hug lc "getUserById" -- src/users.js  # Restrict to file
@@ -71,7 +71,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 - `hug lcr <regex> [-i] [-p] [--all] [-- file]`
   - **Description**: Search commits where the diff matches a regex (more flexible than `lc`).
   - **Options**: Same as `lc`.
-  - **Usage**:
+  - **Example**:
     ```
     hug lcr "TODO:" --all    # Regex search across branches
     ```
@@ -81,7 +81,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 
 - `hug lau <author> [options]`
   - **Description**: Filter log to commits by a specific author.
-  - **Usage**:
+  - **Example**:
     ```
     hug lau "John Doe"       # Author's commits
     hug lau "John Doe" -5    # Last 5 by author
@@ -90,7 +90,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 
 - `hug ld <since-date> [<until-date>]`
   - **Description**: Log commits within a date range (until defaults to now).
-  - **Usage**:
+  - **Example**:
     ```
     hug ld "2023-01-01"      # Since date
     hug ld "2023-01-01" "2023-12-31"  # Date range
@@ -103,7 +103,7 @@ These commands show the history of changes to a specific file, following renames
 
 - `hug llf <file> [-N] [log options]`
   - **Description**: Log commits that modified a file (handles renames). Ideal for finding the most recent change to a file.
-  - **Usage**:
+  - **Example**:
     ```
     hug llf file.txt -1          # Most recent commit touching file
     hug llf file.txt -2 --stat   # Last 2 commits with stats
@@ -112,7 +112,7 @@ These commands show the history of changes to a specific file, following renames
 
 - `hug llfs <file> [-N] [log options]`
   - **Description**: File history with change statistics (insertions/deletions).
-  - **Usage**:
+  - **Example**:
     ```
     hug llfs file.txt -1  # Stats for most recent change
     ```
@@ -121,7 +121,7 @@ These commands show the history of changes to a specific file, following renames
 
 - `hug llfp <file> [-N] [log options]`
   - **Description**: File history including full patches/diffs.
-  - **Usage**:
+  - **Example**:
     ```
     hug llfp file.txt -1  # Patch of most recent change
     ```

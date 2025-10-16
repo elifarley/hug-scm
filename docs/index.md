@@ -6,7 +6,7 @@ Key features:
 - **Intuitive Commands**: Shorter for common/safe ops, longer for powerful ones (e.g., `hug b` to switch branches).
 - **Safety Built-In**: Previews, dry-runs, and confirmations for destructive actions.
 - **Discoverability**: Grouped by prefix (e.g., `h*` for HEAD, `w*` for working directory).
-- **Git-Only for Now**: Full Git support; Mercurial and others coming soon.
+- **Git-Only for Now**: Full Git support; Mercurial, Sapling and others coming later.
 
 [Start with Hug for Developers](/hug-for-developers)
 

@@ -8,7 +8,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ### `hug b [branch]`
 - **Description**: Switch (checkout) to an existing local branch. If no branch is specified, shows an interactive menu of local branches for selection.
-- **Usage**:
+- **Example**:
   ```
   hug b main                 # Switch to main branch
   hug b                      # Interactive menu to select branch
@@ -19,7 +19,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ### `hug bl`
 - **Description**: List local branches in short format, sorted alphabetically. The current branch is marked with an asterisk (*).
-- **Usage**:
+- **Example**:
   ```
   hug bl    # List all local branches
   ```
@@ -28,7 +28,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ### `hug bla`
 - **Description**: List all branches (local and remote) in short format.
-- **Usage**:
+- **Example**:
   ```
   hug bla   # List all branches including remotes
   ```
@@ -37,7 +37,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ### `hug blr`
 - **Description**: List remote branches only in short format.
-- **Usage**:
+- **Example**:
   ```
   hug blr   # List remote branches
   ```
@@ -46,7 +46,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ### `hug bll`
 - **Description**: List local branches in long format with details: short commit hash, upstream tracking info (e.g., ahead/behind counts), and the latest commit message title. Current branch is highlighted in green and marked with *. Branches are left-aligned for readability.
-- **Usage**:
+- **Example**:
   ```
   hug bll   # Detailed local branch listing
   ```
@@ -57,7 +57,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ### `hug bc <branch-name>`
 - **Description**: Create a new branch and switch to it.
-- **Usage**:
+- **Example**:
   ```
   hug bc new-feature    # Create and switch to new-feature
   ```
@@ -66,7 +66,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ### `hug br <new-name>`
 - **Description**: Rename the current branch to a new name.
-- **Usage**:
+- **Example**:
   ```
   hug br updated-feature  # Rename current branch
   ```
@@ -77,7 +77,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ### `hug bdel <branch>`
 - **Description**: Safely delete a local branch (only if fully merged into current branch).
-- **Usage**:
+- **Example**:
   ```
   hug bdel old-feature    # Safe delete if merged
   ```
@@ -86,7 +86,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ### `hug bdelf <branch>`
 - **Description**: Force-delete a local branch, even if unmerged.
-- **Usage**:
+- **Example**:
   ```
   hug bdelf risky-branch  # Force delete unmerged branch
   ```
@@ -95,7 +95,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ### `hug bdelr <branch>`
 - **Description**: Delete a remote branch (pushes delete to origin).
-- **Usage**:
+- **Example**:
   ```
   hug bdelr origin/old-remote  # Delete remote branch
   ```
@@ -108,7 +108,7 @@ These commands help inspect which branches relate to specific commits or states.
 
 ### `hug bwc [<commit>]`
 - **Description**: Show branches that contain a specific commit (in their history). Defaults to HEAD.
-- **Usage**:
+- **Example**:
   ```
   hug bwc a1b2c3    # Branches containing commit a1b2c3
   hug bwc           # Branches containing HEAD
@@ -118,7 +118,7 @@ These commands help inspect which branches relate to specific commits or states.
 
 ### `hug bwp [<object>]`
 - **Description**: Show branches that point exactly at a specific object (e.g., commit). Defaults to HEAD.
-- **Usage**:
+- **Example**:
   ```
   hug bwp HEAD       # Branches pointing at HEAD
   ```
@@ -127,7 +127,7 @@ These commands help inspect which branches relate to specific commits or states.
 
 ### `hug bwnc [<commit>]`
 - **Description**: Show branches that do NOT contain a specific commit. Defaults to HEAD.
-- **Usage**:
+- **Example**:
   ```
   hug bwnc HEAD      # Branches not containing HEAD
   ```
@@ -136,7 +136,7 @@ These commands help inspect which branches relate to specific commits or states.
 
 ### `hug bwm [<commit>]`
 - **Description**: Show branches merged into a specific commit (defaults to HEAD).
-- **Usage**:
+- **Example**:
   ```
   hug bwm            # Branches merged into HEAD
   ```
@@ -145,7 +145,7 @@ These commands help inspect which branches relate to specific commits or states.
 
 ### `hug bwnm [<commit>]`
 - **Description**: Show branches NOT merged into a specific commit (defaults to HEAD).
-- **Usage**:
+- **Example**:
   ```
   hug bwnm           # Branches not merged into HEAD
   ```
@@ -153,7 +153,7 @@ These commands help inspect which branches relate to specific commits or states.
 - **Git Equivalent**: `git branch --no-merged <commit>`
 
 ## Tips
-- Use `hug bll` or `hug bla` before switching with `hug b` to review branch status.
+- Use `hug b` to review branch status and easily switch via an interactive menu.
 - For creating a branch from an existing one: `hug bc <new> <existing>` (e.g., `hug bc new-feature existing-feature`).
 - Always backup work with `hug w backup` before deleting branches.
 - Queries like `bwc` and `bwm` are useful for cleanup before `bdel`.

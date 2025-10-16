@@ -8,7 +8,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 
 ### `hug h back [N|commit]`
 - **Description**: Soft reset HEAD back by N commits (default: 1) or to a specific commit. Keeps changes from the undone commits staged—non-destructive, ideal for re-committing with adjustments.
-- **Usage**:
+- **Example**:
   ```
   hug h back                # Undo last commit, keep changes staged
   hug h back 3              # Undo last 3 commits
@@ -18,7 +18,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 
 ### `hug h undo [N|commit]`
 - **Description**: Mixed reset back by N commits (default: 1) or to a specific commit. Unstages changes from the undone commits but keeps them in your working directory—perfect for editing before re-staging.
-- **Usage**:
+- **Example**:
   ```
   hug h undo                # Undo last commit, unstage changes
   hug h undo 3              # Undo last 3 commits
@@ -29,7 +29,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 
 ### `hug h rollback [N|commit]`
 - **Description**: Hard reset back by N commits (default: 1) or to a specific commit, discarding commit history and staged changes, but preserving any uncommitted local changes in the working directory.
-- **Usage**:
+- **Example**:
   ```
   hug h rollback            # Rollback last commit, keep local work
   hug h rollback 2          # Rollback last 2 commits
@@ -39,7 +39,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 
 ### `hug h rewind [N|commit]`
 - **Description**: Full hard reset by N commits (default: 1) or to a specific commit, moving to a clean state. Highly destructive! Discards all staged/unstaged changes in tracked files (untracked/ignored files are preserved).
-- **Usage**:
+- **Example**:
   ```
   hug h rewind              # Rewind to last commit's clean state
   hug h rewind 3            # Rewind last 3 commits
@@ -49,7 +49,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 
 ### `hug h files [N|commit] [options]`
 - **Description**: Preview unique files touched by commits in the specified range (default: last 1 commit). Useful before back, undo, rollback, or rewind to understand impact.
-- **Usage**:
+- **Example**:
   ```
   hug h files                # Files in last commit
   hug h files 3              # Files in last 3 commits
