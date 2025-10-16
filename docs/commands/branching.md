@@ -158,4 +158,4 @@ These commands help inspect which branches relate to specific commits or states.
 - Always backup work with `hug w backup` before deleting branches.
 - Queries like `bwc` and `bwm` are useful for cleanup before `bdel`.
 
-See [Status & Staging](/commands/status-staging) for checking changes after branching operations.
+See [Status & Staging](status-staging) for checking changes after branching operations.

@@ -62,7 +62,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 - Preview impact with `hug h files` before any HEAD movement (e.g., `hug h files 2` then `hug h back 2`).
 - Always run `hug w backup` before destructive ops like `rollback` or `rewind`.
 - Use `hug s` or `hug sw` (**S**tatus + **W**orking directory diff) to check status after any HEAD movement.
-- For interactive rebase (edit/squash multiple commits), see [Rebase Commands](/commands/commits#rebase).
+- For interactive rebase (edit/squash multiple commits), see [Rebase Commands](commits#rebase).
 - Aliases like `hug back` are available as shortcuts for `hug h back`.
 
-Pair with [Working Directory](/commands/working-dir) for cleanup/restore, or [Logging](/commands/logging) to inspect history before resetting.
+Pair with [Working Directory](working-dir) for cleanup/restore, or [Logging](logging) to inspect history before resetting.

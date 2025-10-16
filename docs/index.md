@@ -8,18 +8,18 @@ Key features:
 - **Discoverability**: Grouped by prefix (e.g., `h*` for HEAD, `w*` for working directory).
 - **Git-Only for Now**: Full Git support; Mercurial, Sapling and others coming later.
 
-[Start with Hug for Developers](/hug-for-developers)
+[Start with Hug for Developers](hug-for-developers)
 
 ## Command Reference
 Dive into detailed guides for command groups:
 
-- [HEAD Operations (h*): Undo and rewind commits](/commands/head)
-- [Working Directory (w*): Clean up changes](/commands/working-dir)
-- [Status & Staging (s*, a*): View and stage files](/commands/status-staging)
-- [Branching (b*): Switch, list, and manage branches](/commands/branching)
-- [Commits (c*): Create and amend commits](/commands/commits)
-- [Logging (l*): Search and view history](/commands/logging)
-- [File Inspection (f*): Analyze file authorship and history](/commands/file-inspection)
+- [HEAD Operations (h*): Undo and rewind commits](commands/head)
+- [Working Directory (w*): Clean up changes](commands/working-dir)
+- [Status & Staging (s*, a*): View and stage files](commands/status-staging)
+- [Branching (b*): Switch, list, and manage branches](commands/branching)
+- [Commits (c*): Create and amend commits](commands/commits)
+- [Logging (l*): Search and view history](commands/logging)
+- [File Inspection (f*): Analyze file authorship and history](commands/file-inspection)
  
 ### Tips for Common Queries
 - **Most recent commit touching a file**: Use `hug llf <file> -1` to get the latest commit modifying a specific file (handles renames with `--follow`). For multiple files, run separately and compare timestamps, or use `hug llf file1 -1` and `hug llf file2 -1`.

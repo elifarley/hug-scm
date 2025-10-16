@@ -69,7 +69,7 @@ Combines wipe + purge for full reset.
 
 ## Tips
 - Chain with status: `hug w discard file.js && hug sl`
-- Restore from stash: Use [Stash Commands](/commands/status-staging#s*) like `hug sapply`.
-- For undoing HEAD moves that affect working dir, see [HEAD Operations](/commands/head).
+- Restore from stash: Use [Stash Commands](status-staging#s*) like `hug sapply`.
+- For undoing HEAD moves that affect working dir, see [HEAD Operations](head).
 
 Backup first with `hug w backup`!

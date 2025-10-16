@@ -116,6 +116,6 @@ Stashing is part of status workflow for temporary backups.
 ## Tips
 - Pipe status to pager: `hug sl | less`
 - Interactive staging pairs well with `hug cii` for commit.
-- For file inspection (blame, history), see [Logging](/commands/logging#file-inspection).
+- For file inspection (blame, history), see [Logging](logging#file-inspection).
 
 Use `hug s` or `hug sl` frequently to stay oriented!

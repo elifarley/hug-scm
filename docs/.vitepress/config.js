@@ -1,7 +1,7 @@
   // https://vitepress.dev/reference/site-config
   export default {
     base: '/hug-scm/',
-    title: "Hug Source Control Management CLI",
+    title: "Hug SCM CLI",
     description: "Documentation for Hug, a Humane Git CLI",
     themeConfig: {
       search: {

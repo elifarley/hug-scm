@@ -55,9 +55,9 @@ Blame shows which author last modified each line of a file, helping attribute ch
     - **Git Equivalent**: `git log --pretty=logbody --follow --diff-filter=A --find-renames=40% -- <file>`
 
 ## Tips
-- Combine with [Logging](/commands/logging#file-inspection) for broader file history: e.g., use `hug llf <file> -1` for the latest commit, then `hug fblame <file>` to see line authors.
+- Combine with [Logging](logging#file-inspection) for broader file history: e.g., use `hug llf <file> -1` for the latest commit, then `hug fblame <file>` to see line authors.
 - For detecting code movement across files, `fblame` and `fb` use advanced `-C -C -C` options - great for refactors.
 - Pipe outputs to tools: `hug fa <file> | head -5` for top 5 contributors.
 - Always use `--follow` implicitly for rename-aware inspection.
 
-Pair with [Status & Staging](/commands/status-staging) to inspect current file changes, or [Logging](/commands/logging) for commit-level details.
+Pair with [Status & Staging](status-staging) to inspect current file changes, or [Logging](logging) for commit-level details.
