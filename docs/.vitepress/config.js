@@ -6,9 +6,10 @@
     head: [
       ['meta', { name: 'theme-color', content: '#3b82f6' }],
       ['meta', { name: 'og:title', content: 'Hug SCM CLI Documentation' }],
-      ['link', { rel: 'icon', href: '/favicon.ico' }]
+      ['link', { rel: 'icon', href: '/favicon.png' }]
     ],
     themeConfig: {
+      logo: '/hug-icon.png',
       search: {
         provider: 'local'
       },
