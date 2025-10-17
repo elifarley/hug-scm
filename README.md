@@ -111,6 +111,10 @@ hug w zap-all -f
 # Undo last 3 commits, unstage changes
 # Hug, Head movement: UNDO last 3 commits
 hug h undo 3
+
+# Find steps back to last change in a file, then rewind precisely
+hug h steps src/app.js  # e.g., "2 steps back..."
+hug h back 2
 ```
 
 ## Installation
@@ -168,6 +172,7 @@ hug h back [N|commit]     # Move HEAD back, keep changes staged (non-destructive
 hug h undo [N|commit]     # Move HEAD back, unstage changes (non-destructive)
 hug h rollback [N|commit] # Rollback commits and their changes (preserves local work)
 hug h rewind <commit>     # Destructive rewind to clean state (discards history and changes, but keeps current untracked files)
+hug h steps <file> [--raw] # Steps back from HEAD to last change in <file> (for precise rewinds)
 ```
 
 #### 🧹 Working Directory (`w`)

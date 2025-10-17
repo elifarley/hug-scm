@@ -22,8 +22,9 @@
         {
           text: 'Command Reference',
           items: [
+            { text: 'Command Map', link: '/command-map' },
             { text: 'HEAD Operations (h*)', link: '/commands/head' },
-            { text: 'Working Directory (w*)', link: '/commands/working-dir' },
+            { text: 'Working Directory & WIP (w*)', link: '/commands/working-dir' },
             { text: 'Status & Staging (s*, a*)', link: '/commands/status-staging' },
             { text: 'Branching (b*)', link: '/commands/branching' },
             { text: 'Commits (c*)', link: '/commands/commits' },

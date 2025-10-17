@@ -13,6 +13,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 | `hug h rollback` | **H**EAD **R**ollback | Hard reset preserving working tree changes |
 | `hug h rewind` | **H**EAD **Re**wind | Full hard reset to a clean tracked state |
 | `hug h files` | **H**EAD **F**iles | Preview files touched in the selected range |
+| `hug h steps <file>` | **H**EAD **Steps** | Steps back to last file change (query for rewinds) |
 
 ## Commands
 
@@ -67,6 +68,16 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
   hug h files --stat         # With line change stats
   ```
 - **Safety**: Read-only; no changes to repo.
+
+### `hug h steps <file> [--raw]`
+- **Description**: Calculate commit steps from HEAD back to the most recent commit touching <file> (handles renames). Outputs the count; use for precise rewinds like `h back N`. Full mode shows formatted commit info via `hug ll`.
+- **Example**:
+  ```
+  hug h steps src/app.js          # "3 steps back from HEAD (last commit abc123); <ll output>"
+  hug h steps README.md --raw     # "3" (just the number)
+  hug h steps file.txt | xargs hug h back  # Rewind exactly to last change
+  ```
+- **Safety**: Read-only query; errors if file has no history. If 0 steps, confirms last change is in HEAD.
 
 ## Tips
 - Preview impact with `hug h files` before any HEAD movement (e.g., `hug h files 2` then `hug h back 2`).

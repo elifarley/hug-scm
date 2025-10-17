@@ -8,101 +8,141 @@ Imagine accidentally deleting code, breaking a feature during experimentation, o
 
 Hug is your friendly time machine for code: track changes, experiment fearlessly, and collaborate smoothly – all with natural language commands.
 
+[[toc]]
+
+::: info Mnemonic + Workflow Legend
+- **Bold letters** in command names highlight the initials that make each alias (for example, `hug sl` → **S**tatus + **L**ist).
+- Multi-step workflows appear as ordered lists so you can scan the path before executing commands.
+- For deep dives, pair this guide with references like [Status & Staging (s*, a*)](commands/status-staging) or [Working Directory (w*)](commands/working-dir).
+:::
+
+## Workflow Cheat Sheet
+
+| Scenario | Command Flow                                                     | Why it works |
+| --- |------------------------------------------------------------------| --- |
+| Start a fresh project | `hug s` → `hug a` → `hug c`                                      | Snapshot new files, stage cleanly, commit with context. |
+| Park work before a hotfix | `hug wip "WIP message"` → `hug bc hotfix` → `hug bs` | Save all changes on a dated WIP branch (pushable!), branch off, then resume later. Preferred over stash for persistence. |
+| Review before pushing | `hug ss` → `hug su` → `hug sw`                                   | Compare staged vs unstaged diffs, then ship confidently. |
+| Clean up experiments | `hug w backup` → `hug w discard-all` → `hug w purge`             | Save a safety net, drop tracked edits, prune generated junk. |
+| Undo a public mistake | `hug l` → `hug revert <sha>` → `hug bpush`                       | Find the bad commit, revert it, and push the fix upstream. |
+
 ## Getting Started: Your First Repository
 
 ### Use Case 1: Starting a New Project
 
-You're building a personal portfolio. Set up Hug tracking from scratch.
+**Scenario:** You're creating a new project and want to track your code from the beginning.
 
-```shell
-# Create your project folder
-mkdir my-portfolio
-cd my-portfolio
+**Steps:**
+1. Initialize the repository: `hug init`
+2. Check status: `hug s`
+3. Stage all files: `hug aa`
+4. Commit: `hug c "Initial commit"`
+5. Push to remote: `hug bpush`
 
-# Initialize Git (Hug works on top of it)
-git init
+**Why it works:** This workflow ensures you capture all files (including new ones) in your first commit, establishing a clean baseline for future changes.
 
-# Create your first file
-echo "# My Portfolio" > README.md
+**Mnemonic breakdown:**
+- `hug s` → **S**tatus snapshot
+- `hug aa` → **A**dd **A**ll
+- `hug c` → **C**ommit
+- `hug bpush` → **B**ranch **Push**
 
-# Check status with Hug
-hug s
+**Git equivalents:**
+- `hug init` = `git init`
+- `hug s` = `git status`
+- `hug aa` = `git add -A`
+- `hug c` = `git commit -m`
+- `hug bpush` = `git push origin <branch>`
 
-# Stage the file
-hug a README.md
+### Use Case 2: Making Your First Changes
 
-# Make your first commit
-hug c "Initial commit: Add README"
-```
+**Scenario:** You've made some code changes and want to commit them.
 
-**What just happened?** You created a repository and saved your first snapshot. Hug's `s` gives a quick, colorful summary.
+**Steps:**
+1. Check status: `hug s`
+2. Stage changes: `hug a`
+3. Commit: `hug c "Add login feature"`
+4. Push: `hug bpush`
 
-### Use Case 2: Building Your Project with Regular Commits
+**Why it works:** This workflow helps you review changes before committing, ensuring you only include what you intend to.
 
-Adding pages to your portfolio? Commit as you go.
+**Mnemonic breakdown:**
+- `hug s` → **S**tatus snapshot
+- `hug a` → **A**dd tracked
+- `hug c` → **C**ommit
+- `hug bpush` → **B**ranch **Push**
 
-```shell
-# Create an HTML file
-touch index.html
+**Git equivalents:**
+- `hug s` = `git status`
+- `hug a` = `git add -u`
+- `hug c` = `git commit -m`
+- `hug bpush` = `git push origin <branch>`
 
-# Add some code, then check status
-hug s
-
-# Stage and commit
-hug a index.html
-hug c "Add homepage structure"
-
-# Add CSS
-touch styles.css
-hug a styles.css
-hug c "Add base styling"
-
-# View your history
-hug l
-```
-
-**Pro tip:** Commit small, meaningful changes. Hug's `c` prompts for a message if needed, keeping your history clear.
+::: tip Scenario: Patch-and-Push
+**Goal:** Ship a small change without noise.
+1. `hug sl` to verify tracked files.
+2. `hug ap` to stage only the relevant hunk.
+3. `hug ss` to double-check the staged diff, then `hug c "Describe change"`.
+4. `hug bpush` to publish.
+   :::
 
 ## Working with Remote Repositories (GitHub)
 
-### Use Case 3: Backing Up Your Work
+### Use Case 3: Undoing Mistakes
 
-Save your portfolio online for sharing.
+**Scenario:** You've made a mistake and want to undo it.
 
-```shell
-# On GitHub, create a new repository (don't initialize with README)
+**Sub-scenarios:**
+- **Undo last commit (keep changes staged):** `hug h back` (**H**EAD **Back**)
+- **Undo last commit (keep changes unstaged):** `hug h undo` (**H**EAD **Undo**)
+- **Discard uncommitted changes:** `hug w discard <file>` (**W**orking dir **Discard**)
+- **Full cleanup:** `hug w zap-all` (**W**orking dir **Zap** **All**)
 
-# Connect your local repo to GitHub
-git remote add origin https://github.com/yourusername/my-portfolio.git
+**Steps for undoing last commit (keep staged):**
+1. Run `hug h back` (**H**EAD **Back**) to soft reset HEAD, keeping changes staged.
+2. Inspect with `hug ss` (**S**tatus **S**taged).
+3. Re-commit: `hug c "Fixed message"` (**C**ommit).
 
-# Push your code with Hug
-hug bpush
-```
+**Why it works:** Non-destructive; lets you adjust without losing work.
 
-Now your code is backed up with a shareable URL. Hug's `bpush` handles setting upstream automatically.
+**Mnemonic breakdown:**
+- `hug h back` → **H**EAD **Back** (soft reset, staged)
+- `hug h undo` → **H**EAD **Undo** (mixed reset, unstaged)
+- `hug w discard` → **W**orking dir **Discard** (local changes)
+- `hug w zap-all` → **W**orking dir **Zap** **All** (nuclear clean)
+
+**Git equivalents:**
+- `hug h back` = `git reset --soft HEAD~1`
+- `hug h undo` = `git reset --mixed HEAD~1`
+- `hug w discard <file>` = `git checkout HEAD -- <file>`
+- `hug w zap-all` = `git reset --hard HEAD && git clean -fd`
 
 ### Use Case 4: Cloning a Project to Work On
 
 Joining a team or open source?
 
-```shell
-# Clone the repository
-git clone https://github.com/company/project-name.git
+**Steps:**
+1. Clone: `git clone https://github.com/company/project-name.git`
+2. Navigate: `cd project-name`
+3. Check branches: `hug bl` (**B**ranch **L**ist)
+4. Start working: `# ... make changes ...`
+5. Stage all: `hug aa` (**A**dd **A**ll)
+6. Commit: `hug c "Fix navigation bug"` (**C**ommit)
+7. Push: `hug bpush` (**B**ranch **Push**)
 
-# Navigate into it
-cd project-name
+**Why it works:** Gets you up-to-date and contributing quickly.
 
-# Check branches
-hug bl
+**Mnemonic breakdown:**
+- `hug bl` → **B**ranch **L**ist
+- `hug aa` → **A**dd **A**ll (including new files)
+- `hug c` → **C**ommit
+- `hug bpush` → **B**ranch **Push** (with upstream)
 
-# Start working
-# ... make changes ...
-
-# Stage, commit, and push
-hug aa
-hug c "Fix navigation bug"
-hug bpush
-```
+**Git equivalents:**
+- `hug bl` = `git branch`
+- `hug aa` = `git add -A`
+- `hug c` = `git commit -m`
+- `hug bpush` = `git push -u origin <branch>`
 
 ## Branching: Experimenting Safely
 
@@ -110,57 +150,72 @@ hug bpush
 
 Add a blog without risking your main site.
 
-```shell
-# Create and switch to a new branch
-hug bc add-blog-section
+**Steps:**
+1. Create and switch: `hug bc add-blog-section` (**B**ranch **C**reate)
+2. Make changes: `touch blog.html` `# ... add blog code ...`
+3. Stage: `hug a blog.html` (**A**dd)
+4. Commit: `hug c "Add blog page with recent posts"` (**C**ommit)
+5. Switch back: `hug bs` (**B**ranch **S**witch back)
+6. Switch to main: `hug b main` (**B**ranch)
+7. Merge: `hug m add-blog-section` (**M**erge)
+8. Delete: `hug bdel add-blog-section` (**B**ranch **Del**ete)
 
-# Make your changes
-touch blog.html
-# ... add blog code ...
+**Why it works:** Branches isolate work; merge integrates safely.
 
-# Commit on the branch
-hug a blog.html
-hug c "Add blog page with recent posts"
+**Mnemonic breakdown:**
+- `hug bc` → **B**ranch **C**reate & switch
+- `hug a` → **A**dd tracked
+- `hug c` → **C**ommit
+- `hug bs` → **B**ranch **S**witch back
+- `hug b` → **B**ranch switch
+- `hug m` → **M**erge
+- `hug bdel` → **B**ranch **Del**ete (safe)
 
-# Switch back to main
-hug bs
-
-# Merge when ready
-hug b main
-hug m add-blog-section
-
-# Delete the branch
-hug bdel add-blog-section
-```
-
-**Why branches matter:** Experiment safely. Hug's `bc` creates and switches in one command.
+**Git equivalents:**
+- `hug bc` = `git checkout -b`
+- `hug a` = `git add -u`
+- `hug c` = `git commit -m`
+- `hug bs` = `git checkout -`
+- `hug m` = `git merge`
+- `hug bdel` = `git branch -d`
 
 ### Use Case 6: Working on Multiple Features
 
 Building a contact form and header redesign?
 
-```shell
-# Branch for contact form
-hug bc contact-form
-# ... work on contact form ...
-hug a contact.html
-hug c "Add contact form"
+**Steps:**
+1. Branch for contact: `hug bc contact-form` (**B**ranch **C**reate)
+2. Work: `# ... work on contact form ...`
+3. Stage: `hug a contact.html` (**A**dd)
+4. Commit: `hug c "Add contact form"` (**C**ommit)
+5. Switch back: `hug bs` (**B**ranch **S**witch back)
+6. New branch: `hug bc redesign-header` (**B**ranch **C**reate)
+7. Work: `# ... work on header ...`
+8. Stage: `hug a styles.css index.html` (**A**dd)
+9. Commit: `hug c "Redesign header with new logo"` (**C**ommit)
+10. View: `hug bl` (**B**ranch **L**ist)
+11. Switch: `hug b main` (**B**ranch)
+12. Merge first: `hug m contact-form` (**M**erge)
+13. Merge second: `hug m redesign-header` (**M**erge)
 
-# Switch to header work
-hug bs
-hug bc redesign-header
-# ... work on header ...
-hug a styles.css index.html
-hug c "Redesign header with new logo"
+**Why it works:** Easy switching keeps features isolated.
 
-# View branches
-hug bl
+**Mnemonic breakdown:**
+- `hug bc` → **B**ranch **C**reate & switch
+- `hug a` → **A**dd
+- `hug c` → **C**ommit
+- `hug bs` → **B**ranch **S**witch back
+- `hug bl` → **B**ranch **L**ist
+- `hug b` → **B**ranch switch
+- `hug m` → **M**erge
 
-# Merge both
-hug b main
-hug m contact-form
-hug m redesign-header
-```
+**Git equivalents:**
+- `hug bc` = `git checkout -b`
+- `hug a` = `git add -u`
+- `hug c` = `git commit -m`
+- `hug bs` = `git checkout -`
+- `hug bl` = `git branch`
+- `hug m` = `git merge`
 
 ## Collaboration Scenarios
 
@@ -168,45 +223,59 @@ hug m redesign-header
 
 Working with teammates on an e-commerce site.
 
-```shell
-# Start day with latest code
-hug bpull
+**Steps:**
+1. Update: `hug bpull` (**B**ranch **Pull**)
+2. Branch: `hug bc add-shopping-cart` (**B**ranch **C**reate)
+3. Work: `# ... build shopping cart ...`
+4. Stage: `hug a cart.js cart.html` (**A**dd)
+5. Commit: `hug c "Implement shopping cart functionality"` (**C**ommit)
+6. Push: `hug bpush` (**B**ranch **Push**)
+7. Create PR on GitHub.
+8. After merge: `hug b main` (**B**ranch)
+9. Update: `hug bpull` (**B**ranch **Pull**)
 
-# Branch for your task
-hug bc add-shopping-cart
+**Why it works:** Syncs team changes, isolates your work.
 
-# Work and commit
-# ... build shopping cart ...
-hug a cart.js cart.html
-hug c "Implement shopping cart functionality"
+**Mnemonic breakdown:**
+- `hug bpull` → **B**ranch **Pull** (rebase)
+- `hug bc` → **B**ranch **C**reate
+- `hug a` → **A**dd
+- `hug c` → **C**ommit
+- `hug bpush` → **B**ranch **Push**
+- `hug b` → **B**ranch switch
+- `hug bpull` → **B**ranch **Pull**
 
-# Push branch
-hug bpush
-
-# On GitHub, create Pull Request for review
-# After merge, update local main
-hug b main
-hug bpull
-```
+**Git equivalents:**
+- `hug bpull` = `git pull --rebase`
+- `hug bc` = `git checkout -b`
+- `hug a` = `git add`
+- `hug c` = `git commit -m`
+- `hug bpush` = `git push -u origin <branch>`
+- `hug b` = `git checkout`
 
 ### Use Case 8: Handling Merge Conflicts
 
 You and a teammate edited the same file.
 
-```shell
-# Merge and get conflict
-hug m teammate-branch
+**Steps:**
+1. Merge: `hug m teammate-branch` (**M**erge)
+2. Hug reports: CONFLICT in styles.css
+3. Open styles.css: Edit markers like <<<<<<< HEAD
+4. Resolve, remove markers, save.
+5. Stage: `hug a styles.css` (**A**dd)
+6. Commit: `hug c "Resolve styling conflict"` (**C**ommit)
 
-# Hug shows: CONFLICT in styles.css
+**Why it works:** Guides you through resolution safely.
 
-# Open styles.css: markers like <<<<<<< HEAD show conflicts
+**Mnemonic breakdown:**
+- `hug m` → **M**erge
+- `hug a` → **A**dd
+- `hug c` → **C**ommit
 
-# Edit to resolve, remove markers, save
-
-# Stage and commit resolution
-hug a styles.css
-hug c "Resolve styling conflict"
-```
+**Git equivalents:**
+- `hug m` = `git merge`
+- `hug a` = `git add`
+- `hug c` = `git commit -m`
 
 ## Common Mistakes and How to Fix Them
 
@@ -214,13 +283,19 @@ hug c "Resolve styling conflict"
 
 Changes not committed? Start over safely.
 
-```shell
-# Discard specific file
-hug w discard index.html
+**Steps:**
+1. Discard file: `hug w discard index.html` (**W**orking dir **Discard**)
+2. Discard all: `hug w discard-all` (**W**orking dir **Discard** **All**)
 
-# Discard all uncommitted
-hug w discard-all
-```
+**Why it works:** Targets exactly what you want to reset.
+
+**Mnemonic breakdown:**
+- `hug w discard` → **W**orking dir **Discard** (unstaged)
+- `hug w discard-all` → **W**orking dir **Discard** **All**
+
+**Git equivalents:**
+- `hug w discard <file>` = `git checkout HEAD -- <file>`
+- `hug w discard-all` = `git checkout HEAD -- .`
 
 ### Use Case 10: Fixing Your Last Commit
 
@@ -234,7 +309,23 @@ hug a forgotten-file.js
 hug cm "Corrected commit message"
 ```
 
-### Use Case 11: Reverting a Pushed Commit
+### Use Case 11: Precise Undo to Last File Change
+
+Need to rewind exactly to when a file was last modified?
+
+```shell
+# Find steps back
+hug h steps src/app.js    # e.g., "2 steps back from HEAD..."
+
+# Soft undo to that point (keep changes staged)
+hug h back 2
+
+# Inspect and re-commit
+hug ss
+hug c "Refactored app.js with fixes"
+```
+
+### Use Case 12: Reverting a Pushed Commit
 
 Broke production? Undo it.
 
@@ -251,7 +342,7 @@ hug bpush
 
 ## Advanced But Essential Commands
 
-### Use Case 12: Viewing Changes Before Committing
+### Use Case 13: Viewing Changes Before Committing
 
 Review hours of work.
 
@@ -266,22 +357,27 @@ hug ss
 hug sw index.html
 ```
 
-### Use Case 13: Working with Stash
+### Use Case 14: Working with WIP Branches (Preferred Over Stash)
 
-Switch tasks quickly.
+Switch tasks quickly with persistent, pushable WIP branches. This is safer and more shareable than stashing for longer interruptions.
 
 ```shell
-# Save work
-hug w backup
+# Save work on a dated WIP branch
+hug wip "Draft blog post"
 
 # Fix bug on main
 hug b main
+hug bc hotfix-bug
 # ... fix ...
 hug c "Fix critical bug"
+hug bpush
 
-# Restore
-hug w restore
+# Resume WIP later
+hug b WIP.2023-10-05.14-30-00.draftblogpost
+# Continue working...
 ```
+
+**Why WIP over stash?** Branches are versioned, pushable for backups/collaboration, and easy to list (`hug bl | grep WIP`). Clean up with `hug bdel <wip-branch>` when done. For quick local saves, stash still works, but use WIP for real progress parking.
 
 ## Essential .gitignore Patterns
 
@@ -341,6 +437,9 @@ Use `hug bpull` to avoid conflicts.
 **7. Atomic commits**  
 One change per `hug c`.
 
+**8. Park WIP on branches**  
+Use `hug wip "msg"` to save progress on a dated branch instead of stashing—it's pushable and versioned for safe context-switching.
+
 ## Quick Reference Cheat Sheet
 
 ```shell
@@ -371,6 +470,11 @@ hug w discard <file>       # Discard file
 hug us <file>              # Unstage
 hug cm "msg"               # Amend
 hug h back                 # Undo commit, keep staged
+hug h steps <file>         # Steps back to last file change (for precise undos)
+
+# Park WIP (preferred over stash)
+hug wip "msg"              # Save all changes on WIP branch, switch back
+hug b WIP.<date>           # Resume
 
 # Collab
 hug bpull                  # Pull rebase

@@ -71,8 +71,12 @@ Combines wipe + purge for full reset.
   - **Safety**: Always previews and confirms; use with caution.
 
 ### Utilities
+- `hug wip "<msg>"`
+  - **Description**: Park all changes (staged/unstaged/untracked) on a new dated branch like `WIP.YYYY-MM-DD.HH-MM-SS.msg` with `[WIP] <msg>` commit, then switch back. Preferred over stashing for pushable, persistent saves.
+  - **Example**: `hug wip "Draft feature"` → Resume: `hug b WIP.2023-10-05.14-30-00.draftfeature`
+
 - `hug w backup [-m "msg"]`
-  - **Description**: Safe stash of all changes (tracked + untracked).
+  - **Description**: Safe stash of all changes (tracked + untracked). Use for quick local backups; prefer `wip` for longer workflows.
   - **Example**: `hug w backup -m "WIP before refactor"`
 
 - `hug w get <commit> [files...]`
