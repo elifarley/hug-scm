@@ -67,7 +67,7 @@ Combines wipe + purge for full reset.
   - **Example**: `hug w zap my-file` (careful!)
 
 - `hug w zap-all`
-  - **Description**: Complete repo reset—tracked to clean, untracked/ignored removed.
+  - **Description**: Complete repo reset - tracked to clean, untracked/ignored removed.
   - **Safety**: Always previews and confirms; use with caution.
 
 ### Utilities

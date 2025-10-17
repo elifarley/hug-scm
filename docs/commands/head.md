@@ -71,7 +71,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
   hug h squash a1b2c3        # Squash to specified commit
   hug h squash -u            # Squash local commits onto upstream tip
   ```
-- **Safety**: Previews commits/files affected and requires y/n confirmation. Aborts if no upstream set for `-u` or invalid target. If no staged changes after reset, skips commit and warns. Cannot mix `-u` with explicit target. Pre-existing staged changes will be included—review with `hug ss` first.
+- **Safety**: Previews commits/files affected and requires y/n confirmation. Aborts if no upstream set for `-u` or invalid target. If no staged changes after reset, skips commit and warns. Cannot mix `-u` with explicit target. Pre-existing staged changes will be included - review with `hug ss` first.
 
 ### `hug h files [N|commit] [options]`
 - **Description**: Preview unique files touched by commits in the specified range (default: last 1 commit). With `-u`, previews files in local-only commits (HEAD to upstream tip). Useful before back, undo, rollback, or rewind to understand impact.

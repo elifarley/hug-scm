@@ -116,7 +116,7 @@ Show diffs inline for better inspection.
 - `hug aa`: **A**dd **A**ll
     - **Description**: Stage everything (tracked + untracked + deletions).
     - **Example**: `hug aa` (use carefully).
-    - **Safety**: ⚠️ Sweeps all changes—run `hug sla` first to confirm what's included.
+    - **Safety**: ⚠️ Sweeps all changes - run `hug sla` first to confirm what's included.
 
 - `hug ai`: **A**dd + **I**nteractive
     - **Description**: Interactive add menu (Git's `-i`).
@@ -144,7 +144,7 @@ Show diffs inline for better inspection.
 - `hug usa`: **U**n**S**tage **A**ll
     - **Description**: Unstage all files.
     - **Example**: `hug usa`
-    - **Safety**: ⚠️ Clears the entire staging area—review with `hug sl` afterward.
+    - **Safety**: ⚠️ Clears the entire staging area - review with `hug sl` afterward.
 
 - `hug untrack <files...>`
     - **Description**: Stop tracking files but keep them locally (e.g., for secrets).
@@ -169,7 +169,7 @@ Stashing is part of status workflow for temporary backups.
 - `hug ssavea "msg"`: **S**tash **Save** + **A**ll
     - **Description**: Stash with message and include untracked files.
     - **Example**: `hug ssavea "WIP widgets"`
-    - **Safety**: ⚠️ Includes untracked work—restore with `hug spop` or `hug sapply`.
+    - **Safety**: ⚠️ Includes untracked work - restore with `hug spop` or `hug sapply`.
 
 - `hug ssavefull`: **S**tash **Save** **Full**
     - **Description**: Stash everything including ignored files.
@@ -214,7 +214,7 @@ Stashing is part of status workflow for temporary backups.
 - `hug sclear`: **S**tash **Clear**
     - **Description**: Clear all stashes (caution!).
     - **Example**: `hug sclear`
-    - **Safety**: ⚠️ Destroys every stash entry—backup with `hug w backup` first.
+    - **Safety**: ⚠️ Destroys every stash entry - backup with `hug w backup` first.
 
 > **Related:** Rather than stashing, you can branch with [`hug bc`](branching) before experimenting, or safeguard everything first via [`hug w backup`](working-dir).
 

@@ -29,7 +29,7 @@ This map provides a high-level overview of Hug's command families, grouped by pr
 ## Visual Command Tree
 
 <details>
-<summary>Expand for a tree view of all families (collapsible)</summary>
+<summary>Expand for a tree view of all families</summary>
 
 ```
 Hug Commands
@@ -100,6 +100,6 @@ Hug Commands
 - Pick a family and explore its dedicated page (e.g., [HEAD Operations](commands/head) for `h*`).
 - Practice: Run `hug s` to check status, then `hug b` to switch branches.
 - For a quick daily reference, see the [Cheat Sheet](/cheat-sheet).
-- For full lists, see individual command docs or `hug alias` in your repo.
+- For full lists, see individual command docs or `hug help` in your repo.
 
 This map evolves with Hug—contribute new families via pull requests!
