@@ -9,10 +9,11 @@ show_help() {
 hug h rollback: Moves HEAD back, discarding their changes: HEAD goes back, their changes are LOST, local changes are preserved.
 
 USAGE:
-    hug h rollback [N|COMMIT] [-u, --upstream]
+    hug h rollback [N|COMMIT] [-u, --upstream] [--quiet]
 
 OPTIONS:
     -u, --upstream  Sets target to upstream remote tip (discards local-only commits; preserves uncommitted changes; no fetch)
+    --quiet         Suppress output (sets HUG_QUIET=T)
 
 DESCRIPTION:
     Moves HEAD back to target. With -u, discards local-only commits to sync with remote tip.
@@ -33,6 +34,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     '-h'|'--help') show_help; exit 1 ;;
     -u|--upstream) upstream=true; shift ;;
+    --quiet) HUG_QUIET=T; shift ;;
     *) target_arg="$1"; shift ;;
   esac
 done

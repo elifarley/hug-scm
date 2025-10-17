@@ -9,10 +9,11 @@ show_help() {
 hug h rewind: Moves HEAD back, discarding their changes AND uncommitted changes.
 
 USAGE:
-    hug h rewind [N|COMMIT] [-u, --upstream]
+    hug h rewind [N|COMMIT] [-u, --upstream] [--quiet]
 
 OPTIONS:
     -u, --upstream  Sets target to upstream remote tip (discards everything after remote tip; no fetch)
+    --quiet         Suppress output (sets HUG_QUIET=T)
 
 DESCRIPTION:
     Moves HEAD back to target (full clean). With -u, discards local-only commits and uncommitted changes to sync with remote tip.
@@ -33,6 +34,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) show_help; exit 0 ;;
     -u|--upstream) upstream=true; shift ;;
+    --quiet) HUG_QUIET=T; shift ;;
     *) target_arg="$1"; shift ;;
   esac
 done

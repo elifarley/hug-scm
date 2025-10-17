@@ -8,10 +8,11 @@ show_help() {
 hug h steps: Show commit steps back from HEAD to last change of a file.
 
 USAGE:
-    hug h steps <file> [--raw] [-h, --help]
+    hug h steps <file> [--raw] [--quiet] [-h, --help]
 
 OPTIONS:
     --raw      Output just the step count (0 if in HEAD)
+    --quiet    Suppress output (sets HUG_QUIET=T)
     -h, --help Show this help
 
 DESCRIPTION:
@@ -33,16 +34,21 @@ SEE ALSO:
 EOF
 }
 
-if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+quiet=false
+file=""
+raw=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) show_help; exit 0 ;;
+    --raw) raw=true; shift ;;
+    --quiet) HUG_QUIET=T; shift ;;
+    *) if [[ -z "$file" ]]; then file="$1"; shift; else break; fi ;;
+  esac
+done
+
+if [[ -z "$file" ]]; then
   show_help
   exit 0
-fi
-
-file="$1"; shift
-raw=false
-if [[ "${1:-}" == "--raw" ]]; then
-  raw=true
-  shift
 fi
 
 check_git_repo

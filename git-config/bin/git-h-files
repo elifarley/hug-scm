@@ -14,6 +14,7 @@ USAGE:
 OPTIONS:
     --stat     Show aggregate line stats per file
     -u, --upstream  Use upstream remote tip as start point (local-only commits)
+    --quiet         Suppress output (sets HUG_QUIET=T)
     -h, --help Show this help
 
 DESCRIPTION:
@@ -41,6 +42,7 @@ while [[ $# -gt 0 ]]; do
     -h|--help) show_help; exit 0 ;;
     --stat) with_stat=true; shift ;;
     -u|--upstream) upstream=true; shift ;;
+    --quiet) HUG_QUIET=T; shift ;;
     *) target_arg="$1"; shift ;;
   esac
 done

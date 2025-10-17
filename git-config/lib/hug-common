@@ -16,22 +16,26 @@ readonly NC=$(tput sgr0) # No Color
 
 # Helper functions
 error() {
+  test "${HUG_QUIET:-}" && return
   printf "${RED}❌ Error:${NC} %s\n" "$1" >&2
   exit "${2:-1}"
 }
 
 warning() {
-    printf "${YELLOW}⚠️  Warning:${NC} %s\n" "$1" >&2
+  test "${HUG_QUIET:-}" && return
+  printf "${YELLOW}⚠️  Warning:${NC} %s\n" "$1" >&2
 }
 
 warn() { warning "$@"; }
 
 info() {
-    printf "${BLUE}ℹ️  Info:${NC} %s\n" "$1" >&2
+  test "${HUG_QUIET:-}" && return
+  printf "${BLUE}ℹ️  Info:${NC} %s\n" "$1" >&2
 }
 
 success() {
-    printf "${GREEN}✅ Success:${NC} %s\n" "$1" >&2
+  test "${HUG_QUIET:-}" && return
+  printf "${GREEN}✅ Success:${NC} %s\n" "$1" >&2
 }
 
 trim_message() {

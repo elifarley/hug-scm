@@ -9,10 +9,11 @@ show_help() {
 hug h back: Moves HEAD back but keep their changes staged.
 
 USAGE:
-    hug h back [N|COMMIT] [-u, --upstream]
+    hug h back [N|COMMIT] [-u, --upstream] [--quiet]
 
 OPTIONS:
     -u, --upstream  Sets the target to the upstream remote tip (discards local-only commits; no fetch)
+    --quiet         Suppress output (sets HUG_QUIET=T)
 
 DESCRIPTION:
     Moves HEAD to target. With -u, discards local-only commits to sync with remote tip.
@@ -33,6 +34,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) show_help; exit 1 ;;
     -u|--upstream) upstream=true; shift ;;
+    --quiet) HUG_QUIET=T; shift ;;
     *) target_arg="$1"; shift ;;
   esac
 done

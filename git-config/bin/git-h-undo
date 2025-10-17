@@ -9,10 +9,11 @@ show_help() {
 h undo: Take back commits and unstages their changes: HEAD goes back, their changes are kept unstaged.
 
 USAGE:
-    hug h undo [N|COMMIT] [-u, --upstream]
+    hug h undo [N|COMMIT] [-u, --upstream] [--quiet]
 
 OPTIONS:
     -u, --upstream  Mixed reset to upstream remote tip (discards local-only commits; no fetch)
+    --quiet         Suppress output (sets HUG_QUIET=T)
 
 DESCRIPTION:
     Mixed reset to target. With -u, discards local-only commits to sync with remote tip.
@@ -33,6 +34,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     '-h'|'--help') show_help; exit 1 ;;
     -u|--upstream) upstream=true; shift ;;
+    --quiet) HUG_QUIET=T; shift ;;
     *) target_arg="$1"; shift ;;
   esac
 done
