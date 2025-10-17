@@ -30,6 +30,7 @@ SEE ALSO:
 EOF
 }
 
+
 upstream=false
 target_arg=""
 while [[ $# -gt 0 ]]; do
@@ -61,49 +62,71 @@ if $upstream; then
     info "No local commits to squash; already synced to upstream ($(git rev-parse --short "$target"))."
     exit 0
   fi
-  upstream_short=$(git rev-parse --short "$target")
-  upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
-  printf 'Commits to be squashed:\n' >&2
-  git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
-  affected_files=$(git log --name-only --pretty=format: "$target"..HEAD | grep -v '^$' | sort -u | wc -l)
-  printf '\nPreview: %d files affected in %d local commits to %s (%s).\n' >&2 \
-    "$affected_files" "$local_commits" "$upstream_short" "$upstream_branch"
-  printf '\nWill create new commit with message: "%s"\n' "$original_message" >&2
-  printf '\n⚠️  This squashes commits into 1 but preserves uncommitted changes.\n' >&2
-  read -p "Proceed with squash (soft reset + commit)? [y/N]: " confirm >&2
-  [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 1; }
+  commits_to_squash=$local_commits
+  log_range="$target"..HEAD
+  if [[ ${HUG_QUIET:-} != T ]]; then
+    upstream_short=$(git rev-parse --short "$target")
+    upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
+    printf 'Commits to be squashed:\n' >&2
+    git log --oneline "$log_range" | sed 's/^/  /' >&2
+    affected_files=$(git log --name-only --pretty=format: "$log_range" | grep -v '^$' | sort -u | wc -l)
+    printf '\nPreview: %d files affected in %d local commits to %s (%s).\n' >&2 \
+      "$affected_files" "$local_commits" "$upstream_short" "$upstream_branch"
+    printf '\nWill create new commit with message: "%s"\n' "$original_message" >&2
+    printf '\n⚠️  This squashes commits into 1 but preserves uncommitted changes.\n' >&2
+  fi
+  prompt_confirm "Proceed with squash (hug back + hug c)? [y/N]: "
 else
   case "${target_arg:-}" in
-    '') target='HEAD~1'; N=1 ;;
-    [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$target_arg"; N="$target_arg" ;;
-    *) target="$target_arg"; N="to $target" ;;
+    '') target_spec='HEAD~1' ;;
+    [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target_spec="HEAD~$target_arg" ;;
+    *) target_spec="$target_arg" ;;
   esac
-  commits_to_squash=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 1)
+  ensure_ancestor_of_head "$target_spec" "cannot squash onto it."
+  target_commit=$(git rev-parse "${target_spec}^{commit}")
+  log_range="$target_commit"..HEAD
+  target_display=$(git rev-parse --short "$target_commit" 2>/dev/null || echo "$target_spec")
+  commits_to_squash=$(git rev-list --count "$log_range" 2>/dev/null || echo 0)
   if [ "$commits_to_squash" -eq 0 ]; then
-    info "No commits to squash (already at $target)."
+    info "No commits to squash (already at $target_display)."
     exit 0
   fi
-  printf 'Commits to be squashed:\n' >&2
-  git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
-  affected_files=$(git log --name-only --pretty=format: "$target"..HEAD | grep -v '^$' | sort -u | wc -l)
-  printf '\nPreview: %d files affected in %d commits.\n' >&2 \
-    "$affected_files" "$commits_to_squash"
-  printf '\nWill create new commit with message: "%s"\n' "$original_message" >&2
-  read -p "Proceed with squash of last $N commits (soft reset + commit)? [y/N]: " confirm >&2
-  [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 1; }
+  commit_word="commit"
+  if [ "$commits_to_squash" -gt 1 ]; then
+    commit_word="commits"
+  fi
+  if [[ ${HUG_QUIET:-} != T ]]; then
+    printf 'Commits to be squashed:\n' >&2
+    git log --oneline "$log_range" | sed 's/^/  /' >&2
+    affected_files=$(git log --name-only --pretty=format: "$log_range" | grep -v '^$' | sort -u | wc -l)
+    printf '\nPreview: %d files affected in %d %s.\n' >&2 \
+      "$affected_files" "$commits_to_squash" "$commit_word"
+    printf '\nWill create new commit with message: "%s"\n' "$original_message" >&2
+  fi
+  if [[ -z "${target_arg:-}" || "${target_arg:-}" =~ ^[0-9]+$ ]]; then
+    prompt_confirm "Proceed with squash of last $commits_to_squash $commit_word (hug back + hug c)? [y/N]: "
+  else
+    prompt_confirm "Proceed with squash up to $target_display (hug back + hug c)? [y/N]: "
+  fi
+  target="$target_commit"
 fi
 
-# Perform soft reset
 hug h back "$target" --quiet
 
-# Check for staged changes (git-c will handle, but warn if none)
+# Check for staged changes (hug c will handle, but warn if none)
 if [ -z "$(git diff --cached --name-only)" ]; then
   warn "No changes staged after reset. Skipping commit (empty squash?)."
-  info "HEAD moved to $target."
+  target_display=$(git rev-parse --short "$target" 2>/dev/null || echo "$target")
+  info "HEAD moved to $target_display."
   exit 0
 fi
 
 # Commit with original message using hug c
 hug c -m "$original_message"
 
-info "Squash complete: $commits_to_squash commits combined into 1 at $target with original message."
+target_display=$(git rev-parse --short "$target" 2>/dev/null || echo "$target")
+summary_word="commit"
+if [ "$commits_to_squash" -gt 1 ]; then
+  summary_word="commits"
+fi
+info "Squash complete: $commits_to_squash $summary_word combined into 1 at $target_display with original message."

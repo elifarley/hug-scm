@@ -159,6 +159,7 @@
   undo = h undo
   rollback = h rollback
   rewind = h rewind
+  squash = h squash
   files = h files
 
   # ═══════════════════════════════════════════════════════════════════

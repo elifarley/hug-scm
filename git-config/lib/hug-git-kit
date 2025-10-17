@@ -1,5 +1,4 @@
-#!/b/bash
-# shellcheck shell=dash
+# shellcheck shell=bash
 # This file is a library to be sourced by shell scripts
 
 # Check if we're in a git repository
@@ -15,6 +14,35 @@ validate_commit() {
     local commit="$1"
     if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
         error "Commit '$commit' does not exist"
+    fi
+}
+
+ensure_commit_exists() {
+    local ref="${1:-}"
+    if [[ -z "$ref" ]]; then
+        error "Reference is required."
+    fi
+
+    if ! git rev-parse --verify "${ref}^{commit}" >/dev/null 2>&1; then
+        error "Unable to resolve reference '$ref' to a commit."
+    fi
+}
+
+ensure_ancestor_of_head() {
+    local ref="${1:-}"
+    local reason="${2:-}"
+    if [[ -z "$ref" ]]; then
+        error "Reference is required."
+    fi
+
+    ensure_commit_exists "$ref"
+
+    if ! git merge-base --is-ancestor "${ref}^{commit}" HEAD >/dev/null 2>&1; then
+        if [[ -n "$reason" ]]; then
+            error "Reference '$ref' is not an ancestor of HEAD; $reason"
+        else
+            error "Reference '$ref' is not an ancestor of HEAD."
+        fi
     fi
 }
 

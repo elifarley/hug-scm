@@ -1,5 +1,4 @@
-#!/b/bash
-# shellcheck shell=dash
+# shellcheck shell=bash
 # This file is a library to be sourced by shell scripts
 
 # Color codes for output
@@ -36,6 +35,23 @@ info() {
 success() {
   test "${HUG_QUIET:-}" && return
   printf "${GREEN}✅ Success:${NC} %s\n" "$1" >&2
+}
+
+prompt_confirm() {
+  if [[ ${HUG_QUIET:-} == T ]]; then
+    return 0
+  fi
+  local prompt="${1:-Proceed? [y/N]: }"
+  local response
+  printf '%s' "$prompt" >&2
+  if ! read -r response; then
+    info "Cancelled."
+    exit 1
+  fi
+  if [[ ! "$response" =~ ^[Yy]$ ]]; then
+    info "Cancelled."
+    exit 1
+  fi
 }
 
 trim_message() {
