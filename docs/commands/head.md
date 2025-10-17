@@ -63,10 +63,10 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 - **Safety**: Previews commits to be discarded, requires typing "rewind" to confirm (or "rewind" for `-u`). Untracked files are safe, but always backup with `hug w backup` first. Cannot mix `-u` with explicit target.
 
 ### `hug h squash [N|commit] [-u, --upstream]`
-- **Description**: Moves HEAD back by N commits (default: 1) or to a specific commit (like `h back`), then immediately commits the staged changes as one new commit using the exact message from the original HEAD (before the movement). Squashes the changes from the undone commits into this single commit. With `-u`, squashes local-only commits onto the upstream tip. Non-destructive to uncommitted working directory changes.
+- **Description**: Moves HEAD back by N commits (default: 2) or to a specific commit (like `h back`), then immediately commits the staged changes as one new commit using the exact message from the original HEAD (before the movement). Squashes the changes from the undone commits into this single commit. With `-u`, squashes local-only commits onto the upstream tip. Non-destructive to uncommitted working directory changes.
 - **Example**:
   ```
-  hug h squash               # Squash last commit (no-op, but consistent)
+  hug h squash               # Squash last 2 commits into 1 at HEAD~2
   hug h squash 3             # Squash last 3 commits into 1 at HEAD~3
   hug h squash a1b2c3        # Squash to specified commit
   hug h squash -u            # Squash local commits onto upstream tip

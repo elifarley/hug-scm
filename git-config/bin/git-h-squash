@@ -16,10 +16,12 @@ OPTIONS:
     --quiet         Suppress output (sets HUG_QUIET=T)
 
 DESCRIPTION:
+    Without N, defaults to squashing the last 2 commits into 1 (intuitive for combining recent work).
     HEAD goes back to target (like 'h back'), then commits staged changes using the original HEAD's message.
     Squashes changes from undone commits into one. Non-destructive to uncommitted work.
 
 EXAMPLES:
+    hug h squash                    # Squash last 2 commits into 1 at HEAD~2
     hug h squash 3                 # Squash last 3 commits into 1 at HEAD~3
     hug h squash a1b2c3            # Squash to specified commit
     hug h squash -u                # Squash local commits onto upstream tip
@@ -78,7 +80,7 @@ if $upstream; then
   prompt_confirm "Proceed with squash (hug back + hug c)? [y/N]: "
 else
   case "${target_arg:-}" in
-    '') target_spec='HEAD~1' ;;
+    '') target_spec='HEAD~2' ;;
     [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target_spec="HEAD~$target_arg" ;;
     *) target_spec="$target_arg" ;;
   esac
