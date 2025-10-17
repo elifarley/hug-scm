@@ -16,6 +16,9 @@ These build on Git's `reset`, `stash`, and `clean` but add intuitive names and s
 | `hug w purge-all` | **W**orking directory **P**urge **ALL** | Repo-wide purge of untracked/ignored files               |
 | `hug w zap` | **W**orking directory **Z**ap           | Combine wipe + purge for paths                           |
 | `hug w zap-all` | **W**orking directory **Z**ap **ALL**   | Full repo cleanup of tracked and untracked files         |
+| `hug w wip` | **W**ork **I**n **P**rogress            | Park changes on dated WIP branch (pushable)              |
+| `hug w unwip` | **Un**park **W**ork **I**n **P**rogress | Squash-merge WIP to current + delete                     |
+| `hug w wipdel` | **W**ork **I**n **P**rogress **DEL**ete | Delete WIP branch (no integration)                       |
 | `hug w backup` | **W**orking directory **B**ackup        | Stash tracked and untracked changes safely               |
 | `hug w get` | **W**orking directory **G**et           | Restore files from a specific commit                     |
 
@@ -71,12 +74,22 @@ Combines wipe + purge for full reset.
   - **Safety**: Always previews and confirms; use with caution.
 
 ### Utilities
-- `hug wip "<msg>"`
-  - **Description**: Park all changes (staged/unstaged/untracked) on a new dated branch like `WIP/YY-MM-DD/HHmm.slug` with `[WIP] <msg>` commit, then switch back. Preferred over stashing for pushable, persistent saves.
-  - **Example**: `hug wip "Draft feature"` → Resume: `hug b WIP/24-10-05/1430.draftfeature`
+- `hug w wip "<msg>"`
+  - **Description**: Park all changes (staged/unstaged/untracked) on a new dated branch like `WIP/YY-MM-DD/HHmm.slug` with `[WIP] <msg>` commit, then switch back. Preferred over stashing for pushable, persistent saves of temp work.
+  - **Example**: `hug w wip "Draft feature"` → Resume: `hug b WIP/24-10-05/1430.draftfeature`; finish: `hug w unwip WIP/24-10-05/1430.draftfeature` (squash-merges to current and deletes).
+
+- `hug w unwip [WIP_BRANCH]`
+  - **Description**: Unpark by squash-merging WIP changes into the current branch as one commit, then deleting the WIP branch. Interactive if no branch specified (requires fzf).
+  - **Example**: `hug w unwip` (prompts to select); `--no-squash` for regular merge.
+  - **Safety**: Previews changes; aborts on conflicts (resolve manually).
+
+- `hug w wipdel [WIP_BRANCH]`
+  - **Description**: Delete a WIP branch without integrating (for worthless/abandoned work). Safe if merged; `-f` to force.
+  - **Example**: `hug w wipdel WIP/24-10-05/1430.draftfeature`
+  - **Safety**: Prompts if unmerged.
 
 - `hug w backup [-m "msg"]`
-  - **Description**: Safe stash of all changes (tracked + untracked). Use for quick local backups; prefer `wip` for longer workflows.
+  - **Description**: Safe stash of all changes (tracked + untracked). Use for quick local backups; prefer `w wip` for longer workflows.
   - **Example**: `hug w backup -m "WIP before refactor"`
 
 - `hug w get <commit> [files...]`
@@ -87,5 +100,6 @@ Combines wipe + purge for full reset.
 - Chain with status: `hug w discard file.js && hug sl`
 - Restore from stash: Use [Stash Commands](status-staging#s*) like `hug sapply`.
 - For undoing HEAD moves that affect working dir, see [HEAD Operations](head).
+- For WIP: Park with `hug w wip`, resume with `hug b <wip>`, finish with `hug w unwip` or discard with `hug w wipdel`.
 
 Backup first with `hug w backup`!

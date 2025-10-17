@@ -224,12 +224,40 @@ Stashing is part of status workflow for temporary backups.
 :::
 
 ## WIP Workflow (w*)
-Branch-based alternative to stashing for persistent saves.
+Branch-based alternative to stashing for persistent, pushable saves of temp work.
 
-- `hug wip "<msg>"`: **W**ork **I**n **P**rogress
-  - **Description**: Stages all changes (tracked/untracked/deletions), commits to a new branch like `WIP/YY-MM-DD/HHmm.slug` with `[WIP] <msg>`, then switches back to previous branch. Pushable and versioned.
-  - **Example**: `hug wip "Fix login UI"` → Resume with `hug b WIP/24-10-05/1430.fixloginui`
-  - **Safety**: Skips if no changes; aborts if branch name conflicts. Use `hug bl | grep WIP` to list.
+- `hug w wip "<msg>"`: **W**ork **I**n **P**rogress
+  - **Description**: Stages all changes (tracked/untracked/deletions), commits to a new dated branch like `WIP/YY-MM-DD/HHmm.slug` with `[WIP] <msg>`, then switches back to the previous branch. Preferred over stashing for shareable, versioned temp progress.
+  - **Example**: `hug w wip "Fix login UI"` → Creates `WIP/24-10-05/1430.fixloginui`; resume with `hug b WIP/24-10-05/1430.fixloginui`.
+  - **Safety**: Skips if no changes; aborts if branch name conflicts. List with `hug bl | grep WIP`.
+
+#### Resuming and Finishing a WIP Branch
+After parking, resume by switching to the WIP branch, add more commits if needed, then unpark or delete.
+
+- **Resume Editing**: Switch to continue work.
+  ```
+  hug b WIP/24-10-05/1430.fixloginui  # Interactive with 'hug b' if needed
+  # Make changes, stage with 'hug a' or 'hug aa', commit with 'hug c "Refine UI"'
+  hug bs  # Switch back when pausing
+  ```
+
+- **Unpark (Integrate and Clean)**: Squash-merge all WIP commits (initial + additions) into the current branch as one clean commit, then delete the WIP branch. Use when finished.
+  ```
+  # Ensure on target branch (e.g., main)
+  hug b main
+  hug w unwip WIP/24-10-05/1430.fixloginui  # Prompts for preview/confirmation; aborts on conflicts
+  ```
+  - **Options**: `--no-squash` for regular merge; `-f` to force-delete post-unpark.
+  - **Safety**: Previews changes; stages conflicts for manual resolution (`hug a && hug c`). No auto-push—run `hug bpush` after.
+  - **Why Squash?**: Keeps linear history; auto-generates message like "Finish WIP: Fix login UI".
+
+- **Delete (Discard Worthless WIP)**: Remove without integrating.
+  ```
+  hug w wipdel WIP/24-10-05/1430.draftfeature  # Safe if merged; -f to force
+  ```
+  - **Safety**: Prompts if unmerged; use for abandoned temp work.
+
+This flow parks temp work safely, allows resumption, and finishes cleanly. Prefer WIP over stash for persistence; push WIP branches for backups if collaborating.
 
 ## Scenarios
 ::: tip Scenario: Patch-and-Push
@@ -254,12 +282,14 @@ Branch-based alternative to stashing for persistent saves.
 - Preview before destructive stash operations: `hug speek` and `hug sshow` give context before `hug sdrop` or `hug sclear`.
 - Combine `hug sl` with `hug llf` from [Logging (l*)](logging#file-inspection) to tie current work back to file history.
 - Share concise stand-up updates by pasting `hug sx` output or attaching diffs from `hug ss`.
+- For WIP: List with `hug bl | grep WIP`; unpark to integrate (`hug w unwip`), delete to discard (`hug w wipdel`).
 
 ## Coverage Checklist
 - [x] Status aliases documented: `hug s`, `hug sl`, `hug sla`, `hug sli`, `hug ss`, `hug su`, `hug sw`, `hug sx`.
 - [x] Staging aliases documented: `hug a`, `hug aa`, `hug ai`, `hug ap`.
 - [x] Unstaging aliases documented: `hug us`, `hug usa`, `hug untrack`.
 - [x] Stash aliases documented: `hug ssave`, `hug ssavea`, `hug ssavefull`, `hug sls`, `hug speek`, `hug sshow`, `hug sapply`, `hug spop`, `hug sdrop`, `hug sbranch`, `hug sclear`.
+- [x] WIP commands documented: `hug w wip`, `hug w unwip`, `hug w wipdel`.
 - [ ] Pending documentation: Consider adding guidance for `hug spopf` (force pop) if it remains in your local `git-config/.gitconfig`.
 
 Use this checklist to keep documentation and aliases in lockstep whenever new commands land.

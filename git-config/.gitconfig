@@ -270,10 +270,14 @@
   sclear = stash clear
 
   # WIP workflow: commit everything as work-in-progress
-  wip = "!git aa && git commit -m 'WIP'"
+  wip = w wip
+  wips = w wip --stay
 
-  # Undo WIP: reset soft to remove WIP commit
-  unwip = "!git log -1 --format='%s' | grep -q '^WIP$' && git reset --soft HEAD~1 || echo 'No WIP commit found'"
+  # Unpark: Squash-merge WIP branch into current and delete (for integration)
+  unwip = w unwip
+
+  # Delete WIP branch without integration (for discard)
+  wipdel = w wipdel
 
   # ============================================================================
   #  Status (s?)
@@ -566,7 +570,7 @@
   # ═══════════════════════════════════════════════════════════════════
 
   # Squash-merge branch into current branch (doesn't commit)
-  # Usage: git m <branch>; g c
+  # Usage: hug m <branch>; hug c
   m = merge --squash
 
   # Merge with fast-forward only (fails if not possible)

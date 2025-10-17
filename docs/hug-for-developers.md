@@ -363,7 +363,7 @@ Switch tasks quickly with persistent, pushable WIP branches. This is safer and m
 
 ```shell
 # Save work on a dated WIP branch
-hug wip "Draft blog post"
+hug w wip "Draft blog post"
 
 # Fix bug on main
 hug b main
@@ -372,12 +372,17 @@ hug bc hotfix-bug
 hug c "Fix critical bug"
 hug bpush
 
-# Resume WIP later
+# Resume WIP later (for more edits)
 hug b WIP.2023-10-05.14-30-00.draftblogpost
 # Continue working...
+
+# Finish: Switch back and unpark (squash-merge to main + delete)
+hug bs
+hug w unwip WIP.2023-10-05.14-30-00.draftblogpost  # Prompts for preview
+hug bpush  # Push the integrated changes
 ```
 
-**Why WIP over stash?** Branches are versioned, pushable for backups/collaboration, and easy to list (`hug bl | grep WIP`). Clean up with `hug bdel <wip-branch>` when done. For quick local saves, stash still works, but use WIP for real progress parking.
+**Why WIP over stash?** Branches are versioned, pushable for backups/collaboration, and easy to list (`hug bl | grep WIP`). Unpark with `hug w unwip` to integrate cleanly; discard with `hug w wipdel` if worthless. For quick local saves, stash still works, but use WIP for real progress parking.
 
 ## Essential .gitignore Patterns
 
@@ -473,8 +478,10 @@ hug h back                 # Undo commit, keep staged
 hug h steps <file>         # Steps back to last file change (for precise undos)
 
 # Park WIP (preferred over stash)
-hug wip "msg"              # Save all changes on WIP branch, switch back
-hug b WIP.<date>           # Resume
+hug w wip "msg"            # Save all changes on WIP branch, switch back
+hug b WIP/<date>/<time>.<slug>        # Resume
+hug w unwip  WIP/<date>/<time>.<slug> # Unpark: squash-merge to current + delete
+hug w wipdel WIP/<date>/<time>.<slug> # Discard WIP branch
 
 # Collab
 hug bpull                  # Pull rebase

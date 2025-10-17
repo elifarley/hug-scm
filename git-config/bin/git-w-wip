@@ -5,14 +5,14 @@ set -euo pipefail
 
 # Part of the Hug tool suite
 
-PROG_NAME="hug wip"
+PROG_NAME="hug w wip"
 
 show_help() {
   cat <<'EOF'
-hug wip: Park all changes on a dated WIP branch and optionally return to your previous branch.
+hug w wip: Park all changes on a dated WIP branch and optionally return to your previous branch.
 
 USAGE:
-  hug wip [OPTIONS] "<message>"
+  hug w wip [OPTIONS] "<message>"
 
 OPTIONS:
   --stay           Remain on the new WIP branch instead of switching back.
@@ -24,12 +24,12 @@ DESCRIPTION:
   unless --stay is supplied. Use WIP branches as pushable work-in-progress snapshots.
 
 EXAMPLES:
-  hug wip "Draft responsive navbar"
-  hug wip --stay "Spike auth refactor"
+  hug w wip "Draft responsive navbar"
+  hug w wip --stay "Spike auth refactor"
 
 TIPS:
   - Resume later with: hug b WIP/YY-MM-DD/HHmm.slug
-  - Clean up when finished: hug unwip WIP/YY-MM-DD/HHmm.slug
+  - Clean up when finished: hug w unwip WIP/YY-MM-DD/HHmm.slug
 EOF
 }
 

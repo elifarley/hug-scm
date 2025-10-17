@@ -31,7 +31,7 @@ Dive into detailed guides for command groups:
 - [Commits (c*): Create and amend commits](commands/commits)
 - [Logging (l*): Search and view history](commands/logging)
 - [File Inspection (f*): Analyze file authorship and history](commands/file-inspection)
-- [WIP Workflow (w*): Park progress on branches](commands/working-dir)
+- [WIP Workflow (w*): Park, resume, and unpark temp work](commands/working-dir)
  
 ### Tips for Common Queries
 - **Most recent commit touching a file**: Use `hug llf <file> -1` to get the latest commit modifying a specific file (handles renames with `--follow`). For multiple files, run separately and compare timestamps, or use `hug llf file1 -1` and `hug llf file2 -1`.

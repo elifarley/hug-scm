@@ -211,6 +211,9 @@ hug w zap-all [-u|-s|-i]          # Complete repo cleanup
 # Utility
 hug w backup [-m "msg"]           # Safe stash of changes
 hug w get <commit> [files]        # Restore files from specific commit
+hug w wip "<msg>"                 # Park changes on dated WIP branch, switch back
+hug w unwip [wip]                 # Unpark: squash-merge WIP to current + delete
+hug w wipdel [wip]                # Delete WIP branch (no integration)
 ```
 
 #### 📊 Status & Staging (`s`)
@@ -363,8 +366,9 @@ hug pullall           # Pull from all remotes
 
 ```shell
 hug o                 # Outgoing changes (what will be pushed)
-hug wip               # Commit everything as WIP
-hug unwip             # Undo last WIP commit
+hug w wip "<msg>"     # Park all changes on dated WIP branch, switch back
+hug w unwip [wip]     # Unpark WIP: squash-merge to current branch + delete
+hug w wipdel [wip]    # Delete WIP branch without integration
 hug alias [pattern]   # List all aliases (search with pattern)
 hug type <object>     # Show object type
 hug dump <object>     # Show object contents

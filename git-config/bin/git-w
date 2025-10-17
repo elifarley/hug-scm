@@ -16,6 +16,9 @@ case "${1:-}" in
   backup)       shift; git w-backup "$@" ;;
   restore)      shift; git w-restore "$@" ;;
   get)          shift; git w-get "$@" ;;
+  wip)          shift; git-w-wip "$@" ;;
+  unwip)        shift; git-w-unwip "$@" ;;
+  wipdel)       shift; git-w-wipdel "$@" ;;
   --dry-run)    shift; git w-dry-run "$@" ;;
   *)             printf 'Usage: hug w <command> [args]\n' >&2;
                  printf 'Commands:\n' >&2;
@@ -30,6 +33,9 @@ case "${1:-}" in
                  printf '  backup       Stash changes safely\n' >&2;
                  printf '  restore      Restore stashed changes\n' >&2;
                  printf '  get          Get files from specific commit\n' >&2;
+                 printf '  wip          Park changes on dated WIP branch, switch back\n' >&2;
+                 printf '  unwip        Unpark WIP: squash-merge to current + delete\n' >&2;
+                 printf '  wipdel       Delete WIP branch (no integration)\n' >&2;
                  printf '  changes      Quick working changes summary\n' >&2;
                  printf '  --dry-run    Show what would happen\n' >&2 ;;
 esac; 

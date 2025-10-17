@@ -3,28 +3,31 @@ CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
-PROG_NAME="hug unwip"
+PROG_NAME="hug w wipdel"
 
 show_help() {
   cat <<'EOF'
-hug unwip: Remove a WIP branch created via `hug wip`.
+hug w wipdel: Delete a WIP branch created via `hug w wip` (no integration).
 
 USAGE:
-  hug unwip [OPTIONS] [WIP_BRANCH]
+  hug w wipdel [OPTIONS] [WIP_BRANCH]
 
 OPTIONS:
   -f, --force      Force delete the branch even if not fully merged.
   -h, --help       Show this help message and exit.
 
 DESCRIPTION:
-  Deletes a WIP/YY-MM-DD/HHmm.slug branch. With no branch argument, presents an interactive picker
-  (requires fzf). By default the script attempts a safe delete (`git branch -d`);
-  retry with --force to drop unmerged work.
+  Deletes a WIP/YY-MM-DD/HHmm.slug branch without merging/integrating its changes.
+  Use when the temp work is worthless or abandoned. With no branch argument,
+  presents an interactive picker (requires fzf). By default attempts safe delete
+  (`git branch -d`); use --force to drop unmerged work.
+
+  For integrating temp work before deletion, use 'hug w unwip' instead.
 
 EXAMPLES:
-  hug unwip
-  hug unwip WIP/24-10-05/1430.draftfeature
-  hug unwip --force WIP/24-10-05/1430.draftfeature
+  hug w wipdel
+  hug w wipdel WIP/24-10-05/1430.draftfeature
+  hug w wipdel --force WIP/24-10-05/1430.draftfeature
 EOF
 }
 
@@ -35,7 +38,7 @@ usage_error() {
 }
 
 list_wip_branches() {
-  git for-each-ref --format='%(refname:short)' --sort=refname refs/heads/WIP/* 2>/dev/null || true | sort
+  git for-each-ref --format='%(refname:short)' --sort=refname 'refs/heads/WIP/' 2>/dev/null || true
 }
 
 select_wip_branch() {
@@ -46,7 +49,7 @@ select_wip_branch() {
   fi
 
   if command -v fzf >/dev/null 2>&1; then
-    selection="$(printf '%s\n' "$branches" | fzf --height=40% --border --prompt='Select WIP branch > ' || true)"
+    selection="$(printf '%s\n' "$branches" | fzf --height=40% --border --prompt='Select WIP branch to delete > ' || true)"
     selection="$(trim_message "${selection:-}")"
     if [ -z "$selection" ]; then
       printf 'No WIP branch selected.\n' >&2
@@ -55,7 +58,7 @@ select_wip_branch() {
     printf '%s\n' "$selection"
   else
     printf 'Available WIP branches:\n%s\n' "$branches" >&2
-    error "$PROG_NAME: fzf not available. Provide the branch explicitly (e.g. hug unwip WIP.<timestamp>.<slug>)."
+    error "$PROG_NAME: fzf not available. Provide the branch explicitly (e.g., hug w wipdel WIP.<timestamp>.<slug>)."
   fi
 }
 

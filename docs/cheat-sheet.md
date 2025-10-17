@@ -117,13 +117,16 @@ hug revert <commit-hash>
 ## Parking Work (WIP & Stash)
 ```bash
 # Save all changes on WIP branch (pushable, persistent)
-hug wip "Draft feature"
+hug w wip "Draft feature"
 
-# Resume WIP
-hug b WIP.2023-10-05.14-30.draftfeature
+# Resume WIP (for more edits)
+hug b WIP/2023-10-05/1430.draftfeature
 
-# Clean up WIP
-hug unwip WIP.<date>.<slug>
+# Unpark/finish: Squash-merge to current branch + delete
+hug w unwip WIP/<date>/<time>.<slug>
+
+# Discard worthless WIP
+hug w wipdel WIP/<date>/<time>.<slug>
 
 # Quick stash (local only)
 hug ssave                # Tracked files

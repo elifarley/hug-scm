@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+PROG_NAME="hug w unwip"
+
+show_help() {
+  cat <<'EOF'
+hug w unwip: Unpark a WIP branch by squash-merging it into the current branch and deleting the WIP branch.
+
+USAGE:
+  hug w unwip [OPTIONS] [WIP_BRANCH]
+
+OPTIONS:
+  -f, --force      Force delete the WIP branch even if not fully merged (after unpark).
+  --no-squash      Perform a regular merge instead of squash-merge (creates merge commit).
+  -h, --help       Show this help message and exit.
+
+DESCRIPTION:
+  Unparks temp work from a WIP/YY-MM-DD/HHmm.slug branch: squash-merges all changes into the current
+  branch as a single commit, then deletes the WIP branch. Use for finishing/integrating parked work.
+  With no branch argument, presents an interactive picker (requires fzf). Prompts for confirmation
+  and previews changes. Aborts on conflicts (resolve manually with 'hug a && hug c').
+
+  For deletion without integration (e.g., worthless WIP), use 'hug w wipdel' instead.
+
+EXAMPLES:
+  hug w unwip                          # Interactive unpark
+  hug w unwip WIP/24-10-05/1430.draftfeature
+  hug w unwip --force WIP/24-10-05/1430.draftfeature  # Force-delete post-unpark
+  hug w unwip --no-squash WIP/24-10-05/1430.draftfeature  # Regular merge
+
+TIPS:
+  - Ensure you're on the target branch (e.g., main) before unparking.
+  - Resume editing first with 'hug b <wip>', add commits, then 'hug bs && hug w unwip <wip>'.
+  - After unpark, run 'hug s' to check status and 'hug bpush' if ready to push.
+EOF
+}
+
+usage_error() {
+  printf '%s: %s\n\n' "$PROG_NAME" "$1" >&2
+  show_help >&2
+  exit 1
+}
+
+list_wip_branches() {
+  git for-each-ref --format='%(refname:short)' --sort=refname 'refs/heads/WIP/' 2>/dev/null || true
+}
+
+select_wip_branch() {
+  local branches selection
+  branches="$(list_wip_branches)"
+  if [ -z "$branches" ]; then
+    error "$PROG_NAME: No WIP branches found."
+  fi
+
+  if command -v fzf >/dev/null 2>&1; then
+    selection="$(printf '%s\n' "$branches" | fzf --height=40% --border --prompt='Select WIP branch to unpark > ' || true)"
+    selection="$(trim_message "${selection:-}")"
+    if [ -z "$selection" ]; then
+      printf 'No WIP branch selected.\n' >&2
+      exit 1
+    fi
+    printf '%s\n' "$selection"
+  else
+    printf 'Available WIP branches:\n%s\n' "$branches" >&2
+    error "$PROG_NAME: fzf not available. Provide the branch explicitly (e.g., hug w unwip WIP.<timestamp>.<slug>)."
+  fi
+}
+
+no_squash=false
+force_delete=false
+branch_arg=""
+
+while (($#)); do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -f|--force)
+      force_delete=true
+      ;;
+    --no-squash)
+      no_squash=true
+      ;;
+    --)
+      shift
+      if (($# > 1)); then
+        usage_error "Provide at most one branch name."
+      fi
+      if (($# == 1)); then
+        branch_arg="$1"
+      fi
+      break
+      ;;
+    -*)
+      usage_error "Unknown option '$1'."
+      ;;
+    *)
+      if [ -n "$branch_arg" ]; then
+        usage_error "Provide only one branch name."
+      fi
+      branch_arg="$1"
+      ;;
+  esac
+  shift || break
+done
+
+check_git_repo
+
+current_branch="$(git branch --show-current)"
+if [ -z "$current_branch" ]; then
+  error "$PROG_NAME: Cannot unpark from a detached HEAD. Switch to a branch first."
+fi
+
+branch_selected="$branch_arg"
+if [ -z "$branch_selected" ]; then
+  branch_selected="$(select_wip_branch)"
+fi
+
+branch="$(trim_message "$branch_selected")"
+if [ -z "$branch" ]; then
+  error "$PROG_NAME: No WIP branch specified."
+fi
+
+if ! git rev-parse --verify --quiet "refs/heads/$branch"; then
+  error "$PROG_NAME: Branch '$branch' does not exist."
+fi
+
+if [ "$branch" = "$current_branch" ]; then
+  error "$PROG_NAME: Cannot unpark the current branch '$branch'. Switch away first."
+fi
+
+if [[ "$branch" != WIP/* ]]; then
+  warn "$PROG_NAME: Branch '$branch' is not prefixed with WIP/; proceeding anyway."
+fi
+
+# Check for unique commits
+base_commit="$(git merge-base "$current_branch" "$branch")"
+unique_commits_count="$(git rev-list --count "$base_commit".."$branch")"
+if [ "$unique_commits_count" -eq 0 ]; then
+  printf 'No unique commits in %s (already merged). Skipping merge.\n' "$branch" >&2
+  merge_performed=false
+else
+  printf 'Unparking %s commits from %s into %s.\n' "$unique_commits_count" "$branch" "$current_branch" >&2
+
+  # Preview changes
+  printf '\nPreview of changes to unpark:\n' >&2
+  git diff --name-only "$current_branch"..."$branch" | head -10 >&2 || true
+  printf '\n(Full preview: git diff %s..%s)\n' "$current_branch" "$branch" >&2
+
+  read -r -p "Proceed with $( [ "$no_squash" = true ] && printf 'regular ' || printf 'squash-' )merge? [y/n] " choice
+  if [[ "$choice" =~ ^[Yy] ]]; then
+    if [ "$no_squash" = true ]; then
+      git merge "$branch" || { error "$PROG_NAME: Merge failed (conflicts?). Resolve manually with 'hug a && hug c', then delete with 'hug w wipdel %s'." "$branch"; exit 1; }
+    else
+      git merge --squash "$branch" || { error "$PROG_NAME: Squash-merge failed (conflicts?). Resolve with 'hug a && hug c', then delete with 'hug w wipdel %s'." "$branch"; exit 1; }
+      orig_msg="$(git log -1 --format='%s' "$branch" | sed 's/^\[WIP\] //' || echo "Complete WIP work")"
+      orig_body="$(git log -1 --format='%b' "$branch")"
+      commit_msg="Finish WIP: $orig_msg"
+      [ -n "$orig_body" ] && commit_msg="$commit_msg\n\n$orig_body"
+      git commit -m "$commit_msg" || { error "$PROG_NAME: Commit after squash failed. Index is staged; run 'hug c' manually."; exit 1; }
+    fi
+    printf 'Unparked successfully.\n' >&2
+    merge_performed=true
+  else
+    printf 'Unpark aborted.\n' >&2
+    exit 0
+  fi
+fi
+
+# Delete the WIP branch
+if [ "$force_delete" = true ]; then
+  if git branch -D "$branch" >/dev/null 2>&1; then
+    printf 'Force-deleted WIP branch %s.\n' "$branch"
+  else
+    error "$PROG_NAME: Failed to force-delete branch '$branch'."
+  fi
+else
+  if git branch -d "$branch" >/dev/null 2>&1; then
+    printf 'Deleted WIP branch %s.\n' "$branch"
+  else
+    printf '%s: Branch "%s" is not fully merged. Re-run with --force to delete it.\n' "$PROG_NAME" "$branch" >&2
+    exit 1
+  fi
+fi
+
+if [ "$merge_performed" = true ]; then
+  printf '\nTip: Run "hug s" to verify status, then "hug bpush" if ready to push.\n' >&2
+fi
