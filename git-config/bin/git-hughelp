@@ -83,6 +83,7 @@ if [[ "$prefix" == "h" ]]; then
   echo "  files    - Preview files touched by commits to rewind"
   echo "  rollback - Rollback commit, preserve local work"
   echo "  rewind   - Rewind to clean state (destructive)"
+  echo "  squash   - Squash last N commits into 1 with original message"
   echo "  undo     - Move HEAD back, unstage changes"
   echo ""
   echo "All h* commands support -u/--upstream to target remote upstream tip"

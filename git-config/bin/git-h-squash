@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+show_help() {
+    cat << EOF
+hug h squash: Squashes last N commits (or local-only to upstream) into 1 with original HEAD message.
+
+USAGE:
+    hug h squash [N|COMMIT] [-u, --upstream] [--quiet]
+
+OPTIONS:
+    -u, --upstream  Squashes local-only commits onto upstream remote tip (no fetch)
+    --quiet         Suppress output (sets HUG_QUIET=T)
+
+DESCRIPTION:
+    HEAD goes back to target (like 'h back'), then commits staged changes using the original HEAD's message.
+    Squashes changes from undone commits into one. Non-destructive to uncommitted work.
+
+EXAMPLES:
+    hug h squash 3                 # Squash last 3 commits into 1 at HEAD~3
+    hug h squash a1b2c3            # Squash to specified commit
+    hug h squash -u                # Squash local commits onto upstream tip
+
+SEE ALSO:
+    hug h back    HEAD goes back only (no auto-commit)
+    hug c         Manual commit after reset
+EOF
+}
+
+upstream=false
+target_arg=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) show_help; exit 0 ;;
+    -u|--upstream) upstream=true; shift ;;
+    --quiet) HUG_QUIET=T; shift ;;
+    *) target_arg="$1"; shift ;;
+  esac
+done
+
+if $upstream && [[ -n "$target_arg" ]]; then
+  error "Cannot specify both -u/--upstream and a target (N|COMMIT)."
+fi
+
+check_git_repo
+
+# Capture original HEAD message BEFORE any reset
+original_head=$(git rev-parse HEAD)
+original_message=$(git log -1 --format=%B "$original_head" 2>/dev/null || echo "Squashed commits")
+
+if $upstream; then
+  if ! git rev-parse --verify @{u} >/dev/null 2>&1; then
+    error "No upstream branch set. Run 'git branch --set-upstream-to=origin/BRANCH'."
+  fi
+  target="@{u}"
+  local_commits=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 0)
+  if [ "$local_commits" -eq 0 ]; then
+    info "No local commits to squash; already synced to upstream ($(git rev-parse --short "$target"))."
+    exit 0
+  fi
+  upstream_short=$(git rev-parse --short "$target")
+  upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
+  printf 'Commits to be squashed:\n' >&2
+  git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
+  affected_files=$(git log --name-only --pretty=format: "$target"..HEAD | grep -v '^$' | sort -u | wc -l)
+  printf '\nPreview: %d files affected in %d local commits to %s (%s).\n' >&2 \
+    "$affected_files" "$local_commits" "$upstream_short" "$upstream_branch"
+  printf '\nWill create new commit with message: "%s"\n' "$original_message" >&2
+  printf '\n⚠️  This squashes commits into 1 but preserves uncommitted changes.\n' >&2
+  read -p "Proceed with squash (soft reset + commit)? [y/N]: " confirm >&2
+  [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 1; }
+else
+  case "${target_arg:-}" in
+    '') target='HEAD~1'; N=1 ;;
+    [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$target_arg"; N="$target_arg" ;;
+    *) target="$target_arg"; N="to $target" ;;
+  esac
+  commits_to_squash=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 1)
+  if [ "$commits_to_squash" -eq 0 ]; then
+    info "No commits to squash (already at $target)."
+    exit 0
+  fi
+  printf 'Commits to be squashed:\n' >&2
+  git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
+  affected_files=$(git log --name-only --pretty=format: "$target"..HEAD | grep -v '^$' | sort -u | wc -l)
+  printf '\nPreview: %d files affected in %d commits.\n' >&2 \
+    "$affected_files" "$commits_to_squash"
+  printf '\nWill create new commit with message: "%s"\n' "$original_message" >&2
+  read -p "Proceed with squash of last $N commits (soft reset + commit)? [y/N]: " confirm >&2
+  [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 1; }
+fi
+
+# Perform soft reset
+hug h back "$target" --quiet
+
+# Check for staged changes (git-c will handle, but warn if none)
+if [ -z "$(git diff --cached --name-only)" ]; then
+  warn "No changes staged after reset. Skipping commit (empty squash?)."
+  info "HEAD moved to $target."
+  exit 0
+fi
+
+# Commit with original message using hug c
+hug c -m "$original_message"
+
+info "Squash complete: $commits_to_squash commits combined into 1 at $target with original message."

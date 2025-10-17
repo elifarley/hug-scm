@@ -6,14 +6,15 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 
 ## Quick Reference
 
-| Command | Memory Hook | Summary                                                               |
-| --- | --- |-----------------------------------------------------------------------|
-| `hug h back [-u]` | **H**EAD **Back** | HEAD goes back, keeping changes staged                                |
-| `hug h undo [-u]` | **H**EAD **Undo** | HEAD goes back, keeping changes unstaged                              |
-| `hug h rollback [-u]` | **H**EAD **R**ollback | HEAD goes back, discarding changes but preserving uncommitted changes |
-| `hug h rewind [-u]` | **H**EAD **Re**wind | HEAD goes back, discarding ALL changes, including uncommitted ones    |
-| `hug h files [-u]` | **H**EAD **F**iles | Preview files touched in the selected range (or local-only with -u)   |
-| `hug h steps <file>` | **H**EAD **Steps** | Steps back to last file change (query for rewinds)                    |
+| Command | Memory Hook | Summary                                                                  |
+| --- | --- |--------------------------------------------------------------------------|
+| `hug h back [-u]` | **H**EAD **Back** | HEAD goes back, keeping changes staged                                   |
+| `hug h undo [-u]` | **H**EAD **Undo** | HEAD goes back, keeping changes unstaged                                 |
+| `hug h rollback [-u]` | **H**EAD **R**ollback | HEAD goes back, discarding changes but preserving uncommitted changes    |
+| `hug h rewind [-u]` | **H**EAD **Re**wind | HEAD goes back, discarding ALL changes, including uncommitted ones       |
+| `hug h squash [-u]` | **H**EAD **S**quash | HEAD goes back + commit last N/local commits as 1 with original HEAD msg |
+| `hug h files [-u]` | **H**EAD **F**iles | Preview files touched in the selected range (or local-only with -u)      |
+| `hug h steps <file>` | **H**EAD **Steps** | Steps back to last file change (query for rewinds)                       |
 
 ## Commands
 
@@ -23,7 +24,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
   ```
   hug h back                # Undo last commit, keep changes staged
   hug h back 3              # Undo last 3 commits
-  hug h back a1b2c3         # Reset to specific commit
+  hug h back a1b2c3         # HEAD goes back to specific commit
   hug h back -u             # HEAD goes back to upstream tip, keep local changes staged
   ```
 - **Safety**: Non-destructive; changes remain staged and can be inspected with `hug sl` (**S**tatus + **L**ist uncommitted files) and `hug ss` (**S**tatus + **S**taged diff) or re-committed. Previews commits/files and requires y/n confirmation for `-u`. Cannot mix `-u` with explicit target.
@@ -35,10 +36,9 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
   hug h undo                # Undo last commit, unstage changes
   hug h undo 3              # Undo last 3 commits
   hug h undo main           # Undo to main branch
-  hug h undo -u             # Mixed reset to upstream tip, keep local changes unstaged
+  hug h undo -u             # Undo to upstream tip, keep local changes unstaged
   ```
 - **Safety**: Non-destructive; changes remain in working directory and can be viewed with `hug su` (**S**tatus + **U**nstaged diff). Previews commits/files and requires y/n confirmation for `-u`. Cannot mix `-u` with explicit target.
-- **Git Equivalent**: `git reset --mixed [commit]` (or `git reset [commit]` for short)
 
 ### `hug h rollback [N|commit] [-u, --upstream]`
 - **Description**: HEAD goes back by N commits (default: 1) or to a specific commit, discarding commit history and staged changes, but preserving any uncommitted local changes in the working directory. With `-u`, resets to upstream remote tip, discarding local-only commits but keeping uncommitted work.
@@ -47,7 +47,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
   hug h rollback            # Rollback last commit, keep local work
   hug h rollback 2          # Rollback last 2 commits
   hug h rollback a1b2c3     # Rollback to specific commit
-  hug h rollback -u         # Hard reset to upstream tip, preserve local uncommitted changes
+  hug h rollback -u         # Rollback to upstream tip, preserve local uncommitted changes
   ```
 - **Safety**: Aborts if it would overwrite uncommitted changes. Previews commits/files and requires y/n confirmation for `-u`. Cannot mix `-u` with explicit target. Use `hug h files` first to inspect.
 
@@ -58,9 +58,20 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
   hug h rewind              # Rewind to last commit's clean state
   hug h rewind 3            # Rewind last 3 commits
   hug h rewind origin/main  # Rewind to remote main
-  hug h rewind -u           # Full hard reset to upstream tip
+  hug h rewind -u           # Rewind to upstream tip
   ```
 - **Safety**: Previews commits to be discarded, requires typing "rewind" to confirm (or "rewind" for `-u`). Untracked files are safe, but always backup with `hug w backup` first. Cannot mix `-u` with explicit target.
+
+### `hug h squash [N|commit] [-u, --upstream]`
+- **Description**: Soft resets HEAD by N commits (default: 1) or to a specific commit (like `h back`), then immediately commits the staged changes as one new commit using the exact message from the original HEAD (before the reset). Squashes the changes from the undone commits into this single commit. With `-u`, squashes local-only commits onto the upstream tip. Non-destructive to uncommitted working directory changes.
+- **Example**:
+  ```
+  hug h squash               # Squash last commit (no-op, but consistent)
+  hug h squash 3             # Squash last 3 commits into 1 at HEAD~3
+  hug h squash a1b2c3        # Squash to specified commit
+  hug h squash -u            # Squash local commits onto upstream tip
+  ```
+- **Safety**: Previews commits/files affected and requires y/n confirmation. Aborts if no upstream set for `-u` or invalid target. If no staged changes after reset, skips commit and warns. Cannot mix `-u` with explicit target. Pre-existing staged changes will be included—review with `hug ss` first.
 
 ### `hug h files [N|commit] [options]`
 - **Description**: Preview unique files touched by commits in the specified range (default: last 1 commit). With `-u`, previews files in local-only commits (HEAD to upstream tip). Useful before back, undo, rollback, or rewind to understand impact.
@@ -87,6 +98,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 ## Tips
 - Preview impact with `hug h files` (or `hug h files -u` for local-only) before any HEAD movement (e.g., `hug h files 2` then `hug h back 2`).
 - Sync to remote after local dev: `hug h back -u` (soft, keeps staged) or `hug h undo -u` (unstaged). Use `git fetch` first if remote may have advanced.
+- For quick squashing: `hug h squash N` (HEAD goes back + auto-commit with original message).
 - Always run `hug w backup` before destructive ops like `rollback` or `rewind`.
 - Use `hug s` or `hug sw` (**S**tatus + **W**orking directory diff) to check status after any HEAD movement.
 - For interactive rebase (edit/squash multiple commits), see [Rebase Commands](commits#rebase).

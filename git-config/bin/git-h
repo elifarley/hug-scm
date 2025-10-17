@@ -10,6 +10,7 @@ case "${1:-}" in
   rollback)      shift; git h-rollback "$@" ;;
   rewind)        shift; git h-rewind "$@" ;;
   files)         shift; git h-files "$@" ;;
+  squash)        shift; git h-squash "$@" ;;
   *)             printf 'Usage: hug h <command> [args]\n' >&2
                  printf 'Commands:\n' >&2
                  printf '  back          Move HEAD back, keep staged\n' >&2
@@ -17,5 +18,6 @@ case "${1:-}" in
                  printf '  files         Preview files touched by commits to rewind\n' >&2
                  printf '  rollback      Rollback commit, preserve local work\n' >&2
                  printf '  rewind        Rewind to clean state (destructive)\n' >&2
+                 printf '  squash        Squash last N commits into 1 with original message\n' >&2
                  printf '\nAll support -u/--upstream to target remote tip (e.g., h back -u)\n' >&2
 esac
