@@ -2,6 +2,8 @@
 
 Hug is a CLI tool to streamline development. It provides a humane, intuitive interface for Git, transforming complex commands into a predictable language that keeps you focused on coding.
 
+[GitHub Repository](https://github.com/elifarley/hug-scm?tab=readme-ov-file#readme)
+
 Key features:
 - **Intuitive Commands**: Shorter for common/safe ops, longer for powerful ones (e.g., `hug b` to switch branches).
 - **Safety Built-In**: Previews, dry-runs, and confirmations for destructive actions.
