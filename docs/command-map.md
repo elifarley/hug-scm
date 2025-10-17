@@ -97,7 +97,7 @@ Hug Commands
 </details>
 
 ## Next Steps
-- Pick a family and explore its dedicated page (e.g., [HEAD Operations](head) for `h*`).
+- Pick a family and explore its dedicated page (e.g., [HEAD Operations](commands/head) for `h*`).
 - Practice: Run `hug s` to check status, then `hug b` to switch branches.
 - For full lists, see individual command docs or `hug alias` in your repo.
 

@@ -86,7 +86,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 - **Safety**: Read-only; no changes to repo. Cannot mix `-u` with explicit target.
 
 ### `hug h steps <file> [--raw]`
-- **Description**: Calculate commit steps from HEAD back to the most recent commit touching <file> (handles renames). Outputs the count; use for precise rewinds like `h back N`. Full mode shows formatted commit info via `hug ll`.
+- **Description**: Calculate commit steps from HEAD back to the most recent commit touching `file` (handles renames). Outputs the count; use for precise rewinds like `h back N`. Full mode shows formatted commit info via `hug ll`.
 - **Example**:
   ```bash
   hug h steps src/app.js          # "3 steps back from HEAD (last commit abc123); <ll output>"
