@@ -227,8 +227,8 @@ Stashing is part of status workflow for temporary backups.
 Branch-based alternative to stashing for persistent saves.
 
 - `hug wip "<msg>"`: **W**ork **I**n **P**rogress
-  - **Description**: Stages all changes (tracked/untracked/deletions), commits to a new branch like `WIP.YYYY-MM-DD.HH-MM-SS.msg` with `[WIP] <msg>`, then switches back to previous branch. Pushable and versioned.
-  - **Example**: `hug wip "Fix login UI"` → Resume with `hug b WIP.2023-10-05.14-30-00.fixloginui`
+  - **Description**: Stages all changes (tracked/untracked/deletions), commits to a new branch like `WIP/YY-MM-DD/HHmm.slug` with `[WIP] <msg>`, then switches back to previous branch. Pushable and versioned.
+  - **Example**: `hug wip "Fix login UI"` → Resume with `hug b WIP/24-10-05/1430.fixloginui`
   - **Safety**: Skips if no changes; aborts if branch name conflicts. Use `hug bl | grep WIP` to list.
 
 ## Scenarios

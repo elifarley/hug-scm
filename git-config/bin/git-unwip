@@ -17,14 +17,14 @@ OPTIONS:
   -h, --help       Show this help message and exit.
 
 DESCRIPTION:
-  Deletes a WIP.* branch. With no branch argument, presents an interactive picker
+  Deletes a WIP/YY-MM-DD/HHmm.slug branch. With no branch argument, presents an interactive picker
   (requires fzf). By default the script attempts a safe delete (`git branch -d`);
   retry with --force to drop unmerged work.
 
 EXAMPLES:
   hug unwip
-  hug unwip WIP.2023-10-05.14-30.draftfeature
-  hug unwip --force WIP.2023-10-05.14-30.draftfeature
+  hug unwip WIP/24-10-05/1430.draftfeature
+  hug unwip --force WIP/24-10-05/1430.draftfeature
 EOF
 }
 
@@ -35,7 +35,7 @@ usage_error() {
 }
 
 list_wip_branches() {
-  git for-each-ref --format='%(refname:short)' refs/heads/WIP.* | sort
+  git for-each-ref --format='%(refname:short)' --sort=refname refs/heads/WIP/* 2>/dev/null || true | sort
 }
 
 select_wip_branch() {
@@ -115,8 +115,8 @@ if [ "$branch" = "$current_branch" ]; then
   error "$PROG_NAME: Cannot delete the currently checked-out branch '$branch'. Switch branches first."
 fi
 
-if [[ "$branch" != WIP.* ]]; then
-  warn "$PROG_NAME: Branch '$branch' is not prefixed with WIP.; deleting anyway."
+if [[ "$branch" != WIP/* ]]; then
+  warn "$PROG_NAME: Branch '$branch' is not prefixed with WIP/; deleting anyway."
 fi
 
 if [ "$force_delete" = true ]; then

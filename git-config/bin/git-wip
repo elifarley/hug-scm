@@ -19,7 +19,7 @@ OPTIONS:
   -h, --help       Show this help message and exit.
 
 DESCRIPTION:
-  Collects staged, unstaged, and untracked changes; creates a WIP.YYYY-MM-DD.HH-MM.slug
+  Collects staged, unstaged, and untracked changes; creates a WIP/YY-MM-DD/HHmm.slug
   branch; commits with a "[WIP] <message>" summary; then switches back to the previous branch
   unless --stay is supplied. Use WIP branches as pushable work-in-progress snapshots.
 
@@ -28,8 +28,8 @@ EXAMPLES:
   hug wip --stay "Spike auth refactor"
 
 TIPS:
-  - Resume later with: hug b WIP.<timestamp>.<slug>
-  - Clean up when finished: hug unwip WIP.<timestamp>.<slug>
+  - Resume later with: hug b WIP/YY-MM-DD/HHmm.slug
+  - Clean up when finished: hug unwip WIP/YY-MM-DD/HHmm.slug
 EOF
 }
 
@@ -47,7 +47,9 @@ generate_branch_name() {
   if [ -z "$slug" ]; then
     slug="work"
   fi
-  printf 'WIP.%s.%s\n' "$(date +%Y-%m-%d.%H-%M)" "$slug"
+  local date_part="$(date +%y-%m-%d)"
+  local time_part="$(date +%H%M)"
+  printf 'WIP/%s/%s.%s\n' "$date_part" "$time_part" "$slug"
 }
 
 stay_on_wip=false
