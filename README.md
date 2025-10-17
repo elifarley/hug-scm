@@ -3,6 +3,8 @@
 Try it now:
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/elifarley/hug-scm)
 
+[View Documentation](https://elifarley.github.io/hug-scm/)
+
 A humane, intuitive interface for Git and other version control systems.
 
 Works as a universal language to control the underlying SCM tool you use.
