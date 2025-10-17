@@ -23,6 +23,7 @@
           text: 'Command Reference',
           items: [
             { text: 'Command Map', link: '/command-map' },
+            { text: 'Cheat Sheet', link: '/cheat-sheet' },
             { text: 'HEAD Operations (h*)', link: '/commands/head' },
             { text: 'Working Directory & WIP (w*)', link: '/commands/working-dir' },
             { text: 'Status & Staging (s*, a*)', link: '/commands/status-staging' },

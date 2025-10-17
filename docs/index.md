@@ -13,7 +13,7 @@ Key features:
 [Start with Hug for Developers](hug-for-developers)
 
 ## Command Reference
-Start with the [Command Map](/command-map) for a quick overview of all families.
+Start with the [Command Map](/command-map) for a quick overview of all families, or the [Cheat Sheet](/cheat-sheet) for daily workflows.
 
 Dive into detailed guides for command groups:
 
