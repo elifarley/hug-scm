@@ -2,6 +2,23 @@
 
 Logging commands in Hug provide powerful ways to view, search, and inspect commit history. Prefixed with `l` for "log," they enhance Git's `log` command with intuitive searches by message, code changes, authors, dates, and file-specific histories. File-focused commands (llf*) handle renames via `--follow` and support limiting to recent commits (e.g., `-1` for the most recent).
 
+## Quick Reference
+
+| Command | Memory Hook | Summary |
+| --- | --- | --- |
+| `hug l` | **L**og summary | Oneline history with graph and decorations |
+| `hug ll` | **L**og **L**ong | Detailed log with full messages |
+| `hug la` | **L**og **A**ll | Detailed log across all branches |
+| `hug lp` | **L**og **P**atch | Log with diffs for each commit |
+| `hug lf` | **L**og message **F**ilter | Search commit messages |
+| `hug lc` | **L**og **C**ode search | Search diffs for exact term |
+| `hug lcr` | **L**og **C**ode **R**egex | Search diffs with regex |
+| `hug lau` | **L**og **A**uthor | Filter log by author |
+| `hug ld` | **L**og **D**ate | Log commits within a date range |
+| `hug llf` | **L**og **L**ookup **F**ile | File history following renames |
+| `hug llfs` | **L**og **L**ookup **F**ile **S**tats | File history with change statistics |
+| `hug llfp` | **L**og **L**ookup **F**ile **P**atch | File history with full patches |
+
 ## Basic Logging
 
 - `hug l [options]`

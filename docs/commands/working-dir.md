@@ -4,14 +4,29 @@ Working Directory commands in Hug help you manage, clean up, and restore changes
 
 These build on Git's `reset`, `stash`, and `clean` but add intuitive names and safety layers.
 
+## Quick Reference
+
+| Command | Memory Hook                             | Summary                                                  |
+| --- |-----------------------------------------|----------------------------------------------------------|
+| `hug w discard` | **W**orking directory **D**iscard       | Discard unstaged or staged changes for paths             |
+| `hug w discard-all` | **W**orking directory **discard **ALL** | Discard unstaged or staged changes across the repository |
+| `hug w wipe` | **W**orking directory **W**ipe          | Discard uncommitted changes for paths                       |
+| `hug w wipe-all` | **W**orking directory **W**ipe **ALL**  | Drop uncommitted changes in entire repo                  |
+| `hug w purge` | **W**orking directory **P**urge         | Remove untracked or ignored files for paths              |
+| `hug w purge-all` | **W**orking directory **P**urge **ALL** | Repo-wide purge of untracked/ignored files               |
+| `hug w zap` | **W**orking directory **Z**ap           | Combine wipe + purge for paths                           |
+| `hug w zap-all` | **W**orking directory **Z**ap **ALL**   | Full repo cleanup of tracked and untracked files         |
+| `hug w backup` | **W**orking directory **B**ackup        | Stash tracked and untracked changes safely               |
+| `hug w get` | **W**orking directory **G**et           | Restore files from a specific commit                     |
+
 ## Commands
 
 ### Discard Changes
-Discard specific or all changes without affecting untracked files.
+Discard unstaged or staged changes without affecting untracked files.
 
 - `hug w discard [-u|-s] <files...>`
   - **Description**: Discard unstaged (`-u`, default) or staged (`-s`) changes for specific files/paths.
-  - **Usage**:
+  - **Example**:
     ```
     hug w discard file.js     # Discard unstaged changes in file.js
     hug w discard -s .        # Discard all staged changes
@@ -23,7 +38,7 @@ Discard specific or all changes without affecting untracked files.
   - **Example**: `hug w discard-all -u` (default unstaged).
 
 ### Wipe Changes
-Reset both staged and unstaged changes to the last commit state.
+Drop uncommitted changes (both staged and unstaged).
 
 - `hug w wipe <files...>`
   - **Description**: Wipe staged + unstaged for specific files (tracked only).
@@ -63,9 +78,6 @@ Combines wipe + purge for full reset.
 - `hug w get <commit> [files...]`
   - **Description**: Restore files from a specific commit to working directory.
   - **Example**: `hug w get HEAD~2 README.md` (gets from 2 commits ago)
-
-- `hug w changes` (or `hug sx`)
-  - **Description**: Quick summary of working directory changes.
 
 ## Tips
 - Chain with status: `hug w discard file.js && hug sl`

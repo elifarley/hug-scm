@@ -5,6 +5,16 @@ and evolution over time.
 These are implemented as Git aliases in `.gitconfig`, wrapping Git's `blame`, `log`, and related commands with optimizations like `--follow` for handling
 renames.
 
+## Quick Reference
+
+| Command | Memory Hook | Summary |
+| --- | --- | --- |
+| `hug fblame` | **F**ile **B**lame | Detailed blame with movement detection |
+| `hug fb` | **F**ile **B**lame (porcelain) | Lightweight blame output for scripting |
+| `hug fcon` | **F**ile **CON**tributors | List unique contributors to a file |
+| `hug fa` | **F**ile **A**uthors | Count commits per author for a file |
+| `hug fborn` | **F**ile **B**orn | Show the commit where the file was added |
+
 ## Blame Commands
 Blame shows which author last modified each line of a file, helping attribute changes.
 - `hug fblame <file>`

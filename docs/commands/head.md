@@ -4,6 +4,16 @@ HEAD operations in Hug allow you to safely move or undo commits without losing w
 
 These map to Git's `reset` modes but with intuitive names and built-in safeguards where applicable (e.g., confirmations for destructive actions).
 
+## Quick Reference
+
+| Command | Memory Hook | Summary |
+| --- | --- | --- |
+| `hug h back` | **H**EAD **Back** | Soft reset keeping changes staged |
+| `hug h undo` | **H**EAD **Undo** | Mixed reset keeping changes unstaged |
+| `hug h rollback` | **H**EAD **R**ollback | Hard reset preserving working tree changes |
+| `hug h rewind` | **H**EAD **Re**wind | Full hard reset to a clean tracked state |
+| `hug h files` | **H**EAD **F**iles | Preview files touched in the selected range |
+
 ## Commands
 
 ### `hug h back [N|commit]`

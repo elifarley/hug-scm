@@ -2,6 +2,14 @@
 
 The `c*` commands handle creating and amending commits, making it easier to record changes in your repository.
 
+## Quick Reference
+
+| Command | Memory Hook | Summary |
+| --- | --- | --- |
+| `hug c` | **C**ommit | Commit staged changes with a message |
+| `hug caa` | **C**ommit **A**ll **A**mend | Amend previous commit including all changes |
+| `hug cc` | **C**ommit **C**lose | Commit and close a referenced issue |
+
 ## hug c
 
 Commit staged changes with a message.
