@@ -1,3 +1,10 @@
+---
+title: Welcome to Hug Documentation
+editLink: true
+lastUpdated: true
+outline: [2, 3]
+---
+
 # Welcome to Hug Documentation
 
 Hug is a CLI tool to streamline development. It provides a humane, intuitive interface for Git, transforming complex commands into a predictable language that keeps you focused on coding.
