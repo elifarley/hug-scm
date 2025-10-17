@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << EOF
+hug h steps: Show commit steps back from HEAD to last change of a file.
+
+USAGE:
+    hug h steps <file> [--raw] [-h, --help]
+
+OPTIONS:
+    --raw      Output just the step count (0 if in HEAD)
+    -h, --help Show this help
+
+DESCRIPTION:
+    Computes the number of commits from HEAD back to the most recent commit
+    touching <file> (handles renames via --follow). Use to find N for 'h back N'
+    or similar HEAD ops.
+
+    Full output: "<steps> steps back from HEAD; <formatted commit info>"
+    If 0 steps: Indicates last change is in HEAD.
+
+EXAMPLES:
+    hug h steps src/app.js          # Full info for app.js
+    hug h steps README.md --raw     # Just the number (e.g., 3)
+    hug h steps file.txt --raw | xargs hug h back  # Chain to rewind
+
+SEE ALSO:
+    h back    : Soft reset N steps (use output here)
+    llf       : View last commit details for file
+EOF
+}
+
+if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+  show_help
+  exit 0
+fi
+
+file="$1"; shift
+raw=false
+if [[ "${1:-}" == "--raw" ]]; then
+  raw=true
+  shift
+fi
+
+check_git_repo
+if [ ! -e "$file" ]; then
+  error "File '$file' does not exist."
+  exit 1
+fi
+
+last_commit=$(git log -1 --follow --format=%H -- "$file" 2>/dev/null) || {
+  error "File '$file' has no commits in history (untracked or new)."
+  exit 1
+}
+
+steps=$(git rev-list --count "$last_commit"..HEAD)
+
+if $raw; then
+  echo "$steps"
+  exit 0
+fi
+
+short_hash=$(git rev-parse --short "$last_commit")
+if [ "$steps" = "0" ]; then
+  echo "0 steps back from HEAD (last change in current commit);"
+  hug ll -1
+else
+  echo "$steps steps back from HEAD (last commit $short_hash);"
+  hug ll "$last_commit" -1
+fi

@@ -16,13 +16,15 @@ readonly NC=$(tput sgr0) # No Color
 
 # Helper functions
 error() {
-    printf "${RED}❌ Error:${NC} %s\n" "$1" >&2
-    exit 1
+  printf "${RED}❌ Error:${NC} %s\n" "$1" >&2
+  exit "${2:-1}"
 }
 
 warning() {
     printf "${YELLOW}⚠️  Warning:${NC} %s\n" "$1" >&2
 }
+
+warn() { warning "$@"; }
 
 info() {
     printf "${BLUE}ℹ️  Info:${NC} %s\n" "$1" >&2
@@ -30,6 +32,10 @@ info() {
 
 success() {
     printf "${GREEN}✅ Success:${NC} %s\n" "$1" >&2
+}
+
+trim_message() {
+  printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
 dedupe_array() {

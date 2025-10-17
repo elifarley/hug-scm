@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+PROG_NAME="hug unwip"
+
+show_help() {
+  cat <<'EOF'
+hug unwip: Remove a WIP branch created via `hug wip`.
+
+USAGE:
+  hug unwip [OPTIONS] [WIP_BRANCH]
+
+OPTIONS:
+  -f, --force      Force delete the branch even if not fully merged.
+  -h, --help       Show this help message and exit.
+
+DESCRIPTION:
+  Deletes a WIP.* branch. With no branch argument, presents an interactive picker
+  (requires fzf). By default the script attempts a safe delete (`git branch -d`);
+  retry with --force to drop unmerged work.
+
+EXAMPLES:
+  hug unwip
+  hug unwip WIP.2023-10-05.14-30.draftfeature
+  hug unwip --force WIP.2023-10-05.14-30.draftfeature
+EOF
+}
+
+usage_error() {
+  printf '%s: %s\n\n' "$PROG_NAME" "$1" >&2
+  show_help >&2
+  exit 1
+}
+
+list_wip_branches() {
+  git for-each-ref --format='%(refname:short)' refs/heads/WIP.* | sort
+}
+
+select_wip_branch() {
+  local branches selection
+  branches="$(list_wip_branches)"
+  if [ -z "$branches" ]; then
+    error "$PROG_NAME: No WIP branches found."
+  fi
+
+  if command -v fzf >/dev/null 2>&1; then
+    selection="$(printf '%s\n' "$branches" | fzf --height=40% --border --prompt='Select WIP branch > ' || true)"
+    selection="$(trim_message "${selection:-}")"
+    if [ -z "$selection" ]; then
+      printf 'No WIP branch selected.\n' >&2
+      exit 1
+    fi
+    printf '%s\n' "$selection"
+  else
+    printf 'Available WIP branches:\n%s\n' "$branches" >&2
+    error "$PROG_NAME: fzf not available. Provide the branch explicitly (e.g. hug unwip WIP.<timestamp>.<slug>)."
+  fi
+}
+
+force_delete=false
+branch_arg=""
+
+while (($#)); do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -f|--force)
+      force_delete=true
+      ;;
+    --)
+      shift
+      if (($# > 1)); then
+        usage_error "Provide at most one branch name."
+      fi
+      if (($# == 1)); then
+        branch_arg="$1"
+      fi
+      break
+      ;;
+    -*)
+      usage_error "Unknown option '$1'."
+      ;;
+    *)
+      if [ -n "$branch_arg" ]; then
+        usage_error "Provide only one branch name."
+      fi
+      branch_arg="$1"
+      ;;
+  esac
+  shift || break
+done
+
+check_git_repo
+
+branch_selected="$branch_arg"
+if [ -z "$branch_selected" ]; then
+  branch_selected="$(select_wip_branch)"
+fi
+
+branch="$(trim_message "$branch_selected")"
+if [ -z "$branch" ]; then
+  error "$PROG_NAME: No WIP branch specified."
+fi
+
+if ! git rev-parse --verify --quiet "refs/heads/$branch"; then
+  error "$PROG_NAME: Branch '$branch' does not exist."
+fi
+
+current_branch="$(git branch --show-current)"
+if [ "$branch" = "$current_branch" ]; then
+  error "$PROG_NAME: Cannot delete the currently checked-out branch '$branch'. Switch branches first."
+fi
+
+if [[ "$branch" != WIP.* ]]; then
+  warn "$PROG_NAME: Branch '$branch' is not prefixed with WIP.; deleting anyway."
+fi
+
+if [ "$force_delete" = true ]; then
+  if git branch -D "$branch" >/dev/null 2>&1; then
+    printf 'Force-deleted WIP branch %s.\n' "$branch"
+  else
+    error "$PROG_NAME: Failed to force-delete branch '$branch'."
+  fi
+else
+  if git branch -d "$branch" >/dev/null 2>&1; then
+    printf 'Deleted WIP branch %s.\n' "$branch"
+  else
+    printf '%s: Branch "%s" is not fully merged. Re-run with --force to delete it.\n' "$PROG_NAME" "$branch" >&2
+    exit 1
+  fi
+fi

@@ -18,6 +18,10 @@ validate_commit() {
     fi
 }
 
+has_pending_changes() {
+  git status --porcelain=2 --untracked-files=normal | grep -q '.'
+}
+
 # Check if working tree is clean
 check_working_tree_clean() {
     if ! git diff --quiet || ! git diff --cached --quiet; then

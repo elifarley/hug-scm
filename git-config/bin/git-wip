@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# Part of the Hug tool suite
+
+PROG_NAME="hug wip"
+
+show_help() {
+  cat <<'EOF'
+hug wip: Park all changes on a dated WIP branch and optionally return to your previous branch.
+
+USAGE:
+  hug wip [OPTIONS] "<message>"
+
+OPTIONS:
+  --stay           Remain on the new WIP branch instead of switching back.
+  -h, --help       Show this help message and exit.
+
+DESCRIPTION:
+  Collects staged, unstaged, and untracked changes; creates a WIP.YYYY-MM-DD.HH-MM.slug
+  branch; commits with a "[WIP] <message>" summary; then switches back to the previous branch
+  unless --stay is supplied. Use WIP branches as pushable work-in-progress snapshots.
+
+EXAMPLES:
+  hug wip "Draft responsive navbar"
+  hug wip --stay "Spike auth refactor"
+
+TIPS:
+  - Resume later with: hug b WIP.<timestamp>.<slug>
+  - Clean up when finished: hug unwip WIP.<timestamp>.<slug>
+EOF
+}
+
+usage_error() {
+  printf '%s: %s\n\n' "$PROG_NAME" "$1" >&2
+  show_help >&2
+  exit 1
+}
+
+generate_branch_name() {
+  local message="$1"
+  local slug
+  slug="$(printf '%s' "$message" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:][:punct:]')"
+  slug="${slug:0:24}"
+  if [ -z "$slug" ]; then
+    slug="work"
+  fi
+  printf 'WIP.%s.%s\n' "$(date +%Y-%m-%d.%H-%M)" "$slug"
+}
+
+stay_on_wip=false
+declare -a message_parts=()
+
+while (($#)); do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    --stay)
+      stay_on_wip=true
+      ;;
+    --)
+      shift
+      while (($#)); do
+        message_parts+=("$1")
+        shift
+      done
+      break
+      ;;
+    -*)
+      usage_error "Unknown option '$1'."
+      ;;
+    *)
+      message_parts+=("$1")
+      ;;
+  esac
+  shift || break
+done
+
+if ((${#message_parts[@]} == 0)); then
+  usage_error "Missing message. Provide a description of your work-in-progress."
+fi
+
+message="$(trim_message "${message_parts[*]}")"
+if [ -z "$message" ]; then
+  usage_error "Message must contain non-whitespace characters."
+fi
+
+check_git_repo
+
+if ! has_pending_changes; then
+  printf '%s: No changes detected. Run "hug sl" to confirm the working tree state.\n' "$PROG_NAME" >&2
+  exit 0
+fi
+
+previous_branch="$(git branch --show-current)"
+if [ -z "$previous_branch" ]; then
+  error "$PROG_NAME: Cannot determine the current branch (detached HEAD?)."
+fi
+
+branch_name="$(generate_branch_name "$message")"
+if git rev-parse --verify --quiet "refs/heads/$branch_name"; then
+  error "$PROG_NAME: Branch '$branch_name' already exists. Try a different message."
+fi
+
+git switch -c "$branch_name" >/dev/null
+
+cleanup() {
+  git switch "$previous_branch" >/dev/null 2>&1 || true
+}
+
+if [ "$stay_on_wip" = false ]; then
+  trap cleanup EXIT
+fi
+
+git add -A
+
+if git diff --cached --quiet; then
+  trap - EXIT
+  cleanup
+  git branch -D "$branch_name" >/dev/null 2>&1 || true
+  error "$PROG_NAME: Nothing to commit after staging. Check .gitignore or file filters."
+fi
+
+git commit --quiet -m "[WIP] $message"
+wip_commit="$(git rev-parse --short HEAD)"
+
+if [ "$stay_on_wip" = true ]; then
+  printf 'WIP saved on %s (commit %s). Stay on this branch to continue.\n' "$branch_name" "$wip_commit"
+  printf 'Switch back anytime with: hug b %s\n' "$previous_branch"
+else
+  git switch "$previous_branch" >/dev/null
+  trap - EXIT
+  printf 'WIP saved on %s (commit %s). Switched back to %s.\n' "$branch_name" "$wip_commit" "$previous_branch"
+  printf 'Resume later with: hug b %s\n' "$branch_name"
+fi
