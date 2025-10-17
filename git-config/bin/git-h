@@ -17,4 +17,5 @@ case "${1:-}" in
                  printf '  files         Preview files touched by commits to rewind\n' >&2
                  printf '  rollback      Rollback commit, preserve local work\n' >&2
                  printf '  rewind        Rewind to clean state (destructive)\n' >&2
+                 printf '\nAll support -u/--upstream to target remote tip (e.g., h back -u)\n' >&2
 esac

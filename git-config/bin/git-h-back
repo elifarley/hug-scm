@@ -1,38 +1,75 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-. "$CMD_BASE/../lib/hug-common"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
     cat << EOF
-h back: Take back commits but keep everything ready: HEAD goes back, keeps their changes staged.
+hug h back: Moves HEAD back but keep their changes staged.
 
 USAGE:
-    hug h back [N|COMMIT]
+    hug h back [N|COMMIT] [-u, --upstream]
+
+OPTIONS:
+    -u, --upstream  Sets the target to the upstream remote tip (discards local-only commits; no fetch)
 
 DESCRIPTION:
-    Deletes the specified commits and moves the HEAD back.
-    Changes introduced by the removed commits are kept (staged).
-    Working directory isn't affected at all.
+    Moves HEAD to target. With -u, discards local-only commits to sync with remote tip.
 
 EXAMPLES:
-    hug h back        # delete last commit, keep changes staged
-    hug h back 3      # delete last 3 commits, keep changes staged
-    hug h back a1b2c3 # delete commits AFTER specified commit, keep changes staged
+    hug h back -u                # Moves HEAD to upstream, keep local changes staged
+    hug h back 3                 # Moves HEAD back 3 commits
+    hug h back a1b2c3            # Moves HEAD to specified commit
 
 SEE ALSO:
-    hug h undo          Take back commits and keep their changes unstaged.
+    hug h undo    Mixed reset (keep changes unstaged)
 EOF
 }
 
-case "${1:-}" in
-  -h|--help)
-    show_help
-    exit 1;;
-  '') target='HEAD~1' ;;
-  [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$1" ;;
-  *) target="$1" ;;
-esac
+upstream=false
+target_arg=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) show_help; exit 1 ;;
+    -u|--upstream) upstream=true; shift ;;
+    *) target_arg="$1"; shift ;;
+  esac
+done
+
+if $upstream && [[ -n "$target_arg" ]]; then
+  error "Cannot specify both --upstream and a target (N|COMMIT)."
+fi
+
+check_git_repo
+
+if $upstream; then
+  if ! git rev-parse --verify @{u} >/dev/null 2>&1; then
+    error "No upstream branch set. Run 'git branch --set-upstream-to=origin/BRANCH'."
+  fi
+  target="@{u}"
+  local_commits=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 0)
+  if [ "$local_commits" -eq 0 ]; then
+    info "Already synced to upstream ($(git rev-parse --short "$target"))."
+    exit 0
+  fi
+  upstream_short=$(git rev-parse --short "$target")
+  upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
+  printf 'Commits to be discarded:\n' >&2
+  git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
+  printf '\nPreview: %d files affected in %d local commits to %s (%s).\n' >&2 \
+    "$(git log --name-only --pretty=format: "$target"..HEAD | grep -v '^$' | sort -u | wc -l)" \
+    "$local_commits" "$upstream_short" "$upstream_branch"
+  read -p "Proceed with soft reset (keep changes staged)? [y/N]: " confirm >&2
+  [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 1; }
+else
+  case "${target_arg:-}" in
+    '') target='HEAD~1' ;;
+    [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$target_arg" ;;
+    *) target="$target_arg" ;;
+  esac
+fi
+
 git reset --soft "$target"
+info "Soft reset to $target complete."
 

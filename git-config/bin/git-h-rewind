@@ -6,44 +6,80 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
     cat << EOF
-h rewind: Moves HEAD back, deleting commits, their changes, AND local changes.
+hug h rewind: Moves HEAD back, discarding their changes AND uncommitted changes.
 
 USAGE:
-    hug h rewind [N|COMMIT]
+    hug h rewind [N|COMMIT] [-u, --upstream]
+
+OPTIONS:
+    -u, --upstream  Sets target to upstream remote tip (discards everything after remote tip; no fetch)
 
 DESCRIPTION:
-    Deletes the specified commits and moves the HEAD back.
-    Changes introduced by the removed commits are REMOVED from the working directory and LOST.
-    Working directory IS affected: ALL uncommitted changes are lost (but untracked and ignored files are preserved).
-    It's equivalent to `hug back; hug wipe-all`.
+    Moves HEAD back to target (full clean). With -u, discards local-only commits and uncommitted changes to sync with remote tip.
 
 EXAMPLES:
-    hug h rewind a1b2c3 # rewind to the specified commit
+    hug h rewind -u              # Moves HEAD back to upstream, WD loses all changes
+    hug h rewind 3               # Moves HEAD back last 3 commits
+    hug h rewind a1b2c3          # Moves HEAD back after specified commit
 
 SEE ALSO:
-    hug h back          Take back commits and keep their changes staged.
+    hug h back    Move HEAD back, keep changes staged
 EOF
 }
 
-case "${1:-}" in
-  -h|--help)
-    show_help
+upstream=false
+target_arg=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) show_help; exit 0 ;;
+    -u|--upstream) upstream=true; shift ;;
+    *) target_arg="$1"; shift ;;
+  esac
+done
+
+if $upstream && [[ -n "$target_arg" ]]; then
+  error "Cannot specify both --upstream and a target (N|COMMIT)."
+fi
+
+check_git_repo
+
+if $upstream; then
+  if ! git rev-parse --verify @{u} >/dev/null 2>&1; then
+    error "No upstream branch set. Run 'git branch --set-upstream-to=origin/BRANCH'."
+  fi
+  target="@{u}"
+  local_commits=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 0)
+  if [ "$local_commits" -eq 0 ]; then
+    info "Already synced to upstream ($(git rev-parse --short "$target"))."
     exit 0
-    ;;
-  '') target='HEAD~1' ;;
-  [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$1" ;;
-  *) target="$1" ;;
-esac
+  fi
+  upstream_short=$(git rev-parse --short "$target")
+  upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
+  printf 'Will rewind to %s (%s) and discard all commits/uncommitted changes after it\n' "$upstream_short" "$upstream_branch" >&2
+  printf 'Commits to be discarded:\n' >&2
+  git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
+  printf '\nPreview: %d files affected in %d local commits.\n' >&2 \
+    "$(git log --name-only --pretty=format: "$target"..HEAD | grep -v '^$' | sort -u | wc -l)" \
+    "$local_commits"
+  printf '\n⚠️  This is PERMANENT: Commit changes and ALL uncommitted changes LOST (untracked files preserved)!\n' >&2
+  read -p 'Type "rewind" to confirm: ' confirm >&2
+  [ "$confirm" = "rewind" ] || { info "Cancelled."; exit 1; }
+else
+  case "${target_arg:-}" in
+    '') target='HEAD~1' ;;
+    [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$target_arg" ;;
+    *) target="$target_arg" ;;
+  esac
 
+  printf 'Will rewind to %s and discard all commits after it\n' "$target" >&2
+  printf 'Commits to be discarded:\n' >&2
+  git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
+  printf '\n' >&2
 
-printf 'Will rewind to %s and discard all commits after it\n' "$target" >&2
-printf 'Commits to be discarded:\n' >&2
-git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
-printf '\n' >&2
-
-printf '⚠️  This is PERMANENT and cannot be undone!\n' >&2
-read -p 'Type "rewind" to confirm: ' confirm
-[ "$confirm" = "rewind" ] || { printf 'Cancelled\n' >&2; exit 1; }
+  printf '⚠️  This is PERMANENT and cannot be undone!\n' >&2
+  read -p 'Type "rewind" to confirm: ' confirm >&2
+  [ "$confirm" = "rewind" ] || { info "Cancelled."; exit 1; }
+fi
 
 printf 'Rewinding to %s...\n' "$target" >&2
 git reset --hard "$target"

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
-set -euo pipefail
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
 
 show_help() {
   cat << EOF
@@ -12,15 +13,18 @@ USAGE:
 
 OPTIONS:
     --stat     Show aggregate line stats per file
+    -u, --upstream  Use upstream remote tip as start point (local-only commits)
     -h, --help Show this help
 
 DESCRIPTION:
     Lists unique files changed in the range (default: last 1 commit).
+    With -u, previews files in local-only commits (HEAD to upstream tip).
     Use before 'h back N' or 'h rewind COMMIT' to see affected files.
 
 EXAMPLES:
     hug h files 3          # Files in last 3 commits
     hug h files main       # Files changed after 'main' to HEAD
+    hug h files -u         # Files in local-only commits (to upstream)
     hug h files --stat     # With stats (default range)
 
 SEE ALSO:
@@ -30,21 +34,46 @@ EOF
 }
 
 with_stat=false
+upstream=false
+target_arg=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) show_help; exit 0 ;;
     --stat) with_stat=true; shift ;;
-    *) break ;;
+    -u|--upstream) upstream=true; shift ;;
+    *) target_arg="$1"; shift ;;
   esac
 done
 
-target="${1:-HEAD~1}"
-if [[ "$target" =~ ^[1-9][0-9]*$ ]]; then
-  start_point="HEAD~$target"
-else
-  start_point="$target"
+if $upstream && [[ -n "$target_arg" ]]; then
+  error "Cannot specify both --upstream and a target (N|COMMIT)."
 fi
-range="$start_point..HEAD"
+
+check_git_repo
+
+if $upstream; then
+  if ! git rev-parse --verify @{u} >/dev/null 2>&1; then
+    error "No upstream branch set. Run 'git branch --set-upstream-to=origin/BRANCH'."
+  fi
+  start_point="@{u}"
+  range="$start_point..HEAD"
+  local_commits=$(git rev-list --count "$range" 2>/dev/null || echo 0)
+  if [ "$local_commits" -eq 0 ]; then
+    info "No local-only commits; already synced to upstream."
+    exit 0
+  fi
+else
+  target="${target_arg:-HEAD~1}"
+  if [[ "$target" =~ ^[1-9][0-9]*$ ]]; then
+    start_point="HEAD~$target"
+  else
+    start_point="$target"
+  fi
+  range="$start_point..HEAD"
+  if ! git rev-parse --verify "$start_point" >/dev/null 2>&1; then
+    error "Invalid target '$target' (use N or commit ref)"
+  fi
+fi
 
 check_git_repo
 if ! git rev-parse --verify "$start_point" >/dev/null 2>&1; then
@@ -58,7 +87,12 @@ if [[ -z "$files" ]]; then
 fi
 
 count=$(echo "$files" | wc -l)
-warning "These $count files would be affected by moving HEAD to $start_point (e.g., via 'h back' or 'h rewind')."
+if $upstream; then
+  upstream_short=$(git rev-parse --short "$start_point")
+  warning "These $count files are affected by $local_commits local-only commits to upstream tip $upstream_short (e.g., via 'h back -u')."
+else
+  warning "These $count files would be affected by moving HEAD to $start_point (e.g., via 'h back' or 'h rewind')."
+fi
 
 if $with_stat; then
   echo "$files" | while read -r file; do
