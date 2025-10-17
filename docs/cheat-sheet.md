@@ -62,8 +62,11 @@ hug bdelr origin/old-branch  # Remote
 # Push current branch (sets upstream)
 hug bpush
 
-# Pull with rebase (clean history)
+# Safe fast-forward pull (fails if merge/rebase needed)
 hug bpull
+
+# Pull with rebase (linear history)
+hug bpullr
 
 # Force push (safe)
 hug bpushf

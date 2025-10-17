@@ -13,7 +13,7 @@
     verbose = true
 
 [pull]
-  rebase = true
+  rebase = false
 
 [pretty]
     log1        = %C(yellow)%h%C(reset) %C(blue)%ad%C(reset) %C(magenta)[%an]%C(reset)%C(auto)%d%C(reset) %s
@@ -583,9 +583,13 @@
   #  PUSH / PULL BRANCHES
   # ═══════════════════════════════════════════════════════════════════
 
-  # Pull with rebase (cleaner than merge)
-  # Usage: hug pullr
-  bpull = pull --rebase
+  # Safe fast-forward pull (fails if merge/rebase needed)
+  # Usage: hug bpull
+  bpull = pull --ff-only
+
+  # Pull with rebase (linear history)
+  # Usage: hug bpullr
+  bpullr = pull --rebase
 
   # Pull and update all remote tracking branches
   # Usage: hug pullall

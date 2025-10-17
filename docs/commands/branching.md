@@ -18,6 +18,8 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 | `hug bdel` | **B**ranch **DEL**ete (safe) | Delete merged local branch |
 | `hug bdelf` | **B**ranch **DEL**ete **F**orce | Force-delete local branch |
 | `hug bdelr` | **B**ranch **DEL**ete **R**emote | Delete remote branch |
+| `hug bpull` | **B**ranch **Pull** | Safe fast-forward pull (fails if merge/rebase needed) |
+| `hug bpullr` | **B**ranch **Pull** **R**ebase | Pull with rebase (linear history) |
 | `hug bwc` | **B**ranch **W**hich **C**ontain | Branches containing a commit |
 | `hug bwp` | **B**ranch **W**hich **P**oint | Branches pointing at an object |
 | `hug bwnc` | **B**ranch **W**hich **N**ot **C**ontain | Branches missing a commit |
@@ -111,6 +113,26 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   hug bdelr origin/old-remote  # Delete remote branch
   ```
 - **Safety**: Prompts for confirmation; assumes 'origin' remote.
+
+## Pulling Branches
+
+Hug provides safe, intuitive pull commands under the `b*` prefix, emphasizing fast-forward safety by default while offering rebase for linear histories.
+
+### `hug bpull`
+- **Description**: Safe fast-forward pull from upstream. Succeeds only if your local branch can fast-forward (no local divergence); aborts otherwise to prevent unintended merges or rewrites. Ideal for verifying sync before critical operations like tagging or releasing.
+- **Example**:
+  ```
+  hug bpull    # Pull if fast-forward possible; fails safely if diverged
+  ```
+- **Safety**: Ultra-safe - aborts on any need for merge/rebase, prompting you to inspect with `hug sl` or use `hug bpullr`.
+
+### `hug bpullr`
+- **Description**: Pull with rebase, replaying your local commits on top of remote changes for a clean, linear history. Use when you've diverged locally (e.g., after committing features).
+- **Example**:
+  ```
+  hug bpullr   # Pull and rebase for linear history
+  ```
+- **Safety**: Non-destructive to remote history, but may require conflict resolution. Aborts on issues; resume with `hug rbc` or abort with `hug rba`.
 
 ## Branch Queries (bw*)
 

@@ -77,6 +77,12 @@ hug cc <commit>  # Clone a Commit on top of 'HEAD'
 hug bc feature   # Create and switch to new branch
 hug bs           # Switch back to previous branch
 
+# Safe pull (fast-forward only; fails on divergence)
+hug bpull
+
+# Pull with rebase for linear history
+hug bpullr
+
 # Working directory cleanup
 hug w backup     # Stash current work safely
 hug w zap        # Complete cleanup (reset + purge) for specific files
@@ -117,6 +123,12 @@ hug h undo 3
 # Find steps back to last change in a file, then rewind precisely
 hug h steps src/app.js  # e.g., "2 steps back..."
 hug h back 2
+
+# Safe pull (fast-forward only; fails on divergence)
+hug bpull
+
+# Pull with rebase for linear history
+hug bpullr
 ```
 
 ## Installation
