@@ -30,7 +30,7 @@ Discard unstaged or staged changes without affecting untracked files.
 - `hug w discard [-u|-s] <files...>`
   - **Description**: Discard unstaged (`-u`, default) or staged (`-s`) changes for specific files/paths.
   - **Example**:
-    ```
+    ```shell
     hug w discard file.js     # Discard unstaged changes in file.js
     hug w discard -s .        # Discard all staged changes
     ```

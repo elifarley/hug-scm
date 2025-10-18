@@ -17,7 +17,7 @@ Commit staged changes with a message.
 **Usage:** `hug c <message>`
 
 **Examples:**
-```bash
+```shell
 hug c "Fix typo in README"
 hug c -m "Update dependencies" -a  # Commit all changes
 ```
@@ -31,7 +31,7 @@ Commit all changes and amend the last commit.
 **Usage:** `hug caa <message>`
 
 **Examples:**
-```bash
+```shell
 hug caa "Add missing feature"
 ```
 
@@ -44,7 +44,7 @@ Commit and close an issue (integrates with GitHub/GitLab).
 **Usage:** `hug cc <message> #<issue-number>`
 
 **Examples:**
-```bash
+```shell
 hug cc "Resolve authentication bug #123"
 ```
 

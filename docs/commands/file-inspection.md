@@ -21,7 +21,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
     - **Description**: Detailed blame showing author, date, and line content for each line in the file. Ignores whitespace changes and detects moved/copied code
       across files (up to 3 levels).
     - **Example**:
-      ```
+      ```shell
       hug fblame src/app.js    # Blame for app.js
       ```
     - **Safety**: Read-only; no repo changes.
@@ -29,7 +29,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
 - `hug fb <file>`
     - **Description**: Short blame output with just author and line number (porcelain format for scripting).
     - **Example**:
-      ```
+      ```shell
       hug fb README.md         # Short blame for README.md
       ```
     - **Safety**: Read-only.
@@ -39,7 +39,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
 - `hug fcon <file>`
     - **Description**: List all unique contributors (authors with email) to a file, following renames.
     - **Example**:
-      ```
+      ```shell
       hug fcon docs/index.md   # Contributors to index.md
       ```
     - **Safety**: Read-only.
@@ -47,7 +47,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
 - `hug fa <file>`
     - **Description**: Count commits per author for a file (sorted by count descending), following renames.
     - **Example**:
-      ```
+      ```shell
       hug fa lib/utils.js      # Author commit counts for utils.js
       ```
     - **Safety**: Read-only.
@@ -58,7 +58,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
     - **Description**: Show the commit where the file was first added (born), including the full commit details and message. Handles renames with a 40%
       similarity threshold.
     - **Usage**:
-      ```
+      ```shell
       hug fborn package.json   # When package.json was added
       ```
     - **Safety**: Read-only.

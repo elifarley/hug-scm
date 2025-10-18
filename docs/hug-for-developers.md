@@ -388,7 +388,7 @@ hug bpush  # Push the integrated changes
 
 Add to `.gitignore` to exclude junk:
 
-```gitignore
+```.gitignore
 # Dependencies
 node_modules/
 vendor/

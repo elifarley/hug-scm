@@ -31,7 +31,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 ### `hug b [branch]`
 - **Description**: Switch (checkout) to an existing local branch. If no branch is specified, shows an interactive menu of local branches for selection.
 - **Example**:
-  ```
+  ```shell
   hug b main                 # Switch to main branch
   hug b                      # Interactive menu to select branch
   hug b feature/new-ui       # Switch to feature branch
@@ -41,7 +41,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 ### `hug bl`
 - **Description**: List local branches in short format, sorted alphabetically. The current branch is marked with an asterisk (*).
 - **Example**:
-  ```
+  ```shell
   hug bl    # List all local branches
   ```
 - **Safety**: Read-only operation; no changes to repo state.
@@ -49,7 +49,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 ### `hug bla`
 - **Description**: List all branches (local and remote) in short format.
 - **Example**:
-  ```
+  ```shell
   hug bla   # List all branches including remotes
   ```
 - **Safety**: Read-only.
@@ -57,7 +57,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 ### `hug blr`
 - **Description**: List remote branches only in short format.
 - **Example**:
-  ```
+  ```shell
   hug blr   # List remote branches
   ```
 - **Safety**: Read-only.
@@ -65,7 +65,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 ### `hug bll`
 - **Description**: List local branches in long format with details: short commit hash, upstream tracking info (e.g., ahead/behind counts), and the latest commit message title. Current branch is highlighted in green and marked with *. Branches are left-aligned for readability.
 - **Example**:
-  ```
+  ```shell
   hug bll   # Detailed local branch listing
   ```
 - **Safety**: Read-only; displays tracking info like `git branch -vv` but with commit subjects.
@@ -75,7 +75,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 ### `hug bc <branch-name>`
 - **Description**: Create a new branch and switch to it.
 - **Example**:
-  ```
+  ```shell
   hug bc new-feature    # Create and switch to new-feature
   ```
 - **Safety**: Non-destructive; creates from current HEAD.
@@ -83,7 +83,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 ### `hug br <new-name>`
 - **Description**: Rename the current branch to a new name.
 - **Example**:
-  ```
+  ```shell
   hug br updated-feature  # Rename current branch
   ```
 - **Safety**: Prompts for confirmation if the new name exists.
@@ -93,7 +93,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 ### `hug bdel <branch>`
 - **Description**: Safely delete a local branch (only if fully merged into current branch).
 - **Example**:
-  ```
+  ```shell
   hug bdel old-feature    # Safe delete if merged
   ```
 - **Safety**: Fails if unmerged; requires confirmation.
@@ -101,7 +101,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 ### `hug bdelf <branch>`
 - **Description**: Force-delete a local branch, even if unmerged.
 - **Example**:
-  ```
+  ```shell
   hug bdelf risky-branch  # Force delete unmerged branch
   ```
 - **Safety**: Double-prompts for confirmation to prevent accidents.
@@ -109,7 +109,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 ### `hug bdelr <branch>`
 - **Description**: Delete a remote branch (pushes delete to origin).
 - **Example**:
-  ```
+  ```shell
   hug bdelr origin/old-remote  # Delete remote branch
   ```
 - **Safety**: Prompts for confirmation; assumes 'origin' remote.
@@ -121,7 +121,7 @@ Hug provides safe, intuitive pull commands under the `b*` prefix, emphasizing fa
 ### `hug bpull`
 - **Description**: Safe fast-forward pull from upstream. Succeeds only if your local branch can fast-forward (no local divergence); aborts otherwise to prevent unintended merges or rewrites. Ideal for verifying sync before critical operations like tagging or releasing.
 - **Example**:
-  ```
+  ```shell
   hug bpull    # Pull if fast-forward possible; fails safely if diverged
   ```
 - **Safety**: Ultra-safe - aborts on any need for merge/rebase, prompting you to inspect with `hug sl` or use `hug bpullr`.
@@ -129,7 +129,7 @@ Hug provides safe, intuitive pull commands under the `b*` prefix, emphasizing fa
 ### `hug bpullr`
 - **Description**: Pull with rebase, replaying your local commits on top of remote changes for a clean, linear history. Use when you've diverged locally (e.g., after committing features).
 - **Example**:
-  ```
+  ```shell
   hug bpullr   # Pull and rebase for linear history
   ```
 - **Safety**: Non-destructive to remote history, but may require conflict resolution. Aborts on issues; resume with `hug rbc` or abort with `hug rba`.
@@ -141,7 +141,7 @@ These commands help inspect which branches relate to specific commits or states.
 ### `hug bwc [<commit>]`
 - **Description**: Show branches that contain a specific commit (in their history). Defaults to HEAD.
 - **Example**:
-  ```
+  ```shell
   hug bwc a1b2c3    # Branches containing commit a1b2c3
   hug bwc           # Branches containing HEAD
   ```
@@ -150,7 +150,7 @@ These commands help inspect which branches relate to specific commits or states.
 ### `hug bwp [<object>]`
 - **Description**: Show branches that point exactly at a specific object (e.g., commit). Defaults to HEAD.
 - **Example**:
-  ```
+  ```shell
   hug bwp HEAD       # Branches pointing at HEAD
   ```
 - **Safety**: Read-only.
@@ -158,7 +158,7 @@ These commands help inspect which branches relate to specific commits or states.
 ### `hug bwnc [<commit>]`
 - **Description**: Show branches that do NOT contain a specific commit. Defaults to HEAD.
 - **Example**:
-  ```
+  ```shell
   hug bwnc HEAD      # Branches not containing HEAD
   ```
 - **Safety**: Read-only.
@@ -166,7 +166,7 @@ These commands help inspect which branches relate to specific commits or states.
 ### `hug bwm [<commit>]`
 - **Description**: Show branches merged into a specific commit (defaults to HEAD).
 - **Example**:
-  ```
+  ```shell
   hug bwm            # Branches merged into HEAD
   ```
 - **Safety**: Read-only.
@@ -174,7 +174,7 @@ These commands help inspect which branches relate to specific commits or states.
 ### `hug bwnm [<commit>]`
 - **Description**: Show branches NOT merged into a specific commit (defaults to HEAD).
 - **Example**:
-  ```
+  ```shell
   hug bwnm           # Branches not merged into HEAD
   ```
 - **Safety**: Read-only.

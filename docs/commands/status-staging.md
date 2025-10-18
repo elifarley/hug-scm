@@ -235,14 +235,14 @@ Branch-based alternative to stashing for persistent, pushable saves of temp work
 After parking, resume by switching to the WIP branch, add more commits if needed, then unpark or delete.
 
 - **Resume Editing**: Switch to continue work.
-  ```
+  ```shell
   hug b WIP/24-10-05/1430.fixloginui  # Interactive with 'hug b' if needed
   # Make changes, stage with 'hug a' or 'hug aa', commit with 'hug c "Refine UI"'
   hug bs  # Switch back when pausing
   ```
 
 - **Unpark (Integrate and Clean)**: Squash-merge all WIP commits (initial + additions) into the current branch as one clean commit, then delete the WIP branch. Use when finished.
-  ```
+  ```shell
   # Ensure on target branch (e.g., main)
   hug b main
   hug w unwip WIP/24-10-05/1430.fixloginui  # Prompts for preview/confirmation; aborts on conflicts
@@ -252,7 +252,7 @@ After parking, resume by switching to the WIP branch, add more commits if needed
   - **Why Squash?**: Keeps linear history; auto-generates message like "Finish WIP: Fix login UI".
 
 - **Delete (Discard Worthless WIP)**: Remove without integrating.
-  ```
+  ```shell
   hug w wipdel WIP/24-10-05/1430.draftfeature  # Safe if merged; -f to force
   ```
   - **Safety**: Prompts if unmerged; use for abandoned temp work.

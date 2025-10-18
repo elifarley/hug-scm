@@ -21,7 +21,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 ### `hug h back [N|commit] [-u, --upstream]`
 - **Description**: HEAD goes back by N commits (default: 1) or to a specific commit. Keeps changes from the undone commits staged - non-destructive, ideal for re-committing with adjustments. With `-u`, resets to upstream remote tip (e.g., origin/my-branch), discarding local-only commits (no fetch needed).
 - **Example**:
-  ```
+  ```shell
   hug h back                # Undo last commit, keep changes staged
   hug h back 3              # Undo last 3 commits
   hug h back a1b2c3         # HEAD goes back to specific commit
@@ -32,7 +32,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 ### `hug h undo [N|commit] [-u, --upstream]`
 - **Description**: HEAD goes back by N commits (default: 1) or to a specific commit. Unstages changes from the undone commits but keeps them in your working directory - perfect for editing before re-staging. With `-u`, resets to upstream remote tip, discarding local-only commits.
 - **Example**:
-  ```
+  ```shell
   hug h undo                # Undo last commit, unstage changes
   hug h undo 3              # Undo last 3 commits
   hug h undo main           # Undo to main branch
@@ -43,7 +43,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 ### `hug h rollback [N|commit] [-u, --upstream]`
 - **Description**: HEAD goes back by N commits (default: 1) or to a specific commit, discarding commit history and staged changes, but preserving any uncommitted local changes in the working directory. With `-u`, resets to upstream remote tip, discarding local-only commits but keeping uncommitted work.
 - **Example**:
-  ```
+  ```shell
   hug h rollback            # Rollback last commit, keep local work
   hug h rollback 2          # Rollback last 2 commits
   hug h rollback a1b2c3     # Rollback to specific commit
@@ -54,7 +54,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 ### `hug h rewind [N|commit] [-u, --upstream]`
 - **Description**: HEAD goes back by N commits (default: 1) or to a specific commit, moving to a clean state. Highly destructive! Discards all staged/unstaged changes in tracked files (untracked/ignored files are preserved). With `-u`, resets to upstream remote tip, discarding everything after it.
 - **Example**:
-  ```
+  ```shell
   hug h rewind              # Rewind to last commit's clean state
   hug h rewind 3            # Rewind last 3 commits
   hug h rewind origin/main  # Rewind to remote main
@@ -65,7 +65,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 ### `hug h squash [N|commit] [-u, --upstream]`
 - **Description**: Moves HEAD back by N commits (default: 2) or to a specific commit (like `h back`), then immediately commits the staged changes as one new commit using the exact message from the original HEAD (before the movement). Squashes the changes from the undone commits into this single commit. With `-u`, squashes local-only commits onto the upstream tip. Non-destructive to uncommitted working directory changes.
 - **Example**:
-  ```
+  ```shell
   hug h squash               # Squash last 2 commits into 1 at HEAD~2
   hug h squash 3             # Squash last 3 commits into 1 at HEAD~3
   hug h squash a1b2c3        # Squash to specified commit
@@ -76,7 +76,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 ### `hug h files [N|commit] [options]`
 - **Description**: Preview unique files touched by commits in the specified range (default: last 1 commit). With `-u`, previews files in local-only commits (HEAD to upstream tip). Useful before back, undo, rollback, or rewind to understand impact.
 - **Example**:
-  ```
+  ```shell
   hug h files                # Files in last commit
   hug h files 3              # Files in last 3 commits
   hug h files main           # Files changed since main
@@ -88,7 +88,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 ### `hug h steps <file> [--raw]`
 - **Description**: Calculate commit steps from HEAD back to the most recent commit touching `file` (handles renames). Outputs the count; use for precise rewinds like `h back N`. Full mode shows formatted commit info via `hug ll`.
 - **Example**:
-  ```bash
+  ```shell
   hug h steps src/app.js          # "3 steps back from HEAD (last commit abc123); <ll output>"
   hug h steps README.md --raw     # "3" (just the number)
   hug h steps file.txt | xargs hug h back  # Rewind exactly to last change
