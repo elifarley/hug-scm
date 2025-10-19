@@ -226,10 +226,10 @@ Stashing is part of status workflow for temporary backups.
 ## WIP Workflow (w*)
 Branch-based alternative to stashing for persistent, pushable saves of temp work.
 
-- `hug w wip "<msg>"`: **W**ork **I**n **P**rogress
-  - **Description**: Stages all changes (tracked/untracked/deletions), commits to a new dated branch like `WIP/YY-MM-DD/HHmm.slug` with `[WIP] <msg>`, then switches back to the previous branch. Preferred over stashing for shareable, versioned temp progress.
-  - **Example**: `hug w wip "Fix login UI"` → Creates `WIP/24-10-05/1430.fixloginui`; resume with `hug b WIP/24-10-05/1430.fixloginui`.
-  - **Safety**: Skips if no changes; aborts if branch name conflicts. List with `hug bl | grep WIP`.
+- `hug wip "<msg>"` (or `hug wips "<msg>"` to stay): **W**ork **I**n **P**rogress
+  - **Description**: Stages all changes (tracked/untracked/deletions), commits to a new branch like `WIP/YY-MM-DD/HHmm.slug` with `[WIP] <msg>`. Default (`hug wip`): switches back to previous branch. Use `hug wips` to stay on the WIP branch for immediate commits (e.g., after parking: `hug c "Iterate on draft"`). Preferred over stashing for shareable, versioned temp progress.
+  - **Example**: `hug wip "Fix login UI"` → Creates `WIP/24-10-05/1430.fixloginui`; resume with `hug b WIP/24-10-05/1430.fixloginui`. For staying: `hug wips "Deep refactor"`.
+  - **Safety**: Skips if no changes; aborts on name conflicts. List with `hug bl | grep WIP`.
 
 #### Resuming and Finishing a WIP Branch
 After parking, resume by switching to the WIP branch, add more commits if needed, then unpark or delete.
@@ -282,7 +282,7 @@ This flow parks temp work safely, allows resumption, and finishes cleanly. Prefe
 - Preview before destructive stash operations: `hug speek` and `hug sshow` give context before `hug sdrop` or `hug sclear`.
 - Combine `hug sl` with `hug llf` from [Logging (l*)](logging#file-inspection) to tie current work back to file history.
 - Share concise stand-up updates by pasting `hug sx` output or attaching diffs from `hug ss`.
-- For WIP: List with `hug bl | grep WIP`; unpark to integrate (`hug w unwip`), delete to discard (`hug w wipdel`).
+- For WIP: List with `hug bl | grep WIP`; unpark to integrate (`hug w unwip`), delete to discard (`hug w wipdel`). Use `wips` when you plan to continue right   away (avoids extra `hug b` switches).
 
 ## Coverage Checklist
 - [x] Status aliases documented: `hug s`, `hug sl`, `hug sla`, `hug sli`, `hug ss`, `hug su`, `hug sw`, `hug sx`.

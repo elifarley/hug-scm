@@ -114,26 +114,23 @@ hug h steps <file>       # Steps back to last file change
 hug revert <commit-hash>
 ```
 
-## Parking Work (WIP & Stash)
-```bash
-# Save all changes on WIP branch (pushable, persistent)
-hug w wip "Draft feature"
+## Parking Work (WIP)
+```shell
+# Save all uncommitted changes on new WIP branch (pushable, persistent)
+hug wip  "Draft feature" # Park changes on a new branch so that you can focus on something else on the current branch
+hug wips "Deep spike"    # Park changes on a new branch and stay on it so that you can focus without affecting the current branch
 
 # Resume WIP (for more edits)
 hug b WIP/2023-10-05/1430.draftfeature
 
 # Unpark/finish: Squash-merge to current branch + delete
-hug w unwip WIP/<date>/<time>.<slug>
+hug unwip WIP/<date>/<time>.<slug>
 
 # Discard worthless WIP
-hug w wipdel WIP/<date>/<time>.<slug>
-
-# Quick stash (local only)
-hug ssave                # Tracked files
-hug ssavea "msg"         # + untracked
-hug spop                 # Restore and drop
-hug sls                  # List stashes
+hug wipdel WIP/<date>/<time>.<slug>
 ```
+
+**Tip: `wips` vs. `wip`**: Use `wips` for immersive sessions (stay on WIP to add commits like `hug c`). Use `wip` for interruptions (e.g., switch to hotfix,   resume later). Both beat stash for shareability - push WIP branches for team backups.
 
 ## Advanced Workflows
 ```bash

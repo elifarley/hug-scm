@@ -22,9 +22,10 @@ Hug is your friendly time machine for code: track changes, experiment fearlessly
 | --- |------------------------------------------------------------------| --- |
 | Start a fresh project | `hug s` → `hug a` → `hug c`                                      | Snapshot new files, stage cleanly, commit with context. |
 | Park work before a hotfix | `hug wip "WIP message"` → `hug bc hotfix` → `hug bs` | Save all changes on a dated WIP branch (pushable!), branch off, then resume later. Preferred over stash for persistence. |
+| Park and continue deep work | `hug wips "msg"` → `hug c` → `hug w unwip <wip>` | Isolates experiments; stay for momentum, integrate cleanly. |
 | Review before pushing | `hug ss` → `hug su` → `hug sw`                                   | Compare staged vs unstaged diffs, then ship confidently. |
 | Clean up experiments | `hug w backup` → `hug w discard-all` → `hug w purge`             | Save a safety net, drop tracked edits, prune generated junk. |
-| Undo a public mistake | `hug l` → `hug revert <sha>` → `hug bpush`                       | Find the bad commit, revert it, and push the fix upstream. |
+| Undo a public mistake | `hug l` → `hug revert <sha>` → `hug bpush`                       | Find the bad commit, revert it, and push the fix upstream. | 
 
 ## Getting Started: Your First Repository
 
@@ -179,43 +180,44 @@ Add a blog without risking your main site.
 - `hug m` = `git merge`
 - `hug bdel` = `git branch -d`
 
-### Use Case 6: Working on Multiple Features
+  ### Use Case 6: Working on Multiple Features
 
-Building a contact form and header redesign?
+  Building a contact form and header redesign?
 
-**Steps:**
-1. Branch for contact: `hug bc contact-form` (**B**ranch **C**reate)
-2. Work: `# ... work on contact form ...`
-3. Stage: `hug a contact.html` (**A**dd)
-4. Commit: `hug c "Add contact form"` (**C**ommit)
-5. Switch back: `hug bs` (**B**ranch **S**witch back)
-6. New branch: `hug bc redesign-header` (**B**ranch **C**reate)
-7. Work: `# ... work on header ...`
-8. Stage: `hug a styles.css index.html` (**A**dd)
-9. Commit: `hug c "Redesign header with new logo"` (**C**ommit)
-10. View: `hug bl` (**B**ranch **L**ist)
-11. Switch: `hug b main` (**B**ranch)
-12. Merge first: `hug m contact-form` (**M**erge)
-13. Merge second: `hug m redesign-header` (**M**erge)
+  **Steps:**
+    1. Branch for contact: `hug bc contact-form` (**B**ranch **C**reate)
+    2. Work: `# ... work on contact form ...`
+    3. Stage: `hug a contact.html` (**A**dd)
+    4. Commit: `hug c "Add contact form"` (**C**ommit)
+    5. Switch back: `hug bs` (**B**ranch **S**witch back)
+    6. New branch: `hug bc redesign-header` (**B**ranch **C**reate)
+    7. For a spike: `hug wips "Test header variant"` → Stay and experiment, then `hug bs` to park mid-way.
+    8. Work: `# ... work on header ...`
+    9. Stage: `hug a styles.css index.html` (**A**dd)
+    10. Commit: `hug c "Redesign header with new logo"` (**C**ommit)
+    11. View: `hug bl` (**B**ranch **L**ist)
+    12. Switch: `hug b main` (**B**ranch)
+    13. Merge first: `hug m contact-form` (**M**erge)
+    14. Merge second: `hug m redesign-header` (**M**erge)
 
-**Why it works:** Easy switching keeps features isolated.
+  **Why it works:** Easy switching keeps features isolated.
 
-**Mnemonic breakdown:**
-- `hug bc` → **B**ranch **C**reate & switch
-- `hug a` → **A**dd
-- `hug c` → **C**ommit
-- `hug bs` → **B**ranch **S**witch back
-- `hug bl` → **B**ranch **L**ist
-- `hug b` → **B**ranch switch
-- `hug m` → **M**erge
+  **Mnemonic breakdown:**
+    - `hug bc` → **B**ranch **C**reate & switch
+    - `hug a` → **A**dd
+    - `hug c` → **C**ommit
+    - `hug bs` → **B**ranch **S**witch back
+    - `hug bl` → **B**ranch **L**ist
+    - `hug b` → **B**ranch switch
+    - `hug m` → **M**erge
 
-**Git equivalents:**
-- `hug bc` = `git checkout -b`
-- `hug a` = `git add -u`
-- `hug c` = `git commit -m`
-- `hug bs` = `git checkout -`
-- `hug bl` = `git branch`
-- `hug m` = `git merge`
+  **Git equivalents:**
+    - `hug bc` = `git checkout -b`
+    - `hug a` = `git add -u`
+    - `hug c` = `git commit -m`
+    - `hug bs` = `git checkout -`
+    - `hug bl` = `git branch`
+    - `hug m` = `git merge`
 
 ## Collaboration Scenarios
 
@@ -359,30 +361,35 @@ hug sw index.html
 
 ### Use Case 14: Working with WIP Branches (Preferred Over Stash)
 
-Switch tasks quickly with persistent, pushable WIP branches. This is safer and more shareable than stashing for longer interruptions.
+Switch tasks with persistent WIP branches. Use `wips` to stay and build (e.g., add commits), or `wip` to park briefly.
 
+**Deep Work Flow (`wips`)**:
+  ```shell
+  # Park current task, stay on WIP for focused prototyping
+  hug wips "Draft blog post"
+  # Now on WIP/...; continue:
+  # ... edit code ...
+  hug a . && hug c "Add post rendering"
+  # Pause: hug bs (back to main for hotfix)
+  # Later resume: hug b WIP/... && hug c "Polish UI"
+  # Finish: hug b main && hug w unwip WIP/... (squash-merge + delete)
+  hug bpush  # Push integrated changes
+  ```
+
+**Quick Interrupt Flow (`wip`)**:
 ```shell
-# Save work on a dated WIP branch
-hug w wip "Draft blog post"
-
-# Fix bug on main
-hug b main
-hug bc hotfix-bug
-# ... fix ...
-hug c "Fix critical bug"
+# Park briefly (e.g., for urgent hotfix), switch back
+hug wip "Draft blog post"
+# Now back on main; do hotfix: hug bc hotfix-bug && hug c "Fix bug"
 hug bpush
-
-# Resume WIP later (for more edits)
-hug b WIP.2023-10-05.14-30-00.draftblogpost
-# Continue working...
-
-# Finish: Switch back and unpark (squash-merge to main + delete)
-hug bs
-hug w unwip WIP.2023-10-05.14-30-00.draftblogpost  # Prompts for preview
-hug bpush  # Push the integrated changes
+# Resume WIP later: hug b WIP/... && hug a . && hug c "Continue post"
+# Finish as above.
 ```
 
-**Why WIP over stash?** Branches are versioned, pushable for backups/collaboration, and easy to list (`hug bl | grep WIP`). Unpark with `hug w unwip` to integrate cleanly; discard with `hug w wipdel` if worthless. For quick local saves, stash still works, but use WIP for real progress parking.
+**Why `wips` vs. `wip`?** `wips` suits solo deep dives (stay isolated, version progress with commits). `wip` is better for teams/multi-tasks (quick park, swi  tch to main/hotfix, resume without disrupting flow). Both are pushable—contrast with stash (local-only, no history).
+
+**Why WIP over stash?** Branches are versioned, pushable for backups/collaboration, and easy to list (`hug bl | grep WIP`). Unpark with `hug w unwip` to inte  grate cleanly; discard with `hug w wipdel` if worthless. For quick local saves, stash still works, but use WIP for real progress parking.
+
 
 ## Essential .gitignore Patterns
 
@@ -443,7 +450,7 @@ Use `hug bpull` to avoid conflicts.
 One change per `hug c`.
 
 **8. Park WIP on branches**  
-Use `hug wip "msg"` to save progress on a dated branch instead of stashing—it's pushable and versioned for safe context-switching.
+Use `hug wip "msg"` for quick saves (switch back); `hug wips "msg"` to stay and iterate (e.g., `hug c` multiple times). Unpark with `hug unwip` for clean i  ntegration; delete junk with `hug wipdel`.
 
 ## Quick Reference Cheat Sheet
 
@@ -464,7 +471,6 @@ hug bl                     # List
 hug bc <name>              # Create & switch
 hug b <name>               # Switch
 hug m <branch>             # Merge
-
 # Inspect
 hug l                      # History
 hug sw                     # Working changes
@@ -478,10 +484,11 @@ hug h back                 # Undo commit, keep staged
 hug h steps <file>         # Steps back to last file change (for precise undos)
 
 # Park WIP (preferred over stash)
-hug w wip "msg"            # Save all changes on WIP branch, switch back
+hug wip "msg"              # Save all changes on WIP branch, switch back
+hug wips "msg"             # Save and stay on WIP branch
 hug b WIP/<date>/<time>.<slug>        # Resume
-hug w unwip  WIP/<date>/<time>.<slug> # Unpark: squash-merge to current + delete
-hug w wipdel WIP/<date>/<time>.<slug> # Discard WIP branch
+hug unwip  WIP/<date>/<time>.<slug> # Unpark: squash-merge to current + delete
+hug wipdel WIP/<date>/<time>.<slug> # Discard WIP branch
 
 # Collab
 hug bpull                  # Pull rebase

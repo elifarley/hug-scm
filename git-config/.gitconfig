@@ -271,7 +271,7 @@
 
   # WIP workflow: commit everything as work-in-progress
   wip = w wip
-  wips = w wip --stay
+  wips = w wips
 
   # Unpark: Squash-merge WIP branch into current and delete (for integration)
   unwip = w unwip

@@ -87,6 +87,10 @@ hug bpullr
 hug w backup     # Stash current work safely
 hug w zap        # Complete cleanup (reset + purge) for specific files
 hug w zap-all    # Complete cleanup across the entire repository
+
+# Park WIP (preferred over stash)
+hug wip "Draft feature"    # Park and switch back (quick pause)
+hug wips "Deep spike"      # Park and stay (continue immediately)
 ```
 
 ### Common Scenarios
@@ -129,7 +133,15 @@ hug bpull
 
 # Pull with rebase for linear history
 hug bpullr
+
+# Park WIP for interruption (switch back to main/hotfix)
+hug wip "Draft feature" → hug bc hotfix && hug c "Fix bug" → hug bpush
+
+# Deep work on WIP (stay and iterate)
+hug wips "Prototype UI" → hug a . && hug c "Add components" → hug bs (pause) → later hug b WIP/... → hug w unwip WIP/... (integrate)
 ```
+
+**Tip: `wips` vs. `wip`**: Use `wips` for immersive sessions (stay on WIP to add commits like `hug c`). Use `wip` for quick pauses (park and switch back to main). Both are pushable branches—better than local stash for persistence.
 
 ## Installation
 
@@ -211,9 +223,36 @@ hug w zap-all [-u|-s|-i]          # Complete repo cleanup
 # Utility
 hug w backup [-m "msg"]           # Safe stash of changes
 hug w get <commit> [files]        # Restore files from specific commit
-hug w wip "<msg>"                 # Park changes on dated WIP branch, switch back
+hug wip "<msg>"                   # Park changes on dated WIP branch, switch back
+hug wips "<msg>"                  # Park changes on dated WIP branch and stay
 hug w unwip [wip]                 # Unpark: squash-merge WIP to current + delete
 hug w wipdel [wip]                # Delete WIP branch (no integration)
+```
+
+#### Parking Work (WIP & Stash)
+
+```shell
+# Save all changes on WIP branch (pushable, persistent)
+hug wip "Draft feature"    # Park and switch back (quick pause)
+hug wips "Deep spike"      # Park and stay (continue immediately)
+
+# Resume WIP (for more edits)
+hug b WIP/2023-10-05/1430.draftfeature
+
+# Unpark/finish: Squash-merge to current branch + delete
+hug w unwip WIP/<date>/<time>.<slug>
+
+# Discard worthless WIP
+hug w wipdel WIP/<date>/<time>.<slug>
+
+# Quick stash (local only)
+hug ssave                # Tracked files
+hug ssavea "msg"         # + untracked
+hug spop                 # Restore and drop
+hug sls                  # List stashes
+```
+
+**Tip: `wips` vs. `wip`**: Use `wips` for immersive sessions (stay on WIP to add commits like `hug c`). Use `wip` for interruptions (e.g., switch to hotfix, resume later). Both beat stash for shareability—push WIP branches for team backups.
 ```
 
 #### 📊 Status & Staging (`s`)
