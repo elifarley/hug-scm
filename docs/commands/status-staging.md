@@ -38,9 +38,6 @@ Looking for other families? Try [HEAD Operations (h*)](head) for resets, [Workin
 | `hug aa` | **A**dd **A**ll | Stage tracked and untracked changes |
 | `hug us` | **U**n**S**tage | Unstage specific files |
 | `hug usa` | **U**n**S**tage **A**ll | Unstage everything |
-| `hug ssave` | **S**tash **Save** | Stash tracked changes |
-| `hug spop` | **S**tash **Pop** | Apply and drop stash entry |
-| `hug wip "<msg>"` | **W**ork **I**n **P**rogress | Save all changes on dated WIP branch (preferred over stash) |
 
 ## Status Commands (s*)
 
@@ -151,113 +148,12 @@ Show diffs inline for better inspection.
     - **Example**: `hug untrack .env`
     - **Safety**: ⚠️ Removes files from version control; make sure `.gitignore` covers them to prevent re-adding.
 
-> **Related:** If you need to toss changes entirely, jump to [`hug w discard`](working-dir) or [`hug w backup`](working-dir) for safe checkpoints.
+> **Related:** If you need to toss changes entirely, jump to [`hug w discard`](working-dir) or [`hug w wip`](working-dir) for safe checkpoints.
 
 ::: tip Scenario
 **Task:** You staged a compiled artifact by mistake.  
 **Flow:** Run `hug us dist/app.js`, add it to `.gitignore`, then `hug untrack dist/` so it stays local only.
 :::
-
-## Stash Commands (s* overlap)
-Stashing is part of status workflow for temporary backups.
-
-- `hug ssave`: **S**tash **Save**
-    - **Description**: Quick stash of tracked files.
-    - **Example**: `hug ssave`
-    - **Safety**: ✅ Saves changes to the stash stack, leaving your working tree clean.
-
-- `hug ssavea "msg"`: **S**tash **Save** + **A**ll
-    - **Description**: Stash with message and include untracked files.
-    - **Example**: `hug ssavea "WIP widgets"`
-    - **Safety**: ⚠️ Includes untracked work - restore with `hug spop` or `hug sapply`.
-
-- `hug ssavefull`: **S**tash **Save** **Full**
-    - **Description**: Stash everything including ignored files.
-    - **Example**: `hug ssavefull`
-    - **Safety**: ⚠️ Sweeps ignored artifacts; double-check before running.
-
-- `hug sls`: **S**tash **L**i**S**t
-    - **Description**: List available stashes.
-    - **Example**: `hug sls`
-    - **Safety**: ✅ Read-only overview.
-
-- `hug speek [stash]`: **S**tash **Peek**
-    - **Description**: Preview a stash diff before applying.
-    - **Example**: `hug speek stash@{1}`
-    - **Safety**: ✅ Read-only preview.
-
-- `hug sshow [stash]`: **S**tash **Show**
-    - **Description**: Show a stash summary with file stats.
-    - **Example**: `hug sshow`
-    - **Safety**: ✅ Read-only summary.
-
-- `hug sapply [stash]`: **S**tash **Apply**
-    - **Description**: Apply stash contents but keep the entry.
-    - **Example**: `hug sapply stash@{1}`
-    - **Safety**: 🔄 Leaves the stash untouched so you can reuse it.
-
-- `hug spop [stash]`: **S**tash **Pop**
-    - **Description**: Apply a stash with an interactive confirmation and drop it.
-    - **Example**: `hug spop`
-    - **Safety**: 🔄 Prompts before applying and deleting the stash entry.
-
-- `hug sdrop [stash]`: **S**tash **Drop**
-    - **Description**: Drop (delete) a stash entry.
-    - **Example**: `hug sdrop stash@{2}`
-    - **Safety**: ⚠️ Permanently removes stash content.
-
-- `hug sbranch <branch> [stash]`: **S**tash **Branch**
-    - **Description**: Create a new branch from a stash.
-    - **Example**: `hug sbranch fix-fast-follow`
-    - **Safety**: ✅ Restores work onto a fresh branch; stash entry remains.
-
-- `hug sclear`: **S**tash **Clear**
-    - **Description**: Clear all stashes (caution!).
-    - **Example**: `hug sclear`
-    - **Safety**: ⚠️ Destroys every stash entry - backup with `hug w backup` first.
-
-> **Related:** Rather than stashing, you can branch with [`hug bc`](branching) before experimenting, or safeguard everything first via [`hug w backup`](working-dir).
-
-::: tip Scenario
-**Task:** Park WIP before an urgent hotfix.  
-**Flow:** Run `hug ssavea "WIP nav redesign"`, switch with `hug b hotfix`, and restore later with `hug spop` once the fire is out.
-:::
-
-## WIP Workflow (w*)
-Branch-based alternative to stashing for persistent, pushable saves of temp work.
-
-- `hug wip "<msg>"` (or `hug wips "<msg>"` to stay): **W**ork **I**n **P**rogress
-  - **Description**: Stages all changes (tracked/untracked/deletions), commits to a new branch like `WIP/YY-MM-DD/HHmm.slug` with `[WIP] <msg>`. Default (`hug wip`): switches back to previous branch. Use `hug wips` to stay on the WIP branch for immediate commits (e.g., after parking: `hug c "Iterate on draft"`). Preferred over stashing for shareable, versioned temp progress.
-  - **Example**: `hug wip "Fix login UI"` → Creates `WIP/24-10-05/1430.fixloginui`; resume with `hug b WIP/24-10-05/1430.fixloginui`. For staying: `hug wips "Deep refactor"`.
-  - **Safety**: Skips if no changes; aborts on name conflicts. List with `hug bl | grep WIP`.
-
-#### Resuming and Finishing a WIP Branch
-After parking, resume by switching to the WIP branch, add more commits if needed, then unpark or delete.
-
-- **Resume Editing**: Switch to continue work.
-  ```shell
-  hug b WIP/24-10-05/1430.fixloginui  # Interactive with 'hug b' if needed
-  # Make changes, stage with 'hug a' or 'hug aa', commit with 'hug c "Refine UI"'
-  hug bs  # Switch back when pausing
-  ```
-
-- **Unpark (Integrate and Clean)**: Squash-merge all WIP commits (initial + additions) into the current branch as one clean commit, then delete the WIP branch. Use when finished.
-  ```shell
-  # Ensure on target branch (e.g., main)
-  hug b main
-  hug w unwip WIP/24-10-05/1430.fixloginui  # Prompts for preview/confirmation; aborts on conflicts
-  ```
-  - **Options**: `--no-squash` for regular merge; `-f` to force-delete post-unpark.
-  - **Safety**: Previews changes; stages conflicts for manual resolution (`hug a && hug c`). No auto-push—run `hug bpush` after.
-  - **Why Squash?**: Keeps linear history; auto-generates message like "Finish WIP: Fix login UI".
-
-- **Delete (Discard Worthless WIP)**: Remove without integrating.
-  ```shell
-  hug w wipdel WIP/24-10-05/1430.draftfeature  # Safe if merged; -f to force
-  ```
-  - **Safety**: Prompts if unmerged; use for abandoned temp work.
-
-This flow parks temp work safely, allows resumption, and finishes cleanly. Prefer WIP over stash for persistence; push WIP branches for backups if collaborating.
 
 ## Scenarios
 ::: tip Scenario: Patch-and-Push
@@ -271,7 +167,7 @@ This flow parks temp work safely, allows resumption, and finishes cleanly. Prefe
 ::: tip Scenario: Recover from Experimental Edits
 **Goal:** Restore a clean working tree after a spike.
 1. `hug sla` to spot all touched files.
-2. `hug w backup -m "Spike backup"` for a safety net.
+2. `hug w wip "Spike backup"` for a safety net.
 3. `hug w discard-all` for tracked changes, followed by `hug w purge` for generated files.
 4. Finish with `hug s` to confirm you're clean.
    :::
@@ -279,17 +175,5 @@ This flow parks temp work safely, allows resumption, and finishes cleanly. Prefe
 ## Tips
 - Use `hug s`/`hug sl` as your heartbeat commands; rerun them after every change to stay oriented.
 - When staging aggressively with `hug aa`, follow with `hug ss` and `hug su` to ensure nothing surprising slips in.
-- Preview before destructive stash operations: `hug speek` and `hug sshow` give context before `hug sdrop` or `hug sclear`.
 - Combine `hug sl` with `hug llf` from [Logging (l*)](logging#file-inspection) to tie current work back to file history.
 - Share concise stand-up updates by pasting `hug sx` output or attaching diffs from `hug ss`.
-- For WIP: List with `hug bl | grep WIP`; unpark to integrate (`hug w unwip`), delete to discard (`hug w wipdel`). Use `wips` when you plan to continue right   away (avoids extra `hug b` switches).
-
-## Coverage Checklist
-- [x] Status aliases documented: `hug s`, `hug sl`, `hug sla`, `hug sli`, `hug ss`, `hug su`, `hug sw`, `hug sx`.
-- [x] Staging aliases documented: `hug a`, `hug aa`, `hug ai`, `hug ap`.
-- [x] Unstaging aliases documented: `hug us`, `hug usa`, `hug untrack`.
-- [x] Stash aliases documented: `hug ssave`, `hug ssavea`, `hug ssavefull`, `hug sls`, `hug speek`, `hug sshow`, `hug sapply`, `hug spop`, `hug sdrop`, `hug sbranch`, `hug sclear`.
-- [x] WIP commands documented: `hug w wip`, `hug w unwip`, `hug w wipdel`.
-- [ ] Pending documentation: Consider adding guidance for `hug spopf` (force pop) if it remains in your local `git-config/.gitconfig`.
-
-Use this checklist to keep documentation and aliases in lockstep whenever new commands land.

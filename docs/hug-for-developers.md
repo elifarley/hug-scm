@@ -359,36 +359,36 @@ hug ss
 hug sw index.html
 ```
 
-### Use Case 14: Working with WIP Branches (Preferred Over Stash)
+### Use Case 14: Parking Your Work (Preferred Over Stash)
 
-Switch tasks with persistent WIP branches. Use `wips` to stay and build (e.g., add commits), or `wip` to park briefly.
+Use the WIP workflow to safely park uncommitted changes.
 
-**Deep Work Flow (`wips`)**:
-  ```shell
-  # Park current task, stay on WIP for focused prototyping
-  hug wips "Draft blog post"
-  # Now on WIP/...; continue:
-  # ... edit code ...
-  hug a . && hug c "Add post rendering"
-  # Pause: hug bs (back to main for hotfix)
-  # Later resume: hug b WIP/... && hug c "Polish UI"
-  # Finish: hug b main && hug w unwip WIP/... (squash-merge + delete)
-  hug bpush  # Push integrated changes
-  ```
-
-**Quick Interrupt Flow (`wip`)**:
+**Scenario 1: You're interrupted by an urgent task.**
+Use `hug wip` to safely park your uncommitted changes somewhere else and re-focus on a new task.
 ```shell
-# Park briefly (e.g., for urgent hotfix), switch back
-hug wip "Draft blog post"
-# Now back on main; do hotfix: hug bc hotfix-bug && hug c "Fix bug"
-hug bpush
-# Resume WIP later: hug b WIP/... && hug a . && hug c "Continue post"
-# Finish as above.
+# You are on the 'my-feature' branch and need to do a hotfix
+hug wip "Pause feature work for hotfix"
+
+# You still are on the same branch ('my-feature'), but now it's clean. Check out 'main' and create the hotfix.
+hug b main
+hug bc hotfix-123
 ```
 
-**Why `wips` vs. `wip`?** `wips` suits solo deep dives (stay isolated, version progress with commits). `wip` is better for teams/multi-tasks (quick park, swi  tch to main/hotfix, resume without disrupting flow). Both are pushable—contrast with stash (local-only, no history).
+**Scenario 2: You were casually making some changes and now want to stay on it to get serious.**
+Use `hug wips` to park your work on a new WIP branch and stay on it to continue iterating.
+```shell
+# Move current uncommitted changes to a new WIP branch for a longer task
+hug wips "Prototype new dashboard UI"
 
-**Why WIP over stash?** Branches are versioned, pushable for backups/collaboration, and easy to list (`hug bl | grep WIP`). Unpark with `hug w unwip` to inte  grate cleanly; discard with `hug w wipdel` if worthless. For quick local saves, stash still works, but use WIP for real progress parking.
+# You are now on the new WIP branch. Add more commits as you experiment.
+hug a . && hug c "Add chart component"
+```
+
+**Finishing Up:**
+- To integrate your work: `hug b main && hug w unwip <wip-branch-name>`
+- To discard it: `hug w wipdel <wip-branch-name>`
+
+For a full breakdown, see the **[WIP Workflow Guide](commands/working-dir.md#the-wip-workflow-a-better-stash)**.
 
 
 ## Essential .gitignore Patterns

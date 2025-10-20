@@ -19,8 +19,8 @@ OPTIONS:
 DESCRIPTION:
   Deletes a WIP/YY-MM-DD/HHmm.slug branch without merging/integrating its changes.
   Use when the temp work is worthless or abandoned. With no branch argument,
-  presents an interactive picker (requires fzf). By default attempts safe delete
-  (`git branch -d`); use --force to drop unmerged work.
+  presents an interactive picker (requires fzf). By default attempts a safe delete
+  (like `hug bdel`); use --force to drop unmerged work.
 
   For integrating temp work before deletion, use 'hug w unwip' instead.
 
@@ -28,6 +28,10 @@ EXAMPLES:
   hug w wipdel
   hug w wipdel WIP/24-10-05/1430.draftfeature
   hug w wipdel --force WIP/24-10-05/1430.draftfeature
+
+TIPS:
+  - If unsure, inspect the branch with 'hug l <wip_branch>' before deleting.
+  - If you pushed the WIP branch, delete it remotely with 'hug bdelr <wip_branch>'.
 EOF
 }
 
@@ -123,16 +127,7 @@ if [[ "$branch" != WIP/* ]]; then
 fi
 
 if [ "$force_delete" = true ]; then
-  if git branch -D "$branch" >/dev/null 2>&1; then
-    printf 'Force-deleted WIP branch %s.\n' "$branch"
-  else
-    error "$PROG_NAME: Failed to force-delete branch '$branch'."
-  fi
+  hug bdelf "$branch"
 else
-  if git branch -d "$branch" >/dev/null 2>&1; then
-    printf 'Deleted WIP branch %s.\n' "$branch"
-  else
-    printf '%s: Branch "%s" is not fully merged. Re-run with --force to delete it.\n' "$PROG_NAME" "$branch" >&2
-    exit 1
-  fi
+  hug bdel "$branch"
 fi

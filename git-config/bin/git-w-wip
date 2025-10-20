@@ -9,19 +9,27 @@ PROG_NAME="hug w wip"
 
 show_help() {
   cat <<'EOF'
-hug w wip: Park all changes on a dated WIP branch and optionally return to your previous branch.
+hug w wip: Park all uncommitted changes (tracked and untracked) on a new, separate WIP branch.
+Use WIP branches as pushable work-in-progress snapshots.
 
 USAGE:
   hug w wip [OPTIONS] "<message>"
 
 OPTIONS:
-  --stay           Remain on the new WIP branch instead of switching back.
+  --stay           Check out the new WIP branch so that you can stay on the same task, but separate from the original branch.
   -h, --help       Show this help message and exit.
 
 DESCRIPTION:
-  Collects staged, unstaged, and untracked changes; creates a WIP/YY-MM-DD/HHmm.slug
-  branch; commits with a "[WIP] <message>" summary; then switches back to the previous branch
-  unless --stay is supplied. Use WIP branches as pushable work-in-progress snapshots.
+  Collects staged, unstaged, and untracked changes; creates a WIP commit on
+  a new `WIP/YY-MM-DD/HHmm.slug` branch;
+
+  WITH    `--stay`:
+     The new WIP branch is checked out so that you can *stay* on the same task.
+     Good for immersive sessions.
+  WITHOUT `--stay`
+     Your changes are moved out of your way and
+     your working directory is clean for new, unrelated tasks.
+     Good for interruptions (e.g., switch to hotfix, resume later).
 
 EXAMPLES:
   hug w wip "Draft responsive navbar"

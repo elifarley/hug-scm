@@ -1,6 +1,6 @@
-# HEAD Operations (h*)
+# HEAD Operations (h *)
 
-HEAD operations in Hug allow you to safely move or undo commits without losing work. Commands are prefixed with `h` for "HEAD" and follow a progressive destructiveness: `back` (safest) to `rewind` (most destructive). Use `hug h files` to preview affected files before any operation.
+HEAD operations in Hug allow you to safely move or undo commits without losing work. Commands are accessed via the main `h` command (for "HEAD") and follow a progressive destructiveness: `back` (safest) to `rewind` (most destructive). Use `hug h files` to preview affected files before any operation.
 
 These map to Git's `reset` modes but with intuitive names and built-in safeguards where applicable (e.g., confirmations for destructive actions).
 
@@ -14,7 +14,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 | `hug h rewind [-u]` | **H**EAD **Re**wind | HEAD goes back, discarding ALL changes, including uncommitted ones       |
 | `hug h squash [-u]` | **H**EAD **S**quash | HEAD goes back + commit last N/local commits as 1 with original HEAD msg |
 | `hug h files [-u]` | **H**EAD **F**iles | Preview files touched in the selected range (or local-only with -u)      |
-| `hug h steps <file>` | **H**EAD **Steps** | Steps back to last file change (query for rewinds)                       |
+| `hug h steps <file>` | **H**EAD **Steps** | Count steps back to find most recent file change (query for rewinds)     |
 
 ## Commands
 
@@ -86,7 +86,7 @@ These map to Git's `reset` modes but with intuitive names and built-in safeguard
 - **Safety**: Read-only; no changes to repo. Cannot mix `-u` with explicit target.
 
 ### `hug h steps <file> [--raw]`
-- **Description**: Calculate commit steps from HEAD back to the most recent commit touching `file` (handles renames). Outputs the count; use for precise rewinds like `h back N`. Full mode shows formatted commit info via `hug ll`.
+- **Description**: Calculate how many commit steps from HEAD back to the most recent commit touching `file` (handles renames). Outputs the count; use for precise rewinds like `h back N`. Full mode shows formatted commit info via `hug ll`.
 - **Example**:
   ```shell
   hug h steps src/app.js          # "3 steps back from HEAD (last commit abc123); <ll output>"

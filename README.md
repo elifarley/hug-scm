@@ -84,12 +84,11 @@ hug bpull
 hug bpullr
 
 # Working directory cleanup
-hug w backup     # Stash current work safely
 hug w zap        # Complete cleanup (reset + purge) for specific files
 hug w zap-all    # Complete cleanup across the entire repository
 
 # Park WIP (preferred over stash)
-hug wip "Draft feature"    # Park and switch back (quick pause)
+hug wip "Draft feature"    # Park and get a clean working directory (quick pause)
 hug wips "Deep spike"      # Park and stay (continue immediately)
 ```
 
@@ -170,8 +169,7 @@ hug wips "Prototype UI" → hug a . && hug c "Add components" → hug bs (pause)
 
 - **No Git Knowledge Needed**: Hug handles the complexity; focus on intent.
 - **Dry-Run Everything**: Add `--dry-run` to preview (e.g., `hug w zap-all --dry-run`).
-- **Backup First**: Always `hug w backup` before destructive ops.
-- **Explore**: Run `hug alias` to see all Git aliases enabled by Hug.
+- **Explore**: Run `hug help` to see Hug commands.
 
 ---
 
@@ -221,38 +219,24 @@ hug w zap [-u|-s|-i] <files>      # Full cleanup for specific paths
 hug w zap-all [-u|-s|-i]          # Complete repo cleanup
 
 # Utility
-hug w backup [-m "msg"]           # Safe stash of changes
 hug w get <commit> [files]        # Restore files from specific commit
-hug wip "<msg>"                   # Park changes on dated WIP branch, switch back
-hug wips "<msg>"                  # Park changes on dated WIP branch and stay
-hug w unwip [wip]                 # Unpark: squash-merge WIP to current + delete
-hug w wipdel [wip]                # Delete WIP branch (no integration)
 ```
 
-#### Parking Work (WIP & Stash)
+#### Parking Work (WIP)
 
 ```shell
-# Save all changes on WIP branch (pushable, persistent)
-hug wip "Draft feature"    # Park and switch back (quick pause)
-hug wips "Deep spike"      # Park and stay (continue immediately)
+# Save all changes on a WIP branch (pushable, persistent)
+hug wip "msg"              # Move uncommitted changes away into a new WIP branch (for interruptions)
+hug wips "msg"             # Park work and stay on the new WIP branch (for focused work)
 
-# Resume WIP (for more edits)
-hug b WIP/2023-10-05/1430.draftfeature
+# Resume WIP
+hug b <wip-branch-name>    # Switch to the WIP branch to continue
 
-# Unpark/finish: Squash-merge to current branch + delete
-hug w unwip WIP/<date>/<time>.<slug>
+# Finish and integrate WIP
+hug w unwip <wip-branch>   # Squash-merges WIP into current branch and deletes it
 
-# Discard worthless WIP
-hug w wipdel WIP/<date>/<time>.<slug>
-
-# Quick stash (local only)
-hug ssave                # Tracked files
-hug ssavea "msg"         # + untracked
-hug spop                 # Restore and drop
-hug sls                  # List stashes
-```
-
-**Tip: `wips` vs. `wip`**: Use `wips` for immersive sessions (stay on WIP to add commits like `hug c`). Use `wip` for interruptions (e.g., switch to hotfix, resume later). Both beat stash for shareability—push WIP branches for team backups.
+# Abandon WIP
+hug w wipdel <wip-branch>  # Deletes the WIP branch without merging
 ```
 
 #### 📊 Status & Staging (`s`)
@@ -317,22 +301,6 @@ hug fa <file>         # Count commits per author for a file
 hug fborn <file>      # Show when file was added
 ```
 
-#### Stashing (`s*` for stash, but note `s` is also status)
-
-```shell
-hug ssave             # Quick stash (tracked files only)
-hug ssavea "msg"      # Stash with message and untracked files
-hug ssavefull         # Stash everything including ignored files
-hug sls               # List stashes with formatting
-hug speek [stash]     # Preview stash contents with full diff
-hug sshow [stash]     # Summary of stash changes
-hug sapply [stash]    # Apply stash and keep it
-hug spop [stash]      # Pop stash (with interactive preview)
-hug sdrop [stash]     # Drop specific stash
-hug sbranch <branch> [stash] # Create branch from stash
-hug sclear            # Clear all stashes
-```
-
 #### Tagging (`t*`)
 
 ```shell
@@ -394,9 +362,9 @@ hug ma                # Abort merge
 #### Push/Pull (`bpush`, etc.)
 
 ```shell
-hug bpush             # Branch: Push (Push current branch and set upstream)
-hug bpushf            # Branch: Push-Force (Force push with lease and set upstream)
-hug bpush-unsafe      # Branch: Push-unsafe (Unsafe force push and set upstream)
+hug bpush             # Branch: Push (Push current branch)
+hug bpushf            # Branch: Push-Force (Force push with lease)
+hug bpush-unsafe      # Branch: Push-unsafe (Unsafe force push)
 hug bpull             # Pull with rebase
 hug pullall           # Pull from all remotes
 ```
@@ -405,10 +373,9 @@ hug pullall           # Pull from all remotes
 
 ```shell
 hug o                 # Outgoing changes (what will be pushed)
-hug w wip "<msg>"     # Park all changes on dated WIP branch, switch back
+hug w wip "<msg>"     # Park all changes on WIP branch
 hug w unwip [wip]     # Unpark WIP: squash-merge to current branch + delete
 hug w wipdel [wip]    # Delete WIP branch without integration
-hug alias [pattern]   # List all aliases (search with pattern)
 hug type <object>     # Show object type
 hug dump <object>     # Show object contents
 hug untrack <files>   # Stop tracking files but keep locally
@@ -467,9 +434,9 @@ hug shf <file> [commit] # SHow: File at [commit] (File diff in commit)
 -    **Mercurial Support** - Full compatibility with `hg` commands
 -    **Sapling Support** - Meta's next-gen VCS
 -    **Interactive Mode** - TUI with visual diff preview
--   \[\] **AI Integration** - Smart commit suggestions
+-    **AI Integration** - Smart commit suggestions
 -    **GUI Frontend** - Visual interface for complex operations
--   \[\] **Plugin System** - Custom command extensions
+-    **Plugin System** - Custom command extensions
 
 Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
@@ -477,5 +444,5 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Apache 2.0 license - see [LICENSE](LICENSE) for details.
 

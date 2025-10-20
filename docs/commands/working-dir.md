@@ -1,48 +1,54 @@
-# Working Directory (w*)
+# Working Directory (w *)
 
-Working Directory commands in Hug help you manage, clean up, and restore changes in your local files. Prefixed with `w` for "working directory," they range from safe discards to nuclear cleanups, always with previews.
+Working Directory commands in Hug help you manage, clean up, and restore changes in your local files.
+They live under the `w` (for "working directory") gateway.
+They range from safe discards to nuclear cleanups, always with previews.
 
-These build on Git's `reset`, `stash`, and `clean` but add intuitive names and safety layers.
+Some of them can also be accessed directly (without using `h` before them):
+- `hug get` (same as `hug w get`)
+- `hug wip` (same as `hug w wip`)
+- `hug wips` (same as `hug w wips`)
+- `hug unwip` (same as `hug w unwip`)
+
 
 ## Quick Reference
 
-| Command | Memory Hook                             | Summary                                                  |
-| --- |-----------------------------------------|----------------------------------------------------------|
-| `hug w discard` | **W**orking directory **D**iscard       | Discard unstaged or staged changes for paths             |
-| `hug w discard-all` | **W**orking directory **discard **ALL** | Discard unstaged or staged changes across the repository |
-| `hug w wipe` | **W**orking directory **W**ipe          | Discard uncommitted changes for paths                    |
-| `hug w wipe-all` | **W**orking directory **W**ipe **ALL**  | Drop uncommitted changes in entire repo                  |
-| `hug w purge` | **W**orking directory **P**urge         | Remove untracked or ignored files for paths              |
-| `hug w purge-all` | **W**orking directory **P**urge **ALL** | Repo-wide purge of untracked/ignored files               |
-| `hug w zap` | **W**orking directory **Z**ap           | Combine wipe + purge for paths                           |
-| `hug w zap-all` | **W**orking directory **Z**ap **ALL**   | Full repo cleanup of tracked and untracked files         |
-| `hug w wip` | **W**ork **I**n **P**rogress            | Park changes on dated WIP branch (pushable)              |
-| `hug wips` | **W**ork **I**n **P**rogress **S**tay  | Park changes on new  WIP branch and stay on it           |
-| `hug w unwip` | **Un**park **W**ork **I**n **P**rogress | Squash-merge WIP to current + delete                     |
-| `hug w wipdel` | **W**ork **I**n **P**rogress **DEL**ete | Delete WIP branch (no integration)                       |
-| `hug w backup` | **W**orking directory **B**ackup        | Stash tracked and untracked changes safely               |
-| `hug w get` | **W**orking directory **G**et           | Restore files from a specific commit                     |
+| Command             | Memory Hook                             | Summary                                                 |
+|---------------------|-----------------------------------------|---------------------------------------------------------|
+| `hug w discard`     | **W**orking directory **D**iscard       | Discard unstaged or staged changes in     tracked files |
+| `hug w discard-all` | **W**orking directory **discard **ALL** | Discard unstaged or staged changes in ALL tracked files |
+| `hug w wipe`        | **W**orking directory **W**ipe          | Discard uncommitted changes in     tracked files        |
+| `hug w wipe-all`    | **W**orking directory **W**ipe **ALL**  | Discard uncommitted changes in ALL tracked files        |
+| `hug w purge`       | **W**orking directory **P**urge         | Remove     untracked or ignored files                   |
+| `hug w purge-all`   | **W**orking directory **P**urge **ALL** | Remove ALL untracked or ignored files                   |
+| `hug w zap`         | **W**orking directory **Z**ap           | Combine wipe + purge for     files                      |
+| `hug w zap-all`     | **W**orking directory **Z**ap **ALL**   | Combine wipe + purge for ALL files                      |
+| `hug w wip`         | **W**ork **I**n **P**rogress            | Park changes on new WIP branch (pushable)               |
+| `hug w wips`        | **W**ork **I**n **P**rogress, **S**tay  | Park changes on new  WIP branch and stay on it          |
+| `hug w unwip`       | **Un**park **W**ork **I**n **P**rogress | Squash-merge WIP to current branch + delete WIP         |
+| `hug w wipdel`      | **W**ork **I**n **P**rogress **DEL**ete | Delete WIP branch (no integration)                      |
+| `hug w get`         | **W**orking directory **G**et           | Restore files from a specific commit                    |
 
 ## Commands
 
 ### Discard Changes
-Discard unstaged or staged changes without affecting untracked files.
+Discard unstaged or staged **changes in _tracked_** files without affecting **untracked / ignored** files.
 
 - `hug w discard [-u|-s] <files...>`
   - **Description**: Discard unstaged (`-u`, default) or staged (`-s`) changes for specific files/paths.
   - **Example**:
     ```shell
     hug w discard file.js     # Discard unstaged changes in file.js
-    hug w discard -s .        # Discard all staged changes
+    hug w discard -s .        # Discard all staged changes in current directory
     ```
   - **Safety**: `--dry-run` to preview; requires `-f` to force.
 
 - `hug w discard-all [-u|-s]`
   - **Description**: Repo-wide discard of unstaged or staged changes.
-  - **Example**: `hug w discard-all -u` (default unstaged).
+  - **Example**: `hug w discard-all` (default: unstaged).
 
 ### Wipe Changes
-Drop uncommitted changes (both staged and unstaged).
+Discard uncommitted changes (both staged and unstaged) in **_tracked_** files without affecting **untracked / ignored** files.
 
 - `hug w wipe <files...>`
   - **Description**: Wipe staged + unstaged for specific files (tracked only).
@@ -75,43 +81,89 @@ Combines wipe + purge for full reset.
   - **Safety**: Always previews and confirms; use with caution.
 
 ### Utilities
-- `hug w wip "<msg>"`
-    - **Description**: Park all changes (staged/unstaged/untracked) on a new branch like `WIP/YY-MM-DD/HHmm.slug` with `[WIP] <msg>` commit. Working directory will be on the same branch as before, but clean, ready for tackling a more important task that just came in. Preferred over stashing for pushable, persistent saves of temp work.
-    - **Example**: `hug wip "Draft feature"` → Resume: `hug b WIP/24-10-05/1430.draftfeature`; finish: `hug unwip WIP/24-10-05/1430.draftfeature` (squash-merges WIP to current branch and deletes WIP).
-
-- `hug w wips "<msg>"`
-  - **Description**: Park all changes (staged/unstaged/untracked) on a new branch like `WIP/YY-MM-DD/HHmm.slug` with `[WIP] <msg>` commit. Working directory will be on the new WIP branch so that you can *stay* on it for focused work. Preferred over stashing for pushable, persistent saves of temp work.
-  - **Example**: `hug wips "Draft feature"` → continue editing immediately → finish: `hug b my-main-branch; hug unwip WIP/24-10-05/1430.draftfeature` (squash-merges to `my-main-branch` and deletes WIP branch).
-
-- `hug w unwip [WIP_BRANCH]`
-  - **Description**: Unpark by squash-merging WIP changes into the current branch as one commit, then deleting the WIP branch. Interactive if no branch specified (requires fzf).
-  - **Example**: `hug unwip` (prompts to select); `--no-squash` for regular merge.
-  - **Safety**: Previews changes; aborts on conflicts (resolve manually).
-
-- `hug w wipdel [WIP_BRANCH]`
-  - **Description**: Delete a WIP branch without integrating (for worthless/abandoned work). Safe if merged; `-f` to force.
-  - **Example**: `hug wipdel WIP/24-10-05/1430.draftfeature`
-  - **Safety**: Prompts if unmerged.
-
 - `hug w get <commit> [files...]`
   - **Description**: Restore files from a specific commit to working directory.
   - **Example**: `hug w get HEAD~2 README.md` (gets from 2 commits ago)
 
-  ### WIP Workflow Choices
-  ::: tip When to Use `wips` vs. `wip`
-    - **Use `wips` (--stay)**: When you want to dive deeper into temp/experimental work without switching contexts (e.g., prototyping a feature mid-session). It   keeps you on the isolated WIP branch for commits like `hug c "Refine prototype"`, then finish with `hug w unwip <wip>` (squash-merge + delete).
-    - **Use `wip` (switch back)**: For brief pauses (e.g., handling a hotfix on main). Parks safely, returns you to your primary task, and lets you resume later   via `hug b <wip>`. Better for multi-tasking or team syncs, as WIP branches are pushable for backups.
-    - **Contrast with Stash**: Both WIP variants are branch-based (versioned, shareable), unlike local-only stashes. Avoid stash for anything >1 hour—use `wips`   for persistence without cluttering main.
-      :::
+### The WIP Workflow: A Better Stash
 
-  **Full Flow Example (Deep Work with `wips`)**:
-    1. `hug wips "Explore auth flows"` → Parks current changes, stays on `WIP/24-10-05/1430.exploreauthflows`.
-    2. Edit more: `hug a . && hug c "Add OAuth integration"`.
-    3. Pause/resume: `hug bs` (back to main), later `hug b WIP/...` to continue.
-    4. Finish: `hug b main && hug w unwip WIP/...` (integrates as one commit).
+The WIP (Work-In-Progress) workflow is a robust, branch-based alternative to `git stash`. It lets you park changes on a dedicated, dated branch that you can push, share, and resume safely.
+
+| Command           | Use Case                                                    | Switches Branches? |
+| ----------------- |-------------------------------------------------------------|--------------------|
+| `hug w wip "msg"`   | **Quick Interruption**: Park work to handle something else. | **No**             |
+| `hug w wips "msg"`  | **Focused Work**: Park work to iterate on it immediately.   | **Yes**            |
+| `hug w unwip`     | **Finish** : Integrate completed WIP into your main branch. | No                 |
+| `hug w wipdel`    | **Abandon**: Delete a worthless WIP branch.                 | No                 |
+
+#### The Lifecycle of a WIP Branch
+
+**1. Park Your Work**
+
+- To handle a quick interruption (e.g., a hotfix):
+  ```shell
+  # Parks all changes (staged, unstaged, and untracked) on a new WIP branch,
+  # leaving working directory clean for a new, unrelated task.
+  hug w wip "Drafting the new feature, pausing for hotfix"
+  ```
+
+- To start a focused experimental session:
+  ```shell
+  # Moves all changes (staged, unstaged, and untracked) to a new WIP branch
+  # and stays on it for further work.
+  hug w wips "Spike on new auth API"
+  ```
+
+**2. Resume Your Work**
+
+If you used `hug w wip`, you can resume your work at any time by switching to the WIP branch that was created.
+
+```shell
+# List WIP branches and switch to one
+hug bl | grep WIP
+hug b WIP/24-10-26/1530.spikeonnewauthapi
+```
+If you used `hug wips`, you are already on the branch and can add more commits.
+
+**3. Finish and Integrate (`unwip`)**
+
+When the work is complete, switch to your target branch (e.g., `main`) and "unpark" it. By default, this squash-merges the WIP branch's changes into a single, clean commit and then deletes the WIP branch. For a regular merge that creates a merge commit, use the `--no-squash` option.
+
+```shell
+# 1. Switch to your target branch
+hug b main
+
+# 2. Unpark the WIP branch (prompts for selection if name is omitted)
+hug w unwip WIP/24-10-26/1530.spikeonnewauthapi # Squash-merge by default
+
+hug w unwip --no-squash WIP/24-10-26/1530.spikeonnewauthapi # Perform a regular merge
+```
+
+::: tip Unwip Tips
+- You can resume work on a WIP branch (`hug b <wip>`), add more commits, then switch back to your target branch and run `hug w unwip`.
+- After unparking, run `hug s` to check the status and `hug bpush` to push the new commit.
+:::
+
+**4. Abandon and Delete (`wipdel`)**
+
+If the experiment was a dead end, you can delete the WIP branch without merging its changes. The command will attempt a safe deletion, but if the branch contains unmerged work, you will need to use the `--force` flag to discard it.
+
+```shell
+# Deletes the branch. Fails if not fully merged.
+hug w wipdel WIP/24-10-26/1530.spikeonnewauthapi
+
+# Force-deletes the branch even if it has unmerged work.
+hug w wipdel --force WIP/24-10-26/1530.spikeonnewauthapi
+```
+
+::: tip Why Use WIP Instead of Stash?
+- **Persistent & Safe**: Stashes are local and can be lost. WIP branches are real commits.
+- **Shareable**: You can `hug bpush` a WIP branch to get feedback or save it remotely.
+- **Versioned**: You can add multiple commits to a WIP branch, creating a history for your experiment.
+- **Clear**: `hug bl | grep WIP` gives a clear list of parked tasks, unlike the cryptic `git stash list`.
+:::
 
 ## Tips
 - Chain with status: `hug w discard file.js && hug sl`
-- Restore from stash: Use [Stash Commands](status-staging#s*) like `hug sapply`.
 - For undoing HEAD moves that affect working dir, see [HEAD Operations](head).
 - For WIP: Park with `hug wip` (changes moved out of your way into a new WIP branch) or `hug wips` (changes moved to new WIP branch, working dir stays on it), resume with `hug b <wip>`, finish with `hug w unwip` or discard with `hug w wipdel`.

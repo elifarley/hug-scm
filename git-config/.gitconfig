@@ -166,31 +166,14 @@
   #  Working directory (w-*)
   # ═══════════════════════════════════════════════════════════════════
 
-  # Safe backup of changes
-  w-backup = "!f() { \
-    local message=\"WIP: Auto-backup before destructive operation\"; \
-    \
-    while [ $# -gt 0 ]; do \
-      case \"$1\" in \
-        -m|--message) message=\"$2\"; shift 2 ;; \
-        -h|--help) \
-          printf 'w backup: Stash changes safely\n' >&2; \
-          printf 'Usage: hug w backup [-m \"message\"]\n' >&2; \
-          printf '  -m, --message  Custom stash message\n' >&2; \
-          return 1 ;; \
-        *) printf 'Unknown option: %s\n' \"$1\" >&2; return 1 ;; \
-      esac; \
-    done; \
-    \
-    if git diff --quiet && git diff --cached --quiet; then \
-      printf 'No changes to backup\n' >&2; \
-      return 0; \
-    fi; \
-    \
-    git stash push -m \"$message\"; \
-      printf 'Changes backed up safely\n' >&2; \
-    printf 'Use \"hug s pop\" to restore when needed\n' >&2; \
-  }; f"
+  # WIP workflow: commit everything as work-in-progress
+  wip = w wip
+  wips = w wips
+
+  # Unpark: Squash-merge WIP branch into current and delete (for integration)
+  unwip = w unwip
+
+  get = w get
 
   # ──────────────────────────────────────────────────────────────────
   #  COMMITS (c*)
@@ -233,51 +216,8 @@
   # STASH
   # ============================================================================
 
-  # Quick stash: tracked files only, auto-generated message
-  ssave = stash push
-
-  # Save with message and include untracked files (usage: git ssave "message")
-  ssavea = "!f() { git stash push -u -m \"${1:?Usage: ssavea '<message>'}\"; }; f"
-
-  # Stash everything including ignored files
-  ssavefull = stash push -a
-
   # List stashes with beautiful formatting
   sls = stash list --pretty=stash
-
-  # Preview stash contents with full diff (usage: git speek [stash@{n}])
-  speek = "!f() { git stash show -p ${1:-stash@{0}}; }; f"
-
-  # Summary of stash changes (usage: git sshow [stash@{n}])
-  sshow = "!f() { git stash show ${1:-stash@{0}}; }; f"
-
-  # Apply stash and keep it in list (usage: git sapply [stash@{n}])
-  sapply = "!f() { git stash apply ${1:-stash@{0}}; }; f"
-
-  # Apply stash and remove from list (usage: git spop [stash@{n}])
-  spopf = "!f() { git stash pop ${1:-stash@{0}}; }; f"
-
-  # Interactive pop: preview before applying
-  spop = "!bash -c 'git stash show -p && read -p \"Apply this stash? (y/n) \" -n 1 -r && echo && [[ $REPLY =~ ^[Yy]$ ]] && git stash pop'"
-
-  # Drop specific stash (usage: git sdrop [stash@{n}])
-  sdrop = "!f() { git stash drop ${1:-stash@{0}}; }; f"
-
-  # Create branch from stash (usage: git sbranch <branch-name> [stash@{n}])
-  sbranch = "!f() { git stash branch \"$1\" ${2:-stash@{0}}; }; f"
-
-  # Clear all stashes (use with caution!)
-  sclear = stash clear
-
-  # WIP workflow: commit everything as work-in-progress
-  wip = w wip
-  wips = w wips
-
-  # Unpark: Squash-merge WIP branch into current and delete (for integration)
-  unwip = w unwip
-
-  # Delete WIP branch without integration (for discard)
-  wipdel = w wipdel
 
   # ============================================================================
   #  Status (s?)

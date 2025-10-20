@@ -15,7 +15,7 @@ This map provides a high-level overview of Hug's command families, grouped by pr
 | Prefix | Category | Description | Top Commands                                                                                                                                                                                                                                                                                                          |
 |--------|----------|-------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `h*` | HEAD Operations | Undo, rewind, and inspect commits without losing work. Safest for experimenting. | `hug h back` (**H**EAD **Back** – soft reset), `hug h undo` (**Undo** – mixed reset), `hug h steps <file>` (**Steps** – distance to last file change)                                                                                                                                                                 |
-| `w*` | Working Directory | Manage local changes: discard, clean, restore, or park/unpark temp work. Great for cleanup. | `hug w discard <file>` (**W**orking dir **Discard**), `hug w zap-all` (**Zap** **All** – full reset), `hug wip "<msg>"` (**W**ork **I**n **P**rogress** – park on new WIP branch), `hug wips "<msg>"` (**W**ork **I**n **P**rogress **S**tay** on new WIP branch), `hug w unwip` (**Un**park – squash-merge + delete) |
+| `w*` | Working Directory | Manage local changes: discard, clean, restore, or park/unpark temp work. Great for cleanup. | `hug w discard <file>` (**W**orking dir **Discard**), `hug w zap-all` (**Zap** **All** – full reset), `hug wip "<msg>"` (**W**ork **I**n **P**rogress – park & switch back), `hug wips "<msg>"` (**W**ork **I**n **P**rogress **S**tay – park & stay), `hug w unwip` (**Un**park **WIP** – integrate WIP branch) |
 | `s*` | Status | View repo state: summaries, diffs, and stashes. Essential for daily checks. | `hug s` (**S**tatus snapshot), `hug sw` (**S**tatus + **W**orking diff), `hug ssave` (**S**tash **Save**)                                                                                                                                                                                                             |
 | `a*` | Staging/Add | Stage changes for commit: tracked, all, or interactive. Pairs with `s*`. | `hug a <file>` (**A**dd tracked), `hug aa` (**A**dd **A**ll), `hug ap` (**A**dd + **P**atch – interactive)                                                                                                                                                                                                            |
 | `b*` | Branching | Create, switch, list, delete, and pull branches. Core for feature isolation and sync. | `hug bc <name>` (**B**ranch **C**reate), `hug b <name>` (**B**ranch switch), `hug bpull` (**B**ranch **Pull** – safe ff-only), `hug bpullr` (**B**ranch **Pull** **R**ebase)                                                                                                                                          |
@@ -46,8 +46,10 @@ Hug Commands
 │   ├── w purge    # Purge untracked/ignored
 │   ├── w zap      # Wipe + purge (nuclear)
 │   ├── w get      # Restore from commit
-│   ├── w wip        # Park on new WIP branch (working dir clean for new, unrelated tasks)
-│   └── w wips       # Park on new WIP branch (stay on it to refine current task)
+│   ├── w wip        # Park work & switch back
+│   ├── w wips       # Park work & stay on new branch
+│   ├── w unwip      # Integrate WIP branch
+│   └── w wipdel     # Delete WIP branch
 ├── s* (Status: View State)
 │   ├── s          # Quick summary
 │   ├── sl         # List tracked
@@ -102,4 +104,4 @@ Hug Commands
 - For a quick daily reference, see the [Cheat Sheet](/cheat-sheet).
 - For full lists, see individual command docs or `hug help` in your repo.
 
-This map evolves with Hug—contribute new families via pull requests!
+This map evolves with Hug - contribute new families via pull requests!

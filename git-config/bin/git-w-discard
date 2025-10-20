@@ -141,12 +141,12 @@ handle_staged_only() {
 
     # Delegate based on unstaged flag (simple case first)
     if ! $has_unstaged_flag; then
-      # Simple case: No unstaged changes—direct discard
+      # Simple case: No unstaged changes - direct discard
       discard_staged_no_unstaged "$file"
       continue
     fi
 
-    # Complex case: Has unstaged changes—handle patch reversal (or merge-file from previous fix)
+    # Complex case: Has unstaged changes - handle patch reversal (or merge-file from previous fix)
     local failed_patch=""  # Temp for failure output (scoped to complex path)
     if ! discard_staged_with_unstaged "$file" "$repo_root" failed_patch; then
       exit 1  # Propagate failure (prints already done in sub-function)
