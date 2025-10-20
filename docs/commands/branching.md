@@ -107,12 +107,15 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 - **Safety**: Double-prompts for confirmation to prevent accidents.
 
 ### `hug bdelr <branch>`
-- **Description**: Delete a remote branch (pushes delete to origin).
+- **Description**: Delete a remote branch from the `origin` remote.
 - **Example**:
   ```shell
-  hug bdelr origin/old-remote  # Delete remote branch
+  # First, list remote branches to find the one to delete
+  hug blr
+  # Then, delete the desired branch by name
+  hug bdelr old-remote-feature
   ```
-- **Safety**: Prompts for confirmation; assumes 'origin' remote.
+- **Safety**: Prompts for confirmation before deleting.
 
 ## Pulling Branches
 
@@ -183,6 +186,7 @@ These commands help inspect which branches relate to specific commits or states.
 - Use `hug b` to review branch status and easily switch via an interactive menu.
 - For creating a branch from an existing one: `hug bc <new> <existing>` (e.g., `hug bc new-feature existing-feature`).
 - Always backup work with `hug w backup` before deleting branches.
+- Use `hug blr` to list remote branches before deleting one with `hug bdelr`.
 - Queries like `bwc` and `bwm` are useful for cleanup before `bdel`.
 
 See [Status & Staging](status-staging) for checking changes after branching operations.
