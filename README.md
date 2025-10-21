@@ -445,4 +445,3 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ## License
 
 Apache 2.0 License - see [LICENSE](LICENSE) for details.
-

@@ -28,6 +28,20 @@ ensure_commit_exists() {
     fi
 }
 
+# Get the commit hash of the upstream branch for the current HEAD
+# Usage: get_upstream_commit
+# Outputs: the commit hash of the upstream branch
+# Exits with error if upstream is not configured
+get_upstream_commit() {
+    local upstream_commit
+    upstream_commit=$(git rev-parse --verify @{u} 2>/dev/null) || {
+        error "No upstream branch configured for the current branch.
+       Use 'git branch --set-upstream-to=<remote>/<branch>' to configure it."
+        exit 1
+    }
+    echo "$upstream_commit"
+}
+
 ensure_ancestor_of_head() {
     local ref="${1:-}"
     local reason="${2:-}"
@@ -44,6 +58,50 @@ ensure_ancestor_of_head() {
             error "Reference '$ref' is not an ancestor of HEAD."
         fi
     fi
+}
+
+# Get the Nth commit hash in history, optionally for specific files
+# Usage: get_commit_n_back <N> [file1] [file2] ...
+# N: An integer between 1 and 99 indicating how many commits to go back.
+# If files are provided, it counts only commits that affected those files.
+# If no files are provided, it counts commits in the overall history.
+# Outputs: the resolved commit hash.
+# Exits with error if N commits cannot be found.
+get_commit_n_back() {
+    local n="$1"
+    shift
+    local files=("$@")
+
+    if [[ ! "$n" =~ ^([0-9]|[1-9][0-9]?)$ ]]; then
+        # This is an internal check, user input should be validated first
+        error "Internal error: N must be an integer between 0 and 99."
+        exit 1
+    fi
+
+    local target_commit
+
+    if [ ${#files[@]} -eq 0 ]; then
+        # No files specified, go back N commits in overall history.
+        target_commit="HEAD~$n"
+    else
+        # Files specified, find the commit N steps back from their last change.
+        if [ "$n" -eq 0 ]; then
+            # N=0 means reset to HEAD.
+            target_commit="HEAD"
+        else
+            # N > 0 means go back N commits BEFORE the last change.
+            # We skip N commits from the list of file changes and take the next one.
+            target_commit=$(git rev-list --skip=$((n)) -1 HEAD -- "${files[@]}" 2>/dev/null)
+            if [ -z "$target_commit" ]; then
+                local file_list
+                printf -v file_list "%s " "${files[@]}"
+                error "Could not find $n commits in the history of: ${file_list% }"
+                exit 1
+            fi
+        fi
+    fi
+
+    echo "$target_commit"
 }
 
 has_pending_changes() {
@@ -66,6 +124,35 @@ check_working_tree_clean() {
        • Use 'git w-backup' to save changes first
        • Use 'git w-discard-all' to discard changes
        • Use 'git w-discard <file>' for specific files"
+    fi
+}
+
+# Check if a specific list of files are clean (no staged or unstaged changes)
+# Usage: check_files_clean <file1> <file2> ...
+# Exits with error if any of the specified files have uncommitted changes.
+check_files_clean() {
+    local -a files=("$@")
+    if [ ${#files[@]} -eq 0 ]; then
+        return 0 # No files to check
+    fi
+
+    # Optimization: use a single git command to check all files at once
+    local -a files_with_changes=()
+    mapfile -t files_with_changes < <(git diff --name-only -- "${files[@]}" 2>/dev/null || true)
+    mapfile -t -O "${#files_with_changes[@]}" files_with_changes < <(git diff --cached --name-only -- "${files[@]}" 2>/dev/null || true)
+    
+    # Remove duplicates from the combined list
+    dedupe_array files_with_changes
+
+    if [ ${#files_with_changes[@]} -gt 0 ]; then
+        error "Cannot proceed because some affected files have uncommitted changes.
+       Affected files:
+         $(printf "%s\n" "${files_with_changes[@]}" | sed 's/^/         /')
+
+       Solutions:
+       • Use 'hug w discard-all' to discard changes
+       • Use 'hug w discard <file>' for specific files"
+        exit 1
     fi
 }
 

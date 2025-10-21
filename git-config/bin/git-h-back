@@ -46,10 +46,7 @@ fi
 check_git_repo
 
 if $upstream; then
-  if ! git rev-parse --verify @{u} >/dev/null 2>&1; then
-    error "No upstream branch set. Run 'git branch --set-upstream-to=origin/BRANCH'."
-  fi
-  target="@{u}"
+  target=$(get_upstream_commit)
   local_commits=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 0)
   if [ "$local_commits" -eq 0 ]; then
     info "Already synced to upstream ($(git rev-parse --short "$target"))."

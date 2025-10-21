@@ -33,6 +33,7 @@ import { defineConfig } from 'vitepress'
         { text: 'Home', link: '/' },
         { text: 'Hug for Beginners', link: '/hug-for-beginners' },
         { text: 'Commands', link: '/command-map' },
+        { text: 'Try it online', link: 'https://codespaces.new/elifarley/hug-scm' },
         { text: 'GitHub', link: 'https://github.com/elifarley/hug-scm' }
       ],
       sidebar: [
