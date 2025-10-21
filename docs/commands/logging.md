@@ -4,20 +4,21 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 
 ## Quick Reference
 
-| Command | Memory Hook | Summary |
-| --- | --- | --- |
-| `hug l` | **L**og summary | Oneline history with graph and decorations |
-| `hug ll` | **L**og **L**ong | Detailed log with full messages |
-| `hug la` | **L**og **A**ll | Detailed log across all branches |
-| `hug lp` | **L**og **P**atch | Log with diffs for each commit |
-| `hug lf` | **L**og message **F**ilter | Search commit messages |
-| `hug lc` | **L**og **C**ode search | Search diffs for exact term |
-| `hug lcr` | **L**og **C**ode **R**egex | Search diffs with regex |
-| `hug lau` | **L**og **A**uthor | Filter log by author |
-| `hug ld` | **L**og **D**ate | Log commits within a date range |
-| `hug llf` | **L**og **L**ookup **F**ile | File history following renames |
-| `hug llfs` | **L**og **L**ookup **F**ile **S**tats | File history with change statistics |
-| `hug llfp` | **L**og **L**ookup **F**ile **P**atch | File history with full patches |
+| Command    | Memory Hook                           | Summary                                    |
+|------------|---------------------------------------|--------------------------------------------|
+| `hug l`    | **L**og                               | Oneline history with graph and decorations |
+| `hug la`   | **L**og **A**ll                       | Oneline log across all branches            |
+| `hug ll`   | **L**og **L**ong                      | Detailed log with full messages            |
+| `hug lla`  | **L**og **L**ong **A**ll              | Detailed log across all branches           |
+| `hug lp`   | **L**og **P**atch                     | Log with diffs for each commit             |
+| `hug lf`   | **L**og message **F**ilter            | Search commit messages                     |
+| `hug lc`   | **L**og **C**ode search               | Search diffs for exact term                |
+| `hug lcr`  | **L**og **C**ode **R**egex            | Search diffs with regex                    |
+| `hug lau`  | **L**og **A**uthor                    | Filter log by author                       |
+| `hug ld`   | **L**og **D**ate                      | Log commits within a date range            |
+| `hug llf`  | **L**og **L**ookup **F**ile           | File history following renames             |
+| `hug llfs` | **L**og **L**ookup **F**ile **S**tats | File history with change statistics        |
+| `hug llfp` | **L**og **L**ookup **F**ile **P**atch | File history with full patches             |
 
 ## Basic Logging
 
@@ -26,25 +27,33 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
   - **Example**:
     ```shell
     hug l              # Current branch history
-    hug l --all        # All branches
     ```
   - **Safety**: Read-only; no repo changes.
-  - **Git Equivalent**: `git log --oneline --graph --decorate --color`
+  - ![img.png](../images/commands/hug-l.png)
+
+- `hug la [options]`
+    - **Description**: One-line log with graph visualization and branch decorations for a concise history overview for ALL branches.
+    - **Example**:
+      ```shell
+      hug la              # branch history for ALL branches
+      ```
+    - **Safety**: Read-only; no repo changes.
 
 - `hug ll [options]`
   - **Description**: Detailed log with graph, short date, author, decorations, and full commit message.
   - **Example**:
     ```shell
     hug ll             # Current branch detailed history
-    hug ll --all       # All branches
     ```
   - **Safety**: Read-only.
-  - **Git Equivalent**: `git log --graph --pretty=log1 --date=short`
 
-- `hug la [options]`
-  - **Description**: Log across all branches (alias for `hug ll --all`).
-  - **Example**: `hug la`
-  - **Safety**: Read-only.
+- `hug lla [options]`
+    - **Description**: Detailed log with graph, short date, author, decorations, and full commit message for ALL branches.
+    - **Example**:
+      ```shell
+      hug lla             # Detailed history for ALL branches
+      ```
+    - **Safety**: Read-only.
 
 - `hug lp [options]`
   - **Description**: Detailed log including patches/diffs for each commit.
@@ -134,7 +143,6 @@ These commands show the history of changes to a specific file, following renames
     hug llfs file.txt -1  # Stats for most recent change
     ```
   - **Safety**: Read-only.
-  - **Git Equivalent**: `git log --follow --stat -- <file>`
 
 - `hug llfp <file> [-N] [log options]`
   - **Description**: File history including full patches/diffs.

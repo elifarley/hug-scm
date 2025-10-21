@@ -36,11 +36,14 @@
   # Log one-line with graph and decorations
   l = log --oneline --graph --decorate --color
 
+  # All branches
+  la = "!f() { hug l --all \"$@\"; }; f"
+
   # Log one-line with date, author and message
   ll = log --graph --pretty=log1 --date=short
 
   # All branches
-  la = "!f() { hug ll --all \"$@\"; }; f"
+  lla = "!f() { hug ll --all \"$@\"; }; f"
 
   # Search commits by message
   lf = "!f() { \
