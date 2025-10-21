@@ -1,5 +1,11 @@
+import { defineConfig } from 'vitepress'
+  import { pagefindPlugin } from 'vitepress-plugin-pagefind'
+
   // https://vitepress.dev/reference/site-config
-  export default {
+  export default defineConfig({
+    vite: {
+      plugins: [pagefindPlugin()],
+    },
     base: '/hug-scm/',
     sitemap: {
       hostname: 'https://elifarley.github.io/hug-scm/'
@@ -19,10 +25,10 @@
       `]
     ],
     themeConfig: {
-      logo: '/hug-icon.png',
       search: {
-        provider: 'local'
+        provider: 'pagefind'
       },
+      logo: '/hug-icon.png',
       nav: [
         { text: 'Home', link: '/' },
         { text: 'Hug for Beginners', link: '/hug-for-beginners' },
@@ -90,5 +96,5 @@
         }
       }
     }
-  }
+  })
 
