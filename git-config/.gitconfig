@@ -99,23 +99,6 @@
   #  STAGING (a*)
   # ═══════════════════════════════════════════════════════════════════
 
-  # Stage tracked files, or specific files if provided
-  # Usage:
-  #   hug a           → stage all tracked files (updates only)
-  #   hug a .         → stage current directory
-  #   hug a <file>... → stage specific files
-  a = "!f() { \
-    if [ $# -eq 0 ]; then \
-      git add -u; \
-    else \
-      git add \"$@\"; \
-    fi; \
-  }; f"
-
-  # Stage everything (tracked + untracked + deletions)
-  # Usage: hug aa
-  aa = add -A
-
   # Invoke interactive add menu
   ai = add --interactive
 

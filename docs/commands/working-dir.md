@@ -85,9 +85,10 @@ Combines wipe + purge for full reset.
   - **Description**: Restore files from a specific commit to working directory.
   - **Example**: `hug w get HEAD~2 README.md` (gets from 2 commits ago)
 
-### The WIP Workflow: A Better Stash
+### The WIP Workflow: A Better Way to Manage Temporary Work {#wip-workflow}
 
-The WIP (Work-In-Progress) workflow is a robust, branch-based alternative to `git stash`. It lets you park changes on a dedicated, dated branch that you can push, share, and resume safely.
+The WIP (Work-In-Progress) workflow is a robust, branch-based alternative to `git stash` or Mercurial's *MQ*.
+It lets you park changes on a dedicated, dated branch that you can push, share, and resume safely.
 
 | Command           | Use Case                                                    | Switches Branches? |
 | ----------------- |-------------------------------------------------------------|--------------------|

@@ -17,7 +17,7 @@ Key features:
 - **Discoverability**: Grouped by prefix (e.g., `h*` for HEAD, `w*` for working directory).
 - **Git-Only for Now**: Full Git support; Mercurial, Sapling and others coming later.
 
-[Start with Hug for Developers](hug-for-developers)
+Start with [Hug for Beginners](hug-for-beginners.md)
 
 ## Command Reference
 Start with the [Command Map](/command-map) for a quick overview of all families, or the [Cheat Sheet](/cheat-sheet) for daily workflows.

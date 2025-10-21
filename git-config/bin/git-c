@@ -27,9 +27,12 @@ EXAMPLES:
   hug c -v                # Verbose commit
 
 SEE ALSO:
-  hug ca : For committing all changes (staged and unstaged)
-  hug cm : For modifying the last commit with staged changes.
+  hug ca : For committing all changes to ALL tracked files (staged and unstaged)
+  hug caa: For committing all changes to ALL tracked and untracked files.
+  hug cm : For modifying the last commit with staged changes only.
   hug cma: For modifying the last commit with ALL tracked changes.
+  hug a  : Stage tracked files, or specific files if provided.
+  hug aa : Stage everything (tracked + untracked + deletions)
 
 FURTHER READING:
   See 'git commit --help' for full Git documentation.

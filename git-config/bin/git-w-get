@@ -7,6 +7,9 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # w-get - Get file contents from specific commit (without staging)
 # Usage: hug w get <commit> [file1] [file2] ...
 
+# TODO Add support for -u/--upstream as in git-h-back
+# TODO Add support for `hug w get <N|COMMIT> where N is integer > 0 indicating how many commits to go back for the files.
+
 show_help() { cat << EOF
 w-get: Reset file contents to specific commit (without staging)
 

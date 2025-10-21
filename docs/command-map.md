@@ -71,7 +71,7 @@ Hug Commands
 │   └── bpush      # Push & upstream
 ├── c* (Commits: Record Changes)
 │   ├── c          # Commit staged
-│   ├── caa        # Commit all & amend
+│   ├── caa        # Commit all (tracked + untracked)
 │   └── cm         # Amend last
 ├── l* (Logging: History Search)
 │   ├── l          # Oneline log
