@@ -6,29 +6,35 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
     cat << EOF
-hug h squash: Squashes last N commits (or local-only to upstream) into 1 with original HEAD message.
+hug h squash: Squashes specific commits into 1 with original HEAD message.
 
 USAGE:
-    hug h squash [N|COMMIT] [-u, --upstream] [--quiet]
+    hug h squash [--quiet] [target]
 
 OPTIONS:
-    -u, --upstream  Squashes local-only commits onto upstream remote tip (no fetch)
-    --quiet         Suppress output (sets HUG_QUIET=T)
+    [target]        Either empty, an integer N > 1, a COMMIT hash, or -u, --upstream
+        (empty)         The last 2 commits will be squashed.
+        N               The last N commits will be squashed.
+        COMMIT          All commits above the target commit will be squashed.
+        -u, --upstream  Local-only commits (those above the upstream HEAD - the remote tip) will be squashed (no fetch)
+    --quiet         Suppress output
 
 DESCRIPTION:
-    Without N, defaults to squashing the last 2 commits into 1 (intuitive for combining recent work).
-    HEAD goes back to target (like 'h back'), then commits staged changes using the original HEAD's message.
-    Squashes changes from undone commits into one. Non-destructive to uncommitted work.
+    Without [target], defaults to squashing the last 2 commits into 1 (intuitive for combining recent work
+    from the *last commit* with the *previous commit*).
+    HEAD goes back to target (like 'h back'), then commits changes from the target commits using the original HEAD's message.
+    Non-destructive to uncommitted work.
+    Pre-existing staged changes will be included - review with `hug ss` first.
 
 EXAMPLES:
-    hug h squash                    # Squash last 2 commits into 1 at HEAD~2
-    hug h squash 3                 # Squash last 3 commits into 1 at HEAD~3
-    hug h squash a1b2c3            # Squash to specified commit
-    hug h squash -u                # Squash local commits onto upstream tip
+    hug h squash                   # Squash last 2 commits into 1
+    hug h squash 3                 # Squash last 3 commits into 1
+    hug h squash a1b2c3            # Keep a1b2c3 unchanged; Squash all commits above it into 1
+    hug h squash -u                # Keep upstream tip unchanged; Squash local-only commits on top
 
 SEE ALSO:
     hug h back    HEAD goes back only (no auto-commit)
-    hug c         Manual commit after reset
+    hug c         commit staged changes
 EOF
 }
 
