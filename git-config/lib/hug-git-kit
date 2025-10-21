@@ -661,3 +661,52 @@ print_interactive_branch_menu() {
         fi
     done
 }
+
+# Handles upstream validation, preview, and confirmation for operations like rewind, squash, and undo.
+# Usage: handle_upstream_operation <action_name> <confirmation_word> <operation_description>
+#   action_name: A verb for output, e.g., "rewinding", "squashing".
+#   confirmation_word: The word to type for confirmation (e.g., "rewind") or "y/N" for a simple prompt.
+#   operation_description: A description of the operation for the warning message.
+# Outputs the upstream commit hash on success.
+handle_upstream_operation() {
+    local action_name="$1"
+    local confirmation_word="$2"
+    local operation_description="$3"
+
+    local target
+    target=$(get_upstream_commit) # This will exit if no upstream
+
+    local local_commits
+    local_commits=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 0)
+
+    if [ "$local_commits" -eq 0 ]; then
+        info "Already synced to upstream ($(git rev-parse --short "$target"))."
+        exit 0
+    fi
+
+    if [[ ${HUG_QUIET:-} != T ]]; then
+        local upstream_short upstream_branch
+        upstream_short=$(git rev-parse --short "$target")
+        upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
+
+        printf 'Commits to be affected:\n' >&2
+        git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
+
+        local affected_files
+        affected_files=$(git log --name-only --pretty=format: "$target"..HEAD | grep -v '^$' | sort -u | wc -l)
+        
+        printf '\nPreview: %d files affected in %d local commits to %s (%s).\n' >&2 \
+            "$affected_files" "$local_commits" "$upstream_short" "$upstream_branch"
+
+        printf '\n⚠️  This action involves %s: %s\n' "$action_name" "$operation_description" >&2
+        if [[ "$confirmation_word" == "y/N" ]]; then
+            read -p "Proceed? [y/N]: " confirm >&2
+            [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 1; }
+        else
+            read -p "Type \"$confirmation_word\" to confirm: " confirm >&2
+            [ "$confirm" = "$confirmation_word" ] || { info "Cancelled."; exit 1; }
+        fi
+    fi
+
+    echo "$target"
+}

@@ -54,10 +54,7 @@ fi
 check_git_repo
 
 if $upstream; then
-  if ! git rev-parse --verify @{u} >/dev/null 2>&1; then
-    error "No upstream branch set. Run 'git branch --set-upstream-to=origin/BRANCH'."
-  fi
-  start_point="@{u}"
+  start_point=$(get_upstream_commit) # This will exit if no upstream
   range="$start_point..HEAD"
   local_commits=$(git rev-list --count "$range" 2>/dev/null || echo 0)
   if [ "$local_commits" -eq 0 ]; then

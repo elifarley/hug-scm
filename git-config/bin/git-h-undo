@@ -46,24 +46,7 @@ fi
 check_git_repo
 
 if $upstream; then
-  if ! git rev-parse --verify @{u} >/dev/null 2>&1; then
-    error "No upstream branch set. Run 'git branch --set-upstream-to=origin/BRANCH'."
-  fi
-  target="@{u}"
-  local_commits=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 0)
-  if [ "$local_commits" -eq 0 ]; then
-    info "Already synced to upstream ($(git rev-parse --short "$target"))."
-    exit 0
-  fi
-  upstream_short=$(git rev-parse --short "$target")
-  upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
-  printf 'Commits to be discarded:\n' >&2
-  git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
-  printf '\nPreview: %d files affected in %d local commits to %s (%s).\n' >&2 \
-    "$(git log --name-only --pretty=format: "$target"..HEAD | grep -v '^$' | sort -u | wc -l)" \
-    "$local_commits" "$upstream_short" "$upstream_branch"
-  read -p "Proceed with mixed reset (keep changes unstaged)? [y/N]: " confirm >&2
-  [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 1; }
+  target=$(handle_upstream_operation "undoing" "y/N" "mixed reset to upstream, keep changes unstaged")
 else
   case "${target_arg:-}" in
     '') target='HEAD~1' ;;

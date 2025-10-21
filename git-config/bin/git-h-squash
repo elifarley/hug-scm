@@ -61,29 +61,8 @@ original_head=$(git rev-parse HEAD)
 original_message=$(git log -1 --format=%B "$original_head" 2>/dev/null || echo "Squashed commits")
 
 if $upstream; then
-  if ! git rev-parse --verify @{u} >/dev/null 2>&1; then
-    error "No upstream branch set. Run 'git branch --set-upstream-to=origin/BRANCH'."
-  fi
-  target="@{u}"
-  local_commits=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 0)
-  if [ "$local_commits" -eq 0 ]; then
-    info "No local commits to squash; already synced to upstream ($(git rev-parse --short "$target"))."
-    exit 0
-  fi
-  commits_to_squash=$local_commits
-  log_range="$target"..HEAD
-  if [[ ${HUG_QUIET:-} != T ]]; then
-    upstream_short=$(git rev-parse --short "$target")
-    upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
-    printf 'Commits to be squashed:\n' >&2
-    git log --oneline "$log_range" | sed 's/^/  /' >&2
-    affected_files=$(git log --name-only --pretty=format: "$log_range" | grep -v '^$' | sort -u | wc -l)
-    printf '\nPreview: %d files affected in %d local commits to %s (%s).\n' >&2 \
-      "$affected_files" "$local_commits" "$upstream_short" "$upstream_branch"
-    printf '\nWill create new commit with message: "%s"\n' "$original_message" >&2
-    printf '\n⚠️  This squashes commits into 1 but preserves uncommitted changes.\n' >&2
-  fi
-  prompt_confirm "Proceed with squash (hug back + hug c)? [y/N]: "
+  target=$(handle_upstream_operation "squashing" "y/N" "squash local-only commits")
+  commits_to_squash=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 0)
 else
   case "${target_arg:-}" in
     '') target_spec='HEAD~2' ;;
