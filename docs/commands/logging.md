@@ -29,7 +29,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
     hug l              # Current branch history
     ```
   - **Safety**: Read-only; no repo changes.
-  - ![img.png](../images/commands/hug-l.png)
+  - ![hug -l example](img/hug-l.png)
 
 - `hug la [options]`
     - **Description**: One-line log with graph visualization and branch decorations for a concise history overview for ALL branches.
