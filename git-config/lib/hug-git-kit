@@ -71,9 +71,9 @@ check_working_tree_clean() {
 
 # Check file in target commit
 check_file_in_commit() {
+    test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
     local commit="$1"
-    local file="$2"
-
+    local file="${GIT_PREFIX}$2"
     if ! git cat-file -e "$commit:$file" 2>/dev/null; then
         error "File '$file' does not exist in commit $commit"
     fi
@@ -81,40 +81,44 @@ check_file_in_commit() {
 
 # Preview changes for specific files
 preview_file_changes() {
-    local commit="$1"
-    local file="$2"
+  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+  local commit="$1"
+  local file="${GIT_PREFIX}$2"
 
-    printf "─ %s ─\n" "$file" >&2
-    if git diff --no-index -- "$file" <(git show "$commit:$file") 2>/dev/null | head -20 >&2; then
-        printf "─ (showing first 20 lines) ─\n\n" >&2
-    else
-        printf "─ (binary file or no changes) ─\n\n" >&2
-    fi
+  printf "─ %s ─\n" "$file" >&2
+  if git diff --no-index -- "$file" <(git show "$commit:$file") 2>/dev/null | head -20 >&2; then
+    printf "─ (showing first 20 lines) ─\n\n" >&2
+  else
+    printf "─ (binary file or no changes) ─\n\n" >&2
+  fi
 }
 
 # Check file has staged changes
 check_file_staged() {
-    local file="$1"
+  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+  local file="${GIT_PREFIX}$1"
 
-    if ! git diff --cached --quiet "$file" 2>/dev/null; then
-        error "File '$file' has staged changes
-       Use 'git us $file' to unstage first"
-    fi
+  if ! git diff --cached --quiet -- "$file" 2>/dev/null; then
+    error "File '$file' has staged changes
+    Use 'hug us $file' to unstage first"
+  fi
 }
 
 # Check file has unstaged changes
 check_file_unstaged() {
-    local file="$1"
+  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+  local file="${GIT_PREFIX}$1"
 
-    if ! git diff --quiet "$file" 2>/dev/null; then
-        error "File '$file' has unstaged changes
-       Use 'git w-discard $file' to discard changes first"
-    fi
+  if ! git diff --quiet -- "$file" 2>/dev/null; then
+    error "File '$file' has unstaged changes
+    Use 'git w-discard $file' to discard changes first"
+  fi
 }
 
 # Detects if the staged changes for a file are binary (returns true/false)
 is_binary_staged() {
-  local file="$1"
+  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+  local file="${GIT_PREFIX}$1"
   local added deleted
   local diff_numstat
 
@@ -193,9 +197,9 @@ discard_all_uncommitted_changes() {
 
   # Collect unique affected files: staged + unstaged changes (tracked only)
   local -a affected_files=()
-  mapfile -t affected_files < <(git diff --name-only --cached . 2>/dev/null || true)
+  mapfile -t affected_files < <(git diff --name-only --cached -- . 2>/dev/null || true)
   local -a unstaged_files=()
-  mapfile -t unstaged_files < <(git diff --name-only . 2>/dev/null || true)
+  mapfile -t unstaged_files < <(git diff --name-only -- . 2>/dev/null || true)
   # Union into affected_files
   affected_files+=("${unstaged_files[@]}")
   dedupe_array affected_files  # From your libraries; removes duplicates
