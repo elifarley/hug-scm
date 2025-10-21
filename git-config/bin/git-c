@@ -33,9 +33,6 @@ SEE ALSO:
   hug cma: For modifying the last commit with ALL tracked changes.
   hug a  : Stage tracked files, or specific files if provided.
   hug aa : Stage everything (tracked + untracked + deletions)
-
-FURTHER READING:
-  See 'git commit --help' for full Git documentation.
 EOF
 }
 
@@ -50,33 +47,30 @@ usage_error() {
   exit 1
 }
 
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
+  exit
+}
+
 # Early exit if not in Git repo
 check_git_repo
 
-# Simple arg parsing: handle --help, pass rest to git commit
-while (($#)); do
-  case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    *)
-      # Pass all other args to git commit
-      break
-      ;;
-  esac
-  shift
-done
+output=$(git commit "$@" 2>&1)
+status=$?
 
-# Check for staged changes
-if [ -z "$(git diff --cached --name-only 2>/dev/null)" ]; then
-  printf "No staged changes found.\n\n"
-  printf "Suggestions:\n"
-  printf "  - Stage files with 'hug a <files>' or 'hug aa' (all).\n"
-  printf "  - To commit all changes (staged + unstaged), use 'hug ca'.\n"
-  printf "  - For an empty commit, use 'hug c --allow-empty'.\n"
-  exit 1
+if [ $status -eq 0 ]; then
+  printf "Committing staged changes...\n"
+  printf "%s\n" "$output"
+else
+  if [ -z "$(git diff --cached --name-only 2>/dev/null)" ] && echo "$output" | grep -q "nothing to commit"; then
+    printf "No staged changes found.\n\n"
+    printf "Suggestions:\n"
+    printf "  - Stage files with 'hug a <files>' or 'hug aa' (all).\n"
+    printf "  - To commit all changes (staged + unstaged), use 'hug ca'.\n"
+    printf "  - For an empty commit, use 'hug c --allow-empty'.\n"
+    exit 1
+  else
+    printf "%s\n" "$output" >&2
+    exit $status
+  fi
 fi
-
-printf "Committing staged changes...\n"
-git commit "$@"

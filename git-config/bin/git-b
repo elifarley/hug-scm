@@ -34,38 +34,26 @@ FURTHER READING:
 EOF
 }
 
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
+  exit
+}
+
 # Early exit if not in Git repo
 check_git_repo
 
-# Simple arg parsing: handle --help, pass rest to git commit
-while (($#)); do
-  case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    *)
-      # Pass all other args to git commit
-      break
-      ;;
-  esac
-  shift
-done
+test $# -gt 0 && exec git switch "$@"
 
-if [ $# -eq 0 ]; then
-  # Compute branch details
-  declare -a branches=() hashes=() subjects=() tracks=()
-  max_len=""
-  current_branch=""
-  selected_branch=""
-  if ! compute_local_branch_details branches hashes subjects tracks max_len current_branch; then
-    printf "No local branches found.\n" >&2
-    exit 1
-  fi
-
-  # Print interactive menu and get selection
-  print_interactive_branch_menu selected_branch branches hashes subjects tracks "$max_len" "$current_branch"
-  git switch "$selected_branch"
-else
-  git switch "$@"
+# Compute branch details
+declare -a branches=() hashes=() subjects=() tracks=()
+max_len=""
+current_branch=""
+selected_branch=""
+if ! compute_local_branch_details branches hashes subjects tracks max_len current_branch; then
+  printf "No local branches found.\n" >&2
+  exit 1
 fi
+
+# Print interactive menu and get selection
+print_interactive_branch_menu selected_branch branches hashes subjects tracks "$max_len" "$current_branch"
+git switch "$selected_branch"

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat <<'EOF'
+hug aa: Stage everything (tracked + untracked + deletions).
+
+USAGE:
+  hug aa
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  Stages all changes in the working directory, including:
+  - New untracked files
+  - Modifications to tracked files
+  - Deletions of tracked files
+  This is equivalent to 'git add -A' with no pathspec, affecting the entire repository.
+
+EXAMPLES:
+  hug aa                # Stage all changes (new files, updates, deletions)
+  # Note: No paths allowed; use 'hug a <path>' for specific files or directories.
+
+SEE ALSO:
+  hug a: Stage tracked files (updates only), or specific files if provided
+  hug ai: Invoke interactive add menu
+  hug ap: Add patches interactively (no commit)
+EOF
+}
+
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
+  exit
+}
+
+test $# -gt 0 && {
+  show_help
+  echo "Error: 'hug aa' stages everything in the repo; no paths expected."
+  echo "For specific files or directories, use 'hug a <path>'."
+  exit 1
+}
+
+# Early exit if not in Git repo
+check_git_repo
+
+exec git add -A

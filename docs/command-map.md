@@ -6,7 +6,7 @@ This map provides a high-level overview of Hug's command families, grouped by pr
 - **Prefixes** (e.g., `h*`) group related commands.
 - **Top Commands** show the most common ones; see individual pages for full details.
 - **Memory Hook**: Bold letters highlight the key initials (e.g., `hug h back` → **H**EAD **Back**).
-- For interactive exploration, run `hug alias` in your terminal.
+- For interactive exploration, run `hug help` in your terminal.
 
 :::
 

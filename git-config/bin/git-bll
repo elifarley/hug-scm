@@ -31,28 +31,19 @@ FURTHER READING:
 EOF
 }
 
-# Early exit if not in Git repo
-check_git_repo
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
+  exit
+}
 
-usage_error() {
-  printf 'hug bll: %s\n\n' "$1" >&2
-  show_help >&2
+test $# -gt 0 && {
+  show_help
+  echo "Error: Arguments not expected: $*"
   exit 1
 }
 
-# Simple arg parsing: handle --help, no other args expected
-while (($#)); do
-  case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    *)
-      usage_error "Unknown option: $1"
-      ;;
-  esac
-  shift
-done
+# Early exit if not in Git repo
+check_git_repo
 
 # Compute branch details
 declare -a branches=() hashes=() subjects=() tracks=()
