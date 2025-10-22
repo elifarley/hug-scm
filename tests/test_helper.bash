@@ -35,25 +35,34 @@ setup_file() {
   export PATH="$HUG_BIN:$PATH"
 }
 
+# Helper to create a unique temp dir for test repos
+create_temp_repo_dir() {
+  local dir
+  dir=$(mktemp -d -t "hug-test-repo-XXXXXX" 2>/dev/null || mktemp -d /tmp/hug-test-repo-XXXXXX)
+  echo "$dir"
+}
+
 # Create a temporary git repository for testing
 create_test_repo() {
-  local test_repo="$BATS_TEST_TMPDIR/test_repo"
+  local test_repo
+  test_repo=$(create_temp_repo_dir)
   
   # Clean up if it exists
   rm -rf "$test_repo"
-  
-  # Create and initialize
   mkdir -p "$test_repo"
-  cd "$test_repo"
   
-  git init -q
-  git config user.email "test@hug-scm.test"
-  git config user.name "Hug Test"
-  
-  # Create initial commit
-  echo "# Test Repository" > README.md
-  git add README.md
-  git commit -q -m "Initial commit"
+  # Initialize repo in subshell for isolation
+  (
+    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    git init -q
+    git config user.email "test@hug-scm.test"
+    git config user.name "Hug Test"
+    
+    # Create initial commit
+    echo "# Test Repository" > README.md
+    git add README.md
+    git commit -q -m "Initial commit"
+  )
   
   echo "$test_repo"
 }
@@ -63,16 +72,17 @@ create_test_repo_with_history() {
   local test_repo
   test_repo=$(create_test_repo)
   
-  cd "$test_repo"
-  
-  # Add a few more commits
-  echo "Feature 1" > feature1.txt
-  git add feature1.txt
-  git commit -q -m "Add feature 1"
-  
-  echo "Feature 2" > feature2.txt
-  git add feature2.txt
-  git commit -q -m "Add feature 2"
+  (
+    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    # Add a few more commits
+    echo "Feature 1" > feature1.txt
+    git add feature1.txt
+    git commit -q -m "Add feature 1"
+    
+    echo "Feature 2" > feature2.txt
+    git add feature2.txt
+    git commit -q -m "Add feature 2"
+  )
   
   echo "$test_repo"
 }
@@ -82,26 +92,30 @@ create_test_repo_with_changes() {
   local test_repo
   test_repo=$(create_test_repo)
   
-  cd "$test_repo"
-  
-  # Staged changes
-  echo "Staged content" > staged.txt
-  git add staged.txt
-  
-  # Unstaged changes
-  echo "Modified content" >> README.md
-  
-  # Untracked file
-  echo "Untracked content" > untracked.txt
+  (
+    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    # Staged changes
+    echo "Staged content" > staged.txt
+    git add staged.txt
+    
+    # Unstaged changes
+    echo "Modified content" >> README.md
+    
+    # Untracked file
+    echo "Untracked content" > untracked.txt
+  )
   
   echo "$test_repo"
 }
 
 # Clean up test repository
 cleanup_test_repo() {
-  if [[ -n "${BATS_TEST_TMPDIR:-}" ]]; then
-    rm -rf "$BATS_TEST_TMPDIR/test_repo"
+  if [[ -n "${TEST_REPO:-}" && -d "$TEST_REPO" ]]; then
+    rm -rf "$TEST_REPO"
+    unset TEST_REPO
   fi
+  # Clean up any hug-test-repo-* dirs
+  find /tmp -maxdepth 1 -name "hug-test-repo-*" -type d -exec rm -rf {} + 2>/dev/null || true
 }
 
 # Assert that a command's output contains a string (case-insensitive)

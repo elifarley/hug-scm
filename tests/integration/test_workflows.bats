@@ -190,79 +190,92 @@ teardown() {
 @test "workflow: rollback safety vs rewind destructiveness" {
   # Test 1: Rollback base case (no conflicts) - discards committed changes
   TEST_REPO1=$(create_test_repo_with_history)
-  cd "$TEST_REPO1"
-  
-  run hug h rollback --force
-  assert_success
-  assert_file_not_exists "feature2.txt"  # Committed change discarded
-  assert_file_exists "feature1.txt"
-  assert_git_clean
-  run git log --oneline -2
-  refute_output --partial "Add feature 2"
+  (
+    cd "$TEST_REPO1" || { echo "cd failed"; exit 1; }
+    run hug h rollback --force
+    assert_success
+    assert_file_not_exists "feature2.txt"  # Committed change discarded
+    assert_file_exists "feature1.txt"
+    assert_git_clean
+    run git log --oneline -2
+    refute_output --partial "Add feature 2"
+  )
   
   # Test 2: Rollback preserves untracked files
   TEST_REPO2=$(create_test_repo_with_history)
-  cd "$TEST_REPO2"
-  echo "untracked data" > untracked.txt
-  
-  run hug h rollback --force
-  assert_success
-  assert_file_not_exists "feature2.txt"
-  assert_file_exists "untracked.txt"
-  run cat untracked.txt
-  assert_output --partial "untracked data"
-  run git status --porcelain
-  assert_output --partial "?? untracked.txt"
+  (
+    cd "$TEST_REPO2" || { echo "cd failed"; exit 1; }
+    echo "untracked data" > untracked.txt
+    
+    run hug h rollback --force
+    assert_success
+    assert_file_not_exists "feature2.txt"
+    assert_file_exists "untracked.txt"
+    run cat untracked.txt
+    assert_output --partial "untracked data"
+    run git status --porcelain
+    assert_output --partial "?? untracked.txt"
+  )
   
   # Test 3: Rollback safety abort on conflicting uncommitted changes
   TEST_REPO3=$(create_test_repo_with_history)
-  cd "$TEST_REPO3"
-  echo "local mod to f2" >> feature2.txt  # Conflicting uncommitted change to file in commit being rolled back
-  
-  run hug h rollback --force
-  [ "$status" -ne 0 ]  # Git aborts to prevent loss
-  assert_output --partial "not uptodate"
-  run cat feature2.txt
-  assert_output --partial "local mod to f2"  # Local change preserved
-  run git status --porcelain
-  assert_output --partial "M feature2.txt"
+  (
+    cd "$TEST_REPO3" || { echo "cd failed"; exit 1; }
+    echo "local mod to f2" >> feature2.txt  # Conflicting uncommitted change to file in commit being rolled back
+    
+    run hug h rollback --force
+    [ "$status" -ne 0 ]  # Git aborts to prevent loss
+    assert_output --partial "not uptodate"
+    run cat feature2.txt
+    assert_output --partial "local mod to f2"  # Local change preserved
+    run git status --porcelain
+    assert_output --partial "M feature2.txt"
+  )
   
   # Test 4: Rewind base case - discards committed changes
   TEST_REPO4=$(create_test_repo_with_history)
-  cd "$TEST_REPO4"
-  
-  run hug h rewind HEAD~1 --force
-  assert_success
-  assert_file_not_exists "feature2.txt"
-  assert_file_exists "feature1.txt"
-  assert_git_clean
-  run git log --oneline -2
-  refute_output --partial "Add feature 2"
+  (
+    cd "$TEST_REPO4" || { echo "cd failed"; exit 1; }
+    run hug h rewind HEAD~1 --force
+    assert_success
+    assert_file_not_exists "feature2.txt"
+    assert_file_exists "feature1.txt"
+    assert_git_clean
+    run git log --oneline -2
+    refute_output --partial "Add feature 2"
+  )
   
   # Test 5: Rewind destructiveness - overwrites uncommitted changes
   TEST_REPO5=$(create_test_repo_with_history)
-  cd "$TEST_REPO5"
-  echo "local mod to f1" >> feature1.txt  # Conflicting uncommitted change
-  
-  run hug h rewind HEAD~1 --force
-  assert_success  # Overwrites without aborting
-  run cat feature1.txt
-  refute_output --partial "local mod to f1"  # Local change lost
-  assert_git_clean
+  (
+    cd "$TEST_REPO5" || { echo "cd failed"; exit 1; }
+    echo "local mod to f1" >> feature1.txt  # Conflicting uncommitted change
+    
+    run hug h rewind HEAD~1 --force
+    assert_success  # Overwrites without aborting
+    run cat feature1.txt
+    refute_output --partial "local mod to f1"  # Local change lost
+    assert_git_clean
+  )
   
   # Test 6: Rewind preserves untracked files (like rollback)
   TEST_REPO6=$(create_test_repo_with_history)
-  cd "$TEST_REPO6"
-  echo "untracked data" > untracked.txt
+  (
+    cd "$TEST_REPO6" || { echo "cd failed"; exit 1; }
+    echo "untracked data" > untracked.txt
+    
+    run hug h rewind HEAD~1 --force
+    assert_success
+    assert_file_not_exists "feature2.txt"
+    assert_file_exists "untracked.txt"
+    run cat untracked.txt
+    assert_output --partial "untracked data"
+    run git status --porcelain
+    assert_output --partial "?? untracked.txt"
+  )
   
-  run hug h rewind HEAD~1 --force
-  assert_success
-  assert_file_not_exists "feature2.txt"
-  assert_file_exists "untracked.txt"
-  run cat untracked.txt
-  assert_output --partial "untracked data"
-  run git status --porcelain
-  assert_output --partial "?? untracked.txt"
+  # Clean up all test repos
+  cleanup_test_repo
 }
 
 @test "workflow: safety - confirm dialogs prevent accidents" {

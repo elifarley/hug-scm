@@ -168,6 +168,17 @@ main() {
   check_helpers
   activate_hug
   
+  # Pre-flight check for temp dir isolation
+  if [[ -z "${BATS_TEST_TMPDIR:-}" ]]; then
+    echo -e "${YELLOW}⚠ Bats \$BATS_TEST_TMPDIR not set; using explicit /tmp isolation${NC}"
+  fi
+  temp_dir=$(mktemp -d -t bats-check-XXXXXX 2>/dev/null || echo "failed")
+  if [[ "$temp_dir" == "failed" ]]; then
+    echo -e "${RED}❌ Cannot create temp dirs; check /tmp permissions${NC}"
+    exit 1
+  fi
+  rm -rf "$temp_dir"
+  
   if [[ "$check_only" == "true" ]]; then
     echo ""
     echo -e "${GREEN}✓ All prerequisites are met${NC}"
