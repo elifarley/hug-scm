@@ -3,9 +3,27 @@
 # This file is sourced by all BATS test files
 
 # Load BATS support libraries
-load '/usr/lib/bats-support/load.bash'
-load '/usr/lib/bats-assert/load.bash'
-load '/usr/lib/bats-file/load.bash'
+# Try multiple common locations
+if [[ -f '/usr/lib/bats-support/load.bash' ]]; then
+  load '/usr/lib/bats-support/load.bash'
+  load '/usr/lib/bats-assert/load.bash'
+  load '/usr/lib/bats-file/load.bash'
+elif [[ -d '/usr/lib/bats-support' ]]; then
+  # Load individual files if load.bash doesn't exist
+  for lib in /usr/lib/bats-support/*.bash; do
+    source "$lib"
+  done
+  for lib in /usr/lib/bats-assert/*.bash; do
+    source "$lib"
+  done
+  for lib in /usr/lib/bats-file/*.bash; do
+    source "$lib"
+  done
+elif [[ -d "$HOME/.bats-libs/bats-support" ]]; then
+  load "$HOME/.bats-libs/bats-support/load.bash"
+  load "$HOME/.bats-libs/bats-assert/load.bash"
+  load "$HOME/.bats-libs/bats-file/load.bash"
+fi
 
 # Set up the test environment
 setup_file() {

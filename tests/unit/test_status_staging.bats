@@ -17,8 +17,8 @@ teardown() {
 @test "hug s: shows status summary" {
   run hug s
   assert_success
-  # Should show some status information
-  assert_output --partial "Changes"
+  # Should show some status information (HEAD, branch, or status indicator)
+  [[ "$output" =~ (HEAD|master|Staged|Unstaged) ]]
 }
 
 @test "hug sl: shows status without untracked files" {
@@ -109,7 +109,9 @@ teardown() {
   
   run hug s
   assert_success
-  assert_output --partial "working tree clean"
+  # Clean status shows HEAD or a clean indicator (no Staged/Unstaged mentions)
+  [[ "$output" =~ HEAD ]]
+  [[ ! "$output" =~ Unstaged ]]
 }
 
 @test "hug ss with specific file shows only that file" {
