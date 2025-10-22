@@ -112,14 +112,14 @@ teardown() {
   assert_output --partial "new.txt"
 }
 
-@test "workflow: undo last commit, fix, and recommit" {
+@test "workflow: back last commit, fix, and recommit" {
   # Make a commit
   echo "Mistake" > file.txt
-  git add file.txt
-  git commit -q -m "Wrong commit"
+  hug a file.txt
+  hug c -q -m "Wrong commit"
   
-  # Undo it
-  run hug h undo --force # Requires user confirmation if we don't use the `--force` flag.
+  # Go back 1 commit
+  run hug h back --force # Requires user confirmation if we don't use the `--force` flag.
   assert_success
   
   # Fix the content
@@ -137,14 +137,14 @@ teardown() {
 @test "workflow: multiple files cleanup with zap-all" {
   # Create various types of changes
   echo "Staged" > staged.txt
-  git add staged.txt
+  hug aa
   
   echo "Modified" >> README.md
   
   echo "Untracked" > untracked.txt
   
   # Zap everything
-  run hug w zap-all -f
+  run hug w zap-all --force
   assert_success
   
   # Everything should be clean
