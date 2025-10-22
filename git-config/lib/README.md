@@ -271,6 +271,202 @@ error "Cannot proceed because some affected files have uncommitted changes.
 
 Always check `HUG_QUIET` before output and `HUG_FORCE` before confirmations.
 
+## Command Structure Patterns
+
+All Hug command scripts should follow consistent structural patterns for maintainability and code elegance.
+
+### Standard Full Command Pattern
+
+```bash
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat <<'EOF'
+Usage: hug <command> [OPTIONS] [ARGS]
+
+Description of what the command does.
+
+Options:
+  -f, --force      Skip confirmation prompt
+      --dry-run    Preview without making changes
+  -h, --help       Show this help
+
+Examples:
+  hug command example1
+  hug command example2
+EOF
+}
+
+# Parse arguments
+dry_run=false
+force=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -f|--force)
+      force=true
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      error "unknown option: $1"
+      show_help >&2
+      exit 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+# Set HUG_FORCE if needed
+if [[ $force == true ]]; then
+  export HUG_FORCE=true
+fi
+
+# Validate we're in a git repo
+check_git_repo
+
+# Main command logic here
+# ...
+```
+
+### Simple Wrapper Command Pattern
+
+For commands that are just aliases to other commands with specific flags:
+
+```bash
+#!/usr/bin/env bash
+# Part of the Hug tool suite
+
+# Alias for hug command --flag
+exec hug command --flag "$@"
+```
+
+Or for slightly more complex wrappers:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Description of what this wrapper does
+exec hug base-command -u -s "$@"
+```
+
+### Gateway Command Pattern
+
+For commands that dispatch to sub-commands (like `git-h` and `git-w`):
+
+```bash
+#!/usr/bin/env bash
+# git-x - Command category gateway
+# Part of the Hug tool suite
+
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+case "${1:-}" in
+  subcommand1)  shift; git x-subcommand1 "$@" ;;
+  subcommand2)  shift; git x-subcommand2 "$@" ;;
+  *)
+    echo "Usage: hug x <subcommand>"
+    echo "Available subcommands:"
+    echo "  subcommand1  - Description"
+    echo "  subcommand2  - Description"
+    exit 1
+    ;;
+esac
+```
+
+### Help Function Naming
+
+**Always use `show_help()` for consistency**, not `usage()`.
+
+Benefits:
+- Consistent across all commands
+- Easier to grep and find
+- Aligns with common conventions
+
+### Confirmation Pattern
+
+**Use `confirm_action()` from hug-common**, not custom `confirm()` functions.
+
+```bash
+# Good - uses library function
+if ! $force; then
+  printf 'About to delete files:\n'
+  print_list 'Files' "${files[@]}"
+  confirm_action 'delete'  # User types "delete" to confirm
+fi
+
+# Bad - duplicate implementation
+confirm() {
+  local prompt=$1 expected=$2 reply
+  read -r -p "$prompt" reply
+  # ...
+}
+```
+
+Benefits of `confirm_action()`:
+- Respects `HUG_FORCE` environment variable
+- Consistent output formatting with `info()`
+- No code duplication
+- Automatic cancellation handling
+
+### Library Sourcing
+
+**Always use the loop pattern** for consistency:
+
+```bash
+# Good - consistent pattern
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+
+# Avoid - individual sourcing (harder to maintain)
+. "$CMD_BASE/../lib/hug-common"
+. "$CMD_BASE/../lib/hug-git-kit"
+```
+
+### Dry-Run Support
+
+Commands that modify files should support `--dry-run`:
+
+```bash
+if $dry_run; then
+  printf 'Dry run: Would perform these actions:\n'
+  print_list 'Files to modify' "${files[@]}"
+  return 0
+fi
+
+# Actual operation here
+```
+
+### Force Flag Support
+
+Destructive commands should support `-f/--force`:
+
+```bash
+if [[ $force == true ]]; then
+  export HUG_FORCE=true
+fi
+
+# Later, confirmations will be skipped if HUG_FORCE is set
+```
+
 ## Testing Changes
 
 After modifying libraries, test:
@@ -290,12 +486,23 @@ When adding new functions:
 5. **Consider reusability**: Make functions generic enough for multiple use cases
 6. **Handle errors gracefully**: Provide helpful error messages
 
+When adding new commands:
+
+1. **Follow the standard patterns** described above
+2. **Use `show_help()` for help text**, not `usage()`
+3. **Source libraries with the loop pattern**
+4. **Use library functions** instead of duplicating code (e.g., `confirm_action()`)
+5. **Support common flags** where appropriate (`--dry-run`, `-f/--force`, `-h/--help`)
+6. **Test with ShellCheck** to ensure quality
+
 ## Examples
 
 See the command scripts in `../bin/` for real-world usage examples:
 
-- `git-w-discard`: Complex file state management
-- `git-h-back`: HEAD movement operations  
+- `git-w-discard`: Complex file state management with dry-run support
+- `git-h-back`: HEAD movement operations with confirmation
 - `git-w-purge`: Untracked file handling
 - `git-bll`: Branch listing with details
 - `git-s`: Status display with colors
+- `git-w-wipe`: Simple wrapper command
+- `git-h`: Gateway command pattern
