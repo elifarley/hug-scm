@@ -12,11 +12,11 @@ USAGE:
     hug h back [N|COMMIT] [-u, --upstream] [--quiet]
 
 OPTIONS:
-    -u, --upstream  Sets the target to the upstream remote tip (discards local-only commits; no fetch)
+    -u, --upstream  Sets the target to the upstream remote tip after read-only preview/confirmation (discards local-only commits; no fetch)
     --quiet         Suppress output (sets HUG_QUIET=T)
 
 DESCRIPTION:
-    Moves HEAD to target. With -u, discards local-only commits to sync with remote tip.
+    Moves HEAD to target. With -u, runs a read-only preview/confirmation before discarding local-only commits to sync with remote tip.
 
 EXAMPLES:
     hug h back -u                # Moves HEAD to upstream, keep local changes staged
@@ -46,27 +46,10 @@ fi
 check_git_repo
 
 if $upstream; then
-  target=$(get_upstream_commit)
-  local_commits=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 0)
-  if [ "$local_commits" -eq 0 ]; then
-    info "Already synced to upstream ($(git rev-parse --short "$target"))."
-    exit 0
-  fi
-  upstream_short=$(git rev-parse --short "$target")
-  upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
-  printf 'Commits to be discarded:\n' >&2
-  git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
-  printf '\nPreview: %d files affected in %d local commits to %s (%s).\n' >&2 \
-    "$(git log --name-only --pretty=format: "$target"..HEAD | grep -v '^$' | sort -u | wc -l)" \
-    "$local_commits" "$upstream_short" "$upstream_branch"
-  read -p "Proceed with soft reset (keep changes staged)? [y/N]: " confirm >&2
-  [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 1; }
+  # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
+  target=$(handle_upstream_operation "soft resetting" "y/N" "soft reset to upstream and keep changes staged")
 else
-  case "${target_arg:-}" in
-    '') target='HEAD~1' ;;
-    [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$target_arg" ;;
-    *) target="$target_arg" ;;
-  esac
+  target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
 fi
 
 git reset --soft "$target"

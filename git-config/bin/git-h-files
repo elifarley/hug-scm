@@ -13,7 +13,7 @@ USAGE:
 
 OPTIONS:
     --stat     Show aggregate line stats per file
-    -u, --upstream  Use upstream remote tip as start point (local-only commits)
+    -u, --upstream  Use upstream remote tip as start point (local-only commits; read-only preview)
     --quiet         Suppress output (sets HUG_QUIET=T)
     -h, --help Show this help
 
@@ -56,36 +56,29 @@ check_git_repo
 if $upstream; then
   start_point=$(get_upstream_commit) # This will exit if no upstream
   range="$start_point..HEAD"
-  local_commits=$(git rev-list --count "$range" 2>/dev/null || echo 0)
+  local_commits=$(count_commits_in_range "$start_point" HEAD)
   if [ "$local_commits" -eq 0 ]; then
     info "No local-only commits; already synced to upstream."
     exit 0
   fi
 else
-  target="${target_arg:-HEAD~1}"
-  if [[ "$target" =~ ^[1-9][0-9]*$ ]]; then
-    start_point="HEAD~$target"
-  else
-    start_point="$target"
-  fi
+  target_input="${target_arg:-}"
+  target=$(resolve_head_target "$target_input" 'HEAD~1')
+  start_point="$target"
   range="$start_point..HEAD"
   if ! git rev-parse --verify "$start_point" >/dev/null 2>&1; then
-    error "Invalid target '$target' (use N or commit ref)"
+    error "Invalid target '${target_input:-$start_point}' (use N or commit ref)"
   fi
 fi
 
-check_git_repo
-if ! git rev-parse --verify "$start_point" >/dev/null 2>&1; then
-  error "Invalid target '$target' (use N or commit ref)"
-fi
+mapfile -t files < <(list_changed_files_in_range "$start_point" HEAD)
 
-files=$(git log --name-only --pretty=format: "$range" | grep -v '^$' | sort -u)
-if [[ -z "$files" ]]; then
+if [ ${#files[@]} -eq 0 ]; then
   info "No files touched in range $range."
   exit 0
 fi
 
-count=$(echo "$files" | wc -l)
+count=${#files[@]}
 if $upstream; then
   upstream_short=$(git rev-parse --short "$start_point")
   warning "These $count files are affected by $local_commits local-only commits to upstream tip $upstream_short (e.g., via 'h back -u')."
@@ -94,10 +87,12 @@ else
 fi
 
 if $with_stat; then
-  echo "$files" | while read -r file; do
+  for file in "${files[@]}"; do
     stats=$(git diff --stat "$range" -- "$file" 2>/dev/null | tail -1 || echo "(no stats)")
     printf "  ${GREEN}%s${NC} %s\n" "$file" "$stats"
   done
 else
-  echo "$files" | sed 's/^/  /'
+  for file in "${files[@]}"; do
+    printf '  %s\n' "$file"
+  done
 fi

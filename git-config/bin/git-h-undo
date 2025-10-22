@@ -12,11 +12,11 @@ USAGE:
     hug h undo [N|COMMIT] [-u, --upstream] [--quiet]
 
 OPTIONS:
-    -u, --upstream  Mixed reset to upstream remote tip (discards local-only commits; no fetch)
+    -u, --upstream  Mixed reset to upstream remote tip after read-only preview/confirmation (discards local-only commits; no fetch)
     --quiet         Suppress output (sets HUG_QUIET=T)
 
 DESCRIPTION:
-    Mixed reset to target. With -u, discards local-only commits to sync with remote tip.
+    Mixed reset to target. With -u, runs a read-only preview/confirmation before discarding local-only commits to sync with remote tip.
 
 EXAMPLES:
     hug h undo -u                # Mixed reset to upstream, keep local changes unstaged
@@ -46,13 +46,10 @@ fi
 check_git_repo
 
 if $upstream; then
+  # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
   target=$(handle_upstream_operation "undoing" "y/N" "mixed reset to upstream, keep changes unstaged")
 else
-  case "${target_arg:-}" in
-    '') target='HEAD~1' ;;
-    [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target="HEAD~$target_arg" ;;
-    *) target="$target_arg" ;;
-  esac
+  target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
 fi
 
 git reset --mixed "$target"

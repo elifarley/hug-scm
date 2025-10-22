@@ -16,7 +16,7 @@ OPTIONS:
         (empty)         The last 2 commits will be squashed.
         N               The last N commits will be squashed.
         COMMIT          All commits above the target commit will be squashed.
-        -u, --upstream  Local-only commits (those above the upstream HEAD - the remote tip) will be squashed (no fetch)
+        -u, --upstream  Local-only commits (those above the upstream HEAD - the remote tip) will be squashed after read-only preview/confirmation (no fetch)
     --quiet         Suppress output
 
 DESCRIPTION:
@@ -61,19 +61,16 @@ original_head=$(git rev-parse HEAD)
 original_message=$(git log -1 --format=%B "$original_head" 2>/dev/null || echo "Squashed commits")
 
 if $upstream; then
+  # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
   target=$(handle_upstream_operation "squashing" "y/N" "squash local-only commits")
-  commits_to_squash=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 0)
+  commits_to_squash=$(count_commits_in_range "$target" HEAD)
 else
-  case "${target_arg:-}" in
-    '') target_spec='HEAD~2' ;;
-    [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) target_spec="HEAD~$target_arg" ;;
-    *) target_spec="$target_arg" ;;
-  esac
+  target_spec=$(resolve_head_target "${target_arg:-}" 'HEAD~2')
   ensure_ancestor_of_head "$target_spec" "cannot squash onto it."
   target_commit=$(git rev-parse "${target_spec}^{commit}")
   log_range="$target_commit"..HEAD
   target_display=$(git rev-parse --short "$target_commit" 2>/dev/null || echo "$target_spec")
-  commits_to_squash=$(git rev-list --count "$log_range" 2>/dev/null || echo 0)
+  commits_to_squash=$(count_commits_in_range "$target_commit" HEAD)
   if [ "$commits_to_squash" -eq 0 ]; then
     info "No commits to squash (already at $target_display)."
     exit 0

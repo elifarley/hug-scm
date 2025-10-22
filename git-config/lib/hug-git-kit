@@ -60,6 +60,19 @@ ensure_ancestor_of_head() {
     fi
 }
 
+resolve_head_target() {
+    local arg="${1:-}"
+    local default_target="${2:-HEAD~1}"
+
+    if [[ -z "$arg" ]]; then
+        printf '%s\n' "$default_target"
+    elif [[ "$arg" =~ ^[1-9][0-9]{0,2}$ ]]; then
+        printf 'HEAD~%s\n' "$arg"
+    else
+        printf '%s\n' "$arg"
+    fi
+}
+
 # Get the Nth commit hash in history, optionally for specific files
 # Usage: get_commit_n_back <N> [file1] [file2] ...
 # N: An integer between 1 and 99 indicating how many commits to go back.
@@ -662,7 +675,37 @@ print_interactive_branch_menu() {
     done
 }
 
+count_commits_in_range() {
+    local start="$1"
+    local end="${2:-HEAD}"
+
+    git rev-list --count "$start..$end" 2>/dev/null || echo 0
+}
+
+print_commit_list_in_range() {
+    local start="$1"
+    local end="${2:-HEAD}"
+
+    git log --oneline "$start..$end" | sed 's/^/  /'
+}
+
+list_changed_files_in_range() {
+    local start="$1"
+    local end="${2:-HEAD}"
+
+    git log --name-only --pretty=format: "$start..$end" | sed '/^$/d' | sort -u
+}
+
+count_changed_files_in_range() {
+    local start="$1"
+    local end="${2:-HEAD}"
+
+    list_changed_files_in_range "$start" "$end" | wc -l | awk '{print $1}'
+}
+
 # Handles upstream validation, preview, and confirmation for operations like rewind, squash, and undo.
+# This helper is read-only: it never mutates commits, the index, or the working tree. After gathering
+# preview information and (optionally) confirmation, it simply echoes the upstream commit hash for callers.
 # Usage: handle_upstream_operation <action_name> <confirmation_word> <operation_description>
 #   action_name: A verb for output, e.g., "rewinding", "squashing".
 #   confirmation_word: The word to type for confirmation (e.g., "rewind") or "y/N" for a simple prompt.
@@ -677,7 +720,7 @@ handle_upstream_operation() {
     target=$(get_upstream_commit) # This will exit if no upstream
 
     local local_commits
-    local_commits=$(git rev-list --count "$target"..HEAD 2>/dev/null || echo 0)
+    local_commits=$(count_commits_in_range "$target" HEAD)
 
     if [ "$local_commits" -eq 0 ]; then
         info "Already synced to upstream ($(git rev-parse --short "$target"))."
@@ -690,10 +733,10 @@ handle_upstream_operation() {
         upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
 
         printf 'Commits to be affected:\n' >&2
-        git log --oneline "$target"..HEAD | sed 's/^/  /' >&2
+        print_commit_list_in_range "$target" HEAD >&2
 
         local affected_files
-        affected_files=$(git log --name-only --pretty=format: "$target"..HEAD | grep -v '^$' | sort -u | wc -l)
+        affected_files=$(count_changed_files_in_range "$target" HEAD)
         
         printf '\nPreview: %d files affected in %d local commits to %s (%s).\n' >&2 \
             "$affected_files" "$local_commits" "$upstream_short" "$upstream_branch"
