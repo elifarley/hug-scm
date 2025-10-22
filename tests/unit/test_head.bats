@@ -19,7 +19,7 @@ teardown() {
   local original_head
   original_head=$(git rev-parse HEAD)
   
-  run hug h back
+  run hug h back --force
   assert_success
   
   # HEAD should have moved back
@@ -37,7 +37,7 @@ teardown() {
   local original_head
   original_head=$(git rev-parse HEAD)
   
-  run hug h back 2
+  run hug h back 2 --force
   assert_success
   
   # Should have moved back 2 commits
@@ -51,7 +51,7 @@ teardown() {
 }
 
 @test "hug h undo: moves HEAD back and unstages changes" {
-  run hug h undo
+  run hug h undo --force
   assert_success
   
   # Changes should be unstaged
@@ -64,7 +64,7 @@ teardown() {
 }
 
 @test "hug h undo N: undoes N commits" {
-  run hug h undo 2
+  run hug h undo 2 --force
   assert_success
   
   # Both files should be present but unstaged
@@ -95,7 +95,7 @@ teardown() {
   git add temp.txt
   git commit -q -m "Temp commit"
   
-  run hug h rollback
+  run hug h rollback --force
   assert_success
   
   # Commit should be gone
@@ -107,7 +107,7 @@ teardown() {
 }
 
 @test "hug h rollback N: rolls back N commits" {
-  run hug h rollback 2
+  run hug h rollback 2 --force
   assert_success
   
   # Should be at initial commit
@@ -125,7 +125,7 @@ teardown() {
   local first_commit
   first_commit=$(git rev-list --max-parents=0 HEAD)
   
-  run hug h rewind "$first_commit"
+  run hug h rewind "$first_commit" --force
   assert_success
   
   # Should be at initial commit with clean state
@@ -146,7 +146,7 @@ teardown() {
   local target_commit
   target_commit=$(git log --oneline --all | grep "Add feature 1" | awk '{print $1}')
   
-  run hug h back "$target_commit"
+  run hug h back "$target_commit" --force
   assert_success
   
   # HEAD should be at that commit
@@ -169,7 +169,7 @@ teardown() {
   cd "$test_repo"
   
   # Try to undo when there's only one commit
-  run hug h undo
+  run hug h undo --force
   
   # Should fail or handle gracefully
   assert_failure
@@ -179,7 +179,7 @@ teardown() {
   # Add an untracked file
   echo "untracked" > untracked.txt
   
-  run hug h back
+  run hug h back --force
   assert_success
   
   # Untracked file should still exist
