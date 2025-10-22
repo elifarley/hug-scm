@@ -5,7 +5,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
-usage() {
+show_help() {
   cat <<'EOF'
 Usage: hug w purge [OPTIONS] <path> [<path>...]
 
@@ -46,7 +46,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      usage
+      show_help
       exit 0
       ;;
     --)
@@ -55,7 +55,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -*)
       error "unknown option: $1"
-      usage >&2
+      show_help >&2
       exit 2
       ;;
     *)
@@ -70,7 +70,7 @@ fi
 
 if [[ $# -lt 1 ]]; then
   error "this command requires at least one path (or use 'git w purge-all')"
-  usage >&2
+  show_help >&2
   exit 2
 fi
 

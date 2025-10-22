@@ -3,18 +3,9 @@ CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
-confirm() {
-  local prompt=$1 expected=$2 reply
-  read -r -p "$prompt" reply
-  if [[ "$reply" != "$expected" ]]; then
-    printf 'Cancelled.\n'
-    exit 1
-  fi
-}
-
 # Part of the Hug tool suite
 
-usage() {
+show_help() {
   cat <<'EOF'
 Usage: hug w discard [OPTIONS] <path> [<path>...]
 
@@ -64,7 +55,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      usage
+      show_help
       exit 0
       ;;
     --)
@@ -73,7 +64,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -*)
       error "unknown option: $1"
-      usage >&2
+      show_help >&2
       exit 2
       ;;
     *)
@@ -88,7 +79,7 @@ fi
 
 if [[ $# -lt 1 ]]; then
   error "this command requires at least one path (or use 'git w discard-all')"
-  usage >&2
+  show_help >&2
   exit 2
 fi
 
@@ -201,7 +192,7 @@ if ! $force; then
   if $target_staged && $target_unstaged; then
     printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
   fi
-  confirm 'Type "discard" to confirm: ' 'discard'
+  confirm_action 'discard'
 fi
 
 # Handle both targets: Simple full discard to HEAD for union of affected paths

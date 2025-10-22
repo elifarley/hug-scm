@@ -5,7 +5,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
-usage() {
+show_help() {
   cat <<'EOF'
 Usage: hug w purge-all [OPTIONS]
 
@@ -22,15 +22,6 @@ Notes:
   • Combine -u and -i to remove both untracked and ignored content.
   • Without flags, only untracked files are removed.
 EOF
-}
-
-confirm() {
-  local prompt=$1 expected=$2 reply
-  read -r -p "$prompt" reply
-  if [[ "$reply" != "$expected" ]]; then
-    printf 'Cancelled.\n'
-    exit 1
-  fi
 }
 
 dry_run=false
@@ -60,17 +51,17 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      usage
+      show_help
       exit 0
       ;;
     -*)
       error "unknown option: $1"
-      usage >&2
+      show_help >&2
       exit 2
       ;;
     *)
       error "positional arguments are not accepted (use 'git w purge' for path-specific)"
-      usage >&2
+      show_help >&2
       exit 2
       ;;
   esac
@@ -106,7 +97,7 @@ fi
 
 if ! $force; then
   printf '⚠ About to remove the following:\n%s\n' "$preview_output"
-  confirm 'Type "purge-all" to confirm: ' 'purge-all'
+  confirm_action 'purge-all'
 fi
 
 run_cmd=("git" "clean" "-f" "-d")
