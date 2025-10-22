@@ -1,7 +1,16 @@
 # shellcheck shell=bash
 # This file is a library to be sourced by shell scripts
 
-# Check if we're in a git repository
+################################################################################
+# Git Repository Validation Functions
+################################################################################
+
+# Checks if current directory is within a git repository
+# Usage: check_git_repo
+# Environment:
+#   GIT_PREFIX - Set to git prefix path if not already set
+# Exits:
+#   With error if not in a git repository
 check_git_repo() {
     if ! git rev-parse --git-dir >/dev/null 2>&1; then
         error "Not in a git repository"
@@ -9,7 +18,16 @@ check_git_repo() {
     test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
 }
 
-# Validate commit exists
+################################################################################
+# Commit Validation Functions
+################################################################################
+
+# Validates that a commit reference exists
+# Usage: validate_commit "commit-ref"
+# Parameters:
+#   $1 - Commit reference to validate
+# Exits:
+#   With error if commit does not exist
 validate_commit() {
     local commit="$1"
     if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
@@ -17,6 +35,12 @@ validate_commit() {
     fi
 }
 
+# Ensures a reference can be resolved to a commit
+# Usage: ensure_commit_exists "ref"
+# Parameters:
+#   $1 - Reference to validate (branch, tag, commit hash, etc.)
+# Exits:
+#   With error if reference is empty or cannot be resolved to a commit
 ensure_commit_exists() {
     local ref="${1:-}"
     if [[ -z "$ref" ]]; then
@@ -28,12 +52,20 @@ ensure_commit_exists() {
     fi
 }
 
-# Get the commit hash of the upstream branch for the current HEAD
-# Usage: get_upstream_commit
-# Outputs: the commit hash of the upstream branch
-# Exits with error if upstream is not configured
+################################################################################
+# Upstream Branch Functions
+################################################################################
+
+# Gets the commit hash of the upstream branch for the current HEAD
+# Usage: commit=$(get_upstream_commit)
+# Output:
+#   Commit hash of the upstream branch to stdout
+# Exits:
+#   With error if upstream is not configured
 get_upstream_commit() {
     local upstream_commit
+    # SC1083 suppressed: @{u} is git syntax, not shell expansion
+    # shellcheck disable=SC1083
     upstream_commit=$(git rev-parse --verify @{u} 2>/dev/null) || {
         error "No upstream branch configured for the current branch.
        Use 'git branch --set-upstream-to=<remote>/<branch>' to configure it."
@@ -42,6 +74,17 @@ get_upstream_commit() {
     echo "$upstream_commit"
 }
 
+################################################################################
+# Commit Ancestry Functions
+################################################################################
+
+# Ensures a reference is an ancestor of HEAD
+# Usage: ensure_ancestor_of_head "ref" ["reason"]
+# Parameters:
+#   $1 - Reference to check
+#   $2 - (Optional) Additional context for error message
+# Exits:
+#   With error if reference is empty, doesn't exist, or is not an ancestor of HEAD
 ensure_ancestor_of_head() {
     local ref="${1:-}"
     local reason="${2:-}"
@@ -60,6 +103,17 @@ ensure_ancestor_of_head() {
     fi
 }
 
+# Resolves a HEAD target from user input
+# Usage: target=$(resolve_head_target "arg" ["default"])
+# Parameters:
+#   $1 - User argument (empty, number 1-999, or commit reference)
+#   $2 - (Optional) Default target if arg is empty, defaults to "HEAD~1"
+# Output:
+#   Resolved commit reference to stdout
+# Examples:
+#   resolve_head_target "" -> "HEAD~1" (or custom default)
+#   resolve_head_target "3" -> "HEAD~3"
+#   resolve_head_target "abc123" -> "abc123"
 resolve_head_target() {
     local arg="${1:-}"
     local default_target="${2:-HEAD~1}"
@@ -73,13 +127,22 @@ resolve_head_target() {
     fi
 }
 
-# Get the Nth commit hash in history, optionally for specific files
-# Usage: get_commit_n_back <N> [file1] [file2] ...
-# N: An integer between 1 and 99 indicating how many commits to go back.
-# If files are provided, it counts only commits that affected those files.
-# If no files are provided, it counts commits in the overall history.
-# Outputs: the resolved commit hash.
-# Exits with error if N commits cannot be found.
+################################################################################
+# Commit History Navigation Functions
+################################################################################
+
+# Gets the Nth commit hash in history, optionally for specific files
+# Usage: commit=$(get_commit_n_back N [file1] [file2] ...)
+# Parameters:
+#   $1 - Number of commits to go back (0-99)
+#   $@ - (Optional) Files to consider; if provided, counts only commits affecting those files
+# Output:
+#   Resolved commit hash to stdout
+# Exits:
+#   With error if N commits cannot be found in history
+# Examples:
+#   get_commit_n_back 3 -> HEAD~3
+#   get_commit_n_back 5 src/main.c -> 5th commit that touched src/main.c
 get_commit_n_back() {
     local n="$1"
     shift
@@ -117,11 +180,23 @@ get_commit_n_back() {
     echo "$target_commit"
 }
 
+################################################################################
+# Working Tree State Functions
+################################################################################
+
+# Checks if there are any pending changes (staged, unstaged, or untracked)
+# Usage: if has_pending_changes; then ...; fi
+# Returns:
+#   0 if there are pending changes, 1 if working tree is clean
 has_pending_changes() {
   git status --porcelain=2 --untracked-files=normal | grep -q '.'
 }
 
-# Check if working tree is clean
+# Checks if working tree is clean (no uncommitted changes)
+# Usage: check_working_tree_clean
+# Exits:
+#   With error if there are uncommitted changes (staged or unstaged)
+#   Error message includes counts and suggested solutions
 check_working_tree_clean() {
     if ! git diff --quiet || ! git diff --cached --quiet; then
         local unstaged_count
@@ -140,9 +215,13 @@ check_working_tree_clean() {
     fi
 }
 
-# Check if a specific list of files are clean (no staged or unstaged changes)
-# Usage: check_files_clean <file1> <file2> ...
-# Exits with error if any of the specified files have uncommitted changes.
+# Checks if specific files are clean (no staged or unstaged changes)
+# Usage: check_files_clean file1 file2 ...
+# Parameters:
+#   $@ - Files to check
+# Exits:
+#   With error if any of the specified files have uncommitted changes
+#   Error message includes affected files and suggested solutions
 check_files_clean() {
     local -a files=("$@")
     if [ ${#files[@]} -eq 0 ]; then
@@ -169,7 +248,19 @@ check_files_clean() {
     fi
 }
 
-# Check file in target commit
+################################################################################
+# File State Checking Functions
+################################################################################
+
+# Checks if a file exists in a specific commit
+# Usage: check_file_in_commit "commit" "file"
+# Parameters:
+#   $1 - Commit reference
+#   $2 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Exits:
+#   With error if file does not exist in the specified commit
 check_file_in_commit() {
     test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
     local commit="$1"
@@ -179,7 +270,15 @@ check_file_in_commit() {
     fi
 }
 
-# Preview changes for specific files
+# Previews changes for specific files
+# Usage: preview_file_changes "commit" "file"
+# Parameters:
+#   $1 - Commit reference
+#   $2 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Output:
+#   Diff preview (first 20 lines) to stderr
 preview_file_changes() {
   test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
   local commit="$1"
@@ -193,7 +292,14 @@ preview_file_changes() {
   fi
 }
 
-# Check file has staged changes
+# Checks if a file has staged changes
+# Usage: check_file_staged "file"
+# Parameters:
+#   $1 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Exits:
+#   With error if file has staged changes
 check_file_staged() {
   test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
   local file="${GIT_PREFIX}$1"
@@ -204,7 +310,14 @@ check_file_staged() {
   fi
 }
 
-# Check file has unstaged changes
+# Checks if a file has unstaged changes
+# Usage: check_file_unstaged "file"
+# Parameters:
+#   $1 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Exits:
+#   With error if file has unstaged changes
 check_file_unstaged() {
   test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
   local file="${GIT_PREFIX}$1"
@@ -215,7 +328,14 @@ check_file_unstaged() {
   fi
 }
 
-# Detects if the staged changes for a file are binary (returns true/false)
+# Detects if the staged changes for a file are binary
+# Usage: if is_binary_staged "file"; then ...; fi
+# Parameters:
+#   $1 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Returns:
+#   0 if file has binary staged changes, 1 otherwise
 is_binary_staged() {
   test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
   local file="${GIT_PREFIX}$1"
@@ -231,6 +351,18 @@ is_binary_staged() {
   fi
 }
 
+################################################################################
+# Discard Operations - Unstaged Changes
+################################################################################
+
+# Discards all unstaged changes in the repository
+# Usage: discard_all_unstaged [--dry-run]
+# Parameters:
+#   $1 - (Optional) --dry-run flag for preview mode
+# Effects:
+#   Restores working tree to index state (preserves staged changes)
+# Output:
+#   Status message and list of affected files
 discard_all_unstaged() {
   local dry_run=false
   # Check for --dry-run flag (passed as first argument if present)
@@ -268,6 +400,14 @@ discard_all_unstaged() {
   print_list 'Affected files:' "${affected_files[@]}"
 }
 
+# Discards unstaged changes for specific paths
+# Usage: discard_unstaged array_name
+# Parameters:
+#   $1 - Name of array containing paths to discard (nameref)
+# Effects:
+#   Restores working tree to index state for specified paths
+# Output:
+#   List of affected paths
 discard_unstaged() {
   local -n paths_ref="$1"  # Nameref to capture the array passed as the first argument (e.g., unstaged_paths)
   shift  # Remove the array name from arguments, leaving any extras if needed (though not used here)
@@ -285,6 +425,18 @@ discard_unstaged() {
   print_list 'Discarded unstaged changes from (preserving staged)' "${paths_ref[@]}"
 }
 
+################################################################################
+# Discard Operations - All Uncommitted Changes
+################################################################################
+
+# Discards all uncommitted changes (staged and unstaged) in the repository
+# Usage: discard_all_uncommitted_changes [--dry-run]
+# Parameters:
+#   $1 - (Optional) --dry-run flag for preview mode
+# Effects:
+#   Hard resets working tree and index to HEAD
+# Output:
+#   Status message and list of affected files
 discard_all_uncommitted_changes() {
   local dry_run=false
   # Optional first arg: --dry-run (for preview without changes)
@@ -327,6 +479,15 @@ discard_all_uncommitted_changes() {
   return 0
 }
 
+# Discards all uncommitted changes for specific paths
+# Usage: discard_uncommitted_changes array_name [--dry-run]
+# Parameters:
+#   $1 - Name of array containing paths (nameref)
+#   $2 - (Optional) --dry-run flag for preview mode
+# Effects:
+#   Resets working tree and index to HEAD for specified paths
+# Output:
+#   List of affected paths
 discard_uncommitted_changes() {
   local -n target_files_ref="$1"  # Nameref to the array of target paths (caller provides union/deduped list)
   local dry_run=false
@@ -360,7 +521,18 @@ discard_uncommitted_changes() {
   return 0
 }
 
-# Discards staged changes for a file with no unstaged changes (simple case)
+################################################################################
+# Discard Operations - Staged Changes Only
+################################################################################
+
+# Discards staged changes for a file with no unstaged changes
+# Usage: discard_staged_no_unstaged "file"
+# Parameters:
+#   $1 - File path
+# Effects:
+#   Resets file to HEAD state (removes from staging)
+# Output:
+#   Status message
 discard_staged_no_unstaged() {
   local file="$1"
   if ! git restore --source=HEAD --staged --worktree -- "$file"; then
@@ -369,8 +541,20 @@ discard_staged_no_unstaged() {
   printf 'Discarded staged changes from %s\n' "$file"
 }
 
-# Discards staged changes for a file with unstaged changes (non-binary, non-symlink)
-# Generates unstaged patch pre-reset, resets to HEAD, applies with fallbacks (including fuzz patch).
+# Discards staged changes for a file with unstaged changes
+# Usage: discard_staged_with_unstaged "file" "repo_root" failed_patch_var
+# Parameters:
+#   $1 - File path
+#   $2 - Repository root path
+#   $3 - Name of variable to store failed patch path (nameref, optional output)
+# Effects:
+#   Attempts to preserve unstaged changes while discarding staged changes
+#   Uses multiple fallback strategies (3-way merge, reject files, fuzz patching)
+# Returns:
+#   0 on success, 1 on failure (with guidance printed to stderr)
+# Note:
+#   This is a complex operation that may fail for conflicting changes
+#   On failure, provides detailed guidance and preserves patch files for manual resolution
 # Params: file, repo_root, failed_patch (output var for failure paths, optional)
 discard_staged_with_unstaged() {
   local file="$1"
@@ -474,6 +658,17 @@ discard_staged_with_unstaged() {
   fi
 }
 
+# Discards all staged changes in the repository
+# Usage: discard_all_staged [--dry-run]
+# Parameters:
+#   $1 - (Optional) --dry-run flag for preview mode
+# Effects:
+#   Discards staged changes while attempting to preserve unstaged changes
+#   Handles binary files and symlinks with appropriate error messages
+# Output:
+#   Status messages and list of affected files
+# Note:
+#   Cannot safely handle binary files or symlinks with both staged and unstaged changes
 discard_all_staged() {
   local dry_run=false
   if [[ "${1:-}" == "--dry-run" ]]; then
@@ -535,6 +730,8 @@ discard_all_staged() {
       continue
     fi
 
+    # SC2034: failed_patch is assigned via nameref in discard_staged_with_unstaged
+    # shellcheck disable=SC2034
     local failed_patch=""
     if ! discard_staged_with_unstaged "$file" "$repo_root" failed_patch; then
       exit 1
@@ -545,8 +742,23 @@ discard_all_staged() {
   return 0
 }
 
-# Computes details for local branches: populates output arrays and scalars via namerefs
-# Returns 0 if branches found, 1 if none
+################################################################################
+# Branch Information Functions
+################################################################################
+
+# Computes details for local branches and populates output arrays
+# Usage: compute_local_branch_details branches hashes subjects tracks max_len current_branch
+# Parameters (all namerefs to output variables):
+#   $1 - Array to receive branch names
+#   $2 - Array to receive commit hashes
+#   $3 - Array to receive commit subjects
+#   $4 - Array to receive tracking information
+#   $5 - Scalar to receive max branch name length
+#   $6 - Scalar to receive current branch name
+# Returns:
+#   0 if branches found, 1 if no branches exist
+# Note:
+#   Arrays are cleared before population. Branches are sorted by name.
 compute_local_branch_details() {
     local -n branches_ref="$1"
     local -n hashes_ref="$2"
@@ -568,6 +780,8 @@ compute_local_branch_details() {
         return 1  # No branches
     fi
 
+    # SC2034: current_branch_ref is assigned via nameref (output parameter)
+    # shellcheck disable=SC2034
     current_branch_ref=$(git branch --show-current 2>/dev/null || echo "")
 
     # Compute max branch name length for alignment
@@ -592,7 +806,19 @@ compute_local_branch_details() {
     return 0
 }
 
-# Prints non-interactive list of branches with details (used by git-bll)
+# Prints a non-interactive list of branches with details
+# Usage: print_branch_list branches hashes subjects tracks max_len current_branch
+# Parameters (namerefs to arrays/scalars):
+#   $1 - Array of branch names
+#   $2 - Array of commit hashes
+#   $3 - Array of commit subjects  
+#   $4 - Array of tracking information
+#   $5 - Maximum branch name length (for alignment)
+#   $6 - Current branch name
+# Output:
+#   Formatted branch list to stdout, with current branch highlighted in green
+# SC2178: These nameref declarations are intentional and correct
+# shellcheck disable=SC2178
 print_branch_list() {
     local -n branches_ref="$1"
     local -n hashes_ref="$2"
@@ -609,15 +835,15 @@ print_branch_list() {
 
         if [ "$branch" = "$current_branch" ]; then
             if [ -n "$track" ]; then
-                printf "${GREEN}* %-*s (%s) %s${NC}" $max_len "$branch" "$hash" "$track"
+                printf "${GREEN}* %-*s (%s) %s${NC}" "$max_len" "$branch" "$hash" "$track"
             else
-                printf "${GREEN}* %-*s (%s)${NC}" $max_len "$branch" "$hash"
+                printf "${GREEN}* %-*s (%s)${NC}" "$max_len" "$branch" "$hash"
             fi
         else
             if [ -n "$track" ]; then
-                printf "  %-*s (%s) %s" $max_len "$branch" "$hash" "$track"
+                printf "  %-*s (%s) %s" "$max_len" "$branch" "$hash" "$track"
             else
-                printf "  %-*s (%s)" $max_len "$branch" "$hash"
+                printf "  %-*s (%s)" "$max_len" "$branch" "$hash"
             fi
         fi
 
@@ -625,7 +851,23 @@ print_branch_list() {
     done
 }
 
-# Prints interactive menu for branch selection and returns selected branch via nameref (used by git-b)
+# Prints an interactive menu for branch selection
+# Usage: print_interactive_branch_menu selected branches hashes subjects tracks max_len current_branch
+# Parameters (namerefs):
+#   $1 - Output variable to receive selected branch name
+#   $2 - Array of branch names
+#   $3 - Array of commit hashes
+#   $4 - Array of commit subjects
+#   $5 - Array of tracking information
+#   $6 - Maximum branch name length (for alignment)
+#   $7 - Current branch name
+# Effects:
+#   Displays numbered menu and prompts for selection
+#   Loops until valid selection is made
+# Output:
+#   Selected branch name via nameref parameter
+# SC2178: These nameref declarations are intentional and correct
+# shellcheck disable=SC2178
 print_interactive_branch_menu() {
     local -n selected_ref="$1"
     local -n branches_ref="$2"
@@ -646,15 +888,15 @@ print_interactive_branch_menu() {
 
         if [ "$branch" = "$current_branch" ]; then
             if [ -n "$track" ]; then
-                printf "%d) ${GREEN}* %-*s (%s) %s${NC}" "$num" $max_len "$branch" "$hash" "$track"
+                printf "%d) ${GREEN}* %-*s (%s) %s${NC}" "$num" "$max_len" "$branch" "$hash" "$track"
             else
-                printf "%d) ${GREEN}* %-*s (%s)${NC}" "$num" $max_len "$branch" "$hash"
+                printf "%d) ${GREEN}* %-*s (%s)${NC}" "$num" "$max_len" "$branch" "$hash"
             fi
         else
             if [ -n "$track" ]; then
-                printf "%d)   %-*s (%s) %s" "$num" $max_len "$branch" "$hash" "$track"
+                printf "%d)   %-*s (%s) %s" "$num" "$max_len" "$branch" "$hash" "$track"
             else
-                printf "%d)   %-*s (%s)" "$num" $max_len "$branch" "$hash"
+                printf "%d)   %-*s (%s)" "$num" "$max_len" "$branch" "$hash"
             fi
         fi
 
@@ -666,6 +908,8 @@ print_interactive_branch_menu() {
 
     while true; do
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#branches_ref[@]}" ]; then
+            # SC2034: selected_ref is a nameref that assigns to caller's variable
+            # shellcheck disable=SC2034
             selected_ref="${branches_ref[$((choice - 1))]}"
             return 0
         else
@@ -675,6 +919,17 @@ print_interactive_branch_menu() {
     done
 }
 
+################################################################################
+# Commit Range Analysis Functions
+################################################################################
+
+# Counts commits in a range
+# Usage: count=$(count_commits_in_range "start" ["end"])
+# Parameters:
+#   $1 - Start commit (exclusive)
+#   $2 - (Optional) End commit (inclusive), defaults to HEAD
+# Output:
+#   Number of commits in range to stdout
 count_commits_in_range() {
     local start="$1"
     local end="${2:-HEAD}"
@@ -682,12 +937,16 @@ count_commits_in_range() {
     git rev-list --count "$start..$end" 2>/dev/null || echo 0
 }
 
-# Prints a list of commits in a given range.
-# This is the standard utility for displaying commit lists to the user.
-# Usage: print_commit_list_in_range <start_commit> [end_commit]
-#   start_commit: The commit to start the range from (exclusive).
-#   end_commit:   The commit to end the range at (inclusive). Defaults to HEAD.
-# Output is written to standard output, typically redirected to stderr for prompts.
+# Prints a list of commits in a given range
+# Usage: print_commit_list_in_range "start" ["end"]
+# Parameters:
+#   $1 - Start commit (exclusive)
+#   $2 - (Optional) End commit (inclusive), defaults to HEAD
+# Output:
+#   Formatted commit list to stdout (typically redirected to stderr for prompts)
+# Note:
+#   This is the standard utility for displaying commit lists to users
+#   Uses 'hug ll' command for consistent formatting
 print_commit_list_in_range() {
     local start="$1"
     local end="${2:-HEAD}"
@@ -695,6 +954,13 @@ print_commit_list_in_range() {
     hug ll "$start..$end"
 }
 
+# Lists changed files in a commit range
+# Usage: files=$(list_changed_files_in_range "start" ["end"])
+# Parameters:
+#   $1 - Start commit (exclusive)
+#   $2 - (Optional) End commit (inclusive), defaults to HEAD
+# Output:
+#   Sorted unique list of changed file paths to stdout
 list_changed_files_in_range() {
     local start="$1"
     local end="${2:-HEAD}"
@@ -702,6 +968,13 @@ list_changed_files_in_range() {
     git log --name-only --pretty=format: "$start..$end" | sed '/^$/d' | sort -u
 }
 
+# Counts changed files in a commit range
+# Usage: count=$(count_changed_files_in_range "start" ["end"])
+# Parameters:
+#   $1 - Start commit (exclusive)
+#   $2 - (Optional) End commit (inclusive), defaults to HEAD
+# Output:
+#   Number of unique changed files to stdout
 count_changed_files_in_range() {
     local start="$1"
     local end="${2:-HEAD}"
@@ -709,12 +982,23 @@ count_changed_files_in_range() {
     list_changed_files_in_range "$start" "$end" | wc -l | awk '{print $1}'
 }
 
-# Handles upstream validation, preview, and confirmation for operations like rewind, squash, and undo.
-# This helper is read-only: it never mutates commits, the index, or the working tree. After gathering
-# preview information and confirmation, it echoes the upstream commit hash for callers.
-# Usage: handle_upstream_operation <action_name>
-#   action_name: A verb for output, e.g., "rewinding", "squashing".
-# Outputs the upstream commit hash on success.
+################################################################################
+# Upstream Operation Handlers
+################################################################################
+
+# Handles upstream validation, preview, and confirmation for operations
+# Usage: target=$(handle_upstream_operation "action_name")
+# Parameters:
+#   $1 - Action description verb (e.g., "rewinding", "squashing")
+# Output:
+#   Upstream commit hash to stdout
+# Environment:
+#   HUG_QUIET - If not "T", displays preview and confirmation prompts
+# Exits:
+#   With info message if already synced to upstream
+# Note:
+#   This helper is read-only: never mutates commits, index, or working tree
+#   After gathering preview information and confirmation, echoes upstream commit
 handle_upstream_operation() {
     local action_name="$1"
 
@@ -757,11 +1041,18 @@ handle_upstream_operation() {
     echo "$target"
 }
 
-# Handles validation, preview, and confirmation for standard local operations (back, undo, rollback, rewind).
-# This helper is read-only: it never mutates commits, the index, or the working tree.
-# Usage: handle_standard_operation <action_name> <target_commit>
-#   action_name: A verb for output, e.g., "soft resetting", "rewinding".
-#   target_commit: The commit to reset to.
+# Handles validation, preview, and confirmation for standard local operations
+# Usage: handle_standard_operation "action_name" "target_commit"
+# Parameters:
+#   $1 - Action description verb (e.g., "soft resetting", "rewinding")
+#   $2 - Target commit to reset/move to
+# Environment:
+#   HUG_QUIET - If not "T", displays preview information
+# Exits:
+#   With info message if already at target
+# Note:
+#   This helper is read-only: never mutates commits, index, or working tree
+#   Displays commit list and file change statistics for the operation
 handle_standard_operation() {
     local action_name="$1"
     local target="$2"
@@ -775,8 +1066,6 @@ handle_standard_operation() {
     fi
 
     if [[ ${HUG_QUIET:-} != T ]]; then
-        local target_display
-        target_display=$(git rev-parse --short "$target")
         local range_for_diff
         range_for_diff="$target..HEAD"
         local commit_word="commit"
