@@ -14,6 +14,9 @@ teardown() {
   cleanup_test_repo
 }
 
+# Head movement commands require user confirmation unless we use the `--force`.
+# TODO create additional tests that don't use the `--force` flag (so we need to pipe a `y` to the run command)
+
 @test "hug h back: moves HEAD back one commit, keeps changes staged" {
   # Get current HEAD
   local original_head
