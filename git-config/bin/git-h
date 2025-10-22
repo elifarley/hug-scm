@@ -5,17 +5,19 @@
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 case "${1:-}" in
+  files)         shift; git h-files "$@" ;;
+  steps)         shift; git h-steps "$@" ;;
   back)          shift; git h-back "$@" ;;
   undo)          shift; git h-undo "$@" ;;
   rollback)      shift; git h-rollback "$@" ;;
   rewind)        shift; git h-rewind "$@" ;;
-  files)         shift; git h-files "$@" ;;
   squash)        shift; git h-squash "$@" ;;
   *)             printf 'Usage: hug h <command> [args]\n' >&2
                  printf 'Commands:\n' >&2
+                 printf '  files         Preview files touched by commits when moving HEAD\n' >&2
+                 printf '  steps         Show commit steps back from HEAD to last change of a file\n' >&2
                  printf '  back          Move HEAD back, keep staged\n' >&2
                  printf '  undo          Move HEAD back, unstage changes\n' >&2
-                 printf '  files         Preview files touched by commits to rewind\n' >&2
                  printf '  rollback      Rollback commit, preserve local work\n' >&2
                  printf '  rewind        Rewind to clean state (destructive)\n' >&2
                  printf '  squash        Squash last N commits into 1 with original message\n' >&2

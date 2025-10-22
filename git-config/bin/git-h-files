@@ -6,7 +6,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat << EOF
-hug h files: Preview files and stats touched by commits you'd rewind/back (HEAD range).
+hug h files: Preview files and stats touched by commits affected by HEAD movements.
 
 USAGE:
     hug h files [N|COMMIT] [OPTIONS]

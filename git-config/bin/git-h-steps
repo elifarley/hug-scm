@@ -29,8 +29,8 @@ EXAMPLES:
     hug h steps file.txt --raw | xargs hug h back  # Chain to rewind
 
 SEE ALSO:
-    h back    : Soft reset N steps (use output here)
-    llf       : View last commit details for file
+    h back    : Make HEAD walk back some commits while keeping their changes staged
+    llf       : Log commits for file
 EOF
 }
 

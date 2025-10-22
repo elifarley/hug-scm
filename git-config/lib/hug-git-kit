@@ -711,16 +711,12 @@ count_changed_files_in_range() {
 
 # Handles upstream validation, preview, and confirmation for operations like rewind, squash, and undo.
 # This helper is read-only: it never mutates commits, the index, or the working tree. After gathering
-# preview information and (optionally) confirmation, it simply echoes the upstream commit hash for callers.
-# Usage: handle_upstream_operation <action_name> <confirmation_word> <operation_description>
+# preview information and confirmation, it echoes the upstream commit hash for callers.
+# Usage: handle_upstream_operation <action_name>
 #   action_name: A verb for output, e.g., "rewinding", "squashing".
-#   confirmation_word: The word to type for confirmation (e.g., "rewind") or "y/N" for a simple prompt.
-#   operation_description: A description of the operation for the warning message.
 # Outputs the upstream commit hash on success.
 handle_upstream_operation() {
     local action_name="$1"
-    local confirmation_word="$2"
-    local operation_description="$3"
 
     local target
     target=$(get_upstream_commit) # This will exit if no upstream
@@ -741,21 +737,63 @@ handle_upstream_operation() {
         printf 'Commits to be affected:\n' >&2
         print_commit_list_in_range "$target" HEAD >&2
 
-        local affected_files
-        affected_files=$(count_changed_files_in_range "$target" HEAD)
-        
-        printf '\nPreview: %d files affected in %d local commits to %s (%s).\n' >&2 \
-            "$affected_files" "$local_commits" "$upstream_short" "$upstream_branch"
+        local range_for_diff
+        range_for_diff="$target..HEAD"
 
-        printf '\n⚠️  This action involves %s: %s\n' "$action_name" "$operation_description" >&2
-        if [[ "$confirmation_word" == "y/N" ]]; then
-            read -p "Proceed? [y/N]: " confirm >&2
-            [[ "$confirm" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 1; }
+        # Check if there are any file changes to show stats for
+        if git diff --quiet "$range_for_diff"; then
+            printf '\nPreview: no file changes in %d local commits to %s (%s).\n' >&2 \
+                "$local_commits" "$upstream_short" "$upstream_branch"
         else
-            read -p "Type \"$confirmation_word\" to confirm: " confirm >&2
-            [ "$confirm" = "$confirmation_word" ] || { info "Cancelled."; exit 1; }
+            printf '\nPreview: changes in %d local commits to %s (%s):\n' >&2 \
+                "$local_commits" "$upstream_short" "$upstream_branch"
+            git diff --stat "$range_for_diff" >&2
         fi
+
+        printf '\n⚠️  This action involves %s to upstream.\n' "$action_name" >&2
+        prompt_confirm "Proceed with $action_name to upstream? [y/N]: "
     fi
 
     echo "$target"
+}
+
+# Handles validation, preview, and confirmation for standard local operations (back, undo, rollback, rewind).
+# This helper is read-only: it never mutates commits, the index, or the working tree.
+# Usage: handle_standard_operation <action_name> <target_commit>
+#   action_name: A verb for output, e.g., "soft resetting", "rewinding".
+#   target_commit: The commit to reset to.
+handle_standard_operation() {
+    local action_name="$1"
+    local target="$2"
+
+    local commits_to_affected
+    commits_to_affected=$(count_commits_in_range "$target" HEAD)
+
+    if [ "$commits_to_affected" -eq 0 ]; then
+        info "Already at target $(git rev-parse --short "$target"). No action taken."
+        exit 0
+    fi
+
+    if [[ ${HUG_QUIET:-} != T ]]; then
+        local target_display
+        target_display=$(git rev-parse --short "$target")
+        local range_for_diff
+        range_for_diff="$target..HEAD"
+        local commit_word="commit"
+        if [ "$commits_to_affected" -gt 1 ]; then
+            commit_word="commits"
+        fi
+
+        printf 'Commits to be affected:\n' >&2
+        print_commit_list_in_range "$target" HEAD >&2
+
+        if git diff --quiet "$range_for_diff"; then
+            printf '\nPreview: no file changes in %d %s.\n' >&2 \
+                "$commits_to_affected" "$commit_word"
+        else
+            printf '\nPreview: changes in %d %s:\n' >&2 \
+                "$commits_to_affected" "$commit_word"
+            git diff --stat "$range_for_diff" >&2
+        fi
+    fi
 }

@@ -13,8 +13,6 @@ case "${1:-}" in
   wipe-all)     shift; git w-wipe-all "$@" ;;
   zap)          shift; git w-zap "$@" ;;
   zap-all)      shift; git w-zap-all "$@" ;;
-  backup)       shift; git w-backup "$@" ;;
-  restore)      shift; git w-restore "$@" ;;
   get)          shift; git w-get "$@" ;;
   wip)          shift; git-w-wip "$@" ;;
   wips)         shift; git-w-wip "$@" --stay ;;
@@ -30,8 +28,6 @@ case "${1:-}" in
                  printf '  purge-all    Remove ALL Untracked / Ignored files\n' >&2;
                  printf '  zap          Factory reset on some files\n' >&2;
                  printf '  zap-all      Factory reset on ALL  files\n' >&2;
-                 printf '  backup       Stash changes safely\n' >&2;
-                 printf '  restore      Restore stashed changes\n' >&2;
                  printf '  get          Get files from specific commit\n' >&2;
                  printf '  wip          Park changes on new WIP branch\n' >&2;
                  printf '  wips         Park changes on new WIP branch, stay on it\n' >&2;

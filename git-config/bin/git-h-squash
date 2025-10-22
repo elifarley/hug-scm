@@ -9,7 +9,7 @@ show_help() {
 hug h squash: Squashes specific commits into 1 with original HEAD message.
 
 USAGE:
-    hug h squash [--quiet] [target]
+    hug h squash [--quiet] [--force] [target]
 
 OPTIONS:
     [target]        Either empty, an integer N > 1, a COMMIT hash, or -u, --upstream
@@ -18,6 +18,7 @@ OPTIONS:
         COMMIT          All commits above the target commit will be squashed.
         -u, --upstream  Local-only commits (those above the upstream HEAD - the remote tip) will be squashed after read-only preview/confirmation (no fetch)
     --quiet         Suppress output
+    --force         Skip confirmation prompts (use with caution)
 
 DESCRIPTION:
     Without [target], defaults to squashing the last 2 commits into 1 (intuitive for combining recent work
@@ -31,6 +32,7 @@ EXAMPLES:
     hug h squash 3                 # Squash last 3 commits into 1
     hug h squash a1b2c3            # Keep a1b2c3 unchanged; Squash all commits above it into 1
     hug h squash -u                # Keep upstream tip unchanged; Squash local-only commits on top
+    hug h squash 3 --force         # Skip confirmation
 
 SEE ALSO:
     hug h back    HEAD goes back only (no auto-commit)
@@ -40,15 +42,21 @@ EOF
 
 
 upstream=false
+force=false
 target_arg=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) show_help; exit 0 ;;
     -u|--upstream) upstream=true; shift ;;
     --quiet) HUG_QUIET=T; shift ;;
+    --force) force=true; shift ;;
     *) target_arg="$1"; shift ;;
   esac
 done
+
+if [[ $force == true ]]; then
+  export HUG_FORCE=true
+fi
 
 if $upstream && [[ -n "$target_arg" ]]; then
   error "Cannot specify both -u/--upstream and a target (N|COMMIT)."
@@ -62,7 +70,7 @@ original_message=$(git log -1 --format=%B "$original_head" 2>/dev/null || echo "
 
 if $upstream; then
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
-  target=$(handle_upstream_operation "squashing" "y/N" "squash local-only commits")
+  target=$(handle_upstream_operation "squashing")
   commits_to_squash=$(count_commits_in_range "$target" HEAD)
 else
   target_spec=$(resolve_head_target "${target_arg:-}" 'HEAD~2')
@@ -82,20 +90,26 @@ else
   if [[ ${HUG_QUIET:-} != T ]]; then
     printf 'Commits to be squashed:\n' >&2
     print_commit_list_in_range "$target_commit" HEAD >&2
-    affected_files=$(git log --name-only --pretty=format: "$log_range" | grep -v '^$' | sort -u | wc -l)
-    printf '\nPreview: %d files affected in %d %s.\n' >&2 \
-      "$affected_files" "$commits_to_squash" "$commit_word"
+    printf '\nPreview: changes in %d %s.\n' >&2 \
+      "$commits_to_squash" "$commit_word"
+    git diff --stat "$log_range" >&2
     printf '\nWill create new commit with message: "%s"\n' "$original_message" >&2
   fi
-  if [[ -z "${target_arg:-}" || "${target_arg:-}" =~ ^[0-9]+$ ]]; then
-    prompt_confirm "Proceed with squash of last $commits_to_squash $commit_word (hug back + hug c)? [y/N]: "
-  else
-    prompt_confirm "Proceed with squash up to $target_display (hug back + hug c)? [y/N]: "
+  if [[ ${HUG_FORCE:-} != true ]]; then
+    if [[ -z "${target_arg:-}" || "${target_arg:-}" =~ ^[0-9]+$ ]]; then
+      prompt_confirm "Proceed with squash of last $commits_to_squash $commit_word (hug back + hug c)? [y/N]: "
+    else
+      prompt_confirm "Proceed with squash up to $target_display (hug back + hug c)? [y/N]: "
+    fi
   fi
   target="$target_commit"
 fi
 
-hug h back "$target" --quiet
+back_cmd="hug h back $target --quiet"
+if [[ $force == true ]]; then
+  back_cmd="$back_cmd --force"
+fi
+$back_cmd
 
 # Check for staged changes (hug c will handle, but warn if none)
 if [ -z "$(git diff --cached --name-only)" ]; then

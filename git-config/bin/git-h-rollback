@@ -6,38 +6,47 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
     cat << EOF
-hug h rollback: Moves HEAD back, discarding their changes: HEAD goes back, their changes are LOST, local changes are preserved.
+hug h rollback: Make HEAD walk back some commits while DISCARDING their changes. Uncommitted changes are preserved.
 
 USAGE:
-    hug h rollback [N|COMMIT] [-u, --upstream] [--quiet]
+    hug h rollback [N|COMMIT] [-u, --upstream] [--quiet] [--force]
 
 OPTIONS:
     -u, --upstream  Sets target to upstream remote tip after read-only preview/confirmation (discards local-only commits; preserves uncommitted changes; no fetch)
     --quiet         Suppress output (sets HUG_QUIET=T)
+    --force         Skip confirmation prompts (use with caution)
 
 DESCRIPTION:
     Moves HEAD back to target. With -u, runs a read-only preview/confirmation before discarding local-only commits to sync with remote tip.
 
 EXAMPLES:
+    # Uncommitted changes are preserved in all examples below:
     hug h rollback -u         # Moves HEAD back to upstream, lose commit changes but keep local work
     hug h rollback 3          # Moves HEAD back last 3 commits
     hug h rollback a1b2c3     # Moves HEAD back after specified commit
+    hug h rollback 3 --force  # Skip confirmation
 
 SEE ALSO:
-    hug h back    Soft reset (keep changes staged)
+    hug h back    Make HEAD walk back some commits while keeping their changes staged
 EOF
 }
 
 upstream=false
+force=false
 target_arg=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     '-h'|'--help') show_help; exit 1 ;;
     -u|--upstream) upstream=true; shift ;;
     --quiet) HUG_QUIET=T; shift ;;
+    --force) force=true; shift ;;
     *) target_arg="$1"; shift ;;
   esac
 done
+
+if [[ $force == true ]]; then
+  export HUG_FORCE=true
+fi
 
 if $upstream && [[ -n "$target_arg" ]]; then
   error "Cannot specify both --upstream and a target (N|COMMIT)."
@@ -47,10 +56,12 @@ check_git_repo
 
 if $upstream; then
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
-  target=$(handle_upstream_operation "rolling back" "y/N" "hard reset to upstream while preserving uncommitted working tree changes")
+  target=$(handle_upstream_operation "rolling back")
 else
   target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
+  handle_standard_operation "rollback" "$target"
+  prompt_confirm "Rollback HEAD to $(git rev-parse --short "$target")? [y/N]: "
 fi
 
-git reset --hard "$target"
-info "Moves HEAD back to $target complete (uncommitted changes preserved)."
+git reset --keep "$target"
+info "Roll back HEAD to $target done (uncommitted changes preserved)."

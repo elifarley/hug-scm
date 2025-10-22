@@ -38,7 +38,7 @@ success() {
 }
 
 prompt_confirm() {
-  if [[ ${HUG_QUIET:-} == T ]]; then
+  if [[ ${HUG_FORCE:-} == true ]]; then
     return 0
   fi
   local prompt="${1:-Proceed? [y/N]: }"

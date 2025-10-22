@@ -185,7 +185,6 @@ These commands help inspect which branches relate to specific commits or states.
 ## Tips
 - Use `hug b` to review branch status and easily switch via an interactive menu.
 - For creating a branch from an existing one: `hug bc <new> <existing>` (e.g., `hug bc new-feature existing-feature`).
-- Always backup work with `hug w backup` before deleting branches.
 - Use `hug blr` to list remote branches before deleting one with `hug bdelr`.
 - Queries like `bwc` and `bwm` are useful for cleanup before `bdel`.
 
