@@ -217,15 +217,15 @@ teardown() {
   # Test 3: Rollback safety abort on conflicting uncommitted changes
   TEST_REPO3=$(create_test_repo_with_history)
   cd "$TEST_REPO3"
-  echo "local mod to f1" >> feature1.txt  # Conflicting uncommitted change
+  echo "local mod to f2" >> feature2.txt  # Conflicting uncommitted change to file in commit being rolled back
   
   run hug h rollback --force
   [ "$status" -ne 0 ]  # Git aborts to prevent loss
-  assert_output --partial "would be overwritten"
-  run cat feature1.txt
-  assert_output --partial "local mod to f1"  # Local change preserved
+  assert_output --partial "not uptodate"
+  run cat feature2.txt
+  assert_output --partial "local mod to f2"  # Local change preserved
   run git status --porcelain
-  assert_output --partial "M feature1.txt"
+  assert_output --partial "M feature2.txt"
   
   # Test 4: Rewind base case - discards committed changes
   TEST_REPO4=$(create_test_repo_with_history)
