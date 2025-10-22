@@ -682,11 +682,17 @@ count_commits_in_range() {
     git rev-list --count "$start..$end" 2>/dev/null || echo 0
 }
 
+# Prints a list of commits in a given range.
+# This is the standard utility for displaying commit lists to the user.
+# Usage: print_commit_list_in_range <start_commit> [end_commit]
+#   start_commit: The commit to start the range from (exclusive).
+#   end_commit:   The commit to end the range at (inclusive). Defaults to HEAD.
+# Output is written to standard output, typically redirected to stderr for prompts.
 print_commit_list_in_range() {
     local start="$1"
     local end="${2:-HEAD}"
 
-    git log --oneline "$start..$end" | sed 's/^/  /'
+    hug ll "$start..$end"
 }
 
 list_changed_files_in_range() {

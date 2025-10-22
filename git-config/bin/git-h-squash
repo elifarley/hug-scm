@@ -81,7 +81,7 @@ else
   fi
   if [[ ${HUG_QUIET:-} != T ]]; then
     printf 'Commits to be squashed:\n' >&2
-    git log --oneline "$log_range" | sed 's/^/  /' >&2
+    print_commit_list_in_range "$target_commit" HEAD >&2
     affected_files=$(git log --name-only --pretty=format: "$log_range" | grep -v '^$' | sort -u | wc -l)
     printf '\nPreview: %d files affected in %d %s.\n' >&2 \
       "$affected_files" "$commits_to_squash" "$commit_word"

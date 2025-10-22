@@ -6,27 +6,25 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat << EOF
-hug h files: Preview files touched by commits you'd rewind/back (HEAD range).
+hug h files: Preview files and stats touched by commits you'd rewind/back (HEAD range).
 
 USAGE:
     hug h files [N|COMMIT] [OPTIONS]
 
 OPTIONS:
-    --stat     Show aggregate line stats per file
     -u, --upstream  Use upstream remote tip as start point (local-only commits; read-only preview)
     --quiet         Suppress output (sets HUG_QUIET=T)
     -h, --help Show this help
 
 DESCRIPTION:
-    Lists unique files changed in the range (default: last 1 commit).
-    With -u, previews files in local-only commits (HEAD to upstream tip).
+    Lists unique files and their line change stats in the range (default: last 1 commit).
+    With -u, previews files and stats in local-only commits (HEAD to upstream tip).
     Use before 'h back N' or 'h rewind COMMIT' to see affected files.
 
 EXAMPLES:
-    hug h files 3          # Files in last 3 commits
-    hug h files main       # Files changed after 'main' to HEAD
-    hug h files -u         # Files in local-only commits (to upstream)
-    hug h files --stat     # With stats (default range)
+    hug h files 3          # Files and stats in last 3 commits
+    hug h files main       # Files and stats changed after 'main' to HEAD
+    hug h files -u         # Files and stats in local-only commits (to upstream)
 
 SEE ALSO:
     h back    : Actually perform the rewind (keep staged)
@@ -34,13 +32,11 @@ SEE ALSO:
 EOF
 }
 
-with_stat=false
 upstream=false
 target_arg=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) show_help; exit 0 ;;
-    --stat) with_stat=true; shift ;;
     -u|--upstream) upstream=true; shift ;;
     --quiet) HUG_QUIET=T; shift ;;
     *) target_arg="$1"; shift ;;
@@ -81,18 +77,9 @@ fi
 count=${#files[@]}
 if $upstream; then
   upstream_short=$(git rev-parse --short "$start_point")
-  warning "These $count files are affected by $local_commits local-only commits to upstream tip $upstream_short (e.g., via 'h back -u')."
+  warning "These $count files and their stats are affected by $local_commits local-only commits to upstream tip $upstream_short (e.g., via 'h back -u')."
 else
-  warning "These $count files would be affected by moving HEAD to $start_point (e.g., via 'h back' or 'h rewind')."
+  warning "These $count files and their stats would be affected by moving HEAD to $start_point (e.g., via 'h back' or 'h rewind')."
 fi
 
-if $with_stat; then
-  for file in "${files[@]}"; do
-    stats=$(git diff --stat "$range" -- "$file" 2>/dev/null | tail -1 || echo "(no stats)")
-    printf "  ${GREEN}%s${NC} %s\n" "$file" "$stats"
-  done
-else
-  for file in "${files[@]}"; do
-    printf '  %s\n' "$file"
-  done
-fi
+git diff --stat "$range"
