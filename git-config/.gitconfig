@@ -45,6 +45,13 @@
   # All branches
   lla = "!f() { hug ll --all \"$@\"; }; f"
 
+  # File history with patches (-p)
+  lp = "!f() { git ll -p \"$@\"; }; f"
+
+  # log-outgoing aliases
+  lo = log-outgoing --quiet
+  lol = log-outgoing
+
   # Search commits by message
   lf = "!f() { \
     test $# -eq 0 -o \"$1\" = '-h' && { \
@@ -75,9 +82,6 @@
 
   # Commits in date range
   ld = "!f() { git ll --since=\"$1\" --until=\"${2:-now}\"; }; f"
-
-  # File history with patches (-p)
-  lp = "!f() { git ll -p \"$@\"; }; f"
 
   # ============================================================================
   # FILE INSPECTION
@@ -194,9 +198,6 @@
 
   # Full interactive staging menu (git add -i wrapper)
   cim = "!git add --interactive && git s && git c"
-
-  # Outgoing changes: what will be pushed to upstream
-  o = !git cherry -v @{upstream} && git s && git diff --stat @{u}..HEAD
 
   # ============================================================================
   # STASH

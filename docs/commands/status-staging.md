@@ -51,6 +51,7 @@ Looking for other families? Try [HEAD Operations (h*)](head) for resets, [Workin
     - **Description**: Status with a list of *uncommitted* tracked files (mirrors plain `git status`).
     - **Example**: `hug sl`
     - **Safety**: ✅ Read-only.
+    - ![hug sl example](img/hug-sl.png)
 
 - `hug sla`: **S**tatus + **L**ist **A**ll
     - **Description**: Full status including **untracked** files so you can see new additions.

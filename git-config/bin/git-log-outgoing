@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+show_help() {
+  cat << EOF
+hug log-outgoing: Preview outgoing changes to upstream.
+
+USAGE:
+    hug log-outgoing [--quiet] [--fetch] [-h, --help]
+
+OPTIONS:
+    --quiet    Suppress verbose output (sets HUG_QUIET=T; keeps core previews)
+    --fetch    Fetch upstream before preview (updates remote refs)
+    -h, --help Show this help
+
+DESCRIPTION:
+    Shows local-only commits (via Hug log), unpushed uniques (cherry), status, and diff stats.
+    Use before pushing to review what's outgoing. Errors if no upstream configured.
+
+EXAMPLES:
+    hug o                          # Full preview
+    hug o --quiet                  # Minimal output
+    hug o --fetch                  # Refresh upstream first
+
+SEE ALSO:
+    hug bpush   Safe push with previews
+EOF
+}
+
+quiet=false
+fetch=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) show_help; exit 0 ;;
+    --quiet) HUG_QUIET=T; quiet=true; shift ;;
+    --fetch) fetch=true; shift ;;
+    *) error "Unknown option: $1. See --help."; ;;
+  esac
+done
+
+check_git_repo
+
+if $fetch; then
+  info "Fetching upstream..."
+  git fetch 2>/dev/null || warn "Fetch failed; using cached refs."
+fi
+
+target=$(get_upstream_commit)  # Exits if no upstream
+
+local_commits=$(count_commits_in_range "$target" HEAD)
+
+if [ "$local_commits" -eq 0 ]; then
+  info "No outgoing changes (already synced to upstream)."
+  exit 0
+fi
+
+printf '📊 since upstream:\n' >&2
+git diff --stat @{u}..HEAD >&2
+
+if [[ ${HUG_QUIET:-} != T ]]; then
+  printf '\n📤 Outgoing changes to upstream:\n' >&2
+  print_commit_list_in_range "$target" HEAD >&2
+fi
+
+# Core previews (always show, even in quiet, for safety)
+test "${HUG_QUIET:-}" || printf '\nExact commits missing from upstream:\n' >&2
+git cherry -v @{upstream} >&2
+
+test "${HUG_QUIET:-}" || printf '\n' >&2
+hug s >&2
+
+test "${HUG_QUIET:-}" || printf '\nReady to push? Use "hug bpush".\n' >&2
+
+exit 0
