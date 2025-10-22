@@ -2,41 +2,96 @@
 # This file is a library to be sourced by shell scripts
 
 # Color codes for output
-readonly RED=$(tput setaf 1)
-readonly GREEN=$(tput setaf 2)
-readonly GREEN_BRIGHT=$(tput setaf 10)
-readonly YELLOW=$(tput setaf 3)
-readonly YELLOW_BRIGHT=$(tput setaf 11)
-readonly BLUE=$(tput setaf 4)
-readonly MAGENTA=$(tput setaf 5)
-readonly CYAN=$(tput setaf 6)
-readonly GREY=$(tput setaf 8)
-readonly NC=$(tput sgr0) # No Color
+# Declared and assigned separately to avoid masking tput return values (SC2155)
+# Exported so they can be used in sourced scripts without SC2034 warnings
+RED=''
+GREEN=''
+GREEN_BRIGHT=''
+YELLOW=''
+YELLOW_BRIGHT=''
+BLUE=''
+MAGENTA=''
+CYAN=''
+GREY=''
+NC=''
 
-# Helper functions
+RED=$(tput setaf 1)
+GREEN=$(tput setaf 2)
+GREEN_BRIGHT=$(tput setaf 10)
+YELLOW=$(tput setaf 3)
+YELLOW_BRIGHT=$(tput setaf 11)
+BLUE=$(tput setaf 4)
+MAGENTA=$(tput setaf 5)
+CYAN=$(tput setaf 6)
+GREY=$(tput setaf 8)
+NC=$(tput sgr0) # No Color
+
+readonly RED GREEN GREEN_BRIGHT YELLOW YELLOW_BRIGHT BLUE MAGENTA CYAN GREY NC
+export RED GREEN GREEN_BRIGHT YELLOW YELLOW_BRIGHT BLUE MAGENTA CYAN GREY NC
+
+################################################################################
+# Output and User Interaction Functions
+################################################################################
+
+# Prints an error message and exits the script
+# Usage: error "message" [exit_code]
+# Parameters:
+#   $1 - Error message to display
+#   $2 - (Optional) Exit code, defaults to 1
+# Environment:
+#   HUG_QUIET - If set, suppresses output
 error() {
   test "${HUG_QUIET:-}" && return
   printf "${RED}❌ Error:${NC} %s\n" "$1" >&2
   exit "${2:-1}"
 }
 
+# Prints a warning message to stderr
+# Usage: warning "message"
+# Parameters:
+#   $1 - Warning message to display
+# Environment:
+#   HUG_QUIET - If set, suppresses output
 warning() {
   test "${HUG_QUIET:-}" && return
   printf "${YELLOW}⚠️  Warning:${NC} %s\n" "$1" >&2
 }
 
+# Alias for warning() function
+# Usage: warn "message"
 warn() { warning "$@"; }
 
+# Prints an informational message to stderr
+# Usage: info "message"
+# Parameters:
+#   $1 - Information message to display
+# Environment:
+#   HUG_QUIET - If set, suppresses output
 info() {
   test "${HUG_QUIET:-}" && return
   printf "${BLUE}ℹ️  Info:${NC} %s\n" "$1" >&2
 }
 
+# Prints a success message to stderr
+# Usage: success "message"
+# Parameters:
+#   $1 - Success message to display
+# Environment:
+#   HUG_QUIET - If set, suppresses output
 success() {
   test "${HUG_QUIET:-}" && return
   printf "${GREEN}✅ Success:${NC} %s\n" "$1" >&2
 }
 
+# Prompts user for confirmation, exits if not confirmed
+# Usage: prompt_confirm ["custom prompt"]
+# Parameters:
+#   $1 - (Optional) Custom prompt text, defaults to "Proceed? [y/N]: "
+# Environment:
+#   HUG_FORCE - If true, automatically confirms without prompting
+# Returns:
+#   0 if confirmed (or HUG_FORCE is true)
+#   Exits with code 1 if user declines or read fails
 prompt_confirm() {
   if [[ ${HUG_FORCE:-} == true ]]; then
     return 0
@@ -54,10 +109,31 @@ prompt_confirm() {
   fi
 }
 
+################################################################################
+# String Manipulation Functions
+################################################################################
+
+# Trims leading and trailing whitespace from a string
+# Usage: result=$(trim_message "  text  ")
+# Parameters:
+#   $1 - String to trim
+# Output:
+#   Trimmed string to stdout
 trim_message() {
   printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 }
 
+################################################################################
+# Array Manipulation Functions
+################################################################################
+
+# Removes duplicate entries from an array in-place
+# Usage: dedupe_array array_name
+# Parameters:
+#   $1 - Name of the array variable to deduplicate (nameref)
+# Note:
+#   Modifies the array in-place, preserving order of first occurrence
+#   Empty strings are filtered out
 dedupe_array() {
   local -n __array_ref=$1
   local -A __seen=()
@@ -73,6 +149,13 @@ dedupe_array() {
   __array_ref=("${__unique[@]}")
 }
 
+# Prints a titled list of items
+# Usage: print_list "Title" item1 item2 item3...
+# Parameters:
+#   $1 - Title for the list
+#   $@ - Items to list (remaining arguments)
+# Output:
+#   Title with count, followed by indented items
 print_list() {
   local title=$1
   shift
@@ -83,7 +166,16 @@ print_list() {
   done
 }
 
-# Checks if a local file path is a symlink (returns true/false)
+################################################################################
+# File System Utility Functions
+################################################################################
+
+# Checks if a local file path is a symlink
+# Usage: if is_symlink "path/to/file"; then ...; fi
+# Parameters:
+#   $1 - Path to check
+# Returns:
+#   0 if path is a symbolic link, 1 otherwise
 is_symlink() {
   local local_file="$1"
   [[ -L "$local_file" ]]
