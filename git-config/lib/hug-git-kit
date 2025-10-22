@@ -1,5 +1,18 @@
 # shellcheck shell=bash
 # This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-KIT: Git-specific operations library
+#
+# This library provides high-level functions for git operations including:
+# - Repository and commit validation
+# - Working tree state management
+# - File change operations (discard, wipe, purge)
+# - Branch information and navigation
+# - Commit history analysis
+# - Upstream operation handlers
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
 
 ################################################################################
 # Git Repository Validation Functions

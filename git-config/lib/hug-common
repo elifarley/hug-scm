@@ -1,7 +1,45 @@
 # shellcheck shell=bash
 # This file is a library to be sourced by shell scripts
+#
+# HUG-COMMON: Common utilities library
+#
+# This library provides general-purpose utility functions including:
+# - Color definitions for terminal output
+# - Output and user interaction functions (error, warning, info, success, prompts)
+# - String manipulation utilities
+# - Array manipulation utilities  
+# - File system utilities
+# - Command pattern helpers
+#
+# These functions are used across all hug commands for consistent
+# user experience and error handling.
 
-# Color codes for output
+################################################################################
+# Standard Command Script Header Pattern
+################################################################################
+#
+# All hug command scripts should follow this standard pattern:
+#
+# #!/usr/bin/env bash
+# CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+# CMD_BASE="$(dirname "$CMD_BASE")"
+# # shellcheck source=../lib/hug-common
+# . "$CMD_BASE/../lib/hug-common"
+# # shellcheck source=../lib/hug-git-kit
+# . "$CMD_BASE/../lib/hug-git-kit"
+# set -euo pipefail  # Exit on error, undefined vars, pipe failures
+#
+# This ensures:
+# - Proper library path resolution (works with symlinks)
+# - Sourcing of common functions
+# - Strict error handling (fail fast on errors)
+# - ShellCheck can follow the source directives
+#
+################################################################################
+
+################################################################################
+# Color Definitions
+################################################################################
 # Declared and assigned separately to avoid masking tput return values (SC2155)
 # Exported so they can be used in sourced scripts without SC2034 warnings
 RED=''
@@ -179,4 +217,103 @@ print_list() {
 is_symlink() {
   local local_file="$1"
   [[ -L "$local_file" ]]
+}
+
+################################################################################
+# Command Pattern Helpers
+################################################################################
+
+# Parses common option flags for command scripts
+# Usage: eval "$(parse_common_flags "$@")"
+# Recognizes flags:
+#   --dry-run    Sets dry_run=true
+#   -f, --force  Sets force=true, exports HUG_FORCE=true
+#   --quiet      Exports HUG_QUIET=T
+#   -h, --help   Calls usage function and exits
+# Note:
+#   Consumes recognized flags from arguments
+#   Remaining args can be accessed via "$@" after eval
+parse_common_flags() {
+  local remaining_args=()
+  
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        echo "dry_run=true"
+        shift
+        ;;
+      -f|--force)
+        echo "force=true"
+        echo "export HUG_FORCE=true"
+        shift
+        ;;
+      --quiet)
+        echo "export HUG_QUIET=T"
+        shift
+        ;;
+      -h|--help)
+        echo "if declare -f usage >/dev/null; then usage; exit 0; fi"
+        shift
+        ;;
+      --)
+        shift
+        remaining_args+=("$@")
+        break
+        ;;
+      *)
+        remaining_args+=("$1")
+        shift
+        ;;
+    esac
+  done
+  
+  printf 'set -- '
+  printf '%q ' "${remaining_args[@]}"
+  printf '\n'
+}
+
+# Validates minimum number of arguments
+# Usage: require_args N ["error message"]
+# Parameters:
+#   $1 - Minimum number of arguments required
+#   $2 - (Optional) Custom error message
+# Environment:
+#   Uses $# from caller's context
+# Note:
+#   This is meant to be called with: require_args N "$#" ["message"]
+require_args() {
+  local required="$1"
+  local actual="$2"
+  local message="${3:-this command requires at least $required argument(s)}"
+  
+  if [[ $actual -lt $required ]]; then
+    error "$message"
+  fi
+}
+
+# Confirms an action with a specific word
+# Usage: confirm_action "action_word"
+# Parameters:
+#   $1 - Word that user must type to confirm
+# Environment:
+#   HUG_FORCE - If true, skips confirmation
+# Returns:
+#   0 if confirmed (or HUG_FORCE is true)
+#   Exits with code 1 if user declines
+confirm_action() {
+  if [[ ${HUG_FORCE:-} == true ]]; then
+    return 0
+  fi
+  
+  local action="$1"
+  local reply
+  printf 'Type "%s" to confirm: ' "$action" >&2
+  if ! read -r reply; then
+    info "Cancelled."
+    exit 1
+  fi
+  if [[ "$reply" != "$action" ]]; then
+    info "Cancelled."
+    exit 1
+  fi
 }
