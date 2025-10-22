@@ -20,6 +20,7 @@ Hug transforms complex and forgettable Git commands into a simple, predictable l
 - [Quick Start](#quick-start)
 - [Command Reference](#command-reference)
 - [Philosophy](#philosophy)
+- [Testing](#testing)
 - [Roadmap](#roadmap)
 - [License](#license)
 
@@ -428,6 +429,29 @@ hug shf <file> [commit] # SHow: File at [commit] (File diff in commit)
 -   Related commands share prefixes
 -   Built-in help with examples
 -   Smart completion with partial matching
+
+## Testing
+
+Hug SCM uses [BATS (Bash Automated Testing System)](https://github.com/bats-core/bats-core) for automated testing. We have comprehensive test coverage for core commands and workflows.
+
+**Running Tests:**
+```bash
+# Install prerequisites and run all tests
+./run-tests.sh
+
+# Run specific test suite
+./run-tests.sh tests/unit/test_status_staging.bats
+
+# Run with verbose output
+./run-tests.sh -v
+```
+
+**For Contributors:**
+- All new commands must include tests
+- Tests run automatically in CI on every PR
+- See [TESTING.md](TESTING.md) for detailed testing guide
+- See [tests/README.md](tests/README.md) for test suite documentation
+- See [ADR-001](docs/architecture/ADR-001-automated-testing-strategy.md) for testing strategy rationale
 
 ## Roadmap
 

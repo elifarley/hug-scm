@@ -17,7 +17,7 @@ test $# -eq 0 && {
   echo '  w*  - Working dir operations'
   echo ''
   echo "Use 'hug help [prefix]' to see commands with that prefix"
-  exit 1
+  exit 0
 }
 prefix="$1"
 dir=$(dirname "$0")
@@ -93,3 +93,5 @@ if [[ "$prefix" == "h" ]]; then
   echo "  e.g., 'hug h back -u' (HEAD moves to origin/BRANCH, discard local commits)"
   echo "  e.g., 'hug h rewind 3 --force' (destructive, no prompt)"
 fi
+
+exit 0

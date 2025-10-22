@@ -35,6 +35,3 @@ To use it in the current terminal, type:
 
 source $HUG_HOME/activate
 EOF
-
-
-}
