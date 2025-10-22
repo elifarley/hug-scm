@@ -220,7 +220,7 @@ teardown() {
   echo "local mod to f1" >> feature1.txt  # Conflicting uncommitted change
   
   run hug h rollback --force
-  refute_success  # Git aborts to prevent loss
+  [ "$status" -ne 0 ]  # Git aborts to prevent loss
   assert_output --partial "would be overwritten"
   run cat feature1.txt
   assert_output --partial "local mod to f1"  # Local change preserved
