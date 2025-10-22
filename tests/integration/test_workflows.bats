@@ -119,7 +119,7 @@ teardown() {
   git commit -q -m "Wrong commit"
   
   # Undo it
-  run hug h undo
+  run hug h undo --force # Requires user confirmation if we don't use the `--force` flag.
   assert_success
   
   # Fix the content
@@ -201,8 +201,9 @@ teardown() {
   local before_rollback
   before_rollback=$(git rev-parse HEAD)
   
-  # Rollback preserves files
-  run hug h rollback
+  # Rollback discards changes from the commits
+  # but preserves untracked and uncommitted changes
+  run hug h rollback --force
   assert_success
   assert_file_exists "f2.txt"
   
@@ -211,7 +212,7 @@ teardown() {
   git commit -q -m "Feature 2 again"
   
   # Rewind removes files
-  run hug h rewind HEAD~1
+  run hug h rewind HEAD~1 --force
   assert_success
   assert_file_not_exists "f2.txt"
 }
