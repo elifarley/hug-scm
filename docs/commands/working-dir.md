@@ -140,10 +140,9 @@ hug w unwip WIP/24-10-26/1530.spikeonnewauthapi # Squash-merge by default
 hug w unwip --no-squash WIP/24-10-26/1530.spikeonnewauthapi # Perform a regular merge
 ```
 
-::: tip Unwip Tips
-- You can resume work on a WIP branch (`hug b <wip>`), add more commits, then switch back to your target branch and run `hug w unwip`.
-- After unparking, run `hug s` to check the status and `hug bpush` to push the new commit.
-:::
+> [!TIP] Unwip Tips
+> - You can resume work on a WIP branch (`hug b <wip>`), add more commits, then switch back to your target branch and run `hug w unwip`.
+> - After unparking, run `hug s` to check the status and `hug bpush` to push the new commit.
 
 **4. Abandon and Delete (`wipdel`)**
 
@@ -157,12 +156,11 @@ hug w wipdel WIP/24-10-26/1530.spikeonnewauthapi
 hug w wipdel --force WIP/24-10-26/1530.spikeonnewauthapi
 ```
 
-::: tip Why Use WIP Instead of Stash?
-- **Persistent & Safe**: Stashes are local and can be lost. WIP branches are real commits.
-- **Shareable**: You can `hug bpush` a WIP branch to get feedback or save it remotely.
-- **Versioned**: You can add multiple commits to a WIP branch, creating a history for your experiment.
-- **Clear**: `hug bl | grep WIP` gives a clear list of parked tasks, unlike the cryptic `git stash list`.
-:::
+> [!TIP] Why Use WIP Instead of Stash?
+> - **Persistent & Safe**: Stashes are local and can be lost. WIP branches are real commits.
+> - **Shareable**: You can `hug bpush` a WIP branch to get feedback or save it remotely.
+> - **Versioned**: You can add multiple commits to a WIP branch, creating a history for your experiment.
+> - **Clear**: `hug bl | grep WIP` gives a clear list of parked tasks, unlike the cryptic `git stash list`.
 
 ## Tips
 - Chain with status: `hug w discard file.js && hug sl`
