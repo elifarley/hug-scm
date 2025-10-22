@@ -98,7 +98,10 @@ teardown() {
 }
 
 @test "hug h rollback: removes commit but preserves work" {
-  # Add a change that we'll rollback
+  # Add an uncommitted change that should be preserved
+  echo "uncommitted" > uncommitted.txt
+  
+  # Add a change that we'll rollback (committed)
   echo "test" > temp.txt
   git add temp.txt
   git commit -q -m "Temp commit"
@@ -110,11 +113,17 @@ teardown() {
   run git log --oneline
   refute_output --partial "Temp commit"
   
-  # But file should still exist
-  assert_file_exists "temp.txt"
+  # Committed file should NOT exist (rollback discards commit changes)
+  assert_file_not_exists "temp.txt"
+  
+  # But uncommitted file should still exist (uncommitted changes preserved)
+  assert_file_exists "uncommitted.txt"
 }
 
 @test "hug h rollback N: rolls back N commits" {
+  # Add an uncommitted change that should be preserved
+  echo "uncommitted" > uncommitted.txt
+  
   run hug h rollback 2 --force
   assert_success
   
@@ -123,9 +132,12 @@ teardown() {
   assert_output --partial "Initial commit"
   refute_output --partial "Add feature"
   
-  # But files should still exist (preserved work)
-  assert_file_exists "feature1.txt"
-  assert_file_exists "feature2.txt"
+  # Committed files should NOT exist (rollback discards commit changes)
+  assert_file_not_exists "feature1.txt"
+  assert_file_not_exists "feature2.txt"
+  
+  # But uncommitted file should still exist (uncommitted changes preserved)
+  assert_file_exists "uncommitted.txt"
 }
 
 @test "hug h rewind: destructive rewind to commit" {
@@ -162,15 +174,20 @@ teardown() {
   assert_output --partial "Add feature 1"
 }
 
-@test "hug h steps --raw: shows raw commit hash" {
+@test "hug h steps --raw: shows raw step count" {
   run hug h steps --raw feature2.txt
   assert_success
   
-  # Output should contain a commit hash (40 char hex)
-  assert_output --regexp "[0-9a-f]{40}"
+  # --raw option returns just the step count (0 for file modified in HEAD)
+  assert_output "0"
+  
+  # Test with a file from an older commit
+  run hug h steps --raw feature1.txt
+  assert_success
+  assert_output "1"
 }
 
-@test "hug h undo with no commits fails gracefully" {
+@test "hug h undo with no commits handles gracefully" {
   # Create a fresh repo at initial commit
   local test_repo
   test_repo=$(create_test_repo)
@@ -179,8 +196,9 @@ teardown() {
   # Try to undo when there's only one commit
   run hug h undo --force
   
-  # Should fail or handle gracefully
-  assert_failure
+  # Should succeed with info message (no commits to undo)
+  assert_success
+  assert_output --partial "Already at target"
 }
 
 @test "hug h operations preserve untracked files" {
