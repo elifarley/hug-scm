@@ -1,0 +1,66 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Install BATS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
+          
+      - name: Install BATS helper libraries
+        run: |
+          # Create directories for BATS helpers
+          sudo mkdir -p /usr/lib/bats-support /usr/lib/bats-assert /usr/lib/bats-file
+          
+          # Clone helper libraries
+          git clone https://github.com/bats-core/bats-support.git /tmp/bats-support
+          git clone https://github.com/bats-core/bats-assert.git /tmp/bats-assert
+          git clone https://github.com/bats-core/bats-file.git /tmp/bats-file
+          
+          # Copy to system location
+          sudo cp -r /tmp/bats-support/src/* /usr/lib/bats-support/
+          sudo cp -r /tmp/bats-assert/src/* /usr/lib/bats-assert/
+          sudo cp -r /tmp/bats-file/src/* /usr/lib/bats-file/
+          
+      - name: Verify Git version
+        run: |
+          git --version
+          
+      - name: Install Hug SCM
+        run: |
+          ./install.sh
+          source git-config/activate
+          
+      - name: Verify Hug installation
+        run: |
+          source git-config/activate
+          which hug
+          hug help
+          
+      - name: Run unit tests
+        run: |
+          source git-config/activate
+          bats --tap tests/unit/
+          
+      - name: Run integration tests
+        run: |
+          source git-config/activate
+          bats --tap tests/integration/
+          
+      - name: Run all tests with verbose output
+        if: failure()
+        run: |
+          source git-config/activate
+          bats --verbose-run --print-output-on-failure tests/
