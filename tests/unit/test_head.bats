@@ -54,12 +54,17 @@ teardown() {
   run hug h undo --force
   assert_success
   
-  # Changes should be unstaged
-  run git diff --name-only
+  # Changes should be unstaged or untracked after an undo.
+  # For this specific case, 'feature2.txt' must be untracked.
+  run git ls-files --others --exclude-standard
   assert_output --partial "feature2.txt"
   
   # Nothing should be staged
   run git diff --cached
+  assert_output ""
+
+  # Nothing should be unstaged
+  run git diff --name-only
   assert_output ""
 }
 
