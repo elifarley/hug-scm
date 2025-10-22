@@ -4,7 +4,7 @@ for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common 
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
-usage() {
+show_help() {
   cat <<'EOF'
 Usage: hug w zap-all [OPTIONS]
 
@@ -23,15 +23,6 @@ Semantics:
 EOF
 }
 
-confirm() {
-  local prompt=$1 expected=$2 reply
-  read -r -p "$prompt" reply
-  if [[ "$reply" != "$expected" ]]; then
-    printf 'Cancelled.\n'
-    exit 1
-  fi
-}
-
 dry_run=false
 force=false
 
@@ -46,7 +37,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      usage
+      show_help
       exit 0
       ;;
     -*)
@@ -57,7 +48,7 @@ while [[ $# -gt 0 ]]; do
         case "$char" in
           *)
             error "unknown option: -$char"
-            usage >&2
+            show_help >&2
             exit 2
             ;;
         esac
@@ -65,7 +56,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       error "positional arguments are not accepted (zap-all affects the entire repository)"
-      usage >&2
+      show_help >&2
       exit 2
       ;;
   esac
@@ -86,7 +77,7 @@ fi
 if ! $force; then
   printf '🚨⚠ About to run zap-all with the following effects:\n'
   run_preview
-  confirm 'Type "zap-all" to confirm: ' 'zap-all'
+  confirm_action 'zap-all'
 fi
 
 hug w wipe-all --force

@@ -5,7 +5,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
-usage() {
+show_help() {
   cat <<'EOF'
 Usage: hug w discard-all [OPTIONS]
 
@@ -26,15 +26,6 @@ Notes:
 See also:
   • `w wipe-all` (to discard both staged and unstaged uncommitted changes)
 EOF
-}
-
-confirm() {
-  local prompt=$1 expected=$2 reply
-  read -r -p "$prompt" reply
-  if [[ "$reply" != "$expected" ]]; then
-    printf 'Cancelled.\n'
-    exit 1
-  fi
 }
 
 dry_run=false
@@ -64,17 +55,17 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      usage
+      show_help
       exit 0
       ;;
     -*)
       error "unknown option: $1"
-      usage >&2
+      show_help >&2
       exit 2
       ;;
     *)
       error "positional arguments are not accepted (use 'git w discard' for path-specific)"
-      usage >&2
+      show_help >&2
       exit 2
       ;;
   esac
@@ -141,7 +132,7 @@ if $dry_run || ! $force; then
   if $target_staged && $target_unstaged; then
     printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
   fi
-  confirm 'Type "discard-all" to confirm: ' 'discard-all'
+  confirm_action 'discard-all'
 fi
 
 # Execution
