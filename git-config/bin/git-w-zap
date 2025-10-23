@@ -87,7 +87,6 @@ wipe_cmd+=(-- "${paths[@]}")
 
 purge_cmd=(hug w purge)
 $dry_run && purge_cmd+=(--dry-run)
-$force && purge_cmd+=(-f)
 purge_cmd+=(-u -i -- "${paths[@]}")
 "${purge_cmd[@]}"
 

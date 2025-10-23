@@ -115,7 +115,6 @@ teardown() {
 }
 
 @test "hug w zap: does complete cleanup of specific files" {
-  skip " 'echo "untracked" > untracked.txt' failed"
   # Ensure README.md exists
   echo "Initial content" > README.md
   git add README.md

@@ -43,7 +43,7 @@ check_helpers() {
   local missing=0
   
   for lib in bats-support bats-assert bats-file; do
-    if [[ ! -d "/usr/lib/$lib" ]] && [[ ! -d "/usr/local/lib/$lib" ]] && [[ ! -d "$HOME/.bats-libs/$lib" ]]; then
+    if [[ ! -d "/usr/lib/bats/$lib" ]] && [[ ! -d "/usr/lib/$lib" ]] && [[ ! -d "/usr/local/lib/$lib" ]] && [[ ! -d "$HOME/.bats-libs/$lib" ]]; then
       echo -e "${YELLOW}⚠ Warning: $lib not found in standard locations${NC}"
       missing=1
     fi
