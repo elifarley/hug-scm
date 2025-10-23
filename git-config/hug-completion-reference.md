@@ -85,9 +85,6 @@ These map to custom scripts (see Section 2).
 - `cc [<commit-range>] [git-cherry-pick-opts]`: Cherry-pick with attribution. Args: `<commit-range>` (required, hash/range), Git cherry-pick options.
 - `caa`: Commit all (tracked + untracked). No args.
 
-### Stash (s*)
-- `sls`: List stashes. No args.
-
 ### Status (s*)
 - `sl [git-status-opts]`: Status (no untracked). Args: Git status options.
 - `sla [git-status-opts]`: Status (long, with untracked). Args: as above.

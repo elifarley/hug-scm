@@ -26,8 +26,8 @@ Hug transforms complex and forgettable Git commands into a simple, predictable l
 
 ## What is Hug?
 
-Hug SCM is a humane interface layer for version control systems, but currently only works with Git.
-It transforms the complex, often intimidating Git commands into an intuitive, predictable language that feels natural to developers.
+Hug SCM is a humane interface layer for version control systems that currently supports **Git** and **Mercurial**.
+It transforms complex, often intimidating SCM commands into an intuitive, predictable language that feels natural to developers.
 
 With Hug, you get:
 
@@ -35,7 +35,7 @@ With Hug, you get:
 - Progressive safety (shorter = safer, longer = more powerful)
 - Consistent patterns across all operations
 - Rich feedback and previews before destructive actions
-- Multi-VCS support (Git now, Mercurial and others coming later)
+- **Multi-VCS support** - Use the same commands whether you're working with Git or Mercurial repositories
 
 ## Why Hug?
 While Git is incredibly powerful, its command syntax can be inconsistent and difficult to remember. Hug smooths out these rough edges.
@@ -143,9 +143,50 @@ hug wips "Prototype UI" → hug a . && hug c "Add components" → hug bs (pause)
 
 **Tip: `wips` vs. `wip`**: Use `wips` for immersive sessions (stay on WIP to add commits like `hug c`). Use `wip` for quick pauses (park). Both are pushable branches - better than local stash for persistence.
 
+## Mercurial Support
+
+Hug now supports Mercurial! The same intuitive commands work across both Git and Mercurial repositories.
+
+### Quick Mercurial Start
+
+```shell
+# Install Mercurial support
+cd hg-config
+./install.sh
+
+# Use the same Hug commands in Mercurial repos!
+cd ~/my-hg-repo
+hug s              # Status
+hug a file.txt     # Add file
+hug c -m "Update"  # Commit
+hug b feature      # Switch bookmark
+hug l              # View history
+```
+
+### Key Features
+
+- **Automatic Detection**: Hug automatically detects whether you're in a Git or Mercurial repository
+- **Unified Interface**: Use the same commands regardless of SCM type
+- **Bookmark Support**: Mercurial bookmarks work like Git branches
+- **Working Directory Ops**: Full support for discard, purge, and zap operations
+- **HEAD Operations**: Uncommit operations via the evolve extension
+
+### Mercurial-Specific Notes
+
+- **No Staging Area**: Mercurial commits directly from working directory
+- **Bookmarks vs Branches**: Hug uses bookmarks (like Git branches) instead of permanent Mercurial branches
+- **Extensions Required**: Some commands require `purge` and `evolve` extensions
+
+See [hg-config/README.md](hg-config/README.md) for full Mercurial documentation.
+
 ## Installation
 
 Check the [Installation Guide](https://elifarley.github.io/hug-scm/installation.html)
+
+**For Mercurial only:**
+```bash
+cd hg-config && ./install.sh
+```
 
 
 ---
@@ -438,7 +479,12 @@ Hug SCM uses [BATS (Bash Automated Testing System)](https://github.com/bats-core
 
 ## Roadmap
 
--    **Mercurial Support** - Full compatibility with `hg` commands
+- ✅ **Mercurial Support** - Full compatibility with `hg` commands (COMPLETED!)
+  - Core commands (status, staging, commits, branches)
+  - Working directory operations (discard, purge, zap)
+  - HEAD operations (back, undo)
+  - Automatic repository detection
+  - See [ADR-002](docs/architecture/ADR-002-mercurial-support-architecture.md) for details
 -    **Sapling Support** - Meta's next-gen VCS
 -    **Interactive Mode** - TUI with visual diff preview
 -    **AI Integration** - Smart commit suggestions

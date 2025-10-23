@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite - Mercurial version
+
+show_help() {
+  cat <<'EOF'
+hug l: Display changeset history with graph.
+
+USAGE:
+  hug l [options]
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  Displays changeset history in a compact format with a graph.
+
+SEE ALSO:
+  hug ll  : Log with more details
+  hug la  : Log all branches
+EOF
+}
+
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
+  exit
+}
+
+# Early exit if not in Mercurial repo
+check_hg_repo
+
+# Display log with graph
+hg log -G --template '{rev}:{node|short} {desc|firstline}\n' "$@"

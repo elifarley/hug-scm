@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# hg-h - HEAD operations gateway
+# Part of the Hug tool suite - Mercurial version
+
+set -euo pipefail
+
+# Get the directory where this script is located
+CMD_BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+case "${1:-}" in
+  back)         shift; exec "$CMD_BASE/hg-h-back" "$@" ;;
+  undo)         shift; exec "$CMD_BASE/hg-h-undo" "$@" ;;
+  *)
+    echo "Usage: hug h <subcommand>"
+    echo "HEAD/commit operations:"
+    echo "  back      - Uncommit last change(s), keep changes"
+    echo "  undo      - Uncommit last change(s), discard changes"
+    echo ""
+    echo "Note: Mercurial HEAD operations require the 'evolve' extension"
+    echo "      Add to ~/.hgrc: [extensions]"
+    echo "                      evolve ="
+    exit 1
+    ;;
+esac

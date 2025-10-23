@@ -1,7 +1,44 @@
 #!/usr/bin/env bash
 # Part of the Hug tool suite
+# Main dispatcher - detects repository type and delegates to appropriate SCM
 
-test "${1:-help}" = help && exec git hughelp "${@:2}"
-
-# GIT_TRACE_SETUP=1 to show diagnostic messages
-exec git "$@"
+# Detect repository type and dispatch
+if git rev-parse --git-dir >/dev/null 2>&1; then
+    # Git repository detected
+    test "${1:-help}" = help && exec git hughelp "${@:2}"
+    # GIT_TRACE_SETUP=1 to show diagnostic messages
+    exec git "$@"
+elif hg root >/dev/null 2>&1; then
+    # Mercurial repository detected
+    test "${1:-help}" = help && {
+        echo "Hug SCM - Mercurial mode"
+        echo "Usage: hug <command> [options]"
+        echo ""
+        echo "Common commands:"
+        echo "  s        - Show status"
+        echo "  a        - Add files"
+        echo "  c        - Commit changes"
+        echo "  b        - Switch bookmark/branch"
+        echo "  l        - Show log"
+        echo "  w        - Working directory operations"
+        exit 0
+    }
+    
+    # Find the hug script directory to locate hg-config
+    HUG_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    HG_CONFIG_BIN="$HUG_SCRIPT_DIR/../hg-config/bin"
+    
+    # Check if we have a custom hg command for this
+    if [[ -n "${1:-}" && -x "$HG_CONFIG_BIN/hg-$1" ]]; then
+        exec "$HG_CONFIG_BIN/hg-$1" "${@:2}"
+    else
+        # Fall back to standard hg command
+        exec hg "$@"
+    fi
+else
+    echo "Error: Not in a Git or Mercurial repository" >&2
+    echo "" >&2
+    echo "Hug SCM supports both Git and Mercurial repositories." >&2
+    echo "Please run this command from within a repository." >&2
+    exit 1
+fi

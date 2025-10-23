@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# hug ll: Log with more details (date, author)
+set -euo pipefail
+exec hg log -G --template '{rev}:{node|short} {date|shortdate} [{author|user}] {desc|firstline}\n' "$@"

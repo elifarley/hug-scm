@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# hug w purge-all - Remove all untracked files
+set -euo pipefail
+exec hg w-purge "$@"

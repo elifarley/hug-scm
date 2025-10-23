@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# hg-w - Working directory operations gateway
+# Part of the Hug tool suite - Mercurial version
+
+set -euo pipefail
+
+# Get the directory where this script is located
+CMD_BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+case "${1:-}" in
+  discard)      shift; exec "$CMD_BASE/hg-w-discard" "$@" ;;
+  discard-all)  shift; exec "$CMD_BASE/hg-w-discard-all" "$@" ;;
+  purge)        shift; exec "$CMD_BASE/hg-w-purge" "$@" ;;
+  purge-all)    shift; exec "$CMD_BASE/hg-w-purge-all" "$@" ;;
+  wipe)         shift; exec "$CMD_BASE/hg-w-wipe" "$@" ;;
+  wipe-all)     shift; exec "$CMD_BASE/hg-w-wipe-all" "$@" ;;
+  zap)          shift; exec "$CMD_BASE/hg-w-zap" "$@" ;;
+  zap-all)      shift; exec "$CMD_BASE/hg-w-zap-all" "$@" ;;
+  *)
+    echo "Usage: hug w <subcommand>"
+    echo "Working directory operations:"
+    echo "  discard      - Discard changes in specific files"
+    echo "  discard-all  - Discard all changes"
+    echo "  purge        - Remove untracked files"
+    echo "  purge-all    - Remove all untracked files"
+    echo "  wipe         - Discard changes (alias for discard)"
+    echo "  wipe-all     - Discard all changes (alias for discard-all)"
+    echo "  zap          - Complete cleanup (discard + purge)"
+    echo "  zap-all      - Complete cleanup of entire repo"
+    exit 1
+    ;;
+esac
