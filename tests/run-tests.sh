@@ -3,6 +3,15 @@
 
 set -euo pipefail
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get the project root (parent of tests/ if we're in tests/, otherwise current dir)
+if [[ "$(basename "$SCRIPT_DIR")" == "tests" ]]; then
+  PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+else
+  PROJECT_ROOT="$SCRIPT_DIR"
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -51,13 +60,14 @@ check_helpers() {
 
 # Activate Hug
 activate_hug() {
-  if [[ -f "git-config/activate" ]]; then
+  local activate_script="$PROJECT_ROOT/git-config/activate"
+  if [[ -f "$activate_script" ]]; then
     # shellcheck source=/dev/null
-    source git-config/activate
+    source "$activate_script"
     echo -e "${GREEN}✓ Hug activated${NC}"
   else
-    echo -e "${YELLOW}⚠ Warning: git-config/activate not found${NC}"
-    echo "Make sure you're running this from the project root"
+    echo -e "${YELLOW}⚠ Warning: $activate_script not found${NC}"
+    echo "Make sure you're running this from the project root or tests directory"
   fi
 }
 
@@ -65,6 +75,11 @@ activate_hug() {
 run_tests() {
   local test_path="${1:-tests/}"
   local extra_args=("${@:2}")
+  
+  # If test_path is relative and we're not in project root, make it absolute
+  if [[ ! "$test_path" =~ ^/ ]]; then
+    test_path="$PROJECT_ROOT/$test_path"
+  fi
   
   echo ""
   echo -e "${GREEN}Running tests: $test_path${NC}"

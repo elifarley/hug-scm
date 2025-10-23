@@ -87,24 +87,43 @@ brew install bats-assert bats-file bats-support
 
 ### Running Tests
 
+Using Make (recommended):
 ```bash
 # Check prerequisites
-./run-tests.sh --check
+make test-check
 
 # Run all tests
-./run-tests.sh
+make test
 
-# Run specific test suite
-./run-tests.sh tests/unit/test_status_staging.bats
+# Run only unit tests
+make test-unit
+
+# Run only integration tests
+make test-integration
 
 # Run with verbose output
-./run-tests.sh -v
+make test-verbose
+```
+
+Or use the test script directly:
+```bash
+# Check prerequisites
+./tests/run-tests.sh --check
+
+# Run all tests
+./tests/run-tests.sh
+
+# Run specific test suite
+./tests/run-tests.sh tests/unit/test_status_staging.bats
+
+# Run with verbose output
+./tests/run-tests.sh -v
 
 # Run tests matching a pattern
-./run-tests.sh -f "hug s"
+./tests/run-tests.sh -f "hug s"
 
 # Run tests in parallel
-./run-tests.sh -j 4
+./tests/run-tests.sh -j 4
 ```
 
 ## Test Structure
@@ -332,33 +351,40 @@ Verify safety mechanisms:
 
 **All tests:**
 ```bash
-./run-tests.sh
+make test
+# or
+./tests/run-tests.sh
 ```
 
 **Specific suite:**
 ```bash
-./run-tests.sh tests/unit/
-./run-tests.sh tests/integration/
+make test-unit
+make test-integration
+# or
+./tests/run-tests.sh tests/unit/
+./tests/run-tests.sh tests/integration/
 ```
 
 **Specific file:**
 ```bash
-./run-tests.sh tests/unit/test_status_staging.bats
+./tests/run-tests.sh tests/unit/test_status_staging.bats
 ```
 
 **Single test:**
 ```bash
-./run-tests.sh -f "hug s shows status"
+./tests/run-tests.sh -f "hug s shows status"
 ```
 
 **Verbose output:**
 ```bash
-./run-tests.sh -v
+make test-verbose
+# or
+./tests/run-tests.sh -v
 ```
 
 **Parallel execution:**
 ```bash
-./run-tests.sh -j 4
+./tests/run-tests.sh -j 4
 ```
 
 ### Direct BATS Commands
@@ -424,7 +450,7 @@ To add test coverage reporting or other checks:
 
 - Use `setup_file()` for expensive one-time setup
 - Create minimal test repositories
-- Run tests in parallel: `./run-tests.sh -j 4`
+- Run tests in parallel: `./tests/run-tests.sh -j 4`
 - Focus tests on specific behaviors (faster than broad tests)
 
 ### Code Review Checklist
@@ -482,7 +508,7 @@ source git-config/activate
 
 **Enable verbose output:**
 ```bash
-./run-tests.sh -v tests/unit/test_status_staging.bats
+./tests/run-tests.sh -v tests/unit/test_status_staging.bats
 ```
 
 **Add debugging to tests:**
@@ -516,7 +542,7 @@ teardown() {
 
 **Run single test:**
 ```bash
-./run-tests.sh -f "exact test name"
+./tests/run-tests.sh -f "exact test name"
 ```
 
 ### Common Issues

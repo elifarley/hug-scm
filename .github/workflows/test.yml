@@ -42,9 +42,7 @@ jobs:
           git --version
           
       - name: Install Hug SCM
-        run: |
-          ./install.sh
-          source git-config/activate
+        run: make install
           
       - name: Verify Hug installation
         run: |
@@ -52,18 +50,16 @@ jobs:
           which hug
           hug help
           
+      - name: Check test prerequisites
+        run: make test-check
+          
       - name: Run unit tests
-        run: |
-          source git-config/activate
-          bats --tap tests/unit/
+        run: make test-unit
           
       - name: Run integration tests
-        run: |
-          source git-config/activate
-          bats --tap tests/integration/
+        run: make test-integration
           
       - name: Run all tests with verbose output
         if: failure()
-        run: |
-          source git-config/activate
-          bats --verbose-run --print-output-on-failure tests/
+        run: make test-verbose
+
