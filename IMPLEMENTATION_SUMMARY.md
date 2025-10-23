@@ -68,16 +68,32 @@ GitHub Actions workflow that:
 
 ### 5. Developer Tools
 
-**File**: `run-tests.sh` (executable, 4.3KB)
+**File**: `Makefile`
 
-Convenience script for local testing:
+Build automation with elegant help system:
 ```bash
-./run-tests.sh                    # Run all tests
-./run-tests.sh --unit             # Run only unit tests
-./run-tests.sh -v                 # Verbose output
-./run-tests.sh -f "pattern"       # Filter tests
-./run-tests.sh -j 4               # Parallel execution
-./run-tests.sh --check            # Check prerequisites
+make help                # Display all targets
+make test                # Run all tests
+make test-unit           # Run unit tests
+make test-integration    # Run integration tests
+make test-verbose        # Run with verbose output
+make test-check          # Check prerequisites
+make docs-dev            # Start docs dev server
+make docs-build          # Build documentation
+make install             # Install Hug SCM
+make clean               # Clean build artifacts
+```
+
+**File**: `tests/run-tests.sh` (executable, 4.3KB)
+
+Test runner script (also callable via Makefile):
+```bash
+./tests/run-tests.sh                    # Run all tests
+./tests/run-tests.sh --unit             # Run only unit tests
+./tests/run-tests.sh -v                 # Verbose output
+./tests/run-tests.sh -f "pattern"       # Filter tests
+./tests/run-tests.sh -j 4               # Parallel execution
+./tests/run-tests.sh --check            # Check prerequisites
 ```
 
 ### 6. Comprehensive Documentation
@@ -242,7 +258,7 @@ The foundation is laid for:
 
 ## Files Created/Modified
 
-### New Files (10)
+### New Files (11)
 1. `docs/architecture/ADR-001-automated-testing-strategy.md` - Decision document
 2. `.github/workflows/test.yml` - CI workflow
 3. `tests/test_helper.bash` - Test utilities
@@ -252,7 +268,8 @@ The foundation is laid for:
 7. `tests/integration/test_workflows.bats` - Integration tests
 8. `tests/README.md` - Test suite documentation
 9. `TESTING.md` - Testing guide
-10. `run-tests.sh` - Test runner script
+10. `tests/run-tests.sh` - Test runner script
+11. `Makefile` - Build automation with elegant help
 
 ### Modified Files (1)
 1. `README.md` - Added Testing section
@@ -270,7 +287,9 @@ brew tap kaos/shell
 brew install bats-assert bats-file bats-support
 
 # Run tests
-./run-tests.sh
+make test
+# or
+./tests/run-tests.sh
 ```
 
 ## Conclusion

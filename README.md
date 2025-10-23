@@ -419,14 +419,17 @@ Hug SCM uses [BATS (Bash Automated Testing System)](https://github.com/bats-core
 
 **Running Tests:**
 ```bash
-# Install prerequisites and run all tests
-./run-tests.sh
+# Using Make (recommended)
+make test              # Run all tests
+make test-unit         # Run unit tests only
+make test-integration  # Run integration tests only
+make test-verbose      # Run with verbose output
+make test-check        # Check prerequisites
 
-# Run specific test suite
-./run-tests.sh tests/unit/test_status_staging.bats
-
-# Run with verbose output
-./run-tests.sh -v
+# Or use the test script directly
+./tests/run-tests.sh                              # Run all tests
+./tests/run-tests.sh tests/unit/test_status_staging.bats  # Run specific test
+./tests/run-tests.sh -v                           # Run with verbose output
 ```
 
 **For Contributors:**

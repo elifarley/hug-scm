@@ -86,9 +86,14 @@ Hug follows a "progressive destructiveness" approach:
 
 **Running Tests:**
 ```bash
-./run-tests.sh              # Run all tests
-./run-tests.sh <file.bats>  # Run specific test file
-./run-tests.sh --check      # Check prerequisites
+make test                      # Run all tests (recommended)
+make test-unit                 # Run unit tests only
+make test-integration          # Run integration tests only
+make test-check                # Check prerequisites
+# or use the test script directly:
+./tests/run-tests.sh              # Run all tests
+./tests/run-tests.sh <file.bats>  # Run specific test file
+./tests/run-tests.sh --check      # Check prerequisites
 ```
 
 **Writing Tests:**
@@ -164,7 +169,7 @@ npm run docs:preview  # Preview production build
 
 5. **Test thoroughly**:
    ```bash
-   ./run-tests.sh
+   make test
    ```
 
 ### Modifying Existing Commands
