@@ -28,6 +28,8 @@ These are top-level commands defined as Git aliases. Complete them as static wor
 - `l [git-log-opts]`: `log --oneline --graph --decorate --color`. Args: Git log options.
 - `ll [git-log-opts]`: `log --graph --pretty=log1 --date=short`. Args: Git log options.
 - `la [git-log-opts]`: Log all branches. Args: Git log options.
+- `lo`: Log outgoing changes (quiet mode, alias for `log-outgoing --quiet`). No args.
+- `lol`: Log outgoing changes (verbose mode, alias for `log-outgoing`). No args.
 - `llf <file> [-p] [git-log-opts]`: Log commits to a file (with optional patches). Args: `<file>` (required), `[-p]` (show patches), Git log options.
 - `llfp <file> [git-log-opts]`: Log file with patches. Args: `<file>` (required), Git log options.
 - `llfs <file> [git-log-opts]`: Log file stats. Args: `<file>` (required), Git log options.
@@ -62,12 +64,16 @@ These map to custom scripts (see Section 2).
 - `undo [<n|commit>]`: Mixed reset back. Args: as above.
 - `rollback [<n|commit>]`: Keep reset back. Args: as above.
 - `rewind [<n|commit>]`: Hard reset back. Args: as above.
+- `squash [<n|commit>]`: Squash commits into one. Args: `[<n|commit>]` (optional, default 2).
+- `files [<n|commit>]`: Preview files in commits. Args: `[<n|commit>]` (optional, default 1).
 
 ### Working Directory (w*)
 These map to custom scripts (see Section 2).
-- `w-backup [-m <message>]`: Stash changes. Args: `[-m <message>]` (optional).
-- `wip`: Commit as WIP. No args.
-- `unwip`: Undo WIP commit. No args.
+- `wip "<message>"`: Park changes on new WIP branch. Args: `"<message>"` (required). Options: `--stay` to remain on WIP branch.
+- `wips "<message>"`: Alias for `wip --stay`. Args: `"<message>"` (required).
+- `unwip [<wip-branch>]`: Unpark WIP branch. Args: `[<wip-branch>]` (optional, interactive picker if omitted). Options: `--no-squash`, `-f|--force`.
+- `wipdel [<wip-branch>]`: Delete WIP branch (no integration). Args: `[<wip-branch>]` (optional). Options: `-f|--force`.
+- `get <commit> [files...]`: Get files from commit. Args: `<commit>` (required), `[files...]` (optional).
 
 ### Commits (c*)
 - `ca`: Commit all tracked. No args.
@@ -75,23 +81,12 @@ These map to custom scripts (see Section 2).
 - `cma`: Amend last (all tracked). No args.
 - `cii`: Interactive stage + commit. No args.
 - `cim`: Interactive add + status + commit. No args.
-- `o`: Outgoing changes. No args.
+- `o`: Outgoing changes (alias for `log-outgoing --quiet`). No args.
 - `cc [<commit-range>] [git-cherry-pick-opts]`: Cherry-pick with attribution. Args: `<commit-range>` (required, hash/range), Git cherry-pick options.
 - `caa`: Commit all (tracked + untracked). No args.
 
 ### Stash (s*)
-- `ssave`: Quick stash (tracked). No args.
-- `ssavea <message>`: Stash with message + untracked. Args: `<message>` (required).
-- `ssavefull`: Stash everything + ignored. No args.
 - `sls`: List stashes. No args.
-- `speak [<stash@{n}>]`: Preview stash diff. Args: `[<stash@{n}>]` (optional, default stash@{0}).
-- `sshow [<stash@{n}>]`: Summary of stash. Args: as above.
-- `sapply [<stash@{n}>]`: Apply stash (keep). Args: as above.
-- `spopf [<stash@{n}>]`: Pop stash. Args: as above.
-- `spop [<stash@{n}>]`: Interactive pop. Args: as above.
-- `sdrop [<stash@{n}>]`: Drop stash. Args: as above.
-- `sbranch <branch> [<stash@{n}>]`: Branch from stash. Args: `<branch>` (required), `[<stash@{n}>]` (optional).
-- `sclear`: Clear all stashes. No args.
 
 ### Status (s*)
 - `sl [git-status-opts]`: Status (no untracked). Args: Git status options.
@@ -130,6 +125,7 @@ These map to custom scripts (see Section 2).
 - `b <branch>`: Switch branch. Args: `<branch>` (required).
 - `bs`: Switch to previous. No args.
 - `bl`: List local branches. No args.
+- `bll`: List local branches (enhanced). No args.
 - `bla`: List all branches. No args.
 - `blr`: List remote branches. No args.
 - `bc <branch>`: Create + switch branch. Args: `<branch>` (required).
@@ -171,10 +167,13 @@ These are top-level commands backed by executable scripts (`git-*` in `bin/`). C
 
 ### h (HEAD operations, via git-h)
 Subcommands:
-- `back [<n|commit>]`: Soft reset (keep staged). Args: `[<n|commit>]` (optional). Options: `-h|--help`.
+- `back [<n|commit>]`: Soft reset (keep staged). Args: `[<n|commit>]` (optional). Options: `-u|--upstream`, `-h|--help`, `--force`, `--quiet`.
 - `undo [<n|commit>]`: Mixed reset (keep unstaged). Args: as above. Options: as above.
 - `rollback [<n|commit>]`: Keep reset (lose commit changes, preserve local). Args: as above. Options: as above.
 - `rewind [<n|commit>]`: Hard reset (destructive). Args: as above. Options: as above.
+- `squash [<n|commit>]`: Squash commits into one. Args: `[<n|commit>]` (optional, default 2). Options: `-u|--upstream`, `-h|--help`, `--force`, `--quiet`.
+- `files [<n|commit>]`: Preview files in commits. Args: `[<n|commit>]` (optional, default 1). Options: `-u|--upstream`, `--quiet`, `--stat`.
+- `steps <file>`: Count steps back to file change. Args: `<file>` (required). Options: `--raw`, `--quiet`.
 
 ### w (Working Directory, via git-w)
 Subcommands (gateway to specific scripts):
@@ -186,10 +185,11 @@ Subcommands (gateway to specific scripts):
 - `wipe-all [options]`: Repo-wide wipe. No positional args. Options: as wipe.
 - `zap [options] <paths...>` (via git-w-zap): Full reset (wipe + purge). Args: `<paths...>` (required). Options: `--dry-run`, `-h|--help`.
 - `zap-all [options]`: Repo-wide zap. No positional args. Options: `--dry-run`, `-f|--force`, `-h|--help`.
-- `backup [-m <message>]`: Stash safely. Args: none. Options: `-m|--message <message>`, `-h|--help`.
-- `restore`: Not implemented in provided files (placeholder for stash apply).
+- `wip [options] "<message>"`: Park changes on new WIP branch. Args: `"<message>"` (required). Options: `--stay`, `-h|--help`.
+- `wips "<message>"`: Alias for `wip --stay` (parks and stays on WIP branch). Args: `"<message>"` (required).
+- `unwip [options] [<wip-branch>]`: Unpark WIP branch. Args: `[<wip-branch>]` (optional, interactive if omitted). Options: `-f|--force`, `--no-squash`, `-h|--help`.
+- `wipdel [options] [<wip-branch>]`: Delete WIP branch (no integration). Args: `[<wip-branch>]` (optional, interactive if omitted). Options: `-f|--force`, `-h|--help`.
 - `get <commit> [files...]`: Get files from commit. Args: `<commit>` (required), `[files...]` (optional; if none, all files). No options (use `-h` for help).
-- `changes`: Alias for `sx` (working summary). No args.
 
 ### c (Commit, via git-c)
 - `c [git-commit-opts]`: Commit staged. No positional args. Options: Pass-through to `git commit` (e.g., `-m <msg>`, `-v`), plus `-h|--help`.
@@ -223,6 +223,12 @@ Subcommands (gateway to specific scripts):
 
 ### remote2ssh (Remote Switch, via git-remote2ssh)
 - `remote2ssh [<remote>]`: Switch to SSH URL. Args: `[<remote>]` (optional, default origin). No options.
+
+### bll (Branch List Enhanced, via git-bll)
+- `bll`: List local branches with enhanced formatting. No args/options.
+
+### log-outgoing (Outgoing Changes, via git-log-outgoing)
+- `log-outgoing [options]`: Show commits not yet pushed to upstream. Options: `--quiet`, `--fetch`, `-h|--help`.
 
 ### hughelp (Help, via git-hughelp)
 - `hughelp [<prefix>]`: Smart help for prefix. Args: `[<prefix>]` (optional). No options.
