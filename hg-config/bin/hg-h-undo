@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# hug h undo: Uncommit and discard changes
+
+show_help() {
+  cat <<'EOF'
+hug h undo: Uncommit last changeset(s) and discard changes.
+
+USAGE:
+  hug h undo [N]
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  Moves HEAD back by uncommitting the last changeset(s).
+  Changes are discarded (not kept in working directory).
+  
+  This is equivalent to uncommit + revert.
+  Requires the 'evolve' extension.
+
+ARGUMENTS:
+  N              Number of changesets to undo (default: 1)
+
+EXAMPLES:
+  hug h undo      # Undo last changeset
+  hug h undo 3    # Undo last 3 changesets
+
+WARNING:
+  This discards changes permanently!
+
+SEE ALSO:
+  hug h back : Uncommit but keep changes
+EOF
+}
+
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
+  exit
+}
+
+check_hg_repo
+ensure_extension_enabled "evolve"
+
+# Get number of changesets to undo (default 1)
+count="${1:-1}"
+
+if ! [[ "$count" =~ ^[1-9][0-9]*$ ]]; then
+  error "Invalid count: $count (must be a positive integer)"
+fi
+
+# Confirm action
+printf "${RED}⚠️  Warning: This will uncommit and DISCARD changes!${NC}\n"
+printf "About to undo last $count changeset(s).\n\n"
+if [[ $count -eq 1 ]]; then
+  hg log -r . --template 'Changeset: {rev}:{node|short} {desc|firstline}\n'
+else
+  printf "Affected changesets:\n"
+  hg log -r ".~$((count-1)):." --template '{rev}:{node|short} {desc|firstline}\n'
+fi
+
+prompt_confirm "Proceed? [y/N]: "
+
+# First uncommit
+for ((i=0; i<count; i++)); do
+  if ! hg uncommit; then
+    error "Failed to uncommit (iteration $((i+1)))"
+  fi
+done
+
+# Then revert to discard changes
+if ! hg revert --all --no-backup; then
+  error "Failed to discard changes after uncommit"
+fi
+
+success "Successfully undone $count changeset(s). Changes discarded."

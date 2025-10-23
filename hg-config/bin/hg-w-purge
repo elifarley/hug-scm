@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite - Mercurial version
+
+show_help() {
+  cat <<'EOF'
+hug w purge: Remove untracked files from specific paths.
+
+USAGE:
+  hug w purge [options] [paths...]
+
+OPTIONS:
+  -u, --untracked   Remove untracked files (default)
+  -i, --ignored     Remove ignored files instead
+  --dry-run         Preview without removing
+  -f, --force       Skip confirmation prompt
+  -h, --help        Show this help message and exit.
+
+DESCRIPTION:
+  Removes untracked and/or ignored files from the repository.
+  Requires the 'purge' extension to be enabled.
+
+EXAMPLES:
+  hug w purge               # Remove untracked files
+  hug w purge -i            # Remove ignored files
+  hug w purge --dry-run     # Preview files to be removed
+  hug w purge src/          # Remove untracked files in src/
+
+SEE ALSO:
+  hug w purge-all : Remove untracked files from entire repository
+EOF
+}
+
+# Parse arguments
+untracked=true
+ignored=false
+dry_run=false
+force=false
+paths=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -u|--untracked)
+      untracked=true
+      shift
+      ;;
+    -i|--ignored)
+      ignored=true
+      untracked=false
+      shift
+      ;;
+    -f|--force)
+      force=true
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    *)
+      paths+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Set HUG_FORCE if needed
+if [[ $force == true ]]; then
+  export HUG_FORCE=true
+fi
+
+# Early exit if not in Mercurial repo
+check_hg_repo
+
+# Build purge arguments
+purge_args=()
+$untracked && purge_args+=(--untracked)
+$ignored && purge_args+=(--ignored)
+$dry_run && purge_args+=(--dry-run)
+[[ ${#paths[@]} -gt 0 ]] && purge_args+=("${paths[@]}")
+
+# Confirm action unless forced or dry-run
+if [[ $force != true && $dry_run != true ]]; then
+  printf "${YELLOW}⚠️  Warning: This will permanently remove files!${NC}\n"
+  prompt_confirm "Proceed? [y/N]: "
+fi
+
+# Purge files
+purge_files "${purge_args[@]}"

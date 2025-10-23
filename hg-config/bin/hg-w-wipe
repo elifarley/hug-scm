@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# hug w wipe - Discard changes (alias for discard)
+set -euo pipefail
+exec hg w-discard "$@"

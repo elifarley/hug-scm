@@ -1,0 +1,422 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-HG-KIT: Mercurial-specific operations library
+#
+# This library provides high-level functions for Mercurial operations including:
+# - Repository and changeset validation
+# - Working directory state management
+# - File change operations (revert, purge)
+# - Branch/bookmark information and navigation
+# - Changeset history analysis
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
+
+################################################################################
+# Mercurial Repository Validation Functions
+################################################################################
+
+# Checks if current directory is within a Mercurial repository
+# Usage: check_hg_repo
+# Exits:
+#   With error if not in a Mercurial repository
+check_hg_repo() {
+    if ! hg root >/dev/null 2>&1; then
+        error "Not in a Mercurial repository"
+    fi
+}
+
+################################################################################
+# Changeset Validation Functions
+################################################################################
+
+# Validates that a changeset reference exists
+# Usage: validate_changeset "changeset-ref"
+# Parameters:
+#   $1 - Changeset reference to validate (revision number, hash, bookmark, tag)
+# Exits:
+#   With error if changeset does not exist
+validate_changeset() {
+    local changeset="$1"
+    if ! hg log -r "$changeset" >/dev/null 2>&1; then
+        error "Changeset '$changeset' does not exist"
+    fi
+}
+
+# Ensures a reference can be resolved to a changeset
+# Usage: ensure_changeset_exists "ref"
+# Parameters:
+#   $1 - Reference to validate (revision, hash, bookmark, tag, etc.)
+# Exits:
+#   With error if reference is empty or cannot be resolved to a changeset
+ensure_changeset_exists() {
+    local ref="${1:-}"
+    if [[ -z "$ref" ]]; then
+        error "Reference is required."
+    fi
+
+    if ! hg log -r "$ref" >/dev/null 2>&1; then
+        error "Unable to resolve reference '$ref' to a changeset."
+    fi
+}
+
+################################################################################
+# Working Directory State Functions
+################################################################################
+
+# Checks if there are any pending changes (modified, added, removed, untracked)
+# Usage: if has_pending_changes; then ...; fi
+# Returns:
+#   0 if there are pending changes, 1 if working directory is clean
+has_pending_changes() {
+    hg status | grep -q '.'
+}
+
+# Checks if working directory is clean (no uncommitted changes)
+# Usage: check_working_dir_clean
+# Exits:
+#   With error if there are uncommitted changes
+#   Error message includes counts and suggested solutions
+check_working_dir_clean() {
+    if hg status -mard | grep -q '.'; then
+        local modified_count added_count removed_count
+        modified_count=$(hg status -m | wc -l | awk '{print $1}')
+        added_count=$(hg status -a | wc -l | awk '{print $1}')
+        removed_count=$(hg status -r | wc -l | awk '{print $1}')
+
+        error "Working directory is not clean!
+       Modified files: $modified_count
+       Added files: $added_count
+       Removed files: $removed_count
+
+       Solutions:
+       • Use 'hug w discard-all' to discard changes
+       • Use 'hug w discard <file>' for specific files
+       • Commit your changes with 'hug c'"
+    fi
+}
+
+################################################################################
+# Changeset History Navigation Functions
+################################################################################
+
+# Resolves a parent target from user input
+# Usage: target=$(resolve_parent_target "arg" ["default"])
+# Parameters:
+#   $1 - User argument (empty, number 1-999, or changeset reference)
+#   $2 - (Optional) Default target if arg is empty, defaults to "."
+# Output:
+#   Resolved changeset reference to stdout
+# Examples:
+#   resolve_parent_target "" -> "."
+#   resolve_parent_target "3" -> ".~3"
+#   resolve_parent_target "abc123" -> "abc123"
+resolve_parent_target() {
+    local arg="${1:-}"
+    local default_target="${2:-.}"
+
+    if [[ -z "$arg" ]]; then
+        printf '%s\n' "$default_target"
+    elif [[ "$arg" =~ ^[1-9][0-9]{0,2}$ ]]; then
+        printf '.~%s\n' "$arg"
+    else
+        printf '%s\n' "$arg"
+    fi
+}
+
+################################################################################
+# File State Checking Functions
+################################################################################
+
+# Checks if a file exists in a specific changeset
+# Usage: check_file_in_changeset "changeset" "file"
+# Parameters:
+#   $1 - Changeset reference
+#   $2 - File path
+# Exits:
+#   With error if file does not exist in the specified changeset
+check_file_in_changeset() {
+    local changeset="$1"
+    local file="$2"
+    if ! hg cat -r "$changeset" "$file" >/dev/null 2>&1; then
+        error "File '$file' does not exist in changeset $changeset"
+    fi
+}
+
+################################################################################
+# Discard Operations - Revert Changes
+################################################################################
+
+# Discards all uncommitted changes in the repository
+# Usage: discard_all_uncommitted_changes [--dry-run]
+# Parameters:
+#   $1 - (Optional) --dry-run flag for preview mode
+# Effects:
+#   Reverts working directory to parent changeset
+# Output:
+#   Status message and list of affected files
+discard_all_uncommitted_changes() {
+    local dry_run=false
+    if [[ "${1:-}" == "--dry-run" ]]; then
+        dry_run=true
+    fi
+
+    # Ensure we're in a Mercurial repo
+    check_hg_repo
+
+    # Collect unique affected files: modified, added, removed
+    local -a affected_files=()
+    mapfile -t affected_files < <(hg status -mard --no-status 2>/dev/null || true)
+    dedupe_array affected_files
+
+    if [[ ${#affected_files[@]} -eq 0 ]]; then
+        if ! $dry_run; then
+            printf 'No uncommitted changes to discard in the repository.\n'
+        fi
+        return 0
+    fi
+
+    if $dry_run; then
+        printf 'Dry run: Would discard all uncommitted changes from the following files:\n'
+        print_list '  ' "${affected_files[@]}"
+        return 0
+    fi
+
+    # Perform the full repo-wide discard (revert all)
+    if ! hg revert --all --no-backup; then
+        error "Failed to discard all uncommitted changes."
+    fi
+
+    printf 'Successfully discarded all uncommitted changes in the repository.\n'
+    print_list 'Affected files:' "${affected_files[@]}"
+    return 0
+}
+
+# Discards uncommitted changes for specific paths
+# Usage: discard_uncommitted_changes array_name [--dry-run]
+# Parameters:
+#   $1 - Name of array containing paths (nameref)
+#   $2 - (Optional) --dry-run flag for preview mode
+# Effects:
+#   Reverts working directory to parent changeset for specified paths
+# Output:
+#   List of affected paths
+discard_uncommitted_changes() {
+    local -n target_files_ref="$1"
+    local dry_run=false
+    if [[ "${2:-}" == "--dry-run" ]]; then
+        dry_run=true
+    fi
+
+    # Ensure we're in a Mercurial repo
+    check_hg_repo
+
+    if [[ ${#target_files_ref[@]} -eq 0 ]]; then
+        if ! $dry_run; then
+            printf 'No uncommitted changes to discard for the specified paths.\n'
+        fi
+        return 0
+    fi
+
+    if $dry_run; then
+        printf 'Dry run: Would discard all uncommitted changes from the following paths:\n'
+        print_list '  ' "${target_files_ref[@]}"
+        return 0
+    fi
+
+    # Perform the full discard for specified paths
+    if ! hg revert --no-backup -- "${target_files_ref[@]}"; then
+        error "Failed to discard uncommitted changes for the specified paths."
+    fi
+
+    print_list 'Discarded all uncommitted changes from' "${target_files_ref[@]}"
+    return 0
+}
+
+################################################################################
+# Purge Operations - Remove Untracked Files
+################################################################################
+
+# Removes untracked and/or ignored files from the repository
+# Usage: purge_files [--untracked] [--ignored] [--dry-run] [paths...]
+# Parameters:
+#   --untracked - Remove untracked files (default)
+#   --ignored   - Remove ignored files
+#   --dry-run   - Preview without removing
+#   paths       - Specific paths to purge (default: all)
+# Effects:
+#   Removes untracked/ignored files based on options
+# Output:
+#   List of removed files
+# Note:
+#   Requires the 'purge' extension to be enabled
+purge_files() {
+    local untracked=true
+    local ignored=false
+    local dry_run=false
+    local -a paths=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --untracked)
+                untracked=true
+                shift
+                ;;
+            --ignored)
+                ignored=true
+                shift
+                ;;
+            --dry-run)
+                dry_run=true
+                shift
+                ;;
+            *)
+                paths+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    check_hg_repo
+
+    # Build purge command
+    local -a cmd=(hg purge)
+    
+    if $dry_run; then
+        cmd+=(--print)
+    fi
+
+    if $ignored && ! $untracked; then
+        cmd+=(--ignored)
+    elif $untracked && $ignored; then
+        cmd+=(--all)
+    fi
+    # else: default behavior (untracked only)
+
+    if [[ ${#paths[@]} -gt 0 ]]; then
+        cmd+=("${paths[@]}")
+    fi
+
+    # Check if purge extension is available
+    if ! hg help purge >/dev/null 2>&1; then
+        error "The 'purge' extension is not enabled.
+       Add to your ~/.hgrc:
+       [extensions]
+       purge ="
+    fi
+
+    if $dry_run; then
+        printf 'Dry run: Would remove the following files:\n'
+    fi
+
+    "${cmd[@]}"
+}
+
+################################################################################
+# Branch/Bookmark Information Functions
+################################################################################
+
+# Gets the current bookmark or branch name
+# Usage: current=$(get_current_branch)
+# Output:
+#   Current bookmark (if any) or branch name to stdout
+get_current_branch() {
+    # Try to get current bookmark first
+    local bookmark
+    bookmark=$(hg bookmark --active 2>/dev/null | awk '{print $1}')
+    
+    if [[ -n "$bookmark" ]]; then
+        printf '%s\n' "$bookmark"
+    else
+        # Fall back to branch name
+        hg branch 2>/dev/null
+    fi
+}
+
+# Lists local bookmarks with details
+# Usage: list_bookmarks
+# Output:
+#   Formatted list of bookmarks to stdout
+list_bookmarks() {
+    check_hg_repo
+    
+    if ! hg bookmarks 2>/dev/null | grep -q '.'; then
+        printf 'No bookmarks found.\n'
+        return 0
+    fi
+    
+    hg bookmarks
+}
+
+# Lists branches with details
+# Usage: list_branches
+# Output:
+#   Formatted list of branches to stdout
+list_branches() {
+    check_hg_repo
+    hg branches
+}
+
+################################################################################
+# Changeset Range Analysis Functions
+################################################################################
+
+# Counts changesets in a range
+# Usage: count=$(count_changesets_in_range "start" "end")
+# Parameters:
+#   $1 - Start changeset (exclusive)
+#   $2 - End changeset (inclusive)
+# Output:
+#   Number of changesets in range to stdout
+count_changesets_in_range() {
+    local start="$1"
+    local end="$2"
+
+    hg log -r "$start::$end" --template '.\n' 2>/dev/null | wc -l | awk '{print $1}'
+}
+
+# Prints a list of changesets in a given range
+# Usage: print_changeset_list_in_range "start" "end"
+# Parameters:
+#   $1 - Start changeset (exclusive)
+#   $2 - End changeset (inclusive)
+# Output:
+#   Formatted changeset list to stdout
+print_changeset_list_in_range() {
+    local start="$1"
+    local end="$2"
+
+    hg log -r "$start::$end" --template '{rev}:{node|short} {desc|firstline}\n'
+}
+
+################################################################################
+# Extension Check Functions
+################################################################################
+
+# Checks if a Mercurial extension is enabled
+# Usage: if check_extension_enabled "evolve"; then ...; fi
+# Parameters:
+#   $1 - Extension name
+# Returns:
+#   0 if extension is enabled, 1 otherwise
+check_extension_enabled() {
+    local ext="$1"
+    hg help "$ext" >/dev/null 2>&1
+}
+
+# Ensures a required extension is enabled
+# Usage: ensure_extension_enabled "evolve"
+# Parameters:
+#   $1 - Extension name
+# Exits:
+#   With error if extension is not enabled
+ensure_extension_enabled() {
+    local ext="$1"
+    if ! check_extension_enabled "$ext"; then
+        error "The '$ext' extension is not enabled.
+       Add to your ~/.hgrc:
+       [extensions]
+       $ext ="
+    fi
+}

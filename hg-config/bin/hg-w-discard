@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite - Mercurial version
+
+show_help() {
+  cat <<'EOF'
+hug w discard: Discard changes in specific files.
+
+USAGE:
+  hug w discard <file>...
+
+OPTIONS:
+  --dry-run      Preview without making changes
+  -f, --force    Skip confirmation prompt
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  Reverts specified files to their state in the parent changeset,
+  discarding all local modifications.
+
+EXAMPLES:
+  hug w discard file.txt           # Discard changes to file.txt
+  hug w discard src/*.py           # Discard changes to Python files
+  hug w discard --dry-run file.txt # Preview changes
+
+SEE ALSO:
+  hug w discard-all : Discard all changes in the repository
+EOF
+}
+
+# Parse arguments
+dry_run=false
+force=false
+files=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -f|--force)
+      force=true
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    *)
+      files+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Set HUG_FORCE if needed
+if [[ $force == true ]]; then
+  export HUG_FORCE=true
+fi
+
+# Early exit if not in Mercurial repo
+check_hg_repo
+
+if [ ${#files[@]} -eq 0 ]; then
+  error "At least one file must be specified"
+fi
+
+if $dry_run; then
+  printf 'Dry run: Would discard changes from the following files:\n'
+  print_list '  ' "${files[@]}"
+  exit 0
+fi
+
+# Confirm action unless forced
+if [[ $force != true ]]; then
+  printf 'About to discard changes from the following files:\n'
+  print_list '  ' "${files[@]}"
+  prompt_confirm "Proceed? [y/N]: "
+fi
+
+# Discard changes
+discard_uncommitted_changes files

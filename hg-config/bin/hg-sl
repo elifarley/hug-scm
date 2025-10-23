@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# hug sl: Status without untracked files
+set -euo pipefail
+exec hg status -mard "$@"

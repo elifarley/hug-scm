@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite - Mercurial version
+
+show_help() {
+  cat <<'EOF'
+hug a: Add files to be committed, or prepare tracked files if none specified.
+
+USAGE:
+  hug a           # Prepare all tracked files (updates only)
+  hug a <file>    # Add specific files
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  In Mercurial, this marks files as ready to commit.
+  Without arguments, prepares all modified tracked files.
+  With arguments, adds specified files (including untracked).
+
+SEE ALSO:
+  hug aa: Add everything (tracked + untracked + removals)
+EOF
+}
+
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
+  exit
+}
+
+# Early exit if not in Mercurial repo
+check_hg_repo
+
+if [ $# -eq 0 ]; then
+  # Just show status for modified files (Mercurial doesn't have staging)
+  hg status -m
+else
+  # Add specific files
+  hg add "$@"
+fi

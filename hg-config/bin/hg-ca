@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# hug ca: Commit all tracked changes (same as c in Mercurial)
+set -euo pipefail
+exec hg commit "$@"
