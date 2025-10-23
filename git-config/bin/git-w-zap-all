@@ -70,6 +70,7 @@ run_preview() {
 }
 
 if $dry_run; then
+  printf 'Dry run: zap-all with the following effects\n'
   run_preview
   exit 0
 fi

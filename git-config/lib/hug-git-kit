@@ -755,6 +755,44 @@ discard_all_staged() {
   return 0
 }
 
+# Helper function to handle dry-run confirmation pattern
+# Usage: handle_dry_run_confirmation dry_run message
+# Parameters:
+#   $1 - Boolean flag indicating if it's a dry run
+#   $2 - Message to display for confirmation
+# Returns:
+#   0 if operation should proceed, exits if cancelled
+handle_dry_run_confirmation() {
+  local dry_run=$1
+  local message=$2
+  
+  if $dry_run; then
+    printf 'Dry run: %s\n' "$message"
+    exit 0
+  fi
+}
+
+# Helper function to check if there are no changes to process
+# Usage: check_no_changes count message [dry_run]
+# Parameters:
+#   $1 - Count of items to check
+#   $2 - Message to display when there are no changes
+#   $3 - Optional dry_run flag
+# Returns:
+#   0 if there are changes, exits if no changes (unless dry_run)
+check_no_changes() {
+  local count=$1
+  local message=$2
+  local dry_run=${3:-false}
+  
+  if [[ $count -eq 0 ]]; then
+    if ! $dry_run; then
+      printf '%s\n' "$message"
+    fi
+    exit 0
+  fi
+}
+
 ################################################################################
 # Branch Information Functions
 ################################################################################

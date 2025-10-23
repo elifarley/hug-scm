@@ -74,7 +74,9 @@ reset_all_files() {
 
     commit_short=$(git rev-parse --short "$commit")
 
-    printf "Will reset ALL files to commit %s (%s)\n" "$commit" "$commit_short" >&2
+    if ! $force; then
+        printf "Will reset ALL files to commit %s (%s)\n" "$commit" "$commit_short" >&2
+    fi
 
     # Calculate all files that will be affected by the reset
     local -a changed_files deleted_files added_files

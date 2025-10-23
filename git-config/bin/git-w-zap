@@ -12,6 +12,7 @@ Usage: hug w zap [OPTIONS] <path> [<path>...]
 Wipe tracked changes and purge untracked / ignored files for the specified paths.
 
 Options:
+  -f, --force      Skip confirmation prompts
       --dry-run    Show what would be affected without applying changes
   -h, --help       Show this help
 
@@ -24,10 +25,15 @@ Semantics:
 EOF
 }
 
+force=false
 dry_run=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -f|--force)
+      force=true
+      shift
+      ;;
     --dry-run)
       dry_run=true
       shift
@@ -75,11 +81,13 @@ paths=("$@")
 
 wipe_cmd=(hug w wipe)
 $dry_run && wipe_cmd+=(--dry-run)
+$force && wipe_cmd+=(-f)
 wipe_cmd+=(-- "${paths[@]}")
 "${wipe_cmd[@]}"
 
 purge_cmd=(hug w purge)
 $dry_run && purge_cmd+=(--dry-run)
+$force && purge_cmd+=(-f)
 purge_cmd+=(-u -i -- "${paths[@]}")
 "${purge_cmd[@]}"
 

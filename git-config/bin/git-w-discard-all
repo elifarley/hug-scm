@@ -77,45 +77,45 @@ fi
 
 check_git_repo
 
-if $dry_run || ! $force; then
-  declare -a unstaged_paths=() staged_paths=()
-  empty=true
-  if $target_unstaged; then
-    mapfile -t unstaged_paths < <(git diff --name-only 2>/dev/null || true)
-    dedupe_array unstaged_paths
-    [[ ${#unstaged_paths[@]} -gt 0 ]] && empty=false
-  fi
-  if $target_staged; then
-    mapfile -t staged_paths < <(git diff --cached --name-only 2>/dev/null || true)
-    dedupe_array staged_paths
-    [[ ${#staged_paths[@]} -gt 0 ]] && empty=false
-  fi
-  if $empty; then
-    printf 'Working tree already clean for the selected scope.\n'
-    exit 0
-  fi
+# Check for changes and handle dry run
+declare -a unstaged_paths=() staged_paths=()
+empty=true
+if $target_unstaged; then
+  mapfile -t unstaged_paths < <(git diff --name-only 2>/dev/null || true)
+  dedupe_array unstaged_paths
+  [[ ${#unstaged_paths[@]} -gt 0 ]] && empty=false
+fi
+if $target_staged; then
+  mapfile -t staged_paths < <(git diff --cached --name-only 2>/dev/null || true)
+  dedupe_array staged_paths
+  [[ ${#staged_paths[@]} -gt 0 ]] && empty=false
+fi
 
-  if $dry_run; then
-    printf 'Dry run: the following changes would be discarded\n'
-    if [[ ${#staged_paths[@]} -gt 0 ]]; then
-      staged_label='  Staged paths'
-      if $target_staged && ! $target_unstaged; then
-        staged_label='  Staged paths (unstaged changes in these files would be preserved)'
-      fi
-      printf '%s:\n' "$staged_label"
-      print_list '    ' "${staged_paths[@]}"
-    fi
-    if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
-      printf '  Unstaged paths:\n'
-      print_list '    ' "${unstaged_paths[@]}"
-    fi
-    if $target_staged && $target_unstaged; then
-      printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
-    fi
-    exit 0
-  fi
+handle_dry_run_confirmation $dry_run "the following changes would be discarded"
+check_no_changes $(( ${#unstaged_paths[@]} + ${#staged_paths[@]} )) "Working tree already clean for the selected scope." $dry_run
 
-  # Confirmation preview
+if $dry_run; then
+  printf 'Dry run: the following changes would be discarded\n'
+  if [[ ${#staged_paths[@]} -gt 0 ]]; then
+    staged_label='  Staged paths'
+    if $target_staged && ! $target_unstaged; then
+      staged_label='  Staged paths (unstaged changes in these files would be preserved)'
+    fi
+    printf '%s:\n' "$staged_label"
+    print_list '    ' "${staged_paths[@]}"
+  fi
+  if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
+    printf '  Unstaged paths:\n'
+    print_list '    ' "${unstaged_paths[@]}"
+  fi
+  if $target_staged && $target_unstaged; then
+    printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
+  fi
+  exit 0
+fi
+
+# Confirmation preview
+if ! $force; then
   printf '⚠ About to discard the following changes:\n'
   if [[ ${#staged_paths[@]} -gt 0 ]]; then
     staged_label='  Staged paths'
