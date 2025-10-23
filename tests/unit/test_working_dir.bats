@@ -115,16 +115,24 @@ teardown() {
 }
 
 @test "hug w zap: does complete cleanup of specific files" {
-  skip "This test needs investigation - command may prompt"
+  skip " 'echo "untracked" > untracked.txt' failed"
+  # Ensure README.md exists
+  echo "Initial content" > README.md
+  git add README.md
+  git commit -q -m "Add README.md"
+  
   # This should discard changes AND remove if untracked
   echo "Change" >> README.md
   git add README.md
   
-  run hug w zap README.md untracked.txt
+  # Create untracked file
+  echo "untracked" > untracked.txt
+  
+  run hug w zap -f README.md untracked.txt
   assert_success
   
-  # README.md should be clean
-  run git diff README.md
+  # README.md should be clean (back to committed state)
+  run git diff HEAD -- README.md
   assert_output ""
   run git diff --cached README.md
   assert_output ""
@@ -154,7 +162,6 @@ teardown() {
 }
 
 @test "hug w get: retrieves file from specific commit" {
-  skip "This test needs investigation - command may prompt or hang"
   # Create a commit with a file
   echo "Version 1" > test.txt
   git add test.txt
@@ -165,8 +172,8 @@ teardown() {
   git add test.txt
   git commit -q -m "Update test.txt"
   
-  # Get the old version
-  run hug w get HEAD~1 test.txt
+  # Get the old version using force flag to avoid prompts
+  run hug w get -f HEAD~1 test.txt
   assert_success
   
   # Should have version 1 content
