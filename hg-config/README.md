@@ -19,8 +19,6 @@ hg-config/
 │   ├── hug-common    # Symlink to common utilities (shared with git-config)
 │   └── hug-hg-kit    # Mercurial-specific operations library
 ├── .hgrc             # Mercurial configuration with Hug aliases
-├── activate          # Shell script to activate Hug for Mercurial
-└── install.sh        # Installation script
 ```
 
 ## Prerequisites
@@ -53,15 +51,6 @@ pip install --user hg-evolve
 
 ## Installation
 
-### Standalone Mercurial Support
-
-If you only want Mercurial support (without Git):
-
-```bash
-cd hg-config
-./install.sh
-```
-
 ### Combined Installation
 
 To install both Git and Mercurial support, use the main installer:
@@ -76,7 +65,7 @@ cd ..  # Go to project root
 After installation, open a new terminal or run:
 
 ```bash
-source ~/path/to/hug-scm/hg-config/activate
+source ~/path/to/hug-scm/bin/activate
 ```
 
 Navigate to a Mercurial repository and try:
@@ -184,13 +173,6 @@ bats tests/
 ```
 
 ## Troubleshooting
-
-### "hg: unknown command"
-
-Make sure the hg-config/bin directory is in your PATH:
-```bash
-export PATH="$PATH:/path/to/hug-scm/hg-config/bin"
-```
 
 ### "extension 'purge' is not enabled"
 

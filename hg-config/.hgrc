@@ -1,7 +1,7 @@
 # Hug SCM - Mercurial Configuration
 # To use: Add to your ~/.hgrc:
 # [include]
-# path = $HUG_HOME/.hgrc
+# path = $HUG_HOME/hg-config/.hgrc
 
 [ui]
 # Use Git-style diffs

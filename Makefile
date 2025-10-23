@@ -55,7 +55,7 @@ install: ## Install Hug SCM
 	@echo "$(BLUE)Installing Hug SCM...$(NC)"
 	./install.sh
 	@echo "$(GREEN)Installation complete!$(NC)"
-	@echo "Run 'source git-config/activate' to activate Hug"
+	@echo "Run 'source bin/activate' to activate Hug"
 
 deps-docs: ## Install documentation dependencies
 	@echo "$(BLUE)Installing documentation dependencies...$(NC)"

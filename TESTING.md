@@ -391,12 +391,12 @@ make test-verbose
 
 ```bash
 # Activate Hug first
-source git-config/activate
+source bin/activate
 
 # Run tests
 bats tests/
 bats --tap tests/unit/
-bats --verbose-run tests/unit/test_status_staging.bats
+bats tests/unit/test_status_staging.bats
 ```
 
 ## CI/CD Integration
@@ -485,7 +485,7 @@ brew install bats-core      # macOS
 **Problem**: `hug: command not found`
 ```bash
 # Solution: Activate Hug
-source git-config/activate
+source bin/activate
 ```
 
 ### Tests Fail Unexpectedly

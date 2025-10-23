@@ -26,8 +26,6 @@ Total: 31 files
 - `hg-config/lib/hug-hg-kit` - Mercurial-specific operations library (393 lines)
 - `hg-config/lib/hug-common` - Symlink to shared utilities
 - `hg-config/.hgrc` - Mercurial configuration with Hug aliases
-- `hg-config/activate` - Shell activation script
-- `hg-config/install.sh` - Installation script
 - `hg-config/README.md` - Comprehensive documentation
 
 #### Commands Implemented (26 total)

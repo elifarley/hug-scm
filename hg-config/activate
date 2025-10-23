@@ -1,7 +1,0 @@
-. "$HOME"/.hug-scm
-export HUG_HOME PATH="$PATH:$HUG_HOME/hg-config/bin"
-alias h=hug
-alias hg=hug
-
-# Note: Bash completion for Mercurial hug commands would go here
-# when implemented

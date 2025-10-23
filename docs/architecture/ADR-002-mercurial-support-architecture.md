@@ -175,10 +175,7 @@ hug-scm/
 │   ├── lib/
 │   │   ├── hug-common           # Common utilities
 │   │   └── hug-git-kit          # Git-specific operations
-│   ├── completions/
 │   ├── .gitconfig
-│   ├── activate
-│   └── install.sh
 ├── hg-config/
 │   ├── bin/
 │   │   ├── hg-a, hg-aa, hg-b, hg-bc, ...
@@ -188,10 +185,7 @@ hug-scm/
 │   ├── lib/
 │   │   ├── hug-common           # Symlink to git-config/lib/hug-common
 │   │   └── hug-hg-kit           # Mercurial-specific operations
-│   ├── completions/
 │   ├── .hgrc
-│   ├── activate
-│   └── install.sh
 ├── tests/
 │   ├── unit/
 │   │   ├── test_git_*.bats      # Git-specific tests

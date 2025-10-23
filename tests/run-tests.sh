@@ -61,7 +61,7 @@ check_helpers() {
 
 # Activate Hug
 activate_hug() {
-  local activate_script="$PROJECT_ROOT/git-config/activate"
+  local activate_script="$PROJECT_ROOT/bin/activate"
   if [[ -f "$activate_script" ]]; then
     # shellcheck source=/dev/null
     source "$activate_script"

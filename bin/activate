@@ -1,5 +1,5 @@
 . "$HOME"/.hug-scm
-export HUG_HOME PATH="$PATH:$HUG_HOME/bin"
+export HUG_HOME PATH="$PATH:$HUG_HOME/git-config/bin"
 alias h=hug
 alias g=hug
 
@@ -10,10 +10,10 @@ fi
 
 complete -F _hug h
 
-
 # Hug Fish completion
 
 test -r "$HUG_HOME/completions/hug.fish" && \
   mkdir -p ~/.config/fish/completions && \
   \cp -f "$HUG_HOME/completions/hug.fish" "$HOME"/.config/fish/completions/
 
+: Exit code set to 0

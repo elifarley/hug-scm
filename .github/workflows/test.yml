@@ -17,6 +17,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         
+      - name: Verify Git version
+        run: |
+          git --version
+
+      - name: Install Hug SCM
+        run: make install
+
+      - name: Verify Hug installation
+        run: |
+          source bin/activate
+          which hug
+          hug help
+
       - name: Install BATS
         run: |
           sudo apt-get update
@@ -36,19 +49,6 @@ jobs:
           sudo cp -r /tmp/bats-support/src/* /usr/lib/bats-support/
           sudo cp -r /tmp/bats-assert/src/* /usr/lib/bats-assert/
           sudo cp -r /tmp/bats-file/src/* /usr/lib/bats-file/
-          
-      - name: Verify Git version
-        run: |
-          git --version
-          
-      - name: Install Hug SCM
-        run: make install
-          
-      - name: Verify Hug installation
-        run: |
-          source git-config/activate
-          which hug
-          hug help
           
       - name: Check test prerequisites
         run: make test-check
