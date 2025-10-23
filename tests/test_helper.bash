@@ -62,6 +62,11 @@ create_test_repo() {
     git config user.email "test@hug-scm.test"
     git config user.name "Hug Test"
     
+    # Configure git aliases needed by hug commands
+    # These are from git-config/.gitconfig
+    git config alias.ll "log --graph --pretty=log1 --date=short"
+    git config pretty.log1 "%C(bold blue)%h%C(reset) %C(white)%ad%C(reset) %C(dim white)%an%C(reset)%C(auto)%d%C(reset) %s"
+    
     # Create initial commit
     echo "# Test Repository" > README.md
     git add README.md
