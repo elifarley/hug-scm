@@ -2,7 +2,7 @@
 
 HEAD operations in Hug allow you to safely move or undo commits without losing work. Commands are accessed via the main `h` command (for "HEAD") and follow a progressive destructiveness: `back` (safest) to `rewind` (most destructive). Use `hug h files` to preview affected files before any operation.
 
-These map to Git's `reset` modes but with intuitive names and built-in safeguards where applicable (e.g., confirmations for destructive actions).
+These commands provide intuitive names and built-in safeguards for moving the branch pointer (HEAD), avoiding the complexity of Git's `reset` modes.
 
 ## Quick Reference
 
@@ -107,11 +107,11 @@ Several HEAD commands (`hug h back`, `hug h rollback`, `hug h undo`, `hug h rewi
 
 ## Tips
 - Preview impact with `hug h files` (or `hug h files -u` for local-only) before any HEAD movement (e.g., `hug h files 2` then `hug h back 2`).
-- Sync to remote after local dev: `hug h back -u` (soft, keeps staged) or `hug h undo -u` (unstaged). Use `git fetch` first if remote may have advanced.
-- For quick squashing: `hug h squash N` (HEAD goes back + auto-commit with original message).
+- Sync to remote after local dev: `hug h squash -u` (all local-only commits squashed into 1), `hug h undo -u` (unstaged) etc.
+- For quick squashing: `hug h squash N` (HEAD goes back + auto-commit with top-most message).
 - Use `--force` for non-interactive scripting (skips confirmations but prints other messages; combine with `--quiet` for minimal output).
-- Use `hug s` or `hug sw` (**S**tatus + **W**orking directory diff) to check status after any HEAD movement.
-- For interactive rebase (edit/squash multiple commits), see [Rebase Commands](commits#rebase).
+- Use [`hug sl` or `hug sw` (**S**tatus + **W**orking directory diff)](status-staging.md#quick-reference) to check status after any HEAD movement.
+- For interactive history editing (edit/squash multiple commits), see [Rebase Commands](rebase.md).
 - Aliases like `hug back` are available as shortcuts for `hug h back`.
 
-Pair with [Working Directory](working-dir) for cleanup/restore, or [Logging](logging) to inspect history before resetting.
+Pair with [Working Directory](working-dir.md) for cleanup/restore, or [Logging](logging.md) to inspect history before resetting.

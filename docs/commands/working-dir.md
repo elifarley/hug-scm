@@ -87,15 +87,16 @@ Combines wipe + purge for full reset.
 
 ### The WIP Workflow: A Better Way to Manage Temporary Work {#wip-workflow}
 
-The WIP (Work-In-Progress) workflow is a robust, branch-based alternative to `git stash` or Mercurial's *MQ*.
-It lets you park changes on a dedicated, dated branch that you can push, share, and resume safely.
+The WIP (Work-In-Progress) workflow is a robust, branch-based approach to parking temporary work.
+It provides a safer and more powerful alternative to features found in other version control systems like `git stash` or Mercurial's *MQ*.
+It lets you park changes on a dedicated, dated branch that you can push, share, and resume safely when needed.
 
-| Command           | Use Case                                                    | Switches Branches? |
-| ----------------- |-------------------------------------------------------------|--------------------|
-| `hug w wip "msg"`   | **Quick Interruption**: Park work to handle something else. | **No**             |
-| `hug w wips "msg"`  | **Focused Work**: Park work to iterate on it immediately.   | **Yes**            |
-| `hug w unwip`     | **Finish** : Integrate completed WIP into your main branch. | No                 |
-| `hug w wipdel`    | **Abandon**: Delete a worthless WIP branch.                 | No                 |
+| Command           | Use Case                                                                         | Switches Branches? |
+| ----------------- |----------------------------------------------------------------------------------|--------------------|
+| `hug w wip "msg"`   | **Quick Interruption**: Park work to handle something else.                      | **No**             |
+| `hug w wips "msg"`  | **Focused Work**: (WIP + **S**tay on it) Park work to iterate on it immediately. | **Yes**            |
+| `hug w unwip`     | **Finish** : Integrate completed WIP into your main branch.                      | No                 |
+| `hug w wipdel`    | **Abandon**: Delete an unfruitful WIP branch.                                    | No                 |
 
 #### The Lifecycle of a WIP Branch
 
@@ -124,7 +125,7 @@ If you used `hug w wip`, you can resume your work at any time by switching to th
 hug bl | grep WIP
 hug b WIP/24-10-26/1530.spikeonnewauthapi
 ```
-If you used `hug wips`, you are already on the branch and can add more commits.
+If you used `hug w wips`, you are already on the new WIP branch and can add more commits.
 
 **3. Finish and Integrate (`unwip`)**
 
@@ -141,7 +142,7 @@ hug w unwip --no-squash WIP/24-10-26/1530.spikeonnewauthapi # Perform a regular 
 ```
 
 > [!TIP] Unwip Tips
-> - You can resume work on a WIP branch (`hug b <wip>`), add more commits, then switch back to your target branch and run `hug w unwip`.
+> - You can resume work on a WIP branch (`hug b <wip>`), add more commits, then switch back to your target branch and run `hug w unwip` to bring those changes in.
 > - After unparking, run `hug s` to check the status and `hug bpush` to push the new commit.
 
 **4. Abandon and Delete (`wipdel`)**
@@ -160,7 +161,7 @@ hug w wipdel --force WIP/24-10-26/1530.spikeonnewauthapi
 > - **Persistent & Safe**: Stashes are local and can be lost. WIP branches are real commits.
 > - **Shareable**: You can `hug bpush` a WIP branch to get feedback or save it remotely.
 > - **Versioned**: You can add multiple commits to a WIP branch, creating a history for your experiment.
-> - **Clear**: `hug bl | grep WIP` gives a clear list of parked tasks, unlike the cryptic `git stash list`.
+> - **Clear**: `hug bl | grep WIP` gives a clear list of parked tasks.
 
 ## Tips
 - Chain with status: `hug w discard file.js && hug sl`

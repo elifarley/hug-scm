@@ -4,16 +4,16 @@ The `c*` commands handle creating and modifying commits, making it easier to rec
 
 ## Quick Reference
 
-| Command   | Memory Hook                   | Summary                                            |
-|-----------|-------------------------------|----------------------------------------------------|
-| `hug c`   | **C**ommit staged             | Commit staged changes                              |
-| `hug ca`  | **C**ommit **A**ll tracked    | Commit ALL tracked changes                         |
-| `hug caa` | **C**ommit **A**dd **A**ll    | Stage and commit ALL changes (tracked + untracked) |
-| `hug cm`  | **C**ommit **M**odify         | Modify (amend) last commit with staged changes only|
-| `hug cma` | **C**ommit **M**odify tracked | Modify (amend) last commit with all tracked changes|
-| `hug cc`  | **C**ommit **C**herry-pick    | Copy a commit from another branch onto HEAD        |
+| Command   | Memory Hook                           | Summary                                            |
+|-----------|---------------------------------------|----------------------------------------------------|
+| `hug c`   | **C**ommit staged                     | Commit staged changes                              |
+| `hug ca`  | **C**ommit **A**ll tracked            | Commit ALL tracked changes                         |
+| `hug caa` | **C**ommit **A**dd **A**ll            | Stage and commit ALL changes (tracked + untracked) |
+| `hug cm`  | **C**ommit **M**odify                 | Modify last commit with staged changes only        |
+| `hug cma` | **C**ommit **M**odify **A**ll tracked | Modify last commit with all tracked changes        |
+| `hug cc`  | **C**ommit **C**opy (or cherry-pick)  | Copy a commit from another branch onto HEAD        |
 
-## hug c
+## hug c (Commit staged)
 
 Commit staged changes.
 
@@ -27,7 +27,7 @@ hug c -m "Fix typo in README"
 
 This is a safe way to commit, ensuring only staged files are included.
 
-## hug ca
+## hug ca (Commit All tracked)
 
 Commit all tracked changes.
 
@@ -42,9 +42,9 @@ hug ca -m "Fix typo in README"
 This is a quick way to commit without having to add files to the staging area first.
 Useful if you know that ALL tracked files must be committed.
 
-## hug caa
+## hug caa (Commit Add All)
 
-Stage and commit all changes (tracked and untracked).
+Stage all untracked changes and commit (tracked and untracked).
 
 **Usage:** `hug caa`
 
@@ -56,13 +56,13 @@ hug caa -m "Add new feature with all related files"
 Stages all current changes (staged and unstaged) and creates a new commit.
 It is a convenient shortcut for `hug aa && hug c`.
 
-## hug cm
+## hug cm (Commit Modify)
 
-Modify (amend) the last commit with staged changes.
+Modify the last commit with staged changes.
 
 This command allows you to add staged changes to the previous commit without creating a new one. It's ideal for fixing small mistakes or adding forgotten files.
 
-When you run `hug cm` without flags, your editor will open with the previous commit message already populated. This is very convenient if you just need to fix a typo or slightly reword the message.
+When you run `hug cm` (**C**ommit **M**odify) without flags, your editor will open with the previous commit message already populated. This is very convenient if you just need to fix a typo or slightly reword the message.
 
 If you want to replace the old message entirely, you can provide a new one directly with the `-m` flag, which avoids opening the editor.
 
@@ -81,9 +81,9 @@ hug cm -m "A completely new and corrected commit message"
 
 ## hug cma
 
-Modify (amend) the last commit with all tracked changes.
+Modify the last commit with all tracked changes.
 
-Similar to `hug cm`, this command amends the last commit.
+Similar to `hug cm` (**C**ommit **M**odify), this command modifies the last commit.
 However, it automatically includes all changes to **ALL tracked files**, so you don't need to stage them first.
 
 Running `hug cma` opens your editor with the existing commit message, making it perfect for small edits. To replace the message entirely without opening the editor, use the `-m` flag.
@@ -96,11 +96,11 @@ Usage: `hug cma`
 # Open the editor to adjust the commit message
 hug cma
 
-# Amend and provide a new message in one step
+# Modify and provide a new message in one step
 hug cma -m "Add new feature (with all files)"
 ```
 
-## hug cc
+## hug cc (Commit Copy)
 
 Copy a commit from another branch onto the current branch (cherry-pick).
 
@@ -114,10 +114,10 @@ hug cc a1b2c3d4  # Apply the changes from commit a1b2c3d4 to the tip (HEAD) of t
 Applies the changes from a specific commit on top of the current HEAD, creating a new commit on the current branch. `hug` also adds the original commit hash to the new commit message for reference. This is useful for bringing a specific bug fix or feature from one branch to another without merging the entire source branch.
 
 ## Tips
-- Use `hug s` or `hug sl` to check what you are about to commit, especially before using `hug c`.
-- `hug ca` and `hug caa` are great for speed, but be sure you want to commit *all* changes. For more selective commits, stage files individually with `hug a` or `hug aa` and then use `hug c`.
-- Use `hug cm` or `hug cma` to fix mistakes in your last commit (e.g., forgotten changes or typos in the message) without creating extra "fixup" commits. This keeps your history cleaner.
+- Use `hug s` (**S**tatus) or `hug sl` (**S**tatus + **L**ist) to check what you are about to commit, especially before using `hug c` (**C**ommit).
+- `hug ca` (**C**ommit **A**ll tracked) and `hug caa` (**C**ommit **A**dd **A**ll) are great for speed, but be sure you want to commit *all* changes. For more selective commits, stage files individually with `hug a` (**A**dd) or `hug aa` (**A**dd **A**ll) and then use `hug c` (**C**ommit).
+- Use `hug cm` (**C**ommit **M**odify) or `hug cma` (**C**ommit **M**odify **A**ll tracked) to fix mistakes in your last commit (e.g., forgotten changes or typos in the message) without creating extra "fixup" commits. This keeps your history cleaner.
 
 > [!WARNING]
-> Avoid using `hug cm` or `hug cma` on commits that have already been pushed to a remote repository (like GitHub).
-> Amending rewrites history, which can create significant problems for anyone who has already pulled your changes.
+> Avoid using `hug cm` (**C**ommit **M**odify) or `hug cma` (**C**ommit **M**odify **A**ll tracked) on commits that have already been pushed to a remote repository (like GitHub).
+> Modifying a commit rewrites history, which can create significant problems for anyone who has already pulled your changes.
