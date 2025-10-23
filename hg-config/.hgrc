@@ -1,0 +1,73 @@
+# Hug SCM - Mercurial Configuration
+# To use: Add to your ~/.hgrc:
+# [include]
+# path = $HUG_HOME/.hgrc
+
+[ui]
+# Use Git-style diffs
+git = True
+
+# Better merge markers
+mergemarkertemplate = {node|short} {desc|firstline}
+
+[extensions]
+# Enable color output
+color =
+
+# Enable pager for long output
+pager =
+
+# Enable purge extension (for hug w purge)
+purge =
+
+# Enable evolve extension (for hug h back/undo)
+# Uncomment if you have it installed:
+# evolve =
+
+[alias]
+# Hug-style aliases (these are called via 'hg <alias>')
+# The actual hug commands are in hg-config/bin/
+
+# Status aliases
+s = status
+sl = status -mard
+sla = status
+
+# Add aliases  
+a = status -m
+aa = addremove
+
+# Commit aliases
+c = commit
+ca = commit
+caa = !$HG addremove && $HG commit $@
+
+# Branch/bookmark aliases
+b = update
+bc = bookmark
+bl = bookmarks
+bs = update -
+
+# Log aliases
+l = log -G --template '{rev}:{node|short} {desc|firstline}\n'
+ll = log -G --template '{rev}:{node|short} {date|shortdate} [{author|user}] {desc|firstline}\n'
+la = log -G --template '{rev}:{node|short} {desc|firstline}\n'
+
+[color]
+# Custom colors for status output
+status.modified = blue bold
+status.added = green bold
+status.removed = red bold
+status.deleted = cyan bold
+status.unknown = magenta bold
+status.ignored = black bold
+
+# Log colors
+log.changeset = yellow
+log.user = magenta
+log.date = blue
+
+[pager]
+# Commands that should use pager
+pager = LESS='FRX' less
+attend = diff, log, glog, incoming, outgoing, status, blame

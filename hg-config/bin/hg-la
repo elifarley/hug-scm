@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# hug la: Log all branches
+set -euo pipefail
+exec hg log -G --template '{rev}:{node|short} {desc|firstline}\n' "$@"

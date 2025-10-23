@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# hug h back: Uncommit changes, keeping them in working directory
+
+show_help() {
+  cat <<'EOF'
+hug h back: Uncommit last changeset(s), keeping changes in working directory.
+
+USAGE:
+  hug h back [N]
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  Moves HEAD back by uncommitting the last changeset(s).
+  Changes are preserved in the working directory.
+  
+  Requires the 'evolve' extension.
+
+ARGUMENTS:
+  N              Number of changesets to uncommit (default: 1)
+
+EXAMPLES:
+  hug h back      # Uncommit last changeset
+  hug h back 3    # Uncommit last 3 changesets
+
+SEE ALSO:
+  hug h undo : Uncommit and discard changes
+EOF
+}
+
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
+  exit
+}
+
+check_hg_repo
+ensure_extension_enabled "evolve"
+
+# Get number of changesets to uncommit (default 1)
+count="${1:-1}"
+
+if ! [[ "$count" =~ ^[1-9][0-9]*$ ]]; then
+  error "Invalid count: $count (must be a positive integer)"
+fi
+
+# Confirm action
+printf "About to uncommit last $count changeset(s), keeping changes in working directory.\n"
+if [[ $count -eq 1 ]]; then
+  hg log -r . --template 'Changeset: {rev}:{node|short} {desc|firstline}\n'
+else
+  printf "Affected changesets:\n"
+  hg log -r ".~$((count-1)):." --template '{rev}:{node|short} {desc|firstline}\n'
+fi
+
+prompt_confirm "Proceed? [y/N]: "
+
+# Perform uncommit
+for ((i=0; i<count; i++)); do
+  if ! hg uncommit; then
+    error "Failed to uncommit (iteration $((i+1)))"
+  fi
+done
+
+success "Successfully uncommitted $count changeset(s). Changes are in working directory."

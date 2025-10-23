@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# hug sla: Full status with all files including untracked
+set -euo pipefail
+exec hg status "$@"

@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# hug w zap-all: Complete cleanup of entire repository
+
+show_help() {
+  cat <<'EOF'
+hug w zap-all: Complete cleanup of entire repository.
+
+USAGE:
+  hug w zap-all [options]
+
+OPTIONS:
+  --dry-run      Preview without making changes
+  -f, --force    Skip confirmation prompt
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  Performs complete cleanup: discards ALL changes AND removes
+  ALL untracked files throughout the entire repository.
+
+  This is the nuclear option - use with caution!
+
+EXAMPLES:
+  hug w zap-all --dry-run    # Preview cleanup
+  hug w zap-all -f           # Force cleanup without confirmation
+
+SEE ALSO:
+  hug w zap : Complete cleanup for specific paths
+EOF
+}
+
+# Parse arguments
+dry_run=false
+force=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -f|--force)
+      force=true
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    *)
+      error "Unknown option: $1"
+      ;;
+  esac
+done
+
+if [[ $force == true ]]; then
+  export HUG_FORCE=true
+fi
+
+check_hg_repo
+
+if $dry_run; then
+  printf 'Dry run: Would perform complete cleanup of entire repository:\n'
+  discard_all_uncommitted_changes --dry-run
+  printf '\nWould also remove untracked files:\n'
+  if hg help purge >/dev/null 2>&1; then
+    hg purge --print
+  fi
+  exit 0
+fi
+
+if [[ $force != true ]]; then
+  printf "${RED}⚠️  WARNING: This will discard ALL changes and remove ALL untracked files!${NC}\n"
+  printf "This action affects the ENTIRE repository.\n"
+  prompt_confirm "Are you absolutely sure? [y/N]: "
+fi
+
+# First discard all changes
+discard_all_uncommitted_changes
+
+# Then purge all untracked files
+if hg help purge >/dev/null 2>&1; then
+  hg purge --all
+fi
+
+printf "${GREEN}✅ Complete cleanup of entire repository finished.${NC}\n"

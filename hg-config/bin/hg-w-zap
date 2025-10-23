@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# hug w zap: Complete cleanup (discard + purge) for specific paths
+
+show_help() {
+  cat <<'EOF'
+hug w zap: Complete cleanup (discard + purge) for specific paths.
+
+USAGE:
+  hug w zap [options] <paths...>
+
+OPTIONS:
+  --dry-run      Preview without making changes
+  -f, --force    Skip confirmation prompt
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  Performs complete cleanup: discards all changes AND removes
+  untracked files for the specified paths.
+
+EXAMPLES:
+  hug w zap src/           # Clean up src directory
+  hug w zap --dry-run .    # Preview cleanup of current directory
+
+SEE ALSO:
+  hug w zap-all : Complete cleanup of entire repository
+EOF
+}
+
+# Parse arguments
+dry_run=false
+force=false
+paths=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -f|--force)
+      force=true
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    *)
+      paths+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ $force == true ]]; then
+  export HUG_FORCE=true
+fi
+
+check_hg_repo
+
+if [ ${#paths[@]} -eq 0 ]; then
+  error "At least one path must be specified"
+fi
+
+if $dry_run; then
+  printf 'Dry run: Would perform complete cleanup (discard + purge) for:\n'
+  print_list '  ' "${paths[@]}"
+  exit 0
+fi
+
+if [[ $force != true ]]; then
+  printf "${RED}⚠️  Warning: This will discard ALL changes and remove untracked files!${NC}\n"
+  prompt_confirm "Proceed? [y/N]: "
+fi
+
+# First discard changes
+if ! hg revert --no-backup -- "${paths[@]}"; then
+  error "Failed to discard changes"
+fi
+
+# Then purge untracked files  
+if hg help purge >/dev/null 2>&1; then
+  hg purge "${paths[@]}"
+fi
+
+printf "${GREEN}✅ Complete cleanup finished for specified paths.${NC}\n"
