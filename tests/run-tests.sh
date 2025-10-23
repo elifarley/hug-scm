@@ -34,6 +34,7 @@ check_bats() {
     echo "See tests/README.md for detailed installation instructions."
     exit 1
   fi
+  bats --version
   echo -e "${GREEN}✓ BATS is installed${NC}"
 }
 
@@ -85,7 +86,7 @@ run_tests() {
   echo -e "${GREEN}Running tests: $test_path${NC}"
   echo "----------------------------------------"
   
-  if bats --tap "${extra_args[@]}" "$test_path"; then
+  if bats --timing --recursive --tap "${extra_args[@]}" $test_path; then
     echo ""
     echo -e "${GREEN}✓ All tests passed!${NC}"
     return 0
@@ -105,7 +106,6 @@ Run Hug SCM test suite using BATS.
 
 Options:
   -h, --help          Show this help message
-  -v, --verbose       Run tests with verbose output
   -f, --filter TEXT   Run only tests matching TEXT
   -j, --jobs N        Run tests in parallel with N jobs
   --unit              Run only unit tests
@@ -116,7 +116,6 @@ Examples:
   $0                           # Run all tests
   $0 tests/unit/               # Run all unit tests
   $0 tests/unit/test_status_staging.bats  # Run specific test file
-  $0 -v                        # Run with verbose output
   $0 -f "hug s"                # Run tests matching "hug s"
   $0 -j 4                      # Run with 4 parallel jobs
   $0 --unit                    # Run only unit tests
@@ -128,7 +127,6 @@ EOF
 # Main
 main() {
   local test_path="tests/"
-  local verbose=false
   local filter=""
   local jobs=""
   local check_only=false
@@ -140,10 +138,6 @@ main() {
       -h|--help)
         show_usage
         exit 0
-        ;;
-      -v|--verbose)
-        extra_args+=("--verbose-run" "--print-output-on-failure")
-        shift
         ;;
       -f|--filter)
         extra_args+=("--filter" "$2")
@@ -163,6 +157,7 @@ main() {
         ;;
       --check)
         check_only=true
+        extra_args+=("--count")
         shift
         ;;
       -*)
@@ -194,14 +189,14 @@ main() {
   fi
   rm -rf "$temp_dir"
   
+  # Run tests or only show test counts if `--check` present
+  run_tests "$test_path" "${extra_args[@]}"
+
   if [[ "$check_only" == "true" ]]; then
     echo ""
     echo -e "${GREEN}✓ All prerequisites are met${NC}"
-    exit 0
   fi
-  
-  # Run tests
-  run_tests "$test_path" "${extra_args[@]}"
+
 }
 
 # Run main function

@@ -61,5 +61,5 @@ jobs:
           
       - name: Run all tests with verbose output
         if: failure()
-        run: make test-verbose
+        run: echo "no verbose option"
 

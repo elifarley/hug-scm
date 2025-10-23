@@ -31,10 +31,6 @@ test-integration: ## Run only integration tests
 	@echo "$(BLUE)Running integration tests...$(NC)"
 	./tests/run-tests.sh --integration
 
-test-verbose: ## Run tests with verbose output
-	@echo "$(BLUE)Running tests with verbose output...$(NC)"
-	./tests/run-tests.sh -v
-
 test-check: ## Check test prerequisites without running tests
 	@echo "$(BLUE)Checking test prerequisites...$(NC)"
 	./tests/run-tests.sh --check
@@ -81,6 +77,6 @@ clean-all: clean ## Clean everything including node_modules
 	rm -rf node_modules
 	@echo "$(GREEN)Deep clean complete!$(NC)"
 
-.PHONY: test test-unit test-integration test-verbose test-check
+.PHONY: test test-unit test-integration test-check
 .PHONY: docs-dev docs-build docs-preview deps-docs
 .PHONY: install check clean clean-all
