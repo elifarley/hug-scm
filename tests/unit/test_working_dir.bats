@@ -1004,3 +1004,148 @@ teardown() {
   assert_file_not_exists "root-untracked.txt"
   refute [ -d "nested" ]
 }
+
+################################################################################
+# SUBDIRECTORY OPERATION TESTS (GIT_PREFIX handling)
+################################################################################
+
+@test "hug w discard: works from subdirectory with relative path" {
+  # Create subdirectory with files
+  mkdir -p subdir/nested
+  echo "sub content" > subdir/file.txt
+  echo "nested content" > subdir/nested/deep.txt
+  git add subdir
+  git commit -q -m "Add subdirectory files"
+  
+  # Modify file
+  echo "change" >> subdir/file.txt
+  
+  # Run discard from subdirectory
+  cd subdir
+  run hug w discard -f file.txt
+  assert_success
+  
+  # File should be clean
+  run git diff file.txt
+  assert_output ""
+}
+
+@test "hug w discard: works from nested subdirectory" {
+  mkdir -p subdir/nested/deep
+  echo "deep content" > subdir/nested/deep/file.txt
+  git add subdir
+  git commit -q -m "Add deep nested file"
+  
+  echo "change" >> subdir/nested/deep/file.txt
+  
+  cd subdir/nested/deep
+  run hug w discard -f file.txt
+  assert_success
+  
+  run git diff file.txt
+  assert_output ""
+}
+
+@test "hug w purge: works from subdirectory" {
+  mkdir -p subdir
+  echo "root file" > root.txt
+  git add root.txt
+  git commit -q -m "Add root file"
+  
+  # Create untracked file in subdirectory
+  echo "untracked" > subdir/temp.txt
+  
+  cd subdir
+  run hug w purge temp.txt
+  assert_success
+  
+  assert_file_not_exists "temp.txt"
+}
+
+@test "hug w wipe: works from subdirectory" {
+  mkdir -p subdir
+  echo "content" > subdir/file.txt
+  git add subdir/file.txt
+  git commit -q -m "Add subdir file"
+  
+  echo "staged" >> subdir/file.txt
+  git add subdir/file.txt
+  echo "unstaged" >> subdir/file.txt
+  
+  cd subdir
+  run hug w wipe -f file.txt
+  assert_success
+  
+  run git diff file.txt
+  assert_output ""
+  run git diff --cached file.txt
+  assert_output ""
+}
+
+@test "hug w zap: works from subdirectory with mixed files" {
+  mkdir -p subdir
+  echo "tracked" > subdir/tracked.txt
+  git add subdir/tracked.txt
+  git commit -q -m "Add tracked"
+  
+  echo "change" >> subdir/tracked.txt
+  echo "untracked" > subdir/untracked.txt
+  
+  cd subdir
+  run hug w zap -f tracked.txt untracked.txt
+  assert_success
+  
+  run git diff tracked.txt
+  assert_output ""
+  assert_file_not_exists "untracked.txt"
+}
+
+@test "hug w get: works from subdirectory" {
+  mkdir -p subdir
+  echo "Version 1" > subdir/file.txt
+  git add subdir/file.txt
+  git commit -q -m "Add v1"
+  
+  echo "Version 2" > subdir/file.txt
+  git add subdir/file.txt
+  git commit -q -m "Add v2"
+  
+  cd subdir
+  run hug w get -f HEAD~1 file.txt
+  assert_success
+  
+  run cat file.txt
+  assert_output "Version 1"
+}
+
+@test "hug w discard: handles paths with parent directory references from subdir" {
+  mkdir -p subdir
+  echo "root content" > root.txt
+  echo "sub content" > subdir/sub.txt
+  git add root.txt subdir/sub.txt
+  git commit -q -m "Add files"
+  
+  echo "change" >> root.txt
+  echo "change" >> subdir/sub.txt
+  
+  cd subdir
+  run hug w discard -f ../root.txt sub.txt
+  assert_success
+  
+  # Both should be clean
+  run git diff ../root.txt
+  assert_output ""
+  run git diff sub.txt
+  assert_output ""
+}
+
+@test "hug w purge: handles absolute paths from subdirectory" {
+  mkdir -p subdir
+  echo "temp" > subdir/temp.txt
+  
+  cd subdir
+  run hug w purge "$TEST_REPO/subdir/temp.txt"
+  assert_success
+  
+  assert_file_not_exists "temp.txt"
+}

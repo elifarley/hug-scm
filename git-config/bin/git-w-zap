@@ -99,6 +99,11 @@ while IFS= read -r -d '' entry; do
   esac
 done < <(git status --porcelain=v1 --ignored=matching -z -- "${paths[@]}" 2>/dev/null || true)
 
+# Convert paths to be relative to current directory before passing to sub-commands
+# (git status returns repo-root-relative paths, but wipe/purge expect current-dir-relative)
+convert_to_relative_paths tracked_paths
+convert_to_relative_paths untracked_paths
+
 # Wipe tracked changes
 if [[ ${#tracked_paths[@]} -gt 0 ]]; then
   wipe_cmd=(hug w wipe)

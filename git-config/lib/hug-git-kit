@@ -31,6 +31,60 @@ check_git_repo() {
     test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
 }
 
+# Converts repository-root-relative paths to current-directory-relative paths
+# Usage: convert_to_relative_paths array_name
+# Parameters:
+#   $1 - Name of array containing repo-root-relative paths (nameref)
+# Effects:
+#   Modifies the array in-place to contain current-directory-relative paths
+# Environment:
+#   GIT_PREFIX - Current directory path relative to repo root (must be set)
+# Notes:
+#   When running from a subdirectory, git commands like 'git diff' and 'git status'
+#   return paths relative to the repository root. However, commands like 'git restore'
+#   and 'git checkout' expect paths relative to the current directory.
+#   This function converts repo-root-relative paths to current-directory-relative paths.
+convert_to_relative_paths() {
+    local -n path_array_ref="$1"
+    local prefix="${GIT_PREFIX:-}"
+    
+    # If we're at repo root (no prefix), paths are already correct
+    [[ -z "$prefix" ]] && return 0
+    
+    local repo_root
+    repo_root="$(git rev-parse --show-toplevel)"
+    
+    local -a converted_paths=()
+    local path
+    for path in "${path_array_ref[@]}"; do
+        # If path starts with the prefix, remove it to make it current-dir-relative
+        if [[ "$path" == "$prefix"* ]]; then
+            converted_paths+=("${path#"$prefix"}")
+        else
+            # Path doesn't start with prefix - compute relative path from current directory
+            # This handles cases like "../file.txt" or files in sibling directories
+            local abs_path="$repo_root/$path"
+            if command -v realpath >/dev/null 2>&1 && [[ -e "$abs_path" || -L "$abs_path" ]]; then
+                # Use realpath to compute the relative path from current directory
+                local rel_path
+                rel_path="$(realpath --relative-to="." "$abs_path" 2>/dev/null || echo "$path")"
+                converted_paths+=("$rel_path")
+            else
+                # Fallback: construct relative path manually
+                # Count directory depth (number of / in prefix)
+                local depth="${prefix//[^\/]}"
+                local parent_refs=""
+                for ((i=0; i<${#depth}; i++)); do
+                    parent_refs="../$parent_refs"
+                done
+                converted_paths+=("${parent_refs}${path}")
+            fi
+        fi
+    done
+    
+    path_array_ref=("${converted_paths[@]}")
+}
+
 ################################################################################
 # Commit Validation Functions
 ################################################################################
@@ -430,6 +484,9 @@ discard_unstaged() {
   fi
 
   check_git_repo
+  
+  # Convert paths to be relative to current directory
+  convert_to_relative_paths paths_ref
 
   if ! git checkout -- "${paths_ref[@]}" 2>/dev/null; then  # Discard unstaged: working tree to index; suppress warnings, check exit
     error "Failed to discard unstaged changes for the specified paths. Check for submodules or permissions."
@@ -525,6 +582,9 @@ discard_uncommitted_changes() {
     return 0
   fi
 
+  # Convert paths to be relative to current directory
+  convert_to_relative_paths target_files_ref
+
   # Perform the full discard to HEAD (staged + unstaged)
   if ! git restore --source=HEAD --staged --worktree -- "${target_files_ref[@]}"; then
     error "Failed to discard uncommitted changes for the specified paths. Check for conflicts or submodules."
@@ -548,7 +608,16 @@ discard_uncommitted_changes() {
 #   Status message
 discard_staged_no_unstaged() {
   local file="$1"
-  if ! git restore --source=HEAD --staged --worktree -- "$file"; then
+  
+  # Ensure GIT_PREFIX is set
+  check_git_repo
+  
+  # Convert path to be relative to current directory
+  local -a file_array=("$file")
+  convert_to_relative_paths file_array
+  local relative_file="${file_array[0]}"
+  
+  if ! git restore --source=HEAD --staged --worktree -- "$relative_file"; then
     error "Failed to discard staged changes for '$file' (no unstaged)."
   fi
   printf 'Discarded staged changes from %s\n' "$file"
@@ -574,6 +643,14 @@ discard_staged_with_unstaged() {
   local repo_root="$2"
   local -n failed_patch_ref="$3"  # Nameref for output on failure (optional)
 
+  # Ensure GIT_PREFIX is set
+  check_git_repo
+  
+  # Convert path to be relative to current directory for git commands
+  local -a file_array=("$file")
+  convert_to_relative_paths file_array
+  local relative_file="${file_array[0]}"
+  
   local local_file="$repo_root/$file"
   local unstaged_patch sanitized_patch rej_file=""
 
@@ -582,7 +659,7 @@ discard_staged_with_unstaged() {
   sanitized_patch=$(mktemp -t hug-unstaged-clean.XXXXXX.patch)  # Pre-create for consistency
   trap 'rm -f "'"$unstaged_patch"'" "'"$sanitized_patch"'" "$rej_file"' RETURN  # Cleanup on success
 
-  if ! git diff -- "$file" > "$unstaged_patch"; then
+  if ! git diff -- "$relative_file" > "$unstaged_patch"; then
     trap - RETURN
     rm -f "$unstaged_patch" "$sanitized_patch"
     error "Failed to capture unstaged patch for '$file'."
@@ -592,7 +669,7 @@ discard_staged_with_unstaged() {
   awk 'NR==2 && /^index / {next} {print}' "$unstaged_patch" > "$sanitized_patch"
 
   # Reset both index and WD to HEAD (discard staged + temp WD to "1")
-  if ! git restore --source=HEAD --staged --worktree -- "$file"; then
+  if ! git restore --source=HEAD --staged --worktree -- "$relative_file"; then
     trap - RETURN
     rm -f "$unstaged_patch" "$sanitized_patch"
     error "Failed to reset '$file' to HEAD."

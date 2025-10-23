@@ -118,6 +118,10 @@ if $dry_run; then
   fi
   exit 0
 fi
+# Convert paths to be relative to current directory for git clean
+convert_to_relative_paths untracked_paths
+convert_to_relative_paths ignored_paths
+
 
 remove_with_clean() {
   local mode_flags=()
