@@ -62,7 +62,7 @@ Complex operations become one-liners: `hug w zap-all` for a complete "factory re
 
 ```shell
 # Check status with beautiful output
-hug s
+hug sl # **S**tatus + **L**ist
 
 # Stage changes (smart defaults)
 hug a            # Stage tracked changes
@@ -72,7 +72,7 @@ hug aa           # Stage everything including untracked (new) files
 hug c            # Commit staged changes
 hug ca           # Commit all tracked changes
 hug caa          # Commit all tracked & untracked changes
-hug cc <commit>  # Clone a Commit on top of 'HEAD'
+hug cc <commit>  # Copy a Commit on top of 'HEAD'
 
 # Branch operations
 hug bc feature   # Create and switch to new branch
@@ -134,42 +134,25 @@ hug bpull
 # Pull with rebase for linear history
 hug bpullr
 
-# Park WIP for interruption (switch back to main/hotfix)
+# Park WIP for interruption to have a clean working directory
 hug wip "Draft feature" → hug bc hotfix && hug c "Fix bug" → hug bpush
 
 # Deep work on WIP (stay and iterate)
 hug wips "Prototype UI" → hug a . && hug c "Add components" → hug bs (pause) → later hug b WIP/... → hug w unwip WIP/... (integrate)
 ```
 
-**Tip: `wips` vs. `wip`**: Use `wips` for immersive sessions (stay on WIP to add commits like `hug c`). Use `wip` for quick pauses (park and switch back to main). Both are pushable branches—better than local stash for persistence.
+**Tip: `wips` vs. `wip`**: Use `wips` for immersive sessions (stay on WIP to add commits like `hug c`). Use `wip` for quick pauses (park). Both are pushable branches - better than local stash for persistence.
 
 ## Installation
 
-1. **Clone the Repo**:
-   ```shell
-   git clone https://github.com/elifarley/hug-scm.git
-   cd hug-scm
-   ```
+Check the [Installation Guide](https://elifarley.github.io/hug-scm/installation.html)
 
-2. **Install** (run from repo root):
-   ```shell
-   ./install.sh
-   ```
-
-3. **Verify**:
-   ```shell
-   hug s  # Should show status summary
-   hug help  # List available commands
-   ```
-
-**Dependencies**: Bash, Git 2.23+ (for `git restore`). Works on Linux/macOS.
 
 ---
 
 ## Quick Start Tips
 
 - **No Git Knowledge Needed**: Hug handles the complexity; focus on intent.
-- **Dry-Run Everything**: Add `--dry-run` to preview (e.g., `hug w zap-all --dry-run`).
 - **Explore**: Run `hug help` to see Hug commands.
 
 ---

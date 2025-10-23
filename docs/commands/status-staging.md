@@ -20,9 +20,8 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 - [Tips](#tips)
 - [Coverage Checklist](#coverage-checklist)
 
-::: tip Command Family Map
-Looking for other families? Try [HEAD Operations (h*)](head) for resets, [Working Directory (w*)](working-dir) for cleanups, or [Logging (l*)](logging) to inspect history before staging.
-:::
+> [!TIP] Command Family Map
+> Looking for other families? Try [HEAD Operations (h*)](head) for resets, [Working Directory (w*)](working-dir) for cleanups, or [Logging (l*)](logging) to inspect history before staging.
 
 ## Quick Reference
 
@@ -65,10 +64,9 @@ Looking for other families? Try [HEAD Operations (h*)](head) for resets, [Workin
 
 > **Related:** After inspecting status, jump to [Detailed Patches](#detailed-patches) for inline diffs or hop over to [Working Directory (w*)](working-dir) to clean up files you find.
 
-::: tip Scenario
-**Task:** Sanity-check your working tree before pushing.  
-**Flow:** Run `hug sl` for a tracked summary, then `hug sla` if you need to confirm no new files are lingering.
-:::
+> [!TIP] Scenario
+> **Task:** Sanity-check your working tree before pushing.  
+> **Flow:** Run `hug sl` for a tracked summary, then `hug sla` if you need to confirm no new files are lingering.
 
 ### Detailed Patches
 Show diffs inline for better inspection.
@@ -95,10 +93,9 @@ Show diffs inline for better inspection.
 
 > **Related:** Compare against recent commits with [`hug lp`](logging) or [`hug l`](logging) before deciding whether to amend or discard changes.
 
-::: tip Scenario
-**Task:** Review your commit before amending.  
-**Flow:** Run `hug ss` to verify staged fixes, then `hug su` to ensure no leftovers remain before `hug caa`.
-:::
+> [!TIP] Scenario
+> **Task:** Review your commit before amending.  
+> **Flow:** Run `hug ss` to verify staged fixes, then `hug su` to ensure no leftovers remain before `hug caa`.
 
 ## Staging Commands (a*)
 
@@ -128,10 +125,9 @@ Show diffs inline for better inspection.
 
 > **Related:** Once staged, continue with [Commits (c*)](commits) like `hug c` or `hug caa` to record the snapshot.
 
-::: tip Scenario
-**Task:** Stage only your lint fixes.  
-**Flow:** Run `hug ap` to choose specific hunks, then `hug ss` to confirm before committing with `hug c`.
-:::
+> [!TIP] Scenario
+> **Task:** Stage only your lint fixes.  
+> **Flow:** Run `hug ap` to choose specific hunks, then `hug ss` to confirm before committing with `hug c`.
 
 ## Unstaging
 - `hug us <files...>`: **U**n**S**tage specifics
@@ -151,10 +147,9 @@ Show diffs inline for better inspection.
 
 > **Related:** If you need to toss changes entirely, jump to [`hug w discard`](working-dir) or [`hug w wip`](working-dir) for safe checkpoints.
 
-::: tip Scenario
-**Task:** You staged a compiled artifact by mistake.  
-**Flow:** Run `hug us dist/app.js`, add it to `.gitignore`, then `hug untrack dist/` so it stays local only.
-:::
+> [!TIP] Scenario
+> **Task:** You staged a compiled artifact by mistake.  
+> **Flow:** Run `hug us dist/app.js`, add it to `.gitignore`, then `hug untrack dist/` so it stays local only.
 
 ## Scenarios
 ::: tip Scenario: Patch-and-Push

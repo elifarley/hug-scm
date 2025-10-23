@@ -29,11 +29,11 @@ Git manages your code across three main areas. Hug's commands are designed to gi
 
 2.  **The Index (Staging Area)**: A "holding area" where you prepare your next official record, known as a commit.
     - **Lab Analogy**: This is your lab's **preparation counter**. After completing an experiment on your lab table, you move the results (your changed files) here to be documented and stored.
-    - **Hug's View**: `hug a` and `hug aa` move files from the lab table to the preparation counter. `hug ss` (**S**tatus + **S**taged) shows you exactly what's on the counter. `hug us` moves things back to the lab table.
+    - **Hug's View**: `hug a` (**A**dd) and `hug aa` (**A**dd **A**ll) move files from the lab table to the preparation counter. `hug ss` (**S**tatus + **S**taged) shows you exactly what's on the counter. `hug us` moves things back to the lab table.
 
 3.  **The Repository (Commits & HEAD)**: The permanent history of your project, made up of commits.
     - **Lab Analogy**: A **commit** is like a **labeled moment in your lab's security camera recording**. It's a permanent snapshot of your staged files at a specific point in time. **HEAD** is simply a pointer to the most recent recording you've made on your current timeline.
-    - **Hug's View**: `hug c` takes everything on the preparation counter and creates that permanent snapshot. `hug l` lets you review the timeline of all your recordings. `hug h back` and `hug h undo` move the HEAD pointer back to an earlier recording.
+    - **Hug's View**: `hug c` (**C**ommit) takes everything on the preparation counter and creates that permanent snapshot. `hug l` lets you review the timeline of all your recordings. `hug h back` and `hug h undo` move the HEAD pointer back to an earlier recording.
 
 ### Branches: Your Lab Rooms
 
@@ -46,18 +46,18 @@ As your project grows, you might want to work on a new feature without disturbin
     -   `hug b main`: Moves you out of your current room and back into the `main` lab room.
     - The files on your "lab table" (working directory) instantly swap to match the state of the new room you've entered.
 
-### The WIP Workflow: A Better Stash
+### The WIP Workflow: A Better Way to Park Work
 
-`git stash` is a powerful but often confusing feature. It's a single, temporary holding area that's local to your machine and can be lost if something happens to your computer.
+Other version control systems have a more convoluted "stash" feature that is a single, temporary holding area local to your machine. It can be lost if something happens to your computer.
 
 Hug promotes the **[WIP (Work-In-Progress) workflow](commands/working-dir.md#wip-workflow)** as a safer, more robust alternative.
 
--   **What is it?** Instead of a stash, `hug wip` creates a real, timestamped branch (`WIP/YY-MM-DD/HHmm.slug`). It commits all your current changes (staged, unstaged, and untracked) to this branch.
+-   **What is it?** Instead of a stash, `hug wip` (**W**ork **I**n **P**rogress) creates a real, timestamped branch (`WIP/YY-MM-DD/HHmm.slug`). It commits all your current changes (staged, unstaged, and untracked) to this branch.
 
 -   **Why is it better?**
     -   **Persistent & Safe**: A WIP branch is part of your repository's history. It won't get lost if you rebase or switch machines.
     -   **Shareable**: You can push a WIP branch (`hug bpush`) to a remote repository to back it up or get feedback from a teammate.
     -   **Versioned**: You can continue to work on a WIP branch, adding more commits to document your experiment or spike.
-    -   **Clear**: `hug bl | grep WIP` gives you a clear, descriptive list of all your parked tasks, unlike the cryptic `git stash list`.
+    -   **Clear**: `hug bl` (**B**ranch **L**ist) gives you a clear, descriptive list of all your parked tasks, unlike the cryptic lists from other tools.
 
 The `wip` / `wips` / `unwip` / `wipdel` commands provide a complete, safe lifecycle for [managing temporary work](commands/working-dir.md#wip-workflow), making it one of Hug's cornerstone features.

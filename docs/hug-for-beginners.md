@@ -36,7 +36,7 @@ This is the simple, repeatable process you'll use every day to save your work.
 
 ### Step 1: Create Your Lab Facility (`hug init`)
 
-You have a new project idea, which means you need a place to work. In our analogy, `hug init` gives you a big, empty laboratory facility for your project.
+You have a new project idea, which means you need a place to work. In our analogy, `hug init` (**Init**ialize) gives you a big, empty laboratory facility for your project.
 
 The `hug init` command initializes a new Git repository in your project folder. A repository (or "repo") is essentially your project's dedicated lab facility (with multiple lab rooms), containing all your files and the entire history of their changes.
 
@@ -69,10 +69,13 @@ echo "Hello, World!" > hello.txt
 How do you know what you've changed? Ask your lab assistant for a status report.
 
 ```shell
-hug s
+hug sl
 ```
 
-`hug s` (**S**tatus) gives you a quick, colorful summary of what's going on in your lab. It will tell you about any new or modified files on your lab table.
+[`hug sl` (**S**tatus + **L**ist changes)](commands/status-staging.md#basic-status) gives you a quick, colorful summary of what's going on in your lab. It will tell you about any new or modified files on your lab table.
+
+Example:
+![hug sl example](commands/img/hug-sl.png)
 
 ### Step 4: Prepare Your Snapshot (`hug aa`)
 
@@ -193,9 +196,16 @@ hug c -m "Incorporate the new idea"
 > [!TIP]
 > Learn more about [`m*` commands](commands/merge.md) and the [WIP workflow](commands/working-dir.md#wip-workflow)
 
-## Your Ultimate Safety Net: Undoing Mistakes
+## Your Ultimate Safety Net: Handling Interruptions & Mistakes
 
-Hug makes it safe to fix common mistakes.
+Hug makes it safe to fix common mistakes and handle interruptions without losing your progress.
+
+-   **Interruption: "I need to switch tasks, but my work isn't ready to commit!"**
+    -   **Solution**: Use Hug's **WIP (Work-In-Progress) workflow**. This is a safer, more robust alternative to the confusing "stash" feature found in other tools. `hug wip` (**W**ork **I**n **P**rogress) parks all your changes on a temporary, real branch, keeping your working directory clean (free from uncommitted changes).
+    -   ```shell
+      hug wip "Pausing work on the login form"
+      ```
+      When you're ready to return, `hug w unwip` (**Un**park **WIP**) will bring your changes right back.
 
 -   **Mistake #1: "I made a typo in my file, but I haven't committed yet."**
     -   **Solution**: Just discard the changes from your lab table.

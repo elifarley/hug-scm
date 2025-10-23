@@ -10,151 +10,130 @@ cd hug-scm
 ./install.sh
 
 # Verify
-hug s    # Quick status check
+hug s    # **S**tatus check
 hug help # List all commands
 ```
 
 ## Basic Workflow
 ```bash
 # Check status (colored summary)
-hug s
+hug sl    # **S**tatus + **L**ist
 
-# Stage tracked changes
-hug a <file>     # Specific file
-hug a .          # Current directory
-hug a            # All tracked updates
-
-# Stage everything (tracked + untracked)
-hug aa
+# Stage changes for commit
+hug aa   # **A**dd **A**ll (tracked + untracked)
+hug a    # **A**dd tracked
 
 # Commit staged changes
-hug c "Add login feature"
+hug c "Add login feature"  # **C**ommit
 
 # View history
-hug l    # One-line log with graph
-hug ll   # Detailed log with messages
+hug l    # **L**og
+hug ll   # **L**og **L**ong
 ```
 
 ## Branching & Switching
 ```bash
 # List branches
-hug bl   # Local branches
-hug bla  # All (local + remote)
+hug bl   # **B**ranch **L**ist (local)
+hug blr  # **B**ranch **L**ist **R**emote
 
 # Create and switch
-hug bc feature-branch
+hug bc feature-branch  # **B**ranch **C**reate
 
-# Switch to existing
-hug b main
-hug bs   # Back to previous branch
+# Switch to existing (interactive menu)
+hug b    # **B**ranch
 
-# Merge
-hug m feature-branch  # Squash merge (no commit)
-hug mkeep feature-branch  # Merge commit
+# Merge (squash, no commit)
+hug m feature-branch  # **M**erge
 
 # Delete (safe)
-hug bdel old-branch
-hug bdelr origin/old-branch  # Remote
+hug bdel old-branch    # **B**ranch **DEL**ete (local)
+hug bdelr old-remote-branch  # **B**ranch **DEL**ete **R**emote
 ```
 
-## Pushing & Pulling
+## Syncing with Remote
 ```bash
 # Push current branch (sets upstream)
-hug bpush
+hug bpush  # **B**ranch **Push**
 
 # Safe fast-forward pull (fails if merge/rebase needed)
-hug bpull
+hug bpull  # **B**ranch **Pull**
 
 # Pull with rebase (linear history)
-hug bpullr
+hug bpullr  # **B**ranch **Pull** **R**ebase
 
-# Force push (safe)
-hug bpushf
-
-# Pull from all remotes
-hug pullall
+# Safe force push (for rewritten local history)
+hug bpushf  # **B**ranch **Push** **F**orce
 ```
+> **CRITICAL**: Always review before pushing. Run `hug lol` (**L**og **O**utgoing **L**ong) for a full preview of commits that will be pushed, followed by a final status check.
 
-## Inspecting Changes
+## Inspection & Discovery
 ```bash
-# Status variants
-hug sl   # Tracked files only
-hug sla  # Include untracked
-hug ss   # Staged diff
-hug su   # Unstaged diff
-hug sw   # Full working directory diff
+# See what will be pushed
+hug lol  # **L**og **O**utgoing **L**ong
 
-# File history
-hug llf <file> -1    # Last change to file
-hug fblame <file>    # Who changed each line
+# Most recent commit touching a file
+hug llf <file> -1  # **L**og **L**ookup **F**ile
 
-# Search history
-hug lf "fix bug"     # By message
-hug lc "getUser"     # By code changes
+# Who changed each line in a file
+hug fblame <file>  # **F**ile **B**lame
+
+# Who contributed to a file
+hug fcon <file>  # **F**ile **CON**tributors
+
+# Search commit messages
+hug lf "fix bug"  # **L**og message **F**ilter
+
+# Search code changes
+hug lc "getUser"  # **L**og **C**ode search
 ```
 
 ## Undoing & Cleaning Up
 ```bash
-# Discard changes (preview with --dry-run)
-hug w discard <file>     # Unstaged
-hug w discard-all        # All unstaged
-hug w discard-all -s     # Staged only
+# Discard unstaged changes in a file
+hug w discard <file>  # **W**orking directory **Discard**
 
-# Full reset
-hug w wipe-all           # Tracked files to clean state
-hug w purge-all          # Remove untracked/ignored
-hug w zap-all            # Nuclear: wipe + purge (-f to force)
+# Discard ALL unstaged changes
+hug w discard-all  # **W**orking directory **discard** **ALL**
 
-# Undo commits (non-destructive)
-hug h back               # Keep changes staged
-hug h undo               # Keep changes unstaged
-hug h steps <file>       # Steps back to last file change
+# Full reset of tracked files (staged + unstaged)
+hug w wipe-all  # **W**orking directory **W**ipe **ALL**
 
-# Revert pushed commit
+# Remove all untracked/ignored files
+hug w purge-all  # **W**orking directory **P**urge **ALL**
+
+# Undo last commit (keep changes staged)
+hug h back  # **H**EAD **Back**
+
+# Undo last commit (keep changes unstaged)
+hug h undo  # **H**EAD **Undo**
+
+# Rewind to a clean state (destructive)
+hug h rewind  # **H**EAD **Rewind**
+
+# Find how many steps back to last file change
+hug h steps <file>  # **H**EAD **Steps**
+
+# Revert a specific commit (creates a new commit undoing it)
 hug revert <commit-hash>
 ```
 
-## Parking Work (WIP)
-```shell
-# Save all uncommitted changes on new WIP branch (pushable, persistent)
-hug wip  "Draft feature" # Park changes on a new branch so that you can focus on something else on the current branch
-hug wips "Deep spike"    # Park changes on a new branch and stay on it so that you can focus without affecting the current branch
-
-# Resume WIP (for more edits)
-hug b WIP/2023-10-05/1430.draftfeature
-
-# Unpark/finish: Squash-merge to current branch + delete
-hug unwip WIP/<date>/<time>.<slug>
-
-# Discard worthless WIP
-hug wipdel WIP/<date>/<time>.<slug>
-```
-
-**Tip: `wips` vs. `wip`**: Use `wips` for immersive sessions (stay on WIP to add commits like `hug c`). Use `wip` for interruptions (e.g., switch to hotfix,   resume later). Both beat stash for shareability - push WIP branches for team backups.
-
-## Advanced Workflows
+## WIP (Work-In-Progress) Workflow
 ```bash
-# Amend last commit
-hug cm "Updated message"  # Staged changes only
-hug cma                   # All tracked changes
+# Park all changes on a new WIP branch to have a clean working directory (free from uncommitted changes)
+hug wip "Pausing work on feature X"  # **W**ork **I**n **P**rogress
 
-# Cherry-pick commit
-hug cc <commit-hash>      # Copy onto HEAD
+# Park all changes on a new WIP branch and Stay on it
+hug wips "Starting a focused spike"  # **W**ork **I**n **P**rogress **S**tay
 
-# Interactive rebase
-hug rbi                  # From root
-hug rb main              # Onto main
+# Integrate a WIP branch into your current branch (squash-merge)
+hug w unwip WIP/YY-MM-DD/HHMM.slug  # **Un**park **W**ork **I**n **P**rogress
 
-# Tag releases
-hug ta v1.0 "Release 1.0"
-hug tpush v1.0           # Push tag
+# Delete a WIP branch without integrating it
+hug w wipdel WIP/YY-MM-DD/HHMM.slug  # **W**ork **I**n **P**rogress **DEL**ete
 ```
 
-## Tips for Smooth Sailing
-- **Always preview:** Use `hug s` after every operation.
-- **Safety first:** Destructive commands (e.g., `zap-all`) require confirmation; add `--dry-run` to simulate.
-- **Discover commands:** `hug help <prefix>` (e.g., `hug help w` for working directory).
-- **WIP > Stash:** Use `hug wip` for shareable progress; stash for quick local saves.
-- **File-focused:** `hug llf <file> -1` for the latest commit touching a file.
-
-For full details, see [Documentation](https://elifarley.github.io/hug-scm/). Happy developing! 🚀
+## Tips
+- **Get a reminder**: Forgetting a command? Just type `hug help` to see all families.
+- **Check before you act**: `hug sl` is your best friend. Run it often.
+- Hug's `bpull` and `bpullr` handle fetching for you in most cases. But you can run `hug fetch` to get the latest remote info without affecting your local branches.
