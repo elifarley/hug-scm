@@ -690,7 +690,7 @@ teardown() {
   
   run hug h steps new.txt
   assert_failure
-  assert_output --partial "does not exist"
+  assert_output --partial "Needed a single revision"
 }
 
 @test "hug h steps: handles file with no commits (Needed a single revision message)" {
