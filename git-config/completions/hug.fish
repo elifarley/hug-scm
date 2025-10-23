@@ -115,8 +115,8 @@ function __hug_complete_search_terms  # For lf, lc, etc.; no dynamic, just files
 end
 
 # List of all top-level Hug commands (unique from reference, alias-based + custom).
-# Note: w-backup has hyphen; treated as single token.
-set -l hug_tops alias l ll la llf llfp llfs lf lc lcr lau ld lp fblame fb fcon fa fborn a aa ai ap us usa untrack back undo rollback rewind w-backup wip unwip ca cm cma cii cim o cc caa ssave ssavea ssavefull sls speak sshow sapply spopf spop sdrop sbranch sclear sl sla sli s ss su sw sx sh shp shc shf t tc ta ts tr tm tma tpush tpull tpullf tdel tdelr tco twc twp b bs bl bla blr bc br bdel bdelf bdelr bwc bwp bwnc bwm bwnm bpush rb rbi rbc rba rbs m mff mkeep ma bpull pullall type dump remote2ssh h w c statusbase hughelp
+# Note: wips has no hyphen (treated as single token for alias).
+set -l hug_tops alias l ll lla la llf llfp llfs lf lc lcr lau ld lp lo lol fblame fb fcon fa fborn a aa ai ap us usa untrack back undo rollback rewind squash files wip wips unwip get ca cm cma cii cim o cc caa sls sl sla sli s ss su sw sx sh shp shc shf t tc ta ts tr tm tma tpush tpull tpullf tdel tdelr tco twc twp b bs bl bll bla blr bc br bdel bdelf bdelr bwc bwp bwnc bwm bwnm bpush rb rbi rbc rba rbs m mff mkeep ma bpull bpullr pullall type dump remote2ssh h w c statusbase hughelp log-outgoing
 
 # Top-level completions: Custom Hug commands + standard Git subcommands.
 # Trigger ONLY if no subcommand seen (after 'hug ' only).
@@ -144,12 +144,16 @@ set -l common_branch_opts -u -f --track
 complete -c hug -n '__fish_seen_subcommand_from alias' -f -a "(__hug_complete_search_terms)" -d "Pattern"
 
 # Logging (l*)
-# After l/ll/la/ld/lp: Git log options + files/dates/authors dynamic where applicable.
-for sub in l ll la ld lp
+# After l/ll/la/ld/lp/lo/lol: Git log options + files/dates/authors dynamic where applicable.
+for sub in l ll la ld lp lo lol
     complete -c hug -n "__fish_seen_subcommand_from $sub" -a "$common_log_opts" -d "Git log options"
     # Enable file completion for file-related (e.g., lp, but general)
     complete -c hug -n "__fish_seen_subcommand_from $sub" -a "(__hug_complete_files)"
 end
+# log-outgoing specific
+complete -c hug -n '__fish_seen_subcommand_from log-outgoing' -l quiet -d "Quiet mode"
+complete -c hug -n '__fish_seen_subcommand_from log-outgoing' -l fetch -d "Fetch before preview"
+complete -c hug -n '__fish_seen_subcommand_from log-outgoing' -s h -l help -d "Help"
 # llf/llfp/llfs: Require <file>, optional -p
 for sub in llf llfp llfs
     complete -c hug -n "__fish_seen_subcommand_from $sub" -s p -d "Show patches"
@@ -185,15 +189,28 @@ complete -c hug -n '__fish_seen_subcommand_from usa' -f
 
 # HEAD Operations (back etc.; map to custom, but listed as top-level aliases)
 # Assume top-level back etc. take [<n|commit>] optional
-for sub in back undo rollback rewind
+for sub in back undo rollback rewind squash files
     complete -c hug -n "__fish_seen_subcommand_from $sub" -a "(__hug_complete_refs)" -d "Commit or n"
+    complete -c hug -n "__fish_seen_subcommand_from $sub" -s u -l upstream -d "Reset to upstream"
+    complete -c hug -n "__fish_seen_subcommand_from $sub" -l force -d "Skip confirmation"
+    complete -c hug -n "__fish_seen_subcommand_from $sub" -l quiet -d "Quiet mode"
 end
+# files specific
+complete -c hug -n '__fish_seen_subcommand_from files' -l stat -d "Show line stats"
 
-# Working Directory (w* aliases; but w is custom, these are separate)
-# w-backup: [-m <message>] optional
-complete -c hug -n '__fish_seen_subcommand_from w-backup' -s m -d "Message" -a "(__hug_complete_files)" -d "Files?"
-# wip/unwip: No args
-complete -c hug -n '__fish_seen_subcommand_from wip unwip' -f
+# Working Directory top-level aliases (wip, wips, unwip, get)
+# wip: <message> [--stay]
+complete -c hug -n '__fish_seen_subcommand_from wip' -l stay -d "Stay on WIP branch"
+complete -c hug -n '__fish_seen_subcommand_from wip' -a " " -d "Message (required)"
+# wips: <message> (alias for wip --stay)
+complete -c hug -n '__fish_seen_subcommand_from wips' -a " " -d "Message (required)"
+# unwip: [<wip-branch>]
+complete -c hug -n '__fish_seen_subcommand_from unwip' -s f -l force -d "Force delete"
+complete -c hug -n '__fish_seen_subcommand_from unwip' -l no-squash -d "Regular merge"
+complete -c hug -n '__fish_seen_subcommand_from unwip' -a "(git for-each-ref --format='%(refname:short)' --sort=refname 'refs/heads/WIP/' 2>/dev/null)" -d "WIP branch"
+# get: <commit> [files...]
+complete -c hug -n '__fish_seen_subcommand_from get' -a "(__hug_complete_refs)" -d "Commit"
+complete -c hug -n '__fish_seen_subcommand_from get' -a "(__hug_complete_files)" -d "Files"
 
 # Commits (c*)
 # ca/cm/cma/cii/cim/caa/o: No positional, Git commit options
@@ -204,19 +221,8 @@ end
 complete -c hug -n '__fish_seen_subcommand_from cc' -a "(__hug_complete_refs)" -d "Commit range"
 complete -c hug -n '__fish_seen_subcommand_from cc' -a "$common_cherry_opts" -d "Cherry-pick options"
 
-# ssave/ssavefull: No args
-complete -c hug -n '__fish_seen_subcommand_from ssave ssavefull' -f
-# ssavea: <message>
-complete -c hug -n '__fish_seen_subcommand_from ssavea' -a " " -d "Message"  # Free text
-# sls/sclear: No args
-complete -c hug -n '__fish_seen_subcommand_from sls sclear' -f
-# speak/sshow/sapply/spopf/spop/sdrop: [<stash@{n}>]
-for sub in speak sshow sapply spopf spop sdrop
-    complete -c hug -n "__fish_seen_subcommand_from $sub" -a "(__hug_complete_stashes)" -d "Stash"
-end
-# sbranch: <branch> [<stash>]
-complete -c hug -n '__fish_seen_subcommand_from sbranch' -a "(__hug_complete_branches)" -d "Branch"
-complete -c hug -n '__fish_seen_subcommand_from sbranch; __fish_seen_subcommand_from ... wait, positional second' -a "(__hug_complete_stashes)"  # Approximate
+# sls: No args
+complete -c hug -n '__fish_seen_subcommand_from sls' -f
 
 # Status (s*)
 # sl/sla/sli/statusbase: Git status options only (no files)
@@ -275,9 +281,9 @@ complete -c hug -n '__fish_seen_subcommand_from tpull tpullf' -f
 for sub in b bc m mff mkeep rb
     complete -c hug -n "__fish_seen_subcommand_from $sub" -a "(__hug_complete_branches)" -d "Branch"
 end
-# bs/bl/bla/blr/bdel/bdelf/bdelr/br: No/optional args
+# bs/bl/bll/bla/blr/bdel/bdelf/bdelr/br: No/optional args
 complete -c hug -n '__fish_seen_subcommand_from bs' -f
-complete -c hug -n '__fish_seen_subcommand_from bl bla blr' -a "(__hug_complete_all_branches)" -d "Branches"
+complete -c hug -n '__fish_seen_subcommand_from bl bll bla blr' -a "(__hug_complete_all_branches)" -d "Branches"
 complete -c hug -n '__fish_seen_subcommand_from bdel bdelf bdelr br' -a "(__hug_complete_branches)" -d "Branch"
 # bpush: [options] [<remote>] [<url>] (custom, but alias here)
 complete -c hug -n '__fish_seen_subcommand_from bpush' -a "$common_branch_opts" -d "Branch options"
@@ -310,16 +316,37 @@ complete -c hug -n '__fish_seen_subcommand_from remote2ssh' -a "(__hug_complete_
 # These have explicit subcommands/options from reference.
 
 # h (HEAD operations)
-set -l h_subs back undo rollback rewind
-complete -c hug -n '__fish_seen_subcommand_from h; not __fish_seen_subcommand_from (string escape -- $h_subs)' -f -a "back\t'Soft reset (keep staged)' undo\t'Mixed reset (keep unstaged)' rollback\t'Keep reset (preserve local)' rewind\t'Hard reset (destructive)'"
+set -l h_subs back undo rollback rewind squash files steps
+complete -c hug -n '__fish_seen_subcommand_from h; not __fish_seen_subcommand_from (string escape -- $h_subs)' -f -a "back\t'Soft reset (keep staged)' undo\t'Mixed reset (keep unstaged)' rollback\t'Keep reset (preserve local)' rewind\t'Hard reset (destructive)' squash\t'Squash commits into one' files\t'Preview files in commits' steps\t'Count steps to file change'"
 for sub in $h_subs
     complete -c hug -n "__fish_seen_subcommand_from h $sub" -s h -l help -d "Help"
-    complete -c hug -n "__fish_seen_subcommand_from h $sub" -a "(__hug_complete_refs)" -d "n or commit (optional)"
+    # Most h commands take refs/commits
+    if not string match -q 'steps' $sub
+        complete -c hug -n "__fish_seen_subcommand_from h $sub" -a "(__hug_complete_refs)" -d "n or commit (optional)"
+    end
 end
+# h files specific options
+complete -c hug -n "__fish_seen_subcommand_from h files" -s u -l upstream -d "Upstream mode"
+complete -c hug -n "__fish_seen_subcommand_from h files" -l stat -d "Show line stats"
+complete -c hug -n "__fish_seen_subcommand_from h files" -l quiet -d "Quiet mode"
+# h squash specific options  
+complete -c hug -n "__fish_seen_subcommand_from h squash" -s u -l upstream -d "Squash local-only commits"
+complete -c hug -n "__fish_seen_subcommand_from h squash" -l force -d "Skip confirmation"
+complete -c hug -n "__fish_seen_subcommand_from h squash" -l quiet -d "Quiet mode"
+# h back/undo/rollback/rewind specific options
+for sub in back undo rollback rewind
+    complete -c hug -n "__fish_seen_subcommand_from h $sub" -s u -l upstream -d "Reset to upstream tip"
+    complete -c hug -n "__fish_seen_subcommand_from h $sub" -l force -d "Skip confirmation"
+    complete -c hug -n "__fish_seen_subcommand_from h $sub" -l quiet -d "Quiet mode"
+end
+# h steps takes file argument
+complete -c hug -n "__fish_seen_subcommand_from h steps" -a "(__hug_complete_files)" -d "File"
+complete -c hug -n "__fish_seen_subcommand_from h steps" -l raw -d "Output just the number"
+complete -c hug -n "__fish_seen_subcommand_from h steps" -l quiet -d "Quiet mode"
 
 # w (Working Directory)
-set -l w_subs discard discard-all purge purge-all wipe wipe-all zap zap-all backup restore get changes
-complete -c hug -n '__fish_seen_subcommand_from w; not __fish_seen_subcommand_from (string escape -- $w_subs)' -f -a "discard\t'Discard tracked changes' discard-all\t'Repo-wide discard' purge\t'Remove untracked/ignored' purge-all\t'Repo-wide purge' wipe\t'Wipe staged+unstaged' wipe-all\t'Repo-wide wipe' zap\t'Full reset (wipe+purge)' zap-all\t'Repo-wide zap' backup\t'Stash safely' restore\t'Restore from stash' get\t'Get files from commit' changes\t'Working summary'"
+set -l w_subs discard discard-all purge purge-all wipe wipe-all zap zap-all wip wips unwip wipdel get
+complete -c hug -n '__fish_seen_subcommand_from w; not __fish_seen_subcommand_from (string escape -- $w_subs)' -f -a "discard\t'Discard tracked changes' discard-all\t'Repo-wide discard' purge\t'Remove untracked/ignored' purge-all\t'Repo-wide purge' wipe\t'Wipe staged+unstaged' wipe-all\t'Repo-wide wipe' zap\t'Full reset (wipe+purge)' zap-all\t'Repo-wide zap' wip\t'Park changes on new WIP branch' wips\t'Park changes, stay on WIP branch' unwip\t'Unpark WIP branch' wipdel\t'Delete WIP branch (no integration)' get\t'Get files from commit'"
 # discard/discard-all options + <paths> or none
 for sub in discard discard-all
     complete -c hug -n "__fish_seen_subcommand_from w $sub" -s u -l unstaged -d "Unstaged (default)"
@@ -361,16 +388,25 @@ for sub in zap zap-all
         complete -c hug -n "__fish_seen_subcommand_from w $sub" -a "(__hug_complete_files)" -d "Paths"
     end
 end
-# backup: [-m <message>]
-complete -c hug -n '__fish_seen_subcommand_from w backup' -s m -l message -d "Message" -a " "
-complete -c hug -n '__fish_seen_subcommand_from w backup' -s h -l help -d "Help"
-# restore: No args (placeholder)
-complete -c hug -n '__fish_seen_subcommand_from w restore' -f
+# wip/wips: <message> with --stay option
+complete -c hug -n '__fish_seen_subcommand_from w wip' -l stay -d "Stay on WIP branch"
+complete -c hug -n '__fish_seen_subcommand_from w wip' -s h -l help -d "Help"
+complete -c hug -n '__fish_seen_subcommand_from w wip' -a " " -d "Message (required)"
+# wips is wip --stay (handled by gateway)
+complete -c hug -n '__fish_seen_subcommand_from w wips' -s h -l help -d "Help"
+complete -c hug -n '__fish_seen_subcommand_from w wips' -a " " -d "Message (required)"
+# unwip: [<wip-branch>] with options
+complete -c hug -n '__fish_seen_subcommand_from w unwip' -s f -l force -d "Force delete WIP branch"
+complete -c hug -n '__fish_seen_subcommand_from w unwip' -l no-squash -d "Regular merge instead of squash"
+complete -c hug -n '__fish_seen_subcommand_from w unwip' -s h -l help -d "Help"
+complete -c hug -n '__fish_seen_subcommand_from w unwip' -a "(git for-each-ref --format='%(refname:short)' --sort=refname 'refs/heads/WIP/' 2>/dev/null)" -d "WIP branch (optional)"
+# wipdel: [<wip-branch>] with force option
+complete -c hug -n '__fish_seen_subcommand_from w wipdel' -s f -l force -d "Force delete"
+complete -c hug -n '__fish_seen_subcommand_from w wipdel' -s h -l help -d "Help"
+complete -c hug -n '__fish_seen_subcommand_from w wipdel' -a "(git for-each-ref --format='%(refname:short)' --sort=refname 'refs/heads/WIP/' 2>/dev/null)" -d "WIP branch (optional)"
 # get: <commit> [files...]
 complete -c hug -n '__fish_seen_subcommand_from w get' -a "(__hug_complete_refs)" -d "Commit"
 complete -c hug -n '__fish_seen_subcommand_from w get; __fish_seen_subcommand_from ...' -a "(__hug_complete_files)" -d "Files (optional)"
-# changes: No args
-complete -c hug -n '__fish_seen_subcommand_from w changes' -f
 
 # c (Commit): [git-commit-opts]
 complete -c hug -n '__fish_seen_subcommand_from c' -a "$common_commit_opts" -d "Git commit options"
