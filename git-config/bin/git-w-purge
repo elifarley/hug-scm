@@ -120,9 +120,13 @@ if $dry_run; then
 fi
 
 remove_with_clean() {
-  local mode=$1
-  shift
-  git clean "$mode" -d -- "$@"
+  local mode_flags=()
+  # Collect all flags until we hit a non-flag argument
+  while [[ $# -gt 0 && "$1" == -* ]]; do
+    mode_flags+=("$1")
+    shift
+  done
+  git clean "${mode_flags[@]}" -d -- "$@"
 }
 
 if $target_untracked && $target_ignored; then
