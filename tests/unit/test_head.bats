@@ -684,23 +684,23 @@ teardown() {
   assert_success
 }
 
-@test "hug h steps: handles file with no commits" {
+@test "hug h steps: handles file with no commits (does not exist message)" {
   # Create a new untracked file
   echo "new" > new.txt
   
   run hug h steps new.txt
   assert_failure
-  # Error message may vary
-  if [[ "$output" == *"does not exist"* ]]; then
-    assert_output --partial "does not exist"
-  elif [[ "$output" == *"Needed a single revision"* ]]; then
-    assert_output --partial "Needed a single revision"
-  else
-    # Any failure is acceptable for untracked file
-    assert_failure
-  fi
+  assert_output --partial "does not exist"
 }
 
+@test "hug h steps: handles file with no commits (Needed a single revision message)" {
+  # Create a new untracked file
+  echo "new" > new.txt
+  
+  run hug h steps new.txt
+  assert_failure
+  assert_output --partial "Needed a single revision"
+}
 @test "hug h steps: handles renamed files" {
   # Create and rename a file
   echo "original" > original.txt
