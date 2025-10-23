@@ -4,7 +4,11 @@
 
 # Load BATS support libraries
 # Try multiple common locations
-if [[ -f '/usr/lib/bats-support/load.bash' ]]; then
+if [[ -f '/usr/lib/bats/bats-support/load.bash' ]]; then
+  load '/usr/lib/bats/bats-support/load.bash'
+  load '/usr/lib/bats/bats-assert/load.bash'
+  load '/usr/lib/bats/bats-file/load.bash'
+elif [[ -f '/usr/lib/bats-support/load.bash' ]]; then
   load '/usr/lib/bats-support/load.bash'
   load '/usr/lib/bats-assert/load.bash'
   load '/usr/lib/bats-file/load.bash'

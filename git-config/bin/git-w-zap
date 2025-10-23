@@ -79,16 +79,46 @@ check_git_repo
 
 paths=("$@")
 
-wipe_cmd=(hug w wipe)
-$dry_run && wipe_cmd+=(--dry-run)
-$force && wipe_cmd+=(-f)
-wipe_cmd+=(-- "${paths[@]}")
-"${wipe_cmd[@]}"
+# Separate tracked/changed files from untracked/ignored files
+declare -a tracked_paths=()
+declare -a untracked_paths=()
 
-purge_cmd=(hug w purge)
-$dry_run && purge_cmd+=(--dry-run)
-$force && purge_cmd+=(-f)
-purge_cmd+=(-u -i -- "${paths[@]}")
-"${purge_cmd[@]}"
+while IFS= read -r -d '' entry; do
+  [[ -z "$entry" ]] && continue
+  status=${entry:0:2}
+  path=${entry:3}
+  case "$status" in
+    '??'|'!!')
+      # Untracked or ignored
+      untracked_paths+=("$path")
+      ;;
+    *)
+      # Tracked file (modified, staged, etc.)
+      tracked_paths+=("$path")
+      ;;
+  esac
+done < <(git status --porcelain=v1 --ignored=matching -z -- "${paths[@]}" 2>/dev/null || true)
+
+# Convert paths to be relative to current directory before passing to sub-commands
+# (git status returns repo-root-relative paths, but wipe/purge expect current-dir-relative)
+convert_to_relative_paths tracked_paths
+convert_to_relative_paths untracked_paths
+
+# Wipe tracked changes
+if [[ ${#tracked_paths[@]} -gt 0 ]]; then
+  wipe_cmd=(hug w wipe)
+  $dry_run && wipe_cmd+=(--dry-run)
+  $force && wipe_cmd+=(-f)
+  wipe_cmd+=(-- "${tracked_paths[@]}")
+  "${wipe_cmd[@]}"
+fi
+
+# Purge untracked/ignored files
+if [[ ${#untracked_paths[@]} -gt 0 ]]; then
+  purge_cmd=(hug w purge)
+  $dry_run && purge_cmd+=(--dry-run)
+  purge_cmd+=(-u -i -- "${untracked_paths[@]}")
+  "${purge_cmd[@]}"
+fi
 
 exit 0
