@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite - Mercurial version
+
+show_help() {
+  cat <<'EOF'
+hug bc: Create a new bookmark and switch to it.
+
+USAGE:
+  hug bc <bookmark-name>
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  Creates a new bookmark at the current changeset and activates it.
+  Bookmarks in Mercurial are similar to Git branches.
+
+EXAMPLES:
+  hug bc feature    # Create and activate bookmark 'feature'
+
+SEE ALSO:
+  hug b   : Switch to a bookmark
+  hug bl  : List bookmarks
+EOF
+}
+
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
+  exit
+}
+
+# Early exit if not in Mercurial repo
+check_hg_repo
+
+if [ $# -eq 0 ]; then
+  error "Bookmark name is required"
+fi
+
+# Create and activate bookmark
+hg bookmark "$1"

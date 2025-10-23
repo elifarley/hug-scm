@@ -174,3 +174,106 @@ require_git_version() {
     skip "Git version $required or higher required (found $current)"
   fi
 }
+
+################################################################################
+# Mercurial Test Helpers
+################################################################################
+
+# Skip test if hg is not installed
+require_hg() {
+  if ! command -v hg &> /dev/null; then
+    skip "hg (Mercurial) command not found in PATH"
+  fi
+}
+
+# Skip test if hg extension is not available
+require_hg_extension() {
+  local ext="$1"
+  if ! hg help "$ext" >/dev/null 2>&1; then
+    skip "Mercurial extension '$ext' is not enabled"
+  fi
+}
+
+# Create a temporary Mercurial repository for testing
+create_test_hg_repo() {
+  local test_repo
+  test_repo=$(create_temp_repo_dir)
+  
+  # Clean up if it exists
+  rm -rf "$test_repo"
+  mkdir -p "$test_repo"
+  
+  # Initialize repo in subshell for isolation
+  (
+    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    hg init
+    
+    # Configure test user
+    cat > .hg/hgrc <<EOF
+[ui]
+username = Hug Test <test@hug-scm.test>
+
+[extensions]
+purge =
+EOF
+    
+    # Create initial commit
+    echo "# Test Repository" > README.md
+    hg add README.md
+    hg commit -m "Initial commit" -q
+  )
+  
+  echo "$test_repo"
+}
+
+# Create a test Mercurial repository with some sample commits
+create_test_hg_repo_with_history() {
+  local test_repo
+  test_repo=$(create_test_hg_repo)
+  
+  (
+    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    # Add a few more commits
+    echo "Feature 1" > feature1.txt
+    hg add feature1.txt
+    hg commit -m "Add feature 1" -q
+    
+    echo "Feature 2" > feature2.txt
+    hg add feature2.txt
+    hg commit -m "Add feature 2" -q
+  )
+  
+  echo "$test_repo"
+}
+
+# Create a test Mercurial repository with uncommitted changes
+create_test_hg_repo_with_changes() {
+  local test_repo
+  test_repo=$(create_test_hg_repo)
+  
+  (
+    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    # Added file
+    echo "Added content" > added.txt
+    hg add added.txt
+    
+    # Modified file
+    echo "Modified content" >> README.md
+    
+    # Untracked file
+    echo "Untracked content" > untracked.txt
+  )
+  
+  echo "$test_repo"
+}
+
+# Assert that hg status is clean
+assert_hg_clean() {
+  local status
+  status=$(hg status)
+  if [[ -n "$status" ]]; then
+    echo "Expected clean hg status, but found:"
+    echo "$status"
+    return 1
+  fi
+}

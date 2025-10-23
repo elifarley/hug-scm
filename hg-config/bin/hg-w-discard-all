@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite - Mercurial version
+
+show_help() {
+  cat <<'EOF'
+hug w discard-all: Discard all changes in the repository.
+
+USAGE:
+  hug w discard-all
+
+OPTIONS:
+  --dry-run      Preview without making changes
+  -f, --force    Skip confirmation prompt
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  Reverts all files to their state in the parent changeset,
+  discarding all local modifications throughout the repository.
+
+EXAMPLES:
+  hug w discard-all                # Discard all changes
+  hug w discard-all --dry-run      # Preview changes
+  hug w discard-all -f             # Force without confirmation
+
+SEE ALSO:
+  hug w discard : Discard changes in specific files
+EOF
+}
+
+# Parse arguments
+dry_run=false
+force=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -f|--force)
+      force=true
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    *)
+      error "Unknown option: $1"
+      ;;
+  esac
+done
+
+# Set HUG_FORCE if needed
+if [[ $force == true ]]; then
+  export HUG_FORCE=true
+fi
+
+# Early exit if not in Mercurial repo
+check_hg_repo
+
+if $dry_run; then
+  discard_all_uncommitted_changes --dry-run
+  exit 0
+fi
+
+# Confirm action unless forced
+if [[ $force != true ]]; then
+  printf "${RED}⚠️  Warning: This will discard ALL uncommitted changes!${NC}\n"
+  prompt_confirm "Are you sure? [y/N]: "
+fi
+
+# Discard all changes
+discard_all_uncommitted_changes

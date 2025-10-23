@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite - Mercurial version
+
+show_help() {
+  cat <<'EOF'
+hug s: Show repository status summary.
+
+USAGE:
+  hug s
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  Displays a summary of the current working directory status,
+  including modified, added, removed, and untracked files.
+
+SEE ALSO:
+  hug sl  : Status without untracked files
+  hug sla : Full status with untracked files
+  hug ss  : Status with diff of changes
+EOF
+}
+
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
+  exit
+}
+
+# Early exit if not in Mercurial repo
+check_hg_repo
+
+# Show status with colors
+hg status

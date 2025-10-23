@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite - Mercurial version
+
+show_help() {
+  cat <<'EOF'
+hug b: Switch to a bookmark or branch, or list if no args supplied.
+
+USAGE:
+  hug b [bookmark/branch]
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  If a bookmark or branch name is provided, updates to it.
+  If no arguments are given, displays list of bookmarks and branches.
+
+EXAMPLES:
+  hug b feature      # Switch to bookmark/branch 'feature'
+  hug b              # List bookmarks and branches
+
+SEE ALSO:
+  hug bc  : Create a new bookmark
+  hug bl  : List bookmarks
+EOF
+}
+
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
+  exit
+}
+
+# Early exit if not in Mercurial repo
+check_hg_repo
+
+if [ $# -gt 0 ]; then
+  # Switch to bookmark or branch
+  hg update "$@"
+else
+  # List bookmarks and branches
+  printf "${GREEN}Bookmarks:${NC}\n"
+  list_bookmarks
+  printf "\n${BLUE}Branches:${NC}\n"
+  list_branches
+fi
