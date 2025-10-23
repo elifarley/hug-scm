@@ -4,9 +4,12 @@
 
 set -euo pipefail
 
+# Get the directory where this script is located
+CMD_BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 case "${1:-}" in
-  back)         shift; hg h-back "$@" ;;
-  undo)         shift; hg h-undo "$@" ;;
+  back)         shift; exec "$CMD_BASE/hg-h-back" "$@" ;;
+  undo)         shift; exec "$CMD_BASE/hg-h-undo" "$@" ;;
   *)
     echo "Usage: hug h <subcommand>"
     echo "HEAD/commit operations:"

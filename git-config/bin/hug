@@ -23,7 +23,18 @@ elif hg root >/dev/null 2>&1; then
         echo "  w        - Working directory operations"
         exit 0
     }
-    exec hg "$@"
+    
+    # Find the hug script directory to locate hg-config
+    HUG_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    HG_CONFIG_BIN="$HUG_SCRIPT_DIR/../hg-config/bin"
+    
+    # Check if we have a custom hg command for this
+    if [[ -n "${1:-}" && -x "$HG_CONFIG_BIN/hg-$1" ]]; then
+        exec "$HG_CONFIG_BIN/hg-$1" "${@:2}"
+    else
+        # Fall back to standard hg command
+        exec hg "$@"
+    fi
 else
     echo "Error: Not in a Git or Mercurial repository" >&2
     echo "" >&2

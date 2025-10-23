@@ -4,15 +4,18 @@
 
 set -euo pipefail
 
+# Get the directory where this script is located
+CMD_BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 case "${1:-}" in
-  discard)      shift; hg w-discard "$@" ;;
-  discard-all)  shift; hg w-discard-all "$@" ;;
-  purge)        shift; hg w-purge "$@" ;;
-  purge-all)    shift; hg w-purge-all "$@" ;;
-  wipe)         shift; hg w-wipe "$@" ;;
-  wipe-all)     shift; hg w-wipe-all "$@" ;;
-  zap)          shift; hg w-zap "$@" ;;
-  zap-all)      shift; hg w-zap-all "$@" ;;
+  discard)      shift; exec "$CMD_BASE/hg-w-discard" "$@" ;;
+  discard-all)  shift; exec "$CMD_BASE/hg-w-discard-all" "$@" ;;
+  purge)        shift; exec "$CMD_BASE/hg-w-purge" "$@" ;;
+  purge-all)    shift; exec "$CMD_BASE/hg-w-purge-all" "$@" ;;
+  wipe)         shift; exec "$CMD_BASE/hg-w-wipe" "$@" ;;
+  wipe-all)     shift; exec "$CMD_BASE/hg-w-wipe-all" "$@" ;;
+  zap)          shift; exec "$CMD_BASE/hg-w-zap" "$@" ;;
+  zap-all)      shift; exec "$CMD_BASE/hg-w-zap-all" "$@" ;;
   *)
     echo "Usage: hug w <subcommand>"
     echo "Working directory operations:"
