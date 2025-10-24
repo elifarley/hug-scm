@@ -39,7 +39,7 @@
   lu = l @{u}..HEAD
 
   # All branches
-  la = "!f() { hug l --all \"$@\"; }; f"
+  la = l --all
 
   # Log one-line with date, author and message
   ll  = log --graph --pretty=log1 --date=short
@@ -47,10 +47,10 @@
   llu = ll @{u}..HEAD
 
   # All branches
-  lla = "!f() { hug ll --all \"$@\"; }; f"
+  lla = ll --all
 
   # File history with patches (-p)
-  lp = "!f() { git ll -p \"$@\"; }; f"
+  lp = ll -p
 
   # log-outgoing aliases
   lo = log-outgoing --quiet
