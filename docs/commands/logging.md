@@ -7,8 +7,10 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 | Command    | Memory Hook                           | Summary                                    |
 |------------|---------------------------------------|--------------------------------------------|
 | `hug l`    | **L**og                               | Oneline history with graph and decorations |
+| `hug lu`   | **L**og after **U**pstream            | Log commits after the last Upstream commit |
 | `hug la`   | **L**og **A**ll                       | Oneline log across all branches            |
 | `hug ll`   | **L**og **L**ong                      | Detailed log with full messages            |
+| `hug llu`  | **L**og **L**ong after **U**pstream   | Log commits after the last Upstream commit |
 | `hug lla`  | **L**og **L**ong **A**ll              | Detailed log across all branches           |
 | `hug lp`   | **L**og **P**atch                     | Log with diffs for each commit             |
 | `hug lo`   | **L**og **O**utgoing                  | Quiet preview of commits not yet on upstream |

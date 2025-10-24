@@ -34,13 +34,17 @@
   # ============================================================================
 
   # Log one-line with graph and decorations
-  l = log --oneline --graph --decorate --color
+  l  = log --oneline --graph --decorate --color
+  # Log commits after the last Upstream commit
+  lu = l @{u}..HEAD
 
   # All branches
   la = "!f() { hug l --all \"$@\"; }; f"
 
   # Log one-line with date, author and message
-  ll = log --graph --pretty=log1 --date=short
+  ll  = log --graph --pretty=log1 --date=short
+  # Log commits after the last Upstream commit
+  llu = ll @{u}..HEAD
 
   # All branches
   lla = "!f() { hug ll --all \"$@\"; }; f"
