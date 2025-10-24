@@ -57,11 +57,11 @@ if [ "$local_commits" -eq 0 ]; then
   exit 0
 fi
 
-printf '📊 since upstream:\n' >&2
+printf '📊 %d commits since upstream:\n' "$local_commits" >&2
 git diff --stat @{u}..HEAD >&2
 
 if [[ ${HUG_QUIET:-} != T ]]; then
-  printf '\n📤 Outgoing changes to upstream:\n' >&2
+  printf '\n📤 Outgoing commits to upstream:\n' >&2
   print_commit_list_in_range "$target" HEAD >&2
 fi
 
