@@ -117,6 +117,98 @@ create_test_repo_with_changes() {
   echo "$test_repo"
 }
 
+# Create a repository where HEAD commits touch the same file as local staged,
+# unstaged, untracked, and ignored changes. Useful for exercising hug h*
+# interactions with mixed working-tree states.
+# The tracked.txt storyline deliberately overlaps:
+#   1. Baseline commit seeds three lines.
+#   2. Next commit rewrites the TOP line and appends a BOTTOM line.
+#   3. Local staged edit rewrites the TOP line again.
+#   4. Local unstaged edit appends a new BOTTOM line.
+# This lets tests confirm how commands reconcile commit deltas with staged and
+# unstaged hunks that touch different sections of the same file.
+create_test_repo_with_head_mixed_state() {
+  local test_repo
+  test_repo=$(create_test_repo)
+  
+  (
+    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    
+    echo "ignored.txt" > .gitignore
+    git add .gitignore
+    git commit -q -m "Ignore ignored.txt"
+    
+    cat <<'EOF' > tracked.txt
+alpha baseline
+beta baseline
+gamma baseline
+EOF
+    git add tracked.txt
+    git commit -q -m "Add tracked baseline"
+    
+    cat <<'EOF' > tracked.txt
+alpha commit
+beta baseline
+gamma baseline
+delta commit
+EOF
+    git add tracked.txt
+    git commit -q -m "Touch tracked top and bottom"
+    
+    cat <<'EOF' > tracked.txt
+alpha staged
+beta baseline
+gamma baseline
+delta commit
+EOF
+    git add tracked.txt
+    
+    echo "epsilon unstaged" >> tracked.txt
+    
+    echo "scratch content" > scratch.txt
+    
+    echo "ignored content" > ignored.txt
+  )
+  
+  echo "$test_repo"
+}
+
+# Create a repository where rolling back commits would overwrite local changes,
+# allowing tests to assert that git reset --keep aborts safely.
+create_test_repo_with_head_conflict_state() {
+  local test_repo
+  test_repo=$(create_test_repo)
+  
+  (
+    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    
+    cat <<'EOF' > tracked.txt
+alpha baseline
+beta baseline
+gamma baseline
+EOF
+    git add tracked.txt
+    git commit -q -m "Add tracked baseline"
+    
+    cat <<'EOF' > tracked.txt
+alpha head
+beta baseline
+gamma baseline
+EOF
+    git add tracked.txt
+    git commit -q -m "Modify tracked top line"
+    
+    cat <<'EOF' > tracked.txt
+alpha local
+beta baseline
+gamma baseline
+EOF
+    # Leave the conflicting change unstaged to simulate user edits that must be preserved.
+  )
+  
+  echo "$test_repo"
+}
+
 # Clean up test repository
 cleanup_test_repo() {
   if [[ -n "${TEST_REPO:-}" && -d "$TEST_REPO" ]]; then
@@ -155,6 +247,38 @@ assert_file_not_exists() {
   fi
 }
 
+# Assert that a file contains the given string.
+assert_file_contains() {
+  local file="$1"
+  local expected="$2"
+  if [[ ! -f "$file" ]]; then
+    echo "Expected file to exist for content assertion: $file"
+    return 1
+  fi
+  if ! grep -F -- "$expected" "$file" >/dev/null; then
+    echo "Expected $file to contain: $expected"
+    echo "Actual contents:"
+    cat "$file"
+    return 1
+  fi
+}
+
+# Assert that a file does not contain the given string.
+assert_file_not_contains() {
+  local file="$1"
+  local unexpected="$2"
+  if [[ ! -f "$file" ]]; then
+    echo "Expected file to exist for content assertion: $file"
+    return 1
+  fi
+  if grep -F -- "$unexpected" "$file" >/dev/null; then
+    echo "Did not expect $file to contain: $unexpected"
+    echo "Actual contents:"
+    cat "$file"
+    return 1
+  fi
+}
+
 # Assert that git status is clean
 assert_git_clean() {
   local status
@@ -162,6 +286,37 @@ assert_git_clean() {
   if [[ -n "$status" ]]; then
     echo "Expected clean git status, but found:"
     echo "$status"
+    return 1
+  fi
+}
+
+# Obtain git status output with porcelain=2 for detailed assertions.
+git_status_porcelain() {
+  git status --porcelain=2 --untracked-files=normal
+}
+
+# Assert that git status porcelain output contains a specific fragment.
+assert_git_status_contains() {
+  local expected="$1"
+  local status
+  status=$(git_status_porcelain)
+  if ! printf '%s\n' "$status" | grep -F -- "$expected" >/dev/null; then
+    echo "Expected git status --porcelain=2 to contain: $expected"
+    echo "Actual status:"
+    printf '%s\n' "$status"
+    return 1
+  fi
+}
+
+# Assert that git status porcelain output omits a specific fragment.
+assert_git_status_not_contains() {
+  local unexpected="$1"
+  local status
+  status=$(git_status_porcelain)
+  if printf '%s\n' "$status" | grep -F -- "$unexpected" >/dev/null; then
+    echo "Did not expect git status --porcelain=2 to contain: $unexpected"
+    echo "Actual status:"
+    printf '%s\n' "$status"
     return 1
   fi
 }

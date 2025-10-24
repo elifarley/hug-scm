@@ -1,6 +1,46 @@
 #!/usr/bin/env bats
 # Tests for HEAD operations (h*)
 
+# -----------------------------------------------------------------------------
+# HEAD COMMAND CONTRACT OVERVIEW
+# Each h* command manipulates HEAD relative to commit history while applying
+# different guarantees to the index (staging area) and working tree.
+#
+# Terminology used throughout this file:
+#   • Commit changes — differences introduced by the commits being rewound.
+#   • Local staged changes — entries currently staged by the user.
+#   • Local unstaged changes — tracked files modified but not staged.
+#   • Local untracked files — files that are not tracked by Git.
+#   • Ignored files — paths excluded via .gitignore or similar.
+#
+# Command contracts asserted by these tests:
+#   hug h back (git reset --soft):
+#     - Moves HEAD to the target commit.
+#     - Leaves the index untouched, so commit changes become staged alongside any
+#       pre-existing staged work. Working tree is untouched.
+#     - Unstaged, untracked, and ignored files must remain exactly as they were.
+#   hug h undo (git reset --mixed):
+#     - Moves HEAD to the target commit.
+#     - Resets the index to the target so commit changes become unstaged and
+#       merge with any existing unstaged edits.
+#     - Working tree is untouched, untracked/ignored files remain.
+#   hug h rollback (git reset --keep):
+#     - Moves HEAD to the target commit.
+#     - Discards commit changes from both the index and the working tree while
+#       preserving user edits wherever they do not conflict.
+#   hug h rewind (git reset --hard):
+#     - Moves HEAD to the target commit and makes both index and working tree
+#       match it (tracked changes discarded). Untracked/ignored files are left.
+#   hug h squash:
+#     - Replays the selected commit range into a single commit using the original
+#       HEAD message, preserving uncommitted work.
+#   hug h files / hug h steps:
+#     - Read-only helpers; never mutate index or working tree.
+#
+# Each section below re-states the relevant contract and ensures we assert both
+# "must happen" and "must not happen" behaviours so future regressions are caught.
+# -----------------------------------------------------------------------------
+
 # Load test helpers
 load '../test_helper'
 
@@ -15,9 +55,14 @@ teardown() {
 }
 
 # Head movement commands require user confirmation unless we use the `--force`.
-# TODO create additional tests that don't use the `--force` flag (so we need to pipe a `y` to the run command)
 
-@test "hug h back: moves HEAD back one commit, keeps changes staged" {
+# -----------------------------------------------------------------------------
+# hug h back (soft reset) expectations
+#   - Moves HEAD to target without touching index or working tree contents.
+#   - Commit deltas become staged alongside existing staged edits.
+#   - Local unstaged, untracked, and ignored items must remain untouched.
+# -----------------------------------------------------------------------------
+@test "hug h back: moves HEAD back one commit, keeps commit changes staged" {
   # Get current HEAD
   local original_head
   original_head=$(git rev-parse HEAD)
@@ -33,9 +78,15 @@ teardown() {
   # Changes should be staged
   run git diff --cached --name-only
   assert_output --partial "feature2.txt"
+  
+  run git diff --name-only
+  assert_output ""
+  
+  run git status --short
+  assert_output --partial "A  feature2.txt"
 }
 
-@test "hug h back N: moves HEAD back N commits" {
+@test "hug h back N: moves HEAD back N commits, keeps commit changes staged" {
   # Get current HEAD
   local original_head
   original_head=$(git rev-parse HEAD)
@@ -51,9 +102,73 @@ teardown() {
   run git log --oneline
   assert_output --partial "Initial commit"
   refute_output --partial "Add feature 1"
+  
+  run git status --short
+  assert_output --partial "A  feature1.txt"
+  assert_output --partial "A  feature2.txt"
+}
+# Scenario: HEAD commit modifies tracked.txt at the top and bottom; local staged
+# work rewrites the top line while local unstaged work appends to the bottom.
+# hug h back must stage the commit delta while leaving the staged and unstaged
+# hunks untouched, and keep untracked/ignored artefacts as-is.
+@test "hug h back: preserves staged, unstaged, untracked, and ignored artefacts" {
+  local repo
+  repo=$(create_test_repo_with_head_mixed_state)
+  pushd "$repo" >/dev/null
+  
+  local original_head
+  original_head=$(git rev-parse HEAD)
+  
+  run hug h back --force
+  assert_success
+  
+  run git rev-parse HEAD
+  assert_output --partial "$(git rev-parse --short "${original_head}~1")"
+  
+  run git log -1 --format=%s
+  assert_output --partial "Add tracked baseline"
+  
+  run git diff --cached --name-status
+  assert_output --partial "M	tracked.txt"
+  
+  run git diff --name-status
+  assert_output --partial "M	tracked.txt"
+  
+  run git diff --cached tracked.txt
+  assert_output --partial "delta commit"
+  assert_output --partial "alpha staged"
+  
+  run git diff tracked.txt
+  assert_output --partial "epsilon unstaged"
+  
+  assert_git_status_contains "? scratch.txt"
+  assert_file_exists "scratch.txt"
+  
+  run git check-ignore -v ignored.txt
+  assert_success
+  assert_output --partial "ignored.txt"
+  
+  assert_file_contains "tracked.txt" "alpha staged"
+  assert_file_contains "tracked.txt" "delta commit"
+  assert_file_contains "tracked.txt" "epsilon unstaged"
+  
+  run head -n 1 tracked.txt
+  assert_output "alpha staged"
+
+  run tail -n 1 tracked.txt
+  assert_output "epsilon unstaged"
+  
+  popd >/dev/null
+  rm -rf "$repo"
 }
 
-@test "hug h undo: moves HEAD back and unstages changes" {
+# -----------------------------------------------------------------------------
+# hug h undo (mixed reset) expectations
+#   - Moves HEAD to target and resets index to match target.
+#   - Commit deltas plus pre-existing staged edits become unstaged in working tree.
+#   - Local unstaged, untracked, and ignored items must remain untouched.
+# -----------------------------------------------------------------------------
+@test "hug h undo: moves HEAD back 1 commit, keeps commit changes unstaged" {
   run hug h undo --force
   assert_success
   
@@ -65,13 +180,16 @@ teardown() {
   # Nothing should be staged
   run git diff --cached
   assert_output ""
-
-  # Nothing should be unstaged
+  
+  # Nothing additional should be unstaged (tracked tree matches HEAD)
   run git diff --name-only
   assert_output ""
+  
+  run git status --short
+  assert_output --partial "?? feature2.txt"
 }
 
-@test "hug h undo N: undoes N commits" {
+@test "hug h undo N: moves HEAD back N commits, keeps commit changes unstaged" {
   run hug h undo 2 --force
   assert_success
   
@@ -83,8 +201,63 @@ teardown() {
   run git log --oneline
   assert_output --partial "Initial commit"
   refute_output --partial "Add feature"
+  
+  run git status --short
+  assert_output --partial "?? feature1.txt"
+  assert_output --partial "?? feature2.txt"
+}
+# Scenario mirrors the mixed-state fixture: commit delta rewrites top/bottom of
+# tracked.txt, staged work rewrites the top, unstaged work appends the bottom.
+# hug h undo must move the commit delta into the working tree (unstaged) while
+# leaving the staged portion unstaged and untouched, and preserving untracked/
+# ignored artefacts.
+@test "hug h undo: merges commit delta with staged and unstaged edits in working tree" {
+  local repo
+  repo=$(create_test_repo_with_head_mixed_state)
+  pushd "$repo" >/dev/null
+  
+  local original_head
+  original_head=$(git rev-parse HEAD)
+  
+  run hug h undo --force
+  assert_success
+  
+  run git rev-parse HEAD
+  assert_output --partial "$(git rev-parse --short "${original_head}~1")"
+  
+  run git diff --cached --name-only
+  assert_output ""
+  
+  run git diff --name-status
+  assert_output --partial "M	tracked.txt"
+  
+  run git status --short
+  assert_output --partial " M tracked.txt"
+  assert_output --partial "?? scratch.txt"
+  
+  assert_file_contains "tracked.txt" "alpha staged"
+  assert_file_contains "tracked.txt" "delta commit"
+  assert_file_contains "tracked.txt" "epsilon unstaged"
+  
+  run head -n 1 tracked.txt
+  assert_output "alpha staged"
+
+  run tail -n 1 tracked.txt
+  assert_output "epsilon unstaged"
+  
+  run git check-ignore -v ignored.txt
+  assert_success
+  assert_output --partial "ignored.txt"
+  
+  popd >/dev/null
+  rm -rf "$repo"
 }
 
+# -----------------------------------------------------------------------------
+# hug h steps (read-only introspection) expectations
+#   - Never mutates index or working tree.
+#   - Outputs diagnostics about commit distance for specified files.
+# -----------------------------------------------------------------------------
 @test "hug h steps: shows steps to last change in file" {
   # file feature2.txt was changed in the last commit
   run hug h steps feature2.txt
@@ -97,30 +270,48 @@ teardown() {
   assert_output --partial "1 step"
 }
 
-@test "hug h rollback: removes commit but preserves work" {
-  # Add an uncommitted change that should be preserved
+# -----------------------------------------------------------------------------
+# hug h rollback (reset --keep) expectations
+#   - Moves HEAD to target, discarding commit changes from history.
+#   - Preserves local modifications that do not conflict with target content.
+#   - Aborts if local changes would be overwritten.
+# -----------------------------------------------------------------------------
+@test "hug h rollback: moves HEAD back 1 commit, discards the commit changes" {
+  # Untracked artefact before rollback should survive untouched.
   echo "uncommitted" > uncommitted.txt
-  
-  # Add a change that we'll rollback (committed)
-  echo "test" > temp.txt
+
+  # Commit that we'll roll back (touches only temp.txt).
+  echo "temporary payload" > temp.txt
   git add temp.txt
   git commit -q -m "Temp commit"
-  
+
+  # Local edits that must be preserved.
+  echo "keep staged" >> README.md
+  git add README.md
+  echo "keep unstaged" >> README.md
+
+  echo "scratch content" > scratch.keep
+
   run hug h rollback --force
   assert_success
-  
-  # Commit should be gone
+
+  # Commit should be gone from history and temp.txt removed.
   run git log --oneline
   refute_output --partial "Temp commit"
-  
-  # Committed file should NOT exist (rollback discards commit changes)
   assert_file_not_exists "temp.txt"
-  
-  # But uncommitted file should still exist (uncommitted changes preserved)
+
+  # Local artefacts stay in place.
   assert_file_exists "uncommitted.txt"
+  assert_file_exists "scratch.keep"
+  assert_file_contains "README.md" "keep staged"
+  assert_file_contains "README.md" "keep unstaged"
+  assert_git_status_contains "README.md"
+  assert_git_status_contains "? scratch.keep"
+  assert_git_status_contains "? uncommitted.txt"
+  assert_git_status_not_contains "temp.txt"
 }
 
-@test "hug h rollback N: rolls back N commits" {
+@test "hug h rollback N: moves HEAD back N commit, discards the commit changes" {
   # Add an uncommitted change that should be preserved
   echo "uncommitted" > uncommitted.txt
   
@@ -139,11 +330,43 @@ teardown() {
   # But uncommitted file should still exist (uncommitted changes preserved)
   assert_file_exists "uncommitted.txt"
 }
+# Scenario: the rollback target rewrites tracked.txt’s top line, but the user
+# holds an unstaged edit to that same line. git reset --keep must refuse to
+# clobber those local changes, so hug h rollback should abort cleanly.
+@test "hug h rollback: aborts when local modifications would be lost" {
+  local repo
+  repo=$(create_test_repo_with_head_conflict_state)
+  pushd "$repo" >/dev/null
+  
+  run hug h rollback --force
+  assert_failure
+  assert_output_contains "Could not reset"
+  
+  run git status --short
+  assert_output --partial " M tracked.txt"
+  
+  assert_file_contains "tracked.txt" "alpha local"
+  
+  popd >/dev/null
+  rm -rf "$repo"
+}
 
-@test "hug h rewind: destructive rewind to commit" {
+# -----------------------------------------------------------------------------
+# hug h rewind (reset --hard) expectations
+#   - Moves HEAD to target and aligns index + working tree to target (tracked changes lost).
+#   - Leaves untracked and ignored files untouched.
+# -----------------------------------------------------------------------------
+@test "hug h rewind: moves HEAD to specific commit, sets working dir to match the state of the commit, discarding WD changes" {
   # Get the commit hash of first commit
   local first_commit
   first_commit=$(git rev-list --max-parents=0 HEAD)
+  
+  # Ensure untracked and ignored files survive the rewind
+  echo "untracked scratch" > scratch.tmp
+  echo "ignored.log" > ignored.log
+  echo "ignored.log" >> .gitignore
+  git add .gitignore
+  git commit -q -m "Track ignore rule"
   
   run hug h rewind "$first_commit" --force
   assert_success
@@ -157,8 +380,54 @@ teardown() {
   assert_file_not_exists "feature1.txt"
   assert_file_not_exists "feature2.txt"
   
-  # Working tree should be clean
-  assert_git_clean
+  # Untracked and ignored artefacts remain
+  assert_file_exists "scratch.tmp"
+  assert_file_exists "ignored.log"
+  
+  # Tracked tree should be clean; only untracked artefacts remain.
+  run git status --short
+  assert_output --partial "?? scratch.tmp"
+  assert_output --partial "?? ignored.log"
+  refute_output --partial " M "
+}
+
+@test "hug h rewind: discards tracked staged and unstaged edits but preserves untracked and ignored files" {
+  local repo
+  repo=$(create_test_repo_with_head_mixed_state)
+  pushd "$repo" >/dev/null
+  
+  local target
+  target=$(git rev-parse HEAD~1)
+  local target_short
+  target_short=$(git rev-parse --short "$target")
+  
+  run hug h rewind "$target" --force
+  assert_success
+  
+  run git rev-parse --short HEAD
+  assert_output "$target_short"
+  
+  run git diff --cached --name-only
+  assert_output ""
+  
+  run git diff --name-only
+  assert_output ""
+  
+  assert_git_status_contains "? scratch.txt"
+  assert_file_exists "scratch.txt"
+  assert_file_exists "ignored.txt"
+  run git check-ignore -v ignored.txt
+  assert_success
+  assert_output --partial "ignored.txt"
+  
+  assert_file_contains "tracked.txt" "alpha baseline"
+  assert_file_contains "tracked.txt" "beta baseline"
+  assert_file_not_contains "tracked.txt" "alpha staged"
+  assert_file_not_contains "tracked.txt" "delta commit"
+  assert_file_not_contains "tracked.txt" "epsilon unstaged"
+  
+  popd >/dev/null
+  rm -rf "$repo"
 }
 
 @test "hug h back with commit hash: moves to specific commit" {
@@ -479,9 +748,12 @@ teardown() {
   assert_success
 }
 
-# ----------------------------------------------------------------------------
-# git-h-squash edge cases
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# hug h squash (history consolidation) expectations
+#   - Combines a commit range into a single commit using the original HEAD message.
+#   - Leaves working tree and untracked changes untouched throughout the squash.
+#   - Requires staged content after the reset step; otherwise it becomes a no-op.
+# -----------------------------------------------------------------------------
 
 @test "hug h squash: shows help with -h" {
   run hug h squash -h
@@ -587,6 +859,11 @@ teardown() {
 # git-h-files edge cases
 # ----------------------------------------------------------------------------
 
+# -----------------------------------------------------------------------------
+# hug h files (read-only preview) expectations
+#   - Never mutates repository state.
+#   - Provides visibility into files touched across commit ranges.
+# -----------------------------------------------------------------------------
 @test "hug h files: shows help with -h" {
   run hug h files -h
   assert_success
@@ -693,6 +970,9 @@ teardown() {
   assert_output --partial "Needed a single revision"
 }
 
+# -----------------------------------------------------------------------------
+# Additional hug h steps scenarios (rename, subdirectories, error paths)
+# -----------------------------------------------------------------------------
 @test "hug h steps: handles file with no commits (Needed a single revision message)" {
   # Create a new untracked file
   echo "new" > new.txt
@@ -755,6 +1035,9 @@ teardown() {
   assert_success
 }
 
+# -----------------------------------------------------------------------------
+# Combined scenarios and stress tests
+# -----------------------------------------------------------------------------
 @test "hug h commands handle merge commits" {
   # Create a branch
   git checkout -b feature-branch >/dev/null 2>&1
@@ -771,6 +1054,9 @@ teardown() {
   assert_success
 }
 
+# -----------------------------------------------------------------------------
+# hug h steps (extended history coverage)
+# -----------------------------------------------------------------------------
 @test "hug h steps with file having complex history" {
   # Create a file with multiple modifications
   echo "v1" > complex.txt
@@ -809,6 +1095,17 @@ teardown() {
   assert_output --partial "file"
 }
 
+# -----------------------------------------------------------------------------
+# TEST COVERAGE QUICK REFERENCE
+#   • Mixed-state preservation (tracked.txt top/bottom interplay + staged/unstaged coverage):
+#       - h back -> "preserves staged, unstaged, untracked, and ignored artefacts"
+#       - h undo -> "merges commit delta with staged and unstaged edits in working tree"
+#   • Safety abort scenarios:
+#       - h rollback -> "aborts when local modifications would be lost"
+#   • Destructive operations:
+#       - h rewind -> "moves HEAD to specific commit..." and
+#                     "discards tracked staged and unstaged edits but preserves untracked and ignored files"
+# -----------------------------------------------------------------------------
 @test "hug h back handles when working tree has conflicts" {
   # Make conflicting changes
   echo "conflict line" >> feature2.txt
