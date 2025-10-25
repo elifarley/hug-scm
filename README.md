@@ -102,7 +102,7 @@ hug w discard file.js
 # Need to undo the last commit but keep changes staged?
 # Hug, Head movement: Back
 hug h back
-# Tip: When the staging area is clean, Hug skips the confirmation prompt automatically; existing staged work still triggers it.
+# Tip: When the staging area has no staged changes, Hug skips the confirmation prompt automatically; existing staged work still triggers it. Unstaged changes are never touched by this command. The same protection applies to `hug h squash`, which keeps you safe when staged work might otherwise be unintentionally lumped into the squash while skipping the prompt when nothing is staged.
 
 # Want to see what changed in a specific file?
 # Hug, Status: Working dir (meaning unstaged changes)

@@ -866,6 +866,32 @@ teardown() {
   assert_success
 }
 
+@test "hug h squash: skips confirmation when staging area is clean" {
+  local original_count
+  original_count=$(git rev-list --count HEAD)
+
+  run hug h squash
+  assert_success
+  assert_output --partial "No staged changes detected; skipping confirmation."
+
+  local new_count
+  new_count=$(git rev-list --count HEAD)
+  assert_equal "$new_count" "$((original_count - 1))"
+}
+
+@test "hug h squash: requires confirmation when staged changes exist" {
+  echo "staged work" > staged.txt
+  git add staged.txt
+
+  run bash -c 'printf "n\n" | hug h squash'
+  assert_failure
+  assert_output --partial "Proceed with squash"
+  assert_output --partial "Cancelled."
+
+  run git ls-files --cached
+  assert_output --partial "staged.txt"
+}
+
 @test "hug h squash: handles squashing to commit hash" {
   local commits
   mapfile -t commits < <(git rev-list --max-count=3 HEAD)

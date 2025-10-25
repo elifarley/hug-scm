@@ -69,7 +69,15 @@ original_head=$(git rev-parse HEAD)
 
 if $upstream; then
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
-  target=$(handle_upstream_operation "squashing")
+  # When the staging area is clean we temporarily set HUG_FORCE to bypass the confirmation prompt.
+  if [[ ${HUG_FORCE:-} == true ]]; then
+    target=$(handle_upstream_operation "squashing")
+  elif has_staged_changes; then
+    target=$(handle_upstream_operation "squashing")
+  else
+    info "No staged changes detected; skipping confirmation."
+    target=$(HUG_FORCE=true handle_upstream_operation "squashing")
+  fi
   commits_to_squash=$(count_commits_in_range "$target" HEAD)
 else
   target_spec=$(resolve_head_target "${target_arg:-}" 'HEAD~2')
@@ -94,7 +102,16 @@ else
       "$commits_to_squash" "$commit_word"
     git diff --stat "$log_range" >&2
   fi
-  if [[ ${HUG_FORCE:-} != true ]]; then
+
+  should_prompt=true
+  if [[ ${HUG_FORCE:-} == true ]]; then
+    should_prompt=false
+  elif ! has_staged_changes; then
+    should_prompt=false
+    info "No staged changes detected; skipping confirmation."
+  fi
+
+  if $should_prompt; then
     if [[ -z "${target_arg:-}" || "${target_arg:-}" =~ ^[0-9]+$ ]]; then
       prompt_confirm "Proceed with squash of last $commits_to_squash $commit_word (hug back + hug c)? [y/N]: "
     else
@@ -111,7 +128,7 @@ back_cmd="hug h back $target --quiet --force"
 $back_cmd
 
 # Check for staged changes (hug c will handle, but warn if none)
-if [ -z "$(git diff --cached --name-only)" ]; then
+if ! has_staged_changes; then
   warn "No changes staged after reset. Skipping commit (empty squash?)."
   target_display=$(git rev-parse --short "$target" 2>/dev/null || echo "$target")
   info "HEAD moved to $target_display."
@@ -121,7 +138,7 @@ fi
 # Commit with messages collected from all abandoned commits
 hug c -m "[squash] $commits_to_squash commits…" -m "" -m "$combined_messages"
 
-test ${HUG_QUIET:-} = T && exit
+test "${HUG_QUIET:-f}" = T && exit
 
 target_display=$(git rev-parse --short "$target" 2>/dev/null || echo "$target")
 summary_word="commit"

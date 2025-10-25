@@ -81,7 +81,7 @@ Changes from all squashed commits are kept staged so that they can be committed 
   hug h squash -u            # Keep upstream tip unchanged; Squash local-only commits on top
   hug h squash 3 --force     # Skip confirmation
   ```
-- **Safety**: Previews commits and their file change statistics affected and requires y/n confirmation (skipped with --force). The shared preview helper is read-only; the squash only runs after you confirm. Aborts if no upstream set for `-u` or invalid target. If no staged changes after reset, skips commit and warns. Cannot mix `-u` with explicit target.
+- **Safety**: Previews commits and their file change statistics affected and requires y/n confirmation when staged changes are present (skipped with --force or when the staging area is clean). Keeps protection when staged work might be unintentionally lumped into the squash, but skips the prompt when no staged changes are present. The shared preview helper is read-only; the squash only runs after you confirm. Aborts if no upstream set for `-u` or invalid target. If no staged changes after reset, skips commit and warns. Cannot mix `-u` with explicit target.
 - Pre-existing staged changes will be included - review with `hug ss` first.
 
 ### `hug h files [N|commit] [options]`
