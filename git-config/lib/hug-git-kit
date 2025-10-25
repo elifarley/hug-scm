@@ -270,6 +270,17 @@ has_staged_changes() {
   return 0
 }
 
+# Checks if there are unstaged tracked changes (working tree dirty)
+# Usage: if has_unstaged_changes; then ...; fi
+# Returns:
+#   0 if unstaged tracked changes exist, 1 otherwise
+has_unstaged_changes() {
+  if git diff --quiet >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
 # Checks if working tree is clean (no uncommitted changes)
 # Usage: check_working_tree_clean
 # Exits:

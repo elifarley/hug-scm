@@ -228,6 +228,10 @@ bats --jobs 4 tests/
 bats --verbose-run tests/
 ```
 
+### 5. HEAD Command UX Improvements
+
+Recent updates align confirmation prompts for head-management commands with the repository state: prompts remain whenever staged or unstaged work might be unintentionally merged into the action, while `hug h back`, `hug h squash`, and `hug h undo` skip them automatically when both the staging area and working tree are clean.
+
 ## Benefits Achieved
 
 ### For Development

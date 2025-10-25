@@ -56,11 +56,29 @@ check_git_repo
 
 if $upstream; then
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
-  target=$(handle_upstream_operation "undoing")
+  if [[ ${HUG_FORCE:-} == true ]]; then
+    target=$(handle_upstream_operation "undoing")
+  elif has_staged_changes || has_unstaged_changes; then
+    target=$(handle_upstream_operation "undoing")
+  else
+    info "No staged or unstaged changes detected; skipping confirmation."
+    target=$(HUG_FORCE=true handle_upstream_operation "undoing")
+  fi
 else
   target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
   handle_standard_operation "undo" "$target"
-  prompt_confirm "Undo commits back to $(git rev-parse --short "$target")? [y/N]: "
+
+  should_prompt=true
+  if [[ ${HUG_FORCE:-} == true ]]; then
+    should_prompt=false
+  elif ! has_staged_changes && ! has_unstaged_changes; then
+    should_prompt=false
+    info "No staged or unstaged changes detected; skipping confirmation."
+  fi
+
+  if $should_prompt; then
+    prompt_confirm "Undo commits back to $(git rev-parse --short "$target")? [y/N]: "
+  fi
 fi
 
 git reset --mixed "$target"

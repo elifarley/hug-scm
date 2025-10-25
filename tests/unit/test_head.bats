@@ -663,6 +663,61 @@ teardown() {
   assert_success
 }
 
+@test "hug h undo: skips confirmation when staging area and working tree are clean" {
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  run hug h undo
+  assert_success
+  assert_output --partial "No staged or unstaged changes detected; skipping confirmation."
+
+  local new_head
+  new_head=$(git rev-parse HEAD)
+  assert_not_equal "$original_head" "$new_head"
+
+  run git status --short
+  assert_output --partial "?? feature2.txt"
+}
+
+@test "hug h undo: requires confirmation when staged changes exist" {
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  echo "staged work" > staged.txt
+  git add staged.txt
+
+  run bash -c 'printf "n\n" | hug h undo'
+  assert_failure
+  assert_output --partial "Undo commits back to"
+  assert_output --partial "Cancelled."
+
+  local head_after
+  head_after=$(git rev-parse HEAD)
+  assert_equal "$original_head" "$head_after"
+
+  run git ls-files --cached
+  assert_output --partial "staged.txt"
+}
+
+@test "hug h undo: requires confirmation when unstaged changes exist" {
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  echo "local change" >> README.md
+
+  run bash -c 'printf "n\n" | hug h undo'
+  assert_failure
+  assert_output --partial "Undo commits back to"
+  assert_output --partial "Cancelled."
+
+  local head_after
+  head_after=$(git rev-parse HEAD)
+  assert_equal "$original_head" "$head_after"
+
+  run git diff --name-only
+  assert_output --partial "README.md"
+}
+
 @test "hug h undo: merges staged and committed changes to unstaged" {
   # Stage a change
   echo "staged content" > staged.txt
