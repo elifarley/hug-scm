@@ -57,9 +57,12 @@ check_git_repo
 if $upstream; then
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
   target=$(handle_upstream_operation "rewinding")
+  if [[ -z "${target:-}" ]]; then
+    exit 0
+  fi
 else
   target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
-  handle_standard_operation "rewinding" "$target"
+  handle_standard_operation "rewinding" "$target" false
 
   printf '\n⚠️  This is PERMANENT and cannot be undone!\n' >&2
   if [[ ${HUG_FORCE:-} != true ]]; then

@@ -68,7 +68,7 @@ Several HEAD commands (`hug h back`, `hug h rollback`, `hug h undo`, `hug h rewi
   hug h rewind -u           # Rewind to upstream tip
   hug h rewind 3 --force    # Skip confirmation (very dangerous!)
   ```
-- **Safety**: Previews commits and their file change statistics to be discarded, requires typing "rewind" to confirm (skipped with --force). The preview helper is read-only; nothing changes until you confirm. Untracked files are safe. Cannot mix `-u` with explicit target.
+- **Safety**: Previews commits and their file change statistics to be discarded, requires typing "rewind" to confirm (skipped with --force). The preview helper is read-only; nothing changes until you confirm. Even if HEAD is already at the target, the command still hard-resets tracked changes in the index and working tree. Untracked files are safe. Cannot mix `-u` with explicit target.
 
 ### `hug h squash [N|commit] [-u, --upstream] [--force]`
 - **Description**: Moves HEAD back by N commits (default: 2) or to a specific commit (like `h back`), then immediately commits the staged changes as one new commit, combining all commit messages.

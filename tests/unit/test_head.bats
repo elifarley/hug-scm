@@ -430,6 +430,16 @@ teardown() {
   rm -rf "$repo"
 }
 
+@test "hug h rewind: cleans tracked changes even when already at target" {
+  echo "stage me" >> README.md
+  git add README.md
+  echo "leave unstaged" >> README.md
+
+  run hug h rewind HEAD --force
+  assert_success
+  assert_git_clean
+}
+
 @test "hug h back with commit hash: moves to specific commit" {
   # Get hash of first feature commit
   local target_commit
