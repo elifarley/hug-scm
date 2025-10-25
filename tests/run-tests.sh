@@ -12,48 +12,99 @@ else
   PROJECT_ROOT="$SCRIPT_DIR"
 fi
 
+# Dependency paths
+DEPS_DIR="$PROJECT_ROOT/tests/deps"
+BATS_CORE_DIR="$DEPS_DIR/bats-core"
+BATS_BIN="$BATS_CORE_DIR/bin/bats"
+BATS_SUPPORT_DIR="$DEPS_DIR/bats-support"
+BATS_ASSERT_DIR="$DEPS_DIR/bats-assert"
+BATS_FILE_DIR="$DEPS_DIR/bats-file"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Install or update test dependencies
+install_test_deps() {
+  mkdir -p "$DEPS_DIR"
+  clone_or_update() {
+    local repo_url="$1" target_dir="$2"
+    if [[ -d "$target_dir/.git" ]]; then
+      echo "Updating $(basename "$target_dir")..."
+      git -C "$target_dir" pull --ff-only
+    else
+      echo "Installing $(basename "$target_dir")..."
+      git clone --depth 1 "$repo_url" "$target_dir"
+    fi
+  }
+
+  clone_or_update https://github.com/bats-core/bats-core.git "$BATS_CORE_DIR"
+  clone_or_update https://github.com/bats-core/bats-support.git "$BATS_SUPPORT_DIR"
+  clone_or_update https://github.com/bats-core/bats-assert.git "$BATS_ASSERT_DIR"
+  clone_or_update https://github.com/bats-core/bats-file.git "$BATS_FILE_DIR"
+}
+
 # Check if BATS is installed
 check_bats() {
-  if ! command -v bats &> /dev/null; then
-    echo -e "${RED}❌ Error: BATS is not installed${NC}"
-    echo ""
-    echo "Please install BATS and its helper libraries:"
-    echo ""
-    echo "On Ubuntu/Debian:"
-    echo "  sudo apt-get install -y bats"
-    echo ""
-    echo "On macOS:"
-    echo "  brew install bats-core"
-    echo ""
-    echo "See tests/README.md for detailed installation instructions."
+  if command -v bats >/dev/null; then
+    bats --version
+    echo -e "${GREEN}✓ BATS is installed${NC}"
+    return
+  fi
+
+  if [[ ! -x "$BATS_BIN" ]]; then
+    echo -e "${YELLOW}⚠ BATS not found, installing locally...${NC}"
+    install_test_deps
+  fi
+
+  if [[ -x "$BATS_BIN" ]]; then
+    PATH="$BATS_CORE_DIR/bin:$PATH"
+    export PATH
+  fi
+
+  if ! command -v bats >/dev/null; then
+    echo -e "${RED}❌ Error: BATS installation failed${NC}"
     exit 1
   fi
+
   bats --version
-  echo -e "${GREEN}✓ BATS is installed${NC}"
+  echo -e "${GREEN}✓ Using local BATS from $BATS_CORE_DIR${NC}"
 }
 
 # Check if helper libraries are available
 check_helpers() {
   local missing=0
+  local found_local=false
   
+  # Export for test_helper.bash
+  export HUG_TEST_DEPS="$DEPS_DIR"
+  
+  # Check local dependencies first
+  for lib_dir in "$BATS_SUPPORT_DIR" "$BATS_ASSERT_DIR" "$BATS_FILE_DIR"; do
+    if [[ -d "$lib_dir" ]]; then
+      found_local=true
+      break
+    fi
+  done
+  
+  if [[ "$found_local" == "true" ]]; then
+    echo -e "${GREEN}✓ Using local BATS helper libraries${NC}"
+    return
+  fi
+  
+  # Check system locations
   for lib in bats-support bats-assert bats-file; do
     if [[ ! -d "/usr/lib/bats/$lib" ]] && [[ ! -d "/usr/lib/$lib" ]] && [[ ! -d "/usr/local/lib/$lib" ]] && [[ ! -d "$HOME/.bats-libs/$lib" ]]; then
-      echo -e "${YELLOW}⚠ Warning: $lib not found in standard locations${NC}"
       missing=1
     fi
   done
   
   if [[ $missing -eq 1 ]]; then
-    echo ""
-    echo "Helper libraries may be missing. Tests might fail."
-    echo "See tests/README.md for installation instructions."
-    echo ""
+    echo -e "${YELLOW}⚠ Helper libraries not found, installing locally...${NC}"
+    install_test_deps
+    echo -e "${GREEN}✓ BATS helper libraries installed${NC}"
   else
     echo -e "${GREEN}✓ BATS helper libraries found${NC}"
   fi
@@ -81,6 +132,10 @@ run_tests() {
   if [[ ! "$test_path" =~ ^/ ]]; then
     test_path="$PROJECT_ROOT/$test_path"
   fi
+  
+  # Ensure exports for parallel execution
+  export HUG_TEST_DEPS="$DEPS_DIR"
+  export PATH="$BATS_CORE_DIR/bin:$PATH"
   
   echo ""
   echo -e "${GREEN}Running tests: $test_path${NC}"
@@ -111,6 +166,7 @@ Options:
   --unit              Run only unit tests
   --integration       Run only integration tests
   --check             Check prerequisites without running tests
+  --install-deps      Install or update test dependencies only
 
 Examples:
   $0                           # Run all tests
@@ -120,6 +176,7 @@ Examples:
   $0 -j 4                      # Run with 4 parallel jobs
   $0 --unit                    # Run only unit tests
   $0 --check                   # Check prerequisites
+  $0 --install-deps            # Install test dependencies
 
 EOF
 }
@@ -130,6 +187,7 @@ main() {
   local filter=""
   local jobs=""
   local check_only=false
+  local install_only=false
   local extra_args=()
   
   # Parse arguments
@@ -160,6 +218,10 @@ main() {
         extra_args+=("--count")
         shift
         ;;
+      --install-deps)
+        install_only=true
+        shift
+        ;;
       -*)
         echo -e "${RED}Unknown option: $1${NC}"
         show_usage
@@ -171,6 +233,14 @@ main() {
         ;;
     esac
   done
+  
+  # Handle install-only mode
+  if [[ "$install_only" == "true" ]]; then
+    echo -e "${GREEN}Installing test dependencies...${NC}"
+    install_test_deps
+    echo -e "${GREEN}✓ Test dependencies installed successfully${NC}"
+    exit 0
+  fi
   
   # Check prerequisites
   echo "Checking prerequisites..."

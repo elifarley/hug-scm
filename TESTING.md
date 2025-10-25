@@ -59,9 +59,19 @@ Focus on unit tests for speed and precision, with targeted integration tests for
 
 ## Quick Start
 
-### Prerequisites
+### Install Test Dependencies
 
-Install BATS and helper libraries:
+Run once (or whenever you need an update):
+
+```bash
+make test-deps-install
+```
+
+This installs BATS and helper libraries under `tests/deps/`. The test runner (`./tests/run-tests.sh`) will automatically install or update dependencies if they're missing, so you can also just run `make test` and let it bootstrap everything.
+
+#### Manual Installation (Optional)
+
+If you prefer to install BATS system-wide:
 
 **Ubuntu/Debian:**
 ```bash

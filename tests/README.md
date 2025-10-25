@@ -18,9 +18,19 @@ tests/
 
 ## Prerequisites
 
-### Installing BATS
+### Installing Test Dependencies
 
-BATS and its helper libraries must be installed before running tests.
+The project uses a self-contained test dependency system. Run once (or whenever you need an update):
+
+```bash
+make test-deps-install
+```
+
+This installs BATS and helper libraries under `tests/deps/`. The test runner (`./tests/run-tests.sh`) will automatically install or update dependencies if they're missing, so you can also just run `make test` and let it bootstrap everything.
+
+#### Manual Installation (Optional)
+
+If you prefer to install BATS system-wide:
 
 #### On Ubuntu/Debian:
 ```bash
@@ -183,9 +193,19 @@ From `test_helper.bash`:
 6. **Mock When Needed**: Use test repositories, not real repos
 7. **Deterministic**: Tests should always produce same results
 
+## Advanced Usage
+
+You can override the dependencies directory by setting the `DEPS_DIR` environment variable before running tests:
+
+```bash
+DEPS_DIR=/custom/path ./tests/run-tests.sh
+```
+
+This is useful for custom installations or CI environments with restricted paths.
+
 ## Continuous Integration
 
-Tests run automatically in GitHub Actions on every push and pull request.
+Tests run automatically in GitHub Actions on every push and pull request. The workflow caches test dependencies to speed up runs.
 
 See `.github/workflows/test.yml` for the CI configuration.
 

@@ -78,11 +78,19 @@ Hug follows a "progressive destructiveness" approach:
 - `tests/test_helper.bash` - Common setup, utilities, and helpers
 - `tests/unit/` - Unit tests for individual commands
 - `tests/integration/` - End-to-end workflow tests
+- `tests/deps/` - Local test dependencies (auto-installed)
 
 **Helper Libraries:**
 - bats-support - Enhanced BATS support functions
 - bats-assert - Assertion helpers (assert_success, assert_output, etc.)
 - bats-file - File system assertions
+
+**Dependency Management:**
+The project uses a self-contained test dependency system:
+- Run `make test-deps-install` to install/update BATS and helpers locally
+- Test runner automatically bootstraps dependencies if missing
+- Dependencies are stored in `tests/deps/` and ignored by git
+- Can be overridden via `DEPS_DIR` env var for custom paths (e.g., in CI or restricted environments)
 
 **Running Tests:**
 ```bash
@@ -90,10 +98,12 @@ make test                      # Run all tests (recommended)
 make test-unit                 # Run unit tests only
 make test-integration          # Run integration tests only
 make test-check                # Check prerequisites
+make test-deps-install         # Install/update test dependencies
 # or use the test script directly:
 ./tests/run-tests.sh              # Run all tests
 ./tests/run-tests.sh <file.bats>  # Run specific test file
 ./tests/run-tests.sh --check      # Check prerequisites
+./tests/run-tests.sh --install-deps  # Install dependencies only
 ```
 
 **Writing Tests:**

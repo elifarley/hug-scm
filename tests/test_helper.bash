@@ -3,30 +3,43 @@
 # This file is sourced by all BATS test files
 
 # Load BATS support libraries
-# Try multiple common locations
-if [[ -f '/usr/lib/bats/bats-support/load.bash' ]]; then
-  load '/usr/lib/bats/bats-support/load.bash'
-  load '/usr/lib/bats/bats-assert/load.bash'
-  load '/usr/lib/bats/bats-file/load.bash'
-elif [[ -f '/usr/lib/bats-support/load.bash' ]]; then
-  load '/usr/lib/bats-support/load.bash'
-  load '/usr/lib/bats-assert/load.bash'
-  load '/usr/lib/bats-file/load.bash'
-elif [[ -d '/usr/lib/bats-support' ]]; then
-  # Load individual files if load.bash doesn't exist
-  for lib in /usr/lib/bats-support/*.bash; do
-    source "$lib"
-  done
-  for lib in /usr/lib/bats-assert/*.bash; do
-    source "$lib"
-  done
-  for lib in /usr/lib/bats-file/*.bash; do
-    source "$lib"
-  done
-elif [[ -d "$HOME/.bats-libs/bats-support" ]]; then
-  load "$HOME/.bats-libs/bats-support/load.bash"
-  load "$HOME/.bats-libs/bats-assert/load.bash"
-  load "$HOME/.bats-libs/bats-file/load.bash"
+# Try local dependencies first
+local_loaded=false
+if [[ -n "${HUG_TEST_DEPS:-}" ]]; then
+  if [[ -f "$HUG_TEST_DEPS/bats-support/load.bash" ]]; then
+    load "$HUG_TEST_DEPS/bats-support/load.bash"
+    load "$HUG_TEST_DEPS/bats-assert/load.bash"
+    load "$HUG_TEST_DEPS/bats-file/load.bash"
+    local_loaded=true
+  fi
+fi
+
+# Fall back to system locations if local not loaded
+if [[ "$local_loaded" == "false" ]]; then
+  if [[ -f '/usr/lib/bats/bats-support/load.bash' ]]; then
+    load '/usr/lib/bats/bats-support/load.bash'
+    load '/usr/lib/bats/bats-assert/load.bash'
+    load '/usr/lib/bats/bats-file/load.bash'
+  elif [[ -f '/usr/lib/bats-support/load.bash' ]]; then
+    load '/usr/lib/bats-support/load.bash'
+    load '/usr/lib/bats-assert/load.bash'
+    load '/usr/lib/bats-file/load.bash'
+  elif [[ -d '/usr/lib/bats-support' ]]; then
+    # Load individual files if load.bash doesn't exist
+    for lib in /usr/lib/bats-support/*.bash; do
+      source "$lib"
+    done
+    for lib in /usr/lib/bats-assert/*.bash; do
+      source "$lib"
+    done
+    for lib in /usr/lib/bats-file/*.bash; do
+      source "$lib"
+    done
+  elif [[ -d "$HOME/.bats-libs/bats-support" ]]; then
+    load "$HOME/.bats-libs/bats-support/load.bash"
+    load "$HOME/.bats-libs/bats-assert/load.bash"
+    load "$HOME/.bats-libs/bats-file/load.bash"
+  fi
 fi
 
 # Set up the test environment
@@ -37,6 +50,17 @@ setup_file() {
   
   # Add hug to PATH for tests
   export PATH="$HUG_BIN:$PATH"
+  
+  # Set up isolated temp dir for the test suite
+  export BATS_TEST_TMPDIR="$(mktemp -d -t hug-test-suite-XXXXXX)"
+}
+
+teardown_file() {
+  # Clean up suite-level temp dir
+  if [[ -n "${BATS_TEST_TMPDIR:-}" && -d "$BATS_TEST_TMPDIR" ]]; then
+    rm -rf "$BATS_TEST_TMPDIR"
+    unset BATS_TEST_TMPDIR
+  fi
 }
 
 # Helper to create a unique temp dir for test repos

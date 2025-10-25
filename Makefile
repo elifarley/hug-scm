@@ -35,6 +35,10 @@ test-check: ## Check test prerequisites without running tests
 	@echo "$(BLUE)Checking test prerequisites...$(NC)"
 	./tests/run-tests.sh --check
 
+test-deps-install: ## Install or update local BATS dependencies
+	@echo "$(BLUE)Installing test dependencies...$(NC)"
+	./tests/run-tests.sh --install-deps
+
 ##@ Documentation
 
 docs-dev: ## Start documentation development server
@@ -77,6 +81,6 @@ clean-all: clean ## Clean everything including node_modules
 	rm -rf node_modules
 	@echo "$(GREEN)Deep clean complete!$(NC)"
 
-.PHONY: test test-unit test-integration test-check
+.PHONY: test test-unit test-integration test-check test-deps-install
 .PHONY: docs-dev docs-build docs-preview deps-docs
 .PHONY: install check clean clean-all

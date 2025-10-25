@@ -7,6 +7,9 @@ dist/
 .cache/
 cache/
 
+# Local test dependencies
+tests/deps/
+
 ### Development Artifacts ###
 # Vite dev server cache (critical for HMR performance)
 .vite/

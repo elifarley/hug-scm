@@ -16,7 +16,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
+      - name: Cache test dependencies
+        uses: actions/cache@v4
+        with:
+          path: tests/deps
+          key: ${{ runner.os }}-tests-deps-${{ hashFiles('tests/run-tests.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-tests-deps-
+
       - name: Verify Git version
         run: |
           git --version
@@ -30,25 +38,8 @@ jobs:
           which hug
           hug help
 
-      - name: Install BATS
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bats
-          
-      - name: Install BATS helper libraries
-        run: |
-          # Create directories for BATS helpers
-          sudo mkdir -p /usr/lib/bats-support /usr/lib/bats-assert /usr/lib/bats-file
-          
-          # Clone helper libraries
-          git clone https://github.com/bats-core/bats-support.git /tmp/bats-support
-          git clone https://github.com/bats-core/bats-assert.git /tmp/bats-assert
-          git clone https://github.com/bats-core/bats-file.git /tmp/bats-file
-          
-          # Copy to system location
-          sudo cp -r /tmp/bats-support/src/* /usr/lib/bats-support/
-          sudo cp -r /tmp/bats-assert/src/* /usr/lib/bats-assert/
-          sudo cp -r /tmp/bats-file/src/* /usr/lib/bats-file/
+      - name: Install test dependencies
+        run: make test-deps-install
           
       - name: Check test prerequisites
         run: make test-check
