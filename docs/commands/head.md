@@ -71,7 +71,8 @@ Several HEAD commands (`hug h back`, `hug h rollback`, `hug h undo`, `hug h rewi
 - **Safety**: Previews commits and their file change statistics to be discarded, requires typing "rewind" to confirm (skipped with --force). The preview helper is read-only; nothing changes until you confirm. Untracked files are safe. Cannot mix `-u` with explicit target.
 
 ### `hug h squash [N|commit] [-u, --upstream] [--force]`
-- **Description**: Moves HEAD back by N commits (default: 2) or to a specific commit (like `h back`), then immediately commits the staged changes as one new commit using the same message from the original HEAD (before the movement). Squashes the changes from the undone commits into this single commit. With `-u`, squashes local-only commits onto the upstream tip. Non-destructive to uncommitted working directory changes.
+- **Description**: Moves HEAD back by N commits (default: 2) or to a specific commit (like `h back`), then immediately commits the staged changes as one new commit, combining all commit messages.
+Changes from all squashed commits are kept staged so that they can be committed in sequence. With `-u`, squashes local-only commits onto the upstream tip. Non-destructive to uncommitted working directory changes.
 - **Example**:
   ```shell
   hug h squash               # Squash last 2 commits into 1

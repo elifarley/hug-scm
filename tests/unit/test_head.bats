@@ -790,18 +790,32 @@ teardown() {
   assert_equal "$new_count" "$((original_count - 1))"
 }
 
-@test "hug h squash: preserves original HEAD message" {
-  local original_message
-  original_message=$(git log -1 --format=%s)
+@test "hug h squash: combines commit messages from squashed commits" {
+  # Get messages from commits that will be squashed (last 2 by default)
+  local head_message
+  local prev_message
+  head_message=$(git log -1 --format=%s)
+  prev_message=$(git log -2 --format=%s | tail -n 1)
   
   run hug h squash --force
   assert_success
   
+  # The commit message should contain the squash prefix and references to the squashed commits
   local new_message
-  new_message=$(git log -1 --format=%s)
+  new_message=$(git log -1 --format=%B)
   
-  # Message should match the original HEAD message
-  assert_equal "$new_message" "$original_message"
+  # Should contain the squash indicator in the commit message, not command output
+  if ! grep -Fq "[squash] 2 commits" <<<"$new_message"; then
+    fail "Expected commit message to include squash summary"
+  fi
+  
+  # Should contain parts of both original commit messages
+  if ! grep -Fq "$head_message" <<<"$new_message"; then
+    fail "Expected commit message to include original HEAD message"
+  fi
+  if ! grep -Fq "$prev_message" <<<"$new_message"; then
+    fail "Expected commit message to include previous commit message"
+  fi
 }
 
 @test "hug h squash: rejects both --upstream and target" {
@@ -816,16 +830,38 @@ teardown() {
 }
 
 @test "hug h squash: handles squashing to commit hash" {
-  local first_feature
-  first_feature=$(git log --oneline --all | grep "Add feature 1" | awk '{print $1}')
+  local commits
+  mapfile -t commits < <(git rev-list --max-count=3 HEAD)
+  if [ "${#commits[@]}" -lt 3 ]; then
+    fail "Expected at least 3 commits to test squash to commit hash"
+  fi
+  local target_commit="${commits[2]}"
+  local commits_to_squash
+  commits_to_squash=$(git rev-list "$target_commit"..HEAD --count)
+  local commit_word="commit"
+  if [ "$commits_to_squash" -ne 1 ]; then
+    commit_word="commits"
+  fi
+  local squashed_head_subject
+  squashed_head_subject=$(git log -1 --format=%s)
   
-  run hug h squash "$first_feature" --force
+  run hug h squash "$target_commit" --force
   assert_success
   
-  # Should have squashed everything above first feature
-  run git log --oneline
-  assert_output --partial "Add feature 2"  # Uses this message
-  assert_output --partial "Add feature 1"
+  local new_message
+  new_message=$(git log -1 --format=%B)
+  
+  if ! grep -Fq "[squash] $commits_to_squash $commit_word" <<<"$new_message"; then
+    fail "Expected commit message to include squash summary"
+  fi
+  if ! grep -Fq "$squashed_head_subject" <<<"$new_message"; then
+    fail "Expected commit message to include squashed commit subject"
+  fi
+  
+  # Parent of the squash commit should be the target commit hash noted earlier
+  local parent_commit
+  parent_commit=$(git rev-parse HEAD^)
+  assert_equal "$parent_commit" "$target_commit"
 }
 
 @test "hug h squash: preserves uncommitted changes" {

@@ -112,6 +112,17 @@ info() {
   printf "${BLUE}ℹ️  Info:${NC} %s\n" "$1" >&2
 }
 
+# Prints a tip message to stderr
+# Usage: tip "message"
+# Parameters:
+#   $1 - Tip message to display
+# Environment:
+#   HUG_QUIET - If set, suppresses output
+tip() {
+  test "${HUG_QUIET:-}" && return
+  printf "${CYAN}💡  Tip:${NC} %s\n" "$1" >&2
+}
+
 # Prints a success message to stderr
 # Usage: success "message"
 # Parameters:

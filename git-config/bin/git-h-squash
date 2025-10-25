@@ -6,7 +6,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
     cat << EOF
-hug h squash: Squashes specific commits into 1 with original HEAD message.
+hug h squash: Squashes specific commits into 1 with original messages combined.
 
 USAGE:
     hug h squash [--quiet] [--force] [target]
@@ -66,7 +66,6 @@ check_git_repo
 
 # Capture original HEAD message BEFORE any reset
 original_head=$(git rev-parse HEAD)
-original_message=$(git log -1 --format=%B "$original_head" 2>/dev/null || echo "Squashed commits")
 
 if $upstream; then
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
@@ -77,6 +76,7 @@ else
   ensure_ancestor_of_head "$target_spec" "cannot squash onto it."
   target_commit=$(git rev-parse "${target_spec}^{commit}")
   log_range="$target_commit"..HEAD
+  # short hash
   target_display=$(git rev-parse --short "$target_commit" 2>/dev/null || echo "$target_spec")
   commits_to_squash=$(count_commits_in_range "$target_commit" HEAD)
   if [ "$commits_to_squash" -eq 0 ]; then
@@ -93,7 +93,6 @@ else
     printf '\nPreview: changes in %d %s.\n' >&2 \
       "$commits_to_squash" "$commit_word"
     git diff --stat "$log_range" >&2
-    printf '\nWill create new commit with message: "%s"\n' "$original_message" >&2
   fi
   if [[ ${HUG_FORCE:-} != true ]]; then
     if [[ -z "${target_arg:-}" || "${target_arg:-}" =~ ^[0-9]+$ ]]; then
@@ -105,10 +104,10 @@ else
   target="$target_commit"
 fi
 
-back_cmd="hug h back $target --quiet"
-if [[ $force == true ]]; then
-  back_cmd="$back_cmd --force"
-fi
+# Collect all commit messages from the commits to be squashed, in reverse order
+combined_messages=$(git log --format='--squash--%n- %B' --reverse "$target..HEAD" 2>/dev/null | tail -n +2 || echo "Squashed commits")
+
+back_cmd="hug h back $target --quiet --force"
 $back_cmd
 
 # Check for staged changes (hug c will handle, but warn if none)
@@ -119,12 +118,15 @@ if [ -z "$(git diff --cached --name-only)" ]; then
   exit 0
 fi
 
-# Commit with original message using hug c
-hug c -m "$original_message"
+# Commit with messages collected from all abandoned commits
+hug c -m "[squash] $commits_to_squash commits…" -m "" -m "$combined_messages"
+
+test ${HUG_QUIET:-} = T && exit
 
 target_display=$(git rev-parse --short "$target" 2>/dev/null || echo "$target")
 summary_word="commit"
 if [ "$commits_to_squash" -gt 1 ]; then
   summary_word="commits"
 fi
-info "Squash complete: $commits_to_squash $summary_word combined into 1 at $target_display with original message."
+info "Squash complete: $commits_to_squash $summary_word combined into 1 with parent '$target_display'."
+tip 'Use `hug cm` to change the commit message of the last commit.'
