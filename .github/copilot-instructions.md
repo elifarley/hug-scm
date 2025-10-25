@@ -78,7 +78,7 @@ Hug follows a "progressive destructiveness" approach:
 - `tests/test_helper.bash` - Common setup, utilities, and helpers
 - `tests/unit/` - Unit tests for individual commands
 - `tests/integration/` - End-to-end workflow tests
-- `tests/deps/` - Local test dependencies (auto-installed)
+- `tests/deps/` - Local test dependencies (auto-installed, listed in .gitignore)
 
 **Helper Libraries:**
 - bats-support - Enhanced BATS support functions
@@ -94,16 +94,11 @@ The project uses a self-contained test dependency system:
 
 **Running Tests:**
 ```bash
+make test-deps-install         # Install BATS and helpers first
 make test                      # Run all tests (recommended)
 make test-unit                 # Run unit tests only
 make test-integration          # Run integration tests only
 make test-check                # Check prerequisites
-make test-deps-install         # Install/update test dependencies
-# or use the test script directly:
-./tests/run-tests.sh              # Run all tests
-./tests/run-tests.sh <file.bats>  # Run specific test file
-./tests/run-tests.sh --check      # Check prerequisites
-./tests/run-tests.sh --install-deps  # Install dependencies only
 ```
 
 **Writing Tests:**
@@ -268,6 +263,10 @@ Tests create isolated Git repositories in temp directories:
 - See README.md for command philosophy and structure
 
 ## Quick Reference
+
+**Command Pattern**: `hug <command> [args]`
+- Shorter commands = more common/safer
+- Longer commands  = more specific/powerful/dangerous
 
 **Command Pattern**: `hug <prefix> [subcommand] [args]`
 - Single letter prefix = command category
