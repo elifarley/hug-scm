@@ -137,11 +137,24 @@ run_tests() {
   export HUG_TEST_DEPS="$DEPS_DIR"
   export PATH="$BATS_CORE_DIR/bin:$PATH"
   
+  # Find .bats files, excluding deps/
+  local bats_files
+  if [[ -f "$test_path" ]]; then
+    bats_files="$test_path"
+  else
+    bats_files=$(find "$test_path" -path "*/deps/*" -prune -o -name "*.bats" -print)
+  fi
+  
+  if [[ -z "$bats_files" ]]; then
+    echo "No .bats files found in $test_path"
+    return 1
+  fi
+  
   echo ""
   echo -e "${GREEN}Running tests: $test_path${NC}"
   echo "----------------------------------------"
   
-  if bats --timing --recursive --tap "${extra_args[@]}" $test_path; then
+  if bats --timing --tap "${extra_args[@]}" $bats_files; then
     echo ""
     echo -e "${GREEN}✓ All tests passed!${NC}"
     return 0
