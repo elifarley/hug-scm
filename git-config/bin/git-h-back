@@ -60,7 +60,12 @@ if $upstream; then
 else
   target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
   handle_standard_operation "move back" "$target"
-  prompt_confirm "Move HEAD back to $(git rev-parse --short "$target")? [y/N]: "
+  target_short=$(git rev-parse --short "$target")
+  if has_staged_changes; then
+    prompt_confirm "Move HEAD back to ${target_short}? [y/N]: "
+  else
+    info "No staged changes detected; skipping confirmation."
+  fi
 fi
 
 git reset --soft "$target"

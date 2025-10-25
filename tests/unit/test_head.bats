@@ -568,6 +568,43 @@ teardown() {
   # Output should be minimal (info messages suppressed)
 }
 
+@test "hug h back: skips confirmation when staging area is clean" {
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  run hug h back
+  assert_success
+  assert_output --partial "No staged changes detected; skipping confirmation."
+
+  local new_head
+  new_head=$(git rev-parse HEAD)
+  assert_not_equal "$original_head" "$new_head"
+
+  run git status --short
+  assert_output --partial "A  feature2.txt"
+}
+
+@test "hug h back: requires confirmation when staged changes exist" {
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  echo "preexisting" > staged.txt
+  git add staged.txt
+
+  # Feed "n" to decline the confirmation prompt while capturing output.
+  run bash -c 'printf "n\n" | hug h back'
+  assert_failure
+  assert_output --partial "Move HEAD back to"
+  assert_output --partial "Cancelled."
+
+  local new_head
+  new_head=$(git rev-parse HEAD)
+  assert_equal "$original_head" "$new_head"
+
+  run git ls-files --cached
+  assert_output --partial "staged.txt"
+}
+
 @test "hug h back: handles invalid target" {
   run hug h back invalidcommit --force
   # Invalid targets may be handled gracefully with "Already at target" message

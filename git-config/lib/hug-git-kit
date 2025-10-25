@@ -259,6 +259,17 @@ has_pending_changes() {
   git status --porcelain=2 --untracked-files=normal | grep -q '.'
 }
 
+# Checks if there are staged changes (index dirty)
+# Usage: if has_staged_changes; then ...; fi
+# Returns:
+#   0 if staged changes exist, 1 otherwise
+has_staged_changes() {
+  if git diff --cached --quiet >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
 # Checks if working tree is clean (no uncommitted changes)
 # Usage: check_working_tree_clean
 # Exits:
