@@ -53,6 +53,10 @@ setup_file() {
   
   # Set up isolated temp dir for the test suite
   export BATS_TEST_TMPDIR="$(mktemp -d -t hug-test-suite-XXXXXX)"
+
+  # Capture original global configs
+  export ORIGINAL_GIT_USER_NAME="$(git config --global user.name || echo "")"
+  export ORIGINAL_GIT_USER_EMAIL="$(git config --global user.email || echo "")"
 }
 
 teardown_file() {
@@ -60,6 +64,24 @@ teardown_file() {
   if [[ -n "${BATS_TEST_TMPDIR:-}" && -d "$BATS_TEST_TMPDIR" ]]; then
     rm -rf "$BATS_TEST_TMPDIR"
     unset BATS_TEST_TMPDIR
+  fi
+
+  # Restore original global configs if changed
+  current_name="$(git config --global user.name || echo "")"
+  if [ "$current_name" != "$ORIGINAL_GIT_USER_NAME" ]; then
+    if [ -n "$ORIGINAL_GIT_USER_NAME" ]; then
+      git config --global user.name "$ORIGINAL_GIT_USER_NAME"
+    else
+      git config --global --unset user.name || true
+    fi
+  fi
+  current_email="$(git config --global user.email || echo "")"
+  if [ "$current_email" != "$ORIGINAL_GIT_USER_EMAIL" ]; then
+    if [ -n "$ORIGINAL_GIT_USER_EMAIL" ]; then
+      git config --global user.email "$ORIGINAL_GIT_USER_EMAIL"
+    else
+      git config --global --unset user.email || true
+    fi
   fi
 }
 
@@ -83,13 +105,13 @@ create_test_repo() {
   (
     cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
     git init -q
-    git config user.email "test@hug-scm.test"
-    git config user.name "Hug Test"
+    git config --local user.email "test@hug-scm.test"
+    git config --local user.name "Hug Test"
     
     # Configure git aliases needed by hug commands
     # These are from git-config/.gitconfig
-    git config alias.ll "log --graph --pretty=log1 --date=short"
-    git config pretty.log1 "%C(bold blue)%h%C(reset) %C(white)%ad%C(reset) %C(dim white)%an%C(reset)%C(auto)%d%C(reset) %s"
+    git config --local alias.ll "log --graph --pretty=log1 --date=short"
+    git config --local pretty.log1 "%C(bold blue)%h%C(reset) %C(white)%ad%C(reset) %C(dim white)%an%C(reset)%C(auto)%d%C(reset) %s"
     
     # Create initial commit
     echo "# Test Repository" > README.md
@@ -236,7 +258,7 @@ EOF
 # Clean up test repository
 cleanup_test_repo() {
   if [[ -n "${TEST_REPO:-}" && -d "$TEST_REPO" ]]; then
-    rm -rf "$TEST_REPO"
+    rm -rf "$TEST_REPO" 2>/dev/null || true
     unset TEST_REPO
   fi
   # Clean up any hug-test-repo-* dirs

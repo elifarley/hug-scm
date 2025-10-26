@@ -8,12 +8,13 @@ setup() {
   require_hg
   require_hug
   TEST_REPO=$(create_test_hg_repo)
-  cd "$TEST_REPO"
+  pushd "$TEST_REPO" > /dev/null
   # Update PATH to include hg-config bin
   export PATH="$PROJECT_ROOT/hg-config/bin:$PATH"
 }
 
 teardown() {
+  popd > /dev/null
   cleanup_test_repo
 }
 

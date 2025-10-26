@@ -614,6 +614,15 @@ All PRs must:
 - [ADR-001: Testing Strategy](docs/architecture/ADR-001-automated-testing-strategy.md)
 - [Test Suite README](tests/README.md)
 
+## Config Isolation Guidelines
+
+To ensure tests do not affect global Git configurations:
+- Always use `--local` with `git config` in test helpers.
+- Use subshells for environment isolation in scripts.
+- Capture and restore global configs in setup/teardown if needed.
+- Verify locally by checking `git config --global user.name` before/after tests.
+- Run tests outside Git repositories or back up global configs manually.
+
 ## Questions?
 
 For questions or issues with testing:

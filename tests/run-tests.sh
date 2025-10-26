@@ -121,6 +121,7 @@ activate_hug() {
     echo -e "${YELLOW}⚠ Warning: $activate_script not found${NC}"
     echo "Make sure you're running this from the project root or tests directory"
   fi
+  echo "Verifying no global changes post-activation"
 }
 
 # Run tests
@@ -273,7 +274,7 @@ main() {
   rm -rf "$temp_dir"
   
   # Run tests or only show test counts if `--check` present
-  run_tests "$test_path" "${extra_args[@]}"
+  (run_tests "$test_path" "${extra_args[@]}")
 
   if [[ "$check_only" == "true" ]]; then
     echo ""
