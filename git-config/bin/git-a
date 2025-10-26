@@ -26,10 +26,8 @@ SEE ALSO:
 EOF
 }
 
-test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
-  show_help
-  exit
-}
+# Parse common flags
+eval "$(parse_common_flags "$@")"
 
 # Early exit if not in Git repo
 check_git_repo
