@@ -66,16 +66,4 @@ fi
 
 info "Committing staged changes..."
 
-# Run git commit directly without capturing output to allow interactive editor
-# Temporarily disable error exit to capture the exit code
-set +e
 git commit "$@"
-exit_code=$?
-set -e
-
-# Print success message if commit succeeded
-if [ $exit_code -eq 0 ]; then
-  info "Commit successful."
-fi
-
-exit $exit_code

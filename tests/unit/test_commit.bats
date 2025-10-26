@@ -49,7 +49,7 @@ teardown() {
 @test "hug c: allows empty commit with --allow-empty" {
   run hug c --allow-empty -m "Empty commit"
   assert_success
-  assert_output --partial "Commit successful."
+  assert_output --partial "Committing staged changes..."
 
   # Verify commit exists
   run git log -1 --format=%s
@@ -62,7 +62,7 @@ teardown() {
 
   run hug c -m "Staged commit"
   assert_success
-  assert_output --partial "Commit successful."
+  assert_output --partial "Committing staged changes..."
 
   local new_head
   new_head=$(git rev-parse HEAD)
@@ -93,7 +93,6 @@ teardown() {
   run hug c -m "Quiet commit" --quiet
   assert_success
   refute_output --partial "Committing staged changes..."
-  refute_output --partial "Commit successful."
 }
 
 @test "hug c: propagates git commit errors" {
@@ -117,7 +116,7 @@ teardown() {
 
   run hug c -m "Initial commit"
   assert_success
-  assert_output --partial "Commit successful."
+  assert_output --partial "Committing staged changes..."
 
   run git log -1 --format=%s
   assert_output "Initial commit"
