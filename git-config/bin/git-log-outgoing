@@ -30,12 +30,13 @@ SEE ALSO:
 EOF
 }
 
-quiet=false
+# Parse common flags (--quiet, -h|--help)
+eval "$(parse_common_flags "$@")"
+
+# Parse custom flags
 fetch=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -h|--help) show_help; exit 0 ;;
-    --quiet) HUG_QUIET=T; quiet=true; shift ;;
     --fetch) fetch=true; shift ;;
     *) error "Unknown option: $1. See --help."; ;;
   esac
