@@ -125,11 +125,11 @@ print_nothing_to_do() {
 }
 
 # Prints an informational dry-run preview message (shared across commands)
-# Usage: print_dry_run_preview "be discarded" "from the specified paths."
+# Usage: print_dry_run_preview "discarded" "from the specified paths."
 print_dry_run_preview() {
   local action_phrase="$1"
   local scope="${2:-for the selected scope.}"
-  info "Dry run: the following items would be ${action_phrase} ${scope} (no changes applied)."
+  info "Dry run: the following items would ${action_phrase} ${scope} (no changes applied)."
 }
 
 # Prints a warning preview message before executing a destructive action
