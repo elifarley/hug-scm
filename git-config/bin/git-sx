@@ -23,7 +23,7 @@ aggregate line insertions/deletions and a short list of affected paths.
 EOF
 }
 
-# Parse common flags (-h|--help)
+# Parse common flags (--dry-run, -f|--force, --quiet, -h|--help)
 eval "$(parse_common_flags "$@")"
 
 # Parse custom flags

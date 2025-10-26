@@ -30,7 +30,7 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (--quiet, -h|--help)
+# Parse common flags (--dry-run, -f|--force, --quiet, -h|--help)
 eval "$(parse_common_flags "$@")"
 
 # Parse custom flags
