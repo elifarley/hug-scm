@@ -52,14 +52,15 @@ teardown() {
   assert_success
   
   # Use a fake editor that writes a commit message
-  # Create a simple script instead of inline bash
-  cat > /tmp/test-editor.sh << 'EDITORSCRIPT'
+  # Create a simple script in a safe temporary location
+  local editor_script=$(mktemp)
+  cat > "$editor_script" << 'EDITORSCRIPT'
 #!/bin/bash
 echo "Test commit from editor" > "$1"
 EDITORSCRIPT
-  chmod +x /tmp/test-editor.sh
+  chmod +x "$editor_script"
   
-  export GIT_EDITOR="/tmp/test-editor.sh"
+  export GIT_EDITOR="$editor_script"
   run timeout 5 hug c
   assert_success
   
@@ -68,7 +69,8 @@ EDITORSCRIPT
   assert_success
   assert_output --partial "Test commit from editor"
   
-  rm -f /tmp/test-editor.sh
+  # Cleanup
+  rm -f "$editor_script"
 }
 
 @test "hug c: passes through other git commit flags" {
