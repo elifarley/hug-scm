@@ -294,7 +294,7 @@ parse_common_flags() {
         shift
         ;;
       -h|--help)
-        echo "if declare -f usage >/dev/null; then usage; elif declare -f show_help >/dev/null; then show_help; fi && exit 0"
+        echo "if declare -f usage >/dev/null; then usage; elif declare -f show_help >/dev/null; then show_help; fi; exit 0"
         shift
         ;;
       --)
