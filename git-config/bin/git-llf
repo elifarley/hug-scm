@@ -15,7 +15,10 @@ show_help() {
   printf '  hug llf file.txt -2 --stat  # Last 2 commits with stats\n' >&2
 }
 
-if [ $# -eq 0 ] || [ "$1" = '-h' ] || [ "$1" = '--help' ]; then
+# Parse common flags
+eval "$(parse_common_flags "$@")"
+
+if [ $# -eq 0 ]; then
   show_help
   exit 1
 fi

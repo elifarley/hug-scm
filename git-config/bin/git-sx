@@ -23,17 +23,16 @@ aggregate line insertions/deletions and a short list of affected paths.
 EOF
 }
 
-# ---------- option parsing ----------
+# Parse common flags (--dry-run, -f|--force, --quiet, -h|--help)
+eval "$(parse_common_flags "$@")"
+
+# Parse custom flags
 want_color=true
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-color)
       want_color=false
       shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
       ;;
     *)
       printf 'Error: unknown option: %s\n' "$1" >&2

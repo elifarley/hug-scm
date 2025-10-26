@@ -32,13 +32,15 @@ SEE ALSO:
 EOF
 }
 
+# Parse common flags (--quiet, -h|--help)
+eval "$(parse_common_flags "$@")"
+
+# Parse custom flags
 upstream=false
 target_arg=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -h|--help) show_help; exit 0 ;;
     -u|--upstream) upstream=true; shift ;;
-    --quiet) HUG_QUIET=T; shift ;;
     *) target_arg="$1"; shift ;;
   esac
 done

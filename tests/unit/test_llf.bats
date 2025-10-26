@@ -23,7 +23,7 @@ teardown() {
 
 @test "hug llf: shows help with -h flag" {
   run hug llf -h
-  assert_failure
+  assert_success
   assert_output --partial "hug llf: Log commits to a file (handles renames)"
 }
 

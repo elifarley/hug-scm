@@ -37,12 +37,6 @@ SEE ALSO:
 EOF
 }
 
-# Check for help flags before parse_common_flags to prevent git from intercepting --help
-test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
-  show_help
-  exit 0
-}
-
 # Parse common flags
 eval "$(parse_common_flags "$@")"
 
@@ -66,4 +60,5 @@ fi
 
 info "Committing staged changes..."
 
+# Run git commit directly without capturing output to allow interactive editor
 git commit "$@"

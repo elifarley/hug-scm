@@ -799,7 +799,7 @@ teardown() {
 
 @test "hug h rollback: shows help with -h" {
   run hug h rollback -h
-  assert_failure  # -h exits with 1
+  assert_success  # -h exits with 0
   assert_output --partial "hug h rollback"
 }
 

@@ -178,6 +178,6 @@ EDITORSCRIPT
   # Verify commit
   run git log -1 --format=%s
   assert_output "Quiet commit message"
-  
+
   rm -f "$fake_editor"
 }
