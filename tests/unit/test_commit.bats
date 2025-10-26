@@ -19,6 +19,15 @@ teardown() {
   assert_output --partial "hug c: Commit staged changes."
   assert_output --partial "USAGE:"
   assert_output --partial "OPTIONS:"
+  assert_output --partial "--quiet       Suppress non-essential output."
+}
+
+@test "hug c: shows help with --help" {
+  run hug c --help
+  assert_success
+  assert_output --partial "hug c: Commit staged changes."
+  assert_output --partial "DESCRIPTION:"
+  assert_output --partial "EXAMPLES:"
 }
 
 @test "hug c: fails gracefully outside git repo" {
@@ -114,4 +123,44 @@ teardown() {
 
   run git log -1 --format=%s
   assert_output "Initial commit"
+}
+
+@test "hug c: handles no arguments correctly (no pathspec error)" {
+  # Setup with staged changes
+  echo "staged content" > staged_no_msg.txt
+  git add staged_no_msg.txt
+
+  # Fake editor to avoid interactive hang; should succeed without pathspec error
+  GIT_EDITOR="true" run hug c
+  assert_success
+  refute_output --partial "pathspec"
+  refute_output --partial "empty string"
+
+  # Verify commit was created (even without message, Git allows it with editor)
+  run git log -1 --format=%s
+  refute_output ""  # Should have a message from fake editor or default
+
+  # Clean case: no staged, no args
+  git reset --hard HEAD  # Clean staging
+  run hug c
+  assert_failure
+  assert_output --partial "No staged changes found."
+  refute_output --partial "pathspec"
+  refute_output --partial "empty string"
+}
+
+@test "hug c: handles flags only (no args, no pathspec error)" {
+  # Staged changes + quiet flag only
+  echo "quiet staged" > quiet_staged.txt
+  git add quiet_staged.txt
+
+  GIT_EDITOR="true" run hug c --quiet
+  assert_success
+  refute_output --partial "pathspec"
+  refute_output --partial "empty string"
+  refute_output --partial "Committing staged changes..."  # Quiet suppresses
+
+  # Verify commit
+  run git log -1 --oneline
+  assert_output --partial "quiet staged"
 }
