@@ -12,6 +12,7 @@ The `c*` commands handle creating and modifying commits, making it easier to rec
 | `hug cm`  | **C**ommit **M**odify                 | Modify last commit with staged changes only        |
 | `hug cma` | **C**ommit **M**odify **A**ll tracked | Modify last commit with all tracked changes        |
 | `hug cc`  | **C**ommit **C**opy (or cherry-pick)  | Copy a commit from another branch onto HEAD        |
+| `hug cmv [N|commit] <branch> [--new] [-u, --upstream] [--force]` | **C**ommit **M**o**V**e | Move commits to another branch (like mv for files) |
 
 ## hug c (Commit staged)
 
@@ -114,6 +115,25 @@ hug cc a1b2c3d4  # Apply the changes from commit a1b2c3d4 to the tip (HEAD) of t
 ```
 
 Applies the changes from a specific commit on top of the current HEAD, creating a new commit on the current branch. `hug` also adds the original commit hash to the new commit message for reference. This is useful for bringing a specific bug fix or feature from one branch to another without merging the entire source branch.
+
+## hug cmv (Commit Move)
+
+Move (relocate) commits from the current branch to another branch (new or existing), like `mv` for files.
+
+**Usage:** `hug cmv [N|commit] <branch> [--new] [-u, --upstream] [--force]`
+
+**Description**: Moves the last N commits (default: 1) or commits above a specific commit from the current branch to <branch>, preserving individual commit history. Then resets the current branch back. If <branch> missing without --new: Prompts to create (y/n); auto-creates with --force (no prompt). Use --new for explicit non-interactive creation. For new branches, detaches by creating at original HEAD then resetting original back (exact history preserved, no conflicts). For existing branches, cherry-picks the range. With -u, moves local-only commits above the upstream tip (read-only preview/confirmation; no fetch).
+
+**Examples:**
+```shell
+hug cmv 2 feature/new           # Prompts to create if missing
+hug cmv 2 feature/new --new     # Explicitly create new branch 'feature/new'
+hug cmv a1b2c3 existing-branch  # Move commits above a1b2c3 to 'existing-branch'
+hug cmv -u feature/local --force # Auto-creates if missing, skip confirmation
+hug cmv 3 bugfix --force        # Skip confirmation (auto-create if missing)
+```
+
+**Safety**: Requires clean working tree and index (no staged or unstaged changes; untracked ok). Previews commits and file changes; requires y/n confirmation for move (skipped with --force). Auto-creation on --force for scripting; interactive prompt otherwise. For new branches: Simple detach (no reapplication). For existing: Cherry-pick may conflict/abort. Cannot mix -u with explicit N/commit. The preview is read-only.
 
 ## Tips
 - Use `hug s` (**S**tatus) or `hug sl` (**S**tatus + **L**ist) to check what you are about to commit, especially before using `hug c` (**C**ommit).
