@@ -58,7 +58,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$branch_name" ]]; then
-  error "Missing required <target-branch>."
+  # Special case: if using -u and target_arg is set, it's actually the branch name
+  if $upstream && [[ -n "$target_arg" ]]; then
+    branch_name="$target_arg"
+    target_arg=""
+  else
+    error "Missing required <target-branch>."
+  fi
 fi
 
 if $upstream && [[ -n "$target_arg" ]]; then
@@ -84,9 +90,17 @@ if $upstream; then
     exit 0
   fi
 else
+  # Special case: if target_arg is "0", immediately exit with message
+  if [[ "${target_arg:-}" == "0" ]]; then
+    info "No commits to move (target is 0)."
+    exit 0
+  fi
   target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
   handle_standard_operation "moving" "$target" false
 fi
+
+# Resolve target to actual SHA (important: do this before reset changes HEAD)
+target=$(git rev-parse "$target")
 
 # Check branch existence
 branch_exists=true
@@ -122,7 +136,7 @@ if [ "$commits_to_relocate" -gt 1 ]; then
 fi
 
 if [[ ${HUG_QUIET:-} != T ]]; then
-  local create_note=""
+  create_note=""
   if ! $branch_exists && $new_branch; then
     create_note=" (will detach commits to new branch from original HEAD)"
   fi
@@ -139,7 +153,7 @@ if [[ ${HUG_FORCE:-} == true ]]; then
 fi
 
 if $should_prompt; then
-  local create_msg=""
+  create_msg=""
   if ! $branch_exists && $new_branch; then
     create_msg=" (detaching to new branch '$branch_name')"
   fi
@@ -157,7 +171,7 @@ if ! $branch_exists && $new_branch; then
   git checkout -q "$branch_name"
 else
   # Existing branch: use temp for cherry-pick
-  local temp_branch="hug-move-temp-$(git rev-parse --short "$original_head")"
+  temp_branch="hug-move-temp-$(git rev-parse --short "$original_head")"
   git branch "$temp_branch" "$original_head"
   git checkout -q "$branch_name"
   git cherry-pick "$target".."$temp_branch"
@@ -169,7 +183,7 @@ git checkout -q "$original_branch"
 
 test "${HUG_QUIET:-f}" = T && exit
 
-local reset_msg="Original branch reset to $(git rev-parse --short "$target") (just before the moved commits)."
+reset_msg="Original branch reset to $(git rev-parse --short "$target") (just before the moved commits)."
 if ! $branch_exists && $new_branch; then
   info "Detached commits to new branch '$branch_name' (from original HEAD). $reset_msg"
 else

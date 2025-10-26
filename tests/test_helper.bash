@@ -104,7 +104,7 @@ create_test_repo() {
   # Initialize repo in subshell for isolation
   (
     cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
-    git init -q
+    git init -q --initial-branch=main
     git config --local user.email "test@hug-scm.test"
     git config --local user.name "Hug Test"
     

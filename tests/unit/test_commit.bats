@@ -200,8 +200,8 @@ EDITORSCRIPT
   local original_head
   original_head=$(git rev-parse HEAD)
   
-  # Create target branch
-  git checkout -q -b target-branch HEAD~1
+  # Create target branch at HEAD~2 (not direct parent, to ensure cherry-pick creates new commit)
+  git checkout -q -b target-branch HEAD~2
   
   git checkout -q main
   
@@ -215,8 +215,8 @@ EDITORSCRIPT
   git checkout -q target-branch
   run git log -2 --oneline
   assert_line --index 0 --partial "Add main extra"
-  # New commit hash, but message matches
-  refute_equal "$(git rev-parse HEAD)" "$original_head"
+  # New commit hash when parent is different
+  assert_not_equal "$(git rev-parse HEAD)" "$original_head"
   
   popd >/dev/null
   rm -rf "$repo"
@@ -241,8 +241,8 @@ EDITORSCRIPT
 
   # New branch log matches exact range SHAs (no new commits)
   git checkout -q new-detach
-  run git log --oneline
-  assert_output "$expected_log"  # Exact match
+  run git log --oneline HEAD~1..HEAD
+  assert_output "$expected_log"  # Exact match - just the moved commit(s)
   assert_equal "$(git rev-parse HEAD)" "$original_head"
 
   popd >/dev/null
@@ -268,8 +268,8 @@ EDITORSCRIPT
   
   # New branch log matches exact range SHAs
   git checkout -q new-branch
-  run git log --oneline
-  assert_output "$expected_log"  # Exact match
+  run git log --oneline HEAD~2..HEAD
+  assert_output "$expected_log"  # Exact match - just the moved commits
   assert_equal "$(git rev-parse HEAD)" "$original_head"
 
   popd >/dev/null
@@ -356,13 +356,19 @@ EDITORSCRIPT
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
   
-  # Simulate upstream (assuming main has upstream)
+  # Create a mock remote
   git checkout -q main
-  git branch --set-upstream-to=origin/main >/dev/null 2>&1
+  git remote add origin "$repo"
+  git fetch -q origin
+  git branch --set-upstream-to=origin/main
   
-  # Mock upstream commit (for test, assume HEAD~1 is "upstream")
+  # Create a local commit on top
+  echo "Local only" > local.txt
+  git add local.txt
+  git commit -q -m "Add local commit"
+  
+  # Mock upstream commit (for test, move the local commit)
   run hug cmv -u new-upstream --new --force
-  # Note: Full upstream simulation may need mock remote; test basic flow
   assert_success
   
   popd >/dev/null
@@ -380,7 +386,7 @@ EDITORSCRIPT
   local expected_log
   expected_log=$(git log --oneline HEAD~1..HEAD)  # Range to move
 
-  run bash -c 'printf "y\n" | hug cmv 1 prompt-missing'
+  run bash -c 'printf "y\ny\n" | hug cmv 1 prompt-missing'
   assert_success
   assert_output --partial "Target branch 'prompt-missing' doesn't exist. Create it?"
   assert_output --partial "Proceed with moving 1 commit to 'prompt-missing' (detaching to new branch 'prompt-missing')?"
@@ -389,13 +395,13 @@ EDITORSCRIPT
   local target_before
   target_before=$(git rev-parse "${original_head}~1")
   assert_equal "$(git rev-parse main)" "$target_before"
-  run git branch -l | grep prompt-missing
+  run bash -c "git branch -l | grep prompt-missing"
   assert_success
 
   # New branch log matches exact range SHAs
   git checkout -q prompt-missing
-  run git log --oneline
-  assert_output "$expected_log"  # Exact match
+  run git log --oneline HEAD~1..HEAD
+  assert_output "$expected_log"  # Exact match - just the moved commit(s)
   assert_equal "$(git rev-parse HEAD)" "$original_head"
 
   popd >/dev/null
@@ -441,13 +447,13 @@ EDITORSCRIPT
 
   # Verify creation, reset to just before
   assert_equal "$(git rev-parse main)" "$(git rev-parse "${original_head}~1")"
-  run git branch -l | grep auto-force-missing
+  run bash -c "git branch -l | grep auto-force-missing"
   assert_success
 
   # New branch log matches exact range SHAs
   git checkout -q auto-force-missing
-  run git log --oneline
-  assert_output "$expected_log"  # Exact match
+  run git log --oneline HEAD~1..HEAD
+  assert_output "$expected_log"  # Exact match - just the moved commit(s)
   assert_equal "$(git rev-parse HEAD)" "$original_head"
 
   popd >/dev/null
@@ -498,9 +504,17 @@ EDITORSCRIPT
 }
 
 @test "hug cmv: handles no commits to move gracefully" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+  
+  git checkout -q main
   run hug cmv 0 new-branch --new --force
   assert_success
   assert_output --partial "No commits to move"
+  
+  popd >/dev/null
+  rm -rf "$repo"
 }
 
 # Additional cmv edge cases...
