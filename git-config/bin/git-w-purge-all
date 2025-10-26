@@ -85,28 +85,32 @@ build_preview() {
 }
 
 preview_output=$(build_preview)
-handle_dry_run_confirmation $dry_run "$(printf '\n%s' "$preview_output")"
 
-# Check if there's actually anything to purge
 # git clean -n produces no output when there's nothing to clean
 if [[ -z "$preview_output" ]]; then
-  if ! $dry_run; then
-    printf 'Nothing to purge in the selected scope.\n'
-  fi
-else
-  if ! $force; then
-    printf '⚠ About to remove the following:\n%s\n' "$preview_output"
-    confirm_action 'purge-all'
-  fi
-
-  run_cmd=("git" "clean" "-f" "-d")
-  if $target_untracked && $target_ignored; then
-    run_cmd+=("-x")
-  elif $target_ignored; then
-    run_cmd+=("-X")
-  fi
-
-  "${run_cmd[@]}"
+  print_nothing_to_do "purge"
+  exit 0
 fi
+
+if $dry_run; then
+  print_dry_run_preview "be removed"
+  printf '\n%s\n' "$preview_output"
+  exit 0
+fi
+
+if ! $force; then
+  print_action_preview "remove the listed entries"
+  printf '\n%s\n' "$preview_output"
+  confirm_action 'purge-all'
+fi
+
+run_cmd=("git" "clean" "-f" "-d")
+if $target_untracked && $target_ignored; then
+  run_cmd+=("-x")
+elif $target_ignored; then
+  run_cmd+=("-X")
+fi
+
+"${run_cmd[@]}"
 
 exit 0

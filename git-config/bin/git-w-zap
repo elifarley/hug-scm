@@ -104,6 +104,11 @@ done < <(git status --porcelain=v1 --ignored=matching -z -- "${paths[@]}" 2>/dev
 convert_to_relative_paths tracked_paths
 convert_to_relative_paths untracked_paths
 
+if [[ ${#tracked_paths[@]} -eq 0 && ${#untracked_paths[@]} -eq 0 ]]; then
+  print_nothing_to_do "zap" "for the provided paths."
+  exit 0
+fi
+
 # Wipe tracked changes
 if [[ ${#tracked_paths[@]} -gt 0 ]]; then
   wipe_cmd=(hug w wipe)

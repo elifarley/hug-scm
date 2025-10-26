@@ -112,6 +112,34 @@ info() {
   printf "${BLUE}ℹ️  Info:${NC} %s\n" "$1" >&2
 }
 
+# Prints a standardized message when no changes are detected
+# Usage: print_nothing_to_do "action" ["scope phrase"]
+# Examples:
+#   print_nothing_to_do "discard"
+#   print_nothing_to_do "zap" "in the repository."
+# The scope phrase should include any desired trailing punctuation.
+print_nothing_to_do() {
+  local action="$1"
+  local scope="${2:-for the selected scope.}"
+  info "Nothing to ${action}; repository already clean ${scope}"
+}
+
+# Prints an informational dry-run preview message (shared across commands)
+# Usage: print_dry_run_preview "be discarded" "from the specified paths."
+print_dry_run_preview() {
+  local action_phrase="$1"
+  local scope="${2:-for the selected scope.}"
+  info "Dry run: the following items would be ${action_phrase} ${scope} (no changes applied)."
+}
+
+# Prints a warning preview message before executing a destructive action
+# Usage: print_action_preview "discard the listed changes" "from the specified paths."
+print_action_preview() {
+  local action_phrase="$1"
+  local scope="${2:-for the selected scope.}"
+  warning "⚠ About to ${action_phrase} ${scope} Review the list below."
+}
+
 # Prints a tip message to stderr
 # Usage: tip "message"
 # Parameters:

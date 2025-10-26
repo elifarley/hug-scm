@@ -102,7 +102,7 @@ if $target_staged; then
 fi
 
 if [[ ${#unstaged_paths[@]} -eq 0 && ${#staged_paths[@]} -eq 0 ]]; then
-  printf 'Nothing to discard for the specified paths.\n'
+  print_nothing_to_do "discard" "for the specified paths."
   exit 0
 fi
 
@@ -156,7 +156,8 @@ if $target_staged && ! $target_unstaged && [[ $dry_run == false ]]; then
 fi
 
 if $dry_run; then
-  printf 'Dry run: the following changes would be discarded\n'
+  print_dry_run_preview "be discarded" "from the specified paths."
+  printf '\n'
   if [[ ${#staged_paths[@]} -gt 0 ]]; then
     if $target_staged && ! $target_unstaged; then
       printf '  Staged paths (unstaged changes in these files would be preserved):\n'
@@ -176,7 +177,8 @@ if $dry_run; then
 fi
 
 if ! $force; then
-  printf '⚠ About to discard the following changes:\n'
+  print_action_preview "discard the listed changes" "from the specified paths."
+  printf '\n'
   if [[ ${#staged_paths[@]} -gt 0 ]]; then
     if $target_staged && ! $target_unstaged; then
       printf '  Staged paths (unstaged changes in these files would be preserved):\n'

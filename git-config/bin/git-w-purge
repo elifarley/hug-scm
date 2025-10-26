@@ -104,12 +104,13 @@ dedupe_array untracked_paths
 dedupe_array ignored_paths
 
 (( ${#untracked_paths[@]} == 0 )) && (( ${#ignored_paths[@]} == 0 )) && {
-  printf 'Nothing to purge for the specified paths.\n'
+  print_nothing_to_do "purge" "from the specified paths."
   exit 0
 }
 
 if $dry_run; then
-  printf 'Dry run: the following files/directories would be removed\n'
+  print_dry_run_preview "be removed" "from the specified paths."
+  printf '\n'
   if $target_untracked && [[ ${#untracked_paths[@]} -gt 0 ]]; then
     print_list '  Untracked' "${untracked_paths[@]}"
   fi
@@ -132,6 +133,9 @@ remove_with_clean() {
   done
   git clean "${mode_flags[@]}" -d -- "$@"
 }
+
+print_action_preview "purge the listed entries" "from the specified paths."
+printf '\n'
 
 if $target_untracked && $target_ignored; then
   combined=("${untracked_paths[@]}" "${ignored_paths[@]}")

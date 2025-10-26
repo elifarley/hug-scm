@@ -91,11 +91,15 @@ if $target_staged; then
   [[ ${#staged_paths[@]} -gt 0 ]] && empty=false
 fi
 
-handle_dry_run_confirmation $dry_run "the following changes would be discarded"
-check_no_changes $(( ${#unstaged_paths[@]} + ${#staged_paths[@]} )) "Working tree already clean for the selected scope." $dry_run
+total_changes=$(( ${#unstaged_paths[@]} + ${#staged_paths[@]} ))
+if [[ $total_changes -eq 0 ]]; then
+  print_nothing_to_do "discard"
+  exit 0
+fi
 
 if $dry_run; then
-  printf 'Dry run: the following changes would be discarded\n'
+  print_dry_run_preview "be discarded" ""
+  printf '\n'
   if [[ ${#staged_paths[@]} -gt 0 ]]; then
     staged_label='  Staged paths'
     if $target_staged && ! $target_unstaged; then
@@ -116,7 +120,8 @@ fi
 
 # Confirmation preview
 if ! $force; then
-  printf '⚠ About to discard the following changes:\n'
+  print_action_preview "discard the listed changes"
+  printf '\n'
   if [[ ${#staged_paths[@]} -gt 0 ]]; then
     staged_label='  Staged paths'
     if $target_staged && ! $target_unstaged; then

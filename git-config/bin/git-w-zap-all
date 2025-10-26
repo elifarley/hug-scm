@@ -64,19 +64,35 @@ done
 
 check_git_repo
 
+tracked_dirty=false
+if ! git diff --quiet >/dev/null 2>&1; then
+  tracked_dirty=true
+elif ! git diff --cached --quiet >/dev/null 2>&1; then
+  tracked_dirty=true
+fi
+
+clean_preview=$(git clean -n -d -x 2>/dev/null || true)
+
+if [[ "$tracked_dirty" == false && -z "$clean_preview" ]]; then
+  print_nothing_to_do "zap"
+  exit 0
+fi
+
 run_preview() {
   hug w wipe-all --dry-run
   hug w purge-all --dry-run -u -i
 }
 
 if $dry_run; then
-  printf 'Dry run: zap-all with the following effects\n'
+  print_dry_run_preview "apply zap-all"
+  printf '\n'
   run_preview
   exit 0
 fi
 
 if ! $force; then
-  printf '🚨⚠ About to run zap-all with the following effects:\n'
+  print_action_preview "run zap-all"
+  printf '\n'
   run_preview
   confirm_action 'zap-all'
 fi
