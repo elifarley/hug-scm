@@ -293,7 +293,7 @@ parse_common_flags() {
         shift
         ;;
       -h|--help)
-        echo "if declare -f usage >/dev/null; then usage; exit 0; fi"
+        echo "if declare -f show_help >/dev/null; then show_help; exit 0; fi"
         shift
         ;;
       --)

@@ -17,7 +17,7 @@ The `c*` commands handle creating and modifying commits, making it easier to rec
 
 Commit staged changes.
 
-**Usage:** `hug c`
+**Usage:** `hug c [options]`
 
 **Examples:**
 ```shell
@@ -26,6 +26,8 @@ hug c -m "Fix typo in README"
 ```
 
 This is a safe way to commit, ensuring only staged files are included.
+
+To preview what would be committed, run `hug sl` for a list of changed files or `hug ss` for a diff of staged changes.
 
 ## hug ca (Commit All tracked)
 
