@@ -55,8 +55,35 @@ test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
 # Early exit if not in Git repo
 check_git_repo
 
+# Check if user provided flags that bypass the editor
+# (-m/--message, -F/--file, -C/--reuse-message, -c/--reedit-message)
+needs_editor=true
+for arg in "$@"; do
+  case "$arg" in
+    -m|--message|-F|--file|-C|--reuse-message|-c|--reedit-message)
+      needs_editor=false
+      break
+      ;;
+    -m=*|--message=*|-F=*|--file=*|-C=*|--reuse-message=*|-c=*|--reedit-message=*)
+      needs_editor=false
+      break
+      ;;
+  esac
+done
+
+# If editor is needed, call git commit directly (no output capture)
+# This allows the editor to have proper terminal access
+if [ "$needs_editor" = true ]; then
+  git commit "$@"
+  exit $?
+fi
+
+# Otherwise, capture output for processing
+# Temporarily disable error exit to capture non-zero exit codes
+set +e
 output=$(git commit "$@" 2>&1)
 status=$?
+set -e
 
 if [ $status -eq 0 ]; then
   printf "Committing staged changes...\n"
