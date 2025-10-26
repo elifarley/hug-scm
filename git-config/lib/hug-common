@@ -309,10 +309,13 @@ parse_common_flags() {
     esac
   done
   
+  # Always output set -- to properly update $@ in the caller
   if [ ${#remaining_args[@]} -gt 0 ]; then
     printf 'set -- '
     printf '%q ' "${remaining_args[@]}"
     printf '\n'
+  else
+    printf 'set --\n'
   fi
 }
 
