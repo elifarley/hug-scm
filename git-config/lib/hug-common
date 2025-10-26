@@ -270,10 +270,11 @@ is_symlink() {
 #   --dry-run    Sets dry_run=true
 #   -f, --force  Sets force=true, exports HUG_FORCE=true
 #   --quiet      Exports HUG_QUIET=T
-#   -h, --help   Calls usage function and exits
+#   -h, --help   Calls usage or show_help function and exits
 # Note:
 #   Consumes recognized flags from arguments
 #   Remaining args can be accessed via "$@" after eval
+#   Handles empty remaining args without setting $@ to ("")
 parse_common_flags() {
   local remaining_args=()
   
@@ -293,7 +294,7 @@ parse_common_flags() {
         shift
         ;;
       -h|--help)
-        echo "if declare -f usage >/dev/null; then usage; exit 0; fi"
+        echo "if declare -f usage >/dev/null; then usage; elif declare -f show_help >/dev/null; then show_help; fi; exit 0"
         shift
         ;;
       --)
@@ -308,9 +309,11 @@ parse_common_flags() {
     esac
   done
   
-  printf 'set -- '
-  printf '%q ' "${remaining_args[@]}"
-  printf '\n'
+  if [ ${#remaining_args[@]} -gt 0 ]; then
+    printf 'set -- '
+    printf '%q ' "${remaining_args[@]}"
+    printf '\n'
+  fi
 }
 
 # Validates minimum number of arguments

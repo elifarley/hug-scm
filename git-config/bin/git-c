@@ -14,6 +14,7 @@ USAGE:
 
 OPTIONS:
   -h, --help     Show this help message and exit.
+  --quiet       Suppress non-essential output.
   (All other options are passed directly to 'git commit')
 
 DESCRIPTION:
@@ -36,41 +37,33 @@ SEE ALSO:
 EOF
 }
 
-error() {
-  printf 'hug c: %s\n' "$1" >&2
-  exit "${2:-1}"
-}
-
-usage_error() {
-  printf 'hug c: %s\n\n' "$1" >&2
-  show_help >&2
-  exit 1
-}
-
+# Check for help flags before parse_common_flags to prevent git from intercepting --help
 test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
   show_help
-  exit
+  exit 0
 }
+
+# Parse common flags
+eval "$(parse_common_flags "$@")"
 
 # Early exit if not in Git repo
 check_git_repo
 
-output=$(git commit "$@" 2>&1)
-status=$?
-
-if [ $status -eq 0 ]; then
-  printf "Committing staged changes...\n"
-  printf "%s\n" "$output"
-else
-  if [ -z "$(git diff --cached --name-only 2>/dev/null)" ] && echo "$output" | grep -q "nothing to commit"; then
-    printf "No staged changes found.\n\n"
-    printf "Suggestions:\n"
-    printf "  - Stage files with 'hug a <files>' or 'hug aa' (all).\n"
-    printf "  - To commit all changes (staged + unstaged), use 'hug ca'.\n"
-    printf "  - For an empty commit, use 'hug c --allow-empty'.\n"
-    exit 1
-  else
-    printf "%s\n" "$output" >&2
-    exit $status
+# Check for --allow-empty in remaining args
+allow_empty=false
+for arg in "$@"; do
+  if [[ "$arg" == "--allow-empty" ]]; then
+    allow_empty=true
+    break
   fi
+done
+
+# Check for staged changes upfront
+if ! $allow_empty && ! has_staged_changes; then
+  info "No staged changes found.\n\nSuggestions:\n  - Stage files with 'hug a <files>' or 'hug aa' (all).\n  - To commit all changes (staged + unstaged), use 'hug ca'.\n  - For an empty commit, use 'hug c --allow-empty'.\n  - To preview staged changes, run 'hug sl' for a list or 'hug ss' for a diff."
+  exit 1
 fi
+
+info "Committing staged changes..."
+
+git commit "$@"
