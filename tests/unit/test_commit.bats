@@ -97,6 +97,10 @@ teardown() {
 
 @test "hug c: propagates git commit errors" {
   # Attempt commit without message and fake editor failure
+  # Unset fallback environment variables to ensure consistent behavior
+  unset GIT_SEQUENCE_EDITOR
+  unset VISUAL
+  unset EDITOR
   GIT_EDITOR="false" run hug c
   assert_failure
   assert_output --partial "there was a problem with the editor"
@@ -235,6 +239,12 @@ HOOK
   repo=$(create_temp_repo_dir)
   pushd "$repo" >/dev/null
 
+  # Unset all possible sources of git identity to ensure test fails as expected
+  unset GIT_AUTHOR_NAME
+  unset GIT_AUTHOR_EMAIL
+  unset GIT_COMMITTER_NAME
+  unset GIT_COMMITTER_EMAIL
+  
   git init -q
   echo "content" > file.txt
   git add file.txt
