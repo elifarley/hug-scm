@@ -316,7 +316,7 @@ HOOK
   local preview_section
   preview_section=$(echo "$output" | sed -n '/📊/,/HEAD is now/p' | head -n -1)
   local commit_hash
-  commit_hash=$(git rev-parse --short HEAD)
+  commit_hash=$(git rev-parse --short "$original_head")
   # grep -c returns 0 if no matches are found, so no fallback is needed
   local count=$(echo "$preview_section" | grep -c "$commit_hash")
   assert_equal "$count" 1
