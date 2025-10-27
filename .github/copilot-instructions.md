@@ -10,6 +10,27 @@ Hug is a CLI tool that provides a humane, intuitive interface for Git and other 
 - Currently only supports Git and Mercurial (future: Sapling)
 - Documentation site built with VitePress
 
+## Prerequisites
+
+Before working on this project, ensure you have:
+
+**Required:**
+- Bash 4.0 or higher
+- Git 2.0 or higher
+- Make (for running build commands)
+
+**For Testing:**
+- BATS (Bash Automated Testing System) - automatically installed via `make test-deps-install`
+- Helper libraries (bats-support, bats-assert, bats-file) - automatically installed
+
+**For Documentation:**
+- Node.js 16+ and npm (for VitePress documentation)
+
+**Setup:**
+1. Install Hug: `make install`
+2. Install test dependencies: `make test-deps-install`
+3. Activate in current shell: `source bin/activate`
+
 ## Repository Structure
 
 ```
@@ -62,13 +83,21 @@ hug-scm/
 - Custom git commands are sourced through Git's extension mechanism
 - Use `git --no-pager` to prevent pager issues in scripts
 
-### Safety Philosophy
+### Safety Philosophy & Security Considerations
 
 Hug follows a "progressive destructiveness" approach:
 - Shorter commands = safer (e.g., `hug a` stages tracked files)
 - Longer commands = more powerful/destructive (e.g., `hug aa` stages everything)
 - Destructive operations require confirmation (unless `-f` flag)
 - Provide `--dry-run` for preview where applicable
+
+**Security Guidelines:**
+1. **Input Validation**: Always validate user input, especially file paths
+2. **Confirmation Prompts**: Destructive operations must prompt for confirmation
+3. **No Force by Default**: Never make `-f` or `--force` the default behavior
+4. **Safe Defaults**: Commands should fail safe rather than destructively
+5. **Clear Warnings**: Use clear, specific warning messages for dangerous operations
+6. **Dry Run First**: Implement `--dry-run` for any command that modifies repository state
 
 ## Testing
 
@@ -255,6 +284,35 @@ Tests create isolated Git repositories in temp directories:
 5. **Safety first** - Maintain Hug's safety philosophy
 6. **Be consistent** - Follow naming conventions and command structure
 7. **Think about edge cases** - Test error conditions and boundary cases
+
+## Common Pitfalls
+
+### When Adding New Commands
+
+1. **Forgetting to make scripts executable**: Always run `chmod +x` on new scripts
+2. **Not testing in isolation**: Always test new commands in a fresh test repository
+3. **Breaking existing commands**: Run full test suite before committing changes
+4. **Inconsistent naming**: Follow the prefix convention (h*, w*, s*, b*, etc.)
+
+### When Writing Tests
+
+1. **Not using setup_test_repo()**: Tests must create isolated repos via test helper
+2. **Depending on external state**: Tests should be self-contained and order-independent
+3. **Ignoring test failures**: All tests must pass before merging
+4. **Not testing error cases**: Test both success and failure scenarios
+
+### When Modifying Documentation
+
+1. **Forgetting to update README.md**: Keep command reference up to date
+2. **Breaking VitePress syntax**: Test docs locally with `npm run docs:dev`
+3. **Inconsistent examples**: Use realistic, practical examples
+
+### General Development
+
+1. **Not activating Hug**: Run `source bin/activate` after installation
+2. **Skipping `make install`**: Required before running tests
+3. **Forgetting git --no-pager**: Use in scripts to avoid pager issues
+4. **Unquoted variables**: Always quote bash variables: `"$var"` not `$var`
 
 ## Getting Help
 
