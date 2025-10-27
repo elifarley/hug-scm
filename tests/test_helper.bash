@@ -2,6 +2,8 @@
 # Test helper utilities for Hug SCM tests
 # This file is sourced by all BATS test files
 
+declare -ga HUG_TEST_REMOTE_REPOS=()
+
 # Load BATS support libraries
 # Try local dependencies first
 local_loaded=false
@@ -57,6 +59,7 @@ setup_file() {
   # Capture original global configs
   export ORIGINAL_GIT_USER_NAME="$(git config --global user.name || echo "")"
   export ORIGINAL_GIT_USER_EMAIL="$(git config --global user.email || echo "")"
+  HUG_TEST_REMOTE_REPOS=()
 }
 
 teardown_file() {
@@ -263,6 +266,15 @@ cleanup_test_repo() {
   fi
   # Clean up any hug-test-repo-* dirs
   find /tmp -maxdepth 1 -name "hug-test-repo-*" -type d -exec rm -rf {} + 2>/dev/null || true
+
+  if [[ ${#HUG_TEST_REMOTE_REPOS[@]} -gt 0 ]]; then
+    for remote_dir in "${HUG_TEST_REMOTE_REPOS[@]}"; do
+      if [[ -d "$remote_dir" ]]; then
+        rm -rf "$remote_dir" 2>/dev/null || true
+      fi
+    done
+    HUG_TEST_REMOTE_REPOS=()
+  fi
 }
 
 # Assert that a command's output contains a string (case-insensitive)
@@ -486,6 +498,48 @@ assert_hg_clean() {
     echo "$status"
     return 1
   fi
+}
+
+create_test_repo_with_cherry_pick_conflict() {
+  local test_repo
+  test_repo=$(create_test_repo_with_history)
+
+  (
+    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+
+    git checkout -q -b conflict-target HEAD~1
+    echo "Feature 1 change on target branch" > feature1.txt
+    git add feature1.txt
+    git commit -q -m "Conflict change on target"
+
+    git checkout -q main
+    echo "Feature 1 change on main branch" > feature1.txt
+    git add feature1.txt
+    git commit -q -m "Conflict change on main"
+  )
+
+  echo "$test_repo"
+}
+
+create_test_repo_with_remote_upstream() {
+  local test_repo
+  test_repo=$(create_test_repo_with_history)
+
+  local remote_root
+  remote_root=$(mktemp -d -t "hug-remote-XXXXXX" 2>/dev/null || mktemp -d /tmp/hug-remote-XXXXXX)
+  local remote_repo="$remote_root/origin.git"
+  git init --bare -q "$remote_repo"
+  HUG_TEST_REMOTE_REPOS+=("$remote_root")
+
+  (
+    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+
+    git remote add origin "$remote_repo"
+    git push -q origin main
+    git branch --set-upstream-to=origin/main
+  )
+
+  echo "$test_repo"
 }
 
 # Create a test repository with multiple branches for relocate tests

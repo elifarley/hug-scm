@@ -182,6 +182,71 @@ EDITORSCRIPT
   rm -f "$fake_editor"
 }
 
+@test "hug c: amends last commit with --amend" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  echo "amend content" > amend.txt
+  git add amend.txt
+  run hug c -m "Add amend file"
+  assert_success
+
+  echo "amend update" >> amend.txt
+  git add amend.txt
+  run hug c --amend -m "Add amend file (amended)"
+  assert_success
+
+  run git log -1 --format=%s
+  assert_output "Add amend file (amended)"
+
+  run git show --stat HEAD
+  assert_output --partial "amend.txt"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug c: surfaces commit hook failures" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  cat > .git/hooks/commit-msg <<'HOOK'
+#!/usr/bin/env bash
+echo "rejecting commit from hook" >&2
+exit 1
+HOOK
+  chmod +x .git/hooks/commit-msg
+
+  echo "hook failure" > hook.txt
+  git add hook.txt
+
+  run hug c -m "Commit rejected by hook"
+  assert_failure
+  assert_output --partial "rejecting commit from hook"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug c: errors when author identity unknown" {
+  local repo
+  repo=$(create_temp_repo_dir)
+  pushd "$repo" >/dev/null
+
+  git init -q
+  echo "content" > file.txt
+  git add file.txt
+
+  run hug c -m "Should fail"
+  assert_failure
+  assert_output --partial "Author identity unknown"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
 # -----------------------------------------------------------------------------
 # hug cmv expectations
 #   - Copies specified commits to target branch (new or existing) via cherry-pick.
@@ -492,6 +557,176 @@ EDITORSCRIPT
   run hug cmv 1 existing-target --force
   assert_success
   assert_output --partial "Moved 1 commit to 'existing-target'. Original branch reset to $target_short (just before the moved commits)."
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: aborts with cherry-pick conflict on existing branch" {
+  local repo
+  repo=$(create_test_repo_with_cherry_pick_conflict)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  run hug cmv 1 conflict-target --force
+  assert_failure
+  assert_output --partial "CONFLICT"
+
+  run git status --porcelain
+  assert_output --partial "UU feature1.txt"
+
+  git cherry-pick --abort >/dev/null 2>&1 || true
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: errors on invalid branch name" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  run hug cmv 1 "invalid branch" --new --force
+  assert_failure
+  assert_output --partial "invalid branch"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: errors on invalid commit target" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  run hug cmv deadbeef target-branch --force
+  assert_failure
+  assert_output --partial "fatal"
+
+  run git branch --list target-branch
+  if [[ -n "$output" ]]; then
+    fail "Expected target-branch to not exist, found: $output"
+  fi
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: errors when run from detached HEAD" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  git checkout --detach HEAD >/dev/null 2>&1
+
+  run hug cmv 1 target-branch --force
+  assert_failure
+  assert_output --partial "Detached HEAD"
+
+  git checkout -q main
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: detaches local-only commits to new branch with -u" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  local upstream_sha
+  upstream_sha=$(git rev-parse origin/main)
+
+  echo "local detach" > local-detach.txt
+  git add local-detach.txt
+  git commit -q -m "Local detach commit"
+  local local_sha
+  local_sha=$(git rev-parse HEAD)
+
+  run hug cmv -u upstream-detach --new --force
+  assert_success
+  assert_equal "$(git rev-parse main)" "$upstream_sha"
+
+  git checkout -q upstream-detach
+  assert_equal "$(git rev-parse HEAD)" "$local_sha"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: moves local-only commits to existing branch with -u" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  git checkout -q -b existing-target origin/main
+  echo "target branch content" > target.txt
+  git add target.txt
+  git commit -q -m "Existing branch baseline"
+  git checkout -q main
+
+  local upstream_sha
+  upstream_sha=$(git rev-parse origin/main)
+  echo "local existing" > local-existing.txt
+  git add local-existing.txt
+  git commit -q -m "Local existing commit"
+  local local_sha
+  local_sha=$(git rev-parse HEAD)
+
+  run hug cmv -u existing-target --force
+  assert_success
+  assert_equal "$(git rev-parse main)" "$upstream_sha"
+
+  git checkout -q existing-target
+  run git log -1 --format=%s
+  assert_output "Local existing commit"
+  refute_equal "$(git rev-parse HEAD)" "$local_sha"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: errors on -u without upstream" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  run hug cmv -u missing --new --force
+  assert_failure
+  assert_output --partial "upstream"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: supports --quiet with --force" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  run hug cmv 1 quiet-branch --new --force --quiet
+  assert_success
+  if [[ -n "$output" ]]; then
+    fail "Expected no output in quiet mode, got: $output"
+  fi
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: no branch created when moving 0 commits" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  run hug cmv 0 zero-branch --force
+  assert_success
+  assert_output --partial "No commits to move"
+
+  run git branch --list zero-branch
+  if [[ -n "$output" ]]; then
+    fail "Expected zero-branch to not exist, found: $output"
+  fi
 
   popd >/dev/null
   rm -rf "$repo"
