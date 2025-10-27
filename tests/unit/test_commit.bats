@@ -106,10 +106,6 @@ teardown() {
   unset VISUAL
   unset EDITOR
   
-  # Debug: Check that 'false' command exists
-  echo "# Debug: 'false' command check:" >&3
-  command -v false >&3 || echo "# WARNING: 'false' command not found!" >&3
-  
   # Debug: Show environment before test
   echo "# Debug: Environment before test:" >&3
   echo "# GIT_EDITOR=${GIT_EDITOR:-<not set>}" >&3
@@ -132,11 +128,7 @@ teardown() {
   [[ -n "$saved_git_sequence_editor" ]] && export GIT_SEQUENCE_EDITOR="$saved_git_sequence_editor"
   [[ -n "$saved_visual" ]] && export VISUAL="$saved_visual"
   [[ -n "$saved_editor" ]] && export EDITOR="$saved_editor"
-  if [[ -n "$saved_git_editor" ]]; then
-    export GIT_EDITOR="$saved_git_editor"
-  else
-    unset GIT_EDITOR
-  fi
+  [[ -n "$saved_git_editor" ]] && export GIT_EDITOR="$saved_git_editor"
   : # the previous command may have returned false
 }
 
