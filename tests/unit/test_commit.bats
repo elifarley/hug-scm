@@ -122,7 +122,7 @@ teardown() {
   echo "$output" | sed 's/^/# /' >&3
   
   assert_failure
-  assert_output --partial "there was a problem with the editor"
+  assert_output --regexp "[Tt]here was a problem with the editor"
   
   # Restore original values (BATS runs tests in subshells, so this is defensive)
   [[ -n "$saved_git_sequence_editor" ]] && export GIT_SEQUENCE_EDITOR="$saved_git_sequence_editor"
