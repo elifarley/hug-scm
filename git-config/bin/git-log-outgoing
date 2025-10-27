@@ -6,24 +6,29 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat << EOF
-hug log-outgoing: Preview outgoing changes to upstream.
+hug log-outgoing: Preview outgoing changes to upstream or custom target.
 
 USAGE:
-    hug log-outgoing [--quiet] [--fetch] [-h, --help]
+    hug log-outgoing [<remote-branch>] [--quiet] [--fetch] [-h, --help]
 
 OPTIONS:
-    --quiet    Suppress verbose output (sets HUG_QUIET=T; keeps core previews)
-    --fetch    Fetch upstream before preview (updates remote refs)
-    -h, --help Show this help
+    <remote-branch>  Optional target remote branch (e.g., 'origin/dev') instead of upstream.
+                     Allows preview even without tracking upstream.
+    --quiet          Suppress verbose output (sets HUG_QUIET=T; keeps core previews)
+    --fetch          Fetch upstream before preview (updates remote refs)
+    -h, --help       Show this help
 
 DESCRIPTION:
     Shows local-only commits (via Hug log), unpushed uniques (cherry), status, and diff stats.
-    Use before pushing to review what's outgoing. Errors if no upstream configured.
+    Use before pushing to review what's outgoing. If no <remote-branch> and no upstream,
+    errors out. With <remote-branch>, uses it as target for comparisons.
 
 EXAMPLES:
-    hug o                          # Full preview
-    hug o --quiet                  # Minimal output
-    hug o --fetch                  # Refresh upstream first
+    hug log-outgoing                                   # Full preview to upstream
+    hug log-outgoing origin/dev                        # Preview against custom remote branch
+    hug log-outgoing --quiet origin/dev                # Minimal output to custom target
+    hug log-outgoing --fetch                           # Refresh upstream first
+    hug log-outgoing --fetch origin/dev                # Fetch then preview custom target
 
 SEE ALSO:
     hug bpush   Safe push with previews
@@ -32,6 +37,13 @@ EOF
 
 # Parse common flags (--dry-run, -f|--force, --quiet, -h|--help)
 eval "$(parse_common_flags "$@")"
+
+# Parse positional argument: optional <remote-branch>
+remote_branch=""
+if [[ $# -gt 0 ]]; then
+  remote_branch="$1"
+  shift
+fi
 
 # Parse custom flags
 fetch=false
@@ -45,34 +57,63 @@ done
 check_git_repo
 
 if $fetch; then
-  info "Fetching upstream..."
+  info "Fetching remotes..."
   git fetch 2>/dev/null || warn "Fetch failed; using cached refs."
 fi
 
-target=$(get_upstream_commit)  # Exits if no upstream
+# Resolve target commit
+if [[ -n "$remote_branch" ]]; then
+  # Validate and resolve custom remote branch
+  if ! git rev-parse --verify "refs/remotes/$remote_branch" >/dev/null 2>&1; then
+    error "Invalid remote branch '$remote_branch': ref does not exist. Ensure it exists after fetch."
+  fi
+  target=$(git rev-parse "$remote_branch")
+  target_short=$(git rev-parse --short "$target")
+  printf "Using custom target: %s (%s)\n" "$remote_branch" "$target_short" >&2
+else
+  # Fallback to upstream
+  target=$(get_upstream_commit)  # Exits if no upstream
+  target_short=$(git rev-parse --short "$target")
+fi
 
 local_commits=$(count_commits_in_range "$target" HEAD)
 
 if [ "$local_commits" -eq 0 ]; then
-  info "No outgoing changes (already synced to upstream)."
+  info "No outgoing changes (already synced to $target_short)."
   exit 0
 fi
 
-printf '📊 %d commits since upstream:\n' "$local_commits" >&2
-git diff --stat @{u}..HEAD >&2
+printf '📊 %d commits since %s:\n' "$local_commits" "$target_short" >&2
+git diff --stat "$target"..HEAD >&2
 
 if [[ ${HUG_QUIET:-} != T ]]; then
-  printf '\n📤 Outgoing commits to upstream:\n' >&2
+  if [[ -n "$remote_branch" ]]; then
+    printf '\n📤 Outgoing commits to %s:\n' "$remote_branch" >&2
+  else
+    printf '\n📤 Outgoing commits to upstream:\n' >&2
+  fi
   print_commit_list_in_range "$target" HEAD >&2
 fi
 
 # Core previews (always show, even in quiet, for safety)
-test "${HUG_QUIET:-}" || printf '\nExact commits missing from upstream:\n' >&2
-git cherry -v @{upstream} >&2
+if [[ -n "$remote_branch" ]]; then
+  test "${HUG_QUIET:-}" || printf '\nExact commits missing from %s:\n' "$remote_branch" >&2
+  git cherry -v "$target" HEAD >&2
+else
+  test "${HUG_QUIET:-}" || printf '\nExact commits missing from upstream:\n' >&2
+  git cherry -v @{upstream} HEAD >&2
+fi
 
 test "${HUG_QUIET:-}" || printf '\n' >&2
 hug s >&2
 
-test "${HUG_QUIET:-}" || printf '\nReady to push? Use "hug bpush".\n' >&2
+if [[ ${HUG_QUIET:-} != T ]]; then
+  printf '\n'
+  if [[ -n "$remote_branch" ]]; then
+    tip "Ready to push to $remote_branch? Set upstream with 'git branch --set-upstream-to=$remote_branch' then use 'hug bpush'." >&2
+  else
+    tip 'Ready to push? Use "hug bpush".' >&2
+  fi
+fi
 
 exit 0

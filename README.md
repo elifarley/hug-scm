@@ -402,7 +402,7 @@ hug pullall           # Pull from all remotes
 #### Utilities
 
 ```shell
-hug o                 # Outgoing changes (what will be pushed)
+hug lol [<remote-branch>] # Log Outgoing Long: Show outgoing changes (what will be pushed; optional remote branch target, e.g., origin/dev)
 hug w wip "<msg>"     # Park all changes on WIP branch
 hug w unwip [wip]     # Unpark WIP: squash-merge to current branch + delete
 hug w wipdel [wip]    # Delete WIP branch without integration
