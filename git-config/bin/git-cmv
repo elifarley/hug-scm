@@ -85,7 +85,7 @@ fi
 original_head=$(git rev-parse HEAD)
 
 if $upstream; then
-  target=$(handle_upstream_operation "moving")
+  target=$(handle_upstream_operation "moving") || exit 1
   if [[ -z "${target:-}" ]]; then
     exit 0
   fi
@@ -96,6 +96,11 @@ else
     exit 0
   fi
   target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
+  # Validate that the target is a valid commit before proceeding
+  if ! git_error=$(git rev-parse --verify "$target" 2>&1); then
+    printf '%s\n' "$git_error" >&2
+    error "Invalid commit target: $target"
+  fi
   handle_standard_operation "moving" "$target" false
 fi
 
@@ -104,71 +109,100 @@ target=$(git rev-parse "$target")
 
 # Check branch existence
 branch_exists=true
+commits_to_relocate=0  # Initialize to avoid unbound variable error
+commit_word="commit"
 if ! git rev-parse --verify "$branch_name" >/dev/null 2>&1; then
   branch_exists=false
   if ! $new_branch; then
     if [[ ${HUG_FORCE:-} == true ]]; then
+      # Need to calculate commits_to_relocate for later use
+      commits_to_relocate=$(count_commits_in_range "$target" HEAD)
+      if [ "$commits_to_relocate" -gt 1 ]; then
+        commit_word="commits"
+      fi
       if [[ ${HUG_QUIET:-} != T ]]; then
         printf 'Branch %s missing; auto-creating with --force from target %s.\n' "$branch_name" "$(git rev-parse --short "$target")" >&2
       fi
       new_branch=true  # Enable creation logic
     else
-      if prompt_confirm "Target branch '$branch_name' doesn't exist. Create it? [y/N]: "; then
+      # Combined prompt for creation + move
+      commits_to_relocate=$(count_commits_in_range "$target" HEAD)
+      if [ "$commits_to_relocate" -eq 0 ]; then
+        info "No commits to move (already at target)."
+        exit 0
+      fi
+
+      commit_word="commit"
+      if [ "$commits_to_relocate" -gt 1 ]; then
+        commit_word="commits"
+      fi
+
+      if [[ ${HUG_QUIET:-} != T ]]; then
+        printf 'Commits to move to %s (new branch):\n' "$branch_name" >&2
+        print_commit_list_in_range "$target" HEAD >&2
+        printf '\nPreview: changes in %d %s.\n' "$commits_to_relocate" "$commit_word" >&2
+        git diff --stat "$target"..HEAD >&2
+      fi
+
+      if prompt_confirm "Branch '$branch_name' doesn't exist. Proceed with creating a new branch named '$branch_name' and moving $commits_to_relocate $commit_word to it? [y/N]: "; then
         new_branch=true
       else
         info "Cancelled."
         exit 0
       fi
     fi
+  else
+    # --new was explicitly specified, calculate commits_to_relocate
+    commits_to_relocate=$(count_commits_in_range "$target" HEAD)
+    if [ "$commits_to_relocate" -gt 1 ]; then
+      commit_word="commits"
+    fi
   fi
 fi
 
-# Count commits to move
-commits_to_relocate=$(count_commits_in_range "$target" HEAD)
-if [ "$commits_to_relocate" -eq 0 ]; then
-  info "No commits to move (already at target)."
-  exit 0
-fi
-
-commit_word="commit"
-if [ "$commits_to_relocate" -gt 1 ]; then
-  commit_word="commits"
-fi
-
-if [[ ${HUG_QUIET:-} != T ]]; then
-  create_note=""
-  if ! $branch_exists && $new_branch; then
-    create_note=" (will detach commits to new branch from original HEAD)"
+# For existing branches, count and confirm move (new branches already handled above)
+if $branch_exists; then
+  commits_to_relocate=$(count_commits_in_range "$target" HEAD)
+  if [ "$commits_to_relocate" -eq 0 ]; then
+    info "No commits to move (already at target)."
+    exit 0
   fi
-  printf 'Commits to move to %s%s:\n' "$branch_name" "$create_note" >&2
-  print_commit_list_in_range "$target" HEAD >&2
-  printf '\nPreview: changes in %d %s.\n' "$commits_to_relocate" "$commit_word" >&2
-  git diff --stat "$target"..HEAD >&2
-fi
 
-# Confirmation (only if --force not set; tree is clean, so always skip prompt if force)
-should_prompt=true
-if [[ ${HUG_FORCE:-} == true ]]; then
-  should_prompt=false
-fi
-
-if $should_prompt; then
-  create_msg=""
-  if ! $branch_exists && $new_branch; then
-    create_msg=" (detaching to new branch '$branch_name')"
+  commit_word="commit"
+  if [ "$commits_to_relocate" -gt 1 ]; then
+    commit_word="commits"
   fi
-  prompt_confirm "Proceed with moving $commits_to_relocate $commit_word to '$branch_name'$create_msg? [y/N]: "
+
+  if [[ ${HUG_QUIET:-} != T ]]; then
+    printf 'Commits to move to %s:\n' "$branch_name" >&2
+    print_commit_list_in_range "$target" HEAD >&2
+    printf '\nPreview: changes in %d %s.\n' "$commits_to_relocate" "$commit_word" >&2
+    git diff --stat "$target"..HEAD >&2
+  fi
+
+  # Confirmation (only if --force not set; tree is clean, so always skip prompt if force)
+  should_prompt=true
+  if [[ ${HUG_FORCE:-} == true ]]; then
+    should_prompt=false
+  fi
+
+  if $should_prompt; then
+    prompt_confirm "Proceed with moving $commits_to_relocate $commit_word to '$branch_name'? [y/N]: "
+  fi
 fi
 
 # Reset original branch to target (safe since tree/index clean)
 git checkout -q "$original_branch"
-git reset --hard "$target"
+if [[ ${HUG_QUIET:-} == T ]]; then
+  git reset --hard "$target" >/dev/null 2>&1
+else
+  git reset --hard "$target"
+fi
 
 # Handle creation or existing
 if ! $branch_exists && $new_branch; then
   # Simple detach for new branch: create pointing to original HEAD
   git branch "$branch_name" "$original_head"
-  git checkout -q "$branch_name"
 else
   # Existing branch: use temp for cherry-pick
   temp_branch="hug-move-temp-$(git rev-parse --short "$original_head")"
@@ -178,15 +212,14 @@ else
   git branch -D "$temp_branch"
 fi
 
-# Switch back to original branch
-git checkout -q "$original_branch"
+# Stay on target branch
+git checkout -q "$branch_name"
 
 test "${HUG_QUIET:-f}" = T && exit
 
-reset_msg="Original branch reset to $(git rev-parse --short "$target") (just before the moved commits)."
 if ! $branch_exists && $new_branch; then
-  info "Detached commits to new branch '$branch_name' (from original HEAD). $reset_msg"
+  info "Created and moved $commits_to_relocate $commit_word to new branch '$branch_name'. Now on '$branch_name'."
 else
-  info "Moved $commits_to_relocate $commit_word to '$branch_name'. $reset_msg"
+  info "Moved $commits_to_relocate $commit_word to '$branch_name'. Now on '$branch_name'."
 fi
-tip "Now on original branch '$original_branch'. Use 'hug b $branch_name' to switch."
+tip "Commits relocated. Continue working on '$branch_name'."
