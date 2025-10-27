@@ -1,3 +1,9 @@
+test -e "$HOME"/.hug-scm || {
+  echo "$HOME/.hug-scm is missing. Before activating Hug, you must install it by running:"
+  echo "  make install"
+  exit 1
+}
+
 . "$HOME"/.hug-scm
 export HUG_HOME PATH="$PATH:$HUG_HOME/git-config/bin"
 alias h=hug
