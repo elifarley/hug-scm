@@ -148,8 +148,8 @@ if ! git rev-parse --verify "$branch_name" >/dev/null 2>&1; then
 fi
 
 # Centralized unified preview (after branch decision, before existing-branch confirmation)
-local target_short=$(git rev-parse --short "$target")
-local range_for_diff="$target..HEAD"
+target_short=$(git rev-parse --short "$target")
+range_for_diff="$target..HEAD"
 if [[ ${HUG_QUIET:-} != T ]]; then
   print_preview_summary "$commits_to_relocate" "$commit_word" "$target_short" "$range_for_diff"
   print_commit_list_header "moving" "$branch_name" "$is_new_branch" "false"
