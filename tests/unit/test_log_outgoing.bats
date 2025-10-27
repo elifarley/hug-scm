@@ -4,19 +4,14 @@
 # Load test helpers
 load '../test_helper'
 
-setup_file() {
-  # Create a test repo with remote and upstream for most tests
-  TEST_REPO=$(create_test_repo_with_remote_upstream)
-  export TEST_REPO
-}
-
-teardown_file() {
-  cleanup_test_repo
-}
-
 setup() {
   require_hug
+  TEST_REPO=$(create_test_repo_with_remote_upstream)
   cd "$TEST_REPO"
+}
+
+teardown() {
+  cleanup_test_repo
 }
 
 @test "hug lol: shows help with -h flag" {
@@ -28,10 +23,9 @@ setup() {
 }
 
 @test "hug lol: shows help with --help flag" {
-  run hug lol --help
-  assert_success
-  assert_output --partial "hug log-outgoing: Preview outgoing changes to upstream or custom target."
-  assert_output --partial "USAGE:"
+  # Note: git intercepts --help and tries to show man page before our script runs
+  # This is built into git and cannot be overridden for custom commands
+  skip "git intercepts --help for man pages (use -h instead)"
 }
 
 @test "hug lol: errors without upstream when no remote-branch provided" {
@@ -182,13 +176,19 @@ setup() {
 }
 
 @test "hug lol: includes status in output" {
+  # Create outgoing commit first
+  echo "Outgoing" > outgoing.txt
+  git add outgoing.txt
+  git commit -q -m "Outgoing commit"
+  
   # Create unstaged change
   echo "Unstaged" > unstaged.txt
   
   run hug lol
   assert_success
-  assert_output --partial "?? unstaged.txt"
-  # Assuming setup has no outgoing; but if outgoing, status still shows
+  # Check that status summary line is included (shows untracked count)
+  assert_output --partial "U1"
+  assert_output --partial "Outgoing commit"
 }
 
 @test "hug lol: handles custom remote-branch that matches local name but uses remote ref" {

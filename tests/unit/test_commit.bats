@@ -311,10 +311,14 @@ HOOK
   refute_output --partial "Commits to be affected:"
   refute_output --partial "Preview: changes in"
   assert_output --partial "📊 1 commit since"
-  # Ensure only one instance of the commit hash (no duplication)
+  # Ensure the preview section (between 📊 and operational git output) shows commit hash only once
+  # Extract just the preview section (everything before "HEAD is now" which is from git reset)
+  local preview_section
+  preview_section=$(echo "$output" | sed -n '/📊/,/HEAD is now/p' | head -n -1)
   local commit_hash
   commit_hash=$(git rev-parse --short HEAD)
-  local count=$(echo "$output" | grep -c "$commit_hash")
+  # grep -c returns 0 if no matches are found, so no fallback is needed
+  local count=$(echo "$preview_section" | grep -c "$commit_hash")
   assert_equal "$count" 1
   assert_output --partial "📤 moving to existing-target:"
   
