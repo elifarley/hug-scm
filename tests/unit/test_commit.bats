@@ -101,11 +101,24 @@ teardown() {
   local saved_git_sequence_editor="${GIT_SEQUENCE_EDITOR:-}"
   local saved_visual="${VISUAL:-}"
   local saved_editor="${EDITOR:-}"
+  local saved_git_editor="${GIT_EDITOR:-}"
   unset GIT_SEQUENCE_EDITOR
   unset VISUAL
   unset EDITOR
   
-  GIT_EDITOR="false" run hug c
+  # Debug: Check that 'false' command exists
+  echo "# Debug: 'false' command check:" >&3
+  command -v false >&3 || echo "# WARNING: 'false' command not found!" >&3
+  
+  # Debug: Show environment before test
+  echo "# Debug: Environment before test:" >&3
+  echo "# GIT_EDITOR=${GIT_EDITOR:-<not set>}" >&3
+  echo "# VISUAL=${VISUAL:-<not set>}" >&3
+  echo "# EDITOR=${EDITOR:-<not set>}" >&3
+  
+  # Export GIT_EDITOR before run command (not inline)
+  export GIT_EDITOR="false"
+  run hug c
   
   # Debug output
   echo "# Exit status: $status" >&3
@@ -119,6 +132,11 @@ teardown() {
   [[ -n "$saved_git_sequence_editor" ]] && export GIT_SEQUENCE_EDITOR="$saved_git_sequence_editor"
   [[ -n "$saved_visual" ]] && export VISUAL="$saved_visual"
   [[ -n "$saved_editor" ]] && export EDITOR="$saved_editor"
+  if [[ -n "$saved_git_editor" ]]; then
+    export GIT_EDITOR="$saved_git_editor"
+  else
+    unset GIT_EDITOR
+  fi
   : # the previous command may have returned false
 }
 
@@ -266,6 +284,22 @@ HOOK
   unset GIT_COMMITTER_EMAIL
   
   git init -q
+  
+  # Temporarily unset global git config to ensure test isolation
+  local saved_global_name
+  local saved_global_email
+  saved_global_name="$(git config --global user.name 2>/dev/null || echo "")"
+  saved_global_email="$(git config --global user.email 2>/dev/null || echo "")"
+  git config --global --unset user.name 2>/dev/null || true
+  git config --global --unset user.email 2>/dev/null || true
+  
+  # Debug: Check git config
+  echo "# Debug: Git config check:" >&3
+  echo "# user.name in repo: $(git config --local user.name 2>&1 || echo '<not set>')" >&3
+  echo "# user.email in repo: $(git config --local user.email 2>&1 || echo '<not set>')" >&3
+  echo "# user.name global: $(git config --global user.name 2>&1 || echo '<not set>')" >&3
+  echo "# user.email global: $(git config --global user.email 2>&1 || echo '<not set>')" >&3
+  
   echo "content" > file.txt
   git add file.txt
 
@@ -276,10 +310,14 @@ HOOK
   echo "# Output:" >&3
   echo "$output" | sed 's/^/# /' >&3
   
+  # Restore global config before assertions (in case they fail)
+  [[ -n "$saved_global_name" ]] && git config --global user.name "$saved_global_name"
+  [[ -n "$saved_global_email" ]] && git config --global user.email "$saved_global_email"
+  
   assert_failure
   assert_output --partial "Author identity unknown"
 
-  # Restore original values (BATS runs tests in subshells, so this is defensive)
+  # Restore original environment values (BATS runs tests in subshells, so this is defensive)
   [[ -n "$saved_git_author_name" ]] && export GIT_AUTHOR_NAME="$saved_git_author_name"
   [[ -n "$saved_git_author_email" ]] && export GIT_AUTHOR_EMAIL="$saved_git_author_email"
   [[ -n "$saved_git_committer_name" ]] && export GIT_COMMITTER_NAME="$saved_git_committer_name"
