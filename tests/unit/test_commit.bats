@@ -256,7 +256,7 @@ HOOK
 #   - Aborts on conflicts, invalid branches, or without --new if branch doesn't exist.
 #   - Requires confirmation (skipped with --force).
 # -----------------------------------------------------------------------------
-@test "hug cmv: moves last commit to existing branch (cherry-pick)" {
+@test "hug cmv: moves last commit to existing branch (cherry-pick) and stays on it" {
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -276,8 +276,11 @@ HOOK
   # Original branch reset back
   assert_equal "$(git rev-parse main)" "$(git rev-parse "$original_head~1")"
   
+  # Now on target-branch
+  run git branch --show-current
+  assert_output "target-branch"
+  
   # Commit moved to target-branch (new commit via cherry-pick)
-  git checkout -q target-branch
   run git log -2 --oneline
   assert_line --index 0 --partial "Add main extra"
   # New commit hash when parent is different
@@ -287,7 +290,7 @@ HOOK
   rm -rf "$repo"
 }
 
-@test "hug cmv: detaches exact history to new branch (--new)" {
+@test "hug cmv: detaches exact history to new branch (--new) and stays on it" {
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -304,8 +307,11 @@ HOOK
   # Original branch reset back
   assert_equal "$(git rev-parse main)" "$(git rev-parse "$original_head~1")"
 
+  # Now on new-detach
+  run git branch --show-current
+  assert_output "new-detach"
+
   # New branch log matches exact range SHAs (no new commits)
-  git checkout -q new-detach
   run git log --oneline HEAD~1..HEAD
   assert_output "$expected_log"  # Exact match - just the moved commit(s)
   assert_equal "$(git rev-parse HEAD)" "$original_head"
@@ -314,7 +320,7 @@ HOOK
   rm -rf "$repo"
 }
 
-@test "hug cmv: moves multiple commits to new branch (detach)" {
+@test "hug cmv: moves multiple commits to new branch (detach) and stays on it" {
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -331,8 +337,11 @@ HOOK
   # Original branch reset back
   assert_equal "$(git rev-parse main)" "$(git rev-parse "$original_head~2")"
   
+  # Now on new-branch
+  run git branch --show-current
+  assert_output "new-branch"
+
   # New branch log matches exact range SHAs
-  git checkout -q new-branch
   run git log --oneline HEAD~2..HEAD
   assert_output "$expected_log"  # Exact match - just the moved commits
   assert_equal "$(git rev-parse HEAD)" "$original_head"
@@ -398,7 +407,7 @@ HOOK
   rm -rf "$repo"
 }
 
-@test "hug cmv: skips confirmation with --force" {
+@test "hug cmv: skips confirmation with --force and stays on target (existing)" {
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -412,6 +421,42 @@ HOOK
   run hug cmv 1 target-branch --force
   assert_success
   
+  # Now on target-branch
+  run git branch --show-current
+  assert_output "target-branch"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: moves to existing branch and stays on it (with confirmation)" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # Create existing target
+  git checkout -q -b existing-target HEAD~1
+  git checkout -q main
+
+  run bash -c 'printf "y\n" | hug cmv 1 existing-target'
+  assert_success
+  assert_output --partial "Proceed with moving 1 commit to 'existing-target'?"
+
+  # Original branch reset back
+  assert_equal "$(git rev-parse main)" "$(git rev-parse "$original_head~1")"
+
+  # Now on existing-target
+  run git branch --show-current
+  assert_output "existing-target"
+
+  # Verify cherry-pick
+  run git log -1 --oneline
+  assert_line --index 0 --partial "Add main extra"
+
   popd >/dev/null
   rm -rf "$repo"
 }
@@ -440,7 +485,7 @@ HOOK
   rm -rf "$repo"
 }
 
-@test "hug cmv: prompts to create missing branch without --new (detach on y)" {
+@test "hug cmv: prompts to create missing branch without --new (combined prompt, detach on y) and stays on it" {
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -451,10 +496,9 @@ HOOK
   local expected_log
   expected_log=$(git log --oneline HEAD~1..HEAD)  # Range to move
 
-  run bash -c 'printf "y\ny\n" | hug cmv 1 prompt-missing'
+  run bash -c 'printf "y\n" | hug cmv 1 prompt-missing'
   assert_success
-  assert_output --partial "Target branch 'prompt-missing' doesn't exist. Create it?"
-  assert_output --partial "Proceed with moving 1 commit to 'prompt-missing' (detaching to new branch 'prompt-missing')?"
+  assert_output --partial "Branch 'prompt-missing' doesn't exist. Proceed with creating a new branch named 'prompt-missing' and moving 1 commit to it?"
 
   # Verify creation and reset to just before
   local target_before
@@ -463,8 +507,11 @@ HOOK
   run bash -c "git branch -l | grep prompt-missing"
   assert_success
 
+  # Now on prompt-missing
+  run git branch --show-current
+  assert_output "prompt-missing"
+
   # New branch log matches exact range SHAs
-  git checkout -q prompt-missing
   run git log --oneline HEAD~1..HEAD
   assert_output "$expected_log"  # Exact match - just the moved commit(s)
   assert_equal "$(git rev-parse HEAD)" "$original_head"
@@ -473,7 +520,7 @@ HOOK
   rm -rf "$repo"
 }
 
-@test "hug cmv: aborts on 'n' to creation prompt without --new" {
+@test "hug cmv: aborts on 'n' to creation prompt without --new (combined prompt)" {
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -484,16 +531,19 @@ HOOK
 
   run bash -c 'printf "n\n" | hug cmv 1 abort-missing'
   assert_failure
+  assert_output --partial "Branch 'abort-missing' doesn't exist. Proceed with creating a new branch named 'abort-missing' and moving 1 commit to it?"
   assert_output --partial "Cancelled."
 
   # No changes
   assert_equal "$(git rev-parse HEAD)" "$original_head"
+  run bash -c "git branch -l | grep abort-missing"
+  refute_output
 
   popd >/dev/null
   rm -rf "$repo"
 }
 
-@test "hug cmv: auto-creates with --force on missing without --new (detach)" {
+@test "hug cmv: auto-creates with --force on missing without --new (detach) and stays on it" {
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -515,8 +565,11 @@ HOOK
   run bash -c "git branch -l | grep auto-force-missing"
   assert_success
 
+  # Now on auto-force-missing
+  run git branch --show-current
+  assert_output "auto-force-missing"
+
   # New branch log matches exact range SHAs
-  git checkout -q auto-force-missing
   run git log --oneline HEAD~1..HEAD
   assert_output "$expected_log"  # Exact match - just the moved commit(s)
   assert_equal "$(git rev-parse HEAD)" "$original_head"
@@ -536,7 +589,7 @@ HOOK
 
   run hug cmv 1 post-force --force
   assert_success
-  assert_output --partial "Detached commits to new branch 'post-force' (from original HEAD). Original branch reset to $target_short (just before the moved commits)."
+  assert_output --partial "Created and moved 1 commit to new branch 'post-force'. Now on 'post-force'."
 
   popd >/dev/null
   rm -rf "$repo"
@@ -556,7 +609,7 @@ HOOK
 
   run hug cmv 1 existing-target --force
   assert_success
-  assert_output --partial "Moved 1 commit to 'existing-target'. Original branch reset to $target_short (just before the moved commits)."
+  assert_output --partial "Moved 1 commit to 'existing-target'. Now on 'existing-target'."
 
   popd >/dev/null
   rm -rf "$repo"

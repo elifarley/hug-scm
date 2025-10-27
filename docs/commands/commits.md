@@ -118,22 +118,27 @@ Applies the changes from a specific commit on top of the current HEAD, creating 
 
 ## hug cmv (Commit Move)
 
-Move (relocate) commits from the current branch to another branch (new or existing), like `mv` for files.
+Move (relocate) commits from the current branch to another branch (new or existing), like `mv` for files. After the move, switches to and stays on the target branch.
 
 **Usage:** `hug cmv [N|commit] \<branch\> [--new] [-u, --upstream] [--force]`
 
-**Description**: Moves the last N commits (default: 1) or commits above a specific commit from the current branch to \<branch\>, preserving individual commit history. Then resets the current branch back. If \<branch\> missing without --new: Prompts to create (y/n); auto-creates with --force (no prompt). Use --new for explicit non-interactive creation. For new branches, detaches by creating at original HEAD then resetting original back (exact history preserved, no conflicts). For existing branches, cherry-picks the range. With -u, moves local-only commits above the upstream tip (read-only preview/confirmation; no fetch).
+**Description**: Moves the last N commits (default: 1) or commits above a specific commit from the current branch to \<branch\>, preserving individual commit history. Then resets the current branch back. If \<branch\> missing without --new: Combined prompt "Branch 'X' doesn't exist. Proceed with creating a new branch named 'X' and moving N commit(s) to it?" (y/n); auto-creates with --force (no prompt). Use --new for explicit non-interactive creation (skips prompt if missing). For new branches, detaches by creating at original HEAD then resetting original back (exact history preserved, no conflicts). For existing branches, cherry-picks the range. With -u, moves local-only commits above the upstream tip (read-only preview/confirmation; no fetch). Post-move: You'll end up on the target branch for easy continuation.
 
 **Examples:**
 ```shell
-hug cmv 2 feature/new           # Prompts to create if missing
+hug cmv 2 feature/new           # Combined prompt to create if missing
 hug cmv 2 feature/new --new     # Explicitly create new branch 'feature/new'
 hug cmv a1b2c3 existing-branch  # Move commits above a1b2c3 to 'existing-branch'
 hug cmv -u feature/local --force # Auto-creates if missing, skip confirmation
 hug cmv 3 bugfix --force        # Skip confirmation (auto-create if missing)
+
+# Example interactive session (missing branch):
+# $ hug cmv 1 my-new-branch
+# Branch 'my-new-branch' doesn't exist. Proceed with creating a new branch named 'my-new-branch' and moving 1 commit to it? [y/N]: y
+# Created and moved 1 commit to new branch 'my-new-branch'. Now on 'my-new-branch'.
 ```
 
-**Safety**: Requires clean working tree and index (no staged or unstaged changes; untracked ok). Previews commits and file changes; requires y/n confirmation for move (skipped with --force). Auto-creation on --force for scripting; interactive prompt otherwise. For new branches: Simple detach (no reapplication). For existing: Cherry-pick may conflict/abort. Cannot mix -u with explicit N/commit. The preview is read-only.
+**Safety**: Requires clean working tree and index (no staged or unstaged changes; untracked ok). Previews commits and file changes; requires y/n confirmation for move (skipped with --force). Auto-creation on --force for scripting; combined interactive prompt otherwise. For new branches: Simple detach (no reapplication). For existing: Cherry-pick may conflict/abort. Cannot mix -u with explicit N/commit. The preview is read-only.
 
 ## Tips
 - Use `hug s` (**S**tatus) or `hug sl` (**S**tatus + **L**ist) to check what you are about to commit, especially before using `hug c` (**C**ommit).
