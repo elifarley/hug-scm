@@ -1153,7 +1153,12 @@ handle_upstream_operation() {
     local action_name="$1"
 
     local target
-    target=$(get_upstream_commit) # This will exit if no upstream
+    target=$(get_upstream_commit) || return 1  # Propagate failure if no upstream
+    
+    # Additional safety check
+    if [[ -z "$target" ]]; then
+        error "Failed to get upstream commit."
+    fi
 
     local local_commits
     local_commits=$(count_commits_in_range "$target" HEAD)
