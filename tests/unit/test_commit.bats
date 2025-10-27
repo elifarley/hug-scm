@@ -106,6 +106,12 @@ teardown() {
   unset EDITOR
   
   GIT_EDITOR="false" run hug c
+  
+  # Debug output
+  echo "# Exit status: $status" >&3
+  echo "# Output:" >&3
+  echo "$output" | sed 's/^/# /' >&3
+  
   assert_failure
   assert_output --partial "there was a problem with the editor"
   
@@ -264,6 +270,12 @@ HOOK
   git add file.txt
 
   run hug c -m "Should fail"
+  
+  # Debug output
+  echo "# Exit status: $status" >&3
+  echo "# Output:" >&3
+  echo "$output" | sed 's/^/# /' >&3
+  
   assert_failure
   assert_output --partial "Author identity unknown"
 
