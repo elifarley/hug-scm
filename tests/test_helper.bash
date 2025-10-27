@@ -104,7 +104,7 @@ create_test_repo() {
   # Initialize repo in subshell for isolation
   (
     cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
-    git init -q
+    git init -q --initial-branch=main
     git config --local user.email "test@hug-scm.test"
     git config --local user.name "Hug Test"
     
@@ -486,4 +486,28 @@ assert_hg_clean() {
     echo "$status"
     return 1
   fi
+}
+
+# Create a test repository with multiple branches for relocate tests
+create_test_repo_with_branches() {
+  local test_repo
+  test_repo=$(create_test_repo_with_history)
+  
+  (
+    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    
+    # Create a feature branch with commits
+    git checkout -q -b feature/branch
+    echo "Feature branch file" > feature.txt
+    git add feature.txt
+    git commit -q -m "Add feature on branch"
+    
+    # Switch back to main and add more commits
+    git checkout -q main
+    echo "Main extra" > main_extra.txt
+    git add main_extra.txt
+    git commit -q -m "Add main extra"
+  )
+  
+  echo "$test_repo"
 }

@@ -222,6 +222,8 @@ hug h back [N|commit]     # Move HEAD back, keep changes staged (non-destructive
 hug h undo [N|commit]     # Move HEAD back, unstage changes (non-destructive)
 hug h rollback [N|commit] # Rollback commits and their changes (preserves local work)
 hug h rewind <commit>     # Destructive rewind to clean state (discards history and changes, but keeps current untracked files)
+hug h squash [N|commit]   # Squash commits into one
+hug h files [N|commit]    # Preview files touched in commit range
 hug h steps <file> [--raw] # Steps back from HEAD to last change in <file> (for precise rewinds)
 ```
 
@@ -367,6 +369,8 @@ hug ca [-m msg]       # Commit: All (all tracked changes)
 hug caa [-m msg]      # Commit: All All (tracked + untracked + deletions)
 hug cm [-m msg]       # Commit: Modify (Amend last commit with staged changes)
 hug cma [-m msg]      # Commit: Modify (Amend last commit with all tracked changes)
+hug cc <commit>       # Copy commit to current branch
+hug cmv [N] <branch> [--new] # Move commits to another branch (like mv; detaches for new (exact history), cherry-picks for existing; prompts to create if missing, auto with --force)
 hug cii               # Interactive patch commit (add --patch then commit)
 hug cim               # Full interactive staging and commit
 ```

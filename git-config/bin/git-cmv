@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+show_help() {
+    cat << EOF
+hug cmv: Move (relocate) commits from current branch to another branch (new or existing).
+
+USAGE:
+    hug cmv [N|COMMIT] <target-branch> [--new] [-u, --upstream] [--quiet] [--force]
+
+OPTIONS:
+    [N|COMMIT]      Number of commits to move (default: 1) or specific commit to move above
+    <target-branch> Required: Branch to move commits to
+    --new           Create <target-branch> if it doesn't exist (from the move target commit)
+    -u, --upstream  Move local-only commits above upstream tip instead of [N|COMMIT]
+    --quiet         Suppress output (sets HUG_QUIET=T)
+    --force         Skip confirmation prompts (use with caution)
+
+DESCRIPTION:
+    Moves the specified commits from the current branch to <target-branch> by detaching (new branches) or cherry-picking (existing) and resetting the current branch back. Preserves individual commit history. If <target-branch> missing without --new, prompts to create (auto-creates with --force). Use --new for explicit non-interactive creation. For new branches, detaches by creating at original HEAD then resetting original back (exact history preserved, no conflicts). For existing, cherry-picks the range. With -u, moves commits above the upstream remote tip (read-only preview/confirmation; no fetch).
+
+    Requires a clean working tree and index (no staged or unstaged changes; untracked ok). Cannot mix -u with [N|COMMIT]. Aborts on cherry-pick conflicts (existing branches) or if <target-branch> can't be checked out.
+
+EXAMPLES:
+    hug cmv 2 feature/new --new     # Move last 2 commits to new branch 'feature/new'
+    hug cmv a1b2c3 existing-branch  # Move commits above a1b2c3 to 'existing-branch'
+    hug cmv -u feature/local        # Move local-only commits to 'feature/local'
+    hug cmv 3 bugfix --force        # Skip confirmation
+
+SEE ALSO:
+    hug cc    Copy commits instead of moving
+    hug h back    Move HEAD back without relocating
+    hug b         Branch management
+EOF
+}
+
+# Parse common flags (--quiet, --force, -h|--help)
+eval "$(parse_common_flags "$@")"
+
+# Parse custom flags
+upstream=false
+new_branch=false
+target_arg=""
+branch_name=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -u|--upstream) upstream=true; shift ;;
+    --new) new_branch=true; shift ;;
+    *) 
+      if [[ -z "$target_arg" ]]; then target_arg="$1"
+      elif [[ -z "$branch_name" ]]; then branch_name="$1"
+      else error "Unexpected argument: $1"; fi
+      shift ;;
+  esac
+done
+
+if [[ -z "$branch_name" ]]; then
+  # Special case: if using -u and target_arg is set, it's actually the branch name
+  if $upstream && [[ -n "$target_arg" ]]; then
+    branch_name="$target_arg"
+    target_arg=""
+  else
+    error "Missing required <target-branch>."
+  fi
+fi
+
+if $upstream && [[ -n "$target_arg" ]]; then
+  error "Cannot specify both --upstream and [N|COMMIT]."
+fi
+
+check_git_repo
+
+# Require clean working tree and index (no staged or unstaged changes)
+if has_staged_changes || has_unstaged_changes; then
+  error "Require clean working tree and index to proceed (no staged or unstaged changes; untracked ok). Unstaged changes would be lost during reset."
+fi
+
+original_branch=$(git branch --show-current)
+if [[ -z "$original_branch" ]]; then
+  error "Must be on a branch to move commits. (Detached HEAD not supported.)"
+fi
+original_head=$(git rev-parse HEAD)
+
+if $upstream; then
+  target=$(handle_upstream_operation "moving")
+  if [[ -z "${target:-}" ]]; then
+    exit 0
+  fi
+else
+  # Special case: if target_arg is "0", immediately exit with message
+  if [[ "${target_arg:-}" == "0" ]]; then
+    info "No commits to move (target is 0)."
+    exit 0
+  fi
+  target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
+  handle_standard_operation "moving" "$target" false
+fi
+
+# Resolve target to actual SHA (important: do this before reset changes HEAD)
+target=$(git rev-parse "$target")
+
+# Check branch existence
+branch_exists=true
+if ! git rev-parse --verify "$branch_name" >/dev/null 2>&1; then
+  branch_exists=false
+  if ! $new_branch; then
+    if [[ ${HUG_FORCE:-} == true ]]; then
+      if [[ ${HUG_QUIET:-} != T ]]; then
+        printf 'Branch %s missing; auto-creating with --force from target %s.\n' "$branch_name" "$(git rev-parse --short "$target")" >&2
+      fi
+      new_branch=true  # Enable creation logic
+    else
+      if prompt_confirm "Target branch '$branch_name' doesn't exist. Create it? [y/N]: "; then
+        new_branch=true
+      else
+        info "Cancelled."
+        exit 0
+      fi
+    fi
+  fi
+fi
+
+# Count commits to move
+commits_to_relocate=$(count_commits_in_range "$target" HEAD)
+if [ "$commits_to_relocate" -eq 0 ]; then
+  info "No commits to move (already at target)."
+  exit 0
+fi
+
+commit_word="commit"
+if [ "$commits_to_relocate" -gt 1 ]; then
+  commit_word="commits"
+fi
+
+if [[ ${HUG_QUIET:-} != T ]]; then
+  create_note=""
+  if ! $branch_exists && $new_branch; then
+    create_note=" (will detach commits to new branch from original HEAD)"
+  fi
+  printf 'Commits to move to %s%s:\n' "$branch_name" "$create_note" >&2
+  print_commit_list_in_range "$target" HEAD >&2
+  printf '\nPreview: changes in %d %s.\n' "$commits_to_relocate" "$commit_word" >&2
+  git diff --stat "$target"..HEAD >&2
+fi
+
+# Confirmation (only if --force not set; tree is clean, so always skip prompt if force)
+should_prompt=true
+if [[ ${HUG_FORCE:-} == true ]]; then
+  should_prompt=false
+fi
+
+if $should_prompt; then
+  create_msg=""
+  if ! $branch_exists && $new_branch; then
+    create_msg=" (detaching to new branch '$branch_name')"
+  fi
+  prompt_confirm "Proceed with moving $commits_to_relocate $commit_word to '$branch_name'$create_msg? [y/N]: "
+fi
+
+# Reset original branch to target (safe since tree/index clean)
+git checkout -q "$original_branch"
+git reset --hard "$target"
+
+# Handle creation or existing
+if ! $branch_exists && $new_branch; then
+  # Simple detach for new branch: create pointing to original HEAD
+  git branch "$branch_name" "$original_head"
+  git checkout -q "$branch_name"
+else
+  # Existing branch: use temp for cherry-pick
+  temp_branch="hug-move-temp-$(git rev-parse --short "$original_head")"
+  git branch "$temp_branch" "$original_head"
+  git checkout -q "$branch_name"
+  git cherry-pick "$target".."$temp_branch"
+  git branch -D "$temp_branch"
+fi
+
+# Switch back to original branch
+git checkout -q "$original_branch"
+
+test "${HUG_QUIET:-f}" = T && exit
+
+reset_msg="Original branch reset to $(git rev-parse --short "$target") (just before the moved commits)."
+if ! $branch_exists && $new_branch; then
+  info "Detached commits to new branch '$branch_name' (from original HEAD). $reset_msg"
+else
+  info "Moved $commits_to_relocate $commit_word to '$branch_name'. $reset_msg"
+fi
+tip "Now on original branch '$original_branch'. Use 'hug b $branch_name' to switch."
