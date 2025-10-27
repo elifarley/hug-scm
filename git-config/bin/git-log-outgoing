@@ -85,15 +85,12 @@ if [ "$local_commits" -eq 0 ]; then
   exit 0
 fi
 
-printf '📊 %d commits since %s:\n' "$local_commits" "$target_short" >&2
-git diff --stat "$target"..HEAD >&2
+range="$target..HEAD"
+print_preview_summary "$local_commits" "commits" "$target_short" "$range"
 
 if [[ ${HUG_QUIET:-} != T ]]; then
-  if [[ -n "$remote_branch" ]]; then
-    printf '\n📤 Outgoing commits to %s:\n' "$remote_branch" >&2
-  else
-    printf '\n📤 Outgoing commits to upstream:\n' >&2
-  fi
+  header_target="${remote_branch:-upstream}"
+  print_commit_list_header "Outgoing" "$header_target" "false" "true"
   print_commit_list_in_range "$target" HEAD >&2
 fi
 

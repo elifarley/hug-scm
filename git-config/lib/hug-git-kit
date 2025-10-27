@@ -1133,6 +1133,63 @@ count_changed_files_in_range() {
 }
 
 ################################################################################
+# Preview Helper Functions
+################################################################################
+
+# Prints preview summary (📊 section): commit count and diff stat
+# Usage: print_preview_summary num_commits commit_word target_short range
+# Parameters:
+#   $1 - Number of commits
+#   $2 - "commit" or "commits"
+#   $3 - Short commit hash of target
+#   $4 - Range for diff (e.g., "target..HEAD")
+# Output: 📊 summary and diff stat to stderr
+print_preview_summary() {
+    local num_commits="$1"
+    local commit_word="$2"
+    local target_short="$3"
+    local range="$4"
+    printf '📊 %d %s since %s:\n' "$num_commits" "$commit_word" "$target_short" >&2
+    if git diff --quiet "$range"; then
+        printf 'No file changes.\n' >&2
+    else
+        git diff --stat "$range" >&2
+    fi
+}
+
+# Prints commit list header (📤 section)
+# Usage: print_commit_list_header header_type target_name is_new include_commits
+# Parameters:
+#   $1 - Header type (e.g., "moving", "Outgoing")
+#   $2 - Target name (e.g., branch or "upstream")
+#   $3 - "true" if new branch, "false" otherwise
+#   $4 - "true" to include "commits" in header, "false" otherwise
+# Output: 📤 header to stderr
+print_commit_list_header() {
+    local header_type="$1"
+    local target_name="$2"
+    local is_new="$3"
+    local include_commits="$4"
+    local suffix=""
+    if [[ "$is_new" == "true" ]]; then
+        suffix=" (new branch)"
+    fi
+    if [[ -n "$target_name" ]]; then
+        local commits_text=""
+        if [[ "$include_commits" == "true" ]]; then
+            commits_text=" commits"
+        fi
+        printf '\n📤 %s%s to %s%s:\n' "$header_type" "$commits_text" "$target_name" "$suffix" >&2
+    else
+        local commits_text=" commits"
+        if [[ "$include_commits" != "true" ]]; then
+            commits_text=""
+        fi
+        printf '\n📤 %s%s:\n' "$header_type" "$commits_text" >&2
+    fi
+}
+
+################################################################################
 # Upstream Operation Handlers
 ################################################################################
 
