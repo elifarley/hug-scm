@@ -110,10 +110,10 @@ teardown() {
   assert_output --partial "there was a problem with the editor"
   
   # Restore original values (BATS runs tests in subshells, so this is defensive)
-  # Using || true to ensure restoration doesn't affect test result
-  [[ -n "$saved_git_sequence_editor" ]] && export GIT_SEQUENCE_EDITOR="$saved_git_sequence_editor" || true
-  [[ -n "$saved_visual" ]] && export VISUAL="$saved_visual" || true
-  [[ -n "$saved_editor" ]] && export EDITOR="$saved_editor" || true
+  [[ -n "$saved_git_sequence_editor" ]] && export GIT_SEQUENCE_EDITOR="$saved_git_sequence_editor"
+  [[ -n "$saved_visual" ]] && export VISUAL="$saved_visual"
+  [[ -n "$saved_editor" ]] && export EDITOR="$saved_editor"
+  : # the previous command may have returned false
 }
 
 @test "hug c: commits in repo with no prior commits" {
@@ -268,11 +268,11 @@ HOOK
   assert_output --partial "Author identity unknown"
 
   # Restore original values (BATS runs tests in subshells, so this is defensive)
-  # Using || true to ensure restoration doesn't affect test result
-  [[ -n "$saved_git_author_name" ]] && export GIT_AUTHOR_NAME="$saved_git_author_name" || true
-  [[ -n "$saved_git_author_email" ]] && export GIT_AUTHOR_EMAIL="$saved_git_author_email" || true
-  [[ -n "$saved_git_committer_name" ]] && export GIT_COMMITTER_NAME="$saved_git_committer_name" || true
-  [[ -n "$saved_git_committer_email" ]] && export GIT_COMMITTER_EMAIL="$saved_git_committer_email" || true
+  [[ -n "$saved_git_author_name" ]] && export GIT_AUTHOR_NAME="$saved_git_author_name"
+  [[ -n "$saved_git_author_email" ]] && export GIT_AUTHOR_EMAIL="$saved_git_author_email"
+  [[ -n "$saved_git_committer_name" ]] && export GIT_COMMITTER_NAME="$saved_git_committer_name"
+  [[ -n "$saved_git_committer_email" ]] && export GIT_COMMITTER_EMAIL="$saved_git_committer_email"
+  : # To avoid affecting test result
 
   popd >/dev/null
   rm -rf "$repo"
