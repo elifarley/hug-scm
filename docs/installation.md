@@ -6,8 +6,8 @@ It's designed to be installed directly from its Github repository, and doesn't r
 
 ## Prerequisites
 
-- **Git**: Hug requires an underlying SCM tool. Currently, it only works with Git, so you must have Git installed and available in your `PATH`.
-- **Bash shell** 
+- **Git or Mercurial**: Hug requires an underlying SCM tool. It works with both Git and Mercurial (Hg), so you must have at least one installed and available in your `PATH`.
+- **Bash shell**: Hug is a Bash-based tool and requires Bash 4.0 or higher. 
 
 ## Installation Steps
 
@@ -50,3 +50,16 @@ It's designed to be installed directly from its Github repository, and doesn't r
     ```
 
 You are now ready to use Hug SCM in any of your Git repositories.
+
+## Mercurial Support
+
+Hug also supports Mercurial repositories! After installing Hug for Git (steps above), you can optionally install Mercurial support:
+
+```shell
+cd $HOME/hug-scm/hg-config
+./install.sh
+```
+
+Once installed, Hug will automatically detect whether you're in a Git or Mercurial repository and use the appropriate commands. The same familiar Hug commands work in both!
+
+See [Mercurial Support](../README.md#mercurial-support) in the main README for more details on Mercurial-specific features and limitations.
