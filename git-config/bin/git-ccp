@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat <<'EOF'
+hug ccp: Commit Cherry-Pick / Commit Clone / Carbon Copy (copy a commit onto HEAD).
+
+USAGE:
+  hug ccp [OPTIONS] <commit>...
+  hug ccp [OPTIONS] <commit-range>
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+  (All other options are passed directly to 'git cherry-pick')
+
+DESCRIPTION:
+  This is a convenient alias for 'git cherry-pick -x', which copies the specified commit(s)
+  onto the current branch while preserving the original commit's metadata (via -x). It supports
+  single commits, ranges (e.g., HEAD~2..HEAD), or multiple commits.
+
+  After cherry-picking, you can edit the new commit message with 'hug cm' if needed.
+  Note: Cherry-picking can lead to conflicts; resolve them with 'hug s' (status) and 'hug caa' (commit all).
+
+EXAMPLES:
+  hug ccp a1b2c3d4              # Cherry-pick a single commit by hash
+  hug ccp HEAD~2                # Cherry-pick the commit two steps back
+  hug ccp HEAD~2..HEAD          # Cherry-pick a range of commits
+  hug ccp a1b2c3 d4e5f6         # Cherry-pick multiple commits
+  hug ccp --no-commit a1b2c3    # Cherry-pick without auto-committing (passes to git)
+
+EOF
+}
+
+error() {
+  printf 'hug cc: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+usage_error() {
+  printf 'hug cc: %s\n\n' "$1" >&2
+  show_help >&2
+  exit 1
+}
+
+# Early exit if not in Git repo
+check_git_repo
+
+positional_args=()
+git_options=()
+
+while (($#)); do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    --)
+      shift
+      while (($#)); do
+        positional_args+=("$1")
+        shift
+      done
+      break
+      ;;
+    -*)
+      # Assume it's a git cherry-pick option (pass through)
+      git_options+=("$1")
+      ;;
+    *)
+      positional_args+=("$1")
+      ;;
+  esac
+  shift || break
+done
+
+set -- "${positional_args[@]}"
+
+if [ $# -eq 0 ]; then
+  usage_error "No commit(s) specified. Provide at least one commit hash, reference, or range."
+fi
+
+# Validate that arguments look like valid Git refs (basic check; Git will error more precisely)
+for arg in "$@"; do
+  if ! [[ "$arg" =~ ^[a-f0-9]{1,40}$ || "$arg" =~ ^HEAD~?[0-9]*(\.\.HEAD~?[0-9]*)?$ || "$arg" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
+    error "Invalid commit reference: '$arg'. Use a hash, ref, or range like 'HEAD~2'."
+  fi
+done
+
+printf "Copying %s onto current branch...\n" "$*"
+git cherry-pick -x "${git_options[@]}" "$@"

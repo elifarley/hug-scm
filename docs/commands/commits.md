@@ -11,6 +11,7 @@ The `c*` commands handle creating and modifying commits, making it easier to rec
 | `hug caa` | **C**ommit **A**dd **A**ll            | Stage and commit ALL changes (tracked + untracked) |
 | `hug cm`  | **C**ommit **M**odify                 | Modify last commit with staged changes only        |
 | `hug cma` | **C**ommit **M**odify **A**ll tracked | Modify last commit with all tracked changes        |
+| `hug ccp` | **C**ommit **C**o**P**y (cherry-pick) | Copy a commit from another branch onto HEAD        |
 | `hug cmv [N|commit] \<branch\> [--new] [-u, --upstream] [--force]` | **C**ommit **M**o**V**e | Move commits to another branch (like mv for files) |
 
 ## hug c (Commit staged)
@@ -101,6 +102,29 @@ hug cma
 # Modify and provide a new message in one step
 hug cma -m "Add new feature (with all files)"
 ```
+
+## hug ccp (Commit Copy)
+
+Copy a commit from another branch onto the current branch (cherry-pick).
+
+**Usage:** `hug ccp \<commit\>...`
+
+**Examples:**
+```shell
+hug ccp a1b2c3d4              # Copy a single commit by hash
+hug ccp HEAD~2                # Copy the commit two steps back
+hug ccp a1b2c3 d4e5f6         # Copy multiple commits
+hug ccp --no-commit a1b2c3    # Copy without auto-committing
+```
+
+Applies the changes from a specific commit on top of the current HEAD, creating a new commit on the current branch. Hug uses `git cherry-pick -x`, which adds the original commit hash to the new commit message for reference. This is useful for bringing a specific bug fix or feature from one branch to another without merging the entire source branch.
+
+**When to use:**
+- You want to apply a specific bug fix from another branch without merging all changes
+- You need to backport a feature to a maintenance branch
+- You want to copy a commit from someone else's branch
+
+**Note:** If conflicts occur during cherry-pick, resolve them with `hug s` to see the status, fix the conflicts, then `hug caa` to complete the cherry-pick.
 
 ## hug cmv (Commit Move)
 
