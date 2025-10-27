@@ -97,7 +97,7 @@ Hug follows a "progressive destructiveness" approach:
 3. **No Force by Default**: Never make `-f` or `--force` the default behavior
 4. **Safe Defaults**: Commands should fail safe rather than destructively
 5. **Clear Warnings**: Use clear, specific warning messages for dangerous operations
-6. **Dry Run First**: Implement `--dry-run` for any command that modifies repository state
+6. **Dry Run First**: Implement `--dry-run` for state-modifying commands
 
 ## Testing
 
@@ -289,7 +289,7 @@ Tests create isolated Git repositories in temp directories:
 
 ### When Adding New Commands
 
-1. **Forgetting to make scripts executable**: Always run `chmod +x` on new scripts
+1. **Forgetting to make scripts executable**: Always run `chmod +x git-config/bin/git-<command>` on new scripts
 2. **Not testing in isolation**: Always test new commands in a fresh test repository
 3. **Breaking existing commands**: Run full test suite before committing changes
 4. **Inconsistent naming**: Follow the prefix convention (h*, w*, s*, b*, etc.)
@@ -304,7 +304,7 @@ Tests create isolated Git repositories in temp directories:
 ### When Modifying Documentation
 
 1. **Forgetting to update README.md**: Keep command reference up to date
-2. **Breaking VitePress syntax**: Test docs locally with `npm run docs:dev`
+2. **Breaking VitePress syntax**: Test docs locally from project root with `npm run docs:dev`
 3. **Inconsistent examples**: Use realistic, practical examples
 
 ### General Development
