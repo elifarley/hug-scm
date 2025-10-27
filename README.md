@@ -72,7 +72,7 @@ hug aa           # Stage everything including untracked (new) files
 hug c            # Commit staged changes
 hug ca           # Commit all tracked changes
 hug caa          # Commit all tracked & untracked changes
-hug cc <commit>  # Copy a Commit on top of 'HEAD'
+hug ccp <commit>  # Copy a Commit on top of 'HEAD'
 
 # Branch operations
 hug bc feature   # Create and switch to new branch
@@ -369,7 +369,7 @@ hug ca [-m msg]       # Commit: All (all tracked changes)
 hug caa [-m msg]      # Commit: All All (tracked + untracked + deletions)
 hug cm [-m msg]       # Commit: Modify (Amend last commit with staged changes)
 hug cma [-m msg]      # Commit: Modify (Amend last commit with all tracked changes)
-hug cc <commit>       # Copy commit to current branch
+hug ccp <commit>       # Copy commit to current branch
 hug cmv [N] <branch> [--new] # Move commits to another branch and switch to it (like mv; detaches for new (exact history), cherry-picks for existing; combined prompt to create if missing, auto with --force)
 hug cii               # Interactive patch commit (add --patch then commit)
 hug cim               # Full interactive staging and commit
