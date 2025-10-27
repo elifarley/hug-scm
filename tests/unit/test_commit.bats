@@ -278,10 +278,19 @@ HOOK
   git init -q
   
   # Temporarily unset global git config to ensure test isolation
+  # Track existence separately from value to handle empty strings correctly
   local saved_global_name
   local saved_global_email
-  saved_global_name="$(git config --global user.name 2>/dev/null || echo "")"
-  saved_global_email="$(git config --global user.email 2>/dev/null)"
+  local had_global_name=false
+  local had_global_email=false
+  if git config --global user.name >/dev/null 2>&1; then
+    saved_global_name="$(git config --global user.name)"
+    had_global_name=true
+  fi
+  if git config --global user.email >/dev/null 2>&1; then
+    saved_global_email="$(git config --global user.email)"
+    had_global_email=true
+  fi
   git config --global --unset user.name 2>/dev/null || true
   git config --global --unset user.email 2>/dev/null || true
   
@@ -303,8 +312,12 @@ HOOK
   echo "$output" | sed 's/^/# /' >&3
   
   # Restore global config before assertions (in case they fail)
-  [[ -n "$saved_global_name" ]] && git config --global user.name "$saved_global_name"
-  [[ -n "$saved_global_email" ]] && git config --global user.email "$saved_global_email"
+  if [[ "$had_global_name" == true ]]; then
+    git config --global user.name "$saved_global_name"
+  fi
+  if [[ "$had_global_email" == true ]]; then
+    git config --global user.email "$saved_global_email"
+  fi
   
   assert_failure
   assert_output --partial "Author identity unknown"
