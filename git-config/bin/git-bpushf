@@ -1,5 +1,32 @@
 #!/usr/bin/env bash
 # Part of the Hug tool suite
 
+# Show help if requested
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  cat <<'EOF'
+hug bpushf: Force push current branch with lease (safer force push)
+
+USAGE:
+  hug bpushf [git push options]
+
+DESCRIPTION:
+  Alias for 'hug bpush --force'. Force pushes with --force-with-lease,
+  which is safer than regular force push as it checks that the remote
+  hasn't changed since your last fetch.
+
+EXAMPLES:
+  hug bpushf              # Force push current branch with lease
+
+SEE ALSO:
+  hug bpush              # Normal push
+  hug bpush-unsafe       # Unsafe force push (use with extreme caution)
+
+SAFETY:
+  Uses --force-with-lease for safer force pushing. Still coordinate
+  with your team before force pushing shared branches.
+EOF
+  exit 0
+}
+
 # Alias for hug bpush --force
 exec hug bpush --force "$@"

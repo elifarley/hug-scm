@@ -72,7 +72,6 @@ hug aa           # Stage everything including untracked (new) files
 hug c            # Commit staged changes
 hug ca           # Commit all tracked changes
 hug caa          # Commit all tracked & untracked changes
-hug ccp <commit>  # Copy a Commit on top of 'HEAD'
 
 # Branch operations
 hug bc feature   # Create and switch to new branch
@@ -148,13 +147,11 @@ hug wips "Prototype UI" → hug a . && hug c "Add components" → hug bs (pause)
 
 Hug now supports Mercurial! The same intuitive commands work across both Git and Mercurial repositories.
 
+Once installed, Hug will automatically detect whether you're in a Git or Mercurial repository and use the appropriate commands. The same familiar Hug commands work in both!
+
 ### Quick Mercurial Start
 
 ```shell
-# Install Mercurial support
-cd hg-config
-./install.sh
-
 # Use the same Hug commands in Mercurial repos!
 cd ~/my-hg-repo
 hug s              # Status
@@ -183,12 +180,6 @@ See [hg-config/README.md](hg-config/README.md) for full Mercurial documentation.
 ## Installation
 
 Check the [Installation Guide](https://elifarley.github.io/hug-scm/installation.html)
-
-**For Mercurial only:**
-```bash
-cd hg-config && ./install.sh
-```
-
 
 ---
 
@@ -369,7 +360,7 @@ hug ca [-m msg]       # Commit: All (all tracked changes)
 hug caa [-m msg]      # Commit: All All (tracked + untracked + deletions)
 hug cm [-m msg]       # Commit: Modify (Amend last commit with staged changes)
 hug cma [-m msg]      # Commit: Modify (Amend last commit with all tracked changes)
-hug ccp <commit>       # Copy commit to current branch
+hug ccp <commit>      # Commit Copy (cherry-pick commit onto current branch)
 hug cmv [N] <branch> [--new] # Move commits to another branch and switch to it (like mv; detaches for new (exact history), cherry-picks for existing; combined prompt to create if missing, auto with --force)
 hug cii               # Interactive patch commit (add --patch then commit)
 hug cim               # Full interactive staging and commit
@@ -505,4 +496,3 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ## License
 
 Apache 2.0 License - see [LICENSE](LICENSE) for details.
-XXX

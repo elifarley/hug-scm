@@ -1,5 +1,39 @@
 #!/usr/bin/env bash
 # Part of the Hug tool suite
 
+# Show help if requested
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  cat <<'EOF'
+hug bpush-unsafe: Unsafe force push (use with extreme caution)
+
+USAGE:
+  hug bpush-unsafe [git push options]
+
+DESCRIPTION:
+  Alias for 'hug bpush --unsafe'. Performs an unsafe force push without
+  --force-with-lease protection. This can overwrite others' work.
+
+WARNING:
+  This command is DANGEROUS and should rarely be used. It can:
+  - Overwrite other people's commits
+  - Cause data loss
+  - Break team members' local repositories
+  
+  Use 'hug bpushf' instead for safer force pushing.
+
+EXAMPLES:
+  hug bpush-unsafe        # Unsafe force push (dangerous!)
+
+SEE ALSO:
+  hug bpush               # Normal push (recommended)
+  hug bpushf              # Force push with lease (safer alternative)
+
+SAFETY:
+  EXTREMELY UNSAFE. Only use when you fully understand the consequences
+  and have coordinated with your entire team.
+EOF
+  exit 0
+}
+
 # Alias for hug bpush --unsafe
 exec hug bpush --unsafe "$@"
