@@ -30,7 +30,8 @@ Dive into detailed guides for command groups:
 - [Logging (l*): Search and view history](commands/logging)
 - [File Inspection (f*): Analyze file authorship and history](commands/file-inspection)
 - [Tagging (t*): Manage tags for releases](commands/tagging)
-- [Merge & Rebase (m*, r*): Integrate branches and edit history](commands/merge)
+- [Merge (m*): Integrate branches](commands/merge)
+- [Rebase (r*): Edit history](commands/rebase)
 - [WIP Workflow (w*): Park, resume, and unpark temp work](commands/working-dir)
  
 ### Tips for Common Queries

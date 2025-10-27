@@ -4,6 +4,8 @@ Tagging commands in Hug are for creating, listing, and managing release markers 
 
 These commands provide intuitive ways to create lightweight and annotated tags, manage tag lifecycle (move, rename, delete), sync with remotes, and query which tags relate to specific commits.
 
+> **Note:** Tag commands are implemented as Git aliases in `.gitconfig`, providing a consistent interface over Git's native tag functionality.
+
 ## Quick Reference
 
 | Command | Memory Hook | Summary |
