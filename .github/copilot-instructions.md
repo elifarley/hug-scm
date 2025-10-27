@@ -5,9 +5,9 @@
 Hug is a CLI tool that provides a humane, intuitive interface for Git and other version control systems. It transforms complex Git commands into a simple, predictable language that feels natural to use.
 
 **Key Facts:**
-- Written entirely in Bash scripts
+- Written in Bash scripts (/git-config/bin/*) and git aliases (/git-config/.git-config)
 - Acts as a wrapper/interface layer over Git
-- Currently only supports Git (future: Mercurial, Sapling)
+- Currently only supports Git and Mercurial (future: Sapling)
 - Documentation site built with VitePress
 
 ## Repository Structure
@@ -73,6 +73,8 @@ Hug follows a "progressive destructiveness" approach:
 ## Testing
 
 ### Framework: BATS (Bash Automated Testing System)
+
+Before running tests, you must install Hug via `make install; make test-deps-install`.
 
 **Test Structure:**
 - `tests/test_helper.bash` - Common setup, utilities, and helpers
