@@ -97,13 +97,23 @@ teardown() {
 
 @test "hug c: propagates git commit errors" {
   # Attempt commit without message and fake editor failure
-  # Unset fallback environment variables to ensure consistent behavior
+  # Save and unset fallback environment variables to ensure consistent behavior
+  local saved_git_sequence_editor="${GIT_SEQUENCE_EDITOR:-}"
+  local saved_visual="${VISUAL:-}"
+  local saved_editor="${EDITOR:-}"
   unset GIT_SEQUENCE_EDITOR
   unset VISUAL
   unset EDITOR
+  
   GIT_EDITOR="false" run hug c
   assert_failure
   assert_output --partial "there was a problem with the editor"
+  
+  # Restore original values (BATS runs tests in subshells, so this is defensive)
+  # Using || true to ensure restoration doesn't affect test result
+  [[ -n "$saved_git_sequence_editor" ]] && export GIT_SEQUENCE_EDITOR="$saved_git_sequence_editor" || true
+  [[ -n "$saved_visual" ]] && export VISUAL="$saved_visual" || true
+  [[ -n "$saved_editor" ]] && export EDITOR="$saved_editor" || true
 }
 
 @test "hug c: commits in repo with no prior commits" {
@@ -239,7 +249,11 @@ HOOK
   repo=$(create_temp_repo_dir)
   pushd "$repo" >/dev/null
 
-  # Unset all possible sources of git identity to ensure test fails as expected
+  # Save and unset all possible sources of git identity to ensure test fails as expected
+  local saved_git_author_name="${GIT_AUTHOR_NAME:-}"
+  local saved_git_author_email="${GIT_AUTHOR_EMAIL:-}"
+  local saved_git_committer_name="${GIT_COMMITTER_NAME:-}"
+  local saved_git_committer_email="${GIT_COMMITTER_EMAIL:-}"
   unset GIT_AUTHOR_NAME
   unset GIT_AUTHOR_EMAIL
   unset GIT_COMMITTER_NAME
@@ -252,6 +266,13 @@ HOOK
   run hug c -m "Should fail"
   assert_failure
   assert_output --partial "Author identity unknown"
+
+  # Restore original values (BATS runs tests in subshells, so this is defensive)
+  # Using || true to ensure restoration doesn't affect test result
+  [[ -n "$saved_git_author_name" ]] && export GIT_AUTHOR_NAME="$saved_git_author_name" || true
+  [[ -n "$saved_git_author_email" ]] && export GIT_AUTHOR_EMAIL="$saved_git_author_email" || true
+  [[ -n "$saved_git_committer_name" ]] && export GIT_COMMITTER_NAME="$saved_git_committer_name" || true
+  [[ -n "$saved_git_committer_email" ]] && export GIT_COMMITTER_EMAIL="$saved_git_committer_email" || true
 
   popd >/dev/null
   rm -rf "$repo"
