@@ -281,7 +281,7 @@ HOOK
   local saved_global_name
   local saved_global_email
   saved_global_name="$(git config --global user.name 2>/dev/null || echo "")"
-  saved_global_email="$(git config --global user.email 2>/dev/null || echo "")"
+  saved_global_email="$(git config --global user.email 2>/dev/null)"
   git config --global --unset user.name 2>/dev/null || true
   git config --global --unset user.email 2>/dev/null || true
   
