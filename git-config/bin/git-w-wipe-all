@@ -1,5 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Show help if requested
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  cat <<'EOF'
+hug w wipe-all: Wipe all staged and unstaged changes across repository
+
+USAGE:
+  hug w wipe-all [options]
+
+DESCRIPTION:
+  Discards both staged and unstaged changes for all tracked files
+  across the entire repository. This is a convenience command that
+  combines:
+    hug w discard-all -u  (all unstaged changes)
+    hug w discard-all -s  (all staged changes)
+  
+  Does not affect untracked or ignored files.
+
+EXAMPLES:
+  hug w wipe-all              # Wipe all changes repo-wide
+  hug w wipe-all --dry-run    # Preview what would be wiped
+  hug w wipe-all -f           # Skip confirmation
+
+OPTIONS:
+  --dry-run    Preview what would be wiped without making changes
+  -f, --force  Skip confirmation prompts
+
+SEE ALSO:
+  hug w wipe         # Wipe changes for specific files
+  hug w discard-all  # Discard unstaged OR staged changes repo-wide
+  hug w zap-all      # Complete repo cleanup (wipe + purge)
+
+SAFETY:
+  Removes all uncommitted work from tracked files. Use --dry-run first.
+  This is a destructive operation - make sure you want to lose all changes.
+EOF
+  exit 0
+}
+
 # Convenience alias: wipe-all == discard-all staged + unstaged repo-wide
 exec hug w discard-all -u -s "$@"
