@@ -317,7 +317,8 @@ HOOK
   preview_section=$(echo "$output" | sed -n '/📊/,/HEAD is now/p' | head -n -1)
   local commit_hash
   commit_hash=$(git rev-parse --short HEAD)
-  local count=$(echo "$preview_section" | grep -c "$commit_hash" || echo "0")
+  # grep -c returns 0 if no matches are found, so no fallback is needed
+  local count=$(echo "$preview_section" | grep -c "$commit_hash")
   assert_equal "$count" 1
   assert_output --partial "📤 moving to existing-target:"
   
