@@ -24,6 +24,8 @@ DESCRIPTION:
 
     Requires a clean working tree and index (no staged or unstaged changes; untracked ok). Cannot mix -u with [N|COMMIT]. Aborts on cherry-pick conflicts (existing branches) or if <target-branch> can't be checked out.
 
+    Previews are organized: 📊 summary + changes, followed by 📤 commit list (shown once).
+
 EXAMPLES:
     hug cmv 2 feature/new --new     # Move last 2 commits to new branch 'feature/new'
     hug cmv a1b2c3 existing-branch  # Move commits above a1b2c3 to 'existing-branch'
@@ -101,85 +103,57 @@ else
     printf '%s\n' "$git_error" >&2
     error "Invalid commit target: $target"
   fi
-  handle_standard_operation "moving" "$target" false
 fi
 
 # Resolve target to actual SHA (important: do this before reset changes HEAD)
 target=$(git rev-parse "$target")
 
+# Early calculation for commits to relocate (for 0-commit early exit and prompts)
+commits_to_relocate=$(count_commits_in_range "$target" HEAD)
+if [ "$commits_to_relocate" -eq 0 ]; then
+  info "No commits to move (already at target)."
+  exit 0
+fi
+commit_word="commit"
+if [ "$commits_to_relocate" -gt 1 ]; then
+  commit_word="commits"
+fi
+
 # Check branch existence
 branch_exists=true
-commits_to_relocate=0  # Initialize to avoid unbound variable error
-commit_word="commit"
+is_new_branch=false
 if ! git rev-parse --verify "$branch_name" >/dev/null 2>&1; then
   branch_exists=false
   if ! $new_branch; then
     if [[ ${HUG_FORCE:-} == true ]]; then
-      # Need to calculate commits_to_relocate for later use
-      commits_to_relocate=$(count_commits_in_range "$target" HEAD)
-      if [ "$commits_to_relocate" -gt 1 ]; then
-        commit_word="commits"
-      fi
       if [[ ${HUG_QUIET:-} != T ]]; then
         printf 'Branch %s missing; auto-creating with --force from target %s.\n' "$branch_name" "$(git rev-parse --short "$target")" >&2
       fi
       new_branch=true  # Enable creation logic
+      is_new_branch=true
     else
       # Combined prompt for creation + move
-      commits_to_relocate=$(count_commits_in_range "$target" HEAD)
-      if [ "$commits_to_relocate" -eq 0 ]; then
-        info "No commits to move (already at target)."
-        exit 0
-      fi
-
-      commit_word="commit"
-      if [ "$commits_to_relocate" -gt 1 ]; then
-        commit_word="commits"
-      fi
-
-      if [[ ${HUG_QUIET:-} != T ]]; then
-        printf 'Commits to move to %s (new branch):\n' "$branch_name" >&2
-        print_commit_list_in_range "$target" HEAD >&2
-        printf '\nPreview: changes in %d %s.\n' "$commits_to_relocate" "$commit_word" >&2
-        git diff --stat "$target"..HEAD >&2
-      fi
-
       if prompt_confirm "Branch '$branch_name' doesn't exist. Proceed with creating a new branch named '$branch_name' and moving $commits_to_relocate $commit_word to it? [y/N]: "; then
         new_branch=true
+        is_new_branch=true
       else
         info "Cancelled."
         exit 0
       fi
     fi
   else
-    # --new was explicitly specified, calculate commits_to_relocate
-    commits_to_relocate=$(count_commits_in_range "$target" HEAD)
-    if [ "$commits_to_relocate" -gt 1 ]; then
-      commit_word="commits"
-    fi
+    # --new was explicitly specified
+    is_new_branch=true
   fi
+fi
+
+# Centralized unified preview (after branch decision, before existing-branch confirmation)
+if [[ ${HUG_QUIET:-} != T ]]; then
+  print_cmv_preview "moving" "$target" "$branch_name" "$is_new_branch"
 fi
 
 # For existing branches, count and confirm move (new branches already handled above)
 if $branch_exists; then
-  commits_to_relocate=$(count_commits_in_range "$target" HEAD)
-  if [ "$commits_to_relocate" -eq 0 ]; then
-    info "No commits to move (already at target)."
-    exit 0
-  fi
-
-  commit_word="commit"
-  if [ "$commits_to_relocate" -gt 1 ]; then
-    commit_word="commits"
-  fi
-
-  if [[ ${HUG_QUIET:-} != T ]]; then
-    printf 'Commits to move to %s:\n' "$branch_name" >&2
-    print_commit_list_in_range "$target" HEAD >&2
-    printf '\nPreview: changes in %d %s.\n' "$commits_to_relocate" "$commit_word" >&2
-    git diff --stat "$target"..HEAD >&2
-  fi
-
   # Confirmation (only if --force not set; tree is clean, so always skip prompt if force)
   should_prompt=true
   if [[ ${HUG_FORCE:-} == true ]]; then

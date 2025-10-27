@@ -272,6 +272,9 @@ HOOK
   
   run hug cmv 1 target-branch --force
   assert_success
+  refute_output --partial "Commits to be affected:"
+  assert_output --partial "📊 1 commit since"
+  assert_output --partial "📤 moving to target-branch:"
   
   # Original branch reset back
   assert_equal "$(git rev-parse main)" "$(git rev-parse "$original_head~1")"
@@ -290,6 +293,35 @@ HOOK
   rm -rf "$repo"
 }
 
+@test "hug cmv: single unified preview for existing branch (no duplication)" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+  
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+  
+  # Create existing target branch
+  git checkout -q -b existing-target HEAD~1
+  git checkout -q main
+  
+  run hug cmv 1 existing-target --force
+  assert_success
+  refute_output --partial "Commits to be affected:"
+  refute_output --partial "Preview: changes in"
+  assert_output --partial "📊 1 commit since"
+  # Ensure only one instance of the commit hash (no duplication)
+  local commit_hash
+  commit_hash=$(git rev-parse --short HEAD)
+  local count=$(echo "$output" | grep -c "$commit_hash")
+  assert_equal "$count" 1
+  assert_output --partial "📤 moving to existing-target:"
+  
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
 @test "hug cmv: detaches exact history to new branch (--new) and stays on it" {
   local repo
   repo=$(create_test_repo_with_branches)
@@ -303,6 +335,9 @@ HOOK
 
   run hug cmv 1 new-detach --new --force
   assert_success
+  refute_output --partial "Commits to be affected:"
+  assert_output --partial "📊 1 commit since"
+  assert_output --partial "📤 moving to new-detach (new branch):"
 
   # Original branch reset back
   assert_equal "$(git rev-parse main)" "$(git rev-parse "$original_head~1")"
@@ -498,6 +533,8 @@ HOOK
 
   run bash -c 'printf "y\n" | hug cmv 1 prompt-missing'
   assert_success
+  assert_output --partial "📊 1 commit since"
+  assert_output --partial "📤 moving to prompt-missing (new branch):"
   assert_output --partial "Branch 'prompt-missing' doesn't exist. Proceed with creating a new branch named 'prompt-missing' and moving 1 commit to it?"
 
   # Verify creation and reset to just before
@@ -558,6 +595,9 @@ HOOK
 
   run hug cmv 1 auto-force-missing --force
   assert_success
+  refute_output --partial "Commits to be affected:"
+  assert_output --partial "📊 1 commit since"
+  assert_output --partial "📤 moving to auto-force-missing (new branch):"
   assert_output --partial "Branch auto-force-missing missing; auto-creating with --force from target $target_short."
 
   # Verify creation, reset to just before

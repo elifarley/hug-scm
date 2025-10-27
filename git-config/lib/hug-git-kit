@@ -1249,3 +1249,60 @@ handle_standard_operation() {
         fi
     fi
 }
+
+# Prints unified preview for cmv operations (summary, diff stat, commit list)
+# Usage: print_cmv_preview "action_name" "target_commit" "branch_name" [is_new=false]
+# Parameters:
+#   $1 - Action verb (e.g., "moving")
+#   $2 - Target commit
+#   $3 - Branch name (for header; optional)
+#   $4 - (Optional) is_new flag (true for "(new branch)" suffix)
+# Environment:
+#   HUG_QUIET - Suppresses if "T"
+# Output:
+#   📊 summary + diff stat + 📤 header + commit list to stderr
+# Note:
+#   Designed for cmv; call once early to avoid duplication
+print_cmv_preview() {
+    local action_name="$1"
+    local target="$2"
+    local branch_name="${3:-}"
+    local is_new="${4:-false}"
+
+    if [[ ${HUG_QUIET:-} == T ]]; then
+        return 0
+    fi
+
+    local commits_to_affected
+    commits_to_affected=$(count_commits_in_range "$target" HEAD)
+    local commit_word="commit"
+    if [ "$commits_to_affected" -gt 1 ]; then
+        commit_word="commits"
+    fi
+
+    local target_short
+    target_short=$(git rev-parse --short "$target")
+    local range_for_diff="$target..HEAD"
+
+    # 📊 Summary + diff stat
+    printf '📊 %d %s since %s:\n' "$commits_to_affected" "$commit_word" "$target_short" >&2
+    if git diff --quiet "$range_for_diff"; then
+        printf 'No file changes.\n' >&2
+    else
+        git diff --stat "$range_for_diff" >&2
+    fi
+
+    # 📤 Header + commit list
+    if [[ -n "$branch_name" ]]; then
+        local branch_suffix=""
+        if $is_new; then
+            branch_suffix=" (new branch)"
+        fi
+        printf '\n📤 %s to %s%s:\n' "$action_name" "$branch_name" "$branch_suffix" >&2
+    else
+        printf '\n📤 %s commits:\n' "$action_name" >&2
+    fi
+    print_commit_list_in_range "$target" HEAD >&2
+
+    printf '\n' >&2
+}
