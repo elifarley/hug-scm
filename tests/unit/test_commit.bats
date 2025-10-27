@@ -733,7 +733,7 @@ HOOK
   git checkout -q existing-target
   run git log -1 --format=%s
   assert_output "Local existing commit"
-  refute_equal "$(git rev-parse HEAD)" "$local_sha"
+  assert_not_equal "$(git rev-parse HEAD)" "$local_sha"
 
   popd >/dev/null
   rm -rf "$repo"

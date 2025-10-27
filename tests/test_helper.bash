@@ -536,7 +536,7 @@ create_test_repo_with_remote_upstream() {
 
     git remote add origin "$remote_repo"
     git push -q origin main
-    git branch --set-upstream-to=origin/main
+    git branch --set-upstream-to=origin/main >&2
   )
 
   echo "$test_repo"
