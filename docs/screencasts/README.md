@@ -333,20 +333,13 @@ Commands that would benefit from visual documentation:
 - [x] `hug-branch.tape` - Branch switching, creation, and listing
 
 ### Commits
-- [ ] `hug-c.tape` - Basic commit
-- [ ] `hug-ca.tape` - Commit amend
-- [ ] `hug-caa.tape` - Commit amend all
+- [x] `hug-commit.tape` – Demonstrates: `c`, `ca`
 
 ### HEAD Operations
-- [ ] `hug-h-back.tape` - Move HEAD back
-- [ ] `hug-h-undo.tape` - Undo last commit
-- [ ] `hug-h-rewind.tape` - Reset to commit
+- [x] `hug-head.tape` – Demonstrates: `h back`, `h undo`, `h rewind`
 
 ### Working Directory
-- [ ] `hug-w-discard.tape` - Discard changes
-- [ ] `hug-w-wipe.tape` - Wipe changes (staged + unstaged)
-- [ ] `hug-w-purge.tape` - Remove untracked files
-- [ ] `hug-w-zap.tape` - Complete cleanup
+- [x] `hug-working-dir.tape` – Demonstrates: `w discard`, `w wipe`, `w purge`, `w zap`
 
 ## Tips
 
