@@ -579,6 +579,7 @@ setup_remote_and_upstream() {
     git reset --hard $dashboard_commit 2>&1 | grep -v "hint:"
     
     # Scenario 4: Branch both ahead and behind (diverged)
+    # This requires careful sequencing to ensure both states exist
     git checkout feature/search 2>&1 | grep -v "hint:"
     local search_base=$(git rev-parse HEAD)
     git push -u origin feature/search 2>&1 | grep -v "hint:"
@@ -590,20 +591,28 @@ setup_remote_and_upstream() {
         c -m "feat: Local search enhancement (diverged)"
     local search_local=$(git rev-parse HEAD)
     
-    # Now create a different remote commit (makes it behind as well)
-    git checkout $search_base 2>&1 | grep -v "hint:"
+    # Create a new commit on the base and push it as the remote version
+    # This makes the remote ahead of what we had
+    git checkout -b temp-search-remote $search_base 2>&1 | grep -v "hint:"
     echo "// Remote search improvement (different line)" >> src/search.js
     git add src/search.js
     GIT_AUTHOR_NAME="$AUTHOR_FOUR_NAME" GIT_AUTHOR_EMAIL="$AUTHOR_FOUR_EMAIL" \
     GIT_COMMITTER_NAME="$AUTHOR_FOUR_NAME" GIT_COMMITTER_EMAIL="$AUTHOR_FOUR_EMAIL" \
     git commit -m "feat: Remote search optimization (diverged)" 2>&1 | grep -v "hint:"
-    git push -f origin feature/search 2>&1 | grep -v "hint:"
     
-    # Return to the local version (now it's ahead by 1 and behind by 1)
-    git checkout -B feature/search $search_local 2>&1 | grep -v "hint:"
+    # Force push this to origin/feature/search
+    git push -f origin temp-search-remote:feature/search 2>&1 | grep -v "hint:"
+    
+    # Now switch back to our local version which has a different commit
+    git checkout feature/search 2>&1 | grep -v "hint:"
+    git reset --hard $search_local 2>&1 | grep -v "hint:"
+    
+    # Update the tracking and fetch to see the divergence
     git branch -u origin/feature/search 2>&1 | grep -v "hint:"
-    # Fetch to see the divergence
     git fetch origin 2>&1 | grep -v "hint:"
+    
+    # Clean up temp branch
+    git branch -D temp-search-remote 2>&1 | grep -v "hint:"
     
     # Scenario 5: Branches with no upstream (bugfix branches)
     # These already have no upstream since we never pushed them
