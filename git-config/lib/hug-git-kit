@@ -1115,7 +1115,7 @@ list_changed_files_in_range() {
     local start="$1"
     local end="${2:-HEAD}"
 
-    git log --name-only --pretty=format: "$start..$end" | sed '/^$/d' | sort -u
+    git diff --name-only "$start..$end" | sort -u
 }
 
 # Counts changed files in a commit range
@@ -1129,7 +1129,7 @@ count_changed_files_in_range() {
     local start="$1"
     local end="${2:-HEAD}"
 
-    list_changed_files_in_range "$start" "$end" | wc -l | awk '{print $1}'
+    git diff --name-only "$start..$end" | wc -l
 }
 
 ################################################################################
