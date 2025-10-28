@@ -920,35 +920,53 @@ compute_local_branch_details() {
     subjects_ref=()
     tracks_ref=()
 
-    # Get sorted list of local branches
-    mapfile -t branches_ref < <(git for-each-ref --format='%(refname:short)' --sort=refname refs/heads/ 2>/dev/null || true)
-
-    if [ ${#branches_ref[@]} -eq 0 ]; then
-        return 1  # No branches
-    fi
-
-    # SC2034: current_branch_ref is assigned via nameref (output parameter)
-    # shellcheck disable=SC2034
-    current_branch_ref=$(git branch --show-current 2>/dev/null || echo "")
-
-    # Compute max branch name length for alignment
     max_len_ref=0
-    for branch in "${branches_ref[@]}"; do
-        len=${#branch}
-        (( len > max_len_ref )) && max_len_ref=$len
+
+    #
+    # --- ROBUST SANITIZATION: CURRENT BRANCH ---
+    # Get the current branch and aggressively strip any trailing newline or
+    # carriage return characters to ensure string comparisons work correctly.
+    local current_branch_raw
+    current_branch_raw=$(git branch --show-current 2>/dev/null || echo "")
+    current_branch_ref=$(printf '%s' "$current_branch_raw" | tr -d '\n\r')
+
+    # Use mapfile for robust, atomic parsing of null-delimited data.
+    local -a git_output=()
+    mapfile -t -d '' git_output < <(git for-each-ref \
+        --format='%(refname:short)%00%(objectname:short)%00%(subject)%00%(upstream:track)%00' \
+        --sort=refname refs/heads/)
+
+    # Iterate through the flat array in chunks of 4.
+    local i
+    for ((i = 0; i + 3 < ${#git_output[@]}; i += 4)); do
+        #
+        # --- ROBUST SANITIZATION: BRANCH AND SUBJECT ---
+        # Read the raw values and then pipe them through 'tr' to delete any
+        # hidden \n or \r characters. This is the critical fix.
+        #
+        local branch_raw="${git_output[i]}"
+        local subject_raw="${git_output[i+2]}"
+
+        local branch subject
+        branch=$(printf '%s' "$branch_raw" | tr -d '\n\r')
+        subject=$(printf '%s' "$subject_raw" | tr -d '\n\r')
+
+        # Operate directly on the nameref to update the max length.
+        #
+        if (( ${#branch} > max_len_ref )); then
+            max_len_ref=${#branch}
+        fi
+
+        branches_ref+=("$branch")
+        hashes_ref+=("${git_output[i+1]}")
+        subjects_ref+=("${subject:-(no commit message)}")
+        tracks_ref+=("${git_output[i+3]}")
     done
 
-    # Populate details arrays
-    for branch in "${branches_ref[@]}"; do
-        local hash subject track
-        hash=$(git rev-parse --short "$branch" 2>/dev/null)
-        subject=$(git log -1 --format='%s' "$branch" 2>/dev/null || echo "(no commit message)")
-        track=$(git for-each-ref --format='%(upstream:track)' "refs/heads/$branch" 2>/dev/null || echo "")
-
-        hashes_ref+=("$hash")
-        subjects_ref+=("$subject")
-        tracks_ref+=("$track")
-    done
+    # Check if any branches were found
+    if [ ${#branches_ref[@]} -eq 0 ]; then
+        return 1
+    fi
 
     return 0
 }
