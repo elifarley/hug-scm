@@ -33,10 +33,10 @@ as_author() {
 
 # Creates the directory and initializes the git repository.
 setup_repo() {
+    test -d /tmp/demo-repo && echo "/tmp/demo-repo already exists" && return 1
     cd /tmp
     echo "1. Initializing repository..."
     mkdir -p demo-repo
-    rm -rf demo-repo/* demo-repo/.git
     cd demo-repo
     git init -b main
 }
@@ -737,7 +737,7 @@ show_repo_state() {
 # --- Main Execution ---
 
 main() (
-    setup_repo
+    setup_repo || return
     create_main_commits
     create_feature_branches
     create_bugfix_branches

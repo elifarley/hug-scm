@@ -76,7 +76,7 @@ clean: ## Clean build artifacts and temporary files
 	rm -rf node_modules/.vite
 	@echo "$(GREEN)Clean complete!$(NC)"
 
-clean-all: clean ## Clean everything including node_modules
+clean-all: clean demo-clean ## Clean everything including node_modules
 	@echo "$(BLUE)Cleaning everything...$(NC)"
 	rm -rf node_modules
 	@echo "$(GREEN)Deep clean complete!$(NC)"
@@ -85,10 +85,6 @@ clean-all: clean ## Clean everything including node_modules
 
 demo-repo: ## Create demo repository for tutorials and screencasts
 	@echo "$(BLUE)Creating demo repository...$(NC)"
-	@if [ ! -f ~/.hug-scm/bin/hug ]; then \
-		echo "$(YELLOW)Hug is not installed. Run 'make install' first.$(NC)"; \
-		exit 1; \
-	fi
 	@bash docs/screencasts/bin/repo-setup.sh
 	@echo "$(GREEN)Demo repository created at /tmp/demo-repo$(NC)"
 
