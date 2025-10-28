@@ -48,6 +48,7 @@ Type "hug lo  # (L)og (O)utgoing - preview commits before push" Enter
 Sleep 2s
 
 # Capture the screenshot
+Output ../commands/img/hug-lo.png
 Screenshot ../commands/img/hug-lo.png
 
 # Cleanup

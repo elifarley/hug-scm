@@ -1,4 +1,4 @@
-Output hug-status-changes.gif
+Output ../commands/img/hug-status-changes.gif
 
 Require echo
 Require hug
@@ -12,7 +12,7 @@ Set Theme "Afterglow"
 
 Hide
 Type 'xxx_PS1="> "' Enter
-Type 'cd /tmp/demo && hug zap-all -f' Enter
+Type 'cd /tmp/demo-repo && hug w zap-all -f' Enter
 Type "clear" Enter
 Show
 
