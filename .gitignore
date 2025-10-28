@@ -48,7 +48,9 @@ Thumbs.db
 npm-debug.log*
 
 ### Documentation Images ###
-# NOTE: VHS-generated screenshots (docs/commands/img/*.gif, *.png) 
-# SHOULD be committed to ensure fast CI builds and consistent documentation.
-# They are automatically regenerated via scheduled GitHub Actions workflow.
-# See docs/VHS_CI_INTEGRATION.md for details.
+# VHS-generated screenshots are committed for fast CI builds and consistent docs
+# However, frame directories (created when Output uses .png) should not be committed
+docs/commands/img/hug-*.png/
+# GIFs/PNGs created in screencasts directory should not be committed (wrong location)
+docs/screencasts/*.gif
+docs/screencasts/*.png
