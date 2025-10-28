@@ -971,6 +971,48 @@ compute_local_branch_details() {
     return 0
 }
 
+# Prints a single formatted branch line (shared helper for list and menu)
+# Usage: print_branch_line i branches_ref hashes_ref subjects_ref tracks_ref max_len current_branch prefix
+# Parameters:
+#   $1 - Index i in the arrays
+#   $2-$6 - Namerefs to arrays/scalars (same as print_branch_list)
+#   $7 - Prefix string for the line (e.g., "" for list current, "  " for list non-current, "%d) " or "%d)   " for menu)
+# Output:
+#   Formatted branch line to stdout, with subject
+# SC2178: Nameref declarations are intentional
+# shellcheck disable=SC2178
+print_branch_line() {
+    local i="$1"
+    local -n branches_ref="$2"
+    local -n hashes_ref="$3"
+    local -n subjects_ref="$4"
+    local -n tracks_ref="$5"
+    local max_len="$6"
+    local current_branch="$7"
+    local prefix="$8"
+
+    local branch="${branches_ref[i]}"
+    local hash="${hashes_ref[i]}"
+    local subject="${subjects_ref[i]}"
+    local track="${tracks_ref[i]}"
+
+    if [ "$branch" = "$current_branch" ]; then
+        if [ -n "$track" ]; then
+            printf "${prefix}${GREEN}* %7s %-*s %s${NC}" "$hash" "$max_len" "$branch" "$track"
+        else
+            printf "${prefix}${GREEN}* %7s %-*s${NC}" "$hash" "$max_len" "$branch"
+        fi
+    else
+        if [ -n "$track" ]; then
+            printf "${prefix}${YELLOW}%7s${NC} %-*s ${CYAN}%s${NC}" "$hash" "$max_len" "$branch" "$track"
+        else
+            printf "${prefix}${YELLOW}%7s${NC} %-*s" "$hash" "$max_len" "$branch"
+        fi
+    fi
+
+    printf " %s\n" "$subject"
+}
+
 # Prints a non-interactive list of branches with details
 # Usage: print_branch_list branches hashes subjects tracks max_len current_branch
 # Parameters (namerefs to arrays/scalars):
@@ -994,25 +1036,11 @@ print_branch_list() {
 
     for i in "${!branches_ref[@]}"; do
         local branch="${branches_ref[i]}"
-        local hash="${hashes_ref[i]}"
-        local subject="${subjects_ref[i]}"
-        local track="${tracks_ref[i]}"
-
-        if [ "$branch" = "$current_branch" ]; then
-            if [ -n "$track" ]; then
-                printf "${GREEN}* %7s %-*s | %s${NC}" "$hash" "$max_len" "$branch" "$track"
-            else
-                printf "${GREEN}* %7s %-*s${NC}" "$hash" "$max_len" "$branch"
-            fi
-        else
-            if [ -n "$track" ]; then
-                printf "  %7s %-*s | %s" "$hash" "$max_len" "$branch" "$track"
-            else
-                printf "  %7s %-*s" "$hash" "$max_len" "$branch"
-            fi
+        local prefix=""
+        if [ "$branch" != "$current_branch" ]; then
+            prefix="  "
         fi
-
-        printf " %s\n" "$subject"
+        print_branch_line "$i" "$1" "$2" "$3" "$4" "$max_len" "$current_branch" "$prefix"
     done
 }
 
@@ -1047,25 +1075,11 @@ print_interactive_branch_menu() {
     for i in "${!branches_ref[@]}"; do
         local num=$((i + 1))
         local branch="${branches_ref[i]}"
-        local hash="${hashes_ref[i]}"
-        local subject="${subjects_ref[i]}"
-        local track="${tracks_ref[i]}"
-
-        if [ "$branch" = "$current_branch" ]; then
-            if [ -n "$track" ]; then
-                printf "%d) ${GREEN}* %7s %-*s | %s${NC}" "$num" "$hash" "$max_len" "$branch" "$track"
-            else
-                printf "%d) ${GREEN}* %7s %-*s${NC}" "$num" "$hash" "$max_len" "$branch"
-            fi
-        else
-            if [ -n "$track" ]; then
-                printf "%d)   %7s %-*s | %s" "$num" "$hash" "$max_len" "$branch" "$track"
-            else
-                printf "%d)   %7s %-*s" "$num" "$hash" "$max_len" "$branch"
-            fi
+        local prefix="$num) "
+        if [ "$branch" != "$current_branch" ]; then
+            prefix="${num})   "
         fi
-
-        printf " %s\n" "$subject"
+        print_branch_line "$i" "$2" "$3" "$4" "$5" "$max_len" "$current_branch" "$prefix"
     done
 
     printf "Enter choice (1-%d): " "${#branches_ref[@]}"
