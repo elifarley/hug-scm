@@ -393,8 +393,8 @@ add_development_activity() {
         c -m "chore: Update dependencies"
     
     # Add API documentation
-    echo "# API Documentation" > docs/API.md
     mkdir -p docs
+    echo "# API Documentation" > docs/API.md
     echo "## Endpoints" >> docs/API.md
     hug a docs/API.md
     as_author "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" \
