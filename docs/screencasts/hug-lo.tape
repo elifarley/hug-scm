@@ -1,6 +1,8 @@
 # VHS tape file for hug-lo command
 # Shows a preview of local commits not yet on upstream branch
 
+Output ../commands/img/hug-lo.png
+
 Require echo
 Require hug
 

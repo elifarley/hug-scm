@@ -66,8 +66,6 @@ vhs-dry-run: ## Show what would be built without building
 vhs-clean: ## Remove generated GIF/PNG files from VHS
 	@echo "$(BLUE)Cleaning VHS generated images...$(NC)"
 	@rm -f docs/commands/img/hug-*.gif docs/commands/img/hug-*.png
-	@rm -rf docs/commands/img/hug-*.png/
-	@rm -f docs/screencasts/*.gif docs/screencasts/*.png
 	@echo "$(GREEN)VHS images cleaned$(NC)"
 
 ##@ Documentation
