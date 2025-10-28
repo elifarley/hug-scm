@@ -480,8 +480,7 @@ discard_all_unstaged() {
   fi
 
   # Perform the discard: Restore working tree to index repo-wide (preserves staged)
-  # Using git checkout for reliability; equivalent to git restore --source=: --worktree .
-  if ! git checkout -- . 2>/dev/null; then  # Suppress per-file output; check exit code
+  if ! git restore --worktree . 2>/dev/null; then  # Suppress per-file output; check exit code
     error "Failed to discard all unstaged changes. Check for submodules or permissions."
   fi
 
@@ -562,8 +561,8 @@ discard_all_uncommitted_changes() {
   fi
 
   # Perform the full repo-wide discard (staged + unstaged) to HEAD
-  if ! git reset --hard HEAD; then
-    error "Failed to discard all uncommitted changes. If submodules are dirty, run: git submodule foreach --recursive git reset --hard HEAD"
+  if ! git restore --source=HEAD --staged --worktree .; then
+    error "Failed to discard all uncommitted changes. If submodules are dirty, run: git submodule foreach --recursive git restore --source=HEAD --staged --worktree ."
   fi
 
   printf 'Successfully discarded all uncommitted changes in the repository.\n'
