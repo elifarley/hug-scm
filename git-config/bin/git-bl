@@ -7,10 +7,10 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat <<'EOF'
-hug bll: List local branches in long format, showing short hash, upstream tracking info, and commit message title for each.
+hug bl: List local branches in short format, showing short hash, upstream tracking info.
 
 USAGE:
-  hug bll [OPTIONS]
+  hug bl [OPTIONS]
 
 OPTIONS:
   -h, --help     Show this help message and exit.
@@ -18,15 +18,14 @@ OPTIONS:
 DESCRIPTION:
   Displays each local branch sorted alphabetically. The current branch is highlighted in green and marked with an asterisk (*).
   Each entry shows: branch name (short hash) [upstream tracking info, e.g., origin/main ahead 2].
-  The commit message title follows.
   Remote tracking information is shown just as in 'git branch -vv'.
 
 EXAMPLES:
-  hug bll    # List all local branches in long format
+  hug bl    # List all local branches in short format
 
 SEE ALSO:
-  hug bl : For listing local branches in short form
-  hug b  : For switching branches
+  hug bll : For listing local branches in long form
+  hug b   : For switching branches
 EOF
 }
 
@@ -46,7 +45,7 @@ check_git_repo
 declare -a branches=() hashes=() subjects=() tracks=()
 max_len=""
 current_branch=""
-if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects true; then
+if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects false; then
   printf "No local branches found.\n" >&2
   exit 1
 fi

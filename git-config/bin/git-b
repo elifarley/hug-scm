@@ -47,11 +47,11 @@ declare -a branches=() hashes=() subjects=() tracks=()
 max_len=""
 current_branch=""
 selected_branch=""
-if ! compute_local_branch_details branches hashes subjects tracks max_len current_branch; then
+if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects; then
   printf "No local branches found.\n" >&2
   exit 1
 fi
 
 # Print interactive menu and get selection
-print_interactive_branch_menu selected_branch branches hashes subjects tracks "$max_len" "$current_branch"
+print_interactive_branch_menu selected_branch "$current_branch" "$max_len" hashes branches tracks subjects
 git switch "$selected_branch"

@@ -379,14 +379,11 @@
   #  BRANCH LISTING
   # ═══════════════════════════════════════════════════════════════════
 
-  # List local branches
-  bl = branch
-
   # List all branches (local + remote)
-  bla = branch -a
+  bla = branch -avv
 
   # List remote branches only
-  blr = branch -r
+  blr = branch -rvv
 
   # ═══════════════════════════════════════════════════════════════════
   #  BRANCH CREATION / MODIFICATION

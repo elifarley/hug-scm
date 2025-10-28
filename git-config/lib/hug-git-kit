@@ -894,33 +894,35 @@ check_no_changes() {
 ################################################################################
 
 # Computes details for local branches and populates output arrays
-# Usage: compute_local_branch_details branches hashes subjects tracks max_len current_branch
+# Usage: compute_local_branch_details current_branch max_len hashes branches tracks subjects [include_subjects]
 # Parameters (all namerefs to output variables):
-#   $1 - Array to receive branch names
-#   $2 - Array to receive commit hashes
-#   $3 - Array to receive commit subjects
-#   $4 - Array to receive tracking information
-#   $5 - Scalar to receive max branch name length
-#   $6 - Scalar to receive current branch name
+#   $1 - Scalar to receive current branch name
+#   $2 - Scalar to receive max branch name length
+#   $3 - Array to receive commit hashes
+#   $4 - Array to receive branch names
+#   $5 - Array to receive tracking information
+#   $6 - Array to receive commit subjects
+#   $7 - (Optional) Boolean to include subjects (default: true); if false, skips subject computation and leaves subjects empty
 # Returns:
 #   0 if branches found, 1 if no branches exist
 # Note:
-#   Arrays are cleared before population. Branches are sorted by name.
+#   Arrays are cleared before population. Branches are sorted by name. Tracking info mimics 'git branch -vv' format.
 compute_local_branch_details() {
-    local -n branches_ref="$1"
-    local -n hashes_ref="$2"
-    local -n subjects_ref="$3"
-    local -n tracks_ref="$4"
-    local -n max_len_ref="$5"
-    local -n current_branch_ref="$6"
+    local -n current_branch_ref="$1"
+    local -n max_len_ref="$2"
+    local -n hashes_ref="$3"
+    local -n branches_ref="$4"
+    local -n tracks_ref="$5"
+    local -n subjects_ref="$6"
+    local include_subjects="${7:-false}"
 
     # Clear outputs
+    current_branch_ref=""
+    max_len_ref=0
     branches_ref=()
     hashes_ref=()
     subjects_ref=()
     tracks_ref=()
-
-    max_len_ref=0
 
     #
     # --- ROBUST SANITIZATION: CURRENT BRANCH ---
@@ -930,26 +932,78 @@ compute_local_branch_details() {
     current_branch_raw=$(git branch --show-current 2>/dev/null || echo "")
     current_branch_ref=$(printf '%s' "$current_branch_raw" | tr -d '\n\r')
 
+    # Build format: Include upstream:short separately for reliable name resolution
+    local format='%(refname:short)%00%(objectname:short)'
+    if [[ "$include_subjects" == "true" ]]; then
+        format+='%00%(subject)'
+    fi
+    format+='%00%(upstream:short)%00'
+
     # Use mapfile for robust, atomic parsing of null-delimited data.
     local -a git_output=()
     mapfile -t -d '' git_output < <(git for-each-ref \
-        --format='%(refname:short)%00%(objectname:short)%00%(subject)%00%(upstream:track)%00' \
+        --format="$format" \
         --sort=refname refs/heads/)
 
-    # Iterate through the flat array in chunks of 4.
+    # Iterate through the flat array in chunks of 3 or 4.
     local i
-    for ((i = 0; i + 3 < ${#git_output[@]}; i += 4)); do
+    local increment=3
+    local chunk_limit=2
+    if [[ "$include_subjects" == "true" ]]; then
+        increment=4
+        chunk_limit=3
+    fi
+    for ((i = 0; i + chunk_limit < ${#git_output[@]}; i += increment)); do
         #
-        # --- ROBUST SANITIZATION: BRANCH AND SUBJECT ---
+        # --- ROBUST SANITIZATION: BRANCH AND SUBJECT (if included) ---
         # Read the raw values and then pipe them through 'tr' to delete any
         # hidden \n or \r characters. This is the critical fix.
         #
         local branch_raw="${git_output[i]}"
-        local subject_raw="${git_output[i+2]}"
-
-        local branch subject
+        local branch
         branch=$(printf '%s' "$branch_raw" | tr -d '\n\r')
-        subject=$(printf '%s' "$subject_raw" | tr -d '\n\r')
+
+        local hash="${git_output[i+1]}"
+
+        local subject=""
+        if [[ "$include_subjects" == "true" ]]; then
+            local subject_raw="${git_output[i+2]}"
+            subject=$(printf '%s' "$subject_raw" | tr -d '\n\r')
+        fi
+
+        local upstream_name="${git_output[i + increment - 1]}"
+        upstream_name=$(printf '%s' "$upstream_name" | tr -d '\n\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')  # Trim whitespace
+
+        # Compute divergence status to mimic 'git branch -vv' (ahead/behind)
+        local status=""
+        if [[ -n "$upstream_name" ]]; then
+            local divergence
+            divergence=$(git rev-list --left-right --count "$branch...$upstream_name" 2>/dev/null || echo "")
+            if [[ -n "$divergence" ]]; then
+                local ahead behind
+                IFS='	' read -r ahead behind <<< "$divergence"
+                if [[ "$ahead" != "0" && "$behind" != "0" ]]; then
+                    status="[ahead $ahead behind $behind]"
+                elif [[ "$ahead" != "0" ]]; then
+                    status="[ahead $ahead]"
+                elif [[ "$behind" != "0" ]]; then
+                    status="[behind $behind]"
+                fi
+            fi
+        fi
+
+        # Build track string: [upstream: status] like 'git branch -vv'
+        local track=""
+        if [[ -n "$upstream_name" ]]; then
+            track="[$upstream_name"
+            if [[ -n "$status" ]]; then
+                track+=": $BLUE$(echo $status | tr -d '[]')$CYAN"
+            fi
+            track+="]"
+        elif [[ -n "$status" ]]; then
+            # Fallback if name empty but status computable (rare)
+            track="$status"
+        fi
 
         # Operate directly on the nameref to update the max length.
         #
@@ -958,9 +1012,11 @@ compute_local_branch_details() {
         fi
 
         branches_ref+=("$branch")
-        hashes_ref+=("${git_output[i+1]}")
-        subjects_ref+=("${subject:-(no commit message)}")
-        tracks_ref+=("${git_output[i+3]}")
+        hashes_ref+=("$hash")
+        if [[ "$include_subjects" == "true" ]]; then
+            subjects_ref+=("$GREY${subject:-(no commit message)}$NC")
+        fi
+        tracks_ref+=("$track")
     done
 
     # Check if any branches were found
@@ -972,28 +1028,30 @@ compute_local_branch_details() {
 }
 
 # Prints a single formatted branch line (shared helper for list and menu)
-# Usage: print_branch_line i branches_ref hashes_ref subjects_ref tracks_ref max_len current_branch prefix
+# Usage: print_branch_line prefix current_branch max_len i hashes_ref branches_ref tracks_ref subjects_ref
 # Parameters:
-#   $1 - Index i in the arrays
-#   $2-$6 - Namerefs to arrays/scalars (same as print_branch_list)
-#   $7 - Prefix string for the line (e.g., "" for list current, "  " for list non-current, "%d) " or "%d)   " for menu)
+#   $1 - Prefix string for the line (e.g., "" for list current, "  " for list non-current, "%d) " or "%d)   " for menu)
+#   $2 - Current branch name
+#   $3 - Maximum branch name length (for alignment)
+#   $4 - Index i in the arrays
+#   $5-$8 - Namerefs to arrays (hashes branches tracks subjects)
 # Output:
-#   Formatted branch line to stdout, with subject
+#   Formatted branch line to stdout; subject printed only if subjects array is non-empty
 # SC2178: Nameref declarations are intentional
 # shellcheck disable=SC2178
 print_branch_line() {
-    local i="$1"
-    local -n branches_ref="$2"
-    local -n hashes_ref="$3"
-    local -n subjects_ref="$4"
-    local -n tracks_ref="$5"
-    local max_len="$6"
-    local current_branch="$7"
-    local prefix="$8"
+    local prefix="$1"
+    local current_branch="$2"
+    local max_len="$3"
+    local i="$4"
+    local -n hashes_ref="$5"
+    local -n branches_ref="$6"
+    local -n tracks_ref="$7"
+    local -n subjects_ref="$8"
 
     local branch="${branches_ref[i]}"
     local hash="${hashes_ref[i]}"
-    local subject="${subjects_ref[i]}"
+    local subject=""
     local track="${tracks_ref[i]}"
 
     if [ "$branch" = "$current_branch" ]; then
@@ -1010,29 +1068,32 @@ print_branch_line() {
         fi
     fi
 
-    printf " %s\n" "$subject"
+    if [[ ${#subjects_ref[@]} -gt 0 ]]; then
+        subject="${subjects_ref[i]}"
+        printf " %s\n" "$subject"
+    else
+        printf "\n"
+    fi
 }
 
 # Prints a non-interactive list of branches with details
-# Usage: print_branch_list branches hashes subjects tracks max_len current_branch
-# Parameters (namerefs to arrays/scalars):
-#   $1 - Array of branch names
-#   $2 - Array of commit hashes
-#   $3 - Array of commit subjects  
-#   $4 - Array of tracking information
-#   $5 - Maximum branch name length (for alignment)
-#   $6 - Current branch name
+# Usage: print_branch_list current_branch max_len hashes branches tracks subjects
+# Parameters:
+#   $1 - Current branch name
+#   $2 - Maximum branch name length (for alignment)
+#   $3-$6 - Namerefs to arrays (hashes branches tracks subjects)
 # Output:
-#   Formatted branch list to stdout, with current branch highlighted in green
+#   Formatted branch list to stdout, with current branch highlighted in green;
+#   subjects printed only if subjects array is non-empty
 # SC2178: These nameref declarations are intentional and correct
 # shellcheck disable=SC2178
 print_branch_list() {
-    local -n branches_ref="$1"
-    local -n hashes_ref="$2"
-    local -n subjects_ref="$3"
-    local -n tracks_ref="$4"
-    local max_len="$5"
-    local current_branch="$6"
+    local current_branch="$1"
+    local max_len="$2"
+    local -n hashes_ref="$3"
+    local -n branches_ref="$4"
+    local -n tracks_ref="$5"
+    local -n subjects_ref="$6"
 
     for i in "${!branches_ref[@]}"; do
         local branch="${branches_ref[i]}"
@@ -1040,35 +1101,32 @@ print_branch_list() {
         if [ "$branch" != "$current_branch" ]; then
             prefix="  "
         fi
-        print_branch_line "$i" "$1" "$2" "$3" "$4" "$max_len" "$current_branch" "$prefix"
+        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$3" "$4" "$5" "$6"
     done
 }
 
 # Prints an interactive menu for branch selection
-# Usage: print_interactive_branch_menu selected branches hashes subjects tracks max_len current_branch
+# Usage: print_interactive_branch_menu selected current_branch max_len hashes branches tracks subjects
 # Parameters (namerefs):
 #   $1 - Output variable to receive selected branch name
-#   $2 - Array of branch names
-#   $3 - Array of commit hashes
-#   $4 - Array of commit subjects
-#   $5 - Array of tracking information
-#   $6 - Maximum branch name length (for alignment)
-#   $7 - Current branch name
+#   $2 - Current branch name
+#   $3 - Maximum branch name length (for alignment)
+#   $4-$7 - Namerefs to arrays (hashes branches tracks subjects)
 # Effects:
 #   Displays numbered menu and prompts for selection
 #   Loops until valid selection is made
 # Output:
-#   Selected branch name via nameref parameter
+#   Selected branch name via nameref parameter; subjects printed only if subjects array is non-empty
 # SC2178: These nameref declarations are intentional and correct
 # shellcheck disable=SC2178
 print_interactive_branch_menu() {
     local -n selected_ref="$1"
-    local -n branches_ref="$2"
-    local -n hashes_ref="$3"
-    local -n subjects_ref="$4"
-    local -n tracks_ref="$5"
-    local max_len="$6"
-    local current_branch="$7"
+    local current_branch="$2"
+    local max_len="$3"
+    local -n hashes_ref="$4"
+    local -n branches_ref="$5"
+    local -n tracks_ref="$6"
+    local -n subjects_ref="$7"
 
     printf "Select a branch to switch to:\n\n"
 
@@ -1079,7 +1137,7 @@ print_interactive_branch_menu() {
         if [ "$branch" != "$current_branch" ]; then
             prefix="${num})   "
         fi
-        print_branch_line "$i" "$2" "$3" "$4" "$5" "$max_len" "$current_branch" "$prefix"
+        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$4" "$5" "$6" "$7"
     done
 
     printf "Enter choice (1-%d): " "${#branches_ref[@]}"
