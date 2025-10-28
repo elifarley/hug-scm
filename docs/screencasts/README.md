@@ -330,10 +330,7 @@ Commands that would benefit from visual documentation:
 - [ ] `hug-lf.tape` - Log message filter
 
 ### Branching
-- [ ] `hug-b.tape` - Branch switching
-- [ ] `hug-bc.tape` - Branch creation
-- [ ] `hug-bl.tape` - Branch list
-- [ ] `hug-bpush.tape` - Safe branch push
+- [x] `hug-branch.tape` - Branch switching, creation, and listing
 
 ### Commits
 - [ ] `hug-c.tape` - Basic commit
