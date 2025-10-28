@@ -318,12 +318,10 @@ check_files_clean() {
     fi
 
     # Optimization: use a single git command to check all files at once
-    local -a files_with_changes=()
-    mapfile -t files_with_changes < <(git diff --name-only -- "${files[@]}" 2>/dev/null || true)
-    mapfile -t -O "${#files_with_changes[@]}" files_with_changes < <(git diff --cached --name-only -- "${files[@]}" 2>/dev/null || true)
-    
-    # Remove duplicates from the combined list
-    dedupe_array files_with_changes
+    mapfile -t files_with_changes < <( (
+        git diff --name-only -- "${files[@]}"
+        git diff --cached --name-only -- "${files[@]}"
+    ) | sort -u )
 
     if [ ${#files_with_changes[@]} -gt 0 ]; then
         error "Cannot proceed because some affected files have uncommitted changes.
@@ -331,8 +329,8 @@ check_files_clean() {
          $(printf "%s\n" "${files_with_changes[@]}" | sed 's/^/         /')
 
        Solutions:
-       • Use 'hug w discard-all' to discard changes
-       • Use 'hug w discard <file>' for specific files"
+       • Use 'hug w wipe-all' to discard changes
+       • Use 'hug w wipe <file>' for specific files"
         exit 1
     fi
 }
