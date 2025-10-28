@@ -39,11 +39,34 @@ test-deps-install: ## Install or update local BATS dependencies
 	@echo "$(BLUE)Installing test dependencies...$(NC)"
 	./tests/run-tests.sh --install-deps
 
-##@ VHS gifs
+##@ VHS Screencasts
 
-vhs: ## Build GIF images used in Vitepress documents (/docs/*)
-	@echo "$(BLUE)Creating GIF images via VHS...$(NC)"
-	@bash docs/screencasts/bin/vhs-build.sh
+vhs-check: ## Check if VHS is installed
+	@echo "$(BLUE)Checking VHS installation...$(NC)"
+	@bash docs/screencasts/bin/vhs-build.sh --check
+
+vhs: demo-repo vhs-check ## Build all GIF/PNG images from VHS tape files
+	@echo "$(BLUE)Building all VHS screencasts...$(NC)"
+	@bash docs/screencasts/bin/vhs-build.sh --all
+
+vhs-build: vhs ## Alias for vhs target
+
+vhs-build-one: demo-repo vhs-check ## Build a specific VHS tape file (usage: make vhs-build-one TAPE=filename.tape)
+	@echo "$(BLUE)Building VHS screencast: $(TAPE)$(NC)"
+	@if [ -z "$(TAPE)" ]; then \
+		echo "$(YELLOW)Usage: make vhs-build-one TAPE=filename.tape$(NC)"; \
+		exit 1; \
+	fi
+	@bash docs/screencasts/bin/vhs-build.sh "$(TAPE)"
+
+vhs-dry-run: ## Show what would be built without building
+	@echo "$(BLUE)Dry run - showing what would be built...$(NC)"
+	@bash docs/screencasts/bin/vhs-build.sh --dry-run --all
+
+vhs-clean: ## Remove generated GIF/PNG files from VHS
+	@echo "$(BLUE)Cleaning VHS generated images...$(NC)"
+	@rm -f docs/commands/img/hug-*.gif docs/commands/img/hug-*.png
+	@echo "$(GREEN)VHS images cleaned$(NC)"
 
 ##@ Documentation
 
@@ -117,7 +140,7 @@ demo-repo-status: ## Show status of demo repository
 	fi
 
 .PHONY: test test-unit test-integration test-check test-deps-install
-.PHONY: vhs
+.PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check
 .PHONY: docs-dev docs-build docs-preview deps-docs
 .PHONY: install check clean clean-all
 .PHONY: demo-repo demo-clean demo-repo-rebuild demo-repo-status

@@ -50,7 +50,27 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
     - **Description**: Status with a list of *uncommitted* tracked files (mirrors plain `git status`).
     - **Example**: `hug sl`
     - **Safety**: ✅ Read-only.
-    - ![hug sl example](img/hug-sl.png)
+    
+    ::: details Visual Examples: hug sl in Different States
+    
+    **Clean Working Directory:**
+    
+    ![hug sl - clean](img/hug-sl-clean.png)
+    
+    **With Unstaged Changes:**
+    
+    ![hug sl - unstaged](img/hug-sl-unstaged.png)
+    
+    **With Staged Changes:**
+    
+    ![hug sl - staged](img/hug-sl-staged.png)
+    
+    **Mixed (Staged + Unstaged):**
+    
+    ![hug sl - mixed](img/hug-sl-mixed.png)
+    
+    :::
+
 
 - `hug sla`: **S**tatus + **L**ist **A**ll
     - **Description**: Full status including **untracked** files so you can see new additions.
