@@ -39,17 +39,23 @@ test-deps-install: ## Install or update local BATS dependencies
 	@echo "$(BLUE)Installing test dependencies...$(NC)"
 	./tests/run-tests.sh --install-deps
 
+##@ VHS gifs
+
+vhs: ## Build GIF images used in Vitepress documents (/docs/*)
+	@echo "$(BLUE)Creating GIF images via VHS...$(NC)"
+	@bash docs/screencasts/bin/vhs-build.sh
+
 ##@ Documentation
 
-docs-dev: ## Start documentation development server
+docs-dev: vhs ## Start documentation development server
 	@echo "$(BLUE)Starting documentation server...$(NC)"
 	npm run docs:dev
 
-docs-build: ## Build documentation for production
+docs-build: vhs ## Build documentation for production
 	@echo "$(BLUE)Building documentation...$(NC)"
 	npm run docs:build
 
-docs-preview: ## Preview built documentation
+docs-preview: vhs ## Preview built documentation
 	@echo "$(BLUE)Previewing documentation...$(NC)"
 	npm run docs:preview
 
@@ -111,6 +117,7 @@ demo-repo-status: ## Show status of demo repository
 	fi
 
 .PHONY: test test-unit test-integration test-check test-deps-install
+.PHONY: vhs
 .PHONY: docs-dev docs-build docs-preview deps-docs
 .PHONY: install check clean clean-all
 .PHONY: demo-repo demo-clean demo-repo-rebuild demo-repo-status
