@@ -325,7 +325,7 @@ Commands that would benefit from visual documentation:
 ### Logging
 - [x] `hug-lol.tape` - Log outgoing long (exists)
 - [x] `hug-lo.tape` - Log outgoing quiet
-- [ ] `hug-l.tape` - Basic log with graph
+- [x] `hug-l.tape` - Basic log with graph
 - [ ] `hug-ll.tape` - Detailed log
 - [ ] `hug-lf.tape` - Log message filter
 
