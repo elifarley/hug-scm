@@ -580,23 +580,30 @@ setup_remote_and_upstream() {
     
     # Scenario 4: Branch both ahead and behind (diverged)
     git checkout feature/search 2>&1 | grep -v "hint:"
-    local search_commit=$(git rev-parse HEAD)
+    local search_base=$(git rev-parse HEAD)
     git push -u origin feature/search 2>&1 | grep -v "hint:"
-    # Add local commit
+    
+    # Add local commit (makes it ahead)
     echo "// Local search improvement" >> src/search.js
     git add src/search.js
     as_author "$AUTHOR_THREE_NAME" "$AUTHOR_THREE_EMAIL" \
         c -m "feat: Local search enhancement (diverged)"
-    # Reset and add different remote commit
-    git reset --hard $search_commit 2>&1 | grep -v "hint:"
-    echo "// Remote search improvement (different)" >> src/search.js
+    local search_local=$(git rev-parse HEAD)
+    
+    # Now create a different remote commit (makes it behind as well)
+    git checkout $search_base 2>&1 | grep -v "hint:"
+    echo "// Remote search improvement (different line)" >> src/search.js
     git add src/search.js
     GIT_AUTHOR_NAME="$AUTHOR_FOUR_NAME" GIT_AUTHOR_EMAIL="$AUTHOR_FOUR_EMAIL" \
     GIT_COMMITTER_NAME="$AUTHOR_FOUR_NAME" GIT_COMMITTER_EMAIL="$AUTHOR_FOUR_EMAIL" \
     git commit -m "feat: Remote search optimization (diverged)" 2>&1 | grep -v "hint:"
     git push -f origin feature/search 2>&1 | grep -v "hint:"
-    # Go back to local version (now diverged)
-    git reset --hard HEAD@{1} 2>&1 | grep -v "hint:"
+    
+    # Return to the local version (now it's ahead by 1 and behind by 1)
+    git checkout -B feature/search $search_local 2>&1 | grep -v "hint:"
+    git branch -u origin/feature/search 2>&1 | grep -v "hint:"
+    # Fetch to see the divergence
+    git fetch origin 2>&1 | grep -v "hint:"
     
     # Scenario 5: Branches with no upstream (bugfix branches)
     # These already have no upstream since we never pushed them
@@ -633,14 +640,21 @@ add_tags() {
         git tag -a v0.5.0 $merge_commit -m "Alpha release with authentication"
     fi
     
-    # Add a lightweight tag for quick reference
+    # Add a lightweight tag for quick reference (won't be pushed)
     git tag snapshot-$(date +%Y%m%d)
     
-    # Tag the current state
+    # Tag the current state (won't be pushed)
     git tag -a v1.1.0-alpha.1 -m "Alpha release 1.1.0"
     
-    # Push tags to remote
-    git push origin --tags 2>&1 | grep -v "hint:"
+    # Add experimental tag (won't be pushed)
+    git tag -a experimental-feature -m "Experimental features tag"
+    
+    # Push only some tags to remote (not all)
+    # Push stable release tags
+    git push origin v0.1.0 v0.5.0 v1.0.0-beta.1 v1.0.0 2>&1 | grep -v "hint:"
+    
+    # Note: v1.1.0-alpha.1, snapshot-*, and experimental-feature are NOT pushed
+    # This creates variety for demonstrating local vs remote tags
 }
 
 # Add some work-in-progress scenarios.
@@ -678,7 +692,10 @@ show_repo_state() {
     hug bll
     echo "--------------------------------------------------------"
     echo "Tags:"
-    git tag -l -n1
+    echo "  Local and remote:"
+    git tag -l -n1 | grep -E "^(v0\.[15]\.0|v1\.0\.0)" | sed 's/^/    /'
+    echo "  Local only (not pushed):"
+    git tag -l -n1 | grep -vE "^(v0\.[15]\.0|v1\.0\.0-beta\.1|v1\.0\.0)$" | sed 's/^/    /'
     echo "--------------------------------------------------------"
     echo "Branch upstream status:"
     git for-each-ref --format='%(refname:short) %(upstream:short) %(upstream:track)' refs/heads/ | \
@@ -694,14 +711,18 @@ show_repo_state() {
     echo ""
     echo "Upstream scenarios created:"
     echo "  - feature/user-auth: in sync with origin"
-    echo "  - feature/user-profile: ahead of origin"
-    echo "  - feature/dashboard: behind origin"
-    echo "  - feature/search: diverged (both ahead and behind)"
+    echo "  - feature/user-profile: ahead of origin by 1 commit"
+    echo "  - feature/dashboard: behind origin by 1 commit"
+    echo "  - feature/search: diverged (ahead 1, behind 1)"
     echo "  - bugfix/*, experimental/*: no upstream"
     echo ""
+    echo "Tags:"
+    echo "  - Pushed to remote: v0.1.0, v0.5.0, v1.0.0-beta.1, v1.0.0"
+    echo "  - Local only: v1.1.0-alpha.1, snapshot-*, experimental-feature"
+    echo ""
     echo "WIP scenarios:"
-    echo "  - feature/notifications: staged changes"
-    echo "  - bugfix/performance-issue: unstaged changes"
+    echo "  - feature/notifications: staged changes (notification system)"
+    echo "  - bugfix/performance-issue: unstaged changes (performance optimization)"
 }
 
 # --- Main Execution ---

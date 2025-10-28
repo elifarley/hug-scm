@@ -81,6 +81,40 @@ clean-all: clean ## Clean everything including node_modules
 	rm -rf node_modules
 	@echo "$(GREEN)Deep clean complete!$(NC)"
 
+##@ Demo Repository
+
+demo-repo: ## Create demo repository for tutorials and screencasts
+	@echo "$(BLUE)Creating demo repository...$(NC)"
+	@if [ ! -f ~/.hug-scm/bin/hug ]; then \
+		echo "$(YELLOW)Hug is not installed. Run 'make install' first.$(NC)"; \
+		exit 1; \
+	fi
+	@bash docs/screencasts/bin/repo-setup.sh
+	@echo "$(GREEN)Demo repository created at /tmp/demo-repo$(NC)"
+
+demo-clean: ## Clean demo repository and remote
+	@echo "$(BLUE)Cleaning demo repository...$(NC)"
+	@rm -rf /tmp/demo-repo /tmp/demo-repo.git
+	@echo "$(GREEN)Demo repository cleaned$(NC)"
+
+demo-repo-rebuild: demo-clean demo-repo ## Rebuild demo repository from scratch
+
+demo-repo-status: ## Show status of demo repository
+	@echo "$(BLUE)Demo repository status:$(NC)"
+	@if [ -d /tmp/demo-repo ]; then \
+		cd /tmp/demo-repo && \
+		echo "$(GREEN)Repository exists$(NC)" && \
+		echo "" && \
+		echo "Commits: $$(git rev-list --all --count 2>/dev/null || echo 'N/A')" && \
+		echo "Branches: $$(git branch -a 2>/dev/null | wc -l || echo 'N/A')" && \
+		echo "Tags: $$(git tag 2>/dev/null | wc -l || echo 'N/A')" && \
+		echo "Remote: $$(git remote -v 2>/dev/null | head -1 || echo 'N/A')"; \
+	else \
+		echo "$(YELLOW)Demo repository does not exist$(NC)"; \
+		echo "Run 'make demo-repo' to create it"; \
+	fi
+
 .PHONY: test test-unit test-integration test-check test-deps-install
 .PHONY: docs-dev docs-build docs-preview deps-docs
 .PHONY: install check clean clean-all
+.PHONY: demo-repo demo-clean demo-repo-rebuild demo-repo-status
