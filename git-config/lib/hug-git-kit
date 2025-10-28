@@ -1000,15 +1000,15 @@ print_branch_list() {
 
         if [ "$branch" = "$current_branch" ]; then
             if [ -n "$track" ]; then
-                printf "${GREEN}* %-*s (%s) %s${NC}" "$max_len" "$branch" "$hash" "$track"
+                printf "${GREEN}* %7s %-*s | %s${NC}" "$hash" "$max_len" "$branch" "$track"
             else
-                printf "${GREEN}* %-*s (%s)${NC}" "$max_len" "$branch" "$hash"
+                printf "${GREEN}* %7s %-*s${NC}" "$hash" "$max_len" "$branch"
             fi
         else
             if [ -n "$track" ]; then
-                printf "  %-*s (%s) %s" "$max_len" "$branch" "$hash" "$track"
+                printf "  %7s %-*s | %s" "$hash" "$max_len" "$branch" "$track"
             else
-                printf "  %-*s (%s)" "$max_len" "$branch" "$hash"
+                printf "  %7s %-*s" "$hash" "$max_len" "$branch"
             fi
         fi
 
@@ -1053,15 +1053,15 @@ print_interactive_branch_menu() {
 
         if [ "$branch" = "$current_branch" ]; then
             if [ -n "$track" ]; then
-                printf "%d) ${GREEN}* %-*s (%s) %s${NC}" "$num" "$max_len" "$branch" "$hash" "$track"
+                printf "%d) ${GREEN}* %7s %-*s | %s${NC}" "$num" "$hash" "$max_len" "$branch" "$track"
             else
-                printf "%d) ${GREEN}* %-*s (%s)${NC}" "$num" "$max_len" "$branch" "$hash"
+                printf "%d) ${GREEN}* %7s %-*s${NC}" "$num" "$hash" "$max_len" "$branch"
             fi
         else
             if [ -n "$track" ]; then
-                printf "%d)   %-*s (%s) %s" "$num" "$max_len" "$branch" "$hash" "$track"
+                printf "%d)   %7s %-*s | %s" "$num" "$hash" "$max_len" "$branch" "$track"
             else
-                printf "%d)   %-*s (%s)" "$num" "$max_len" "$branch" "$hash"
+                printf "%d)   %7s %-*s" "$num" "$hash" "$max_len" "$branch"
             fi
         fi
 
