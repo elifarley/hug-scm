@@ -351,7 +351,7 @@ check_files_clean() {
 # Exits:
 #   With error if file does not exist in the specified commit
 check_file_in_commit() {
-    test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+    check_git_repo
     local commit="$1"
     local file="${GIT_PREFIX}$2"
     if ! git cat-file -e "$commit:$file" 2>/dev/null; then
@@ -369,7 +369,7 @@ check_file_in_commit() {
 # Output:
 #   Diff preview (first 20 lines) to stderr
 preview_file_changes() {
-  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+  check_git_repo
   local commit="$1"
   local file="${GIT_PREFIX}$2"
 
@@ -390,7 +390,7 @@ preview_file_changes() {
 # Exits:
 #   With error if file has staged changes
 check_file_staged() {
-  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+  check_git_repo
   local file="${GIT_PREFIX}$1"
 
   if ! git diff --cached --quiet -- "$file" 2>/dev/null; then
@@ -408,7 +408,7 @@ check_file_staged() {
 # Exits:
 #   With error if file has unstaged changes
 check_file_unstaged() {
-  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+  check_git_repo
   local file="${GIT_PREFIX}$1"
 
   if ! git diff --quiet -- "$file" 2>/dev/null; then
@@ -426,7 +426,7 @@ check_file_unstaged() {
 # Returns:
 #   0 if file has binary staged changes, 1 otherwise
 is_binary_staged() {
-  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+  check_git_repo
   local file="${GIT_PREFIX}$1"
   local added deleted
   local diff_numstat
