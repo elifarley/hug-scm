@@ -1,0 +1,62 @@
+name: Regenerate VHS Documentation Images
+
+on:
+  schedule:
+    # Run monthly on the first day at 00:00 UTC
+    - cron: '0 0 1 * *'
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate-images:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Git configuration
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg ttyd
+
+      - name: Install Hug SCM
+        run: make install
+
+      - name: Install VHS
+        run: |
+          VHS_VERSION="0.8.0"
+          wget -q https://github.com/charmbracelet/vhs/releases/download/v${VHS_VERSION}/vhs_${VHS_VERSION}_Linux_x86_64.tar.gz
+          tar -xzf vhs_${VHS_VERSION}_Linux_x86_64.tar.gz
+          
+          # Find and install the vhs binary
+          if [ -f "vhs_${VHS_VERSION}_Linux_x86_64/vhs" ]; then
+            sudo mv "vhs_${VHS_VERSION}_Linux_x86_64/vhs" /usr/local/bin/
+          elif [ -f "vhs" ]; then
+            sudo mv "vhs" /usr/local/bin/
+          else
+            echo "Error: VHS binary not found after extraction." >&2
+            exit 1
+          fi
+          
+          vhs --version
+
+      - name: Regenerate VHS images
+        run: |
+          source bin/activate
+          make vhs-regenerate
+
+      - name: Commit and push changes
+        run: make vhs-commit-push
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+

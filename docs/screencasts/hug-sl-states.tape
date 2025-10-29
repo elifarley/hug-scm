@@ -7,6 +7,8 @@
 # - hug-sl-staged.png: Staged changes only
 # - hug-sl-mixed.png: Both staged and unstaged changes
 
+Output ../commands/img/hug-sl-states.png
+
 Require echo
 Require hug
 
@@ -31,7 +33,6 @@ Sleep 200ms
 Show
 
 # STATE 1: Clean working directory
-Output ../commands/img/hug-sl-clean.png
 Type "hug sl  # State 1: Clean working directory" Enter
 Sleep 1s
 Screenshot ../commands/img/hug-sl-clean.png
@@ -46,7 +47,6 @@ Type "clear" Enter
 Sleep 200ms
 Show
 
-Output ../commands/img/hug-sl-unstaged.png
 Type "hug sl  # State 2: Unstaged changes only" Enter
 Sleep 1s
 Screenshot ../commands/img/hug-sl-unstaged.png
@@ -61,7 +61,6 @@ Type "clear" Enter
 Sleep 200ms
 Show
 
-Output ../commands/img/hug-sl-staged.png
 Type "hug sl  # State 3: Staged changes only" Enter
 Sleep 1s
 Screenshot ../commands/img/hug-sl-staged.png
@@ -76,7 +75,6 @@ Type "clear" Enter
 Sleep 200ms
 Show
 
-Output ../commands/img/hug-sl-mixed.png
 Type "hug sl  # State 4: Staged AND unstaged changes" Enter
 Sleep 1s
 Screenshot ../commands/img/hug-sl-mixed.png

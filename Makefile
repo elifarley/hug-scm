@@ -74,6 +74,15 @@ vhs-clean: ## Remove generated GIF/PNG files from VHS
 	@rm -f docs/commands/img/hug-*.gif docs/commands/img/hug-*.png
 	@echo "$(GREEN)VHS images cleaned$(NC)"
 
+vhs-regenerate: demo-repo-simple vhs-deps-install ## Regenerate VHS images for CI (simple demo + essential tapes)
+	@echo "$(BLUE)Regenerating VHS images...$(NC)"
+	@bash docs/screencasts/bin/vhs-build.sh hug-l.tape hug-lo.tape hug-lol.tape hug-sl-states.tape
+	@bash docs/screencasts/bin/vhs-cleanup-frames.sh
+	@echo "$(GREEN)VHS images regenerated$(NC)"
+
+vhs-commit-push: ## Commit and push VHS image changes (for CI/automation)
+	@bash docs/screencasts/bin/vhs-commit-push.sh
+
 ##@ Documentation
 
 docs-dev: ## Start documentation development server
@@ -123,6 +132,10 @@ demo-repo: ## Create demo repository for tutorials and screencasts
 	@bash docs/screencasts/bin/repo-setup.sh "${DEMO_REPO_BASE}"
 	@echo "$(GREEN)Demo repository created at /tmp/demo-repo$(NC)"
 
+demo-repo-simple: ## Create simple demo repository for CI and quick testing
+	@echo "$(BLUE)Creating simple demo repository...$(NC)"
+	@bash docs/screencasts/bin/repo-setup-simple.sh "${DEMO_REPO_BASE}"
+
 demo-clean: ## Clean demo repository and remote
 	@echo "$(BLUE)Cleaning demo repository...$(NC)"
 	@rm -rf /tmp/demo-repo /tmp/demo-repo.git
@@ -147,7 +160,7 @@ demo-repo-status: ## Show status of demo repository
 
 .PHONY: test test-unit test-integration test-check test-deps-install
 .PHONY: vhs-deps-install
-.PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check
+.PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
 .PHONY: docs-dev docs-build docs-preview deps-docs
 .PHONY: install check clean clean-all
-.PHONY: demo-repo demo-clean demo-repo-rebuild demo-repo-status
+.PHONY: demo-repo demo-repo-simple demo-clean demo-repo-rebuild demo-repo-status
