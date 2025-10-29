@@ -1,3 +1,6 @@
+Set Height 80
+Source setup.tape
+
 # VHS tape file for hug-sl showing 4 different states
 # Outputs a series of PNGs showing: clean, unstaged, staged, and mixed states
 #
@@ -7,79 +10,54 @@
 # - hug-sl-staged.png: Staged changes only
 # - hug-sl-mixed.png: Both staged and unstaged changes
 
-Output ../commands/img/hug-sl-states.png
-
-Require echo
-Require hug
-
-Set Shell "fish"
-Set FontSize 13
-Set Width 1020
-Set Height 280
-Set Margin 0
-Set Padding 10
-Set Theme "Afterglow"
-
-# Setup: Start in demo-repo
-Hide
-Type "cd /tmp/demo-repo" Enter
-Sleep 500ms
-
 # Clean up any existing state
-Type "hug w zap-all -f" Enter
-Sleep 500ms
-Type "clear" Enter
-Sleep 200ms
+Hide
+Type "hug w zap-all --force && hug b main && clear" Enter
+Sleep 300ms
 Show
 
 # STATE 1: Clean working directory
-Type "hug sl  # State 1: Clean working directory" Enter
-Sleep 1s
+Type "hug sl  # Clean working directory" Enter
+Sleep 200ms
+#Wait@800ms />$/
 Screenshot ../commands/img/hug-sl-clean.png
+Sleep 20ms
 
 # STATE 2: Unstaged changes only
 Hide
 Type "clear" Enter
-Sleep 200ms
-Type "echo 'New content' >> README.md" Enter
-Sleep 200ms
-Type "clear" Enter
-Sleep 200ms
+#Wait@800ms />$/
+Sleep 100ms
 Show
-
-Type "hug sl  # State 2: Unstaged changes only" Enter
-Sleep 1s
+Type "echo 'New content' >> README.md && hug sl  # Unstaged changes only" Enter
+Sleep 100ms
+#Wait@800ms />$/
 Screenshot ../commands/img/hug-sl-unstaged.png
+Sleep 10ms
 
 # STATE 3: Staged changes only
 Hide
 Type "clear" Enter
-Sleep 200ms
-Type "hug a README.md" Enter
-Sleep 200ms
-Type "clear" Enter
-Sleep 200ms
+Sleep 100ms
+#Wait@800ms />$/
 Show
-
-Type "hug sl  # State 3: Staged changes only" Enter
-Sleep 1s
+Type "hug a README.md && hug sl  # Staged changes only" Enter
+Sleep 300ms
+#Wait@800ms />$/
 Screenshot ../commands/img/hug-sl-staged.png
+Sleep 10ms
 
 # STATE 4: Both staged and unstaged changes
 Hide
 Type "clear" Enter
-Sleep 200ms
-Type "echo 'More unstaged content' >> README.md" Enter
-Sleep 200ms
-Type "clear" Enter
-Sleep 200ms
+Sleep 50ms
 Show
-
-Type "hug sl  # State 4: Staged AND unstaged changes" Enter
-Sleep 1s
+Type "echo 'More unstaged content' >> README.md && hug sl  # Staged AND unstaged changes" Enter
+Sleep 100ms
 Screenshot ../commands/img/hug-sl-mixed.png
+Sleep 10ms
 
 # Cleanup
 Hide
-Type "hug w zap-all -f" Enter
+Type "hug w zap-all --force" Enter
 Sleep 200ms
