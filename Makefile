@@ -77,8 +77,15 @@ vhs-clean: ## Remove generated GIF/PNG files from VHS
 vhs-regenerate: demo-repo-simple vhs-deps-install ## Regenerate VHS images for CI (simple demo + essential tapes)
 	@echo "$(BLUE)Regenerating VHS images...$(NC)"
 	@bash docs/screencasts/bin/vhs-build.sh hug-l.tape hug-lo.tape hug-lol.tape hug-sl-states.tape
+	@echo "$(BLUE)Cleaning up frame directories...$(NC)"
 	@bash docs/screencasts/bin/vhs-cleanup-frames.sh
-	@echo "$(GREEN)VHS images regenerated$(NC)"
+	@echo "$(BLUE)Verifying cleanup...$(NC)"
+	@if find docs/commands/img -type d -name "*.png" -o -name "*.gif" 2>/dev/null | grep -q .; then \
+		echo "$(YELLOW)Warning: Frame directories still present after cleanup:$(NC)" >&2; \
+		find docs/commands/img -type d -name "*.png" -o -name "*.gif"; \
+		exit 1; \
+	fi
+	@echo "$(GREEN)VHS images regenerated successfully$(NC)"
 
 vhs-commit-push: ## Commit and push VHS image changes (for CI/automation)
 	@bash docs/screencasts/bin/vhs-commit-push.sh
