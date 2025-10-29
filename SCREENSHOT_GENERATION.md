@@ -112,7 +112,7 @@ After generating, check the images:
 ls -lh docs/commands/img/*.png
 ```
 
-The placeholder images are very small (70 bytes each). Real VHS-generated screenshots will be much larger (typically 20-100 KB depending on terminal content).
+The placeholder images are very small (67 bytes each). Real VHS-generated screenshots will be much larger (typically 20-100 KB depending on terminal content).
 
 ### Commit Generated Images
 
