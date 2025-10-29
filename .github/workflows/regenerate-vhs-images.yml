@@ -34,7 +34,7 @@ jobs:
 
       - name: Install VHS
         run: |
-          VHS_VERSION="0.8.0"
+          VHS_VERSION="0.10.0"
           echo "Installing VHS v${VHS_VERSION}..."
           
           wget -q https://github.com/charmbracelet/vhs/releases/download/v${VHS_VERSION}/vhs_${VHS_VERSION}_Linux_x86_64.tar.gz
