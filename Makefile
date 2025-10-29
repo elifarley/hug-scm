@@ -132,24 +132,24 @@ clean-all: clean demo-clean ## Clean everything including node_modules
 
 demo-repo: ## Create demo repository for tutorials and screencasts
 	@echo "$(BLUE)Creating demo repository...$(NC)"
-	@bash docs/screencasts/bin/repo-setup.sh "${DEMO_REPO_BASE}"
-	@echo "$(GREEN)Demo repository created at /tmp/demo-repo$(NC)"
+	@bash docs/screencasts/bin/repo-setup.sh "$(DEMO_REPO_BASE)"
+	@echo "$(GREEN)Demo repository created at $(DEMO_REPO_BASE)$(NC)"
 
 demo-repo-simple: ## Create simple demo repository for CI and quick testing
 	@echo "$(BLUE)Creating simple demo repository...$(NC)"
-	@bash docs/screencasts/bin/repo-setup-simple.sh "${DEMO_REPO_BASE}"
+	@bash docs/screencasts/bin/repo-setup-simple.sh "$(DEMO_REPO_BASE)"
 
 demo-clean: ## Clean demo repository and remote
 	@echo "$(BLUE)Cleaning demo repository...$(NC)"
-	@rm -rf /tmp/demo-repo /tmp/demo-repo.git
+	@rm -rf $(DEMO_REPO_BASE) $(DEMO_REPO_BASE).git
 	@echo "$(GREEN)Demo repository cleaned$(NC)"
 
 demo-repo-rebuild: demo-clean demo-repo ## Rebuild demo repository from scratch
 
 demo-repo-status: ## Show status of demo repository
 	@echo "$(BLUE)Demo repository status:$(NC)"
-	@if [ -d /tmp/demo-repo ]; then \
-		cd /tmp/demo-repo && \
+	@if [ -d $(DEMO_REPO_BASE) ]; then \
+		cd $(DEMO_REPO_BASE) && \
 		echo "$(GREEN)Repository exists$(NC)" && \
 		echo "" && \
 		echo "Commits: $$(git rev-list --all --count 2>/dev/null || echo 'N/A')" && \
