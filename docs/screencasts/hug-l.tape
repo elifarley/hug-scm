@@ -1,7 +1,7 @@
 # VHS tape file for hug-l command
 # Shows basic log with graph visualization
 
-Output ../commands/img/hug-l-new.gif
+Output ../commands/img/hug-l.png
 
 Require echo
 Require hug
@@ -25,7 +25,10 @@ Show
 # Run hug l to show log with graph
 Set TypingSpeed 40ms
 Type "hug l  # (L)og - one-line history with graph" Enter
-Sleep 3s
+Sleep 2s
+
+# Capture screenshot
+Screenshot ../commands/img/hug-l.png
 
 # Cleanup
 Hide

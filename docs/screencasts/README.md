@@ -354,4 +354,4 @@ Commands that would benefit from visual documentation:
 
 - [VHS Documentation](https://github.com/charmbracelet/vhs)
 - [VHS Examples](https://github.com/charmbracelet/vhs/tree/main/examples)
-- [Hug SCM Documentation](../../README.md)
+- [Hug SCM Documentation](../index.md)
