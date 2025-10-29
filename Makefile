@@ -81,22 +81,7 @@ vhs-regenerate: demo-repo-simple vhs-deps-install ## Regenerate VHS images for C
 	@echo "$(GREEN)VHS images regenerated$(NC)"
 
 vhs-commit-push: ## Commit and push VHS image changes (for CI/automation)
-	@echo "$(BLUE)Committing VHS image changes...$(NC)"
-	@git add docs/commands/img/
-	@if git diff --staged --quiet; then \
-		echo "$(YELLOW)No changes to commit$(NC)"; \
-	else \
-		git diff --staged --stat; \
-		git commit -m "chore: regenerate VHS documentation images [skip ci]"; \
-		echo "$(GREEN)Changes committed$(NC)"; \
-		if [ -n "$${GITHUB_ACTIONS:-}" ]; then \
-			git push origin $${GITHUB_REF_NAME:-main}; \
-			echo "$(GREEN)Changes pushed to remote$(NC)"; \
-		else \
-			echo "$(YELLOW)Not in GitHub Actions - skipping push$(NC)"; \
-			echo "$(YELLOW)To push manually, run: git push$(NC)"; \
-		fi \
-	fi
+	@bash docs/screencasts/bin/vhs-commit-push.sh
 
 ##@ Documentation
 
