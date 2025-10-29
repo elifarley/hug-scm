@@ -73,13 +73,8 @@ jobs:
           make vhs-regenerate
           
           echo "Validating output..."
-          # Check for frame directories that should have been cleaned up
-          frame_dirs=$(find docs/commands/img -type d \( -name "*.png" -o -name "*.gif" \) 2>/dev/null || true)
-          if [ -n "$frame_dirs" ]; then
-            frame_count=$(echo "$frame_dirs" | wc -l)
-            echo "Warning: Found $frame_count frame directories that weren't cleaned up:"
-            echo "$frame_dirs"
-          fi
+          # Use the cleanup script with --verify to check for residual frame directories
+          bash docs/screencasts/bin/vhs-cleanup-frames.sh --verify
           
           echo "Generated images:"
           ls -lh docs/commands/img/*.{png,gif} 2>/dev/null || echo "No images found"

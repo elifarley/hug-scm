@@ -7,11 +7,39 @@
 # (e.g., a directory named "output.png/" containing frame files).
 # This script extracts the last frame and replaces the directory with the file.
 #
-# Usage: vhs-cleanup-frames.sh [IMG_DIR]
-#   IMG_DIR: Directory containing VHS output (default: docs/commands/img)
+# Usage: 
+#   vhs-cleanup-frames.sh [OPTIONS] [IMG_DIR]
+#
+# Options:
+#   --verify        Verify that no frame directories remain (no cleanup)
+#   --verify-strict Exit with error if frame directories are found
+#
+# Arguments:
+#   IMG_DIR         Directory containing VHS output (default: docs/commands/img)
 #==============================================================================
 
 set -euo pipefail
+
+# Parse options
+VERIFY_MODE=false
+VERIFY_STRICT=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --verify)
+            VERIFY_MODE=true
+            shift
+            ;;
+        --verify-strict)
+            VERIFY_MODE=true
+            VERIFY_STRICT=true
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
 
 IMG_DIR="${1:-docs/commands/img}"
 
@@ -22,6 +50,38 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Verify mode: check for frame directories without cleaning
+if [ "$VERIFY_MODE" = true ]; then
+    echo -e "${BLUE}Verifying no frame directories remain in ${IMG_DIR}...${NC}"
+    
+    if [ ! -d "$IMG_DIR" ]; then
+        echo -e "${RED}ERROR: Directory ${IMG_DIR} does not exist${NC}" >&2
+        exit 1
+    fi
+    
+    cd "$IMG_DIR" || exit 1
+    
+    # Find frame directories (directories with .png or .gif extensions)
+    frame_dirs=$(find . -maxdepth 1 -type d \( -name "*.png" -o -name "*.gif" \) 2>/dev/null || true)
+    
+    if [ -n "$frame_dirs" ]; then
+        frame_count=$(echo "$frame_dirs" | wc -l)
+        if [ "$VERIFY_STRICT" = true ]; then
+            echo -e "${RED}✗ Verification failed: Found $frame_count frame director(y|ies):${NC}" >&2
+            echo "$frame_dirs" | sed 's|^\./||' >&2
+            exit 1
+        else
+            echo -e "${YELLOW}⚠ Warning: Found $frame_count frame director(y|ies):${NC}"
+            echo "$frame_dirs" | sed 's|^\./||'
+            exit 0
+        fi
+    else
+        echo -e "${GREEN}✓ Verification passed: No frame directories found${NC}"
+        exit 0
+    fi
+fi
+
+# Normal cleanup mode
 echo -e "${BLUE}Cleaning up VHS frame directories in ${IMG_DIR}...${NC}"
 
 cd "$IMG_DIR" || exit 1

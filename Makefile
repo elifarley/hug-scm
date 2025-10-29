@@ -80,12 +80,7 @@ vhs-regenerate: demo-repo vhs-deps-install ## Regenerate VHS images for CI (demo
 	@echo "$(BLUE)Cleaning up frame directories...$(NC)"
 	@bash docs/screencasts/bin/vhs-cleanup-frames.sh
 	@echo "$(BLUE)Verifying cleanup...$(NC)"
-	@frame_dirs=$$(find docs/commands/img -type d \( -name "*.png" -o -name "*.gif" \) 2>/dev/null); \
-	if [ -n "$$frame_dirs" ]; then \
-		echo "$(YELLOW)Warning: Frame directories still present after cleanup:$(NC)" >&2; \
-		echo "$$frame_dirs"; \
-		exit 1; \
-	fi
+	@bash docs/screencasts/bin/vhs-cleanup-frames.sh --verify-strict
 	@echo "$(GREEN)VHS images regenerated successfully$(NC)"
 
 vhs-commit-push: ## Commit and push VHS image changes (for CI/automation)
