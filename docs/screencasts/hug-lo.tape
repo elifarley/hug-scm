@@ -1,3 +1,4 @@
+Set Height 125
 Source setup.tape
 
 # VHS tape file for hug-lo command

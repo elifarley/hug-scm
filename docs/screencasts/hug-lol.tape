@@ -1,22 +1,16 @@
-Output ../commands/img/hug-lol.gif
+Set Height 250
+Source setup.tape
 
-Require echo
-Require hug
-
-Set Shell "fish"
-Set FontSize 12
-Set Width 1024
-Set Height 500
-Set Margin 0
-Set Theme "Afterglow"
+# VHS tape file for hug-lol command
+# Shows a preview of local commits not yet on upstream branch
 
 Hide
-Type '#PS1="> "' Enter
-Type 'cd /tmp/demo-repo && hug b feature/search' Enter
-Type "clear" Enter
-Sleep 100 ms
-Set TypingSpeed 0ms
-Type "hug lol # 'lol' is for (L)og (O)utgoing (L)ong" Enter
-Sleep 500ms
+Type "hug b feature/search && clear" Enter
+Sleep 300ms
 Show
-Sleep 100ms
+
+Type "hug lol  # (L)og (O)utgoing (L)ong - preview commits before push" Enter
+Sleep 500ms
+
+Screenshot ../commands/img/hug-lol.png
+Sleep 10ms

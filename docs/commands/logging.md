@@ -190,7 +190,7 @@ These commands help you review what will be pushed to the remote (upstream) bran
     hug lol
     ```
   - **Safety**: Read-only. Exits with an error if the current branch has no configured upstream.
-  - ![hug lol example](img/hug-lol.gif)
+  - ![hug lol example](img/hug-lol.png)
 
 - `hug log-outgoing`
   - **Description**: The underlying script for `hug lo` and `hug lol`. You can call it directly for more control.
