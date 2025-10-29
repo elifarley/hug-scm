@@ -51,13 +51,13 @@ vhs-check: vhs-deps-install ## Check if VHS is installed
 	@echo "$(BLUE)Checking VHS installation...$(NC)"
 	@bash docs/screencasts/bin/vhs-build.sh --check
 
-vhs: demo-repo vhs-deps-install ## Build all GIF/PNG images from VHS tape files
+vhs: demo-repo-rebuild vhs-deps-install ## Build all GIF/PNG images from VHS tape files
 	@echo "$(BLUE)Building all VHS screencasts...$(NC)"
 	@bash docs/screencasts/bin/vhs-build.sh --all
 
 vhs-build: vhs ## Alias for vhs target
 
-vhs-build-one: demo-repo vhs-check ## Build a specific VHS tape file (usage: make vhs-build-one TAPE=filename.tape)
+vhs-build-one: demo-repo-rebuild vhs-check ## Build a specific VHS tape file (usage: make vhs-build-one TAPE=filename.tape)
 	@echo "$(BLUE)Building VHS screencast: $(TAPE)$(NC)"
 	@if [ -z "$(TAPE)" ]; then \
 		echo "$(YELLOW)Usage: make vhs-build-one TAPE=filename.tape$(NC)"; \
@@ -148,18 +148,19 @@ demo-repo-rebuild: demo-clean demo-repo ## Rebuild demo repository from scratch
 
 demo-repo-status: ## Show status of demo repository
 	@echo "$(BLUE)Demo repository status:$(NC)"
-	@if [ -d $(DEMO_REPO_BASE) ]; then \
-		cd $(DEMO_REPO_BASE) && \
-		echo "$(GREEN)Repository exists$(NC)" && \
-		echo "" && \
-		echo "Commits: $$(git rev-list --all --count 2>/dev/null || echo 'N/A')" && \
-		echo "Branches: $$(git branch -a 2>/dev/null | wc -l || echo 'N/A')" && \
-		echo "Tags: $$(git tag 2>/dev/null | wc -l || echo 'N/A')" && \
-		echo "Remote: $$(git remote -v 2>/dev/null | head -1 || echo 'N/A')"; \
-	else \
+	@if [ ! -d $(DEMO_REPO_BASE) ]; then \
 		echo "$(YELLOW)Demo repository does not exist$(NC)"; \
 		echo "Run 'make demo-repo' to create it"; \
-	fi
+		exit 1; \
+	fi; \
+	cd $(DEMO_REPO_BASE) && \
+	echo "$(GREEN)Repository exists$(NC)" && \
+	echo "" && \
+	echo "Commits: $$(git rev-list --all --count 2>/dev/null || echo 'N/A')" && \
+	echo "Branches: $$(git branch -a 2>/dev/null | wc -l || echo 'N/A')" && \
+	echo "Tags: $$(git tag 2>/dev/null | wc -l || echo 'N/A')" && \
+	echo "Remote: $$(git remote -v 2>/dev/null | head -1 || echo 'N/A')"; \
+	exit 0
 
 .PHONY: test test-unit test-integration test-check test-deps-install
 .PHONY: vhs-deps-install

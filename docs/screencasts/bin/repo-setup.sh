@@ -37,7 +37,6 @@ as_author() (
 
 # Creates the directory and initializes the git repository.
 setup_repo() (
-    test -d "$DEMO_REPO_BASE" && echo "$DEMO_REPO_BASE already exists" && return 0
     echo "1. Initializing repository..."
     mkdir -p "$DEMO_REPO_BASE"
     cd "$DEMO_REPO_BASE" && git init -b main
@@ -740,6 +739,7 @@ show_repo_state() (
 
 main() (
     readonly DEMO_REPO_BASE="${1:-/tmp/demo-repo}"
+    test -d "$DEMO_REPO_BASE" && echo "$DEMO_REPO_BASE already exists" && return 0
     setup_repo && cd "$DEMO_REPO_BASE" || return
     create_main_commits
     create_feature_branches
