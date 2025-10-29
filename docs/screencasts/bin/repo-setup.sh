@@ -38,14 +38,6 @@ as_author() (
 # Creates the directory and initializes the git repository.
 setup_repo() (
     echo "1. Initializing repository..."
-    
-    # Setup git user if not already configured
-    # Use command git to avoid wrapper that tries to cd to nonexistent dir
-    if [ -z "$(command git config --global user.name 2>/dev/null || true)" ]; then
-        command git config --global user.name "Demo User"
-        command git config --global user.email "demo@example.com"
-    fi
-    
     mkdir -p "$DEMO_REPO_BASE"
     cd "$DEMO_REPO_BASE" && git init -b main
 )
