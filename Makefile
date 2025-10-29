@@ -74,7 +74,7 @@ vhs-clean: ## Remove generated GIF/PNG files from VHS
 	@rm -f docs/commands/img/hug-*.gif docs/commands/img/hug-*.png
 	@echo "$(GREEN)VHS images cleaned$(NC)"
 
-vhs-regenerate: demo-repo-simple vhs-deps-install ## Regenerate VHS images for CI (simple demo + essential tapes)
+vhs-regenerate: demo-repo vhs-deps-install ## Regenerate VHS images for CI (simple demo + essential tapes)
 	@echo "$(BLUE)Regenerating VHS images...$(NC)"
 	@bash docs/screencasts/bin/vhs-build.sh hug-l.tape hug-lo.tape hug-lol.tape hug-sl-states.tape
 	@echo "$(BLUE)Cleaning up frame directories...$(NC)"
