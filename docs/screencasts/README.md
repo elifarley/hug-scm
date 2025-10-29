@@ -233,6 +233,39 @@ Type "hug sl  # Status with list of changes" Enter
    - Output: `hug-status-changes.gif` (animated)
    - Shows: `hug sl`, `hug ss`, `hug su`, `hug sw` in action
 
+5. **Logging Commands**
+   - `hug-l.tape` - Basic log with graph
+   - `hug-ll.tape` - Detailed log
+   - `hug-la.tape` - Log all branches
+   - `hug-lla.tape` - Detailed log all branches
+   - `hug-lp.tape` - Log with patches
+   - `hug-lf.tape` - Log message filter
+   - `hug-lc.tape` - Log code search
+   - `hug-lau.tape` - Log by author
+   - `hug-ld.tape` - Log by date
+   - `hug-llf.tape` - Log file history
+
+6. **Branching Commands**
+   - `hug-bl.tape` - List local branches
+   - `hug-bla.tape` - List all branches
+   - `hug-blr.tape` - List remote branches
+   - `hug-bll.tape` - Detailed branch list
+
+7. **File Inspection Commands**
+   - `hug-fblame.tape` - File blame
+   - `hug-fcon.tape` - File contributors
+   - `hug-fa.tape` - File authors
+   - `hug-fborn.tape` - File origin
+
+8. **Working Directory Commands**
+   - `hug-w-discard.tape` - Discard changes
+   - `hug-w-purge.tape` - Purge untracked files
+
+9. **HEAD Operations Commands**
+   - `hug-h-back.tape` - Move HEAD back
+   - `hug-h-undo.tape` - Undo commit
+   - `hug-h-files.tape` - Preview files
+
 ## Adding Screencasts to Documentation
 
 ### Reference Generated Images
