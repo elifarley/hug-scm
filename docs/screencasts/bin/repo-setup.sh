@@ -33,7 +33,7 @@ as_author() {
 
 # Creates the directory and initializes the git repository.
 setup_repo() {
-    test -d /tmp/demo-repo && echo "/tmp/demo-repo already exists" && return 1
+    test -d /tmp/demo-repo && echo "/tmp/demo-repo already exists" && return 0
     cd /tmp
     echo "1. Initializing repository..."
     mkdir -p demo-repo
