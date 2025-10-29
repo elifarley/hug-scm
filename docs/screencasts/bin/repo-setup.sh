@@ -18,31 +18,32 @@ readonly AUTHOR_FOUR_EMAIL="david.lee@example.com"
 
 # --- Helper Functions ---
 
+hug() { cd "$DEMO_REPO_BASE" && "$CMD_BASE"/../../../git-config/bin/hug "$@" ;}
+git() { cd "$DEMO_REPO_BASE" && \git "$@" ;}
+
 # Executes a hug command as a specific author.
 # Usage: as_author "Author Name" "author@email.com" "hug c -m 'message'"
-as_author() {
+as_author() (
     local author_name="$1"; shift
     local author_email="$2"; shift
 
     GIT_AUTHOR_NAME="$author_name" GIT_AUTHOR_EMAIL="$author_email" \
     GIT_COMMITTER_NAME="$author_name" GIT_COMMITTER_EMAIL="$author_email" \
     hug "$@"
-}
+)
 
 # --- Repository Creation Functions ---
 
 # Creates the directory and initializes the git repository.
-setup_repo() {
-    test -d /tmp/demo-repo && echo "/tmp/demo-repo already exists" && return 0
-    cd /tmp
+setup_repo() (
+    test -d "$DEMO_REPO_BASE" && echo "$DEMO_REPO_BASE already exists" && return 0
     echo "1. Initializing repository..."
-    mkdir -p demo-repo
-    cd demo-repo
-    git init -b main
-}
+    mkdir -p "$DEMO_REPO_BASE"
+    cd "$DEMO_REPO_BASE" && git init -b main
+)
 
 # Creates the initial commits on the main branch.
-create_main_commits() {
+create_main_commits() (
     echo "2. Creating initial commits on main branch..."
     as_author "$AUTHOR_ONE_NAME" "$AUTHOR_ONE_EMAIL" \
         c --allow-empty -m "Initial commit"
@@ -70,10 +71,10 @@ create_main_commits() {
     hug a src/index.js
     as_author "$AUTHOR_FOUR_NAME" "$AUTHOR_FOUR_EMAIL" \
         c -m "refactor: Move app to src directory"
-}
+)
 
 # Creates feature branches with multiple commits.
-create_feature_branches() {
+create_feature_branches() (
     echo "3. Creating feature branches..."
     
     # Feature 1: User Authentication (merged)
@@ -159,10 +160,10 @@ create_feature_branches() {
     hug a src/search.js
     as_author "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" \
         c -m "feat: Implement user search"
-}
+)
 
 # Creates bugfix branches.
-create_bugfix_branches() {
+create_bugfix_branches() (
     echo "4. Creating bugfix branches..."
     
     hug b main
@@ -207,10 +208,10 @@ create_bugfix_branches() {
     hug a src/styles.css
     as_author "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" \
         c -m "fix: Fix layout issues on mobile"
-}
+)
 
 # Creates hotfix branches for production issues.
-create_hotfix_branches() {
+create_hotfix_branches() (
     echo "5. Creating hotfix branches..."
     
     hug b main
@@ -236,10 +237,10 @@ create_hotfix_branches() {
     hug checkout main
     as_author "$AUTHOR_THREE_NAME" "$AUTHOR_THREE_EMAIL" \
         mkeep hotfix/prod-crash -m "Merge branch 'hotfix/prod-crash'"
-}
+)
 
 # Creates experimental/research branches.
-create_experimental_branches() {
+create_experimental_branches() (
     echo "6. Creating experimental branches..."
     
     hug b main
@@ -262,10 +263,10 @@ create_experimental_branches() {
     hug a src/ai.js
     as_author "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" \
         c -m "experiment: Add AI integration prototype"
-}
+)
 
 # Creates release branches.
-create_release_branches() {
+create_release_branches() (
     echo "7. Creating release branches..."
     
     hug b main
@@ -293,10 +294,10 @@ create_release_branches() {
     hug a package.json
     as_author "$AUTHOR_ONE_NAME" "$AUTHOR_ONE_EMAIL" \
         c -m "release: Bump version to 1.1.0-rc.1"
-}
+)
 
 # Add more commits to main branch for realistic history.
-add_main_branch_commits() {
+add_main_branch_commits() (
     echo "8. Adding more commits to main branch..."
     
     hug b main
@@ -362,10 +363,10 @@ add_main_branch_commits() {
     hug a LICENSE
     as_author "$AUTHOR_ONE_NAME" "$AUTHOR_ONE_EMAIL" \
         c -m "docs: Add MIT license"
-}
+)
 
 # Add more realistic development activity with additional commits.
-add_development_activity() {
+add_development_activity() (
     echo "9. Adding additional development activity..."
     
     # Add more tests
@@ -534,10 +535,10 @@ add_development_activity() {
     hug a tests/performance.test.js
     as_author "$AUTHOR_ONE_NAME" "$AUTHOR_ONE_EMAIL" \
         c -m "test: Add performance tests"
-}
+)
 
 # Set up a simulated remote and configure upstream tracking.
-setup_remote_and_upstream() {
+setup_remote_and_upstream() (
     echo "10. Setting up remote repository and upstream tracking..."
     
     # Create a bare repository to simulate a remote
@@ -546,7 +547,7 @@ setup_remote_and_upstream() {
     git init --bare demo-repo.git 2>&1 | grep -v "hint:"
     
     cd demo-repo
-    git remote add origin /tmp/demo-repo.git 2>&1 | grep -v "hint:"
+    git remote add origin "$DEMO_REPO_BASE".git 2>&1 | grep -v "hint:"
     
     # Push main branch to establish it on remote
     git push -u origin main 2>&1 | grep -v "hint:"
@@ -628,10 +629,10 @@ setup_remote_and_upstream() {
     
     # Return to main
     git checkout main 2>&1 | grep -v "hint:"
-}
+)
 
 # Add tags at various points in history.
-add_tags() {
+add_tags() (
     echo "11. Adding tags for version markers..."
     
     # Tag the initial release
@@ -664,10 +665,10 @@ add_tags() {
     
     # Note: v1.1.0-alpha.1, snapshot-*, and experimental-feature are NOT pushed
     # This creates variety for demonstrating local vs remote tags
-}
+)
 
 # Add some work-in-progress scenarios.
-add_wip_scenarios() {
+add_wip_scenarios() (
     echo "12. Adding work-in-progress scenarios..."
     
     # Create a branch with uncommitted changes
@@ -683,10 +684,10 @@ add_wip_scenarios() {
     
     # Return to main
     git checkout main 2>&1 | grep -v "hint:"
-}
+)
 
 # Displays the final state of the repository.
-show_repo_state() {
+show_repo_state() (
     echo ""
     echo "✅ Git repository for the tutorial has been set up successfully!"
     echo "========================================================"
@@ -695,7 +696,7 @@ show_repo_state() {
     echo "  Total branches: $(git branch -a | wc -l)"
     echo "  Total tags: $(git tag | wc -l)"
     echo "  Contributors: 4"
-    echo "  Remote: origin -> /tmp/demo-repo.git"
+    echo "  Remote: origin -> $DEMO_REPO_BASE.git"
     echo "========================================================"
     echo "Current branches:"
     hug bll
@@ -715,8 +716,8 @@ show_repo_state() {
     hug sl
     echo "========================================================"
     echo ""
-    echo "Demo repository created at: /tmp/demo-repo"
-    echo "Remote repository at: /tmp/demo-repo.git"
+    echo "Demo repository created at: $DEMO_REPO_BASE"
+    echo "Remote repository at: $DEMO_REPO_BASE.git"
     echo ""
     echo "Upstream scenarios created:"
     echo "  - feature/user-auth: in sync with origin"
@@ -732,12 +733,13 @@ show_repo_state() {
     echo "WIP scenarios:"
     echo "  - feature/notifications: staged changes (notification system)"
     echo "  - bugfix/performance-issue: unstaged changes (performance optimization)"
-}
+)
 
 # --- Main Execution ---
 
 main() (
-    setup_repo || return
+    readonly DEMO_REPO_BASE="${1:-/tmp/demo-repo}"
+    setup_repo && cd "$DEMO_REPO_BASE" || return
     create_main_commits
     create_feature_branches
     create_bugfix_branches
@@ -753,4 +755,4 @@ main() (
 )
 
 # Run the script
-main
+main "$@"

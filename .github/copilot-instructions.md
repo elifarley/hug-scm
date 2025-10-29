@@ -25,11 +25,13 @@ Before working on this project, ensure you have:
 
 **For Documentation:**
 - Node.js 16+ and npm (for VitePress documentation)
+- VHS (for creating images used in /docs/*)
 
 **Setup:**
 1. Install Hug: `make install`
 2. Install test dependencies: `make test-deps-install`
-3. Activate in current shell: `source bin/activate`
+3. Install documentation dependencies: `make vhs-deps-install`
+4. Activate in current shell: `source bin/activate`
 
 ## Repository Structure
 

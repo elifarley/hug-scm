@@ -10,6 +10,8 @@ GREEN := \033[0;32m
 YELLOW := \033[1;33m
 NC := \033[0m # No Color
 
+DEMO_REPO_BASE := /tmp/demo-repo
+
 ##@ General
 
 help: ## Display this help message
@@ -74,15 +76,15 @@ vhs-clean: ## Remove generated GIF/PNG files from VHS
 
 ##@ Documentation
 
-docs-dev: vhs ## Start documentation development server
+docs-dev: ## Start documentation development server
 	@echo "$(BLUE)Starting documentation server...$(NC)"
 	npm run docs:dev
 
-docs-build: vhs ## Build documentation for production
+docs-build: ## Build documentation for production
 	@echo "$(BLUE)Building documentation...$(NC)"
 	npm run docs:build
 
-docs-preview: vhs ## Preview built documentation
+docs-preview: ## Preview built documentation
 	@echo "$(BLUE)Previewing documentation...$(NC)"
 	npm run docs:preview
 
@@ -118,7 +120,7 @@ clean-all: clean demo-clean ## Clean everything including node_modules
 
 demo-repo: ## Create demo repository for tutorials and screencasts
 	@echo "$(BLUE)Creating demo repository...$(NC)"
-	@bash docs/screencasts/bin/repo-setup.sh
+	@bash docs/screencasts/bin/repo-setup.sh "${DEMO_REPO_BASE}"
 	@echo "$(GREEN)Demo repository created at /tmp/demo-repo$(NC)"
 
 demo-clean: ## Clean demo repository and remote
