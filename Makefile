@@ -80,9 +80,10 @@ vhs-regenerate: demo-repo-simple vhs-deps-install ## Regenerate VHS images for C
 	@echo "$(BLUE)Cleaning up frame directories...$(NC)"
 	@bash docs/screencasts/bin/vhs-cleanup-frames.sh
 	@echo "$(BLUE)Verifying cleanup...$(NC)"
-	@if find docs/commands/img -type d -name "*.png" -o -name "*.gif" 2>/dev/null | grep -q .; then \
+	@frame_dirs=$$(find docs/commands/img -type d \( -name "*.png" -o -name "*.gif" \) 2>/dev/null); \
+	if [ -n "$$frame_dirs" ]; then \
 		echo "$(YELLOW)Warning: Frame directories still present after cleanup:$(NC)" >&2; \
-		find docs/commands/img -type d -name "*.png" -o -name "*.gif"; \
+		echo "$$frame_dirs"; \
 		exit 1; \
 	fi
 	@echo "$(GREEN)VHS images regenerated successfully$(NC)"

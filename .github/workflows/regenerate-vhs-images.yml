@@ -74,10 +74,11 @@ jobs:
           
           echo "Validating output..."
           # Check for frame directories that should have been cleaned up
-          frame_dirs=$(find docs/commands/img -type d -name "*.png" -o -name "*.gif" 2>/dev/null | wc -l)
-          if [ "$frame_dirs" -gt 0 ]; then
-            echo "Warning: Found $frame_dirs frame directories that weren't cleaned up:"
-            find docs/commands/img -type d -name "*.png" -o -name "*.gif"
+          frame_dirs=$(find docs/commands/img -type d \( -name "*.png" -o -name "*.gif" \) 2>/dev/null || true)
+          if [ -n "$frame_dirs" ]; then
+            frame_count=$(echo "$frame_dirs" | wc -l)
+            echo "Warning: Found $frame_count frame directories that weren't cleaned up:"
+            echo "$frame_dirs"
           fi
           
           echo "Generated images:"
