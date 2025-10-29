@@ -50,6 +50,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
     hug ll             # Current branch detailed history
     ```
   - **Safety**: Read-only.
+  - ![hug ll example](img/hug-ll.png)
 
 - `hug lla [options]`
     - **Description**: Detailed log with graph, short date, author, decorations, and full commit message for ALL branches.
