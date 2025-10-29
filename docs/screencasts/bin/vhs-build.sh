@@ -10,6 +10,7 @@
 #   --dry-run, -n       Show what would be built without actually building
 #   --parallel, -p      Build tapes in parallel (requires GNU parallel)
 #   --check, -c         Check if VHS is installed and exit
+#   --install-deps, -i  Install VHS if not present (exit after)
 #   --help, -h          Show this help message
 #
 # Arguments:
@@ -21,6 +22,7 @@
 #   vhs-build.sh hug-lol.tape             # Build specific tape
 #   vhs-build.sh --dry-run hug-*.tape     # Preview what would be built
 #   vhs-build.sh --parallel --all         # Build all in parallel
+#   vhs-build.sh --install-deps           # Install VHS tool
 #==============================================================================
 
 set -euo pipefail
@@ -47,6 +49,7 @@ DRY_RUN=false
 BUILD_ALL=false
 PARALLEL=false
 CHECK_ONLY=false
+INSTALL_DEPS=false
 
 #==============================================================================
 # Helper Functions
@@ -82,11 +85,88 @@ success() {
 
 # Check if VHS is installed
 check_vhs() {
-    if ! command -v vhs &> /dev/null; then
-        error "VHS is not installed. Install it from: https://github.com/charmbracelet/vhs"
+    if command -v vhs &> /dev/null; then
+        info "VHS is installed: $(command -v vhs)"
+        vhs --version
+        return 0
+    else
+        warn "VHS is not installed."
+        return 1
     fi
-    info "VHS is installed: $(command -v vhs)"
-    vhs --version
+}
+
+# Install VHS locally if not present
+install_vhs() {
+    local local_bin="$SCREENCASTS_DIR/bin/vhs"
+    local tmp_dir=$(mktemp -d)
+
+    # Check if already installed locally
+    if [[ -x "$local_bin" ]] && command -v vhs &> /dev/null; then
+        info "VHS already available locally at $local_bin"
+        export PATH="$SCREENCASTS_DIR/bin:$PATH"
+        return 0
+    fi
+
+    local os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    local arch=$(uname -m)
+    local os_name="$os"
+    if [[ "$os" == "darwin" ]]; then
+        os_name="Darwin"
+    elif [[ "$os" != "linux" ]]; then
+        warn "Unsupported OS: $os. Manual installation required."
+        echo "Install VHS via: go install github.com/charmbracelet/vhs@latest"
+        echo "or download from https://github.com/charmbracelet/vhs/releases"
+        return 1
+    fi
+
+    if [[ "$arch" != "x86_64" && "$arch" != "amd64" && "$arch" != "arm64" ]]; then
+        warn "Unsupported architecture: $arch. Manual installation required."
+        echo "Install VHS via: go install github.com/charmbracelet/vhs@latest"
+        echo "or download from https://github.com/charmbracelet/vhs/releases"
+        return 1
+    fi
+
+    if [[ "$arch" == "x86_64" ]]; then
+        arch="x86_64"
+    elif [[ "$arch" == "amd64" ]]; then
+        arch="x86_64"
+    fi
+
+    info "Installing VHS for $os_name $arch..."
+
+    # Get latest release tag
+    local latest_version
+    latest_version=$(curl -s https://api.github.com/repos/charmbracelet/vhs/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/v//')
+
+    if [[ -z "$latest_version" ]]; then
+        error "Failed to fetch latest VHS version from GitHub API"
+    fi
+
+    local download_url="https://github.com/charmbracelet/vhs/releases/download/v${latest_version}/vhs_${latest_version}_${os_name}_${arch}.tar.gz"
+    local tmp_tar="${tmp_dir}/vhs.tar.gz"
+
+    if ! curl -L -o "$tmp_tar" "$download_url" 2>/dev/null; then
+        warn "Failed to download VHS from $download_url"
+        echo "Manual installation required:"
+        echo "go install github.com/charmbracelet/vhs@latest"
+        echo "or visit https://github.com/charmbracelet/vhs/releases"
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$local_bin")"
+    if tar -xzf "$tmp_tar" -C "$tmp_dir" vhs; then
+        cp "$tmp_dir/vhs" "$local_bin"
+        chmod +x "$local_bin"
+        export PATH="$SCREENCASTS_DIR/bin:$PATH"
+        success "VHS installed locally at $local_bin (version: $(vhs --version 2>/dev/null || echo 'unknown'))"
+        rm -rf "$tmp_dir"
+        return 0
+    else
+        warn "Failed to extract VHS binary"
+        rm -rf "$tmp_dir"
+        return 1
+    fi
 }
 
 # Show usage information
@@ -187,6 +267,10 @@ while [[ $# -gt 0 ]]; do
             CHECK_ONLY=true
             shift
             ;;
+        --install-deps|-i)
+            INSTALL_DEPS=true
+            shift
+            ;;
         --help|-h)
             usage
             ;;
@@ -198,6 +282,18 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Handle install-deps mode
+if [[ "$INSTALL_DEPS" == "true" ]]; then
+    if ! check_vhs; then
+        install_vhs || {
+            warn "VHS installation failed or manual installation required"
+            exit 1
+        }
+    fi
+    check_vhs
+    exit 0
+fi
 
 # Check VHS installation
 if [[ "$CHECK_ONLY" == "true" ]]; then

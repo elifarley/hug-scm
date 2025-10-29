@@ -41,11 +41,15 @@ test-deps-install: ## Install or update local BATS dependencies
 
 ##@ VHS Screencasts
 
-vhs-check: ## Check if VHS is installed
+vhs-deps-install: ## Install VHS tool if not present
+	@echo "$(BLUE)Installing VHS dependencies...$(NC)"
+	@bash docs/screencasts/bin/vhs-build.sh --install-deps
+
+vhs-check: vhs-deps-install ## Check if VHS is installed
 	@echo "$(BLUE)Checking VHS installation...$(NC)"
 	@bash docs/screencasts/bin/vhs-build.sh --check
 
-vhs: demo-repo vhs-check ## Build all GIF/PNG images from VHS tape files
+vhs: demo-repo vhs-deps-install ## Build all GIF/PNG images from VHS tape files
 	@echo "$(BLUE)Building all VHS screencasts...$(NC)"
 	@bash docs/screencasts/bin/vhs-build.sh --all
 
@@ -140,6 +144,7 @@ demo-repo-status: ## Show status of demo repository
 	fi
 
 .PHONY: test test-unit test-integration test-check test-deps-install
+.PHONY: vhs-deps-install
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check
 .PHONY: docs-dev docs-build docs-preview deps-docs
 .PHONY: install check clean clean-all
