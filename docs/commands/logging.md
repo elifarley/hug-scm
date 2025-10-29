@@ -42,6 +42,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
       hug la              # branch history for ALL branches
       ```
     - **Safety**: Read-only; no repo changes.
+    - ![hug la example](img/hug-la.png)
 
 - `hug ll [options]`
   - **Description**: Detailed log with graph, short date, author, decorations, and full commit message.
@@ -59,6 +60,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
       hug lla             # Detailed history for ALL branches
       ```
     - **Safety**: Read-only.
+    - ![hug lla example](img/hug-lla.png)
 
 - `hug lp [options]`
   - **Description**: Detailed log including patches/diffs for each commit.
@@ -68,6 +70,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
     hug lp -3          # Last 3 commits with patches
     ```
   - **Safety**: Read-only.
+  - ![hug lp example](img/hug-lp.png)
 
 ## Search by Commit Message
 
@@ -83,6 +86,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
     hug lf -i "fix bug" --all  # Ignore case, all branches
     ```
   - **Safety**: Read-only.
+  - ![hug lf example](img/hug-lf.png)
 
 ## Search by Code Changes
 
@@ -98,6 +102,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
     hug lc "getUserById" -- src/users.js  # Restrict to file
     ```
   - **Safety**: Read-only.
+  - ![hug lc example](img/hug-lc.png)
 
 - `hug lcr <regex> [-i] [-p] [--all] [-- file]`
   - **Description**: Search commits where the diff matches a regex (more flexible than `lc`).
@@ -118,6 +123,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
     hug lau "John Doe" -5    # Last 5 by author
     ```
   - **Safety**: Read-only.
+  - ![hug lau example](img/hug-lau.png)
 
 - `hug ld <since-date> [<until-date>]`
   - **Description**: Log commits within a date range (until defaults to now).
@@ -127,6 +133,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
     hug ld "2023-01-01" "2023-12-31"  # Date range
     ```
   - **Safety**: Read-only.
+  - ![hug ld example](img/hug-ld.png)
 
 ## File Inspection (llf*)
 
@@ -140,6 +147,7 @@ These commands show the history of changes to a specific file, following renames
     hug llf file.txt -2 --stat   # Last 2 commits with stats
     ```
   - **Safety**: Read-only.
+  - ![hug llf example](img/hug-llf.png)
 
 - `hug llfs <file> [-N] [log options]`
   - **Description**: File history with change statistics (insertions/deletions).

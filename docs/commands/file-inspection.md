@@ -26,6 +26,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
       ```
     - **Safety**: Read-only; no repo changes.
     - **Git Equivalent**: `git blame -w -C -C -C <file>`
+    - ![hug fblame example](img/hug-fblame.png)
 - `hug fb <file>`
     - **Description**: Short blame output with just author and line number (porcelain format for scripting).
     - **Example**:
@@ -44,6 +45,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
       ```
     - **Safety**: Read-only.
     - **Git Equivalent**: `git log --follow --pretty=format:'%an <%ae>' -- <file> | sort -u`
+    - ![hug fcon example](img/hug-fcon.png)
 - `hug fa <file>`
     - **Description**: Count commits per author for a file (sorted by count descending), following renames.
     - **Example**:
@@ -52,6 +54,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
       ```
     - **Safety**: Read-only.
     - **Git Equivalent**: `git log --follow --format='%an' -- <file> | sort | uniq -c | sort -rn`
+    - ![hug fa example](img/hug-fa.png)
 
 ## File Origin
 - `hug fborn <file>`
@@ -63,6 +66,7 @@ Blame shows which author last modified each line of a file, helping attribute ch
       ```
     - **Safety**: Read-only.
     - **Git Equivalent**: `git log --pretty=logbody --follow --diff-filter=A --find-renames=40% -- <file>`
+    - ![hug fborn example](img/hug-fborn.png)
 
 ## Tips
 - Combine with [Logging](logging#file-inspection) for broader file history: e.g., use `hug llf <file> -1` for the latest commit, then `hug fblame <file>` to see line authors.

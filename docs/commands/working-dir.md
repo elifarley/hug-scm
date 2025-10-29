@@ -42,6 +42,7 @@ Discard unstaged or staged **changes in _tracked_** files without affecting **un
     hug w discard -s .        # Discard all staged changes in current directory
     ```
   - **Safety**: `--dry-run` to preview; requires `-f` to force.
+  - ![hug w discard example](img/hug-w-discard.png)
 
 - `hug w discard-all [-u|-s]`
   - **Description**: Repo-wide discard of unstaged or staged changes.
@@ -64,6 +65,7 @@ Remove untracked or ignored files (e.g., build artifacts).
 - `hug w purge [-u|-i] <paths...>`
   - **Description**: Purge untracked (`-u`, default) or ignored (`-i`) files/paths.
   - **Example**: `hug w purge -i node_modules/`
+  - ![hug w purge example](img/hug-w-purge.png)
 
 - `hug w purge-all [-u|-i]`
   - **Description**: Repo-wide purge.
