@@ -6,7 +6,7 @@ Output ../commands/img/hug-lo.png
 Require echo
 Require hug
 
-Set Shell "bash"
+Set Shell "fish"
 Set FontSize 13
 Set Width 1020
 Set Height 400

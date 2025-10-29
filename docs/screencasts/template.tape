@@ -17,7 +17,7 @@ Require echo
 Require hug
 
 # Terminal settings
-Set Shell "bash"
+Set Shell "fish"
 Set FontSize 13        # Readable size
 Set Width 1020         # Standard width for docs
 Set Height 600         # Adjust based on output length
