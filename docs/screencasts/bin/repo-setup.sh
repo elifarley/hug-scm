@@ -38,6 +38,14 @@ as_author() (
 # Creates the directory and initializes the git repository.
 setup_repo() (
     echo "1. Initializing repository..."
+    
+    # Setup git user if not already configured
+    # Use command git to avoid wrapper that tries to cd to nonexistent dir
+    if [ -z "$(command git config --global user.name 2>/dev/null || true)" ]; then
+        command git config --global user.name "Demo User"
+        command git config --global user.email "demo@example.com"
+    fi
+    
     mkdir -p "$DEMO_REPO_BASE"
     cd "$DEMO_REPO_BASE" && git init -b main
 )
@@ -542,23 +550,23 @@ setup_remote_and_upstream() (
     echo "10. Setting up remote repository and upstream tracking..."
     
     # Create a bare repository to simulate a remote
-    cd /tmp
-    rm -rf demo-repo.git
-    git init --bare demo-repo.git 2>&1 | grep -v "hint:"
+    # Use command git to avoid the wrapper that cd's to $DEMO_REPO_BASE
+    rm -rf "$DEMO_REPO_BASE.git"
+    command git init --bare "$DEMO_REPO_BASE.git" 2>&1 | grep -v "hint:" || true
     
-    cd demo-repo
-    git remote add origin "$DEMO_REPO_BASE".git 2>&1 | grep -v "hint:"
+    cd "$DEMO_REPO_BASE"
+    git remote add origin "$DEMO_REPO_BASE.git" 2>&1 | grep -v "hint:" || true
     
     # Push main branch to establish it on remote
-    git push -u origin main 2>&1 | grep -v "hint:"
+    git push -u origin main 2>&1 | grep -v "hint:" || true
     
     # Scenario 1: Branch in sync with upstream
-    git checkout feature/user-auth 2>&1 | grep -v "hint:"
-    git push -u origin feature/user-auth 2>&1 | grep -v "hint:"
+    git checkout feature/user-auth 2>&1 | grep -v "hint:" || true
+    git push -u origin feature/user-auth 2>&1 | grep -v "hint:" || true
     
     # Scenario 2: Branch ahead of upstream
-    git checkout feature/user-profile 2>&1 | grep -v "hint:"
-    git push -u origin feature/user-profile 2>&1 | grep -v "hint:"
+    git checkout feature/user-profile 2>&1 | grep -v "hint:" || true
+    git push -u origin feature/user-profile 2>&1 | grep -v "hint:" || true
     # Add commit locally to make it ahead
     echo "// Additional profile feature" >> src/profile.js
     git add src/profile.js
@@ -566,24 +574,24 @@ setup_remote_and_upstream() (
         c -m "feat: Add extra profile feature (ahead of origin)"
     
     # Scenario 3: Branch behind upstream (we'll manually update the remote)
-    git checkout feature/dashboard 2>&1 | grep -v "hint:"
+    git checkout feature/dashboard 2>&1 | grep -v "hint:" || true
     local dashboard_commit=$(git rev-parse HEAD)
-    git push -u origin feature/dashboard 2>&1 | grep -v "hint:"
+    git push -u origin feature/dashboard 2>&1 | grep -v "hint:" || true
     # Add a commit directly to simulate remote ahead
     echo "// Remote addition" >> src/components/Dashboard.js
     git add src/components/Dashboard.js
     GIT_AUTHOR_NAME="$AUTHOR_TWO_NAME" GIT_AUTHOR_EMAIL="$AUTHOR_TWO_EMAIL" \
     GIT_COMMITTER_NAME="$AUTHOR_TWO_NAME" GIT_COMMITTER_EMAIL="$AUTHOR_TWO_EMAIL" \
-    git commit -m "feat: Remote team added dashboard feature" 2>&1 | grep -v "hint:"
-    git push origin feature/dashboard 2>&1 | grep -v "hint:"
+    git commit -m "feat: Remote team added dashboard feature" 2>&1 | grep -v "hint:" || true
+    git push origin feature/dashboard 2>&1 | grep -v "hint:" || true
     # Reset local to previous state to be behind
-    git reset --hard $dashboard_commit 2>&1 | grep -v "hint:"
+    git reset --hard $dashboard_commit 2>&1 | grep -v "hint:" || true
     
     # Scenario 4: Branch both ahead and behind (diverged)
     # This requires careful sequencing to ensure both states exist
-    git checkout feature/search 2>&1 | grep -v "hint:"
+    git checkout feature/search 2>&1 | grep -v "hint:" || true
     local search_base=$(git rev-parse HEAD)
-    git push -u origin feature/search 2>&1 | grep -v "hint:"
+    git push -u origin feature/search 2>&1 | grep -v "hint:" || true
     
     # Add local commit (makes it ahead)
     echo "// Local search improvement" >> src/search.js
@@ -594,41 +602,41 @@ setup_remote_and_upstream() (
     
     # Create a new commit on the base and push it as the remote version
     # This makes the remote ahead of what we had
-    git checkout -b temp-search-remote $search_base 2>&1 | grep -v "hint:"
+    git checkout -b temp-search-remote $search_base 2>&1 | grep -v "hint:" || true
     echo "// Remote search improvement (different line)" >> src/search.js
     git add src/search.js
     GIT_AUTHOR_NAME="$AUTHOR_FOUR_NAME" GIT_AUTHOR_EMAIL="$AUTHOR_FOUR_EMAIL" \
     GIT_COMMITTER_NAME="$AUTHOR_FOUR_NAME" GIT_COMMITTER_EMAIL="$AUTHOR_FOUR_EMAIL" \
-    git commit -m "feat: Remote search optimization (diverged)" 2>&1 | grep -v "hint:"
+    git commit -m "feat: Remote search optimization (diverged)" 2>&1 | grep -v "hint:" || true
     
     # Force push this to origin/feature/search
-    git push -f origin temp-search-remote:feature/search 2>&1 | grep -v "hint:"
+    git push -f origin temp-search-remote:feature/search 2>&1 | grep -v "hint:" || true
     
     # Now switch back to our local version which has a different commit
-    git checkout feature/search 2>&1 | grep -v "hint:"
-    git reset --hard $search_local 2>&1 | grep -v "hint:"
+    git checkout feature/search 2>&1 | grep -v "hint:" || true
+    git reset --hard $search_local 2>&1 | grep -v "hint:" || true
     
     # Update the tracking and fetch to see the divergence
-    git branch -u origin/feature/search 2>&1 | grep -v "hint:"
-    git fetch origin 2>&1 | grep -v "hint:"
+    git branch -u origin/feature/search 2>&1 | grep -v "hint:" || true
+    git fetch origin 2>&1 | grep -v "hint:" || true
     
     # Clean up temp branch
-    git branch -D temp-search-remote 2>&1 | grep -v "hint:"
+    git branch -D temp-search-remote 2>&1 | grep -v "hint:" || true
     
     # Scenario 5: Branches with no upstream (bugfix branches)
     # These already have no upstream since we never pushed them
     
     # Push some other branches for completeness
-    git checkout release/v1.0 2>&1 | grep -v "hint:"
-    git push origin release/v1.0 2>&1 | grep -v "hint:"
-    git checkout hotfix/security-patch 2>&1 | grep -v "hint:"
-    git push origin hotfix/security-patch 2>&1 | grep -v "hint:"
+    git checkout release/v1.0 2>&1 | grep -v "hint:" || true
+    git push origin release/v1.0 2>&1 | grep -v "hint:" || true
+    git checkout hotfix/security-patch 2>&1 | grep -v "hint:" || true
+    git push origin hotfix/security-patch 2>&1 | grep -v "hint:" || true
     
     # Fetch to update remote tracking
-    git fetch origin 2>&1 | grep -v "hint:"
+    git fetch origin 2>&1 | grep -v "hint:" || true
     
     # Return to main
-    git checkout main 2>&1 | grep -v "hint:"
+    git checkout main 2>&1 | grep -v "hint:" || true
 )
 
 # Add tags at various points in history.
@@ -636,12 +644,12 @@ add_tags() (
     echo "11. Adding tags for version markers..."
     
     # Tag the initial release
-    git checkout release/v1.0 2>&1 | grep -v "hint:"
+    git checkout release/v1.0 2>&1 | grep -v "hint:" || true
     git tag -a v1.0.0 -m "Release version 1.0.0"
     git tag -a v1.0.0-beta.1 HEAD~1 -m "Beta release 1.0.0-beta.1"
     
     # Tag some points on main
-    git checkout main 2>&1 | grep -v "hint:"
+    git checkout main 2>&1 | grep -v "hint:" || true
     git tag -a v0.1.0 $(git rev-list --max-parents=0 HEAD) -m "Initial version"
     
     # Find the commit where we merged feature/user-auth
@@ -661,7 +669,7 @@ add_tags() (
     
     # Push only some tags to remote (not all)
     # Push stable release tags
-    git push origin v0.1.0 v0.5.0 v1.0.0-beta.1 v1.0.0 2>&1 | grep -v "hint:"
+    git push origin v0.1.0 v0.5.0 v1.0.0-beta.1 v1.0.0 2>&1 | grep -v "hint:" || true
     
     # Note: v1.1.0-alpha.1, snapshot-*, and experimental-feature are NOT pushed
     # This creates variety for demonstrating local vs remote tags
@@ -672,18 +680,18 @@ add_wip_scenarios() (
     echo "12. Adding work-in-progress scenarios..."
     
     # Create a branch with uncommitted changes
-    git checkout -b feature/notifications 2>&1 | grep -v "hint:"
+    git checkout -b feature/notifications 2>&1 | grep -v "hint:" || true
     echo "// Notification system - WIP" > src/notifications.js
     git add src/notifications.js
     # Leave it staged but not committed
     
     # Create another branch with unstaged changes
-    git checkout -b bugfix/performance-issue 2>&1 | grep -v "hint:"
+    git checkout -b bugfix/performance-issue 2>&1 | grep -v "hint:" || true
     echo "// Performance optimization - WIP" > src/performance.js
     # Leave it unstaged
     
     # Return to main
-    git checkout main 2>&1 | grep -v "hint:"
+    git checkout main 2>&1 | grep -v "hint:" || true
 )
 
 # Displays the final state of the repository.
@@ -703,9 +711,9 @@ show_repo_state() (
     echo "--------------------------------------------------------"
     echo "Tags:"
     echo "  Local and remote:"
-    git tag -l -n1 | grep -E "^(v0\.[15]\.0|v1\.0\.0)" | sed 's/^/    /'
+    git tag -l -n1 | grep -E "^(v0\.[15]\.0|v1\.0\.0)" | sed 's/^/    /' || true
     echo "  Local only (not pushed):"
-    git tag -l -n1 | grep -vE "^(v0\.[15]\.0|v1\.0\.0-beta\.1|v1\.0\.0)$" | sed 's/^/    /'
+    git tag -l -n1 | grep -vE "^(v0\.[15]\.0|v1\.0\.0-beta\.1|v1\.0\.0)$" | sed 's/^/    /' || true
     echo "--------------------------------------------------------"
     echo "Branch upstream status:"
     git for-each-ref --format='%(refname:short) %(upstream:short) %(upstream:track)' refs/heads/ | \
