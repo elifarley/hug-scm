@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 #==============================================================================
 # A script to create a hug repository for tutorials with multiple contributors.
@@ -19,7 +20,7 @@ readonly AUTHOR_FOUR_EMAIL="david.lee@example.com"
 # --- Helper Functions ---
 
 hug() { cd "$DEMO_REPO_BASE" && "$CMD_BASE"/../../../git-config/bin/hug "$@" ;}
-git() { cd "$DEMO_REPO_BASE" && \git "$@" ;}
+git() { cd "$DEMO_REPO_BASE" && command git "$@" ;}
 
 # Executes a hug command as a specific author.
 # Usage: as_author "Author Name" "author@email.com" "hug c -m 'message'"
