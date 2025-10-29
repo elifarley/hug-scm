@@ -725,7 +725,7 @@ show_repo_state() (
         awk '{printf "  %-30s %-30s %s\n", $1, ($2 ? $2 : "(no upstream)"), ($3 ? $3 : "")}'
     echo "--------------------------------------------------------"
     echo "Recent commit history:"
-    hug ll
+    hug ll -4
     hug sl
     echo "========================================================"
     echo ""
