@@ -228,7 +228,7 @@ Output ../commands/img/hug-${cmd}.${type}
 Require echo
 Require hug
 
-Set Shell "bash"
+Set Shell "fish"
 Set FontSize 13
 Set Width 1020
 Set Height $height
@@ -417,7 +417,7 @@ Support multiple shells in tape files:
 **Update template.tape:**
 ```tape
 # Detect and set appropriate shell
-Set Shell "bash"  # or "zsh", "fish", "sh"
+Set Shell "fish"  # or "zsh", "bash", "sh"
 
 # Shell-specific prompt setup
 Hide
