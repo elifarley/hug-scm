@@ -33,6 +33,7 @@ Several HEAD commands (`hug h back`, `hug h rollback`, `hug h undo`, `hug h rewi
   hug h back 3 --force      # Skip confirmation
   ```
 - **Safety**: Non-destructive; changes remain staged and can be inspected with `hug sl` (**S**tatus + **L**ist uncommitted files) and `hug ss` (**S**tatus + **S**taged diff) or re-committed. Previews commits and their file change statistics and requires y/n confirmation when staged changes are present (skipped with --force or when the staging area is clean); the preview helper is read-only, so no reset happens until you confirm. Cannot mix `-u` with explicit target.
+- ![hug h back example](img/hug-h-back.png)
 
 ### `hug h undo [N|commit] [-u, --upstream] [--force]`
 - **Description**: HEAD goes back by N commits (default: 1) or to a specific commit. Unstages changes from the undone commits but keeps them in your working directory - perfect for editing before re-staging. With `-u`, resets to upstream remote tip, discarding local-only commits.
@@ -45,6 +46,7 @@ Several HEAD commands (`hug h back`, `hug h rollback`, `hug h undo`, `hug h rewi
   hug h undo 3 --force      # Skip confirmation
   ```
 - **Safety**: Non-destructive; changes remain in working directory and can be viewed with `hug su` (**S**tatus + **U**nstaged diff). Previews commits and their file change statistics and requires y/n confirmation when staged or unstaged changes are present (skipped with --force or when both the staging area and working tree are clean). Keeps protection when staged or unstaged work might be unintentionally merged into the undo, but skips the prompt when no staged or unstaged changes are present. The preview helper is read-only, so no reset happens until you confirm. Cannot mix `-u` with explicit target.
+- ![hug h undo example](img/hug-h-undo.png)
 
 ### `hug h rollback [N|commit] [-u, --upstream] [--force]`
 - **Description**: HEAD goes back by N commits (default: 1) or to a specific commit, discarding commit history and staged changes, but preserving any uncommitted local changes in the working directory. With `-u`, resets to upstream remote tip, discarding local-only commits but keeping uncommitted work.
@@ -95,6 +97,7 @@ Changes from all squashed commits are kept staged so that they can be committed 
   hug h files --stat         # With line change stats
   ```
 - **Safety**: Read-only; no changes to repo. Upstream mode uses the shared preview data but remains read-only. Cannot mix `-u` with explicit target.
+- ![hug h files example](img/hug-h-files.png)
 
 ### `hug h steps <file> [--raw]`
 - **Description**: Calculate how many commit steps from HEAD back to the most recent commit touching `file` (handles renames). Outputs the count; use for precise rewinds like `h back N`. Full mode shows formatted commit info via `hug ll`.

@@ -45,6 +45,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   hug bl    # List all local branches
   ```
 - **Safety**: Read-only operation; no changes to repo state.
+- ![hug bl example](img/hug-bl.png)
 
 ### `hug bla`
 - **Description**: List all branches (local and remote) in short format.
@@ -53,6 +54,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   hug bla   # List all branches including remotes
   ```
 - **Safety**: Read-only.
+- ![hug bla example](img/hug-bla.png)
 
 ### `hug blr`
 - **Description**: List remote branches only in short format.
@@ -61,6 +63,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   hug blr   # List remote branches
   ```
 - **Safety**: Read-only.
+- ![hug blr example](img/hug-blr.png)
 
 ### `hug bll`
 - **Description**: List local branches in long format with details: short commit hash, upstream tracking info (e.g., ahead/behind counts), and the latest commit message title. Current branch is highlighted in green and marked with *. Branches are left-aligned for readability.
@@ -69,6 +72,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   hug bll   # Detailed local branch listing
   ```
 - **Safety**: Read-only; displays tracking info like `git branch -vv` but with commit subjects.
+- ![hug bll example](img/hug-bll.png)
 
 ## Branch Creation / Modification
 

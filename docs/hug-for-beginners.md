@@ -75,7 +75,7 @@ hug sl
 [`hug sl` (**S**tatus + **L**ist changes)](commands/status-staging.md#basic-status) gives you a quick, colorful summary of what's going on in your lab. It will tell you about any new or modified files on your lab table.
 
 Example:
-![hug sl example](commands/img/hug-sl.png)
+![hug sl example](commands/img/hug-sl-unstaged.png)
 
 ### Step 4: Prepare Your Snapshot (`hug aa`)
 
