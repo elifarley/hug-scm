@@ -24,140 +24,39 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Install Hug SCM
+      - name: Install system dependencies
         run: |
-          make install
-          echo "Hug installed"
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg ttyd
+
+      - name: Install Hug SCM
+        run: make install
 
       - name: Install VHS
         run: |
           VHS_VERSION="0.8.0"
           wget -q https://github.com/charmbracelet/vhs/releases/download/v${VHS_VERSION}/vhs_${VHS_VERSION}_Linux_x86_64.tar.gz
           tar -xzf vhs_${VHS_VERSION}_Linux_x86_64.tar.gz
-          sudo mv vhs_${VHS_VERSION}_Linux_x86_64/vhs /usr/local/bin/
+          
+          # Find and install the vhs binary
+          if [ -f "vhs_${VHS_VERSION}_Linux_x86_64/vhs" ]; then
+            sudo mv "vhs_${VHS_VERSION}_Linux_x86_64/vhs" /usr/local/bin/
+          elif [ -f "vhs" ]; then
+            sudo mv "vhs" /usr/local/bin/
+          else
+            echo "Error: VHS binary not found after extraction." >&2
+            exit 1
+          fi
+          
           vhs --version
 
-      - name: Install ffmpeg (required for VHS)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg ttyd
-          ffmpeg -version
-
-      - name: Create demo repository
+      - name: Regenerate VHS images
         run: |
           source bin/activate
-          
-          # Create a simple demo repo
-          DEMO_REPO_BASE="/tmp/demo-repo"
-          REMOTE_BASE="/tmp/demo-repo.git"
-          
-          # Clean up any existing repos
-          rm -rf "$DEMO_REPO_BASE" "$REMOTE_BASE"
-          
-          # Create bare remote
-          mkdir -p "$REMOTE_BASE"
-          cd "$REMOTE_BASE"
-          git init --bare
-          
-          # Create local repo
-          mkdir -p "$DEMO_REPO_BASE"
-          cd "$DEMO_REPO_BASE"
-          git init -b main
-          git remote add origin "$REMOTE_BASE"
-          
-          # Create initial content
-          echo "# Demo Repository" > README.md
-          echo "This is a demo repository for Hug SCM." >> README.md
-          git add README.md
-          git commit -m "Initial commit"
-          
-          echo "console.log('hello');" > app.js
-          git add app.js
-          git commit -m "feat: Add main app"
-          
-          echo "node_modules/" > .gitignore
-          git add .gitignore
-          git commit -m "chore: Add gitignore"
-          
-          # Push to remote
-          git push -u origin main
-          
-          # Create a feature branch
-          git checkout -b feature/search
-          echo "// Search functionality" > search.js
-          git add search.js
-          git commit -m "feat: Add search module"
-          
-          echo "function search(query) { }" >> search.js
-          git add search.js
-          git commit -m "feat: Implement search function"
-          
-          # Back to main
-          git checkout main
-          
-          echo "Demo repository created"
-
-      - name: Generate VHS images
-        run: |
-          source bin/activate
-          
-          # Generate images one by one to avoid timeouts
-          cd docs/screencasts
-          
-          # List of essential tape files to regenerate
-          TAPES=(
-            "hug-l.tape"
-            "hug-lo.tape"
-            "hug-lol.tape"
-            "hug-sl-states.tape"
-          )
-          
-          for tape in "${TAPES[@]}"; do
-            if [ -f "$tape" ]; then
-              echo "Building $tape..."
-              timeout 120 vhs "$tape" || echo "Warning: $tape timed out or failed"
-            fi
-          done
-          
-          cd ../..
-          
-          # Check what was generated
-          ls -lah docs/commands/img/
-
-      - name: Clean up VHS frame directories
-        run: |
-          # Remove any frame directories that VHS might have created
-          cd docs/commands/img
-          for dir in */; do
-            if [ -d "$dir" ]; then
-              echo "Removing frame directory: $dir"
-              # Extract last frame if it's a states directory
-              if [ -d "${dir}frame-text-00001.png" ] || ls "${dir}"frame-text-*.png > /dev/null 2>&1; then
-                LAST_FRAME=$(ls "${dir}"frame-text-*.png 2>/dev/null | tail -1)
-                if [ -n "$LAST_FRAME" ]; then
-                  DIRNAME=$(basename "$dir")
-                  cp "$LAST_FRAME" "../${DIRNAME}"
-                fi
-              fi
-              rm -rf "$dir"
-            fi
-          done
-
-      - name: Check for changes
-        id: check_changes
-        run: |
-          git add docs/commands/img/
-          if git diff --staged --quiet; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-            echo "No changes detected in VHS images"
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "Changes detected in VHS images"
-            git diff --staged --stat
-          fi
+          make vhs-regenerate
 
       - name: Commit and push changes
-        if: steps.check_changes.outputs.changed == 'true'
-        run: |
-          git commit -m "chore: regenerate VHS documentation images [skip ci]"
-          git push origin ${{ github.ref_name }}
+        run: make vhs-commit-push
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
