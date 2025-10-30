@@ -644,7 +644,7 @@ setup_remote_and_upstream() (
     echo "// Remote addition" >> src/components/Dashboard.js
     hug add src/components/Dashboard.js
     commit_with_date 2 days "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" \
-        commit -m "feat: Remote team added dashboard feature" 2>&1 | grep -v "hint:" || true
+        c -m "feat: Remote team added dashboard feature"
     hug push origin feature/dashboard 2>&1 | grep -v "hint:" || true
     # Reset local to previous state to be behind
     hug reset --hard $dashboard_commit 2>&1 | grep -v "hint:" || true
@@ -668,7 +668,7 @@ setup_remote_and_upstream() (
     echo "// Remote search improvement (different line)" >> src/search.js
     hug add src/search.js
     commit_with_date 1 day "$AUTHOR_FOUR_NAME" "$AUTHOR_FOUR_EMAIL" \
-        commit -m "feat: Remote search optimization (diverged)" 2>&1 | grep -v "hint:" || true
+        c -m "feat: Remote search optimization (diverged)"
     
     # Force push this to origin/feature/search
     hug push -f origin temp-search-remote:feature/search 2>&1 | grep -v "hint:" || true
