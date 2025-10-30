@@ -72,14 +72,24 @@ error()   { msg "$RED"    "ERROR: $*" >&2; exit 1; }
 #==============================================================================
 
 check_vhs() {
+    # First check if VHS is in PATH
     if command -v vhs &> /dev/null; then
         info "✓ VHS is installed: $(command -v vhs)"
         vhs --version
         return 0
-    else
-        warn "✗ VHS is not installed"
-        return 1
     fi
+    
+    # Check if locally installed
+    local local_bin="$SCRIPT_DIR/vhs"
+    if [[ -x "$local_bin" ]]; then
+        export PATH="$SCRIPT_DIR:$PATH"
+        info "✓ VHS is installed: $local_bin"
+        vhs --version
+        return 0
+    fi
+    
+    warn "✗ VHS is not installed"
+    return 1
 }
 
 install_vhs() {
