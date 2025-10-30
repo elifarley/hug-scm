@@ -143,7 +143,7 @@ install_vhs() {
     
     if [[ -z "$version" ]]; then
         warn "Could not fetch latest version from GitHub API, using fallback version"
-        version="0.8.0"
+        version="0.10.0"
         info "Using VHS v${version}"
     fi
     

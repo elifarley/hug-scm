@@ -50,7 +50,7 @@ make vhs-deps-install
 
 # This will:
 # - Check if VHS is already installed
-# - Download and install VHS v0.8.0 (or latest if GitHub API is available)
+# - Download and install VHS v0.10.0 (or latest if GitHub API is available)
 # - Install to docs/screencasts/bin/vhs
 # - Works even when GitHub API is blocked
 
@@ -59,7 +59,7 @@ go install github.com/charmbracelet/vhs@latest
 # Or download from: https://github.com/charmbracelet/vhs/releases
 ```
 
-**Note:** The automated installer has a fallback mechanism that uses version v0.8.0 if the GitHub API is unavailable or blocked. This ensures installation works in restricted environments.
+**Note:** The automated installer has a fallback mechanism that uses version v0.10.0 if the GitHub API is unavailable or blocked. This ensures installation works in restricted environments.
 
 ### 3. Missing System Dependencies
 
