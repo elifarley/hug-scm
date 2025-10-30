@@ -1,4 +1,4 @@
-Set Height 140
+Set Height 200
 Source setup.tape
 
 Type "hug ld '2024-01-01' # (L)og (D)ate - log commits since date" Enter
