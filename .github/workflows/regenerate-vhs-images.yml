@@ -27,66 +27,25 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg ttyd
+          sudo apt-get install -y ffmpeg ttyd fish
 
       - name: Install Hug SCM
         run: make install
 
       - name: Install VHS
-        run: |
-          VHS_VERSION="0.10.0"
-          echo "Installing VHS v${VHS_VERSION}..."
-          
-          wget -q https://github.com/charmbracelet/vhs/releases/download/v${VHS_VERSION}/vhs_${VHS_VERSION}_Linux_x86_64.tar.gz
-          
-          # Extract tarball
-          tar -xzf vhs_${VHS_VERSION}_Linux_x86_64.tar.gz
-          
-          # Find and install the vhs binary
-          if [ -f "vhs_${VHS_VERSION}_Linux_x86_64/vhs" ]; then
-            sudo mv "vhs_${VHS_VERSION}_Linux_x86_64/vhs" /usr/local/bin/
-          elif [ -f "vhs" ]; then
-            sudo mv "vhs" /usr/local/bin/
-          else
-            echo "Error: VHS binary not found after extraction." >&2
-            echo "Contents of current directory:"
-            ls -la
-            echo "Contents of extracted directory:"
-            ls -la vhs_${VHS_VERSION}_Linux_x86_64/ || true
-            exit 1
-          fi
-          
-          # Verify installation
-          chmod +x /usr/local/bin/vhs
-          vhs --version
-          
-          echo "VHS installed successfully"
+        run: make vhs-deps-install
 
       - name: Regenerate VHS images
         run: |
           source bin/activate
-          echo "Activating Hug environment..."
-          which hug
-          hug --version || echo "Hug command check skipped"
-          
-          echo "Running VHS regeneration..."
           make vhs-regenerate
-          
-          echo "Validating output..."
-          # Use the cleanup script with --verify to check for residual frame directories
-          bash docs/screencasts/bin/vhs-cleanup-frames.sh --verify
           
           echo "Generated images:"
           ls -lh docs/commands/img/*.{png,gif} 2>/dev/null || echo "No images found"
         continue-on-error: false
 
       - name: Commit and push changes
-        run: |
-          echo "Checking for changes..."
-          git status
-          
-          echo "Running commit and push script..."
-          make vhs-commit-push
+        run: make vhs-commit-push
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
         continue-on-error: false
