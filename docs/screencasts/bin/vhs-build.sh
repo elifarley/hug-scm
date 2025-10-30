@@ -193,7 +193,7 @@ install_vhs() {
 #==============================================================================
 
 find_tape_files() {
-    find "$SCREENCASTS_DIR" -maxdepth 1 -name "*.tape" -type f | sort
+    find "$SCREENCASTS_DIR" -maxdepth 1 ! -name setup.tape -name "*.tape" -type f | sort
 }
 
 build_single_tape() {
