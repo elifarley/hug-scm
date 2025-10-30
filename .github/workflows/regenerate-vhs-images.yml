@@ -48,4 +48,5 @@ jobs:
         run: make vhs-commit-push
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
+        continue-on-error: false
 
