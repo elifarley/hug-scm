@@ -45,13 +45,21 @@ vhs: command not found
 
 **Solution:**
 ```bash
-# Install VHS
+# Install VHS using the automated installer
 make vhs-deps-install
+
+# This will:
+# - Check if VHS is already installed
+# - Download and install VHS v0.8.0 (or latest if GitHub API is available)
+# - Install to docs/screencasts/bin/vhs
+# - Works even when GitHub API is blocked
 
 # Or manually:
 go install github.com/charmbracelet/vhs@latest
 # Or download from: https://github.com/charmbracelet/vhs/releases
 ```
+
+**Note:** The automated installer has a fallback mechanism that uses version v0.8.0 if the GitHub API is unavailable or blocked. This ensures installation works in restricted environments.
 
 ### 3. Missing System Dependencies
 
@@ -204,6 +212,47 @@ Set Theme "Afterglow"
 Available themes: Run `vhs themes` to see all options.
 
 ## Debugging Tips
+
+### Using GitHub Copilot Devcontainer
+
+**Problem:** Setting up the development environment is complex or time-consuming.
+
+**Solution:** Use the pre-configured GitHub Copilot devcontainer:
+
+1. **In GitHub Codespaces:**
+   - Open the repository in GitHub
+   - Click "Code" → "Codespaces" → "Create codespace on main"
+   - The environment will automatically set up with all dependencies
+
+2. **In VS Code with Dev Containers:**
+   - Install the "Dev Containers" extension
+   - Open the repository
+   - Run "Dev Containers: Reopen in Container"
+   - All dependencies will be installed automatically
+
+**What's included:**
+- Pre-configured Ubuntu environment
+- Git, Node.js, and npm
+- System dependencies (ffmpeg, ttyd, fish, shellcheck, bats)
+- Hug SCM installed and activated
+- VHS installed for documentation generation
+- Test dependencies ready to use
+- Documentation dependencies installed
+
+**Quick start after opening devcontainer:**
+```bash
+# Already activated! Just use Hug
+hug help
+
+# Run tests
+make test
+
+# Build VHS images
+make vhs
+
+# Start documentation server
+npm run docs:dev
+```
 
 ### Enable Verbose Output
 
