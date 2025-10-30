@@ -38,7 +38,7 @@ jobs:
       - name: Regenerate VHS images
         run: |
           source bin/activate
-          make vhs-regenerate
+          make vhs
           
           echo "Generated images:"
           ls -lh docs/commands/img/*.{png,gif} 2>/dev/null || echo "No images found"
