@@ -124,7 +124,7 @@ The agents have access to:
 
 When adding new dependencies:
 
-1. **System packages:** Add to `scripts/setup-codespace.sh`
+1. **System packages:** Add to `.github/scripts/setup-codespace.sh` and `.github/copilot-setup.sh`
 2. **Node packages:** Use `npm install --save-dev` (updates package.json)
 3. **Test dependencies:** Add to appropriate Makefile target
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #==============================================================================
-# setup-devcontainer.sh - Setup script for GitHub Copilot devcontainer
+# setup-codespace.sh - Setup script for GitHub Codespaces
 #
 # This script installs all required dependencies for developing and testing
-# Hug SCM in a GitHub Codespace or Copilot workspace.
+# Hug SCM in a GitHub Codespace.
 #==============================================================================
 
 set -euo pipefail
@@ -37,8 +37,10 @@ echo "📚 Installing documentation dependencies..."
 npm ci
 
 # Activate Hug in the current shell
+# Use relative path from repository root
 echo "✨ Activating Hug SCM..."
-echo 'source /workspaces/hug-scm/bin/activate' >> ~/.bashrc
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+echo "source ${REPO_ROOT}/bin/activate" >> ~/.bashrc
 
 echo ""
 echo "✅ Development environment setup complete!"
