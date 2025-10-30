@@ -125,15 +125,17 @@ install_vhs() {
     
     info "Installing VHS for $os_name $arch..."
     
-    # Get latest version
+    # Try to get latest version, fall back to known stable version
     local version
     version=$(curl -sSL https://api.github.com/repos/charmbracelet/vhs/releases/latest \
         | grep '"tag_name":' \
-        | sed -E 's/.*"v([^"]+)".*/\1/') || {
-        error "Failed to fetch VHS version from GitHub API"
-    }
+        | sed -E 's/.*"v([^"]+)".*/\1/' 2>/dev/null) || true
     
-    [[ -n "$version" ]] || error "Empty version retrieved"
+    if [[ -z "$version" ]]; then
+        warn "Could not fetch latest version from GitHub API, using fallback version"
+        version="0.8.0"
+        info "Using VHS v${version}"
+    fi
     
     # Download and install
     local url="https://github.com/charmbracelet/vhs/releases/download/v${version}/vhs_${version}_${os_name}_${arch}.tar.gz"
@@ -148,16 +150,29 @@ install_vhs() {
     fi
     
     info "Extracting..."
-    if tar -xzf "$tarball" -C "$tmp_dir" vhs 2>/dev/null; then
-        mkdir -p "$SCRIPT_DIR"
-        mv "$tmp_dir/vhs" "$local_bin"
-        chmod +x "$local_bin"
-        export PATH="$SCRIPT_DIR:$PATH"
-        success "✓ VHS installed at $local_bin"
-        rm -rf "$tmp_dir"
-        return 0
+    # Extract all contents first, then find the vhs binary
+    if tar -xzf "$tarball" -C "$tmp_dir" 2>/dev/null; then
+        # Find the vhs binary (may be in root or subdirectory)
+        local vhs_binary
+        vhs_binary=$(find "$tmp_dir" -type f -name "vhs" -executable 2>/dev/null | head -1)
+        
+        if [[ -n "$vhs_binary" && -x "$vhs_binary" ]]; then
+            mkdir -p "$SCRIPT_DIR"
+            mv "$vhs_binary" "$local_bin"
+            chmod +x "$local_bin"
+            export PATH="$SCRIPT_DIR:$PATH"
+            success "✓ VHS installed at $local_bin"
+            rm -rf "$tmp_dir"
+            return 0
+        else
+            warn "VHS binary not found in tarball"
+            info "Contents of tarball:"
+            tar -tzf "$tarball" | head -10
+            rm -rf "$tmp_dir"
+            return 1
+        fi
     else
-        warn "Failed to extract VHS binary"
+        warn "Failed to extract tarball"
         rm -rf "$tmp_dir"
         return 1
     fi
