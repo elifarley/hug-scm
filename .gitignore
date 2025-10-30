@@ -10,6 +10,9 @@ cache/
 # Local test dependencies
 tests/deps/
 
+# VHS binary (downloaded by vhs-build.sh)
+docs/screencasts/bin/vhs
+
 ### Development Artifacts ###
 # Vite dev server cache (critical for HMR performance)
 .vite/
