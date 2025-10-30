@@ -1,8 +1,8 @@
-Set Height 100
+Set Height 350
 Source setup.tape
 
 Type "hug bl # (B)ranch (L)ist - list local branches" Enter
-Sleep 100ms
+Sleep 400ms
 
 Screenshot ../commands/img/hug-bl.png
 Sleep 10ms
