@@ -37,6 +37,7 @@ These commands provide intuitive ways to create lightweight and annotated tags, 
   hug t "v2.0*"      # List tags starting with v2.0
   ```
 - **Safety**: Read-only; no repo changes.
+- ![hug t example](img/hug-t.png)
 
 ## Creating Tags
 
@@ -48,6 +49,7 @@ These commands provide intuitive ways to create lightweight and annotated tags, 
   hug tc v1.0.1 a1b2c3       # Tag specific commit
   ```
 - **Safety**: Non-destructive; creates new tag reference.
+- ![hug tc example](img/hug-tc.png)
 
 ### `hug ta <tag-name> "<message>"`
 - **Description**: Creates an annotated tag. This is recommended for official releases, as it is a full object in the Git database that includes the tagger's name, email, date, and a message. Annotated tags are the Git-recommended way to mark releases.
@@ -57,6 +59,7 @@ These commands provide intuitive ways to create lightweight and annotated tags, 
   hug ta v2.0.0 "Major rewrite with breaking changes"
   ```
 - **Safety**: Non-destructive; creates new tag object.
+- ![hug ta example](img/hug-ta.png)
 
 ## Viewing Tag Details
 
@@ -67,6 +70,7 @@ These commands provide intuitive ways to create lightweight and annotated tags, 
   hug ts v1.0.0       # Show details for v1.0.0 tag
   ```
 - **Safety**: Read-only; displays tag information.
+- ![hug ts example](img/hug-ts.png)
 
 ## Modifying Tags
 

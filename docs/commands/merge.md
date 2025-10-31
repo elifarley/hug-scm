@@ -42,3 +42,4 @@ Merge commands in Hug are used to integrate changes from one branch into another
 ### `hug ma`
 - **Description**: Aborts a merge that has resulted in conflicts. This will return your working directory to the state it was in before you attempted the merge. It is the safe way to back out of a confusing merge.
 - **Example**: `hug ma`
+- ![hug ma example](img/hug-ma.png)
