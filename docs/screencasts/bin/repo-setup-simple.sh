@@ -21,6 +21,24 @@ git() { (cd "$DEMO_REPO_BASE" && command git "$@") ;}
 # Function for git operations in the remote (bare) repo
 git_remote() { (cd "$REMOTE_BASE" && command git "$@") ;}
 
+# --- Deterministic Timestamps for Repeatable Commit Hashes ---
+# Initialize to a fixed starting date (2000-01-01 00:00:00 UTC)
+FAKE_CLOCK_EPOCH=946684800
+FAKE_CLOCK_CURRENT=$FAKE_CLOCK_EPOCH
+
+# Helper function to create commits with deterministic timestamps
+git_commit_deterministic() {
+    local message="$1"
+    local seconds_offset="${2:-3600}"  # Default: 1 hour increment
+    
+    FAKE_CLOCK_CURRENT=$((FAKE_CLOCK_CURRENT + seconds_offset))
+    local commit_date="${FAKE_CLOCK_CURRENT} +0000"
+    
+    GIT_AUTHOR_DATE="$commit_date" \
+    GIT_COMMITTER_DATE="$commit_date" \
+    git commit -m "$message"
+}
+
 echo -e "${BLUE}Creating simple demo repository at ${DEMO_REPO_BASE}${NC}"
 
 # Clean up any existing repos
@@ -51,13 +69,13 @@ cat > "$DEMO_REPO_BASE/README.md" << 'EOF'
 This is a demo repository for Hug SCM documentation and screencasts.
 EOF
 git add README.md
-git commit -m "Initial commit"
+git_commit_deterministic "Initial commit"
 
 cat > "$DEMO_REPO_BASE/app.js" << 'EOF'
 console.log('hello');
 EOF
 git add app.js
-git commit -m "feat: Add main app"
+git_commit_deterministic "feat: Add main app" 86400
 
 cat > "$DEMO_REPO_BASE/.gitignore" << 'EOF'
 node_modules/
@@ -65,7 +83,7 @@ dist/
 .env
 EOF
 git add .gitignore
-git commit -m "chore: Add gitignore"
+git_commit_deterministic "chore: Add gitignore" 86400
 
 # Push to remote
 echo "Pushing to remote..."
@@ -79,7 +97,7 @@ cat > "$DEMO_REPO_BASE/search.js" << 'EOF'
 // Search functionality
 EOF
 git add search.js
-git commit -m "feat: Add search module"
+git_commit_deterministic "feat: Add search module" 86400
 
 cat >> "$DEMO_REPO_BASE/search.js" << 'EOF'
 function search(query) { 
@@ -87,7 +105,7 @@ function search(query) {
 }
 EOF
 git add search.js
-git commit -m "feat: Implement search function"
+git_commit_deterministic "feat: Implement search function" 3600
 
 # Back to main
 git checkout main

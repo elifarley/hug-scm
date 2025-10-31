@@ -17,6 +17,24 @@ NC='\033[0m' # No Color
 # This prevents accidental operations in the wrong directory
 git() { (cd "$DEMO_REPO_BASE" && command git "$@") ;}
 
+# --- Deterministic Timestamps for Repeatable Commit Hashes ---
+# Initialize to a fixed starting date (2000-01-01 00:00:00 UTC)
+FAKE_CLOCK_EPOCH=946684800
+FAKE_CLOCK_CURRENT=$FAKE_CLOCK_EPOCH
+
+# Helper function to create commits with deterministic timestamps
+git_commit_deterministic() {
+    local message="$1"
+    local seconds_offset="${2:-3600}"  # Default: 1 hour increment
+    
+    FAKE_CLOCK_CURRENT=$((FAKE_CLOCK_CURRENT + seconds_offset))
+    local commit_date="${FAKE_CLOCK_CURRENT} +0000"
+    
+    GIT_AUTHOR_DATE="$commit_date" \
+    GIT_COMMITTER_DATE="$commit_date" \
+    git commit -m "$message"
+}
+
 echo -e "${BLUE}Creating practical workflows repository at ${DEMO_REPO_BASE}${NC}"
 
 # Clean up any existing repo
@@ -41,7 +59,7 @@ cat > "$DEMO_REPO_BASE/README.md" << 'EOF'
 A sample web application for demonstrating practical Git workflows.
 EOF
 git add README.md
-git commit -m "Initial commit"
+git_commit_deterministic "Initial commit"
 
 mkdir -p "$DEMO_REPO_BASE/src"
 cat > "$DEMO_REPO_BASE/src/app.js" << 'EOF'
@@ -49,7 +67,7 @@ cat > "$DEMO_REPO_BASE/src/app.js" << 'EOF'
 console.log('App starting...');
 EOF
 git add src/app.js
-git commit -m "feat: Add main application file"
+git_commit_deterministic "feat: Add main application file" 86400
 
 cat > "$DEMO_REPO_BASE/src/utils.js" << 'EOF'
 // Utility functions
@@ -58,7 +76,7 @@ function formatDate(date) {
 }
 EOF
 git add src/utils.js
-git commit -m "feat: Add utility functions"
+git_commit_deterministic "feat: Add utility functions" 86400
 
 cat > "$DEMO_REPO_BASE/.gitignore" << 'EOF'
 node_modules/
@@ -67,7 +85,7 @@ dist/
 *.log
 EOF
 git add .gitignore
-git commit -m "chore: Add gitignore"
+git_commit_deterministic "chore: Add gitignore" 86400
 
 echo -e "${GREEN}Practical workflows repository created successfully!${NC}"
 echo "  Location: ${DEMO_REPO_BASE}"
