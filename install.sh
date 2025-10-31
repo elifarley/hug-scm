@@ -27,6 +27,35 @@ test -e "$HOME"/.gitconfig && grep -q HUG_HOME "$HOME"/.gitconfig || {
 EOF
 }
 
+# Configure fish shell if fish is installed
+if command -v fish &> /dev/null; then
+  FISH_CONFIG="$HOME/.config/fish/config.fish"
+  mkdir -p "$HOME/.config/fish"
+  
+  if [ ! -e "$FISH_CONFIG" ] || ! grep -q "Hug SCM activation" "$FISH_CONFIG" 2>/dev/null; then
+    echo "Configuring fish shell for Hug..."
+    cat <<'EOF' >> "$FISH_CONFIG"
+
+# Hug SCM activation for fish
+if test -e "$HOME/.hug-scm"
+    # Read HUG_HOME from .hug-scm file (bash format: HUG_HOME=/path)
+    set -l hug_config (cat "$HOME/.hug-scm")
+    set -l hug_home (string match -r 'HUG_HOME=(.*)' -- $hug_config)[2]
+    if test -n "$hug_home"
+        set -gx HUG_HOME $hug_home
+        set -gx PATH $HUG_HOME/git-config/bin $PATH
+    end
+end
+EOF
+  else
+    echo "✓ Fish shell already configured for Hug"
+  fi
+  
+  # Set universal PATH for fish (persists across sessions)
+  echo "Setting fish universal PATH..."
+  fish -c "contains '$HUG_HOME/git-config/bin' \$fish_user_paths; or set -U fish_user_paths '$HUG_HOME/git-config/bin' \$fish_user_paths" 2>/dev/null || true
+fi
+
 # Configure .hgrc if it exists
 if [ -e "$HOME"/.hgrc ]; then
   if ! grep -q "path = $HUG_HOME/.hgrc" "$HOME"/.hgrc 2>/dev/null; then

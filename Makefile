@@ -12,6 +12,10 @@ NC := \033[0m # No Color
 
 DEMO_REPO_BASE := /tmp/demo-repo
 
+# Setup PATH for demo repository creation (includes hug commands)
+HUG_BIN_PATH := $(shell pwd)/git-config/bin
+DEMO_REPO_ENV := export PATH="$$PATH:$(HUG_BIN_PATH)" &&
+
 ##@ General
 
 help: ## Display this help message
@@ -51,13 +55,13 @@ vhs-check: vhs-deps-install ## Check if VHS is installed
 	@echo "$(BLUE)Checking VHS installation...$(NC)"
 	@bash docs/screencasts/bin/vhs-build.sh --check
 
-vhs: demo-repo-rebuild vhs-deps-install ## Build all GIF/PNG images from VHS tape files
+vhs: demo-repo-rebuild-all vhs-deps-install ## Build all GIF/PNG images from VHS tape files
 	@echo "$(BLUE)Building all VHS screencasts...$(NC)"
 	@bash docs/screencasts/bin/vhs-build.sh --all
 
 vhs-build: vhs ## Alias for vhs target
 
-vhs-build-one: demo-repo-rebuild vhs-check ## Build a specific VHS tape file (usage: make vhs-build-one TAPE=filename.tape)
+vhs-build-one: demo-repo-rebuild-all vhs-check ## Build a specific VHS tape file (usage: make vhs-build-one TAPE=filename.tape)
 	@echo "$(BLUE)Building VHS screencast: $(TAPE)$(NC)"
 	@if [ -z "$(TAPE)" ]; then \
 		echo "$(YELLOW)Usage: make vhs-build-one TAPE=filename.tape$(NC)"; \
@@ -130,19 +134,40 @@ clean-all: clean demo-clean ## Clean everything including node_modules
 
 demo-repo: ## Create demo repository for tutorials and screencasts
 	@echo "$(BLUE)Creating demo repository...$(NC)"
-	@bash docs/screencasts/bin/repo-setup.sh "$(DEMO_REPO_BASE)"
+	@$(DEMO_REPO_ENV) bash docs/screencasts/bin/repo-setup.sh "$(DEMO_REPO_BASE)"
 	@echo "$(GREEN)Demo repository created at $(DEMO_REPO_BASE)$(NC)"
 
 demo-repo-simple: ## Create simple demo repository for CI and quick testing
 	@echo "$(BLUE)Creating simple demo repository...$(NC)"
-	@bash docs/screencasts/bin/repo-setup-simple.sh "$(DEMO_REPO_BASE)"
+	@$(DEMO_REPO_ENV) bash docs/screencasts/bin/repo-setup-simple.sh "$(DEMO_REPO_BASE)"
+
+demo-repo-workflows: ## Create workflows demo repository for practical workflows screencasts
+	@echo "$(BLUE)Creating workflows demo repository...$(NC)"
+	@$(DEMO_REPO_ENV) bash docs/screencasts/practical-workflows/bin/repo-setup.sh /tmp/workflows-repo
+	@echo "$(GREEN)Workflows demo repository created at /tmp/workflows-repo$(NC)"
+
+demo-repo-beginner: ## Create beginner demo repository for beginner tutorial screencasts
+	@echo "$(BLUE)Creating beginner demo repository...$(NC)"
+	@$(DEMO_REPO_ENV) bash docs/screencasts/hug-for-beginners/bin/repo-setup.sh /tmp/beginner-repo
+	@echo "$(GREEN)Beginner demo repository created at /tmp/beginner-repo$(NC)"
+
+demo-repo-all: demo-repo demo-repo-workflows demo-repo-beginner ## Create all demo repositories
 
 demo-clean: ## Clean demo repository and remote
 	@echo "$(BLUE)Cleaning demo repository...$(NC)"
 	@rm -rf $(DEMO_REPO_BASE) $(DEMO_REPO_BASE).git
 	@echo "$(GREEN)Demo repository cleaned$(NC)"
 
+demo-clean-all: ## Clean all demo repositories
+	@echo "$(BLUE)Cleaning all demo repositories...$(NC)"
+	@rm -rf $(DEMO_REPO_BASE) $(DEMO_REPO_BASE).git
+	@rm -rf /tmp/workflows-repo /tmp/workflows-repo.git
+	@rm -rf /tmp/beginner-repo /tmp/beginner-repo.git
+	@echo "$(GREEN)All demo repositories cleaned$(NC)"
+
 demo-repo-rebuild: demo-clean demo-repo ## Rebuild demo repository from scratch
+
+demo-repo-rebuild-all: demo-clean-all demo-repo-all ## Rebuild all demo repositories from scratch
 
 demo-repo-status: ## Show status of demo repository
 	@echo "$(BLUE)Demo repository status:$(NC)"
@@ -165,4 +190,4 @@ demo-repo-status: ## Show status of demo repository
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
 .PHONY: docs-dev docs-build docs-preview deps-docs
 .PHONY: install check clean clean-all
-.PHONY: demo-repo demo-repo-simple demo-clean demo-repo-rebuild demo-repo-status
+.PHONY: demo-repo demo-repo-simple demo-repo-workflows demo-repo-beginner demo-repo-all demo-clean demo-clean-all demo-repo-rebuild demo-repo-rebuild-all demo-repo-status
