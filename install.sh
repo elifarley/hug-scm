@@ -43,7 +43,7 @@ if test -e "$HOME/.hug-scm"
     set -l hug_home (string match -r 'HUG_HOME=(.*)' -- $hug_config)[2]
     if test -n "$hug_home"
         set -gx HUG_HOME $hug_home
-        set -gx PATH $PATH $HUG_HOME/git-config/bin
+        set -gx PATH $HUG_HOME/git-config/bin $PATH
     end
 end
 EOF
