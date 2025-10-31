@@ -162,6 +162,7 @@ These commands provide intuitive ways to create lightweight and annotated tags, 
   hug twc a1b2c3       # Tags containing specific commit
   ```
 - **Safety**: Read-only query.
+- ![hug twc example](img/hug-twc.png)
 
 ### `hug twp [object]`
 - **Description**: Show tags which point directly at a specific object (defaults to HEAD). This answers "which tags point exactly to this commit?"
@@ -171,6 +172,7 @@ These commands provide intuitive ways to create lightweight and annotated tags, 
   hug twp a1b2c3       # Tags pointing at specific commit
   ```
 - **Safety**: Read-only query.
+- ![hug twp example](img/hug-twp.png)
 
 ## Best Practices
 

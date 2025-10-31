@@ -153,6 +153,7 @@ These commands help inspect which branches relate to specific commits or states.
   hug bwc           # Branches containing HEAD
   ```
 - **Safety**: Read-only.
+- ![hug bwc example](img/hug-bwc.png)
 
 ### `hug bwp [<object>]`
 - **Description**: Show branches that point exactly at a specific object (e.g., commit). Defaults to HEAD.
@@ -161,6 +162,7 @@ These commands help inspect which branches relate to specific commits or states.
   hug bwp HEAD       # Branches pointing at HEAD
   ```
 - **Safety**: Read-only.
+- ![hug bwp example](img/hug-bwp.png)
 
 ### `hug bwnc [<commit>]`
 - **Description**: Show branches that do NOT contain a specific commit. Defaults to HEAD.
@@ -169,6 +171,7 @@ These commands help inspect which branches relate to specific commits or states.
   hug bwnc HEAD      # Branches not containing HEAD
   ```
 - **Safety**: Read-only.
+- ![hug bwnc example](img/hug-bwnc.png)
 
 ### `hug bwm [<commit>]`
 - **Description**: Show branches merged into a specific commit (defaults to HEAD).
@@ -177,6 +180,7 @@ These commands help inspect which branches relate to specific commits or states.
   hug bwm            # Branches merged into HEAD
   ```
 - **Safety**: Read-only.
+- ![hug bwm example](img/hug-bwm.png)
 
 ### `hug bwnm [<commit>]`
 - **Description**: Show branches NOT merged into a specific commit (defaults to HEAD).
@@ -185,6 +189,7 @@ These commands help inspect which branches relate to specific commits or states.
   hug bwnm           # Branches not merged into HEAD
   ```
 - **Safety**: Read-only.
+- ![hug bwnm example](img/hug-bwnm.png)
 
 ## Tips
 - Use `hug b` to review branch status and easily switch via an interactive menu.
