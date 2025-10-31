@@ -53,7 +53,7 @@ EOF
   
   # Set universal PATH for fish (persists across sessions)
   echo "Setting fish universal PATH..."
-  fish -c "set -U fish_user_paths $HUG_HOME/git-config/bin \$fish_user_paths" 2>/dev/null || true
+  fish -c "contains $HUG_HOME/git-config/bin \$fish_user_paths; or set -U fish_user_paths $HUG_HOME/git-config/bin \$fish_user_paths" 2>/dev/null || true
 fi
 
 # Configure .hgrc if it exists

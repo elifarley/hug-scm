@@ -12,6 +12,10 @@ NC := \033[0m # No Color
 
 DEMO_REPO_BASE := /tmp/demo-repo
 
+# Setup PATH for demo repository creation (includes hug commands)
+HUG_BIN_PATH := $(shell pwd)/git-config/bin
+DEMO_REPO_ENV := export PATH="$$PATH:$(HUG_BIN_PATH)" &&
+
 ##@ General
 
 help: ## Display this help message
@@ -130,21 +134,21 @@ clean-all: clean demo-clean ## Clean everything including node_modules
 
 demo-repo: ## Create demo repository for tutorials and screencasts
 	@echo "$(BLUE)Creating demo repository...$(NC)"
-	@export PATH="$$PATH:$(shell pwd)/git-config/bin" && bash docs/screencasts/bin/repo-setup.sh "$(DEMO_REPO_BASE)"
+	@$(DEMO_REPO_ENV) bash docs/screencasts/bin/repo-setup.sh "$(DEMO_REPO_BASE)"
 	@echo "$(GREEN)Demo repository created at $(DEMO_REPO_BASE)$(NC)"
 
 demo-repo-simple: ## Create simple demo repository for CI and quick testing
 	@echo "$(BLUE)Creating simple demo repository...$(NC)"
-	@export PATH="$$PATH:$(shell pwd)/git-config/bin" && bash docs/screencasts/bin/repo-setup-simple.sh "$(DEMO_REPO_BASE)"
+	@$(DEMO_REPO_ENV) bash docs/screencasts/bin/repo-setup-simple.sh "$(DEMO_REPO_BASE)"
 
 demo-repo-workflows: ## Create workflows demo repository for practical workflows screencasts
 	@echo "$(BLUE)Creating workflows demo repository...$(NC)"
-	@export PATH="$$PATH:$(shell pwd)/git-config/bin" && bash docs/screencasts/practical-workflows/bin/repo-setup.sh /tmp/workflows-repo
+	@$(DEMO_REPO_ENV) bash docs/screencasts/practical-workflows/bin/repo-setup.sh /tmp/workflows-repo
 	@echo "$(GREEN)Workflows demo repository created at /tmp/workflows-repo$(NC)"
 
 demo-repo-beginner: ## Create beginner demo repository for beginner tutorial screencasts
 	@echo "$(BLUE)Creating beginner demo repository...$(NC)"
-	@export PATH="$$PATH:$(shell pwd)/git-config/bin" && bash docs/screencasts/hug-for-beginners/bin/repo-setup.sh /tmp/beginner-repo
+	@$(DEMO_REPO_ENV) bash docs/screencasts/hug-for-beginners/bin/repo-setup.sh /tmp/beginner-repo
 	@echo "$(GREEN)Beginner demo repository created at /tmp/beginner-repo$(NC)"
 
 demo-repo-all: demo-repo demo-repo-workflows demo-repo-beginner ## Create all demo repositories
