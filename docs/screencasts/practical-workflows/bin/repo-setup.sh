@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
-# Wrapper functions to ensure all git operations happen in DEMO_REPO_BASE
+# Wrapper function to ensure all git operations happen in DEMO_REPO_BASE
 # This prevents accidental operations in the wrong directory
 git() { (cd "$DEMO_REPO_BASE" && command git "$@") ;}
 
