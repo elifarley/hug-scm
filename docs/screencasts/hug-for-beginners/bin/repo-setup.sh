@@ -40,16 +40,14 @@ echo -e "${BLUE}Creating beginner tutorial repository at ${DEMO_REPO_BASE}${NC}"
 # Clean up any existing repo
 rm -rf "$DEMO_REPO_BASE"
 
-# Setup git user if not already configured
-if [ -z "$(command git config --global user.name 2>/dev/null || true)" ]; then
-    command git config --global user.name "Demo User"
-    command git config --global user.email "demo@example.com"
-fi
-
 # Create local repo
 echo "Initializing empty repository..."
 mkdir -p "$DEMO_REPO_BASE"
 git init -b main
+
+# Setup git user locally (not globally) for reliable VHS execution
+git config user.name "Demo User"
+git config user.email "demo@example.com"
 
 # Create minimal initial content - just enough for a complete tutorial
 echo "Adding minimal initial content..."
