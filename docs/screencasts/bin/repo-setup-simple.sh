@@ -44,12 +44,6 @@ echo -e "${BLUE}Creating simple demo repository at ${DEMO_REPO_BASE}${NC}"
 # Clean up any existing repos
 rm -rf "$DEMO_REPO_BASE" "$REMOTE_BASE"
 
-# Setup git user if not already configured
-if [ -z "$(command git config --global user.name 2>/dev/null || true)" ]; then
-    command git config --global user.name "Demo User"
-    command git config --global user.email "demo@example.com"
-fi
-
 # Create bare remote
 echo "Creating bare remote at ${REMOTE_BASE}..."
 mkdir -p "$REMOTE_BASE"
@@ -60,6 +54,10 @@ echo "Creating local repository at ${DEMO_REPO_BASE}..."
 mkdir -p "$DEMO_REPO_BASE"
 git init -b main
 git remote add origin "$REMOTE_BASE"
+
+# Setup git user locally (not globally) for reliable VHS execution
+git config user.name "Demo User"
+git config user.email "demo@example.com"
 
 # Create initial content
 echo "Adding initial content..."
