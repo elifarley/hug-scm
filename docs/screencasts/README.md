@@ -11,13 +11,14 @@ VHS (Video Handshake) is a tool for generating terminal GIFs and screenshots fro
 ```
 screencasts/
 ├── bin/
-│   ├── vhs-build.sh       # Script to build GIFs/PNGs from tape files
-│   └── repo-setup.sh      # Script to create demo repository
-├── *.tape                 # VHS tape files (input)
-└── README.md             # This file
+│   ├── vhs-build.sh            # Script to build GIFs/PNGs from tape files
+│   ├── vhs-strip-metadata.sh   # Strip metadata for deterministic images
+│   └── repo-setup.sh           # Script to create demo repository
+├── *.tape                      # VHS tape files (input)
+└── README.md                  # This file
 
 Generated outputs go to:
-└── ../commands/img/       # Generated GIFs and PNGs (output)
+└── ../commands/img/            # Generated GIFs and PNGs (output)
 ```
 
 ## Prerequisites
@@ -98,6 +99,10 @@ make vhs
 make vhs-build
 ```
 
+This will:
+1. Build all `.tape` files in the screencasts directory
+2. Strip metadata from generated images to ensure deterministic output
+
 ### Build Specific Tape
 
 ```bash
@@ -105,6 +110,22 @@ make vhs-build-one TAPE=hug-lol.tape
 # or directly
 bash docs/screencasts/bin/vhs-build.sh hug-lol.tape
 ```
+
+**Note:** When using Makefile targets, metadata is automatically stripped. When using the script directly, you'll need to run `make vhs-strip-metadata` afterwards.
+
+### Strip Metadata (Make Images Deterministic)
+
+Generated PNG and GIF files contain timestamps that change on each build. To make images deterministic (same content = same bytes), strip the metadata:
+
+```bash
+make vhs-strip-metadata
+# or directly
+bash docs/screencasts/bin/vhs-strip-metadata.sh
+```
+
+This removes embedded timestamps and other non-deterministic metadata from all images in `docs/**/img/` directories, ensuring that regenerating images produces identical files if the content hasn't changed.
+
+**Why this matters:** Deterministic images prevent unnecessary git commits when regenerating documentation images, as unchanged images will have identical checksums.
 
 ### Preview Without Building (Dry Run)
 
