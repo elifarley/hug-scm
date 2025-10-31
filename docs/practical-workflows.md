@@ -23,6 +23,8 @@ This workflow is the backbone of most feature development.
 1.  **Switch to the main branch**: `hug b main` (**B**ranch)
 2.  **Get the latest updates**: `hug bpullr` (**B**ranch **Pull** with **R**ebase)
 3.  **Create your feature branch**: `hug bc feature/user-authentication` (**B**ranch **C**reate`)
+
+![Creating a new feature branch](img/practical-workflows/branch-create.png)
  
 **Why it works:** This sequence ensures you start from the most recent version of the main branch, which helps prevent merge conflicts later. Using `bpullr` maintains a clean, linear project history.
 
@@ -50,6 +52,8 @@ This is where you'll spend most of your time: writing code and saving progress. 
 3.  **Fix the bug, merge it, and return**: `# ... do the work ...`
 4.  **Resume your work**: `hug b feature/user-authentication` and then `hug w unwip` (**Un**park **WIP**). Select the WIP branch you created.
     *   This squash-merges the work from the WIP branch back into your feature branch, restoring your changes so you can continue where you left off.
+
+![WIP workflow in action](img/practical-workflows/wip-workflow.png)
  
 The WIP workflow is a safer, more robust alternative to `git stash`. See the [WIP Workflow Guide](commands/working-dir.md#wip-workflow) for more details.
  
@@ -60,6 +64,8 @@ The WIP workflow is a safer, more robust alternative to `git stash`. See the [WI
 1.  **Stage the missing file**: `hug a forgotten-file.js` (**A**dd)
 2.  **Modify the most recent commit**: `hug cm` (**C**ommit **M**odify)
     *   This opens your editor with the last commit message, allowing you to edit it. When you save and close, the staged changes will be added to that commit instead of creating a new one. This keeps your history clean.
+
+![Modifying the last commit](img/practical-workflows/commit-modify.png)
  
 ### 3. Preparing for Review
 **Scenario:** Your feature is complete! Before you create a pull request, you want to clean up your commit history. You might have several "WIP" or "fixup" commits that should be combined into one or two logical commits.
@@ -153,6 +159,7 @@ There are two main ways to undo work, depending on whether the mistake is public
 *   **Local Mistake: "I just made a bad commit on my machine."**
     *   **Solution**: `hug h back` (**H**EAD **B**ack). This moves the branch pointer back one commit but **keeps your changes staged**. You can edit them and re-commit correctly. It's the safest way to undo a local commit.
     *   Use `hug h undo` (**H**EAD **Undo**) to do the same, but leave the changes in your working directory (unstaged).
+    *   ![Undoing a local commit](img/practical-workflows/head-back.png)
  
 *   **Public Mistake: "I pushed a commit that broke the build."**
     *   **Solution**: `hug revert <commit-hash>` (**Revert** a commit). This creates a *new* commit that is the exact opposite of the bad commit.
@@ -189,6 +196,8 @@ hug bpush
 
 **Why this works:** Cherry-picking preserves the original commit metadata while applying changes to a different base. Perfect for maintaining multiple release branches.
 
+![Cherry-picking commits between branches](img/practical-workflows/cherry-pick.png)
+
 ### Workflow 2: Reorganizing Work Across Branches
 
 **Scenario:** You've been working on `feature/big-refactor` and made 10 commits. The last 3 commits are actually a separate, smaller feature that should be on its own branch for easier review.
@@ -213,6 +222,8 @@ hug b feature/big-refactor
 ```
 
 **The magic:** In one command, you've split your work into two logical branches without any complex rebasing or manual commit tracking.
+
+![Moving commits to a different branch](img/practical-workflows/commit-move.png)
 
 ### Workflow 3: Collecting Fixes from Multiple Branches
 
