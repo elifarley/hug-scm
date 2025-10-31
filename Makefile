@@ -130,21 +130,21 @@ clean-all: clean demo-clean ## Clean everything including node_modules
 
 demo-repo: ## Create demo repository for tutorials and screencasts
 	@echo "$(BLUE)Creating demo repository...$(NC)"
-	@bash docs/screencasts/bin/repo-setup.sh "$(DEMO_REPO_BASE)"
+	@export PATH="$$PATH:$(shell pwd)/git-config/bin" && bash docs/screencasts/bin/repo-setup.sh "$(DEMO_REPO_BASE)"
 	@echo "$(GREEN)Demo repository created at $(DEMO_REPO_BASE)$(NC)"
 
 demo-repo-simple: ## Create simple demo repository for CI and quick testing
 	@echo "$(BLUE)Creating simple demo repository...$(NC)"
-	@bash docs/screencasts/bin/repo-setup-simple.sh "$(DEMO_REPO_BASE)"
+	@export PATH="$$PATH:$(shell pwd)/git-config/bin" && bash docs/screencasts/bin/repo-setup-simple.sh "$(DEMO_REPO_BASE)"
 
 demo-repo-workflows: ## Create workflows demo repository for practical workflows screencasts
 	@echo "$(BLUE)Creating workflows demo repository...$(NC)"
-	@bash docs/screencasts/practical-workflows/bin/repo-setup.sh /tmp/workflows-repo
+	@export PATH="$$PATH:$(shell pwd)/git-config/bin" && bash docs/screencasts/practical-workflows/bin/repo-setup.sh /tmp/workflows-repo
 	@echo "$(GREEN)Workflows demo repository created at /tmp/workflows-repo$(NC)"
 
 demo-repo-beginner: ## Create beginner demo repository for beginner tutorial screencasts
 	@echo "$(BLUE)Creating beginner demo repository...$(NC)"
-	@bash docs/screencasts/hug-for-beginners/bin/repo-setup.sh /tmp/beginner-repo
+	@export PATH="$$PATH:$(shell pwd)/git-config/bin" && bash docs/screencasts/hug-for-beginners/bin/repo-setup.sh /tmp/beginner-repo
 	@echo "$(GREEN)Beginner demo repository created at /tmp/beginner-repo$(NC)"
 
 demo-repo-all: demo-repo demo-repo-workflows demo-repo-beginner ## Create all demo repositories
