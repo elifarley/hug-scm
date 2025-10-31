@@ -13,26 +13,29 @@ BLUE='\033[0;34m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
+# Wrapper function to ensure all git operations happen in DEMO_REPO_BASE
+# This prevents accidental operations in the wrong directory
+git() { (cd "$DEMO_REPO_BASE" && command git "$@") ;}
+
 echo -e "${BLUE}Creating beginner tutorial repository at ${DEMO_REPO_BASE}${NC}"
 
 # Clean up any existing repo
 rm -rf "$DEMO_REPO_BASE"
 
 # Setup git user if not already configured
-if [ -z "$(git config --global user.name 2>/dev/null || true)" ]; then
-    git config --global user.name "Demo User"
-    git config --global user.email "demo@example.com"
+if [ -z "$(command git config --global user.name 2>/dev/null || true)" ]; then
+    command git config --global user.name "Demo User"
+    command git config --global user.email "demo@example.com"
 fi
 
 # Create local repo
 echo "Initializing empty repository..."
 mkdir -p "$DEMO_REPO_BASE"
-cd "$DEMO_REPO_BASE"
 git init -b main
 
 # Create minimal initial content - just enough for a complete tutorial
 echo "Adding minimal initial content..."
-cat > README.md << 'EOF'
+cat > "$DEMO_REPO_BASE/README.md" << 'EOF'
 # My First Project
 
 A simple project to learn version control.

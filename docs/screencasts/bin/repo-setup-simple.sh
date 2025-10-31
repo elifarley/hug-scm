@@ -14,33 +14,38 @@ BLUE='\033[0;34m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
+# Wrapper function to ensure all git operations happen in DEMO_REPO_BASE
+# This prevents accidental operations in the wrong directory
+git() { (cd "$DEMO_REPO_BASE" && command git "$@") ;}
+
+# Function for git operations in the remote (bare) repo
+git_remote() { (cd "$REMOTE_BASE" && command git "$@") ;}
+
 echo -e "${BLUE}Creating simple demo repository at ${DEMO_REPO_BASE}${NC}"
 
 # Clean up any existing repos
 rm -rf "$DEMO_REPO_BASE" "$REMOTE_BASE"
 
 # Setup git user if not already configured
-if [ -z "$(git config --global user.name 2>/dev/null || true)" ]; then
-    git config --global user.name "Demo User"
-    git config --global user.email "demo@example.com"
+if [ -z "$(command git config --global user.name 2>/dev/null || true)" ]; then
+    command git config --global user.name "Demo User"
+    command git config --global user.email "demo@example.com"
 fi
 
 # Create bare remote
 echo "Creating bare remote at ${REMOTE_BASE}..."
 mkdir -p "$REMOTE_BASE"
-cd "$REMOTE_BASE"
-git init --bare
+git_remote init --bare
 
 # Create local repo
 echo "Creating local repository at ${DEMO_REPO_BASE}..."
 mkdir -p "$DEMO_REPO_BASE"
-cd "$DEMO_REPO_BASE"
 git init -b main
 git remote add origin "$REMOTE_BASE"
 
 # Create initial content
 echo "Adding initial content..."
-cat > README.md << 'EOF'
+cat > "$DEMO_REPO_BASE/README.md" << 'EOF'
 # Demo Repository
 
 This is a demo repository for Hug SCM documentation and screencasts.
@@ -48,13 +53,13 @@ EOF
 git add README.md
 git commit -m "Initial commit"
 
-cat > app.js << 'EOF'
+cat > "$DEMO_REPO_BASE/app.js" << 'EOF'
 console.log('hello');
 EOF
 git add app.js
 git commit -m "feat: Add main app"
 
-cat > .gitignore << 'EOF'
+cat > "$DEMO_REPO_BASE/.gitignore" << 'EOF'
 node_modules/
 dist/
 .env
@@ -70,13 +75,13 @@ git push -u origin main
 echo "Creating feature branch..."
 git checkout -b feature/search
 
-cat > search.js << 'EOF'
+cat > "$DEMO_REPO_BASE/search.js" << 'EOF'
 // Search functionality
 EOF
 git add search.js
 git commit -m "feat: Add search module"
 
-cat >> search.js << 'EOF'
+cat >> "$DEMO_REPO_BASE/search.js" << 'EOF'
 function search(query) { 
     // Implementation here
 }
