@@ -58,6 +58,7 @@ vhs-check: vhs-deps-install ## Check if VHS is installed
 vhs: demo-repo-rebuild-all vhs-deps-install ## Build all GIF/PNG images from VHS tape files
 	@echo "$(BLUE)Building all VHS screencasts...$(NC)"
 	@bash docs/screencasts/bin/vhs-build.sh --all
+	@$(MAKE) vhs-strip-metadata
 
 vhs-build: vhs ## Alias for vhs target
 
@@ -68,10 +69,16 @@ vhs-build-one: demo-repo-rebuild-all vhs-check ## Build a specific VHS tape file
 		exit 1; \
 	fi
 	@bash docs/screencasts/bin/vhs-build.sh "$(TAPE)"
+	@$(MAKE) vhs-strip-metadata
 
 vhs-dry-run: ## Show what would be built without building
 	@echo "$(BLUE)Dry run - showing what would be built...$(NC)"
 	@bash docs/screencasts/bin/vhs-build.sh --dry-run --all
+
+vhs-strip-metadata: ## Strip metadata from all PNG/GIF images to make them deterministic
+	@echo "$(BLUE)Stripping metadata from images...$(NC)"
+	@bash docs/screencasts/bin/vhs-strip-metadata.sh
+	@echo "$(GREEN)Metadata stripped successfully$(NC)"
 
 vhs-clean: ## Remove generated GIF/PNG files from VHS
 	@bash docs/screencasts/bin/vhs-clean.sh
@@ -83,6 +90,7 @@ vhs-regenerate: demo-repo vhs-deps-install ## Regenerate VHS images for CI (demo
 	@bash docs/screencasts/bin/vhs-cleanup-frames.sh
 	@echo "$(BLUE)Verifying cleanup...$(NC)"
 	@bash docs/screencasts/bin/vhs-cleanup-frames.sh --verify-strict
+	@$(MAKE) vhs-strip-metadata
 	@echo "$(GREEN)VHS images regenerated successfully$(NC)"
 
 vhs-commit-push: ## Commit and push VHS image changes (for CI/automation)
