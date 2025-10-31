@@ -70,9 +70,7 @@ vhs-dry-run: ## Show what would be built without building
 	@bash docs/screencasts/bin/vhs-build.sh --dry-run --all
 
 vhs-clean: ## Remove generated GIF/PNG files from VHS
-	@echo "$(BLUE)Cleaning VHS generated images...$(NC)"
-	@rm -f docs/commands/img/hug-*.gif docs/commands/img/hug-*.png
-	@echo "$(GREEN)VHS images cleaned$(NC)"
+	@bash docs/screencasts/bin/vhs-clean.sh
 
 vhs-regenerate: demo-repo vhs-deps-install ## Regenerate VHS images for CI (demo + essential tapes)
 	@echo "$(BLUE)Regenerating VHS images...$(NC)"
