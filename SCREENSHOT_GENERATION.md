@@ -85,7 +85,8 @@ make vhs
 This will:
 1. Process all `.tape` files in `docs/screencasts/`
 2. Generate PNG images in `docs/commands/img/`
-3. Replace the placeholder images with actual terminal screenshots
+3. Strip metadata to ensure deterministic output (same content = same bytes)
+4. Replace the placeholder images with actual terminal screenshots
 
 ### Generate Specific Screenshots
 
@@ -102,6 +103,9 @@ cd docs/screencasts
 vhs hug-la.tape
 vhs hug-ll.tape
 vhs hug-lp.tape
+# Then strip metadata for deterministic output
+cd ../..
+make vhs-strip-metadata
 ```
 
 ### Verify Generated Images
