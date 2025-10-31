@@ -93,6 +93,8 @@ hug aa
 
 Now's a good time to try the `hug sl` (**S**tatus + **L**ist) command to get the status line plus a list of changed files.
 
+![Staging files with hug aa](img/hug-for-beginners/hug-aa.png)
+
 ### Step 5: Create a Save Point (`hug c`)
 
 Once your changes are on the "preparation counter," you can create a permanent snapshot, called a **commit**.
@@ -107,6 +109,8 @@ hug c -m "Created my first file"
 ```
 
 `hug c` (**C**ommit) takes everything on the preparation counter and saves it to your project's history. The message is crucial - it's the note you're leaving for your future self!
+
+![Creating a commit with hug c](img/hug-for-beginners/hug-c.png)
 
 ### The Loop
 
@@ -157,6 +161,8 @@ hug bc new-idea
 
 `hug bc` (**B**ranch: **C**reate) does two things: it creates a new lab room called `new-idea` and immediately moves you inside it.
 
+![Creating a new branch with hug bc](img/hug-for-beginners/hug-bc.png)
+
 ### 2. Work in Your New Room
 
 Now you're in the `new-idea` room. You can make changes, stage them, and commit them, just like before. This history is completely separate from your main work.
@@ -177,6 +183,8 @@ hug b main
 
 `hug b` (**B**ranch) switches you between lab rooms. Notice that `idea.txt` has vanished from your lab table! It's safely stored in the `new-idea` room, waiting for you.
 
+![Switching branches with hug b](img/hug-for-beginners/hug-b-switch.png)
+
 > [!TIP]
 > Execute `hug b` without passing a branch name to get an interactive menu showing you all available branches.
 
@@ -193,6 +201,8 @@ hug m new-idea # This brings in the changes from that branch
 hug c -m "Incorporate the new idea"
 ```
 
+![Merging branches with hug m](img/hug-for-beginners/hug-m.png)
+
 > [!TIP]
 > Learn more about [`m*` commands](commands/merge.md) and the [WIP workflow](commands/working-dir.md#wip-workflow)
 
@@ -206,14 +216,17 @@ Hug makes it safe to fix common mistakes and handle interruptions without losing
       hug wip "Pausing work on the login form"
       ```
       When you're ready to return, `hug w unwip` (**Un**park **WIP**) will bring your changes right back.
+    -   ![Using hug wip to save work in progress](img/hug-for-beginners/hug-wip.png)
 
 -   **Mistake #1: "I made a typo in my file, but I haven't committed yet."**
     -   **Solution**: Just discard the changes from your lab table.
     -   `hug w discard hello.txt` (**W**orking directory **Discard**)
+    -   ![Discarding changes with hug w discard](img/hug-for-beginners/hug-w-discard.png)
 
 -   **Mistake #2: "I just made a commit, but it was wrong!"**
     -   **Solution**: Tell your lab assistant to roll back the timeline by one step, but leave all your files on the lab table so you can fix them.
     -   `hug h back` (**H**EAD **B**ack)
+    -   ![Rolling back a commit with hug h back](img/hug-for-beginners/hug-h-back.png)
 
 ## Next Steps
 

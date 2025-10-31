@@ -193,27 +193,35 @@ install_vhs() {
 #==============================================================================
 
 find_tape_files() {
-    find "$SCREENCASTS_DIR" -maxdepth 1 ! -name setup.tape -name "*.tape" -type f | sort
+    # Find all .tape files in screencasts directory and subdirectories
+    # Exclude setup.tape files at any level
+    find "$SCREENCASTS_DIR" -name "*.tape" -type f ! -name "setup.tape" | sort
 }
 
 build_single_tape() {
     local tape_file=$1
-    local tape_name
-    tape_name=$(basename "$tape_file")
+    local tape_name tape_dir tape_basename rel_path
+    
+    tape_basename=$(basename "$tape_file")
+    tape_dir=$(dirname "$tape_file")
+    
+    # Calculate relative path from screencasts dir for display
+    rel_path="${tape_file#$SCREENCASTS_DIR/}"
     
     if [[ "$DRY_RUN" == "true" ]]; then
-        echo "  [DRY RUN] Would build: $tape_name"
+        echo "  [DRY RUN] Would build: $rel_path"
         return 0
     fi
     
-    info "Building: $tape_name"
+    info "Building: $rel_path"
     
-    # Run VHS in the screencasts directory
-    if (cd "$SCREENCASTS_DIR" && vhs "$tape_name" 2>&1); then
-        success "  ✓ $tape_name"
+    # Run VHS in the directory containing the tape file
+    # This ensures relative paths in Source and Screenshot work correctly
+    if (cd "$tape_dir" && vhs "$tape_basename" 2>&1); then
+        success "  ✓ $rel_path"
         return 0
     else
-        warn "  ✗ Failed: $tape_name"
+        warn "  ✗ Failed: $rel_path"
         return 1
     fi
 }
