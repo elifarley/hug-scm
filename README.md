@@ -1,15 +1,11 @@
 # Hug SCM - The Humane Source Control Management Interface
 
-Try it now:
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/elifarley/hug-scm)
+[![Tests](https://github.com/elifarley/hug-scm/actions/workflows/test.yml/badge.svg)](https://github.com/elifarley/hug-scm/actions/workflows/test.yml) [![Deploy Docs to GitHub Pages](https://github.com/elifarley/hug-scm/actions/workflows/deploy-docs.yml/badge.svg)](https://github.com/elifarley/hug-scm/actions/workflows/deploy-docs.yml) [![Regenerate VHS Images](https://github.com/elifarley/hug-scm/actions/workflows/regenerate-vhs-images.yml/badge.svg)](https://github.com/elifarley/hug-scm/actions/workflows/regenerate-vhs-images.yml)
 
-[View Documentation](https://elifarley.github.io/hug-scm/)
+A humane, intuitive interface for Git and other version control systems. Hug transforms complex and forgettable Git commands into a simple, predictable language that feels natural to use, keeping you focused on your code, not on wrestling with version control.
 
-A humane, intuitive interface for Git and other version control systems.
-
-Works as a universal language to control the underlying SCM tool you use.
-
-Hug transforms complex and forgettable Git commands into a simple, predictable language that feels natural to use, keeping you focused on your code, not on wrestling with version control.
+| [**&rarr; View the Documentation**](https://elifarley.github.io/hug-scm/) | [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/elifarley/hug-scm) |
+| :--- | :--- |
 
 ![Made with VHS](https://vhs.charm.sh/vhs-4D3aNvebEOccORctJOta77.gif)
 

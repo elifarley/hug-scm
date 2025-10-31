@@ -38,3 +38,12 @@ Dive into detailed guides for command groups:
 - **Most recent commit touching a file**: Use `hug llf <file> -1` to get the latest commit modifying a specific file (handles renames with `--follow`). For multiple files, run separately and compare timestamps, or use `hug llf file1 -1` and `hug llf file2 -1`.
 - **Last N commits for a file**: `hug llf <file> -N` (e.g., `-2` for last 2). Use `hug llfp <file> -1` for patches or `hug llfs <file> -1` for changes.
 - **Search history by file changes**: Combine with `lf` or `lc` for message/code searches restricted to file touches.
+
+---
+
+## Build Status
+
+[![Deploy Docs to GitHub Pages](https://github.com/elifarley/hug-scm/actions/workflows/deploy-docs.yml/badge.svg)](https://github.com/elifarley/hug-scm/actions/workflows/deploy-docs.yml)
+[![Run Tests](https://github.com/elifarley/hug-scm/actions/workflows/test.yml/badge.svg)](https://github.com/elifarley/hug-scm/actions/workflows/test.yml)
+[![Regenerate VHS Images](https://github.com/elifarley/hug-scm/actions/workflows/regenerate-vhs-images.yml/badge.svg)](https://github.com/elifarley/hug-scm/actions/workflows/regenerate-vhs-images.yml)
+[![Copilot Setup Steps](https://github.com/elifarley/hug-scm/actions/workflows/copilot-setup-steps.yml/badge.svg)](https://github.com/elifarley/hug-scm/actions/workflows/copilot-setup-steps.yml)
