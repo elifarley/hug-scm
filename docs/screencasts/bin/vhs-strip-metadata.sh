@@ -41,6 +41,9 @@ readonly NC='\033[0m'
 # Options (defaults)
 DRY_RUN=false
 
+# ImageMagick command (will be set by check_imagemagick)
+CONVERT_CMD=""
+
 #==============================================================================
 # Output Functions
 #==============================================================================
@@ -60,8 +63,17 @@ error()   { msg "$RED"    "ERROR: $*" >&2; exit 1; }
 #==============================================================================
 
 check_imagemagick() {
-    if ! command -v convert &> /dev/null; then
-        error "ImageMagick's 'convert' command not found.\nInstall it with: sudo apt-get install imagemagick"
+    # Check if ImageMagick is available (try both v7 'magick' and v6 'convert')
+    if command -v magick &> /dev/null; then
+        # ImageMagick 7+ uses 'magick' command
+        CONVERT_CMD="magick"
+        return 0
+    elif command -v convert &> /dev/null; then
+        # ImageMagick 6 uses 'convert' command
+        CONVERT_CMD="convert"
+        return 0
+    else
+        error "ImageMagick not found.\nInstall it with: sudo apt-get install imagemagick"
     fi
 }
 
@@ -77,8 +89,8 @@ strip_image_metadata() {
     # Create temp file for the stripped version
     local temp_file="${image_file}.tmp"
     
-    # Strip metadata using ImageMagick
-    if convert "$image_file" -strip "$temp_file" 2>/dev/null; then
+    # Strip metadata using ImageMagick (supports both v6 'convert' and v7 'magick')
+    if "$CONVERT_CMD" "$image_file" -strip "$temp_file" 2>/dev/null; then
         # Replace original with stripped version
         mv "$temp_file" "$image_file"
         return 0
@@ -91,8 +103,8 @@ strip_image_metadata() {
 }
 
 find_image_files() {
-    # Find all PNG and GIF files in docs/**/img/ directories
-    find "$DOCS_DIR" -type d -name "img" -exec find {} -type f \( -name "*.png" -o -name "*.gif" \) \; | sort
+    # Find all PNG and GIF files in docs/**/img/ directories using a single find command
+    find "$DOCS_DIR" -path "*/img/*" -type f \( -name "*.png" -o -name "*.gif" \) | sort
 }
 
 process_images() {
