@@ -1,3 +1,4 @@
+# Builds and deploys documentation to GitHub Pages
 name: Deploy Docs to GitHub Pages
 
 on:

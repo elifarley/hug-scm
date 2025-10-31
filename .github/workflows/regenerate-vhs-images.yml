@@ -1,3 +1,4 @@
+# Automatically regenerates VHS documentation images on a monthly schedule or manual trigger.
 name: Regenerate VHS Documentation Images
 
 on:
