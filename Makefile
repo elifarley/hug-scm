@@ -77,8 +77,7 @@ vhs-dry-run: ## Show what would be built without building
 
 vhs-strip-metadata: ## Strip metadata from all PNG/GIF images to make them deterministic
 	@echo "$(BLUE)Stripping metadata from images...$(NC)"
-	@bash docs/screencasts/bin/vhs-strip-metadata.sh
-	@echo "$(GREEN)Metadata stripped successfully$(NC)"
+	@bash docs/screencasts/bin/vhs-strip-metadata.sh && echo "$(GREEN)Metadata stripped successfully$(NC)"
 
 vhs-clean: ## Remove generated GIF/PNG files from VHS
 	@bash docs/screencasts/bin/vhs-clean.sh
