@@ -18,6 +18,9 @@ This is a powerful tool and should be used with care, especially on branches sha
 
 ## Initiating a Rebase
 
+> [!NOTE]
+> A rebase can also be initiated by other commands, such as `hug bpullr` when pulling changes from a remote branch. The conflict resolution workflow described below applies in those cases as well.
+
 ### `hug rb <branch-name>`
 -   **Description**: Updates your current branch by re-applying its commits on top of the latest commit from `<branch-name>`. This is the standard way to update a feature branch with the latest changes from `main`.
 - **Example**:
