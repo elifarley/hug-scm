@@ -465,12 +465,6 @@
   #  REBASE OPERATIONS
   # ═══════════════════════════════════════════════════════════════════
 
-  # Rebase current branch onto another branch
-  # Usage: hug rb <branch>
-  #   hug rb main       → rebase current branch onto main
-  #   hug rb origin/main → rebase onto remote main
-  rb = rebase
-
   # Rebase interactive (clean up commits)
   # Usage: hug rbi [commit]
   #   hug rbi           → interactive rebase from root

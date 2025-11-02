@@ -16,7 +16,7 @@ This is a powerful tool and should be used with care, especially on branches sha
 | `hug rbc-current` | **R**ebase **C**ontinue (with) **Current** | Resolve conflict with **current** version & continue |
 | `hug rbc-other` | **R**ebase **C**ontinue (with) **Other** | Resolve conflict with **other** version & continue |
 
-## Commands
+## Initiating a Rebase
 
 ### `hug rb <branch-name>`
 -   **Description**: Updates your current branch by re-applying its commits on top of the latest commit from `<branch-name>`. This is the standard way to update a feature branch with the latest changes from `main`.
@@ -42,7 +42,15 @@ This is a powerful tool and should be used with care, especially on branches sha
 
 ## Rebase Conflict Workflow
 
-The following commands are used when a rebase is **paused** due to a merge conflict.
+> [!TIP] 💡 Key Concept: "Current" Branch vs. "Other" Branch
+> When a rebase stops for a conflict, you must understand which version is which:
+>
+> - **Current** Branch: The changes from the branch you are on and rebasing (e.g., `my-feature`). This is **your** code.
+> - **Other** Branch: The changes from the branch you are rebasing *onto* (e.g., `main`). This is the **incoming** code.
+>
+> Our `rbc-current` and `rbc-other` commands use this logic to resolve conflicts for you.
+
+The following commands are used when a rebase is **paused** due to a conflicting commit.
 
 ### `hug rba`
 -   **Description**: This is your "undo" button. It completely **aborts** the entire rebase operation and returns your branch to the state it was in before you started.
@@ -53,25 +61,14 @@ The following commands are used when a rebase is **paused** due to a merge confl
 ### `hug rbs`
 -   **Description**: Skips the current commit and continues with the rebase. This is rarely needed but can be useful if a commit's changes are no longer relevant.
 
----
-
-> ### 💡 Key Concept: "Current" vs. "Other"
->
-> When a rebase stops for a conflict, you must understand which version is which:
->
-> * **Current**: The changes from the branch you are on and rebasing (e.g., `my-feature`). This is **your** code.
-> * **Other**: The changes from the branch you are rebasing *onto* (e.g., `main`). This is the **incoming** code.
->
-> Our `rbc-current` and `rbc-other` commands use this logic to resolve conflicts for you.
-
 ### `hug rbc-current [--all]`
--   **Description**: Resolves the *current* conflict by automatically choosing the version from your **current** (feature) branch.
+-   **Description**: Resolves a conflicting commit by automatically choosing the version from your **current** branch.
 -   **Behavior**:
-    * **Without `--all`**: Resolves the *current* conflict with your changes, stages them, and **continues** to the next commit (which may also have conflicts).
-    * **With `--all`**: Resolves the current conflict and applies the **same strategy** to all *future* conflicts in this rebase, allowing it to run to completion automatically.
+    - **Without `--all`**: Resolves all conflicts in *one* commit with **your** changes, stages them, and **continues** to the next commit (which may also have conflicts).
+    - **With `--all`**: Resolves all conflicts in **ALL** conflicting commits of this rebase operation, applying the **same strategy** to them all, allowing it to run to completion automatically.
 
 ### `hug rbc-other [--all]`
--   **Description**: Resolves the *current* conflict by automatically choosing the version from the **other** (target) branch (e.g., `main`).
+-   **Description**: Resolves a conflicting commit by automatically choosing the version from the **other** (target) branch (e.g., `main`).
 -   **Behavior**:
-    * **Without `--all`**: Resolves the *current* conflict with the incoming changes, stages them, and **continues** to the next commit.
-    * **With `--all`**: Resolves the current conflict and applies the **same strategy** to all *future* conflicts, allowing it to run to completion automatically.
+    - **Without `--all`**: Resolves all conflicts in *one* commit with the **incoming** changes, stages them, and **continues** to the next commit (which may also have conflicts).
+    - **With `--all`**: Resolves all conflicts in **ALL** conflicting commits of this rebase operation, applying the **same strategy** to them all, allowing it to run to completion automatically.

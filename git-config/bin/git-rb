@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+# shellcheck source=../lib/hug-common
+. "$CMD_BASE/../lib/hug-common"
+# shellcheck source=../lib/hug-git-kit
+. "$CMD_BASE/../lib/hug-git-kit"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+show_help() {
+    cat << EOF
+hug rb: Rebase the current branch onto a target branch, with automatic backup.
+
+USAGE:
+    hug rb <target-branch> [--dry-run] [-f, --force] [--quiet] [--no-backup] [-h, --help]
+
+OPTIONS:
+    --dry-run      Preview the rebase operation without applying changes
+    -f, --force    Skip checks (e.g., working tree clean) and confirmation prompts (sets HUG_FORCE=true)
+    --quiet        Suppress output (sets HUG_QUIET=T)
+    --no-backup    Skip creating a backup branch (dangerous; use with caution)
+    -h, --help     Show this help
+
+DESCRIPTION:
+    Rebases the current branch onto the specified target branch (e.g., 'main').
+    Automatically creates a backup branch before rebasing for safety.
+    If conflicts occur, the rebase pauses; use 'hug rbc', 'hug rbc-current', or 'hug rbc-other' to resolve.
+    To abort, run 'hug rba'.
+    WARNING: Rebasing rewrites history. Ensure your branch is pushed only to personal remotes.
+
+EXAMPLES:
+    hug rb main                    # Rebase current branch onto main (with backup and preview)
+    hug rb main --dry-run          # Preview commits and changes without rebasing
+    hug rb develop -f --no-backup  # Force rebase without checks or backup
+
+SEE ALSO:
+    hug rba        Abort the current rebase
+    hug rbc        Continue rebase after manual conflict resolution
+    hug rbc-current Pick current branch version for conflicts
+    hug rbc-other  Pick target branch version for conflicts
+EOF
+# Parse common flags (--dry-run, -f|--force, --quiet, -h|--help)
+eval "$(parse_common_flags "$@")"
+
+# Custom flag parsing
+no_backup=false
+target_branch=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-backup)
+      no_backup=true
+      shift
+      ;;
+    -*)
+      error "Unknown option: $1. See 'hug rb --help'."
+      ;;
+    *)
+      if [[ -n "$target_branch" ]]; then
+        error "Only one target branch allowed. See 'hug rb --help'."
+      fi
+      target_branch="$1"
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$target_branch" ]]; then
+  error "Missing target branch. See 'hug rb --help'."
+fi
+
+# --- Internal function for 'hug rb' ---
+hug_rb() {
+  local target_branch="$1"
+  local current_branch
+  local backup_name
+
+  check_git_repo
+
+  # Validate target branch exists
+  ensure_commit_exists "$target_branch"
+
+  current_branch=$(git rev-parse --abbrev-ref HEAD)
+  if [[ "$current_branch" == "HEAD" ]]; then
+    error "You are in detached HEAD state. Please check out a branch first."
+  fi
+
+  # Check if already on target
+  if [[ "$current_branch" == "$target_branch" ]]; then
+    info "Already on '$target_branch'; nothing to rebase."
+    return 0
+  fi
+
+  # Check working tree unless forced
+  if [[ ${HUG_FORCE:-} != true ]]; then
+    if has_pending_changes; then
+      check_working_tree_clean
+    fi
+  else
+    warning "Force mode: Skipping working tree clean check (uncommitted changes may be lost)."
+  fi
+
+  local dry_run="${dry_run:-false}"
+
+  if [[ ${dry_run} == true ]]; then
+    local num_commits
+    num_commits=$(count_commits_in_range "$target_branch" HEAD)
+    local commit_word="commit"
+    [[ $num_commits -gt 1 ]] && commit_word="commits"
+
+    info "Dry run: Previewing rebase of current branch onto '$target_branch'."
+
+    printf 'Commits that would be rebased:\n' >&2
+    print_commit_list_in_range "$target_branch" HEAD >&2
+
+    local range_for_diff="$target_branch..HEAD"
+    if git diff --quiet "$range_for_diff"; then
+      printf '\nPreview: no file changes in %d %s.\n' "$num_commits" "$commit_word" >&2
+    else
+      printf '\nPreview: changes in %d %s:\n' "$num_commits" "$commit_word" >&2
+      git diff --stat "$range_for_diff" >&2
+    fi
+
+    print_dry_run_preview "be rebased onto $target_branch"
+    return 0
+  fi
+
+  # Create backup unless skipped
+  if [[ ${no_backup} != true ]]; then
+    backup_name=$(create_backup_branch HEAD "$current_branch")
+    if [[ $? -ne 0 ]]; then
+      warn "Rebase aborted due to backup failure."
+      return 1
+    fi
+    tip "Backup of '$current_branch' created at: $backup_name"
+  else
+    if [[ ${HUG_FORCE:-} != true ]]; then
+      error "--no-backup requires --force for safety."
+    fi
+    warning "Skipping backup branch creation (as requested with --force)."
+  fi
+
+  # Confirmation unless forced or quiet
+  if [[ ${HUG_QUIET:-} != T && ${HUG_FORCE:-} != true ]]; then
+    local num_commits
+    num_commits=$(count_commits_in_range "$target_branch" HEAD)
+    local commit_word="commit"
+    [[ $num_commits -gt 1 ]] && commit_word="commits"
+
+    printf 'Commits to be rebased:\n' >&2
+    print_commit_list_in_range "$target_branch" HEAD >&2
+
+    local range_for_diff="$target_branch..HEAD"
+    if git diff --quiet "$range_for_diff"; then
+      printf '\nPreview: no file changes in %d %s to %s.\n' "$num_commits" "$commit_word" "$target_branch" >&2
+    else
+      printf '\nPreview: changes in %d %s to %s:\n' "$num_commits" "$commit_word" "$target_branch" >&2
+      git diff --stat "$range_for_diff" >&2
+    fi
+
+    print_action_preview "rebase $num_commits $commit_word onto $target_branch"
+    prompt_confirm
+  fi
+
+  # Perform Rebase
+  info "Starting rebase of '$current_branch' onto '$target_branch'..."
+  git rebase "$target_branch"
+
+  local rebase_status=$?
+  if [ $rebase_status -eq 0 ]; then
+    success "Rebase onto '$target_branch' successful."
+    [[ -n "$backup_name" ]] && tip "Backup available at: $backup_name (can be deleted if no longer needed)."
+  else
+    warn "Rebase paused due to conflict or error."
+    warn "  Resolve conflicts and run 'hug rbc' to continue."
+    warn "  Or use 'hug rbc-current --all' / 'hug rbc-other --all' to auto-resolve all with one side."
+    warn "  To abort, run 'hug rba'."
+    [[ -n "$backup_name" ]] && tip "Backup available at: $backup_name"
+  fi
+}
+
+hug_rb "$target_branch"

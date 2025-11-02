@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+# shellcheck source=../lib/hug-common
+. "$CMD_BASE/../lib/hug-common"
+# shellcheck source=../lib/hug-git-kit
+. "$CMD_BASE/../lib/hug-git-kit"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+show_help() {
+    cat << EOF
+hug rbc-current: Resolve the present rebase conflict by picking the "current" branch (your changes) version.
+
+USAGE:
+    hug rbc-current [--all] [--quiet] [-h, --help]
+
+OPTIONS:
+    --all          Resolve conflicts in current commit and automatically apply the same strategy (pick current) to all remaining conflicting commits, completing the rebase
+    --quiet        Suppress output (sets HUG_QUIET=T)
+    -h, --help     Show this help
+
+DESCRIPTION:
+    During a rebase, one or more commits from the current branch being rebased may conflict with changes from the other branch.
+    'rbc-current' picks the version from the current branch (the branch being rebased).
+    This affects all conflicting files in the current commit being rebased.
+    USe --all to finish the entire rebase using this same choice.
+    WARNING: This rewrites history. Ensure you understand the conflict before using --all.
+
+EXAMPLES:
+    hug rbc-current          # Resolve current conflicting commit with your changes and continue
+    hug rbc-current --all    # Resolve all remaining conflicting commits with your changes
+
+SEE ALSO:
+    hug rbc-other    Pick the other branch (the target, the one with incoming changes) version
+    hug rbc          For manually resolving a conflict and continuing the rebase operation
+EOF
+}
+
+# Parse common flags (--quiet, -h|--help)
+eval "$(parse_common_flags "$@")"
+
+# Parse custom flags
+finish_all=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --all) finish_all=true; shift ;;
+    *) error "Unknown option: $1. See 'hug rbc-current --help'."; ;;
+  esac
+done
+
+check_git_repo
+abort_if_no_rebase_conflict
+strategy="current"
+
+if $finish_all; then
+  info "Resolving all remaining conflicting commits with $current version."
+  rebase_finish_all "$strategy" || \
+    error "Failed to finish rebase automatically."
+
+  success "Rebase completed successfully (all conflicts resolved with $current version)."
+  exit
+fi
+
+info "Resolving 1 rebase conflicting commit with $strategy version."
+rebase_pick "$strategy" || \
+  error "Failed to resolve conflict."
