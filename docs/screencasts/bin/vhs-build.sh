@@ -38,6 +38,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCREENCASTS_DIR="$(dirname "$SCRIPT_DIR")"
 OUTPUT_DIR="${SCREENCASTS_DIR}/../commands/img"
+USER_DEPS_DIR="$HOME/.hug-deps/bin"
 
 # Color codes
 readonly RED='\033[0;31m'
@@ -72,18 +73,10 @@ error()   { msg "$RED"    "ERROR: $*" >&2; exit 1; }
 #==============================================================================
 
 check_vhs() {
-    # First check if VHS is in PATH
+    # Check user deps and PATH
+    export PATH="$USER_DEPS_DIR:$PATH"
     if command -v vhs &> /dev/null; then
         info "✓ VHS is installed: $(command -v vhs)"
-        vhs --version
-        return 0
-    fi
-    
-    # Check if locally installed
-    local local_bin="$SCRIPT_DIR/vhs"
-    if [[ -x "$local_bin" ]]; then
-        export PATH="$SCRIPT_DIR:$PATH"
-        info "✓ VHS is installed: $local_bin"
         vhs --version
         return 0
     fi
@@ -93,14 +86,14 @@ check_vhs() {
 }
 
 install_vhs() {
-    local local_bin="$SCRIPT_DIR/vhs"
+    local user_bin="$USER_DEPS_DIR/vhs"
     local tmp_dir
     tmp_dir=$(mktemp -d)
-    
-    # Check if already installed locally
-    if [[ -x "$local_bin" ]]; then
-        info "✓ VHS already available at $local_bin"
-        export PATH="$SCRIPT_DIR:$PATH"
+
+    # Check if already installed in user dir
+    if [[ -x "$user_bin" ]]; then
+        info "✓ VHS already available at $user_bin"
+        export PATH="$USER_DEPS_DIR:$PATH"
         return 0
     fi
     
@@ -167,11 +160,11 @@ install_vhs() {
         vhs_binary=$(find "$tmp_dir" -type f -name "vhs" -executable 2>/dev/null | head -1)
         
         if [[ -n "$vhs_binary" && -x "$vhs_binary" ]]; then
-            mkdir -p "$SCRIPT_DIR"
-            mv "$vhs_binary" "$local_bin"
-            chmod +x "$local_bin"
-            export PATH="$SCRIPT_DIR:$PATH"
-            success "✓ VHS installed at $local_bin"
+            mkdir -p "$USER_DEPS_DIR"
+            mv "$vhs_binary" "$user_bin"
+            chmod +x "$user_bin"
+            export PATH="$USER_DEPS_DIR:$PATH"
+            success "✓ VHS installed at $user_bin"
             rm -rf "$tmp_dir"
             return 0
         else

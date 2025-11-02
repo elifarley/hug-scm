@@ -13,7 +13,7 @@ else
 fi
 
 # Dependency paths
-DEPS_DIR="$PROJECT_ROOT/tests/deps"
+DEPS_DIR="$HOME/.hug-deps/bats"
 BATS_CORE_DIR="$DEPS_DIR/bats-core"
 BATS_BIN="$BATS_CORE_DIR/bin/bats"
 BATS_SUPPORT_DIR="$DEPS_DIR/bats-support"
