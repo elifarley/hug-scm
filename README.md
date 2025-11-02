@@ -1,56 +1,36 @@
 # Hug SCM - The Humane Source Control Management Interface
 
-[![Tests](https://github.com/elifarley/hug-scm/actions/workflows/test.yml/badge.svg)](https://github.com/elifarley/hug-scm/actions/workflows/test.yml) [![Deploy Docs to GitHub Pages](https://github.com/elifarley/hug-scm/actions/workflows/deploy-docs.yml/badge.svg)](https://github.com/elifarley/hug-scm/actions/workflows/deploy-docs.yml) [![Regenerate VHS Images](https://github.com/elifarley/hug-scm/actions/workflows/regenerate-vhs-images.yml/badge.svg)](https://github.com/elifarley/hug-scm/actions/workflows/regenerate-vhs-images.yml)
-
-A humane, intuitive interface for Git and other version control systems. Hug transforms complex and forgettable Git commands into a simple, predictable language that feels natural to use, keeping you focused on your code, not on wrestling with version control.
-
-| [**&rarr; View the Documentation**](https://elifarley.github.io/hug-scm/) | [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/elifarley/hug-scm) |
-| :--- | :--- |
-
-![Made with VHS](https://vhs.charm.sh/vhs-4D3aNvebEOccORctJOta77.gif)
-
-## Table of Contents
-- [What is Hug?](#what-is-hug)
-- [Why Hug?](#why-hug)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Command Reference](#command-reference)
+[![Tests](https://github.com/elifarley/hug-scm/actions/workflows/test.yml/badge.svg)](https://github.com/elifarley/hug-scm/actions/workflows/test.yml) [![Deploy Docs to GitHub Pages
+[Command Reference](#command-reference)
 - [Philosophy](#philosophy)
-- [Testing](#testing)
 - [Roadmap](#roadmap)
+- [Testing](#testing)
 - [License](#license)
 
 ## What is Hug?
 
-Hug SCM is a humane interface layer for version control systems that currently supports **Git** and **Mercurial**.
-It transforms complex, often intimidating SCM commands into an intuitive, predictable language that feels natural to developers.
+Hug SCM is a humane interface for Git and Mercurial that transforms complex commands into a simple, predictable language. It's designed to keep you focused on your code, not on wrestling with version control.
 
-With Hug, you get:
+## Core Features
 
-- Intuitive commands that make sense
-- Progressive safety (shorter = safer, longer = more powerful)
-- Consistent patterns across all operations
-- Rich feedback and previews before destructive actions
-- **Multi-VCS support** - Use the same commands whether you're working with Git or Mercurial repositories
+- **Intuitive Commands:** Simple, memorable commands for common operations (`hug b feature` instead of `git checkout -b feature`).
+- **Safety First:** Destructive operations require confirmation and offer previews, preventing accidental data loss.
+- **Multi-VCS Support:** Use the same commands for both Git and Mercurial repositories.
+- **Discoverable Interface:** Commands are grouped by prefixes (`h*` for HEAD, `w*` for working directory), making them easy to find and learn.
+- **WIP Workflow:** A robust alternative to `git stash` that uses temporary branches to park work safely.
 
-## Why Hug?
-While Git is incredibly powerful, its command syntax can be inconsistent and difficult to remember. Hug smooths out these rough edges.
+## Installation
 
-✅ Making common operations trivial
+1. **Clone the repository:**
+   ```shell
+   git clone https://github.com/elifarley/hug-scm.git
+   ```
+2. **Run the installer:**
+   ```shell
+   cd hug-scm && ./install.sh
+   ```
 
-`hug b feature` gets you to a branch, instead of `git checkout -b feature`
-
-✅ Keeping you safe
-
-Destructive commands require explicit confirmation
-
-✅ Being discoverable
-
-Commands are grouped logically: `h*` for `HEAD` operations, `w*` for working directory, `s*` for status
-
-✅ Providing superpowers
-
-Complex operations become one-liners: `hug w zap-all` for a complete "factory reset" of your local working directory.
+For more details, see the [full installation guide](https://elifarley.github.io/hug-scm/installation.html).
 
 ## Quick Start
 
@@ -95,96 +75,30 @@ hug wips "Deep spike"      # Park and stay (continue immediately)
 hug w discard file.js
 
 # Need to undo the last commit but keep changes staged?
-# Hug, Head movement: Back
 hug h back
-# Tip: When the staging area has no staged changes, Hug skips the confirmation prompt automatically; existing staged work still triggers it. Unstaged changes are never touched by this command. The same protection applies to `hug h squash` and `hug h undo`, which keep you safe when staged or unstaged work might otherwise be unintentionally lumped into the action while skipping the prompt when no staged or unstaged changes are present.
 
 # Want to see what changed in a specific file?
-# Hug, Status: Working dir (meaning unstaged changes)
 hug sw file.js
 
 # Clean up build artifacts?
 hug w purge
 
 # Get a file from an old commit?
-# Hug, Working dir: Get from <commit> the file <file>
 hug w get a1b2c3 file.js
 
 # Preview a destructive operation
 hug w zap-all --dry-run
-
-# Force a cleanup without prompts
-hug w zap-all -f
-
-# Undo last 3 commits, unstage changes
-# Hug, Head movement: UNDO last 3 commits
-hug h undo 3
-
-# Find steps back to last change in a file, then rewind precisely
-hug h steps src/app.js  # e.g., "2 steps back..."
-hug h back 2
-
-# Safe pull (fast-forward only; fails on divergence)
-hug bpull
-
-# Pull with rebase for linear history
-hug bpullr
-
-# Park WIP for interruption to have a clean working directory
-hug wip "Draft feature" → hug bc hotfix && hug c "Fix bug" → hug bpush
-
-# Deep work on WIP (stay and iterate)
-hug wips "Prototype UI" → hug a . && hug c "Add components" → hug bs (pause) → later hug b WIP/... → hug w unwip WIP/... (integrate)
 ```
 
-**Tip: `wips` vs. `wip`**: Use `wips` for immersive sessions (stay on WIP to add commits like `hug c`). Use `wip` for quick pauses (park). Both are pushable branches - better than local stash for persistence.
+**Tip:** Run `hug help` to see all available commands.
 
-## Mercurial Support
+## Documentation
 
-Hug now supports Mercurial! The same intuitive commands work across both Git and Mercurial repositories.
+For a complete guide to all commands and concepts, check out the [full documentation](https://elifarley.github.io/hug-scm/).
 
-Once installed, Hug will automatically detect whether you're in a Git or Mercurial repository and use the appropriate commands. The same familiar Hug commands work in both!
-
-### Quick Mercurial Start
-
-```shell
-# Use the same Hug commands in Mercurial repos!
-cd ~/my-hg-repo
-hug s              # Status
-hug a file.txt     # Add file
-hug c -m "Update"  # Commit
-hug b feature      # Switch bookmark
-hug l              # View history
-```
-
-### Key Features
-
-- **Automatic Detection**: Hug automatically detects whether you're in a Git or Mercurial repository
-- **Unified Interface**: Use the same commands regardless of SCM type
-- **Bookmark Support**: Mercurial bookmarks work like Git branches
-- **Working Directory Ops**: Full support for discard, purge, and zap operations
-- **HEAD Operations**: Uncommit operations via the evolve extension
-
-### Mercurial-Specific Notes
-
-- **No Staging Area**: Mercurial commits directly from working directory
-- **Bookmarks vs Branches**: Hug uses bookmarks (like Git branches) instead of permanent Mercurial branches
-- **Extensions Required**: Some commands require `purge` and `evolve` extensions
-
-See [hg-config/README.md](hg-config/README.md) for full Mercurial documentation.
-
-## Installation
-
-Check the [Installation Guide](https://elifarley.github.io/hug-scm/installation.html)
-
----
-
-## Quick Start Tips
-
-- **No Git Knowledge Needed**: Hug handles the complexity; focus on intent.
-- **Explore**: Run `hug help` to see Hug commands.
-
----
+- **[Command Map](https://elifarley.github.io/hug-scm/command-map)**: A quick overview of all command families.
+- **[Cheat Sheet](https://elifarley.github.io/hug-scm/cheat-sheet)**: A handy reference for daily workflows.
+- **[Core Concepts](https://elifarley.github.io/hug-scm/core-concepts)**: An introduction to the philosophy behind Hug.
 
 ## Command Reference
 
@@ -446,6 +360,22 @@ hug shf <file> [commit] # SHow: File at [commit] (File diff in commit)
 -   Built-in help with examples
 -   Smart completion with partial matching
 
+## Roadmap
+
+- ✅ **Mercurial Support** - Full compatibility with `hg` commands (COMPLETED!)
+  - Core commands (status, staging, commits, branches)
+  - Working directory operations (discard, purge, zap)
+  - HEAD operations (back, undo)
+  - Automatic repository detection
+  - See [ADR-002](docs/architecture/ADR-002-mercurial-support-architecture.md) for details
+-    **Sapling Support** - Meta's next-gen VCS
+-    **Interactive Mode** - TUI with visual diff preview
+-    **AI Integration** - Smart commit suggestions
+-    **GUI Frontend** - Visual interface for complex operations
+-    **Plugin System** - Custom command extensions
+
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
 ## Testing
 
 Hug SCM uses [BATS (Bash Automated Testing System)](https://github.com/bats-core/bats-core) for automated testing. We have comprehensive test coverage for core commands and workflows.
@@ -470,22 +400,6 @@ tests/run-tests.sh -v                           # Run with verbose output
 - See [TESTING.md](TESTING.md) for detailed testing guide
 - See [tests/README.md](tests/README.md) for test suite documentation
 - See [ADR-001](docs/architecture/ADR-001-automated-testing-strategy.md) for testing strategy rationale
-
-## Roadmap
-
-- ✅ **Mercurial Support** - Full compatibility with `hg` commands (COMPLETED!)
-  - Core commands (status, staging, commits, branches)
-  - Working directory operations (discard, purge, zap)
-  - HEAD operations (back, undo)
-  - Automatic repository detection
-  - See [ADR-002](docs/architecture/ADR-002-mercurial-support-architecture.md) for details
--    **Sapling Support** - Meta's next-gen VCS
--    **Interactive Mode** - TUI with visual diff preview
--    **AI Integration** - Smart commit suggestions
--    **GUI Frontend** - Visual interface for complex operations
--    **Plugin System** - Custom command extensions
-
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
