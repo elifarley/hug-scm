@@ -301,3 +301,60 @@ create_backup_branch() {
   run git rev-parse --verify "feature/branch"
   assert_success
 }
+
+@test "hug brestore: accepts short form without 'hug-backups/' prefix" {
+  # Create a backup of feature/branch
+  local backup
+  backup=$(create_backup_branch "feature/branch")
+  
+  # Extract the short form (without hug-backups/ prefix)
+  local short_form
+  short_form="${backup#hug-backups/}"
+  
+  # Delete original
+  git branch -D "feature/branch"
+  
+  # Restore using short form
+  run hug brestore "$short_form" -f
+  assert_success
+  assert_output --partial "Branch restored: 'feature/branch'"
+  
+  # Verify restoration
+  run git rev-parse --verify "feature/branch"
+  assert_success
+}
+
+@test "hug brestore: short form works with --dry-run" {
+  # Create a backup of feature/branch
+  local backup
+  backup=$(create_backup_branch "feature/branch")
+  
+  # Extract the short form
+  local short_form
+  short_form="${backup#hug-backups/}"
+  
+  # Dry run with short form
+  run hug brestore "$short_form" --dry-run
+  assert_success
+  assert_output --partial "Dry run: Previewing restore"
+  assert_output --partial "hug-backups/"
+}
+
+@test "hug brestore: short form works with custom target name" {
+  # Create a backup
+  local backup
+  backup=$(create_backup_branch "feature/branch")
+  
+  # Extract the short form
+  local short_form
+  short_form="${backup#hug-backups/}"
+  
+  # Restore to different name using short form
+  run hug brestore "$short_form" "recovered-branch" -f
+  assert_success
+  assert_output --partial "Branch restored: 'recovered-branch'"
+  
+  # Verify the new branch exists
+  run git rev-parse --verify "recovered-branch"
+  assert_success
+}

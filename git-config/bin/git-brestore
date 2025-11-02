@@ -15,7 +15,9 @@ USAGE:
     hug brestore [<backup-branch>] [<target-branch>] [--dry-run] [-f, --force] [--quiet] [-h, --help]
 
 ARGUMENTS:
-    <backup-branch>    Name of the backup branch to restore (e.g., hug-backups/2025-11/02-1234.feature)
+    <backup-branch>    Name of the backup branch to restore
+                       Can be the full name: hug-backups/2024-11/02-1234.feature
+                       Or just the short form: 2024-11/02-1234.feature
                        If not provided, shows interactive list of available backups
     <target-branch>    Name of the branch to restore to (optional)
                        If not provided, restores to the original branch name extracted from the backup name
@@ -35,12 +37,15 @@ DESCRIPTION:
     destructive operation (the existing branch will be deleted and recreated).
 
     When no arguments are provided, displays an interactive menu of available backup branches.
+    
+    For convenience, you can omit the "hug-backups/" prefix when specifying a backup branch.
 
 EXAMPLES:
     hug brestore                                        # Interactive: select from available backups
-    hug brestore hug-backups/2025-11/02-1234.feature   # Restore to original name 'feature'
-    hug brestore hug-backups/2025-11/02-1234.feature feature-recovered  # Restore to 'feature-recovered'
-    hug brestore hug-backups/2025-11/02-1234.feature --dry-run  # Preview restoration
+    hug brestore hug-backups/2024-11/02-1234.feature   # Restore using full name
+    hug brestore 2024-11/02-1234.feature               # Restore using short form (recommended)
+    hug brestore 2024-11/02-1234.feature feature-recovered  # Restore to different name
+    hug brestore 2024-11/02-1234.feature --dry-run     # Preview restoration
 
 SEE ALSO:
     hug rb         Rebase command that creates backups
@@ -133,6 +138,12 @@ hug_brestore() {
   # If no backup specified, show interactive menu
   if [[ -z "$backup_branch" ]]; then
     backup_branch=$(show_interactive_backup_menu)
+  else
+    # If backup branch doesn't start with "hug-backups/", prepend it
+    # This allows users to type just "2024-11/02-1430.feature" instead of the full path
+    if [[ "$backup_branch" != hug-backups/* ]]; then
+      backup_branch="hug-backups/$backup_branch"
+    fi
   fi
   
   # Validate backup branch exists
