@@ -114,7 +114,9 @@ show_interactive_backup_menu() {
     
     # Use gum filter for selection
     local selection
-    selection=$(printf '%s\n' "${formatted_options[@]}" | gum filter --placeholder="Select a backup branch to restore..." --height=15 || true)
+    # Use dynamic height: min of 15 or number of backups + 2 for UI
+    local gum_height=$((${#backups[@]} < 13 ? ${#backups[@]} + 2 : 15))
+    selection=$(printf '%s\n' "${formatted_options[@]}" | gum filter --placeholder="Select a backup branch to restore..." --height="$gum_height" || true)
     
     if [[ -z "$selection" ]]; then
       info "Cancelled."
@@ -134,7 +136,7 @@ show_interactive_backup_menu() {
       fi
     done
     
-    error "Failed to match selection. Please try again."
+    error "Selection could not be matched to a backup branch."
   fi
   
   # Fallback to numbered list for < 10 branches or when gum is not available

@@ -371,7 +371,7 @@ create_backup_branch() {
   done
   
   # Test that numbered list is shown (even if gum is available)
-  run bash -c "timeout 5 bash -c 'echo \"\" | hug brestore 2>&1' || true"
+  run bash -c 'echo "" | timeout 5 hug brestore 2>&1 || true'
   assert_output --partial "Select a backup branch to restore"
   assert_output --partial "1)"
   assert_output --partial "9)"
