@@ -139,7 +139,7 @@ Hug provides safe, intuitive pull commands under the `b*` prefix, emphasizing fa
   ```shell
   hug bpullr   # Pull and rebase for linear history
   ```
-- **Safety**: Non-destructive to remote history, but may require conflict resolution. Aborts on issues; resume with `hug rbc` or abort with `hug rba`.
+- **Safety**: Non-destructive to remote history, but may require conflict resolution. Aborts on issues; resume with `hug rbc` or abort with `hug rba`. See the [Rebase Conflict Workflow](rebase.md#rebase-conflict-workflow) for a detailed guide on resolving conflicts.
 
 ## Branch Queries (bw*)
 
