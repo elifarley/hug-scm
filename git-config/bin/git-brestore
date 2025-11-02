@@ -83,10 +83,11 @@ get_backup_branches() {
 
 # Extract original branch name from backup branch name
 # Example: hug-backups/2025-11/02-1234.feature -> feature
+# Backup format: hug-backups/YYYY-MM/DD-HHMM.branch-name
 extract_original_name() {
   local backup="$1"
   # Remove the hug-backups/YYYY-MM/DD-HHMM. prefix
-  echo "$backup" | sed -E 's|^hug-backups/[0-9]{4}-[0-9]{2}/[0-9]{2}-[0-9]{4}\.||'
+  echo "$backup" | sed -E 's|^hug-backups/[0-9][0-9][0-9][0-9]-[0-9][0-9]/[0-9][0-9]-[0-9][0-9][0-9][0-9]\.||'
 }
 
 # Show interactive menu of backup branches
@@ -170,10 +171,11 @@ hug_brestore() {
     target_exists=true
   fi
   
+  # Set dry_run default if not already set by parse_common_flags
   local dry_run="${dry_run:-false}"
   
   # Preview mode
-  if [[ ${dry_run} == true ]]; then
+  if [[ "${dry_run}" == "true" ]]; then
     info "Dry run: Previewing restore of '$backup_branch' to '$target_branch'."
     
     if $target_exists; then

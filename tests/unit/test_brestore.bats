@@ -15,9 +15,10 @@ teardown() {
 }
 
 # Helper to create a backup branch for testing
+# Uses a realistic past date to avoid confusion
 create_backup_branch() {
   local branch_name="$1"
-  local backup_name="hug-backups/2025-11/02-1234.$branch_name"
+  local backup_name="hug-backups/2024-11/02-1234.$branch_name"
   git branch "$backup_name" "$branch_name"
   echo "$backup_name"
 }
@@ -222,22 +223,22 @@ create_backup_branch() {
 
 @test "hug brestore: extracts original name from backup branch correctly" {
   # Test various backup name formats
-  git branch "hug-backups/2025-11/02-1234.simple"
-  git branch "hug-backups/2025-11/02-1234.feature/complex"
-  git branch "hug-backups/2025-11/02-1234.feat-123"
+  git branch "hug-backups/2024-11/02-1234.simple"
+  git branch "hug-backups/2024-11/02-1234.feature/complex"
+  git branch "hug-backups/2024-11/02-1234.feat-123"
   
   # Restore simple name
-  run hug brestore "hug-backups/2025-11/02-1234.simple" -f --dry-run
+  run hug brestore "hug-backups/2024-11/02-1234.simple" -f --dry-run
   assert_success
   assert_output --partial "to 'simple'"
   
   # Restore complex name with slash
-  run hug brestore "hug-backups/2025-11/02-1234.feature/complex" -f --dry-run
+  run hug brestore "hug-backups/2024-11/02-1234.feature/complex" -f --dry-run
   assert_success
   assert_output --partial "to 'feature/complex'"
   
   # Restore name with dash
-  run hug brestore "hug-backups/2025-11/02-1234.feat-123" -f --dry-run
+  run hug brestore "hug-backups/2024-11/02-1234.feat-123" -f --dry-run
   assert_success
   assert_output --partial "to 'feat-123'"
 }
@@ -279,8 +280,8 @@ create_backup_branch() {
   run bash -c "echo '' | hug brestore 2>&1"
   assert_failure  # Cancelled by empty input
   assert_output --partial "Select a backup branch to restore"
-  assert_output --partial "hug-backups/2025-11/02-1234.main"
-  assert_output --partial "hug-backups/2025-11/02-1234.feature/branch"
+  assert_output --partial "hug-backups/2024-11/02-1234.main"
+  assert_output --partial "hug-backups/2024-11/02-1234.feature/branch"
 }
 
 @test "hug brestore: interactive menu selection works" {
