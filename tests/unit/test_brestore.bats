@@ -358,3 +358,22 @@ create_backup_branch() {
   run git rev-parse --verify "recovered-branch"
   assert_success
 }
+
+# -----------------------------------------------------------------------------
+# Gum integration tests (for 10+ backup branches)
+# -----------------------------------------------------------------------------
+
+@test "hug brestore: uses numbered list for fewer than 10 branches" {
+  # Create 9 backup branches
+  for i in {1..9}; do
+    git branch "feature-$i"
+    create_backup_branch "feature-$i" > /dev/null
+  done
+  
+  # Test that numbered list is shown (even if gum is available)
+  run bash -c "timeout 5 bash -c 'echo \"\" | hug brestore 2>&1' || true"
+  assert_output --partial "Select a backup branch to restore"
+  assert_output --partial "1)"
+  assert_output --partial "9)"
+  assert_output --partial "Enter choice"
+}
