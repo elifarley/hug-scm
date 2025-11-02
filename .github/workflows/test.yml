@@ -28,7 +28,7 @@ jobs:
       - name: Cache VHS dependency
         uses: actions/cache@v4
         with:
-          path: ~/.hug-deps/bin/vhs
+          path: ~/.hug-deps/bin
           key: ${{ runner.os }}-vhs-deps-${{ hashFiles('docs/screencasts/bin/vhs-build.sh') }}
           restore-keys: |
             ${{ runner.os }}-vhs-deps-
