@@ -39,6 +39,8 @@ SEE ALSO:
     hug rbc-current Pick current branch version for conflicts
     hug rbc-other  Pick target branch version for conflicts
 EOF
+}
+
 # Parse common flags (--dry-run, -f|--force, --quiet, -h|--help)
 eval "$(parse_common_flags "$@")"
 
