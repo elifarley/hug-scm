@@ -1,0 +1,266 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+# shellcheck source=../lib/hug-common
+. "$CMD_BASE/../lib/hug-common"
+# shellcheck source=../lib/hug-git-kit
+. "$CMD_BASE/../lib/hug-git-kit"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+show_help() {
+    cat << EOF
+hug brestore: Restore a branch from a backup created by 'hug rb' or similar commands.
+
+USAGE:
+    hug brestore [<backup-branch>] [<target-branch>] [--dry-run] [-f, --force] [--quiet] [-h, --help]
+
+ARGUMENTS:
+    <backup-branch>    Name of the backup branch to restore
+                       Can be the full name: hug-backups/2024-11/02-1234.feature
+                       Or just the short form: 2024-11/02-1234.feature
+                       If not provided, shows interactive list of available backups
+    <target-branch>    Name of the branch to restore to (optional)
+                       If not provided, restores to the original branch name extracted from the backup name
+                       If provided, creates a new branch with the specified name
+
+OPTIONS:
+    --dry-run          Preview the restore operation without applying changes
+    -f, --force        Skip confirmation prompts (sets HUG_FORCE=true)
+    --quiet            Suppress output (sets HUG_QUIET=T)
+    -h, --help         Show this help
+
+DESCRIPTION:
+    Restores a branch from a backup created by commands like 'hug rb'.
+    Backup branches follow the naming convention: hug-backups/YYYY-MM/DD-HHMM.original-name
+
+    If the target branch already exists, you will be prompted for confirmation as this is a
+    destructive operation (the existing branch will be deleted and recreated).
+
+    When no arguments are provided, displays an interactive menu of available backup branches.
+    
+    For convenience, you can omit the "hug-backups/" prefix when specifying a backup branch.
+
+EXAMPLES:
+    hug brestore                                        # Interactive: select from available backups
+    hug brestore hug-backups/2024-11/02-1234.feature   # Restore using full name
+    hug brestore 2024-11/02-1234.feature               # Restore using short form (recommended)
+    hug brestore 2024-11/02-1234.feature feature-recovered  # Restore to different name
+    hug brestore 2024-11/02-1234.feature --dry-run     # Preview restoration
+
+SEE ALSO:
+    hug rb         Rebase command that creates backups
+    hug bl         List local branches
+    hug bdel       Delete a branch safely
+EOF
+}
+
+# Parse common flags (--dry-run, -f|--force, --quiet, -h|--help)
+eval "$(parse_common_flags "$@")"
+
+# Custom flag parsing
+backup_branch=""
+target_branch=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -*)
+      error "Unknown option: $1. See 'hug brestore --help'."
+      ;;
+    *)
+      if [[ -z "$backup_branch" ]]; then
+        backup_branch="$1"
+        shift
+      elif [[ -z "$target_branch" ]]; then
+        target_branch="$1"
+        shift
+      else
+        error "Too many arguments. See 'hug brestore --help'."
+      fi
+      ;;
+  esac
+done
+
+check_git_repo
+
+# --- Main function for 'hug brestore' ---
+# Show interactive menu of backup branches
+show_interactive_backup_menu() {
+  local -a backups=()
+  mapfile -t backups < <(get_backup_branches)
+  
+  if [[ ${#backups[@]} -eq 0 ]]; then
+    error "No backup branches found. Backup branches are created by commands like 'hug rb'."
+  fi
+  
+  printf "Select a backup branch to restore:\n\n" >&2
+  
+  local i
+  for i in "${!backups[@]}"; do
+    local backup="${backups[i]}"
+    local display_name
+    display_name=$(format_backup_display_name "$backup")
+    local original_name
+    original_name=$(extract_original_name "$backup")
+    local hash
+    hash=$(git rev-parse --short "$backup" 2>/dev/null || echo "???????")
+    local subject
+    subject=$(git log -1 --format='%s' "$backup" 2>/dev/null || echo "(no commit)")
+    
+    printf "%d) ${YELLOW}%s${NC} ${GREY}→${NC} ${CYAN}%s${NC} ${YELLOW}%s${NC} ${GREY}%s${NC}\n" \
+      $((i + 1)) "$display_name" "$original_name" "$hash" "$subject" >&2
+  done
+  
+  printf "\nEnter choice (1-%d): " "${#backups[@]}" >&2
+  local choice
+  if ! read -r choice; then
+    info "Cancelled."
+    exit 1
+  fi
+  
+  while true; do
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#backups[@]}" ]; then
+      echo "${backups[$((choice - 1))]}"
+      return 0
+    else
+      printf "Invalid choice. Please enter a number between 1 and %d: " "${#backups[@]}" >&2
+      if ! read -r choice; then
+        info "Cancelled."
+        exit 1
+      fi
+    fi
+  done
+}
+
+# --- Main function for 'hug brestore' ---
+hug_brestore() {
+  local backup_branch="$1"
+  local target_branch="$2"
+  
+  # If no backup specified, show interactive menu
+  if [[ -z "$backup_branch" ]]; then
+    backup_branch=$(show_interactive_backup_menu)
+  else
+    # If backup branch doesn't start with "hug-backups/", prepend it
+    # This allows users to type just "2024-11/02-1430.feature" instead of the full path
+    if [[ "$backup_branch" != hug-backups/* ]]; then
+      backup_branch="hug-backups/$backup_branch"
+    fi
+  fi
+  
+  # Validate backup branch exists
+  if ! git rev-parse --verify "$backup_branch" >/dev/null 2>&1; then
+    error "Backup branch '$backup_branch' does not exist."
+  fi
+  
+  # If no target branch specified, extract from backup name
+  if [[ -z "$target_branch" ]]; then
+    target_branch=$(extract_original_name "$backup_branch")
+    if [[ -z "$target_branch" || "$target_branch" == "$backup_branch" ]]; then
+      error "Could not extract original branch name from '$backup_branch'. Please specify target branch explicitly."
+    fi
+  fi
+  
+  # Get backup commit hash
+  local backup_commit
+  backup_commit=$(git rev-parse "$backup_branch")
+  local backup_short
+  backup_short=$(git rev-parse --short "$backup_branch")
+  
+  # Check if target branch already exists
+  local target_exists=false
+  if git rev-parse --verify "$target_branch" >/dev/null 2>&1; then
+    target_exists=true
+  fi
+  
+  # Set dry_run default if not already set by parse_common_flags
+  local dry_run="${dry_run:-false}"
+  
+  # Preview mode
+  if [[ "${dry_run}" == "true" ]]; then
+    info "Dry run: Previewing restore of '$backup_branch' to '$target_branch'."
+    
+    if $target_exists; then
+      local current_target_hash
+      current_target_hash=$(git rev-parse --short "$target_branch")
+      printf "⚠️  Warning: Branch '$target_branch' already exists at commit %s\n" "$current_target_hash" >&2
+      printf "   It would be deleted and recreated at %s\n" "$backup_short" >&2
+    else
+      printf "✓ Branch '$target_branch' does not exist; it would be created\n" >&2
+    fi
+    
+    printf "\nBackup branch details:\n" >&2
+    printf "  Branch: %s\n" "$backup_branch" >&2
+    printf "  Commit: %s\n" "$backup_short" >&2
+    git log -1 --format='  Subject: %s%n  Author: %an <%ae>%n  Date: %ad' --date=format:'%Y-%m-%d %H:%M:%S' "$backup_branch" >&2
+    
+    print_dry_run_preview "restore '$backup_branch' to '$target_branch'"
+    return 0
+  fi
+  
+  # Confirmation for existing branch (destructive operation)
+  if $target_exists; then
+    if [[ ${HUG_QUIET:-} != T && ${HUG_FORCE:-} != true ]]; then
+      local current_target_hash
+      current_target_hash=$(git rev-parse --short "$target_branch")
+      warning "Branch '$target_branch' already exists at commit $current_target_hash"
+      warning "Restoring will DELETE the existing branch and recreate it at $backup_short"
+      printf "\n" >&2
+      prompt_confirm "⚠️  This is a DESTRUCTIVE operation. Proceed? [y/N]: "
+    fi
+  fi
+  
+  # Get current branch to restore it later if we're on the target
+  local current_branch
+  current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
+  local was_on_target=false
+  if [[ "$current_branch" == "$target_branch" ]]; then
+    was_on_target=true
+  fi
+  
+  # If we're on the target branch, switch away temporarily
+  if $was_on_target; then
+    info "Switching away from '$target_branch' to perform restoration..."
+    # Try to switch to a safe branch (main, master, or the backup itself)
+    if git rev-parse --verify main >/dev/null 2>&1 && [[ "$target_branch" != "main" ]]; then
+      git checkout -q main 2>/dev/null || git checkout -q "$backup_branch" 2>/dev/null || {
+        error "Cannot switch away from '$target_branch'. Please switch to another branch first."
+      }
+    elif git rev-parse --verify master >/dev/null 2>&1 && [[ "$target_branch" != "master" ]]; then
+      git checkout -q master 2>/dev/null || git checkout -q "$backup_branch" 2>/dev/null || {
+        error "Cannot switch away from '$target_branch'. Please switch to another branch first."
+      }
+    else
+      git checkout -q "$backup_branch" 2>/dev/null || {
+        error "Cannot switch away from '$target_branch'. Please switch to another branch first."
+      }
+    fi
+  fi
+  
+  # Delete existing branch if it exists
+  if $target_exists; then
+    if ! git branch -D "$target_branch" >/dev/null 2>&1; then
+      error "Failed to delete existing branch '$target_branch'."
+    fi
+  fi
+  
+  # Create the branch at the backup commit
+  if ! git branch "$target_branch" "$backup_commit" >/dev/null 2>&1; then
+    error "Failed to create branch '$target_branch' at commit $backup_short."
+  fi
+  
+  success "Branch restored: '$target_branch' (at $backup_short)"
+  
+  # If we were on the target branch, switch back to it
+  if $was_on_target; then
+    if git checkout -q "$target_branch" 2>/dev/null; then
+      tip "Switched back to '$target_branch'."
+    else
+      warning "Could not switch back to '$target_branch'. Use 'hug b $target_branch' to switch manually."
+    fi
+  else
+    tip "Use 'hug b $target_branch' to switch to the restored branch."
+  fi
+  
+  tip "Backup branch '$backup_branch' is still available. Use 'hug bdel $backup_branch' to delete it if no longer needed."
+}
+
+hug_brestore "$backup_branch" "$target_branch"

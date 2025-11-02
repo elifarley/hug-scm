@@ -15,6 +15,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 | `hug bll` | **B**ranch **L**ist **L**ong | Detailed local branch list with tracking info |
 | `hug bc` | **B**ranch **C**reate | Create a new branch and switch to it |
 | `hug br` | **B**ranch **R**ename | Rename the current branch |
+| `hug brestore` | **B**ranch **RESTORE** | Restore a branch from a backup |
 | `hug bdel` | **B**ranch **DEL**ete (safe) | Delete merged local branch |
 | `hug bdelf` | **B**ranch **DEL**ete **F**orce | Force-delete local branch |
 | `hug bdelr` | **B**ranch **DEL**ete **R**emote | Delete remote branch |
@@ -91,6 +92,17 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   hug br updated-feature  # Rename current branch
   ```
 - **Safety**: Prompts for confirmation if the new name exists.
+
+### `hug brestore [<backup-branch>] [<target-branch>]`
+- **Description**: Restore a branch from a backup created by commands like `hug rb`. Backups follow the naming convention `hug-backups/YYYY-MM/DD-HHMM.original-name`. If no arguments are provided, shows an interactive menu of available backups. If only the backup branch is specified, restores to the original branch name. If both arguments are provided, restores to a different branch name.
+- **Examples**:
+  ```shell
+  hug brestore                                      # Interactive: select from available backups
+  hug brestore hug-backups/2025-11/02-1234.feature # Restore to 'feature'
+  hug brestore hug-backups/2025-11/02-1234.feature recovered-feature  # Restore to 'recovered-feature'
+  hug brestore hug-backups/2025-11/02-1234.feature --dry-run  # Preview restoration
+  ```
+- **Safety**: Prompts for confirmation if the target branch already exists (destructive operation). Use `--dry-run` to preview changes. The original backup branch is preserved after restoration.
 
 ## Branch Deletion
 
@@ -196,5 +208,7 @@ These commands help inspect which branches relate to specific commits or states.
 - For creating a branch from an existing one: `hug bc <new> <existing>` (e.g., `hug bc new-feature existing-feature`).
 - Use `hug blr` to list remote branches before deleting one with `hug bdelr`.
 - Queries like `bwc` and `bwm` are useful for cleanup before `bdel`.
+- Commands like `hug rb` automatically create backup branches in the `hug-backups/` namespace. Use `hug brestore` to restore them if needed.
+- Backup branches follow the naming convention `hug-backups/YYYY-MM/DD-HHMM.original-name`, making them easy to identify and clean up.
 
 See [Status & Staging](status-staging) for checking changes after branching operations.
