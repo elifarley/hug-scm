@@ -280,8 +280,8 @@ create_backup_branch() {
   run bash -c "echo '' | hug brestore 2>&1"
   assert_failure  # Cancelled by empty input
   assert_output --partial "Select a backup branch to restore"
-  assert_output --partial "hug-backups/2024-11/02-1234.main"
-  assert_output --partial "hug-backups/2024-11/02-1234.feature/branch"
+  assert_output --partial "2024-11/02-1234.main"
+  assert_output --partial "2024-11/02-1234.feature/branch"
 }
 
 @test "hug brestore: interactive menu selection works" {

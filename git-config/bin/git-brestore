@@ -76,20 +76,7 @@ done
 
 check_git_repo
 
-# Get list of backup branches
-get_backup_branches() {
-  git for-each-ref --format='%(refname:short)' 'refs/heads/hug-backups/**' 2>/dev/null || true
-}
-
-# Extract original branch name from backup branch name
-# Example: hug-backups/2025-11/02-1234.feature -> feature
-# Backup format: hug-backups/YYYY-MM/DD-HHMM.branch-name
-extract_original_name() {
-  local backup="$1"
-  # Remove the hug-backups/YYYY-MM/DD-HHMM. prefix
-  echo "$backup" | sed -E 's|^hug-backups/[0-9][0-9][0-9][0-9]-[0-9][0-9]/[0-9][0-9]-[0-9][0-9][0-9][0-9]\.||'
-}
-
+# --- Main function for 'hug brestore' ---
 # Show interactive menu of backup branches
 show_interactive_backup_menu() {
   local -a backups=()
@@ -104,6 +91,8 @@ show_interactive_backup_menu() {
   local i
   for i in "${!backups[@]}"; do
     local backup="${backups[i]}"
+    local display_name
+    display_name=$(format_backup_display_name "$backup")
     local original_name
     original_name=$(extract_original_name "$backup")
     local hash
@@ -112,7 +101,7 @@ show_interactive_backup_menu() {
     subject=$(git log -1 --format='%s' "$backup" 2>/dev/null || echo "(no commit)")
     
     printf "%d) ${YELLOW}%s${NC} ${GREY}→${NC} ${CYAN}%s${NC} ${YELLOW}%s${NC} ${GREY}%s${NC}\n" \
-      $((i + 1)) "$backup" "$original_name" "$hash" "$subject" >&2
+      $((i + 1)) "$display_name" "$original_name" "$hash" "$subject" >&2
   done
   
   printf "\nEnter choice (1-%d): " "${#backups[@]}" >&2
