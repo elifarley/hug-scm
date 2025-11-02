@@ -28,7 +28,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg ttyd fish
+          sudo apt-get install -y ffmpeg ttyd fish imagemagick
 
       - name: Install Hug SCM
         run: make install
