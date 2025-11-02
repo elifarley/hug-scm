@@ -37,6 +37,8 @@ DESCRIPTION:
     destructive operation (the existing branch will be deleted and recreated).
 
     When no arguments are provided, displays an interactive menu of available backup branches.
+    For repositories with 10 or more backup branches, uses gum filter (if installed) for
+    easier searching and selection. Otherwise, displays a numbered list.
     
     For convenience, you can omit the "hug-backups/" prefix when specifying a backup branch.
 
