@@ -962,6 +962,12 @@ compute_local_branch_details() {
         local branch_raw="${git_output[i]}"
         local branch
         branch=$(printf '%s' "$branch_raw" | tr -d '\n\r')
+        
+        # Skip backup branches (internal implementation detail)
+        # Backup branches follow the pattern: hug-backups/**
+        if [[ "$branch" == hug-backups/* ]]; then
+            continue
+        fi
 
         local hash="${git_output[i+1]}"
 
