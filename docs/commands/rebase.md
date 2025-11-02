@@ -72,3 +72,13 @@ The following commands are used when a rebase is **paused** due to a conflicting
 -   **Behavior**:
     - **Without `--all`**: Resolves all conflicts in *one* commit with the **incoming** changes, stages them, and **continues** to the next commit (which may also have conflicts).
     - **With `--all`**: Resolves all conflicts in **ALL** conflicting commits of this rebase operation, applying the **same strategy** to them all, allowing it to run to completion automatically.
+
+- **Example**:
+  - **1. A rebase conflict occurs:**
+    ![Rebase conflict](img/rebase-conflict-1-conflict.png)
+  - **2. The file has conflict markers:**
+    ![File with conflict markers](img/rebase-conflict-2-cat.png)
+  - **3. `hug rbc-other` resolves the conflict, prioritizing the `main` branch's changes:**
+    ![Conflict resolved with other](img/rebase-conflict-3-resolved-cat.png)
+  - **4. The history is now linear:**
+    ![Linear history after rebase](img/rebase-conflict-4-resolved-history.png)

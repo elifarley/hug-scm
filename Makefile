@@ -55,6 +55,10 @@ vhs-check: vhs-deps-install ## Check if VHS is installed
 	@echo "$(BLUE)Checking VHS installation...$(NC)"
 	@bash docs/screencasts/bin/vhs-build.sh --check
 
+vhs-deps-install-ci: ## Install VHS dependencies for CI
+	@echo "$(BLUE)Installing VHS dependencies for CI...$(NC)"
+	@sudo apt-get update && sudo apt-get install -y ffmpeg ttyd imagemagick
+
 vhs: demo-repo-rebuild-all vhs-deps-install ## Build all GIF/PNG images from VHS tape files
 	@echo "$(BLUE)Building all VHS screencasts...$(NC)"
 	@bash docs/screencasts/bin/vhs-build.sh --all
@@ -62,7 +66,7 @@ vhs: demo-repo-rebuild-all vhs-deps-install ## Build all GIF/PNG images from VHS
 
 vhs-build: vhs ## Alias for vhs target
 
-vhs-build-one: demo-repo-rebuild-all vhs-check ## Build a specific VHS tape file (usage: make vhs-build-one TAPE=filename.tape)
+vhs-build-one: demo-repo-rebuild-all vhs-deps-install-ci vhs-check ## Build a specific VHS tape file (usage: make vhs-build-one TAPE=filename.tape)
 	@echo "$(BLUE)Building VHS screencast: $(TAPE)$(NC)"
 	@if [ -z "$(TAPE)" ]; then \
 		echo "$(YELLOW)Usage: make vhs-build-one TAPE=filename.tape$(NC)"; \
