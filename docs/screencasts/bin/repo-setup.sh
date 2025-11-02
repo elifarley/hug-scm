@@ -367,6 +367,39 @@ create_release_branches() (
         c -m "release: Bump version to 1.1.0-rc.1"
 )
 
+# Creates a branch with a conflict for rebase demonstrations.
+create_rebase_conflict_branch() (
+    echo "7a. Creating branch with rebase conflict..."
+
+    hug b main
+
+    # 1. Create a common base commit
+    echo "This is the original line." > conflict.txt
+    hug a conflict.txt
+    commit_with_date 1 day "$AUTHOR_ONE_NAME" "$AUTHOR_ONE_EMAIL" \
+        c -m "feat: Add base file for conflict"
+
+    # 2. Create a branch
+    hug bc feature/rebase-conflict-demo
+
+    # 3. Create a commit on the branch
+    echo "This is a line from the feature branch." > conflict.txt
+    hug a conflict.txt
+    commit_with_date 1 day "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" \
+        c -m "feat: Modify conflict file on feature branch"
+
+    # 4. Go back to the original branch, and create a conflicting commit
+    hug b main
+
+    echo "This is a line from the main branch." > conflict.txt
+    hug a conflict.txt
+    commit_with_date 1 day "$AUTHOR_THREE_NAME" "$AUTHOR_THREE_EMAIL" \
+        c -m "feat: Modify conflict file on main branch"
+
+    # Leave the repo on the feature branch
+    hug b feature/rebase-conflict-demo
+)
+
 # Add more commits to main branch for realistic history.
 add_main_branch_commits() (
     echo "8. Adding more commits to main branch..."
@@ -823,6 +856,7 @@ main() (
     create_hotfix_branches
     create_experimental_branches
     create_release_branches
+    create_rebase_conflict_branch
     add_main_branch_commits
     add_development_activity
     setup_remote_and_upstream
