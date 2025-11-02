@@ -20,10 +20,18 @@ jobs:
       - name: Cache test dependencies
         uses: actions/cache@v4
         with:
-          path: tests/deps
+          path: ~/.hug-deps/bats
           key: ${{ runner.os }}-tests-deps-${{ hashFiles('tests/run-tests.sh') }}
           restore-keys: |
             ${{ runner.os }}-tests-deps-
+
+      - name: Cache VHS dependency
+        uses: actions/cache@v4
+        with:
+          path: ~/.hug-deps/bin/vhs
+          key: ${{ runner.os }}-vhs-deps-${{ hashFiles('docs/screencasts/bin/vhs-build.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-vhs-deps-
 
       - name: Verify Git version
         run: |

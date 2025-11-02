@@ -38,7 +38,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCREENCASTS_DIR="$(dirname "$SCRIPT_DIR")"
 OUTPUT_DIR="${SCREENCASTS_DIR}/../commands/img"
-USER_DEPS_DIR="$HOME/.hug-deps/bin"
+USER_DEPS_DIR="${VHS_DEPS_DIR:-$HOME/.hug-deps/bin}"
 
 # Color codes
 readonly RED='\033[0;31m'

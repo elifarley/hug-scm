@@ -111,8 +111,6 @@ Before running tests, you must install Hug via `make install; make test-deps-ins
 - `tests/test_helper.bash` - Common setup, utilities, and helpers
 - `tests/unit/` - Unit tests for individual commands
 - `tests/integration/` - End-to-end workflow tests
-- `tests/deps/` - Local test dependencies (auto-installed, listed in .gitignore)
-
 **Helper Libraries:**
 - bats-support - Enhanced BATS support functions
 - bats-assert - Assertion helpers (assert_success, assert_output, etc.)
@@ -120,10 +118,10 @@ Before running tests, you must install Hug via `make install; make test-deps-ins
 
 **Dependency Management:**
 The project uses a self-contained test dependency system:
-- Run `make test-deps-install` to install/update BATS and helpers locally
-- Test runner automatically bootstraps dependencies if missing
-- Dependencies are stored in `tests/deps/` and ignored by git
-- Can be overridden via `DEPS_DIR` env var for custom paths (e.g., in CI or restricted environments)
+- Run `make test-deps-install` to install/update BATS and helpers.
+- By default, dependencies are installed in `$HOME/.hug-deps`.
+- The installation directory for test dependencies can be overridden by setting the `DEPS_DIR` environment variable.
+- The installation directory for the `vhs` dependency can be overridden by setting the `VHS_DEPS_DIR` environment variable.
 
 **Running Tests:**
 ```bash
