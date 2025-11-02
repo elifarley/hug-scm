@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+# shellcheck source=../lib/hug-common
+. "$CMD_BASE/../lib/hug-common"
+# shellcheck source=../lib/hug-git-kit
+. "$CMD_BASE/../lib/hug-git-kit"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+show_help() {
+    cat << EOF
+hug brestore: Restore a branch from a backup created by 'hug rb'.
+
+USAGE:
+    hug brestore [new-branch-name] [-h, --help]
+
+OPTIONS:
+    new-branch-name    (Optional) The name of the new branch to create.
+                         If not provided, it defaults to the original branch name.
+    -h, --help         Show this help
+
+DESCRIPTION:
+    Lists all available backup branches and prompts you to select one to restore.
+    If the target branch name already exists, it will ask for confirmation
+    before overwriting.
+
+EXAMPLES:
+    hug brestore                   # Interactively restore to the original branch name
+    hug brestore my-new-feature    # Restore a backup to a new branch named 'my-new-feature'
+EOF
+}
+
+# Parse command-line arguments
+eval "$(parse_common_flags "$@")"
+
+new_branch_name=""
+if [[ $# -gt 0 ]]; then
+  # check if the argument is not a flag
+  if [[ "$1" != -* ]]; then
+    new_branch_name="$1"
+    shift
+  fi
+fi
+
+# Additional arguments are not allowed
+if [[ $# -gt 0 ]]; then
+  error "Unknown arguments: $*"
+fi
+
+# Main logic
+
+check_git_repo
+
+# Get a list of backup branches, sorted by most recent first
+mapfile -t backup_branches < <(git for-each-ref --sort=-committerdate 'refs/heads/hug-backups/**' --format='%(refname:short)')
+
+# Check if there are any backups
+if [[ ${#backup_branches[@]} -eq 0 ]]; then
+  info "No backup branches found."
+  exit 0
+fi
+
+# Display the backup branches to the user
+info "Available backup branches:"
+for i in "${!backup_branches[@]}"; do
+  printf "  %d) %s\n" "$((i + 1))" "${backup_branches[i]}"
+done
+
+# Prompt the user for a selection
+printf "\nEnter the number of the branch to restore: "
+read -r choice
+
+# Validate the user's input
+if ! [[ "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 ]] || [[ "$choice" -gt ${#backup_branches[@]} ]]; then
+  error "Invalid selection. Please enter a number between 1 and ${#backup_branches[@]}."
+fi
+
+selected_backup_branch="${backup_branches[$((choice - 1))]}"
+
+# Determine the target branch name
+if [[ -n "$new_branch_name" ]]; then
+  target_branch_name="$new_branch_name"
+else
+  # Extract the original branch name from the backup name
+  # e.g., hug-backups/2023-11/02-1234.my-feature -> my-feature
+  target_branch_name=$(basename "$selected_backup_branch" | cut -d'.' -f2-)
+fi
+
+# Check if the target branch already exists
+if git rev-parse --verify "$target_branch_name" >/dev/null 2>&1; then
+  warning "Branch '$target_branch_name' already exists and will be overwritten."
+  prompt_confirm "Are you sure you want to continue?"
+fi
+
+# Restore the branch
+if git branch -f "$target_branch_name" "$selected_backup_branch"; then
+  success "Branch '$target_branch_name' has been restored from backup '$selected_backup_branch'."
+else
+  error "Failed to restore branch '$target_branch_name'."
+fi

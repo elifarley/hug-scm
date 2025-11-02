@@ -15,6 +15,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 | `hug bll` | **B**ranch **L**ist **L**ong | Detailed local branch list with tracking info |
 | `hug bc` | **B**ranch **C**reate | Create a new branch and switch to it |
 | `hug br` | **B**ranch **R**ename | Rename the current branch |
+| `hug brestore` | **B**ranch **Restore** | Restore a branch from a backup |
 | `hug bdel` | **B**ranch **DEL**ete (safe) | Delete merged local branch |
 | `hug bdelf` | **B**ranch **DEL**ete **F**orce | Force-delete local branch |
 | `hug bdelr` | **B**ranch **DEL**ete **R**emote | Delete remote branch |
@@ -91,6 +92,20 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   hug br updated-feature  # Rename current branch
   ```
 - **Safety**: Prompts for confirmation if the new name exists.
+
+## Branch Restoration
+
+### `hug brestore [new-branch-name]`
+- **Description**: Restores a branch from a backup created by `hug rb`. It presents an interactive list of available backups to choose from. If `new-branch-name` is provided, the backup is restored to that name; otherwise, it defaults to the original branch name.
+- **Example**:
+  ```shell
+  # Interactively restore to the original branch name
+  hug brestore
+
+  # Restore a backup to a new branch named 'my-recovered-feature'
+  hug brestore my-recovered-feature
+  ```
+- **Safety**: If the target branch name already exists, it warns you and asks for confirmation before overwriting the existing branch.
 
 ## Branch Deletion
 
