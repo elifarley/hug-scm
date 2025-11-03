@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug fa: Count commits per author for a file.
+
+USAGE:
+    hug fa [<file>] [-h, --help]
+
+ARGUMENTS:
+    <file>     File to analyze (optional - prompts for selection if omitted)
+
+OPTIONS:
+    -h, --help Show this help
+
+DESCRIPTION:
+    Shows the number of commits each author has made to a file, sorted by
+    commit count (most active first). Follows renames through history.
+
+EXAMPLES:
+    hug fa                      # Interactive file selection
+    hug fa src/app.js           # Count commits per author for specific file
+
+SEE ALSO:
+    hug fblame   : Show who changed what line
+    hug fb       : Short blame (author and line only)
+    hug fcon     : List all contributors to a file
+EOF
+}
+
+# Parse common flags
+eval "$(parse_common_flags "$@")"
+
+check_git_repo
+
+# If no file provided, show interactive selection
+if [ $# -eq 0 ]; then
+  local file
+  if ! file=$(select_file "Select file to count commits per author..."); then
+    info "No file selected or cancelled."
+    exit 0
+  fi
+  exec git log --follow --format='%an' -- "$file" | sort | uniq -c | sort -rn
+fi
+
+exec git log --follow --format='%an' -- "$@" | sort | uniq -c | sort -rn

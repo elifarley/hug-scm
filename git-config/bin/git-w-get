@@ -10,6 +10,7 @@ w-get: Get file contents from specific commit (without staging)
 
 USAGE:
     hug w get [-f/--force] <target> [file1] [file2] ...
+    hug w get [-f/--force] <target> --
 
 OPTIONS:
     -f, --force     Force overwrite, ignoring any uncommitted changes and running non-interactively.
@@ -22,6 +23,7 @@ OPTIONS:
         -u, --upstream  Use the head of the upstream branch as the target commit.
     [file...]       Specific files to reset (optional)
                     If omitted, ALL files will be reset.
+    --              Trigger interactive file selection UI
 
 DESCRIPTION:
     Reset files to their state in a specific commit without staging changes.
@@ -30,6 +32,7 @@ DESCRIPTION:
 
 EXAMPLES:
     hug w get a1b2c3              Reset ALL files to commit a1b2c3
+    hug w get a1b2c3 --           Interactive file selection for commit a1b2c3
     hug w get --upstream          Reset ALL files to the upstream branch state
     hug w get -u file.js          Reset specific file to upstream branch state
     hug w get HEAD~5 file.js      Reset specific file to 5 branch commits ago
@@ -291,7 +294,26 @@ main() {
     # 6. Validate commit
     validate_commit "$commit"
 
-    # 7. Determine operation mode and execute
+    # 7. Check if user wants interactive file selection
+    if [ $# -eq 1 ] && [ "$1" = "--" ]; then
+        # Interactive file selection
+        local -a selected_files=()
+        if ! mapfile -t selected_files < <(select_file --multi "Select files to reset..."); then
+            info "No files selected or cancelled."
+            exit 0
+        fi
+        
+        if [ ${#selected_files[@]} -eq 0 ]; then
+            info "No files selected."
+            exit 0
+        fi
+        
+        # Reset selected files
+        reset_specific_files "$commit" "$force" "${selected_files[@]}"
+        exit 0
+    fi
+
+    # 8. Determine operation mode and execute
     if [ $# -eq 0 ]; then
         # Reset ALL files
         reset_all_files "$commit" "$force"

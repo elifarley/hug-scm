@@ -77,6 +77,81 @@ gum_available() {
   command -v gum >/dev/null 2>&1 && [[ -t 0 ]] && [[ -t 1 ]]
 }
 
+# Interactive file selection using gum
+# Usage: select_file [--multi] [--filter-cmd <cmd>] [prompt]
+# Parameters:
+#   --multi         Allow multiple file selection (default: single)
+#   --filter-cmd    Command to generate file list (default: git ls-files)
+#   prompt          Custom prompt text (optional)
+# Output:
+#   Selected file(s) to stdout, one per line
+# Returns:
+#   0 if files selected, 1 if cancelled or no selection
+# Note:
+#   Requires gum to be installed
+select_file() {
+  if ! gum_available; then
+    error "Interactive file selection requires 'gum' to be installed.
+Install: https://github.com/charmbracelet/gum"
+  fi
+  
+  local multi=false
+  local filter_cmd="git ls-files"
+  local prompt="Select file(s)..."
+  
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --multi)
+        multi=true
+        shift
+        ;;
+      --filter-cmd)
+        filter_cmd="$2"
+        shift 2
+        ;;
+      *)
+        prompt="$1"
+        shift
+        ;;
+    esac
+  done
+  
+  # Get list of files
+  local -a files=()
+  mapfile -t files < <(eval "$filter_cmd" 2>/dev/null || true)
+  
+  if [[ ${#files[@]} -eq 0 ]]; then
+    return 1
+  fi
+  
+  # Calculate height for gum
+  local gum_height
+  gum_height=$((${#files[@]} < 13 ? ${#files[@]} + 3 : 15))
+  
+  # Build gum command
+  local -a gum_args=(
+    "filter"
+    "--placeholder=$prompt"
+    "--height=$gum_height"
+  )
+  
+  if $multi; then
+    gum_args+=("--no-limit")
+  fi
+  
+  # Run gum and capture selection
+  local selection
+  selection=$(printf '%s\n' "${files[@]}" | gum "${gum_args[@]}" || true)
+  
+  if [[ -z "$selection" ]]; then
+    return 1
+  fi
+  
+  printf '%s\n' "$selection"
+  return 0
+}
+
 ################################################################################
 # Output and User Interaction Functions
 ################################################################################

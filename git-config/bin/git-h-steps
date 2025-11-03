@@ -8,7 +8,10 @@ show_help() {
 hug h steps: Show commit steps back from HEAD to last change of a file.
 
 USAGE:
-    hug h steps <file> [--raw] [--quiet] [-h, --help]
+    hug h steps [<file>] [--raw] [--quiet] [-h, --help]
+
+ARGUMENTS:
+    <file>     File to analyze (optional - prompts for selection if omitted)
 
 OPTIONS:
     --raw      Output just the step count (0 if in HEAD)
@@ -20,10 +23,13 @@ DESCRIPTION:
     touching <file> (handles renames via --follow). Use to find N for 'h back N'
     or similar HEAD ops.
 
+    When no file is provided, displays an interactive file selection menu.
+
     Full output: "<steps> steps back from HEAD; <formatted commit info>"
     If 0 steps: Indicates last change is in HEAD.
 
 EXAMPLES:
+    hug h steps                     # Interactive file selection
     hug h steps src/app.js          # Full info for app.js
     hug h steps README.md --raw     # Just the number (e.g., 3)
     hug h steps file.txt --raw | xargs hug h back  # Chain to rewind
@@ -47,9 +53,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# If no file provided, show interactive selection
 if [[ -z "$file" ]]; then
-  show_help
-  exit 0
+  if ! file=$(select_file "Select file to analyze..."); then
+    info "No file selected or cancelled."
+    exit 0
+  fi
 fi
 
 check_git_repo

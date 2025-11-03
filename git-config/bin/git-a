@@ -10,14 +10,19 @@ show_help() {
 hug a: Stage tracked files, or specific files if provided.
 
 USAGE:
-  hug a        # Stage all tracked files (updates only)
-  hug a .      # Stage current directory
-  hug a <file> # Stage specific files
+  hug a          # Stage all tracked files (updates only)
+  hug a .        # Stage current directory
+  hug a <file>   # Stage specific files
+  hug a --       # Interactive file selection
 
 OPTIONS:
+  --             Trigger interactive file selection UI
   -h, --help     Show this help message and exit.
 
 DESCRIPTION:
+  Stage tracked files for commit. When no arguments are provided, stages all
+  tracked files that have been modified. Use '--' to interactively select
+  files to stage.
 
 SEE ALSO:
   hug aa: Stage everything (tracked + untracked + deletions)
@@ -32,8 +37,26 @@ eval "$(parse_common_flags "$@")"
 # Early exit if not in Git repo
 check_git_repo
 
+# Check if user wants interactive file selection
 if [ $# -eq 0 ]; then
   git add -u
 else
-  git add "$@"
+  # If only argument is '--', trigger interactive selection
+  if [ $# -eq 1 ] && [ "$1" = "--" ]; then
+    # Get list of files with changes (tracked files)
+    local -a files=()
+    if ! mapfile -t files < <(select_file --multi --filter-cmd "git ls-files --modified --others --exclude-standard" "Select files to stage (<TAB> to select, Enter to confirm)..."); then
+      info "No files selected or cancelled."
+      exit 0
+    fi
+    
+    if [ ${#files[@]} -eq 0 ]; then
+      info "No files selected."
+      exit 0
+    fi
+    
+    git add "${files[@]}"
+  else
+    git add "$@"
+  fi
 fi

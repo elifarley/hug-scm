@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug fblame: Show who changed what line in a file (with whitespace/copy detection).
+
+USAGE:
+    hug fblame [<file>] [-h, --help]
+
+ARGUMENTS:
+    <file>     File to blame (optional - prompts for selection if omitted)
+
+OPTIONS:
+    -h, --help Show this help
+
+DESCRIPTION:
+    Shows line-by-line authorship of a file with enhanced detection:
+    - Ignores whitespace changes (-w)
+    - Detects code moved/copied within and across files (-C -C -C)
+
+EXAMPLES:
+    hug fblame                  # Interactive file selection
+    hug fblame src/app.js       # Blame specific file
+
+SEE ALSO:
+    hug fb       : Short blame (author and line only)
+    hug fcon     : List all contributors to a file
+    hug fa       : Count commits per author for a file
+EOF
+}
+
+# Parse common flags
+eval "$(parse_common_flags "$@")"
+
+check_git_repo
+
+# If no file provided, show interactive selection
+if [ $# -eq 0 ]; then
+  local file
+  if ! file=$(select_file "Select file to blame..."); then
+    info "No file selected or cancelled."
+    exit 0
+  fi
+  exec git blame -w -C -C -C -- "$file"
+fi
+
+exec git blame -w -C -C -C -- "$@"

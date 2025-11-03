@@ -7,18 +7,25 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
   printf 'hug llfs: Log commits to a file with change stats.\n' >&2
+  printf '<file>: File to show log for (optional - prompts for selection if omitted).\n' >&2
   printf '[-N]: Limit to last N commits (e.g., -1 for most recent).\n' >&2
-  printf 'Usage: hug llfs <file> [-N] [log options]\n' >&2
+  printf 'Usage: hug llfs [<file>] [-N] [log options]\n' >&2
   printf 'Examples:\n' >&2
-  printf '  hug llfs file.txt -1  # Stats for most recent change\n' >&2
+  printf '  hug llfs                 # Interactive file selection\n' >&2
+  printf '  hug llfs file.txt -1     # Stats for most recent change\n' >&2
 }
 
 # Parse common flags
 eval "$(parse_common_flags "$@")"
 
+# If no file provided, show interactive selection
 if [ $# -eq 0 ]; then
-  show_help
-  exit 1
+  local file
+  if ! file=$(select_file "Select file to view log with stats..."); then
+    info "No file selected or cancelled."
+    exit 0
+  fi
+  exec hug llf "$file" --stat
 fi
 
 file="$1"; shift

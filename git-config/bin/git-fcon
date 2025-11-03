@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug fcon: List all contributors to a file.
+
+USAGE:
+    hug fcon [<file>] [-h, --help]
+
+ARGUMENTS:
+    <file>     File to analyze (optional - prompts for selection if omitted)
+
+OPTIONS:
+    -h, --help Show this help
+
+DESCRIPTION:
+    Lists all unique contributors (name and email) who have committed changes
+    to a file, following renames through history.
+
+EXAMPLES:
+    hug fcon                    # Interactive file selection
+    hug fcon src/app.js         # List contributors to specific file
+
+SEE ALSO:
+    hug fblame   : Show who changed what line
+    hug fb       : Short blame (author and line only)
+    hug fa       : Count commits per author for a file
+EOF
+}
+
+# Parse common flags
+eval "$(parse_common_flags "$@")"
+
+check_git_repo
+
+# If no file provided, show interactive selection
+if [ $# -eq 0 ]; then
+  local file
+  if ! file=$(select_file "Select file to list contributors..."); then
+    info "No file selected or cancelled."
+    exit 0
+  fi
+  exec git log --follow --pretty=format:'%an <%ae>' -- "$file" | sort -u
+fi
+
+exec git log --follow --pretty=format:'%an <%ae>' -- "$@" | sort -u
