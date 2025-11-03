@@ -1001,7 +1001,7 @@ compute_local_branch_details() {
         # Build track string: [upstream: status] like 'git branch -vv'
         local track=""
         if [[ -n "$upstream_name" ]]; then
-            track="[$upstream_name"
+            track="$CYAN[$upstream_name"
             if [[ -n "$status" ]]; then
                 track+=": $BLUE$(echo $status | tr -d '[]')$CYAN"
             fi
@@ -1068,7 +1068,7 @@ print_branch_line() {
         fi
     else
         if [ -n "$track" ]; then
-            printf "${prefix}${YELLOW}%7s${NC} %-*s ${CYAN}%s${NC}" "$hash" "$max_len" "$branch" "$track"
+            printf "${prefix}${YELLOW}%7s${NC} %-*s %s${NC}" "$hash" "$max_len" "$branch" "$track"
         else
             printf "${prefix}${YELLOW}%7s${NC} %-*s" "$hash" "$max_len" "$branch"
         fi
@@ -1162,18 +1162,12 @@ print_interactive_branch_menu() {
                 marker="* "
             fi
             
-            local formatted="${marker}${branch} (${hash})"
+            local formatted="${marker}${branch} $YELLOW$hash$NC"
             if [ -n "$track" ]; then
-                # Remove ANSI color codes for gum display
-                local clean_track
-                clean_track=$(strip_ansi "$track")
-                formatted="${formatted} ${clean_track}"
+                formatted="$formatted $track"
             fi
             if [ -n "$subject" ]; then
-                # Remove ANSI color codes for gum display
-                local clean_subject
-                clean_subject=$(strip_ansi "$subject")
-                formatted="${formatted} ${clean_subject}"
+                formatted="$formatted $subject"
             fi
             
             formatted_options+=("$formatted")
@@ -1182,7 +1176,7 @@ print_interactive_branch_menu() {
         # Use dynamic height: min of 15 or number of branches + 2 for UI
         local gum_height=$(($num_branches < 13 ? $num_branches + 2 : 15))
         local index
-        index=$(get_gum_selection_index formatted_options branches "Select a branch to switch to..." "$gum_height")
+        index=$(get_gum_selection_index formatted_options branches "$num_branches branches; Pick one to switch to..." "$gum_height")
         
         # SC2034: selected_ref is a nameref that assigns to caller's variable
         # shellcheck disable=SC2034
@@ -1247,7 +1241,7 @@ get_gum_selection_index() {
     fi
 
     local selection
-    selection=$(printf '%s\n' "${formatted_options_ref[@]}" | gum filter --placeholder="$placeholder" --height="$height" || true)
+    selection=$(printf '%s\n' "${formatted_options_ref[@]}" | gum filter --placeholder="$placeholder" --height="$height" --no-strip-ansi --reverse || true)
     
     if [[ -z "$selection" ]]; then
         info "Cancelled."

@@ -364,13 +364,3 @@ confirm_action() {
     exit 1
   fi
 }
-
-# Removes ANSI color codes from a string
-# Usage: clean=$(strip_ansi "colored text")
-# Parameters:
-#   $1 - String to strip
-# Output:
-#   Clean string without ANSI codes to stdout
-strip_ansi() {
-  printf '%s' "$1" | sed 's/\x1b\[[0-9;]*m//g'
-}
