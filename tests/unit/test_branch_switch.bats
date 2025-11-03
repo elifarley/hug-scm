@@ -29,7 +29,7 @@ teardown() {
 @test "hug b <branch>: switches to specified branch directly" {
   # Create a test branch
   git checkout -b test-branch
-  git checkout main
+  git switch main
   
   # Switch using hug b
   run hug b test-branch
