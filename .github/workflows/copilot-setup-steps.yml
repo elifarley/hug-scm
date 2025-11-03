@@ -50,3 +50,6 @@ jobs:
       - name: Install VHS
         run: make vhs-deps-install
 
+      - name: Install optional dependencies
+        run: make optional-deps-install
+
