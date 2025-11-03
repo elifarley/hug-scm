@@ -70,6 +70,14 @@ readonly RED GREEN GREEN_BRIGHT YELLOW YELLOW_BRIGHT BLUE MAGENTA CYAN GREY NC
 export RED GREEN GREEN_BRIGHT YELLOW YELLOW_BRIGHT BLUE MAGENTA CYAN GREY NC
 
 ################################################################################
+# Gum Integration Helpers
+################################################################################
+
+gum_available() {
+  command -v gum >/dev/null 2>&1 && [[ -t 0 ]] && [[ -t 1 ]]
+}
+
+################################################################################
 # Output and User Interaction Functions
 ################################################################################
 
@@ -148,6 +156,14 @@ prompt_confirm() {
     return 0
   fi
   local prompt="${1:-Proceed? [y/N]: }"
+  if gum_available; then
+    local message="${prompt% }"
+    if gum confirm "$message"; then
+      return 0
+    fi
+    info "Cancelled."
+    exit 1
+  fi
   local response
   printf '%s' "$prompt" >&2
   if ! read -r response; then
@@ -351,8 +367,22 @@ confirm_action() {
   if [[ ${HUG_FORCE:-} == true ]]; then
     return 0
   fi
-  
+
   local action="$1"
+  if gum_available; then
+    local gum_reply
+    if ! gum_reply=$(gum input --prompt "→ " --placeholder "Type \"${action}\" to confirm" 2>/dev/null); then
+      info "Cancelled."
+      exit 1
+    fi
+    gum_reply="$(trim_message "${gum_reply:-}")"
+    if [[ "$gum_reply" == "$action" ]]; then
+      return 0
+    fi
+    info "Cancelled."
+    exit 1
+  fi
+
   local reply
   printf 'Type "%s" to confirm: ' "$action" >&2
   if ! read -r reply; then
