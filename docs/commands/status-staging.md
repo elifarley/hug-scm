@@ -120,11 +120,12 @@ Show diffs inline for better inspection.
 ## Staging Commands (a*)
 
 - `hug a [files...]`: **A**dd tracked
-    - **Description**: Stage tracked changes (or specific files if provided). If no args, stages updates only.
+    - **Description**: Stage tracked changes (or specific files if provided). If no args, stages updates only. Use `--` to trigger interactive file selection UI.
     - **Example**:
       ```
       hug a                     # Stage all tracked updates
       hug a src/                # Stage directory, including non-tracked files
+      hug a --                  # Interactive file selection (requires gum)
       ```
     - **Safety**: ✅ Safe staging (reversible with `hug us`).
 

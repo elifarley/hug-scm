@@ -268,6 +268,7 @@ hug sw [file]               # Status with working dir changes patch (staged and 
 
 # Staging
 hug a [files]               # Stage tracked files (or all if no args)
+hug a --                    # Interactive file selection (requires gum)
 hug aa                      # Stage everything (tracked + untracked + deletions)
 hug us <files>              # Unstage specific files
 hug usa                     # Unstage all files
@@ -297,23 +298,23 @@ hug bdelr <branch>          # Delete remote branch
 hug l                 # One-line log with graph and decorations
 hug ll                # Log with date, author, and message (short date)
 hug la                # Log all branches
-hug lf <term>         # Search commits by message (add -i for case-insensitive)
-hug lc <code>         # Search commits by code changes in diff
-hug lcr <regex>       # Search commits by regex in code changes
+hug lf [term]         # Search commits by message (interactive if no term, add -i for case-insensitive)
+hug lc [code]         # Search commits by code changes in diff (interactive if no code)
+hug lcr [regex]       # Search commits by regex in code changes (interactive if no regex)
 hug lau <author>      # Commits by specific author
 hug ld <since> <until># Commits in date range
 hug lp                # Log with patches
-hug llf <file>        # Log commits to a specific file (add -p for patches)
+hug llf [file]        # Log commits to a specific file (interactive if no file, add -p for patches)
 ```
 
 #### File Inspection (`f*`)
 
 ```shell
-hug fblame <file>     # Blame with whitespace/copy detection
-hug fb <file>         # Short blame (author and line only)
-hug fcon <file>       # List all contributors to a file
-hug fa <file>         # Count commits per author for a file
-hug fborn <file>      # Show when file was added
+hug fblame [file]     # Blame with whitespace/copy detection (interactive if no file)
+hug fb [file]         # Short blame (author and line only) (interactive if no file)
+hug fcon [file]       # List all contributors to a file (interactive if no file)
+hug fa [file]         # Count commits per author for a file (interactive if no file)
+hug fborn [file]      # Show when file was added (interactive if no file)
 ```
 
 #### Tagging (`t*`)

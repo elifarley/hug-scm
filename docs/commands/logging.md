@@ -74,14 +74,15 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 
 ## Search by Commit Message
 
-- `hug lf <search-term> [-i] [-p] [--all]`
-  - **Description**: Search commit history by grep on commit messages.
+- `hug lf [<search-term>] [-i] [-p] [--all]`
+  - **Description**: Search commit history by grep on commit messages. When no search term is provided, prompts for interactive input (requires gum).
   - **Options**:
     - `-i`: Ignore case.
     - `-p`: Include patches in results.
     - `--all`: Search all branches.
   - **Usage**:
     ```shell
+    hug lf                     # Interactive: enter search term
     hug lf "fix bug"           # Case-sensitive search
     hug lf -i "fix bug" --all  # Ignore case, all branches
     ```
@@ -90,26 +91,28 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 
 ## Search by Code Changes
 
-- `hug lc <search-term> [-i] [-p] [--all] [-- file]`
-  - **Description**: Search commits where the diff (code changes) contains the term (Git's pickaxe search). Restrict to a file with `-- file`.
+- `hug lc [<search-term>] [-i] [-p] [--all] [-- file]`
+  - **Description**: Search commits where the diff (code changes) contains the term (Git's pickaxe search). Restrict to a file with `-- file`. When no search term is provided, prompts for interactive input (requires gum).
   - **Options**:
     - `-i`: Ignore case.
     - `-p`: Show patches.
     - `--all`: All branches.
   - **Example**:
     ```shell
-    hug lc "getUserById"              # Search code changes
+    hug lc                                # Interactive: enter search term
+    hug lc "getUserById"                  # Search code changes
     hug lc "getUserById" -- src/users.js  # Restrict to file
     ```
   - **Safety**: Read-only.
   - ![hug lc example](img/hug-lc.png)
 
-- `hug lcr <regex> [-i] [-p] [--all] [-- file]`
-  - **Description**: Search commits where the diff matches a regex (more flexible than `lc`).
+- `hug lcr [<regex>] [-i] [-p] [--all] [-- file]`
+  - **Description**: Search commits where the diff matches a regex (more flexible than `lc`). When no regex is provided, prompts for interactive input (requires gum).
   - **Options**: Same as `lc`.
   - **Example**:
     ```shell
-    hug lcr "TODO:" --all    # Regex search across branches
+    hug lcr                      # Interactive: enter regex pattern
+    hug lcr "TODO:" --all        # Regex search across branches
     ```
   - **Safety**: Read-only.
 
@@ -137,31 +140,34 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 
 ## File Inspection (llf*)
 
-These commands show the history of changes to a specific file, following renames. Use `-N` to limit to the last N commits (e.g., `-1` for most recent). Combine with log options like `--stat` or `-p`.
+These commands show the history of changes to a specific file, following renames. Use `-N` to limit to the last N commits (e.g., `-1` for most recent). Combine with log options like `--stat` or `-p`. When no file is provided, shows an interactive file selection UI (requires gum).
 
-- `hug llf <file> [-N] [log options]`
-  - **Description**: Log commits that modified a file (handles renames). Ideal for finding the most recent change to a file.
+- `hug llf [<file>] [-N] [log options]`
+  - **Description**: Log commits that modified a file (handles renames). Ideal for finding the most recent change to a file. When no file is provided, shows interactive file selection.
   - **Example**:
     ```shell
+    hug llf                      # Interactive file selection
     hug llf file.txt -1          # Most recent commit touching file
     hug llf file.txt -2 --stat   # Last 2 commits with stats
     ```
   - **Safety**: Read-only.
   - ![hug llf example](img/hug-llf.png)
 
-- `hug llfs <file> [-N] [log options]`
-  - **Description**: File history with change statistics (insertions/deletions).
+- `hug llfs [<file>] [-N] [log options]`
+  - **Description**: File history with change statistics (insertions/deletions). When no file is provided, shows interactive file selection.
   - **Example**:
     ```shell
-    hug llfs file.txt -1  # Stats for most recent change
+    hug llfs                 # Interactive file selection
+    hug llfs file.txt -1     # Stats for most recent change
     ```
   - **Safety**: Read-only.
 
-- `hug llfp <file> [-N] [log options]`
-  - **Description**: File history including full patches/diffs.
+- `hug llfp [<file>] [-N] [log options]`
+  - **Description**: File history including full patches/diffs. When no file is provided, shows interactive file selection.
   - **Example**:
     ```shell
-    hug llfp file.txt -1  # Patch of most recent change
+    hug llfp                 # Interactive file selection
+    hug llfp file.txt -1     # Patch of most recent change
     ```
   - **Safety**: Read-only.
 
