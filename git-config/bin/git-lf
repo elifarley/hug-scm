@@ -55,7 +55,7 @@ if [ $# -eq 0 ]; then
     exit 1
   fi
   search_term=""
-  if ! search_term=$(gum input --placeholder "Enter search term for commit messages..." 2>/dev/null || true); then
+  if ! search_term=$(gum input --placeholder "Enter search term for commit messages..."  || true); then
     info "Cancelled."
     exit 0
   fi

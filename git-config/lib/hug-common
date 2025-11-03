@@ -446,7 +446,7 @@ confirm_action() {
   local action="$1"
   if gum_available; then
     local gum_reply
-    if ! gum_reply=$(gum input --prompt "→ " --placeholder "Type \"${action}\" to confirm" 2>/dev/null); then
+    if ! gum_reply=$(gum input --prompt "→ " --placeholder "Type \"${action}\" to confirm" ); then
       info "Cancelled."
       exit 1
     fi
