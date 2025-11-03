@@ -16,7 +16,8 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 | `hug bc` | **B**ranch **C**reate | Create a new branch and switch to it |
 | `hug br` | **B**ranch **R**ename | Rename the current branch |
 | `hug brestore` | **B**ranch **RESTORE** | Restore a branch from a backup |
-| `hug bdel` | **B**ranch **DEL**ete (safe) | Delete merged local branch |
+| `hug bdel` | **B**ranch **DEL**ete | Delete branches interactively or by name |
+| `hug bdel-backup` | **B**ranch **DEL**ete **BACKUP** | Delete backup branches with filters |
 | `hug bdelf` | **B**ranch **DEL**ete **F**orce | Force-delete local branch |
 | `hug bdelr` | **B**ranch **DEL**ete **R**emote | Delete remote branch |
 | `hug bpull` | **B**ranch **Pull** | Safe fast-forward pull (fails if merge/rebase needed) |
@@ -106,21 +107,54 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ## Branch Deletion
 
-### `hug bdel <branch>`
-- **Description**: Safely delete a local branch (only if fully merged into current branch).
-- **Example**:
+### `hug bdel [<branch>...]`
+- **Description**: Interactively or directly delete one or more local branches. Supports multi-selection via `gum filter` when no branches specified.
+- **Examples**:
   ```shell
-  hug bdel old-feature    # Safe delete if merged
+  hug bdel                    # Interactive: select branches with gum filter
+  hug bdel old-feature        # Delete single branch (merged only)
+  hug bdel feat-1 feat-2      # Delete multiple branches
+  hug bdel old-feat --force   # Force delete unmerged branch
+  hug bdel --dry-run          # Preview what would be deleted
   ```
-- **Safety**: Fails if unmerged; requires confirmation.
+- **Features**:
+  - Interactive multi-selection with `gum filter --no-limit` (when no branches specified)
+  - Excludes backup branches (use `hug bdel-backup` for those)
+  - Shows confirmation with branch count before deletion
+  - Safe by default: only deletes merged branches (use `--force` for unmerged)
+- **Safety**: Requires confirmation unless `--force` is used; fails if trying to delete unmerged branches without `--force`.
+
+### `hug bdel-backup [<backup>...] [--keep N] [--delete-older-than PATTERN]`
+- **Description**: Manage backup branches created by commands like `hug rb`. Supports filtering by date and keeping N most recent backups.
+- **Examples**:
+  ```shell
+  hug bdel-backup                                  # Interactive: select backups to delete
+  hug bdel-backup 2024-11/02-1234.feature         # Delete specific backup (short form)
+  hug bdel-backup --keep 5                        # Keep 5 most recent, delete rest
+  hug bdel-backup --delete-older-than 2024-11     # Delete backups from Nov 2024 and earlier
+  hug bdel-backup --delete-older-than 2024-11/03  # Delete backups from Nov 3, 2024 and earlier
+  hug bdel-backup --keep 3 --delete-older-than 2024  # Combine filters: delete 2024 and earlier, but keep 3 most recent overall
+  ```
+- **Filter Patterns**:
+  - `YYYY` - Year (e.g., `2024`)
+  - `YYYY-MM` - Month (e.g., `2024-11`)
+  - `YYYY-MM/DD` - Day (e.g., `2024-11/03`)
+  - `YYYY-MM/DD-HH` - Hour (e.g., `2024-11/03-14`)
+  - `YYYY-MM/DD-HHMM` - Minute (e.g., `2024-11/03-1415`)
+- **Features**:
+  - Interactive multi-selection with `gum filter --no-limit`
+  - `--keep N`: Always preserve N most recent backups
+  - `--delete-older-than`: Delete backups with timestamps older than pattern
+  - Combined filters: `--delete-older-than` identifies candidates, `--keep` protects most recent
+- **Safety**: Always prompts for confirmation unless `--force` is used.
 
 ### `hug bdelf <branch>`
-- **Description**: Force-delete a local branch, even if unmerged.
+- **Description**: Force-delete a local branch, even if unmerged. Direct alias to `git branch -D`.
 - **Example**:
   ```shell
   hug bdelf risky-branch  # Force delete unmerged branch
   ```
-- **Safety**: Double-prompts for confirmation to prevent accidents.
+- **Note**: For safer multi-branch deletion with unmerged branches, use `hug bdel --force` which provides better UI and confirmation.
 
 ### `hug bdelr <branch>`
 - **Description**: Delete a remote branch from the `origin` remote.
