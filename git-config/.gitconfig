@@ -64,8 +64,9 @@
     hug ll --grep=\"$t\" \"$@\"; \
   }; f"
 
+  # Search commits by code changes
   # Ex: Search in specific file
-  # git lc "getUserById" -- src/users.js
+  # hug lc "getUserById" -- src/users.js
   lc = "!f() { \
     test $# -eq 0 -o \"$1\" = '-h' && { \
       printf '\nlc: Search commits by CODE CHANGES in diff.\n-i: Ignore case.\n-p: Show patches.\n--all: Consider ALL branches.\n-- file: Restrict to a file.\nUsage: hug lc <search-term> [-ip] [--all] [-- file]' >&2; return 1; }; \
@@ -91,19 +92,19 @@
   # FILE INSPECTION
   # ============================================================================
 
-  # Who changed what line (usage: git blame <file>)
+  # Who changed what line (usage: hug fblame <file>)
   fblame = blame -w -C -C -C # w: Ignore whitespace changes; CCC: Detect code moved/copied within/across files (3 levels deep)
 
-  # Short blame with just author and line (usage: git bls <file>)
+  # Short blame with just author and line (usage: hug fb <file>)
   fb = blame -w -C -C -C --line-porcelain
 
-  # List all contributors to a file (usage: git contributors <file>)
+  # List all contributors to a file (usage: hug fcon <file>)
   fcon = "!f() { git log --follow --pretty=format:'%an <%ae>' -- \"$1\" | sort -u; }; f"
 
-  # Count commits per author for a file (usage: git file-authors <file>)
+  # Count commits per author for a file (usage: hug fa <file>)
   fa = "!f() { git log --follow --format='%an' -- \"$1\" | sort | uniq -c | sort -rn; }; f"
 
-  # Show when file was added (usage: git file-born <file>)
+  # Show when file was added (usage: hug fborn <file>)
   fborn = log --pretty=logbody --follow --diff-filter=A --find-renames=40% --
 
   # ═══════════════════════════════════════════════════════════════════
