@@ -60,10 +60,10 @@ if [ $# -eq 0 ]; then
     info "No search term provided."
     exit 0
   fi
-  exec git ll -S "$search_term"
+  exec hug ll -S "$search_term"
 fi
 
 search_term="$1"
 shift
 
-exec git ll -S "$search_term" "$@"
+exec hug ll -S "$search_term" "$@"

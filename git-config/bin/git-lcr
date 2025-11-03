@@ -60,10 +60,10 @@ if [ $# -eq 0 ]; then
     info "No regex pattern provided."
     exit 0
   fi
-  exec git ll -G "$regex_pattern"
+  exec hug ll -G "$regex_pattern"
 fi
 
 regex_pattern="$1"
 shift
 
-exec git ll -G "$regex_pattern" "$@"
+exec hug ll -G "$regex_pattern" "$@"
