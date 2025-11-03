@@ -45,6 +45,14 @@ test-deps-install: ## Install or update local BATS dependencies
 	@echo "$(BLUE)Installing test dependencies...$(NC)"
 	./tests/run-tests.sh --install-deps
 
+optional-deps-install: ## Install optional dependencies (gum, etc.)
+	@echo "$(BLUE)Installing optional dependencies...$(NC)"
+	@bash bin/optional-deps-install.sh
+
+optional-deps-check: ## Check if optional dependencies are installed
+	@echo "$(BLUE)Checking optional dependencies...$(NC)"
+	@bash bin/optional-deps-install.sh --check
+
 ##@ VHS Screencasts
 
 vhs-deps-install: ## Install VHS tool if not present
@@ -192,7 +200,7 @@ demo-repo-status: ## Show status of demo repository
 	echo "Remote: $$(git remote -v 2>/dev/null | head -1 || echo 'N/A')"; \
 	exit 0
 
-.PHONY: test test-unit test-integration test-check test-deps-install
+.PHONY: test test-unit test-integration test-check test-deps-install optional-deps-install optional-deps-check
 .PHONY: vhs-deps-install
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
 .PHONY: docs-dev docs-build docs-preview deps-docs
