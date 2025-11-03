@@ -2,7 +2,7 @@
 # Tests for branch switching (hug b / git b)
 
 # Load test helpers
-load '../test_helper'
+load '../test_helper.bash'
 
 setup() {
   require_hug

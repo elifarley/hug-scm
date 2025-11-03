@@ -1188,7 +1188,7 @@ print_interactive_branch_menu() {
         # Remove leading "* " marker if present
         selection="${selection#\* }"
         # Extract branch name (everything before the first space and paren)
-        local selected_branch="${selection%% (*}"
+        local selected_branch="${selection%% \(*}"
         
         # Find the corresponding branch in the array
         for i in "${!branches_ref[@]}"; do
@@ -1201,6 +1201,7 @@ print_interactive_branch_menu() {
         done
         
         error "Selection could not be matched to a branch."
+        return 1
     fi
 
     # Fallback to numbered list for < 10 branches or when gum is not available
