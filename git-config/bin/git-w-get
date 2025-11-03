@@ -297,7 +297,7 @@ main() {
     # 7. Check if user wants interactive file selection
     if [ $# -eq 1 ] && [ "$1" = "--" ]; then
         # Interactive file selection
-        local -a selected_files=()
+        selected_files=()
         if ! mapfile -t selected_files < <(select_file --multi "Select files to reset..."); then
             info "No files selected or cancelled."
             exit 0

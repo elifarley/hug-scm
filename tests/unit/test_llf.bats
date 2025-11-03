@@ -18,7 +18,7 @@ teardown() {
   run hug llf
   assert_failure
   assert_output --partial "hug llf: Log commits to a file (handles renames)"
-  assert_output --partial "Usage: hug llf <file>"
+  assert_output --partial "Usage: hug llf [<file>]"
 }
 
 @test "hug llf: shows help with -h flag" {

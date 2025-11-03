@@ -53,11 +53,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# If no file provided, show interactive selection
+# If no file provided, show interactive selection or help
 if [[ -z "$file" ]]; then
-  if ! file=$(select_file "Select file to analyze..."); then
-    info "No file selected or cancelled."
-    exit 0
+  # Only show interactive selection if gum is available
+  if gum_available; then
+    if ! file=$(select_file "Select file to analyze..."); then
+      info "No file selected or cancelled."
+      exit 0
+    fi
+  else
+    # Fall back to showing help when gum is not available
+    show_help
+    exit 1
   fi
 fi
 

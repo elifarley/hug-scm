@@ -20,14 +20,21 @@ show_help() {
 # Parse common flags
 eval "$(parse_common_flags "$@")"
 
-# If no file provided, show interactive selection
+# If no file provided, show interactive selection or help
 if [ $# -eq 0 ]; then
-  local file
-  if ! file=$(select_file "Select file to view log..."); then
-    info "No file selected or cancelled."
-    exit 0
+  # Only show interactive selection if gum is available
+  if gum_available; then
+    file=""
+    if ! file=$(select_file "Select file to view log..."); then
+      info "No file selected or cancelled."
+      exit 0
+    fi
+    exec hug ll --follow -- "$file"
+  else
+    # Fall back to showing help when gum is not available
+    show_help
+    exit 1
   fi
-  exec hug ll --follow -- "$file"
 fi
 
 file="$1"; shift

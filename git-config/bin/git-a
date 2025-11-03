@@ -44,7 +44,7 @@ else
   # If only argument is '--', trigger interactive selection
   if [ $# -eq 1 ] && [ "$1" = "--" ]; then
     # Get list of files with changes (tracked files)
-    local -a files=()
+    files=()
     if ! mapfile -t files < <(select_file --multi --filter-cmd "git ls-files --modified --others --exclude-standard" "Select files to stage (<TAB> to select, Enter to confirm)..."); then
       info "No files selected or cancelled."
       exit 0

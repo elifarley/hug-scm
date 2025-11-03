@@ -51,7 +51,7 @@ if [ $# -eq 0 ]; then
     show_help
     exit 1
   fi
-  local regex_pattern
+  regex_pattern=""
   if ! regex_pattern=$(gum input --placeholder "Enter regex pattern for code changes..." 2>/dev/null || true); then
     info "Cancelled."
     exit 0

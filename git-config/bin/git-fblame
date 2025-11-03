@@ -37,14 +37,22 @@ eval "$(parse_common_flags "$@")"
 
 check_git_repo
 
-# If no file provided, show interactive selection
+# If no file provided, show interactive selection or error
 if [ $# -eq 0 ]; then
-  local file
-  if ! file=$(select_file "Select file to blame..."); then
-    info "No file selected or cancelled."
-    exit 0
+  # Only show interactive selection if gum is available
+  if gum_available; then
+    file=""
+    if ! file=$(select_file "Select file to blame..."); then
+      info "No file selected or cancelled."
+      exit 0
+    fi
+    exec git blame -w -C -C -C -- "$file"
+  else
+    # Fall back to error when gum is not available
+    error "File argument required. Install 'gum' for interactive file selection.
+Usage: hug fblame <file>
+Install gum: https://github.com/charmbracelet/gum"
   fi
-  exec git blame -w -C -C -C -- "$file"
 fi
 
 exec git blame -w -C -C -C -- "$@"

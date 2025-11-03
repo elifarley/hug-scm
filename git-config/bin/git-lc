@@ -51,7 +51,7 @@ if [ $# -eq 0 ]; then
     show_help
     exit 1
   fi
-  local search_term
+  search_term=""
   if ! search_term=$(gum input --placeholder "Enter search term for code changes..." 2>/dev/null || true); then
     info "Cancelled."
     exit 0
