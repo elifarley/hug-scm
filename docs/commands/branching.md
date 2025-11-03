@@ -94,10 +94,10 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 - **Safety**: Prompts for confirmation if the new name exists.
 
 ### `hug brestore [<backup-branch>] [<target-branch>]`
-- **Description**: Restore a branch from a backup created by commands like `hug rb`. Backups follow the naming convention `hug-backups/YYYY-MM/DD-HHMM.original-name`. If no arguments are provided, shows an interactive menu of available backups. If only the backup branch is specified, restores to the original branch name. If both arguments are provided, restores to a different branch name.
+- **Description**: Restore a branch from a backup created by commands like `hug rb`. Backups follow the naming convention `hug-backups/YYYY-MM/DD-HHMM.original-name`. If no arguments are provided, shows an interactive menu of available backups. When there are 10 or more backup branches and [gum](https://github.com/charmbracelet/gum) is installed, uses an interactive filter for easier selection. Otherwise, displays a numbered list. If only the backup branch is specified, restores to the original branch name. If both arguments are provided, restores to a different branch name.
 - **Examples**:
   ```shell
-  hug brestore                                      # Interactive: select from available backups
+  hug brestore                                      # Interactive: select from available backups (uses gum filter for 10+)
   hug brestore hug-backups/2025-11/02-1234.feature # Restore to 'feature'
   hug brestore hug-backups/2025-11/02-1234.feature recovered-feature  # Restore to 'recovered-feature'
   hug brestore hug-backups/2025-11/02-1234.feature --dry-run  # Preview restoration

@@ -37,6 +37,8 @@ DESCRIPTION:
     destructive operation (the existing branch will be deleted and recreated).
 
     When no arguments are provided, displays an interactive menu of available backup branches.
+    For repositories with 10 or more backup branches, uses gum filter (if installed) for
+    easier searching and selection. Otherwise, displays a numbered list.
     
     For convenience, you can omit the "hug-backups/" prefix when specifying a backup branch.
 
@@ -91,6 +93,53 @@ show_interactive_backup_menu() {
     error "No backup branches found. Backup branches are created by commands like 'hug rb'."
   fi
   
+  # Use gum filter for 10+ branches if gum is available
+  if [[ ${#backups[@]} -ge 10 ]] && command -v gum >/dev/null 2>&1; then
+    local -a formatted_options=()
+    local i
+    for i in "${!backups[@]}"; do
+      local backup="${backups[i]}"
+      local display_name
+      display_name=$(format_backup_display_name "$backup")
+      local original_name
+      original_name=$(extract_original_name "$backup")
+      local hash
+      hash=$(git rev-parse --short "$backup" 2>/dev/null || echo "???????")
+      local subject
+      subject=$(git log -1 --format='%s' "$backup" 2>/dev/null || echo "(no commit)")
+      
+      # Format: "display_name → original_name hash subject"
+      formatted_options+=("${display_name} → ${original_name} ${hash} ${subject}")
+    done
+    
+    # Use gum filter for selection
+    local selection
+    # Use dynamic height: min of 15 or number of backups + 2 for UI
+    local gum_height=$((${#backups[@]} < 13 ? ${#backups[@]} + 2 : 15))
+    selection=$(printf '%s\n' "${formatted_options[@]}" | gum filter --placeholder="Select a backup branch to restore..." --height="$gum_height" || true)
+    
+    if [[ -z "$selection" ]]; then
+      info "Cancelled."
+      exit 1
+    fi
+    
+    # Extract display_name from selection (everything before " → ")
+    local selected_display_name="${selection%% → *}"
+    
+    # Find the corresponding backup branch
+    for i in "${!backups[@]}"; do
+      local display_name
+      display_name=$(format_backup_display_name "${backups[i]}")
+      if [[ "$display_name" == "$selected_display_name" ]]; then
+        echo "${backups[i]}"
+        return 0
+      fi
+    done
+    
+    error "Selection could not be matched to a backup branch."
+  fi
+  
+  # Fallback to numbered list for < 10 branches or when gum is not available
   printf "Select a backup branch to restore:\n\n" >&2
   
   local i
