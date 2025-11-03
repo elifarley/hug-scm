@@ -102,6 +102,15 @@ check_git_repo
 # Validate delete_older_than pattern if provided
 if [[ -n "$delete_older_than" ]]; then
   # Valid patterns: YYYY, YYYY-MM, YYYY-MM/DD, YYYY-MM/DD-HH, YYYY-MM/DD-HHMM
+  # Pattern explanation:
+  #   ^[0-9]{4}         - Year (4 digits)
+  #   (-[0-9]{2}        - Optional: -MM (month)
+  #     (\/[0-9]{2}     - Optional: /DD (day)
+  #       (-[0-9]{2}    - Optional: -HH (hour)
+  #         ([0-9]{2})? - Optional: MM (minute)
+  #       )?
+  #     )?
+  #   )?$
   if ! [[ "$delete_older_than" =~ ^[0-9]{4}(-[0-9]{2}(\/[0-9]{2}(-[0-9]{2}([0-9]{2})?)?)?)?$ ]]; then
     error "Invalid pattern for --delete-older-than: $delete_older_than
        Valid patterns: YYYY, YYYY-MM, YYYY-MM/DD, YYYY-MM/DD-HH, YYYY-MM/DD-HHMM
@@ -111,6 +120,7 @@ fi
 
 # Helper function to normalize backup branch name format to comparison key
 # Converts: hug-backups/2024-11/02-1234.feature -> 2024-11/02-1234
+# The date-time portion follows YYYY-MM/DD-HHMM format for lexicographic comparison
 normalize_backup_key() {
   local backup="$1"
   # Extract the date-time portion (YYYY-MM/DD-HHMM)
@@ -129,9 +139,11 @@ is_older_than_pattern() {
   # Pattern can be: YYYY, YYYY-MM, YYYY-MM/DD, YYYY-MM/DD-HH, YYYY-MM/DD-HHMM
   local normalized_pattern="$pattern"
   
-  # Convert pattern to comparable format
+  # Convert pattern to comparable format by expanding to end of period
+  # Note: We use approximations (e.g., day 31) which is sufficient for
+  # "older than" comparisons since we only care about the boundary
   # YYYY -> YYYY-12/31-2359 (end of year)
-  # YYYY-MM -> YYYY-MM/31-2359 (end of month, approximation)
+  # YYYY-MM -> YYYY-MM/31-2359 (end of month, approximation works for comparison)
   # YYYY-MM/DD -> YYYY-MM/DD-2359 (end of day)
   # YYYY-MM/DD-HH -> YYYY-MM/DD-HH59 (end of hour)
   # YYYY-MM/DD-HHMM -> YYYY-MM/DD-HHMM (exact)
@@ -295,7 +307,7 @@ hug_bdel_backup() {
   if [[ -n "$keep_count" ]]; then
     # Sort ALL backups by date (newest first) to determine which to keep
     # Backup format: hug-backups/YYYY-MM/DD-HHMM.name
-    # Sort by the date portion (reverse = newest first)
+    # The date format is designed for lexicographic sorting (newest first with -r)
     local -a sorted_all_backups=()
     mapfile -t sorted_all_backups < <(
       printf '%s\n' "${all_backups[@]}" | sort -r
