@@ -1136,8 +1136,14 @@ print_interactive_branch_menu() {
     local -n tracks_ref="$6"
     local -n subjects_ref="$7"
 
+    local num_branches="${#branches_ref[@]}"
+    if [[ $num_branches -eq 0 ]]; then
+        error "No branches available for selection."
+        return 1
+    fi
+
     # Use gum filter for 10+ branches if gum is available
-    if [[ ${#branches_ref[@]} -ge 10 ]] && command -v gum >/dev/null 2>&1; then
+    if [[ $num_branches -ge 10 ]] && command -v gum >/dev/null 2>&1; then
         local -a formatted_options=()
         local i
         for i in "${!branches_ref[@]}"; do
@@ -1160,53 +1166,34 @@ print_interactive_branch_menu() {
             if [ -n "$track" ]; then
                 # Remove ANSI color codes for gum display
                 local clean_track
-                clean_track=$(echo "$track" | sed 's/\x1b\[[0-9;]*m//g')
+                clean_track=$(strip_ansi "$track")
                 formatted="${formatted} ${clean_track}"
             fi
             if [ -n "$subject" ]; then
                 # Remove ANSI color codes for gum display
                 local clean_subject
-                clean_subject=$(echo "$subject" | sed 's/\x1b\[[0-9;]*m//g')
+                clean_subject=$(strip_ansi "$subject")
                 formatted="${formatted} ${clean_subject}"
             fi
             
             formatted_options+=("$formatted")
         done
         
-        # Use gum filter for selection
-        local selection
         # Use dynamic height: min of 15 or number of branches + 2 for UI
-        local gum_height=$((${#branches_ref[@]} < 13 ? ${#branches_ref[@]} + 2 : 15))
-        selection=$(printf '%s\n' "${formatted_options[@]}" | gum filter --placeholder="Select a branch to switch to..." --height="$gum_height" || true)
+        local gum_height=$(($num_branches < 13 ? $num_branches + 2 : 15))
+        local index
+        index=$(get_gum_selection_index formatted_options branches "Select a branch to switch to..." "$gum_height")
         
-        if [[ -z "$selection" ]]; then
-            info "Cancelled."
-            exit 1
-        fi
-        
-        # Extract branch name from selection
-        # Remove leading "* " marker if present
-        selection="${selection#\* }"
-        # Extract branch name (everything before the first space and paren)
-        local selected_branch="${selection%% \(*}"
-        
-        # Find the corresponding branch in the array
-        for i in "${!branches_ref[@]}"; do
-            if [[ "${branches_ref[i]}" == "$selected_branch" ]]; then
-                # SC2034: selected_ref is a nameref that assigns to caller's variable
-                # shellcheck disable=SC2034
-                selected_ref="${branches_ref[i]}"
-                return 0
-            fi
-        done
-        
-        error "Selection could not be matched to a branch."
-        return 1
+        # SC2034: selected_ref is a nameref that assigns to caller's variable
+        # shellcheck disable=SC2034
+        selected_ref="${branches_ref[$index]}"
+        return 0
     fi
 
     # Fallback to numbered list for < 10 branches or when gum is not available
     printf "Select a branch to switch to:\n\n"
 
+    local i
     for i in "${!branches_ref[@]}"; do
         local num=$((i + 1))
         local branch="${branches_ref[i]}"
@@ -1217,18 +1204,127 @@ print_interactive_branch_menu() {
         print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$4" "$5" "$6" "$7"
     done
 
-    printf "Enter choice (1-%d): " "${#branches_ref[@]}"
-    read -r choice
+    local index
+    index=$(get_numbered_selection_index "$num_branches")
+    # SC2034: selected_ref is a nameref that assigns to caller's variable
+    # shellcheck disable=SC2034
+    selected_ref="${branches_ref[$index]}"
+    return 0
+}
+
+# Interactive Selection Helpers
+# These functions provide reusable logic for interactive selection from lists,
+# used by commands like 'hug b' and 'hug brestore' to avoid duplication.
+
+# Threshold for using gum filter instead of numbered list
+readonly MIN_ITEMS_FOR_GUM=10
+
+# Returns the 0-based index of the selected item from gum filter output
+# Usage: index=$(get_gum_selection_index formatted_options match_keys placeholder height)
+# Parameters:
+#   $1 - Name of array containing formatted options (nameref, clean strings for display)
+#   $2 - Name of array containing match keys (nameref, e.g., branch names or identifiers)
+#   $3 - Placeholder text for gum prompt
+#   $4 - Height for gum UI
+# Output:
+#   Index of matched item to stdout
+# Exits:
+#   With "Cancelled." if no selection, error if no match
+get_gum_selection_index() {
+    local -n formatted_options_ref="$1"
+    local -n match_keys_ref="$2"
+    local placeholder="$3"
+    local height="$4"
+    local num_items=${#formatted_options_ref[@]}
+    local have_match_keys=false
+    if [[ ${#match_keys_ref[@]} -gt 0 ]]; then
+        have_match_keys=true
+    fi
+
+    if [[ $num_items -eq 0 ]]; then
+        error "No items available for selection."
+        return 1
+    fi
+
+    local selection
+    selection=$(printf '%s\n' "${formatted_options_ref[@]}" | gum filter --placeholder="$placeholder" --height="$height" || true)
+    
+    if [[ -z "$selection" ]]; then
+        info "Cancelled."
+        exit 1
+    fi
+
+    local normalized_selection="$selection"
+    if [[ "$normalized_selection" == \** ]]; then
+        normalized_selection="${normalized_selection#\* }"
+        normalized_selection="${normalized_selection#\*}"
+    fi
+    normalized_selection="${normalized_selection#"${normalized_selection%%[![:space:]]*}"}"
+
+    local selection_key="$normalized_selection"
+    local trailing_whitespace="${selection_key##*[![:space:]]}"
+    selection_key="${selection_key%"$trailing_whitespace"}"
+
+    if [[ "$selection_key" == *" → "* ]]; then
+        selection_key="${selection_key%% → *}"
+    elif [[ "$selection_key" == *" ("* ]]; then
+        selection_key="${selection_key%% (*}"
+    else
+        selection_key="${selection_key%% *}"
+    fi
+
+    local i
+    for i in "${!formatted_options_ref[@]}"; do
+        if [[ "${formatted_options_ref[i]}" == "$selection" ]]; then
+            echo "$i"
+            return 0
+        fi
+
+        if [[ $have_match_keys == true && $i -lt ${#match_keys_ref[@]} ]]; then
+            local key="${match_keys_ref[i]}"
+            if [[ -n "$key" && "$selection_key" == "$key" ]]; then
+                echo "$i"
+                return 0
+            fi
+        fi
+    done
+
+    error "Selection could not be matched to an item."
+}
+
+# Prompts for numbered choice and returns the 0-based index
+# Usage: index=$(get_numbered_selection_index num_items)
+# Parameters:
+#   $1 - Number of items in the list
+# Output:
+#   Selected index to stdout
+# Exits:
+#   With "Cancelled." if read fails or invalid input persists
+get_numbered_selection_index() {
+    local num_items="$1"
+
+    if [[ $num_items -eq 0 ]]; then
+        error "No items available for selection."
+        return 1
+    fi
+
+    local choice
+    printf "Enter choice (1-%d): " "$num_items" >&2
+    if ! read -r choice; then
+        info "Cancelled."
+        exit 1
+    fi
 
     while true; do
-        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#branches_ref[@]}" ]; then
-            # SC2034: selected_ref is a nameref that assigns to caller's variable
-            # shellcheck disable=SC2034
-            selected_ref="${branches_ref[$((choice - 1))]}"
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$num_items" ]; then
+            echo "$((choice - 1))"
             return 0
         else
-            printf "Invalid choice. Please enter a number between 1 and %d: " "${#branches_ref[@]}"
-            read -r choice
+            printf "Invalid choice. Please enter a number between 1 and %d: " "$num_items" >&2
+            if ! read -r choice; then
+                info "Cancelled."
+                exit 1
+            fi
         fi
     done
 }

@@ -72,18 +72,119 @@ teardown() {
   branch_count=$(git branch | wc -l)
   [ "$branch_count" -ge 10 ]
   
-  # Check if gum is available
-  if command -v gum >/dev/null 2>&1; then
-    # Run hug b with a simulated input via echo and timeout
-    # This test verifies the code path is executed without hanging indefinitely
-    run timeout 2 bash -c "echo | hug b 2>&1"
-    
-    # The command will timeout waiting for input, but that's expected
-    # We're just verifying it doesn't error out
-    [ "$status" -eq 124 ] || [ "$status" -eq 1 ]  # 124 = timeout, 1 = cancelled
-  else
-    skip "gum not installed, skipping gum filter test"
+  # Run hug b with a simulated input via echo and timeout
+  # This test verifies the code path is executed without hanging indefinitely
+  run timeout 2 bash -c "echo | hug b 2>&1"
+
+  # The command will timeout waiting for input, but that's expected
+  # We're just verifying it doesn't error out
+  [ "$status" -eq 124 ] || [ "$status" -eq 1 ]  # 124 = timeout, 1 = cancelled
+}
+
+@test "hug b: gum selection matches current branch" {
+  # Setup: Create exactly 10 branches to trigger gum
+  for i in {1..10}; do
+    git checkout -b "feature/test-$i" main >/dev/null 2>&1
+    echo "test $i" >> file.txt
+    git add file.txt
+    git commit -m "Feature $i" >/dev/null 2>&1
+  done
+  git checkout main >/dev/null 2>&1
+
+  # Verify 10+ branches
+  branch_count=$(git branch | wc -l)
+  [ "$branch_count" -ge 10 ]
+
+  # Mock gum: Select the current branch (line starting with "* main")
+  local mock_gum
+  mock_gum=$(mktemp)
+  cat > "$mock_gum" <<'EOF'
+#!/usr/bin/env bash
+mapfile -t lines
+for line in "${lines[@]}"; do
+  if [[ "$line" == "* main"* ]]; then
+    printf '%s\n' "$line"
+    exit 0
   fi
+done
+if [[ ${#lines[@]} -gt 0 ]]; then
+  printf '%s\n' "${lines[0]}"
+fi
+EOF
+  chmod +x "$mock_gum"
+
+  # Temporarily override gum command
+  local original_path="$PATH"
+  local mock_dir
+  mock_dir=$(dirname "$mock_gum")
+  export PATH="$mock_dir:$PATH"
+  hash -r
+
+  run timeout 3 bash -c "hug b 2>&1"
+  assert_success
+
+  local after_branch
+  after_branch=$(git branch --show-current)
+  [ "$after_branch" = "main" ]
+
+  # Cleanup
+  rm -f "$mock_gum"
+  export PATH="$original_path"
+  hash -r
+}
+
+@test "hug b: gum selection switches to feature branch" {
+  # Setup: Create exactly 10 branches to trigger gum
+  for i in {1..10}; do
+    git checkout -b "feature/test-$i" main >/dev/null 2>&1
+    echo "test $i" >> file.txt
+    git add file.txt
+    git commit -m "Feature $i" >/dev/null 2>&1
+  done
+  git checkout main >/dev/null 2>&1
+
+  branch_count=$(git branch | wc -l)
+  [ "$branch_count" -ge 10 ]
+
+  # Mock gum to select the feature/test-1 branch
+  local mock_gum
+  mock_gum=$(mktemp)
+  cat > "$mock_gum" <<'EOF'
+#!/usr/bin/env bash
+mapfile -t lines
+for line in "${lines[@]}"; do
+  if [[ "$line" == feature/test-1* ]]; then
+    printf '%s\n' "$line"
+    exit 0
+  fi
+done
+if [[ ${#lines[@]} -gt 0 ]]; then
+  printf '%s\n' "${lines[0]}"
+fi
+EOF
+  chmod +x "$mock_gum"
+
+  local original_path="$PATH"
+  local mock_dir
+  mock_dir=$(dirname "$mock_gum")
+  export PATH="$mock_dir:$PATH"
+  hash -r
+
+  local before_branch
+  before_branch=$(git branch --show-current)
+  [ "$before_branch" = "main" ]
+
+  run timeout 3 bash -c "hug b 2>&1"
+  assert_success
+
+  local after_branch
+  after_branch=$(git branch --show-current)
+  [ "$after_branch" = "feature/test-1" ]
+
+  # Cleanup
+  rm -f "$mock_gum"
+  export PATH="$original_path"
+  hash -r
 }
 
 @test "hug b: falls back to numbered menu when gum not installed" {
@@ -143,12 +244,6 @@ teardown() {
 # -----------------------------------------------------------------------------
 # Edge cases
 # -----------------------------------------------------------------------------
-
-@test "hug b: fails gracefully when no branches exist" {
-  # This shouldn't happen in practice, but test defensive code
-  # Create a fresh repo with no branches (impossible in git, so skip)
-  skip "Git always has at least one branch"
-}
 
 @test "hug b: handles branches with special characters in names" {
   git checkout -b "feature/test-123" >/dev/null 2>&1
