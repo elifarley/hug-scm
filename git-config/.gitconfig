@@ -121,29 +121,19 @@
   # ═══════════════════════════════════════════════════════════════════
 
   # Unstage specific files (most common - shortest alias)
-  # Usage: hug us <file> [<file2> ...]
-  us = "!f() { \
-    test $# -eq 0 -o \"$1\" = '-h' -o \"$1\" = '--help' && { \
-      printf 'us: UnStage specific files.\nUsage: hug us <file1> [<file2> ...]' >&2; return 1; }; \
-    git restore --staged \"$@\"; \
-  }; f"
+  # Usage: hug us [<file> ...]
+  # Now implemented as git-config/bin/git-us script with interactive UI
+  # (alias removed - script takes precedence)
 
   # Unstage all files (nuclear option)
   # Usage: hug usa
   usa = reset HEAD
 
   # Stop tracking files but keep them locally
-  # Usage: hug untrack <file> [<file2> ...]
+  # Usage: hug untrack [<file> ...]
   # Common use: hug untrack .env (after accidentally committing secrets)
-  untrack = "!f() { \
-    test $# -eq 0 -o \"$1\" = '-h' -o \"$1\" = '--help' && { \
-      printf 'untrack: Stop tracking files but keep them locally\n' >&2; \
-      printf 'Usage: hug untrack <file> [<file2> ...]\n' >&2; \
-      printf 'Example: hug untrack .env config.local.json\n' >&2; \
-      return 1; \
-    }; \
-    git rm --cached \"$@\"; \
-  }; f"
+  # Now implemented as git-config/bin/git-untrack script with interactive UI
+  # (alias removed - script takes precedence)
 
   # ═══════════════════════════════════════════════════════════════════
   #  Head (h*)

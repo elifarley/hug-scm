@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+# shellcheck source=../lib/hug-common
+. "$CMD_BASE/../lib/hug-common"
+# shellcheck source=../lib/hug-git-kit
+. "$CMD_BASE/../lib/hug-git-kit"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+show_help() {
+    cat << EOF
+hug untrack: Stop tracking files but keep them locally
+
+USAGE:
+    hug untrack [<file>...] [--dry-run] [-f, --force] [--quiet] [-h, --help]
+
+ARGUMENTS:
+    <file>...          One or more file paths to untrack
+                       If not provided, shows interactive list for selection
+
+OPTIONS:
+    --dry-run          Preview the untrack operation without applying changes
+    -f, --force        Skip confirmation prompts (sets HUG_FORCE=true)
+    --quiet            Suppress output (sets HUG_QUIET=T)
+    -h, --help         Show this help
+
+DESCRIPTION:
+    Stops tracking one or more files while keeping them in the working directory.
+    This is useful when you accidentally committed files that should be ignored
+    (like .env, config.local.json, etc.) and want to stop tracking them without
+    deleting them.
+
+    When no file names are provided, displays an interactive menu using gum filter
+    (if installed) for multi-selection. This makes it easy to select multiple
+    files to untrack at once.
+
+    If no tracked files exist (or only directories), displays an informative message.
+
+    After untracking, remember to add the files to .gitignore to prevent them
+    from being tracked again.
+
+EXAMPLES:
+    hug untrack                         # Interactive: select files to untrack
+    hug untrack .env                    # Untrack single file
+    hug untrack .env config.local.json  # Untrack multiple files
+    hug untrack --dry-run               # Preview which files would be untracked
+
+SEE ALSO:
+    hug us         Unstage files (keep them tracked, just remove from staging)
+    hug usa        Unstage all files
+EOF
+}
+
+# Parse common flags (--dry-run, -f|--force, --quiet, -h|--help)
+eval "$(parse_common_flags "$@")"
+
+# Collect file names
+files_to_untrack=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -*)
+      error "Unknown option: $1. See 'hug untrack --help'."
+      ;;
+    *)
+      files_to_untrack+=("$1")
+      shift
+      ;;
+  esac
+done
+
+check_git_repo
+
+# --- Main function for 'hug untrack' ---
+hug_untrack() {
+  local -a files_to_untrack=("$@")
+  
+  # If no files specified, show interactive menu
+  if [[ ${#files_to_untrack[@]} -eq 0 ]]; then
+    local -a tracked_files=()
+    
+    # Get all tracked files (excluding directories)
+    mapfile -t tracked_files < <(
+      git ls-files 2>/dev/null || true
+    )
+    
+    if [[ ${#tracked_files[@]} -eq 0 ]]; then
+      info "No tracked files to untrack."
+      exit 0
+    fi
+    
+    # Check if gum is available
+    if ! command -v gum >/dev/null 2>&1; then
+      error "Interactive mode requires 'gum' to be installed. Please install it or specify file names directly.
+       Install: https://github.com/charmbracelet/gum"
+    fi
+    
+    # Prepare formatted options for gum with file details
+    local -a formatted_options=()
+    local -a display_names=()
+    
+    for file in "${tracked_files[@]}"; do
+      # Get file modification status
+      local status=""
+      if git diff --quiet -- "$file" 2>/dev/null && git diff --cached --quiet -- "$file" 2>/dev/null; then
+        status="${GREEN}clean${NC}"
+      elif ! git diff --cached --quiet -- "$file" 2>/dev/null; then
+        status="${YELLOW}staged${NC}"
+      else
+        status="${YELLOW}modified${NC}"
+      fi
+      
+      # Format for gum: plain text with details
+      local formatted="${file} ${status}"
+      formatted_options+=("$formatted")
+      display_names+=("$file")
+    done
+    
+    # Use gum filter for multi-selection
+    local gum_height
+    gum_height=$((${#tracked_files[@]} < 13 ? ${#tracked_files[@]} + 2 : 15))
+    
+    local selection
+    selection=$(printf '%s\n' "${formatted_options[@]}" | \
+      gum filter --placeholder="Select files to untrack (Space to select, Enter to confirm)..." \
+                  --height="$gum_height" \
+                  --no-limit \
+                  --no-strip-ansi \
+                  --reverse || true)
+    
+    if [[ -z "$selection" ]]; then
+      info "Cancelled."
+      exit 0
+    fi
+    
+    # Extract file names from selection
+    files_to_untrack=()
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      # Extract file name (first word before status)
+      local file_name="${line%% *}"
+      files_to_untrack+=("$file_name")
+    done <<< "$selection"
+    
+    if [[ ${#files_to_untrack[@]} -eq 0 ]]; then
+      info "No files selected."
+      exit 0
+    fi
+  fi
+  
+  # Validate that files exist and are tracked
+  for file in "${files_to_untrack[@]}"; do
+    if ! git ls-files --error-unmatch "$file" >/dev/null 2>&1; then
+      error "File '$file' is not tracked by git."
+    fi
+  done
+  
+  # Set dry_run default if not already set by parse_common_flags
+  local dry_run="${dry_run:-false}"
+  
+  # Preview mode
+  if [[ "${dry_run}" == "true" ]]; then
+    info "Dry run: Would untrack ${#files_to_untrack[@]} file(s):"
+    for file in "${files_to_untrack[@]}"; do
+      printf "  - %s\n" "$file" >&2
+    done
+    print_dry_run_preview "untrack the listed files (files will be kept locally)"
+    return 0
+  fi
+  
+  # Confirmation prompt (unless --force) for potentially destructive operation
+  if [[ ${HUG_FORCE:-} != true ]]; then
+    local count=${#files_to_untrack[@]}
+    local file_word="file"
+    [[ $count -gt 1 ]] && file_word="files"
+    
+    warning "About to untrack $count $file_word (files will be kept locally):"
+    for file in "${files_to_untrack[@]}"; do
+      printf "  - %s\n" "$file" >&2
+    done
+    printf "\n" >&2
+    tip "Remember to add these files to .gitignore to prevent them from being tracked again."
+    printf "\n" >&2
+    prompt_confirm "⚠️  Proceed with untracking? [y/N]: "
+  fi
+  
+  # Perform untracking
+  if ! git rm --cached -- "${files_to_untrack[@]}" 2>/dev/null; then
+    error "Failed to untrack files. Check file paths and permissions."
+  fi
+  
+  # Report results
+  local count=${#files_to_untrack[@]}
+  local file_word="file"
+  [[ $count -gt 1 ]] && file_word="files"
+  
+  success "Untracked $count $file_word (kept locally):"
+  for file in "${files_to_untrack[@]}"; do
+    printf "  ✓ %s\n" "$file" >&2
+  done
+  
+  printf "\n" >&2
+  tip "Don't forget to add these files to .gitignore to prevent them from being tracked again."
+}
+
+hug_untrack "${files_to_untrack[@]}"
