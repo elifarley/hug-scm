@@ -92,9 +92,11 @@ hug_us() {
     
     # Prepare formatted options for gum with file details
     local -a formatted_options=()
-    local -a display_names=()
     
     for file in "${staged_files[@]}"; do
+      # Skip empty file names (defensive)
+      [[ -z "$file" ]] && continue
+      
       # Get file status (new, modified, etc.)
       local status
       status=$(git diff --cached --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
@@ -111,13 +113,18 @@ hug_us() {
       
       # Format for gum: plain text with details
       local formatted="${file} ${status_text}"
-      formatted_options+=("$formatted")
-      display_names+=("$file")
+      # Only add non-empty formatted options
+      [[ -n "$formatted" ]] && formatted_options+=("$formatted")
     done
+    
+    # Additional safety check: ensure we have formatted options
+    if [[ ${#formatted_options[@]} -eq 0 ]]; then
+      error "No valid staged files found to display. This may be a bug - please report it."
+    fi
     
     # Use gum filter for multi-selection
     local gum_height
-    gum_height=$((${#staged_files[@]} < 13 ? ${#staged_files[@]} + 2 : 15))
+    gum_height=$((${#formatted_options[@]} < 13 ? ${#formatted_options[@]} + 2 : 15))
     
     local selection
     selection=$(printf '%s\n' "${formatted_options[@]}" | \
