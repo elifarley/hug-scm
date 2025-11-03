@@ -401,9 +401,9 @@
   #  BRANCH DELETION
   # ═══════════════════════════════════════════════════════════════════
 
-  # Delete local branch (safe: only if merged)
-  # Usage: hug bdel <branch>
-  bdel = branch -d
+  # Delete local branches with interactive UI (implemented as script)
+  # Usage: hug bdel [<branch>...]
+  # See: git-config/bin/git-bdel
 
   # Force delete local branch (dangerous: deletes even if unmerged)
   # Usage: hug bdelf <branch>
