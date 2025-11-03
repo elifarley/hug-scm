@@ -1120,6 +1120,8 @@ print_branch_list() {
 #   $4-$7 - Namerefs to arrays (hashes branches tracks subjects)
 # Effects:
 #   Displays numbered menu and prompts for selection
+#   For repositories with 10 or more branches, uses gum filter (if installed) for
+#   easier searching and selection. Otherwise, displays a numbered list.
 #   Loops until valid selection is made
 # Output:
 #   Selected branch name via nameref parameter; subjects printed only if subjects array is non-empty
@@ -1134,6 +1136,75 @@ print_interactive_branch_menu() {
     local -n tracks_ref="$6"
     local -n subjects_ref="$7"
 
+    # Use gum filter for 10+ branches if gum is available
+    if [[ ${#branches_ref[@]} -ge 10 ]] && command -v gum >/dev/null 2>&1; then
+        local -a formatted_options=()
+        local i
+        for i in "${!branches_ref[@]}"; do
+            local branch="${branches_ref[i]}"
+            local hash="${hashes_ref[i]}"
+            local track="${tracks_ref[i]}"
+            local subject=""
+            if [[ ${#subjects_ref[@]} -gt 0 ]]; then
+                subject="${subjects_ref[i]}"
+            fi
+            
+            # Format: "branch (hash) [track] subject"
+            # Current branch is marked with *
+            local marker=""
+            if [ "$branch" = "$current_branch" ]; then
+                marker="* "
+            fi
+            
+            local formatted="${marker}${branch} (${hash})"
+            if [ -n "$track" ]; then
+                # Remove ANSI color codes for gum display
+                local clean_track
+                clean_track=$(echo "$track" | sed 's/\x1b\[[0-9;]*m//g')
+                formatted="${formatted} ${clean_track}"
+            fi
+            if [ -n "$subject" ]; then
+                # Remove ANSI color codes for gum display
+                local clean_subject
+                clean_subject=$(echo "$subject" | sed 's/\x1b\[[0-9;]*m//g')
+                formatted="${formatted} ${clean_subject}"
+            fi
+            
+            formatted_options+=("$formatted")
+        done
+        
+        # Use gum filter for selection
+        local selection
+        # Use dynamic height: min of 15 or number of branches + 2 for UI
+        local gum_height=$((${#branches_ref[@]} < 13 ? ${#branches_ref[@]} + 2 : 15))
+        selection=$(printf '%s\n' "${formatted_options[@]}" | gum filter --placeholder="Select a branch to switch to..." --height="$gum_height" || true)
+        
+        if [[ -z "$selection" ]]; then
+            info "Cancelled."
+            exit 1
+        fi
+        
+        # Extract branch name from selection
+        # Remove leading "* " marker if present
+        selection="${selection#\* }"
+        # Extract branch name (everything before the first space and paren)
+        local selected_branch="${selection%% \(*}"
+        
+        # Find the corresponding branch in the array
+        for i in "${!branches_ref[@]}"; do
+            if [[ "${branches_ref[i]}" == "$selected_branch" ]]; then
+                # SC2034: selected_ref is a nameref that assigns to caller's variable
+                # shellcheck disable=SC2034
+                selected_ref="${branches_ref[i]}"
+                return 0
+            fi
+        done
+        
+        error "Selection could not be matched to a branch."
+        return 1
+    fi
+
+    # Fallback to numbered list for < 10 branches or when gum is not available
     printf "Select a branch to switch to:\n\n"
 
     for i in "${!branches_ref[@]}"; do

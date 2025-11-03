@@ -17,9 +17,12 @@ OPTIONS:
 
 DESCRIPTION:
   If a branch name is provided, switches to it directly.
-  If no arguments are given, displays a numbered interactive menu of local branches.
+  If no arguments are given, displays an interactive menu of local branches.
   Each entry shows: branch name (short hash) [upstream tracking info], followed by the commit subject.
-  The current branch is highlighted in green and marked with *. Select by number to switch.
+  The current branch is highlighted in green and marked with *.
+  
+  For repositories with 10 or more branches, uses gum filter (if installed) for
+  easier searching and selection. Otherwise, displays a numbered list.
 
 EXAMPLES:
   hug b main               # Switch directly to main
@@ -47,7 +50,7 @@ declare -a branches=() hashes=() subjects=() tracks=()
 max_len=""
 current_branch=""
 selected_branch=""
-if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects; then
+if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects "true"; then
   printf "No local branches found.\n" >&2
   exit 1
 fi
