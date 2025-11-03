@@ -147,6 +147,7 @@ teardown() {
   assert_output --partial "USAGE:"
 }
 
+# Note: 'staged.txt' is created by the test fixture 'create_test_repo_with_changes' in setup().
 @test "hug us: unstages single file when specified" {
   # Stage a file first
   git add staged.txt
