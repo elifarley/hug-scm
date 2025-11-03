@@ -115,7 +115,6 @@ EOF
 
   # Temporarily override gum command
   local original_path="$PATH"
-  export PATH="$mock_dir:$PATH"
   hash -r
 
   run timeout 3 bash -c "PATH='$mock_dir:$PATH' hug b 2>&1"
