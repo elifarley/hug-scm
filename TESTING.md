@@ -72,7 +72,7 @@ By default, this installs BATS and its helper libraries into `$HOME/.hug-deps`.
 To install dependencies in a different location, you can set the `DEPS_DIR` environment variable. Similarly, the `vhs` dependency location can be overridden with the `VHS_DEPS_DIR` environment variable, and optional dependencies with `OPTIONAL_DEPS_DIR`.
 
 ```bash
-DEPS_DIR=/path/to/your/deps VHS_DEPS_DIR=/path/to/your/vhs-deps make test-deps-install vhs-deps-install
+DEPS_DIR=/path/to/your/deps VHS_DEPS_DIR=/path/to/your/vhs-deps OPTIONAL_DEPS_DIR=/path/to/your/optional-deps make test-deps-install vhs-deps-install optional-deps-install
 ```
 
 The test runner (`./tests/run-tests.sh`) will automatically install or update dependencies if they're missing, so you can also just run `make test` and let it bootstrap everything.
