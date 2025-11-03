@@ -394,7 +394,7 @@ hug_bdel_backup() {
     
     local selection
     selection=$(printf '%s\n' "${formatted_options[@]}" | \
-      gum filter --placeholder="Select backup branches to delete (Space to select, Enter to confirm)..." \
+      gum filter --placeholder="Select backup branches to delete (<TAB> to select, Enter to confirm)..." \
                   --height="$gum_height" \
                   --no-limit \
                   --no-strip-ansi \

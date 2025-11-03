@@ -124,11 +124,11 @@ hug_us() {
     
     # Use gum filter for multi-selection
     local gum_height
-    gum_height=$((${#formatted_options[@]} < 13 ? ${#formatted_options[@]} + 2 : 15))
+    gum_height=$((${#formatted_options[@]} < 13 ? ${#formatted_options[@]} + 3 : 15))
     
     local selection
     selection=$(printf '%s\n' "${formatted_options[@]}" | \
-      gum filter --placeholder="Select files to unstage (Space to select, Enter to confirm)..." \
+      gum filter --placeholder="Select files to unstage (<TAB> to select, Enter to confirm)..." \
                   --height="$gum_height" \
                   --no-limit \
                   --no-strip-ansi \
