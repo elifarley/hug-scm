@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Integration tests for the brestore command
+# Unit tests for the brestore command
 
 # Load test helpers
 load '../test_helper'
