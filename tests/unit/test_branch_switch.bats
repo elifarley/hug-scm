@@ -96,9 +96,9 @@ teardown() {
   [ "$branch_count" -ge 10 ]
 
   # Mock gum: Select the current branch (line starting with "* main")
-  local mock_gum
-  mock_gum=$(mktemp)
-  cat > "$mock_gum" <<'EOF'
+  local mock_dir
+  mock_dir=$(mktemp -d)
+  cat > "$mock_dir/gum" <<'EOF'
 #!/usr/bin/env bash
 mapfile -t lines
 for line in "${lines[@]}"; do
@@ -111,16 +111,14 @@ if [[ ${#lines[@]} -gt 0 ]]; then
   printf '%s\n' "${lines[0]}"
 fi
 EOF
-  chmod +x "$mock_gum"
+  chmod +x "$mock_dir/gum"
 
   # Temporarily override gum command
   local original_path="$PATH"
-  local mock_dir
-  mock_dir=$(dirname "$mock_gum")
   export PATH="$mock_dir:$PATH"
   hash -r
 
-  run timeout 3 bash -c "hug b 2>&1"
+  run timeout 3 bash -c "PATH='$mock_dir:$PATH' hug b 2>&1"
   assert_success
 
   local after_branch
@@ -128,7 +126,7 @@ EOF
   [ "$after_branch" = "main" ]
 
   # Cleanup
-  rm -f "$mock_gum"
+  rm -rf "$mock_dir"
   export PATH="$original_path"
   hash -r
 }
@@ -147,9 +145,9 @@ EOF
   [ "$branch_count" -ge 10 ]
 
   # Mock gum to select the feature/test-1 branch
-  local mock_gum
-  mock_gum=$(mktemp)
-  cat > "$mock_gum" <<'EOF'
+  local mock_dir
+  mock_dir=$(mktemp -d)
+  cat > "$mock_dir/gum" <<'EOF'
 #!/usr/bin/env bash
 mapfile -t lines
 for line in "${lines[@]}"; do
@@ -162,11 +160,9 @@ if [[ ${#lines[@]} -gt 0 ]]; then
   printf '%s\n' "${lines[0]}"
 fi
 EOF
-  chmod +x "$mock_gum"
+  chmod +x "$mock_dir/gum"
 
   local original_path="$PATH"
-  local mock_dir
-  mock_dir=$(dirname "$mock_gum")
   export PATH="$mock_dir:$PATH"
   hash -r
 
@@ -174,7 +170,7 @@ EOF
   before_branch=$(git branch --show-current)
   [ "$before_branch" = "main" ]
 
-  run timeout 3 bash -c "hug b 2>&1"
+  run timeout 3 bash -c "PATH='$mock_dir:$PATH' hug b 2>&1"
   assert_success
 
   local after_branch
@@ -182,7 +178,7 @@ EOF
   [ "$after_branch" = "feature/test-1" ]
 
   # Cleanup
-  rm -f "$mock_gum"
+  rm -rf "$mock_dir"
   export PATH="$original_path"
   hash -r
 }
