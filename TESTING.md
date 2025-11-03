@@ -69,13 +69,32 @@ make test-deps-install
 
 By default, this installs BATS and its helper libraries into `$HOME/.hug-deps`.
 
-To install dependencies in a different location, you can set the `DEPS_DIR` environment variable. Similarly, the `vhs` dependency location can be overridden with the `VHS_DEPS_DIR` environment variable.
+To install dependencies in a different location, you can set the `DEPS_DIR` environment variable. Similarly, the `vhs` dependency location can be overridden with the `VHS_DEPS_DIR` environment variable, and optional dependencies with `OPTIONAL_DEPS_DIR`.
 
 ```bash
 DEPS_DIR=/path/to/your/deps VHS_DEPS_DIR=/path/to/your/vhs-deps make test-deps-install vhs-deps-install
 ```
 
 The test runner (`./tests/run-tests.sh`) will automatically install or update dependencies if they're missing, so you can also just run `make test` and let it bootstrap everything.
+
+### Install Optional Dependencies
+
+Optional dependencies enhance Hug's functionality but are not required for basic operation. To install them:
+
+```bash
+make optional-deps-install
+```
+
+This installs tools like `gum` (interactive filter) that improve the user experience for certain commands. By default, they are installed to `$HOME/.hug-deps/bin`.
+
+To check if optional dependencies are installed:
+
+```bash
+make optional-deps-check
+```
+
+Optional dependencies currently include:
+- **gum**: Interactive filter/prompt tool used by commands like `hug brestore` for better UX when selecting from many backup branches
 
 #### Manual Installation (Optional)
 

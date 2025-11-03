@@ -51,6 +51,33 @@ It's designed to be installed directly from its Github repository, and doesn't r
 
 You are now ready to use Hug SCM in any of your Git repositories.
 
+## Optional Dependencies
+
+Hug works great out of the box, but certain commands can benefit from additional tools that enhance the user experience. These are completely optional and only needed for specific features.
+
+### Installing Optional Tools
+
+To install all optional dependencies at once:
+
+```shell
+make optional-deps-install
+```
+
+Or check which optional tools are installed:
+
+```shell
+make optional-deps-check
+```
+
+### Available Optional Tools
+
+- **gum**: Interactive filter/prompt tool from [Charm Bracelet](https://github.com/charmbracelet/gum)
+  - **Used by**: `hug brestore` for better UX when selecting from 10+ backup branches
+  - **Without it**: Falls back to a numbered list menu (still fully functional)
+  - **Install manually**: `go install github.com/charmbracelet/gum@latest`
+
+Optional tools are installed to `$HOME/.hug-deps/bin` by default. Set `OPTIONAL_DEPS_DIR` to customize the location.
+
 ## Mercurial Support
 
 Hug also supports Mercurial repositories!
