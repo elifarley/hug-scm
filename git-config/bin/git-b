@@ -50,7 +50,7 @@ declare -a branches=() hashes=() subjects=() tracks=()
 max_len=""
 current_branch=""
 selected_branch=""
-if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects; then
+if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects "true"; then
   printf "No local branches found.\n" >&2
   exit 1
 fi
