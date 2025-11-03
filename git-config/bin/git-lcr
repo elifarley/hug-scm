@@ -8,17 +8,18 @@ show_help() {
 hug lcr: Search commits by RegEx CODE CHANGES in diff.
 
 USAGE:
-    hug lcr [<regex>] [-i] [-p] [--all] [-- <file>] [-h, --help]
+    hug lcr <regex> [-i] [-p] [--all] [-- [<file>]] [-h, --help]
 
 ARGUMENTS:
-    <regex>        Regular expression to search for in code changes
-                   (optional - prompts for input if omitted)
+    <regex>        Regular expression to search for in code changes (required)
+    <file>         Restrict search to specific file (optional)
 
 OPTIONS:
     -i             Ignore case when searching
     -p             Show patches
     --all          Consider ALL branches (not just current)
     -- <file>      Restrict search to specific file
+    -- (last arg)  Restrict search with interactive file selection
     -h, --help     Show this help
 
 DESCRIPTION:
@@ -27,11 +28,11 @@ DESCRIPTION:
     matching a pattern was introduced or changed.
 
 EXAMPLES:
-    hug lcr                         # Interactive: enter regex pattern
     hug lcr "function.*User"        # Find commits with function definitions
     hug lcr "TODO|FIXME" -i         # Case-insensitive pattern search
     hug lcr "import.*from" -p       # Show patches for matches
     hug lcr "class \w+" -- src/     # Search in specific directory
+    hug lcr "class \w+" --          # Search with interactive file selection
 
 SEE ALSO:
     hug lf       : Search commits by message
@@ -45,25 +46,34 @@ eval "$(parse_common_flags "$@")"
 
 check_git_repo
 
-# If no search term provided, prompt for it
+# Check if regex pattern provided
 if [ $# -eq 0 ]; then
-  if ! gum_available; then
-    show_help
-    exit 1
-  fi
-  regex_pattern=""
-  if ! regex_pattern=$(gum input --placeholder "Enter regex pattern for code changes..."  || true); then
-    info "Cancelled."
-    exit 0
-  fi
-  if [[ -z "$regex_pattern" ]]; then
-    info "No regex pattern provided."
-    exit 0
-  fi
-  exec hug ll -G "$regex_pattern"
+  show_help
+  exit 1
 fi
 
 regex_pattern="$1"
 shift
+
+# Check if last argument is '--' for interactive file selection
+if [ $# -gt 0 ] && [ "${!#}" = "--" ]; then
+  # Remove the '--' from arguments
+  set -- "${@:1:$(($#-1))}"
+  
+  # Show interactive file selection
+  if gum_available; then
+    file=""
+    if file=$(select_file "Select file to restrict search..."); then
+      exec hug ll -G "$regex_pattern" "$@" -- "$file"
+    else
+      info "Cancelled."
+      exit 0
+    fi
+  else
+    error "Interactive file selection requires 'gum' to be installed.
+Usage: hug lcr <regex> [options] -- <file>
+Install gum: https://github.com/charmbracelet/gum"
+  fi
+fi
 
 exec hug ll -G "$regex_pattern" "$@"

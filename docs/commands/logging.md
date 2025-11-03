@@ -74,45 +74,52 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 
 ## Search by Commit Message
 
-- `hug lf [<search-term>] [-i] [-p] [--all]`
-  - **Description**: Search commit history by grep on commit messages. When no search term is provided, prompts for interactive input (requires gum).
+- `hug lf <search-term> [-i] [-p] [--all] [-- [<file>]]`
+  - **Description**: Search commit history by grep on commit messages. Use `--` as the last argument for interactive file selection to restrict the search.
   - **Options**:
     - `-i`: Ignore case.
     - `-p`: Include patches in results.
     - `--all`: Search all branches.
+    - `-- <file>`: Restrict search to specific file.
+    - `--` (last arg): Restrict with interactive file selection.
   - **Usage**:
     ```shell
-    hug lf                     # Interactive: enter search term
-    hug lf "fix bug"           # Case-sensitive search
-    hug lf -i "fix bug" --all  # Ignore case, all branches
+    hug lf "fix bug"           # Search for "fix bug"
+    hug lf "fix bug" -i        # Case-insensitive search
+    hug lf "fix bug" --all     # Search all branches
+    hug lf "fix bug" -- file.js  # Restrict to specific file
+    hug lf "fix bug" --        # Interactive file selection
     ```
   - **Safety**: Read-only.
   - ![hug lf example](img/hug-lf.png)
 
 ## Search by Code Changes
 
-- `hug lc [<search-term>] [-i] [-p] [--all] [-- file]`
-  - **Description**: Search commits where the diff (code changes) contains the term (Git's pickaxe search). Restrict to a file with `-- file`. When no search term is provided, prompts for interactive input (requires gum).
+- `hug lc <search-term> [-i] [-p] [--all] [-- [<file>]]`
+  - **Description**: Search commits where the diff (code changes) contains the term (Git's pickaxe search). Use `--` as the last argument for interactive file selection to restrict the search.
   - **Options**:
     - `-i`: Ignore case.
     - `-p`: Show patches.
     - `--all`: All branches.
+    - `-- <file>`: Restrict search to specific file.
+    - `--` (last arg): Restrict with interactive file selection.
   - **Example**:
     ```shell
-    hug lc                                # Interactive: enter search term
     hug lc "getUserById"                  # Search code changes
-    hug lc "getUserById" -- src/users.js  # Restrict to file
+    hug lc "getUserById" -- src/users.js  # Restrict to specific file
+    hug lc "getUserById" --               # Interactive file selection
     ```
   - **Safety**: Read-only.
   - ![hug lc example](img/hug-lc.png)
 
-- `hug lcr [<regex>] [-i] [-p] [--all] [-- file]`
-  - **Description**: Search commits where the diff matches a regex (more flexible than `lc`). When no regex is provided, prompts for interactive input (requires gum).
+- `hug lcr <regex> [-i] [-p] [--all] [-- [<file>]]`
+  - **Description**: Search commits where the diff matches a regex (more flexible than `lc`). Use `--` as the last argument for interactive file selection to restrict the search.
   - **Options**: Same as `lc`.
   - **Example**:
     ```shell
-    hug lcr                      # Interactive: enter regex pattern
-    hug lcr "TODO:" --all        # Regex search across branches
+    hug lcr "TODO:"              # Regex search
+    hug lcr "TODO:" --all        # Search across all branches
+    hug lcr "TODO:" --           # Interactive file selection
     ```
   - **Safety**: Read-only.
 

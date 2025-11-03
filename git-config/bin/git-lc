@@ -8,17 +8,18 @@ show_help() {
 hug lc: Search commits by CODE CHANGES in diff.
 
 USAGE:
-    hug lc [<search-term>] [-i] [-p] [--all] [-- <file>] [-h, --help]
+    hug lc <search-term> [-i] [-p] [--all] [-- [<file>]] [-h, --help]
 
 ARGUMENTS:
-    <search-term>  Text to search for in code changes
-                   (optional - prompts for input if omitted)
+    <search-term>  Text to search for in code changes (required)
+    <file>         Restrict search to specific file (optional)
 
 OPTIONS:
     -i             Ignore case when searching
     -p             Show patches
     --all          Consider ALL branches (not just current)
     -- <file>      Restrict search to specific file
+    -- (last arg)  Restrict search with interactive file selection
     -h, --help     Show this help
 
 DESCRIPTION:
@@ -27,11 +28,11 @@ DESCRIPTION:
     code pattern was introduced or changed.
 
 EXAMPLES:
-    hug lc                          # Interactive: enter search term
     hug lc "getUserById"            # Find commits changing this function
     hug lc "getUserById" -i         # Case-insensitive search
     hug lc "config.api" -p          # Show patches
     hug lc "import" -- src/main.js  # Search in specific file
+    hug lc "import" --              # Search with interactive file selection
 
 SEE ALSO:
     hug lf       : Search commits by message
@@ -45,25 +46,34 @@ eval "$(parse_common_flags "$@")"
 
 check_git_repo
 
-# If no search term provided, prompt for it
+# Check if search term provided
 if [ $# -eq 0 ]; then
-  if ! gum_available; then
-    show_help
-    exit 1
-  fi
-  search_term=""
-  if ! search_term=$(gum input --placeholder "Enter search term for code changes..."  || true); then
-    info "Cancelled."
-    exit 0
-  fi
-  if [[ -z "$search_term" ]]; then
-    info "No search term provided."
-    exit 0
-  fi
-  exec hug ll -S "$search_term"
+  show_help
+  exit 1
 fi
 
 search_term="$1"
 shift
+
+# Check if last argument is '--' for interactive file selection
+if [ $# -gt 0 ] && [ "${!#}" = "--" ]; then
+  # Remove the '--' from arguments
+  set -- "${@:1:$(($#-1))}"
+  
+  # Show interactive file selection
+  if gum_available; then
+    file=""
+    if file=$(select_file "Select file to restrict search..."); then
+      exec hug ll -S "$search_term" "$@" -- "$file"
+    else
+      info "Cancelled."
+      exit 0
+    fi
+  else
+    error "Interactive file selection requires 'gum' to be installed.
+Usage: hug lc <search-term> [options] -- <file>
+Install gum: https://github.com/charmbracelet/gum"
+  fi
+fi
 
 exec hug ll -S "$search_term" "$@"

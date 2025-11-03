@@ -298,9 +298,9 @@ hug bdelr <branch>          # Delete remote branch
 hug l                 # One-line log with graph and decorations
 hug ll                # Log with date, author, and message (short date)
 hug la                # Log all branches
-hug lf [term]         # Search commits by message (interactive if no term, add -i for case-insensitive)
-hug lc [code]         # Search commits by code changes in diff (interactive if no code)
-hug lcr [regex]       # Search commits by regex in code changes (interactive if no regex)
+hug lf <term> [--]    # Search commits by message (use -- for file selection, add -i for case-insensitive)
+hug lc <code> [--]    # Search commits by code changes in diff (use -- for file selection)
+hug lcr <regex> [--]  # Search commits by regex in code changes (use -- for file selection)
 hug lau <author>      # Commits by specific author
 hug ld <since> <until># Commits in date range
 hug lp                # Log with patches
