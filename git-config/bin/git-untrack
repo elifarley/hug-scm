@@ -89,7 +89,7 @@ hug_untrack() {
     fi
     
     # Check if gum is available
-    if ! command -v gum >/dev/null 2>&1; then
+    if ! gum_available; then
       error "Interactive mode requires 'gum' to be installed. Please install it or specify file names directly.
        Install: https://github.com/charmbracelet/gum"
     fi

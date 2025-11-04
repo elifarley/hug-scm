@@ -404,23 +404,19 @@ require_git_version() {
 # Disable gum for tests that need non-interactive behavior
 # This allows tests to use stdin for confirmation prompts
 disable_gum_for_test() {
-  # Save original PATH if not already saved
-  if [[ -z "${HUG_TEST_ORIGINAL_PATH:-}" ]]; then
-    export HUG_TEST_ORIGINAL_PATH="$PATH"
-  fi
-  # Remove gum from PATH by filtering out .hug-deps/bin
-  export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '\.hug-deps/bin' | tr '\n' ':' | sed 's/:$//')
+  export HUG_DISABLE_GUM=true
 }
 
 # Re-enable gum after test
 enable_gum_for_test() {
-  if [[ -n "${HUG_TEST_ORIGINAL_PATH:-}" ]]; then
-    export PATH="$HUG_TEST_ORIGINAL_PATH"
-  fi
+  unset HUG_DISABLE_GUM
 }
 
-# Check if gum is available in test environment
+# Check if gum is available in test environment (respects HUG_DISABLE_GUM)
 gum_available_in_test() {
+  if [[ "${HUG_DISABLE_GUM:-}" == "true" ]]; then
+    return 1
+  fi
   command -v gum >/dev/null 2>&1
 }
 

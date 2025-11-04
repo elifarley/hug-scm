@@ -74,6 +74,11 @@ export RED GREEN GREEN_BRIGHT YELLOW YELLOW_BRIGHT BLUE MAGENTA CYAN GREY NC
 ################################################################################
 
 gum_available() {
+  # Check if gum is explicitly disabled via environment variable
+  if [[ "${HUG_DISABLE_GUM:-}" == "true" ]]; then
+    return 1
+  fi
+  # Check if gum command is available in PATH
   command -v gum >/dev/null 2>&1
 }
 
