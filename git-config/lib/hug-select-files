@@ -238,11 +238,14 @@ Install: https://github.com/charmbracelet/gum"
     "--no-strip-ansi"
     "--placeholder=$prompt"
     "--height=$gum_height"
-    "--reverse"
   )
   
   if $multi; then
+    # When selecting multiple items, better not to reverse the order,
+    # bacause Gum doesn't reverse the movement caused by the <TAB> key
     gum_args+=("--no-limit")
+  else
+    gum_args+=("--reverse")
   fi
   
   # Run gum and capture selection
