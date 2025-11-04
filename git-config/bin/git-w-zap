@@ -7,7 +7,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat <<'EOF'
-Usage: hug w zap [OPTIONS] <path> [<path>...]
+Usage: hug w zap [OPTIONS] [<path>...]
 
 Wipe tracked changes and purge untracked / ignored files for the specified paths.
 
@@ -21,7 +21,8 @@ Semantics:
   • ALL uncommitted changes on those paths (staged or unstaged) will be wiped (as in `hug wipe <path>`).
   • ALL untracked and ignored files on those paths will be gone for good (as in `hug purge -ui <path>`).
   • It's the same as `hug wipe <path>; hug purge -ui <path>`.
-  • Requires at least one path; use `hug w zap-all` to affect ALL files in the working directory.
+  • If no paths provided, interactive file selection UI will be shown (requires gum).
+  • Use `hug w zap-all` to affect ALL files in the working directory without interactive selection.
 EOF
 }
 
@@ -68,16 +69,28 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ $# -lt 1 ]]; then
-  error "this command requires at least one path (or use 'hug w zap-all')"
-  show_help >&2
-  exit 2
-fi
-
 # Early exit if not in Git repo
 check_git_repo
 
-paths=("$@")
+# Handle interactive file selection when no paths provided
+if [[ $# -lt 1 ]]; then
+  # Show all types: staged, unstaged, untracked, ignored
+  declare -a select_opts=("--multi" "--staged" "--unstaged" "--untracked" "--ignored")
+  select_opts+=("--prompt" "Select files to zap (complete cleanup)...")
+  
+  paths=()
+  if ! mapfile -t paths < <(select_files_advanced "${select_opts[@]}"); then
+    info "No files selected or cancelled."
+    exit 0
+  fi
+  
+  if [[ ${#paths[@]} -eq 0 ]]; then
+    info "No files selected."
+    exit 0
+  fi
+else
+  paths=("$@")
+fi
 
 # Separate tracked/changed files from untracked/ignored files
 declare -a tracked_paths=()
