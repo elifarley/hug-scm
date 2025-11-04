@@ -49,8 +49,11 @@ jobs:
       - name: Install test dependencies
         run: make test-deps-install
           
+      - name: Install optional dependencies
+        run: make optional-deps-install
+
       - name: Check test prerequisites
-        run: make test-check
+        run: make test-check optional-deps-check
           
       - name: Run unit tests
         run: make test-unit
