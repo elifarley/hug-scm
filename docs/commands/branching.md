@@ -39,6 +39,9 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   hug b feature/new-ui       # Switch to feature branch
   ```
 - **Safety**: Interactive mode prevents accidental switches. Always checks if you're in a Git repo.
+- ![hug b example](img/hug-b.png)
+- After typing `perform`:
+- ![hug b example with "perform" search term](img/hug-b-perform.png)
 
 ### `hug bl`
 - **Description**: List local branches in short format, sorted alphabetically. The current branch is marked with an asterisk (*).

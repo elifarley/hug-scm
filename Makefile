@@ -74,7 +74,7 @@ vhs: demo-repo-rebuild-all vhs-deps-install ## Build all GIF/PNG images from VHS
 
 vhs-build: vhs ## Alias for vhs target
 
-vhs-build-one: demo-repo-rebuild-all vhs-check ## Build a specific VHS tape file (usage: make vhs-build-one TAPE=filename.tape)
+vhs-build-one: vhs-check ## Build a specific VHS tape file (usage: make vhs-build-one TAPE=filename.tape)
 	@echo "$(BLUE)Building VHS screencast: $(TAPE)$(NC)"
 	@if [ -z "$(TAPE)" ]; then \
 		echo "$(YELLOW)Usage: make vhs-build-one TAPE=filename.tape$(NC)"; \

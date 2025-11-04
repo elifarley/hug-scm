@@ -58,13 +58,14 @@ Discard unstaged or staged **changes in _tracked_** files without affecting **un
   - **Scoping**: By default, when run without explicit paths, shows only files from current directory and subdirectories. Use `--browse-root` to browse the entire repository.
   - **Example**:
     ```shell
-    hug w discard file.js     # Discard unstaged changes in file.js (CWD-relative)
-    hug w discard -s .        # Discard all staged changes in current directory
-    hug w discard --browse-root # Interactive selection from entire repository
+    hug w discard               # Interactive selection (files in CWD)
+    hug w discard --browse-root # Interactive selection (files from entire repository)
+    hug w discard file.js       # Discard unstaged changes in file.js (CWD-relative)
+    hug w discard -s .          # Discard all staged changes in current directory
     ```
   - **Path Behavior**: 
-    - Without arguments: Interactive UI scoped to current directory (shows `main.java` not `src/java/main.java`)
-    - With `--browse-root`: Interactive UI shows entire repository
+    - Without arguments: Interactive UI scoped to current directory
+    - With `--browse-root`: Interactive UI shows files from entire repository
     - With explicit paths: Paths are relative to current directory (e.g., `main.java` in `src/java/` targets `src/java/main.java`)
   - **Safety**: `--dry-run` to preview; requires `-f` to force.
   - ![hug w discard example](img/hug-w-discard.png)
