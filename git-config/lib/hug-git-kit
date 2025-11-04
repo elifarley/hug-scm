@@ -1420,7 +1420,7 @@ print_interactive_branch_menu() {
             # Current branch is marked with *
             local marker=""
             if [ "$branch" = "$current_branch" ]; then
-                marker="* "
+                marker="${GREEN}* "
             fi
             
             local formatted="${marker}${branch} $YELLOW$hash$NC"
