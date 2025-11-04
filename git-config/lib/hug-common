@@ -304,7 +304,15 @@ Install: https://github.com/charmbracelet/gum"
     [[ -z "$line" ]] && continue
     local file_name
     if $use_status_formatting; then
-      file_name="${line#* }"
+      # Strip ANSI codes before extracting filename
+      # This handles selections from gum with --no-strip-ansi
+      local stripped_line
+      stripped_line=$(printf '%s' "$line" | sed $'s/\033\[[0-9;]*m//g')
+      # Extract filename after status prefix (after first space)
+      file_name="${stripped_line#* }"
+      # Trim leading and trailing whitespace
+      file_name="${file_name#"${file_name%%[![:space:]]*}"}"
+      file_name="${file_name%"${file_name##*[![:space:]]}"}"
     else
       file_name="$line"
     fi

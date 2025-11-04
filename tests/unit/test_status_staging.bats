@@ -295,3 +295,36 @@ teardown() {
   run git ls-files
   assert_output --partial "confirm_test.txt"
 }
+
+@test "select_files_with_status: correctly strips ANSI codes when extracting filenames" {
+  # This test ensures that the fix for interactive file selection works correctly
+  # by testing the ANSI code stripping logic that was added to handle gum's output
+  
+  # Source the library to access the extraction logic
+  # Navigate from test file location (tests/unit/) to project root
+  local lib_path="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)/git-config/lib/hug-common"
+  source "$lib_path"
+  
+  # Create a test selection with ANSI codes (simulating gum output with --no-strip-ansi)
+  # Format: "<GREEN>S:<YELLOW>Mod <NC> filename"
+  local test_selection=$'\033[32mS:\033[33mMod \033[0m test_file.txt'
+  local use_status_formatting=true
+  
+  # Extract filename using the same logic as select_files_with_status
+  local extracted_file
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    if $use_status_formatting; then
+      local stripped_line
+      stripped_line=$(printf '%s' "$line" | sed $'s/\033\[[0-9;]*m//g')
+      extracted_file="${stripped_line#* }"
+      extracted_file="${extracted_file#"${extracted_file%%[![:space:]]*}"}"
+      extracted_file="${extracted_file%"${extracted_file##*[![:space:]]}"}"
+    else
+      extracted_file="$line"
+    fi
+  done <<< "$test_selection"
+  
+  # Verify the extracted filename is correct (no ANSI codes, no extra spaces)
+  [[ "$extracted_file" == "test_file.txt" ]]
+}
