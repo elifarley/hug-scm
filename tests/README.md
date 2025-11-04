@@ -167,7 +167,7 @@ For library tests (lib/):
 #!/usr/bin/env bats
 # Tests for [library description]
 
-load '../../test_helper'
+load '../test_helper'
 
 # Load the library (use 'load' for BATS compatibility and path reliability)
 load '../../../git-config/lib/hug-fs'  # Adjust path for your lib

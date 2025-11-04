@@ -12,27 +12,43 @@ Usage: hug w zap [OPTIONS] [<path>...]
 Wipe tracked changes and purge untracked / ignored files for the specified paths.
 
 Options:
-  -f, --force      Skip confirmation prompts
-      --dry-run    Show what would be affected without applying changes
-  -h, --help       Show this help
+  -f, --force        Skip confirmation prompts
+      --browse-root  Browse full repository scope in file selector UI (default: current directory)
+      --dry-run      Show what would be affected without applying changes
+  -h, --help         Show this help
 
 Semantics:
   • Performs a full factory reset on the provided paths of the working directory so that they match HEAD verbatim.
   • ALL uncommitted changes on those paths (staged or unstaged) will be wiped (as in `hug wipe <path>`).
   • ALL untracked and ignored files on those paths will be gone for good (as in `hug purge -ui <path>`).
   • It's the same as `hug wipe <path>; hug purge -ui <path>`.
-  • If no paths provided, interactive file selection UI will be shown (requires gum).
+
+Behavior:
+  • When run with no paths, shows an interactive file selection UI (requires gum).
+  • By default, file selection is scoped to the current directory and subdirectories.
+  • Use --browse-root to browse files across the entire repository in the UI.
+  • When explicit paths are provided, they are interpreted relative to the current directory.
   • Use `hug w zap-all` to affect ALL files in the working directory without interactive selection.
+
+Examples:
+  hug w zap                       # Interactive UI, current directory scope
+  hug w zap --browse-root         # Interactive UI, full repository scope
+  hug w zap dir/                  # Zap everything in dir/ (CWD-relative)
 EOF
 }
 
 force=false
 dry_run=false
+browse_root=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -f|--force)
       force=true
+      shift
+      ;;
+    --browse-root)
+      browse_root=true
       shift
       ;;
     --dry-run)
@@ -74,8 +90,20 @@ check_git_repo
 
 # Handle interactive file selection when no paths provided
 if [[ $# -lt 1 ]]; then
+  # Check for conflicting flags
+  if $browse_root; then
+    # --browse-root without explicit paths is valid (triggers UI with full scope)
+    :
+  fi
+  
   # Show all types: staged, unstaged, untracked, ignored
   declare -a select_opts=("--multi" "--staged" "--unstaged" "--untracked" "--ignored")
+  
+  # Default to --cwd (current directory scope) unless --browse-root is specified
+  if ! $browse_root; then
+    select_opts+=("--cwd")
+  fi
+  
   select_opts+=("--prompt" "Select files to zap (complete cleanup)...")
   
   paths=()
@@ -89,6 +117,11 @@ if [[ $# -lt 1 ]]; then
     exit 0
   fi
 else
+  # Explicit paths provided - check for conflicting flags
+  if $browse_root; then
+    error "--browse-root cannot be used with explicit paths. Either use --browse-root alone to browse files, or specify paths directly."
+  fi
+  
   paths=("$@")
 fi
 

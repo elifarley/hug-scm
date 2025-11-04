@@ -10,6 +10,25 @@ Some of them can also be accessed directly (without using `h` before them):
 - `hug wips` (same as `hug w wips`)
 - `hug unwip` (same as `hug w unwip`)
 
+## Directory Scoping
+
+Many `w` commands support interactive file selection with intelligent scoping:
+
+- **Default behavior**: When run without explicit paths, interactive commands (`discard`, `purge`, `zap`) **scope to the current directory and subdirectories**.
+  - Running `hug w discard` from `src/java/` shows only files in `src/java/` and its subdirectories
+  - File paths are displayed relative to your current location (e.g., `main.java` not `src/java/main.java`)
+  - This reduces noise and cognitive load in large repositories or monorepos
+
+- **Full repository scope**: Use `--browse-root` flag to browse files across the entire repository
+  - Example: `hug w discard --browse-root` shows all changed files in the repo
+  - Cannot be combined with explicit file paths
+
+- **Explicit paths**: Always interpreted relative to current directory
+  - Example: In `src/java/`, `hug w discard main.java` targets `src/java/main.java`
+  - Works naturally from any directory without requiring full repository paths
+
+This scoping mirrors Git's native `-- .` behavior and provides an intuitive, focused view for directory-specific workflows.
+
 
 ## Quick Reference
 
@@ -34,13 +53,19 @@ Some of them can also be accessed directly (without using `h` before them):
 ### Discard Changes
 Discard unstaged or staged **changes in _tracked_** files without affecting **untracked / ignored** files.
 
-- `hug w discard [-u|-s] <files...>`
+- `hug w discard [-u|-s] [--browse-root] <files...>`
   - **Description**: Discard unstaged (`-u`, default) or staged (`-s`) changes for specific files/paths.
+  - **Scoping**: By default, when run without explicit paths, shows only files from current directory and subdirectories. Use `--browse-root` to browse the entire repository.
   - **Example**:
     ```shell
-    hug w discard file.js     # Discard unstaged changes in file.js
+    hug w discard file.js     # Discard unstaged changes in file.js (CWD-relative)
     hug w discard -s .        # Discard all staged changes in current directory
+    hug w discard --browse-root # Interactive selection from entire repository
     ```
+  - **Path Behavior**: 
+    - Without arguments: Interactive UI scoped to current directory (shows `main.java` not `src/java/main.java`)
+    - With `--browse-root`: Interactive UI shows entire repository
+    - With explicit paths: Paths are relative to current directory (e.g., `main.java` in `src/java/` targets `src/java/main.java`)
   - **Safety**: `--dry-run` to preview; requires `-f` to force.
   - ![hug w discard example](img/hug-w-discard.png)
 
@@ -62,9 +87,15 @@ Discard uncommitted changes (both staged and unstaged) in **_tracked_** files wi
 ### Purge Untracked
 Remove untracked or ignored files (e.g., build artifacts).
 
-- `hug w purge [-u|-i] <paths...>`
+- `hug w purge [-u|-i] [--browse-root] <paths...>`
   - **Description**: Purge untracked (`-u`, default) or ignored (`-i`) files/paths.
-  - **Example**: `hug w purge -i node_modules/`
+  - **Scoping**: By default, when run without explicit paths, shows only files from current directory and subdirectories. Use `--browse-root` to browse the entire repository.
+  - **Example**: 
+    ```shell
+    hug w purge -i node_modules/     # Purge ignored files in node_modules/
+    hug w purge --browse-root        # Interactive selection from entire repository
+    ```
+  - **Path Behavior**: Same as `discard` - paths are CWD-relative, UI shows simplified paths
   - ![hug w purge example](img/hug-w-purge.png)
 
 - `hug w purge-all [-u|-i]`
@@ -74,9 +105,15 @@ Remove untracked or ignored files (e.g., build artifacts).
 ### Zap (Nuclear Cleanup)
 Combines wipe + purge for full reset.
 
-- `hug w zap <paths...>`
+- `hug w zap [--browse-root] <paths...>`
   - **Description**: Full cleanup (discard + purge) for paths.
-  - **Example**: `hug w zap my-file` (careful!)
+  - **Scoping**: By default, when run without explicit paths, shows only files from current directory and subdirectories. Use `--browse-root` to browse the entire repository.
+  - **Example**: 
+    ```shell
+    hug w zap my-file              # Full cleanup for my-file (careful!)
+    hug w zap --browse-root        # Interactive selection from entire repository
+    ```
+  - **Path Behavior**: Same as `discard` and `purge` - paths are CWD-relative, UI shows simplified paths
 
 - `hug w zap-all`
   - **Description**: Complete repo reset - tracked to clean, untracked/ignored removed.
