@@ -327,5 +327,5 @@ teardown() {
   done <<< "$test_selection"
   
   # Verify the extracted filename is correct (no ANSI codes, no extra spaces)
-  [[ "$extracted_file" == "test_file.txt" ]]
+  assert_equal "$extracted_file" "test_file.txt"
 }
