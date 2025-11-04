@@ -37,13 +37,13 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags
+# Parse common flags (handles -- detection automatically)
 eval "$(parse_common_flags "$@")"
 
 check_git_repo
 
-# Check if user wants interactive file selection
-if [ $# -eq 1 ] && [ "$1" = "--" ]; then
+# Handle interactive file selection if requested
+if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   if file=$(select_files_with_status "working" "Select file to view working directory changes (<TAB> to select, Enter to confirm)..."); then
     printf '─────────────────── Working dir changes for FILE:\n'
     git diff HEAD -- "$file"

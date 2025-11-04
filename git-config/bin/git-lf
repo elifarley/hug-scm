@@ -44,7 +44,7 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags
+# Parse common flags (handles -- detection automatically)
 eval "$(parse_common_flags "$@")"
 
 check_git_repo
@@ -58,11 +58,8 @@ fi
 search_term="$1"
 shift
 
-# Check if last argument is '--' for interactive file selection
-if [ $# -gt 0 ] && [ "${!#}" = "--" ]; then
-  # Remove the '--' from arguments
-  set -- "${@:1:$(($#-1))}"
-  
+# Handle interactive file selection if requested
+if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   # Show interactive file selection
   if gum_available; then
     file=""

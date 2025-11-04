@@ -461,12 +461,21 @@ is_symlink() {
 #   -f, --force  Sets force=true, exports HUG_FORCE=true
 #   --quiet      Exports HUG_QUIET=T
 #   -h, --help   Calls usage or show_help function and exits
+#   --           If last argument, sets HUG_INTERACTIVE_FILE_SELECTION=true and removes it
 # Note:
 #   Consumes recognized flags from arguments
 #   Remaining args can be accessed via "$@" after eval
 #   Handles empty remaining args without setting $@ to ("")
 parse_common_flags() {
   local remaining_args=()
+  local interactive_file_selection=false
+  
+  # Check if last argument is '--' before processing
+  if [[ $# -gt 0 && "${!#}" = "--" ]]; then
+    interactive_file_selection=true
+    # Remove last argument by creating new array without it
+    set -- "${@:1:$(($#-1))}"
+  fi
   
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -498,6 +507,11 @@ parse_common_flags() {
         ;;
     esac
   done
+  
+  # Export interactive file selection flag if detected
+  if $interactive_file_selection; then
+    echo "export HUG_INTERACTIVE_FILE_SELECTION=true"
+  fi
   
   # Always output set -- to properly update $@ in the caller
   if [ ${#remaining_args[@]} -gt 0 ]; then
