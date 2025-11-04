@@ -37,6 +37,10 @@ test-integration: ## Run only integration tests
 	@echo "$(BLUE)Running integration tests...$(NC)"
 	./tests/run-tests.sh --integration
 
+test-lib: ## Run only library tests
+	@echo "$(BLUE)Running library tests...$(NC)"
+	./tests/run-tests.sh --lib
+
 test-check: ## Check test prerequisites without running tests
 	@echo "$(BLUE)Checking test prerequisites...$(NC)"
 	./tests/run-tests.sh --check
@@ -200,7 +204,7 @@ demo-repo-status: ## Show status of demo repository
 	echo "Remote: $$(git remote -v 2>/dev/null | head -1 || echo 'N/A')"; \
 	exit 0
 
-.PHONY: test test-unit test-integration test-check test-deps-install optional-deps-install optional-deps-check
+.PHONY: test test-unit test-integration test-lib test-check test-deps-install optional-deps-install optional-deps-check
 .PHONY: vhs-deps-install
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
 .PHONY: docs-dev docs-build docs-preview deps-docs
