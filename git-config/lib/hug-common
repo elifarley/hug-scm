@@ -86,11 +86,9 @@ gum_available() {
 # Parameters:
 #   $1 - Error message to display
 #   $2 - (Optional) Exit code, defaults to 1
-# Environment:
-#   HUG_QUIET - If set, suppresses output
 error() {
-  test "${HUG_QUIET:-}" && return
-  printf "${RED}❌ Error:${NC} %s\n" "$1" >&2
+  gum_available && gum log -s --prefix=❌ -l error "$@" || \
+    printf "${RED}❌ Error:${NC} %s\n" "$1" >&2
   exit "${2:-1}"
 }
 
@@ -102,7 +100,8 @@ error() {
 #   HUG_QUIET - If set, suppresses output
 warning() {
   test "${HUG_QUIET:-}" && return
-  printf "${YELLOW}⚠️  Warning:${NC} %s\n" "$1" >&2
+  gum_available && gum log -s --prefix=⚠️  -l warn "$@" || \
+    printf "${YELLOW}⚠️  Warning:${NC} %s\n" "$1" >&2
 }
 
 # Alias for warning() function
@@ -117,7 +116,8 @@ warn() { warning "$@"; }
 #   HUG_QUIET - If set, suppresses output
 info() {
   test "${HUG_QUIET:-}" && return
-  printf "${BLUE}ℹ️  Info:${NC} %s\n" "$1" >&2
+  gum_available && gum log -s --prefix=ℹ️  -l info "$@" || \
+    printf "${BLUE}ℹ️  Info:${NC} %s\n" "$1" >&2
 }
 
 # Prints a tip message to stderr
@@ -128,7 +128,7 @@ info() {
 #   HUG_QUIET - If set, suppresses output
 tip() {
   test "${HUG_QUIET:-}" && return
-  printf "${CYAN}💡  Tip:${NC} %s\n" "$1" >&2
+  printf "${CYAN}💡 Tip:${NC} %s\n" "$1" >&2
 }
 
 # Prints a success message to stderr
