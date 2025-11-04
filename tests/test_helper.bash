@@ -407,7 +407,6 @@ disable_gum_for_test() {
   export HUG_DISABLE_GUM=true
 }
 
-# Re-enable gum after test
 enable_gum_for_test() {
   unset HUG_DISABLE_GUM
 }

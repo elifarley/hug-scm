@@ -45,6 +45,7 @@
 load '../test_helper'
 
 setup() {
+  enable_gum_for_test
   require_hug
   TEST_REPO=$(create_test_repo_with_history)
   cd "$TEST_REPO"
@@ -615,8 +616,6 @@ teardown() {
 
   run git ls-files --cached
   assert_output --partial "staged.txt"
-  
-  enable_gum_for_test
 }
 
 @test "hug h back: handles invalid target" {
@@ -713,8 +712,6 @@ teardown() {
 
   run git ls-files --cached
   assert_output --partial "staged.txt"
-  
-  enable_gum_for_test
 }
 
 @test "hug h undo: requires confirmation when unstaged changes exist" {
@@ -736,8 +733,6 @@ teardown() {
 
   run git diff --name-only
   assert_output --partial "README.md"
-  
-  enable_gum_for_test
 }
 
 @test "hug h undo: merges staged and committed changes to unstaged" {
@@ -969,8 +964,6 @@ teardown() {
 
   run git ls-files --cached
   assert_output --partial "staged.txt"
-  
-  enable_gum_for_test
 }
 
 @test "hug h squash: handles squashing to commit hash" {

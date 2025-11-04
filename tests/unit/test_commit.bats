@@ -4,6 +4,7 @@
 load '../test_helper'
 
 setup() {
+  enable_gum_for_test
   require_hug
   TEST_REPO=$(create_test_repo_with_changes)
   cd "$TEST_REPO"
@@ -532,7 +533,6 @@ HOOK
   
   popd >/dev/null
   rm -rf "$repo"
-  enable_gum_for_test
 }
 
 @test "hug cmv: skips confirmation with --force and stays on target (existing)" {
@@ -589,7 +589,6 @@ HOOK
 
   popd >/dev/null
   rm -rf "$repo"
-  enable_gum_for_test
 }
 
 @test "hug cmv: handles upstream mode" {
@@ -653,7 +652,6 @@ HOOK
 
   popd >/dev/null
   rm -rf "$repo"
-  enable_gum_for_test
 }
 
 @test "hug cmv: aborts on 'n' to creation prompt without --new (combined prompt)" {
@@ -679,7 +677,6 @@ HOOK
 
   popd >/dev/null
   rm -rf "$repo"
-  enable_gum_for_test
 }
 
 @test "hug cmv: auto-creates with --force on missing without --new (detach) and stays on it" {
