@@ -15,15 +15,14 @@ Options:
   -f, --force      Skip confirmation prompts
       --dry-run    Show what would be affected without applying changes
   -h, --help       Show this help
-  --               Trigger interactive file selection UI
 
 Semantics:
   • Performs a full factory reset on the provided paths of the working directory so that they match HEAD verbatim.
   • ALL uncommitted changes on those paths (staged or unstaged) will be wiped (as in `hug wipe <path>`).
   • ALL untracked and ignored files on those paths will be gone for good (as in `hug purge -ui <path>`).
   • It's the same as `hug wipe <path>; hug purge -ui <path>`.
-  • If no paths provided, interactive file selection UI will be shown.
-  • Use `hug w zap-all` to affect ALL files in the working directory.
+  • If no paths provided, interactive file selection UI will be shown (requires gum).
+  • Use `hug w zap-all` to affect ALL files in the working directory without interactive selection.
 EOF
 }
 
