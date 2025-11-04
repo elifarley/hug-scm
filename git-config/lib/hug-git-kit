@@ -450,10 +450,9 @@ is_binary_staged() {
 # Output:
 #   File paths relative to current directory (one per line, or status\tfile if --status)
 # Notes:
-#   Handles path conversion for subdirectories via GIT_PREFIX (unless --cwd is used).
+#   Always converts paths to current-directory-relative via GIT_PREFIX.
 #   For renames/copies with --status, outputs the new file path.
 #   Empty output if no staged files.
-#   When --cwd is used, paths are already current-dir relative (no conversion needed).
 list_staged_files() {
     local with_status=false
     local scope_cwd=false
@@ -500,21 +499,16 @@ list_staged_files() {
                 file="$old"
             fi
             [[ -z "$file" ]] && continue
-            if $scope_cwd; then
-                # Already current-dir relative
-                printf '%s\t%s\n' "$status" "$file"
-            else
-                local -a single=("$file")
-                convert_to_relative_paths single
-                printf '%s\t%s\n' "$status" "${single[0]}"
-            fi
+            # Always convert to current-dir relative paths
+            local -a single=("$file")
+            convert_to_relative_paths single
+            printf '%s\t%s\n' "$status" "${single[0]}"
         done < <("${git_cmd_base[@]}" 2>/dev/null || true)
     else
         local -a paths=()
         mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
-        if ! $scope_cwd; then
-            convert_to_relative_paths paths
-        fi
+        # Always convert to current-dir relative paths
+        convert_to_relative_paths paths
         printf '%s\n' "${paths[@]}"
     fi
 }
@@ -527,10 +521,9 @@ list_staged_files() {
 # Output:
 #   File paths relative to current directory (one per line, or status\tfile if --status)
 # Notes:
-#   Handles path conversion for subdirectories via GIT_PREFIX (unless --cwd is used).
+#   Always converts paths to current-directory-relative via GIT_PREFIX.
 #   For potential renames/copies with --status, outputs the relevant file path (future-proof).
 #   Empty output if no unstaged files.
-#   When --cwd is used, paths are already current-dir relative (no conversion needed).
 list_unstaged_files() {
     local with_status=false
     local scope_cwd=false
@@ -577,21 +570,16 @@ list_unstaged_files() {
                 file="$old"
             fi
             [[ -z "$file" ]] && continue
-            if $scope_cwd; then
-                # Already current-dir relative
-                printf '%s\t%s\n' "$status" "$file"
-            else
-                local -a single=("$file")
-                convert_to_relative_paths single
-                printf '%s\t%s\n' "$status" "${single[0]}"
-            fi
+            # Always convert to current-dir relative paths
+            local -a single=("$file")
+            convert_to_relative_paths single
+            printf '%s\t%s\n' "$status" "${single[0]}"
         done < <("${git_cmd_base[@]}" 2>/dev/null || true)
     else
         local -a paths=()
         mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
-        if ! $scope_cwd; then
-            convert_to_relative_paths paths
-        fi
+        # Always convert to current-dir relative paths
+        convert_to_relative_paths paths
         printf '%s\n' "${paths[@]}"
     fi
 }
@@ -603,11 +591,10 @@ list_unstaged_files() {
 # Output:
 #   File paths relative to current directory (one per line)
 # Notes:
-#   Handles path conversion for subdirectories via GIT_PREFIX (unless --cwd is used).
+#   Always converts paths to current-directory-relative via GIT_PREFIX.
 #   Parses git status --porcelain=v1 -z for ?? entries.
 #   Empty output if no untracked files.
 #   Preserves special characters in filenames (e.g., spaces, newlines).
-#   When --cwd is used, paths are already current-dir relative (no conversion needed).
 list_untracked_files() {
     local scope_cwd=false
     if [[ "${1:-}" == "--cwd" ]]; then
@@ -633,9 +620,8 @@ list_untracked_files() {
         fi
     done < <("${git_cmd[@]}" 2>/dev/null || true)
 
-    if ! $scope_cwd; then
-        convert_to_relative_paths paths
-    fi
+    # Always convert to current-dir relative paths
+    convert_to_relative_paths paths
     printf '%s\n' "${paths[@]}"
 }
 
@@ -646,11 +632,10 @@ list_untracked_files() {
 # Output:
 #   File paths relative to current directory (one per line)
 # Notes:
-#   Handles path conversion for subdirectories via GIT_PREFIX (unless --cwd is used).
+#   Always converts paths to current-directory-relative via GIT_PREFIX.
 #   Parses git status --porcelain=v1 --ignored=matching -z for !! entries.
 #   Empty output if no ignored files.
 #   Preserves special characters in filenames (e.g., spaces, newlines).
-#   When --cwd is used, paths are already current-dir relative (no conversion needed).
 list_ignored_files() {
     local scope_cwd=false
     if [[ "${1:-}" == "--cwd" ]]; then
@@ -676,9 +661,8 @@ list_ignored_files() {
         fi
     done < <("${git_cmd[@]}" 2>/dev/null || true)
 
-    if ! $scope_cwd; then
-        convert_to_relative_paths paths
-    fi
+    # Always convert to current-dir relative paths
+    convert_to_relative_paths paths
     printf '%s\n' "${paths[@]}"
 }
 
@@ -689,11 +673,10 @@ list_ignored_files() {
 # Output:
 #   File paths relative to current directory (one per line)
 # Notes:
-#   Handles path conversion for subdirectories via GIT_PREFIX (unless --cwd is used).
+#   Always converts paths to current-directory-relative via GIT_PREFIX.
 #   Uses git ls-files to list index contents (excludes untracked).
 #   Includes unchanged tracked files.
 #   Empty output if no tracked files (new repo).
-#   When --cwd is used, paths are already current-dir relative (no conversion needed).
 list_tracked_files() {
     local scope_cwd=false
     if [[ "${1:-}" == "--cwd" ]]; then
@@ -711,9 +694,8 @@ list_tracked_files() {
 
     local -a paths=()
     mapfile -t paths < <("${git_cmd[@]}" 2>/dev/null || true)
-    if ! $scope_cwd; then
-        convert_to_relative_paths paths
-    fi
+    # Always convert to current-dir relative paths
+    convert_to_relative_paths paths
     printf '%s\n' "${paths[@]}"
 }
 
