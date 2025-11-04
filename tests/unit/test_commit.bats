@@ -617,6 +617,8 @@ HOOK
 }
 
 @test "hug cmv: prompts to create missing branch without --new (combined prompt, detach on y) and stays on it" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -651,9 +653,12 @@ HOOK
 
   popd >/dev/null
   rm -rf "$repo"
+  enable_gum_for_test
 }
 
 @test "hug cmv: aborts on 'n' to creation prompt without --new (combined prompt)" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -674,6 +679,7 @@ HOOK
 
   popd >/dev/null
   rm -rf "$repo"
+  enable_gum_for_test
 }
 
 @test "hug cmv: auto-creates with --force on missing without --new (detach) and stays on it" {
