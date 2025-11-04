@@ -29,7 +29,6 @@ dry_run=false
 target_untracked=false
 target_ignored=false
 flags_explicit=false
-interactive_selection=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -52,7 +51,6 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     --)
-      interactive_selection=true
       shift
       break
       ;;
@@ -74,8 +72,8 @@ fi
 # Early exit if not in Git repo
 check_git_repo
 
-# Handle interactive file selection if requested or no paths provided
-if [[ $# -lt 1 ]] || $interactive_selection; then
+# Handle interactive file selection when no paths provided
+if [[ $# -lt 1 ]]; then
   # Determine which file types to show based on flags
   declare -a select_opts=("--multi")
   

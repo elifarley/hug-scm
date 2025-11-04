@@ -34,7 +34,6 @@ target_unstaged=false
 target_staged=false
 flags_explicit=false
 force=false
-interactive_selection=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -61,7 +60,6 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     --)
-      interactive_selection=true
       shift
       break
       ;;
@@ -83,8 +81,8 @@ fi
 check_git_repo
 repo_root="$(git rev-parse --show-toplevel)"
 
-# Handle interactive file selection if requested or no paths provided
-if [[ $# -lt 1 ]] || $interactive_selection; then
+# Handle interactive file selection when no paths provided
+if [[ $# -lt 1 ]]; then
   # Determine which file types to show based on flags
   declare -a select_opts=("--multi")
   
