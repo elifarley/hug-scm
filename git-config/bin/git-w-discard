@@ -140,8 +140,7 @@ if [[ $# -lt 1 ]]; then
 else
   # Explicit paths provided - check for conflicting flags
   if $browse_root; then
-    error "--browse-root cannot be used with explicit paths. 
-       Either use --browse-root alone to browse files, or specify paths directly."
+    error "--browse-root cannot be used with explicit paths. Either use --browse-root alone to browse files, or specify paths directly."
   fi
   
   paths=("$@")
