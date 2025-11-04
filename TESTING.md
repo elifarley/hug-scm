@@ -13,6 +13,7 @@ This document provides comprehensive guidance on testing strategies, practices, 
 - [CI/CD Integration](#cicd-integration)
 - [Best Practices](#best-practices)
 - [Troubleshooting](#troubleshooting)
+- [Library Testing](#library-testing)
 
 ## Overview
 
@@ -138,6 +139,9 @@ make test-unit
 # Run only integration tests
 make test-integration
 
+# Run only library tests
+make test-lib
+
 # Run with verbose output
 make test-verbose
 ```
@@ -152,6 +156,7 @@ Or use the test script directly:
 
 # Run specific test suite
 ./tests/run-tests.sh tests/unit/test_status_staging.bats
+./tests/run-tests.sh tests/lib/test_hug-fs.bats
 
 # Run with verbose output
 ./tests/run-tests.sh -v
@@ -172,6 +177,8 @@ tests/
 │   ├── test_status_staging.bats  # Status and staging (s*, a*, us*)
 │   ├── test_working_dir.bats     # Working directory (w*)
 │   └── test_head.bats            # HEAD operations (h*)
+├── lib/                          # Library unit tests
+│   └── test_hug-fs.bats          # Filesystem utilities (hug-fs)
 ├── integration/                  # Integration tests
 │   └── test_workflows.bats       # End-to-end workflows
 └── fixtures/                     # Test data
@@ -209,6 +216,8 @@ require_git_version "2.23"        # Skip if git too old
 
 ### Basic Test Template
 
+For command tests (unit/integration):
+
 ```bash
 #!/usr/bin/env bats
 # Tests for [feature description]
@@ -238,6 +247,26 @@ teardown() {
 }
 ```
 
+For library tests:
+
+```bash
+#!/usr/bin/env bats
+# Tests for [library feature]
+
+load '../../test_helper'
+
+# Load the library (BATS 'load' ensures reliable sourcing)
+load '../../../git-config/lib/hug-fs'  # Relative from tests/lib/
+
+@test "library function: does something specific" {
+  # Act: Call the function
+  run is_symlink "arg"
+  
+  # Assert: Verify outcome
+  assert_success
+}
+```
+
 ### Test Naming
 
 - **File Names**: `test_<feature>.bats`
@@ -249,6 +278,7 @@ teardown() {
 - `"hug s: shows status summary"`
 - `"hug w discard -f: discards changes without confirmation"`
 - `"hug h back N: moves HEAD back N commits"`
+- `"hug-fs: is_symlink: detects symbolic links"`
 
 **Bad Examples:**
 - `"test status"` (too vague)
@@ -405,11 +435,13 @@ make test-integration
 **Specific file:**
 ```bash
 ./tests/run-tests.sh tests/unit/test_status_staging.bats
+./tests/run-tests.sh tests/lib/test_hug-fs.bats
 ```
 
 **Single test:**
 ```bash
 ./tests/run-tests.sh -f "hug s shows status"
+./tests/run-tests.sh -f "hug-fs: is_symlink"
 ```
 
 **Verbose output:**
@@ -582,6 +614,11 @@ teardown() {
 ./tests/run-tests.sh -f "exact test name"
 ```
 
+**Library loading fails (e.g., function not found):**
+- Use `load` instead of `source`—it's BATS-optimized. Ensure relative path is correct (e.g., `../../../` from tests/lib/).
+- Debug: Add `@test "debug" { echo "Loaded from: $(pwd)"; }` after load.
+- Verify: Run `make test-lib` and check for status 127 (partial BATS lib load).
+
 ### Common Issues
 
 **Tests hang waiting for input:**
@@ -610,12 +647,13 @@ teardown() {
 
 ### Coverage Goals
 
-Target: **>80% command coverage**
+Target: **>80% overall coverage** (commands + libraries)
 
 Current coverage:
 - ✅ Status and staging (s*, a*, us*)
 - ✅ Working directory (w*)
 - ✅ HEAD operations (h*)
+- ✅ Library: filesystem (hug-fs)
 - ✅ Common workflows
 - ⏳ Branch operations (b*)
 - ⏳ Commit commands (c*)
@@ -623,6 +661,7 @@ Current coverage:
 - ⏳ Tagging (t*)
 - ⏳ File inspection (f*)
 - ⏳ Rebase/merge (r*, m*)
+- ⏳ Additional libraries (hug-confirm, etc.)
 
 ### Test Requirements for PRs
 
@@ -631,6 +670,24 @@ All PRs must:
 - Update tests for changed behavior
 - Pass all existing tests
 - Maintain or improve coverage
+
+## Library Testing
+
+Library tests in `tests/lib/` focus on reusable code from `git-config/lib/` (e.g., `hug-fs`, `hug-confirm`). These are pure unit tests without Git dependencies:
+
+### Guidelines
+- **Sourcing**: Use `load` for libraries: `load '../../../git-config/lib/hug-fs'` (relative path from .bats file). This is preferred over `source` in BATS for path handling and consistency with helpers.
+- **Isolation**: No repo setup; use `mktemp` for files/dirs
+- **Assertions**: Focus on function return codes and output (e.g., `assert_success`, `assert_output`)
+- **Naming**: `"hug-<lib>: <function>: <behavior>"` (e.g., `"hug-fs: is_symlink: handles broken links"`)
+- **Edge Cases**: Test valid/invalid inputs, empty args, non-existent paths
+- **No Teardown**: Individual tests clean up temps; no global `setup()`/`teardown()`
+
+### Example Workflow
+1. Add new lib function to `git-config/lib/`
+2. Create `tests/lib/test_<lib>.bats`
+3. Test in isolation: `make test-lib`
+4. Integrate with commands if applicable (via unit/integration tests)
 
 ## Resources
 

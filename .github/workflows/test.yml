@@ -12,26 +12,21 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        test_type: [lib, unit, integration]
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Cache test dependencies
+      - name: Cache Hug dependencies
         uses: actions/cache@v4
         with:
-          path: ~/.hug-deps/bats
-          key: ${{ runner.os }}-tests-deps-${{ hashFiles('tests/run-tests.sh') }}
+          path: ~/.hug-deps
+          key: ${{ runner.os }}-hug-deps-${{ hashFiles('tests/run-tests.sh', 'docs/screencasts/bin/vhs-build.sh', 'bin/optional-deps-install.sh') }}
           restore-keys: |
-            ${{ runner.os }}-tests-deps-
-
-      - name: Cache VHS dependency
-        uses: actions/cache@v4
-        with:
-          path: ~/.hug-deps/bin
-          key: ${{ runner.os }}-vhs-deps-${{ hashFiles('docs/screencasts/bin/vhs-build.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-vhs-deps-
+            ${{ runner.os }}-hug-deps-
 
       - name: Verify Git version
         run: |
@@ -55,12 +50,9 @@ jobs:
       - name: Check test prerequisites
         run: make test-check optional-deps-check
           
-      - name: Run unit tests
-        run: make test-unit
-          
-      - name: Run integration tests
-        run: make test-integration
-          
+      - name: Run ${{ matrix.test_type }} tests
+        run: make test-${{ matrix.test_type }}
+
       - name: Run all tests with verbose output
         if: failure()
         run: echo "no verbose option"

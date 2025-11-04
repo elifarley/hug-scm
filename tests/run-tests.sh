@@ -179,6 +179,7 @@ Options:
   -j, --jobs N        Run tests in parallel with N jobs
   --unit              Run only unit tests
   --integration       Run only integration tests
+  --lib               Run only library tests
   --check             Check prerequisites without running tests
   --install-deps      Install or update test dependencies only
 
@@ -189,6 +190,7 @@ Examples:
   $0 -f "hug s"                # Run tests matching "hug s"
   $0 -j 4                      # Run with 4 parallel jobs
   $0 --unit                    # Run only unit tests
+  $0 --lib                     # Run only library tests
   $0 --check                   # Check prerequisites
   $0 --install-deps            # Install test dependencies
 
@@ -225,6 +227,10 @@ main() {
         ;;
       --integration)
         test_path="tests/integration/"
+        shift
+        ;;
+      --lib)
+        test_path="tests/lib/"
         shift
         ;;
       --check)

@@ -11,6 +11,8 @@ tests/
 │   ├── test_status_staging.bats    # Tests for s*, a*, us* commands
 │   ├── test_working_dir.bats       # Tests for w* commands
 │   └── test_head.bats              # Tests for h* commands
+├── lib/                      # Unit tests for library code (git-config/lib/)
+│   └── test_hug-fs.bats      # Tests for filesystem utilities
 ├── integration/              # Integration tests for workflows
 │   └── test_workflows.bats         # End-to-end workflow tests
 └── fixtures/                 # Test data and sample repositories
@@ -101,6 +103,7 @@ bats .
 bats tests/unit/test_status_staging.bats
 bats tests/unit/test_working_dir.bats
 bats tests/unit/test_head.bats
+bats tests/lib/test_hug-fs.bats
 bats tests/integration/test_workflows.bats
 ```
 
@@ -124,6 +127,8 @@ bats --print-output-on-failure tests/  # Show output only on failures
 ## Writing Tests
 
 ### Test File Template
+
+For command tests (unit/integration):
 
 ```bash
 #!/usr/bin/env bats
@@ -156,6 +161,26 @@ teardown() {
 }
 ```
 
+For library tests (lib/):
+
+```bash
+#!/usr/bin/env bats
+# Tests for [library description]
+
+load '../../test_helper'
+
+# Load the library (use 'load' for BATS compatibility and path reliability)
+load '../../../git-config/lib/hug-fs'  # Adjust path for your lib
+
+@test "descriptive test name" {
+  # Act: Call library function
+  run is_symlink "path/to/symlink"
+  
+  # Assert: Verify results
+  assert_success
+}
+```
+
 ### Available Test Helpers
 
 From `test_helper.bash`:
@@ -184,10 +209,17 @@ From `test_helper.bash`:
 - `require_hug()` - Skip test if hug not installed
 - `require_git_version "X.Y"` - Skip test if git too old
 
+**Library Testing Notes:**
+- Load library files with `load "$RELATIVE_PATH"` (e.g., `load '../../../git-config/lib/hug-fs'` from tests/lib/). Use `load` (not `source`) for BATS best practices—it handles paths relative to the .bats file and integrates with test isolation.
+- Place after loading test_helper, once per file (not inside @test blocks).
+- If path issues arise, verify with `echo "$(pwd)"` in a test; PROJECT_ROOT is for absolute paths if needed.
+- Use temporary directories for file/symlink tests: `mktemp -d`
+- Clean up temps in each test (no global setup/teardown needed for pure lib tests)
+
 ### Test Naming Conventions
 
 - Test files: `test_<feature>.bats`
-- Test descriptions: `"hug <command>: <behavior>"`
+- Test descriptions: `"hug <command>: <behavior>"` (commands) or `"hug-fs: <function>: <behavior>"` (libraries)
 - Be specific and descriptive
 - Each test should verify one behavior
 
@@ -264,6 +296,7 @@ Currently, we have tests for:
 - ✅ Status and staging commands (s*, a*, us*)
 - ✅ Working directory commands (w*)
 - ✅ HEAD operations (h*)
+- ✅ Library: filesystem utilities (hug-fs)
 - ✅ Common workflows (integration tests)
 
 To add:
@@ -273,14 +306,16 @@ To add:
 - [ ] Tagging commands (t*)
 - [ ] File inspection (f*)
 - [ ] Rebase and merge (r*, m*)
+- [ ] Additional libraries (hug-confirm, hug-output, etc.)
 
 ## Contributing
 
 When adding new commands or features:
 1. Write tests first (TDD) or alongside the feature
-2. Ensure tests pass: `bats tests/`
-3. Add integration tests for complex workflows
-4. Update this README if adding new test utilities
+2. For library code in git-config/lib/, add tests to tests/lib/
+3. Ensure tests pass: `bats tests/`
+4. Add integration tests for complex workflows
+5. Update this README if adding new test utilities
 
 ## Resources
 
