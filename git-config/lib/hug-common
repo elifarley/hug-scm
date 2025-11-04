@@ -213,15 +213,15 @@ Install: https://github.com/charmbracelet/gum"
     
     local status_text
     case "$status" in
-      A) status_text="${GREEN}new${NC}" ;;
-      M) status_text="${YELLOW}modified${NC}" ;;
-      D) status_text="${RED}deleted${NC}" ;;
-      R*) status_text="${BLUE}renamed${NC}" ;;
-      C*) status_text="${BLUE}copied${NC}" ;;
-      *) status_text="${GREY}changed${NC}" ;;
+      A)  status_text="${GREEN}Add  ${NC}" ;;
+      M)  status_text="${YELLOW}Mod  ${NC}" ;;
+      D)  status_text="${RED}Del  ${NC}" ;;
+      R*) status_text="${BLUE}Ren  ${NC}" ;;
+      C*) status_text="${BLUE}Copy ${NC}" ;;
+      *)  status_text="${GREY}Change${NC}" ;;
     esac
     
-    local formatted="${file} ${status_text}"
+    local formatted="${status_text} ${file}"
     [[ -n "$formatted" ]] && formatted_options+=("$formatted")
   done
   
@@ -327,15 +327,15 @@ Install: https://github.com/charmbracelet/gum"
       status=$(git diff --cached --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
       local status_text
       case "$status" in
-        A) status_text="${GREEN}staged/new${NC}" ;;
-        M) status_text="${GREEN}staged/modified${NC}" ;;
-        D) status_text="${GREEN}staged/deleted${NC}" ;;
-        R*) status_text="${GREEN}staged/renamed${NC}" ;;
-        C*) status_text="${GREEN}staged/copied${NC}" ;;
-        *) status_text="${GREEN}staged${NC}" ;;
+        A)  status_text="${GREEN}S:Add ${NC}" ;;
+        M)  status_text="${GREEN}S:${YELLOW}Mod ${NC}" ;;
+        D)  status_text="${GREEN}S:${RED}Del ${NC}" ;;
+        R*) status_text="${GREEN}S:${CYAN}Ren ${NC}" ;;
+        C*) status_text="${GREEN}S:${BLUE}Copy${NC}" ;;
+        *)  status_text="${GREEN}S     ${NC}" ;;
       esac
       files+=("$file")
-      formatted_options+=("${file} ${status_text}")
+      formatted_options+=("${status_text} ${file}")
     done < <(git diff --cached --name-only 2>/dev/null || true)
   fi
   
@@ -346,12 +346,12 @@ Install: https://github.com/charmbracelet/gum"
       status=$(git diff --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
       local status_text
       case "$status" in
-        M) status_text="${YELLOW}unstaged/modified${NC}" ;;
-        D) status_text="${YELLOW}unstaged/deleted${NC}" ;;
-        *) status_text="${YELLOW}unstaged${NC}" ;;
+        M) status_text="${RED}U:${YELLOW}Mod ${NC}" ;;
+        D) status_text="${RED}U:Del ${NC}" ;;
+        *) status_text="${RED}${NC}U     " ;;
       esac
       files+=("$file")
-      formatted_options+=("${file} ${status_text}")
+      formatted_options+=("${status_text} ${file}")
     done < <(git diff --name-only 2>/dev/null || true)
   fi
   
@@ -362,7 +362,7 @@ Install: https://github.com/charmbracelet/gum"
       local file="${entry:3}"
       if [[ "$status" == "??" ]]; then
         files+=("$file")
-        formatted_options+=("${file} ${CYAN}untracked${NC}")
+        formatted_options+=("${MAGENTA}UnTrck${NC} ${file}")
       fi
     done < <(git status --porcelain=v1 -z 2>/dev/null || true)
   fi
@@ -374,7 +374,7 @@ Install: https://github.com/charmbracelet/gum"
       local file="${entry:3}"
       if [[ "$status" == "!!" ]]; then
         files+=("$file")
-        formatted_options+=("${file} ${GREY}ignored${NC}")
+        formatted_options+=("${GREY}Ignore${NC} ${file}")
       fi
     done < <(git status --porcelain=v1 --ignored=matching -z 2>/dev/null || true)
   fi
