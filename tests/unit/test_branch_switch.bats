@@ -5,6 +5,7 @@
 load '../test_helper.bash'
 
 setup() {
+  enable_gum_for_test
   require_hug
   TEST_REPO=$(create_test_repo_with_branches)
   cd "$TEST_REPO"
@@ -192,8 +193,7 @@ EOF
   done
   git checkout main >/dev/null 2>&1
   
-  # Temporarily hide gum from PATH
-  export PATH="/tmp/no-gum:$PATH"
+  disable_gum_for_test
   
   # Run hug b with a timeout
   run timeout 1 bash -c "echo | hug b 2>&1"
