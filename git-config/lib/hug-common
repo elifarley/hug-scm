@@ -74,7 +74,7 @@ export RED GREEN GREEN_BRIGHT YELLOW YELLOW_BRIGHT BLUE MAGENTA CYAN GREY NC
 ################################################################################
 
 gum_available() {
-  command -v gum >/dev/null 2>&1 && [[ -t 0 ]] && [[ -t 1 ]]
+  command -v gum >/dev/null 2>&1
 }
 
 # Interactive file selection using gum
