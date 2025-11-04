@@ -297,13 +297,14 @@ teardown() {
 }
 
 @test "select_files_with_status: correctly strips ANSI codes when extracting filenames" {
-  # This test ensures that the fix for interactive file selection works correctly
-  # by testing the ANSI code stripping logic that was added to handle gum's output
+  # This test verifies the ANSI code stripping fix for interactive file selection.
+  # We test the extraction logic directly because select_files_with_status() is
+  # interactive and requires gum, making it impractical to test end-to-end in CI.
+  # This ensures the core fix (ANSI stripping + whitespace trimming) works correctly.
   
-  # Source the library to access the extraction logic
-  # Navigate from test file location (tests/unit/) to project root
-  local lib_path="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)/git-config/lib/hug-common"
-  source "$lib_path"
+  # Source the library - use relative path from test file location
+  # Test is in tests/unit/, library is in git-config/lib/
+  source "$(dirname "$BATS_TEST_FILENAME")/../../git-config/lib/hug-common"
   
   # Create a test selection with ANSI codes (simulating gum output with --no-strip-ansi)
   # Format: "<GREEN>S:<YELLOW>Mod <NC> filename"
