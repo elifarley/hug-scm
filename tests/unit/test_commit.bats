@@ -4,6 +4,7 @@
 load '../test_helper'
 
 setup() {
+  enable_gum_for_test
   require_hug
   TEST_REPO=$(create_test_repo_with_changes)
   cd "$TEST_REPO"
@@ -509,6 +510,8 @@ HOOK
 }
 
 @test "hug cmv: requires confirmation without --force" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -555,6 +558,8 @@ HOOK
 }
 
 @test "hug cmv: moves to existing branch and stays on it (with confirmation)" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -611,6 +616,8 @@ HOOK
 }
 
 @test "hug cmv: prompts to create missing branch without --new (combined prompt, detach on y) and stays on it" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -648,6 +655,8 @@ HOOK
 }
 
 @test "hug cmv: aborts on 'n' to creation prompt without --new (combined prompt)" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null

@@ -1143,7 +1143,7 @@ print_interactive_branch_menu() {
     fi
 
     # Use gum filter for 10+ branches if gum is available
-    if [[ $num_branches -ge 10 ]] && command -v gum >/dev/null 2>&1; then
+    if [[ $num_branches -ge 10 ]] && gum_available; then
         local -a formatted_options=()
         local i
         for i in "${!branches_ref[@]}"; do

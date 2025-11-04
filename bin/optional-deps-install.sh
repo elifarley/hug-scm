@@ -63,8 +63,8 @@ check_gum() {
     export PATH="$OPTIONAL_DEPS_DIR:$PATH"
     if command -v gum &> /dev/null; then
         info "✓ gum is installed: $(command -v gum)"
-        gum --version 2>/dev/null || true
-        return 0
+        gum --version
+        return
     fi
     
     warn "✗ gum is not installed"

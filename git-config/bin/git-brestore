@@ -128,7 +128,7 @@ hug_brestore() {
     gum_height=$(($num_backups < 13 ? $num_backups + 2 : 15))
     local index
     
-    if [[ $num_backups -ge 10 ]] && command -v gum >/dev/null 2>&1; then
+    if [[ $num_backups -ge 10 ]] && gum_available; then
       index=$(get_gum_selection_index formatted_options display_names "Select a backup branch to restore..." "$gum_height")
     else
       printf "Select a backup branch to restore:\n\n" >&2

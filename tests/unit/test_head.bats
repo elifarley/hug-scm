@@ -45,6 +45,7 @@
 load '../test_helper'
 
 setup() {
+  enable_gum_for_test
   require_hug
   TEST_REPO=$(create_test_repo_with_history)
   cd "$TEST_REPO"
@@ -595,6 +596,8 @@ teardown() {
 }
 
 @test "hug h back: requires confirmation when staged changes exist" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local original_head
   original_head=$(git rev-parse HEAD)
 
@@ -690,6 +693,8 @@ teardown() {
 }
 
 @test "hug h undo: requires confirmation when staged changes exist" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local original_head
   original_head=$(git rev-parse HEAD)
 
@@ -710,6 +715,8 @@ teardown() {
 }
 
 @test "hug h undo: requires confirmation when unstaged changes exist" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local original_head
   original_head=$(git rev-parse HEAD)
 
@@ -945,6 +952,8 @@ teardown() {
 }
 
 @test "hug h squash: requires confirmation when staged changes exist" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   echo "staged work" > staged.txt
   git add staged.txt
 

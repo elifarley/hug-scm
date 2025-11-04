@@ -5,6 +5,7 @@
 load '../test_helper'
 
 setup() {
+  enable_gum_for_test
   require_hug
   TEST_REPO=$(create_test_repo_with_branches)
   cd "$TEST_REPO"
@@ -88,6 +89,8 @@ create_backup_branch() {
 }
 
 @test "hug brestore: warns when target branch already exists" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   # Create a backup of feature/branch
   local backup
   backup=$(create_backup_branch "feature/branch")
@@ -97,6 +100,7 @@ create_backup_branch() {
   assert_failure
   assert_output --partial "Branch 'feature/branch' already exists"
   assert_output --partial "DESTRUCTIVE operation"
+  
 }
 
 @test "hug brestore --force: skips confirmation for existing branch" {

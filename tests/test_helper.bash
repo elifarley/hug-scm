@@ -398,6 +398,23 @@ require_git_version() {
 }
 
 ################################################################################
+# Gum Test Helpers
+################################################################################
+
+# Disable gum for tests that need non-interactive behavior
+# This allows tests to use stdin for confirmation prompts
+disable_gum_for_test() {
+  export HUG_DISABLE_GUM=true
+}
+
+enable_gum_for_test() {
+  unset HUG_DISABLE_GUM
+}
+
+# Skip test if gum is not available
+require_gum() { gum_available || error "gum not available in test environment"; }
+
+################################################################################
 # Mercurial Test Helpers
 ################################################################################
 

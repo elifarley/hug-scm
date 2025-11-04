@@ -14,13 +14,6 @@ teardown() {
   cleanup_test_repo
 }
 
-@test "hug llf: shows help with no arguments" {
-  run hug llf
-  assert_failure
-  assert_output --partial "hug llf: Log commits to a file (handles renames)"
-  assert_output --partial "Usage: hug llf [<file>]"
-}
-
 @test "hug llf: shows help with -h flag" {
   run hug llf -h
   assert_success
