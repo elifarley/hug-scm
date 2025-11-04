@@ -95,86 +95,92 @@ Install: https://github.com/charmbracelet/gum"
   local -a formatted_options=()
   
   if ! $has_includes; then
-    mapfile -t files < <(git ls-files 2>/dev/null || true)
+    mapfile -t files < <(list_tracked_files)
     mapfile -t formatted_options < <(printf '%s\n' "${files[@]}")
   else
   
   # Collect files based on requested types
   if $include_staged; then
-    while IFS= read -r file; do
-      [[ -z "$file" ]] && continue
-      local status
-      status=$(git diff --cached --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
-      local status_text
-      case "$status" in
-        A)  status_text="${GREEN}S:Add ${NC}" ;;
-        M)  status_text="${GREEN}S:${YELLOW}Mod ${NC}" ;;
-        D)  status_text="${GREEN}S:${RED}Del ${NC}" ;;
-        R*) status_text="${GREEN}S:${CYAN}Ren ${NC}" ;;
-        C*) status_text="${GREEN}S:${BLUE}Copy${NC}" ;;
-        *)  status_text="${GREEN}S     ${NC}" ;;
-      esac
-      files+=("$file")
-      if $use_status_formatting; then
+    local status_flag=""
+    if $use_status_formatting; then
+      status_flag="--status"
+    fi
+    if $use_status_formatting; then
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local status file
+        IFS=$'\t' read -r status file <<< "$line"
+        local status_text
+        case "$status" in
+          A)  status_text="${GREEN}S:Add ${NC}" ;;
+          M)  status_text="${GREEN}S:${YELLOW}Mod ${NC}" ;;
+          D)  status_text="${GREEN}S:${RED}Del ${NC}" ;;
+          R*) status_text="${GREEN}S:${CYAN}Ren ${NC}" ;;
+          C*) status_text="${GREEN}S:${BLUE}Copy${NC}" ;;
+          *)  status_text="${GREEN}S     ${NC}" ;;
+        esac
+        files+=("$file")
         formatted_options+=("${status_text} ${file}")
-      else
-        formatted_options+=("$file")
-      fi
-    done < <(git diff --cached --name-only 2>/dev/null || true)
+      done < <(list_staged_files "$status_flag")
+    else
+      mapfile -t staged_files < <(list_staged_files "$status_flag")
+      files+=("${staged_files[@]}")
+      formatted_options+=("${staged_files[@]}")
+    fi
   fi
   
   if $include_unstaged; then
-    while IFS= read -r file; do
+    local status_flag=""
+    if $use_status_formatting; then
+      status_flag="--status"
+    fi
+    if $use_status_formatting; then
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local status file
+        IFS=$'\t' read -r status file <<< "$line"
+        local status_text
+        case "$status" in
+          M) status_text="${RED}U:${YELLOW}Mod ${NC}" ;;
+          D) status_text="${RED}U:Del ${NC}" ;;
+          *) status_text="${RED}${NC}U     " ;;
+        esac
+        files+=("$file")
+        formatted_options+=("${status_text} ${file}")
+      done < <(list_unstaged_files "$status_flag")
+    else
+      mapfile -t unstaged_files < <(list_unstaged_files "$status_flag")
+      files+=("${unstaged_files[@]}")
+      formatted_options+=("${unstaged_files[@]}")
+    fi
+  fi
+  
+  if $include_untracked; then
+    mapfile -t untracked_files < <(list_untracked_files)
+    for file in "${untracked_files[@]}"; do
       [[ -z "$file" ]] && continue
-      local status
-      status=$(git diff --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
-      local status_text
-      case "$status" in
-        M) status_text="${RED}U:${YELLOW}Mod ${NC}" ;;
-        D) status_text="${RED}U:Del ${NC}" ;;
-        *) status_text="${RED}${NC}U     " ;;
-      esac
+      local status_text="${MAGENTA}UnTrck${NC}"
       files+=("$file")
       if $use_status_formatting; then
         formatted_options+=("${status_text} ${file}")
       else
         formatted_options+=("$file")
       fi
-    done < <(git diff --name-only 2>/dev/null || true)
-  fi
-  
-  if $include_untracked; then
-    while IFS= read -r -d '' entry; do
-      [[ -z "$entry" ]] && continue
-      local status="${entry:0:2}"
-      local file="${entry:3}"
-      if [[ "$status" == "??" ]]; then
-        local status_text="${MAGENTA}UnTrck${NC}"
-        files+=("$file")
-        if $use_status_formatting; then
-          formatted_options+=("${status_text} ${file}")
-        else
-          formatted_options+=("$file")
-        fi
-      fi
-    done < <(git status --porcelain=v1 -z 2>/dev/null || true)
+    done
   fi
   
   if $include_ignored; then
-    while IFS= read -r -d '' entry; do
-      [[ -z "$entry" ]] && continue
-      local status="${entry:0:2}"
-      local file="${entry:3}"
-      if [[ "$status" == "!!" ]]; then
-        local status_text="${GREY}Ignore${NC}"
-        files+=("$file")
-        if $use_status_formatting; then
-          formatted_options+=("${status_text} ${file}")
-        else
-          formatted_options+=("$file")
-        fi
+    mapfile -t ignored_files < <(list_ignored_files)
+    for file in "${ignored_files[@]}"; do
+      [[ -z "$file" ]] && continue
+      local status_text="${GREY}Ignore${NC}"
+      files+=("$file")
+      if $use_status_formatting; then
+        formatted_options+=("${status_text} ${file}")
+      else
+        formatted_options+=("$file")
       fi
-    done < <(git status --porcelain=v1 --ignored=matching -z 2>/dev/null || true)
+    done
   fi
   fi
   

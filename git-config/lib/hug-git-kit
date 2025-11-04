@@ -439,6 +439,164 @@ is_binary_staged() {
 }
 
 ################################################################################
+# Working Tree File Listing Functions
+################################################################################
+
+# Lists files that are staged (index differs from HEAD)
+# Usage: mapfile -t files < <(list_staged_files [--status])
+# Parameters:
+#   --status - If provided, outputs "status\tfile" (one per line, status like 'M', 'A', 'R100' for renames)
+# Output:
+#   File paths relative to current directory (one per line, or status\tfile if --status)
+# Notes:
+#   Handles path conversion for subdirectories via GIT_PREFIX.
+#   For renames/copies with --status, outputs the new file path.
+#   Empty output if no staged files.
+list_staged_files() {
+    local with_status=false
+    if [[ "${1:-}" == "--status" ]]; then
+        with_status=true
+        shift
+    fi
+
+    check_git_repo
+
+    if $with_status; then
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            local status old new file
+            IFS=$'\t' read -r status old new <<< "$line"
+            if [[ "$status" == R* ]] || [[ "$status" == C* ]]; then
+                file="$new"
+            else
+                file="$old"
+            fi
+            [[ -z "$file" ]] && continue
+            local -a single=("$file")
+            convert_to_relative_paths single
+            printf '%s\t%s\n' "$status" "${single[0]}"
+        done < <(git diff --cached --name-status 2>/dev/null || true)
+    else
+        local -a paths=()
+        mapfile -t paths < <(git diff --cached --name-only 2>/dev/null || true)
+        convert_to_relative_paths paths
+        printf '%s\n' "${paths[@]}"
+    fi
+}
+
+# Lists unstaged tracked files (working tree differs from index)
+# Usage: mapfile -t files < <(list_unstaged_files [--status])
+# Parameters:
+#   --status - If provided, outputs "status\tfile" (one per line, status like 'M', 'D')
+# Output:
+#   File paths relative to current directory (one per line, or status\tfile if --status)
+# Notes:
+#   Handles path conversion for subdirectories via GIT_PREFIX.
+#   For potential renames/copies with --status, outputs the relevant file path (future-proof).
+#   Empty output if no unstaged files.
+list_unstaged_files() {
+    local with_status=false
+    if [[ "${1:-}" == "--status" ]]; then
+        with_status=true
+        shift
+    fi
+
+    check_git_repo
+
+    if $with_status; then
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            local status old new file
+            IFS=$'\t' read -r status old new <<< "$line"
+            if [[ "$status" == R* ]] || [[ "$status" == C* ]]; then
+                file="$new"
+            else
+                file="$old"
+            fi
+            [[ -z "$file" ]] && continue
+            local -a single=("$file")
+            convert_to_relative_paths single
+            printf '%s\t%s\n' "$status" "${single[0]}"
+        done < <(git diff --name-status 2>/dev/null || true)
+    else
+        local -a paths=()
+        mapfile -t paths < <(git diff --name-only 2>/dev/null || true)
+        convert_to_relative_paths paths
+        printf '%s\n' "${paths[@]}"
+    fi
+}
+
+# Lists untracked files (not in index or .gitignore)
+# Usage: mapfile -t files < <(list_untracked_files)
+# Output:
+#   File paths relative to current directory (one per line)
+# Notes:
+#   Handles path conversion for subdirectories via GIT_PREFIX.
+#   Parses git status --porcelain=v1 -z for ?? entries.
+#   Empty output if no untracked files.
+#   Preserves special characters in filenames (e.g., spaces, newlines).
+list_untracked_files() {
+    check_git_repo
+
+    local -a paths=()
+    while IFS= read -r -d '' entry; do
+        [[ -z "$entry" ]] && continue
+        local status="${entry:0:2}"
+        if [[ "$status" == "??" ]]; then
+            local file="${entry:3}"
+            paths+=("$file")
+        fi
+    done < <(git status --porcelain=v1 -z 2>/dev/null || true)
+
+    convert_to_relative_paths paths
+    printf '%s\n' "${paths[@]}"
+}
+
+# Lists ignored files (matched by .gitignore)
+# Usage: mapfile -t files < <(list_ignored_files)
+# Output:
+#   File paths relative to current directory (one per line)
+# Notes:
+#   Handles path conversion for subdirectories via GIT_PREFIX.
+#   Parses git status --porcelain=v1 --ignored=matching -z for !! entries.
+#   Empty output if no ignored files.
+#   Preserves special characters in filenames (e.g., spaces, newlines).
+list_ignored_files() {
+    check_git_repo
+
+    local -a paths=()
+    while IFS= read -r -d '' entry; do
+        [[ -z "$entry" ]] && continue
+        local status="${entry:0:2}"
+        if [[ "$status" == "!!" ]]; then
+            local file="${entry:3}"
+            paths+=("$file")
+        fi
+    done < <(git status --porcelain=v1 --ignored=matching -z 2>/dev/null || true)
+
+    convert_to_relative_paths paths
+    printf '%s\n' "${paths[@]}"
+}
+
+# Lists all tracked files (in the index)
+# Usage: mapfile -t files < <(list_tracked_files)
+# Output:
+#   File paths relative to current directory (one per line)
+# Notes:
+#   Handles path conversion for subdirectories via GIT_PREFIX.
+#   Uses git ls-files to list index contents (excludes untracked).
+#   Includes unchanged tracked files.
+#   Empty output if no tracked files (new repo).
+list_tracked_files() {
+    check_git_repo
+
+    local -a paths=()
+    mapfile -t paths < <(git ls-files 2>/dev/null || true)
+    convert_to_relative_paths paths
+    printf '%s\n' "${paths[@]}"
+}
+
+################################################################################
 # Discard Operations - Unstaged Changes
 ################################################################################
 
