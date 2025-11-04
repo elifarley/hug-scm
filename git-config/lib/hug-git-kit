@@ -443,23 +443,51 @@ is_binary_staged() {
 ################################################################################
 
 # Lists files that are staged (index differs from HEAD)
-# Usage: mapfile -t files < <(list_staged_files [--status])
+# Usage: mapfile -t files < <(list_staged_files [--status] [--cwd])
 # Parameters:
 #   --status - If provided, outputs "status\tfile" (one per line, status like 'M', 'A', 'R100' for renames)
+#   --cwd    - If provided, scopes listing to current directory and subdirectories only
 # Output:
 #   File paths relative to current directory (one per line, or status\tfile if --status)
 # Notes:
-#   Handles path conversion for subdirectories via GIT_PREFIX.
+#   Handles path conversion for subdirectories via GIT_PREFIX (unless --cwd is used).
 #   For renames/copies with --status, outputs the new file path.
 #   Empty output if no staged files.
+#   When --cwd is used, paths are already current-dir relative (no conversion needed).
 list_staged_files() {
     local with_status=false
-    if [[ "${1:-}" == "--status" ]]; then
-        with_status=true
-        shift
-    fi
+    local scope_cwd=false
+    
+    # Parse flags
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --status)
+                with_status=true
+                shift
+                ;;
+            --cwd)
+                scope_cwd=true
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
 
     check_git_repo
+    
+    # Build git command with optional scoping
+    local -a git_cmd_base=("git" "diff" "--cached")
+    if $with_status; then
+        git_cmd_base+=("--name-status")
+    else
+        git_cmd_base+=("--name-only")
+    fi
+    
+    if $scope_cwd; then
+        git_cmd_base+=("--" ".")
+    fi
 
     if $with_status; then
         while IFS= read -r line; do
@@ -472,36 +500,71 @@ list_staged_files() {
                 file="$old"
             fi
             [[ -z "$file" ]] && continue
-            local -a single=("$file")
-            convert_to_relative_paths single
-            printf '%s\t%s\n' "$status" "${single[0]}"
-        done < <(git diff --cached --name-status 2>/dev/null || true)
+            if $scope_cwd; then
+                # Already current-dir relative
+                printf '%s\t%s\n' "$status" "$file"
+            else
+                local -a single=("$file")
+                convert_to_relative_paths single
+                printf '%s\t%s\n' "$status" "${single[0]}"
+            fi
+        done < <("${git_cmd_base[@]}" 2>/dev/null || true)
     else
         local -a paths=()
-        mapfile -t paths < <(git diff --cached --name-only 2>/dev/null || true)
-        convert_to_relative_paths paths
+        mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
+        if ! $scope_cwd; then
+            convert_to_relative_paths paths
+        fi
         printf '%s\n' "${paths[@]}"
     fi
 }
 
 # Lists unstaged tracked files (working tree differs from index)
-# Usage: mapfile -t files < <(list_unstaged_files [--status])
+# Usage: mapfile -t files < <(list_unstaged_files [--status] [--cwd])
 # Parameters:
 #   --status - If provided, outputs "status\tfile" (one per line, status like 'M', 'D')
+#   --cwd    - If provided, scopes listing to current directory and subdirectories only
 # Output:
 #   File paths relative to current directory (one per line, or status\tfile if --status)
 # Notes:
-#   Handles path conversion for subdirectories via GIT_PREFIX.
+#   Handles path conversion for subdirectories via GIT_PREFIX (unless --cwd is used).
 #   For potential renames/copies with --status, outputs the relevant file path (future-proof).
 #   Empty output if no unstaged files.
+#   When --cwd is used, paths are already current-dir relative (no conversion needed).
 list_unstaged_files() {
     local with_status=false
-    if [[ "${1:-}" == "--status" ]]; then
-        with_status=true
-        shift
-    fi
+    local scope_cwd=false
+    
+    # Parse flags
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --status)
+                with_status=true
+                shift
+                ;;
+            --cwd)
+                scope_cwd=true
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
 
     check_git_repo
+    
+    # Build git command with optional scoping
+    local -a git_cmd_base=("git" "diff")
+    if $with_status; then
+        git_cmd_base+=("--name-status")
+    else
+        git_cmd_base+=("--name-only")
+    fi
+    
+    if $scope_cwd; then
+        git_cmd_base+=("--" ".")
+    fi
 
     if $with_status; then
         while IFS= read -r line; do
@@ -514,29 +577,51 @@ list_unstaged_files() {
                 file="$old"
             fi
             [[ -z "$file" ]] && continue
-            local -a single=("$file")
-            convert_to_relative_paths single
-            printf '%s\t%s\n' "$status" "${single[0]}"
-        done < <(git diff --name-status 2>/dev/null || true)
+            if $scope_cwd; then
+                # Already current-dir relative
+                printf '%s\t%s\n' "$status" "$file"
+            else
+                local -a single=("$file")
+                convert_to_relative_paths single
+                printf '%s\t%s\n' "$status" "${single[0]}"
+            fi
+        done < <("${git_cmd_base[@]}" 2>/dev/null || true)
     else
         local -a paths=()
-        mapfile -t paths < <(git diff --name-only 2>/dev/null || true)
-        convert_to_relative_paths paths
+        mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
+        if ! $scope_cwd; then
+            convert_to_relative_paths paths
+        fi
         printf '%s\n' "${paths[@]}"
     fi
 }
 
 # Lists untracked files (not in index or .gitignore)
-# Usage: mapfile -t files < <(list_untracked_files)
+# Usage: mapfile -t files < <(list_untracked_files [--cwd])
+# Parameters:
+#   --cwd - If provided, scopes listing to current directory and subdirectories only
 # Output:
 #   File paths relative to current directory (one per line)
 # Notes:
-#   Handles path conversion for subdirectories via GIT_PREFIX.
+#   Handles path conversion for subdirectories via GIT_PREFIX (unless --cwd is used).
 #   Parses git status --porcelain=v1 -z for ?? entries.
 #   Empty output if no untracked files.
 #   Preserves special characters in filenames (e.g., spaces, newlines).
+#   When --cwd is used, paths are already current-dir relative (no conversion needed).
 list_untracked_files() {
+    local scope_cwd=false
+    if [[ "${1:-}" == "--cwd" ]]; then
+        scope_cwd=true
+        shift
+    fi
+
     check_git_repo
+    
+    # Build git command with optional scoping
+    local -a git_cmd=("git" "status" "--porcelain=v1" "-z")
+    if $scope_cwd; then
+        git_cmd+=("--" ".")
+    fi
 
     local -a paths=()
     while IFS= read -r -d '' entry; do
@@ -546,23 +631,40 @@ list_untracked_files() {
             local file="${entry:3}"
             paths+=("$file")
         fi
-    done < <(git status --porcelain=v1 -z 2>/dev/null || true)
+    done < <("${git_cmd[@]}" 2>/dev/null || true)
 
-    convert_to_relative_paths paths
+    if ! $scope_cwd; then
+        convert_to_relative_paths paths
+    fi
     printf '%s\n' "${paths[@]}"
 }
 
 # Lists ignored files (matched by .gitignore)
-# Usage: mapfile -t files < <(list_ignored_files)
+# Usage: mapfile -t files < <(list_ignored_files [--cwd])
+# Parameters:
+#   --cwd - If provided, scopes listing to current directory and subdirectories only
 # Output:
 #   File paths relative to current directory (one per line)
 # Notes:
-#   Handles path conversion for subdirectories via GIT_PREFIX.
+#   Handles path conversion for subdirectories via GIT_PREFIX (unless --cwd is used).
 #   Parses git status --porcelain=v1 --ignored=matching -z for !! entries.
 #   Empty output if no ignored files.
 #   Preserves special characters in filenames (e.g., spaces, newlines).
+#   When --cwd is used, paths are already current-dir relative (no conversion needed).
 list_ignored_files() {
+    local scope_cwd=false
+    if [[ "${1:-}" == "--cwd" ]]; then
+        scope_cwd=true
+        shift
+    fi
+
     check_git_repo
+    
+    # Build git command with optional scoping
+    local -a git_cmd=("git" "status" "--porcelain=v1" "--ignored=matching" "-z")
+    if $scope_cwd; then
+        git_cmd+=("--" ".")
+    fi
 
     local -a paths=()
     while IFS= read -r -d '' entry; do
@@ -572,27 +674,46 @@ list_ignored_files() {
             local file="${entry:3}"
             paths+=("$file")
         fi
-    done < <(git status --porcelain=v1 --ignored=matching -z 2>/dev/null || true)
+    done < <("${git_cmd[@]}" 2>/dev/null || true)
 
-    convert_to_relative_paths paths
+    if ! $scope_cwd; then
+        convert_to_relative_paths paths
+    fi
     printf '%s\n' "${paths[@]}"
 }
 
 # Lists all tracked files (in the index)
-# Usage: mapfile -t files < <(list_tracked_files)
+# Usage: mapfile -t files < <(list_tracked_files [--cwd])
+# Parameters:
+#   --cwd - If provided, scopes listing to current directory and subdirectories only
 # Output:
 #   File paths relative to current directory (one per line)
 # Notes:
-#   Handles path conversion for subdirectories via GIT_PREFIX.
+#   Handles path conversion for subdirectories via GIT_PREFIX (unless --cwd is used).
 #   Uses git ls-files to list index contents (excludes untracked).
 #   Includes unchanged tracked files.
 #   Empty output if no tracked files (new repo).
+#   When --cwd is used, paths are already current-dir relative (no conversion needed).
 list_tracked_files() {
+    local scope_cwd=false
+    if [[ "${1:-}" == "--cwd" ]]; then
+        scope_cwd=true
+        shift
+    fi
+
     check_git_repo
+    
+    # Build git command with optional scoping
+    local -a git_cmd=("git" "ls-files")
+    if $scope_cwd; then
+        git_cmd+=("--" ".")
+    fi
 
     local -a paths=()
-    mapfile -t paths < <(git ls-files 2>/dev/null || true)
-    convert_to_relative_paths paths
+    mapfile -t paths < <("${git_cmd[@]}" 2>/dev/null || true)
+    if ! $scope_cwd; then
+        convert_to_relative_paths paths
+    fi
     printf '%s\n' "${paths[@]}"
 }
 

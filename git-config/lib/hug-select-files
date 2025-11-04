@@ -16,6 +16,7 @@
 #   --untracked          Include untracked files
 #   --ignored            Include ignored files
 #   --no-status          Omit status column/formatting (plain file names)
+#   --cwd                Scope file listing to current directory and subdirectories only
 #   --prompt <text>      Custom prompt text
 # Output:
 #   Selected file(s) to stdout, one per line
@@ -26,6 +27,7 @@
 # Defaults:
 #   - Multi-selection enabled
 #   - If no --staged/--unstaged/--untracked/--ignored provided, falls back to all tracked files via 'git ls-files' (displayed plainly)
+#   - Without --cwd, lists files across entire repository
 select_files_with_status() {
   if ! gum_available; then
     error "Interactive file selection requires 'gum' to be installed.
@@ -38,6 +40,7 @@ Install: https://github.com/charmbracelet/gum"
   local include_untracked=false
   local include_ignored=false
   local no_status=false
+  local scope_cwd=false
   local prompt="Select file(s)..."
   
   # Parse arguments
@@ -71,6 +74,10 @@ Install: https://github.com/charmbracelet/gum"
         no_status=true
         shift
         ;;
+      --cwd)
+        scope_cwd=true
+        shift
+        ;;
       --prompt)
         prompt="$2"
         shift 2
@@ -80,6 +87,16 @@ Install: https://github.com/charmbracelet/gum"
         ;;
     esac
   done
+  
+  # Adjust prompt if scoped to current directory
+  if $scope_cwd; then
+    # If custom prompt doesn't already mention directory scope
+    if [[ "$prompt" != *"current directory"* ]]; then
+      prompt="${prompt% (current directory)*}" # Remove any existing suffix
+      prompt="${prompt%...}" # Remove trailing ...
+      prompt="$prompt (current directory)..."
+    fi
+  fi
   
   local has_includes=false
   if $include_staged || $include_unstaged || $include_untracked || $include_ignored; then
@@ -94,16 +111,22 @@ Install: https://github.com/charmbracelet/gum"
   local -a files=()
   local -a formatted_options=()
   
+  # Build flag array for list functions
+  local -a list_flags=()
+  if $scope_cwd; then
+    list_flags+=("--cwd")
+  fi
+  
   if ! $has_includes; then
-    mapfile -t files < <(list_tracked_files)
+    mapfile -t files < <(list_tracked_files "${list_flags[@]}")
     mapfile -t formatted_options < <(printf '%s\n' "${files[@]}")
   else
   
   # Collect files based on requested types
   if $include_staged; then
-    local status_flag=""
+    local -a status_flags=("${list_flags[@]}")
     if $use_status_formatting; then
-      status_flag="--status"
+      status_flags+=("--status")
     fi
     if $use_status_formatting; then
       while IFS= read -r line; do
@@ -121,18 +144,18 @@ Install: https://github.com/charmbracelet/gum"
         esac
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
-      done < <(list_staged_files "$status_flag")
+      done < <(list_staged_files "${status_flags[@]}")
     else
-      mapfile -t staged_files < <(list_staged_files "$status_flag")
+      mapfile -t staged_files < <(list_staged_files "${list_flags[@]}")
       files+=("${staged_files[@]}")
       formatted_options+=("${staged_files[@]}")
     fi
   fi
   
   if $include_unstaged; then
-    local status_flag=""
+    local -a status_flags=("${list_flags[@]}")
     if $use_status_formatting; then
-      status_flag="--status"
+      status_flags+=("--status")
     fi
     if $use_status_formatting; then
       while IFS= read -r line; do
@@ -147,16 +170,16 @@ Install: https://github.com/charmbracelet/gum"
         esac
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
-      done < <(list_unstaged_files "$status_flag")
+      done < <(list_unstaged_files "${status_flags[@]}")
     else
-      mapfile -t unstaged_files < <(list_unstaged_files "$status_flag")
+      mapfile -t unstaged_files < <(list_unstaged_files "${list_flags[@]}")
       files+=("${unstaged_files[@]}")
       formatted_options+=("${unstaged_files[@]}")
     fi
   fi
   
   if $include_untracked; then
-    mapfile -t untracked_files < <(list_untracked_files)
+    mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}")
     for file in "${untracked_files[@]}"; do
       [[ -z "$file" ]] && continue
       local status_text="${MAGENTA}UnTrck${NC}"
@@ -170,7 +193,7 @@ Install: https://github.com/charmbracelet/gum"
   fi
   
   if $include_ignored; then
-    mapfile -t ignored_files < <(list_ignored_files)
+    mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}")
     for file in "${ignored_files[@]}"; do
       [[ -z "$file" ]] && continue
       local status_text="${GREY}Ignore${NC}"
@@ -199,6 +222,9 @@ Install: https://github.com/charmbracelet/gum"
   done
   
   if [[ ${#unique_files[@]} -eq 0 ]]; then
+    if $scope_cwd; then
+      info "No relevant files in current directory."
+    fi
     return 1
   fi
   
