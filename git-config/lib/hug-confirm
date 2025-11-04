@@ -1,0 +1,84 @@
+# shellcheck shell=bash
+# Library: HUG confirmation prompts
+#
+# Reusable confirmation helpers for interactive hug commands.
+# Depends on: hug-gum for charmbracelet integration, hug-output for messaging,
+#             hug-strings for input trimming.
+# Functions:
+#   - prompt_confirm: yes/no confirmation with gum fallback.
+#   - confirm_action: exact-word confirmation gate.
+
+# Prompts user for confirmation, exits if not confirmed
+# Usage: prompt_confirm ["custom prompt"]
+# Parameters:
+#   $1 - (Optional) Custom prompt text, defaults to "Proceed? [y/N]: "
+# Environment:
+#   HUG_FORCE - If true, automatically confirms without prompting
+# Returns:
+#   0 if confirmed (or HUG_FORCE is true)
+#   Exits with code 1 if user declines or read fails
+prompt_confirm() {
+  if [[ ${HUG_FORCE:-} == true ]]; then
+    return 0
+  fi
+  local prompt="${1:-Proceed? [y/N]: }"
+  if gum_available; then
+    local message="${prompt% }"
+    if gum confirm "$message"; then
+      return 0
+    fi
+    info "Cancelled."
+    exit 1
+  fi
+  local response
+  printf '%s' "$prompt" >&2
+  if ! read -r response; then
+    info "Cancelled."
+    exit 1
+  fi
+  if [[ ! "$response" =~ ^[Yy]$ ]]; then
+    info "Cancelled."
+    exit 1
+  fi
+}
+
+# Confirms an action with a specific word
+# Usage: confirm_action "action_word"
+# Parameters:
+#   $1 - Word that user must type to confirm
+# Environment:
+#   HUG_FORCE - If true, skips confirmation
+# Returns:
+#   0 if confirmed (or HUG_FORCE is true)
+#   Exits with code 1 if user declines
+confirm_action() {
+  if [[ ${HUG_FORCE:-} == true ]]; then
+    return 0
+  fi
+
+  local action="$1"
+  if gum_available; then
+    local gum_reply
+    if ! gum_reply=$(gum input --prompt "→ " --placeholder "Type \"${action}\" to confirm" ); then
+      info "Cancelled."
+      exit 1
+    fi
+    gum_reply="$(trim_message "${gum_reply:-}")"
+    if [[ "$gum_reply" == "$action" ]]; then
+      return 0
+    fi
+    info "Cancelled."
+    exit 1
+  fi
+
+  local reply
+  printf 'Type "%s" to confirm: ' "$action" >&2
+  if ! read -r reply; then
+    info "Cancelled."
+    exit 1
+  fi
+  if [[ "$reply" != "$action" ]]; then
+    info "Cancelled."
+    exit 1
+  fi
+}

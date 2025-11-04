@@ -1,0 +1,51 @@
+# shellcheck shell=bash
+# Library: HUG array utilities
+#
+# Provides helpers for working with Bash arrays inside hug commands.
+# Functions:
+#   - dedupe_array: remove duplicate entries while preserving order.
+#   - print_list: render a titled list with a count.
+
+
+################################################################################
+# Array Manipulation Functions
+################################################################################
+
+# Removes duplicate entries from an array in-place
+# Usage: dedupe_array array_name
+# Parameters:
+#   $1 - Name of the array variable to deduplicate (nameref)
+# Note:
+#   Modifies the array in-place, preserving order of first occurrence
+#   Empty strings are filtered out
+dedupe_array() {
+  local -n __array_ref=$1
+  local -A __seen=()
+  local -a __unique=()
+  local item
+  for item in "${__array_ref[@]}"; do
+    [[ -z "$item" ]] && continue
+    if [[ -z "${__seen[$item]+_}" ]]; then
+      __seen["$item"]=1
+      __unique+=("$item")
+    fi
+  done
+  __array_ref=("${__unique[@]}")
+}
+
+# Prints a titled list of items
+# Usage: print_list "Title" item1 item2 item3...
+# Parameters:
+#   $1 - Title for the list
+#   $@ - Items to list (remaining arguments)
+# Output:
+#   Title with count, followed by indented items
+print_list() {
+  local title=$1
+  shift
+  printf '%s (%d):\n' "$title" "$#"
+  local item
+  for item in "$@"; do
+    printf '  %s\n' "$item"
+  done
+}

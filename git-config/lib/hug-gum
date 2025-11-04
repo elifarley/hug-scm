@@ -1,0 +1,19 @@
+# shellcheck shell=bash
+# Library: HUG gum integration helpers
+#
+# Detects whether charmbracelet/gum is available for enhanced UX.
+# Functions:
+#   - gum_available: return success when gum can be used.
+
+################################################################################
+# Gum Integration Helpers
+################################################################################
+
+gum_available() {
+  # Check if gum is explicitly disabled via environment variable
+  if [[ "${HUG_DISABLE_GUM:-}" == "true" ]]; then
+    return 1
+  fi
+  # Check if gum command is available in PATH
+  command -v gum >/dev/null 2>&1
+}

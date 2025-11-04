@@ -1,0 +1,21 @@
+# shellcheck shell=bash
+# Library: HUG string helpers
+#
+# String manipulation utilities reused across hug commands.
+# Functions:
+#   - trim_message: strip leading and trailing whitespace.
+
+################################################################################
+# String Manipulation Functions
+################################################################################
+
+# Trims leading and trailing whitespace from a string
+# Usage: result=$(trim_message "  text  ")
+# Parameters:
+#   $1 - String to trim
+# Output:
+#   Trimmed string to stdout
+trim_message() {
+  printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+

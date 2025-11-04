@@ -1,0 +1,245 @@
+# shellcheck shell=bash
+# Library: HUG interactive file selection
+#
+# Implements gum-powered file selection with git status annotations.
+# Depends on: hug-gum, hug-output, hug-terminal.
+# Functions:
+#   - select_files_with_status: filter staged/unstaged/untracked files interactively.
+
+# Advanced interactive file selection with multiple file types support
+# Usage: select_files_with_status [OPTIONS]
+# Options:
+#   --multi              Allow multiple file selection (default: true)
+#   --single             Single file selection (default: multi)
+#   --staged             Include staged files
+#   --unstaged           Include unstaged files
+#   --untracked          Include untracked files
+#   --ignored            Include ignored files
+#   --no-status          Omit status column/formatting (plain file names)
+#   --prompt <text>      Custom prompt text
+# Output:
+#   Selected file(s) to stdout, one per line
+# Returns:
+#   0 if files selected, 1 if cancelled or no selection
+# Note:
+#   Requires gum to be installed
+# Defaults:
+#   - Multi-selection enabled
+#   - If no --staged/--unstaged/--untracked/--ignored provided, falls back to all tracked files via 'git ls-files' (displayed plainly)
+select_files_with_status() {
+  if ! gum_available; then
+    error "Interactive file selection requires 'gum' to be installed.
+Install: https://github.com/charmbracelet/gum"
+  fi
+  
+  local multi=true
+  local include_staged=false
+  local include_unstaged=false
+  local include_untracked=false
+  local include_ignored=false
+  local no_status=false
+  local prompt="Select file(s)..."
+  
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --multi)
+        multi=true
+        shift
+        ;;
+      --single)
+        multi=false
+        shift
+        ;;
+      --staged)
+        include_staged=true
+        shift
+        ;;
+      --unstaged)
+        include_unstaged=true
+        shift
+        ;;
+      --untracked)
+        include_untracked=true
+        shift
+        ;;
+      --ignored)
+        include_ignored=true
+        shift
+        ;;
+      --no-status)
+        no_status=true
+        shift
+        ;;
+      --prompt)
+        prompt="$2"
+        shift 2
+        ;;
+      *)
+        error "Unknown option for select_files_with_status: $1"
+        ;;
+    esac
+  done
+  
+  local has_includes=false
+  if $include_staged || $include_unstaged || $include_untracked || $include_ignored; then
+    has_includes=true
+  fi
+  
+  local use_status_formatting=false
+  if $has_includes && ! $no_status; then
+    use_status_formatting=true
+  fi
+  
+  local -a files=()
+  local -a formatted_options=()
+  
+  if ! $has_includes; then
+    mapfile -t files < <(git ls-files 2>/dev/null || true)
+    mapfile -t formatted_options < <(printf '%s\n' "${files[@]}")
+  else
+  
+  # Collect files based on requested types
+  if $include_staged; then
+    while IFS= read -r file; do
+      [[ -z "$file" ]] && continue
+      local status
+      status=$(git diff --cached --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
+      local status_text
+      case "$status" in
+        A)  status_text="${GREEN}S:Add ${NC}" ;;
+        M)  status_text="${GREEN}S:${YELLOW}Mod ${NC}" ;;
+        D)  status_text="${GREEN}S:${RED}Del ${NC}" ;;
+        R*) status_text="${GREEN}S:${CYAN}Ren ${NC}" ;;
+        C*) status_text="${GREEN}S:${BLUE}Copy${NC}" ;;
+        *)  status_text="${GREEN}S     ${NC}" ;;
+      esac
+      files+=("$file")
+      if $use_status_formatting; then
+        formatted_options+=("${status_text} ${file}")
+      else
+        formatted_options+=("$file")
+      fi
+    done < <(git diff --cached --name-only 2>/dev/null || true)
+  fi
+  
+  if $include_unstaged; then
+    while IFS= read -r file; do
+      [[ -z "$file" ]] && continue
+      local status
+      status=$(git diff --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
+      local status_text
+      case "$status" in
+        M) status_text="${RED}U:${YELLOW}Mod ${NC}" ;;
+        D) status_text="${RED}U:Del ${NC}" ;;
+        *) status_text="${RED}${NC}U     " ;;
+      esac
+      files+=("$file")
+      if $use_status_formatting; then
+        formatted_options+=("${status_text} ${file}")
+      else
+        formatted_options+=("$file")
+      fi
+    done < <(git diff --name-only 2>/dev/null || true)
+  fi
+  
+  if $include_untracked; then
+    while IFS= read -r -d '' entry; do
+      [[ -z "$entry" ]] && continue
+      local status="${entry:0:2}"
+      local file="${entry:3}"
+      if [[ "$status" == "??" ]]; then
+        local status_text="${MAGENTA}UnTrck${NC}"
+        files+=("$file")
+        if $use_status_formatting; then
+          formatted_options+=("${status_text} ${file}")
+        else
+          formatted_options+=("$file")
+        fi
+      fi
+    done < <(git status --porcelain=v1 -z 2>/dev/null || true)
+  fi
+  
+  if $include_ignored; then
+    while IFS= read -r -d '' entry; do
+      [[ -z "$entry" ]] && continue
+      local status="${entry:0:2}"
+      local file="${entry:3}"
+      if [[ "$status" == "!!" ]]; then
+        local status_text="${GREY}Ignore${NC}"
+        files+=("$file")
+        if $use_status_formatting; then
+          formatted_options+=("${status_text} ${file}")
+        else
+          formatted_options+=("$file")
+        fi
+      fi
+    done < <(git status --porcelain=v1 --ignored=matching -z 2>/dev/null || true)
+  fi
+  fi
+  
+  # Remove duplicates while preserving order
+  local -A seen=()
+  local -a unique_files=()
+  local -a unique_formatted=()
+  local i
+  for i in "${!files[@]}"; do
+    local file="${files[$i]}"
+    if [[ -z "${seen[$file]+_}" ]]; then
+      seen["$file"]=1
+      unique_files+=("$file")
+      unique_formatted+=("${formatted_options[$i]}")
+    fi
+  done
+  
+  if [[ ${#unique_files[@]} -eq 0 ]]; then
+    return 1
+  fi
+  
+  # Calculate height for gum
+  local gum_height
+  gum_height=$((${#unique_files[@]} < 13 ? ${#unique_files[@]} + 3 : 15))
+  
+  # Build gum command
+  local -a gum_args=(
+    "filter"
+    "--no-strip-ansi"
+    "--placeholder=$prompt"
+    "--height=$gum_height"
+    "--reverse"
+  )
+  
+  if $multi; then
+    gum_args+=("--no-limit")
+  fi
+  
+  # Run gum and capture selection
+  local selection
+  selection=$(printf '%s\n' "${unique_formatted[@]}" | gum "${gum_args[@]}" || true)
+  
+  if [[ -z "$selection" ]]; then
+    return 1
+  fi
+  
+  # Extract file names from selection
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    local file_name
+    if $use_status_formatting; then
+      # Strip ANSI codes before extracting filename
+      # This handles selections from gum with --no-strip-ansi
+      local stripped_line
+      stripped_line=$(printf '%s' "$line" | sed $'s/\033\[[0-9;]*m//g')
+      # Extract filename after status prefix (after first space)
+      file_name="${stripped_line#* }"
+      # Trim leading and trailing whitespace
+      file_name="${file_name#"${file_name%%[![:space:]]*}"}"
+      file_name="${file_name%"${file_name##*[![:space:]]}"}"
+    else
+      file_name="$line"
+    fi
+    printf '%s\n' "$file_name"
+  done <<< "$selection"
+  
+  return 0
+}

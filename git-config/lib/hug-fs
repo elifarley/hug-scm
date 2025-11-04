@@ -1,0 +1,21 @@
+# shellcheck shell=bash
+# Library: HUG filesystem helpers
+#
+# Lightweight filesystem utilities shared by hug commands.
+# Functions:
+#   - is_symlink: test whether a given path is a symlink.
+
+################################################################################
+# File System Utility Functions
+################################################################################
+
+# Checks if a local file path is a symlink
+# Usage: if is_symlink "path/to/file"; then ...; fi
+# Parameters:
+#   $1 - Path to check
+# Returns:
+#   0 if path is a symbolic link, 1 otherwise
+is_symlink() {
+  local local_file="$1"
+  [[ -L "$local_file" ]]
+}

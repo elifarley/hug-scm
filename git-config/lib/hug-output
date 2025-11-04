@@ -1,0 +1,107 @@
+# shellcheck shell=bash
+# Library: HUG output and messaging
+#
+# Renders consistent, colorized log messages for hug commands.
+# Depends on: hug-terminal for color constants, hug-gum for optional styling.
+# Functions:
+#   - error: print an error and exit.
+#   - warning / warn: display non-fatal warnings.
+#   - info: emit informational messages.
+#   - tip: highlight tips.
+#   - success: announce successful operations.
+#   - print_nothing_to_do: standard "nothing changed" message.
+#   - print_dry_run_preview: describe dry-run behavior.
+#   - print_action_preview: caution before destructive actions.
+
+################################################################################
+# Output and User Interaction Functions
+################################################################################
+
+# Prints an error message and exits the script
+# Usage: error "message" [exit_code]
+# Parameters:
+#   $1 - Error message to display
+#   $2 - (Optional) Exit code, defaults to 1
+error() {
+  gum_available && gum log -s --prefix=❌ -l error "$@" || \
+    printf "${RED}❌ Error:${NC} %s\n" "$1" >&2
+  exit "${2:-1}"
+}
+
+# Prints a warning message to stderr
+# Usage: warning "message"
+# Parameters:
+#   $1 - Warning message to display
+# Environment:
+#   HUG_QUIET - If set, suppresses output
+warning() {
+  test "${HUG_QUIET:-}" && return
+  gum_available && gum log -s --prefix=⚠️  -l warn "$@" || \
+    printf "${YELLOW}⚠️  Warning:${NC} %s\n" "$1" >&2
+}
+
+# Alias for warning() function
+# Usage: warn "message"
+warn() { warning "$@"; }
+
+# Prints an informational message to stderr
+# Usage: info "message"
+# Parameters:
+#   $1 - Information message to display
+# Environment:
+#   HUG_QUIET - If set, suppresses output
+info() {
+  test "${HUG_QUIET:-}" && return
+  gum_available && gum log -s --prefix=ℹ️  -l info "$@" || \
+    printf "${BLUE}ℹ️  Info:${NC} %s\n" "$1" >&2
+}
+
+# Prints a tip message to stderr
+# Usage: tip "message"
+# Parameters:
+#   $1 - Tip message to display
+# Environment:
+#   HUG_QUIET - If set, suppresses output
+tip() {
+  test "${HUG_QUIET:-}" && return
+  printf "${CYAN}💡 Tip:${NC} %s\n" "$1" >&2
+}
+
+# Prints a success message to stderr
+# Usage: success "message"
+# Parameters:
+#   $1 - Success message to display
+# Environment:
+#   HUG_QUIET - If set, suppresses output
+success() {
+  test "${HUG_QUIET:-}" && return
+  printf "${GREEN}✅ Success:${NC} %s\n" "$1" >&2
+}
+
+# Prints a standardized message when no changes are detected
+# Usage: print_nothing_to_do "action" ["scope phrase"]
+# Examples:
+#   print_nothing_to_do "discard"
+#   print_nothing_to_do "zap" "in the repository."
+# The scope phrase should include any desired trailing punctuation.
+print_nothing_to_do() {
+  local action="$1"
+  local scope="${2:-for the selected scope.}"
+  info "Nothing to ${action}; repository already clean ${scope}"
+}
+
+# Prints an informational dry-run preview message (shared across commands)
+# Usage: print_dry_run_preview "discarded" "from the specified paths."
+print_dry_run_preview() {
+  local action_phrase="$1"
+  local scope="${2:-for the selected scope.}"
+  info "Dry run: the following items would ${action_phrase} ${scope} (no changes applied)."
+}
+
+# Prints a warning preview message before executing a destructive action
+# Usage: print_action_preview "discard the listed changes" "from the specified paths."
+print_action_preview() {
+  local action_phrase="$1"
+  local scope="${2:-for the selected scope.}"
+  warning "⚠ About to ${action_phrase} ${scope} Review the list below."
+}
