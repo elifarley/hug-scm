@@ -41,7 +41,7 @@ check_git_repo
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   # Get list of files with changes (tracked files)
   files=()
-  if ! mapfile -t files < <(select_file --multi --filter-cmd "git ls-files --modified --others --exclude-standard" "Select files to stage (<TAB> to select, Enter to confirm)..."); then
+  if ! mapfile -t files < <(select_files_with_status --multi --unstaged --untracked --prompt "Select files to stage..."); then
     info "No files selected or cancelled."
     exit 0
   fi

@@ -60,7 +60,7 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   # Show interactive file selection
   if gum_available; then
     file=""
-    if file=$(select_file "Select file to restrict search..."); then
+    if file=$(select_files_with_status --single --prompt "Select file to restrict search..."); then
       exec hug ll -S "$search_term" "$@" -- "$file"
     else
       info "Cancelled."

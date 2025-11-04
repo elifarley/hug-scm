@@ -57,7 +57,7 @@ done
 if [[ -z "$file" ]]; then
   # Only show interactive selection if gum is available
   if gum_available; then
-    if ! file=$(select_file "Select file to analyze..."); then
+    if ! file=$(select_files_with_status --single --prompt "Select file to analyze..."); then
       info "No file selected or cancelled."
       exit 0
     fi

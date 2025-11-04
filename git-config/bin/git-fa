@@ -41,11 +41,12 @@ if [ $# -eq 0 ]; then
   # Only show interactive selection if gum is available
   if gum_available; then
     file=""
-    if ! file=$(select_file "Select file to count commits per author..."); then
+    if ! file=$(select_files_with_status --single --prompt "Select file to count commits per author..."); then
       info "No file selected or cancelled."
       exit 0
     fi
-    exec git log --follow --format='%an' -- "$file" | sort | uniq -c | sort -rn
+    git log --follow --format='%an' -- "$file" | sort | uniq -c | sort -rn
+    exit 0
   else
     # Fall back to error when gum is not available
     error "File argument required. Install 'gum' for interactive file selection.

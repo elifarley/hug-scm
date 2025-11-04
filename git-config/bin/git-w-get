@@ -298,7 +298,7 @@ main() {
     if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
         # Interactive file selection
         selected_files=()
-        if ! mapfile -t selected_files < <(select_file --multi "Select files to reset..."); then
+        if ! mapfile -t selected_files < <(select_files_with_status --multi --staged --unstaged --untracked --prompt "Select files to reset..."); then
             info "No files selected or cancelled."
             exit 0
         fi

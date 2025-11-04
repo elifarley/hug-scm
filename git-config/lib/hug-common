@@ -82,90 +82,18 @@ gum_available() {
   command -v gum >/dev/null 2>&1
 }
 
-# Interactive file selection using gum
-# Usage: select_file [--multi] [--filter-cmd <cmd>] [prompt]
-# Parameters:
-#   --multi         Allow multiple file selection (default: single)
-#   --filter-cmd    Command to generate file list (default: git ls-files)
-#   prompt          Custom prompt text (optional)
-# Output:
-#   Selected file(s) to stdout, one per line
-# Returns:
-#   0 if files selected, 1 if cancelled or no selection
-# Note:
-#   Requires gum to be installed
-select_file() {
-  if ! gum_available; then
-    error "Interactive file selection requires 'gum' to be installed.
-Install: https://github.com/charmbracelet/gum"
-  fi
-  
-  local multi=false
-  local filter_cmd="git ls-files"
-  local prompt="Select file(s)..."
-  
-  # Parse arguments
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --multi)
-        multi=true
-        shift
-        ;;
-      --filter-cmd)
-        filter_cmd="$2"
-        shift 2
-        ;;
-      *)
-        prompt="$1"
-        shift
-        ;;
-    esac
-  done
-  
-  # Get list of files
-  local -a files=()
-  mapfile -t files < <(eval "$filter_cmd" 2>/dev/null || true)
-  
-  if [[ ${#files[@]} -eq 0 ]]; then
-    return 1
-  fi
-  
-  # Calculate height for gum
-  local gum_height
-  gum_height=$((${#files[@]} < 13 ? ${#files[@]} + 3 : 15))
-  
-  # Build gum command
-  local -a gum_args=(
-    "filter"
-    "--placeholder=$prompt"
-    "--height=$gum_height"
-  )
-  
-  if $multi; then
-    gum_args+=("--no-limit")
-  fi
-  
-  # Run gum and capture selection
-  local selection
-  selection=$(printf '%s\n' "${files[@]}" | gum "${gum_args[@]}" || true)
-  
-  if [[ -z "$selection" ]]; then
-    return 1
-  fi
-  
-  printf '%s\n' "$selection"
-  return 0
-}
 
 
 # Advanced interactive file selection with multiple file types support
 # Usage: select_files_with_status [OPTIONS]
 # Options:
 #   --multi              Allow multiple file selection (default: true)
+#   --single             Single file selection (default: multi)
 #   --staged             Include staged files
 #   --unstaged           Include unstaged files
 #   --untracked          Include untracked files
 #   --ignored            Include ignored files
+#   --no-status          Omit status column/formatting (plain file names)
 #   --prompt <text>      Custom prompt text
 # Output:
 #   Selected file(s) to stdout, one per line
@@ -173,6 +101,9 @@ Install: https://github.com/charmbracelet/gum"
 #   0 if files selected, 1 if cancelled or no selection
 # Note:
 #   Requires gum to be installed
+# Defaults:
+#   - Multi-selection enabled
+#   - If no --staged/--unstaged/--untracked/--ignored provided, falls back to all tracked files via 'git ls-files' (displayed plainly)
 select_files_with_status() {
   if ! gum_available; then
     error "Interactive file selection requires 'gum' to be installed.
@@ -184,6 +115,7 @@ Install: https://github.com/charmbracelet/gum"
   local include_unstaged=false
   local include_untracked=false
   local include_ignored=false
+  local no_status=false
   local prompt="Select file(s)..."
   
   # Parse arguments
@@ -213,6 +145,10 @@ Install: https://github.com/charmbracelet/gum"
         include_ignored=true
         shift
         ;;
+      --no-status)
+        no_status=true
+        shift
+        ;;
       --prompt)
         prompt="$2"
         shift 2
@@ -223,8 +159,23 @@ Install: https://github.com/charmbracelet/gum"
     esac
   done
   
+  local has_includes=false
+  if $include_staged || $include_unstaged || $include_untracked || $include_ignored; then
+    has_includes=true
+  fi
+  
+  local use_status_formatting=false
+  if $has_includes && ! $no_status; then
+    use_status_formatting=true
+  fi
+  
   local -a files=()
   local -a formatted_options=()
+  
+  if ! $has_includes; then
+    mapfile -t files < <(git ls-files 2>/dev/null || true)
+    mapfile -t formatted_options < <(printf '%s\n' "${files[@]}")
+  else
   
   # Collect files based on requested types
   if $include_staged; then
@@ -242,7 +193,11 @@ Install: https://github.com/charmbracelet/gum"
         *)  status_text="${GREEN}S     ${NC}" ;;
       esac
       files+=("$file")
-      formatted_options+=("${status_text} ${file}")
+      if $use_status_formatting; then
+        formatted_options+=("${status_text} ${file}")
+      else
+        formatted_options+=("$file")
+      fi
     done < <(git diff --cached --name-only 2>/dev/null || true)
   fi
   
@@ -258,7 +213,11 @@ Install: https://github.com/charmbracelet/gum"
         *) status_text="${RED}${NC}U     " ;;
       esac
       files+=("$file")
-      formatted_options+=("${status_text} ${file}")
+      if $use_status_formatting; then
+        formatted_options+=("${status_text} ${file}")
+      else
+        formatted_options+=("$file")
+      fi
     done < <(git diff --name-only 2>/dev/null || true)
   fi
   
@@ -268,8 +227,13 @@ Install: https://github.com/charmbracelet/gum"
       local status="${entry:0:2}"
       local file="${entry:3}"
       if [[ "$status" == "??" ]]; then
+        local status_text="${MAGENTA}UnTrck${NC}"
         files+=("$file")
-        formatted_options+=("${MAGENTA}UnTrck${NC} ${file}")
+        if $use_status_formatting; then
+          formatted_options+=("${status_text} ${file}")
+        else
+          formatted_options+=("$file")
+        fi
       fi
     done < <(git status --porcelain=v1 -z 2>/dev/null || true)
   fi
@@ -280,10 +244,16 @@ Install: https://github.com/charmbracelet/gum"
       local status="${entry:0:2}"
       local file="${entry:3}"
       if [[ "$status" == "!!" ]]; then
+        local status_text="${GREY}Ignore${NC}"
         files+=("$file")
-        formatted_options+=("${GREY}Ignore${NC} ${file}")
+        if $use_status_formatting; then
+          formatted_options+=("${status_text} ${file}")
+        else
+          formatted_options+=("$file")
+        fi
       fi
     done < <(git status --porcelain=v1 --ignored=matching -z 2>/dev/null || true)
+  fi
   fi
   
   # Remove duplicates while preserving order
@@ -306,14 +276,14 @@ Install: https://github.com/charmbracelet/gum"
   
   # Calculate height for gum
   local gum_height
-  gum_height=$((${#unique_formatted[@]} < 13 ? ${#unique_formatted[@]} + 3 : 15))
+  gum_height=$((${#unique_files[@]} < 13 ? ${#unique_files[@]} + 3 : 15))
   
   # Build gum command
   local -a gum_args=(
     "filter"
+    "--no-strip-ansi"
     "--placeholder=$prompt"
     "--height=$gum_height"
-    "--no-strip-ansi"
     "--reverse"
   )
   
@@ -329,10 +299,15 @@ Install: https://github.com/charmbracelet/gum"
     return 1
   fi
   
-  # Extract file names (first word before status)
+  # Extract file names from selection
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
-    local file_name="${line%% *}"
+    local file_name
+    if $use_status_formatting; then
+      file_name="${line#* }"
+    else
+      file_name="$line"
+    fi
     printf '%s\n' "$file_name"
   done <<< "$selection"
   
