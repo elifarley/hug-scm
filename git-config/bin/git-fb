@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug fb: Short blame with just author and line.
+
+USAGE:
+    hug fb [<file>] [-h, --help]
+
+ARGUMENTS:
+    <file>     File to blame (optional - prompts for selection if omitted)
+
+OPTIONS:
+    -h, --help Show this help
+
+DESCRIPTION:
+    Shows line-by-line authorship of a file in porcelain format:
+    - Ignores whitespace changes (-w)
+    - Detects code moved/copied within and across files (-C -C -C)
+    - Outputs in porcelain format for parsing
+
+EXAMPLES:
+    hug fb                      # Interactive file selection
+    hug fb src/app.js           # Short blame for specific file
+
+SEE ALSO:
+    hug fblame   : Full blame with whitespace/copy detection
+    hug fcon     : List all contributors to a file
+    hug fa       : Count commits per author for a file
+EOF
+}
+
+# Parse common flags
+eval "$(parse_common_flags "$@")"
+
+check_git_repo
+
+# If no file provided, show interactive selection or error
+if [ $# -eq 0 ]; then
+  # Only show interactive selection if gum is available
+  if gum_available; then
+    file=""
+    if ! file=$(select_file "Select file for short blame..."); then
+      info "No file selected or cancelled."
+      exit 0
+    fi
+    exec git blame -w -C -C -C --line-porcelain -- "$file"
+  else
+    # Fall back to error when gum is not available
+    error "File argument required. Install 'gum' for interactive file selection.
+Usage: hug fb <file>
+Install gum: https://github.com/charmbracelet/gum"
+  fi
+fi
+
+exec git blame -w -C -C -C --line-porcelain -- "$@"

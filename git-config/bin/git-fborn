@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug fborn: Show when file was added (birth commit).
+
+USAGE:
+    hug fborn [<file>] [-h, --help]
+
+ARGUMENTS:
+    <file>     File to analyze (optional - prompts for selection if omitted)
+
+OPTIONS:
+    -h, --help Show this help
+
+DESCRIPTION:
+    Shows the commit where a file was first added to the repository.
+    Follows renames through history with 40% similarity threshold.
+    Displays commit details with full body.
+
+EXAMPLES:
+    hug fborn                   # Interactive file selection
+    hug fborn src/app.js        # Show when specific file was added
+
+SEE ALSO:
+    hug fblame   : Show who changed what line
+    hug llf      : Log commits for file
+EOF
+}
+
+# Parse common flags
+eval "$(parse_common_flags "$@")"
+
+check_git_repo
+
+# If no file provided, show interactive selection or error
+if [ $# -eq 0 ]; then
+  # Only show interactive selection if gum is available
+  if gum_available; then
+    file=""
+    if ! file=$(select_file "Select file to show birth commit..."); then
+      info "No file selected or cancelled."
+      exit 0
+    fi
+    exec git log --pretty=logbody --follow --diff-filter=A --find-renames=40% -- "$file"
+  else
+    # Fall back to error when gum is not available
+    error "File argument required. Install 'gum' for interactive file selection.
+Usage: hug fborn <file>
+Install gum: https://github.com/charmbracelet/gum"
+  fi
+fi
+
+exec git log --pretty=logbody --follow --diff-filter=A --find-renames=40% -- "$@"

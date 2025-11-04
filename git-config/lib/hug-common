@@ -74,7 +74,181 @@ export RED GREEN GREEN_BRIGHT YELLOW YELLOW_BRIGHT BLUE MAGENTA CYAN GREY NC
 ################################################################################
 
 gum_available() {
-  command -v gum >/dev/null 2>&1 && [[ -t 0 ]] && [[ -t 1 ]]
+  command -v gum >/dev/null 2>&1
+}
+
+# Interactive file selection using gum
+# Usage: select_file [--multi] [--filter-cmd <cmd>] [prompt]
+# Parameters:
+#   --multi         Allow multiple file selection (default: single)
+#   --filter-cmd    Command to generate file list (default: git ls-files)
+#   prompt          Custom prompt text (optional)
+# Output:
+#   Selected file(s) to stdout, one per line
+# Returns:
+#   0 if files selected, 1 if cancelled or no selection
+# Note:
+#   Requires gum to be installed
+select_file() {
+  if ! gum_available; then
+    error "Interactive file selection requires 'gum' to be installed.
+Install: https://github.com/charmbracelet/gum"
+  fi
+  
+  local multi=false
+  local filter_cmd="git ls-files"
+  local prompt="Select file(s)..."
+  
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --multi)
+        multi=true
+        shift
+        ;;
+      --filter-cmd)
+        filter_cmd="$2"
+        shift 2
+        ;;
+      *)
+        prompt="$1"
+        shift
+        ;;
+    esac
+  done
+  
+  # Get list of files
+  local -a files=()
+  mapfile -t files < <(eval "$filter_cmd" 2>/dev/null || true)
+  
+  if [[ ${#files[@]} -eq 0 ]]; then
+    return 1
+  fi
+  
+  # Calculate height for gum
+  local gum_height
+  gum_height=$((${#files[@]} < 13 ? ${#files[@]} + 3 : 15))
+  
+  # Build gum command
+  local -a gum_args=(
+    "filter"
+    "--placeholder=$prompt"
+    "--height=$gum_height"
+  )
+  
+  if $multi; then
+    gum_args+=("--no-limit")
+  fi
+  
+  # Run gum and capture selection
+  local selection
+  selection=$(printf '%s\n' "${files[@]}" | gum "${gum_args[@]}" || true)
+  
+  if [[ -z "$selection" ]]; then
+    return 1
+  fi
+  
+  printf '%s\n' "$selection"
+  return 0
+}
+
+# Interactive file selection with status formatting (like hug us)
+# Usage: select_files_with_status <type> [prompt]
+# Parameters:
+#   type    One of: 'staged', 'unstaged', 'working'
+#   prompt  Custom prompt text (optional)
+# Output:
+#   Selected file(s) to stdout, one per line
+# Returns:
+#   0 if files selected, 1 if cancelled or no selection
+# Note:
+#   Requires gum to be installed
+select_files_with_status() {
+  if ! gum_available; then
+    error "Interactive file selection requires 'gum' to be installed.
+Install: https://github.com/charmbracelet/gum"
+  fi
+  
+  local type="$1"
+  local prompt="${2:-Select file(s)...}"
+  local -a files=()
+  local -a formatted_options=()
+  
+  # Get files based on type
+  case "$type" in
+    staged)
+      mapfile -t files < <(git diff --cached --name-only 2>/dev/null || true)
+      ;;
+    unstaged)
+      mapfile -t files < <(git diff --name-only 2>/dev/null || true)
+      ;;
+    working)
+      mapfile -t files < <(git diff HEAD --name-only 2>/dev/null || true)
+      ;;
+    *)
+      error "Invalid type for select_files_with_status: $type"
+      ;;
+  esac
+  
+  if [[ ${#files[@]} -eq 0 ]]; then
+    return 1
+  fi
+  
+  # Format files with status
+  for file in "${files[@]}"; do
+    [[ -z "$file" ]] && continue
+    
+    local status
+    case "$type" in
+      staged)
+        status=$(git diff --cached --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
+        ;;
+      unstaged)
+        status=$(git diff --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
+        ;;
+      working)
+        status=$(git diff HEAD --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
+        ;;
+    esac
+    
+    local status_text
+    case "$status" in
+      A) status_text="${GREEN}new${NC}" ;;
+      M) status_text="${YELLOW}modified${NC}" ;;
+      D) status_text="${RED}deleted${NC}" ;;
+      R*) status_text="${BLUE}renamed${NC}" ;;
+      C*) status_text="${BLUE}copied${NC}" ;;
+      *) status_text="${GREY}changed${NC}" ;;
+    esac
+    
+    local formatted="${file} ${status_text}"
+    [[ -n "$formatted" ]] && formatted_options+=("$formatted")
+  done
+  
+  if [[ ${#formatted_options[@]} -eq 0 ]]; then
+    return 1
+  fi
+  
+  # Calculate height for gum
+  local gum_height
+  gum_height=$((${#formatted_options[@]} < 13 ? ${#formatted_options[@]} + 3 : 15))
+  
+  # Use gum filter for selection (single file for diff commands)
+  local selection
+  selection=$(printf '%s\n' "${formatted_options[@]}" | \
+    gum filter --placeholder="$prompt" \
+                --height="$gum_height" \
+                --no-strip-ansi \
+                --reverse || true)
+  
+  if [[ -z "$selection" ]]; then
+    return 1
+  fi
+  
+  # Extract file name (first word before status)
+  local file_name="${selection%% *}"
+  printf '%s\n' "$file_name"
+  return 0
 }
 
 ################################################################################
@@ -287,12 +461,21 @@ is_symlink() {
 #   -f, --force  Sets force=true, exports HUG_FORCE=true
 #   --quiet      Exports HUG_QUIET=T
 #   -h, --help   Calls usage or show_help function and exits
+#   --           If last argument, sets HUG_INTERACTIVE_FILE_SELECTION=true and removes it
 # Note:
 #   Consumes recognized flags from arguments
 #   Remaining args can be accessed via "$@" after eval
 #   Handles empty remaining args without setting $@ to ("")
 parse_common_flags() {
   local remaining_args=()
+  local interactive_file_selection=false
+  
+  # Check if last argument is '--' before processing
+  if [[ $# -gt 0 && "${!#}" = "--" ]]; then
+    interactive_file_selection=true
+    # Remove last argument by creating new array without it
+    set -- "${@:1:$(($#-1))}"
+  fi
   
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -324,6 +507,11 @@ parse_common_flags() {
         ;;
     esac
   done
+  
+  # Export interactive file selection flag if detected
+  if $interactive_file_selection; then
+    echo "export HUG_INTERACTIVE_FILE_SELECTION=true"
+  fi
   
   # Always output set -- to properly update $@ in the caller
   if [ ${#remaining_args[@]} -gt 0 ]; then
@@ -371,7 +559,7 @@ confirm_action() {
   local action="$1"
   if gum_available; then
     local gum_reply
-    if ! gum_reply=$(gum input --prompt "→ " --placeholder "Type \"${action}\" to confirm" 2>/dev/null); then
+    if ! gum_reply=$(gum input --prompt "→ " --placeholder "Type \"${action}\" to confirm" ); then
       info "Cancelled."
       exit 1
     fi

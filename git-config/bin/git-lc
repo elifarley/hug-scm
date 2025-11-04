@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug lc: Search commits by CODE CHANGES in diff.
+
+USAGE:
+    hug lc <search-term> [-i] [-p] [--all] [-- [<file>]] [-h, --help]
+
+ARGUMENTS:
+    <search-term>  Text to search for in code changes (required)
+    <file>         Restrict search to specific file (optional)
+
+OPTIONS:
+    -i             Ignore case when searching
+    -p             Show patches
+    --all          Consider ALL branches (not just current)
+    -- <file>      Restrict search to specific file
+    -- (last arg)  Restrict search with interactive file selection
+    -h, --help     Show this help
+
+DESCRIPTION:
+    Searches for commits where the specified text was added or removed in the
+    diff. This is useful for finding when a particular function, variable, or
+    code pattern was introduced or changed.
+
+EXAMPLES:
+    hug lc "getUserById"            # Find commits changing this function
+    hug lc "getUserById" -i         # Case-insensitive search
+    hug lc "config.api" -p          # Show patches
+    hug lc "import" -- src/main.js  # Search in specific file
+    hug lc "import" --              # Search with interactive file selection
+
+SEE ALSO:
+    hug lf       : Search commits by message
+    hug lcr      : Search commits by regex code changes
+    hug llf      : Log commits for file
+EOF
+}
+
+# Parse common flags (handles -- detection automatically)
+eval "$(parse_common_flags "$@")"
+
+check_git_repo
+
+# Check if search term provided
+if [ $# -eq 0 ]; then
+  show_help
+  exit 1
+fi
+
+search_term="$1"
+shift
+
+# Handle interactive file selection if requested
+if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
+  # Show interactive file selection
+  if gum_available; then
+    file=""
+    if file=$(select_file "Select file to restrict search..."); then
+      exec hug ll -S "$search_term" "$@" -- "$file"
+    else
+      info "Cancelled."
+      exit 0
+    fi
+  else
+    error "Interactive file selection requires 'gum' to be installed.
+Usage: hug lc <search-term> [options] -- <file>
+Install gum: https://github.com/charmbracelet/gum"
+  fi
+fi
+
+exec hug ll -S "$search_term" "$@"

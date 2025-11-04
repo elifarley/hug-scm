@@ -1,16 +1,66 @@
 #!/usr/bin/env bash
-# Part of the Hug tool suite
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
-test "${1:-}" = '-h' && {
-  printf '\nsw: Show status with patch of working dir changes.\nUsage: hug sw [file]' >&2
-  exit 1
+# Part of the Hug tool suite
+
+show_help() {
+  cat << 'EOF'
+hug sw: Show status with patch of working directory changes.
+
+USAGE:
+    hug sw [<file>] [-h, --help]
+    hug sw --
+
+ARGUMENTS:
+    <file>         Show working directory changes for specific file (optional)
+    --             Interactive file selection from changed files
+
+OPTIONS:
+    -h, --help     Show this help
+
+DESCRIPTION:
+    Shows the diff of all working directory changes (staged + unstaged).
+    When no file is specified, shows all working directory changes. Use '--'
+    to interactively select a file from files with working directory changes.
+
+EXAMPLES:
+    hug sw                 # Show all working directory changes
+    hug sw file.txt        # Show working directory changes for specific file
+    hug sw --              # Interactive file selection
+
+SEE ALSO:
+    hug ss       : Show staged changes
+    hug su       : Show unstaged changes
+    hug s        : Show status
+EOF
 }
-if test $# -eq 0; then \
+
+# Parse common flags (handles -- detection automatically)
+eval "$(parse_common_flags "$@")"
+
+check_git_repo
+
+# Handle interactive file selection if requested
+if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
+  if file=$(select_files_with_status "working" "Select file to view working directory changes (<TAB> to select, Enter to confirm)..."); then
+    printf '─────────────────── Working dir changes for FILE:\n'
+    git diff HEAD -- "$file"
+    git diff HEAD --stat -- "$file"
+    git s
+    exit 0
+  else
+    info "No files with working directory changes available or cancelled."
+    exit 0
+  fi
+fi
+
+if test $# -eq 0; then
   printf '─────────────────── Working dir changes:\n'
   git diff HEAD
   git diff HEAD --stat
-else \
+else
   t="$1"; shift
   printf '─────────────────── Working dir changes for FILE:\n'
   test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")

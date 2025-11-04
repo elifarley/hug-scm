@@ -99,10 +99,11 @@ Changes from all squashed commits are kept staged so that they can be committed 
 - **Safety**: Read-only; no changes to repo. Upstream mode uses the shared preview data but remains read-only. Cannot mix `-u` with explicit target.
 - ![hug h files example](img/hug-h-files.png)
 
-### `hug h steps <file> [--raw]`
-- **Description**: Calculate how many commit steps from HEAD back to the most recent commit touching `file` (handles renames). Outputs the count; use for precise rewinds like `h back N`. Full mode shows formatted commit info via `hug ll`.
+### `hug h steps [<file>] [--raw]`
+- **Description**: Calculate how many commit steps from HEAD back to the most recent commit touching `file` (handles renames). Outputs the count; use for precise rewinds like `h back N`. Full mode shows formatted commit info via `hug ll`. When no file is provided, shows interactive file selection UI (requires gum).
 - **Example**:
   ```shell
+  hug h steps                     # Interactive file selection
   hug h steps src/app.js          # "3 steps back from HEAD (last commit abc123); <ll output>"
   hug h steps README.md --raw     # "3" (just the number)
   hug h steps file.txt | xargs hug h back  # Rewind exactly to last change

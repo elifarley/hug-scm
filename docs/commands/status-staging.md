@@ -92,18 +92,33 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 Show diffs inline for better inspection.
 
 - `hug ss [file]`: **S**tatus + **S**taged diff
-    - **Description**: Status + staged changes patch (for a file or all files).
-    - **Example**: `hug ss src/app.js`
+    - **Description**: Status + staged changes patch (for a file or all files). Use `--` to interactively select from staged files.
+    - **Example**: 
+      ```
+      hug ss                 # Show all staged changes
+      hug ss src/app.js      # Show staged changes for specific file
+      hug ss --              # Interactive file selection from staged files
+      ```
     - **Safety**: ✅ Read-only diff preview.
 
 - `hug su [file]`: **S**tatus + **U**nstaged diff
-    - **Description**: Status + unstaged changes patch.
-    - **Example**: `hug su`
+    - **Description**: Status + unstaged changes patch. Use `--` to interactively select from unstaged files.
+    - **Example**: 
+      ```
+      hug su                 # Show all unstaged changes
+      hug su file.txt        # Show unstaged changes for specific file
+      hug su --              # Interactive file selection from unstaged files
+      ```
     - **Safety**: ✅ Read-only diff preview.
 
 - `hug sw [file]`: **S**tatus + **W**orking directory diff
-    - **Description**: Status + working directory patch (staged + unstaged).
-    - **Example**: `hug sw .`
+    - **Description**: Status + working directory patch (staged + unstaged). Use `--` to interactively select from changed files.
+    - **Example**: 
+      ```
+      hug sw                 # Show all working directory changes
+      hug sw .               # Show all changes in current directory
+      hug sw --              # Interactive file selection from changed files
+      ```
     - **Safety**: ✅ Read-only diff preview.
 
 - `hug sx`: **S**tatus e**X**press
@@ -120,11 +135,12 @@ Show diffs inline for better inspection.
 ## Staging Commands (a*)
 
 - `hug a [files...]`: **A**dd tracked
-    - **Description**: Stage tracked changes (or specific files if provided). If no args, stages updates only.
+    - **Description**: Stage tracked changes (or specific files if provided). If no args, stages updates only. Use `--` to trigger interactive file selection UI.
     - **Example**:
       ```
       hug a                     # Stage all tracked updates
       hug a src/                # Stage directory, including non-tracked files
+      hug a --                  # Interactive file selection (requires gum)
       ```
     - **Safety**: ✅ Safe staging (reversible with `hug us`).
 

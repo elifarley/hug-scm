@@ -84,8 +84,12 @@ Combines wipe + purge for full reset.
 
 ### Utilities
 - `hug w get <commit> [files...]`
-  - **Description**: Restore files from a specific commit to working directory.
-  - **Example**: `hug w get HEAD~2 README.md` (gets from 2 commits ago)
+  - **Description**: Restore files from a specific commit to working directory. Use `--` to trigger interactive file selection UI (requires gum).
+  - **Example**:
+    ```shell
+    hug w get HEAD~2 README.md    # Gets from 2 commits ago
+    hug w get HEAD~2 --           # Interactive file selection from HEAD~2
+    ```
 
 ### The WIP Workflow: A Better Way to Manage Temporary Work {#wip-workflow}
 

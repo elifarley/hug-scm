@@ -57,55 +57,46 @@
   lol = log-outgoing
 
   # Search commits by message
-  lf = "!f() { \
-    test $# -eq 0 -o \"$1\" = '-h' && { \
-      printf 'hug lf: Search commits by MESSAGE.\n-i: Ignore case.\n-p: Show patches.\n--all: Consider ALL branches.\nUsage: git lf <search-term> [-ip] [--all]' >&2; return 1; }; \
-    t=\"$1\"; shift; \
-    hug ll --grep=\"$t\" \"$@\"; \
-  }; f"
+  # Now implemented as git-config/bin/git-lf script with interactive UI
+  # (alias removed - script takes precedence)
 
   # Search commits by code changes
-  # Ex: Search in specific file
-  # hug lc "getUserById" -- src/users.js
-  lc = "!f() { \
-    test $# -eq 0 -o \"$1\" = '-h' && { \
-      printf '\nlc: Search commits by CODE CHANGES in diff.\n-i: Ignore case.\n-p: Show patches.\n--all: Consider ALL branches.\n-- file: Restrict to a file.\nUsage: hug lc <search-term> [-ip] [--all] [-- file]' >&2; return 1; }; \
-    t=\"$1\"; shift; \
-    git ll -S \"$t\" \"$@\"; \
-  }; f"
+  # Now implemented as git-config/bin/git-lc script with interactive UI
+  # (alias removed - script takes precedence)
 
   # Search commits by RegEx changes
-  lcr = "!f() { \
-    test $# -eq 0 -o \"$1\" = '-h' && { \
-      printf '\nlcr: Search commits by RegEx CODE CHANGES in diff.\n-i: Ignore case.\n-p: Show patches.\n--all: Consider ALL branches.\n-- file: Restrict to a file.\nUsage: hug lcr <RegEx> [-ip] [--all] [-- file]' >&2; return 1; }; \
-    t=\"$1\"; shift; \
-    git ll -G \"$t\" \"$@\"; \
-  }; f"
+  # Now implemented as git-config/bin/git-lcr script with interactive UI
+  # (alias removed - script takes precedence)
 
   # Commits by specific author
-  lau = "!f() { t=\"${1:?(Search commits by AUTHOR) Missing search term}\"; shift; git ll --author=\"$t\" \"$@\"; }; f"
+  lau = "!f() { t="${1:?(Search commits by AUTHOR) Missing search term}"; shift; git ll --author="$t" "$@"; }; f"
 
   # Commits in date range
-  ld = "!f() { git ll --since=\"$1\" --until=\"${2:-now}\"; }; f"
+  ld = "!f() { git ll --since="$1" --until="${2:-now}"; }; f"
 
   # ============================================================================
   # FILE INSPECTION
   # ============================================================================
 
-  # Who changed what line (usage: hug fblame <file>)
-  fblame = blame -w -C -C -C # w: Ignore whitespace changes; CCC: Detect code moved/copied within/across files (3 levels deep)
+  # Who changed what line
+  # Now implemented as git-config/bin/git-fblame script with interactive UI
+  # (alias removed - script takes precedence)
 
-  # Short blame with just author and line (usage: hug fb <file>)
-  fb = blame -w -C -C -C --line-porcelain
+  # Short blame with just author and line
+  # Now implemented as git-config/bin/git-fb script with interactive UI
+  # (alias removed - script takes precedence)
 
-  # List all contributors to a file (usage: hug fcon <file>)
-  fcon = "!f() { git log --follow --pretty=format:'%an <%ae>' -- \"$1\" | sort -u; }; f"
+  # List all contributors to a file
+  # Now implemented as git-config/bin/git-fcon script with interactive UI
+  # (alias removed - script takes precedence)
 
-  # Count commits per author for a file (usage: hug fa <file>)
-  fa = "!f() { git log --follow --format='%an' -- \"$1\" | sort | uniq -c | sort -rn; }; f"
+  # Count commits per author for a file
+  # Now implemented as git-config/bin/git-fa script with interactive UI
+  # (alias removed - script takes precedence)
 
-  # Show when file was added (usage: hug fborn <file>)
-  fborn = log --pretty=logbody --follow --diff-filter=A --find-renames=40% --
+  # Show when file was added
+  # Now implemented as git-config/bin/git-fborn script with interactive UI
+  # (alias removed - script takes precedence)
 
   # ═══════════════════════════════════════════════════════════════════
   #  STAGING (a*)

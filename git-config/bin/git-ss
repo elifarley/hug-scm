@@ -1,11 +1,61 @@
 #!/usr/bin/env bash
-# Part of the Hug tool suite
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
-test "${1:-}" = '-h' && {
-  printf '\nss: Show status with patch of staged changes.\nUsage: hug ss [file]' >&2
-  exit 1
+# Part of the Hug tool suite
+
+show_help() {
+  cat << 'EOF'
+hug ss: Show status with patch of staged changes.
+
+USAGE:
+    hug ss [<file>] [-h, --help]
+    hug ss --
+
+ARGUMENTS:
+    <file>         Show staged changes for specific file (optional)
+    --             Interactive file selection from staged files
+
+OPTIONS:
+    -h, --help     Show this help
+
+DESCRIPTION:
+    Shows the diff of staged changes (what will be committed). When no file
+    is specified, shows all staged changes. Use '--' to interactively select
+    a file from staged files.
+
+EXAMPLES:
+    hug ss                 # Show all staged changes
+    hug ss file.txt        # Show staged changes for specific file
+    hug ss --              # Interactive file selection
+
+SEE ALSO:
+    hug su       : Show unstaged changes
+    hug sw       : Show working directory changes
+    hug s        : Show status
+EOF
 }
+
+# Parse common flags (handles -- detection automatically)
+eval "$(parse_common_flags "$@")"
+
+check_git_repo
+
+# Handle interactive file selection if requested
+if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
+  if file=$(select_files_with_status "staged" "Select file to view staged changes (<TAB> to select, Enter to confirm)..."); then
+    printf '─────────────────── Staged changes for FILE:\n'
+    git diff --cached -- "$file"
+    git diff --cached --stat -- "$file"
+    git s
+    exit 0
+  else
+    info "No staged files available or cancelled."
+    exit 0
+  fi
+fi
+
 if test $# -eq 0; then
   printf '─────────────────── Staged changes:\n'
   git diff --cached
