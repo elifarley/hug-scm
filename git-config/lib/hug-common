@@ -157,107 +157,9 @@ Install: https://github.com/charmbracelet/gum"
   return 0
 }
 
-# Interactive file selection with status formatting (like hug us)
-# Usage: select_files_with_status <type> [prompt]
-# Parameters:
-#   type    One of: 'staged', 'unstaged', 'working'
-#   prompt  Custom prompt text (optional)
-# Output:
-#   Selected file(s) to stdout, one per line
-# Returns:
-#   0 if files selected, 1 if cancelled or no selection
-# Note:
-#   Requires gum to be installed
-select_files_with_status() {
-  if ! gum_available; then
-    error "Interactive file selection requires 'gum' to be installed.
-Install: https://github.com/charmbracelet/gum"
-  fi
-  
-  local type="$1"
-  local prompt="${2:-Select file(s)...}"
-  local -a files=()
-  local -a formatted_options=()
-  
-  # Get files based on type
-  case "$type" in
-    staged)
-      mapfile -t files < <(git diff --cached --name-only 2>/dev/null || true)
-      ;;
-    unstaged)
-      mapfile -t files < <(git diff --name-only 2>/dev/null || true)
-      ;;
-    working)
-      mapfile -t files < <(git diff HEAD --name-only 2>/dev/null || true)
-      ;;
-    *)
-      error "Invalid type for select_files_with_status: $type"
-      ;;
-  esac
-  
-  if [[ ${#files[@]} -eq 0 ]]; then
-    return 1
-  fi
-  
-  # Format files with status
-  for file in "${files[@]}"; do
-    [[ -z "$file" ]] && continue
-    
-    local status
-    case "$type" in
-      staged)
-        status=$(git diff --cached --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
-        ;;
-      unstaged)
-        status=$(git diff --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
-        ;;
-      working)
-        status=$(git diff HEAD --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
-        ;;
-    esac
-    
-    local status_text
-    case "$status" in
-      A)  status_text="${GREEN}Add  ${NC}" ;;
-      M)  status_text="${YELLOW}Mod  ${NC}" ;;
-      D)  status_text="${RED}Del  ${NC}" ;;
-      R*) status_text="${BLUE}Ren  ${NC}" ;;
-      C*) status_text="${BLUE}Copy ${NC}" ;;
-      *)  status_text="${GREY}Change${NC}" ;;
-    esac
-    
-    local formatted="${status_text} ${file}"
-    [[ -n "$formatted" ]] && formatted_options+=("$formatted")
-  done
-  
-  if [[ ${#formatted_options[@]} -eq 0 ]]; then
-    return 1
-  fi
-  
-  # Calculate height for gum
-  local gum_height
-  gum_height=$((${#formatted_options[@]} < 13 ? ${#formatted_options[@]} + 3 : 15))
-  
-  # Use gum filter for selection (single file for diff commands)
-  local selection
-  selection=$(printf '%s\n' "${formatted_options[@]}" | \
-    gum filter --placeholder="$prompt" \
-                --height="$gum_height" \
-                --no-strip-ansi \
-                --reverse || true)
-  
-  if [[ -z "$selection" ]]; then
-    return 1
-  fi
-  
-  # Extract file name (first word before status)
-  local file_name="${selection%% *}"
-  printf '%s\n' "$file_name"
-  return 0
-}
 
 # Advanced interactive file selection with multiple file types support
-# Usage: select_files_advanced [OPTIONS]
+# Usage: select_files_with_status [OPTIONS]
 # Options:
 #   --multi              Allow multiple file selection (default: true)
 #   --staged             Include staged files
@@ -271,7 +173,7 @@ Install: https://github.com/charmbracelet/gum"
 #   0 if files selected, 1 if cancelled or no selection
 # Note:
 #   Requires gum to be installed
-select_files_advanced() {
+select_files_with_status() {
   if ! gum_available; then
     error "Interactive file selection requires 'gum' to be installed.
 Install: https://github.com/charmbracelet/gum"
@@ -316,7 +218,7 @@ Install: https://github.com/charmbracelet/gum"
         shift 2
         ;;
       *)
-        error "Unknown option for select_files_advanced: $1"
+        error "Unknown option for select_files_with_status: $1"
         ;;
     esac
   done

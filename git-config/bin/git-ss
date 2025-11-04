@@ -44,16 +44,18 @@ check_git_repo
 
 # Handle interactive file selection if requested
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
-  if file=$(select_files_with_status "staged" "Select file to view staged changes (<TAB> to select, Enter to confirm)..."); then
-    printf '─────────────────── Staged changes for FILE:\n'
-    git diff --cached -- "$file"
-    git diff --cached --stat -- "$file"
-    git s
-    exit 0
-  else
+  mapfile -t files < <(select_files_with_status --staged --prompt "Select file(s) to view staged changes..." || true)
+  if [[ ${#files[@]} -eq 0 ]]; then
     info "No staged files available or cancelled."
     exit 0
   fi
+  for file in "${files[@]}"; do
+    printf '─────────────────── Staged changes for %s:\n' "$file"
+    git diff --cached -- "$file"
+    git diff --cached --stat -- "$file"
+  done
+  git s
+  exit 0
 fi
 
 if test $# -eq 0; then

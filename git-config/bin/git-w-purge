@@ -87,7 +87,7 @@ if [[ $# -lt 1 ]]; then
   select_opts+=("--prompt" "Select files to purge...")
   
   paths=()
-  if ! mapfile -t paths < <(select_files_advanced "${select_opts[@]}"); then
+  if ! mapfile -t paths < <(select_files_with_status "${select_opts[@]}"); then
     info "No files selected or cancelled."
     exit 0
   fi

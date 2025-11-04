@@ -44,16 +44,18 @@ check_git_repo
 
 # Handle interactive file selection if requested
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
-  if file=$(select_files_with_status "unstaged" "Select file to view unstaged changes (<TAB> to select, Enter to confirm)..."); then
-    printf '─────────────────── Unstaged changes for FILE:\n'
-    git diff -- "$file"
-    git diff --stat -- "$file"
-    git s
-    exit 0
-  else
+  mapfile -t files < <(select_files_with_status --unstaged --prompt "Select file(s) to view unstaged changes..." || true)
+  if [[ ${#files[@]} -eq 0 ]]; then
     info "No unstaged files available or cancelled."
     exit 0
   fi
+  for file in "${files[@]}"; do
+    printf '─────────────────── Unstaged changes for %s:\n' "$file"
+    git diff -- "$file"
+    git diff --stat -- "$file"
+  done
+  git s
+  exit 0
 fi
 
 if test $# -eq 0; then
