@@ -7,7 +7,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat <<'EOF'
-Usage: hug w discard [OPTIONS] <path> [<path>...]
+Usage: hug w discard [OPTIONS] [<path>...]
 
 Discard tracked changes for the given paths.
 
@@ -17,9 +17,10 @@ Options:
       --dry-run    Show what would be discarded without applying changes
   -f, --force      Skip confirmation prompt
   -h, --help       Show this help
+  --               Trigger interactive file selection UI
 
 Notes:
-  • Requires at least one path argument.
+  • If no paths provided, interactive file selection UI will be shown.
   • Use `hug w discard-all` for repository-wide scope.
   • When discarding staged changes, any unstaged changes in those files are preserved (WD = committed + unstaged).
   • When discarding both, all uncommitted changes are discarded (WD and index = committed).
@@ -33,6 +34,7 @@ target_unstaged=false
 target_staged=false
 flags_explicit=false
 force=false
+interactive_selection=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -59,6 +61,7 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     --)
+      interactive_selection=true
       shift
       break
       ;;
@@ -77,16 +80,39 @@ if ! $flags_explicit; then
   target_unstaged=true
 fi
 
-if [[ $# -lt 1 ]]; then
-  error "this command requires at least one path (or use 'git w discard-all')"
-  show_help >&2
-  exit 2
-fi
-
 check_git_repo
 repo_root="$(git rev-parse --show-toplevel)"
 
-paths=("$@")
+# Handle interactive file selection if requested or no paths provided
+if [[ $# -lt 1 ]] || $interactive_selection; then
+  # Determine which file types to show based on flags
+  declare -a select_opts=("--multi")
+  
+  if $target_staged && ! $target_unstaged; then
+    select_opts+=("--staged")
+    select_opts+=("--prompt" "Select staged files to discard...")
+  elif $target_unstaged && ! $target_staged; then
+    select_opts+=("--unstaged")
+    select_opts+=("--prompt" "Select unstaged files to discard...")
+  else
+    # Both or default (unstaged)
+    select_opts+=("--staged" "--unstaged")
+    select_opts+=("--prompt" "Select files to discard...")
+  fi
+  
+  paths=()
+  if ! mapfile -t paths < <(select_files_advanced "${select_opts[@]}"); then
+    info "No files selected or cancelled."
+    exit 0
+  fi
+  
+  if [[ ${#paths[@]} -eq 0 ]]; then
+    info "No files selected."
+    exit 0
+  fi
+else
+  paths=("$@")
+fi
 
 declare -a unstaged_paths=()
 declare -a staged_paths=()

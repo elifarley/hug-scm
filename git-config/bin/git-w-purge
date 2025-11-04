@@ -7,7 +7,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat <<'EOF'
-Usage: hug w purge [OPTIONS] <path> [<path>...]
+Usage: hug w purge [OPTIONS] [<path>...]
 
 Remove untracked and/or ignored files for the given paths.
 
@@ -16,9 +16,10 @@ Options:
   -i, --ignored    Remove ignored files
       --dry-run    Show what would be removed without deleting anything
   -h, --help       Show this help
+  --               Trigger interactive file selection UI
 
 Notes:
-  • Requires at least one path argument.
+  • If no paths provided, interactive file selection UI will be shown.
   • Use `hug w purge-all` for repository-wide scope.
   • Paths that are tracked will produce an error.
 EOF
@@ -28,6 +29,7 @@ dry_run=false
 target_untracked=false
 target_ignored=false
 flags_explicit=false
+interactive_selection=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -50,6 +52,7 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     --)
+      interactive_selection=true
       shift
       break
       ;;
@@ -68,16 +71,37 @@ if ! $flags_explicit; then
   target_untracked=true
 fi
 
-if [[ $# -lt 1 ]]; then
-  error "this command requires at least one path (or use 'git w purge-all')"
-  show_help >&2
-  exit 2
-fi
-
 # Early exit if not in Git repo
 check_git_repo
 
-paths=("$@")
+# Handle interactive file selection if requested or no paths provided
+if [[ $# -lt 1 ]] || $interactive_selection; then
+  # Determine which file types to show based on flags
+  declare -a select_opts=("--multi")
+  
+  if $target_untracked; then
+    select_opts+=("--untracked")
+  fi
+  
+  if $target_ignored; then
+    select_opts+=("--ignored")
+  fi
+  
+  select_opts+=("--prompt" "Select files to purge...")
+  
+  paths=()
+  if ! mapfile -t paths < <(select_files_advanced "${select_opts[@]}"); then
+    info "No files selected or cancelled."
+    exit 0
+  fi
+  
+  if [[ ${#paths[@]} -eq 0 ]]; then
+    info "No files selected."
+    exit 0
+  fi
+else
+  paths=("$@")
+fi
 
 declare -a untracked_paths=()
 declare -a ignored_paths=()
