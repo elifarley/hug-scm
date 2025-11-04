@@ -595,6 +595,8 @@ teardown() {
 }
 
 @test "hug h back: requires confirmation when staged changes exist" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local original_head
   original_head=$(git rev-parse HEAD)
 
@@ -613,6 +615,8 @@ teardown() {
 
   run git ls-files --cached
   assert_output --partial "staged.txt"
+  
+  enable_gum_for_test
 }
 
 @test "hug h back: handles invalid target" {
@@ -690,6 +694,8 @@ teardown() {
 }
 
 @test "hug h undo: requires confirmation when staged changes exist" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local original_head
   original_head=$(git rev-parse HEAD)
 
@@ -707,9 +713,13 @@ teardown() {
 
   run git ls-files --cached
   assert_output --partial "staged.txt"
+  
+  enable_gum_for_test
 }
 
 @test "hug h undo: requires confirmation when unstaged changes exist" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local original_head
   original_head=$(git rev-parse HEAD)
 
@@ -726,6 +736,8 @@ teardown() {
 
   run git diff --name-only
   assert_output --partial "README.md"
+  
+  enable_gum_for_test
 }
 
 @test "hug h undo: merges staged and committed changes to unstaged" {
@@ -945,6 +957,8 @@ teardown() {
 }
 
 @test "hug h squash: requires confirmation when staged changes exist" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   echo "staged work" > staged.txt
   git add staged.txt
 
@@ -955,6 +969,8 @@ teardown() {
 
   run git ls-files --cached
   assert_output --partial "staged.txt"
+  
+  enable_gum_for_test
 }
 
 @test "hug h squash: handles squashing to commit hash" {

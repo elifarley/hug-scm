@@ -398,6 +398,40 @@ require_git_version() {
 }
 
 ################################################################################
+# Gum Test Helpers
+################################################################################
+
+# Disable gum for tests that need non-interactive behavior
+# This allows tests to use stdin for confirmation prompts
+disable_gum_for_test() {
+  # Save original PATH if not already saved
+  if [[ -z "${HUG_TEST_ORIGINAL_PATH:-}" ]]; then
+    export HUG_TEST_ORIGINAL_PATH="$PATH"
+  fi
+  # Remove gum from PATH by filtering out .hug-deps/bin
+  export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '\.hug-deps/bin' | tr '\n' ':' | sed 's/:$//')
+}
+
+# Re-enable gum after test
+enable_gum_for_test() {
+  if [[ -n "${HUG_TEST_ORIGINAL_PATH:-}" ]]; then
+    export PATH="$HUG_TEST_ORIGINAL_PATH"
+  fi
+}
+
+# Check if gum is available in test environment
+gum_available_in_test() {
+  command -v gum >/dev/null 2>&1
+}
+
+# Skip test if gum is not available
+require_gum() {
+  if ! gum_available_in_test; then
+    skip "gum not available in test environment"
+  fi
+}
+
+################################################################################
 # Mercurial Test Helpers
 ################################################################################
 

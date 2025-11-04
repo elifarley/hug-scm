@@ -509,6 +509,8 @@ HOOK
 }
 
 @test "hug cmv: requires confirmation without --force" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -530,6 +532,7 @@ HOOK
   
   popd >/dev/null
   rm -rf "$repo"
+  enable_gum_for_test
 }
 
 @test "hug cmv: skips confirmation with --force and stays on target (existing)" {
@@ -555,6 +558,8 @@ HOOK
 }
 
 @test "hug cmv: moves to existing branch and stays on it (with confirmation)" {
+  disable_gum_for_test  # Use stdin-based confirmation for this test
+  
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -584,6 +589,7 @@ HOOK
 
   popd >/dev/null
   rm -rf "$repo"
+  enable_gum_for_test
 }
 
 @test "hug cmv: handles upstream mode" {
