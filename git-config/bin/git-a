@@ -31,32 +31,33 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags
+# Parse common flags (handles -- detection automatically)
 eval "$(parse_common_flags "$@")"
 
 # Early exit if not in Git repo
 check_git_repo
 
-# Check if user wants interactive file selection
+# Check if user wants interactive file selection via --
+if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
+  # Get list of files with changes (tracked files)
+  files=()
+  if ! mapfile -t files < <(select_file --multi --filter-cmd "git ls-files --modified --others --exclude-standard" "Select files to stage (<TAB> to select, Enter to confirm)..."); then
+    info "No files selected or cancelled."
+    exit 0
+  fi
+  
+  if [ ${#files[@]} -eq 0 ]; then
+    info "No files selected."
+    exit 0
+  fi
+  
+  git add "${files[@]}"
+  exit 0
+fi
+
+# Check if no arguments - stage all tracked modified files
 if [ $# -eq 0 ]; then
   git add -u
 else
-  # If only argument is '--', trigger interactive selection
-  if [ $# -eq 1 ] && [ "$1" = "--" ]; then
-    # Get list of files with changes (tracked files)
-    files=()
-    if ! mapfile -t files < <(select_file --multi --filter-cmd "git ls-files --modified --others --exclude-standard" "Select files to stage (<TAB> to select, Enter to confirm)..."); then
-      info "No files selected or cancelled."
-      exit 0
-    fi
-    
-    if [ ${#files[@]} -eq 0 ]; then
-      info "No files selected."
-      exit 0
-    fi
-    
-    git add "${files[@]}"
-  else
-    git add "$@"
-  fi
+  git add "$@"
 fi
