@@ -411,20 +411,8 @@ enable_gum_for_test() {
   unset HUG_DISABLE_GUM
 }
 
-# Check if gum is available in test environment (respects HUG_DISABLE_GUM)
-gum_available_in_test() {
-  if [[ "${HUG_DISABLE_GUM:-}" == "true" ]]; then
-    return 1
-  fi
-  command -v gum >/dev/null 2>&1
-}
-
 # Skip test if gum is not available
-require_gum() {
-  if ! gum_available_in_test; then
-    skip "gum not available in test environment"
-  fi
-}
+require_gum() { gum_available || error "gum not available in test environment"; }
 
 ################################################################################
 # Mercurial Test Helpers

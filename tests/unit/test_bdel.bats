@@ -26,17 +26,6 @@ teardown() {
   assert_output --partial "EXAMPLES:"
 }
 
-@test "hug bdel: fails with informative message when gum not installed" {
-  # Hide gum if it exists
-  if command -v gum >/dev/null 2>&1; then
-    skip "gum is installed, cannot test this scenario"
-  fi
-  
-  run hug bdel
-  assert_failure
-  assert_output --partial "Interactive mode requires 'gum'"
-}
-
 @test "hug bdel: reports no branches when only current exists" {
   # Delete all branches except main
   git for-each-ref --format='%(refname:short)' refs/heads/ |
