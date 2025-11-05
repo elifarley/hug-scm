@@ -63,7 +63,7 @@ create_test_repo_with_subdirs() {
 setup() {
   require_hug
   TEST_REPO=$(create_test_repo_with_subdirs)
-  cd "$TEST_REPO"
+  cd "$TEST_REPO" || exit 1
 }
 
 teardown() {
