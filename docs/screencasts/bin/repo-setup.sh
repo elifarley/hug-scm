@@ -793,124 +793,83 @@ create_comprehensive_wip_scenarios() (
     hug checkout -b demo/wip-states 2>&1 | grep -v "hint:" || true
     
     # ============================================================================
-    # PHASE 1: Clean operations (require clean working directory)
+    # PHASE 1: Setup - commit base files that will be modified/deleted
     # ============================================================================
     
-    # State 9: Staged Deleted - Create and commit 2 files, then stage their deletion
+    # Create files that will be deleted (unstaged)
+    echo "// App file" > app.js
+    hug a app.js
+    
+    # Create files that will be staged for deletion
     echo "// File to be deleted from staging" > staged-deleted-1.js
     echo "// Another file to be deleted from staging" > staged-deleted-2.js
     hug a staged-deleted-1.js staged-deleted-2.js
+    
+    # Create files that will be renamed
+    mkdir -p src
+    echo "// Profile file for rename demo" > src/profile.js
+    echo "// Search file for rename demo" > src/search.js
+    hug a src/profile.js src/search.js
+    
+    # Create files for conflicts on this branch
+    echo "// Conflict 1 from demo/wip-states" > conflict-1.txt
+    echo "// Conflict 2 from demo/wip-states" > conflict-2.txt
+    hug a conflict-1.txt conflict-2.txt
+    
     commit_with_date 1 day "$AUTHOR_ONE_NAME" "$AUTHOR_ONE_EMAIL" \
-        c -m "feat: Add files for staged deletion demo"
-    
-    # Remove files and stage the deletion
-    rm staged-deleted-1.js staged-deleted-2.js
-    hug rm --cached staged-deleted-1.js staged-deleted-2.js || true
-    
-    # State 7: Unmerged/Conflicted - Create 2 add/add conflicts via temp branches
-    # Conflict 1
-    hug checkout -b temp/conflict-base-1 2>&1 | grep -v "hint:" || true
-    cat > conflict-1.txt << 'EOF'
-// Base version of conflict file 1
-console.log('base version');
-EOF
-    hug a conflict-1.txt
-    commit_with_date 1 day "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" \
-        c -m "feat: Add base for conflict-1"
-    
-    hug checkout -b temp/demo-clean 2>&1 | grep -v "hint:" || true
-    cat > conflict-1.txt << 'EOF'
-// Branch A version
-console.log('version from demo branch');
-EOF
-    hug a conflict-1.txt
-    commit_with_date 1 day "$AUTHOR_THREE_NAME" "$AUTHOR_THREE_EMAIL" \
-        c -m "feat: Demo branch version of conflict-1"
-    
-    hug checkout demo/wip-states 2>&1 | grep -v "hint:" || true
-    cat > conflict-1.txt << 'EOF'
-// Branch B version
-console.log('version from wip-states branch');
-EOF
-    hug a conflict-1.txt
-    commit_with_date 1 day "$AUTHOR_FOUR_NAME" "$AUTHOR_FOUR_EMAIL" \
-        c -m "feat: WIP-states branch version of conflict-1"
-    
-    # Attempt merge to create conflict
-    hug merge temp/demo-clean --no-commit 2>&1 | grep -v "hint:" || true
-    
-    # Manually create conflict markers
-    cat > conflict-1.txt << 'EOF'
-<<<<<<< HEAD
-// Branch B version
-console.log('version from wip-states branch');
-=======
-// Branch A version
-console.log('version from demo branch');
->>>>>>> temp/demo-clean
-EOF
-    
-    # Conflict 2
-    hug checkout temp/conflict-base-1 2>&1 | grep -v "hint:" || true
-    cat > conflict-2.txt << 'EOF'
-// Base version of conflict file 2
-function base() {}
-EOF
-    hug a conflict-2.txt
-    commit_with_date 1 day "$AUTHOR_ONE_NAME" "$AUTHOR_ONE_EMAIL" \
-        c -m "feat: Add base for conflict-2"
-    
-    hug checkout temp/demo-clean 2>&1 | grep -v "hint:" || true
-    cat > conflict-2.txt << 'EOF'
-// Demo branch version
-function fromDemoBranch() {}
-EOF
-    hug a conflict-2.txt
-    commit_with_date 1 day "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" \
-        c -m "feat: Demo branch version of conflict-2"
-    
-    hug checkout demo/wip-states 2>&1 | grep -v "hint:" || true
-    cat > conflict-2.txt << 'EOF'
-// WIP-states branch version
-function fromWipStatesBranch() {}
-EOF
-    hug a conflict-2.txt
-    commit_with_date 1 day "$AUTHOR_THREE_NAME" "$AUTHOR_THREE_EMAIL" \
-        c -m "feat: WIP-states branch version of conflict-2"
-    
-    # Attempt merge to create second conflict
-    hug merge temp/demo-clean --no-commit 2>&1 | grep -v "hint:" || true
-    
-    # Manually create conflict markers
-    cat > conflict-2.txt << 'EOF'
-<<<<<<< HEAD
-// WIP-states branch version
-function fromWipStatesBranch() {}
-=======
-// Demo branch version
-function fromDemoBranch() {}
->>>>>>> temp/demo-clean
-EOF
-    
-    # Clean up temp branches
-    hug branch -D temp/conflict-base-1 temp/demo-clean 2>&1 | grep -v "hint:" || true
+        c -m "feat: Add base files for WIP demo"
     
     # ============================================================================
-    # PHASE 2: Unclean operations (build dirty working directory at end)
+    # PHASE 2: Create conflicts via temp branch
+    # ============================================================================
+    
+    # Create temp branch with conflicting versions (branch off before modifying)
+    hug checkout -b temp/conflict-branch 2>&1 | grep -v "hint:" || true
+    echo "// Conflict 1 from temp branch - VERSION A" > conflict-1.txt
+    echo "// Conflict 2 from temp branch - VERSION A" > conflict-2.txt
+    hug a conflict-1.txt conflict-2.txt
+    commit_with_date 1 day "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" \
+        c -m "feat: Modify conflicts on temp branch"
+    
+    # Go back and create different versions to conflict
+    hug checkout demo/wip-states 2>&1 | grep -v "hint:" || true
+    echo "// Conflict 1 from demo/wip-states - VERSION B (DIFFERENT)" > conflict-1.txt
+    echo "// Conflict 2 from demo/wip-states - VERSION B (DIFFERENT)" > conflict-2.txt
+    hug a conflict-1.txt conflict-2.txt
+    commit_with_date 1 day "$AUTHOR_THREE_NAME" "$AUTHOR_THREE_EMAIL" \
+        c -m "feat: Modify conflicts on demo branch"
+    
+    # Merge to create real conflicts - don't use || true so we can see if it fails
+    # The --no-commit keeps it from auto-committing on success
+    # Set identity for merge operation
+    GIT_AUTHOR_NAME="$AUTHOR_THREE_NAME" \
+    GIT_AUTHOR_EMAIL="$AUTHOR_THREE_EMAIL" \
+    GIT_COMMITTER_NAME="$AUTHOR_THREE_NAME" \
+    GIT_COMMITTER_EMAIL="$AUTHOR_THREE_EMAIL" \
+    git merge temp/conflict-branch --no-commit 2>&1 | head -20 || true
+    
+    # At this point, files should be in conflict state (UU)
+    # Don't resolve or abort - leave them conflicted
+    
+    # Clean up temp branch
+    hug branch -D temp/conflict-branch 2>&1 | grep -v "hint:" || true
+    
+    # ============================================================================
+    # PHASE 3: Unclean operations (build dirty working directory)
     # ============================================================================
     
     # State 2: Untracked - Create new files without staging
     echo "// WIP: Untracked file 1" > untracked-1.js
     echo "// WIP: Untracked file 2" > untracked-2.js
     
-    # State 3: Ignored - Update .gitignore and create ignored files
+    # State 3: Ignored - Update .gitignore and create ignored files  
     echo "*.tmp" >> .gitignore
     echo "*.bak" >> .gitignore
     hug a .gitignore
     echo "// WIP: Ignored temporary file 1" > ignored-1.tmp
     echo "// WIP: Ignored backup file 2" > ignored-2.bak
     # Unstage .gitignore to show unstaged modification
-    hug reset .gitignore || true
+    git reset .gitignore 2>&1 | grep -v "hint:" || true
     
     # State 4: Unstaged Modified - Modify tracked files without staging
     ( test -f README.md && echo "" >> README.md && echo "// WIP: Unstaged modification" >> README.md ) || true
@@ -929,9 +888,12 @@ EOF
     ( test -f app.js && rm app.js ) || true
     ( test -f src/api.js && rm src/api.js ) || true
     
-    # State 10: Unstaged Renamed - Move tracked files (Git detects as rename)
-    ( test -f src/profile.js && mv src/profile.js renamed-profile.js ) || ( echo "// Dummy profile" > src/profile.js && hug a src/profile.js && commit_with_date 1 day "$AUTHOR_ONE_NAME" "$AUTHOR_ONE_EMAIL" c -m "Add dummy profile" && mv src/profile.js renamed-profile.js )
-    ( test -f src/search.js && mv src/search.js renamed-search.js ) || ( echo "// Dummy search" > src/search.js && hug a src/search.js && commit_with_date 1 day "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" c -m "Add dummy search" && mv src/search.js renamed-search.js )
+    # State 9: Staged Deleted - Stage deletion of files
+    hug rm staged-deleted-1.js staged-deleted-2.js 2>&1 | grep -v "hint:" || true
+    
+    # State 10: Staged Renamed - Move and stage files (creates rename detection)
+    git mv src/profile.js renamed-profile.js 2>&1 | grep -v "hint:" || true
+    git mv src/search.js renamed-search.js 2>&1 | grep -v "hint:" || true
     
     echo "✅ WIP demo complete: 'demo/wip-states' branch has all Git file states!"
 )
@@ -977,7 +939,7 @@ show_repo_state() (
     echo "  7. Unmerged/Conflicted: conflict-1.txt, conflict-2.txt (UU state)"
     echo "  8. Unstaged Deleted: app.js, src/api.js"
     echo "  9. Staged Deleted: staged-deleted-1.js, staged-deleted-2.js"
-    echo "  10. Unstaged Renamed: src/profile.js → renamed-profile.js, src/search.js → renamed-search.js"
+    echo "  10. Staged Renamed: src/profile.js → renamed-profile.js, src/search.js → renamed-search.js"
     echo "========================================================"
     echo ""
     echo "Demo repository created at: $DEMO_REPO_BASE"
