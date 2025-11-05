@@ -9,20 +9,25 @@ hug fblame: Show who changed what line in a file (with whitespace/copy detection
 
 USAGE:
     hug fblame [<file>] [-h, --help]
+    hug fblame --browse-root
 
 ARGUMENTS:
-    <file>     File to blame (optional - prompts for selection if omitted)
+    <file>          File to blame (optional - prompts for selection if omitted)
 
 OPTIONS:
-    -h, --help Show this help
+    --browse-root   Browse full repository scope in file selector UI (default: current directory)
+    -h, --help      Show this help
 
 DESCRIPTION:
     Shows line-by-line authorship of a file with enhanced detection:
     - Ignores whitespace changes (-w)
     - Detects code moved/copied within and across files (-C -C -C)
+    By default, interactive selection is scoped to the current directory and
+    subdirectories. Use --browse-root to browse the entire repository.
 
 EXAMPLES:
-    hug fblame                  # Interactive file selection
+    hug fblame                  # Interactive file selection (current directory)
+    hug fblame --browse-root    # Interactive file selection (full repository)
     hug fblame src/app.js       # Blame specific file
 
 SEE ALSO:
@@ -31,6 +36,18 @@ SEE ALSO:
     hug fa       : Count commits per author for a file
 EOF
 }
+
+# Parse --browse-root flag before common flags
+browse_root=false
+new_args=()
+for arg in "$@"; do
+  if [[ "$arg" == "--browse-root" ]]; then
+    browse_root=true
+  else
+    new_args+=("$arg")
+  fi
+done
+set -- "${new_args[@]}"
 
 # Parse common flags
 eval "$(parse_common_flags "$@")"
@@ -41,8 +58,17 @@ check_git_repo
 if [ $# -eq 0 ]; then
   # Only show interactive selection if gum is available
   if gum_available; then
+    declare -a select_opts=("--single")
+    
+    # Default to --cwd (current directory scope) unless --browse-root is specified
+    if ! $browse_root; then
+      select_opts+=("--cwd")
+    fi
+    
+    select_opts+=("--prompt" "Select file to blame...")
+    
     file=""
-    if ! file=$(select_files_with_status --single --prompt "Select file to blame..."); then
+    if ! file=$(select_files_with_status "${select_opts[@]}"); then
       info "No file selected or cancelled."
       exit 0
     fi

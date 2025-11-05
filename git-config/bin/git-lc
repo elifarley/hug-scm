@@ -8,7 +8,7 @@ show_help() {
 hug lc: Search commits by CODE CHANGES in diff.
 
 USAGE:
-    hug lc <search-term> [-i] [-p] [--all] [-- [<file>]] [-h, --help]
+    hug lc <search-term> [-i] [-p] [--all] [-- [<file>]] [--browse-root] [-h, --help]
 
 ARGUMENTS:
     <search-term>  Text to search for in code changes (required)
@@ -18,21 +18,25 @@ OPTIONS:
     -i             Ignore case when searching
     -p             Show patches
     --all          Consider ALL branches (not just current)
+    --browse-root  Browse full repository scope in file selector UI (default: current directory)
     -- <file>      Restrict search to specific file
-    -- (last arg)  Restrict search with interactive file selection
+    -- (last arg)  Restrict search with interactive file selection (current directory scope)
     -h, --help     Show this help
 
 DESCRIPTION:
     Searches for commits where the specified text was added or removed in the
     diff. This is useful for finding when a particular function, variable, or
     code pattern was introduced or changed.
+    By default, interactive selection is scoped to the current directory and
+    subdirectories. Use --browse-root to browse the entire repository.
 
 EXAMPLES:
     hug lc "getUserById"            # Find commits changing this function
     hug lc "getUserById" -i         # Case-insensitive search
     hug lc "config.api" -p          # Show patches
     hug lc "import" -- src/main.js  # Search in specific file
-    hug lc "import" --              # Search with interactive file selection
+    hug lc "import" --              # Search with interactive file selection (current directory)
+    hug lc "import" --browse-root   # Search with interactive file selection (full repository)
 
 SEE ALSO:
     hug lf       : Search commits by message
@@ -40,6 +44,18 @@ SEE ALSO:
     hug llf      : Log commits for file
 EOF
 }
+
+# Parse --browse-root flag before common flags
+browse_root=false
+new_args=()
+for arg in "$@"; do
+  if [[ "$arg" == "--browse-root" ]]; then
+    browse_root=true
+  else
+    new_args+=("$arg")
+  fi
+done
+set -- "${new_args[@]}"
 
 # Parse common flags (handles -- detection automatically)
 eval "$(parse_common_flags "$@")"
@@ -59,8 +75,17 @@ shift
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   # Show interactive file selection
   if gum_available; then
+    declare -a select_opts=("--single")
+    
+    # Default to --cwd (current directory scope) unless --browse-root is specified
+    if ! $browse_root; then
+      select_opts+=("--cwd")
+    fi
+    
+    select_opts+=("--prompt" "Select file to restrict search...")
+    
     file=""
-    if file=$(select_files_with_status --single --prompt "Select file to restrict search..."); then
+    if file=$(select_files_with_status "${select_opts[@]}"); then
       exec hug ll -S "$search_term" "$@" -- "$file"
     else
       info "Cancelled."

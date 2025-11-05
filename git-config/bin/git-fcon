@@ -9,19 +9,24 @@ hug fcon: List all contributors to a file.
 
 USAGE:
     hug fcon [<file>] [-h, --help]
+    hug fcon --browse-root
 
 ARGUMENTS:
-    <file>     File to analyze (optional - prompts for selection if omitted)
+    <file>          File to analyze (optional - prompts for selection if omitted)
 
 OPTIONS:
-    -h, --help Show this help
+    --browse-root   Browse full repository scope in file selector UI (default: current directory)
+    -h, --help      Show this help
 
 DESCRIPTION:
     Lists all unique contributors (name and email) who have committed changes
     to a file, following renames through history.
+    By default, interactive selection is scoped to the current directory and
+    subdirectories. Use --browse-root to browse the entire repository.
 
 EXAMPLES:
-    hug fcon                    # Interactive file selection
+    hug fcon                    # Interactive file selection (current directory)
+    hug fcon --browse-root      # Interactive file selection (full repository)
     hug fcon src/app.js         # List contributors to specific file
 
 SEE ALSO:
@@ -30,6 +35,18 @@ SEE ALSO:
     hug fa       : Count commits per author for a file
 EOF
 }
+
+# Parse --browse-root flag before common flags
+browse_root=false
+new_args=()
+for arg in "$@"; do
+  if [[ "$arg" == "--browse-root" ]]; then
+    browse_root=true
+  else
+    new_args+=("$arg")
+  fi
+done
+set -- "${new_args[@]}"
 
 # Parse common flags
 eval "$(parse_common_flags "$@")"
@@ -40,8 +57,17 @@ check_git_repo
 if [ $# -eq 0 ]; then
   # Only show interactive selection if gum is available
   if gum_available; then
+    declare -a select_opts=("--single")
+    
+    # Default to --cwd (current directory scope) unless --browse-root is specified
+    if ! $browse_root; then
+      select_opts+=("--cwd")
+    fi
+    
+    select_opts+=("--prompt" "Select file to list contributors...")
+    
     file=""
-    if ! file=$(select_files_with_status --single --prompt "Select file to list contributors..."); then
+    if ! file=$(select_files_with_status "${select_opts[@]}"); then
       info "No file selected or cancelled."
       exit 0
     fi
