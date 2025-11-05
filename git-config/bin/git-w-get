@@ -11,9 +11,11 @@ w-get: Get file contents from specific commit (without staging)
 USAGE:
     hug w get [-f/--force] <target> [file1] [file2] ...
     hug w get [-f/--force] <target> --
+    hug w get [-f/--force] <target> --browse-root
 
 OPTIONS:
     -f, --force     Force overwrite, ignoring any uncommitted changes and running non-interactively.
+    --browse-root   Browse full repository scope in file selector UI (default: current directory)
     <target>        Either an integer 0 <= N < 100, a COMMIT hash, or -u / --upstream
         N               Specifies how many commits to go back from a file's last change.
                         N=0 resets to the file's state in HEAD.
@@ -23,16 +25,19 @@ OPTIONS:
         -u, --upstream  Use the head of the upstream branch as the target commit.
     [file...]       Specific files to reset (optional)
                     If omitted, ALL files will be reset.
-    --              Trigger interactive file selection UI
+    --              Trigger interactive file selection UI (current directory scope)
 
 DESCRIPTION:
     Reset files to their state in a specific commit without staging changes.
     If a file is specified and N is the target commit, only commits that affect that file are counted.
     This is a destructive operation that overwrites working directory files.
+    By default, interactive selection is scoped to the current directory and
+    subdirectories. Use --browse-root to browse the entire repository.
 
 EXAMPLES:
     hug w get a1b2c3              Reset ALL files to commit a1b2c3
-    hug w get a1b2c3 --           Interactive file selection for commit a1b2c3
+    hug w get a1b2c3 --           Interactive file selection (current directory)
+    hug w get a1b2c3 --browse-root  Interactive file selection (full repository)
     hug w get --upstream          Reset ALL files to the upstream branch state
     hug w get -u file.js          Reset specific file to upstream branch state
     hug w get HEAD~5 file.js      Reset specific file to 5 branch commits ago
@@ -228,6 +233,7 @@ main() {
     local integer_N=0
     local commit=""
     local force=false
+    local browse_root=false
     local target_identifier=""
 
     # 1. Parse arguments: process flags first
@@ -239,6 +245,14 @@ main() {
                 ;;
             -f|--force)
                 force=true
+                shift
+                ;;
+            --browse-root)
+                browse_root=true
+                shift
+                ;;
+            --)
+                # Marker for parse_common_flags to enable interactive file selection
                 shift
                 ;;
             *)
@@ -297,8 +311,17 @@ main() {
     # 7. Check if user wants interactive file selection via --
     if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
         # Interactive file selection
+        declare -a select_opts=("--multi" "--staged" "--unstaged" "--untracked")
+        
+        # Default to --cwd (current directory scope) unless --browse-root is specified
+        if ! $browse_root; then
+            select_opts+=("--cwd")
+        fi
+        
+        select_opts+=("--prompt" "Select files to reset...")
+        
         selected_files=()
-        if ! mapfile -t selected_files < <(select_files_with_status --multi --staged --unstaged --untracked --prompt "Select files to reset..."); then
+        if ! mapfile -t selected_files < <(select_files_with_status "${select_opts[@]}"); then
             info "No files selected or cancelled."
             exit 0
         fi

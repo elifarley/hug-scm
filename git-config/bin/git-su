@@ -12,23 +12,28 @@ hug su: Show status with patch of unstaged changes.
 USAGE:
     hug su [<file>] [-h, --help]
     hug su --
+    hug su --browse-root
 
 ARGUMENTS:
     <file>         Show unstaged changes for specific file (optional)
-    --             Interactive file selection from unstaged files
+    --             Interactive file selection from unstaged files (current directory scope)
 
 OPTIONS:
+    --browse-root  Browse full repository scope in file selector UI (default: current directory)
     -h, --help     Show this help
 
 DESCRIPTION:
     Shows the diff of unstaged changes (modifications not yet staged). When
     no file is specified, shows all unstaged changes. Use '--' to
-    interactively select a file from unstaged files.
+    interactively select a file from unstaged files. By default, interactive
+    selection is scoped to the current directory and subdirectories. Use
+    --browse-root to browse the entire repository.
 
 EXAMPLES:
-    hug su                 # Show all unstaged changes
-    hug su file.txt        # Show unstaged changes for specific file
-    hug su --              # Interactive file selection
+    hug su                  # Show all unstaged changes
+    hug su file.txt         # Show unstaged changes for specific file
+    hug su --               # Interactive file selection (current directory)
+    hug su --browse-root    # Interactive file selection (full repository)
 
 SEE ALSO:
     hug ss       : Show staged changes
@@ -37,6 +42,18 @@ SEE ALSO:
 EOF
 }
 
+# Parse --browse-root flag before common flags
+browse_root=false
+new_args=()
+for arg in "$@"; do
+  if [[ "$arg" == "--browse-root" ]]; then
+    browse_root=true
+  else
+    new_args+=("$arg")
+  fi
+done
+set -- "${new_args[@]}"
+
 # Parse common flags (handles -- detection automatically)
 eval "$(parse_common_flags "$@")"
 
@@ -44,7 +61,16 @@ check_git_repo
 
 # Handle interactive file selection if requested
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
-  mapfile -t files < <(select_files_with_status --unstaged --prompt "Select file(s) to view unstaged changes..." || true)
+  declare -a select_opts=("--unstaged")
+  
+  # Default to --cwd (current directory scope) unless --browse-root is specified
+  if ! $browse_root; then
+    select_opts+=("--cwd")
+  fi
+  
+  select_opts+=("--prompt" "Select file(s) to view unstaged changes...")
+  
+  mapfile -t files < <(select_files_with_status "${select_opts[@]}" || true)
   if [[ ${#files[@]} -eq 0 ]]; then
     info "No unstaged files available or cancelled."
     exit 0

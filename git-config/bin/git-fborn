@@ -9,20 +9,25 @@ hug fborn: Show when file was added (birth commit).
 
 USAGE:
     hug fborn [<file>] [-h, --help]
+    hug fborn --browse-root
 
 ARGUMENTS:
-    <file>     File to analyze (optional - prompts for selection if omitted)
+    <file>          File to analyze (optional - prompts for selection if omitted)
 
 OPTIONS:
-    -h, --help Show this help
+    --browse-root   Browse full repository scope in file selector UI (default: current directory)
+    -h, --help      Show this help
 
 DESCRIPTION:
     Shows the commit where a file was first added to the repository.
     Follows renames through history with 40% similarity threshold.
     Displays commit details with full body.
+    By default, interactive selection is scoped to the current directory and
+    subdirectories. Use --browse-root to browse the entire repository.
 
 EXAMPLES:
-    hug fborn                   # Interactive file selection
+    hug fborn                   # Interactive file selection (current directory)
+    hug fborn --browse-root     # Interactive file selection (full repository)
     hug fborn src/app.js        # Show when specific file was added
 
 SEE ALSO:
@@ -30,6 +35,18 @@ SEE ALSO:
     hug llf      : Log commits for file
 EOF
 }
+
+# Parse --browse-root flag before common flags
+browse_root=false
+new_args=()
+for arg in "$@"; do
+  if [[ "$arg" == "--browse-root" ]]; then
+    browse_root=true
+  else
+    new_args+=("$arg")
+  fi
+done
+set -- "${new_args[@]}"
 
 # Parse common flags
 eval "$(parse_common_flags "$@")"
@@ -40,8 +57,17 @@ check_git_repo
 if [ $# -eq 0 ]; then
   # Only show interactive selection if gum is available
   if gum_available; then
+    declare -a select_opts=("--single")
+    
+    # Default to --cwd (current directory scope) unless --browse-root is specified
+    if ! $browse_root; then
+      select_opts+=("--cwd")
+    fi
+    
+    select_opts+=("--prompt" "Select file to show birth commit...")
+    
     file=""
-    if ! file=$(select_files_with_status --single  --prompt "Select file to show birth commit..."); then
+    if ! file=$(select_files_with_status "${select_opts[@]}"); then
       info "No file selected or cancelled."
       exit 0
     fi
