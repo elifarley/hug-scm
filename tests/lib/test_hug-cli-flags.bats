@@ -190,34 +190,40 @@ teardown() {
 
 @test "hug-cli-flags: parse_common_flags sets browse_root=true for --browse-root" {
   # Act
-  eval "$(parse_common_flags --browse-root arg1 arg2)"
+  eval "$(parse_common_flags --browse-root)"
   
   # Assert
   assert_equal "$browse_root" "true"
-  assert_equal "$1" "arg1"
-  assert_equal "$2" "arg2"
+  assert_equal "${HUG_INTERACTIVE_FILE_SELECTION:-}" "true"
+  assert_equal "$#" "0"
 }
 
 @test "hug-cli-flags: parse_common_flags handles --browse-root with other flags" {
   # Act
-  eval "$(parse_common_flags --dry-run --browse-root -f arg1)"
+  eval "$(parse_common_flags --dry-run --browse-root -f)"
   
   # Assert
   assert_equal "$dry_run" "true"
   assert_equal "$browse_root" "true"
   assert_equal "$force" "true"
-  assert_equal "$1" "arg1"
+  assert_equal "${HUG_INTERACTIVE_FILE_SELECTION:-}" "true"
+  assert_equal "$#" "0"
 }
 
-@test "hug-cli-flags: parse_common_flags handles --browse-root with -- at end" {
-  # Act
-  eval "$(parse_common_flags --browse-root arg1 --)"
+@test "hug-cli-flags: parse_common_flags errors when --browse-root used with args even with --" {
+  # Act - Using a subshell to capture the error
+  run bash -c "
+    cd '$BATS_TEST_DIRNAME/../..'
+    source 'git-config/lib/hug-terminal'
+    source 'git-config/lib/hug-gum'
+    source 'git-config/lib/hug-output'
+    source 'git-config/lib/hug-cli-flags'
+    eval \"\$(parse_common_flags --browse-root arg1 --)\"
+  "
   
   # Assert
-  assert_equal "$browse_root" "true"
-  assert_equal "${HUG_INTERACTIVE_FILE_SELECTION:-}" "true"
-  assert_equal "$1" "arg1"
-  assert_equal "$#" "1"
+  assert_failure
+  assert_output --partial "cannot be used with explicit paths"
 }
 
 @test "hug-cli-flags: parse_common_flags handles --browse-root alone" {
@@ -228,4 +234,20 @@ teardown() {
   assert_equal "$browse_root" "true"
   assert_equal "$#" "0"
   assert_equal "${HUG_INTERACTIVE_FILE_SELECTION:-}" "true"
+}
+
+@test "hug-cli-flags: parse_common_flags errors when --browse-root used with paths" {
+  # Act - Using a subshell to capture the error
+  run bash -c "
+    cd '$BATS_TEST_DIRNAME/../..'
+    source 'git-config/lib/hug-terminal'
+    source 'git-config/lib/hug-gum'
+    source 'git-config/lib/hug-output'
+    source 'git-config/lib/hug-cli-flags'
+    eval \"\$(parse_common_flags --browse-root file.txt)\"
+  "
+  
+  # Assert
+  assert_failure
+  assert_output --partial "cannot be used with explicit paths"
 }

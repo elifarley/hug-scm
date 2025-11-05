@@ -301,8 +301,8 @@ teardown() {
 ################################################################################
 
 @test "hug sw --browse-root: triggers interactive mode when gum is available" {
-  # Skip if gum is not available
-  if ! command -v gum >/dev/null 2>&1; then
+  # Mock gum_available to ensure test can run
+  if ! gum_available; then
     skip "gum not available"
   fi
   
@@ -316,7 +316,7 @@ teardown() {
 }
 
 @test "hug ss --browse-root: triggers interactive mode" {
-  if ! command -v gum >/dev/null 2>&1; then
+  if ! gum_available; then
     skip "gum not available"
   fi
   
@@ -327,7 +327,7 @@ teardown() {
 }
 
 @test "hug su --browse-root: triggers interactive mode" {
-  if ! command -v gum >/dev/null 2>&1; then
+  if ! gum_available; then
     skip "gum not available"
   fi
   
@@ -338,7 +338,7 @@ teardown() {
 }
 
 @test "hug a --browse-root: triggers interactive mode" {
-  if ! command -v gum >/dev/null 2>&1; then
+  if ! gum_available; then
     skip "gum not available"
   fi
   
@@ -347,4 +347,16 @@ teardown() {
   # Should have attempted interactive selection
   # Won't stage anything but shouldn't error about missing args
   [[ "$status" -ne 0 ]] || true  # timeout or interactive cancel is ok
+}
+
+@test "hug sw --browse-root with path: errors and aborts" {
+  run hug sw --browse-root file.txt
+  assert_failure
+  assert_output --partial "cannot be used with explicit paths"
+}
+
+@test "hug ss --browse-root with path: errors and aborts" {
+  run hug ss --browse-root file.txt
+  assert_failure
+  assert_output --partial "cannot be used with explicit paths"
 }
