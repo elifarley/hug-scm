@@ -128,7 +128,7 @@ teardown() {
     source 'git-config/lib/hug-strings'
     source 'git-config/lib/hug-confirm'
     echo 'y' | prompt_confirm 'Continue? [y/N]: '
-  " 2>&1
+  "
   
   # Assert
   assert_success
