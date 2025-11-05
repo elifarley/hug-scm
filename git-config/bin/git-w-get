@@ -252,7 +252,7 @@ main() {
                 shift
                 ;;
             --)
-                # Handled by parse_common_flags environment variable
+                # Marker for parse_common_flags to enable interactive file selection
                 shift
                 ;;
             *)
