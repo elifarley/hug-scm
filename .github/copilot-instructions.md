@@ -6,32 +6,19 @@ Hug is a CLI tool that provides a humane, intuitive interface for Git and other 
 
 **Key Facts:**
 - Written in Bash scripts (/git-config/bin/*) and git aliases (/git-config/.git-config)
-- Acts as a wrapper/interface layer over Git
+- Acts as a wrapper/interface layer over Git and Mercurial
 - Currently only supports Git and Mercurial (future: Sapling)
 - Documentation site built with VitePress
 
 ## Prerequisites
 
-Before working on this project, ensure you have:
+Your environment was already pre-configured with all required tools, so you don't need to install them again.
 
-**Required:**
-- Bash 4.0 or higher
-- Git 2.0 or higher
-- Make (for running build commands)
+Some dependencies, like Gum and VHS, are installed in `$HOME/.hug-deps`.
 
-**For Testing:**
-- BATS (Bash Automated Testing System) - automatically installed via `make test-deps-install`
-- Helper libraries (bats-support, bats-assert, bats-file) - automatically installed
+Everything is already available in your `$PATH` (no need to provide full command path).
 
-**For Documentation:**
-- Node.js 16+ and npm (for VitePress documentation)
-- VHS (for creating images used in /docs/*)
-
-**Setup:**
-1. Install Hug: `make install`
-2. Install test dependencies: `make test-deps-install`
-3. Install documentation dependencies: `make vhs-deps-install`
-4. Activate in current shell: `source bin/activate`
+However, you don't really need to call some of the tools directly (vhs, bats, etc) since we have excellent, high-level Makefile targets you should prefer to use instead (check them out).
 
 ## Repository Structure
 
@@ -53,6 +40,7 @@ hug-scm/
 │   ├── test_helper.bash     # Shared test utilities
 │   ├── unit/                # Unit tests for individual commands
 │   └── integration/         # Workflow/integration tests
+│   └── lib/                 # Tests for library files found in git-config/lib/*
 └── *.md                     # Root documentation
 ```
 
@@ -65,7 +53,7 @@ hug-scm/
 3. **Naming Conventions**:
    - Scripts in `git-config/bin/` follow pattern: `git-<command>` or `git-<prefix>-<command>`
    - Use lowercase with hyphens (e.g., `git-w-discard-all`)
-   - Main entry point is `hug` script
+   - Main entry point is `hug` script, which calls the needed scripts in `git-config/bin/` or aliases from `git-config/.giconfig`
 4. **Command Prefix Convention**:
    - `h*` = HEAD operations (e.g., h back, h undo, h rewind)
    - `w*` = Working directory (e.g., w discard, w wipe, w zap)
@@ -77,11 +65,13 @@ hug-scm/
    - `c*` = Commits (e.g., c, ca, caa)
 5. **Comments**: Add comments for complex logic, but prefer self-documenting code
 6. **Error Handling**: Check command results and provide helpful error messages
+7. Leverage charmbracelet Gum when possible for a nicer text UI
+8. **Gum Availability**: In scripts and tests, always use the `gum_available` helper function to check if `gum` is installed, instead of calling `command -v gum`.
 
 ### Git Integration
 
-- All scripts ultimately call Git commands
-- The `hug` main script delegates to `git` with appropriate subcommands
+- All scripts ultimately call Git or Mercurial commands
+- The `hug` main script delegates to `git` or `hg` with appropriate subcommands
 - Custom git commands are sourced through Git's extension mechanism
 - Use `git --no-pager` to prevent pager issues in scripts
 
@@ -105,12 +95,11 @@ Hug follows a "progressive destructiveness" approach:
 
 ### Framework: BATS (Bash Automated Testing System)
 
-Before running tests, you must install Hug via `make install; make test-deps-install`.
-
 **Test Structure:**
 - `tests/test_helper.bash` - Common setup, utilities, and helpers
 - `tests/unit/` - Unit tests for individual commands
 - `tests/integration/` - End-to-end workflow tests
+- `tests/lib/` - Unit tests for library files (those in `git-config/lib/*`)
 **Helper Libraries:**
 - bats-support - Enhanced BATS support functions
 - bats-assert - Assertion helpers (assert_success, assert_output, etc.)
@@ -118,25 +107,24 @@ Before running tests, you must install Hug via `make install; make test-deps-ins
 
 **Dependency Management:**
 The project uses a self-contained test dependency system:
-- Run `make test-deps-install` to install/update BATS and helpers.
+- Users can run `make test-deps-install` to install/update BATS and helpers.
 - By default, dependencies are installed in `$HOME/.hug-deps`.
 - The installation directory for test dependencies can be overridden by setting the `DEPS_DIR` environment variable.
 - The installation directory for the `vhs` dependency can be overridden by setting the `VHS_DEPS_DIR` environment variable.
 
 **Running Tests:**
 ```bash
-make test-deps-install         # Install BATS and helpers first
 make test                      # Run all tests (recommended)
-make test-unit                 # Run unit tests only
+make test-lib                  # Run unit tests for library files only
+make test-unit                 # Run unit tests for Hug commands only
 make test-integration          # Run integration tests only
-make test-check                # Check prerequisites
 ```
 
 **Writing Tests:**
 1. Use descriptive test names: `@test "hug a - stages tracked changes only"`
 2. Use `setup()` and `teardown()` functions from test_helper.bash
 3. Create isolated test repos with `setup_test_repo()`
-4. Use BATS assertions: `assert_success`, `assert_output`, `assert_line`
+4. Use BATS assertions instead of braces: `assert_success`, `assert_output`, `assert_line`
 5. Test both success and error cases
 6. Include tests for safety features (confirmations, dry-run)
 
@@ -163,9 +151,9 @@ make test-check                # Check prerequisites
 
 ### Building Docs
 ```bash
-npm run docs:dev      # Development server
-npm run docs:build    # Production build
-npm run docs:preview  # Preview production build
+make docs-dev      # Development server
+make docs-build    # Production build
+make docs-preview  # Preview production build
 ```
 
 ## Development Workflow
@@ -222,8 +210,7 @@ npm run docs:preview  # Preview production build
 **Add a bash script:**
 - Place in appropriate location (git-config/bin/ or git-config/lib/)
 - Follow naming conventions
-- Make executable (chmod +x)
-- Source library files if needed: `. "$(git --exec-path)/hug-common"`
+- Make executable (chmod +x) if it's not a library file
 
 **Add or modify tests:**
 - Use existing tests as templates
@@ -235,7 +222,7 @@ npm run docs:preview  # Preview production build
 - Edit markdown files in docs/
 - Use VitePress markdown extensions where helpful
 - Keep examples practical and realistic
-- Test docs locally: `npm run docs:dev`
+- Test if docs still build successfully: `make docs-build`
 
 ## Important Notes
 
@@ -246,6 +233,7 @@ npm run docs:preview  # Preview production build
 3. **Exit codes**: 0 = success, non-zero = error
 4. **Command substitution**: Use `$()` instead of backticks: `result=$(command)`
 5. **Arrays**: Use proper array syntax: `arr=("item1" "item2")`, access with `"${arr[@]}"`
+6. **Gum Check**: Use the `gum_available` function instead of `command -v gum` to check for its availability.
 
 ### Git Integration Patterns
 
@@ -309,8 +297,6 @@ Tests create isolated Git repositories in temp directories:
 
 ### General Development
 
-1. **Not activating Hug**: Run `source bin/activate` after installation
-2. **Skipping `make install`**: Required before running tests
 3. **Forgetting git --no-pager**: Use in scripts to avoid pager issues
 4. **Unquoted variables**: Always quote bash variables: `"$var"` not `$var`
 
