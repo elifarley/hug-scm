@@ -492,7 +492,15 @@ add_development_activity() (
         c -m "chore: Add TypeScript configuration"
     
     # Update dependencies
-    echo '{"dependencies": {"express": "^4.18.0"}}' >> package.json
+    cat > package.json << 'EOF'
+{
+  "name": "demo-app",
+  "version": "1.0.0",
+  "dependencies": {
+    "express": "^4.18.0"
+  }
+}
+EOF
     hug a package.json
     commit_with_date 3 weeks "$AUTHOR_ONE_NAME" "$AUTHOR_ONE_EMAIL" \
         c -m "chore: Update dependencies"
@@ -776,23 +784,156 @@ add_tags() (
     # This creates variety for demonstrating local vs remote tags
 )
 
-# Add some work-in-progress scenarios.
-add_wip_scenarios() (
-    echo "12. Adding work-in-progress scenarios..."
+# Create comprehensive WIP scenarios demonstrating all major Git file states.
+create_comprehensive_wip_scenarios() (
+    echo "12. Creating comprehensive WIP scenarios with all Git file states..."
     
-    # Create a branch with uncommitted changes
-    hug checkout -b feature/notifications 2>&1 | grep -v "hint:" || true
-    echo "// Notification system - WIP" > src/notifications.js
-    hug add src/notifications.js
-    # Leave it staged but not committed
-    
-    # Create another branch with unstaged changes
-    hug checkout -b bugfix/performance-issue 2>&1 | grep -v "hint:" || true
-    echo "// Performance optimization - WIP" > src/performance.js
-    # Leave it unstaged
-    
-    # Return to main
+    # Switch to main and create new demo branch
     hug checkout main 2>&1 | grep -v "hint:" || true
+    hug checkout -b demo/wip-states 2>&1 | grep -v "hint:" || true
+    
+    # ============================================================================
+    # PHASE 1: Clean operations (require clean working directory)
+    # ============================================================================
+    
+    # State 9: Staged Deleted - Create and commit 2 files, then stage their deletion
+    echo "// File to be deleted from staging" > staged-deleted-1.js
+    echo "// Another file to be deleted from staging" > staged-deleted-2.js
+    hug a staged-deleted-1.js staged-deleted-2.js
+    commit_with_date 1 day "$AUTHOR_ONE_NAME" "$AUTHOR_ONE_EMAIL" \
+        c -m "feat: Add files for staged deletion demo"
+    
+    # Remove files and stage the deletion
+    rm staged-deleted-1.js staged-deleted-2.js
+    hug rm --cached staged-deleted-1.js staged-deleted-2.js || true
+    
+    # State 7: Unmerged/Conflicted - Create 2 add/add conflicts via temp branches
+    # Conflict 1
+    hug checkout -b temp/conflict-base-1 2>&1 | grep -v "hint:" || true
+    cat > conflict-1.txt << 'EOF'
+// Base version of conflict file 1
+console.log('base version');
+EOF
+    hug a conflict-1.txt
+    commit_with_date 1 day "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" \
+        c -m "feat: Add base for conflict-1"
+    
+    hug checkout -b temp/demo-clean 2>&1 | grep -v "hint:" || true
+    cat > conflict-1.txt << 'EOF'
+// Branch A version
+console.log('version from demo branch');
+EOF
+    hug a conflict-1.txt
+    commit_with_date 1 day "$AUTHOR_THREE_NAME" "$AUTHOR_THREE_EMAIL" \
+        c -m "feat: Demo branch version of conflict-1"
+    
+    hug checkout demo/wip-states 2>&1 | grep -v "hint:" || true
+    cat > conflict-1.txt << 'EOF'
+// Branch B version
+console.log('version from wip-states branch');
+EOF
+    hug a conflict-1.txt
+    commit_with_date 1 day "$AUTHOR_FOUR_NAME" "$AUTHOR_FOUR_EMAIL" \
+        c -m "feat: WIP-states branch version of conflict-1"
+    
+    # Attempt merge to create conflict
+    hug merge temp/demo-clean --no-commit 2>&1 | grep -v "hint:" || true
+    
+    # Manually create conflict markers
+    cat > conflict-1.txt << 'EOF'
+<<<<<<< HEAD
+// Branch B version
+console.log('version from wip-states branch');
+=======
+// Branch A version
+console.log('version from demo branch');
+>>>>>>> temp/demo-clean
+EOF
+    
+    # Conflict 2
+    hug checkout temp/conflict-base-1 2>&1 | grep -v "hint:" || true
+    cat > conflict-2.txt << 'EOF'
+// Base version of conflict file 2
+function base() {}
+EOF
+    hug a conflict-2.txt
+    commit_with_date 1 day "$AUTHOR_ONE_NAME" "$AUTHOR_ONE_EMAIL" \
+        c -m "feat: Add base for conflict-2"
+    
+    hug checkout temp/demo-clean 2>&1 | grep -v "hint:" || true
+    cat > conflict-2.txt << 'EOF'
+// Demo branch version
+function fromDemoBranch() {}
+EOF
+    hug a conflict-2.txt
+    commit_with_date 1 day "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" \
+        c -m "feat: Demo branch version of conflict-2"
+    
+    hug checkout demo/wip-states 2>&1 | grep -v "hint:" || true
+    cat > conflict-2.txt << 'EOF'
+// WIP-states branch version
+function fromWipStatesBranch() {}
+EOF
+    hug a conflict-2.txt
+    commit_with_date 1 day "$AUTHOR_THREE_NAME" "$AUTHOR_THREE_EMAIL" \
+        c -m "feat: WIP-states branch version of conflict-2"
+    
+    # Attempt merge to create second conflict
+    hug merge temp/demo-clean --no-commit 2>&1 | grep -v "hint:" || true
+    
+    # Manually create conflict markers
+    cat > conflict-2.txt << 'EOF'
+<<<<<<< HEAD
+// WIP-states branch version
+function fromWipStatesBranch() {}
+=======
+// Demo branch version
+function fromDemoBranch() {}
+>>>>>>> temp/demo-clean
+EOF
+    
+    # Clean up temp branches
+    hug branch -D temp/conflict-base-1 temp/demo-clean 2>&1 | grep -v "hint:" || true
+    
+    # ============================================================================
+    # PHASE 2: Unclean operations (build dirty working directory at end)
+    # ============================================================================
+    
+    # State 2: Untracked - Create new files without staging
+    echo "// WIP: Untracked file 1" > untracked-1.js
+    echo "// WIP: Untracked file 2" > untracked-2.js
+    
+    # State 3: Ignored - Update .gitignore and create ignored files
+    echo "*.tmp" >> .gitignore
+    echo "*.bak" >> .gitignore
+    hug a .gitignore
+    echo "// WIP: Ignored temporary file 1" > ignored-1.tmp
+    echo "// WIP: Ignored backup file 2" > ignored-2.bak
+    # Unstage .gitignore to show unstaged modification
+    hug reset .gitignore || true
+    
+    # State 4: Unstaged Modified - Modify tracked files without staging
+    ( test -f README.md && echo "" >> README.md && echo "// WIP: Unstaged modification" >> README.md ) || true
+    ( test -f CHANGELOG.md || touch CHANGELOG.md ) && echo "// WIP: Unstaged changes" >> CHANGELOG.md || true
+    
+    # State 5: Staged New - Create and stage new files
+    echo "// WIP: Staged new file 1" > staged-new-1.js
+    echo "// WIP: Staged new file 2" > staged-new-2.js
+    hug a staged-new-1.js staged-new-2.js
+    
+    # State 6: Staged Modified - Modify tracked files and stage them
+    ( test -f src/index.js && echo "// WIP: Staged modification 1" >> src/index.js && hug a src/index.js ) || true
+    ( test -f src/auth.js && echo "// WIP: Staged modification 2" >> src/auth.js && hug a src/auth.js ) || true
+    
+    # State 8: Unstaged Deleted - Remove tracked files without staging
+    ( test -f app.js && rm app.js ) || true
+    ( test -f src/api.js && rm src/api.js ) || true
+    
+    # State 10: Unstaged Renamed - Move tracked files (Git detects as rename)
+    ( test -f src/profile.js && mv src/profile.js renamed-profile.js ) || ( echo "// Dummy profile" > src/profile.js && hug a src/profile.js && commit_with_date 1 day "$AUTHOR_ONE_NAME" "$AUTHOR_ONE_EMAIL" c -m "Add dummy profile" && mv src/profile.js renamed-profile.js )
+    ( test -f src/search.js && mv src/search.js renamed-search.js ) || ( echo "// Dummy search" > src/search.js && hug a src/search.js && commit_with_date 1 day "$AUTHOR_TWO_NAME" "$AUTHOR_TWO_EMAIL" c -m "Add dummy search" && mv src/search.js renamed-search.js )
+    
+    echo "✅ WIP demo complete: 'demo/wip-states' branch has all Git file states!"
 )
 
 # Displays the final state of the repository.
@@ -822,7 +963,21 @@ show_repo_state() (
     echo "--------------------------------------------------------"
     echo "Recent commit history:"
     hug ll -4
+    echo "--------------------------------------------------------"
+    echo "Working directory status on 'demo/wip-states' branch:"
     hug sl
+    echo ""
+    echo "State Breakdown (2 files per state):"
+    echo "  1. Clean/Committed: .gitignore, package.json (no changes)"
+    echo "  2. Untracked: untracked-1.js, untracked-2.js"
+    echo "  3. Ignored: ignored-1.tmp, ignored-2.bak (*.tmp, *.bak patterns)"
+    echo "  4. Unstaged Modified: README.md, CHANGELOG.md"
+    echo "  5. Staged New: staged-new-1.js, staged-new-2.js"
+    echo "  6. Staged Modified: src/index.js, src/auth.js"
+    echo "  7. Unmerged/Conflicted: conflict-1.txt, conflict-2.txt (UU state)"
+    echo "  8. Unstaged Deleted: app.js, src/api.js"
+    echo "  9. Staged Deleted: staged-deleted-1.js, staged-deleted-2.js"
+    echo "  10. Unstaged Renamed: src/profile.js → renamed-profile.js, src/search.js → renamed-search.js"
     echo "========================================================"
     echo ""
     echo "Demo repository created at: $DEMO_REPO_BASE"
@@ -839,9 +994,7 @@ show_repo_state() (
     echo "  - Pushed to remote: v0.1.0, v0.5.0, v1.0.0-beta.1, v1.0.0"
     echo "  - Local only: v1.1.0-alpha.1, snapshot-*, experimental-feature"
     echo ""
-    echo "WIP scenarios:"
-    echo "  - feature/notifications: staged changes (notification system)"
-    echo "  - bugfix/performance-issue: unstaged changes (performance optimization)"
+    echo "Demo ready: Run 'hug sl' to see all Git file states on 'demo/wip-states'!"
 )
 
 # --- Main Execution ---
@@ -861,7 +1014,7 @@ main() (
     add_development_activity
     setup_remote_and_upstream
     add_tags
-    add_wip_scenarios
+    create_comprehensive_wip_scenarios
     show_repo_state
 )
 
