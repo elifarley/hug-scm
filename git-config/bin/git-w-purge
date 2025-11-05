@@ -45,6 +45,8 @@ target_ignored=false
 flags_explicit=false
 
 # Parse custom flags first (non-common flags)
+# We need to process these before parse_common_flags
+declare -a temp_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -u|--untracked)
@@ -58,10 +60,15 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     *)
-      break
+      # Keep other args for parse_common_flags
+      temp_args+=("$1")
+      shift
       ;;
   esac
 done
+
+# Restore args for parse_common_flags
+set -- "${temp_args[@]}"
 
 # Parse common flags (--browse-root, --dry-run, -f|--force, -h|--help, --)
 eval "$(parse_common_flags "$@")"
