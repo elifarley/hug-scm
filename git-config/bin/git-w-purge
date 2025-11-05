@@ -16,6 +16,7 @@ Options:
   -i, --ignored      Remove ignored files
       --browse-root  Browse full repository scope in file selector UI (default: current directory)
       --dry-run      Show what would be removed without deleting anything
+  -f, --force        Skip confirmation prompt
   -h, --help         Show this help
 
 Behavior:
@@ -62,12 +63,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Parse common flags (--browse-root, --dry-run, -h|--help, --)
+# Parse common flags (--browse-root, --dry-run, -f|--force, -h|--help, --)
 eval "$(parse_common_flags "$@")"
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
 : "${dry_run:=false}"
+: "${force:=false}"
 
 if ! $flags_explicit; then
   target_untracked=true
@@ -178,6 +180,18 @@ remove_with_clean() {
 
 print_action_preview "purge the listed entries" "from the specified paths."
 printf '\n'
+
+if $target_untracked && [[ ${#untracked_paths[@]} -gt 0 ]]; then
+  print_list '  Untracked' "${untracked_paths[@]}"
+fi
+if $target_ignored && [[ ${#ignored_paths[@]} -gt 0 ]]; then
+  print_list '  Ignored' "${ignored_paths[@]}"
+fi
+
+# Prompt for confirmation unless force flag is set
+if ! $force; then
+  prompt_confirm
+fi
 
 if $target_untracked && $target_ignored; then
   combined=("${untracked_paths[@]}" "${ignored_paths[@]}")
