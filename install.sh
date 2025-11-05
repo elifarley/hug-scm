@@ -58,7 +58,7 @@ fi
 
 # Configure .hgrc if it exists
 if [ -e "$HOME"/.hgrc ]; then
-  if ! grep -q "path = $HUG_HOME/.hgrc" "$HOME"/.hgrc 2>/dev/null; then
+  if ! grep -q "%include $HUG_HOME/hg-config/.hgrc" "$HOME"/.hgrc 2>/dev/null; then
     echo "Configuring '$HOME/.hgrc' ..."
     cat <<EOF >> "$HOME"/.hgrc
 

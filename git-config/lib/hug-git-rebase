@@ -1,0 +1,187 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-REBASE: Git rebase conflict resolution helpers
+#
+# This library provides functions for:
+# - Checking for rebase conflicts
+# - Resolving conflicts with strategy selection
+# - Automated conflict resolution for entire rebases
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
+################################################################################
+# Rebase Helpers
+################################################################################
+
+# Abort if no rebase conflict
+abort_if_no_rebase_conflict() {
+
+  # Validate rebase in progress
+  if ! [ -d ".git/rebase-merge" ]; then
+    error "No rebase in progress. Run 'hug rb <branch>' first."
+  fi
+
+  # Check for current conflicts
+  local conflicted_files=$(git diff --name-only --diff-filter=U)
+  if [ -z "$conflicted_files" ]; then
+    error "No current conflicts found.
+           (If you resolved manually, run 'hug rbc'.)"
+  fi
+}
+
+# Resolves the CURRENT rebase conflict by picking one version.
+# Must be run when a rebase is paused due to conflicts.
+#
+# Usage:
+#   rebase_pick current   -> Picks *your* feature branch's changes.
+#   rebase_pick other     -> Picks the *main* branch's changes.
+#
+rebase_pick() {
+  local hug_strategy="${1:-}" strategy
+  local branch_name
+
+  # Check if rebase is in progress
+  if ! [ -d ".git/rebase-merge" ]; then
+    echo "Error: No rebase in progress. Run 'git rebase <branch>' first."
+    return 1
+  fi
+
+  if [ "$hug_strategy" == "current" ]; then
+    strategy="--theirs" # In rebase, --theirs is *your* commit
+    branch_name="current (your changes)"
+  elif [ "$hug_strategy" == "other" ]; then
+    strategy="--ours"   # In rebase, --ours is the target branch
+    branch_name="other (target branch / incoming changes)"
+  else
+    echo "Error: You must specify 'current' or 'other'."
+    echo "Usage: rebase-pick [current|other]"
+    return 1
+  fi
+
+  local conflicted_files
+  conflicted_files=$(git diff --name-only --diff-filter=U)
+
+  if [ -z "$conflicted_files" ]; then
+    echo "Error: No conflicts found."
+    echo "   (If you resolved manually, run 'hug rbc'.)"
+    return 1
+  fi
+
+  info "Resolving conflict using strategy $branch_name..."
+
+  for file in $conflicted_files; do
+    echo "  -> Resolving $file..."
+    git checkout "$strategy" -- "$file"
+    git add "$file"
+  done
+
+  echo ""
+  echo "Resuming rebase operation..."
+  git rebase --continue
+}
+
+#
+# Takes over a paused rebase and automatically resolves ALL
+# remaining conflicts using a specified strategy.
+#
+# Usage:
+#   rebase_finish_all current   -> Picks *your* changes for all remaining conflicts.
+#   rebase_finish_all other     -> Picks the *target* branch's changes for all.
+#
+rebase_finish_all() {
+  local choice="$1"
+
+  # --- 1. Argument Validation ---
+  if [[ "$choice" != "current" && "$choice" != "other" ]]; then
+    echo "Error: You must specify 'current' or 'other'."
+    echo "Usage: rebase-finish-all [current|other]"
+    return 1
+  fi
+
+  # --- 2. Check Rebase State ---
+  if ! [ -d ".git/rebase-merge" ]; then
+    echo "Error: No rebase in progress."
+    echo "   Run 'git rebase <branch>' first. Call this *after* it stops on a conflict."
+    return 1
+  fi
+
+  local conflicted_files
+  conflicted_files=$(git diff --name-only --diff-filter=U)
+  if [ -z "$conflicted_files" ]; then
+    echo "Error: No *current* conflicts found to start with."
+    echo "   This function must be called when a rebase is paused on a conflict."
+    echo "   (If you resolved manually, run 'hug rbc'.)"
+    return 1
+  fi
+
+  # --- 3. Setup Strategy ---
+  local strategy_option
+  local branch_name
+
+  if [ "$choice" == "current" ]; then
+    strategy_option="--theirs"
+    branch_name="current (feature branch)"
+  else
+    strategy_option="--ours"
+    branch_name="other (target branch)"
+  fi
+
+  echo "🚀 Taking over rebase to finish all remaining commits..."
+  echo "   Resolution Strategy: **Pick $branch_name** for all conflicts."
+  echo "---"
+
+  # --- 4. Initialize Counters & Start Loop ---
+  local conflicted_commits_count=0
+  local skipped_commits_count=0
+
+  # Loop *while* the rebase directory exists.
+  # This will run at least once to resolve the current conflict.
+  while [ -d ".git/rebase-merge" ]; do
+
+    # Check for conflicts *at this step*
+    conflicted_files=$(git diff --name-only --diff-filter=U)
+
+    if [ -n "$conflicted_files" ]; then
+      # --- A. CONFLICTS FOUND ---
+      ((conflicted_commits_count++))
+      echo "🔄 Conflict detected. Resolving..."
+
+      for file in $conflicted_files; do
+        echo "    -> Resolving $file with '$choice' version."
+        git checkout "$strategy_option" -- "$file"
+        git add "$file"
+      done
+
+      echo "    -> Continuing rebase..."
+      git rebase --continue
+
+    else
+      # --- B. NO CONFLICTS, BUT REBASE STOPPED ---
+      # This means the previous '--continue' resulted in an
+      # empty commit. We must skip it to proceed.
+      ((skipped_commits_count++))
+      echo "⚠️ Rebase stopped, but no conflicts found. (Likely empty commit)"
+      echo "   Skipping it..."
+      git rebase --skip
+    fi
+  done
+
+  # --- 5. Final Report ---
+  if [ $? -ne 0 ]; then
+      echo "---"
+      echo "❌ REBASE FAILED."
+      echo "   The last step failed. Please run 'git status' to check the state."
+      return 1
+  fi
+
+  echo "---"
+  echo "✅ REBASE COMPLETE."
+  echo ""
+  echo "### Rebase Summary ###"
+  echo "* **Strategy Applied**: Pick **$branch_name** for all conflicts."
+  echo "* **Commits with Conflicts**: $conflicted_commits_count"
+  echo "* **Empty Commits Skipped**: $skipped_commits_count"
+  echo ""
+  echo "State: Successfully rebased."
+}

@@ -1,0 +1,132 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-COMMIT: Git commit range analysis and preview functions
+#
+# This library provides functions for:
+# - Counting commits in ranges
+# - Listing commits and changed files
+# - Preview summaries and headers
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
+
+################################################################################
+# Commit Range Analysis Functions
+################################################################################
+
+# Counts commits in a range
+# Usage: count=$(count_commits_in_range "start" ["end"])
+# Parameters:
+#   $1 - Start commit (exclusive)
+#   $2 - (Optional) End commit (inclusive), defaults to HEAD
+# Output:
+#   Number of commits in range to stdout
+count_commits_in_range() {
+    local start="$1"
+    local end="${2:-HEAD}"
+
+    git rev-list --count "$start..$end" 2>/dev/null || echo 0
+}
+
+# Prints a list of commits in a given range
+# Usage: print_commit_list_in_range "start" ["end"]
+# Parameters:
+#   $1 - Start commit (exclusive)
+#   $2 - (Optional) End commit (inclusive), defaults to HEAD
+# Output:
+#   Formatted commit list to stdout (typically redirected to stderr for prompts)
+# Note:
+#   This is the standard utility for displaying commit lists to users
+#   Uses 'hug ll' command for consistent formatting
+print_commit_list_in_range() {
+    local start="$1"
+    local end="${2:-HEAD}"
+
+    hug ll "$start..$end"
+}
+
+# Lists changed files in a commit range
+# Usage: files=$(list_changed_files_in_range "start" ["end"])
+# Parameters:
+#   $1 - Start commit (exclusive)
+#   $2 - (Optional) End commit (inclusive), defaults to HEAD
+# Output:
+#   Sorted unique list of changed file paths to stdout
+list_changed_files_in_range() {
+    local start="$1"
+    local end="${2:-HEAD}"
+
+    git diff --name-only "$start..$end" | sort -u
+}
+
+# Counts changed files in a commit range
+# Usage: count=$(count_changed_files_in_range "start" ["end"])
+# Parameters:
+#   $1 - Start commit (exclusive)
+#   $2 - (Optional) End commit (inclusive), defaults to HEAD
+# Output:
+#   Number of unique changed files to stdout
+count_changed_files_in_range() {
+    local start="$1"
+    local end="${2:-HEAD}"
+
+    git diff --name-only "$start..$end" | wc -l
+}
+
+################################################################################
+# Preview Helper Functions
+################################################################################
+
+# Prints preview summary (📊 section): commit count and diff stat
+# Usage: print_preview_summary num_commits commit_word target_short range
+# Parameters:
+#   $1 - Number of commits
+#   $2 - "commit" or "commits"
+#   $3 - Short commit hash of target
+#   $4 - Range for diff (e.g., "target..HEAD")
+# Output: 📊 summary and diff stat to stderr
+print_preview_summary() {
+    local num_commits="$1"
+    local commit_word="$2"
+    local target_short="$3"
+    local range="$4"
+    printf '📊 %d %s since %s:\n' "$num_commits" "$commit_word" "$target_short" >&2
+    if git diff --quiet "$range"; then
+        printf 'No file changes.\n' >&2
+    else
+        git diff --stat "$range" >&2
+    fi
+}
+
+# Prints commit list header (📤 section)
+# Usage: print_commit_list_header header_type target_name is_new include_commits
+# Parameters:
+#   $1 - Header type (e.g., "moving", "Outgoing")
+#   $2 - Target name (e.g., branch or "upstream")
+#   $3 - "true" if new branch, "false" otherwise
+#   $4 - "true" to include "commits" in header, "false" otherwise
+# Output: 📤 header to stderr
+print_commit_list_header() {
+    local header_type="$1"
+    local target_name="$2"
+    local is_new="$3"
+    local include_commits="$4"
+    local suffix=""
+    if [[ "$is_new" == "true" ]]; then
+        suffix=" (new branch)"
+    fi
+    if [[ -n "$target_name" ]]; then
+        local commits_text=""
+        if [[ "$include_commits" == "true" ]]; then
+            commits_text=" commits"
+        fi
+        printf '\n📤 %s%s to %s%s:\n' "$header_type" "$commits_text" "$target_name" "$suffix" >&2
+    else
+        local commits_text=" commits"
+        if [[ "$include_commits" != "true" ]]; then
+            commits_text=""
+        fi
+        printf '\n📤 %s%s:\n' "$header_type" "$commits_text" >&2
+    fi
+}

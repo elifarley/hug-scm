@@ -12,19 +12,27 @@
 # All hug command scripts should follow this standard pattern:
 #
 # #!/usr/bin/env bash
-# CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
-# CMD_BASE="$(dirname "$CMD_BASE")"
-# # shellcheck source=../lib/hug-common
-# . "$CMD_BASE/../lib/hug-common"
-# # shellcheck source=../lib/hug-git-kit
-# . "$CMD_BASE/../lib/hug-git-kit"
+# # Assume HUG_HOME is set (exported by hug or environment)
+# # shellcheck source=git-config/lib/hug-common
+# . "$HUG_HOME/git-config/lib/hug-common"
+# # shellcheck source=git-config/lib/hug-git-kit
+# . "$HUG_HOME/git-config/lib/hug-git-kit"
 # set -euo pipefail  # Exit on error, undefined vars, pipe failures
 #
 # This ensures:
-# - Proper library path resolution (works with symlinks)
+# - Proper library path resolution via HUG_HOME (works with symlinks if HUG_HOME is absolute)
 # - Sourcing of common functions
 # - Strict error handling (fail fast on errors)
 # - ShellCheck can follow the source directives
+#
+# For Mercurial scripts:
+# #!/usr/bin/env bash
+# # Assume HUG_HOME is set (exported by hug or environment)
+# # shellcheck source=hg-config/lib/hug-common
+# . "$HUG_HOME/hg-config/lib/hug-common"
+# # shellcheck source=hg-config/lib/hug-hg-kit
+# . "$HUG_HOME/hg-config/lib/hug-hg-kit"
+# set -euo pipefail  # Exit on error, undefined vars, pipe failures
 #
 ################################################################################
 
@@ -33,12 +41,12 @@ if [[ -n "${_HUG_COMMON_LOADED:-}" ]]; then
 fi
 _HUG_COMMON_LOADED=1
 
-if [[ -z "${HUG_LIB_DIR:-}" ]]; then
-  _hug_common_source="${BASH_SOURCE[0]:-"${0}"}"
-  HUG_LIB_DIR="$(cd "$(dirname "$_hug_common_source")" && pwd)"
-  unset _hug_common_source
+if [[ -z "${HUG_HOME:-}" ]]; then
+  error "HUG_HOME must be set to the Hug installation root directory"
+  exit 1
 fi
 
+HUG_LIB_DIR="$HUG_HOME/git-config/lib"
 export HUG_LIB_DIR
 
 _hug_common_libs=(
