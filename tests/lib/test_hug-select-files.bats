@@ -189,3 +189,61 @@ teardown() {
   done
   [[ "$has_parent_files" == true ]]
 }
+
+@test "hug-select-files: conflict files show U status in staged files" {
+  # Create a merge conflict scenario
+  echo "base content" > conflict-file.txt
+  git add conflict-file.txt
+  git commit -q -m "Add base file"
+  
+  # Create two branches with conflicting changes
+  git checkout -q -b branch1
+  echo "branch1 change" > conflict-file.txt
+  git add conflict-file.txt
+  git commit -q -m "Change on branch1"
+  
+  git checkout -q main
+  git checkout -q -b branch2
+  echo "branch2 change" > conflict-file.txt
+  git add conflict-file.txt
+  git commit -q -m "Change on branch2"
+  
+  # Try to merge, which will create a conflict
+  git merge --no-commit --no-ff branch1 2>/dev/null || true
+  
+  # Check that list_staged_files returns U status for conflict
+  local output
+  output=$(list_staged_files --status)
+  
+  # Should show U status for the conflict file
+  [[ "$output" =~ U.*conflict-file.txt ]]
+}
+
+@test "hug-select-files: conflict files show U status in unstaged files" {
+  # Create a merge conflict scenario
+  echo "base content" > conflict-file.txt
+  git add conflict-file.txt
+  git commit -q -m "Add base file"
+  
+  # Create two branches with conflicting changes
+  git checkout -q -b branch1
+  echo "branch1 change" > conflict-file.txt
+  git add conflict-file.txt
+  git commit -q -m "Change on branch1"
+  
+  git checkout -q main
+  git checkout -q -b branch2
+  echo "branch2 change" > conflict-file.txt
+  git add conflict-file.txt
+  git commit -q -m "Change on branch2"
+  
+  # Try to merge, which will create a conflict
+  git merge --no-commit --no-ff branch1 2>/dev/null || true
+  
+  # Check that list_unstaged_files returns U status for conflict
+  local output
+  output=$(list_unstaged_files --status)
+  
+  # Should show U status for the conflict file (may appear multiple times)
+  [[ "$output" =~ U.*conflict-file.txt ]]
+}
