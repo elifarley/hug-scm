@@ -28,5 +28,5 @@ readonly _HUG_GIT_KIT_LOADED=1
 # Source all git-specific library modules
 for module in hug-git-repo hug-git-state hug-git-files hug-git-discard hug-git-branch hug-git-commit hug-git-upstream hug-git-backup hug-git-rebase; do
     # shellcheck source=/dev/null
-    . "$HUG_LIB_DIR/$module"
+    . "$HUG_LIB_DIR/$module" || { echo "Failed to load $module" >&2; return 1; }
 done
