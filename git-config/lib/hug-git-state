@@ -1,0 +1,203 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-STATE: Git working tree state checking functions
+#
+# This library provides functions for:
+# - Checking for pending changes (staged, unstaged, untracked)
+# - Validating working tree cleanliness
+# - Checking file-specific state
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
+
+################################################################################
+# Working Tree State Functions
+################################################################################
+
+# Checks if there are any pending changes (staged, unstaged, or untracked)
+# Usage: if has_pending_changes; then ...; fi
+# Returns:
+#   0 if there are pending changes, 1 if working tree is clean
+has_pending_changes() {
+  git status --porcelain=2 --untracked-files=normal | grep -q '.'
+}
+
+# Checks if there are staged changes (index dirty)
+# Usage: if has_staged_changes; then ...; fi
+# Returns:
+#   0 if staged changes exist, 1 otherwise
+has_staged_changes() {
+  if git diff --cached --quiet >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
+# Checks if there are unstaged tracked changes (working tree dirty)
+# Usage: if has_unstaged_changes; then ...; fi
+# Returns:
+#   0 if unstaged tracked changes exist, 1 otherwise
+has_unstaged_changes() {
+  if git diff --quiet >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
+# Checks if working tree is clean (no uncommitted changes)
+# Usage: check_working_tree_clean
+# Exits:
+#   With error if there are uncommitted changes (staged or unstaged)
+#   Error message includes counts and suggested solutions
+check_working_tree_clean() {
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        local unstaged_count
+        local staged_count
+        unstaged_count=$(git diff --name-only | wc -l)
+        staged_count=$(git diff --cached --name-only | wc -l)
+
+        error "Working tree is not clean!
+       Unstaged changes: $unstaged_count files
+       Staged changes: $staged_count files
+
+       Solutions:
+       • Use 'git w-backup' to save changes first
+       • Use 'git w-discard-all' to discard changes
+       • Use 'git w-discard <file>' for specific files"
+    fi
+}
+
+# Checks if specific files are clean (no staged or unstaged changes)
+# Usage: check_files_clean file1 file2 ...
+# Parameters:
+#   $@ - Files to check
+# Exits:
+#   With error if any of the specified files have uncommitted changes
+#   Error message includes affected files and suggested solutions
+check_files_clean() {
+    local -a files=("$@")
+    if [ ${#files[@]} -eq 0 ]; then
+        return 0 # No files to check
+    fi
+
+    # Optimization: use a single git command to check all files at once
+    mapfile -t files_with_changes < <( (
+        git diff --name-only -- "${files[@]}"
+        git diff --cached --name-only -- "${files[@]}"
+    ) | sort -u )
+
+    if [ ${#files_with_changes[@]} -gt 0 ]; then
+        error "Cannot proceed because some affected files have uncommitted changes.
+       Affected files:
+         $(printf "%s\n" "${files_with_changes[@]}" | sed 's/^/         /')
+
+       Solutions:
+       • Use 'hug w wipe-all' to discard changes
+       • Use 'hug w wipe <file>' for specific files"
+        exit 1
+    fi
+}
+
+################################################################################
+# File State Checking Functions
+################################################################################
+
+# Checks if a file exists in a specific commit
+# Usage: check_file_in_commit "commit" "file"
+# Parameters:
+#   $1 - Commit reference
+#   $2 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Exits:
+#   With error if file does not exist in the specified commit
+check_file_in_commit() {
+    check_git_repo
+    local commit="$1"
+    local file="${GIT_PREFIX}$2"
+    if ! git cat-file -e "$commit:$file" 2>/dev/null; then
+        error "File '$file' does not exist in commit $commit"
+    fi
+}
+
+# Previews changes for specific files
+# Usage: preview_file_changes "commit" "file"
+# Parameters:
+#   $1 - Commit reference
+#   $2 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Output:
+#   Diff preview (first 20 lines) to stderr
+preview_file_changes() {
+  check_git_repo
+  local commit="$1"
+  local file="${GIT_PREFIX}$2"
+
+  printf "─ %s ─\n" "$file" >&2
+  if git diff --no-index -- "$file" <(git show "$commit:$file") 2>/dev/null | head -20 >&2; then
+    printf "─ (showing first 20 lines) ─\n\n" >&2
+  else
+    printf "─ (binary file or no changes) ─\n\n" >&2
+  fi
+}
+
+# Checks if a file has staged changes
+# Usage: check_file_staged "file"
+# Parameters:
+#   $1 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Exits:
+#   With error if file has staged changes
+check_file_staged() {
+  check_git_repo
+  local file="${GIT_PREFIX}$1"
+
+  if ! git diff --cached --quiet -- "$file" 2>/dev/null; then
+    error "File '$file' has staged changes
+    Use 'hug us $file' to unstage first"
+  fi
+}
+
+# Checks if a file has unstaged changes
+# Usage: check_file_unstaged "file"
+# Parameters:
+#   $1 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Exits:
+#   With error if file has unstaged changes
+check_file_unstaged() {
+  check_git_repo
+  local file="${GIT_PREFIX}$1"
+
+  if ! git diff --quiet -- "$file" 2>/dev/null; then
+    error "File '$file' has unstaged changes
+    Use 'git w-discard $file' to discard changes first"
+  fi
+}
+
+# Detects if the staged changes for a file are binary
+# Usage: if is_binary_staged "file"; then ...; fi
+# Parameters:
+#   $1 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Returns:
+#   0 if file has binary staged changes, 1 otherwise
+is_binary_staged() {
+  check_git_repo
+  local file="${GIT_PREFIX}$1"
+  local added deleted
+  local diff_numstat
+
+  diff_numstat="$(git diff --cached --numstat -- "$file" 2>/dev/null || true)"
+  if [[ -n $diff_numstat ]]; then
+    IFS=$'\t' read -r added deleted _ <<<"$diff_numstat"
+    [[ $added == "-" && $deleted == "-" ]]
+  else
+    false  # No staged changes, not binary
+  fi
+}

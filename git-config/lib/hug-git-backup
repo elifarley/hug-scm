@@ -1,0 +1,94 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-BACKUP: Git branch backup management
+#
+# This library provides functions for:
+# - Creating backup branches before destructive operations
+# - Listing and managing backup branches
+# - Extracting metadata from backup branch names
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
+################################################################################
+# Branch Backup
+################################################################################
+
+# 🛡️ (Internal Helper) Creates a standardized backup branch.
+#
+# It's used by other 'hug' commands before they perform a
+# destructive operation.
+#
+# @param $1  The commit or branch to back up (e.g., "HEAD", "my-feature")
+# @param $2  The base name for the new branch (e.g., "my-feature")
+#
+# @output  The name of the created backup branch (e.g., "hug-backups/2025-11/01-0815.my-feature")
+# @return  0 on success, 1 on failure
+#
+create_backup_branch() {
+  local source_ref="$1"
+  local base_name="$2"
+
+  # --- 1. Validation ---
+  if [ -z "$source_ref" ]; then
+    error "Error (internal): create_backup_branch requires a source reference." >&2
+    return 1
+  fi
+
+  if [ -z "$base_name" ]; then
+    error "Error (internal): create_backup_branch requires a base name." >&2
+    return 1
+  fi
+
+  # --- 2. Generate Name ---
+  # Example: hug-backups/2025-11/01-0815.my-feature
+  local backup_name="hug-backups/$(date +'%Y-%m/%d-%H%M').$base_name"
+
+  # --- 3. Create Branch ---
+  if ! git branch "$backup_name" "$source_ref" >/dev/null 2>&1; then
+    error "Error (internal): Failed to create backup branch '$backup_name'." >&2
+    return 1
+  fi
+
+  # --- 4. Output the name to stdout ---
+  echo "$backup_name"
+}
+
+# Gets list of backup branches
+# Usage: branches=$(get_backup_branches)
+# Output:
+#   List of backup branch names (one per line) to stdout
+#   Branches are sorted by refname (chronologically by date in the path)
+# Returns:
+#   0 if successful (even if no branches found)
+get_backup_branches() {
+  git for-each-ref --format='%(refname:short)' 'refs/heads/hug-backups/**' 2>/dev/null || true
+}
+
+# Extracts original branch name from a backup branch name
+# Usage: original=$(extract_original_name "hug-backups/2024-11/02-1234.feature")
+# Parameters:
+#   $1 - Backup branch name (e.g., "hug-backups/2024-11/02-1234.feature")
+# Output:
+#   Original branch name (e.g., "feature") to stdout
+# Note:
+#   Backup format: hug-backups/YYYY-MM/DD-HHMM.branch-name
+#   Returns empty string if name doesn't match expected format
+extract_original_name() {
+  local backup="$1"
+  # Remove the hug-backups/YYYY-MM/DD-HHMM. prefix
+  echo "$backup" | sed -E 's|^hug-backups/[0-9][0-9][0-9][0-9]-[0-9][0-9]/[0-9][0-9]-[0-9][0-9][0-9][0-9]\.||'
+}
+
+# Formats a backup branch name for display by removing the common prefix
+# Usage: display_name=$(format_backup_display_name "hug-backups/2024-11/02-1234.feature")
+# Parameters:
+#   $1 - Backup branch name (e.g., "hug-backups/2024-11/02-1234.feature")
+# Output:
+#   Display-friendly name (e.g., "2024-11/02-1234.feature") to stdout
+# Note:
+#   Removes only the "hug-backups/" prefix to avoid visual clutter
+format_backup_display_name() {
+  local backup="$1"
+  echo "$backup" | sed 's|^hug-backups/||'
+}

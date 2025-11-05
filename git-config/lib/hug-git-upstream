@@ -1,0 +1,130 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-UPSTREAM: Git upstream operation handlers
+#
+# This library provides functions for:
+# - Handling upstream validation, preview, and confirmation
+# - Standard operation handlers with preview
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
+
+################################################################################
+# Upstream Operation Handlers
+################################################################################
+
+# Handles upstream validation, preview, and confirmation for operations
+# Usage: target=$(handle_upstream_operation "action_name")
+# Parameters:
+#   $1 - Action description verb (e.g., "rewinding", "squashing")
+# Output:
+#   Upstream commit hash to stdout
+# Environment:
+#   HUG_QUIET - If not "T", displays preview and confirmation prompts
+# Exits:
+#   With info message if already synced to upstream
+# Note:
+#   This helper is read-only: never mutates commits, index, or working tree
+#   After gathering preview information and confirmation, echoes upstream commit
+handle_upstream_operation() {
+    local action_name="$1"
+
+    local target
+    target=$(get_upstream_commit) || return 1  # Propagate failure if no upstream
+    
+    # Additional safety check
+    if [[ -z "$target" ]]; then
+        error "Failed to get upstream commit."
+    fi
+
+    local local_commits
+    local_commits=$(count_commits_in_range "$target" HEAD)
+
+    if [ "$local_commits" -eq 0 ]; then
+        info "Already synced to upstream ($(git rev-parse --short "$target"))."
+        exit 0
+    fi
+
+    if [[ ${HUG_QUIET:-} != T ]]; then
+        local upstream_short upstream_branch
+        upstream_short=$(git rev-parse --short "$target")
+        upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
+
+        printf 'Commits to be affected:\n' >&2
+        print_commit_list_in_range "$target" HEAD >&2
+
+        local range_for_diff
+        range_for_diff="$target..HEAD"
+
+        # Check if there are any file changes to show stats for
+        if git diff --quiet "$range_for_diff"; then
+            printf '\nPreview: no file changes in %d local commits to %s (%s).\n' >&2 \
+                "$local_commits" "$upstream_short" "$upstream_branch"
+        else
+            printf '\nPreview: changes in %d local commits to %s (%s):\n' >&2 \
+                "$local_commits" "$upstream_short" "$upstream_branch"
+            git diff --stat "$range_for_diff" >&2
+        fi
+
+        printf '\n⚠️  This action involves %s to upstream.\n' "$action_name" >&2
+        prompt_confirm "Proceed with $action_name to upstream? [y/N]: "
+    fi
+
+    echo "$target"
+}
+
+# Handles validation, preview, and confirmation for standard local operations
+# Usage: handle_standard_operation "action_name" "target_commit"
+# Parameters:
+#   $1 - Action description verb (e.g., "soft resetting", "rewinding")
+#   $2 - Target commit to reset/move to
+#   $3 - (Optional) skip_when_aligned flag (default: true)
+# Environment:
+#   HUG_QUIET - If not "T", displays preview information
+# Exits:
+#   With info message if already at target
+# Note:
+#   This helper is read-only: never mutates commits, index, or working tree
+#   Displays commit list and file change statistics for the operation
+handle_standard_operation() {
+    local action_name="$1"
+    local target="$2"
+    local skip_when_aligned="${3:-true}"
+
+    local commits_to_affected
+    commits_to_affected=$(count_commits_in_range "$target" HEAD)
+
+    if [ "$commits_to_affected" -eq 0 ]; then
+        if [[ "$skip_when_aligned" == true ]] || ! has_pending_changes; then
+            info "Already at target $(git rev-parse --short "$target"). No action taken."
+            exit 0
+        fi
+
+        if [[ ${HUG_QUIET:-} != T ]]; then
+            info "No commits to $action_name; local tracked changes will be reset."
+        fi
+        return 0
+    fi
+
+    if [[ ${HUG_QUIET:-} != T ]]; then
+        local range_for_diff
+        range_for_diff="$target..HEAD"
+        local commit_word="commit"
+        if [ "$commits_to_affected" -gt 1 ]; then
+            commit_word="commits"
+        fi
+
+        printf 'Commits to be affected:\n' >&2
+        print_commit_list_in_range "$target" HEAD >&2
+
+        if git diff --quiet "$range_for_diff"; then
+            printf '\nPreview: no file changes in %d %s.\n' >&2 \
+                "$commits_to_affected" "$commit_word"
+        else
+            printf '\nPreview: changes in %d %s:\n' >&2 \
+                "$commits_to_affected" "$commit_word"
+            git diff --stat "$range_for_diff" >&2
+        fi
+    fi
+}

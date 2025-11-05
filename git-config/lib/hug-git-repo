@@ -1,0 +1,247 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-REPO: Git repository and commit validation functions
+#
+# This library provides functions for:
+# - Repository validation and path conversion
+# - Commit validation and existence checks
+# - Upstream branch operations
+# - Commit ancestry checking
+# - Commit history navigation
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
+
+################################################################################
+# Git Repository Validation Functions
+################################################################################
+
+# Checks if current directory is within a git repository
+# Usage: check_git_repo
+# Environment:
+#   GIT_PREFIX - Set to git prefix path if not already set
+# Exits:
+#   With error if not in a git repository
+check_git_repo() {
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        error "Not in a git repository"
+    fi
+    test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+}
+
+# Converts repository-root-relative paths to current-directory-relative paths
+# Usage: convert_to_relative_paths array_name
+# Parameters:
+#   $1 - Name of array containing repo-root-relative paths (nameref)
+# Effects:
+#   Modifies the array in-place to contain current-directory-relative paths
+# Environment:
+#   GIT_PREFIX - Current directory path relative to repo root (must be set)
+# Notes:
+#   When running from a subdirectory, git commands like 'git diff' and 'git status'
+#   return paths relative to the repository root. However, commands like 'git restore'
+#   and 'git checkout' expect paths relative to the current directory.
+#   This function converts repo-root-relative paths to current-directory-relative paths.
+convert_to_relative_paths() {
+    local -n path_array_ref="$1"
+    local prefix="${GIT_PREFIX:-}"
+    
+    # If we're at repo root (no prefix), paths are already correct
+    [[ -z "$prefix" ]] && return 0
+    
+    local repo_root
+    repo_root="$(git rev-parse --show-toplevel)"
+    
+    local -a converted_paths=()
+    local path
+    for path in "${path_array_ref[@]}"; do
+        # If path starts with the prefix, remove it to make it current-dir-relative
+        if [[ "$path" == "$prefix"* ]]; then
+            converted_paths+=("${path#"$prefix"}")
+        else
+            # Path doesn't start with prefix - compute relative path from current directory
+            # This handles cases like "../file.txt" or files in sibling directories
+            local abs_path="$repo_root/$path"
+            if command -v realpath >/dev/null 2>&1 && [[ -e "$abs_path" || -L "$abs_path" ]]; then
+                # Use realpath to compute the relative path from current directory
+                local rel_path
+                rel_path="$(realpath --relative-to="." "$abs_path" 2>/dev/null || echo "$path")"
+                converted_paths+=("$rel_path")
+            else
+                # Fallback: construct relative path manually
+                # Count directory depth (number of / in prefix)
+                local depth="${prefix//[^\/]}"
+                local parent_refs=""
+                for ((i=0; i<${#depth}; i++)); do
+                    parent_refs="../$parent_refs"
+                done
+                converted_paths+=("${parent_refs}${path}")
+            fi
+        fi
+    done
+    
+    path_array_ref=("${converted_paths[@]}")
+}
+
+################################################################################
+# Commit Validation Functions
+################################################################################
+
+# Validates that a commit reference exists
+# Usage: validate_commit "commit-ref"
+# Parameters:
+#   $1 - Commit reference to validate
+# Exits:
+#   With error if commit does not exist
+validate_commit() {
+    local commit="$1"
+    if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
+        error "Commit '$commit' does not exist"
+    fi
+}
+
+# Ensures a reference can be resolved to a commit
+# Usage: ensure_commit_exists "ref"
+# Parameters:
+#   $1 - Reference to validate (branch, tag, commit hash, etc.)
+# Exits:
+#   With error if reference is empty or cannot be resolved to a commit
+ensure_commit_exists() {
+    local ref="${1:-}"
+    if [[ -z "$ref" ]]; then
+        error "Reference is required."
+    fi
+
+    if ! git rev-parse --verify "${ref}^{commit}" >/dev/null 2>&1; then
+        error "Unable to resolve reference '$ref' to a commit."
+    fi
+}
+
+################################################################################
+# Upstream Branch Functions
+################################################################################
+
+# Gets the commit hash of the upstream branch for the current HEAD
+# Usage: commit=$(get_upstream_commit)
+# Output:
+#   Commit hash of the upstream branch to stdout
+# Exits:
+#   With error if upstream is not configured
+get_upstream_commit() {
+    local upstream_commit
+    # SC1083 suppressed: @{u} is git syntax, not shell expansion
+    # shellcheck disable=SC1083
+    upstream_commit=$(git rev-parse --verify @{u} 2>/dev/null) || {
+        error "No upstream branch configured for the current branch.
+       Use 'git branch --set-upstream-to=<remote>/<branch>' to configure it."
+        exit 1
+    }
+    echo "$upstream_commit"
+}
+
+################################################################################
+# Commit Ancestry Functions
+################################################################################
+
+# Ensures a reference is an ancestor of HEAD
+# Usage: ensure_ancestor_of_head "ref" ["reason"]
+# Parameters:
+#   $1 - Reference to check
+#   $2 - (Optional) Additional context for error message
+# Exits:
+#   With error if reference is empty, doesn't exist, or is not an ancestor of HEAD
+ensure_ancestor_of_head() {
+    local ref="${1:-}"
+    local reason="${2:-}"
+    if [[ -z "$ref" ]]; then
+        error "Reference is required."
+    fi
+
+    ensure_commit_exists "$ref"
+
+    if ! git merge-base --is-ancestor "${ref}^{commit}" HEAD >/dev/null 2>&1; then
+        if [[ -n "$reason" ]]; then
+            error "Reference '$ref' is not an ancestor of HEAD; $reason"
+        else
+            error "Reference '$ref' is not an ancestor of HEAD."
+        fi
+    fi
+}
+
+# Resolves a HEAD target from user input
+# Usage: target=$(resolve_head_target "arg" ["default"])
+# Parameters:
+#   $1 - User argument (empty, number 1-999, or commit reference)
+#   $2 - (Optional) Default target if arg is empty, defaults to "HEAD~1"
+# Output:
+#   Resolved commit reference to stdout
+# Examples:
+#   resolve_head_target "" -> "HEAD~1" (or custom default)
+#   resolve_head_target "3" -> "HEAD~3"
+#   resolve_head_target "abc123" -> "abc123"
+resolve_head_target() {
+    local arg="${1:-}"
+    local default_target="${2:-HEAD~1}"
+
+    if [[ -z "$arg" ]]; then
+        printf '%s\n' "$default_target"
+    elif [[ "$arg" =~ ^[1-9][0-9]{0,2}$ ]]; then
+        printf 'HEAD~%s\n' "$arg"
+    else
+        printf '%s\n' "$arg"
+    fi
+}
+
+################################################################################
+# Commit History Navigation Functions
+################################################################################
+
+# Gets the Nth commit hash in history, optionally for specific files
+# Usage: commit=$(get_commit_n_back N [file1] [file2] ...)
+# Parameters:
+#   $1 - Number of commits to go back (0-99)
+#   $@ - (Optional) Files to consider; if provided, counts only commits affecting those files
+# Output:
+#   Resolved commit hash to stdout
+# Exits:
+#   With error if N commits cannot be found in history
+# Examples:
+#   get_commit_n_back 3 -> HEAD~3
+#   get_commit_n_back 5 src/main.c -> 5th commit that touched src/main.c
+get_commit_n_back() {
+    local n="$1"
+    shift
+    local files=("$@")
+
+    if [[ ! "$n" =~ ^([0-9]|[1-9][0-9]?)$ ]]; then
+        # This is an internal check, user input should be validated first
+        error "Internal error: N must be an integer between 0 and 99."
+        exit 1
+    fi
+
+    local target_commit
+
+    if [ ${#files[@]} -eq 0 ]; then
+        # No files specified, go back N commits in overall history.
+        target_commit="HEAD~$n"
+    else
+        # Files specified, find the commit N steps back from their last change.
+        if [ "$n" -eq 0 ]; then
+            # N=0 means reset to HEAD.
+            target_commit="HEAD"
+        else
+            # N > 0 means go back N commits BEFORE the last change.
+            # We skip N commits from the list of file changes and take the next one.
+            target_commit=$(git rev-list --skip=$((n)) -1 HEAD -- "${files[@]}" 2>/dev/null)
+            if [ -z "$target_commit" ]; then
+                local file_list
+                printf -v file_list "%s " "${files[@]}"
+                error "Could not find $n commits in the history of: ${file_list% }"
+                exit 1
+            fi
+        fi
+    fi
+
+    echo "$target_commit"
+}

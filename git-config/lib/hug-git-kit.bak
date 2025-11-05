@@ -1,0 +1,2086 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-KIT: Git-specific operations library
+#
+# This library provides high-level functions for git operations including:
+# - Repository and commit validation
+# - Working tree state management
+# - File change operations (discard, wipe, purge)
+# - Branch information and navigation
+# - Commit history analysis
+# - Upstream operation handlers
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
+
+################################################################################
+# Git Repository Validation Functions
+################################################################################
+
+# Checks if current directory is within a git repository
+# Usage: check_git_repo
+# Environment:
+#   GIT_PREFIX - Set to git prefix path if not already set
+# Exits:
+#   With error if not in a git repository
+check_git_repo() {
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        error "Not in a git repository"
+    fi
+    test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+}
+
+# Converts repository-root-relative paths to current-directory-relative paths
+# Usage: convert_to_relative_paths array_name
+# Parameters:
+#   $1 - Name of array containing repo-root-relative paths (nameref)
+# Effects:
+#   Modifies the array in-place to contain current-directory-relative paths
+# Environment:
+#   GIT_PREFIX - Current directory path relative to repo root (must be set)
+# Notes:
+#   When running from a subdirectory, git commands like 'git diff' and 'git status'
+#   return paths relative to the repository root. However, commands like 'git restore'
+#   and 'git checkout' expect paths relative to the current directory.
+#   This function converts repo-root-relative paths to current-directory-relative paths.
+convert_to_relative_paths() {
+    local -n path_array_ref="$1"
+    local prefix="${GIT_PREFIX:-}"
+    
+    # If we're at repo root (no prefix), paths are already correct
+    [[ -z "$prefix" ]] && return 0
+    
+    local repo_root
+    repo_root="$(git rev-parse --show-toplevel)"
+    
+    local -a converted_paths=()
+    local path
+    for path in "${path_array_ref[@]}"; do
+        # If path starts with the prefix, remove it to make it current-dir-relative
+        if [[ "$path" == "$prefix"* ]]; then
+            converted_paths+=("${path#"$prefix"}")
+        else
+            # Path doesn't start with prefix - compute relative path from current directory
+            # This handles cases like "../file.txt" or files in sibling directories
+            local abs_path="$repo_root/$path"
+            if command -v realpath >/dev/null 2>&1 && [[ -e "$abs_path" || -L "$abs_path" ]]; then
+                # Use realpath to compute the relative path from current directory
+                local rel_path
+                rel_path="$(realpath --relative-to="." "$abs_path" 2>/dev/null || echo "$path")"
+                converted_paths+=("$rel_path")
+            else
+                # Fallback: construct relative path manually
+                # Count directory depth (number of / in prefix)
+                local depth="${prefix//[^\/]}"
+                local parent_refs=""
+                for ((i=0; i<${#depth}; i++)); do
+                    parent_refs="../$parent_refs"
+                done
+                converted_paths+=("${parent_refs}${path}")
+            fi
+        fi
+    done
+    
+    path_array_ref=("${converted_paths[@]}")
+}
+
+################################################################################
+# Commit Validation Functions
+################################################################################
+
+# Validates that a commit reference exists
+# Usage: validate_commit "commit-ref"
+# Parameters:
+#   $1 - Commit reference to validate
+# Exits:
+#   With error if commit does not exist
+validate_commit() {
+    local commit="$1"
+    if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
+        error "Commit '$commit' does not exist"
+    fi
+}
+
+# Ensures a reference can be resolved to a commit
+# Usage: ensure_commit_exists "ref"
+# Parameters:
+#   $1 - Reference to validate (branch, tag, commit hash, etc.)
+# Exits:
+#   With error if reference is empty or cannot be resolved to a commit
+ensure_commit_exists() {
+    local ref="${1:-}"
+    if [[ -z "$ref" ]]; then
+        error "Reference is required."
+    fi
+
+    if ! git rev-parse --verify "${ref}^{commit}" >/dev/null 2>&1; then
+        error "Unable to resolve reference '$ref' to a commit."
+    fi
+}
+
+################################################################################
+# Upstream Branch Functions
+################################################################################
+
+# Gets the commit hash of the upstream branch for the current HEAD
+# Usage: commit=$(get_upstream_commit)
+# Output:
+#   Commit hash of the upstream branch to stdout
+# Exits:
+#   With error if upstream is not configured
+get_upstream_commit() {
+    local upstream_commit
+    # SC1083 suppressed: @{u} is git syntax, not shell expansion
+    # shellcheck disable=SC1083
+    upstream_commit=$(git rev-parse --verify @{u} 2>/dev/null) || {
+        error "No upstream branch configured for the current branch.
+       Use 'git branch --set-upstream-to=<remote>/<branch>' to configure it."
+        exit 1
+    }
+    echo "$upstream_commit"
+}
+
+################################################################################
+# Commit Ancestry Functions
+################################################################################
+
+# Ensures a reference is an ancestor of HEAD
+# Usage: ensure_ancestor_of_head "ref" ["reason"]
+# Parameters:
+#   $1 - Reference to check
+#   $2 - (Optional) Additional context for error message
+# Exits:
+#   With error if reference is empty, doesn't exist, or is not an ancestor of HEAD
+ensure_ancestor_of_head() {
+    local ref="${1:-}"
+    local reason="${2:-}"
+    if [[ -z "$ref" ]]; then
+        error "Reference is required."
+    fi
+
+    ensure_commit_exists "$ref"
+
+    if ! git merge-base --is-ancestor "${ref}^{commit}" HEAD >/dev/null 2>&1; then
+        if [[ -n "$reason" ]]; then
+            error "Reference '$ref' is not an ancestor of HEAD; $reason"
+        else
+            error "Reference '$ref' is not an ancestor of HEAD."
+        fi
+    fi
+}
+
+# Resolves a HEAD target from user input
+# Usage: target=$(resolve_head_target "arg" ["default"])
+# Parameters:
+#   $1 - User argument (empty, number 1-999, or commit reference)
+#   $2 - (Optional) Default target if arg is empty, defaults to "HEAD~1"
+# Output:
+#   Resolved commit reference to stdout
+# Examples:
+#   resolve_head_target "" -> "HEAD~1" (or custom default)
+#   resolve_head_target "3" -> "HEAD~3"
+#   resolve_head_target "abc123" -> "abc123"
+resolve_head_target() {
+    local arg="${1:-}"
+    local default_target="${2:-HEAD~1}"
+
+    if [[ -z "$arg" ]]; then
+        printf '%s\n' "$default_target"
+    elif [[ "$arg" =~ ^[1-9][0-9]{0,2}$ ]]; then
+        printf 'HEAD~%s\n' "$arg"
+    else
+        printf '%s\n' "$arg"
+    fi
+}
+
+################################################################################
+# Commit History Navigation Functions
+################################################################################
+
+# Gets the Nth commit hash in history, optionally for specific files
+# Usage: commit=$(get_commit_n_back N [file1] [file2] ...)
+# Parameters:
+#   $1 - Number of commits to go back (0-99)
+#   $@ - (Optional) Files to consider; if provided, counts only commits affecting those files
+# Output:
+#   Resolved commit hash to stdout
+# Exits:
+#   With error if N commits cannot be found in history
+# Examples:
+#   get_commit_n_back 3 -> HEAD~3
+#   get_commit_n_back 5 src/main.c -> 5th commit that touched src/main.c
+get_commit_n_back() {
+    local n="$1"
+    shift
+    local files=("$@")
+
+    if [[ ! "$n" =~ ^([0-9]|[1-9][0-9]?)$ ]]; then
+        # This is an internal check, user input should be validated first
+        error "Internal error: N must be an integer between 0 and 99."
+        exit 1
+    fi
+
+    local target_commit
+
+    if [ ${#files[@]} -eq 0 ]; then
+        # No files specified, go back N commits in overall history.
+        target_commit="HEAD~$n"
+    else
+        # Files specified, find the commit N steps back from their last change.
+        if [ "$n" -eq 0 ]; then
+            # N=0 means reset to HEAD.
+            target_commit="HEAD"
+        else
+            # N > 0 means go back N commits BEFORE the last change.
+            # We skip N commits from the list of file changes and take the next one.
+            target_commit=$(git rev-list --skip=$((n)) -1 HEAD -- "${files[@]}" 2>/dev/null)
+            if [ -z "$target_commit" ]; then
+                local file_list
+                printf -v file_list "%s " "${files[@]}"
+                error "Could not find $n commits in the history of: ${file_list% }"
+                exit 1
+            fi
+        fi
+    fi
+
+    echo "$target_commit"
+}
+
+################################################################################
+# Working Tree State Functions
+################################################################################
+
+# Checks if there are any pending changes (staged, unstaged, or untracked)
+# Usage: if has_pending_changes; then ...; fi
+# Returns:
+#   0 if there are pending changes, 1 if working tree is clean
+has_pending_changes() {
+  git status --porcelain=2 --untracked-files=normal | grep -q '.'
+}
+
+# Checks if there are staged changes (index dirty)
+# Usage: if has_staged_changes; then ...; fi
+# Returns:
+#   0 if staged changes exist, 1 otherwise
+has_staged_changes() {
+  if git diff --cached --quiet >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
+# Checks if there are unstaged tracked changes (working tree dirty)
+# Usage: if has_unstaged_changes; then ...; fi
+# Returns:
+#   0 if unstaged tracked changes exist, 1 otherwise
+has_unstaged_changes() {
+  if git diff --quiet >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
+# Checks if working tree is clean (no uncommitted changes)
+# Usage: check_working_tree_clean
+# Exits:
+#   With error if there are uncommitted changes (staged or unstaged)
+#   Error message includes counts and suggested solutions
+check_working_tree_clean() {
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        local unstaged_count
+        local staged_count
+        unstaged_count=$(git diff --name-only | wc -l)
+        staged_count=$(git diff --cached --name-only | wc -l)
+
+        error "Working tree is not clean!
+       Unstaged changes: $unstaged_count files
+       Staged changes: $staged_count files
+
+       Solutions:
+       • Use 'git w-backup' to save changes first
+       • Use 'git w-discard-all' to discard changes
+       • Use 'git w-discard <file>' for specific files"
+    fi
+}
+
+# Checks if specific files are clean (no staged or unstaged changes)
+# Usage: check_files_clean file1 file2 ...
+# Parameters:
+#   $@ - Files to check
+# Exits:
+#   With error if any of the specified files have uncommitted changes
+#   Error message includes affected files and suggested solutions
+check_files_clean() {
+    local -a files=("$@")
+    if [ ${#files[@]} -eq 0 ]; then
+        return 0 # No files to check
+    fi
+
+    # Optimization: use a single git command to check all files at once
+    mapfile -t files_with_changes < <( (
+        git diff --name-only -- "${files[@]}"
+        git diff --cached --name-only -- "${files[@]}"
+    ) | sort -u )
+
+    if [ ${#files_with_changes[@]} -gt 0 ]; then
+        error "Cannot proceed because some affected files have uncommitted changes.
+       Affected files:
+         $(printf "%s\n" "${files_with_changes[@]}" | sed 's/^/         /')
+
+       Solutions:
+       • Use 'hug w wipe-all' to discard changes
+       • Use 'hug w wipe <file>' for specific files"
+        exit 1
+    fi
+}
+
+################################################################################
+# File State Checking Functions
+################################################################################
+
+# Checks if a file exists in a specific commit
+# Usage: check_file_in_commit "commit" "file"
+# Parameters:
+#   $1 - Commit reference
+#   $2 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Exits:
+#   With error if file does not exist in the specified commit
+check_file_in_commit() {
+    check_git_repo
+    local commit="$1"
+    local file="${GIT_PREFIX}$2"
+    if ! git cat-file -e "$commit:$file" 2>/dev/null; then
+        error "File '$file' does not exist in commit $commit"
+    fi
+}
+
+# Previews changes for specific files
+# Usage: preview_file_changes "commit" "file"
+# Parameters:
+#   $1 - Commit reference
+#   $2 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Output:
+#   Diff preview (first 20 lines) to stderr
+preview_file_changes() {
+  check_git_repo
+  local commit="$1"
+  local file="${GIT_PREFIX}$2"
+
+  printf "─ %s ─\n" "$file" >&2
+  if git diff --no-index -- "$file" <(git show "$commit:$file") 2>/dev/null | head -20 >&2; then
+    printf "─ (showing first 20 lines) ─\n\n" >&2
+  else
+    printf "─ (binary file or no changes) ─\n\n" >&2
+  fi
+}
+
+# Checks if a file has staged changes
+# Usage: check_file_staged "file"
+# Parameters:
+#   $1 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Exits:
+#   With error if file has staged changes
+check_file_staged() {
+  check_git_repo
+  local file="${GIT_PREFIX}$1"
+
+  if ! git diff --cached --quiet -- "$file" 2>/dev/null; then
+    error "File '$file' has staged changes
+    Use 'hug us $file' to unstage first"
+  fi
+}
+
+# Checks if a file has unstaged changes
+# Usage: check_file_unstaged "file"
+# Parameters:
+#   $1 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Exits:
+#   With error if file has unstaged changes
+check_file_unstaged() {
+  check_git_repo
+  local file="${GIT_PREFIX}$1"
+
+  if ! git diff --quiet -- "$file" 2>/dev/null; then
+    error "File '$file' has unstaged changes
+    Use 'git w-discard $file' to discard changes first"
+  fi
+}
+
+# Detects if the staged changes for a file are binary
+# Usage: if is_binary_staged "file"; then ...; fi
+# Parameters:
+#   $1 - File path (relative to current directory)
+# Environment:
+#   GIT_PREFIX - Git prefix path (set automatically if not present)
+# Returns:
+#   0 if file has binary staged changes, 1 otherwise
+is_binary_staged() {
+  check_git_repo
+  local file="${GIT_PREFIX}$1"
+  local added deleted
+  local diff_numstat
+
+  diff_numstat="$(git diff --cached --numstat -- "$file" 2>/dev/null || true)"
+  if [[ -n $diff_numstat ]]; then
+    IFS=$'\t' read -r added deleted _ <<<"$diff_numstat"
+    [[ $added == "-" && $deleted == "-" ]]
+  else
+    false  # No staged changes, not binary
+  fi
+}
+
+################################################################################
+# Working Tree File Listing Functions
+################################################################################
+
+# Lists files that are staged (index differs from HEAD)
+# Usage: mapfile -t files < <(list_staged_files [--status] [--cwd])
+# Parameters:
+#   --status - If provided, outputs "status\tfile" (one per line, status like 'M', 'A', 'R100' for renames)
+#   --cwd    - If provided, scopes listing to current directory and subdirectories only
+# Output:
+#   File paths relative to current directory (one per line, or status\tfile if --status)
+# Notes:
+#   Always converts paths to current-directory-relative via GIT_PREFIX.
+#   For renames/copies with --status, outputs the new file path.
+#   Empty output if no staged files.
+list_staged_files() {
+    local with_status=false
+    local scope_cwd=false
+    
+    # Parse flags
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --status)
+                with_status=true
+                shift
+                ;;
+            --cwd)
+                scope_cwd=true
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    check_git_repo
+    
+    # Build git command with optional scoping
+    local -a git_cmd_base=("git" "diff" "--cached")
+    if $with_status; then
+        git_cmd_base+=("--name-status")
+    else
+        git_cmd_base+=("--name-only")
+    fi
+    
+    if $scope_cwd; then
+        git_cmd_base+=("--" ".")
+    fi
+
+    if $with_status; then
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            local status old new file
+            IFS=$'\t' read -r status old new <<< "$line"
+            if [[ "$status" == R* ]] || [[ "$status" == C* ]]; then
+                file="$new"
+            else
+                file="$old"
+            fi
+            [[ -z "$file" ]] && continue
+            # Always convert to current-dir relative paths
+            local -a single=("$file")
+            convert_to_relative_paths single
+            printf '%s\t%s\n' "$status" "${single[0]}"
+        done < <("${git_cmd_base[@]}" 2>/dev/null || true)
+    else
+        local -a paths=()
+        mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
+        # Always convert to current-dir relative paths
+        convert_to_relative_paths paths
+        printf '%s\n' "${paths[@]}"
+    fi
+}
+
+# Lists unstaged tracked files (working tree differs from index)
+# Usage: mapfile -t files < <(list_unstaged_files [--status] [--cwd])
+# Parameters:
+#   --status - If provided, outputs "status\tfile" (one per line, status like 'M', 'D')
+#   --cwd    - If provided, scopes listing to current directory and subdirectories only
+# Output:
+#   File paths relative to current directory (one per line, or status\tfile if --status)
+# Notes:
+#   Always converts paths to current-directory-relative via GIT_PREFIX.
+#   For potential renames/copies with --status, outputs the relevant file path (future-proof).
+#   Empty output if no unstaged files.
+list_unstaged_files() {
+    local with_status=false
+    local scope_cwd=false
+    
+    # Parse flags
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --status)
+                with_status=true
+                shift
+                ;;
+            --cwd)
+                scope_cwd=true
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    check_git_repo
+    
+    # Build git command with optional scoping
+    local -a git_cmd_base=("git" "diff")
+    if $with_status; then
+        git_cmd_base+=("--name-status")
+    else
+        git_cmd_base+=("--name-only")
+    fi
+    
+    if $scope_cwd; then
+        git_cmd_base+=("--" ".")
+    fi
+
+    if $with_status; then
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            local status old new file
+            IFS=$'\t' read -r status old new <<< "$line"
+            if [[ "$status" == R* ]] || [[ "$status" == C* ]]; then
+                file="$new"
+            else
+                file="$old"
+            fi
+            [[ -z "$file" ]] && continue
+            # Always convert to current-dir relative paths
+            local -a single=("$file")
+            convert_to_relative_paths single
+            printf '%s\t%s\n' "$status" "${single[0]}"
+        done < <("${git_cmd_base[@]}" 2>/dev/null || true)
+    else
+        local -a paths=()
+        mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
+        # Always convert to current-dir relative paths
+        convert_to_relative_paths paths
+        printf '%s\n' "${paths[@]}"
+    fi
+}
+
+# Lists untracked files (not in index or .gitignore)
+# Usage: mapfile -t files < <(list_untracked_files [--cwd])
+# Parameters:
+#   --cwd - If provided, scopes listing to current directory and subdirectories only
+# Output:
+#   File paths relative to current directory (one per line)
+# Notes:
+#   Always converts paths to current-directory-relative via GIT_PREFIX.
+#   Parses git status --porcelain=v1 -z for ?? entries.
+#   Empty output if no untracked files.
+#   Preserves special characters in filenames (e.g., spaces, newlines).
+list_untracked_files() {
+    local scope_cwd=false
+    if [[ "${1:-}" == "--cwd" ]]; then
+        scope_cwd=true
+        shift
+    fi
+
+    check_git_repo
+    
+    # Build git command with optional scoping
+    local -a git_cmd=("git" "status" "--porcelain=v1" "-z")
+    if $scope_cwd; then
+        git_cmd+=("--" ".")
+    fi
+
+    local -a paths=()
+    while IFS= read -r -d '' entry; do
+        [[ -z "$entry" ]] && continue
+        local status="${entry:0:2}"
+        if [[ "$status" == "??" ]]; then
+            local file="${entry:3}"
+            paths+=("$file")
+        fi
+    done < <("${git_cmd[@]}" 2>/dev/null || true)
+
+    # Always convert to current-dir relative paths
+    convert_to_relative_paths paths
+    printf '%s\n' "${paths[@]}"
+}
+
+# Lists ignored files (matched by .gitignore)
+# Usage: mapfile -t files < <(list_ignored_files [--cwd])
+# Parameters:
+#   --cwd - If provided, scopes listing to current directory and subdirectories only
+# Output:
+#   File paths relative to current directory (one per line)
+# Notes:
+#   Always converts paths to current-directory-relative via GIT_PREFIX.
+#   Parses git status --porcelain=v1 --ignored=matching -z for !! entries.
+#   Empty output if no ignored files.
+#   Preserves special characters in filenames (e.g., spaces, newlines).
+list_ignored_files() {
+    local scope_cwd=false
+    if [[ "${1:-}" == "--cwd" ]]; then
+        scope_cwd=true
+        shift
+    fi
+
+    check_git_repo
+    
+    # Build git command with optional scoping
+    local -a git_cmd=("git" "status" "--porcelain=v1" "--ignored=matching" "-z")
+    if $scope_cwd; then
+        git_cmd+=("--" ".")
+    fi
+
+    local -a paths=()
+    while IFS= read -r -d '' entry; do
+        [[ -z "$entry" ]] && continue
+        local status="${entry:0:2}"
+        if [[ "$status" == "!!" ]]; then
+            local file="${entry:3}"
+            paths+=("$file")
+        fi
+    done < <("${git_cmd[@]}" 2>/dev/null || true)
+
+    # Always convert to current-dir relative paths
+    convert_to_relative_paths paths
+    printf '%s\n' "${paths[@]}"
+}
+
+# Lists all tracked files (in the index)
+# Usage: mapfile -t files < <(list_tracked_files [--cwd])
+# Parameters:
+#   --cwd - If provided, scopes listing to current directory and subdirectories only
+# Output:
+#   File paths relative to current directory (one per line)
+# Notes:
+#   When --cwd is NOT specified, lists all files in repository by running from repo root.
+#   When --cwd IS specified, lists files in current directory and subdirectories.
+#   Uses git ls-files to list index contents (excludes untracked).
+#   Includes unchanged tracked files.
+#   Empty output if no tracked files (new repo).
+list_tracked_files() {
+    local scope_cwd=false
+    if [[ "${1:-}" == "--cwd" ]]; then
+        scope_cwd=true
+        shift
+    fi
+
+    check_git_repo
+    
+    local -a paths=()
+    if $scope_cwd; then
+        # Scope to current directory: run ls-files with -- .
+        mapfile -t paths < <(git ls-files -- . 2>/dev/null || true)
+    else
+        # Browse full repository: run ls-files from repo root
+        local repo_root
+        repo_root="$(git rev-parse --show-toplevel)"
+        mapfile -t paths < <(git -C "$repo_root" ls-files 2>/dev/null || true)
+        # Paths are now relative to repo root, convert to current-dir relative
+        convert_to_relative_paths paths
+    fi
+
+    printf '%s\n' "${paths[@]}"
+}
+
+################################################################################
+# Discard Operations - Unstaged Changes
+################################################################################
+
+# Discards all unstaged changes in the repository
+# Usage: discard_all_unstaged [--dry-run]
+# Parameters:
+#   $1 - (Optional) --dry-run flag for preview mode
+# Effects:
+#   Restores working tree to index state (preserves staged changes)
+# Output:
+#   Status message and list of affected files
+discard_all_unstaged() {
+  local dry_run=false
+  # Check for --dry-run flag (passed as first argument if present)
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    dry_run=true
+    shift  # Remove the flag
+  fi
+
+  # Ensure we're in a Git repo
+  check_git_repo
+
+  # Check if there are any unstaged changes (modified tracked files)
+  local -a affected_files=()
+  mapfile -t affected_files < <(git diff --name-only 2>/dev/null || true)
+  dedupe_array affected_files
+
+  if [[ ${#affected_files[@]} -eq 0 ]]; then
+    printf 'No unstaged changes to discard in the repository.\n'
+    return 0
+  fi
+
+  if $dry_run; then
+    printf 'Dry run: Would discard unstaged changes from the following files:\n'
+    print_list '  ' "${affected_files[@]}"
+    return 0
+  fi
+
+  # Perform the discard: Restore working tree to index repo-wide (preserves staged)
+  if ! git restore --worktree . 2>/dev/null; then  # Suppress per-file output; check exit code
+    error "Failed to discard all unstaged changes. Check for submodules or permissions."
+  fi
+
+  printf 'Discarded all unstaged changes from the repository (preserving staged changes).\n'
+  print_list 'Affected files:' "${affected_files[@]}"
+}
+
+# Discards unstaged changes for specific paths
+# Usage: discard_unstaged array_name
+# Parameters:
+#   $1 - Name of array containing paths to discard (nameref)
+# Effects:
+#   Restores working tree to index state for specified paths
+# Output:
+#   List of affected paths
+discard_unstaged() {
+  local -n paths_ref="$1"  # Nameref to capture the array passed as the first argument (e.g., unstaged_paths)
+  shift  # Remove the array name from arguments, leaving any extras if needed (though not used here)
+
+  if [[ ${#paths_ref[@]} -eq 0 ]]; then
+    return 0  # Nothing to do; early exit
+  fi
+
+  check_git_repo
+  
+  # Convert paths to be relative to current directory
+  convert_to_relative_paths paths_ref
+
+  if ! git checkout -- "${paths_ref[@]}" 2>/dev/null; then  # Discard unstaged: working tree to index; suppress warnings, check exit
+    error "Failed to discard unstaged changes for the specified paths. Check for submodules or permissions."
+  fi
+
+  print_list 'Discarded unstaged changes from (preserving staged)' "${paths_ref[@]}"
+}
+
+################################################################################
+# Discard Operations - All Uncommitted Changes
+################################################################################
+
+# Discards all uncommitted changes (staged and unstaged) in the repository
+# Usage: discard_all_uncommitted_changes [--dry-run]
+# Parameters:
+#   $1 - (Optional) --dry-run flag for preview mode
+# Effects:
+#   Hard resets working tree and index to HEAD
+# Output:
+#   Status message and list of affected files
+discard_all_uncommitted_changes() {
+  local dry_run=false
+  # Optional first arg: --dry-run (for preview without changes)
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    dry_run=true
+  fi
+
+  # Ensure we're in a Git repo
+  check_git_repo
+
+  # Collect unique affected files: staged + unstaged changes (tracked only)
+  local -a affected_files=()
+  mapfile -t affected_files < <(git diff --name-only --cached -- . 2>/dev/null || true)
+  local -a unstaged_files=()
+  mapfile -t unstaged_files < <(git diff --name-only -- . 2>/dev/null || true)
+  # Union into affected_files
+  affected_files+=("${unstaged_files[@]}")
+  dedupe_array affected_files  # From your libraries; removes duplicates
+
+  if [[ ${#affected_files[@]} -eq 0 ]]; then
+    if ! $dry_run; then
+      printf 'No uncommitted changes to discard in the repository.\n'
+    fi
+    return 0
+  fi
+
+  if $dry_run; then
+    printf 'Dry run: Would discard all uncommitted changes from the following files:\n'
+    print_list '  ' "${affected_files[@]}"
+    return 0
+  fi
+
+  # Perform the full repo-wide discard (staged + unstaged) to HEAD
+  if ! git restore --source=HEAD --staged --worktree .; then
+    error "Failed to discard all uncommitted changes. If submodules are dirty, run: git submodule foreach --recursive git restore --source=HEAD --staged --worktree ."
+  fi
+
+  printf 'Successfully discarded all uncommitted changes in the repository.\n'
+  print_list 'Affected files:' "${affected_files[@]}"
+  return 0
+}
+
+# Discards all uncommitted changes for specific paths
+# Usage: discard_uncommitted_changes array_name [--dry-run]
+# Parameters:
+#   $1 - Name of array containing paths (nameref)
+#   $2 - (Optional) --dry-run flag for preview mode
+# Effects:
+#   Resets working tree and index to HEAD for specified paths
+# Output:
+#   List of affected paths
+discard_uncommitted_changes() {
+  local -n target_files_ref="$1"  # Nameref to the array of target paths (caller provides union/deduped list)
+  local dry_run=false
+  # Optional second arg: --dry-run (for preview without changes)
+  if [[ "${2:-}" == "--dry-run" ]]; then
+    dry_run=true
+  fi
+
+  # Ensure we're in a Git repo
+  check_git_repo
+
+  if [[ ${#target_files_ref[@]} -eq 0 ]]; then
+    if ! $dry_run; then
+      printf 'No uncommitted changes to discard for the specified paths.\n'
+    fi
+    return 0
+  fi
+
+  if $dry_run; then
+    printf 'Dry run: Would discard all uncommitted changes from the following paths:\n'
+    print_list '  ' "${target_files_ref[@]}"
+    return 0
+  fi
+
+  # Convert paths to be relative to current directory
+  convert_to_relative_paths target_files_ref
+
+  # Perform the full discard to HEAD (staged + unstaged)
+  if ! git restore --source=HEAD --staged --worktree -- "${target_files_ref[@]}"; then
+    error "Failed to discard uncommitted changes for the specified paths. Check for conflicts or submodules."
+  fi
+
+  print_list 'Discarded all uncommitted changes from' "${target_files_ref[@]}"
+  return 0
+}
+
+################################################################################
+# Discard Operations - Staged Changes Only
+################################################################################
+
+# Discards staged changes for a file with no unstaged changes
+# Usage: discard_staged_no_unstaged "file"
+# Parameters:
+#   $1 - File path
+# Effects:
+#   Resets file to HEAD state (removes from staging)
+# Output:
+#   Status message
+discard_staged_no_unstaged() {
+  local file="$1"
+  
+  # Ensure GIT_PREFIX is set
+  check_git_repo
+  
+  # Convert path to be relative to current directory
+  local -a file_array=("$file")
+  convert_to_relative_paths file_array
+  local relative_file="${file_array[0]}"
+  
+  if ! git restore --source=HEAD --staged --worktree -- "$relative_file"; then
+    error "Failed to discard staged changes for '$file' (no unstaged)."
+  fi
+  printf 'Discarded staged changes from %s\n' "$file"
+}
+
+# Discards staged changes for a file with unstaged changes
+# Usage: discard_staged_with_unstaged "file" "repo_root" failed_patch_var
+# Parameters:
+#   $1 - File path
+#   $2 - Repository root path
+#   $3 - Name of variable to store failed patch path (nameref, optional output)
+# Effects:
+#   Attempts to preserve unstaged changes while discarding staged changes
+#   Uses multiple fallback strategies (3-way merge, reject files, fuzz patching)
+# Returns:
+#   0 on success, 1 on failure (with guidance printed to stderr)
+# Note:
+#   This is a complex operation that may fail for conflicting changes
+#   On failure, provides detailed guidance and preserves patch files for manual resolution
+# Params: file, repo_root, failed_patch (output var for failure paths, optional)
+discard_staged_with_unstaged() {
+  local file="$1"
+  local repo_root="$2"
+  local -n failed_patch_ref="$3"  # Nameref for output on failure (optional)
+
+  # Ensure GIT_PREFIX is set
+  check_git_repo
+  
+  # Convert path to be relative to current directory for git commands
+  local -a file_array=("$file")
+  convert_to_relative_paths file_array
+  local relative_file="${file_array[0]}"
+  
+  local local_file="$repo_root/$file"
+  local unstaged_patch sanitized_patch rej_file=""
+
+  # Generate unstaged patch BEFORE any reset (from current index to WD)
+  unstaged_patch=$(mktemp -t hug-unstaged.XXXXXX.patch)
+  sanitized_patch=$(mktemp -t hug-unstaged-clean.XXXXXX.patch)  # Pre-create for consistency
+  trap 'rm -f "'"$unstaged_patch"'" "'"$sanitized_patch"'" "$rej_file"' RETURN  # Cleanup on success
+
+  if ! git diff -- "$relative_file" > "$unstaged_patch"; then
+    trap - RETURN
+    rm -f "$unstaged_patch" "$sanitized_patch"
+    error "Failed to capture unstaged patch for '$file'."
+  fi
+
+  # Sanitize patch (remove index line for relaxed fallbacks)
+  awk 'NR==2 && /^index / {next} {print}' "$unstaged_patch" > "$sanitized_patch"
+
+  # Reset both index and WD to HEAD (discard staged + temp WD to "1")
+  if ! git restore --source=HEAD --staged --worktree -- "$relative_file"; then
+    trap - RETURN
+    rm -f "$unstaged_patch" "$sanitized_patch"
+    error "Failed to reset '$file' to HEAD."
+  fi
+
+  local success=false
+  # Primary: Git 3-way apply (uses patch blob refs)
+  if git apply --3way --ignore-whitespace --whitespace=nowarn "$unstaged_patch" 2>/dev/null; then
+    success=true
+  else
+    # Fallback 1: Git 2-way with reject (native, but strict)
+    if git apply --ignore-whitespace --whitespace=nowarn --reject "$sanitized_patch" 2>/dev/null; then
+      # Check for .rej (rejected hunk)
+      rej_file="${local_file}.rej"
+      if [[ -f "$rej_file" ]]; then
+        rm -f "$rej_file"
+      else
+        success=true
+      fi
+    else
+      # Fallback 2: Standard 'patch' command with fuzz (forgiving for missing context)
+      if command -v patch >/dev/null 2>&1; then
+        if patch -p1 --forward --fuzz=3 --ignore-whitespace < "$sanitized_patch" 2>/dev/null; then
+          # Check for .rej (rejected)
+          rej_file="${local_file}.rej"
+          if [[ -f "$rej_file" ]]; then
+            rm -f "$rej_file"
+          else
+            success=true
+          fi
+        fi
+      fi
+    fi
+  fi
+
+  if $success; then
+    trap - RETURN
+    rm -f "$unstaged_patch" "$sanitized_patch" "$rej_file"
+    printf 'Discarded staged changes from %s (unstaged preserved)\n' "$file"
+    return 0
+  else
+    # Failure: Preserve files, print guidance (clean any markers if present)
+    trap - RETURN
+    # Clean conflict markers if inserted (simple regex replace)
+    if grep -q '<<<<<<<' "$local_file" 2>/dev/null; then
+      sed -i '/^<<<<<<< ours/,/^>>>>>>> theirs/d' "$local_file"  # Remove markers, keep original WD content
+      printf 'Warning: Removed conflict markers from %s (manual resolution needed).\n' "$file" >&2
+    fi
+    if [[ -n "${failed_patch_ref+set}" ]]; then
+      failed_patch_ref="$unstaged_patch"  # Provide original patch for manual
+    fi
+    printf 'Failed to preserve unstaged changes for %s.\n' "$file" >&2
+    printf '  • Saved unstaged diff: %s\n' "$unstaged_patch" >&2
+    printf '  • Sanitized patch: %s\n' "$sanitized_patch" >&2
+    # Print sanitized patch contents for immediate inspection
+    printf '\nSanitized patch contents (the unstaged changes that failed to be preserved):\n' >&2
+    cat "$sanitized_patch" >&2
+    printf '\n' >&2
+    # If .rej exists (from --reject), explain and print it
+    rej_file="${local_file}.rej"
+    if [[ -f "$rej_file" ]]; then
+      printf '  • Rejected hunk file: %s (contains parts of the patch that could not be applied automatically)\n' "$rej_file" >&2
+      printf 'Rejected hunk contents:\n' >&2
+      cat "$rej_file" >&2
+      printf '\nTo resolve: Edit the rejected hunk into %s manually, then remove the .rej file.\n' "$local_file" >&2
+    fi
+    printf 'You can try manually after resetting:\n' >&2
+    printf '  git restore --source=HEAD --staged --worktree -- "%s"\n' "$file" >&2
+    printf '  git apply --3way --ignore-whitespace "%s"\n' "$unstaged_patch" >&2
+    printf '  or patch -p1 --fuzz=3 --ignore-whitespace < "%s"\n' "$sanitized_patch" >&2
+    printf 'If conflicts persist, resolve the .rej file manually.\n' >&2
+    printf 'To restore original state (before command):\n' >&2
+    printf '  git checkout HEAD -- "%s"  # or git restore --source=HEAD --staged --worktree -- "%s"\n' "$file" "$file" >&2
+    printf '  Then re-stage and re-add unstaged manually.\n' >&2
+    return 1
+  fi
+}
+
+# Discards all staged changes in the repository
+# Usage: discard_all_staged [--dry-run]
+# Parameters:
+#   $1 - (Optional) --dry-run flag for preview mode
+# Effects:
+#   Discards staged changes while attempting to preserve unstaged changes
+#   Handles binary files and symlinks with appropriate error messages
+# Output:
+#   Status messages and list of affected files
+# Note:
+#   Cannot safely handle binary files or symlinks with both staged and unstaged changes
+discard_all_staged() {
+  local dry_run=false
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    dry_run=true
+    shift
+  fi
+
+  check_git_repo
+
+  local -a staged_paths=()
+  mapfile -t staged_paths < <(git diff --cached --name-only 2>/dev/null || true)
+  dedupe_array staged_paths
+
+  if [[ ${#staged_paths[@]} -eq 0 ]]; then
+    if ! $dry_run; then
+      printf 'No staged changes to discard in the repository.\n'
+    fi
+    return 0
+  fi
+
+  if $dry_run; then
+    printf 'Dry run: Would discard staged changes from the following files (unstaged preserved):\n'
+    for file in "${staged_paths[@]}"; do
+      printf '  %s\n' "$file"
+    done
+    return 0
+  fi
+
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel)"
+
+  # Compute has_unstaged only for staged paths
+  declare -A has_unstaged
+  local -a temp_unstaged_paths=()
+  mapfile -t temp_unstaged_paths < <(git diff --name-only -- "${staged_paths[@]}" 2>/dev/null || true)
+  dedupe_array temp_unstaged_paths
+  for file in "${temp_unstaged_paths[@]}"; do
+    has_unstaged["$file"]=true
+  done
+
+  for file in "${staged_paths[@]}"; do
+    local has_unstaged_flag=false
+    if [[ -n "${has_unstaged[$file]+set}" ]]; then
+      has_unstaged_flag=true
+    fi
+
+    # Early errors for unsafe cases
+    if $has_unstaged_flag && is_binary_staged "$file"; then
+      error "Cannot safely discard staged changes for binary path '$file' while preserving unstaged changes. Please stash or commit the unstaged content first."
+    fi
+
+    local local_file="$repo_root/$file"
+    if $has_unstaged_flag && is_symlink "$local_file"; then
+      error "Cannot safely discard staged changes for symbolic link '$file' while preserving unstaged changes. Please stash or commit the unstaged content first."
+    fi
+
+    if ! $has_unstaged_flag; then
+      discard_staged_no_unstaged "$file"
+      continue
+    fi
+
+    # SC2034: failed_patch is assigned via nameref in discard_staged_with_unstaged
+    # shellcheck disable=SC2034
+    local failed_patch=""
+    if ! discard_staged_with_unstaged "$file" "$repo_root" failed_patch; then
+      exit 1
+    fi
+  done
+
+  printf 'Successfully discarded all staged changes in the repository (unstaged preserved where applicable).\n'
+  return 0
+}
+
+# Helper function to handle dry-run confirmation pattern
+# Usage: handle_dry_run_confirmation dry_run message
+# Parameters:
+#   $1 - Boolean flag indicating if it's a dry run
+#   $2 - Message to display for confirmation
+# Returns:
+#   0 if operation should proceed, exits if cancelled
+handle_dry_run_confirmation() {
+  local dry_run=$1
+  local message=$2
+  
+  if $dry_run; then
+    printf 'Dry run: %s\n' "$message"
+    exit 0
+  fi
+}
+
+# Helper function to check if there are no changes to process
+# Usage: check_no_changes count message [dry_run]
+# Parameters:
+#   $1 - Count of items to check
+#   $2 - Message to display when there are no changes
+#   $3 - Optional dry_run flag
+# Returns:
+#   0 if there are changes, exits if no changes (unless dry_run)
+check_no_changes() {
+  local count=$1
+  local message=$2
+  local dry_run=${3:-false}
+  
+  if [[ $count -eq 0 ]]; then
+    if ! $dry_run; then
+      printf '%s\n' "$message"
+    fi
+    exit 0
+  fi
+}
+
+################################################################################
+# Branch Information Functions
+################################################################################
+
+# Computes details for local branches and populates output arrays
+# Usage: compute_local_branch_details current_branch max_len hashes branches tracks subjects [include_subjects]
+# Parameters (all namerefs to output variables):
+#   $1 - Scalar to receive current branch name
+#   $2 - Scalar to receive max branch name length
+#   $3 - Array to receive commit hashes
+#   $4 - Array to receive branch names
+#   $5 - Array to receive tracking information
+#   $6 - Array to receive commit subjects
+#   $7 - (Optional) Boolean to include subjects (default: true); if false, skips subject computation and leaves subjects empty
+# Returns:
+#   0 if branches found, 1 if no branches exist
+# Note:
+#   Arrays are cleared before population. Branches are sorted by name. Tracking info mimics 'git branch -vv' format.
+compute_local_branch_details() {
+    local -n current_branch_ref="$1"
+    local -n max_len_ref="$2"
+    local -n hashes_ref="$3"
+    local -n branches_ref="$4"
+    local -n tracks_ref="$5"
+    local -n subjects_ref="$6"
+    local include_subjects="${7:-false}"
+
+    # Clear outputs
+    current_branch_ref=""
+    max_len_ref=0
+    branches_ref=()
+    hashes_ref=()
+    subjects_ref=()
+    tracks_ref=()
+
+    #
+    # --- ROBUST SANITIZATION: CURRENT BRANCH ---
+    # Get the current branch and aggressively strip any trailing newline or
+    # carriage return characters to ensure string comparisons work correctly.
+    local current_branch_raw
+    current_branch_raw=$(git branch --show-current 2>/dev/null || echo "")
+    current_branch_ref=$(printf '%s' "$current_branch_raw" | tr -d '\n\r')
+
+    # Build format: Include upstream:short separately for reliable name resolution
+    local format='%(refname:short)%00%(objectname:short)'
+    if [[ "$include_subjects" == "true" ]]; then
+        format+='%00%(subject)'
+    fi
+    format+='%00%(upstream:short)%00'
+
+    # Use mapfile for robust, atomic parsing of null-delimited data.
+    local -a git_output=()
+    mapfile -t -d '' git_output < <(git for-each-ref \
+        --format="$format" \
+        --sort=refname refs/heads/)
+
+    # Iterate through the flat array in chunks of 3 or 4.
+    local i
+    local increment=3
+    local chunk_limit=2
+    if [[ "$include_subjects" == "true" ]]; then
+        increment=4
+        chunk_limit=3
+    fi
+    for ((i = 0; i + chunk_limit < ${#git_output[@]}; i += increment)); do
+        #
+        # --- ROBUST SANITIZATION: BRANCH AND SUBJECT (if included) ---
+        # Read the raw values and then pipe them through 'tr' to delete any
+        # hidden \n or \r characters. This is the critical fix.
+        #
+        local branch_raw="${git_output[i]}"
+        local branch
+        branch=$(printf '%s' "$branch_raw" | tr -d '\n\r')
+        
+        # Skip backup branches (internal implementation detail)
+        # Backup branches follow the pattern: hug-backups/**
+        if [[ "$branch" == hug-backups/* ]]; then
+            continue
+        fi
+
+        local hash="${git_output[i+1]}"
+
+        local subject=""
+        if [[ "$include_subjects" == "true" ]]; then
+            local subject_raw="${git_output[i+2]}"
+            subject=$(printf '%s' "$subject_raw" | tr -d '\n\r')
+        fi
+
+        local upstream_name="${git_output[i + increment - 1]}"
+        upstream_name=$(printf '%s' "$upstream_name" | tr -d '\n\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')  # Trim whitespace
+
+        # Compute divergence status to mimic 'git branch -vv' (ahead/behind)
+        local status=""
+        if [[ -n "$upstream_name" ]]; then
+            local divergence
+            divergence=$(git rev-list --left-right --count "$branch...$upstream_name" 2>/dev/null || echo "")
+            if [[ -n "$divergence" ]]; then
+                local ahead behind
+                IFS='	' read -r ahead behind <<< "$divergence"
+                if [[ "$ahead" != "0" && "$behind" != "0" ]]; then
+                    status="[ahead $ahead behind $behind]"
+                elif [[ "$ahead" != "0" ]]; then
+                    status="[ahead $ahead]"
+                elif [[ "$behind" != "0" ]]; then
+                    status="[behind $behind]"
+                fi
+            fi
+        fi
+
+        # Build track string: [upstream: status] like 'git branch -vv'
+        local track=""
+        if [[ -n "$upstream_name" ]]; then
+            track="$CYAN[$upstream_name"
+            if [[ -n "$status" ]]; then
+                track+=": $BLUE$(echo $status | tr -d '[]')$CYAN"
+            fi
+            track+="]"
+        elif [[ -n "$status" ]]; then
+            # Fallback if name empty but status computable (rare)
+            track="$status"
+        fi
+
+        # Operate directly on the nameref to update the max length.
+        #
+        if (( ${#branch} > max_len_ref )); then
+            max_len_ref=${#branch}
+        fi
+
+        branches_ref+=("$branch")
+        hashes_ref+=("$hash")
+        if [[ "$include_subjects" == "true" ]]; then
+            subjects_ref+=("$GREY${subject:-(no commit message)}$NC")
+        fi
+        tracks_ref+=("$track")
+    done
+
+    # Check if any branches were found
+    if [ ${#branches_ref[@]} -eq 0 ]; then
+        return 1
+    fi
+
+    return 0
+}
+
+# Prints a single formatted branch line (shared helper for list and menu)
+# Usage: print_branch_line prefix current_branch max_len i hashes_ref branches_ref tracks_ref subjects_ref
+# Parameters:
+#   $1 - Prefix string for the line (e.g., "" for list current, "  " for list non-current, "%d) " or "%d)   " for menu)
+#   $2 - Current branch name
+#   $3 - Maximum branch name length (for alignment)
+#   $4 - Index i in the arrays
+#   $5-$8 - Namerefs to arrays (hashes branches tracks subjects)
+# Output:
+#   Formatted branch line to stdout; subject printed only if subjects array is non-empty
+# SC2178: Nameref declarations are intentional
+# shellcheck disable=SC2178
+print_branch_line() {
+    local prefix="$1"
+    local current_branch="$2"
+    local max_len="$3"
+    local i="$4"
+    local -n hashes_ref="$5"
+    local -n branches_ref="$6"
+    local -n tracks_ref="$7"
+    local -n subjects_ref="$8"
+
+    local branch="${branches_ref[i]}"
+    local hash="${hashes_ref[i]}"
+    local subject=""
+    local track="${tracks_ref[i]}"
+
+    if [ "$branch" = "$current_branch" ]; then
+        if [ -n "$track" ]; then
+            printf "${prefix}${GREEN}* %7s %-*s %s${NC}" "$hash" "$max_len" "$branch" "$track"
+        else
+            printf "${prefix}${GREEN}* %7s %-*s${NC}" "$hash" "$max_len" "$branch"
+        fi
+    else
+        if [ -n "$track" ]; then
+            printf "${prefix}${YELLOW}%7s${NC} %-*s %s${NC}" "$hash" "$max_len" "$branch" "$track"
+        else
+            printf "${prefix}${YELLOW}%7s${NC} %-*s" "$hash" "$max_len" "$branch"
+        fi
+    fi
+
+    if [[ ${#subjects_ref[@]} -gt 0 ]]; then
+        subject="${subjects_ref[i]}"
+        printf " %s\n" "$subject"
+    else
+        printf "\n"
+    fi
+}
+
+# Prints a non-interactive list of branches with details
+# Usage: print_branch_list current_branch max_len hashes branches tracks subjects
+# Parameters:
+#   $1 - Current branch name
+#   $2 - Maximum branch name length (for alignment)
+#   $3-$6 - Namerefs to arrays (hashes branches tracks subjects)
+# Output:
+#   Formatted branch list to stdout, with current branch highlighted in green;
+#   subjects printed only if subjects array is non-empty
+# SC2178: These nameref declarations are intentional and correct
+# shellcheck disable=SC2178
+print_branch_list() {
+    local current_branch="$1"
+    local max_len="$2"
+    local -n hashes_ref="$3"
+    local -n branches_ref="$4"
+    local -n tracks_ref="$5"
+    local -n subjects_ref="$6"
+
+    for i in "${!branches_ref[@]}"; do
+        local branch="${branches_ref[i]}"
+        local prefix=""
+        if [ "$branch" != "$current_branch" ]; then
+            prefix="  "
+        fi
+        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$3" "$4" "$5" "$6"
+    done
+}
+
+# Prints an interactive menu for branch selection
+# Usage: print_interactive_branch_menu selected current_branch max_len hashes branches tracks subjects
+# Parameters (namerefs):
+#   $1 - Output variable to receive selected branch name
+#   $2 - Current branch name
+#   $3 - Maximum branch name length (for alignment)
+#   $4-$7 - Namerefs to arrays (hashes branches tracks subjects)
+# Effects:
+#   Displays numbered menu and prompts for selection
+#   For repositories with 10 or more branches, uses gum filter (if installed) for
+#   easier searching and selection. Otherwise, displays a numbered list.
+#   Loops until valid selection is made
+# Output:
+#   Selected branch name via nameref parameter; subjects printed only if subjects array is non-empty
+# SC2178: These nameref declarations are intentional and correct
+# shellcheck disable=SC2178
+print_interactive_branch_menu() {
+    local -n selected_ref="$1"
+    local current_branch="$2"
+    local max_len="$3"
+    local -n hashes_ref="$4"
+    local -n branches_ref="$5"
+    local -n tracks_ref="$6"
+    local -n subjects_ref="$7"
+
+    local num_branches="${#branches_ref[@]}"
+    if [[ $num_branches -eq 0 ]]; then
+        error "No branches available for selection."
+        return 1
+    fi
+
+    # Use gum filter for 10+ branches if gum is available
+    if [[ $num_branches -ge 10 ]] && gum_available; then
+        local -a formatted_options=()
+        local i
+        for i in "${!branches_ref[@]}"; do
+            local branch="${branches_ref[i]}"
+            local hash="${hashes_ref[i]}"
+            local track="${tracks_ref[i]}"
+            local subject=""
+            if [[ ${#subjects_ref[@]} -gt 0 ]]; then
+                subject="${subjects_ref[i]}"
+            fi
+            
+            # Format: "branch (hash) [track] subject"
+            # Current branch is marked with *
+            local marker=""
+            if [ "$branch" = "$current_branch" ]; then
+                marker="${GREEN}* "
+            fi
+            
+            local formatted="${marker}${branch} $YELLOW$hash$NC"
+            if [ -n "$track" ]; then
+                formatted="$formatted $track"
+            fi
+            if [ -n "$subject" ]; then
+                formatted="$formatted $subject"
+            fi
+            
+            formatted_options+=("$formatted")
+        done
+        
+        # Use dynamic height: min of 15 or number of branches + 2 for UI
+        local gum_height=$(($num_branches < 13 ? $num_branches + 2 : 15))
+        local index
+        index=$(get_gum_selection_index formatted_options branches "$num_branches branches; Pick one to switch to..." "$gum_height")
+        
+        # SC2034: selected_ref is a nameref that assigns to caller's variable
+        # shellcheck disable=SC2034
+        selected_ref="${branches_ref[$index]}"
+        return 0
+    fi
+
+    # Fallback to numbered list for < 10 branches or when gum is not available
+    printf "Select a branch to switch to:\n\n"
+
+    local i
+    for i in "${!branches_ref[@]}"; do
+        local num=$((i + 1))
+        local branch="${branches_ref[i]}"
+        local prefix="$num) "
+        if [ "$branch" != "$current_branch" ]; then
+            prefix="${num})   "
+        fi
+        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$4" "$5" "$6" "$7"
+    done
+
+    local index
+    index=$(get_numbered_selection_index "$num_branches")
+    # SC2034: selected_ref is a nameref that assigns to caller's variable
+    # shellcheck disable=SC2034
+    selected_ref="${branches_ref[$index]}"
+    return 0
+}
+
+# Interactive Selection Helpers
+# These functions provide reusable logic for interactive selection from lists,
+# used by commands like 'hug b' and 'hug brestore' to avoid duplication.
+
+# Threshold for using gum filter instead of numbered list
+readonly MIN_ITEMS_FOR_GUM=10
+
+# Returns the 0-based index of the selected item from gum filter output
+# Usage: index=$(get_gum_selection_index formatted_options match_keys placeholder height)
+# Parameters:
+#   $1 - Name of array containing formatted options (nameref, clean strings for display)
+#   $2 - Name of array containing match keys (nameref, e.g., branch names or identifiers)
+#   $3 - Placeholder text for gum prompt
+#   $4 - Height for gum UI
+# Output:
+#   Index of matched item to stdout
+# Exits:
+#   With "Cancelled." if no selection, error if no match
+get_gum_selection_index() {
+    local -n formatted_options_ref="$1"
+    local -n match_keys_ref="$2"
+    local placeholder="$3"
+    local height="$4"
+    local num_items=${#formatted_options_ref[@]}
+    local have_match_keys=false
+    if [[ ${#match_keys_ref[@]} -gt 0 ]]; then
+        have_match_keys=true
+    fi
+
+    if [[ $num_items -eq 0 ]]; then
+        error "No items available for selection."
+        return 1
+    fi
+
+    local selection
+    selection=$(printf '%s\n' "${formatted_options_ref[@]}" | gum filter --placeholder="$placeholder" --height="$height" --no-strip-ansi --reverse || true)
+    
+    if [[ -z "$selection" ]]; then
+        info "Cancelled."
+        exit 1
+    fi
+
+    local normalized_selection="$selection"
+    if [[ "$normalized_selection" == \** ]]; then
+        normalized_selection="${normalized_selection#\* }"
+        normalized_selection="${normalized_selection#\*}"
+    fi
+    normalized_selection="${normalized_selection#"${normalized_selection%%[![:space:]]*}"}"
+
+    local selection_key="$normalized_selection"
+    local trailing_whitespace="${selection_key##*[![:space:]]}"
+    selection_key="${selection_key%"$trailing_whitespace"}"
+
+    if [[ "$selection_key" == *" → "* ]]; then
+        selection_key="${selection_key%% → *}"
+    elif [[ "$selection_key" == *" ("* ]]; then
+        selection_key="${selection_key%% (*}"
+    else
+        selection_key="${selection_key%% *}"
+    fi
+
+    local i
+    for i in "${!formatted_options_ref[@]}"; do
+        if [[ "${formatted_options_ref[i]}" == "$selection" ]]; then
+            echo "$i"
+            return 0
+        fi
+
+        if [[ $have_match_keys == true && $i -lt ${#match_keys_ref[@]} ]]; then
+            local key="${match_keys_ref[i]}"
+            if [[ -n "$key" && "$selection_key" == "$key" ]]; then
+                echo "$i"
+                return 0
+            fi
+        fi
+    done
+
+    error "Selection could not be matched to an item."
+}
+
+# Prompts for numbered choice and returns the 0-based index
+# Usage: index=$(get_numbered_selection_index num_items)
+# Parameters:
+#   $1 - Number of items in the list
+# Output:
+#   Selected index to stdout
+# Exits:
+#   With "Cancelled." if read fails or invalid input persists
+get_numbered_selection_index() {
+    local num_items="$1"
+
+    if [[ $num_items -eq 0 ]]; then
+        error "No items available for selection."
+        return 1
+    fi
+
+    local choice
+    printf "Enter choice (1-%d): " "$num_items" >&2
+    if ! read -r choice; then
+        info "Cancelled."
+        exit 1
+    fi
+
+    while true; do
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$num_items" ]; then
+            echo "$((choice - 1))"
+            return 0
+        else
+            printf "Invalid choice. Please enter a number between 1 and %d: " "$num_items" >&2
+            if ! read -r choice; then
+                info "Cancelled."
+                exit 1
+            fi
+        fi
+    done
+}
+
+################################################################################
+# Commit Range Analysis Functions
+################################################################################
+
+# Counts commits in a range
+# Usage: count=$(count_commits_in_range "start" ["end"])
+# Parameters:
+#   $1 - Start commit (exclusive)
+#   $2 - (Optional) End commit (inclusive), defaults to HEAD
+# Output:
+#   Number of commits in range to stdout
+count_commits_in_range() {
+    local start="$1"
+    local end="${2:-HEAD}"
+
+    git rev-list --count "$start..$end" 2>/dev/null || echo 0
+}
+
+# Prints a list of commits in a given range
+# Usage: print_commit_list_in_range "start" ["end"]
+# Parameters:
+#   $1 - Start commit (exclusive)
+#   $2 - (Optional) End commit (inclusive), defaults to HEAD
+# Output:
+#   Formatted commit list to stdout (typically redirected to stderr for prompts)
+# Note:
+#   This is the standard utility for displaying commit lists to users
+#   Uses 'hug ll' command for consistent formatting
+print_commit_list_in_range() {
+    local start="$1"
+    local end="${2:-HEAD}"
+
+    hug ll "$start..$end"
+}
+
+# Lists changed files in a commit range
+# Usage: files=$(list_changed_files_in_range "start" ["end"])
+# Parameters:
+#   $1 - Start commit (exclusive)
+#   $2 - (Optional) End commit (inclusive), defaults to HEAD
+# Output:
+#   Sorted unique list of changed file paths to stdout
+list_changed_files_in_range() {
+    local start="$1"
+    local end="${2:-HEAD}"
+
+    git diff --name-only "$start..$end" | sort -u
+}
+
+# Counts changed files in a commit range
+# Usage: count=$(count_changed_files_in_range "start" ["end"])
+# Parameters:
+#   $1 - Start commit (exclusive)
+#   $2 - (Optional) End commit (inclusive), defaults to HEAD
+# Output:
+#   Number of unique changed files to stdout
+count_changed_files_in_range() {
+    local start="$1"
+    local end="${2:-HEAD}"
+
+    git diff --name-only "$start..$end" | wc -l
+}
+
+################################################################################
+# Preview Helper Functions
+################################################################################
+
+# Prints preview summary (📊 section): commit count and diff stat
+# Usage: print_preview_summary num_commits commit_word target_short range
+# Parameters:
+#   $1 - Number of commits
+#   $2 - "commit" or "commits"
+#   $3 - Short commit hash of target
+#   $4 - Range for diff (e.g., "target..HEAD")
+# Output: 📊 summary and diff stat to stderr
+print_preview_summary() {
+    local num_commits="$1"
+    local commit_word="$2"
+    local target_short="$3"
+    local range="$4"
+    printf '📊 %d %s since %s:\n' "$num_commits" "$commit_word" "$target_short" >&2
+    if git diff --quiet "$range"; then
+        printf 'No file changes.\n' >&2
+    else
+        git diff --stat "$range" >&2
+    fi
+}
+
+# Prints commit list header (📤 section)
+# Usage: print_commit_list_header header_type target_name is_new include_commits
+# Parameters:
+#   $1 - Header type (e.g., "moving", "Outgoing")
+#   $2 - Target name (e.g., branch or "upstream")
+#   $3 - "true" if new branch, "false" otherwise
+#   $4 - "true" to include "commits" in header, "false" otherwise
+# Output: 📤 header to stderr
+print_commit_list_header() {
+    local header_type="$1"
+    local target_name="$2"
+    local is_new="$3"
+    local include_commits="$4"
+    local suffix=""
+    if [[ "$is_new" == "true" ]]; then
+        suffix=" (new branch)"
+    fi
+    if [[ -n "$target_name" ]]; then
+        local commits_text=""
+        if [[ "$include_commits" == "true" ]]; then
+            commits_text=" commits"
+        fi
+        printf '\n📤 %s%s to %s%s:\n' "$header_type" "$commits_text" "$target_name" "$suffix" >&2
+    else
+        local commits_text=" commits"
+        if [[ "$include_commits" != "true" ]]; then
+            commits_text=""
+        fi
+        printf '\n📤 %s%s:\n' "$header_type" "$commits_text" >&2
+    fi
+}
+
+################################################################################
+# Upstream Operation Handlers
+################################################################################
+
+# Handles upstream validation, preview, and confirmation for operations
+# Usage: target=$(handle_upstream_operation "action_name")
+# Parameters:
+#   $1 - Action description verb (e.g., "rewinding", "squashing")
+# Output:
+#   Upstream commit hash to stdout
+# Environment:
+#   HUG_QUIET - If not "T", displays preview and confirmation prompts
+# Exits:
+#   With info message if already synced to upstream
+# Note:
+#   This helper is read-only: never mutates commits, index, or working tree
+#   After gathering preview information and confirmation, echoes upstream commit
+handle_upstream_operation() {
+    local action_name="$1"
+
+    local target
+    target=$(get_upstream_commit) || return 1  # Propagate failure if no upstream
+    
+    # Additional safety check
+    if [[ -z "$target" ]]; then
+        error "Failed to get upstream commit."
+    fi
+
+    local local_commits
+    local_commits=$(count_commits_in_range "$target" HEAD)
+
+    if [ "$local_commits" -eq 0 ]; then
+        info "Already synced to upstream ($(git rev-parse --short "$target"))."
+        exit 0
+    fi
+
+    if [[ ${HUG_QUIET:-} != T ]]; then
+        local upstream_short upstream_branch
+        upstream_short=$(git rev-parse --short "$target")
+        upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
+
+        printf 'Commits to be affected:\n' >&2
+        print_commit_list_in_range "$target" HEAD >&2
+
+        local range_for_diff
+        range_for_diff="$target..HEAD"
+
+        # Check if there are any file changes to show stats for
+        if git diff --quiet "$range_for_diff"; then
+            printf '\nPreview: no file changes in %d local commits to %s (%s).\n' >&2 \
+                "$local_commits" "$upstream_short" "$upstream_branch"
+        else
+            printf '\nPreview: changes in %d local commits to %s (%s):\n' >&2 \
+                "$local_commits" "$upstream_short" "$upstream_branch"
+            git diff --stat "$range_for_diff" >&2
+        fi
+
+        printf '\n⚠️  This action involves %s to upstream.\n' "$action_name" >&2
+        prompt_confirm "Proceed with $action_name to upstream? [y/N]: "
+    fi
+
+    echo "$target"
+}
+
+# Handles validation, preview, and confirmation for standard local operations
+# Usage: handle_standard_operation "action_name" "target_commit"
+# Parameters:
+#   $1 - Action description verb (e.g., "soft resetting", "rewinding")
+#   $2 - Target commit to reset/move to
+# Environment:
+#   HUG_QUIET - If not "T", displays preview information
+# Exits:
+#   With info message if already at target
+# Note:
+#   This helper is read-only: never mutates commits, index, or working tree
+#   Displays commit list and file change statistics for the operation
+handle_standard_operation() {
+    local action_name="$1"
+    local target="$2"
+    local skip_when_aligned="${3:-true}"
+
+    local commits_to_affected
+    commits_to_affected=$(count_commits_in_range "$target" HEAD)
+
+    if [ "$commits_to_affected" -eq 0 ]; then
+        if [[ "$skip_when_aligned" == true ]] || ! has_pending_changes; then
+            info "Already at target $(git rev-parse --short "$target"). No action taken."
+            exit 0
+        fi
+
+        if [[ ${HUG_QUIET:-} != T ]]; then
+            info "No commits to $action_name; local tracked changes will be reset."
+        fi
+        return 0
+    fi
+
+    if [[ ${HUG_QUIET:-} != T ]]; then
+        local range_for_diff
+        range_for_diff="$target..HEAD"
+        local commit_word="commit"
+        if [ "$commits_to_affected" -gt 1 ]; then
+            commit_word="commits"
+        fi
+
+        printf 'Commits to be affected:\n' >&2
+        print_commit_list_in_range "$target" HEAD >&2
+
+        if git diff --quiet "$range_for_diff"; then
+            printf '\nPreview: no file changes in %d %s.\n' >&2 \
+                "$commits_to_affected" "$commit_word"
+        else
+            printf '\nPreview: changes in %d %s:\n' >&2 \
+                "$commits_to_affected" "$commit_word"
+            git diff --stat "$range_for_diff" >&2
+        fi
+    fi
+}
+
+################################################################################
+# Branch Backup
+################################################################################
+
+# 🛡️ (Internal Helper) Creates a standardized backup branch.
+#
+# It's used by other 'hug' commands before they perform a
+# destructive operation.
+#
+# @param $1  The commit or branch to back up (e.g., "HEAD", "my-feature")
+# @param $2  The base name for the new branch (e.g., "my-feature")
+#
+# @output  The name of the created backup branch (e.g., "hug-backups/2025-11/01-0815.my-feature")
+# @return  0 on success, 1 on failure
+#
+create_backup_branch() {
+  local source_ref="$1"
+  local base_name="$2"
+
+  # --- 1. Validation ---
+  if [ -z "$source_ref" ]; then
+    error "Error (internal): create_backup_branch requires a source reference." >&2
+    return 1
+  fi
+
+  if [ -z "$base_name" ]; then
+    error "Error (internal): create_backup_branch requires a base name." >&2
+    return 1
+  fi
+
+  # --- 2. Generate Name ---
+  # Example: hug-backups/2025-11/01-0815.my-feature
+  local backup_name="hug-backups/$(date +'%Y-%m/%d-%H%M').$base_name"
+
+  # --- 3. Create Branch ---
+  if ! git branch "$backup_name" "$source_ref" >/dev/null 2>&1; then
+    error "Error (internal): Failed to create backup branch '$backup_name'." >&2
+    return 1
+  fi
+
+  # --- 4. Output the name to stdout ---
+  echo "$backup_name"
+}
+
+# Gets list of backup branches
+# Usage: branches=$(get_backup_branches)
+# Output:
+#   List of backup branch names (one per line) to stdout
+#   Branches are sorted by refname (chronologically by date in the path)
+# Returns:
+#   0 if successful (even if no branches found)
+get_backup_branches() {
+  git for-each-ref --format='%(refname:short)' 'refs/heads/hug-backups/**' 2>/dev/null || true
+}
+
+# Extracts original branch name from a backup branch name
+# Usage: original=$(extract_original_name "hug-backups/2024-11/02-1234.feature")
+# Parameters:
+#   $1 - Backup branch name (e.g., "hug-backups/2024-11/02-1234.feature")
+# Output:
+#   Original branch name (e.g., "feature") to stdout
+# Note:
+#   Backup format: hug-backups/YYYY-MM/DD-HHMM.branch-name
+#   Returns empty string if name doesn't match expected format
+extract_original_name() {
+  local backup="$1"
+  # Remove the hug-backups/YYYY-MM/DD-HHMM. prefix
+  echo "$backup" | sed -E 's|^hug-backups/[0-9][0-9][0-9][0-9]-[0-9][0-9]/[0-9][0-9]-[0-9][0-9][0-9][0-9]\.||'
+}
+
+# Formats a backup branch name for display by removing the common prefix
+# Usage: display_name=$(format_backup_display_name "hug-backups/2024-11/02-1234.feature")
+# Parameters:
+#   $1 - Backup branch name (e.g., "hug-backups/2024-11/02-1234.feature")
+# Output:
+#   Display-friendly name (e.g., "2024-11/02-1234.feature") to stdout
+# Note:
+#   Removes only the "hug-backups/" prefix to avoid visual clutter
+format_backup_display_name() {
+  local backup="$1"
+  echo "$backup" | sed 's|^hug-backups/||'
+}
+
+################################################################################
+# Rebase Helpers
+################################################################################
+
+# Abort if no rebase conflict
+abort_if_no_rebase_conflict() {
+
+  # Validate rebase in progress
+  if ! [ -d ".git/rebase-merge" ]; then
+    error "No rebase in progress. Run 'hug rb <branch>' first."
+  fi
+
+  # Check for current conflicts
+  local conflicted_files=$(git diff --name-only --diff-filter=U)
+  if [ -z "$conflicted_files" ]; then
+    error "No current conflicts found.
+           (If you resolved manually, run 'hug rbc'.)"
+  fi
+}
+
+# Resolves the CURRENT rebase conflict by picking one version.
+# Must be run when a rebase is paused due to conflicts.
+#
+# Usage:
+#   rebase_pick current   -> Picks *your* feature branch's changes.
+#   rebase_pick other     -> Picks the *main* branch's changes.
+#
+rebase_pick() {
+  local hug_strategy="${1:-}" strategy
+  local branch_name
+
+  # Check if rebase is in progress
+  if ! [ -d ".git/rebase-merge" ]; then
+    echo "Error: No rebase in progress. Run 'git rebase <branch>' first."
+    return 1
+  fi
+
+  if [ "$hug_strategy" == "current" ]; then
+    strategy="--theirs" # In rebase, --theirs is *your* commit
+    branch_name="current (your changes)"
+  elif [ "$hug_strategy" == "other" ]; then
+    strategy="--ours"   # In rebase, --ours is the target branch
+    branch_name="other (target branch / incoming changes)"
+  else
+    echo "Error: You must specify 'current' or 'other'."
+    echo "Usage: rebase-pick [current|other]"
+    return 1
+  fi
+
+  local conflicted_files
+  conflicted_files=$(git diff --name-only --diff-filter=U)
+
+  if [ -z "$conflicted_files" ]; then
+    echo "Error: No conflicts found."
+    echo "   (If you resolved manually, run 'hug rbc'.)"
+    return 1
+  fi
+
+  info "Resolving conflict using strategy $branch_name..."
+
+  for file in $conflicted_files; do
+    echo "  -> Resolving $file..."
+    git checkout "$strategy" -- "$file"
+    git add "$file"
+  done
+
+  echo ""
+  echo "Resuming rebase operation..."
+  git rebase --continue
+}
+
+#
+# Takes over a paused rebase and automatically resolves ALL
+# remaining conflicts using a specified strategy.
+#
+# Usage:
+#   rebase_finish_all current   -> Picks *your* changes for all remaining conflicts.
+#   rebase_finish_all other     -> Picks the *target* branch's changes for all.
+#
+rebase_finish_all() {
+  local choice="$1"
+
+  # --- 1. Argument Validation ---
+  if [[ "$choice" != "current" && "$choice" != "other" ]]; then
+    echo "Error: You must specify 'current' or 'other'."
+    echo "Usage: rebase-finish-all [current|other]"
+    return 1
+  fi
+
+  # --- 2. Check Rebase State ---
+  if ! [ -d ".git/rebase-merge" ]; then
+    echo "Error: No rebase in progress."
+    echo "   Run 'git rebase <branch>' first. Call this *after* it stops on a conflict."
+    return 1
+  fi
+
+  local conflicted_files
+  conflicted_files=$(git diff --name-only --diff-filter=U)
+  if [ -z "$conflicted_files" ]; then
+    echo "Error: No *current* conflicts found to start with."
+    echo "   This function must be called when a rebase is paused on a conflict."
+    echo "   (If you resolved manually, run 'hug rbc'.)"
+    return 1
+  fi
+
+  # --- 3. Setup Strategy ---
+  local strategy_option
+  local branch_name
+
+  if [ "$choice" == "current" ]; then
+    strategy_option="--theirs"
+    branch_name="current (feature branch)"
+  else
+    strategy_option="--ours"
+    branch_name="other (target branch)"
+  fi
+
+  echo "🚀 Taking over rebase to finish all remaining commits..."
+  echo "   Resolution Strategy: **Pick $branch_name** for all conflicts."
+  echo "---"
+
+  # --- 4. Initialize Counters & Start Loop ---
+  local conflicted_commits_count=0
+  local skipped_commits_count=0
+
+  # Loop *while* the rebase directory exists.
+  # This will run at least once to resolve the current conflict.
+  while [ -d ".git/rebase-merge" ]; do
+
+    # Check for conflicts *at this step*
+    conflicted_files=$(git diff --name-only --diff-filter=U)
+
+    if [ -n "$conflicted_files" ]; then
+      # --- A. CONFLICTS FOUND ---
+      ((conflicted_commits_count++))
+      echo "🔄 Conflict detected. Resolving..."
+
+      for file in $conflicted_files; do
+        echo "    -> Resolving $file with '$choice' version."
+        git checkout "$strategy_option" -- "$file"
+        git add "$file"
+      done
+
+      echo "    -> Continuing rebase..."
+      git rebase --continue
+
+    else
+      # --- B. NO CONFLICTS, BUT REBASE STOPPED ---
+      # This means the previous '--continue' resulted in an
+      # empty commit. We must skip it to proceed.
+      ((skipped_commits_count++))
+      echo "⚠️ Rebase stopped, but no conflicts found. (Likely empty commit)"
+      echo "   Skipping it..."
+      git rebase --skip
+    fi
+  done
+
+  # --- 5. Final Report ---
+  if [ $? -ne 0 ]; then
+      echo "---"
+      echo "❌ REBASE FAILED."
+      echo "   The last step failed. Please run 'git status' to check the state."
+      return 1
+  fi
+
+  echo "---"
+  echo "✅ REBASE COMPLETE."
+  echo ""
+  echo "### Rebase Summary ###"
+  echo "* **Strategy Applied**: Pick **$branch_name** for all conflicts."
+  echo "* **Commits with Conflicts**: $conflicted_commits_count"
+  echo "* **Empty Commits Skipped**: $skipped_commits_count"
+  echo ""
+  echo "State: Successfully rebased."
+}

@@ -1,0 +1,445 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-BRANCH: Git branch information, display, and selection functions
+#
+# This library provides functions for:
+# - Computing branch details and metadata
+# - Printing branch lists and menus
+# - Interactive branch selection
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
+################################################################################
+# Branch Information Functions
+################################################################################
+
+# Computes details for local branches and populates output arrays
+# Usage: compute_local_branch_details current_branch max_len hashes branches tracks subjects [include_subjects]
+# Parameters (all namerefs to output variables):
+#   $1 - Scalar to receive current branch name
+#   $2 - Scalar to receive max branch name length
+#   $3 - Array to receive commit hashes
+#   $4 - Array to receive branch names
+#   $5 - Array to receive tracking information
+#   $6 - Array to receive commit subjects
+#   $7 - (Optional) Boolean to include subjects (default: true); if false, skips subject computation and leaves subjects empty
+# Returns:
+#   0 if branches found, 1 if no branches exist
+# Note:
+#   Arrays are cleared before population. Branches are sorted by name. Tracking info mimics 'git branch -vv' format.
+compute_local_branch_details() {
+    local -n current_branch_ref="$1"
+    local -n max_len_ref="$2"
+    local -n hashes_ref="$3"
+    local -n branches_ref="$4"
+    local -n tracks_ref="$5"
+    local -n subjects_ref="$6"
+    local include_subjects="${7:-false}"
+
+    # Clear outputs
+    current_branch_ref=""
+    max_len_ref=0
+    branches_ref=()
+    hashes_ref=()
+    subjects_ref=()
+    tracks_ref=()
+
+    #
+    # --- ROBUST SANITIZATION: CURRENT BRANCH ---
+    # Get the current branch and aggressively strip any trailing newline or
+    # carriage return characters to ensure string comparisons work correctly.
+    local current_branch_raw
+    current_branch_raw=$(git branch --show-current 2>/dev/null || echo "")
+    current_branch_ref=$(printf '%s' "$current_branch_raw" | tr -d '\n\r')
+
+    # Build format: Include upstream:short separately for reliable name resolution
+    local format='%(refname:short)%00%(objectname:short)'
+    if [[ "$include_subjects" == "true" ]]; then
+        format+='%00%(subject)'
+    fi
+    format+='%00%(upstream:short)%00'
+
+    # Use mapfile for robust, atomic parsing of null-delimited data.
+    local -a git_output=()
+    mapfile -t -d '' git_output < <(git for-each-ref \
+        --format="$format" \
+        --sort=refname refs/heads/)
+
+    # Iterate through the flat array in chunks of 3 or 4.
+    local i
+    local increment=3
+    local chunk_limit=2
+    if [[ "$include_subjects" == "true" ]]; then
+        increment=4
+        chunk_limit=3
+    fi
+    for ((i = 0; i + chunk_limit < ${#git_output[@]}; i += increment)); do
+        #
+        # --- ROBUST SANITIZATION: BRANCH AND SUBJECT (if included) ---
+        # Read the raw values and then pipe them through 'tr' to delete any
+        # hidden \n or \r characters. This is the critical fix.
+        #
+        local branch_raw="${git_output[i]}"
+        local branch
+        branch=$(printf '%s' "$branch_raw" | tr -d '\n\r')
+        
+        # Skip backup branches (internal implementation detail)
+        # Backup branches follow the pattern: hug-backups/**
+        if [[ "$branch" == hug-backups/* ]]; then
+            continue
+        fi
+
+        local hash="${git_output[i+1]}"
+
+        local subject=""
+        if [[ "$include_subjects" == "true" ]]; then
+            local subject_raw="${git_output[i+2]}"
+            subject=$(printf '%s' "$subject_raw" | tr -d '\n\r')
+        fi
+
+        local upstream_name="${git_output[i + increment - 1]}"
+        upstream_name=$(printf '%s' "$upstream_name" | tr -d '\n\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')  # Trim whitespace
+
+        # Compute divergence status to mimic 'git branch -vv' (ahead/behind)
+        local status=""
+        if [[ -n "$upstream_name" ]]; then
+            local divergence
+            divergence=$(git rev-list --left-right --count "$branch...$upstream_name" 2>/dev/null || echo "")
+            if [[ -n "$divergence" ]]; then
+                local ahead behind
+                IFS='	' read -r ahead behind <<< "$divergence"
+                if [[ "$ahead" != "0" && "$behind" != "0" ]]; then
+                    status="[ahead $ahead behind $behind]"
+                elif [[ "$ahead" != "0" ]]; then
+                    status="[ahead $ahead]"
+                elif [[ "$behind" != "0" ]]; then
+                    status="[behind $behind]"
+                fi
+            fi
+        fi
+
+        # Build track string: [upstream: status] like 'git branch -vv'
+        local track=""
+        if [[ -n "$upstream_name" ]]; then
+            track="$CYAN[$upstream_name"
+            if [[ -n "$status" ]]; then
+                track+=": $BLUE$(echo $status | tr -d '[]')$CYAN"
+            fi
+            track+="]"
+        elif [[ -n "$status" ]]; then
+            # Fallback if name empty but status computable (rare)
+            track="$status"
+        fi
+
+        # Operate directly on the nameref to update the max length.
+        #
+        if (( ${#branch} > max_len_ref )); then
+            max_len_ref=${#branch}
+        fi
+
+        branches_ref+=("$branch")
+        hashes_ref+=("$hash")
+        if [[ "$include_subjects" == "true" ]]; then
+            subjects_ref+=("$GREY${subject:-(no commit message)}$NC")
+        fi
+        tracks_ref+=("$track")
+    done
+
+    # Check if any branches were found
+    if [ ${#branches_ref[@]} -eq 0 ]; then
+        return 1
+    fi
+
+    return 0
+}
+
+# Prints a single formatted branch line (shared helper for list and menu)
+# Usage: print_branch_line prefix current_branch max_len i hashes_ref branches_ref tracks_ref subjects_ref
+# Parameters:
+#   $1 - Prefix string for the line (e.g., "" for list current, "  " for list non-current, "%d) " or "%d)   " for menu)
+#   $2 - Current branch name
+#   $3 - Maximum branch name length (for alignment)
+#   $4 - Index i in the arrays
+#   $5-$8 - Namerefs to arrays (hashes branches tracks subjects)
+# Output:
+#   Formatted branch line to stdout; subject printed only if subjects array is non-empty
+# SC2178: Nameref declarations are intentional
+# shellcheck disable=SC2178
+print_branch_line() {
+    local prefix="$1"
+    local current_branch="$2"
+    local max_len="$3"
+    local i="$4"
+    local -n hashes_ref="$5"
+    local -n branches_ref="$6"
+    local -n tracks_ref="$7"
+    local -n subjects_ref="$8"
+
+    local branch="${branches_ref[i]}"
+    local hash="${hashes_ref[i]}"
+    local subject=""
+    local track="${tracks_ref[i]}"
+
+    if [ "$branch" = "$current_branch" ]; then
+        if [ -n "$track" ]; then
+            printf "${prefix}${GREEN}* %7s %-*s %s${NC}" "$hash" "$max_len" "$branch" "$track"
+        else
+            printf "${prefix}${GREEN}* %7s %-*s${NC}" "$hash" "$max_len" "$branch"
+        fi
+    else
+        if [ -n "$track" ]; then
+            printf "${prefix}${YELLOW}%7s${NC} %-*s %s${NC}" "$hash" "$max_len" "$branch" "$track"
+        else
+            printf "${prefix}${YELLOW}%7s${NC} %-*s" "$hash" "$max_len" "$branch"
+        fi
+    fi
+
+    if [[ ${#subjects_ref[@]} -gt 0 ]]; then
+        subject="${subjects_ref[i]}"
+        printf " %s\n" "$subject"
+    else
+        printf "\n"
+    fi
+}
+
+# Prints a non-interactive list of branches with details
+# Usage: print_branch_list current_branch max_len hashes branches tracks subjects
+# Parameters:
+#   $1 - Current branch name
+#   $2 - Maximum branch name length (for alignment)
+#   $3-$6 - Namerefs to arrays (hashes branches tracks subjects)
+# Output:
+#   Formatted branch list to stdout, with current branch highlighted in green;
+#   subjects printed only if subjects array is non-empty
+# SC2178: These nameref declarations are intentional and correct
+# shellcheck disable=SC2178
+print_branch_list() {
+    local current_branch="$1"
+    local max_len="$2"
+    local -n hashes_ref="$3"
+    local -n branches_ref="$4"
+    local -n tracks_ref="$5"
+    local -n subjects_ref="$6"
+
+    for i in "${!branches_ref[@]}"; do
+        local branch="${branches_ref[i]}"
+        local prefix=""
+        if [ "$branch" != "$current_branch" ]; then
+            prefix="  "
+        fi
+        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$3" "$4" "$5" "$6"
+    done
+}
+
+# Prints an interactive menu for branch selection
+# Usage: print_interactive_branch_menu selected current_branch max_len hashes branches tracks subjects
+# Parameters (namerefs):
+#   $1 - Output variable to receive selected branch name
+#   $2 - Current branch name
+#   $3 - Maximum branch name length (for alignment)
+#   $4-$7 - Namerefs to arrays (hashes branches tracks subjects)
+# Effects:
+#   Displays numbered menu and prompts for selection
+#   For repositories with 10 or more branches, uses gum filter (if installed) for
+#   easier searching and selection. Otherwise, displays a numbered list.
+#   Loops until valid selection is made
+# Output:
+#   Selected branch name via nameref parameter; subjects printed only if subjects array is non-empty
+# SC2178: These nameref declarations are intentional and correct
+# shellcheck disable=SC2178
+print_interactive_branch_menu() {
+    local -n selected_ref="$1"
+    local current_branch="$2"
+    local max_len="$3"
+    local -n hashes_ref="$4"
+    local -n branches_ref="$5"
+    local -n tracks_ref="$6"
+    local -n subjects_ref="$7"
+
+    local num_branches="${#branches_ref[@]}"
+    if [[ $num_branches -eq 0 ]]; then
+        error "No branches available for selection."
+        return 1
+    fi
+
+    # Use gum filter for 10+ branches if gum is available
+    if [[ $num_branches -ge 10 ]] && gum_available; then
+        local -a formatted_options=()
+        local i
+        for i in "${!branches_ref[@]}"; do
+            local branch="${branches_ref[i]}"
+            local hash="${hashes_ref[i]}"
+            local track="${tracks_ref[i]}"
+            local subject=""
+            if [[ ${#subjects_ref[@]} -gt 0 ]]; then
+                subject="${subjects_ref[i]}"
+            fi
+            
+            # Format: "branch (hash) [track] subject"
+            # Current branch is marked with *
+            local marker=""
+            if [ "$branch" = "$current_branch" ]; then
+                marker="${GREEN}* "
+            fi
+            
+            local formatted="${marker}${branch} $YELLOW$hash$NC"
+            if [ -n "$track" ]; then
+                formatted="$formatted $track"
+            fi
+            if [ -n "$subject" ]; then
+                formatted="$formatted $subject"
+            fi
+            
+            formatted_options+=("$formatted")
+        done
+        
+        # Use dynamic height: min of 15 or number of branches + 2 for UI
+        local gum_height=$(($num_branches < 13 ? $num_branches + 2 : 15))
+        local index
+        index=$(get_gum_selection_index formatted_options branches "$num_branches branches; Pick one to switch to..." "$gum_height")
+        
+        # SC2034: selected_ref is a nameref that assigns to caller's variable
+        # shellcheck disable=SC2034
+        selected_ref="${branches_ref[$index]}"
+        return 0
+    fi
+
+    # Fallback to numbered list for < 10 branches or when gum is not available
+    printf "Select a branch to switch to:\n\n"
+
+    local i
+    for i in "${!branches_ref[@]}"; do
+        local num=$((i + 1))
+        local branch="${branches_ref[i]}"
+        local prefix="$num) "
+        if [ "$branch" != "$current_branch" ]; then
+            prefix="${num})   "
+        fi
+        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$4" "$5" "$6" "$7"
+    done
+
+    local index
+    index=$(get_numbered_selection_index "$num_branches")
+    # SC2034: selected_ref is a nameref that assigns to caller's variable
+    # shellcheck disable=SC2034
+    selected_ref="${branches_ref[$index]}"
+    return 0
+}
+
+# Interactive Selection Helpers
+# These functions provide reusable logic for interactive selection from lists,
+# used by commands like 'hug b' and 'hug brestore' to avoid duplication.
+
+# Threshold for using gum filter instead of numbered list
+readonly MIN_ITEMS_FOR_GUM=10
+
+# Returns the 0-based index of the selected item from gum filter output
+# Usage: index=$(get_gum_selection_index formatted_options match_keys placeholder height)
+# Parameters:
+#   $1 - Name of array containing formatted options (nameref, clean strings for display)
+#   $2 - Name of array containing match keys (nameref, e.g., branch names or identifiers)
+#   $3 - Placeholder text for gum prompt
+#   $4 - Height for gum UI
+# Output:
+#   Index of matched item to stdout
+# Exits:
+#   With "Cancelled." if no selection, error if no match
+get_gum_selection_index() {
+    local -n formatted_options_ref="$1"
+    local -n match_keys_ref="$2"
+    local placeholder="$3"
+    local height="$4"
+    local num_items=${#formatted_options_ref[@]}
+    local have_match_keys=false
+    if [[ ${#match_keys_ref[@]} -gt 0 ]]; then
+        have_match_keys=true
+    fi
+
+    if [[ $num_items -eq 0 ]]; then
+        error "No items available for selection."
+        return 1
+    fi
+
+    local selection
+    selection=$(printf '%s\n' "${formatted_options_ref[@]}" | gum filter --placeholder="$placeholder" --height="$height" --no-strip-ansi --reverse || true)
+    
+    if [[ -z "$selection" ]]; then
+        info "Cancelled."
+        exit 1
+    fi
+
+    local normalized_selection="$selection"
+    if [[ "$normalized_selection" == \** ]]; then
+        normalized_selection="${normalized_selection#\* }"
+        normalized_selection="${normalized_selection#\*}"
+    fi
+    normalized_selection="${normalized_selection#"${normalized_selection%%[![:space:]]*}"}"
+
+    local selection_key="$normalized_selection"
+    local trailing_whitespace="${selection_key##*[![:space:]]}"
+    selection_key="${selection_key%"$trailing_whitespace"}"
+
+    if [[ "$selection_key" == *" → "* ]]; then
+        selection_key="${selection_key%% → *}"
+    elif [[ "$selection_key" == *" ("* ]]; then
+        selection_key="${selection_key%% (*}"
+    else
+        selection_key="${selection_key%% *}"
+    fi
+
+    local i
+    for i in "${!formatted_options_ref[@]}"; do
+        if [[ "${formatted_options_ref[i]}" == "$selection" ]]; then
+            echo "$i"
+            return 0
+        fi
+
+        if [[ $have_match_keys == true && $i -lt ${#match_keys_ref[@]} ]]; then
+            local key="${match_keys_ref[i]}"
+            if [[ -n "$key" && "$selection_key" == "$key" ]]; then
+                echo "$i"
+                return 0
+            fi
+        fi
+    done
+
+    error "Selection could not be matched to an item."
+}
+
+# Prompts for numbered choice and returns the 0-based index
+# Usage: index=$(get_numbered_selection_index num_items)
+# Parameters:
+#   $1 - Number of items in the list
+# Output:
+#   Selected index to stdout
+# Exits:
+#   With "Cancelled." if read fails or invalid input persists
+get_numbered_selection_index() {
+    local num_items="$1"
+
+    if [[ $num_items -eq 0 ]]; then
+        error "No items available for selection."
+        return 1
+    fi
+
+    local choice
+    printf "Enter choice (1-%d): " "$num_items" >&2
+    if ! read -r choice; then
+        info "Cancelled."
+        exit 1
+    fi
+
+    while true; do
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$num_items" ]; then
+            echo "$((choice - 1))"
+            return 0
+        else
+            printf "Invalid choice. Please enter a number between 1 and %d: " "$num_items" >&2
+            if ! read -r choice; then
+                info "Cancelled."
+                exit 1
+            fi
+        fi
+    done
+}
