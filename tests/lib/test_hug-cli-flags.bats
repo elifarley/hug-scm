@@ -1,0 +1,189 @@
+#!/usr/bin/env bats
+# Tests for hug-cli-flags library: CLI flag parsing utilities
+
+load '../test_helper'
+load '../../git-config/lib/hug-output'
+load '../../git-config/lib/hug-cli-flags'
+
+setup() {
+  export HUG_DISABLE_GUM=true
+}
+
+teardown() {
+  unset HUG_DISABLE_GUM
+  unset HUG_FORCE
+  unset HUG_QUIET
+  unset HUG_INTERACTIVE_FILE_SELECTION
+}
+
+@test "hug-cli-flags: parse_common_flags sets dry_run=true for --dry-run" {
+  # Act
+  eval "$(parse_common_flags --dry-run arg1 arg2)"
+  
+  # Assert
+  assert_equal "$dry_run" "true"
+  assert_equal "$1" "arg1"
+  assert_equal "$2" "arg2"
+}
+
+@test "hug-cli-flags: parse_common_flags sets force=true for -f" {
+  # Act
+  eval "$(parse_common_flags -f arg1)"
+  
+  # Assert
+  assert_equal "$force" "true"
+  assert_equal "${HUG_FORCE:-}" "true"
+  assert_equal "$1" "arg1"
+}
+
+@test "hug-cli-flags: parse_common_flags sets force=true for --force" {
+  # Act
+  eval "$(parse_common_flags --force arg1)"
+  
+  # Assert
+  assert_equal "$force" "true"
+  assert_equal "${HUG_FORCE:-}" "true"
+  assert_equal "$1" "arg1"
+}
+
+@test "hug-cli-flags: parse_common_flags exports HUG_QUIET for --quiet" {
+  # Act
+  eval "$(parse_common_flags --quiet arg1)"
+  
+  # Assert
+  assert_equal "${HUG_QUIET:-}" "T"
+  assert_equal "$1" "arg1"
+}
+
+@test "hug-cli-flags: parse_common_flags handles multiple flags" {
+  # Act
+  eval "$(parse_common_flags --dry-run -f --quiet arg1 arg2)"
+  
+  # Assert
+  assert_equal "$dry_run" "true"
+  assert_equal "$force" "true"
+  assert_equal "${HUG_FORCE:-}" "true"
+  assert_equal "${HUG_QUIET:-}" "T"
+  assert_equal "$1" "arg1"
+  assert_equal "$2" "arg2"
+}
+
+@test "hug-cli-flags: parse_common_flags handles -- as separator" {
+  # Act
+  eval "$(parse_common_flags arg1 -- arg2 arg3)"
+  
+  # Assert
+  assert_equal "$1" "arg1"
+  assert_equal "$2" "arg2"
+  assert_equal "$3" "arg3"
+}
+
+@test "hug-cli-flags: parse_common_flags sets HUG_INTERACTIVE_FILE_SELECTION when -- is last arg" {
+  # Act
+  eval "$(parse_common_flags arg1 arg2 --)"
+  
+  # Assert
+  assert_equal "${HUG_INTERACTIVE_FILE_SELECTION:-}" "true"
+  assert_equal "$1" "arg1"
+  assert_equal "$2" "arg2"
+  assert_equal "$#" "2"
+}
+
+@test "hug-cli-flags: parse_common_flags handles no arguments" {
+  # Act
+  eval "$(parse_common_flags)"
+  
+  # Assert
+  assert_equal "$#" "0"
+}
+
+@test "hug-cli-flags: parse_common_flags preserves non-flag arguments" {
+  # Act
+  eval "$(parse_common_flags --dry-run file1.txt file2.txt)"
+  
+  # Assert
+  assert_equal "$dry_run" "true"
+  assert_equal "$1" "file1.txt"
+  assert_equal "$2" "file2.txt"
+}
+
+@test "hug-cli-flags: parse_common_flags handles flags interspersed with args" {
+  # Act
+  eval "$(parse_common_flags arg1 --dry-run arg2 -f arg3)"
+  
+  # Assert
+  assert_equal "$dry_run" "true"
+  assert_equal "$force" "true"
+  assert_equal "$1" "arg1"
+  assert_equal "$2" "arg2"
+  assert_equal "$3" "arg3"
+}
+
+@test "hug-cli-flags: parse_common_flags handles only -- as last argument" {
+  # Act
+  eval "$(parse_common_flags --)"
+  
+  # Assert
+  assert_equal "${HUG_INTERACTIVE_FILE_SELECTION:-}" "true"
+  assert_equal "$#" "0"
+}
+
+@test "hug-cli-flags: require_args passes with enough arguments" {
+  # Arrange
+  export HUG_DISABLE_GUM=true
+  
+  # Act
+  run require_args 2 3 "custom message"
+  
+  # Assert
+  assert_success
+}
+
+@test "hug-cli-flags: require_args fails with too few arguments" {
+  # Arrange
+  export HUG_DISABLE_GUM=true
+  
+  # Act
+  run bash -c "
+    cd '$BATS_TEST_DIRNAME/../..'
+    source 'git-config/lib/hug-terminal'
+    source 'git-config/lib/hug-gum'
+    source 'git-config/lib/hug-output'
+    source 'git-config/lib/hug-cli-flags'
+    require_args 3 1
+  "
+  
+  # Assert
+  assert_failure
+  assert_output --partial "requires at least 3 argument(s)"
+}
+
+@test "hug-cli-flags: require_args uses custom error message" {
+  # Arrange
+  export HUG_DISABLE_GUM=true
+  
+  # Act
+  run bash -c "
+    cd '$BATS_TEST_DIRNAME/../..'
+    source 'git-config/lib/hug-terminal'
+    source 'git-config/lib/hug-gum'
+    source 'git-config/lib/hug-output'
+    source 'git-config/lib/hug-cli-flags'
+    require_args 2 1 'custom error message'
+  "
+  
+  # Assert
+  assert_failure
+  assert_output --partial "custom error message"
+}
+
+@test "hug-cli-flags: require_args passes when actual equals required" {
+  # Arrange
+  export HUG_DISABLE_GUM=true
+  
+  # Act
+  run require_args 2 2
+  
+  # Assert
+  assert_success
+}
