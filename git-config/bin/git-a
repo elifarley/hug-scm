@@ -10,19 +10,22 @@ show_help() {
 hug a: Stage tracked files, or specific files if provided.
 
 USAGE:
-  hug a          # Stage all tracked files (updates only)
-  hug a .        # Stage current directory
-  hug a <file>   # Stage specific files
-  hug a --       # Interactive file selection
+  hug a                # Stage all tracked files (updates only)
+  hug a .              # Stage current directory
+  hug a <file>         # Stage specific files
+  hug a --             # Interactive file selection (current directory scope)
+  hug a --browse-root  # Interactive file selection (full repository scope)
 
 OPTIONS:
   --             Trigger interactive file selection UI
+  --browse-root  Browse full repository scope in file selector UI (default: current directory)
   -h, --help     Show this help message and exit.
 
 DESCRIPTION:
   Stage tracked files for commit. When no arguments are provided, stages all
   tracked files that have been modified. Use '--' to interactively select
-  files to stage.
+  files to stage. By default, interactive selection is scoped to the current
+  directory and subdirectories. Use --browse-root to browse the entire repository.
 
 SEE ALSO:
   hug aa: Stage everything (tracked + untracked + deletions)
@@ -30,6 +33,18 @@ SEE ALSO:
   hug ap: Add patches interactively (no commit)
 EOF
 }
+
+# Parse --browse-root flag before common flags
+browse_root=false
+new_args=()
+for arg in "$@"; do
+  if [[ "$arg" == "--browse-root" ]]; then
+    browse_root=true
+  else
+    new_args+=("$arg")
+  fi
+done
+set -- "${new_args[@]}"
 
 # Parse common flags (handles -- detection automatically)
 eval "$(parse_common_flags "$@")"
@@ -40,8 +55,17 @@ check_git_repo
 # Check if user wants interactive file selection via --
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   # Get list of files with changes (tracked files)
+  declare -a select_opts=("--multi" "--unstaged" "--untracked")
+  
+  # Default to --cwd (current directory scope) unless --browse-root is specified
+  if ! $browse_root; then
+    select_opts+=("--cwd")
+  fi
+  
+  select_opts+=("--prompt" "Select files to stage...")
+  
   files=()
-  if ! mapfile -t files < <(select_files_with_status --multi --unstaged --untracked --prompt "Select files to stage..."); then
+  if ! mapfile -t files < <(select_files_with_status "${select_opts[@]}"); then
     info "No files selected or cancelled."
     exit 0
   fi

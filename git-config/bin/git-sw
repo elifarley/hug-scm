@@ -12,23 +12,28 @@ hug sw: Show status with patch of working directory changes.
 USAGE:
     hug sw [<file>] [-h, --help]
     hug sw --
+    hug sw --browse-root
 
 ARGUMENTS:
     <file>         Show working directory changes for specific file (optional)
-    --             Interactive file selection from changed files
+    --             Interactive file selection from changed files (current directory scope)
 
 OPTIONS:
+    --browse-root  Browse full repository scope in file selector UI (default: current directory)
     -h, --help     Show this help
 
 DESCRIPTION:
     Shows the diff of all working directory changes (staged + unstaged).
     When no file is specified, shows all working directory changes. Use '--'
     to interactively select a file from files with working directory changes.
+    By default, interactive selection is scoped to the current directory and
+    subdirectories. Use --browse-root to browse the entire repository.
 
 EXAMPLES:
-    hug sw                 # Show all working directory changes
-    hug sw file.txt        # Show working directory changes for specific file
-    hug sw --              # Interactive file selection
+    hug sw                  # Show all working directory changes
+    hug sw file.txt         # Show working directory changes for specific file
+    hug sw --               # Interactive file selection (current directory)
+    hug sw --browse-root    # Interactive file selection (full repository)
 
 SEE ALSO:
     hug ss       : Show staged changes
@@ -37,6 +42,18 @@ SEE ALSO:
 EOF
 }
 
+# Parse --browse-root flag before common flags
+browse_root=false
+new_args=()
+for arg in "$@"; do
+  if [[ "$arg" == "--browse-root" ]]; then
+    browse_root=true
+  else
+    new_args+=("$arg")
+  fi
+done
+set -- "${new_args[@]}"
+
 # Parse common flags (handles -- detection automatically)
 eval "$(parse_common_flags "$@")"
 
@@ -44,7 +61,16 @@ check_git_repo
 
 # Handle interactive file selection if requested
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
-  mapfile -t files < <(select_files_with_status --staged --unstaged --prompt "Select file(s) to view uncommitted changes..." || true)
+  declare -a select_opts=("--staged" "--unstaged")
+  
+  # Default to --cwd (current directory scope) unless --browse-root is specified
+  if ! $browse_root; then
+    select_opts+=("--cwd")
+  fi
+  
+  select_opts+=("--prompt" "Select file(s) to view uncommitted changes...")
+  
+  mapfile -t files < <(select_files_with_status "${select_opts[@]}" || true)
   if [[ ${#files[@]} -eq 0 ]]; then
     info "No files with working directory changes available or cancelled."
     exit 0

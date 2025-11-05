@@ -12,23 +12,28 @@ hug ss: Show status with patch of staged changes.
 USAGE:
     hug ss [<file>] [-h, --help]
     hug ss --
+    hug ss --browse-root
 
 ARGUMENTS:
     <file>         Show staged changes for specific file (optional)
-    --             Interactive file selection from staged files
+    --             Interactive file selection from staged files (current directory scope)
 
 OPTIONS:
+    --browse-root  Browse full repository scope in file selector UI (default: current directory)
     -h, --help     Show this help
 
 DESCRIPTION:
     Shows the diff of staged changes (what will be committed). When no file
     is specified, shows all staged changes. Use '--' to interactively select
-    a file from staged files.
+    a file from staged files. By default, interactive selection is scoped to
+    the current directory and subdirectories. Use --browse-root to browse the
+    entire repository.
 
 EXAMPLES:
-    hug ss                 # Show all staged changes
-    hug ss file.txt        # Show staged changes for specific file
-    hug ss --              # Interactive file selection
+    hug ss                  # Show all staged changes
+    hug ss file.txt         # Show staged changes for specific file
+    hug ss --               # Interactive file selection (current directory)
+    hug ss --browse-root    # Interactive file selection (full repository)
 
 SEE ALSO:
     hug su       : Show unstaged changes
@@ -37,6 +42,18 @@ SEE ALSO:
 EOF
 }
 
+# Parse --browse-root flag before common flags
+browse_root=false
+new_args=()
+for arg in "$@"; do
+  if [[ "$arg" == "--browse-root" ]]; then
+    browse_root=true
+  else
+    new_args+=("$arg")
+  fi
+done
+set -- "${new_args[@]}"
+
 # Parse common flags (handles -- detection automatically)
 eval "$(parse_common_flags "$@")"
 
@@ -44,7 +61,16 @@ check_git_repo
 
 # Handle interactive file selection if requested
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
-  mapfile -t files < <(select_files_with_status --staged --prompt "Select file(s) to view staged changes..." || true)
+  declare -a select_opts=("--staged")
+  
+  # Default to --cwd (current directory scope) unless --browse-root is specified
+  if ! $browse_root; then
+    select_opts+=("--cwd")
+  fi
+  
+  select_opts+=("--prompt" "Select file(s) to view staged changes...")
+  
+  mapfile -t files < <(select_files_with_status "${select_opts[@]}" || true)
   if [[ ${#files[@]} -eq 0 ]]; then
     info "No staged files available or cancelled."
     exit 0
