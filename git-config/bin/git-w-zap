@@ -37,53 +37,13 @@ Examples:
 EOF
 }
 
-force=false
-dry_run=false
-browse_root=false
+# Parse common flags (--browse-root, --dry-run, -f|--force, -h|--help, --)
+eval "$(parse_common_flags "$@")"
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -f|--force)
-      force=true
-      shift
-      ;;
-    --browse-root)
-      browse_root=true
-      shift
-      ;;
-    --dry-run)
-      dry_run=true
-      shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    --)
-      shift
-      break
-      ;;
-    -*)
-      opt=$1
-      shift
-      # expand combined short flags (e.g., -us)
-      opt=${opt#-}
-      for ((i=0; i<${#opt}; ++i)); do
-        char=${opt:i:1}
-        case "$char" in
-          *)
-            error "unknown option: -$char"
-            show_help >&2
-            exit 2
-            ;;
-        esac
-      done
-      ;;
-    *)
-      break
-      ;;
-  esac
-done
+# Initialize common flag variables if not set by parse_common_flags
+: "${browse_root:=false}"
+: "${dry_run:=false}"
+: "${force:=false}"
 
 # Early exit if not in Git repo
 check_git_repo

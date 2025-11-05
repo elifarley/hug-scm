@@ -14,11 +14,12 @@
 # Parses common option flags for command scripts
 # Usage: eval "$(parse_common_flags "$@")"
 # Recognizes flags:
-#   --dry-run    Sets dry_run=true
-#   -f, --force  Sets force=true, exports HUG_FORCE=true
-#   --quiet      Exports HUG_QUIET=T
-#   -h, --help   Calls usage or show_help function and exits
-#   --           If last argument, sets HUG_INTERACTIVE_FILE_SELECTION=true and removes it
+#   --dry-run      Sets dry_run=true
+#   -f, --force    Sets force=true, exports HUG_FORCE=true
+#   --quiet        Exports HUG_QUIET=T
+#   --browse-root  Sets browse_root=true
+#   -h, --help     Calls usage or show_help function and exits
+#   --             If last argument, sets HUG_INTERACTIVE_FILE_SELECTION=true and removes it
 # Note:
 #   Consumes recognized flags from arguments
 #   Remaining args can be accessed via "$@" after eval
@@ -47,6 +48,10 @@ parse_common_flags() {
         ;;
       --quiet)
         echo "export HUG_QUIET=T"
+        shift
+        ;;
+      --browse-root)
+        echo "browse_root=true"
         shift
         ;;
       -h|--help)

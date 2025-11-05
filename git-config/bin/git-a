@@ -34,20 +34,11 @@ SEE ALSO:
 EOF
 }
 
-# Parse --browse-root flag before common flags
-browse_root=false
-new_args=()
-for arg in "$@"; do
-  if [[ "$arg" == "--browse-root" ]]; then
-    browse_root=true
-  else
-    new_args+=("$arg")
-  fi
-done
-set -- "${new_args[@]}"
-
-# Parse common flags (handles -- detection automatically)
+# Parse common flags (handles --browse-root, --, etc.)
 eval "$(parse_common_flags "$@")"
+
+# Initialize common flag variables if not set by parse_common_flags
+: "${browse_root:=false}"
 
 # Early exit if not in Git repo
 check_git_repo

@@ -232,44 +232,34 @@ main() {
     local use_integer_N=false
     local integer_N=0
     local commit=""
-    local force=false
-    local browse_root=false
     local target_identifier=""
 
-    # 1. Parse arguments: process flags first
+    # 1. Parse custom flag first (-u|--upstream)
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -u|--upstream)
                 use_upstream=true
                 shift
                 ;;
-            -f|--force)
-                force=true
-                shift
-                ;;
-            --browse-root)
-                browse_root=true
-                shift
-                ;;
-            --)
-                # Marker for parse_common_flags to enable interactive file selection
-                shift
-                ;;
             *)
-                # The first non-flag argument is the target
-                if [[ -z "$target_identifier" ]]; then
-                    target_identifier="$1"
-                    shift
-                    break # Remaining args are files
-                else
-                    error "Unexpected argument: $1"
-                    exit 1
-                fi
+                break
                 ;;
         esac
     done
 
-    # 2. Check for missing target
+    # 2. Parse common flags (--browse-root, -f|--force, -h|--help, --)
+    eval "$(parse_common_flags "$@")"
+
+    # Initialize common flag variables if not set by parse_common_flags
+    : "${browse_root:=false}"
+    : "${force:=false}"
+
+    # 3. Get target identifier (first non-flag argument)
+    if [[ $# -gt 0 ]]; then
+        target_identifier="$1"
+        shift
+    fi
+    # 4. Check for missing target
     if [[ -z "$target_identifier" ]]; then
         error "Missing target argument.
        Usage: hug w get <commit> [file...]
@@ -277,7 +267,7 @@ main() {
         exit 1
     fi
 
-    # 3. Process the isolated target
+    # 5. Process the isolated target
     if [[ "$target_identifier" == "-u" || "$target_identifier" == "--upstream" ]]; then
         use_upstream=true
     elif [[ "$target_identifier" =~ ^([0-9]|[1-9][0-9]?)$ ]]; then
@@ -287,13 +277,13 @@ main() {
         commit="$target_identifier"
     fi
 
-    # 4. Validate argument combinations
+    # 6. Validate argument combinations
     if $use_upstream && ( $use_integer_N || [[ -n "$commit" ]] ); then
         error "Cannot specify --upstream with a specific commit or integer N."
         exit 1
     fi
 
-    # 5. Determine the target commit
+    # 7. Determine the target commit
     if $use_upstream; then
         commit=$(get_upstream_commit)
     elif $use_integer_N; then
@@ -305,10 +295,10 @@ main() {
         exit 1
     fi
 
-    # 6. Validate commit
+    # 8. Validate commit
     validate_commit "$commit"
 
-    # 7. Check if user wants interactive file selection via --
+    # 9. Check if user wants interactive file selection via --
     if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
         # Interactive file selection
         declare -a select_opts=("--multi" "--staged" "--unstaged" "--untracked")
@@ -336,7 +326,7 @@ main() {
         exit 0
     fi
 
-    # 8. Determine operation mode and execute
+    # 10. Determine operation mode and execute
     if [ $# -eq 0 ]; then
         # Reset ALL files
         reset_all_files "$commit" "$force"

@@ -17,20 +17,11 @@ show_help() {
   printf '  hug llfp file.txt -1      # Patch of most recent change\n' >&2
 }
 
-# Parse --browse-root flag before common flags
-browse_root=false
-new_args=()
-for arg in "$@"; do
-  if [[ "$arg" == "--browse-root" ]]; then
-    browse_root=true
-  else
-    new_args+=("$arg")
-  fi
-done
-set -- "${new_args[@]}"
-
-# Parse common flags
+# Parse common flags (handles --browse-root, etc.)
 eval "$(parse_common_flags "$@")"
+
+# Initialize common flag variables if not set by parse_common_flags
+: "${browse_root:=false}"
 
 # If no file provided, show interactive selection or help
 if [ $# -eq 0 ]; then
