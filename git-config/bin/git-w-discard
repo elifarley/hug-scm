@@ -42,13 +42,12 @@ See also:
 EOF
 }
 
-dry_run=false
+# Initialize custom flag variables
 target_unstaged=false
 target_staged=false
 flags_explicit=false
-force=false
-browse_root=false
 
+# Parse custom flags first (non-common flags)
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -u|--unstaged)
@@ -61,36 +60,19 @@ while [[ $# -gt 0 ]]; do
       flags_explicit=true
       shift
       ;;
-    --browse-root)
-      browse_root=true
-      shift
-      ;;
-    --dry-run)
-      dry_run=true
-      shift
-      ;;
-    -f|--force)
-      force=true
-      shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    --)
-      shift
-      break
-      ;;
-    -*)
-      error "unknown option: $1"
-      show_help >&2
-      exit 2
-      ;;
     *)
       break
       ;;
   esac
 done
+
+# Parse common flags (--browse-root, --dry-run, -f|--force, -h|--help, --)
+eval "$(parse_common_flags "$@")"
+
+# Initialize common flag variables if not set by parse_common_flags
+: "${browse_root:=false}"
+: "${dry_run:=false}"
+: "${force:=false}"
 
 if ! $flags_explicit; then
   target_unstaged=true

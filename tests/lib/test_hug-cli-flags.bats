@@ -187,3 +187,44 @@ teardown() {
   # Assert
   assert_success
 }
+
+@test "hug-cli-flags: parse_common_flags sets browse_root=true for --browse-root" {
+  # Act
+  eval "$(parse_common_flags --browse-root arg1 arg2)"
+  
+  # Assert
+  assert_equal "$browse_root" "true"
+  assert_equal "$1" "arg1"
+  assert_equal "$2" "arg2"
+}
+
+@test "hug-cli-flags: parse_common_flags handles --browse-root with other flags" {
+  # Act
+  eval "$(parse_common_flags --dry-run --browse-root -f arg1)"
+  
+  # Assert
+  assert_equal "$dry_run" "true"
+  assert_equal "$browse_root" "true"
+  assert_equal "$force" "true"
+  assert_equal "$1" "arg1"
+}
+
+@test "hug-cli-flags: parse_common_flags handles --browse-root with -- at end" {
+  # Act
+  eval "$(parse_common_flags --browse-root arg1 --)"
+  
+  # Assert
+  assert_equal "$browse_root" "true"
+  assert_equal "${HUG_INTERACTIVE_FILE_SELECTION:-}" "true"
+  assert_equal "$1" "arg1"
+  assert_equal "$#" "1"
+}
+
+@test "hug-cli-flags: parse_common_flags handles --browse-root alone" {
+  # Act
+  eval "$(parse_common_flags --browse-root)"
+  
+  # Assert
+  assert_equal "$browse_root" "true"
+  assert_equal "$#" "0"
+}
