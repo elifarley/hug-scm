@@ -251,3 +251,43 @@ teardown() {
   assert_failure
   assert_output --partial "cannot be used with explicit paths"
 }
+
+@test "hug-cli-flags: check_browse_root_no_paths passes when browse_root is false" {
+  # Act
+  run check_browse_root_no_paths false true
+  
+  # Assert
+  assert_success
+}
+
+@test "hug-cli-flags: check_browse_root_no_paths passes when no paths provided" {
+  # Act
+  run check_browse_root_no_paths true false
+  
+  # Assert
+  assert_success
+}
+
+@test "hug-cli-flags: check_browse_root_no_paths fails when browse_root=true and has_paths=true" {
+  # Act - Using a subshell to capture the error
+  run bash -c "
+    cd '$BATS_TEST_DIRNAME/../..'
+    source 'git-config/lib/hug-terminal'
+    source 'git-config/lib/hug-gum'
+    source 'git-config/lib/hug-output'
+    source 'git-config/lib/hug-cli-flags'
+    check_browse_root_no_paths true true
+  "
+  
+  # Assert
+  assert_failure
+  assert_output --partial "cannot be used with explicit paths"
+}
+
+@test "hug-cli-flags: check_browse_root_no_paths passes when both flags are false" {
+  # Act
+  run check_browse_root_no_paths false false
+  
+  # Assert
+  assert_success
+}

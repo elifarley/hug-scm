@@ -98,3 +98,62 @@ print_action_preview() {
   local scope="${2:-for the selected scope.}"
   warning "⚠ About to ${action_phrase} ${scope} Review the list below."
 }
+
+# Prints staged and unstaged path lists with appropriate labels
+# Usage: print_staged_unstaged_paths staged_paths_array unstaged_paths_array target_staged target_unstaged
+# Parameters:
+#   $1 - Name of array containing staged paths
+#   $2 - Name of array containing unstaged paths
+#   $3 - Boolean: whether staged changes are targeted
+#   $4 - Boolean: whether unstaged changes are targeted
+# Notes:
+#   - Displays appropriate labels based on what is being targeted
+#   - Adds contextual note when both staged and unstaged are targeted
+print_staged_unstaged_paths() {
+  local -n staged_ref="$1"
+  local -n unstaged_ref="$2"
+  local target_staged="$3"
+  local target_unstaged="$4"
+  
+  if [[ ${#staged_ref[@]} -gt 0 ]]; then
+    if $target_staged && ! $target_unstaged; then
+      printf '  Staged paths (unstaged changes in these files would be preserved):\n'
+    else
+      printf '  Staged paths:\n'
+    fi
+    print_list '    ' "${staged_ref[@]}"
+  fi
+  
+  if [[ ${#unstaged_ref[@]} -gt 0 ]]; then
+    printf '  Unstaged paths:\n'
+    print_list '    ' "${unstaged_ref[@]}"
+  fi
+  
+  if $target_staged && $target_unstaged; then
+    printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
+  fi
+}
+
+# Prints untracked and ignored path lists with appropriate labels
+# Usage: print_untracked_ignored_paths untracked_paths_array ignored_paths_array target_untracked target_ignored
+# Parameters:
+#   $1 - Name of array containing untracked paths
+#   $2 - Name of array containing ignored paths
+#   $3 - Boolean: whether untracked files are targeted
+#   $4 - Boolean: whether ignored files are targeted
+# Notes:
+#   - Only displays paths that are targeted
+print_untracked_ignored_paths() {
+  local -n untracked_ref="$1"
+  local -n ignored_ref="$2"
+  local target_untracked="$3"
+  local target_ignored="$4"
+  
+  if $target_untracked && [[ ${#untracked_ref[@]} -gt 0 ]]; then
+    print_list '  Untracked' "${untracked_ref[@]}"
+  fi
+  
+  if $target_ignored && [[ ${#ignored_ref[@]} -gt 0 ]]; then
+    print_list '  Ignored' "${ignored_ref[@]}"
+  fi
+}

@@ -17,6 +17,24 @@ General-purpose utility functions for shell scripting.
 - File system checks (`is_symlink`)
 - Command pattern helpers
 
+### hug-output
+
+Consistent output formatting and messaging for commands.
+
+**Features:**
+- Standard message functions (`error`, `warning`, `info`, `success`, `tip`)
+- Action preview functions (`print_nothing_to_do`, `print_dry_run_preview`, `print_action_preview`)
+- File list display helpers (`print_staged_unstaged_paths`, `print_untracked_ignored_paths`)
+
+### hug-cli-flags
+
+Command-line flag parsing utilities.
+
+**Features:**
+- Common flag parsing (`parse_common_flags`)
+- Argument validation (`require_args`)
+- Flag conflict detection (`check_browse_root_no_paths`)
+
 ### hug-git-kit
 
 Git-specific operations and utilities.
@@ -98,6 +116,30 @@ print_list "Modified files" "${files[@]}"
 #   a.txt
 #   b.txt
 #   c.txt
+```
+
+### Displaying File Status Lists
+
+```bash
+# Display staged and unstaged paths with appropriate labels
+declare -a staged_paths=("file1.txt" "file2.txt")
+declare -a unstaged_paths=("file3.txt")
+print_staged_unstaged_paths staged_paths unstaged_paths true false
+# Shows preservation note when only staged is targeted
+
+# Display untracked and ignored paths
+declare -a untracked=("new.txt")
+declare -a ignored=(".DS_Store")
+print_untracked_ignored_paths untracked ignored true true
+# Only displays paths for targeted categories
+```
+
+### Flag Validation
+
+```bash
+# Validate that --browse-root is not used with explicit paths
+check_browse_root_no_paths "$browse_root" true  # has_paths=true
+# Exits with error if browse_root=true and paths provided
 ```
 
 ### Git Repository Checks

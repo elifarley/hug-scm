@@ -207,3 +207,88 @@ teardown() {
   assert_output --partial "About to remove files"
   assert_output --partial "from staging area."
 }
+
+@test "hug-output: print_staged_unstaged_paths displays both arrays" {
+  # Arrange
+  source 'git-config/lib/hug-arrays'
+  staged=("file1.txt" "file2.txt")
+  unstaged=("file3.txt" "file4.txt")
+  
+  # Act
+  run print_staged_unstaged_paths staged unstaged true true
+  
+  # Assert
+  assert_success
+  assert_output --partial "Staged paths:"
+  assert_output --partial "file1.txt"
+  assert_output --partial "file2.txt"
+  assert_output --partial "Unstaged paths:"
+  assert_output --partial "file3.txt"
+  assert_output --partial "file4.txt"
+  assert_output --partial "Both staged and unstaged would be fully discarded"
+}
+
+@test "hug-output: print_staged_unstaged_paths shows preserve note for staged-only" {
+  # Arrange
+  source 'git-config/lib/hug-arrays'
+  staged=("file1.txt")
+  unstaged=()
+  
+  # Act
+  run print_staged_unstaged_paths staged unstaged true false
+  
+  # Assert
+  assert_success
+  assert_output --partial "unstaged changes in these files would be preserved"
+  assert_output --partial "file1.txt"
+}
+
+@test "hug-output: print_staged_unstaged_paths handles empty arrays" {
+  # Arrange
+  source 'git-config/lib/hug-arrays'
+  staged=()
+  unstaged=()
+  
+  # Act
+  run print_staged_unstaged_paths staged unstaged true true
+  
+  # Assert
+  assert_success
+  refute_output --partial "Staged paths:"
+  refute_output --partial "Unstaged paths:"
+}
+
+@test "hug-output: print_untracked_ignored_paths displays both arrays" {
+  # Arrange
+  source 'git-config/lib/hug-arrays'
+  untracked=("new1.txt" "new2.txt")
+  ignored=(".DS_Store" "node_modules/")
+  
+  # Act
+  run print_untracked_ignored_paths untracked ignored true true
+  
+  # Assert
+  assert_success
+  assert_output --partial "Untracked"
+  assert_output --partial "new1.txt"
+  assert_output --partial "new2.txt"
+  assert_output --partial "Ignored"
+  assert_output --partial ".DS_Store"
+}
+
+@test "hug-output: print_untracked_ignored_paths respects target flags" {
+  # Arrange
+  source 'git-config/lib/hug-arrays'
+  untracked=("new1.txt")
+  ignored=(".DS_Store")
+  
+  # Act - only target untracked
+  run print_untracked_ignored_paths untracked ignored true false
+  
+  # Assert
+  assert_success
+  assert_output --partial "Untracked"
+  assert_output --partial "new1.txt"
+  refute_output --partial "Ignored"
+  refute_output --partial ".DS_Store"
+}
