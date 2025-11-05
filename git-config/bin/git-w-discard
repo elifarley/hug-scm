@@ -198,42 +198,14 @@ fi
 if $dry_run; then
   print_dry_run_preview "be discarded" "from the specified paths."
   printf '\n'
-  if [[ ${#staged_paths[@]} -gt 0 ]]; then
-    if $target_staged && ! $target_unstaged; then
-      printf '  Staged paths (unstaged changes in these files would be preserved):\n'
-    else
-      printf '  Staged paths:\n'
-    fi
-    print_list '    ' "${staged_paths[@]}"
-  fi
-  if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
-    printf '  Unstaged paths:\n'
-    print_list '    ' "${unstaged_paths[@]}"
-  fi
-  if $target_staged && $target_unstaged; then
-    printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
-  fi
+  print_staged_unstaged_paths staged_paths unstaged_paths "$target_staged" "$target_unstaged"
   exit 0
 fi
 
 if ! $force; then
   print_action_preview "discard the listed changes" "from the specified paths."
   printf '\n'
-  if [[ ${#staged_paths[@]} -gt 0 ]]; then
-    if $target_staged && ! $target_unstaged; then
-      printf '  Staged paths (unstaged changes in these files would be preserved):\n'
-    else
-      printf '  Staged paths:\n'
-    fi
-    print_list '    ' "${staged_paths[@]}"
-  fi
-  if [[ ${#unstaged_paths[@]} -gt 0 ]]; then
-    printf '  Unstaged paths:\n'
-    print_list '    ' "${unstaged_paths[@]}"
-  fi
-  if $target_staged && $target_unstaged; then
-    printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
-  fi
+  print_staged_unstaged_paths staged_paths unstaged_paths "$target_staged" "$target_unstaged"
   confirm_action 'discard'
 fi
 

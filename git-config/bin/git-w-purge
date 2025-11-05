@@ -162,12 +162,7 @@ dedupe_array ignored_paths
 if $dry_run; then
   print_dry_run_preview "be removed" "from the specified paths."
   printf '\n'
-  if $target_untracked && [[ ${#untracked_paths[@]} -gt 0 ]]; then
-    print_list '  Untracked' "${untracked_paths[@]}"
-  fi
-  if $target_ignored && [[ ${#ignored_paths[@]} -gt 0 ]]; then
-    print_list '  Ignored' "${ignored_paths[@]}"
-  fi
+  print_untracked_ignored_paths untracked_paths ignored_paths "$target_untracked" "$target_ignored"
   exit 0
 fi
 # Convert paths to be relative to current directory for git clean
@@ -187,13 +182,7 @@ remove_with_clean() {
 
 print_action_preview "purge the listed entries" "from the specified paths."
 printf '\n'
-
-if $target_untracked && [[ ${#untracked_paths[@]} -gt 0 ]]; then
-  print_list '  Untracked' "${untracked_paths[@]}"
-fi
-if $target_ignored && [[ ${#ignored_paths[@]} -gt 0 ]]; then
-  print_list '  Ignored' "${ignored_paths[@]}"
-fi
+print_untracked_ignored_paths untracked_paths ignored_paths "$target_untracked" "$target_ignored"
 
 # Prompt for confirmation unless force flag is set
 if ! $force; then
