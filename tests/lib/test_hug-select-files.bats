@@ -160,7 +160,7 @@ teardown() {
   [[ ! " ${files[*]} " =~ "README.md" ]]
 }
 
-@test "hug-select-files: tracked files from subdirectory don't have ../ prefix" {
+@test "hug-select-files: tracked files from subdirectory have correct relative paths" {
   cd src/components
   
   # Simulate GIT_PREFIX being set (as git does when running git commands)
@@ -168,15 +168,24 @@ teardown() {
   
   mapfile -t files < <(list_tracked_files --cwd)
   
-  # Files should be relative to current directory, not prefixed with ../
+  # With --cwd, files should be relative to current directory, not prefixed with ../
   [[ " ${files[*]} " =~ "App.js" ]]
   [[ ! " ${files[*]} " =~ "../" ]]
   
-  # Test without --cwd as well
+  # Test without --cwd - should list ALL files in repository
   mapfile -t all_files < <(list_tracked_files)
   
-  # Should still not have ../ in paths (paths should be relative to CWD)
+  # Should include files from current directory without prefix
+  local has_app_js=false
   for file in "${all_files[@]}"; do
-    [[ ! "$file" =~ ^\.\./ ]]
+    [[ "$file" == "App.js" ]] && has_app_js=true
   done
+  [[ "$has_app_js" == true ]]
+  
+  # Should include files from parent directories WITH ../ prefix
+  local has_parent_files=false
+  for file in "${all_files[@]}"; do
+    [[ "$file" =~ ^\.\./ ]] && has_parent_files=true && break
+  done
+  [[ "$has_parent_files" == true ]]
 }

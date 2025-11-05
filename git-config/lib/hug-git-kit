@@ -673,7 +673,8 @@ list_ignored_files() {
 # Output:
 #   File paths relative to current directory (one per line)
 # Notes:
-#   git ls-files returns paths relative to CWD when run from a subdirectory.
+#   When --cwd is NOT specified, lists all files in repository by running from repo root.
+#   When --cwd IS specified, lists files in current directory and subdirectories.
 #   Uses git ls-files to list index contents (excludes untracked).
 #   Includes unchanged tracked files.
 #   Empty output if no tracked files (new repo).
@@ -686,16 +687,19 @@ list_tracked_files() {
 
     check_git_repo
     
-    # Build git command with optional scoping
-    local -a git_cmd=("git" "ls-files")
+    local -a paths=()
     if $scope_cwd; then
-        git_cmd+=("--" ".")
+        # Scope to current directory: run ls-files with -- .
+        mapfile -t paths < <(git ls-files -- . 2>/dev/null || true)
+    else
+        # Browse full repository: run ls-files from repo root
+        local repo_root
+        repo_root="$(git rev-parse --show-toplevel)"
+        mapfile -t paths < <(git -C "$repo_root" ls-files 2>/dev/null || true)
+        # Paths are now relative to repo root, convert to current-dir relative
+        convert_to_relative_paths paths
     fi
 
-    local -a paths=()
-    mapfile -t paths < <("${git_cmd[@]}" 2>/dev/null || true)
-    # git ls-files always returns paths relative to CWD when run from subdirectory
-    # So we should NOT call convert_to_relative_paths at all
     printf '%s\n' "${paths[@]}"
 }
 
