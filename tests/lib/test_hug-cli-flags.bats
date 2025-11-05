@@ -227,4 +227,5 @@ teardown() {
   # Assert
   assert_equal "$browse_root" "true"
   assert_equal "$#" "0"
+  assert_equal "${HUG_INTERACTIVE_FILE_SELECTION:-}" "true"
 }

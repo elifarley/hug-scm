@@ -306,14 +306,12 @@ teardown() {
     skip "gum not available"
   fi
   
-  # Mock gum to return nothing (cancelled)
-  # We just want to verify interactive mode is triggered
-  export HUG_DISABLE_GUM=false
+  # Run with --browse-root and no paths - should trigger interactive mode
+  # Use timeout since we can't interact with gum in tests
   run timeout 1 bash -c "hug sw --browse-root < /dev/null" || true
   
   # Should have attempted to use interactive selection
-  # (will timeout/fail because we can't interact in test, but that's expected)
-  # The key is that it doesn't show the full diff output
+  # The key is that it doesn't show the full diff output (non-interactive mode)
   refute_output --partial "Working dir changes:"
 }
 
@@ -322,7 +320,6 @@ teardown() {
     skip "gum not available"
   fi
   
-  export HUG_DISABLE_GUM=false
   run timeout 1 bash -c "hug ss --browse-root < /dev/null" || true
   
   # Should have attempted interactive selection, not showing full diff
@@ -334,7 +331,6 @@ teardown() {
     skip "gum not available"
   fi
   
-  export HUG_DISABLE_GUM=false
   run timeout 1 bash -c "hug su --browse-root < /dev/null" || true
   
   # Should have attempted interactive selection
@@ -346,7 +342,6 @@ teardown() {
     skip "gum not available"
   fi
   
-  export HUG_DISABLE_GUM=false
   run timeout 1 bash -c "hug a --browse-root < /dev/null" || true
   
   # Should have attempted interactive selection

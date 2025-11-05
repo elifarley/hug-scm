@@ -43,11 +43,6 @@ eval "$(parse_common_flags "$@")"
 # Early exit if not in Git repo
 check_git_repo
 
-# When --browse-root is used with no paths, trigger interactive mode
-if $browse_root && [[ $# -eq 0 ]]; then
-  export HUG_INTERACTIVE_FILE_SELECTION=true
-fi
-
 # Check if user wants interactive file selection via --
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   # Get list of files with changes (tracked files)
