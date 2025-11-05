@@ -117,3 +117,19 @@ require_args() {
   fi
 }
 
+# Checks that --browse-root is not used with explicit paths
+# Usage: check_browse_root_no_paths browse_root_flag has_paths
+# Parameters:
+#   $1 - Boolean value of browse_root flag
+#   $2 - Boolean indicating if paths are provided (true if $# > 0 after flag parsing)
+# Effects:
+#   Exits with error if browse_root is true and paths are provided
+check_browse_root_no_paths() {
+  local browse_root="$1"
+  local has_paths="$2"
+  
+  if $browse_root && $has_paths; then
+    error "--browse-root cannot be used with explicit paths. Either use --browse-root alone to browse files, or specify paths directly."
+  fi
+}
+
