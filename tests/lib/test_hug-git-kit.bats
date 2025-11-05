@@ -7,6 +7,7 @@ load '../../git-config/lib/hug-git-kit'
 
 setup() {
   require_hug
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
 }
 
 @test "hug-git-kit: loads without errors" {

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-# shellcheck source=../lib/hug-common
-. "$CMD_BASE/../lib/hug-common"
-# shellcheck source=../lib/hug-git-kit
-. "$CMD_BASE/../lib/hug-git-kit"
+# Assume HUG_HOME is set (exported by hug or environment)
+# shellcheck source=git-config/lib/hug-common
+. "$HUG_HOME/git-config/lib/hug-common"
+# shellcheck source=git-config/lib/hug-git-kit
+. "$HUG_HOME/git-config/lib/hug-git-kit"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 

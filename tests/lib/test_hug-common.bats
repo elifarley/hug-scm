@@ -5,6 +5,7 @@ load '../test_helper'
 
 @test "hug-common: loads without errors" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "cd '$BATS_TEST_DIRNAME/../..'; source 'git-config/lib/hug-common'; echo 'loaded'"
   
   # Assert
@@ -14,6 +15,7 @@ load '../test_helper'
 
 @test "hug-common: sets _HUG_COMMON_LOADED guard" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -29,6 +31,7 @@ load '../test_helper'
 
 @test "hug-common: prevents double loading" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -45,6 +48,7 @@ load '../test_helper'
 
 @test "hug-common: sets HUG_LIB_DIR environment variable" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -60,6 +64,7 @@ load '../test_helper'
 
 @test "hug-common: exports HUG_LIB_DIR" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -73,6 +78,7 @@ load '../test_helper'
 
 @test "hug-common: HUG_LIB_DIR points to lib directory" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -86,6 +92,7 @@ load '../test_helper'
 
 @test "hug-common: sources hug-terminal library" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -101,6 +108,7 @@ load '../test_helper'
 
 @test "hug-common: sources hug-gum library" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -116,6 +124,7 @@ load '../test_helper'
 
 @test "hug-common: sources hug-output library" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -131,6 +140,7 @@ load '../test_helper'
 
 @test "hug-common: sources hug-strings library" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -146,6 +156,7 @@ load '../test_helper'
 
 @test "hug-common: sources hug-arrays library" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -161,6 +172,7 @@ load '../test_helper'
 
 @test "hug-common: sources hug-fs library" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -176,6 +188,7 @@ load '../test_helper'
 
 @test "hug-common: sources hug-cli-flags library" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -191,6 +204,7 @@ load '../test_helper'
 
 @test "hug-common: sources hug-confirm library" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -206,6 +220,7 @@ load '../test_helper'
 
 @test "hug-common: sources hug-select-files library" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -221,6 +236,7 @@ load '../test_helper'
 
 @test "hug-common: does not source hug-git-kit by default" {
   # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
@@ -240,12 +256,16 @@ load '../test_helper'
 @test "hug-common: handles missing library gracefully" {
   # Act - use a temporary directory without all libraries
   run bash -c "
-    # Create a temp directory and copy hug-common there
+    # Create a temp directory and copy hug-common there (but no other libs)
     TEMP_DIR=\$(mktemp -d)
-    cp '$BATS_TEST_DIRNAME/../../git-config/lib/hug-common' \"\$TEMP_DIR/\"
+    mkdir -p \"\$TEMP_DIR/git-config/lib\"
+    cp '$BATS_TEST_DIRNAME/../../git-config/lib/hug-common' \"\$TEMP_DIR/git-config/lib/hug-common\"
+    
+    # Set HUG_HOME to temp for test
+    export HUG_HOME=\"\$TEMP_DIR\"
     
     # Try to source it (will warn about missing libraries but shouldn't fail)
-    cd \"\$TEMP_DIR\"
+    cd \"\$TEMP_DIR/git-config/lib\"
     source hug-common 2>&1 | grep -q 'warning.*could not source' && echo 'warning shown'
     
     # Cleanup

@@ -2,6 +2,14 @@
 # Part of the Hug tool suite
 # Main dispatcher - detects repository type and delegates to appropriate SCM
 
+# Set HUG_HOME if not already set (fallback derivation)
+if [[ -z "${HUG_HOME:-}" ]]; then
+  local script_dir
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  HUG_HOME="$(cd "$script_dir/../.." && pwd)"
+fi
+export HUG_HOME
+
 # Detect repository type and dispatch
 if git rev-parse --git-dir >/dev/null 2>&1; then
     # Git repository detected
@@ -24,9 +32,7 @@ elif hg root >/dev/null 2>&1; then
         exit 0
     }
     
-    # Find the hug script directory to locate hg-config
-    HUG_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-    HG_CONFIG_BIN="$HUG_SCRIPT_DIR/../hg-config/bin"
+    HG_CONFIG_BIN="$HUG_HOME/hg-config/bin"
     
     # Check if we have a custom hg command for this
     if [[ -n "${1:-}" && -x "$HG_CONFIG_BIN/hg-$1" ]]; then
@@ -40,5 +46,6 @@ else
     echo "" >&2
     echo "Hug SCM supports both Git and Mercurial repositories." >&2
     echo "Please run this command from within a repository." >&2
+    [[ -z "${HUG_HOME:-}" ]] && echo "Note: If paths are incorrect, ensure HUG_HOME is set to the Hug installation root." >&2
     exit 1
 fi
