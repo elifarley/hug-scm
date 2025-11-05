@@ -16,7 +16,7 @@ Your environment was already pre-configured with all required tools, so you don'
 
 Some dependencies, like Gum and VHS, are installed in `$HOME/.hug-deps`.
 
-Everything is already available in your `$PATH` (no need to provide full command path).
+IMPORTANT! Before starting, you need to run `bin/activate` so that everything will be available to you in your `$PATH`, including Hug (no need to provide full command path).
 
 However, you don't really need to call some of the tools directly (vhs, bats, etc) since we have excellent, high-level Makefile targets you should prefer to use instead (check them out).
 
