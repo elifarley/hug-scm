@@ -17,3 +17,10 @@ gum_available() {
   # Check if gum command is available in PATH
   command -v gum >/dev/null 2>&1
 }
+
+gum_log() {
+  test "${HUG_QUIET:-}" && return
+  local prefix="$1"; shift
+  gum_available && gum log -s --prefix="$prefix" -- "$@" || \
+    printf "%s: %s\n" "$prefix" "$@" >&2
+}
