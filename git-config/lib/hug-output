@@ -23,8 +23,7 @@
 #   $1 - Error message to display
 #   $2 - (Optional) Exit code, defaults to 1
 error() {
-  gum_available && gum log -s --prefix=❌ -l error "$@" || \
-    printf "${RED}❌ Error:${NC} %s\n" "$1" >&2
+  HUG_QUIET='' gum_log "${RED}❌ Error$NC" "$@"
   exit "${2:-1}"
 }
 
@@ -35,9 +34,7 @@ error() {
 # Environment:
 #   HUG_QUIET - If set, suppresses output
 warning() {
-  test "${HUG_QUIET:-}" && return
-  gum_available && gum log -s --prefix=⚠️  -l warn "$@" || \
-    printf "${YELLOW}⚠️  Warning:${NC} %s\n" "$1" >&2
+  gum_log "${YELLOW}⚠️ Warning$NC" "$@"
 }
 
 # Alias for warning() function
@@ -51,9 +48,7 @@ warn() { warning "$@"; }
 # Environment:
 #   HUG_QUIET - If set, suppresses output
 info() {
-  test "${HUG_QUIET:-}" && return
-  gum_available && gum log -s --prefix=ℹ️  -l info "$@" || \
-    printf "${BLUE}ℹ️  Info:${NC} %s\n" "$1" >&2
+  gum_log "${BLUE}ℹ️ Info$NC" "$@"
 }
 
 # Prints a tip message to stderr
@@ -63,8 +58,7 @@ info() {
 # Environment:
 #   HUG_QUIET - If set, suppresses output
 tip() {
-  test "${HUG_QUIET:-}" && return
-  printf "${CYAN}💡 Tip:${NC} %s\n" "$1" >&2
+  gum_log "${CYAN}💡 Tip$NC" "$@"
 }
 
 # Prints a success message to stderr
@@ -74,8 +68,7 @@ tip() {
 # Environment:
 #   HUG_QUIET - If set, suppresses output
 success() {
-  test "${HUG_QUIET:-}" && return
-  printf "${GREEN}✅ Success:${NC} %s\n" "$1" >&2
+  gum_log "${GREEN}✅ Success$NC" "$@"
 }
 
 # Prints a standardized message when no changes are detected
