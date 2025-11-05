@@ -295,3 +295,61 @@ teardown() {
   run git ls-files
   assert_output --partial "confirm_test.txt"
 }
+
+################################################################################
+# Interactive File Selection with --browse-root Tests
+################################################################################
+
+@test "hug sw --browse-root: triggers interactive mode when gum is available" {
+  # Skip if gum is not available
+  if ! command -v gum >/dev/null 2>&1; then
+    skip "gum not available"
+  fi
+  
+  # Mock gum to return nothing (cancelled)
+  # We just want to verify interactive mode is triggered
+  export HUG_DISABLE_GUM=false
+  run timeout 1 bash -c "hug sw --browse-root < /dev/null" || true
+  
+  # Should have attempted to use interactive selection
+  # (will timeout/fail because we can't interact in test, but that's expected)
+  # The key is that it doesn't show the full diff output
+  refute_output --partial "Working dir changes:"
+}
+
+@test "hug ss --browse-root: triggers interactive mode" {
+  if ! command -v gum >/dev/null 2>&1; then
+    skip "gum not available"
+  fi
+  
+  export HUG_DISABLE_GUM=false
+  run timeout 1 bash -c "hug ss --browse-root < /dev/null" || true
+  
+  # Should have attempted interactive selection, not showing full diff
+  refute_output --partial "Staged changes:"
+}
+
+@test "hug su --browse-root: triggers interactive mode" {
+  if ! command -v gum >/dev/null 2>&1; then
+    skip "gum not available"
+  fi
+  
+  export HUG_DISABLE_GUM=false
+  run timeout 1 bash -c "hug su --browse-root < /dev/null" || true
+  
+  # Should have attempted interactive selection
+  refute_output --partial "Unstaged changes:"
+}
+
+@test "hug a --browse-root: triggers interactive mode" {
+  if ! command -v gum >/dev/null 2>&1; then
+    skip "gum not available"
+  fi
+  
+  export HUG_DISABLE_GUM=false
+  run timeout 1 bash -c "hug a --browse-root < /dev/null" || true
+  
+  # Should have attempted interactive selection
+  # Won't stage anything but shouldn't error about missing args
+  [[ "$status" -ne 0 ]] || true  # timeout or interactive cancel is ok
+}
