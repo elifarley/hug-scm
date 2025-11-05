@@ -50,6 +50,11 @@ eval "$(parse_common_flags "$@")"
 
 check_git_repo
 
+# When --browse-root is used with no paths, trigger interactive mode
+if $browse_root && [[ $# -eq 0 ]]; then
+  export HUG_INTERACTIVE_FILE_SELECTION=true
+fi
+
 # Handle interactive file selection if requested
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   declare -a select_opts=("--unstaged")
