@@ -24,7 +24,8 @@ prompt_confirm() {
   local prompt="${1:-Proceed? [y/N]: }"
   if gum_available; then
     local message="${prompt% }"
-    if gum confirm "$message"; then
+    # Set default to No (--default=false) for safety in destructive operations
+    if gum confirm --default=false "$message"; then
       return 0
     fi
     info "Cancelled."

@@ -17,16 +17,18 @@
 #   --dry-run      Sets dry_run=true
 #   -f, --force    Sets force=true, exports HUG_FORCE=true
 #   --quiet        Exports HUG_QUIET=T
-#   --browse-root  Sets browse_root=true
+#   --browse-root  Sets browse_root=true, ALWAYS triggers interactive mode (errors if paths provided)
 #   -h, --help     Calls usage or show_help function and exits
 #   --             If last argument, sets HUG_INTERACTIVE_FILE_SELECTION=true and removes it
 # Note:
 #   Consumes recognized flags from arguments
 #   Remaining args can be accessed via "$@" after eval
 #   Handles empty remaining args without setting $@ to ("")
+#   --browse-root ALWAYS triggers interactive mode and errors if paths are provided
 parse_common_flags() {
   local remaining_args=()
   local interactive_file_selection=false
+  local browse_root_flag=false
   
   # Check if last argument is '--' before processing
   if [[ $# -gt 0 && "${!#}" = "--" ]]; then
@@ -52,6 +54,7 @@ parse_common_flags() {
         ;;
       --browse-root)
         echo "browse_root=true"
+        browse_root_flag=true
         shift
         ;;
       -h|--help)
@@ -70,9 +73,19 @@ parse_common_flags() {
     esac
   done
   
-  # Export interactive file selection flag if detected
+  # Export interactive file selection flag if detected via '--' at end
   if $interactive_file_selection; then
     echo "export HUG_INTERACTIVE_FILE_SELECTION=true"
+  fi
+  
+  # --browse-root ALWAYS triggers interactive mode
+  if $browse_root_flag; then
+    echo "export HUG_INTERACTIVE_FILE_SELECTION=true"
+    # Error if paths are provided with --browse-root
+    if [ ${#remaining_args[@]} -gt 0 ]; then
+      echo "error '--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection.'"
+      echo "exit 1"
+    fi
   fi
   
   # Always output set -- to properly update $@ in the caller

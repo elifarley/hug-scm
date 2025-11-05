@@ -102,7 +102,7 @@ teardown() {
   # Create some untracked files
   echo "temp" > temp.txt
   
-  run hug w purge temp.txt
+  run hug w purge -f temp.txt
   assert_success
   
   assert_file_not_exists "temp.txt"
@@ -396,7 +396,7 @@ teardown() {
 @test "hug w purge: removes single untracked file" {
   echo "temp" > temp.txt
   
-  run hug w purge temp.txt
+  run hug w purge -f temp.txt
   assert_success
   assert_file_not_exists "temp.txt"
 }
@@ -405,7 +405,7 @@ teardown() {
   echo "temp1" > temp1.txt
   echo "temp2" > temp2.txt
   
-  run hug w purge temp1.txt temp2.txt
+  run hug w purge -f temp1.txt temp2.txt
   assert_success
   
   assert_file_not_exists "temp1.txt"
@@ -417,7 +417,7 @@ teardown() {
   echo "content" > tempdir/file.txt
   echo "nested" > tempdir/nested/file.txt
   
-  run hug w purge tempdir
+  run hug w purge -f tempdir
   assert_success
   
   refute [ -d "tempdir" ]
@@ -441,7 +441,7 @@ teardown() {
   
   echo "log content" > test.log
   
-  run hug w purge -i test.log
+  run hug w purge -f -i test.log
   assert_success
   
   assert_file_not_exists "test.log"
@@ -455,7 +455,7 @@ teardown() {
   echo "untracked" > untracked.txt
   echo "ignored" > test.log
   
-  run hug w purge -u -i untracked.txt test.log
+  run hug w purge -f -u -i untracked.txt test.log
   assert_success
   
   assert_file_not_exists "untracked.txt"
@@ -466,6 +466,30 @@ teardown() {
   run hug w purge README.md
   assert_failure
   assert_output --partial "tracked"
+}
+
+@test "hug w purge: prompts for confirmation without -f flag" {
+  echo "temp" > temp.txt
+  
+  # Without -f, should prompt and cancel when user says no
+  run bash -c "echo 'n' | hug w purge temp.txt"
+  assert_failure
+  assert_output --partial "Cancelled"
+  
+  # File should still exist
+  assert_file_exists "temp.txt"
+}
+
+@test "hug w purge: skips confirmation with -f flag" {
+  echo "temp" > temp.txt
+  
+  # With -f, should not prompt
+  run hug w purge -f temp.txt
+  assert_success
+  refute_output --partial "Cancelled"
+  
+  # File should be removed
+  assert_file_not_exists "temp.txt"
 }
 
 @test "hug w purge-all -f: removes all untracked files" {
@@ -975,7 +999,7 @@ teardown() {
   mkdir -p deep/nested/directory/structure
   echo "content" > deep/nested/directory/structure/file.txt
   
-  run hug w purge deep
+  run hug w purge -f deep
   assert_success
   
   refute [ -d "deep" ]
@@ -1056,7 +1080,7 @@ teardown() {
   echo "untracked" > subdir/temp.txt
   
   cd subdir
-  run hug w purge temp.txt
+  run hug w purge -f temp.txt
   assert_success
   
   assert_file_not_exists "temp.txt"
@@ -1144,7 +1168,7 @@ teardown() {
   echo "temp" > subdir/temp.txt
   
   cd subdir
-  run hug w purge "$TEST_REPO/subdir/temp.txt"
+  run hug w purge -f "$TEST_REPO/subdir/temp.txt"
   assert_success
   
   assert_file_not_exists "temp.txt"

@@ -128,6 +128,7 @@ fi
 if [[ ${#untracked_paths[@]} -gt 0 ]]; then
   purge_cmd=(hug w purge)
   $dry_run && purge_cmd+=(--dry-run)
+  $force && purge_cmd+=(-f)
   purge_cmd+=(-u -i -- "${untracked_paths[@]}")
   "${purge_cmd[@]}"
 fi
