@@ -839,8 +839,9 @@ create_comprehensive_wip_scenarios() (
     commit_with_date 1 day "$AUTHOR_THREE_NAME" "$AUTHOR_THREE_EMAIL" \
         c -m "feat: Modify conflicts on demo branch"
     
-    # Merge to create real conflicts - don't use || true so we can see if it fails
-    # The --no-commit keeps it from auto-committing on success
+    # Merge to create real conflicts
+    # Use command git directly for merge as it needs to remain in conflict state
+    # The --no-commit keeps it from auto-committing, and we don't want hug wrappers here
     # Set identity for merge operation
     GIT_AUTHOR_NAME="$AUTHOR_THREE_NAME" \
     GIT_AUTHOR_EMAIL="$AUTHOR_THREE_EMAIL" \
@@ -872,8 +873,12 @@ create_comprehensive_wip_scenarios() (
     git reset .gitignore 2>&1 | grep -v "hint:" || true
     
     # State 4: Unstaged Modified - Modify tracked files without staging
-    ( test -f README.md && echo "" >> README.md && echo "// WIP: Unstaged modification" >> README.md ) || true
-    ( test -f CHANGELOG.md || touch CHANGELOG.md ) && echo "// WIP: Unstaged changes" >> CHANGELOG.md || true
+    if test -f README.md; then
+        echo "" >> README.md
+        echo "// WIP: Unstaged modification" >> README.md
+    fi
+    test -f CHANGELOG.md || touch CHANGELOG.md
+    echo "// WIP: Unstaged changes" >> CHANGELOG.md
     
     # State 5: Staged New - Create and stage new files
     echo "// WIP: Staged new file 1" > staged-new-1.js
@@ -881,12 +886,18 @@ create_comprehensive_wip_scenarios() (
     hug a staged-new-1.js staged-new-2.js
     
     # State 6: Staged Modified - Modify tracked files and stage them
-    ( test -f src/index.js && echo "// WIP: Staged modification 1" >> src/index.js && hug a src/index.js ) || true
-    ( test -f src/auth.js && echo "// WIP: Staged modification 2" >> src/auth.js && hug a src/auth.js ) || true
+    if test -f src/index.js; then
+        echo "// WIP: Staged modification 1" >> src/index.js
+        hug a src/index.js
+    fi
+    if test -f src/auth.js; then
+        echo "// WIP: Staged modification 2" >> src/auth.js
+        hug a src/auth.js
+    fi
     
     # State 8: Unstaged Deleted - Remove tracked files without staging
-    ( test -f app.js && rm app.js ) || true
-    ( test -f src/api.js && rm src/api.js ) || true
+    test -f app.js && rm app.js || true
+    test -f src/api.js && rm src/api.js || true
     
     # State 9: Staged Deleted - Stage deletion of files
     hug rm staged-deleted-1.js staged-deleted-2.js 2>&1 | grep -v "hint:" || true
