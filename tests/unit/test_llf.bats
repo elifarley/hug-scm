@@ -271,3 +271,25 @@ teardown() {
   assert_success
   assert_output --partial "Add temp"
 }
+
+################################################################################
+# --browse-root flag tests
+################################################################################
+
+@test "hug llf: --browse-root cannot be used with explicit file path" {
+  echo "Content" > test.txt
+  git add test.txt
+  git commit -q -m "Add test.txt"
+  
+  # --browse-root should not be combinable with explicit paths
+  run hug llf --browse-root test.txt
+  assert_failure
+  assert_output --partial "browse-root cannot be used with explicit paths"
+}
+
+@test "hug llf: help shows --browse-root option" {
+  run hug llf -h
+  assert_success
+  assert_output --partial "--browse-root"
+  assert_output --partial "full repository"
+}
