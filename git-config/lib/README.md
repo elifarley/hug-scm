@@ -37,16 +37,80 @@ Command-line flag parsing utilities.
 
 ### hug-git-kit
 
-Git-specific operations and utilities.
+Git-specific operations library (main entry point).
 
-**Features:**
+**Organization:**
+The hug-git-kit has been split into focused modules for better organization:
+
+- **hug-git-repo**: Repository and commit validation functions
+- **hug-git-state**: Working tree state checking functions
+- **hug-git-files**: File listing functions (staged, unstaged, tracked, etc.)
+- **hug-git-discard**: Discard operations for staged/unstaged/uncommitted changes
+- **hug-git-branch**: Branch information, display, and selection
+- **hug-git-commit**: Commit range analysis and preview helpers
+- **hug-git-upstream**: Upstream operation handlers
+- **hug-git-backup**: Branch backup management
+- **hug-git-rebase**: Rebase conflict resolution helpers
+
+The main `hug-git-kit` file sources all these modules to maintain backward compatibility.
+
+**Features by Module:**
+
+#### hug-git-repo
 - Repository validation (`check_git_repo`)
-- Commit validation and ancestry checking
-- Working tree state management
-- File change operations (discard, wipe, purge)
-- Branch information and navigation
-- Commit history analysis
-- Upstream operation handlers
+- Path conversion utilities (`convert_to_relative_paths`)
+- Commit validation (`validate_commit`, `ensure_commit_exists`)
+- Upstream branch operations (`get_upstream_commit`)
+- Commit ancestry checking (`ensure_ancestor_of_head`)
+- HEAD target resolution (`resolve_head_target`)
+- Commit history navigation (`get_commit_n_back`)
+
+#### hug-git-state
+- Working tree state checks (`has_pending_changes`, `has_staged_changes`, `has_unstaged_changes`)
+- Cleanliness validation (`check_working_tree_clean`, `check_files_clean`)
+- File state checking (`check_file_in_commit`, `check_file_staged`, `check_file_unstaged`)
+- Binary file detection (`is_binary_staged`)
+- Change preview (`preview_file_changes`)
+
+#### hug-git-files
+- List staged files (`list_staged_files`)
+- List unstaged files (`list_unstaged_files`)
+- List untracked files (`list_untracked_files`)
+- List ignored files (`list_ignored_files`)
+- List tracked files (`list_tracked_files`)
+- Support for `--cwd` scoping and `--status` information
+
+#### hug-git-discard
+- Discard unstaged changes (`discard_all_unstaged`, `discard_unstaged`)
+- Discard all uncommitted changes (`discard_all_uncommitted_changes`, `discard_uncommitted_changes`)
+- Discard staged changes only (`discard_all_staged`, `discard_staged_no_unstaged`, `discard_staged_with_unstaged`)
+- Dry-run and confirmation helpers
+
+#### hug-git-branch
+- Compute branch details (`compute_local_branch_details`)
+- Print branch lists (`print_branch_list`, `print_branch_line`)
+- Interactive branch selection (`print_interactive_branch_menu`)
+- Selection helpers (`get_gum_selection_index`, `get_numbered_selection_index`)
+
+#### hug-git-commit
+- Count commits in range (`count_commits_in_range`)
+- List changed files (`list_changed_files_in_range`, `count_changed_files_in_range`)
+- Print commit lists (`print_commit_list_in_range`)
+- Preview helpers (`print_preview_summary`, `print_commit_list_header`)
+
+#### hug-git-upstream
+- Handle upstream operations (`handle_upstream_operation`)
+- Handle standard operations (`handle_standard_operation`)
+
+#### hug-git-backup
+- Create backup branches (`create_backup_branch`)
+- List backup branches (`get_backup_branches`)
+- Extract metadata (`extract_original_name`, `format_backup_display_name`)
+
+#### hug-git-rebase
+- Check for rebase conflicts (`abort_if_no_rebase_conflict`)
+- Resolve current conflict (`rebase_pick`)
+- Auto-resolve all remaining conflicts (`rebase_finish_all`)
 
 ## Usage in Command Scripts
 
@@ -548,3 +612,33 @@ See the command scripts in `../bin/` for real-world usage examples:
 - `git-s`: Status display with colors
 - `git-w-wipe`: Simple wrapper command
 - `git-h`: Gateway command pattern
+
+## Testing
+
+Library functions are tested using BATS (Bash Automated Testing System). Test files are located in `../../tests/lib/`:
+
+**Test Organization:**
+- `test_hug-common.bats`: Tests for hug-common library
+- `test_hug-git-kit.bats`: Tests for hug-git-kit main entry point
+- `test_hug-git-repo.bats`: Tests for repository validation functions
+- `test_hug-git-state.bats`: Tests for working tree state functions
+- `test_hug-git-files.bats`: Tests for file listing functions
+- `test_hug-git-commit.bats`: Tests for commit range analysis functions
+- Additional test files for other library modules
+
+**Running Tests:**
+```bash
+make test-lib        # Run all library tests
+make test           # Run all tests (library + unit + integration)
+```
+
+**Writing Tests:**
+When adding or modifying library functions, always add corresponding tests:
+
+1. Use `setup()` to create test repositories and fixtures
+2. Use `teardown()` to clean up
+3. Test both success and failure cases
+4. Use BATS assertions (`assert_success`, `assert_failure`, `assert_output`)
+5. Keep tests focused and independent
+
+See existing test files for patterns and examples.
