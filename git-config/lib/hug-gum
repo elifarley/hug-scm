@@ -229,6 +229,7 @@ gum_filter_by_index() {
   fi
   
   if [ -z "$selection" ]; then
+    test "${HUG_QUIET:-}" || info "No selection made." >&2
     return 1
   fi
   
@@ -237,11 +238,14 @@ gum_filter_by_index() {
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     
+    local found=false
+    
     # Try exact match first (against formatted options)
     local i
     for i in "${!options_ref[@]}"; do
       if [[ "${options_ref[i]}" == "$line" ]]; then
         result_indices+=("$i")
+        found=true
         continue 2  # Exit inner loop and continue outer while loop to process next line
       fi
     done
@@ -255,13 +259,20 @@ gum_filter_by_index() {
       for i in "${!match_keys_ref[@]}"; do
         if [[ "${match_keys_ref[i]}" == "$normalized_key" ]]; then
           result_indices+=("$i")
+          found=true
           break
         fi
       done
     fi
+    
+    # Warn if we couldn't match this selection
+    if [[ "$found" == false ]]; then
+      test "${HUG_QUIET:-}" || warn "Skipped invalid selection: $line" >&2
+    fi
   done <<< "$selection"
   
   if [ ${#result_indices[@]} -eq 0 ]; then
+    test "${HUG_QUIET:-}" || info "No valid selection." >&2
     return 1
   fi
   

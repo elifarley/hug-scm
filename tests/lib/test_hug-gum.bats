@@ -413,3 +413,83 @@ load '../../git-config/lib/hug-output'
   assert_success
   assert_output "1"
 }
+
+@test "hug-gum: gum_filter_by_index respects HUG_QUIET on cancel" {
+  # Arrange
+  local -a test_options=("item1" "item2")
+  export HUG_QUIET=T
+  
+  # Mock gum filter to simulate cancel
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      return 1
+    fi
+    return 1
+  }
+  
+  # Act
+  run gum_filter_by_index test_options "Select item"
+  
+  # Assert
+  assert_failure
+  assert_output ""  # No output when quiet
+  
+  unset HUG_QUIET
+}
+
+@test "hug-gum: gum_filter_by_index shows message on cancel when not quiet" {
+  # Arrange
+  local -a test_options=("item1" "item2")
+  unset HUG_QUIET
+  
+  # Mock gum filter to simulate cancel
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      return 1
+    fi
+    return 1
+  }
+  
+  # Mock info to capture message
+  info() { echo "INFO: $*" >&2; }
+  export -f info
+  
+  # Act
+  run gum_filter_by_index test_options "Select item"
+  
+  # Assert
+  assert_failure
+  assert_output --partial "No selection made."
+}
+
+@test "hug-gum: gum_filter_by_index warns on invalid selection" {
+  # Arrange
+  local -a test_options=("item1" "item2")
+  local -a test_keys=("item1" "item2")
+  unset HUG_QUIET
+  
+  # Mock gum filter to return something that doesn't match
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      echo "invalid_item"
+      return 0
+    fi
+    return 1
+  }
+  
+  # Mock warn to capture message
+  warn() { echo "WARN: $*" >&2; }
+  export -f warn
+  
+  # Mock info for final message
+  info() { echo "INFO: $*" >&2; }
+  export -f info
+  
+  # Act
+  run gum_filter_by_index test_options "Select item" --match-keys test_keys
+  
+  # Assert
+  assert_failure
+  assert_output --partial "Skipped invalid selection: invalid_item"
+  assert_output --partial "No valid selection."
+}
