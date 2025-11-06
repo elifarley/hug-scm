@@ -62,7 +62,6 @@ select_wip_branch() {
 
   # Prepare formatted options with branch details
   local -a formatted_options=()
-  local -a branch_names=()
   
   while IFS= read -r branch; do
     [ -z "$branch" ] && continue
@@ -74,12 +73,7 @@ select_wip_branch() {
     # Format: branch (hash) subject
     local formatted="${branch} ${YELLOW}${hash}${NC} ${GREY}${subject}${NC}"
     formatted_options+=("$formatted")
-    branch_names+=("$branch")
   done <<< "$branches"
-  
-  if [ ${#formatted_options[@]} -eq 0 ]; then
-    error "$PROG_NAME: No WIP branches found."
-  fi
   
   # Use gum filter for selection
   local gum_height
