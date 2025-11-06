@@ -4,7 +4,174 @@
 # Implements gum-powered file selection with git status annotations.
 # Depends on: hug-gum, hug-output, hug-terminal.
 # Functions:
+#   - list_files_with_status: list staged/unstaged/untracked files with color-coded status (non-interactive).
 #   - select_files_with_status: filter staged/unstaged/untracked files interactively.
+
+# Non-interactive file listing with status annotations
+# Usage: list_files_with_status [OPTIONS]
+# Options:
+#   --staged             Include staged files
+#   --unstaged           Include unstaged files
+#   --untracked          Include untracked files
+#   --ignored            Include ignored files
+#   --cwd                Scope file listing to current directory and subdirectories only
+# Output:
+#   Formatted file list to stdout, one per line, with color-coded status prefix
+#   Format: "<status_label> <filename>"
+#   Examples:
+#     S:Add  staged.txt
+#     U:Mod  README.md
+#     UnTrck untracked.txt
+# Returns:
+#   0 if files found and listed, 1 if no files found
+# Defaults:
+#   - If no --staged/--unstaged/--untracked/--ignored provided, falls back to all tracked files via 'git ls-files' (displayed plainly)
+#   - Without --cwd, lists files across entire repository
+list_files_with_status() {
+  local include_staged=false
+  local include_unstaged=false
+  local include_untracked=false
+  local include_ignored=false
+  local scope_cwd=false
+  
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --staged)
+        include_staged=true
+        shift
+        ;;
+      --unstaged)
+        include_unstaged=true
+        shift
+        ;;
+      --untracked)
+        include_untracked=true
+        shift
+        ;;
+      --ignored)
+        include_ignored=true
+        shift
+        ;;
+      --cwd)
+        scope_cwd=true
+        shift
+        ;;
+      *)
+        error "Unknown option for list_files_with_status: $1"
+        ;;
+    esac
+  done
+  
+  local has_includes=false
+  if $include_staged || $include_unstaged || $include_untracked || $include_ignored; then
+    has_includes=true
+  fi
+  
+  local -a files=()
+  local -a formatted_options=()
+  
+  # Build flag array for list functions
+  local -a list_flags=()
+  if $scope_cwd; then
+    list_flags+=("--cwd")
+  fi
+  
+  if ! $has_includes; then
+    # No specific includes, list all tracked files plainly
+    mapfile -t files < <(list_tracked_files "${list_flags[@]}")
+    for file in "${files[@]}"; do
+      [[ -z "$file" ]] && continue
+      printf '%s\n' "$file"
+    done
+  else
+    # Collect files based on requested types
+    if $include_staged; then
+      local -a status_flags=("${list_flags[@]}" "--status")
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local status file
+        IFS=$'\t' read -r status file <<< "$line"
+        local status_text
+        case "$status" in
+          A)  status_text="${GREEN}S:Add ${NC}" ;;
+          M)  status_text="${GREEN}S:${YELLOW}Mod ${NC}" ;;
+          D)  status_text="${GREEN}S:${RED}Del ${NC}" ;;
+          R*) status_text="${GREEN}S:${CYAN}Ren ${NC}" ;;
+          C*) status_text="${GREEN}S:${BLUE}Copy${NC}" ;;
+          U)  status_text="${YELLOW}Cnflt ${NC}" ;;
+          *)  status_text="${GREEN}S     ${NC}" ;;
+        esac
+        files+=("$file")
+        formatted_options+=("${status_text} ${file}")
+      done < <(list_staged_files "${status_flags[@]}")
+    fi
+    
+    if $include_unstaged; then
+      local -a status_flags=("${list_flags[@]}" "--status")
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local status file
+        IFS=$'\t' read -r status file <<< "$line"
+        local status_text
+        case "$status" in
+          M) status_text="${RED}U:${YELLOW}Mod ${NC}" ;;
+          D) status_text="${RED}U:Del ${NC}" ;;
+          U) status_text="${RED}${YELLOW}Cnflt${NC}" ;;
+          *) status_text="${RED}${NC}U     " ;;
+        esac
+        files+=("$file")
+        formatted_options+=("${status_text} ${file}")
+      done < <(list_unstaged_files "${status_flags[@]}")
+    fi
+    
+    if $include_untracked; then
+      mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}")
+      for file in "${untracked_files[@]}"; do
+        [[ -z "$file" ]] && continue
+        local status_text="${MAGENTA}UnTrck${NC}"
+        files+=("$file")
+        formatted_options+=("${status_text} ${file}")
+      done
+    fi
+    
+    if $include_ignored; then
+      mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}")
+      for file in "${ignored_files[@]}"; do
+        [[ -z "$file" ]] && continue
+        local status_text="${GREY}Ignore${NC}"
+        files+=("$file")
+        formatted_options+=("${status_text} ${file}")
+      done
+    fi
+    
+    # Remove duplicates while preserving order
+    local -A seen=()
+    local -a unique_files=()
+    local -a unique_formatted=()
+    local i
+    for i in "${!files[@]}"; do
+      local file="${files[$i]}"
+      if [[ -z "${seen[$file]+_}" ]]; then
+        seen["$file"]=1
+        unique_files+=("$file")
+        unique_formatted+=("${formatted_options[$i]}")
+      fi
+    done
+    
+    if [[ ${#unique_files[@]} -eq 0 ]]; then
+      if $scope_cwd; then
+        info "No relevant files in current directory."
+      fi
+      return 1
+    fi
+    
+    # Print the formatted list
+    printf '%s\n' "${unique_formatted[@]}"
+  fi
+  
+  return 0
+}
 
 # Advanced interactive file selection with multiple file types support
 # Usage: select_files_with_status [OPTIONS]
