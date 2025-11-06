@@ -10,6 +10,10 @@ GREEN := \033[0;32m
 YELLOW := \033[1;33m
 NC := \033[0m # No Color
 
+# Test customization variables (optional)
+TEST_FILE ?=
+TEST_FILTER ?=
+
 DEMO_REPO_BASE := /tmp/demo-repo
 
 # Setup PATH for demo repository creation (includes hug commands)
@@ -25,21 +29,69 @@ help: ## Display this help message
 
 ##@ Testing
 
-test: ## Run all tests using BATS
+test: ## Run all tests using BATS (or specific: TEST_FILE=... TEST_FILTER=...)
 	@echo "$(BLUE)Running all tests...$(NC)"
-	./tests/run-tests.sh
+	@if [ -n "$(TEST_FILE)" ]; then \
+		case "$(TEST_FILE)" in \
+		tests/*) \
+			./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			;; \
+		*) \
+			ADJUSTED_FILE="tests/$$(basename "$(TEST_FILE)")"; \
+			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			;; \
+		esac; \
+	else \
+		./tests/run-tests.sh tests/ $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+	fi
 
-test-unit: ## Run only unit tests
+test-unit: ## Run only unit tests (or specific: TEST_FILE=... TEST_FILTER=...)
 	@echo "$(BLUE)Running unit tests...$(NC)"
-	./tests/run-tests.sh --unit
+	@if [ -n "$(TEST_FILE)" ]; then \
+		case "$(TEST_FILE)" in \
+		tests/*) \
+			./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			;; \
+		*) \
+			ADJUSTED_FILE="tests/unit/$$(basename "$(TEST_FILE)")"; \
+			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			;; \
+		esac; \
+	else \
+		./tests/run-tests.sh --unit $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+	fi
 
-test-integration: ## Run only integration tests
+test-integration: ## Run only integration tests (or specific: TEST_FILE=... TEST_FILTER=...)
 	@echo "$(BLUE)Running integration tests...$(NC)"
-	./tests/run-tests.sh --integration
+	@if [ -n "$(TEST_FILE)" ]; then \
+		case "$(TEST_FILE)" in \
+		tests/*) \
+			./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			;; \
+		*) \
+			ADJUSTED_FILE="tests/integration/$$(basename "$(TEST_FILE)")"; \
+			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			;; \
+		esac; \
+	else \
+		./tests/run-tests.sh --integration $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+	fi
 
-test-lib: ## Run only library tests
+test-lib: ## Run only library tests (or specific: TEST_FILE=... TEST_FILTER=...)
 	@echo "$(BLUE)Running library tests...$(NC)"
-	./tests/run-tests.sh --lib
+	@if [ -n "$(TEST_FILE)" ]; then \
+		case "$(TEST_FILE)" in \
+		tests/*) \
+			./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			;; \
+		*) \
+			ADJUSTED_FILE="tests/lib/$$(basename "$(TEST_FILE)")"; \
+			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			;; \
+		esac; \
+	else \
+		./tests/run-tests.sh --lib $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+	fi
 
 test-check: ## Check test prerequisites without running tests
 	@echo "$(BLUE)Checking test prerequisites...$(NC)"

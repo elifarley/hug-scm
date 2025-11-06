@@ -112,8 +112,27 @@ The project uses a self-contained test dependency system:
 - The installation directory for test dependencies can be overridden by setting the `DEPS_DIR` environment variable.
 - The installation directory for the `vhs` dependency can be overridden by setting the `VHS_DEPS_DIR` environment variable.
 
-**Running Tests:**
-```bash
+**Running 1 or more Specific Tests:**
+Useful when testing specific functionality, as this is much faster.
+Works for all categories (unit, integration, lib) and general `test`.
+Filters search the specified file or entire category.
+```shell
+# Specific file: 
+make test-unit TEST_FILE=test_head.bats # (auto-prepends `tests/unit/`)
+
+# Filter (matches @test names across files):
+make test-unit TEST_FILTER="hug h back"
+
+# Combine:
+make test-unit TEST_FILE=test_head.bats TEST_FILTER="edge case"
+
+# Full paths also work:
+make test-unit TEST_FILE=tests/unit/test_head.bats
+```
+
+**Running ALL Tests or a category:**
+Useful for the final test run, after having tested specific functionality (see section above).
+```shell
 make test                      # Run all tests (recommended)
 make test-lib                  # Run unit tests for library files only
 make test-unit                 # Run unit tests for Hug commands only
