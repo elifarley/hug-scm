@@ -125,7 +125,7 @@ hug_brestore() {
     
     local num_backups="${#backups[@]}"
     local gum_height
-    gum_height=$(($num_backups < 13 ? $num_backups + 2 : 15))
+    gum_height=$(gum_calculate_height "$num_backups")
     local index
     
     if [[ $num_backups -ge 10 ]] && gum_available; then

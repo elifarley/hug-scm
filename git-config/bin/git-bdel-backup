@@ -390,7 +390,7 @@ hug_bdel_backup() {
     
     # Use gum filter for multi-selection
     local gum_height
-    gum_height=$((${#all_backups[@]} < 13 ? ${#all_backups[@]} + 2 : 15))
+    gum_height=$(gum_calculate_height "${#all_backups[@]}")
     
     local selection
     selection=$(printf '%s\n' "${formatted_options[@]}" | \

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+# Assume HUG_HOME is set (exported by hug or environment)
+# Import only needed library files
+. "$HUG_HOME/git-config/lib/hug-terminal"
+. "$HUG_HOME/git-config/lib/hug-output"
+. "$HUG_HOME/git-config/lib/hug-gum"
+. "$HUG_HOME/git-config/lib/hug-git-repo"
+. "$HUG_HOME/git-config/lib/hug-git-branch"
+. "$HUG_HOME/git-config/lib/hug-strings"
 set -euo pipefail
 
 PROG_NAME="hug w unwip"
@@ -20,7 +26,7 @@ OPTIONS:
 DESCRIPTION:
   Unparks temp work from a WIP/YY-MM-DD/HHmm.slug branch: squash-merges all changes into the current
   branch as a single commit, then deletes the WIP branch. Use for finishing/integrating parked work.
-  With no branch argument, presents an interactive picker (requires fzf). Prompts for confirmation
+  With no branch argument, presents an interactive picker (requires gum). Prompts for confirmation
   and previews changes. Aborts on conflicts (resolve manually with 'hug a && hug c').
 
   For deletion without integration (e.g., worthless WIP), use 'hug w wipdel' instead.
@@ -42,31 +48,6 @@ usage_error() {
   printf '%s: %s\n\n' "$PROG_NAME" "$1" >&2
   show_help >&2
   exit 1
-}
-
-list_wip_branches() {
-  git for-each-ref --format='%(refname:short)' --sort=refname 'refs/heads/WIP/' 2>/dev/null || true
-}
-
-select_wip_branch() {
-  local branches selection
-  branches="$(list_wip_branches)"
-  if [ -z "$branches" ]; then
-    error "$PROG_NAME: No WIP branches found."
-  fi
-
-  if command -v fzf >/dev/null 2>&1; then
-    selection="$(printf '%s\n' "$branches" | fzf --height=40% --border --prompt='Select WIP branch to unpark > ' || true)"
-    selection="$(trim_message "${selection:-}")"
-    if [ -z "$selection" ]; then
-      printf 'No WIP branch selected.\n' >&2
-      exit 1
-    fi
-    printf '%s\n' "$selection"
-  else
-    printf 'Available WIP branches:\n%s\n' "$branches" >&2
-    error "$PROG_NAME: fzf not available. Provide the branch explicitly (e.g., hug w unwip WIP.<timestamp>.<slug>)."
-  fi
 }
 
 no_squash=false
@@ -117,7 +98,7 @@ fi
 
 branch_selected="$branch_arg"
 if [ -z "$branch_selected" ]; then
-  branch_selected="$(select_wip_branch)"
+  branch_selected="$(select_wip_branch "Select WIP branch to unpark..." "$PROG_NAME")"
 fi
 
 branch="$(trim_message "$branch_selected")"

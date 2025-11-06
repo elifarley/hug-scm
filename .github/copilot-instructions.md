@@ -53,7 +53,7 @@ hug-scm/
 3. **Naming Conventions**:
    - Scripts in `git-config/bin/` follow pattern: `git-<command>` or `git-<prefix>-<command>`
    - Use lowercase with hyphens (e.g., `git-w-discard-all`)
-   - Main entry point is `hug` script, which calls the needed scripts in `git-config/bin/` or aliases from `git-config/.giconfig`
+   - Main entry point is `hug` script, which calls the needed scripts in `git-config/bin/` or aliases from `git-config/.gitconfig`
 4. **Command Prefix Convention**:
    - `h*` = HEAD operations (e.g., h back, h undo, h rewind)
    - `w*` = Working directory (e.g., w discard, w wipe, w zap)
@@ -184,7 +184,12 @@ make docs-preview  # Preview production build
    # Example: git-config/bin/git-w-newcmd
    #!/usr/bin/env bash
    # Brief description of what this command does
-   
+
+   # Import only needed library files
+   . "$HUG_HOME/git-config/lib/hug-terminal"
+   . "$HUG_HOME/git-config/lib/hug-output"
+   . "$HUG_HOME/git-config/lib/hug-gum"
+   . "$HUG_HOME/git-config/lib/hug-git-repo"
    # Implementation
    ```
 
@@ -219,14 +224,16 @@ make docs-preview  # Preview production build
 
 1. Understand the current behavior first
 2. Run existing tests to establish baseline
-3. Make minimal, focused changes
-4. Update or add tests for new behavior
-5. Update documentation if behavior changes
-6. Run full test suite to prevent regressions
+3. Make sure it only imports the library files it needs
+4. Make minimal, focused changes
+5. Update or add tests for new behavior
+6. Run specific tests relevant to your changes (leveraging `TEST_FILTER` and `TEST_FILE`)
+7. Once specific tests pass, run full test suite to prevent regressions
+6. Update relevant documentation when appropriate
 
 ### Common Tasks
 
-**Add a bash script:**
+**Add a bash script or library file:**
 - Place in appropriate location (git-config/bin/ or git-config/lib/)
 - Follow naming conventions
 - Make executable (chmod +x) if it's not a library file

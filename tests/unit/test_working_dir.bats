@@ -942,13 +942,259 @@ teardown() {
   # Switch back
   git switch - >/dev/null
   
-  # Force delete using git directly since hug bdelf doesn't exist yet
-  run git branch -D "$wip_branch"
+  # Use hug w wipdel with --force
+  run hug w wipdel --force "$wip_branch"
   assert_success
   
   # Branch should be gone
   run git branch --list "$wip_branch"
   assert_output ""
+}
+
+@test "hug w wipdel: shows help with --help flag" {
+  run hug w wipdel --help
+  assert_success
+  assert_output --partial "hug w wipdel: Delete a WIP branch"
+  assert_output --partial "USAGE:"
+  assert_output --partial "requires gum"
+}
+
+@test "hug w wipdel: errors when gum not available and no branch provided" {
+  # Create WIP branch
+  echo "delete test" > wipdel-test.txt
+  git add wipdel-test.txt
+  hug w wip "delete test work" >/dev/null
+  
+  # Disable gum
+  disable_gum_for_test
+  
+  # Try to run without providing branch name
+  run hug w wipdel
+  assert_failure
+  assert_output --partial "Interactive mode requires 'gum' to be installed"
+  assert_output --partial "https://github.com/charmbracelet/gum"
+  
+  enable_gum_for_test
+}
+
+@test "hug w wipdel: works with explicit branch when gum not available" {
+  # Create WIP branch
+  echo "delete test" > wipdel-test.txt
+  git add wipdel-test.txt
+  hug w wip "delete test work" >/dev/null
+  
+  wip_branch=$(git branch --list "WIP/*" | head -1 | xargs)
+  
+  # Disable gum
+  disable_gum_for_test
+  
+  # Should work with explicit branch name
+  run hug w wipdel --force "$wip_branch"
+  assert_success
+  
+  # Branch should be gone
+  run git branch --list "WIP/*"
+  assert_output ""
+  
+  enable_gum_for_test
+}
+
+@test "hug w unwip: shows help with --help flag" {
+  run hug w unwip --help
+  assert_success
+  assert_output --partial "hug w unwip: Unpark a WIP branch"
+  assert_output --partial "USAGE:"
+  assert_output --partial "requires gum"
+}
+
+@test "hug w unwip: errors when gum not available and no branch provided" {
+  # Create WIP branch
+  echo "unwip test" > unwip-test.txt
+  git add unwip-test.txt
+  hug w wip "unwip test work" >/dev/null
+  
+  # Disable gum
+  disable_gum_for_test
+  
+  # Try to run without providing branch name
+  run hug w unwip
+  assert_failure
+  assert_output --partial "Interactive mode requires 'gum' to be installed"
+  assert_output --partial "https://github.com/charmbracelet/gum"
+  
+  enable_gum_for_test
+}
+
+@test "hug w unwip: works with explicit branch when gum not available" {
+  # Create WIP branch
+  echo "unwip test" > unwip-test.txt
+  git add unwip-test.txt
+  hug w wip "unwip test work" >/dev/null
+  
+  wip_branch=$(git branch --list "WIP/*" | head -1 | xargs)
+  
+  # Disable gum
+  disable_gum_for_test
+  
+  # Should work with explicit branch name
+  run bash -c "echo 'y' | hug w unwip --force \"$wip_branch\""
+  assert_success
+  assert_output --partial "Unparked successfully"
+  
+  # Branch should be gone
+  run git branch --list "WIP/*"
+  assert_output ""
+  
+  enable_gum_for_test
+}
+
+@test "hug w wipdel: interactive mode with gum mock selects and deletes branch" {
+  # Create multiple WIP branches
+  echo "wip1" > wip1.txt
+  git add wip1.txt
+  hug w wip "First feature" >/dev/null
+  
+  echo "wip2" > wip2.txt
+  git add wip2.txt
+  hug w wip "Second feature" >/dev/null
+  
+  echo "wip3" > wip3.txt
+  git add wip3.txt
+  hug w wip "Third feature" >/dev/null
+  
+  # Verify WIP branches exist
+  wip_count=$(git branch --list "WIP/*" | wc -l)
+  [ "$wip_count" -eq 3 ]
+  
+  # Get first WIP branch name to verify deletion
+  first_wip=$(git branch --list "WIP/*" | head -1 | xargs)
+  
+  # Create mock gum that verifies it receives branch list
+  local mock_dir
+  mock_dir=$(mktemp -d)
+  local log_file="$mock_dir/gum.log"
+  cat > "$mock_dir/gum" <<EOF
+#!/usr/bin/env bash
+# Mock gum that logs input and selects first line
+if [[ "\$1" == "filter" ]]; then
+  mapfile -t lines
+  # Log how many lines we received
+  echo "Received \${#lines[@]} lines" > "$log_file"
+  if [ \${#lines[@]} -eq 0 ]; then
+    echo "ERROR: No input received by gum filter" >> "$log_file"
+    exit 1
+  fi
+  # Log first few lines for debugging
+  for i in "\${!lines[@]}"; do
+    if [ "\$i" -lt 3 ]; then
+      echo "Line \$i: \${lines[\$i]}" >> "$log_file"
+    fi
+  done
+  printf '%s\n' "\${lines[0]}"
+else
+  exit 0
+fi
+EOF
+  chmod +x "$mock_dir/gum"
+  
+  # Run wipdel with mock gum
+  run bash -c "PATH='$mock_dir:$PATH' hug w wipdel --force"
+  
+  # Should succeed
+  assert_success
+  
+  # Verify gum received the branch list
+  [ -f "$log_file" ]
+  local line_count=$(grep "Received" "$log_file" | grep -o '[0-9]*')
+  [ "$line_count" -eq 3 ] || {
+    echo "Expected gum to receive 3 lines, but got: $line_count"
+    cat "$log_file"
+    return 1
+  }
+  
+  # The first branch should be deleted
+  run git branch --list "$first_wip"
+  assert_output ""
+  
+  # Other branches should still exist
+  remaining_count=$(git branch --list "WIP/*" | wc -l)
+  [ "$remaining_count" -eq 2 ]
+  
+  # Cleanup
+  rm -rf "$mock_dir"
+}
+
+@test "hug w unwip: interactive mode with gum mock selects and unparks branch" {
+  # Create multiple WIP branches
+  echo "wip1" > wip1.txt
+  git add wip1.txt
+  hug w wip "First feature" >/dev/null
+  
+  echo "wip2" > wip2.txt
+  git add wip2.txt
+  hug w wip "Second feature" >/dev/null
+  
+  # Verify WIP branches exist
+  wip_count=$(git branch --list "WIP/*" | wc -l)
+  [ "$wip_count" -eq 2 ]
+  
+  # Get first WIP branch name
+  first_wip=$(git branch --list "WIP/*" | head -1 | xargs)
+  
+  # Create mock gum that verifies it receives branch list
+  local mock_dir
+  mock_dir=$(mktemp -d)
+  local log_file="$mock_dir/gum.log"
+  cat > "$mock_dir/gum" <<EOF
+#!/usr/bin/env bash
+# Mock gum that logs input and selects first line
+if [[ "\$1" == "filter" ]]; then
+  mapfile -t lines
+  # Log how many lines we received
+  echo "Received \${#lines[@]} lines" > "$log_file"
+  if [ \${#lines[@]} -eq 0 ]; then
+    echo "ERROR: No input received by gum filter" >> "$log_file"
+    exit 1
+  fi
+  # Log first few lines for debugging
+  for i in "\${!lines[@]}"; do
+    if [ "\$i" -lt 3 ]; then
+      echo "Line \$i: \${lines[\$i]}" >> "$log_file"
+    fi
+  done
+  printf '%s\n' "\${lines[0]}"
+else
+  exit 0
+fi
+EOF
+  chmod +x "$mock_dir/gum"
+  
+  # Run unwip with mock gum, auto-confirming the merge
+  run bash -c "PATH='$mock_dir:$PATH' bash -c 'echo y | hug w unwip --force'"
+  
+  # Should succeed
+  assert_success
+  assert_output --partial "Unparked successfully"
+  
+  # Verify gum received the branch list
+  [ -f "$log_file" ]
+  local line_count=$(grep "Received" "$log_file" | grep -o '[0-9]*')
+  [ "$line_count" -eq 2 ] || {
+    echo "Expected gum to receive 2 lines, but got: $line_count"
+    cat "$log_file"
+    return 1
+  }
+  
+  # The first branch should be deleted
+  run git branch --list "$first_wip"
+  assert_output ""
+  
+  # Only one branch should remain
+  remaining_count=$(git branch --list "WIP/*" | wc -l)
+  [ "$remaining_count" -eq 1 ]
+  
+  # Cleanup
+  rm -rf "$mock_dir"
 }
 
 ################################################################################

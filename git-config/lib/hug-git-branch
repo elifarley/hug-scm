@@ -443,3 +443,128 @@ get_numbered_selection_index() {
         fi
     done
 }
+
+################################################################################
+# WIP Branch Functions
+################################################################################
+
+# Computes details for WIP branches (or any branch matching a pattern) and populates output arrays
+# Usage: compute_wip_branch_details branches hashes subjects [ref_pattern]
+# Parameters (all namerefs to output variables):
+#   $1 - Array to receive branch names
+#   $2 - Array to receive commit hashes
+#   $3 - Array to receive commit subjects
+#   $4 - (Optional) Ref pattern to match (default: 'refs/heads/WIP/')
+# Returns:
+#   0 if branches found, 1 if no branches exist
+# Note:
+#   Arrays are cleared before population. Branches are sorted by name.
+#   This is a simpler version of compute_local_branch_details that omits:
+#   - Tracking information (upstream branches, ahead/behind status)
+#   - Max length calculation for alignment
+#   - Current branch highlighting
+#   Use this for WIP branch selection where tracking info isn't needed.
+#   Use compute_local_branch_details for full branch listing with tracking.
+compute_wip_branch_details() {
+    local -n branches_ref="$1"
+    local -n hashes_ref="$2"
+    local -n subjects_ref="$3"
+    local ref_pattern="${4:-refs/heads/WIP/}"
+
+    # Clear outputs
+    branches_ref=()
+    hashes_ref=()
+    subjects_ref=()
+
+    # Build format: branch name, hash, and subject
+    local format='%(refname:short)%00%(objectname:short)%00%(subject)%00'
+
+    # Use mapfile for robust, atomic parsing of null-delimited data
+    local -a git_output=()
+    mapfile -t -d '' git_output < <(git for-each-ref \
+        --format="$format" \
+        --sort=refname "$ref_pattern" 2>/dev/null || true)
+
+    # Check if we got any results
+    if [ ${#git_output[@]} -eq 0 ]; then
+        return 1
+    fi
+
+    # Iterate through the flat array in chunks of 3
+    local i
+    for ((i = 0; i + 2 < ${#git_output[@]}; i += 3)); do
+        local branch_raw="${git_output[i]}"
+        local branch
+        branch=$(printf '%s' "$branch_raw" | tr -d '\n\r')
+        
+        # Skip if empty
+        if [[ -z "$branch" ]]; then
+            continue
+        fi
+
+        local hash="${git_output[i+1]}"
+        local subject_raw="${git_output[i+2]}"
+        local subject
+        subject=$(printf '%s' "$subject_raw" | tr -d '\n\r')
+
+        branches_ref+=("$branch")
+        hashes_ref+=("$hash")
+        subjects_ref+=("${subject:-(no commit message)}")
+    done
+
+    # Check if any branches were found after filtering
+    if [ ${#branches_ref[@]} -eq 0 ]; then
+        return 1
+    fi
+
+    return 0
+}
+
+# Interactive WIP branch selection using gum
+# Usage: select_wip_branch <placeholder_text> <prog_name>
+# Returns: selected branch name on stdout, exits on cancel or error
+# Example: branch=$(select_wip_branch "Select WIP branch to delete..." "hug w wipdel")
+select_wip_branch() {
+    local placeholder="$1"
+    local prog_name="$2"
+    
+    # Use library function to get WIP branch details
+    declare -a branches=() hashes=() subjects=()
+    
+    if ! compute_wip_branch_details branches hashes subjects 'refs/heads/WIP/'; then
+        error "$prog_name: No WIP branches found."
+    fi
+
+    if ! gum_available; then
+        printf 'Available WIP branches:\n'
+        for i in "${!branches[@]}"; do
+            printf '  %s\n' "${branches[$i]}"
+        done
+        error "$prog_name: Interactive mode requires 'gum' to be installed. Provide the branch explicitly or install gum: https://github.com/charmbracelet/gum"
+    fi
+
+    # Prepare formatted options with branch details
+    local -a formatted_options=()
+    
+    for i in "${!branches[@]}"; do
+        local branch="${branches[$i]}"
+        local hash="${hashes[$i]}"
+        local subject="${subjects[$i]}"
+        
+        # Format: branch (hash) subject
+        local formatted="${branch} ${YELLOW}${hash}${NC} ${GREY}${subject}${NC}"
+        formatted_options+=("$formatted")
+    done
+    
+    # Use gum filter for selection
+    local selection
+    if ! selection=$(printf '%s\n' "${formatted_options[@]}" | gum_filter_select "$placeholder"); then
+        info "Cancelled."
+        exit 0
+    fi
+    
+    # Extract branch name (first word). Assumes branch names have no spaces.
+    local branch_name="${selection%% *}"
+    printf '%s\n' "$branch_name"
+}
+
