@@ -1048,7 +1048,7 @@ teardown() {
   enable_gum_for_test
 }
 
-@test "hug w wipdel: interactive mode with gum displays branches correctly" {
+@test "hug w wipdel: interactive mode with gum mock selects and deletes branch" {
   # Create multiple WIP branches
   echo "wip1" > wip1.txt
   git add wip1.txt
@@ -1066,42 +1066,32 @@ teardown() {
   wip_count=$(git branch --list "WIP/*" | wc -l)
   [ "$wip_count" -eq 3 ]
   
-  # Mock gum to verify it receives the formatted branch list
-  local mock_dir
-  mock_dir=$(mktemp -d)
-  cat > "$mock_dir/gum" <<'EOF'
-#!/usr/bin/env bash
-# Read all input lines
-mapfile -t lines
-# Verify we received input
-if [ ${#lines[@]} -eq 0 ]; then
-  echo "ERROR: No input received by gum" >&2
-  exit 1
-fi
-# Log received lines for debugging
-echo "Received ${#lines[@]} lines:" >&2
-for line in "${lines[@]}"; do
-  echo "  '$line'" >&2
-done
-# Return first line
-printf '%s\n' "${lines[0]}"
-EOF
-  chmod +x "$mock_dir/gum"
+  # Get first WIP branch name to verify deletion
+  first_wip=$(git branch --list "WIP/*" | head -1 | xargs)
   
-  # Run with mock gum
-  run timeout 3 bash -c "PATH='$mock_dir:$PATH' hug w wipdel --force 2>&1"
+  # Setup gum mock and select first branch (index 0)
+  setup_gum_mock
+  export HUG_TEST_GUM_SELECTION_INDEX=0
+  
+  # Run wipdel in interactive mode - this should use gum-mock
+  run hug w wipdel --force
   
   # Should succeed
   assert_success
   
-  # Check stderr for debug output showing gum received 3 lines
-  assert_output --partial "Received 3 lines:"
+  # The first branch should be deleted
+  run git branch --list "$first_wip"
+  assert_output ""
+  
+  # Other branches should still exist
+  remaining_count=$(git branch --list "WIP/*" | wc -l)
+  [ "$remaining_count" -eq 2 ]
   
   # Cleanup
-  rm -rf "$mock_dir"
+  teardown_gum_mock
 }
 
-@test "hug w unwip: interactive mode with gum displays branches correctly" {
+@test "hug w unwip: interactive mode with gum mock selects and unparks branch" {
   # Create multiple WIP branches
   echo "wip1" > wip1.txt
   git add wip1.txt
@@ -1115,48 +1105,31 @@ EOF
   wip_count=$(git branch --list "WIP/*" | wc -l)
   [ "$wip_count" -eq 2 ]
   
-  # Mock gum to verify it receives the formatted branch list and confirm merge
-  local mock_dir
-  mock_dir=$(mktemp -d)
-  cat > "$mock_dir/gum" <<'EOF'
-#!/usr/bin/env bash
-# Handle different gum commands
-if [[ "$1" == "filter" ]]; then
-  # Read all input lines for filter
-  mapfile -t lines
-  # Verify we received input
-  if [ ${#lines[@]} -eq 0 ]; then
-    echo "ERROR: No input received by gum filter" >&2
-    exit 1
-  fi
-  # Log received lines for debugging
-  echo "Received ${#lines[@]} lines:" >&2
-  for line in "${lines[@]}"; do
-    echo "  '$line'" >&2
-  done
-  # Return first line
-  printf '%s\n' "${lines[0]}"
-elif [[ "$1" == "confirm" ]] || [[ "$1" == "log" ]]; then
-  # Just pass through for other gum commands
-  /home/runner/.hug-deps/bin/gum "$@"
-else
-  # Default: pass through
-  /home/runner/.hug-deps/bin/gum "$@"
-fi
-EOF
-  chmod +x "$mock_dir/gum"
+  # Get first WIP branch name
+  first_wip=$(git branch --list "WIP/*" | head -1 | xargs)
   
-  # Run with mock gum, auto-confirming the merge
-  run timeout 3 bash -c "echo 'y' | PATH='$mock_dir:$PATH' hug w unwip --force 2>&1"
+  # Setup gum mock and select first branch (index 0)
+  setup_gum_mock
+  export HUG_TEST_GUM_SELECTION_INDEX=0
+  
+  # Run unwip in interactive mode, auto-confirming the merge
+  # Note: read -r -p doesn't require gum, just stdin
+  run bash -c "echo 'y' | hug w unwip --force"
   
   # Should succeed
   assert_success
+  assert_output --partial "Unparked successfully"
   
-  # Check stderr for debug output showing gum received 2 lines
-  assert_output --partial "Received 2 lines:"
+  # The first branch should be deleted
+  run git branch --list "$first_wip"
+  assert_output ""
+  
+  # Only one branch should remain
+  remaining_count=$(git branch --list "WIP/*" | wc -l)
+  [ "$remaining_count" -eq 1 ]
   
   # Cleanup
-  rm -rf "$mock_dir"
+  teardown_gum_mock
 }
 
 ################################################################################

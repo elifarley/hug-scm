@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Mock gum for testing
+# This script simulates gum behavior for automated tests
+
+# Handle different gum commands
+case "$1" in
+  filter)
+    # For filter command, read all input lines and return selection
+    mapfile -t lines
+    
+    # Check if we received any input
+    if [ ${#lines[@]} -eq 0 ]; then
+      # No input means no items to select
+      exit 1
+    fi
+    
+    # Check if HUG_TEST_GUM_SELECTION_INDEX is set
+    # This allows tests to control which item is selected
+    if [[ -n "${HUG_TEST_GUM_SELECTION_INDEX:-}" ]]; then
+      idx="$HUG_TEST_GUM_SELECTION_INDEX"
+      if [[ "$idx" =~ ^[0-9]+$ ]] && [ "$idx" -lt "${#lines[@]}" ]; then
+        printf '%s\n' "${lines[$idx]}"
+      else
+        # Invalid index, return first line as fallback
+        printf '%s\n' "${lines[0]}"
+      fi
+    else
+      # Default: return first line
+      printf '%s\n' "${lines[0]}"
+    fi
+    ;;
+    
+  confirm)
+    # For confirm command, check if HUG_TEST_GUM_CONFIRM is set
+    # If "yes", return 0; if "no", return 1; otherwise use real gum
+    if [[ "${HUG_TEST_GUM_CONFIRM:-}" == "yes" ]]; then
+      exit 0
+    elif [[ "${HUG_TEST_GUM_CONFIRM:-}" == "no" ]]; then
+      exit 1
+    else
+      # Fall back to real gum if available
+      if command -v /home/runner/.hug-deps/bin/gum >/dev/null 2>&1; then
+        /home/runner/.hug-deps/bin/gum "$@"
+      else
+        # No real gum available, default to yes
+        exit 0
+      fi
+    fi
+    ;;
+    
+  log)
+    # For log command, just pass through to real gum if available
+    # Otherwise, just echo the message
+    if command -v /home/runner/.hug-deps/bin/gum >/dev/null 2>&1; then
+      /home/runner/.hug-deps/bin/gum "$@"
+    else
+      shift  # Remove 'log' argument
+      # Skip flags and print remaining arguments
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -s|--prefix=*|--prefix)
+            shift
+            [[ "$1" != -* ]] && shift
+            ;;
+          *)
+            echo "$@"
+            break
+            ;;
+        esac
+      done
+    fi
+    ;;
+    
+  *)
+    # For other commands, try to pass through to real gum
+    if command -v /home/runner/.hug-deps/bin/gum >/dev/null 2>&1; then
+      /home/runner/.hug-deps/bin/gum "$@"
+    else
+      # No real gum, just exit successfully
+      exit 0
+    fi
+    ;;
+esac

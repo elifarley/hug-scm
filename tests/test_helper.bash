@@ -411,6 +411,41 @@ enable_gum_for_test() {
   unset HUG_DISABLE_GUM
 }
 
+# Setup gum mock for testing
+# This adds tests/bin to PATH so gum-mock is used instead of real gum
+# Usage in tests:
+#   setup_gum_mock
+#   export HUG_TEST_GUM_SELECTION_INDEX=0  # Select first item (optional)
+#   hug w wipdel  # Will use gum-mock instead of real gum
+#   teardown_gum_mock
+setup_gum_mock() {
+  # Save original PATH
+  export HUG_TEST_ORIGINAL_PATH="$PATH"
+  
+  # Add tests/bin to the beginning of PATH
+  # The gum symlink should already exist pointing to gum-mock
+  if [[ -z "${PROJECT_ROOT:-}" ]]; then
+    # Fallback: calculate PROJECT_ROOT if not set
+    PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  fi
+  
+  tests_bin="$PROJECT_ROOT/tests/bin"
+  export PATH="$tests_bin:$PATH"
+}
+
+# Teardown gum mock
+teardown_gum_mock() {
+  # Restore original PATH
+  if [[ -n "${HUG_TEST_ORIGINAL_PATH:-}" ]]; then
+    export PATH="$HUG_TEST_ORIGINAL_PATH"
+    unset HUG_TEST_ORIGINAL_PATH
+  fi
+  
+  # Unset any mock-related environment variables
+  unset HUG_TEST_GUM_SELECTION_INDEX
+  unset HUG_TEST_GUM_CONFIRM
+}
+
 # Skip test if gum is not available
 require_gum() { gum_available || error "gum not available in test environment"; }
 
