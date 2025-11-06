@@ -77,8 +77,8 @@ normalize_selection() {
     selection="${selection%%: ahead *}"
   elif [[ "$selection" == *": behind "* ]]; then
     selection="${selection%%: behind *}"
-  elif [[ "$selection" == *": gone"* ]]; then
-    selection="${selection%%: gone*}"
+  elif [[ "$selection" == *": gone "* ]]; then
+    selection="${selection%%: gone *}"
   fi
   
   # If selection contains " → ", extract everything before it
