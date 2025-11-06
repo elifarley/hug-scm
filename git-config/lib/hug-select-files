@@ -118,7 +118,7 @@ list_files_with_status() {
           M) status_text="${RED}U:${YELLOW}Mod ${NC}" ;;
           D) status_text="${RED}U:Del ${NC}" ;;
           U) status_text="${RED}${YELLOW}Cnflt${NC}" ;;
-          *) status_text="${RED}${NC}U     " ;;
+          *) status_text="${RED}U     ${NC}" ;;
         esac
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
@@ -335,7 +335,7 @@ Install: https://github.com/charmbracelet/gum"
           M) status_text="${RED}U:${YELLOW}Mod ${NC}" ;;
           D) status_text="${RED}U:Del ${NC}" ;;
           U) status_text="${RED}${YELLOW}Cnflt${NC}" ;;
-          *) status_text="${RED}${NC}U     " ;;
+          *) status_text="${RED}U     ${NC}" ;;
         esac
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
