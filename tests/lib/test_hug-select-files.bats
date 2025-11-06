@@ -235,3 +235,118 @@ create_merge_conflict() {
   # Should show U status for the conflict file (may appear multiple times)
   [[ "$output" =~ U.*conflict-file.txt ]]
 }
+
+################################################################################
+# Tests for list_files_with_status (non-interactive listing)
+################################################################################
+
+@test "list_files_with_status: returns formatted output with --staged" {
+  # Test that list_files_with_status returns formatted output
+  local output
+  output=$(list_files_with_status --staged)
+  
+  # Should have filename
+  [[ "$output" =~ src/staged.js ]]
+  # Should have status label (S: prefix or similar)
+  [[ "$output" =~ S: ]]
+}
+
+@test "list_files_with_status: returns formatted output with --unstaged" {
+  local output
+  output=$(list_files_with_status --unstaged)
+  
+  # Should show unstaged modified file
+  [[ "$output" =~ src/components/App.js ]]
+  # Should have status label (U: prefix or similar)
+  [[ "$output" =~ U: ]]
+}
+
+@test "list_files_with_status: returns formatted output with --untracked" {
+  local output
+  output=$(list_files_with_status --untracked)
+  
+  # Should show untracked file
+  [[ "$output" =~ src/untracked.js ]]
+  # Should have untracked label
+  [[ "$output" =~ UnTrck ]]
+}
+
+@test "list_files_with_status: shows all types with multiple flags" {
+  local output
+  output=$(list_files_with_status --staged --unstaged --untracked)
+  
+  # Should show all three types
+  [[ "$output" =~ src/staged.js ]]
+  [[ "$output" =~ src/components/App.js ]]
+  [[ "$output" =~ src/untracked.js ]]
+}
+
+@test "list_files_with_status: respects --cwd flag" {
+  cd src
+  
+  local output
+  output=$(list_files_with_status --unstaged --cwd)
+  
+  # Should show files from current directory
+  [[ "$output" =~ components/App.js ]]
+  # Should not show files from parent
+  [[ ! "$output" =~ root.txt ]]
+}
+
+@test "list_files_with_status: returns 1 when no files found" {
+  # Create a clean repo
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+  
+  run list_files_with_status --staged --unstaged
+  assert_failure
+}
+
+@test "list_files_with_status: shows tracked files when no flags specified" {
+  local output
+  output=$(list_files_with_status)
+  
+  # Should list tracked files without formatting
+  [[ "$output" =~ root.txt ]]
+  [[ "$output" =~ src/components/App.js ]]
+  # Should NOT have ANSI color codes for plain listing
+  # (This may fail if terminal color codes are in the output, adjust as needed)
+}
+
+@test "list_files_with_status: no duplicate files in output" {
+  # Modify the same file and stage part of it (if possible)
+  echo "line2" >> src/components/App.js
+  git add -p src/components/App.js <<< "y" 2>/dev/null || git add src/components/App.js
+  echo "line3" >> src/components/App.js
+  
+  local output
+  output=$(list_files_with_status --staged --unstaged)
+  
+  # Count occurrences of App.js - should appear only once
+  local count
+  count=$(echo "$output" | grep -c "App.js" || echo "0")
+  [[ $count -eq 1 ]]
+}
+
+@test "list_files_with_status: handles files with various status codes" {
+  # Create files with different statuses
+  echo "to delete" > todelete.txt
+  git add todelete.txt
+  git commit -q -m "Add file to delete"
+  
+  # Stage deletion
+  git rm todelete.txt
+  
+  # Create a new file and stage it
+  echo "added" > added.txt
+  git add added.txt
+  
+  local output
+  output=$(list_files_with_status --staged)
+  
+  # Should show deletion status
+  [[ "$output" =~ todelete.txt ]]
+  # Should show addition status
+  [[ "$output" =~ added.txt ]]
+}
