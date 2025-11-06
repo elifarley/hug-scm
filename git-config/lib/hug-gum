@@ -74,6 +74,20 @@ gum_filter_select() {
   return 0
 }
 
+# Helper function to display info message (with fallback)
+_gum_filter_info() {
+  local message="$1"
+  # Source hug-output for info function if not already available
+  if [[ -n "${HUG_HOME:-}" ]] && [[ -f "$HUG_HOME/git-config/lib/hug-output" ]]; then
+    # shellcheck source=git-config/lib/hug-output
+    . "$HUG_HOME/git-config/lib/hug-output"
+    info "$message"
+  else
+    # Fallback if hug-output not available
+    printf "%s\n" "$message" >&2
+  fi
+}
+
 # Enhanced gum filter with automatic field extraction
 # Usage: gum_filter_extract <placeholder> <cancel_message> <extractor_function> [--no-limit] < formatted_options
 # 
@@ -123,19 +137,11 @@ gum_filter_extract() {
                 --height="$height" \
                 --no-strip-ansi \
                 --reverse \
-                ${no_limit} \
+                "${no_limit}" \
                 "$@" || true)
   
   if [ -z "$selection" ]; then
-    # Source hug-output for info function
-    if [[ -n "${HUG_HOME:-}" ]] && [[ -f "$HUG_HOME/git-config/lib/hug-output" ]]; then
-      # shellcheck source=git-config/lib/hug-output
-      . "$HUG_HOME/git-config/lib/hug-output"
-      info "$cancel_message"
-    else
-      # Fallback if hug-output not available
-      printf "%s\n" "$cancel_message" >&2
-    fi
+    _gum_filter_info "$cancel_message"
     return 1
   fi
   
@@ -149,15 +155,7 @@ gum_filter_extract() {
   done <<< "$selection"
   
   if [ ${#extracted[@]} -eq 0 ]; then
-    # Source hug-output for info function
-    if [[ -n "${HUG_HOME:-}" ]] && [[ -f "$HUG_HOME/git-config/lib/hug-output" ]]; then
-      # shellcheck source=git-config/lib/hug-output
-      . "$HUG_HOME/git-config/lib/hug-output"
-      info "$cancel_message"
-    else
-      # Fallback if hug-output not available
-      printf "%s\n" "$cancel_message" >&2
-    fi
+    _gum_filter_info "$cancel_message"
     return 1
   fi
   
