@@ -132,13 +132,20 @@ gum_filter_extract() {
   
   # Run gum filter with standard flags
   local selection
-  selection=$(printf '%s\n' "${options[@]}" | \
-    gum filter --placeholder="$placeholder" \
-                --height="$height" \
-                --no-strip-ansi \
-                --reverse \
-                "${no_limit}" \
-                "$@" || true)
+  if [ -n "$no_limit" ]; then
+    selection=$(printf '%s\n' "${options[@]}" | \
+      gum filter --placeholder="$placeholder" \
+                  --height="$height" \
+                  --no-strip-ansi \
+                  --reverse \
+                  --no-limit || true)
+  else
+    selection=$(printf '%s\n' "${options[@]}" | \
+      gum filter --placeholder="$placeholder" \
+                  --height="$height" \
+                  --no-strip-ansi \
+                  --reverse || true)
+  fi
   
   if [ -z "$selection" ]; then
     _gum_filter_info "$cancel_message"

@@ -370,8 +370,8 @@ hug_bdel_backup() {
     
     # Prepare formatted options for gum
     local -a formatted_options=()
-    # Build mapping between display names and full backup names
-    local -a backup_mapping=()
+    # Build mapping between display names and full backup names using associative array
+    declare -A backup_mapping
     
     for backup in "${all_backups[@]}"; do
       local display_name
@@ -387,7 +387,7 @@ hug_bdel_backup() {
       local formatted="${display_name} → ${original_name} ${YELLOW}${hash}${NC} ${GREY}${subject}${NC}"
       formatted_options+=("$formatted")
       # Store mapping for later lookup
-      backup_mapping+=("$display_name:$backup")
+      backup_mapping["$display_name"]="$backup"
     done
     
     # Extractor function to get display name and then map to backup name
@@ -405,21 +405,12 @@ hug_bdel_backup() {
                            --no-limit
     ) || exit 0
     
-    # Map display names back to full backup branch names
+    # Map display names back to full backup branch names using associative array
     backup_branches_to_delete=()
     for display_name in "${selected_display_names[@]}"; do
-      local found=false
-      for mapping in "${backup_mapping[@]}"; do
-        local map_display="${mapping%%:*}"
-        local map_backup="${mapping#*:}"
-        if [[ "$map_display" == "$display_name" ]]; then
-          backup_branches_to_delete+=("$map_backup")
-          found=true
-          break
-        fi
-      done
-      
-      if [[ "$found" == false ]]; then
+      if [[ -n "${backup_mapping[$display_name]:-}" ]]; then
+        backup_branches_to_delete+=("${backup_mapping[$display_name]}")
+      else
         error "Internal error: Could not match selected item '$display_name' to a backup branch."
       fi
     done
