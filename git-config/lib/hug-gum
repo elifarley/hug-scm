@@ -6,8 +6,11 @@
 # Functions:
 #   - gum_available: return success when gum can be used.
 #   - gum_calculate_height: calculate appropriate height for gum filter
+#   - normalize_selection: normalize gum selection (strip markers, whitespace, etc.)
+#   - gum_invoke_filter: low-level gum filter invocation with standard flags
 #   - gum_filter_select: wrapper for gum filter with standard flags
 #   - gum_filter_extract: select items and extract specific field from each
+#   - gum_filter_by_index: select items and return 0-based indices for flexible extraction
 
 ################################################################################
 # Gum Integration Helpers
@@ -39,6 +42,95 @@ gum_calculate_height() {
   echo $((num_items < 13 ? num_items + 3 : 15))
 }
 
+# Normalize a gum filter selection by stripping markers and whitespace
+# Usage: normalize_selection <selection_string>
+# Returns: normalized string to stdout
+# 
+# Removes:
+#   - Leading `* ` or `*` markers (current branch indicator)
+#   - Leading/trailing whitespace
+#   - Arrows (→) and text after them
+#   - Parentheses and text after them (for formats like "branch (hash)")
+normalize_selection() {
+  local selection="$1"
+  
+  # Strip leading `* ` or `*` marker
+  if [[ "$selection" == \** ]]; then
+    selection="${selection#\* }"
+    selection="${selection#\*}"
+  fi
+  
+  # Strip leading whitespace
+  selection="${selection#"${selection%%[![:space:]]*}"}"
+  
+  # Strip trailing whitespace
+  local trailing_whitespace="${selection##*[![:space:]]}"
+  selection="${selection%"$trailing_whitespace"}"
+  
+  # If selection contains " → ", extract everything before it
+  if [[ "$selection" == *" → "* ]]; then
+    selection="${selection%% → *}"
+  # If selection contains " (", extract everything before it
+  elif [[ "$selection" == *" ("* ]]; then
+    selection="${selection%% (*}"
+  # Otherwise, just take the first word
+  else
+    selection="${selection%% *}"
+  fi
+  
+  echo "$selection"
+}
+
+# Low-level gum filter invocation with standard flags
+# Usage: gum_invoke_filter <options_array_name> <placeholder> [--no-limit]
+# Parameters:
+#   $1 - Name of array containing options (nameref)
+#   $2 - Placeholder text for gum prompt
+#   $3 - Optional: --no-limit for multi-select
+# Output:
+#   Selected line(s) to stdout (one per line if multi-select)
+# Returns:
+#   0 if selection made, 1 if cancelled or no options
+gum_invoke_filter() {
+  local -n options_ref="$1"
+  local placeholder="$2"
+  local no_limit=""
+  
+  # Check for --no-limit flag
+  if [[ "${3:-}" == "--no-limit" ]]; then
+    no_limit="--no-limit"
+  fi
+  
+  if [ ${#options_ref[@]} -eq 0 ]; then
+    return 1
+  fi
+  
+  local height
+  height=$(gum_calculate_height "${#options_ref[@]}")
+  
+  # Build gum args
+  local -a gum_args=(
+    --placeholder="$placeholder"
+    --height="$height"
+    --no-strip-ansi
+  )
+  
+  # When --no-limit is present, we should NOT use --reverse because even though we would expect Gum
+  # to reverse the movement caused by the <TAB> key (it should go up instead of down), it's still the same
+  # downward movement, making it harder to select multiple items.
+  [ -n "$no_limit" ] && gum_args+=(--no-limit) || gum_args+=(--reverse)
+  
+  local selection
+  selection=$(printf '%s\n' "${options_ref[@]}" | gum filter "${gum_args[@]}" || true)
+  
+  if [ -z "$selection" ]; then
+    return 1
+  fi
+  
+  printf '%s\n' "$selection"
+  return 0
+}
+
 # Wrapper for gum filter with common flags
 # Usage: gum_filter_select <placeholder> [additional_flags...]
 # Reads options from stdin, outputs selection to stdout
@@ -47,32 +139,12 @@ gum_filter_select() {
   local placeholder="$1"
   shift
   
-  # Read input into array to calculate height
+  # Read input into array
   local -a options=()
   mapfile -t options
   
-  if [ ${#options[@]} -eq 0 ]; then
-    return 1
-  fi
-  
-  local height
-  height=$(gum_calculate_height "${#options[@]}")
-  
-  # Output options and run gum filter with standard flags
-  local selection
-  selection=$(printf '%s\n' "${options[@]}" | \
-    gum filter --placeholder="$placeholder" \
-                --height="$height" \
-                --no-strip-ansi \
-                --reverse \
-                "$@" || true)
-  
-  if [ -z "$selection" ]; then
-    return 1
-  fi
-  
-  printf '%s\n' "$selection"
-  return 0
+  # Use gum_invoke_filter for the actual invocation
+  gum_invoke_filter options "$placeholder" "$@"
 }
 
 # Enhanced gum filter with automatic field extraction
@@ -106,7 +178,7 @@ gum_filter_extract() {
     shift
   fi
   
-  # Read input into array to calculate height
+  # Read input into array
   local -a options=()
   mapfile -t options
   
@@ -114,26 +186,9 @@ gum_filter_extract() {
     return 1
   fi
   
-  local height
-  height=$(gum_calculate_height "${#options[@]}")
-  
-  # Run gum filter with standard flags
-  local -a gum_args=(
-    --placeholder="$placeholder"
-    --height="$height"
-    --no-strip-ansi
-
-  )
-  
-  # When --no-limit is present, we should NOT use --reverse because even though we would expect Gum
-  # to reverse the movement caused by the <TAB> key (it should go up instead of down), it's still the same
-  # downward movement, making it harder to select multiple items.
-  [ -n "$no_limit" ] && gum_args+=(--no-limit) || gum_args+=(--reverse)
-  
+  # Use gum_invoke_filter for the actual invocation
   local selection
-  selection=$(printf '%s\n' "${options[@]}" | gum filter "${gum_args[@]}" || true)
-  
-  if [ -z "$selection" ]; then
+  if ! selection=$(gum_invoke_filter options "$placeholder" $no_limit); then
     info "$cancel_message"
     return 1
   fi
@@ -153,5 +208,114 @@ gum_filter_extract() {
   fi
   
   printf '%s\n' "${extracted[@]}"
+  return 0
+}
+
+# Gum filter with index-based returns for flexible extraction
+# Usage: gum_filter_by_index <options_array_name> <placeholder> [--match-keys <keys_array_name>] [--no-limit]
+#
+# Arguments:
+#   $1 - Name of array containing formatted options for display (nameref)
+#   $2 - Placeholder text for gum prompt
+#   --match-keys <array_name> - Optional: Name of array containing keys for matching (e.g., branch names)
+#                               If provided, will try to match normalized selection against keys first
+#   --no-limit - Optional: Allow multi-selection
+#
+# Output:
+#   0-based index or indices (one per line) of selected items
+#
+# Returns:
+#   0 if items selected, 1 if cancelled or no match found
+#
+# Examples:
+#   # Simple index return (matches formatted_options)
+#   index=$(gum_filter_by_index formatted_options "Select item...")
+#   selected="${values[$index]}"
+#
+#   # With match keys for reliable extraction
+#   indices=$(gum_filter_by_index formatted_options "Select branches..." --match-keys branches)
+#   for idx in $indices; do
+#     echo "Selected: ${branches[$idx]}"
+#   done
+#
+#   # Multi-select
+#   gum_filter_by_index formatted_options "Select files..." --no-limit
+#
+gum_filter_by_index() {
+  local options_array_name="$1"
+  local -n options_ref="$options_array_name"
+  local placeholder="$2"
+  shift 2
+  
+  # Parse optional flags
+  local match_keys_array_name=""
+  local no_limit=""
+  local have_match_keys=false
+  
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --match-keys)
+        if [[ -n "${2:-}" ]]; then
+          match_keys_array_name="$2"
+          have_match_keys=true
+          shift 2
+        else
+          return 1
+        fi
+        ;;
+      --no-limit)
+        no_limit="--no-limit"
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+  
+  if [ ${#options_ref[@]} -eq 0 ]; then
+    return 1
+  fi
+  
+  # Use gum_invoke_filter for the actual invocation
+  local selection
+  if ! selection=$(gum_invoke_filter "$options_array_name" "$placeholder" $no_limit); then
+    return 1
+  fi
+  
+  # Process each selected line and find its index
+  local -a result_indices=()
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    
+    # Try exact match first
+    local i
+    for i in "${!options_ref[@]}"; do
+      if [[ "${options_ref[i]}" == "$line" ]]; then
+        result_indices+=("$i")
+        continue 2  # Skip to next line
+      fi
+    done
+    
+    # If no exact match and we have match keys, try normalized matching
+    if [[ "$have_match_keys" == true ]]; then
+      local -n match_keys_ref="$match_keys_array_name"
+      local normalized_key
+      normalized_key=$(normalize_selection "$line")
+      
+      for i in "${!match_keys_ref[@]}"; do
+        if [[ "${match_keys_ref[i]}" == "$normalized_key" ]]; then
+          result_indices+=("$i")
+          break
+        fi
+      done
+    fi
+  done <<< "$selection"
+  
+  if [ ${#result_indices[@]} -eq 0 ]; then
+    return 1
+  fi
+  
+  printf '%s\n' "${result_indices[@]}"
   return 0
 }
