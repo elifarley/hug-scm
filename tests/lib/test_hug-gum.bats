@@ -233,3 +233,220 @@ load '../../git-config/lib/hug-output'
   # Should only have 2 lines (empty line skipped)
   [ "${#lines[@]}" -eq 2 ]
 }
+
+# Tests for new helper functions
+
+@test "hug-gum: normalize_selection strips leading asterisk and space" {
+  run normalize_selection "* main"
+  assert_success
+  assert_output "main"
+}
+
+@test "hug-gum: normalize_selection strips trailing whitespace" {
+  run normalize_selection "branch  "
+  assert_success
+  assert_output "branch"
+}
+
+@test "hug-gum: normalize_selection extracts before arrow" {
+  run normalize_selection "2024-11/02 → feature"
+  assert_success
+  assert_output "2024-11/02"
+}
+
+@test "hug-gum: normalize_selection extracts before parenthesis" {
+  run normalize_selection "branch (abc123)"
+  assert_success
+  assert_output "branch"
+}
+
+@test "hug-gum: normalize_selection extracts first word by default" {
+  run normalize_selection "branch hash123 subject"
+  assert_success
+  assert_output "branch"
+}
+
+@test "hug-gum: normalize_selection handles complex format" {
+  run normalize_selection "* feature (abc123) [origin/feature] message"
+  assert_success
+  assert_output "feature"
+}
+
+@test "hug-gum: gum_invoke_filter returns selection" {
+  # Arrange
+  local -a options=("option1" "option2" "option3")
+  
+  # Mock gum filter
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      echo "option2"
+      return 0
+    fi
+    return 1
+  }
+  
+  # Act
+  run gum_invoke_filter options "Select option"
+  
+  # Assert
+  assert_success
+  assert_output "option2"
+}
+
+@test "hug-gum: gum_invoke_filter returns failure on cancel" {
+  # Arrange
+  local -a options=("option1" "option2")
+  
+  # Mock gum filter to simulate cancel
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      return 1
+    fi
+    return 1
+  }
+  
+  # Act
+  run gum_invoke_filter options "Select option"
+  
+  # Assert
+  assert_failure
+}
+
+@test "hug-gum: gum_invoke_filter returns failure for empty array" {
+  # Arrange
+  local -a options=()
+  
+  # Act
+  run gum_invoke_filter options "Select option"
+  
+  # Assert
+  assert_failure
+}
+
+@test "hug-gum: gum_invoke_filter supports multi-select with --no-limit" {
+  # Arrange
+  local -a options=("item1" "item2" "item3")
+  
+  # Mock gum filter to return multiple selections
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      printf "%s\n" "item1" "item3"
+      return 0
+    fi
+    return 1
+  }
+  
+  # Act
+  run gum_invoke_filter options "Select items" --no-limit
+  
+  # Assert
+  assert_success
+  assert_line --index 0 "item1"
+  assert_line --index 1 "item3"
+}
+
+@test "hug-gum: gum_filter_by_index returns index of selected item" {
+  # Arrange
+  local -a test_options=("branch1 hash1" "branch2 hash2" "branch3 hash3")
+  
+  # Mock gum filter to return second item
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      echo "branch2 hash2"
+      return 0
+    fi
+    return 1
+  }
+  
+  # Act
+  run gum_filter_by_index test_options "Select branch"
+  
+  # Assert
+  assert_success
+  assert_output "1"
+}
+
+@test "hug-gum: gum_filter_by_index with --match-keys uses normalized matching" {
+  # Arrange
+  local -a test_formatted=("* main abc123 subject" "feature def456 message")
+  local -a test_keys=("main" "feature")
+  
+  # Mock gum filter to return first item (with asterisk)
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      echo "* main abc123 subject"
+      return 0
+    fi
+    return 1
+  }
+  
+  # Act
+  run gum_filter_by_index test_formatted "Select branch" --match-keys test_keys
+  
+  # Assert
+  assert_success
+  assert_output "0"
+}
+
+@test "hug-gum: gum_filter_by_index returns multiple indices with --no-limit" {
+  # Arrange
+  local -a test_options=("file1.txt" "file2.js" "file3.py")
+  
+  # Mock gum filter to return multiple selections
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      printf "%s\n" "file1.txt" "file3.py"
+      return 0
+    fi
+    return 1
+  }
+  
+  # Act
+  run gum_filter_by_index test_options "Select files" --no-limit
+  
+  # Assert
+  assert_success
+  assert_line --index 0 "0"
+  assert_line --index 1 "2"
+}
+
+@test "hug-gum: gum_filter_by_index returns failure on cancel" {
+  # Arrange
+  local -a test_options=("item1" "item2")
+  
+  # Mock gum filter to simulate cancel
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      return 1
+    fi
+    return 1
+  }
+  
+  # Act
+  run gum_filter_by_index test_options "Select item"
+  
+  # Assert
+  assert_failure
+}
+
+@test "hug-gum: gum_filter_by_index with match-keys handles arrow format" {
+  # Arrange
+  local -a test_formatted=("2024-11/01 → feature" "2024-11/02 → bugfix")
+  local -a test_keys=("2024-11/01" "2024-11/02")
+  
+  # Mock gum filter
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      echo "2024-11/02 → bugfix"
+      return 0
+    fi
+    return 1
+  }
+  
+  # Act
+  run gum_filter_by_index test_formatted "Select backup" --match-keys test_keys
+  
+  # Assert
+  assert_success
+  assert_output "1"
+}
