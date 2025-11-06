@@ -140,6 +140,7 @@ Install: https://github.com/charmbracelet/gum"
           D)  status_text="${GREEN}S:${RED}Del ${NC}" ;;
           R*) status_text="${GREEN}S:${CYAN}Ren ${NC}" ;;
           C*) status_text="${GREEN}S:${BLUE}Copy${NC}" ;;
+          U)  status_text="${RED}Cnflt${NC}" ;;
           *)  status_text="${GREEN}S     ${NC}" ;;
         esac
         files+=("$file")
@@ -166,6 +167,7 @@ Install: https://github.com/charmbracelet/gum"
         case "$status" in
           M) status_text="${RED}U:${YELLOW}Mod ${NC}" ;;
           D) status_text="${RED}U:Del ${NC}" ;;
+          U) status_text="${RED}${YELLOW}Cnflt${NC}" ;;
           *) status_text="${RED}${NC}U     " ;;
         esac
         files+=("$file")
