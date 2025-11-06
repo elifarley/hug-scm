@@ -942,13 +942,110 @@ teardown() {
   # Switch back
   git switch - >/dev/null
   
-  # Force delete using git directly since hug bdelf doesn't exist yet
-  run git branch -D "$wip_branch"
+  # Use hug w wipdel with --force
+  run hug w wipdel --force "$wip_branch"
   assert_success
   
   # Branch should be gone
   run git branch --list "$wip_branch"
   assert_output ""
+}
+
+@test "hug w wipdel: shows help with --help flag" {
+  run hug w wipdel --help
+  assert_success
+  assert_output --partial "hug w wipdel: Delete a WIP branch"
+  assert_output --partial "USAGE:"
+  assert_output --partial "requires gum"
+}
+
+@test "hug w wipdel: errors when gum not available and no branch provided" {
+  # Create WIP branch
+  echo "delete test" > wipdel-test.txt
+  git add wipdel-test.txt
+  hug w wip "delete test work" >/dev/null
+  
+  # Disable gum
+  disable_gum_for_test
+  
+  # Try to run without providing branch name
+  run hug w wipdel
+  assert_failure
+  assert_output --partial "Interactive mode requires 'gum' to be installed"
+  assert_output --partial "https://github.com/charmbracelet/gum"
+  
+  enable_gum_for_test
+}
+
+@test "hug w wipdel: works with explicit branch when gum not available" {
+  # Create WIP branch
+  echo "delete test" > wipdel-test.txt
+  git add wipdel-test.txt
+  hug w wip "delete test work" >/dev/null
+  
+  wip_branch=$(git branch --list "WIP/*" | head -1 | xargs)
+  
+  # Disable gum
+  disable_gum_for_test
+  
+  # Should work with explicit branch name
+  run hug w wipdel --force "$wip_branch"
+  assert_success
+  
+  # Branch should be gone
+  run git branch --list "WIP/*"
+  assert_output ""
+  
+  enable_gum_for_test
+}
+
+@test "hug w unwip: shows help with --help flag" {
+  run hug w unwip --help
+  assert_success
+  assert_output --partial "hug w unwip: Unpark a WIP branch"
+  assert_output --partial "USAGE:"
+  assert_output --partial "requires gum"
+}
+
+@test "hug w unwip: errors when gum not available and no branch provided" {
+  # Create WIP branch
+  echo "unwip test" > unwip-test.txt
+  git add unwip-test.txt
+  hug w wip "unwip test work" >/dev/null
+  
+  # Disable gum
+  disable_gum_for_test
+  
+  # Try to run without providing branch name
+  run hug w unwip
+  assert_failure
+  assert_output --partial "Interactive mode requires 'gum' to be installed"
+  assert_output --partial "https://github.com/charmbracelet/gum"
+  
+  enable_gum_for_test
+}
+
+@test "hug w unwip: works with explicit branch when gum not available" {
+  # Create WIP branch
+  echo "unwip test" > unwip-test.txt
+  git add unwip-test.txt
+  hug w wip "unwip test work" >/dev/null
+  
+  wip_branch=$(git branch --list "WIP/*" | head -1 | xargs)
+  
+  # Disable gum
+  disable_gum_for_test
+  
+  # Should work with explicit branch name
+  run bash -c "echo 'y' | hug w unwip --force $wip_branch"
+  assert_success
+  assert_output --partial "Unparked successfully"
+  
+  # Branch should be gone
+  run git branch --list "WIP/*"
+  assert_output ""
+  
+  enable_gum_for_test
 }
 
 ################################################################################
