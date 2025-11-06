@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Assume HUG_HOME is set (exported by hug or environment)
-# shellcheck source=git-config/lib/hug-common
-. "$HUG_HOME/git-config/lib/hug-common"
-# shellcheck source=git-config/lib/hug-git-kit
-. "$HUG_HOME/git-config/lib/hug-git-kit"
+# Import only needed library files
 . "$HUG_HOME/git-config/lib/hug-terminal"
+. "$HUG_HOME/git-config/lib/hug-output"
+. "$HUG_HOME/git-config/lib/hug-gum"
+. "$HUG_HOME/git-config/lib/hug-git-repo"
+. "$HUG_HOME/git-config/lib/hug-git-branch"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
