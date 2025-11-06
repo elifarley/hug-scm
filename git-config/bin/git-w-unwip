@@ -44,36 +44,34 @@ usage_error() {
   exit 1
 }
 
-list_wip_branches() {
-  git for-each-ref --format='%(refname:short)' --sort=refname 'refs/heads/WIP/' 2>/dev/null || true
-}
-
 select_wip_branch() {
-  local branches
-  branches="$(list_wip_branches)"
-  if [ -z "$branches" ]; then
+  # Use library function to get WIP branch details
+  declare -a branches=() hashes=() subjects=()
+  
+  if ! compute_wip_branch_details branches hashes subjects 'refs/heads/WIP/'; then
     error "$PROG_NAME: No WIP branches found."
   fi
 
   if ! gum_available; then
-    printf 'Available WIP branches:\n%s\n' "$branches" >&2
+    printf 'Available WIP branches:\n'
+    for i in "${!branches[@]}"; do
+      printf '  %s\n' "${branches[$i]}"
+    done
     error "$PROG_NAME: Interactive mode requires 'gum' to be installed. Provide the branch explicitly (e.g., hug w unwip WIP/24-10-05/1430.draftfeature) or install gum: https://github.com/charmbracelet/gum"
   fi
 
   # Prepare formatted options with branch details
   local -a formatted_options=()
   
-  while IFS= read -r branch; do
-    [ -z "$branch" ] && continue
-    local hash
-    hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
-    local subject
-    subject=$(git log -1 --format='%s' "$branch" 2>/dev/null || echo "(no commit)")
+  for i in "${!branches[@]}"; do
+    local branch="${branches[$i]}"
+    local hash="${hashes[$i]}"
+    local subject="${subjects[$i]}"
     
     # Format: branch (hash) subject
     local formatted="${branch} ${YELLOW}${hash}${NC} ${GREY}${subject}${NC}"
     formatted_options+=("$formatted")
-  done <<< "$branches"
+  done
   
   # Use gum filter for selection
   local gum_height

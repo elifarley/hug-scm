@@ -443,3 +443,74 @@ get_numbered_selection_index() {
         fi
     done
 }
+
+################################################################################
+# WIP Branch Functions
+################################################################################
+
+# Computes details for WIP branches (or any branch matching a pattern) and populates output arrays
+# Usage: compute_wip_branch_details branches hashes subjects [ref_pattern]
+# Parameters (all namerefs to output variables):
+#   $1 - Array to receive branch names
+#   $2 - Array to receive commit hashes
+#   $3 - Array to receive commit subjects
+#   $4 - (Optional) Ref pattern to match (default: 'refs/heads/WIP/')
+# Returns:
+#   0 if branches found, 1 if no branches exist
+# Note:
+#   Arrays are cleared before population. Branches are sorted by name.
+#   This is a simpler version of compute_local_branch_details focused on WIP branches.
+compute_wip_branch_details() {
+    local -n branches_ref="$1"
+    local -n hashes_ref="$2"
+    local -n subjects_ref="$3"
+    local ref_pattern="${4:-refs/heads/WIP/}"
+
+    # Clear outputs
+    branches_ref=()
+    hashes_ref=()
+    subjects_ref=()
+
+    # Build format: branch name, hash, and subject
+    local format='%(refname:short)%00%(objectname:short)%00%(subject)%00'
+
+    # Use mapfile for robust, atomic parsing of null-delimited data
+    local -a git_output=()
+    mapfile -t -d '' git_output < <(git for-each-ref \
+        --format="$format" \
+        --sort=refname "$ref_pattern" 2>/dev/null || true)
+
+    # Check if we got any results
+    if [ ${#git_output[@]} -eq 0 ]; then
+        return 1
+    fi
+
+    # Iterate through the flat array in chunks of 3
+    local i
+    for ((i = 0; i + 2 < ${#git_output[@]}; i += 3)); do
+        local branch_raw="${git_output[i]}"
+        local branch
+        branch=$(printf '%s' "$branch_raw" | tr -d '\n\r')
+        
+        # Skip if empty
+        if [[ -z "$branch" ]]; then
+            continue
+        fi
+
+        local hash="${git_output[i+1]}"
+        local subject_raw="${git_output[i+2]}"
+        local subject
+        subject=$(printf '%s' "$subject_raw" | tr -d '\n\r')
+
+        branches_ref+=("$branch")
+        hashes_ref+=("$hash")
+        subjects_ref+=("${subject:-(no commit message)}")
+    done
+
+    # Check if any branches were found after filtering
+    if [ ${#branches_ref[@]} -eq 0 ]; then
+        return 1
+    fi
+
+    return 0
+}
