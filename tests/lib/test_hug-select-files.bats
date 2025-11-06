@@ -315,9 +315,9 @@ create_merge_conflict() {
 }
 
 @test "list_files_with_status: no duplicate files in output" {
-  # Modify the same file and stage part of it (if possible)
+  # Create a partially staged file: "line2" is staged, "line3" is unstaged.
   echo "line2" >> src/components/App.js
-  git add -p src/components/App.js <<< "y" 2>/dev/null || git add src/components/App.js
+  git add src/components/App.js
   echo "line3" >> src/components/App.js
   
   local output
