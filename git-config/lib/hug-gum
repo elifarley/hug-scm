@@ -188,7 +188,13 @@ gum_filter_extract() {
   
   # Use gum_invoke_filter for the actual invocation
   local selection
-  if ! selection=$(gum_invoke_filter options "$placeholder" $no_limit); then
+  if [ -n "$no_limit" ]; then
+    selection=$(gum_invoke_filter options "$placeholder" "$no_limit")
+  else
+    selection=$(gum_invoke_filter options "$placeholder")
+  fi
+  
+  if [ -z "$selection" ]; then
     info "$cancel_message"
     return 1
   fi
@@ -279,7 +285,13 @@ gum_filter_by_index() {
   
   # Use gum_invoke_filter for the actual invocation
   local selection
-  if ! selection=$(gum_invoke_filter "$options_array_name" "$placeholder" $no_limit); then
+  if [ -n "$no_limit" ]; then
+    selection=$(gum_invoke_filter "$options_array_name" "$placeholder" "$no_limit")
+  else
+    selection=$(gum_invoke_filter "$options_array_name" "$placeholder")
+  fi
+  
+  if [ -z "$selection" ]; then
     return 1
   fi
   
@@ -288,12 +300,12 @@ gum_filter_by_index() {
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     
-    # Try exact match first
+    # Try exact match first (against formatted options)
     local i
     for i in "${!options_ref[@]}"; do
       if [[ "${options_ref[i]}" == "$line" ]]; then
         result_indices+=("$i")
-        continue 2  # Skip to next line
+        continue 2  # Exit inner loop and continue outer while loop to process next line
       fi
     done
     
