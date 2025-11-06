@@ -370,8 +370,8 @@ hug_bdel_backup() {
     
     # Prepare formatted options for gum
     local -a formatted_options=()
-    # Build mapping between display names and full backup names using associative array
-    declare -A backup_mapping
+    # Display names array for matching (parallel to all_backups by index)
+    local -a display_names=()
     
     for backup in "${all_backups[@]}"; do
       local display_name
@@ -386,33 +386,28 @@ hug_bdel_backup() {
       # Format for gum: plain text
       local formatted="${display_name} → ${original_name} ${YELLOW}${hash}${NC} ${GREY}${subject}${NC}"
       formatted_options+=("$formatted")
-      # Store mapping for later lookup
-      backup_mapping["$display_name"]="$backup"
+      # Populate display_names for matching (normalized selection will match against this)
+      display_names+=("$display_name")
     done
     
-    # Extractor function to get display name and then map to backup name
-    extract_backup_display_name() {
-      echo "${1%% → *}"
-    }
+    # Use gum_filter_by_index for selection with match-keys for reliable extraction
+    local -a selected_indices=()
+    mapfile -t selected_indices < <(
+      gum_filter_by_index formatted_options \
+                          "Select backup branches to delete (<TAB> to select, Enter to confirm)..." \
+                          --match-keys display_names \
+                          --no-limit
+    )
     
-    # Use gum_filter_extract for selection with automatic field extraction
-    local -a selected_display_names=()
-    mapfile -t selected_display_names < <(
-      printf '%s\n' "${formatted_options[@]}" | \
-        gum_filter_extract "Select backup branches to delete (<TAB> to select, Enter to confirm)..." \
-                           "No backup branches selected." \
-                           "extract_backup_display_name" \
-                           --no-limit
-    ) || exit 0
+    if [ ${#selected_indices[@]} -eq 0 ]; then
+      info "No backup branches selected."
+      exit 0
+    fi
     
-    # Map display names back to full backup branch names using associative array
+    # Extract selected backup branches using indices
     backup_branches_to_delete=()
-    for display_name in "${selected_display_names[@]}"; do
-      if [[ -n "${backup_mapping[$display_name]:-}" ]]; then
-        backup_branches_to_delete+=("${backup_mapping[$display_name]}")
-      else
-        error "Internal error: Could not match selected item '$display_name' to a backup branch."
-      fi
+    for idx in "${selected_indices[@]}"; do
+      backup_branches_to_delete+=("${all_backups[$idx]}")
     done
   fi
   

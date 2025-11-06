@@ -122,19 +122,25 @@ hug_us() {
       error "No valid staged files found to display. This may be a bug - please report it."
     fi
     
-    # Extractor function to get file name (first word)
-    extract_filename() {
-      echo "${1%% *}"
-    }
+    # Use gum_filter_by_index for selection with match-keys for reliable extraction
+    local -a selected_indices=()
+    mapfile -t selected_indices < <(
+      gum_filter_by_index formatted_options \
+                          "Select files to unstage (<TAB> to select, Enter to confirm)..." \
+                          --match-keys staged_files \
+                          --no-limit
+    )
     
-    # Use gum_filter_extract for selection with automatic field extraction
-    mapfile -t files_to_unstage < <(
-      printf '%s\n' "${formatted_options[@]}" | \
-        gum_filter_extract "Select files to unstage (<TAB> to select, Enter to confirm)..." \
-                           "No files selected." \
-                           "extract_filename" \
-                           --no-limit
-    ) || exit 0
+    if [ ${#selected_indices[@]} -eq 0 ]; then
+      info "No files selected."
+      exit 0
+    fi
+    
+    # Extract selected files using indices
+    files_to_unstage=()
+    for idx in "${selected_indices[@]}"; do
+      files_to_unstage+=("${staged_files[$idx]}")
+    done
   fi
   
   # Validate that files exist and are staged

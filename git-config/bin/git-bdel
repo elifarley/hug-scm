@@ -118,19 +118,25 @@ hug_bdel() {
       formatted_options+=("$formatted")
     done
     
-    # Extractor function to get branch name (first word)
-    extract_branchname() {
-      echo "${1%% *}"
-    }
+    # Use gum_filter_by_index for selection with match-keys for reliable extraction
+    local -a selected_indices=()
+    mapfile -t selected_indices < <(
+      gum_filter_by_index formatted_options \
+                          "Select branches to delete (<TAB> to select, Enter to confirm)..." \
+                          --match-keys all_branches \
+                          --no-limit
+    )
     
-    # Use gum_filter_extract for selection with automatic field extraction
-    mapfile -t branches_to_delete < <(
-      printf '%s\n' "${formatted_options[@]}" | \
-        gum_filter_extract "Select branches to delete (<TAB> to select, Enter to confirm)..." \
-                           "No branches selected." \
-                           "extract_branchname" \
-                           --no-limit
-    ) || exit 0
+    if [ ${#selected_indices[@]} -eq 0 ]; then
+      info "No branches selected."
+      exit 0
+    fi
+    
+    # Extract selected branches using indices
+    branches_to_delete=()
+    for idx in "${selected_indices[@]}"; do
+      branches_to_delete+=("${all_branches[$idx]}")
+    done
   fi
   
   # Validate that none of the branches is the current branch
