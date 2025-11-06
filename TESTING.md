@@ -146,6 +146,36 @@ make test-lib
 make test-verbose
 ```
 
+#### Running Specific Tests via Makefile
+The Makefile now supports optional variables for granular execution within categories. This overrides defaults without breaking broad runs. For category-specific targets, if `TEST_FILE` lacks a full path (doesn't start with `tests/`), it automatically prepends the category directory (e.g., `tests/unit/` for `test-unit`).
+
+```bash
+# Run a specific unit test file (short name auto-prepended with tests/unit/)
+make test-unit TEST_FILE=test_head.bats
+
+# Run unit tests matching a filter (searches @test names across all unit files)
+make test-unit TEST_FILTER="hug h back"
+
+# Combine: Specific file with filter (filters within that file)
+make test-unit TEST_FILE=test_head.bats TEST_FILTER="edge case"
+
+# Full paths also work
+make test-unit TEST_FILE=tests/unit/test_head.bats
+
+# Same pattern for other categories
+make test-integration TEST_FILE=test_workflows.bats  # Auto-prepends tests/integration/
+make test-lib TEST_FILTER="hug-fs is_symlink"
+make test-lib TEST_FILE=test_hug-fs.bats  # Auto-prepends tests/lib/
+make test TEST_FILE=test_head.bats  # Auto-prepends tests/ for general tests
+
+# Notes:
+# - TEST_FILE overrides the category path; short names (filenames only) are auto-completed with category dir.
+# - Full relative paths (e.g., tests/unit/test_head.bats) are used as-is.
+# - TEST_FILTER uses run-tests.sh's -f (partial match on test names); combine with TEST_FILE for precision.
+# - For advanced args (e.g., -j 4, -v), invoke run-tests.sh directly.
+# - Invalid paths/files will error via run-tests.sh.
+```
+
 Or use the test script directly:
 ```bash
 # Check prerequisites
