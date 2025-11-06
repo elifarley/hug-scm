@@ -6,6 +6,7 @@
 #   - gum_available: return success when gum can be used.
 #   - gum_calculate_height: calculate appropriate height for gum filter
 #   - gum_filter_select: wrapper for gum filter with standard flags
+#   - gum_filter_extract: select items and extract specific field from each
 
 ################################################################################
 # Gum Integration Helpers
@@ -70,5 +71,96 @@ gum_filter_select() {
   fi
   
   printf '%s\n' "$selection"
+  return 0
+}
+
+# Enhanced gum filter with automatic field extraction
+# Usage: gum_filter_extract <placeholder> <cancel_message> <extractor_function> [--no-limit] < formatted_options
+# 
+# Arguments:
+#   placeholder: Text to show in gum filter placeholder
+#   cancel_message: Message to display when user cancels or no items selected (e.g., "No files selected")
+#   extractor_function: Function name to extract desired field from each selected line
+#                       The function receives one line as argument and should output the extracted value
+#   --no-limit: Optional flag to allow multi-selection
+#
+# Returns: 
+#   0 if items selected (outputs extracted values, one per line)
+#   1 if cancelled or no items selected
+#
+# Example extractor functions:
+#   extract_first_word() { echo "${1%% *}"; }
+#   extract_second_word() { local line="$1"; echo "${line#* }" | cut -d' ' -f1; }
+#
+gum_filter_extract() {
+  local placeholder="$1"
+  local cancel_message="$2"
+  local extractor_function="$3"
+  shift 3
+  
+  # Check for --no-limit flag
+  local no_limit=""
+  if [[ "$1" == "--no-limit" ]]; then
+    no_limit="--no-limit"
+    shift
+  fi
+  
+  # Read input into array to calculate height
+  local -a options=()
+  mapfile -t options
+  
+  if [ ${#options[@]} -eq 0 ]; then
+    return 1
+  fi
+  
+  local height
+  height=$(gum_calculate_height "${#options[@]}")
+  
+  # Run gum filter with standard flags
+  local selection
+  selection=$(printf '%s\n' "${options[@]}" | \
+    gum filter --placeholder="$placeholder" \
+                --height="$height" \
+                --no-strip-ansi \
+                --reverse \
+                ${no_limit} \
+                "$@" || true)
+  
+  if [ -z "$selection" ]; then
+    # Source hug-output for info function
+    if [[ -n "${HUG_HOME:-}" ]] && [[ -f "$HUG_HOME/git-config/lib/hug-output" ]]; then
+      # shellcheck source=git-config/lib/hug-output
+      . "$HUG_HOME/git-config/lib/hug-output"
+      info "$cancel_message"
+    else
+      # Fallback if hug-output not available
+      printf "%s\n" "$cancel_message" >&2
+    fi
+    return 1
+  fi
+  
+  # Extract field from each selected line
+  local -a extracted=()
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    local extracted_value
+    extracted_value=$("$extractor_function" "$line")
+    [[ -n "$extracted_value" ]] && extracted+=("$extracted_value")
+  done <<< "$selection"
+  
+  if [ ${#extracted[@]} -eq 0 ]; then
+    # Source hug-output for info function
+    if [[ -n "${HUG_HOME:-}" ]] && [[ -f "$HUG_HOME/git-config/lib/hug-output" ]]; then
+      # shellcheck source=git-config/lib/hug-output
+      . "$HUG_HOME/git-config/lib/hug-output"
+      info "$cancel_message"
+    else
+      # Fallback if hug-output not available
+      printf "%s\n" "$cancel_message" >&2
+    fi
+    return 1
+  fi
+  
+  printf '%s\n' "${extracted[@]}"
   return 0
 }
