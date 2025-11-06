@@ -77,13 +77,18 @@ gum_filter_select() {
 # Helper function to display info message (with fallback)
 _gum_filter_info() {
   local message="$1"
-  # Source hug-output for info function if not already available
-  if [[ -n "${HUG_HOME:-}" ]] && [[ -f "$HUG_HOME/git-config/lib/hug-output" ]]; then
-    # shellcheck source=git-config/lib/hug-output
-    . "$HUG_HOME/git-config/lib/hug-output"
+  # Check if info function is available, if not source hug-output
+  if ! command -v info >/dev/null 2>&1; then
+    if [[ -n "${HUG_HOME:-}" ]] && [[ -f "$HUG_HOME/git-config/lib/hug-output" ]]; then
+      # shellcheck source=git-config/lib/hug-output
+      . "$HUG_HOME/git-config/lib/hug-output"
+    fi
+  fi
+  
+  # Try to use info function, fallback to printf
+  if command -v info >/dev/null 2>&1; then
     info "$message"
   else
-    # Fallback if hug-output not available
     printf "%s\n" "$message" >&2
   fi
 }
@@ -131,21 +136,18 @@ gum_filter_extract() {
   height=$(gum_calculate_height "${#options[@]}")
   
   # Run gum filter with standard flags
+  local -a gum_args=(
+    --placeholder="$placeholder"
+    --height="$height"
+    --no-strip-ansi
+    --reverse
+  )
+  
+  # Add --no-limit flag if requested
+  [ -n "$no_limit" ] && gum_args+=(--no-limit)
+  
   local selection
-  if [ -n "$no_limit" ]; then
-    selection=$(printf '%s\n' "${options[@]}" | \
-      gum filter --placeholder="$placeholder" \
-                  --height="$height" \
-                  --no-strip-ansi \
-                  --reverse \
-                  --no-limit || true)
-  else
-    selection=$(printf '%s\n' "${options[@]}" | \
-      gum filter --placeholder="$placeholder" \
-                  --height="$height" \
-                  --no-strip-ansi \
-                  --reverse || true)
-  fi
+  selection=$(printf '%s\n' "${options[@]}" | gum filter "${gum_args[@]}" || true)
   
   if [ -z "$selection" ]; then
     _gum_filter_info "$cancel_message"
