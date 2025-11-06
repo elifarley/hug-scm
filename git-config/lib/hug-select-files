@@ -140,7 +140,7 @@ Install: https://github.com/charmbracelet/gum"
           D)  status_text="${GREEN}S:${RED}Del ${NC}" ;;
           R*) status_text="${GREEN}S:${CYAN}Ren ${NC}" ;;
           C*) status_text="${GREEN}S:${BLUE}Copy${NC}" ;;
-          U)  status_text="${RED}Cnflt${NC}" ;;
+          U)  status_text="${YELLOW}Cnflt ${NC}" ;;
           *)  status_text="${GREEN}S     ${NC}" ;;
         esac
         files+=("$file")
