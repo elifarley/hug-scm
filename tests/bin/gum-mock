@@ -2,6 +2,8 @@
 # Mock gum for testing
 # This script simulates gum behavior for automated tests
 
+. "$HUG_HOME/git-config/lib/hug-gum" || exit
+
 # Handle different gum commands
 case "$1" in
   filter)
@@ -39,8 +41,8 @@ case "$1" in
       exit 1
     else
       # Fall back to real gum if available
-      if command -v /home/runner/.hug-deps/bin/gum >/dev/null 2>&1; then
-        /home/runner/.hug-deps/bin/gum "$@"
+      if gum_available; then
+        command gum "$@"
       else
         # No real gum available, default to yes
         exit 0
@@ -51,8 +53,8 @@ case "$1" in
   log)
     # For log command, just pass through to real gum if available
     # Otherwise, just echo the message
-    if command -v /home/runner/.hug-deps/bin/gum >/dev/null 2>&1; then
-      /home/runner/.hug-deps/bin/gum "$@"
+    if gum_available; then
+      gum "$@"
     else
       shift  # Remove 'log' argument
       # Skip flags and print remaining arguments
@@ -60,7 +62,7 @@ case "$1" in
         case "$1" in
           -s|--prefix=*|--prefix)
             shift
-            [[ "$1" != -* ]] && shift
+            [[ $# -gt 0 && "$1" != -* ]] && shift
             ;;
           *)
             echo "$@"
@@ -73,8 +75,8 @@ case "$1" in
     
   *)
     # For other commands, try to pass through to real gum
-    if command -v /home/runner/.hug-deps/bin/gum >/dev/null 2>&1; then
-      /home/runner/.hug-deps/bin/gum "$@"
+    if gum_available; then
+      gum "$@"
     else
       # No real gum, just exit successfully
       exit 0

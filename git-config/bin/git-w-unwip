@@ -89,7 +89,7 @@ select_wip_branch() {
     exit 0
   fi
   
-  # Extract branch name (first word)
+  # Extract branch name (first word). Assumes branch names have no spaces.
   local branch_name="${selection%% *}"
   printf '%s\n' "$branch_name"
 }

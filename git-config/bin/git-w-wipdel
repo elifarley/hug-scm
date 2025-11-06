@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
-set -euo pipefail
+# Assume HUG_HOME is set (exported by hug or environment)
+# shellcheck source=git-config/lib/hug-common
+. "$HUG_HOME/git-config/lib/hug-common"
+# shellcheck source=git-config/lib/hug-git-kit
+. "$HUG_HOME/git-config/lib/hug-git-kit"
+. "$HUG_HOME/git-config/lib/hug-terminal"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
 
 PROG_NAME="hug w wipdel"
 
@@ -86,7 +91,7 @@ select_wip_branch() {
     exit 0
   fi
   
-  # Extract branch name (first word)
+  # Extract branch name (first word). Assumes branch names have no spaces.
   local branch_name="${selection%% *}"
   printf '%s\n' "$branch_name"
 }
