@@ -2,7 +2,7 @@
 # Library: HUG interactive file selection
 #
 # Implements gum-powered file selection with git status annotations.
-# Depends on: hug-gum, hug-output, hug-terminal.
+# Depends on: hug-gum, hug-output, hug-terminal, hug-git-files (for list_* functions).
 # Functions:
 #   - list_files_with_status: list staged/unstaged/untracked files with color-coded status (non-interactive).
 #   - select_files_with_status: filter staged/unstaged/untracked files interactively.
