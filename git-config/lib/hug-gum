@@ -56,7 +56,7 @@ normalize_selection() {
   local selection="$1"
   
   # Strip ANSI color codes first
-  selection=$(sed 's/\033\[[0-9;]*[a-zA-Z]//g' <<< "$selection")
+  selection=$(sed $'s/\033\\[[0-9;]*[a-zA-Z]//g' <<< "$selection")
   
   # Strip leading `* ` or `*` marker
   if [[ "$selection" == \** ]]; then
