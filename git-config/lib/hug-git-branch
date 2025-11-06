@@ -517,15 +517,14 @@ select_wip_branch() {
         formatted_options+=("$formatted")
     done
     
-    # Use gum filter for selection
-    local selection
-    if ! selection=$(printf '%s\n' "${formatted_options[@]}" | gum_filter_select "$placeholder"); then
+    # Use gum_filter_by_index for selection with match-keys for reliable extraction
+    local index
+    if ! index=$(gum_filter_by_index formatted_options "$placeholder" --match-keys branches); then
         info "Cancelled."
         exit 0
     fi
     
-    # Extract branch name (first word). Assumes branch names have no spaces.
-    local branch_name="${selection%% *}"
-    printf '%s\n' "$branch_name"
+    # Return the selected branch name using the index
+    printf '%s\n' "${branches[$index]}"
 }
 
