@@ -48,56 +48,6 @@ usage_error() {
   exit 1
 }
 
-select_wip_branch() {
-  # Use library function to get WIP branch details
-  declare -a branches=() hashes=() subjects=()
-  
-  if ! compute_wip_branch_details branches hashes subjects 'refs/heads/WIP/'; then
-    error "$PROG_NAME: No WIP branches found."
-  fi
-
-  if ! gum_available; then
-    printf 'Available WIP branches:\n'
-    for i in "${!branches[@]}"; do
-      printf '  %s\n' "${branches[$i]}"
-    done
-    error "$PROG_NAME: Interactive mode requires 'gum' to be installed. Provide the branch explicitly (e.g., hug w wipdel WIP/24-10-05/1430.draftfeature) or install gum: https://github.com/charmbracelet/gum"
-  fi
-
-  # Prepare formatted options with branch details
-  local -a formatted_options=()
-  
-  for i in "${!branches[@]}"; do
-    local branch="${branches[$i]}"
-    local hash="${hashes[$i]}"
-    local subject="${subjects[$i]}"
-    
-    # Format: branch (hash) subject
-    local formatted="${branch} ${YELLOW}${hash}${NC} ${GREY}${subject}${NC}"
-    formatted_options+=("$formatted")
-  done
-  
-  # Use gum filter for selection
-  local gum_height
-  gum_height=$((${#formatted_options[@]} < 13 ? ${#formatted_options[@]} + 2 : 15))
-  
-  local selection
-  selection=$(printf '%s\n' "${formatted_options[@]}" | \
-    gum filter --placeholder="Select WIP branch to delete..." \
-                --height="$gum_height" \
-                --no-strip-ansi \
-                --reverse || true)
-  
-  if [ -z "$selection" ]; then
-    info "Cancelled."
-    exit 0
-  fi
-  
-  # Extract branch name (first word). Assumes branch names have no spaces.
-  local branch_name="${selection%% *}"
-  printf '%s\n' "$branch_name"
-}
-
 force_delete=false
 branch_arg=""
 
@@ -137,7 +87,7 @@ check_git_repo
 
 branch_selected="$branch_arg"
 if [ -z "$branch_selected" ]; then
-  branch_selected="$(select_wip_branch)"
+  branch_selected="$(select_wip_branch "Select WIP branch to delete..." "$PROG_NAME")"
 fi
 
 branch="$(trim_message "$branch_selected")"

@@ -4,6 +4,8 @@
 # Detects whether charmbracelet/gum is available for enhanced UX.
 # Functions:
 #   - gum_available: return success when gum can be used.
+#   - gum_calculate_height: calculate appropriate height for gum filter
+#   - gum_filter_select: wrapper for gum filter with standard flags
 
 ################################################################################
 # Gum Integration Helpers
@@ -23,4 +25,50 @@ gum_log() {
   local prefix="$1"; shift
   gum_available && gum log -s --prefix="$prefix" -- "$@" || \
     printf "%s: %s\n" "$prefix" "$@" >&2
+}
+
+# Calculate optimal height for gum filter based on number of items
+# Usage: gum_calculate_height <num_items>
+# Returns: height value suitable for --height flag
+gum_calculate_height() {
+  local num_items="$1"
+  # Use + 3 for proper spacing (placeholder + 2 lines padding)
+  # Cap at 15 for reasonable screen usage
+  echo $((num_items < 13 ? num_items + 3 : 15))
+}
+
+# Wrapper for gum filter with common flags
+# Usage: gum_filter_select <placeholder> [additional_flags...]
+# Reads options from stdin, outputs selection to stdout
+# Returns: 0 if selection made, 1 if cancelled
+gum_filter_select() {
+  local placeholder="$1"
+  shift
+  
+  # Read input into array to calculate height
+  local -a options=()
+  mapfile -t options
+  
+  if [ ${#options[@]} -eq 0 ]; then
+    return 1
+  fi
+  
+  local height
+  height=$(gum_calculate_height "${#options[@]}")
+  
+  # Output options and run gum filter with standard flags
+  local selection
+  selection=$(printf '%s\n' "${options[@]}" | \
+    gum filter --placeholder="$placeholder" \
+                --height="$height" \
+                --no-strip-ansi \
+                --reverse \
+                "$@" || true)
+  
+  if [ -z "$selection" ]; then
+    return 1
+  fi
+  
+  printf '%s\n' "$selection"
+  return 0
 }

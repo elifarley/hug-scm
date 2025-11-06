@@ -122,7 +122,7 @@ hug_bdel() {
     
     # Use gum filter for multi-selection
     local gum_height
-    gum_height=$((${#all_branches[@]} < 13 ? ${#all_branches[@]} + 2 : 15))
+    gum_height=$(gum_calculate_height "${#all_branches[@]}")
     
     local selection
     selection=$(printf '%s\n' "${formatted_options[@]}" | \
