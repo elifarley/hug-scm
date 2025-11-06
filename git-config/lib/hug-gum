@@ -56,7 +56,7 @@ normalize_selection() {
   local selection="$1"
   
   # Strip ANSI color codes first
-  selection=$(echo "$selection" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
+  selection=$(sed 's/\x1B\[[0-9;]*[a-zA-Z]//g' <<< "$selection")
   
   # Strip leading `* ` or `*` marker
   if [[ "$selection" == \** ]]; then
@@ -71,6 +71,16 @@ normalize_selection() {
   local trailing_whitespace="${selection##*[![:space:]]}"
   selection="${selection%"$trailing_whitespace"}"
   
+  # Strip upstream status indicators like ": ahead N" or ": behind N" BEFORE other extractions
+  # This is more precise than stripping all colons and preserves valid colons in branch names
+  if [[ "$selection" == *": ahead "* ]]; then
+    selection="${selection%%: ahead *}"
+  elif [[ "$selection" == *": behind "* ]]; then
+    selection="${selection%%: behind *}"
+  elif [[ "$selection" == *": gone"* ]]; then
+    selection="${selection%%: gone*}"
+  fi
+  
   # If selection contains " → ", extract everything before it
   if [[ "$selection" == *" → "* ]]; then
     selection="${selection%% → *}"
@@ -81,9 +91,6 @@ normalize_selection() {
   else
     selection="${selection%% *}"
   fi
-  
-  # Strip any remaining trailing whitespace and colons (for upstream status)
-  selection="${selection%%[[:space:]:]*}"
   
   echo "$selection"
 }
