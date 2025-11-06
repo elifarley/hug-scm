@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # Library: HUG gum integration helpers
+# REQUIRES hug-output
 #
 # Detects whether charmbracelet/gum is available for enhanced UX.
 # Functions:
@@ -74,25 +75,6 @@ gum_filter_select() {
   return 0
 }
 
-# Helper function to display info message (with fallback)
-_gum_filter_info() {
-  local message="$1"
-  # Check if info function is available, if not source hug-output
-  if ! command -v info >/dev/null 2>&1; then
-    if [[ -n "${HUG_HOME:-}" ]] && [[ -f "$HUG_HOME/git-config/lib/hug-output" ]]; then
-      # shellcheck source=git-config/lib/hug-output
-      . "$HUG_HOME/git-config/lib/hug-output"
-    fi
-  fi
-  
-  # Try to use info function, fallback to printf
-  if command -v info >/dev/null 2>&1; then
-    info "$message"
-  else
-    printf "%s\n" "$message" >&2
-  fi
-}
-
 # Enhanced gum filter with automatic field extraction
 # Usage: gum_filter_extract <placeholder> <cancel_message> <extractor_function> [--no-limit] < formatted_options
 # 
@@ -140,17 +122,19 @@ gum_filter_extract() {
     --placeholder="$placeholder"
     --height="$height"
     --no-strip-ansi
-    --reverse
+
   )
   
-  # Add --no-limit flag if requested
-  [ -n "$no_limit" ] && gum_args+=(--no-limit)
+  # When --no-limit is present, we should NOT use --reverse because even though we would expect Gum
+  # to reverse the movement caused by the <TAB> key (it should go up instead of down), it's still the same
+  # downward movement, making it harder to select multiple items.
+  [ -n "$no_limit" ] && gum_args+=(--no-limit) || gum_args+=(--reverse)
   
   local selection
   selection=$(printf '%s\n' "${options[@]}" | gum filter "${gum_args[@]}" || true)
   
   if [ -z "$selection" ]; then
-    _gum_filter_info "$cancel_message"
+    info "$cancel_message"
     return 1
   fi
   
@@ -164,7 +148,7 @@ gum_filter_extract() {
   done <<< "$selection"
   
   if [ ${#extracted[@]} -eq 0 ]; then
-    _gum_filter_info "$cancel_message"
+    info "$cancel_message"
     return 1
   fi
   
