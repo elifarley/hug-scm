@@ -58,7 +58,8 @@ list_files_with_status() {
         shift
         ;;
       *)
-        error "Unknown option for list_files_with_status: $1"
+        warn "Unknown option for list_files_with_status: $1"
+        return 1
         ;;
     esac
   done
