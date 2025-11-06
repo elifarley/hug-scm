@@ -9,7 +9,6 @@
 #   - normalize_selection: normalize gum selection (strip markers, whitespace, etc.)
 #   - gum_invoke_filter: low-level gum filter invocation with standard flags
 #   - gum_filter_select: wrapper for gum filter with standard flags
-#   - gum_filter_extract: select items and extract specific field from each
 #   - gum_filter_by_index: select items and return 0-based indices for flexible extraction
 
 ################################################################################
@@ -47,12 +46,17 @@ gum_calculate_height() {
 # Returns: normalized string to stdout
 # 
 # Removes:
+#   - ANSI color codes (e.g., \x1b[33m, \x1b[0m)
 #   - Leading `* ` or `*` markers (current branch indicator)
 #   - Leading/trailing whitespace
 #   - Arrows (→) and text after them
 #   - Parentheses and text after them (for formats like "branch (hash)")
+#   - Upstream status indicators (e.g., "[origin/feat: ahead 2]")
 normalize_selection() {
   local selection="$1"
+  
+  # Strip ANSI color codes first
+  selection=$(echo "$selection" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
   
   # Strip leading `* ` or `*` marker
   if [[ "$selection" == \** ]]; then
@@ -77,6 +81,9 @@ normalize_selection() {
   else
     selection="${selection%% *}"
   fi
+  
+  # Strip any remaining trailing whitespace and colons (for upstream status)
+  selection="${selection%%[[:space:]:]*}"
   
   echo "$selection"
 }
@@ -145,76 +152,6 @@ gum_filter_select() {
   
   # Use gum_invoke_filter for the actual invocation
   gum_invoke_filter options "$placeholder" "$@"
-}
-
-# Enhanced gum filter with automatic field extraction
-# Usage: gum_filter_extract <placeholder> <cancel_message> <extractor_function> [--no-limit] < formatted_options
-# 
-# Arguments:
-#   placeholder: Text to show in gum filter placeholder
-#   cancel_message: Message to display when user cancels or no items selected (e.g., "No files selected")
-#   extractor_function: Function name to extract desired field from each selected line
-#                       The function receives one line as argument and should output the extracted value
-#   --no-limit: Optional flag to allow multi-selection
-#
-# Returns: 
-#   0 if items selected (outputs extracted values, one per line)
-#   1 if cancelled or no items selected
-#
-# Example extractor functions:
-#   extract_first_word() { echo "${1%% *}"; }
-#   extract_second_word() { local line="$1"; echo "${line#* }" | cut -d' ' -f1; }
-#
-gum_filter_extract() {
-  local placeholder="$1"
-  local cancel_message="$2"
-  local extractor_function="$3"
-  shift 3
-  
-  # Check for --no-limit flag
-  local no_limit=""
-  if [[ "$1" == "--no-limit" ]]; then
-    no_limit="--no-limit"
-    shift
-  fi
-  
-  # Read input into array
-  local -a options=()
-  mapfile -t options
-  
-  if [ ${#options[@]} -eq 0 ]; then
-    return 1
-  fi
-  
-  # Use gum_invoke_filter for the actual invocation
-  local selection
-  if [ -n "$no_limit" ]; then
-    selection=$(gum_invoke_filter options "$placeholder" "$no_limit")
-  else
-    selection=$(gum_invoke_filter options "$placeholder")
-  fi
-  
-  if [ -z "$selection" ]; then
-    info "$cancel_message"
-    return 1
-  fi
-  
-  # Extract field from each selected line
-  local -a extracted=()
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    local extracted_value
-    extracted_value=$("$extractor_function" "$line")
-    [[ -n "$extracted_value" ]] && extracted+=("$extracted_value")
-  done <<< "$selection"
-  
-  if [ ${#extracted[@]} -eq 0 ]; then
-    info "$cancel_message"
-    return 1
-  fi
-  
-  printf '%s\n' "${extracted[@]}"
-  return 0
 }
 
 # Gum filter with index-based returns for flexible extraction

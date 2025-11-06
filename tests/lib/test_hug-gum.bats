@@ -111,129 +111,6 @@ load '../../git-config/lib/hug-output'
   unset HUG_DISABLE_GUM
 }
 
-@test "hug-gum: gum_filter_extract with first word extraction" {
-  # Arrange - create extractor function
-  extract_first_word() { echo "${1%% *}"; }
-  
-  # Mock gum filter to return selection
-  gum() {
-    if [[ "$1" == "filter" ]]; then
-      cat  # Just pass through input as selection
-      return 0
-    fi
-    return 1
-  }
-  
-  # Act - provide formatted input like "file.txt status"
-  run gum_filter_extract "Test" "Cancelled" "extract_first_word" --no-limit < <(printf "%s\n" "file1.txt modified" "file2.js new")
-  
-  # Assert
-  assert_success
-  assert_line --index 0 "file1.txt"
-  assert_line --index 1 "file2.js"
-}
-
-@test "hug-gum: gum_filter_extract returns failure when cancelled" {
-  # Arrange - create extractor function
-  extract_first_word() { echo "${1%% *}"; }
-  
-  # Mock gum filter to return empty (cancelled)
-  gum() {
-    if [[ "$1" == "filter" ]]; then
-      return 1  # Simulate cancellation
-    fi
-    return 1
-  }
-  
-  # Act
-  run gum_filter_extract "Test" "No items selected" "extract_first_word" < <(printf "%s\n" "file1.txt modified")
-  
-  # Assert
-  assert_failure
-  assert_output --partial "No items selected"
-}
-
-@test "hug-gum: gum_filter_extract returns failure when no input provided" {
-  # Arrange - create extractor function
-  extract_first_word() { echo "${1%% *}"; }
-  
-  # Act - provide empty input
-  run gum_filter_extract "Test" "No items" "extract_first_word" < /dev/null
-  
-  # Assert
-  assert_failure
-}
-
-@test "hug-gum: gum_filter_extract handles single selection" {
-  # Arrange - create extractor function
-  extract_first_word() { echo "${1%% *}"; }
-  
-  # Mock gum filter to return single selection
-  gum() {
-    if [[ "$1" == "filter" ]]; then
-      echo "branch1 hash123 commit message"
-      return 0
-    fi
-    return 1
-  }
-  
-  # Act
-  run gum_filter_extract "Test" "Cancelled" "extract_first_word" < <(printf "%s\n" "branch1 hash123" "branch2 hash456")
-  
-  # Assert
-  assert_success
-  assert_output "branch1"
-}
-
-@test "hug-gum: gum_filter_extract with custom extractor" {
-  # Arrange - create custom extractor that extracts text before arrow
-  extract_before_arrow() { 
-    local line="$1"
-    echo "${line%% → *}"
-  }
-  
-  # Mock gum filter
-  gum() {
-    if [[ "$1" == "filter" ]]; then
-      cat  # Pass through
-      return 0
-    fi
-    return 1
-  }
-  
-  # Act
-  run gum_filter_extract "Test" "Cancelled" "extract_before_arrow" --no-limit < <(printf "%s\n" "2024-11/01 → original" "2024-11/02 → feature")
-  
-  # Assert
-  assert_success
-  assert_line --index 0 "2024-11/01"
-  assert_line --index 1 "2024-11/02"
-}
-
-@test "hug-gum: gum_filter_extract skips empty lines" {
-  # Arrange - create extractor function
-  extract_first_word() { echo "${1%% *}"; }
-  
-  # Mock gum filter
-  gum() {
-    if [[ "$1" == "filter" ]]; then
-      printf "%s\n" "file1.txt modified" "" "file2.js new"  # Include empty line
-      return 0
-    fi
-    return 1
-  }
-  
-  # Act
-  run gum_filter_extract "Test" "Cancelled" "extract_first_word" --no-limit < <(printf "%s\n" "file1.txt modified" "file2.js new")
-  
-  # Assert
-  assert_success
-  assert_line --index 0 "file1.txt"
-  assert_line --index 1 "file2.js"
-  # Should only have 2 lines (empty line skipped)
-  [ "${#lines[@]}" -eq 2 ]
-}
-
 # Tests for new helper functions
 
 @test "hug-gum: normalize_selection strips leading asterisk and space" {
@@ -445,6 +322,92 @@ load '../../git-config/lib/hug-output'
   
   # Act
   run gum_filter_by_index test_formatted "Select backup" --match-keys test_keys
+  
+  # Assert
+  assert_success
+  assert_output "1"
+}
+
+# Tests for ANSI color handling
+@test "hug-gum: normalize_selection strips ANSI color codes" {
+  # Test with ANSI color codes (yellow and reset)
+  run normalize_selection $'\x1b[33mbranch\x1b[0m'
+  assert_success
+  assert_output "branch"
+}
+
+@test "hug-gum: normalize_selection strips ANSI codes with asterisk" {
+  run normalize_selection $'* \x1b[33mmain\x1b[0m abc123'
+  assert_success
+  assert_output "main"
+}
+
+@test "hug-gum: normalize_selection handles upstream status with colon" {
+  run normalize_selection "origin/feat: ahead 2"
+  assert_success
+  assert_output "origin/feat"
+}
+
+@test "hug-gum: normalize_selection handles complex git status with ANSI" {
+  # Simulates: colored branch name with upstream tracking
+  run normalize_selection $'\x1b[32mfeature\x1b[0m [origin/feature: ahead 1]'
+  assert_success
+  assert_output "feature"
+}
+
+@test "hug-gum: normalize_selection handles branch with spaces and ANSI" {
+  # Branch name followed by colored hash
+  run normalize_selection $'feature \x1b[33mabc123\x1b[0m subject text'
+  assert_success
+  assert_output "feature"
+}
+
+# Test for HUG_QUIET support
+@test "hug-gum: gum_log respects HUG_QUIET" {
+  # Mock gum to not be available
+  gum_available() { return 1; }
+  
+  # Act with HUG_QUIET set
+  export HUG_QUIET=T
+  run gum_log "INFO" "test message"
+  
+  # Assert - should produce no output when quiet
+  assert_success
+  assert_output ""
+  
+  unset HUG_QUIET
+}
+
+@test "hug-gum: gum_log produces output when HUG_QUIET not set" {
+  # Mock gum to not be available
+  gum_available() { return 1; }
+  
+  # Act without HUG_QUIET
+  unset HUG_QUIET
+  run gum_log "INFO" "test message"
+  
+  # Assert - should produce output
+  assert_success
+  assert_output --partial "INFO: test message"
+}
+
+# Test edge cases in gum_filter_by_index
+@test "hug-gum: gum_filter_by_index with ANSI colors in formatted options" {
+  # Arrange - formatted options with ANSI codes
+  local -a test_formatted=($'\x1b[33mbranch1\x1b[0m abc123' $'\x1b[33mbranch2\x1b[0m def456')
+  local -a test_keys=("branch1" "branch2")
+  
+  # Mock gum filter to return colored selection
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      echo $'\x1b[33mbranch2\x1b[0m def456'
+      return 0
+    fi
+    return 1
+  }
+  
+  # Act
+  run gum_filter_by_index test_formatted "Select branch" --match-keys test_keys
   
   # Assert
   assert_success
