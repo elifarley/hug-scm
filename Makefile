@@ -135,7 +135,7 @@ deps-docs: ## Install documentation dependencies
 
 ##@ Development
 
-check: test-check ## Alias for test-check (check prerequisites)
+check: test-check vhs-check ## check prerequisites
 
 clean: ## Clean build artifacts and temporary files
 	@echo "$(BLUE)Cleaning build artifacts...$(NC)"
