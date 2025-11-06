@@ -106,7 +106,6 @@ hug_bdel() {
     
     # Prepare formatted options for gum with branch details
     local -a formatted_options=()
-    local -a display_names=()
     
     for branch in "${all_branches[@]}"; do
       local hash
@@ -117,39 +116,21 @@ hug_bdel() {
       # Format for gum: plain text with details
       local formatted="${branch} ${YELLOW}${hash}${NC} ${GREY}${subject}${NC}"
       formatted_options+=("$formatted")
-      display_names+=("$branch")
     done
     
-    # Use gum filter for multi-selection
-    local gum_height
-    gum_height=$(gum_calculate_height "${#all_branches[@]}")
+    # Extractor function to get branch name (first word)
+    extract_branchname() {
+      echo "${1%% *}"
+    }
     
-    local selection
-    selection=$(printf '%s\n' "${formatted_options[@]}" | \
-      gum filter --placeholder="Select branches to delete (<TAB> to select, Enter to confirm)..." \
-                  --height="$gum_height" \
-                  --no-limit \
-                  --no-strip-ansi \
-                  --reverse || true)
-    
-    if [[ -z "$selection" ]]; then
-      info "Cancelled."
-      exit 0
-    fi
-    
-    # Extract branch names from selection
-    branches_to_delete=()
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
-      # Extract branch name (first word before hash)
-      local branch_name="${line%% *}"
-      branches_to_delete+=("$branch_name")
-    done <<< "$selection"
-    
-    if [[ ${#branches_to_delete[@]} -eq 0 ]]; then
-      info "No branches selected."
-      exit 0
-    fi
+    # Use gum_filter_extract for selection with automatic field extraction
+    mapfile -t branches_to_delete < <(
+      printf '%s\n' "${formatted_options[@]}" | \
+        gum_filter_extract "Select branches to delete (<TAB> to select, Enter to confirm)..." \
+                           "No branches selected." \
+                           "extract_branchname" \
+                           --no-limit
+    ) || exit 0
   fi
   
   # Validate that none of the branches is the current branch
