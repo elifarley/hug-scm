@@ -124,7 +124,7 @@ hug_us() {
     
     # Use gum filter for multi-selection
     local gum_height
-    gum_height=$((${#formatted_options[@]} < 13 ? ${#formatted_options[@]} + 3 : 15))
+    gum_height=$(gum_calculate_height "${#formatted_options[@]}")
     
     local selection
     selection=$(printf '%s\n' "${formatted_options[@]}" | \

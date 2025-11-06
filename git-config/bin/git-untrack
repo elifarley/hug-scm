@@ -117,7 +117,7 @@ hug_untrack() {
     
     # Use gum filter for multi-selection
     local gum_height
-    gum_height=$((${#tracked_files[@]} < 13 ? ${#tracked_files[@]} + 3 : 15))
+    gum_height=$(gum_calculate_height "${#tracked_files[@]}")
     
     local selection
     selection=$(printf '%s\n' "${formatted_options[@]}" | \
