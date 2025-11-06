@@ -370,6 +370,7 @@ hug_bdel_backup() {
     
     # Prepare formatted options for gum
     local -a formatted_options=()
+    # Display names array for matching (parallel to all_backups by index)
     local -a display_names=()
     
     for backup in "${all_backups[@]}"; do
@@ -385,6 +386,7 @@ hug_bdel_backup() {
       # Format for gum: plain text
       local formatted="${display_name} → ${original_name} ${YELLOW}${hash}${NC} ${GREY}${subject}${NC}"
       formatted_options+=("$formatted")
+      # Populate display_names for matching (normalized selection will match against this)
       display_names+=("$display_name")
     done
     
