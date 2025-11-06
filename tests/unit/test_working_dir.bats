@@ -1037,7 +1037,7 @@ teardown() {
   disable_gum_for_test
   
   # Should work with explicit branch name
-  run bash -c "echo 'y' | hug w unwip --force $wip_branch"
+  run bash -c "echo 'y' | hug w unwip --force \"$wip_branch\""
   assert_success
   assert_output --partial "Unparked successfully"
   
@@ -1046,6 +1046,117 @@ teardown() {
   assert_output ""
   
   enable_gum_for_test
+}
+
+@test "hug w wipdel: interactive mode with gum displays branches correctly" {
+  # Create multiple WIP branches
+  echo "wip1" > wip1.txt
+  git add wip1.txt
+  hug w wip "First feature" >/dev/null
+  
+  echo "wip2" > wip2.txt
+  git add wip2.txt
+  hug w wip "Second feature" >/dev/null
+  
+  echo "wip3" > wip3.txt
+  git add wip3.txt
+  hug w wip "Third feature" >/dev/null
+  
+  # Verify WIP branches exist
+  wip_count=$(git branch --list "WIP/*" | wc -l)
+  [ "$wip_count" -eq 3 ]
+  
+  # Mock gum to verify it receives the formatted branch list
+  local mock_dir
+  mock_dir=$(mktemp -d)
+  cat > "$mock_dir/gum" <<'EOF'
+#!/usr/bin/env bash
+# Read all input lines
+mapfile -t lines
+# Verify we received input
+if [ ${#lines[@]} -eq 0 ]; then
+  echo "ERROR: No input received by gum" >&2
+  exit 1
+fi
+# Log received lines for debugging
+echo "Received ${#lines[@]} lines:" >&2
+for line in "${lines[@]}"; do
+  echo "  '$line'" >&2
+done
+# Return first line
+printf '%s\n' "${lines[0]}"
+EOF
+  chmod +x "$mock_dir/gum"
+  
+  # Run with mock gum
+  run timeout 3 bash -c "PATH='$mock_dir:$PATH' hug w wipdel --force 2>&1"
+  
+  # Should succeed
+  assert_success
+  
+  # Check stderr for debug output showing gum received 3 lines
+  assert_output --partial "Received 3 lines:"
+  
+  # Cleanup
+  rm -rf "$mock_dir"
+}
+
+@test "hug w unwip: interactive mode with gum displays branches correctly" {
+  # Create multiple WIP branches
+  echo "wip1" > wip1.txt
+  git add wip1.txt
+  hug w wip "First feature" >/dev/null
+  
+  echo "wip2" > wip2.txt
+  git add wip2.txt
+  hug w wip "Second feature" >/dev/null
+  
+  # Verify WIP branches exist
+  wip_count=$(git branch --list "WIP/*" | wc -l)
+  [ "$wip_count" -eq 2 ]
+  
+  # Mock gum to verify it receives the formatted branch list and confirm merge
+  local mock_dir
+  mock_dir=$(mktemp -d)
+  cat > "$mock_dir/gum" <<'EOF'
+#!/usr/bin/env bash
+# Handle different gum commands
+if [[ "$1" == "filter" ]]; then
+  # Read all input lines for filter
+  mapfile -t lines
+  # Verify we received input
+  if [ ${#lines[@]} -eq 0 ]; then
+    echo "ERROR: No input received by gum filter" >&2
+    exit 1
+  fi
+  # Log received lines for debugging
+  echo "Received ${#lines[@]} lines:" >&2
+  for line in "${lines[@]}"; do
+    echo "  '$line'" >&2
+  done
+  # Return first line
+  printf '%s\n' "${lines[0]}"
+elif [[ "$1" == "confirm" ]] || [[ "$1" == "log" ]]; then
+  # Just pass through for other gum commands
+  /home/runner/.hug-deps/bin/gum "$@"
+else
+  # Default: pass through
+  /home/runner/.hug-deps/bin/gum "$@"
+fi
+EOF
+  chmod +x "$mock_dir/gum"
+  
+  # Run with mock gum, auto-confirming the merge
+  run timeout 3 bash -c "echo 'y' | PATH='$mock_dir:$PATH' hug w unwip --force 2>&1"
+  
+  # Should succeed
+  assert_success
+  
+  # Check stderr for debug output showing gum received 2 lines
+  assert_output --partial "Received 2 lines:"
+  
+  # Cleanup
+  rm -rf "$mock_dir"
 }
 
 ################################################################################
