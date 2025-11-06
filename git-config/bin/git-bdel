@@ -118,12 +118,11 @@ hug_bdel() {
       formatted_options+=("$formatted")
     done
     
-    # Use gum_filter_by_index for selection with match-keys for reliable extraction
+    # Use gum_filter_by_index for selection with exact matching
     local -a selected_indices=()
     mapfile -t selected_indices < <(
       gum_filter_by_index formatted_options \
                           "Select branches to delete (<TAB> to select, Enter to confirm)..." \
-                          --match-keys all_branches \
                           --no-limit
     )
     

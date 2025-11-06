@@ -243,10 +243,9 @@ load '../../git-config/lib/hug-output'
   assert_output "1"
 }
 
-@test "hug-gum: gum_filter_by_index with --match-keys uses normalized matching" {
+@test "hug-gum: gum_filter_by_index returns index via exact match" {
   # Arrange
   local -a test_formatted=("* main abc123 subject" "feature def456 message")
-  local -a test_keys=("main" "feature")
   
   # Mock gum filter to return first item (with asterisk)
   gum() {
@@ -258,7 +257,7 @@ load '../../git-config/lib/hug-output'
   }
   
   # Act
-  run gum_filter_by_index test_formatted "Select branch" --match-keys test_keys
+  run gum_filter_by_index test_formatted "Select branch"
   
   # Assert
   assert_success
@@ -306,10 +305,9 @@ load '../../git-config/lib/hug-output'
   assert_failure
 }
 
-@test "hug-gum: gum_filter_by_index with match-keys handles arrow format" {
+@test "hug-gum: gum_filter_by_index handles arrow format via exact match" {
   # Arrange
   local -a test_formatted=("2024-11/01 → feature" "2024-11/02 → bugfix")
-  local -a test_keys=("2024-11/01" "2024-11/02")
   
   # Mock gum filter
   gum() {
@@ -321,7 +319,7 @@ load '../../git-config/lib/hug-output'
   }
   
   # Act
-  run gum_filter_by_index test_formatted "Select backup" --match-keys test_keys
+  run gum_filter_by_index test_formatted "Select backup"
   
   # Assert
   assert_success
@@ -395,7 +393,6 @@ load '../../git-config/lib/hug-output'
 @test "hug-gum: gum_filter_by_index with ANSI colors in formatted options" {
   # Arrange - formatted options with ANSI codes
   local -a test_formatted=($'\x1b[33mbranch1\x1b[0m abc123' $'\x1b[33mbranch2\x1b[0m def456')
-  local -a test_keys=("branch1" "branch2")
   
   # Mock gum filter to return colored selection
   gum() {
@@ -407,7 +404,7 @@ load '../../git-config/lib/hug-output'
   }
   
   # Act
-  run gum_filter_by_index test_formatted "Select branch" --match-keys test_keys
+  run gum_filter_by_index test_formatted "Select branch"
   
   # Assert
   assert_success
@@ -465,7 +462,6 @@ load '../../git-config/lib/hug-output'
 @test "hug-gum: gum_filter_by_index warns on invalid selection" {
   # Arrange
   local -a test_options=("item1" "item2")
-  local -a test_keys=("item1" "item2")
   unset HUG_QUIET
   
   # Mock gum filter to return something that doesn't match
@@ -486,7 +482,7 @@ load '../../git-config/lib/hug-output'
   export -f info
   
   # Act
-  run gum_filter_by_index test_options "Select item" --match-keys test_keys
+  run gum_filter_by_index test_options "Select item"
   
   # Assert
   assert_failure

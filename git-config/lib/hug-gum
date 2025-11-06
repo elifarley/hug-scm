@@ -162,13 +162,11 @@ gum_filter_select() {
 }
 
 # Gum filter with index-based returns for flexible extraction
-# Usage: gum_filter_by_index <options_array_name> <placeholder> [--match-keys <keys_array_name>] [--no-limit]
+# Usage: gum_filter_by_index <options_array_name> <placeholder> [--no-limit]
 #
 # Arguments:
 #   $1 - Name of array containing formatted options for display (nameref)
 #   $2 - Placeholder text for gum prompt
-#   --match-keys <array_name> - Optional: Name of array containing keys for matching (e.g., branch names)
-#                               If provided, will try to match normalized selection against keys first
 #   --no-limit - Optional: Allow multi-selection
 #
 # Output:
@@ -178,15 +176,9 @@ gum_filter_select() {
 #   0 if items selected, 1 if cancelled or no match found
 #
 # Examples:
-#   # Simple index return (matches formatted_options)
+#   # Simple index return (matches against formatted_options exactly)
 #   index=$(gum_filter_by_index formatted_options "Select item...")
 #   selected="${values[$index]}"
-#
-#   # With match keys for reliable extraction
-#   indices=$(gum_filter_by_index formatted_options "Select branches..." --match-keys branches)
-#   for idx in $indices; do
-#     echo "Selected: ${branches[$idx]}"
-#   done
 #
 #   # Multi-select
 #   gum_filter_by_index formatted_options "Select files..." --no-limit
@@ -198,21 +190,10 @@ gum_filter_by_index() {
   shift 2
   
   # Parse optional flags
-  local match_keys_array_name=""
   local no_limit=""
-  local have_match_keys=false
   
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --match-keys)
-        if [[ -n "${2:-}" ]]; then
-          match_keys_array_name="$2"
-          have_match_keys=true
-          shift 2
-        else
-          return 1
-        fi
-        ;;
       --no-limit)
         no_limit="--no-limit"
         shift
@@ -240,37 +221,20 @@ gum_filter_by_index() {
     return 1
   fi
   
-  # Process each selected line and find its index
+  # Process each selected line and find its index via exact match
   local -a result_indices=()
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     
     local found=false
-    
-    # Try exact match first (against formatted options)
     local i
     for i in "${!options_ref[@]}"; do
       if [[ "${options_ref[i]}" == "$line" ]]; then
         result_indices+=("$i")
         found=true
-        continue 2  # Exit inner loop and continue outer while loop to process next line
+        break
       fi
     done
-    
-    # If no exact match and we have match keys, try normalized matching
-    if [[ "$have_match_keys" == true ]]; then
-      local -n match_keys_ref="$match_keys_array_name"
-      local normalized_key
-      normalized_key=$(normalize_selection "$line")
-      
-      for i in "${!match_keys_ref[@]}"; do
-        if [[ "${match_keys_ref[i]}" == "$normalized_key" ]]; then
-          result_indices+=("$i")
-          found=true
-          break
-        fi
-      done
-    fi
     
     # Warn if we couldn't match this selection
     if [[ "$found" == false ]]; then
