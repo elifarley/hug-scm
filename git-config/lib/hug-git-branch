@@ -459,7 +459,12 @@ get_numbered_selection_index() {
 #   0 if branches found, 1 if no branches exist
 # Note:
 #   Arrays are cleared before population. Branches are sorted by name.
-#   This is a simpler version of compute_local_branch_details focused on WIP branches.
+#   This is a simpler version of compute_local_branch_details that omits:
+#   - Tracking information (upstream branches, ahead/behind status)
+#   - Max length calculation for alignment
+#   - Current branch highlighting
+#   Use this for WIP branch selection where tracking info isn't needed.
+#   Use compute_local_branch_details for full branch listing with tracking.
 compute_wip_branch_details() {
     local -n branches_ref="$1"
     local -n hashes_ref="$2"
