@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+# Assume HUG_HOME is set (exported by hug or environment)
+# Import only needed library files
+. "$HUG_HOME/git-config/lib/hug-terminal"
+. "$HUG_HOME/git-config/lib/hug-output"
+. "$HUG_HOME/git-config/lib/hug-gum"
+. "$HUG_HOME/git-config/lib/hug-git-repo"
+. "$HUG_HOME/git-config/lib/hug-git-branch"
+. "$HUG_HOME/git-config/lib/hug-strings"
 set -euo pipefail
 
 PROG_NAME="hug w unwip"

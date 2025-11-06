@@ -1069,9 +1069,13 @@ teardown() {
   # Get first WIP branch name to verify deletion
   first_wip=$(git branch --list "WIP/*" | head -1 | xargs)
   
-  # Test with explicit branch name since interactive tests are complex in BATS
-  # The gum-mock infrastructure is verified to work in manual testing
-  run hug w wipdel --force "$first_wip"
+  # Setup gum mock - this prepends tests/bin to PATH
+  setup_gum_mock
+  local mock_path="$PATH"
+  
+  # Run wipdel in interactive mode WITHOUT providing branch name
+  # This tests that gum-mock receives the branch list correctly
+  run bash -c "PATH='$mock_path' HUG_TEST_GUM_SELECTION_INDEX=0 hug w wipdel --force"
   
   # Should succeed
   assert_success
@@ -1083,6 +1087,9 @@ teardown() {
   # Other branches should still exist
   remaining_count=$(git branch --list "WIP/*" | wc -l)
   [ "$remaining_count" -eq 2 ]
+  
+  # Cleanup
+  teardown_gum_mock
 }
 
 @test "hug w unwip: interactive mode with gum mock selects and unparks branch" {
@@ -1102,9 +1109,12 @@ teardown() {
   # Get first WIP branch name
   first_wip=$(git branch --list "WIP/*" | head -1 | xargs)
   
-  # Test with explicit branch name since interactive tests are complex in BATS
-  # The gum-mock infrastructure is verified to work in manual testing
-  run bash -c "echo 'y' | hug w unwip --force \"$first_wip\""
+  # Setup gum mock - this prepends tests/bin to PATH
+  setup_gum_mock
+  local mock_path="$PATH"
+  
+  # Run unwip in interactive mode WITHOUT providing branch name, auto-confirming the merge
+  run bash -c "PATH='$mock_path' HUG_TEST_GUM_SELECTION_INDEX=0 bash -c 'echo y | hug w unwip --force'"
   
   # Should succeed
   assert_success
@@ -1117,6 +1127,9 @@ teardown() {
   # Only one branch should remain
   remaining_count=$(git branch --list "WIP/*" | wc -l)
   [ "$remaining_count" -eq 1 ]
+  
+  # Cleanup
+  teardown_gum_mock
 }
 
 ################################################################################

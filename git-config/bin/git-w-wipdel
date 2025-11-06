@@ -6,6 +6,7 @@
 . "$HUG_HOME/git-config/lib/hug-gum"
 . "$HUG_HOME/git-config/lib/hug-git-repo"
 . "$HUG_HOME/git-config/lib/hug-git-branch"
+. "$HUG_HOME/git-config/lib/hug-strings"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
