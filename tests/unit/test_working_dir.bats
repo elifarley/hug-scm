@@ -1069,17 +1069,28 @@ teardown() {
   # Get first WIP branch name to verify deletion
   first_wip=$(git branch --list "WIP/*" | head -1 | xargs)
   
-  # Create mock gum that selects first WIP branch
+  # Create mock gum that verifies it receives branch list
   local mock_dir
   mock_dir=$(mktemp -d)
-  cat > "$mock_dir/gum" <<'EOF'
+  local log_file="$mock_dir/gum.log"
+  cat > "$mock_dir/gum" <<EOF
 #!/usr/bin/env bash
-# Mock gum that selects first line
-if [[ "$1" == "filter" ]]; then
+# Mock gum that logs input and selects first line
+if [[ "\$1" == "filter" ]]; then
   mapfile -t lines
-  if [ ${#lines[@]} -gt 0 ]; then
-    printf '%s\n' "${lines[0]}"
+  # Log how many lines we received
+  echo "Received \${#lines[@]} lines" > "$log_file"
+  if [ \${#lines[@]} -eq 0 ]; then
+    echo "ERROR: No input received by gum filter" >> "$log_file"
+    exit 1
   fi
+  # Log first few lines for debugging
+  for i in "\${!lines[@]}"; do
+    if [ "\$i" -lt 3 ]; then
+      echo "Line \$i: \${lines[\$i]}" >> "$log_file"
+    fi
+  done
+  printf '%s\n' "\${lines[0]}"
 else
   exit 0
 fi
@@ -1091,6 +1102,15 @@ EOF
   
   # Should succeed
   assert_success
+  
+  # Verify gum received the branch list
+  [ -f "$log_file" ]
+  local line_count=$(grep "Received" "$log_file" | grep -o '[0-9]*')
+  [ "$line_count" -eq 3 ] || {
+    echo "Expected gum to receive 3 lines, but got: $line_count"
+    cat "$log_file"
+    return 1
+  }
   
   # The first branch should be deleted
   run git branch --list "$first_wip"
@@ -1121,17 +1141,28 @@ EOF
   # Get first WIP branch name
   first_wip=$(git branch --list "WIP/*" | head -1 | xargs)
   
-  # Create mock gum that selects first WIP branch
+  # Create mock gum that verifies it receives branch list
   local mock_dir
   mock_dir=$(mktemp -d)
-  cat > "$mock_dir/gum" <<'EOF'
+  local log_file="$mock_dir/gum.log"
+  cat > "$mock_dir/gum" <<EOF
 #!/usr/bin/env bash
-# Mock gum that selects first line
-if [[ "$1" == "filter" ]]; then
+# Mock gum that logs input and selects first line
+if [[ "\$1" == "filter" ]]; then
   mapfile -t lines
-  if [ ${#lines[@]} -gt 0 ]; then
-    printf '%s\n' "${lines[0]}"
+  # Log how many lines we received
+  echo "Received \${#lines[@]} lines" > "$log_file"
+  if [ \${#lines[@]} -eq 0 ]; then
+    echo "ERROR: No input received by gum filter" >> "$log_file"
+    exit 1
   fi
+  # Log first few lines for debugging
+  for i in "\${!lines[@]}"; do
+    if [ "\$i" -lt 3 ]; then
+      echo "Line \$i: \${lines[\$i]}" >> "$log_file"
+    fi
+  done
+  printf '%s\n' "\${lines[0]}"
 else
   exit 0
 fi
@@ -1144,6 +1175,15 @@ EOF
   # Should succeed
   assert_success
   assert_output --partial "Unparked successfully"
+  
+  # Verify gum received the branch list
+  [ -f "$log_file" ]
+  local line_count=$(grep "Received" "$log_file" | grep -o '[0-9]*')
+  [ "$line_count" -eq 2 ] || {
+    echo "Expected gum to receive 2 lines, but got: $line_count"
+    cat "$log_file"
+    return 1
+  }
   
   # The first branch should be deleted
   run git branch --list "$first_wip"
