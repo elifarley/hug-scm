@@ -370,7 +370,8 @@ hug_bdel_backup() {
     
     # Prepare formatted options for gum
     local -a formatted_options=()
-    local -a display_names=()
+    # Build mapping between display names and full backup names
+    local -a backup_mapping=()
     
     for backup in "${all_backups[@]}"; do
       local display_name
@@ -385,42 +386,34 @@ hug_bdel_backup() {
       # Format for gum: plain text
       local formatted="${display_name} → ${original_name} ${YELLOW}${hash}${NC} ${GREY}${subject}${NC}"
       formatted_options+=("$formatted")
-      display_names+=("$display_name")
+      # Store mapping for later lookup
+      backup_mapping+=("$display_name:$backup")
     done
     
-    # Use gum filter for multi-selection
-    local gum_height
-    gum_height=$(gum_calculate_height "${#all_backups[@]}")
+    # Extractor function to get display name and then map to backup name
+    extract_backup_display_name() {
+      echo "${1%% → *}"
+    }
     
-    local selection
-    selection=$(printf '%s\n' "${formatted_options[@]}" | \
-      gum filter --placeholder="Select backup branches to delete (<TAB> to select, Enter to confirm)..." \
-                  --height="$gum_height" \
-                  --no-limit \
-                  --no-strip-ansi \
-                  --reverse || true)
+    # Use gum_filter_extract for selection with automatic field extraction
+    local -a selected_display_names=()
+    mapfile -t selected_display_names < <(
+      printf '%s\n' "${formatted_options[@]}" | \
+        gum_filter_extract "Select backup branches to delete (<TAB> to select, Enter to confirm)..." \
+                           "No backup branches selected." \
+                           "extract_backup_display_name" \
+                           --no-limit
+    ) || exit 0
     
-    if [[ -z "$selection" ]]; then
-      info "Cancelled."
-      exit 0
-    fi
-    
-    # Extract branch names from selection
+    # Map display names back to full backup branch names
     backup_branches_to_delete=()
-    local line_num=0
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
-      
-      # Extract the display name (first part before →)
-      local display_name="${line%% → *}"
-      
-      # Find matching backup from all_backups
+    for display_name in "${selected_display_names[@]}"; do
       local found=false
-      for i in "${!all_backups[@]}"; do
-        local check_display
-        check_display=$(format_backup_display_name "${all_backups[i]}")
-        if [[ "$check_display" == "$display_name" ]]; then
-          backup_branches_to_delete+=("${all_backups[i]}")
+      for mapping in "${backup_mapping[@]}"; do
+        local map_display="${mapping%%:*}"
+        local map_backup="${mapping#*:}"
+        if [[ "$map_display" == "$display_name" ]]; then
+          backup_branches_to_delete+=("$map_backup")
           found=true
           break
         fi
@@ -429,12 +422,7 @@ hug_bdel_backup() {
       if [[ "$found" == false ]]; then
         error "Internal error: Could not match selected item '$display_name' to a backup branch."
       fi
-    done <<< "$selection"
-    
-    if [[ ${#backup_branches_to_delete[@]} -eq 0 ]]; then
-      info "No backup branches selected."
-      exit 0
-    fi
+    done
   fi
   
   # Call the deletion function

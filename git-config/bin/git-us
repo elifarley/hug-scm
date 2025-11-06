@@ -122,36 +122,19 @@ hug_us() {
       error "No valid staged files found to display. This may be a bug - please report it."
     fi
     
-    # Use gum filter for multi-selection
-    local gum_height
-    gum_height=$(gum_calculate_height "${#formatted_options[@]}")
+    # Extractor function to get file name (first word)
+    extract_filename() {
+      echo "${1%% *}"
+    }
     
-    local selection
-    selection=$(printf '%s\n' "${formatted_options[@]}" | \
-      gum filter --placeholder="Select files to unstage (<TAB> to select, Enter to confirm)..." \
-                  --height="$gum_height" \
-                  --no-limit \
-                  --no-strip-ansi \
-                  --reverse || true)
-    
-    if [[ -z "$selection" ]]; then
-      info "Cancelled."
-      exit 0
-    fi
-    
-    # Extract file names from selection
-    files_to_unstage=()
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
-      # Extract file name (first word before status)
-      local file_name="${line%% *}"
-      files_to_unstage+=("$file_name")
-    done <<< "$selection"
-    
-    if [[ ${#files_to_unstage[@]} -eq 0 ]]; then
-      info "No files selected."
-      exit 0
-    fi
+    # Use gum_filter_extract for selection with automatic field extraction
+    mapfile -t files_to_unstage < <(
+      printf '%s\n' "${formatted_options[@]}" | \
+        gum_filter_extract "Select files to unstage (<TAB> to select, Enter to confirm)..." \
+                           "No files selected." \
+                           "extract_filename" \
+                           --no-limit
+    ) || exit 0
   fi
   
   # Validate that files exist and are staged

@@ -96,7 +96,6 @@ hug_untrack() {
     
     # Prepare formatted options for gum with file details
     local -a formatted_options=()
-    local -a display_names=()
     
     for file in "${tracked_files[@]}"; do
       # Get file modification status
@@ -112,39 +111,21 @@ hug_untrack() {
       # Format for gum: plain text with details
       local formatted="${file} ${status}"
       formatted_options+=("$formatted")
-      display_names+=("$file")
     done
     
-    # Use gum filter for multi-selection
-    local gum_height
-    gum_height=$(gum_calculate_height "${#tracked_files[@]}")
+    # Extractor function to get file name (first word)
+    extract_filename() {
+      echo "${1%% *}"
+    }
     
-    local selection
-    selection=$(printf '%s\n' "${formatted_options[@]}" | \
-      gum filter --placeholder="Select files to untrack (<TAB> to select, Enter to confirm)..." \
-                  --height="$gum_height" \
-                  --no-limit \
-                  --no-strip-ansi \
-                  --reverse || true)
-    
-    if [[ -z "$selection" ]]; then
-      info "Cancelled."
-      exit 0
-    fi
-    
-    # Extract file names from selection
-    files_to_untrack=()
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
-      # Extract file name (first word before status)
-      local file_name="${line%% *}"
-      files_to_untrack+=("$file_name")
-    done <<< "$selection"
-    
-    if [[ ${#files_to_untrack[@]} -eq 0 ]]; then
-      info "No files selected."
-      exit 0
-    fi
+    # Use gum_filter_extract for selection with automatic field extraction
+    mapfile -t files_to_untrack < <(
+      printf '%s\n' "${formatted_options[@]}" | \
+        gum_filter_extract "Select files to untrack (<TAB> to select, Enter to confirm)..." \
+                           "No files selected." \
+                           "extract_filename" \
+                           --no-limit
+    ) || exit 0
   fi
   
   # Validate that files exist and are tracked
