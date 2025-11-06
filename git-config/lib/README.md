@@ -35,6 +35,24 @@ Command-line flag parsing utilities.
 - Argument validation (`require_args`)
 - Flag conflict detection (`check_browse_root_no_paths`)
 
+### hug-gum
+
+Interactive selection and filtering with charmbracelet/gum integration.
+
+**Features:**
+- Gum availability detection (`gum_available`)
+- Height calculation for optimal UI (`gum_calculate_height`)
+- Selection normalization with ANSI stripping (`normalize_selection`)
+- Low-level filter invocation (`gum_invoke_filter`)
+- Stdin filter wrapper (`gum_filter_select`)
+- Index-based selection for flexible extraction (`gum_filter_by_index`)
+
+**Important Notes:**
+- ANSI color codes in options are automatically stripped during matching to ensure reliable selection
+- All functions respect `HUG_QUIET` environment variable for silent operation
+- `normalize_selection` handles git-specific formats (branch markers, upstream status, parentheses)
+- Failed selections provide user-friendly feedback unless `HUG_QUIET` is set
+
 ### hug-git-kit
 
 Git-specific operations library (main entry point).
