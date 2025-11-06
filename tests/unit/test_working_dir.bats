@@ -1069,13 +1069,25 @@ teardown() {
   # Get first WIP branch name to verify deletion
   first_wip=$(git branch --list "WIP/*" | head -1 | xargs)
   
-  # Setup gum mock - this prepends tests/bin to PATH
-  setup_gum_mock
-  local mock_path="$PATH"
+  # Create mock gum that selects first WIP branch
+  local mock_dir
+  mock_dir=$(mktemp -d)
+  cat > "$mock_dir/gum" <<'EOF'
+#!/usr/bin/env bash
+# Mock gum that selects first line
+if [[ "$1" == "filter" ]]; then
+  mapfile -t lines
+  if [ ${#lines[@]} -gt 0 ]; then
+    printf '%s\n' "${lines[0]}"
+  fi
+else
+  exit 0
+fi
+EOF
+  chmod +x "$mock_dir/gum"
   
-  # Run wipdel in interactive mode WITHOUT providing branch name
-  # This tests that gum-mock receives the branch list correctly
-  run bash -c "PATH='$mock_path' HUG_TEST_GUM_SELECTION_INDEX=0 hug w wipdel --force"
+  # Run wipdel with mock gum
+  run bash -c "PATH='$mock_dir:$PATH' hug w wipdel --force"
   
   # Should succeed
   assert_success
@@ -1089,7 +1101,7 @@ teardown() {
   [ "$remaining_count" -eq 2 ]
   
   # Cleanup
-  teardown_gum_mock
+  rm -rf "$mock_dir"
 }
 
 @test "hug w unwip: interactive mode with gum mock selects and unparks branch" {
@@ -1109,12 +1121,25 @@ teardown() {
   # Get first WIP branch name
   first_wip=$(git branch --list "WIP/*" | head -1 | xargs)
   
-  # Setup gum mock - this prepends tests/bin to PATH
-  setup_gum_mock
-  local mock_path="$PATH"
+  # Create mock gum that selects first WIP branch
+  local mock_dir
+  mock_dir=$(mktemp -d)
+  cat > "$mock_dir/gum" <<'EOF'
+#!/usr/bin/env bash
+# Mock gum that selects first line
+if [[ "$1" == "filter" ]]; then
+  mapfile -t lines
+  if [ ${#lines[@]} -gt 0 ]; then
+    printf '%s\n' "${lines[0]}"
+  fi
+else
+  exit 0
+fi
+EOF
+  chmod +x "$mock_dir/gum"
   
-  # Run unwip in interactive mode WITHOUT providing branch name, auto-confirming the merge
-  run bash -c "PATH='$mock_path' HUG_TEST_GUM_SELECTION_INDEX=0 bash -c 'echo y | hug w unwip --force'"
+  # Run unwip with mock gum, auto-confirming the merge
+  run bash -c "PATH='$mock_dir:$PATH' bash -c 'echo y | hug w unwip --force'"
   
   # Should succeed
   assert_success
@@ -1129,7 +1154,7 @@ teardown() {
   [ "$remaining_count" -eq 1 ]
   
   # Cleanup
-  teardown_gum_mock
+  rm -rf "$mock_dir"
 }
 
 ################################################################################
