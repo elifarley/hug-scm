@@ -1,14 +1,39 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+for f in hug-common hug-git-kit hug-select-files; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
-# Enhanced status: shows latest commit hash + message, then status
+# Enhanced status: shows detailed file list with color-coded status, then summary
 
 # Early exit if not in Git repo
 check_git_repo
 
-git -c color.ui=always status -sb "$@" | tail -n +2
+# Parse arguments to determine what to show
+include_untracked=false
+for arg in "$@"; do
+  case "$arg" in
+    --long|-u|--untracked-files=all)
+      include_untracked=true
+      ;;
+    -uno|--untracked-files=no)
+      include_untracked=false
+      ;;
+  esac
+done
+
+# Build list_files_with_status options
+list_opts=("--staged" "--unstaged")
+if $include_untracked; then
+  list_opts+=("--untracked")
+fi
+
+# Show enhanced file list if there are any changes
+if list_files_with_status "${list_opts[@]}" 2>/dev/null; then
+  # Success - files were listed
+  :
+fi
+
+# Show summary line
 git s

@@ -28,11 +28,73 @@ teardown() {
   refute_output --partial "untracked.txt"
 }
 
+@test "hug sl: shows enhanced status list with color-coded status" {
+  run hug sl
+  assert_success
+  # Should show staged file with status prefix
+  assert_output --partial "staged.txt"
+  # Should show modified file
+  assert_output --partial "README.md"
+  # Should show summary line with HEAD
+  assert_output --partial "HEAD"
+}
+
+@test "hug sl: shows staged and unstaged files with status prefixes" {
+  run hug sl
+  assert_success
+  # Output should have file names (we can't easily test ANSI codes in BATS)
+  assert_output --partial "staged.txt"
+  assert_output --partial "README.md"
+  # Should not show untracked
+  refute_output --partial "untracked.txt"
+}
+
 @test "hug sla: shows status with untracked files" {
   run hug sla
   assert_success
   # Should show untracked.txt
   assert_output --partial "untracked.txt"
+}
+
+@test "hug sla: shows enhanced status list including untracked files" {
+  run hug sla
+  assert_success
+  # Should show all file types
+  assert_output --partial "staged.txt"
+  assert_output --partial "README.md"
+  assert_output --partial "untracked.txt"
+  # Should show summary line
+  assert_output --partial "HEAD"
+}
+
+@test "hug sl: clean repository shows only summary" {
+  # Create a fresh repo
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+  
+  run hug sl
+  assert_success
+  # Should show HEAD in summary
+  assert_output --partial "HEAD"
+  # Should not show file listings (no changes)
+  refute_output --partial "S:"
+  refute_output --partial "U:"
+}
+
+@test "hug sla: repository with only untracked files shows untracked" {
+  # Create a fresh repo with untracked file
+  local test_repo
+  test_repo=$(create_test_repo)
+  cd "$test_repo"
+  echo "new" > untracked.txt
+  
+  run hug sla
+  assert_success
+  # Should show untracked file
+  assert_output --partial "untracked.txt"
+  # Should show summary with untracked count
+  assert_output --partial "U1"
 }
 
 @test "hug ss: shows staged changes" {
