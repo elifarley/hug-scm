@@ -137,8 +137,16 @@ load '../../git-config/lib/hug-output'
   assert_output "branch"
 }
 
-@test "hug-gum: normalize_selection extracts first word by default" {
+@test "hug-gum: normalize_selection returns full cleaned string by default" {
+  # Without first_word_only, returns the full cleaned string
   run normalize_selection "branch hash123 subject"
+  assert_success
+  assert_output "branch hash123 subject"
+}
+
+@test "hug-gum: normalize_selection extracts first word with first_word_only" {
+  # With first_word_only, extracts just the first word
+  run normalize_selection "branch hash123 subject" "first_word_only"
   assert_success
   assert_output "branch"
 }
@@ -335,7 +343,8 @@ load '../../git-config/lib/hug-output'
 }
 
 @test "hug-gum: normalize_selection strips ANSI codes with asterisk" {
-  run normalize_selection $'* \x1b[33mmain\x1b[0m abc123'
+  # Test with first_word_only to extract just the branch name
+  run normalize_selection $'* \x1b[33mmain\x1b[0m abc123' "first_word_only"
   assert_success
   assert_output "main"
 }
@@ -348,14 +357,29 @@ load '../../git-config/lib/hug-output'
 
 @test "hug-gum: normalize_selection handles complex git status with ANSI" {
   # Simulates: colored branch name with upstream tracking
+  # Without first_word_only, should return full cleaned string
   run normalize_selection $'\x1b[32mfeature\x1b[0m [origin/feature: ahead 1]'
+  assert_success
+  assert_output "feature [origin/feature"
+}
+
+@test "hug-gum: normalize_selection handles complex git status with ANSI and first_word_only" {
+  # With first_word_only, should return just the branch name
+  run normalize_selection $'\x1b[32mfeature\x1b[0m [origin/feature: ahead 1]' "first_word_only"
   assert_success
   assert_output "feature"
 }
 
 @test "hug-gum: normalize_selection handles branch with spaces and ANSI" {
-  # Branch name followed by colored hash
+  # Branch name followed by colored hash - without first_word_only, returns full string
   run normalize_selection $'feature \x1b[33mabc123\x1b[0m subject text'
+  assert_success
+  assert_output "feature abc123 subject text"
+}
+
+@test "hug-gum: normalize_selection handles branch with spaces and ANSI with first_word_only" {
+  # With first_word_only, extracts just the branch name
+  run normalize_selection $'feature \x1b[33mabc123\x1b[0m subject text' "first_word_only"
   assert_success
   assert_output "feature"
 }
@@ -394,7 +418,7 @@ load '../../git-config/lib/hug-output'
   # Arrange - formatted options with ANSI codes
   local -a test_formatted=($'\x1b[33mbranch1\x1b[0m abc123' $'\x1b[33mbranch2\x1b[0m def456')
   
-  # Mock gum filter to return colored selection
+  # Mock gum filter to return colored selection (ANSI preserved)
   gum() {
     if [[ "$1" == "filter" ]]; then
       echo $'\x1b[33mbranch2\x1b[0m def456'
@@ -409,6 +433,67 @@ load '../../git-config/lib/hug-output'
   # Assert
   assert_success
   assert_output "1"
+}
+
+@test "hug-gum: gum_filter_by_index handles gum stripping ANSI from selection" {
+  # This test catches the real-world issue where gum strips ANSI codes from
+  # its output, causing a mismatch with formatted_options that contain ANSI codes.
+  # The fix normalizes both sides before comparing.
+  
+  # Arrange - formatted options WITH ANSI codes (as passed to gum)
+  local -a test_formatted=(
+    $'branch-one \x1b[33mabc123\x1b[0m subject one'
+    $'branch-two \x1b[33mdef456\x1b[0m subject two'
+    $'\x1b[32m* \x1b[0mbranch-three \x1b[33mghi789\x1b[0m subject three'
+  )
+  
+  # Mock gum to return selection WITHOUT ANSI codes (stripped by gum)
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      # Gum has stripped ANSI codes from the selection
+      echo "branch-two def456 subject two"
+      return 0
+    fi
+    return 1
+  }
+  
+  # Act
+  run gum_filter_by_index test_formatted "Select branch"
+  
+  # Assert - should successfully match despite ANSI mismatch
+  assert_success
+  assert_output "1"
+}
+
+@test "hug-gum: gum_filter_by_index handles multi-select with ANSI stripping" {
+  # Test multi-select where gum strips ANSI from all selections
+  
+  # Arrange
+  local -a test_formatted=(
+    $'file1.txt \x1b[33mmodified\x1b[0m'
+    $'file2.js \x1b[32madded\x1b[0m'
+    $'file3.py \x1b[31mdeleted\x1b[0m'
+  )
+  
+  # Mock gum to return selections without ANSI codes
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      # Both selections have ANSI stripped
+      printf '%s\n' \
+        "file1.txt modified" \
+        "file3.py deleted"
+      return 0
+    fi
+    return 1
+  }
+  
+  # Act
+  run gum_filter_by_index test_formatted "Select files" --no-limit
+  
+  # Assert - should find both matches
+  assert_success
+  assert_line --index 0 "0"
+  assert_line --index 1 "2"
 }
 
 @test "hug-gum: gum_filter_by_index respects HUG_QUIET on cancel" {
