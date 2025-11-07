@@ -294,10 +294,8 @@ print_interactive_branch_menu() {
             formatted_options+=("$formatted")
         done
         
-        # Use dynamic height: min of 15 or number of branches + 2 for UI
-        local gum_height=$(($num_branches < 13 ? $num_branches + 2 : 15))
         local index
-        index=$(get_gum_selection_index formatted_options branches "$num_branches branches; Pick one to switch to..." "$gum_height")
+        index=$(get_gum_selection_index formatted_options "$num_branches branches; Pick one to switch to...")
         
         # SC2034: selected_ref is a nameref that assigns to caller's variable
         # shellcheck disable=SC2034
@@ -335,12 +333,10 @@ print_interactive_branch_menu() {
 readonly MIN_ITEMS_FOR_GUM=10
 
 # Returns the 0-based index of the selected item from gum filter output
-# Usage: index=$(get_gum_selection_index formatted_options match_keys placeholder height)
+# Usage: index=$(get_gum_selection_index formatted_options_name placeholder)
 # Parameters:
-#   $1 - Name of array containing formatted options (nameref, clean strings for display)
-#   $2 - Name of array containing match keys (nameref, e.g., branch names or identifiers)
-#   $3 - Placeholder text for gum prompt
-#   $4 - Height for gum UI (ignored, kept for backward compatibility)
+#   $1 - Name of array containing formatted options (nameref, strings for display)
+#   $2 - Placeholder text for gum prompt
 # Output:
 #   Index of matched item to stdout
 # Exits:
@@ -348,9 +344,7 @@ readonly MIN_ITEMS_FOR_GUM=10
 get_gum_selection_index() {
     local formatted_options_name="$1"
     local -n formatted_options_ref="$formatted_options_name"
-    local match_keys_name="$2"
-    local placeholder="$3"
-    # $4 (height) is ignored - gum_filter_by_index calculates it automatically
+    local placeholder="$2"
     
     local num_items=${#formatted_options_ref[@]}
     if [[ $num_items -eq 0 ]]; then
@@ -359,7 +353,7 @@ get_gum_selection_index() {
     fi
     
     local index
-    if ! index=$(gum_filter_by_index "$formatted_options_name" "$placeholder" --match-keys "$match_keys_name"); then
+    if ! index=$(gum_filter_by_index "$formatted_options_name" "$placeholder"); then
         info "Cancelled."
         exit 1
     fi
@@ -517,9 +511,9 @@ select_wip_branch() {
         formatted_options+=("$formatted")
     done
     
-    # Use gum_filter_by_index for selection with match-keys for reliable extraction
+    # Use gum_filter_by_index for selection with exact matching
     local index
-    if ! index=$(gum_filter_by_index formatted_options "$placeholder" --match-keys branches); then
+    if ! index=$(gum_filter_by_index formatted_options "$placeholder"); then
         info "Cancelled."
         exit 0
     fi

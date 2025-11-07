@@ -63,6 +63,7 @@ EOF
 keep_count=""
 delete_older_than=""
 backup_branches_to_delete=()
+formatted_backups_to_delete=()  # Parallel array for display purposes
 
 # Parse common flags first
 eval "$(parse_common_flags "$@")"
@@ -175,13 +176,20 @@ perform_deletion() {
   # Preview mode
   if [[ "${dry_run}" == "true" ]]; then
     info "Dry run: Would delete ${#backup_branches_to_delete[@]} backup branch(es):"
-    for branch in "${backup_branches_to_delete[@]}"; do
-      local display_name
-      display_name=$(format_backup_display_name "$branch")
-      local hash
-      hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
-      printf "  - %s (%s)\n" "$display_name" "$hash" >&2
-    done
+    if [[ ${#formatted_backups_to_delete[@]} -gt 0 ]]; then
+      for formatted in "${formatted_backups_to_delete[@]}"; do
+        printf "  - %s\n" "$formatted" >&2
+      done
+    else
+      # Fallback for CLI args (no formatted)
+      for branch in "${backup_branches_to_delete[@]}"; do
+        local display_name
+        display_name=$(format_backup_display_name "$branch")
+        local hash
+        hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
+        printf "  - %s (%s)\n" "$display_name" "$hash" >&2
+      done
+    fi
     print_dry_run_preview "delete the listed backup branches"
     return 0
   fi
@@ -193,13 +201,20 @@ perform_deletion() {
     [[ $count -gt 1 ]] && branch_word="backup branches"
     
     warning "About to delete $count $branch_word:"
-    for branch in "${backup_branches_to_delete[@]}"; do
-      local display_name
-      display_name=$(format_backup_display_name "$branch")
-      local hash
-      hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
-      printf "  - %s (%s)\n" "$display_name" "$hash" >&2
-    done
+    if [[ ${#formatted_backups_to_delete[@]} -gt 0 ]]; then
+      for formatted in "${formatted_backups_to_delete[@]}"; do
+        printf "  - %s\n" "$formatted" >&2
+      done
+    else
+      # Fallback for CLI args (no formatted)
+      for branch in "${backup_branches_to_delete[@]}"; do
+        local display_name
+        display_name=$(format_backup_display_name "$branch")
+        local hash
+        hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
+        printf "  - %s (%s)\n" "$display_name" "$hash" >&2
+      done
+    fi
     printf "\n" >&2
     prompt_confirm "⚠️  Delete these ${branch_word}? [y/N]: "
   fi
@@ -225,11 +240,31 @@ perform_deletion() {
     local branch_word="backup branch"
     [[ $deleted_count -gt 1 ]] && branch_word="backup branches"
     success "Deleted $deleted_count $branch_word:"
-    for branch in "${deleted_branches[@]}"; do
-      local display_name
-      display_name=$(format_backup_display_name "$branch")
-      printf "  ✓ %s\n" "$display_name" >&2
-    done
+    if [[ ${#formatted_backups_to_delete[@]} -gt 0 ]]; then
+      for i in "${!deleted_branches[@]}"; do
+        # Find the corresponding formatted entry
+        local branch_idx=-1
+        for j in "${!backup_branches_to_delete[@]}"; do
+          if [[ "${backup_branches_to_delete[$j]}" == "${deleted_branches[$i]}" ]]; then
+            branch_idx=$j
+            break
+          fi
+        done
+        if [[ $branch_idx -ge 0 ]]; then
+          printf "  ✓ %s\n" "${formatted_backups_to_delete[$branch_idx]}" >&2
+        else
+          local display_name
+          display_name=$(format_backup_display_name "${deleted_branches[$i]}")
+          printf "  ✓ %s\n" "$display_name" >&2
+        fi
+      done
+    else
+      for branch in "${deleted_branches[@]}"; do
+        local display_name
+        display_name=$(format_backup_display_name "$branch")
+        printf "  ✓ %s\n" "$display_name" >&2
+      done
+    fi
   fi
   
   if [[ $failed_count -gt 0 ]]; then
@@ -390,12 +425,11 @@ hug_bdel_backup() {
       display_names+=("$display_name")
     done
     
-    # Use gum_filter_by_index for selection with match-keys for reliable extraction
+    # Use gum_filter_by_index for selection with exact matching
     local -a selected_indices=()
     mapfile -t selected_indices < <(
       gum_filter_by_index formatted_options \
                           "Select backup branches to delete (<TAB> to select, Enter to confirm)..." \
-                          --match-keys display_names \
                           --no-limit
     )
     
@@ -404,10 +438,12 @@ hug_bdel_backup() {
       exit 0
     fi
     
-    # Extract selected backup branches using indices
+    # Extract selected backup branches and formatted lines using indices
     backup_branches_to_delete=()
+    formatted_backups_to_delete=()
     for idx in "${selected_indices[@]}"; do
       backup_branches_to_delete+=("${all_backups[$idx]}")
+      formatted_backups_to_delete+=("${formatted_options[$idx]}")
     done
   fi
   

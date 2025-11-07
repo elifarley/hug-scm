@@ -77,6 +77,7 @@ current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 # --- Main function for 'hug bdel' ---
 hug_bdel() {
   local -a branches_to_delete=("$@")
+  local -a formatted_to_delete=()
   
   # If no branches specified, show interactive menu
   if [[ ${#branches_to_delete[@]} -eq 0 ]]; then
@@ -118,12 +119,11 @@ hug_bdel() {
       formatted_options+=("$formatted")
     done
     
-    # Use gum_filter_by_index for selection with match-keys for reliable extraction
+    # Use gum_filter_by_index for selection with exact matching
     local -a selected_indices=()
     mapfile -t selected_indices < <(
       gum_filter_by_index formatted_options \
                           "Select branches to delete (<TAB> to select, Enter to confirm)..." \
-                          --match-keys all_branches \
                           --no-limit
     )
     
@@ -132,10 +132,12 @@ hug_bdel() {
       exit 0
     fi
     
-    # Extract selected branches using indices
+    # Extract selected branches and formatted lines using indices
     branches_to_delete=()
     for idx in "${selected_indices[@]}"; do
-      branches_to_delete+=("${all_branches[$idx]}")
+      local branch="${all_branches[$idx]}"
+      branches_to_delete+=("$branch")
+      formatted_to_delete+=("${formatted_options[$idx]}")
     done
   fi
   
@@ -157,11 +159,18 @@ hug_bdel() {
   # Preview mode
   if [[ "${dry_run}" == "true" ]]; then
     info "Dry run: Would delete ${#branches_to_delete[@]} branch(es):"
-    for branch in "${branches_to_delete[@]}"; do
-      local hash
-      hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
-      printf "  - %s (%s)\n" "$branch" "$hash" >&2
-    done
+    if [[ ${#formatted_to_delete[@]} -gt 0 ]]; then
+      for formatted in "${formatted_to_delete[@]}"; do
+        printf "  - %s\n" "$formatted" >&2
+      done
+    else
+      # Fallback for CLI args (no formatted)
+      for branch in "${branches_to_delete[@]}"; do
+        local hash
+        hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
+        printf "  - %s (%s)\n" "$branch" "$hash" >&2
+      done
+    fi
     print_dry_run_preview "delete the listed branches"
     return 0
   fi
@@ -173,11 +182,18 @@ hug_bdel() {
     [[ $count -gt 1 ]] && branch_word="branches"
     
     warning "About to delete $count $branch_word:"
-    for branch in "${branches_to_delete[@]}"; do
-      local hash
-      hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
-      printf "  - %s (%s)\n" "$branch" "$hash" >&2
-    done
+    if [[ ${#formatted_to_delete[@]} -gt 0 ]]; then
+      for formatted in "${formatted_to_delete[@]}"; do
+        printf "  - %s\n" "$formatted" >&2
+      done
+    else
+      # Fallback for CLI args (no formatted)
+      for branch in "${branches_to_delete[@]}"; do
+        local hash
+        hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
+        printf "  - %s (%s)\n" "$branch" "$hash" >&2
+      done
+    fi
     printf "\n" >&2
     prompt_confirm "⚠️  Delete these ${branch_word}? [y/N]: "
   fi
@@ -209,9 +225,19 @@ hug_bdel() {
     local branch_word="branch"
     [[ $deleted_count -gt 1 ]] && branch_word="branches"
     success "Deleted $deleted_count $branch_word:"
-    for branch in "${deleted_branches[@]}"; do
-      printf "  ✓ %s\n" "$branch" >&2
-    done
+    if [[ ${#formatted_to_delete[@]} -gt 0 ]]; then
+      for i in "${!deleted_branches[@]}"; do
+        if [[ "${deleted_branches[$i]}" == "${branches_to_delete[$i]}" ]]; then
+          printf "  ✓ %s\n" "${formatted_to_delete[$i]}" >&2
+        else
+          printf "  ✓ %s\n" "${deleted_branches[$i]}" >&2
+        fi
+      done
+    else
+      for branch in "${deleted_branches[@]}"; do
+        printf "  ✓ %s\n" "$branch" >&2
+      done
+    fi
   fi
   
   if [[ $failed_count -gt 0 ]]; then
