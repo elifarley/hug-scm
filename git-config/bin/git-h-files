@@ -13,17 +13,24 @@ USAGE:
 
 OPTIONS:
     -u, --upstream  Use upstream remote tip as start point (local-only commits; read-only preview)
+    -p, --patch     Show full patch of changes before stats
+    --patch=FILE    Show patch for specific FILE in the range before stats
+    --             Trigger interactive selection for patch file (with -p)
     --quiet         Suppress output (sets HUG_QUIET=T)
     -h, --help Show this help
 
 DESCRIPTION:
     Lists unique files and their line change stats in the range (default: last 1 commit).
+    Optionally show full patch (-p/--patch) or patch for a specific file (--patch=FILE) before the stats.
+    Use -- with -p to interactively select a specific file for the patch instead of showing the full patch.
     With -u, previews files and stats in local-only commits (HEAD to upstream tip).
     Use before 'h back N' or 'h rewind COMMIT' to see affected files.
 
 EXAMPLES:
     hug h files 3          # Files and stats in last 3 commits
-    hug h files main       # Files and stats changed after 'main' to HEAD
+    hug h files 3 -p       # Full patch and stats in last 3 commits
+    hug h files 3 -p --    # Interactively select file for patch and stats in last 3 commits
+    hug h files main --patch=src/main.py  # Patch for src/main.py and stats changed after 'main' to HEAD
     hug h files -u         # Files and stats in local-only commits (to upstream)
 
 SEE ALSO:
@@ -35,12 +42,18 @@ EOF
 # Parse common flags (--quiet, -h|--help)
 eval "$(parse_common_flags "$@")"
 
+: "${browse_root:=false}"
+
 # Parse custom flags
 upstream=false
 target_arg=""
+show_patch=false
+patch_file=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -u|--upstream) upstream=true; shift ;;
+    -p|--patch) show_patch=true; shift ;;
+    --patch=*) show_patch=true; patch_file="${1#*=}"; shift ;;
     *) target_arg="$1"; shift ;;
   esac
 done
@@ -77,11 +90,50 @@ if [ ${#files[@]} -eq 0 ]; then
 fi
 
 count=${#files[@]}
+
+if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]] && $show_patch && [[ -z "$patch_file" ]]; then
+  declare -a select_opts=("--prompt" "Select file for patch...")
+
+  if ! $browse_root; then
+    select_opts+=("--cwd")
+  fi
+
+  patch_selected_files=()
+  if mapfile -t patch_selected_files < <(select_files_with_status "${select_opts[@]}"); then
+    if [ ${#patch_selected_files[@]} -gt 0 ]; then
+      patch_file="${patch_selected_files[0]}"
+    else
+      info "No file selected for patch; showing full patch instead."
+    fi
+  else
+    info "Selection cancelled; showing full patch instead."
+  fi
+fi
+
+if $show_patch && [[ -n "$patch_file" ]]; then
+  if ! printf '%s\n' "${files[@]}" | grep -Fxq "$patch_file"; then
+    info "File '$patch_file' not changed in range; skipping patch."
+    show_patch=false
+  fi
+fi
+
+if $show_patch; then
+  if [[ -n "$patch_file" ]]; then
+    git diff "$range" -- "$patch_file"
+    printf '☝️ Patch for %s in range %s ☝️\n' "$patch_file" "$range"
+    echo
+  else
+    git diff "$range"
+    printf '☝️ Full patch for range %s ☝️\n' "$range"
+    echo
+  fi
+fi
+
 if $upstream; then
   upstream_short=$(git rev-parse --short "$start_point")
-  warning "These $count files and their stats are affected by $local_commits local-only commits to upstream tip $upstream_short (e.g., via 'h back -u')."
+  tip "These $count files and their stats are affected by $local_commits local-only commits to upstream tip $upstream_short (e.g., via 'h back -u')."
 else
-  warning "These $count files and their stats would be affected by moving HEAD to $start_point (e.g., via 'h back' or 'h rewind')."
+  tip "These $count files and their stats would be affected by moving HEAD to $start_point (e.g., via 'h back' or 'h rewind')."
 fi
 
 git diff --stat "$range"

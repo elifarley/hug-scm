@@ -137,14 +137,24 @@
   rewind = h rewind
   squash = h squash
   files = h files
+  filesp = h files -p
 
   # ═══════════════════════════════════════════════════════════════════
   #  Working directory (w-*)
   # ═══════════════════════════════════════════════════════════════════
 
   # WIP workflow: commit everything as work-in-progress
+  discard = w discard
+  discard-all = w discard-all
+  purge = w purge
+  purge-all = w purge-all
+  wipe = w wipe
+  wipe-all = w wipe-all
+  get = w get
   wip = w wip
   wips = w wips
+  unwip = w unwip
+  wipdel = w wipdel
 
   # Unpark: Squash-merge WIP branch into current and delete (for integration)
   unwip = w unwip
