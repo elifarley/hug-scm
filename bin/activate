@@ -5,7 +5,7 @@ test -e "$HOME"/.hug-scm || {
 }
 
 . "$HOME"/.hug-scm
-export HUG_HOME PATH="$HUG_HOME/git-config/bin:$PATH:$HOME/.hug-deps/bin"
+export HUG_HOME PATH="$HUG_HOME/bin:$HUG_HOME/git-config/bin:$PATH:$HOME/.hug-deps/bin"
 alias h=hug
 alias g=hug
 
