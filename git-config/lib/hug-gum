@@ -42,7 +42,7 @@ gum_calculate_height() {
 }
 
 # Normalize a gum filter selection by stripping markers and whitespace
-# Usage: normalize_selection <selection_string>
+# Usage: normalize_selection <selection_string> [first_word_only]
 # Returns: normalized string to stdout
 # 
 # Removes:
@@ -52,11 +52,15 @@ gum_calculate_height() {
 #   - Arrows (→) and text after them
 #   - Parentheses and text after them (for formats like "branch (hash)")
 #   - Upstream status indicators (e.g., "[origin/feat: ahead 2]")
+#
+# Optional second argument "first_word_only" (non-empty): If set, extracts only the first word
+# after cleaning (useful for branch/file names). Otherwise, returns full cleaned string.
 normalize_selection() {
   local selection="$1"
+  local first_word_only="${2:-}"
   
-  # Strip ANSI color codes first
-  selection=$(sed $'s/\033\\[[0-9;]*[a-zA-Z]//g' <<< "$selection")
+  # Strip ANSI color codes (including SGR and charset resets) while preserving printable ASCII and UTF-8
+  selection=$(sed $'s/\033\\[[0-9;]*[a-zA-Z]//g; s/\033(B//g' <<< "$selection")
   
   # Strip leading `* ` or `*` marker
   if [[ "$selection" == \** ]]; then
@@ -87,8 +91,10 @@ normalize_selection() {
   # If selection contains " (", extract everything before it
   elif [[ "$selection" == *" ("* ]]; then
     selection="${selection%% (*}"
-  # Otherwise, just take the first word
-  else
+  fi
+  
+  # Optionally, take the first word (only if first_word_only is non-empty)
+  if [[ -n "$first_word_only" ]]; then
     selection="${selection%% *}"
   fi
   
@@ -221,22 +227,26 @@ gum_filter_by_index() {
     return 1
   fi
   
-  # Process each selected line and find its index via exact match
+  # Process each selected line and find its index via normalized full-string match (strips ANSI, markers, etc.)
   local -a result_indices=()
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
-    
+
+    local cleaned_line
+    cleaned_line=$(normalize_selection "$line")
+
     local found=false
     local i
     for i in "${!options_ref[@]}"; do
-      if [[ "${options_ref[i]}" == "$line" ]]; then
+      local cleaned_option
+      cleaned_option=$(normalize_selection "${options_ref[i]}")
+      if [[ "$cleaned_option" == "$cleaned_line" ]]; then
         result_indices+=("$i")
         found=true
         break
       fi
     done
-    
-    # Warn if we couldn't match this selection
+
     if [[ "$found" == false ]]; then
       test "${HUG_QUIET:-}" || warn "Skipped invalid selection: $line" >&2
     fi
