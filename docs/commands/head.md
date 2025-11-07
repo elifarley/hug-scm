@@ -13,7 +13,7 @@ These commands provide intuitive names and built-in safeguards for moving the br
 | `hug h rollback [-u] [--force]` | **H**EAD **R**ollback | HEAD goes back, discarding changes but preserving uncommitted changes             |
 | `hug h rewind [-u] [--force]` | **H**EAD **Re**wind | HEAD goes back, discarding ALL changes, including uncommitted ones                |
 | `hug h squash [-u] [--force]` | **H**EAD **S**quash | HEAD goes back + commit last N/local/specific commits as 1 with original HEAD msg |
-| `hug h files [-u]` | **H**EAD **F**iles | Preview files touched in the selected range (or local-only with -u)               |
+| `hug h files [-u] [-p|--patch [FILE]]` | **H**EAD **F**iles | Preview files touched in the selected range (or local-only with -u); optionally show patch (-p) before stats |
 | `hug h steps <file>` | **H**EAD **Steps** | Count steps back to find most recent file change (query for rewinds)              |
 
 ## Upstream Safety Workflow (`-u` / `--upstream`)
@@ -87,14 +87,16 @@ Changes from all squashed commits are kept staged so that they can be committed 
 - Pre-existing staged changes will be included - review with `hug ss` first.
 
 ### `hug h files [N|commit] [options]`
-- **Description**: Preview unique files touched by commits in the specified range (default: last 1 commit). With `-u`, previews files in local-only commits (HEAD to upstream tip). Useful before back, undo, rollback, or rewind to understand impact.
+- **Description**: Preview unique files touched by commits in the specified range (default: last 1 commit), including line change stats. Optionally show full patch of changes (-p/--patch) or patch for a specific file (--patch=FILE) before the stats. Use -- with -p to interactively select a specific file for the patch instead of showing the full patch. With `-u`, previews files and stats in local-only commits (HEAD to upstream tip). Useful before back, undo, rollback, or rewind to understand impact.
 - **Example**:
   ```shell
-  hug h files                # Files in last commit
-  hug h files 3              # Files in last 3 commits
-  hug h files main           # Files changed since main
-  hug h files -u             # Files in local-only commits to upstream
-  hug h files --stat         # With line change stats
+  hug h files                # Files and stats in last commit
+  hug h files 3              # Files and stats in last 3 commits
+  hug h files main           # Files and stats changed since main
+  hug h files -u             # Files and stats in local-only commits to upstream
+  hug h files 3 -p           # Full patch and stats in last 3 commits
+  hug h files 3 -p --        # Interactively select file for patch and stats in last 3 commits
+  hug h files main --patch=src/main.py  # Patch for src/main.py and stats changed after 'main' to HEAD
   ```
 - **Safety**: Read-only; no changes to repo. Upstream mode uses the shared preview data but remains read-only. Cannot mix `-u` with explicit target.
 - ![hug h files example](img/hug-h-files.png)
