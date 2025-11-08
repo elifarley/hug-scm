@@ -4,6 +4,121 @@ Miscellaneous utility commands for working with repositories.
 
 [[toc]]
 
+## Init (`hug init`)
+
+Initialize a new Git or Mercurial repository. Defaults to Git.
+
+### Basic Usage
+
+```shell
+# Initialize Git repo in current directory
+hug init
+
+# Initialize Git repo in new directory
+hug init my-project
+
+# Initialize with specific VCS
+hug init --git
+hug init --hg
+
+# Skip post-init status display
+hug init --no-status
+
+# Pass options to underlying VCS
+hug init --initial-branch=main
+hug init my-project --bare
+```
+
+### Features
+
+#### Defaults to Git
+
+By default, `hug init` creates a Git repository. This makes it quick and easy to get started without specifying flags:
+
+```shell
+hug init my-new-project
+```
+
+#### Force Specific VCS
+
+Use `--git` or `--hg` to explicitly choose the version control system:
+
+```shell
+# Git (explicit)
+hug init --git my-git-repo
+
+# Mercurial
+hug init --hg my-hg-repo
+```
+
+#### Post-Init Status
+
+By default, Hug provides helpful information after initialization. For empty repositories, it shows a friendly message:
+
+```shell
+$ hug init my-repo
+ℹ️ Info: Initializing Git repository...
+✅ Success: ✓ Initialized Git repository in 'my-repo'.
+ℹ️ Info: Empty repository. Create your first commit to see status.
+```
+
+Use `--no-status` to skip this behavior, useful for scripts:
+
+```shell
+hug init --no-status my-repo
+```
+
+#### Safety Features
+
+**Prevents Re-initialization:**
+Hug checks if a repository already exists and prevents accidental re-initialization:
+
+```shell
+$ hug init
+❌ Error: Already a Git repository.
+```
+
+**Directory Creation:**
+If the specified directory doesn't exist, Hug creates it for you:
+
+```shell
+hug init path/to/my-project
+```
+
+### Examples
+
+**Basic Git initialization:**
+```shell
+hug init
+```
+
+**Initialize in new directory:**
+```shell
+hug init my-awesome-project
+cd my-awesome-project
+```
+
+**Initialize with custom branch name:**
+```shell
+hug init --initial-branch=main my-project
+```
+
+**Initialize bare repository:**
+```shell
+hug init --bare my-bare-repo.git
+```
+
+**Initialize Mercurial repository:**
+```shell
+hug init --hg my-hg-project
+```
+
+**Script-friendly (no status output):**
+```shell
+hug init --no-status project1
+hug init --no-status project2
+```
+
 ## Clone (`hug clone`)
 
 Clone a Git or Mercurial repository with automatic VCS detection.

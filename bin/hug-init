@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# Hug init command - Initialize a new Git or Mercurial repository
+# Defaults to Git, supports Mercurial with --hg flag
+# This is VCS-agnostic orchestration code
+
+# Set HUG_HOME if not already set
+if [[ -z "${HUG_HOME:-}" ]]; then
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  HUG_HOME="$(cd "$script_dir/.." && pwd)"
+fi
+export HUG_HOME
+
+# Source common libraries
+# shellcheck source=git-config/lib/hug-common
+. "$HUG_HOME/git-config/lib/hug-common"
+
+set -euo pipefail
+
+# Validate VCS binary is available
+# Usage: validate_vcs_available <vcs>
+# Returns: 0 if available, exits with error if not
+validate_vcs_available() {
+  local vcs="$1"
+  if ! command -v "$vcs" >/dev/null 2>&1; then
+    error "Error: '$vcs' command not found in PATH. Please install $vcs."
+    exit 1
+  fi
+}
+
+# Show usage
+show_usage() {
+    cat <<EOF
+Usage: hug init [--git|--hg] [--no-status] [dir] [options]
+
+Initialize a new Git or Mercurial repository. Defaults to Git.
+
+Options:
+  --git         Use Git (default)
+  --hg          Use Mercurial
+  --no-status   Skip post-init status display
+
+Examples:
+  hug init                           # Initialize Git repo in current directory
+  hug init my-project                # Initialize Git repo in new directory
+  hug init --hg                      # Initialize Mercurial repo in current directory
+  hug init --bare                    # Pass --bare to git init
+  hug init --initial-branch=main     # Set initial branch name
+EOF
+}
+
+# Parse arguments
+vcs="git"  # Default to Git
+run_status=true
+target_dir=""
+declare -a vcs_options=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --git)
+            vcs="git"
+            shift
+            ;;
+        --hg)
+            vcs="hg"
+            shift
+            ;;
+        --no-status)
+            run_status=false
+            shift
+            ;;
+        --help|-h)
+            show_usage
+            exit 0
+            ;;
+        -*)
+            # Any other flag is a VCS option
+            vcs_options+=("$1")
+            shift
+            ;;
+        *)
+            # First non-flag argument is the directory
+            if [[ -z "$target_dir" ]]; then
+                target_dir="$1"
+            else
+                # Additional non-flag arguments are passed as options (shouldn't happen but handle it)
+                vcs_options+=("$1")
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Default to current directory if not specified
+if [[ -z "$target_dir" ]]; then
+    target_dir="."
+fi
+
+# Validate VCS availability
+validate_vcs_available "$vcs"
+
+# Create directory if specified and doesn't exist
+if [[ "$target_dir" != "." && ! -d "$target_dir" ]]; then
+    mkdir -p "$target_dir"
+fi
+
+# Check if already initialized
+if [[ "$target_dir" == "." ]]; then
+    if [[ "$vcs" == "git" && -d ".git" ]]; then
+        error "Error: Already a Git repository."
+        exit 1
+    elif [[ "$vcs" == "hg" && -d ".hg" ]]; then
+        error "Error: Already a Mercurial repository."
+        exit 1
+    fi
+else
+    if [[ "$vcs" == "git" && -d "$target_dir/.git" ]]; then
+        error "Error: Already a Git repository at '$target_dir'."
+        exit 1
+    elif [[ "$vcs" == "hg" && -d "$target_dir/.hg" ]]; then
+        error "Error: Already a Mercurial repository at '$target_dir'."
+        exit 1
+    fi
+fi
+
+# Execute init
+vcs_name=$([[ "$vcs" == "git" ]] && echo "Git" || echo "Mercurial")
+info "Initializing $vcs_name repository..."
+
+# Build init command: vcs init [options] [dir]
+if [[ "$target_dir" == "." ]]; then
+    # Init in current directory - pass options only
+    init_cmd=("$vcs" init "${vcs_options[@]}")
+else
+    # Init in specified directory - options before directory
+    init_cmd=("$vcs" init "${vcs_options[@]}" "$target_dir")
+fi
+
+if "${init_cmd[@]}"; then
+    success "✓ Initialized $vcs_name repository in '$target_dir'."
+    
+    # Run status if enabled (skip on empty repos since status may fail)
+    if [[ "$run_status" == true ]]; then
+        cd "$target_dir"
+        # Check if repository has any commits before running status
+        if "$vcs" rev-parse HEAD >/dev/null 2>&1; then
+            hug s
+        else
+            info "Empty repository. Create your first commit to see status."
+        fi
+    fi
+    exit 0
+else
+    error "Initialization failed."
+    exit 1
+fi

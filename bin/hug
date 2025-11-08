@@ -9,10 +9,15 @@ if [[ -z "${HUG_HOME:-}" ]]; then
 fi
 export HUG_HOME
 
-# Handle clone command (outside repository)
+# Handle commands that work outside repository
 if [[ "${1:-}" == "clone" ]]; then
     shift
     exec "$HUG_HOME/bin/hug-clone" "$@"
+fi
+
+if [[ "${1:-}" == "init" ]]; then
+    shift
+    exec "$HUG_HOME/bin/hug-init" "$@"
 fi
 
 # Detect repository type and dispatch
