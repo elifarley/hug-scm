@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# Hug clone command - Clone a Git or Mercurial repository
+# Auto-detects VCS from URL or prompts if ambiguous
+# shellcheck source=git-config/lib/hug-common
+. "$HUG_HOME/git-config/lib/hug-common"
+# shellcheck source=git-config/lib/hug-clone
+. "$HUG_HOME/git-config/lib/hug-clone"
+
+set -euo pipefail
+
+# Show usage
+show_usage() {
+    cat <<EOF
+Usage: hug clone [--git|--hg] [--no-status] <url> [dir] [options]
+
+Clone a Git or Mercurial repository. Auto-detects VCS from URL or prompts if ambiguous.
+
+Options:
+  --git         Force Git as the VCS
+  --hg          Force Mercurial as the VCS
+  --no-status   Skip post-clone status display
+
+Examples:
+  hug clone https://github.com/user/repo.git
+  hug clone --hg https://hg.example.com/repo my-repo
+  hug clone https://github.com/user/repo.git --depth 1
+  hug clone --no-status https://gitlab.com/user/repo.git
+EOF
+}
+
+# Parse arguments
+vcs=""
+auto_detected=false
+run_status=true
+declare -a args=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --git)
+            vcs="git"
+            shift
+            ;;
+        --hg)
+            vcs="hg"
+            shift
+            ;;
+        --no-status)
+            run_status=false
+            shift
+            ;;
+        --help|-h)
+            show_usage
+            exit 0
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Check if we have a URL
+if [[ ${#args[@]} -eq 0 ]]; then
+    show_usage
+    exit 1
+fi
+
+url="${args[0]}"
+dir=""
+if [[ ${#args[@]} -gt 1 && ${args[1]} != -* ]]; then
+    dir="${args[1]}"
+    options=("${args[@]:2}")
+else
+    options=("${args[@]:1}")
+fi
+
+# Auto-detect VCS if not specified
+if [[ -z "$vcs" ]]; then
+    auto_detected=true
+    vcs=$(detect_vcs_from_url "$url")
+    
+    if [[ "$vcs" == "unknown" ]]; then
+        # Prompt with gum if available, else fallback to read
+        if gum_available; then
+            vcs_choice=$(gum choose --header "Select VCS for '$url':" "Git" "Mercurial" || echo "")
+            if [[ -z "$vcs_choice" ]]; then
+                info "Cancelled."
+                exit 1
+            fi
+            vcs=$([[ "$vcs_choice" == "Git" ]] && echo "git" || echo "hg")
+        else
+            choice=''
+            read -rp "Ambiguous VCS for '$url'. (g)it or (h)g? " choice
+            vcs=$([[ ${choice,,} == g* ]] && echo "git" || echo "hg")
+        fi
+    fi
+fi
+
+# Show detection result
+if [[ "$auto_detected" == true && "$vcs" != "unknown" ]]; then
+    vcs_name=$([[ "$vcs" == "git" ]] && echo "Git" || echo "Mercurial")
+    info "Detected: $vcs_name"
+fi
+
+# Validate VCS availability
+validate_vcs_available "$vcs"
+
+# Determine target directory
+cloned_dir="${dir}"
+if [[ -z "$cloned_dir" ]]; then
+    cloned_dir=$(basename "${url%.*}")
+fi
+
+# Check if directory exists
+check_directory_exists "$cloned_dir"
+
+# Set up cleanup trap
+cleanup_on_error() {
+    local exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        cleanup_failed_clone "$cloned_dir"
+    fi
+    exit $exit_code
+}
+trap cleanup_on_error EXIT
+
+# Execute clone
+info "Cloning with $vcs..."
+if "$vcs" clone "$url" ${dir:+"$dir"} "${options[@]}"; then
+    trap - EXIT  # Clear trap on success
+    success "✓ Cloned successfully to '$cloned_dir'."
+    
+    # Run status if enabled
+    if [[ "$run_status" == true ]]; then
+        cd "$cloned_dir" && hug s
+    fi
+    exit 0
+else
+    error "Clone failed."
+    exit 1
+fi
