@@ -55,6 +55,15 @@ Complex operations become one-liners: `hug w zap-all` for a complete "factory re
 
 ## Quick Start
 
+### Getting Started with a Repository
+
+```shell
+# Clone a repository (auto-detects Git or Mercurial)
+hug clone https://github.com/user/repo.git
+hug clone https://gitlab.com/user/repo.git my-repo
+hug clone --no-status https://bitbucket.org/user/repo.git  # Skip post-clone status
+```
+
 ### Basic Workflow
 
 ```shell
@@ -391,7 +400,14 @@ hug pullall           # Pull from all remotes
 #### Utilities
 
 ```shell
-hug clone [--git|--hg] <url> [dir] [options]   # Clone a Git or Mercurial repository (auto-detects VCS)
+# Clone - Auto-detects Git or Mercurial from URL patterns
+hug clone <url> [dir] [options]                 # Auto-detect VCS and clone
+hug clone --git <url> [dir]                     # Force Git
+hug clone --hg <url> [dir]                      # Force Mercurial  
+hug clone --no-status <url> [dir]               # Skip post-clone status
+hug clone <url> --depth 1                       # Pass options to underlying VCS
+
+# Other utilities
 hug lol [<remote-branch>] # Log Outgoing Long: Show outgoing changes (what will be pushed; optional remote branch target, e.g., origin/dev)
 hug w wip "<msg>"     # Park all changes on WIP branch
 hug w unwip [wip]     # Unpark WIP: squash-merge to current branch + delete
