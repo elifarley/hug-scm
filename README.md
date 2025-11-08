@@ -58,6 +58,11 @@ Complex operations become one-liners: `hug w zap-all` for a complete "factory re
 ### Getting Started with a Repository
 
 ```shell
+# Initialize a new repository (defaults to Git)
+hug init                    # Initialize Git repo in current directory
+hug init my-project         # Initialize Git repo in new directory
+hug init --hg               # Initialize Mercurial repo
+
 # Clone a repository (auto-detects Git or Mercurial)
 hug clone https://github.com/user/repo.git
 hug clone https://gitlab.com/user/repo.git my-repo
@@ -400,6 +405,12 @@ hug pullall           # Pull from all remotes
 #### Utilities
 
 ```shell
+# Initialize - Create a new repository (defaults to Git)
+hug init [dir] [options]                        # Initialize Git repo (current dir or specified)
+hug init --hg [dir]                             # Initialize Mercurial repo
+hug init --no-status [dir]                      # Skip post-init status
+hug init [dir] --initial-branch=main            # Pass options to underlying VCS
+
 # Clone - Auto-detects Git or Mercurial from URL patterns
 hug clone <url> [dir] [options]                 # Auto-detect VCS and clone
 hug clone --git <url> [dir]                     # Force Git
