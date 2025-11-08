@@ -204,8 +204,9 @@ create_test_repo_with_content() {
 }
 
 @test "hug clone - library function detect_vcs_from_url works" {
-    # Source the library
-    source "$HUG_HOME/git-config/lib/hug-clone"
+    # Source the detect function from hug-clone
+    source "$HUG_HOME/git-config/lib/hug-common"
+    source <(sed -n '/^detect_vcs_from_url/,/^}/p' "$HUG_HOME/bin/hug-clone")
     
     # Test Git patterns
     result=$(detect_vcs_from_url "https://github.com/user/repo.git")

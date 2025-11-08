@@ -1,12 +1,108 @@
 #!/usr/bin/env bash
 # Hug clone command - Clone a Git or Mercurial repository
 # Auto-detects VCS from URL or prompts if ambiguous
+# This is VCS-agnostic orchestration code
+
+# Set HUG_HOME if not already set
+if [[ -z "${HUG_HOME:-}" ]]; then
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  HUG_HOME="$(cd "$script_dir/.." && pwd)"
+fi
+export HUG_HOME
+
+# Source common libraries
 # shellcheck source=git-config/lib/hug-common
 . "$HUG_HOME/git-config/lib/hug-common"
-# shellcheck source=git-config/lib/hug-clone
-. "$HUG_HOME/git-config/lib/hug-clone"
 
 set -euo pipefail
+
+# VCS Detection Functions
+# These are VCS-agnostic and live at the top level
+
+# Detect VCS from repository URL
+# Usage: detect_vcs_from_url <url>
+# Returns: "git", "hg", or "unknown"
+detect_vcs_from_url() {
+  local url="$1"
+  
+  # Git patterns
+  if [[ "$url" == *.git ]] || [[ "$url" == *.git/ ]]; then
+    echo "git"
+    return 0
+  fi
+  
+  # Check for popular Git hosting platforms
+  if [[ "$url" =~ github\.com|gitlab\.com|bitbucket\.org/[^/]+/[^/]+\.git|gitea\.|codeberg\.org ]]; then
+    echo "git"
+    return 0
+  fi
+  
+  # Mercurial patterns
+  if [[ "$url" == *.hg ]] || [[ "$url" == *.hg/ ]]; then
+    echo "hg"
+    return 0
+  fi
+  
+  # Check for Mercurial-specific patterns (less common but still supported)
+  if echo "$url" | grep -q "hg\."; then
+    echo "hg"
+    return 0
+  fi
+  
+  echo "unknown"
+  return 0
+}
+
+# Validate VCS binary is available
+# Usage: validate_vcs_available <vcs>
+# Returns: 0 if available, exits with error if not
+validate_vcs_available() {
+  local vcs="$1"
+  if ! command -v "$vcs" >/dev/null 2>&1; then
+    error "Error: '$vcs' command not found in PATH. Please install $vcs."
+    exit 1
+  fi
+}
+
+# Check if directory exists and prompt for confirmation
+# Usage: check_directory_exists <dir>
+# Returns: 0 to proceed, exits if user cancels
+check_directory_exists() {
+  local dir="$1"
+  
+  # If directory doesn't exist, all good
+  if [[ ! -d "$dir" ]]; then
+    return 0
+  fi
+  
+  # Directory exists - prompt for confirmation
+  if gum_available; then
+    if ! gum confirm --default=false "Directory '$dir' exists. Overwrite?"; then
+      info "Cancelled."
+      exit 1
+    fi
+  else
+    local response
+    read -rp "Directory '$dir' exists. Overwrite? (y/N) " response
+    if [[ ! "$response" =~ ^[Yy]$ ]]; then
+      info "Cancelled."
+      exit 1
+    fi
+  fi
+  
+  # Remove existing directory
+  rm -rf "$dir"
+}
+
+# Cleanup failed clone by removing partial directory
+# Usage: cleanup_failed_clone <dir>
+cleanup_failed_clone() {
+  local dir="$1"
+  if [[ -n "$dir" && -d "$dir" ]]; then
+    info "Cleaning up partial clone at '$dir'..."
+    rm -rf "$dir"
+  fi
+}
 
 # Show usage
 show_usage() {

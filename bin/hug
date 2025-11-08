@@ -12,7 +12,7 @@ export HUG_HOME
 # Handle clone command (outside repository)
 if [[ "${1:-}" == "clone" ]]; then
     shift
-    exec "$HUG_HOME/git-config/bin/git-clone-cmd" "$@"
+    exec "$HUG_HOME/bin/hug-clone" "$@"
 fi
 
 # Detect repository type and dispatch
