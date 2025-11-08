@@ -34,7 +34,8 @@ With Hug, you get:
 - **Multi-VCS support** - Use the same commands whether you're working with Git or Mercurial repositories
 
 ## Why Hug?
-While Git is incredibly powerful, its command syntax can be inconsistent and difficult to remember. Hug smooths out these rough edges.
+While Git is incredibly powerful, its command syntax can be inconsistent and difficult to remember.
+Hug provides a seamless and humane experience, reducing friction for beginners while empowering advanced users.
 
 ✅ Making common operations trivial
 
