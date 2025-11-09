@@ -381,9 +381,8 @@
   #  BRANCH CREATION / MODIFICATION
   # ═══════════════════════════════════════════════════════════════════
 
-  # Create and switch to new branch
-  # Usage: hug bc <branch-name>
-  bc = switch -c
+  # Create and switch to new branch (now implemented as git-bc script)
+  # Usage: hug bc [<branch-name>] [--point-to <commitish>]
 
   # Rename current branch
   # Usage: hug br <new-name>
