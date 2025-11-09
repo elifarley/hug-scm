@@ -138,7 +138,7 @@ teardown() {
   
   # First create to cause potential conflict (but with seconds uniqueness)
   run hug bc --no-switch --point-to v1.0.0
-  first_branch=$(git branch --show-current | grep ".branch\." | head -1 | xargs)
+  first_branch=$(git branch | grep ".branch\." | head -1 | xargs)
   
   # Second should generate unique (with seconds)
   git switch "$original_branch"
