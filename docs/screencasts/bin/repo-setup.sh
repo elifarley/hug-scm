@@ -19,7 +19,7 @@ readonly AUTHOR_FOUR_EMAIL="david.lee@example.com"
 
 # --- Helper Functions ---
 
-hug() { cd "$DEMO_REPO_BASE" && "$CMD_BASE"/../../../git-config/bin/hug "$@" ;}
+hug() { cd "$DEMO_REPO_BASE" && "$CMD_BASE"/../../../bin/hug "$@" ;}
 git() { cd "$DEMO_REPO_BASE" && command git "$@" ;}
 
 # --- Fake Clock System for Deterministic Commit Hashes ---
