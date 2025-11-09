@@ -345,10 +345,16 @@ teardown() {
   git switch "$original_branch"
   
   # Try to create another branch from same tag in same minute
-  # This should fail because the branch name already exists
+  # This should succeed with a unique name (adds seconds)
   run hug bc --point-to v1.0.0
-  assert_failure
-  assert_output --partial "already exists"
+  assert_success
+  assert_output --partial "Generated name existed; using"
+  second_branch=$(git branch --show-current)
+  
+  # Verify branches are different but both exist
+  [ "$first_branch" != "$second_branch" ]
+  git show-ref --verify "refs/heads/$first_branch" >/dev/null
+  git show-ref --verify "refs/heads/$second_branch" >/dev/null
 }
 
 @test "hug bc: validates repo is a git repository" {
