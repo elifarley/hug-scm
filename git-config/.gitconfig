@@ -384,6 +384,10 @@
   # Create and switch to new branch (now implemented as git-bc script)
   # Usage: hug bc [<branch-name>] [--point-to <commitish>]
 
+  # hug bcp <src> [dest]
+  # (B)ranch (CP) - Copy a branch or committish reference.
+  bcp = bc --no-switch --point-to
+
   # Rename current branch
   # Usage: hug br <new-name>
   br = branch -m
