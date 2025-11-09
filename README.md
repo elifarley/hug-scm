@@ -296,9 +296,10 @@ hug usa                     # Unstage all files
 ```shell
 hug b <branch>              # Switch to existing branch
 hug bs                      # Switch back to previous branch
-hug bc [<branch>] [--point-to <commitish>]  # Create and switch to new branch
+hug bc [<branch>] [--point-to <commitish>] [--no-switch]  # Create and switch to new branch
                             # With --point-to: create from specific commit/tag/branch
                             # Without branch name: auto-generates descriptive name
+                            # --no-switch: create without switching
 hug bl                      # List local branches
 hug bla                     # List all branches (local + remote)
 hug bdel <branch>           # Safe delete local branch (if merged)

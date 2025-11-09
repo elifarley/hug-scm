@@ -66,6 +66,91 @@ teardown() {
   assert_output --partial "Branch name is required"
 }
 
+@test "hug bc --no-switch <branch>: creates without switching" {
+  original_branch=$(git branch --show-current)
+  original_commit=$(git rev-parse HEAD)
+  
+  run hug bc --no-switch new-feature-no-switch
+  assert_success
+  assert_output --partial "Created branch 'new-feature-no-switch' from HEAD"
+  
+  # Verify still on original branch
+  current=$(git branch --show-current)
+  [ "$current" = "$original_branch" ]
+  
+  # Verify branch exists and points to original HEAD
+  git show-ref --verify "refs/heads/new-feature-no-switch" >/dev/null
+  branch_commit=$(git rev-parse new-feature-no-switch)
+  [ "$branch_commit" = "$original_commit" ]
+}
+
+@test "hug bc --no-switch --point-to <commit> <branch>: creates from commit without switching" {
+  first_commit=$(git rev-list --max-parents=0 HEAD)
+  
+  original_branch=$(git branch --show-current)
+  run hug bc --no-switch --point-to "$first_commit" feature-from-first-no-switch
+  assert_success
+  assert_output --partial "Created branch 'feature-from-first-no-switch' pointing to"
+  
+  # Verify still on original branch
+  current=$(git branch --show-current)
+  [ "$current" = "$original_branch" ]
+  
+  # Verify branch exists and points to first commit
+  git show-ref --verify "refs/heads/feature-from-first-no-switch" >/dev/null
+  branch_commit=$(git rev-parse feature-from-first-no-switch)
+  [ "$branch_commit" = "$first_commit" ]
+}
+
+@test "hug bc --no-switch --point-to <tag>: auto-generates name without switching" {
+  original_branch=$(git branch --show-current)
+  
+  run hug bc --no-switch --point-to v1.0.0
+  assert_success
+  assert_output --partial "Auto-generated branch name:"
+  assert_output --partial ".branch."
+  assert_output --partial "Created branch"
+  
+  # Verify still on original branch
+  current=$(git branch --show-current)
+  [ "$current" = "$original_branch" ]
+  
+  # Verify generated branch exists and points to tag
+  new_branch=$(git branch | grep ".branch\." | head -1 | xargs)
+  [ -n "$new_branch" ]
+  git show-ref --verify "refs/heads/$new_branch" >/dev/null
+  tag_commit=$(git rev-parse v1.0.0)
+  branch_commit=$(git rev-parse "$new_branch")
+  [ "$branch_commit" = "$tag_commit" ]
+}
+
+@test "hug bc --no-switch: fails if branch exists" {
+  git checkout -b existing-no-switch
+  git switch -
+  
+  run hug bc --no-switch existing-no-switch
+  assert_failure
+  assert_output --partial "already exists"
+}
+
+@test "hug bc --no-switch --point-to: auto-generates unique name if conflict" {
+  original_branch=$(git branch --show-current)
+  
+  # First create to cause potential conflict (but with seconds uniqueness)
+  run hug bc --no-switch --point-to v1.0.0
+  first_branch=$(git branch --show-current | grep ".branch\." | head -1 | xargs)
+  
+  # Second should generate unique (with seconds)
+  git switch "$original_branch"
+  run hug bc --no-switch --point-to v1.0.0
+  assert_success
+  assert_output --partial "Generated name existed; using"
+  
+  second_branch=$(git branch | grep ".branch\." | tail -1 | xargs)
+  [ "$second_branch" != "$first_branch" ]
+  [ -n "$second_branch" ]
+}
+
 # -----------------------------------------------------------------------------
 # --point-to with explicit branch name tests
 # -----------------------------------------------------------------------------
