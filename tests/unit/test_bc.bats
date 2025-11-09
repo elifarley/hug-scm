@@ -141,7 +141,6 @@ teardown() {
   first_branch=$(git branch | grep ".branch\." | head -1 | xargs)
   
   # Second should generate unique (with seconds)
-  git switch "$original_branch"
   run hug bc --no-switch --point-to v1.0.0
   assert_success
   assert_output --partial "Generated name existed; using"
