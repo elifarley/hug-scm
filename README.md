@@ -85,8 +85,10 @@ hug ca           # Commit all tracked changes
 hug caa          # Commit all tracked & untracked changes
 
 # Branch operations
-hug bc feature   # Create and switch to new branch
-hug bs           # Switch back to previous branch
+hug bc feature              # Create and switch to new branch
+hug bc --point-to v1.0.0    # Create branch from tag (auto-generates name)
+hug bc hotfix --point-to v1.0.0  # Create named branch from tag
+hug bs                      # Switch back to previous branch
 
 # Safe pull (fast-forward only; fails on divergence)
 hug bpull
@@ -294,7 +296,9 @@ hug usa                     # Unstage all files
 ```shell
 hug b <branch>              # Switch to existing branch
 hug bs                      # Switch back to previous branch
-hug bc <branch>             # Create and switch to new branch
+hug bc [<branch>] [--point-to <commitish>]  # Create and switch to new branch
+                            # With --point-to: create from specific commit/tag/branch
+                            # Without branch name: auto-generates descriptive name
 hug bl                      # List local branches
 hug bla                     # List all branches (local + remote)
 hug bdel <branch>           # Safe delete local branch (if merged)
