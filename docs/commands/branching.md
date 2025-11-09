@@ -81,13 +81,29 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ## Branch Creation / Modification
 
-### `hug bc <branch-name>`
-- **Description**: Create a new branch and switch to it.
-- **Example**:
+### `hug bc [<branch-name>] [--point-to <commitish>]`
+- **Description**: Create a new branch and switch to it. By default, creates from current HEAD. With `--point-to`, you can create a branch from any commit, tag, or branch.
+- **Arguments**:
+  - `<branch-name>` - Name for the new branch (optional with `--point-to`)
+  - `--point-to <commitish>` - Create branch pointing to a specific commit, tag, or branch
+- **Auto-Generated Names**: When using `--point-to` without a branch name, automatically generates a descriptive name:
+  - If target is a branch: `<branch>.copy.<iso-datetime>`
+  - If target is not a branch: `<target>.branch.<iso-datetime>`
+  - ISO datetime format: YYYYMMDD-HHMM (e.g., 20251109-1430)
+- **Examples**:
   ```shell
-  hug bc new-feature    # Create and switch to new-feature
+  hug bc new-feature                      # Create branch from current HEAD
+  hug bc --point-to abc123 my-feature     # Create branch from commit abc123
+  hug bc --point-to v1.0.0                # Auto-generate name from tag v1.0.0
+  hug bc --point-to main                  # Auto-generate name: main.copy.20251109-1430
+  hug bc my-feature --point-to abc123     # Flag can come after branch name
   ```
-- **Safety**: Non-destructive; creates from current HEAD.
+- **Use Cases**:
+  - **From a tag**: Quickly create a branch to investigate or patch a specific release
+  - **From a commit**: Create a branch from a specific point in history for debugging or feature development
+  - **From another branch**: Create a snapshot copy of a branch's current state
+  - **Experimentation**: Auto-generated names let you quickly create exploratory branches without thinking of names
+- **Safety**: Non-destructive; creates from specified point or current HEAD.
 
 ### `hug br <new-name>`
 - **Description**: Rename the current branch to a new name.
@@ -242,7 +258,9 @@ These commands help inspect which branches relate to specific commits or states.
 
 ## Tips
 - Use `hug b` to review branch status and easily switch via an interactive menu.
-- For creating a branch from an existing one: `hug bc <new> <existing>` (e.g., `hug bc new-feature existing-feature`).
+- **Quick branch creation**: Use `hug bc --point-to <target>` without a branch name to quickly experiment - the auto-generated name includes a timestamp.
+- **Branch from releases**: Need to patch a production release? Use `hug bc --point-to v1.2.3` to instantly create a branch from that tag.
+- **Preserve branch state**: Create a snapshot before risky operations: `hug bc --point-to feature-branch` creates a timestamped copy.
 - Use `hug blr` to list remote branches before deleting one with `hug bdelr`.
 - Queries like `bwc` and `bwm` are useful for cleanup before `bdel`.
 - Commands like `hug rb` automatically create backup branches in the `hug-backups/` namespace. Use `hug brestore` to restore them if needed.
