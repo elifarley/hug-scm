@@ -13,8 +13,9 @@ USAGE:
   hug b [options] [branch]
 
 OPTIONS:
-  -h, --help     Show this help message and exit.
-  -r, --remote   Show only remote branches in interactive menu (no branch arg required).
+  -h, --help            Show this help message and exit.
+  -r, --remote          Show only remote branches in interactive menu (no branch arg required).
+  -R, --refresh         Show only remote branches in interactive menu, refreshing via 'git fetch' first (implies --remote).
 
 DESCRIPTION:
   If a branch name is provided, switches to it directly. If the branch doesn't
@@ -29,6 +30,9 @@ DESCRIPTION:
   in the interactive menu. Selecting a remote branch creates a local tracking
   branch and switches to it.
   
+  With the -R/--refresh flag (no branch argument), shows only remote branches
+  in the interactive menu after running 'git fetch --all --prune' to refresh.
+  
   For repositories with 10 or more branches, uses gum filter (if installed) for
   easier searching and selection. Otherwise, displays a numbered list.
 
@@ -38,6 +42,7 @@ EXAMPLES:
   hug b origin/feature     # Create local 'feature' tracking 'origin/feature'
   hug b                    # Show interactive menu of local branches
   hug b -r                 # Show interactive menu of remote branches only
+  hug b -R                 # Show refreshed interactive menu of remote branches (fetches first)
 
 SEE ALSO:
   hug bll : Detailed non-interactive branch list
@@ -48,8 +53,9 @@ FURTHER READING:
 EOF
 }
 
-# Parse flags manually to handle -r/--remote
+# Parse flags manually to handle -r/--remote and -R/--refresh
 remote_only=false
+refresh_remotes=false
 declare -a args=()
 
 while [[ $# -gt 0 ]]; do
@@ -60,6 +66,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     -r|--remote)
       remote_only=true
+      shift
+      ;;
+    -R|--refresh)
+      remote_only=true
+      refresh_remotes=true
       shift
       ;;
     -*)
@@ -79,9 +90,9 @@ check_git_repo
 
 # Handle case where branch name is provided
 if [ ${#args[@]} -gt 0 ]; then
-  # Error if -r flag is used with branch argument
+  # Error if -r or -R flag is used with branch argument
   if [ "$remote_only" = true ]; then
-    error "The -r/--remote flag cannot be used with a branch argument."
+    error "The -r/--remote or -R/--refresh flag cannot be used with a branch argument."
     exit 1
   fi
   
@@ -119,6 +130,16 @@ if [ "$remote_only" = true ]; then
   declare -a branches=() hashes=() subjects=() remote_refs=()
   max_len=""
   selected_branch=""
+  
+  # Refresh remotes if flag set
+  if [[ "$refresh_remotes" == true ]]; then
+    info "Fetching remote branches..."
+    if ! git fetch --all --prune --quiet; then
+      warn "Fetch failed (e.g., network or auth issue); using cached remote info."
+    else
+      info "Remotes updated."
+    fi
+  fi
   
   if ! compute_remote_branch_details max_len hashes branches remote_refs subjects "true"; then
     error "No remote branches found."
