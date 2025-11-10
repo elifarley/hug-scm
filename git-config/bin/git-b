@@ -11,11 +11,13 @@ hug b: Switch to a branch, with interactive detailed menu if no args supplied.
 
 USAGE:
   hug b [options] [branch]
+  hug b -r
+  hug b -R
 
 OPTIONS:
   -h, --help            Show this help message and exit.
-  -r, --remote          Show only remote branches in interactive menu (no branch arg required).
-  -R, --refresh         Show only remote branches in interactive menu, refreshing via 'git fetch' first (implies --remote).
+  -r, --remote          Show only remote branches in interactive menu (requires no branch argument).
+  -R, --refresh         Show only remote branches in interactive menu, refreshing via 'git fetch' first (implies --remote; requires no branch argument).
 
 DESCRIPTION:
   If a branch name is provided, switches to it directly. If the branch doesn't
