@@ -7,26 +7,44 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat <<'EOF'
-hug b: Switch to a local branch, with interactive detailed menu if no args supplied.
+hug b: Switch to a branch, with interactive detailed menu if no args supplied.
 
 USAGE:
-  hug b [branch]
+  hug b [options] [branch]
+  hug b -r
+  hug b -R
 
 OPTIONS:
-  -h, --help     Show this help message and exit.
+  -h, --help            Show this help message and exit.
+  -r, --remote          Show only remote branches in interactive menu (requires no branch argument).
+  -R, --refresh         Show only remote branches in interactive menu, refreshing via 'git fetch' first (implies --remote; requires no branch argument).
 
 DESCRIPTION:
-  If a branch name is provided, switches to it directly.
-  If no arguments are given, displays an interactive menu of local branches.
+  If a branch name is provided, switches to it directly. If the branch doesn't
+  exist locally but exists on a remote (e.g., origin/feature), automatically
+  creates a local tracking branch and switches to it.
+  
+  If no branch argument is given and --remote isn't given, displays an interactive menu of local branches.
   Each entry shows: branch name (short hash) [upstream tracking info], followed by the commit subject.
   The current branch is highlighted in green and marked with *.
+  
+  If no branch argument is given and -r/--remote flag is given, shows only remote branches
+  in the interactive menu. Selecting a remote branch creates a local tracking
+  branch and switches to it.
+  
+  With the -R/--refresh flag, shows only remote branches
+  in the interactive menu after running 'git fetch --all --prune' to refresh.
   
   For repositories with 10 or more branches, uses gum filter (if installed) for
   easier searching and selection. Otherwise, displays a numbered list.
 
 EXAMPLES:
-  hug b main               # Switch directly to main
-  hug b                    # Show interactive menu for selection
+  hug b main               # Switch directly to main (local or create from remote)
+  hug b feature            # Switch to feature (local or create from origin/feature)
+  hug b origin/feature     # Create local 'feature' tracking 'origin/feature'
+  hug b                    # Show interactive menu of local branches
+  hug b -r                 # Show interactive menu of remote branches only
+  hug b -R                 # Show refreshed interactive menu of remote branches (fetches first)
 
 SEE ALSO:
   hug bll : Detailed non-interactive branch list
@@ -37,24 +55,147 @@ FURTHER READING:
 EOF
 }
 
-# Parse common flags
-eval "$(parse_common_flags "$@")"
+# Parse flags manually to handle -r/--remote and -R/--refresh
+remote_only=false
+refresh_remotes=false
+declare -a args=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -r|--remote)
+      remote_only=true
+      shift
+      ;;
+    -R|--refresh)
+      remote_only=true
+      refresh_remotes=true
+      shift
+      ;;
+    -*)
+      error "Unknown option: $1"
+      show_help
+      exit 1
+      ;;
+    *)
+      args+=("$1")
+      shift
+      ;;
+  esac
+done
 
 # Early exit if not in Git repo
 check_git_repo
 
-test $# -gt 0 && exec git switch "$@"
-
-# Compute branch details
-declare -a branches=() hashes=() subjects=() tracks=()
-max_len=""
-current_branch=""
-selected_branch=""
-if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects "true"; then
-  printf "No local branches found.\n" >&2
-  exit 1
+# Handle case where branch name is provided
+if [ ${#args[@]} -gt 0 ]; then
+  # Error if -r or -R flag is used with branch argument
+  if [ "$remote_only" = true ]; then
+    error "The -r/--remote or -R/--refresh flag cannot be used with a branch argument."
+    exit 1
+  fi
+  
+  branch_arg="${args[0]}"
+  
+  # Check if branch exists locally
+  if git show-ref --verify --quiet "refs/heads/$branch_arg" 2>/dev/null; then
+    # Local branch exists, switch to it normally
+    exec git switch "${args[@]}"
+  fi
+  
+  # Local branch doesn't exist, check for remote branch
+  remote_ref=""
+  if remote_ref=$(find_remote_branch "$branch_arg"); then
+    # Found a remote branch, create local tracking branch
+    local_name="${remote_ref#*/}"  # Strip remote prefix
+    
+    info "Creating local branch '$local_name' tracking '$remote_ref'..."
+    if git switch -c "$local_name" --track "$remote_ref"; then
+      success "Switched to new branch '$local_name' (tracking $remote_ref)"
+      exit 0
+    else
+      error "Failed to create tracking branch."
+      exit 1
+    fi
+  else
+    # Not found locally or remotely, let git switch handle it (will show error)
+    exec git switch "${args[@]}"
+  fi
 fi
 
-# Print interactive menu and get selection
-print_interactive_branch_menu selected_branch "$current_branch" "$max_len" hashes branches tracks subjects
-git switch "$selected_branch"
+# No branch argument provided - show interactive menu
+if [ "$remote_only" = true ]; then
+  # Show remote branches only
+  declare -a branches=() hashes=() subjects=() remote_refs=()
+  max_len=""
+  selected_branch=""
+  
+  # Refresh remotes if flag set
+  if [[ "$refresh_remotes" == true ]]; then
+    info "Fetching remote branches..."
+    if ! git fetch --all --prune --quiet; then
+      warn "Fetch failed (e.g., network or auth issue); using cached remote info."
+    else
+      info "Remotes updated."
+    fi
+  fi
+  
+  if ! compute_remote_branch_details max_len hashes branches remote_refs subjects "true"; then
+    error "No remote branches found."
+    exit 1
+  fi
+  
+  # Create tracks array as empty (remote branches don't have upstream in this context)
+  declare -a tracks=()
+  for ((i=0; i<${#branches[@]}; i++)); do
+    tracks+=("$CYAN[${remote_refs[i]}]")
+  done
+  
+  # Print interactive menu with remote branches
+  # Note: We pass empty string for current_branch since we're showing remotes
+  print_interactive_branch_menu selected_branch "" "$max_len" hashes branches tracks subjects
+  
+  # Create local tracking branch for selected remote
+  local_name="$selected_branch"
+  remote_ref=""
+  
+  # Find the corresponding remote ref for the selected branch
+  for ((i=0; i<${#branches[@]}; i++)); do
+    if [ "${branches[i]}" = "$selected_branch" ]; then
+      remote_ref="${remote_refs[i]}"
+      break
+    fi
+  done
+  
+  if [ -z "$remote_ref" ]; then
+    error "Could not find remote reference for branch '$selected_branch'."
+    exit 1
+  fi
+  
+  info "Creating local branch '$local_name' tracking '$remote_ref'..."
+  if git switch -c "$local_name" --track "$remote_ref"; then
+    success "Switched to new branch '$local_name' (tracking $remote_ref)"
+    exit 0
+  else
+    error "Failed to create tracking branch."
+    exit 1
+  fi
+else
+  # Show local branches (default behavior)
+  declare -a branches=() hashes=() subjects=() tracks=()
+  max_len=""
+  current_branch=""
+  selected_branch=""
+  
+  if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects "true"; then
+    error "No local branches found."
+    exit 1
+  fi
+  
+  # Print interactive menu and get selection
+  print_interactive_branch_menu selected_branch "$current_branch" "$max_len" hashes branches tracks subjects
+  git switch "$selected_branch"
+fi

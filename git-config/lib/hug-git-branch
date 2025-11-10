@@ -522,3 +522,168 @@ select_wip_branch() {
     printf '%s\n' "${branches[$index]}"
 }
 
+################################################################################
+# Remote Branch Functions
+################################################################################
+
+# Computes details for remote branches and populates output arrays
+# Usage: compute_remote_branch_details max_len hashes branches remote_refs subjects [include_subjects]
+# Parameters (all namerefs to output variables):
+#   $1 - Scalar to receive max branch name length
+#   $2 - Array to receive commit hashes
+#   $3 - Array to receive local branch names (remote prefix stripped, e.g., "feature" from "origin/feature")
+#   $4 - Array to receive full remote refs (e.g., "origin/feature")
+#   $5 - Array to receive commit subjects
+#   $6 - (Optional) Boolean to include subjects (default: true); if false, skips subject computation
+# Returns:
+#   0 if remote branches found, 1 if no remote branches exist
+# Note:
+#   Arrays are cleared before population. Branches are sorted by name.
+#   Excludes HEAD references (like "origin/HEAD -> origin/main").
+compute_remote_branch_details() {
+    local -n max_len_ref="$1"
+    local -n hashes_ref="$2"
+    local -n branches_ref="$3"
+    local -n remote_refs_ref="$4"
+    local -n subjects_ref="$5"
+    local include_subjects="${6:-true}"
+
+    # Clear outputs
+    max_len_ref=0
+    hashes_ref=()
+    branches_ref=()
+    remote_refs_ref=()
+    subjects_ref=()
+
+    # Build format: remote ref name, hash, and optionally subject
+    local format='%(refname:short)%00%(objectname:short)'
+    if [[ "$include_subjects" == "true" ]]; then
+        format+='%00%(subject)'
+    fi
+    format+='%00'
+
+    # Use mapfile for robust, atomic parsing of null-delimited data
+    local -a git_output=()
+    mapfile -t -d '' git_output < <(git for-each-ref \
+        --format="$format" \
+        --sort=refname refs/remotes/ 2>/dev/null || true)
+
+    # Check if we got any results
+    if [ ${#git_output[@]} -eq 0 ]; then
+        return 1
+    fi
+
+    # Iterate through the flat array in chunks of 2 or 3
+    local i
+    local increment=2
+    local chunk_limit=1
+    if [[ "$include_subjects" == "true" ]]; then
+        increment=3
+        chunk_limit=2
+    fi
+    
+    for ((i = 0; i + chunk_limit < ${#git_output[@]}; i += increment)); do
+        local remote_ref_raw="${git_output[i]}"
+        local remote_ref
+        remote_ref=$(printf '%s' "$remote_ref_raw" | tr -d '\n\r')
+        
+        # Skip if empty or HEAD reference
+        if [[ -z "$remote_ref" ]] || [[ "$remote_ref" == */HEAD ]]; then
+            continue
+        fi
+
+        local hash="${git_output[i+1]}"
+        
+        local subject=""
+        if [[ "$include_subjects" == "true" ]]; then
+            local subject_raw="${git_output[i+2]}"
+            subject=$(printf '%s' "$subject_raw" | tr -d '\n\r')
+        fi
+
+        # Extract local branch name by stripping remote prefix (e.g., "origin/feature" -> "feature")
+        local branch="${remote_ref#*/}"
+        
+        # Skip if we couldn't extract a meaningful branch name
+        if [[ -z "$branch" ]] || [[ "$branch" == "$remote_ref" ]]; then
+            continue
+        fi
+
+        # Update max length
+        if (( ${#branch} > max_len_ref )); then
+            max_len_ref=${#branch}
+        fi
+
+        branches_ref+=("$branch")
+        remote_refs_ref+=("$remote_ref")
+        hashes_ref+=("$hash")
+        if [[ "$include_subjects" == "true" ]]; then
+            subjects_ref+=("$GREY${subject:-(no commit message)}$NC")
+        fi
+    done
+
+    # Check if any branches were found after filtering
+    if [ ${#branches_ref[@]} -eq 0 ]; then
+        return 1
+    fi
+
+    return 0
+}
+
+# Finds a remote branch that matches the given branch name
+# Usage: find_remote_branch <branch_name>
+# Parameters:
+#   $1 - Branch name to search for (can be short name or full remote ref)
+# Output:
+#   Full remote ref name (e.g., "origin/feature") to stdout if found
+# Returns:
+#   0 if found, 1 if not found
+# Note:
+#   If multiple remotes have the same branch, prefers "origin" if available,
+#   otherwise returns the first match alphabetically.
+find_remote_branch() {
+    local branch_name="$1"
+    
+    # If branch_name already looks like a remote ref (contains /), check if it exists
+    if [[ "$branch_name" == */* ]]; then
+        if git show-ref --verify --quiet "refs/remotes/$branch_name" 2>/dev/null; then
+            echo "$branch_name"
+            return 0
+        fi
+    fi
+    
+    # Search for matching remote branches
+    local -a matches=()
+    local remote_ref
+    
+    # Get all remote branches, excluding HEAD
+    while IFS= read -r remote_ref; do
+        # Extract the branch name part (after the remote/)
+        local ref_branch="${remote_ref#*/}"
+        
+        # Check if it matches our search
+        if [[ "$ref_branch" == "$branch_name" ]]; then
+            matches+=("$remote_ref")
+        fi
+    done < <(git for-each-ref --format='%(refname:short)' refs/remotes/ 2>/dev/null | grep -v '/HEAD$' || true)
+    
+    # No matches found
+    test ${#matches[@]} -eq 0 && return 1
+
+    # If only one match, return it
+    test ${#matches[@]} -eq 1 && echo "${matches[0]}" && return 0
+
+    # Multiple matches: prefer origin
+    local match
+    for match in "${matches[@]}"; do
+        if [[ "$match" == origin/* ]]; then
+            echo "$match"
+            return 0
+        fi
+    done
+
+    # No origin match, return first alphabetically
+    remote_ref=$(printf "%s\n" "${matches[@]}" | sort --ignore-case | head -n1)
+    echo "$remote_ref"
+    return 0
+}
+
