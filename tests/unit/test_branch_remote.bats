@@ -140,16 +140,28 @@ teardown() {
 @test "hug b -r <branch>: shows error when branch argument provided with -r flag" {
   run hug b -r main
   assert_failure
-  assert_output --partial "The -r/--remote flag cannot be used with a branch argument"
+  assert_output --partial "The -r/--remote or -R/--refresh flag cannot be used with a branch argument"
 }
 
 @test "hug b --remote <branch>: shows error when branch argument provided with --remote flag" {
   run hug b --remote main
   assert_failure
-  assert_output --partial "The -r/--remote flag cannot be used with a branch argument"
+  assert_output --partial "The -r/--remote or -R/--refresh flag cannot be used with a branch argument"
 }
 
-# Note: Interactive menu tests for -r flag would require mocking gum or user input
+@test "hug b -R <branch>: shows error when branch argument provided with -R flag" {
+  run hug b -R main
+  assert_failure
+  assert_output --partial "The -r/--remote or -R/--refresh flag cannot be used with a branch argument"
+}
+
+@test "hug b --refresh <branch>: shows error when branch argument provided with --refresh flag" {
+  run hug b --refresh main
+  assert_failure
+  assert_output --partial "The -r/--remote or -R/--refresh flag cannot be used with a branch argument"
+}
+
+# Note: Interactive menu tests for -r and -R flags would require mocking gum or user input
 # We test the error case above, and the library functions separately
 
 # -----------------------------------------------------------------------------
@@ -160,6 +172,7 @@ teardown() {
   run hug b -h
   assert_success
   assert_output --partial "-r, --remote"
+  assert_output --partial "-R, --refresh"
   assert_output --partial "remote branches"
   assert_output --partial "creates a local tracking branch"
 }
