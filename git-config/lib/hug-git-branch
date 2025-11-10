@@ -667,16 +667,11 @@ find_remote_branch() {
     done < <(git for-each-ref --format='%(refname:short)' refs/remotes/ 2>/dev/null | grep -v '/HEAD$' || true)
     
     # No matches found
-    if [ ${#matches[@]} -eq 0 ]; then
-        return 1
-    fi
-    
+    test ${#matches[@]} -eq 0 && return 1
+
     # If only one match, return it
-    if [ ${#matches[@]} -eq 1 ]; then
-        echo "${matches[0]}"
-        return 0
-    fi
-    
+    test ${#matches[@]} -eq 1 && echo "${matches[0]}" && return 0
+
     # Multiple matches: prefer origin
     local match
     for match in "${matches[@]}"; do
@@ -685,9 +680,10 @@ find_remote_branch() {
             return 0
         fi
     done
-    
+
     # No origin match, return first alphabetically
-    echo "${matches[0]}"
+    remote_ref=$(printf "%s\n" "${matches[@]}" | sort --ignore-case | head -n1)
+    echo "$remote_ref"
     return 0
 }
 
