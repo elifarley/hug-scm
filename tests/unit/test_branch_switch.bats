@@ -22,7 +22,7 @@ teardown() {
 @test "hug b --help: shows help message" {
   run bash -c "hug b -h 2>&1"
   assert_success
-  assert_output --partial "hug b: Switch to a local branch"
+  assert_output --partial "hug b: Switch to a branch"
   assert_output --partial "USAGE:"
   assert_output --partial "gum filter"
 }
