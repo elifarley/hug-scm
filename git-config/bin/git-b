@@ -24,15 +24,15 @@ DESCRIPTION:
   exist locally but exists on a remote (e.g., origin/feature), automatically
   creates a local tracking branch and switches to it.
   
-  If no arguments are given, displays an interactive menu of local branches.
+  If no branch argument is given and --remote isn't given, displays an interactive menu of local branches.
   Each entry shows: branch name (short hash) [upstream tracking info], followed by the commit subject.
   The current branch is highlighted in green and marked with *.
   
-  With the -r/--remote flag (no branch argument), shows only remote branches
+  If no branch argument is given and -r/--remote flag is given, shows only remote branches
   in the interactive menu. Selecting a remote branch creates a local tracking
   branch and switches to it.
   
-  With the -R/--refresh flag (no branch argument), shows only remote branches
+  With the -R/--refresh flag, shows only remote branches
   in the interactive menu after running 'git fetch --all --prune' to refresh.
   
   For repositories with 10 or more branches, uses gum filter (if installed) for
