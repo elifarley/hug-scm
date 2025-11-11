@@ -9,6 +9,8 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 | Command | Memory Hook | Summary |
 | --- | --- | --- |
 | `hug b` | **B**ranch checkout | Switch to an existing branch or pick interactively |
+| `hug b -r` | **B**ranch checkout **R**emote | Interactive menu of remote branches only; create tracking on select |
+| `hug b -R` | **B**ranch **R**efresh remotes | As above, but fetch/prune remotes first |
 | `hug bl` | **B**ranch **L**ist | List local branches |
 | `hug bla` | **B**ranch **L**ist **A**ll | List local and remote branches |
 | `hug blr` | **B**ranch **L**ist **R**emote | List remote branches only |
@@ -32,14 +34,26 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 ## Listing Branches
 
 ### `hug b [branch]`
-- **Description**: Switch (checkout) to an existing local branch. If no branch is specified, shows an interactive menu of local branches for selection.
+- **Description**: Switch (checkout) to an existing local branch. If no branch is specified, shows an interactive menu of local branches for selection. If the specified branch doesn't exist locally, `hug b` automatically searches for a matching remote branch (e.g., `origin/branch-name`) and creates a local tracking branch. If no match is found anywhere, it errors out safely.
+- **Options**:
+  - `-r, --remote`: Display an interactive menu of *only* remote branches. Selecting one creates and switches to a local tracking branch. Use this when you want to discover and pull in remote work without listing locals first. Requires no branch argument.
+  - `-R, --refresh`: Like `--remote`, but first fetches branch data from the remote to ensure up-to-date information. Ideal before switching in shared repos; if fetch fails (e.g., network issues), it warns and uses cached data.
+- **Interactive Selection Behavior**: The menu lists branches as: *branch-name* (*short-hash*) [upstream info, e.g., ahead/behind counts], followed by the commit subject line. The current branch is highlighted in green with an asterisk (*). By default, shows local branches. With `-r` or `-R`, shows remotes only (with remote prefix in cyan brackets, e.g., [origin/main]). For repos with 10+ branches, leverages `gum filter` (install via [charmbracelet/gum](https://github.com/charmbracelet/gum)) for searchable, multi-select filtering. Otherwise, falls back to a simple numbered list for quick picks.
 - **Example**:
   ```shell
-  hug b main                 # Switch to main branch
-  hug b                      # Interactive menu to select branch
-  hug b feature/new-ui       # Switch to feature branch
+  hug b main                 # Switch to local 'main' (or create tracking from remote if missing)
+  hug b feature/new-ui       # Switch to local; if absent, auto-create from origin/feature/new-ui
+  hug b origin/hotfix        # Explicitly create local 'hotfix' tracking origin/hotfix
+  hug b                      # Interactive local menu (searchable with gum if many branches)
+  hug b -r                   # Interactive remote-only menu; select to create/switch local tracking
+  hug b -R                   # As above, but fetches fresh remotes first
   ```
-- **Safety**: Interactive mode prevents accidental switches. Always checks if you're in a Git repo.
+- **Examples assume a standard `origin` remote; works with other remotes via Git config.**
+- **Safety**: Interactive mode prevents accidental switches. Always checks if you're in a Git repo. Prevents stale switches by optionally refreshing remotes (`-R`). Interactive mode avoids direct errors—e.g., no branches? Exits with a clear message. Fetch warnings ensure you're aware of potential outdated data.
+- **Use Cases**:
+  - Quick remote onboarding: `hug b -r` to browse and switch to a teammate's feature branch.
+  - Safe experimentation: Use `-R` before switching in a team repo to avoid missing upstream changes.
+  - Debugging history: Switch to a remote tag-like branch without manual setup.
 - ![hug b example](img/hug-b.png)
 - After typing `perform`:
 - ![hug b example with "perform" search term](img/hug-b-perform.png)
@@ -270,5 +284,6 @@ These commands help inspect which branches relate to specific commits or states.
 - Queries like `bwc` and `bwm` are useful for cleanup before `bdel`.
 - Commands like `hug rb` automatically create backup branches in the `hug-backups/` namespace. Use `hug brestore` to restore them if needed.
 - Backup branches follow the naming convention `hug-backups/YYYY-MM/DD-HHMM.original-name`, making them easy to identify and clean up.
+- Pair `hug b -R` with `hug sl` (status) post-switch to verify sync. For detailed lists before interactive, use `hug blr` (remotes) or `hug bll` (locals with tracking).
 
 See [Status & Staging](status-staging) for checking changes after branching operations.
