@@ -37,7 +37,7 @@ jobs:
         run: make vhs-deps-install
 
       - name: Install Optional Deps (Gum)
-        run: make optional-deps-install
+        run: make optional-deps-install optional-deps-check
 
       - name: Regenerate VHS images
         run: |
