@@ -363,6 +363,12 @@
   #  BRANCH NAVIGATION (most common → shortest)
   # ═══════════════════════════════════════════════════════════════════
 
+  # Switch to remote branch
+  br = b -r
+
+  # Fetch, then switch to remote branch
+  bR = b -R
+
   # Go back to previous branch (like 'cd -')
   # Usage: hug bs
   bs = switch -
@@ -389,8 +395,8 @@
   bcp = bc --no-switch --point-to
 
   # Rename current branch
-  # Usage: hug br <new-name>
-  br = branch -m
+  # Usage: hug bmv <new-name>
+  bmv = branch -m
 
   # ═══════════════════════════════════════════════════════════════════
   #  BRANCH DELETION

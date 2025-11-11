@@ -40,8 +40,14 @@ hug blr  # **B**ranch **L**ist **R**emote
 # Create and switch
 hug bc feature-branch  # **B**ranch **C**reate
 
+# Copy a branch (create snapshot without switching)
+hug bcp main                  # **B**ranch **CP** (auto-generates main.copy.YYYYMMDD-HHMM from main's HEAD)
+hug bcp feat-1 backup-feat    # Explicit name for the copy
+
 # Switch to existing (interactive menu)
 hug b    # **B**ranch
+hug br   # **B**ranch **R**emote (interactive menu of remotes only)
+hug bR   # **B**ranch **R**efreshed remotes (fetch first, then remote menu)
 
 # Merge (squash, no commit)
 hug m feature-branch  # **M**erge

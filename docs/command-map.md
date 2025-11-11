@@ -18,7 +18,7 @@ This map provides a high-level overview of Hug's command families, grouped by pr
 | `w*` | Working Directory | Manage local changes: discard, clean, restore, or park/unpark temp work. Great for cleanup. | `hug w discard <file>` (**W**orking dir **Discard**), `hug w zap-all` (**Zap** **All** – full reset), `hug wip "<msg>"` (**W**ork **I**n **P**rogress – park & switch back), `hug wips "<msg>"` (**W**ork **I**n **P**rogress **S**tay – park & stay), `hug w unwip` (**Un**park **WIP** – integrate WIP branch) |
 | `s*` | Status | View repo state: summaries, diffs, and stashes. Essential for daily checks. | `hug s` (**S**tatus), `hug sl` (**S**tatus + **L**ist), `hug sla` (**S**tatus + **L**ist **A**ll), `hug ss` (**S**tatus + **S**taged diff), `hug su` (**S**tatus + **U**nstaged diff)                                                                                                                            |
 | `a*` | Staging/Add | Stage changes for commit: tracked, all, or interactive. Pairs with `s*`. | `hug a <file>` (**A**dd tracked), `hug aa` (**A**dd **A**ll), `hug ap` (**A**dd + **P**atch – interactive)                                                                                                                                                                                                       |
-| `b*` | Branching | Create, switch, list, delete, and pull branches. Core for feature isolation and sync. | `hug b <name>` (**B**ranch switch), `hug bc <name>` (**B**ranch **C**reate), `hug bl` (**B**ranch **L**ist), `hug bpull` (**B**ranch **Pull** – safe ff-only), `hug bpullr` (**B**ranch **Pull** **R**ebase)                                                                                                     |
+| `b*` | Branching | Create, switch, list, delete, and pull branches. Core for feature isolation and sync. | `hug b <name>` (**B**ranch switch), `hug br` (**B**ranch **R**emote switch), `hug bcp <src> [dest]` (**B**ranch **CP** – copy without switching), `hug bc <name>` (**B**ranch **C**reate), `hug bl` (**B**ranch **L**ist), `hug bpull` (**B**ranch **Pull** – safe ff-only), `hug bpullr` (**B**ranch **Pull** **R**ebase)                                                                                                     |
 | `c*` | Commits | Create and amend commits. Focus on atomic, meaningful snapshots. | `hug c "<msg>"` (**C**ommit), `hug caa "<msg>"` (**C**ommit **A**dd **A**ll), `hug cm "<msg>"` (**C**ommit **M**odify – amend), `hug ccp <commit>` (**C**ommit **C**o**P**y – cherry-pick), `hug cmv` (**C**ommit **M**o**V**e)                                                                                                                                          |
 | `l*` | Logging | Search and view history: messages, code, authors, files. For debugging timelines. | `hug l` (**L**og), `hug ll` (**L**og **L**ong), `hug lf "<term>"` (**L**og **F**ilter – Find commit messages), `hug lc "<term>"` (**L**og **C**ode search), `hug llf <file>` (**L**og **L**ookup **F**ile), `hug lol` (**L**og **O**utgoing **L**ong)                                                            |
 | `f*` | File Inspection | Analyze file history: blame, contributors, origin. Ownership and evolution insights. | `hug fblame <file>` (**F**ile **B**lame), `hug fcon <file>` (**F**ile **CON**tributors), `hug fa <file>` (**F**ile **A**uthor counts), `hug fborn <file>` (**F**ile **B**orn)                                                                                                                                    |
@@ -74,12 +74,15 @@ Hug Commands
 │   └── untrack      # Stop tracking
 ├── b* (Branches: Manage Flow)
 │   ├── b            # Switch (interactive menu)
+│   ├── br           # Branch switch remote (alias for b -r)
+│   ├── bR           # Branch switch remote refreshed (alias for b -R)
+│   ├── bcp          # Branch Copy (alias: bc --no-switch --point-to)
 │   ├── bc           # Create & switch
 │   ├── bl           # Branch List local
 │   ├── bla          # Branch List All
 │   ├── blr          # Branch List Remote
 │   ├── bll          # Branch List Long (detailed)
-│   ├── br           # Branch Rename
+│   ├── bmv          # Branch Rename (alias for branch -m)
 │   ├── bdel         # Branch Delete safe
 │   ├── bdelf        # Branch Delete force
 │   ├── bdelr        # Branch Delete remote

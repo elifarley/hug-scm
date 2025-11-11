@@ -9,15 +9,16 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 | Command | Memory Hook | Summary |
 | --- | --- | --- |
 | `hug b` | **B**ranch checkout | Switch to an existing branch or pick interactively |
-| `hug b -r` | **B**ranch checkout **R**emote | Interactive menu of remote branches only; create tracking on select |
-| `hug b -R` | **B**ranch **R**efresh remotes | As above, but fetch/prune remotes first |
+| `hug br` | **B**ranch **R**emote | Alias for `hug b -r`: Interactive menu of remote branches only; create tracking on select |
+| `hug bR` | **B**ranch **R**efresh remotes | Alias for `hug b -R`: As above, but fetch/prune remotes first |
 | `hug bl` | **B**ranch **L**ist | List local branches |
 | `hug bla` | **B**ranch **L**ist **A**ll | List local and remote branches |
 | `hug blr` | **B**ranch **L**ist **R**emote | List remote branches only |
 | `hug bll` | **B**ranch **L**ist **L**ong | Detailed local branch list with tracking info |
+| `hug bcp <source> [dest]` | **B**ranch **CP** (copy) | Create a copy of a branch or commitish without switching; auto-names if unspecified |
 | `hug bc` | **B**ranch **C**reate | Create a new branch and switch to it |
 | `hug bc --no-switch` | **B**ranch **C**reate **no-switch** | Create a new branch without switching to it |
-| `hug br` | **B**ranch **R**ename | Rename the current branch |
+| `hug bmv` | **B**ranch **MV** (move) | Rename the current branch |
 | `hug brestore` | **B**ranch **RESTORE** | Restore a branch from a backup |
 | `hug bdel` | **B**ranch **DEL**ete | Delete branches interactively or by name |
 | `hug bdel-backup` | **B**ranch **DEL**ete **BACKUP** | Delete backup branches with filters |
@@ -38,6 +39,11 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 - **Options**:
   - `-r, --remote`: Display an interactive menu of *only* remote branches. Selecting one creates and switches to a local tracking branch. Use this when you want to discover and pull in remote work without listing locals first. Requires no branch argument.
   - `-R, --refresh`: Like `--remote`, but first fetches branch data from the remote to ensure up-to-date information. Ideal before switching in shared repos; if fetch fails (e.g., network issues), it warns and uses cached data.
+- **Aliases**:
+  - `hug br`: Equivalent to `hug b -r` (remote branches menu).
+  - `hug bR`: Equivalent to `hug b -R` (refreshed remote branches menu).
+
+- **Interactive Selection Behavior**: The menu lists branches as: *branch-name* (*short-hash*) [upstream info, e.g., ahead/behind counts], followed by the commit subject line. The current branch is highlighted in green with an asterisk (*). By default, shows local branches. With `-r` or `-R`, shows remotes only (with remote prefix in cyan brackets, e.g., [origin/main]). For repos with 10+ branches, leverages `gum filter` (install via [charmbracelet/gum](https://github.com/charmbracelet/gum)) for searchable, multi-select filtering. Otherwise, falls back to a simple numbered list for quick picks.
 - **Interactive Selection Behavior**: The menu lists branches as: *branch-name* (*short-hash*) [upstream info, e.g., ahead/behind counts], followed by the commit subject line. The current branch is highlighted in green with an asterisk (*). By default, shows local branches. With `-r` or `-R`, shows remotes only (with remote prefix in cyan brackets, e.g., [origin/main]). For repos with 10+ branches, leverages `gum filter` (install via [charmbracelet/gum](https://github.com/charmbracelet/gum)) for searchable, multi-select filtering. Otherwise, falls back to a simple numbered list for quick picks.
 - **Example**:
   ```shell
@@ -106,6 +112,8 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   - If target is a branch: `<branch>.copy.<iso-datetime>`
   - If target is not a branch: `<target>.branch.<iso-datetime>`
   - ISO datetime format: YYYYMMDD-HHMM (e.g., 20251109-1430)
+- **Aliases and Variants**:
+  - `hug bcp <source> [dest]` is a convenient alias for `hug bc --no-switch --point-to <source> [dest]`, ideal for creating branch snapshots (e.g., **B**ranch **CP** for copy). It leverages the same auto-naming but keeps you on the current branch to avoid workflow interruption. Prefer `bcp` for quick copies; use full `bc` flags for advanced control. Cross-references `hug ccp` for commit-level copies.
 - **Examples**:
   ```shell
   hug bc new-feature                      # Create branch from current HEAD
@@ -115,6 +123,11 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   hug bc my-feature --point-to abc123     # Flag can come after branch name
   hug bc --no-switch snapshot-branch      # Create without switching
   hug bc --no-switch --point-to v1.0.0    # Auto-generate and create without switching
+
+  # bcp-specific examples
+  hug bcp origin/release/v1.0 hotfix-v1.0 # Copy remote branch explicitly
+  hug bcp HEAD~3 debug-branch             # Copy from 3 commits back
+  hug bcp main                            # Auto-generate: main.copy.20251109-1430 (no switch)
   ```
 - **Use Cases**:
   - **From a tag**: Quickly create a branch to investigate or patch a specific release
@@ -122,13 +135,14 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   - **From another branch**: Create a snapshot copy of a branch's current state
   - **Experimentation**: Auto-generated names let you quickly create exploratory branches without thinking of names
   - **Backups/Snapshots**: Use `--no-switch` to create a branch reference without disrupting current work
-- **Safety**: Non-destructive; creates from specified point or current HEAD.
+  - **Before rebasing a shared branch**: Copy it with `hug bcp shared-main my-local-copy` to preserve the original state
+- **Safety**: Non-destructive; creates from specified point or current HEAD. Prompts if target name exists. For copies via `bcp`, ensures uniqueness by appending seconds to timestamps if needed.
 
-### `hug br <new-name>`
-- **Description**: Rename the current branch to a new name.
+### `hug bmv <new-name>`
+- **Description**: Rename the current branch to a new name (alias for `git branch -m`).
 - **Example**:
   ```shell
-  hug br updated-feature  # Rename current branch
+  hug bmv updated-feature  # Rename current branch
   ```
 - **Safety**: Prompts for confirmation if the new name exists.
 
