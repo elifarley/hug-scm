@@ -167,7 +167,7 @@ run_tests() {
 }
 
 # Show usage
-show_usage() {
+show_help() {
   cat <<EOF
 Usage: $0 [OPTIONS] [TEST_PATH]
 
@@ -210,7 +210,7 @@ main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)
-        show_usage
+        show_help
         exit 0
         ;;
       -f|--filter)
@@ -244,7 +244,7 @@ main() {
         ;;
       -*)
         echo -e "${RED}Unknown option: $1${NC}"
-        show_usage
+        show_help
         exit 1
         ;;
       *)

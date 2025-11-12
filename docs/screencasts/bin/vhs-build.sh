@@ -265,7 +265,7 @@ build_parallel() {
 # Argument Parsing
 #==============================================================================
 
-show_usage() {
+show_help() {
     sed -n '2,/^#==/p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
     exit 0
 }
@@ -278,7 +278,7 @@ parse_args() {
             --parallel|-p)    PARALLEL=true; shift ;;
             --check|-c)       CHECK_ONLY=true; shift ;;
             --install-deps|-i) INSTALL_DEPS=true; shift ;;
-            --help|-h)        show_usage ;;
+            --help|-h)        show_help ;;
             -*)               error "Unknown option: $1\nUse --help for usage" ;;
             *)                break ;;
         esac

@@ -105,7 +105,7 @@ cleanup_failed_clone() {
 }
 
 # Show usage
-show_usage() {
+show_help() {
     cat <<EOF
 Usage: hug clone [--git|--hg] [--no-status] <url> [dir] [options]
 
@@ -145,7 +145,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help|-h)
-            show_usage
+            show_help
             exit 0
             ;;
         *)
@@ -157,7 +157,7 @@ done
 
 # Check if we have a URL
 if [[ ${#args[@]} -eq 0 ]]; then
-    show_usage
+    show_help
     exit 1
 fi
 

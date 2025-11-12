@@ -148,7 +148,7 @@ process_images() {
 # Argument Parsing
 #==============================================================================
 
-show_usage() {
+show_help() {
     sed -n '2,/^#==/p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
     exit 0
 }
@@ -157,7 +157,7 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             --dry-run|-n)     DRY_RUN=true; shift ;;
-            --help|-h)        show_usage ;;
+            --help|-h)        show_help ;;
             -*)               error "Unknown option: $1\nUse --help for usage" ;;
             *)                error "Unexpected argument: $1\nUse --help for usage" ;;
         esac

@@ -28,7 +28,7 @@ validate_vcs_available() {
 }
 
 # Show usage
-show_usage() {
+show_help() {
     cat <<EOF
 Usage: hug init [--git|--hg] [--no-status] [dir] [options]
 
@@ -69,7 +69,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help|-h)
-            show_usage
+            show_help
             exit 0
             ;;
         -*)
