@@ -188,7 +188,7 @@ install_vhs() {
 find_tape_files() {
     # Find all .tape files in screencasts directory and subdirectories
     # Exclude setup.tape files at any level
-    find "$SCREENCASTS_DIR" -name "*.tape" -type f ! -name "setup.tape" | sort
+    find "$SCREENCASTS_DIR" -name "*.tape" -type f ! -name "setup.tape"  ! -name "template.tape" | sort
 }
 
 build_single_tape() {
