@@ -12,23 +12,23 @@ show_help() {
 hug bc: Create a new branch and switch to it
 
 USAGE:
-    hug bc [<branch-name>] [--point-to <commitish>] [-h, --help]
-    hug bc [--point-to <commitish>] [<branch-name>] [-h, --help]
+    hug bc [<branch-name>] [-t, --point-to <commitish>] [--no-switch] [-h, --help]
+    hug bc [-t, --point-to <commitish>] [<branch-name>] [--no-switch] [-h, --help]
 
 ARGUMENTS:
-    <branch-name>      Name for the new branch (optional with --point-to)
+    <branch-name>      Name for the new branch (optional with -t/--point-to)
 
 OPTIONS:
-    --point-to <commitish>   Create branch pointing to a specific commit, tag, or branch
-                             If specified without a branch name, generates one automatically
-    --no-switch              Create branch without switching to it
-    -h, --help               Show this help
+    -t, --point-to <commitish>   Create branch pointing to a specific commit, tag, or branch
+                                 If specified without a branch name, generates one automatically
+    --no-switch                  Create branch without switching to it
+    -h, --help                   Show this help
 
 DESCRIPTION:
     Creates a new branch and switches to it. By default, creates from the current HEAD.
     
-    With --point-to, you can create a branch from any commit, tag, or branch.
-    When --point-to is used without a branch name, automatically generates a name:
+    With -t/--point-to, you can create a branch from any commit, tag, or branch.
+    When -t/--point-to is used without a branch name, automatically generates a name:
     - If target is a branch: <branch>.copy.<iso-datetime>
     - If target is not a branch: <target>.branch.<iso-datetime>
     
@@ -36,12 +36,12 @@ DESCRIPTION:
 
 EXAMPLES:
     hug bc new-feature                      # Create branch from current HEAD
-    hug bc --point-to abc123 my-feature     # Create branch from commit abc123
-    hug bc --point-to v1.0.0                # Auto-generate name from tag
-    hug bc --point-to main                  # Auto-generate name from branch
-    hug bc my-feature --point-to abc123     # Flag can come after branch name
+    hug bc -t abc123 my-feature             # Create branch from commit abc123
+    hug bc -t v1.0.0                        # Auto-generate name from tag
+    hug bc -t main                          # Auto-generate name from branch
+    hug bc my-feature -t abc123             # Flag can come after branch name
     hug bc --no-switch backup-branch        # Create without switching
-    hug bc --no-switch --point-to v1.0.0    # Auto-generate and create without switching
+    hug bc --no-switch -t v1.0.0            # Auto-generate and create without switching
 
 SEE ALSO:
     hug b      Switch to an existing branch
@@ -53,26 +53,37 @@ FURTHER READING:
 EOF
 }
 
-# Check for help flag first
-for arg in "$@"; do
-    if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
-        show_help
-        exit 0
-    fi
-done
-
 check_git_repo
 
-# Parse arguments
+# Parse arguments using getopt
+set +e  # Temporarily disable exit on error to capture getopt failure
+PARSED=$(getopt --options ht: --longoptions help,point-to:,no-switch --name "hug bc" -- "$@" 2>&1)
+getopt_status=$?
+set -e  # Re-enable exit on error
+
+if [ $getopt_status -ne 0 ]; then
+  # getopt failed - print the error message if available
+  if [ -n "$PARSED" ]; then
+    echo "$PARSED" >&2
+  fi
+  exit 1
+fi
+
+eval set -- "$PARSED"
+
+# Initialize variables
 branch_name=""
 point_to=""
 no_switch=false
-while [[ $# -gt 0 ]]; do
+
+# Process options
+while true; do
     case "$1" in
-        --point-to)
-            if [[ $# -lt 2 ]]; then
-                error "--point-to requires a commitish argument"
-            fi
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -t|--point-to)
             point_to="$2"
             shift 2
             ;;
@@ -80,19 +91,22 @@ while [[ $# -gt 0 ]]; do
             no_switch=true
             shift
             ;;
-        -*)
-            error "Unknown option: $1. See 'hug bc --help'."
+        --)
+            shift
+            break
             ;;
         *)
-            if [[ -z "$branch_name" ]]; then
-                branch_name="$1"
-            else
-                error "Too many arguments. Expected one branch name. See 'hug bc --help'."
-            fi
-            shift
+            error "Internal error in option parsing"
             ;;
     esac
 done
+
+# Collect branch name from remaining arguments
+if [[ $# -gt 1 ]]; then
+    error "Too many arguments. Expected one branch name. See 'hug bc --help'."
+elif [[ $# -eq 1 ]]; then
+    branch_name="$1"
+fi
 
 # If no branch name and no point-to, error
 if [[ -z "$branch_name" && -z "$point_to" ]]; then

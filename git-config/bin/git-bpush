@@ -129,13 +129,28 @@ if [ -z "$branch" ]; then
   error "Cannot determine the current branch (detached HEAD?)."
 fi
 
+# Parse arguments using getopt
+set +e  # Temporarily disable exit on error to capture getopt failure
+PARSED=$(getopt --options huft --longoptions help,update,force,unsafe,track --name "hug bpush" -- "$@" 2>&1)
+getopt_status=$?
+set -e  # Re-enable exit on error
+
+if [ $getopt_status -ne 0 ]; then
+  # getopt failed - print the error message if available
+  if [ -n "$PARSED" ]; then
+    echo "$PARSED" >&2
+  fi
+  exit 1
+fi
+
+eval set -- "$PARSED"
+
 update=false
 force_safe=false
 force_unsafe=false
 track=false
-positional_args=()
 
-while (($#)); do
+while true; do
   case "$1" in
     -h|--help)
       show_help
@@ -143,39 +158,33 @@ while (($#)); do
       ;;
     -u|--update)
       update=true
+      shift
       ;;
     -f|--force)
       force_safe=true
+      shift
       ;;
     --unsafe)
       force_unsafe=true
+      shift
       ;;
     -t|--track)
       track=true
+      shift
       ;;
     --)
       shift
-      while (($#)); do
-        positional_args+=("$1")
-        shift
-      done
       break
       ;;
-    -*)
-      usage_error "Unknown option '$1'."
-      ;;
     *)
-      positional_args+=("$1")
+      error "Internal error in option parsing"
       ;;
   esac
-  shift || break
 done
 
 if $force_safe && $force_unsafe; then
   usage_error "Cannot specify both --force and --unsafe."
 fi
-
-set -- "${positional_args[@]}"
 
 remote="origin"
 is_url_arg=false

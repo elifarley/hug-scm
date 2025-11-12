@@ -226,7 +226,7 @@ teardown() {
 @test "hug bc --point-to: requires a commitish argument" {
   run hug bc --point-to
   assert_failure
-  assert_output --partial "--point-to requires a commitish argument"
+  assert_output --partial "requires an argument"
 }
 
 @test "hug bc --point-to <invalid>: fails with invalid commitish" {
@@ -320,7 +320,7 @@ teardown() {
 @test "hug bc: unknown option fails" {
   run hug bc --unknown-flag my-branch
   assert_failure
-  assert_output --partial "Unknown option: --unknown-flag"
+  assert_output --partial "unrecognized option"
 }
 
 @test "hug bc: works with branch names containing special characters" {
