@@ -51,7 +51,7 @@ jobs:
         run: make test-check optional-deps-check
           
       - name: Run ${{ matrix.test_type }} tests
-        run: make test-${{ matrix.test_type }}
+        run: make test-${{ matrix.test_type }} SHOW_FAILING=1
 
       - name: Run all tests with verbose output
         if: failure()
