@@ -128,6 +128,10 @@ make test-unit TEST_FILE=test_head.bats TEST_FILTER="edge case"
 
 # Full paths also work:
 make test-unit TEST_FILE=tests/unit/test_head.bats
+
+# Show only failing tests (hides passing test output):
+make test-unit SHOW_FAILING=1
+make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
 ```
 
 **Running ALL Tests or a category:**
@@ -137,6 +141,10 @@ make test                      # Run all tests (recommended)
 make test-lib                  # Run unit tests for library files only
 make test-unit                 # Run unit tests for Hug commands only
 make test-integration          # Run integration tests only
+
+# Show only failing tests for faster identification of failures:
+make test SHOW_FAILING=1
+make test-unit SHOW_FAILING=1
 ```
 
 **Writing Tests:**

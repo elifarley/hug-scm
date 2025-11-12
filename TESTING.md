@@ -144,6 +144,10 @@ make test-lib
 
 # Run with verbose output
 make test-verbose
+
+# Show only failing tests (filters out passing tests)
+make test SHOW_FAILING=1
+make test-unit SHOW_FAILING=1
 ```
 
 #### Running Specific Tests via Makefile
@@ -162,6 +166,10 @@ make test-unit TEST_FILE=test_head.bats TEST_FILTER="edge case"
 # Full paths also work
 make test-unit TEST_FILE=tests/unit/test_head.bats
 
+# Show only failing tests by setting SHOW_FAILING=1
+make test-unit SHOW_FAILING=1
+make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
+
 # Same pattern for other categories
 make test-integration TEST_FILE=test_workflows.bats  # Auto-prepends tests/integration/
 make test-lib TEST_FILTER="hug-fs is_symlink"
@@ -172,6 +180,7 @@ make test TEST_FILE=test_head.bats  # Auto-prepends tests/ for general tests
 # - TEST_FILE overrides the category path; short names (filenames only) are auto-completed with category dir.
 # - Full relative paths (e.g., tests/unit/test_head.bats) are used as-is.
 # - TEST_FILTER uses run-tests.sh's -f (partial match on test names); combine with TEST_FILE for precision.
+# - SHOW_FAILING=1 filters output to show only failing tests, hiding passing test lines.
 # - For advanced args (e.g., -j 4, -v), invoke run-tests.sh directly.
 # - Invalid paths/files will error via run-tests.sh.
 ```
@@ -196,6 +205,10 @@ Or use the test script directly:
 
 # Run tests in parallel
 ./tests/run-tests.sh -j 4
+
+# Show only failing tests
+./tests/run-tests.sh -F
+./tests/run-tests.sh --show-failing-only
 ```
 
 ## Test Structure
