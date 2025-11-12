@@ -1,4 +1,4 @@
-Set Height 100
+Set Height 170
 Source setup.tape
 
 Type "hug blr # (B)ranch (L)ist (R)emote - list remote branches" Enter
