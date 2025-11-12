@@ -296,7 +296,7 @@ main() {
     fi
 
     # 8. Validate commit
-    validate_commit "$commit"
+    validate_commitish "--target" "$commit"
 
     # 9. Check if user wants interactive file selection via --
     if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
