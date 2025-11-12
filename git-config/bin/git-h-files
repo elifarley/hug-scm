@@ -136,4 +136,4 @@ else
   tip "These $count files and their stats would be affected by moving HEAD to $start_point (e.g., via 'h back' or 'h rewind')."
 fi
 
-git diff --stat "$range"
+exec git diff --stat "$range"

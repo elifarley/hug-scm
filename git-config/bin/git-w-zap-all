@@ -98,6 +98,4 @@ if ! $force; then
 fi
 
 hug w wipe-all --force
-hug w purge-all --force -u -i
-
-exit 0
+exec hug w purge-all --force -u -i

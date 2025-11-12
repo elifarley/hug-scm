@@ -86,4 +86,4 @@ else
   git diff --cached "$@" -- "${GIT_PREFIX}$t"
   git diff --cached --stat "$@" -- "${GIT_PREFIX}$t"
 fi
-git s
+exec hug s

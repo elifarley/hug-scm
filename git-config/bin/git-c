@@ -61,4 +61,4 @@ fi
 info "Committing staged changes..."
 
 # Run git commit directly without capturing output to allow interactive editor
-git commit "$@"
+exec git commit "$@"

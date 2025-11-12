@@ -66,13 +66,10 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     exit 0
   fi
   
-  git add "${files[@]}"
-  exit 0
+  exec git add "${files[@]}"
 fi
 
 # Check if no arguments - stage all tracked modified files
-if [ $# -eq 0 ]; then
-  git add -u
-else
-  git add "$@"
-fi
+test $# -eq 0 && exec git add -u
+
+exec git add "$@"

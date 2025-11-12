@@ -183,19 +183,21 @@ if [ "$remote_only" = true ]; then
     error "Failed to create tracking branch."
     exit 1
   fi
-else
-  # Show local branches (default behavior)
-  declare -a branches=() hashes=() subjects=() tracks=()
-  max_len=""
-  current_branch=""
-  selected_branch=""
-  
-  if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects "true"; then
-    error "No local branches found."
-    exit 1
-  fi
-  
-  # Print interactive menu and get selection
-  print_interactive_branch_menu selected_branch "$current_branch" "$max_len" hashes branches tracks subjects
-  git switch "$selected_branch"
+fi # remote_only
+
+# If not remote_only:
+
+# Show local branches (default behavior)
+declare -a branches=() hashes=() subjects=() tracks=()
+max_len=""
+current_branch=""
+selected_branch=""
+
+if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects "true"; then
+  error "No local branches found."
+  exit 1
 fi
+
+# Print interactive menu and get selection
+print_interactive_branch_menu selected_branch "$current_branch" "$max_len" hashes branches tracks subjects
+exec git switch "$selected_branch"

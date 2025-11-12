@@ -158,14 +158,11 @@ if [[ -n "$point_to" ]]; then
     if [[ "$no_switch" == true ]]; then
         git branch "$branch_name" "$point_to"
         info "Created branch '$branch_name' pointing to $point_to (use 'hug b $branch_name' to switch)"
-    else
-        git switch -c "$branch_name" "$point_to"
+        exit
     fi
-else
-    if [[ "$no_switch" == true ]]; then
-        git branch "$branch_name"
-        info "Created branch '$branch_name' from HEAD (use 'hug b $branch_name' to switch)"
-    else
-        git switch -c "$branch_name"
-    fi
-fi
+    exec git switch -c "$branch_name" "$point_to"
+
+test "$no_switch" != true &&  exec git switch -c "$branch_name"
+
+git branch "$branch_name"
+info "Created branch '$branch_name' from HEAD (use 'hug b $branch_name' to switch)"

@@ -309,4 +309,4 @@ else
   printf "Pushing branch '%s' to remote '%s'%s...\n" "$branch" "$remote" "$tracking_note"
 fi
 push_args+=("$remote" "$branch")
-git push "${push_args[@]}"
+exec git push "${push_args[@]}"

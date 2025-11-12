@@ -89,4 +89,4 @@ for arg in "$@"; do
 done
 
 printf "Copying %s onto current branch...\n" "$*"
-git cherry-pick -x "${git_options[@]}" "$@"
+exec git cherry-pick -x "${git_options[@]}" "$@"

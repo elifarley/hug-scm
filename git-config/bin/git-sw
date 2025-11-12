@@ -86,4 +86,4 @@ else
   git diff "$@" HEAD -- "${GIT_PREFIX}$t"
   git diff "$@" HEAD --stat -- "${GIT_PREFIX}$t"
 fi
-git s
+exec hug s

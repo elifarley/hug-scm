@@ -36,4 +36,4 @@ if list_files_with_status "${list_opts[@]}" 2>/dev/null; then
 fi
 
 # Show summary line
-git s
+exec hug s
