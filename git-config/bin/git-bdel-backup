@@ -107,7 +107,7 @@ while true; do
       ;;
     -k|--keep)
       if ! [[ "$2" =~ ^[0-9]+$ ]]; then
-        error "--keep requires a positive integer, got: $2"
+        error "Option -k/--keep requires a positive integer argument, got: $2"
       fi
       keep_count="$2"
       shift 2
@@ -333,9 +333,7 @@ hug_bdel_backup() {
     
     # Validate all branches exist
     for branch in "${backup_branches_to_delete[@]}"; do
-      if ! git rev-parse --verify "$branch" >/dev/null 2>&1; then
-        error "Backup branch '$branch' does not exist."
-      fi
+      validate_commitish "bdel-backup argument" "$branch"
     done
     
     # Jump to deletion logic (skip interactive mode)

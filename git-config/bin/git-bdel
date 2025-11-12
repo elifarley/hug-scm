@@ -147,10 +147,7 @@ hug_bdel() {
       error "Cannot delete current branch '$current_branch'. Switch to another branch first."
     fi
     
-    # Validate that branch exists
-    if ! git rev-parse --verify "$branch" >/dev/null 2>&1; then
-      error "Branch '$branch' does not exist."
-    fi
+    validate_commitish "bdel argument" "$branch"
   done
   
   # Set dry_run default if not already set by parse_common_flags

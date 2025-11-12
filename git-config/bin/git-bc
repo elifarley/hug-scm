@@ -84,6 +84,7 @@ while true; do
             exit 0
             ;;
         -t|--point-to)
+            validate_commitish "-t/--point-to" "$2"
             point_to="$2"
             shift 2
             ;;
@@ -115,11 +116,6 @@ fi
 
 # If point-to is specified without a branch name, generate one
 if [[ -n "$point_to" && -z "$branch_name" ]]; then
-    # Verify the target exists
-    if ! git rev-parse --verify --quiet "$point_to" >/dev/null 2>&1; then
-        error "Invalid commitish: $point_to"
-    fi
-    
     # Check if point_to is a branch name
     is_branch=false
     if git show-ref --verify --quiet "refs/heads/$point_to" 2>/dev/null; then
@@ -159,10 +155,6 @@ fi
 
 # Create and switch to the branch
 if [[ -n "$point_to" ]]; then
-    # Verify the target exists
-    if ! git rev-parse --verify --quiet "$point_to" >/dev/null 2>&1; then
-        error "Invalid commitish: $point_to"
-    fi
     if [[ "$no_switch" == true ]]; then
         git branch "$branch_name" "$point_to"
         info "Created branch '$branch_name' pointing to $point_to (use 'hug b $branch_name' to switch)"

@@ -30,3 +30,14 @@ for module in hug-git-repo hug-git-state hug-git-files hug-git-discard hug-git-b
     # shellcheck source=/dev/null
     . "$HUG_LIB_DIR/$module" || { echo "Failed to load $module" >&2; return 1; }
 done
+
+validate_commitish() {
+    local opt="$1"
+    local commitish="$2"
+    if [[ -z "$commitish" ]]; then
+        error "$opt requires a non-empty commitish (e.g., branch name, tag, or commit hash)"
+    fi
+    if ! git rev-parse --verify --quiet "$commitish" >/dev/null 2>&1; then
+        error "Invalid commitish for $opt: $commitish (must be a valid branch, tag, or commit hash)"
+    fi
+}
