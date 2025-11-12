@@ -13,7 +13,7 @@ Set TypingSpeed 0ms
 
 # Setup: Start in demo-repo
 Hide
-Type "function fish_prompt ; printf '> '; end; cd /tmp/demo-repo && hug b main && clear" Enter
+Type "function fish_prompt ; printf '> '; end; cd /tmp/demo-repo && clear" Enter
 Sleep 400ms
 #Wait@800ms />$/
 Show
