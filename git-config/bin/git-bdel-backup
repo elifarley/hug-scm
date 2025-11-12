@@ -12,7 +12,7 @@ show_help() {
 hug bdel-backup: Delete backup branches with filtering options
 
 USAGE:
-    hug bdel-backup [<backup-branch>...] [--keep N] [--delete-older-than PATTERN] [--dry-run] [-f, --force] [--quiet] [-h, --help]
+    hug bdel-backup [<backup-branch>...] [--keep N] [--delete-older-than PATTERN] [--dry-run] [-f, --force] [-q, --quiet] [-h, --help]
 
 ARGUMENTS:
     <backup-branch>... One or more backup branch names to delete
@@ -27,7 +27,7 @@ OPTIONS:
                             Example: --delete-older-than 2024-11 deletes backups from Nov 2024 and earlier
     --dry-run               Preview the delete operation without applying changes
     -f, --force             Skip confirmation prompts
-    --quiet                 Suppress output (sets HUG_QUIET=T)
+    -q, --quiet             Suppress output (sets HUG_QUIET=T)
     -h, --help              Show this help
 
 DESCRIPTION:
@@ -59,22 +59,53 @@ SEE ALSO:
 EOF
 }
 
-# Parse custom flags
+# Parse all flags using getopt
 keep_count=""
 delete_older_than=""
 backup_branches_to_delete=()
 formatted_backups_to_delete=()  # Parallel array for display purposes
 
-# Parse common flags first
-eval "$(parse_common_flags "$@")"
+# Use getopt for parsing all options (common + custom)
+set +e  # Temporarily disable exit on error to capture getopt failure
+PARSED=$(getopt --options hfq --longoptions help,force,quiet,dry-run,keep:,delete-older-than: --name "hug bdel-backup" -- "$@" 2>&1)
+getopt_status=$?
+set -e  # Re-enable exit on error
 
-# Now parse remaining custom flags
-while [[ $# -gt 0 ]]; do
+if [ $getopt_status -ne 0 ]; then
+  # getopt failed - print the error message if available
+  if [ -n "$PARSED" ]; then
+    echo "$PARSED" >&2
+  fi
+  exit 1
+fi
+
+eval set -- "$PARSED"
+
+# Initialize common flag variables
+dry_run=false
+force=false
+
+# Process all options
+while true; do
   case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -f|--force)
+      force=true
+      export HUG_FORCE=true
+      shift
+      ;;
+    -q|--quiet)
+      export HUG_QUIET=T
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
     --keep)
-      if [[ -z "${2:-}" ]]; then
-        error "--keep requires a number argument"
-      fi
       if ! [[ "$2" =~ ^[0-9]+$ ]]; then
         error "--keep requires a positive integer, got: $2"
       fi
@@ -82,21 +113,21 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --delete-older-than)
-      if [[ -z "${2:-}" ]]; then
-        error "--delete-older-than requires a pattern argument"
-      fi
       delete_older_than="$2"
       shift 2
       ;;
-    -*)
-      error "Unknown option: $1. See 'hug bdel-backup --help'."
+    --)
+      shift
+      break
       ;;
     *)
-      backup_branches_to_delete+=("$1")
-      shift
+      error "Internal error in option parsing"
       ;;
   esac
 done
+
+# Collect remaining arguments (backup branch names)
+backup_branches_to_delete=("$@")
 
 check_git_repo
 

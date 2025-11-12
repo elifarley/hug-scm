@@ -3,13 +3,13 @@
 #
 # Shared argument parsing and validation helpers for hug commands.
 # Depends on: hug-output for consistent error reporting.
+# Requires: GNU getopt
 # Functions:
 #   - parse_common_flags: expand shared flags into shell assignments.
 #   - require_args: enforce minimum argument counts.
 #
 # Implementation:
-#   Uses GNU getopt for robust option parsing when available.
-#   Fallback to manual parsing if getopt is not available or not GNU version.
+#   Uses GNU getopt for robust option parsing (required dependency).
 
 ################################################################################
 # Command Pattern Helpers
@@ -47,147 +47,24 @@ parse_common_flags() {
     set -- "${@:1:$(($#-1))}"
   fi
   
-  # Check if GNU getopt is available
-  # GNU getopt exits with code 4 when called with --test
-  if getopt --test >/dev/null 2>&1; [ $? -eq 4 ]; then
-    # Use GNU getopt for enhanced parsing
-    local parsed
-    # Use -q to suppress getopt error messages, we'll handle them ourselves
-    parsed=$(getopt -q --options hfq --longoptions help,force,quiet,dry-run,browse-root --name "parse_common_flags" -- "$@" 2>&1)
-    local getopt_status=$?
-    
-    # If getopt failed (status 1 = error in parameters), fall back to manual parsing
-    # This allows commands to use additional options beyond common flags
-    if [ $getopt_status -ne 0 ]; then
-      # Fall back to manual parsing
-      local remaining_args=()
-      
-      while [[ $# -gt 0 ]]; do
-        case "$1" in
-          --dry-run)
-            echo "dry_run=true"
-            shift
-            ;;
-          -f|--force)
-            echo "force=true"
-            echo "export HUG_FORCE=true"
-            shift
-            ;;
-          -q|--quiet)
-            echo "export HUG_QUIET=T"
-            shift
-            ;;
-          --browse-root)
-            echo "browse_root=true"
-            browse_root_flag=true
-            shift
-            ;;
-          -h|--help)
-            echo "if declare -f show_help >/dev/null; then show_help; fi; exit 0"
-            shift
-            ;;
-          --)
-            shift
-            remaining_args+=("$@")
-            break
-            ;;
-          *)
-            remaining_args+=("$1")
-            shift
-            ;;
-        esac
-      done
-      
-      # Export interactive file selection flag if detected via '--' at end
-      if $interactive_file_selection; then
-        echo "export HUG_INTERACTIVE_FILE_SELECTION=true"
-      fi
-      
-      # --browse-root ALWAYS triggers interactive mode
-      if $browse_root_flag; then
-        echo "export HUG_INTERACTIVE_FILE_SELECTION=true"
-        # Error if paths are provided with --browse-root
-        if [ ${#remaining_args[@]} -gt 0 ]; then
-          echo "error '--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection.'"
-          echo "exit 1"
-        fi
-      fi
-      
-      # Always output set -- to properly update $@ in the caller
-      if [ ${#remaining_args[@]} -gt 0 ]; then
-        printf 'set -- '
-        printf '%q ' "${remaining_args[@]}"
-        printf '\n'
-      else
-        printf 'set --\n'
-      fi
-      return 0
-    fi
-    
-    eval set -- "$parsed"
-    
-    # Process parsed options
-    while true; do
-      case "$1" in
-        -h|--help)
-          echo "if declare -f show_help >/dev/null; then show_help; fi; exit 0"
-          shift
-          ;;
-        -f|--force)
-          echo "force=true"
-          echo "export HUG_FORCE=true"
-          shift
-          ;;
-        -q|--quiet)
-          echo "export HUG_QUIET=T"
-          shift
-          ;;
-        --dry-run)
-          echo "dry_run=true"
-          shift
-          ;;
-        --browse-root)
-          echo "browse_root=true"
-          browse_root_flag=true
-          shift
-          ;;
-        --)
-          shift
-          break
-          ;;
-        *)
-          echo "echo 'Internal error in parse_common_flags' >&2" >&2
-          echo "exit 1"
-          return 1
-          ;;
-      esac
-    done
-    
-    # Export interactive file selection flag if detected via '--' at end
-    if $interactive_file_selection; then
-      echo "export HUG_INTERACTIVE_FILE_SELECTION=true"
-    fi
-    
-    # --browse-root ALWAYS triggers interactive mode
-    if $browse_root_flag; then
-      echo "export HUG_INTERACTIVE_FILE_SELECTION=true"
-      # Error if paths are provided with --browse-root
-      if [ $# -gt 0 ]; then
-        echo "error '--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection.'"
-        echo "exit 1"
-      fi
-    fi
-    
-    # Output remaining arguments
-    if [ $# -gt 0 ]; then
-      printf 'set -- '
-      printf '%q ' "$@"
-      printf '\n'
-    else
-      printf 'set --\n'
-    fi
-  else
-    # Fallback to manual parsing (original implementation)
+  # Verify GNU getopt is available (required dependency)
+  if ! getopt --test >/dev/null 2>&1; [ $? -eq 4 ]; then
+    echo "echo 'Error: GNU getopt is required but not found. Please install util-linux package.' >&2" >&2
+    echo "exit 1"
+    return 1
+  fi
+  
+  # Use GNU getopt for enhanced parsing
+  local parsed
+  # Use -q to suppress getopt error messages, we'll handle them ourselves
+  parsed=$(getopt -q --options hfq --longoptions help,force,quiet,dry-run,browse-root --name "parse_common_flags" -- "$@" 2>&1)
+  local getopt_status=$?
+  
+  # If getopt failed (status 1 = error in parameters), it means unknown options
+  # This allows commands to use additional options beyond common flags
+  if [ $getopt_status -ne 0 ]; then
+    # For commands with additional options, they need to handle their own parsing
+    # Just pass through everything as remaining args
     local remaining_args=()
     
     while [[ $# -gt 0 ]]; do
@@ -249,6 +126,70 @@ parse_common_flags() {
     else
       printf 'set --\n'
     fi
+    return 0
+  fi
+  
+  eval set -- "$parsed"
+  
+  # Process parsed options
+  while true; do
+    case "$1" in
+      -h|--help)
+        echo "if declare -f show_help >/dev/null; then show_help; fi; exit 0"
+        shift
+        ;;
+      -f|--force)
+        echo "force=true"
+        echo "export HUG_FORCE=true"
+        shift
+        ;;
+      -q|--quiet)
+        echo "export HUG_QUIET=T"
+        shift
+        ;;
+      --dry-run)
+        echo "dry_run=true"
+        shift
+        ;;
+      --browse-root)
+        echo "browse_root=true"
+        browse_root_flag=true
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        echo "echo 'Internal error in parse_common_flags' >&2" >&2
+        echo "exit 1"
+        return 1
+        ;;
+    esac
+  done
+  
+  # Export interactive file selection flag if detected via '--' at end
+  if $interactive_file_selection; then
+    echo "export HUG_INTERACTIVE_FILE_SELECTION=true"
+  fi
+  
+  # --browse-root ALWAYS triggers interactive mode
+  if $browse_root_flag; then
+    echo "export HUG_INTERACTIVE_FILE_SELECTION=true"
+    # Error if paths are provided with --browse-root
+    if [ $# -gt 0 ]; then
+      echo "error '--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection.'"
+      echo "exit 1"
+    fi
+  fi
+  
+  # Output remaining arguments
+  if [ $# -gt 0 ]; then
+    printf 'set -- '
+    printf '%q ' "$@"
+    printf '\n'
+  else
+    printf 'set --\n'
   fi
 }
 

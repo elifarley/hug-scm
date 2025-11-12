@@ -28,21 +28,20 @@ Consistent output formatting and messaging for commands.
 
 ### hug-cli-flags
 
-Command-line flag parsing utilities using GNU getopt when available.
+Command-line flag parsing utilities using GNU getopt (required).
 
 **Features:**
-- Common flag parsing with GNU getopt support (`parse_common_flags`)
+- Common flag parsing with GNU getopt (`parse_common_flags`)
+  - **Requires GNU getopt** (util-linux package)
   - Supports combined short options (e.g., `-fq` for `--force --quiet`)
-  - Graceful fallback to manual parsing when getopt unavailable or unknown options present
+  - Graceful handling of commands with additional custom options
   - Recognized flags: `-f/--force`, `-q/--quiet`, `-h/--help`, `--dry-run`, `--browse-root`
   - Special handling for trailing `--` (interactive file selection)
 - Argument validation (`require_args`)
 - Flag conflict detection (`check_browse_root_no_paths`)
 
-**Implementation:**
-- Uses GNU getopt for enhanced option parsing when available
-- Falls back to manual parsing for compatibility and unknown option pass-through
-- Maintains backward compatibility with all existing commands
+**Requirements:**
+- GNU getopt (provided by util-linux package on most Linux distributions)
 
 ### hug-gum
 
