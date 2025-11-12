@@ -12,7 +12,7 @@ show_help() {
 hug bdel: Delete one or more local branches safely
 
 USAGE:
-    hug bdel [<branch>...] [--dry-run] [-f, --force] [--quiet] [-h, --help]
+    hug bdel [<branch>...] [--dry-run] [-f, --force] [-q, --quiet] [-h, --help]
 
 ARGUMENTS:
     <branch>...        One or more branch names to delete
@@ -21,7 +21,7 @@ ARGUMENTS:
 OPTIONS:
     --dry-run          Preview the delete operation without applying changes
     -f, --force        Skip confirmation prompts and force delete unmerged branches
-    --quiet            Suppress output (sets HUG_QUIET=T)
+    -q, --quiet        Suppress output (sets HUG_QUIET=T)
     -h, --help         Show this help
 
 DESCRIPTION:
@@ -52,7 +52,7 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (--dry-run, -f|--force, --quiet, -h|--help)
+# Parse common flags (--dry-run, -f|--force, -q|--quiet, -h|--help)
 eval "$(parse_common_flags "$@")"
 
 # Collect branch names
