@@ -153,7 +153,8 @@ hug_caa() {
   local staged_count=${#staged_files[@]}
 
   local change_count=$((unstaged_count + untracked_count + staged_count))
-  local has_deletions=$([[ $deletions_count -gt 0 ]])
+  local has_deletions=false
+  [[ $deletions_count -gt 0 ]] && has_deletions=true
 
   local needs_confirm=false
   if [[ $change_count -gt 10 ]] || $has_deletions; then
