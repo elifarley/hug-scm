@@ -48,7 +48,7 @@ parse_common_flags() {
   fi
   
   # Verify GNU getopt is available (required dependency)
-  if ! getopt --test >/dev/null 2>&1; [ $? -eq 4 ]; then
+  if ! { getopt --test >/dev/null 2>&1; [ $? -eq 4 ]; }; then
     echo "echo 'Error: GNU getopt is required but not found. Please install util-linux package.' >&2" >&2
     echo "exit 1"
     return 1
@@ -57,7 +57,7 @@ parse_common_flags() {
   # Use GNU getopt for enhanced parsing
   local parsed
   # Use -q to suppress getopt error messages, we'll handle them ourselves
-  parsed=$(getopt -q --options hfq --longoptions help,force,quiet,dry-run,browse-root --name "parse_common_flags" -- "$@" 2>&1)
+  parsed=$(getopt -q --options hfq --longoptions help,force,quiet,dry-run,browse-root --name "parse_common_flags" -- "$@")
   local getopt_status=$?
   
   # If getopt failed (status 1 = error in parameters), it means unknown options
@@ -161,7 +161,7 @@ parse_common_flags() {
         break
         ;;
       *)
-        echo "echo 'Internal error in parse_common_flags' >&2" >&2
+        echo "echo 'Internal error in parse_common_flags: unexpected argument \"$(printf %q "$1")\"' >&2" >&2
         echo "exit 1"
         return 1
         ;;
