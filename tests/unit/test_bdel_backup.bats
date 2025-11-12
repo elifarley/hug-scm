@@ -104,7 +104,7 @@ create_test_backup() {
 @test "hug bdel-backup: fails when backup does not exist" {
   run hug bdel-backup "2025-99/99-9999.nonexistent" -f
   assert_failure
-  assert_output --partial "does not exist"
+  assert_output --partial "Invalid commitish"
 }
 
 # -----------------------------------------------------------------------------

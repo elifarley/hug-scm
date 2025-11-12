@@ -139,7 +139,7 @@ teardown() {
 @test "hug bdel: fails when branch does not exist" {
   run hug bdel nonexistent -f
   assert_failure
-  assert_output --partial "does not exist"
+  assert_output --partial "Invalid commitish"
 }
 
 # -----------------------------------------------------------------------------

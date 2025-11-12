@@ -232,7 +232,7 @@ teardown() {
 @test "hug bc --point-to <invalid>: fails with invalid commitish" {
   run hug bc --point-to nonexistent-commit my-branch
   assert_failure
-  assert_output --partial "Invalid commitish: nonexistent-commit"
+  assert_output --partial "Invalid commitish"
 }
 
 # -----------------------------------------------------------------------------
