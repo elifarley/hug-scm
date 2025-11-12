@@ -127,7 +127,8 @@ activate_hug() {
 # Run tests
 run_tests() {
   local test_path="${1:-tests/}"
-  local extra_args=("${@:2}")
+  local show_failing_only="${2:-false}"
+  local extra_args=("${@:3}")
   
   # If test_path is relative and we're not in project root, make it absolute
   if [[ ! "$test_path" =~ ^/ ]]; then
@@ -155,7 +156,25 @@ run_tests() {
   echo -e "${GREEN}Running tests: $test_path${NC}"
   echo "----------------------------------------"
   
-  if bats --timing "${extra_args[@]}" $bats_files; then
+  local test_result
+  if [[ "$show_failing_only" == "true" ]]; then
+    # Filter output to show only lines that don't start with checkmarks (passing tests)
+    # This filters out lines matching the pattern: optional whitespace followed by ✓
+    # We need to capture the exit code from bats, not from grep
+    set +e  # Temporarily disable exit on error
+    local output
+    output=$(bats --timing "${extra_args[@]}" $bats_files 2>&1)
+    test_result=$?
+    set -e  # Re-enable exit on error
+    
+    # Filter and display the output - remove lines starting with ✓ or "ok "
+    echo "$output" | grep -v '^\s*✓' | grep -v '^ok '
+  else
+    bats --timing "${extra_args[@]}" $bats_files
+    test_result=$?
+  fi
+  
+  if [[ $test_result -eq 0 ]]; then
     echo ""
     echo -e "${GREEN}✓ All tests passed!${NC}"
     return 0
@@ -177,6 +196,8 @@ Options:
   -h, --help          Show this help message
   -f, --filter TEXT   Run only tests matching TEXT
   -j, --jobs N        Run tests in parallel with N jobs
+  -F, --show-failing-only
+                      Filter output to show only failing tests
   --unit              Run only unit tests
   --integration       Run only integration tests
   --lib               Run only library tests
@@ -189,6 +210,7 @@ Examples:
   $0 tests/unit/test_status_staging.bats  # Run specific test file
   $0 -f "hug s"                # Run tests matching "hug s"
   $0 -j 4                      # Run with 4 parallel jobs
+  $0 -F                        # Show only failing tests
   $0 --unit                    # Run only unit tests
   $0 --lib                     # Run only library tests
   $0 --check                   # Check prerequisites
@@ -204,6 +226,7 @@ main() {
   local jobs=""
   local check_only=false
   local install_only=false
+  local show_failing_only=false
   local extra_args=()
   
   # Parse arguments
@@ -220,6 +243,10 @@ main() {
       -j|--jobs)
         extra_args+=("--jobs" "$2")
         shift 2
+        ;;
+      -F|--show-failing-only)
+        show_failing_only=true
+        shift
         ;;
       --unit)
         test_path="tests/unit/"
@@ -280,7 +307,7 @@ main() {
   rm -rf "$temp_dir"
   
   # Run tests or only show test counts if `--check` present
-  (run_tests "$test_path" "${extra_args[@]}")
+  (run_tests "$test_path" "$show_failing_only" "${extra_args[@]}")
 
   if [[ "$check_only" == "true" ]]; then
     echo ""
