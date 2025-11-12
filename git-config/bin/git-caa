@@ -1,14 +1,143 @@
 #!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+# shellcheck source=../lib/hug-common
+. "$CMD_BASE/../lib/hug-common"
+# shellcheck source=../lib/hug-git-kit
+. "$CMD_BASE/../lib/hug-git-kit"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
-# Commit tracked + untracked + deletions
-test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
-  printf 'caa: Commit tracked + untracked + deletions.\n'
-  printf 'See also:\n'
-  printf '  hug c\n'
-  printf '  hug ca\n'
-  exit 1
+show_help() {
+    cat << EOF
+hug caa: Commit all changes (tracked + untracked + deletions).
+
+USAGE:
+    hug caa [COMMIT_OPTIONS] [--dry-run] [-f, --force] [--quiet] [-h, --help]
+
+ARGUMENTS:
+    COMMIT_OPTIONS    Options passed directly to 'git commit' (e.g., -m "message", -v)
+
+OPTIONS:
+    --dry-run         Preview the staging and commit operation without applying changes
+    -f, --force       Skip confirmation prompts (sets HUG_FORCE=true)
+    --quiet           Suppress non-essential output (sets HUG_QUIET=T)
+    -h, --help        Show this help
+
+DESCRIPTION:
+    Stages all changes in the working directory—including new untracked files, modifications to tracked files, and deletions—then commits them.
+    This is equivalent to 'git add -A' followed by 'git commit'.
+    If no changes are detected, the script exits early with a message.
+    For large or destructive changes (e.g., many deletions), a confirmation prompt is shown unless --force is used.
+
+EXAMPLES:
+    hug caa -m "WIP: all changes"                  # Stage and commit everything with a message
+    hug caa --dry-run                              # Preview what would be staged and committed
+    hug caa -v                                     # Verbose commit (passes -v to git commit)
+    hug caa                                        # Interactive commit (opens editor if no -m)
+
+SEE ALSO:
+    hug aa     Stage everything (without committing)
+    hug c      Commit only staged changes
+    hug ca     Commit all tracked changes (staged + unstaged, no untracked)
+    hug a      Stage specific files or tracked changes
+EOF
 }
 
-hug aa && hug c "$@"
+# Parse common flags (--dry-run, -f|--force, --quiet, -h|--help)
+eval "$(parse_common_flags "$@")"
+
+# Collect remaining args for git commit
+commit_args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -*)
+      # Unknown options after commons; let git commit handle them or error
+      commit_args+=("$1")
+      shift
+      ;;
+    *)
+      commit_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+check_git_repo
+
+# --- Main function for 'hug caa' ---
+hug_caa() {
+  local commit_args=("$@")
+
+  # Check if there are any changes to stage/commit
+  if git diff --quiet && ! git ls-files --others --exclude-standard | grep -q . 2>/dev/null; then
+    info "No changes to stage or commit."
+    return 0
+  fi
+
+  # Dry-run preview
+  if [[ "${dry_run:-false}" == "true" ]]; then
+    info "Dry run: Previewing 'caa' operation (stage all and commit)."
+
+    printf "\nChanges that would be staged:\n" >&2
+    git status --porcelain | while IFS= read -r line; do
+      local status="${line:0:2}"
+      local file="${line:3}"
+      if [[ "$status" == D? || "$status" == ?D ]]; then
+        printf "⚠️  DELETE: %s\n" "$file" >&2
+      elif [[ "$status" == ?? ]]; then
+        printf "  UNTRACKED: %s\n" "$file" >&2
+      else
+        printf "  MODIFY: %s\n" "$file" >&2
+      fi
+    done
+
+    local change_count
+    change_count=$(git status --porcelain | wc -l)
+    printf "\nSummary: Would stage %s files and commit them.\n" "$change_count" >&2
+
+    if [[ ${#commit_args[@]} -gt 0 ]]; then
+      printf "Commit options: %s\n" "${commit_args[*]}" >&2
+    else
+      printf "Commit would open editor for message.\n" >&2
+    fi
+
+    print_dry_run_preview "stage all changes and commit with ${commit_args[*]:-default message}"
+    return 0
+  fi
+
+  # Check for potentially large/destructive changes and confirm
+  local change_count
+  change_count=$(git status --porcelain | wc -l)
+  local has_deletions=false
+  if git status --porcelain | grep -q '^D'; then
+    has_deletions=true
+  fi
+
+  local needs_confirm=false
+  if [[ $change_count -gt 10 ]] || $has_deletions; then
+    needs_confirm=true
+  fi
+
+  if $needs_confirm && [[ ${HUG_QUIET:-} != T && ${HUG_FORCE:-} != true ]]; then
+    warning "Detected potentially large/destructive changes:"
+    if [[ $change_count -gt 10 ]]; then
+      warning "  - $change_count files affected"
+    fi
+    if $has_deletions; then
+      warning "  - Deletions involved (use 'git status' to review)"
+    fi
+    prompt_confirm "Proceed to stage all and commit? [y/N]: "
+  fi
+
+  info "Staging all changes..."
+  hug aa
+
+  info "Committing all staged changes..."
+  hug c "${commit_args[@]}"
+
+  local staged_count
+  staged_count=$(git diff --name-only --cached | wc -l)
+  success "Committed all changes ($staged_count files staged and committed)."
+}
+
+hug_caa "${commit_args[@]}"
