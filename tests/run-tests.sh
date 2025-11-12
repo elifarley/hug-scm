@@ -155,7 +155,7 @@ run_tests() {
   echo -e "${GREEN}Running tests: $test_path${NC}"
   echo "----------------------------------------"
   
-  if bats --timing --tap "${extra_args[@]}" $bats_files; then
+  if bats --timing "${extra_args[@]}" $bats_files; then
     echo ""
     echo -e "${GREEN}✓ All tests passed!${NC}"
     return 0
