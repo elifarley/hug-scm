@@ -88,16 +88,21 @@ convert_to_relative_paths() {
 # Commit Validation Functions
 ################################################################################
 
-# Validates that a commit reference exists
-# Usage: validate_commit "commit-ref"
+# Validates a commitish for CLI options (enhanced with context)
+# Usage: validate_commitish "option-name" "commitish"
 # Parameters:
-#   $1 - Commit reference to validate
+#   $1 - Option name for error context (e.g., "--target")
+#   $2 - Commitish to validate (branch, tag, hash, etc.)
 # Exits:
-#   With error if commit does not exist
-validate_commit() {
-    local commit="$1"
-    if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
-        error "Commit '$commit' does not exist"
+#   With error if empty or invalid
+validate_commitish() {
+    local opt="$1"
+    local commitish="$2"
+    if [[ -z "$commitish" ]]; then
+        error "$opt requires a non-empty commitish (e.g., branch name, tag, or commit hash)"
+    fi
+    if ! git rev-parse --verify --quiet "$commitish" >/dev/null 2>&1; then
+        error "Invalid commitish for $opt: $commitish (must be a valid branch, tag, or commit hash)"
     fi
 }
 

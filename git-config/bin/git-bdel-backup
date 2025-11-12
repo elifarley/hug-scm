@@ -12,7 +12,7 @@ show_help() {
 hug bdel-backup: Delete backup branches with filtering options
 
 USAGE:
-    hug bdel-backup [<backup-branch>...] [--keep N] [--delete-older-than PATTERN] [--dry-run] [-f, --force] [--quiet] [-h, --help]
+    hug bdel-backup [<backup-branch>...] [-k, --keep N] [-o, --delete-older-than PATTERN] [--dry-run] [-f, --force] [-q, --quiet] [-h, --help]
 
 ARGUMENTS:
     <backup-branch>... One or more backup branch names to delete
@@ -21,14 +21,14 @@ ARGUMENTS:
                        If not provided, shows interactive list for selection
 
 OPTIONS:
-    --keep N                Keep N most recent backup branches (delete the rest)
-    --delete-older-than P   Delete backups older than pattern P
-                            Patterns: YYYY, YYYY-MM, YYYY-MM/DD, YYYY-MM/DD-HH, YYYY-MM/DD-HHMM
-                            Example: --delete-older-than 2024-11 deletes backups from Nov 2024 and earlier
-    --dry-run               Preview the delete operation without applying changes
-    -f, --force             Skip confirmation prompts
-    --quiet                 Suppress output (sets HUG_QUIET=T)
-    -h, --help              Show this help
+    -k, --keep N                Keep N most recent backup branches (delete the rest)
+    -o, --delete-older-than P   Delete backups older than pattern P
+                                Patterns: YYYY, YYYY-MM, YYYY-MM/DD, YYYY-MM/DD-HH, YYYY-MM/DD-HHMM
+                                Example: -o 2024-11 deletes backups from Nov 2024 and earlier
+    --dry-run                   Preview the delete operation without applying changes
+    -f, --force                 Skip confirmation prompts
+    -q, --quiet                 Suppress output (sets HUG_QUIET=T)
+    -h, --help                  Show this help
 
 DESCRIPTION:
     Manages deletion of backup branches created by commands like 'hug rb'.
@@ -45,12 +45,12 @@ DESCRIPTION:
     apply --keep filter on the remaining backups.
 
 EXAMPLES:
-    hug bdel-backup                                    # Interactive: select backups to delete
+    hug bdel-backup                                   # Interactive: select backups to delete
     hug bdel-backup 2024-11/02-1234.feature           # Delete specific backup
-    hug bdel-backup --keep 5                          # Keep 5 most recent, delete rest
+    hug bdel-backup -k 5                              # Keep 5 most recent, delete rest
     hug bdel-backup --delete-older-than 2024-11       # Delete backups from Nov 2024 and earlier
     hug bdel-backup --delete-older-than 2024-11/03    # Delete backups from Nov 3, 2024 and earlier
-    hug bdel-backup --keep 3 --delete-older-than 2024 # Delete 2024 and earlier, then keep 3 most recent
+    hug bdel-backup -k 3 -o 2024                      # Delete 2024 and earlier, then keep 3 most recent
 
 SEE ALSO:
     hug bdel          Delete regular branches
@@ -59,44 +59,75 @@ SEE ALSO:
 EOF
 }
 
-# Parse custom flags
+# Parse all flags using getopt
 keep_count=""
 delete_older_than=""
 backup_branches_to_delete=()
 formatted_backups_to_delete=()  # Parallel array for display purposes
 
-# Parse common flags first
-eval "$(parse_common_flags "$@")"
+# Use getopt for parsing all options (common + custom)
+set +e  # Temporarily disable exit on error to capture getopt failure
+PARSED=$(getopt --options hfqk:o: --longoptions help,force,quiet,dry-run,keep:,delete-older-than: --name "hug bdel-backup" -- "$@" 2>&1)
+getopt_status=$?
+set -e  # Re-enable exit on error
 
-# Now parse remaining custom flags
-while [[ $# -gt 0 ]]; do
+if [ $getopt_status -ne 0 ]; then
+  # getopt failed - print the error message if available
+  if [ -n "$PARSED" ]; then
+    echo "$PARSED" >&2
+  fi
+  exit 1
+fi
+
+eval set -- "$PARSED"
+
+# Initialize common flag variables
+dry_run=false
+force=false
+
+# Process all options
+while true; do
   case "$1" in
-    --keep)
-      if [[ -z "${2:-}" ]]; then
-        error "--keep requires a number argument"
-      fi
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -f|--force)
+      force=true
+      export HUG_FORCE=true
+      shift
+      ;;
+    -q|--quiet)
+      export HUG_QUIET=T
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    -k|--keep)
       if ! [[ "$2" =~ ^[0-9]+$ ]]; then
-        error "--keep requires a positive integer, got: $2"
+        error "Option -k/--keep requires a positive integer argument, got: $2"
       fi
       keep_count="$2"
       shift 2
       ;;
-    --delete-older-than)
-      if [[ -z "${2:-}" ]]; then
-        error "--delete-older-than requires a pattern argument"
-      fi
+    -o|--delete-older-than)
       delete_older_than="$2"
       shift 2
       ;;
-    -*)
-      error "Unknown option: $1. See 'hug bdel-backup --help'."
+    --)
+      shift
+      break
       ;;
     *)
-      backup_branches_to_delete+=("$1")
-      shift
+      error "Internal error in option parsing"
       ;;
   esac
 done
+
+# Collect remaining arguments (backup branch names)
+backup_branches_to_delete=("$@")
 
 check_git_repo
 
@@ -302,9 +333,7 @@ hug_bdel_backup() {
     
     # Validate all branches exist
     for branch in "${backup_branches_to_delete[@]}"; do
-      if ! git rev-parse --verify "$branch" >/dev/null 2>&1; then
-        error "Backup branch '$branch' does not exist."
-      fi
+      validate_commitish "bdel-backup argument" "$branch"
     done
     
     # Jump to deletion logic (skip interactive mode)

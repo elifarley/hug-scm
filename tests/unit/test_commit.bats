@@ -793,7 +793,7 @@ HOOK
 
   run hug cmv deadbeef target-branch --force
   assert_failure
-  assert_output --partial "fatal"
+  assert_output --partial "Invalid commitish"
 
   run git branch --list target-branch
   if [[ -n "$output" ]]; then

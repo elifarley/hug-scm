@@ -99,10 +99,7 @@ else
   fi
   target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
   # Validate that the target is a valid commit before proceeding
-  if ! git_error=$(git rev-parse --verify "$target" 2>&1); then
-    printf '%s\n' "$git_error" >&2
-    error "Invalid commit target: $target"
-  fi
+  validate_commitish "cmv target" "$target"
 fi
 
 # Resolve target to actual SHA (important: do this before reset changes HEAD)

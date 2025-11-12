@@ -291,3 +291,68 @@ teardown() {
   # Assert
   assert_success
 }
+
+# Tests for GNU getopt enhancements
+
+@test "hug-cli-flags: parse_common_flags handles combined short options -fq" {
+  # Act
+  eval "$(parse_common_flags -fq arg1)"
+  
+  # Assert
+  assert_equal "$force" "true"
+  assert_equal "${HUG_FORCE:-}" "true"
+  assert_equal "${HUG_QUIET:-}" "T"
+  assert_equal "$1" "arg1"
+}
+
+@test "hug-cli-flags: parse_common_flags handles combined short options -qf" {
+  # Act
+  eval "$(parse_common_flags -qf arg1 arg2)"
+  
+  # Assert
+  assert_equal "$force" "true"
+  assert_equal "${HUG_FORCE:-}" "true"
+  assert_equal "${HUG_QUIET:-}" "T"
+  assert_equal "$1" "arg1"
+  assert_equal "$2" "arg2"
+}
+
+@test "hug-cli-flags: parse_common_flags handles -q short option for quiet" {
+  # Act
+  eval "$(parse_common_flags -q arg1)"
+  
+  # Assert
+  assert_equal "${HUG_QUIET:-}" "T"
+  assert_equal "$1" "arg1"
+}
+
+@test "hug-cli-flags: parse_common_flags handles combined -fqh (exits via help)" {
+  # Act - Using a subshell to capture the help exit
+  run bash -c "
+    cd '$BATS_TEST_DIRNAME/../..'
+    source 'git-config/lib/hug-terminal'
+    source 'git-config/lib/hug-gum'
+    source 'git-config/lib/hug-output'
+    source 'git-config/lib/hug-cli-flags'
+    show_help() { echo 'Help text'; }
+    eval \"\$(parse_common_flags -fqh arg1)\"
+  "
+  
+  # Assert
+  assert_success
+  assert_output "Help text"
+}
+
+@test "hug-cli-flags: parse_common_flags properly reorders options before args" {
+  # With GNU getopt, options can come after args and will be reordered
+  # Act
+  eval "$(parse_common_flags arg1 --dry-run arg2 -f arg3 --quiet)"
+  
+  # Assert
+  assert_equal "$dry_run" "true"
+  assert_equal "$force" "true"
+  assert_equal "${HUG_QUIET:-}" "T"
+  assert_equal "$1" "arg1"
+  assert_equal "$2" "arg2"
+  assert_equal "$3" "arg3"
+}

@@ -35,12 +35,28 @@ teardown() {
 # validate_commit TESTS
 ################################################################################
 
-@test "validate_commit: succeeds for valid commit" {
+@test "validate_commitish: errors on empty commitish" {
+  run validate_commitish "--target" ""
+  assert_failure
+  assert_output --partial "--target requires a non-empty commitish"
+}
+
+@test "validate_commitish: errors on invalid commitish" {
   echo "test" > file.txt
   git add file.txt
   git commit -q -m "test commit"
   
-  validate_commit HEAD
+  run validate_commitish "--target" "invalidref"
+  assert_failure
+  assert_output --partial "Invalid commitish for --target: invalidref"
+}
+
+@test "validate_commitish: succeeds for valid commitish" {
+  echo "test" > file.txt
+  git add file.txt
+  git commit -q -m "test commit"
+  
+  validate_commitish "--target" HEAD
 }
 
 ################################################################################

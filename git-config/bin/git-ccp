@@ -83,11 +83,9 @@ if [ $# -eq 0 ]; then
   usage_error "No commit(s) specified. Provide at least one commit hash, reference, or range."
 fi
 
-# Validate that arguments look like valid Git refs (basic check; Git will error more precisely)
+# Validate that arguments are valid commitish (Git refs, hashes, or ranges)
 for arg in "$@"; do
-  if ! [[ "$arg" =~ ^[a-f0-9]{1,40}$ || "$arg" =~ ^HEAD~?[0-9]*(\.\.HEAD~?[0-9]*)?$ || "$arg" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
-    error "Invalid commit reference: '$arg'. Use a hash, ref, or range like 'HEAD~2'."
-  fi
+  validate_commitish "ccp argument" "$arg"
 done
 
 printf "Copying %s onto current branch...\n" "$*"

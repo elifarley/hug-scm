@@ -104,7 +104,7 @@ create_test_backup() {
 @test "hug bdel-backup: fails when backup does not exist" {
   run hug bdel-backup "2025-99/99-9999.nonexistent" -f
   assert_failure
-  assert_output --partial "does not exist"
+  assert_output --partial "Invalid commitish"
 }
 
 # -----------------------------------------------------------------------------
@@ -162,7 +162,7 @@ create_test_backup() {
 @test "hug bdel-backup --keep: fails without number argument" {
   run hug bdel-backup --keep
   assert_failure
-  assert_output --partial "--keep requires a number"
+  assert_output --partial "requires an argument"
 }
 
 @test "hug bdel-backup --keep: fails with invalid number" {
@@ -307,7 +307,7 @@ create_test_backup() {
 @test "hug bdel-backup --delete-older-than: fails without pattern argument" {
   run hug bdel-backup --delete-older-than
   assert_failure
-  assert_output --partial "--delete-older-than requires a pattern"
+  assert_output --partial "requires an argument"
 }
 
 # -----------------------------------------------------------------------------
