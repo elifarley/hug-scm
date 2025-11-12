@@ -4,6 +4,10 @@ CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 . "$CMD_BASE/../lib/hug-common"
 # shellcheck source=../lib/hug-git-kit
 . "$CMD_BASE/../lib/hug-git-kit"
+# shellcheck source=../lib/hug-git-files
+. "$CMD_BASE/../lib/hug-git-files"
+# shellcheck source=../lib/hug-git-state
+. "$CMD_BASE/../lib/hug-git-state"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
@@ -69,7 +73,7 @@ hug_caa() {
   local commit_args=("$@")
 
   # Check if there are any changes to stage/commit
-  if git diff --quiet && ! git ls-files --others --exclude-standard | grep -q . 2>/dev/null; then
+  if ! has_pending_changes; then
     info "No changes to stage or commit."
     return 0
   fi
@@ -79,21 +83,44 @@ hug_caa() {
     info "Dry run: Previewing 'caa' operation (stage all and commit)."
 
     printf "\nChanges that would be staged:\n" >&2
-    git status --porcelain | while IFS= read -r line; do
-      local status="${line:0:2}"
-      local file="${line:3}"
-      if [[ "$status" == D? || "$status" == ?D ]]; then
-        printf "⚠️  DELETE: %s\n" "$file" >&2
-      elif [[ "$status" == ?? ]]; then
-        printf "  UNTRACKED: %s\n" "$file" >&2
+
+    # Untracked files
+    local -a untracked=()
+    mapfile -t untracked < <(list_untracked_files)
+    if [[ ${#untracked[@]} -gt 0 ]]; then
+      printf "\n  UNTRACKED (%d files):\n" "${#untracked[@]}" >&2
+      printf "    %s\n" "${untracked[@]}" >&2
+    fi
+
+    # Already staged (rare, but show)
+    local -a staged=()
+    mapfile -t staged < <(list_staged_files)
+    if [[ ${#staged[@]} -gt 0 ]]; then
+      printf "\n  ALREADY STAGED (%d files):\n" "${#staged[@]}" >&2
+      printf "    %s\n" "${staged[@]}" >&2
+    fi
+
+    # Unstaged with status (mods + dels)
+    local -a unstaged_status=()
+    mapfile -t unstaged_status < <(list_unstaged_files --status)
+    local mod_count=0 del_count=0
+    for line in "${unstaged_status[@]}"; do
+      local status="${line%%	*}"
+      local file="${line#*	}"
+      if [[ "$status" == D* ]]; then
+        printf "  ⚠️  DELETE: %s\n" "$file" >&2
+        ((del_count++))
       else
         printf "  MODIFY: %s\n" "$file" >&2
+        ((mod_count++))
       fi
     done
+    if [[ $((mod_count + del_count)) -gt 0 ]]; then
+      printf "\n  UNSTAGED SUMMARY: %d modified, %d deleted\n" "$mod_count" "$del_count" >&2
+    fi
 
-    local change_count
-    change_count=$(git status --porcelain | wc -l)
-    printf "\nSummary: Would stage %s files and commit them.\n" "$change_count" >&2
+    local total_change_count=$(( ${#untracked[@]} + ${#staged[@]} + mod_count + del_count ))
+    printf "\nSummary: Would stage %s files and commit them.\n" "$total_change_count" >&2
 
     if [[ ${#commit_args[@]} -gt 0 ]]; then
       printf "Commit options: %s\n" "${commit_args[*]}" >&2
@@ -106,12 +133,27 @@ hug_caa() {
   fi
 
   # Check for potentially large/destructive changes and confirm
-  local change_count
-  change_count=$(git status --porcelain | wc -l)
-  local has_deletions=false
-  if git status --porcelain | grep -q '^D'; then
-    has_deletions=true
-  fi
+  local -a unstaged_with_status=()
+  mapfile -t unstaged_with_status < <(list_unstaged_files --status)
+  local unstaged_count=${#unstaged_with_status[@]}
+  local deletions_count=0
+  for line in "${unstaged_with_status[@]}"; do
+    local status="${line%%	*}"
+    if [[ "$status" == D* ]]; then
+      ((deletions_count++))
+    fi
+  done
+
+  local -a untracked_files=()
+  mapfile -t untracked_files < <(list_untracked_files)
+  local untracked_count=${#untracked_files[@]}
+
+  local -a staged_files=()
+  mapfile -t staged_files < <(list_staged_files)
+  local staged_count=${#staged_files[@]}
+
+  local change_count=$((unstaged_count + untracked_count + staged_count))
+  local has_deletions=$([[ $deletions_count -gt 0 ]])
 
   local needs_confirm=false
   if [[ $change_count -gt 10 ]] || $has_deletions; then
@@ -121,10 +163,10 @@ hug_caa() {
   if $needs_confirm && [[ ${HUG_QUIET:-} != T && ${HUG_FORCE:-} != true ]]; then
     warning "Detected potentially large/destructive changes:"
     if [[ $change_count -gt 10 ]]; then
-      warning "  - $change_count files affected"
+      warning "  - $unstaged_count unstaged, $untracked_count untracked, $staged_count already staged (total: $change_count)"
     fi
     if $has_deletions; then
-      warning "  - Deletions involved (use 'git status' to review)"
+      warning "  - $deletions_count deletions involved (use 'git status' to review)"
     fi
     prompt_confirm "Proceed to stage all and commit? [y/N]: "
   fi
@@ -132,12 +174,14 @@ hug_caa() {
   info "Staging all changes..."
   hug aa
 
+  local pre_commit_staged_count
+  mapfile -t pre_commit_staged_files < <(list_staged_files)
+  pre_commit_staged_count=${#pre_commit_staged_files[@]}
+
   info "Committing all staged changes..."
   hug c "${commit_args[@]}"
 
-  local staged_count
-  staged_count=$(git diff --name-only --cached | wc -l)
-  success "Committed all changes ($staged_count files staged and committed)."
+  success "Committed all changes ($pre_commit_staged_count files staged and committed)."
 }
 
 hug_caa "${commit_args[@]}"
