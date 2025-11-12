@@ -75,7 +75,7 @@ Hug Commands
 ├── b* (Branches: Manage Flow)
 │   ├── b            # Switch (interactive menu)
 │   ├── br           # Branch switch remote (alias for b -r)
-│   ├── bR           # Branch switch remote refreshed (alias for b -R)
+│   ├── brr          # Branch switch remote refreshed (alias for b -R)
 │   ├── bcp          # Branch Copy (alias: bc --no-switch --point-to)
 │   ├── bc           # Create & switch
 │   ├── bl           # Branch List local

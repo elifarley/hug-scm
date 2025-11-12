@@ -46,8 +46,8 @@ hug bcp feat-1 backup-feat    # Explicit name for the copy
 
 # Switch to existing (interactive menu)
 hug b    # **B**ranch
-hug br   # **B**ranch **R**emote (interactive menu of remotes only)
-hug bR   # **B**ranch **R**efreshed remotes (fetch first, then remote menu)
+hug br   # **B**ranch **R**emotes (interactive menu of remotes only)
+hug brr   # **B**ranch **R**efreshed **R**emotes (fetch first, then remote menu)
 
 # Merge (squash, no commit)
 hug m feature-branch  # **M**erge

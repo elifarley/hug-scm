@@ -367,7 +367,7 @@
   br = b -r
 
   # Fetch, then switch to remote branch
-  bR = b -R
+  brr = b -R
 
   # Go back to previous branch (like 'cd -')
   # Usage: hug bs

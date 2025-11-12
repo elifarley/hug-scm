@@ -6,31 +6,31 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 
 ## Quick Reference
 
-| Command | Memory Hook | Summary |
-| --- | --- | --- |
-| `hug b` | **B**ranch checkout | Switch to an existing branch or pick interactively |
-| `hug br` | **B**ranch **R**emote | Alias for `hug b -r`: Interactive menu of remote branches only; create tracking on select |
-| `hug bR` | **B**ranch **R**efresh remotes | Alias for `hug b -R`: As above, but fetch/prune remotes first |
-| `hug bl` | **B**ranch **L**ist | List local branches |
-| `hug bla` | **B**ranch **L**ist **A**ll | List local and remote branches |
-| `hug blr` | **B**ranch **L**ist **R**emote | List remote branches only |
-| `hug bll` | **B**ranch **L**ist **L**ong | Detailed local branch list with tracking info |
-| `hug bcp <source> [dest]` | **B**ranch **CP** (copy) | Create a copy of a branch or commitish without switching; auto-names if unspecified |
-| `hug bc` | **B**ranch **C**reate | Create a new branch and switch to it |
-| `hug bc --no-switch` | **B**ranch **C**reate **no-switch** | Create a new branch without switching to it |
-| `hug bmv` | **B**ranch **MV** (move) | Rename the current branch |
-| `hug brestore` | **B**ranch **RESTORE** | Restore a branch from a backup |
-| `hug bdel` | **B**ranch **DEL**ete | Delete branches interactively or by name |
-| `hug bdel-backup` | **B**ranch **DEL**ete **BACKUP** | Delete backup branches with filters |
-| `hug bdelf` | **B**ranch **DEL**ete **F**orce | Force-delete local branch |
-| `hug bdelr` | **B**ranch **DEL**ete **R**emote | Delete remote branch |
-| `hug bpull` | **B**ranch **Pull** | Safe fast-forward pull (fails if merge/rebase needed) |
-| `hug bpullr` | **B**ranch **Pull** **R**ebase | Pull with rebase (linear history) |
-| `hug bwc` | **B**ranch **W**hich **C**ontain | Branches containing a commit |
-| `hug bwp` | **B**ranch **W**hich **P**oint | Branches pointing at an object |
-| `hug bwnc` | **B**ranch **W**hich **N**ot **C**ontain | Branches missing a commit |
-| `hug bwm` | **B**ranch **W**hich **M**erged | Branches merged into a commit |
-| `hug bwnm` | **B**ranch **W**hich **N**ot **M**erged | Branches not merged into a commit |
+| Command                   | Memory Hook                              | Summary |
+|---------------------------|------------------------------------------| --- |
+| `hug b`                   | **B**ranch checkout                      | Switch to an existing branch or pick interactively |
+| `hug br`                  | **B**ranch **R**emotes                   | Alias for `hug b -r`: Interactive menu of remote branches only; create tracking on select |
+| `hug brr`                 | **B**ranch **R**efreshed **R**emotes     | Alias for `hug b -R`: As above, but fetch/prune remotes first |
+| `hug bl`                  | **B**ranch **L**ist                      | List local branches |
+| `hug bla`                 | **B**ranch **L**ist **A**ll              | List local and remote branches |
+| `hug blr`                 | **B**ranch **L**ist **R**emote           | List remote branches only |
+| `hug bll`                 | **B**ranch **L**ist **L**ong             | Detailed local branch list with tracking info |
+| `hug bcp <source> [dest]` | **B**ranch **CP** (copy)                 | Create a copy of a branch or commitish without switching; auto-names if unspecified |
+| `hug bc`                  | **B**ranch **C**reate                    | Create a new branch and switch to it |
+| `hug bc --no-switch`      | **B**ranch **C**reate **no-switch**      | Create a new branch without switching to it |
+| `hug bmv`                 | **B**ranch **MV** (move)                 | Rename the current branch |
+| `hug brestore`            | **B**ranch **RESTORE**                   | Restore a branch from a backup |
+| `hug bdel`                | **B**ranch **DEL**ete                    | Delete branches interactively or by name |
+| `hug bdel-backup`         | **B**ranch **DEL**ete **BACKUP**         | Delete backup branches with filters |
+| `hug bdelf`               | **B**ranch **DEL**ete **F**orce          | Force-delete local branch |
+| `hug bdelr`               | **B**ranch **DEL**ete **R**emote         | Delete remote branch |
+| `hug bpull`               | **B**ranch **Pull**                      | Safe fast-forward pull (fails if merge/rebase needed) |
+| `hug bpullr`              | **B**ranch **Pull** **R**ebase           | Pull with rebase (linear history) |
+| `hug bwc`                 | **B**ranch **W**hich **C**ontain         | Branches containing a commit |
+| `hug bwp`                 | **B**ranch **W**hich **P**oint           | Branches pointing at an object |
+| `hug bwnc`                | **B**ranch **W**hich **N**ot **C**ontain | Branches missing a commit |
+| `hug bwm`                 | **B**ranch **W**hich **M**erged          | Branches merged into a commit |
+| `hug bwnm`                | **B**ranch **W**hich **N**ot **M**erged  | Branches not merged into a commit |
 
 ## Listing Branches
 
@@ -41,7 +41,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   - `-R, --refresh`: Like `--remote`, but first fetches branch data from the remote to ensure up-to-date information. Ideal before switching in shared repos; if fetch fails (e.g., network issues), it warns and uses cached data.
 - **Aliases**:
   - `hug br`: Equivalent to `hug b -r` (remote branches menu).
-  - `hug bR`: Equivalent to `hug b -R` (refreshed remote branches menu).
+  - `hug brr`: Equivalent to `hug b -R` (refreshed remote branches menu).
 
 - **Interactive Selection Behavior**: The menu lists branches as: *branch-name* (*short-hash*) [upstream info, e.g., ahead/behind counts], followed by the commit subject line. The current branch is highlighted in green with an asterisk (*). By default, shows local branches. With `-r` or `-R`, shows remotes only (with remote prefix in cyan brackets, e.g., [origin/main]). For repos with 10+ branches, leverages `gum filter` (install via [charmbracelet/gum](https://github.com/charmbracelet/gum)) for searchable, multi-select filtering. Otherwise, falls back to a simple numbered list for quick picks.
 - **Interactive Selection Behavior**: The menu lists branches as: *branch-name* (*short-hash*) [upstream info, e.g., ahead/behind counts], followed by the commit subject line. The current branch is highlighted in green with an asterisk (*). By default, shows local branches. With `-r` or `-R`, shows remotes only (with remote prefix in cyan brackets, e.g., [origin/main]). For repos with 10+ branches, leverages `gum filter` (install via [charmbracelet/gum](https://github.com/charmbracelet/gum)) for searchable, multi-select filtering. Otherwise, falls back to a simple numbered list for quick picks.
