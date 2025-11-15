@@ -1095,6 +1095,100 @@ teardown() {
 }
 
 # ----------------------------------------------------------------------------
+# hug h files: temporal flag tests
+# ----------------------------------------------------------------------------
+
+@test "hug h files: shows help for --temporal flag" {
+  run hug h files -h
+  assert_success
+  assert_output --partial "-t, --temporal"
+  assert_output --partial "3 days ago"
+  assert_output --partial "1 week ago"
+}
+
+@test "hug h files: accepts -t flag with relative time" {
+  local repo
+  repo=$(create_test_repo_with_dated_commits)
+  cd "$repo" || exit 1
+  
+  # Test: should show files from last 10 days (relative to HEAD which is day 20)
+  # This should include day10, day15, day20
+  run hug h files -t "10 days ago"
+  assert_success
+  assert_output --partial "day15.txt"
+  assert_output --partial "day20.txt"
+  refute_output --partial "day1.txt"
+  
+  cd "$TEST_REPO" || exit 1
+  rm -rf "$repo"
+}
+
+@test "hug h files: accepts --temporal flag with absolute date" {
+  local repo
+  repo=$(create_test_repo_with_dated_commits)
+  cd "$repo" || exit 1
+  
+  # Test: should show files since 2024-01-12 (finds first commit on/after: day15)
+  # So range is day15..HEAD which only includes day20
+  run hug h files -t "2024-01-12"
+  assert_success
+  assert_output --partial "day20.txt"
+  assert_output --partial "since '2024-01-12'"
+  refute_output --partial "day1.txt"
+  
+  cd "$TEST_REPO" || exit 1
+  rm -rf "$repo"
+}
+
+@test "hug h files: rejects --temporal with --upstream" {
+  run hug h files -t "3 days ago" --upstream
+  assert_failure
+  assert_output --partial "Cannot specify both --upstream and --temporal"
+}
+
+@test "hug h files: rejects --temporal with target" {
+  run hug h files -t "3 days ago" 3
+  assert_failure
+  assert_output --partial "Cannot specify both --temporal and a target"
+}
+
+@test "hug h files: requires time specification with -t" {
+  run hug h files -t
+  assert_failure
+  assert_output --partial "requires a time specification"
+}
+
+@test "hug h files: works with --temporal and --patch" {
+  local repo
+  repo=$(create_test_repo_with_dated_commits)
+  cd "$repo" || exit 1
+  
+  # Test: should show patch and stats for files in last 10 days
+  run hug h files -t "10 days ago" -p
+  assert_success
+  assert_output --partial "diff --git"
+  assert_output --partial "day"
+  
+  cd "$TEST_REPO" || exit 1
+  rm -rf "$repo"
+}
+
+@test "hug h files: shows commit count with --temporal" {
+  local repo
+  repo=$(create_test_repo_with_dated_commits)
+  cd "$repo" || exit 1
+  
+  # Test: should show commit count in tip message
+  run hug h files -t "10 days ago"
+  assert_success
+  assert_output --partial "in 2 commit"
+  assert_output --partial "since '10 days ago'"
+  
+  cd "$TEST_REPO" || exit 1
+  rm -rf "$repo"
+}
+
+# ----------------------------------------------------------------------------
 # git-h-steps edge cases
 # ----------------------------------------------------------------------------
 

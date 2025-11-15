@@ -12,6 +12,88 @@
 # and follow consistent patterns for error handling and user feedback.
 
 ################################################################################
+# Temporal Functions
+################################################################################
+
+# Resolves a temporal specification to the earliest commit at or after that time
+# Usage: commit=$(resolve_temporal_to_commit "time_spec" ["reference_time"])
+# Parameters:
+#   $1 - Time specification (relative like "3 days ago", "1 week ago" or absolute like "2024-01-15")
+#   $2 - (Optional) Reference commit for relative time, defaults to HEAD
+# Output:
+#   Commit hash of the first commit at or after the specified time to stdout
+# Exits:
+#   With error if no commits exist at or after the specified time
+# Examples:
+#   resolve_temporal_to_commit "3 days ago"        # First commit from 3 days ago
+#   resolve_temporal_to_commit "1 week ago" HEAD   # First commit from 1 week ago relative to HEAD
+#   resolve_temporal_to_commit "2024-01-15"        # First commit on or after 2024-01-15
+resolve_temporal_to_commit() {
+    local time_spec="$1"
+    local reference="${2:-HEAD}"
+    
+    # Get the reference time (commit time of reference commit)
+    local reference_time
+    reference_time=$(git log -1 --format="%ct" "$reference" 2>/dev/null) || {
+        error "Unable to determine time for reference '$reference'"
+        return 1
+    }
+    
+    # Calculate the target time based on the time specification
+    local target_time
+    if [[ "$time_spec" =~ ^[0-9]+\ (second|minute|hour|day|week|month|year)s?\ ago$ ]]; then
+        # Relative time specification
+        # Convert to seconds and subtract from reference time
+        local amount unit
+        amount=$(echo "$time_spec" | awk '{print $1}')
+        unit=$(echo "$time_spec" | awk '{print $2}' | sed 's/s$//')
+        
+        local seconds_offset
+        case "$unit" in
+            second) seconds_offset=$((amount)) ;;
+            minute) seconds_offset=$((amount * 60)) ;;
+            hour)   seconds_offset=$((amount * 3600)) ;;
+            day)    seconds_offset=$((amount * 86400)) ;;
+            week)   seconds_offset=$((amount * 604800)) ;;
+            month)  seconds_offset=$((amount * 2592000)) ;;  # Approximation: 30 days
+            year)   seconds_offset=$((amount * 31536000)) ;; # Approximation: 365 days
+            *)
+                error "Invalid time unit in '$time_spec'"
+                return 1
+                ;;
+        esac
+        
+        target_time=$((reference_time - seconds_offset))
+    else
+        # Absolute time specification - use git's date parsing directly
+        # Git understands various date formats and is cross-platform
+        # We'll use --since with the time spec and let git parse it
+        local commit
+        commit=$(git log --format="%H" --since="$time_spec" "$reference" --reverse 2>/dev/null | head -n 1)
+        
+        if [[ -z "$commit" ]]; then
+            error "Unable to parse time specification '$time_spec' or no commits found after that time"
+            return 1
+        fi
+        
+        echo "$commit"
+        return 0
+    fi
+    
+    # Find the first commit at or after the target time
+    # We use --since with the target time and --reverse to get the oldest first
+    local commit
+    commit=$(git log --format="%H" --since="@$target_time" "$reference" --reverse 2>/dev/null | head -n 1)
+    
+    if [[ -z "$commit" ]]; then
+        error "No commits found at or after '$time_spec' (relative to $reference)"
+        return 1
+    fi
+    
+    echo "$commit"
+}
+
+################################################################################
 # Commit Range Analysis Functions
 ################################################################################
 

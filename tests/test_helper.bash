@@ -258,6 +258,45 @@ EOF
   echo "$test_repo"
 }
 
+# Create a test repository with commits at specific dates
+# Useful for testing temporal filtering functions
+create_test_repo_with_dated_commits() {
+  local test_repo
+  test_repo=$(create_test_repo)
+  
+  (
+    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    
+    # Create commits at specific times
+    echo "day1" > day1.txt
+    git add day1.txt
+    GIT_COMMITTER_DATE="2024-01-01 10:00:00" GIT_AUTHOR_DATE="2024-01-01 10:00:00" \
+      git commit -q -m "Day 1"
+    
+    echo "day5" > day5.txt
+    git add day5.txt
+    GIT_COMMITTER_DATE="2024-01-05 10:00:00" GIT_AUTHOR_DATE="2024-01-05 10:00:00" \
+      git commit -q -m "Day 5"
+    
+    echo "day10" > day10.txt
+    git add day10.txt
+    GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
+      git commit -q -m "Day 10"
+    
+    echo "day15" > day15.txt
+    git add day15.txt
+    GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+      git commit -q -m "Day 15"
+    
+    echo "day20" > day20.txt
+    git add day20.txt
+    GIT_COMMITTER_DATE="2024-01-20 10:00:00" GIT_AUTHOR_DATE="2024-01-20 10:00:00" \
+      git commit -q -m "Day 20"
+  )
+  
+  echo "$test_repo"
+}
+
 # Clean up test repository
 cleanup_test_repo() {
   if [[ -n "${TEST_REPO:-}" && -d "$TEST_REPO" ]]; then

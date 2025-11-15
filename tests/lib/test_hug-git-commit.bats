@@ -83,3 +83,109 @@ teardown() {
   assert_success
   assert_output "0"
 }
+
+################################################################################
+# resolve_temporal_to_commit TESTS
+################################################################################
+
+@test "resolve_temporal_to_commit: resolves relative time (days ago)" {
+  # Create commits with specific dates
+  echo "old" > old.txt
+  git add old.txt
+  GIT_COMMITTER_DATE="2024-01-01 10:00:00" GIT_AUTHOR_DATE="2024-01-01 10:00:00" \
+    git commit -q -m "Old commit"
+  
+  echo "recent" > recent.txt
+  git add recent.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Recent commit"
+  
+  # Should find first commit at or after 10 days before HEAD (Jan 15 - 10 days = Jan 5)
+  # First commit on/after Jan 5 is the Jan 15 commit
+  run resolve_temporal_to_commit "10 days ago" HEAD
+  assert_success
+  
+  # Verify it returns a valid commit hash
+  local commit_hash
+  commit_hash="$output"
+  run git rev-parse --verify "$commit_hash"
+  assert_success
+}
+
+@test "resolve_temporal_to_commit: resolves relative time (weeks ago)" {
+  echo "week1" > week1.txt
+  git add week1.txt
+  GIT_COMMITTER_DATE="2024-01-01 10:00:00" GIT_AUTHOR_DATE="2024-01-01 10:00:00" \
+    git commit -q -m "Week 1"
+  
+  echo "week2" > week2.txt
+  git add week2.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Week 2"
+  
+  run resolve_temporal_to_commit "1 week ago" HEAD
+  assert_success
+  
+  # Verify it returns a valid commit hash
+  local commit_hash
+  commit_hash="$output"
+  run git rev-parse --verify "$commit_hash"
+  assert_success
+}
+
+@test "resolve_temporal_to_commit: resolves absolute date" {
+  echo "jan1" > jan1.txt
+  git add jan1.txt
+  GIT_COMMITTER_DATE="2024-01-01 10:00:00" GIT_AUTHOR_DATE="2024-01-01 10:00:00" \
+    git commit -q -m "Jan 1"
+  
+  echo "jan15" > jan15.txt
+  git add jan15.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Jan 15"
+  
+  # Should find first commit on or after 2024-01-10
+  run resolve_temporal_to_commit "2024-01-10" HEAD
+  assert_success
+  
+  # Verify it returns a valid commit hash
+  local commit_hash
+  commit_hash="$output"
+  run git rev-parse --verify "$commit_hash"
+  assert_success
+}
+
+@test "resolve_temporal_to_commit: fails when no commits found" {
+  # Try to find commits from far in the future
+  run resolve_temporal_to_commit "2099-01-01" HEAD
+  assert_failure
+  assert_output --partial "Unable to parse time specification '2099-01-01' or no commits found after that time"
+}
+
+@test "resolve_temporal_to_commit: uses HEAD as default reference" {
+  echo "test" > test.txt
+  git add test.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Test commit"
+  
+  # Should work without explicit reference
+  run resolve_temporal_to_commit "5 days ago"
+  assert_success
+}
+
+@test "resolve_temporal_to_commit: handles various time units" {
+  echo "test" > test.txt
+  git add test.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Test commit"
+  
+  # Test different time units (should not error)
+  run resolve_temporal_to_commit "1 hour ago"
+  assert_success
+  
+  run resolve_temporal_to_commit "30 minutes ago"
+  assert_success
+  
+  run resolve_temporal_to_commit "1 month ago"
+  assert_success
+}

@@ -13,6 +13,11 @@ USAGE:
 
 OPTIONS:
     -u, --upstream  Use upstream remote tip as start point (local-only commits; read-only preview)
+    -t, --temporal TIME
+                    Specify commits by time instead of count/commit
+                    TIME can be relative (e.g., "3 days ago", "1 week ago")
+                    or absolute (e.g., "2024-01-15", "2024-01-15 10:30")
+                    Reference point is HEAD's commit time
     -p, --patch     Show full patch of changes before stats
     --patch=FILE    Show patch for specific FILE in the range before stats
     --             Trigger interactive selection for patch file (with -p)
@@ -24,6 +29,7 @@ DESCRIPTION:
     Optionally show full patch (-p/--patch) or patch for a specific file (--patch=FILE) before the stats.
     Use -- with -p to interactively select a specific file for the patch instead of showing the full patch.
     With -u, previews files and stats in local-only commits (HEAD to upstream tip).
+    With -t/--temporal, filters commits by time relative to HEAD's commit time.
     Use before 'h back N' or 'h rewind COMMIT' to see affected files.
 
 EXAMPLES:
@@ -32,6 +38,9 @@ EXAMPLES:
     hug h files 3 -p --    # Interactively select file for patch and stats in last 3 commits
     hug h files main --patch=src/main.py  # Patch for src/main.py and stats changed after 'main' to HEAD
     hug h files -u         # Files and stats in local-only commits (to upstream)
+    hug h files -t "3 days ago"    # Files changed in last 3 days (relative to HEAD's time)
+    hug h files -t "1 week ago"    # Files changed in last week
+    hug h files -t "2024-01-15"    # Files changed since Jan 15, 2024
 
 SEE ALSO:
     h back    : Actually perform the rewind (keep staged)
@@ -46,20 +55,37 @@ eval "$(parse_common_flags "$@")"
 
 # Parse custom flags
 upstream=false
+temporal_spec=""
 target_arg=""
 show_patch=false
 patch_file=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -u|--upstream) upstream=true; shift ;;
+    -t|--temporal) 
+      if [[ $# -lt 2 || "$2" == -* ]]; then
+        error "-t/--temporal requires a time specification (e.g., '3 days ago', '1 week ago', '2024-01-15')"
+      fi
+      temporal_spec="$2"
+      shift 2
+      ;;
     -p|--patch) show_patch=true; shift ;;
     --patch=*) show_patch=true; patch_file="${1#*=}"; shift ;;
     *) target_arg="$1"; shift ;;
   esac
 done
 
+# Validate mutually exclusive options
 if $upstream && [[ -n "$target_arg" ]]; then
   error "Cannot specify both --upstream and a target (N|COMMIT)."
+fi
+
+if $upstream && [[ -n "$temporal_spec" ]]; then
+  error "Cannot specify both --upstream and --temporal."
+fi
+
+if [[ -n "$temporal_spec" ]] && [[ -n "$target_arg" ]]; then
+  error "Cannot specify both --temporal and a target (N|COMMIT)."
 fi
 
 check_git_repo
@@ -71,6 +97,13 @@ if $upstream; then
   if [ "$local_commits" -eq 0 ]; then
     info "No local-only commits; already synced to upstream."
     exit 0
+  fi
+elif [[ -n "$temporal_spec" ]]; then
+  # Resolve temporal specification to a commit
+  start_point=$(resolve_temporal_to_commit "$temporal_spec" HEAD) || exit 1
+  range="$start_point..HEAD"
+  if ! git rev-parse --verify "$start_point" >/dev/null 2>&1; then
+    error "Unable to resolve temporal specification '${temporal_spec}' to a valid commit"
   fi
 else
   target_input="${target_arg:-}"
@@ -132,6 +165,11 @@ fi
 if $upstream; then
   upstream_short=$(git rev-parse --short "$start_point")
   tip "These $count files and their stats are affected by $local_commits local-only commits to upstream tip $upstream_short (e.g., via 'h back -u')."
+elif [[ -n "$temporal_spec" ]]; then
+  start_point_short=$(git rev-parse --short "$start_point")
+  start_point_date=$(git log -1 --format="%ci" "$start_point" | cut -d' ' -f1)
+  num_commits=$(count_commits_in_range "$start_point" HEAD)
+  tip "These $count files and their stats were changed in $num_commits commits since '$temporal_spec' (first commit: $start_point_short from $start_point_date)."
 else
   tip "These $count files and their stats would be affected by moving HEAD to $start_point (e.g., via 'h back' or 'h rewind')."
 fi
