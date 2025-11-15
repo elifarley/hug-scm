@@ -12,11 +12,16 @@ USAGE:
     hug h squash [--quiet] [--force] [target]
 
 OPTIONS:
-    [target]        Either empty, an integer N > 1, a COMMIT hash, or -u, --upstream
+    [target]        Either empty, an integer N > 1, a COMMIT hash, -u/--upstream, or -t/--temporal TIME
         (empty)         The last 2 commits will be squashed.
         N               The last N commits will be squashed.
         COMMIT          All commits above the target commit will be squashed.
         -u, --upstream  Local-only commits (those above the upstream HEAD - the remote tip) will be squashed after read-only preview/confirmation (no fetch)
+        -t, --temporal TIME
+                        Specify commits by time instead of count/commit
+                        TIME can be relative (e.g., "3 days ago", "1 week ago")
+                        or absolute (e.g., "2024-01-15", "2024-01-15 10:30")
+                        Reference point is HEAD's commit time
     --quiet         Suppress output
     --force         Skip confirmation prompts (use with caution)
 
@@ -26,6 +31,7 @@ DESCRIPTION:
     HEAD goes back to target (like 'h back'), then commits changes from the target commits using the original HEAD's message.
     Non-destructive to uncommitted work.
     Pre-existing staged changes will be included - review with `hug ss` first.
+    With -t/--temporal, squashes commits from the first commit at or after the specified time to HEAD.
 
 EXAMPLES:
     hug h squash                   # Squash last 2 commits into 1
@@ -33,6 +39,8 @@ EXAMPLES:
     hug h squash a1b2c3            # Keep a1b2c3 unchanged; Squash all commits above it into 1
     hug h squash -u                # Keep upstream tip unchanged; Squash local-only commits on top
     hug h squash 3 --force         # Skip confirmation
+    hug h squash -t "3 days ago"   # Squash commits from 3 days ago to HEAD
+    hug h squash -t "1 week ago"   # Squash commits from 1 week ago to HEAD
 
 SEE ALSO:
     hug h back    HEAD goes back only (no auto-commit)
@@ -43,7 +51,10 @@ EOF
 # Parse common flags (--quiet, --force, -h|--help)
 eval "$(parse_common_flags "$@")"
 
-# Parse custom flags
+# Parse temporal flag
+eval "$(parse_temporal_flag "$@")"
+
+# Parse remaining custom flags
 upstream=false
 target_arg=""
 while [[ $# -gt 0 ]]; do
@@ -53,16 +64,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if $upstream && [[ -n "$target_arg" ]]; then
-  error "Cannot specify both -u/--upstream and a target (N|COMMIT)."
-fi
-
 check_git_repo
 
 # Capture original HEAD message BEFORE any reset
 original_head=$(git rev-parse HEAD)
 
 if $upstream; then
+  # Use DRY helper for validation, then handle upstream-specific logic
+  resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~2' >/dev/null || exit 1
+  
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
   # When the staging area is clean we temporarily set HUG_FORCE to bypass the confirmation prompt.
   if [[ ${HUG_FORCE:-} == true ]]; then
@@ -75,12 +85,13 @@ if $upstream; then
   fi
   commits_to_squash=$(count_commits_in_range "$target" HEAD)
 else
-  target_spec=$(resolve_head_target "${target_arg:-}" 'HEAD~2')
-  ensure_ancestor_of_head "$target_spec" "cannot squash onto it."
-  target_commit=$(git rev-parse "${target_spec}^{commit}")
+  # Use DRY helper for validation and target resolution
+  target_commit=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~2') || exit 1
+  
+  # Common logic for temporal and explicit targets
+  ensure_ancestor_of_head "$target_commit" "cannot squash onto it."
   log_range="$target_commit"..HEAD
-  # short hash
-  target_display=$(git rev-parse --short "$target_commit" 2>/dev/null || echo "$target_spec")
+  target_display=$(git rev-parse --short "$target_commit" 2>/dev/null || echo "$target_commit")
   commits_to_squash=$(count_commits_in_range "$target_commit" HEAD)
   if [ "$commits_to_squash" -eq 0 ]; then
     info "No commits to squash (already at $target_display)."

@@ -9,15 +9,21 @@ show_help() {
 hug h back: Make HEAD walk back some commits while keeping their changes staged. Uncommitted changes are preserved.
 
 USAGE:
-    hug h back [N|COMMIT] [-u, --upstream] [--quiet] [--force]
+    hug h back [N|COMMIT] [-u, --upstream] [-t, --temporal TIME] [--quiet] [--force]
 
 OPTIONS:
     -u, --upstream  Sets the target to the upstream remote tip after read-only preview/confirmation (discards local-only commits; no fetch)
+    -t, --temporal TIME
+                    Specify commits by time instead of count/commit
+                    TIME can be relative (e.g., "3 days ago", "1 week ago")
+                    or absolute (e.g., "2024-01-15", "2024-01-15 10:30")
+                    Reference point is HEAD's commit time
     --quiet         Suppress output (sets HUG_QUIET=T)
     --force         Skip confirmation prompts (use with caution)
 
 DESCRIPTION:
     Moves HEAD to target. With -u, runs a read-only preview/confirmation before discarding local-only commits to sync with remote tip.
+    With -t/--temporal, moves HEAD to the first commit at or after the specified time.
 
 EXAMPLES:
     # Uncommitted changes are preserved in all examples below:
@@ -25,6 +31,8 @@ EXAMPLES:
     hug h back 3                 # Moves HEAD back 3 commits
     hug h back a1b2c3            # Moves HEAD to specified commit
     hug h back 3 --force         # Skip confirmation
+    hug h back -t "3 days ago"   # Move HEAD to first commit from 3 days ago
+    hug h back -t "1 week ago"   # Move HEAD to first commit from 1 week ago
 
 SEE ALSO:
     hug h undo    Make HEAD walk back some commits while keeping their changes unstaged
@@ -34,7 +42,10 @@ EOF
 # Parse common flags (--quiet, --force, -h|--help)
 eval "$(parse_common_flags "$@")"
 
-# Parse custom flags
+# Parse temporal flag
+eval "$(parse_temporal_flag "$@")"
+
+# Parse remaining custom flags
 upstream=false
 target_arg=""
 while [[ $# -gt 0 ]]; do
@@ -44,17 +55,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if $upstream && [[ -n "$target_arg" ]]; then
-  error "Cannot specify both --upstream and an additional target (N|COMMIT)."
-fi
-
 check_git_repo
 
 if $upstream; then
-  # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
+  # handle_upstream_operation performs validation, preview, confirmation and echoes the upstream commit.
+  target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
   target=$(handle_upstream_operation "moving back")
 else
-  target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
+  # Use DRY helper for validation and target resolution
+  target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
+  
+  # Handle command-specific preview and confirmation
   handle_standard_operation "move back" "$target"
   target_short=$(git rev-parse --short "$target")
   if has_staged_changes; then

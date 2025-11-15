@@ -641,6 +641,69 @@ teardown() {
   assert_equal "$original_head" "$new_head"
 }
 
+@test "hug h back: accepts -t flag with relative time" {
+  # Create commits with known dates
+  echo "test1" > test1.txt
+  git add test1.txt
+  GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
+    git commit -q -m "Test commit 1"
+  
+  echo "test2" > test2.txt
+  git add test2.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Test commit 2"
+  
+  run hug h back -t "7 days ago" --force
+  assert_success
+  assert_output --partial "Moved HEAD back"
+}
+
+@test "hug h back: accepts --temporal flag with absolute date" {
+  # Create commits with known dates
+  echo "test1" > test1.txt
+  git add test1.txt
+  GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
+    git commit -q -m "Test commit 1"
+  
+  echo "test2" > test2.txt
+  git add test2.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Test commit 2"
+  
+  echo "test3" > test3.txt
+  git add test3.txt
+  GIT_COMMITTER_DATE="2024-01-20 10:00:00" GIT_AUTHOR_DATE="2024-01-20 10:00:00" \
+    git commit -q -m "Test commit 3"
+  
+  run hug h back --temporal "2024-01-12" --force
+  assert_success
+  assert_output --partial "Moved HEAD back"
+}
+
+@test "hug h back: rejects --temporal with --upstream" {
+  run hug h back -t "3 days ago" --upstream
+  assert_failure
+  assert_output --partial "Cannot specify both --upstream and --temporal"
+}
+
+@test "hug h back: rejects --temporal with target" {
+  run hug h back -t "3 days ago" 2
+  assert_failure
+  assert_output --partial "Cannot specify both --temporal and a target"
+}
+
+@test "hug h back: requires time specification with -t" {
+  run hug h back -t
+  assert_failure
+  assert_output --partial "requires a time specification"
+}
+
+@test "hug h back: shows help for --temporal flag" {
+  run hug h back -h
+  assert_success
+  assert_output --partial "--temporal"
+}
+
 # ----------------------------------------------------------------------------
 # git-h-undo edge cases
 # ----------------------------------------------------------------------------
@@ -748,6 +811,69 @@ teardown() {
   assert_output --partial "??"
 }
 
+@test "hug h undo: accepts -t flag with relative time" {
+  # Create commits with known dates
+  echo "test1" > test1.txt
+  git add test1.txt
+  GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
+    git commit -q -m "Test commit 1"
+  
+  echo "test2" > test2.txt
+  git add test2.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Test commit 2"
+  
+  run hug h undo -t "7 days ago" --force
+  assert_success
+  assert_output --partial "Moved HEAD back"
+}
+
+@test "hug h undo: accepts --temporal flag with absolute date" {
+  # Create commits with known dates
+  echo "test1" > test1.txt
+  git add test1.txt
+  GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
+    git commit -q -m "Test commit 1"
+  
+  echo "test2" > test2.txt
+  git add test2.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Test commit 2"
+  
+  echo "test3" > test3.txt
+  git add test3.txt
+  GIT_COMMITTER_DATE="2024-01-20 10:00:00" GIT_AUTHOR_DATE="2024-01-20 10:00:00" \
+    git commit -q -m "Test commit 3"
+  
+  run hug h undo --temporal "2024-01-12" --force
+  assert_success
+  assert_output --partial "Moved HEAD back"
+}
+
+@test "hug h undo: rejects --temporal with --upstream" {
+  run hug h undo -t "3 days ago" --upstream
+  assert_failure
+  assert_output --partial "Cannot specify both --upstream and --temporal"
+}
+
+@test "hug h undo: rejects --temporal with target" {
+  run hug h undo -t "3 days ago" 2
+  assert_failure
+  assert_output --partial "Cannot specify both --temporal and a target"
+}
+
+@test "hug h undo: requires time specification with -t" {
+  run hug h undo -t
+  assert_failure
+  assert_output --partial "requires a time specification"
+}
+
+@test "hug h undo: shows help for --temporal flag" {
+  run hug h undo -h
+  assert_success
+  assert_output --partial "--temporal"
+}
+
 # ----------------------------------------------------------------------------
 # git-h-rewind edge cases
 # ----------------------------------------------------------------------------
@@ -798,6 +924,35 @@ teardown() {
   local current_head
   current_head=$(git rev-parse HEAD)
   assert_equal "$current_head" "$initial_commit"
+}
+
+@test "hug h rewind: accepts -t flag with relative time" {
+  # Create commits with known dates
+  echo "test1" > test1.txt
+  git add test1.txt
+  GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
+    git commit -q -m "Test commit 1"
+  
+  echo "test2" > test2.txt
+  git add test2.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Test commit 2"
+  
+  run hug h rewind -t "7 days ago" --force
+  assert_success
+  assert_output --partial "Rewind complete"
+}
+
+@test "hug h rewind: rejects --temporal with --upstream" {
+  run hug h rewind -t "3 days ago" --upstream
+  assert_failure
+  assert_output --partial "Cannot specify both --upstream and --temporal"
+}
+
+@test "hug h rewind: shows help for --temporal flag" {
+  run hug h rewind -h
+  assert_success
+  assert_output --partial "--temporal"
 }
 
 # ----------------------------------------------------------------------------
@@ -855,6 +1010,35 @@ teardown() {
 @test "hug h rollback: works with --quiet flag" {
   run hug h rollback --quiet --force
   assert_success
+}
+
+@test "hug h rollback: accepts -t flag with relative time" {
+  # Create commits with known dates
+  echo "test1" > test1.txt
+  git add test1.txt
+  GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
+    git commit -q -m "Test commit 1"
+  
+  echo "test2" > test2.txt
+  git add test2.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Test commit 2"
+  
+  run hug h rollback -t "7 days ago" --force
+  assert_success
+  assert_output --partial "Roll back HEAD"
+}
+
+@test "hug h rollback: rejects --temporal with --upstream" {
+  run hug h rollback -t "3 days ago" --upstream
+  assert_failure
+  assert_output --partial "Cannot specify both --upstream and --temporal"
+}
+
+@test "hug h rollback: shows help for --temporal flag" {
+  run hug h rollback -h
+  assert_success
+  assert_output --partial "--temporal"
 }
 
 # -----------------------------------------------------------------------------
@@ -1026,6 +1210,35 @@ teardown() {
     # Failure is also acceptable
     assert_failure
   fi
+}
+
+@test "hug h squash: accepts -t flag with relative time" {
+  # Create commits with known dates
+  echo "test1" > test1.txt
+  git add test1.txt
+  GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
+    git commit -q -m "Test commit 1"
+  
+  echo "test2" > test2.txt
+  git add test2.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Test commit 2"
+  
+  run hug h squash -t "7 days ago" --force
+  assert_success
+  assert_output --partial "Squash complete"
+}
+
+@test "hug h squash: rejects --temporal with --upstream" {
+  run hug h squash -t "3 days ago" --upstream
+  assert_failure
+  assert_output --partial "Cannot specify both --upstream and --temporal"
+}
+
+@test "hug h squash: shows help for --temporal flag" {
+  run hug h squash -h
+  assert_success
+  assert_output --partial "--temporal"
 }
 
 # ----------------------------------------------------------------------------

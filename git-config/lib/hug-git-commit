@@ -93,6 +93,110 @@ resolve_temporal_to_commit() {
     echo "$commit"
 }
 
+# Parse temporal flag from command line arguments
+# Usage: eval "$(parse_temporal_flag "$@")"
+# Recognizes flags:
+#   -t, --temporal TIME    Sets temporal_spec="TIME" and consumes the argument
+# Output:
+#   Shell assignments to be eval'd by caller:
+#   - temporal_spec: The time specification string
+#   - Remaining args after consuming temporal flags
+# Example:
+#   eval "$(parse_temporal_flag "$@")"
+#   # Now $temporal_spec is set and $@ contains remaining arguments
+parse_temporal_flag() {
+    local temporal_value=""
+    local -a remaining_args=()
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -t|--temporal)
+                if [[ $# -lt 2 || "$2" == -* ]]; then
+                    echo "echo 'Error: -t/--temporal requires a time specification (e.g., \"3 days ago\", \"1 week ago\", \"2024-01-15\")' >&2"
+                    echo "exit 1"
+                    return
+                fi
+                temporal_value="$2"
+                shift 2
+                ;;
+            *)
+                remaining_args+=("$1")
+                shift
+                ;;
+        esac
+    done
+    
+    # Output the assignments
+    echo "temporal_spec='${temporal_value}'"
+    
+    # Output remaining args
+    if [[ ${#remaining_args[@]} -gt 0 ]]; then
+        printf "set -- "
+        printf "'%s' " "${remaining_args[@]}"
+        printf "\n"
+    else
+        echo "set --"
+    fi
+}
+
+# Resolve target commit from upstream, temporal, or explicit target
+# This is a DRY helper for h commands that support -u, -t, and N|COMMIT arguments
+# Usage: target=$(resolve_target_with_temporal "upstream_flag" "temporal_spec" "target_arg" "default_target")
+# Parameters:
+#   $1 - upstream flag (true/false)
+#   $2 - temporal specification (empty string if not used)
+#   $3 - target argument (N or COMMIT, empty string if not provided)
+#   $4 - default target if no upstream, temporal, or target_arg (e.g., 'HEAD~1')
+# Output:
+#   Resolved commit hash to stdout
+# Exits:
+#   With error if invalid combination or unable to resolve
+# Example:
+#   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1')
+resolve_target_with_temporal() {
+    local upstream="$1"
+    local temporal_spec="$2"
+    local target_arg="$3"
+    local default_target="$4"
+    
+    # Validate mutually exclusive options
+    if [[ "$upstream" == "true" ]] && [[ -n "$target_arg" ]]; then
+        error "Cannot specify both --upstream and a target (N|COMMIT)."
+        return 1
+    fi
+    
+    if [[ "$upstream" == "true" ]] && [[ -n "$temporal_spec" ]]; then
+        error "Cannot specify both --upstream and --temporal."
+        return 1
+    fi
+    
+    if [[ -n "$temporal_spec" ]] && [[ -n "$target_arg" ]]; then
+        error "Cannot specify both --temporal and a target (N|COMMIT)."
+        return 1
+    fi
+    
+    local target
+    
+    if [[ "$upstream" == "true" ]]; then
+        target=$(get_upstream_commit) || return 1
+    elif [[ -n "$temporal_spec" ]]; then
+        target=$(resolve_temporal_to_commit "$temporal_spec" HEAD) || return 1
+        if ! git rev-parse --verify "$target" >/dev/null 2>&1; then
+            error "Unable to resolve temporal specification '${temporal_spec}' to a valid commit"
+            return 1
+        fi
+    else
+        local target_input="${target_arg:-}"
+        local target_ref
+        target_ref=$(resolve_head_target "$target_input" "$default_target")
+        # Try to resolve to commit hash, but don't error if it fails
+        # Let handle_standard_operation check if there are commits in range
+        target=$(git rev-parse --verify "$target_ref" 2>/dev/null || echo "$target_ref")
+    fi
+    
+    echo "$target"
+}
+
 ################################################################################
 # Commit Range Analysis Functions
 ################################################################################

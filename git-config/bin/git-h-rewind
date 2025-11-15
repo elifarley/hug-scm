@@ -9,15 +9,21 @@ show_help() {
 hug h rewind: Make HEAD walk back some commits while DISCARDING their changes. Uncommitted changes are DISCARDED.
 
 USAGE:
-    hug h rewind [N|COMMIT] [-u, --upstream] [--quiet] [--force]
+    hug h rewind [N|COMMIT] [-u, --upstream] [-t, --temporal TIME] [--quiet] [--force]
 
 OPTIONS:
     -u, --upstream  Sets target to upstream remote tip after read-only preview/confirmation (discards everything after remote tip; no fetch)
+    -t, --temporal TIME
+                    Specify commits by time instead of count/commit
+                    TIME can be relative (e.g., "3 days ago", "1 week ago")
+                    or absolute (e.g., "2024-01-15", "2024-01-15 10:30")
+                    Reference point is HEAD's commit time
     --quiet         Suppress output (sets HUG_QUIET=T)
     --force         Skip confirmation prompts (use with caution; highly destructive)
 
 DESCRIPTION:
     Moves HEAD back to target (full clean). With -u, runs a read-only preview/confirmation before discarding local-only commits and uncommitted changes to sync with remote tip.
+    With -t/--temporal, moves HEAD to the first commit at or after the specified time.
 
 EXAMPLES:
     # Uncommitted changes are DISCARDED in all examples below:
@@ -25,6 +31,8 @@ EXAMPLES:
     hug h rewind 3               # Moves HEAD back last 3 commits
     hug h rewind a1b2c3          # Moves HEAD back after specified commit
     hug h rewind 3 --force       # Skip confirmation (dangerous!)
+    hug h rewind -t "3 days ago" # Rewind to first commit from 3 days ago
+    hug h rewind -t "1 week ago" # Rewind to first commit from 1 week ago
 
 SEE ALSO:
     hug h back    Make HEAD walk back some commits while keeping their changes staged
@@ -34,7 +42,10 @@ EOF
 # Parse common flags (--quiet, --force, -h|--help)
 eval "$(parse_common_flags "$@")"
 
-# Parse custom flags
+# Parse temporal flag
+eval "$(parse_temporal_flag "$@")"
+
+# Parse remaining custom flags
 upstream=false
 target_arg=""
 while [[ $# -gt 0 ]]; do
@@ -44,20 +55,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if $upstream && [[ -n "$target_arg" ]]; then
-  error "Cannot specify both --upstream and a target (N|COMMIT)."
-fi
-
 check_git_repo
 
 if $upstream; then
+  # Use DRY helper for validation, then handle upstream-specific logic
+  target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
+  
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
   target=$(handle_upstream_operation "rewinding")
   if [[ -z "${target:-}" ]]; then
     exit 0
   fi
 else
-  target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
+  # Use DRY helper for validation and target resolution
+  target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
+  
+  # Handle command-specific preview and confirmation
   handle_standard_operation "rewinding" "$target" false
 
   printf '\n⚠️  This is PERMANENT and cannot be undone!\n' >&2
