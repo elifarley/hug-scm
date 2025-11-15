@@ -58,27 +58,16 @@ done
 check_git_repo
 
 if $upstream; then
-  # Validate mutually exclusive options
-  if [[ -n "$temporal_spec" ]]; then
-    error "Cannot specify both --upstream and --temporal."
-  fi
-  if [[ -n "$target_arg" ]]; then
-    error "Cannot specify both --upstream and a target (N|COMMIT)."
-  fi
+  # Use DRY helper for validation, then handle upstream-specific logic
+  target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
   
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
   target=$(handle_upstream_operation "rolling back")
-elif [[ -n "$temporal_spec" ]]; then
-  # Validate mutually exclusive options
-  if [[ -n "$target_arg" ]]; then
-    error "Cannot specify both --temporal and a target (N|COMMIT)."
-  fi
-  
-  target=$(resolve_temporal_to_commit "$temporal_spec" HEAD) || exit 1
-  handle_standard_operation "rollback" "$target"
-  prompt_confirm "Rollback HEAD to $(git rev-parse --short "$target")? [y/N]: "
 else
-  target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
+  # Use DRY helper for validation and target resolution
+  target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
+  
+  # Handle command-specific preview and confirmation
   handle_standard_operation "rollback" "$target"
   prompt_confirm "Rollback HEAD to $(git rev-parse --short "$target")? [y/N]: "
 fi

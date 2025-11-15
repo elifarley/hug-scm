@@ -70,13 +70,8 @@ check_git_repo
 original_head=$(git rev-parse HEAD)
 
 if $upstream; then
-  # Validate mutually exclusive options
-  if [[ -n "$temporal_spec" ]]; then
-    error "Cannot specify both --upstream and --temporal."
-  fi
-  if [[ -n "$target_arg" ]]; then
-    error "Cannot specify both -u/--upstream and a target (N|COMMIT)."
-  fi
+  # Use DRY helper for validation, then handle upstream-specific logic
+  resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~2' >/dev/null || exit 1
   
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
   # When the staging area is clean we temporarily set HUG_FORCE to bypass the confirmation prompt.
@@ -89,51 +84,14 @@ if $upstream; then
     target=$(HUG_FORCE=true handle_upstream_operation "squashing")
   fi
   commits_to_squash=$(count_commits_in_range "$target" HEAD)
-elif [[ -n "$temporal_spec" ]]; then
-  # Validate mutually exclusive options
-  if [[ -n "$target_arg" ]]; then
-    error "Cannot specify both --temporal and a target (N|COMMIT)."
-  fi
+else
+  # Use DRY helper for validation and target resolution
+  target_commit=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~2') || exit 1
   
-  target_commit=$(resolve_temporal_to_commit "$temporal_spec" HEAD) || exit 1
+  # Common logic for temporal and explicit targets
   ensure_ancestor_of_head "$target_commit" "cannot squash onto it."
   log_range="$target_commit"..HEAD
-  target_display=$(git rev-parse --short "$target_commit" 2>/dev/null)
-  commits_to_squash=$(count_commits_in_range "$target_commit" HEAD)
-  if [ "$commits_to_squash" -eq 0 ]; then
-    info "No commits to squash (already at $target_display)."
-    exit 0
-  fi
-  commit_word="commit"
-  if [ "$commits_to_squash" -gt 1 ]; then
-    commit_word="commits"
-  fi
-  if [[ ${HUG_QUIET:-} != T ]]; then
-    printf 'Squashing %d %s into 1:\n' "$commits_to_squash" "$commit_word" >&2
-    print_commit_list_in_range "$target_commit" HEAD >&2
-  fi
-  should_prompt=true
-  if [[ ${HUG_FORCE:-} == true ]]; then
-    should_prompt=false
-  elif ! has_staged_changes; then
-    should_prompt=false
-    info "No staged changes detected; skipping confirmation."
-  fi
-  if $should_prompt; then
-    prompt_confirm "Squash these $commits_to_squash ${commit_word} into 1? [y/N]: "
-  fi
-  target="$target_commit"
-else
-  if [[ -n "$target_arg" ]]; then
-    # target was provided - no need to check mutual exclusivity again
-    :
-  fi
-  target_spec=$(resolve_head_target "${target_arg:-}" 'HEAD~2')
-  ensure_ancestor_of_head "$target_spec" "cannot squash onto it."
-  target_commit=$(git rev-parse "${target_spec}^{commit}")
-  log_range="$target_commit"..HEAD
-  # short hash
-  target_display=$(git rev-parse --short "$target_commit" 2>/dev/null || echo "$target_spec")
+  target_display=$(git rev-parse --short "$target_commit" 2>/dev/null || echo "$target_commit")
   commits_to_squash=$(count_commits_in_range "$target_commit" HEAD)
   if [ "$commits_to_squash" -eq 0 ]; then
     info "No commits to squash (already at $target_display)."

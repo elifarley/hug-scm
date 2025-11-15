@@ -58,13 +58,8 @@ done
 check_git_repo
 
 if $upstream; then
-  # Validate mutually exclusive options
-  if [[ -n "$temporal_spec" ]]; then
-    error "Cannot specify both --upstream and --temporal."
-  fi
-  if [[ -n "$target_arg" ]]; then
-    error "Cannot specify both --upstream and a target (N|COMMIT)."
-  fi
+  # Use DRY helper for validation, then handle upstream-specific logic
+  target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
   
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
   if [[ ${HUG_FORCE:-} == true ]]; then
@@ -75,28 +70,11 @@ if $upstream; then
     info "No staged or unstaged changes detected; skipping confirmation."
     target=$(HUG_FORCE=true handle_upstream_operation "undoing")
   fi
-elif [[ -n "$temporal_spec" ]]; then
-  # Validate mutually exclusive options
-  if [[ -n "$target_arg" ]]; then
-    error "Cannot specify both --temporal and a target (N|COMMIT)."
-  fi
-  
-  target=$(resolve_temporal_to_commit "$temporal_spec" HEAD) || exit 1
-  handle_standard_operation "undo" "$target"
-
-  should_prompt=true
-  if [[ ${HUG_FORCE:-} == true ]]; then
-    should_prompt=false
-  elif ! has_staged_changes && ! has_unstaged_changes; then
-    should_prompt=false
-    info "No staged or unstaged changes detected; skipping confirmation."
-  fi
-
-  if $should_prompt; then
-    prompt_confirm "Undo commits back to $(git rev-parse --short "$target")? [y/N]: "
-  fi
 else
-  target=$(resolve_head_target "${target_arg:-}" 'HEAD~1')
+  # Use DRY helper for validation and target resolution
+  target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
+  
+  # Handle command-specific preview and confirmation
   handle_standard_operation "undo" "$target"
 
   should_prompt=true

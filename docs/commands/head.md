@@ -8,12 +8,12 @@ These commands provide intuitive names and built-in safeguards for moving the br
 
 | Command | Memory Hook | Summary                                                                           |
 | --- | --- |-----------------------------------------------------------------------------------|
-| `hug h back [-u\|-t TIME] [--force]` | **H**EAD **Back** | HEAD goes back, keeping changes staged                                            |
-| `hug h undo [-u\|-t TIME] [--force]` | **H**EAD **Undo** | HEAD goes back, keeping changes unstaged                                          |
-| `hug h rollback [-u\|-t TIME] [--force]` | **H**EAD **R**ollback | HEAD goes back, discarding changes but preserving uncommitted changes             |
-| `hug h rewind [-u\|-t TIME] [--force]` | **H**EAD **Re**wind | HEAD goes back, discarding ALL changes, including uncommitted ones                |
-| `hug h squash [-u\|-t TIME] [--force]` | **H**EAD **S**quash | HEAD goes back + commit last N/local/specific commits as 1 with original HEAD msg |
-| `hug h files [-u\|-t TIME] [-p\|--patch [FILE]]` | **H**EAD **F**iles | Preview files touched in the selected range (or local-only with -u, or by time with -t); optionally show patch (-p) before stats |
+| `hug h back [-u|-t TIME] [--force]` | **H**EAD **Back** | HEAD goes back, keeping changes staged                                            |
+| `hug h undo [-u|-t TIME] [--force]` | **H**EAD **Undo** | HEAD goes back, keeping changes unstaged                                          |
+| `hug h rollback [-u|-t TIME] [--force]` | **H**EAD **R**ollback | HEAD goes back, discarding changes but preserving uncommitted changes             |
+| `hug h rewind [-u|-t TIME] [--force]` | **H**EAD **Re**wind | HEAD goes back, discarding ALL changes, including uncommitted ones                |
+| `hug h squash [-u|-t TIME] [--force]` | **H**EAD **S**quash | HEAD goes back + commit last N/local/specific commits as 1 with original HEAD msg |
+| `hug h files [-u|-t TIME] [-p|--patch [FILE]]` | **H**EAD **F**iles | Preview files touched in the selected range (or local-only with -u, or by time with -t); optionally show patch (-p) before stats |
 | `hug h steps <file>` | **H**EAD **Steps** | Count steps back to find most recent file change (query for rewinds)              |
 
 ## Upstream Safety Workflow (`-u` / `--upstream`)
