@@ -1107,77 +1107,37 @@ teardown() {
 }
 
 @test "hug h files: accepts -t flag with relative time" {
-  # Create commits with specific dates
-  local test_repo_temporal
-  test_repo_temporal=$(mktemp -d)
-  cd "$test_repo_temporal" || exit 1
-  git init -q
-  git config user.email "test@example.com"
-  git config user.name "Test User"
+  local repo
+  repo=$(create_test_repo_with_dated_commits)
+  cd "$repo" || exit 1
   
-  # Create commits at specific times
-  echo "day1" > day1.txt
-  git add .
-  GIT_COMMITTER_DATE="2024-01-01 10:00:00" GIT_AUTHOR_DATE="2024-01-01 10:00:00" \
-    git commit -q -m "Day 1"
-  
-  echo "day5" > day5.txt
-  git add .
-  GIT_COMMITTER_DATE="2024-01-05 10:00:00" GIT_AUTHOR_DATE="2024-01-05 10:00:00" \
-    git commit -q -m "Day 5"
-  
-  echo "day10" > day10.txt
-  git add .
-  GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
-    git commit -q -m "Day 10"
-  
-  # Test: should show files from last 7 days (relative to HEAD which is day 10)
-  run hug h files -t "7 days ago"
+  # Test: should show files from last 10 days (relative to HEAD which is day 20)
+  # This should include day10, day15, day20
+  run hug h files -t "10 days ago"
   assert_success
-  assert_output --partial "day10.txt"
+  assert_output --partial "day15.txt"
+  assert_output --partial "day20.txt"
   refute_output --partial "day1.txt"
   
-  # Cleanup
   cd "$TEST_REPO" || exit 1
-  rm -rf "$test_repo_temporal"
+  rm -rf "$repo"
 }
 
 @test "hug h files: accepts --temporal flag with absolute date" {
-  # Create commits with specific dates
-  local test_repo_temporal
-  test_repo_temporal=$(mktemp -d)
-  cd "$test_repo_temporal" || exit 1
-  git init -q
-  git config user.email "test@example.com"
-  git config user.name "Test User"
+  local repo
+  repo=$(create_test_repo_with_dated_commits)
+  cd "$repo" || exit 1
   
-  # Create commits at specific times
-  echo "jan1" > jan1.txt
-  git add .
-  GIT_COMMITTER_DATE="2024-01-01 10:00:00" GIT_AUTHOR_DATE="2024-01-01 10:00:00" \
-    git commit -q -m "Jan 1"
-  
-  echo "jan15" > jan15.txt
-  git add .
-  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
-    git commit -q -m "Jan 15"
-  
-  echo "jan20" > jan20.txt
-  git add .
-  GIT_COMMITTER_DATE="2024-01-20 10:00:00" GIT_AUTHOR_DATE="2024-01-20 10:00:00" \
-    git commit -q -m "Jan 20"
-  
-  # Test: should show files since 2024-01-10 (finds first commit on/after: jan15)
-  # So range is jan15..HEAD which only includes jan20
-  run hug h files -t "2024-01-10"
+  # Test: should show files since 2024-01-12 (finds first commit on/after: day15)
+  # So range is day15..HEAD which only includes day20
+  run hug h files -t "2024-01-12"
   assert_success
-  assert_output --partial "jan20.txt"
-  assert_output --partial "since '2024-01-10'"
-  refute_output --partial "jan1.txt"
+  assert_output --partial "day20.txt"
+  assert_output --partial "since '2024-01-12'"
+  refute_output --partial "day1.txt"
   
-  # Cleanup
   cd "$TEST_REPO" || exit 1
-  rm -rf "$test_repo_temporal"
+  rm -rf "$repo"
 }
 
 @test "hug h files: rejects --temporal with --upstream" {
@@ -1199,77 +1159,33 @@ teardown() {
 }
 
 @test "hug h files: works with --temporal and --patch" {
-  # Create commits with specific dates
-  local test_repo_temporal
-  test_repo_temporal=$(mktemp -d)
-  cd "$test_repo_temporal" || exit 1
-  git init -q
-  git config user.email "test@example.com"
-  git config user.name "Test User"
+  local repo
+  repo=$(create_test_repo_with_dated_commits)
+  cd "$repo" || exit 1
   
-  # Create commits at specific times
-  echo "initial" > file.txt
-  git add .
-  GIT_COMMITTER_DATE="2024-01-01 10:00:00" GIT_AUTHOR_DATE="2024-01-01 10:00:00" \
-    git commit -q -m "Initial"
-  
-  echo "day5" > file2.txt
-  git add .
-  GIT_COMMITTER_DATE="2024-01-05 10:00:00" GIT_AUTHOR_DATE="2024-01-05 10:00:00" \
-    git commit -q -m "Day 5"
-  
-  echo "week1" > file3.txt
-  git add .
-  GIT_COMMITTER_DATE="2024-01-08 10:00:00" GIT_AUTHOR_DATE="2024-01-08 10:00:00" \
-    git commit -q -m "Week 1"
-  
-  # Test: should show patch and stats (2 days ago from Jan 8 = Jan 6, first commit is Jan 8)
-  # So this will find no commits and show "No files touched"
-  # Let's use "3 days ago" which goes to Jan 5, finding the commit on Jan 5
-  run hug h files -t "3 days ago" -p
+  # Test: should show patch and stats for files in last 10 days
+  run hug h files -t "10 days ago" -p
   assert_success
   assert_output --partial "diff --git"
-  assert_output --partial "file"
+  assert_output --partial "day"
   
-  # Cleanup
   cd "$TEST_REPO" || exit 1
-  rm -rf "$test_repo_temporal"
+  rm -rf "$repo"
 }
 
 @test "hug h files: shows commit count with --temporal" {
-  # Create commits with specific dates
-  local test_repo_temporal
-  test_repo_temporal=$(mktemp -d)
-  cd "$test_repo_temporal" || exit 1
-  git init -q
-  git config user.email "test@example.com"
-  git config user.name "Test User"
-  
-  # Create commits at specific times
-  echo "day1" > day1.txt
-  git add .
-  GIT_COMMITTER_DATE="2024-01-01 10:00:00" GIT_AUTHOR_DATE="2024-01-01 10:00:00" \
-    git commit -q -m "Day 1"
-  
-  echo "day5" > day5.txt
-  git add .
-  GIT_COMMITTER_DATE="2024-01-05 10:00:00" GIT_AUTHOR_DATE="2024-01-05 10:00:00" \
-    git commit -q -m "Day 5"
-  
-  echo "day10" > day10.txt
-  git add .
-  GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
-    git commit -q -m "Day 10"
+  local repo
+  repo=$(create_test_repo_with_dated_commits)
+  cd "$repo" || exit 1
   
   # Test: should show commit count in tip message
-  run hug h files -t "7 days ago"
+  run hug h files -t "10 days ago"
   assert_success
-  assert_output --partial "in 1 commit"
-  assert_output --partial "since '7 days ago'"
+  assert_output --partial "in 2 commit"
+  assert_output --partial "since '10 days ago'"
   
-  # Cleanup
   cd "$TEST_REPO" || exit 1
-  rm -rf "$test_repo_temporal"
+  rm -rf "$repo"
 }
 
 # ----------------------------------------------------------------------------

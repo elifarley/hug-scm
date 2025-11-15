@@ -65,12 +65,19 @@ resolve_temporal_to_commit() {
         
         target_time=$((reference_time - seconds_offset))
     else
-        # Absolute time specification - let git parse it
-        # Use git's date parsing by creating a temporary query
-        target_time=$(date -d "$time_spec" +%s 2>/dev/null) || {
-            error "Unable to parse time specification '$time_spec'"
+        # Absolute time specification - use git's date parsing directly
+        # Git understands various date formats and is cross-platform
+        # We'll use --since with the time spec and let git parse it
+        local commit
+        commit=$(git log --format="%H" --since="$time_spec" "$reference" --reverse 2>/dev/null | head -n 1)
+        
+        if [[ -z "$commit" ]]; then
+            error "Unable to parse time specification '$time_spec' or no commits found after that time"
             return 1
-        }
+        fi
+        
+        echo "$commit"
+        return 0
     fi
     
     # Find the first commit at or after the target time
