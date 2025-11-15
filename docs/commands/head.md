@@ -13,7 +13,7 @@ These commands provide intuitive names and built-in safeguards for moving the br
 | `hug h rollback [-u] [--force]` | **H**EAD **R**ollback | HEAD goes back, discarding changes but preserving uncommitted changes             |
 | `hug h rewind [-u] [--force]` | **H**EAD **Re**wind | HEAD goes back, discarding ALL changes, including uncommitted ones                |
 | `hug h squash [-u] [--force]` | **H**EAD **S**quash | HEAD goes back + commit last N/local/specific commits as 1 with original HEAD msg |
-| `hug h files [-u] [-p|--patch [FILE]]` | **H**EAD **F**iles | Preview files touched in the selected range (or local-only with -u); optionally show patch (-p) before stats |
+| `hug h files [-u] [-t TIME] [-p|--patch [FILE]]` | **H**EAD **F**iles | Preview files touched in the selected range (or local-only with -u, or by time with -t); optionally show patch (-p) before stats |
 | `hug h steps <file>` | **H**EAD **Steps** | Count steps back to find most recent file change (query for rewinds)              |
 
 ## Upstream Safety Workflow (`-u` / `--upstream`)
@@ -87,7 +87,13 @@ Changes from all squashed commits are kept staged so that they can be committed 
 - Pre-existing staged changes will be included - review with `hug ss` first.
 
 ### `hug h files [N|commit] [options]`
-- **Description**: Preview unique files touched by commits in the specified range (default: last 1 commit), including line change stats. Optionally show full patch of changes (-p/--patch) or patch for a specific file (--patch=FILE) before the stats. Use -- with -p to interactively select a specific file for the patch instead of showing the full patch. With `-u`, previews files and stats in local-only commits (HEAD to upstream tip). Useful before back, undo, rollback, or rewind to understand impact.
+- **Description**: Preview unique files touched by commits in the specified range (default: last 1 commit), including line change stats. Optionally show full patch of changes (-p/--patch) or patch for a specific file (--patch=FILE) before the stats. Use -- with -p to interactively select a specific file for the patch instead of showing the full patch. With `-u`, previews files and stats in local-only commits (HEAD to upstream tip). With `-t/--temporal`, filters commits by time relative to HEAD's commit time. Useful before back, undo, rollback, or rewind to understand impact.
+- **Options**:
+  - `-u, --upstream`: Use upstream remote tip as start point (local-only commits)
+  - `-t, --temporal TIME`: Specify commits by time instead of count/commit. TIME can be relative (e.g., "3 days ago", "1 week ago") or absolute (e.g., "2024-01-15"). Reference point is HEAD's commit time.
+  - `-p, --patch`: Show full patch of changes before stats
+  - `--patch=FILE`: Show patch for specific FILE before stats
+  - `--`: Trigger interactive file selection for patch (with -p)
 - **Example**:
   ```shell
   hug h files                # Files and stats in last commit
@@ -97,8 +103,12 @@ Changes from all squashed commits are kept staged so that they can be committed 
   hug h files 3 -p           # Full patch and stats in last 3 commits
   hug h files 3 -p --        # Interactively select file for patch and stats in last 3 commits
   hug h files main --patch=src/main.py  # Patch for src/main.py and stats changed after 'main' to HEAD
+  hug h files -t "3 days ago"    # Files changed in last 3 days (relative to HEAD's time)
+  hug h files -t "1 week ago"    # Files changed in last week
+  hug h files -t "2024-01-15"    # Files changed since Jan 15, 2024
+  hug h files -t "3 days ago" -p # Show patch and stats for files changed in last 3 days
   ```
-- **Safety**: Read-only; no changes to repo. Upstream mode uses the shared preview data but remains read-only. Cannot mix `-u` with explicit target.
+- **Safety**: Read-only; no changes to repo. Upstream mode uses the shared preview data but remains read-only. Cannot mix `-u` with explicit target or `-t/--temporal`. Cannot mix `-t/--temporal` with explicit target.
 - ![hug h files example](img/hug-h-files.png)
 
 ### `hug h steps [<file>] [--raw]`
