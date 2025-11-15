@@ -229,6 +229,10 @@ hug h rewind <commit>     # Destructive rewind to clean state (discards history 
 hug h squash [N|commit]   # Squash commits into one
 hug h files [N|commit]    # Preview files touched in commit range
 hug h steps <file> [--raw] # Steps back from HEAD to last change in <file> (for precise rewinds)
+
+# All h commands support -t/--temporal TIME for time-based operations:
+hug h back -t "3 days ago"    # Move HEAD to first commit from 3 days ago
+hug h files -t "1 week ago"   # Preview files changed in last week
 ```
 
 #### 🧹 Working Directory (`w`)
