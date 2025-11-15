@@ -189,10 +189,9 @@ resolve_target_with_temporal() {
         local target_input="${target_arg:-}"
         local target_ref
         target_ref=$(resolve_head_target "$target_input" "$default_target")
-        if ! target=$(git rev-parse --verify "$target_ref" 2>/dev/null); then
-            error "Invalid target '${target_input:-$target_ref}' (use N or commit ref)"
-            return 1
-        fi
+        # Try to resolve to commit hash, but don't error if it fails
+        # Let handle_standard_operation check if there are commits in range
+        target=$(git rev-parse --verify "$target_ref" 2>/dev/null || echo "$target_ref")
     fi
     
     echo "$target"
