@@ -189,3 +189,105 @@ teardown() {
   run resolve_temporal_to_commit "1 month ago"
   assert_success
 }
+
+################################################################################
+# parse_temporal_flag TESTS
+################################################################################
+
+@test "parse_temporal_flag: parses -t flag with time spec" {
+  eval "$(parse_temporal_flag -t "3 days ago" some other args)"
+  
+  assert_equal "$temporal_spec" "3 days ago"
+  assert_equal "$1" "some"
+  assert_equal "$2" "other"
+  assert_equal "$3" "args"
+}
+
+@test "parse_temporal_flag: parses --temporal flag" {
+  eval "$(parse_temporal_flag --temporal "1 week ago" remaining)"
+  
+  assert_equal "$temporal_spec" "1 week ago"
+  assert_equal "$1" "remaining"
+}
+
+@test "parse_temporal_flag: errors when -t missing time spec" {
+  run bash -c "cd $TEST_REPO && source $HUG_HOME/git-config/lib/hug-common && source $HUG_HOME/git-config/lib/hug-git-commit && eval \"\$(parse_temporal_flag -t)\""
+  assert_failure
+  assert_output --partial "requires a time specification"
+}
+
+@test "parse_temporal_flag: errors when -t followed by flag" {
+  run bash -c "cd $TEST_REPO && source $HUG_HOME/git-config/lib/hug-common && source $HUG_HOME/git-config/lib/hug-git-commit && eval \"\$(parse_temporal_flag -t --force)\""
+  assert_failure
+  assert_output --partial "requires a time specification"
+}
+
+@test "parse_temporal_flag: preserves other arguments" {
+  eval "$(parse_temporal_flag arg1 -t "time spec" arg2 --flag arg3)"
+  
+  assert_equal "$temporal_spec" "time spec"
+  assert_equal "$1" "arg1"
+  assert_equal "$2" "arg2"
+  assert_equal "$3" "--flag"
+  assert_equal "$4" "arg3"
+}
+
+@test "parse_temporal_flag: handles no temporal flag" {
+  eval "$(parse_temporal_flag arg1 arg2)"
+  
+  assert_equal "$temporal_spec" ""
+  assert_equal "$1" "arg1"
+  assert_equal "$2" "arg2"
+}
+
+################################################################################
+# resolve_target_with_temporal TESTS
+################################################################################
+
+@test "resolve_target_with_temporal: resolves explicit target" {
+  run resolve_target_with_temporal false "" "HEAD~1" "HEAD~2"
+  assert_success
+  
+  # Should resolve to HEAD~1's commit hash
+  expected=$(git rev-parse HEAD~1)
+  assert_output "$expected"
+}
+
+@test "resolve_target_with_temporal: uses default when no args" {
+  run resolve_target_with_temporal false "" "" "HEAD~1"
+  assert_success
+  
+  expected=$(git rev-parse HEAD~1)
+  assert_output "$expected"
+}
+
+@test "resolve_target_with_temporal: resolves temporal spec" {
+  # Create a commit with known date
+  echo "test" > test.txt
+  git add test.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Test commit"
+  
+  run resolve_target_with_temporal false "5 days ago" "" "HEAD~1"
+  assert_success
+  # Should return a commit hash
+  [[ "$output" =~ ^[0-9a-f]{40}$ ]] || fail "Expected 40-char commit hash, got: $output"
+}
+
+@test "resolve_target_with_temporal: rejects upstream + target" {
+  run resolve_target_with_temporal true "" "HEAD~1" "HEAD~2"
+  assert_failure
+  assert_output --partial "Cannot specify both --upstream and a target"
+}
+
+@test "resolve_target_with_temporal: rejects upstream + temporal" {
+  run resolve_target_with_temporal true "3 days ago" "" "HEAD~2"
+  assert_failure
+  assert_output --partial "Cannot specify both --upstream and --temporal"
+}
+
+@test "resolve_target_with_temporal: rejects temporal + target" {
+  run resolve_target_with_temporal false "3 days ago" "HEAD~1" "HEAD~2"
+  assert_failure
+  assert_output --partial "Cannot specify both --temporal and a target"
+}

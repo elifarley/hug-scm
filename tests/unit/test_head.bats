@@ -641,6 +641,69 @@ teardown() {
   assert_equal "$original_head" "$new_head"
 }
 
+@test "hug h back: accepts -t flag with relative time" {
+  # Create commits with known dates
+  echo "test1" > test1.txt
+  git add test1.txt
+  GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
+    git commit -q -m "Test commit 1"
+  
+  echo "test2" > test2.txt
+  git add test2.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Test commit 2"
+  
+  run hug h back -t "7 days ago" --force
+  assert_success
+  assert_output --partial "Moved HEAD back"
+}
+
+@test "hug h back: accepts --temporal flag with absolute date" {
+  # Create commits with known dates
+  echo "test1" > test1.txt
+  git add test1.txt
+  GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
+    git commit -q -m "Test commit 1"
+  
+  echo "test2" > test2.txt
+  git add test2.txt
+  GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
+    git commit -q -m "Test commit 2"
+  
+  echo "test3" > test3.txt
+  git add test3.txt
+  GIT_COMMITTER_DATE="2024-01-20 10:00:00" GIT_AUTHOR_DATE="2024-01-20 10:00:00" \
+    git commit -q -m "Test commit 3"
+  
+  run hug h back --temporal "2024-01-12" --force
+  assert_success
+  assert_output --partial "Moved HEAD back"
+}
+
+@test "hug h back: rejects --temporal with --upstream" {
+  run hug h back -t "3 days ago" --upstream
+  assert_failure
+  assert_output --partial "Cannot specify both --upstream and --temporal"
+}
+
+@test "hug h back: rejects --temporal with target" {
+  run hug h back -t "3 days ago" 2
+  assert_failure
+  assert_output --partial "Cannot specify both --temporal and a target"
+}
+
+@test "hug h back: requires time specification with -t" {
+  run hug h back -t
+  assert_failure
+  assert_output --partial "requires a time specification"
+}
+
+@test "hug h back: shows help for --temporal flag" {
+  run hug h back -h
+  assert_success
+  assert_output --partial "--temporal"
+}
+
 # ----------------------------------------------------------------------------
 # git-h-undo edge cases
 # ----------------------------------------------------------------------------
