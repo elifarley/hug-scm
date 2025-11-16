@@ -1,0 +1,146 @@
+name: Test MCP Server
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'hug-scm-mcp-server/**'
+      - '.github/workflows/test-mcp-server.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'hug-scm-mcp-server/**'
+      - '.github/workflows/test-mcp-server.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test-mcp:
+    name: Test MCP Server (Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.10', '3.11', '3.12']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: 'hug-scm-mcp-server/pyproject.toml'
+
+      - name: Install Hug SCM
+        run: |
+          make install
+          echo "Hug SCM installed"
+
+      - name: Verify Hug installation
+        run: |
+          source bin/activate
+          which hug
+          hug --version || hug help
+          echo "Hug verified"
+
+      - name: Install MCP Server dependencies
+        working-directory: hug-scm-mcp-server
+        run: make ci-install
+
+      - name: Verify MCP Server installation
+        working-directory: hug-scm-mcp-server
+        run: make verify-install
+
+      - name: Verify dependencies
+        working-directory: hug-scm-mcp-server
+        run: make verify-deps
+
+      - name: Run linter (CI mode)
+        working-directory: hug-scm-mcp-server
+        run: make ci-lint
+
+      - name: Check code formatting
+        working-directory: hug-scm-mcp-server
+        run: make format-check
+
+      - name: Run type checker
+        working-directory: hug-scm-mcp-server
+        run: make type-check
+
+      - name: Run tests (CI mode)
+        working-directory: hug-scm-mcp-server
+        env:
+          CI: true
+        run: make ci-test
+
+      - name: Upload coverage reports
+        if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v4
+        with:
+          file: hug-scm-mcp-server/coverage.xml
+          flags: mcp-server
+          name: mcp-server-coverage
+          fail_ci_if_error: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.python-version }}
+          path: hug-scm-mcp-server/junit.xml
+
+  test-mcp-integration:
+    name: Integration Test with Hug SCM
+    runs-on: ubuntu-latest
+    needs: test-mcp
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Hug SCM
+        run: make install
+
+      - name: Activate Hug
+        run: |
+          source bin/activate
+          which hug
+
+      - name: Install MCP Server
+        working-directory: hug-scm-mcp-server
+        run: make ci-install
+
+      - name: Run integration tests
+        working-directory: hug-scm-mcp-server
+        run: |
+          source ../bin/activate
+          make test-integration
+
+      - name: Test MCP server startup
+        working-directory: hug-scm-mcp-server
+        run: |
+          source ../bin/activate
+          # Test that the server can start (will timeout waiting for input)
+          timeout 5 hug-scm-mcp-server || [ $? -eq 124 ]
+          echo "✓ Server starts successfully"
+
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    needs: [test-mcp, test-mcp-integration]
+    
+    steps:
+      - name: All tests passed
+        run: |
+          echo "✅ All MCP Server tests passed!"
+          echo "Quality gate: PASSED"
