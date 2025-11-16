@@ -1,5 +1,6 @@
 """Pytest configuration and fixtures."""
 
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Generator
@@ -59,13 +60,5 @@ def temp_git_repo() -> Generator[Path, None, None]:
 
 @pytest.fixture
 def hug_available() -> bool:
-    """Check if hug command is available."""
-    try:
-        result = subprocess.run(
-            ["which", "hug"],
-            capture_output=True,
-            text=True,
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
+    """Check if hug command is available (cross-platform)."""
+    return shutil.which("hug") is not None

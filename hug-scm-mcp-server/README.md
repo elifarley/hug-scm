@@ -184,7 +184,8 @@ hug_h_steps(file="src/main.py")
 - All commands run with the permissions of the user running the server
 - Commands are read-only by default (status, log, diff operations)
 - No destructive operations are exposed
-- File paths are validated to prevent directory traversal
+- File paths are validated and resolved to absolute paths to prevent directory traversal
+- Working directory paths are verified to exist and be directories before command execution
 
 ## Contributing
 
