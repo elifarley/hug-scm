@@ -75,6 +75,18 @@ import { defineConfig } from 'vitepress'
               ]
             }
           ]
+        },
+        {
+          text: 'MCP Server',
+          collapsible: true,
+          collapsed: true,
+          items: [
+            { text: 'Overview', link: '/mcp-server/index' },
+            { text: 'Quick Start', link: '/mcp-server/quickstart' },
+            { text: 'Usage', link: '/mcp-server/usage' },
+            { text: 'Architecture', link: '/mcp-server/architecture' },
+            { text: 'Examples', link: '/mcp-server/examples' }
+          ]
         }
       ],
       outline: [2, 6],
