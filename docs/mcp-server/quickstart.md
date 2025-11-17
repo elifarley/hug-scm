@@ -134,8 +134,8 @@ If you encounter issues:
 ## Next Steps
 
 ✨ **Explore**: Try different prompts to see what the server can do
-📖 **Learn**: Read [USAGE.md](USAGE.md) for detailed tool documentation
-🎯 **Examples**: Check [EXAMPLES.md](EXAMPLES.md) for real-world scenarios
+📖 **Learn**: Read [USAGE](./usage) for detailed tool documentation
+🎯 **Examples**: Check [EXAMPLES](./examples) for real-world scenarios
 
 ## Useful Prompts to Try
 
@@ -209,7 +209,7 @@ make check
 
 ## Getting Help
 
-- 📚 **Documentation**: See [README.md](README.md)
+- 📚 **Documentation**: See [README](./index)
 - 🐛 **Issues**: Report at https://github.com/elifarley/hug-scm/issues
 - 💬 **Discussions**: Join at https://github.com/elifarley/hug-scm/discussions
 
