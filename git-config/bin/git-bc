@@ -145,8 +145,24 @@ if [[ -n "$point_to" && -z "$branch_name" ]]; then
     fi
     
     # Ensure uniqueness by appending seconds if the name already exists
-    if git show-ref --verify --quiet "refs/heads/$branch_name" 2>/dev/null; then
-        branch_name="${branch_name}.$(date +%S)"
+    original_name="$branch_name"
+    counter=0
+    while git show-ref --verify --quiet "refs/heads/$branch_name" 2>/dev/null; do
+        if [[ $counter -eq 0 ]]; then
+            # First collision: try appending seconds
+            branch_name="${original_name}.$(date +%S)"
+        else
+            # Subsequent collisions: append counter
+            branch_name="${original_name}.$(date +%S).${counter}"
+        fi
+        counter=$((counter + 1))
+        # Safety check to prevent infinite loop
+        if [[ $counter -gt 100 ]]; then
+            error "Failed to generate unique branch name after 100 attempts"
+        fi
+    done
+    
+    if [[ "$branch_name" != "$original_name" ]]; then
         warn "Generated name existed; using $branch_name"
     fi
     
