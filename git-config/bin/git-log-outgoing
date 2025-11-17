@@ -106,7 +106,7 @@ fi
 test "${HUG_QUIET:-}" || printf '\n' >&2
 hug s >&2
 
-test ${HUG_QUIET:-} == T && exit
+test "${HUG_QUIET:-}" == T && exit
 
 printf '\n'
 if [[ -n "$remote_branch" ]]; then
