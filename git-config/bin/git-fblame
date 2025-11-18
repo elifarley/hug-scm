@@ -100,8 +100,8 @@ if $churn_mode; then
 
   # Get file argument
   if [ ${#remaining_args[@]} -eq 0 ]; then
-    # Interactive file selection if gum is available
-    if gum_available; then
+    # Interactive file selection if gum is available AND we have a TTY
+    if gum_available && [ -t 0 ]; then
       declare -a select_opts=("--single")
 
       if ! $browse_root; then
@@ -141,8 +141,8 @@ fi
 # Standard blame mode
 # If no file provided, show interactive selection or error
 if [ ${#remaining_args[@]} -eq 0 ]; then
-  # Only show interactive selection if gum is available
-  if gum_available; then
+  # Only show interactive selection if gum is available AND we have a TTY
+  if gum_available && [ -t 0 ]; then
     declare -a select_opts=("--single")
 
     # Default to --cwd (current directory scope) unless --browse-root is specified
@@ -159,10 +159,9 @@ if [ ${#remaining_args[@]} -eq 0 ]; then
     fi
     exec git blame -w -C -C -C -- "$file"
   else
-    # Fall back to error when gum is not available
-    error "File argument required. Install 'gum' for interactive file selection.
-Usage: hug fblame <file>
-Install gum: https://github.com/charmbracelet/gum"
+    # Fall back to error when gum is not available or no TTY
+    error "File argument required.
+Usage: hug fblame <file>"
   fi
 fi
 

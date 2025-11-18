@@ -142,8 +142,8 @@ fi
 
 # File mode
 if [ -z "$target" ]; then
-  # Interactive file selection if gum is available
-  if gum_available; then
+  # Interactive file selection if gum is available AND we have a TTY
+  if gum_available && [ -t 0 ]; then
     declare -a select_opts=("--single")
 
     if ! $browse_root; then
@@ -158,7 +158,8 @@ if [ -z "$target" ]; then
     fi
   else
     error "File argument required.
-Usage: hug analyze expert <file>"
+Usage: hug analyze expert <file>
+   or: hug analyze expert --author <name>"
     exit 1
   fi
 fi

@@ -99,10 +99,15 @@ hug_bdel() {
       exit 0
     fi
     
-    # Check if gum is available
+    # Check if gum is available and we have a TTY
     if ! gum_available; then
       error "Interactive mode requires 'gum' to be installed. Please install it or specify branch names directly.
        Install: https://github.com/charmbracelet/gum"
+    fi
+
+    if [ ! -t 0 ]; then
+      error "Non-interactive mode: Provide branch names as arguments.
+Usage: hug bdel <branch>..."
     fi
     
     # Prepare formatted options for gum with branch details
