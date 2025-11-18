@@ -1,0 +1,13 @@
+# Hug SCM Python Helper Dependencies
+
+# Optional: Fast matrix operations for co-change analysis
+# numpy>=1.20.0
+
+# Optional: Terminal plotting for activity analysis
+# plotext>=5.0.0
+
+# Optional: Graph algorithms for dependency analysis
+# networkx>=2.6.0
+
+# Note: All are optional. Commands will gracefully degrade if not available.
+# Install with: pip install -r requirements.txt
