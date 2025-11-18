@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
 # git-analyze-expert - Identify code ownership and expertise
 # Part of the Hug tool suite
-#
-# TODO: Implement expertise detection
-# Algorithm:
-#   1. For given file, analyze commit history
-#   2. Count commits per author, weighted by recency
-#   3. Calculate ownership percentage
-#   4. Classify as primary/secondary/historical maintainers
-#
-# Weighting: Recent commits weighted higher (e.g., exponential decay)
 
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
@@ -27,16 +18,21 @@ ARGUMENTS:
     --author <name>   Find expertise areas for author
 
 OPTIONS:
-    --top <n>          Show top N results (default: 10)
     --since <date>     Only consider commits since date
-    --threshold <pct>  Minimum ownership percentage (default: 10)
+    --decay <days>     Recency decay constant (default: 180 days = 6 months)
     --json             Output as JSON
+    -h, --help         Show this help
 
 DESCRIPTION:
-    Identifies code ownership and expertise by analyzing:
-    - Commit frequency per author
-    - Recency of contributions (recent weighted higher)
-    - Percentage of total changes
+    Identifies code ownership and expertise by analyzing commit history
+    with recency weighting. Recent contributions count more than old ones.
+
+    Formula: weight = commits × exp(-days_ago / decay_days)
+
+    Ownership classification:
+    - Primary: >40% weighted ownership
+    - Secondary: >20% weighted ownership
+    - Historical: <20% weighted ownership
 
     Helps answer:
     - "Who should review this file?"
@@ -46,80 +42,148 @@ DESCRIPTION:
 EXAMPLES:
     hug analyze expert src/auth/login.js              # Experts for file
     hug analyze expert --author "Alice"               # Alice's expertise
-    hug analyze expert src/auth/ --top 5              # Top 5 for directory
-    hug analyze expert --author "Alice" --since="6m"  # Recent expertise
+    hug analyze expert src/auth/ --since="6m"         # Recent experts
+    hug analyze expert --author "Alice" --json        # JSON output
 
 OUTPUT FORMAT (for file):
     Experts for src/auth/login.js:
 
     Primary maintainer:
-      Alice  (45%, 23 commits, last: 2 days ago)
+      Alice (45%, 23 commits, last: 2 days ago)
 
     Secondary:
-      Bob    (30%, 15 commits, last: 1 week ago)
+      Bob (30%, 15 commits, last: 1 week ago)
 
     Historical:
-      Charlie (25%, 12 commits, last: 8 months ago)
+      Charlie (25%, 12 commits, last: 8 months ago) ⚠️  Stale
 
 OUTPUT FORMAT (for author):
     Alice's expertise areas:
 
-    1. src/auth/login.js        (23 commits, 45% of file)
-    2. src/auth/session.js      (18 commits, 38% of file)
-    3. src/api/users.js         (15 commits, 25% of file)
+     1. src/auth/login.js        (23 commits)
+     2. src/auth/session.js      (18 commits)
+     3. src/api/users.js         (15 commits)
     ...
 
-IMPLEMENTATION NOTES:
-    This command should:
-    1. Use git log --follow --format='%an|%ai' -- <file>
-    2. Parse author and timestamp
-    3. Apply recency weighting (exponential decay)
-    4. Calculate ownership percentage
-    5. Classify by threshold (e.g., >40% = primary)
-    6. For --author mode, aggregate all files
-
-    Weighting formula:
-      weight = commits * exp(-days_ago / decay_constant)
-      decay_constant = 180 days (6 months)
-
 SEE ALSO:
-    hug fcon      : File contributors
-    hug fa        : Author commit counts
-    hug lau       : Commits by author
+    hug fcon     : List all contributors to a file
+    hug fa       : Count commits per author for a file
+    hug lau      : Commits by specific author
 EOF
 }
 
+# Parse arguments
+target=""
+author=""
+since_arg=""
+decay_days=180
+json_output=false
+browse_root=false
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --author)
+      author="$2"
+      shift 2
+      ;;
+    --since)
+      since_arg="$2"
+      shift 2
+      ;;
+    --decay)
+      decay_days="$2"
+      shift 2
+      ;;
+    --json)
+      json_output=true
+      shift
+      ;;
+    --browse-root)
+      browse_root=true
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      target="$1"
+      shift
+      ;;
+  esac
+done
+
 check_git_repo
 
-# Stub implementation
-warning "🚧 This command is not yet implemented"
-info ""
-info "This command will identify code ownership and expertise areas."
-info ""
-info "Planned features:"
-info "  • Find experts for any file or directory"
-info "  • Recency-weighted ownership calculation"
-info "  • Classify as primary/secondary/historical maintainers"
-info "  • Reverse lookup: what does author X know?"
-info "  • Support for directory-level expertise"
-info ""
-info "Implementation approach:"
-info "  • Parse git log with author and timestamp"
-info "  • Apply exponential decay weighting (recent = higher)"
-info "  • Calculate ownership: (author commits) / (total commits)"
-info "  • Classify by thresholds: >40% primary, >20% secondary"
-info "  • For directories, aggregate file-level expertise"
-info ""
-info "Example output:"
-info "  Experts for src/auth/login.js:"
-info ""
-info "  Primary maintainer:"
-info "    Alice  (45%, 23 commits, last: 2 days ago)"
-info ""
-info "  Secondary:"
-info "    Bob    (30%, 15 commits, last: 1 week ago)"
-info ""
-info "To implement this command, see:"
-info "  git-config/bin/git-analyze-expert"
+# Check for Python helper
+python_script="$CMD_BASE/../lib/python/ownership.py"
 
-exit 1
+if [ ! -f "$python_script" ]; then
+  error "Ownership analysis not available: $python_script not found"
+  exit 1
+fi
+
+# Author mode
+if [ -n "$author" ]; then
+  py_args=(--author "$author")
+
+  if [ -n "$since_arg" ]; then
+    py_args+=(--since="$since_arg")
+  fi
+
+  if $json_output; then
+    py_args+=(--format=json)
+  else
+    py_args+=(--format=text)
+  fi
+
+  exec python3 "$python_script" "${py_args[@]}"
+fi
+
+# File mode
+if [ -z "$target" ]; then
+  # Interactive file selection if gum is available
+  if gum_available; then
+    declare -a select_opts=("--single")
+
+    if ! $browse_root; then
+      select_opts+=("--cwd")
+    fi
+
+    select_opts+=("--prompt" "Select file for ownership analysis...")
+
+    if ! target=$(select_files_with_status "${select_opts[@]}"); then
+      info "No file selected or cancelled."
+      exit 0
+    fi
+  else
+    error "File argument required.
+Usage: hug analyze expert <file>"
+    exit 1
+  fi
+fi
+
+# Validate file exists
+if [ ! -f "$target" ]; then
+  error "File not found: $target"
+  exit 1
+fi
+
+# Build Python command
+py_args=("$target")
+
+if [ -n "$since_arg" ]; then
+  py_args+=(--since="$since_arg")
+fi
+
+if [ "$decay_days" != "180" ]; then
+  py_args+=(--decay-days="$decay_days")
+fi
+
+if $json_output; then
+  py_args+=(--format=json)
+else
+  py_args+=(--format=text)
+fi
+
+exec python3 "$python_script" "${py_args[@]}"
