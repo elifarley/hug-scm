@@ -3,7 +3,7 @@
 A quick reference for daily workflows with Hug SCM. Focus on intuitive commands that keep you coding, not wrestling Git. Grouped by common scenarios.
 
 > 📖 **[Command Map](command-map.md)** - Learn command organization and structure
-> 📚 **[README](../README.md)** - Full project documentation
+> 📚 **[Getting Started](getting-started.md)** - Installation and quick start guide
 
 ## Setup & Installation
 ```bash
@@ -195,4 +195,4 @@ hug fblame --churn --since="3 months ago" <file>  # Recent churn
 
 ---
 
-**See also**: [Command Map](command-map.md) for complete command reference | [README](../README.md) for getting started
+**See also**: [Command Map](command-map.md) for complete command reference | [Getting Started](getting-started.md) for installation guide

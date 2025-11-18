@@ -173,7 +173,7 @@ Hug Commands
 
 ## Next Steps
 
-- **New to Hug?** Check the [README](../README.md) for quick start examples
+- **New to Hug?** Check the [Getting Started](getting-started.md) guide
 - **Daily workflows** → See the [Cheat Sheet](cheat-sheet.md) for scenario-based commands
 - **Deep learning** → Pick a family above and explore command details
 - **Interactive help** → Run `hug help` in your terminal to discover commands

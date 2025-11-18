@@ -785,8 +785,8 @@ Beginners memorize commands. **Experts recognize patterns**:
 
 - **Reference**: See [Command Map](command-map.md) for complete command catalog
 - **Quick Lookup**: Use [Cheat Sheet](cheat-sheet.md) for syntax reference
-- **Advanced Features**: Explore individual [command pages](commands/) for deep dives
-- **AI Assistant**: See [Skills](../skills/) for AI-powered investigation patterns
+- **Advanced Features**: Explore individual [command pages](commands/head.md) for deep dives on specific categories
+- **Command Reference**: See [Command Map](command-map.md) for the complete list of all 139 commands
 
 ---
 

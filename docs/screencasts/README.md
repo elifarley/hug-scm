@@ -358,6 +358,8 @@ make demo-repo-status
 
 ## CI/CD Integration
 
+### Local Integration
+
 The VHS build process is integrated into documentation builds:
 
 ```makefile
@@ -365,6 +367,170 @@ docs-dev: vhs    # Builds GIFs before starting dev server
 docs-build: vhs  # Builds GIFs before building docs
 docs-preview: vhs # Builds GIFs before preview
 ```
+
+### GitHub Actions Integration
+
+There are three approaches to integrate VHS screenshot generation into CI/CD:
+
+#### Option 1: Generate Screenshots in CI
+
+**Pros:**
+- Always up-to-date screenshots
+- Ensures tape files are working
+- Catches broken tapes early
+
+**Cons:**
+- Longer CI build times (~3-5 minutes extra)
+- Requires VHS installation in CI
+- Requires demo repository setup
+
+**Implementation:**
+
+```yaml
+# .github/workflows/deploy-docs.yml
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Hug SCM
+        run: make install
+
+      - name: Install VHS
+        run: |
+          VHS_VERSION="v0.7.2"  # Update to latest
+          wget https://github.com/charmbracelet/vhs/releases/download/${VHS_VERSION}/vhs_${VHS_VERSION#v}_Linux_x86_64.tar.gz
+          tar -xzf vhs_${VHS_VERSION#v}_Linux_x86_64.tar.gz
+          sudo mv vhs /usr/local/bin/
+          vhs --version
+
+      - name: Install ttyd (required for VHS)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ttyd
+
+      - name: Setup demo repository
+        run: |
+          source bin/activate
+          make demo-repo
+
+      - name: Generate VHS screenshots
+        run: |
+          source bin/activate
+          make vhs
+
+      - name: Build documentation
+        run: npm run docs:build
+```
+
+#### Option 2: Pre-generate and Commit Screenshots
+
+**Pros:**
+- Faster CI builds (no VHS required)
+- Simpler CI configuration
+- Guaranteed consistent output
+
+**Cons:**
+- Screenshots can become stale
+- Manual regeneration required
+- Larger git repository (binary files)
+
+**Implementation:**
+
+1. Generate screenshots locally:
+   ```bash
+   make demo-repo
+   make vhs
+   ```
+
+2. Commit generated files:
+   ```bash
+   git add docs/commands/img/*.gif docs/commands/img/*.png
+   git commit -m "chore: update VHS screenshots"
+   ```
+
+3. Update .gitignore to allow screenshot commits:
+   ```gitignore
+   # Allow VHS-generated screenshots (should be committed)
+   !docs/commands/img/*.gif
+   !docs/commands/img/*.png
+   ```
+
+#### Option 3: Hybrid Approach (Recommended ✅)
+
+Combine both approaches for the best balance:
+
+1. **Development:** Generate locally before committing major changes
+2. **CI:** Validate tape files (dry-run) but use committed screenshots
+3. **Scheduled:** Weekly/monthly job to regenerate and commit updated screenshots
+
+**Benefits:**
+- Fast CI builds (uses committed screenshots)
+- Automated freshness (scheduled regeneration)
+- Always validated (dry-run check in CI)
+- Manual control (commit screenshots when needed)
+
+**Implementation:**
+
+```yaml
+# .github/workflows/deploy-docs.yml
+- name: Validate VHS tapes (optional dry-run)
+  run: |
+    if command -v vhs &> /dev/null; then
+      make vhs-dry-run
+    else
+      echo "VHS not installed, using committed screenshots"
+    fi
+
+# .github/workflows/regenerate-vhs-images.yml (scheduled)
+name: Regenerate VHS Screenshots
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday at midnight
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Hug SCM
+        run: make install
+
+      - name: Install VHS
+        run: |
+          VHS_VERSION="v0.7.2"
+          wget https://github.com/charmbracelet/vhs/releases/download/${VHS_VERSION}/vhs_${VHS_VERSION#v}_Linux_x86_64.tar.gz
+          tar -xzf vhs_${VHS_VERSION#v}_Linux_x86_64.tar.gz
+          sudo mv vhs /usr/local/bin/
+
+      - name: Install ttyd
+        run: sudo apt-get update && sudo apt-get install -y ttyd
+
+      - name: Generate screenshots
+        run: |
+          source bin/activate
+          make demo-repo
+          make vhs
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/commands/img/
+          git diff --staged --quiet || git commit -m "chore: regenerate VHS screenshots [skip ci]"
+          git push
+```
+
+**Recommendation:** Use the hybrid approach (Option 3) for the best developer experience and CI performance.
 
 ## Suggested Tape Files to Create
 
@@ -404,8 +570,95 @@ Commands that would benefit from visual documentation:
 5. **Clean Up**: Reset state at the end of tape files
 6. **Version Control**: Commit tape files, not generated images (add to .gitignore if needed)
 
+## Future Enhancements
+
+These are suggested improvements that could further enhance the VHS screenshot system:
+
+### 1. Pre-commit Hook for Screenshot Validation
+
+Ensure tape files are valid before committing:
+
+**Create `.git/hooks/pre-commit`:**
+```bash
+#!/bin/bash
+if ! command -v vhs &> /dev/null; then
+    echo "⚠️  VHS not installed, skipping tape validation"
+    exit 0
+fi
+
+MODIFIED_TAPES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.tape$')
+if [ -z "$MODIFIED_TAPES" ]; then exit 0; fi
+
+echo "🎬 Validating modified VHS tape files..."
+for tape in $MODIFIED_TAPES; do
+    echo "  Checking $tape..."
+    if ! grep -q "^Output " "$tape"; then
+        echo "❌ Error: $tape is missing Output directive"
+        exit 1
+    fi
+done
+echo "✅ All tape files validated"
+```
+
+### 2. Tape File Linter
+
+Create a linter to check tape file quality (dimensions, demo-repo usage, cleanup, etc.):
+
+```bash
+make vhs-lint  # Check tape files for common issues
+```
+
+### 3. Screenshot Comparison Tool
+
+Detect visual changes in screenshots to understand impact of changes:
+
+```bash
+make vhs-compare  # Compare current screenshots vs. regenerated
+```
+
+### 4. Performance Monitoring
+
+Track how long each tape takes to build and identify slow ones:
+
+```bash
+make vhs-benchmark  # Show build times for all tapes
+```
+
+### 5. Screenshot Gallery Page
+
+Create a visual index of all screenshots in the documentation.
+
+### 6. Automated Screenshot Optimization
+
+Automatically optimize PNG/GIF files for size without quality loss.
+
+### 7. Interactive Preview Mode
+
+Preview tape execution in the terminal before building:
+
+```bash
+make vhs-preview TAPE=hug-branch.tape
+```
+
+### 8. Tape Template Generator
+
+Generate tape files from command invocations:
+
+```bash
+make vhs-generate COMMAND="hug sl"  # Creates hug-sl.tape template
+```
+
+### 9. Screenshot Versioning
+
+Track screenshot changes over time to understand visual evolution.
+
+### 10. Multi-shell Support
+
+Generate screenshots for different shells (bash, zsh, fish) to show consistency.
+
 ## Resources
 
 - [VHS Documentation](https://github.com/charmbracelet/vhs)
 - [VHS Examples](https://github.com/charmbracelet/vhs/tree/main/examples)
 - [Hug SCM Documentation](../index.md)
+- [Charm Bracelet Tools](https://charm.sh)

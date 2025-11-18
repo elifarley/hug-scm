@@ -36,7 +36,7 @@ The Makefile provides comprehensive test capabilities with better ergonomics:
 
 ```bash
 # All tests (recommended for final validation)
-make test                                   # Runs ALL tests (BATS + pytest)
+make test SHOW_FAILING=1                    # Runs ALL tests (BATS + pytest)
                                             # = test-bash + test-lib-py
 
 # BATS-only or pytest-only
@@ -543,9 +543,72 @@ These provide important context for major architectural decisions.
 
 ### When Modifying Documentation
 
+- **Not consulting `docs/DOCS_ORGANIZATION.md`** - Read it first to understand placement
 - Forgetting to update README.md command reference
+- Creating documentation in wrong location (use decision tree in CLAUDE.md)
 - Breaking VitePress syntax (test with `make docs-build`)
 - Inconsistent examples (use realistic, practical examples)
+- Duplicating existing documentation (consolidate to single source of truth)
+
+## Documentation Organization
+
+**IMPORTANT: Before creating or modifying documentation, consult `docs/DOCS_ORGANIZATION.md` for file placement guidelines.**
+
+This comprehensive guide covers:
+- Where to place different types of documentation
+- File naming conventions
+- Content structure standards
+- Best practices for maintainability
+
+### Quick Reference: Where to Put Documentation
+
+| Type | Location | Examples |
+|------|----------|----------|
+| **User Guides** | `docs/*.md` | getting-started.md, workflows.md |
+| **Command Reference** | `docs/commands/*.md` | head.md, branching.md, status-staging.md |
+| **Architecture Decisions** | `docs/architecture/ADR-*.md` | ADR-001-automated-testing-strategy.md |
+| **Planning Docs** | `docs/planning/*.md` | json-output-roadmap.md |
+| **VHS Screencasts** | `docs/screencasts/*.tape` | hug-sl-states.tape, template.tape |
+| **Meta/Tooling** | `docs/meta/*.md` | hug-completion-reference.md |
+| **Library Docs** | `git-config/lib/README.md` | Library function documentation |
+| **Python Helpers** | `git-config/lib/python/README.md` | Python analysis module docs |
+| **Testing Guide** | `TESTING.md` (root) | Testing strategy and examples |
+| **Contributing** | `CONTRIBUTING.md` (root) | Contribution guidelines |
+
+### Documentation Decision Tree
+
+**Ask yourself:**
+
+1. **Is it an architectural decision?** → `docs/architecture/ADR-NNN-*.md`
+2. **Is it a planning/roadmap document?** → `docs/planning/*.md`
+3. **Is it command reference?** → `docs/commands/*.md`
+4. **Is it a user guide?** → `docs/*.md`
+5. **Is it about VHS screenshots?** → `docs/screencasts/README.md` (single source of truth)
+6. **Is it about testing?** → `TESTING.md` or `tests/README.md`
+7. **Is it library implementation?** → `git-config/lib/README.md` or `git-config/lib/python/README.md`
+8. **Is it meta/tooling?** → `docs/meta/*.md`
+
+### Common Pitfalls
+
+**Don't create:**
+- ❌ Implementation notes in root (IMPLEMENTATION_*.md)
+- ❌ Temporary procedural docs in root (SCREENSHOT_GENERATION.md)
+- ❌ Multiple docs for same topic (consolidate to single source of truth)
+- ❌ Duplicate VHS documentation (use `docs/screencasts/README.md`)
+
+**Do create:**
+- ✅ ADRs for architectural decisions
+- ✅ Planning docs in `docs/planning/` for roadmaps
+- ✅ Command docs in `docs/commands/` organized by prefix
+- ✅ User guides in `docs/` for workflows and tutorials
+
+### Before Creating Documentation
+
+1. **Check if similar documentation exists** - Read `docs/DOCS_ORGANIZATION.md` first
+2. **Choose the right location** - Use the decision tree above
+3. **Follow naming conventions** - Use lowercase with hyphens (e.g., `json-output-roadmap.md`)
+4. **Update DOCS_ORGANIZATION.md** - Add your new file to the appropriate section
+5. **Update VitePress sidebar** - If user-facing, add to `docs/.vitepress/config.mjs`
 
 ## Documentation Structure
 
@@ -555,6 +618,8 @@ These provide important context for major architectural decisions.
 - **git-config/lib/README.md**: Library function documentation and patterns
 - **docs/**: VitePress site with command docs and architecture decisions
 - **docs/architecture/ADR-*.md**: Architectural decision records
+- **docs/planning/**: Planning and roadmap documents
+- **docs/screencasts/README.md**: VHS screenshot system guide (single source of truth)
 
 ## Useful References
 
