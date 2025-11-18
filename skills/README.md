@@ -48,13 +48,22 @@ These skills are designed to work with:
 
 ## Core Concepts
 
+### Hug's Four-Tier Value Proposition
+
+Hug delivers value at multiple levels beyond simple Git aliases:
+
+1. **Humanization** - Intuitive names, better UX, semantic prefixes
+2. **Workflow Automation** - Multi-step operations, interactive selection, safety nets
+3. **Computational Analysis** - Statistical algorithms impossible with pure Git (co-changes, ownership, dependencies, activity patterns, churn analysis)
+4. **Machine-Readable Export** - JSON output for automation and dashboards
+
 ### Hug's Safety-First Philosophy
 
 All skills emphasize Hug's core principles:
 
 1. **Brevity Hierarchy** - Shorter = safer (`hug a` vs `hug aa`)
 2. **Progressive Destructiveness** - `discard < wipe < purge < zap`
-3. **Semantic Prefixes** - Commands grouped by purpose (`h*`, `w*`, `s*`, etc.)
+3. **Semantic Prefixes** - Commands grouped by purpose (`h*`, `w*`, `s*`, `l*`, `analyze`)
 4. **Built-in Safety** - Confirmations, dry-run, automatic backups
 5. **Interactive Modes** - Gum-based selection for complex operations
 
@@ -70,6 +79,7 @@ All skills emphasize Hug's core principles:
 | `l*` | Logging | `lf`, `lc`, `lcr`, `lol` |
 | `f*` | File inspection | `fborn`, `fblame`, `fcon` |
 | `t*` | Tagging | `t`, `tc`, `ta`, `tdel` |
+| `analyze` | Computational analysis | `analyze co-changes`, `analyze deps`, `analyze ownership` |
 
 ## Skill Highlights
 
@@ -83,6 +93,8 @@ These powerful but under-documented features are covered in the skills:
 4. **Auto-backups** - Destructive HEAD operations create safety branches
 5. **Interactive selection** - Most commands support `--` for Gum-based picking
 6. **Upstream comparisons** - `-u` flag for unpushed commit analysis
+7. **Computational analysis** - `analyze` commands use statistical algorithms (co-changes, ownership, dependencies)
+8. **JSON export** - Many commands accept `--json` or `--format json` for automation
 
 ### Key Investigation Patterns
 
@@ -110,6 +122,14 @@ hug llf <file>               # full history
 hug fblame <file>            # who wrote what?
 ```
 
+**Pattern 4: Computational Analysis**
+```bash
+hug analyze co-changes <file>           # find architecturally coupled files
+hug analyze ownership <file>            # who maintains this file?
+hug analyze deps <commit>               # what commits are related?
+hug analyze activity --format json      # export temporal patterns
+```
+
 ## Integration Points
 
 ### With Hug SCM MCP Server
@@ -126,10 +146,10 @@ Skills teach when and how to combine these tools effectively.
 
 ### With Code Execution
 
-For complex analysis requiring data processing (see guides for examples):
+For complex analysis requiring data processing:
 
 ```typescript
-// Example: Find files changed most often
+// Example: Find files changed most often (basic approach)
 const commits = await hug_log({ count: 100 });
 const fileChanges = new Map();
 
@@ -142,6 +162,20 @@ for (const commit of commits) {
 const hotSpots = Array.from(fileChanges.entries())
   .sort((a, b) => b[1] - a[1])
   .slice(0, 10);
+```
+
+```typescript
+// Example: Advanced analysis with JSON export
+const coChanges = await execCommand('hug analyze co-changes src/main.ts --format json');
+const ownership = await execCommand('hug analyze ownership src/main.ts --format json');
+const deps = await execCommand('hug analyze deps HEAD --format json');
+
+// Combine multiple data sources for rich insights
+const analysis = {
+  coupling: JSON.parse(coChanges),
+  maintainers: JSON.parse(ownership),
+  dependencies: JSON.parse(deps)
+};
 ```
 
 ## Development Workflow

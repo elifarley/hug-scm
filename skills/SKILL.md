@@ -8,15 +8,38 @@ version: 1.0.0
 
 This skill equips AI assistants with expert knowledge for investigating Git repositories using Hug SCM's humane interface. Hug transforms complex Git operations into intuitive, safe commands organized by semantic prefixes.
 
-## Core Philosophy
+## Core Philosophy & Value Proposition
 
-Hug follows a **safety-first, discoverability-focused** design:
+Hug provides **four layers of value** over raw Git:
 
-- **Brevity Hierarchy**: Shorter commands = safer/more common (e.g., `hug a` stages tracked only; `hug aa` stages everything)
-- **Progressive Destructiveness**: Commands escalate: `discard < wipe < purge < zap < rewind`
-- **Semantic Prefixes**: Commands grouped by purpose (`h*` = HEAD, `w*` = working dir, `s*` = status, `b*` = branches, etc.)
-- **Built-in Safety**: Destructive operations require confirmation unless forced with `-f`
-- **Interactive Modes**: Most commands support Gum-based selection with `--` or `-i`
+### 1. Humanization (Better UX for Git)
+- **Brevity Hierarchy**: Shorter = safer (`hug a` stages tracked only; `hug aa` stages everything)
+- **Memorable Commands**: `hug back 1` vs `git reset --soft HEAD~1`
+- **Progressive Destructiveness**: `discard < wipe < purge < zap < rewind`
+- **Semantic Prefixes**: Commands grouped by purpose (`h*` = HEAD, `w*` = working dir, etc.)
+- **Built-in Safety**: Auto-backups, confirmations, dry-run on destructive operations
+- **Clear Feedback**: Informative messages with ✅ success, ⚠️ warnings, colored output
+
+### 2. Workflow Automation
+- **Combined Operations**: `--with-files` = log + file listing in one command
+- **Temporal Queries**: `-t "3 days ago"` instead of date math
+- **Smart Defaults**: Sensible scoping, interactive file selection
+- **Interactive Modes**: Gum-based selection with `--` or `-i`
+
+### 3. Computational Analysis ⭐ (Impossible with Pure Git)
+- **Co-change Detection**: Statistical correlation analysis of files that change together
+- **Ownership Calculation**: Recency-weighted expertise detection (who knows this code)
+- **Dependency Graphs**: Graph traversal to find related commits via file overlap
+- **Activity Patterns**: Temporal histograms showing when/how team works
+- **Churn Analysis**: Line-level change frequency to identify code hotspots
+- **Statistical Metrics**: Aggregated insights across files/authors/branches
+
+*These features require Python-based data processing, graph algorithms, and statistical analysis—beyond what Git's plumbing commands can provide.*
+
+### 4. Machine-Readable Data Export 🤖
+- **JSON Output**: `--json` flag on analyze, stats, and churn commands
+- **Automation Ready**: Build dashboards, integrate with CI/CD, create custom reports
+- **Structured Data**: All computational analysis exports to JSON for external tools
 
 ## When to Use This Skill
 
@@ -92,27 +115,59 @@ hug shc a1b2c3d
 
 ### 3. Finding When Things Changed
 
-**Critical skill: Use the right search command:**
+**Three search tools for different needs:**
 
-- **`hug lf "keyword"`** - Search commit **messages** for keyword
-- **`hug lf "keyword" --with-files`** - Search messages, show files changed in each commit
-- **`hug lc "code"`** - Search for **code changes** (Git's `-S` pickaxe)
-- **`hug lc "code" --with-files`** - Search code changes, show files changed in each commit
-- **`hug lcr "regex"`** - Search code changes with **regex** patterns
+#### Message Search (with regex support!)
+
+```bash
+# Simple message search
+hug lf "keyword"
+hug lf "fix bug" --with-files        # Show files changed in each match
+
+# HIDDEN FEATURE: Regex patterns work! (uses git --grep internally)
+hug lf "fix\|bug\|resolve" -i --all  # OR patterns (case-insensitive)
+hug lf "feat.*auth" --all            # Regex matching
+hug lf "^Merge" --all                # Pattern matching
+```
+
+**Pro tip:** `lf` supports extended regex via `git --grep`, though not advertised!
+
+#### Code Search - Literal String (Fast)
+
+```bash
+# Exact string matching in code diffs (Git's -S pickaxe)
+hug lc "getUserById"                 # Find when this function changed
+hug lc "import React" --with-files   # Show files with React imports
+```
+
+#### Code Search - Regex Patterns (Powerful)
+
+```bash
+# Regex matching in code diffs (Git's -G flag)
+hug lcr "function.*User"             # Function definitions
+hug lcr "class \w+" -i               # Case-insensitive class declarations
+hug lcr "TODO|FIXME" --all           # OR patterns in code
+hug lcr "^import.*from" -p           # Import statements with patches
+```
+
+**Decision tree:**
+- Searching commit messages? → `lf` (supports regex via git --grep!)
+- Exact code string? → `lc` (faster, literal matching)
+- Code pattern/regex? → `lcr` (explicit regex for complex patterns)
 
 **Examples:**
 
 ```bash
-# Find commits mentioning "fix bug"
-hug lf "fix bug"
+# Find commits mentioning multiple related terms
+hug lf "refactor\|restructure\|reorganize" -i --all
 
-# Find when function "getUserById" was added/removed
-hug lc "getUserById"
+# Find when specific function was modified
+hug lc "getUserById" --with-files
 
-# Find when any import statement changed
-hug lcr "^import.*from"
+# Find any import statement changes
+hug lcr "^import.*from" --all
 
-# Find when specific file was last modified
+# Find file history
 hug llf <file>
 ```
 
@@ -361,6 +416,205 @@ hug h files -t "3 hours ago"
 hug ld "last monday" "friday"
 ```
 
+## Computational Analysis (Beyond Git's Capabilities)
+
+These commands perform **statistical analysis and graph algorithms** impossible with raw Git alone. They require Python-based data processing and export to JSON for automation.
+
+### 1. Co-Change Detection (Architectural Coupling)
+
+**Problem:** Which files change together? Reveals architectural coupling.
+
+```bash
+# Analyze last 100 commits for co-changing files
+hug analyze co-changes 100
+
+# Strong coupling only (≥50% correlation)
+hug analyze co-changes --threshold 0.50
+
+# Top 10 pairs
+hug analyze co-changes --top 10
+
+# Machine-readable export
+hug analyze co-changes --json
+```
+
+**Algorithm:** Builds co-occurrence matrix from commit history, calculates Jaccard-like correlation coefficients.
+
+**Use cases:**
+- Identify tightly coupled modules that should be refactored
+- Find files to review together
+- Detect architectural issues
+
+### 2. Code Ownership Analysis (Expertise Detection)
+
+**Problem:** Who owns this code? Who should review changes?
+
+```bash
+# Find experts for a file (recency-weighted)
+hug analyze expert src/auth.js
+
+# Find author's expertise areas
+hug analyze expert --author "Alice"
+
+# Custom recency decay (default: 180 days)
+hug analyze expert src/auth.js --decay 90
+
+# JSON export for dashboards
+hug analyze expert src/auth.js --json
+```
+
+**Algorithm:** Recency-weighted commit analysis with exponential decay formula: `weight = commits × exp(-days_ago / decay_days)`
+
+**Output categories:**
+- Primary: >40% weighted ownership
+- Secondary: >20% weighted ownership
+- Historical: <20% (stale contributors)
+
+### 3. Activity Pattern Detection (Team Health)
+
+**Problem:** When does the team work? Are there sustainability issues?
+
+```bash
+# Hourly histogram
+hug analyze activity --by-hour
+
+# Day-of-week patterns
+hug analyze activity --by-day
+
+# Per-author breakdowns
+hug analyze activity --by-author --by-hour
+
+# Time-filtered analysis
+hug analyze activity --since="3 months ago"
+
+# Export for dashboards
+hug analyze activity --json
+```
+
+**Algorithm:** Temporal aggregation with statistical summaries. Flags:
+- ⚠️ Late night commits (10pm-4am)
+- ⚠️ Weekend work patterns
+- Peak productivity hours
+
+**Insights:**
+- Team sustainability assessment
+- Timezone coverage detection
+- Process problem indicators
+
+### 4. Commit Dependency Graphs ⭐ NEW
+
+**Problem:** Which commits are related through file overlap?
+
+```bash
+# Find commits related to specific commit
+hug analyze deps abc1234
+
+# Two-level dependency traversal
+hug analyze deps abc1234 --depth 2
+
+# Require strong coupling (3+ files overlap)
+hug analyze deps abc1234 --threshold 3
+
+# Repository-wide coupling analysis
+hug analyze deps --all --threshold 5
+
+# Export formats
+hug analyze deps abc1234 --format graph   # ASCII tree (default)
+hug analyze deps abc1234 --format text    # Simple list
+hug analyze deps abc1234 --format json    # Machine-readable
+```
+
+**Algorithm:** File-to-commits indexing + graph traversal (BFS) based on file overlap.
+
+**Use cases:**
+- Find all commits in a logical feature
+- Determine review scope ("what else changed with this?")
+- Detect tightly coupled code areas
+- Understand feature evolution
+
+### 5. Statistical Metrics
+
+**Repository-wide insights:**
+
+```bash
+# File-level statistics
+hug stats file src/app.js
+hug stats file src/app.js --json          # Export
+
+# Author contributions
+hug stats author "Alice"
+hug stats author "Alice" --json
+
+# Branch metrics
+hug stats branch feature/auth
+hug stats branch feature/auth --json
+```
+
+**Metrics include:**
+- Commit counts, file counts
+- Line changes (additions/deletions)
+- Active periods
+- Contribution percentages
+
+### 6. Churn Analysis (Code Hotspots)
+
+**Problem:** Which code changes most frequently?
+
+```bash
+# Line-level change frequency
+hug fblame --churn src/auth.js
+
+# Time-filtered churn
+hug fblame --churn --since="3 months ago" src/auth.js
+
+# JSON export for hotspot visualization
+hug fblame --churn --json src/auth.js
+```
+
+**Algorithm:** Counts modifications per line over time using `git log -L`.
+
+**Identifies:**
+- 🔥 Hot lines (changed frequently = potential issues)
+- Stable code vs volatile code
+- Refactoring candidates
+
+### Why These Are Impossible with Pure Git
+
+**Git provides data, Hug provides analysis:**
+
+| Git Capability | Hug Analysis |
+|----------------|--------------|
+| `git log --name-only` | **→ Co-change correlation** (statistical) |
+| `git log --follow` | **→ Ownership calculation** (recency-weighted) |
+| `git diff-tree` | **→ Dependency graphs** (graph traversal) |
+| `git log --format=%ai` | **→ Activity patterns** (temporal histograms) |
+| `git log -L` | **→ Churn analysis** (frequency aggregation) |
+
+**These require:**
+- Python data processing
+- Statistical algorithms (correlation, exponential decay)
+- Graph analysis (BFS/DFS)
+- Data aggregation and export
+
+### Machine-Readable Export
+
+**All computational features support `--json` or `--format=json`:**
+
+```bash
+# Build custom dashboards
+hug analyze co-changes --json > coupling.json
+hug analyze expert --author "Alice" --json > alice-expertise.json
+hug analyze activity --json > team-health.json
+hug analyze deps --all --format json > commit-graph.json
+hug stats file src/app.js --json > file-metrics.json
+```
+
+**Enable:**
+- CI/CD integration
+- Custom reporting
+- Dashboard visualization (Grafana, etc.)
+- Data science workflows
+
 ## Important Caveats and Limitations
 
 ### When to Use Raw Git
@@ -440,14 +694,22 @@ hug fblame --churn <file>    # churn analysis
 hug fcon <file>              # contributors
 hug h steps <file>           # commits since change
 
-# Statistics & Analysis
-hug stats file <file>        # file metrics
-hug stats author [author]    # author contributions
-hug stats branch [branch]    # branch statistics
-hug analyze expert <file>    # code ownership
-hug analyze expert --author "Alice"  # author expertise
-hug analyze co-changes [N]   # co-changing files
-hug analyze activity         # temporal patterns
+# Computational Analysis (with JSON export!)
+hug analyze co-changes 100              # files that change together
+hug analyze co-changes --json           # coupling data export
+hug analyze expert <file>               # code ownership
+hug analyze expert <file> --json        # ownership data export
+hug analyze expert --author "Alice"     # expertise areas
+hug analyze activity --by-hour          # team patterns
+hug analyze activity --json             # activity data export
+hug analyze deps <commit>               # commit dependencies
+hug analyze deps --all --format json    # dependency graph export
+
+# Statistics (with JSON export!)
+hug stats file <file> --json            # file metrics
+hug stats author "Alice" --json         # author data
+hug stats branch feature/x --json       # branch metrics
+hug fblame --churn --json <file>        # hotspot data
 
 # Time-Based
 hug h files -t "3 days ago"  # recent changes
