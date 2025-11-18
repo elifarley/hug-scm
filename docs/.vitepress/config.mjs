@@ -31,7 +31,8 @@ import { defineConfig } from 'vitepress'
       logo: '/hug-icon.png',
       nav: [
         { text: 'Home', link: '/' },
-        { text: 'Hug for Beginners', link: '/hug-for-beginners' },
+        { text: 'Getting Started', link: '/getting-started' },
+        { text: 'Workflows', link: '/workflows' },
         { text: 'Commands', link: '/command-map' },
         { text: 'Try it online', link: 'https://codespaces.new/elifarley/hug-scm' },
         { text: 'GitHub', link: 'https://github.com/elifarley/hug-scm' }
@@ -43,10 +44,12 @@ import { defineConfig } from 'vitepress'
           collapsed: false,
           items: [
             { text: 'Installation', link: '/installation' },
-            { text: 'Core Concepts', link: '/core-concepts' },
-            { text: 'A Beginner\'s Guide', link: '/hug-for-beginners' },
-            { text: 'Practical Workflows', link: '/practical-workflows' },
-            { text: 'Cookbook', link: '/cookbook' }
+            { text: 'Getting Started', link: '/getting-started' },
+            { text: 'Workflows', link: '/workflows' },
+            { text: '📚 Legacy: Beginner\'s Guide', link: '/hug-for-beginners' },
+            { text: '📚 Legacy: Core Concepts', link: '/core-concepts' },
+            { text: '📚 Legacy: Practical Workflows', link: '/practical-workflows' },
+            { text: '📚 Legacy: Cookbook', link: '/cookbook' }
           ]
         },
         {

@@ -142,10 +142,55 @@ hug w unwip WIP/YY-MM-DD/HHMM.slug  # **Un**park **W**ork **I**n **P**rogress
 hug w wipdel WIP/YY-MM-DD/HHMM.slug  # **W**ork **I**n **P**rogress **DEL**ete
 ```
 
+## Advanced Analysis & Statistics
+
+```bash
+# Computational analysis (files that change together)
+hug analyze co-changes 100              # Find coupling in last 100 commits
+hug analyze co-changes --threshold 0.50 # Strong coupling only (≥50%)
+
+# Code ownership & expertise
+hug analyze expert <file>               # Who owns this code? (recency-weighted)
+hug analyze expert --author "Alice"     # Where does Alice have expertise?
+
+# Team activity patterns
+hug analyze activity --by-hour          # When does team commit?
+hug analyze activity --by-author        # Per-author breakdown
+
+# Commit dependency graph
+hug analyze deps <commit>               # Find related commits via file overlap
+hug analyze deps --all --format json    # Repository-wide coupling (JSON export)
+
+# Repository statistics
+hug stats file <file>                   # File metrics (commits, authors, churn)
+hug stats author "Alice"                # Author contributions & expertise
+hug stats branch feature/x              # Branch statistics
+```
+
+### Hidden Gems
+```bash
+# Regex support in message search (undocumented!)
+hug lf "fix\|bug\|resolve" -i --all     # OR patterns in commit messages
+
+# JSON export for automation
+hug analyze co-changes --json           # Machine-readable coupling data
+hug analyze expert <file> --json        # Ownership data export
+hug stats file <file> --json            # File metrics export
+
+# Temporal operations (works on most commands)
+hug h files -t "3 days ago"             # Files changed recently
+hug lf "keyword" --since="1 week ago"   # Time-filtered search
+
+# Churn analysis (code hotspots)
+hug fblame --churn <file>               # Line-level change frequency
+hug fblame --churn --since="3 months ago" <file>  # Recent churn
+```
+
 ## Tips
 - **Get a reminder**: Forgetting a command? Just type `hug help` to see all families.
 - **Check before you act**: `hug sl` is your best friend. Run it often.
 - **Learn the structure**: See [Command Map](command-map.md) for comprehensive organization
+- **Use computational analysis**: `analyze` commands reveal architectural issues (coupling, ownership)
 - Hug's `bpull` and `bpullr` handle fetching for you in most cases. But you can run `hug fetch` to get the latest remote info without affecting your local branches.
 
 ---

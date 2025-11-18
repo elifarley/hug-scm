@@ -15,7 +15,22 @@ Key features:
 - **Discoverability**: Grouped by prefix (e.g., `h*` for HEAD, `w*` for working directory).
 - **Multi-VCS Support**: Full support for both Git and Mercurial with automatic repository detection.
 
-Start with [Hug for Beginners](hug-for-beginners.md)
+## New to Hug?
+
+**👉 Start here**: [Getting Started Guide](getting-started.md) - Learn the essentials in 15 minutes
+
+::: tip Learning Path
+1. **[Getting Started](getting-started.md)** - Core concepts and your first workflow
+2. **[Workflows Guide](workflows.md)** - Advanced patterns and real-world scenarios
+3. **[Command Map](command-map.md)** - Complete command reference
+4. **[Cheat Sheet](cheat-sheet.md)** - Quick syntax lookup
+:::
+
+## Daily Users
+
+**Quick reference**: [Cheat Sheet](cheat-sheet.md) - Common commands and hidden gems
+
+**Scenario-based**: [Workflows Guide](workflows.md) - Investigation patterns, commit management, and recipes
 
 ## Command Reference
 Start with the [Command Map](/command-map) for a quick overview of all families, or the [Cheat Sheet](/cheat-sheet) for daily workflows.

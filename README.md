@@ -34,24 +34,38 @@ With Hug, you get:
 - **Multi-VCS support** - Use the same commands whether you're working with Git or Mercurial repositories
 
 ## Why Hug?
-While Git is incredibly powerful, its command syntax can be inconsistent and difficult to remember.
-Hug provides a seamless and humane experience, reducing friction for beginners while empowering advanced users.
 
-✅ Making common operations trivial
+Hug SCM delivers **four tiers of value** beyond raw Git:
 
-`hug b feature` gets you to a branch, instead of `git checkout -b feature`
+### 1. 🎯 Humanization - Better UX for Git
+- **Brevity Hierarchy**: Shorter = safer (`hug a` vs `hug aa`)
+- **Memorable Commands**: `hug back 1` vs `git reset --soft HEAD~1`
+- **Progressive Destructiveness**: `discard < wipe < purge < zap < rewind`
+- **Semantic Prefixes**: Commands grouped by purpose (`h*`, `w*`, `s*`, etc.)
+- **Built-in Safety**: Auto-backups, confirmations, dry-run modes
+- **Clear Feedback**: Informative messages with ✅ success, ⚠️ warnings
 
-✅ Keeping you safe
+### 2. ⚙️ Workflow Automation
+- **Combined Operations**: `--with-files` = log + file listing in one command
+- **Temporal Queries**: `-t "3 days ago"` instead of complex date math
+- **Smart Defaults**: Sensible scoping, interactive file selection
+- **Interactive Modes**: Gum-based selection with `--` flag
 
-Destructive commands require explicit confirmation
+### 3. 🔬 Computational Analysis ⭐ (Impossible with Pure Git!)
+- **Co-change Detection**: Statistical correlation of files that change together
+- **Ownership Calculation**: Recency-weighted expertise detection
+- **Dependency Graphs**: Graph traversal to find related commits via file overlap
+- **Activity Patterns**: Temporal histograms revealing team work patterns
+- **Churn Analysis**: Line-level change frequency for identifying hotspots
 
-✅ Being discoverable
+*These features require Python-based data processing, graph algorithms, and statistical analysis—beyond what Git's plumbing can provide.*
 
-Commands are grouped logically: `h*` for `HEAD` operations, `w*` for working directory, `s*` for status
+### 4. 🤖 Machine-Readable Data Export
+- **JSON Output**: `--json` flag on analyze, stats, and churn commands
+- **Automation Ready**: Build dashboards, integrate with CI/CD
+- **Structured Data**: All computational analysis exports for external tools
 
-✅ Providing superpowers
-
-Complex operations become one-liners: `hug w zap-all` for a complete "factory reset" of your local working directory.
+**In short**: Making operations trivial, keeping you safe, being discoverable, and providing computational superpowers.
 
 ## Quick Start
 
@@ -214,11 +228,14 @@ Hug commands are organized by **semantic prefixes** that make them easy to disco
 | `h*` | HEAD Operations | `hug h back`, `hug h undo` |
 | `w*` | Working Directory | `hug w get`, `hug w wip` |
 | `s*` | Status & Staging | `hug ss`, `hug su` |
+| `a*` | Staging | `hug a`, `hug aa`, `hug ai`, `hug ap` |
 | `b*` | Branching | `hug b`, `hug bc` |
 | `c*` | Commits | `hug c`, `hug ca` |
 | `l*` | Logging & History | `hug l`, `hug lc` |
 | `f*` | File Inspection | `hug fa`, `hug fb` |
 | `t*` | Tagging | `hug t`, `hug tc` |
+| `r*` | Rebase | `hug rb`, `hug rbi`, `hug rbc`, `hug rba` |
+| `m*` | Merge | `hug m`, `hug ma`, `hug mff`, `hug mkeep` |
 | `analyze*` | Advanced Analysis | `hug analyze deps`, `hug analyze expert` |
 | `stats*` | Repository Statistics | `hug stats file`, `hug stats author` |
 
@@ -311,10 +328,13 @@ hug usa                     # Unstage all files
 ```shell
 hug b <branch>              # Switch to existing branch
 hug bs                      # Switch back to previous branch
+hug br                      # Switch to remote branch (interactive menu)
+hug brr                     # Fetch then switch to remote branch (refresh + switch)
 hug bc [<branch>] [--point-to <commitish>] [--no-switch]  # Create and switch to new branch
                             # With --point-to: create from specific commit/tag/branch
                             # Without branch name: auto-generates descriptive name
                             # --no-switch: create without switching
+hug bcp <src> [dest]        # Copy branch (create snapshot without switching)
 hug bl                      # List local branches
 hug bla                     # List all branches (local + remote)
 hug bdel <branch>           # Safe delete local branch (if merged)
@@ -401,7 +421,7 @@ hug twp [object]      # Tags which point to object (default HEAD)
 
 ```shell
 hug blr               # Branch: List Remote (List remote branches only)
-hug br <new-name>     # Branch: Rename (Rename current branch)
+hug bmv <new-name>    # Branch: Move/Rename (Rename current branch)
 hug bwc [commit]      # Branches which contain commit (default HEAD)
 hug bwp [object]      # Branches which point to object (default HEAD)
 hug bwnc [commit]     # Branches which do not contain commit
