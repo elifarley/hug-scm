@@ -4,37 +4,13 @@
 load ../test_helper
 
 setup() {
-  create_test_repo
+  require_hug
+  TEST_REPO=$(create_demo_repo_simple)
+  cd "$TEST_REPO"
 }
 
 teardown() {
   cleanup_test_repo
-}
-
-# Helper function to create commits with specific file patterns
-create_related_commits() {
-  # Create first commit touching file1 and file2
-  echo "content1" > file1.txt
-  echo "content2" > file2.txt
-  git add file1.txt file2.txt
-  git commit -m "feat: add feature A" --allow-empty
-
-  # Create second commit touching file2 and file3 (related via file2)
-  echo "updated" > file2.txt
-  echo "content3" > file3.txt
-  git add -A
-  git commit -m "feat: extend feature A" --allow-empty
-
-  # Create third commit touching file1 and file2 again (related to first)
-  echo "updated" > file1.txt
-  echo "updated again" > file2.txt
-  git add -A
-  git commit -m "fix: bug in feature A" --allow-empty
-
-  # Create unrelated commit touching only file4
-  echo "content4" > file4.txt
-  git add -A
-  git commit -m "feat: add feature B" --allow-empty
 }
 
 # Basic functionality tests
@@ -76,8 +52,7 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: analyzes HEAD commit" {
-  create_related_commits
-
+  # Demo repo has "feat: add feature B" as HEAD commit
   run git analyze-deps HEAD
 
   assert_success
@@ -86,10 +61,9 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: shows related commits via file overlap" {
-  create_related_commits
-
-  # Get the first commit hash (feat: add feature A)
-  first_commit=$(git log --oneline --reverse | head -n 1 | awk '{print $1}')
+  # Get the first commit with file dependencies (feat: add feature A)
+  # Skip the initial 3 commits (README, app.js, .gitignore) to get to file1.txt commits
+  first_commit=$(git log --oneline --grep="feat: add feature A" --format="%H" -n 1)
 
   run git analyze-deps "$first_commit" --threshold 1
 
@@ -99,10 +73,8 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: respects threshold parameter" {
-  create_related_commits
-
-  # Get the first commit hash
-  first_commit=$(git log --oneline --reverse | head -n 1 | awk '{print $1}')
+  # Get the first commit with file dependencies
+  first_commit=$(git log --oneline --grep="feat: add feature A" --format="%H" -n 1)
 
   # With high threshold, should find fewer or no matches
   run git analyze-deps "$first_commit" --threshold 10
@@ -112,8 +84,6 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: supports --format text" {
-  create_related_commits
-
   run git analyze-deps HEAD --format text
 
   assert_success
@@ -122,8 +92,6 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: supports --format json" {
-  create_related_commits
-
   run git analyze-deps HEAD --format json
 
   assert_success
@@ -133,8 +101,6 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: supports --format graph (default)" {
-  create_related_commits
-
   run git analyze-deps HEAD --format graph
 
   assert_success
@@ -145,9 +111,7 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: supports --depth parameter" {
-  create_related_commits
-
-  first_commit=$(git log --oneline --reverse | head -n 1 | awk '{print $1}')
+  first_commit=$(git log --oneline --grep="feat: add feature A" --format="%H" -n 1)
 
   # Depth 1 (default)
   run git analyze-deps "$first_commit" --depth 1 --threshold 1
@@ -161,8 +125,6 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: supports --max-results parameter" {
-  create_related_commits
-
   # Create more commits to have many related ones
   for i in {1..5}; do
     echo "update $i" >> file1.txt
@@ -170,7 +132,7 @@ create_related_commits() {
     git commit -m "update $i"
   done
 
-  first_commit=$(git log --oneline --reverse | head -n 1 | awk '{print $1}')
+  first_commit=$(git log --oneline --grep="feat: add feature A" --format="%H" -n 1)
 
   run git analyze-deps "$first_commit" --max-results 2 --threshold 1
 
@@ -179,10 +141,9 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: supports --since parameter" {
-  create_related_commits
-
-  # Just verify the --since flag is accepted
-  run git analyze-deps HEAD --since="1 week ago"
+  # Demo repo commits are all from year 2000, so --since="1 week ago" returns nothing
+  # Use a date far in the past to include all commits
+  run git analyze-deps HEAD --since="1990-01-01"
 
   assert_success
   assert_output --partial "Dependency graph for commit"
@@ -191,8 +152,6 @@ create_related_commits() {
 # --all mode tests
 
 @test "hug analyze deps: supports --all mode" {
-  create_related_commits
-
   run git analyze-deps --all --threshold 2 --max-results 5
 
   assert_success
@@ -201,8 +160,6 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: --all mode shows repository-wide coupling" {
-  create_related_commits
-
   run git analyze-deps --all --threshold 1 --max-results 10
 
   assert_success
@@ -211,8 +168,6 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: --all mode supports --format json" {
-  create_related_commits
-
   run git analyze-deps --all --format json --max-results 5
 
   assert_success
@@ -224,8 +179,6 @@ create_related_commits() {
 # Edge cases and error handling
 
 @test "hug analyze deps: handles commit with no related commits" {
-  create_related_commits
-
   # Use high threshold to ensure no matches
   run git analyze-deps HEAD --threshold 100
 
@@ -234,8 +187,6 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: handles merge commits" {
-  create_related_commits
-
   # Store current branch name
   main_branch=$(git rev-parse --abbrev-ref HEAD)
 
@@ -256,8 +207,6 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: works with short commit hashes" {
-  create_related_commits
-
   # Get short hash
   short_hash=$(git log -1 --format=%h)
 
@@ -267,8 +216,6 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: works with relative refs like HEAD~1" {
-  create_related_commits
-
   run git analyze-deps HEAD~1
 
   assert_success
@@ -277,8 +224,8 @@ create_related_commits() {
 # Python script availability
 
 @test "hug analyze deps: fails gracefully if deps.py not found" {
-  # Temporarily rename the Python script
-  python_script="git-config/lib/python/deps.py"
+  # Temporarily rename the Python script (use absolute path)
+  python_script="$PROJECT_ROOT/git-config/lib/python/deps.py"
 
   if [ -f "$python_script" ]; then
     mv "$python_script" "${python_script}.bak"
@@ -327,9 +274,7 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: graph output includes file count" {
-  create_related_commits
-
-  first_commit=$(git log --oneline --reverse | head -n 1 | awk '{print $1}')
+  first_commit=$(git log --oneline --grep="feat: add feature A" --format="%H" -n 1)
 
   run git analyze-deps "$first_commit" --threshold 1
 
@@ -339,8 +284,6 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: text output is properly formatted" {
-  create_related_commits
-
   run git analyze-deps HEAD --format text
 
   assert_success
@@ -350,8 +293,6 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: handles repository with many commits efficiently" {
-  create_related_commits
-
   # Create more commits
   for i in {1..10}; do
     echo "commit $i" > "file${i}.txt"

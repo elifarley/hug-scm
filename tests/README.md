@@ -233,10 +233,27 @@ load '../../../git-config/lib/hug-fs'  # Adjust path for your lib
 From `test_helper.bash`:
 
 **Repository Creation:**
-- `create_test_repo()` - Creates a fresh git repository
-- `create_test_repo_with_history()` - Creates a repo with sample commits
+
+*Recommended: Use Demo Repositories (Deterministic)*
+- `create_demo_repo_simple()` - Creates deterministic demo repo with 9 commits, 2 branches, remote
+  - 3 initial commits (README, app.js, .gitignore)
+  - 4 commits with overlapping files (for dependency testing: file1.txt, file2.txt, file3.txt, file4.txt)
+  - 2 commits on feature/search branch
+  - All commits have fixed timestamps (year 2000) for reproducible commit hashes
+  - Includes bare remote repository
+  - Perfect for testing commands that analyze commit history, dependencies, or branches
+- `create_demo_repo_full()` - Creates comprehensive demo repo with 70+ commits, 15+ branches, 4 contributors
+  - Use when you need complex scenarios (tags, upstream tracking, WIP states, etc.)
+  - Much slower than simple demo repo (use sparingly)
+
+*Legacy: Simple Test Repos (Non-Deterministic)*
+- `create_test_repo()` - Creates a minimal git repository with 1 commit
+- `create_test_repo_with_history()` - Creates a repo with 3 sample commits
 - `create_test_repo_with_changes()` - Creates a repo with uncommitted changes
-- `cleanup_test_repo()` - Cleans up test repository
+- **Note:** These use current timestamps, so commit hashes vary between runs. Prefer `create_demo_repo_simple()` for tests that rely on commit history.
+
+*Cleanup:*
+- `cleanup_test_repo()` - Cleans up test repository (works with all repo types)
 
 **Assertions (from bats-assert):**
 - `assert_success` - Command exit code is 0
@@ -279,6 +296,10 @@ From `test_helper.bash`:
 5. **Comprehensive**: Test happy path, edge cases, and error conditions
 6. **Mock When Needed**: Use test repositories, not real repos
 7. **Deterministic**: Tests should always produce same results
+8. **Prefer Demo Repos**: Use `create_demo_repo_simple()` instead of `create_test_repo*()` for tests that rely on commit history or analyze dependencies
+   - Demo repos have fixed timestamps → reproducible commit hashes
+   - Demo repos have realistic commit patterns → more thorough testing
+   - Demo repos are battle-tested → fewer surprises
 
 ## Advanced Usage
 

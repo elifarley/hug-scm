@@ -7,7 +7,7 @@
 set -euo pipefail
 
 DEMO_REPO_BASE="${1:-/tmp/demo-repo}"
-REMOTE_BASE="/tmp/demo-repo.git"
+REMOTE_BASE="${DEMO_REPO_BASE}.git"
 
 # Colors for output
 BLUE='\033[0;34m'
@@ -83,6 +83,46 @@ EOF
 git add .gitignore
 git_commit_deterministic "chore: Add gitignore" 86400
 
+# Create commits with overlapping file changes for dependency testing
+echo "Creating commits with file dependencies..."
+
+# Commit 1: Touch file1.txt and file2.txt
+cat > "$DEMO_REPO_BASE/file1.txt" << 'EOF'
+content1
+EOF
+cat > "$DEMO_REPO_BASE/file2.txt" << 'EOF'
+content2
+EOF
+git add file1.txt file2.txt
+git_commit_deterministic "feat: add feature A" 86400
+
+# Commit 2: Touch file2.txt and file3.txt (related via file2.txt)
+cat > "$DEMO_REPO_BASE/file2.txt" << 'EOF'
+content2 updated
+EOF
+cat > "$DEMO_REPO_BASE/file3.txt" << 'EOF'
+content3
+EOF
+git add file2.txt file3.txt
+git_commit_deterministic "feat: extend feature A" 86400
+
+# Commit 3: Touch file1.txt and file2.txt again (related to commit 1)
+cat > "$DEMO_REPO_BASE/file1.txt" << 'EOF'
+content1 updated
+EOF
+cat > "$DEMO_REPO_BASE/file2.txt" << 'EOF'
+content2 updated again
+EOF
+git add file1.txt file2.txt
+git_commit_deterministic "fix: bug in feature A" 86400
+
+# Commit 4: Touch only file4.txt (unrelated to others)
+cat > "$DEMO_REPO_BASE/file4.txt" << 'EOF'
+content4
+EOF
+git add file4.txt
+git_commit_deterministic "feat: add feature B" 86400
+
 # Push to remote
 echo "Pushing to remote..."
 git push -u origin main
@@ -98,7 +138,7 @@ git add search.js
 git_commit_deterministic "feat: Add search module" 86400
 
 cat >> "$DEMO_REPO_BASE/search.js" << 'EOF'
-function search(query) { 
+function search(query) {
     // Implementation here
 }
 EOF

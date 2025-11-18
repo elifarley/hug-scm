@@ -47,12 +47,14 @@ fi
 # Set up the test environment
 setup_file() {
   # Export the project root for tests to use
-  export PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  # BATS_TEST_FILENAME points to tests/unit/test_*.bats or tests/lib/test_*.bats
+  # We need to go up 2 levels to get to project root
+  export PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   export HUG_BIN="$PROJECT_ROOT/git-config/bin"
-  
+
   # Add hug to PATH for tests
   export PATH="$HUG_BIN:$PATH"
-  
+
   # Set up isolated temp dir for the test suite
   export BATS_TEST_TMPDIR="$(mktemp -d -t hug-test-suite-XXXXXX)"
 
@@ -637,22 +639,99 @@ create_test_repo_with_remote_upstream() {
 create_test_repo_with_branches() {
   local test_repo
   test_repo=$(create_test_repo_with_history)
-  
+
   (
     cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
-    
+
     # Create a feature branch with commits
     git checkout -q -b feature/branch
     echo "Feature branch file" > feature.txt
     git add feature.txt
     git commit -q -m "Add feature on branch"
-    
+
     # Switch back to main and add more commits
     git checkout -q main
     echo "Main extra" > main_extra.txt
     git add main_extra.txt
     git commit -q -m "Add main extra"
   )
-  
+
   echo "$test_repo"
+}
+
+################################################################################
+# Demo Repository Helpers (Leverage Makefile Targets)
+################################################################################
+
+# Create simple demo repository via repo-setup script
+# This uses the battle-tested repo-setup-simple.sh script which creates
+# deterministic commits with fixed timestamps for repeatable test results.
+#
+# The simple demo repo includes:
+# - 3 initial commits (README, app.js, .gitignore)
+# - 4 commits with overlapping file changes (for dependency testing)
+# - 2 commits on feature/search branch
+# - Bare remote repository
+# - Proper git config (user.name, user.email)
+#
+# Returns: Path to created repository
+create_demo_repo_simple() {
+  local repo_path="${1:-$(create_temp_repo_dir)}"
+
+  # Call repo-setup script directly
+  # Explicitly set PATH to include hug bin (setup_file should have done this)
+  if [ -z "${PROJECT_ROOT:-}" ]; then
+    echo "ERROR: PROJECT_ROOT not set in create_demo_repo_simple" >&2
+    return 1
+  fi
+
+  local setup_script="$PROJECT_ROOT/docs/screencasts/bin/repo-setup-simple.sh"
+  if [[ ! -f "$setup_script" ]]; then
+    echo "ERROR: Setup script not found: $setup_script" >&2
+    return 1
+  fi
+
+  # Run the setup script (output suppressed)
+  if ! HUG_BIN_PATH="$PROJECT_ROOT/git-config/bin" \
+       PATH="$PATH:$PROJECT_ROOT/git-config/bin" \
+       bash "$setup_script" "$repo_path" >/dev/null 2>&1; then
+    echo "Failed to create demo repo at $repo_path (script returned error)" >&2
+    return 1
+  fi
+
+  # Verify repo was created successfully
+  if [[ ! -d "$repo_path/.git" ]]; then
+    echo "Failed to create demo repo at $repo_path (no .git directory)" >&2
+    return 1
+  fi
+
+  echo "$repo_path"
+}
+
+# Create full demo repository via make target
+# This uses repo-setup.sh which creates a comprehensive demo with:
+# - 70+ commits with deterministic timestamps
+# - 15+ branches (feature, bugfix, hotfix, experimental, release)
+# - 4 contributors with realistic commit patterns
+# - Remote repository with upstream tracking
+# - Tags (both local and pushed)
+# - Various file states (staged, unstaged, conflicts, etc.)
+#
+# Returns: Path to created repository
+create_demo_repo_full() {
+  local repo_path="${1:-$(create_temp_repo_dir)}"
+
+  # Call repo-setup script directly instead of via make
+  # This avoids issues with make being called from within BATS
+  HUG_BIN_PATH="$PROJECT_ROOT/git-config/bin" \
+  PATH="$PATH:$PROJECT_ROOT/git-config/bin" \
+  bash "$PROJECT_ROOT/docs/screencasts/bin/repo-setup.sh" "$repo_path" >/dev/null 2>&1
+
+  # Verify repo was created successfully
+  if [[ ! -d "$repo_path/.git" ]]; then
+    echo "Failed to create full demo repo at $repo_path" >&2
+    return 1
+  fi
+
+  echo "$repo_path"
 }
