@@ -61,9 +61,17 @@ Hug SCM delivers **four tiers of value** beyond raw Git:
 *These features require Python-based data processing, graph algorithms, and statistical analysis—beyond what Git's plumbing can provide.*
 
 ### 4. 🤖 Machine-Readable Data Export
-- **JSON Output**: `--json` flag on analyze, stats, and churn commands
-- **Automation Ready**: Build dashboards, integrate with CI/CD
-- **Structured Data**: All computational analysis exports for external tools
+- **JSON Output**: `--json` flag on all analysis and stats commands
+- **Automation Ready**: Build dashboards, integrate with CI/CD, MCP servers
+- **Structured Data**: All computational analysis exports valid JSON
+
+```bash
+# Analysis with JSON output
+hug analyze co-changes 50 --json | jq '.correlations[0]'
+hug analyze expert src/auth/login.js --json | jq '.ownership[0]'
+hug stats file README.md --json | jq '.file_churn'
+hug analyze activity --by-hour --json | jq '.analysis.data'
+```
 
 **In short**: Making operations trivial, keeping you safe, being discoverable, and providing computational superpowers.
 

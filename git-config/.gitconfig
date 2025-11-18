@@ -42,7 +42,9 @@
   la = l --all
 
   # Log one-line with date, author and message
-  ll  = log --graph --pretty=log1 --date=short
+  # Now implemented as git-config/bin/git-ll script with --json support
+  # (alias removed - script takes precedence)
+
   # Log commits after the last Upstream commit
   llu = ll @{u}..HEAD
 
