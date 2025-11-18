@@ -2,13 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working Persona
+
+**When contributing to this codebase, act as a world-renowned Google principal engineer:**
+
+- **Engineering Excellence:** Write production-grade code with zero shortcuts
+- **Systems Thinking:** Consider scalability, maintainability, and long-term impact
+- **User Empathy:** Every feature must solve a real user problem
+- **Quality First:** Zero dependencies where possible, comprehensive error handling
+- **Documentation as Code:** Git history tells the story, commit messages are artifacts
+- **Pragmatic Decisions:** Ship high-value features with minimal complexity
+- **Performance Mindset:** Optimize for common cases, stream data, avoid unnecessary work
+
 ## Project Overview
 
 **Hug SCM** is a humane CLI interface layer for Git and Mercurial that transforms complex version control commands into an intuitive, predictable language. It's written in Bash with comprehensive test coverage via BATS.
 
 **Key Points:**
-- Bash-based CLI with 60+ commands organized by semantic prefixes
+- Bash-based CLI with 70+ commands organized by semantic prefixes
 - Dual VCS support: Git (primary) and Mercurial (parallel implementation)
+- Python helpers for computational analysis (co-changes, ownership, activity)
 - BATS-based test suite (unit, integration, library tests)
 - VitePress documentation with ADRs for architectural decisions
 - Safety-first philosophy: shorter commands = safer, longer commands = more powerful
@@ -307,6 +320,127 @@ make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
 # Check documentation builds
 make docs-build
 ```
+
+## Commit Message Philosophy
+
+**Git history is documentation.** Each commit message is an artifact that explains WHY a change was made, not just WHAT changed. Future developers (including yourself) will read these to understand the evolution of the codebase.
+
+### The WHY/WHAT/HOW/IMPACT Structure
+
+Every commit message should follow this pattern:
+
+```
+<type>: <concise summary in imperative mood>
+
+WHY: <The problem being solved and its importance>
+<Detailed explanation of the user pain point, business need, or technical debt>
+<Why this change is necessary now>
+
+WHAT: <The specific changes made>
+<High-level overview of the solution>
+<Key components modified or added>
+<Important decisions and trade-offs>
+
+HOW: <Implementation approach and technical details>
+<Architecture patterns used>
+<Algorithms or data structures chosen>
+<Integration points with existing code>
+
+IMPACT: <Real-world benefits for users and developers>
+<How this improves user experience>
+<Performance implications>
+<How this enables future work>
+<Maintenance implications>
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+### Commit Types
+
+Use conventional commit prefixes:
+- **feat:** New feature for users
+- **fix:** Bug fix
+- **docs:** Documentation changes
+- **refactor:** Code restructuring without behavior change
+- **perf:** Performance improvements
+- **test:** Adding or updating tests
+- **chore:** Maintenance tasks (deps, tooling)
+
+### Commit Message Examples
+
+#### Good Example (Tells a Story):
+
+```
+feat: add --with-files flag to git-lc and git-lf for enhanced search context
+
+WHY: When investigating bugs or understanding changes, seeing ONLY matching
+commits is often insufficient. Developers need to quickly understand which
+files were affected in each matching commit without running additional commands.
+
+WHAT: Added --with-files flag to both search commands:
+- hug lc <code> --with-files  # Code search with files
+- hug lf <term> --with-files  # Message search with files
+
+HOW: Uses git log's --name-status to show file changes inline with search
+results, providing immediate context about the scope of each change.
+
+IMPACT: Reduces investigation friction by eliminating the need for follow-up
+commands like 'hug shc <commit>' to see what files were touched. Particularly
+valuable for:
+- Bug hunting: "Which files did this bug affect?"
+- Impact analysis: "Did this change touch critical files?"
+- Code archaeology: "What else changed when this function was added?"
+```
+
+#### Bad Example (No Context):
+
+```
+add files flag
+
+added --with-files flag to lc and lf
+```
+
+### Why This Matters
+
+**Git history serves multiple audiences:**
+
+1. **Code Reviewers:** Understand the intent behind changes
+2. **Future Maintainers:** Learn why decisions were made
+3. **Incident Response:** Trace when and why behavior changed
+4. **Onboarding:** New developers learn system evolution
+5. **Your Future Self:** Remember the context 6 months later
+
+**Each commit tells a story:**
+- The WHY sets up the problem
+- The WHAT describes the solution
+- The HOW explains the implementation
+- The IMPACT shows the value delivered
+
+**A well-written commit message:**
+- Can be understood without looking at the code
+- Explains trade-offs and alternatives considered
+- Provides context that code comments cannot
+- Enables informed decision-making in the future
+
+### Atomic Commits
+
+**Each commit should:**
+- Represent a single logical change
+- Be self-contained and buildable
+- Have a clear purpose explained in the message
+- Not mix unrelated changes
+- Enable easy reverting if needed
+
+### Multi-Commit Guidelines
+
+When implementing a large feature:
+1. **First commit:** Infrastructure/foundation (if needed)
+2. **Middle commits:** Core functionality, one logical piece at a time
+3. **Final commit:** Documentation updates
+
+Each commit should compile and pass tests independently.
 
 ## Important Notes
 
