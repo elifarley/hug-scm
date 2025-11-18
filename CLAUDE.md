@@ -35,37 +35,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The Makefile provides comprehensive test capabilities with better ergonomics:
 
 ```bash
+# SHOW_FAILING=1 is recommended for all BATS tests:
+# - Shows only failures during test run (less noise)
+# - Still shows test count (e.g., "1..248") and summary ("✓ All tests passed!")
+# - Makes failures immediately visible when they occur
+# - No downside: same confidence signal, cleaner output
+
 # All tests (recommended for final validation)
 make test SHOW_FAILING=1                    # Runs ALL tests (BATS + pytest)
                                             # = test-bash + test-lib-py
 
 # BATS-only or pytest-only
-make test-bash                              # All BATS tests (unit + integration + lib)
+make test-bash SHOW_FAILING=1               # All BATS tests (unit + integration + lib)
 make test-lib-py                            # Python library tests (pytest)
 make test-lib-py-coverage                   # Python tests with coverage report
 
 # BATS test categories (subsets of test-bash)
-make test-unit                              # BATS unit tests (tests/unit/)
-make test-integration                       # BATS integration tests (tests/integration/)
-make test-lib                               # BATS library tests (tests/lib/)
+make test-unit SHOW_FAILING=1               # BATS unit tests (tests/unit/)
+make test-integration SHOW_FAILING=1        # BATS integration tests (tests/integration/)
+make test-lib SHOW_FAILING=1                # BATS library tests (tests/lib/)
 
 # Run specific BATS test files (supports basename or full path)
-make test-unit TEST_FILE=test_head.bats
-make test-unit TEST_FILE=test_analyze_deps.bats
-make test-lib TEST_FILE=test_hug_common.bats
-make test-integration TEST_FILE=test_workflows.bats
-make test-bash TEST_FILE=test_head.bats     # Works with test-bash too
+make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
+make test-unit TEST_FILE=test_analyze_deps.bats SHOW_FAILING=1
+make test-lib TEST_FILE=test_hug_common.bats SHOW_FAILING=1
+make test-integration TEST_FILE=test_workflows.bats SHOW_FAILING=1
+make test-bash TEST_FILE=test_head.bats SHOW_FAILING=1
 
 # Filter tests by name pattern (works with BATS and pytest)
-make test-unit TEST_FILTER="hug w discard"
-make test-lib TEST_FILTER="confirm_action"
-make test-bash TEST_FILTER="hug s"
+make test-unit TEST_FILTER="hug w discard" SHOW_FAILING=1
+make test-lib TEST_FILTER="confirm_action" SHOW_FAILING=1
+make test-bash TEST_FILTER="hug s" SHOW_FAILING=1
 make test-lib-py TEST_FILTER="test_analyze" # pytest -k pattern
-
-# Show only failing BATS tests (faster iteration during debugging)
-make test-unit SHOW_FAILING=1
-make test-bash SHOW_FAILING=1
-make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
 
 # Combine BATS options: file + filter + show-failing
 make test-unit TEST_FILE=test_analyze_deps.bats TEST_FILTER="dependency" SHOW_FAILING=1
