@@ -38,8 +38,10 @@ Use this skill when the user asks to:
 | `b*` | Branching | Creating, switching, listing, deleting branches |
 | `c*` | Commits | Committing, amending, cherry-picking, moving commits |
 | `l*` | Logging | Viewing history, searching commits, analyzing changes |
-| `f*` | File Inspection | Blame, contributors, file history, when file was born |
+| `f*` | File Inspection | Blame, contributors, file history, churn analysis |
 | `t*` | Tagging | Creating, managing, querying tags |
+| `analyze` | Advanced Analysis | Co-changes, activity patterns, dependencies, expertise |
+| `stats` | Statistics | File/author/branch metrics and insights |
 
 ## Essential Investigation Workflows
 
@@ -93,7 +95,9 @@ hug shc a1b2c3d
 **Critical skill: Use the right search command:**
 
 - **`hug lf "keyword"`** - Search commit **messages** for keyword
+- **`hug lf "keyword" --with-files`** - Search messages, show files changed in each commit
 - **`hug lc "code"`** - Search for **code changes** (Git's `-S` pickaxe)
+- **`hug lc "code" --with-files`** - Search code changes, show files changed in each commit
 - **`hug lcr "regex"`** - Search code changes with **regex** patterns
 
 **Examples:**
@@ -122,6 +126,10 @@ hug fborn <file>
 
 # See who wrote each line
 hug fblame <file>
+
+# Analyze file churn (how frequently it changes)
+hug fblame --churn <file>
+hug fblame --churn --since="3 months ago" <file>
 
 # Short blame (author + line only)
 hug fb <file>
@@ -419,15 +427,25 @@ hug lol                      # what will push?
 
 # Search Operations
 hug lf "keyword"             # search messages
+hug lf "keyword" --with-files # search messages, show files
 hug lc "code"                # search code changes
+hug lc "code" --with-files   # search code changes, show files
 hug lcr "regex"              # regex code search
 hug llf <file>               # file history
 
 # Deep Inspection
 hug fborn <file>             # when created
 hug fblame <file>            # who wrote what
+hug fblame --churn <file>    # churn analysis
 hug fcon <file>              # contributors
 hug h steps <file>           # commits since change
+
+# Statistics & Analysis
+hug stats file <file>        # file metrics
+hug stats author [author]    # author contributions
+hug stats branch [branch]    # branch statistics
+hug analyze expert <file>    # code ownership (TODO)
+hug analyze co-changes [N]   # co-changing files (TODO)
 
 # Time-Based
 hug h files -t "3 days ago"  # recent changes

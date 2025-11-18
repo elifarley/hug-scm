@@ -216,6 +216,8 @@ Prefix|Category|Description
 `t*`|Tagging|Create, manage tags
 `l*`|Logging|View history, list matching commits for a search term
 `f*`|File Inspection|Analyze file authorship and history (blame, contributors)
+`analyze`|Advanced Analysis|Co-changes, activity patterns, dependencies, expertise
+`stats`|Repository Statistics|File, author, and branch metrics
 
 ### Core Commands
 
@@ -319,26 +321,47 @@ hug bdelr <branch>          # Delete remote branch
 #### Logging & History (`l*`)
 
 ```shell
-hug l                 # One-line log with graph and decorations
-hug ll                # Log with date, author, and message (short date)
-hug la                # Log all branches
-hug lf <term> [--]    # Search commits by message (use -- for file selection, add -i for case-insensitive)
-hug lc <code> [--]    # Search commits by code changes in diff (use -- for file selection)
-hug lcr <regex> [--]  # Search commits by regex in code changes (use -- for file selection)
-hug lau <author>      # Commits by specific author
-hug ld <since> <until># Commits in date range
-hug lp                # Log with patches
-hug llf [file]        # Log commits to a specific file (interactive if no file, add -p for patches)
+hug l                      # One-line log with graph and decorations
+hug ll                     # Log with date, author, and message (short date)
+hug la                     # Log all branches
+hug lf <term> [--]         # Search commits by message (use -- for file selection, add -i for case-insensitive)
+hug lf <term> --with-files # Search commits by message, show files changed
+hug lc <code> [--]         # Search commits by code changes in diff (use -- for file selection)
+hug lc <code> --with-files # Search commits by code changes, show files changed
+hug lcr <regex> [--]       # Search commits by regex in code changes (use -- for file selection)
+hug lau <author>           # Commits by specific author
+hug ld <since> <until>     # Commits in date range
+hug lp                     # Log with patches
+hug llf [file]             # Log commits to a specific file (interactive if no file, add -p for patches)
 ```
 
 #### File Inspection (`f*`)
 
 ```shell
-hug fblame [file]     # Blame with whitespace/copy detection (interactive if no file)
-hug fb [file]         # Short blame (author and line only) (interactive if no file)
-hug fcon [file]       # List all contributors to a file (interactive if no file)
-hug fa [file]         # Count commits per author for a file (interactive if no file)
-hug fborn [file]      # Show when file was added (interactive if no file)
+hug fblame [file]             # Blame with whitespace/copy detection (interactive if no file)
+hug fblame --churn [file]     # Show churn analysis (how frequently file changes)
+hug fblame --churn --since="3 months ago" [file]  # Recent churn analysis
+hug fb [file]                 # Short blame (author and line only) (interactive if no file)
+hug fcon [file]               # List all contributors to a file (interactive if no file)
+hug fa [file]                 # Count commits per author for a file (interactive if no file)
+hug fborn [file]              # Show when file was added (interactive if no file)
+```
+
+#### 🔬 Advanced Analysis (`analyze`)
+
+```shell
+hug analyze co-changes [N]    # Find files that frequently change together (TODO)
+hug analyze activity          # Analyze temporal commit patterns (TODO)
+hug analyze deps <commit>     # Show dependency graph for commits/files (TODO)
+hug analyze expert [file]     # Identify code ownership and expertise (TODO)
+```
+
+#### 📊 Repository Statistics (`stats`)
+
+```shell
+hug stats file [file]         # File-level statistics (commits, authors, churn)
+hug stats author [author]     # Author contributions and expertise areas
+hug stats branch [branch]     # Branch statistics (commits, divergence, age)
 ```
 
 #### Tagging (`t*`)
