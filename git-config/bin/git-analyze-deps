@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# git-analyze-deps - Show commit dependency graph
+# Part of the Hug tool suite
+#
+# TODO: Implement dependency graph analysis
+# Algorithm:
+#   1. For given commit, find all commits that touch same files
+#   2. Build graph of commits related by file overlap
+#   3. Render ASCII tree showing relationships
+#   4. Support filtering by file pattern or date range
+#
+# Consider Python with graph libraries (networkx) for complex graphs
+
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug analyze deps: Show commit dependency graph
+
+USAGE:
+    hug analyze deps <commit> [options]
+
+ARGUMENTS:
+    <commit>       Commit hash to analyze
+
+OPTIONS:
+    --depth <n>        Maximum graph depth (default: 3)
+    --feature <term>   Find all commits related to feature
+    --since <date>     Only include commits since date
+    --format <type>    Output format: tree, json, dot
+
+DESCRIPTION:
+    Shows commits that are related to the given commit by:
+    - Touching the same files
+    - Being part of the same feature branch
+    - Temporal proximity with file overlap
+
+    Helps answer:
+    - "What other commits touched these files?"
+    - "What's the history of this feature?"
+    - "What might break if I revert this commit?"
+
+EXAMPLES:
+    hug analyze deps abc1234                    # Dependencies for commit
+    hug analyze deps abc1234 --depth 2          # Limit to 2 levels
+    hug analyze deps --feature "authentication" # All related commits
+    hug analyze deps abc1234 --format dot       # Graphviz format
+
+OUTPUT FORMAT:
+    abc1234 (feat: add authentication)
+      ├─ def5678 (fix: auth bug in session handling)
+      ├─ ghi9012 (refactor: extract auth logic)
+      └─ jkl3456 (test: add auth integration tests)
+          └─ mno7890 (fix: test flakiness)
+
+IMPLEMENTATION NOTES:
+    This command should:
+    1. Use git log --name-only to get files per commit
+    2. Build graph of commits sharing files
+    3. Use BFS/DFS to traverse to max depth
+    4. Render as ASCII tree or export as JSON/DOT
+    5. Consider networkx for graph algorithms (Python)
+
+SEE ALSO:
+    hug h files           : Files changed in commits
+    hug analyze co-changes: Files that change together
+EOF
+}
+
+check_git_repo
+
+# Stub implementation
+warning "🚧 This command is not yet implemented"
+info ""
+info "This command will show dependency relationships between commits."
+info ""
+info "Planned features:"
+info "  • Graph of commits touching same files"
+info "  • ASCII tree visualization of dependencies"
+info "  • Find all commits related to a feature"
+info "  • Export as JSON or Graphviz DOT format"
+info "  • Configurable depth limit"
+info ""
+info "Implementation approach:"
+info "  • Build graph from git log file overlap"
+info "  • Use graph traversal (BFS/DFS) with depth limit"
+info "  • Python with networkx for graph algorithms"
+info "  • ASCII tree rendering using box-drawing chars"
+info ""
+info "Example output:"
+info "  abc1234 (feat: add authentication)"
+info "    ├─ def5678 (fix: auth bug)"
+info "    ├─ ghi9012 (refactor: auth)"
+info "    └─ jkl3456 (test: auth tests)"
+info "        └─ mno7890 (fix: test flakiness)"
+info ""
+info "To implement this command, see:"
+info "  git-config/bin/git-analyze-deps"
+
+exit 1

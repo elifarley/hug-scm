@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# git-analyze - Repository analysis gateway command
+# Part of the Hug tool suite
+
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+show_help() {
+  cat << 'EOF'
+hug analyze: Repository analysis and insights
+
+USAGE:
+    hug analyze <command> [args]
+
+COMMANDS:
+    co-changes      Find files that frequently change together
+    activity        Analyze temporal commit patterns and activity
+    deps            Show dependency graph for commits/files
+    expert          Identify code ownership and expertise areas
+
+EXAMPLES:
+    hug analyze co-changes 50              # Analyze last 50 commits
+    hug analyze activity --by-hour         # Activity by hour of day
+    hug analyze deps abc1234               # Dependencies for commit
+    hug analyze expert src/auth/login.js   # Who owns this file
+
+For detailed help on each command:
+    hug analyze <command> --help
+
+SEE ALSO:
+    hug stats        : Quick repository statistics
+    hug lc           : Search code changes
+    hug h files      : Files touched by commits
+EOF
+}
+
+case "${1:-}" in
+  co-changes)     shift; git analyze-co-changes "$@" ;;
+  activity)       shift; git analyze-activity "$@" ;;
+  deps)           shift; git analyze-deps "$@" ;;
+  expert)         shift; git analyze-expert "$@" ;;
+  -h|--help|help) show_help ;;
+  *)
+    if [ -n "${1:-}" ]; then
+      printf 'Unknown analyze command: %s\n\n' "$1" >&2
+    fi
+    show_help
+    exit 1
+    ;;
+esac

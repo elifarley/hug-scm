@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# git-analyze-activity - Analyze temporal commit patterns
+# Part of the Hug tool suite
+#
+# TODO: Implement activity analysis
+# Algorithm:
+#   1. Parse git log with timestamps
+#   2. Group by requested dimension (hour/day/week/author)
+#   3. Generate histogram or time series data
+#   4. Output ASCII chart or JSON for visualization
+#
+# Consider Python implementation for plotting libraries (matplotlib/plotext)
+
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug analyze activity: Analyze temporal commit patterns
+
+USAGE:
+    hug analyze activity [options]
+
+OPTIONS:
+    --by-hour          Group activity by hour of day
+    --by-day           Group activity by day of week
+    --by-week          Group activity by week
+    --by-month         Group activity by month
+    --by-author        Show activity per author over time
+    --since <date>     Only analyze commits since date
+    --json             Output as JSON
+
+DESCRIPTION:
+    Analyzes when development activity happens to identify:
+    - Peak coding hours (crunch times)
+    - Most active days of week
+    - Contribution patterns by author
+    - Quiet periods (gaps in development)
+
+EXAMPLES:
+    hug analyze activity --by-hour                # Histogram by hour
+    hug analyze activity --by-day                 # Activity by weekday
+    hug analyze activity --by-author              # Time series per author
+    hug analyze activity --by-hour --json         # Machine-readable
+
+OUTPUT FORMAT (--by-hour example):
+    Activity by hour of day (last 100 commits):
+    00:00 ▏ 2
+    01:00 ▏ 1
+    02:00
+    ...
+    09:00 ▊▊▊▊▊ 12
+    10:00 ▊▊▊▊▊▊▊▊ 18
+    11:00 ▊▊▊▊▊▊▊ 15
+    ...
+    22:00 ▊▊▊ 8
+    23:00 ▊ 3
+
+IMPLEMENTATION NOTES:
+    This command should:
+    1. Use git log --format='%ai' for timestamps
+    2. Parse timestamps and extract hour/day/week
+    3. Aggregate into buckets
+    4. Generate ASCII histogram using Unicode blocks
+    5. Consider plotext for terminal graphs (Python)
+
+SEE ALSO:
+    hug lau           : Commits by author
+    hug ld            : Commits in date range
+EOF
+}
+
+check_git_repo
+
+# Stub implementation
+warning "🚧 This command is not yet implemented"
+info ""
+info "This command will analyze temporal patterns in commit activity."
+info ""
+info "Planned features:"
+info "  • Activity heatmap by hour of day"
+info "  • Commits by day of week histogram"
+info "  • Per-author contribution timelines"
+info "  • Identify quiet periods (gaps > N days)"
+info "  • ASCII chart visualization in terminal"
+info ""
+info "Implementation approach:"
+info "  • Parse git log timestamps with --format='%ai'"
+info "  • Use Python for date/time parsing and aggregation"
+info "  • Consider plotext for terminal charts"
+info "  • Support JSON output for external visualization"
+info ""
+info "Example output (--by-hour):"
+info "  Activity by hour of day:"
+info "  09:00 ▊▊▊▊ 12 commits"
+info "  10:00 ▊▊▊▊▊▊▊▊ 18 commits"
+info "  11:00 ▊▊▊▊▊▊ 15 commits"
+info ""
+info "To implement this command, see:"
+info "  git-config/bin/git-analyze-activity"
+
+exit 1
