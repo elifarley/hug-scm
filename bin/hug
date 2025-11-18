@@ -10,15 +10,26 @@ fi
 export HUG_HOME
 
 # Handle commands that work outside repository
-if [[ "${1:-}" == "clone" ]]; then
-    shift
-    exec "$HUG_HOME/bin/hug-clone" "$@"
-fi
-
-if [[ "${1:-}" == "init" ]]; then
-    shift
-    exec "$HUG_HOME/bin/hug-init" "$@"
-fi
+case "${1:-}" in
+    clone)
+        shift
+        exec "$HUG_HOME/bin/hug-clone" "$@"
+        ;;
+    init)
+        shift
+        exec "$HUG_HOME/bin/hug-init" "$@"
+        ;;
+    help)
+        # Help works outside repos - default to Git's help system
+        shift
+        exec git hughelp "$@"
+        ;;
+    --version|version)
+        echo "Hug SCM - A humane interface for Git and Mercurial"
+        echo "Part of the Hug tool suite"
+        exit 0
+        ;;
+esac
 
 # Detect repository type and dispatch
 if git rev-parse --git-dir >/dev/null 2>&1; then
