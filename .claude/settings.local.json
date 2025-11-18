@@ -12,7 +12,20 @@
       "Bash(git -C /tmp/demo-repo shortlog -sn --all)",
       "Bash(HUG_HOME=/home/ecc/IdeaProjects/hug-scm/git-config timeout:*)",
       "Bash(git commit:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(source:*)",
+      "Bash(python3:*)",
+      "Bash(cat:*)",
+      "Bash(git reset:*)",
+      "Bash(git log:*)",
+      "Bash(hug analyze:*)",
+      "Bash(./tests/run-tests.sh:*)",
+      "Bash(make:*)",
+      "Bash(hug:*)",
+      "Bash(grep:*)",
+      "Bash(sed:*)",
+      "Bash(git help:*)",
+      "Bash(/home/ecc/IdeaProjects/hug-scm/bin/hug:*)"
     ],
     "deny": [],
     "ask": []
