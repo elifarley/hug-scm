@@ -91,6 +91,7 @@ check_git_repo
 
 if $json_output; then
   # JSON output mode
+  # Always use Python helper for consistent parsing (handles multi-line commit messages)
 
   # Strategy: Use git log with simple separators, parse in Python
   # Format fields with a unique separator
@@ -100,74 +101,15 @@ if $json_output; then
   # Format: hash|~|short|~|author_name|~|author_email|~|...|~|refs
   format="%H${field_sep}%h${field_sep}%an${field_sep}%ae${field_sep}%cn${field_sep}%ce${field_sep}%aI${field_sep}%ar${field_sep}%s${field_sep}%B${field_sep}%P${field_sep}%D"
 
-  # Use Python to parse and format JSON
+  # Delegate to Python helper for parsing (handles both with and without stats)
+  python_helper="$CMD_BASE/../lib/python/log_json.py"
+
   if $with_stats; then
-    # With stats: delegate to Python helper for parsing
-    python_helper="$CMD_BASE/../lib/python/log_json.py"
     git log --format="${format}" --numstat "${git_args[@]}" 2>/dev/null | \
       python3 "$python_helper" --with-stats
   else
-    git log --format="${format}" "${git_args[@]}" 2>/dev/null | python3 <<'PYTHON_EOF'
-import sys, json
-
-commits = []
-
-for line in sys.stdin:
-    line = line.rstrip("\n")
-    if not line:
-        continue
-
-    # Parse commit fields separated by |~|
-    fields = line.split("|~|")
-    if len(fields) < 12:
-        continue
-
-    # Extract message
-    subject = fields[8]
-    full_body = fields[9]
-    body_parts = full_body.strip().split("\n", 1)
-    body = body_parts[1].strip() if len(body_parts) > 1 else ""
-
-    # Parse refs
-    refs = []
-    if fields[11]:
-        for ref in fields[11].split(","):
-            ref = ref.strip()
-            if " -> " in ref:
-                parts = ref.split(" -> ")
-                refs.append(parts[0].strip())
-                refs.append(parts[1].strip())
-            else:
-                refs.append(ref)
-
-    commits.append({
-        "hash": fields[0],
-        "hash_short": fields[1],
-        "author": {"name": fields[2], "email": fields[3]},
-        "committer": {"name": fields[4], "email": fields[5]},
-        "date": fields[6],
-        "date_relative": fields[7],
-        "message": {
-            "subject": subject,
-            "body": body if body else None
-        },
-        "parents": fields[10].split() if fields[10] else [],
-        "refs": refs if refs else None
-    })
-
-output = {
-    "command": "hug ll",
-    "commits": commits,
-    "summary": {"total_commits": len(commits)}
-}
-
-if commits:
-    earliest = min(c["date"] for c in commits)
-    latest = max(c["date"] for c in commits)
-    output["summary"]["date_range"] = {"earliest": earliest, "latest": latest}
-
-print(json.dumps(output, indent=2))
-PYTHON_EOF
+    git log --format="${format}" "${git_args[@]}" 2>/dev/null | \
+      python3 "$python_helper"
   fi
 
 else

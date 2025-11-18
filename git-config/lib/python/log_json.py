@@ -6,101 +6,204 @@ Usage:
     git log --format='<format>' --numstat | python3 log_json.py [--with-stats]
 
 Input format expected:
-    hash|~|short|~|author_name|~|author_email|~|...|~|refs
-    <blank line>
-    <numstat lines>
-    <blank line>
-    next commit...
+    The format string splits across multiple lines:
+    Line 1: hash|~|short|~|...|~|subject|~|<start of body>
+    Lines 2-N: <continuation of body>
+    Last line of commit: <end of body>|~|parent_hash|~|refs
+
+    Then optionally followed by numstat lines and blank lines.
 """
 
 import sys
 import json
 import argparse
+import re
 
 
 def parse_log_with_stats(lines):
-    """Parse git log output with --numstat"""
+    """Parse git log output with --numstat
+
+    The git log format we use is:
+    %H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%s|~|%B|~|%P|~|%D
+
+    This produces output where:
+    - First line starts with commit hash (40 hex chars)
+    - Body (%B) spans multiple lines
+    - Last line of commit metadata ends with |~|parent_hashes|~|refs
+    - Optionally followed by blank line and numstat lines
+
+    Strategy: Accumulate lines until we find the next commit hash
+    """
     commits = []
-    current_commit = None
+    current_lines = []
+    current_numstats = []
     in_numstat = False
 
     for line in lines:
         line = line.rstrip('\n')
 
-        # Check if this is a commit line (contains our delimiter)
-        if '|~|' in line:
-            # Save previous commit if exists
-            if current_commit:
-                commits.append(current_commit)
+        # Check if this line starts a new commit (begins with 40-char hex hash followed by |~|)
+        if re.match(r'^[0-9a-f]{40}\|~\|', line):
+            # Process previous commit if exists
+            if current_lines:
+                commit = parse_single_commit(current_lines, current_numstats)
+                if commit:
+                    commits.append(commit)
+            # Start new commit
+            current_lines = [line]
+            current_numstats = []
+            in_numstat = False
+        elif current_lines:
+            # Check if this is a numstat line (N\tM\tfilename)
+            if '\t' in line and not '|~|' in line:
+                parts = line.split('\t')
+                if len(parts) >= 3:
+                    # This is a numstat line
+                    current_numstats.append(line)
+                    in_numstat = True
+                    continue
 
-            # Parse new commit
-            fields = line.split('|~|')
-            if len(fields) < 12:
-                continue
+            # If we're not in numstat and not blank, it's part of commit body
+            if not in_numstat or line.strip():
+                current_lines.append(line)
 
-            # Extract message
-            subject = fields[8]
-            full_body = fields[9]
-            body_parts = full_body.strip().split('\n', 1)
-            body = body_parts[1].strip() if len(body_parts) > 1 else ""
-
-            # Parse refs
-            refs = []
-            if fields[11]:
-                for ref in fields[11].split(','):
-                    ref = ref.strip()
-                    if ' -> ' in ref:
-                        parts = ref.split(' -> ')
-                        refs.append(parts[0].strip())
-                        refs.append(parts[1].strip())
-                    else:
-                        refs.append(ref)
-
-            current_commit = {
-                'hash': fields[0],
-                'hash_short': fields[1],
-                'author': {'name': fields[2], 'email': fields[3]},
-                'committer': {'name': fields[4], 'email': fields[5]},
-                'date': fields[6],
-                'date_relative': fields[7],
-                'message': {
-                    'subject': subject,
-                    'body': body if body else None
-                },
-                'parents': fields[10].split() if fields[10] else [],
-                'refs': refs if refs else None,
-                'stats': {
-                    'files_changed': 0,
-                    'insertions': 0,
-                    'deletions': 0
-                }
-            }
-            in_numstat = True
-
-        elif in_numstat and current_commit:
-            # This might be a numstat line or blank line
-            if not line.strip():
-                # Blank line - might separate commits or be between format and numstat
-                continue
-
-            # Try to parse as numstat: "additions\tdeletions\tfilename"
-            parts = line.split('\t')
-            if len(parts) >= 3:
-                try:
-                    add = 0 if parts[0] == '-' else int(parts[0])
-                    delete = 0 if parts[1] == '-' else int(parts[1])
-                    current_commit['stats']['insertions'] += add
-                    current_commit['stats']['deletions'] += delete
-                    current_commit['stats']['files_changed'] += 1
-                except ValueError:
-                    # Not a numstat line
-                    pass
-
-    # Save last commit
-    if current_commit:
-        commits.append(current_commit)
+    # Process last commit
+    if current_lines:
+        commit = parse_single_commit(current_lines, current_numstats)
+        if commit:
+            commits.append(commit)
 
     return commits
+
+
+def parse_single_commit(lines, numstat_lines=None):
+    """Parse a single commit from accumulated lines
+
+    Args:
+        lines: List of lines containing commit metadata and body
+        numstat_lines: Optional list of numstat lines (N\tM\tfilename format)
+
+    Returns None if parsing fails.
+    """
+    if not lines:
+        return None
+
+    if numstat_lines is None:
+        numstat_lines = []
+
+    # First line has: hash|~|short|~|author|~|email|~|...|~|subject|~|<body starts>
+    first_line = lines[0]
+
+    # Join all lines and look for the parent/refs trailer at the end
+    full_text = '\n'.join(lines)
+
+    # The last |~| separator should be followed by refs (or empty string)
+    # The second-to-last |~| separator should be followed by parent hashes (or empty)
+    # Find these by looking from the end
+
+    # Strategy: Split first line to get fields 0-8 (up to subject)
+    # Then reconstruct the body from the remaining text
+    # Then extract parents and refs from the end
+
+    fields = first_line.split('|~|', 9)  # Split into at most 10 parts (0-9)
+    if len(fields) < 10:
+        return None
+
+    hash_val = fields[0]
+    hash_short = fields[1]
+    author_name = fields[2]
+    author_email = fields[3]
+    committer_name = fields[4]
+    committer_email = fields[5]
+    date = fields[6]
+    date_relative = fields[7]
+    subject = fields[8]
+    body_start = fields[9]  # This is the start of %B (which includes subject line again)
+
+    # Now we need to extract the body, parents, and refs from the full text
+    # The last line should end with: |~|parent_hashes|~|refs
+    # Find the last two |~| separators
+
+    last_sep = full_text.rfind('|~|')
+    if last_sep == -1:
+        # Malformed - no trailer
+        return None
+
+    refs_str = full_text[last_sep + 3:].strip()
+
+    # Find second-to-last separator
+    remaining = full_text[:last_sep]
+    second_last_sep = remaining.rfind('|~|')
+    if second_last_sep == -1:
+        # Malformed
+        return None
+
+    parents_str = remaining[second_last_sep + 3:].strip()
+
+    # Everything before that is the body
+    body_end_pos = second_last_sep
+
+    # Body starts after field 9 in first line
+    first_line_prefix = '|~|'.join(fields[:9]) + '|~|'
+    body_full = full_text[len(first_line_prefix):body_end_pos]
+
+    # Extract subject and body from full body text
+    body_parts = body_full.strip().split('\n', 1)
+    body = body_parts[1].strip() if len(body_parts) > 1 else ""
+
+    # Parse refs
+    refs = []
+    if refs_str:
+        # Filter out numstat lines that got mixed into refs
+        # Numstat lines contain \t characters
+        if '\t' not in refs_str:
+            for ref in refs_str.split(','):
+                ref = ref.strip()
+                if ' -> ' in ref:
+                    parts = ref.split(' -> ')
+                    refs.append(parts[0].strip())
+                    refs.append(parts[1].strip())
+                else:
+                    refs.append(ref)
+
+    # Parse parents
+    parents = parents_str.split() if parents_str else []
+
+    # Parse numstat lines
+    stats = {
+        'files_changed': 0,
+        'insertions': 0,
+        'deletions': 0
+    }
+
+    for numstat_line in numstat_lines:
+        parts = numstat_line.split('\t')
+        if len(parts) >= 3:
+            try:
+                add = 0 if parts[0] == '-' else int(parts[0])
+                delete = 0 if parts[1] == '-' else int(parts[1])
+                stats['insertions'] += add
+                stats['deletions'] += delete
+                stats['files_changed'] += 1
+            except ValueError:
+                # Not a valid numstat line
+                pass
+
+    return {
+        'hash': hash_val,
+        'hash_short': hash_short,
+        'author': {'name': author_name, 'email': author_email},
+        'committer': {'name': committer_name, 'email': committer_email},
+        'date': date,
+        'date_relative': date_relative,
+        'message': {
+            'subject': subject,
+            'body': body if body else None
+        },
+        'parents': parents,
+        'refs': refs if refs else None,
+        'stats': stats
+    }
 
 
 def main():
@@ -112,11 +215,9 @@ def main():
     # Read all input
     lines = sys.stdin.readlines()
 
-    if args.with_stats:
-        commits = parse_log_with_stats(lines)
-    else:
-        # Should not reach here (bash handles non-stats case inline)
-        commits = []
+    # Always use parse_log_with_stats - it handles both cases
+    # (just sets stats to zero when there are no numstat lines)
+    commits = parse_log_with_stats(lines)
 
     # Build output
     output = {
