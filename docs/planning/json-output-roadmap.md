@@ -1,9 +1,26 @@
 # JSON Output Support in Hug
 
-**Status**: Phase 4a Complete ✅
+**Status**: Phase 4b Complete (hybrid GitHub-compatible schema) ✅
 **Date**: 2025-11-18
-**Updated**: 2025-11-18 (Phase 4a completion)
+**Updated**: 2025-11-18 (Phase 4b completion - GitHub API compatibility)
 **Purpose**: Document JSON support implementation and future roadmap
+
+---
+
+## Design Philosophy: GitHub API Compatibility
+
+**Key Principle**: When implementing JSON output, align with GitHub REST API formats where possible while preserving Hug-specific enhancements.
+
+**Rationale**:
+- **Ecosystem Integration**: Tools already built for GitHub API can consume Hug data
+- **Developer Familiarity**: Developers know GitHub's schema (commits, trees, refs)
+- **Future Extensibility**: GitHub-compatible baseline makes future integrations easier
+- **Best of Both**: Adopt GitHub structure + add Hug enhancements (refs, relative dates, pre-parsed fields)
+
+**Hybrid Approach**:
+- Use GitHub field names where applicable (`sha` not `hash`, structured `parents`)
+- Add Hug conveniences that GitHub doesn't provide (subject/body split, relative timestamps)
+- Preserve GitHub compatibility as a subset (tools can ignore Hug extras)
 
 ---
 
@@ -21,19 +38,23 @@
 ## Executive Summary
 
 **✅ Phase 4a Complete**: All 4 analysis/stats commands now have JSON support with comprehensive test coverage
+**✅ Phase 4b Complete**: `hug ll` now outputs GitHub-compatible JSON with Hug enhancements
 
 **Current State**:
 - ✅ 4 core analysis commands with JSON output
+- ✅ `hug ll` with hybrid GitHub-compatible schema
 - ✅ 18 BATS tests validating JSON structure and validity
 - ✅ All JSON outputs validated by Python json.tool
 - ✅ jq-compatible output for command-line pipelines
+- ✅ GitHub API alignment for commit log data
 
-**Future Opportunity**: 15+ workflow commands would benefit from JSON output (Phase 4b)
+**Future Opportunity**: 14+ workflow commands would benefit from JSON output (Phase 4c+)
 
-**Primary Use Cases**: CI/CD automation, MCP server integration, IDE tooling, dashboards
+**Primary Use Cases**: CI/CD automation, MCP server integration, IDE tooling, dashboards, GitHub API compatibility
 
 **Key Achievements**:
 - All analysis/stats commands use consistent `--json` flag pattern
+- **GitHub-Compatible Commit Schema**: Aligns with `GET /repos/:owner/:repo/commits` API
 - Python scripts already return structured data (easy JSON serialization)
 - Comprehensive test coverage ensures reliability
 - Valid JSON output compatible with standard tools (jq, json.tool)
@@ -71,7 +92,7 @@ All existing JSON implementations:
 
 ---
 
-## Prioritized Recommendations (Phase 4b and Beyond)
+## Prioritized Recommendations (Phase 4c and Beyond)
 
 ### ✅ Phase 4a Complete (Analysis Commands)
 
@@ -81,7 +102,71 @@ The top-priority analysis commands now have full JSON support:
 3. ✅ `hug stats file --json`
 4. ✅ `hug analyze activity --json`
 
-### Tier 1: Essential Workflow Commands (Phase 4b - HIGH PRIORITY)
+### ✅ Phase 4b Complete (Commit Log - GitHub Compatible)
+
+**`hug ll --json`** - Commit History with GitHub API Alignment
+
+**Status**: ✅ Complete with hybrid schema
+
+**GitHub API Compatibility**: Aligns with `GET /repos/:owner/:repo/commits` response format
+
+**Hybrid Schema** (GitHub-compatible + Hug enhancements):
+```json
+{
+  "commits": [{
+    "sha": "80c0d5d...",              // ✅ GitHub compat
+    "sha_short": "80c0d5d",           // ⭐ Hug convenience
+    "author": {
+      "name": "...",
+      "email": "...",
+      "date": "2025-11-18T20:13:20-03:00",
+      "date_relative": "8 minutes ago"  // ⭐ Hug convenience
+    },
+    "committer": {
+      "name": "...",
+      "email": "...",
+      "date": "2025-11-18T20:15:00-03:00",
+      "date_relative": "6 minutes ago"  // ⭐ Hug convenience
+    },
+    "message": "fix: repair...\n\nWHY: ...",  // ✅ GitHub compat (full text)
+    "subject": "fix: repair...",             // ⭐ Hug convenience (pre-parsed)
+    "body": "WHY: ...",                      // ⭐ Hug convenience (pre-parsed)
+    "tree": {"sha": "e1ae8ec..."},           // ✅ GitHub compat
+    "parents": [{"sha": "09f88db..."}],      // ✅ GitHub compat (structured)
+    "refs": ["HEAD", "main"],                // ⭐ Hug enhancement (git context)
+    "stats": {...}                           // ⭐ Hug enhancement (with --with-stats)
+  }],
+  "summary": {
+    "total_commits": 5,
+    "date_range": {"earliest": "...", "latest": "..."}
+  }
+}
+```
+
+**Key Achievements**:
+- ✅ Renamed `hash` → `sha` (GitHub standard)
+- ✅ Added committer timestamps (author vs committer dates)
+- ✅ Structured parents as objects (GitHub format)
+- ✅ Full `message` text + parsed `subject`/`body` (hybrid)
+- ✅ Tree SHA included (GitHub compat)
+- ✅ Preserved Hug enhancements (refs, relative dates, short hash, pre-parsed fields)
+
+**Use Cases Enabled**:
+```bash
+# Get commit subjects (using Hug convenience field)
+hug ll -10 --json | jq '.commits[].subject'
+
+# GitHub-style access
+hug ll -10 --json | jq '.commits[].message | split("\n")[0]'
+
+# Find commits with stats
+hug ll --json --with-stats | jq '.commits[] | select(.stats.insertions > 100)'
+
+# Extract git context (Hug enhancement)
+hug ll --json | jq '.commits[] | select(.refs | contains(["HEAD"]))'
+```
+
+### Tier 1: Essential Workflow Commands (Phase 4c - HIGH PRIORITY)
 
 Commands used daily that would provide immediate automation value.
 

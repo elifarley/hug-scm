@@ -84,6 +84,11 @@ def parse_single_commit(lines, numstat_lines=None):
         numstat_lines: Optional list of numstat lines (N\tM\tfilename format)
 
     Returns None if parsing fails.
+
+    Format (15 fields):
+    hash|~|short|~|author_name|~|author_email|~|committer_name|~|committer_email|~|
+    author_date|~|author_date_rel|~|committer_date|~|committer_date_rel|~|tree|~|
+    subject|~|body|~|parents|~|refs
     """
     if not lines:
         return None
@@ -91,7 +96,7 @@ def parse_single_commit(lines, numstat_lines=None):
     if numstat_lines is None:
         numstat_lines = []
 
-    # First line has: hash|~|short|~|author|~|email|~|...|~|subject|~|<body starts>
+    # First line has: hash|~|short|~|...|~|subject|~|<body starts>
     first_line = lines[0]
 
     # Join all lines and look for the parent/refs trailer at the end
@@ -101,12 +106,12 @@ def parse_single_commit(lines, numstat_lines=None):
     # The second-to-last |~| separator should be followed by parent hashes (or empty)
     # Find these by looking from the end
 
-    # Strategy: Split first line to get fields 0-8 (up to subject)
+    # Strategy: Split first line to get fields 0-11 (up to subject)
     # Then reconstruct the body from the remaining text
     # Then extract parents and refs from the end
 
-    fields = first_line.split('|~|', 9)  # Split into at most 10 parts (0-9)
-    if len(fields) < 10:
+    fields = first_line.split('|~|', 12)  # Split into at most 13 parts (0-12)
+    if len(fields) < 13:
         return None
 
     hash_val = fields[0]
@@ -115,10 +120,13 @@ def parse_single_commit(lines, numstat_lines=None):
     author_email = fields[3]
     committer_name = fields[4]
     committer_email = fields[5]
-    date = fields[6]
-    date_relative = fields[7]
-    subject = fields[8]
-    body_start = fields[9]  # This is the start of %B (which includes subject line again)
+    author_date = fields[6]
+    author_date_relative = fields[7]
+    committer_date = fields[8]
+    committer_date_relative = fields[9]
+    tree_sha = fields[10]
+    subject = fields[11]
+    body_start = fields[12]  # This is the start of %B (which includes subject line again)
 
     # Now we need to extract the body, parents, and refs from the full text
     # The last line should end with: |~|parent_hashes|~|refs
@@ -143,8 +151,8 @@ def parse_single_commit(lines, numstat_lines=None):
     # Everything before that is the body
     body_end_pos = second_last_sep
 
-    # Body starts after field 9 in first line
-    first_line_prefix = '|~|'.join(fields[:9]) + '|~|'
+    # Body starts after field 12 in first line
+    first_line_prefix = '|~|'.join(fields[:12]) + '|~|'
     body_full = full_text[len(first_line_prefix):body_end_pos]
 
     # Extract subject and body from full body text
@@ -166,8 +174,11 @@ def parse_single_commit(lines, numstat_lines=None):
                 else:
                     refs.append(ref)
 
-    # Parse parents
-    parents = parents_str.split() if parents_str else []
+    # Parse parents - convert to GitHub-style objects
+    parents = []
+    if parents_str:
+        for parent_sha in parents_str.split():
+            parents.append({'sha': parent_sha})
 
     # Parse numstat lines
     stats = {
@@ -189,17 +200,30 @@ def parse_single_commit(lines, numstat_lines=None):
                 # Not a valid numstat line
                 pass
 
+    # Construct full message (GitHub compat)
+    full_message = subject
+    if body:
+        full_message = subject + '\n\n' + body
+
     return {
-        'hash': hash_val,
-        'hash_short': hash_short,
-        'author': {'name': author_name, 'email': author_email},
-        'committer': {'name': committer_name, 'email': committer_email},
-        'date': date,
-        'date_relative': date_relative,
-        'message': {
-            'subject': subject,
-            'body': body if body else None
+        'sha': hash_val,
+        'sha_short': hash_short,
+        'author': {
+            'name': author_name,
+            'email': author_email,
+            'date': author_date,
+            'date_relative': author_date_relative
         },
+        'committer': {
+            'name': committer_name,
+            'email': committer_email,
+            'date': committer_date,
+            'date_relative': committer_date_relative
+        },
+        'message': full_message,
+        'subject': subject,
+        'body': body if body else None,
+        'tree': {'sha': tree_sha},
         'parents': parents,
         'refs': refs if refs else None,
         'stats': stats
@@ -227,8 +251,8 @@ def main():
     }
 
     if commits:
-        earliest = min(c['date'] for c in commits)
-        latest = max(c['date'] for c in commits)
+        earliest = min(c['author']['date'] for c in commits)
+        latest = max(c['author']['date'] for c in commits)
         output['summary']['date_range'] = {
             'earliest': earliest,
             'latest': latest

@@ -30,19 +30,37 @@ EXAMPLES:
     hug ll --json --with-stats # JSON with file change stats
     hug ll main..feature      # Commits in feature not in main
 
-JSON OUTPUT:
+JSON OUTPUT (GitHub-compatible + Hug enhancements):
     {
       "commits": [
         {
-          "hash": "full_hash",
-          "hash_short": "short_hash",
-          "author": {"name": "...", "email": "..."},
-          "date": "ISO8601_timestamp",
-          "message": {"subject": "...", "body": "..."},
+          "sha": "full_hash",
+          "sha_short": "short_hash",
+          "author": {
+            "name": "...",
+            "email": "...",
+            "date": "ISO8601",
+            "date_relative": "2 hours ago"
+          },
+          "committer": {
+            "name": "...",
+            "email": "...",
+            "date": "ISO8601",
+            "date_relative": "2 hours ago"
+          },
+          "message": "subject\n\nbody",
+          "subject": "subject line",
+          "body": "body text",
+          "tree": {"sha": "tree_hash"},
+          "parents": [{"sha": "parent_hash"}],
           "refs": ["HEAD", "main"],
           "stats": {"files_changed": 3, "insertions": 10, "deletions": 5}
         }
-      ]
+      ],
+      "summary": {
+        "total_commits": 5,
+        "date_range": {"earliest": "...", "latest": "..."}
+      }
     }
 
 SEE ALSO:
@@ -98,8 +116,8 @@ if $json_output; then
   # Note: with --numstat, the format is: "<format>%n%n<numstat lines>%n"
   # Use newline as commit separator since numstat already includes newlines
   field_sep='|~|'
-  # Format: hash|~|short|~|author_name|~|author_email|~|...|~|refs
-  format="%H${field_sep}%h${field_sep}%an${field_sep}%ae${field_sep}%cn${field_sep}%ce${field_sep}%aI${field_sep}%ar${field_sep}%s${field_sep}%B${field_sep}%P${field_sep}%D"
+  # Format: hash|~|short|~|author_name|~|author_email|~|committer_name|~|committer_email|~|author_date|~|author_date_rel|~|committer_date|~|committer_date_rel|~|tree|~|subject|~|body|~|parents|~|refs
+  format="%H${field_sep}%h${field_sep}%an${field_sep}%ae${field_sep}%cn${field_sep}%ce${field_sep}%aI${field_sep}%ar${field_sep}%cI${field_sep}%cr${field_sep}%T${field_sep}%s${field_sep}%B${field_sep}%P${field_sep}%D"
 
   # Delegate to Python helper for parsing (handles both with and without stats)
   python_helper="$CMD_BASE/../lib/python/log_json.py"
