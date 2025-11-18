@@ -21,16 +21,56 @@ docs/
 │   ├── rebase.md               # r* (rebase)
 │   ├── merge.md                # m* (merge)
 │   └── img/                    # Screenshots and images (VHS-generated)
+│       ├── README.md           # Image generation notes
+│       ├── PLACEHOLDER_NOTE.md # Placeholder documentation
+│       └── *.png, *.gif        # Generated screenshots
 │
-├── command-map.md              # High-level overview (quick reference)
-├── cheat-sheet.md              # Command syntax reference
-├── core-concepts.md            # Conceptual foundation
-├── hug-for-beginners.md        # Tutorial for new users
-├── practical-workflows.md      # Real-world usage patterns
-├── cookbook.md                 # Solutions to common problems
-├── installation.md             # Setup instructions
+├── screencasts/                # VHS tape files for screenshot generation
+│   ├── bin/                    # VHS build and maintenance scripts
+│   │   ├── vhs-build.sh        # Main build orchestrator
+│   │   ├── vhs-clean.sh        # Cleanup generated files
+│   │   ├── vhs-strip-metadata.sh # Post-processing
+│   │   ├── repo-setup.sh       # Demo repo creation
+│   │   └── vhs-commit-push.sh  # Automated commit workflow
+│   ├── hug-for-beginners/      # Beginner guide tapes
+│   │   └── README.md           # Category documentation
+│   ├── practical-workflows/    # Workflow demo tapes
+│   │   └── README.md           # Category documentation
+│   ├── *.tape                  # Individual command tape files
+│   ├── template.tape           # Template for new tapes
+│   ├── README.md               # VHS system documentation
+│   └── VHS_TROUBLESHOOTING.md  # Common issues and solutions
+│
+├── mcp-server/                 # MCP server documentation
+│   ├── index.md                # Overview and features
+│   ├── quickstart.md           # Installation and setup
+│   ├── usage.md                # Using MCP tools
+│   ├── architecture.md         # Design and implementation
+│   └── examples.md             # Example use cases
+│
+├── meta/                       # Developer tooling documentation
+│   └── hug-completion-reference.md  # Shell completion details
+│
 ├── architecture/               # ADRs and design decisions
-└── index.md                    # Landing page
+│   ├── ADR-001-automated-testing-strategy.md
+│   └── ADR-002-mercurial-support-architecture.md
+│
+├── getting-started.md          # Consolidated beginner guide (NEW)
+├── workflows.md                # Consolidated workflows guide (NEW)
+├── hug-for-beginners.md        # 📚 Legacy: Original beginner tutorial
+├── core-concepts.md            # 📚 Legacy: Core concepts explained
+├── practical-workflows.md      # 📚 Legacy: Workflow patterns
+├── cookbook.md                 # 📚 Legacy: Solutions to common problems
+│
+├── command-map.md              # High-level overview (authoritative)
+├── cheat-sheet.md              # Command syntax reference
+├── installation.md             # Setup instructions
+├── index.md                    # Landing page
+│
+├── json-output-support.md      # JSON output implementation roadmap
+├── VHS_IMPROVEMENTS.md         # VHS enhancement suggestions
+├── VHS_CI_INTEGRATION.md       # CI/CD integration for VHS
+└── DOCS_ORGANIZATION.md        # This file
 ```
 
 ### Navigation Hierarchy
@@ -39,28 +79,44 @@ In `.vitepress/config.mjs`:
 
 ```
 Sidebar Structure:
-├── Guides
+├── Guides (collapsed: false)
 │   ├── Installation
-│   ├── Core Concepts
-│   ├── Hug for Beginners
-│   ├── Practical Workflows
-│   └── Cookbook
-└── Command Reference
-    ├── Command Map
-    ├── Cheat Sheet
-    └── Core Commands (collapsible)
-        ├── Utilities
-        ├── HEAD Operations (h*)
-        ├── Working Directory (w*)
-        ├── Status & Staging (s*, a*)
-        ├── Branching (b*)
-        ├── Commits (c*)
-        ├── Logging (l*)
-        ├── File Inspection (f*)
-        ├── Tagging (t*)
-        ├── Rebase (r*)
-        └── Merge (m*)
+│   ├── Getting Started (NEW - consolidated)
+│   ├── Workflows (NEW - consolidated)
+│   ├── 📚 Legacy: Beginner's Guide (hug-for-beginners)
+│   ├── 📚 Legacy: Core Concepts
+│   ├── 📚 Legacy: Practical Workflows
+│   └── 📚 Legacy: Cookbook
+│
+├── Command Reference (collapsed: false)
+│   ├── Command Map (authoritative source)
+│   ├── Cheat Sheet
+│   └── Core Commands (collapsible, collapsed: true)
+│       ├── Utilities (clone, etc.)
+│       ├── HEAD Operations (h*)
+│       ├── Working Directory & WIP (w*)
+│       ├── Status & Staging (s*, a*)
+│       ├── Branching (b*)
+│       ├── Commits (c*)
+│       ├── Logging (l*)
+│       ├── File Inspection (f*)
+│       ├── Tagging (t*)
+│       ├── Rebase (r*)
+│       └── Merge (m*)
+│
+└── MCP Server (collapsible, collapsed: true)
+    ├── Overview
+    ├── Quick Start
+    ├── Usage
+    ├── Architecture
+    └── Examples
 ```
+
+**Navigation Flow**:
+- New users: Installation → Getting Started → Workflows → Command Map
+- Experienced users: Cheat Sheet → Core Commands (as needed)
+- AI Integration: MCP Server section
+- Legacy content: Preserved but marked, maintains link compatibility
 
 ## Best Practices for Command Documentation
 
@@ -415,42 +471,179 @@ Explanation of what happened and why.
 - **Tip 2**: Common pattern
 ```
 
-## Related Files
+## Documentation Types and Their Purposes
 
-### command-map.md
+### 1. User-Facing Command Documentation
 
-High-level overview showing all command families.
+#### command-map.md
 
+**Purpose**: Authoritative source of truth for all commands
 **Update when**:
 - Adding a new command family (prefix)
 - Changing the mental model/organization
+- Adding or removing commands
 
 **Content**:
 - Table overview of all families
 - Tree view of all commands
 - One-sentence summaries per command
 
-### cheat-sheet.md
+#### cheat-sheet.md
 
-Syntax reference without detailed explanations.
-
+**Purpose**: Quick syntax reference for experienced users
 **Update when**:
 - Adding a new command
 - Changing command syntax or options
 
 **Content**:
 - All commands organized by prefix
-- Syntax only
-- No explanations (users know what they're looking for)
+- Syntax only (no explanations)
+- Scenario-based quick lookups
 
-### README.md
+#### README.md
 
-Main project readme with quick start and command reference.
+**Purpose**: Main project entry point
+**Update when**:
+- Adding a new command category
+- Changing core command behavior
+- Adding new examples or value propositions
+
+**Content**:
+- Quick start guide
+- Four-tier value proposition
+- Command reference summary
+- Installation instructions
+
+### 2. VHS Screenshot Documentation
+
+#### docs/screencasts/README.md
+
+**Purpose**: Guide for creating and maintaining VHS tape files
+**Update when**:
+- Adding new tape file patterns
+- Changing build process
+- Adding new VHS features
+
+**Content**:
+- Tape file creation guide
+- Build process documentation
+- Best practices for screencasts
+- Troubleshooting common issues
+
+#### VHS_CI_INTEGRATION.md
+
+**Purpose**: CI/CD integration strategies
+**Update when**:
+- Changing CI workflow
+- Adding new automation
+- Updating VHS version
+
+**Content**:
+- Three integration approaches (full CI, pre-commit, hybrid)
+- GitHub Actions workflows
+- Troubleshooting CI issues
+
+#### VHS_IMPROVEMENTS.md
+
+**Purpose**: Enhancement tracking and suggestions
+**Update when**:
+- Implementing suggested improvements
+- Adding new enhancement ideas
+- Marking features as complete
+
+**Content**:
+- Implemented features (✅)
+- Suggested improvements (🚀)
+- Priority recommendations
+
+### 3. MCP Server Documentation
+
+#### docs/mcp-server/index.md
+
+**Purpose**: Overview and introduction
+**Update when**:
+- Adding new MCP tools
+- Changing server features
+- Major architectural changes
+
+**Content**:
+- Feature overview
+- Available tools list
+- Use cases
+
+#### docs/mcp-server/quickstart.md
+
+**Purpose**: Installation and setup guide
+**Update when**:
+- Installation process changes
+- New configuration options
+- Claude Desktop integration updates
+
+**Content**:
+- Installation steps
+- Configuration examples
+- First-time setup
+
+#### docs/mcp-server/architecture.md
+
+**Purpose**: Technical design documentation
+**Update when**:
+- Architectural changes
+- New design patterns
+- Tool implementation changes
+
+**Content**:
+- System architecture
+- Module structure
+- Design decisions
+
+### 4. Planning and Roadmap Documentation
+
+#### json-output-support.md
+
+**Purpose**: Implementation planning and tracking
+**Type**: Living document (updated as implemented)
 
 **Update when**:
-- Adding a new command
-- Changing core command behavior
-- Adding new examples
+- Implementing JSON support in commands
+- Changing JSON output format
+- Adding new use cases
+
+**Content**:
+- Current state (commands with JSON)
+- Prioritized recommendations
+- Implementation patterns
+- Roadmap phases
+
+**Note**: This is a planning document that will evolve. As features are implemented, mark them complete and update the status sections.
+
+### 5. Meta Documentation
+
+#### docs/meta/hug-completion-reference.md
+
+**Purpose**: Shell completion technical documentation
+**Update when**:
+- Adding new completion patterns
+- Changing completion behavior
+- Supporting new shells
+
+**Content**:
+- Completion mechanism details
+- Implementation patterns
+- Shell-specific notes
+
+#### DOCS_ORGANIZATION.md (this file)
+
+**Purpose**: Documentation organization guide
+**Update when**:
+- Adding new documentation types
+- Changing organization patterns
+- New best practices emerge
+
+**Content**:
+- Structure guidelines
+- Best practices
+- Maintenance procedures
 
 ## VitePress Configuration
 
@@ -522,7 +715,223 @@ VitePress supports special callout syntax:
 > Dangerous operation
 ```
 
+## VHS Screenshot Best Practices
+
+### Creating Tape Files
+
+**Location**: `docs/screencasts/*.tape`
+
+**Naming Convention**: `hug-<command>.tape` or `hug-<category>-demo.tape`
+
+**Template Structure**:
+```tape
+# VHS tape file for hug <command>
+# Brief description of what this demonstrates
+
+Output ../commands/img/hug-<command>.gif  # or .png
+
+Require echo
+Require hug
+
+Set Shell "fish"          # Or bash, zsh
+Set FontSize 13
+Set Width 1020
+Set Height 600           # Adjust as needed
+Set Margin 0
+Set Padding 10
+Set Theme "Afterglow"
+
+# Setup (hidden from output)
+Hide
+Type "cd /tmp/demo-repo" Enter
+Sleep 500ms
+Type "clear" Enter
+Sleep 200ms
+Show
+
+# Demonstrate command
+Set TypingSpeed 40ms
+Type "hug command  # Brief inline explanation" Enter
+Sleep 2s
+
+# Cleanup (hidden)
+Hide
+Type "hug w zap-all -f" Enter
+Sleep 300ms
+```
+
+**Best Practices**:
+- Use `/tmp/demo-repo` for consistency
+- Hide setup and cleanup commands
+- Add inline comments to explain what's being shown
+- Use realistic examples (not "foo.txt" or "test.md")
+- Keep screenshots focused (one concept per tape)
+- Set appropriate height to avoid empty space
+- Use Sleep to give readers time to read output
+
+### Regenerating Screenshots
+
+**When to regenerate**:
+- Command output format changes
+- Adding new visual examples
+- Fixing incorrect demonstrations
+- Before major releases
+
+**How to regenerate**:
+```bash
+# Setup demo repository
+make demo-repo
+
+# Regenerate all screenshots
+make vhs
+
+# Regenerate specific screenshot
+make vhs-build-one TAPE=hug-sl-states.tape
+
+# Check output
+ls -la docs/commands/img/
+```
+
+**Committing screenshots**:
+- Always commit generated images (not gitignored)
+- Screenshots are committed to ensure CI builds work without VHS
+- Monthly scheduled regeneration keeps them fresh
+- Manual regeneration before releases
+
+### Screenshot Organization
+
+**File naming**: Match tape file name
+- `hug-sl-states.tape` → `hug-sl-*.png` (4 states: clean, staged, unstaged, mixed)
+- `hug-branch-demo.tape` → `hug-branch-demo.gif`
+
+**Documentation references**:
+```markdown
+![Hug status list showing clean state](img/hug-sl-clean.png)
+*Figure: Output of `hug sl` with a clean working directory*
+```
+
+## Documentation Consolidation Best Practices
+
+### When to Consolidate
+
+**Consolidate when**:
+- Multiple files cover overlapping topics
+- Content is duplicated across files
+- Users are confused about which file to read
+- Maintenance burden is high (updating same info in 3+ places)
+
+**Example**: Recent consolidation (commit 0e9c998):
+- `hug-for-beginners.md` + `core-concepts.md` → `getting-started.md`
+- `practical-workflows.md` + `cookbook.md` + skills content → `workflows.md`
+
+### How to Consolidate
+
+**Process**:
+1. **Identify overlap**: Map out which topics appear in multiple files
+2. **Choose primary file**: Pick the most logical destination
+3. **Merge best content**: Take the best explanation from each source
+4. **Add navigation**: Include table of contents for long guides
+5. **Preserve legacy**: Keep old files, mark as "📚 Legacy" in sidebar
+6. **Update links**: Ensure VitePress config reflects new structure
+7. **Test builds**: Verify `make docs-build` succeeds
+
+**Preservation strategy**:
+```javascript
+// In .vitepress/config.mjs
+{
+  text: '📚 Legacy: Beginner\'s Guide',
+  link: '/hug-for-beginners'
+}
+```
+
+**Why preserve legacy files**:
+- Maintains backward compatibility for external links
+- Gives users time to discover new structure
+- Prevents 404s from search engines or bookmarks
+
+### Marking Legacy Content
+
+**In sidebar**: Use 📚 emoji prefix
+**In file**: Add note at top:
+```markdown
+::: warning Consolidated Documentation
+This content has been merged into [Getting Started](getting-started.md).
+This page is preserved for backward compatibility.
+:::
+```
+
+## Planning Document Best Practices
+
+### Purpose of Planning Documents
+
+Planning documents (like `json-output-support.md`) serve as:
+- **Living roadmaps**: Track implementation progress
+- **Decision records**: Document why approaches were chosen
+- **Reference guides**: Show examples and patterns for future work
+- **Status tracking**: Mark what's completed vs planned
+
+### Structure for Planning Documents
+
+```markdown
+# Feature Planning Document
+
+**Status**: Planning / In Progress / Partially Implemented
+**Date**: YYYY-MM-DD
+**Purpose**: Brief purpose statement
+
+## Table of Contents
+[Standard TOC]
+
+## Executive Summary
+- Current state
+- Opportunity
+- Key findings
+
+## Current State
+What exists today (with version/date info)
+
+## Prioritized Recommendations
+Tier 1 (HIGH), Tier 2 (MEDIUM), etc.
+Each with:
+- Priority rating (⭐⭐⭐⭐⭐)
+- Implementation complexity (🟢 LOW, 🟡 MEDIUM, 🔴 HIGH)
+- Use cases
+- Impact analysis
+
+## Implementation Patterns
+Code examples, best practices, templates
+
+## Roadmap
+Phased approach with milestones
+
+## Status Tracking
+- ✅ Completed
+- 🔄 In Progress
+- ⏭️ Planned
+```
+
+### Maintaining Planning Documents
+
+**Update when**:
+- Features are implemented (mark ✅)
+- Priorities change (re-tier items)
+- New use cases emerge (add examples)
+- Implementation patterns are validated (update or add)
+
+**Example update**:
+```markdown
+### Phase 1: Core Workflow Commands
+**Status**: ✅ COMPLETED (2025-11-20)
+
+1. **`hug sl` / `hug sla`** ✅
+   - Implemented: 2025-11-18
+   - Commit: abc123f
+   - [Documentation](commands/status-staging.md#json-output)
+```
+
 ## Review Checklist
+
+### Command Documentation
 
 Before committing command documentation:
 
@@ -534,11 +943,54 @@ Before committing command documentation:
 - [ ] Safety indicators (✅/⚠️/🔄) are accurate
 - [ ] Cross-references link to related commands
 - [ ] Scenarios show real-world usage
-- [ ] Screenshots are added if UI-relevant
+- [ ] Screenshots are added if UI-relevant (via VHS tape files)
 - [ ] Documentation builds without errors: `make docs-build`
 - [ ] Links work: `make docs-dev` and test navigation
 - [ ] Related files updated (command-map, cheat-sheet, README if needed)
 - [ ] Mercurial notes added if behavior differs
+
+### VHS Screenshot Documentation
+
+Before committing VHS changes:
+
+- [ ] Tape file follows naming convention (`hug-<command>.tape`)
+- [ ] Demo repository is used (`/tmp/demo-repo`)
+- [ ] Setup and cleanup are hidden (Hide/Show commands)
+- [ ] Output path is correct (`../commands/img/`)
+- [ ] Screenshot demonstrates realistic use case
+- [ ] Inline comments explain what's shown
+- [ ] Generated images are committed
+- [ ] Command documentation references new screenshots
+- [ ] `make vhs-build` succeeds without errors
+
+### Consolidated Documentation
+
+When consolidating documentation:
+
+- [ ] Mapped overlapping content across files
+- [ ] Chose logical destination for merged content
+- [ ] Took best explanations from each source
+- [ ] Added table of contents to long guides
+- [ ] Preserved legacy files (not deleted)
+- [ ] Marked legacy files with 📚 in sidebar
+- [ ] Updated VitePress config navigation
+- [ ] Added migration notice to legacy files
+- [ ] Tested all internal links still work
+- [ ] Verified `make docs-build` succeeds
+- [ ] Checked navigation flow makes sense
+
+### Planning Document Updates
+
+When updating planning documents:
+
+- [ ] Updated status (Planning/In Progress/Completed)
+- [ ] Marked completed items with ✅
+- [ ] Added commit references for implemented features
+- [ ] Updated priorities if changed
+- [ ] Added new use cases discovered
+- [ ] Validated implementation patterns
+- [ ] Updated roadmap phases
+- [ ] Checked examples are still accurate
 
 ## Examples from Current Docs
 
@@ -556,19 +1008,163 @@ When expanding existing files:
 - Expand Mercurial compatibility notes where applicable
 - Add "Tips" sections with command combinations
 
+## Documentation Evolution and Recent Changes
+
+### Major Consolidation (November 2025)
+
+**Commit**: 0e9c998 - "docs: consolidate and enhance documentation structure"
+
+**Problem**: Documentation was fragmented across 9 overlapping files, creating maintenance burden and user confusion.
+
+**Solution**: Consolidated into focused guides:
+
+1. **getting-started.md** (NEW)
+   - Merged: `hug-for-beginners.md` + `core-concepts.md`
+   - Purpose: Single beginner-to-comfortable progression
+   - Length: ~450 lines
+   - Audience: New users learning Hug
+
+2. **workflows.md** (NEW)
+   - Merged: `practical-workflows.md` + `cookbook.md` + skills insights
+   - Purpose: Comfortable-to-expert patterns
+   - Length: ~650 lines
+   - Audience: Users who know basics, want mastery
+
+**Legacy files preserved**: All original files kept with "📚 Legacy" markers in sidebar to maintain link compatibility.
+
+**Impact**:
+- Reduced primary user-facing files: 9 → 7
+- Clear learning progression: getting-started → workflows → command-map
+- Better discoverability of advanced features
+- Less maintenance (single source for concepts)
+
+### VHS Screenshot System (October-November 2025)
+
+**Added infrastructure**:
+- `docs/screencasts/` directory with tape files
+- `docs/screencasts/bin/` build scripts
+- VHS_IMPROVEMENTS.md and VHS_CI_INTEGRATION.md guides
+- Automated screenshot generation via `make vhs`
+
+**Impact**:
+- Visual examples for all major commands
+- Consistent screenshot style and quality
+- Reproducible documentation builds
+- CI/CD integration (hybrid approach)
+
+### MCP Server Documentation (November 2025)
+
+**Added section**: `docs/mcp-server/`
+- Dedicated documentation for AI assistant integration
+- Installation, architecture, usage, examples
+- Separate from main user docs (different audience)
+
+**Impact**:
+- Claude Desktop users can integrate Hug tools
+- Clear separation of concerns (user docs vs integration docs)
+- Enables AI-assisted repository exploration
+
+### JSON Output Planning (November 2025)
+
+**Added**: `json-output-support.md`
+- Comprehensive planning document (1757 lines)
+- Tracks implementation status
+- Documents patterns and use cases
+- Living roadmap for JSON output rollout
+
+**Type**: Planning document (not user-facing guide)
+**Status**: In progress (7 commands with JSON, 15+ planned)
+
+## Maintenance Guidelines
+
+### When Documentation Structure Changes
+
+**After major changes**:
+1. Update DOCS_ORGANIZATION.md (this file)
+2. Update VitePress config sidebar
+3. Test builds: `make docs-build`
+4. Test navigation: `make docs-dev` and click through links
+5. Verify search still works (pagefind)
+
+### Regular Maintenance Tasks
+
+**Weekly**:
+- Review open issues for documentation bugs
+- Check for broken links (VitePress build warnings)
+
+**Monthly**:
+- Regenerate VHS screenshots: `make vhs`
+- Review planning documents (update completed items)
+- Check for outdated examples
+
+**Before releases**:
+- Update README.md with new features
+- Regenerate all screenshots
+- Verify command-map.md is current
+- Update installation.md if setup changed
+- Review and update planning documents
+
+### Adding New Documentation Types
+
+When adding a new type of documentation:
+
+1. **Choose appropriate location**:
+   - User guides → `docs/*.md`
+   - Command reference → `docs/commands/*.md`
+   - Architecture → `docs/architecture/ADR-*.md`
+   - Planning/roadmap → `docs/*-support.md` or `docs/*-roadmap.md`
+   - Integration docs → `docs/<integration>/`
+   - Meta/tooling → `docs/meta/`
+
+2. **Update this guide**:
+   - Add to directory structure
+   - Add to "Documentation Types" section
+   - Add to appropriate checklist
+   - Add maintenance notes
+
+3. **Update VitePress**:
+   - Add to sidebar in config.mjs
+   - Test navigation
+
+4. **Document the pattern**:
+   - Add examples to "Well-Structured" section
+   - Update templates if needed
+
 ## Summary
 
 **Best practices in brief**:
 
+### Command Documentation
 1. **One file per semantic prefix** (h*, w*, s*, b*, etc.)
 2. **Quick reference table** at the top
 3. **Detailed command sections** with examples and safety info
 4. **Memory hooks** to help users remember commands
 5. **Cross-links** to related commands and concepts
 6. **Real-world scenarios** showing how commands work together
-7. **Visual examples** where UI or complex behavior is involved
+7. **Visual examples** (VHS screenshots) where UI or complex behavior is involved
 8. **Clear safety indicators** showing consequences of each command
 9. **Keep in sync** with command implementation and README.md
 10. **Test builds** before committing: `make docs-build`
 
-This structure makes Hug's extensive command set feel organized and discoverable rather than overwhelming.
+### VHS Screenshot Documentation
+1. Use `/tmp/demo-repo` for consistency
+2. Hide setup and cleanup commands
+3. Realistic examples (not "foo.txt")
+4. Commit generated images
+5. Reference via `![description](img/filename.png)`
+
+### Consolidation and Evolution
+1. Consolidate when duplication is high
+2. Preserve legacy files (backward compatibility)
+3. Mark legacy content clearly (📚 emoji)
+4. Update VitePress sidebar
+5. Test all navigation flows
+
+### Planning Documents
+1. Living documents (update as implemented)
+2. Track status explicitly (✅/🔄/⏭️)
+3. Include implementation patterns
+4. Reference commits when features land
+5. Keep executive summary current
+
+This structure makes Hug's extensive command set and growing feature ecosystem feel organized and discoverable rather than overwhelming.
