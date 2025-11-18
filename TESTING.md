@@ -58,6 +58,32 @@ For the full rationale, see [ADR-001: Automated Testing Strategy](docs/architect
 
 Focus on unit tests for speed and precision, with targeted integration tests for critical workflows.
 
+### Test Infrastructure Architecture (Phase 1-3 Complete)
+
+Hug SCM uses a **hybrid architecture** for test repository creation, optimized for both performance and reproducibility:
+
+**Demo Repositories** (Externally-Built, Comprehensive)
+- Full-featured repos with 9+ commits, branches, remotes, tags
+- Built via `docs/screencasts/bin/repo-setup-simple.sh` and `repo-setup.sh`
+- Use when: Integration tests need realistic repo structure
+- Performance: ~200ms setup cost per test
+- Example: `test_analyze_deps.bats` (needs overlapping file changes)
+
+**Test Fixtures** (In-Process, Lightweight)
+- Purpose-built minimal repos (1-4 commits)
+- Built via `tests/test_helper.bash` functions
+- Use when: Unit tests need fast, focused setup
+- Performance: ~20ms setup cost per test (10x faster)
+- Example: `test_llf.bats`, `test_bc.bats`, `test_head.bats`
+
+**Shared Foundation: Deterministic Timestamps**
+- All repos use `tests/lib/deterministic_git.bash`
+- Fixed epoch: 2000-01-01 00:00:00 UTC
+- Reproducible commit hashes across all test runs
+- Zero non-deterministic commit creation in entire suite
+
+**Key Insight:** Both patterns are optimal for their use cases. Demo repos provide realism for integration tests; fixtures provide speed for unit tests. Attempting to use only one pattern would sacrifice either performance (10x slower) or realism. The hybrid approach leverages the strengths of both.
+
 ## Quick Start
 
 ### Install Test Dependencies
