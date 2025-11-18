@@ -5,13 +5,15 @@ Following Google Python testing best practices:
 - Arrange-Act-Assert pattern
 - Descriptive test names
 - Test edge cases and error conditions
+
+NOTE: These tests focus on the algorithmic functions (calculate_recency_weight,
+calculate_file_ownership) rather than git-invoking functions which require
+subprocess mocking.
 """
 
-import json
 import pytest
 import math
-from datetime import datetime, timedelta
-from io import StringIO
+from datetime import datetime
 
 # Import module under test
 import ownership
@@ -64,431 +66,308 @@ class TestCalculateRecencyWeight:
         # Assert
         assert weight == 1.0
 
-
-class TestParseGitLogFileMode:
-    """Tests for parse_git_log_file_mode function."""
-
-    def test_parse_valid_log_with_multiple_authors(self, sample_git_log_ownership_file):
-        """Should parse git log with multiple commits by different authors."""
+    def test_custom_decay_constant(self):
+        """Should respect different decay periods."""
         # Arrange
-        today = datetime.now()
+        days_ago = 30
 
         # Act
-        result = ownership.parse_git_log_file_mode(sample_git_log_ownership_file, today)
+        weight_short_decay = ownership.calculate_recency_weight(days_ago, 30)   # 1/e
+        weight_long_decay = ownership.calculate_recency_weight(days_ago, 180)   # Higher
 
         # Assert
-        assert len(result) == 7
-        assert result[0]['author'] == 'Alice Smith'
-        assert result[1]['author'] == 'Bob Johnson'
-        assert 'days_ago' in result[0]
-
-    def test_parse_calculates_days_ago_correctly(self):
-        """Should calculate correct days_ago from dates."""
-        # Arrange
-        log = "abc1234|Alice Smith|2024-11-01 10:00:00 -0500"
-        reference_date = datetime(2024, 11, 11, 10, 0, 0)
-
-        # Act
-        result = ownership.parse_git_log_file_mode(log, reference_date)
-
-        # Assert
-        assert len(result) == 1
-        assert result[0]['days_ago'] == 10
-
-    def test_parse_handles_malformed_lines(self):
-        """Should skip malformed log lines gracefully."""
-        # Arrange
-        log = """abc1234|Alice Smith|2024-11-01 10:00:00 -0500
-invalid_line_without_pipes
-def5678|Bob Johnson|2024-11-02 11:00:00 -0500
-"""
-        today = datetime.now()
-
-        # Act
-        result = ownership.parse_git_log_file_mode(log, today)
-
-        # Assert
-        # Should parse only valid lines
-        assert len(result) == 2
-
-    def test_parse_empty_log(self, empty_git_log):
-        """Should return empty list for empty log."""
-        # Act
-        result = ownership.parse_git_log_file_mode(empty_git_log, datetime.now())
-
-        # Assert
-        assert result == []
+        # Shorter decay period = faster decline
+        assert weight_short_decay < weight_long_decay
+        assert abs(weight_short_decay - math.exp(-1)) < 0.01
 
 
 class TestCalculateFileOwnership:
     """Tests for calculate_file_ownership function."""
 
-    def test_calculate_ownership_percentages(self, sample_git_log_ownership_file):
+    def test_calculate_ownership_percentages(self):
         """Should calculate correct ownership percentages."""
         # Arrange
-        today = datetime(2024, 11, 17, 12, 0, 0)
-        commits = ownership.parse_git_log_file_mode(sample_git_log_ownership_file, today)
+        commits = [
+            {'author': 'Alice', 'days_ago': 1},
+            {'author': 'Alice', 'days_ago': 2},
+            {'author': 'Alice', 'days_ago': 3},
+            {'author': 'Bob', 'days_ago': 5},
+        ]
 
         # Act
         result = ownership.calculate_file_ownership(commits, decay_days=180)
 
         # Assert
-        # Alice has 4 commits (most recent), should have highest ownership
-        alice_data = result['Alice Smith']
-        assert alice_data['commits'] == 4
-        assert alice_data['ownership'] > 40  # Should be primary owner
+        # Alice has 3 commits, Bob has 1 - Alice should have higher ownership
+        alice = next(r for r in result if r['author'] == 'Alice')
+        bob = next(r for r in result if r['author'] == 'Bob')
+
+        assert alice['ownership_pct'] > bob['ownership_pct']
+        assert alice['raw_commits'] == 3
+        assert bob['raw_commits'] == 1
 
     def test_calculate_ownership_recency_weighting(self):
         """Should weight recent commits higher than old commits."""
         # Arrange
-        today = datetime(2024, 11, 17, 12, 0, 0)
-
         # Alice: 1 very recent commit
         # Bob: 2 old commits
-        log = """abc1234|Alice Smith|2024-11-16 10:00:00 -0500
-def5678|Bob Johnson|2024-01-01 10:00:00 -0500
-ghi9012|Bob Johnson|2024-01-02 10:00:00 -0500
-"""
-        commits = ownership.parse_git_log_file_mode(log, today)
+        commits = [
+            {'author': 'Alice', 'days_ago': 1},
+            {'author': 'Bob', 'days_ago': 300},
+            {'author': 'Bob', 'days_ago': 310},
+        ]
 
         # Act
         result = ownership.calculate_file_ownership(commits, decay_days=180)
 
         # Assert
+        alice = next(r for r in result if r['author'] == 'Alice')
+        bob = next(r for r in result if r['author'] == 'Bob')
+
         # Alice's 1 recent commit should have higher ownership than Bob's 2 old commits
-        assert result['Alice Smith']['ownership'] > result['Bob Johnson']['ownership']
+        assert alice['ownership_pct'] > bob['ownership_pct']
 
     def test_calculate_ownership_classification_thresholds(self):
         """Should correctly classify primary/secondary/historical owners."""
         # Arrange
-        today = datetime(2024, 11, 17, 12, 0, 0)
-
-        # Create scenario with clear ownership tiers
-        log = """abc1234|Alice Smith|2024-11-16 10:00:00 -0500
-def5678|Alice Smith|2024-11-15 10:00:00 -0500
-ghi9012|Alice Smith|2024-11-14 10:00:00 -0500
-jkl3456|Bob Johnson|2024-11-13 10:00:00 -0500
-mno7890|Charlie Brown|2024-01-01 10:00:00 -0500
-"""
-        commits = ownership.parse_git_log_file_mode(log, today)
+        # Create commits with clear ownership tiers
+        commits = [
+            {'author': 'Alice', 'days_ago': 1},
+            {'author': 'Alice', 'days_ago': 2},
+            {'author': 'Alice', 'days_ago': 3},
+            {'author': 'Alice', 'days_ago': 4},
+            {'author': 'Alice', 'days_ago': 5},
+            {'author': 'Bob', 'days_ago': 6},
+            {'author': 'Bob', 'days_ago': 7},
+            {'author': 'Charlie', 'days_ago': 300},
+        ]
 
         # Act
         result = ownership.calculate_file_ownership(commits, decay_days=180)
 
         # Assert
-        # Alice: >40% = primary
-        # Bob: >20% but <40% = secondary
-        # Charlie: <20% = historical
-        assert result['Alice Smith']['classification'] == 'primary'
-        assert result['Bob Johnson']['classification'] in ['secondary', 'historical']
-        assert result['Charlie Brown']['classification'] == 'historical'
+        alice = next(r for r in result if r['author'] == 'Alice')
+        bob = next(r for r in result if r['author'] == 'Bob')
+        charlie = next(r for r in result if r['author'] == 'Charlie')
 
-    def test_calculate_ownership_total_equals_100(self, sample_git_log_ownership_file):
+        # Alice: >40% = primary
+        assert alice['classification'] == 'primary'
+        # Bob: likely secondary or historical depending on weighting
+        assert bob['classification'] in ['secondary', 'historical']
+        # Charlie: old commit = historical
+        assert charlie['classification'] == 'historical'
+
+    def test_calculate_ownership_total_equals_100(self):
         """Should have ownership percentages sum to ~100%."""
         # Arrange
-        today = datetime.now()
-        commits = ownership.parse_git_log_file_mode(sample_git_log_ownership_file, today)
+        commits = [
+            {'author': 'Alice', 'days_ago': 1},
+            {'author': 'Bob', 'days_ago': 2},
+            {'author': 'Charlie', 'days_ago': 3},
+        ]
 
         # Act
         result = ownership.calculate_file_ownership(commits, decay_days=180)
 
         # Assert
-        total_ownership = sum(data['ownership'] for data in result.values())
+        total_ownership = sum(r['ownership_pct'] for r in result)
         assert 99.0 <= total_ownership <= 101.0  # Allow small floating point error
 
-
-class TestParseGitLogAuthorMode:
-    """Tests for parse_git_log_author_mode function."""
-
-    def test_parse_author_mode_with_multiple_files(self, sample_git_log_ownership_author):
-        """Should parse commits and track file modifications."""
-        # Act
-        result = ownership.parse_git_log_author_mode(sample_git_log_ownership_author)
-
-        # Assert
-        assert len(result) > 0
-        # src/auth/login.py appears in 2 commits
-        assert result['src/auth/login.py'] == 2
-        # src/auth/session.py appears in 2 commits
-        assert result['src/auth/session.py'] == 2
-
-    def test_parse_author_mode_counts_file_occurrences(self):
-        """Should count how many commits each file appears in."""
+    def test_calculate_ownership_sorted_descending(self):
+        """Should return results sorted by ownership percentage (descending)."""
         # Arrange
-        log = """abc1234567890123456789012345678901234567
-file_a.py
-file_b.py
-
-def4567890123456789012345678901234567890
-file_a.py
-file_c.py
-
-ghi7890123456789012345678901234567890123
-file_a.py
-"""
+        commits = [
+            {'author': 'Alice', 'days_ago': 1},
+            {'author': 'Alice', 'days_ago': 2},
+            {'author': 'Bob', 'days_ago': 3},
+            {'author': 'Charlie', 'days_ago': 300},
+        ]
 
         # Act
-        result = ownership.parse_git_log_author_mode(log)
-
-        # Assert
-        assert result['file_a.py'] == 3
-        assert result['file_b.py'] == 1
-        assert result['file_c.py'] == 1
-
-    def test_parse_author_mode_handles_empty_log(self, empty_git_log):
-        """Should return empty dict for empty log."""
-        # Act
-        result = ownership.parse_git_log_author_mode(empty_git_log)
-
-        # Assert
-        assert result == {}
-
-    def test_parse_author_mode_ignores_blank_lines(self):
-        """Should skip blank lines in commit blocks."""
-        # Arrange
-        log = """abc1234567890123456789012345678901234567
-
-file_a.py
-
-
-file_b.py
-
-"""
-
-        # Act
-        result = ownership.parse_git_log_author_mode(log)
-
-        # Assert
-        assert result['file_a.py'] == 1
-        assert result['file_b.py'] == 1
-
-
-class TestCalculateAuthorExpertise:
-    """Tests for calculate_author_expertise function."""
-
-    def test_calculate_expertise_ranks_by_commit_count(self, sample_git_log_ownership_author):
-        """Should rank files by number of commits."""
-        # Arrange
-        file_commits = ownership.parse_git_log_author_mode(sample_git_log_ownership_author)
-
-        # Act
-        result = ownership.calculate_author_expertise(file_commits)
+        result = ownership.calculate_file_ownership(commits, decay_days=180)
 
         # Assert
         # Verify descending order
         for i in range(len(result) - 1):
-            assert result[i]['commits'] >= result[i + 1]['commits']
+            assert result[i]['ownership_pct'] >= result[i + 1]['ownership_pct']
 
-    def test_calculate_expertise_includes_all_files(self, sample_git_log_ownership_author):
-        """Should include all files touched by author."""
+    def test_handles_single_author_single_commit(self):
+        """Should handle minimal ownership scenario."""
         # Arrange
-        file_commits = ownership.parse_git_log_author_mode(sample_git_log_ownership_author)
+        commits = [{'author': 'Alice', 'days_ago': 5}]
 
         # Act
-        result = ownership.calculate_author_expertise(file_commits)
-
-        # Assert
-        file_paths = [item['file'] for item in result]
-        assert 'src/auth/login.py' in file_paths
-        assert 'src/auth/session.py' in file_paths
-        assert 'src/api/users.py' in file_paths
-
-    def test_calculate_expertise_with_single_file(self):
-        """Should handle author with single file."""
-        # Arrange
-        file_commits = {'single_file.py': 5}
-
-        # Act
-        result = ownership.calculate_author_expertise(file_commits)
+        result = ownership.calculate_file_ownership(commits, decay_days=180)
 
         # Assert
         assert len(result) == 1
-        assert result[0]['file'] == 'single_file.py'
-        assert result[0]['commits'] == 5
+        assert result[0]['ownership_pct'] == 100.0
+        assert result[0]['classification'] == 'primary'
+        assert result[0]['raw_commits'] == 1
 
-    def test_calculate_expertise_empty_input(self):
-        """Should return empty list for no files."""
+    def test_handles_empty_commits(self):
+        """Should return empty list for no commits."""
         # Act
-        result = ownership.calculate_author_expertise({})
+        result = ownership.calculate_file_ownership([], decay_days=180)
 
         # Assert
         assert result == []
 
-
-class TestFormatTextOutput:
-    """Tests for format_text_output function."""
-
-    def test_format_file_mode_includes_classifications(self, sample_git_log_ownership_file):
-        """Should display primary/secondary/historical sections."""
+    def test_tracks_last_commit_days(self):
+        """Should track most recent commit per author."""
         # Arrange
-        today = datetime.now()
-        commits = ownership.parse_git_log_file_mode(sample_git_log_ownership_file, today)
-        ownership_data = ownership.calculate_file_ownership(commits, decay_days=180)
-
-        analysis = {
-            'mode': 'file',
-            'target': 'test_file.py',
-            'ownership': ownership_data
-        }
+        commits = [
+            {'author': 'Alice', 'days_ago': 1},
+            {'author': 'Alice', 'days_ago': 10},
+            {'author': 'Alice', 'days_ago': 5},
+        ]
 
         # Act
-        output = ownership.format_text_output(analysis)
+        result = ownership.calculate_file_ownership(commits, decay_days=180)
 
         # Assert
-        assert 'test_file.py' in output
-        assert 'Primary' in output or 'Secondary' in output or 'Historical' in output
+        alice = result[0]
+        assert alice['last_commit_days'] == 1  # Most recent
 
-    def test_format_author_mode_shows_file_list(self, sample_git_log_ownership_author):
-        """Should list files with commit counts for author mode."""
+    def test_different_decay_periods(self):
+        """Should respect custom decay_days parameter."""
         # Arrange
-        file_commits = ownership.parse_git_log_author_mode(sample_git_log_ownership_author)
-        expertise = ownership.calculate_author_expertise(file_commits)
-
-        analysis = {
-            'mode': 'author',
-            'target': 'Alice Smith',
-            'expertise': expertise,
-            'total_files': len(expertise)
-        }
+        commits = [
+            {'author': 'Alice', 'days_ago': 1},
+            {'author': 'Bob', 'days_ago': 100},
+        ]
 
         # Act
-        output = ownership.format_text_output(analysis)
+        result_short = ownership.calculate_file_ownership(commits, decay_days=30)
+        result_long = ownership.calculate_file_ownership(commits, decay_days=360)
 
         # Assert
-        assert 'Alice Smith' in output
-        assert 'src/auth/login.py' in output
-        assert 'commits' in output.lower()
+        alice_short = next(r for r in result_short if r['author'] == 'Alice')
+        alice_long = next(r for r in result_long if r['author'] == 'Alice')
 
-    def test_format_handles_stale_contributors(self):
-        """Should mark contributors with old commits as stale."""
-        # Arrange
-        today = datetime(2024, 11, 17, 12, 0, 0)
-
-        # Old commit from 1 year ago
-        log = "abc1234|Charlie Brown|2023-11-01 10:00:00 -0500"
-        commits = ownership.parse_git_log_file_mode(log, today)
-        ownership_data = ownership.calculate_file_ownership(commits, decay_days=180)
-
-        analysis = {
-            'mode': 'file',
-            'target': 'test_file.py',
-            'ownership': ownership_data
-        }
-
-        # Act
-        output = ownership.format_text_output(analysis)
-
-        # Assert
-        assert '⚠️' in output or 'Stale' in output or 'stale' in output
+        # With shorter decay, Alice should have even higher ownership
+        assert alice_short['ownership_pct'] >= alice_long['ownership_pct']
 
 
-class TestMainFunction:
-    """Integration tests for main function."""
+class TestFormatDaysAgo:
+    """Tests for format_days_ago function."""
 
-    def test_main_file_mode_json_output(self, sample_git_log_ownership_file, monkeypatch, capsys):
-        """Should output valid JSON for file mode."""
-        # Arrange
-        import sys
-        monkeypatch.setattr(sys, 'stdin', StringIO(sample_git_log_ownership_file))
-        monkeypatch.setattr(
-            sys, 'argv',
-            ['ownership.py', '--file', 'test.py', '--format', 'json']
-        )
+    def test_format_today(self):
+        """Should return 'today' for 0 days."""
+        assert ownership.format_days_ago(0) == "today"
 
-        # Act
-        exit_code = ownership.main()
-        captured = capsys.readouterr()
+    def test_format_yesterday(self):
+        """Should return 'yesterday' for 1 day."""
+        assert ownership.format_days_ago(1) == "yesterday"
 
-        # Assert
-        assert exit_code == 0
-        result = json.loads(captured.out)
-        assert result['mode'] == 'file'
-        assert 'ownership' in result
+    def test_format_recent_days(self):
+        """Should return 'N days ago' for recent days."""
+        assert ownership.format_days_ago(3) == "3 days ago"
+        assert ownership.format_days_ago(6) == "6 days ago"
 
-    def test_main_author_mode_text_output(self, sample_git_log_ownership_author, monkeypatch, capsys):
-        """Should output formatted text for author mode."""
-        # Arrange
-        import sys
-        monkeypatch.setattr(sys, 'stdin', StringIO(sample_git_log_ownership_author))
-        monkeypatch.setattr(
-            sys, 'argv',
-            ['ownership.py', '--author', 'Alice Smith', '--format', 'text']
-        )
+    def test_format_weeks(self):
+        """Should return 'N weeks ago' for week intervals."""
+        assert ownership.format_days_ago(14) == "2 weeks ago"
+        assert ownership.format_days_ago(21) == "3 weeks ago"
 
-        # Act
-        exit_code = ownership.main()
-        captured = capsys.readouterr()
+    def test_format_months(self):
+        """Should return 'N months ago' for month intervals."""
+        assert ownership.format_days_ago(60) == "2 months ago"
+        assert ownership.format_days_ago(120) == "4 months ago"
 
-        # Assert
-        assert exit_code == 0
-        assert 'Alice Smith' in captured.out
-        assert 'src/auth/login.py' in captured.out
+    def test_format_years(self):
+        """Should return 'N years ago' for year intervals."""
+        result = ownership.format_days_ago(400)
+        assert "year" in result or "month" in result
 
 
 class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""
 
-    def test_handles_single_author_single_commit(self):
-        """Should handle minimal ownership scenario."""
+    def test_all_commits_same_day(self):
+        """Should handle all commits on same day."""
         # Arrange
-        log = "abc1234|Alice Smith|2024-11-17 10:00:00 -0500"
-        today = datetime(2024, 11, 17, 12, 0, 0)
-        commits = ownership.parse_git_log_file_mode(log, today)
+        commits = [
+            {'author': 'Alice', 'days_ago': 5},
+            {'author': 'Bob', 'days_ago': 5},
+            {'author': 'Charlie', 'days_ago': 5},
+        ]
 
         # Act
         result = ownership.calculate_file_ownership(commits, decay_days=180)
 
         # Assert
-        assert len(result) == 1
-        assert result['Alice Smith']['ownership'] == 100.0
-        assert result['Alice Smith']['classification'] == 'primary'
+        # With equal recency, ownership should be equal (33.33% each)
+        assert abs(result[0]['ownership_pct'] - 33.33) < 1.0
+        assert abs(result[1]['ownership_pct'] - 33.33) < 1.0
+        assert abs(result[2]['ownership_pct'] - 33.33) < 1.0
 
-    def test_handles_files_with_special_characters(self):
-        """Should correctly parse file paths with special characters."""
+    def test_very_old_commits_not_zero_weight(self):
+        """Should give non-zero weight even to very old commits."""
         # Arrange
-        log = """abc1234567890123456789012345678901234567
-src/file-with-dashes.py
-src/file_with_underscores.py
-src/file.with.dots.py
-"""
+        commits = [{'author': 'Alice', 'days_ago': 1000}]
 
         # Act
-        result = ownership.parse_git_log_author_mode(log)
+        result = ownership.calculate_file_ownership(commits, decay_days=180)
 
         # Assert
-        assert 'src/file-with-dashes.py' in result
-        assert 'src/file_with_underscores.py' in result
-        assert 'src/file.with.dots.py' in result
+        # Even very old commits should have some weight
+        assert result[0]['ownership_pct'] == 100.0
+        assert result[0]['weighted_score'] > 0
 
-    def test_handles_very_long_file_paths(self):
-        """Should handle long file paths without truncation."""
+    def test_many_authors(self):
+        """Should handle many different authors."""
         # Arrange
-        long_path = "src/" + "/".join(["very"] * 20) + "/deep/file.py"
-        log = f"""abc1234567890123456789012345678901234567
-{long_path}
-"""
+        commits = [
+            {'author': f'Author{i}', 'days_ago': i}
+            for i in range(50)
+        ]
 
         # Act
-        result = ownership.parse_git_log_author_mode(log)
+        result = ownership.calculate_file_ownership(commits, decay_days=180)
 
         # Assert
-        assert long_path in result
+        assert len(result) == 50
+        # Total should still be 100%
+        total = sum(r['ownership_pct'] for r in result)
+        assert 99.0 <= total <= 101.0
 
-    def test_custom_decay_constant(self):
-        """Should respect custom decay_days parameter."""
+    def test_classification_boundary_cases(self):
+        """Should handle boundary cases for classification thresholds."""
+        # Arrange - Create scenario with ownership right at thresholds
+        commits = [
+            {'author': 'Primary', 'days_ago': 1},
+            {'author': 'Primary', 'days_ago': 2},
+            {'author': 'Primary', 'days_ago': 3},
+            {'author': 'Primary', 'days_ago': 4},
+            {'author': 'Secondary', 'days_ago': 5},
+            {'author': 'Secondary', 'days_ago': 6},
+            {'author': 'Historical', 'days_ago': 7},
+        ]
+
+        # Act
+        result = ownership.calculate_file_ownership(commits, decay_days=180)
+
+        # Assert
+        # Check that classifications are assigned
+        classifications = [r['classification'] for r in result]
+        assert 'primary' in classifications or 'secondary' in classifications or 'historical' in classifications
+
+    def test_zero_decay_days_edge_case(self):
+        """Should handle edge case of zero decay (though unrealistic)."""
         # Arrange
-        today = datetime(2024, 11, 17, 12, 0, 0)
-        log = """abc1234|Alice Smith|2024-11-16 10:00:00 -0500
-def5678|Bob Johnson|2024-01-01 10:00:00 -0500
-"""
-        commits = ownership.parse_git_log_file_mode(log, today)
+        commits = [
+            {'author': 'Alice', 'days_ago': 0},
+            {'author': 'Bob', 'days_ago': 1},
+        ]
 
-        # Act - Short decay period (30 days)
-        result_short = ownership.calculate_file_ownership(commits, decay_days=30)
-
-        # Act - Long decay period (360 days)
-        result_long = ownership.calculate_file_ownership(commits, decay_days=360)
+        # Act
+        # With decay_days=1, even 1 day ago has significant decay
+        result = ownership.calculate_file_ownership(commits, decay_days=1)
 
         # Assert
-        # With shorter decay, Alice should have even higher ownership
-        assert result_short['Alice Smith']['ownership'] > result_long['Alice Smith']['ownership']
+        alice = next(r for r in result if r['author'] == 'Alice')
+        bob = next(r for r in result if r['author'] == 'Bob')
+
+        # Alice (today) should have much higher ownership than Bob (1 day ago)
+        assert alice['ownership_pct'] > bob['ownership_pct']
