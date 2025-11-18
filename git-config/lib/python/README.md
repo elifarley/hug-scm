@@ -185,8 +185,7 @@ For each new Python helper:
 - ✅ `co_changes.py` - Co-change matrix analysis (265 lines, 21 tests ✓)
 - ✅ `activity.py` - Temporal pattern analysis (300 lines, 39 tests ✓)
 - ✅ `ownership.py` - Code expertise detection (325 lines, 25 tests ✓)
-- ✅ `churn.py` - File churn calculation (partial - file-level complete)
+- ✅ `churn.py` - File and line-level churn analysis (281 lines, complete ✓)
 
 ### To Be Implemented:
-- ⏳ `churn.py` - Complete line-level churn analysis
 - 📋 `deps.py` - Dependency graph construction (requires networkx)

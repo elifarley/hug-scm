@@ -23,7 +23,7 @@ This document tracks implementation of the `hug analyze` stub commands. Each com
     - ownership.py: 25 tests ✓
   - [x] Add Makefile targets for Python testing (test-lib-py, test-lib-py-coverage, test-deps-py-install)
   - [x] Updated git-config/lib/python/README.md with testing documentation
-  - [ ] Complete line-level churn in `churn.py`
+  - [x] Complete line-level churn in `churn.py` ✓
   - [ ] POSTPONED: Add caching mechanism for expensive operations
   - [ ] POSTPONED: Add progress indicators for long-running analysis
 
