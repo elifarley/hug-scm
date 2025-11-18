@@ -8,14 +8,18 @@ show_help() {
 hug fblame: Show who changed what line in a file (with whitespace/copy detection).
 
 USAGE:
-    hug fblame [<file>] [-h, --help]
+    hug fblame [<file>] [options]
     hug fblame --browse-root
+    hug fblame --churn [<file>]
 
 ARGUMENTS:
     <file>          File to blame (optional - prompts for selection if omitted)
 
 OPTIONS:
     --browse-root   Browse full repository scope in file selector UI (default: current directory)
+    --churn         Show churn analysis (how frequently file and lines change)
+    --since <date>  With --churn: only analyze commits since date
+    --json          With --churn: output as JSON
     -h, --help      Show this help
 
 DESCRIPTION:
@@ -25,10 +29,18 @@ DESCRIPTION:
     By default, interactive selection is scoped to the current directory and
     subdirectories. Use --browse-root to browse the entire repository.
 
+    With --churn flag, shows churn analysis instead of blame:
+    - File-level metrics: total commits, unique authors, date range
+    - Identifies "hot" files that change frequently
+    - Helps prioritize refactoring and testing efforts
+
 EXAMPLES:
-    hug fblame                  # Interactive file selection (current directory)
-    hug fblame --browse-root    # Interactive file selection (full repository)
-    hug fblame src/app.js       # Blame specific file
+    hug fblame                      # Interactive file selection (current directory)
+    hug fblame --browse-root        # Interactive file selection (full repository)
+    hug fblame src/app.js           # Blame specific file
+    hug fblame --churn src/app.js   # Churn analysis for file
+    hug fblame --churn --since="3 months ago" src/app.js  # Recent churn only
+    hug fblame --churn --json       # Churn analysis as JSON
 
 SEE ALSO:
     hug fb       : Short blame (author and line only)
@@ -37,27 +49,109 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (handles --browse-root, etc.)
-eval "$(parse_common_flags "$@")"
+# Parse arguments for churn mode
+churn_mode=false
+since_arg=""
+json_output=false
+browse_root=false
+remaining_args=()
 
-# Initialize common flag variables if not set by parse_common_flags
-: "${browse_root:=false}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --churn)
+      churn_mode=true
+      shift
+      ;;
+    --since)
+      since_arg="$2"
+      shift 2
+      ;;
+    --json)
+      json_output=true
+      shift
+      ;;
+    --browse-root)
+      browse_root=true
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      remaining_args+=("$1")
+      shift
+      ;;
+  esac
+done
 
 check_git_repo
 
+# Churn mode - delegate to Python
+if $churn_mode; then
+  python_script="$CMD_BASE/../lib/python/churn.py"
+
+  if [ ! -f "$python_script" ]; then
+    error "Churn analysis not available: $python_script not found"
+  fi
+
+  # Build Python command
+  py_args=()
+
+  # Get file argument
+  if [ ${#remaining_args[@]} -eq 0 ]; then
+    # Interactive file selection if gum is available
+    if gum_available; then
+      declare -a select_opts=("--single")
+
+      if ! $browse_root; then
+        select_opts+=("--cwd")
+      fi
+
+      select_opts+=("--prompt" "Select file for churn analysis...")
+
+      file=""
+      if ! file=$(select_files_with_status "${select_opts[@]}"); then
+        info "No file selected or cancelled."
+        exit 0
+      fi
+      py_args+=("$file")
+    else
+      error "File argument required for churn analysis.
+Usage: hug fblame --churn <file>"
+    fi
+  else
+    py_args+=("${remaining_args[0]}")
+  fi
+
+  # Add optional flags
+  if [ -n "$since_arg" ]; then
+    py_args+=("--since=$since_arg")
+  fi
+
+  if $json_output; then
+    py_args+=("--format=json")
+  else
+    py_args+=("--format=text")
+  fi
+
+  exec python3 "$python_script" "${py_args[@]}"
+fi
+
+# Standard blame mode
 # If no file provided, show interactive selection or error
-if [ $# -eq 0 ]; then
+if [ ${#remaining_args[@]} -eq 0 ]; then
   # Only show interactive selection if gum is available
   if gum_available; then
     declare -a select_opts=("--single")
-    
+
     # Default to --cwd (current directory scope) unless --browse-root is specified
     if ! $browse_root; then
       select_opts+=("--cwd")
     fi
-    
+
     select_opts+=("--prompt" "Select file to blame...")
-    
+
     file=""
     if ! file=$(select_files_with_status "${select_opts[@]}"); then
       info "No file selected or cancelled."
@@ -72,4 +166,4 @@ Install gum: https://github.com/charmbracelet/gum"
   fi
 fi
 
-exec git blame -w -C -C -C -- "$@"
+exec git blame -w -C -C -C -- "${remaining_args[@]}"
