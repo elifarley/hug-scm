@@ -444,8 +444,10 @@ hug h steps <file>           # commits since change
 hug stats file <file>        # file metrics
 hug stats author [author]    # author contributions
 hug stats branch [branch]    # branch statistics
-hug analyze expert <file>    # code ownership (TODO)
-hug analyze co-changes [N]   # co-changing files (TODO)
+hug analyze expert <file>    # code ownership
+hug analyze expert --author "Alice"  # author expertise
+hug analyze co-changes [N]   # co-changing files
+hug analyze activity         # temporal patterns
 
 # Time-Based
 hug h files -t "3 days ago"  # recent changes

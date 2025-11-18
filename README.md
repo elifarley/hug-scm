@@ -350,10 +350,13 @@ hug fborn [file]              # Show when file was added (interactive if no file
 #### 🔬 Advanced Analysis (`analyze`)
 
 ```shell
-hug analyze co-changes [N]    # Find files that frequently change together (TODO)
-hug analyze activity          # Analyze temporal commit patterns (TODO)
-hug analyze deps <commit>     # Show dependency graph for commits/files (TODO)
-hug analyze expert [file]     # Identify code ownership and expertise (TODO)
+hug analyze co-changes [N]    # Find files that frequently change together
+hug analyze co-changes 200 --threshold 0.50  # Strong coupling only
+hug analyze activity          # Temporal commit patterns (hour/day histograms)
+hug analyze activity --by-hour --by-author   # Per-author hour breakdown
+hug analyze expert <file>     # Identify code ownership and expertise
+hug analyze expert --author "Alice"          # Author's expertise areas
+hug analyze deps <commit>     # Show dependency graph (TODO)
 ```
 
 #### 📊 Repository Statistics (`stats`)
