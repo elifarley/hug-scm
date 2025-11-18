@@ -4,6 +4,11 @@
 
 declare -ga HUG_TEST_REMOTE_REPOS=()
 
+# Load deterministic git helpers for reproducible commit hashes
+# This is sourced early so all fixtures can use git_commit_deterministic()
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/deterministic_git.bash"
+
 # Load BATS support libraries
 # Try local dependencies first
 local_loaded=false
@@ -112,38 +117,42 @@ create_test_repo() {
     git init -q --initial-branch=main
     git config --local user.email "test@hug-scm.test"
     git config --local user.name "Hug Test"
-    
+
     # Configure git aliases needed by hug commands
     # These are from git-config/.gitconfig
     git config --local alias.ll "log --graph --pretty=log1 --date=short"
     git config --local pretty.log1 "%C(bold blue)%h%C(reset) %C(white)%ad%C(reset) %C(dim white)%an%C(reset)%C(auto)%d%C(reset) %s"
-    
-    # Create initial commit
+
+    # Create initial commit with deterministic timestamp
+    reset_fake_clock
     echo "# Test Repository" > README.md
     git add README.md
-    git commit -q -m "Initial commit"
+    git_commit_deterministic "Initial commit"
   )
   
   echo "$test_repo"
 }
 
 # Create a test repository with some sample commits
+# Uses deterministic timestamps for reproducible commit hashes
 create_test_repo_with_history() {
   local test_repo
   test_repo=$(create_test_repo)
-  
+
   (
     cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
-    # Add a few more commits
+    reset_fake_clock  # Start from epoch for reproducibility
+
+    # Add a few more commits with deterministic timestamps
     echo "Feature 1" > feature1.txt
     git add feature1.txt
-    git commit -q -m "Add feature 1"
-    
+    git_commit_deterministic "Add feature 1"
+
     echo "Feature 2" > feature2.txt
     git add feature2.txt
-    git commit -q -m "Add feature 2"
+    git_commit_deterministic "Add feature 2"
   )
-  
+
   echo "$test_repo"
 }
 
@@ -178,25 +187,27 @@ create_test_repo_with_changes() {
 #   4. Local unstaged edit appends a new BOTTOM line.
 # This lets tests confirm how commands reconcile commit deltas with staged and
 # unstaged hunks that touch different sections of the same file.
+# Uses deterministic timestamps for reproducible commit hashes.
 create_test_repo_with_head_mixed_state() {
   local test_repo
   test_repo=$(create_test_repo)
-  
+
   (
     cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
-    
+    reset_fake_clock
+
     echo "ignored.txt" > .gitignore
     git add .gitignore
-    git commit -q -m "Ignore ignored.txt"
-    
+    git_commit_deterministic "Ignore ignored.txt"
+
     cat <<'EOF' > tracked.txt
 alpha baseline
 beta baseline
 gamma baseline
 EOF
     git add tracked.txt
-    git commit -q -m "Add tracked baseline"
-    
+    git_commit_deterministic "Add tracked baseline"
+
     cat <<'EOF' > tracked.txt
 alpha commit
 beta baseline
@@ -204,8 +215,8 @@ gamma baseline
 delta commit
 EOF
     git add tracked.txt
-    git commit -q -m "Touch tracked top and bottom"
-    
+    git_commit_deterministic "Touch tracked top and bottom"
+
     cat <<'EOF' > tracked.txt
 alpha staged
 beta baseline
@@ -213,42 +224,44 @@ gamma baseline
 delta commit
 EOF
     git add tracked.txt
-    
+
     echo "epsilon unstaged" >> tracked.txt
-    
+
     echo "scratch content" > scratch.txt
-    
+
     echo "ignored content" > ignored.txt
   )
-  
+
   echo "$test_repo"
 }
 
 # Create a repository where rolling back commits would overwrite local changes,
 # allowing tests to assert that git reset --keep aborts safely.
+# Uses deterministic timestamps for reproducible commit hashes.
 create_test_repo_with_head_conflict_state() {
   local test_repo
   test_repo=$(create_test_repo)
-  
+
   (
     cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
-    
+    reset_fake_clock
+
     cat <<'EOF' > tracked.txt
 alpha baseline
 beta baseline
 gamma baseline
 EOF
     git add tracked.txt
-    git commit -q -m "Add tracked baseline"
-    
+    git_commit_deterministic "Add tracked baseline"
+
     cat <<'EOF' > tracked.txt
 alpha head
 beta baseline
 gamma baseline
 EOF
     git add tracked.txt
-    git commit -q -m "Modify tracked top line"
-    
+    git_commit_deterministic "Modify tracked top line"
+
     cat <<'EOF' > tracked.txt
 alpha local
 beta baseline
@@ -256,7 +269,7 @@ gamma baseline
 EOF
     # Leave the conflicting change unstaged to simulate user edits that must be preserved.
   )
-  
+
   echo "$test_repo"
 }
 

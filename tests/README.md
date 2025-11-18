@@ -234,23 +234,49 @@ From `test_helper.bash`:
 
 **Repository Creation:**
 
-*Recommended: Use Demo Repositories (Deterministic)*
-- `create_demo_repo_simple()` - Creates deterministic demo repo with 9 commits, 2 branches, remote
+*Phase 2: All fixtures now use deterministic commits for reproducibility*
+
+**Demo Repositories (Externally-Built, Comprehensive)**
+- `create_demo_repo_simple()` - Full-featured demo repo with 9 commits, 2 branches, remote
   - 3 initial commits (README, app.js, .gitignore)
   - 4 commits with overlapping files (for dependency testing: file1.txt, file2.txt, file3.txt, file4.txt)
   - 2 commits on feature/search branch
   - All commits have fixed timestamps (year 2000) for reproducible commit hashes
   - Includes bare remote repository
   - Perfect for testing commands that analyze commit history, dependencies, or branches
-- `create_demo_repo_full()` - Creates comprehensive demo repo with 70+ commits, 15+ branches, 4 contributors
+  - **Use when:** You need a realistic repo structure with remote and branches
+- `create_demo_repo_full()` - Comprehensive demo repo with 70+ commits, 15+ branches, 4 contributors
   - Use when you need complex scenarios (tags, upstream tracking, WIP states, etc.)
   - Much slower than simple demo repo (use sparingly)
 
-*Legacy: Simple Test Repos (Non-Deterministic)*
-- `create_test_repo()` - Creates a minimal git repository with 1 commit
-- `create_test_repo_with_history()` - Creates a repo with 3 sample commits
-- `create_test_repo_with_changes()` - Creates a repo with uncommitted changes
-- **Note:** These use current timestamps, so commit hashes vary between runs. Prefer `create_demo_repo_simple()` for tests that rely on commit history.
+**Test Fixtures (Built In-Process, Lightweight)**
+- `create_test_repo()` - Minimal git repository with 1 deterministic commit
+  - Uses `git_commit_deterministic()` for reproducible hashes
+  - Perfect for tests that only need a clean git repo as a starting point
+- `create_test_repo_with_history()` - Repo with 3 deterministic commits
+  - Commits: "Initial commit", "Add feature 1", "Add feature 2"
+  - All use fixed timestamps starting from year 2000
+  - **Use when:** Testing HEAD manipulation, history traversal
+- `create_test_repo_with_changes()` - Repo with 1 commit + uncommitted changes
+  - Staged file (staged.txt), unstaged changes (README.md), untracked file (untracked.txt)
+  - **Use when:** Testing staging/unstaging commands (hug a, hug us, hug sl)
+- `create_test_repo_with_head_mixed_state()` - Complex fixture for HEAD operation testing
+  - 4 commits with overlapping edits to tracked.txt
+  - Staged changes, unstaged changes, untracked file, ignored file
+  - **Use when:** Testing hug h* commands with complex working tree states
+- `create_test_repo_with_head_conflict_state()` - Fixture for conflict testing
+  - Local changes conflict with HEAD commits
+  - **Use when:** Testing git reset --keep behavior (hug h rollback)
+- `create_test_repo_with_dated_commits()` - Commits at specific dates
+  - 5 commits at specific 2024 dates (Day 1, Day 5, Day 10, Day 15, Day 20)
+  - **Use when:** Testing temporal filtering (--since, --until)
+
+**Deterministic Timestamp System:**
+All fixtures now use `git_commit_deterministic()` from `tests/lib/deterministic_git.bash`:
+- Fixed starting epoch: 2000-01-01 00:00:00 UTC
+- Default increment: 1 hour between commits
+- Ensures reproducible commit hashes across test runs
+- Call `reset_fake_clock()` at start of fixture for consistency
 
 *Cleanup:*
 - `cleanup_test_repo()` - Cleans up test repository (works with all repo types)
