@@ -8,7 +8,7 @@ show_help() {
 hug lf: Search commits by MESSAGE.
 
 USAGE:
-    hug lf <search-term> [-i] [-p] [--all] [-- [<file>]] [--browse-root] [-h, --help]
+    hug lf <search-term> [-i] [-p] [--all] [--with-files] [-- [<file>]] [--browse-root] [-h, --help]
 
 ARGUMENTS:
     <search-term>  Text to search for in commit messages (required)
@@ -18,6 +18,7 @@ OPTIONS:
     -i             Ignore case when searching
     -p             Show patches
     --all          Consider ALL branches (not just current)
+    --with-files   Show files changed in each matching commit
     --browse-root  Browse full repository scope in file selector UI (default: current directory)
     -- <file>      Restrict search to specific file
     -- (last arg)  Restrict search with interactive file selection (current directory scope)
@@ -36,6 +37,7 @@ EXAMPLES:
     hug lf "bug fix"            # Search for "bug fix" in commit messages
     hug lf "feature" -i         # Case-insensitive search
     hug lf "refactor" -p        # Show patches for matching commits
+    hug lf "update" --with-files # Show files changed in each match
     hug lf "update" --all       # Search all branches
     hug lf "change" -- file.js  # Search in commits affecting file.js
     hug lf "change" --          # Search with interactive file selection (current directory)
@@ -54,6 +56,21 @@ eval "$(parse_common_flags "$@")"
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
 
+# Parse --with-files flag
+with_files=false
+remaining_args=()
+for arg in "$@"; do
+  case "$arg" in
+    --with-files)
+      with_files=true
+      ;;
+    *)
+      remaining_args+=("$arg")
+      ;;
+  esac
+done
+set -- "${remaining_args[@]}"
+
 check_git_repo
 
 # Check if search term provided
@@ -70,17 +87,21 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   # Show interactive file selection
   if gum_available; then
     declare -a select_opts=("--single")
-    
+
     # Default to --cwd (current directory scope) unless --browse-root is specified
     if ! $browse_root; then
       select_opts+=("--cwd")
     fi
-    
+
     select_opts+=("--prompt" "Select file to restrict search...")
-    
+
     file=""
     if file=$(select_files_with_status "${select_opts[@]}"); then
-      exec hug ll --grep="$search_term" "$@" -- "$file"
+      if $with_files; then
+        exec hug ll --grep="$search_term" --name-status "$@" -- "$file"
+      else
+        exec hug ll --grep="$search_term" "$@" -- "$file"
+      fi
     else
       info "Cancelled."
       exit 0
@@ -92,4 +113,9 @@ Install gum: https://github.com/charmbracelet/gum"
   fi
 fi
 
-exec hug ll --grep="$search_term" "$@"
+# Execute with or without files listing
+if $with_files; then
+  exec hug ll --grep="$search_term" --name-status "$@"
+else
+  exec hug ll --grep="$search_term" "$@"
+fi
