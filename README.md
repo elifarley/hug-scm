@@ -356,7 +356,8 @@ hug analyze activity          # Temporal commit patterns (hour/day histograms)
 hug analyze activity --by-hour --by-author   # Per-author hour breakdown
 hug analyze expert <file>     # Identify code ownership and expertise
 hug analyze expert --author "Alice"          # Author's expertise areas
-hug analyze deps <commit>     # Show dependency graph (TODO)
+hug analyze deps <commit>     # Show commit dependency graph via file overlap
+hug analyze deps --all        # Repository-wide coupling analysis
 ```
 
 #### 📊 Repository Statistics (`stats`)

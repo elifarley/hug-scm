@@ -30,24 +30,66 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Testing
 
+**IMPORTANT: Always use `make` targets for testing, NOT direct `./tests/run-tests.sh` invocation.**
+
+The Makefile provides comprehensive test capabilities with better ergonomics:
+
 ```bash
 # All tests (recommended for final validation)
-make test
+make test                                   # Runs ALL tests (BATS + pytest)
+                                            # = test-bash + test-lib-py
 
-# Specific test categories
-make test-unit                              # Unit tests only
-make test-integration                       # Integration tests only
-make test-lib                               # Library tests only
+# BATS-only or pytest-only
+make test-bash                              # All BATS tests (unit + integration + lib)
+make test-lib-py                            # Python library tests (pytest)
+make test-lib-py-coverage                   # Python tests with coverage report
 
-# Filter and show only failing tests (faster iteration)
+# BATS test categories (subsets of test-bash)
+make test-unit                              # BATS unit tests (tests/unit/)
+make test-integration                       # BATS integration tests (tests/integration/)
+make test-lib                               # BATS library tests (tests/lib/)
+
+# Run specific BATS test files (supports basename or full path)
+make test-unit TEST_FILE=test_head.bats
+make test-unit TEST_FILE=test_analyze_deps.bats
+make test-lib TEST_FILE=test_hug_common.bats
+make test-integration TEST_FILE=test_workflows.bats
+make test-bash TEST_FILE=test_head.bats     # Works with test-bash too
+
+# Filter tests by name pattern (works with BATS and pytest)
 make test-unit TEST_FILTER="hug w discard"
-make test-unit SHOW_FAILING=1
-make test TEST_FILE=test_head.bats          # Specific file
+make test-lib TEST_FILTER="confirm_action"
+make test-bash TEST_FILTER="hug s"
+make test-lib-py TEST_FILTER="test_analyze" # pytest -k pattern
 
-# Direct invocation for advanced options
-./tests/run-tests.sh -j 4                   # Parallel execution
-./tests/run-tests.sh -v                     # Verbose output
-./tests/run-tests.sh -f "exact test name"   # Single test
+# Show only failing BATS tests (faster iteration during debugging)
+make test-unit SHOW_FAILING=1
+make test-bash SHOW_FAILING=1
+make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
+
+# Combine BATS options: file + filter + show-failing
+make test-unit TEST_FILE=test_analyze_deps.bats TEST_FILTER="dependency" SHOW_FAILING=1
+make test-bash TEST_FILTER="hug w" SHOW_FAILING=1
+
+# Check prerequisites without running tests
+make test-check                             # BATS dependencies check
+```
+
+**Test Hierarchy Summary:**
+```
+make test (ALL)
+├── make test-bash (ALL BATS)
+│   ├── make test-unit (tests/unit/*.bats)
+│   ├── make test-integration (tests/integration/*.bats)
+│   └── make test-lib (tests/lib/*.bats)
+└── make test-lib-py (git-config/lib/python/tests/)
+```
+
+**Advanced usage (when Makefile doesn't suffice):**
+```bash
+# Only use direct invocation for features not exposed by Makefile
+./tests/run-tests.sh -j 4                   # Parallel execution (not in Makefile)
+./tests/run-tests.sh --install-deps         # Install BATS deps (use make test-deps-install instead)
 ```
 
 ### Installation & Activation
@@ -314,7 +356,7 @@ Current status:
 # Test locally
 make test
 
-# Verify specific functionality
+# Verify specific functionality (use Makefile, not direct script invocation)
 make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
 
 # Check documentation builds

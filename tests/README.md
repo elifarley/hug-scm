@@ -88,40 +88,87 @@ export PATH="$HOME/.bats-libs/bats-core/bin:$PATH"
 
 ## Running Tests
 
+**IMPORTANT: Always use `make` targets from the project root, NOT direct `bats` or `./tests/run-tests.sh` invocation.**
+
+The Makefile provides the recommended interface for running all tests:
+
+### Test Hierarchy
+
+```
+make test (ALL TESTS)
+├── make test-bash (ALL BATS TESTS)
+│   ├── make test-unit (tests/unit/*.bats)
+│   ├── make test-integration (tests/integration/*.bats)
+│   └── make test-lib (tests/lib/*.bats)
+└── make test-lib-py (git-config/lib/python/tests/)
+```
+
 ### Run All Tests
 ```bash
-# From the project root
-bats tests/
-
-# Or from the tests directory
-cd tests
-bats .
+make test                                   # ALL tests (BATS + pytest)
+make test-bash                              # All BATS tests (unit + integration + lib)
+make test-lib-py                            # Python library tests only (pytest)
+make test-lib-py-coverage                   # Python tests with coverage report
 ```
 
-### Run Specific Test File
+### Run BATS Test Categories
 ```bash
-bats tests/unit/test_status_staging.bats
-bats tests/unit/test_working_dir.bats
-bats tests/unit/test_head.bats
-bats tests/lib/test_hug-fs.bats
-bats tests/integration/test_workflows.bats
+make test-unit                              # BATS unit tests (tests/unit/)
+make test-integration                       # BATS integration tests (tests/integration/)
+make test-lib                               # BATS library tests (tests/lib/)
 ```
 
-### Run Specific Test
+### Run Specific BATS Test File
 ```bash
-bats tests/unit/test_status_staging.bats --filter "hug s shows status"
+# Supports basename or full path
+make test-unit TEST_FILE=test_status_staging.bats
+make test-unit TEST_FILE=test_working_dir.bats
+make test-unit TEST_FILE=test_head.bats
+make test-lib TEST_FILE=test_hug-fs.bats
+make test-integration TEST_FILE=test_workflows.bats
+make test-bash TEST_FILE=test_head.bats     # Also works with test-bash
 ```
 
-### Run Tests in Parallel
+### Filter Tests by Name Pattern
 ```bash
-bats --jobs 4 tests/
+# BATS tests
+make test-unit TEST_FILTER="hug s shows status"
+make test-lib TEST_FILTER="is_symlink"
+make test-bash TEST_FILTER="hug w"
+
+# Python tests (pytest -k)
+make test-lib-py TEST_FILTER="test_analyze"
 ```
 
-### Verbose Output
+### Show Only Failing BATS Tests
 ```bash
-bats --tap tests/              # TAP format output
-bats --verbose-run tests/      # Show test commands as they run
-bats --print-output-on-failure tests/  # Show output only on failures
+make test-unit SHOW_FAILING=1
+make test-bash SHOW_FAILING=1
+make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
+```
+
+### Combine BATS Options
+```bash
+make test-unit TEST_FILE=test_status_staging.bats TEST_FILTER="hug s" SHOW_FAILING=1
+make test-bash TEST_FILTER="working directory" SHOW_FAILING=1
+```
+
+### Check Prerequisites
+```bash
+make test-check                             # Verify BATS setup without running tests
+```
+
+### Advanced: Direct Invocation
+Only use direct commands for features not exposed by the Makefile:
+
+```bash
+# From project root (after running `make test-check` once)
+./tests/run-tests.sh -j 4                   # Parallel BATS execution
+./tests/run-tests.sh --install-deps         # Install BATS dependencies
+
+# Direct bats (if you have system-wide BATS)
+bats --tap tests/                           # TAP format output
+bats --verbose-run tests/                   # Show commands as they run
 ```
 
 ## Writing Tests
