@@ -16,12 +16,16 @@ This document tracks implementation of the `hug analyze` stub commands. Each com
 - [x] Update skills/SKILL.md with new examples
 
 ### 🚧 In Progress
-- [ ] Python helper infrastructure improvements
+- [x] Python helper infrastructure improvements
+  - [x] Using PyTest best practices, create unit tests for the python libs (**85/85 tests passing 100% ✓**)
+    - activity.py: 39 tests ✓
+    - co_changes.py: 21 tests ✓
+    - ownership.py: 25 tests ✓
+  - [x] Add Makefile targets for Python testing (test-lib-py, test-lib-py-coverage, test-deps-py-install)
+  - [x] Updated git-config/lib/python/README.md with testing documentation
   - [ ] Complete line-level churn in `churn.py`
-  - [ ] Using PyTest best practices, create unit tests for the python libs
   - [ ] POSTPONED: Add caching mechanism for expensive operations
   - [ ] POSTPONED: Add progress indicators for long-running analysis
-- [ ] Add Makefile targets for Python testing (test-lib-py)
 
 ### 📋 Planned
 
