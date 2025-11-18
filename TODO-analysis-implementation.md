@@ -18,6 +18,7 @@ This document tracks implementation of the `hug analyze` stub commands. Each com
 ### 🚧 In Progress
 - [ ] Python helper infrastructure improvements
   - [ ] Complete line-level churn in `churn.py`
+  - [ ] Using PyTest best practices, create unit tests for the python libs
   - [ ] POSTPONED: Add caching mechanism for expensive operations
   - [ ] POSTPONED: Add progress indicators for long-running analysis
 - [ ] Add Makefile targets for Python testing (test-lib-py)

@@ -29,8 +29,11 @@ help: ## Display this help message
 
 ##@ Testing
 
-test: ## Run all tests using BATS (or specific: TEST_FILE=... TEST_FILTER=... SHOW_FAILING=1)
-	@echo "$(BLUE)Running all tests...$(NC)"
+test: test-bash test-lib-py ## Run all tests (BATS + pytest)
+	@echo "$(GREEN)All tests completed!$(NC)"
+
+test-bash: ## Run all BATS-based tests (or specific: TEST_FILE=... TEST_FILTER=... SHOW_FAILING=1)
+	@echo "$(BLUE)Running BATS tests...$(NC)"
 	@if [ -n "$(TEST_FILE)" ]; then \
 		case "$(TEST_FILE)" in \
 		tests/*) \
@@ -97,9 +100,30 @@ test-check: ## Check test prerequisites without running tests
 	@echo "$(BLUE)Checking test prerequisites...$(NC)"
 	./tests/run-tests.sh --check
 
+test-lib-py: ## Run Python library tests using pytest
+	@echo "$(BLUE)Running Python library tests...$(NC)"
+	@cd git-config/lib/python && \
+	if ! python3 -m pytest --version >/dev/null 2>&1; then \
+		echo "$(YELLOW)pytest not installed. Installing pytest and dev dependencies...$(NC)"; \
+		python3 -m pip install -q -e ".[dev]" || \
+		(echo "$(YELLOW)Warning: Could not install dev dependencies. Tests will be skipped.$(NC)" && exit 0); \
+	fi; \
+	python3 -m pytest tests/ -v --color=yes --tb=short $(if $(TEST_FILTER),-k "$(TEST_FILTER)")
+
+test-lib-py-coverage: ## Run Python library tests with coverage report
+	@echo "$(BLUE)Running Python library tests with coverage...$(NC)"
+	@cd git-config/lib/python && \
+	python3 -m pip install -q -e ".[dev]" 2>/dev/null || true; \
+	python3 -m pytest tests/ -v --cov=. --cov-report=term-missing --cov-report=html
+
 test-deps-install: ## Install or update local BATS dependencies
 	@echo "$(BLUE)Installing test dependencies...$(NC)"
 	./tests/run-tests.sh --install-deps
+
+test-deps-py-install: ## Install Python test dependencies (pytest, coverage, etc.)
+	@echo "$(BLUE)Installing Python test dependencies...$(NC)"
+	@cd git-config/lib/python && python3 -m pip install -e ".[dev]"
+	@echo "$(GREEN)Python test dependencies installed$(NC)"
 
 optional-deps-install: ## Install optional dependencies (gum, etc.)
 	@echo "$(BLUE)Installing optional dependencies...$(NC)"
@@ -256,7 +280,7 @@ demo-repo-status: ## Show status of demo repository
 	echo "Remote: $$(git remote -v 2>/dev/null | head -1 || echo 'N/A')"; \
 	exit 0
 
-.PHONY: test test-unit test-integration test-lib test-check test-deps-install optional-deps-install optional-deps-check
+.PHONY: test test-bash test-unit test-integration test-lib test-check test-lib-py test-lib-py-coverage test-deps-install test-deps-py-install optional-deps-install optional-deps-check
 .PHONY: vhs-deps-install
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
 .PHONY: docs-dev docs-build docs-preview deps-docs
