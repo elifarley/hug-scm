@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
-# git-analyze-deps - Show commit dependency graph
+# git-analyze-deps - Show dependency graph for commits/files
 # Part of the Hug tool suite
-#
-# TODO: Implement dependency graph analysis
-# Algorithm:
-#   1. For given commit, find all commits that touch same files
-#   2. Build graph of commits related by file overlap
-#   3. Render ASCII tree showing relationships
-#   4. Support filtering by file pattern or date range
-#
-# Consider Python with graph libraries (networkx) for complex graphs
 
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
@@ -17,86 +8,222 @@ set -euo pipefail
 
 show_help() {
   cat << 'EOF'
-hug analyze deps: Show commit dependency graph
+hug analyze deps: Show dependency graph for commits/files
 
 USAGE:
     hug analyze deps <commit> [options]
+    hug analyze deps --all [options]
 
 ARGUMENTS:
-    <commit>       Commit hash to analyze
+    <commit>          Commit hash to analyze
 
 OPTIONS:
-    --depth <n>        Maximum graph depth (default: 3)
-    --feature <term>   Find all commits related to feature
-    --since <date>     Only include commits since date
-    --format <type>    Output format: tree, json, dot
+    --all             Analyze all commits in repository
+    --depth <n>       Depth of dependency traversal (default: 1)
+    --threshold <n>   Minimum file overlap for dependency (default: 2)
+    --since <date>    Only consider commits since date
+    --format <fmt>    Output format: graph, text, json (default: graph)
+    --max-results <n> Maximum related commits to show (default: 20)
+    -h, --help        Show this help
 
 DESCRIPTION:
-    Shows commits that are related to the given commit by:
-    - Touching the same files
-    - Being part of the same feature branch
-    - Temporal proximity with file overlap
+    Analyzes commit dependencies by identifying commits that modify the
+    same files. This reveals:
+    - Related commits that should be reviewed together
+    - Feature evolution across multiple commits
+    - Potentially conflicting changes
+    - Logical groupings of work
+
+    Dependency formula: Two commits are related if they modify N or more
+    of the same files (threshold).
 
     Helps answer:
-    - "What other commits touched these files?"
-    - "What's the history of this feature?"
-    - "What might break if I revert this commit?"
+    - "What other commits are related to this change?"
+    - "What commits touched these same files?"
+    - "Which commits form a logical feature?"
+    - "What should I review alongside this commit?"
 
 EXAMPLES:
-    hug analyze deps abc1234                    # Dependencies for commit
-    hug analyze deps abc1234 --depth 2          # Limit to 2 levels
-    hug analyze deps --feature "authentication" # All related commits
-    hug analyze deps abc1234 --format dot       # Graphviz format
+    # Analyze single commit
+    hug analyze deps abc1234                    # Show related commits
+    hug analyze deps abc1234 --depth 2          # Two levels deep
+    hug analyze deps HEAD~5 --threshold 3       # Need 3+ file overlap
 
-OUTPUT FORMAT:
-    abc1234 (feat: add authentication)
-      ├─ def5678 (fix: auth bug in session handling)
-      ├─ ghi9012 (refactor: extract auth logic)
-      └─ jkl3456 (test: add auth integration tests)
-          └─ mno7890 (fix: test flakiness)
+    # Repository-wide analysis
+    hug analyze deps --all                      # All commit coupling
+    hug analyze deps --all --threshold 5        # Strong coupling only
 
-IMPLEMENTATION NOTES:
-    This command should:
-    1. Use git log --name-only to get files per commit
-    2. Build graph of commits sharing files
-    3. Use BFS/DFS to traverse to max depth
-    4. Render as ASCII tree or export as JSON/DOT
-    5. Consider networkx for graph algorithms (Python)
+    # Filtered analysis
+    hug analyze deps abc1234 --since="1 month ago"
+    hug analyze deps abc1234 --format text      # Simple list
+    hug analyze deps abc1234 --format json      # Machine-readable
+
+    # Interactive selection
+    hug analyze deps                            # Select commit via gum
+
+OUTPUT FORMAT (graph):
+    Dependency graph for commit abc1234:
+    feat: add user authentication
+
+    Author: Alice, Date: 2024-01-15
+    Files modified: 5
+
+    Related commits (depth=1):
+
+    ├─ def5678 (3 files) fix: auth token expiration
+    │     Alice, 2024-01-16
+    └─ ghi9012 (2 files) test: add auth integration tests
+          Bob, 2024-01-17
+
+OUTPUT FORMAT (text):
+    Related commits for abc1234 (feat: add user authentication):
+
+    def5678  fix: auth token expiration                  (3 files)  2024-01-16
+    ghi9012  test: add auth integration tests            (2 files)  2024-01-17
+
+OUTPUT FORMAT (--all):
+    Commit Coupling Analysis (threshold: 2 files):
+
+    Found 45 commits with dependencies
+
+    abc1234 feat: add user authentication
+      3 related commits:
+        def5678 (3 files) fix: auth token expiration
+        ghi9012 (2 files) test: add auth integration tests
+        jkl3456 (2 files) docs: update auth documentation
+
+INTERPRETATION:
+    High file overlap = Commits are tightly coupled
+    - Consider: Are these part of the same feature?
+    - Consider: Should they be reviewed together?
+    - Consider: Do they introduce conflicts?
+
+    Many related commits = Active/critical code area
+    - Indicates frequently changing code
+    - May need refactoring or better modularity
 
 SEE ALSO:
-    hug h files           : Files changed in commits
-    hug analyze co-changes: Files that change together
+    hug analyze co-changes  : Files that change together
+    hug h files             : Files touched by commits
+    hug lc                  : Search code changes
+    hug fcon                : Contributors to a file
 EOF
 }
 
+# Parse arguments
+commit=""
+all_mode=false
+depth=1
+threshold=2
+since_arg=""
+output_format="graph"
+max_results=20
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --all)
+      all_mode=true
+      shift
+      ;;
+    --depth)
+      depth="$2"
+      shift 2
+      ;;
+    --threshold)
+      threshold="$2"
+      shift 2
+      ;;
+    --since)
+      since_arg="$2"
+      shift 2
+      ;;
+    --format)
+      output_format="$2"
+      shift 2
+      ;;
+    --max-results)
+      max_results="$2"
+      shift 2
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      if [ -z "$commit" ]; then
+        commit="$1"
+      else
+        error "Unknown option: $1"
+        show_help
+        exit 1
+      fi
+      shift
+      ;;
+  esac
+done
+
 check_git_repo
 
-# Stub implementation
-warning "🚧 This command is not yet implemented"
-info ""
-info "This command will show dependency relationships between commits."
-info ""
-info "Planned features:"
-info "  • Graph of commits touching same files"
-info "  • ASCII tree visualization of dependencies"
-info "  • Find all commits related to a feature"
-info "  • Export as JSON or Graphviz DOT format"
-info "  • Configurable depth limit"
-info ""
-info "Implementation approach:"
-info "  • Build graph from git log file overlap"
-info "  • Use graph traversal (BFS/DFS) with depth limit"
-info "  • Python with networkx for graph algorithms"
-info "  • ASCII tree rendering using box-drawing chars"
-info ""
-info "Example output:"
-info "  abc1234 (feat: add authentication)"
-info "    ├─ def5678 (fix: auth bug)"
-info "    ├─ ghi9012 (refactor: auth)"
-info "    └─ jkl3456 (test: auth tests)"
-info "        └─ mno7890 (fix: test flakiness)"
-info ""
-info "To implement this command, see:"
-info "  git-config/bin/git-analyze-deps"
+# Check for Python helper
+python_script="$CMD_BASE/../lib/python/deps.py"
 
-exit 1
+if [ ! -f "$python_script" ]; then
+  error "Dependency analysis not available: $python_script not found"
+  exit 1
+fi
+
+# Handle --all mode
+if $all_mode; then
+  py_args=(--all --threshold="$threshold" --format="$output_format" --max-results="$max_results")
+
+  if [ -n "$since_arg" ]; then
+    py_args+=(--since="$since_arg")
+  fi
+
+  exec python3 "$python_script" "${py_args[@]}"
+fi
+
+# Single commit mode - need commit hash
+if [ -z "$commit" ]; then
+  # Interactive commit selection if gum is available
+  if gum_available; then
+    info "Select commit for dependency analysis..."
+
+    # Get recent commits for selection
+    mapfile -t commits < <(git log --oneline -n 50)
+
+    if [ ${#commits[@]} -eq 0 ]; then
+      error "No commits found in repository"
+      exit 1
+    fi
+
+    selected=$(printf '%s\n' "${commits[@]}" | gum filter --placeholder "Select commit...")
+
+    if [ -z "$selected" ]; then
+      info "No commit selected or cancelled."
+      exit 0
+    fi
+
+    # Extract commit hash (first word)
+    commit=$(echo "$selected" | awk '{print $1}')
+  else
+    error "Commit argument required.
+Usage: hug analyze deps <commit>"
+    exit 1
+  fi
+fi
+
+# Validate commit exists
+if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
+  error "Invalid commit: $commit"
+  exit 1
+fi
+
+# Build Python command
+py_args=("$commit" --depth="$depth" --threshold="$threshold" --format="$output_format" --max-results="$max_results")
+
+if [ -n "$since_arg" ]; then
+  py_args+=(--since="$since_arg")
+fi
+
+exec python3 "$python_script" "${py_args[@]}"
