@@ -50,7 +50,7 @@ create_related_commits() {
 }
 
 @test "hug analyze deps: shows help with --help" {
-  run git analyze-deps --help
+  run git analyze-deps -h
 
   assert_success
   assert_output --partial "hug analyze deps"
@@ -236,16 +236,18 @@ create_related_commits() {
 @test "hug analyze deps: handles merge commits" {
   create_related_commits
 
-  # Create a branch and merge
-  git checkout -b feature 2>/dev/null
+  # Store current branch name
+  main_branch=$(git rev-parse --abbrev-ref HEAD)
+
+  # Create a branch and merge (use unique name to avoid conflicts)
+  git checkout -b test530-feature
   echo "feature" > feature.txt
   git add feature.txt
   git commit -m "feature commit"
 
-  # Get main branch name
-  main_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
-  git checkout "$main_branch" 2>/dev/null || git checkout main 2>/dev/null || git checkout master
-  git merge feature --no-edit
+  # Return to main branch
+  git checkout "$main_branch"
+  git merge test530-feature --no-edit
 
   run git analyze-deps HEAD
 
@@ -296,32 +298,32 @@ create_related_commits() {
 # Integration with actual file changes
 
 @test "hug analyze deps: correctly identifies commits touching same files" {
-  # Create commit 1 touching file1.txt and file2.txt
-  echo "v1" > file1.txt
-  echo "v1" > file2.txt
-  git add file1.txt file2.txt
-  git commit -m "commit 1"
+  # Create commit 1 touching unique_file1.txt and unique_file2.txt
+  echo "v1" > unique_file1.txt
+  echo "v1" > unique_file2.txt
+  git add unique_file1.txt unique_file2.txt
+  git commit -m "test534: commit 1"
   commit1=$(git log -1 --format=%H)
 
-  # Create commit 2 touching file2.txt and file3.txt
-  echo "v2" > file2.txt
-  echo "v2" > file3.txt
-  git add file2.txt file3.txt
-  git commit -m "commit 2"
+  # Create commit 2 touching unique_file2.txt and unique_file3.txt
+  echo "v2" > unique_file2.txt
+  echo "v2" > unique_file3.txt
+  git add unique_file2.txt unique_file3.txt
+  git commit -m "test534: commit 2"
 
-  # Create commit 3 touching file1.txt and file2.txt (related to commit 1)
-  echo "v3" > file1.txt
-  echo "v3" >> file2.txt
-  git add file1.txt file2.txt
-  git commit -m "commit 3"
+  # Create commit 3 touching unique_file1.txt and unique_file2.txt (related to commit 1)
+  echo "v3" > unique_file1.txt
+  echo "v3" >> unique_file2.txt
+  git add unique_file1.txt unique_file2.txt
+  git commit -m "test534: commit 3"
   commit3=$(git log -1 --format=%H)
 
   # Analyze commit 1
   run git analyze-deps "$commit1" --threshold 2 --format text
 
   assert_success
-  # Should show commit 3 as related (both touch file1.txt and file2.txt)
-  assert_output --partial "commit 3"
+  # Should show commit 3 as related (both touch unique_file1.txt and unique_file2.txt)
+  assert_output --partial "test534: commit 3"
 }
 
 @test "hug analyze deps: graph output includes file count" {

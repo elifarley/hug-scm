@@ -133,6 +133,10 @@ while [ $# -gt 0 ]; do
       threshold="$2"
       shift 2
       ;;
+    --since=*)
+      since_arg="${1#*=}"
+      shift
+      ;;
     --since)
       since_arg="$2"
       shift 2
@@ -148,6 +152,11 @@ while [ $# -gt 0 ]; do
     -h|--help)
       show_help
       exit 0
+      ;;
+    -*)
+      error "Unknown option: $1"
+      show_help
+      exit 1
       ;;
     *)
       if [ -z "$commit" ]; then
