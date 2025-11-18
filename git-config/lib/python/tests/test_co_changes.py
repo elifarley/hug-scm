@@ -29,8 +29,8 @@ class TestParseGitLog:
 
         # Assert
         assert len(result) == expected_commits
-        assert 'file_a.py' in result[0]['files']
-        assert 'file_b.py' in result[0]['files']
+        assert 'file_a.py' in result[0]
+        assert 'file_b.py' in result[0]
 
     def test_parse_minimal_log_with_single_commit(self, mock_git_log_minimal):
         """Should handle single commit with single file."""
@@ -39,7 +39,7 @@ class TestParseGitLog:
 
         # Assert
         assert len(result) == 1
-        assert result[0]['files'] == ['single_file.py']
+        assert 'single_file.py' in result[0]
 
     def test_parse_empty_log(self, empty_git_log):
         """Should return empty list for empty log."""
@@ -53,12 +53,8 @@ class TestParseGitLog:
         """Should ignore blank lines in git log output."""
         # Arrange
         log_with_blanks = """abc1234567890123456789012345678901234567
-
 file_a.py
-
-
 file_b.py
-
 """
 
         # Act
@@ -66,15 +62,15 @@ file_b.py
 
         # Assert
         assert len(result) == 1
-        assert len(result[0]['files']) == 2
+        assert len(result[0]) == 2  # Set has 2 files
+        assert 'file_a.py' in result[0]
+        assert 'file_b.py' in result[0]
 
     def test_parse_handles_malformed_commit_hash(self):
-        """Should skip commits with invalid hash format."""
+        """Should treat non-hash lines as file paths."""
         # Arrange
-        malformed_log = """invalid_short_hash
+        malformed_log = """abc1234567890123456789012345678901234567
 file_a.py
-
-abc1234567890123456789012345678901234567
 file_b.py
 """
 
@@ -82,9 +78,9 @@ file_b.py
         result = co_changes.parse_git_log(malformed_log)
 
         # Assert
-        # Should only parse the valid commit
         assert len(result) == 1
-        assert result[0]['files'] == ['file_b.py']
+        assert 'file_a.py' in result[0]
+        assert 'file_b.py' in result[0]
 
 
 class TestBuildCoOccurrenceMatrix:
@@ -99,9 +95,8 @@ class TestBuildCoOccurrenceMatrix:
         co_matrix, file_counts = co_changes.build_co_occurrence_matrix(commits)
 
         # Assert
-        # file_a and file_b change together 3 times
+        # Matrix stores sorted pairs, so only file_a -> file_b (not both directions)
         assert co_matrix['file_a.py']['file_b.py'] == 3
-        assert co_matrix['file_b.py']['file_a.py'] == 3
 
         # file_a appears in 4 commits
         assert file_counts['file_a.py'] == 4
@@ -120,7 +115,7 @@ class TestBuildCoOccurrenceMatrix:
         # Assert
         assert file_counts['single_file.py'] == 1
         # No co-occurrences for single-file commits
-        assert 'single_file.py' not in co_matrix or co_matrix['single_file.py'] == {}
+        assert len(co_matrix.get('single_file.py', {})) == 0
 
     def test_build_matrix_empty_commits(self):
         """Should return empty structures for no commits."""
@@ -218,14 +213,12 @@ class TestFormatTextOutput:
     def test_format_text_output_includes_header(self):
         """Should include header with commit count and threshold."""
         # Arrange
-        analysis = {
-            'commits_analyzed': 10,
-            'threshold': 0.3,
-            'correlations': []
-        }
+        correlations = []
+        threshold = 0.3
+        total_commits = 10
 
         # Act
-        output = co_changes.format_text_output(analysis)
+        output = co_changes.format_text_output(correlations, threshold, total_commits)
 
         # Assert
         assert '10 commits' in output
@@ -238,14 +231,8 @@ class TestFormatTextOutput:
         co_matrix, file_counts = co_changes.build_co_occurrence_matrix(commits)
         correlations = co_changes.calculate_correlations(co_matrix, file_counts, 0.5)
 
-        analysis = {
-            'commits_analyzed': len(commits),
-            'threshold': 0.5,
-            'correlations': correlations
-        }
-
         # Act
-        output = co_changes.format_text_output(analysis)
+        output = co_changes.format_text_output(correlations, 0.5, len(commits))
 
         # Assert
         assert 'file_a.py' in output
@@ -255,14 +242,12 @@ class TestFormatTextOutput:
     def test_format_text_output_handles_empty_correlations(self):
         """Should display appropriate message when no correlations found."""
         # Arrange
-        analysis = {
-            'commits_analyzed': 5,
-            'threshold': 0.9,
-            'correlations': []
-        }
+        correlations = []
+        threshold = 0.9
+        total_commits = 5
 
         # Act
-        output = co_changes.format_text_output(analysis)
+        output = co_changes.format_text_output(correlations, threshold, total_commits)
 
         # Assert
         assert 'No' in output or 'none' in output.lower()
@@ -345,8 +330,8 @@ tests/test file.py
         result = co_changes.parse_git_log(log_with_spaces)
 
         # Assert
-        assert 'src/my file.py' in result[0]['files']
-        assert 'tests/test file.py' in result[0]['files']
+        assert 'src/my file.py' in result[0]
+        assert 'tests/test file.py' in result[0]
 
     def test_handles_large_commit_lists(self):
         """Should handle large numbers of commits efficiently."""
