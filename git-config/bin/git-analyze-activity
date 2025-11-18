@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
 # git-analyze-activity - Analyze temporal commit patterns
 # Part of the Hug tool suite
-#
-# TODO: Implement activity analysis
-# Algorithm:
-#   1. Parse git log with timestamps
-#   2. Group by requested dimension (hour/day/week/author)
-#   3. Generate histogram or time series data
-#   4. Output ASCII chart or JSON for visualization
-#
-# Consider Python implementation for plotting libraries (matplotlib/plotext)
 
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
@@ -25,79 +16,151 @@ USAGE:
 OPTIONS:
     --by-hour          Group activity by hour of day
     --by-day           Group activity by day of week
-    --by-week          Group activity by week
-    --by-month         Group activity by month
-    --by-author        Show activity per author over time
+    --by-author        Show activity breakdown per author
     --since <date>     Only analyze commits since date
     --json             Output as JSON
+    -h, --help         Show this help
 
 DESCRIPTION:
-    Analyzes when development activity happens to identify:
-    - Peak coding hours (crunch times)
-    - Most active days of week
-    - Contribution patterns by author
-    - Quiet periods (gaps in development)
+    Analyzes when development activity happens to identify team dynamics,
+    productivity patterns, and potential process issues:
+
+    - Peak coding hours → When is the team most productive?
+    - Late night commits → Pressure or poor work-life balance?
+    - Weekend work → Process issues or crunch time?
+    - Per-author patterns → Individual work habits
+
+    Helps answer:
+    - "Are we working sustainable hours?"
+    - "What's our peak productivity time?"
+    - "Is weekend work necessary?"
+    - "Do we have timezone coverage?"
 
 EXAMPLES:
-    hug analyze activity --by-hour                # Histogram by hour
-    hug analyze activity --by-day                 # Activity by weekday
-    hug analyze activity --by-author              # Time series per author
-    hug analyze activity --by-hour --json         # Machine-readable
+    hug analyze activity                      # Both hour and day histograms
+    hug analyze activity --by-hour            # Histogram by hour only
+    hug analyze activity --by-day             # Activity by weekday only
+    hug analyze activity --by-hour --by-author # Per-author hour breakdown
+    hug analyze activity --since="3 months ago"
+    hug analyze activity --json               # Machine-readable
 
-OUTPUT FORMAT (--by-hour example):
-    Activity by hour of day (last 100 commits):
-    00:00 ▏ 2
-    01:00 ▏ 1
-    02:00
-    ...
-    09:00 ▊▊▊▊▊ 12
-    10:00 ▊▊▊▊▊▊▊▊ 18
-    11:00 ▊▊▊▊▊▊▊ 15
-    ...
-    22:00 ▊▊▊ 8
-    23:00 ▊ 3
+OUTPUT FORMAT:
+    Commit Activity Analysis (85 commits):
 
-IMPLEMENTATION NOTES:
-    This command should:
-    1. Use git log --format='%ai' for timestamps
-    2. Parse timestamps and extract hour/day/week
-    3. Aggregate into buckets
-    4. Generate ASCII histogram using Unicode blocks
-    5. Consider plotext for terminal graphs (Python)
+    Commits by Hour:
+
+    00:00 █ 2
+    01:00 █ 1
+    09:00 ████████████████ 15
+    10:00 ████████████████████████ 23
+    14:00 ████████████ 12
+    22:00 ███ 5
+
+    Observations:
+      Peak activity: 10:00 (23 commits)
+      ⚠️  8.2% of commits during late night (10pm-4am)
+
+    Commits by Day of Week:
+
+    Mon ████████████████████ 18
+    Tue ███████████████████ 17
+    Wed ████████████████████ 19
+    Sat ████ 4
+
+    Observations:
+      Most active day: Wed (19 commits)
+      ⚠️  12.9% of commits on weekends
 
 SEE ALSO:
-    hug lau           : Commits by author
-    hug ld            : Commits in date range
+    hug lau    : Commits by author
+    hug ld     : Commits in date range
+    hug stats author : Author contribution statistics
 EOF
 }
 
+# Parse arguments
+by_hour=false
+by_day=false
+by_author=false
+since_arg=""
+json_output=false
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --by-hour)
+      by_hour=true
+      shift
+      ;;
+    --by-day)
+      by_day=true
+      shift
+      ;;
+    --by-author)
+      by_author=true
+      shift
+      ;;
+    --since)
+      since_arg="$2"
+      shift 2
+      ;;
+    --json)
+      json_output=true
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      error "Unknown option: $1"
+      show_help
+      exit 1
+      ;;
+  esac
+done
+
 check_git_repo
 
-# Stub implementation
-warning "🚧 This command is not yet implemented"
-info ""
-info "This command will analyze temporal patterns in commit activity."
-info ""
-info "Planned features:"
-info "  • Activity heatmap by hour of day"
-info "  • Commits by day of week histogram"
-info "  • Per-author contribution timelines"
-info "  • Identify quiet periods (gaps > N days)"
-info "  • ASCII chart visualization in terminal"
-info ""
-info "Implementation approach:"
-info "  • Parse git log timestamps with --format='%ai'"
-info "  • Use Python for date/time parsing and aggregation"
-info "  • Consider plotext for terminal charts"
-info "  • Support JSON output for external visualization"
-info ""
-info "Example output (--by-hour):"
-info "  Activity by hour of day:"
-info "  09:00 ▊▊▊▊ 12 commits"
-info "  10:00 ▊▊▊▊▊▊▊▊ 18 commits"
-info "  11:00 ▊▊▊▊▊▊ 15 commits"
-info ""
-info "To implement this command, see:"
-info "  git-config/bin/git-analyze-activity"
+# Check for Python helper
+python_script="$CMD_BASE/../lib/python/activity.py"
 
-exit 1
+if [ ! -f "$python_script" ]; then
+  error "Activity analysis not available: $python_script not found"
+  exit 1
+fi
+
+# Build git log command
+git_cmd=(git log --all --format='%ai|%an')
+
+if [ -n "$since_arg" ]; then
+  git_cmd+=(--since="$since_arg")
+fi
+
+# Build Python command args
+py_args=()
+
+if $by_hour; then
+  py_args+=(--by-hour)
+fi
+
+if $by_day; then
+  py_args+=(--by-day)
+fi
+
+if $by_author; then
+  py_args+=(--by-author)
+fi
+
+if $json_output; then
+  py_args+=(--format=json)
+else
+  py_args+=(--format=text)
+fi
+
+# Add time range description for display
+if [ -n "$since_arg" ]; then
+  py_args+=(--since="since $since_arg")
+fi
+
+# Execute pipeline
+"${git_cmd[@]}" | python3 "$python_script" "${py_args[@]}"
