@@ -12,19 +12,23 @@ This map provides a high-level overview of Hug's command families, grouped by pr
 
 ## Command Families Overview
 
-| Prefix | Category | Description | Top Commands                                                                                                                                                                                                                                                                                                     |
-|--------|----------|-------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `h*` | HEAD Operations | Undo, rewind, and inspect commits without losing work. Safest for experimenting. | `hug h back` (**H**EAD **Back** – HEAD goes back, keeping changes staged), `hug h undo` (**Undo** – HEAD goes back, keeping changes unstaged), `hug h rewind` (**Rewind** – HEAD goes back, discarding all changes), `hug h squash` (**Squash** – combine commits)                                               |
-| `w*` | Working Directory | Manage local changes: discard, clean, restore, or park/unpark temp work. Great for cleanup. | `hug w discard <file>` (**W**orking dir **Discard**), `hug w zap-all` (**Zap** **All** – full reset), `hug wip "<msg>"` (**W**ork **I**n **P**rogress – park & switch back), `hug wips "<msg>"` (**W**ork **I**n **P**rogress **S**tay – park & stay), `hug w unwip` (**Un**park **WIP** – integrate WIP branch) |
-| `s*` | Status | View repo state: summaries, diffs, and stashes. Essential for daily checks. | `hug s` (**S**tatus), `hug sl` (**S**tatus + **L**ist), `hug sla` (**S**tatus + **L**ist **A**ll), `hug ss` (**S**tatus + **S**taged diff), `hug su` (**S**tatus + **U**nstaged diff)                                                                                                                            |
-| `a*` | Staging/Add | Stage changes for commit: tracked, all, or interactive. Pairs with `s*`. | `hug a <file>` (**A**dd tracked), `hug aa` (**A**dd **A**ll), `hug ap` (**A**dd + **P**atch – interactive)                                                                                                                                                                                                       |
-| `b*` | Branching | Create, switch, list, delete, and pull branches. Core for feature isolation and sync. | `hug b <name>` (**B**ranch switch), `hug br` (**B**ranch **R**emote switch), `hug bcp <src> [dest]` (**B**ranch **CP** – copy without switching), `hug bc <name>` (**B**ranch **C**reate), `hug bl` (**B**ranch **L**ist), `hug bpull` (**B**ranch **Pull** – safe ff-only), `hug bpullr` (**B**ranch **Pull** **R**ebase)                                                                                                     |
-| `c*` | Commits | Create and amend commits. Focus on atomic, meaningful snapshots. | `hug c "<msg>"` (**C**ommit), `hug caa "<msg>"` (**C**ommit **A**dd **A**ll), `hug cm "<msg>"` (**C**ommit **M**odify – amend), `hug ccp <commit>` (**C**ommit **C**o**P**y – cherry-pick), `hug cmv` (**C**ommit **M**o**V**e)                                                                                                                                          |
-| `l*` | Logging | Search and view history: messages, code, authors, files. For debugging timelines. | `hug l` (**L**og), `hug ll` (**L**og **L**ong), `hug lf "<term>"` (**L**og **F**ilter – Find commit messages), `hug lc "<term>"` (**L**og **C**ode search), `hug llf <file>` (**L**og **L**ookup **F**ile), `hug lol` (**L**og **O**utgoing **L**ong)                                                            |
-| `f*` | File Inspection | Analyze file history: blame, contributors, origin. Ownership and evolution insights. | `hug fblame <file>` (**F**ile **B**lame), `hug fcon <file>` (**F**ile **CON**tributors), `hug fa <file>` (**F**ile **A**uthor counts), `hug fborn <file>` (**F**ile **B**orn)                                                                                                                                    |
-| `t*` | Tagging | Manage tags for releases/milestones. Lightweight or annotated. | `hug t` (**T**ags list), `hug tc <tag>` (**T**ag **C**reate lightweight), `hug ta <tag> "<msg>"` (**T**ag **A**nnotated), `hug tpush <tag>` (**T**ag **Push**), `hug tdel <tag>` (**T**ag **DEL**ete), `hug twc` (**T**ags **W**hich **C**ontain)                                                                                                                                                |
-| `r*` | Rebase | Interactive history editing: continue, abort, skip. For clean timelines. | `hug rb <branch>` (**R**ebase onto branch), `hug rbi` (**R**ebase **I**nteractive), `hug rbc` (**R**ebase **C**ontinue), `hug rba` (**R**ebase **A**bort)                                                                                                                                                        |
-| `m*` | Merge | Integrate branches: squash, fast-forward, or keep. Conflict resolution. | `hug m <branch>` (**M**erge squash), `hug mkeep <branch>` (**M**erge **Keep** commit), `hug mff <branch>` (**M**erge **F**ast-**F**orward), `hug ma` (**M**erge **A**bort)                                                                                                                                       |
+This table is the **authoritative source** for Hug's command organization. All commands are verified against actual implementation in `git-config/bin/` and `git-config/.gitconfig`.
+
+| Prefix | Category | Description | Top Commands | Memory Hook |
+|--------|----------|-------------|--------------|-------------|
+| `h*` | HEAD Operations | Undo, rewind, and inspect commits without losing work | `hug h back`, `hug h undo`, `hug h files`, `hug h steps` | **H**EAD |
+| `w*` | Working Directory | Manage local changes: discard, clean, restore, park/unpark work | `hug w get`, `hug w wip`, `hug w zap`, `hug w purge` | **W**orking dir |
+| `s*` | Status & Staging | View repo state: summaries, diffs, staged/unstaged changes | `hug ss`, `hug su`, `hug sw`, `hug sx` | **S**tatus |
+| `a*` | Staging | Stage changes for commit: tracked, all, or interactive | `hug a`, `hug aa`, `hug ai`, `hug ap` | **A**dd/stage |
+| `b*` | Branching | Create, switch, list, delete, sync branches | `hug b`, `hug bc`, `hug bl`, `hug br` | **B**ranch |
+| `c*` | Commits | Create and amend commits | `hug c`, `hug ca`, `hug cm`, `hug caa` | **C**ommit |
+| `l*` | Logging & History | Search and view history: messages, code, authors, files | `hug l`, `hug lc`, `hug lf`, `hug lu` | **L**og |
+| `f*` | File Inspection | Analyze file history: blame, contributors, origin | `hug fa`, `hug fb`, `hug fcon`, `hug fborn` | **F**ile |
+| `t*` | Tagging | Manage tags for releases and milestones | `hug t`, `hug tc`, `hug ta`, `hug ts` | **T**ag |
+| `r*` | Rebase | Interactive history editing and rebasing | `hug rb`, `hug rbi`, `hug rbc`, `hug rba` | **R**ebase |
+| `m*` | Merge | Integrate branches with various strategies | `hug m`, `hug ma`, `hug mff`, `hug mkeep` | **M**erge |
+| `analyze*` | Advanced Analysis | Advanced repository analysis and insights | `hug analyze deps`, `hug analyze expert`, `hug analyze activity`, `hug analyze co-changes` | **ANALYZE** |
+| `stats*` | Repository Statistics | Quick repository statistics and metrics | `hug stats file`, `hug stats author`, `hug stats branch` | **STATS** |
 
 ## Visual Command Tree
 
@@ -42,19 +46,19 @@ Hug Commands
 │   ├── h files        # Preview affected files if HEAD moved back
 │   └── h steps <file> # Count steps back to reach most recent file change
 ├── w* (Working Dir: Clean & Restore)
-│   ├── w discard    # Discard unstaged/staged
-│   ├── w discard-all
-│   ├── w wipe <path> # Discard uncommitted (unstaged + staged)
-│   ├── w wipe-all
-│   ├── w purge <path># Purge untracked/ignored
-│   ├── w purge-all
-│   ├── w zap <path>  # Wipe + purge
-│   ├── w zap-all
-│   ├── w get        # Restore from commit
-│   ├── w wip        # Park work on separate WIP branch 
-│   ├── w wips       # Park work & stay on new WIP branch
-│   ├── w unwip      # Integrate WIP branch into current
-│   └── w wipdel     # Delete WIP branch
+│   ├── w discard      # Discard unstaged/staged changes
+│   ├── w discard-all  # Discard across entire repo
+│   ├── w wipe <path>  # Discard uncommitted (unstaged + staged)
+│   ├── w wipe-all     # Wipe all tracked files
+│   ├── w purge <path> # Remove untracked/ignored
+│   ├── w purge-all    # Remove all untracked/ignored
+│   ├── w zap <path>   # Full cleanup (wipe + purge)
+│   ├── w zap-all      # Complete repo cleanup
+│   ├── w get          # Restore from commit
+│   ├── w wip          # Park work on separate WIP branch
+│   ├── w wips         # Park work & stay on new WIP branch
+│   ├── w unwip        # Integrate WIP branch into current
+│   └── w wipdel       # Delete WIP branch
 ├── s* (Status: View State)
 │   ├── s            # Quick status
 │   ├── sl           # Status + List tracked
@@ -149,19 +153,35 @@ Hug Commands
 │   ├── rbc          # Rebase continue
 │   ├── rba          # Rebase abort
 │   └── rbs          # Rebase skip
-└── m* (Merge: Integrate)
-    ├── m            # Squash merge
-    ├── mkeep        # Merge (keep commit)
-    ├── mff          # Fast-forward only
-    └── ma           # Merge abort
+├── m* (Merge: Integrate)
+│   ├── m            # Squash merge
+│   ├── mkeep        # Merge (keep commit)
+│   ├── mff          # Fast-forward only
+│   └── ma           # Merge abort
+├── analyze* (Advanced Analysis)
+│   ├── analyze co-changes  # Find files that change together
+│   ├── analyze activity    # Temporal commit patterns
+│   ├── analyze deps        # Commit dependency graph
+│   └── analyze expert      # Code ownership and expertise
+└── stats* (Repository Statistics)
+    ├── stats file      # File-level statistics
+    ├── stats author    # Author contributions
+    └── stats branch    # Branch statistics
 ```
 
 </details>
 
 ## Next Steps
-- Pick a family and explore its dedicated page (e.g., [HEAD Operations](commands/head) for `h*`).
-- Practice: Run `hug s` to check status, then `hug b` to switch branches.
-- For a quick daily reference, see the [Cheat Sheet](/cheat-sheet).
-- For full lists, see individual command docs or `hug help` in your repo.
 
-This map evolves with Hug - contribute new families via pull requests!
+- **New to Hug?** Check the [README](../README.md) for quick start examples
+- **Daily workflows** → See the [Cheat Sheet](cheat-sheet.md) for scenario-based commands
+- **Deep learning** → Pick a family above and explore command details
+- **Interactive help** → Run `hug help` in your terminal to discover commands
+
+---
+
+**Maintenance Note**: This map is the authoritative source for command organization. When adding new commands:
+1. Update the authoritative table above
+2. Add to the visual command tree
+3. Update README.md brief summary (if new prefix family)
+4. Add to cheat-sheet.md if commonly used

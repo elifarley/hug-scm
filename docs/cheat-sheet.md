@@ -2,6 +2,9 @@
 
 A quick reference for daily workflows with Hug SCM. Focus on intuitive commands that keep you coding, not wrestling Git. Grouped by common scenarios.
 
+> 📖 **[Command Map](command-map.md)** - Learn command organization and structure
+> 📚 **[README](../README.md)** - Full project documentation
+
 ## Setup & Installation
 ```bash
 # Clone and install
@@ -142,4 +145,9 @@ hug w wipdel WIP/YY-MM-DD/HHMM.slug  # **W**ork **I**n **P**rogress **DEL**ete
 ## Tips
 - **Get a reminder**: Forgetting a command? Just type `hug help` to see all families.
 - **Check before you act**: `hug sl` is your best friend. Run it often.
+- **Learn the structure**: See [Command Map](command-map.md) for comprehensive organization
 - Hug's `bpull` and `bpullr` handle fetching for you in most cases. But you can run `hug fetch` to get the latest remote info without affecting your local branches.
+
+---
+
+**See also**: [Command Map](command-map.md) for complete command reference | [README](../README.md) for getting started

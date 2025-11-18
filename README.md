@@ -205,19 +205,28 @@ Check the [Installation Guide](https://elifarley.github.io/hug-scm/installation.
 
 ## Command Reference
 
-### Command Groups
+### Command Organization
 
-Prefix|Category|Description
--|-|-
-`h*`|HEAD Operations|Move HEAD, undo commits
-`w*`|Working Directory|Discard, wipe, purge, zap changes
-`s*`|Status & Staging|View status
-`b*`|Branching|Create, switch, manage branches
-`t*`|Tagging|Create, manage tags
-`l*`|Logging|View history, list matching commits for a search term
-`f*`|File Inspection|Analyze file authorship and history (blame, contributors)
-`analyze`|Advanced Analysis|Co-changes, activity patterns, dependencies, expertise
-`stats`|Repository Statistics|File, author, and branch metrics
+Hug commands are organized by **semantic prefixes** that make them easy to discover and remember:
+
+| Prefix | Category | Examples |
+|--------|----------|----------|
+| `h*` | HEAD Operations | `hug h back`, `hug h undo` |
+| `w*` | Working Directory | `hug w get`, `hug w wip` |
+| `s*` | Status & Staging | `hug ss`, `hug su` |
+| `b*` | Branching | `hug b`, `hug bc` |
+| `c*` | Commits | `hug c`, `hug ca` |
+| `l*` | Logging & History | `hug l`, `hug lc` |
+| `f*` | File Inspection | `hug fa`, `hug fb` |
+| `t*` | Tagging | `hug t`, `hug tc` |
+| `analyze*` | Advanced Analysis | `hug analyze deps`, `hug analyze expert` |
+| `stats*` | Repository Statistics | `hug stats file`, `hug stats author` |
+
+> 📖 **[View Complete Command Map](https://elifarley.github.io/hug-scm/command-map)** -
+> Full table with all command families, memory hooks, and visual structure (13 families, 139 commands).
+>
+> 🏁 **[Quick Reference Cheat Sheet](https://elifarley.github.io/hug-scm/cheat-sheet)** -
+> Scenario-based commands for daily workflows.
 
 ### Core Commands
 
