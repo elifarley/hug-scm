@@ -1,0 +1,340 @@
+#!/usr/bin/env bash
+# git-stats-branch - Branch statistics and metrics
+# Part of the Hug tool suite
+
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug stats branch: Branch statistics and metrics
+
+USAGE:
+    hug stats branch [<branch>] [options]
+
+ARGUMENTS:
+    <branch>         Branch name (default: current branch)
+
+OPTIONS:
+    --base <branch>  Compare against base branch (default: main/master)
+    --all            Show stats for all branches (ignores branch argument)
+    --json           Output as JSON
+    -h, --help       Show this help
+
+DESCRIPTION:
+    Provides comprehensive statistics for a branch:
+    - Total commits on branch
+    - Unique authors and contribution breakdown
+    - Commits ahead/behind base branch
+    - Branch age (first and last commit)
+    - Files changed (additions, modifications, deletions)
+    - Lines added/deleted
+    - Merge status (merged/unmerged)
+
+    With --all flag, shows summary for all branches.
+
+    Helps answer:
+    - "How big is this branch?"
+    - "Is this branch ready to merge?"
+    - "Who contributed to this branch?"
+    - "What branches are stale?"
+
+EXAMPLES:
+    hug stats branch                        # Current branch stats
+    hug stats branch feature/xyz            # Specific branch stats
+    hug stats branch --base develop         # Compare against develop
+    hug stats branch --all                  # All branches summary
+    hug stats branch --json feature/xyz     # JSON output
+
+OUTPUT FORMAT (single branch):
+    Branch: feature/authentication (unmerged)
+
+    Commits:     23 commits ahead of main
+                 2 commits behind main
+                 Authors: Alice (15), Bob (8)
+
+    Age:         Created: 2024-02-15 (5 weeks ago)
+                 Updated: 2024-03-20 (2 hours ago)
+                 Span:    33 days
+
+    Changes:     12 files changed
+                 8 files added
+                 4 files modified
+                 0 files deleted
+
+    Code:        Added:   +1,247 lines
+                 Deleted: -234 lines
+                 Net:     +1,013 lines
+
+    Status:      Not merged into main
+                 Last commit: 2 hours ago
+                 Ready to merge: Yes (up to date with base)
+
+OUTPUT FORMAT (all branches):
+    Active branches:
+
+    feature/auth       23↑ 2↓  Alice    5w ago   +1,013 lines  [unmerged]
+    feature/api        15↑ 0↓  Bob      2d ago   +567 lines    [unmerged]
+    bugfix/login       3↑  1↓  Charlie  3h ago   -45 lines     [unmerged]
+
+    Merged branches:
+
+    feature/dashboard  45↑ 0↓  Alice    2w ago   +2,341 lines  [merged]
+
+IMPLEMENTATION NOTES:
+    Uses Git commands for analysis:
+    - git rev-list for commit counts
+    - git log with --numstat for line changes
+    - git diff --stat for file changes
+    - git branch --merged to check merge status
+    - git merge-base to find divergence point
+
+SEE ALSO:
+    hug b            : List branches
+    hug bwc          : Branch "with commits" (show commit count)
+    hug bwp          : Branch "with preview" (show changes)
+    hug l            : Log for branch
+EOF
+}
+
+# Parse arguments
+base_branch=""
+show_all=false
+json_output=false
+remaining_args=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --base)
+      base_branch="$2"
+      shift 2
+      ;;
+    --all)
+      show_all=true
+      shift
+      ;;
+    --json)
+      json_output=true
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      remaining_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+check_git_repo
+
+# Determine base branch if not specified
+if [ -z "$base_branch" ]; then
+  if git rev-parse --verify main >/dev/null 2>&1; then
+    base_branch="main"
+  elif git rev-parse --verify master >/dev/null 2>&1; then
+    base_branch="master"
+  else
+    base_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+  fi
+fi
+
+# Get branch argument
+branch=""
+if [ ${#remaining_args[@]} -gt 0 ]; then
+  branch="${remaining_args[0]}"
+else
+  # Default to current branch
+  branch=$(git branch --show-current)
+fi
+
+# Validate branch exists
+if [ -n "$branch" ] && ! git rev-parse --verify "$branch" >/dev/null 2>&1; then
+  error "Branch not found: $branch"
+fi
+
+# Show all branches summary
+if $show_all; then
+  if $json_output; then
+    echo "["
+    git for-each-ref --format='%(refname:short)' refs/heads/ | \
+      awk -v first=1 -v base="$base_branch" '{
+        if (!first) print ",";
+        first=0;
+        printf "  {\"branch\": \"%s\", \"base\": \"%s\"}", $0, base
+      }'
+    echo ""
+    echo "]"
+  else
+    info "Branch statistics (compared to $base_branch):"
+    info ""
+
+    # Merged branches
+    merged_branches=$(git branch --merged "$base_branch" | grep -v '^\*' | sed 's/^  //' | grep -v "^$base_branch$" || true)
+
+    # Unmerged branches
+    unmerged_branches=$(git branch --no-merged "$base_branch" | sed 's/^[\* ] //' || true)
+
+    if [ -n "$unmerged_branches" ]; then
+      info "Active (unmerged) branches:"
+      info ""
+      echo "$unmerged_branches" | while read -r br; do
+        # Commits ahead/behind
+        ahead=$(git rev-list --count "$base_branch..$br" 2>/dev/null || echo "0")
+        behind=$(git rev-list --count "$br..$base_branch" 2>/dev/null || echo "0")
+
+        # Last commit info
+        last_commit=$(git log -1 --format='%cr' "$br" 2>/dev/null || echo "unknown")
+        last_author=$(git log -1 --format='%an' "$br" 2>/dev/null || echo "unknown")
+
+        # Line stats
+        merge_base=$(git merge-base "$base_branch" "$br" 2>/dev/null || echo "")
+        if [ -n "$merge_base" ]; then
+          stats=$(git diff --numstat "$merge_base..$br" | \
+            awk '{added+=$1; deleted+=$2} END {print added-deleted}')
+          net_lines=${stats:-0}
+        else
+          net_lines="0"
+        fi
+
+        info "  $(printf '%-25s %3d↑ %2d↓  %-15s %-12s %+6d lines' \
+          "$br" "$ahead" "$behind" "${last_author:0:15}" "${last_commit:0:12}" "$net_lines")"
+      done
+      info ""
+    fi
+
+    if [ -n "$merged_branches" ]; then
+      info "Merged branches:"
+      info ""
+      echo "$merged_branches" | while read -r br; do
+        last_commit=$(git log -1 --format='%cr' "$br" 2>/dev/null || echo "unknown")
+        last_author=$(git log -1 --format='%an' "$br" 2>/dev/null || echo "unknown")
+
+        info "  $(printf '%-25s %-15s %-12s [merged]' \
+          "$br" "${last_author:0:15}" "${last_commit:0:12}")"
+      done
+    fi
+  fi
+  exit 0
+fi
+
+# Single branch statistics
+if $json_output; then
+  # JSON output
+  echo "{"
+  echo "  \"branch\": \"$branch\","
+  echo "  \"base\": \"$base_branch\","
+
+  # Commits ahead/behind
+  ahead=$(git rev-list --count "$base_branch..$branch" 2>/dev/null || echo "0")
+  behind=$(git rev-list --count "$branch..$base_branch" 2>/dev/null || echo "0")
+  echo "  \"commits_ahead\": $ahead,"
+  echo "  \"commits_behind\": $behind,"
+
+  # Total commits on branch
+  total=$(git rev-list --count "$branch" 2>/dev/null || echo "0")
+  echo "  \"total_commits\": $total,"
+
+  # Merge status
+  if git branch --merged "$base_branch" | grep -q "^[\* ] $branch$"; then
+    echo "  \"merged\": true,"
+  else
+    echo "  \"merged\": false,"
+  fi
+
+  # Line stats
+  merge_base=$(git merge-base "$base_branch" "$branch" 2>/dev/null || echo "")
+  if [ -n "$merge_base" ]; then
+    stats=$(git diff --numstat "$merge_base..$branch" | \
+      awk '{added+=$1; deleted+=$2} END {print added, deleted, added-deleted}')
+    read added deleted net <<< "$stats"
+    echo "  \"lines_added\": ${added:-0},"
+    echo "  \"lines_deleted\": ${deleted:-0},"
+    echo "  \"lines_net\": ${net:-0}"
+  else
+    echo "  \"lines_added\": 0,"
+    echo "  \"lines_deleted\": 0,"
+    echo "  \"lines_net\": 0"
+  fi
+
+  echo "}"
+else
+  # Human-readable output
+
+  # Check merge status
+  merged=false
+  if git branch --merged "$base_branch" | grep -q "^[\* ] $branch$"; then
+    merged=true
+  fi
+
+  if $merged; then
+    info "Branch: $branch (merged into $base_branch)"
+  else
+    info "Branch: $branch (unmerged)"
+  fi
+  info ""
+
+  # Commits ahead/behind
+  ahead=$(git rev-list --count "$base_branch..$branch" 2>/dev/null || echo "0")
+  behind=$(git rev-list --count "$branch..$base_branch" 2>/dev/null || echo "0")
+
+  info "Commits:"
+  info "  $ahead commits ahead of $base_branch"
+  info "  $behind commits behind $base_branch"
+
+  # Authors
+  if [ "$ahead" -gt 0 ]; then
+    info "  Authors:"
+    git log --format='%an' "$base_branch..$branch" | sort | uniq -c | sort -rn | \
+      while read count author; do
+        info "    $author ($count commits)"
+      done
+  fi
+
+  # Age
+  info ""
+  info "Age:"
+  first_date=$(git log --format='%ai' --reverse "$branch" | head -1 | cut -d' ' -f1)
+  last_date=$(git log -1 --format='%ai' "$branch" | cut -d' ' -f1)
+  last_relative=$(git log -1 --format='%cr' "$branch")
+  info "  Created: $first_date"
+  info "  Updated: $last_date ($last_relative)"
+
+  # File changes
+  merge_base=$(git merge-base "$base_branch" "$branch" 2>/dev/null || echo "")
+  if [ -n "$merge_base" ]; then
+    info ""
+    info "Changes (vs $base_branch):"
+
+    # Files changed
+    files_changed=$(git diff --name-only "$merge_base..$branch" | wc -l)
+    info "  $files_changed files changed"
+
+    # Line stats
+    git diff --numstat "$merge_base..$branch" | \
+      awk '{added+=$1; deleted+=$2} END {
+        printf "\n"
+        printf "Code:\n"
+        printf "  Added:   +%d lines\n", added;
+        printf "  Deleted: -%d lines\n", deleted;
+        printf "  Net:     %+d lines\n", added-deleted
+      }'
+
+    # Status
+    info ""
+    info "Status:"
+    if $merged; then
+      info "  ✓ Merged into $base_branch"
+    else
+      info "  ✗ Not merged into $base_branch"
+      if [ "$behind" -eq 0 ]; then
+        info "  ✓ Up to date with $base_branch"
+      else
+        info "  ⚠ Behind $base_branch by $behind commits"
+      fi
+    fi
+  fi
+fi

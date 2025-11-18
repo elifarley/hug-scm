@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# git-stats - Gateway for repository statistics commands
+# Part of the Hug tool suite
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug stats: Repository statistics and metrics
+
+USAGE:
+    hug stats <command> [options]
+
+COMMANDS:
+    file     File-level statistics (commits, authors, churn)
+    author   Author statistics (contributions, files touched)
+    branch   Branch statistics (commits, divergence, age)
+
+OPTIONS:
+    -h, --help   Show this help
+
+DESCRIPTION:
+    Gateway command for accessing repository statistics and metrics.
+    Each subcommand provides different analytical views of your repository.
+
+EXAMPLES:
+    hug stats file src/app.js        # Statistics for specific file
+    hug stats author "Alice"          # Contributions by Alice
+    hug stats branch feature/xyz      # Branch statistics
+
+SEE ALSO:
+    hug analyze  : Advanced analysis (co-changes, activity, dependencies)
+    hug l*       : Log commands for historical views
+    hug f*       : File inspection commands
+EOF
+}
+
+case "${1:-}" in
+  file)
+    shift
+    exec git stats-file "$@"
+    ;;
+  author)
+    shift
+    exec git stats-author "$@"
+    ;;
+  branch)
+    shift
+    exec git stats-branch "$@"
+    ;;
+  -h|--help|help)
+    show_help
+    ;;
+  *)
+    if [ -n "${1:-}" ]; then
+      printf 'Unknown stats command: %s\n\n' "$1" >&2
+    fi
+    show_help
+    exit 1
+    ;;
+esac

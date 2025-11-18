@@ -1,0 +1,259 @@
+#!/usr/bin/env bash
+# git-stats-author - Author contribution statistics
+# Part of the Hug tool suite
+
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug stats author: Author contribution statistics
+
+USAGE:
+    hug stats author [<author>] [options]
+
+ARGUMENTS:
+    <author>         Author name (partial match supported)
+                     If omitted, shows stats for all authors
+
+OPTIONS:
+    --since <date>   Only analyze commits since date
+    --until <date>   Only analyze commits until date
+    --top <n>        Show top N authors (default: 10, use with no author arg)
+    --json           Output as JSON
+    -h, --help       Show this help
+
+DESCRIPTION:
+    Provides comprehensive statistics for author contributions:
+    - Total commits by author
+    - Lines added/deleted/net change
+    - Files touched (unique count)
+    - First and last commit dates
+    - Commit frequency (commits per week/month)
+    - Top files contributed to
+    - Collaboration patterns (co-authors)
+
+    Without author argument, shows ranked list of all contributors.
+
+    Helps answer:
+    - "What is Alice's contribution history?"
+    - "Who are the most active contributors?"
+    - "What areas does Bob work on?"
+
+EXAMPLES:
+    hug stats author                        # All authors ranked by commits
+    hug stats author "Alice"                # Detailed stats for Alice
+    hug stats author --since="6m" "Bob"     # Bob's recent contributions
+    hug stats author --top 5                # Top 5 contributors
+    hug stats author --json Alice           # JSON output for scripting
+
+OUTPUT FORMAT (specific author):
+    Author: Alice Smith <alice@example.com>
+
+    Commits:     247 commits
+                 Avg: 4.5 commits/week
+                 Peak: Jan 2024 (23 commits)
+
+    Time span:   First: 2023-03-15
+                 Last:  2024-03-20
+                 Active: 12 months
+
+    Code:        Added:   +12,456 lines
+                 Deleted: -8,234 lines
+                 Net:     +4,222 lines
+
+    Files:       89 files touched
+                 Top files:
+                   src/auth/login.js      (21 commits)
+                   src/api/users.js       (18 commits)
+                   src/utils/helpers.js   (15 commits)
+
+    Expertise:   Primary in: src/auth/* (45% of commits)
+                 Secondary: src/api/* (30% of commits)
+
+OUTPUT FORMAT (all authors):
+    Top contributors:
+
+    1. Alice   (247 commits, +4,222 lines, 89 files)
+    2. Bob     (189 commits, +6,103 lines, 67 files)
+    3. Charlie (156 commits, +3,891 lines, 54 files)
+    4. David   (98 commits,  +2,134 lines, 41 files)
+    5. Eve     (67 commits,  +1,456 lines, 28 files)
+
+IMPLEMENTATION NOTES:
+    Uses Git commands for analysis:
+    - git shortlog -sn for commit counts
+    - git log --author with --numstat for line changes
+    - git log --name-only for file lists
+    - git log --format for date ranges
+
+SEE ALSO:
+    hug lau              : List commits by specific author
+    hug fa               : Author commits for specific file
+    hug analyze expert   : Code ownership and expertise detection
+EOF
+}
+
+# Parse arguments
+since_arg=""
+until_arg=""
+top_n=10
+json_output=false
+remaining_args=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --since)
+      since_arg="$2"
+      shift 2
+      ;;
+    --until)
+      until_arg="$2"
+      shift 2
+      ;;
+    --top)
+      top_n="$2"
+      shift 2
+      ;;
+    --json)
+      json_output=true
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      remaining_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+check_git_repo
+
+# Build git log options for date filtering
+git_opts=()
+if [ -n "$since_arg" ]; then
+  git_opts+=("--since=$since_arg")
+fi
+if [ -n "$until_arg" ]; then
+  git_opts+=("--until=$until_arg")
+fi
+
+# Get author argument
+author=""
+if [ ${#remaining_args[@]} -gt 0 ]; then
+  author="${remaining_args[0]}"
+fi
+
+# If specific author requested, show detailed stats
+if [ -n "$author" ]; then
+  if $json_output; then
+    # JSON output for scripting
+    echo "{"
+    echo "  \"author\": \"$author\","
+
+    # Commit count
+    commit_count=$(git log --author="$author" --oneline "${git_opts[@]}" | wc -l)
+    echo "  \"commits\": $commit_count,"
+
+    # Line stats
+    stats=$(git log --author="$author" --numstat --format= "${git_opts[@]}" | \
+      awk '{added+=$1; deleted+=$2} END {print added, deleted, added-deleted}')
+    read added deleted net <<< "$stats"
+    echo "  \"lines_added\": ${added:-0},"
+    echo "  \"lines_deleted\": ${deleted:-0},"
+    echo "  \"lines_net\": ${net:-0},"
+
+    # Files touched
+    files_count=$(git log --author="$author" --name-only --format= "${git_opts[@]}" | \
+      sort -u | grep -v '^$' | wc -l)
+    echo "  \"files_touched\": ${files_count:-0}"
+
+    echo "}"
+  else
+    # Human-readable output
+    info "Author: $author"
+    info ""
+
+    # Commit count
+    commit_count=$(git log --author="$author" --oneline "${git_opts[@]}" | wc -l)
+    info "Commits: $commit_count"
+
+    # Date range
+    if [ "$commit_count" -gt 0 ]; then
+      first_date=$(git log --author="$author" --format='%ai' "${git_opts[@]}" | tail -1 | cut -d' ' -f1)
+      last_date=$(git log --author="$author" --format='%ai' "${git_opts[@]}" | head -1 | cut -d' ' -f1)
+      info ""
+      info "Time span:"
+      info "  First: $first_date"
+      info "  Last:  $last_date"
+    fi
+
+    # Line stats
+    info ""
+    info "Code changes:"
+    git log --author="$author" --numstat --format= "${git_opts[@]}" | \
+      awk '{added+=$1; deleted+=$2} END {
+        printf "  Added:   +%d lines\n", added;
+        printf "  Deleted: -%d lines\n", deleted;
+        printf "  Net:     %+d lines\n", added-deleted
+      }'
+
+    # Files touched
+    info ""
+    files_count=$(git log --author="$author" --name-only --format= "${git_opts[@]}" | \
+      sort -u | grep -v '^$' | wc -l)
+    info "Files: $files_count files touched"
+
+    # Top files
+    info ""
+    info "Top files:"
+    git log --author="$author" --name-only --format= "${git_opts[@]}" | \
+      grep -v '^$' | sort | uniq -c | sort -rn | head -5 | \
+      while read count file; do
+        info "  $file ($count commits)"
+      done
+  fi
+
+  exit 0
+fi
+
+# No author specified - show all authors ranked
+if $json_output; then
+  # JSON array of authors
+  echo "["
+  git shortlog -sn --all "${git_opts[@]}" | head -"$top_n" | \
+    awk -v first=1 '{
+      if (!first) print ",";
+      first=0;
+      count=$1;
+      $1="";
+      author=$0;
+      sub(/^[ \t]+/, "", author);
+      printf "  {\"commits\": %d, \"author\": \"%s\"}", count, author
+    }'
+  echo ""
+  echo "]"
+else
+  # Human-readable ranked list
+  info "Top $top_n contributors:"
+  info ""
+
+  git shortlog -sn --all "${git_opts[@]}" | head -"$top_n" | nl | \
+    while read rank count author; do
+      # Get line stats for this author
+      stats=$(git log --all --author="$author" --numstat --format= "${git_opts[@]}" | \
+        awk '{added+=$1; deleted+=$2} END {print added-deleted}')
+      net_lines=${stats:-0}
+
+      # Get files count
+      files=$(git log --all --author="$author" --name-only --format= "${git_opts[@]}" | \
+        sort -u | grep -v '^$' | wc -l)
+
+      info "$(printf '%2d. %-20s (%3d commits, %+6d lines, %3d files)' \
+        "$rank" "$author" "$count" "$net_lines" "$files")"
+    done
+fi

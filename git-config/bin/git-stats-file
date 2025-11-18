@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# git-stats-file - File-level statistics and metrics
+# Part of the Hug tool suite
+
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug stats file: File-level statistics and metrics
+
+USAGE:
+    hug stats file [<file>] [options]
+
+ARGUMENTS:
+    <file>           File to analyze (optional - prompts for selection if omitted)
+
+OPTIONS:
+    --browse-root    Browse full repository scope in file selector UI
+    --since <date>   Only analyze commits since date
+    --json           Output as JSON
+    -h, --help       Show this help
+
+DESCRIPTION:
+    Provides comprehensive statistics for a file:
+    - Total commits touching the file
+    - Unique authors and their contribution percentages
+    - File age (first and last commit)
+    - Churn metrics (how frequently it changes)
+    - Lines added/deleted over time
+    - Current file size and line count
+
+    Helps answer:
+    - "How stable is this file?"
+    - "Who are the main contributors?"
+    - "Is this a high-churn file that needs attention?"
+
+EXAMPLES:
+    hug stats file                         # Interactive selection
+    hug stats file src/app.js              # Stats for specific file
+    hug stats file --since="6 months ago"  # Recent stats only
+    hug stats file --json src/app.js       # JSON output for scripting
+
+OUTPUT FORMAT:
+    File: src/auth/login.js
+
+    Commits:     47 commits
+    Authors:     5 contributors
+                 Alice (45%, 21 commits)
+                 Bob   (30%, 14 commits)
+                 Charlie (15%, 7 commits)
+                 David (7%, 3 commits)
+                 Eve (3%, 2 commits)
+
+    Age:         First: 2023-01-15 (by Alice)
+                 Last:  2024-03-20 (by Bob)
+                 Span:  14 months
+
+    Churn:       High (avg 3.4 commits/month)
+                 Recent: 8 commits in last 3 months
+
+    Size:        Current: 487 lines
+                 Added:   +2,341 lines (total)
+                 Deleted: -1,854 lines (total)
+                 Net:     +487 lines
+
+IMPLEMENTATION NOTES:
+    This command delegates to the Python churn.py helper for advanced metrics,
+    but also uses direct Git commands for basic stats:
+    - git log --follow for commit history
+    - git log --numstat for line changes
+    - wc -l for current line count
+
+SEE ALSO:
+    hug fblame --churn   : Churn analysis with line-level data
+    hug fcon             : File contributors list
+    hug fa               : Author commit counts for file
+    hug analyze activity : Temporal activity patterns
+EOF
+}
+
+# Parse arguments
+browse_root=false
+since_arg=""
+json_output=false
+remaining_args=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --browse-root)
+      browse_root=true
+      shift
+      ;;
+    --since)
+      since_arg="$2"
+      shift 2
+      ;;
+    --json)
+      json_output=true
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      remaining_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+check_git_repo
+
+# Get file argument
+file=""
+if [ ${#remaining_args[@]} -eq 0 ]; then
+  # Interactive file selection if gum is available
+  if gum_available; then
+    declare -a select_opts=("--single")
+
+    if ! $browse_root; then
+      select_opts+=("--cwd")
+    fi
+
+    select_opts+=("--prompt" "Select file for statistics...")
+
+    if ! file=$(select_files_with_status "${select_opts[@]}"); then
+      info "No file selected or cancelled."
+      exit 0
+    fi
+  else
+    error "File argument required.
+Usage: hug stats file <file>"
+  fi
+else
+  file="${remaining_args[0]}"
+fi
+
+# Validate file exists
+if [ ! -f "$file" ]; then
+  error "File not found: $file"
+fi
+
+# Use Python helper for comprehensive analysis
+python_script="$CMD_BASE/../lib/python/churn.py"
+
+if [ ! -f "$python_script" ]; then
+  # Fallback to basic implementation if Python helper not available
+  warning "Python helper not available, showing basic stats only"
+
+  info "File: $file"
+  info ""
+
+  # Basic commit count
+  commit_count=$(git log --follow --oneline -- "$file" | wc -l)
+  info "Commits: $commit_count"
+
+  # Authors
+  info "Authors:"
+  git log --follow --format='%an' -- "$file" | sort | uniq -c | sort -rn | head -5 | \
+    while read count author; do
+      info "  $author ($count commits)"
+    done
+
+  # First and last commit
+  info ""
+  info "First commit:"
+  git log --follow --format='  %ai by %an' -- "$file" | tail -1
+
+  info "Last commit:"
+  git log --follow --format='  %ai by %an' -- "$file" | head -1
+
+  # Current size
+  if [ -f "$file" ]; then
+    lines=$(wc -l < "$file")
+    info ""
+    info "Current size: $lines lines"
+  fi
+
+  exit 0
+fi
+
+# Build Python command
+py_args=("$file")
+
+if [ -n "$since_arg" ]; then
+  py_args+=("--since=$since_arg")
+fi
+
+if $json_output; then
+  py_args+=("--format=json")
+else
+  py_args+=("--format=text")
+fi
+
+exec python3 "$python_script" "${py_args[@]}"
