@@ -55,53 +55,52 @@ def parse_args():
 
 def get_line_history(filepath: str, since: str = None) -> Dict[int, int]:
     """
-    Get change count for each line using git blame --line-porcelain.
+    Get change count for each line using git log -L.
+
+    Uses git log -L to track how many times each line has changed throughout history.
+    This is expensive for large files, so use sparingly or with --since filters.
 
     Returns: Dict mapping line_number -> change_count
     """
-    # Use git blame --line-porcelain to get commit hash per line
-    # Then count unique commits per line
-    cmd = ['git', 'blame', '--line-porcelain', '-w', '-C', '-C', '-C', '--', filepath]
-
+    # First, get current line count
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-
-        line_commits = {}  # line_number -> set of commit hashes
-        current_commit = None
-        current_line = None
-
-        for line in result.stdout.split('\n'):
-            if not line:
-                continue
-
-            # Line starts with commit hash
-            if not line.startswith('\t'):
-                parts = line.split(' ', 2)
-                if len(parts) >= 3 and len(parts[0]) == 40:  # SHA-1 hash
-                    current_commit = parts[0]
-                    # Parts[1] is original line, parts[2] is final line
-                    try:
-                        current_line = int(parts[2])
-                    except (ValueError, IndexError):
-                        pass
-
-        # For now, return simple commit count per line from blame
-        # This gives us "how many times has this line's current state been committed"
-        # Full implementation would use git log -L to track all historical changes
-
-        # Simplified: just return line number -> 1 for now
-        # Full line history tracking is expensive and should be opt-in
-
-        return {}  # Simplified for performance
-
-    except subprocess.CalledProcessError as e:
-        print(f"Error running git blame: {e}", file=sys.stderr)
+        with open(filepath, 'r') as f:
+            total_lines = sum(1 for _ in f)
+    except (FileNotFoundError, IOError) as e:
+        print(f"Error reading file {filepath}: {e}", file=sys.stderr)
         return {}
+
+    line_churn = {}
+
+    # For each line, use git log -L to count commits that touched it
+    for line_num in range(1, total_lines + 1):
+        cmd = ['git', 'log', '-L', f'{line_num},{line_num}:{filepath}', '--oneline']
+
+        if since:
+            cmd.insert(2, f'--since={since}')
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False  # git log -L returns non-zero if line never changed
+            )
+
+            # Count commits (each commit is one line in --oneline output)
+            if result.returncode == 0:
+                commit_count = len([l for l in result.stdout.strip().split('\n') if l])
+                if commit_count > 0:
+                    line_churn[line_num] = commit_count
+            else:
+                # Line may not exist in history (newly added)
+                line_churn[line_num] = 0
+
+        except Exception as e:
+            print(f"Warning: Could not analyze line {line_num}: {e}", file=sys.stderr)
+            continue
+
+    return line_churn
 
 
 def get_file_churn(filepath: str, since: str = None) -> Dict[str, any]:
@@ -166,20 +165,40 @@ def analyze_churn(filepath: str, since: str = None, hot_threshold: int = 3) -> D
     """
     Main analysis function.
 
-    Returns comprehensive churn data structure.
+    Returns comprehensive churn data structure with file-level and line-level metrics.
     """
     file_churn = get_file_churn(filepath, since)
     if not file_churn:
         return {'error': 'Could not analyze file'}
 
-    # TODO: Implement line-level analysis
-    # For now, return file-level data
+    # Get line-level churn data
+    line_churn = get_line_history(filepath, since)
+
+    # Identify hot lines (lines changed frequently)
+    hot_lines = []
+    for line_num, change_count in sorted(line_churn.items()):
+        if change_count >= hot_threshold:
+            hot_lines.append({
+                'line_number': line_num,
+                'changes': change_count,
+                'churn_score': calculate_churn_score(change_count, 0)  # 0 days = max recency
+            })
+
+    # Sort hot lines by change count (descending)
+    hot_lines.sort(key=lambda x: x['changes'], reverse=True)
 
     result = {
         'file': filepath,
         'file_churn': file_churn,
-        'line_churn': {},  # TODO: Implement
-        'hot_lines': [],   # Lines with changes > hot_threshold
+        'line_churn': line_churn,
+        'hot_lines': hot_lines,
+        'summary': {
+            'total_lines': len(line_churn) if line_churn else 0,
+            'lines_with_changes': sum(1 for c in line_churn.values() if c > 0),
+            'hot_lines_count': len(hot_lines),
+            'max_line_changes': max(line_churn.values()) if line_churn else 0,
+            'avg_line_changes': sum(line_churn.values()) / len(line_churn) if line_churn else 0
+        },
         'analysis_params': {
             'since': since,
             'hot_threshold': hot_threshold
@@ -196,6 +215,7 @@ def format_text_output(data: Dict) -> str:
     lines.append(f"Churn analysis for: {data['file']}")
     lines.append("")
 
+    # File-level metrics
     fc = data['file_churn']
     lines.append("File-level metrics:")
     lines.append(f"  Total commits: {fc['total_commits']}")
@@ -206,9 +226,32 @@ def format_text_output(data: Dict) -> str:
     if fc['last_commit']:
         lines.append(f"  Last changed: {fc['last_commit']['date'][:10]} by {fc['last_commit']['author']}")
 
-    lines.append("")
-    lines.append("Line-level churn: (Not yet implemented)")
-    lines.append("TODO: Show hot lines with change counts")
+    # Line-level summary
+    if 'summary' in data:
+        lines.append("")
+        lines.append("Line-level summary:")
+        s = data['summary']
+        lines.append(f"  Total lines analyzed: {s['total_lines']}")
+        lines.append(f"  Lines with changes: {s['lines_with_changes']}")
+        lines.append(f"  Hot lines (≥{data['analysis_params']['hot_threshold']} changes): {s['hot_lines_count']}")
+
+        if s['max_line_changes'] > 0:
+            lines.append(f"  Most changed line: {s['max_line_changes']} changes")
+            lines.append(f"  Average changes per line: {s['avg_line_changes']:.2f}")
+
+    # Hot lines details
+    if data.get('hot_lines'):
+        lines.append("")
+        lines.append("Hot lines (most frequently changed):")
+        lines.append("")
+
+        for hl in data['hot_lines'][:20]:  # Show top 20
+            line_num = hl['line_number']
+            changes = hl['changes']
+            lines.append(f"  Line {line_num:4d}: {changes:3d} changes")
+
+        if len(data['hot_lines']) > 20:
+            lines.append(f"  ... and {len(data['hot_lines']) - 20} more hot lines")
 
     return '\n'.join(lines)
 
