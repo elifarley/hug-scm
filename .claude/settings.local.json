@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "WebFetch(domain:www.anthropic.com)",
+      "Bash(chmod:*)",
+      "Bash(./bin/hug help:*)",
+      "Bash(timeout:*)",
+      "Bash(git shortlog:*)",
+      "Bash(git -C /tmp/demo-repo shortlog -sn)",
+      "Bash(git -C /tmp/demo-repo log --oneline)",
+      "Bash(git -C /tmp/demo-repo shortlog -sn --all)",
+      "Bash(HUG_HOME=/home/ecc/IdeaProjects/hug-scm/git-config timeout:*)",
+      "Bash(git commit:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
