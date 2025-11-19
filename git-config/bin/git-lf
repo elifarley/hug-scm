@@ -88,7 +88,13 @@ shift
 
 # JSON output mode
 if $json_output; then
-  output_json_commit_search "message" "$search_term" "$with_files" "$@"
+  # Use Python implementation for better performance and reliability
+  python_cmd=("python3" "$CMD_BASE/../lib/python/json_transform.py" "commit_search" "message" "$search_term")
+  if $with_files; then
+    python_cmd+=("--with-files")
+  fi
+  python_cmd+=("$@")
+  "${python_cmd[@]}"
   exit 0
 fi
 

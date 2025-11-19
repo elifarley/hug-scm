@@ -188,9 +188,8 @@ For each new Python helper:
 - ✅ `activity.py` - Temporal pattern analysis (300 lines, 39 tests ✓)
 - ✅ `ownership.py` - Code expertise detection (325 lines, 25 tests ✓)
 - ✅ `churn.py` - File and line-level churn analysis (281 lines, complete ✓)
-
-### To Be Implemented:
-- 📋 `deps.py` - Dependency graph construction (requires networkx)
+- ✅ `deps.py` - Dependency graph construction (423 lines, complete ✓)
+- ✅ `log_json.py` - Git log JSON formatting (256 lines, with tests ✓)
 
 ## JSON Transform Module (NEW)
 

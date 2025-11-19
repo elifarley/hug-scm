@@ -71,7 +71,8 @@ def transform_git_status_to_json(status_output: str) -> Dict[str, Any]:
     unstaged = []
     untracked = []
     
-    for line in status_output.strip().split('\n'):
+    # Don't strip individual lines - git status format requires exact character positions
+    for line in status_output.split('\n'):
         if not line:
             continue
             
