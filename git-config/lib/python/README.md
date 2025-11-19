@@ -44,6 +44,7 @@ python/
 - ✅ Graph algorithms (dependency graphs)
 - ✅ Complex data transformations
 - ✅ Plotting/visualization (plotext for terminal, matplotlib for files)
+- ✅ JSON handling (when it's not trivial)
 - ✅ Machine learning (if we go that route)
 
 ### Use Bash for:
