@@ -148,9 +148,9 @@ output_json_commit_search() {
 
   # Build search metadata
   local search_metadata
-  search_metadata=$(to_json_object \
-    "type" "$search_type" \
-    "term" "$search_term" \
+  search_metadata=$(to_json_nested \
+    "type" "\"$search_type\"" \
+    "term" "\"$search_term\"" \
     "with_files" "$with_files" \
     "results_count" "${#commits[@]}")
 
