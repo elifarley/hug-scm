@@ -157,25 +157,35 @@ def validate_json_schema(json_data: str, schema_name: str) -> bool:
     return True
 
 
-def commit_search(search_type: str, search_term: str, with_files: bool = False, 
-                  additional_args: List[str] = None) -> Dict[str, Any]:
+def commit_search(search_type: str, search_term: str, with_files: bool = False,
+                  no_body: bool = False, additional_args: List[str] = None) -> Dict[str, Any]:
     """
-    Search commits and return JSON output.
+    Search commits and return JSON output in GitHub-compatible format.
     
-    This replaces the complex bash parsing in output_json_commit_search.
+    This uses the same log_json format as git-ll for consistency (DRY principle).
     
     Args:
         search_type: 'message' or 'code'
         search_term: Search term
-        with_files: Include file changes
+        with_files: Include file changes (--with-files)
+        no_body: Omit commit message body (--no-body)
         additional_args: Additional git log arguments
         
     Returns:
-        Dictionary with search results
+        Dictionary with search results in GitHub-compatible format
     """
+    # Use the same format as log_json.py for consistency
+    field_sep = '|~|'
+    # Format: hash|~|short|~|author_name|~|author_email|~|committer_name|~|committer_email|~|
+    #         author_date|~|author_date_rel|~|committer_date|~|committer_date_rel|~|tree|~|
+    #         subject|~|body|~|parents|~|refs
+    format_str = f"%H{field_sep}%h{field_sep}%an{field_sep}%ae{field_sep}%cn{field_sep}%ce{field_sep}%aI{field_sep}%ar{field_sep}%cI{field_sep}%cr{field_sep}%T{field_sep}%s{field_sep}%B{field_sep}%P{field_sep}%D"
+    
     # Build git log command
-    # Format: full_hash NULL short_hash NULL author_name NULL author_email NULL date NULL subject NULL
-    cmd = ['git', 'log', '--format=%H%x00%h%x00%an%x00%ae%x00%ai%x00%s%x00']
+    cmd = ['git', 'log', f'--format={format_str}']
+    
+    if with_files:
+        cmd.append('--numstat')
     
     if search_type == 'message':
         cmd.append(f'--grep={search_term}')
@@ -204,60 +214,43 @@ def commit_search(search_type: str, search_term: str, with_files: bool = False,
             }
         }
     
-    # Parse commits
-    commits = []
-    # Split by newline first, then by NULL
-    for commit_line in log_output.strip().split('\n'):
-        if not commit_line:
-            continue
+    # Import log_json parser for consistency
+    try:
+        # Add the python lib directory to path
+        python_lib_dir = os.path.join(os.path.dirname(__file__))
+        if python_lib_dir not in sys.path:
+            sys.path.insert(0, python_lib_dir)
         
-        # Split by NULL separator
-        parts = commit_line.split('\x00')
-        if len(parts) < 6:
-            continue
+        from log_json import parse_log_with_stats
         
-        commit = {
-            'sha': parts[0],
-            'sha_short': parts[1],
-            'author': {
-                'name': parts[2],
-                'email': parts[3]
-            },
-            'date': parts[4],
-            'message': parts[5]
-        }
+        # Parse using the same logic as log_json.py
+        lines = log_output.split('\n')
+        commits = parse_log_with_stats(lines, include_stats=with_files, omit_body=no_body)
         
-        # Get files if requested
-        if with_files and parts[0]:
-            try:
-                files_result = subprocess.run(
-                    ['git', 'show', '--name-status', '--format=', parts[0]],
-                    capture_output=True, text=True, check=True
-                )
-                files = []
-                for file_line in files_result.stdout.strip().split('\n'):
-                    if not file_line:
-                        continue
-                    parts_file = file_line.split('\t', 1)
-                    if len(parts_file) == 2:
-                        status_code = parts_file[0][0] if parts_file[0] else 'M'
-                        files.append({
-                            'path': parts_file[1],
-                            'status': _status_to_type(status_code)
-                        })
-                commit['files'] = files
-            except subprocess.CalledProcessError:
-                commit['files'] = []
-        
-        commits.append(commit)
+    except ImportError:
+        # Fallback to simple parsing if log_json not available
+        commits = []
+        for commit_line in log_output.strip().split('\n'):
+            if not commit_line or not commit_line.startswith(field_sep.join([''] * 1)[1:]):
+                continue
+            parts = commit_line.split(field_sep)
+            if len(parts) >= 12:
+                commits.append({
+                    'sha': parts[0],
+                    'sha_short': parts[1],
+                    'author': {'name': parts[2], 'email': parts[3]},
+                    'date': parts[6],
+                    'subject': parts[11],
+                    'message': parts[12] if len(parts) > 12 else parts[11]
+                })
     
-    # Build response
+    # Build response with search metadata
     return {
         'repository': {
             'path': os.getcwd()
         },
         'timestamp': datetime.now().astimezone().replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
-        'command': 'hug lf --json' if search_type == 'message' else 'hug lc --json',
+        'command': f'hug {"lf" if search_type == "message" else "lc"} --json',
         'version': os.environ.get('HUG_VERSION', 'unknown'),
         'search': {
             'type': search_type,
@@ -265,7 +258,7 @@ def commit_search(search_type: str, search_term: str, with_files: bool = False,
             'with_files': with_files,
             'results_count': len(commits)
         },
-        'results': commits
+        'commits': commits  # Use 'commits' key for consistency with log_json
     }
 
 
@@ -288,13 +281,14 @@ def main():
         print(result)
     elif command == 'commit_search':
         if len(sys.argv) < 4:
-            print("Usage: json_transform.py commit_search <type> <term> [--with-files] [git-args...]", file=sys.stderr)
+            print("Usage: json_transform.py commit_search <type> <term> [--with-files] [--no-body] [git-args...]", file=sys.stderr)
             sys.exit(1)
         search_type = sys.argv[2]
         search_term = sys.argv[3]
         with_files = '--with-files' in sys.argv
-        additional_args = [arg for arg in sys.argv[4:] if arg != '--with-files']
-        result = commit_search(search_type, search_term, with_files, additional_args)
+        no_body = '--no-body' in sys.argv
+        additional_args = [arg for arg in sys.argv[4:] if arg not in ('--with-files', '--no-body')]
+        result = commit_search(search_type, search_term, with_files, no_body, additional_args)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     elif command == 'validate':
         if len(sys.argv) < 3:

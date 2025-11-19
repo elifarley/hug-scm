@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit output_json_commit_search; do . "$CMD_BASE/../lib/$f"; done
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
 show_help() {
@@ -8,7 +8,7 @@ show_help() {
 hug lf: Search commits by MESSAGE.
 
 USAGE:
-    hug lf <search-term> [-i] [-p] [--all] [--with-files] [-- [<file>]] [--browse-root] [-h, --help]
+    hug lf <search-term> [-i] [-p] [--all] [--json] [--with-files] [--no-body] [-- [<file>]] [--browse-root] [-h, --help]
 
 ARGUMENTS:
     <search-term>  Text to search for in commit messages (required)
@@ -18,7 +18,9 @@ OPTIONS:
     -i             Ignore case when searching
     -p             Show patches
     --all          Consider ALL branches (not just current)
-    --with-files   Show files changed in each matching commit
+    --json         Output as JSON (GitHub-compatible format, same as 'hug ll --json')
+    --with-files   Show files changed in each matching commit (JSON: includes numstat)
+    --no-body      Omit commit message body (JSON mode only, faster)
     --browse-root  Browse full repository scope in file selector UI (default: current directory)
     -- <file>      Restrict search to specific file
     -- (last arg)  Restrict search with interactive file selection (current directory scope)
@@ -59,6 +61,7 @@ eval "$(parse_common_flags "$@")"
 # Parse flags
 json_output=false
 with_files=false
+no_body=false
 remaining_args=()
 for arg in "$@"; do
   case "$arg" in
@@ -67,6 +70,9 @@ for arg in "$@"; do
       ;;
     --with-files)
       with_files=true
+      ;;
+    --no-body)
+      no_body=true
       ;;
     *)
       remaining_args+=("$arg")
@@ -89,9 +95,13 @@ shift
 # JSON output mode
 if $json_output; then
   # Use Python implementation for better performance and reliability
+  # Uses same format as git-ll for consistency (DRY principle)
   python_cmd=("python3" "$CMD_BASE/../lib/python/json_transform.py" "commit_search" "message" "$search_term")
   if $with_files; then
     python_cmd+=("--with-files")
+  fi
+  if $no_body; then
+    python_cmd+=("--no-body")
   fi
   python_cmd+=("$@")
   "${python_cmd[@]}"

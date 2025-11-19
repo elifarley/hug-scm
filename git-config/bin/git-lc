@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit output_json_commit_search; do . "$CMD_BASE/../lib/$f"; done
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
 show_help() {
@@ -56,6 +56,7 @@ eval "$(parse_common_flags "$@")"
 # Parse flags
 json_output=false
 with_files=false
+no_body=false
 remaining_args=()
 for arg in "$@"; do
   case "$arg" in
@@ -64,6 +65,9 @@ for arg in "$@"; do
       ;;
     --with-files)
       with_files=true
+      ;;
+    --no-body)
+      no_body=true
       ;;
     *)
       remaining_args+=("$arg")
@@ -86,9 +90,13 @@ shift
 # JSON output mode
 if $json_output; then
   # Use Python implementation for better performance and reliability
+  # Uses same format as git-ll for consistency (DRY principle)
   python_cmd=("python3" "$CMD_BASE/../lib/python/json_transform.py" "commit_search" "code" "$search_term")
   if $with_files; then
     python_cmd+=("--with-files")
+  fi
+  if $no_body; then
+    python_cmd+=("--no-body")
   fi
   python_cmd+=("$@")
   "${python_cmd[@]}"
