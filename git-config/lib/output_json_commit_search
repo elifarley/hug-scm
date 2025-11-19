@@ -37,7 +37,11 @@ output_json_commit_search() {
 
   # Execute git log once and capture all commits
   local -a commit_hashes=()
-  local -a commits_data=()
+  local -a commit_short_hashes=()
+  local -a commit_authors=()
+  local -a commit_emails=()
+  local -a commit_dates=()
+  local -a commit_subjects=()
 
   # First pass: collect basic commit info and hashes
   while IFS= read -r -d $'\0' commit_line; do
@@ -49,7 +53,11 @@ output_json_commit_search() {
     [[ -z "$hash" ]] && continue
 
     commit_hashes+=("$hash")
-    commits_data+=("$hash$field_separator$short_hash$field_separator$author_name$field_separator$author_email$field_separator$date$field_separator$subject")
+    commit_short_hashes+=("$short_hash")
+    commit_authors+=("$author_name")
+    commit_emails+=("$author_email")
+    commit_dates+=("$date")
+    commit_subjects+=("$subject")
   done < <(git log --format="$format_string" -z "${git_log_args[@]}")
 
   # Second pass: batch file processing if needed
@@ -111,18 +119,22 @@ output_json_commit_search() {
 
   # Build final commit objects
   local -a commits=()
-  for i in "${!commits_data[@]}"; do
-    local commit_data="${commits_data[$i]}"
-    IFS=$field_separator read -r hash short_hash author_name author_email date subject <<< "$commit_data"
+  for i in "${!commit_hashes[@]}"; do
+    local hash="${commit_hashes[$i]}"
+    local short_hash="${commit_short_hashes[$i]}"
+    local author_name="${commit_authors[$i]}"
+    local author_email="${commit_emails[$i]}"
+    local date="${commit_dates[$i]}"
+    local subject="${commit_subjects[$i]}"
 
     # Basic commit object
     local commit_object
-    commit_object=$(to_json_object \
-      "sha" "$hash" \
-      "sha_short" "$short_hash" \
+    commit_object=$(to_json_nested \
+      "sha" "\"$hash\"" \
+      "sha_short" "\"$short_hash\"" \
       "author" "$(to_json_object "name" "$author_name" "email" "$author_email")" \
-      "date" "$date" \
-      "message" "$subject")
+      "date" "\"$date\"" \
+      "message" "\"$subject\"")
 
     # Add files if requested
     if $with_files; then

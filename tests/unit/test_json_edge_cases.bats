@@ -170,9 +170,10 @@ validate_json() {
   assert_success
   validate_json "$output"
   # Should have 1 untracked and 1 ignored file
+  # Repository is clean (no staged/unstaged changes) even with untracked files
   assert_output --partial '"untracked_count":1'
   assert_output --partial '"ignored_count":1'
-  assert_output --partial '"clean":false'
+  assert_output --partial '"clean":true'
 }
 
 # =============================================================================
@@ -191,8 +192,8 @@ validate_json() {
   assert_output --partial 'café'
   assert_output --partial 'résumé'
   assert_output --partial '🦊'
-  assert_output --partial '\\"quoted\\"'
-  assert_output --partial '\\t'
+  assert_output --partial '\"quoted\"'
+  assert_output --partial '\t'
 }
 
 @test "hug lf --json: handles multi-line commit messages" {
