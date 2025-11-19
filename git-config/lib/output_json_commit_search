@@ -40,17 +40,17 @@ output_json_commit_search() {
   local -a commits_data=()
 
   # First pass: collect basic commit info and hashes
-  while IFS=$'\n' read -r -d '' commit_block; do
-    [[ -z "$commit_block" ]] && continue
+  while IFS= read -r -d $'\0' commit_line; do
+    [[ -z "$commit_line" ]] && continue
 
     # Split into fields using custom separator
-    IFS=$field_separator read -r hash short_hash author_name author_email date subject <<< "$commit_block"
+    IFS=$field_separator read -r hash short_hash author_name author_email date subject <<< "$commit_line"
 
     [[ -z "$hash" ]] && continue
 
     commit_hashes+=("$hash")
     commits_data+=("$hash$field_separator$short_hash$field_separator$author_name$field_separator$author_email$field_separator$date$field_separator$subject")
-  done < <(git log --format="$format_string" --null "${git_log_args[@]}" | sed -z "s/\x00/\n$commit_separator/g" | tr -d '\000')
+  done < <(git log --format="$format_string" -z "${git_log_args[@]}")
 
   # Second pass: batch file processing if needed
   local -a all_files_data=()
