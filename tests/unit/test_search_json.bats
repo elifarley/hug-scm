@@ -146,14 +146,16 @@ teardown() {
   # Act - search for something that doesn't exist
   run hug lf "nonexistentterm" --json
 
-  # Assert
+  # Assert - validate structure using jq
   assert_success
-  assert_output --partial '"commits":[]'
-  assert_output --partial '"results_count":0'
 
   # Validate JSON
   echo "$output" | jq . >/dev/null
   assert_success "Output should be valid JSON"
+
+  # Check search results using jq
+  [[ "$(echo "$output" | jq -r '.search.results_count')" == "0" ]] || fail "Expected results_count: 0"
+  [[ "$(echo "$output" | jq '.commits | length')" == "0" ]] || fail "Expected empty commits array"
 }
 
 @test "hug lc --json: handles no matches" {
@@ -163,14 +165,16 @@ teardown() {
   # Act - search for code that doesn't exist
   run hug lc "nonexistentFunction" --json
 
-  # Assert
+  # Assert - validate structure using jq
   assert_success
-  assert_output --partial '"commits":[]'
-  assert_output --partial '"results_count":0'
 
   # Validate JSON
   echo "$output" | jq . >/dev/null
   assert_success "Output should be valid JSON"
+
+  # Check search results using jq
+  [[ "$(echo "$output" | jq -r '.search.results_count')" == "0" ]] || fail "Expected results_count: 0"
+  [[ "$(echo "$output" | jq '.commits | length')" == "0" ]] || fail "Expected empty commits array"
 }
 
 @test "hug lf --json: no ANSI colors in JSON" {
@@ -214,11 +218,15 @@ teardown() {
   # Act
   run hug lf "test" --json
 
-  # Assert
+  # Assert - validate error JSON structure
   assert_failure
-  assert_output --partial '"error"'
 
   # Validate error JSON
   echo "$output" | jq . >/dev/null
   assert_success "Error output should be valid JSON"
+
+  # Check error field exists using jq
+  echo "$output" | jq -e '.error' >/dev/null || fail "Missing 'error' field in JSON output"
+  echo "$output" | jq -e '.error.type' >/dev/null || fail "Missing 'error.type' field"
+  echo "$output" | jq -e '.error.message' >/dev/null || fail "Missing 'error.message' field"
 }

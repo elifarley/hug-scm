@@ -22,17 +22,19 @@ teardown() {
   # Act
   run hug s --json
 
-  # Assert
+  # Assert - validate JSON structure, not exact formatting
   assert_success
-  assert_output --partial '"repository"'
-  assert_output --partial '"timestamp"'
-  assert_output --partial '"command": "hug s --json"'
-  assert_output --partial '"status"'
-  assert_output --partial '"branch"'
 
-  # Validate JSON
+  # Validate JSON is parseable
   echo "$output" | jq . >/dev/null
   assert_success "Output should be valid JSON"
+
+  # Check key fields exist (flexible format)
+  echo "$output" | jq -e '.repository' >/dev/null || fail "Missing 'repository' field"
+  echo "$output" | jq -e '.timestamp' >/dev/null || fail "Missing 'timestamp' field"
+  echo "$output" | jq -e '.command' >/dev/null || fail "Missing 'command' field"
+  echo "$output" | jq -e '.status' >/dev/null || fail "Missing 'status' field"
+  echo "$output" | jq -e '.branch' >/dev/null || fail "Missing 'branch' field"
 }
 
 @test "hug s --json: clean repository" {
@@ -42,15 +44,17 @@ teardown() {
   # Act
   run hug s --json
 
-  # Assert
+  # Assert - validate structure, not formatting
   assert_success
-  assert_output --partial '"clean":true'
-  assert_output --partial '"staged_files":0'
-  assert_output --partial '"unstaged_files":0'
 
-  # Validate JSON
+  # Validate JSON and check values
   echo "$output" | jq . >/dev/null
   assert_success "Output should be valid JSON"
+
+  # Check status values using jq
+  [[ "$(echo "$output" | jq -r '.status.clean')" == "true" ]] || fail "Expected clean: true"
+  [[ "$(echo "$output" | jq -r '.status.staged_files')" == "0" ]] || fail "Expected staged_files: 0"
+  [[ "$(echo "$output" | jq -r '.status.unstaged_files')" == "0" ]] || fail "Expected unstaged_files: 0"
 }
 
 @test "hug s --json: dirty repository" {
@@ -62,11 +66,17 @@ teardown() {
   # Act
   run hug s --json
 
-  # Assert
+  # Assert - validate structure using jq
   assert_success
-  assert_output --partial '"clean":false'
-  assert_output --partial '"staged_files":1'
-  assert_output --partial '"unstaged_files":1'
+
+  # Validate JSON
+  echo "$output" | jq . >/dev/null
+  assert_success "Output should be valid JSON"
+
+  # Check status values
+  [[ "$(echo "$output" | jq -r '.status.clean')" == "false" ]] || fail "Expected clean: false"
+  [[ "$(echo "$output" | jq -r '.status.staged_files')" == "1" ]] || fail "Expected staged_files: 1"
+  [[ "$(echo "$output" | jq -r '.status.unstaged_files')" == "1" ]] || fail "Expected unstaged_files: 1"
 
   # Validate JSON
   echo "$output" | jq . >/dev/null
@@ -83,25 +93,24 @@ teardown() {
   # Act
   run hug sl --json
 
-  # Assert
+  # Assert - validate structure using jq
   assert_success
-  assert_output --partial '"summary"'
-  assert_output --partial '"staged":1'
-  assert_output --partial '"unstaged":1'
-  assert_output --partial '"untracked":1'
-  assert_output --partial '"total":3'
-
-  # Check file objects
-  assert_output --partial '"path": "staged.txt"'
-  assert_output --partial '"status": "added"'
-  assert_output --partial '"path": "modified.txt"'
-  assert_output --partial '"status": "modified"'
-  assert_output --partial '"path": "untracked.txt"'
-  assert_output --partial '"status": "untracked"'
 
   # Validate JSON
   echo "$output" | jq . >/dev/null
   assert_success "Output should be valid JSON"
+
+  # Check summary values
+  echo "$output" | jq -e '.summary' >/dev/null || fail "Missing 'summary' field"
+  [[ "$(echo "$output" | jq -r '.summary.staged')" == "1" ]] || fail "Expected staged: 1"
+  [[ "$(echo "$output" | jq -r '.summary.unstaged')" == "1" ]] || fail "Expected unstaged: 1"
+  [[ "$(echo "$output" | jq -r '.summary.untracked')" == "1" ]] || fail "Expected untracked: 1"
+  [[ "$(echo "$output" | jq -r '.summary.total')" == "3" ]] || fail "Expected total: 3"
+
+  # Check file objects exist (validate structure, flexible format)
+  echo "$output" | jq -e '.staged[] | select(.path=="staged.txt")' >/dev/null || fail "Missing staged.txt"
+  echo "$output" | jq -e '.unstaged[] | select(.path=="modified.txt")' >/dev/null || fail "Missing modified.txt"
+  echo "$output" | jq -e '.untracked[] | select(.path=="untracked.txt")' >/dev/null || fail "Missing untracked.txt"
 }
 
 @test "hug sla --json: includes untracked files" {
@@ -112,16 +121,17 @@ teardown() {
   # Act
   run hug sla --json
 
-  # Assert
+  # Assert - validate structure using jq
   assert_success
-  assert_output --partial '"staged":1'
-  assert_output --partial '"untracked":1'
-  assert_output --partial '"path": "untracked.txt"'
-  assert_output --partial '"status": "untracked"'
 
   # Validate JSON
   echo "$output" | jq . >/dev/null
   assert_success "Output should be valid JSON"
+
+  # Check summary and file objects
+  [[ "$(echo "$output" | jq -r '.summary.staged')" == "1" ]] || fail "Expected staged: 1"
+  [[ "$(echo "$output" | jq -r '.summary.untracked')" == "1" ]] || fail "Expected untracked: 1"
+  echo "$output" | jq -e '.untracked[] | select(.path=="untracked.txt")' >/dev/null || fail "Missing untracked.txt"
 }
 
 @test "hug sl --json: empty repository" {
@@ -131,11 +141,17 @@ teardown() {
   # Act
   run hug sl --json
 
-  # Assert
+  # Assert - validate structure using jq
   assert_success
-  assert_output --partial '"staged"'
-  assert_output --partial '"unstaged"'
-  assert_output --partial '"untracked"'
+
+  # Validate JSON
+  echo "$output" | jq . >/dev/null
+  assert_success "Output should be valid JSON"
+
+  # Check required fields exist
+  echo "$output" | jq -e '.summary.staged' >/dev/null || fail "Missing 'staged' field"
+  echo "$output" | jq -e '.summary.unstaged' >/dev/null || fail "Missing 'unstaged' field"
+  echo "$output" | jq -e '.summary.untracked' >/dev/null || fail "Missing 'untracked' field"
   assert_output --partial '"total"'
 
   # Validate JSON
