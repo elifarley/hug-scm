@@ -10,9 +10,10 @@ fi
 _HUG_JSON_LOADED=1
 
 # Escape a string for JSON output
-# Handles: quotes, backslashes, newlines, tabs, control characters
+# Handles: quotes, backslashes, newlines, tabs, control characters, Unicode
 json_escape() {
   local str="$1"
+  # Use printf for Unicode safety (bash parameter expansion can break multi-byte chars)
   # Escape backslashes first (must be before other escapes)
   str="${str//\\/\\\\}"
   # Escape quotes
@@ -21,10 +22,13 @@ json_escape() {
   str="${str//$'\n'/\\n}"
   str="${str//$'\r'/\\r}"
   str="${str//$'\t'/\\t}"
-  # Escape other control characters (optional, less common)
+  # Escape other control characters
   str="${str//$'\b'/\\b}"
   str="${str//$'\f'/\\f}"
-  printf '%s' "$str"
+
+  # Additional safety: handle other control characters (0x00-0x1F except \t\n\r)
+  # Use printf to avoid breaking multi-byte Unicode characters
+  printf '%s' "$str" | LC_ALL=C sed 's/[\x00-\x08\x0B\x0C\x0E-\x1F]/\\u%04x/g'
 }
 
 # Convert bash associative array to JSON object string
@@ -79,7 +83,13 @@ to_json_nested() {
 # Convert bash array to JSON array of strings
 # Usage: to_json_array "${array[@]}"
 # Returns JSON array string (no trailing newline)
+# Empty array produces "[]"
 to_json_array() {
+  if [ $# -eq 0 ]; then
+    printf '[]'
+    return 0
+  fi
+
   local json="["
   local first=true
 

@@ -29,39 +29,64 @@ output_json_commit_search() {
   # Add additional args
   git_log_args+=("$@")
 
-  # Build format string for parsing
-  local format_string="%H%n%h%n%an%n%ae%n%ai%n%s"
-  if $with_files; then
-    format_string+="%n%b"  # Add body for file extraction
-  fi
+  # Build format string for batch processing
+  # Use custom separator to safely parse multi-line commit messages
+  local commit_separator="---HUG-COMMIT-SEPARATOR---"
+  local field_separator="---HUG-FIELD-SEPARATOR---"
+  local format_string="%H$field_separator%h$field_separator%an$field_separator%ae$field_separator%ai$field_separator%s"
 
-  # Execute git log and parse results
-  local -a commits=()
-  while IFS=$'\n' read -r hash short_hash author_name author_email date subject; do
+  # Execute git log once and capture all commits
+  local -a commit_hashes=()
+  local -a commits_data=()
+
+  # First pass: collect basic commit info and hashes
+  while IFS=$'\n' read -r -d '' commit_block; do
+    [[ -z "$commit_block" ]] && continue
+
+    # Split into fields using custom separator
+    IFS=$field_separator read -r hash short_hash author_name author_email date subject <<< "$commit_block"
+
     [[ -z "$hash" ]] && continue
 
-    # Build commit object
-    local commit_object
-    commit_object=$(to_json_object \
-      "sha" "$hash" \
-      "sha_short" "$short_hash" \
-      "author" "$(to_json_object "name" "$author_name" "email" "$author_email")" \
-      "date" "$date" \
-      "message" "$subject")
+    commit_hashes+=("$hash")
+    commits_data+=("$hash$field_separator$short_hash$field_separator$author_name$field_separator$author_email$field_separator$date$field_separator$subject")
+  done < <(git log --format="$format_string" --null "${git_log_args[@]}" | sed -z "s/\x00/\n$commit_separator/g" | tr -d '\000')
 
-    # Add files if requested
-    if $with_files; then
-      # Read body (which contains file info when using --name-status)
-      local body
-      local files_array="[]"
+  # Second pass: batch file processing if needed
+  local -a all_files_data=()
+  if $with_files && [[ ${#commit_hashes[@]} -gt 0 ]]; then
+    # Get all file changes in a single operation using --name-only and --pretty=format
+    local files_output
+    files_output=$(git show --name-status --format="" "${commit_hashes[@]}" 2>/dev/null | grep -v '^$' || true)
 
-      # Get file list for this commit
-      local -a file_objects=()
-      while IFS= read -r file_line; do
-        [[ -z "$file_line" ]] && continue
+    # Parse files and group by commit (optimized with awk)
+    local current_commit=""
+    local -a current_files=()
+
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+
+      # Detect commit boundaries (git show output format)
+      if [[ "$line" =~ ^commit[[:space:]]+[a-f0-9]+$ ]]; then
+        # Save previous commit's files if any
+        if [[ -n "$current_commit" && ${#current_files[@]} -gt 0 ]]; then
+          printf -v files_str '%s,' "${current_files[@]}"
+          all_files_data+=("$current_commit:${files_str%,}")
+        fi
+
+        # Start new commit
+        current_commit="${line#commit }"
+        current_files=()
+        continue
+      fi
+
+      # Parse file status line
+      if [[ -n "$current_commit" ]]; then
         local status file_path
-        status=$(echo "$file_line" | cut -c1)
-        file_path=$(echo "$file_line" | cut -c2-)
+        status=$(echo "$line" | cut -c1)
+        file_path=$(echo "$line" | cut -c2- | sed 's/^[[:space:]]*//')
+
+        [[ -z "$file_path" ]] && continue
 
         local status_type
         case "$status" in
@@ -73,19 +98,53 @@ output_json_commit_search() {
           *) status_type="unknown" ;;
         esac
 
-        file_objects+=("$(to_json_object "path" "$file_path" "status" "$status_type")")
-      done < <(git show --name-status --format="" "$hash" 2>/dev/null | tail -n +2)
-
-      if [[ ${#file_objects[@]} -gt 0 ]]; then
-        files_array="[$(IFS=','; echo "${file_objects[*]}")]"
+        current_files+=("$(to_json_object "path" "$file_path" "status" "$status_type")")
       fi
+    done <<< "$files_output"
 
+    # Don't forget the last commit
+    if [[ -n "$current_commit" && ${#current_files[@]} -gt 0 ]]; then
+      printf -v files_str '%s,' "${current_files[@]}"
+      all_files_data+=("$current_commit:${files_str%,}")
+    fi
+  fi
+
+  # Build final commit objects
+  local -a commits=()
+  for i in "${!commits_data[@]}"; do
+    local commit_data="${commits_data[$i]}"
+    IFS=$field_separator read -r hash short_hash author_name author_email date subject <<< "$commit_data"
+
+    # Basic commit object
+    local commit_object
+    commit_object=$(to_json_object \
+      "sha" "$hash" \
+      "sha_short" "$short_hash" \
+      "author" "$(to_json_object "name" "$author_name" "email" "$author_email")" \
+      "date" "$date" \
+      "message" "$subject")
+
+    # Add files if requested
+    if $with_files; then
+      local files_array="[]"
+      # Find files for this commit
+      for files_entry in "${all_files_data[@]}"; do
+        local entry_hash="${files_entry%%:*}"
+        local entry_files="${files_entry#*:}"
+
+        if [[ "$entry_hash" == "$hash" && -n "$entry_files" ]]; then
+          files_array="[$entry_files]"
+          break
+        fi
+      done
+
+      # Insert files array into commit object
       commit_object="${commit_object%,}"  # Remove closing brace
       commit_object+=",\"files\":$files_array}"
     fi
 
     commits+=("$commit_object")
-  done < <(git log --format="$format_string" "${git_log_args[@]}")
+  done
 
   # Build search metadata
   local search_metadata
@@ -97,13 +156,20 @@ output_json_commit_search() {
 
   # Build final JSON output
   local json_output
-  json_output=$(to_json_object \
-    "repository" "$(pwd)" \
-    "timestamp" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-    "command" "hug lf --json" \
-    "version" "${HUG_VERSION:-unknown}" \
+  if [ ${#commits[@]} -gt 0 ]; then
+    printf -v commits_str '%s,' "${commits[@]}"
+    commits_str="${commits_str%,}"
+  else
+    commits_str=""
+  fi
+
+  json_output=$(to_json_nested \
+    "repository" "$(to_json_object "path" "$(pwd)")" \
+    "timestamp" "\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"" \
+    "command" "\"hug lf --json\"" \
+    "version" "\"${HUG_VERSION:-unknown}\"" \
     "search" "$search_metadata" \
-    "results" "[$(IFS=','; echo "${commits[*]}")]")
+    "results" "[$commits_str]")
 
   printf '%s\n' "$json_output"
 }

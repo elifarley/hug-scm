@@ -42,120 +42,38 @@ output_json_status() {
     esac
   done
 
-  # Build flag array for list functions
-  local -a list_flags=()
-  if $scope_cwd; then
-    list_flags+=("--cwd")
-  fi
+  # Load unified JSON library
+  . "$CMD_BASE/../lib/hug-git-json"
 
-  # Collect files based on requested types
-  local -a staged_files=()
-  local -a unstaged_files=()
-  local -a untracked_files=()
-  local -a ignored_files=()
-
+  # Build filter types
+  local filter_types=""
   if $include_staged; then
-    local -a status_flags=("${list_flags[@]}" "--status")
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
-      local status file additions deletions
-      IFS=$'\t' read -r status file additions deletions <<< "$line"
-
-      local status_type
-      case "$status" in
-        A)  status_type="added" ;;
-        M)  status_type="modified" ;;
-        D)  status_type="deleted" ;;
-        R*) status_type="renamed" ;;
-        C*) status_type="copied" ;;
-        U)  status_type="conflict" ;;
-        *)  status_type="unknown" ;;
-      esac
-
-      staged_files+=("$(to_json_object "path" "$file" "status" "$status_type" "additions" "${additions:-0}" "deletions" "${deletions:-0}")")
-    done < <(list_staged_files "${status_flags[@]}")
+    filter_types+="staged,"
   fi
-
   if $include_unstaged; then
-    local -a status_flags=("${list_flags[@]}" "--status")
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
-      local status file additions deletions
-      IFS=$'\t' read -r status file additions deletions <<< "$line"
-
-      local status_type
-      case "$status" in
-        M)  status_type="modified" ;;
-        D)  status_type="deleted" ;;
-        U)  status_type="conflict" ;;
-        *)  status_type="unknown" ;;
-      esac
-
-      unstaged_files+=("$(to_json_object "path" "$file" "status" "$status_type" "additions" "${additions:-0}" "deletions" "${deletions:-0}")")
-    done < <(list_unstaged_files "${status_flags[@]}")
+    filter_types+="unstaged,"
   fi
-
   if $include_untracked; then
-    mapfile -t files < <(list_untracked_files "${list_flags[@]}")
-    for file in "${files[@]}"; do
-      [[ -z "$file" ]] && continue
-      untracked_files+=("$(to_json_object "path" "$file" "status" "untracked")")
-    done
+    filter_types+="untracked,"
   fi
-
   if $include_ignored; then
-    mapfile -t files < <(list_ignored_files "${list_flags[@]}")
-    for file in "${files[@]}"; do
-      [[ -z "$file" ]] && continue
-      ignored_files+=("$(to_json_object "path" "$file" "status" "ignored")")
-    done
+    filter_types+="ignored,"
   fi
 
-  # Build summary
-  local summary
-  summary=$(to_json_object \
-    "staged" "${#staged_files[@]}" \
-    "unstaged" "${#unstaged_files[@]}" \
-    "untracked" "${#untracked_files[@]}" \
-    "ignored" "${#ignored_files[@]}" \
-    "total" "$((${#staged_files[@]} + ${#unstaged_files[@]} + ${#untracked_files[@]} + ${#ignored_files[@]}))")
+  # Remove trailing comma if any
+  filter_types="${filter_types%,}"
 
-  # Build summary object
-  local summary_object
-  summary_object=$(to_json_object \
-    "staged" "${#staged_files[@]}" \
-    "unstaged" "${#unstaged_files[@]}" \
-    "untracked" "${#untracked_files[@]}" \
-    "ignored" "${#ignored_files[@]}" \
-    "total" "$((${#staged_files[@]} + ${#unstaged_files[@]} + ${#untracked_files[@]} + ${#ignored_files[@]}))")
+  # Build unified arguments (library version excludes empty arrays)
+  local -a unified_args=()
 
-  # Start JSON output
-  local json
-  json=$(to_json_object \
-    "repository" "$(pwd)" \
-    "timestamp" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-    "command" "hug status --json" \
-    "version" "${HUG_VERSION:-unknown}" \
-    "summary" "$summary_object")
-
-  # Add files arrays - only include non-empty arrays
-  local files_added=false
-  if $include_staged && [ ${#staged_files[@]} -gt 0 ]; then
-    json+=",\"staged\":[$(IFS=','; echo "${staged_files[*]}")]"
-    files_added=true
-  fi
-  if $include_unstaged && [ ${#unstaged_files[@]} -gt 0 ]; then
-    json+=",\"unstaged\":[$(IFS=','; echo "${unstaged_files[*]}")]"
-    files_added=true
-  fi
-  if $include_untracked && [ ${#untracked_files[@]} -gt 0 ]; then
-    json+=",\"untracked\":[$(IFS=','; echo "${untracked_files[*]}")]"
-    files_added=true
-  fi
-  if $include_ignored && [ ${#ignored_files[@]} -gt 0 ]; then
-    json+=",\"ignored\":[$(IFS=','; echo "${ignored_files[*]}")]"
-    files_added=true
+  if [[ -n "$filter_types" ]]; then
+    unified_args+=("--filter" "$filter_types")
   fi
 
-  printf '%s\n' "$json"
+  if $scope_cwd; then
+    unified_args+=("--cwd-only")
+  fi
+
+  # Call unified function
+  output_json_status_unified "${unified_args[@]}"
 }

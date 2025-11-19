@@ -59,7 +59,11 @@ output_json_status_summary() {
 
   # Build status summary
   local is_clean
-  is_clean=$(((unstaged_files + staged_files) == 0 && echo "true" || echo "false"))
+  if [ $((unstaged_files + staged_files)) -eq 0 ]; then
+    is_clean="true"
+  else
+    is_clean="false"
+  fi
 
   local status_summary
   status_summary=$(to_json_object \

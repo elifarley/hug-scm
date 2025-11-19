@@ -44,6 +44,22 @@ install_test_deps() {
   clone_or_update https://github.com/bats-core/bats-support.git "$BATS_SUPPORT_DIR"
   clone_or_update https://github.com/bats-core/bats-assert.git "$BATS_ASSERT_DIR"
   clone_or_update https://github.com/bats-core/bats-file.git "$BATS_FILE_DIR"
+
+  # Install jq for JSON validation and pretty-printing in tests
+  if ! command -v jq >/dev/null; then
+    echo "Installing jq for JSON tests..."
+    if command -v apt-get >/dev/null; then
+      sudo apt-get update && sudo apt-get install -y jq
+    elif command -v yum >/dev/null; then
+      sudo yum install -y jq
+    elif command -v brew >/dev/null; then
+      brew install jq
+    elif command -v pacman >/dev/null; then
+      sudo pacman -S jq
+    else
+      echo "⚠️ jq not found. Please install jq manually for JSON tests."
+    fi
+  fi
 }
 
 # Check if BATS is installed

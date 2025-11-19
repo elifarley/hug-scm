@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+# Library: HUG Git JSON utilities
+#
+# Provides reusable JSON helpers for Git operations.
+# Consolidates common Git parsing patterns for JSON output.
+
+if [[ -n "${_HUG_GIT_JSON_LOADED:-}" ]]; then
+  return 0 2>/dev/null || :
+fi
+_HUG_GIT_JSON_LOADED=1
+
+# Load required libraries
+CMD_BASE="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || greadlink -f "${BASH_SOURCE[0]}")" || CMD_BASE="${BASH_SOURCE[0]}"
+CMD_BASE="$(dirname "$CMD_BASE")"
+. "$CMD_BASE/hug-json"
+. "$CMD_BASE/hug-git-files"
+
+# Map Git status code to JSON status type
+git_status_to_json_type() {
+  local status="$1"
+  case "$status" in
+    A) echo "added" ;;
+    M) echo "modified" ;;
+    D) echo "deleted" ;;
+    R*) echo "renamed" ;;
+    C*) echo "copied" ;;
+    U) echo "conflict" ;;
+    ??) echo "untracked" ;;
+    !!) echo "ignored" ;;
+    *) echo "unknown" ;;
+  esac
+}
+
+# Parse tab-separated Git status line into variables
+# Usage: parse_git_status_line "status	file	additions	deletions"
+parse_git_status_line() {
+  local line="$1"
+  local status file additions deletions
+  IFS=$'\t' read -r status file additions deletions <<< "$line"
+
+  printf '%s' "$status" "$file" "${additions:-0}" "${deletions:-0}"
+}
+
+# Build file JSON object from Git status line
+git_file_to_json() {
+  local line="$1"
+  local status_type="${2:-unknown}"
+
+  local status file additions deletions
+  status="$(parse_git_status_line "$line" | cut -d'' -f1)"
+  file="$(parse_git_status_line "$line" | cut -d'' -f2)"
+  additions="$(parse_git_status_line "$line" | cut -d'' -f3)"
+  deletions="$(parse_git_status_line "$line" | cut -d'' -f4)"
+
+  to_json_object "path" "$file" "status" "$status_type" "additions" "$additions" "deletions" "$deletions"
+}
+
+# Collect files of specific type with JSON objects
+collect_git_files_json() {
+  local file_type="$1"
+  shift
+  local list_flags=("$@")
+  local -a files=()
+  local -a status_flags=("${list_flags[@]}" "--status")
+
+  case "$file_type" in
+    "staged")
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local status_type
+        status="$(echo "$line" | cut -f1)"
+        status_type="$(git_status_to_json_type "$status")"
+        files+=("$(to_json_object "path" "$(echo "$line" | cut -f2)" "status" "$status_type" "additions" "$(echo "$line" | cut -f3)" "deletions" "$(echo "$line" | cut -f4)")")
+      done < <(list_staged_files "${status_flags[@]}")
+      ;;
+    "unstaged")
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local status_type
+        status="$(echo "$line" | cut -f1)"
+        status_type="$(git_status_to_json_type "$status")"
+        files+=("$(to_json_object "path" "$(echo "$line" | cut -f2)" "status" "$status_type" "additions" "$(echo "$line" | cut -f3)" "deletions" "$(echo "$line" | cut -f4)")")
+      done < <(list_unstaged_files "${status_flags[@]}")
+      ;;
+    "untracked")
+      mapfile -t temp_files < <(list_untracked_files "${list_flags[@]}")
+      for file in "${temp_files[@]}"; do
+        [[ -z "$file" ]] && continue
+        files+=("$(to_json_object "path" "$file" "status" "untracked")")
+      done
+      ;;
+    "ignored")
+      mapfile -t temp_files < <(list_ignored_files "${list_flags[@]}")
+      for file in "${temp_files[@]}"; do
+        [[ -z "$file" ]] && continue
+        files+=("$(to_json_object "path" "$file" "status" "ignored")")
+      done
+      ;;
+  esac
+
+  # Print array as comma-separated JSON objects
+  if [ ${#files[@]} -gt 0 ]; then
+    printf '%s' "$(IFS=','; echo "${files[*]}")"
+  else
+    printf ''
+  fi
+}
+
+# Unified JSON status output function
+# Usage: output_json_status_unified [--include-empty] [--filter TYPES] [--cwd-only]
+output_json_status_unified() {
+  local include_empty=false
+  local filter_types="staged,unstaged,untracked,ignored"
+  local scope_cwd=false
+
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --include-empty)
+        include_empty=true
+        shift
+        ;;
+      --filter)
+        filter_types="$2"
+        shift 2
+        ;;
+      --cwd-only)
+        scope_cwd=true
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  # Build flag array for list functions
+  local -a list_flags=()
+  if $scope_cwd; then
+    list_flags+=("--cwd")
+  fi
+
+  # Collect files based on filter
+  local -a staged_files=()
+  local -a unstaged_files=()
+  local -a untracked_files=()
+  local -a ignored_files=()
+
+  if [[ "$filter_types" == *"staged"* ]]; then
+    local result
+    result="$(collect_git_files_json "staged" "${list_flags[@]}")"
+    [[ -n "$result" ]] && IFS=',' read -ra staged_files <<< "$result"
+  fi
+
+  if [[ "$filter_types" == *"unstaged"* ]]; then
+    local result
+    result="$(collect_git_files_json "unstaged" "${list_flags[@]}")"
+    [[ -n "$result" ]] && IFS=',' read -ra unstaged_files <<< "$result"
+  fi
+
+  if [[ "$filter_types" == *"untracked"* ]]; then
+    local result
+    result="$(collect_git_files_json "untracked" "${list_flags[@]}")"
+    [[ -n "$result" ]] && IFS=',' read -ra untracked_files <<< "$result"
+  fi
+
+  if [[ "$filter_types" == *"ignored"* ]]; then
+    local result
+    result="$(collect_git_files_json "ignored" "${list_flags[@]}")"
+    [[ -n "$result" ]] && IFS=',' read -ra ignored_files <<< "$result"
+  fi
+
+  # Build summary
+  local summary
+  summary=$(to_json_object \
+    "staged" "${#staged_files[@]}" \
+    "unstaged" "${#unstaged_files[@]}" \
+    "untracked" "${#untracked_files[@]}" \
+    "ignored" "${#ignored_files[@]}" \
+    "total" "$((${#staged_files[@]} + ${#unstaged_files[@]} + ${#untracked_files[@]} + ${#ignored_files[@]}))")
+
+  # Start JSON output
+  local json
+  json=$(to_json_nested \
+    "repository" "$(to_json_object "path" "$(pwd)")" \
+    "timestamp" "\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"" \
+    "command" "\"hug status --json\"" \
+    "version" "\"${HUG_VERSION:-unknown}\"" \
+    "summary" "$summary")
+
+  # Add files arrays
+  local arrays_added=false
+
+  add_file_array() {
+    local array_name="$1"
+    shift
+    local -a array_items=("$@")
+
+    if $include_empty || [ ${#array_items[@]} -gt 0 ]; then
+      if $arrays_added; then
+        json+=","
+      fi
+      json+="\"$array_name\":["
+      if [ ${#array_items[@]} -gt 0 ]; then
+        printf -v array_str '%s,' "${array_items[@]}"
+        array_str="${array_str%,}"  # Remove trailing comma
+        json+="$array_str"
+      fi
+      json+="]"
+      arrays_added=true
+    fi
+  }
+
+  # Close the initial object and add arrays
+  json="${json%}}"  # Remove closing brace
+
+  # Add each file array
+  if [[ "$filter_types" == *"staged"* ]]; then
+    add_file_array "staged" "${staged_files[@]}"
+  fi
+  if [[ "$filter_types" == *"unstaged"* ]]; then
+    add_file_array "unstaged" "${unstaged_files[@]}"
+  fi
+  if [[ "$filter_types" == *"untracked"* ]]; then
+    add_file_array "untracked" "${untracked_files[@]}"
+  fi
+  if [[ "$filter_types" == *"ignored"* ]]; then
+    add_file_array "ignored" "${ignored_files[@]}"
+  fi
+
+  # Close the object
+  json+="}"
+
+  printf '%s\n' "$json"
+}

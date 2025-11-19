@@ -138,6 +138,46 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
 - Resolve current conflict (`rebase_pick`)
 - Auto-resolve all remaining conflicts (`rebase_finish_all`)
 
+### hug-json
+
+JSON serialization and validation utilities (pure Bash).
+
+**Features:**
+- String escaping with Unicode support (`json_escape`)
+- JSON object creation (`to_json_object`, `to_json_nested`)
+- JSON array creation (`to_json_array`)
+- Streaming array helpers (`json_array_start`, `json_array_add`, `json_array_end`)
+- Error response generation (`json_error`)
+- Metadata generation (`json_metadata`)
+- JSON validation (`validate_json`)
+- Pretty printing (`json_pretty`)
+
+**Important Notes:**
+- Pure Bash implementation - no external dependencies required
+- Handles Unicode characters safely via `LC_ALL=C sed`
+- Empty arrays produce `"[]"` explicitly
+- Control characters are properly escaped
+- Optional Python validation when available
+
+### hug-git-json
+
+Git-specific JSON output helpers (uses hug-json).
+
+**Features:**
+- Unified status JSON output (`output_json_status_unified`)
+- Git status code mapping (`git_status_to_json_type`)
+- File collection helpers (`collect_git_files_json`)
+- Common parsing patterns (`parse_git_status_line`, `git_file_to_json`)
+- Optimized for batch Git operations
+- Handles special characters in file paths and commit messages
+
+**JSON Design Philosophy:**
+- Pure Bash for portability and dependency-free operation
+- Computational tasks (analytics, stats) use Python helpers
+- Simple formatting stays in Bash - faster startup, no dependencies
+- Complex processing can use Python via subprocess calls when needed
+- JSON output focuses on data transformation, not computation
+
 ## Usage in Command Scripts
 
 All Hug command scripts should follow this standard pattern:
@@ -189,6 +229,49 @@ prompt_confirm "Proceed? [y/N]: "
 
 # Require specific word confirmation
 confirm_action "delete"  # User must type "delete"
+```
+
+### JSON Operations
+
+```bash
+# Create a JSON object
+json_obj=$(to_json_object "name" "John Doe" "age" "30" "active" "true")
+# Result: {"name":"John Doe","age":"30","active":"true"}
+
+# Create a JSON array
+files=("file1.txt" "file2.txt")
+json_array=$(to_json_array "${files[@]}")
+# Result: ["file1.txt","file2.txt"]
+
+# Handle special characters in JSON
+special_text="café résumé 🦊 \"quoted\""
+escaped=$(json_escape "$special_text")
+# Properly escapes Unicode, quotes, and control characters
+
+# Validate JSON
+if validate_json "$json_obj"; then
+    echo "Valid JSON"
+else
+    echo "Invalid JSON"
+fi
+```
+
+### Git JSON Output
+
+```bash
+# Generate unified status JSON
+# Include all file types, show empty arrays
+output_json_status_unified --include-empty --filter "staged,unstaged,untracked,ignored"
+
+# Include only specific types, exclude empty arrays
+output_json_status_unified --filter "staged,unstaged" --cwd-only
+
+# JSON status output with backward compatibility
+# Bin version (includes empty arrays)
+output_json_status --staged --unstaged --untracked --ignored
+
+# Lib version (excludes empty arrays)
+output_json_status --staged --unstaged
 ```
 
 ### Working with Arrays
