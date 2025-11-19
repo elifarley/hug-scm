@@ -94,7 +94,11 @@ Run once (or whenever you need an update):
 make test-deps-install
 ```
 
-By default, this installs BATS and its helper libraries into `$HOME/.hug-deps`.
+This installs **both BATS and Python test dependencies**:
+- BATS and helper libraries for Bash testing (installed to `$HOME/.hug-deps`)
+- pytest, coverage, and Python dev dependencies for Python library tests
+
+The installation handles both dependency types automatically with graceful fallbacks if installation fails.
 
 To install dependencies in a different location, you can set the `DEPS_DIR` environment variable. Similarly, the `vhs` dependency location can be overridden with the `VHS_DEPS_DIR` environment variable, and optional dependencies with `OPTIONAL_DEPS_DIR`.
 
@@ -153,10 +157,10 @@ brew install bats-assert bats-file bats-support
 
 Using Make (recommended):
 ```bash
-# Check prerequisites
+# Check prerequisites (checks both BATS and Python dependencies)
 make test-check
 
-# Run all tests
+# Run all tests (BATS + Python library tests)
 make test
 
 # Run only unit tests
@@ -168,12 +172,16 @@ make test-integration
 # Run only library tests
 make test-lib
 
-# Run with verbose output
-make test-verbose
+# Run only Python library tests
+make test-lib-py
+
+# Run Python library tests with coverage report
+make test-lib-py-coverage
 
 # Show only failing tests (filters out passing tests)
 make test SHOW_FAILING=1
 make test-unit SHOW_FAILING=1
+make test-lib-py SHOW_FAILING=1
 ```
 
 #### Running Specific Tests via Makefile
@@ -742,7 +750,31 @@ All PRs must:
 
 ## Library Testing
 
+### Bash Library Tests
+
 Library tests in `tests/lib/` focus on reusable code from `git-config/lib/` (e.g., `hug-fs`, `hug-confirm`). These are pure unit tests without Git dependencies:
+
+### Python Library Tests
+
+Python library tests in `git-config/lib/python/tests/` use pytest to test the Python analysis modules (activity, churn, co_changes, ownership, etc.):
+
+```bash
+# Run Python library tests
+make test-lib-py
+
+# Run with coverage report
+make test-lib-py-coverage
+
+# Filter tests by name
+make test-lib-py TEST_FILTER="test_analyze"
+```
+
+**Automatic Dependency Installation**: Python tests automatically install pytest and dev dependencies if missing, but it's recommended to run `make test-deps-install` beforehand for consistency.
+
+**Key Features**:
+- Uses standard pytest with fixtures and mocks
+- Tests analyze activity, ownership, dependencies, and JSON transformations
+- Integrated with the main test suite via `make test`
 
 ### Guidelines
 - **Sourcing**: Use `load` for libraries: `load '../../../git-config/lib/hug-fs'` (relative path from .bats file). This is preferred over `source` in BATS for path handling and consistency with helpers.
