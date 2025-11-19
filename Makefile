@@ -98,7 +98,14 @@ test-lib: ## Run only library tests (or specific: TEST_FILE=... TEST_FILTER=... 
 
 test-check: ## Check test prerequisites without running tests
 	@echo "$(BLUE)Checking test prerequisites...$(NC)"
+	@echo "$(BLUE)Checking BATS prerequisites...$(NC)"
 	./tests/run-tests.sh --check
+	@echo "$(BLUE)Checking Python test prerequisites...$(NC)"
+	@if cd git-config/lib/python && python3 -m pytest --version >/dev/null 2>&1; then \
+		echo "$(GREEN)✓ pytest is available$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠ pytest not found - install with 'make test-deps-install' or 'make test-deps-py-install'$(NC)"; \
+	fi
 
 test-lib-py: ## Run Python library tests using pytest
 	@echo "$(BLUE)Running Python library tests...$(NC)"
@@ -116,9 +123,14 @@ test-lib-py-coverage: ## Run Python library tests with coverage report
 	python3 -m pip install -q -e ".[dev]" 2>/dev/null || true; \
 	python3 -m pytest tests/ -v --cov=. --cov-report=term-missing --cov-report=html
 
-test-deps-install: ## Install or update local BATS dependencies
+test-deps-install: ## Install all test dependencies (BATS + Python)
 	@echo "$(BLUE)Installing test dependencies...$(NC)"
+	@echo "$(BLUE)Installing BATS dependencies...$(NC)"
 	./tests/run-tests.sh --install-deps
+	@echo "$(BLUE)Installing Python test dependencies...$(NC)"
+	@cd git-config/lib/python && python3 -m pip install -q -e ".[dev]" || \
+	(echo "$(YELLOW)Warning: Could not install Python dev dependencies. Python tests may not work.$(NC)")
+	@echo "$(GREEN)All test dependencies installed$(NC)"
 
 test-deps-py-install: ## Install Python test dependencies (pytest, coverage, etc.)
 	@echo "$(BLUE)Installing Python test dependencies...$(NC)"
