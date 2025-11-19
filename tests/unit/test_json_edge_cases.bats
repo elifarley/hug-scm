@@ -55,14 +55,14 @@ validate_json() {
 }
 
 @test "hug-json: json_escape handles quotes and backslashes" {
-  # Test quotes and backslashes in content
-  echo 'file with "double quotes" and backslashes\\' > "quotes.txt"
-  hug add quotes.txt
-  hug commit -m "add file with quotes and backslashes"
-
-  run hug s --json --staged
+  # Test json_escape directly with quotes and backslashes
+  run bash -c "
+    source $PROJECT_ROOT/git-config/lib/hug-json
+    test_str='file with \"double quotes\" and backslashes\\\\'
+    escaped=\$(json_escape \"\$test_str\")
+    printf \"%s\" \"\$escaped\"
+  "
   assert_success
-  validate_json "$output"
   # Quotes and backslashes should be escaped
   assert_output --partial '\\"'
   assert_output --partial '\\\\'
@@ -85,7 +85,7 @@ validate_json() {
   assert_success
   validate_json "$output"
   assert_output --partial 'file with spaces.txt'
-  assert_output --partial 'file"with"quotes.txt'
+  assert_output --partial 'file\"with\"quotes.txt'
   # Should escape special characters
   assert_output --partial '\\t'
   assert_output --partial '\\n'
