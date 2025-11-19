@@ -53,8 +53,8 @@ def transform_git_log_to_json(log_output: str, with_files: bool = False) -> str:
             commit['files'] = json.loads(fields[6]) if fields[6] else []
             
         commits.append(commit)
-    
-    return json.dumps(commits, ensure_ascii=False, indent=2)
+
+    return json.dumps(commits, ensure_ascii=False, indent=2, separators=(', ', ': '))
 
 
 def transform_git_status_to_json(status_output: str) -> Dict[str, Any]:
@@ -289,7 +289,7 @@ def main():
         no_body = '--no-body' in sys.argv
         additional_args = [arg for arg in sys.argv[4:] if arg not in ('--with-files', '--no-body')]
         result = commit_search(search_type, search_term, with_files, no_body, additional_args)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(result, ensure_ascii=False, indent=2, separators=(', ', ': ')))
     elif command == 'validate':
         if len(sys.argv) < 3:
             print("Usage: json_transform.py validate <schema_name>", file=sys.stderr)

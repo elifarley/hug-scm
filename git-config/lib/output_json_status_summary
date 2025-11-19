@@ -77,16 +77,20 @@ output_json_status_summary() {
     "unstaged_insertions" "$unstaged_insertions" \
     "unstaged_deletions" "$unstaged_deletions")
 
-  # Build main JSON output
+  # Build main JSON output using to_json_object for proper formatting
+  # Note: Using nested JSON objects for structured data
   local json_output
   json_output=$(to_json_nested \
-    "repository" "\"$(pwd)\"" \
+    "repository" "$(to_json_object "path" "$(pwd)")" \
     "timestamp" "\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"" \
     "command" "\"hug s --json\"" \
     "version" "\"${HUG_VERSION:-unknown}\"" \
     "head" "$(to_json_object "hash" "$hash")" \
     "branch" "$branch_info" \
     "status" "$status_summary")
+
+  # Add spaces after colons for consistent formatting with Python JSON
+  json_output=$(printf '%s' "$json_output" | sed 's/":/": /g')
 
   printf '%s\n' "$json_output"
 }

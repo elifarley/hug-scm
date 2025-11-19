@@ -67,6 +67,7 @@ for arg in "$@"; do
   case "$arg" in
     --json)
       json_output=true
+      export HUG_JSON_MODE="true"
       ;;
     --with-files)
       with_files=true
@@ -81,7 +82,15 @@ for arg in "$@"; do
 done
 set -- "${remaining_args[@]}"
 
-check_git_repo
+# Check if in git repo, handle errors appropriately
+if ! check_git_repo 2>/dev/null; then
+  if $json_output; then
+    . "$CMD_BASE/../lib/hug-json"
+    json_error "not_git_repo" "Not in a Git or Mercurial repository" 1
+  else
+    check_git_repo  # Show normal error
+  fi
+fi
 
 # Check if search term provided
 if [ $# -eq 0 ]; then

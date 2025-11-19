@@ -179,7 +179,7 @@ output_json_status_unified() {
     "ignored" "${#ignored_files[@]}" \
     "total" "$((${#staged_files[@]} + ${#unstaged_files[@]} + ${#untracked_files[@]} + ${#ignored_files[@]}))")
 
-  # Start JSON output
+  # Start JSON output (without spaces, will be added later)
   local json
   json=$(to_json_nested \
     "repository" "$(to_json_object "path" "$(pwd)")" \
@@ -197,7 +197,13 @@ output_json_status_unified() {
     local -a array_items=("$@")
 
     if $include_empty || [ ${#array_items[@]} -gt 0 ]; then
-      if $arrays_added; then
+      if ! $arrays_added; then
+        # First array - remove closing brace and add comma
+        json="${json%\}}"
+        json+=","
+        arrays_added=true
+      else
+        # Subsequent arrays - just add comma
         json+=","
       fi
       json+="\"$array_name\":["
@@ -207,12 +213,8 @@ output_json_status_unified() {
         json+="$array_str"
       fi
       json+="]"
-      arrays_added=true
     fi
   }
-
-  # Close the initial object and add arrays
-  json="${json%}}"  # Remove closing brace
 
   # Add each file array
   if [[ "$filter_types" == *"staged"* ]]; then
@@ -228,8 +230,13 @@ output_json_status_unified() {
     add_file_array "ignored" "${ignored_files[@]}"
   fi
 
-  # Close the object
-  json+="}"
+  # Close the object (only if we added arrays, otherwise already closed)
+  if $arrays_added; then
+    json+="}"
+  fi
+
+  # Add spaces after colons for consistent formatting with Python JSON
+  json=$(printf '%s' "$json" | sed 's/":/": /g')
 
   printf '%s\n' "$json"
 }
