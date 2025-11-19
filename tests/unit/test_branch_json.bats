@@ -2,13 +2,16 @@
 
 # Test JSON output for branch commands (hug bll)
 
+load '../test_helper'
+
 setup() {
-  create_test_repo_with_history
-  load_test_helpers
+  TEST_REPO=$(create_test_repo_with_history)
+  cd "$TEST_REPO" || exit 1
 }
 
 teardown() {
-  cleanup_test_repo
+  cd /
+  rm -rf "$TEST_REPO"
 }
 
 @test "hug bll --json: basic JSON structure" {
@@ -130,9 +133,10 @@ teardown() {
 }
 
 @test "hug bll --json: handles repository with single branch" {
-  # Arrange - new repo with only main branch
-  create_test_repo
-  git commit --allow-empty -m "Initial commit"
+  # Arrange - create a separate repo with only main branch
+  local single_branch_repo
+  single_branch_repo=$(create_test_repo)
+  cd "$single_branch_repo" || exit 1
 
   # Act
   run hug bll --json
@@ -144,6 +148,63 @@ teardown() {
   [ "$branch_count" -eq 1 ]
 
   assert_output --partial '"name":"main"'
+
+  # Validate JSON
+  echo "$output" | jq . >/dev/null
+  assert_success "Output should be valid JSON"
+
+  # Cleanup
+  cd /
+  rm -rf "$single_branch_repo"
+}
+
+@test "hug bll --json: branches field should be JSON array not string" {
+  # Arrange
+  git checkout main
+
+  # Act
+  run hug bll --json
+
+  # Assert
+  assert_success
+  # Ensure branches field is a JSON array, not a string
+  local branch_type
+  branch_type=$(echo "$output" | jq '.branches | type')
+  [ "$branch_type" = '"array"' ]
+
+  # Validate JSON
+  echo "$output" | jq . >/dev/null
+  assert_success "Output should be valid JSON"
+}
+
+@test "hug bll --json: multiple branches create proper array structure" {
+  # Arrange - create multiple branches
+  git checkout main
+  git checkout -b feature1
+  git commit --allow-empty -m "Feature 1 commit"
+  git checkout main
+  git checkout -b feature2
+  git commit --allow-empty -m "Feature 2 commit"
+
+  # Act
+  run hug bll --json
+
+  # Assert
+  assert_success
+  # Should have at least 3 branches (main, feature1, feature2)
+  local branch_count
+  branch_count=$(echo "$output" | jq '.branches | length')
+  [ "$branch_count" -ge 3 ]
+
+  # Ensure branches field is still an array type
+  local branch_type
+  branch_type=$(echo "$output" | jq '.branches | type')
+  [ "$branch_type" = '"array"' ]
+
+  # Should include all branch names
+  assert_output --partial '"name":"main"'
+  assert_output --partial '"name":"feature1"'
+  assert_output --partial '"name":"feature2"'
 
   # Validate JSON
   echo "$output" | jq . >/dev/null

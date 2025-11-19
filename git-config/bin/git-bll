@@ -14,6 +14,7 @@ USAGE:
 
 OPTIONS:
   -h, --help     Show this help message and exit.
+  --json         Output in JSON format instead of human-readable text.
 
 DESCRIPTION:
   Displays each local branch sorted alphabetically. The current branch is highlighted in green and marked with an asterisk (*).

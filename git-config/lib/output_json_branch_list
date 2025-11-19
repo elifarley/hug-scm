@@ -42,32 +42,50 @@ output_json_branch_list() {
       behind_count=$(echo "$counts" | cut -f2)
     fi
 
-    # Build branch object
+    # Build branch object using nested approach for proper JSON structure
     local branch_object
-    branch_object=$(to_json_object \
-      "name" "$branch_name" \
-      "current" "$is_current" \
-      "hash" "$hash" \
-      "subject" "$subject")
-
-    # Add upstream info if available
     if [[ -n "$upstream_name" ]]; then
-      branch_object="${branch_object%,}"
-      branch_object+=",\"upstream\":$(to_json_object "name" "$upstream_name" "ahead" "$ahead_count" "behind" "$behind_count")}"
+      branch_object=$(to_json_nested \
+        "name" "\"$branch_name\"" \
+        "current" "\"$is_current\"" \
+        "hash" "\"$hash\"" \
+        "subject" "\"$subject\"" \
+        "upstream" "$(to_json_object "name" "$upstream_name" "ahead" "$ahead_count" "behind" "$behind_count")")
+    else
+      branch_object=$(to_json_object \
+        "name" "$branch_name" \
+        "current" "$is_current" \
+        "hash" "$hash" \
+        "subject" "$subject")
     fi
 
-    branch_data+=("$branch_object}")
-  done < <(git for-each-ref --format='%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(contents:subject)' refs/heads/ 2>/dev/null)
+    # Add completed branch object to array
+    branch_data+=("$branch_object")
+  done < <(git for-each-ref --format='%(refname)%09%(objectname:short)%09%(upstream:short)%09%(contents:subject)' refs/heads/ 2>/dev/null)
 
   # Build final JSON output
   local json_output
-  json_output=$(to_json_object \
-    "repository" "$(pwd)" \
-    "timestamp" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-    "command" "hug bll --json" \
-    "version" "${HUG_VERSION:-unknown}" \
-    "current_branch" "$current_branch" \
-    "branches" "[$(IFS=','; echo "${branch_data[*]}")]")
+  if [[ ${#branch_data[@]} -eq 0 ]]; then
+    # Empty array case
+    json_output=$(to_json_nested \
+      "repository" "$(to_json_object "path" "$(pwd)")" \
+      "timestamp" "\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"" \
+      "command" "\"hug bll --json\"" \
+      "version" "\"${HUG_VERSION:-unknown}\"" \
+      "current_branch" "\"$current_branch\"" \
+      "branches" "[]")
+  else
+    # Non-empty array case - join with commas
+    local branches_array
+    branches_array="$(IFS=','; echo "${branch_data[*]}")"
+    json_output=$(to_json_nested \
+      "repository" "$(to_json_object "path" "$(pwd)")" \
+      "timestamp" "\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"" \
+      "command" "\"hug bll --json\"" \
+      "version" "\"${HUG_VERSION:-unknown}\"" \
+      "current_branch" "\"$current_branch\"" \
+      "branches" "[$branches_array]")
+  fi
 
   printf '%s\n' "$json_output"
 }
