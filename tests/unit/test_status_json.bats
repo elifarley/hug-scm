@@ -2,9 +2,11 @@
 
 # Test JSON output for status commands (hug s, hug sl, hug sla)
 
+load ../test_helper
+
 setup() {
+  require_hug
   create_test_repo_with_history
-  load_test_helpers
 }
 
 teardown() {
