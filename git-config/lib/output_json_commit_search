@@ -47,8 +47,16 @@ output_json_commit_search() {
   while IFS= read -r -d $'\0' commit_line; do
     [[ -z "$commit_line" ]] && continue
 
-    # Split into fields using custom separator
-    IFS=$field_separator read -r hash short_hash author_name author_email date subject <<< "$commit_line"
+    # Split into fields using awk (IFS doesn't work with multi-char separators)
+    local -a fields
+    mapfile -t fields < <(echo "$commit_line" | awk -F "$field_separator" '{for(i=1;i<=NF;i++)print $i}')
+    
+    local hash="${fields[0]}"
+    local short_hash="${fields[1]}"
+    local author_name="${fields[2]}"
+    local author_email="${fields[3]}"
+    local date="${fields[4]}"
+    local subject="${fields[5]}"
 
     [[ -z "$hash" ]] && continue
 
@@ -130,11 +138,11 @@ output_json_commit_search() {
     # Basic commit object
     local commit_object
     commit_object=$(to_json_nested \
-      "sha" "\"$hash\"" \
-      "sha_short" "\"$short_hash\"" \
+      "sha" "\"$(json_escape "$hash")\"" \
+      "sha_short" "\"$(json_escape "$short_hash")\"" \
       "author" "$(to_json_object "name" "$author_name" "email" "$author_email")" \
-      "date" "\"$date\"" \
-      "message" "\"$subject\"")
+      "date" "\"$(json_escape "$date")\"" \
+      "message" "\"$(json_escape "$subject")\"")
 
     # Add files if requested
     if $with_files; then
