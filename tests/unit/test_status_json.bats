@@ -6,7 +6,8 @@ load ../test_helper
 
 setup() {
   require_hug
-  create_test_repo_with_history
+  TEST_REPO=$(create_test_repo_with_history)
+  cd "$TEST_REPO"
 }
 
 teardown() {
@@ -25,7 +26,7 @@ teardown() {
   assert_success
   assert_output --partial '"repository"'
   assert_output --partial '"timestamp"'
-  assert_output --partial '"command":"hug s --json"'
+  assert_output --partial '"command": "hug s --json"'
   assert_output --partial '"status"'
   assert_output --partial '"branch"'
 
@@ -94,12 +95,12 @@ teardown() {
   assert_output --partial '"total":3'
 
   # Check file objects
-  assert_output --partial '"path":"staged.txt"'
-  assert_output --partial '"status":"added"'
-  assert_output --partial '"path":"modified.txt"'
-  assert_output --partial '"status":"modified"'
-  assert_output --partial '"path":"untracked.txt"'
-  assert_output --partial '"status":"untracked"'
+  assert_output --partial '"path" : "staged.txt"'
+  assert_output --partial '"status" : "added"'
+  assert_output --partial '"path" : "modified.txt"'
+  assert_output --partial '"status" : "modified"'
+  assert_output --partial '"path" : "untracked.txt"'
+  assert_output --partial '"status" : "untracked"'
 
   # Validate JSON
   echo "$output" | jq . >/dev/null
@@ -118,8 +119,8 @@ teardown() {
   assert_success
   assert_output --partial '"staged":1'
   assert_output --partial '"untracked":1'
-  assert_output --partial '"path":"untracked.txt"'
-  assert_output --partial '"status":"untracked"'
+  assert_output --partial '"path" : "untracked.txt"'
+  assert_output --partial '"status" : "untracked"'
 
   # Validate JSON
   echo "$output" | jq . >/dev/null

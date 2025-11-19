@@ -6,7 +6,8 @@ load ../test_helper
 
 setup() {
   require_hug
-  create_test_repo_with_history
+  TEST_REPO=$(create_test_repo_with_history)
+  cd "$TEST_REPO"
 }
 
 teardown() {
@@ -25,11 +26,11 @@ teardown() {
   assert_success
   assert_output --partial '"repository"'
   assert_output --partial '"timestamp"'
-  assert_output --partial '"command":"hug lf --json"'
+  assert_output --partial '"command": "hug lf --json"'
   assert_output --partial '"search"'
   assert_output --partial '"commits"'
-  assert_output --partial '"type":"message"'
-  assert_output --partial '"term":"feat"'
+  assert_output --partial '"type" : "message"'
+  assert_output --partial '"term" : "feat"'
 
   # Validate JSON
   echo "$output" | jq . >/dev/null
@@ -49,7 +50,7 @@ teardown() {
   # Assert
   assert_success
   # Should find at least the feat commit
-  assert_output --partial '"message":"feat: add new feature"'
+  assert_output --partial '"message" : "feat: add new feature"'
 
   # Validate JSON
   echo "$output" | jq . >/dev/null
@@ -68,8 +69,8 @@ teardown() {
   # Assert
   assert_success
   assert_output --partial '"files"'
-  assert_output --partial '"path":"newfile.txt"'
-  assert_output --partial '"status":"added"'
+  assert_output --partial '"path" : "newfile.txt"'
+  assert_output --partial '"status" : "added"'
   assert_output --partial '"with_files":true'
 
   # Validate JSON
@@ -88,8 +89,8 @@ teardown() {
 
   # Assert
   assert_success
-  assert_output --partial '"type":"code"'
-  assert_output --partial '"term":"testFunction"'
+  assert_output --partial '"type" : "code"'
+  assert_output --partial '"term" : "testFunction"'
   assert_output --partial '"search"'
   assert_output --partial '"commits"'
 
@@ -110,7 +111,7 @@ teardown() {
   # Assert
   assert_success
   # Should find the commit with the function
-  assert_output --partial '"message":"add test function"'
+  assert_output --partial '"message" : "add test function"'
 
   # Validate JSON
   echo "$output" | jq . >/dev/null
@@ -129,8 +130,8 @@ teardown() {
   # Assert
   assert_success
   assert_output --partial '"files"'
-  assert_output --partial '"path":"test.js"'
-  assert_output --partial '"status":"modified"'
+  assert_output --partial '"path" : "test.js"'
+  assert_output --partial '"status" : "modified"'
   assert_output --partial '"with_files":true'
 
   # Validate JSON
