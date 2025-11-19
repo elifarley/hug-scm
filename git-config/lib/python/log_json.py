@@ -20,8 +20,13 @@ import argparse
 import re
 
 
-def parse_log_with_stats(lines):
+def parse_log_with_stats(lines, include_stats=True, omit_body=False):
     """Parse git log output with --numstat
+
+    Args:
+        lines: Lines from git log output
+        include_stats: Whether to include stats field in output (default: True)
+        omit_body: Whether to omit body text from output (default: False)
 
     The git log format we use is:
     %H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%s|~|%B|~|%P|~|%D
@@ -46,7 +51,7 @@ def parse_log_with_stats(lines):
         if re.match(r'^[0-9a-f]{40}\|~\|', line):
             # Process previous commit if exists
             if current_lines:
-                commit = parse_single_commit(current_lines, current_numstats)
+                commit = parse_single_commit(current_lines, current_numstats, include_stats, omit_body)
                 if commit:
                     commits.append(commit)
             # Start new commit
@@ -69,19 +74,21 @@ def parse_log_with_stats(lines):
 
     # Process last commit
     if current_lines:
-        commit = parse_single_commit(current_lines, current_numstats)
+        commit = parse_single_commit(current_lines, current_numstats, include_stats, omit_body)
         if commit:
             commits.append(commit)
 
     return commits
 
 
-def parse_single_commit(lines, numstat_lines=None):
+def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body=False):
     """Parse a single commit from accumulated lines
 
     Args:
         lines: List of lines containing commit metadata and body
         numstat_lines: Optional list of numstat lines (N\tM\tfilename format)
+        include_stats: Whether to include stats field in output (default: True)
+        omit_body: Whether to omit body text from output (default: False)
 
     Returns None if parsing fails.
 
@@ -200,12 +207,17 @@ def parse_single_commit(lines, numstat_lines=None):
                 # Not a valid numstat line
                 pass
 
+    # Apply omit_body flag if requested
+    if omit_body:
+        body = None
+
     # Construct full message (GitHub compat)
     full_message = subject
     if body:
         full_message = subject + '\n\n' + body
 
-    return {
+    # Build commit object
+    commit = {
         'sha': hash_val,
         'sha_short': hash_short,
         'author': {
@@ -225,23 +237,29 @@ def parse_single_commit(lines, numstat_lines=None):
         'body': body if body else None,
         'tree': {'sha': tree_sha},
         'parents': parents,
-        'refs': refs if refs else None,
-        'stats': stats
+        'refs': refs if refs else None
     }
+
+    # Conditionally add stats field
+    if include_stats:
+        commit['stats'] = stats
+
+    return commit
 
 
 def main():
     parser = argparse.ArgumentParser(description='Format git log output as JSON')
     parser.add_argument('--with-stats', action='store_true',
-                       help='Parse numstat output')
+                       help='Include file change statistics in output')
+    parser.add_argument('--no-body', action='store_true',
+                       help='Omit commit message body (subject only)')
     args = parser.parse_args()
 
     # Read all input
     lines = sys.stdin.readlines()
 
-    # Always use parse_log_with_stats - it handles both cases
-    # (just sets stats to zero when there are no numstat lines)
-    commits = parse_log_with_stats(lines)
+    # Parse commits with conditional stats and body
+    commits = parse_log_with_stats(lines, include_stats=args.with_stats, omit_body=args.no_body)
 
     # Build output
     output = {

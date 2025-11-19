@@ -12,7 +12,7 @@ import os
 
 # Add parent directory to path to import log_json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from log_json import parse_log_with_stats
+from log_json import parse_log_with_stats, parse_single_commit
 
 
 class TestParseLogWithStats:
@@ -266,3 +266,151 @@ class TestEdgeCases:
         assert commit['author']['name'] == 'José García'
         assert '🎉' in commit['message']['subject']
         assert '中文' in commit['message']['body']
+
+
+class TestConditionalStats:
+    """Test conditional stats field inclusion (new 15-field format)"""
+
+    def test_stats_included_when_flag_true(self):
+        """Test stats field is present when include_stats=True"""
+        lines = [
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Fix bug|~|Fix bug\n|~||~|\n",
+            "\n",
+            "10\t5\tREADME.md\n"
+        ]
+
+        commits = parse_log_with_stats(lines, include_stats=True)
+
+        assert len(commits) == 1
+        commit = commits[0]
+        assert 'stats' in commit
+        assert commit['stats']['files_changed'] == 1
+        assert commit['stats']['insertions'] == 10
+        assert commit['stats']['deletions'] == 5
+
+    def test_stats_excluded_when_flag_false(self):
+        """Test stats field is absent when include_stats=False"""
+        lines = [
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Fix bug|~|Fix bug\n|~||~|\n",
+            "\n",
+            "10\t5\tREADME.md\n"
+        ]
+
+        commits = parse_log_with_stats(lines, include_stats=False)
+
+        assert len(commits) == 1
+        commit = commits[0]
+        assert 'stats' not in commit
+        # Verify other fields still present
+        assert commit['sha'] == 'abc123def456789012345678901234567890abcd'
+        assert commit['subject'] == 'Fix bug'
+
+    def test_stats_included_by_default(self):
+        """Test stats field defaults to included (backward compatibility)"""
+        lines = [
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Fix bug|~|Fix bug\n|~||~|\n"
+        ]
+
+        commits = parse_log_with_stats(lines)  # No include_stats arg
+
+        assert len(commits) == 1
+        commit = commits[0]
+        assert 'stats' in commit
+        assert commit['stats']['files_changed'] == 0
+
+
+class TestNoBodyFlag:
+    """Test --no-body flag functionality (new 15-field format)"""
+
+    def test_body_omitted_when_flag_true(self):
+        """Test body is None and message=subject when omit_body=True"""
+        lines = [
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Add feature|~|Add feature\n\nThis is a detailed description.\nWith multiple lines.|~||~|\n"
+        ]
+
+        commits = parse_log_with_stats(lines, omit_body=True)
+
+        assert len(commits) == 1
+        commit = commits[0]
+        assert commit['subject'] == 'Add feature'
+        assert commit['body'] is None
+        assert commit['message'] == 'Add feature'  # Should equal subject only
+
+    def test_body_included_when_flag_false(self):
+        """Test body is present when omit_body=False"""
+        lines = [
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Add feature|~|Add feature\n\nThis is a detailed description.\nWith multiple lines.|~||~|\n"
+        ]
+
+        commits = parse_log_with_stats(lines, omit_body=False)
+
+        assert len(commits) == 1
+        commit = commits[0]
+        assert commit['subject'] == 'Add feature'
+        assert commit['body'] == 'This is a detailed description.\nWith multiple lines.'
+        assert commit['message'] == 'Add feature\n\nThis is a detailed description.\nWith multiple lines.'
+
+    def test_body_included_by_default(self):
+        """Test body defaults to included (backward compatibility)"""
+        lines = [
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Add feature|~|Add feature\n\nDetailed body text.|~||~|\n"
+        ]
+
+        commits = parse_log_with_stats(lines)  # No omit_body arg
+
+        assert len(commits) == 1
+        commit = commits[0]
+        assert commit['body'] == 'Detailed body text.'
+        assert 'Detailed body text.' in commit['message']
+
+    def test_no_body_with_subject_only_commit(self):
+        """Test --no-body flag on commit that has no body anyway"""
+        lines = [
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Quick fix|~|Quick fix\n|~||~|\n"
+        ]
+
+        commits = parse_log_with_stats(lines, omit_body=True)
+
+        assert len(commits) == 1
+        commit = commits[0]
+        assert commit['subject'] == 'Quick fix'
+        assert commit['body'] is None
+        assert commit['message'] == 'Quick fix'
+
+
+class TestCombinedFlags:
+    """Test combining include_stats and omit_body flags (new 15-field format)"""
+
+    def test_no_stats_no_body(self):
+        """Test with both stats excluded and body omitted"""
+        lines = [
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Update docs|~|Update docs\n\nAdded new examples.|~||~|\n",
+            "\n",
+            "5\t2\tREADME.md\n"
+        ]
+
+        commits = parse_log_with_stats(lines, include_stats=False, omit_body=True)
+
+        assert len(commits) == 1
+        commit = commits[0]
+        assert 'stats' not in commit
+        assert commit['body'] is None
+        assert commit['message'] == 'Update docs'
+        assert commit['subject'] == 'Update docs'
+
+    def test_with_stats_no_body(self):
+        """Test with stats included but body omitted"""
+        lines = [
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Refactor code|~|Refactor code\n\nImproved performance.|~||~|\n",
+            "\n",
+            "15\t8\tsrc/main.py\n"
+        ]
+
+        commits = parse_log_with_stats(lines, include_stats=True, omit_body=True)
+
+        assert len(commits) == 1
+        commit = commits[0]
+        assert 'stats' in commit
+        assert commit['stats']['insertions'] == 15
+        assert commit['body'] is None
+        assert commit['message'] == 'Refactor code'

@@ -5,7 +5,9 @@ load '../test_helper'
 
 setup() {
   # Create simple test repo with known commits
-  create_test_repo
+  TEST_REPO=$(create_test_repo)
+  cd "$TEST_REPO" || return 1
+
   echo "first" > file1.txt
   git add file1.txt
   git_commit_deterministic "First commit"
@@ -73,44 +75,46 @@ teardown() {
 @test "hug ll --json: includes required fields" {
   run hug ll -1 --json
   assert_success
+  local json_output="$output"
 
   # Check for required top-level fields
-  run bash -c "echo '$output' | python3 -c 'import sys, json; d=json.load(sys.stdin); print(d.get(\"command\"))'"
+  run bash -c "echo '$json_output' | python3 -c 'import sys, json; d=json.load(sys.stdin); print(d.get(\"command\"))'"
   assert_output "hug ll"
 
-  run bash -c "echo '$output' | python3 -c 'import sys, json; d=json.load(sys.stdin); print(len(d.get(\"commits\", [])))'"
+  run bash -c "echo '$json_output' | python3 -c 'import sys, json; d=json.load(sys.stdin); print(len(d.get(\"commits\", [])))'"
   assert_output "1"
 
-  run bash -c "echo '$output' | python3 -c 'import sys, json; d=json.load(sys.stdin); print(d.get(\"summary\", {}).get(\"total_commits\"))'"
+  run bash -c "echo '$json_output' | python3 -c 'import sys, json; d=json.load(sys.stdin); print(d.get(\"summary\", {}).get(\"total_commits\"))'"
   assert_output "1"
 }
 
 @test "hug ll --json: commit object has correct structure" {
   run hug ll -1 --json
   assert_success
+  local json_output="$output"
 
   # Check commit fields using jq if available, otherwise python
   if command -v jq >/dev/null 2>&1; then
-    run bash -c "echo '$output' | jq -r '.commits[0].hash'"
+    run bash -c "echo '$json_output' | jq -r '.commits[0].sha'"
     assert_success
-    # Hash should be 40 characters
+    # SHA should be 40 characters
     [ ${#output} -eq 40 ]
 
-    run bash -c "echo '$output' | jq -r '.commits[0].hash_short'"
+    run bash -c "echo '$json_output' | jq -r '.commits[0].sha_short'"
     assert_success
-    # Short hash should be 7 characters
+    # Short SHA should be 7 characters
     [ ${#output} -eq 7 ]
 
-    run bash -c "echo '$output' | jq -r '.commits[0].author.name'"
+    run bash -c "echo '$json_output' | jq -r '.commits[0].author.name'"
     assert_success
     [[ -n "$output" ]]
 
-    run bash -c "echo '$output' | jq -r '.commits[0].message.subject'"
+    run bash -c "echo '$json_output' | jq -r '.commits[0].subject'"
     assert_success
     [[ -n "$output" ]]
   else
     # Fallback to python
-    run bash -c "echo '$output' | python3 -c 'import sys, json; c=json.load(sys.stdin)[\"commits\"][0]; print(len(c[\"hash\"]))'"
+    run bash -c "echo '$json_output' | python3 -c 'import sys, json; c=json.load(sys.stdin)[\"commits\"][0]; print(len(c[\"sha\"]))'"
     assert_output "40"
   fi
 }
@@ -119,8 +123,8 @@ teardown() {
   run hug ll -1 --json
   assert_success
 
-  # Extract date and check format (YYYY-MM-DDTHH:MM:SS...)
-  run bash -c "echo '$output' | python3 -c 'import sys, json; print(json.load(sys.stdin)[\"commits\"][0][\"date\"])'"
+  # Extract author date and check format (YYYY-MM-DDTHH:MM:SS...)
+  run bash -c "echo '$output' | python3 -c 'import sys, json; print(json.load(sys.stdin)[\"commits\"][0][\"author\"][\"date\"])'"
   assert_success
   assert_output --regexp '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
 }
@@ -129,8 +133,8 @@ teardown() {
   run hug ll -1 --json
   assert_success
 
-  # Check for date_relative field
-  run bash -c "echo '$output' | python3 -c 'import sys, json; print(json.load(sys.stdin)[\"commits\"][0].get(\"date_relative\"))'"
+  # Check for author.date_relative field
+  run bash -c "echo '$output' | python3 -c 'import sys, json; print(json.load(sys.stdin)[\"commits\"][0][\"author\"].get(\"date_relative\"))'"
   assert_success
   [[ -n "$output" ]]
 }
@@ -138,13 +142,14 @@ teardown() {
 @test "hug ll --json: handles multiple commits" {
   run hug ll -3 --json
   assert_success
+  local json_output="$output"
 
   # Should have 3 commits
-  run bash -c "echo '$output' | python3 -c 'import sys, json; print(len(json.load(sys.stdin)[\"commits\"]))'"
+  run bash -c "echo '$json_output' | python3 -c 'import sys, json; print(len(json.load(sys.stdin)[\"commits\"]))'"
   assert_output "3"
 
   # Summary should match
-  run bash -c "echo '$output' | python3 -c 'import sys, json; print(json.load(sys.stdin)[\"summary\"][\"total_commits\"])'"
+  run bash -c "echo '$json_output' | python3 -c 'import sys, json; print(json.load(sys.stdin)[\"summary\"][\"total_commits\"])'"
   assert_output "3"
 }
 
@@ -166,7 +171,7 @@ teardown() {
   assert_success
 
   # Extract just commit subjects
-  run bash -c "echo '$output' | jq -r '.commits[].message.subject'"
+  run bash -c "echo '$output' | jq -r '.commits[].subject'"
   assert_success
   [[ -n "$output" ]]
 }
@@ -202,6 +207,16 @@ teardown() {
 # =============================================================================
 # JSON WITH STATS
 # =============================================================================
+
+@test "hug ll --json: stats field ABSENT by default" {
+  run hug ll -1 --json
+  assert_success
+
+  # Stats field should NOT exist when --with-stats is absent
+  run bash -c "echo '$output' | python3 -c 'import sys, json; print(\"stats\" in json.load(sys.stdin)[\"commits\"][0])'"
+  assert_success
+  assert_output "False"
+}
 
 @test "hug ll --json --with-stats: includes file change statistics" {
   # Create a commit with known changes
@@ -239,6 +254,72 @@ print(\"files_changed\" in stats and \"insertions\" in stats and \"deletions\" i
 }
 
 # =============================================================================
+# JSON WITH --no-body FLAG
+# =============================================================================
+
+@test "hug ll --json --no-body: body field is null" {
+  # Create commit with body
+  git commit --allow-empty -m "Subject line" -m "Body paragraph 1" -m "Body paragraph 2" >/dev/null 2>&1
+
+  run hug ll -1 --json --no-body
+  assert_success
+
+  # Body should be null
+  run bash -c "echo '$output' | python3 -c 'import sys, json; print(json.load(sys.stdin)[\"commits\"][0][\"body\"])'"
+  assert_output "None"
+}
+
+@test "hug ll --json --no-body: message equals subject only" {
+  # Create commit with body
+  git commit --allow-empty -m "Test subject" -m "Test body content" >/dev/null 2>&1
+
+  run hug ll -1 --json --no-body
+  assert_success
+
+  # Message should equal subject (no body)
+  run bash -c "echo '$output' | python3 -c '
+import sys, json
+commit = json.load(sys.stdin)[\"commits\"][0]
+print(commit[\"message\"] == commit[\"subject\"])
+'"
+  assert_success
+  assert_output "True"
+}
+
+@test "hug ll --json: body INCLUDED by default" {
+  # Create commit with body
+  git commit --allow-empty -m "Subject" -m "Body text here" >/dev/null 2>&1
+
+  run hug ll -1 --json
+  assert_success
+
+  # Body should be present
+  run bash -c "echo '$output' | python3 -c 'import sys, json; body=json.load(sys.stdin)[\"commits\"][0][\"body\"]; print(body is not None and len(body) > 0)'"
+  assert_success
+  assert_output "True"
+}
+
+@test "hug ll --json --with-stats --no-body: both flags work together" {
+  # Create commit with body and file changes
+  echo "content" > newfile.txt
+  git add newfile.txt
+  git commit -m "Add file" -m "Detailed description here" >/dev/null 2>&1
+
+  run hug ll -1 --json --with-stats --no-body
+  assert_success
+  local json_output="$output"
+
+  # Check stats present
+  run bash -c "echo '$json_output' | python3 -c 'import sys, json; print(\"stats\" in json.load(sys.stdin)[\"commits\"][0])'"
+  assert_success
+  assert_output "True"
+
+  # Check body absent
+  run bash -c "echo '$json_output' | python3 -c 'import sys, json; print(json.load(sys.stdin)[\"commits\"][0][\"body\"])'"
+  assert_output "None"
+}
+
+# =============================================================================
 # EDGE CASES
 # =============================================================================
 
@@ -250,7 +331,7 @@ print(\"files_changed\" in stats and \"insertions\" in stats and \"deletions\" i
   assert_success
 
   # Check that body is captured
-  run bash -c "echo '$output' | python3 -c 'import sys, json; body=json.load(sys.stdin)[\"commits\"][0][\"message\"].get(\"body\"); print(body is not None and len(body) > 0)'"
+  run bash -c "echo '$output' | python3 -c 'import sys, json; body=json.load(sys.stdin)[\"commits\"][0].get(\"body\"); print(body is not None and len(body) > 0)'"
   assert_success
   assert_output "True"
 }
@@ -262,7 +343,7 @@ print(\"files_changed\" in stats and \"insertions\" in stats and \"deletions\" i
   assert_success
 
   # Body should be null
-  run bash -c "echo '$output' | python3 -c 'import sys, json; print(json.load(sys.stdin)[\"commits\"][0][\"message\"][\"body\"])'"
+  run bash -c "echo '$output' | python3 -c 'import sys, json; print(json.load(sys.stdin)[\"commits\"][0][\"body\"])'"
   assert_output "None"
 }
 

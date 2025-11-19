@@ -14,7 +14,8 @@ OPTIONS:
     -<n>           Show last n commits (e.g., -10)
     --all          Show all branches
     --json         Output as JSON (machine-readable)
-    --with-stats   Include file change statistics
+    --with-stats   Include file change statistics (JSON mode only)
+    --no-body      Omit commit message body (JSON mode only)
     -h, --help     Show this help
 
 DESCRIPTION:
@@ -23,12 +24,14 @@ DESCRIPTION:
     Use --json for machine-readable output suitable for automation.
 
 EXAMPLES:
-    hug ll                    # Show commits on current branch
-    hug ll -10                # Show last 10 commits
-    hug ll --all              # Show all branches
-    hug ll --json             # Output as JSON
-    hug ll --json --with-stats # JSON with file change stats
-    hug ll main..feature      # Commits in feature not in main
+    hug ll                         # Show commits on current branch
+    hug ll -10                     # Show last 10 commits
+    hug ll --all                   # Show all branches
+    hug ll --json                  # Output as JSON
+    hug ll --json --with-stats     # JSON with file change stats
+    hug ll --json --no-body        # JSON with subject only (faster)
+    hug ll --json --with-stats --no-body  # Combined flags
+    hug ll main..feature           # Commits in feature not in main
 
 JSON OUTPUT (GitHub-compatible + Hug enhancements):
     {
@@ -74,6 +77,7 @@ EOF
 # Parse flags
 json_output=false
 with_stats=false
+no_body=false
 git_args=()
 
 while [ $# -gt 0 ]; do
@@ -88,6 +92,10 @@ while [ $# -gt 0 ]; do
       ;;
     --with-stats)
       with_stats=true
+      shift
+      ;;
+    --no-body)
+      no_body=true
       shift
       ;;
     --all)
@@ -119,15 +127,21 @@ if $json_output; then
   # Format: hash|~|short|~|author_name|~|author_email|~|committer_name|~|committer_email|~|author_date|~|author_date_rel|~|committer_date|~|committer_date_rel|~|tree|~|subject|~|body|~|parents|~|refs
   format="%H${field_sep}%h${field_sep}%an${field_sep}%ae${field_sep}%cn${field_sep}%ce${field_sep}%aI${field_sep}%ar${field_sep}%cI${field_sep}%cr${field_sep}%T${field_sep}%s${field_sep}%B${field_sep}%P${field_sep}%D"
 
-  # Delegate to Python helper for parsing (handles both with and without stats)
+  # Delegate to Python helper for parsing
   python_helper="$CMD_BASE/../lib/python/log_json.py"
 
+  # Build Python helper args
+  python_args=()
+  $with_stats && python_args+=("--with-stats")
+  $no_body && python_args+=("--no-body")
+
+  # Run git log with optional --numstat
   if $with_stats; then
     git log --format="${format}" --numstat "${git_args[@]}" 2>/dev/null | \
-      python3 "$python_helper" --with-stats
+      python3 "$python_helper" "${python_args[@]}"
   else
     git log --format="${format}" "${git_args[@]}" 2>/dev/null | \
-      python3 "$python_helper"
+      python3 "$python_helper" "${python_args[@]}"
   fi
 
 else
