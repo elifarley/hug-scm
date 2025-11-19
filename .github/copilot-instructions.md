@@ -1,14 +1,122 @@
 # Copilot Instructions for Hug SCM
 
+## Working Persona
+
+**When contributing to this codebase, act as a world-renowned Google principal engineer:**
+
+- **Engineering Excellence:** Write production-grade code with zero shortcuts
+- **Systems Thinking:** Consider scalability, maintainability, and long-term impact
+- **User Empathy:** Every feature must solve a real user problem
+- **Quality First:** Zero dependencies where possible, comprehensive error handling
+- **Documentation as Code:** Git history tells the story, commit messages are artifacts
+- **Pragmatic Decisions:** Ship high-value features with minimal complexity
+- **Performance Mindset:** Optimize for common cases, stream data, avoid unnecessary work
+
 ## Project Overview
 
-Hug is a CLI tool that provides a humane, intuitive interface for Git and other version control systems. It transforms complex Git commands into a simple, predictable language that feels natural to use.
+**Hug SCM** is a humane CLI interface layer for Git and Mercurial that transforms complex version control commands into an intuitive, predictable language. It's written in Bash with comprehensive test coverage via BATS.
 
-**Key Facts:**
-- Written in Bash scripts (/git-config/bin/*) and git aliases (/git-config/.git-config)
-- Acts as a wrapper/interface layer over Git and Mercurial
-- Currently only supports Git and Mercurial (future: Sapling)
-- Documentation site built with VitePress
+**Key Points:**
+- Bash-based CLI with 70+ commands organized by semantic prefixes
+- Dual VCS support: Git (primary) and Mercurial (parallel implementation)
+- Python helpers for computational analysis (co-changes, ownership, activity)
+- BATS-based test suite (unit, integration, library tests)
+- VitePress documentation with ADRs for architectural decisions
+- Safety-first philosophy: shorter commands = safer, longer commands = more powerful
+
+## Development Commands
+
+### Testing
+
+**IMPORTANT: Always use `make` targets for testing, NOT direct `./tests/run-tests.sh` invocation.**
+
+The Makefile provides comprehensive test capabilities with better ergonomics:
+
+```bash
+# SHOW_FAILING=1 is recommended for all BATS tests:
+# - Shows only failures during test run (less noise)
+# - Still shows test count (e.g., "1..248") and summary ("✓ All tests passed!")
+# - Makes failures immediately visible when they occur
+# - No downside: same confidence signal, cleaner output
+
+# All tests (recommended for final validation)
+make test SHOW_FAILING=1                    # Runs ALL tests (BATS + pytest)
+                                            # = test-bash + test-lib-py
+
+# BATS-only or pytest-only
+make test-bash SHOW_FAILING=1               # All BATS tests (unit + integration + lib)
+make test-lib-py                            # Python library tests (pytest)
+make test-lib-py-coverage                   # Python tests with coverage report
+
+# BATS test categories (subsets of test-bash)
+make test-unit SHOW_FAILING=1               # BATS unit tests (tests/unit/)
+make test-integration SHOW_FAILING=1        # BATS integration tests (tests/integration/)
+make test-lib SHOW_FAILING=1                # BATS library tests (tests/lib/)
+
+# Run specific BATS test files (supports basename or full path)
+make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
+make test-unit TEST_FILE=test_analyze_deps.bats SHOW_FAILING=1
+make test-lib TEST_FILE=test_hug_common.bats SHOW_FAILING=1
+make test-integration TEST_FILE=test_workflows.bats SHOW_FAILING=1
+make test-bash TEST_FILE=test_head.bats SHOW_FAILING=1
+
+# Filter tests by name pattern (works with BATS and pytest)
+make test-unit TEST_FILTER="hug w discard" SHOW_FAILING=1
+make test-lib TEST_FILTER="confirm_action" SHOW_FAILING=1
+make test-bash TEST_FILTER="hug s" SHOW_FAILING=1
+make test-lib-py TEST_FILTER="test_analyze" # pytest -k pattern
+
+# Combine BATS options: file + filter + show-failing
+make test-unit TEST_FILE=test_analyze_deps.bats TEST_FILTER="dependency" SHOW_FAILING=1
+make test-bash TEST_FILTER="hug w" SHOW_FAILING=1
+
+# Check prerequisites without running tests
+make test-check                             # BATS dependencies check
+```
+
+**Test Hierarchy Summary:**
+```
+make test (ALL)
+├── make test-bash (ALL BATS)
+│   ├── make test-unit (tests/unit/*.bats)
+│   ├── make test-integration (tests/integration/*.bats)
+│   └── make test-lib (tests/lib/*.bats)
+└── make test-lib-py (git-config/lib/python/tests/)
+```
+
+### Installation & Activation
+
+```bash
+# Install Hug SCM
+make install
+
+# Activate Hug in current shell (required before manual testing)
+source bin/activate
+
+# Check test prerequisites
+make test-check
+```
+
+### Documentation
+
+```bash
+make docs-dev                               # Local dev server (port 5173)
+make docs-build                             # Production build
+make docs-preview                           # Preview production build
+```
+
+### Setup
+
+```bash
+# Install test dependencies (BATS, helpers)
+make test-deps-install
+
+# Install optional dependencies (gum, vhs)
+make optional-deps-install
+
+# View all available commands
+make help
+```
 
 ## Prerequisites
 
@@ -20,29 +128,93 @@ IMPORTANT! Before starting, you need to run `bin/activate` so that everything wi
 
 However, you don't really need to call some of the tools directly (vhs, bats, etc) since we have excellent, high-level Makefile targets you should prefer to use instead (check them out).
 
-## Repository Structure
+## Project Architecture
+
+### Directory Structure
 
 ```
 hug-scm/
-├── git-config/              # Git-specific implementation
-│   ├── bin/                 # Executable Bash scripts (git-* and hug)
-│   ├── lib/                 # Shared library code
-│   │   ├── hug-common       # Common utilities
-│   │   └── hug-git-kit      # Git-specific helpers
-│   ├── completions/         # Shell completion scripts
-│   └── install.sh           # Installation script
-├── docs/                    # VitePress documentation
-│   ├── .vitepress/          # VitePress config
-│   ├── commands/            # Command documentation
-│   ├── architecture/        # ADRs and design docs
-│   └── *.md                 # Documentation pages
-├── tests/                   # BATS test suite
-│   ├── test_helper.bash     # Shared test utilities
-│   ├── unit/                # Unit tests for individual commands
-│   └── integration/         # Workflow/integration tests
-│   └── lib/                 # Tests for library files found in git-config/lib/*
-└── *.md                     # Root documentation
+├── bin/                          # Main entry points
+│   ├── hug                        # Dispatcher (auto-detects Git vs Mercurial)
+│   ├── hug-clone, hug-init        # Clone/init operations
+│   └── activate                   # Shell activation script
+│
+├── git-config/                    # Git implementation (primary)
+│   ├── bin/                       # 60+ command scripts (git-*, named git-<prefix>-<cmd>)
+│   ├── lib/                       # 21 modular library functions (~4500 LOC)
+│   │   ├── hug-common             # Shared utilities (output, confirmation, colors)
+│   │   ├── hug-cli-flags          # GNU getopt-based flag parsing
+│   │   ├── hug-gum                # Interactive selection (charmbracelet/gum)
+│   │   ├── hug-git-kit            # Git operations (repo, state, files, discard, branch, commit, etc.)
+│   │   └── ... 16 more focused modules
+│   ├── completions/               # Shell completion scripts
+│   └── .gitconfig                 # Git aliases for all Hug commands
+│
+├── hg-config/                     # Mercurial implementation (parallel to git-config)
+│   ├── bin/                       # Mercurial command scripts
+│   ├── lib/                       # Shared hug-common + hug-hg-kit
+│   └── .hgrc                      # Mercurial configuration
+│
+├── tests/                         # BATS test suite
+│   ├── test_helper.bash           # Common setup/utilities
+│   ├── unit/                      # 17 test files for commands
+│   ├── lib/                       # 16 test files for library modules
+│   ├── integration/               # 4 test files for workflows
+│   ├── run-tests.sh               # Test runner with filtering support
+│   └── README.md                  # Test documentation
+│
+├── docs/                          # VitePress documentation
+│   ├── architecture/              # ADRs (testing strategy, Mercurial support)
+│   ├── commands/                  # Command reference docs
+│   ├── .vitepress/                # VitePress config
+│   └── *.md                       # User documentation
+│
+├── .github/workflows/             # CI/CD automation
+│   ├── test.yml                   # Run BATS tests on push/PR
+│   ├── deploy-docs.yml            # Deploy VitePress docs
+│   └── regenerate-vhs-images.yml  # Screencast updates
+│
+├── Makefile                       # Development commands
+├── README.md                      # Main project readme
+├── TESTING.md                     # Testing guide
+├── CONTRIBUTING.md               # Contribution guidelines
+└── install.sh                     # Installation script
 ```
+
+### Command Organization
+
+Commands are organized by semantic prefixes:
+
+| Prefix | Category | Examples |
+|--------|----------|----------|
+| `h*` | HEAD operations | h, h-back, h-undo, h-squash, h-rewind, h-rollback |
+| `w*` | Working directory | w, w-discard, w-wipe, w-purge, w-zap, w-unwip, w-get |
+| `s*` | Status & staging | s, a, aa, us, usa, sl, sla, ss, su, sw |
+| `b*` | Branching | b, bc, bl, bpush, bpull, bdel, bpullr |
+| `c*` | Commits | c, ca, caa, cm, cma, ccp, cmv |
+| `l*` | Logging | l, ll, la, lp, lf, lc, lau, ld |
+| `f*` | File inspection | fblame, fb, fcon, fa, fborn |
+| `t*` | Tagging | t, tc, ta, ts, tr, tm, tdel |
+| `r*`, `m*` | Rebase & merge | rb, rbi, rbc, m, mff, mkeep |
+
+### Library Architecture
+
+All command scripts source shared libraries. Key modules:
+
+- **hug-common**: Utilities for colors, output, confirmations, arrays
+- **hug-cli-flags**: GNU getopt-based flag parsing (supports `-f`, `--dry-run`, combined flags)
+- **hug-gum**: Interactive selection wrapper around charmbracelet/gum
+- **hug-git-repo**: Repository & commit validation, path operations
+- **hug-git-state**: Working tree state checks (staged, unstaged, clean)
+- **hug-git-files**: File listing functions (staged, unstaged, tracked, untracked, ignored)
+- **hug-git-discard**: Discard operations with dry-run and confirmation support
+- **hug-git-branch**: Branch info, display, interactive selection
+- **hug-git-commit**: Commit range analysis, preview helpers
+- **hug-git-upstream**: Upstream operation handlers
+- **hug-git-backup**: Backup branch management
+- **hug-git-rebase**: Rebase conflict resolution helpers
+
+See `git-config/lib/README.md` for comprehensive library documentation.
 
 ## Coding Standards
 
@@ -334,6 +506,66 @@ Tests create isolated Git repositories in temp directories:
 3. **Forgetting git --no-pager**: Use in scripts to avoid pager issues
 4. **Unquoted variables**: Always quote bash variables: `"$var"` not `$var`
 
+## Commit Message Philosophy
+
+**Git history is documentation.** Each commit message is an artifact that explains WHY a change was made, not just WHAT changed.
+
+### The WHY/WHAT/HOW/IMPACT Structure
+
+Every commit message should follow this pattern:
+
+```
+<type>: <concise summary in imperative mood>
+
+WHY: <The problem being solved and its importance>
+<Detailed explanation of the user pain point, business need, or technical debt>
+
+WHAT: <The specific changes made>
+<High-level overview of the solution>
+<Key components modified or added>
+
+HOW: <Implementation approach and technical details>
+<Architecture patterns used>
+<Algorithms or data structures chosen>
+
+IMPACT: <Real-world benefits for users and developers>
+<How this improves user experience>
+<Performance implications>
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+### Commit Types
+
+Use conventional commit prefixes:
+- **feat:** New feature for users
+- **fix:** Bug fix
+- **docs:** Documentation changes
+- **refactor:** Code restructuring without behavior change
+- **perf:** Performance improvements
+- **test:** Adding or updating tests
+- **chore:** Maintenance tasks (deps, tooling)
+
+## Documentation Organization
+
+**IMPORTANT: Before creating or modifying documentation, consult `docs/DOCS_ORGANIZATION.md` for file placement guidelines.**
+
+### Quick Reference: Where to Put Documentation
+
+| Type | Location | Examples |
+|------|----------|----------|
+| **User Guides** | `docs/*.md` | getting-started.md, workflows.md |
+| **Command Reference** | `docs/commands/*.md` | head.md, branching.md, status-staging.md |
+| **Architecture Decisions** | `docs/architecture/ADR-*.md` | ADR-001-automated-testing-strategy.md |
+| **Planning Docs** | `docs/planning/*.md` | json-output-roadmap.md |
+| **VHS Screencasts** | `docs/screencasts/*.tape` | hug-sl-states.tape, template.tape |
+| **Library Docs** | `git-config/lib/README.md` | Library function documentation |
+| **Python Helpers** | `git-config/lib/python/README.md` | Python analysis module docs |
+| **Testing Guide** | `TESTING.md` (root) | Testing strategy and examples |
+| **Contributing** | `CONTRIBUTING.md` (root) | Contribution guidelines |
+
 ## Getting Help
 
 - Read existing scripts in `git-config/bin/` for examples
@@ -341,6 +573,7 @@ Tests create isolated Git repositories in temp directories:
 - Review documentation in `docs/`
 - Consult TESTING.md for detailed testing guide
 - See README.md for command philosophy and structure
+- Check CLAUDE.md for comprehensive development guidance
 
 ## Quick Reference
 

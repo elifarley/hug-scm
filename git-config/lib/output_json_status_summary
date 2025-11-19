@@ -47,14 +47,14 @@ output_json_status_summary() {
     left_count=$(echo "$counts" | cut -f1)
     right_count=$(echo "$counts" | cut -f2)
 
-    branch_info=$(to_json_object \
-      "name" "$branch" \
-      "upstream" "$upstream" \
+    branch_info=$(to_json_nested \
+      "name" "\"$branch\"" \
+      "upstream" "\"$upstream\"" \
       "ahead" "$left_count" \
       "behind" "$right_count")
   else
-    branch_info=$(to_json_object \
-      "name" "$branch")
+    branch_info=$(to_json_nested \
+      "name" "\"$branch\"")
   fi
 
   # Build status summary
@@ -66,7 +66,7 @@ output_json_status_summary() {
   fi
 
   local status_summary
-  status_summary=$(to_json_object \
+  status_summary=$(to_json_nested \
     "clean" "$is_clean" \
     "staged_files" "$staged_files" \
     "unstaged_files" "$unstaged_files" \
@@ -79,11 +79,11 @@ output_json_status_summary() {
 
   # Build main JSON output
   local json_output
-  json_output=$(to_json_object \
-    "repository" "$(pwd)" \
-    "timestamp" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-    "command" "hug s --json" \
-    "version" "${HUG_VERSION:-unknown}" \
+  json_output=$(to_json_nested \
+    "repository" "\"$(pwd)\"" \
+    "timestamp" "\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"" \
+    "command" "\"hug s --json\"" \
+    "version" "\"${HUG_VERSION:-unknown}\"" \
     "head" "$(to_json_object "hash" "$hash")" \
     "branch" "$branch_info" \
     "status" "$status_summary")

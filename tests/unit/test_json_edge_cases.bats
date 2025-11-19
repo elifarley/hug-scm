@@ -41,12 +41,12 @@ validate_json() {
   # Test json_escape directly with control characters
   cd /tmp
   printf 'tab\tseparated\nnewlines\rreturn' > test_input.txt
-  run bash -c '
-    source /home/ecc/IdeaProjects/hug-scm/git-config/lib/hug-json
-    test_str="$(cat test_input.txt)"
-    escaped=$(json_escape "$test_str")
-    printf "%s" "$escaped"
-  '
+  run bash -c "
+    source $PROJECT_ROOT/git-config/lib/hug-json
+    test_str=\"\$(cat test_input.txt)\"
+    escaped=\$(json_escape \"\$test_str\")
+    printf \"%s\" \"\$escaped\"
+  "
   assert_success
   # Control characters should be escaped
   assert_output --partial '\\t'
@@ -70,18 +70,18 @@ validate_json() {
 
 @test "hug-json: to_json_array handles empty arrays" {
   # Test empty array generation
-  run bash -c 'cd /home/ecc/IdeaProjects/hug-scm && source git-config/lib/hug-json; to_json_array'
+  run bash -c "cd $PROJECT_ROOT && source git-config/lib/hug-json; to_json_array"
   assert_success
   assert_output '[]'
 }
 
 @test "hug-json: to_json_array handles arrays with special characters" {
-  run bash -c '
-    cd /home/ecc/IdeaProjects/hug-scm
+  run bash -c "
+    cd $PROJECT_ROOT
     source git-config/lib/hug-json
-    array=("file with spaces.txt" "file\"with\"quotes.txt" "file\twith\ttabs.txt" "file\nwith\nnewlines.txt")
-    to_json_array "${array[@]}"
-  '
+    array=(\"file with spaces.txt\" \"file\\\"with\\\"quotes.txt\" \"file\twith\ttabs.txt\" \"file\nwith\nnewlines.txt\")
+    to_json_array \"\${array[@]}\"
+  "
   assert_success
   validate_json "$output"
   assert_output --partial 'file with spaces.txt'
@@ -276,31 +276,31 @@ validate_json() {
 # =============================================================================
 
 @test "hug-json: json_error produces valid JSON" {
-  run bash -c '
-    cd /home/ecc/IdeaProjects/hug-scm
+  run bash -c "
+    cd $PROJECT_ROOT
     source git-config/lib/hug-json
-    json_error "test_error" "test message" 2>&1
-  '
+    json_error \"test_error\" \"test message\" 2>&1
+  "
   assert_failure 1
   validate_json "$output"
   assert_output --partial '"error":{"type":"test_error","message":"test message"}'
 }
 
 @test "hug-json: validate_json handles malformed JSON" {
-  run bash -c '
-    cd /home/ecc/IdeaProjects/hug-scm
+  run bash -c "
+    cd $PROJECT_ROOT
     source git-config/lib/hug-json
-    validate_json '\''{"invalid": json}'\''
-  '
+    validate_json '{\"invalid\": json}'
+  "
   assert_failure 1
 }
 
 @test "hug-json: validate_json handles valid JSON" {
-  run bash -c '
-    cd /home/ecc/IdeaProjects/hug-scm
+  run bash -c "
+    cd $PROJECT_ROOT
     source git-config/lib/hug-json
-    validate_json '\''{"valid": "json", "array": [1,2,3]}'\''
-  '
+    validate_json '{\"valid\": \"json\", \"array\": [1,2,3]}'
+  "
   assert_success
 }
 

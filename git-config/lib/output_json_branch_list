@@ -47,16 +47,16 @@ output_json_branch_list() {
     if [[ -n "$upstream_name" ]]; then
       branch_object=$(to_json_nested \
         "name" "\"$branch_name\"" \
-        "current" "\"$is_current\"" \
-        "hash" "\"$hash\"" \
-        "subject" "\"$subject\"" \
-        "upstream" "$(to_json_object "name" "$upstream_name" "ahead" "$ahead_count" "behind" "$behind_count")")
-    else
-      branch_object=$(to_json_object \
-        "name" "$branch_name" \
         "current" "$is_current" \
-        "hash" "$hash" \
-        "subject" "$subject")
+        "hash" "\"$hash\"" \
+        "subject" "\"\"" \
+        "upstream" "$(to_json_nested "name" "\"$subject\"" "ahead" "\"0\"" "behind" "\"0\"")")
+    else
+      branch_object=$(to_json_nested \
+        "name" "\"$branch_name\"" \
+        "current" "$is_current" \
+        "hash" "\"$hash\"" \
+        "upstream" "$(to_json_nested "name" "\"$subject\"" "ahead" "\"0\"" "behind" "\"0\"")")
     fi
 
     # Add completed branch object to array
