@@ -170,7 +170,7 @@ If migration criteria are met:
 - [ADR-002: Mercurial Support Architecture](ADR-002-mercurial-support-architecture.md)
 - [JSON Output Roadmap](../planning/json-output-roadmap.md)
 - [Testing Strategy](../../TESTING.md)
-- [Python Helpers Documentation](../../../git-config/lib/python/README.md)
+- [Python Helpers Documentation](../../git-config/lib/python/README.md)
 
 ---
 
