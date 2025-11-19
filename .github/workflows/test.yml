@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        test_type: [lib, unit, integration, lib-py]
+        test_type: [lib-py, lib, unit, integration]
     
     steps:
       - name: Checkout code
