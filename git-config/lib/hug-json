@@ -1,0 +1,183 @@
+# shellcheck shell=bash
+# Library: HUG JSON utilities
+#
+# Provides reusable JSON helper functions for hug commands.
+# All functions are pure bash (no external dependencies).
+
+if [[ -n "${_HUG_JSON_LOADED:-}" ]]; then
+  return 0 2>/dev/null || :
+fi
+_HUG_JSON_LOADED=1
+
+# Escape a string for JSON output
+# Handles: quotes, backslashes, newlines, tabs, control characters
+json_escape() {
+  local str="$1"
+  # Escape backslashes first (must be before other escapes)
+  str="${str//\\/\\\\}"
+  # Escape quotes
+  str="${str//\"/\\\"}"
+  # Escape control characters
+  str="${str//$'\n'/\\n}"
+  str="${str//$'\r'/\\r}"
+  str="${str//$'\t'/\\t}"
+  # Escape other control characters (optional, less common)
+  str="${str//$'\b'/\\b}"
+  str="${str//$'\f'/\\f}"
+  printf '%s' "$str"
+}
+
+# Convert bash associative array to JSON object string
+# Usage: to_json_object "key1" "value1" "key2" "value2" ...
+# Returns JSON object string (no trailing newline)
+to_json_object() {
+  local json="{"
+  local first=true
+
+  while [ $# -gt 0 ]; do
+    local key="$1"
+    local value="$2"
+
+    if $first; then
+      first=false
+    else
+      json+=","
+    fi
+
+    json+="\"$(json_escape "$key")\":\"$(json_escape "$value")\""
+    shift 2
+  done
+
+  json+="}"
+  printf '%s' "$json"
+}
+
+# Helper to create JSON object with proper escaping for nested structures
+# Usage: to_json_nested "key1" "value1" "key2" "object"
+to_json_nested() {
+  local json="{"
+  local first=true
+
+  while [ $# -gt 0 ]; do
+    local key="$1"
+    local value="$2"
+
+    if $first; then
+      first=false
+    else
+      json+=","
+    fi
+
+    json+="\"$(json_escape "$key")\":$value"
+    shift 2
+  done
+
+  json+="}"
+  printf '%s' "$json"
+}
+
+# Convert bash array to JSON array of strings
+# Usage: to_json_array "${array[@]}"
+# Returns JSON array string (no trailing newline)
+to_json_array() {
+  local json="["
+  local first=true
+
+  for item in "$@"; do
+    if $first; then
+      first=false
+    else
+      json+=","
+    fi
+    json+="\"$(json_escape "$item")\""
+  done
+
+  json+="]"
+  printf '%s' "$json"
+}
+
+# Start JSON array (for streaming large outputs)
+# Usage: json_array_start
+json_array_start() {
+  printf '['
+}
+
+# Add object to JSON array (for streaming)
+# Usage: json_array_add "$json_object" [add_comma=true]
+json_array_add() {
+  local item="$1"
+  local add_comma="${2:-true}"
+
+  if $add_comma; then
+    printf ',%s' "$item"
+  else
+    printf '%s' "$item"
+  fi
+}
+
+# End JSON array (for streaming)
+# Usage: json_array_end
+json_array_end() {
+  printf ']'
+}
+
+# Generate standardized JSON error response
+# Usage: json_error "error_type" "error_message" [exit_code=1]
+json_error() {
+  local error_type="$1"
+  local error_message="$2"
+  local exit_code="${3:-1}"
+
+  printf '{"error":{"type":"%s","message":"%s"}}\n' "$(json_escape "$error_type")" "$(json_escape "$error_message")" >&2
+  exit "$exit_code"
+}
+
+# Generate JSON object with common metadata fields
+# Usage: json_metadata "command_name"
+# Returns object with repository, timestamp, command, version
+json_metadata() {
+  local command="$1"
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+  # Get version from project if available
+  local version="${HUG_VERSION:-"unknown"}"
+
+  to_json_object \
+    "repository" "$(pwd)" \
+    "timestamp" "$timestamp" \
+    "command" "$command" \
+    "version" "$version"
+}
+
+# Validate JSON string using Python if available
+# Usage: validate_json "$json_string"
+# Returns 0 if valid, 1 if invalid
+validate_json() {
+  local json="$1"
+
+  if command -v python3 >/dev/null 2>&1; then
+    echo "$json" | python3 -m json.tool >/dev/null 2>&1
+  elif command -v python >/dev/null 2>&1; then
+    echo "$json" | python -m json.tool >/dev/null 2>&1
+  else
+    # Fallback: basic syntax check (not comprehensive)
+    [[ "$json" =~ ^\[\]$\|^\{\}\$ ]] && return 0 || return 1
+  fi
+}
+
+# Pretty-print JSON if pretty-printer available, otherwise output as-is
+# Usage: json_pretty "$json_string"
+json_pretty() {
+  local json="$1"
+
+  if command -v jq >/dev/null 2>&1; then
+    echo "$json" | jq .
+  elif command -v python3 >/dev/null 2>&1; then
+    echo "$json" | python3 -m json.tool
+  elif command -v python >/dev/null 2>&1; then
+    echo "$json" | python -m json.tool
+  else
+    printf '%s\n' "$json"
+  fi
+}

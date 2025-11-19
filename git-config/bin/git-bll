@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+for f in hug-common hug-git-kit output_json_branch_list; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
@@ -30,17 +30,36 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags
-eval "$(parse_common_flags "$@")"
-
-test $# -gt 0 && {
-  show_help
-  echo "Error: Arguments not expected: $*"
-  exit 1
-}
+# Parse arguments
+json_output=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json)
+      json_output=true
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      show_help
+      echo "Error: Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
 
 # Early exit if not in Git repo
 check_git_repo
+
+# JSON output mode
+if $json_output; then
+  # Get current branch for JSON
+  current_branch=$(git branch --show-current 2>/dev/null || echo "detached HEAD")
+  output_json_branch_list "$current_branch"
+  exit 0
+fi
 
 # Compute branch details
 declare -a branches=() hashes=() subjects=() tracks=()

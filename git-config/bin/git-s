@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/../lib/hug-common"
+. "$CMD_BASE/../lib/output_json_status_summary"
 set -euo pipefail
 
 # TODO if no uncommitted changes:
@@ -9,12 +10,28 @@ set -euo pipefail
 #   - Show orange circle if only untracked
 #   - Show purple circle if both untracked and ignored
 
-# Quick changes summary
+# Parse arguments
+json_output=false
 test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
   printf 's: Quick summary of working and staged changes\n' >&2
-  printf 'Usage: hug s\n' >&2
+  printf 'Usage: hug s [--json]\n' >&2
   exit 1
 }
+
+# Check for --json flag
+for arg in "$@"; do
+  case "$arg" in
+    --json)
+      json_output=true
+      ;;
+  esac
+done
+
+# Quick changes summary
+if $json_output; then
+  output_json_status_summary
+  exit 0
+fi
 
 # HEAD status line (inspired by hug sl)
 hash=$(git rev-parse --short HEAD)

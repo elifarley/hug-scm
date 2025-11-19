@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Helper function for JSON status summary output
+# Used by git-s command
+
+# Load JSON utilities
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+. "$CMD_BASE/../lib/hug-json"
+
+output_json_status_summary() {
+  # Get current git information
+  local hash
+  local branch
+  local upstream
+  hash=$(git rev-parse --short HEAD)
+  branch=$(git branch --show-current 2>/dev/null || echo "detached HEAD")
+  upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
+
+  # Get file counts and line stats
+  local unstaged_files=0 unstaged_insertions=0 unstaged_deletions=0
+  local staged_files=0 staged_insertions=0 staged_deletions=0
+
+  if ! git diff --quiet; then
+    unstaged_files=$(git diff --name-only | wc -l)
+    unstaged_insertions=$(git diff --numstat | awk '{sum += $1} END {print sum+0}')
+    unstaged_deletions=$(git diff --numstat | awk '{sum += $2} END {print sum+0}')
+  fi
+
+  if ! git diff --quiet --cached; then
+    staged_files=$(git diff --cached --name-only | wc -l)
+    staged_insertions=$(git diff --cached --numstat | awk '{sum += $1} END {print sum+0}')
+    staged_deletions=$(git diff --cached --numstat | awk '{sum += $2} END {print sum+0}')
+  fi
+
+  # Get untracked and ignored counts
+  local untracked_count
+  local ignored_count
+  untracked_count=$(git ls-files --others --exclude-standard | wc -l)
+  ignored_count=$(git ls-files --others --exclude-standard --ignored | wc -l)
+
+  # Build branch info
+  local branch_info
+  if [ -n "$upstream" ]; then
+    local counts
+    local left_count
+    local right_count
+    counts=$(git rev-list --left-right --count HEAD...@{u} 2>/dev/null || echo "0	0")
+    left_count=$(echo "$counts" | cut -f1)
+    right_count=$(echo "$counts" | cut -f2)
+
+    branch_info=$(to_json_object \
+      "name" "$branch" \
+      "upstream" "$upstream" \
+      "ahead" "$left_count" \
+      "behind" "$right_count")
+  else
+    branch_info=$(to_json_object \
+      "name" "$branch")
+  fi
+
+  # Build status summary
+  local is_clean
+  is_clean=$(((unstaged_files + staged_files) == 0 && echo "true" || echo "false"))
+
+  local status_summary
+  status_summary=$(to_json_object \
+    "clean" "$is_clean" \
+    "staged_files" "$staged_files" \
+    "unstaged_files" "$unstaged_files" \
+    "untracked_count" "$untracked_count" \
+    "ignored_count" "$ignored_count" \
+    "staged_insertions" "$staged_insertions" \
+    "staged_deletions" "$staged_deletions" \
+    "unstaged_insertions" "$unstaged_insertions" \
+    "unstaged_deletions" "$unstaged_deletions")
+
+  # Build main JSON output
+  local json_output
+  json_output=$(to_json_object \
+    "repository" "$(pwd)" \
+    "timestamp" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+    "command" "hug s --json" \
+    "version" "${HUG_VERSION:-unknown}" \
+    "head" "$(to_json_object "hash" "$hash")" \
+    "branch" "$branch_info" \
+    "status" "$status_summary")
+
+  printf '%s\n' "$json_output"
+}

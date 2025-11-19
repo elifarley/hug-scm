@@ -59,6 +59,7 @@ _hug_common_libs=(
   "hug-cli-flags"
   "hug-confirm"
   "hug-select-files"
+  "hug-json"
 )
 
 for _hug_lib in "${_hug_common_libs[@]}"; do

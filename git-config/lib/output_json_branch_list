@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Helper function for JSON branch list output
+# Usage: output_json_branch_list "current_branch_name"
+
+# Load JSON utilities
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+. "$CMD_BASE/../lib/hug-json"
+
+output_json_branch_list() {
+  local current_branch="${1:-}"
+
+  # Get current branch name
+  if [[ -z "$current_branch" ]]; then
+    current_branch=$(git branch --show-current 2>/dev/null || echo "detached HEAD")
+  fi
+
+  # Get branch data using git for-each-ref
+  local -a branch_data=()
+  while IFS=$'\t' read -r refname hash upstream subject; do
+    [[ -z "$refname" ]] && continue
+
+    # Extract branch name from ref
+    local branch_name="${refname#refs/heads/}"
+    [[ "$branch_name" == "$refname" ]] && continue  # Skip non-head refs
+
+    # Determine if current branch
+    local is_current="false"
+    [[ "$branch_name" == "$current_branch" ]] && is_current="true"
+
+    # Get upstream tracking info
+    local upstream_name=""
+    local ahead_count="0"
+    local behind_count="0"
+
+    if [[ -n "$upstream" && "$upstream" != "[no upstream]" ]]; then
+      upstream_name="$upstream"
+
+      # Get ahead/behind counts
+      local counts
+      counts=$(git rev-list --left-right --count "$branch_name"..."$upstream" 2>/dev/null || echo "0	0")
+      ahead_count=$(echo "$counts" | cut -f1)
+      behind_count=$(echo "$counts" | cut -f2)
+    fi
+
+    # Build branch object
+    local branch_object
+    branch_object=$(to_json_object \
+      "name" "$branch_name" \
+      "current" "$is_current" \
+      "hash" "$hash" \
+      "subject" "$subject")
+
+    # Add upstream info if available
+    if [[ -n "$upstream_name" ]]; then
+      branch_object="${branch_object%,}"
+      branch_object+=",\"upstream\":$(to_json_object "name" "$upstream_name" "ahead" "$ahead_count" "behind" "$behind_count")}"
+    fi
+
+    branch_data+=("$branch_object}")
+  done < <(git for-each-ref --format='%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(contents:subject)' refs/heads/ 2>/dev/null)
+
+  # Build final JSON output
+  local json_output
+  json_output=$(to_json_object \
+    "repository" "$(pwd)" \
+    "timestamp" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+    "command" "hug bll --json" \
+    "version" "${HUG_VERSION:-unknown}" \
+    "current_branch" "$current_branch" \
+    "branches" "[$(IFS=','; echo "${branch_data[*]}")]")
+
+  printf '%s\n' "$json_output"
+}

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+for f in hug-common hug-git-kit output_json_commit_search; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
 show_help() {
@@ -53,11 +53,15 @@ eval "$(parse_common_flags "$@")"
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
 
-# Parse --with-files flag
+# Parse flags
+json_output=false
 with_files=false
 remaining_args=()
 for arg in "$@"; do
   case "$arg" in
+    --json)
+      json_output=true
+      ;;
     --with-files)
       with_files=true
       ;;
@@ -78,6 +82,12 @@ fi
 
 search_term="$1"
 shift
+
+# JSON output mode
+if $json_output; then
+  output_json_commit_search "code" "$search_term" "$with_files" "$@"
+  exit 0
+fi
 
 # Handle interactive file selection if requested
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
