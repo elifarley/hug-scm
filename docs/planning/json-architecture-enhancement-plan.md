@@ -14,6 +14,8 @@ Major accomplishments:
 - ✅ Created comprehensive test suite for all Python modules
 - ✅ Updated git-lf and git-lc to use Python implementation
 - ✅ Documented all JSON output schemas and patterns
+- ✅ **Unified commit JSON format across all commands (DRY principle)**
+- ✅ **All commands outputting commits now use log_json.py (single source of truth)**
 
 ## Current State Analysis
 
@@ -51,6 +53,26 @@ Major accomplishments:
    - Solution: Python implementation uses proper git commands with subprocess
 
 ## Architecture Design Principles
+
+### 0. DRY Principle - Don't Repeat Yourself ⭐
+
+**Principle**: Single source of truth for common output formats.
+
+**Implementation**:
+- **Commit formatting**: All commands that output commits (`git-ll`, `git-lf`, `git-lc`) use `log_json.py` parser
+- **GitHub-compatible format**: Unified structure across all commit-outputting commands
+- **Shared parser**: `parse_log_with_stats()` function in `log_json.py` is the single source of truth
+- **Benefits**: 
+  - Consistent API for consumers
+  - Single place to fix bugs or add features
+  - Easier testing and maintenance
+  - Reduced code duplication
+
+**Commands Using Unified Format**:
+- ✅ `hug ll --json`: Primary implementation (log_json.py)
+- ✅ `hug lf --json`: Leverages log_json.py via commit_search()
+- ✅ `hug lc --json`: Leverages log_json.py via commit_search()
+- 🔄 Future: Other commit-listing commands should follow this pattern
 
 ### 1. Type Safety
 

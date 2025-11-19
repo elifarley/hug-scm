@@ -25,7 +25,7 @@ teardown() {
   assert_output --partial '"timestamp"'
   assert_output --partial '"command":"hug lf --json"'
   assert_output --partial '"search"'
-  assert_output --partial '"results"'
+  assert_output --partial '"commits"'
   assert_output --partial '"type":"message"'
   assert_output --partial '"term":"feat"'
 
@@ -89,7 +89,7 @@ teardown() {
   assert_output --partial '"type":"code"'
   assert_output --partial '"term":"testFunction"'
   assert_output --partial '"search"'
-  assert_output --partial '"results"'
+  assert_output --partial '"commits"'
 
   # Validate JSON
   echo "$output" | jq . >/dev/null
@@ -145,7 +145,7 @@ teardown() {
 
   # Assert
   assert_success
-  assert_output --partial '"results":[]'
+  assert_output --partial '"commits":[]'
   assert_output --partial '"results_count":0'
 
   # Validate JSON
@@ -162,7 +162,7 @@ teardown() {
 
   # Assert
   assert_success
-  assert_output --partial '"results":[]'
+  assert_output --partial '"commits":[]'
   assert_output --partial '"results_count":0'
 
   # Validate JSON

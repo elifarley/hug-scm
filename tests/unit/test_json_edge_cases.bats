@@ -214,7 +214,7 @@ validate_json() {
   assert_success
   validate_json "$output"
   assert_output --partial '"results_count":0'
-  assert_output --partial '"results":[]'
+  assert_output --partial '"commits":[]'
 }
 
 @test "hug lf --json: handles commits with files containing special characters" {
@@ -338,5 +338,5 @@ validate_json() {
   validate_json "$output"
   # Should have multiple results
   assert_output --partial '"results_count":'
-  assert_output --partial '"results":['
+  assert_output --partial '"commits":['
 }
