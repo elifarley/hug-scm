@@ -8,10 +8,14 @@ operations that are difficult or inefficient in pure Bash.
 Usage:
     python3 json_transform.py transform_git_log <log_output>
     python3 json_transform.py transform_git_status <status_output>
+    python3 json_transform.py commit_search <search_type> <search_term> [--with-files]
 """
 
 import sys
 import json
+import subprocess
+import os
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 
@@ -152,6 +156,118 @@ def validate_json_schema(json_data: str, schema_name: str) -> bool:
     return True
 
 
+def commit_search(search_type: str, search_term: str, with_files: bool = False, 
+                  additional_args: List[str] = None) -> Dict[str, Any]:
+    """
+    Search commits and return JSON output.
+    
+    This replaces the complex bash parsing in output_json_commit_search.
+    
+    Args:
+        search_type: 'message' or 'code'
+        search_term: Search term
+        with_files: Include file changes
+        additional_args: Additional git log arguments
+        
+    Returns:
+        Dictionary with search results
+    """
+    # Build git log command
+    # Format: full_hash NULL short_hash NULL author_name NULL author_email NULL date NULL subject NULL
+    cmd = ['git', 'log', '--format=%H%x00%h%x00%an%x00%ae%x00%ai%x00%s%x00']
+    
+    if search_type == 'message':
+        cmd.append(f'--grep={search_term}')
+    elif search_type == 'code':
+        cmd.append(f'-S{search_term}')
+    else:
+        return {
+            'error': {
+                'type': 'invalid_search_type',
+                'message': 'Search type must be "message" or "code"'
+            }
+        }
+    
+    if additional_args:
+        cmd.extend(additional_args)
+    
+    try:
+        # Execute git log
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        log_output = result.stdout
+    except subprocess.CalledProcessError as e:
+        return {
+            'error': {
+                'type': 'git_error',
+                'message': f'Git command failed: {e.stderr}'
+            }
+        }
+    
+    # Parse commits
+    commits = []
+    # Split by newline first, then by NULL
+    for commit_line in log_output.strip().split('\n'):
+        if not commit_line:
+            continue
+        
+        # Split by NULL separator
+        parts = commit_line.split('\x00')
+        if len(parts) < 6:
+            continue
+        
+        commit = {
+            'sha': parts[0],
+            'sha_short': parts[1],
+            'author': {
+                'name': parts[2],
+                'email': parts[3]
+            },
+            'date': parts[4],
+            'message': parts[5]
+        }
+        
+        # Get files if requested
+        if with_files and parts[0]:
+            try:
+                files_result = subprocess.run(
+                    ['git', 'show', '--name-status', '--format=', parts[0]],
+                    capture_output=True, text=True, check=True
+                )
+                files = []
+                for file_line in files_result.stdout.strip().split('\n'):
+                    if not file_line:
+                        continue
+                    parts_file = file_line.split('\t', 1)
+                    if len(parts_file) == 2:
+                        status_code = parts_file[0][0] if parts_file[0] else 'M'
+                        files.append({
+                            'path': parts_file[1],
+                            'status': _status_to_type(status_code)
+                        })
+                commit['files'] = files
+            except subprocess.CalledProcessError:
+                commit['files'] = []
+        
+        commits.append(commit)
+    
+    # Build response
+    return {
+        'repository': {
+            'path': os.getcwd()
+        },
+        'timestamp': datetime.now().astimezone().replace(microsecond=0).isoformat().replace('+00:00', 'Z'),
+        'command': 'hug lf --json' if search_type == 'message' else 'hug lc --json',
+        'version': os.environ.get('HUG_VERSION', 'unknown'),
+        'search': {
+            'type': search_type,
+            'term': search_term,
+            'with_files': with_files,
+            'results_count': len(commits)
+        },
+        'results': commits
+    }
+
+
 def main():
     """CLI entry point for JSON transformations."""
     if len(sys.argv) < 2:
@@ -169,6 +285,16 @@ def main():
         status_data = sys.stdin.read()
         result = json.dumps(transform_git_status_to_json(status_data), indent=2)
         print(result)
+    elif command == 'commit_search':
+        if len(sys.argv) < 4:
+            print("Usage: json_transform.py commit_search <type> <term> [--with-files] [git-args...]", file=sys.stderr)
+            sys.exit(1)
+        search_type = sys.argv[2]
+        search_term = sys.argv[3]
+        with_files = '--with-files' in sys.argv
+        additional_args = [arg for arg in sys.argv[4:] if arg != '--with-files']
+        result = commit_search(search_type, search_term, with_files, additional_args)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     elif command == 'validate':
         if len(sys.argv) < 3:
             print("Usage: json_transform.py validate <schema_name>", file=sys.stderr)

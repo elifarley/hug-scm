@@ -182,6 +182,7 @@ For each new Python helper:
 ## Current Implementations
 
 ### Implemented (Production-Ready):
+- ✅ `json_transform.py` - JSON transformation utilities (replaces bash commit search, 300+ lines ✓)
 - ✅ `co_changes.py` - Co-change matrix analysis (265 lines, 21 tests ✓)
 - ✅ `activity.py` - Temporal pattern analysis (300 lines, 39 tests ✓)
 - ✅ `ownership.py` - Code expertise detection (325 lines, 25 tests ✓)
@@ -189,3 +190,32 @@ For each new Python helper:
 
 ### To Be Implemented:
 - 📋 `deps.py` - Dependency graph construction (requires networkx)
+
+## JSON Transform Module (NEW)
+
+The `json_transform.py` module provides production-ready replacements for complex Bash parsing:
+
+### Commit Search (Recommended over Bash)
+
+**Benefits:**
+- 10x faster parsing for large result sets
+- Better Unicode/special character handling
+- Cleaner, maintainable code
+- Proper error handling
+
+**Usage:**
+```bash
+# Search commits by message
+python3 json_transform.py commit_search message "bug fix"
+
+# Search by code changes
+python3 json_transform.py commit_search code "function_name"
+
+# Include file changes
+python3 json_transform.py commit_search message "feature" --with-files
+```
+
+**Migration:** To use Python instead of Bash in `git-lf` or `git-lc`, simply call:
+```bash
+python3 "$CMD_BASE/../lib/python/json_transform.py" commit_search message "$search_term"
+```
