@@ -11,7 +11,7 @@ output_json_status_summary() {
   local hash
   local branch
   local upstream
-  hash=$(git rev-parse --short HEAD)
+  hash=$(git rev-parse --short HEAD 2>/dev/null || echo "")
   branch=$(git branch --show-current 2>/dev/null || echo "detached HEAD")
   upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
 

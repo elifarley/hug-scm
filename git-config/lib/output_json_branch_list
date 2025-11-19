@@ -46,17 +46,17 @@ output_json_branch_list() {
     local branch_object
     if [[ -n "$upstream_name" ]]; then
       branch_object=$(to_json_nested \
-        "name" "\"$branch_name\"" \
+        "name" "\"$(json_escape "$branch_name")\"" \
         "current" "$is_current" \
-        "hash" "\"$hash\"" \
+        "hash" "\"$(json_escape "$hash")\"" \
         "subject" "\"\"" \
-        "upstream" "$(to_json_nested "name" "\"$subject\"" "ahead" "\"0\"" "behind" "\"0\"")")
+        "upstream" "$(to_json_nested "name" "\"$(json_escape "$subject")\"" "ahead" "\"0\"" "behind" "\"0\"")")
     else
       branch_object=$(to_json_nested \
-        "name" "\"$branch_name\"" \
+        "name" "\"$(json_escape "$branch_name")\"" \
         "current" "$is_current" \
-        "hash" "\"$hash\"" \
-        "upstream" "$(to_json_nested "name" "\"$subject\"" "ahead" "\"0\"" "behind" "\"0\"")")
+        "hash" "\"$(json_escape "$hash")\"" \
+        "upstream" "$(to_json_nested "name" "\"$(json_escape "$subject")\"" "ahead" "\"0\"" "behind" "\"0\"")")
     fi
 
     # Add completed branch object to array
@@ -72,7 +72,7 @@ output_json_branch_list() {
       "timestamp" "\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"" \
       "command" "\"hug bll --json\"" \
       "version" "\"${HUG_VERSION:-unknown}\"" \
-      "current_branch" "\"$current_branch\"" \
+      "current_branch" "\"$(json_escape "$current_branch")\"" \
       "branches" "[]")
   else
     # Non-empty array case - join with commas
@@ -83,7 +83,7 @@ output_json_branch_list() {
       "timestamp" "\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"" \
       "command" "\"hug bll --json\"" \
       "version" "\"${HUG_VERSION:-unknown}\"" \
-      "current_branch" "\"$current_branch\"" \
+      "current_branch" "\"$(json_escape "$current_branch")\"" \
       "branches" "[$branches_array]")
   fi
 
