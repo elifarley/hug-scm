@@ -258,7 +258,7 @@ def commit_search(search_type: str, search_term: str, with_files: bool = False,
             'with_files': with_files,
             'results_count': len(commits)
         },
-        'commits': commits  # Use 'commits' key for consistency with log_json
+        'results': commits  # Changed from 'commits' to 'results' to match schema expectations
     }
 
 

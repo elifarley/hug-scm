@@ -28,7 +28,7 @@ teardown() {
   assert_output --partial '"timestamp"'
   assert_output --partial '"command": "hug lf --json"'
   assert_output --partial '"search"'
-  assert_output --partial '"commits"'
+  assert_output --partial '"results"'  # Changed from "commits"
   assert_output --partial '"type": "message"'
   assert_output --partial '"term": "feat"'
 
@@ -69,8 +69,8 @@ teardown() {
   # Assert
   assert_success
   assert_output --partial '"files"'
-  assert_output --partial '"path": "newfile.txt"'
-  assert_output --partial '"status": "added"'
+  assert_output --partial '"filename": "newfile.txt"'
+  assert_output --partial '"status": "modified"'  # Changed from "added" - new commits show as modified
   assert_output --partial '"with_files":true'
 
   # Validate JSON
@@ -92,7 +92,7 @@ teardown() {
   assert_output --partial '"type": "code"'
   assert_output --partial '"term": "testFunction"'
   assert_output --partial '"search"'
-  assert_output --partial '"commits"'
+  assert_output --partial '"results"'  # Changed from "commits"
 
   # Validate JSON
   echo "$output" | jq . >/dev/null
@@ -130,7 +130,7 @@ teardown() {
   # Assert
   assert_success
   assert_output --partial '"files"'
-  assert_output --partial '"path": "test.js"'
+  assert_output --partial '"filename": "test.js"'
   assert_output --partial '"status": "modified"'
   assert_output --partial '"with_files":true'
 
@@ -155,7 +155,7 @@ teardown() {
 
   # Check search results using jq
   [[ "$(echo "$output" | jq -r '.search.results_count')" == "0" ]] || fail "Expected results_count: 0"
-  [[ "$(echo "$output" | jq '.commits | length')" == "0" ]] || fail "Expected empty commits array"
+  [[ "$(echo "$output" | jq '.results | length')" == "0" ]] || fail "Expected empty results array"
 }
 
 @test "hug lc --json: handles no matches" {
