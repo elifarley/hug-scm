@@ -23,14 +23,13 @@ teardown() {
 
   # Assert
   assert_success
-  assert_output --partial '"repository"'
-  assert_output --partial '"timestamp"'
-  assert_output --partial '"command":"hug bll --json"'
-  assert_output --partial '"branches"'
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
+  assert_valid_json "$output"
+  assert_json_has_key "$output" ".repository"
+  assert_json_has_key "$output" ".timestamp"
+  assert_json_has_key "$output" ".command"
+  assert_json_value "$output" ".command" "hug bll --json"
+  assert_json_has_key "$output" ".branches"
+  assert_json_type "$output" ".branches" "array"
 }
 
 @test "hug bll --json: includes current branch marker" {
@@ -42,13 +41,11 @@ teardown() {
 
   # Assert
   assert_success
-  assert_output --partial '"current_branch":"main"'
-  assert_output --partial '"current":true'
-  assert_output --partial '"name":"main"'
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
+  assert_valid_json "$output"
+  assert_json_value "$output" ".current_branch" "main"
+  # Check that at least one branch has current: true
+  local current_count=$(echo "$output" | jq '[.branches[] | select(.current == true)] | length')
+  [[ "$current_count" -ge 1 ]] || fail "Expected at least one branch with current: true"
 }
 
 @test "hug bll --json: branch with upstream tracking" {
@@ -61,12 +58,12 @@ teardown() {
 
   # Assert
   assert_success
-  assert_output --partial '"name":"feature/test"'
-  assert_output --partial '"current":true'
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
+  assert_valid_json "$output"
+  # Check that feature/test branch exists in array
+  local branch_exists=$(echo "$output" | jq '[.branches[] | select(.name == "feature/test")] | length')
+  [[ "$branch_exists" -eq 1 ]] || fail "Expected feature/test branch in output"
+  # Check current branch
+  assert_json_value "$output" ".current_branch" "feature/test"
 }
 
 @test "hug bll --json: multiple branches" {
@@ -81,19 +78,17 @@ teardown() {
 
   # Assert
   assert_success
+  assert_valid_json "$output"
   # Should have at least 3 branches (main, feature1, feature2)
-  local branch_count
-  branch_count=$(echo "$output" | jq '.branches | length')
-  [ "$branch_count" -ge 3 ]
-
-  # Should include all branch names
-  assert_output --partial '"name":"main"'
-  assert_output --partial '"name":"feature1"'
-  assert_output --partial '"name":"feature2"'
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
+  assert_json_array_length "$output" ".branches" 3
+  
+  # Check all branch names exist
+  local main_exists=$(echo "$output" | jq '[.branches[] | select(.name == "main")] | length')
+  [[ "$main_exists" -eq 1 ]] || fail "Expected main branch"
+  local f1_exists=$(echo "$output" | jq '[.branches[] | select(.name == "feature1")] | length')
+  [[ "$f1_exists" -eq 1 ]] || fail "Expected feature1 branch"
+  local f2_exists=$(echo "$output" | jq '[.branches[] | select(.name == "feature2")] | length')
+  [[ "$f2_exists" -eq 1 ]] || fail "Expected feature2 branch"
 }
 
 @test "hug bll --json: branch object structure" {
@@ -105,15 +100,12 @@ teardown() {
 
   # Assert
   assert_success
-  # Check branch object fields
-  assert_output --partial '"hash"'  # Should have short hash
-  assert_output --partial '"subject"'  # Should have commit subject
-  assert_output --partial '"name"'    # Should have branch name
-  assert_output --partial '"current"'  # Should have current branch marker
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
+  assert_valid_json "$output"
+  # Check that first branch has all required fields
+  assert_json_has_key "$output" ".branches[0].hash"
+  assert_json_has_key "$output" ".branches[0].name"
+  assert_json_has_key "$output" ".branches[0].current"
+  assert_json_type "$output" ".branches[0].current" "boolean"
 }
 
 @test "hug bll --json: no ANSI colors in JSON" {
@@ -143,15 +135,11 @@ teardown() {
 
   # Assert
   assert_success
-  local branch_count
-  branch_count=$(echo "$output" | jq '.branches | length')
-  [ "$branch_count" -eq 1 ]
-
-  assert_output --partial '"name":"main"'
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
+  assert_valid_json "$output"
+  assert_json_array_length "$output" ".branches" 1
+  # Check that the single branch is main
+  local main_exists=$(echo "$output" | jq '[.branches[] | select(.name == "main")] | length')
+  [[ "$main_exists" -eq 1 ]] || fail "Expected main branch"
 
   # Cleanup
   cd /
@@ -191,22 +179,18 @@ teardown() {
 
   # Assert
   assert_success
+  assert_valid_json "$output"
   # Should have at least 3 branches (main, feature1, feature2)
-  local branch_count
-  branch_count=$(echo "$output" | jq '.branches | length')
-  [ "$branch_count" -ge 3 ]
-
-  # Ensure branches field is still an array type
-  local branch_type
-  branch_type=$(echo "$output" | jq '.branches | type')
-  [ "$branch_type" = '"array"' ]
-
-  # Should include all branch names
-  assert_output --partial '"name":"main"'
-  assert_output --partial '"name":"feature1"'
-  assert_output --partial '"name":"feature2"'
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
+  assert_json_array_length "$output" ".branches" 3
+  
+  # Ensure branches field is an array type
+  assert_json_type "$output" ".branches" "array"
+  
+  # Check all branch names exist
+  local main_exists=$(echo "$output" | jq '[.branches[] | select(.name == "main")] | length')
+  [[ "$main_exists" -eq 1 ]] || fail "Expected main branch"
+  local f1_exists=$(echo "$output" | jq '[.branches[] | select(.name == "feature1")] | length')
+  [[ "$f1_exists" -eq 1 ]] || fail "Expected feature1 branch"
+  local f2_exists=$(echo "$output" | jq '[.branches[] | select(.name == "feature2")] | length')
+  [[ "$f2_exists" -eq 1 ]] || fail "Expected feature2 branch"
 }
