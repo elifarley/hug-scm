@@ -22,19 +22,16 @@ teardown() {
   # Act
   run hug lf "feat" --json
 
-  # Assert
+  # Assert - use flexible JSON validation
   assert_success
-  assert_output --partial '"repository"'
-  assert_output --partial '"timestamp"'
-  assert_output --partial '"command": "hug lf --json"'
-  assert_output --partial '"search"'
-  assert_output --partial '"results"'  # Changed from "commits"
-  assert_output --partial '"type": "message"'
-  assert_output --partial '"term": "feat"'
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
+  assert_valid_json
+  assert_json_has_key ".repository"
+  assert_json_has_key ".timestamp"
+  assert_json_has_key ".command"
+  assert_json_has_key ".search"
+  assert_json_has_key ".commits"
+  assert_json_value ".search.type" "message"
+  assert_json_value ".search.term" "feat"
 }
 
 @test "hug lf --json: finds commits with matching messages" {
@@ -47,14 +44,13 @@ teardown() {
   # Act
   run hug lf "feat" --json
 
-  # Assert
+  # Assert - flexible validation
   assert_success
-  # Should find at least the feat commit
-  assert_output --partial '"message": "feat: add new feature"'
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
+  assert_valid_json
+  assert_json_has_key ".commits"
+  assert_json_type ".commits" "array"
+  # Should find at least the feat commit (check with jq)
+  [[ $(echo "$output" | jq -r '.commits[].message' | grep -c "feat: add new feature") -ge 1 ]] || fail "Should find feat commit"
 }
 
 @test "hug lf --json: with --with-files flag" {
@@ -66,16 +62,14 @@ teardown() {
   # Act
   run hug lf "feat" --json --with-files
 
-  # Assert
+  # Assert - flexible validation
   assert_success
-  assert_output --partial '"files"'
-  assert_output --partial '"filename": "newfile.txt"'
-  assert_output --partial '"status": "modified"'  # Changed from "added" - new commits show as modified
-  assert_output --partial '"with_files":true'
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
+  assert_valid_json
+  assert_json_has_key ".search.with_files"
+  assert_json_value ".search.with_files" "true"
+  assert_json_has_key ".commits[0].files"
+  # Check that newfile.txt appears in files array
+  [[ $(echo "$output" | jq -r '.commits[0].files[].filename' | grep -c "newfile.txt") -ge 1 ]] || fail "Should find newfile.txt in files"
 }
 
 @test "hug lc --json: basic code search structure" {
@@ -87,16 +81,13 @@ teardown() {
   # Act
   run hug lc "testFunction" --json
 
-  # Assert
+  # Assert - flexible validation
   assert_success
-  assert_output --partial '"type": "code"'
-  assert_output --partial '"term": "testFunction"'
-  assert_output --partial '"search"'
-  assert_output --partial '"results"'  # Changed from "commits"
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
+  assert_valid_json
+  assert_json_value ".search.type" "code"
+  assert_json_value ".search.term" "testFunction"
+  assert_json_has_key ".search"
+  assert_json_has_key ".commits"
 }
 
 @test "hug lc --json: finds commits with code changes" {

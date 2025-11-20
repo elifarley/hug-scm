@@ -22,19 +22,14 @@ teardown() {
   # Act
   run hug s --json
 
-  # Assert - validate JSON structure, not exact formatting
+  # Assert - flexible validation using helpers
   assert_success
-
-  # Validate JSON is parseable
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
-
-  # Check key fields exist (flexible format)
-  echo "$output" | jq -e '.repository' >/dev/null || fail "Missing 'repository' field"
-  echo "$output" | jq -e '.timestamp' >/dev/null || fail "Missing 'timestamp' field"
-  echo "$output" | jq -e '.command' >/dev/null || fail "Missing 'command' field"
-  echo "$output" | jq -e '.status' >/dev/null || fail "Missing 'status' field"
-  echo "$output" | jq -e '.branch' >/dev/null || fail "Missing 'branch' field"
+  assert_valid_json
+  assert_json_has_key ".repository"
+  assert_json_has_key ".timestamp"
+  assert_json_has_key ".command"
+  assert_json_has_key ".status"
+  assert_json_has_key ".branch"
 }
 
 @test "hug s --json: clean repository" {
@@ -44,17 +39,12 @@ teardown() {
   # Act
   run hug s --json
 
-  # Assert - validate structure, not formatting
+  # Assert - flexible validation
   assert_success
-
-  # Validate JSON and check values
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
-
-  # Check status values using jq
-  [[ "$(echo "$output" | jq -r '.status.clean')" == "true" ]] || fail "Expected clean: true"
-  [[ "$(echo "$output" | jq -r '.status.staged_files')" == "0" ]] || fail "Expected staged_files: 0"
-  [[ "$(echo "$output" | jq -r '.status.unstaged_files')" == "0" ]] || fail "Expected unstaged_files: 0"
+  assert_valid_json
+  assert_json_value ".status.clean" "true"
+  assert_json_value ".status.staged_files" "0"
+  assert_json_value ".status.unstaged_files" "0"
 }
 
 @test "hug s --json: dirty repository" {
@@ -66,21 +56,12 @@ teardown() {
   # Act
   run hug s --json
 
-  # Assert - validate structure using jq
+  # Assert - flexible validation
   assert_success
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
-
-  # Check status values
-  [[ "$(echo "$output" | jq -r '.status.clean')" == "false" ]] || fail "Expected clean: false"
-  [[ "$(echo "$output" | jq -r '.status.staged_files')" == "1" ]] || fail "Expected staged_files: 1"
-  [[ "$(echo "$output" | jq -r '.status.unstaged_files')" == "1" ]] || fail "Expected unstaged_files: 1"
-
-  # Validate JSON
-  echo "$output" | jq . >/dev/null
-  assert_success "Output should be valid JSON"
+  assert_valid_json
+  assert_json_value ".status.clean" "false"
+  assert_json_value ".status.staged_files" "1"
+  assert_json_value ".status.unstaged_files" "1"
 }
 
 @test "hug sl --json: file status structure" {
