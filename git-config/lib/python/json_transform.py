@@ -231,7 +231,7 @@ def commit_search(search_type: str, search_term: str, with_files: bool = False,
         # Fallback to simple parsing if log_json not available
         commits = []
         for commit_line in log_output.strip().split('\n'):
-            if not commit_line or not commit_line.startswith(field_sep.join([''] * 1)[1:]):
+            if not commit_line:
                 continue
             parts = commit_line.split(field_sep)
             if len(parts) >= 12:
