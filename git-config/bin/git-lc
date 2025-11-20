@@ -112,8 +112,13 @@ if $json_output; then
   # Output unified JSON response with metadata
   search_results=$(batch_code_search "$search_term" "${search_args[@]}")
 
+  # Build command name with flags for output
+  cmd_name="hug lc --json"
+  $with_files && cmd_name="$cmd_name --with-files"
+  $no_body && cmd_name="$cmd_name --no-body"
+  
   # Wrap with metadata and output
-  output_json_response "hug lc" "{\"search\":{\"type\":\"code\",\"term\":\"$search_term\"},\"results\":$search_results}" --with-branch --with-head
+  output_json_response "$cmd_name" "{\"search\":{\"type\":\"code\",\"term\":\"$search_term\"},\"results\":$search_results}" --with-branch --with-head
   exit 0
 fi
 

@@ -117,8 +117,13 @@ if $json_output; then
   # Output unified JSON response with metadata
   search_results=$(batch_commit_search "$search_term" "${search_args[@]}")
 
+  # Build command name with flags for output
+  cmd_name="hug lf --json"
+  $with_files && cmd_name="$cmd_name --with-files"
+  $no_body && cmd_name="$cmd_name --no-body"
+  
   # Wrap with metadata and output
-  output_json_response "hug lf" "{\"search\":{\"type\":\"message\",\"term\":\"$search_term\"},\"results\":$search_results}" --with-branch --with-head
+  output_json_response "$cmd_name" "{\"search\":{\"type\":\"message\",\"term\":\"$search_term\"},\"results\":$search_results}" --with-branch --with-head
   exit 0
 fi
 

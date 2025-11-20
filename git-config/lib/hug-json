@@ -47,10 +47,10 @@ to_json_object() {
     if $first; then
       first=false
     else
-      json+=","
+      json+=", "
     fi
 
-    json+="\"$(json_escape "$key")\":\"$(json_escape "$value")\""
+    json+="\"$(json_escape "$key")\": \"$(json_escape "$value")\""
     shift 2
   done
 
@@ -71,10 +71,10 @@ to_json_nested() {
     if $first; then
       first=false
     else
-      json+=","
+      json+=", "
     fi
 
-    json+="\"$(json_escape "$key")\":$value"
+    json+="\"$(json_escape "$key")\": $value"
     shift 2
   done
 
@@ -99,7 +99,7 @@ to_json_array() {
     if $first; then
       first=false
     else
-      json+=","
+      json+=", "
     fi
     json+="\"$(json_escape "$item")\""
   done
