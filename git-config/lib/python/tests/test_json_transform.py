@@ -7,7 +7,6 @@ git log transformation, and status transformation.
 """
 
 import json
-import pytest
 import subprocess
 from unittest.mock import patch, MagicMock
 import sys

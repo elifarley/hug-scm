@@ -119,10 +119,10 @@ validate_json() {
   assert_success
   validate_json "$output"
   # Should show not clean and correct file counts
-  assert_output --partial '"clean":false'
-  assert_output --partial '"unstaged_files":1'
-  assert_output --partial '"untracked_count":1'
-  assert_output --partial '"staged_files":0'
+  assert_output --partial '"clean": false'
+  assert_output --partial '"unstaged_files": 1'
+  assert_output --partial '"untracked_count": 1'
+  assert_output --partial '"staged_files": 0'
 }
 
 @test "hug status --json: handles renamed files" {
@@ -135,9 +135,9 @@ validate_json() {
   assert_success
   validate_json "$output"
   # Should show renamed file with correct counts
-  assert_output --partial '"staged_files":1'
-  assert_output --partial '"staged_insertions":0'
-  assert_output --partial '"staged_deletions":0'
+  assert_output --partial '"staged_files": 1'
+  assert_output --partial '"staged_insertions": 0'
+  assert_output --partial '"staged_deletions": 0'
 }
 
 @test "hug status --json: handles binary files" {
@@ -150,9 +150,9 @@ validate_json() {
   assert_success
   validate_json "$output"
   # Should show clean repository after commit
-  assert_output --partial '"clean":true'
-  assert_output --partial '"staged_files":0'
-  assert_output --partial '"unstaged_files":0'
+  assert_output --partial '"clean": true'
+  assert_output --partial '"staged_files": 0'
+  assert_output --partial '"unstaged_files": 0'
 }
 
 @test "hug status --json: handles empty repository" {
@@ -162,11 +162,11 @@ validate_json() {
   run hug s --json
   assert_success
   validate_json "$output"
-  assert_output --partial '"clean":true'
-  assert_output --partial '"staged_files":0'
-  assert_output --partial '"unstaged_files":0'
-  assert_output --partial '"untracked_count":0'
-  assert_output --partial '"ignored_count":0'
+  assert_output --partial '"clean": true'
+  assert_output --partial '"staged_files": 0'
+  assert_output --partial '"unstaged_files": 0'
+  assert_output --partial '"untracked_count": 0'
+  assert_output --partial '"ignored_count": 0'
 }
 
 @test "hug status --json: handles repository with only ignored files" {

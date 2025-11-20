@@ -16,7 +16,7 @@ import json
 import subprocess
 import os
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 
 
 def transform_git_log_to_json(log_output: str, with_files: bool = False) -> str:

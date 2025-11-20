@@ -49,8 +49,8 @@ output_json_branch_list() {
         "name" "\"$(json_escape "$branch_name")\"" \
         "current" "$is_current" \
         "hash" "\"$(json_escape "$hash")\"" \
-        "subject" "\"\"" \
-        "upstream" "$(to_json_nested "name" "\"$(json_escape "$subject")\"" "ahead" "\"0\"" "behind" "\"0\"")")
+        "subject" "\"$(json_escape "$subject")\"" \
+        "upstream" "$(to_json_nested "name" "\"$(json_escape "$upstream_name")\"" "ahead" "\"0\"" "behind" "\"0\"")")
     else
       branch_object=$(to_json_nested \
         "name" "\"$(json_escape "$branch_name")\"" \

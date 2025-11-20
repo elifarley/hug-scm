@@ -411,16 +411,41 @@ batch_commit_search() {
   local search_term="$1"
   shift
 
-  # Use single git log call with --grep for message search
-  local format_string="--format=%H---HUG-FIELD-SEPARATOR---%s---HUG-FIELD-SEPARATOR---%an---HUG-FIELD-SEPARATOR---%ae---HUG-FIELD-SEPARATOR---%ci"
-
-  # Filter out --no-files flag if present (not supported by git log)
-  local -a filtered_args=()
-  for arg in "$@"; do
-    [[ "$arg" != "--no-files" ]] && filtered_args+=("$arg")
+  # Parse flags
+  local with_files=true
+  local no_body=false
+  local -a git_args=()
+  
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --no-files)
+        with_files=false
+        shift
+        ;;
+      --no-body)
+        no_body=true
+        shift
+        ;;
+      *)
+        git_args+=("$1")
+        shift
+        ;;
+    esac
   done
 
-  json_array_from_git_log_batch "$format_string" "--name-status" --grep="$search_term" "${filtered_args[@]}"
+  # Use Python log_json.py for consistent GitHub-compatible format
+  local python_cmd="$CMD_BASE/../lib/python/log_json.py"
+  local format='%H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%s|~|%B|~|%P|~|%D'
+  local -a python_args=()
+  $with_files && python_args+=(--with-stats)
+  $no_body && python_args+=(--no-body)
+  
+  # Generate git log output and pipe to Python parser
+  local -a git_log_args=(--format="$format" --grep="$search_term")
+  $with_files && git_log_args+=(--numstat)
+  git_log_args+=("${git_args[@]}")
+  
+  git log "${git_log_args[@]}" | python3 "$python_cmd" "${python_args[@]}" | jq -c '.commits'
 }
 
 # Enhanced batched search for code content (hug lc implementation)
@@ -429,16 +454,41 @@ batch_code_search() {
   local search_pattern="$1"
   shift
 
-  # Use single git log call with -S for content search
-  local format_string="--format=%H---HUG-FIELD-SEPARATOR---%s---HUG-FIELD-SEPARATOR---%an---HUG-FIELD-SEPARATOR---%ae---HUG-FIELD-SEPARATOR---%ci"
-
-  # Filter out --no-files flag if present (not supported by git log)
-  local -a filtered_args=()
-  for arg in "$@"; do
-    [[ "$arg" != "--no-files" ]] && filtered_args+=("$arg")
+  # Parse flags
+  local with_files=true
+  local no_body=false
+  local -a git_args=()
+  
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --no-files)
+        with_files=false
+        shift
+        ;;
+      --no-body)
+        no_body=true
+        shift
+        ;;
+      *)
+        git_args+=("$1")
+        shift
+        ;;
+    esac
   done
 
-  json_array_from_git_log_batch "$format_string" "--name-status" -S"$search_pattern" "${filtered_args[@]}"
+  # Use Python log_json.py for consistent GitHub-compatible format
+  local python_cmd="$CMD_BASE/../lib/python/log_json.py"
+  local format='%H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%s|~|%B|~|%P|~|%D'
+  local -a python_args=()
+  $with_files && python_args+=(--with-stats)
+  $no_body && python_args+=(--no-body)
+  
+  # Generate git log output and pipe to Python parser
+  local -a git_log_args=(--format="$format" -S"$search_pattern")
+  $with_files && git_log_args+=(--numstat)
+  git_log_args+=("${git_args[@]}")
+  
+  git log "${git_log_args[@]}" | python3 "$python_cmd" "${python_args[@]}" | jq -c '.commits'
 }
 
 # Batch git log output for hug ll with streaming capability
