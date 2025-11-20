@@ -28,10 +28,10 @@ teardown() {
   assert_json_has_key ".repository"
   assert_json_has_key ".timestamp"
   assert_json_has_key ".command"
-  assert_json_has_key ".search"
-  assert_json_has_key ".commits"
-  assert_json_value ".search.type" "message"
-  assert_json_value ".search.term" "feat"
+  assert_json_has_key ".data.search"
+  assert_json_has_key ".data.results"
+  assert_json_value ".data.search.type" "message"
+  assert_json_value ".data.search.term" "feat"
 }
 
 @test "hug lf --json: finds commits with matching messages" {
@@ -47,10 +47,10 @@ teardown() {
   # Assert - flexible validation
   assert_success
   assert_valid_json
-  assert_json_has_key ".commits"
-  assert_json_type ".commits" "array"
+  assert_json_has_key ".data.results"
+  assert_json_type ".data.results" "array"
   # Should find at least the feat commit (check with jq)
-  [[ $(echo "$output" | jq -r '.commits[].message' | grep -c "feat: add new feature") -ge 1 ]] || fail "Should find feat commit"
+  [[ $(echo "$output" | jq -r '.data.results[].message' | grep -c "feat: add new feature") -ge 1 ]] || fail "Should find feat commit"
 }
 
 @test "hug lf --json: with --with-files flag" {
@@ -65,11 +65,11 @@ teardown() {
   # Assert - flexible validation
   assert_success
   assert_valid_json
-  assert_json_has_key ".search.with_files"
-  assert_json_value ".search.with_files" "true"
-  assert_json_has_key ".commits[0].files"
+  assert_json_has_key ".data.search.with_files"
+  assert_json_value ".data.search.with_files" "true"
+  assert_json_has_key ".data.results[0].files"
   # Check that newfile.txt appears in files array
-  [[ $(echo "$output" | jq -r '.commits[0].files[].filename' | grep -c "newfile.txt") -ge 1 ]] || fail "Should find newfile.txt in files"
+  [[ $(echo "$output" | jq -r '.data.results[0].files[].filename' | grep -c "newfile.txt") -ge 1 ]] || fail "Should find newfile.txt in files"
 }
 
 @test "hug lc --json: basic code search structure" {
@@ -84,10 +84,10 @@ teardown() {
   # Assert - flexible validation
   assert_success
   assert_valid_json
-  assert_json_value ".search.type" "code"
-  assert_json_value ".search.term" "testFunction"
-  assert_json_has_key ".search"
-  assert_json_has_key ".commits"
+  assert_json_value ".data.search.type" "code"
+  assert_json_value ".data.search.term" "testFunction"
+  assert_json_has_key ".data.search"
+  assert_json_has_key ".data.results"
 }
 
 @test "hug lc --json: finds commits with code changes" {
@@ -164,8 +164,8 @@ teardown() {
   assert_success "Output should be valid JSON"
 
   # Check search results using jq
-  [[ "$(echo "$output" | jq -r '.search.results_count')" == "0" ]] || fail "Expected results_count: 0"
-  [[ "$(echo "$output" | jq '.commits | length')" == "0" ]] || fail "Expected empty commits array"
+  [[ "$(echo "$output" | jq -r '.data.search.results_count')" == "0" ]] || fail "Expected results_count: 0"
+  [[ "$(echo "$output" | jq '.data.results | length')" == "0" ]] || fail "Expected empty results array"
 }
 
 @test "hug lf --json: no ANSI colors in JSON" {

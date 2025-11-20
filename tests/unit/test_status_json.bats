@@ -76,14 +76,14 @@ teardown() {
 
   # Assert - validate structure using jq
   assert_success
-  assert_valid_json "$output"
+  assert_valid_json
 
   # Check summary exists and has required fields
-  assert_json_has_key "$output" ".summary"
-  assert_json_has_key "$output" ".summary.staged"
-  assert_json_has_key "$output" ".summary.unstaged"
-  assert_json_has_key "$output" ".summary.untracked"
-  assert_json_has_key "$output" ".summary.total"
+  assert_json_has_key ".summary"
+  assert_json_has_key ".summary.staged"
+  assert_json_has_key ".summary.unstaged"
+  assert_json_has_key ".summary.untracked"
+  assert_json_has_key ".summary.total"
   
   # Check that we have at least the files we created
   local staged_count=$(echo "$output" | jq -r '.summary.staged')
@@ -105,10 +105,10 @@ teardown() {
 
   # Assert - validate structure using jq
   assert_success
-  assert_valid_json "$output"
+  assert_valid_json
 
   # Check summary exists with untracked files
-  assert_json_has_key "$output" ".summary.untracked"
+  assert_json_has_key ".summary.untracked"
   local untracked_count=$(echo "$output" | jq -r '.summary.untracked')
   [[ "$untracked_count" -ge 1 ]] || fail "Expected at least 1 untracked file"
   

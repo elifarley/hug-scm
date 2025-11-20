@@ -782,7 +782,7 @@ assert_json_array_length() {
   local jq_path="$1"
   local expected_length="$2"
   local actual_length
-  actual_length=$(echo "$output" | jq -r "$jq_path | length")
+  actual_length=$(echo "$output" | jq "$jq_path | length")
   [[ "$actual_length" == "$expected_length" ]] || fail "Expected $jq_path length = $expected_length, got $actual_length"
 }
 
