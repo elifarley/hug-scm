@@ -164,16 +164,16 @@ class TestCommitSearch:
     
     @patch('subprocess.run')
     def test_message_search_success(self, mock_run):
-        # Mock git log output
+        # Mock git log output with proper 15-field format
         mock_result = MagicMock()
-        mock_result.stdout = 'abc123\x00abc\x00John\x00john@example.com\x002025-01-01 12:00:00 +0000\x00Test commit\x00\n'
+        mock_result.stdout = 'abc123def456789012345678901234567890abcd|~|abc123d|~|John|~|john@example.com|~|John|~|john@example.com|~|2025-01-01 12:00:00 +0000|~|1 hour ago|~|2025-01-01 12:00:00 +0000|~|1 hour ago|~|tree123abc456def789012345678901234567890|~|Test commit|~|Test commit\n|~||~|\n'
         mock_run.return_value = mock_result
-        
-        result = commit_search('message', 'test', False, [])
-        
+
+        result = commit_search('message', 'test', False, False, [])
+
         assert 'results' in result
         assert len(result['results']) == 1
-        assert result['results'][0]['sha'] == 'abc123'
+        assert result['results'][0]['sha'] == 'abc123def456789012345678901234567890abcd'
         assert result['search']['type'] == 'message'
         assert result['search']['term'] == 'test'
     
@@ -205,23 +205,23 @@ class TestCommitSearch:
     
     @patch('subprocess.run')
     def test_with_files(self, mock_run):
-        # Mock git log output
+        # Mock git log output with proper 15-field format
         log_result = MagicMock()
-        log_result.stdout = 'abc123\x00abc\x00John\x00john@example.com\x002025-01-01 12:00:00 +0000\x00Test commit\x00\n'
-        
+        log_result.stdout = 'abc123def456789012345678901234567890abcd|~|abc123d|~|John|~|john@example.com|~|John|~|john@example.com|~|2025-01-01 12:00:00 +0000|~|1 hour ago|~|2025-01-01 12:00:00 +0000|~|1 hour ago|~|tree123abc456def789012345678901234567890|~|Test commit|~|Test commit\n|~||~|\n\n5\t2\tfile1.txt\n3\t1\tfile2.txt\n'
+
         # Mock git show output
         show_result = MagicMock()
         show_result.stdout = 'M\tfile1.txt\nA\tfile2.txt\n'
-        
+
         mock_run.side_effect = [log_result, show_result]
-        
-        result = commit_search('message', 'test', True, [])
-        
+
+        result = commit_search('message', 'test', True, False, [])
+
         assert len(result['results']) == 1
-        assert 'files' in result['results'][0]
-        assert len(result['results'][0]['files']) == 2
-        assert result['results'][0]['files'][0]['path'] == 'file1.txt'
-        assert result['results'][0]['files'][0]['status'] == 'modified'
+        assert 'stats' in result['results'][0]
+        assert result['results'][0]['stats']['files_changed'] == 2
+        assert result['results'][0]['stats']['insertions'] == 8
+        assert result['results'][0]['stats']['deletions'] == 3
 
 
 class TestIntegration:
