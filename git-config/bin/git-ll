@@ -140,26 +140,22 @@ if $json_output; then
     done
   fi
 
-  # Use streaming mode for large result sets (>100 commits)
-  if [[ -z "$commit_count" ]] || [[ "$commit_count" -gt 100 ]]; then
+  # Use streaming mode for very large result sets (>100 commits explicitly requested)
+  # Default to normal mode (array format) for better compatibility
+  if [[ -n "$commit_count" ]] && [[ "$commit_count" -gt 100 ]]; then
     # Streaming mode: output NDJSON for memory efficiency
     echo '{"type":"log_start","data":{"format":"ndjson","command":"hug ll"}}'
-    batch_log_output --stream --max "${commit_count:-1000}" "${log_args[@]}"
+    batch_log_output --stream --max "${commit_count}" "${log_args[@]}"
     echo '{"type":"log_end","data":{}}'
   else
-    # Normal mode: array of commits for smaller result sets
+    # Normal mode: array of commits for smaller result sets and default behavior
     log_results=$(batch_log_output --max "${commit_count:-100}" "${log_args[@]}")
 
-    # Wrap with metadata and output
-    data_json="{\"commits\":$log_results}"
-    if $with_stats; then
-      data_json="${data_json%}},\"with_stats\":true}"
-    fi
-    if $no_body; then
-      data_json="${data_json%}},\"no_body\":true}"
-    fi
+    # Count commits
+    commit_total=$(echo "$log_results" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo "0")
 
-    output_json_response "hug ll" "$data_json" --with-branch --with-head
+    # Build output with required fields (command, commits, summary)
+    echo "{\"command\":\"hug ll\",\"commits\":$log_results,\"summary\":{\"total_commits\":$commit_total}}"
   fi
 
 else
