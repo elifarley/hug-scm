@@ -49,8 +49,8 @@ def parse_log_with_stats(lines, include_stats=True, omit_body=False):
 
         # Always check for new commit first - this prevents subsequent commit lines
         # from being absorbed into previous commit's body.
-        # Accept both 40 and 41 char hashes (some git outputs have 41 chars)
-        if re.match(r'^[0-9a-f]{40,41}\|~\|', line):
+        # Accept only 40 char hashes (git commit SHAs are always 40 hexadecimal characters)
+        if re.match(r'^[0-9a-f]{40}\|~\|', line):
             # Process previous commit if exists
             if current_lines:
                 commit = parse_single_commit(current_lines, current_numstats, include_stats, omit_body)
