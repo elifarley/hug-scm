@@ -129,7 +129,7 @@ if $json_output; then
   log_args+=("${git_args[@]}")
 
   # Determine if we should use streaming mode for large result sets
-  local commit_count=""
+  commit_count=""
   if [[ ${#git_args[@]} -gt 0 ]]; then
     # Extract commit limit if provided (e.g., -10, -100)
     for arg in "${git_args[@]}"; do
@@ -148,11 +148,10 @@ if $json_output; then
     echo '{"type":"log_end","data":{}}'
   else
     # Normal mode: array of commits for smaller result sets
-    local log_results
     log_results=$(batch_log_output --max "${commit_count:-100}" "${log_args[@]}")
 
     # Wrap with metadata and output
-    local data_json="{\"commits\":$log_results}"
+    data_json="{\"commits\":$log_results}"
     if $with_stats; then
       data_json="${data_json%}},\"with_stats\":true}"
     fi

@@ -435,7 +435,7 @@ batch_commit_search() {
 
   # Use Python log_json.py for consistent GitHub-compatible format
   local python_cmd="$CMD_BASE/../lib/python/log_json.py"
-  local format='%H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%s|~|%B|~|%P|~|%D'
+  local format='%H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%cI|~|%cr|~|%T|~|%s|~|%B|~|%P|~|%D'
   local -a python_args=()
   $with_files && python_args+=(--with-stats)
   $no_body && python_args+=(--no-body)
@@ -478,7 +478,7 @@ batch_code_search() {
 
   # Use Python log_json.py for consistent GitHub-compatible format
   local python_cmd="$CMD_BASE/../lib/python/log_json.py"
-  local format='%H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%s|~|%B|~|%P|~|%D'
+  local format='%H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%cI|~|%cr|~|%T|~|%s|~|%B|~|%P|~|%D'
   local -a python_args=()
   $with_files && python_args+=(--with-stats)
   $no_body && python_args+=(--no-body)
@@ -496,8 +496,11 @@ batch_code_search() {
 batch_log_output() {
   local max_items=""
   local stream_mode=false
+  local with_stats=false
+  local no_body=false
 
-  # Parse optional arguments (--max, --stream)
+  # Parse optional arguments (--max, --stream, --numstat, --no-body)
+  local -a git_args=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --max)
@@ -508,51 +511,43 @@ batch_log_output() {
         stream_mode=true
         shift
         ;;
+      --numstat)
+        with_stats=true
+        shift
+        ;;
+      --no-body)
+        no_body=true
+        shift
+        ;;
       *)
+        git_args+=("$1")
         shift
         ;;
     esac
   done
 
-  # GitHub-compatible format for commit listing
-  local format_string="--format=%H---HUG-FIELD-SEPARATOR---%s---HUG-FIELD-SEPARATOR---%an---HUG-FIELD-SEPARATOR---%ae---HUG-FIELD-SEPARATOR---%ci"
-  local -a log_args=("$format_string")
-
-  # Add max items if specified
-  if [[ -n "$max_items" ]]; then
-    log_args+=("-n$max_items")
-  fi
+  # Use Python log_json.py for consistent GitHub-compatible format
+  local python_cmd="$CMD_BASE/../lib/python/log_json.py"
+  local format='%H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%cI|~|%cr|~|%T|~|%s|~|%B|~|%P|~|%D'
+  local -a python_args=()
+  $with_stats && python_args+=(--with-stats)
+  $no_body && python_args+=(--no-body)
+  
+  # Build git log arguments
+  local -a git_log_args=(--format="$format")
+  [[ -n "$max_items" ]] && git_log_args+=("-n$max_items")
+  $with_stats && git_log_args+=(--numstat)
+  git_log_args+=("${git_args[@]}")
 
   if $stream_mode; then
-    # Streaming mode: output NDJSON for large result sets
-    local first=true
-    local current_commit=""
-    local current_files=""
-
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      [[ -z "$line" ]] && continue
-
-      if [[ "$line" =~ ^[0-9a-f]{8,40}(.---HUG-FIELD-SEPARATOR---)? ]]; then
-        # Output previous commit in NDJSON format
-        if [[ -n "$current_commit" ]]; then
-          local commit_json
-          commit_json=$(build_commit_json_batch "$current_commit" "$current_files")
-          printf '{"type":"commit","data":%s}\n' "$commit_json"
-        fi
-
-        current_commit="$line"
-        current_files=""
-      fi
-    done < <(git log "${log_args[@]}")
-
-    # Output last commit
-    if [[ -n "$current_commit" ]]; then
-      local commit_json
-      commit_json=$(build_commit_json_batch "$current_commit" "$current_files")
-      printf '{"type":"commit","data":%s}\n' "$commit_json"
-    fi
+    # Streaming mode: output NDJSON for large result sets (one commit per line)
+    # Parse Python JSON output and convert to NDJSON format
+    git log "${git_log_args[@]}" | python3 "$python_cmd" "${python_args[@]}" | \
+      jq -c '.commits[]' | while read -r commit; do
+        printf '{"type":"commit","data":%s}\n' "$commit"
+      done
   else
-    # Normal mode: array of commits
-    json_array_from_git_log_batch "$format_string" "$@" "${log_args[@]}"
+    # Normal mode: return array of commits
+    git log "${git_log_args[@]}" | python3 "$python_cmd" "${python_args[@]}" | jq -c '.commits'
   fi
 }
