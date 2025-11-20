@@ -39,7 +39,8 @@
       "Bash(: 'Test hug lf with JSON output directly')",
       "Bash(. git-config/lib/hug-json)",
       "Bash(/home/ecc/IdeaProjects/hug-scm/tests/run-tests.sh:*)",
-      "Bash(: 'Check actual directory for test')"
+      "Bash(: 'Check actual directory for test')",
+      "Bash(bats:*)"
     ],
     "deny": [],
     "ask": []
