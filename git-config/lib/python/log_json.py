@@ -296,7 +296,9 @@ def main():
             'latest': latest
         }
 
-    print(json.dumps(output, indent=2))
+    # Output compact JSON (spaces after : and , for readability but no newlines)
+    # Use separators with spaces to match bash JSON output format
+    print(json.dumps(output, separators=(', ', ': ')))
 
 
 if __name__ == '__main__':

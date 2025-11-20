@@ -294,7 +294,7 @@ build_standard_metadata() {
     fi
 
     # Add branch to metadata (remove closing }, add comma and branch, add closing })
-    metadata_json="${metadata_json%\}},\"branch\":$branch_json}"
+    metadata_json="${metadata_json%\}}, \"branch\": $branch_json}"
   fi
 
   # Add optional HEAD information
@@ -305,7 +305,7 @@ build_standard_metadata() {
     head_json=$(to_json_object "hash" "$hash")
 
     # Add head to metadata (remove closing }, add comma and head, add closing })
-    metadata_json="${metadata_json%\}},\"head\":$head_json}"
+    metadata_json="${metadata_json%\}}, \"head\": $head_json}"
   fi
 
   printf '%s' "$metadata_json"
@@ -353,9 +353,9 @@ output_json_response() {
   local metadata
   metadata=$(build_standard_metadata "${metadata_args[@]}")
 
-  # Combine metadata and data
+  # Combine metadata and data (with spaces for consistency)
   local response
-  response="${metadata%\}},\"data\":$data}"
+  response="${metadata%\}}, \"data\": $data}"
 
   # Output with or without pretty-printing
   if $pretty; then
