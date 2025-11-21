@@ -19,6 +19,7 @@ import sys
 import json
 import subprocess
 import argparse
+import re
 from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Tuple
@@ -87,9 +88,11 @@ def get_line_history(filepath: str, since: str = None) -> Dict[int, int]:
                 check=False  # git log -L returns non-zero if line never changed
             )
 
-            # Count commits (each commit is one line in --oneline output)
+            # Count commits (only lines starting with commit hash in --oneline output)
+            # Note: git log -L with --oneline includes diff context, not just commit headers
             if result.returncode == 0:
-                commit_count = len([l for l in result.stdout.strip().split('\n') if l])
+                commit_count = len([l for l in result.stdout.strip().split('\n')
+                                   if re.match(r'^[a-f0-9]{7,}', l)])
                 if commit_count > 0:
                     line_churn[line_num] = commit_count
             else:
