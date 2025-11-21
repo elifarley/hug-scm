@@ -154,6 +154,135 @@ compute_local_branch_details() {
     return 0
 }
 
+# Batched version of compute_local_branch_details for optimized performance
+# Replaces per-branch git rev-list calls with single batched operation
+# Usage: compute_local_branch_details_batched current_branch max_len hashes branches tracks subjects
+# Parameters (all namerefs to output variables):
+#   $1 - Scalar to receive current branch name
+#   $2 - Scalar to receive max branch name length
+#   $3 - Array to receive commit hashes
+#   $4 - Array to receive branch names
+#   $5 - Array to receive tracking information
+#   $6 - Array to receive commit subjects
+# Returns:
+#   0 if branches found, 1 if no branches exist
+compute_local_branch_details_batched() {
+    local -n current_branch_ref="$1"
+    local -n max_len_ref="$2"
+    local -n hashes_ref="$3"
+    local -n branches_ref="$4"
+    local -n tracks_ref="$5"
+    local -n subjects_ref="$6"
+
+    # Clear outputs
+    current_branch_ref=""
+    max_len_ref=0
+    branches_ref=()
+    hashes_ref=()
+    subjects_ref=()
+    tracks_ref=()
+
+    # Get all branches with their upstream refs in a single call
+    local format='%(refname:short)%00%(objectname:short)%00%(subject)%00%(upstream:short)%00%(upstream:track)'
+    mapfile -t branch_data < <(git for-each-ref --format="$format" refs/heads/ 2>/dev/null)
+
+    if [[ ${#branch_data[@]} -eq 0 ]]; then
+        return 1
+    fi
+
+    # Get current branch
+    local current_branch
+    current_branch=$(git branch --show-current 2>/dev/null || echo "detached HEAD")
+    current_branch_ref="$current_branch"
+
+    # Extract branch names and upstreams for batch divergence calculation
+    local -a branch_names=()
+    local -a upstream_names=()
+    local -a divergence_commands=()
+
+    for line in "${branch_data[@]}"; do
+        IFS=$'\0' read -r branch hash subject upstream track <<< "$line"
+        branch=$(printf '%s' "$branch" | tr -d '\n\r')
+        hash=$(printf '%s' "$hash" | tr -d '\n\r')
+        subject=$(printf '%s' "$subject" | tr -d '\n\r')
+
+        branch_names+=("$branch")
+        upstream_names+=("$upstream")
+        hashes_ref+=("$hash")
+        subjects_ref+=("$subject")
+
+        # Update max length
+        if (( ${#branch} > max_len_ref )); then
+            max_len_ref=${#branch}
+        fi
+
+        # Build divergence command arguments if upstream exists
+        if [[ -n "$upstream" ]]; then
+            divergence_commands+=("$branch...$upstream")
+        else
+            divergence_commands+=("")
+        fi
+    done
+
+    # Batch compute divergence for all branches with upstreams
+    local -a divergence_results=()
+    if [[ ${#divergence_commands[@]} -gt 0 ]]; then
+        # Create a single git command for all divergence calculations
+        while IFS= read -r line; do
+            divergence_results+=("$line")
+        done < <({
+            # Generate left-right commands for all branches
+            for divergence in "${divergence_commands[@]}"; do
+                if [[ -n "$divergence" ]]; then
+                    echo "$divergence"
+                fi
+            done | \
+            # Run them in parallel with xargs if available, otherwise sequentially
+            if command -v xargs >/dev/null 2>&1 && [[ ${#divergence_commands[@]} -gt 5 ]]; then
+                xargs -I {} -P 4 git rev-list --left-right --count "{}" 2>/dev/null
+            else
+                while IFS= read -r divergence; do
+                    [[ -n "$divergence" ]] && git rev-list --left-right --count "$divergence" 2>/dev/null || echo "0	0"
+                done
+            fi
+        })
+    fi
+
+    # Build tracking strings with divergence results
+    local divergence_index=0
+    for i in "${!branch_names[@]}"; do
+        local branch="${branch_names[i]}"
+        local hash="${hashes_ref[i]}"
+        local subject="${subjects_ref[i]}"
+        local upstream="${upstream_names[i]}"
+
+        local track=""
+        if [[ -n "$upstream" ]]; then
+            track="$CYAN[$upstream"
+
+            # Use pre-computed divergence result
+            local divergence_result="${divergence_results[divergence_index]:-0	0}"
+            if [[ -n "$divergence_result" ]]; then
+                local ahead behind
+                IFS=$'\t' read -r ahead behind <<< "$divergence_result"
+                if [[ "$ahead" != "0" && "$behind" != "0" ]]; then
+                    track+=": $BLUE$ahead ahead, $behind behind$CYAN"
+                elif [[ "$ahead" != "0" ]]; then
+                    track+=": $BLUE$ahead ahead$CYAN"
+                elif [[ "$behind" != "0" ]]; then
+                    track+=": $BLUE$behind behind$CYAN"
+                fi
+                ((divergence_index++))
+            fi
+            track+="]"
+        fi
+
+        tracks_ref+=("$track")
+    done
+
+    return 0
+}
+
 # Prints a single formatted branch line (shared helper for list and menu)
 # Usage: print_branch_line prefix current_branch max_len i hashes_ref branches_ref tracks_ref subjects_ref
 # Parameters:

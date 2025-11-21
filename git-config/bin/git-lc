@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit output_json_commit_search; do . "$CMD_BASE/../lib/$f"; done
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
 show_help() {
@@ -56,14 +56,19 @@ eval "$(parse_common_flags "$@")"
 # Parse flags
 json_output=false
 with_files=false
+no_body=false
 remaining_args=()
 for arg in "$@"; do
   case "$arg" in
     --json)
       json_output=true
+      export HUG_JSON_MODE="true"
       ;;
     --with-files)
       with_files=true
+      ;;
+    --no-body)
+      no_body=true
       ;;
     *)
       remaining_args+=("$arg")
@@ -72,7 +77,15 @@ for arg in "$@"; do
 done
 set -- "${remaining_args[@]}"
 
-check_git_repo
+# Check if in git repo, handle errors appropriately
+if ! check_git_repo 2>/dev/null; then
+  if $json_output; then
+    . "$CMD_BASE/../lib/hug-json"
+    json_error "not_git_repo" "Not in a Git or Mercurial repository" 1
+  else
+    check_git_repo  # Show normal error
+  fi
+fi
 
 # Check if search term provided
 if [ $# -eq 0 ]; then
@@ -83,9 +96,32 @@ fi
 search_term="$1"
 shift
 
-# JSON output mode
+# JSON output mode - use batched operations for performance
 if $json_output; then
-  output_json_commit_search "code" "$search_term" "$with_files" "$@"
+  # Load batch JSON utilities for optimized performance
+  . "$CMD_BASE/../lib/hug-git-json"
+
+  # Build search response with batched git operations
+  search_args=()
+  $with_files || search_args+=("--no-files")  # Don't need file status
+  $no_body && search_args+=("--no-body")
+
+  # Add remaining git log arguments
+  search_args+=("$@")
+
+  # Output unified JSON response with metadata
+  search_results=$(batch_code_search "$search_term" "${search_args[@]}")
+
+  # Build command name with flags for output
+  cmd_name="hug lc --json"
+  $with_files && cmd_name="$cmd_name --with-files"
+  $no_body && cmd_name="$cmd_name --no-body"
+
+  # Count results
+  results_count=$(echo "$search_results" | jq 'length' 2>/dev/null || echo "0")
+
+  # Wrap with metadata and output
+  output_json_response "$cmd_name" "{\"search\":{\"type\":\"code\",\"term\":\"$search_term\",\"results_count\":$results_count,\"with_files\":$with_files},\"results\":$search_results}" --with-branch --with-head
   exit 0
 fi
 

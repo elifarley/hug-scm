@@ -116,32 +116,42 @@ done
 check_git_repo
 
 if $json_output; then
-  # JSON output mode
-  # Always use Python helper for consistent parsing (handles multi-line commit messages)
+  # JSON output mode - use batched operations for performance
+  # Load batch JSON utilities for optimized performance
+  . "$CMD_BASE/../lib/hug-git-json"
 
-  # Strategy: Use git log with simple separators, parse in Python
-  # Format fields with a unique separator
-  # Note: with --numstat, the format is: "<format>%n%n<numstat lines>%n"
-  # Use newline as commit separator since numstat already includes newlines
-  field_sep='|~|'
-  # Format: hash|~|short|~|author_name|~|author_email|~|committer_name|~|committer_email|~|author_date|~|author_date_rel|~|committer_date|~|committer_date_rel|~|tree|~|subject|~|body|~|parents|~|refs
-  format="%H${field_sep}%h${field_sep}%an${field_sep}%ae${field_sep}%cn${field_sep}%ce${field_sep}%aI${field_sep}%ar${field_sep}%cI${field_sep}%cr${field_sep}%T${field_sep}%s${field_sep}%B${field_sep}%P${field_sep}%D"
+  # Build batch log arguments
+  log_args=()
+  $with_stats && log_args+=("--numstat")
+  $no_body && log_args+=("--no-body")
 
-  # Delegate to Python helper for parsing
-  python_helper="$CMD_BASE/../lib/python/log_json.py"
+  # Add git arguments passed from command line
+  log_args+=("${git_args[@]}")
 
-  # Build Python helper args
-  python_args=()
-  $with_stats && python_args+=("--with-stats")
-  $no_body && python_args+=("--no-body")
+  # Determine if we should use streaming mode for large result sets
+  commit_count=""
+  if [[ ${#git_args[@]} -gt 0 ]]; then
+    # Extract commit limit if provided (e.g., -10, -100)
+    for arg in "${git_args[@]}"; do
+      if [[ "$arg" =~ ^-[0-9]+$ ]]; then
+        commit_count="${arg:1}"
+        break
+      fi
+    done
+  fi
 
-  # Run git log with optional --numstat
-  if $with_stats; then
-    git log --format="${format}" --numstat "${git_args[@]}" 2>/dev/null | \
-      python3 "$python_helper" "${python_args[@]}"
+  # Use streaming mode for very large result sets (>100 commits explicitly requested)
+  # Default to normal mode (array format) for better compatibility
+  if [[ -n "$commit_count" ]] && [[ "$commit_count" -gt 100 ]]; then
+    # Streaming mode: output NDJSON for memory efficiency
+    echo '{"type":"log_start","data":{"format":"ndjson","command":"hug ll"}}'
+    batch_log_output --stream --max "${commit_count}" "${log_args[@]}"
+    echo '{"type":"log_end","data":{}}'
   else
-    git log --format="${format}" "${git_args[@]}" 2>/dev/null | \
-      python3 "$python_helper" "${python_args[@]}"
+    # Normal mode: array of commits for smaller result sets and default behavior
+    # batch_log_output returns the full JSON from log_json.py which includes commits and summary
+    # We just need to output it directly
+    batch_log_output --max "${commit_count:-100}" "${log_args[@]}"
   fi
 
 else

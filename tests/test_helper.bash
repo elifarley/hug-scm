@@ -748,3 +748,46 @@ create_demo_repo_full() {
 
   echo "$repo_path"
 }
+
+# JSON validation helpers - flexible to formatting variations
+# These helpers allow tests to validate JSON structure and values
+# without being strict about formatting (spaces, quote style, ordering)
+
+assert_valid_json() {
+  echo "$output" | jq . >/dev/null || fail "Output is not valid JSON"
+}
+
+assert_json_has_key() {
+  local jq_path="$1"
+  echo "$output" | jq -e "$jq_path" >/dev/null || fail "JSON missing key: $jq_path"
+}
+
+assert_json_value() {
+  local jq_path="$1"
+  local expected="$2"
+  local actual
+  actual=$(echo "$output" | jq -r "$jq_path")
+  [[ "$actual" == "$expected" ]] || fail "Expected $jq_path = '$expected', got '$actual'"
+}
+
+assert_json_type() {
+  local jq_path="$1"
+  local expected_type="$2"  # string, number, boolean, array, object, null
+  local actual_type
+  actual_type=$(echo "$output" | jq -r "$jq_path | type")
+  [[ "$actual_type" == "$expected_type" ]] || fail "Expected $jq_path to be $expected_type, got $actual_type"
+}
+
+assert_json_array_length() {
+  local jq_path="$1"
+  local expected_length="$2"
+  local actual_length
+  actual_length=$(echo "$output" | jq "$jq_path | length")
+  [[ "$actual_length" == "$expected_length" ]] || fail "Expected $jq_path length = $expected_length, got $actual_length"
+}
+
+assert_json_contains() {
+  local jq_path="$1"
+  local search_term="$2"
+  echo "$output" | jq -e "$jq_path | contains(\"$search_term\")" >/dev/null || fail "$jq_path does not contain '$search_term'"
+}

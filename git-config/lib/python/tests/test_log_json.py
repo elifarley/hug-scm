@@ -21,37 +21,37 @@ class TestParseLogWithStats:
     def test_single_commit_basic(self):
         """Test parsing a single commit without stats"""
         lines = [
-            "abc123def456|~|abc123|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|Fix bug|~|Fix bug\n|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc456def789012345678901234567890|~|Fix bug|~|Fix bug\n|~||~|\n"
         ]
 
         commits = parse_log_with_stats(lines)
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['hash'] == 'abc123def456'
-        assert commit['hash_short'] == 'abc123'
+        assert commit['sha'] == 'abc123def456789012345678901234567890abcd'
+        assert commit['sha_short'] == 'abc123d'
         assert commit['author']['name'] == 'Alice'
         assert commit['author']['email'] == 'alice@example.com'
-        assert commit['message']['subject'] == 'Fix bug'
-        assert commit['message']['body'] is None
+        assert commit['subject'] == 'Fix bug'
+        assert commit['body'] is None
 
     def test_single_commit_with_body(self):
         """Test parsing commit with multi-line message body"""
         lines = [
-            "abc123|~|abc|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|Add feature|~|Add feature\n\nThis is a longer description.\nWith multiple lines.|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree456def789012345678901234567890abcdef|~|Add feature|~|Add feature\n\nThis is a longer description.\nWith multiple lines.|~||~|\n"
         ]
 
         commits = parse_log_with_stats(lines)
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['message']['subject'] == 'Add feature'
-        assert commit['message']['body'] == 'This is a longer description.\nWith multiple lines.'
+        assert commit['subject'] == 'Add feature'
+        assert commit['body'] == 'This is a longer description.\nWith multiple lines.'
 
     def test_single_commit_with_numstat(self):
         """Test parsing commit with file statistics"""
         lines = [
-            "abc123|~|abc|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|Update files|~|Update files\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree789abc456def012345678901234567890ab|~|Update files|~|Update files\n|~||~|\n",
             "\n",
             "10\t5\tREADME.md\n",
             "20\t3\tsrc/app.js\n"
@@ -68,7 +68,7 @@ class TestParseLogWithStats:
     def test_binary_file_in_numstat(self):
         """Test handling binary files (marked with -)"""
         lines = [
-            "abc123|~|abc|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|Add image|~|Add image\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree012abc456def789012345678901234567890|~|Add image|~|Add image\n|~||~|\n",
             "\n",
             "-\t-\timage.png\n",
             "5\t2\tREADME.md\n"
@@ -86,10 +86,11 @@ class TestParseLogWithStats:
     def test_multiple_commits(self):
         """Test parsing multiple commits"""
         lines = [
-            "abc123|~|abc|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|First commit|~|First commit\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree345abc456def789012345678901234567890|~|First commit|~|First commit\n|~||~|\n",
             "\n",
             "10\t5\tfile1.txt\n",
-            "def456|~|def|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|Second commit|~|Second commit\n|~||~|\n",
+            "\n",
+            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree678def012345678901234567890abcdef12|~|Second commit|~|Second commit\n|~||~|\n",
             "\n",
             "20\t10\tfile2.txt\n"
         ]
@@ -97,15 +98,15 @@ class TestParseLogWithStats:
         commits = parse_log_with_stats(lines)
 
         assert len(commits) == 2
-        assert commits[0]['hash'] == 'abc123'
+        assert commits[0]['sha'] == 'abc123def456789012345678901234567890abcd'
         assert commits[0]['stats']['insertions'] == 10
-        assert commits[1]['hash'] == 'def456'
+        assert commits[1]['sha'] == 'def456abc789012345678901234567890abcdef0'
         assert commits[1]['stats']['insertions'] == 20
 
     def test_commit_with_refs(self):
         """Test parsing commit with branch/tag refs"""
         lines = [
-            "abc123|~|abc|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|Tagged commit|~|Tagged commit\n|~||~|HEAD -> main, origin/main, tag: v1.0\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree901abc456def789012345678901234567890|~|Tagged commit|~|Tagged commit\n|~||~|HEAD -> main, origin/main, tag: v1.0\n"
         ]
 
         commits = parse_log_with_stats(lines)
@@ -120,7 +121,7 @@ class TestParseLogWithStats:
     def test_commit_with_multiple_parents(self):
         """Test merge commit with multiple parents"""
         lines = [
-            "abc123|~|abc|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|Merge branch|~|Merge branch\n|~|parent1 parent2|~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree234abc456def789012345678901234567890|~|Merge branch|~|Merge branch\n|~|parent1abc456def789012345678901234567890 parent2def789abc012345678901234567890ab|~|\n"
         ]
 
         commits = parse_log_with_stats(lines)
@@ -128,8 +129,8 @@ class TestParseLogWithStats:
         assert len(commits) == 1
         commit = commits[0]
         assert len(commit['parents']) == 2
-        assert 'parent1' in commit['parents']
-        assert 'parent2' in commit['parents']
+        assert commit['parents'][0]['sha'] == 'parent1abc456def789012345678901234567890'
+        assert commit['parents'][1]['sha'] == 'parent2def789abc012345678901234567890ab'
 
     def test_empty_input(self):
         """Test parsing empty input"""
@@ -142,7 +143,7 @@ class TestParseLogWithStats:
     def test_commit_with_no_stats(self):
         """Test commit where no files changed (stats should be zero)"""
         lines = [
-            "abc123|~|abc|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|Empty commit|~|Empty commit\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree567abc456def789012345678901234567890|~|Empty commit|~|Empty commit\n|~||~|\n",
             "\n"
         ]
 
@@ -157,7 +158,7 @@ class TestParseLogWithStats:
     def test_malformed_numstat_line(self):
         """Test that malformed numstat lines are skipped gracefully"""
         lines = [
-            "abc123|~|abc|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|Update|~|Update\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree890abc456def789012345678901234567890|~|Update|~|Update\n|~||~|\n",
             "\n",
             "10\t5\tvalid_file.txt\n",
             "malformed line without tabs\n",
@@ -176,20 +177,20 @@ class TestParseLogWithStats:
     def test_commit_with_special_characters_in_message(self):
         """Test commit message with special characters"""
         lines = [
-            'abc123|~|abc|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|Fix "bug" in <module>|~|Fix "bug" in <module>\n\nDetailed description with special chars: $, %, &|~||~|\n'
+            'abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree123def456789012345678901234567890ab|~|Fix "bug" in <module>|~|Fix "bug" in <module>\n\nDetailed description with special chars: $, %, &|~||~|\n'
         ]
 
         commits = parse_log_with_stats(lines)
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['message']['subject'] == 'Fix "bug" in <module>'
-        assert 'special chars: $, %, &' in commit['message']['body']
+        assert commit['subject'] == 'Fix "bug" in <module>'
+        assert 'special chars: $, %, &' in commit['body']
 
     def test_commit_with_empty_refs(self):
         """Test commit with no refs"""
         lines = [
-            "abc123|~|abc|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|No refs|~|No refs\n|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree456def789012345678901234567890abcdef|~|No refs|~|No refs\n|~||~|\n"
         ]
 
         commits = parse_log_with_stats(lines)
@@ -201,7 +202,7 @@ class TestParseLogWithStats:
     def test_real_world_commit_format(self):
         """Test with a more realistic commit structure"""
         lines = [
-            "e1bb93c05d8699243d43c9148a00804ae79cffff|~|e1bb93c|~|Elifarley C|~|elifarley@gmail.com|~|Elifarley C|~|elifarley@gmail.com|~|2025-11-18T19:19:14-03:00|~|12 minutes ago|~|feat: add comprehensive JSON output support for analysis commands (Phase 4a)|~|feat: add comprehensive JSON output support for analysis commands (Phase 4a)\n\nWHY: JSON output enables automation.\n\nWHAT: Added JSON support to 4 commands.\n\nIMPACT: Users can now pipe output to jq.|~|258d41a972c0e71100a1c64ca75de03bfc6943d1|~|HEAD -> main\n",
+            "e1bb93c05d8699243d43c9148a00804ae79cffff|~|e1bb93c|~|Elifarley C|~|elifarley@gmail.com|~|Elifarley C|~|elifarley@gmail.com|~|2025-11-18T19:19:14-03:00|~|12 minutes ago|~|2025-11-18T19:19:14-03:00|~|12 minutes ago|~|tree258d41a972c0e71100a1c64ca75de03bfc694|~|feat: add comprehensive JSON output support for analysis commands (Phase 4a)|~|feat: add comprehensive JSON output support for analysis commands (Phase 4a)\n\nWHY: JSON output enables automation.\n\nWHAT: Added JSON support to 4 commands.\n\nIMPACT: Users can now pipe output to jq.|~|258d41a972c0e71100a1c64ca75de03bfc6943d1|~|HEAD -> main\n",
             "\n",
             "11\t3\tREADME.md\n",
             "47\t23\tdocs/planning/json-output-roadmap.md\n",
@@ -212,10 +213,10 @@ class TestParseLogWithStats:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['hash'] == 'e1bb93c05d8699243d43c9148a00804ae79cffff'
-        assert commit['hash_short'] == 'e1bb93c'
+        assert commit['sha'] == 'e1bb93c05d8699243d43c9148a00804ae79cffff'
+        assert commit['sha_short'] == 'e1bb93c'
         assert commit['author']['name'] == 'Elifarley C'
-        assert 'JSON output enables automation' in commit['message']['body']
+        assert 'JSON output enables automation' in commit['body']
         assert len(commit['parents']) == 1
         assert 'HEAD' in commit['refs']
         assert 'main' in commit['refs']
@@ -231,22 +232,23 @@ class TestEdgeCases:
         """Test handling of incomplete commit lines"""
         lines = [
             "abc123|~|abc|~|Alice\n",  # Incomplete - missing fields
-            "def456|~|def|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|Valid commit|~|Valid commit\n|~||~|\n"
+            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree012abc456def789012345678901234567890|~|Valid commit|~|Valid commit\n|~||~|\n"
         ]
 
         commits = parse_log_with_stats(lines)
 
         # Should skip incomplete line and only parse valid commit
         assert len(commits) == 1
-        assert commits[0]['hash'] == 'def456'
+        assert commits[0]['sha'] == 'def456abc789012345678901234567890abcdef0'
 
     def test_blank_lines_between_commits(self):
         """Test that blank lines are handled correctly"""
         lines = [
-            "abc123|~|abc|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|First|~|First\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree345abc456def789012345678901234567890|~|First|~|First\n|~||~|\n",
             "\n",
             "\n",
-            "def456|~|def|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|Second|~|Second\n|~||~|\n"
+            "\n",
+            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree678def012345678901234567890abcdef12|~|Second|~|Second\n|~||~|\n"
         ]
 
         commits = parse_log_with_stats(lines)
@@ -256,7 +258,7 @@ class TestEdgeCases:
     def test_unicode_in_commit_message(self):
         """Test handling of Unicode characters"""
         lines = [
-            "abc123|~|abc|~|José García|~|jose@example.com|~|José García|~|jose@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|Add emoji support 🎉|~|Add emoji support 🎉\n\nSupports UTF-8: ñ, é, 中文|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|José García|~|jose@example.com|~|José García|~|jose@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree901abc456def789012345678901234567890|~|Add emoji support 🎉|~|Add emoji support 🎉\n\nSupports UTF-8: ñ, é, 中文|~||~|\n"
         ]
 
         commits = parse_log_with_stats(lines)
@@ -264,8 +266,8 @@ class TestEdgeCases:
         assert len(commits) == 1
         commit = commits[0]
         assert commit['author']['name'] == 'José García'
-        assert '🎉' in commit['message']['subject']
-        assert '中文' in commit['message']['body']
+        assert '🎉' in commit['subject']
+        assert '中文' in commit['body']
 
 
 class TestConditionalStats:

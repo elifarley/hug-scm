@@ -233,7 +233,7 @@ UnTrck untracked.txt
 
 ---
 
-#### 2. `hug b` / `hug bl` / `hug bll` - Branch Listing
+#### 2. `hug bl` / `hug bll` - Branch Listing
 
 **Priority**: ⭐⭐⭐⭐⭐ (Highest)
 
@@ -307,14 +307,7 @@ UnTrck untracked.txt
 
 **Current Output**:
 ```
-On branch main
-Your branch is ahead of 'origin/main' by 2 commits.
-
-Changes staged for commit:
-  new file:   src/auth.js
-
-Changes not staged:
-  modified:   README.md
+🔴 HEAD: b8527cd 🌿copilot/fix-failing-tests-one-more-time...origin/copilot/fix-failing-tests-one-more-time │ 📝 4 files, +41/-2 lines (Unstaged) │ 📦 - (Staged) │ U6 I5029
 ```
 
 **Proposed JSON Format**:
@@ -322,22 +315,23 @@ Changes not staged:
 {
   "repository": "/path/to/repo",
   "branch": {
-    "name": "main",
-    "upstream": "origin/main",
-    "ahead": 2,
+    "name": "copilot/fix-failing-tests-one-more-time",
+    "upstream": "origin/copilot/fix-failing-tests-one-more-time",
+    "ahead": 0,
     "behind": 0
   },
   "status": {
     "clean": false,
-    "staged_count": 1,
-    "unstaged_count": 1,
-    "untracked_count": 0,
+    "unstaged_count": 4,
+    "staged_count": 0,
+    "untracked_count": 6,
+    "ignored_count": 5029,
     "conflicts": 0
   },
   "files": {
-    "staged": ["src/auth.js"],
-    "unstaged": ["README.md"],
-    "untracked": [],
+    "unstaged": ["README.md", "2.txt", "3.txt", "4.txt"],
+    "staged": [],
+    "untracked": ["a", "b", "c", "d", "e", "f"],
     "conflicts": []
   }
 }

@@ -47,30 +47,44 @@ def parse_log_with_stats(lines, include_stats=True, omit_body=False):
     for line in lines:
         line = line.rstrip('\n')
 
-        # Check if this line starts a new commit (begins with 40-char hex hash followed by |~|)
+        # Always check for new commit first - this prevents subsequent commit lines
+        # from being absorbed into previous commit's body.
+        # Accept only 40 char hashes (git commit SHAs are always 40 hexadecimal characters)
         if re.match(r'^[0-9a-f]{40}\|~\|', line):
             # Process previous commit if exists
             if current_lines:
                 commit = parse_single_commit(current_lines, current_numstats, include_stats, omit_body)
                 if commit:
                     commits.append(commit)
-            # Start new commit
-            current_lines = [line]
-            current_numstats = []
-            in_numstat = False
-        elif current_lines:
-            # Check if this is a numstat line (N\tM\tfilename)
-            if '\t' in line and not '|~|' in line:
-                parts = line.split('\t')
-                if len(parts) >= 3:
-                    # This is a numstat line
-                    current_numstats.append(line)
-                    in_numstat = True
-                    continue
+            # Validate that commit line has enough fields before starting new commit
+            # Expected format has 15 fields separated by |~|, but body (%B) spans multiple lines
+            # so the first line might have 13 fields (up to and including start of body)
+            field_count = line.count('|~|') + 1
+            if field_count >= 13:  # At least 13 fields required (relaxed from 14)
+                # Start new commit
+                current_lines = [line]
+                current_numstats = []
+                in_numstat = False
+            # Skip incomplete commit lines (field_count < 13)
+            continue
 
-            # If we're not in numstat and not blank, it's part of commit body
-            if not in_numstat or line.strip():
-                current_lines.append(line)
+        # Skip lines before the first commit (e.g., incomplete or malformed lines)
+        if not current_lines:
+            continue
+
+        # Check if this is a numstat line (N\tM\tfilename)
+        if '\t' in line and not '|~|' in line:
+            parts = line.split('\t')
+            if len(parts) >= 3:
+                # This is a numstat line
+                current_numstats.append(line)
+                in_numstat = True
+                continue
+
+        # If we're not in numstat and not blank, it's part of commit body
+        # Skip blank lines that appear between commits (when in_numstat=True)
+        if not in_numstat or line.strip():
+            current_lines.append(line)
 
     # Process last commit
     if current_lines:
@@ -193,6 +207,7 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
         'insertions': 0,
         'deletions': 0
     }
+    files = []  # Detailed file changes for GitHub compatibility
 
     for numstat_line in numstat_lines:
         parts = numstat_line.split('\t')
@@ -200,9 +215,19 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
             try:
                 add = 0 if parts[0] == '-' else int(parts[0])
                 delete = 0 if parts[1] == '-' else int(parts[1])
+                filename = parts[2]
                 stats['insertions'] += add
                 stats['deletions'] += delete
                 stats['files_changed'] += 1
+
+                # Add file details to files array
+                files.append({
+                    'filename': filename,
+                    'status': 'modified',  # Default status
+                    'additions': add,
+                    'deletions': delete,
+                    'changes': add + delete
+                })
             except ValueError:
                 # Not a valid numstat line
                 pass
@@ -243,6 +268,7 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
     # Conditionally add stats field
     if include_stats:
         commit['stats'] = stats
+        commit['files'] = files
 
     return commit
 
@@ -276,7 +302,9 @@ def main():
             'latest': latest
         }
 
-    print(json.dumps(output, indent=2))
+    # Output compact JSON (spaces after : and , for readability but no newlines)
+    # Use separators with spaces to match bash JSON output format
+    print(json.dumps(output, separators=(', ', ': ')))
 
 
 if __name__ == '__main__':

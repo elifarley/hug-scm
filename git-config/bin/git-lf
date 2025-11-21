@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit output_json_commit_search; do . "$CMD_BASE/../lib/$f"; done
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
 show_help() {
@@ -8,7 +8,7 @@ show_help() {
 hug lf: Search commits by MESSAGE.
 
 USAGE:
-    hug lf <search-term> [-i] [-p] [--all] [--with-files] [-- [<file>]] [--browse-root] [-h, --help]
+    hug lf <search-term> [-i] [-p] [--all] [--json] [--with-files] [--no-body] [-- [<file>]] [--browse-root] [-h, --help]
 
 ARGUMENTS:
     <search-term>  Text to search for in commit messages (required)
@@ -18,7 +18,9 @@ OPTIONS:
     -i             Ignore case when searching
     -p             Show patches
     --all          Consider ALL branches (not just current)
-    --with-files   Show files changed in each matching commit
+    --json         Output as JSON (GitHub-compatible format, same as 'hug ll --json')
+    --with-files   Show files changed in each matching commit (JSON: includes numstat)
+    --no-body      Omit commit message body (JSON mode only, faster)
     --browse-root  Browse full repository scope in file selector UI (default: current directory)
     -- <file>      Restrict search to specific file
     -- (last arg)  Restrict search with interactive file selection (current directory scope)
@@ -59,14 +61,19 @@ eval "$(parse_common_flags "$@")"
 # Parse flags
 json_output=false
 with_files=false
+no_body=false
 remaining_args=()
 for arg in "$@"; do
   case "$arg" in
     --json)
       json_output=true
+      export HUG_JSON_MODE="true"
       ;;
     --with-files)
       with_files=true
+      ;;
+    --no-body)
+      no_body=true
       ;;
     *)
       remaining_args+=("$arg")
@@ -75,7 +82,15 @@ for arg in "$@"; do
 done
 set -- "${remaining_args[@]}"
 
-check_git_repo
+# Check if in git repo, handle errors appropriately
+if ! check_git_repo 2>/dev/null; then
+  if $json_output; then
+    . "$CMD_BASE/../lib/hug-json"
+    json_error "not_git_repo" "Not in a Git or Mercurial repository" 1
+  else
+    check_git_repo  # Show normal error
+  fi
+fi
 
 # Check if search term provided
 if [ $# -eq 0 ]; then
@@ -86,9 +101,32 @@ fi
 search_term="$1"
 shift
 
-# JSON output mode
+# JSON output mode - use batched operations for performance
 if $json_output; then
-  output_json_commit_search "message" "$search_term" "$with_files" "$@"
+  # Load batch JSON utilities for optimized performance
+  . "$CMD_BASE/../lib/hug-git-json"
+
+  # Build search response with batched git operations
+  search_args=()
+  $with_files || search_args+=("--no-files")  # Don't need file status
+  $no_body && search_args+=("--no-body")
+
+  # Add remaining git log arguments
+  search_args+=("$@")
+
+  # Output unified JSON response with metadata
+  search_results=$(batch_commit_search "$search_term" "${search_args[@]}")
+
+  # Build command name with flags for output
+  cmd_name="hug lf --json"
+  $with_files && cmd_name="$cmd_name --with-files"
+  $no_body && cmd_name="$cmd_name --no-body"
+
+  # Count results
+  results_count=$(echo "$search_results" | jq 'length' 2>/dev/null || echo "0")
+
+  # Wrap with metadata and output
+  output_json_response "$cmd_name" "{\"search\":{\"type\":\"message\",\"term\":\"$search_term\",\"results_count\":$results_count,\"with_files\":$with_files},\"results\":$search_results}" --with-branch --with-head
   exit 0
 fi
 

@@ -13,22 +13,24 @@ _HUG_JSON_LOADED=1
 # Handles: quotes, backslashes, newlines, tabs, control characters, Unicode
 json_escape() {
   local str="$1"
-  # Use printf for Unicode safety (bash parameter expansion can break multi-byte chars)
-  # Escape backslashes first (must be before other escapes)
+
+  # Escape backslashes FIRST (critical - must be before other escapes)
   str="${str//\\/\\\\}"
+
   # Escape quotes
   str="${str//\"/\\\"}"
-  # Escape control characters
+
+  # Escape common control characters using Bash parameter expansion
+  # These produce the literal escape sequences (e.g., \n not actual newline)
   str="${str//$'\n'/\\n}"
   str="${str//$'\r'/\\r}"
   str="${str//$'\t'/\\t}"
-  # Escape other control characters
   str="${str//$'\b'/\\b}"
   str="${str//$'\f'/\\f}"
 
-  # Additional safety: handle other control characters (0x00-0x1F except \t\n\r)
-  # Use printf to avoid breaking multi-byte Unicode characters
-  printf '%s' "$str" | LC_ALL=C sed 's/[\x00-\x08\x0B\x0C\x0E-\x1F]/\\u%04x/g'
+  # Output the escaped string directly
+  # The parameter expansions above already created the correct escape sequences
+  printf '%s' "$str"
 }
 
 # Convert bash associative array to JSON object string
@@ -45,10 +47,10 @@ to_json_object() {
     if $first; then
       first=false
     else
-      json+=","
+      json+=", "
     fi
 
-    json+="\"$(json_escape "$key")\":\"$(json_escape "$value")\""
+    json+="\"$(json_escape "$key")\": \"$(json_escape "$value")\""
     shift 2
   done
 
@@ -69,10 +71,10 @@ to_json_nested() {
     if $first; then
       first=false
     else
-      json+=","
+      json+=", "
     fi
 
-    json+="\"$(json_escape "$key")\":$value"
+    json+="\"$(json_escape "$key")\": $value"
     shift 2
   done
 
@@ -97,7 +99,7 @@ to_json_array() {
     if $first; then
       first=false
     else
-      json+=","
+      json+=", "
     fi
     json+="\"$(json_escape "$item")\""
   done
@@ -138,7 +140,7 @@ json_error() {
   local error_message="$2"
   local exit_code="${3:-1}"
 
-  printf '{"error":{"type":"%s","message":"%s"}}\n' "$(json_escape "$error_type")" "$(json_escape "$error_message")" >&2
+  printf '{"error":{"type":"%s","message":"%s"}}\n' "$(json_escape "$error_type")" "$(json_escape "$error_message")"
   exit "$exit_code"
 }
 
@@ -189,5 +191,176 @@ json_pretty() {
     echo "$json" | python -m json.tool
   else
     printf '%s\n' "$json"
+  fi
+}
+
+# Check if JSON mode is enabled in current command arguments
+# Usage: is_json_mode "$@"
+is_json_mode() {
+  # Check if JSON mode is explicitly set via environment
+  if [[ "${HUG_JSON_MODE:-}" == "true" ]]; then
+    return 0
+  fi
+
+  # Check command line arguments
+  for arg in "$@"; do
+    if [[ "$arg" == "--json" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+# Enhanced error handler that detects JSON mode and formats appropriately
+# Usage: handle_command_error "error_type" "error_message" [exit_code=1] [args...]
+handle_command_error() {
+  local error_type="$1"
+  local error_message="$2"
+  local exit_code="${3:-1}"
+  shift 3
+
+  # Auto-detect JSON mode from command line arguments or environment
+  if is_json_mode "$@"; then
+    json_error "$error_type" "$error_message" "$exit_code"
+  else
+    printf 'Error: %s\n' "$error_message" >&2
+    exit "$exit_code"
+  fi
+}
+
+# Build standardized metadata object for all JSON commands
+# Usage: build_standard_metadata "command_name" [--with-branch] [--with-head]
+# Returns JSON object with repository, timestamp, command, version (and optional branch/head)
+build_standard_metadata() {
+  local command="$1"
+  shift
+
+  local with_branch=false
+  local with_head=false
+
+  # Parse optional flags
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --with-branch)
+        with_branch=true
+        shift
+        ;;
+      --with-head)
+        with_head=true
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  # Base metadata (repository as object, not string)
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+  # Build base metadata object
+  local metadata_json
+  metadata_json=$(to_json_nested \
+    "repository" "$(to_json_object "path" "$(pwd)")" \
+    "timestamp" "\"$timestamp\"" \
+    "command" "\"$command\"" \
+    "version" "\"${HUG_VERSION:-unknown}\"")
+
+  # Add optional branch information
+  if $with_branch; then
+    local branch
+    local upstream
+    branch=$(git branch --show-current 2>/dev/null || echo "detached HEAD")
+    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
+
+    local branch_json
+    if [ -n "$upstream" ]; then
+      local counts
+      local left_count
+      local right_count
+      counts=$(git rev-list --left-right --count HEAD...@{u} 2>/dev/null || echo "0	0")
+      left_count=$(echo "$counts" | cut -f1)
+      right_count=$(echo "$counts" | cut -f2)
+
+      branch_json=$(to_json_nested \
+        "name" "\"$branch\"" \
+        "upstream" "\"$upstream\"" \
+        "ahead" "$left_count" \
+        "behind" "$right_count")
+    else
+      branch_json=$(to_json_object "name" "$branch")
+    fi
+
+    # Add branch to metadata (remove closing }, add comma and branch, add closing })
+    metadata_json="${metadata_json%\}}, \"branch\": $branch_json}"
+  fi
+
+  # Add optional HEAD information
+  if $with_head; then
+    local hash
+    hash=$(git rev-parse --short HEAD 2>/dev/null || echo "")
+    local head_json
+    head_json=$(to_json_object "hash" "$hash")
+
+    # Add head to metadata (remove closing }, add comma and head, add closing })
+    metadata_json="${metadata_json%\}}, \"head\": $head_json}"
+  fi
+
+  printf '%s' "$metadata_json"
+}
+
+# Unified JSON output wrapper for consistent responses
+# Usage: output_json_response "command_name" "data_json" [--with-branch] [--with-head] [--pretty]
+# Combines metadata with data and outputs complete JSON response
+output_json_response() {
+  local command="$1"
+  local data="$2"
+  shift 2
+
+  local with_branch=false
+  local with_head=false
+  local pretty=false
+
+  # Parse optional flags
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --with-branch)
+        with_branch=true
+        shift
+        ;;
+      --with-head)
+        with_head=true
+        shift
+        ;;
+      --pretty)
+        pretty=true
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  # Build metadata args
+  local -a metadata_args=("$command")
+  $with_branch && metadata_args+=(--with-branch)
+  $with_head && metadata_args+=(--with-head)
+
+  # Build complete response
+  local metadata
+  metadata=$(build_standard_metadata "${metadata_args[@]}")
+
+  # Combine metadata and data (with spaces for consistency)
+  local response
+  response="${metadata%\}}, \"data\": $data}"
+
+  # Output with or without pretty-printing
+  if $pretty; then
+    json_pretty "$response"
+  else
+    printf '%s\n' "$response"
   fi
 }

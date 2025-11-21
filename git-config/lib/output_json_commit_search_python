@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Python-based commit search - wrapper for json_transform.py
+# Usage: output_json_commit_search_python "type" "search_term" "with_files" [additional_args]
+
+# Get script directory
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+
+output_json_commit_search_python() {
+  local search_type="$1"
+  local search_term="$2"
+  local with_files="$3"
+  shift 3
+  
+  # Build command
+  local -a python_cmd=("python3" "$CMD_BASE/python/json_transform.py" "commit_search" "$search_type" "$search_term")
+  
+  # Add --with-files flag if requested
+  if [[ "$with_files" == "true" ]]; then
+    python_cmd+=("--with-files")
+  fi
+  
+  # Add additional git log arguments
+  python_cmd+=("$@")
+  
+  # Execute Python script
+  "${python_cmd[@]}"
+}
