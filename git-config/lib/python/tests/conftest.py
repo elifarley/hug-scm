@@ -14,6 +14,9 @@ import pytest
 PYTHON_LIB_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(PYTHON_LIB_DIR))
 
+# Import command_mock fixture from fixtures/conftest.py
+pytest_plugins = ['tests.fixtures.conftest']
+
 
 @pytest.fixture
 def sample_git_log_co_changes():
