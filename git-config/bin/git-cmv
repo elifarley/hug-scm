@@ -20,11 +20,31 @@ OPTIONS:
     --force         Skip confirmation prompts (use with caution)
 
 DESCRIPTION:
-    Moves the specified commits from the current branch to <target-branch> by detaching (new branches) or cherry-picking (existing) and resetting the current branch back. Preserves individual commit history. If <target-branch> missing without --new, prompts to create (auto-creates with --force). Use --new for explicit non-interactive creation. For new branches, detaches by creating at original HEAD then resetting original back (exact history preserved, no conflicts). For existing, cherry-picks the range. With -u, moves commits above the upstream remote tip (read-only preview/confirmation; no fetch).
+    Moves the specified commits from the current branch to <target-branch> by detaching (new branches) or cherry-picking (existing) and resetting the current branch back. Preserves individual commit history. If <target-branch> missing without --new, prompts to create (auto-creates with --force). Use --new for explicit non-interactive creation.
+
+    For new branches: Creates pointer at original HEAD then resets source back (exact history preserved, original SHAs kept, no conflicts possible).
+    For existing branches: Cherry-picks the range onto target (creates NEW commit SHAs, may conflict).
+
+    With -u, moves local-only commits above the upstream remote tip (read-only preview/confirmation; no fetch).
 
     Requires a clean working tree and index (no staged or unstaged changes; untracked ok). Cannot mix -u with [N|COMMIT]. Aborts on cherry-pick conflicts (existing branches) or if <target-branch> can't be checked out.
 
     Previews are organized: 📊 summary + changes, followed by 📤 commit list (shown once).
+
+    IMPORTANT: For existing branches, commits are rewritten (new SHAs via cherry-pick). For new branches, original SHAs are preserved. To copy commits without modifying the source branch, use 'hug ccp' instead.
+
+COMMON SCENARIOS:
+    # Accidentally committed to wrong branch
+    hug cmv 3 feature/api-refactor --new    # Move last 3 commits to new feature branch
+
+    # Move tested commits from feature branch to main
+    hug cmv 6 main                          # Move 6 commits to existing main branch
+
+    # Extract experimental work to separate branch
+    hug cmv 2 experiment/perf-test --new    # Keep experimenting without cluttering main
+
+    # Consolidate unpushed commits to proper branch
+    hug cmv -u feature/cleanup              # Move local-only commits to cleanup branch
 
 EXAMPLES:
     hug cmv 2 feature/new --new     # Move last 2 commits to new branch 'feature/new'
@@ -32,10 +52,25 @@ EXAMPLES:
     hug cmv -u feature/local        # Move local-only commits to 'feature/local'
     hug cmv 3 bugfix --force        # Skip confirmation
 
+CONFLICT RESOLUTION:
+    If cherry-pick fails due to conflicts on existing branches:
+
+    Manual approach (recommended):
+        hug b <target-branch>       # Switch to target branch
+        hug ccp <commit-range>      # Cherry-pick commits step-by-step
+        # Resolve conflicts interactively as they occur
+
+    Alternative using git rebase:
+        git rebase --onto <target> <base> <source-branch>
+        # Follow interactive prompts to resolve conflicts
+
+    Note: Conflicts only occur with existing branches. New branches preserve exact history (no conflicts possible).
+
 SEE ALSO:
-    hug cc    Copy commits instead of moving
+    hug ccp       Copy commits instead of moving
     hug h back    Move HEAD back without relocating
     hug b         Branch management
+    hug rbi       Interactive rebase for complex history editing
 EOF
 }
 

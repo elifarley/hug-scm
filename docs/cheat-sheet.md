@@ -52,6 +52,10 @@ hug b    # **B**ranch
 hug br   # **B**ranch **R**emotes (interactive menu of remotes only)
 hug brr   # **B**ranch **R**efreshed **R**emotes (fetch first, then remote menu)
 
+# Move commits between branches
+hug cmv 3 feature/api --new   # **C**ommit **M**o**V**e to new branch (relocates commits, resets source)
+hug cmv 6 main                # Move 6 commits to existing main branch
+
 # Merge (squash, no commit)
 hug m feature-branch  # **M**erge
 
@@ -110,6 +114,9 @@ hug w wipe-all  # **W**orking directory **W**ipe **ALL**
 
 # Remove all untracked/ignored files
 hug w purge-all  # **W**orking directory **P**urge **ALL**
+
+# Fix "committed to wrong branch" mistake
+hug cmv 2 correct-branch --new  # **C**ommit **M**o**V**e to new branch (relocates last 2 commits)
 
 # Undo last commit (keep changes staged)
 hug h back  # **H**EAD **Back**

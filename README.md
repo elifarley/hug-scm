@@ -452,7 +452,9 @@ hug caa [-m msg]      # Commit: All All (tracked + untracked + deletions)
 hug cm [-m msg]       # Commit: Modify (Amend last commit with staged changes)
 hug cma [-m msg]      # Commit: Modify (Amend last commit with all tracked changes)
 hug ccp <commit>      # Commit Copy (cherry-pick commit onto current branch)
-hug cmv [N] <branch> [--new] # Move commits to another branch and switch to it (like mv; detaches for new (exact history), cherry-picks for existing; combined prompt to create if missing, auto with --force)
+hug cmv [N] <branch> [--new] # Commit MoVe: Relocate commits to another branch (resets source, switches to target)
+                             #   - New branches: preserves original SHAs (no conflicts)
+                             #   - Existing branches: creates new SHAs via cherry-pick (may conflict)
 hug cii               # Interactive patch commit (add --patch then commit)
 hug cim               # Full interactive staging and commit
 ```

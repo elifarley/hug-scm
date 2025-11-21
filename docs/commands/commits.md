@@ -132,20 +132,88 @@ Move (relocate) commits from the current branch to another branch (new or existi
 
 **Usage:** `hug cmv [N|commit] \<branch\> [--new] [-u, --upstream] [--force]`
 
-**Description**: Moves the last N commits (default: 1) or commits above a specific commit from the current branch to \<branch\>, preserving individual commit history. Then resets the current branch back. If \<branch\> missing without --new: Combined prompt "Branch 'X' doesn't exist. Proceed with creating a new branch named 'X' and moving N commit(s) to it?" (y/n); auto-creates with --force (no prompt). Use --new for explicit non-interactive creation (skips prompt if missing). For new branches, detaches by creating at original HEAD then resetting original back (exact history preserved, no conflicts). For existing branches, cherry-picks the range. With -u, moves local-only commits above the upstream tip (read-only preview/confirmation; no fetch). Post-move: You'll end up on the target branch for easy continuation.
+**Description**: Moves the last N commits (default: 1) or commits above a specific commit from the current branch to \<branch\>, preserving individual commit history. Then resets the current branch back.
 
-**Examples:**
+**Visual Example:**
+```
+BEFORE:                           AFTER:
+feature-branch                    feature-branch
+    ↓                                ↓
+  ●─●─●─●─●─●  (6 commits)         ●  (reset back 6 commits)
+    ↓
+  ● main                           ● main
+                                     ↓
+                                   ●─●─●─●─●─●  (6 commits added)
+
+Command: hug cmv 6 main
+Result:  Now on 'main' with 6 commits (new SHAs via cherry-pick)
+```
+
+**Behavior**:
+- **New branches**: Creates pointer at original HEAD then resets source back (exact history preserved, original SHAs kept, no conflicts possible)
+- **Existing branches**: Cherry-picks commits onto target (creates NEW commit SHAs, may conflict)
+
+If \<branch\> missing without --new: Combined prompt "Branch 'X' doesn't exist. Proceed with creating a new branch named 'X' and moving N commit(s) to it?" (y/n); auto-creates with --force (no prompt). Use --new for explicit non-interactive creation. With -u, moves local-only commits above the upstream tip (read-only preview/confirmation; no fetch). Post-move: You'll end up on the target branch for easy continuation.
+
+**When to Use What:**
+
+| Scenario | Command | Why |
+|----------|---------|-----|
+| Move commits, don't keep on source | `hug cmv` | Relocates commits (source loses them) |
+| Copy commits, keep on source | `hug ccp` | Duplicates commits (source keeps them) |
+| Just move HEAD back | `hug h back` | Doesn't relocate commits to another branch |
+| Interactive history editing | `hug rbi` | More control, can squash/edit/reorder |
+
+**Real-World Examples:**
+
+### Scenario 1: Wrong Branch Recovery
+```shell
+# You're on main, but commits should be on feature branch
+$ git branch --show-current
+main
+
+$ hug ll -3
+* abc123 2025-11-21 Add new API endpoint
+* def456 2025-11-21 Update tests
+* ghi789 2025-11-21 Fix typo
+
+$ hug cmv 3 feature/api --new
+📊 3 commits since ghi789~1:
+...
+📤 moving to feature/api:
+* abc123 Add new API endpoint
+* def456 Update tests
+* ghi789 Fix typo
+
+✅ Created and moved 3 commits to new branch 'feature/api'
+✅ main reset back 3 commits
+✅ Now on 'feature/api'
+```
+
+### Scenario 2: Consolidate to Main
+```shell
+# Feature branch work done, move to main
+$ git branch --show-current
+feature/refactor
+
+$ hug cmv 6 main
+📊 6 commits since abc123:
+...
+📤 moving to main:
+...
+
+✅ Moved 6 commits to 'main'
+✅ feature/refactor reset back 6 commits
+✅ Now on main (ready to push)
+```
+
+**Basic Examples:**
 ```shell
 hug cmv 2 feature/new           # Combined prompt to create if missing
 hug cmv 2 feature/new --new     # Explicitly create new branch 'feature/new'
 hug cmv a1b2c3 existing-branch  # Move commits above a1b2c3 to 'existing-branch'
 hug cmv -u feature/local --force # Auto-creates if missing, skip confirmation
 hug cmv 3 bugfix --force        # Skip confirmation (auto-create if missing)
-
-# Example interactive session (missing branch):
-# $ hug cmv 1 my-new-branch
-# Branch 'my-new-branch' doesn't exist. Proceed with creating a new branch named 'my-new-branch' and moving 1 commit to it? [y/N]: y
-# Created and moved 1 commit to new branch 'my-new-branch'. Now on 'my-new-branch'.
 ```
 
 **Safety**: Requires clean working tree and index (no staged or unstaged changes; untracked ok). Previews commits and file changes; requires y/n confirmation for move (skipped with --force). Auto-creation on --force for scripting; combined interactive prompt otherwise. For new branches: Simple detach (no reapplication). For existing: Cherry-pick may conflict/abort. Cannot mix -u with explicit N/commit. The preview is read-only.
