@@ -1241,6 +1241,107 @@ teardown() {
   assert_output --partial "--temporal"
 }
 
+@test "hug h squash: uses base commit message with -b flag" {
+  # When squashing last 2 commits, the base commit is HEAD~2 (the target)
+  # That's where we go back to, and its message should be used
+  local target_commit
+  target_commit=$(git rev-parse HEAD~2)
+  local base_message
+  base_message=$(git log -1 --format=%B "$target_commit")
+
+  run hug h squash 2 -b --force
+  assert_success
+
+  # The new commit message should match the base commit message exactly
+  local new_message
+  new_message=$(git log -1 --format=%B)
+
+  assert_equal "$new_message" "$base_message"
+}
+
+@test "hug h squash: uses custom message with -m flag" {
+  local custom_msg="feat: custom squash message"
+
+  run hug h squash 2 -m "$custom_msg" --force
+  assert_success
+
+  # The commit message should be exactly what we provided
+  local new_message
+  new_message=$(git log -1 --format=%s)
+
+  assert_equal "$new_message" "$custom_msg"
+}
+
+@test "hug h squash: opens editor with -e flag" {
+  # Use a mock editor that appends a marker
+  local test_msg="editor was opened"
+  local mock_editor="$TEST_REPO/mock_editor.sh"
+  cat > "$mock_editor" << 'EOF'
+#!/bin/sh
+echo "editor was opened" >> "$1"
+EOF
+  chmod +x "$mock_editor"
+  export EDITOR="$mock_editor"
+
+  run hug h squash 2 -e --force
+  assert_success
+
+  # The commit message should contain our marker
+  local new_message
+  new_message=$(git log -1 --format=%B)
+
+  if ! grep -Fq "$test_msg" <<<"$new_message"; then
+    fail "Expected commit message to include editor marker"
+  fi
+}
+
+@test "hug h squash: opens editor with base message when -b -e combined" {
+  # Get base commit message
+  local base_message
+  base_message=$(git log -2 --format=%B | tail -n +2)
+
+  # Use a mock editor that just keeps the file as-is
+  export EDITOR="cat"
+
+  run hug h squash 2 -b -e --force
+  assert_success
+
+  # The commit message should match the base commit message
+  local new_message
+  new_message=$(git log -1 --format=%B)
+
+  # Should contain base message (editor was pre-populated with it)
+  if ! grep -Fq "$(echo "$base_message" | head -n 1)" <<<"$new_message"; then
+    fail "Expected commit message to include base message content"
+  fi
+}
+
+@test "hug h squash: rejects -m and -e together" {
+  run hug h squash 2 -m "message" -e
+  assert_failure
+  assert_output --partial "Cannot use -m/--message and -e/--edit together"
+}
+
+@test "hug h squash: rejects -m and -b together" {
+  run hug h squash 2 -m "message" -b
+  assert_failure
+  assert_output --partial "Cannot use -m/--message and -b/--base-message together"
+}
+
+@test "hug h squash: allows -b and -e together" {
+  # This combination should work (edit the base message)
+  export EDITOR="cat"
+
+  run hug h squash 2 -b -e --force
+  assert_success
+}
+
+@test "hug h squash: -m flag requires argument" {
+  run hug h squash 2 -m
+  assert_failure
+  assert_output --partial "-m/--message requires a commit message argument"
+}
+
 # ----------------------------------------------------------------------------
 # git-h-files edge cases
 # ----------------------------------------------------------------------------

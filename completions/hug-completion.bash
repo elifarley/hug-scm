@@ -154,13 +154,13 @@ _hug() {
             local opts=""
             case "$h_subcmd" in
                 back|undo|rollback|rewind)
-                    opts="-u --upstream --force --quiet -h --help"
+                    opts="-u --upstream -t --temporal --force --quiet -h --help"
                     ;;
                 squash)
-                    opts="-u --upstream --force --quiet -h --help"
+                    opts="-u --upstream -b --base-message -m --message -e --edit -t --temporal --force --quiet -h --help"
                     ;;
                 files)
-                    opts="-u --upstream --quiet --stat -h --help"
+                    opts="-u --upstream -t --temporal --quiet --stat -h --help"
                     ;;
                 steps)
                     opts="--raw --quiet -h --help"
@@ -213,7 +213,7 @@ _hug() {
     
     if [[ "$subcmd" == "squash" ]]; then
         if [[ $cur == -* ]]; then
-            COMPREPLY=( $(compgen -W "-u --upstream --force --quiet -h --help" -- "$cur" ) )
+            COMPREPLY=( $(compgen -W "-u --upstream -b --base-message -m --message -e --edit -t --temporal --force --quiet -h --help" -- "$cur" ) )
             return 0
         fi
         if git rev-parse --git-dir > /dev/null 2>&1; then

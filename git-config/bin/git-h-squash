@@ -9,7 +9,7 @@ show_help() {
 hug h squash: Squashes specific commits into 1 with original messages combined.
 
 USAGE:
-    hug h squash [--quiet] [--force] [target]
+    hug h squash [--quiet] [--force] [-b|--base-message] [-m|--message MSG] [-e|--edit] [target]
 
 OPTIONS:
     [target]        Either empty, an integer N > 1, a COMMIT hash, -u/--upstream, or -t/--temporal TIME
@@ -22,6 +22,11 @@ OPTIONS:
                         TIME can be relative (e.g., "3 days ago", "1 week ago")
                         or absolute (e.g., "2024-01-15", "2024-01-15 10:30")
                         Reference point is HEAD's commit time
+    -b, --base-message
+                    Use base commit's full message (subject + body + footers) instead of concatenating all commit messages
+    -m, --message MSG
+                    Use provided message directly (conflicts with -e and -b)
+    -e, --edit      Open editor to edit commit message (pre-populated with base message if -b is used)
     --quiet         Suppress output
     --force         Skip confirmation prompts (use with caution)
 
@@ -34,17 +39,22 @@ DESCRIPTION:
     With -t/--temporal, squashes commits from the first commit at or after the specified time to HEAD.
 
 EXAMPLES:
-    hug h squash                   # Squash last 2 commits into 1
-    hug h squash 3                 # Squash last 3 commits into 1
-    hug h squash a1b2c3            # Keep a1b2c3 unchanged; Squash all commits above it into 1
-    hug h squash -u                # Keep upstream tip unchanged; Squash local-only commits on top
-    hug h squash 3 --force         # Skip confirmation
-    hug h squash -t "3 days ago"   # Squash commits from 3 days ago to HEAD
-    hug h squash -t "1 week ago"   # Squash commits from 1 week ago to HEAD
+    hug h squash                       # Squash last 2 commits into 1 (concatenated messages)
+    hug h squash 3                     # Squash last 3 commits into 1
+    hug h squash 3 -b                  # Squash with base commit's full message
+    hug h squash 3 -m "feat: xyz"      # Squash with custom message
+    hug h squash 3 -e                  # Squash and open editor for message
+    hug h squash 3 -b -e               # Edit base commit message in editor
+    hug h squash a1b2c3                # Keep a1b2c3 unchanged; Squash all commits above it into 1
+    hug h squash -u                    # Keep upstream tip unchanged; Squash local-only commits on top
+    hug h squash 3 --force             # Skip confirmation
+    hug h squash -t "3 days ago"       # Squash commits from 3 days ago to HEAD
+    hug h squash -t "1 week ago" -b    # Squash commits from 1 week ago with base message
 
 SEE ALSO:
     hug h back    HEAD goes back only (no auto-commit)
     hug c         commit staged changes
+    hug cm        amend last commit message
 EOF
 }
 
@@ -56,15 +66,36 @@ eval "$(parse_temporal_flag "$@")"
 
 # Parse remaining custom flags
 upstream=false
+use_base_message=false
+custom_message=""
+open_editor=false
 target_arg=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -u|--upstream) upstream=true; shift ;;
+    -b|--base-message) use_base_message=true; shift ;;
+    -m|--message)
+      if [[ $# -lt 2 || "$2" == -* ]]; then
+        error "-m/--message requires a commit message argument"
+      fi
+      custom_message="$2"
+      shift 2
+      ;;
+    -e|--edit) open_editor=true; shift ;;
     *) target_arg="$1"; shift ;;
   esac
 done
 
 check_git_repo
+
+# Validate flag combinations
+if [[ -n "$custom_message" && "$open_editor" == true ]]; then
+  error "Cannot use -m/--message and -e/--edit together (conflicting options)"
+fi
+
+if [[ -n "$custom_message" && "$use_base_message" == true ]]; then
+  error "Cannot use -m/--message and -b/--base-message together (conflicting options)"
+fi
 
 # Capture original HEAD message BEFORE any reset
 original_head=$(git rev-parse HEAD)
@@ -127,8 +158,36 @@ else
   target="$target_commit"
 fi
 
-# Collect all commit messages from the commits to be squashed, in reverse order
-combined_messages=$(git log --format='--squash--%n- %B' --reverse "$target..HEAD" 2>/dev/null | tail -n +2 || echo "Squashed commits")
+# Determine the commit message based on flags
+if [[ -n "$custom_message" ]]; then
+  # User provided message directly via -m flag
+  final_message="$custom_message"
+elif $open_editor; then
+  # User wants to edit the message in an editor
+  if $use_base_message; then
+    # Pre-populate editor with base commit message
+    temp_file=$(mktemp)
+    git log -1 --format='%B' "$target" > "$temp_file"
+    ${EDITOR:-vi} "$temp_file" || error "Editor exited with non-zero status"
+    final_message=$(cat "$temp_file")
+    rm -f "$temp_file"
+  else
+    # Open editor with concatenated messages
+    temp_file=$(mktemp)
+    combined_messages=$(git log --format='--squash--%n- %B' --reverse "$target..HEAD" 2>/dev/null | tail -n +2 || echo "Squashed commits")
+    printf "[squash] %d commits…\n\n%s" "$commits_to_squash" "$combined_messages" > "$temp_file"
+    ${EDITOR:-vi} "$temp_file" || error "Editor exited with non-zero status"
+    final_message=$(cat "$temp_file")
+    rm -f "$temp_file"
+  fi
+elif $use_base_message; then
+  # Use base commit's full message (subject + body + footers)
+  final_message=$(git log -1 --format='%B' "$target")
+else
+  # Default: concatenate all commit messages
+  combined_messages=$(git log --format='--squash--%n- %B' --reverse "$target..HEAD" 2>/dev/null | tail -n +2 || echo "Squashed commits")
+  final_message="[squash] $commits_to_squash commits…"$'\n\n'"$combined_messages"
+fi
 
 back_cmd="hug h back $target --quiet --force"
 $back_cmd
@@ -141,8 +200,8 @@ if ! has_staged_changes; then
   exit 0
 fi
 
-# Commit with messages collected from all abandoned commits
-hug c -m "[squash] $commits_to_squash commits…" -m "" -m "$combined_messages"
+# Commit with the final message
+hug c -m "$final_message"
 
 test "${HUG_QUIET:-f}" = T && exit
 

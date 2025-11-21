@@ -12,7 +12,7 @@ These commands provide intuitive names and built-in safeguards for moving the br
 | `hug h undo [-u|-t TIME] [--force]` | **H**EAD **Undo** | HEAD goes back, keeping changes unstaged                                          |
 | `hug h rollback [-u|-t TIME] [--force]` | **H**EAD **R**ollback | HEAD goes back, discarding changes but preserving uncommitted changes             |
 | `hug h rewind [-u|-t TIME] [--force]` | **H**EAD **Re**wind | HEAD goes back, discarding ALL changes, including uncommitted ones                |
-| `hug h squash [-u|-t TIME] [--force]` | **H**EAD **S**quash | HEAD goes back + commit last N/local/specific commits as 1 with original HEAD msg |
+| `hug h squash [-u|-t TIME] [-b\|-m\|-e] [--force]` | **H**EAD **S**quash | HEAD goes back + commit last N/local/specific commits as 1 (default: concatenated messages; -b: base message; -m: custom message; -e: edit) |
 | `hug h files [-u|-t TIME] [-p|--patch [FILE]]` | **H**EAD **F**iles | Preview files touched in the selected range (or local-only with -u, or by time with -t); optionally show patch (-p) before stats |
 | `hug h steps <file>` | **H**EAD **Steps** | Count steps back to find most recent file change (query for rewinds)              |
 
@@ -84,20 +84,29 @@ All HEAD movement commands (`hug h back`, `hug h undo`, `hug h rollback`, `hug h
   ```
 - **Safety**: Previews commits and their file change statistics to be discarded, requires typing "rewind" to confirm (skipped with --force). The preview helper is read-only; nothing changes until you confirm. Even if HEAD is already at the target, the command still hard-resets tracked changes in the index and working tree. Untracked files are safe. Cannot mix `-u` with explicit target or `-t`. Cannot mix `-t` with explicit target.
 
-### `hug h squash [N|commit] [-u, --upstream] [-t, --temporal TIME] [--force]`
-- **Description**: Moves HEAD back by N commits (default: 2) or to a specific commit (like `h back`), then immediately commits the staged changes as one new commit, combining all commit messages.
-Changes from all squashed commits are kept staged so that they can be committed in sequence. With `-u`, squashes local-only commits onto the upstream tip. With `-t/--temporal`, squashes commits from the first commit at or after the specified time to HEAD. Non-destructive to uncommitted working directory changes.
+### `hug h squash [N|commit] [-u, --upstream] [-t, --temporal TIME] [-b|--base-message] [-m|--message MSG] [-e|--edit] [--force]`
+- **Description**: Moves HEAD back by N commits (default: 2) or to a specific commit (like `h back`), then immediately commits the staged changes as one new commit. By default, combines all commit messages from squashed commits. Message behavior can be controlled with flags:
+  - **Default**: Concatenates all commit messages with `[squash] N commits…` prefix
+  - `-b/--base-message`: Uses the base commit's full message (subject + body + footers) instead of concatenation
+  - `-m/--message MSG`: Uses the provided message directly (conflicts with `-e` and `-b`)
+  - `-e/--edit`: Opens editor to edit the commit message (pre-populated with base message if `-b` is also used)
+
+  Changes from all squashed commits are kept staged so that they can be committed in sequence. With `-u`, squashes local-only commits onto the upstream tip. With `-t/--temporal`, squashes commits from the first commit at or after the specified time to HEAD. Non-destructive to uncommitted working directory changes.
 - **Example**:
   ```shell
-  hug h squash               # Squash last 2 commits into 1
-  hug h squash 3             # Squash last 3 commits into 1
-  hug h squash a1b2c3        # Keep a1b2c3 unchanged; Squash all commits above it into 1
-  hug h squash -u            # Keep upstream tip unchanged; Squash local-only commits on top
-  hug h squash 3 --force     # Skip confirmation
-  hug h squash -t "3 days ago"   # Squash commits from 3 days ago to HEAD
-  hug h squash -t "1 week ago"   # Squash commits from 1 week ago to HEAD
+  hug h squash                       # Squash last 2 commits into 1 (concatenated messages)
+  hug h squash 3                     # Squash last 3 commits into 1
+  hug h squash 3 -b                  # Squash with base commit's full message
+  hug h squash 3 -m "feat: xyz"      # Squash with custom message
+  hug h squash 3 -e                  # Squash and open editor for message
+  hug h squash 3 -b -e               # Edit base commit message in editor
+  hug h squash a1b2c3                # Keep a1b2c3 unchanged; Squash all commits above it into 1
+  hug h squash -u                    # Keep upstream tip unchanged; Squash local-only commits on top
+  hug h squash 3 --force             # Skip confirmation
+  hug h squash -t "3 days ago"       # Squash commits from 3 days ago to HEAD
+  hug h squash -t "1 week ago" -b    # Squash commits from 1 week ago with base message
   ```
-- **Safety**: Previews commits and their file change statistics affected and requires y/n confirmation when staged changes are present (skipped with --force or when the staging area is clean). Keeps protection when staged work might be unintentionally lumped into the squash, but skips the prompt when no staged changes are present. The shared preview helper is read-only; the squash only runs after you confirm. Aborts if no upstream set for `-u` or invalid target. If no staged changes after reset, skips commit and warns. Cannot mix `-u` with explicit target or `-t`. Cannot mix `-t` with explicit target.
+- **Safety**: Previews commits and their file change statistics affected and requires y/n confirmation when staged changes are present (skipped with --force or when the staging area is clean). Keeps protection when staged work might be unintentionally lumped into the squash, but skips the prompt when no staged changes are present. The shared preview helper is read-only; the squash only runs after you confirm. Aborts if no upstream set for `-u` or invalid target. If no staged changes after reset, skips commit and warns. Cannot mix `-u` with explicit target or `-t`. Cannot mix `-t` with explicit target. Cannot use `-m` with `-e` or `-b` (conflicting message options).
 - Pre-existing staged changes will be included - review with `hug ss` first.
 
 ### `hug h files [N|commit] [options]`
