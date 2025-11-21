@@ -232,14 +232,14 @@ class TestEdgeCases:
         """Test handling of incomplete commit lines"""
         lines = [
             "abc123|~|abc|~|Alice\n",  # Incomplete - missing fields
-            "def456abc789012345678901234567890abcdef01|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree012abc456def789012345678901234567890|~|Valid commit|~|Valid commit\n|~||~|\n"
+            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree012abc456def789012345678901234567890|~|Valid commit|~|Valid commit\n|~||~|\n"
         ]
 
         commits = parse_log_with_stats(lines)
 
         # Should skip incomplete line and only parse valid commit
         assert len(commits) == 1
-        assert commits[0]['sha'] == 'def456abc789012345678901234567890abcdef01'
+        assert commits[0]['sha'] == 'def456abc789012345678901234567890abcdef0'
 
     def test_blank_lines_between_commits(self):
         """Test that blank lines are handled correctly"""

@@ -57,14 +57,15 @@ def parse_log_with_stats(lines, include_stats=True, omit_body=False):
                 if commit:
                     commits.append(commit)
             # Validate that commit line has enough fields before starting new commit
-            # Expected format has 15 fields separated by |~|
+            # Expected format has 15 fields separated by |~|, but body (%B) spans multiple lines
+            # so the first line might have 13 fields (up to and including start of body)
             field_count = line.count('|~|') + 1
-            if field_count >= 14:  # At least 14 fields required
+            if field_count >= 13:  # At least 13 fields required (relaxed from 14)
                 # Start new commit
                 current_lines = [line]
                 current_numstats = []
                 in_numstat = False
-            # Skip incomplete commit lines (field_count < 14)
+            # Skip incomplete commit lines (field_count < 13)
             continue
 
         # Skip lines before the first commit (e.g., incomplete or malformed lines)

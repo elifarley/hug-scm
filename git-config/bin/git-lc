@@ -116,9 +116,12 @@ if $json_output; then
   cmd_name="hug lc --json"
   $with_files && cmd_name="$cmd_name --with-files"
   $no_body && cmd_name="$cmd_name --no-body"
-  
+
+  # Count results
+  results_count=$(echo "$search_results" | jq 'length' 2>/dev/null || echo "0")
+
   # Wrap with metadata and output
-  output_json_response "$cmd_name" "{\"search\":{\"type\":\"code\",\"term\":\"$search_term\"},\"results\":$search_results}" --with-branch --with-head
+  output_json_response "$cmd_name" "{\"search\":{\"type\":\"code\",\"term\":\"$search_term\",\"results_count\":$results_count,\"with_files\":$with_files},\"results\":$search_results}" --with-branch --with-head
   exit 0
 fi
 

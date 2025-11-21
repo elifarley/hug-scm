@@ -547,7 +547,7 @@ batch_log_output() {
         printf '{"type":"commit","data":%s}\n' "$commit"
       done
   else
-    # Normal mode: return array of commits
-    git log "${git_log_args[@]}" | python3 "$python_cmd" "${python_args[@]}" | jq -c '.commits'
+    # Normal mode: return full JSON object (includes command, commits, summary)
+    git log "${git_log_args[@]}" | python3 "$python_cmd" "${python_args[@]}" | jq -c '.'
   fi
 }

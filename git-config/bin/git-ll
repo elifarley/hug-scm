@@ -149,13 +149,9 @@ if $json_output; then
     echo '{"type":"log_end","data":{}}'
   else
     # Normal mode: array of commits for smaller result sets and default behavior
-    log_results=$(batch_log_output --max "${commit_count:-100}" "${log_args[@]}")
-
-    # Count commits
-    commit_total=$(echo "$log_results" | python3 -c 'import sys, json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo "0")
-
-    # Build output with required fields (command, commits, summary)
-    echo "{\"command\":\"hug ll\",\"commits\":$log_results,\"summary\":{\"total_commits\":$commit_total}}"
+    # batch_log_output returns the full JSON from log_json.py which includes commits and summary
+    # We just need to output it directly
+    batch_log_output --max "${commit_count:-100}" "${log_args[@]}"
   fi
 
 else
