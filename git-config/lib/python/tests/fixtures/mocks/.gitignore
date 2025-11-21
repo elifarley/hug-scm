@@ -1,0 +1,8 @@
+# Mock data files are tracked for immediate test execution after clone
+# Regenerate with: pytest --regenerate-mocks or python generate_mocks.py
+
+# Keep .example files for documentation reference
+*.toml.example
+
+# Keep .gitkeep to preserve directory structure
+.gitkeep

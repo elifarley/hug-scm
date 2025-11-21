@@ -1,0 +1,47 @@
+[metadata]
+description = "Mock data for git log -L (line history analysis)"
+generated_by = "generate_mocks.py"
+repo_setup = "git/churn-basic.sh"
+
+[[scenario]]
+name = "basic"
+description = "Basic line history without filters"
+command = [
+    "git",
+    "log",
+    "-L",
+    "2,2:file.txt",
+    "--oneline",
+]
+returncode = 0
+output_file = "outputs/L-line-basic.txt"
+stderr = ""
+
+[[scenario]]
+name = "with_since_filter"
+description = "Line history filtered by --since date"
+command = [
+    "git",
+    "log",
+    "-L",
+    "2,2:file.txt",
+    "--oneline",
+    "--since=1 month ago",
+]
+returncode = 0
+output_file = "outputs/L-line-with_since_filter.txt"
+stderr = ""
+
+[[scenario]]
+name = "no_commits"
+description = "Line that has never been modified (empty result)"
+command = [
+    "git",
+    "log",
+    "-L",
+    "1,1:file.txt",
+    "--oneline",
+]
+returncode = 0
+output_file = "outputs/L-line-no_commits.txt"
+stderr = ""
