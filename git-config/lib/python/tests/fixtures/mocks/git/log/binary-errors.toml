@@ -1,0 +1,18 @@
+[metadata]
+description = "Mock data for binary file error handling"
+generated_by = "generate_mocks.py"
+repo_setup = "git/churn-binary.sh"
+
+[[scenario]]
+name = "binary_file"
+description = "Git error when running -L on binary file"
+command = [
+    "git",
+    "log",
+    "-L",
+    "1,1:image.png",
+    "--oneline",
+]
+returncode = 128
+output_file = "outputs/binary-binary_file.txt"
+stderr = "fatal: binary file cannot be processed"

@@ -1,0 +1,35 @@
+[metadata]
+description = "Mock data for git log --follow (file churn analysis)"
+generated_by = "generate_mocks.py"
+repo_setup = "git/churn-with-since.sh"
+
+[[scenario]]
+name = "basic"
+description = "Basic file history without filters"
+command = [
+    "git",
+    "log",
+    "--follow",
+    "--format=%H|%an|%ai",
+    "--",
+    "project.py",
+]
+returncode = 0
+output_file = "outputs/follow-basic.txt"
+stderr = ""
+
+[[scenario]]
+name = "with_since_filter"
+description = "File history filtered by --since date"
+command = [
+    "git",
+    "log",
+    "--follow",
+    "--format=%H|%an|%ai",
+    "--since=2 months ago",
+    "--",
+    "project.py",
+]
+returncode = 0
+output_file = "outputs/follow-with_since_filter.txt"
+stderr = ""

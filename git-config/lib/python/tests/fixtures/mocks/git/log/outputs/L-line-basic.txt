@@ -1,0 +1,23 @@
+aa80966 Modify line 2 again
+
+diff --git a/file.txt b/file.txt
+--- a/file.txt
++++ b/file.txt
+@@ -2,1 +2,1 @@
+-line 2 modified
++line 2 modified again
+ef8c09e Modify line 2
+
+diff --git a/file.txt b/file.txt
+--- a/file.txt
++++ b/file.txt
+@@ -2,1 +2,1 @@
+-line 2
++line 2 modified
+37791ac Initial commit
+
+diff --git a/file.txt b/file.txt
+--- /dev/null
++++ b/file.txt
+@@ -0,0 +2,1 @@
++line 2
