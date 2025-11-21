@@ -14,8 +14,18 @@ import pytest
 PYTHON_LIB_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(PYTHON_LIB_DIR))
 
-# Import command_mock fixture from fixtures/conftest.py
-pytest_plugins = ['tests.fixtures.conftest']
+# Import fixtures directory for command_mock without loading pytest hooks
+import importlib.util
+fixtures_conftest_path = Path(__file__).parent / 'fixtures' / 'conftest.py'
+spec = importlib.util.spec_from_file_location("_fixtures_conftest", fixtures_conftest_path)
+_fixtures_conftest = importlib.util.module_from_spec(spec)
+sys.modules['_fixtures_conftest'] = _fixtures_conftest
+spec.loader.exec_module(_fixtures_conftest)
+
+# Re-export fixtures (already have @pytest.fixture decorator)
+command_mock = _fixtures_conftest.command_mock
+command_type = _fixtures_conftest.command_type
+regenerate_mocks = _fixtures_conftest.regenerate_mocks
 
 
 @pytest.fixture

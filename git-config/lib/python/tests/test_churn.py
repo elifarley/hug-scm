@@ -119,62 +119,47 @@ class TestCalculateChurnScore:
 
 
 class TestGetLineHistory:
-    """Tests for get_line_history function."""
+    """Tests for get_line_history function using Command Mock Framework."""
 
-    @patch('subprocess.run')
-    @patch('builtins.open', new_callable=mock_open, read_data='line1\nline2\nline3\n')
-    def test_get_line_history_successful_analysis(self, mock_file, mock_subprocess):
+    def test_get_line_history_successful_analysis(self, command_mock):
         """Should analyze line history and count changes per line."""
-        # Arrange
-        filepath = 'test.py'
+        # Arrange - Dynamic scenario selection based on line number
+        def choose_scenario(cmd):
+            # Extract line number from -L argument (format: "N,N:file.txt")
+            line_num = int(cmd[cmd.index('-L') + 1].split(',')[0])
 
-        # Mock git log -L output for 3 lines with varying change counts
-        def mock_git_log(cmd, **kwargs):
-            result = MagicMock()
-            line_num = int(cmd[3].split(',')[0])  # Extract line number from -L arg
-
-            if line_num == 1:
-                # Line 1: 5 commits
-                result.stdout = 'abc1234\ndef5678\nghi9012\njkl3456\nmno7890'
-                result.returncode = 0
-            elif line_num == 2:
-                # Line 2: 2 commits
-                result.stdout = 'pqr1234\nstu5678'
-                result.returncode = 0
+            if line_num == 2:
+                return "basic"  # Line 2: 3 commits (from real git output)
             else:
-                # Line 3: never changed
-                result.stdout = ''
-                result.returncode = 128  # git returns non-zero for unchanged lines
+                return "no_commits"  # Lines 1, 3, 4, 5: 1 commit each (initial commit only)
 
-            return result
+        mock_fn = command_mock.get_dynamic_mock("log/L-line.toml", choose_scenario)
 
-        mock_subprocess.side_effect = mock_git_log
+        # Act - Mock open() only for the target file, not TOML files
+        test_file_content = 'line1\nline2\nline3\n'
+        with patch('builtins.open', mock_open(read_data=test_file_content)):
+            with patch('subprocess.run', side_effect=mock_fn):
+                result = churn.get_line_history('file.txt')
 
-        # Act
-        result = churn.get_line_history(filepath)
-
-        # Assert
-        assert result[1] == 5
-        assert result[2] == 2
-        assert result[3] == 0
+        # Assert - Line 2 has 3 commits, other lines have 1 commit (initial only)
+        assert result[1] == 1  # no_commits scenario (initial commit only)
+        assert result[2] == 3  # basic scenario (3 commits)
+        assert result[3] == 1  # no_commits scenario (initial commit only)
         assert len(result) == 3
 
-    @patch('subprocess.run')
-    @patch('builtins.open', new_callable=mock_open, read_data='single line\n')
-    def test_get_line_history_single_line_file(self, mock_file, mock_subprocess):
+    def test_get_line_history_single_line_file(self, command_mock):
         """Should handle single-line files correctly."""
-        # Arrange
-        mock_subprocess.return_value = MagicMock(
-            stdout='abc1234\ndef5678',
-            returncode=0
-        )
+        # Arrange - Use 'no_commits' scenario which expects line 1 (1,1:file.txt)
+        mock_fn = command_mock.get_subprocess_mock("log/L-line.toml", "no_commits")
 
-        # Act
-        result = churn.get_line_history('test.py')
+        # Act - Mock open() after getting command_mock
+        with patch('builtins.open', mock_open(read_data='single line\n')):
+            with patch('subprocess.run', side_effect=mock_fn):
+                result = churn.get_line_history('file.txt')
 
-        # Assert
+        # Assert - 'no_commits' scenario has 1 commit (initial commit only)
         assert len(result) == 1
-        assert result[1] == 2
+        assert result[1] == 1  # 1 commit in no_commits scenario
 
     @patch('builtins.open', side_effect=FileNotFoundError('File not found'))
     def test_get_line_history_file_not_found(self, mock_file, capsys):
@@ -187,21 +172,28 @@ class TestGetLineHistory:
         captured = capsys.readouterr()
         assert 'Error reading file' in captured.err
 
-    @patch('subprocess.run')
-    @patch('builtins.open', new_callable=mock_open, read_data='line1\nline2\n')
-    def test_get_line_history_with_since_filter(self, mock_file, mock_subprocess):
+    def test_get_line_history_with_since_filter(self, command_mock):
         """Should pass --since parameter to git log command."""
-        # Arrange
-        mock_subprocess.return_value = MagicMock(stdout='abc1234', returncode=0)
-        since_date = '2 weeks ago'
+        # Arrange - Dynamic mock to handle --since flag
+        def choose_scenario(cmd):
+            if '--since=1 month ago' in cmd:
+                return "with_since_filter"  # Empty output
+            else:
+                return "no_commits"  # Default: 1 commit
 
-        # Act
-        result = churn.get_line_history('test.py', since=since_date)
+        mock_fn = command_mock.get_dynamic_mock("log/L-line.toml", choose_scenario)
+        since_date = '1 month ago'
 
-        # Assert
-        # Verify git command includes --since
+        # Act - Mock open() after getting command_mock
+        with patch('builtins.open', mock_open(read_data='line1\nline2\n')):
+            with patch('subprocess.run', side_effect=mock_fn) as mock_subprocess:
+                result = churn.get_line_history('file.txt', since=since_date)
+
+        # Assert - Verify git command includes --since
         call_args = mock_subprocess.call_args_list[0][0][0]
-        assert '--since=2 weeks ago' in call_args
+        assert '--since=1 month ago' in call_args
+        # Empty output means no commits in range (churn.py skips adding 0 counts)
+        assert result == {}
 
     @patch('subprocess.run')
     @patch('builtins.open', new_callable=mock_open, read_data='line1\n')
@@ -218,12 +210,15 @@ class TestGetLineHistory:
         captured = capsys.readouterr()
         assert 'Could not analyze line' in captured.err
 
-    @patch('subprocess.run')
-    @patch('builtins.open', new_callable=mock_open, read_data='')
-    def test_get_line_history_empty_file(self, mock_file, mock_subprocess):
+    def test_get_line_history_empty_file(self, command_mock):
         """Should handle empty files (0 lines)."""
-        # Act
-        result = churn.get_line_history('empty.py')
+        # Arrange - Mock should not be called for empty file
+        mock_fn = command_mock.get_subprocess_mock("log/L-line.toml", "basic")
+
+        # Act - Mock open() after getting command_mock
+        with patch('builtins.open', mock_open(read_data='')):
+            with patch('subprocess.run', side_effect=mock_fn) as mock_subprocess:
+                result = churn.get_line_history('empty.py')
 
         # Assert
         assert result == {}
