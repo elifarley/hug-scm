@@ -1,5 +1,9 @@
 # Hug SCM Python Helper Dependencies
 
+# Required: TOML support for test fixtures (Python < 3.11)
+tomli>=2.0.0; python_version < '3.11'
+tomli-w>=1.0.0
+
 # Optional: Fast matrix operations for co-change analysis
 # numpy>=1.20.0
 
@@ -9,5 +13,5 @@
 # Optional: Graph algorithms for dependency analysis
 # networkx>=2.6.0
 
-# Note: All are optional. Commands will gracefully degrade if not available.
+# Note: All are optional except TOML (for tests). Commands will gracefully degrade if not available.
 # Install with: pip install -r requirements.txt
