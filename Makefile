@@ -145,6 +145,68 @@ optional-deps-check: ## Check if optional dependencies are installed
 	@echo "$(BLUE)Checking optional dependencies...$(NC)"
 	@bash bin/optional-deps-install.sh --check
 
+##@ Mock Data Management
+
+mocks-check: ## Check status of recorded mock data
+	@echo "$(BLUE)Checking mock data status...$(NC)"
+	@cd git-config/lib/python/tests/fixtures && \
+	if [ ! -d mocks/git/log ]; then \
+		echo "$(YELLOW)⚠ No mock data found$(NC)"; \
+		echo "Run 'make mocks-generate' to create mock data"; \
+		exit 1; \
+	fi; \
+	echo "$(GREEN)✓ Mock data exists$(NC)"; \
+	echo ""; \
+	echo "TOML files:"; \
+	find mocks -name "*.toml" -type f | sed 's/^/  - /'; \
+	echo ""; \
+	echo "Output files:"; \
+	find mocks -name "*.txt" -type f | wc -l | xargs printf "  %s output files\n"
+
+mocks-generate: ## Regenerate all mock data from real commands
+	@echo "$(BLUE)Regenerating all mock data...$(NC)"
+	@cd git-config/lib/python/tests/fixtures && python3 generate_mocks.py
+	@echo "$(GREEN)✓ All mock data regenerated successfully$(NC)"
+
+mocks-generate-git: ## Regenerate Git command mocks only
+	@echo "$(BLUE)Regenerating Git command mocks...$(NC)"
+	@cd git-config/lib/python/tests/fixtures && python3 generate_mocks.py
+	@echo "$(GREEN)✓ Git mocks regenerated$(NC)"
+
+mocks-regenerate: mocks-generate ## Alias for mocks-generate
+
+mocks-clean: ## Remove all generated mock data
+	@echo "$(BLUE)Cleaning mock data...$(NC)"
+	@cd git-config/lib/python/tests/fixtures/mocks && \
+	find . -name "*.toml" -type f -delete && \
+	find . -name "*.txt" -type f -delete
+	@echo "$(GREEN)✓ Mock data cleaned$(NC)"
+	@echo "$(YELLOW)Run 'make mocks-generate' to recreate$(NC)"
+
+mocks-clean-git: ## Remove Git command mocks only
+	@echo "$(BLUE)Cleaning Git command mocks...$(NC)"
+	@rm -rf git-config/lib/python/tests/fixtures/mocks/git/log/*.toml
+	@rm -rf git-config/lib/python/tests/fixtures/mocks/git/log/outputs/*.txt
+	@echo "$(GREEN)✓ Git mocks cleaned$(NC)"
+
+mocks-test-with-regenerate: ## Run Python tests and regenerate mocks on failure
+	@echo "$(BLUE)Running Python tests with mock regeneration...$(NC)"
+	@cd git-config/lib/python && \
+	if ! python3 -m pytest tests/ -v --color=yes --tb=short; then \
+		echo "$(YELLOW)Tests failed - regenerating mocks...$(NC)"; \
+		cd tests/fixtures && python3 generate_mocks.py; \
+		echo "$(BLUE)Retrying tests with fresh mocks...$(NC)"; \
+		cd ../.. && python3 -m pytest tests/ -v --color=yes --tb=short; \
+	fi
+	@echo "$(GREEN)✓ Python tests passed$(NC)"
+
+mocks-validate: ## Validate mock data integrity (TOML + output files match)
+	@echo "$(BLUE)Validating mock data integrity...$(NC)"
+	@cd git-config/lib/python/tests/fixtures && \
+	python3 -c "import tomllib; from pathlib import Path; errors = []; \
+[toml_file for toml_file in Path('mocks').rglob('*.toml') if (lambda f: ([errors.append(f'Missing: {f.parent / scenario.get(\"output_file\", \"\")}') for scenario in tomllib.load(open(f, 'rb')).get('scenario', []) if not (f.parent / scenario.get('output_file', '')).exists()], None)[1])(toml_file)]; \
+exit(1) if errors and print('\n'.join(errors)) else print('$(GREEN)✓ All mock data is valid$(NC)')"
+
 ##@ VHS Screencasts
 
 vhs-deps-install: ## Install VHS tool if not present
@@ -293,6 +355,7 @@ demo-repo-status: ## Show status of demo repository
 	exit 0
 
 .PHONY: test test-bash test-unit test-integration test-lib test-check test-lib-py test-lib-py-coverage test-deps-install test-deps-py-install optional-deps-install optional-deps-check
+.PHONY: mocks-check mocks-generate mocks-generate-git mocks-regenerate mocks-clean mocks-clean-git mocks-test-with-regenerate mocks-validate
 .PHONY: vhs-deps-install
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
 .PHONY: docs-dev docs-build docs-preview deps-docs
