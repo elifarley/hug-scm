@@ -21,6 +21,10 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
+dependencies = [
+    "tomli>=2.0.0; python_version < '3.11'",
+    "tomli-w>=1.0.0",
+]
 
 [tool.setuptools]
 py-modules = ["activity", "churn", "co_changes", "ownership"]
