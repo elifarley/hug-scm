@@ -1241,22 +1241,22 @@ teardown() {
   assert_output --partial "--temporal"
 }
 
-@test "hug h squash: uses base commit message with -b flag" {
-  # When squashing last 2 commits, the base commit is HEAD~2 (the target)
-  # That's where we go back to, and its message should be used
-  local target_commit
-  target_commit=$(git rev-parse HEAD~2)
-  local base_message
-  base_message=$(git log -1 --format=%B "$target_commit")
+@test "hug h squash: uses first (oldest) squashed commit message with -i flag" {
+  # When squashing last 2 commits, the first (oldest) squashed commit is HEAD~1
+  # That's the first commit in the range HEAD~2..HEAD, so its message should be used
+  local first_squashed_commit
+  first_squashed_commit=$(git rev-parse HEAD~1)
+  local first_message
+  first_message=$(git log -1 --format=%B "$first_squashed_commit")
 
-  run hug h squash 2 -b --force
+  run hug h squash 2 -i --force
   assert_success
 
-  # The new commit message should match the base commit message exactly
+  # The new commit message should match the first squashed commit message exactly
   local new_message
   new_message=$(git log -1 --format=%B)
 
-  assert_equal "$new_message" "$base_message"
+  assert_equal "$new_message" "$first_message"
 }
 
 @test "hug h squash: uses custom message with -m flag" {
@@ -1295,24 +1295,26 @@ EOF
   fi
 }
 
-@test "hug h squash: opens editor with base message when -b -e combined" {
-  # Get base commit message
-  local base_message
-  base_message=$(git log -2 --format=%B | tail -n +2)
+@test "hug h squash: opens editor with initial commit message when -i -e combined" {
+  # Get first (oldest) squashed commit message
+  local first_squashed_commit
+  first_squashed_commit=$(git rev-parse HEAD~1)
+  local first_squashed_message
+  first_squashed_message=$(git log -1 --format=%B "$first_squashed_commit")
 
   # Use a mock editor that just keeps the file as-is
   export EDITOR="cat"
 
-  run hug h squash 2 -b -e --force
+  run hug h squash 2 -i -e --force
   assert_success
 
-  # The commit message should match the base commit message
+  # The commit message should match the first squashed commit message
   local new_message
   new_message=$(git log -1 --format=%B)
 
-  # Should contain base message (editor was pre-populated with it)
-  if ! grep -Fq "$(echo "$base_message" | head -n 1)" <<<"$new_message"; then
-    fail "Expected commit message to include base message content"
+  # Should contain first squashed commit message (editor was pre-populated with it)
+  if ! grep -Fq "$(echo "$first_squashed_message" | head -n 1)" <<<"$new_message"; then
+    fail "Expected commit message to include first squashed commit message content"
   fi
 }
 
@@ -1322,17 +1324,17 @@ EOF
   assert_output --partial "Cannot use -m/--message and -e/--edit together"
 }
 
-@test "hug h squash: rejects -m and -b together" {
-  run hug h squash 2 -m "message" -b
+@test "hug h squash: rejects -m and -i together" {
+  run hug h squash 2 -m "message" -i
   assert_failure
-  assert_output --partial "Cannot use -m/--message and -b/--base-message together"
+  assert_output --partial "Cannot use -m/--message and -i/--initial-message together"
 }
 
-@test "hug h squash: allows -b and -e together" {
-  # This combination should work (edit the base message)
+@test "hug h squash: allows -i and -e together" {
+  # This combination should work (edit the initial commit message)
   export EDITOR="cat"
 
-  run hug h squash 2 -b -e --force
+  run hug h squash 2 -i -e --force
   assert_success
 }
 
