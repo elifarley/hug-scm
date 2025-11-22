@@ -152,20 +152,55 @@ class CommandMockPlayer:
         strict: bool = False
     ) -> bool:
         """
-        Check if actual command matches template command.
+        Check if actual command matches template command with flexible placeholder matching.
+
+        This method supports two types of placeholders:
+
+        1. **Embedded placeholders** (within flag values):
+           Template:  ["git", "log", "--grep={term}"]
+           Matches:   ["git", "log", "--grep=fix"]
+           Matches:   ["git", "log", "--grep=feature"]
+
+        2. **Standalone placeholders** (separate arguments):
+           Template:  ["git", "log", "-G", "{code}", "--", "{filepath}"]
+           Matches:   ["git", "log", "-G", "def foo", "--", "app.py"]
+           Matches:   ["git", "log", "-G", "class Bar", "--", "test.py"]
+
+        Special Handling:
+        - Strips dynamic flags like --since from actual commands before matching
+        - Handles both list and string template formats
+        - Supports strict mode for exact matching (ignoring placeholders)
 
         Args:
             actual_cmd: Command that was actually called (list of strings)
-            template_cmd: Template command from mock (string, may have {placeholders})
+                       Example: ["git", "log", "--grep=bugfix", "--", "src/main.py"]
+            template_cmd: Template command from mock (list or string, may have {placeholders})
+                         Example: ["git", "log", "--grep={term}", "--", "{filepath}"]
             strict: If True, commands must match exactly (ignoring placeholders)
+                   Default: False (flexible matching)
 
         Returns:
-            True if commands match
+            True if commands match, False otherwise
 
         Examples:
+            >>> # Embedded placeholder matching
             >>> self.command_matches(
-            ...     ["git", "log", "--follow", "--", "file.txt"],
-            ...     "git log --follow -- {filepath}"
+            ...     ["git", "log", "--grep=fix"],
+            ...     ["git", "log", "--grep={term}"]
+            ... )
+            True
+
+            >>> # Standalone placeholder matching
+            >>> self.command_matches(
+            ...     ["git", "log", "-G", "def calculate", "--", "app.py"],
+            ...     ["git", "log", "-G", "{code}", "--", "{filepath}"]
+            ... )
+            True
+
+            >>> # Dynamic flag stripping (--since)
+            >>> self.command_matches(
+            ...     ["git", "log", "--follow", "--", "file.txt", "--since", "1 week ago"],
+            ...     ["git", "log", "--follow", "--", "{filepath}"]
             ... )
             True
         """

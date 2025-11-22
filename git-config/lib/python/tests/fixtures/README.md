@@ -256,9 +256,46 @@ def test_binary_file_error(command_mock):
 
 ## Advanced Features
 
-### Template Variables
+### Template Variables and Placeholders
 
-Use `{placeholders}` in commands for reusable scenarios:
+The framework supports flexible command matching through placeholders that enable reusable scenarios across different file paths and parameter values.
+
+#### Placeholder Types
+
+**1. Embedded Placeholders** (in flag values):
+```python
+# Example: --grep={term} or --format={format_str}
+command = ["git", "log", "--grep={term}", "--format={format}"]
+```
+
+**2. Standalone Placeholders** (separate arguments):
+```python
+# Example: {filepath} or {code}
+command = ["git", "log", "-G", "{code}", "--", "{filepath}"]
+```
+
+#### How Placeholders Work
+
+**During Recording** (recorder.py):
+```python
+# Template variables are substituted to create real commands
+recorder.record_scenario(
+    command=["git", "log", "--grep={term}", "--", "{filepath}"],
+    template_vars={"term": "fix", "filepath": "src/main.py"}
+)
+# Executes: git log --grep=fix -- src/main.py
+# But TOML stores the template with placeholders intact
+```
+
+**During Playback** (player.py):
+```python
+# Player matches actual commands against template patterns
+# Actual:   ["git", "log", "--grep=bugfix", "--", "app.py"]
+# Template: ["git", "log", "--grep={term}", "--", "{filepath}"]
+# Result:   MATCH ✓ (placeholders accept any value)
+```
+
+#### Recording with Template Variables
 
 ```python
 scenario = recorder.record_scenario(
@@ -268,10 +305,57 @@ scenario = recorder.record_scenario(
 )
 ```
 
-The recorded TOML will have the actual filepath:
+The recorded TOML preserves placeholders for flexible matching:
 
 ```toml
-command = ["git", "log", "--follow", "--", "myfile.txt"]
+# mocks/git/log/follow.toml
+[[scenario]]
+name = "basic"
+command = ["git", "log", "--follow", "--", "{filepath}"]
+output_file = "outputs/follow-basic.txt"
+```
+
+#### Command Matching Logic
+
+The `player.py` module uses sophisticated matching to handle various placeholder patterns:
+
+**Embedded Placeholder Matching** (`--grep={term}`):
+```python
+# Template: --grep={term}
+# Matches:  --grep=fix, --grep=feature, --grep=bugfix
+# Method:   Checks if actual command part starts with "--grep="
+```
+
+**Standalone Placeholder Matching** (`{filepath}`):
+```python
+# Template: -G {code} or -- {filepath}
+# Matches:  -G def calculate, -- src/main.py
+# Method:   Checks for value after preceding flag or --
+```
+
+**Combined Example**:
+```python
+# Template command
+["git", "log", "--format={fmt}", "--grep={term}", "-G", "{code}", "--", "{filepath}"]
+
+# Matches ALL of these:
+["git", "log", "--format=%H", "--grep=fix", "-G", "def foo", "--", "app.py"]
+["git", "log", "--format=%an", "--grep=bug", "-G", "class Bar", "--", "test.py"]
+["git", "log", "--format=%aI", "--grep=feat", "-G", "import os", "--", "main.py"]
+```
+
+#### Special Handling: Dynamic Flags
+
+Some commands add flags dynamically (e.g., `--since` for date filtering):
+
+```python
+# Template stores base command without --since
+["git", "log", "--follow", "--", "{filepath}"]
+
+# Actual command may include --since at the end
+["git", "log", "--follow", "--", "app.py", "--since", "1 week ago"]
+
+# Player strips --since before matching (configurable behavior)
 ```
 
 ### Output File Prefixes
@@ -520,6 +604,81 @@ python generate_mocks.py
 
 # Verify tests still pass
 pytest tests/
+```
+
+### Command matching fails with placeholders
+
+**Error**: `Mock not found for command: git log --grep=feature --`
+
+**Root cause**: Command matching doesn't recognize embedded or standalone placeholders
+
+**Debug approach**:
+```python
+# Add debug logging to player.py command_matches():
+print(f"Template: {template_parts}")
+print(f"Actual:   {actual_cmd}")
+print(f"Has placeholders: {has_placeholders}")
+
+# Check if placeholder types are detected correctly
+# Embedded: --grep={term}
+# Standalone: {filepath}
+```
+
+**Common issues**:
+1. **Embedded placeholder not detected**: Template has `--grep={term}` but matching logic doesn't extract prefix `--grep=`
+2. **Standalone placeholder positioning**: Template has `-G {code}` but actual command has `-Scode` (concatenated)
+3. **Dynamic flags not handled**: Actual command has extra `--since` flag not in template
+
+**Solutions**:
+```python
+# Fix 1: Ensure command_matches() checks for "{" in template part
+if "{" in template_part and "}" in template_part:
+    prefix = template_part.split("{")[0]
+    found = any(a.startswith(prefix) for a in actual_cmd)
+
+# Fix 2: Handle both separated and concatenated forms
+# Template: -G {code} should match both:
+# - ["git", "log", "-G", "def foo"]  (separated)
+# - ["git", "log", "-Gdef foo"]      (concatenated)
+
+# Fix 3: Strip dynamic flags before matching
+if "--since" in actual_cmd:
+    since_index = actual_cmd.index("--since")
+    actual_core = actual_cmd[:since_index] + actual_cmd[since_index+2:]
+```
+
+### Placeholders in TOML are substituted instead of preserved
+
+**Problem**: Generated TOML files have actual values instead of `{placeholders}`
+
+**Example**:
+```toml
+# BAD - placeholders replaced
+command = ["git", "log", "--grep=fix", "--", "src/main.py"]
+
+# GOOD - placeholders preserved
+command = ["git", "log", "--grep={term}", "--", "{filepath}"]
+```
+
+**Root cause**: recorder.py uses substituted command instead of template command
+
+**Solution**: Update recorder.py to preserve template:
+```python
+# In record_scenario():
+template_command = command.copy()  # Store original with placeholders
+
+# Substitute for execution
+if template_vars:
+    command = [part.format(**template_vars) for part in command]
+
+# Execute command with substituted values
+result = subprocess.run(command, ...)
+
+# But store template in TOML
+scenario = {
+    "command": template_command,  # Use template, not executed command
+    ...
+}
 ```
 
 ### Missing output files

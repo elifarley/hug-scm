@@ -110,27 +110,67 @@ class CommandMockRecorder:
         output_prefix: str = ""
     ) -> Dict[str, Any]:
         """
-        Execute a Git command and record its output.
+        Execute a command and record its output with template placeholder preservation.
+
+        This method executes real commands with substituted values but stores the original
+        template (with placeholders) in the TOML file. This enables flexible command matching
+        during test playback.
+
+        Template Placeholder Workflow:
+        1. Store original command with placeholders: ["git", "log", "--grep={term}"]
+        2. Substitute placeholders for execution: ["git", "log", "--grep=fix"]
+        3. Execute the substituted command
+        4. Store template (not substituted) in TOML for flexible matching
 
         Args:
-            command: Git command to execute (with template placeholders)
+            command: Command to execute with template placeholders
+                    Example: ["git", "log", "--grep={term}", "--", "{filepath}"]
             scenario_name: Name for this scenario (e.g., "basic", "with_since")
+                          Used to identify scenario in TOML file
             output_path: Path to TOML file to append scenario to
-            repo_path: Path to Git repo (if None, uses current directory)
+                        Example: Path("log/follow.toml")
+            repo_path: Path to command execution directory (if None, uses current directory)
+                      For git commands, this is the git repository path
             description: Human-readable description of scenario
-            template_vars: Variables to substitute in command (e.g., {"filepath": "file.txt"})
-            output_prefix: Prefix for output filename (e.g., "follow-" or "L-line-")
+                        Example: "Search commit messages with --grep flag"
+            template_vars: Variables to substitute in command placeholders
+                          Example: {"term": "fix", "filepath": "src/main.py"}
+                          Substitutes {term} → "fix" and {filepath} → "src/main.py"
+            output_prefix: Prefix for output filename to avoid collisions
+                          Example: "follow-" creates "follow-basic.txt" not "basic.txt"
 
         Returns:
-            Dictionary containing scenario data
+            Dictionary containing scenario data with template command preserved:
+            {
+                "name": "basic",
+                "description": "...",
+                "command": ["git", "log", "--grep={term}"],  # Template preserved
+                "returncode": 0,
+                "output_file": "outputs/follow-basic.txt",
+                "stderr": ""
+            }
 
         Raises:
-            subprocess.CalledProcessError: If Git command fails unexpectedly
+            subprocess.CalledProcessError: If command fails unexpectedly
+            UnicodeDecodeError: Handled automatically for binary output
+
+        Examples:
+            >>> recorder = CommandMockRecorder("git")
+            >>> scenario = recorder.record_scenario(
+            ...     command=["git", "log", "--grep={term}", "--", "{filepath}"],
+            ...     scenario_name="message_search",
+            ...     output_path=Path("log/search.toml"),
+            ...     template_vars={"term": "fix", "filepath": "app.py"},
+            ...     description="Search for fix commits"
+            ... )
+            >>> # Executes: git log --grep=fix -- app.py
+            >>> # But TOML stores: ["git", "log", "--grep={term}", "--", "{filepath}"]
         """
-        # Store the original template command for TOML (with placeholders)
+        # Store the original template command for TOML (with placeholders intact)
+        # This is critical for flexible command matching in player.py
         template_command = command.copy()
 
-        # Substitute template variables in command for execution
+        # Substitute template variables in command for actual execution
         if template_vars:
             command = [
                 part.format(**template_vars) if isinstance(part, str) else part
