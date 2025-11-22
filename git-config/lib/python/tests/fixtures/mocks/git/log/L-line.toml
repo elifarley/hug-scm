@@ -10,7 +10,7 @@ command = [
     "git",
     "log",
     "-L",
-    "2,2:file.txt",
+    "{line_range}:{filepath}",
     "--oneline",
 ]
 returncode = 0
@@ -24,9 +24,9 @@ command = [
     "git",
     "log",
     "-L",
-    "2,2:file.txt",
+    "{line_range}:{filepath}",
     "--oneline",
-    "--since=1 month ago",
+    "--since={since}",
 ]
 returncode = 0
 output_file = "outputs/L-line-with_since_filter.txt"
@@ -39,7 +39,7 @@ command = [
     "git",
     "log",
     "-L",
-    "1,1:file.txt",
+    "{line_range}:{filepath}",
     "--oneline",
 ]
 returncode = 0

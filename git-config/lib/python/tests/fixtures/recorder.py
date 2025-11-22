@@ -127,7 +127,10 @@ class CommandMockRecorder:
         Raises:
             subprocess.CalledProcessError: If Git command fails unexpectedly
         """
-        # Substitute template variables in command
+        # Store the original template command for TOML (with placeholders)
+        template_command = command.copy()
+
+        # Substitute template variables in command for execution
         if template_vars:
             command = [
                 part.format(**template_vars) if isinstance(part, str) else part
@@ -179,10 +182,11 @@ class CommandMockRecorder:
         output_file_path.write_text(result.stdout)
 
         # Create scenario data with output path relative to TOML file location
+        # Use template_command (with placeholders) not the executed command
         scenario = {
             "name": scenario_name,
             "description": description,
-            "command": command,
+            "command": template_command,
             "returncode": result.returncode,
             "output_file": f"outputs/{output_filename}",  # Relative to TOML file
             "stderr": result.stderr if result.stderr else "",

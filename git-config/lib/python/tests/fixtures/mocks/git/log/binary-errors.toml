@@ -10,7 +10,7 @@ command = [
     "git",
     "log",
     "-L",
-    "1,1:image.png",
+    "{line_range}:{filepath}",
     "--oneline",
 ]
 returncode = 128

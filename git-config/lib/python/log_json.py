@@ -72,11 +72,14 @@ def parse_log_with_stats(lines, include_stats=True, omit_body=False):
         if not current_lines:
             continue
 
-        # Check if this is a numstat line (N\tM\tfilename)
+        # Check if this is a numstat or name-status line
+        # numstat: N\tM\tfilename (e.g., "10\t5\tsrc/file.py")
+        # name-status: X\tfilename (e.g., "A\tsrc/file.py", "M\tsrc/file.py")
         if '\t' in line and not '|~|' in line:
             parts = line.split('\t')
-            if len(parts) >= 3:
-                # This is a numstat line
+            # numstat has 3+ parts, name-status has 2+ parts
+            if len(parts) >= 2:
+                # This is a numstat or name-status line
                 current_numstats.append(line)
                 in_numstat = True
                 continue
@@ -201,7 +204,7 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
         for parent_sha in parents_str.split():
             parents.append({'sha': parent_sha})
 
-    # Parse numstat lines
+    # Parse numstat or name-status lines
     stats = {
         'files_changed': 0,
         'insertions': 0,
@@ -209,9 +212,10 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
     }
     files = []  # Detailed file changes for GitHub compatibility
 
-    for numstat_line in numstat_lines:
-        parts = numstat_line.split('\t')
+    for line in numstat_lines:
+        parts = line.split('\t')
         if len(parts) >= 3:
+            # numstat format: N\tM\tfilename
             try:
                 add = 0 if parts[0] == '-' else int(parts[0])
                 delete = 0 if parts[1] == '-' else int(parts[1])
@@ -231,6 +235,31 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
             except ValueError:
                 # Not a valid numstat line
                 pass
+        elif len(parts) == 2:
+            # name-status format: X\tfilename (e.g., "A\tsrc/file.py")
+            status_char = parts[0].strip()
+            filename = parts[1].strip()
+
+            # Map git status chars to GitHub-style status
+            status_map = {
+                'A': 'added',
+                'M': 'modified',
+                'D': 'deleted',
+                'R': 'renamed',
+                'C': 'copied',
+                'T': 'type_changed',
+                'U': 'unmerged'
+            }
+            status = status_map.get(status_char, 'modified')
+
+            files.append({
+                'filename': filename,
+                'status': status,
+                'additions': 0,  # name-status doesn't provide line counts
+                'deletions': 0,
+                'changes': 0
+            })
+            stats['files_changed'] += 1
 
     # Apply omit_body flag if requested
     if omit_body:

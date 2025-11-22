@@ -12,7 +12,7 @@ command = [
     "--follow",
     "--format=%H|%an|%ai",
     "--",
-    "project.py",
+    "{filepath}",
 ]
 returncode = 0
 output_file = "outputs/follow-basic.txt"
@@ -26,9 +26,9 @@ command = [
     "log",
     "--follow",
     "--format=%H|%an|%ai",
-    "--since=2 months ago",
+    "--since={since}",
     "--",
-    "project.py",
+    "{filepath}",
 ]
 returncode = 0
 output_file = "outputs/follow-with_since_filter.txt"

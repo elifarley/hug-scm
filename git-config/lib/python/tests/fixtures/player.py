@@ -165,7 +165,7 @@ class CommandMockPlayer:
         Examples:
             >>> self.command_matches(
             ...     ["git", "log", "--follow", "--", "file.txt"],
-            ...     "git log --follow -- --{filepath} --"
+            ...     "git log --follow -- {filepath}"
             ... )
             True
         """
@@ -175,51 +175,77 @@ class CommandMockPlayer:
         else:
             template_parts = template_cmd.split()
 
-        # Check if pattern contains placeholders
-        has_placeholders = any(p.startswith("{") and p.endswith("}") for p in template_parts)
+        # Check if pattern contains placeholders (including embedded ones like "--grep={term}")
+        has_placeholders = any(
+            (p.startswith("{") and p.endswith("}")) or ("{" in p and "}" in p)
+            for p in template_parts
+        )
 
-        # Enhanced matching: handle different orders and arguments
+        # For placeholder templates, use flexible subset matching
         if has_placeholders and not strict:
-            # For templates with placeholders, check if all non-placeholder parts exist
-            # and the command structure is valid (git log with required options)
-            non_placeholder_parts = [p for p in template_parts if not (p.startswith("{") and p.endswith("}"))]
+            # Match each template part against actual command
+            template_idx = 0
+            actual_idx = 0
 
-            # Check required parts exist
-            for required_part in non_placeholder_parts:
-                if required_part not in actual_cmd:
-                    return False
+            while template_idx < len(template_parts):
+                template_part = template_parts[template_idx]
 
-            # Validate command structure: should be git log with follow and proper format
-            required_options = ["--follow", "--pretty=format:%ad|%an"]
-            for option in required_options:
-                if option not in actual_cmd:
-                    return False
+                # Check if template part contains embedded placeholder (e.g., "--grep={term}")
+                if "{" in template_part and "}" in template_part:
+                    # Extract the prefix before the placeholder
+                    prefix = template_part.split("{")[0]
+                    # Check if any actual command part starts with this prefix
+                    found = any(a.startswith(prefix) for a in actual_cmd)
+                    if not found:
+                        return False
+                    template_idx += 1
+                elif template_part.startswith("{") and template_part.endswith("}"):
+                    # Standalone placeholder (e.g., {filepath}, {code})
+                    # This can match any positional argument in actual_cmd
+                    # For {filepath} after "--" in activity commands
+                    if "--" in template_parts[:template_idx]:
+                        # Filepath after --
+                        if "--" in actual_cmd:
+                            dash_index = actual_cmd.index("--")
+                            if dash_index + 1 < len(actual_cmd):
+                                next_elem = actual_cmd[dash_index + 1]
+                                if not next_elem.startswith("--"):
+                                    template_idx += 1
+                                    continue
+                            return False
+                    else:
+                        # Other standalone placeholders (like {code} after -G)
+                        # Need to find corresponding actual value after previous fixed part
+                        if template_idx > 0:
+                            prev_template = template_parts[template_idx - 1]
+                            # Find prev_template in actual_cmd
+                            if prev_template in actual_cmd:
+                                prev_idx = actual_cmd.index(prev_template)
+                                # The placeholder matches the next element
+                                if prev_idx + 1 < len(actual_cmd):
+                                    template_idx += 1
+                                    continue
+                        return False
+                else:
+                    # Non-placeholder part - must exist in actual command
+                    if template_part not in actual_cmd:
+                        return False
+                    template_idx += 1
 
-            # Check for file path after --
-            if "--" in actual_cmd and actual_cmd.index("--") < len(actual_cmd) - 1:
-                # There should be a file path after --
-                return True
+            return True
 
-            return False
-
-        # Enhanced matching for activity commands with since flag
+        # Strip --since and its value from actual command if present (activity.py adds this)
+        actual_to_match = actual_cmd
         if "--since" in actual_cmd:
-            # activity.py adds --since at the end: [..., "--", "file.py", "--since", "1 day ago"]
-            # Template doesn't have --since, so we need to remove it from actual_cmd for comparison
-            since_index = actual_cmd.index('--since')
-            # Remove --since and its value from actual command
-            actual_core = actual_cmd[:since_index] + actual_cmd[since_index+2:]
+            since_index = actual_cmd.index("--since")
+            # Remove --since and its value
+            actual_to_match = actual_cmd[:since_index] + actual_cmd[since_index+2:]
 
-            # Now compare
-            if len(actual_core) != len(template_parts):
-                return False
-            return all(a == t for a, t in zip(actual_core, template_parts))
-
-        # Strict matching for templates without placeholders
-        if len(actual_cmd) != len(template_parts):
+        # Exact matching (with placeholder support)
+        if len(actual_to_match) != len(template_parts):
             return False
 
-        for actual, template in zip(actual_cmd, template_parts):
+        for actual, template in zip(actual_to_match, template_parts):
             # Exact match
             if actual == template:
                 continue
@@ -295,6 +321,8 @@ class CommandMockPlayer:
                             output=scen.get("stdout", ""),
                             stderr=scen.get("stderr", "")
                         )
+                    # If returncode is non-zero and check=False, still return result with error
+                    # This allows json_transform.py to catch the error via result.returncode check
                     return result
 
             # No match found - return default error

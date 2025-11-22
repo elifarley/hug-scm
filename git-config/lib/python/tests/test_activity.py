@@ -678,8 +678,8 @@ class TestGetActivityCommits:
         with patch("activity.subprocess.run", side_effect=mock_fn):
             commits = activity.get_activity_commits("src/main.py", since="3 days ago")
 
-            # Assert
-            assert len(commits) == 8
+            # Assert - script creates 9 commits: 6 weekday, 3 weekend
+            assert len(commits) == 9
 
             # Check weekend commits (Saturday and Sunday)
             weekend_commits = [c for c in commits if c['day_of_week'] in ['Sat', 'Sun']]

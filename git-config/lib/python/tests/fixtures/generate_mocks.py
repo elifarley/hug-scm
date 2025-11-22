@@ -137,6 +137,7 @@ def generate_activity_mocks():
     recorder_empty = CommandMockRecorder("git")
 
     # Generate all three scenarios with their respective repos
+    # Templates will be converted to string format in TOML for player.py matching
     burst_scenario = {
         "command": ["git", "log", "--date=format:%Y-%m-%d %H:%M:%S %z", "--pretty=format:%ad|%an", "--follow", "--", "{filepath}"],
         "scenario_name": "burst",
@@ -249,7 +250,7 @@ def generate_search_mocks():
             "template_vars": {"term": "fix"}
         },
         {
-            "command": ["git", "log", f"--format={format_str}", "-G", "{code}"],
+            "command": ["git", "log", f"--format={format_str}", "-S{code}"],
             "scenario_name": "code_match",
             "description": "Search code changes for 'def calculate'",
             "template_vars": {"code": "def calculate"}

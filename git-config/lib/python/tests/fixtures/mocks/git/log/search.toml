@@ -10,7 +10,7 @@ command = [
     "git",
     "log",
     "--format=%H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%cI|~|%cr|~|%T|~|%s|~|%B|~|%P|~|%D",
-    "--grep=fix",
+    "--grep={term}",
 ]
 returncode = 0
 output_file = "outputs/search_message_match.txt"
@@ -23,8 +23,7 @@ command = [
     "git",
     "log",
     "--format=%H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%cI|~|%cr|~|%T|~|%s|~|%B|~|%P|~|%D",
-    "-G",
-    "def calculate",
+    "-S{code}",
 ]
 returncode = 0
 output_file = "outputs/search_code_match.txt"
@@ -38,7 +37,7 @@ command = [
     "log",
     "--format=%H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%cI|~|%cr|~|%T|~|%s|~|%B|~|%P|~|%D",
     "--name-status",
-    "--grep=feature",
+    "--grep={term}",
 ]
 returncode = 0
 output_file = "outputs/search_with_files.txt"
@@ -51,7 +50,7 @@ command = [
     "git",
     "log",
     "--format=%H|~|%h|~|%an|~|%ae|~|%cn|~|%ce|~|%aI|~|%ar|~|%cI|~|%cr|~|%T|~|%s|~|%B|~|%P|~|%D",
-    "--grep=nonexistent",
+    "--grep={term}",
 ]
 returncode = 0
 output_file = "outputs/search_no_match.txt"

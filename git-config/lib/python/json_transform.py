@@ -183,9 +183,9 @@ def commit_search(search_type: str, search_term: str, with_files: bool = False,
     
     # Build git log command
     cmd = ['git', 'log', f'--format={format_str}']
-    
+
     if with_files:
-        cmd.append('--numstat')
+        cmd.append('--name-status')
     
     if search_type == 'message':
         cmd.append(f'--grep={search_term}')
@@ -202,17 +202,19 @@ def commit_search(search_type: str, search_term: str, with_files: bool = False,
     if additional_args:
         cmd.extend(additional_args)
     
-    try:
-        # Execute git log
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        log_output = result.stdout
-    except subprocess.CalledProcessError as e:
+    # Execute git log (check=False to handle errors manually)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+    # Check for git errors
+    if result.returncode != 0:
         return {
             'error': {
                 'type': 'git_error',
-                'message': f'Git command failed: {e.stderr}'
+                'message': f'Git command failed: {result.stderr}'
             }
         }
+
+    log_output = result.stdout
     
     # Import log_json parser for consistency
     try:

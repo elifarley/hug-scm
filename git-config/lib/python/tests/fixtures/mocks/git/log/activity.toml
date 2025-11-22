@@ -12,7 +12,7 @@ command = [
     "--pretty=format:%ad|%an",
     "--follow",
     "--",
-    "file.py",
+    "{filepath}",
 ]
 returncode = 0
 output_file = "outputs/activity_burst.txt"
@@ -28,7 +28,7 @@ command = [
     "--pretty=format:%ad|%an",
     "--follow",
     "--",
-    "file.py",
+    "{filepath}",
 ]
 returncode = 0
 output_file = "outputs/activity_weekend.txt"
@@ -44,7 +44,7 @@ command = [
     "--pretty=format:%ad|%an",
     "--follow",
     "--",
-    "nonexistent.py",
+    "{filepath}",
 ]
 returncode = 0
 output_file = "outputs/activity_empty.txt"
