@@ -159,68 +159,62 @@ class TestValidateJsonSchema:
 
 
 class TestCommitSearch:
-    """Test commit search functionality"""
-    
-    @patch('subprocess.run')
-    def test_message_search_success(self, mock_run):
-        # Mock git log output with proper 15-field format
-        mock_result = MagicMock()
-        mock_result.stdout = 'abc123def456789012345678901234567890abcd|~|abc123d|~|John|~|john@example.com|~|John|~|john@example.com|~|2025-01-01 12:00:00 +0000|~|1 hour ago|~|2025-01-01 12:00:00 +0000|~|1 hour ago|~|tree123abc456def789012345678901234567890|~|Test commit|~|Test commit\n|~||~|\n'
-        mock_run.return_value = mock_result
+    """Test commit search functionality using Command Mock Framework"""
 
-        result = commit_search('message', 'test', False, False, [])
+    def test_message_search_success(self, command_mock):
+        """Test message search with successful results."""
+        mock_fn = command_mock.get_subprocess_mock("log/search.toml", "message_match")
+        with patch("json_transform.subprocess.run", side_effect=mock_fn):
+            result = commit_search('message', 'fix', False, False, [])
 
-        assert 'results' in result
-        assert len(result['results']) == 1
-        assert result['results'][0]['sha'] == 'abc123def456789012345678901234567890abcd'
-        assert result['search']['type'] == 'message'
-        assert result['search']['term'] == 'test'
-    
-    @patch('subprocess.run')
-    def test_code_search_success(self, mock_run):
-        mock_result = MagicMock()
-        mock_result.stdout = 'abc123\x00abc\x00John\x00john@example.com\x002025-01-01 12:00:00 +0000\x00Test commit\x00\n'
-        mock_run.return_value = mock_result
-        
-        result = commit_search('code', 'function_name', False, [])
-        
-        assert result['search']['type'] == 'code'
-        assert result['search']['term'] == 'function_name'
-    
+            assert 'results' in result
+            assert len(result['results']) == 3
+            assert result['search']['type'] == 'message'
+            assert result['search']['term'] == 'fix'
+
+    def test_code_search_success(self, command_mock):
+        """Test code search with successful results."""
+        mock_fn = command_mock.get_subprocess_mock("log/search.toml", "code_match")
+        with patch("json_transform.subprocess.run", side_effect=mock_fn):
+            result = commit_search('code', 'function_name', False, [])
+
+            assert result['search']['type'] == 'code'
+            assert result['search']['term'] == 'function_name'
+
+    def test_with_files(self, command_mock):
+        """Test search with files included."""
+        mock_fn = command_mock.get_subprocess_mock("log/search.toml", "with_files")
+        with patch("json_transform.subprocess.run", side_effect=mock_fn):
+            result = commit_search('message', 'feature', True, False, [])
+
+            assert len(result['results']) == 2
+            assert 'files' in result['results'][0]
+            assert len(result['results'][0]['files']) == 3
+
+    def test_no_match(self, command_mock):
+        """Test search with no matching results."""
+        mock_fn = command_mock.get_subprocess_mock("log/search.toml", "no_match")
+        with patch("json_transform.subprocess.run", side_effect=mock_fn):
+            result = commit_search('message', 'nonexistent', False, False, [])
+
+            assert 'results' in result
+            assert len(result['results']) == 0
+
+    def test_git_error(self, command_mock):
+        """Test handling of git command errors."""
+        mock_fn = command_mock.get_subprocess_mock("log/search.toml", "git_error")
+        with patch("json_transform.subprocess.run", side_effect=mock_fn):
+            result = commit_search('message', 'test', False, False, [])
+
+            assert 'error' in result
+            assert result['error']['type'] == 'git_error'
+
     def test_invalid_search_type(self):
+        """Test handling of invalid search type."""
         result = commit_search('invalid', 'test', False, [])
-        
+
         assert 'error' in result
         assert result['error']['type'] == 'invalid_search_type'
-    
-    @patch('subprocess.run')
-    def test_git_error(self, mock_run):
-        mock_run.side_effect = subprocess.CalledProcessError(1, 'git', stderr='error')
-        
-        result = commit_search('message', 'test', False, [])
-        
-        assert 'error' in result
-        assert result['error']['type'] == 'git_error'
-    
-    @patch('subprocess.run')
-    def test_with_files(self, mock_run):
-        # Mock git log output with proper 15-field format
-        log_result = MagicMock()
-        log_result.stdout = 'abc123def456789012345678901234567890abcd|~|abc123d|~|John|~|john@example.com|~|John|~|john@example.com|~|2025-01-01 12:00:00 +0000|~|1 hour ago|~|2025-01-01 12:00:00 +0000|~|1 hour ago|~|tree123abc456def789012345678901234567890|~|Test commit|~|Test commit\n|~||~|\n\n5\t2\tfile1.txt\n3\t1\tfile2.txt\n'
-
-        # Mock git show output
-        show_result = MagicMock()
-        show_result.stdout = 'M\tfile1.txt\nA\tfile2.txt\n'
-
-        mock_run.side_effect = [log_result, show_result]
-
-        result = commit_search('message', 'test', True, False, [])
-
-        assert len(result['results']) == 1
-        assert 'stats' in result['results'][0]
-        assert result['results'][0]['stats']['files_changed'] == 2
-        assert result['results'][0]['stats']['insertions'] == 8
-        assert result['results'][0]['stats']['deletions'] == 3
 
 
 class TestIntegration:

@@ -11,6 +11,7 @@ import json
 import pytest
 from datetime import datetime
 from io import StringIO
+from unittest.mock import patch
 
 # Import module under test
 import activity
@@ -650,3 +651,54 @@ class TestEdgeCases:
 
         # Assert
         assert len(result['data']) == 50  # 50 different authors
+
+
+class TestGetActivityCommits:
+    """Tests for get_activity_commits using Command Mock Framework."""
+
+    def test_get_activity_commits_burst(self, command_mock):
+        """Test activity commits with burst pattern."""
+        mock_fn = command_mock.get_subprocess_mock("log/activity.toml", "burst")
+        with patch("activity.subprocess.run", side_effect=mock_fn):
+            commits = activity.get_activity_commits("file.py", since="1 day ago")
+
+            # Assert
+            assert len(commits) == 11
+            assert commits[0]['author'] == 'Alice Smith'
+            assert commits[0]['hour'] == 9
+            assert commits[0]['day_of_week'] == 'Fri'
+
+            # Check burst pattern (multiple commits from same author)
+            alice_commits = [c for c in commits if c['author'] == 'Alice Smith']
+            assert len(alice_commits) == 6
+
+    def test_get_activity_commits_weekend(self, command_mock):
+        """Test activity commits including weekend work."""
+        mock_fn = command_mock.get_subprocess_mock("log/activity.toml", "weekend")
+        with patch("activity.subprocess.run", side_effect=mock_fn):
+            commits = activity.get_activity_commits("src/main.py", since="3 days ago")
+
+            # Assert
+            assert len(commits) == 8
+
+            # Check weekend commits (Saturday and Sunday)
+            weekend_commits = [c for c in commits if c['day_of_week'] in ['Sat', 'Sun']]
+            assert len(weekend_commits) == 3
+
+    def test_get_activity_commits_empty(self, command_mock):
+        """Test activity commits with no results."""
+        mock_fn = command_mock.get_subprocess_mock("log/activity.toml", "empty")
+        with patch("activity.subprocess.run", side_effect=mock_fn):
+            commits = activity.get_activity_commits("nonexistent.txt", since="1 week ago")
+
+            # Assert
+            assert len(commits) == 0
+
+    def test_get_activity_commits_no_since(self, command_mock):
+        """Test activity commits without since parameter."""
+        mock_fn = command_mock.get_subprocess_mock("log/activity.toml", "burst")
+        with patch("activity.subprocess.run", side_effect=mock_fn):
+            commits = activity.get_activity_commits("file.py")
+
+            # Assert - should still work, just without --since flag
+            assert len(commits) == 11

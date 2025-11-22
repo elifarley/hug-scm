@@ -1,0 +1,38 @@
+[metadata]
+description = "git log for commit search functionality"
+command = "git log"
+
+[[scenario]]
+name = "message_match"
+command = "git log --grep=fix --pretty=format:%H|%s|%an|%ad"
+returncode = 0
+output_file = "outputs/search_message_match.txt"
+stderr = ""
+
+[[scenario]]
+name = "code_match"
+command = "git log -Sfunction_name --pretty=format:%H|%s|%an|%ad"
+returncode = 0
+output_file = "outputs/search_code_match.txt"
+stderr = ""
+
+[[scenario]]
+name = "with_files"
+command = "git log --grep=feature --name-status --pretty=format:%H|%s|%an|%ad"
+returncode = 0
+output_file = "outputs/search_with_files.txt"
+stderr = ""
+
+[[scenario]]
+name = "no_match"
+command = "git log --grep=nonexistent --pretty=format:%H|%s|%an|%ad"
+returncode = 0
+output_file = "outputs/search_no_match.txt"
+stderr = ""
+
+[[scenario]]
+name = "git_error"
+command = "git log --grep=test --pretty=format:%H|%s|%an|%ad"
+returncode = 128
+output_file = ""
+stderr = "fatal: bad revision 'test'"

@@ -40,13 +40,20 @@ def pytest_addoption(parser):
 @pytest.fixture(scope="session")
 def command_type(request):
     """Get command type from CLI or test parameter."""
-    return request.config.getoption("--command-type")
+    try:
+        return request.config.getoption("--command-type")
+    except ValueError:
+        # Default to git when option not provided
+        return "git"
 
 
 @pytest.fixture(scope="session")
 def regenerate_mocks(request):
     """Session-scoped fixture indicating if mocks should be regenerated."""
-    return request.config.getoption("--regenerate-mocks")
+    try:
+        return request.config.getoption("--regenerate-mocks")
+    except ValueError:
+        return False
 
 
 @pytest.fixture

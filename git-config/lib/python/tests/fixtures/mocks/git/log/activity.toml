@@ -1,0 +1,48 @@
+[metadata]
+description = "git log for activity analysis"
+command = "git log"
+
+[[scenario]]
+name = "burst"
+command = [
+    "git",
+    "log",
+    "--pretty=format:%ad|%an",
+    "--follow",
+    "--since=1 day ago",
+    "--",
+    "file.py"
+]
+returncode = 0
+output_file = "outputs/activity_burst.txt"
+stderr = ""
+
+[[scenario]]
+name = "weekend"
+command = [
+    "git",
+    "log",
+    "--pretty=format:%ad|%an",
+    "--follow",
+    "--since=3 days ago",
+    "--",
+    "src/main.py"
+]
+returncode = 0
+output_file = "outputs/activity_weekend.txt"
+stderr = ""
+
+[[scenario]]
+name = "empty"
+command = [
+    "git",
+    "log",
+    "--pretty=format:%ad|%an",
+    "--follow",
+    "--since=1 week ago",
+    "--",
+    "nonexistent.txt"
+]
+returncode = 0
+output_file = "outputs/activity_empty.txt"
+stderr = ""

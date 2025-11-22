@@ -18,9 +18,10 @@ Example:
 import sys
 import json
 import argparse
+import subprocess
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional, Any
 
 def parse_args():
     """Parse command line arguments."""
@@ -51,6 +52,10 @@ def parse_args():
     parser.add_argument(
         '--since',
         help='Description of time range (for display)'
+    )
+    parser.add_argument(
+        '--file',
+        help='Analyze activity for specific file'
     )
 
     return parser.parse_args()
@@ -93,6 +98,19 @@ def parse_git_log(stdin_input: str) -> List[Dict]:
             continue
 
     return commits
+
+
+def get_activity_commits(file_path: str, since: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Fetch activity commits for file via git log."""
+    cmd = ["git", "log", "--pretty=format:%ad|%an", "--follow", "--", file_path]
+    if since:
+        cmd += ["--since", since]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return parse_git_log(result.stdout)
+    except subprocess.CalledProcessError as e:
+        print(f"Error analyzing {file_path}: {e}", file=sys.stderr)
+        return []
 
 
 def analyze_by_hour(commits: List[Dict], by_author: bool = False) -> Dict:
