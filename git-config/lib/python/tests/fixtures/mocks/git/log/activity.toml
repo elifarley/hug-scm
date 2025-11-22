@@ -1,17 +1,18 @@
 [metadata]
-description = "git log for activity analysis"
-command = "git log"
+description = "Mock data for git log --follow (activity analysis)"
+generated_by = "generate_mocks.py"
 
 [[scenario]]
 name = "burst"
+description = "Burst pattern - many commits in short time"
 command = [
     "git",
     "log",
+    "--date=format:%Y-%m-%d %H:%M:%S %z",
     "--pretty=format:%ad|%an",
     "--follow",
-    "--since=1 day ago",
     "--",
-    "file.py"
+    "file.py",
 ]
 returncode = 0
 output_file = "outputs/activity_burst.txt"
@@ -19,14 +20,15 @@ stderr = ""
 
 [[scenario]]
 name = "weekend"
+description = "Weekend work pattern - commits on Saturday/Sunday"
 command = [
     "git",
     "log",
+    "--date=format:%Y-%m-%d %H:%M:%S %z",
     "--pretty=format:%ad|%an",
     "--follow",
-    "--since=3 days ago",
     "--",
-    "src/main.py"
+    "file.py",
 ]
 returncode = 0
 output_file = "outputs/activity_weekend.txt"
@@ -34,14 +36,15 @@ stderr = ""
 
 [[scenario]]
 name = "empty"
+description = "No commits for file"
 command = [
     "git",
     "log",
+    "--date=format:%Y-%m-%d %H:%M:%S %z",
     "--pretty=format:%ad|%an",
     "--follow",
-    "--since=1 week ago",
     "--",
-    "nonexistent.txt"
+    "nonexistent.py",
 ]
 returncode = 0
 output_file = "outputs/activity_empty.txt"

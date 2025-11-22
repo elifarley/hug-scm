@@ -98,14 +98,19 @@ class CommandMockPlayer:
             # Load output from separate file if referenced
             if "output_file" in scenario:
                 # output_file is relative to TOML file location (e.g., "outputs/basic.txt")
-                output_path = toml_path.parent / scenario["output_file"]
-                if output_path.exists():
-                    scenario["stdout"] = output_path.read_text()
+                output_file = scenario["output_file"]
+                if output_file:  # Only try to read if output_file is not empty
+                    output_path = toml_path.parent / output_file
+                    if output_path.exists():
+                        scenario["stdout"] = output_path.read_text()
+                    else:
+                        raise FileNotFoundError(
+                            f"Output file not found: {output_path}\n"
+                            f"Referenced in scenario '{scenario_name}' in {toml_path}"
+                        )
                 else:
-                    raise FileNotFoundError(
-                        f"Output file not found: {output_path}\n"
-                        f"Referenced in scenario '{scenario_name}' in {toml_path}"
-                    )
+                    # Empty output_file means no stdout content (e.g., for error scenarios)
+                    scenario["stdout"] = ""
             else:
                 # Inline output in TOML (fallback)
                 scenario["stdout"] = scenario.get("stdout", "")
@@ -197,6 +202,19 @@ class CommandMockPlayer:
 
             return False
 
+        # Enhanced matching for activity commands with since flag
+        if "--since" in actual_cmd:
+            # activity.py adds --since at the end: [..., "--", "file.py", "--since", "1 day ago"]
+            # Template doesn't have --since, so we need to remove it from actual_cmd for comparison
+            since_index = actual_cmd.index('--since')
+            # Remove --since and its value from actual command
+            actual_core = actual_cmd[:since_index] + actual_cmd[since_index+2:]
+
+            # Now compare
+            if len(actual_core) != len(template_parts):
+                return False
+            return all(a == t for a, t in zip(actual_core, template_parts))
+
         # Strict matching for templates without placeholders
         if len(actual_cmd) != len(template_parts):
             return False
@@ -263,11 +281,21 @@ class CommandMockPlayer:
             # Try to match command to one of the scenarios
             for scen in all_scenarios:
                 if self.command_matches(cmd, scen["command"]):
-                    return MagicMock(
+                    result = MagicMock(
                         stdout=scen.get("stdout", ""),
                         stderr=scen.get("stderr", ""),
                         returncode=scen.get("returncode", 0)
                     )
+                    # If returncode is non-zero and check=True, raise CalledProcessError
+                    if scen.get("returncode", 0) != 0 and kwargs.get("check", False):
+                        import subprocess
+                        raise subprocess.CalledProcessError(
+                            returncode=scen.get("returncode", 0),
+                            cmd=cmd,
+                            output=scen.get("stdout", ""),
+                            stderr=scen.get("stderr", "")
+                        )
+                    return result
 
             # No match found - return default error
             return MagicMock(

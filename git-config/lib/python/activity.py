@@ -102,7 +102,7 @@ def parse_git_log(stdin_input: str) -> List[Dict]:
 
 def get_activity_commits(file_path: str, since: Optional[str] = None) -> List[Dict[str, Any]]:
     """Fetch activity commits for file via git log."""
-    cmd = ["git", "log", "--pretty=format:%ad|%an", "--follow", "--", file_path]
+    cmd = ["git", "log", "--date=format:%Y-%m-%d %H:%M:%S %z", "--pretty=format:%ad|%an", "--follow", "--", file_path]
     if since:
         cmd += ["--since", since]
     try:

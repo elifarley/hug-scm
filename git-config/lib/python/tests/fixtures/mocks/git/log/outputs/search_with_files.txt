@@ -1,8 +1,16 @@
-y5z6a7b8|feat: add new authentication system|Alice Smith|2024-11-22 09:15:32 -0500
-M	src/auth.py
-A	src/login.py
-M	tests/auth_test.py
-c9d0e1f2|feat: implement user registration|Bob Johnson|2024-11-21 10:45:18 -0500
-A	src/register.py
-M	src/auth.py
-M	database/migrations.sql
+632d87af6e6b7a530a8c53c0dad0e00f4816068f|~|632d87a|~|Bob Johnson|~|bob@example.com|~|Bob Johnson|~|bob@example.com|~|2025-01-14T15:20:00-05:00|~|10 months ago|~|2025-01-14T15:20:00-05:00|~|10 months ago|~|a90e5cc3bfd6fc72060e979190b85734abb88ea8|~|feat: implement user profile feature|~|feat: implement user profile feature
+
+Added user profile page with edit capabilities.
+|~|dd333f23fd151576701faa7059b3fec90895dbac|~|HEAD -> master
+
+A	src/api/profile.ts
+A	src/components/ProfileForm.tsx
+A	src/pages/profile.tsx
+dd333f23fd151576701faa7059b3fec90895dbac|~|dd333f2|~|Alice Smith|~|alice@example.com|~|Alice Smith|~|alice@example.com|~|2025-01-16T09:30:00-05:00|~|10 months ago|~|2025-01-16T09:30:00-05:00|~|10 months ago|~|14a54fbff360fb5f0545015650d13f582b2b56fa|~|feat: add user authentication feature|~|feat: add user authentication feature
+
+Implemented JWT-based authentication system with login and logout.
+|~|2a649810eebe2f5082cc59bb3c8458b281e5253d|~|
+
+A	src/auth/jwt_utils.py
+A	src/auth/login.py
+A	src/auth/logout.py
