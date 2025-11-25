@@ -18,7 +18,7 @@ Usage:
 
 import sys
 from pathlib import Path
-from recorder import CommandMockRecorder
+from command_mock.recorder import CommandMockRecorder
 
 
 def generate_git_log_follow_mocks():

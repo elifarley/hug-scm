@@ -14,18 +14,63 @@ import pytest
 PYTHON_LIB_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(PYTHON_LIB_DIR))
 
-# Import fixtures directory for command_mock without loading pytest hooks
-import importlib.util
-fixtures_conftest_path = Path(__file__).parent / 'fixtures' / 'conftest.py'
-spec = importlib.util.spec_from_file_location("_fixtures_conftest", fixtures_conftest_path)
-_fixtures_conftest = importlib.util.module_from_spec(spec)
-sys.modules['_fixtures_conftest'] = _fixtures_conftest
-spec.loader.exec_module(_fixtures_conftest)
+# Import command mock framework from installed library
+from command_mock.recorder import CommandMockRecorder
+from command_mock.player import CommandMockPlayer
 
-# Re-export fixtures (already have @pytest.fixture decorator)
-command_mock = _fixtures_conftest.command_mock
-command_type = _fixtures_conftest.command_type
-regenerate_mocks = _fixtures_conftest.regenerate_mocks
+
+def pytest_addoption(parser):
+    """Add custom command line options."""
+    parser.addoption(
+        "--regenerate-mocks",
+        action="store_true",
+        default=False,
+        help="Regenerate mock data from real command calls"
+    )
+    parser.addoption(
+        "--command-type",
+        default="git",
+        help="Command type for mocks (default: git). Examples: git, docker, npm"
+    )
+
+
+@pytest.fixture(scope="session")
+def command_type(request):
+    """Get command type from CLI or test parameter."""
+    try:
+        return request.config.getoption("--command-type")
+    except ValueError:
+        # Default to git when option not provided
+        return "git"
+
+
+@pytest.fixture(scope="session")
+def regenerate_mocks(request):
+    """Session-scoped fixture indicating if mocks should be regenerated."""
+    try:
+        return request.config.getoption("--regenerate-mocks")
+    except ValueError:
+        return False
+
+
+@pytest.fixture
+def command_mock(command_type, regenerate_mocks):
+    """
+    Fixture providing command mock player or recorder.
+
+    Returns CommandMockRecorder if --regenerate-mocks is set,
+    otherwise CommandMockPlayer.
+
+    Points to LOCAL fixtures directory in this project, allowing hug-scm
+    to maintain its own test data while using the framework library.
+    """
+    # CRITICAL: Point to LOCAL fixtures directory with hug-scm-specific mocks
+    local_fixtures_root = Path(__file__).parent / 'fixtures'
+
+    if regenerate_mocks:
+        return CommandMockRecorder(command_type, fixtures_root=local_fixtures_root)
+    else:
+        return CommandMockPlayer(command_type, fixtures_root=local_fixtures_root)
 
 
 @pytest.fixture
