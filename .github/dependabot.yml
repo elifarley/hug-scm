@@ -1,0 +1,61 @@
+version: 2
+updates:
+  # Python helpers (git-config/lib/python)
+  - package-ecosystem: "pip"
+    directory: "/git-config/lib/python"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "ecc"
+    assignees:
+      - "ecc"
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+
+  # MCP server (hug-scm-mcp-server)
+  - package-ecosystem: "pip"
+    directory: "/hug-scm-mcp-server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "ecc"
+    assignees:
+      - "ecc"
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "ecc"
+    assignees:
+      - "ecc"
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
