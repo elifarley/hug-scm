@@ -183,33 +183,56 @@ compute_local_branch_details_batched() {
     tracks_ref=()
 
     # Get all branches with their upstream refs in a single call
-    local format='%(refname:short)%00%(objectname:short)%00%(subject)%00%(upstream:short)%00%(upstream:track)'
-    mapfile -t branch_data < <(git for-each-ref --format="$format" refs/heads/ 2>/dev/null)
+    # Format: branch, hash, subject, upstream, upstream:track
+    # We use null delimiters (%00) for all fields to handle special chars safely
+    local format='%(refname:short)%00%(objectname:short)%00%(subject)%00%(upstream:short)%00%(upstream:track)%00'
 
-    if [[ ${#branch_data[@]} -eq 0 ]]; then
+    local -a git_output=()
+    mapfile -t -d '' git_output < <(git for-each-ref --format="$format" refs/heads/ 2>/dev/null)
+
+    if [[ ${#git_output[@]} -eq 0 ]]; then
         return 1
     fi
 
     # Get current branch
-    local current_branch
-    current_branch=$(git branch --show-current 2>/dev/null || echo "detached HEAD")
-    current_branch_ref="$current_branch"
+    # Rename local variable to avoid nameref collision if caller passed 'current_branch'
+    local curr_branch
+    curr_branch=$(git branch --show-current 2>/dev/null || echo "detached HEAD")
+    current_branch_ref="$curr_branch"
 
     # Extract branch names and upstreams for batch divergence calculation
     local -a branch_names=()
     local -a upstream_names=()
     local -a divergence_commands=()
 
-    for line in "${branch_data[@]}"; do
-        IFS=$'\0' read -r branch hash subject upstream track <<< "$line"
-        branch=$(printf '%s' "$branch" | tr -d '\n\r')
+    # Iterate through flat array in chunks of 5
+    local i
+    for ((i = 0; i + 4 < ${#git_output[@]}; i += 5)); do
+        local branch_raw="${git_output[i]}"
+        local branch
+        branch=$(printf '%s' "$branch_raw" | tr -d '\n\r')
+
+        # Skip backup branches (internal implementation detail)
+        if [[ "$branch" == hug-backups/* ]]; then
+            continue
+        fi
+
+        local hash="${git_output[i+1]}"
         hash=$(printf '%s' "$hash" | tr -d '\n\r')
+
+        local subject="${git_output[i+2]}"
         subject=$(printf '%s' "$subject" | tr -d '\n\r')
 
+        local upstream="${git_output[i+3]}"
+        upstream=$(printf '%s' "$upstream" | tr -d '\n\r')
+
+        local track_info="${git_output[i+4]}" # Not used directly in divergence calc but preserved if we need it later
+
         branch_names+=("$branch")
+        branches_ref+=("$branch")  # Fix: Populate the output array
         upstream_names+=("$upstream")
         hashes_ref+=("$hash")
-        subjects_ref+=("$subject")
+        subjects_ref+=("$GREY${subject:-(no commit message)}$NC")
 
         # Update max length
         if (( ${#branch} > max_len_ref )); then
@@ -333,11 +356,12 @@ print_branch_line() {
 }
 
 # Prints a non-interactive list of branches with details
-# Usage: print_branch_list current_branch max_len hashes branches tracks subjects
+# Usage: print_branch_list current_branch max_len hashes branches tracks subjects [search_term]
 # Parameters:
 #   $1 - Current branch name
 #   $2 - Maximum branch name length (for alignment)
 #   $3-$6 - Namerefs to arrays (hashes branches tracks subjects)
+#   $7 - (Optional) Search term to filter by BRANCH NAME only (case-insensitive)
 # Output:
 #   Formatted branch list to stdout, with current branch highlighted in green;
 #   subjects printed only if subjects array is non-empty
@@ -346,18 +370,40 @@ print_branch_line() {
 print_branch_list() {
     local current_branch="$1"
     local max_len="$2"
-    local -n hashes_ref="$3"
-    local -n branches_ref="$4"
-    local -n tracks_ref="$5"
-    local -n subjects_ref="$6"
+    local hashes_name="$3"
+    local branches_name="$4"
+    local tracks_name="$5"
+    local subjects_name="$6"
+    local search_term="${7:-}"
+
+    local -n hashes_ref="$hashes_name"
+    local -n branches_ref="$branches_name"
+
+    # Pre-calculate lowercase search term for case-insensitive matching
+    # ${var,,} is a Bash 4.0+ feature
+    local search_lower=""
+    if [[ -n "$search_term" ]]; then
+        search_lower="${search_term,,}"
+    fi
 
     for i in "${!branches_ref[@]}"; do
         local branch="${branches_ref[i]}"
+
+        # Apply filter if search term exists
+        if [[ -n "$search_lower" ]]; then
+            local branch_lower="${branch,,}"
+            # If branch name does not contain search term, skip
+            if [[ "$branch_lower" != *"$search_lower"* ]]; then
+                continue
+            fi
+        fi
+
         local prefix=""
         if [ "$branch" != "$current_branch" ]; then
             prefix="  "
         fi
-        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$3" "$4" "$5" "$6"
+
+        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$hashes_name" "$branches_name" "$tracks_name" "$subjects_name"
     done
 }
 

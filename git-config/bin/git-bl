@@ -32,11 +32,8 @@ EOF
 # Parse common flags
 eval "$(parse_common_flags "$@")"
 
-test $# -gt 0 && {
-  show_help
-  echo "Error: Arguments not expected: $*"
-  exit 1
-}
+# Capture optional search terms
+search_terms="$*"
 
 # Early exit if not in Git repo
 check_git_repo
@@ -51,4 +48,4 @@ if ! compute_local_branch_details current_branch max_len hashes branches tracks 
 fi
 
 # Print non-interactive list
-print_branch_list "$current_branch" "$max_len" hashes branches tracks subjects
+print_branch_list "$current_branch" "$max_len" hashes branches tracks subjects "$search_terms"
