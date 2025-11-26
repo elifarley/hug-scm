@@ -349,7 +349,7 @@ hug bc [<branch>] [--point-to <commitish>] [--no-switch]  # Create and switch to
                             # Without branch name: auto-generates descriptive name
                             # --no-switch: create without switching
 hug bcp <src> [dest]        # Copy branch (create snapshot without switching)
-hug bl                      # List local branches
+hug bl [term]               # List local branches (optional search)
 hug bla                     # List all branches (local + remote)
 hug bdel <branch>           # Safe delete local branch (if merged)
 hug bdelf <branch>          # Force delete local branch

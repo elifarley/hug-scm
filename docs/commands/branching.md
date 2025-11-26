@@ -64,11 +64,12 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 - After typing `perform`:
 - ![hug b example with "perform" search term](img/hug-b-perform.png)
 
-### `hug bl`
-- **Description**: List local branches in short format, sorted alphabetically. The current branch is marked with an asterisk (*).
-- **Example**:
+### `hug bl [term]`
+- **Description**: List local branches in short format, sorted alphabetically. The current branch is marked with an asterisk (*). Supports optional case-insensitive search filtering by branch name.
+- **Examples**:
   ```shell
-  hug bl    # List all local branches
+  hug bl           # List all local branches
+  hug bl feature   # List branches containing "feature"
   ```
 - **Safety**: Read-only operation; no changes to repo state.
 - ![hug bl example](img/hug-bl.png)
@@ -91,11 +92,12 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 - **Safety**: Read-only.
 - ![hug blr example](img/hug-blr.png)
 
-### `hug bll`
-- **Description**: List local branches in long format with details: short commit hash, upstream tracking info (e.g., ahead/behind counts), and the latest commit message title. Current branch is highlighted in green and marked with *. Branches are left-aligned for readability.
-- **Example**:
+### `hug bll [term]`
+- **Description**: List local branches in long format with details: short commit hash, upstream tracking info (e.g., ahead/behind counts), and the latest commit message title. Current branch is highlighted in green and marked with *. Branches are left-aligned for readability. Supports optional case-insensitive search filtering by branch name.
+- **Examples**:
   ```shell
-  hug bll   # Detailed local branch listing
+  hug bll          # Detailed local branch listing
+  hug bll fix      # List branches containing "fix"
   ```
 - **Safety**: Read-only; displays tracking info like `git branch -vv` but with commit subjects.
 - ![hug bll example](img/hug-bll.png)

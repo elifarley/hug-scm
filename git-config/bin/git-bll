@@ -10,7 +10,7 @@ show_help() {
 hug bll: List local branches in long format, showing short hash, upstream tracking info, and commit message title for each.
 
 USAGE:
-  hug bll [OPTIONS]
+  hug bll [OPTIONS] [SEARCH_TERM]
 
 OPTIONS:
   -h, --help     Show this help message and exit.
@@ -22,8 +22,11 @@ DESCRIPTION:
   The commit message title follows.
   Remote tracking information is shown just as in 'git branch -vv'.
 
+  If a search term is provided, only branches containing the term (case-insensitive substring match on branch name) are displayed.
+
 EXAMPLES:
-  hug bll    # List all local branches in long format
+  hug bll          # List all local branches in long format
+  hug bll fix      # List branches containing "fix"
 
 SEE ALSO:
   hug bl : For listing local branches in short form
