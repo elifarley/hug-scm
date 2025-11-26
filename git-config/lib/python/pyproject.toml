@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
     "tomli>=2.0.0; python_version < '3.11'",
     "tomli-w>=1.0.0",
+    "orgecc-command-mock>=0.1.5"
 ]
 
 [tool.setuptools]
