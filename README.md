@@ -118,6 +118,13 @@ hug bc --point-to v1.0.0    # Create branch from tag (auto-generates name)
 hug bc hotfix --point-to v1.0.0  # Create named branch from tag
 hug bs                      # Switch back to previous branch
 
+# Worktree operations (parallel development)
+hug wtc feature-auth       # Create worktree for feature branch
+hug wt                     # Interactive worktree management
+hug wtl                    # List worktrees (short format)
+hug wtll                   # List worktrees with commit details
+hug wtdel feature-auth     # Remove worktree when done
+
 # Safe pull (fast-forward only; fails on divergence)
 hug bpull
 
@@ -241,6 +248,7 @@ Hug commands are organized by **semantic prefixes** that make them easy to disco
 |--------|----------|----------|
 | `h*` | HEAD Operations | `hug h back`, `hug h undo` |
 | `w*` | Working Directory | `hug w get`, `hug w wip` |
+| `wt*` | Worktree Management | `hug wt`, `hug wtc`, `hug wtdel` |
 | `s*` | Status & Staging | `hug ss`, `hug su` |
 | `a*` | Staging | `hug a`, `hug aa`, `hug ai`, `hug ap` |
 | `b*` | Branching | `hug b`, `hug bc` |

@@ -1,0 +1,773 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-WORKTREE: Git worktree management functions
+#
+# This library provides functions for:
+# - Worktree discovery and information gathering
+# - Worktree creation and removal with safety checks
+# - Worktree validation and path management
+# - Interactive worktree operations
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
+################################################################################
+# Worktree Information Functions
+################################################################################
+
+# Get all worktrees with detailed information
+# Usage: get_worktrees worktree_paths branches commits status_dirty locked_status
+# Parameters (all namerefs to output variables):
+#   $1 - Array to receive worktree paths
+#   $2 - Array to receive branch names
+#   $3 - Array to receive commit hashes (short)
+#   $4 - Array to receive dirty status (true/false)
+#   $5 - Array to receive locked status (true/false)
+# Returns:
+#   0 if worktrees found, 1 if no worktrees exist
+get_worktrees() {
+    local -n paths_ref="$1"
+    local -n branches_ref="$2"
+    local -n commits_ref="$3"
+    local -n status_ref="$4"
+    local -n locked_ref="$5"
+
+    # Clear output arrays
+    paths_ref=()
+    branches_ref=()
+    commits_ref=()
+    status_ref=()
+    locked_ref=()
+
+    # Check if worktrees exist
+    if ! git worktree list --porcelain 2>/dev/null | grep -q "^worktree "; then
+        return 1
+    fi
+
+    # Parse git worktree list --porcelain output
+    local -a worktree_output
+    mapfile -t worktree_output < <(git worktree list --porcelain)
+
+    local current_path=""
+    local current_branch=""
+    local current_commit=""
+    local current_locked="false"
+    local i=0
+
+    while [[ $i -lt ${#worktree_output[@]} ]]; do
+        local line="${worktree_output[$i]}"
+
+        case "$line" in
+            "worktree "*)
+                # If we have a previous worktree, store it
+                if [[ -n "$current_path" ]]; then
+                    paths_ref+=("$current_path")
+                    branches_ref+=("$current_branch")
+                    commits_ref+=("$current_commit")
+
+                    # Check if worktree is dirty
+                    if git -C "$current_path" diff --quiet 2>/dev/null && git -C "$current_path" diff --cached --quiet 2>/dev/null; then
+                        status_ref+=("false")
+                    else
+                        status_ref+=("true")
+                    fi
+
+                    locked_ref+=("$current_locked")
+                fi
+
+                # Start new worktree
+                current_path="${line#worktree }"
+                current_branch=""
+                current_commit=""
+                current_locked="false"
+                ;;
+            "branch "*)
+                current_branch="${line#branch refs/heads/}"
+                # Get commit hash for this branch
+                current_commit=$(git rev-parse --short "$current_branch" 2>/dev/null || echo "unknown")
+                ;;
+            "commit "*)
+                current_commit="${line#commit }"
+                current_commit=$(git rev-parse --short "$current_commit" 2>/dev/null || echo "unknown")
+                ;;
+            "locked")
+                current_locked="true"
+                ;;
+        esac
+
+        ((i++))
+    done
+
+    # Store the last worktree
+    if [[ -n "$current_path" ]]; then
+        paths_ref+=("$current_path")
+        branches_ref+=("$current_branch")
+        commits_ref+=("$current_commit")
+
+        # Check if worktree is dirty
+        if git -C "$current_path" diff --quiet 2>/dev/null && git -C "$current_path" diff --cached --quiet 2>/dev/null; then
+            status_ref+=("false")
+        else
+            status_ref+=("true")
+        fi
+
+        locked_ref+=("$current_locked")
+    fi
+
+    return 0
+}
+
+# Get current worktree path
+# Usage: current_path=$(get_current_worktree_path)
+# Returns: Absolute path to current worktree, or empty if not in a worktree
+get_current_worktree_path() {
+    git rev-parse --show-toplevel 2>/dev/null || echo ""
+}
+
+# Check if worktree exists at given path
+# Usage: if worktree_exists "/path/to/worktree"; then ...
+# Returns: 0 if worktree exists, 1 if not
+worktree_exists() {
+    local path="$1"
+    [[ -n "$path" ]] && git worktree list --porcelain 2>/dev/null | grep -q "^worktree $(printf '%s' "$path" | sed 's|/|\\/|g')$"
+}
+
+# Count total number of worktrees
+# Usage: count=$(get_worktree_count)
+# Returns: Number of worktrees (including main worktree)
+get_worktree_count() {
+    git worktree list 2>/dev/null | wc -l
+}
+
+################################################################################
+# Worktree Validation Functions
+################################################################################
+
+# Validate worktree path is safe to operate on
+# Usage: validate_worktree_path "/path/to/worktree"
+# Returns: 0 if valid, 1 if invalid (outputs error messages)
+validate_worktree_path() {
+    local path="$1"
+
+    if [[ -z "$path" ]]; then
+        error "Worktree path cannot be empty"
+        return 1
+    fi
+
+    # Convert to absolute path
+    if [[ ! "$path" = /* ]]; then
+        path="$(pwd)/$path"
+    fi
+
+    # Check if path exists and is a directory
+    if [[ ! -e "$path" ]]; then
+        error "Worktree path does not exist: $path"
+        return 1
+    fi
+
+    if [[ ! -d "$path" ]]; then
+        error "Worktree path is not a directory: $path"
+        return 1
+    fi
+
+    # Check if it's actually a worktree
+    if ! worktree_exists "$path"; then
+        error "Path is not a Git worktree: $path"
+        return 1
+    fi
+
+    # Check if we have read permissions
+    if [[ ! -r "$path" ]]; then
+        error "No read permission for worktree: $path"
+        return 1
+    fi
+
+    return 0
+}
+
+# Validate branch is available for worktree creation (not already checked out)
+# Usage: if branch_available_for_worktree "feature-auth"; then ...
+# Returns: 0 if available, 1 if already checked out or doesn't exist
+branch_available_for_worktree() {
+    local branch="$1"
+
+    if [[ -z "$branch" ]]; then
+        return 1
+    fi
+
+    # Check if branch exists locally
+    if ! git rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
+        return 1
+    fi
+
+    # Check if branch is already checked out in any worktree
+    if git worktree list --porcelain 2>/dev/null | grep -q "^branch refs/heads/${branch}$"; then
+        return 1
+    fi
+
+    return 0
+}
+
+# Validate worktree creation path is safe
+# Usage: validate_worktree_creation_path "/path/to/worktree"
+# Returns: 0 if safe, 1 if unsafe (outputs error messages)
+validate_worktree_creation_path() {
+    local path="$1"
+
+    if [[ -z "$path" ]]; then
+        error "Worktree path cannot be empty"
+        return 1
+    fi
+
+    # Convert to absolute path
+    if [[ ! "$path" = /* ]]; then
+        path="$(pwd)/$path"
+    fi
+
+    # Check if target already exists
+    if [[ -e "$path" ]]; then
+        error "Target path already exists: $path"
+        info "Choose a different path or remove the existing directory"
+        return 1
+    fi
+
+    # Check parent directory exists and is writable
+    local parent_dir
+    parent_dir=$(dirname "$path")
+
+    if [[ ! -d "$parent_dir" ]]; then
+        error "Parent directory does not exist: $parent_dir"
+        info "Create it first: mkdir -p '$parent_dir'"
+        return 1
+    fi
+
+    if [[ ! -w "$parent_dir" ]]; then
+        error "No write permission to parent directory: $parent_dir"
+        return 1
+    fi
+
+    # Check that target path is not inside main repository
+    local main_repo
+    main_repo=$(get_current_worktree_path)
+    if [[ "$path" == "$main_repo"* ]]; then
+        error "Cannot create worktree inside main repository: $path"
+        info "Choose a location outside the main repository"
+        return 1
+    fi
+
+    return 0
+}
+
+################################################################################
+# Worktree Path Generation Functions
+################################################################################
+
+# Generate smart default worktree path for a branch
+# Usage: path=$(generate_worktree_path "feature-auth")
+# Returns: Default worktree path outside main repository
+generate_worktree_path() {
+    local branch="$1"
+    local repo_name
+    local safe_branch
+
+    if [[ -z "$branch" ]]; then
+        return 1
+    fi
+
+    # Get repository name
+    repo_name=$(basename "$(get_current_worktree_path)")
+
+    # Make branch name safe for filesystem
+    safe_branch=$(printf '%s' "$branch" | sed 's|/|-|g' | sed 's|\.|-|g' | tr '[:upper:]' '[:lower:]')
+
+    # Generate path outside repository
+    printf '%s/worktrees-%s/%s' "$(dirname "$(get_current_worktree_path)")" "$repo_name" "$safe_branch"
+}
+
+# Generate unique worktree path (handles conflicts)
+# Usage: path=$(generate_unique_worktree_path "feature-auth")
+# Returns: Unique path that doesn't exist
+generate_unique_worktree_path() {
+    local branch="$1"
+    local base_path
+    local counter=1
+
+    base_path=$(generate_worktree_path "$branch")
+
+    # If base path doesn't exist, use it
+    if [[ ! -e "$base_path" ]]; then
+        printf '%s' "$base_path"
+        return 0
+    fi
+
+    # Otherwise, try numbered versions
+    while [[ -e "${base_path}-${counter}" ]]; do
+        ((counter++))
+    done
+
+    printf '%s-%d' "$base_path" "$counter"
+}
+
+################################################################################
+# Worktree Operations Functions
+################################################################################
+
+# Create worktree with comprehensive safety checks
+# Usage: create_worktree "feature-auth" "/path" [force] [dry_run]
+# Parameters:
+#   $1 - Branch name (must exist and not be checked out)
+#   $2 - Target path (parent must exist and be writable)
+#   $3 - Force creation without confirmation (default: false)
+#   $4 - Dry run only (default: false)
+# Returns: 0 on success, 1 on failure
+create_worktree() {
+    local branch="$1"
+    local path="$2"
+    local force="${3:-false}"
+    local dry_run="${4:-false}"
+
+    # Validate inputs
+    if [[ -z "$branch" ]]; then
+        error "Branch name cannot be empty"
+        return 1
+    fi
+
+    if [[ -z "$path" ]]; then
+        error "Worktree path cannot be empty"
+        return 1
+    fi
+
+    # Validate branch exists
+    if ! git rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
+        error "Branch '$branch' does not exist locally"
+        info "Create it first with: hug bc '$branch'"
+        return 1
+    fi
+
+    # Validate branch is available
+    if ! branch_available_for_worktree "$branch"; then
+        error "Branch '$branch' is already checked out in another worktree"
+        info "Use 'hug wt' to see current worktree assignments"
+        return 1
+    fi
+
+    # Validate creation path
+    if ! validate_worktree_creation_path "$path"; then
+        return 1
+    fi
+
+    # Show what we're about to do
+    if $dry_run; then
+        echo "Would create worktree for branch '$branch' at '$path'"
+        return 0
+    fi
+
+    # Get confirmation unless forced
+    if ! $force; then
+        echo "Creating worktree for branch '$branch' at '$path'"
+        if ! confirm_action "create"; then
+            info "Worktree creation cancelled"
+            return 0
+        fi
+    fi
+
+    # Create the worktree
+    echo "Creating worktree..."
+    if git worktree add "$path" "$branch" 2>/dev/null; then
+        success "Worktree created: $path"
+        info "Switch to it with: hug wt $path"
+        info "Or: cd $path"
+        return 0
+    else
+        error "Failed to create worktree"
+        return 1
+    fi
+}
+
+# Remove worktree with comprehensive safety checks
+# Usage: remove_worktree "/path/to/worktree" [force] [dry_run]
+# Parameters:
+#   $1 - Worktree path to remove
+#   $2 - Force removal without confirmation (default: false)
+#   $3 - Dry run only (default: false)
+# Returns: 0 on success, 1 on failure
+remove_worktree() {
+    local path="$1"
+    local force="${2:-false}"
+    local dry_run="${3:-false}"
+
+    # Validate worktree path
+    if ! validate_worktree_path "$path"; then
+        return 1
+    fi
+
+    # Prevent removal of current worktree
+    local current_worktree
+    current_worktree=$(get_current_worktree_path)
+    if [[ "$path" == "$current_worktree" ]]; then
+        error "Cannot remove current worktree"
+        info "Switch to another worktree first with: hug wt"
+        return 1
+    fi
+
+    # Check for uncommitted changes
+    if ! git -C "$path" diff --quiet 2>/dev/null || ! git -C "$path" diff --cached --quiet 2>/dev/null; then
+        if $force; then
+            warning "Worktree has uncommitted changes that will be lost"
+        else
+            error "Worktree has uncommitted changes"
+            info "Commit or stash changes first, or use --force"
+            return 1
+        fi
+    fi
+
+    # Show what we're about to do
+    if $dry_run; then
+        echo "Would remove worktree at '$path'"
+        return 0
+    fi
+
+    # Get confirmation unless forced
+    if ! $force; then
+        echo "Removing worktree at: $path"
+        if ! confirm_action "remove"; then
+            info "Worktree removal cancelled"
+            return 0
+        fi
+    fi
+
+    # Remove the worktree
+    echo "Removing worktree..."
+    if git worktree remove "$path" 2>/dev/null; then
+        success "Worktree removed: $path"
+        return 0
+    else
+        # Fallback to manual removal if git worktree remove fails
+        warning "git worktree remove failed, trying manual cleanup"
+        if rm -rf "$path" && git worktree prune 2>/dev/null; then
+            success "Worktree removed manually: $path"
+            return 0
+        else
+            error "Failed to remove worktree"
+            return 1
+        fi
+    fi
+}
+
+# Switch to worktree with validation
+# Usage: switch_to_worktree "/path/to/worktree"
+# Parameters:
+#   $1 - Worktree path to switch to
+# Returns: 0 on success, 1 on failure
+switch_to_worktree() {
+    local path="$1"
+
+    # Validate worktree path
+    if ! validate_worktree_path "$path"; then
+        return 1
+    fi
+
+    # Try to change directory
+    if cd "$path" 2>/dev/null; then
+        local current_branch
+        current_branch=$(git branch --show-current 2>/dev/null || echo "detached")
+        success "Switched to worktree: $path"
+        info "Current branch: $current_branch"
+        return 0
+    else
+        error "Cannot switch to worktree: $path"
+        info "Check directory permissions and accessibility"
+        return 1
+    fi
+}
+
+# Prune orphaned worktrees (those pointing to non-existent directories)
+# Usage: prune_worktrees [force] [dry_run]
+# Parameters:
+#   $1 - Force pruning without confirmation (default: false)
+#   $2 - Dry run only (default: false)
+# Returns: 0 on success, 1 on failure
+prune_worktrees() {
+    local force="${1:-false}"
+    local dry_run="${2:-false}"
+
+    # Find orphaned worktrees
+    local -a orphaned_worktrees=()
+    local -a worktree_output
+    mapfile -t worktree_output < <(git worktree list --porcelain)
+
+    local current_path=""
+    local i=0
+
+    while [[ $i -lt ${#worktree_output[@]} ]]; do
+        local line="${worktree_output[$i]}"
+
+        case "$line" in
+            "worktree "*)
+                current_path="${line#worktree }"
+                if [[ ! -d "$current_path" ]]; then
+                    orphaned_worktrees+=("$current_path")
+                fi
+                ;;
+        esac
+
+        ((i++))
+    done
+
+    if [[ ${#orphaned_worktrees[@]} -eq 0 ]]; then
+        info "No orphaned worktrees found"
+        return 0
+    fi
+
+    # Show what we found
+    echo "Found ${#orphaned_worktrees[@]} orphaned worktree(s):"
+    printf '  %s\n' "${orphaned_worktrees[@]}"
+
+    if $dry_run; then
+        echo "Would prune ${#orphaned_worktrees[@]} orphaned worktree(s)"
+        return 0
+    fi
+
+    # Get confirmation unless forced
+    if ! $force; then
+        echo "Pruning will remove references to these non-existent worktrees"
+        if ! confirm_action "prune"; then
+            info "Worktree pruning cancelled"
+            return 0
+        fi
+    fi
+
+    # Prune the worktrees
+    echo "Pruning orphaned worktrees..."
+    if git worktree prune 2>/dev/null; then
+        success "Pruned ${#orphaned_worktrees[@]} orphaned worktree(s)"
+        return 0
+    else
+        error "Failed to prune worktrees"
+        return 1
+    fi
+}
+
+################################################################################
+# Worktree Status and Summary Functions
+################################################################################
+
+# Get worktree status summary for display
+# Usage: show_worktree_summary
+# Returns: Human-readable summary of all worktrees
+show_worktree_summary() {
+    local -a worktree_paths=()
+    local -a branches=()
+    local -a commits=()
+    local -a status_dirty=()
+    local -a locked_status=()
+
+    if ! get_worktrees worktree_paths branches commits status_dirty locked_status; then
+        info "No worktrees found"
+        return 0
+    fi
+
+    local current_worktree
+    current_worktree=$(get_current_worktree_path)
+    local count=${#worktree_paths[@]}
+
+    echo
+    printf "${BLUE}Worktrees (%d):${NC}\n" "$count"
+    echo
+
+    for i in "${!worktree_paths[@]}"; do
+        local path="${worktree_paths[$i]}"
+        local branch="${branches[$i]}"
+        local commit="${commits[$i]}"
+        local dirty="${status_dirty[$i]}"
+        local locked="${locked_status[$i]}"
+
+        # Status indicators
+        local indicators=""
+        [[ "$path" == "$current_worktree" ]] && indicators="${indicators}${GREEN}[CURRENT]${NC} "
+        [[ "$dirty" == "true" ]] && indicators="${indicators}${YELLOW}[DIRTY]${NC} "
+        [[ "$locked" == "true" ]] && indicators="${indicators}${RED}[LOCKED]${NC} "
+
+        printf "  %s%-20s %s\n" "$indicators" "$branch" "($commit) → ${path/#$HOME/\~}"
+    done
+
+    echo
+}
+
+# Check if current directory is a worktree (not the main repository)
+# Usage: if is_worktree_not_main; then ...
+# Returns: 0 if in a worktree (not main), 1 if in main repository or not in git repo
+is_worktree_not_main() {
+    local main_repo
+    main_repo=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
+    local current_dir
+    current_dir=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+
+    # If current directory is not the main repository, we're in a worktree
+    [[ "$current_dir" != "$main_repo" ]]
+}
+
+################################################################################
+# Worktree Listing Functions (for wtl/wtll commands)
+################################################################################
+
+# Format worktree information for short listing (wtl)
+# Usage: format_worktree_line "$current_worktree" "$path" "$branch" "$commit" "$dirty" "$locked"
+# Returns: Formatted line for display
+format_worktree_line() {
+    local current_worktree="$1"
+    local path="$2"
+    local branch="$3"
+    local commit="$4"
+    local dirty="$5"
+    local locked="$6"
+
+    # Build status indicators
+    local status_indicators=""
+    local path_display="${path/#$HOME/\~}"
+
+    # Check if current worktree
+    [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}*${NC} "
+
+    # Add other status indicators
+    [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
+    [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
+
+    printf "%s%-20s %s (%s) %s\n" "$status_indicators" "$branch" "$commit" "$path_display"
+}
+
+# Format worktree information for long listing (wtll)
+# Usage: format_worktree_long_line "$current_worktree" "$path" "$branch" "$commit" "$dirty" "$locked"
+# Returns: Formatted lines for display with commit info
+format_worktree_long_line() {
+    local current_worktree="$1"
+    local path="$2"
+    local branch="$3"
+    local commit="$4"
+    local dirty="$5"
+    local locked="$6"
+
+    # Build status indicators
+    local status_indicators=""
+    local path_display="${path/#$HOME/\~}"
+
+    # Check if current worktree
+    [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}*${NC} "
+
+    # Add other status indicators
+    [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
+    [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
+
+    printf "%s%-20s %s (%s) %s\n" "$status_indicators" "$branch" "$commit" "$path_display"
+
+    # Get commit subject and relative time
+    local commit_subject
+    local commit_time
+    commit_subject=$(git -C "$path" log -1 --format=%s "$commit" 2>/dev/null | head -1)
+    commit_time=$(git -C "$path" log -1 --format=%cr "$commit" 2>/dev/null)
+
+    # Format detailed status
+    local detailed_status="Clean"
+    local status_symbol="✓"
+    local locked_status="No"
+
+    if [[ "$dirty" == "true" ]]; then
+        # Get file counts for dirty worktree
+        local staged_count unstaged_count
+        staged_count=$(git -C "$path" diff --cached --name-only 2>/dev/null | wc -l)
+        unstaged_count=$(git -C "$path" diff --name-only 2>/dev/null | wc -l)
+        detailed_status="Modified ! ($staged_count staged, $unstaged_count unstaged)"
+        status_symbol="!"
+    fi
+
+    if [[ "$locked" == "true" ]]; then
+        locked_status="Yes (locked)"
+    fi
+
+    printf "  %s\n" "${commit_subject:-No commits}"
+    printf "  Status: %s %s | Locked: %s\n" "$detailed_status" "$status_symbol" "$locked_status"
+    printf "\n"
+}
+
+# Get worktree commit subject
+# Usage: get_worktree_commit_subject "/path/to/worktree"
+# Returns: Commit subject or empty string
+get_worktree_commit_subject() {
+    local worktree_path="$1"
+
+    if [[ -d "$worktree_path" ]]; then
+        git -C "$worktree_path" log -1 --format=%s 2>/dev/null | head -1
+    fi
+}
+
+# Get worktree commit time
+# Usage: get_worktree_commit_time "/path/to/worktree"
+# Returns: Relative time (e.g., "2 hours ago") or empty string
+get_worktree_commit_time() {
+    local worktree_path="$1"
+
+    if [[ -d "$worktree_path" ]]; then
+        git -C "$worktree_path" log -1 --format=%cr 2>/dev/null
+    fi
+}
+
+# Output worktree information in JSON format
+# Usage: output_worktree_json "$current_worktree" "$search_terms"
+# Returns: JSON formatted worktree data
+output_worktree_json() {
+    local current_worktree="$1"
+    local search_terms="$2"
+    declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
+
+    if ! get_worktrees worktree_paths branches commits status_dirty locked_status; then
+        printf '{"worktrees":[],"current":"%s","count":0}\n' "$current_worktree"
+        return 0
+    fi
+
+    local count=0
+    local first=true
+
+    printf '{"worktrees":['
+    for i in "${!worktree_paths[@]}"; do
+        local path="${worktree_paths[$i]}"
+        local branch="${branches[$i]}"
+        local commit="${commits[$i]}"
+        local dirty="${status_dirty[$i]}"
+        local locked="${locked_status[$i]}"
+        local is_current="false"
+
+        [[ "$path" == "$current_worktree" ]] && is_current="true"
+
+        # Apply search filter if provided
+        local show_worktree=true
+        if [[ -n "$search_terms" ]]; then
+            show_worktree=false
+            for term in $search_terms; do
+                if [[ "${path,,}" == *"${term,,}"* ]] || [[ "${branch,,}" == *"${term,,}"* ]]; then
+                    show_worktree=true
+                    break
+                fi
+            done
+        fi
+
+        # Only include worktree if it matches search criteria (or no search provided)
+        if $show_worktree; then
+            if ! $first; then
+                printf ','
+            fi
+            first=false
+
+            printf '{'
+            printf '"path":"%s",' "$path"
+            printf '"branch":"%s",' "$branch"
+            printf '"commit":"%s",' "$commit"
+            printf '"dirty":%s,' "$dirty"
+            printf '"locked":%s,' "$locked"
+            printf '"current":%s' "$is_current"
+            printf '}'
+            count=$((count + 1))
+        fi
+    done
+
+    printf '],"current":"%s","count":%d}\n' "$current_worktree" "$count"
+}

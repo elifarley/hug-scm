@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# Assume HUG_HOME is set (exported by hug or environment)
+# shellcheck source=git-config/lib/hug-common
+. "$HUG_HOME/git-config/lib/hug-common"
+# shellcheck source=git-config/lib/hug-git-kit
+. "$HUG_HOME/git-config/lib/hug-git-kit"
+# shellcheck source=git-config/lib/hug-git-worktree
+. "$HUG_HOME/git-config/lib/hug-git-worktree"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+show_help() {
+    cat << 'EOF'
+hug wtdel: Remove worktree safely
+
+USAGE:
+    hug wtdel [path] [options]
+    hug wtdel -h|--help
+
+ARGUMENTS:
+    [path]          Path to worktree to remove (optional, shows interactive menu)
+
+OPTIONS:
+    -f, --force     Skip confirmation prompts and remove even with uncommitted changes
+    --dry-run       Show what would be removed without actually removing
+    -h, --help      Show this help
+
+DESCRIPTION:
+    Removes a Git worktree safely. If no path is provided, shows an interactive
+    menu of all available worktrees for selection.
+
+    Safety features:
+    - Prevents removal of current worktree
+    - Warns about uncommitted changes (unless --force is used)
+    - Requires confirmation before deletion (unless --force is used)
+    - Automatically cleans up Git worktree metadata
+
+EXAMPLES:
+    hug wtdel                                 # Interactive selection of worktree to remove
+    hug wtdel ../worktrees-repo/feature-auth  # Remove specific worktree
+    hug wtdel ../feature-auth --dry-run       # Preview removal without doing it
+    hug wtdel ../feature-auth -f              # Force remove without confirmation
+
+SEE ALSO:
+    hug wt      List and switch between worktrees
+    hug wtc     Create worktree for existing branch
+
+FURTHER READING:
+    See 'git worktree remove --help' for underlying implementation details.
+EOF
+}
+
+show_interactive_removal_menu() {
+    declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
+
+    if ! get_worktrees worktree_paths branches commits status_dirty locked_status; then
+        info "No worktrees found."
+        return 1
+    fi
+
+    local current_worktree
+    current_worktree=$(get_current_worktree_path)
+
+    # Build menu items with context
+    declare -a menu_items=()
+    declare -a worktree_selection_paths=()
+
+    for i in "${!worktree_paths[@]}"; do
+        local path="${worktree_paths[$i]}"
+        local branch="${branches[$i]}"
+        local commit="${commits[$i]}"
+        local dirty="${status_dirty[$i]}"
+        local locked="${locked_status[$i]}"
+
+        # Skip current worktree (can't remove it)
+        if [[ "$path" == "$current_worktree" ]]; then
+            continue
+        fi
+
+        # Build status indicators
+        local status_indicators=""
+        [[ "$dirty" == "true" ]] && status_indicators="${YELLOW}[DIRTY]${NC} "
+        [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
+
+        # Format path relative to home if possible
+        local display_path
+        display_path="${path/#$HOME/\~}"
+
+        # Create menu item
+        local menu_item="${status_indicators}${branch} (${commit}) → ${display_path}"
+        menu_items+=("$menu_item")
+        worktree_selection_paths+=("$path")
+    done
+
+    if [[ ${#menu_items[@]} -eq 0 ]]; then
+        info "No removable worktrees found (only current worktree exists)."
+        return 1
+    fi
+
+    # Interactive selection
+    echo
+    printf "${BLUE}Select worktree to remove:${NC}\n"
+
+    local selected_index=-1
+
+    if [[ ${#menu_items[@]} -lt 10 ]]; then
+        # Show numbered menu for fewer worktrees
+        echo
+        for i in "${!menu_items[@]}"; do
+            printf "  %2d) %s\n" $((i + 1)) "${menu_items[i]}"
+        done
+        echo
+
+        # Get user selection
+        while true; do
+            printf "${BLUE}Enter number (1-%d) or press Enter to cancel:${NC} " ${#menu_items[@]}
+            read -r selection
+
+            if [[ -z "$selection" ]]; then
+                info "Worktree removal cancelled"
+                return 1
+            fi
+
+            if [[ "$selection" =~ ^[0-9]+$ ]] && [[ $selection -ge 1 ]] && [[ $selection -le ${#menu_items[@]} ]]; then
+                selected_index=$((selection - 1))
+                break
+            else
+                printf "${RED}Invalid selection. Please enter a number between 1 and %d.${NC}\n" ${#menu_items[@]}
+            fi
+        done
+    else
+        # Use gum filter for many worktrees
+        if gum_available; then
+            local selection_output
+            if selection_output=$(printf '%s\n' "${menu_items[@]}" | gum filter --header="Select worktree to remove (ESC to cancel)"); then
+                # Find the index of the selected item
+                for i in "${!menu_items[@]}"; do
+                    if [[ "${menu_items[i]}" == "$selection_output" ]]; then
+                        selected_index=$i
+                        break
+                    fi
+                done
+            else
+                info "Worktree removal cancelled"
+                return 1
+            fi
+        else
+            # Fallback to numbered menu even for many items if gum is not available
+            echo
+            for i in "${!menu_items[@]}"; do
+                printf "  %2d) %s\n" $((i + 1)) "${menu_items[i]}"
+            done
+            echo
+
+            while true; do
+                printf "${BLUE}Enter number (1-%d) or press Enter to cancel:${NC} " ${#menu_items[@]}
+                read -r selection
+
+                if [[ -z "$selection" ]]; then
+                    info "Worktree removal cancelled"
+                    return 1
+                fi
+
+                if [[ "$selection" =~ ^[0-9]+$ ]] && [[ $selection -ge 1 ]] && [[ $selection -le ${#menu_items[@]} ]]; then
+                    selected_index=$((selection - 1))
+                    break
+                else
+                    printf "${RED}Invalid selection. Please enter a number between 1 and %d.${NC}\n" ${#menu_items[@]}
+                fi
+            done
+        fi
+    fi
+
+    # Return selected path
+    if [[ $selected_index -ge 0 ]]; then
+        selected_path="${worktree_selection_paths[selected_index]}"
+        printf '%s' "$selected_path"
+        return 0
+    else
+        error "Invalid worktree selection"
+        return 1
+    fi
+}
+
+check_git_repo
+
+# Parse arguments using getopt
+set +e  # Temporarily disable exit on error to capture getopt failure
+PARSED=$(getopt --options hf --longoptions help,force,dry-run --name "hug wtdel" -- "$@" 2>&1)
+getopt_status=$?
+set -e  # Re-enable exit on error
+
+if [ $getopt_status -ne 0 ]; then
+  # getopt failed - print the error message if available
+  if [ -n "$PARSED" ]; then
+    echo "$PARSED" >&2
+  fi
+  exit 1
+fi
+
+eval set -- "$PARSED"
+
+# Initialize variables
+force=false
+dry_run=false
+worktree_path=""
+
+# Process options
+while true; do
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -f|--force)
+            force=true
+            shift
+            ;;
+        --dry-run)
+            dry_run=true
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            error "Internal error in option parsing"
+            ;;
+    esac
+done
+
+# Parse arguments
+if [[ $# -gt 1 ]]; then
+    error "Too many arguments. Usage: hug wtdel [path]. See 'hug wtdel --help'."
+fi
+
+if [[ $# -eq 1 ]]; then
+    worktree_path="$1"
+fi
+
+# Convert relative path to absolute if provided
+if [[ -n "$worktree_path" && ! "$worktree_path" = /* ]]; then
+    worktree_path="$(pwd)/$worktree_path"
+fi
+
+# If no path provided, show interactive menu
+if [[ -z "$worktree_path" ]]; then
+    worktree_path=$(show_interactive_removal_menu)
+    if [[ -z "$worktree_path" ]]; then
+        exit 0  # User cancelled
+    fi
+fi
+
+# Show what we're about to do
+echo
+printf "${BLUE}Worktree Removal Summary:${NC}\n"
+printf "  Path: %s\n" "${worktree_path/#$HOME/\~}"
+if "$dry_run"; then
+    printf "  Mode: %s\n" "DRY RUN"
+else
+    printf "  Mode: %s\n" "REMOVE"
+fi
+
+# Check for uncommitted changes and show warning
+if git -C "$worktree_path" diff --quiet 2>/dev/null && git -C "$worktree_path" diff --cached --quiet 2>/dev/null; then
+    printf "  Status: %s\n" "Clean"
+else
+    if $force; then
+        printf "  Status: %s\n" "${RED}Dirty (will be lost)${NC}"
+    else
+        printf "  Status: %s\n" "${YELLOW}Dirty (will be preserved)${NC}"
+    fi
+fi
+echo
+
+# Perform the removal
+remove_worktree "$worktree_path" "$force" "$dry_run"

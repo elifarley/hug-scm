@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-worktree; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat <<'EOF'
+hug wtll: List worktrees in long format, showing path, branch, commit subject, and detailed status.
+
+USAGE:
+  hug wtll [OPTIONS] [SEARCH_TERM]
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+  --json         Output in JSON format instead of human-readable text.
+
+DESCRIPTION:
+  Displays each worktree sorted alphabetically. The current worktree is highlighted in green and marked with an asterisk (*).
+  Each entry shows: path [branch] (short commit) commit subject [status indicators].
+
+  Status indicators:
+    [CURRENT] - The worktree you're currently in
+    [DIRTY]   - Worktree has uncommitted changes
+    [LOCKED]  - Worktree is locked (cannot be removed)
+
+  If a search term is provided, only worktrees containing the term (case-insensitive substring match on path or branch name) are displayed.
+
+EXAMPLES:
+  hug wtll                  # List all worktrees in long format
+  hug wtll feature          # List worktrees containing "feature"
+  hug wtll /home/user/project  # List worktrees containing that path
+  hug wtll --json           # Output worktree information in JSON format
+
+SEE ALSO:
+  hug wtl : For listing worktrees in short form
+  hug wt  : For interactive worktree selection and switching
+  hug wtdel : For removing worktrees safely
+EOF
+}
+
+# Parse arguments
+json_output=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json)
+      json_output=true
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      # Treat remaining arguments as search terms
+      break
+      ;;
+  esac
+done
+
+# Capture search terms
+search_terms="$*"
+
+# Early exit if not in Git repo
+check_git_repo
+
+# JSON output mode
+if $json_output; then
+  # Get current worktree path for JSON
+  current_worktree=$(get_current_worktree_path)
+  output_worktree_json "$current_worktree" "$search_terms"
+  exit 0
+fi
+
+# Get worktree data
+declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
+if ! get_worktrees worktree_paths branches commits status_dirty locked_status; then
+  printf "No worktrees found.\n" >&2
+  exit 1
+fi
+
+# Get current worktree path for comparison
+current_worktree=$(get_current_worktree_path)
+
+# Build and print worktree list in long format
+printf "${BLUE}Worktrees (long format):%s${NC}\n" ""
+for i in "${!worktree_paths[@]}"; do
+  path="${worktree_paths[$i]}"
+  branch="${branches[$i]}"
+  commit="${commits[$i]}"
+  dirty="${status_dirty[$i]}"
+  locked="${locked_status[$i]}"
+
+  # Apply search filter if provided
+  show_worktree=true
+  if [[ -n "$search_terms" ]]; then
+    show_worktree=false
+    for term in $search_terms; do
+      if [[ "${path,,}" == *"${term,,}"* ]] || [[ "${branch,,}" == *"${term,,}"* ]]; then
+        show_worktree=true
+        break
+      fi
+    done
+  fi
+
+  # Only show worktree if it matches search criteria (or no search provided)
+  if $show_worktree; then
+    format_worktree_long_line "$current_worktree" "$path" "$branch" "$commit" "$dirty" "$locked"
+  fi
+done

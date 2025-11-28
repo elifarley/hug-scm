@@ -64,6 +64,35 @@ hug bdel old-branch    # **B**ranch **DEL**ete (local)
 hug bdelr old-remote-branch  # **B**ranch **DEL**ete **R**emote
 ```
 
+## 🌳 Worktree Management (Parallel Development)
+```bash
+# Create worktree for existing branch
+hug wtc feature-auth     # **W**ork**T**ree **C**reate
+
+# Interactive worktree management
+hug wt                    # **W**ork**T**ree (menu + switching)
+
+# List worktrees
+hug wtl                   # **W**ork**T**ree **L**ist (short)
+hug wtll                  # **W**ork**T**ree **L**ong **L**ist (with commit details)
+
+# Switch to worktree directly
+hug wt ~/workspaces-project/feature-auth
+
+# Remove worktree (safe - checks for changes)
+hug wtdel feature-auth    # **W**ork**T**ree **DEL**ete
+
+# Worktree workflow example
+hug wtc feature-auth      # Create worktree
+hug wt ~/workspaces-project/feature-auth  # Switch to it
+# ... work on feature ...
+hug wtdel ~/workspaces-project/feature-auth  # Remove when done
+
+# JSON output for automation
+hug wtll --json | jq '.worktrees[] | select(.dirty == true)'
+```
+> **💡 Worktree Benefits**: No stashing needed, work on multiple features simultaneously, isolated working directories, easy context switching without losing uncommitted work.
+
 ## Syncing with Remote
 ```bash
 # Push current branch (sets upstream)

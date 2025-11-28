@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# Assume HUG_HOME is set (exported by hug or environment)
+# shellcheck source=git-config/lib/hug-common
+. "$HUG_HOME/git-config/lib/hug-common"
+# shellcheck source=git-config/lib/hug-git-kit
+. "$HUG_HOME/git-config/lib/hug-git-kit"
+# shellcheck source=git-config/lib/hug-git-worktree
+. "$HUG_HOME/git-config/lib/hug-git-worktree"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+show_help() {
+    cat << 'EOF'
+hug wtc: Create worktree for existing branch
+
+USAGE:
+    hug wtc <branch> [path] [options]
+    hug wtc -h|--help
+
+ARGUMENTS:
+    <branch>        Name of existing branch to create worktree for
+    [path]          Custom path for worktree (optional, auto-generated if not provided)
+
+OPTIONS:
+    -f, --force     Skip confirmation prompts
+    --dry-run       Show what would be done without creating the worktree
+    -h, --help      Show this help
+
+DESCRIPTION:
+    Creates a new Git worktree for the specified branch. Worktrees allow you to
+    work on multiple branches simultaneously without context switching overhead.
+
+    If no path is provided, generates a smart default path outside the main
+    repository: ../worktrees-<repo>/<branch>
+
+    The branch must exist locally and not be checked out in another worktree.
+
+EXAMPLES:
+    hug wtc feature-auth                    # Create worktree with auto-generated path
+    hug wtc feature-auth ~/work/feature     # Create worktree at custom path
+    hug wtc feature-auth --dry-run          # Preview creation without doing it
+    hug wtc feature-auth -f                 # Create without confirmation
+
+SEE ALSO:
+    hug wt      List and switch between worktrees
+    hug wtr     Remove worktree safely
+
+FURTHER READING:
+    See 'git worktree add --help' for underlying implementation details.
+EOF
+}
+
+check_git_repo
+
+# Parse arguments using getopt
+set +e  # Temporarily disable exit on error to capture getopt failure
+PARSED=$(getopt --options hf --longoptions help,force,dry-run --name "hug wtc" -- "$@" 2>&1)
+getopt_status=$?
+set -e  # Re-enable exit on error
+
+if [ $getopt_status -ne 0 ]; then
+  # getopt failed - print the error message if available
+  if [ -n "$PARSED" ]; then
+    echo "$PARSED" >&2
+  fi
+  exit 1
+fi
+
+eval set -- "$PARSED"
+
+# Initialize variables
+force=false
+dry_run=false
+
+# Process options
+while true; do
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -f|--force)
+            force=true
+            shift
+            ;;
+        --dry-run)
+            dry_run=true
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            error "Internal error in option parsing"
+            ;;
+    esac
+done
+
+# Parse arguments
+if [[ $# -eq 0 ]]; then
+    error "Branch name is required. See 'hug wtc --help'."
+fi
+
+if [[ $# -gt 2 ]]; then
+    error "Too many arguments. Usage: hug wtc <branch> [path]. See 'hug wtc --help'."
+fi
+
+branch_name="$1"
+worktree_path="${2:-}"
+
+# Generate path if not provided
+if [[ -z "$worktree_path" ]]; then
+    worktree_path=$(generate_worktree_path "$branch_name")
+
+    # Ensure path is unique (handle conflicts)
+    if [[ -e "$worktree_path" ]]; then
+        worktree_path=$(generate_unique_worktree_path "$branch_name")
+        info "Default path exists, using: $worktree_path"
+    fi
+fi
+
+# Convert relative path to absolute for validation
+if [[ ! "$worktree_path" = /* ]]; then
+    worktree_path="$(pwd)/$worktree_path"
+fi
+
+# Show what we're about to do
+echo
+printf "${BLUE}Worktree Creation Summary:${NC}\n"
+printf "  Branch: %s\n" "$branch_name"
+printf "  Path: %s\n" "${worktree_path/#$HOME/\~}"
+if "$dry_run"; then
+    printf "  Mode: %s\n" "DRY RUN"
+else
+    printf "  Mode: %s\n" "CREATE"
+fi
+echo
+
+# Perform the creation
+create_worktree "$branch_name" "$worktree_path" "$force" "$dry_run"

@@ -18,6 +18,7 @@ This table is the **authoritative source** for Hug's command organization. All c
 |--------|----------|-------------|--------------|-------------|
 | `h*` | HEAD Operations | Undo, rewind, and inspect commits without losing work | `hug h back`, `hug h undo`, `hug h files`, `hug h steps` | **H**EAD |
 | `w*` | Working Directory | Manage local changes: discard, clean, restore, park/unpark work | `hug w get`, `hug w wip`, `hug w zap`, `hug w purge` | **W**orking dir |
+| `wt*` | Worktree Management | Create, switch, list, remove worktrees for parallel development | `hug wt`, `hug wtc`, `hug wtl`, `hug wtll`, `hug wtdel` | **WT**orktree |
 | `s*` | Status & Staging | View repo state: summaries, diffs, staged/unstaged changes | `hug ss`, `hug su`, `hug sw`, `hug sx` | **S**tatus |
 | `a*` | Staging | Stage changes for commit: tracked, all, or interactive | `hug a`, `hug aa`, `hug ai`, `hug ap` | **A**dd/stage |
 | `b*` | Branching | Create, switch, list, delete, sync branches | `hug b`, `hug bc`, `hug bl`, `hug br` | **B**ranch |
@@ -59,6 +60,12 @@ Hug Commands
 │   ├── w wips         # Park work & stay on new WIP branch
 │   ├── w unwip        # Integrate WIP branch into current
 │   └── w wipdel       # Delete WIP branch
+├── wt* (Worktrees: Parallel Development)
+│   ├── wt             # Interactive worktree management
+│   ├── wtc <branch>   # Create worktree for branch
+│   ├── wtl            # List worktrees (short format)
+│   ├── wtll           # List worktrees (long format with details)
+│   └── wtdel [path]   # Remove worktree safely
 ├── s* (Status: View State)
 │   ├── s            # Quick status
 │   ├── sl           # Status + List tracked

@@ -17,6 +17,9 @@
 # . "$HUG_HOME/git-config/lib/hug-common"
 # # shellcheck source=git-config/lib/hug-git-kit
 # . "$HUG_HOME/git-config/lib/hug-git-kit"
+# # For worktree commands, also source:
+# # shellcheck source=git-config/lib/hug-git-worktree
+# . "$HUG_HOME/git-config/lib/hug-git-worktree"
 # set -euo pipefail  # Exit on error, undefined vars, pipe failures
 #
 # This ensures:
@@ -32,6 +35,9 @@
 # . "$HUG_HOME/hg-config/lib/hug-common"
 # # shellcheck source=hg-config/lib/hug-hg-kit
 # . "$HUG_HOME/hg-config/lib/hug-hg-kit"
+# # For worktree commands, also source (Note: Mercurial worktree support planned):
+# # shellcheck source=git-config/lib/hug-git-worktree
+# . "$HUG_HOME/git-config/lib/hug-git-worktree"
 # set -euo pipefail  # Exit on error, undefined vars, pipe failures
 #
 ################################################################################

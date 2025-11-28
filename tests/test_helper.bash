@@ -791,3 +791,218 @@ assert_json_contains() {
   local search_term="$2"
   echo "$output" | jq -e "$jq_path | contains(\"$search_term\")" >/dev/null || fail "$jq_path does not contain '$search_term'"
 }
+
+################################################################################
+# Worktree Test Helpers
+################################################################################
+
+# Create a test worktree for the specified branch
+# Usage: worktree_path=$(create_test_worktree "feature-branch" "/path/to/repo")
+# Returns: Path to the created worktree
+create_test_worktree() {
+  local branch="$1"
+  local test_repo_path="$2"
+
+  # Ensure branch exists in test repo
+  (
+    cd "$test_repo_path" || { echo "Failed to cd to $test_repo_path" >&2; exit 1; }
+
+    # Create branch if it doesn't exist
+    if ! git rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
+      git checkout -q -b "$branch" 2>/dev/null || {
+        git checkout -q master 2>/dev/null || git checkout -q main 2>/dev/null
+        git checkout -q -b "$branch"
+      }
+
+      # Add a commit to make the branch distinct
+      echo "Test content for $branch" > "test-${branch}.txt"
+      git add "test-${branch}.txt"
+      git_commit_deterministic "Add test content for $branch"
+    fi
+  )
+
+  # Create worktree path outside the repository
+  local worktree_path="${test_repo_path}-wt-${branch}"
+
+  # Create the worktree
+  (
+    cd "$test_repo_path" || { echo "Failed to cd to $test_repo_path" >&2; exit 1; }
+    git worktree add "$worktree_path" "$branch" >/dev/null 2>&1 || {
+      echo "Failed to create worktree for branch $branch" >&2
+      exit 1
+    }
+  )
+
+  echo "$worktree_path"
+}
+
+# Create multiple test worktrees for a repository
+# Usage: create_test_worktrees "/path/to/repo" "branch1" "branch2" "branch3"
+# Creates worktrees for all specified branches
+create_test_worktrees() {
+  local test_repo_path="$1"
+  shift
+
+  local -a created_worktrees=()
+
+  for branch in "$@"; do
+    local worktree_path
+    worktree_path=$(create_test_worktree "$branch" "$test_repo_path")
+    created_worktrees+=("$worktree_path")
+  done
+
+  # Return paths as space-separated string
+  printf '%s ' "${created_worktrees[@]}"
+}
+
+# Clean up all test worktrees for a repository
+# Usage: cleanup_test_worktrees "/path/to/repo"
+cleanup_test_worktrees() {
+  local test_repo="$1"
+
+  # Remove all worktrees associated with the test repository
+  if [[ -d "$test_repo" ]]; then
+    git -C "$test_repo" worktree list --porcelain 2>/dev/null | grep "^worktree " | cut -d' ' -f2 | while read -r wt; do
+      if [[ "$wt" != "$test_repo" && -d "$wt" ]]; then
+        rm -rf "$wt"
+      fi
+    done
+
+    # Prune worktree metadata
+    git -C "$test_repo" worktree prune 2>/dev/null || true
+  fi
+}
+
+# Create a test worktree with uncommitted changes
+# Usage: worktree_path=$(create_test_worktree_with_changes "feature-branch" "/path/to/repo")
+create_test_worktree_with_changes() {
+  local branch="$1"
+  local test_repo_path="$2"
+
+  local worktree_path
+  worktree_path=$(create_test_worktree "$branch" "$test_repo_path")
+
+  # Add uncommitted changes to the worktree
+  (
+    cd "$worktree_path" || { echo "Failed to cd to $worktree_path" >&2; exit 1; }
+    echo "Uncommitted changes in $branch" > "uncommitted-${branch}.txt"
+    git add "uncommitted-${branch}.txt"
+    # Note: Don't commit - leave it staged for testing
+  )
+
+  echo "$worktree_path"
+}
+
+# Create a test worktree with dirty working directory
+# Usage: worktree_path=$(create_test_worktree_with_dirty_changes "feature-branch" "/path/to/repo")
+create_test_worktree_with_dirty_changes() {
+  local branch="$1"
+  local test_repo_path="$2"
+
+  local worktree_path
+  worktree_path=$(create_test_worktree "$branch" "$test_repo_path")
+
+  # Add uncommitted (unstaged) changes to the worktree
+  (
+    cd "$worktree_path" || { echo "Failed to cd to $worktree_path" >&2; exit 1; }
+    echo "Dirty changes in $branch" > "dirty-${branch}.txt"
+    # Note: Don't even stage - leave it completely unstaged
+  )
+
+  echo "$worktree_path"
+}
+
+# Assert that a worktree exists and is valid
+# Usage: assert_worktree_exists "/path/to/worktree"
+assert_worktree_exists() {
+  local worktree_path="$1"
+
+  assert_dir_exists "$worktree_path"
+
+  # Check it's a valid git worktree
+  [[ -d "$worktree_path/.git" ]] || fail "Worktree $worktree_path is not a valid git repository"
+
+  # Check it's listed in git worktree list
+  local found=false
+  while IFS= read -r line; do
+    if [[ "$line" == "worktree $worktree_path" ]]; then
+      found=true
+      break
+    fi
+  done < <(git worktree list --porcelain 2>/dev/null)
+
+  $found || fail "Worktree $worktree_path not found in git worktree list"
+}
+
+# Assert that a worktree does not exist
+# Usage: assert_worktree_not_exists "/path/to/worktree"
+assert_worktree_not_exists() {
+  local worktree_path="$1"
+
+  assert_dir_not_exists "$worktree_path"
+
+  # Check it's not listed in git worktree list
+  local found=false
+  while IFS= read -r line; do
+    if [[ "$line" == "worktree $worktree_path" ]]; then
+      found=true
+      break
+    fi
+  done < <(git worktree list --porcelain 2>/dev/null)
+
+  ! $found || fail "Worktree $worktree_path still found in git worktree list"
+}
+
+# Assert that a worktree has the specified branch checked out
+# Usage: assert_worktree_branch "/path/to/worktree" "feature-branch"
+assert_worktree_branch() {
+  local worktree_path="$1"
+  local expected_branch="$2"
+
+  local actual_branch
+  actual_branch=$(git -C "$worktree_path" branch --show-current 2>/dev/null || echo "")
+
+  [[ "$actual_branch" == "$expected_branch" ]] || fail "Worktree $worktree_path has branch '$actual_branch', expected '$expected_branch'"
+}
+
+# Assert that a worktree is clean (no uncommitted changes)
+# Usage: assert_worktree_clean "/path/to/worktree"
+assert_worktree_clean() {
+  local worktree_path="$1"
+
+  git -C "$worktree_path" diff --quiet && git -C "$worktree_path" diff --cached --quiet || \
+    fail "Worktree $worktree_path has uncommitted changes"
+}
+
+# Assert that a worktree is dirty (has uncommitted changes)
+# Usage: assert_worktree_dirty "/path/to/worktree"
+assert_worktree_dirty() {
+  local worktree_path="$1"
+
+  git -C "$worktree_path" diff --quiet && git -C "$worktree_path" diff --cached --quiet && \
+    fail "Worktree $worktree_path is clean, expected dirty"
+}
+
+# Get the number of worktrees for the current repository
+# Usage: count=$(get_worktree_count)
+get_worktree_count() {
+  git worktree list 2>/dev/null | wc -l
+}
+
+# Assert that the repository has the expected number of worktrees
+# Usage: assert_worktree_count 3
+assert_worktree_count() {
+  local expected_count="$1"
+  local actual_count
+  actual_count=$(get_worktree_count)
+
+  [[ "$actual_count" == "$expected_count" ]] || \
+    fail "Repository has $actual_count worktrees, expected $expected_count"
+}
+
+# Get all worktree paths for the current repository
+# Usage: worktree_paths=$(get_worktree_paths)
+# Returns: Space-separated list of worktree paths
+get_worktree_paths() {
+  git worktree list --porcelain 2>/dev/null | grep "^worktree " | cut -d' ' -f2 | tr '\n' ' '
+}
