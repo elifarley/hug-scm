@@ -4,12 +4,12 @@
 . "$HUG_HOME/git-config/lib/hug-common"
 # shellcheck source=git-config/lib/hug-git-kit
 . "$HUG_HOME/git-config/lib/hug-git-kit"
+# shellcheck source=git-config/lib/hug-git-branch
+. "$HUG_HOME/git-config/lib/hug-git-branch"
 # shellcheck source=git-config/lib/hug-git-worktree
 . "$HUG_HOME/git-config/lib/hug-git-worktree"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
-
-# TODO Implement interactive branch selection menu, similar to what we have in `git-b`
 
 show_help() {
     cat << 'EOF'
@@ -21,8 +21,8 @@ USAGE:
     hug wtc -h|--help
 
 ARGUMENTS:
-    [branch]        Name of existing branch to create worktree for. If equal to `--`, interactive branch selection menu is displayed.
-    [path]          Custom path for worktree (optional, auto-generated if not provided)
+    [branch]        Name of existing branch to create worktree for. If omitted or `--`, interactive branch selection menu is displayed.
+    [path]          Custom path for worktree (optional, auto-generated if not provided).
 
 OPTIONS:
     -f, --force     Skip confirmation prompts
@@ -38,10 +38,13 @@ DESCRIPTION:
 
     The branch must exist locally and not be checked out in another worktree.
 
+    Interactive mode shows only branches that don't already have worktrees,
+    preventing duplicate worktree creation errors.
+
 EXAMPLES:
-    hug wtc                                 # TODO Create worktree with auto-generated path. Interactive menu is used
+    hug wtc                                 # Interactive branch selection, auto-generated path
+    hug wtc --                              # Interactive branch selection, auto-generated path
     hug wtc feature-auth                    # Create worktree with auto-generated path
-    hug wtc feature-auth -- ~/work/feature  # TODO Create worktree at custom path. Interactive menu is used.
     hug wtc feature-auth ~/work/feature     # Create worktree at custom path
     hug wtc feature-auth --dry-run          # Preview creation without doing it
     hug wtc feature-auth -f                 # Create without confirmation
@@ -104,15 +107,77 @@ done
 
 # Parse arguments
 if [[ $# -eq 0 ]]; then
-    error "TODO: Branch name is optional, but the interactive branch selection hasn't been implemented yet."
-fi
-
-if [[ $# -gt 2 ]]; then
+    # No arguments provided - show interactive branch selection
+    branch_name=""
+    worktree_path=""
+elif [[ $# -eq 1 ]]; then
+    if [[ "$1" == "--" ]]; then
+        # Interactive branch selection
+        branch_name=""
+        worktree_path=""
+    else
+        # Branch name provided
+        branch_name="$1"
+        worktree_path=""
+    fi
+elif [[ $# -eq 2 ]]; then
+    if [[ "$1" == "--" ]]; then
+        # Interactive branch selection, custom path provided
+        branch_name=""
+        worktree_path="$2"
+    else
+        # Branch name and path both provided
+        branch_name="$1"
+        worktree_path="$2"
+    fi
+elif [[ $# -gt 2 ]]; then
     error "Too many arguments. Usage: hug wtc [branch] [path]. See 'hug wtc --help'."
+    exit 1
 fi
 
-branch_name="$1"
-worktree_path="${2:-}"
+# Interactive branch selection if needed
+if [[ -z "$branch_name" ]]; then
+    # Show interactive branch selection using existing branch menu functions
+    declare -a branches=() hashes=() subjects=() tracks=()
+    max_len=""
+    current_branch=""
+    selected_branch=""
+
+    if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects "true"; then
+        error "No local branches found."
+        exit 1
+    fi
+
+    # Filter out branches that already have worktrees
+    declare -a available_branches=() available_hashes=() available_subjects=() available_tracks=()
+    for ((i=0; i<${#branches[@]}; i++)); do
+        branch="${branches[i]}"
+        if ! branch_has_worktree "$branch"; then
+            available_branches+=("$branch")
+            available_hashes+=("${hashes[i]}")
+            available_subjects+=("${subjects[i]}")
+            available_tracks+=("${tracks[i]}")
+        fi
+    done
+
+    if [[ ${#available_branches[@]} -eq 0 ]]; then
+        error "All branches already have worktrees. Use 'hug wtl' to see existing worktrees."
+        exit 1
+    fi
+
+    printf "${BLUE}Select branch for new worktree:${NC}\n"
+
+    # Print interactive menu and get selection
+    print_interactive_branch_menu selected_branch "$current_branch" "$max_len" available_hashes available_branches available_tracks available_subjects
+
+    # If user cancelled, print a message and exit
+    if [[ -z "$selected_branch" ]]; then
+        info "Worktree creation cancelled."
+        exit 0
+    fi
+
+    branch_name="$selected_branch"
+fi
 
 # Generate path if not provided
 if [[ -z "$worktree_path" ]]; then
