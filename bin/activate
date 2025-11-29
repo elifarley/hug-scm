@@ -16,6 +16,28 @@ fi
 
 complete -F _hug h
 
+# Worktree switching function - this can change the current directory
+# The underlying git-wt script outputs WORKTREE_PATH:/path/to/worktree for shell integration
+wt() {
+    local worktree_path
+    worktree_path=$(git-wt "$@" | grep "^WORKTREE_PATH:" | cut -d: -f2-)
+
+    if [[ -n "$worktree_path" && -d "$worktree_path" ]]; then
+        cd "$worktree_path" || {
+            echo "Failed to change to worktree directory: $worktree_path" >&2
+            return 1
+        }
+        # Show current context after switching
+        local current_branch
+        current_branch=$(git branch --show-current 2>/dev/null || echo "detached")
+        echo "✓ Switched to worktree: ${worktree_path/#$HOME/~}"
+        echo "  Current branch: $current_branch"
+    else
+        # No worktree selected or git-wt failed/returned nothing
+        return 1
+    fi
+}
+
 # Hug Fish completion
 
 test -r "$HUG_HOME/completions/hug.fish" && \

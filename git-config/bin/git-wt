@@ -15,10 +15,12 @@ USAGE:
 OPTIONS:
   -h, --help            Show this help message and exit.
   --json                Output worktree information in JSON format.
-  --summary             Show detailed worktree summary and exit.
 
 DESCRIPTION:
-  If a worktree path is provided, switches to that worktree directly.
+  Selects a worktree to switch to. This command is used by the 'wt' shell function
+  which performs the actual directory change.
+
+  If a worktree path is provided, selects that worktree directly.
   If no path argument is given, displays an interactive menu of all worktrees.
   Each entry shows: branch name (short commit), status indicators, and path.
   The current worktree is highlighted with [CURRENT] and marked in green.
@@ -31,11 +33,14 @@ DESCRIPTION:
   For repositories with 10 or more worktrees, uses gum filter (if installed) for
   easier searching and selection. Otherwise, displays a numbered list.
 
+  Note: This script outputs WORKTREE_PATH:/path/to/worktree for shell integration.
+  Use the 'wt' command (shell function) to actually change directories.
+
 EXAMPLES:
-  hug wt                    # Show interactive menu of worktrees
-  hug wt ../feature-auth    # Switch to feature-auth worktree
-  hug wt --json             # Output worktree info in JSON format
-  hug wt --summary          # Show detailed worktree summary
+  wt                      # Show interactive menu of worktrees and switch to selection
+  wt ../feature-auth     # Switch to feature-auth worktree directly
+  hug wt                  # Show interactive menu (use 'wt' to actually switch)
+  hug wt --json           # Output worktree info in JSON format
 
 SEE ALSO:
   hug wtc    : Create worktree for existing branch
@@ -48,7 +53,6 @@ EOF
 
 # Parse flags
 json_output=false
-show_summary=false
 declare -a args=()
 
 while [[ $# -gt 0 ]]; do
@@ -61,11 +65,7 @@ while [[ $# -gt 0 ]]; do
       json_output=true
       shift
       ;;
-    --summary)
-      show_summary=true
-      shift
-      ;;
-    -*)
+        -*)
       error "Unknown option: $1"
       show_help
       exit 1
@@ -80,11 +80,6 @@ done
 # Early exit if not in Git repo
 check_git_repo
 
-# Handle summary flag
-if "$show_summary"; then
-  show_worktree_summary
-  exit 0
-fi
 
 # Handle JSON output
 if "$json_output"; then

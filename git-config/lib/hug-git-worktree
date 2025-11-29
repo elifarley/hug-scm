@@ -475,18 +475,18 @@ switch_to_worktree() {
         return 1
     fi
 
-    # Try to change directory
-    if cd "$path" 2>/dev/null; then
-        local current_branch
-        current_branch=$(git branch --show-current 2>/dev/null || echo "detached")
-        success "Switched to worktree: $path"
-        info "Current branch: $current_branch"
-        return 0
-    else
-        error "Cannot switch to worktree: $path"
-        info "Check directory permissions and accessibility"
-        return 1
-    fi
+    # Note: This script cannot change the parent shell's working directory
+    # The shell function 'wt' in the activation script will handle the actual cd
+    # Output the path for shell integration
+    printf "WORKTREE_PATH:%s\n" "$path"
+
+    local display_path="${path/#$HOME/\~}"
+    local current_branch
+    current_branch=$(git -C "$path" branch --show-current 2>/dev/null || echo "detached")
+
+    success "Worktree selected: $display_path"
+    info "Current branch: $current_branch"
+    return 0
 }
 
 # Prune orphaned worktrees (those pointing to non-existent directories)
