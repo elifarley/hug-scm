@@ -90,20 +90,19 @@ if "$json_output"; then
     exit 0
   fi
 
-  local current_worktree
   current_worktree=$(get_current_worktree_path)
-  local count=${#worktree_paths[@]}
+  count=${#worktree_paths[@]}
 
   printf '{'
   printf '"worktrees":['
 
   for i in "${!worktree_paths[@]}"; do
-    local path="${worktree_paths[$i]}"
-    local branch="${branches[$i]}"
-    local commit="${commits[$i]}"
-    local dirty="${status_dirty[$i]}"
-    local locked="${locked_status[$i]}"
-    local is_current="false"
+    path="${worktree_paths[$i]}"
+    branch="${branches[$i]}"
+    commit="${commits[$i]}"
+    dirty="${status_dirty[$i]}"
+    locked="${locked_status[$i]}"
+    is_current="false"
 
     [[ "$path" == "$current_worktree" ]] && is_current="true"
 

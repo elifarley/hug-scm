@@ -69,6 +69,8 @@ hug wtl [OPTIONS] [SEARCH_TERM]
 ```bash
 hug wtl                              # List all worktrees
 hug wtl feature                      # Show worktrees containing "feature"
+hug wtl feature auth                 # Show worktrees with "feature" OR "auth"
+hug wtl bug fix                       # Show worktrees with "bug" OR "fix"
 hug wtl /home/user/project           # Show worktrees containing that path
 hug wtl --json                       # Output in JSON format
 ```
@@ -97,6 +99,8 @@ hug wtll [OPTIONS] [SEARCH_TERM]
 ```bash
 hug wtll                             # List all worktrees with details
 hug wtll feature                     # Show worktrees containing "feature"
+hug wtll feature auth                # Show worktrees with "feature" OR "auth"
+hug wtll bug fix                     # Show worktrees with "bug" OR "fix"
 hug wtll --json                      # Output detailed information in JSON format
 ```
 
@@ -117,20 +121,44 @@ feature-auth         a3f2b1c (~/IdeaProjects/worktrees-hug-scm/feature-auth)
 Displays detailed information about worktrees in a comprehensive, readable format with tree-style layout.
 
 ```bash
-hug wtsh [WORKTREE_PATH]
+hug wtsh [OPTIONS] [SEARCH_TERM]
+hug wtsh --           # Interactive worktree selection
 ```
-
-**Arguments:**
-- `[WORKTREE_PATH]`: Optional path or search term to show specific worktree details
 
 **Options:**
 - `-h, --help`: Show help message
+- `-a, --all`: Show all worktrees (preserves current behavior)
+
+**Behavior:**
+
+**DEFAULT (no arguments):**
+  Shows details for the CURRENT worktree only. This provides focused information
+  about your current working context.
+
+**--all FLAG:**
+  Shows details for ALL worktrees (preserves existing hug wtsh behavior).
+
+**-- FLAG (interactive mode):**
+  Presents an interactive menu to select which worktree to display.
+  Uses gum filter for enhanced selection when available.
+
+**SEARCH TERMS:**
+  Filter worktrees by path or branch name (case-insensitive).
+  Supports multiple search terms with OR logic.
 
 **Examples:**
 ```bash
-hug wtsh                                    # Show details for all worktrees
-hug wtsh ~/project-feature                 # Show details for specific worktree
-hug wtsh feature-worktree                  # Show details for worktree containing "feature-worktree"
+hug wtsh                   # Current worktree only (new default)
+hug wtsh --all             # All worktrees (preserves current behavior)
+hug wtsh -a                # All worktrees (short alias for --all)
+hug wtsh --                # Interactive worktree selection
+
+# Multi-term search examples
+hug wtsh feature           # Search by single term
+hug wtsh feature auth      # Search for worktrees with "feature" OR "auth"
+hug wtsh bug fix           # Search for worktrees with "bug" OR "fix"
+hug wtsh /path/to/project  # Search by specific path
+hug wtsh project home     # Search for worktrees with "project" OR "home"
 ```
 
 **Output Format:**

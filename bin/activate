@@ -19,21 +19,43 @@ complete -F _hug h
 # Worktree switching function - this can change the current directory
 # The underlying git-wt script outputs WORKTREE_PATH:/path/to/worktree for shell integration
 wt() {
+    local output
     local worktree_path
-    worktree_path=$(git-wt "$@" | grep "^WORKTREE_PATH:" | cut -d: -f2-)
 
-    if [[ -n "$worktree_path" && -d "$worktree_path" ]]; then
+    # Capture all output from git-wt
+    output=$(git-wt "$@")
+    local exit_code=$?
+
+    # If git-wt failed, return its exit code
+    if [[ $exit_code -ne 0 ]]; then
+        echo "$output" >&2
+        return $exit_code
+    fi
+
+    # Extract worktree path from output
+    worktree_path=$(echo "$output" | grep "^WORKTREE_PATH:" | cut -d: -f2-)
+
+    # If no worktree path found, just show the output (likely help/info)
+    if [[ -z "$worktree_path" ]]; then
+        echo "$output"
+        return 0
+    fi
+
+    # If worktree path exists and is a directory, switch to it
+    if [[ -d "$worktree_path" ]]; then
         cd "$worktree_path" || {
             echo "Failed to change to worktree directory: $worktree_path" >&2
             return 1
         }
-        # Show current context after switching
+        # Show current context after switching (filter out the WORKTREE_PATH line)
+        echo "$output" | grep -v "^WORKTREE_PATH:"
+
         local current_branch
         current_branch=$(git branch --show-current 2>/dev/null || echo "detached")
         echo "✓ Switched to worktree: ${worktree_path/#$HOME/~}"
         echo "  Current branch: $current_branch"
     else
-        # No worktree selected or git-wt failed/returned nothing
+        echo "Worktree directory not found: $worktree_path" >&2
         return 1
     fi
 }
