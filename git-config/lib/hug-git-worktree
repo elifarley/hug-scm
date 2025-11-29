@@ -231,14 +231,16 @@ validate_worktree_creation_path() {
         return 1
     fi
 
-    # Check parent directory exists and is writable
+    # Check and create parent directory if needed
     local parent_dir
     parent_dir=$(dirname "$path")
 
     if [[ ! -d "$parent_dir" ]]; then
-        error "Parent directory does not exist: $parent_dir"
-        info "Create it first: mkdir -p '$parent_dir'"
-        return 1
+        info "Creating parent directory: $parent_dir"
+        if ! mkdir -p "$parent_dir"; then
+            error "Failed to create parent directory: $parent_dir"
+            return 1
+        fi
     fi
 
     if [[ ! -w "$parent_dir" ]]; then
@@ -249,7 +251,13 @@ validate_worktree_creation_path() {
     # Check that target path is not inside main repository
     local main_repo
     main_repo=$(get_current_worktree_path)
-    if [[ "$path" == "$main_repo"* ]]; then
+
+    # Normalize paths for comparison
+    main_repo="${main_repo%/}"
+    path="${path%/}"
+
+    # Check if path would be a subdirectory of main repository
+    if [[ "$path" == "$main_repo"/* ]]; then
         error "Cannot create worktree inside main repository: $path"
         info "Choose a location outside the main repository"
         return 1
@@ -281,7 +289,7 @@ generate_worktree_path() {
     safe_branch=$(printf '%s' "$branch" | sed 's|/|-|g' | sed 's|\.|-|g' | tr '[:upper:]' '[:lower:]')
 
     # Generate path outside repository
-    printf '%s/worktrees-%s/%s' "$(dirname "$(get_current_worktree_path)")" "$repo_name" "$safe_branch"
+    printf '%s/%s-worktrees/%s' "$(dirname "$(get_current_worktree_path)")" "$repo_name" "$safe_branch"
 }
 
 # Generate unique worktree path (handles conflicts)
