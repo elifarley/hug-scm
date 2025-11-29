@@ -5,6 +5,9 @@
 # Functions:
 #   - dedupe_array: remove duplicate entries while preserving order.
 #   - print_list: render a titled list with a count.
+#   - search_items_by_fields: universal multi-field search functionality.
+#   - search_worktree: specialized worktree search (path + branch).
+#   - search_branch_line: branch line search (matches whole output line).
 
 
 ################################################################################
@@ -48,4 +51,95 @@ print_list() {
   for item in "$@"; do
     printf '  %s\n' "$item"
   done
+}
+
+################################################################################
+# Universal Search Functions
+################################################################################
+
+# Core universal search function for multi-field matching
+# Usage: search_items_by_fields "search_terms" "logic_type" field1 field2 ...
+# Parameters:
+#   $1 - Search terms (space-separated, case-insensitive)
+#   $2 - Logic type: "OR" (any term matches) or "AND" (all terms match)
+#   $@+ - Field values to search against
+# Returns: 0 if match found according to logic, 1 otherwise
+search_items_by_fields() {
+  local search_terms="$1"
+  local logic_type="${2:-OR}"
+  shift 2
+
+  # Early return if no search terms provided
+  if [[ -z "$search_terms" ]]; then
+    return 0  # No search terms means match everything
+  fi
+
+  # Split search terms into array
+  local -a terms=($search_terms)
+  local term_count=${#terms[@]}
+
+  # For OR logic: return true if any term matches any field
+  if [[ "$logic_type" == "OR" ]]; then
+    local term
+    for term in "${terms[@]}"; do
+      local field
+      for field in "$@"; do
+        if [[ "${field,,}" == *"${term,,}"* ]]; then
+          return 0  # Match found
+        fi
+      done
+    done
+    return 1  # No matches found
+  fi
+
+  # For AND logic: all terms must match at least one field each
+  local term
+  for term in "${terms[@]}"; do
+    local term_matched=false
+    local field
+    for field in "$@"; do
+      if [[ "${field,,}" == *"${term,,}"* ]]; then
+        term_matched=true
+        break
+      fi
+    done
+
+    if [[ "$term_matched" == "false" ]]; then
+      return 1  # This term didn't match any field
+    fi
+  done
+
+  return 0  # All terms matched
+}
+
+# Specialized worktree search (path + branch fields)
+# Usage: search_worktree "path" "branch" "search_terms" "logic_type"
+# Parameters:
+#   $1 - Worktree path
+#   $2 - Worktree branch name
+#   $3 - Search terms (space-separated)
+#   $4 - Logic type (optional, defaults to "OR")
+# Returns: 0 if worktree matches search criteria, 1 otherwise
+search_worktree() {
+  local path="$1"
+  local branch="$2"
+  local search_terms="$3"
+  local logic_type="${4:-OR}"
+
+  search_items_by_fields "$search_terms" "$logic_type" "$path" "$branch"
+}
+
+# Branch line search (matches whole output line)
+# Usage: search_branch_line "branch_line" "search_terms" "logic_type"
+# Parameters:
+#   $1 - Full branch output line to search
+#   $2 - Search terms (space-separated)
+#   $3 - Logic type (optional, defaults to "OR")
+# Returns: 0 if branch line matches search criteria, 1 otherwise
+search_branch_line() {
+  local branch_line="$1"
+  local search_terms="$2"
+  local logic_type="${3:-OR}"
+
+  search_items_by_fields "$search_terms" "$logic_type" "$branch_line"
 }

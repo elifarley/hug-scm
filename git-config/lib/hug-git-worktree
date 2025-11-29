@@ -746,16 +746,15 @@ output_worktree_json() {
 
         [[ "$path" == "$current_worktree" ]] && is_current="true"
 
-        # Apply search filter if provided
+        # Apply search filter if provided using unified search function
         local show_worktree=true
         if [[ -n "$search_terms" ]]; then
-            show_worktree=false
-            for term in $search_terms; do
-                if [[ "${path,,}" == *"${term,,}"* ]] || [[ "${branch,,}" == *"${term,,}"* ]]; then
-                    show_worktree=true
-                    break
-                fi
-            done
+            # Use the unified search function from hug-arrays
+            if search_worktree "$path" "$branch" "$search_terms" "OR"; then
+                show_worktree=true
+            else
+                show_worktree=false
+            fi
         fi
 
         # Only include worktree if it matches search criteria (or no search provided)

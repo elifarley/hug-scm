@@ -379,21 +379,19 @@ print_branch_list() {
     local -n hashes_ref="$hashes_name"
     local -n branches_ref="$branches_name"
 
-    # Pre-calculate lowercase search term for case-insensitive matching
-    # ${var,,} is a Bash 4.0+ feature
-    local search_lower=""
-    if [[ -n "$search_term" ]]; then
-        search_lower="${search_term,,}"
-    fi
-
+    # Use unified search function for multi-term search filtering
     for i in "${!branches_ref[@]}"; do
         local branch="${branches_ref[i]}"
+        local hash="${hashes_ref[i]}"
 
-        # Apply filter if search term exists
-        if [[ -n "$search_lower" ]]; then
-            local branch_lower="${branch,,}"
-            # If branch name does not contain search term, skip
-            if [[ "$branch_lower" != *"$search_lower"* ]]; then
+        # Create formatted branch line for searching (matches whole output line)
+        # We'll build this progressively based on available data
+        local branch_line="${branch} ${hash}"
+
+        # Apply filter if search terms exist using unified search function
+        if [[ -n "$search_term" ]]; then
+            # Use search_branch_line for branch name and hash matching
+            if ! search_branch_line "$branch_line" "$search_term" "OR"; then
                 continue
             fi
         fi

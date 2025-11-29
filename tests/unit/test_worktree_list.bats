@@ -415,3 +415,98 @@ teardown() {
   assert_json_array_length '.worktrees' 0
   assert_json_value '0' '.count'
 }
+
+# NEW MULTI-TERM SEARCH TESTS
+
+@test "hug wtl: supports multi-term search (OR logic)" {
+  cd "$TEST_REPO"
+  run git-wtl feature hotfix
+
+  assert_success
+  # Should show worktrees containing either "feature" OR "hotfix"
+  assert_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+}
+
+@test "hug wtl: multi-term search matches path or branch" {
+  cd "$TEST_REPO"
+  # Create worktree with specific path pattern
+  local special_wt="${TEST_REPO}-special-feature"
+  git branch special-feature
+  git worktree add "$special_wt" special-feature
+
+  run git-wtll special feature
+
+  assert_success
+  assert_output --partial "special-feature"
+
+  # Cleanup
+  git worktree remove "$special_wt"
+  git branch -D special-feature
+}
+
+@test "hug wtll: supports multi-term search (OR logic)" {
+  cd "$TEST_REPO"
+  run git-wtll feature hotfix
+
+  assert_success
+  # Should show worktrees containing either "feature" OR "hotfix"
+  assert_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+}
+
+@test "hug wtl: multi-term search with no matches returns error" {
+  cd "$TEST_REPO"
+  run git-wtl nonexistent1 nonexistent2
+
+  assert_failure
+  assert_output --partial "No worktrees found matching"
+}
+
+@test "hug wtll: multi-term search with no matches returns error" {
+  cd "$TEST_REPO"
+  run git-wtll nonexistent1 nonexistent2
+
+  assert_failure
+  assert_output --partial "No worktrees found matching"
+}
+
+@test "hug wtl: multi-term search is case insensitive" {
+  cd "$TEST_REPO"
+  run git-wtl FEATURE HOTFIX
+
+  assert_success
+  # Should find branches regardless of case
+  assert_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+}
+
+@test "hug wtll: multi-term search is case insensitive" {
+  cd "$TEST_REPO"
+  run git-wtll FEATURE HOTFIX
+
+  assert_success
+  # Should find branches regardless of case
+  assert_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+}
+
+@test "hug wtl: JSON output supports multi-term search filtering" {
+  cd "$TEST_REPO"
+  run git-wtl --json feature
+
+  assert_success
+  assert_valid_json
+  assert_json_array_length '.worktrees' 2
+  assert_json_value '2' '.count'
+}
+
+@test "hug wtll: JSON output supports multi-term search filtering" {
+  cd "$TEST_REPO"
+  run git-wtll --json feature
+
+  assert_success
+  assert_valid_json
+  assert_json_array_length '.worktrees' 2
+  assert_json_value '2' '.count'
+}

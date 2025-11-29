@@ -10,39 +10,138 @@ show_help() {
 hug wtsh: Show detailed information about worktrees in a comprehensive, readable format.
 
 USAGE:
-  hug wtsh [OPTIONS] [WORKTREE_PATH]
+  hug wtsh [OPTIONS] [SEARCH_TERM]
+  hug wtsh --           # Interactive worktree selection
 
 OPTIONS:
   -h, --help     Show this help message and exit.
+  -a, --all      Show all worktrees (preserves current behavior)
 
 DESCRIPTION:
-  Displays detailed information about all worktrees or a specific worktree if a path is provided.
-  The output is formatted in a tree-style layout showing comprehensive worktree details including
-  branch information, commit details, status, and configuration.
+  Displays detailed information about worktrees with flexible viewing options:
 
-  For each worktree, the following information is shown:
-    - Worktree path and branch name
-    - Commit hash, subject, author, and date
-    - Working directory status (clean/dirty)
-    - Worktree configuration (locked, detached, etc.)
-    - Remote tracking information
+  DEFAULT BEHAVIOR (no arguments):
+    Shows details for the CURRENT worktree only. This provides focused information
+    about your current working context.
 
-  Status indicators:
-    [CURRENT] - The worktree you're currently in
-    [DIRTY]   - Worktree has uncommitted changes
-    [LOCKED]  - Worktree is locked (cannot be removed)
-    [DETACHED] - Worktree is in detached HEAD state
+  --all FLAG:
+    Shows details for ALL worktrees (preserves existing hug wtsh behavior).
+
+  -- FLAG (interactive mode):
+    Presents an interactive menu to select which worktree to display.
+    Uses gum filter for enhanced selection when available.
+
+  SEARCH TERM:
+    Filter worktrees by path or branch name (case-insensitive).
+    Preserves existing search functionality.
+
+STATUS INDICATORS:
+  [CURRENT] - The worktree you're currently in
+  [DIRTY]   - Worktree has uncommitted changes
+  [LOCKED]  - Worktree is locked (cannot be removed)
+  [DETACHED] - Worktree is in detached HEAD state
 
 EXAMPLES:
-  hug wtsh                  # Show details for all worktrees
-  hug wtsh /home/user/project-feature  # Show details for specific worktree
-  hug wtsh feature-worktree  # Show details for worktree containing "feature-worktree"
+  hug wtsh                   # Current worktree only (new default)
+  hug wtsh --all             # All worktrees (preserves current behavior)
+  hug wtsh -a                # All worktrees (short alias for --all)
+  hug wtsh --                # Interactive worktree selection
+  hug wtsh feature           # Search/filter by branch name
+  hug wtsh /path/to/project  # Search/filter by path
 
 SEE ALSO:
   hug wtl  : For listing worktrees in short form
   hug wtll : For listing worktrees in long form
   hug wt   : For interactive worktree selection and switching
 EOF
+}
+
+# Function to show only the current worktree
+show_current_worktree_only() {
+  local current_worktree="$1"
+
+  # Find the current worktree in the arrays
+  for i in "${!worktree_paths[@]}"; do
+    if [[ "${worktree_paths[$i]}" == "$current_worktree" ]]; then
+      # Show details for current worktree only
+      show_worktree_details "$current_worktree" "${worktree_paths[$i]}"
+      return 0
+    fi
+  done
+
+  error "No current worktree found"
+  return 1
+}
+
+# Function to handle interactive worktree selection
+interactive_worktree_selection() {
+  local current_worktree="$1"
+  shift
+  local worktree_array=("$@")
+
+  if [[ ${#worktree_array[@]} -eq 0 ]]; then
+    error "No worktrees found for interactive selection"
+    return 1
+  fi
+
+  # Check if gum is available
+  if ! gum_available; then
+    error "Interactive worktree selection requires 'gum' to be installed.
+Install gum: https://github.com/charmbracelet/gum"
+    return 1
+  fi
+
+  # Build formatted options for interactive selection
+  declare -a formatted_options=()
+  declare -a worktree_selection_paths=()
+
+  for i in "${!worktree_array[@]}"; do
+    local path="${worktree_array[$i]}"
+    local branch="${branches[$i]}"
+    local commit="${commits[$i]}"
+    local dirty="${status_dirty[$i]}"
+    local locked="${locked_status[$i]}"
+
+    # Build status indicators
+    local status_indicators=""
+    local path_display="${path/#$HOME/\~}"
+
+    # Check if current worktree
+    [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}[CURRENT]${NC} "
+    [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
+    [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
+
+    # Create formatted display string
+    local formatted="${status_indicators}${branch} (${commit}) → ${path_display}"
+    formatted_options+=("$formatted")
+    worktree_selection_paths+=("$path")
+  done
+
+  # Use gum filter for selection
+  local selection_output
+  if selection_output=$(printf '%s\n' "${formatted_options[@]}" | gum filter --header="Select worktree to show details (ESC to cancel)" --placeholder="Search worktrees..."); then
+    # Find the index of selected item
+    local selected_index=-1
+    for i in "${!formatted_options[@]}"; do
+      if [[ "${formatted_options[i]}" == "$selection_output" ]]; then
+        selected_index=$i
+        break
+      fi
+    done
+
+    if [[ $selected_index -ge 0 ]]; then
+      local selected_path="${worktree_selection_paths[$selected_index]}"
+      # Show details for selected worktree
+      show_worktree_details "$current_worktree" "$selected_path"
+      return 0
+    else
+      error "Invalid selection"
+      return 1
+    fi
+  else
+    info "Worktree selection cancelled"
+    return 0
+  fi
 }
 
 # Function to get detailed commit information
@@ -221,15 +320,30 @@ show_worktree_details() {
   done
 }
 
-# Parse arguments
+# Parse common flags to detect -- pattern and standard flags
+eval "$(parse_common_flags "$@")"
+
+# Initialize behavior flags
+show_all=false
+
+# Parse custom flags
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --all|-a)
+      show_all=true
+      shift
+      ;;
     -h|--help)
       show_help
       exit 0
       ;;
+    -*)
+      error "Unknown option: $1"
+      show_help
+      exit 1
+      ;;
     *)
-      # Treat remaining arguments as worktree path
+      # Treat remaining arguments as search term
       break
       ;;
   esac
@@ -253,29 +367,35 @@ if ! get_worktrees worktree_paths branches commits status_dirty locked_status; t
   exit 1
 fi
 
-# Filter worktree if a path was provided
-if [[ $# -gt 0 ]]; then
+# Handle different command modes
+if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" == "true" ]]; then
+  interactive_worktree_selection "$current_worktree" "${worktree_paths[@]}"
+elif [[ "$show_all" == "false" && $# -eq 0 ]]; then
+  # Default: show current worktree only
+  show_current_worktree_only "$current_worktree"
+elif [[ $# -gt 0 ]]; then
+  # Multi-term search filtering (enhanced behavior)
   target_worktrees=()
-  search_term="$1"
+  search_terms="$*"  # Capture all search terms
 
   for i in "${!worktree_paths[@]}"; do
     path="${worktree_paths[$i]}"
     branch="${branches[$i]}"
 
-    # Check if search term matches path or branch (case-insensitive)
-    if [[ "${path,,}" == *"${search_term,,}"* ]] || [[ "${branch,,}" == *"${search_term,,}"* ]]; then
+    # Use unified search function for multi-term filtering
+    if search_worktree "$path" "$branch" "$search_terms" "OR"; then
       target_worktrees+=("$path")
     fi
   done
 
   if [[ ${#target_worktrees[@]} -eq 0 ]]; then
-    printf "No worktrees found matching: %s\n" "$search_term" >&2
+    printf "No worktrees found matching: %s\n" "$search_terms" >&2
     exit 1
   fi
 
   # Show details for matching worktrees
   show_worktree_details "$current_worktree" "${target_worktrees[@]}"
 else
-  # Show details for all worktrees
+  # --all or -a behavior (existing default)
   show_worktree_details "$current_worktree" "${worktree_paths[@]}"
 fi

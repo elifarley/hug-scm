@@ -175,3 +175,116 @@ teardown() {
   # Verify it includes at least a hash and message
   assert_output --regexp "[0-9a-f]{7}" # Short commit hash
 }
+
+# NEW MULTI-TERM SEARCH TESTS
+
+@test "hug bl: supports multi-term search (OR logic)" {
+  cd "$TEST_REPO"
+
+  # Create branches with specific patterns for testing
+  git branch feature-α 2>/dev/null || true
+  git branch hotfix-β 2>/dev/null || true
+
+  run hug bl feature hotfix
+
+  assert_success
+  # Should show branches containing either "feature" OR "hotfix"
+  assert_output --partial "feature-α"
+  assert_output --partial "hotfix-β"
+
+  # Cleanup
+  git branch -D feature-α 2>/dev/null || true
+  git branch -D hotfix-β 2>/dev/null || true
+}
+
+@test "hug bll: supports multi-term search (OR logic)" {
+  cd "$TEST_REPO"
+
+  # Create branches with specific patterns for testing
+  git branch feature-α 2>/dev/null || true
+  git branch hotfix-β 2>/dev/null || true
+
+  run hug bll feature hotfix
+
+  assert_success
+  # Should show branches containing either "feature" OR "hotfix" with full details
+  assert_output --partial "feature-α"
+  assert_output --partial "hotfix-β"
+
+  # Cleanup
+  git branch -D feature-α 2>/dev/null || true
+  git branch -D hotfix-β 2>/dev/null || true
+}
+
+@test "hug bl: multi-term search matches commit hashes" {
+  cd "$TEST_REPO"
+
+  # Test that search can match commit hashes
+  run hug bl "$(git rev-parse --short HEAD 2>/dev/null || echo 'test')"
+
+  assert_success
+  # Should find the current branch by its hash
+  assert_output --partial "$current_branch"
+}
+
+@test "hug bll: multi-term search matches commit hashes" {
+  cd "$TEST_REPO"
+
+  # Test that search can match commit hashes
+  run hug bll "$(git rev-parse --short HEAD 2>/dev/null || echo 'test')"
+
+  assert_success
+  # Should find the current branch by its hash
+  assert_output --partial "$current_branch"
+}
+
+@test "hug bl: multi-term search with no matches returns empty output" {
+  cd "$TEST_REPO"
+  run hug bl nonexistent1 nonexistent2
+
+  assert_success
+  # Should return success but with no branch output (empty result)
+  [[ -z "$output" ]] || {
+    # If there's output, it shouldn't contain any branches
+    refute_output --partial "* "
+  }
+}
+
+@test "hug bll: multi-term search with no matches returns empty output" {
+  cd "$TEST_REPO"
+  run hug bll nonexistent1 nonexistent2
+
+  assert_success
+  # Should return success but with no branch output (empty result)
+  [[ -z "$output" ]] || {
+    # If there's output, it shouldn't contain any branches
+    refute_output --partial "* "
+  }
+}
+
+@test "hug bl: multi-term search is case insensitive" {
+  cd "$TEST_REPO"
+  run hug bl MAIN
+
+  assert_success
+  # Should find main branch regardless of case
+  assert_output --partial "main"
+}
+
+@test "hug bll: multi-term search is case insensitive" {
+  cd "$TEST_REPO"
+  run hug bll MAIN
+
+  assert_success
+  # Should find main branch regardless of case
+  assert_output --partial "main"
+}
+
+@test "hug bl: multi-term search with single term still works" {
+  cd "$TEST_REPO"
+  run hug bl main
+
+  assert_success
+  # Should find main branch
+  assert_output --partial "main"
+}
