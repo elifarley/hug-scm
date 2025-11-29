@@ -39,7 +39,7 @@ EXAMPLES:
 
 SEE ALSO:
   hug wtc    : Create worktree for existing branch
-  hug wtr    : Remove worktree safely
+  hug wtdel  : Remove worktree safely
 
 FURTHER READING:
   See 'git worktree --help' for more information about Git worktrees.

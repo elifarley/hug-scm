@@ -9,16 +9,19 @@
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
+# TODO Implement interactive branch selection menu, similar to what we have in `git-b`
+
 show_help() {
     cat << 'EOF'
 hug wtc: Create worktree for existing branch
 
 USAGE:
+    hug wtc [options]
     hug wtc <branch> [path] [options]
     hug wtc -h|--help
 
 ARGUMENTS:
-    <branch>        Name of existing branch to create worktree for
+    [branch]        Name of existing branch to create worktree for. If equal to `--`, interactive branch selection menu is displayed.
     [path]          Custom path for worktree (optional, auto-generated if not provided)
 
 OPTIONS:
@@ -31,19 +34,21 @@ DESCRIPTION:
     work on multiple branches simultaneously without context switching overhead.
 
     If no path is provided, generates a smart default path outside the main
-    repository: ../worktrees-<repo>/<branch>
+    repository: ../<repo>-worktrees/<branch>
 
     The branch must exist locally and not be checked out in another worktree.
 
 EXAMPLES:
+    hug wtc                                 # TODO Create worktree with auto-generated path. Interactive menu is used
     hug wtc feature-auth                    # Create worktree with auto-generated path
+    hug wtc feature-auth -- ~/work/feature  # TODO Create worktree at custom path. Interactive menu is used.
     hug wtc feature-auth ~/work/feature     # Create worktree at custom path
     hug wtc feature-auth --dry-run          # Preview creation without doing it
     hug wtc feature-auth -f                 # Create without confirmation
 
 SEE ALSO:
     hug wt      List and switch between worktrees
-    hug wtr     Remove worktree safely
+    hug wtdel   Remove worktree safely
 
 FURTHER READING:
     See 'git worktree add --help' for underlying implementation details.
@@ -99,11 +104,11 @@ done
 
 # Parse arguments
 if [[ $# -eq 0 ]]; then
-    error "Branch name is required. See 'hug wtc --help'."
+    error "TODO: Branch name is optional, but the interactive branch selection hasn't been implemented yet."
 fi
 
 if [[ $# -gt 2 ]]; then
-    error "Too many arguments. Usage: hug wtc <branch> [path]. See 'hug wtc --help'."
+    error "Too many arguments. Usage: hug wtc [branch] [path]. See 'hug wtc --help'."
 fi
 
 branch_name="$1"
