@@ -9,6 +9,7 @@ Worktrees allow you to work on multiple branches simultaneously without context 
 | `hug wt` | Interactive worktree management | Like `hug b` |
 | `hug wtl` | List worktrees (short format) | Like `hug bl` |
 | `hug wtll` | List worktrees (long format) | Like `hug bll` |
+| `hug wtsh` | Show detailed worktree information | Like `hug sh` |
 | `hug wtc` | Create worktree for branch | Like `hug bc` |
 | `hug wtdel` | Remove worktree safely | Like `hug bdel` |
 
@@ -111,6 +112,81 @@ feature-auth         a3f2b1c (~/IdeaProjects/worktrees-hug-scm/feature-auth)
   Status: Clean ✓ | Locked: No
 ```
 
+### `hug wtsh` - Show Worktree Details
+
+Displays detailed information about worktrees in a comprehensive, readable format with tree-style layout.
+
+```bash
+hug wtsh [WORKTREE_PATH]
+```
+
+**Arguments:**
+- `[WORKTREE_PATH]`: Optional path or search term to show specific worktree details
+
+**Options:**
+- `-h, --help`: Show help message
+
+**Examples:**
+```bash
+hug wtsh                                    # Show details for all worktrees
+hug wtsh ~/project-feature                 # Show details for specific worktree
+hug wtsh feature-worktree                  # Show details for worktree containing "feature-worktree"
+```
+
+**Output Format:**
+```
+Worktree Summary
+───────────────────────
+Current: ~/IdeaProjects/hug-scm
+
+Worktrees (3 total)
+───────────────────────
+
+[CURRENT] [DIRTY] ~/IdeaProjects/hug-scm (test-new-worktree)
+├─ Commit: deab0e2 fix: make hug wt actually change working directory (13 hours ago)
+├─ Author: Elifarley C
+├─ Branch: test-new-worktree (no remote)
+├─ Path: /home/ecc/IdeaProjects/hug-scm
+├─ Status: Dirty (2 files changed: 0 staged, 2 unstaged)
+└─ Config: Standard worktree (detached: no)
+
+~/workspaces-project/feature-auth (feature-auth)
+├─ Commit: a3f2b1c feat: implement OAuth authentication (2 days ago)
+├─ Author: Jane Smith
+├─ Branch: feature-auth (origin/feature-auth ↑2)
+├─ Path: /home/ecc/workspaces-project/feature-auth
+├─ Status: Clean
+└─ Config: Standard worktree (detached: no)
+
+~/workspaces-project/temp (abc1234) [DETACHED] [LOCKED]
+├─ Commit: abc1234 fix: security issue (1 week ago)
+├─ Author: Bob Wilson
+├─ Branch: detached HEAD
+├─ Path: /home/ecc/workspaces-project/temp
+├─ Status: Clean
+└─ Config: Locked worktree (detached: yes)
+```
+
+**Status Indicators:**
+- **[CURRENT]**: The worktree you're currently in
+- **[DIRTY]**: Worktree has uncommitted changes
+- **[LOCKED]**: Worktree is locked (cannot be removed)
+- **[DETACHED]**: Worktree is in detached HEAD state
+
+**Information Displayed:**
+- Worktree path and branch name with commit hash
+- Commit subject, author, and relative date
+- Branch information with remote tracking details
+- Working directory status with file change counts
+- Worktree configuration (locked, detached state)
+
+**Search Filtering:**
+- Case-insensitive matching on worktree paths and branch names
+- Shows details for all matching worktrees
+- Error if no worktrees match the search term
+
+```
+
 ### `hug wtc` - Create Worktree
 
 Creates a new worktree for an existing branch.
@@ -209,6 +285,9 @@ Both `hug wtl` and `hug wtll` support `--json` output for programmatic use:
 hug wtc feature-auth
 hug wtc feature-ui
 
+# Get overview of all worktrees and their status
+hug wtsh
+
 # Work on authentication in isolation
 cd ~/workspaces-project/feature-auth
 # ... make changes and commits
@@ -219,6 +298,9 @@ hug wt ~/workspaces-project/feature-ui
 
 # Switch back to main
 hug wt ~/project
+
+# Check current status of all worktrees
+hug wtsh
 ```
 
 ### Hotfix Workflow

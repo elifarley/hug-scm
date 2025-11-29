@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-worktree; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat <<'EOF'
+hug wtsh: Show detailed information about worktrees in a comprehensive, readable format.
+
+USAGE:
+  hug wtsh [OPTIONS] [WORKTREE_PATH]
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+
+DESCRIPTION:
+  Displays detailed information about all worktrees or a specific worktree if a path is provided.
+  The output is formatted in a tree-style layout showing comprehensive worktree details including
+  branch information, commit details, status, and configuration.
+
+  For each worktree, the following information is shown:
+    - Worktree path and branch name
+    - Commit hash, subject, author, and date
+    - Working directory status (clean/dirty)
+    - Worktree configuration (locked, detached, etc.)
+    - Remote tracking information
+
+  Status indicators:
+    [CURRENT] - The worktree you're currently in
+    [DIRTY]   - Worktree has uncommitted changes
+    [LOCKED]  - Worktree is locked (cannot be removed)
+    [DETACHED] - Worktree is in detached HEAD state
+
+EXAMPLES:
+  hug wtsh                  # Show details for all worktrees
+  hug wtsh /home/user/project-feature  # Show details for specific worktree
+  hug wtsh feature-worktree  # Show details for worktree containing "feature-worktree"
+
+SEE ALSO:
+  hug wtl  : For listing worktrees in short form
+  hug wtll : For listing worktrees in long form
+  hug wt   : For interactive worktree selection and switching
+EOF
+}
+
+# Function to get detailed commit information
+get_commit_details() {
+  local worktree_path="$1"
+  local commit_hash="$2"
+
+  if [[ -d "$worktree_path" ]]; then
+    # Get commit details using git log
+    local author date subject
+    author=$(git -C "$worktree_path" log -1 --format=%an "$commit_hash" 2>/dev/null || echo "Unknown")
+    date=$(git -C "$worktree_path" log -1 --format=%cr "$commit_hash" 2>/dev/null || echo "Unknown")
+    subject=$(git -C "$worktree_path" log -1 --format=%s "$commit_hash" 2>/dev/null || echo "Unknown")
+
+    printf '%s|%s|%s' "$author" "$date" "$subject"
+  fi
+}
+
+# Function to get branch information including remote tracking
+get_branch_info() {
+  local worktree_path="$1"
+  local branch_name="$2"
+
+  if [[ -d "$worktree_path" ]]; then
+    # Check if we're on a branch or detached HEAD
+    if [[ -n "$branch_name" ]]; then
+      local remote_tracking ahead_behind
+      remote_tracking=$(git -C "$worktree_path" for-each-ref --format='%(upstream:short)' "refs/heads/$branch_name" 2>/dev/null || echo "")
+
+      # Get ahead/behind information if there's a remote tracking branch
+      if [[ -n "$remote_tracking" ]]; then
+        local ahead behind
+        ahead=$(git -C "$worktree_path" rev-list --count "$remote_tracking..$branch_name" 2>/dev/null || echo "0")
+        behind=$(git -C "$worktree_path" rev-list --count "$branch_name..$remote_tracking" 2>/dev/null || echo "0")
+
+        if [[ "$ahead" -gt 0 && "$behind" -gt 0 ]]; then
+          ahead_behind=" (↑$ahead ↓$behind)"
+        elif [[ "$ahead" -gt 0 ]]; then
+          ahead_behind=" (↑$ahead)"
+        elif [[ "$behind" -gt 0 ]]; then
+          ahead_behind=" (↓$behind)"
+        else
+          ahead_behind=" (up to date)"
+        fi
+        printf '%s|%s' "$remote_tracking" "$ahead_behind"
+      else
+        printf '%s|' "no remote"
+      fi
+    else
+      # Detached HEAD
+      printf 'detached HEAD|'
+    fi
+  fi
+}
+
+# Function to get worktree status details
+get_status_details() {
+  local worktree_path="$1"
+  local is_dirty="$2"
+
+  if [[ "$is_dirty" == "true" ]]; then
+    local staged_count unstaged_count total_changes
+    staged_count=$(git -C "$worktree_path" diff --cached --name-only 2>/dev/null | wc -l)
+    unstaged_count=$(git -C "$worktree_path" diff --name-only 2>/dev/null | wc -l)
+    total_changes=$((staged_count + unstaged_count))
+
+    printf 'Dirty (%d files changed: %d staged, %d unstaged)' "$total_changes" "$staged_count" "$unstaged_count"
+  else
+    printf 'Clean'
+  fi
+}
+
+# Function to display detailed worktree information
+show_worktree_details() {
+  local current_worktree="$1"
+  local worktree_paths=("$@")
+
+  # Remove the first argument (current_worktree) to get only the paths array
+  local worktree_array=("${worktree_paths[@]:1}")
+
+  printf "${BLUE}Worktree Summary${NC}\n"
+  printf "───────────────────────\n"
+  printf "Current: %s\n\n" "${current_worktree/#$HOME/\~}"
+
+  if [[ ${#worktree_array[@]} -eq 0 ]]; then
+    printf "${YELLOW}No worktrees found${NC}\n"
+    return 1
+  fi
+
+  printf "${BLUE}Worktrees (%d total)${NC}\n" "${#worktree_array[@]}"
+  printf "───────────────────────\n\n"
+
+  for path in "${worktree_array[@]}"; do
+    # Get worktree information from existing functions
+    local branch commit dirty locked
+    branch=$(git -C "$path" branch --show-current 2>/dev/null || echo "detached")
+
+    # Get commit hash - try branch first, then HEAD
+    if [[ "$branch" != "detached" ]]; then
+      commit=$(git -C "$path" rev-parse --short "$branch" 2>/dev/null || echo "unknown")
+    else
+      commit=$(git -C "$path" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    fi
+
+    # Check if worktree is dirty
+    if git -C "$path" diff --quiet 2>/dev/null && git -C "$path" diff --cached --quiet 2>/dev/null; then
+      dirty="false"
+    else
+      dirty="true"
+    fi
+
+    # Check if locked (simplified check)
+    locked="false"
+    if ! git -C "$path" worktree list --porcelain 2>/dev/null | grep -A1 "^worktree $path\$" | grep -q "^locked"; then
+      locked="false"
+    else
+      locked="true"
+    fi
+
+    # Build status indicators
+    local indicators=""
+    [[ "$path" == "$current_worktree" ]] && indicators="${indicators}${GREEN}[CURRENT]${NC} "
+    [[ "$dirty" == "true" ]] && indicators="${indicators}${YELLOW}[DIRTY]${NC} "
+    [[ "$locked" == "true" ]] && indicators="${indicators}${RED}[LOCKED]${NC} "
+    [[ "$branch" == "detached" ]] && indicators="${indicators}${CYAN}[DETACHED]${NC} "
+
+    local display_path="${path/#$HOME/\~}"
+    printf "%s%s (%s)\n" "$indicators" "$display_path" "$branch"
+
+    # Get detailed information
+    printf "├─ Commit: %s " "$commit"
+
+    # Get commit details
+    local commit_details
+    commit_details=$(get_commit_details "$path" "$commit")
+    IFS='|' read -r author date subject <<< "$commit_details"
+
+    printf "%s (%s)\n" "$subject" "$date"
+    printf "├─ Author: %s\n" "$author"
+
+    # Get branch information
+    local branch_info
+    branch_info=$(get_branch_info "$path" "$branch")
+    IFS='|' read -r remote tracking <<< "$branch_info"
+
+    if [[ "$branch" != "detached" ]]; then
+      printf "├─ Branch: %s" "$branch"
+      if [[ -n "$remote" ]]; then
+        printf " (%s%s)" "$remote" "$tracking"
+      fi
+      printf "\n"
+    else
+      printf "├─ Branch: detached HEAD\n"
+    fi
+
+    printf "├─ Path: %s\n" "$path"
+
+    # Get status details
+    local status_details
+    status_details=$(get_status_details "$path" "$dirty")
+    printf "├─ Status: %s\n" "$status_details"
+
+    # Worktree configuration
+    printf "└─ Config: "
+    if [[ "$locked" == "true" ]]; then
+      printf "Locked worktree"
+    else
+      printf "Standard worktree"
+    fi
+    if [[ "$branch" == "detached" ]]; then
+      printf " (detached: yes)"
+    else
+      printf " (detached: no)"
+    fi
+    printf "\n\n"
+  done
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      # Treat remaining arguments as worktree path
+      break
+      ;;
+  esac
+done
+
+# Early exit if not in Git repo
+check_git_repo
+
+# Get current worktree path
+current_worktree=$(get_current_worktree_path)
+
+# Get worktree paths
+declare -a worktree_paths=()
+declare -a branches=()
+declare -a commits=()
+declare -a status_dirty=()
+declare -a locked_status=()
+
+if ! get_worktrees worktree_paths branches commits status_dirty locked_status; then
+  printf "No worktrees found.\n" >&2
+  exit 1
+fi
+
+# Filter worktree if a path was provided
+if [[ $# -gt 0 ]]; then
+  target_worktrees=()
+  search_term="$1"
+
+  for i in "${!worktree_paths[@]}"; do
+    path="${worktree_paths[$i]}"
+    branch="${branches[$i]}"
+
+    # Check if search term matches path or branch (case-insensitive)
+    if [[ "${path,,}" == *"${search_term,,}"* ]] || [[ "${branch,,}" == *"${search_term,,}"* ]]; then
+      target_worktrees+=("$path")
+    fi
+  done
+
+  if [[ ${#target_worktrees[@]} -eq 0 ]]; then
+    printf "No worktrees found matching: %s\n" "$search_term" >&2
+    exit 1
+  fi
+
+  # Show details for matching worktrees
+  show_worktree_details "$current_worktree" "${target_worktrees[@]}"
+else
+  # Show details for all worktrees
+  show_worktree_details "$current_worktree" "${worktree_paths[@]}"
+fi
