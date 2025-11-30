@@ -1,1 +1,2 @@
-In shell scripts, NEVER use the `local` keyword outside a function body!
+- In shell scripts, NEVER use the `local` keyword outside a function body!
+- If trying to call the `show_help` function of a `git-<COMMAND>` script, use `hug <COMMAND> -h` instead of `--help`;

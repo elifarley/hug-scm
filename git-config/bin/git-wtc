@@ -4,8 +4,6 @@
 . "$HUG_HOME/git-config/lib/hug-common"
 # shellcheck source=git-config/lib/hug-git-kit
 . "$HUG_HOME/git-config/lib/hug-git-kit"
-# shellcheck source=git-config/lib/hug-git-branch
-. "$HUG_HOME/git-config/lib/hug-git-branch"
 # shellcheck source=git-config/lib/hug-git-worktree
 . "$HUG_HOME/git-config/lib/hug-git-worktree"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
@@ -152,7 +150,7 @@ if [[ -z "$branch_name" ]]; then
     declare -a available_branches=() available_hashes=() available_subjects=() available_tracks=()
     for ((i=0; i<${#branches[@]}; i++)); do
         branch="${branches[i]}"
-        if ! branch_has_worktree "$branch"; then
+        if branch_available_for_worktree "$branch"; then
             available_branches+=("$branch")
             available_hashes+=("${hashes[i]}")
             available_subjects+=("${subjects[i]}")
@@ -164,8 +162,6 @@ if [[ -z "$branch_name" ]]; then
         error "All branches already have worktrees. Use 'hug wtl' to see existing worktrees."
         exit 1
     fi
-
-    printf "${BLUE}Select branch for new worktree:${NC}\n"
 
     # Print interactive menu and get selection
     print_interactive_branch_menu selected_branch "$current_branch" "$max_len" available_hashes available_branches available_tracks available_subjects

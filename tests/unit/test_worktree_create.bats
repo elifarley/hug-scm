@@ -14,13 +14,13 @@ teardown() {
 }
 
 @test "hug wtc: shows help when --help flag is used" {
-  run git-wt-create --help
+  run git-wtc --help
   assert_success
   assert_output --partial "hug wtc: Create worktree for existing branch"
 }
 
 @test "hug wtc: creates worktree for existing branch" {
-  run git-wt-create feature-1
+  run git-wtc feature-1
 
   assert_success
   assert_output --partial "Worktree Creation Summary"
@@ -35,7 +35,7 @@ teardown() {
 
 @test "hug wtc: creates worktree at custom path" {
   local custom_path="${TEST_REPO}-custom-feature"
-  run git-wt-create feature-1 "$custom_path"
+  run git-wtc feature-1 "$custom_path"
 
   assert_success
   assert_worktree_exists "$custom_path"
@@ -45,14 +45,14 @@ teardown() {
 @test "hug wtc: uses unique path when default exists" {
   # Create first worktree
   local first_path="${TEST_REPO}-wt-feature-1"
-  run git-wt-create feature-1
+  run git-wtc feature-1
   assert_success
 
   # Create second worktree for same branch after removing first
   rm -rf "$first_path"
   git worktree prune
 
-  run git-wt-create feature-1
+  run git-wtc feature-1
   assert_success
 
   # Should have created a unique path (probably same as original since we removed it)
@@ -60,7 +60,7 @@ teardown() {
 }
 
 @test "hug wtc: dry run shows what would be created" {
-  run git-wt-create feature-1 --dry-run
+  run git-wtc feature-1 --dry-run
 
   assert_success
   assert_output --partial "DRY RUN"
@@ -76,14 +76,14 @@ teardown() {
   confirm_action() { return 1; }
   export -f confirm_action
 
-  run git-wt-create feature-1 --force
+  run git-wtc feature-1 --force
 
   assert_success
   assert_worktree_exists "${TEST_REPO}-wt-feature-1"
 }
 
 @test "hug wtc: fails when branch does not exist" {
-  run git-wt-create nonexistent-branch
+  run git-wtc nonexistent-branch
 
   assert_failure
   assert_output --partial "Branch 'nonexistent-branch' does not exist locally"
@@ -94,7 +94,7 @@ teardown() {
   # Create directory at target path
   mkdir -p "${TEST_REPO}-wt-feature-1"
 
-  run git-wt-create feature-1 "${TEST_REPO}-wt-feature-1"
+  run git-wtc feature-1 "${TEST_REPO}-wt-feature-1"
 
   assert_failure
   assert_output --partial "Target path already exists"
@@ -103,7 +103,7 @@ teardown() {
 @test "hug wtc: fails when parent directory does not exist" {
   local nonexistent_parent="/tmp/hug-test-nonexistent/path"
 
-  run git-wt-create feature-1 "$nonexistent_parent"
+  run git-wtc feature-1 "$nonexistent_parent"
 
   assert_failure
   assert_output --partial "Parent directory does not exist"
@@ -119,7 +119,7 @@ teardown() {
     skip "Cannot create read-only directory for testing"
   }
 
-  run git-wt-create feature-1 "$readonly_parent/worktree"
+  run git-wtc feature-1 "$readonly_parent/worktree"
 
   # Restore permissions for cleanup
   chmod 755 "$readonly_parent"
@@ -131,18 +131,18 @@ teardown() {
 
 @test "hug wtc: fails when branch is already checked out" {
   # Create first worktree
-  run git-wt-create feature-1
+  run git-wtc feature-1
   assert_success
 
   # Try to create another worktree for same branch
-  run git-wt-create feature-1 "${TEST_REPO}-wt-feature-1-duplicate"
+  run git-wtc feature-1 "${TEST_REPO}-wt-feature-1-duplicate"
 
   assert_failure
   assert_output --partial "Branch 'feature-1' is already checked out in another worktree"
 }
 
 @test "hug wtc: generates smart default path" {
-  run git-wt-create feature-1
+  run git-wtc feature-1
 
   assert_success
   assert_output --partial "${TEST_REPO}/../worktrees-$(basename "$TEST_REPO")/feature-1"
@@ -152,7 +152,7 @@ teardown() {
   # Create a branch with slashes
   git checkout -b "feature/auth"
 
-  run git-wt-create "feature/auth"
+  run git-wtc "feature/auth"
 
   assert_success
   assert_output --partial "feature-auth"  # Should convert slashes to dashes
@@ -162,21 +162,21 @@ teardown() {
   # Create a branch with dots
   git checkout -b "feature.v2.0"
 
-  run git-wt-create "feature.v2.0"
+  run git-wtc "feature.v2.0"
 
   assert_success
   assert_output --partial "feature-v2-0"  # Should convert dots to dashes
 }
 
 @test "hug wtc: fails with no branch argument" {
-  run git-wt-create
+  run git-wtc
 
   assert_failure
   assert_output --partial "Branch name is required"
 }
 
 @test "hug wtc: fails with too many arguments" {
-  run git-wt-create feature-1 "/extra/path" "too-many"
+  run git-wtc feature-1 "/extra/path" "too-many"
 
   assert_failure
   assert_output --partial "Too many arguments"
@@ -184,7 +184,7 @@ teardown() {
 
 @test "hug wtc: error when not in git repository" {
   cd /tmp
-  run git-wt-create test-branch
+  run git-wtc test-branch
 
   assert_failure
   assert_output --partial "Not a git repository"
