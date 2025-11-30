@@ -860,3 +860,320 @@ find_remote_branch() {
     return 0
 }
 
+################################################################################
+# Universal Branch Selection Functions
+################################################################################
+
+# Universal branch selection interface supporting both single and multi-selection
+# Usage: select_branches result_array_name [options...]
+# Options:
+#   --multi-select           Enable multi-selection mode (default: single)
+#   --exclude-current        Exclude current branch from selection (default: true)
+#   --include-current        Include current branch in selection
+#   --exclude-backup         Exclude backup branches (default: true)
+#   --include-backup         Include backup branches in selection
+#   --placeholder TEXT       Custom placeholder text for selection prompt
+#   --filter-function NAME   Custom filter function name
+# Parameters:
+#   $1 - Array name (string) that will receive selected branch names
+# Returns:
+#   0 if selection made, 1 if no selection or error
+select_branches() {
+    local result_array_name="$1"
+    shift
+
+    # Default values
+    local multi_select=false
+    local exclude_current=true
+    local exclude_backup=true
+    local placeholder="Select branch"
+    local filter_function=""
+
+    # Parse options using simple loop (consistent with other library functions)
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --multi-select)
+                multi_select=true
+                shift
+                ;;
+            --exclude-current)
+                exclude_current=true
+                shift
+                ;;
+            --include-current)
+                exclude_current=false
+                shift
+                ;;
+            --exclude-backup)
+                exclude_backup=true
+                shift
+                ;;
+            --include-backup)
+                exclude_backup=false
+                shift
+                ;;
+            --placeholder)
+                placeholder="$2"
+                shift 2
+                ;;
+            --filter-function)
+                filter_function="$2"
+                shift 2
+                ;;
+            *)
+                error "select_branches(): Unknown option '$1'"
+                return 1
+                ;;
+        esac
+    done
+
+    # Get branch data using existing library function
+    declare -a branches=() hashes=() subjects=() tracks=()
+    local current_branch="" max_len=""
+
+    if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects "true"; then
+        error "No local branches found"
+        return 1
+    fi
+
+    # Apply filters using centralized filtering function
+    declare -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
+
+    filter_branches branches hashes subjects tracks "$current_branch" \
+        filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+        "$exclude_current" "$exclude_backup" "$filter_function"
+
+    # Check if any branches remain after filtering
+    if [[ ${#filtered_branches[@]} -eq 0 ]]; then
+        return 1
+    fi
+
+    # Clear result array
+    eval "$result_array_name=()"
+
+    # Delegate to appropriate selection function
+    if [[ "$multi_select" == "true" ]]; then
+        multi_select_branches "$result_array_name" "$current_branch" "$max_len" \
+            filtered_hashes filtered_branches filtered_tracks filtered_subjects "$placeholder"
+    else
+        # For single selection, we need a temporary variable name
+        local selected_branch=""
+        single_select_branch selected_branch "$current_branch" "$max_len" \
+            filtered_hashes filtered_branches filtered_tracks filtered_subjects "$placeholder"
+
+        # Move result to the output array if selection was made
+        if [[ -n "$selected_branch" ]]; then
+            eval "$result_array_name=(\"$selected_branch\")"
+            return 0
+        else
+            return 1
+        fi
+    fi
+}
+
+# Centralized branch filtering function
+# Usage: filter_branches input_branches input_hashes input_subjects input_tracks current_branch output_branches output_hashes output_subjects output_tracks exclude_current exclude_backup [filter_function]
+# Parameters:
+#   $1-4  - Input arrays (branches, hashes, subjects, tracks)
+#   $5    - Current branch name
+#   $6-9  - Output arrays (namerefs) for filtered results
+#   $10   - Boolean: exclude current branch
+#   $11   - Boolean: exclude backup branches
+#   $12   - Optional: custom filter function name
+filter_branches() {
+    # Input arrays
+    local -n input_branches_ref="$1"
+    local -n input_hashes_ref="$2"
+    local -n input_subjects_ref="$3"
+    local -n input_tracks_ref="$4"
+
+    # Current branch
+    local current_branch="$5"
+
+    # Output arrays (namerefs)
+    local -n output_branches_ref="$6"
+    local -n output_hashes_ref="$7"
+    local -n output_subjects_ref="$8"
+    local -n output_tracks_ref="$9"
+
+    # Filter options
+    local exclude_current="${10}"
+    local exclude_backup="${11}"
+    local filter_function="${12:-}"
+
+    # Clear output arrays
+    output_branches_ref=()
+    output_hashes_ref=()
+    output_subjects_ref=()
+    output_tracks_ref=()
+
+    # Apply filters
+    local i
+    for ((i = 0; i < ${#input_branches_ref[@]}; i++)); do
+        local branch="${input_branches_ref[i]}"
+
+        # Skip current branch if exclusion enabled
+        if [[ "$exclude_current" == "true" && "$branch" == "$current_branch" ]]; then
+            continue
+        fi
+
+        # Skip backup branches if exclusion enabled
+        if [[ "$exclude_backup" == "true" && "$branch" == hug-backups/* ]]; then
+            continue
+        fi
+
+        # Apply custom filter function if provided
+        if [[ -n "$filter_function" ]] && command -v "$filter_function" >/dev/null 2>&1; then
+            if ! "$filter_function" "$branch" "${input_hashes_ref[i]}" "${input_subjects_ref[i]}"; then
+                continue
+            fi
+        fi
+
+        # Branch passed all filters, add to output
+        output_branches_ref+=("$branch")
+        output_hashes_ref+=("${input_hashes_ref[i]}")
+        output_subjects_ref+=("${input_subjects_ref[i]}")
+        output_tracks_ref+=("${input_tracks_ref[i]}")
+    done
+}
+
+# Single branch selection function
+# Usage: single_select_branch result_variable current_branch max_len hashes branches tracks subjects placeholder
+# Parameters:
+#   $1 - Variable name (string) to receive selected branch name
+#   $2 - Current branch name
+#   $3 - Maximum branch name length (for formatting)
+#   $4-7 - Arrays with branch data (hashes, branches, tracks, subjects)
+#   $8 - Placeholder text for selection prompt
+# Returns:
+#   0 if branch selected, 1 if no selection
+single_select_branch() {
+    local result_variable="$1"
+    local current_branch="$2"
+    local max_len="$3"
+    local -n hashes_ref="$4"
+    local -n branches_ref="$5"
+    local -n tracks_ref="$6"
+    local -n subjects_ref="$7"
+    local placeholder="$8"
+
+    # Use existing print_interactive_branch_menu function for consistency
+    print_interactive_branch_menu "$result_variable" "$current_branch" "$max_len" \
+        hashes_ref branches_ref tracks_ref subjects_ref "$placeholder"
+}
+
+# Multi-branch selection function
+# Usage: multi_select_branches result_array_name current_branch max_len hashes branches tracks subjects placeholder
+# Parameters:
+#   $1 - Array name (string) that will receive selected branch names
+#   $2-7 - Same as single_select_branch
+# Returns:
+#   0 if branches selected, 1 if no selection
+multi_select_branches() {
+    local result_array_name="$1"
+    local current_branch="$2"
+    local max_len="$3"
+    local -n hashes_ref="$4"
+    local -n branches_ref="$5"
+    local -n tracks_ref="$6"
+    local -n subjects_ref="$7"
+    local placeholder="$8"
+
+    # Clear result array
+    eval "$result_array_name=()"
+
+    # Build formatted options for multi-selection (similar to hug bdel pattern)
+    local -a formatted_options=()
+    local branch hash subject track
+
+    for ((i = 0; i < ${#branches_ref[@]}; i++)); do
+        branch="${branches_ref[i]}"
+        hash="${hashes_ref[i]}"
+        subject="${subjects_ref[i]}"
+        track="${tracks_ref[i]}"
+
+        # Format branch line with colors and information
+        local formatted=""
+        if [[ -n "$branch" ]]; then
+            formatted="${branch}"
+            if [[ -n "$hash" ]]; then
+                formatted+=" ${YELLOW}${hash}${NC}"
+            fi
+            if [[ -n "$subject" ]]; then
+                formatted+=" ${GREY}${subject}${NC}"
+            fi
+            if [[ -n "$track" ]]; then
+                formatted+=" ${CYAN}[${track}]${NC}"
+            fi
+        fi
+        formatted_options+=("$formatted")
+    done
+
+    # Use gum for multi-selection if available and enough items
+    if [[ ${#branches_ref[@]} -ge $MIN_ITEMS_FOR_GUM ]] && gum_available; then
+        local gum_height
+        gum_height=$(gum_calculate_height "${#branches_ref[@]}")
+
+        mapfile -t selected_indices < <(
+            gum_filter_by_index formatted_options \
+                "$placeholder (<TAB> to select, Enter to confirm)..." \
+                --height="$gum_height" \
+                --no-limit
+        )
+    else
+        # Fallback to numbered list for small numbers or when gum unavailable
+        echo "$placeholder"
+        echo
+
+        # Display numbered list
+        for ((i = 0; i < ${#formatted_options[@]}; i++)); do
+            printf "  %2d: %s\n" $((i + 1)) "${formatted_options[i]}"
+        done
+        echo
+
+        # Get user selection (support comma-separated numbers)
+        local selection
+        read -r -p "Enter numbers to select (comma-separated, or 'a' for all): " selection
+
+        # Parse selection
+        case "$selection" in
+            a|A|all)
+                # Select all branches
+                selected_indices=("${!branches_ref[@]}")
+                ;;
+            '')
+                # No selection
+                return 1
+                ;;
+            *)
+                # Parse comma-separated numbers
+                IFS=',' read -ra selected_indices <<< "$selection"
+                # Convert to 0-based indexing and validate
+                local -a valid_indices=()
+                local idx
+                for idx in "${selected_indices[@]}"; do
+                    # Remove whitespace and convert to 0-based
+                    idx=$((10#$idx - 1))
+                    if [[ $idx -ge 0 && $idx -lt ${#branches_ref[@]} ]]; then
+                        valid_indices+=("$idx")
+                    fi
+                done
+                selected_indices=("${valid_indices[@]}")
+                ;;
+        esac
+    fi
+
+    # Convert indices back to branch names
+    if [[ ${#selected_indices[@]} -gt 0 ]]; then
+        local idx
+        for idx in "${selected_indices[@]}"; do
+            if [[ $idx -ge 0 && $idx -lt ${#branches_ref[@]} ]]; then
+                eval "$result_array_name+=(\"${branches_ref[idx]}\")"
+            fi
+        done
+        return 0
+    else
+        return 1
+    fi
+}
+

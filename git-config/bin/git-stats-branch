@@ -118,6 +118,10 @@ while [ $# -gt 0 ]; do
       json_output=true
       shift
       ;;
+    --)
+      # Interactive branch selection
+      shift
+      ;;
     -h|--help)
       show_help
       exit 0
@@ -146,6 +150,37 @@ fi
 branch=""
 if [ ${#remaining_args[@]} -gt 0 ]; then
   branch="${remaining_args[0]}"
+elif [[ "$show_all" != "true" ]]; then
+  # Check if we should trigger interactive selection (due to -- flag)
+  interactive_mode=false
+  if [[ "${#remaining_args[@]}" -eq 0 ]]; then
+    # Check if we processed a -- flag by looking at the original arguments
+    for arg in "$@"; do
+      if [[ "$arg" == "--" ]]; then
+        interactive_mode=true
+        break
+      fi
+    done
+  fi
+
+  # Interactive mode: use select_branches to pick a branch
+  if [[ "$interactive_mode" == "true" ]]; then
+    if ! select_branches selected_branches \
+            --placeholder "Select branch for statistics..."; then
+      info "No branch selected."
+      exit 0
+    fi
+
+    if [[ ${#selected_branches[@]} -gt 0 ]]; then
+      branch="${selected_branches[0]}"
+    else
+      # Default to current branch
+      branch=$(git branch --show-current)
+    fi
+  else
+    # Default to current branch
+    branch=$(git branch --show-current)
+  fi
 else
   # Default to current branch
   branch=$(git branch --show-current)
