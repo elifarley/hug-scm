@@ -32,68 +32,68 @@ help: ## Display this help message
 test: test-bash test-lib-py ## Run all tests (BATS + pytest)
 	@echo "$(GREEN)All tests completed!$(NC)"
 
-test-bash: ## Run all BATS-based tests (or specific: TEST_FILE=... TEST_FILTER=... SHOW_FAILING=1)
+test-bash: ## Run all BATS-based tests (or specific: TEST_FILE=... TEST_FILTER=... TEST_SHOW_ALL_RESULTS=1)
 	@echo "$(BLUE)Running BATS tests...$(NC)"
 	@if [ -n "$(TEST_FILE)" ]; then \
 		case "$(TEST_FILE)" in \
 		tests/*) \
-			./tests/run-tests.sh "$(TEST_FILE)" $(if $(SHOW_FAILING),-F) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 			;; \
 		*) \
 			ADJUSTED_FILE="tests/$$(basename "$(TEST_FILE)")"; \
-			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(SHOW_FAILING),-F) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 			;; \
 		esac; \
 	else \
-		./tests/run-tests.sh tests/ $(if $(SHOW_FAILING),-F) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+		./tests/run-tests.sh tests/ $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 	fi
 
-test-unit: ## Run only unit tests (or specific: TEST_FILE=... TEST_FILTER=... SHOW_FAILING=1)
+test-unit: ## Run only unit tests (or specific: TEST_FILE=... TEST_FILTER=... TEST_SHOW_ALL_RESULTS=1)
 	@echo "$(BLUE)Running unit tests...$(NC)"
 	@if [ -n "$(TEST_FILE)" ]; then \
 		case "$(TEST_FILE)" in \
 		tests/*) \
-			./tests/run-tests.sh "$(TEST_FILE)" $(if $(SHOW_FAILING),-F) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 			;; \
 		*) \
 			ADJUSTED_FILE="tests/unit/$$(basename "$(TEST_FILE)")"; \
-			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(SHOW_FAILING),-F) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 			;; \
 		esac; \
 	else \
-		./tests/run-tests.sh --unit $(if $(SHOW_FAILING),-F) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+		./tests/run-tests.sh --unit $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 	fi
 
-test-integration: ## Run only integration tests (or specific: TEST_FILE=... TEST_FILTER=... SHOW_FAILING=1)
+test-integration: ## Run only integration tests (or specific: TEST_FILE=... TEST_FILTER=... TEST_SHOW_ALL_RESULTS=1)
 	@echo "$(BLUE)Running integration tests...$(NC)"
 	@if [ -n "$(TEST_FILE)" ]; then \
 		case "$(TEST_FILE)" in \
 		tests/*) \
-			./tests/run-tests.sh "$(TEST_FILE)" $(if $(SHOW_FAILING),-F) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 			;; \
 		*) \
 			ADJUSTED_FILE="tests/integration/$$(basename "$(TEST_FILE)")"; \
-			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(SHOW_FAILING),-F) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 			;; \
 		esac; \
 	else \
-		./tests/run-tests.sh --integration $(if $(SHOW_FAILING),-F) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+		./tests/run-tests.sh --integration $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 	fi
 
-test-lib: ## Run only library tests (or specific: TEST_FILE=... TEST_FILTER=... SHOW_FAILING=1)
+test-lib: ## Run only library tests (or specific: TEST_FILE=... TEST_FILTER=... TEST_SHOW_ALL_RESULTS=1)
 	@echo "$(BLUE)Running library tests...$(NC)"
 	@if [ -n "$(TEST_FILE)" ]; then \
 		case "$(TEST_FILE)" in \
 		tests/*) \
-			./tests/run-tests.sh "$(TEST_FILE)" $(if $(SHOW_FAILING),-F) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 			;; \
 		*) \
 			ADJUSTED_FILE="tests/lib/$$(basename "$(TEST_FILE)")"; \
-			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(SHOW_FAILING),-F) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 			;; \
 		esac; \
 	else \
-		./tests/run-tests.sh --lib $(if $(SHOW_FAILING),-F) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+		./tests/run-tests.sh --lib $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 	fi
 
 test-check: ## Check test prerequisites without running tests

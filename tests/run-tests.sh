@@ -143,7 +143,7 @@ activate_hug() {
 # Run tests
 run_tests() {
   local test_path="${1:-tests/}"
-  local show_failing_only="${2:-false}"
+  local show_failing_only="${2:-true}"
   local extra_args=("${@:3}")
   
   # If test_path is relative and we're not in project root, make it absolute
@@ -212,8 +212,8 @@ Options:
   -h, --help          Show this help message
   -f, --filter TEXT   Run only tests matching TEXT
   -j, --jobs N        Run tests in parallel with N jobs
-  -F, --show-failing-only
-                      Filter output to show only failing tests
+  -A, --show-all-results
+                      Show all test results (default: failing only)
   --unit              Run only unit tests
   --integration       Run only integration tests
   --lib               Run only library tests
@@ -226,7 +226,7 @@ Examples:
   $0 tests/unit/test_status_staging.bats  # Run specific test file
   $0 -f "hug s"                # Run tests matching "hug s"
   $0 -j 4                      # Run with 4 parallel jobs
-  $0 -F                        # Show only failing tests
+  $0 -A                        # Show all test results (default: failing only)
   $0 --unit                    # Run only unit tests
   $0 --lib                     # Run only library tests
   $0 --check                   # Check prerequisites
@@ -242,7 +242,7 @@ main() {
   local jobs=""
   local check_only=false
   local install_only=false
-  local show_failing_only=false
+  local show_failing_only=true
   local extra_args=()
   
   # Parse arguments
@@ -260,8 +260,8 @@ main() {
         extra_args+=("--jobs" "$2")
         shift 2
         ;;
-      -F|--show-failing-only)
-        show_failing_only=true
+      -A|--show-all-results)
+        show_failing_only=false
         shift
         ;;
       --unit)

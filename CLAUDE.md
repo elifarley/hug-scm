@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Engineering Excellence:** Write production-grade code with zero shortcuts
 - **Systems Thinking:** Consider scalability, maintainability, and long-term impact
 - **User Empathy:** Every feature must solve a real user problem
-- **Quality First:** Zero dependencies where possible, comprehensive error handling
+- **Quality First:** comprehensive error handling and automated tests
 - **Documentation as Code:** Git history tells the story, commit messages are artifacts
 - **Pragmatic Decisions:** Ship high-value features with minimal complexity
 - **Performance Mindset:** Optimize for common cases, stream data, avoid unnecessary work
@@ -35,42 +35,46 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The Makefile provides comprehensive test capabilities with better ergonomics:
 
 ```bash
-# SHOW_FAILING=1 is recommended for all BATS tests:
+# BATS tests show only failing tests by default:
 # - Shows only failures during test run (less noise)
 # - Still shows test count (e.g., "1..248") and summary ("✓ All tests passed!")
 # - Makes failures immediately visible when they occur
-# - No downside: same confidence signal, cleaner output
+# - Use TEST_SHOW_ALL_RESULTS=1 to see all test output
 
 # All tests (recommended for final validation)
-make test SHOW_FAILING=1                    # Runs ALL tests (BATS + pytest)
+make test                                    # Runs ALL tests (BATS + pytest), shows only failing
                                             # = test-bash + test-lib-py
 
 # BATS-only or pytest-only
-make test-bash SHOW_FAILING=1               # All BATS tests (unit + integration + lib)
+make test-bash                               # All BATS tests (unit + integration + lib), shows only failing
 make test-lib-py                            # Python library tests (pytest)
 make test-lib-py-coverage                   # Python tests with coverage report
 
 # BATS test categories (subsets of test-bash)
-make test-unit SHOW_FAILING=1               # BATS unit tests (tests/unit/)
-make test-integration SHOW_FAILING=1        # BATS integration tests (tests/integration/)
-make test-lib SHOW_FAILING=1                # BATS library tests (tests/lib/)
+make test-unit                               # BATS unit tests (tests/unit/), shows only failing
+make test-integration                        # BATS integration tests (tests/integration/), shows only failing
+make test-lib                                # BATS library tests (tests/lib/), shows only failing
 
 # Run specific BATS test files (supports basename or full path)
-make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
-make test-unit TEST_FILE=test_analyze_deps.bats SHOW_FAILING=1
-make test-lib TEST_FILE=test_hug_common.bats SHOW_FAILING=1
-make test-integration TEST_FILE=test_workflows.bats SHOW_FAILING=1
-make test-bash TEST_FILE=test_head.bats SHOW_FAILING=1
+make test-unit TEST_FILE=test_head.bats
+make test-unit TEST_FILE=test_analyze_deps.bats
+make test-lib TEST_FILE=test_hug_common.bats
+make test-integration TEST_FILE=test_workflows.bats
+make test-bash TEST_FILE=test_head.bats
 
 # Filter tests by name pattern (works with BATS and pytest)
-make test-unit TEST_FILTER="hug w discard" SHOW_FAILING=1
-make test-lib TEST_FILTER="confirm_action" SHOW_FAILING=1
-make test-bash TEST_FILTER="hug s" SHOW_FAILING=1
+make test-unit TEST_FILTER="hug w discard"
+make test-lib TEST_FILTER="confirm_action"
+make test-bash TEST_FILTER="hug s"
 make test-lib-py TEST_FILTER="test_analyze" # pytest -k pattern
 
-# Combine BATS options: file + filter + show-failing
-make test-unit TEST_FILE=test_analyze_deps.bats TEST_FILTER="dependency" SHOW_FAILING=1
-make test-bash TEST_FILTER="hug w" SHOW_FAILING=1
+# Combine BATS options: file + filter + show-all-results
+make test-unit TEST_FILE=test_analyze_deps.bats TEST_FILTER="dependency" TEST_SHOW_ALL_RESULTS=1
+make test-bash TEST_FILTER="hug w" TEST_SHOW_ALL_RESULTS=1
+
+# Show all test results (verbose output)
+make test TEST_SHOW_ALL_RESULTS=1            # Shows all tests, including passing ones
+make test-bash TEST_SHOW_ALL_RESULTS=1       # Shows all BATS test results
 
 # Check prerequisites without running tests
 make test-check                             # BATS dependencies check
@@ -358,7 +362,7 @@ Current status:
 make test
 
 # Verify specific functionality (use Makefile, not direct script invocation)
-make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
+make test-unit TEST_FILE=test_head.bats
 
 # Check documentation builds
 make docs-build

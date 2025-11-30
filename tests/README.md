@@ -140,17 +140,30 @@ make test-bash TEST_FILTER="hug w"
 make test-lib-py TEST_FILTER="test_analyze"
 ```
 
-### Show Only Failing BATS Tests
+### BATS Tests Output
+
+**Default behavior**: BATS tests show only failing tests by default
 ```bash
-make test-unit SHOW_FAILING=1
-make test-bash SHOW_FAILING=1
-make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
+make test-unit                           # Shows only failing unit tests
+make test-bash                           # Shows only failing BATS tests
+make test-unit TEST_FILE=test_head.bats  # Shows only failing tests in this file
+```
+
+**Show all test results** (including passing)
+```bash
+make test-unit TEST_SHOW_ALL_RESULTS=1
+make test-bash TEST_SHOW_ALL_RESULTS=1
+make test-unit TEST_FILE=test_head.bats TEST_SHOW_ALL_RESULTS=1
 ```
 
 ### Combine BATS Options
 ```bash
-make test-unit TEST_FILE=test_status_staging.bats TEST_FILTER="hug s" SHOW_FAILING=1
-make test-bash TEST_FILTER="working directory" SHOW_FAILING=1
+make test-unit TEST_FILE=test_status_staging.bats TEST_FILTER="hug s"
+make test-bash TEST_FILTER="working directory"
+
+# Show all results with filters
+make test-unit TEST_FILE=test_status_staging.bats TEST_FILTER="hug s" TEST_SHOW_ALL_RESULTS=1
+make test-bash TEST_FILTER="working directory" TEST_SHOW_ALL_RESULTS=1
 ```
 
 ### Check Prerequisites

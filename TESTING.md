@@ -178,10 +178,14 @@ make test-lib-py
 # Run Python library tests with coverage report
 make test-lib-py-coverage
 
-# Show only failing tests (filters out passing tests)
-make test SHOW_FAILING=1
-make test-unit SHOW_FAILING=1
-make test-lib-py SHOW_FAILING=1
+# BATS tests show only failing tests by default
+make test                    # Shows only failing BATS tests
+make test-unit              # Shows only failing unit tests
+make test-lib-py             # Python tests (pytest, shows all by default)
+
+# Show all test results (including passing)
+make test TEST_SHOW_ALL_RESULTS=1
+make test-unit TEST_SHOW_ALL_RESULTS=1
 ```
 
 #### Running Specific Tests via Makefile
@@ -200,9 +204,13 @@ make test-unit TEST_FILE=test_head.bats TEST_FILTER="edge case"
 # Full paths also work
 make test-unit TEST_FILE=tests/unit/test_head.bats
 
-# Show only failing tests by setting SHOW_FAILING=1
-make test-unit SHOW_FAILING=1
-make test-unit TEST_FILE=test_head.bats SHOW_FAILING=1
+# BATS tests show only failing tests by default
+make test-unit                           # Shows only failing unit tests
+make test-unit TEST_FILE=test_head.bats  # Shows only failing tests in this file
+
+# Show all test results (including passing)
+make test-unit TEST_SHOW_ALL_RESULTS=1
+make test-unit TEST_FILE=test_head.bats TEST_SHOW_ALL_RESULTS=1
 
 # Same pattern for other categories
 make test-integration TEST_FILE=test_workflows.bats  # Auto-prepends tests/integration/
@@ -214,7 +222,7 @@ make test TEST_FILE=test_head.bats  # Auto-prepends tests/ for general tests
 # - TEST_FILE overrides the category path; short names (filenames only) are auto-completed with category dir.
 # - Full relative paths (e.g., tests/unit/test_head.bats) are used as-is.
 # - TEST_FILTER uses run-tests.sh's -f (partial match on test names); combine with TEST_FILE for precision.
-# - SHOW_FAILING=1 filters output to show only failing tests, hiding passing test lines.
+# - BATS tests show only failing tests by default; use TEST_SHOW_ALL_RESULTS=1 to see all test output.
 # - For advanced args (e.g., -j 4, -v), invoke run-tests.sh directly.
 # - Invalid paths/files will error via run-tests.sh.
 ```

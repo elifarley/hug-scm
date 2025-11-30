@@ -1,2 +1,3 @@
 - In shell scripts, NEVER use the `local` keyword outside a function body!
-- If trying to call the `show_help` function of a `git-<COMMAND>` script, use `hug <COMMAND> -h` instead of `--help`;
+- Scripts should always follow the D.R.Y. principle, have high maintainability and elegance.
+- Try to keep most of the work in library functions (../lib/) while the scripts themselves basically work as a thin layer that call the library to promote maximum code reuse
