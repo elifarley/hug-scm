@@ -12,6 +12,7 @@ Worktrees allow you to work on multiple branches simultaneously without context 
 | `hug wtsh` | Show detailed worktree information | Like `hug sh` |
 | `hug wtc` | Create worktree for branch | Like `hug bc` |
 | `hug wtdel` | Remove worktree safely | Like `hug bdel` |
+| `hug wtprune` | Clean up stale worktree metadata | Maintenance utility |
 
 ## Core Concepts
 
@@ -274,6 +275,40 @@ hug wtdel ~/project-feature -f         # Remove without confirmation
 - Requires confirmation unless `--force` is used
 - Prevents removal of current worktree
 - Shows detailed removal summary
+
+### `hug wtprune` - Clean Up Stale Worktree Metadata
+
+Cleans up orphaned worktree metadata from Git's internal database. Orphaned worktrees are references to worktree directories that no longer exist on the filesystem.
+
+```bash
+hug wtprune [options]
+```
+
+**Options:**
+- `-f, --force`: Skip confirmation prompts and prune all stale worktrees
+- `--dry-run`: Show what would be pruned without actually doing it
+- `-v, --verbose`: Show detailed output with progress information
+- `-h, --help`: Show help message
+
+**Examples:**
+```bash
+hug wtprune                               # Interactive pruning with confirmation
+hug wtprune --dry-run                     # Preview what would be pruned
+hug wtprune -f                            # Force prune without confirmation
+hug wtprune --verbose                     # Detailed output with progress
+```
+
+**When to Use:**
+- Worktree directories were manually deleted
+- External processes removed worktree directories
+- You want to clean up stale references after system maintenance
+- Git worktree operations show references to non-existent directories
+
+**Safety Features:**
+- Never prunes current worktree or existing directories
+- Shows exactly what will be pruned before doing it
+- Requires confirmation before cleanup (unless `--force` is used)
+- Supports `--dry-run` to preview changes
 
 ## JSON Output
 

@@ -339,6 +339,9 @@ teardown() {
 }
 
 @test "hug-git-worktree: prune_worktrees handles no orphaned worktrees" {
+  # Source the library to access the function
+  source "$HUG_HOME/git-config/lib/hug-git-worktree"
+
   run prune_worktrees false false
 
   assert_success

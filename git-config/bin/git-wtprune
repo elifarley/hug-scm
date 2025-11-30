@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Assume HUG_HOME is set (exported by hug or environment)
+# shellcheck source=git-config/lib/hug-common
+. "$HUG_HOME/git-config/lib/hug-common"
+# shellcheck source=git-config/lib/hug-git-kit
+. "$HUG_HOME/git-config/lib/hug-git-kit"
+# shellcheck source=git-config/lib/hug-git-worktree
+. "$HUG_HOME/git-config/lib/hug-git-worktree"
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+show_help() {
+    cat << 'EOF'
+hug wtprune: Clean up stale worktree metadata
+
+USAGE:
+    hug wtprune [options]
+    hug wtprune -h|--help
+
+OPTIONS:
+    -f, --force     Skip confirmation prompts and prune all stale worktrees
+    --dry-run       Show what would be pruned without actually doing it
+    -v, --verbose   Show detailed output with progress information
+    -h, --help      Show this help
+
+DESCRIPTION:
+    Cleans up orphaned worktree metadata from Git's internal database.
+    Orphaned worktrees are references to worktree directories that no longer
+    exist on the filesystem.
+
+    This is useful when:
+    - Worktree directories were manually deleted
+    - External processes removed worktree directories
+    - You want to clean up stale references after system maintenance
+
+    Safety features:
+    - Never prunes current worktree or existing directories
+    - Shows exactly what will be pruned before doing it
+    - Requires confirmation before cleanup (unless --force is used)
+    - Supports --dry-run to preview changes
+
+EXAMPLES:
+    hug wtprune                               # Interactive pruning with confirmation
+    hug wtprune --dry-run                     # Preview what would be pruned
+    hug wtprune -f                            # Force prune without confirmation
+    hug wtprune --verbose                     # Detailed output with progress
+
+SEE ALSO:
+    hug wt      List and switch between worktrees
+    hug wtdel   Remove worktree safely
+
+FURTHER READING:
+    See 'git worktree prune --help' for underlying implementation details.
+EOF
+}
+
+# Parse command line arguments
+force=false
+dry_run=false
+verbose=false
+
+# Use GNU getopt for consistent argument parsing
+if ! PARSED=$(getopt --options="fhv" --longoptions="force,dry-run,verbose,help" --name="$0" -- "$@"); then
+    echo "Usage: $0 [-f|--force] [--dry-run] [-v|--verbose] [-h|--help]" >&2
+    exit 2
+fi
+
+eval set -- "$PARSED"
+
+while true; do
+    case "$1" in
+        -f|--force)
+            force=true
+            export HUG_FORCE=true
+            shift
+            ;;
+        --dry-run)
+            dry_run=true
+            shift
+            ;;
+        -v|--verbose)
+            verbose=true
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Internal error!" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Check for extra arguments
+if [[ $# -gt 0 ]]; then
+    echo "Error: Unexpected arguments: $*" >&2
+    echo "Usage: hug wtprune [-f|--force] [--dry-run] [-v|--verbose] [-h|--help]" >&2
+    exit 2
+fi
+
+# Ensure we're in a git repository
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    error "Not a git repository"
+fi
+
+# Verbose output
+if $verbose; then
+    info "Scanning for orphaned worktrees..."
+fi
+
+# Call the existing library function
+prune_worktrees "$force" "$dry_run"
