@@ -79,71 +79,41 @@ hug_bdel() {
   local -a branches_to_delete=("$@")
   local -a formatted_to_delete=()
   
-  # If no branches specified, show interactive menu
+  # If no branches specified, show interactive menu using library functions
   if [[ ${#branches_to_delete[@]} -eq 0 ]]; then
-    local -a all_branches=()
-    
-    # Get all local branches except backup branches and current branch
-    mapfile -t all_branches < <(
-      git for-each-ref --format='%(refname:short)' refs/heads/ |
-      grep -v '^hug-backups/' |
-      grep -v "^${current_branch}$" || true
-    )
-    
-    if [[ ${#all_branches[@]} -eq 0 ]]; then
-      if [[ -n "$current_branch" && "$current_branch" != "HEAD" ]]; then
-        info "No other branches to delete (only current branch '$current_branch' exists)."
-      else
-        info "No branches to delete."
+    # Check if there are any branches available for deletion before showing interface
+    declare -a available_branches=() available_hashes=() available_subjects=() available_tracks=()
+    local available_current_branch="" available_max_len=""
+
+    if compute_local_branch_details available_current_branch available_max_len available_hashes available_branches available_tracks available_subjects "true"; then
+      declare -a filtered_branches=()
+      declare -a filtered_hashes=() filtered_subjects=() filtered_tracks=()
+      filter_branches available_branches available_hashes available_subjects available_tracks "$available_current_branch" \
+          filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+          "true" "true" ""
+
+      if [[ ${#filtered_branches[@]} -eq 0 ]]; then
+        if [[ -n "$available_current_branch" && "$available_current_branch" != "HEAD" ]]; then
+          info "No other branches to delete (only current branch '$available_current_branch' exists)."
+        else
+          info "No branches to delete."
+        fi
+        exit 0
       fi
+    else
+      info "No branches to delete."
       exit 0
     fi
-    
-    # Check if gum is available and we have a TTY
-    if ! gum_available; then
-      error "Interactive mode requires 'gum' to be installed. Please install it or specify branch names directly.
-       Install: https://github.com/charmbracelet/gum"
-    fi
 
-    if [ ! -t 0 ]; then
-      error "Non-interactive mode: Provide branch names as arguments.
-Usage: hug bdel <branch>..."
-    fi
-    
-    # Prepare formatted options for gum with branch details
-    local -a formatted_options=()
-    
-    for branch in "${all_branches[@]}"; do
-      local hash
-      hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
-      local subject
-      subject=$(git log -1 --format='%s' "$branch" 2>/dev/null || echo "(no commit)")
-      
-      # Format for gum: plain text with details
-      local formatted="${branch} ${YELLOW}${hash}${NC} ${GREY}${subject}${NC}"
-      formatted_options+=("$formatted")
-    done
-    
-    # Use gum_filter_by_index for selection with exact matching
-    local -a selected_indices=()
-    mapfile -t selected_indices < <(
-      gum_filter_by_index formatted_options \
-                          "Select branches to delete (<TAB> to select, Enter to confirm)..." \
-                          --no-limit
-    )
-    
-    if [ ${#selected_indices[@]} -eq 0 ]; then
+    # Use existing select_branches function for consistent UX
+    if ! select_branches branches_to_delete \
+            --multi-select \
+            --exclude-current \
+            --exclude-backup \
+            --placeholder "Select branches to delete (<TAB> to select, Enter to confirm)..."; then
       info "No branches selected."
       exit 0
     fi
-    
-    # Extract selected branches and formatted lines using indices
-    branches_to_delete=()
-    for idx in "${selected_indices[@]}"; do
-      local branch="${all_branches[$idx]}"
-      branches_to_delete+=("$branch")
-      formatted_to_delete+=("${formatted_options[$idx]}")
-    done
   fi
   
   # Validate that none of the branches is the current branch

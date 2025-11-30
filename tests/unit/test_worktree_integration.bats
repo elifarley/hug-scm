@@ -17,7 +17,7 @@ teardown() {
   cd "$TEST_REPO"
 
   # 1. Create worktree
-  run git-wt-create feature-1
+  run git-wtc feature-1
   assert_success
   local feature_wt="${TEST_REPO}-wt-feature-1"
   assert_worktree_exists "$feature_wt"
@@ -242,25 +242,25 @@ teardown() {
   git checkout -b "experimental/test_case"
 
   # Create worktrees for these branches
-  run git-wt-create "feature/auth"
+  run git-wtc "feature/auth"
   assert_success
   local wt_auth="${TEST_REPO}-wt-feature-auth"
   assert_worktree_exists "$wt_auth"
   assert_worktree_branch "$wt_auth" "feature/auth"
 
-  run git-wt-create "feature/v2.0"
+  run git-wtc "feature/v2.0"
   assert_success
   local wt_v2="${TEST_REPO}-wt-feature-v2-0"
   assert_worktree_exists "$wt_v2"
   assert_worktree_branch "$wt_v2" "feature/v2.0"
 
-  run git-wt-create "bugfix/issue-123"
+  run git-wtc "bugfix/issue-123"
   assert_success
   local wt_bugfix="${TEST_REPO}-wt-bugfix-issue-123"
   assert_worktree_exists "$wt_bugfix"
   assert_worktree_branch "$wt_bugfix" "bugfix/issue-123"
 
-  run git-wt-create "experimental/test_case"
+  run git-wtc "experimental/test_case"
   assert_success
   local wt_experimental="${TEST_REPO}-wt-experimental-test-case"
   assert_worktree_exists "$wt_experimental"
@@ -282,7 +282,7 @@ teardown() {
   # Test various error conditions and recovery
 
   # 1. Try to create worktree for non-existent branch
-  run git-wt-create nonexistent-branch
+  run git-wtc nonexistent-branch
   assert_failure
   assert_output --partial "does not exist locally"
 
@@ -290,7 +290,7 @@ teardown() {
   local first_wt
   first_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
 
-  run git-wt-create feature-1 "${TEST_REPO}-duplicate-feature"
+  run git-wtc feature-1 "${TEST_REPO}-duplicate-feature"
   assert_failure
   assert_output --partial "already checked out in another worktree"
 

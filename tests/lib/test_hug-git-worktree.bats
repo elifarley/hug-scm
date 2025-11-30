@@ -1,8 +1,10 @@
 #!/usr/bin/env bats
 
-setup() {
-  load '../test_helper'
+load '../test_helper'
+load '../../git-config/lib/hug-common'
+load '../../git-config/lib/hug-git-worktree'
 
+setup() {
   # Create a test repository
   TEST_REPO=$(create_test_repo_with_history)
   cd "$TEST_REPO"
