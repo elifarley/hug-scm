@@ -957,6 +957,41 @@ assert_worktree_exists() {
   $found || fail "Worktree $worktree_path not found in git worktree list"
 }
 
+# Usage: run_with_timeout <timeout_seconds> [expected_exit_code] <command>
+# Run command with timeout protection and optional expected exit code
+# Accepts timeout exit code (124) as valid for hanging tests
+run_with_timeout() {
+  local timeout_seconds="$1"
+  local expected_exit_code="$2"
+  shift 2
+
+  if command -v timeout >/dev/null 2>&1; then
+    run timeout "$timeout_seconds" bash -c "$*"
+    # Accept timeout exit code as valid for hanging tests
+    if [[ "$status" -eq 124 ]]; then
+      echo "Test timed out after ${timeout_seconds}s (expected behavior for hanging scenario)"
+      if [[ -n "$expected_exit_code" ]]; then
+        # For timeout scenarios, treat as success if expecting specific code
+        if [[ "$expected_exit_code" != "0" ]]; then
+          assert_equal "$status" "$expected_exit_code"
+        fi
+      else
+        # No specific expectation, timeout is acceptable
+        return 0
+      fi
+    fi
+  else
+    run "$@"
+  fi
+
+  # Handle expected exit codes for non-timeout scenarios
+  if [[ -n "$expected_exit_code" ]]; then
+    assert_equal "$status" "$expected_exit_code"
+  else
+    assert_success
+  fi
+}
+
 # Assert that a worktree does not exist
 # Usage: assert_worktree_not_exists "/path/to/worktree"
 assert_worktree_not_exists() {

@@ -181,6 +181,9 @@ if [ ! -f "$python_script" ]; then
   exit 1
 fi
 
+# Set default timeout (configurable via environment variable)
+DEFAULT_TIMEOUT=${HUG_ANALYZE_DEPS_TIMEOUT:-120}
+
 # Handle --all mode
 if $all_mode; then
   py_args=(--all --threshold="$threshold" --format="$output_format" --max-results="$max_results")
@@ -189,7 +192,12 @@ if $all_mode; then
     py_args+=(--since="$since_arg")
   fi
 
-  exec python3 "$python_script" "${py_args[@]}"
+  # Use system timeout command as safety net if available
+  if command -v timeout >/dev/null 2>&1; then
+    exec timeout "$DEFAULT_TIMEOUT" python3 "$python_script" "${py_args[@]}"
+  else
+    exec python3 "$python_script" "${py_args[@]}"
+  fi
 fi
 
 # Single commit mode - need commit hash
@@ -235,4 +243,9 @@ if [ -n "$since_arg" ]; then
   py_args+=(--since="$since_arg")
 fi
 
-exec python3 "$python_script" "${py_args[@]}"
+# Use system timeout command as safety net if available
+if command -v timeout >/dev/null 2>&1; then
+  exec timeout "$DEFAULT_TIMEOUT" python3 "$python_script" "${py_args[@]}"
+else
+  exec python3 "$python_script" "${py_args[@]}"
+fi

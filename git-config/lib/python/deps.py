@@ -19,11 +19,36 @@ Example:
 """
 
 import sys
+import os
 import json
 import argparse
 import subprocess
+import signal
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple, Optional
+from functools import lru_cache
+
+
+class TimeoutError(Exception):
+    """Custom timeout exception."""
+    pass
+
+
+class timeout:
+    """Context manager for timeout support using signal handling."""
+
+    def __init__(self, seconds):
+        self.seconds = seconds
+
+    def __enter__(self):
+        def handle_timeout(signum, frame):
+            raise TimeoutError(f"Operation timed out after {self.seconds} seconds")
+
+        signal.signal(signal.SIGALRM, handle_timeout)
+        signal.alarm(self.seconds)
+
+    def __exit__(self, type, value, traceback):
+        signal.alarm(0)
 
 
 def parse_args():
@@ -74,16 +99,21 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_git_command(cmd: List[str]) -> str:
-    """Run git command and return output."""
+def run_git_command(cmd: List[str], timeout_seconds: int = 60) -> str:
+    """Run git command and return output with timeout protection."""
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        return result.stdout.strip()
+        with timeout(timeout_seconds):
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=timeout_seconds
+            )
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, TimeoutError) as e:
+        print(f"Git command timed out: {' '.join(cmd)}", file=sys.stderr)
+        return ""
     except subprocess.CalledProcessError as e:
         print(f"Error running git command: {e}", file=sys.stderr)
         return ""
@@ -115,6 +145,16 @@ def get_commit_info(commit_hash: str) -> Optional[Dict]:
     }
 
 
+@lru_cache(maxsize=1000)
+def get_commit_info_cached(commit_hash: str) -> Optional[Dict]:
+    """
+    Cached version of get_commit_info.
+
+    Returns: Dict with commit metadata or None if commit not found
+    """
+    return get_commit_info(commit_hash)
+
+
 def get_commit_files(commit_hash: str) -> Set[str]:
     """
     Get list of files modified in a commit.
@@ -131,6 +171,33 @@ def get_commit_files(commit_hash: str) -> Set[str]:
         return set()
 
     return set(line.strip() for line in output.split('\n') if line.strip())
+
+
+@lru_cache(maxsize=500)
+def get_commit_files_cached(commit_hash: str) -> frozenset:
+    """
+    Cached version of get_commit_files using immutable frozenset for LRU cache.
+
+    Returns: frozenset of file paths
+    """
+    return frozenset(get_commit_files(commit_hash))
+
+
+def detect_repository_size(commits: List[str]) -> str:
+    """
+    Detect repository size for strategy selection.
+
+    Returns: 'small', 'medium', 'large', or 'massive'
+    """
+    commit_count = len(commits)
+    if commit_count < 100:
+        return "small"
+    elif commit_count < 1000:
+        return "medium"
+    elif commit_count < 10000:
+        return "large"
+    else:
+        return "massive"
 
 
 def get_all_commits(since: Optional[str] = None) -> List[str]:
@@ -178,8 +245,8 @@ def find_related_commits(
 
     Returns: List of (commit_hash, overlap_count) tuples, sorted by overlap
     """
-    # Get files modified by target commit
-    target_files = get_commit_files(commit_hash)
+    # Get files modified by target commit (cached)
+    target_files = get_commit_files_cached(commit_hash)
 
     if not target_files:
         return []
@@ -210,7 +277,8 @@ def build_dependency_graph(
     file_to_commits: Dict[str, Set[str]],
     depth: int = 1,
     threshold: int = 2,
-    max_results: int = 20
+    max_results: int = 20,
+    max_commits: int = 1000
 ) -> Dict[str, List[Tuple[str, int]]]:
     """
     Build dependency graph starting from root commit.
@@ -220,17 +288,24 @@ def build_dependency_graph(
     graph = {}
     visited = set()
     to_visit = [(root_commit, 0)]  # (commit, current_depth)
+    processed_commits = 0
 
-    while to_visit:
+    while to_visit and processed_commits < max_commits:
         current_commit, current_depth = to_visit.pop(0)
 
         if current_commit in visited:
             continue
 
         visited.add(current_commit)
+        processed_commits += 1
 
-        # Find related commits
-        related = find_related_commits(current_commit, file_to_commits, threshold)
+        # Find related commits with timeout protection
+        try:
+            with timeout(30):  # 30 second timeout for each commit analysis
+                related = find_related_commits(current_commit, file_to_commits, threshold)
+        except TimeoutError:
+            print(f"Timeout analyzing commit {current_commit[:8]}, skipping", file=sys.stderr)
+            related = []
 
         # Limit results
         related = related[:max_results]
@@ -240,7 +315,7 @@ def build_dependency_graph(
         # Add related commits for traversal if within depth limit
         if current_depth < depth:
             for related_commit, _ in related:
-                if related_commit not in visited:
+                if related_commit not in visited and len(to_visit) < max_commits:
                     to_visit.append((related_commit, current_depth + 1))
 
     return graph
@@ -484,6 +559,26 @@ def main():
         print("Error: No commits found", file=sys.stderr)
         return 1
 
+    # Detect repository size for strategy selection
+    repo_size = detect_repository_size(all_commits)
+
+    # Adjust parameters based on repository size
+    if repo_size == "small":
+        max_commits_limit = 500
+        default_timeout = 30
+    elif repo_size == "medium":
+        max_commits_limit = 1000
+        default_timeout = 60
+    elif repo_size == "large":
+        max_commits_limit = 2000
+        default_timeout = 90
+    else:  # massive
+        max_commits_limit = 5000
+        default_timeout = 120
+
+    # Apply environment overrides
+    max_commits_limit = int(os.environ.get('HUG_ANALYZE_DEPS_MAX_COMMITS', max_commits_limit))
+
     # Build file-to-commits index
     file_to_commits = build_commit_file_index(all_commits)
 
@@ -507,13 +602,14 @@ def main():
             print(f"Error: Commit {commit} not found", file=sys.stderr)
             return 1
 
-        # Build dependency graph
+        # Build dependency graph with repository size limits
         graph = build_dependency_graph(
             commit_info['full_hash'],
             file_to_commits,
             args.depth,
             args.threshold,
-            args.max_results
+            args.max_results,
+            max_commits_limit
         )
 
         # Format output

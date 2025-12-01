@@ -300,8 +300,8 @@ teardown() {
     git commit -m "commit $i" --allow-empty
   done
 
-  # Should complete quickly
-  run git analyze-deps HEAD --threshold 1 --max-results 5
+  # Test with 120-second timeout protection (configurable via HUG_ANALYZE_DEPS_TIMEOUT)
+  run_with_timeout 120 0 git analyze-deps HEAD --threshold 1 --max-results 5
 
   assert_success
   assert_output --partial "Dependency graph"
