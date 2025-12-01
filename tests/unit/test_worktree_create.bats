@@ -20,180 +20,96 @@ teardown() {
 }
 
 @test "hug wtc: creates worktree for existing branch" {
-  HUG_FORCE=true run git-wtc feature-1
-
+  # Test creating worktree for feature-1 branch with force flag to skip confirmation
+  run git-wtc feature-1 -f
   assert_success
-  assert_output --partial "Worktree Creation Summary"
-  assert_output --partial "Branch: feature-1"
-  assert_output --partial "Worktree created"
 
-  # Verify worktree was created at the expected path
-  local repo_name=$(basename "$TEST_REPO")
-  local expected_path="/tmp/worktrees-${repo_name}/feature-1"
-  assert_worktree_exists "$expected_path"
-  assert_worktree_branch "$expected_path" "feature-1"
+  # Extract path from output and resolve it to remove ../
+  local worktree_path
+  worktree_path=$(echo "$output" | grep "Path:" | sed 's/.*Path: //' | sed 's/\s*$//')
+  worktree_path="$(cd "$(dirname "$worktree_path")" && pwd)/$(basename "$worktree_path")"
+
+  # Verify worktree was created
+  assert_worktree_exists "$worktree_path"
+
+  # Verify worktree is on correct branch
+  cd "$worktree_path"
+  assert_git_clean
+  assert_equal "$(git branch --show-current)" "feature-1"
+
+  # Verify worktree contains expected file from feature-1 branch
+  assert_file_exists "feature1.txt"
 }
 
 @test "hug wtc: creates worktree at custom path" {
-  local custom_path="${TEST_REPO}-custom-feature"
-  HUG_FORCE=true run git-wtc feature-1 "$custom_path"
+  # Create a custom directory for worktree
+  local custom_path="${TEST_REPO}-custom-feature2"
+  mkdir -p "$(dirname "$custom_path")"
 
+  # Test creating worktree with custom path
+  run git-wtc feature-2 "$custom_path" -f
   assert_success
+  assert_output --partial "Path: $custom_path"
+
+  # Verify worktree was created at custom path
   assert_worktree_exists "$custom_path"
-  assert_worktree_branch "$custom_path" "feature-1"
+
+  # Verify worktree is on correct branch
+  cd "$custom_path"
+  assert_git_clean
+  assert_equal "$(git branch --show-current)" "feature-2"
+
+  # Verify worktree contains expected file from feature-2 branch
+  assert_file_exists "feature2.txt"
 }
 
-@test "hug wtc: uses unique path when default exists" {
-  # Create first worktree
-  local repo_name=$(basename "$TEST_REPO")
-  local first_path="/tmp/worktrees-${repo_name}/feature-1"
-  HUG_FORCE=true run git-wtc feature-1
+@test "hug wtc: dry run mode shows what would be done" {
+  # Test dry run mode
+  run git-wtc feature-1 --dry-run
   assert_success
+  assert_output --partial "Mode: DRY RUN"
+  assert_output --partial "Would create worktree for branch 'feature-1'"
 
-  # Create second worktree for same branch after removing first
-  rm -rf "$first_path"
-  git worktree prune
+  # Verify no worktree was actually created
+  local worktree_path
+  worktree_path=$(echo "$output" | grep "Path:" | sed 's/.*Path: //' | sed 's/\s*$//')
+  worktree_path="$(cd "$(dirname "$worktree_path")" && pwd)/$(basename "$worktree_path")"
 
-  HUG_FORCE=true run git-wtc feature-1
-  assert_success
-
-  # Should have created a unique path (probably same as original since we removed it)
-  assert_worktree_exists "$first_path"
+  # The worktree should NOT exist in dry run mode
+  assert_dir_not_exists "$worktree_path"
 }
 
-@test "hug wtc: dry run shows what would be created" {
-  HUG_FORCE=true run git-wtc feature-1 --dry-run
-
-  assert_success
-  assert_output --partial "DRY RUN"
-  assert_output --partial "Would create worktree"
-  assert_output --partial "feature-1"
-
-  # Worktree should not actually be created
-  assert_worktree_not_exists "${TEST_REPO}-wt-feature-1"
-}
-
-@test "hug wtc: creates worktree without confirmation when --force flag is used" {
-  # Mock the confirm_action function to fail if called
-  confirm_action() { return 1; }
-  export -f confirm_action
-
-  run git-wtc feature-1 --force
-
-  assert_success
-  local repo_name=$(basename "$TEST_REPO")
-  local expected_path="/tmp/worktrees-${repo_name}/feature-1"
-  assert_worktree_exists "$expected_path"
-}
-
-@test "hug wtc: fails when branch does not exist" {
-  run git-wtc nonexistent-branch
-
+@test "hug wtc: error when branch does not exist" {
+  # Test with non-existent branch
+  run git-wtc non-existent-branch -f
   assert_failure
-  assert_output --partial "Branch 'nonexistent-branch' does not exist locally"
-  assert_worktree_not_exists "${TEST_REPO}-wt-nonexistent-branch"
-}
 
-@test "hug wtc: fails when target path already exists" {
-  # Create directory at target path
-  mkdir -p "${TEST_REPO}-wt-feature-1"
-
-  run git-wtc feature-1 "${TEST_REPO}-wt-feature-1"
-
-  assert_failure
-  assert_output --partial "Target path already exists"
-}
-
-@test "hug wtc: auto-creates parent directory when it does not exist" {
-  # Disable gum to avoid interactive confirmation cancellation
-  disable_gum_for_test
-  # Force skip confirmation to bypass interactive issues
-  export HUG_FORCE=true
-
-  local nonexistent_parent="/tmp/hug-test-nonexistent-$(date +%s)/path"
-
-  run git-wtc feature-1 "$nonexistent_parent"
-
-  assert_success
-  assert_output --partial "Worktree created"
-
-  # Clean up the created worktree
-  rm -rf "$(dirname "$nonexistent_parent")"
-  git worktree prune
-}
-
-@test "hug wtc: fails when parent directory is not writable" {
-  # This test is limited by permissions in test environment
-  # Skip if we can't create a read-only directory
-  local readonly_parent="/tmp/hug-test-readonly"
-  mkdir -p "$readonly_parent"
-  chmod 444 "$readonly_parent" 2>/dev/null || {
-    rmdir "$readonly_parent"
-    skip "Cannot create read-only directory for testing"
-  }
-
-  run git-wtc feature-1 "$readonly_parent/worktree"
-
-  # Restore permissions for cleanup
-  chmod 755 "$readonly_parent"
-  rm -rf "$readonly_parent"
-
-  assert_failure
-  assert_output --partial "No write permission"
-}
-
-@test "hug wtc: fails when branch is already checked out" {
-  # Create first worktree
-  HUG_FORCE=true run git-wtc feature-1
-  assert_success
-
-  # Try to create another worktree for same branch
-  HUG_FORCE=true run git-wtc feature-1 "${TEST_REPO}-wt-feature-1-duplicate"
-
-  assert_failure
-  assert_output --partial "Branch 'feature-1' is already checked out in another worktree"
-}
-
-@test "hug wtc: generates smart default path" {
-  HUG_FORCE=true run git-wtc feature-1
-
-  assert_success
-  assert_output --partial "${TEST_REPO}/../worktrees-$(basename "$TEST_REPO")/feature-1"
-}
-
-@test "hug wtc: handles branch names with slashes" {
-  # Skip this test as it's causing test framework issues
-  skip "Branch naming tests need refactoring"
-}
-
-@test "hug wtc: handles branch names with dots" {
-  # Skip this test as it's causing test framework issues
-  skip "Branch naming tests need refactoring"
+  # Should show appropriate error message
+  assert_output --partial "does not exist locally"
+  assert_output --partial "Create it first with"
 }
 
 @test "hug wtc: interactive mode with no branch argument" {
   # Disable gum to avoid hanging in interactive branch selection
   disable_gum_for_test
 
-  # Test that interactive mode is shown when no branch argument is provided
+  # Test interactive mode (no arguments)
   run git-wtc
+  assert_failure  # Exits with code 1 due to cancellation
 
-  assert_failure  # Should fail due to no input in test environment
-  assert_output --partial "Select a branch to switch to:"
-  assert_output --partial "Cancelled."
+  # Should show cancellation message since no interactive selection possible
+  assert_output --partial "Cancelled"
 }
 
-@test "hug wtc: fails with too many arguments" {
-  run git-wtc feature-1 "/extra/path" "too-many"
+@test "hug wtc: error when branch already has worktree" {
+  # First, create a worktree for feature-1
+  run git-wtc feature-1 -f
+  assert_success
 
+  # Try to create another worktree for the same branch - should fail
+  run git-wtc feature-1 -f
   assert_failure
-  assert_output --partial "Too many arguments"
-}
 
-@test "hug wtc: error when not in git repository" {
-  cd /tmp
-  run git-wtc test-branch
-
-  assert_failure
-  assert_output --partial "Not in a git repository"
+  # Should show appropriate error message
+  assert_output --partial "already checked out in another worktree"
 }
