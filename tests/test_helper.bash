@@ -656,7 +656,7 @@ create_test_repo_with_branches() {
   (
     cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
 
-    # Create a feature branch with commits
+    # Create a feature branch with commits (existing functionality)
     git checkout -q -b feature/branch
     echo "Feature branch file" > feature.txt
     git add feature.txt
@@ -667,6 +667,29 @@ create_test_repo_with_branches() {
     echo "Main extra" > main_extra.txt
     git add main_extra.txt
     git commit -q -m "Add main extra"
+
+    # Create branches that worktree tests expect
+    git checkout -q -b feature-1
+    echo "Feature 1 content" > feature1.txt
+    git add feature1.txt
+    git commit -q -m "feature-1 initial commit"
+
+    git checkout -q main
+
+    git checkout -q -b feature-2
+    echo "Feature 2 content" > feature2.txt
+    git add feature2.txt
+    git commit -q -m "feature-2 initial commit"
+
+    git checkout -q main
+
+    git checkout -q -b hotfix-1
+    echo "Hotfix 1 content" > hotfix1.txt
+    git add hotfix1.txt
+    git commit -q -m "hotfix-1 initial commit"
+
+    # Return to main branch
+    git checkout -q main
   )
 
   echo "$test_repo"
