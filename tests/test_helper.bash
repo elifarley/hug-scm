@@ -60,6 +60,9 @@ setup_file() {
   # Add hug to PATH for tests
   export PATH="$HUG_BIN:$PATH"
 
+  # Enable test mode for gum simulation (bypasses TTY checks)
+  export HUG_TEST_MODE=true
+
   # Set up isolated temp dir for the test suite
   export BATS_TEST_TMPDIR="$(mktemp -d -t hug-test-suite-XXXXXX)"
 
@@ -463,6 +466,38 @@ disable_gum_for_test() {
 
 enable_gum_for_test() {
   unset HUG_DISABLE_GUM
+}
+
+# Enable gum simulation for testing
+# This enables test mode which bypasses TTY checks and allows gum to work in test environments
+enable_gum_simulation() {
+  export HUG_TEST_MODE=true
+  export HUG_DISABLE_GUM=""  # Ensure gum is not disabled
+}
+
+# Disable gum simulation for testing
+disable_gum_simulation() {
+  unset HUG_TEST_MODE
+}
+
+# Force gum to be unavailable for testing
+# This is useful when testing error paths that require gum to be disabled
+disable_gum_for_test() {
+  export HUG_DISABLE_GUM=true
+  unset HUG_TEST_MODE
+}
+
+# Configure gum mock to simulate cancellation
+# Useful for testing that commands handle cancelled gum interactions properly
+gum_mock_cancel() {
+  export HUG_TEST_GUM_CONFIRM="no"
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1
+}
+
+# Configure gum mock to simulate successful selection/input
+gum_mock_success() {
+  export HUG_TEST_GUM_CONFIRM="yes"
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=0
 }
 
 # Setup gum mock for testing

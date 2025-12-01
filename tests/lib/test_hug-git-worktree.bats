@@ -2,6 +2,7 @@
 
 load '../test_helper'
 load '../../git-config/lib/hug-common'
+load '../../git-config/lib/hug-output'
 load '../../git-config/lib/hug-git-worktree'
 
 setup() {
@@ -183,7 +184,8 @@ teardown() {
 @test "hug-git-worktree: validate_worktree_creation_path rejects non-existent parent" {
   local path_with_nonexistent_parent="/tmp/nonexistent/parent/path"
 
-  run validate_worktree_creation_path "$path_with_nonexistent_parent"
+  # Pass false to disable auto-creation of parent directory
+  run validate_worktree_creation_path "$path_with_nonexistent_parent" "false"
 
   assert_failure
   assert_output --partial "Parent directory does not exist"

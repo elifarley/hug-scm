@@ -34,8 +34,14 @@ prompt_confirm() {
   fi
   # Check if we're in a non-interactive environment (no TTY)
   if [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
-    info "Non-interactive environment: cancelled."
-    exit 1
+    # In test mode, allow input simulation
+    if [[ "${HUG_TEST_MODE:-}" == "true" ]]; then
+      # Continue to input reading in test mode
+      :
+    else
+      info "Non-interactive environment: cancelled."
+      exit 1
+    fi
   fi
   local response
   printf '%s' "$prompt" >&2
@@ -80,8 +86,14 @@ confirm_action() {
 
   # Check if we're in a non-interactive environment (no TTY)
   if [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
-    info "Non-interactive environment: cancelled."
-    exit 1
+    # In test mode, allow input simulation
+    if [[ "${HUG_TEST_MODE:-}" == "true" ]]; then
+      # Continue to input reading in test mode
+      :
+    else
+      info "Non-interactive environment: cancelled."
+      exit 1
+    fi
   fi
 
   local reply

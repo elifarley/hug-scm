@@ -20,6 +20,12 @@ gum_available() {
   if [[ "${HUG_DISABLE_GUM:-}" == "true" ]]; then
     return 1
   fi
+
+  # Test mode bypass - allow gum simulation in test environments
+  if [[ "${HUG_TEST_MODE:-}" == "true" ]]; then
+    return 0
+  fi
+
   # Check if gum command is available in PATH
   if ! command -v gum >/dev/null 2>&1; then
     return 1

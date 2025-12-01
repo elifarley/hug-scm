@@ -172,11 +172,13 @@ teardown() {
   assert_output --partial "feature-v2-0"  # Should convert dots to dashes
 }
 
-@test "hug wtc: fails with no branch argument" {
+@test "hug wtc: interactive mode with no branch argument" {
+  # Test that interactive mode is shown when no branch argument is provided
   run git-wtc
 
-  assert_failure
-  assert_output --partial "Branch name is required"
+  assert_failure  # Should fail due to no input in test environment
+  assert_output --partial "Select a branch to switch to:"
+  assert_output --partial "Cancelled."
 }
 
 @test "hug wtc: fails with too many arguments" {

@@ -2,7 +2,28 @@
 # Mock gum for testing
 # This script simulates gum behavior for automated tests
 
-. "$HUG_HOME/git-config/lib/hug-gum" || exit
+# Standalone gum_available function to avoid circular dependency
+gum_available() {
+  # Check if gum is disabled
+  if [[ "${HUG_DISABLE_GUM:-}" == "true" ]]; then
+    return 1
+  fi
+
+  # In test mode, always report gum as available
+  if [[ "${HUG_TEST_MODE:-}" == "true" ]]; then
+    return 0
+  fi
+
+  # Check if gum command exists
+  command -v gum >/dev/null 2>&1
+}
+
+# Standalone gum_log function to avoid library dependency
+gum_log() {
+  local prefix="$1"
+  shift
+  printf '%s %s\n' "$prefix" "$*"
+}
 
 # Handle different gum commands
 case "$1" in
@@ -52,31 +73,49 @@ case "$1" in
     
   log)
     # For log command, just pass through to real gum if available
-    # Otherwise, just echo the message
+    # Otherwise, use our standalone implementation
     if gum_available; then
-      gum "$@"
+      command gum "$@"
     else
       shift  # Remove 'log' argument
-      # Skip flags and print remaining arguments
-      while [[ $# -gt 0 ]]; do
-        case "$1" in
-          -s|--prefix=*|--prefix)
-            shift
-            [[ $# -gt 0 && "$1" != -* ]] && shift
-            ;;
-          *)
-            echo "$@"
-            break
-            ;;
-        esac
-      done
+      # Simple implementation for testing
+      local message="$*"
+      if [[ -n "$message" ]]; then
+        echo "$message"
+      fi
     fi
     ;;
-    
+
+  input)
+    # For input command, check if HUG_TEST_GUM_INPUT is set
+    # Otherwise read from stdin or use default
+    if [[ -n "${HUG_TEST_GUM_INPUT:-}" ]]; then
+      printf '%s\n' "$HUG_TEST_GUM_INPUT"
+      exit 0
+    elif [[ -n "${HUG_TEST_GUM_INPUT_RETURN_CODE:-}" ]]; then
+      # Allow tests to control return code (0=success, 1=cancelled)
+      exit "$HUG_TEST_GUM_INPUT_RETURN_CODE"
+    else
+      # Read from stdin or provide default behavior
+      if [[ -t 0 ]]; then
+        # Interactive input available
+        if read -r input; then
+          printf '%s\n' "$input"
+          exit 0
+        else
+          exit 1
+        fi
+      else
+        # No interactive input, simulate cancellation
+        exit 1
+      fi
+    fi
+    ;;
+
   *)
     # For other commands, try to pass through to real gum
     if gum_available; then
-      gum "$@"
+      command gum "$@"
     else
       # No real gum, just exit successfully
       exit 0

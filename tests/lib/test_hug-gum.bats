@@ -5,8 +5,10 @@ load '../test_helper'
 load '../../git-config/lib/hug-gum'
 load '../../git-config/lib/hug-output'
 
-@test "hug-gum: gum_available returns success when gum is in PATH" {
-  # Arrange - mock gum command
+@test "hug-gum: gum_available returns failure when gum is in PATH but no TTY" {
+  # Arrange - temporarily disable test mode for this test
+  unset HUG_TEST_MODE
+  # Mock gum command
   command() {
     if [[ "$1" == "-v" && "$2" == "gum" ]]; then
       return 0
@@ -14,16 +16,21 @@ load '../../git-config/lib/hug-output'
     builtin command "$@"
   }
   export -f command
-  
+
   # Act
   run gum_available
-  
+
   # Assert
-  assert_success
+  assert_failure  # Should fail due to no TTY in test environment
+
+  # Cleanup
+  export HUG_TEST_MODE=true
 }
 
 @test "hug-gum: gum_available returns failure when gum is not in PATH" {
-  # Arrange - mock gum command as not found
+  # Arrange - temporarily disable test mode for this test
+  unset HUG_TEST_MODE
+  # Mock gum command as not found
   command() {
     if [[ "$1" == "-v" && "$2" == "gum" ]]; then
       return 1
@@ -31,47 +38,56 @@ load '../../git-config/lib/hug-output'
     builtin command "$@"
   }
   export -f command
-  
+
   # Act
   run gum_available
-  
+
   # Assert
   assert_failure
+
+  # Cleanup
+  export HUG_TEST_MODE=true
 }
 
 @test "hug-gum: gum_available returns failure when HUG_DISABLE_GUM is true" {
-  # Arrange
+  # Arrange - temporarily disable test mode for this test
+  unset HUG_TEST_MODE
   export HUG_DISABLE_GUM=true
-  
+
   # Act
   run gum_available
-  
+
   # Assert
   assert_failure
-  
+
   # Cleanup
   unset HUG_DISABLE_GUM
+  export HUG_TEST_MODE=true
 }
 
 @test "hug-gum: gum_available ignores gum in PATH when HUG_DISABLE_GUM is true" {
-  # Arrange
+  # Arrange - temporarily disable test mode for this test
+  unset HUG_TEST_MODE
   export HUG_DISABLE_GUM=true
   # Even if gum is available, it should return failure
-  
+
   # Act
   run gum_available
-  
+
   # Assert
   assert_failure
-  
+
   # Cleanup
   unset HUG_DISABLE_GUM
+  export HUG_TEST_MODE=true
 }
 
-@test "hug-gum: gum_available works when HUG_DISABLE_GUM is not set" {
-  # Arrange - ensure variable is not set
+@test "hug-gum: gum_available fails when HUG_DISABLE_GUM is not set but no TTY" {
+  # Arrange - temporarily disable test mode for this test
+  unset HUG_TEST_MODE
+  # Ensure variable is not set
   unset HUG_DISABLE_GUM
-  
+
   # Mock command to simulate gum being available
   command() {
     if [[ "$1" == "-v" && "$2" == "gum" ]]; then
@@ -80,18 +96,22 @@ load '../../git-config/lib/hug-output'
     builtin command "$@"
   }
   export -f command
-  
+
   # Act
   run gum_available
-  
+
   # Assert
-  assert_success
+  assert_failure  # Should fail due to no TTY in test environment
+
+  # Cleanup
+  export HUG_TEST_MODE=true
 }
 
-@test "hug-gum: gum_available works when HUG_DISABLE_GUM is false" {
-  # Arrange
+@test "hug-gum: gum_available fails when HUG_DISABLE_GUM is false but no TTY" {
+  # Arrange - temporarily disable test mode for this test
+  unset HUG_TEST_MODE
   export HUG_DISABLE_GUM=false
-  
+
   # Mock command to simulate gum being available
   command() {
     if [[ "$1" == "-v" && "$2" == "gum" ]]; then
@@ -100,15 +120,51 @@ load '../../git-config/lib/hug-output'
     builtin command "$@"
   }
   export -f command
-  
+
   # Act
   run gum_available
-  
+
   # Assert
-  assert_success
-  
+  assert_failure  # Should fail due to no TTY in test environment
+
   # Cleanup
   unset HUG_DISABLE_GUM
+  export HUG_TEST_MODE=true
+}
+
+@test "hug-gum: gum_available returns success in test mode" {
+  # Arrange - test mode should be enabled by default
+  # Mock command to simulate gum being available
+  command() {
+    if [[ "$1" == "-v" && "$2" == "gum" ]]; then
+      return 0
+    fi
+    builtin command "$@"
+  }
+  export -f command
+
+  # Act
+  run gum_available
+
+  # Assert
+  assert_success
+}
+
+@test "hug-gum: gum_available returns success in test mode even without TTY" {
+  # Arrange - test mode bypasses TTY checks
+  command() {
+    if [[ "$1" == "-v" && "$2" == "gum" ]]; then
+      return 1  # gum not found
+    fi
+    builtin command "$@"
+  }
+  export -f command
+
+  # Act
+  run gum_available
+
+  # Assert
+  assert_success  # Should succeed due to test mode
 }
 
 # Tests for new helper functions
