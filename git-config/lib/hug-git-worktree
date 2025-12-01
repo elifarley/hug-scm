@@ -64,7 +64,7 @@ get_worktrees() {
     done
 
     if ! $has_additional_worktrees; then
-        return 0
+        return 1
     fi
 
     # Parse worktrees (excluding main repo)
