@@ -370,14 +370,14 @@ teardown() {
 # -----------------------------------------------------------------------------
 
 @test "hug bdel (no args): enters interactive mode when no branches specified" {
-  # Create some branches to select from
-  git checkout -q -b feature-1
+  # Create some branches to select from (use unique names to avoid conflicts)
+  git checkout -q -b test-interactive-feature-1
   echo "f1" > f1.txt
   git add f1.txt
   git commit -q -m "feat 1"
   git checkout -q main
 
-  git checkout -q -b feature-2
+  git checkout -q -b test-interactive-feature-2
   echo "f2" > f2.txt
   git add f2.txt
   git commit -q -m "feat 2"
