@@ -172,6 +172,9 @@ teardown() {
 }
 
 @test "hug wtc: interactive mode with no branch argument" {
+  # Disable gum to avoid hanging in interactive branch selection
+  disable_gum_for_test
+
   # Test that interactive mode is shown when no branch argument is provided
   run git-wtc
 
