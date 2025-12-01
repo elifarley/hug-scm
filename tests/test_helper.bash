@@ -942,8 +942,8 @@ assert_worktree_exists() {
 
   assert_dir_exists "$worktree_path"
 
-  # Check it's a valid git worktree
-  [[ -d "$worktree_path/.git" ]] || fail "Worktree $worktree_path is not a valid git repository"
+  # Check it's a valid git worktree (in worktrees, .git is a file, not a directory)
+  [[ -f "$worktree_path/.git" ]] || fail "Worktree $worktree_path is not a valid git repository"
 
   # Check it's listed in git worktree list
   local found=false

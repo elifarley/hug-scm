@@ -429,10 +429,16 @@ create_worktree() {
     fi
 
     if git worktree add "${git_args[@]}" 2>/dev/null; then
-        success "Worktree created: $path"
-        info "Switch to it with: hug wt $path"
-        info "Or: cd $path"
-        return 0
+        # Verify the worktree was actually created (in worktrees, .git is a file, not a directory)
+        if [[ -f "$path/.git" ]]; then
+            success "Worktree created: $path"
+            info "Switch to it with: hug wt $path"
+            info "Or: cd $path"
+            return 0
+        else
+            warning "Worktree creation appeared to succeed but directory is invalid"
+            return 1
+        fi
     else
         warning "Failed to create worktree"
         return 1
@@ -472,7 +478,24 @@ remove_worktree() {
     fi
 
     # Check for uncommitted changes
-    if ! git -C "$path" diff --quiet 2>/dev/null || ! git -C "$path" diff --cached --quiet 2>/dev/null; then
+    local unstaged_changes=false
+    local staged_changes=false
+    local untracked_files=false
+
+    if ! git -C "$path" diff --quiet 2>/dev/null; then
+        unstaged_changes=true
+    fi
+
+    if ! git -C "$path" diff --cached --quiet 2>/dev/null; then
+        staged_changes=true
+    fi
+
+    # Check for untracked files (excluding .git directory)
+    if git -C "$path" ls-files --others --exclude-standard 2>/dev/null | grep -q .; then
+        untracked_files=true
+    fi
+
+    if $unstaged_changes || $staged_changes || $untracked_files; then
         if $force; then
             warning "Worktree has uncommitted changes that will be lost"
         else
