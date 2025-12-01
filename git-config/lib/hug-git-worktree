@@ -254,10 +254,11 @@ branch_available_for_worktree() {
 }
 
 # Validate worktree creation path is safe
-# Usage: validate_worktree_creation_path "/path/to/worktree"
+# Usage: validate_worktree_creation_path "/path/to/worktree" [auto_create_parent]
 # Returns: 0 if safe, 1 if unsafe (outputs error messages)
 validate_worktree_creation_path() {
     local path="$1"
+    local auto_create_parent="${2:-true}"  # Auto-create parent directories by default
 
     if [[ -z "$path" ]]; then
         warning "Worktree path cannot be empty"
@@ -276,13 +277,21 @@ validate_worktree_creation_path() {
         return 1
     fi
 
-    # Check parent directory exists
+    # Check parent directory exists and try to create if requested
     local parent_dir
     parent_dir=$(dirname "$path")
 
     if [[ ! -d "$parent_dir" ]]; then
-        warning "Parent directory does not exist: $parent_dir"
-        return 1
+        if [[ "$auto_create_parent" == "true" ]]; then
+            if ! mkdir -p "$parent_dir" 2>/dev/null; then
+                error "Cannot create parent directory: $parent_dir"
+                return 1
+            fi
+            info "Auto-created parent directory: $parent_dir"
+        else
+            warning "Parent directory does not exist: $parent_dir"
+            return 1
+        fi
     fi
 
     if [[ ! -w "$parent_dir" ]]; then
@@ -294,13 +303,18 @@ validate_worktree_creation_path() {
     local main_repo
     main_repo=$(get_current_worktree_path)
 
-    # Normalize paths for comparison
-    main_repo="${main_repo%/}"
-    path="${path%/}"
+    # Normalize paths for comparison using realpath to resolve symlinks and relative paths
+    local normalized_main_repo normalized_path
+    normalized_main_repo=$(realpath "$main_repo" 2>/dev/null || echo "$main_repo")
+    normalized_path=$(realpath "$path" 2>/dev/null || echo "$path")
 
-    # Check if path would be a subdirectory of main repository
-    if [[ "$path" == "$main_repo"/* ]]; then
-        warning "Cannot create worktree inside main repository: $path"
+    # Remove trailing slashes for consistent comparison
+    normalized_main_repo="${normalized_main_repo%/}"
+    normalized_path="${normalized_path%/}"
+
+    # Check if path would be a subdirectory of main repository using proper path comparison
+    if [[ "$normalized_path" == "$normalized_main_repo"* ]]; then
+        warning "Cannot create worktree inside main repository: $normalized_path"
         info "Choose a location outside the main repository"
         return 1
     fi
@@ -330,8 +344,20 @@ generate_worktree_path() {
     # Make branch name safe for filesystem
     safe_branch=$(printf '%s' "$branch" | sed 's|/|-|g' | sed 's|\.|-|g' | tr '[:upper:]' '[:lower:]')
 
-    # Generate path outside repository to match test expectations
-    printf '../worktrees-%s/%s' "$repo_name" "$safe_branch"
+    # Generate preferred path with auto-creation of parent directories
+    local preferred_path="../worktrees-${repo_name}/${safe_branch}"
+    local parent_dir=$(dirname "$preferred_path")
+
+    # Auto-create parent directory if it doesn't exist
+    if [[ ! -d "$parent_dir" ]]; then
+        mkdir -p "$parent_dir" 2>/dev/null || {
+            # Fallback to absolute path in temp directory if auto-creation fails
+            printf '/tmp/hug-wt-%s-%s/%s' "$repo_name" "$$" "$safe_branch"
+            return 0
+        }
+    fi
+
+    printf '%s' "$preferred_path"
 }
 
 # Generate unique worktree path (handles conflicts)
