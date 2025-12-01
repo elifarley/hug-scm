@@ -94,6 +94,9 @@ teardown() {
 }
 
 @test "worktree integration: handles dirty worktrees correctly" {
+  # Disable gum to avoid hanging in interactive remove menu
+  disable_gum_for_test
+
   cd "$TEST_REPO"
 
   # Create worktree and make it dirty
