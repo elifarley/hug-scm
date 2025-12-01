@@ -64,7 +64,7 @@ get_worktrees() {
     done
 
     if ! $has_additional_worktrees; then
-        return 1
+        return 0
     fi
 
     # Parse worktrees (excluding main repo)
@@ -453,7 +453,7 @@ remove_worktree() {
 
     # Show what we're about to do (dry run comes first)
     if $dry_run; then
-        echo "Would remove worktree at '$path'"
+        echo "Would remove worktree at: $path"
         return 0
     fi
 
