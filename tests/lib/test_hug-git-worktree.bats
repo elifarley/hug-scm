@@ -36,21 +36,21 @@ teardown() {
 
   get_worktrees worktree_paths branches commits status_dirty locked_status
 
-  assert_equal "${#worktree_paths[@]}" 2  # Main repo + feature worktree
-  assert_equal "${#branches[@]}" 2
-  assert_equal "${#commits[@]}" 2
-  assert_equal "${#status_dirty[@]}" 2
-  assert_equal "${#locked_status[@]}" 2
+  assert_equal "${#worktree_paths[@]}" 1  # Feature worktree only (main repo excluded)
+  assert_equal "${#branches[@]}" 1
+  assert_equal "${#commits[@]}" 1
+  assert_equal "${#status_dirty[@]}" 1
+  assert_equal "${#locked_status[@]}" 1
 
-  # Check that main repository is included
-  local found_main=false
+  # Check that feature worktree is included
+  local found_feature=false
   for path in "${worktree_paths[@]}"; do
-    if [[ "$path" == "$TEST_REPO" ]]; then
-      found_main=true
+    if [[ "$path" == "$feature_wt" ]]; then
+      found_feature=true
       break
     fi
   done
-  $found_main || fail "Main repository path not found in worktree list"
+  $found_feature || fail "Feature worktree path not found in worktree list"
 }
 
 @test "hug-git-worktree: get_current_worktree_path returns current directory" {

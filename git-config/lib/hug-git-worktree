@@ -39,28 +39,48 @@ get_worktrees() {
     status_ref=()
     locked_ref=()
 
-    # Check if worktrees exist
-    if ! git worktree list --porcelain 2>/dev/null | grep -q "^worktree "; then
+    # Get main repository path
+    local main_repo_path
+    main_repo_path=$(git rev-parse --show-toplevel 2>/dev/null)
+    if [[ -z "$main_repo_path" ]]; then
         return 1
     fi
 
     # Parse git worktree list --porcelain output
     local -a worktree_output
-    mapfile -t worktree_output < <(git worktree list --porcelain)
+    mapfile -t worktree_output < <(git worktree list --porcelain 2>/dev/null)
 
+    # Check if any additional worktrees exist (exclude main repo)
+    local has_additional_worktrees=false
+    local line
+    for line in "${worktree_output[@]}"; do
+        if [[ "$line" =~ ^worktree\ (.+) ]]; then
+            local worktree_path="${BASH_REMATCH[1]}"
+            if [[ "$worktree_path" != "$main_repo_path" ]]; then
+                has_additional_worktrees=true
+                break
+            fi
+        fi
+    done
+
+    if ! $has_additional_worktrees; then
+        return 1
+    fi
+
+    # Parse worktrees (excluding main repo)
     local current_path=""
     local current_branch=""
     local current_commit=""
     local current_locked="false"
     local i=0
 
-    while (( i < ${#worktree_output[@]} )); do
+    while [[ $i -lt ${#worktree_output[@]} ]]; do
         local line="${worktree_output[$i]}"
 
         case "$line" in
             "worktree "*)
-                # If we have a previous worktree, store it
-                if [[ -n "$current_path" ]]; then
+                # If we have a previous worktree, store it (only if not main repo)
+                if [[ -n "$current_path" && "$current_path" != "$main_repo_path" ]]; then
                     paths_ref+=("$current_path")
                     branches_ref+=("$current_branch")
                     commits_ref+=("$current_commit")
@@ -95,11 +115,11 @@ get_worktrees() {
                 ;;
         esac
 
-        ((i++))
+        i=$((i + 1))
     done
 
-    # Store the last worktree
-    if [[ -n "$current_path" ]]; then
+    # Store the last worktree (only if not main repo)
+    if [[ -n "$current_path" && "$current_path" != "$main_repo_path" ]]; then
         paths_ref+=("$current_path")
         branches_ref+=("$current_branch")
         commits_ref+=("$current_commit")
@@ -200,23 +220,35 @@ branch_available_for_worktree() {
         return 1
     fi
 
-    # Check if branch is already checked out in any worktree (separate from main repo)
-    # Get list of branches checked out in worktrees
-    local current_branch
-    current_branch=$(git branch --show-current 2>/dev/null)
+    # Check if branch is already checked out in any worktree (excluding main repo)
+    # Get main repo path to exclude it from worktree checking
+    local main_repo_path
+    main_repo_path=$(git rev-parse --show-toplevel 2>/dev/null)
 
-    # If the branch is currently checked out in main repo, it's not available for worktree creation
-    if [[ "$current_branch" == "$branch" ]]; then
-        return 1
-    fi
+    # Get list of worktrees and check if any additional worktree has this branch
+    local -a worktree_info
+    mapfile -t worktree_info < <(git worktree list --porcelain 2>/dev/null)
 
-    # Check other worktrees
-    local worktree_branches
-    worktree_branches=$(git worktree list --porcelain 2>/dev/null | grep "^branch refs/heads/" | sed 's/^branch refs\/heads\///')
+    local current_worktree_path=""
+    local i=0
+    while [[ $i -lt ${#worktree_info[@]} ]]; do
+        local line="${worktree_info[$i]}"
 
-    if echo "$worktree_branches" | grep -q "^${branch}$"; then
-        return 1
-    fi
+        case "$line" in
+            "worktree "*)
+                current_worktree_path="${line#worktree }"
+                ;;
+            "branch refs/heads/"*)
+                local branch_name="${line#branch refs/heads/}"
+                # Only check additional worktrees (not main repo)
+                if [[ "$current_worktree_path" != "$main_repo_path" && "$branch_name" == "$branch" ]]; then
+                    return 1
+                fi
+                ;;
+        esac
+
+        i=$((i + 1))
+    done
 
     return 0
 }
@@ -228,7 +260,7 @@ validate_worktree_creation_path() {
     local path="$1"
 
     if [[ -z "$path" ]]; then
-        error "Worktree path cannot be empty"
+        warning "Worktree path cannot be empty"
         return 1
     fi
 
@@ -239,7 +271,7 @@ validate_worktree_creation_path() {
 
     # Check if target already exists
     if [[ -e "$path" ]]; then
-        error "Target path already exists: $path"
+        warning "Target path already exists: $path"
         info "Choose a different path or remove the existing directory"
         return 1
     fi
@@ -249,12 +281,12 @@ validate_worktree_creation_path() {
     parent_dir=$(dirname "$path")
 
     if [[ ! -d "$parent_dir" ]]; then
-        error "Parent directory does not exist: $parent_dir"
+        warning "Parent directory does not exist: $parent_dir"
         return 1
     fi
 
     if [[ ! -w "$parent_dir" ]]; then
-        error "No write permission to parent directory: $parent_dir"
+        warning "No write permission to parent directory: $parent_dir"
         return 1
     fi
 
@@ -268,7 +300,7 @@ validate_worktree_creation_path() {
 
     # Check if path would be a subdirectory of main repository
     if [[ "$path" == "$main_repo"/* ]]; then
-        error "Cannot create worktree inside main repository: $path"
+        warning "Cannot create worktree inside main repository: $path"
         info "Choose a location outside the main repository"
         return 1
     fi
@@ -352,25 +384,25 @@ create_worktree() {
 
     # Validate inputs
     if [[ -z "$branch" ]]; then
-        error "Branch name cannot be empty"
+        warning "Branch name cannot be empty"
         return 1
     fi
 
     if [[ -z "$path" ]]; then
-        error "Worktree path cannot be empty"
+        warning "Worktree path cannot be empty"
         return 1
     fi
 
     # Validate branch exists
     if ! git rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
-        error "Branch '$branch' does not exist locally"
+        warning "Branch '$branch' does not exist locally"
         info "Create it first with: hug bc '$branch'"
         return 1
     fi
 
-    # Validate branch is available (unless force is used)
-    if ! $force && ! branch_available_for_worktree "$branch"; then
-        error "Branch '$branch' is already checked out in another worktree"
+    # Validate branch is available (force only bypasses confirmation, not validation)
+    if ! branch_available_for_worktree "$branch"; then
+        warning "Branch '$branch' is already checked out in another worktree"
         info "Use 'hug wt' to see current worktree assignments"
         return 1
     fi
@@ -402,7 +434,7 @@ create_worktree() {
         info "Or: cd $path"
         return 0
     else
-        error "Failed to create worktree"
+        warning "Failed to create worktree"
         return 1
     fi
 }
@@ -434,7 +466,7 @@ remove_worktree() {
     local current_worktree
     current_worktree=$(get_current_worktree_path)
     if [[ "$path" == "$current_worktree" ]]; then
-        error "Cannot remove current worktree"
+        warning "Cannot remove current worktree"
         info "Switch to another worktree first with: hug wt"
         return 1
     fi
@@ -444,7 +476,7 @@ remove_worktree() {
         if $force; then
             warning "Worktree has uncommitted changes that will be lost"
         else
-            error "Worktree has uncommitted changes"
+            warning "Worktree has uncommitted changes"
             info "Commit or stash changes first, or use --force"
             return 1
         fi
@@ -471,7 +503,7 @@ remove_worktree() {
             success "Worktree removed manually: $path"
             return 0
         else
-            error "Failed to remove worktree"
+            warning "Failed to remove worktree"
             return 1
         fi
     fi
@@ -563,7 +595,7 @@ prune_worktrees() {
                 ;;
         esac
 
-        ((i++))
+        i=$((i + 1))
     done
 
     if [[ ${#orphaned_worktrees[@]} -eq 0 ]]; then
