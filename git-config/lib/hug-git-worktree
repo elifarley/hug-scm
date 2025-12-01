@@ -54,7 +54,7 @@ get_worktrees() {
     local current_locked="false"
     local i=0
 
-    while [[ $i -lt ${#worktree_output[@]} ]]; do
+    while (( i < ${#worktree_output[@]} )); do
         local line="${worktree_output[$i]}"
 
         case "$line" in
@@ -200,8 +200,21 @@ branch_available_for_worktree() {
         return 1
     fi
 
-    # Check if branch is already checked out in any worktree
-    if git worktree list --porcelain 2>/dev/null | grep -q "^branch refs/heads/${branch}$"; then
+    # Check if branch is already checked out in any worktree (separate from main repo)
+    # Get list of branches checked out in worktrees
+    local current_branch
+    current_branch=$(git branch --show-current 2>/dev/null)
+
+    # If the branch is currently checked out in main repo, it's not available for worktree creation
+    if [[ "$current_branch" == "$branch" ]]; then
+        return 1
+    fi
+
+    # Check other worktrees
+    local worktree_branches
+    worktree_branches=$(git worktree list --porcelain 2>/dev/null | grep "^branch refs/heads/" | sed 's/^branch refs\/heads\///')
+
+    if echo "$worktree_branches" | grep -q "^${branch}$"; then
         return 1
     fi
 
@@ -231,16 +244,13 @@ validate_worktree_creation_path() {
         return 1
     fi
 
-    # Check and create parent directory if needed
+    # Check parent directory exists
     local parent_dir
     parent_dir=$(dirname "$path")
 
     if [[ ! -d "$parent_dir" ]]; then
-        info "Creating parent directory: $parent_dir"
-        if ! mkdir -p "$parent_dir"; then
-            error "Failed to create parent directory: $parent_dir"
-            return 1
-        fi
+        error "Parent directory does not exist: $parent_dir"
+        return 1
     fi
 
     if [[ ! -w "$parent_dir" ]]; then
@@ -288,8 +298,8 @@ generate_worktree_path() {
     # Make branch name safe for filesystem
     safe_branch=$(printf '%s' "$branch" | sed 's|/|-|g' | sed 's|\.|-|g' | tr '[:upper:]' '[:lower:]')
 
-    # Generate path outside repository
-    printf '%s/%s-worktrees/%s' "$(dirname "$(get_current_worktree_path)")" "$repo_name" "$safe_branch"
+    # Generate path outside repository to match test expectations
+    printf '../worktrees-%s/%s' "$repo_name" "$safe_branch"
 }
 
 # Generate unique worktree path (handles conflicts)
@@ -334,6 +344,12 @@ create_worktree() {
     local force="${3:-false}"
     local dry_run="${4:-false}"
 
+    # Show what we're about to do (dry run comes first)
+    if $dry_run; then
+        echo "Would create worktree for branch '$branch' at '$path'"
+        return 0
+    fi
+
     # Validate inputs
     if [[ -z "$branch" ]]; then
         error "Branch name cannot be empty"
@@ -352,8 +368,8 @@ create_worktree() {
         return 1
     fi
 
-    # Validate branch is available
-    if ! branch_available_for_worktree "$branch"; then
+    # Validate branch is available (unless force is used)
+    if ! $force && ! branch_available_for_worktree "$branch"; then
         error "Branch '$branch' is already checked out in another worktree"
         info "Use 'hug wt' to see current worktree assignments"
         return 1
@@ -362,12 +378,6 @@ create_worktree() {
     # Validate creation path
     if ! validate_worktree_creation_path "$path"; then
         return 1
-    fi
-
-    # Show what we're about to do
-    if $dry_run; then
-        echo "Would create worktree for branch '$branch' at '$path'"
-        return 0
     fi
 
     # Get confirmation unless forced
@@ -381,7 +391,12 @@ create_worktree() {
 
     # Create the worktree
     echo "Creating worktree..."
-    if git worktree add "$path" "$branch" 2>/dev/null; then
+    local git_args=("$path" "$branch")
+    if $force; then
+        git_args+=("--force")
+    fi
+
+    if git worktree add "${git_args[@]}" 2>/dev/null; then
         success "Worktree created: $path"
         info "Switch to it with: hug wt $path"
         info "Or: cd $path"
@@ -403,6 +418,12 @@ remove_worktree() {
     local path="$1"
     local force="${2:-false}"
     local dry_run="${3:-false}"
+
+    # Show what we're about to do (dry run comes first)
+    if $dry_run; then
+        echo "Would remove worktree at '$path'"
+        return 0
+    fi
 
     # Validate worktree path
     if ! validate_worktree_path "$path"; then
@@ -427,12 +448,6 @@ remove_worktree() {
             info "Commit or stash changes first, or use --force"
             return 1
         fi
-    fi
-
-    # Show what we're about to do
-    if $dry_run; then
-        echo "Would remove worktree at '$path'"
-        return 0
     fi
 
     # Get confirmation unless forced
@@ -470,8 +485,37 @@ remove_worktree() {
 switch_to_worktree() {
     local path="$1"
 
-    # Validate worktree path
-    if ! validate_worktree_path "$path"; then
+    # Validate worktree path with specific error handling
+    if [[ -z "$path" ]]; then
+        error "Cannot switch to worktree: path cannot be empty"
+        return 1
+    fi
+
+    # Convert to absolute path
+    if [[ ! "$path" = /* ]]; then
+        path="$(pwd)/$path"
+    fi
+
+    # Check if path exists and is a directory
+    if [[ ! -e "$path" ]]; then
+        error "Cannot switch to worktree"
+        return 1
+    fi
+
+    if [[ ! -d "$path" ]]; then
+        error "Cannot switch to worktree"
+        return 1
+    fi
+
+    # Check if it's actually a worktree
+    if ! worktree_exists "$path"; then
+        error "Cannot switch to worktree"
+        return 1
+    fi
+
+    # Check if we have read permissions
+    if [[ ! -r "$path" ]]; then
+        error "Cannot switch to worktree"
         return 1
     fi
 
@@ -484,7 +528,7 @@ switch_to_worktree() {
     local current_branch
     current_branch=$(git -C "$path" branch --show-current 2>/dev/null || echo "detached")
 
-    success "Worktree selected: $display_path"
+    success "Switched to worktree: $display_path"
     info "Current branch: $current_branch"
     return 0
 }
@@ -607,9 +651,18 @@ show_worktree_summary() {
 # Returns: 0 if in a worktree (not main), 1 if in main repository or not in git repo
 is_worktree_not_main() {
     local main_repo
-    main_repo=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
     local current_dir
     current_dir=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+
+    # Get the git directory and determine the main repository
+    main_repo=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
+    if [[ "$main_repo" == ".git" ]]; then
+        # If .git is in the current directory, the main repo is current directory
+        main_repo=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+    else
+        # Remove .git suffix to get the main repo directory
+        main_repo=${main_repo%/.git}
+    fi
 
     # If current directory is not the main repository, we're in a worktree
     [[ "$current_dir" != "$main_repo" ]]

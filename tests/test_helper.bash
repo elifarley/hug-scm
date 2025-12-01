@@ -827,10 +827,33 @@ create_test_worktree() {
   # Create the worktree
   (
     cd "$test_repo_path" || { echo "Failed to cd to $test_repo_path" >&2; exit 1; }
-    git worktree add "$worktree_path" "$branch" >/dev/null 2>&1 || {
-      echo "Failed to create worktree for branch $branch" >&2
-      exit 1
-    }
+
+    # Try to create worktree with force flag first
+    if ! git worktree add "$worktree_path" "$branch" --force >/dev/null 2>&1; then
+      # If force fails, the branch might be checked out, so create a temp branch
+      current_branch=$(git branch --show-current)
+      temp_branch="temp-worktree-branch-$(date +%s)"
+
+      # Create temporary branch to free up the target branch
+      if git checkout -b "$temp_branch" >/dev/null 2>&1; then
+        # Now try to create the worktree
+        if git worktree add "$worktree_path" "$branch" >/dev/null 2>&1; then
+          # Success - switch back to original branch and clean up
+          git checkout "$current_branch" >/dev/null 2>&1
+          git branch -D "$temp_branch" >/dev/null 2>&1
+        else
+          # Still failed - clean up and exit
+          git checkout "$current_branch" >/dev/null 2>&1
+          git branch -D "$temp_branch" >/dev/null 2>&1
+          echo "Failed to create worktree for branch $branch" >&2
+          exit 1
+        fi
+      else
+        # Couldn't create temp branch
+        echo "Failed to create worktree for branch $branch" >&2
+        exit 1
+      fi
+    fi
   )
 
   echo "$worktree_path"
@@ -1005,4 +1028,16 @@ assert_worktree_count() {
 # Returns: Space-separated list of worktree paths
 get_worktree_paths() {
   git worktree list --porcelain 2>/dev/null | grep "^worktree " | cut -d' ' -f2 | tr '\n' ' '
+}
+
+# Assert that text matches a regex pattern
+# Usage: assert_regex_match "some text" "pattern.*match"
+assert_regex_match() {
+  local text="$1"
+  local pattern="$2"
+
+  if ! echo "$text" | grep -qE "$pattern"; then
+    echo "Expected '$text' to match regex pattern: $pattern"
+    return 1
+  fi
 }
