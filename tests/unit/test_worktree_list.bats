@@ -47,6 +47,9 @@ teardown() {
 }
 
 @test "hug wt: shows interactive menu with multiple worktrees" {
+  # Disable gum to avoid hanging when using interactive selection
+  disable_gum_for_test
+
   # Mock user input - select first worktree (not current)
   cd "$TEST_REPO"
   echo "2" | run git-wt

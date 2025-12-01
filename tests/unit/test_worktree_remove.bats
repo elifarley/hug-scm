@@ -33,6 +33,9 @@ teardown() {
 }
 
 @test "hug wtdel: removes worktree at specified path" {
+  # Disable gum to avoid interactive confirmation cancellation
+  disable_gum_for_test
+
   cd "$TEST_REPO"
   run git-wtdel "$FEATURE_WT"
 
