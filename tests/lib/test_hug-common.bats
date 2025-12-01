@@ -112,11 +112,12 @@ load '../test_helper'
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
-    if declare -f gum_available &>/dev/null; then
+    # Test that gum_available function is available (doesn't require direct gum checks)
+    if type gum_available &>/dev/null; then
       echo 'hug-gum sourced'
     fi
   "
-  
+
   # Assert
   assert_success
   assert_output "hug-gum sourced"

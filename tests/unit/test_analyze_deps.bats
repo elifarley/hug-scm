@@ -34,14 +34,14 @@ teardown() {
 }
 
 @test "hug analyze deps: requires commit argument when not in --all mode" {
+  # Force error path to avoid hanging and ensure predictable behavior
+  disable_gum_for_test
+
   run git analyze-deps
 
-  # Without gum, should fail with error
-  if ! command -v gum &>/dev/null; then
-    assert_failure
-    assert_output --partial "Commit argument required"
-  fi
-  # With gum, might succeed if user selects a commit (skip this assertion)
+  assert_failure
+  assert_output --partial "Commit argument required"
+  assert_output --partial "Usage: hug analyze deps <commit>"
 }
 
 @test "hug analyze deps: fails with invalid commit hash" {
