@@ -313,7 +313,8 @@ validate_worktree_creation_path() {
     normalized_path="${normalized_path%/}"
 
     # Check if path would be a subdirectory of main repository using proper path comparison
-    if [[ "$normalized_path" == "$normalized_main_repo"* ]]; then
+    # Add trailing slash to ensure we're matching directory boundaries, not just prefixes
+    if [[ "$normalized_path" == "$normalized_main_repo"/* ]] || [[ "$normalized_path" == "$normalized_main_repo" ]]; then
         warning "Cannot create worktree inside main repository: $normalized_path"
         info "Choose a location outside the main repository"
         return 1

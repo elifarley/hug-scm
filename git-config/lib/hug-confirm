@@ -14,6 +14,7 @@
 #   $1 - (Optional) Custom prompt text, defaults to "Proceed? [y/N]: "
 # Environment:
 #   HUG_FORCE - If true, automatically confirms without prompting
+#   HUG_NONINTERACTIVE - If true, automatically cancels without prompting
 # Returns:
 #   0 if confirmed (or HUG_FORCE is true)
 #   Exits with code 1 if user declines or read fails
@@ -29,6 +30,11 @@ prompt_confirm() {
       return 0
     fi
     info "Cancelled."
+    exit 1
+  fi
+  # Check if we're in a non-interactive environment (no TTY)
+  if [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
+    info "Non-interactive environment: cancelled."
     exit 1
   fi
   local response
@@ -69,6 +75,12 @@ confirm_action() {
       return 0
     fi
     info "Cancelled."
+    exit 1
+  fi
+
+  # Check if we're in a non-interactive environment (no TTY)
+  if [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
+    info "Non-interactive environment: cancelled."
     exit 1
   fi
 

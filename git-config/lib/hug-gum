@@ -21,7 +21,12 @@ gum_available() {
     return 1
   fi
   # Check if gum command is available in PATH
-  command -v gum >/dev/null 2>&1
+  if ! command -v gum >/dev/null 2>&1; then
+    return 1
+  fi
+  # Check if we have a TTY available (gum needs it for interactive input)
+  # In non-interactive environments like CI/CD, fall back to basic prompts
+  [[ -t 0 ]] && [[ -t 1 ]]
 }
 
 gum_log() {

@@ -20,22 +20,23 @@ teardown() {
 }
 
 @test "hug wtc: creates worktree for existing branch" {
-  run git-wtc feature-1
+  HUG_FORCE=true run git-wtc feature-1
 
   assert_success
   assert_output --partial "Worktree Creation Summary"
   assert_output --partial "Branch: feature-1"
   assert_output --partial "Worktree created"
 
-  # Verify worktree was created
-  local expected_path="${TEST_REPO}-wt-feature-1"
+  # Verify worktree was created at the expected path
+  local repo_name=$(basename "$TEST_REPO")
+  local expected_path="/tmp/worktrees-${repo_name}/feature-1"
   assert_worktree_exists "$expected_path"
   assert_worktree_branch "$expected_path" "feature-1"
 }
 
 @test "hug wtc: creates worktree at custom path" {
   local custom_path="${TEST_REPO}-custom-feature"
-  run git-wtc feature-1 "$custom_path"
+  HUG_FORCE=true run git-wtc feature-1 "$custom_path"
 
   assert_success
   assert_worktree_exists "$custom_path"
@@ -44,23 +45,24 @@ teardown() {
 
 @test "hug wtc: uses unique path when default exists" {
   # Create first worktree
-  local first_path="${TEST_REPO}-wt-feature-1"
-  run git-wtc feature-1
+  local repo_name=$(basename "$TEST_REPO")
+  local first_path="/tmp/worktrees-${repo_name}/feature-1"
+  HUG_FORCE=true run git-wtc feature-1
   assert_success
 
   # Create second worktree for same branch after removing first
   rm -rf "$first_path"
   git worktree prune
 
-  run git-wtc feature-1
+  HUG_FORCE=true run git-wtc feature-1
   assert_success
 
   # Should have created a unique path (probably same as original since we removed it)
-  assert_worktree_exists "${TEST_REPO}-wt-feature-1"
+  assert_worktree_exists "$first_path"
 }
 
 @test "hug wtc: dry run shows what would be created" {
-  run git-wtc feature-1 --dry-run
+  HUG_FORCE=true run git-wtc feature-1 --dry-run
 
   assert_success
   assert_output --partial "DRY RUN"
@@ -79,7 +81,9 @@ teardown() {
   run git-wtc feature-1 --force
 
   assert_success
-  assert_worktree_exists "${TEST_REPO}-wt-feature-1"
+  local repo_name=$(basename "$TEST_REPO")
+  local expected_path="/tmp/worktrees-${repo_name}/feature-1"
+  assert_worktree_exists "$expected_path"
 }
 
 @test "hug wtc: fails when branch does not exist" {
@@ -131,18 +135,18 @@ teardown() {
 
 @test "hug wtc: fails when branch is already checked out" {
   # Create first worktree
-  run git-wtc feature-1
+  HUG_FORCE=true run git-wtc feature-1
   assert_success
 
   # Try to create another worktree for same branch
-  run git-wtc feature-1 "${TEST_REPO}-wt-feature-1-duplicate"
+  HUG_FORCE=true run git-wtc feature-1 "${TEST_REPO}-wt-feature-1-duplicate"
 
   assert_failure
   assert_output --partial "Branch 'feature-1' is already checked out in another worktree"
 }
 
 @test "hug wtc: generates smart default path" {
-  run git-wtc feature-1
+  HUG_FORCE=true run git-wtc feature-1
 
   assert_success
   assert_output --partial "${TEST_REPO}/../worktrees-$(basename "$TEST_REPO")/feature-1"
@@ -152,7 +156,7 @@ teardown() {
   # Create a branch with slashes
   git checkout -b "feature/auth"
 
-  run git-wtc "feature/auth"
+  HUG_FORCE=true run git-wtc "feature/auth"
 
   assert_success
   assert_output --partial "feature-auth"  # Should convert slashes to dashes
@@ -162,7 +166,7 @@ teardown() {
   # Create a branch with dots
   git checkout -b "feature.v2.0"
 
-  run git-wtc "feature.v2.0"
+  HUG_FORCE=true run git-wtc "feature.v2.0"
 
   assert_success
   assert_output --partial "feature-v2-0"  # Should convert dots to dashes
