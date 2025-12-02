@@ -94,7 +94,7 @@ teardown() {
   disable_gum_for_test
 
   # Test interactive mode (no arguments)
-  run git-wtc
+  run bash -c "echo | git-wtc 2>&1"
   assert_failure  # Exits with code 1 due to cancellation
 
   # Should show cancellation message since no interactive selection possible
@@ -157,7 +157,7 @@ teardown() {
   disable_gum_for_test
 
   # Test interactive mode with explicit -- flag
-  run git-wtc --
+  run bash -c "echo | git-wtc -- 2>&1"
   assert_failure  # Exits with code 1 due to cancellation
 
   # Should show cancellation message since no interactive selection possible
