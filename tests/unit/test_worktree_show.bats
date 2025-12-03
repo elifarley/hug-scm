@@ -28,7 +28,8 @@ teardown() {
   assert_output --partial "Worktree Summary"
   assert_output --partial "───────────────────────"
   assert_output --partial "Current:"
-  assert_output --partial "Worktrees (1 total)"
+  # Just main worktree = 0 additional
+  assert_output --partial "Worktrees (0 total)"
   assert_output --partial "───────────────────────"
 }
 
@@ -243,7 +244,8 @@ teardown() {
   run git-wtsh --all
 
   assert_success
-  assert_output --partial "Worktrees (1 total)"
+  # Just main = 0 additional
+  assert_output --partial "Worktrees (0 total)"
   # Should show current worktree when it's the only one
   assert_output --partial "[CURRENT]"
 }
@@ -427,9 +429,10 @@ teardown() {
 
   assert_success
   # Should show details for worktrees matching either "feature" OR "hotfix"
+  # 2 additional worktrees found (excluding main)
   assert_output --partial "feature-search"
   assert_output --partial "hotfix-search"
-  assert_output --partial "Worktrees (3 total)"
+  assert_output --partial "Worktrees (2 total)"
 
   # Cleanup
   git worktree remove "$feature_wt"
@@ -448,9 +451,10 @@ teardown() {
 
   assert_success
   # Should find worktree with "special" in path AND "branch" in branch name
+  # NOTE: Only the additional worktree matches the search terms
   assert_output --partial "special-path"
   assert_output --partial "special-branch"
-  assert_output --partial "Worktrees (2 total)"
+  assert_output --partial "Worktrees (1 total)"
 
   # Cleanup
   git worktree remove "$special_wt"
@@ -466,23 +470,43 @@ teardown() {
 }
 
 @test "hug wtsh: multi-term search is case insensitive" {
+  # Create worktree with test-new branch for case-insensitive search
   cd "$TEST_REPO"
+  git branch test-new-worktree
+  local test_wt="${TEST_REPO}-test-new-worktree"
+  git worktree add "$test_wt" test-new-worktree
+
   run git-wtsh TEST NEW
 
   assert_success
-  # Should find current worktree with "test" and "new" in branch name
+  # Should find worktree with "test" and "new" in branch name
   assert_output --partial "test-new-worktree"
-  assert_output --partial "Worktrees (1 total)"
+  # 2 matching worktrees: main (path has "test") and test-new-worktree (has "test" and "new")
+  assert_output --partial "Worktrees (2 total)"
+
+  # Cleanup
+  git worktree remove "$test_wt"
+  git branch -D test-new-worktree
 }
 
 @test "hug wtsh: multi-term search with single term works" {
+  # Create worktree with test-new branch for single term search
   cd "$TEST_REPO"
+  git branch test-new-worktree
+  local test_wt="${TEST_REPO}-test-new-worktree"
+  git worktree add "$test_wt" test-new-worktree
+
   run git-wtsh test
 
   assert_success
-  # Should find worktree with "test" in branch name
+  # Should find worktree with "test" in branch name (path also matches but that's OK)
   assert_output --partial "test-new-worktree"
-  assert_output --partial "Worktrees (1 total)"
+  # NOTE: Path contains "test" so main worktree also matches, giving us 2 total
+  assert_output --partial "Worktrees (2 total)"
+
+  # Cleanup
+  git worktree remove "$test_wt"
+  git branch -D test-new-worktree
 }
 
 @test "hug wtsh: multi-term search error message shows all terms" {

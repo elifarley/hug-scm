@@ -53,6 +53,7 @@ EOF
 show_interactive_removal_menu() {
     declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
 
+    # NOTE: Using get_worktrees (excludes main) because main worktree cannot be deleted
     if ! get_worktrees worktree_paths branches commits status_dirty locked_status; then
         info "No worktrees found."
         return 1
@@ -98,22 +99,23 @@ show_interactive_removal_menu() {
     fi
 
     # Interactive selection
-    echo
-    printf "${BLUE}Select worktree to remove:${NC}\n"
+    # Note: All prompts go to stderr so they're visible when stdout is captured
+    echo >&2
+    printf "${BLUE}Select worktree to remove:${NC}\n" >&2
 
     local selected_index=-1
 
     if [[ ${#menu_items[@]} -lt 10 ]]; then
         # Show numbered menu for fewer worktrees
-        echo
+        echo >&2
         for i in "${!menu_items[@]}"; do
-            printf "  %2d) %s\n" $((i + 1)) "${menu_items[i]}"
+            printf "  %2d) %s\n" $((i + 1)) "${menu_items[i]}" >&2
         done
-        echo
+        echo >&2
 
         # Get user selection
         while true; do
-            printf "${BLUE}Enter number (1-%d) or press Enter to cancel:${NC} " ${#menu_items[@]}
+            printf "${BLUE}Enter number (1-%d) or press Enter to cancel:${NC} " ${#menu_items[@]} >&2
             read -r selection
 
             if [[ -z "$selection" ]]; then
@@ -125,7 +127,7 @@ show_interactive_removal_menu() {
                 selected_index=$((selection - 1))
                 break
             else
-                printf "${RED}Invalid selection. Please enter a number between 1 and %d.${NC}\n" ${#menu_items[@]}
+                printf "${RED}Invalid selection. Please enter a number between 1 and %d.${NC}\n" ${#menu_items[@]} >&2
             fi
         done
     else
@@ -146,14 +148,14 @@ show_interactive_removal_menu() {
             fi
         else
             # Fallback to numbered menu even for many items if gum is not available
-            echo
+            echo >&2
             for i in "${!menu_items[@]}"; do
-                printf "  %2d) %s\n" $((i + 1)) "${menu_items[i]}"
+                printf "  %2d) %s\n" $((i + 1)) "${menu_items[i]}" >&2
             done
-            echo
+            echo >&2
 
             while true; do
-                printf "${BLUE}Enter number (1-%d) or press Enter to cancel:${NC} " ${#menu_items[@]}
+                printf "${BLUE}Enter number (1-%d) or press Enter to cancel:${NC} " ${#menu_items[@]} >&2
                 read -r selection
 
                 if [[ -z "$selection" ]]; then
@@ -165,7 +167,7 @@ show_interactive_removal_menu() {
                     selected_index=$((selection - 1))
                     break
                 else
-                    printf "${RED}Invalid selection. Please enter a number between 1 and %d.${NC}\n" ${#menu_items[@]}
+                    printf "${RED}Invalid selection. Please enter a number between 1 and %d.${NC}\n" ${#menu_items[@]} >&2
                 fi
             done
         fi
@@ -241,7 +243,7 @@ fi
 
 # Convert relative path to absolute if provided
 if [[ -n "$worktree_path" && ! "$worktree_path" = /* ]]; then
-    worktree_path="$(pwd)/$worktree_path"
+    worktree_path="$(realpath "$(pwd)/$worktree_path" 2>/dev/null || echo "$(pwd)/$worktree_path")"
 fi
 
 # If no path provided, show interactive menu
@@ -263,7 +265,9 @@ else
 fi
 
 # Check for uncommitted changes and show warning
-if git -C "$worktree_path" diff --quiet 2>/dev/null && git -C "$worktree_path" diff --cached --quiet 2>/dev/null; then
+if git -C "$worktree_path" diff --quiet 2>/dev/null && \
+   git -C "$worktree_path" diff --cached --quiet 2>/dev/null && \
+   [[ -z "$(git -C "$worktree_path" ls-files --others --exclude-standard 2>/dev/null)" ]]; then
     printf "  Status: %s\n" "Clean"
 else
     if $force; then

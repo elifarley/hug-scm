@@ -39,7 +39,8 @@ teardown() {
   run git-wt --summary
 
   assert_success
-  assert_output --partial "Worktrees (3)"
+  # 3 total worktrees (main + 2 additional) = count shows 2
+  assert_output --partial "Worktrees (2)"
   assert_output --partial "[CURRENT]"
   assert_output --partial "main"
   assert_output --partial "feature-1"
@@ -79,7 +80,9 @@ teardown() {
   assert_json_has_key '.worktrees'
   assert_json_has_key '.current'
   assert_json_has_key '.count'
-  assert_json_value '3' '.count'
+  # Count shows ADDITIONAL worktrees only (excludes main)
+  # 3 total worktrees (main + feature-1 + hotfix-1) = 2 additional
+  assert_json_value '.count' '2'
 }
 
 @test "hug wt: JSON output includes worktree details" {
@@ -121,7 +124,7 @@ teardown() {
 }
 
 @test "hug wt: handles empty repository (no worktrees) in JSON mode" {
-  # Clean up worktrees
+  # Clean up additional worktrees (main worktree will remain)
   cleanup_test_worktrees "$TEST_REPO"
 
   cd "$TEST_REPO"
@@ -129,8 +132,10 @@ teardown() {
 
   assert_success
   assert_valid_json
-  assert_json_array_length '.worktrees' 0
-  assert_json_value '0' '.count'
+  # Should have 1 worktree in array (main worktree only)
+  assert_json_array_length '.worktrees' 1
+  # But count shows 0 (no additional worktrees)
+  assert_json_value '.count' '0'
 }
 
 @test "hug wt: error when not in git repository" {
@@ -138,7 +143,7 @@ teardown() {
   run git-wt
 
   assert_failure
-  assert_output --partial "Not a git repository"
+  assert_output --partial "Not in a git repository"
 }
 
 @test "hug wt: switches to worktree when path is provided" {
@@ -204,8 +209,8 @@ teardown() {
 
   assert_success
   assert_output --partial "feature-1"
-  assert_output --not--partial "main"
-  assert_output --not--partial "hotfix"
+  refute_output --partial "main"
+  refute_output --partial "hotfix"
 }
 
 @test "hug wtl: filters worktrees by path" {
@@ -214,7 +219,7 @@ teardown() {
 
   assert_success
   assert_output --partial "feature-1"
-  assert_output --not--partial "main"
+  refute_output --partial "main"
 }
 
 @test "hug wtl: case-insensitive search" {
@@ -223,17 +228,16 @@ teardown() {
 
   assert_success
   assert_output --partial "feature-1"
-  assert_output --not--partial "main"
+  refute_output --partial "main"
 }
 
 @test "hug wtl: handles no matching search term" {
   cd "$TEST_REPO"
   run git-wtl nonexistent
 
-  assert_success
-  # Should show header but no worktrees
-  assert_output --partial "Worktrees:"
-  assert_output --not--partial "main"
+  # Should fail when no worktrees match the search term
+  assert_failure
+  assert_output --partial "No worktrees found matching"
 }
 
 @test "hug wtl: handles repository with no worktrees" {
@@ -253,7 +257,7 @@ teardown() {
   run git-wtl
 
   assert_failure
-  assert_output --partial "Not a git repository"
+  assert_output --partial "Not in a git repository"
 }
 
 # Tests for hug wtll (long worktree listing)
@@ -281,8 +285,9 @@ teardown() {
   run git-wtll
 
   assert_success
-  # Should show commit subject (not just commit hash)
-  assert_output --partial "Initial commit"
+  # Should show commit subjects (check for commits from test helper)
+  assert_output --partial "initial commit"
+  assert_output --partial "Status:"
 }
 
 @test "hug wtll: highlights current worktree with asterisk" {
@@ -312,8 +317,8 @@ teardown() {
 
   assert_success
   assert_output --partial "feature-1"
-  assert_output --not--partial "main"
-  assert_output --not--partial "hotfix"
+  refute_output --partial "main"
+  refute_output --partial "hotfix"
 }
 
 @test "hug wtll: handles repository with no worktrees" {
@@ -333,7 +338,7 @@ teardown() {
   run git-wtll
 
   assert_failure
-  assert_output --partial "Not a git repository"
+  assert_output --partial "Not in a git repository"
 }
 
 # Tests for hug wtl/wtll JSON output
@@ -347,7 +352,8 @@ teardown() {
   assert_json_has_key '.worktrees'
   assert_json_has_key '.current'
   assert_json_has_key '.count'
-  assert_json_value '3' '.count'
+  # wtl excludes main, so 3 total - 1 main = 2 additional
+  assert_json_value '.count' '2'
 }
 
 @test "hug wtll: supports --json output" {
@@ -359,7 +365,8 @@ teardown() {
   assert_json_has_key '.worktrees'
   assert_json_has_key '.current'
   assert_json_has_key '.count'
-  assert_json_value '3' '.count'
+  # wtll excludes main, so 3 total - 1 main = 2 additional
+  assert_json_value '.count' '2'
 }
 
 @test "hug wtl: JSON output includes required fields" {
@@ -371,7 +378,8 @@ teardown() {
 
   # Check that worktrees array has correct structure
   assert_json_type '.worktrees' 'array'
-  assert_json_array_length '.worktrees' 3
+  # wtl excludes main, so 3 total - 1 main = 2 additional
+  assert_json_array_length '.worktrees' 2
 
   # Check individual worktree has required fields
   assert_json_has_key '.worktrees[0].path'
@@ -393,7 +401,7 @@ teardown() {
 }
 
 @test "hug wtl: JSON output handles no worktrees" {
-  # Clean up worktrees
+  # Clean up additional worktrees (main remains)
   cleanup_test_worktrees "$TEST_REPO"
 
   cd "$TEST_REPO"
@@ -401,12 +409,13 @@ teardown() {
 
   assert_success
   assert_valid_json
+  # wtl excludes main, so should be 0
   assert_json_array_length '.worktrees' 0
-  assert_json_value '0' '.count'
+  assert_json_value '.count' '0'
 }
 
 @test "hug wtll: JSON output handles no worktrees" {
-  # Clean up worktrees
+  # Clean up additional worktrees (main remains)
   cleanup_test_worktrees "$TEST_REPO"
 
   cd "$TEST_REPO"
@@ -414,8 +423,9 @@ teardown() {
 
   assert_success
   assert_valid_json
+  # wtll excludes main, so should be 0
   assert_json_array_length '.worktrees' 0
-  assert_json_value '0' '.count'
+  assert_json_value '.count' '0'
 }
 
 # NEW MULTI-TERM SEARCH TESTS
@@ -499,8 +509,9 @@ teardown() {
 
   assert_success
   assert_valid_json
-  assert_json_array_length '.worktrees' 2
-  assert_json_value '2' '.count'
+  # Matches feature-1 only (1 additional worktree)
+  assert_json_array_length '.worktrees' 1
+  assert_json_value '.count' '1'
 }
 
 @test "hug wtll: JSON output supports multi-term search filtering" {
@@ -509,6 +520,7 @@ teardown() {
 
   assert_success
   assert_valid_json
-  assert_json_array_length '.worktrees' 2
-  assert_json_value '2' '.count'
+  # Matches feature-1 only (1 additional worktree)
+  assert_json_array_length '.worktrees' 1
+  assert_json_value '.count' '1'
 }

@@ -217,10 +217,16 @@ get_status_details() {
 # Function to display detailed worktree information
 show_worktree_details() {
   local current_worktree="$1"
-  local worktree_paths=("$@")
-
-  # Remove the first argument (current_worktree) to get only the paths array
-  local worktree_array=("${worktree_paths[@]:1}")
+  shift
+  
+  # Check for --filtered flag (for search results, show exact count)
+  local is_filtered=false
+  if [[ "$1" == "--filtered" ]]; then
+    is_filtered=true
+    shift
+  fi
+  
+  local worktree_array=("$@")
 
   printf "${BLUE}Worktree Summary${NC}\n"
   printf "───────────────────────\n"
@@ -231,7 +237,23 @@ show_worktree_details() {
     return 1
   fi
 
-  printf "${BLUE}Worktrees (%d total)${NC}\n" "${#worktree_array[@]}"
+  # Count worktrees for display
+  local display_count=${#worktree_array[@]}
+  
+  # For non-filtered results (--all), subtract 1 for main worktree (semantic counting)
+  # For filtered results, show exact count of matches
+  if [[ "$is_filtered" == "false" ]]; then
+    local main_repo
+    main_repo=$(git rev-parse --show-toplevel 2>/dev/null)
+    for path in "${worktree_array[@]}"; do
+      if [[ "$path" == "$main_repo" ]]; then
+        display_count=$((display_count - 1))
+        break
+      fi
+    done
+  fi
+
+  printf "${BLUE}Worktrees (%d total)${NC}\n" "$display_count"
   printf "───────────────────────\n\n"
 
   for path in "${worktree_array[@]}"; do
@@ -356,13 +378,17 @@ check_git_repo
 current_worktree=$(get_current_worktree_path)
 
 # Get worktree paths
+# NOTE: We use get_all_worktrees_including_main because wtsh needs to display
+#       information about the current worktree, which might be the main worktree.
+#       This is different from commands like wtdel which only operate on
+#       additional worktrees (can't delete the main one).
 declare -a worktree_paths=()
 declare -a branches=()
 declare -a commits=()
 declare -a status_dirty=()
 declare -a locked_status=()
 
-if ! get_worktrees worktree_paths branches commits status_dirty locked_status; then
+if ! get_all_worktrees_including_main worktree_paths branches commits status_dirty locked_status; then
   printf "No worktrees found.\n" >&2
   exit 1
 fi
@@ -393,9 +419,9 @@ elif [[ $# -gt 0 ]]; then
     exit 1
   fi
 
-  # Show details for matching worktrees
-  show_worktree_details "$current_worktree" "${target_worktrees[@]}"
+  # Show details for matching worktrees (filtered=true: show exact count)
+  show_worktree_details "$current_worktree" --filtered "${target_worktrees[@]}"
 else
-  # --all or -a behavior (existing default)
+  # --all or -a behavior (existing default, subtract 1 for main)
   show_worktree_details "$current_worktree" "${worktree_paths[@]}"
 fi

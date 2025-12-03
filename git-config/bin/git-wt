@@ -14,6 +14,7 @@ USAGE:
 
 OPTIONS:
   -h, --help            Show this help message and exit.
+  --summary             Show non-interactive summary of all worktrees.
   --json                Output worktree information in JSON format.
 
 DESCRIPTION:
@@ -53,6 +54,7 @@ EOF
 
 # Parse flags
 json_output=false
+summary_output=false
 declare -a args=()
 
 while [[ $# -gt 0 ]]; do
@@ -60,6 +62,10 @@ while [[ $# -gt 0 ]]; do
     -h|--help)
       show_help
       exit 0
+      ;;
+    --summary)
+      summary_output=true
+      shift
       ;;
     --json)
       json_output=true
@@ -80,18 +86,63 @@ done
 # Early exit if not in Git repo
 check_git_repo
 
+# Handle summary output (non-interactive listing)
+if "$summary_output"; then
+  declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
+
+  # NOTE: Using get_all_worktrees_including_main to show complete worktree status
+  if ! get_all_worktrees_including_main worktree_paths branches commits status_dirty locked_status; then
+    info "No worktrees found."
+    exit 0
+  fi
+
+  current_worktree=$(get_current_worktree_path)
+  count=${#worktree_paths[@]}
+  # Count of ADDITIONAL worktrees (excluding main)
+  additional_count=$((count > 0 ? count - 1 : 0))
+
+  printf "${BLUE}Worktrees (%d)${NC}\n" "$additional_count"
+  echo
+
+  for i in "${!worktree_paths[@]}"; do
+    path="${worktree_paths[$i]}"
+    branch="${branches[$i]}"
+    commit="${commits[$i]}"
+    dirty="${status_dirty[$i]}"
+    locked="${locked_status[$i]}"
+
+    # Build status indicators
+    status_indicators=""
+    [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}[CURRENT]${NC} "
+    [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
+    [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
+
+    # Format path relative to home if possible
+    display_path="${path/#$HOME/\~}"
+
+    # Print worktree line
+    printf "  %s%s (%s) → %s\n" "$status_indicators" "$branch" "$commit" "$display_path"
+  done
+
+  echo
+  exit 0
+fi
 
 # Handle JSON output
 if "$json_output"; then
   declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
 
-  if ! get_worktrees worktree_paths branches commits status_dirty locked_status; then
+  # NOTE: Using get_all_worktrees_including_main to allow JSON output for all worktrees
+  if ! get_all_worktrees_including_main worktree_paths branches commits status_dirty locked_status; then
     printf '{"worktrees":[],"current":"","count":0}\n'
     exit 0
   fi
 
   current_worktree=$(get_current_worktree_path)
   count=${#worktree_paths[@]}
+  # Count of ADDITIONAL worktrees (excluding main) - matches user mental model
+  # 0 = only main, 1 = user created 1 additional worktree
+  additional_count=$((count > 0 ? count - 1 : 0))
 
   printf '{'
   printf '"worktrees":['
@@ -119,7 +170,7 @@ if "$json_output"; then
 
   printf '],'
   printf '"current":"%s",' "$current_worktree"
-  printf '"count":%d' "$count"
+  printf '"count":%d' "$additional_count"
   printf '}\n'
   exit 0
 fi
@@ -134,6 +185,8 @@ fi
 # No path argument provided - show interactive menu
 declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
 
+# NOTE: Using get_worktrees (excludes main) because wt is for SWITCHING between worktrees.
+#       If only main worktree exists, there's nothing to switch to.
 if ! get_worktrees worktree_paths branches commits status_dirty locked_status; then
   info "No worktrees found. Use 'hug wtc <branch>' to create one."
   info "Example: hug wtc feature-auth"

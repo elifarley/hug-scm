@@ -370,8 +370,8 @@ create_backup_branch() {
 # -----------------------------------------------------------------------------
 
 @test "hug brestore: uses numbered list for fewer than 10 branches" {
-  # Create 9 backup branches
-  for i in {1..9}; do
+  # Create 9 backup branches (avoiding conflicts with setup branches)
+  for i in {10..18}; do
     git branch "feature-$i"
     create_backup_branch "feature-$i" > /dev/null
   done

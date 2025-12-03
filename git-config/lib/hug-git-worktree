@@ -15,7 +15,7 @@
 # Worktree Information Functions
 ################################################################################
 
-# Get all worktrees with detailed information
+# Get ADDITIONAL worktrees (excluding the main repository)
 # Usage: get_worktrees worktree_paths branches commits status_dirty locked_status
 # Parameters (all namerefs to output variables):
 #   $1 - Array to receive worktree paths
@@ -24,7 +24,13 @@
 #   $4 - Array to receive dirty status (true/false)
 #   $5 - Array to receive locked status (true/false)
 # Returns:
-#   0 if worktrees found, 1 if no worktrees exist
+#   0 if additional worktrees found, 1 if only main worktree exists
+#
+# IMPORTANT: This function returns ONLY additional worktrees, excluding the main
+#            repository. The main worktree always exists, so this function answers
+#            the question "do we have additional worktrees beyond the main one?"
+#            For commands that need to include the main worktree, use
+#            get_all_worktrees_including_main() instead.
 get_worktrees() {
     local -n paths_ref="$1"
     local -n branches_ref="$2"
@@ -85,8 +91,11 @@ get_worktrees() {
                     branches_ref+=("$current_branch")
                     commits_ref+=("$current_commit")
 
-                    # Check if worktree is dirty
-                    if git -C "$current_path" diff --quiet 2>/dev/null && git -C "$current_path" diff --cached --quiet 2>/dev/null; then
+                    # Check if worktree is dirty (modified, staged, or untracked files)
+                    # NOTE: We check both tracked changes (diff) and untracked files (status)
+                    if git -C "$current_path" diff --quiet 2>/dev/null && \
+                       git -C "$current_path" diff --cached --quiet 2>/dev/null && \
+                       [[ -z $(git -C "$current_path" ls-files --others --exclude-standard 2>/dev/null) ]]; then
                         status_ref+=("false")
                     else
                         status_ref+=("true")
@@ -124,8 +133,144 @@ get_worktrees() {
         branches_ref+=("$current_branch")
         commits_ref+=("$current_commit")
 
-        # Check if worktree is dirty
-        if git -C "$current_path" diff --quiet 2>/dev/null && git -C "$current_path" diff --cached --quiet 2>/dev/null; then
+        # Check if worktree is dirty (modified, staged, or untracked files)
+        # NOTE: We check both tracked changes (diff) and untracked files (status)
+        if git -C "$current_path" diff --quiet 2>/dev/null && \
+           git -C "$current_path" diff --cached --quiet 2>/dev/null && \
+           [[ -z $(git -C "$current_path" ls-files --others --exclude-standard 2>/dev/null) ]]; then
+            status_ref+=("false")
+        else
+            status_ref+=("true")
+        fi
+
+        locked_ref+=("$current_locked")
+    fi
+
+    return 0
+}
+
+# Get ALL worktrees including the main repository
+# Usage: get_all_worktrees_including_main worktree_paths branches commits status_dirty locked_status
+# Parameters (all namerefs to output variables):
+#   $1 - Array to receive worktree paths
+#   $2 - Array to receive branch names
+#   $3 - Array to receive commit hashes (short)
+#   $4 - Array to receive dirty status (true/false)
+#   $5 - Array to receive locked status (true/false)
+# Returns:
+#   0 if any worktrees found (always succeeds if in a git repo), 1 if not in a git repo
+#
+# TEACHING NOTE: Use this function when you need to display/operate on ALL worktrees
+#                including the main repository. This is appropriate for:
+#                - Status displays (e.g., "show current worktree" which might be main)
+#                - Complete worktree listings
+#                - Commands that should work even with only the main worktree
+#
+#                IMPORTANT: When displaying counts, use get_worktree_count() which
+#                excludes the main worktree to match user expectations:
+#                - 0 worktrees = only main exists (default state)
+#                - 1 worktree = user created 1 additional worktree
+#                - This matches the semantic that the main worktree is always present
+#                  and users think in terms of "additional" worktrees they create.
+#
+#                Use get_worktrees() (without "including_main") when you specifically
+#                need to know about ADDITIONAL worktrees, such as:
+#                - Deletion operations (can't delete main worktree)
+#                - Operations that only make sense with multiple worktrees
+get_all_worktrees_including_main() {
+    local -n paths_ref="$1"
+    local -n branches_ref="$2"
+    local -n commits_ref="$3"
+    local -n status_ref="$4"
+    local -n locked_ref="$5"
+
+    # Clear output arrays
+    paths_ref=()
+    branches_ref=()
+    commits_ref=()
+    status_ref=()
+    locked_ref=()
+
+    # Get main repository path
+    local main_repo_path
+    main_repo_path=$(git rev-parse --show-toplevel 2>/dev/null)
+    if [[ -z "$main_repo_path" ]]; then
+        return 1
+    fi
+
+    # Parse git worktree list --porcelain output
+    local -a worktree_output
+    mapfile -t worktree_output < <(git worktree list --porcelain 2>/dev/null)
+
+    if [[ ${#worktree_output[@]} -eq 0 ]]; then
+        return 1
+    fi
+
+    # Parse ALL worktrees (INCLUDING main repo)
+    local current_path=""
+    local current_branch=""
+    local current_commit=""
+    local current_locked="false"
+    local i=0
+
+    while [[ $i -lt ${#worktree_output[@]} ]]; do
+        local line="${worktree_output[$i]}"
+
+        case "$line" in
+            "worktree "*)
+                # If we have a previous worktree, store it (including main repo)
+                if [[ -n "$current_path" ]]; then
+                    paths_ref+=("$current_path")
+                    branches_ref+=("$current_branch")
+                    commits_ref+=("$current_commit")
+
+                    # Check if worktree is dirty (modified, staged, or untracked files)
+                    # NOTE: We check both tracked changes (diff) and untracked files (status)
+                    if git -C "$current_path" diff --quiet 2>/dev/null && \
+                       git -C "$current_path" diff --cached --quiet 2>/dev/null && \
+                       [[ -z $(git -C "$current_path" ls-files --others --exclude-standard 2>/dev/null) ]]; then
+                        status_ref+=("false")
+                    else
+                        status_ref+=("true")
+                    fi
+
+                    locked_ref+=("$current_locked")
+                fi
+
+                # Start new worktree
+                current_path="${line#worktree }"
+                current_branch=""
+                current_commit=""
+                current_locked="false"
+                ;;
+            "branch "*)
+                current_branch="${line#branch refs/heads/}"
+                # Get commit hash for this branch
+                current_commit=$(git rev-parse --short "$current_branch" 2>/dev/null || echo "unknown")
+                ;;
+            "commit "*)
+                current_commit="${line#commit }"
+                current_commit=$(git rev-parse --short "$current_commit" 2>/dev/null || echo "unknown")
+                ;;
+            "locked")
+                current_locked="true"
+                ;;
+        esac
+
+        i=$((i + 1))
+    done
+
+    # Store the last worktree (including main repo)
+    if [[ -n "$current_path" ]]; then
+        paths_ref+=("$current_path")
+        branches_ref+=("$current_branch")
+        commits_ref+=("$current_commit")
+
+        # Check if worktree is dirty (modified, staged, or untracked files)
+        # NOTE: We check both tracked changes (diff) and untracked files (status)
+        if git -C "$current_path" diff --quiet 2>/dev/null && \
+           git -C "$current_path" diff --cached --quiet 2>/dev/null && \
+           [[ -z $(git -C "$current_path" ls-files --others --exclude-standard 2>/dev/null) ]]; then
             status_ref+=("false")
         else
             status_ref+=("true")
@@ -149,14 +294,27 @@ get_current_worktree_path() {
 # Returns: 0 if worktree exists, 1 if not
 worktree_exists() {
     local path="$1"
-    [[ -n "$path" ]] && git worktree list --porcelain 2>/dev/null | grep -q "^worktree $(printf '%s' "$path" | sed 's|/|\\/|g')$"
+    # Use grep -F (fixed string) to match path exactly without regex interpretation
+    [[ -n "$path" ]] && git worktree list --porcelain 2>/dev/null | grep -qF "worktree $path"
 }
 
-# Count total number of worktrees
+# Count number of ADDITIONAL worktrees (excluding main worktree)
 # Usage: count=$(get_worktree_count)
-# Returns: Number of worktrees (including main worktree)
+# Returns: Number of additional worktrees (0 = only main exists, 1 = one additional worktree created)
+#
+# SEMANTIC NOTE: This matches user mental model where:
+#   - 0 worktrees = default state (only main worktree)
+#   - 1 worktree = user created one additional worktree
+#   - Main worktree is always present and not counted
 get_worktree_count() {
-    git worktree list 2>/dev/null | wc -l
+    local total
+    total=$(git worktree list 2>/dev/null | wc -l)
+    # Subtract 1 for main worktree (if any worktrees exist)
+    if [[ $total -gt 0 ]]; then
+        echo $((total - 1))
+    else
+        echo 0
+    fi
 }
 
 ################################################################################

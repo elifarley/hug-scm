@@ -551,6 +551,18 @@ get_numbered_selection_index() {
         return 1
     fi
 
+    # Test-mode override: allow deterministic non-interactive selection in tests
+    if [[ -n "${HUG_TEST_NUMBERED_SELECTION:-}" ]]; then
+        local ts_choice="${HUG_TEST_NUMBERED_SELECTION}"
+        if [[ "$ts_choice" =~ ^[0-9]+$ ]] && [ "$ts_choice" -ge 1 ] && [ "$ts_choice" -le "$num_items" ]; then
+            echo "$((ts_choice - 1))"
+            return 0
+        else
+            info "Cancelled."
+            exit 1
+        fi
+    fi
+
     local choice
     printf "Enter choice (1-%d): " "$num_items" >&2
     if ! read -r choice; then
@@ -1058,8 +1070,9 @@ single_select_branch() {
     local placeholder="$8"
 
     # Use existing print_interactive_branch_menu function for consistency
+    # Pass original parameter names, not the nameref variable names, to avoid circular reference
     print_interactive_branch_menu "$result_variable" "$current_branch" "$max_len" \
-        hashes_ref branches_ref tracks_ref subjects_ref "$placeholder"
+        "$4" "$5" "$6" "$7" "$placeholder"
 }
 
 # Multi-branch selection function
@@ -1133,7 +1146,11 @@ multi_select_branches() {
 
         # Get user selection (support comma-separated numbers)
         local selection
-        read -r -p "Enter numbers to select (comma-separated, or 'a' for all): " selection
+        if [[ -n "${HUG_TEST_NUMBERED_SELECTION:-}" ]]; then
+            selection="${HUG_TEST_NUMBERED_SELECTION}"
+        else
+            read -r -p "Enter numbers to select (comma-separated, or 'a' for all): " selection
+        fi
 
         # Parse selection
         case "$selection" in

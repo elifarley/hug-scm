@@ -329,13 +329,18 @@ cleanup_test_repo() {
   # Cleanup TEST_REPO if set
   if [[ -n "${TEST_REPO:-}" && -d "$TEST_REPO" ]]; then
     # Remove any worktrees FIRST (they reference main repo)
+    # NOTE: Using process substitution instead of pipe to avoid subshell issues
     if [[ -d "$TEST_REPO/.git" ]]; then
-      git -C "$TEST_REPO" worktree list --porcelain 2>/dev/null |
-        grep "^worktree " |
-        cut -d' ' -f2 |
-        while read -r wt; do
-          [[ "$wt" != "$TEST_REPO" && -d "$wt" ]] && rm -rf "$wt" 2>/dev/null
-        done
+      while IFS= read -r wt_line; do
+        # Extract worktree path (format: "worktree /path/to/worktree")
+        if [[ "$wt_line" =~ ^worktree\ (.+)$ ]]; then
+          local wt="${BASH_REMATCH[1]}"
+          # Only remove if it's not the main repo and directory exists
+          if [[ "$wt" != "$TEST_REPO" && -d "$wt" ]]; then
+            rm -rf "$wt" 2>/dev/null || true
+          fi
+        fi
+      done < <(git -C "$TEST_REPO" worktree list --porcelain 2>/dev/null || true)
       
       # Prune worktree metadata
       git -C "$TEST_REPO" worktree prune 2>/dev/null || true
@@ -860,7 +865,11 @@ assert_valid_json() {
 
 assert_json_has_key() {
   local jq_path="$1"
-  echo "$output" | jq -e "$jq_path" >/dev/null || fail "JSON missing key: $jq_path"
+  # Use 'type' to check if key exists (returns null for missing keys)
+  # Don't use -e flag as it fails for false/null values
+  local result
+  result=$(echo "$output" | jq "$jq_path | type" 2>/dev/null)
+  [[ "$result" != "null" && -n "$result" ]] || fail "JSON missing key: $jq_path"
 }
 
 assert_json_value() {
@@ -1164,14 +1173,26 @@ assert_worktree_clean() {
 assert_worktree_dirty() {
   local worktree_path="$1"
 
-  git -C "$worktree_path" diff --quiet && git -C "$worktree_path" diff --cached --quiet && \
+  # Check for: unstaged changes, staged changes, or untracked files
+  if git -C "$worktree_path" diff --quiet && \
+     git -C "$worktree_path" diff --cached --quiet && \
+     [[ -z "$(git -C "$worktree_path" ls-files --others --exclude-standard)" ]]; then
     fail "Worktree $worktree_path is clean, expected dirty"
+  fi
 }
 
-# Get the number of worktrees for the current repository
+# Get the number of ADDITIONAL worktrees for the current repository (excluding main)
 # Usage: count=$(get_worktree_count)
+# Returns: Number of additional worktrees (0 = only main, 1 = one additional created)
 get_worktree_count() {
-  git worktree list 2>/dev/null | wc -l
+  local total
+  total=$(git worktree list 2>/dev/null | wc -l)
+  # Subtract 1 for main worktree to match user mental model
+  if [[ $total -gt 0 ]]; then
+    echo $((total - 1))
+  else
+    echo 0
+  fi
 }
 
 # Assert that the repository has the expected number of worktrees

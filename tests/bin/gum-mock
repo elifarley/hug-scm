@@ -31,6 +31,11 @@ case "$1" in
     # For filter command, read all input lines and return selection
     mapfile -t lines
     
+    # Optional: simulate cancellation via test env
+    if [[ -n "${HUG_TEST_GUM_INPUT_RETURN_CODE:-}" ]] && [ "${HUG_TEST_GUM_INPUT_RETURN_CODE}" -ne 0 ]; then
+      exit "${HUG_TEST_GUM_INPUT_RETURN_CODE}"
+    fi
+    
     # Check if we received any input
     if [ ${#lines[@]} -eq 0 ]; then
       # No input means no items to select
@@ -51,19 +56,56 @@ case "$1" in
       # Default: return first line
       printf '%s\n' "${lines[0]}"
     fi
+    # Ensure the mock terminates cleanly and does not linger
+    exit 0
     ;;
     
   confirm)
     # For confirm command, check if HUG_TEST_GUM_CONFIRM is set
     # If "yes", return 0; if "no", return 1; otherwise use real gum
+    # 
+    # IMPORTANT: gum confirm outputs the prompt message to stderr, so we must
+    # echo it ourselves to ensure tests can verify the prompt appeared.
+    # Parse the prompt from arguments (skipping flags like --default=false)
+    local prompt_msg=""
+    local skip_next=false
+    for arg in "$@"; do
+      if $skip_next; then
+        skip_next=false
+        continue
+      fi
+      case "$arg" in
+        confirm) continue ;;
+        --default=*) continue ;;
+        --default) skip_next=true; continue ;;
+        --affirmative=*) continue ;;
+        --affirmative) skip_next=true; continue ;;
+        --negative=*) continue ;;
+        --negative) skip_next=true; continue ;;
+        *) prompt_msg="$arg" ;;
+      esac
+    done
+    
+    # Output the prompt to stderr (like real gum confirm does)
+    if [[ -n "$prompt_msg" ]]; then
+      printf '%s ' "$prompt_msg" >&2
+    fi
+    
     if [[ "${HUG_TEST_GUM_CONFIRM:-}" == "yes" ]]; then
       exit 0
     elif [[ "${HUG_TEST_GUM_CONFIRM:-}" == "no" ]]; then
       exit 1
     else
-      # Fall back to real gum if available
-      if gum_available; then
-        command gum "$@"
+      # Fall back to real gum if available (use full path to avoid recursion)
+      if command -v /usr/bin/gum >/dev/null 2>&1 || command -v /usr/local/bin/gum >/dev/null 2>&1; then
+        # Find real gum (not the mock)
+        real_gum=$(PATH="${PATH#*:}" command -v gum 2>/dev/null || echo "")
+        if [[ -n "$real_gum" && "$real_gum" != "$0" ]]; then
+          "$real_gum" "$@"
+        else
+          # No real gum found, default to yes
+          exit 0
+        fi
       else
         # No real gum available, default to yes
         exit 0
@@ -74,12 +116,22 @@ case "$1" in
   log)
     # For log command, just pass through to real gum if available
     # Otherwise, use our standalone implementation
-    if gum_available; then
-      command gum "$@"
+    if command -v /usr/bin/gum >/dev/null 2>&1 || command -v /usr/local/bin/gum >/dev/null 2>&1; then
+      # Find real gum (not the mock) 
+      real_gum=$(PATH="${PATH#*:}" command -v gum 2>/dev/null || echo "")
+      if [[ -n "$real_gum" && "$real_gum" != "$0" ]]; then
+        "$real_gum" "$@"
+      else
+        shift  # Remove 'log' argument
+        message="$*"
+        if [[ -n "$message" ]]; then
+          echo "$message"
+        fi
+      fi
     else
       shift  # Remove 'log' argument
       # Simple implementation for testing
-      local message="$*"
+      message="$*"
       if [[ -n "$message" ]]; then
         echo "$message"
       fi
@@ -114,8 +166,15 @@ case "$1" in
 
   *)
     # For other commands, try to pass through to real gum
-    if gum_available; then
-      command gum "$@"
+    if command -v /usr/bin/gum >/dev/null 2>&1 || command -v /usr/local/bin/gum >/dev/null 2>&1; then
+      # Find real gum (not the mock)
+      real_gum=$(PATH="${PATH#*:}" command -v gum 2>/dev/null || echo "")
+      if [[ -n "$real_gum" && "$real_gum" != "$0" ]]; then
+        "$real_gum" "$@"
+      else
+        # No real gum, just exit successfully
+        exit 0
+      fi
     else
       # No real gum, just exit successfully
       exit 0

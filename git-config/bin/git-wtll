@@ -74,8 +74,9 @@ if $json_output; then
 fi
 
 # Get worktree data
+# NOTE: wtll lists all worktrees in long format, including the main repository
 declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
-if ! get_worktrees worktree_paths branches commits status_dirty locked_status; then
+if ! get_all_worktrees_including_main worktree_paths branches commits status_dirty locked_status; then
   printf "No worktrees found.\n" >&2
   exit 1
 fi
@@ -85,6 +86,7 @@ current_worktree=$(get_current_worktree_path)
 
 # Build and print worktree list in long format
 printf "${BLUE}Worktrees (long format):%s${NC}\n" ""
+match_count=0
 for i in "${!worktree_paths[@]}"; do
   path="${worktree_paths[$i]}"
   branch="${branches[$i]}"
@@ -106,5 +108,12 @@ for i in "${!worktree_paths[@]}"; do
   # Only show worktree if it matches search criteria (or no search provided)
   if $show_worktree; then
     format_worktree_long_line "$current_worktree" "$path" "$branch" "$commit" "$dirty" "$locked"
+    match_count=$((match_count + 1))
   fi
 done
+
+# Return error if search terms were provided but no matches found
+if [[ -n "$search_terms" && $match_count -eq 0 ]]; then
+  printf "No worktrees found matching: %s\n" "$search_terms" >&2
+  exit 1
+fi

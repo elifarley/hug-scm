@@ -92,14 +92,14 @@ teardown() {
 }
 
 @test "hug-git-worktree: get_worktree_count returns correct count" {
-  # Should start with 1 (main repository only)
-  assert_equal "$(get_worktree_count)" 1
+  # Should start with 0 (main repository only)
+  assert_equal "$(get_worktree_count)" 0
 
   # Create worktree
   create_test_worktree "feature-1" "$TEST_REPO"
 
-  # Should now have 2
-  assert_equal "$(get_worktree_count)" 2
+  # Should now have 1
+  assert_equal "$(get_worktree_count)" 1
 }
 
 @test "hug-git-worktree: validate_worktree_path accepts valid worktree" {

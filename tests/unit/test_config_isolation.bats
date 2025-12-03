@@ -8,6 +8,7 @@ load '../test_helper'
   pushd "$TEST_REPO" > /dev/null
   git config --local user.name "Temp Test"
   popd > /dev/null
-  cleanup_test_repo
+  # NOTE: cleanup_test_repo uses $TEST_REPO from environment if set
+  cleanup_test_repo "$TEST_REPO"
   assert_equal "$(git config --global user.name || echo "")" "$original_name"
 }
