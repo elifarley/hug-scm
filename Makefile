@@ -29,7 +29,10 @@ help: ## Display this help message
 
 ##@ Testing
 
-test: test-bash test-lib-py ## Run all tests (BATS + pytest)
+test: test-lib-py test-bash  ## Run all tests (BATS + pytest)
+	@echo "$(GREEN)All tests completed!$(NC)"
+
+test-by-category: test-check test-lib-py test-lib test-unit test-integration ## Run all tests by category (fastest first)
 	@echo "$(GREEN)All tests completed!$(NC)"
 
 test-bash: ## Run all BATS-based tests (or specific: TEST_FILE=... TEST_FILTER=... TEST_SHOW_ALL_RESULTS=1)
@@ -96,9 +99,8 @@ test-lib: ## Run only library tests (or specific: TEST_FILE=... TEST_FILTER=... 
 		./tests/run-tests.sh --lib $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
 	fi
 
-test-check: ## Check test prerequisites without running tests
+test-check: ## Check test prerequisites without actually running tests
 	@echo "$(BLUE)Checking test prerequisites...$(NC)"
-	@echo "$(BLUE)Checking BATS prerequisites...$(NC)"
 	./tests/run-tests.sh --check
 	@echo "$(BLUE)Checking Python test prerequisites...$(NC)"
 	@if cd git-config/lib/python && python3 -m pytest --version >/dev/null 2>&1; then \
