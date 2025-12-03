@@ -4,6 +4,8 @@
 . "$HUG_HOME/git-config/lib/hug-common"
 # shellcheck source=git-config/lib/hug-git-kit
 . "$HUG_HOME/git-config/lib/hug-git-kit"
+# shellcheck source=git-config/lib/hug-file-input
+. "$HUG_HOME/git-config/lib/hug-file-input"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
@@ -12,13 +14,15 @@ show_help() {
 hug us: UnStage one or more files
 
 USAGE:
-    hug us [<file>...] [--dry-run] [-f, --force] [--quiet] [-h, --help]
+    hug us [<file>...] [--from-file <file>] [--from-commit <commit>] [--dry-run] [-f, --force] [--quiet] [-h, --help]
 
 ARGUMENTS:
     <file>...          One or more file paths to unstage
                        If not provided, shows interactive list for selection
 
 OPTIONS:
+    --from-file <file>    Read file list from file or stdin (use '-' for stdin)
+    --from-commit <commit> Use files changed in the specified commit
     --dry-run          Preview the unstage operation without applying changes
     -f, --force        Skip confirmation prompts (sets HUG_FORCE=true)
     --quiet            Suppress output (sets HUG_QUIET=T)
@@ -34,10 +38,19 @@ DESCRIPTION:
 
     If no staged files exist, displays an informative message.
 
+    The --from-file flag reads file names from a file or stdin. It intelligently
+    parses both simple file lists (one per line) and the output from 'hug sh'.
+
+    The --from-commit flag directly extracts files from a commit's changes,
+    providing an optimized workflow for unstaging the same files as a previous commit.
+
 EXAMPLES:
     hug us                              # Interactive: select files to unstage
     hug us file.txt                     # Unstage single file
     hug us src/main.js tests/test.js    # Unstage multiple files
+    hug us --from-file files.txt        # Unstage files from list
+    hug us --from-commit HEAD~1         # Unstage files from previous commit
+    hug sh HEAD~2 | hug us --from-file - # Unstage files from hug sh output
     hug us --dry-run                    # Preview which files would be unstaged
 
 SEE ALSO:
@@ -47,22 +60,74 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (--dry-run, -f|--force, --quiet, -h|--help)
-eval "$(parse_common_flags "$@")"
+# Parse custom flags first
+from_file=""
+from_commit=""
+remaining_args=()
 
-# Collect file names
-files_to_unstage=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --from-file)
+      from_file="$2"
+      shift 2
+      ;;
+    --from-commit)
+      from_commit="$2"
+      shift 2
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    --dry-run|--force|-f|--quiet)
+      # These will be handled by parse_common_flags
+      remaining_args+=("$1")
+      shift
+      ;;
     -*)
       error "Unknown option: $1. See 'hug us --help'."
       ;;
     *)
-      files_to_unstage+=("$1")
+      remaining_args+=("$1")
       shift
       ;;
   esac
 done
+
+# Parse common flags with remaining arguments
+eval "$(parse_common_flags "${remaining_args[@]}")"
+
+# Handle file input flags
+if [[ -n "$from_file" || -n "$from_commit" ]]; then
+  files_from_source=()
+
+  if [[ -n "$from_commit" ]]; then
+    mapfile -t files_from_source < <(extract_files_from_commit "$from_commit")
+  elif [[ -n "$from_file" ]]; then
+    mapfile -t files_from_source < <(read_files_from_source "$from_file")
+  fi
+
+  # Filter out any common flags from remaining_args to get just files
+  files_to_unstage=()
+  for arg in "${remaining_args[@]}"; do
+    case "$arg" in
+      --dry-run|--force|-f|--quiet) ;;
+      *) files_to_unstage+=("$arg") ;;
+    esac
+  done
+
+  # Add files from source
+  files_to_unstage+=("${files_from_source[@]}")
+else
+  # Filter out any common flags from remaining_args to get just files
+  files_to_unstage=()
+  for arg in "${remaining_args[@]}"; do
+    case "$arg" in
+      --dry-run|--force|-f|--quiet) ;;
+      *) files_to_unstage+=("$arg") ;;
+    esac
+  done
+fi
 
 check_git_repo
 

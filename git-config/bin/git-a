@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+# Assume HUG_HOME is set (exported by hug or environment)
+# shellcheck source=git-config/lib/hug-common
+. "$HUG_HOME/git-config/lib/hug-common"
+# shellcheck source=git-config/lib/hug-git-kit
+. "$HUG_HOME/git-config/lib/hug-git-kit"
+# shellcheck source=git-config/lib/hug-file-input
+. "$HUG_HOME/git-config/lib/hug-file-input"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
@@ -15,10 +20,14 @@ USAGE:
   hug a <file>         # Stage specific files
   hug a --             # Interactive file selection (current directory scope)
   hug a --browse-root  # Interactive file selection (full repository scope)
+  hug a --from-file <file>     # Stage files from list file or stdin
+  hug a --from-commit <commit> # Stage files changed in specified commit
 
 OPTIONS:
   --             Trigger interactive file selection UI
   --browse-root  Browse full repository scope in file selector UI (default: current directory)
+  --from-file <file>    Read file list from file or stdin (use '-' for stdin)
+  --from-commit <commit> Use files changed in the specified commit
   -h, --help     Show this help message and exit.
 
 DESCRIPTION:
@@ -27,6 +36,17 @@ DESCRIPTION:
   files to stage. By default, interactive selection is scoped to the current
   directory and subdirectories. Use --browse-root to browse the entire repository.
 
+  The --from-file flag reads file names from a file or stdin. It intelligently
+  parses both simple file lists (one per line) and the output from 'hug sh'.
+
+  The --from-commit flag directly extracts files from a commit's changes,
+  providing an optimized workflow for staging the same files as a previous commit.
+
+EXAMPLES:
+  hug a --from-file files.txt          # Stage files from list
+  hug a --from-commit HEAD~1           # Stage files from previous commit
+  hug sh HEAD~2 | hug a --from-file -   # Stage files from hug sh output
+
 SEE ALSO:
   hug aa: Stage everything (tracked + untracked + deletions)
   hug ai: Invoke interactive add menu
@@ -34,8 +54,40 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (handles --browse-root, --, etc.)
-eval "$(parse_common_flags "$@")"
+# Parse custom flags
+from_file=""
+from_commit=""
+remaining_args=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --from-file)
+      from_file="$2"
+      shift 2
+      ;;
+    --from-commit)
+      from_commit="$2"
+      shift 2
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    *)
+      # Check for special interactive mode first
+      if [[ "$1" == "--" ]]; then
+        remaining_args+=("$1")
+        shift
+        # Parse common flags with the remaining arguments
+        eval "$(parse_common_flags "$@")"
+        break
+      else
+        remaining_args+=("$1")
+        shift
+      fi
+      ;;
+  esac
+done
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
@@ -43,33 +95,61 @@ eval "$(parse_common_flags "$@")"
 # Early exit if not in Git repo
 check_git_repo
 
-# Check if user wants interactive file selection via --
-if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
-  # Get list of files with changes (tracked files)
-  declare -a select_opts=("--multi" "--unstaged" "--untracked")
-  
-  # Default to --cwd (current directory scope) unless --browse-root is specified
-  if ! $browse_root; then
-    select_opts+=("--cwd")
-  fi
-  
-  select_opts+=("--prompt" "Select files to stage...")
-  
+# Handle file input flags
+if [[ -n "$from_file" || -n "$from_commit" ]]; then
   files=()
-  if ! mapfile -t files < <(select_files_with_status "${select_opts[@]}"); then
-    info "No files selected or cancelled."
+  files_from_source=()
+
+  if [[ -n "$from_commit" ]]; then
+    mapfile -t files_from_source < <(extract_files_from_commit "$from_commit")
+  elif [[ -n "$from_file" ]]; then
+    mapfile -t files_from_source < <(read_files_from_source "$from_file")
+  fi
+
+  # Add any remaining arguments
+  files+=("${files_from_source[@]}" "${remaining_args[@]}")
+
+  if [[ ${#files[@]} -eq 0 ]]; then
+    info "No files to stage."
     exit 0
   fi
-  
-  if [ ${#files[@]} -eq 0 ]; then
-    info "No files selected."
-    exit 0
-  fi
-  
+
   exec git add "${files[@]}"
 fi
 
-# Check if no arguments - stage all tracked modified files
-test $# -eq 0 && exec git add -u
+# Parse common flags for the interactive mode and regular operation
+if [[ "${#remaining_args[@]}" -gt 0 && "${remaining_args[0]}" == "--" ]]; then
+  # Handle interactive mode with remaining args (excluding the "--" we already processed)
+  unset 'remaining_args[0]'
 
-exec git add "$@"
+  # Check if user wants interactive file selection via --
+  if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
+    # Get list of files with changes (tracked files)
+    declare -a select_opts=("--multi" "--unstaged" "--untracked")
+
+    # Default to --cwd (current directory scope) unless --browse-root is specified
+    if ! $browse_root; then
+      select_opts+=("--cwd")
+    fi
+
+    select_opts+=("--prompt" "Select files to stage...")
+
+    files=()
+    if ! mapfile -t files < <(select_files_with_status "${select_opts[@]}"); then
+      info "No files selected or cancelled."
+      exit 0
+    fi
+
+    if [ ${#files[@]} -eq 0 ]; then
+      info "No files selected."
+      exit 0
+    fi
+
+    exec git add "${files[@]}"
+  fi
+fi
+
+# Check if no arguments - stage all tracked modified files
+test ${#remaining_args[@]} -eq 0 && exec git add -u
+
+exec git add "${remaining_args[@]}"

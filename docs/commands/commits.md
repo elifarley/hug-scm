@@ -20,15 +20,52 @@ Commit staged changes.
 
 **Usage:** `hug c [options]`
 
+**Options:**
+- `-C <commit>`: Reuse commit message from specified commit (exact copy)
+- `-c <commit>`: Reuse and edit commit message from specified commit (opens in editor)
+
 **Examples:**
 ```shell
 hug c # A text editor will be shown so that you can add a message
 hug c -m "Fix typo in README"
+hug c -C HEAD~1          # Reuse message from previous commit
+hug c -c main~2          # Reuse and edit message from main branch
 ```
 
 This is a safe way to commit, ensuring only staged files are included.
 
 To preview what would be committed, run `hug sl` for a list of changed files or `hug ss` for a diff of staged changes.
+
+### Reusing Commit Messages
+
+Git natively supports reusing commit messages from existing commits:
+
+```shell
+# Reuse message exactly
+hug c -C <commit>
+
+# Reuse and edit message
+hug c -c <commit>
+```
+
+Common use cases:
+- Applying the same fix to multiple branches
+- Creating revert commits with context
+- Using well-written commits as templates
+
+**Examples:**
+```shell
+# Apply the same bug fix to multiple branches
+# On feature branch:
+hug c -m "Fix critical security vulnerability in auth module"
+
+# Switch to main branch and apply similar fix:
+hug c -C feature~1
+
+# Create a revert with proper context:
+hug revert abc123
+hug c -c abc123  # Reuse original message and add "Revert: " prefix
+```
 
 ## hug ca (Commit All tracked)
 
@@ -107,14 +144,23 @@ hug cma -m "Add new feature (with all files)"
 
 Copy a commit from another branch onto the current branch (cherry-pick).
 
-**Usage:** `hug ccp \<commit\>...`
+**Usage:**
+- `hug ccp <commit>...`  # Cherry-pick commits
+- `hug ccp --husk <commit>`  # Create template commit with same files and message
+
+**Options:**
+- `--husk`: Stage the same files as the source commit and reuse its message
 
 **Examples:**
 ```shell
+# Cherry-pick commits (original behavior)
 hug ccp a1b2c3d4              # Copy a single commit by hash
 hug ccp HEAD~2                # Copy the commit two steps back
 hug ccp a1b2c3 d4e5f6         # Copy multiple commits
 hug ccp --no-commit a1b2c3    # Copy without auto-committing
+
+# Husk mode (new feature)
+hug ccp --husk abc123         # Stage same files as abc123 and reuse its message
 ```
 
 Applies the changes from a specific commit on top of the current HEAD, creating a new commit on the current branch. Hug uses `git cherry-pick -x`, which adds the original commit hash to the new commit message for reference. This is useful for bringing a specific bug fix or feature from one branch to another without merging the entire source branch.

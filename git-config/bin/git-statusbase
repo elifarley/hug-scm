@@ -33,6 +33,8 @@ if $include_untracked; then
   list_opts+=("--untracked")
 fi
 
+# TODO list files sorted by reverse status text (so that `S:*` files appear last, closer to the cursor line after the command has finished printing a lot of lines. The second field to sort should be the file path.
+
 # JSON output mode
 if $json_output; then
   output_json_status "${list_opts[@]}"

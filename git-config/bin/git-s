@@ -4,11 +4,7 @@ CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 . "$CMD_BASE/../lib/output_json_status_summary"
 set -euo pipefail
 
-# TODO if no uncommitted changes:
-#   - Show Black circle if no untracked AND no ignored files (currently it does show regardless of this)
-#   - Show White circle if only ignored files
-#   - Show orange circle if only untracked
-#   - Show purple circle if both untracked and ignored
+# TODO
 
 # Parse arguments
 json_output=false

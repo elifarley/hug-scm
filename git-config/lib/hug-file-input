@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+# hug-file-input.sh - Library for reading file lists from various sources
+# Supports both simple file lists and hug sh output parsing
+
+# Read files from various sources (file, stdin, or commit)
+# Usage: read_files_from_source <source>
+# Outputs filenames one per line to stdout
+# Source can be:
+#   "-" for stdin
+#   Path to a file containing simple file lists or hug sh output
+#   Empty/unset for no additional files
+read_files_from_source() {
+  local source="$1"
+
+  if [[ "$source" == "-" ]]; then
+    # Read from stdin
+    local content
+    content="$(cat)"
+    parse_file_content "$content"
+  elif [[ -n "$source" && -f "$source" ]]; then
+    # Read from file
+    local content
+    content="$(cat "$source")"
+    parse_file_content "$content"
+  elif [[ -n "$source" ]]; then
+    error "File source '$source' is not a valid file or '-' for stdin"
+    return 1
+  fi
+}
+
+# Parse file content and extract filenames
+# Handles both simple file lists and hug sh output
+# Usage: parse_file_content <content>
+# Outputs filenames one per line to stdout
+parse_file_content() {
+  local content="$1"
+
+  # Check if content looks like hug sh output by looking for summary line
+  if echo "$content" | grep -q "files\? changed"; then
+    extract_files_from_hug_sh "$content"
+  else
+    extract_simple_file_list "$content"
+  fi
+}
+
+# Extract filenames from hug sh output
+# Usage: extract_files_from_hug_sh <content>
+# Outputs filenames one per line to stdout
+extract_files_from_hug_sh() {
+  local content="$1"
+
+  # Convert content to array for easier indexing
+  local lines=()
+  while IFS= read -r line; do
+    lines+=("$line")
+  done <<< "$content"
+
+  # Find the last non-empty line (summary line)
+  local summary_line_idx=-1
+  for ((i=${#lines[@]}-1; i>=0; i--)); do
+    if [[ -n "${lines[$i]}" ]]; then
+      summary_line_idx=$i
+      break
+    fi
+  done
+
+  if [[ $summary_line_idx -eq -1 ]]; then
+    error "Could not find summary line in hug sh output"
+    return 1
+  fi
+
+  local summary_line="${lines[$summary_line_idx]}"
+
+  # Extract number of files from summary
+  local num_files=0
+  if [[ "$summary_line" =~ ([0-9]+)[[:space:]]+files?[[:space:]]+changed ]]; then
+    num_files="${BASH_REMATCH[1]}"
+  else
+    error "Could not determine number of files from summary line: $summary_line"
+    return 1
+  fi
+
+  # Extract the file lines (go up from summary line)
+  local file_start_idx=$((summary_line_idx - num_files))
+
+  if [[ $file_start_idx -lt 0 ]]; then
+    error "Invalid file count in summary: expected $num_files files"
+    return 1
+  fi
+
+  # Extract filenames from the file lines
+  for ((i=file_start_idx; i<summary_line_idx; i++)); do
+    local line="${lines[$i]}"
+
+    # Match lines with " | " pattern (file stats)
+    if [[ "$line" =~ ^[[:space:]]*([^|]+)[[:space:]]*\| ]]; then
+      local file_entry="${BASH_REMATCH[1]}"
+      # Clean up whitespace
+      file_entry="$(echo "$file_entry" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+      # Handle git rename format: {old => new}
+      if [[ "$file_entry" =~ '^{(.*)[[:space:]]*=>[[:space:]]*(.*)}$' ]]; then
+        local old_path="${BASH_REMATCH[1]}"
+        local new_path="${BASH_REMATCH[2]}"
+        echo "$new_path"  # Use the new name
+      else
+        echo "$file_entry"
+      fi
+    fi
+  done
+}
+
+# Extract filenames from simple file list (one per line)
+# Usage: extract_simple_file_list <content>
+# Outputs filenames one per line to stdout
+extract_simple_file_list() {
+  local content="$1"
+
+  while IFS= read -r line; do
+    # Skip empty lines and comments
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    # Trim whitespace
+    line="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [[ -n "$line" ]] && echo "$line"
+  done <<< "$content"
+}
+
+# Extract files directly from a commit using optimized git command
+# Usage: extract_files_from_commit <commit>
+# Outputs filenames one per line to stdout
+extract_files_from_commit() {
+  local commit="$1"
+
+  # Validate commit exists
+  if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
+    error "Commit '$commit' does not exist"
+    return 1
+  fi
+
+  # Get files directly from commit using optimized git command
+  git diff-tree --no-commit-id --name-only -r "$commit" 2>/dev/null || true
+}
+
+# Parse --from-file and --from-commit flags from command line arguments
+# Usage: parse_from_file_and_commit_flags "$@" [remaining_args_var]
+# Sets global variables: from_file, from_commit
+# Returns remaining arguments in array specified by second parameter (optional)
+parse_from_file_and_commit_flags() {
+  local -n remaining_ref=${2:-remaining_args}
+  from_file=""
+  from_commit=""
+  remaining_ref=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --from-file)
+        from_file="$2"
+        shift 2
+        ;;
+      --from-commit)
+        from_commit="$2"
+        shift 2
+        ;;
+      *)
+        remaining_ref+=("$1")
+        shift
+        ;;
+    esac
+  done
+}
+
+# Collect files from command line arguments and optional flags
+# Usage: collect_files_from_args [args...] [--from-file file] [--from-commit commit]
+# Returns array of files in global variable collected_files
+collect_files_from_args() {
+  local remaining_args=()
+  parse_from_file_and_commit_flags "$@" remaining_args
+
+  local files_from_source=()
+  collected_files=()
+
+  # Handle --from-commit flag (optimized path)
+  if [[ -n "$from_commit" ]]; then
+    mapfile -t files_from_source < <(extract_files_from_commit "$from_commit")
+    collected_files=("${files_from_source[@]}" "${remaining_args[@]}")
+
+  # Handle --from-file flag
+  elif [[ -n "$from_file" ]]; then
+    mapfile -t files_from_source < <(read_files_from_source "$from_file")
+    collected_files=("${files_from_source[@]}" "${remaining_args[@]}")
+
+  # No special flags, use remaining args directly
+  else
+    collected_files=("${remaining_args[@]}")
+  fi
+}

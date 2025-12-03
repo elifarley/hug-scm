@@ -13,6 +13,8 @@ USAGE:
   hug c [OPTIONS]
 
 OPTIONS:
+  -C <commit>, --reuse-message=<commit>  Reuse commit message from specified commit
+  -c <commit>, --reedit-message=<commit>  Reuse and edit commit message from specified commit
   -h, --help     Show this help message and exit.
   --quiet       Suppress non-essential output.
   (All other options are passed directly to 'git commit')
@@ -22,10 +24,18 @@ DESCRIPTION:
   If no changes are staged, consider using 'hug ca' (commit all) instead.
   Common options include -m for a commit message, -v for verbose, etc.
 
+  Reusing commit messages:
+    - -C <commit> copies the entire commit message as-is
+    - -c <commit> opens the message in your editor for editing
+    This is useful for applying the same fix to multiple branches or creating
+    revert commits with proper context.
+
 EXAMPLES:
   hug a file.txt          # Stage a file
   hug c -m "Add feature"  # Commit staged file with message
   hug c -v                # Verbose commit
+  hug c -C HEAD~1         # Reuse message from previous commit
+  hug c -c main~2         # Reuse and edit message from main branch
 
 SEE ALSO:
   hug ca : For committing all changes to ALL tracked files (staged and unstaged)
@@ -34,6 +44,7 @@ SEE ALSO:
   hug cma: For modifying the last commit with ALL tracked changes.
   hug a  : Stage tracked files, or specific files if provided.
   hug aa : Stage everything (tracked + untracked + deletions)
+  hug ccp: Cherry-pick commits with the --husk flag for template commits
 EOF
 }
 

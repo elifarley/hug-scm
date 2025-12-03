@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+# Assume HUG_HOME is set (exported by hug or environment)
+# shellcheck source=git-config/lib/hug-common
+. "$HUG_HOME/git-config/lib/hug-common"
+# shellcheck source=git-config/lib/hug-git-kit
+. "$HUG_HOME/git-config/lib/hug-git-kit"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
@@ -12,8 +15,10 @@ hug ccp: Commit Cherry-Pick / Commit Clone / Carbon Copy (copy a commit onto HEA
 USAGE:
   hug ccp [OPTIONS] <commit>...
   hug ccp [OPTIONS] <commit-range>
+  hug ccp --husk <commit>
 
 OPTIONS:
+  --husk         Stage the same files as the source commit and reuse its message
   -h, --help     Show this help message and exit.
   (All other options are passed directly to 'git cherry-pick')
 
@@ -21,6 +26,10 @@ DESCRIPTION:
   This is a convenient alias for 'git cherry-pick -x', which copies the specified commit(s)
   onto the current branch while preserving the original commit's metadata (via -x). It supports
   single commits, ranges (e.g., HEAD~2..HEAD), or multiple commits.
+
+  The --husk flag creates a new commit that reuses the structure (files and message)
+  of the source commit without applying its actual changes. This is useful when you
+  want to apply similar changes to different content or create a template commit.
 
   After cherry-picking, you can edit the new commit message with 'hug cm' if needed.
   Note: Cherry-picking can lead to conflicts; resolve them with 'hug s' (status) and 'hug caa' (commit all).
@@ -31,6 +40,7 @@ EXAMPLES:
   hug ccp HEAD~2..HEAD          # Cherry-pick a range of commits
   hug ccp a1b2c3 d4e5f6         # Cherry-pick multiple commits
   hug ccp --no-commit a1b2c3    # Cherry-pick without auto-committing (passes to git)
+  hug ccp --husk abc123         # Stage same files as abc123 and reuse its message
 
 EOF
 }
@@ -49,6 +59,7 @@ usage_error() {
 # Early exit if not in Git repo
 check_git_repo
 
+husk_mode=false
 positional_args=()
 git_options=()
 
@@ -57,6 +68,10 @@ while (($#)); do
     -h|--help)
       show_help
       exit 0
+      ;;
+    --husk)
+      husk_mode=true
+      shift
       ;;
     --)
       shift
@@ -79,6 +94,51 @@ done
 
 set -- "${positional_args[@]}"
 
+# Handle husk mode
+if [[ "$husk_mode" == true ]]; then
+  if [ $# -eq 0 ]; then
+    usage_error "--husk mode requires a source commit to be specified."
+  fi
+
+  # Validate source commit
+  validate_commitish "husk source commit" "$1"
+  source_commit="$1"
+
+  # Get list of files from source commit
+  files=()
+  mapfile -t files < <(extract_files_from_commit "$source_commit")
+
+  if [ ${#files[@]} -eq 0 ]; then
+    info "No files changed in commit '$source_commit'."
+    exit 0
+  fi
+
+  printf "Staging %d file(s) from commit %s...\n" "${#files[@]}" "$source_commit"
+
+  # Stage the files (but only if they exist in the working directory)
+  files_to_stage=()
+  for file in "${files[@]}"; do
+    if [[ -e "$file" || -L "$file" ]]; then
+      files_to_stage+=("$file")
+    else
+      warning "File '$file' does not exist in working directory, skipping."
+    fi
+  done
+
+  if [ ${#files_to_stage[@]} -eq 0 ]; then
+    info "No existing files to stage from commit '$source_commit'."
+    exit 0
+  fi
+
+  # Stage the files
+  git add "${files_to_stage[@]}"
+
+  printf "Creating commit with message from %s...\n" "$source_commit"
+  # Use git's native commit message reuse
+  exec git commit -C "$source_commit"
+fi
+
+# Regular cherry-pick mode
 if [ $# -eq 0 ]; then
   usage_error "No commit(s) specified. Provide at least one commit hash, reference, or range."
 fi
