@@ -20,9 +20,9 @@ teardown() {
   run git-wtc feature-1 --force
   assert_success
   
-  # Get the actual worktree path using awk to parse porcelain output properly
+  # Get worktree path by grepping for branch name in brackets
   local feature_wt
-  feature_wt=$(git worktree list --porcelain | awk '/^worktree /{wt=$2} /branch refs\/heads\/feature-1$/{print wt}')
+  feature_wt=$(git worktree list | grep '\[feature-1\]' | awk '{print $1}')
   [[ -n "$feature_wt" ]] || fail "Could not find worktree path for feature-1"
   assert_worktree_exists "$feature_wt"
 
@@ -246,18 +246,22 @@ teardown() {
 @test "worktree integration: branch name sanitization" {
   cd "$TEST_REPO"
 
-  # Create branches with special characters
+  # Create branches with special characters (need to return to main after each)
   git checkout -b "feature/auth"
+  git checkout main
   git checkout -b "feature/v2.0"
+  git checkout main
   git checkout -b "bugfix/issue-123"
+  git checkout main
   git checkout -b "experimental/test_case"
+  git checkout main
 
   # Create worktrees for these branches
   run git-wtc "feature/auth" --force
   assert_success
-  # Get the worktree path using awk to parse porcelain output properly
+  # Get worktree path by grepping for branch name in brackets
   local wt_auth
-  wt_auth=$(git worktree list --porcelain | awk '/^worktree /{wt=$2} /branch refs\/heads\/feature\/auth$/{print wt}')
+  wt_auth=$(git worktree list | grep '\[feature/auth\]' | awk '{print $1}')
   [[ -n "$wt_auth" ]] || fail "Could not find worktree for feature/auth"
   assert_worktree_exists "$wt_auth"
   assert_worktree_branch "$wt_auth" "feature/auth"
@@ -265,7 +269,7 @@ teardown() {
   run git-wtc "feature/v2.0" --force
   assert_success
   local wt_v2
-  wt_v2=$(git worktree list --porcelain | awk '/^worktree /{wt=$2} /branch refs\/heads\/feature\/v2\.0$/{print wt}')
+  wt_v2=$(git worktree list | grep '\[feature/v2.0\]' | awk '{print $1}')
   [[ -n "$wt_v2" ]] || fail "Could not find worktree for feature/v2.0"
   assert_worktree_exists "$wt_v2"
   assert_worktree_branch "$wt_v2" "feature/v2.0"
@@ -273,7 +277,7 @@ teardown() {
   run git-wtc "bugfix/issue-123" --force
   assert_success
   local wt_bugfix
-  wt_bugfix=$(git worktree list --porcelain | awk '/^worktree /{wt=$2} /branch refs\/heads\/bugfix\/issue-123$/{print wt}')
+  wt_bugfix=$(git worktree list | grep '\[bugfix/issue-123\]' | awk '{print $1}')
   [[ -n "$wt_bugfix" ]] || fail "Could not find worktree for bugfix/issue-123"
   assert_worktree_exists "$wt_bugfix"
   assert_worktree_branch "$wt_bugfix" "bugfix/issue-123"
@@ -281,7 +285,7 @@ teardown() {
   run git-wtc "experimental/test_case" --force
   assert_success
   local wt_experimental
-  wt_experimental=$(git worktree list --porcelain | awk '/^worktree /{wt=$2} /branch refs\/heads\/experimental\/test_case$/{print wt}')
+  wt_experimental=$(git worktree list | grep '\[experimental/test_case\]' | awk '{print $1}')
   [[ -n "$wt_experimental" ]] || fail "Could not find worktree for experimental/test_case"
   assert_worktree_exists "$wt_experimental"
   assert_worktree_branch "$wt_experimental" "experimental/test_case"
