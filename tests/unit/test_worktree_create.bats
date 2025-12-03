@@ -90,10 +90,8 @@ teardown() {
 }
 
 @test "hug wtc: interactive mode with no branch argument" {
-  # Disable gum to avoid hanging in interactive branch selection
-  disable_gum_for_test
-
-  # Test interactive mode (no arguments)
+  # Test interactive mode with EOF simulation to prevent hanging
+  # This works in both gum and non-gum environments
   run bash -c "echo | git-wtc 2>&1"
   assert_failure  # Exits with code 1 due to cancellation
 
@@ -153,10 +151,8 @@ teardown() {
 }
 
 @test "hug wtc: interactive mode with explicit -- flag" {
-  # Disable gum to avoid hanging in interactive branch selection
-  disable_gum_for_test
-
-  # Test interactive mode with explicit -- flag
+  # Test interactive mode with explicit -- flag using EOF simulation
+  # This works in both gum and non-gum environments
   run bash -c "echo | git-wtc -- 2>&1"
   assert_failure  # Exits with code 1 due to cancellation
 

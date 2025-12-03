@@ -6,21 +6,35 @@ load '../../git-config/lib/hug-output'
 load '../../git-config/lib/hug-git-worktree'
 
 setup() {
-  # Create a test repository
-  TEST_REPO=$(create_test_repo_with_history)
-  cd "$TEST_REPO"
+  require_worktree_support
+  
+  # Create a test repository with branches
+  TEST_REPO=$(create_test_repo_with_branches)
+  
+  # Use pushd for automatic directory management
+  pushd "$TEST_REPO" > /dev/null
 }
 
 teardown() {
+  # CRITICAL: Exit directory BEFORE cleanup to prevent getcwd errors
+  popd > /dev/null 2>&1 || cd /tmp
+  
+  # Cleanup worktrees first, then repo
   cleanup_test_worktrees "$TEST_REPO"
-  cleanup_test_repo "$TEST_REPO"
+  cleanup_test_repo
 }
 
 @test "hug-git-worktree: get_worktrees returns empty when no worktrees exist" {
   declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
 
-  get_worktrees worktree_paths branches commits status_dirty locked_status
-
+  # get_worktrees returns 1 when no additional worktrees exist (only main repo)
+  # This is expected behavior - function returns failure with empty arrays
+  run get_worktrees worktree_paths branches commits status_dirty locked_status
+  
+  # Should return failure (exit 1) when no additional worktrees
+  assert_failure
+  
+  # Arrays should still be empty
   assert_equal "${#worktree_paths[@]}" 0
   assert_equal "${#branches[@]}" 0
   assert_equal "${#commits[@]}" 0

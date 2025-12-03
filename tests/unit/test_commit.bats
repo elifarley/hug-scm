@@ -510,19 +510,20 @@ HOOK
 }
 
 @test "hug cmv: requires confirmation without --force" {
-  disable_gum_for_test  # Use stdin-based confirmation for this test
-  
+  setup_gum_mock
+  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
-  
+
   git checkout -q main
-  
+
   # Create target branch
   git checkout -q -b target-branch HEAD~1
   git checkout -q main
-  
-  run bash -c 'printf "n\n" | hug cmv 1 target-branch'
+
+  run hug cmv 1 target-branch
   assert_failure
   assert_output --partial "Proceed with moving"
   assert_output --partial "Cancelled."
@@ -530,9 +531,11 @@ HOOK
   # HEAD unchanged
   run git rev-parse HEAD
   assert_output "$(git rev-parse main)"
-  
+
   popd >/dev/null
   rm -rf "$repo"
+
+  teardown_gum_mock
 }
 
 @test "hug cmv: skips confirmation with --force and stays on target (existing)" {
@@ -558,8 +561,9 @@ HOOK
 }
 
 @test "hug cmv: moves to existing branch and stays on it (with confirmation)" {
-  disable_gum_for_test  # Use stdin-based confirmation for this test
-  
+  setup_gum_mock
+  export HUG_TEST_GUM_CONFIRM=yes  # Simulate "yes" response
+
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -572,7 +576,7 @@ HOOK
   git checkout -q -b existing-target HEAD~1
   git checkout -q main
 
-  run bash -c 'printf "y\n" | hug cmv 1 existing-target'
+  run hug cmv 1 existing-target
   assert_success
   assert_output --partial "Proceed with moving 1 commit to 'existing-target'?"
 
@@ -589,6 +593,8 @@ HOOK
 
   popd >/dev/null
   rm -rf "$repo"
+
+  teardown_gum_mock
 }
 
 @test "hug cmv: handles upstream mode" {
@@ -616,8 +622,9 @@ HOOK
 }
 
 @test "hug cmv: prompts to create missing branch without --new (combined prompt, detach on y) and stays on it" {
-  disable_gum_for_test  # Use stdin-based confirmation for this test
-  
+  setup_gum_mock
+  export HUG_TEST_GUM_CONFIRM=yes  # Simulate "yes" response
+
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -628,7 +635,7 @@ HOOK
   local expected_log
   expected_log=$(git log --oneline HEAD~1..HEAD)  # Range to move
 
-  run bash -c 'printf "y\n" | hug cmv 1 prompt-missing'
+  run hug cmv 1 prompt-missing
   assert_success
   assert_output --partial "📊 1 commit since"
   assert_output --partial "📤 moving to prompt-missing (new branch):"
@@ -652,11 +659,14 @@ HOOK
 
   popd >/dev/null
   rm -rf "$repo"
+
+  teardown_gum_mock
 }
 
 @test "hug cmv: aborts on 'n' to creation prompt without --new (combined prompt)" {
-  disable_gum_for_test  # Use stdin-based confirmation for this test
-  
+  setup_gum_mock
+  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -665,7 +675,7 @@ HOOK
   local original_head
   original_head=$(git rev-parse HEAD)
 
-  run bash -c 'printf "n\n" | hug cmv 1 abort-missing'
+  run hug cmv 1 abort-missing
   assert_failure
   assert_output --partial "Branch 'abort-missing' doesn't exist. Proceed with creating a new branch named 'abort-missing' and moving 1 commit to it?"
   assert_output --partial "Cancelled."
@@ -677,6 +687,8 @@ HOOK
 
   popd >/dev/null
   rm -rf "$repo"
+
+  teardown_gum_mock
 }
 
 @test "hug cmv: auto-creates with --force on missing without --new (detach) and stays on it" {

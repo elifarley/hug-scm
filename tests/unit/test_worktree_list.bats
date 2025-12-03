@@ -47,16 +47,15 @@ teardown() {
 }
 
 @test "hug wt: shows interactive menu with multiple worktrees" {
-  # Disable gum to avoid hanging when using interactive selection
-  disable_gum_for_test
+  # Since we have <10 worktrees, this uses numbered menu, not gum
+  # Use EOF simulation to test the interactive selection behavior
+  run bash -c "echo | git-wt 2>&1"
 
-  # Mock user input - select first worktree (not current)
-  cd "$TEST_REPO"
-  echo "2" | run git-wt
-
-  # Should attempt to switch to selected worktree
-  # Note: We can't test the actual directory switch in bats, but we can test the flow
+  # Should show interactive menu and handle cancellation gracefully
   assert_success
+  assert_output --partial "Select worktree to switch to"
+  assert_output --partial "Enter number"
+  assert_output --partial "Worktree selection cancelled"
 }
 
 @test "hug wt: detects dirty worktrees" {

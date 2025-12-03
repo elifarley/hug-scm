@@ -317,12 +317,38 @@ create_test_repo_with_dated_commits() {
 
 # Clean up test repository
 cleanup_test_repo() {
+  # CRITICAL: Exit any test repo directory first to prevent getcwd errors
+  local cwd
+  cwd=$(pwd)
+  
+  # If we're inside a test repo, exit it before cleanup
+  if [[ "$cwd" == *"hug-test-repo"* || "$cwd" == *"hug-workflow-test"* || "$cwd" == *"hug-clone-test"* || "$cwd" == *"hug-remote-test"* ]]; then
+    cd "${BATS_TEST_TMPDIR:-/tmp}" 2>/dev/null || cd /tmp || cd "$HOME"
+  fi
+  
+  # Cleanup TEST_REPO if set
   if [[ -n "${TEST_REPO:-}" && -d "$TEST_REPO" ]]; then
+    # Remove any worktrees FIRST (they reference main repo)
+    if [[ -d "$TEST_REPO/.git" ]]; then
+      git -C "$TEST_REPO" worktree list --porcelain 2>/dev/null |
+        grep "^worktree " |
+        cut -d' ' -f2 |
+        while read -r wt; do
+          [[ "$wt" != "$TEST_REPO" && -d "$wt" ]] && rm -rf "$wt" 2>/dev/null
+        done
+      
+      # Prune worktree metadata
+      git -C "$TEST_REPO" worktree prune 2>/dev/null || true
+    fi
+    
+    # Now safe to remove main repo
     rm -rf "$TEST_REPO" 2>/dev/null || true
     unset TEST_REPO
   fi
-  # Clean up any hug-test-repo-* dirs
-  find /tmp -maxdepth 1 -name "hug-test-repo-*" -type d -exec rm -rf {} + 2>/dev/null || true
+  
+  # Clean up any orphaned test repos (older than 60 minutes)
+  find /tmp -maxdepth 1 -name "hug-test-repo-*" -type d \
+    -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 
   if [[ ${#HUG_TEST_REMOTE_REPOS[@]} -gt 0 ]]; then
     for remote_dir in "${HUG_TEST_REMOTE_REPOS[@]}"; do
@@ -537,6 +563,23 @@ teardown_gum_mock() {
 
 # Skip test if gum is not available
 require_gum() { gum_available || error "gum not available in test environment"; }
+
+# Skip test if worktree commands are not fully implemented or supported
+require_worktree_support() {
+  # Check if worktree commands exist and respond
+  if ! command -v hug &>/dev/null; then
+    skip "hug command not found in PATH"
+  fi
+  
+  # Check if git worktree is supported (git 2.5+)
+  if ! git worktree list &>/dev/null 2>&1; then
+    skip "git worktree not supported in this git version (requires 2.5+)"
+  fi
+  
+  # Optional: Check if specific worktree commands are implemented
+  # Commands may exist but not be fully functional yet
+  # This allows tests to be written before full implementation
+}
 
 ################################################################################
 # Mercurial Test Helpers
@@ -923,12 +966,38 @@ create_test_worktree() {
 create_test_worktrees() {
   local test_repo_path="$1"
   shift
+  local branches=("$@")
 
+  # Verify repo exists
+  if [[ ! -d "$test_repo_path/.git" ]]; then
+    echo "ERROR: test repo doesn't exist: $test_repo_path" >&2
+    return 1
+  fi
+
+  # Verify branches exist before creating worktrees
+  local branch
+  for branch in "${branches[@]}"; do
+    if ! git -C "$test_repo_path" rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
+      echo "ERROR: branch '$branch' doesn't exist in $test_repo_path" >&2
+      echo "Available branches:" >&2
+      git -C "$test_repo_path" branch --format='%(refname:short)' >&2
+      return 1
+    fi
+  done
+
+  # Create worktrees
   local -a created_worktrees=()
-
-  for branch in "$@"; do
+  for branch in "${branches[@]}"; do
     local worktree_path
     worktree_path=$(create_test_worktree "$branch" "$test_repo_path")
+    if [[ $? -ne 0 || -z "$worktree_path" ]]; then
+      echo "ERROR: failed to create worktree for branch '$branch'" >&2
+      # Cleanup any worktrees created so far
+      for wt in "${created_worktrees[@]}"; do
+        rm -rf "$wt" 2>/dev/null
+      done
+      return 1
+    fi
     created_worktrees+=("$worktree_path")
   done
 

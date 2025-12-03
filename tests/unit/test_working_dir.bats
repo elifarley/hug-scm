@@ -8,10 +8,22 @@ load '../test_helper'
 setup() {
   require_hug
   TEST_REPO=$(create_test_repo_with_changes)
-  cd "$TEST_REPO"
+  
+  # Use pushd for automatic directory management
+  pushd "$TEST_REPO" > /dev/null
+  
+  # Verify setup succeeded
+  [[ -f README.md ]] || {
+    echo "ERROR: Test setup failed - no README.md found" >&2
+    return 1
+  }
 }
 
 teardown() {
+  # CRITICAL: Exit directory BEFORE cleanup to prevent getcwd errors
+  popd > /dev/null 2>&1 || cd "${BATS_TEST_TMPDIR:-/tmp}" || cd /tmp
+  
+  # Now safe to cleanup
   cleanup_test_repo
 }
 

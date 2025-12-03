@@ -89,18 +89,20 @@ create_backup_branch() {
 }
 
 @test "hug brestore: warns when target branch already exists" {
-  disable_gum_for_test  # Use stdin-based confirmation for this test
-  
+  setup_gum_mock
+  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+
   # Create a backup of feature/branch
   local backup
   backup=$(create_backup_branch "feature/branch")
-  
+
   # Try to restore to existing branch without force
-  run bash -c "echo 'n' | hug brestore '$backup'"
+  run hug brestore "$backup"
   assert_failure
   assert_output --partial "Branch 'feature/branch' already exists"
   assert_output --partial "DESTRUCTIVE operation"
-  
+
+  teardown_gum_mock
 }
 
 @test "hug brestore --force: skips confirmation for existing branch" {

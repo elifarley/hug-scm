@@ -6,12 +6,41 @@ load '../test_helper'
 
 setup() {
   require_hug
-  TEST_REPO=$(create_test_repo)
-  cd "$TEST_REPO"
+  
+  # Create stable work directory to avoid getcwd issues
+  TEST_WORK_DIR=$(mktemp -d -t "hug-workflow-test-XXXXXX")
+  
+  # Create repo in work directory
+  TEST_REPO="$TEST_WORK_DIR/test-repo"
+  mkdir -p "$TEST_REPO"
+  
+  # Initialize repo in subshell to avoid directory issues
+  (
+    cd "$TEST_REPO" || exit 1
+    git init -q --initial-branch=main
+    git config user.email "test@hug-scm.test"
+    git config user.name "Hug Test"
+    
+    echo "# Test Repository" > README.md
+    git add README.md
+    git commit -q -m "Initial commit"
+  ) || {
+    echo "ERROR: Failed to initialize test repo" >&2
+    return 1
+  }
+  
+  # Use pushd for automatic directory management
+  pushd "$TEST_REPO" > /dev/null
 }
 
 teardown() {
-  cleanup_test_repo
+  # CRITICAL: Exit directory BEFORE cleanup to prevent getcwd errors
+  popd > /dev/null 2>&1 || cd /tmp
+  
+  # Cleanup work directory (includes TEST_REPO)
+  if [[ -n "${TEST_WORK_DIR:-}" && -d "$TEST_WORK_DIR" ]]; then
+    rm -rf "$TEST_WORK_DIR"
+  fi
 }
 
 @test "workflow: make changes, stage, commit, and verify" {
@@ -189,6 +218,7 @@ teardown() {
 
 @test "workflow: rollback safety vs rewind destructiveness" {
   # Test 1: Rollback base case (no conflicts) - discards committed changes
+  local TEST_REPO1
   TEST_REPO1=$(create_test_repo_with_history)
   (
     cd "$TEST_REPO1" || { echo "cd failed"; exit 1; }
@@ -200,8 +230,10 @@ teardown() {
     run git log --oneline -2
     refute_output --partial "Add feature 2"
   )
+  rm -rf "$TEST_REPO1"
   
   # Test 2: Rollback preserves untracked files
+  local TEST_REPO2
   TEST_REPO2=$(create_test_repo_with_history)
   (
     cd "$TEST_REPO2" || { echo "cd failed"; exit 1; }
@@ -216,8 +248,10 @@ teardown() {
     run git status --porcelain
     assert_output --partial "?? untracked.txt"
   )
+  rm -rf "$TEST_REPO2"
   
   # Test 3: Rollback safety abort on conflicting uncommitted changes
+  local TEST_REPO3
   TEST_REPO3=$(create_test_repo_with_history)
   (
     cd "$TEST_REPO3" || { echo "cd failed"; exit 1; }
@@ -231,8 +265,10 @@ teardown() {
     run git status --porcelain
     assert_output --partial "M feature2.txt"
   )
+  rm -rf "$TEST_REPO3"
   
   # Test 4: Rewind base case - discards committed changes
+  local TEST_REPO4
   TEST_REPO4=$(create_test_repo_with_history)
   (
     cd "$TEST_REPO4" || { echo "cd failed"; exit 1; }
@@ -244,8 +280,10 @@ teardown() {
     run git log --oneline -2
     refute_output --partial "Add feature 2"
   )
+  rm -rf "$TEST_REPO4"
   
   # Test 5: Rewind destructiveness - overwrites uncommitted changes
+  local TEST_REPO5
   TEST_REPO5=$(create_test_repo_with_history)
   (
     cd "$TEST_REPO5" || { echo "cd failed"; exit 1; }
@@ -257,8 +295,10 @@ teardown() {
     refute_output --partial "local mod to f1"  # Local change lost
     assert_git_clean
   )
+  rm -rf "$TEST_REPO5"
   
   # Test 6: Rewind preserves untracked files (like rollback)
+  local TEST_REPO6
   TEST_REPO6=$(create_test_repo_with_history)
   (
     cd "$TEST_REPO6" || { echo "cd failed"; exit 1; }
@@ -273,9 +313,7 @@ teardown() {
     run git status --porcelain
     assert_output --partial "?? untracked.txt"
   )
-  
-  # Clean up all test repos
-  cleanup_test_repo
+  rm -rf "$TEST_REPO6"
 }
 
 @test "workflow: safety - confirm dialogs prevent accidents" {

@@ -4,17 +4,22 @@ This document provides guidance to Claude Code when working with tests in the Hu
 
 ## Testing Philosophy
 
-Hug SCM uses the BATS (Bash Automated Testing System) framework to test its Bash-based CLI commands. Testing is structured into three main categories:
+Hug SCM uses the BATS (Bash Automated Testing System) framework to test its Bash-based CLI commands; Python tests use pytest. Testing is structured into 4 main categories (fastest groups first):
 
-- **Library tests** (`tests/lib/`)
-- **Unit tests** (`tests/unit/`): Individual command testing
-- **Integration tests** (`tests/integration/`): End-to-end workflows
+1. **Python Library tests** (`git-config/lib/python/tests/`)
+   - `make test-lib-py`
+2. **Library tests** (`tests/lib/`)
+    - `make test-lib`
+3. **Unit tests** (`tests/unit/`): Individual command testing
+   - `make test-unit`
+4. **Integration tests** (`tests/integration/`): End-to-end workflows
+    - `make test-integration`
 
 ## Critical Issue: TTY Environment and Hanging Tests
 
 ### Root Cause Analysis
 
-**Problem**: Tests that read from STDIN can hang indefinitely in TTY (terminal) environments.
+**Problem**: Tests that read from STDIN (calls to `gum`, `read`, etc) can hang indefinitely in TTY (terminal) environments.
 
 **Why it happens**:
 - **Non-TTY environment (CI, automation)**: reading from STDIN immediately fails with exit code 1
@@ -28,6 +33,11 @@ if ! read -r choice; then  # L Hangs in TTY environments
     exit 1
 fi
 ```
+
+### How to identify hanging tests
+
+Instead of running all tests at once (`make test`), run tests by category (see `## Testing Philosophy` above).
+You MUST include `TEST_SHOW_ALL_RESULTS=1` argument after the target name so that you can see the name of each test that finished (without that, only failed tests are shown).
 
 ### Environment Detection
 
@@ -43,30 +53,101 @@ To diagnose TTY vs non-TTY behavior, use these commands:
 
 ## Best Practices for Interactive Tests
 
-### 1. Always Disable Gum for Interactive Tests
+### 1. Preferred: Use Gum Mock Infrastructure for Interactive Testing
 
-When testing interactive functionality, disable gum to avoid complex UI interactions:
+Hug SCM has a sophisticated gum mock system that allows comprehensive testing of interactive functionality without hanging or requiring actual user input. This is the recommended approach for testing gum interactions.
+
+#### Gum Mock Overview
+
+The gum mock system (`tests/bin/gum-mock`) provides realistic simulation of gum commands while allowing tests to control behavior:
 
 ```bash
-@test "hug b: interactive branch selection" {
-  # Disable gum to avoid hanging in interactive branch selection
-  disable_gum_for_test
+setup_gum_mock                    # Enable gum mock system
+export HUG_TEST_GUM_SELECTION_INDEX=1  # Select second item
+export HUG_TEST_GUM_CONFIRM=yes      # Simulate "yes" confirmation
+export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancellation
+export HUG_TEST_GUM_INPUT="1,3"    # Multi-select input
+teardown_gum_mock                 # Clean up environment
+```
 
-  # Test the interactive functionality
-  run hug b
+#### Example: Gum Mock Testing
+
+```bash
+@test "select_branches: interactive selection with gum mock" {
+  setup_gum_mock
+  export HUG_TEST_GUM_SELECTION_INDEX=1  # Select second branch
+
+  declare -a selected_branches=()
+
+  # Mock compute_local_branch_details to return test data
+  compute_local_branch_details() {
+    local -n _current_branch_ref=$1 _max_len_ref=$2 _hashes_ref=$3 _branches_ref=$4 _tracks_ref=$5 _subjects_ref=$6
+    _current_branch_ref="main"
+    _max_len_ref="20"
+    _hashes_ref=("abc123" "def456" "ghi789")
+    _branches_ref=("main" "feature-1" "feature-2")
+    _tracks_ref=("[origin/main]" "" "")
+    _subjects_ref=("Initial" "Feature" "More work")
+    return 0
+  }
+
+  # Test actual gum interaction - no hanging!
+  select_branches selected_branches --exclude-current --exclude-backup
+
+  # Verify the selection worked correctly
+  [[ ${#selected_branches[@]} -eq 1 ]]
+  [[ "${selected_branches[0]}" == "feature-1" ]]  # Index 1 = feature-1
+
+  teardown_gum_mock
+}
+
+@test "hug confirm: uses gum mock for confirmation testing" {
+  setup_gum_mock
+  export HUG_TEST_GUM_CONFIRM=yes  # Simulate "yes" response
+
+  run hug some-command-that-confirms
   assert_success
-  assert_output --partial "interactive behavior expected"
+  # Command should proceed because user said "yes"
+
+  teardown_gum_mock
+}
+
+@test "select_branches: handles gum cancellation" {
+  setup_gum_mock
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancellation
+
+  declare -a selected_branches=()
+
+  # Should fail gracefully due to cancellation
+  run select_branches selected_branches
+  assert_failure 1
+  assert_output --partial "Cancelled"
+
+  teardown_gum_mock
 }
 ```
 
-### 2. Use EOF Simulation for Tests That Expect Cancellation
+### 2. Alternative: Disable Gum for Simple Tests
+
+For tests that don't need to verify gum interaction specifically, disable gum entirely:
+
+```bash
+@test "hug b: basic branch selection (no gum interaction needed)" {
+  # Disable gum entirely for simpler testing
+  disable_gum_for_test
+
+  # Test functionality without gum
+  run hug b some-branch
+  assert_success
+}
+```
+
+### 3. Use EOF Simulation for Tests That Expect Cancellation
 
 For tests that need to verify cancellation behavior in interactive modes, use EOF simulation:
 
 ```bash
 @test "hug wtc: interactive mode with no branch argument" {
-  # Disable gum to avoid hanging in interactive branch selection
-  disable_gum_for_test
 
   # Test interactive mode with EOF input (provides cancellation)
   run bash -c "echo | git-wtc 2>&1"
@@ -77,8 +158,6 @@ For tests that need to verify cancellation behavior in interactive modes, use EO
 }
 
 @test "hug wtc: interactive mode with explicit -- flag" {
-  # Disable gum to avoid hanging in interactive branch selection
-  disable_gum_for_test
 
   # Test interactive mode with explicit -- flag and EOF
   run bash -c "echo | git-wtc -- 2>&1"
@@ -185,7 +264,7 @@ For hanging tests, wrap the command with EOF simulation:
 run hug-command
 
 # After (no hanging):
-run bash -c "echo | hug-command 2>&1"
+run bash -c "echo 'what the user should type' | hug-command 2>&1"
 ```
 
 ### Step 4: Verify Fix
@@ -214,7 +293,7 @@ Use the provided Makefile targets for consistent testing:
 make test                                    # Shows only failing tests
 make test TEST_SHOW_ALL_RESULTS=1             # Shows all test results
 
-# BATS-only testing
+# Runs all bash-related tests
 make test-bash                               # All BATS tests
 make test-bash TEST_SHOW_ALL_RESULTS=1       # All BATS with verbose output
 
@@ -273,6 +352,60 @@ disable_gum_for_test           # Disable gum for interactive tests
 - `TEST_FILTER="<pattern>"`: Filter tests by name pattern
 - `TEST_FILE="<filename>"`: Run specific test file
 
+## Gum Mock Reference
+
+### Setup and Teardown
+
+```bash
+setup_gum_mock                    # Enable gum mock system
+teardown_gum_mock                 # Restore original PATH and cleanup
+```
+
+### Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `HUG_TEST_GUM_SELECTION_INDEX` | Which item to select in filter/choose commands | `export HUG_TEST_GUM_SELECTION_INDEX=1` |
+| `HUG_TEST_GUM_CONFIRM` | Confirm response (yes/no) | `export HUG_TEST_GUM_CONFIRM=yes` |
+| `HUG_TEST_GUM_INPUT` | Input response for input commands | `export HUG_TEST_GUM_INPUT="1,3"` |
+| `HUG_TEST_GUM_INPUT_RETURN_CODE` | Return code for input commands | `export HUG_TEST_GUM_INPUT_RETURN_CODE=1` |
+
+### Gum Commands Supported
+
+- **filter**: Simulates interactive selection with `HUG_TEST_GUM_SELECTION_INDEX`
+- **confirm**: Simulates yes/no responses with `HUG_TEST_GUM_CONFIRM`
+- **input**: Simulates text input with `HUG_TEST_GUM_INPUT` and `HUG_TEST_GUM_INPUT_RETURN_CODE`
+- **log**: Passes through to real gum if available
+- **Other commands**: Returns success without affecting behavior
+
+### Gum Mock Scenarios
+
+```bash
+# Single selection - choose first item
+setup_gum_mock
+export HUG_TEST_GUM_SELECTION_INDEX=0
+# Run test that uses gum filter
+teardown_gum_mock
+
+# Multi-selection - choose items 1 and 3
+setup_gum_mock
+export HUG_TEST_GUM_INPUT="1,3"
+# Run test that uses multi-select
+teardown_gum_mock
+
+# Confirm "yes"
+setup_gum_mock
+export HUG_TEST_GUM_CONFIRM=yes
+# Run test that requires confirmation
+teardown_gum_mock
+
+# Cancel input
+setup_gum_mock
+export HUG_TEST_GUM_INPUT_RETURN_CODE=1
+# Run test that expects cancellation
+teardown_gum_mock
+```
+
 ## Common Pitfalls to Avoid
 
 1. **Using direct `run hug-command`** for tests expecting cancellation (hangs in TTY)
@@ -281,17 +414,85 @@ disable_gum_for_test           # Disable gum for interactive tests
 4. **Hardcoding file paths** - use relative paths and test repos
 5. **Testing production code without isolation** - use create_test_repo()
 
+## Gum Mock Migration Guide
+
+### From `disable_gum_for_test` to Gum Mock
+
+#### Before (Simple, Limited Testing)
+```bash
+@test "interactive test - simple fix" {
+  disable_gum_for_test
+  run hug interactive-command
+  # Only tests that it doesn't hang
+}
+```
+
+#### After (Comprehensive Testing)
+```bash
+@test "interactive test - comprehensive gum mock" {
+  setup_gum_mock
+  export HUG_TEST_GUM_SELECTION_INDEX=1  # Control behavior
+
+  run hug interactive-command
+  assert_success
+
+  # Can now verify actual gum interaction behavior
+  [[ ${#selected_items[@]} -eq 1 ]]
+  [[ "${selected_items[0]}" == "expected_item" ]]
+
+  teardown_gum_mock
+}
+```
+
+### Enhanced Test Examples
+
+#### Example 1: Branch Selection with Specific Branch Chosen
+```bash
+@test "select_branches: chooses feature-1 branch" {
+  setup_gum_mock
+  export HUG_TEST_GUM_SELECTION_INDEX=1  # Choose second branch (feature-1)
+
+  declare -a selected_branches=()
+  # ... setup test data ...
+
+  select_branches selected_branches
+
+  # Verify the correct branch was selected
+  [[ ${#selected_branches[@]} -eq 1 ]]
+  [[ "${selected_branches[0]}" == "feature-1" ]]
+
+  teardown_gum_mock
+}
+```
+
+#### Example 2: Multi-Branch Selection
+```bash
+@test "multi_select_branches: chooses multiple branches" {
+  setup_gum_mock
+  export HUG_TEST_GUM_INPUT="1,3"  # Choose first and third items
+
+  declare -a selected_branches=()
+  # ... setup test data ...
+
+  multi_select_branches selected_branches
+
+  # Verify multiple branches were selected
+  [[ ${#selected_branches[@]} -eq 2 ]]
+  [[ "${selected_branches[@]}" == "main feature-2" ]]  # Example expected result
+
+  teardown_gum_mock
+}
+```
+
 ## Continuous Integration
 
 ### CI Pipeline
-- **BATS tests**: Run on push/PR via `.github/workflows/test.yml`
-- **Python tests**: Run for analysis modules via `make test-lib-py`
+- Run on push/PR via `.github/workflows/test.yml`
 - **Coverage reporting**: Generated for Python tests, planned for BATS
 
 ### CI Best Practices
 - Always run `make test` before committing
-- Use `TEST_SHOW_ALL_RESULTS=1` to catch hanging issues
-- Monitor test execution time for performance regressions
+- Use `TEST_SHOW_ALL_RESULTS=1` to catch hanging issues. Last line that shows before hanging identifies the last test that didn't hang.
 
 ## Related Documentation
 

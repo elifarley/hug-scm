@@ -1,0 +1,244 @@
+================================================================================
+FAILED AND HANGING TESTS REPORT
+Generated: 2025-12-03 08:26
+================================================================================
+
+SUMMARY:
+--------
+Total Tests Run: 1348
+- Python Library Tests: 186 tests (186 passed, 0 failed)
+- Library Tests: 334 tests (333 passed, 1 failed)
+- Unit Tests: 764 tests (332 passed, 5 failed, 427 skipped)
+- Integration Tests: 64 tests (43 passed, 21 failed)
+
+Total Failed: 27 tests
+Hanging Tests: 0 tests (no hanging tests detected)
+
+================================================================================
+CATEGORY 1: PYTHON LIBRARY TESTS (test-lib-py)
+================================================================================
+Status: ALL PASSED ✓
+Tests: 186/186 passed
+Time: 0.35s
+
+No failures.
+
+================================================================================
+CATEGORY 2: LIBRARY TESTS (test-lib)
+================================================================================
+Status: 1 FAILED
+Tests: 333/334 passed
+Failures: 1
+
+FAILED TESTS:
+-------------
+1. hug-git-worktree: get_worktrees returns empty when no worktrees exist
+
+================================================================================
+CATEGORY 3: UNIT TESTS (test-unit)
+================================================================================
+Status: 5 FAILED + 57 WORKTREE-RELATED FAILURES
+Tests: 332/764 passed (427 skipped - Mercurial tests)
+Failures: 62 total
+
+FAILED TESTS (Working Directory Operations):
+---------------------------------------------
+1. hug w discard: discards changes to specific file with force
+2. hug w discard: requires confirmation without force flag
+3. hug w discard: fails with non-existent file
+4. hug w discard -s: discards only staged changes
+5. hug w discard -u: discards only unstaged changes
+
+FAILED TESTS (Worktree Summary - hug wtsh):
+--------------------------------------------
+6. hug wtsh: shows worktree summary with correct structure
+7. hug wtsh: displays single worktree with detailed information
+8. hug wtsh: highlights current worktree with CURRENT indicator
+9. hug wtsh: displays commit details correctly
+10. hug wtsh: shows working directory status
+11. hug wtsh: shows worktree configuration information
+12. hug wtsh: handles dirty worktree status correctly
+13. hug wtsh: handles no matching search term
+14. hug wtsh: displays relative time information
+15. hug wtsh: shows commit hash in correct format
+16. hug wtsh: tree structure formatting is consistent
+17. hug wtsh: handles search filtering with branch name
+18. hug wtsh: case-insensitive search filtering
+19. hug wtsh: filters worktrees by search term
+20. hug wtsh: displays author information correctly
+21. hug wtsh: shows branch information with remote tracking
+22. hug wtsh: default behavior shows current worktree only
+23. hug wtsh: --all flag shows all worktrees
+24. hug wtsh: -a short flag works same as --all
+25. hug wtsh: interactive mode requires gum
+26. hug wtsh: search filtering still works with new behavior
+27. hug wtsh: default behavior vs --all behavior difference
+28. hug wtsh: multiple worktrees with --all flag
+29. hug wtsh: default behavior with multiple worktrees shows current only
+30. hug wtsh: supports multi-term search (OR logic)
+31. hug wtsh: multi-term search matches path or branch
+32. hug wtsh: multi-term search with no matches returns error
+33. hug wtsh: multi-term search is case insensitive
+34. hug wtsh: multi-term search with single term works
+35. hug wtsh: multi-term search error message shows all terms
+
+FAILED TESTS (Worktree List - hug wt):
+---------------------------------------
+36. hug wt: lists worktrees with current indication
+37. hug wt: detects dirty worktrees
+38. hug wt: shows JSON output
+39. hug wt: JSON output includes worktree details
+40. hug wt: identifies current worktree in JSON output
+41. hug wt: handles empty repository (no worktrees) in JSON mode
+42. hug wt: error when not in git repository
+
+FAILED TESTS (Worktree List Short - hug wtl):
+----------------------------------------------
+43. hug wtl: lists worktrees in short format
+44. hug wtl: highlights current worktree with asterisk
+45. hug wtl: shows dirty worktree indicator
+46. hug wtl: filters worktrees by search term
+47. hug wtl: filters worktrees by path
+48. hug wtl: case-insensitive search
+49. hug wtl: handles no matching search term
+50. hug wtl: handles repository with no worktrees
+51. hug wtl: error when not in git repository
+
+FAILED TESTS (Worktree List Long - hug wtll):
+----------------------------------------------
+52. hug wtll: lists worktrees in long format with commit subjects
+53. hug wtll: shows commit subjects for worktrees
+54. hug wtll: highlights current worktree with asterisk
+55. hug wtll: shows detailed status for dirty worktrees
+56. hug wtll: filters worktrees by search term
+57. hug wtll: handles repository with no worktrees
+58. hug wtll: error when not in git repository
+
+FAILED TESTS (Worktree JSON Output):
+-------------------------------------
+59. hug wtl: supports --json output
+
+COMMON ERROR PATTERNS:
+----------------------
+- Directory cleanup issues: "getcwd: cannot access parent directories"
+- Git operations failing: "Fatal: Unable to read current working directory"
+- Worktree functionality expectations not met
+
+================================================================================
+CATEGORY 4: INTEGRATION TESTS (test-integration)
+================================================================================
+Status: 21 FAILED
+Tests: 43/64 passed
+Failures: 21
+
+FAILED TESTS (Workflows):
+-------------------------
+1. workflow: make changes, stage, commit, and verify
+2. workflow: create WIP branch, make changes, switch back
+3. workflow: preview destructive operation with dry-run
+4. workflow: rollback safety vs rewind destructiveness
+5. workflow: safety - confirm dialogs prevent accidents
+
+FAILED TESTS (Clone Operations):
+---------------------------------
+6. hug clone - auto-detects Git from .git URL
+7. hug clone - forces Git with --git flag
+8. hug clone - clones to default directory name
+9. hug clone - clones to specified directory
+10. hug clone - passes through git options
+11. hug clone - runs status by default after clone
+12. hug clone - skips status with --no-status flag
+
+FAILED TESTS (Init Operations):
+--------------------------------
+13. hug init - initializes Git repo in new directory
+14. hug init - defaults to Git
+15. hug init - forces Git with --git flag
+16. hug init - passes through git options
+17. hug init - errors when already initialized
+18. hug init - errors when directory already initialized
+19. hug init - status works after first commit
+20. hug init - combined flags order doesn't matter
+21. hug init - multiple options passed through correctly
+
+COMMON ERROR PATTERNS:
+----------------------
+- Directory creation failures: "cannot mkdir", "No such file or directory"
+- Repository access issues: "Unable to read current working directory"
+- Clone failures: "unable to write file", "error unable to rename temporary"
+- Init failures: "fatal: cannot mkdir", "unable to get current working directory"
+
+================================================================================
+HANGING TESTS
+================================================================================
+Status: NONE DETECTED ✓
+
+No hanging tests were detected during test execution. All tests completed 
+within the timeout period. The preventive measures documented in CLAUDE.md 
+(EOF simulation, gum mocking, timeouts) are working correctly.
+
+================================================================================
+ANALYSIS AND PATTERNS
+================================================================================
+
+PRIMARY FAILURE CAUSE: DIRECTORY CLEANUP ISSUES
+------------------------------------------------
+Most failures are related to temporary directory cleanup during test execution:
+- "getcwd: cannot access parent directories: No such file or directory"
+- "Fatal: Unable to read current working directory"
+- Directory removal happening while tests are still operating within them
+
+WORKTREE-RELATED FAILURES (57 tests):
+--------------------------------------
+The majority of unit test failures are concentrated in worktree functionality:
+- hug wtsh (worktree summary): 30 failures
+- hug wt (worktree list): 7 failures
+- hug wtl (worktree list short): 9 failures
+- hug wtll (worktree list long): 7 failures
+- hug wtl JSON: 1 failure
+- Core worktree library: 1 failure (in test-lib)
+
+These appear to be functionality expectations rather than hanging issues.
+
+INTEGRATION TEST FAILURES (21 tests):
+--------------------------------------
+Integration tests fail due to:
+- Temporary directory management issues
+- Clone operations unable to write files
+- Init operations unable to create directories
+- Workflow tests encountering directory access errors
+
+NO HANGING TESTS:
+-----------------
+✓ All tests complete successfully within timeout periods
+✓ EOF simulation patterns are working
+✓ Gum mock infrastructure is functioning
+✓ No tests block indefinitely on STDIN
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+
+1. DIRECTORY CLEANUP:
+   - Investigate test teardown process for proper directory cleanup
+   - Ensure working directories are not removed while tests are active
+   - Review BATS $BATS_TEST_TMPDIR usage
+
+2. WORKTREE FUNCTIONALITY:
+   - Review worktree test expectations vs actual implementation
+   - Check if worktree features are fully implemented
+   - Validate worktree listing and JSON output functionality
+
+3. INTEGRATION TEST STABILITY:
+   - Review integration test setup and teardown
+   - Ensure proper sequencing of directory operations
+   - Add retry logic for filesystem operations
+
+4. CONTINUED MONITORING:
+   - No hanging test fixes needed (all working correctly)
+   - Focus on functional test failures
+   - Maintain EOF simulation and gum mocking patterns
+
+================================================================================
+END OF REPORT
+================================================================================

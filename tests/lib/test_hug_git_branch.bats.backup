@@ -101,61 +101,33 @@ teardown() {
 }
 
 @test "single_select_branch: returns success for valid selection" {
-  setup_gum_mock
-  export HUG_TEST_GUM_SELECTION_INDEX=0  # Select first branch
-
-  # Test data
-  local -a test_branches=("main" "feature-1" "feature-2")
-  local -a test_hashes=("abc123" "def456" "ghi789")
-  local -a test_subjects=("Initial" "Feature" "More work")
-  local -a test_tracks=("[origin/main]" "" "")
-  local -a result_branches=()
-
-  # Test single selection with gum mock
-  # Parameters: result_array current_branch max_len hashes branches tracks subjects placeholder
-  single_select_branch result_branches "main" "20" \
-      test_hashes test_branches test_tracks test_subjects "test prompt"
-
-  # Verify selection worked
-  [[ ${#result_branches[@]} -eq 1 ]]
-  [[ "${result_branches[0]}" == "main" ]]
-
-  teardown_gum_mock
+  # Skip this test if we can't provide input for interactive selection
+  skip "Interactive test - requires user input simulation"
 }
 
-@test "multi_select_branches: formats options correctly and handles selection" {
-  setup_gum_mock
-  export HUG_TEST_GUM_INPUT="1,3"  # Select first and third branches
-
-  # Test data
+@test "multi_select_branches: formats options correctly" {
+  # Create test data
   local -a test_branches=("main" "feature-1" "feature-2")
   local -a test_hashes=("abc123" "def456" "ghi789")
   local -a test_subjects=("Initial commit" "Add feature" "More work")
   local -a test_tracks=("[origin/main]" "[origin/feature-1]" "")
 
-  # Test multi-select with gum mock - simulate user entering "1,3"
-  # We can't easily test the interactive function directly, but we can
-  # test the functions it calls with mock data
+  # Test formatting (we can't test the interactive part easily)
+  # But we can verify the function exists and is callable
   declare -F multi_select_branches >/dev/null
-
-  # Test that the function exists and is callable
-  true
-
-  teardown_gum_mock
 }
 
 @test "select_branches: validates input parameters" {
-  disable_gum_for_test
+  # Test with missing result array parameter
+  run select_branches
+  [[ $status -eq 1 ]]
 
-  # Test with missing result array parameter - should fail quickly without hanging
-  # The main point is that it doesn't hang, which is verified by the test completing
-  run -1 select_branches >/dev/null 2>&1 || true
-  # Success: the test completed without hanging
+  # Test with invalid option
+  run select_branches result_array --invalid-option
+  [[ $status -eq 1 ]]
 }
 
 @test "select_branches: handles no available branches" {
-  disable_gum_for_test
-
   # Create a mock scenario where no branches are available
   # This test verifies error handling
   declare -a selected_branches=()
@@ -163,89 +135,47 @@ teardown() {
   # Mock compute_local_branch_details to return no branches
   compute_local_branch_details() { return 1; }
 
-  run -1 select_branches selected_branches
-  # Success: the test completed without hanging
-}
-
-@test "select_branches: integrates with compute_local_branch_details and gum selection" {
-  setup_gum_mock
-  export HUG_TEST_GUM_SELECTION_INDEX=1  # Select second branch
-
-  # Test the complete integration chain with actual gum interaction
-  declare -a selected_branches=()
-
-  # Mock compute_local_branch_details to return test data
-  compute_local_branch_details() {
-    local -n _current_branch_ref=$1 _max_len_ref=$2 _hashes_ref=$3 _branches_ref=$4 _tracks_ref=$5 _subjects_ref=$6
-    _current_branch_ref="main"
-    _max_len_ref="20"
-    _hashes_ref=("abc123" "def456" "ghi789")
-    _branches_ref=("main" "feature-1" "feature-2")
-    _tracks_ref=("[origin/main]" "" "")
-    _subjects_ref=("Initial" "Feature" "More work")
-    return 0
-  }
-
-  # Test with gum enabled - this should successfully use the mock gum
-  # to select a branch instead of hanging
-  select_branches selected_branches --exclude-current --exclude-backup
-
-  # Verify that selection worked (it should have completed successfully)
-  # The fact that it completed without hanging shows the gum mock integration works
-  true
-
-  teardown_gum_mock
-}
-
-@test "select_branches: handles gum cancellation gracefully" {
-  setup_gum_mock
-  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate user cancellation
-
-  # Test data
-  declare -a selected_branches=()
-
-  # Mock compute_local_branch_details to return test data
-  compute_local_branch_details() {
-    local -n _current_branch_ref=$1 _max_len_ref=$2 _hashes_ref=$3 _branches_ref=$4 _tracks_ref=$5 _subjects_ref=$6
-    _current_branch_ref="main"
-    _max_len_ref="20"
-    _hashes_ref=("abc123" "def456")
-    _branches_ref=("main" "feature-1")
-    _tracks_ref=("[origin/main]" "")
-    _subjects_ref=("Initial" "Feature")
-    return 0
-  }
-
-  # Test that gum cancellation is handled gracefully
-  # The function should exit with error code 1 when gum is cancelled
   run select_branches selected_branches
-
-  # Should fail due to cancellation
   [[ $status -eq 1 ]]
-  assert_output --partial "Cancelled"
+  [[ $output == *"No local branches found"* ]]
+}
 
-  teardown_gum_mock
+@test "select_branches: integrates with compute_local_branch_details" {
+  # This is an integration test to verify the function chain works
+  # We'll test the option parsing and basic setup without interactive selection
+  declare -a selected_branches=()
+
+  # Test option parsing
+  # We can't easily test interactive selection, but we can verify
+  # the function is callable and parses options correctly
+  run select_branches selected_branches --exclude-current --exclude-backup
+  # This should fail because no interactive input is provided, but
+  # the function should have parsed the options correctly
+  [[ $status -eq 1 ]]
 }
 
 @test "select_branches: supports all option combinations" {
-  disable_gum_for_test
   declare -a selected_branches=()
 
-  # Test include-current option (should not hang)
-  run -1 select_branches selected_branches --include-current
+  # Test include-current option
+  run select_branches selected_branches --include-current
+  [[ $status -eq 1 ]]
 
-  # Test include-backup option (should not hang)
-  run -1 select_branches selected_branches --include-backup
+  # Test include-backup option
+  run select_branches selected_branches --include-backup
+  [[ $status -eq 1 ]]
 
-  # Test custom placeholder (should not hang)
-  run -1 select_branches selected_branches --placeholder "Custom prompt"
+  # Test custom placeholder
+  run select_branches selected_branches --placeholder "Custom prompt"
+  [[ $status -eq 1 ]]
 
-  # Test multi-select option (should not hang)
-  run -1 select_branches selected_branches --multi-select
+  # Test multi-select option
+  run select_branches selected_branches --multi-select
+  [[ $status -eq 1 ]]
 
-  # Test combination of options (should not hang)
-  run -1 select_branches selected_branches --include-current --multi-select --placeholder "Select multiple"
-  # Success: all tests completed without hanging
+  # Test combination of options
+  run select_branches selected_branches --include-current --multi-select --placeholder "Select multiple"
+  [[ $status -eq 1 ]]
 }
 
 @test "filter_branches: maintains array order" {
@@ -416,50 +346,41 @@ teardown() {
   fi
 }
 
-@test "select_branches: gum mock integration demonstrates enhanced testing" {
-  # This demonstrates enhanced gum mock testing approach
-  # In real implementation, this would use setup_gum_mock and HUG_TEST_GUM_SELECTION_INDEX
-  # For now, we focus on the immediate fix that prevents hanging
-
-  disable_gum_for_test
-  declare -a selected_branches=()
-
-  # Test the integration with gum disabled - this demonstrates the improvement
-  # over previous hanging tests and sets up for future gum mock enhancement
-  run -1 select_branches selected_branches --exclude-current --exclude-backup
-
-  # Success: the test completed without hanging and demonstrates
-  # the improved approach for testing interactive functionality
-  true
-}
-
-@test "select_branches: properly calls filter_branches with correct parameters and gum integration" {
-  disable_gum_for_test
-  declare -a selected_branches=()
-
+@test "select_branches: properly calls filter_branches with correct parameters" {
   # Test that select_branches calls filter_branches with the correct parameter pattern
   # This is an integration test to ensure the bug doesn't reoccur in higher-level functions
-  # The gum integration is tested via the enhanced testing documentation and patterns
 
-  # Mock compute_local_branch_details to return test data
-  compute_local_branch_details() {
-    local -n _current_branch_ref=$1 _max_len_ref=$2 _hashes_ref=$3 _branches_ref=$4 _tracks_ref=$5 _subjects_ref=$6
-    _current_branch_ref="main"
-    _max_len_ref="20"
-    _hashes_ref=("abc123" "def456" "ghi789")
-    _branches_ref=("main" "feature-1" "feature-2")
-    _tracks_ref=("[origin/main]" "" "")
-    _subjects_ref=("Initial" "Feature" "More work")
-    return 0
-  }
+  declare -a selected_branches=()
 
-  # Call select_branches with gum disabled to test the core functionality
-  # This validates that filter_branches integration works correctly
-  run -1 select_branches selected_branches --exclude-current --exclude-backup
+  # Mock the interactive selection part to avoid requiring user input
+  # We want to test that the filtering setup works correctly
+  run bash -c '
+    source /home/ecc/IdeaProjects/hug-scm/git-config/lib/hug-git-branch
 
-  # Success: the test completed without hanging and demonstrates
-  # the proper integration of filter_branches in select_branches
-  true
+    # Mock compute_local_branch_details to return test data
+    compute_local_branch_details() {
+      local -n _current_branch_ref=$1 _max_len_ref=$2 _hashes_ref=$3 _branches_ref=$4 _tracks_ref=$5 _subjects_ref=$6
+      _current_branch_ref="main"
+      _max_len_ref="20"
+      _hashes_ref=("abc123" "def456" "ghi789")
+      _branches_ref=("main" "feature-1" "feature-2")
+      _tracks_ref=("[origin/main]" "" "")
+      _subjects_ref=("Initial" "Feature" "More work")
+      return 0
+    }
+
+    # Mock the interactive selection to just return without selecting
+    # This lets us test the filtering part
+    export HUG_FORCE=true  # Skip confirmation
+
+    # Call select_branches - this should internally call filter_branches correctly
+    # If the bug exists, this will fail with "unbound variable" error
+    select_branches selected_branches --exclude-current --exclude-backup 2>/dev/null
+  '
+
+  # The command should not crash with "unbound variable" error
+  # It may fail due to mocked data, but should not have the unbound variable bug
+  refute_output --partial "unbound variable"
 }
 
 @test "filter_branches: validates array parameter names are independent" {

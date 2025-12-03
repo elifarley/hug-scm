@@ -596,16 +596,17 @@ teardown() {
 }
 
 @test "hug h back: requires confirmation when staged changes exist" {
-  disable_gum_for_test  # Use stdin-based confirmation for this test
-  
+  setup_gum_mock
+  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+
   local original_head
   original_head=$(git rev-parse HEAD)
 
   echo "preexisting" > staged.txt
   git add staged.txt
 
-  # Feed "n" to decline the confirmation prompt while capturing output.
-  run bash -c 'printf "n\n" | hug h back'
+  # Test with gum mock - no need for stdin manipulation
+  run hug h back
   assert_failure
   assert_output --partial "Move HEAD back to"
   assert_output --partial "Cancelled."
@@ -616,6 +617,8 @@ teardown() {
 
   run git ls-files --cached
   assert_output --partial "staged.txt"
+
+  teardown_gum_mock
 }
 
 @test "hug h back: handles invalid target" {
@@ -756,15 +759,16 @@ teardown() {
 }
 
 @test "hug h undo: requires confirmation when staged changes exist" {
-  disable_gum_for_test  # Use stdin-based confirmation for this test
-  
+  setup_gum_mock
+  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+
   local original_head
   original_head=$(git rev-parse HEAD)
 
   echo "staged work" > staged.txt
   git add staged.txt
 
-  run bash -c 'printf "n\n" | hug h undo'
+  run hug h undo
   assert_failure
   assert_output --partial "Undo commits back to"
   assert_output --partial "Cancelled."
@@ -775,17 +779,20 @@ teardown() {
 
   run git ls-files --cached
   assert_output --partial "staged.txt"
+
+  teardown_gum_mock
 }
 
 @test "hug h undo: requires confirmation when unstaged changes exist" {
-  disable_gum_for_test  # Use stdin-based confirmation for this test
-  
+  setup_gum_mock
+  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+
   local original_head
   original_head=$(git rev-parse HEAD)
 
   echo "local change" >> README.md
 
-  run bash -c 'printf "n\n" | hug h undo'
+  run hug h undo
   assert_failure
   assert_output --partial "Undo commits back to"
   assert_output --partial "Cancelled."
@@ -796,6 +803,8 @@ teardown() {
 
   run git diff --name-only
   assert_output --partial "README.md"
+
+  teardown_gum_mock
 }
 
 @test "hug h undo: merges staged and committed changes to unstaged" {
@@ -1136,18 +1145,21 @@ teardown() {
 }
 
 @test "hug h squash: requires confirmation when staged changes exist" {
-  disable_gum_for_test  # Use stdin-based confirmation for this test
-  
+  setup_gum_mock
+  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+
   echo "staged work" > staged.txt
   git add staged.txt
 
-  run bash -c 'printf "n\n" | hug h squash'
+  run hug h squash
   assert_failure
   assert_output --partial "Proceed with squash"
   assert_output --partial "Cancelled."
 
   run git ls-files --cached
   assert_output --partial "staged.txt"
+
+  teardown_gum_mock
 }
 
 @test "hug h squash: handles squashing to commit hash" {

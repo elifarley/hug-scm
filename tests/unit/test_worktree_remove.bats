@@ -33,11 +33,12 @@ teardown() {
 }
 
 @test "hug wtdel: removes worktree at specified path" {
-  # Disable gum to avoid interactive confirmation cancellation
-  disable_gum_for_test
+  setup_gum_mock
+  export HUG_TEST_GUM_CONFIRM=yes  # Simulate confirmation
 
   cd "$TEST_REPO"
-  run git-wtdel "$FEATURE_WT"
+  # Use --force to bypass confirmation entirely and test the removal logic
+  run git-wtdel "$FEATURE_WT" --force
 
   assert_success
   assert_output --partial "Worktree Removal Summary"
@@ -45,6 +46,8 @@ teardown() {
 
   # Verify worktree was removed
   assert_worktree_not_exists "$FEATURE_WT"
+
+  teardown_gum_mock
 }
 
 @test "hug wtdel: dry run shows what would be removed" {
