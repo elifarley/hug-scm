@@ -40,9 +40,13 @@ if $json_output; then
   output_json_status "${list_opts[@]}"
 else
   # Show enhanced file list if there are any changes
-  if list_files_with_status "${list_opts[@]}" 2>/dev/null; then
-    # Success - files were listed
-    :
+  if ! list_files_with_status "${list_opts[@]}" 2>/dev/null; then
+    # No files found - show appropriate message
+    if $include_untracked; then
+      info "No staged, unstaged, or untracked files."
+    else
+      info "No staged or unstaged files."
+    fi
   fi
 
   # Show summary line
