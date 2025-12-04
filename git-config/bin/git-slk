@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-select-files output_json_status; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# Part of the Hug tool suite
+
+# Show only untracked files, then summary
+
+# Early exit if not in Git repo
+check_git_repo
+
+# Parse arguments
+json_output=false
+pathspecs=()
+for arg in "$@"; do
+  case "$arg" in
+    --json)
+      json_output=true
+      ;;
+    *)
+      # Treat remaining arguments as pathspecs
+      pathspecs+=("$arg")
+      ;;
+  esac
+done
+
+# Build list_files_with_status options for untracked files only
+list_opts=("--untracked")
+
+# Add pathspecs if provided
+if [[ ${#pathspecs[@]} -gt 0 ]]; then
+  list_opts+=("${pathspecs[@]}")
+fi
+
+# JSON output mode
+if $json_output; then
+  output_json_status "${list_opts[@]}"
+else
+  # Show untracked files
+  if ! list_files_with_status "${list_opts[@]}" 2>/dev/null; then
+    if [[ ${#pathspecs[@]} -gt 0 ]]; then
+      pathspec_list=""
+      printf -v pathspec_list "'%s' " "${pathspecs[@]}"
+      info "No untracked files matching ${pathspec_list% } found."
+    else
+      info "No untracked files."
+    fi
+  fi
+
+  # Show summary line
+  exec hug s
+fi
