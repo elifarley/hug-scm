@@ -29,7 +29,8 @@
 list_staged_files() {
     local with_status=false
     local scope_cwd=false
-    
+    local -a pathspecs=()
+
     # Parse flags
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -42,13 +43,15 @@ list_staged_files() {
                 shift
                 ;;
             *)
-                break
+                # Treat remaining arguments as pathspecs
+                pathspecs+=("$1")
+                shift
                 ;;
         esac
     done
 
     check_git_repo
-    
+
     # Build git command with optional scoping
     local -a git_cmd_base=("git" "diff" "--cached")
     if $with_status; then
@@ -56,8 +59,11 @@ list_staged_files() {
     else
         git_cmd_base+=("--name-only")
     fi
-    
-    if $scope_cwd; then
+
+    # Add pathspecs if provided, otherwise use directory scoping if requested
+    if [[ ${#pathspecs[@]} -gt 0 ]]; then
+        git_cmd_base+=("--" "${pathspecs[@]}")
+    elif $scope_cwd; then
         git_cmd_base+=("--" ".")
     fi
 
@@ -100,7 +106,8 @@ list_staged_files() {
 list_unstaged_files() {
     local with_status=false
     local scope_cwd=false
-    
+    local -a pathspecs=()
+
     # Parse flags
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -113,13 +120,15 @@ list_unstaged_files() {
                 shift
                 ;;
             *)
-                break
+                # Treat remaining arguments as pathspecs
+                pathspecs+=("$1")
+                shift
                 ;;
         esac
     done
 
     check_git_repo
-    
+
     # Build git command with optional scoping
     local -a git_cmd_base=("git" "diff")
     if $with_status; then
@@ -127,8 +136,11 @@ list_unstaged_files() {
     else
         git_cmd_base+=("--name-only")
     fi
-    
-    if $scope_cwd; then
+
+    # Add pathspecs if provided, otherwise use directory scoping if requested
+    if [[ ${#pathspecs[@]} -gt 0 ]]; then
+        git_cmd_base+=("--" "${pathspecs[@]}")
+    elif $scope_cwd; then
         git_cmd_base+=("--" ".")
     fi
 
@@ -158,9 +170,10 @@ list_unstaged_files() {
 }
 
 # Lists untracked files (not in index or .gitignore)
-# Usage: mapfile -t files < <(list_untracked_files [--cwd])
+# Usage: mapfile -t files < <(list_untracked_files [--cwd] [pathspecs...])
 # Parameters:
 #   --cwd - If provided, scopes listing to current directory and subdirectories only
+#   pathspecs - If provided, filters to only show untracked files matching pathspecs
 # Output:
 #   File paths relative to current directory (one per line)
 # Notes:
@@ -170,16 +183,30 @@ list_unstaged_files() {
 #   Preserves special characters in filenames (e.g., spaces, newlines).
 list_untracked_files() {
     local scope_cwd=false
-    if [[ "${1:-}" == "--cwd" ]]; then
-        scope_cwd=true
-        shift
-    fi
+    local -a pathspecs=()
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --cwd)
+                scope_cwd=true
+                shift
+                ;;
+            *)
+                # Treat remaining arguments as pathspecs
+                pathspecs+=("$1")
+                shift
+                ;;
+        esac
+    done
 
     check_git_repo
-    
-    # Build git command with optional scoping
+
+    # Build git command with optional pathspecs
     local -a git_cmd=("git" "status" "--porcelain=v1" "-z")
-    if $scope_cwd; then
+    if [[ ${#pathspecs[@]} -gt 0 ]]; then
+        git_cmd+=("--" "${pathspecs[@]}")
+    elif $scope_cwd; then
         git_cmd+=("--" ".")
     fi
 
@@ -199,9 +226,10 @@ list_untracked_files() {
 }
 
 # Lists ignored files (matched by .gitignore)
-# Usage: mapfile -t files < <(list_ignored_files [--cwd])
+# Usage: mapfile -t files < <(list_ignored_files [--cwd] [pathspecs...])
 # Parameters:
 #   --cwd - If provided, scopes listing to current directory and subdirectories only
+#   pathspecs - If provided, filters to only show ignored files matching pathspecs
 # Output:
 #   File paths relative to current directory (one per line)
 # Notes:
@@ -211,16 +239,30 @@ list_untracked_files() {
 #   Preserves special characters in filenames (e.g., spaces, newlines).
 list_ignored_files() {
     local scope_cwd=false
-    if [[ "${1:-}" == "--cwd" ]]; then
-        scope_cwd=true
-        shift
-    fi
+    local -a pathspecs=()
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --cwd)
+                scope_cwd=true
+                shift
+                ;;
+            *)
+                # Treat remaining arguments as pathspecs
+                pathspecs+=("$1")
+                shift
+                ;;
+        esac
+    done
 
     check_git_repo
-    
-    # Build git command with optional scoping
+
+    # Build git command with optional pathspecs
     local -a git_cmd=("git" "status" "--porcelain=v1" "--ignored=matching" "-z")
-    if $scope_cwd; then
+    if [[ ${#pathspecs[@]} -gt 0 ]]; then
+        git_cmd+=("--" "${pathspecs[@]}")
+    elif $scope_cwd; then
         git_cmd+=("--" ".")
     fi
 

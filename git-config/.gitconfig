@@ -209,9 +209,9 @@
   # ============================================================================
 
   # No untracked files shown
-  sl = !git statusbase -uno \"$@\"
+  sl = statusbase -uno
   # Untracked files are also shown
-  sla = !git statusbase --long \"$@\"
+  sla = statusbase --long
   # Untracked files are also shown
   
   # ============================================================================

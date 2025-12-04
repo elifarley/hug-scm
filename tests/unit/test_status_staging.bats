@@ -596,3 +596,197 @@ teardown() {
   # Should NOT show "No files" message
   refute_output --partial "No staged, unstaged, or untracked files."
 }
+
+@test "hug sls with file argument" {
+  git add staged.txt
+  echo "unstaged" > README.md
+
+  run hug sls staged.txt
+  assert_success
+  assert_output --partial "staged.txt"
+  refute_output --partial "README.md"
+}
+
+@test "hug sls with wildcard pattern" {
+  echo "unstaged" > README.md
+  echo "staged" > test1.js
+  echo "staged" > test2.js
+
+  git add test1.js test2.js
+
+  run hug sls "*.js"
+  assert_success
+  assert_output --partial "test1.js"
+  assert_output --partial "test2.js"
+  refute_output --partial "README.md"
+}
+
+@test "hug sls shows message when no staged files" {
+  # Ensure nothing is staged
+  git reset HEAD
+
+  run hug sls
+  assert_success
+  assert_output --partial "No staged files."
+}
+
+@test "hug slu with file argument" {
+  echo "unstaged1" > file1.txt
+  echo "unstaged2" > file2.txt
+  git add file1.txt
+
+  run hug slu file2.txt
+  assert_success
+  assert_output --partial "file2.txt"
+  refute_output --partial "file1.txt"
+}
+
+@test "hug slu with wildcard pattern" {
+  echo "initial js1" > main.js
+  echo "initial js2" > utils.js
+  echo "initial py" > script.py
+  git add main.js utils.js script.py
+  git commit -m "Initial commit" 2>/dev/null
+
+  # Now modify them to make them unstaged
+  echo "unstaged js1" > main.js
+  echo "unstaged js2" > utils.js
+  echo "unstaged py" > script.py
+
+  run hug slu "*.js"
+  assert_success
+  assert_output --partial "main.js"
+  assert_output --partial "utils.js"
+  refute_output --partial "script.py"
+}
+
+@test "hug slu shows message when no unstaged files" {
+  # Stage all changes
+  git add -A
+
+  run hug slu
+  assert_success
+  assert_output --partial "No unstaged files."
+}
+
+@test "hug slk with directory argument" {
+  mkdir -p src
+  echo "untracked1" > src/file1.txt
+  echo "untracked2" > src/file2.txt
+
+  run hug slk src/
+  assert_success
+  assert_output --partial "UnTrck src/"
+}
+
+@test "hug slk shows message when no untracked files" {
+  # Create a fresh repo without untracked files
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  run hug slk
+  assert_success
+  assert_output --partial "No untracked files."
+}
+
+@test "hug sli with .gitignore pattern" {
+  echo "*.log" > .gitignore
+  echo "tempfile.tmp" >> .gitignore
+  git add .gitignore
+  git commit -m "Add gitignore"
+
+  # Create some ignored files
+  echo "log content" > debug.log
+  echo "temp" > tempfile.tmp
+  echo "not ignored" > regular.txt
+
+  run hug sli "*.log"
+  assert_success
+  assert_output --partial "debug.log"
+  refute_output --partial "tempfile.tmp"  # doesn't match *.log pattern
+  refute_output --partial "regular.txt"
+}
+
+@test "hug sli shows message when no ignored files" {
+  # Create a fresh repo without .gitignore or ignored files
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  run hug sli
+  assert_success
+  assert_output --partial "No ignored files."
+}
+
+@test "hug sl with single file argument shows its status" {
+  echo "unstaged" > README.md
+
+  run hug sl README.md
+  assert_success
+  assert_output --partial "README.md"
+  assert_output --partial "U:Mod"
+}
+
+@test "hug sl with multiple file arguments" {
+  echo "unstaged1" > file1.txt
+  echo "unstaged2" > file2.txt
+  echo "staged" > staged.txt
+  git add staged.txt
+
+  run hug sl README.md staged.txt
+  assert_success
+  assert_output --partial "README.md"
+  assert_output --partial "staged.txt"
+  refute_output --partial "file1.txt"
+  refute_output --partial "file2.txt"
+}
+
+@test "hug sla with directory argument" {
+  mkdir -p src lib docs
+  echo "initial" > src/main.cpp
+  echo "initial" > lib/helper.rb
+  git add src/ lib/
+  git commit -m "Initial commit" 2>/dev/null
+
+  # Now modify them to make them unstaged
+  echo "unstaged" > src/main.cpp
+  echo "unstaged" > lib/helper.rb
+  echo "untracked" > docs/readme.md
+
+  run hug sla src/ lib/
+  assert_success
+  assert_output --partial "src/main.cpp"
+  assert_output --partial "lib/helper.rb"
+  refute_output --partial "docs/readme.md"
+}
+
+@test "hug sl with no matching files shows appropriate message" {
+  run hug sl "nonexistent/*"
+  assert_success
+  assert_output --partial "No staged or unstaged files matching 'nonexistent/*' found."
+}
+
+@test "hug sls with no matching files shows appropriate message" {
+  run hug sls "nonexistent/*"
+  assert_success
+  assert_output --partial "No staged files matching 'nonexistent/*' found."
+}
+
+@test "hug slu with no matching files shows appropriate message" {
+  run hug slu "nonexistent/*"
+  assert_success
+  assert_output --partial "No unstaged files matching 'nonexistent/*' found."
+}
+
+@test "hug slk with no matching files shows appropriate message" {
+  run hug slk "nonexistent/*"
+  assert_success
+  assert_output --partial "No untracked files matching 'nonexistent/*' found."
+}
+
+@test "hug sli with no matching files shows appropriate message" {
+  run hug sli "nonexistent/*"
+  assert_success
+  assert_output --partial "No ignored files matching 'nonexistent/*' found."
+}

@@ -13,6 +13,8 @@ check_git_repo
 # Parse arguments to determine what to show
 include_untracked=false
 json_output=false
+pathspecs=()
+
 for arg in "$@"; do
   case "$arg" in
     --json)
@@ -24,6 +26,10 @@ for arg in "$@"; do
     -uno|--untracked-files=no)
       include_untracked=false
       ;;
+    *)
+      # Treat remaining arguments as pathspecs
+      pathspecs+=("$arg")
+      ;;
   esac
 done
 
@@ -31,6 +37,11 @@ done
 list_opts=("--staged" "--unstaged")
 if $include_untracked; then
   list_opts+=("--untracked")
+fi
+
+# Add pathspecs if provided
+if [[ ${#pathspecs[@]} -gt 0 ]]; then
+  list_opts+=("${pathspecs[@]}")
 fi
 
 # TODO list files sorted by reverse status text (so that `S:*` files appear last, closer to the cursor line after the command has finished printing a lot of lines. The second field to sort should be the file path.
@@ -43,9 +54,21 @@ else
   if ! list_files_with_status "${list_opts[@]}" 2>/dev/null; then
     # No files found - show appropriate message
     if $include_untracked; then
-      info "No staged, unstaged, or untracked files."
+      if [[ ${#pathspecs[@]} -gt 0 ]]; then
+        pathspec_list=""
+        printf -v pathspec_list "'%s' " "${pathspecs[@]}"
+        info "No staged, unstaged, or untracked files matching ${pathspec_list% } found."
+      else
+        info "No staged, unstaged, or untracked files."
+      fi
     else
-      info "No staged or unstaged files."
+      if [[ ${#pathspecs[@]} -gt 0 ]]; then
+        pathspec_list=""
+        printf -v pathspec_list "'%s' " "${pathspecs[@]}"
+        info "No staged or unstaged files matching ${pathspec_list% } found."
+      else
+        info "No staged or unstaged files."
+      fi
     fi
   fi
 
