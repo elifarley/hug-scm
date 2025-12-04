@@ -424,3 +424,125 @@ teardown() {
   assert_failure
   assert_output --partial "cannot be used with explicit paths"
 }
+
+@test "hug sls: shows only staged files" {
+  # Stage a file first
+  git add staged.txt
+
+  run hug sls
+  assert_success
+  assert_output --partial "staged.txt"
+  refute_output --partial "README.md"  # unstaged
+  refute_output --partial "untracked.txt"
+}
+
+@test "hug sls: shows message when no staged files" {
+  # Ensure nothing is staged
+  git reset HEAD
+
+  run hug sls
+  assert_success
+  assert_output --partial "No staged files."
+}
+
+@test "hug slu: shows only unstaged files" {
+  run hug slu
+  assert_success
+  assert_output --partial "README.md"  # unstaged in test fixture
+  refute_output --partial "staged.txt"
+  refute_output --partial "untracked.txt"
+}
+
+@test "hug slu: shows message when no unstaged files" {
+  # Stage all changes
+  git add -A
+
+  run hug slu
+  assert_success
+  assert_output --partial "No unstaged files."
+}
+
+@test "hug slk: shows only untracked files" {
+  run hug slk
+  assert_success
+  assert_output --partial "untracked.txt"
+  refute_output --partial "staged.txt"
+  refute_output --partial "README.md"
+}
+
+@test "hug slk: shows message when no untracked files" {
+  # Create a fresh repo without untracked files
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  run hug slk
+  assert_success
+  assert_output --partial "No untracked files."
+}
+
+@test "hug sls: supports JSON output" {
+  git add staged.txt
+  run hug sls --json
+  assert_success
+  assert_output --partial '{'
+  assert_output --partial '"staged"'
+}
+
+@test "hug slu: supports JSON output" {
+  run hug slu --json
+  assert_success
+  assert_output --partial '{'
+  assert_output --partial '"unstaged"'
+}
+
+@test "hug slk: supports JSON output" {
+  run hug slk --json
+  assert_success
+  assert_output --partial '{'
+  assert_output --partial '"untracked"'
+}
+
+@test "hug sli: shows only ignored files" {
+  # Create a .gitignore file and some ignored content
+  echo "*.log" > .gitignore
+  echo "tempfile.tmp" >> .gitignore
+  git add .gitignore
+  git commit -m "Add gitignore"
+
+  # Create some ignored files
+  echo "log content" > debug.log
+  echo "temp" > tempfile.tmp
+
+  run hug sli
+  assert_success
+  assert_output --partial "debug.log"
+  assert_output --partial "tempfile.tmp"
+  refute_output --partial "README.md"  # tracked
+  refute_output --partial "untracked.txt"  # untracked
+  refute_output --partial "staged.txt"  # staged
+}
+
+@test "hug sli: shows message when no ignored files" {
+  # Create a fresh repo without .gitignore or ignored files
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  run hug sli
+  assert_success
+  assert_output --partial "No ignored files."
+}
+
+@test "hug sli: supports JSON output" {
+  echo "*.log" > .gitignore
+  git add .gitignore
+  git commit -m "Add gitignore"
+  echo "log" > debug.log
+
+  run hug sli --json
+  assert_success
+  assert_output --partial '{'
+  assert_output --partial '"ignored"'
+  assert_output --partial '"debug.log"'
+}

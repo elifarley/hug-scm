@@ -202,7 +202,7 @@
   # ============================================================================
 
   # List stashes with beautiful formatting
-  sls = stash list --pretty=stash
+  stl = stash list --pretty=stash
 
   # ============================================================================
   #  Status (s?)
@@ -213,8 +213,7 @@
   # Untracked files are also shown
   sla = !git statusbase --long \"$@\"
   # Untracked files are also shown
-  sli = !git ls-files --others --ignored --exclude-standard && git s \"$@\"
-
+  
   # ============================================================================
   # SHow object info (sh*)
   # TODO: Move from aliases into their own scripts in bin/git-sh*
