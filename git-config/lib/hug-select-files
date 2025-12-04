@@ -2,7 +2,7 @@
 # Library: HUG interactive file selection
 #
 # Implements gum-powered file selection with git status annotations.
-# Depends on: hug-gum, hug-output, hug-terminal, hug-git-files (for list_* functions).
+# Depends on: hug-gum, hug-output, hug-terminal, hug-git-files (for list_* functions), hug-git-priorities.
 # Functions:
 #   - list_files_with_status: list staged/unstaged/untracked files with color-coded status (non-interactive).
 #   - select_files_with_status: filter staged/unstaged/untracked files interactively.
@@ -30,6 +30,15 @@
 #   - Without --cwd, lists files across entire repository
 #   - Without PATHSPECS, lists all files of the requested types
 list_files_with_status() {
+  # Source priority definitions for sorting
+  if [[ -f "${HUG_LIB_DIR}/hug-git-priorities" ]]; then
+    source "${HUG_LIB_DIR}/hug-git-priorities"
+  else
+    # Fallback if priorities file is not found
+    declare -A STATUS_PRIORITY=()
+    get_status_priority() { echo "0"; }
+  fi
+
   local include_staged=false
   local include_unstaged=false
   local include_untracked=false
@@ -75,13 +84,14 @@ list_files_with_status() {
 
   local -a files=()
   local -a formatted_options=()
+  local -a status_codes=()  # Store status codes for sorting
 
   # Build flag array for list functions
   local -a list_flags=()
   if $scope_cwd; then
     list_flags+=("--cwd")
   fi
-  
+
   if ! $has_includes; then
     # No specific includes, list all tracked files plainly
     mapfile -t files < <(list_tracked_files "${list_flags[@]}")
@@ -98,17 +108,19 @@ list_files_with_status() {
         local status file
         IFS=$'\t' read -r status file <<< "$line"
         local status_text
+        local status_code
         case "$status" in
-          A)  status_text="${GREEN}S:Add ${NC}" ;;
-          M)  status_text="${GREEN}S:${YELLOW}Mod ${NC}" ;;
-          D)  status_text="${GREEN}S:${RED}Del ${NC}" ;;
-          R*) status_text="${GREEN}S:${CYAN}Ren ${NC}" ;;
-          C*) status_text="${GREEN}S:${BLUE}Copy${NC}" ;;
-          U)  status_text="${YELLOW}Cnflt ${NC}" ;;
-          *)  status_text="${GREEN}S     ${NC}" ;;
+          A)  status_text="${GREEN}S:Add ${NC}"; status_code="S:Add" ;;
+          M)  status_text="${GREEN}S:${YELLOW}Mod ${NC}"; status_code="S:Mod" ;;
+          D)  status_text="${GREEN}S:${RED}Del ${NC}"; status_code="S:Del" ;;
+          R*) status_text="${GREEN}S:${CYAN}Ren ${NC}"; status_code="S:Ren" ;;
+          C*) status_text="${GREEN}S:${BLUE}Copy${NC}"; status_code="S:Copy" ;;
+          U)  status_text="${YELLOW}Cnflt ${NC}"; status_code="S:Cnflt" ;;
+          *)  status_text="${GREEN}S     ${NC}"; status_code="S:Unk" ;;
         esac
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
+        status_codes+=("$status_code")
       done < <(list_staged_files "${status_flags[@]}" "${pathspecs[@]}")
     fi
 
@@ -119,14 +131,16 @@ list_files_with_status() {
         local status file
         IFS=$'\t' read -r status file <<< "$line"
         local status_text
+        local status_code
         case "$status" in
-          M) status_text="${RED}U:${YELLOW}Mod ${NC}" ;;
-          D) status_text="${RED}U:Del ${NC}" ;;
-          U) status_text="${RED}${YELLOW}Cnflt${NC}" ;;
-          *) status_text="${RED}U     ${NC}" ;;
+          M) status_text="${RED}U:${YELLOW}Mod ${NC}"; status_code="U:Mod" ;;
+          D) status_text="${RED}U:Del ${NC}"; status_code="U:Del" ;;
+          U) status_text="${RED}${YELLOW}Cnflt${NC}"; status_code="U:Cnflt" ;;
+          *) status_text="${RED}U     ${NC}"; status_code="U:Unk" ;;
         esac
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
+        status_codes+=("$status_code")
       done < <(list_unstaged_files "${status_flags[@]}" "${pathspecs[@]}")
     fi
 
@@ -137,6 +151,7 @@ list_files_with_status() {
         local status_text="${MAGENTA}UnTrck${NC}"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
+        status_codes+=("UnTrck")
       done
     fi
 
@@ -147,31 +162,46 @@ list_files_with_status() {
         local status_text="${GREY}Ignore${NC}"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
+        status_codes+=("Ignore")
       done
     fi
-    
-    # Remove duplicates while preserving order
-    local -A seen=()
-    local -a unique_files=()
-    local -a unique_formatted=()
+
+    # Sort files by priority (descending), then by file path (ascending)
+    # Create array of tuples: (priority, status_code, file, formatted_option)
+    local -a sorted_entries=()
     local i
     for i in "${!files[@]}"; do
       local file="${files[$i]}"
-      if [[ -z "${seen[$file]+_}" ]]; then
+      local status_code="${status_codes[$i]}"
+      local priority
+      priority=$(get_status_priority "$status_code")
+      sorted_entries+=("$priority|$status_code|$file|${formatted_options[$i]}")
+    done
+
+    # Sort by priority (descending, -nr), then by file path (ascending)
+    IFS=$'\n' sorted_entries=($(sort -t'|' -k1,1nr -k3,3 <<<"${sorted_entries[*]}"))
+
+    # Remove duplicates while preserving sorted order
+    local -A seen=()
+    local -a unique_files=()
+    local -a unique_formatted=()
+    for entry in "${sorted_entries[@]}"; do
+      IFS='|' read -r _ _ file formatted <<< "$entry"
+      if [[ -z "${seen[$file]+_}" ]] && [[ -n "$file" ]]; then
         seen["$file"]=1
         unique_files+=("$file")
-        unique_formatted+=("${formatted_options[$i]}")
+        unique_formatted+=("$formatted")
       fi
     done
-    
+
     if [[ ${#unique_files[@]} -eq 0 ]]; then
       if $scope_cwd; then
         info "No relevant files in current directory."
       fi
       return 1
     fi
-    
-    # Print the formatted list
+
+    # Print the formatted list in sorted order
     printf '%s\n' "${unique_formatted[@]}"
   fi
   

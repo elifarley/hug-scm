@@ -1,0 +1,45 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-PRIORITIES: Status priority definitions for file sorting
+#
+# This library provides:
+# - Centralized priority definitions for file statuses
+# - Helper function to get priority for a status
+# - Supports sorting files by importance (highest priority shown last)
+#
+# Priority Values:
+#   90: Conflicts (highest priority - shown LAST)
+#   80: Staged files (ready to commit)
+#   70: Unstaged modifications
+#   60: Untracked files
+#   50: Ignored files (lowest priority - shown FIRST)
+
+# Status priority mapping (higher value = higher priority = shown later)
+declare -A STATUS_PRIORITY=(
+  # Conflicts - highest priority (blocking issues)
+  ["U:Cnflt"]=90  ["S:Cnflt"]=90
+
+  # Staged files - ready to commit (most immediately actionable)
+  ["S:Add"]=80    ["S:Mod"]=80    ["S:Ren"]=80
+  ["S:Copy"]=80   ["S:Del"]=80
+
+  # Unstaged modifications (work in progress)
+  ["U:Mod"]=70    ["U:Del"]=70
+
+  # Untracked files (new files, important but less urgent)
+  ["UnTrck"]=60
+
+  # Ignored files (lowest priority, rarely need attention)
+  ["Ignore"]=50
+)
+
+# Get priority value for a status
+# Usage: priority=$(get_status_priority "S:Mod")
+# Returns:
+#   Priority value (90-50) if status is defined
+#   0 if status is not recognized (lowest possible priority)
+get_status_priority() {
+  local status="$1"
+  echo "${STATUS_PRIORITY[$status]:-0}"
+}
