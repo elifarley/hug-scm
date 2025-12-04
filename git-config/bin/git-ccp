@@ -4,6 +4,8 @@
 . "$HUG_HOME/git-config/lib/hug-common"
 # shellcheck source=git-config/lib/hug-git-kit
 . "$HUG_HOME/git-config/lib/hug-git-kit"
+# shellcheck source=git-config/lib/hug-file-input
+. "$HUG_HOME/git-config/lib/hug-file-input"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
@@ -46,12 +48,12 @@ EOF
 }
 
 error() {
-  printf 'hug cc: %s\n' "$1" >&2
+  printf 'hug ccp: %s\n' "$1" >&2
   exit "${2:-1}"
 }
 
 usage_error() {
-  printf 'hug cc: %s\n\n' "$1" >&2
+  printf 'hug ccp: %s\n\n' "$1" >&2
   show_help >&2
   exit 1
 }
@@ -71,7 +73,6 @@ while (($#)); do
       ;;
     --husk)
       husk_mode=true
-      shift
       ;;
     --)
       shift
