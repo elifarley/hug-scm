@@ -546,3 +546,53 @@ teardown() {
   assert_output --partial '"ignored"'
   assert_output --partial '"debug.log"'
 }
+
+@test "hug sl: shows message when no staged or unstaged files" {
+  # Create a fresh repo without any changes
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  run hug sl
+  assert_success
+  assert_output --partial "No staged or unstaged files."
+  # Should still show summary
+  assert_output --partial "HEAD"
+}
+
+@test "hug sla: shows message when no staged, unstaged, or untracked files" {
+  # Create a fresh repo without any changes or untracked files
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  run hug sla
+  assert_success
+  assert_output --partial "No staged, unstaged, or untracked files."
+  # Should still show summary
+  assert_output --partial "HEAD"
+}
+
+@test "hug sl: shows files when they exist" {
+  # Create some unstaged changes
+  echo "modified" > README.md
+
+  run hug sl
+  assert_success
+  # Should show the modified file
+  assert_output --partial "README.md"
+  # Should NOT show "No files" message
+  refute_output --partial "No staged or unstaged files."
+}
+
+@test "hug sla: shows untracked files when they exist" {
+  # Create an untracked file
+  echo "untracked" > newfile.txt
+
+  run hug sla
+  assert_success
+  # Should show the untracked file
+  assert_output --partial "newfile.txt"
+  # Should NOT show "No files" message
+  refute_output --partial "No staged, unstaged, or untracked files."
+}
