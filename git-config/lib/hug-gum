@@ -30,9 +30,10 @@ gum_available() {
   if ! command -v gum >/dev/null 2>&1; then
     return 1
   fi
-  # Check if we have a TTY available (gum needs it for interactive input)
-  # In non-interactive environments like CI/CD, fall back to basic prompts
-  [[ -t 0 ]] && [[ -t 1 ]]
+  # Check if we have a TTY available for interactive input
+  # gum can work even when stdin/stdout aren't TTYs by opening /dev/tty directly
+  # This is important when running through git commands that don't preserve TTYs
+  [[ -t 0 ]] && [[ -t 1 ]] || [[ -c /dev/tty ]]
 }
 
 gum_log() {

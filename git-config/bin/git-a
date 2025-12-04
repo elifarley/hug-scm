@@ -6,6 +6,8 @@
 . "$HUG_HOME/git-config/lib/hug-git-kit"
 # shellcheck source=git-config/lib/hug-file-input
 . "$HUG_HOME/git-config/lib/hug-file-input"
+# shellcheck source=git-config/lib/hug-select-files
+. "$HUG_HOME/git-config/lib/hug-select-files"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
@@ -54,7 +56,7 @@ SEE ALSO:
 EOF
 }
 
-# Parse custom flags
+# Parse custom flags (excluding -- which will be handled by parse_common_flags)
 from_file=""
 from_commit=""
 remaining_args=()
@@ -73,21 +75,19 @@ while [[ $# -gt 0 ]]; do
       show_help
       exit 0
       ;;
+    --)
+      # Don't process -- here, let parse_common_flags handle it
+      break
+      ;;
     *)
-      # Check for special interactive mode first
-      if [[ "$1" == "--" ]]; then
-        remaining_args+=("$1")
-        shift
-        # Parse common flags with the remaining arguments
-        eval "$(parse_common_flags "$@")"
-        break
-      else
-        remaining_args+=("$1")
-        shift
-      fi
+      remaining_args+=("$1")
+      shift
       ;;
   esac
 done
+
+# Parse common flags (handles --, --browse-root, etc.)
+eval "$(parse_common_flags "$@")"
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
@@ -117,36 +117,30 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
   exec git add "${files[@]}"
 fi
 
-# Parse common flags for the interactive mode and regular operation
-if [[ "${#remaining_args[@]}" -gt 0 && "${remaining_args[0]}" == "--" ]]; then
-  # Handle interactive mode with remaining args (excluding the "--" we already processed)
-  unset 'remaining_args[0]'
+# Handle interactive file selection if requested
+if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
+  # Get list of files with changes (including untracked files)
+  declare -a select_opts=("--multi" "--unstaged" "--untracked")
 
-  # Check if user wants interactive file selection via --
-  if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
-    # Get list of files with changes (tracked files)
-    declare -a select_opts=("--multi" "--unstaged" "--untracked")
-
-    # Default to --cwd (current directory scope) unless --browse-root is specified
-    if ! $browse_root; then
-      select_opts+=("--cwd")
-    fi
-
-    select_opts+=("--prompt" "Select files to stage...")
-
-    files=()
-    if ! mapfile -t files < <(select_files_with_status "${select_opts[@]}"); then
-      info "No files selected or cancelled."
-      exit 0
-    fi
-
-    if [ ${#files[@]} -eq 0 ]; then
-      info "No files selected."
-      exit 0
-    fi
-
-    exec git add "${files[@]}"
+  # Default to --cwd (current directory scope) unless --browse-root is specified
+  if ! $browse_root; then
+    select_opts+=("--cwd")
   fi
+
+  select_opts+=("--prompt" "Select files to stage...")
+
+  files=()
+  if ! mapfile -t files < <(select_files_with_status "${select_opts[@]}"); then
+    info "No files selected or cancelled."
+    exit 0
+  fi
+
+  if [ ${#files[@]} -eq 0 ]; then
+    info "No files selected."
+    exit 0
+  fi
+
+  exec git add "${files[@]}"
 fi
 
 # Check if no arguments - stage all tracked modified files
