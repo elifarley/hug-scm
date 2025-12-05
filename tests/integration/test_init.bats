@@ -27,6 +27,10 @@ teardown() {
     assert_output --partial "Initializing Git repository"
     assert_output --partial "Initialized Git repository in '.'"
     assert_dir_exists "$TEST_INIT_DIR/.git"
+
+    # Check that default branch is 'main'
+    branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+    [[ "$branch" == "main" ]]
 }
 
 @test "hug init - initializes Git repo in new directory" {
@@ -36,6 +40,11 @@ teardown() {
     assert_output --partial "Initializing Git repository"
     assert_output --partial "Initialized Git repository in 'my-repo'"
     assert_dir_exists "$TEST_INIT_DIR/my-repo/.git"
+
+    # Check that default branch is 'main'
+    cd "$TEST_INIT_DIR/my-repo"
+    branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+    [[ "$branch" == "main" ]]
 }
 
 @test "hug init - shows status message on empty repo when status enabled" {
@@ -98,13 +107,32 @@ teardown() {
 
 @test "hug init - passes through initial-branch option" {
     cd "$TEST_INIT_DIR"
-    run hug init --no-status --initial-branch=main test-main
+    run hug init --no-status --initial-branch=develop test-develop
     assert_success
-    
+
     # Check the branch name
-    cd "$TEST_INIT_DIR/test-main"
+    cd "$TEST_INIT_DIR/test-develop"
+    branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+    [[ "$branch" == "develop" ]]
+}
+
+@test "hug init - default is main branch but can be overridden" {
+    cd "$TEST_INIT_DIR"
+
+    # First verify default is main
+    run hug init --no-status default-main-repo
+    assert_success
+    cd "$TEST_INIT_DIR/default-main-repo"
     branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
     [[ "$branch" == "main" ]]
+    cd ..
+
+    # Then verify override works
+    run hug init --no-status --initial-branch=feature custom-branch-repo
+    assert_success
+    cd "$TEST_INIT_DIR/custom-branch-repo"
+    branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+    [[ "$branch" == "feature" ]]
 }
 
 @test "hug init - supports Mercurial with --hg flag" {

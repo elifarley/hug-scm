@@ -40,11 +40,11 @@ Options:
   --no-status   Skip post-init status display
 
 Examples:
-  hug init                           # Initialize Git repo in current directory
+  hug init                           # Initialize Git repo with 'main' branch
   hug init my-project                # Initialize Git repo in new directory
   hug init --hg                      # Initialize Mercurial repo in current directory
   hug init --bare                    # Pass --bare to git init
-  hug init --initial-branch=main     # Set initial branch name
+  hug init --initial-branch=custom   # Set custom initial branch name
 EOF
 }
 
@@ -54,14 +54,25 @@ run_status=true
 target_dir=""
 declare -a vcs_options=()
 
+# Initialize with Git default options (only for Git)
+if [[ "$vcs" == "git" ]]; then
+    vcs_options=("--initial-branch=main")
+fi
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --git)
             vcs="git"
+            # Add default Git options if switching from hg or on initial set
+            if [[ ! " ${vcs_options[*]} " =~ " --initial-branch=" ]]; then
+                vcs_options=("--initial-branch=main")
+            fi
             shift
             ;;
         --hg)
             vcs="hg"
+            # Remove Git-specific options when switching to Mercurial
+            vcs_options=()
             shift
             ;;
         --no-status)
@@ -71,6 +82,24 @@ while [[ $# -gt 0 ]]; do
         --help|-h)
             show_help
             exit 0
+            ;;
+        --initial-branch=*)
+            # Handle --initial-branch specially to replace default
+            if [[ "$vcs" == "git" ]]; then
+                # Replace existing --initial-branch if present
+                declare -a new_options=()
+                for opt in "${vcs_options[@]}"; do
+                    if [[ ! "$opt" =~ ^--initial-branch= ]]; then
+                        new_options+=("$opt")
+                    fi
+                done
+                vcs_options=("${new_options[@]}")
+                vcs_options+=("$1")
+            else
+                # For Mercurial, just add the option (it will be ignored)
+                vcs_options+=("$1")
+            fi
+            shift
             ;;
         -*)
             # Any other flag is a VCS option
