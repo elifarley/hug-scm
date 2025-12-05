@@ -209,14 +209,14 @@ teardown() {
   local generated_path
   generated_path=$(generate_worktree_path "feature-1")
 
-  assert_equal "$generated_path" "../worktrees-$(basename "$TEST_REPO")/feature-1"
+  assert_equal "$generated_path" "../$(basename "$TEST_REPO")-worktrees/feature-1"
 }
 
 @test "hug-git-worktree: generate_worktree_path sanitizes branch name" {
   local generated_path
   generated_path=$(generate_worktree_path "feature/auth.v2")
 
-  assert_equal "$generated_path" "../worktrees-$(basename "$TEST_REPO")/feature-auth-v2"
+  assert_equal "$generated_path" "../$(basename "$TEST_REPO")-worktrees/feature-auth-v2"
 }
 
 @test "hug-git-worktree: generate_unique_worktree_path returns unique path" {
