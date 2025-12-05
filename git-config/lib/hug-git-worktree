@@ -601,7 +601,7 @@ create_worktree() {
     # Get confirmation unless forced
     if ! $force; then
         echo "Creating worktree for branch '$branch' at '$path'"
-        if ! confirm_action "create"; then
+        if ! prompt_confirm_safe "Create worktree for branch '$branch' at '$path'?"; then
             info "Worktree creation cancelled"
             return 0
         fi
@@ -1095,7 +1095,7 @@ create_branch_if_needed() {
         # Prompt to create
         warning "Branch '$branch' does not exist locally."
         info "Use --new flag to automatically create it."
-        if prompt_confirm "Create branch '$branch'?"; then
+        if prompt_confirm_safe "Create branch '$branch'?"; then
             git branch "$branch"
             info "Created new branch '$branch'"
         else

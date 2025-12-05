@@ -165,7 +165,7 @@ if ! git rev-parse --verify "$branch_name" >/dev/null 2>&1; then
       is_new_branch=true
     else
       # Combined prompt for creation + move
-      if prompt_confirm "Branch '$branch_name' doesn't exist. Proceed with creating a new branch named '$branch_name' and moving $commits_to_relocate $commit_word to it? [y/N]: "; then
+      if prompt_confirm_warn "Branch '$branch_name' doesn't exist. Proceed with creating a new branch named '$branch_name' and moving $commits_to_relocate $commit_word to it? [y/N]: "; then
         new_branch=true
         is_new_branch=true
       else
@@ -198,7 +198,7 @@ if $branch_exists; then
   fi
 
   if $should_prompt; then
-    prompt_confirm "Proceed with moving $commits_to_relocate $commit_word to '$branch_name'? [y/N]: "
+    prompt_confirm_warn "Proceed with moving $commits_to_relocate $commit_word to '$branch_name'? [y/N]: "
   fi
 fi
 

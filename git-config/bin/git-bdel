@@ -167,7 +167,7 @@ hug_bdel() {
       done
     fi
     printf "\n" >&2
-    prompt_confirm "⚠️  Delete these ${branch_word}? [y/N]: "
+    prompt_confirm_warn "⚠️  Delete these ${branch_word}? [y/N]: "
   fi
   
   # Perform deletion

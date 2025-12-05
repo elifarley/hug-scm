@@ -191,7 +191,7 @@ print_untracked_ignored_paths untracked_paths ignored_paths "$target_untracked" 
 
 # Prompt for confirmation unless force flag is set
 if ! $force; then
-  prompt_confirm
+  prompt_confirm_warn
 fi
 
 if $target_untracked && $target_ignored; then

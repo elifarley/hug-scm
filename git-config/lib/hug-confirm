@@ -18,7 +18,7 @@
 # Returns:
 #   0 if confirmed (or HUG_FORCE is true)
 #   Exits with code 1 if user declines or read fails
-prompt_confirm() {
+prompt_confirm_warn() {
   if [[ ${HUG_FORCE:-} == true ]]; then
     return 0
   fi
@@ -64,7 +64,7 @@ prompt_confirm() {
 # Returns:
 #   0 if confirmed (or HUG_FORCE is true)
 #   Exits with code 1 if user declines
-confirm_action() {
+confirm_action_danger() {
   if [[ ${HUG_FORCE:-} == true ]]; then
     return 0
   fi
@@ -103,6 +103,80 @@ confirm_action() {
     exit 1
   fi
   if [[ "$reply" != "$action" ]]; then
+    info "Cancelled."
+    exit 1
+  fi
+}
+
+# Confirmation dialog for safe, non-destructive operations
+#
+# This function provides user confirmation for ADDITIVE operations that create new resources
+# without modifying or deleting existing data. These operations are inherently safe and can be
+# easily undone if needed.
+#
+# Design Philosophy:
+# - Safe operations default to YES to reduce friction for productive workflows
+# - Warning operations (prompt_confirm_warn) default to NO for safety
+# - Dangerous operations (confirm_action_danger) require explicit typing for maximum safety
+#
+# When to use this function:
+# ✓ Creating branches, worktrees, tags, or other new resources
+# ✓ Operations that add without removing or modifying existing data
+# ✓ Operations that are easily reversible
+#
+# When NOT to use this function:
+# ✗ Deleting, pruning, or removing resources (use prompt_confirm_warn)
+# ✗ Overwriting or modifying existing data (use prompt_confirm_warn)
+# ✗ Irreversible or high-impact operations (use confirm_action_danger)
+#
+# Usage: prompt_confirm_safe "Create worktree for branch 'feature' at '../repo-worktrees/feature'?"
+#
+# Returns: 0 if user confirms, 1 if cancelled (exits by default in non-interactive mode)
+#
+# Examples:
+#   prompt_confirm_safe "Create new branch 'feature-auth'?"    # Defaults to Yes
+#   prompt_confirm_safe "Tag commit 'abc123' as 'v1.0'?"      # Defaults to Yes
+#
+# Compare with other confirmation functions:
+#   prompt_confirm_warn "Delete branch 'old-feature'?"        # Defaults to No (destructive)
+#   confirm_action_danger "Type 'reset' to reset repository"  # Requires typing (dangerous)
+prompt_confirm_safe() {
+  if [[ ${HUG_FORCE:-} == true ]]; then
+    return 0
+  fi
+  local prompt="${1:-Proceed?}"
+  if gum_available; then
+    local message="${prompt% }"
+    # Default to Yes for safe/non-destructive operations
+    if gum confirm --default=true "$message"; then
+      return 0
+    fi
+    info "Cancelled."
+    exit 1
+  fi
+  # Check if we're in a non-interactive environment (no TTY)
+  if [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
+    # In test mode, allow input simulation
+    if [[ "${HUG_TEST_MODE:-}" == "true" ]]; then
+      # Continue to input reading in test mode
+      :
+    else
+      info "Non-interactive environment: cancelled."
+      exit 1
+    fi
+  fi
+
+  local reply
+  printf '%s [Y/n]: ' "$prompt" >&2
+  if ! read -r reply; then
+    info "Cancelled."
+    exit 1
+  fi
+  # Default to Yes for safe operations
+  reply="${reply:-Y}"
+  reply="${reply:0:1}"
+  reply="${reply,,}"  # Convert to lowercase
+  if [[ "$reply" != "y" ]]; then
     info "Cancelled."
     exit 1
   fi
