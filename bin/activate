@@ -22,12 +22,8 @@ wt() {
     local output
     local worktree_path
 
-    # Debug
-    echo "DEBUG: wt() called with args: $*" >&2
-
     # Check if we have arguments (non-interactive mode)
     if [[ $# -eq 0 ]]; then
-        echo "DEBUG: Interactive mode" >&2
         # Interactive mode - need to show prompts to user
         # Use a temporary file to capture just WORKTREE_PATH while letting other output pass through
         local temp_file=$(mktemp)
@@ -38,18 +34,14 @@ wt() {
         worktree_path=$(grep "^WORKTREE_PATH:" "$temp_file" | cut -d: -f2-)
         rm -f "$temp_file"
 
-        # If git-wt failed, show the error (but don't duplicate since tee already showed it)
+        # If git-wt failed, just return the exit code (tee already showed the error)
         if [[ $exit_code -ne 0 ]]; then
-            echo "DEBUG: git-wt failed with exit code $exit_code" >&2
             return $exit_code
         fi
     else
-        echo "DEBUG: Non-interactive mode with args: $*" >&2
         # Non-interactive mode with arguments - can capture output safely
         output=$(git-wt "$@" 2>&1)
         local exit_code=$?
-
-        echo "DEBUG: exit_code=$exit_code, output=$output" >&2
 
         # If git-wt failed, show the error and return its exit code
         if [[ $exit_code -ne 0 ]]; then
