@@ -30,7 +30,7 @@ if $json_output; then
 fi
 
 # HEAD status line (inspired by hug sl)
-hash=$(git rev-parse --short HEAD)
+hash=$(git rev-parse --short HEAD 2>/dev/null || echo "")
 branch=$(git branch --show-current 2>/dev/null || echo "(detached HEAD)")
 upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
 if [ -n "$upstream" ]; then

@@ -790,3 +790,20 @@ teardown() {
   assert_success
   assert_output --partial "No ignored files matching 'nonexistent/*' found."
 }
+
+@test "hug s: handles empty repository" {
+  # Create an empty repository (no commits)
+  cd "$(mktemp -d)"
+  hug init
+
+  run hug s
+  assert_success
+  # Should show status without error
+  assert_output --partial "HEAD"
+  assert_output --partial "main"
+  # Should show clean state
+  assert_output --partial "⚫"
+  assert_output --partial "🌿main"
+  # Should show empty hash (double spaces)
+  assert_output --partial "HEAD:  🌿"
+}
