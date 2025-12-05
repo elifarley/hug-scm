@@ -504,7 +504,7 @@ generate_worktree_path() {
     safe_branch=$(printf '%s' "$branch" | sed 's|/|-|g' | sed 's|\.|-|g' | tr '[:upper:]' '[:lower:]')
 
     # Generate preferred path with auto-creation of parent directories
-    local preferred_path="../worktrees-${repo_name}/${safe_branch}"
+    local preferred_path="../${repo_name}-worktrees/${safe_branch}"
     local parent_dir=$(dirname "$preferred_path")
 
     # Auto-create parent directory if it doesn't exist
