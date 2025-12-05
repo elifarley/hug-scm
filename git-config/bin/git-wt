@@ -221,7 +221,6 @@ if ! get_worktrees worktree_paths branches commits status_dirty locked_status; t
   info "Example: hug wtc feature-auth"
   exit 0
 fi
-
 current_worktree=$(get_current_worktree_path)
 
 # Build menu items with context

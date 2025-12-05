@@ -22,22 +22,39 @@ wt() {
     local output
     local worktree_path
 
-    # Capture all output from git-wt
-    output=$(git-wt "$@")
-    local exit_code=$?
+    # Check if we have arguments (non-interactive mode)
+    if [[ $# -eq 0 ]]; then
+        # Interactive mode - need to show prompts to user
+        # Use a temporary file to capture just WORKTREE_PATH while letting other output pass through
+        local temp_file=$(mktemp)
+        git-wt "$@" | tee "$temp_file"
+        local exit_code=${PIPESTATUS[0]}
 
-    # If git-wt failed, return its exit code
-    if [[ $exit_code -ne 0 ]]; then
-        echo "$output" >&2
-        return $exit_code
+        # Extract worktree path if it exists
+        worktree_path=$(grep "^WORKTREE_PATH:" "$temp_file" | cut -d: -f2-)
+        rm -f "$temp_file"
+
+        # If git-wt failed, show the error (but don't duplicate since tee already showed it)
+        if [[ $exit_code -ne 0 ]]; then
+            return $exit_code
+        fi
+    else
+        # Non-interactive mode with arguments - can capture output safely
+        output=$(git-wt "$@" 2>&1)
+        local exit_code=$?
+
+        # If git-wt failed, show the error and return its exit code
+        if [[ $exit_code -ne 0 ]]; then
+            echo "$output" >&2
+            return $exit_code
+        fi
+
+        # Extract worktree path from output
+        worktree_path=$(echo "$output" | grep "^WORKTREE_PATH:" | cut -d: -f2-)
     fi
 
-    # Extract worktree path from output
-    worktree_path=$(echo "$output" | grep "^WORKTREE_PATH:" | cut -d: -f2-)
-
-    # If no worktree path found, just show the output (likely help/info)
+    # If no worktree path found, user cancelled or requested help/info
     if [[ -z "$worktree_path" ]]; then
-        echo "$output"
         return 0
     fi
 
