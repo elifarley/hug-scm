@@ -193,17 +193,8 @@ if [[ ${#args[@]} -gt 0 ]]; then
     worktree_path=$(get_worktree_path_by_branch "$input" || true)
 
     if [[ -z "$worktree_path" ]]; then
-      # Show available worktrees before error (error() exits immediately)
-      info "Available worktrees:"
-      declare -a wt_paths=() wt_branches=() wt_commits=() wt_status=() wt_locked=()
-      if get_worktrees wt_paths wt_branches wt_commits wt_status wt_locked; then
-        for i in "${!wt_branches[@]}"; do
-          info "  ${wt_branches[$i]} → ${wt_paths[$i]}"
-        done
-      else
-        info "  No worktrees found"
-      fi
-      info "Use 'hug wtc $input' to create a worktree for branch '$input'"
+      info "Run 'hug wt' to browse and switch between existing worktrees"
+      info "Use 'hug wtc $input --new' to create the branch AND the worktree for it"
       error "Cannot switch to worktree: '$input' is not a valid path or branch with worktree"
     fi
   fi
