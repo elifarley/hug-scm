@@ -16,7 +16,7 @@ teardown() {
 @test "hug wtc: shows help when --help flag is used" {
   run git-wtc --help
   assert_success
-  assert_output --partial "hug wtc: Create worktree for existing branch"
+  assert_output --partial "hug wtc: Create worktree for existing or new branch"
 }
 
 @test "hug wtc: creates worktree for existing branch" {
@@ -79,14 +79,56 @@ teardown() {
   assert_dir_not_exists "$worktree_path"
 }
 
-@test "hug wtc: error when branch does not exist" {
-  # Test with non-existent branch
-  run git-wtc non-existent-branch -f
+@test "hug wtc: creates new branch with --new flag" {
+  # Test creating new branch and worktree with --new flag
+  run git-wtc brand-new-branch --new -f
+  assert_success
+
+  # Should show branch creation message
+  assert_output --partial "Created new branch 'brand-new-branch'"
+
+  # Extract path from output and verify worktree exists
+  local worktree_path
+  worktree_path=$(echo "$output" | grep "Path:" | sed 's/.*Path: //' | sed 's/\s*$//')
+  worktree_path="$(cd "$(dirname "$worktree_path")" && pwd)/$(basename "$worktree_path")"
+
+  # Verify worktree was created
+  assert_worktree_exists "$worktree_path"
+
+  # Verify worktree is on correct branch
+  cd "$worktree_path"
+  assert_equal "$(git branch --show-current)" "brand-new-branch"
+}
+
+@test "hug wtc: prompts to create branch without --new flag" {
+  # Test with non-existent branch without --new flag
+  run bash -c "echo 'n' | git-wtc another-missing-branch 2>&1"
   assert_failure
 
-  # Should show appropriate error message
+  # Should show prompt about branch creation
   assert_output --partial "does not exist locally"
-  assert_output --partial "Create it first with"
+  assert_output --partial "Use --new flag to automatically create it"
+}
+
+@test "hug wtc: auto-creates branch with --force flag" {
+  # Test that --force also auto-creates branches (without --dry-run)
+  run git-wtc force-created-branch -f
+  assert_success
+
+  # Should show branch creation message
+  assert_output --partial "Created new branch 'force-created-branch'"
+
+  # Clean up the worktree
+  local worktree_path
+  worktree_path=$(echo "$output" | grep "Success:" | sed 's/.*Success: Worktree created: //')
+  rm -rf "$worktree_path"
+}
+
+@test "hug wtc: error when using --force and --dry-run together" {
+  # Test that --force and --dry-run are mutually exclusive
+  run git-wtc test-branch -f --dry-run
+  assert_failure
+  assert_output --partial "Cannot use --force and --dry-run together"
 }
 
 @test "hug wtc: interactive mode with no branch argument" {
@@ -214,8 +256,8 @@ teardown() {
 }
 
 @test "hug wtc: combined flag usage" {
-  # Test using both --dry-run and -f flags together
-  run git-wtc feature-1 --dry-run -f
+  # Test using --dry-run flag alone (no longer supports combining with -f)
+  run git-wtc feature-1 --dry-run
   assert_success
   assert_output --partial "Mode: DRY RUN"
   assert_output --partial "Would create worktree for branch 'feature-1'"

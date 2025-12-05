@@ -582,6 +582,7 @@ create_worktree() {
     if ! git rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
         warning "Branch '$branch' does not exist locally"
         info "Create it first with: hug bc '$branch'"
+        info "Or use --new flag to automatically create it"
         return 1
     fi
 
@@ -1070,4 +1071,35 @@ output_worktree_json() {
     done
 
     printf '],"current":"%s","count":%d}\n' "$current_worktree" "$count"
+}
+
+# Create branch if needed with proper prompts
+# Usage: create_branch_if_needed "branch-name" [new_flag] [force_flag]
+# Returns: 0 on success, 1 on failure or user cancellation
+create_branch_if_needed() {
+    local branch="$1"
+    local new_flag="${2:-false}"
+    local force_flag="${3:-false}"
+
+    # Check if branch already exists
+    if git rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
+        return 0  # Branch exists
+    fi
+
+    # Create branch based on flags
+    if $new_flag || $force_flag; then
+        # Create without prompting
+        git branch "$branch"
+        info "Created new branch '$branch'"
+    else
+        # Prompt to create
+        warning "Branch '$branch' does not exist locally."
+        info "Use --new flag to automatically create it."
+        if prompt_confirm "Create branch '$branch'?"; then
+            git branch "$branch"
+            info "Created new branch '$branch'"
+        else
+            return 1
+        fi
+    fi
 }

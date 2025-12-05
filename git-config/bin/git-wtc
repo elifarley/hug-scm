@@ -11,7 +11,7 @@ set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 show_help() {
     cat << 'EOF'
-hug wtc: Create worktree for existing branch
+hug wtc: Create worktree for existing or new branch
 
 USAGE:
     hug wtc [options]
@@ -19,12 +19,13 @@ USAGE:
     hug wtc -h|--help
 
 ARGUMENTS:
-    [branch]        Name of existing branch to create worktree for. If omitted or `--`, interactive branch selection menu is displayed.
+    [branch]        Name of branch to create worktree for. Can be existing or new branch. If omitted or `--`, interactive branch selection menu is displayed.
     [path]          Custom path for worktree (optional, auto-generated if not provided).
 
 OPTIONS:
-    -f, --force     Skip confirmation prompts
+    -f, --force     Skip confirmation prompts and auto-create branches
     --dry-run       Show what would be done without creating the worktree
+    --new           Automatically create branch if it doesn't exist
     -h, --help      Show this help
 
 DESCRIPTION:
@@ -34,7 +35,8 @@ DESCRIPTION:
     If no path is provided, generates a smart default path outside the main
     repository: ../<repo>-worktrees/<branch>
 
-    The branch must exist locally and not be checked out in another worktree.
+    By default, the branch must exist locally. With --new flag or with --force,
+    non-existent branches will be created automatically from the current HEAD.
 
     Interactive mode shows only branches that don't already have worktrees,
     preventing duplicate worktree creation errors.
@@ -42,8 +44,11 @@ DESCRIPTION:
 EXAMPLES:
     hug wtc                                 # Interactive branch selection, auto-generated path
     hug wtc --                              # Interactive branch selection, auto-generated path
-    hug wtc feature-auth                    # Create worktree with auto-generated path
-    hug wtc feature-auth ~/work/feature     # Create worktree at custom path
+    hug wtc feature-auth                    # Create worktree for existing branch
+    hug wtc feature-auth --new              # Create new branch and worktree
+    hug wtc new-feature --new ~/work/feat   # Create new branch at custom path
+    hug wtc missing-branch                  # Prompt to create branch if it doesn't exist
+    hug wtc missing-branch -f               # Auto-create branch without prompting
     hug wtc feature-auth --dry-run          # Preview creation without doing it
     hug wtc feature-auth -f                 # Create without confirmation
 
@@ -60,7 +65,7 @@ check_git_repo
 
 # Parse arguments using getopt
 set +e  # Temporarily disable exit on error to capture getopt failure
-PARSED=$(getopt --options hf --longoptions help,force,dry-run --name "hug wtc" -- "$@" 2>&1)
+PARSED=$(getopt --options hf --longoptions help,force,dry-run,new --name "hug wtc" -- "$@" 2>&1)
 getopt_status=$?
 set -e  # Re-enable exit on error
 
@@ -77,6 +82,7 @@ eval set -- "$PARSED"
 # Initialize variables
 force=false
 dry_run=false
+new_branch=false
 
 # Process options
 while true; do
@@ -93,6 +99,10 @@ while true; do
             dry_run=true
             shift
             ;;
+        --new)
+            new_branch=true
+            shift
+            ;;
         --)
             shift
             break
@@ -102,6 +112,12 @@ while true; do
             ;;
     esac
 done
+
+# Validate flag combinations
+if $force && $dry_run; then
+    error "Cannot use --force and --dry-run together. These flags are mutually exclusive."
+    exit 1
+fi
 
 # Parse arguments
 if [[ $# -eq 0 ]]; then
@@ -173,6 +189,14 @@ if [[ -z "$branch_name" ]]; then
     fi
 
     branch_name="$selected_branch"
+fi
+
+# Create branch if needed (for non-interactive mode)
+if [[ -n "$branch_name" ]]; then
+    if ! create_branch_if_needed "$branch_name" "$new_branch" "$force"; then
+        error "Branch creation cancelled or failed."
+        exit 1
+    fi
 fi
 
 # Generate path if not provided
