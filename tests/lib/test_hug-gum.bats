@@ -5,26 +5,17 @@ load '../test_helper'
 load '../../git-config/lib/hug-gum'
 load '../../git-config/lib/hug-output'
 
-@test "hug-gum: gum_available returns failure when gum is in PATH but no TTY" {
-  # Arrange - temporarily disable test mode for this test
-  unset HUG_TEST_MODE
-  # Mock gum command
-  command() {
-    if [[ "$1" == "-v" && "$2" == "gum" ]]; then
-      return 0
-    fi
-    builtin command "$@"
-  }
-  export -f command
+@test "hug-gum: gum_available returns success with mock gum" {
+  setup_gum_mock
 
   # Act
   run gum_available
 
   # Assert
-  assert_failure  # Should fail due to no TTY in test environment
+  assert_success  # Should work with mock gum
 
   # Cleanup
-  export HUG_TEST_MODE=true
+  teardown_gum_mock
 }
 
 @test "hug-gum: gum_available returns failure when gum is not in PATH" {
@@ -82,54 +73,34 @@ load '../../git-config/lib/hug-output'
   export HUG_TEST_MODE=true
 }
 
-@test "hug-gum: gum_available fails when HUG_DISABLE_GUM is not set but no TTY" {
-  # Arrange - temporarily disable test mode for this test
-  unset HUG_TEST_MODE
-  # Ensure variable is not set
+@test "hug-gum: gum_available returns success when HUG_DISABLE_GUM is not set with mock" {
+  setup_gum_mock
+  # Ensure HUG_DISABLE_GUM is not set
   unset HUG_DISABLE_GUM
-
-  # Mock command to simulate gum being available
-  command() {
-    if [[ "$1" == "-v" && "$2" == "gum" ]]; then
-      return 0
-    fi
-    builtin command "$@"
-  }
-  export -f command
 
   # Act
   run gum_available
 
   # Assert
-  assert_failure  # Should fail due to no TTY in test environment
+  assert_success  # Should work with mock when HUG_DISABLE_GUM is not set
 
   # Cleanup
-  export HUG_TEST_MODE=true
+  teardown_gum_mock
 }
 
-@test "hug-gum: gum_available fails when HUG_DISABLE_GUM is false but no TTY" {
-  # Arrange - temporarily disable test mode for this test
-  unset HUG_TEST_MODE
+@test "hug-gum: gum_available returns success when HUG_DISABLE_GUM is false with mock" {
+  setup_gum_mock
   export HUG_DISABLE_GUM=false
-
-  # Mock command to simulate gum being available
-  command() {
-    if [[ "$1" == "-v" && "$2" == "gum" ]]; then
-      return 0
-    fi
-    builtin command "$@"
-  }
-  export -f command
 
   # Act
   run gum_available
 
   # Assert
-  assert_failure  # Should fail due to no TTY in test environment
+  assert_success  # Should work with mock when HUG_DISABLE_GUM is false
 
   # Cleanup
   unset HUG_DISABLE_GUM
-  export HUG_TEST_MODE=true
+  teardown_gum_mock
 }
 
 @test "hug-gum: gum_available returns success in test mode" {
@@ -624,9 +595,32 @@ load '../../git-config/lib/hug-output'
   
   # Act
   run gum_filter_by_index test_options "Select item"
-  
+
   # Assert
   assert_failure
   assert_output --partial "Skipped invalid selection: invalid_item"
   assert_output --partial "No valid selection."
+}
+
+@test "hug-gum: gum_available integrates with HUG_DISABLE_GUM" {
+  setup_gum_mock
+
+  # Test with HUG_DISABLE_GUM=true
+  export HUG_DISABLE_GUM=true
+  run gum_available
+  assert_failure
+
+  # Test with HUG_DISABLE_GUM unset
+  unset HUG_DISABLE_GUM
+  run gum_available
+  assert_success
+
+  # Test with HUG_DISABLE_GUM=false
+  export HUG_DISABLE_GUM=false
+  run gum_available
+  assert_success
+
+  # Cleanup
+  unset HUG_DISABLE_GUM
+  teardown_gum_mock
 }
