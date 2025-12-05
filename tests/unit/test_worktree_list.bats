@@ -154,12 +154,25 @@ teardown() {
   assert_success
 }
 
-@test "hug wt: fails when switching to non-existent worktree" {
+@test "hug wt: switches to worktree when branch name is provided" {
   cd "$TEST_REPO"
-  run git-wt "/nonexistent/path"
 
-  assert_failure
-  assert_output --partial "Cannot switch to worktree"
+  # Switch using branch name 'feature-1'
+  run git-wt "feature-1"
+
+  assert_success
+  assert_output --partial "WORKTREE_PATH:"
+  # The output should contain the path to feature-1 worktree
+  assert_output --partial "$FEATURE_WT"
+}
+
+@test "hug wt: exits with error when switching to non-existent branch" {
+  cd "$TEST_REPO"
+
+  # The command should fail with exit code 1
+  run git-wt "non-existent-branch"
+
+  assert_failure 1
 }
 
 # Tests for hug wtl (short worktree listing)

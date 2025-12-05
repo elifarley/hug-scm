@@ -1103,3 +1103,35 @@ create_branch_if_needed() {
         fi
     fi
 }
+
+# Get worktree path by branch name
+# Usage: path=$(get_worktree_path_by_branch "branch-name")
+# Returns: Path to worktree if branch has one, empty string otherwise
+get_worktree_path_by_branch() {
+    local branch="$1"
+
+    if [[ -z "$branch" ]]; then
+        echo ""
+        return 1
+    fi
+
+    # Get all worktrees
+    declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
+
+    if ! get_all_worktrees_including_main worktree_paths branches commits status_dirty locked_status; then
+        echo ""
+        return 1
+    fi
+
+    # Find matching branch
+    for i in "${!branches[@]}"; do
+        if [[ "${branches[$i]}" == "$branch" ]]; then
+            echo "${worktree_paths[$i]}"
+            return 0
+        fi
+    done
+
+    # No matching branch found
+    echo ""
+    return 1
+}

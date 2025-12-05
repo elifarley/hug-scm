@@ -10,7 +10,10 @@ show_help() {
 hug wt: Git worktree management for parallel development
 
 USAGE:
-  hug wt [options] [path]
+  hug wt [options] [path|branch]
+
+ARGUMENTS:
+    [path|branch]   Path to worktree OR branch name with worktree
 
 OPTIONS:
   -h, --help            Show this help message and exit.
@@ -22,7 +25,8 @@ DESCRIPTION:
   which performs the actual directory change.
 
   If a worktree path is provided, selects that worktree directly.
-  If no path argument is given, displays an interactive menu of all worktrees.
+  If a branch name is provided, finds and switches to the worktree for that branch.
+  If no argument is given, displays an interactive menu of all worktrees.
   Each entry shows: branch name (short commit), status indicators, and path.
   The current worktree is highlighted with [CURRENT] and marked in green.
 
@@ -175,9 +179,34 @@ if "$json_output"; then
   exit 0
 fi
 
-# Handle case where worktree path is provided
+# Handle case where worktree path or branch name is provided
 if [[ ${#args[@]} -gt 0 ]]; then
-  worktree_path="${args[0]}"
+  input="${args[0]}"
+  worktree_path=""
+
+  # First, try to treat as a path (current behavior)
+  if [[ -e "$input" ]]; then
+    # It's an existing path, use it directly
+    worktree_path="$input"
+  else
+    # Not an existing path, try as branch name
+    worktree_path=$(get_worktree_path_by_branch "$input")
+
+    if [[ -z "$worktree_path" ]]; then
+      error "Cannot switch to worktree: '$input' is not a valid path or branch with worktree"
+      info "Available worktrees:"
+      # Show quick list of available worktrees
+      declare -a wt_paths=() wt_branches=()
+      if get_worktrees wt_paths wt_branches; then
+        for i in "${!wt_branches[@]}"; do
+          info "  ${wt_branches[$i]} → ${wt_paths[$i]}"
+        done
+      fi
+      info "Use 'hug wtc $input' to create a worktree for branch '$input'"
+      exit 1
+    fi
+  fi
+
   switch_to_worktree "$worktree_path"
   exit $?
 fi
