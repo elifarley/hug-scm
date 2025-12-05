@@ -5,11 +5,12 @@
 # Depends on: hug-gum for charmbracelet integration, hug-output for messaging,
 #             hug-strings for input trimming.
 # Functions:
-#   - prompt_confirm: yes/no confirmation with gum fallback.
-#   - confirm_action: exact-word confirmation gate.
+#   - prompt_confirm_warn: yes/no confirmation with NO default for destructive operations.
+#   - confirm_action_danger: exact-word confirmation gate for dangerous operations.
+#   - prompt_confirm_safe: yes/no confirmation with YES default for safe operations.
 
-# Prompts user for confirmation, exits if not confirmed
-# Usage: prompt_confirm ["custom prompt"]
+# Prompts user for confirmation with NO default (for destructive operations), exits if not confirmed
+# Usage: prompt_confirm_warn ["custom prompt"]
 # Parameters:
 #   $1 - (Optional) Custom prompt text, defaults to "Proceed? [y/N]: "
 # Environment:
@@ -55,8 +56,8 @@ prompt_confirm_warn() {
   fi
 }
 
-# Confirms an action with a specific word
-# Usage: confirm_action "action_word"
+# Confirms a dangerous action with a specific word that must be typed exactly
+# Usage: confirm_action_danger "action_word"
 # Parameters:
 #   $1 - Word that user must type to confirm
 # Environment:

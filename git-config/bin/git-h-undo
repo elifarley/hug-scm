@@ -86,7 +86,7 @@ else
   fi
 
   if $should_prompt; then
-    prompt_confirm "Undo commits back to $(git rev-parse --short "$target")? [y/N]: "
+    prompt_confirm_warn "Undo commits back to $(git rev-parse --short "$target")? [y/N]: "
   fi
 fi
 

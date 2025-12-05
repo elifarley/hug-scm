@@ -169,7 +169,7 @@ hug_caa() {
     if $has_deletions; then
       warning "  - $deletions_count deletions involved (use 'git status' to review)"
     fi
-    prompt_confirm "Proceed to stage all and commit? [y/N]: "
+    prompt_confirm_warn "Proceed to stage all and commit? [y/N]: "
   fi
 
   info "Staging all changes..."

@@ -11,7 +11,7 @@ General-purpose utility functions for shell scripting.
 **Features:**
 - Color definitions for terminal output
 - Output functions (`error`, `warning`, `info`, `success`)
-- User interaction (`prompt_confirm`, `confirm_action`)
+- User interaction (`prompt_confirm_warn`, `confirm_action_danger`, `prompt_confirm_safe`)
 - String manipulation (`trim_message`)
 - Array utilities (`dedupe_array`, `print_list`)
 - File system checks (`is_symlink`)
@@ -224,11 +224,14 @@ success "Operation completed"
 ### User Confirmation
 
 ```bash
-# Simple yes/no confirmation (respects HUG_FORCE)
-prompt_confirm "Proceed? [y/N]: "
+# Simple yes/no confirmation with NO default (for destructive operations)
+prompt_confirm_warn "Proceed? [y/N]: "
 
-# Require specific word confirmation
-confirm_action "delete"  # User must type "delete"
+# Require specific word confirmation (for dangerous operations)
+confirm_action_danger "delete"  # User must type "delete"
+
+# Simple yes/no confirmation with YES default (for safe operations)
+prompt_confirm_safe "Create new branch?"  # Defaults to Yes
 ```
 
 ### JSON Operations
@@ -402,7 +405,7 @@ target=$(handle_upstream_operation "rewinding")
 # For standard operations (back, undo, etc.)
 target=$(resolve_head_target "$1")
 handle_standard_operation "moving back" "$target"
-prompt_confirm "Proceed? [y/N]: "
+prompt_confirm_warn "Proceed? [y/N]: "
 # Displays preview, handles already-at-target case
 ```
 
@@ -619,14 +622,14 @@ Benefits:
 
 ### Confirmation Pattern
 
-**Use `confirm_action()` from hug-common**, not custom `confirm()` functions.
+**Use `confirm_action_danger()` from hug-common**, not custom `confirm()` functions.
 
 ```bash
 # Good - uses library function
 if ! $force; then
   printf 'About to delete files:\n'
   print_list 'Files' "${files[@]}"
-  confirm_action 'delete'  # User types "delete" to confirm
+  confirm_action_danger 'delete'  # User types "delete" to confirm
 fi
 
 # Bad - duplicate implementation
@@ -637,7 +640,7 @@ confirm() {
 }
 ```
 
-Benefits of `confirm_action()`:
+Benefits of `confirm_action_danger()`:
 - Respects `HUG_FORCE` environment variable
 - Consistent output formatting with `info()`
 - No code duplication
@@ -706,7 +709,7 @@ When adding new commands:
 1. **Follow the standard patterns** described above
 2. **Use `show_help()` for help text**, not `usage()`
 3. **Source libraries with the loop pattern**
-4. **Use library functions** instead of duplicating code (e.g., `confirm_action()`)
+4. **Use library functions** instead of duplicating code (e.g., `confirm_action_danger()`)
 5. **Support common flags** where appropriate (`--dry-run`, `-f/--force`, `-h/--help`)
 6. **Test with ShellCheck** to ensure quality
 

@@ -64,9 +64,9 @@ teardown() {
 }
 
 @test "hug wtdel: removes worktree without confirmation when --force flag is used" {
-  # Mock the confirm_action function to fail if called
-  confirm_action() { return 1; }
-  export -f confirm_action
+  # Mock the confirm_action_danger function to fail if called
+  confirm_action_danger() { return 1; }
+  export -f confirm_action_danger
 
   cd "$TEST_REPO"
   run git-wtdel "$FEATURE_WT" --force

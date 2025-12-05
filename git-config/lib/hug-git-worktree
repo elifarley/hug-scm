@@ -694,7 +694,7 @@ remove_worktree() {
     # Get confirmation unless forced
     if ! $force; then
         echo "Removing worktree at: $path"
-        if ! confirm_action "remove"; then
+        if ! confirm_action_danger "remove"; then
             info "Worktree removal cancelled"
             return 0
         fi
@@ -824,7 +824,7 @@ prune_worktrees() {
     # Get confirmation unless forced
     if ! $force; then
         echo "Pruning will remove references to these non-existent worktrees"
-        if ! confirm_action "prune"; then
+        if ! confirm_action_danger "prune"; then
             info "Worktree pruning cancelled"
             return 0
         fi

@@ -89,7 +89,7 @@ $dry_run && purge_args+=(--dry-run)
 # Confirm action unless forced or dry-run
 if [[ $force != true && $dry_run != true ]]; then
   printf "${YELLOW}⚠️  Warning: This will permanently remove files!${NC}\n"
-  prompt_confirm "Proceed? [y/N]: "
+  prompt_confirm_warn "Proceed? [y/N]: "
 fi
 
 # Purge files

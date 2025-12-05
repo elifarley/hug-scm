@@ -62,7 +62,7 @@ else
   hg log -r ".~$((count-1)):." --template '{rev}:{node|short} {desc|firstline}\n'
 fi
 
-prompt_confirm "Proceed? [y/N]: "
+prompt_confirm_warn "Proceed? [y/N]: "
 
 # First uncommit
 for ((i=0; i<count; i++)); do

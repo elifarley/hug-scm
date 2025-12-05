@@ -75,7 +75,7 @@ fi
 if [[ $force != true ]]; then
   printf "${RED}⚠️  WARNING: This will discard ALL changes and remove ALL untracked files!${NC}\n"
   printf "This action affects the ENTIRE repository.\n"
-  prompt_confirm "Are you absolutely sure? [y/N]: "
+  prompt_confirm_warn "Are you absolutely sure? [y/N]: "
 fi
 
 # First discard all changes

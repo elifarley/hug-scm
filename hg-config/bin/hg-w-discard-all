@@ -71,7 +71,7 @@ fi
 # Confirm action unless forced
 if [[ $force != true ]]; then
   printf "${RED}⚠️  Warning: This will discard ALL uncommitted changes!${NC}\n"
-  prompt_confirm "Are you sure? [y/N]: "
+  prompt_confirm_warn "Are you sure? [y/N]: "
 fi
 
 # Discard all changes

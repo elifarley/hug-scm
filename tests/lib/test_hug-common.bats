@@ -209,7 +209,7 @@ load '../test_helper'
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
     source 'git-config/lib/hug-common'
-    if declare -f prompt_confirm &>/dev/null; then
+    if declare -f prompt_confirm_warn &>/dev/null; then
       echo 'hug-confirm sourced'
     fi
   "

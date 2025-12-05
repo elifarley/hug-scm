@@ -69,7 +69,7 @@ else
   
   # Handle command-specific preview and confirmation
   handle_standard_operation "rollback" "$target"
-  prompt_confirm "Rollback HEAD to $(git rev-parse --short "$target")? [y/N]: "
+  prompt_confirm_warn "Rollback HEAD to $(git rev-parse --short "$target")? [y/N]: "
 fi
 
 git reset --keep "$target"

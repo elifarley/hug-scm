@@ -237,7 +237,7 @@ hug_untrack() {
     printf "\n" >&2
     tip "Remember to add these files to .gitignore to prevent them from being tracked again."
     printf "\n" >&2
-    prompt_confirm "⚠️  Proceed with untracking? [y/N]: "
+    prompt_confirm_warn "⚠️  Proceed with untracking? [y/N]: "
   fi
   
   # Perform untracking

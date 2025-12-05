@@ -208,7 +208,7 @@ hug_brestore() {
       warning "Branch '$target_branch' already exists at commit $current_target_hash"
       warning "Restoring will DELETE the existing branch and recreate it at $backup_short"
       printf "\n" >&2
-      prompt_confirm "⚠️  This is a DESTRUCTIVE operation. Proceed? [y/N]: "
+      prompt_confirm_warn "⚠️  This is a DESTRUCTIVE operation. Proceed? [y/N]: "
     fi
   fi
   

@@ -18,18 +18,18 @@ teardown() {
   unset HUG_FORCE
 }
 
-@test "hug-confirm: prompt_confirm succeeds with HUG_FORCE" {
+@test "hug-confirm: prompt_confirm_warn succeeds with HUG_FORCE" {
   # Arrange
   export HUG_FORCE=true
   
   # Act
-  run prompt_confirm
+  run prompt_confirm_warn
   
   # Assert
   assert_success
 }
 
-@test "hug-confirm: prompt_confirm succeeds when user enters y" {
+@test "hug-confirm: prompt_confirm_warn succeeds when user enters y" {
   # Act
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
@@ -39,14 +39,14 @@ teardown() {
     source 'git-config/lib/hug-output'
     source 'git-config/lib/hug-strings'
     source 'git-config/lib/hug-confirm'
-    echo 'y' | prompt_confirm
+     echo 'y' | prompt_confirm_warn
   "
   
   # Assert
   assert_success
 }
 
-@test "hug-confirm: prompt_confirm succeeds when user enters Y" {
+@test "hug-confirm: prompt_confirm_warn succeeds when user enters Y" {
   # Act
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
@@ -56,14 +56,14 @@ teardown() {
     source 'git-config/lib/hug-output'
     source 'git-config/lib/hug-strings'
     source 'git-config/lib/hug-confirm'
-    echo 'Y' | prompt_confirm
+     echo 'Y' | prompt_confirm_warn
   "
   
   # Assert
   assert_success
 }
 
-@test "hug-confirm: prompt_confirm exits when user enters n" {
+@test "hug-confirm: prompt_confirm_warn exits when user enters n" {
   # Act
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
@@ -73,7 +73,7 @@ teardown() {
     source 'git-config/lib/hug-output'
     source 'git-config/lib/hug-strings'
     source 'git-config/lib/hug-confirm'
-    echo 'n' | prompt_confirm
+     echo 'n' | prompt_confirm_warn
   "
   
   # Assert
@@ -81,7 +81,7 @@ teardown() {
   assert_output --partial "Cancelled"
 }
 
-@test "hug-confirm: prompt_confirm exits when user enters N" {
+@test "hug-confirm: prompt_confirm_warn exits when user enters N" {
   # Act
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
@@ -91,7 +91,7 @@ teardown() {
     source 'git-config/lib/hug-output'
     source 'git-config/lib/hug-strings'
     source 'git-config/lib/hug-confirm'
-    echo 'N' | prompt_confirm
+     echo 'N' | prompt_confirm_warn
   "
   
   # Assert
@@ -99,7 +99,7 @@ teardown() {
   assert_output --partial "Cancelled"
 }
 
-@test "hug-confirm: prompt_confirm exits when user presses Ctrl-D" {
+@test "hug-confirm: prompt_confirm_warn exits when user presses Ctrl-D" {
   # Act
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
@@ -109,7 +109,7 @@ teardown() {
     source 'git-config/lib/hug-output'
     source 'git-config/lib/hug-strings'
     source 'git-config/lib/hug-confirm'
-    prompt_confirm < /dev/null
+    prompt_confirm_warn < /dev/null
   "
   
   # Assert
@@ -117,7 +117,7 @@ teardown() {
   assert_output --partial "Cancelled"
 }
 
-@test "hug-confirm: prompt_confirm accepts custom prompt" {
+@test "hug-confirm: prompt_confirm_warn accepts custom prompt" {
   # Act
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
@@ -127,25 +127,25 @@ teardown() {
     source 'git-config/lib/hug-output'
     source 'git-config/lib/hug-strings'
     source 'git-config/lib/hug-confirm'
-    echo 'y' | prompt_confirm 'Continue? [y/N]: '
+     echo 'y' | prompt_confirm_warn 'Continue? [y/N]: '
   "
   
   # Assert
   assert_success
 }
 
-@test "hug-confirm: confirm_action succeeds with HUG_FORCE" {
+@test "hug-confirm: confirm_action_danger succeeds with HUG_FORCE" {
   # Arrange
   export HUG_FORCE=true
   
   # Act
-  run confirm_action "delete"
+  run confirm_action_danger "delete"
   
   # Assert
   assert_success
 }
 
-@test "hug-confirm: confirm_action succeeds when user types exact word" {
+@test "hug-confirm: confirm_action_danger succeeds when user types exact word" {
   # Act
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
@@ -155,14 +155,14 @@ teardown() {
     source 'git-config/lib/hug-output'
     source 'git-config/lib/hug-strings'
     source 'git-config/lib/hug-confirm'
-    echo 'delete' | confirm_action 'delete'
+     echo 'delete' | confirm_action_danger 'delete'
   "
   
   # Assert
   assert_success
 }
 
-@test "hug-confirm: confirm_action exits when user types wrong word" {
+@test "hug-confirm: confirm_action_danger exits when user types wrong word" {
   # Act
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
@@ -172,7 +172,7 @@ teardown() {
     source 'git-config/lib/hug-output'
     source 'git-config/lib/hug-strings'
     source 'git-config/lib/hug-confirm'
-    echo 'wrong' | confirm_action 'delete'
+     echo 'wrong' | confirm_action_danger 'delete'
   "
   
   # Assert
@@ -180,7 +180,7 @@ teardown() {
   assert_output --partial "Cancelled"
 }
 
-@test "hug-confirm: confirm_action exits when user types nothing" {
+@test "hug-confirm: confirm_action_danger exits when user types nothing" {
   # Act
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
@@ -190,7 +190,7 @@ teardown() {
     source 'git-config/lib/hug-output'
     source 'git-config/lib/hug-strings'
     source 'git-config/lib/hug-confirm'
-    echo '' | confirm_action 'delete'
+     echo '' | confirm_action_danger 'delete'
   "
   
   # Assert
@@ -198,7 +198,7 @@ teardown() {
   assert_output --partial "Cancelled"
 }
 
-@test "hug-confirm: confirm_action exits on Ctrl-D" {
+@test "hug-confirm: confirm_action_danger exits on Ctrl-D" {
   # Act
   run bash -c "
     cd '$BATS_TEST_DIRNAME/../..'
@@ -208,7 +208,7 @@ teardown() {
     source 'git-config/lib/hug-output'
     source 'git-config/lib/hug-strings'
     source 'git-config/lib/hug-confirm'
-    confirm_action 'delete' < /dev/null
+    confirm_action_danger 'delete' < /dev/null
   "
   
   # Assert

@@ -74,7 +74,7 @@ fi
 
 if [[ $force != true ]]; then
   printf "${RED}⚠️  Warning: This will discard ALL changes and remove untracked files!${NC}\n"
-  prompt_confirm "Proceed? [y/N]: "
+  prompt_confirm_warn "Proceed? [y/N]: "
 fi
 
 # First discard changes

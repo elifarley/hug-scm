@@ -68,7 +68,7 @@ handle_upstream_operation() {
         fi
 
         printf '\n⚠️  This action involves %s to upstream.\n' "$action_name" >&2
-        prompt_confirm "Proceed with $action_name to upstream? [y/N]: "
+        prompt_confirm_warn "Proceed with $action_name to upstream? [y/N]: "
     fi
 
     echo "$target"

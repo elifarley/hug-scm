@@ -79,7 +79,7 @@ fi
 if [[ $force != true ]]; then
   printf 'About to discard changes from the following files:\n'
   print_list '  ' "${files[@]}"
-  prompt_confirm "Proceed? [y/N]: "
+  prompt_confirm_warn "Proceed? [y/N]: "
 fi
 
 # Discard changes

@@ -69,7 +69,7 @@ else
   handle_standard_operation "move back" "$target"
   target_short=$(git rev-parse --short "$target")
   if has_staged_changes; then
-    prompt_confirm "Move HEAD back to ${target_short}? [y/N]: "
+    prompt_confirm_warn "Move HEAD back to ${target_short}? [y/N]: "
   else
     info "No staged changes detected; skipping confirmation."
   fi
