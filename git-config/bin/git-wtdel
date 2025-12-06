@@ -232,6 +232,11 @@ while true; do
     esac
 done
 
+# Check HUG_FORCE environment variable
+if [[ ${HUG_FORCE:-} == true ]]; then
+  force=true
+fi
+
 # Parse arguments
 if [[ $# -gt 1 ]]; then
     error "Too many arguments. Usage: hug wtdel [path]. See 'hug wtdel --help'."
