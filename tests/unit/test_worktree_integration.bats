@@ -307,7 +307,7 @@ teardown() {
   # Test various error conditions and recovery
 
   # 1. Try to create worktree for non-existent branch
-  run git-wtc nonexistent-branch
+  run bash -c 'echo "n" | git-wtc nonexistent-branch'
   assert_failure
   assert_output --partial "does not exist locally"
 

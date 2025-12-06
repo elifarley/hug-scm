@@ -142,7 +142,47 @@ For tests that don't need to verify gum interaction specifically, disable gum en
 }
 ```
 
-### 3. Use EOF Simulation for Tests That Expect Cancellation
+### 3. Use Input Piping for Simple Prompt Responses
+
+For tests that need to handle simple yes/no prompts without complex interaction, use input piping:
+
+```bash
+@test "git-wtc: handles non-existent branch with user input" {
+  # When command prompts for branch creation, automatically answer "n"
+  run bash -c 'echo "n" | git-wtc nonexistent-branch'
+  assert_failure
+  assert_output --partial "does not exist locally"
+}
+
+@test "git-wtdel: handles deletion prompts with confirmation" {
+  create_test_worktree "feature-1" "$TEST_REPO"
+
+  # Automatically confirm deletion when prompted
+  run bash -c 'echo "y" | git-wtdel "${TEST_REPO}-wt-feature-1"'
+  assert_success
+  assert_worktree_not_exists "${TEST_REPO}-wt-feature-1"
+}
+```
+
+#### Input Piping Patterns
+
+**Common prompt responses**:
+- `echo "n"` - Decline/No response (most common for error testing)
+- `echo "y"` - Accept/Yes response (for confirmation testing)
+- `echo ""` - Empty input/Cancel (for cancellation testing)
+
+**When to use input piping**:
+- ✅ Commands that prompt for branch creation (git-wtc with non-existent branches)
+- ✅ Commands that require deletion confirmation (git-wtdel without --force)
+- ✅ Simple yes/no prompts without complex menu navigation
+- ✅ When you want to test the actual command behavior, not just the UI
+
+**When NOT to use input piping**:
+- ❌ Complex gum filter/select menus (use gum mock instead)
+- ❌ Multi-step interactive workflows (use gum mock)
+- ❌ When you need to test UI behavior specifically (use gum mock)
+
+### 4. Use EOF Simulation for Tests That Expect Cancellation
 
 For tests that need to verify cancellation behavior in interactive modes, use EOF simulation:
 
@@ -168,7 +208,7 @@ For tests that need to verify cancellation behavior in interactive modes, use EO
 }
 ```
 
-### 3. Test Environment Isolation
+### 5. Test Environment Isolation
 
 Always use test helper functions to create isolated environments:
 
@@ -190,7 +230,7 @@ Always use test helper functions to create isolated environments:
 }
 ```
 
-### 4. Follow Established Patterns
+### 6. Follow Established Patterns
 
 Look at existing test files for patterns:
 
