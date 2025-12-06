@@ -64,7 +64,10 @@ setup_file() {
   export HUG_TEST_MODE=true
 
   # Set up isolated temp dir for the test suite
-  export BATS_TEST_TMPDIR="$(mktemp -d -t hug-test-suite-XXXXXX)"
+  # Use BATS_TEST_TMPDIR if provided by BATS, otherwise create it
+  if [[ -z "${BATS_TEST_TMPDIR:-}" ]]; then
+    export BATS_TEST_TMPDIR="$(mktemp -d -t hug-test-suite-XXXXXX)"
+  fi
 
   # Capture original global configs
   export ORIGINAL_GIT_USER_NAME="$(git config --global user.name || echo "")"
@@ -101,7 +104,7 @@ teardown_file() {
 # Helper to create a unique temp dir for test repos
 create_temp_repo_dir() {
   local dir
-  dir=$(mktemp -d -t "hug-test-repo-XXXXXX" 2>/dev/null || mktemp -d /tmp/hug-test-repo-XXXXXX)
+  dir=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "hug-test-repo-XXXXXX")
   echo "$dir"
 }
 
@@ -323,7 +326,7 @@ cleanup_test_repo() {
   
   # If we're inside a test repo, exit it before cleanup
   if [[ "$cwd" == *"hug-test-repo"* || "$cwd" == *"hug-workflow-test"* || "$cwd" == *"hug-clone-test"* || "$cwd" == *"hug-remote-test"* ]]; then
-    cd "${BATS_TEST_TMPDIR:-/tmp}" 2>/dev/null || cd /tmp || cd "$HOME"
+    cd "$BATS_TEST_TMPDIR" || cd "$HOME"
   fi
   
   # Cleanup TEST_REPO if set
@@ -352,7 +355,7 @@ cleanup_test_repo() {
   fi
   
   # Clean up any orphaned test repos (older than 60 minutes)
-  find /tmp -maxdepth 1 -name "hug-test-repo-*" -type d \
+  find "$BATS_TEST_TMPDIR" -maxdepth 1 -name "hug-test-repo-*" -type d \
     -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 
   if [[ ${#HUG_TEST_REMOTE_REPOS[@]} -gt 0 ]]; then
@@ -715,7 +718,7 @@ create_test_repo_with_remote_upstream() {
   test_repo=$(create_test_repo_with_history)
 
   local remote_root
-  remote_root=$(mktemp -d -t "hug-remote-XXXXXX" 2>/dev/null || mktemp -d /tmp/hug-remote-XXXXXX)
+  remote_root=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "hug-remote-XXXXXX")
   local remote_repo="$remote_root/origin.git"
   git init --bare -q "$remote_repo"
   HUG_TEST_REMOTE_REPOS+=("$remote_root")
