@@ -321,7 +321,7 @@ teardown() {
 
   # 3. Try to remove current worktree
   cd "$first_wt"
-  run git-wtdel "$first_wt"
+  run env HUG_FORCE=true git-wtdel "$first_wt"
   assert_failure
   assert_output --partial "Cannot remove current worktree"
 

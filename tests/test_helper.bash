@@ -355,7 +355,8 @@ cleanup_test_repo() {
   fi
   
   # Clean up any orphaned test repos (older than 60 minutes)
-  find "$BATS_TEST_TMPDIR" -maxdepth 1 -name "hug-test-repo-*" -type d \
+  local cleanup_base="${BATS_TEST_TMPDIR:-/tmp}"
+  find "$cleanup_base" -maxdepth 1 -name "hug-test-repo-*" -type d \
     -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 
   if [[ ${#HUG_TEST_REMOTE_REPOS[@]} -gt 0 ]]; then
