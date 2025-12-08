@@ -166,7 +166,7 @@ list_files_with_status() {
       done
     fi
 
-    # Sort files by priority (descending), then by file path (ascending)
+    # Sort files by priority (ascending), then by file path (ascending)
     # Create array of tuples: (priority, status_code, file, formatted_option)
     local -a sorted_entries=()
     local i
@@ -178,8 +178,8 @@ list_files_with_status() {
       sorted_entries+=("$priority|$status_code|$file|${formatted_options[$i]}")
     done
 
-    # Sort by priority (descending, -nr), then by file path (ascending)
-    IFS=$'\n' sorted_entries=($(sort -t'|' -k1,1nr -k3,3 <<<"${sorted_entries[*]}"))
+    # Sort by priority (ascending, -n), then by file path (ascending)
+    IFS=$'\n' sorted_entries=($(sort -t'|' -k1,1n -k3,3 <<<"${sorted_entries[*]}"))
 
     # Remove duplicates while preserving sorted order
     local -A seen=()

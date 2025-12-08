@@ -334,19 +334,125 @@ create_merge_conflict() {
   echo "to delete" > todelete.txt
   git add todelete.txt
   git commit -q -m "Add file to delete"
-  
+
   # Stage deletion
   git rm todelete.txt
-  
+
   # Create a new file and stage it
   echo "added" > added.txt
   git add added.txt
-  
+
   local output
   output=$(list_files_with_status --staged)
-  
+
   # Should show deletion status
   [[ "$output" =~ todelete.txt ]]
   # Should show addition status
   [[ "$output" =~ added.txt ]]
+}
+
+@test "list_files_with_status: correct file ordering by priority (UnTrck before U:*)" {
+  # Create a mix of file types to test ordering
+  echo "unstaged change" > unstaged.txt
+  echo "tracked file" > tracked.txt
+  git add tracked.txt
+  git commit -q -m "Add tracked file"
+
+  # Modify tracked file (creates unstaged change)
+  echo "modified" >> tracked.txt
+
+  # Create untracked file
+  echo "untracked" > untracked.txt
+
+  # Stage another file
+  echo "staged" > staged.txt
+  git add staged.txt
+
+  # Get the output and check ordering
+  local output
+  output=$(list_files_with_status --staged --unstaged --untracked)
+
+  # Extract lines containing our test files
+  local unstaged_line untracked_line staged_line
+  unstaged_line=$(echo "$output" | grep "unstaged.txt" | head -1)
+  untracked_line=$(echo "$output" | grep "untracked.txt" | head -1)
+  staged_line=$(echo "$output" | grep "staged.txt" | head -1)
+
+  # Get line numbers for ordering check
+  local unstaged_line_num untracked_line_num staged_line_num
+  unstaged_line_num=$(echo "$output" | grep -n "unstaged.txt" | cut -d: -f1 | head -1)
+  untracked_line_num=$(echo "$output" | grep -n "untracked.txt" | cut -d: -f1 | head -1)
+  staged_line_num=$(echo "$output" | grep -n "staged.txt" | cut -d: -f1 | head -1)
+
+  # Verify that UnTrck appears BEFORE U:Mod (lower line number = higher in output)
+  # This test will FAIL with current implementation, demonstrating the bug
+  [[ $untracked_line_num -lt $unstaged_line_num ]]
+
+  # Verify that S:* appears LAST (highest line number)
+  [[ $staged_line_num -gt $unstaged_line_num ]]
+  [[ $staged_line_num -gt $untracked_line_num ]]
+}
+
+################################################################################
+# Tests for status priority system (hug-git-priorities)
+################################################################################
+
+@test "get_status_priority: returns correct priority values" {
+  # Load the priorities library
+  load '../../git-config/lib/hug-git-priorities'
+
+  # Test known priority values
+  local priority
+
+  # Conflicts have highest priority (90)
+  priority=$(get_status_priority "U:Cnflt")
+  [[ $priority -eq 90 ]]
+  priority=$(get_status_priority "S:Cnflt")
+  [[ $priority -eq 90 ]]
+
+  # Staged files have high priority (80)
+  priority=$(get_status_priority "S:Add")
+  [[ $priority -eq 80 ]]
+  priority=$(get_status_priority "S:Mod")
+  [[ $priority -eq 80 ]]
+  priority=$(get_status_priority "S:Ren")
+  [[ $priority -eq 80 ]]
+  priority=$(get_status_priority "S:Copy")
+  [[ $priority -eq 80 ]]
+  priority=$(get_status_priority "S:Del")
+  [[ $priority -eq 80 ]]
+
+  # Unstaged modifications have medium priority (70)
+  priority=$(get_status_priority "U:Mod")
+  [[ $priority -eq 70 ]]
+  priority=$(get_status_priority "U:Del")
+  [[ $priority -eq 70 ]]
+  priority=$(get_status_priority "U:Cnflt")
+  [[ $priority -eq 90 ]]  # Conflicts are still 90
+
+  # Untracked files have lower priority (60)
+  priority=$(get_status_priority "UnTrck")
+  [[ $priority -eq 60 ]]
+
+  # Ignored files have lowest priority (50)
+  priority=$(get_status_priority "Ignore")
+  [[ $priority -eq 50 ]]
+
+  # Unknown status returns 0
+  priority=$(get_status_priority "Unknown")
+  [[ $priority -eq 0 ]]
+}
+
+@test "get_status_priority: verifies UnTrck has lower priority than U:Mod" {
+  # Load the priorities library
+  load '../../git-config/lib/hug-git-priorities'
+
+  local untracked_priority unstaged_priority
+  untracked_priority=$(get_status_priority "UnTrck")
+  unstaged_priority=$(get_status_priority "U:Mod")
+
+  # UnTrck (60) should have lower priority than U:Mod (70)
+  [[ $untracked_priority -lt $unstaged_priority ]]
+  [[ $untracked_priority -eq 60 ]]
+  [[ $unstaged_priority -eq 70 ]]
 }
