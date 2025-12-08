@@ -145,7 +145,7 @@ if [ ${#args[@]} -gt 0 ]; then
       ;;
     "show")
       # Show detailed tag information
-      local tag_type
+      tag_type=""
       tag_type=$(get_tag_type "$tag_arg")
 
       printf "${GREEN}%s${NC} " "$tag_arg"
@@ -168,7 +168,7 @@ if [ ${#args[@]} -gt 0 ]; then
       # Confirm and delete tag
       if confirm_tag_deletion "$tag_arg"; then
         # Create backup
-        local backup
+        backup=""
         backup=$(backup_tag "$tag_arg" 2>/dev/null || echo "")
 
         if [[ -n "$backup" ]]; then
@@ -305,7 +305,7 @@ case "$action" in
     # Confirm and delete tag
     if confirm_tag_deletion "$selected_tag"; then
       # Create backup
-      local backup
+      backup=""
       backup=$(backup_tag "$selected_tag" 2>/dev/null || echo "")
 
       if [[ -n "$backup" ]]; then

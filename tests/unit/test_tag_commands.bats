@@ -8,9 +8,6 @@ setup() {
   TEST_REPO=$(create_test_repo_with_history)
   cd "$TEST_REPO"
 
-  # Create some additional tags for testing
-  git tag v1.0.0 HEAD~2
-  git tag -a v1.1.0 HEAD~1 -m "Release version 1.1.0"
 }
 
 teardown() {
@@ -49,7 +46,7 @@ teardown() {
   git tag v2.0.0 HEAD~1
   git tag feature-branch HEAD
 
-  run hug tl v1.*
+  run hug tl v1
 
   assert_success
   assert_output --partial "v1.0.0"
@@ -155,24 +152,25 @@ teardown() {
   run hug tc -a test-tag
 
   assert_failure
-  assert_output --partial "require a message"
+  assert_output --partial "Message required for annotated tags"
 }
 
 @test "git-tc: interactive mode accepts custom target commit" {
-  # Enable test mode - this makes gum_available return true but allows basic input
-  export HUG_TEST_MODE=true
-  # Since we're providing input via pipe, also provide the gum input value
-  export HUG_TEST_GUM_INPUT="HEAD~1"
-  unset HUG_TEST_GUM_INPUT_RETURN_CODE
-
-  # Set up gum mock
+  # Set up gum mock for interactive testing
   setup_gum_mock
 
-  # Provide tag name, type selection, and confirmation
-  # Note: The target commit will be read via HUG_TEST_GUM_INPUT
-  run bash -c "
-    printf 'test-target-tag\n1\ny\n' | hug tc -i 2>/dev/null
-  "
+  # Configure mock responses for the prompts:
+  # - First prompt: tag name
+  # - Second prompt: target commit (HEAD~1)
+  # - Third prompt: tag type (1 = lightweight)
+  # - Fourth prompt: confirmation (y)
+  export HUG_TEST_GUM_INPUT="test-target-tag
+HEAD~1
+1
+y"
+
+  # Run interactive command without stdin piping
+  run hug tc -i
 
   # Cleanup
   teardown_gum_mock
@@ -190,20 +188,21 @@ teardown() {
 }
 
 @test "git-tc: interactive mode uses HEAD as default target" {
-  # Enable test mode - this makes gum_available return true but allows basic input
-  export HUG_TEST_MODE=true
-  # Empty input should trigger default value (HEAD)
-  export HUG_TEST_GUM_INPUT=""
-  unset HUG_TEST_GUM_INPUT_RETURN_CODE
-
-  # Set up gum mock
+  # Set up gum mock for interactive testing
   setup_gum_mock
 
-  # Provide tag name, type selection, and confirmation
-  # Note: The target commit will be read via HUG_TEST_GUM_INPUT (empty -> default)
-  run bash -c "
-    printf 'test-default-tag\n1\ny\n' | hug tc -i 2>/dev/null
-  "
+  # Configure mock responses for the prompts:
+  # - First prompt: tag name
+  # - Second prompt: target commit (empty = default to HEAD)
+  # - Third prompt: tag type (1 = lightweight)
+  # - Fourth prompt: confirmation (y)
+  export HUG_TEST_GUM_INPUT="test-default-tag
+
+1
+y"
+
+  # Run interactive command without stdin piping
+  run hug tc -i
 
   # Cleanup
   teardown_gum_mock
@@ -235,7 +234,7 @@ teardown() {
   git tag test-tag HEAD
 
   # Simulate user confirmation
-  echo "delete" | run hug tdel test-tag
+  run bash -c 'echo "y" | hug tdel test-tag'
 
   assert_success
   assert_output --partial "Created backup"

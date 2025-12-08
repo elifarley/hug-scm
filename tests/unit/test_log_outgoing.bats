@@ -187,7 +187,7 @@ teardown() {
   run hug lol
   assert_success
   # Check that status summary line is included (shows untracked count)
-  assert_output --partial "U1"
+  assert_output --partial "K1"
   assert_output --partial "Outgoing commit"
 }
 

@@ -329,7 +329,10 @@ if [[ "$interactive" == "true" ]]; then
 # --- Non-Interactive Validation ---
 else
   if [[ -z "$tag_name" ]]; then error "Tag name required"; exit 1; fi
-  validate_tag_name "$tag_name" || exit 1
+  if ! validate_tag_name "$tag_name"; then
+    error "Invalid tag name: $tag_name"
+    exit 1
+  fi
   validate_tag_exists_check "$tag_name" "$force"
   if [[ "$tag_type" != "lightweight" && -z "$tag_message" ]]; then
     error "Message required for $tag_type tags"; exit 1

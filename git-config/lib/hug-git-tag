@@ -811,7 +811,7 @@ confirm_tag_deletion() {
     if [[ "$force" == "true" ]]; then
         return 0
     else
-        confirm_action_warn "$message"
+        prompt_confirm_warn "$message"
     fi
 }
 
