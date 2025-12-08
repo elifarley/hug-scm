@@ -16,7 +16,7 @@
 #   50: Ignored files (lowest priority - shown FIRST)
 
 # Status priority mapping (higher value = higher priority = shown later)
-declare -A STATUS_PRIORITY=(
+declare -gA STATUS_PRIORITY=(
   # Conflicts - highest priority (blocking issues)
   ["U:Cnflt"]=90  ["S:Cnflt"]=90
 

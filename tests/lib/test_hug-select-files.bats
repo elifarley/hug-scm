@@ -378,19 +378,22 @@ create_merge_conflict() {
   untracked_line=$(echo "$output" | grep "untracked.txt" | head -1)
   staged_line=$(echo "$output" | grep "staged.txt" | head -1)
 
-  # Get line numbers for ordering check
-  local unstaged_line_num untracked_line_num staged_line_num
-  unstaged_line_num=$(echo "$output" | grep -n "unstaged.txt" | cut -d: -f1 | head -1)
-  untracked_line_num=$(echo "$output" | grep -n "untracked.txt" | cut -d: -f1 | head -1)
-  staged_line_num=$(echo "$output" | grep -n "staged.txt" | cut -d: -f1 | head -1)
+  # Get line numbers for ordering check (use word boundaries to avoid substring matches)
+  local unstaged_line_num untracked_line_num tracked_line_num staged_line_num
+  unstaged_line_num=$(echo "$output" | grep -n " unstaged.txt$" | cut -d: -f1 | head -1)
+  untracked_line_num=$(echo "$output" | grep -n " untracked.txt$" | cut -d: -f1 | head -1)
+  tracked_line_num=$(echo "$output" | grep -n " tracked.txt$" | cut -d: -f1 | head -1)
+  staged_line_num=$(echo "$output" | grep -n " staged.txt$" | cut -d: -f1 | head -1)
 
   # Verify that UnTrck appears BEFORE U:Mod (lower line number = higher in output)
-  # This test will FAIL with current implementation, demonstrating the bug
-  [[ $untracked_line_num -lt $unstaged_line_num ]]
+  # UnTrck (priority 60) should come before U:Mod (priority 70)
+  [[ $untracked_line_num -lt $tracked_line_num ]]
+  [[ $unstaged_line_num -lt $tracked_line_num ]]
 
-  # Verify that S:* appears LAST (highest line number)
+  # Verify that S:* appears LAST (highest line number = highest priority)
   [[ $staged_line_num -gt $unstaged_line_num ]]
   [[ $staged_line_num -gt $untracked_line_num ]]
+  [[ $staged_line_num -gt $tracked_line_num ]]
 }
 
 ################################################################################

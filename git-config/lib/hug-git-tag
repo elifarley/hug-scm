@@ -155,7 +155,7 @@ get_tag_type() {
     # Check if tag exists
     if ! git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
         echo "unknown"
-        return 1
+        return 0
     fi
 
     # Get the object type of the tag
@@ -237,7 +237,7 @@ tag_exists_remote() {
     local tag="$1"
     local remote="${2:-origin}"
 
-    git ls-remote --tags "$remote" "refs/tags/$tag" | grep -q "refs/tags/$tag\$"
+    timeout 5 git -c credential.helper= ls-remote --tags "$remote" "refs/tags/$tag" 2>/dev/null | grep -q "refs/tags/$tag\$"
 }
 
 ################################################################################
@@ -769,7 +769,7 @@ validate_tag_name() {
     # if you want to allow them, or fails if strict.
 
     # Using --allow-onelevel allows tags without slashes (standard tags).
-    git check-ref-format --allow-onelevel "refs/tags/$tag"
+    git check-ref-format --allow-onelevel "refs/tags/$tag" 2>/dev/null
 }
 
 # Confirms tag deletion with safety checks
@@ -832,7 +832,7 @@ backup_tag() {
 
     # Get the target commit of the original tag
     local target_commit
-    target_commit=$(get_tag_target_hash "$tag")
+    target_commit=$(get_tag_target_hash "$tag" 2>/dev/null || echo "")
 
     if [[ -n "$target_commit" ]]; then
         # Create lightweight backup tag
@@ -842,7 +842,9 @@ backup_tag() {
         fi
     fi
 
-    return 1
+    # Return empty string for non-existent or failed backup
+    echo ""
+    return 0
 }
 
 ################################################################################

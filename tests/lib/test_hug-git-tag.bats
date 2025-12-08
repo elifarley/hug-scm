@@ -182,44 +182,43 @@ teardown() {
   [[ $? -eq 0 ]]
 
   # Invalid names
-  validate_tag_name ""
-  [[ $? -ne 0 ]]
+  run validate_tag_name ""
+  [[ $status -ne 0 ]]
 
-  validate_tag_name "invalid tag name"
-  [[ $? -ne 0 ]]
+  run validate_tag_name "invalid tag name"
+  [[ $status -ne 0 ]]
 
-  validate_tag_name "invalid~tag"
-  [[ $? -ne 0 ]]
+  run validate_tag_name "invalid~tag"
+  [[ $status -ne 0 ]]
 
-  validate_tag_name "invalid^tag"
-  [[ $? -ne 0 ]]
+  run validate_tag_name "invalid^tag"
+  [[ $status -ne 0 ]]
 
-  validate_tag_name "invalid:tag"
-  [[ $? -ne 0 ]]
+  run validate_tag_name "invalid:tag"
+  [[ $status -ne 0 ]]
 
-  validate_tag_name "invalid?tag"
-  [[ $? -ne 0 ]]
+  run validate_tag_name "invalid?tag"
+  [[ $status -ne 0 ]]
 
-  validate_tag_name "invalid*tag"
-  [[ $? -ne 0 ]]
+  run validate_tag_name "invalid*tag"
+  [[ $status -ne 0 ]]
 
-  validate_tag_name "invalid[tag"
-  [[ $? -ne 0 ]]
+  run validate_tag_name "invalid[tag"
+  [[ $status -ne 0 ]]
 
-  validate_tag_name "invalid]tag"
-  [[ $? -ne 0 ]]
+  # Note: ']' is actually valid in git refs, so we don't test it here
 
-  validate_tag_name ".invalid"
-  [[ $? -ne 0 ]]
+  run validate_tag_name ".invalid"
+  [[ $status -ne 0 ]]
 
-  validate_tag_name "invalid."
-  [[ $? -ne 0 ]]
+  run validate_tag_name "invalid."
+  [[ $status -ne 0 ]]
 
-  validate_tag_name "invalid..tag"
-  [[ $? -ne 0 ]]
+  run validate_tag_name "invalid..tag"
+  [[ $status -ne 0 ]]
 
-  validate_tag_name "invalid.lock"
-  [[ $? -ne 0 ]]
+  run validate_tag_name "invalid.lock"
+  [[ $status -ne 0 ]]
 }
 
 @test "backup_tag: creates backup before deletion" {
@@ -249,14 +248,15 @@ teardown() {
 @test "get_tags_containing: finds tags containing commits" {
   source "$HUG_HOME/git-config/lib/hug-git-tag"
 
-  # Get tags containing HEAD (should be 2 tags)
+  # Get tags containing HEAD (only the tag pointing directly to HEAD)
   local result
   result=$(get_tags_containing "HEAD")
 
-  # Should find the 2 tags that point to or contain HEAD
+  # Should find only the tag that points to HEAD
   local count
   count=$(echo "$result" | wc -l)
-  [[ $count -eq 2 ]]
+  [[ $count -eq 1 ]]
+  [[ "$result" =~ another-tag ]]
 }
 
 @test "get_tags_pointing_to: finds tags pointing to exact commit" {
@@ -301,16 +301,16 @@ teardown() {
   local -a types=("lightweight" "annotated")
   local -a subjects=("Subject 1" "Subject 2")
 
-  # Test current tag formatting
-  run print_tag_line "" "$current_tag" "$max_len" 1 tags hashes types subjects
+  # Test current tag formatting (using index 0 for lightweight-tag)
+  run print_tag_line "" "$current_tag" "$max_len" 0 tags hashes types subjects
 
   assert_success
-  assert_output --partial "* lightweight-tag"
-  assert_output --partial "[L]"
-  assert_output --partial "abc1234"
+  assert_output --partial "abc1234 lightweight-tag [L]"
+  assert_output --partial "Subject 1"
 }
 
 @test "select_tags: requires tags to exist" {
+  source "$HUG_HOME/git-config/lib/hug-common"
   source "$HUG_HOME/git-config/lib/hug-git-tag"
 
   # Delete all tags
