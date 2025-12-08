@@ -317,12 +317,12 @@ fi
 # Confirm bulk deletion
 if [[ "$force" != "true" ]]; then
   if [[ ${#selected_tags[@]} -eq 1 ]]; then
-    if ! confirm_action_warn "delete 1 tag"; then
+    if ! prompt_confirm_warn "Delete 1 tag?"; then
       info "Deletion cancelled."
       exit 0
     fi
   else
-    if ! confirm_action_warn "delete ${#selected_tags[@]} tags"; then
+    if ! prompt_confirm_warn "Delete ${#selected_tags[@]} tags?"; then
       info "Deletion cancelled."
       exit 0
     fi

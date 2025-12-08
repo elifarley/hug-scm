@@ -763,6 +763,11 @@ validate_tag_name() {
         return 1
     fi
 
+    # Reject tag names containing spaces (common mistake, not conventional)
+    if [[ "$tag" =~ [[:space:]] ]]; then
+        return 1
+    fi
+
     # "git check-ref-format" is the single source of truth.
     # We check "refs/tags/$tag" because we specifically want to create a tag.
     # --normalize ensures it handles repeated slashes (e.g., "v1//0") gracefully
@@ -865,31 +870,4 @@ get_tags_containing() {
 
     # Get tags that contain the commit
     git tag --contains "$commit" 2>/dev/null | sort -V
-}
-
-# Gets all tags that point to a specific commit
-# Usage: get_tags_pointing_to commit_hash
-# Returns: List of tags (one per line)
-get_tags_pointing_to() {
-    local commit="$1"
-
-    # Verify commit exists
-    if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
-        error "Invalid commit: $commit"
-        return 1
-    fi
-
-    # Get tags that point to the commit
-    local -a tags=()
-    local tag
-    while IFS= read -r tag; do
-        local target
-        target=$(get_tag_target_hash "$tag" short)
-        if [[ "$target" == "${commit:0:7}" ]] || [[ "$target" == "$commit" ]]; then
-            tags+=("$tag")
-        fi
-    done < <(git tag -l 2>/dev/null)
-
-    # Sort and output
-    printf '%s\n' "${tags[@]}" | sort -V
 }
