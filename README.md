@@ -424,6 +424,7 @@ hug stats branch [branch]     # Branch statistics (commits, divergence, age)
 
 ```shell
 hug t [pattern]       # Tags (List tags (matching pattern))
+hug tl [search]        # List tags with details (searches tag name, hash, commit message)
 hug tc <tag> [commit] # Create lightweight tag
 hug ta <tag> "msg"    # Create annotated tag
 hug ts <tag>          # Show tag details

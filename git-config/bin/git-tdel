@@ -1,0 +1,382 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-tag; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat <<'EOF'
+hug tdel: Interactive tag deletion with safety features.
+
+USAGE:
+  hug tdel [options] [tag-name]
+
+OPTIONS:
+  -h, --help            Show this help message and exit.
+  -f, --force           Skip confirmation prompts.
+  -r, --remote          Also delete tag from remote origin.
+  --dry-run             Show what would be deleted without actually deleting.
+  -t, --type TYPE       Filter by tag type: lightweight, annotated, signed
+  -p, --pattern PATTERN Filter by name pattern
+
+ARGUMENTS:
+  tag-name              Tag to delete (if not provided, shows interactive menu)
+
+DESCRIPTION:
+  Safely delete tags with confirmation and backup options.
+
+  If a tag name is provided directly, deletes that specific tag after confirmation.
+  If no tag name is provided, shows an interactive menu to select tags for deletion.
+
+  Safety Features:
+    - Confirmation prompts for all deletions
+    - Backup creation before deletion
+    - Remote deletion warnings
+    - Dry-run mode to preview deletions
+
+  Multi-select Support:
+    - Select multiple tags in interactive mode
+    - Bulk deletion with single confirmation
+    - Progress tracking for batch operations
+
+  Remote Deletion:
+    - With --remote flag, also removes tags from origin
+    - Warns if tag exists on remote but --remote not specified
+    - Creates local backup even when deleting remote
+
+EXAMPLES:
+  hug tdel v1.0.0              # Delete specific tag with confirmation
+  hug tdel --force v1.0.0      # Delete without confirmation
+  hug tdel --remote v1.0.0     # Delete locally and from origin
+  hug tdel --dry-run           # Preview what would be deleted
+  hug tdel                     # Interactive tag selection
+  hug tdel --multi             # Select multiple tags to delete
+  hug tdel --type annotated    # Delete only annotated tags
+  hug tdel --pattern "v1.*"    # Delete tags matching pattern
+
+SEE ALSO:
+  hug t    : Interactive tag browser
+  hug t    --action delete : Alternative deletion method
+  hug tc   : Create tags
+
+FURTHER READING:
+  See 'git tag --help' and 'git push --help'.
+EOF
+}
+
+# Parse flags
+force=false
+delete_remote=false
+dry_run=false
+type_filter=""
+pattern=""
+declare -a args=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -f|--force)
+      force=true
+      shift
+      ;;
+    -r|--remote)
+      delete_remote=true
+      shift
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    -t|--type)
+      if [[ $# -lt 2 ]]; then
+        error "Option --type requires a value"
+        exit 1
+      fi
+      type_filter="$2"
+      if [[ "$type_filter" != "lightweight" && "$type_filter" != "annotated" && "$type_filter" != "signed" ]]; then
+        error "Invalid type filter: $type_filter. Must be: lightweight, annotated, or signed"
+        exit 1
+      fi
+      shift 2
+      ;;
+    -p|--pattern)
+      if [[ $# -lt 2 ]]; then
+        error "Option --pattern requires a value"
+        exit 1
+      fi
+      pattern="$2"
+      shift 2
+      ;;
+    -*)
+      error "Unknown option: $1"
+      show_help
+      exit 1
+      ;;
+    *)
+      args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Early exit if not in Git repo
+check_git_repo
+
+# Handle case where tag name is provided directly
+if [ ${#args[@]} -gt 0 ]; then
+  # Single tag deletion mode
+  tag_to_delete="${args[0]}"
+
+  # Check if tag exists
+  if ! git rev-parse --verify "refs/tags/$tag_to_delete" >/dev/null 2>&1; then
+    error "Tag '$tag_to_delete' does not exist."
+    exit 1
+  fi
+
+  # Check if tag exists remotely
+  exists_remote=false
+  if tag_exists_remote "$tag_to_delete"; then
+    exists_remote=true
+    if [[ "$delete_remote" == "false" ]]; then
+      warn "Tag '$tag_to_delete' exists on remote origin. Use --remote to delete it remotely."
+    fi
+  fi
+
+  # Show what we're about to do
+  tag_type=$(get_tag_type "$tag_to_delete")
+
+  printf "${RED}Delete tag:${NC} ${GREEN}%s${NC}" "$tag_to_delete"
+  case "$tag_type" in
+    "lightweight")
+      printf " ${GREY}(lightweight)${NC}"
+      ;;
+    "annotated")
+      printf " ${BLUE}(annotated)${NC}"
+      ;;
+    "signed")
+      printf " ${GREEN}(signed)${NC}"
+      ;;
+  esac
+
+  if [[ "$exists_remote" == "true" ]]; then
+    if [[ "$delete_remote" == "true" ]]; then
+      printf " ${RED}+ remote${NC}"
+    else
+      printf " ${YELLOW}(remote will remain)${NC}"
+    fi
+  fi
+  printf "\n"
+
+  # Dry run mode
+  if [[ "$dry_run" == "true" ]]; then
+    info "Dry run mode: Not actually deleting."
+    exit 0
+  fi
+
+  # Confirm deletion
+  if [[ "$force" != "true" ]]; then
+    if ! confirm_tag_deletion "$tag_to_delete"; then
+      info "Deletion cancelled."
+      exit 0
+    fi
+  fi
+
+  # Create backup
+  backup=$(backup_tag "$tag_to_delete" 2>/dev/null || echo "")
+  if [[ -n "$backup" ]]; then
+    info "Created backup: $backup"
+  fi
+
+  # Delete local tag
+  if git tag -d "$tag_to_delete"; then
+    success "Deleted local tag '$tag_to_delete'"
+  else
+    error "Failed to delete local tag '$tag_to_delete'"
+    exit 1
+  fi
+
+  # Delete remote tag if requested
+  if [[ "$delete_remote" == "true" && "$exists_remote" == "true" ]]; then
+    info "Deleting from remote origin..."
+    if git push origin --delete "refs/tags/$tag_to_delete" 2>/dev/null; then
+      success "Deleted remote tag '$tag_to_delete'"
+    else
+      warn "Failed to delete remote tag '$tag_to_delete' (may need manual removal)"
+    fi
+  fi
+
+  exit 0
+fi
+
+# Interactive multi-tag selection mode
+# Get all tags
+current_tag=""
+max_len=0
+tags=()
+hashes=()
+types=()
+subjects=()
+dates=()
+signatures=()
+
+if ! compute_tag_details current_tag max_len hashes tags types subjects dates signatures; then
+  error "No tags found in this repository."
+  exit 1
+fi
+
+# Apply filters if specified
+filtered_tags=()
+filtered_hashes=()
+filtered_types=()
+filtered_subjects=()
+
+i=0
+for ((i = 0; i < ${#tags[@]}; i++)); do
+  # Type filter
+  if [[ -n "$type_filter" && "${types[i]}" != "$type_filter" ]]; then
+    continue
+  fi
+
+  # Pattern filter
+  if [[ -n "$pattern" && ! "${tags[i]}" =~ $pattern ]]; then
+    continue
+  fi
+
+  filtered_tags+=("${tags[i]}")
+  filtered_hashes+=("${hashes[i]}")
+  filtered_types+=("${types[i]}")
+  filtered_subjects+=("${subjects[i]}")
+done
+
+if [[ ${#filtered_tags[@]} -eq 0 ]]; then
+  error "No tags match the specified filters."
+  exit 1
+fi
+
+# Select multiple tags for deletion
+selected_tags=()
+select_options=()
+if [[ -n "$type_filter" ]]; then
+  select_options+=(--type "$type_filter")
+fi
+if [[ -n "$pattern" ]]; then
+  select_options+=(--pattern "$pattern")
+fi
+
+select_options+=(--multi-select)
+select_options+=(--prompt "Select tags to delete")
+select_tags selected_tags "${select_options[@]}"
+
+if [[ ${#selected_tags[@]} -eq 0 ]]; then
+  info "No tags selected."
+  exit 0
+fi
+
+# Show what will be deleted
+printf "\n${RED}Tags to delete:${NC}\n"
+i=0
+for i in "${!selected_tags[@]}"; do
+  tag="${selected_tags[i]}"
+  tag_type=$(get_tag_type "$tag")
+
+  printf "  ${GREEN}%s${NC}" "$tag"
+  case "$tag_type" in
+    "lightweight")
+      printf " ${GREY}(lightweight)${NC}"
+      ;;
+    "annotated")
+      printf " ${BLUE}(annotated)${NC}"
+      ;;
+    "signed")
+      printf " ${GREEN}(signed)${NC}"
+      ;;
+  esac
+
+  # Check remote status
+  if tag_exists_remote "$tag"; then
+    if [[ "$delete_remote" == "true" ]]; then
+      printf " ${RED}+ remote${NC}"
+    else
+      printf " ${YELLOW}(remote will remain)${NC}"
+    fi
+  fi
+
+  printf "\n"
+done
+
+# Dry run mode
+if [[ "$dry_run" == "true" ]]; then
+  info "Dry run mode: Not actually deleting ${#selected_tags[@]} tag(s)."
+  exit 0
+fi
+
+# Confirm bulk deletion
+if [[ "$force" != "true" ]]; then
+  if [[ ${#selected_tags[@]} -eq 1 ]]; then
+    if ! confirm_action_warn "delete 1 tag"; then
+      info "Deletion cancelled."
+      exit 0
+    fi
+  else
+    if ! confirm_action_warn "delete ${#selected_tags[@]} tags"; then
+      info "Deletion cancelled."
+      exit 0
+    fi
+  fi
+fi
+
+# Delete tags
+deleted_count=0
+failed_count=0
+remote_deleted_count=0
+
+printf "\n"
+for tag in "${selected_tags[@]}"; do
+  exists_remote=false
+  if tag_exists_remote "$tag"; then
+    exists_remote=true
+  fi
+
+  # Create backup
+  backup=$(backup_tag "$tag" 2>/dev/null || echo "")
+  if [[ -n "$backup" ]]; then
+    info "Created backup for '$tag': $backup"
+  fi
+
+  # Delete local tag
+  if git tag -d "$tag" 2>/dev/null; then
+    success "Deleted local tag: $tag"
+    ((deleted_count++))
+
+    # Delete remote tag if requested
+    if [[ "$delete_remote" == "true" && "$exists_remote" == "true" ]]; then
+      if git push origin --delete "refs/tags/$tag" 2>/dev/null; then
+        success "Deleted remote tag: $tag"
+        ((remote_deleted_count++))
+      else
+        warn "Failed to delete remote tag: $tag"
+      fi
+    fi
+  else
+    error "Failed to delete local tag: $tag"
+    ((failed_count++))
+  fi
+done
+
+# Summary
+printf "\n${GREEN}Deletion Summary:${NC}\n"
+printf "  Local tags deleted: $deleted_count\n"
+if [[ "$delete_remote" == "true" ]]; then
+  printf "  Remote tags deleted: $remote_deleted_count\n"
+fi
+if [[ $failed_count -gt 0 ]]; then
+  printf "  Failed deletions: $failed_count\n"
+fi
+
+if [[ $failed_count -gt 0 ]]; then
+  exit 1
+fi

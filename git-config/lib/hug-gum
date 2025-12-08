@@ -33,7 +33,7 @@ gum_available() {
   # Check if we have a TTY available for interactive input
   # gum can work even when stdin/stdout aren't TTYs by opening /dev/tty directly
   # This is important when running through git commands that don't preserve TTYs
-  [[ -t 0 ]] && [[ -t 1 ]] || test -t 2>/dev/null </dev/tty
+  [[ -t 0 ]] && [[ -t 1 ]] || test -t 0 2>/dev/null </dev/tty
 }
 
 gum_log() {

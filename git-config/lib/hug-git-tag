@@ -1,0 +1,893 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-TAG: Git tag information, display, and selection functions
+#
+# This library provides functions for:
+# - Computing tag details and metadata
+# - Printing tag lists and menus
+# - Interactive tag selection
+# - Tag type detection (lightweight/annotated/signed)
+# - Tag validation and safety operations
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
+################################################################################
+
+# Prevent multiple sourcing
+if [[ -n "${_HUG_GIT_TAG_LOADED:-}" ]]; then
+  return 0 2>/dev/null || :
+fi
+_HUG_GIT_TAG_LOADED=1
+
+################################################################################
+# Tag Information Functions
+################################################################################
+
+# Computes details for all tags and populates output arrays
+# Usage: compute_tag_details current_tag max_len hashes tags types subjects dates signatures [remote_status]
+# Parameters (all namerefs to output variables):
+#   $1 - Scalar to receive current tag name (empty if not on a tag)
+#   $2 - Scalar to receive max tag name length
+#   $3 - Array to receive commit hashes
+#   $4 - Array to receive tag names
+#   $5 - Array to receive tag types (lightweight/annotated/signed)
+#   $6 - Array to receive commit subjects
+#   $7 - Array to receive tag dates (for annotated tags)
+#   $8 - Array to receive signature status (for signed tags)
+#   $9 - (Optional) Boolean to include remote status (default: false)
+# Returns:
+#   0 if tags found, 1 if no tags exist
+# Note:
+#   Arrays are cleared before population. Tags are sorted by version by default.
+compute_tag_details() {
+    local -n current_tag_ref="$1"
+    local -n max_len_ref="$2"
+    local -n hashes_ref="$3"
+    local -n tags_ref="$4"
+    local -n types_ref="$5"
+    local -n subjects_ref="$6"
+    local -n dates_ref="$7"
+    local -n signatures_ref="$8"
+    local include_remote="${9:-false}"
+
+    # Clear outputs
+    current_tag_ref=""
+    max_len_ref=0
+    hashes_ref=()
+    tags_ref=()
+    types_ref=()
+    subjects_ref=()
+    dates_ref=()
+    signatures_ref=()
+
+    # Get current tag if we're on one
+    current_tag_ref=$(git describe --tags --exact-match 2>/dev/null || echo "")
+
+    # Get all tag references, sorted by version
+    # Use a simpler approach to avoid parsing issues with multi-line content
+    local -a tag_list=()
+    mapfile -t tag_list < <(git tag --sort=-version:refname)
+
+    # Process each tag
+    local tag
+    for tag in "${tag_list[@]}"; do
+        # Get tag details
+        local hash
+        local object_type
+        local tagger_date=""
+        local subject=""
+        local contents=""
+
+        # Get the object the tag points to
+        hash=$(git rev-parse --short "$tag" 2>/dev/null)
+
+        # Determine if it's annotated or lightweight
+        object_type=$(git cat-file -t "$tag" 2>/dev/null || echo "commit")
+
+        if [[ "$object_type" == "tag" ]]; then
+            # Get tagger date and subject for annotated tags
+            tagger_date=$(git tag -l --format='%(taggerdate:iso8601)' "$tag" 2>/dev/null || echo "")
+            subject=$(git tag -l --format='%(subject)' "$tag" 2>/dev/null || echo "")
+            # Get the actual commit hash the tag points to
+            hash=$(git rev-list -n 1 "$tag" 2>/dev/null || echo "$hash")
+            hash="${hash:0:7}"  # Short hash
+        fi
+
+        # Get commit subject if not from annotated tag
+        if [[ -z "$subject" ]]; then
+            subject=$(git log -n 1 --pretty=format:%s "$hash" 2>/dev/null || echo "(no commit message)")
+        fi
+
+        # Determine tag type
+        local tag_type="lightweight"
+        local signature=""
+
+        if [[ "$object_type" == "tag" ]]; then
+            # This is an annotated tag
+            tag_type="annotated"
+
+            # Check if it's signed by looking at the tag object
+            if git verify-tag --quiet "$tag" 2>/dev/null; then
+                tag_type="signed"
+                signature="verified"
+            fi
+        fi
+
+        # Get the commit subject
+        local commit_subject="$subject"
+        if [[ -z "$commit_subject" ]]; then
+            commit_subject=$(git log -n 1 --pretty=format:%s "$hash" 2>/dev/null || echo "(no commit message)")
+        fi
+
+        # Sanitize and store
+        tag=$(printf '%s' "$tag" | tr -d '\n\r')
+        hash=$(printf '%s' "$hash" | tr -d '\n\r')
+        commit_subject=$(printf '%s' "$commit_subject" | tr -d '\n\r')
+
+        tags_ref+=("$tag")
+        hashes_ref+=("$hash")
+        types_ref+=("$tag_type")
+        subjects_ref+=("$commit_subject")
+        dates_ref+=("$tagger_date")
+        signatures_ref+=("$signature")
+
+        # Update max length
+        if (( ${#tag} > max_len_ref )); then
+            max_len_ref=${#tag}
+        fi
+    done
+
+    # Return success if we found any tags
+    if [[ ${#tags_ref[@]} -gt 0 ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Determines the type of a tag
+# Usage: get_tag_type tag_name
+# Returns: "lightweight", "annotated", or "signed"
+get_tag_type() {
+    local tag="$1"
+
+    # Check if tag exists
+    if ! git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
+        echo "unknown"
+        return 1
+    fi
+
+    # Get the object type of the tag
+    local object_type
+    object_type=$(git cat-file -t "refs/tags/$tag" 2>/dev/null || echo "unknown")
+
+    case "$object_type" in
+        "commit")
+            echo "lightweight"
+            ;;
+        "tag")
+            # This is an annotated tag, check if signed
+            local contents
+            contents=$(git cat-file tag "refs/tags/$tag" 2>/dev/null || echo "")
+            if [[ "$contents" =~ -----BEGIN\ PGP\ SIGNATURE----- ]]; then
+                echo "signed"
+            else
+                echo "annotated"
+            fi
+            ;;
+        *)
+            echo "unknown"
+            ;;
+    esac
+}
+
+# Gets signature verification information for a tag
+# Usage: get_tag_signature_info tag_name
+# Returns: "verified", "unverified", "unsigned", or "error"
+get_tag_signature_info() {
+    local tag="$1"
+    local tag_type
+    tag_type=$(get_tag_type "$tag")
+
+    case "$tag_type" in
+        "signed")
+            if git verify-tag "$tag" >/dev/null 2>&1; then
+                echo "verified"
+            else
+                echo "unverified"
+            fi
+            ;;
+        "annotated"|"lightweight")
+            echo "unsigned"
+            ;;
+        *)
+            echo "error"
+            ;;
+    esac
+}
+
+# Gets the target commit hash for a tag
+# Usage: get_tag_target_hash tag_name [short]
+# Parameters:
+#   $1 - tag name
+#   $2 - (Optional) "short" to return short hash (default: full)
+get_tag_target_hash() {
+    local tag="$1"
+    local hash_format="${2:-full}"
+
+    # Get the commit that the tag points to
+    local commit_hash
+    commit_hash=$(git rev-list -n 1 "$tag" 2>/dev/null)
+
+    if [[ -n "$commit_hash" ]]; then
+        if [[ "$hash_format" == "short" ]]; then
+            echo "${commit_hash:0:7}"
+        else
+            echo "$commit_hash"
+        fi
+    else
+        return 1
+    fi
+}
+
+# Checks if a tag exists on a remote
+# Usage: tag_exists_remote tag_name [remote]
+tag_exists_remote() {
+    local tag="$1"
+    local remote="${2:-origin}"
+
+    git ls-remote --tags "$remote" "refs/tags/$tag" | grep -q "refs/tags/$tag\$"
+}
+
+################################################################################
+# Display Functions
+################################################################################
+
+# Prints a single tag line with formatting
+# Usage: print_tag_line prefix current_tag max_len index tags hashes types subjects [show_type]
+print_tag_line() {
+    local prefix="$1"
+    local current_tag="$2"
+    local max_len="$3"
+    local index="$4"
+    local -n tags_arr="$5"
+    local -n hashes_arr="$6"
+    local -n types_arr="$7"
+    local -n subjects_arr="$8"
+    local show_type="${9:-true}"
+
+    local tag="${tags_arr[$index]}"
+    local hash="${hashes_arr[$index]}"
+    local type="${types_arr[$index]}"
+    local subject="${subjects_arr[$index]}"
+
+    # Build the line
+    printf "%s" "$prefix"
+
+    # Mark current tag
+    if [[ "$tag" == "$current_tag" ]]; then
+        printf "${GREEN}*${NC} "
+    else
+        printf "  "
+    fi
+
+    # Commit hash
+    printf "${YELLOW}%s${NC} " "$hash"
+
+    # Tag name
+    printf "%-${max_len}s" "$tag"
+
+    # Type indicator if requested
+    if [[ "$show_type" == "true" ]]; then
+        case "$type" in
+            "lightweight")
+                printf " ${CYAN}[L]${NC}"
+                ;;
+            "annotated")
+                printf " ${CYAN}[A]${NC}"
+                ;;
+            "signed")
+                printf " ${CYAN}[S]${NC}"
+                ;;
+        esac
+    fi
+
+    # Subject (truncated if too long)
+    if [[ -n "$subject" ]]; then
+        # Get terminal width
+        local term_width
+        if [[ -n "${COLUMNS:-}" ]]; then
+            # Use COLUMNS if set
+            term_width=$COLUMNS
+        elif [[ -t 1 ]]; then
+            # Try to get actual terminal width
+            term_width=$(tput cols 2>/dev/null || echo 80)
+        else
+            # Not in a TTY, use a wider default for better readability
+            term_width=120
+        fi
+
+        # Calculate available space for subject
+        local type_width=5  # "[L]" + space
+        local hash_width=9  # 7 char hash + space after
+        local prefix_width=2  # "  " or "* "
+        local padding=5      # Some breathing room
+        local max_subject=$((term_width - prefix_width - hash_width - max_len - type_width - padding))
+
+        # Ensure minimum width for subject
+        [[ $max_subject -lt 20 ]] && max_subject=20
+
+        if [[ ${#subject} -gt $max_subject ]]; then
+            printf " ${GREY}%s...${NC}" "${subject:0:$max_subject}"
+        else
+            printf " ${GREY}%s${NC}" "$subject"
+        fi
+    fi
+
+    printf "\n"
+}
+
+# Prints a non-interactive list of tags
+# Usage: print_tag_list [options]
+# Options:
+#   --type       Show tag type indicators
+#   --remote     Show remote status
+#   --json       Output in JSON format
+print_tag_list() {
+    local show_type=true
+    local show_remote=false
+    local json_output=false
+
+    # Parse simple options
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --type)
+                show_type=true
+                shift
+                ;;
+            --no-type)
+                show_type=false
+                shift
+                ;;
+            --remote)
+                show_remote=true
+                shift
+                ;;
+            --json)
+                json_output=true
+                shift
+                ;;
+            *)
+                error "Unknown option for print_tag_list: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Get tag details
+    local current_tag=""
+    local max_len=0
+    local -a tags=() hashes=() types=() subjects=() dates=() signatures=()
+
+    if ! compute_tag_details current_tag max_len hashes tags types subjects dates signatures; then
+        warn "No tags found in this repository."
+        return 1
+    fi
+
+    # JSON output
+    if [[ "$json_output" == "true" ]]; then
+        printf "[\n"
+        local i
+        for ((i = 0; i < ${#tags[@]}; i++)); do
+            local remote_status="false"
+            if [[ "$show_remote" == "true" ]] && tag_exists_remote "${tags[i]}"; then
+                remote_status="true"
+            fi
+
+            printf "  {\n"
+            printf "    \"name\": \"%s\",\n" "${tags[i]}"
+            printf "    \"hash\": \"%s\",\n" "${hashes[i]}"
+            printf "    \"type\": \"%s\",\n" "${types[i]}"
+            printf "    \"subject\": \"%s\",\n" "${subjects[i]//\"/\\\"}"
+            printf "    \"current\": %s,\n" "$([ "${tags[i]}" == "$current_tag" ] && echo "true" || echo "false")"
+            printf "    \"remote\": %s\n" "$remote_status"
+            printf "  }%s\n" "$([ $i -lt $((${#tags[@]} - 1)) ] && echo "," || echo "")"
+        done
+        printf "]\n"
+        return 0
+    fi
+
+    # Normal text output
+    local i
+    for ((i = 0; i < ${#tags[@]}; i++)); do
+        local prefix=""
+        if [[ "$show_remote" == "true" ]] && tag_exists_remote "${tags[i]}"; then
+            prefix="${CYAN}[REMOTE]${NC} "
+        fi
+
+        print_tag_line "$prefix" "$current_tag" "$max_len" "$i" tags hashes types subjects "$show_type"
+    done
+}
+
+# Prints a detailed list of tags with annotations
+# Usage: print_detailed_tag_list [options]
+# Options:
+#   --json       Output in JSON format
+#   --type TYPE  Filter by type: lightweight, annotated, signed
+print_detailed_tag_list() {
+    local json_output=false
+    local type_filter=""
+
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json)
+                json_output=true
+                shift
+                ;;
+            --type)
+                type_filter="$2"
+                shift 2
+                ;;
+            *)
+                error "Unknown option for print_detailed_tag_list: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Get tag details
+    local current_tag=""
+    local max_len=0
+    local -a tags=() hashes=() types=() subjects=() dates=() signatures=()
+
+    if ! compute_tag_details current_tag max_len hashes tags types subjects dates signatures; then
+        warn "No tags found in this repository."
+        return 1
+    fi
+
+    # JSON output
+    if [[ "$json_output" == "true" ]]; then
+        printf "[\n"
+        local i
+        for ((i = 0; i < ${#tags[@]}; i++)); do
+            # Apply type filter if specified
+            if [[ -n "$type_filter" && "${types[i]}" != "$type_filter" ]]; then
+                continue
+            fi
+
+            local tagger_name=""
+            local tagger_email=""
+            if [[ "${types[i]}" != "lightweight" && -n "${dates[i]}" ]]; then
+                tagger_name=$(git for-each-ref --format='%(taggername)' "refs/tags/${tags[i]}")
+                tagger_email=$(git for-each-ref --format='%(taggeremail)' "refs/tags/${tags[i]}")
+            fi
+
+            printf "  {\n"
+            printf "    \"name\": \"%s\",\n" "${tags[i]}"
+            printf "    \"hash\": \"%s\",\n" "${hashes[i]}"
+            printf "    \"type\": \"%s\",\n" "${types[i]}"
+            printf "    \"subject\": \"%s\",\n" "${subjects[i]//\"/\\\"}"
+            printf "    \"date\": \"%s\",\n" "${dates[i]}"
+            printf "    \"tagger\": {\n"
+            printf "      \"name\": \"%s\",\n" "$tagger_name"
+            printf "      \"email\": \"%s\"\n" "$tagger_email"
+            printf "    },\n"
+            printf "    \"signature\": \"%s\",\n" "${signatures[i]}"
+            printf "    \"current\": %s\n" "$([ "${tags[i]}" == "$current_tag" ] && echo "true" || echo "false")"
+            printf "  }%s\n" "$([ $i -lt $((${#tags[@]} - 1)) ] && echo "," || echo "")"
+        done
+        printf "]\n"
+        return 0
+    fi
+
+    # Normal text output
+    local i
+    for ((i = 0; i < ${#tags[@]}; i++)); do
+        # Apply type filter if specified
+        if [[ -n "$type_filter" && "${types[i]}" != "$type_filter" ]]; then
+            continue
+        fi
+
+        local tag="${tags[i]}"
+        local hash="${hashes[i]}"
+        local type="${types[i]}"
+        local subject="${subjects[i]}"
+        local date="${dates[i]}"
+
+        # Header with tag name and type
+        printf "${GREEN}%s${NC} " "$tag"
+
+        case "$type" in
+            "lightweight")
+                printf "${GREY}(lightweight)${NC}"
+                ;;
+            "annotated")
+                printf "${BLUE}(annotated)${NC}"
+                ;;
+            "signed")
+                printf "${GREEN}(signed)${NC}"
+                ;;
+        esac
+
+        # Current tag indicator
+        if [[ "$tag" == "$current_tag" ]]; then
+            printf " ${YELLOW}[CURRENT]${NC}"
+        fi
+
+        # Remote status
+        if tag_exists_remote "$tag"; then
+            printf " ${CYAN}[REMOTE]${NC}"
+        fi
+
+        printf "\n"
+
+        # Commit info
+        printf "  Commit: ${YELLOW}%s${NC}\n" "$hash"
+        printf "  Subject: ${subject:-${GREY}(no message)${NC}}\n"
+
+        # Annotated tag info
+        if [[ "$type" != "lightweight" && -n "$date" ]]; then
+            printf "  Tagged: %s\n" "$date"
+            local tagger_name=$(git for-each-ref --format='%(taggername)' "refs/tags/$tag")
+            local tagger_email=$(git for-each-ref --format='%(taggeremail)' "refs/tags/$tag")
+            printf "  Tagger: ${BLUE}%s${NC} ${GREY}<%s>${NC}\n" "$tagger_name" "$tagger_email"
+
+            # Signature info
+            if [[ "$type" == "signed" ]]; then
+                local sig_status
+                sig_status=$(get_tag_signature_info "$tag")
+                if [[ "$sig_status" == "verified" ]]; then
+                    printf "  Signature: ${GREEN}Verified${NC}\n"
+                else
+                    printf "  Signature: ${RED}Unverified${NC}\n"
+                fi
+            fi
+        fi
+
+        printf "\n"
+    done
+}
+
+################################################################################
+# Selection Functions
+################################################################################
+
+# Universal tag selection function
+# Usage: select_tags selected_tags [options]
+# Parameters:
+#   $1 - Nameref to array to receive selected tags
+# Options:
+#   --multi-select    Allow multiple selections
+#   --type TYPE       Filter by type (lightweight/annotated/signed)
+#   --pattern PATTERN Filter by name pattern
+#   --prompt TEXT     Custom prompt text
+select_tags() {
+    local -n selected_ref="$1"
+    shift
+
+    local multi_select=false
+    local type_filter=""
+    local pattern_filter=""
+    local prompt="Select a tag"
+
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --multi-select)
+                multi_select=true
+                shift
+                ;;
+            --type)
+                type_filter="$2"
+                shift 2
+                ;;
+            --pattern)
+                pattern_filter="$2"
+                shift 2
+                ;;
+            --prompt)
+                prompt="$2"
+                shift 2
+                ;;
+            *)
+                error "Unknown option for select_tags: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Get tag details
+    local current_tag=""
+    local max_len=0
+    local -a tags=() hashes=() types=() subjects=() dates=() signatures=()
+
+    if ! compute_tag_details current_tag max_len hashes tags types subjects dates signatures; then
+        warn "No tags found in this repository."
+        return 1
+    fi
+
+    # Apply filters
+    local -a filtered_tags=() filtered_hashes=() filtered_types=() filtered_subjects=()
+    local i
+    for ((i = 0; i < ${#tags[@]}; i++)); do
+        local tag="${tags[i]}"
+        local type="${types[i]}"
+
+        # Type filter
+        if [[ -n "$type_filter" && "$type" != "$type_filter" ]]; then
+            continue
+        fi
+
+        # Pattern filter
+        if [[ -n "$pattern_filter" && ! "$tag" =~ $pattern_filter ]]; then
+            continue
+        fi
+
+        filtered_tags+=("$tag")
+        filtered_hashes+=("${hashes[i]}")
+        filtered_types+=("$type")
+        filtered_subjects+=("${subjects[i]}")
+    done
+
+    if [[ ${#filtered_tags[@]} -eq 0 ]]; then
+        warn "No tags match the specified filters."
+        return 1
+    fi
+
+    # Use gum if available and enough tags
+    if gum_available && [[ ${#filtered_tags[@]} -ge 10 ]]; then
+        # Build formatted options for gum
+        local -a formatted_options=()
+        for ((i = 0; i < ${#filtered_tags[@]}; i++)); do
+            local tag="${filtered_tags[i]}"
+            local hash="${filtered_hashes[i]}"
+            local type="${filtered_types[i]}"
+            local subject="${filtered_subjects[i]}"
+
+            local option="$tag"
+            if [[ "$tag" == "$current_tag" ]]; then
+                option="* $option"
+            fi
+
+            # Add type indicator
+            case "$type" in
+                "lightweight")
+                    option="$option [L]"
+                    ;;
+                "annotated")
+                    option="$option [A]"
+                    ;;
+                "signed")
+                    option="$option [S]"
+                    ;;
+            esac
+
+            option="$option $hash $subject"
+            formatted_options+=("$option")
+        done
+
+        if [[ "$multi_select" == "true" ]]; then
+            # Multi-select with gum
+            local -a selected_indices=()
+            if [[ -n "$prompt" ]]; then
+                mapfile -t selected_indices < <(printf '%s\n' "${formatted_options[@]}" | gum filter --multi --prompt="$prompt " | nl -nrn | cut -f1)
+            else
+                mapfile -t selected_indices < <(printf '%s\n' "${formatted_options[@]}" | gum filter --multi | nl -nrn | cut -f1)
+            fi
+
+            # Convert to tags (adjusting for 0-based indexing)
+            selected_ref=()
+            for idx in "${selected_indices[@]}"; do
+                selected_ref+=("${filtered_tags[$((idx-1))]}")
+            done
+        else
+            # Single select with gum
+            local selection
+            if [[ -n "$prompt" ]]; then
+                selection=$(printf '%s\n' "${formatted_options[@]}" | gum filter --prompt="$prompt ")
+            else
+                selection=$(printf '%s\n' "${formatted_options[@]}" | gum filter)
+            fi
+
+            # Extract tag name from selection (strip leading *, type indicators, hash, subject)
+            local tag_name
+            tag_name=$(echo "$selection" | sed -E 's/^\*? //; s/ \[L\]$//; s/ \[A\]$//; s/ \[S\]$//; s/ [a-f0-9]{7}.*//')
+
+            selected_ref=("$tag_name")
+        fi
+    else
+        # Fallback to numbered list
+        printf "%s:\n\n" "$prompt"
+
+        local i
+        for ((i = 0; i < ${#filtered_tags[@]}; i++)); do
+            local prefix="$((i + 1)))"
+            print_tag_line "$prefix" "$current_tag" "$max_len" "$i" filtered_tags filtered_hashes filtered_types filtered_subjects true
+        done
+
+        if [[ "$multi_select" == "true" ]]; then
+            # Multi-select with numbered list
+            local -a selected_indices=()
+            while true; do
+                printf "\nEnter numbers to select (comma-separated), or empty when done: "
+                read -r input
+
+                if [[ -z "$input" ]]; then
+                    break
+                fi
+
+                # Parse comma-separated numbers
+                local -a new_indices=()
+                IFS=',' read -ra new_indices <<< "$input"
+
+                for idx in "${new_indices[@]}"; do
+                    local num
+                    num=$(echo "$idx" | tr -d ' ')
+                    if [[ "$num" =~ ^[0-9]+$ ]] && [[ $num -ge 1 ]] && [[ $num -le ${#filtered_tags[@]} ]]; then
+                        selected_indices+=($((num-1)))
+                    else
+                        warn "Invalid selection: $num"
+                    fi
+                done
+            done
+
+            # Convert to tags
+            selected_ref=()
+            for idx in "${selected_indices[@]}"; do
+                selected_ref+=("${filtered_tags[$idx]}")
+            done
+        else
+            # Single select with numbered list
+            local index
+            index=$(get_numbered_selection_index "${#filtered_tags[@]}")
+            selected_ref=("${filtered_tags[$index]}")
+        fi
+    fi
+
+    return 0
+}
+
+################################################################################
+# Validation and Safety Functions
+################################################################################
+
+# Validates a tag name according to Git conventions
+# Usage: validate_tag_name tag_name
+# Returns: 0 if valid, 1 if invalid
+validate_tag_name() {
+    local tag="$1"
+
+    if [[ -z "$tag" ]]; then
+        return 1
+    fi
+
+    # "git check-ref-format" is the single source of truth.
+    # We check "refs/tags/$tag" because we specifically want to create a tag.
+    # --normalize ensures it handles repeated slashes (e.g., "v1//0") gracefully
+    # if you want to allow them, or fails if strict.
+
+    # Using --allow-onelevel allows tags without slashes (standard tags).
+    git check-ref-format --allow-onelevel "refs/tags/$tag"
+}
+
+# Confirms tag deletion with safety checks
+# Usage: confirm_tag_deletion tag_name [force]
+confirm_tag_deletion() {
+    local tag="$1"
+    local force="${2:-false}"
+
+    # Check if tag exists
+    if ! git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
+        error "Tag '$tag' does not exist."
+        return 1
+    fi
+
+    # Check if tag exists remotely
+    local exists_remote=false
+    if tag_exists_remote "$tag"; then
+        exists_remote=true
+        warn "Tag '$tag' exists on remote origin."
+    fi
+
+    # Get tag type for appropriate warning
+    local tag_type
+    tag_type=$(get_tag_type "$tag")
+
+    # Build warning message
+    local message="delete tag '$tag'"
+    if [[ "$tag_type" == "signed" ]]; then
+        message="$message (${GREEN}signed${NC} tag)"
+    elif [[ "$tag_type" == "annotated" ]]; then
+        message="$message (${BLUE}annotated${NC} tag)"
+    fi
+
+    if [[ "$exists_remote" == "true" ]]; then
+        message="$message ${YELLOW}(also exists on remote)${NC}"
+    fi
+
+    # Confirm based on force flag
+    if [[ "$force" == "true" ]]; then
+        return 0
+    else
+        confirm_action_warn "$message"
+    fi
+}
+
+# Creates a backup of a tag before deletion
+# Usage: backup_tag tag_name
+# Returns: Backup tag name on success, empty string on failure
+backup_tag() {
+    local tag="$1"
+    local timestamp
+    timestamp=$(date +%Y%m%d-%H%M%S)
+    local backup_name="hug-backups/${tag}-backup-${timestamp}"
+
+    # Create backup namespace if it doesn't exist
+    if ! git rev-parse --verify "refs/tags/hug-backups" >/dev/null 2>&1; then
+        # Create a dummy tag to establish the namespace
+        git tag -m "Hug backup namespace" "hug-backups/.keep" 2>/dev/null || true
+    fi
+
+    # Get the target commit of the original tag
+    local target_commit
+    target_commit=$(get_tag_target_hash "$tag")
+
+    if [[ -n "$target_commit" ]]; then
+        # Create lightweight backup tag
+        if git tag "$backup_name" "$target_commit" 2>/dev/null; then
+            echo "$backup_name"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+################################################################################
+# Utility Functions
+################################################################################
+
+# Gets all tags that contain a specific commit
+# Usage: get_tags_containing commit_hash
+# Returns: List of tags (one per line)
+get_tags_containing() {
+    local commit="$1"
+
+    # Verify commit exists
+    if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
+        error "Invalid commit: $commit"
+        return 1
+    fi
+
+    # Get tags that contain the commit
+    git tag --contains "$commit" 2>/dev/null | sort -V
+}
+
+# Gets all tags that point to a specific commit
+# Usage: get_tags_pointing_to commit_hash
+# Returns: List of tags (one per line)
+get_tags_pointing_to() {
+    local commit="$1"
+
+    # Verify commit exists
+    if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
+        error "Invalid commit: $commit"
+        return 1
+    fi
+
+    # Get tags that point to the commit
+    local -a tags=()
+    local tag
+    while IFS= read -r tag; do
+        local target
+        target=$(get_tag_target_hash "$tag" short)
+        if [[ "$target" == "${commit:0:7}" ]] || [[ "$target" == "$commit" ]]; then
+            tags+=("$tag")
+        fi
+    done < <(git tag -l 2>/dev/null)
+
+    # Sort and output
+    printf '%s\n' "${tags[@]}" | sort -V
+}

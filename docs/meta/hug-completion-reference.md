@@ -103,6 +103,7 @@ These map to custom scripts (see Section 2).
 
 ### Tags (t*)
 - `t [<pattern>]`: List tags. Args: `[<pattern>]` (optional, default *).
+- `tl [search_terms]`: List tags with details. Args: `[<search_terms>]` (optional; searches tag name, hash, and commit message).
 - `tc <tag> [<commit>]`: Create lightweight tag. Args: `<tag>` (required), `[<commit>]` (optional).
 - `ta <tag> [<message>]`: Create annotated tag. Args: `<tag>` (required), `[<message>]` (optional).
 - `ts <tag>`: Show tag details. Args: `<tag>` (required).

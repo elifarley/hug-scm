@@ -1,0 +1,327 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-tag; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat <<'EOF'
+hug t: Interactive tag browser with actions.
+
+USAGE:
+  hug t [options] [tag-name-or-action]
+
+OPTIONS:
+  -h, --help            Show this help message and exit.
+  -a, --action ACTION  Perform action on tag: checkout, show, delete
+  -t, --type TYPE       Filter by tag type: lightweight, annotated, signed
+  -p, --pattern PATTERN Filter by name pattern
+
+ACTIONS:
+  checkout              Switch to the selected tag (default action)
+  show                  Show tag details and commit information
+  delete                Delete the selected tag (with confirmation)
+
+ARGUMENTS:
+  tag-name-or-action    Tag name to checkout directly, or action to perform
+
+DESCRIPTION:
+  Interactive tag browser that allows you to explore and act on repository tags.
+
+  If no tag is specified, displays an interactive menu of all tags with:
+    - Tag names with type indicators: [L] lightweight, [A] annotated, [S] signed
+    - Commit hashes and subjects
+    - Current tag highlighted in green
+    - Remote status indicators
+
+  Interactive Features:
+    - Search/filter tags (when gum is available)
+    - Multi-select for batch operations
+    - Type and pattern filtering
+    - Action menu for selected tags
+
+  Type Indicators:
+    [L] - Lightweight tag (direct pointer to commit)
+    [A] - Annotated tag (with message and metadata)
+    [S] - Signed tag (GPG-signed annotated tag)
+
+  For repositories with 10 or more tags, uses gum filter (if installed)
+  for easier searching and selection. Otherwise, displays a numbered list.
+
+EXAMPLES:
+  hug t                       # Interactive tag browser
+  hug t v1.0.0               # Checkout tag v1.0.0 directly
+  hug t --action show v1.0.0 # Show details for tag v1.0.0
+  hug t --type annotated     # Browse only annotated tags
+  hug t --pattern "v1.*"     # Browse tags matching pattern
+  hug t --action delete      # Interactive tag deletion
+
+SEE ALSO:
+  hug tl  : Simple tag list
+  hug tll : Detailed tag list
+  hug tc  : Create tag
+  hug tdel: Delete tag
+
+FURTHER READING:
+  See 'git checkout --help' and 'git tag --help'.
+EOF
+}
+
+# Parse flags
+action="checkout"
+type_filter=""
+pattern=""
+declare -a args=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -a|--action)
+      if [[ $# -lt 2 ]]; then
+        error "Option --action requires a value"
+        exit 1
+      fi
+      action="$2"
+      if [[ "$action" != "checkout" && "$action" != "show" && "$action" != "delete" ]]; then
+        error "Invalid action: $action. Must be: checkout, show, or delete"
+        exit 1
+      fi
+      shift 2
+      ;;
+    -t|--type)
+      if [[ $# -lt 2 ]]; then
+        error "Option --type requires a value"
+        exit 1
+      fi
+      type_filter="$2"
+      if [[ "$type_filter" != "lightweight" && "$type_filter" != "annotated" && "$type_filter" != "signed" ]]; then
+        error "Invalid type filter: $type_filter. Must be: lightweight, annotated, or signed"
+        exit 1
+      fi
+      shift 2
+      ;;
+    -p|--pattern)
+      if [[ $# -lt 2 ]]; then
+        error "Option --pattern requires a value"
+        exit 1
+      fi
+      pattern="$2"
+      shift 2
+      ;;
+    -*)
+      error "Unknown option: $1"
+      show_help
+      exit 1
+      ;;
+    *)
+      args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Early exit if not in Git repo
+check_git_repo
+
+# Handle case where tag name is provided directly
+if [ ${#args[@]} -gt 0 ]; then
+  tag_arg="${args[0]}"
+
+  # Check if tag exists
+  if ! git rev-parse --verify "refs/tags/$tag_arg" >/dev/null 2>&1; then
+    error "Tag '$tag_arg' does not exist."
+    exit 1
+  fi
+
+  # Perform the requested action
+  case "$action" in
+    "checkout")
+      info "Checking out tag '$tag_arg'..."
+      exec git checkout "$tag_arg"
+      ;;
+    "show")
+      # Show detailed tag information
+      local tag_type
+      tag_type=$(get_tag_type "$tag_arg")
+
+      printf "${GREEN}%s${NC} " "$tag_arg"
+      case "$tag_type" in
+        "lightweight")
+          printf "${GREY}(lightweight)${NC}\n\n"
+          ;;
+        "annotated")
+          printf "${BLUE}(annotated)${NC}\n\n"
+          ;;
+        "signed")
+          printf "${GREEN}(signed)${NC}\n\n"
+          ;;
+      esac
+
+      # Show tag details
+      exec git show "$tag_arg"
+      ;;
+    "delete")
+      # Confirm and delete tag
+      if confirm_tag_deletion "$tag_arg"; then
+        # Create backup
+        local backup
+        backup=$(backup_tag "$tag_arg" 2>/dev/null || echo "")
+
+        if [[ -n "$backup" ]]; then
+          info "Created backup: $backup"
+        fi
+
+        # Delete the tag
+        if git tag -d "$tag_arg"; then
+          success "Deleted tag '$tag_arg'"
+        else
+          error "Failed to delete tag '$tag_arg'"
+          exit 1
+        fi
+      else
+        info "Deletion cancelled."
+      fi
+      exit 0
+      ;;
+  esac
+fi
+
+# No tag argument provided - show interactive menu
+# Get all tags
+current_tag=""
+max_len=0
+tags=()
+hashes=()
+types=()
+subjects=()
+dates=()
+signatures=()
+
+if ! compute_tag_details current_tag max_len hashes tags types subjects dates signatures; then
+  error "No tags found in this repository."
+  exit 1
+fi
+
+# Apply filters if specified
+filtered_tags=()
+filtered_hashes=()
+filtered_types=()
+filtered_subjects=()
+
+i=0
+for ((i = 0; i < ${#tags[@]}; i++)); do
+  # Type filter
+  if [[ -n "$type_filter" && "${types[i]}" != "$type_filter" ]]; then
+    continue
+  fi
+
+  # Pattern filter
+  if [[ -n "$pattern" && ! "${tags[i]}" =~ $pattern ]]; then
+    continue
+  fi
+
+  filtered_tags+=("${tags[i]}")
+  filtered_hashes+=("${hashes[i]}")
+  filtered_types+=("${types[i]}")
+  filtered_subjects+=("${subjects[i]}")
+done
+
+if [[ ${#filtered_tags[@]} -eq 0 ]]; then
+  error "No tags match the specified filters."
+  exit 1
+fi
+
+# Select a tag
+selected_tags=()
+select_options=()
+if [[ -n "$type_filter" ]]; then
+  select_options+=(--type "$type_filter")
+fi
+if [[ -n "$pattern" ]]; then
+  select_options+=(--pattern "$pattern")
+fi
+
+select_options+=(--prompt "Browse and select a tag")
+select_tags selected_tags "${select_options[@]}"
+
+selected_tag="${selected_tags[0]}"
+
+# Show action menu
+if [[ "$action" == "checkout" ]]; then
+  # Default action is checkout, but let user choose other actions
+  if gum_available; then
+    action=$(printf "checkout\nshow\ndelete" | gum choose --prompt="Action for '$selected_tag': ")
+  else
+    printf "\nActions for '${GREEN}%s${NC}':\n" "$selected_tag"
+    printf "  1) checkout (switch to tag)\n"
+    printf "  2) show (view tag details)\n"
+    printf "  3) delete (remove tag)\n"
+    printf "\nSelect action (1-3): "
+    read -r choice
+
+    case "$choice" in
+      1) action="checkout" ;;
+      2) action="show" ;;
+      3) action="delete" ;;
+      *)
+        warn "Invalid choice. Defaulting to checkout."
+        action="checkout"
+        ;;
+    esac
+  fi
+fi
+
+# Perform the selected action
+case "$action" in
+  "checkout")
+    info "Checking out tag '$selected_tag'..."
+    exec git checkout "$selected_tag"
+    ;;
+  "show")
+    # Get tag type for display
+    tag_type=$(get_tag_type "$selected_tag")
+
+    printf "${GREEN}%s${NC} " "$selected_tag"
+    case "$tag_type" in
+      "lightweight")
+        printf "${GREY}(lightweight)${NC}\n\n"
+        ;;
+      "annotated")
+        printf "${BLUE}(annotated)${NC}\n\n"
+        ;;
+      "signed")
+        printf "${GREEN}(signed)${NC}\n\n"
+        ;;
+    esac
+
+    # Show tag details
+    exec git show "$selected_tag"
+    ;;
+  "delete")
+    # Confirm and delete tag
+    if confirm_tag_deletion "$selected_tag"; then
+      # Create backup
+      local backup
+      backup=$(backup_tag "$selected_tag" 2>/dev/null || echo "")
+
+      if [[ -n "$backup" ]]; then
+        info "Created backup: $backup"
+      fi
+
+      # Delete the tag
+      if git tag -d "$selected_tag"; then
+        success "Deleted tag '$selected_tag'"
+      else
+        error "Failed to delete tag '$selected_tag'"
+        exit 1
+      fi
+    else
+      info "Deletion cancelled."
+    fi
+    exit 0
+    ;;
+esac

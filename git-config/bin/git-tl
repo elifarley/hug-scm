@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-tag; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat <<'EOF'
+hug tl: List tags with type indicators and formatting.
+
+USAGE:
+  hug tl [options] [search_terms]
+
+OPTIONS:
+  -h, --help            Show this help message and exit.
+  -j, --json            Output tags in JSON format.
+  -r, --remote          Show remote status for tags.
+  --no-type             Hide type indicators ([L], [A], [S]).
+
+ARGUMENTS:
+  search_terms          Optional search terms to filter tags (case-insensitive).
+
+DESCRIPTION:
+  Lists all tags in the repository with useful formatting and indicators:
+
+  Type Indicators:
+    [L] - Lightweight tag (direct pointer to commit)
+    [A] - Annotated tag (with message and metadata)
+    [S] - Signed tag (GPG-signed annotated tag)
+
+  Visual Cues:
+    * - Current tag (if you're on a tag)
+    Green highlight for the current tag
+    Yellow for commit hashes
+    Blue for annotated tags
+    Green for signed tags
+
+  With --json flag, outputs structured data for programmatic use.
+  With --remote flag, shows which tags exist on the remote origin.
+
+  If search terms are provided, only tags containing any of the terms in their
+tag name, commit hash, or commit subject are shown. The search is case-insensitive
+and matches partial strings.
+
+EXAMPLES:
+  hug tl                      # List all tags with type indicators
+  hug tl --json               # Output in JSON format
+  hug tl --remote             # Show remote status
+  hug tl "fix"                # Show only tags related to fixes
+  hug tl "release" "v1"       # Show tags with either "release" or "v1"
+  hug tl --no-type "backup"   # Show backup tags without type indicators
+
+SEE ALSO:
+  hug tll : Detailed tag list with annotations
+  hug t   : Interactive tag browser and selector
+
+FURTHER READING:
+  See 'git tag --help' and 'git for-each-ref --help'.
+EOF
+}
+
+# Parse flags
+json_output=false
+show_type=true
+show_remote=false
+pattern=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -j|--json)
+      json_output=true
+      shift
+      ;;
+    -r|--remote)
+      show_remote=true
+      shift
+      ;;
+    --no-type)
+      show_type=false
+      shift
+      ;;
+    -*)
+      error "Unknown option: $1"
+      show_help
+      exit 1
+      ;;
+    *)
+      pattern="$1"
+      shift
+      ;;
+  esac
+done
+
+# Early exit if not in Git repo
+check_git_repo
+
+# Build options for print_tag_list
+print_options=()
+
+if [[ "$json_output" == "true" ]]; then
+  print_options+=(--json)
+fi
+
+if [[ "$show_type" == "true" ]]; then
+  print_options+=(--type)
+else
+  print_options+=(--no-type)
+fi
+
+if [[ "$show_remote" == "true" ]]; then
+  print_options+=(--remote)
+fi
+
+# If pattern is provided, we need to filter the tags
+if [[ -n "$pattern" ]]; then
+  # Get all tags first
+  current_tag=""
+  max_len=0
+  tags=()
+  hashes=()
+  types=()
+  subjects=()
+  dates=()
+  signatures=()
+
+  if ! compute_tag_details current_tag max_len hashes tags types subjects dates signatures; then
+    warn "No tags found in this repository."
+    exit 1
+  fi
+
+  # Filter tags by pattern using search function
+  for ((i = 0; i < ${#tags[@]}; i++)); do
+    # Create a tag line with all searchable fields
+    tag_line="${tags[i]} ${hashes[i]} ${subjects[i]}"
+
+    # Check if any search term matches
+    if search_items_by_fields "$pattern" "OR" "$tag_line"; then
+      # Print the matching tag line
+      print_tag_line "" "$current_tag" "$max_len" "$i" tags hashes types subjects "$show_type"
+    fi
+  done
+else
+  # No pattern, show all tags
+  print_tag_list "${print_options[@]}"
+fi

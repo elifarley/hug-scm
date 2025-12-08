@@ -182,3 +182,38 @@ prompt_confirm_safe() {
     exit 1
   fi
 }
+
+# Simple input prompt with default value
+# Usage: prompt_input "Prompt text" ["default_value"]
+# Returns: The user input (or default if user just hit enter)
+prompt_input() {
+  local prompt="$1"
+  local default="${2:-}"
+  local result
+
+  if gum_available; then
+    if ! result=$(gum input --header "$prompt" --placeholder "$default"); then
+      return 1  # User cancelled (Ctrl+C/ESC)
+    fi
+  else
+    # Visually indicate the default value in standard text mode.
+    # Otherwise, the user has to guess that pressing Enter yields a value.
+    local display_prompt="$prompt"
+    if [[ -n "$default" ]]; then
+      display_prompt="$display_prompt [$default]"
+    fi
+
+    printf '%s: ' "$display_prompt" >&2
+    read -r result
+  fi
+
+  # Dependency: hug-strings
+  result="$(trim_message "${result:-}")"
+
+  # Logic: If input is empty, fallback to default.
+  if [[ -z "$result" && -n "$default" ]]; then
+    result="$default"
+  fi
+
+  echo "$result"
+}

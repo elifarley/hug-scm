@@ -1,0 +1,372 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-tag; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat <<'EOF'
+hug tc: Interactive tag creation with smart defaults.
+
+USAGE:
+  hug tc [options] [tag-name] [commit]
+
+OPTIONS:
+  -h, --help            Show this help message and exit.
+  -a, --annotated       Create annotated tag (default: lightweight)
+  -s, --signed          Create GPG-signed tag
+  -m, --message MESSAGE Annotated tag message
+  -f, --force           Force creation (overwrite existing tag)
+  -i, --interactive     Force interactive mode (enabled by default with no args)
+
+ARGUMENTS:
+  tag-name              Name of the tag to create
+  commit                Commit to tag (default: HEAD)
+
+DESCRIPTION:
+  Create tags with intelligent defaults and interactive prompts.
+
+  Tag Types:
+    Lightweight - Simple pointer to a commit (fast, no metadata)
+    Annotated   - Tag with message, author, and date (recommended for releases)
+    Signed      - GPG-signed annotated tag (cryptographically verified)
+
+  Interactive Features:
+    - Smart tag name suggestions based on commit history
+    - Target commit selection (defaults to HEAD)
+    - Tag name validation
+    - Duplicate tag warnings
+    - Automatic remote push option
+
+  By default, enters interactive mode when no arguments are provided:
+    - Target commit selection
+    - Tag name suggestion and validation
+    - Type selection (lightweight/annotated/signed)
+    - Message composition for annotated tags
+    - Optional remote push
+
+EXAMPLES:
+  hug tc                       # Interactive tag creation (default behavior)
+  hug tc v1.0.0                # Create lightweight tag on HEAD
+  hug tc -a v1.0.0             # Create annotated tag
+  hug tc -s v1.0.0             # Create signed tag
+  hug tc -m "Release v1.0.0" v1.0.0 HEAD~5
+  hug tc --interactive v1.0.0  # Force interactive mode with pre-filled name
+
+SEE ALSO:
+  hug tl  : List tags
+  hug t   : Browse and manage tags
+  hug tdel: Delete tags
+
+FURTHER READING:
+  See 'git tag --help' for more tag options.
+EOF
+}
+
+# ==============================================================================
+# 1. LOGIC HELPERS (Business Logic)
+# ==============================================================================
+
+generate_tag_suggestions() {
+  local suggestions=()
+
+  # 1. Increment version (Semantic Versioning)
+  local last_version
+
+  # Search for tags matching standard SemVer patterns (both v-prefixed and bare numbers)
+  # We use multiple --list patterns to be efficient, avoiding full repo scans.
+  last_version=$(git tag --list "v[0-9]*.[0-9]*.[0-9]*" --list "[0-9]*.[0-9]*.[0-9]*" --sort=-version:refname | head -1 2>/dev/null || echo "")
+
+  if [[ -n "$last_version" ]]; then
+    # Regex Breakdown:
+    # ^(v?)        -> Group 1: Capture the prefix 'v' if it exists, or empty string
+    # ([0-9]+)     -> Group 2: Major version
+    # \.([0-9]+)   -> Group 3: Minor version
+    # \.([0-9]+)$  -> Group 4: Patch version
+    if [[ "$last_version" =~ ^(v?)([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+      local prefix="${BASH_REMATCH[1]}"
+      local major="${BASH_REMATCH[2]}"
+      local minor="${BASH_REMATCH[3]}"
+      local patch="${BASH_REMATCH[4]}"
+
+      # Suggest next Patch (preserves detected prefix)
+      suggestions+=("${prefix}${major}.${minor}.$((patch + 1))")
+
+      # Suggest next Minor (preserves detected prefix)
+      suggestions+=("${prefix}${major}.$((minor + 1)).0")
+    fi
+  else
+    # Fallback: No tags found. Offer both common standards.
+    suggestions+=("v0.1.0")
+    suggestions+=("0.1.0")
+  fi
+
+  # 2. Date-based (Standard format)
+  suggestions+=("$(date +%Y-%m-%d)")
+
+  # 3. Branch-based (e.g., feature/login-20231025)
+  local branch_name
+  branch_name=$(git branch --show-current 2>/dev/null || echo "release")
+  # Sanitize branch name for tag usage (replace / with -)
+  branch_name="${branch_name//\//-}"
+  suggestions+=("${branch_name}-$(date +%Y%m%d)")
+
+  echo "${suggestions[@]}"
+}
+
+get_commit_subject() {
+  local commit="$1"
+  git log -n 1 --pretty=format:%s "$commit" 2>/dev/null || echo ""
+}
+
+validate_tag_exists_check() {
+  local name="$1"
+  local allow_force="$2"
+
+  if git rev-parse --verify "refs/tags/$name" >/dev/null 2>&1; then
+    if [[ "$allow_force" == "false" ]]; then
+      error "Tag '$name' already exists. Use --force to overwrite."
+      exit 1
+    fi
+    warn "Tag '$name' exists and will be overwritten."
+  fi
+}
+
+# ==============================================================================
+# 2. INTERACTIVE UI HANDLERS (Extract Method targets)
+# ==============================================================================
+
+select_target_commit() {
+  local current_def="$1"
+  local result
+
+  # Uses the prompt_input helper you defined previously
+  if ! result=$(prompt_input "Target commit" "$current_def"); then
+    return 1 # Cancelled
+  fi
+
+  if ! git rev-parse --verify "$result" >/dev/null 2>&1; then
+    error "Invalid target: $result"
+    exit 1
+  fi
+
+  echo "$result"
+}
+
+select_tag_name() {
+  local default_suggestions=($1) # Read array passed as string
+  local result
+
+  if gum_available; then
+    # Use gum filter for list + typing
+    result=$(printf '%s\n' "${default_suggestions[@]}" | gum filter --prompt="Tag name (or type custom): ")
+    # Fallback if gum returns empty but didn't error (user hit esc or enter on empty)
+    if [[ -z "$result" ]]; then
+       # Try simple input if filter failed
+       result=$(prompt_input "Enter tag name")
+    fi
+  else
+    printf "Suggestions: %s\n" "$(IFS=', '; echo "${default_suggestions[*]}")"
+    result=$(prompt_input "Enter tag name")
+  fi
+
+  echo "$result"
+}
+
+select_tag_type() {
+  if gum_available; then
+    gum choose "lightweight" "annotated" "signed" --header="Select tag type"
+  else
+    printf "  1) lightweight\n  2) annotated\n  3) signed\n"
+    local choice
+    choice=$(prompt_input "Select type (1-3)" "2")
+    case "$choice" in
+      1|lightweight) echo "lightweight" ;;
+      3|signed)      echo "signed" ;;
+      *)             echo "annotated" ;;
+    esac
+  fi
+}
+
+select_tag_message() {
+  local commit_ref="$1"
+  local default_msg
+  default_msg=$(get_commit_subject "$commit_ref")
+
+  printf "\n${BLUE}Tag message:${NC}\n"
+
+  # Logic: If gum available, use write, else use standard prompt_input
+  if gum_available; then
+    local input
+    # Gum write is special, it needs a value flag to pre-fill
+    # We offer a choice first to pre-fill or type new? No, let's keep it simple:
+    # Just open the editor with the commit subject pre-filled.
+    input=$(gum write --prompt="Message: " --value="$default_msg" --header="Enter tag message (Ctrl+D to finish)")
+    echo "$input"
+  else
+    # Use the prompt_input helper
+    prompt_input "Tag message" "$default_msg"
+  fi
+}
+
+# ==============================================================================
+# 3. ACTION HANDLERS
+# ==============================================================================
+
+perform_tag_creation() {
+  local type="$1"
+  local name="$2"
+  local ref="$3"
+  local msg="${4:-}"
+
+  case "$type" in
+    "lightweight")
+      git tag -f "$name" "$ref" && success "Created lightweight tag: $name"
+      ;;
+    "annotated")
+      git tag -f -a "$name" "$ref" -m "$msg" && success "Created annotated tag: $name"
+      ;;
+    "signed")
+      # GPG Configuration Check
+      if ! git config --get user.signingkey >/dev/null 2>&1; then
+        warn "No GPG signing key configured."
+        if ! prompt_confirm_warn "continue without GPG signing"; then
+          info "Tag creation cancelled."
+          exit 0
+        fi
+        # Fallback to annotated
+        git tag -f -a "$name" "$ref" -m "$msg" && success "Created annotated tag (GPG missing): $name"
+      else
+        git tag -f -s "$name" "$ref" -m "$msg" && success "Created signed tag: $name"
+      fi
+      ;;
+  esac
+}
+
+# ==============================================================================
+# 4. MAIN EXECUTION
+# ==============================================================================
+
+# Global Defaults
+tag_type="lightweight"
+tag_message=""
+force=false
+interactive=false
+declare -a args=()
+
+# Parse Flags (Same as before)
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) show_help; exit 0 ;;
+    -a|--annotated) tag_type="annotated"; shift ;;
+    -s|--signed) tag_type="signed"; shift ;;
+    -m|--message) tag_message="$2"; tag_type="annotated"; shift 2 ;;
+    -f|--force) force=true; shift ;;
+    -i|--interactive) interactive=true; shift ;;
+    -*) error "Unknown option: $1"; exit 1 ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+
+check_git_repo
+
+# Extract positional args
+tag_name="${args[0]:-}"
+commit="${args[1]:-HEAD}"
+
+# Auto-enable interactive if no args
+if [[ "$interactive" == "true" || ${#args[@]} -eq 0 ]]; then
+  interactive=true
+  # Sanity check for TTY
+  if ! gum_available && ! [[ -t 0 ]] && [[ ${#args[@]} -eq 0 ]]; then
+     error "Non-interactive environment requires arguments."
+     exit 1
+  fi
+fi
+
+# --- Interactive Flow ---
+if [[ "$interactive" == "true" ]]; then
+
+  # 1. Tag Name
+  if [[ -z "$tag_name" ]]; then
+    # Generate suggestions array
+    suggestions_str=$(generate_tag_suggestions)
+    if ! tag_name=$(select_tag_name "$suggestions_str"); then
+       info "Cancelled."; exit 0
+    fi
+  fi
+
+  # 1.1 Validate Name
+  if [[ -z "$tag_name" ]]; then error "Tag name required"; exit 1; fi
+  if ! validate_tag_name "$tag_name"; then error "Invalid tag name format: $tag_name"; exit 1; fi
+  validate_tag_exists_check "$tag_name" "$force"
+
+  printf "  Name:    ${YELLOW}%s${NC}\n" "$tag_name"
+
+  # 2. Target Commit
+  if ! commit=$(select_target_commit "HEAD"); then
+    info "Cancelled."; exit 0
+  fi
+
+  printf "Target:    ${YELLOW}%s${NC}\n" "$commit"
+
+  # 3. Tag Type
+  # Only ask if not manually overridden by flag or inferred by -m
+  if [[ "$tag_type" == "lightweight" && -z "$tag_message" ]]; then
+     tag_type=$(select_tag_type)
+  fi
+
+  printf "  Type:    ${BLUE}%s${NC}\n" "$tag_type"
+
+  # 4. Message
+  # TODO when $tag_type IS lightweight, the test "$tag_type" != "lightweight" says it's not!
+  if [[ "$tag_type" != "lightweight" && -z "$tag_message" ]]; then
+     tag_message=$(select_tag_message "$commit")
+     if [[ -z "$tag_message" ]]; then error "Message required for $tag_type tags"; exit 1; fi
+  fi
+
+# --- Non-Interactive Validation ---
+else
+  if [[ -z "$tag_name" ]]; then error "Tag name required"; exit 1; fi
+  validate_tag_name "$tag_name" || exit 1
+  validate_tag_exists_check "$tag_name" "$force"
+  if [[ "$tag_type" != "lightweight" && -z "$tag_message" ]]; then
+    error "Message required for $tag_type tags"; exit 1
+  fi
+
+  # Safety Check: Require force if no interactive and no args (edge case protection)
+  if [[ "$force" != "true" && ${#args[@]} -eq 0 ]]; then
+    error "Non-interactive mode requires arguments or --force."
+    exit 1
+  fi
+fi
+
+# --- Preview & Execute ---
+
+printf "\n${GREEN}Tag Summary:${NC}\n"
+printf "  Name:    ${YELLOW}%s${NC}\n" "$tag_name"
+printf "  Type:    ${BLUE}%s${NC}\n" "$tag_type"
+printf "  Commit:  ${YELLOW}%s${NC}\n" "$(git rev-parse --short "$commit")"
+[[ -n "$tag_message" ]] && printf "  Message: %s\n" "$tag_message"
+
+printf "\n${BLUE}Commit preview:${NC}\n"
+git log -n 1 --pretty=format:"%h %s (%ar)" "$commit" || echo "Commit not found"
+echo ""
+
+if [[ "$interactive" == "true" ]]; then
+  if ! prompt_confirm_safe "create this tag"; then
+    info "Cancelled."; exit 0
+  fi
+fi
+
+# Create
+perform_tag_creation "$tag_type" "$tag_name" "$commit" "$tag_message"
+
+# Push
+if [[ "$interactive" == "true" ]]; then
+  echo ""
+  if prompt_confirm_safe "push tag to remote origin"; then
+    git push origin "refs/tags/$tag_name" || warn "Push failed (do it manually)"
+  fi
+fi

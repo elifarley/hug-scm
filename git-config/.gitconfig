@@ -238,24 +238,19 @@
   #  TAG MANAGEMENT (t*)
   # ═══════════════════════════════════════════════════════════════════
 
-  # List tags matching pattern (usage: hug t "v1.*")
-  t = "!f() { git tag -l \"${1:-*}\"; }; f"
-
-  # Create lightweight tag (default)
-  # Usage: hug tc v1.0 [<commit>]
-  tc = "!f() { \
-    test $# -eq 0 && { printf 'Usage: hug tc <tag> [<commit>]\n' >&2; return 1; }; \
-    git tag \"$@\"; \
-  }; f"
-
-  # Create annotated tag
-  # Usage: hug ta v1.0 "Release version 1.0"
-  ta = "!f() { \
-    test $# -eq 0 && { printf 'Usage: hug ta <tag> [<message>]\n' >&2; return 1; }; \
-    tag=\"$1\"; shift; \
-    msg=\"${*:-Annotated tag $tag}\"; \
-    git tag -a \"$tag\" -m \"$msg\"; \
-  }; f"
+  # Core tag commands are now implemented as scripts:
+  # - git-t   : Interactive tag browser and selector
+  # - git-tl  : Simple tag list with type indicators
+  # - git-tll : Detailed tag list with annotations
+  # - git-tc  : Interactive tag creation (smart defaults)
+  # - git-tdel: Interactive tag deletion with safety features
+  #
+  # These provide enhanced functionality with:
+  #   * Interactive selection and filtering
+  #   * Type indicators (lightweight/annotated/signed)
+  #   * Safety confirmations and backups
+  #   * Remote status awareness
+  #   * JSON output support
 
   # Show tag details (usage: hug ts v1.0)
   ts = "!f() { \
@@ -322,11 +317,8 @@
     git fetch --tags --prune --prune-tags --force; \
   }; f"
 
-  # Delete local tag
-  tdel = "!f() { \
-    test $# -eq 0 && { printf 'Usage: hug td <tag>\n' >&2; return 1; }; \
-    git tag -d \"$1\"; \
-  }; f"
+  # Note: Use 'hug tdel' for interactive tag deletion with safety features
+  # The simple 'git tag -d' functionality is now provided by the enhanced git-tdel script
 
   # Delete remote tag
   tdelr = "!f() { \

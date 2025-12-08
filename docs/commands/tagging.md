@@ -1,197 +1,443 @@
-# Tagging (t*)
+# Tag Management Commands
 
-Tagging commands in Hug are for creating, listing, and managing release markers or important milestones in your project's history. They are prefixed with `t` for "tag."
+Hug SCM provides comprehensive tag management with interactive browsing, smart defaults, and safety features. The enhanced tag commands follow the same patterns as branch and worktree commands for consistency, while maintaining backward compatibility with existing aliases.
 
-These commands provide intuitive ways to create lightweight and annotated tags, manage tag lifecycle (move, rename, delete), sync with remotes, and query which tags relate to specific commits.
+## Enhanced Commands (Scripts)
 
-> **Note:** Tag commands are implemented as Git aliases in `.gitconfig`, providing a consistent interface over Git's native tag functionality.
+### `hug t` - Interactive Tag Browser
 
-## Quick Reference
+Interactive tag browser with selection and actions.
 
-| Command | Memory Hook | Summary |
-| --- | --- | --- |
-| `hug t` | **T**ags list | List all tags (optionally matching a pattern) |
-| `hug tc` | **T**ag **C**reate | Create a lightweight tag |
-| `hug ta` | **T**ag **A**nnotated | Create an annotated (detailed) tag |
-| `hug ts` | **T**ag **S**how | Show tag details |
-| `hug tr` | **T**ag **R**ename | Rename a tag |
-| `hug tm` | **T**ag **M**ove | Move tag to a new commit |
-| `hug tma` | **T**ag **M**ove **A**nnotated | Move and re-annotate tag |
-| `hug tpush` | **T**ag **Push** | Push specific tag(s) to remote (or all if no args) |
-| `hug tpull` | **T**ag **Pull** | Fetch tags from remote |
-| `hug tpullf` | **T**ag **Pull** **F**orce | Force fetch and prune tags from remote |
-| `hug tdel` | **T**ag **DEL**ete | Delete local tag |
-| `hug tdelr` | **T**ag **DEL**ete **R**emote | Delete remote tag |
-| `hug tco` | **T**ag **C**heck**O**ut | Checkout a specific tag |
-| `hug twc` | **T**ags **W**hich **C**ontain | Tags which contain a commit |
-| `hug twp` | **T**ags **W**hich **P**oint | Tags which point to an object |
+```bash
+# Interactive tag browser
+hug t
 
-## Listing Tags
+# Checkout specific tag directly
+hug t v1.0.0
 
-### `hug t [pattern]`
-- **Description**: Lists all existing tags. If a pattern is provided, only tags matching that pattern are shown (e.g., `v1.*` for all v1.x tags).
-- **Example**: 
-  ```shell
-  hug t              # List all tags
-  hug t "v1.*"       # List tags matching v1.*
-  hug t "v2.0*"      # List tags starting with v2.0
-  ```
-- **Safety**: Read-only; no repo changes.
-- ![hug t example](img/hug-t.png)
+# Show tag details
+hug t --action show v1.0.0
 
-## Creating Tags
+# Delete tag interactively
+hug t --action delete v1.0.0
 
-### `hug tc <tag-name> [commit]`
-- **Description**: Creates a lightweight tag at the specified commit (defaults to HEAD). This is a simple pointer to a specific commit and contains no extra information. Good for quick, temporary markers.
-- **Example**: 
-  ```shell
-  hug tc v1.0.1              # Tag current commit
-  hug tc v1.0.1 a1b2c3       # Tag specific commit
-  ```
-- **Safety**: Non-destructive; creates new tag reference.
-- ![hug tc example](img/hug-tc.png)
+# Filter by tag type
+hug t --type annotated
 
-### `hug ta <tag-name> "<message>"`
-- **Description**: Creates an annotated tag. This is recommended for official releases, as it is a full object in the Git database that includes the tagger's name, email, date, and a message. Annotated tags are the Git-recommended way to mark releases.
-- **Example**: 
-  ```shell
-  hug ta v1.0.0 "Initial stable release"
-  hug ta v2.0.0 "Major rewrite with breaking changes"
-  ```
-- **Safety**: Non-destructive; creates new tag object.
-- ![hug ta example](img/hug-ta.png)
+# Filter by pattern
+hug t --pattern "v1.*"
+```
 
-## Viewing Tag Details
+**Features:**
+- Interactive selection with gum (if available)
+- Type indicators: `[L]` lightweight, `[A]` annotated, `[S]` signed
+- Remote status awareness
+- Action menu: checkout, show, delete
+- Search and filtering capabilities
 
-### `hug ts <tag-name>`
-- **Description**: Show detailed information about a tag, including the commit it points to, the tag message (for annotated tags), and the tagger information.
-- **Example**: 
-  ```shell
-  hug ts v1.0.0       # Show details for v1.0.0 tag
-  ```
-- **Safety**: Read-only; displays tag information.
-- ![hug ts example](img/hug-ts.png)
+### `hug tl` - Enhanced Tag List
 
-## Modifying Tags
+List tags with type indicators and formatting.
 
-### `hug tr <old-tag> <new-tag>`
-- **Description**: Rename a tag by creating a new tag pointing to the same commit and deleting the old tag. The commit reference stays the same, only the tag name changes.
-- **Example**: 
-  ```shell
-  hug tr v1.0 v1.0.1       # Rename tag v1.0 to v1.0.1
-  ```
-- **Safety**: Deletes old tag locally; must manually update remote if already pushed.
+```bash
+# List all tags with type indicators
+hug tl
 
-### `hug tm <tag-name> [commit]`
-- **Description**: Move an existing tag to point to a different commit (defaults to HEAD). Keeps the same tag name but changes what commit it references.
-- **Example**: 
-  ```shell
-  hug tm v1.0           # Move v1.0 tag to current HEAD
-  hug tm v1.0 a1b2c3    # Move v1.0 tag to specific commit
-  ```
-- **Safety**: Overwrites existing tag; use with caution on shared tags.
+# List with remote status
+hug tl --remote
 
-### `hug tma <tag-name> "<message>" [commit]`
-- **Description**: Move an existing tag to a new commit (defaults to HEAD) and update its annotation message. Combines move and re-annotate operations.
-- **Example**: 
-  ```shell
-  hug tma v1.0 "Updated release notes"           # Re-annotate at HEAD
-  hug tma v1.0 "Hotfix included" a1b2c3         # Move and re-annotate
-  ```
-- **Safety**: Overwrites existing tag; coordinate with team if tag is shared.
+# List in JSON format
+hug tl --json
 
-## Synchronizing Tags with Remotes
+# Search for tags by commit message, name, or hash
+hug tl "fix"                     # Find tags related to fixes
+hug tl "release" "v1"           # Multiple search terms
+hug tl 67fc1bd                  # Find tags with this hash in their details
 
-### `hug tpush [tags...]`
-- **Description**: Push tag(s) to the remote repository. If no tag names are provided, pushes all tags. By default, `git push` does not send tags, so this is necessary to share tags with others.
-- **Example**: 
-  ```shell
-  hug tpush v1.0.0           # Push single tag
-  hug tpush v1.0.0 v1.0.1    # Push multiple specific tags
-  hug tpush                  # Push all local tags
-  ```
-- **Safety**: Publishes tags to remote; coordinate releases with team.
+# List without type indicators
+hug tl --no-type
+```
 
-### `hug tpull`
-- **Description**: Fetch all tags from the remote repository. This updates your local tag references to match what's on the remote.
-- **Example**: 
-  ```shell
-  hug tpull       # Fetch all tags from remote
-  ```
-- **Safety**: Read-only operation; updates local tag references but doesn't modify working directory.
+### `hug twp` - Tags Which Point to Commit
 
-### `hug tpullf`
-- **Description**: Force fetch tags from remote, pruning any local tags that no longer exist on the remote. This is the forceful version that synchronizes your local tags to exactly match the remote.
-- **Example**: 
-  ```shell
-  hug tpullf      # Force sync tags with remote
-  ```
-- **Safety**: Removes local tags not on remote; use when you need to completely sync with remote state.
+Find tags that directly point to a specific commit or object.
 
-## Deleting Tags
+```bash
+# Find tags pointing to HEAD
+hug twp
 
-### `hug tdel <tag-name>`
-- **Description**: Delete a tag from your local repository. The tag still exists on the remote unless you also delete it there.
-- **Example**: 
-  ```shell
-  hug tdel v1.0-beta       # Delete local tag
-  ```
-- **Safety**: Only affects local repository; remote tag remains.
+# Find tags pointing to specific commit
+hug twp 67fc1bd
 
-### `hug tdelr <tag-name>`
-- **Description**: Delete a tag from the remote repository (`origin`). This removes the tag for everyone, so use carefully on shared repositories.
-- **Example**: 
-  ```shell
-  hug tdelr v1.0-beta      # Delete tag from remote
-  ```
-- **Safety**: Removes tag from remote repository; coordinate with team before deleting shared release tags.
+# Find tags pointing to branch tip
+hug twp main
+```
 
-## Checking Out Tags
+**Output Format:**
+```
+* 67fc1bd 1.0.0 [L] fix: make git-tc handle non-interactive environments ...
+  5890587 hug-backups/test-tag-backup-20251206-200825 [L] fix: remove local declarations...
+```
 
-### `hug tco <tag-name>`
-- **Description**: Checkout a specific tag, putting your repository in "detached HEAD" state at that tag's commit. This is useful for inspecting or building from a specific release.
-- **Example**: 
-  ```shell
-  hug tco v1.0.0       # Checkout tag v1.0.0
-  ```
-- **Safety**: Puts you in detached HEAD state; create a branch if you need to make changes.
+### `hug tll` - Detailed Tag List
 
-## Tag Queries
+List tags with full information and annotations.
 
-### `hug twc [commit]`
-- **Description**: Show tags which contain a specific commit in their history (defaults to HEAD). This answers "which releases include this commit?"
-- **Example**: 
-  ```shell
-  hug twc              # Tags containing HEAD
-  hug twc a1b2c3       # Tags containing specific commit
-  ```
-- **Safety**: Read-only query.
-- ![hug twc example](img/hug-twc.png)
+```bash
+# Detailed list with all information
+hug tll
 
-### `hug twp [object]`
-- **Description**: Show tags which point directly at a specific object (defaults to HEAD). This answers "which tags point exactly to this commit?"
-- **Example**: 
-  ```shell
-  hug twp              # Tags pointing at HEAD
-  hug twp a1b2c3       # Tags pointing at specific commit
-  ```
-- **Safety**: Read-only query.
-- ![hug twp example](img/hug-twp.png)
+# Filter by tag type
+hug tll --type annotated
+hug tll --type signed
+hug tll --type lightweight
+
+# Output in JSON format
+hug tll --json
+
+# Show tags matching pattern
+hug tll "release-*"
+```
+
+**Output Format:**
+```
+v1.1.0 (annotated) [CURRENT] [REMOTE]
+  Commit: abc1234
+  Subject: Release v1.1.0
+  Tagged: 2025-12-06 19:18:55 -0300
+  Tagger: Test User <test@example.com>
+  Signature: Verified
+
+v1.0.0 (lightweight)
+  Commit: def5678
+  Subject: Initial commit
+```
+
+### `hug tc` - Interactive Tag Creation
+
+Create tags with smart defaults and interactive prompts.
+
+```bash
+# Interactive tag creation
+hug tc
+
+# Create lightweight tag
+hug tc v1.0.0
+
+# Create annotated tag with message
+hug tc -a v1.0.0 "Release version 1.0.0"
+
+# Create signed tag
+hug tc -s v1.0.0 -m "Release v1.0.0"
+
+# Tag specific commit
+hug tc v1.0.0 HEAD~5
+
+# Force overwrite existing tag
+hug tc -f v1.0.0
+
+# Interactive mode with pre-filled name
+hug tc --interactive v1.0.0
+```
+
+**Interactive Features:**
+- Target commit selection (defaults to HEAD)
+- Tag name suggestions (version increment, date-based, branch-based)
+- Tag type selection (lightweight/annotated/signed)
+- Message composition for annotated tags
+- Optional remote push
+
+### `hug tdel` - Interactive Tag Deletion
+
+Delete tags with safety features and confirmations.
+
+```bash
+# Interactive tag deletion
+hug tdel
+
+# Delete specific tag
+hug tdel v1.0.0
+
+# Delete without confirmation
+hug tdel -f v1.0.0
+
+# Delete from remote as well
+hug tdel -r v1.0.0
+
+# Preview deletions without executing
+hug tdel --dry-run
+
+# Delete multiple tags
+hug tdel --multi
+
+# Filter by type
+hug tdel --type annotated
+```
+
+**Safety Features:**
+- Confirmation prompts
+- Backup creation before deletion
+- Remote deletion warnings
+- Dry-run mode for preview
+- Multi-tag support
+
+## Legacy Commands (Aliases)
+
+These commands remain available for backward compatibility:
+
+| Command | Description |
+|---------|-------------|
+| `hug ts <tag>` | Show tag details |
+| `hug tr <old> <new>` | Rename tag |
+| `hug tm <tag> [commit]` | Move tag to different commit |
+| `hug tma <tag> <message> [commit]` | Move and re-annotate tag |
+| `hug tpush [tags...]` | Push tags to remote |
+| `hug tpull` | Fetch tags from remote |
+| `hug tpullf` | Force fetch and prune tags |
+| `hug tdelr <tag>` | Delete remote tag |
+| `hug tco <tag>` | Checkout tag |
+| `hug twc [commit]` | Tags containing commit |
+| `hug twp [object]` | Tags pointing to object |
+
+## Tag Types
+
+### Lightweight Tags
+- Simple pointers to commits
+- No metadata or messages
+- Fast and minimal
+- Created with: `hug tc <tag> <commit>`
+
+**Example:**
+```bash
+hug tc v1.0.0 HEAD
+```
+
+### Annotated Tags
+- Full tag objects with metadata
+- Include message, author, date
+- Recommended for releases
+- Created with: `hug tc -a <tag> -m "message" <commit>`
+
+**Example:**
+```bash
+hug tc -a v1.0.0 -m "Release version 1.0.0"
+```
+
+### Signed Tags
+- Annotated tags with GPG signature
+- Cryptographically verifiable
+- For security-critical releases
+- Created with: `hug tc -s <tag> -m "message" <commit>`
+
+**Example:**
+```bash
+hug tc -s v1.0.0 -m "Release version 1.0.0"
+```
+
+## Visual Indicators
+
+When using enhanced commands, tags are marked with type indicators:
+
+- `[L]` - Lightweight tag
+- `[A]` - Annotated tag
+- `[S]` - Signed tag
+- `*` - Current tag (when checked out)
+- `[REMOTE]` - Tag exists on remote
+
+## Workflows
+
+### Basic Release Workflow
+
+```bash
+# 1. Ensure your code is ready
+hug s
+hug ll
+
+# 2. Create release tag
+hug tc -a v1.0.0 -m "Release version 1.0.0"
+
+# 3. Push tag to remote
+# (Say yes when prompted to push during creation)
+# Or push manually:
+hug tpush v1.0.0
+```
+
+### Browse and Checkout Tags
+
+```bash
+# 1. Browse available tags with indicators
+hug tl
+
+# 2. See detailed information
+hug tll
+
+# 3. Interactive browser
+hug t
+
+# 4. Checkout specific tag
+hug t v1.0.0
+```
+
+### Cleanup Old Tags
+
+```bash
+# 1. Browse tags to identify what to delete
+hug tll --type annotated
+
+# 2. Preview deletions
+hug tdel --dry-run --pattern "old-*"
+
+# 3. Delete with backup and confirmation
+hug tdel --pattern "old-*"
+```
+
+## Advanced Usage
+
+### Pattern Filtering and Search
+
+```bash
+# Search by commit message content
+hug tl "fix"                    # Tags fixing issues
+hug tl "feature" "add"         # Tags adding features
+hug tl "release"               # Release-related tags
+
+# Search by tag name
+hug tl "backup"                # Tags containing "backup"
+hug tl "v1.*"                  # Tags starting with "v1"
+
+# Search by commit hash
+hug tl "67fc1bd"               # Tags pointing to specific commit
+hug tl "a55c7d7"               # Another specific commit
+
+# Multiple search terms (OR logic)
+hug tl "fix" "release"          # Tags with either "fix" OR "release"
+```
+
+### JSON Output
+
+For programmatic use:
+
+```bash
+# Simple JSON
+hug tl --json
+
+# Detailed JSON
+hug tll --json
+
+# Example output
+[
+  {
+    "name": "v1.0.0",
+    "hash": "abc1234",
+    "type": "annotated",
+    "subject": "Release version 1.0.0",
+    "current": false,
+    "remote": true
+  }
+]
+```
+
+### Type-Specific Operations
+
+```bash
+# List only annotated tags (good for releases)
+hug tll --type annotated
+
+# Delete only lightweight tags (temporary tags)
+hug tdel --type lightweight --multi
+
+# Browse only signed tags (security-focused)
+hug t --type signed
+```
+
+## Migration from Git Commands
+
+| Git Command | Hug Equivalent | Notes |
+|-------------|---------------|--------|
+| `git tag` | `hug tl` | Enhanced with type indicators |
+| `git tag -l` | `hug tl` | Same functionality with better formatting |
+| `git tag -a` | `hug tc -a` | Interactive with smart defaults |
+| `git tag -d` | `hug tdel` | Safety features and backups |
+| `git checkout <tag>` | `hug t <tag>` | Interactive selection available |
+| `git show <tag>` | `hug ts <tag>` | Same functionality |
 
 ## Best Practices
 
-- **Use annotated tags for releases**: Annotated tags (`hug ta`) are recommended for version releases because they include metadata about who tagged and when.
+- **Use annotated tags for releases**: Annotated tags (`hug tc -a`) are recommended for version releases because they include metadata about who tagged and when.
 - **Use lightweight tags for temporary markers**: Lightweight tags (`hug tc`) are good for temporary bookmarks or personal references.
 - **Never move or delete shared tags**: Once a tag is pushed and others have pulled it, avoid moving or deleting it. This causes confusion and breaks reproducibility.
 - **Use semantic versioning**: Follow patterns like `v1.2.3` for consistent, sortable version tags.
 - **Tag before pushing**: Create and verify your tag locally before pushing to remote.
+- **Use interactive mode for releases**: `hug tc` provides smart suggestions and validation for release tagging.
 
-## Tips
+## Configuration
 
-- List tags with patterns for specific versions: `hug t "v2.*"`
-- Check what tags include a bugfix: `hug twc <bugfix-commit>`
-- Before deleting a remote tag, notify your team
-- Use `hug ts` to verify tag details before pushing
-- Combine with `hug sh` to see what a tagged release contains: `hug sh v1.0.0`
+Tag commands respect these environment variables:
+
+- `HUG_FORCE`: Skip confirmation prompts
+- `HUG_QUIET`: Suppress output
+- `HUG_DISABLE_GUM`: Disable interactive UI
+
+## Integration with Other Commands
+
+Tag commands work seamlessly with other Hug commands:
+
+```bash
+# See commits in tag
+hug l v1.0.0..HEAD
+
+# Create branch from tag
+hug bc feature-from-v1.0.0 v1.0.0
+
+# Create worktree from tag
+hug wtc hotfix-v1.0.0 v1.0.0
+
+# Compare tags
+hug ld v1.0.0 v1.1.0
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Command not found:**
+```bash
+# Ensure Hug is activated
+source /path/to/hug/bin/activate
+```
+
+**No tags shown:**
+```bash
+# Check if repository has tags
+git tag
+
+# Tags might be filtered
+hug tl --pattern "*"
+```
+
+**Permission denied on remote deletion:**
+```bash
+# Check remote permissions
+git remote -v
+
+# Delete local only first
+hug tdel <tag>
+# Then push manually if needed
+git push origin --delete <tag>
+```
+
+### Getting Help
+
+```bash
+# Command-specific help
+hug help t
+hug help tl
+hug help tll
+hug help tc
+hug help tdel
+
+# General help
+hug help
+```
 
 See also: [Branching](branching) for branch management, [Commits](commits) for creating commits to tag, and [Logging](logging) for viewing tagged history.
