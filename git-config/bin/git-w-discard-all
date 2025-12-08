@@ -109,7 +109,7 @@ if ! $force; then
   print_action_preview "discard the listed changes"
   printf '\n'
   print_staged_unstaged_paths staged_paths unstaged_paths "$target_staged" "$target_unstaged"
-  confirm_action_danger 'discard-all'
+  prompt_confirm_danger 'discard-all'
 fi
 
 # Execution

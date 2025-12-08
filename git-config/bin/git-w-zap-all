@@ -94,7 +94,7 @@ if ! $force; then
   print_action_preview "run zap-all"
   printf '\n'
   run_preview
-  confirm_action_danger 'zap-all'
+  prompt_confirm_danger 'zap-all'
 fi
 
 hug w wipe-all --force

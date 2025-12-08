@@ -287,7 +287,7 @@ If a test hangs, check these common locations:
 
 2. **Confirmation prompts** in command scripts:
    ```bash
-   if ! confirm_action_danger "$operation"; then
+   if ! prompt_confirm_danger "$operation"; then
        info "Cancelled."
        return 1
    fi

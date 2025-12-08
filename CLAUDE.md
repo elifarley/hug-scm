@@ -256,7 +256,7 @@ if [[ $force == true ]]; then
   export HUG_FORCE=true
 fi
 # Later...
-confirm_action "delete"  # User types "delete" to confirm
+prompt_confirm_warn "delete"  # User types "delete" to confirm
 ```
 
 ### Dry-Run Support

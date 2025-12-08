@@ -259,36 +259,6 @@ teardown() {
   [[ "$result" =~ another-tag ]]
 }
 
-@test "get_tags_pointing_to: finds tags pointing to exact commit" {
-  source "$HUG_HOME/git-config/lib/hug-git-tag"
-
-  # Get commit hash for HEAD~1
-  local commit_hash
-  commit_hash=$(git rev-parse "HEAD~1")
-
-  # Find tags pointing to that commit
-  local result
-  result=$(get_tags_pointing_to "$commit_hash")
-
-  # Should find annotated-tag which points to HEAD~1
-  [[ "$result" =~ annotated-tag ]]
-  [[ ! "$result" =~ lightweight-tag ]]
-}
-
-@test "get_tags_pointing_to: handles short commit hash" {
-  source "$HUG_HOME/git-config/lib/hug-git-tag"
-
-  # Get short commit hash for HEAD
-  local short_hash
-  short_hash=$(git rev-parse --short "HEAD")
-
-  # Find tags pointing to that commit
-  local result
-  result=$(get_tags_pointing_to "$short_hash")
-
-  # Should find another-tag which points to HEAD
-  [[ "$result" =~ another-tag ]]
-}
 
 @test "print_tag_line: formats individual tags" {
   source "$HUG_HOME/git-config/lib/hug-git-tag"

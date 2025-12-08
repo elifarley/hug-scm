@@ -42,7 +42,7 @@ create_test_file() {
   local expected="file1.txt\nfile2.txt"
 
   # Act - Use subprocess to test stdin reading
-  run bash -c 'source /home/ecc/IdeaProjects/hug-scm/git-config/lib/hug-file-input; echo -e "file1.txt\nfile2.txt" | read_files_from_source -'
+  run bash -c 'source git-config/lib/hug-file-input; echo -e "file1.txt\nfile2.txt" | read_files_from_source -'
 
   # Assert
   assert_success

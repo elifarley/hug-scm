@@ -109,28 +109,28 @@ All gum-related test failures have been systematically eliminated through a 5-ph
 - **Priority**: MEDIUM
 - **Fix**: Update test to provide proper TTY input or modify expectations
 
-**Test 12**: `hug-confirm: confirm_action succeeds when user types exact word`
+**Test 12**: `hug-confirm: prompt_confirm_warn succeeds when user types exact word`
 - **File**: `tests/lib/test_hug-confirm.bats:162`
 - **Error**: Expected success but got status 1 with "ℹ️ Info: Non-interactive environment: cancelled."
 - **Status**: FAILING (Non-interactive environment handling)
 - **Priority**: MEDIUM
 - **Fix**: Update test to provide proper TTY input or modify expectations
 
-**Test 13**: `hug-confirm: confirm_action exits when user types wrong word`
+**Test 13**: `hug-confirm: prompt_confirm_warn exits when user types wrong word`
 - **File**: `tests/lib/test_hug-confirm.bats:180`
 - **Error**: Expected "Cancelled" but got "ℹ️ Info: Non-interactive environment: cancelled."
 - **Status**: FAILING (Output format mismatch)
 - **Priority**: MEDIUM
 - **Fix**: Update test expectation to match actual non-interactive output
 
-**Test 14**: `hug-confirm: confirm_action exits when user types nothing`
+**Test 14**: `hug-confirm: prompt_confirm_warn exits when user types nothing`
 - **File**: `tests/lib/test_hug-confirm.bats:198`
 - **Error**: Expected "Cancelled" but got "ℹ️ Info: Non-interactive environment: cancelled."
 - **Status**: FAILING (Output format mismatch)
 - **Priority**: MEDIUM
 - **Fix**: Update test expectation to match actual non-interactive output
 
-**Test 15**: `hug-confirm: confirm_action exits on Ctrl-D`
+**Test 15**: `hug-confirm: prompt_confirm_warn exits on Ctrl-D`
 - **File**: `tests/lib/test_hug-confirm.bats:216`
 - **Error**: Expected "Cancelled" but got "ℹ️ Info: Non-interactive environment: cancelled."
 - **Status**: FAILING (Output format mismatch)

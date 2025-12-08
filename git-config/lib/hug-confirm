@@ -5,9 +5,9 @@
 # Depends on: hug-gum for charmbracelet integration, hug-output for messaging,
 #             hug-strings for input trimming.
 # Functions:
-#   - prompt_confirm_warn: yes/no confirmation with NO default for destructive operations.
-#   - confirm_action_danger: exact-word confirmation gate for dangerous operations.
 #   - prompt_confirm_safe: yes/no confirmation with YES default for safe operations.
+#   - prompt_confirm_warn: yes/no confirmation with NO default for destructive operations.
+#   - prompt_confirm_danger: exact-word confirmation gate for dangerous operations.
 
 # Prompts user for confirmation with NO default (for destructive operations), exits if not confirmed
 # Usage: prompt_confirm_warn ["custom prompt"]
@@ -57,7 +57,7 @@ prompt_confirm_warn() {
 }
 
 # Confirms a dangerous action with a specific word that must be typed exactly
-# Usage: confirm_action_danger "action_word"
+# Usage: prompt_confirm_danger "action_word"
 # Parameters:
 #   $1 - Word that user must type to confirm
 # Environment:
@@ -65,7 +65,7 @@ prompt_confirm_warn() {
 # Returns:
 #   0 if confirmed (or HUG_FORCE is true)
 #   Exits with code 1 if user declines
-confirm_action_danger() {
+prompt_confirm_danger() {
   if [[ ${HUG_FORCE:-} == true ]]; then
     return 0
   fi
@@ -118,7 +118,7 @@ confirm_action_danger() {
 # Design Philosophy:
 # - Safe operations default to YES to reduce friction for productive workflows
 # - Warning operations (prompt_confirm_warn) default to NO for safety
-# - Dangerous operations (confirm_action_danger) require explicit typing for maximum safety
+# - Dangerous operations (prompt_confirm_danger) require explicit typing for maximum safety
 #
 # When to use this function:
 # ✓ Creating branches, worktrees, tags, or other new resources
@@ -128,7 +128,7 @@ confirm_action_danger() {
 # When NOT to use this function:
 # ✗ Deleting, pruning, or removing resources (use prompt_confirm_warn)
 # ✗ Overwriting or modifying existing data (use prompt_confirm_warn)
-# ✗ Irreversible or high-impact operations (use confirm_action_danger)
+# ✗ Irreversible or high-impact operations (use prompt_confirm_danger)
 #
 # Usage: prompt_confirm_safe "Create worktree for branch 'feature' at '../repo-worktrees/feature'?"
 #
@@ -140,7 +140,7 @@ confirm_action_danger() {
 #
 # Compare with other confirmation functions:
 #   prompt_confirm_warn "Delete branch 'old-feature'?"        # Defaults to No (destructive)
-#   confirm_action_danger "Type 'reset' to reset repository"  # Requires typing (dangerous)
+#   prompt_confirm_danger "Type 'reset' to reset repository"  # Requires typing (dangerous)
 prompt_confirm_safe() {
   if [[ ${HUG_FORCE:-} == true ]]; then
     return 0

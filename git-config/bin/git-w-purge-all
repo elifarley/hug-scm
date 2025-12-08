@@ -101,7 +101,7 @@ fi
 if ! $force; then
   print_action_preview "remove the listed entries"
   printf '\n%s\n' "$preview_output"
-  confirm_action_danger 'purge-all'
+  prompt_confirm_danger 'purge-all'
 fi
 
 run_cmd=("git" "clean" "-f" "-d")

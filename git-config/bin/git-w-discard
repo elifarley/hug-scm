@@ -204,7 +204,7 @@ if ! $force; then
   print_action_preview "discard the listed changes" "from the specified paths."
   printf '\n'
   print_staged_unstaged_paths staged_paths unstaged_paths "$target_staged" "$target_unstaged"
-  confirm_action_danger 'discard'
+  prompt_confirm_danger 'discard'
 fi
 
 # Handle both targets: Simple full discard to HEAD for union of affected paths

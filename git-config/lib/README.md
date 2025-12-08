@@ -11,7 +11,7 @@ General-purpose utility functions for shell scripting.
 **Features:**
 - Color definitions for terminal output
 - Output functions (`error`, `warning`, `info`, `success`)
-- User interaction (`prompt_confirm_warn`, `confirm_action_danger`, `prompt_confirm_safe`)
+- User interaction (`prompt_confirm_warn`, `prompt_confirm_danger`, `prompt_confirm_safe`)
 - String manipulation (`trim_message`)
 - Array utilities (`dedupe_array`, `print_list`)
 - File system checks (`is_symlink`)
@@ -228,7 +228,7 @@ success "Operation completed"
 prompt_confirm_warn "Proceed? [y/N]: "
 
 # Require specific word confirmation (for dangerous operations)
-confirm_action_danger "delete"  # User must type "delete"
+prompt_confirm_danger "delete"  # User must type "delete"
 
 # Simple yes/no confirmation with YES default (for safe operations)
 prompt_confirm_safe "Create new branch?"  # Defaults to Yes
@@ -622,14 +622,14 @@ Benefits:
 
 ### Confirmation Pattern
 
-**Use `confirm_action_danger()` from hug-common**, not custom `confirm()` functions.
+**Use `prompt_confirm_danger()` from hug-common**, not custom `confirm()` functions.
 
 ```bash
 # Good - uses library function
 if ! $force; then
   printf 'About to delete files:\n'
   print_list 'Files' "${files[@]}"
-  confirm_action_danger 'delete'  # User types "delete" to confirm
+  prompt_confirm_danger 'delete'  # User types "delete" to confirm
 fi
 
 # Bad - duplicate implementation
@@ -640,7 +640,7 @@ confirm() {
 }
 ```
 
-Benefits of `confirm_action_danger()`:
+Benefits of `prompt_confirm_danger()`:
 - Respects `HUG_FORCE` environment variable
 - Consistent output formatting with `info()`
 - No code duplication
@@ -709,7 +709,7 @@ When adding new commands:
 1. **Follow the standard patterns** described above
 2. **Use `show_help()` for help text**, not `usage()`
 3. **Source libraries with the loop pattern**
-4. **Use library functions** instead of duplicating code (e.g., `confirm_action_danger()`)
+4. **Use library functions** instead of duplicating code (e.g., `prompt_confirm_danger()`)
 5. **Support common flags** where appropriate (`--dry-run`, `-f/--force`, `-h/--help`)
 6. **Test with ShellCheck** to ensure quality
 
