@@ -389,7 +389,7 @@ teardown() {
   # Test the BUGGY pattern that causes unbound variable error
   # This should FAIL before the fix, and PASS after the fix
   run bash -c '
-    source git-config/lib/hug-git-branch
+    source "$HUG_HOME/git-config/lib/hug-git-branch"
 
     # Create test data
     local -a available_branches=("main" "feature-1" "feature-2" "hug-backups/test")
