@@ -545,7 +545,11 @@ gum_mock_success() {
 setup_gum_mock() {
   # Save original PATH
   export HUG_TEST_ORIGINAL_PATH="$PATH"
-  
+
+  # Set unique test ID and reset gum call counter file
+  export HUG_TEST_GUM_PID="${BASHPID:-$$}"
+  rm -f "${TMPDIR:-/tmp}/.gum_mock_count.$HUG_TEST_GUM_PID"
+
   # Add tests/bin to the beginning of PATH
   # The gum symlink should already exist pointing to gum-mock
   if [[ -z "${PROJECT_ROOT:-}" ]]; then
@@ -562,9 +566,13 @@ teardown_gum_mock() {
   # Restore original PATH
   if [[ -n "${HUG_TEST_ORIGINAL_PATH:-}" ]]; then
     export PATH="$HUG_TEST_ORIGINAL_PATH"
-    unset HUG_TEST_ORIGINAL_PATH
   fi
-  
+
+  # Clean up counter file
+  rm -f "${TMPDIR:-/tmp}/.gum_mock_count.$HUG_TEST_GUM_PID"
+  unset HUG_TEST_ORIGINAL_PATH
+  unset HUG_TEST_GUM_PID
+
   # Unset any mock-related environment variables
   unset HUG_TEST_GUM_SELECTION_INDEX
   unset HUG_TEST_GUM_CONFIRM

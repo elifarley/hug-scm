@@ -155,14 +155,62 @@ teardown() {
   assert_output --partial "Message required for annotated tags"
 }
 
-# TODO: Fix interactive mode test - gum mock doesn't handle multiple confirm prompts
 @test "git-tc: interactive mode accepts custom target commit" {
-  skip
+  setup_gum_mock
+
+  # Configure sequential responses for the interactive prompts
+  # 1st prompt (tag name): "v1.0.0-test"
+  # 2nd prompt (target commit): "HEAD~1"
+  # 3rd prompt (tag type): "annotated"
+  # 4th prompt (tag message): "Test tag message"
+  # Note: Use | as delimiter to preserve empty responses
+  export HUG_TEST_GUM_RESPONSES="v1.0.0-test|HEAD~1|annotated|Test tag message"
+
+  run hug tc -i
+
+  assert_success
+  assert_output --partial "Created annotated tag: v1.0.0-test"
+
+  # Verify tag was created correctly
+  run git tag -l "v1.0.0-test" -n99
+  assert_success
+  assert_output --partial "Test tag message"
+
+  # Verify tag points to the correct commit
+  # For annotated tags, we need to check the tag's target
+  local tag_target
+  tag_target=$(git rev-parse "v1.0.0-test^{}")
+  local expected_commit
+  expected_commit=$(git rev-parse "HEAD~1")
+  [[ "$tag_target" == "$expected_commit" ]]
+
+  teardown_gum_mock
 }
 
-# TODO: Fix interactive mode test - gum mock doesn't handle multiple confirm prompts
 @test "git-tc: interactive mode uses HEAD as default target" {
-  skip
+  setup_gum_mock
+
+  # Configure sequential responses
+  # 1st prompt (tag name): "release-2025-12-09"
+  # 2nd prompt (target commit): Just press enter for HEAD default (empty response)
+  # 3rd prompt (tag type): "lightweight"
+  # No tag message needed for lightweight tags
+  # Note: Use | as delimiter to preserve empty responses
+  export HUG_TEST_GUM_RESPONSES="release-2025-12-09| |lightweight"
+
+  run hug tc -i
+
+  assert_success
+  assert_output --partial "Created lightweight tag: release-2025-12-09"
+
+  # Verify tag points to HEAD
+  local tag_commit
+  tag_commit=$(git rev-parse "release-2025-12-09")
+  local head_commit
+  head_commit=$(git rev-parse HEAD)
+  [[ "$tag_commit" == "$head_commit" ]]
+
+  teardown_gum_mock
 }
 
 @test "git-tc: interactive mode rejects invalid target commit" {
