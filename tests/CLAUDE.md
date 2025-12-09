@@ -208,6 +208,84 @@ For tests that need to verify cancellation behavior in interactive modes, use EO
 }
 ```
 
+## Decision Tree: Choosing the Right Testing Approach
+
+Use this decision tree to determine the best approach for testing interactive commands:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 Is the command interactive?                │
+└─────────────────────┬───────────────────────────────────────┘
+                      │ Yes
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│              What type of interaction?                      │
+└─────────────────────┬───────────────────────────────────────┘
+                      │
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│ Simple Yes/No   │ │ Single Text     │ │ Complex Menu    │
+│ Confirmation    │ │ Input           │ │ Selection       │
+└─────────┬───────┘ └─────────┬───────┘ └─────────┬───────┘
+          │                   │                   │
+          ▼                   ▼                   ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│ Use Input       │ │ Use Input       │ │ Use Gum Mock    │
+│ Piping          │ │ Piping          │ │ System          │
+│                 │ │                 │ │                 │
+│ echo "y"| cmd   │ │ echo "text"| cmd│ │ setup_gum_mock  │
+│ echo "n"| cmd   │ │                 │ │                 │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
+```
+
+### Examples by Category
+
+#### ✅ Input Piping (Simple Interactions)
+```bash
+# Yes/No confirmations
+echo "y" | hug h back HEAD~1      # Confirm moving HEAD back
+echo "n" | hug cmv 1 feature     # Decline commit move
+
+# Single text input (exact match required)
+echo "rewind" | hug h rewind      # Confirm dangerous rewind
+echo "tag-name" | hug tc          # Provide tag name
+
+# Cancellation
+echo "" | hug wtc nonexistent     # Cancel with empty input
+```
+
+#### ✅ Gum Mock (Complex Interactions)
+```bash
+# Multi-select menus (choose from list)
+setup_gum_mock
+export HUG_TEST_GUM_INPUT="1,3"    # Select items 1 and 3
+run hug untrack --interactive      # Multi-file selection
+
+# Complex filtering interfaces
+setup_gum_mock
+export HUG_TEST_GUM_SELECTION_INDEX=2  # Choose 3rd item
+run hug b -r                         # Branch selection with preview
+```
+
+### Benefits of This Approach
+
+1. **Simplicity**: Input piping requires no setup, just `echo "response" | command`
+2. **Clarity**: The test intent is immediately visible
+3. **Reliability**: Works in all environments (TTY/non-TTY)
+4. **Maintainability**: Less cognitive overhead than gum mock
+5. **Performance**: Faster test execution with no setup/teardown
+
+### Migration Checklist
+
+When converting from gum mock to input piping:
+
+- [ ] Identify if the interaction is simple (yes/no, single text)
+- [ ] Remove `setup_gum_mock`/`teardown_gum_mock`
+- [ ] Replace `export HUG_TEST_GUM_*` with `echo "response" |`
+- [ ] Update assertions to match actual command output
+- [ ] Test both success and failure paths if applicable
+
 ### 5. Test Environment Isolation
 
 Always use test helper functions to create isolated environments:

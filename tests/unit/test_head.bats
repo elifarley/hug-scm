@@ -524,9 +524,26 @@ teardown() {
 # ----------------------------------------------------------------------------
 
 @test "hug h back: requires confirmation without --force" {
-  # This would hang waiting for input, so we skip it in automated tests
-  # Manual testing required for interactive confirmation
-  skip "Interactive test - requires manual verification"
+  # Create test repo with staged changes to trigger confirmation
+  create_test_repo_with_history
+
+  # Stage some changes (but don't commit) to trigger the confirmation prompt
+  echo "test change" > test.txt
+  hug a test.txt
+  # Do NOT commit - we need staged changes
+
+  # Test declining confirmation
+  run bash -c 'echo "n" | hug h back HEAD~1'
+  assert_failure
+  assert_output --partial "Cancelled"
+
+  # Now test accepting confirmation with staged changes
+  run bash -c 'echo "y" | hug h back HEAD~1'
+  assert_success
+  assert_output --partial "Moved HEAD back to"
+
+  # Verify the changes are staged after moving back
+  assert_output --partial "uncommitted changes preserved"
 }
 
 @test "hug h back: rejects both --upstream and target argument" {
@@ -901,7 +918,32 @@ teardown() {
 }
 
 @test "hug h rewind: requires confirmation without --force" {
-  skip "Interactive test - requires manual verification"
+  # Create test repo with some commits to rewind
+  create_test_repo_with_history
+
+  # Store the target commit before attempting rewind
+  local target_commit
+  target_commit=$(git rev-parse HEAD~1)
+
+  # Test declining confirmation (wrong confirmation text)
+  run bash -c 'echo "not_rewind" | hug h rewind HEAD~1'
+  assert_failure
+  assert_output --partial "Cancelled"
+
+  # Test declining confirmation (empty input)
+  run bash -c 'echo "" | hug h rewind HEAD~1'
+  assert_failure
+  assert_output --partial "Cancelled"
+
+  # Test accepting confirmation (exact "rewind" required)
+  run bash -c 'echo "rewind" | hug h rewind HEAD~1'
+  assert_success
+  assert_output --partial "Rewind complete"
+
+  # Verify the rewind actually happened
+  local current_commit
+  current_commit=$(git rev-parse HEAD)
+  [[ "$current_commit" == "$target_commit" ]]
 }
 
 @test "hug h rewind: discards all uncommitted changes" {
