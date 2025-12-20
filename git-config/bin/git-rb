@@ -160,7 +160,7 @@ hug_rb() {
     fi
 
     print_action_preview "rebase $num_commits $commit_word onto $target_branch"
-    prompt_confirm
+    prompt_confirm_warn
   fi
 
   # Perform Rebase
