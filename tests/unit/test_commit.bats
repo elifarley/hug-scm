@@ -570,6 +570,7 @@ HOOK
   git checkout -q main
 
   # Test accepting confirmation
+  export HUG_DISABLE_GUM=true  # Disable gum to use text-based prompts
   run bash -c 'echo "y" | hug cmv 1 existing-target'
   assert_success
   assert_output --partial "Proceed with moving 1 commit to 'existing-target'?"
@@ -625,6 +626,7 @@ HOOK
   expected_log=$(git log --oneline HEAD~1..HEAD)  # Range to move
 
   # Test accepting confirmation to create new branch
+  export HUG_DISABLE_GUM=true  # Disable gum to use text-based prompts
   run bash -c 'echo "y" | hug cmv 1 prompt-missing'
   assert_success
   assert_output --partial "📊 1 commit since"
@@ -661,6 +663,7 @@ HOOK
   original_head=$(git rev-parse HEAD)
 
   # Test declining confirmation
+  export HUG_DISABLE_GUM=true  # Disable gum to use text-based prompts
   run bash -c 'echo "n" | hug cmv 1 abort-missing'
   assert_failure
   assert_output --partial "Branch 'abort-missing' doesn't exist. Proceed with creating a new branch named 'abort-missing' and moving 1 commit to it?"

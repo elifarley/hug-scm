@@ -147,9 +147,10 @@ case "$1" in
       esac
     done
     
-    # Output the prompt to stderr (like real gum confirm does)
+    # Output the prompt to both stdout (for test visibility) and stderr (to mimic real gum)
     if [[ -n "$prompt_msg" ]]; then
-      printf '%s ' "$prompt_msg" >&2
+      printf '%s ' "$prompt_msg"  # Output to stdout for test verification
+      printf '%s ' "$prompt_msg" >&2  # Also output to stderr to mimic real gum
     fi
     
     if [[ "${HUG_TEST_GUM_CONFIRM:-}" == "yes" ]]; then
