@@ -480,6 +480,6 @@ Before every commit:
 ## See Also
 
 - [Main Skill Documentation](../SKILL.md)
-- [Bug Hunting Guide](./bug-hunting.md)
-- [History Cleanup Guide](./history-cleanup.md)
-- [Branch Analysis Guide](./branch-analysis.md)
+- [Bug Hunting Guide](bug-hunting.md)
+- [History Cleanup Guide](history-cleanup.md)
+- [Branch Analysis Guide](branch-analysis.md)

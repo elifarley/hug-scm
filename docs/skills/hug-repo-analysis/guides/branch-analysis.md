@@ -478,6 +478,6 @@ hug l HEAD..@{u}             # what would pull get?
 ## See Also
 
 - [Main Skill Documentation](../SKILL.md)
-- [Bug Hunting Guide](./bug-hunting.md)
-- [Pre-Commit Review Guide](./pre-commit-review.md)
-- [History Cleanup Guide](./history-cleanup.md)
+- [Bug Hunting Guide](bug-hunting.md)
+- [Pre-Commit Review Guide](pre-commit-review.md)
+- [History Cleanup Guide](history-cleanup.md)

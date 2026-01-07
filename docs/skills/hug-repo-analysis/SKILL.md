@@ -659,16 +659,16 @@ When using the Hug SCM MCP server, these tools are available:
 ## Learning More
 
 For detailed command documentation:
-- [Working Directory Commands](../docs/commands/working-dir.md)
-- [HEAD Operations](../docs/commands/head.md)
-- [Status & Staging](../docs/commands/status-staging.md)
-- [Branching](../docs/commands/branching.md)
-- [Logging](../docs/commands/logging.md)
-- [File Inspection](../docs/commands/file-inspection.md)
+- [Working Directory Commands](../../commands/working-dir.md)
+- [HEAD Operations](../../commands/head.md)
+- [Status & Staging](../../commands/status-staging.md)
+- [Branching](../../commands/branching.md)
+- [Logging](../../commands/logging.md)
+- [File Inspection](../../commands/file-inspection.md)
 
 For workflow examples:
-- [Practical Workflows](../docs/practical-workflows.md)
-- [Cookbook Recipes](../docs/cookbook.md)
+- [Practical Workflows](../../practical-workflows.md)
+- [Cookbook Recipes](../../cookbook.md)
 
 ## Quick Command Cheatsheet
 
@@ -736,7 +736,7 @@ hug bwnm                     # which not merged?
 ## Next Steps
 
 For specific workflows, see the guide files:
-- [Bug Hunting Guide](./guides/bug-hunting.md) - Finding when bugs were introduced
-- [Pre-Commit Review Guide](./guides/pre-commit-review.md) - Reviewing changes before commit
-- [Branch Analysis Guide](./guides/branch-analysis.md) - Understanding branch differences
-- [History Cleanup Guide](./guides/history-cleanup.md) - Preparing for PR/merge
+- [Bug Hunting Guide](guides/bug-hunting.md) - Finding when bugs were introduced
+- [Pre-Commit Review Guide](guides/pre-commit-review.md) - Reviewing changes before commit
+- [Branch Analysis Guide](guides/branch-analysis.md) - Understanding branch differences
+- [History Cleanup Guide](guides/history-cleanup.md) - Preparing for PR/merge

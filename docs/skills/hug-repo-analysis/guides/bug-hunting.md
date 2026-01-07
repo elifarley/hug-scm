@@ -326,5 +326,5 @@ hug fa <file>                # author stats for file
 ## See Also
 
 - [Main Skill Documentation](../SKILL.md)
-- [Pre-Commit Review Guide](./pre-commit-review.md)
-- [Branch Analysis Guide](./branch-analysis.md)
+- [Pre-Commit Review Guide](pre-commit-review.md)
+- [Branch Analysis Guide](branch-analysis.md)

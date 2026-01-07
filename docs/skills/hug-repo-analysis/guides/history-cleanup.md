@@ -495,6 +495,6 @@ Safe to clean up when:
 ## See Also
 
 - [Main Skill Documentation](../SKILL.md)
-- [Pre-Commit Review Guide](./pre-commit-review.md)
-- [Branch Analysis Guide](./branch-analysis.md)
-- [Practical Workflows](../../docs/practical-workflows.md)
+- [Pre-Commit Review Guide](pre-commit-review.md)
+- [Branch Analysis Guide](branch-analysis.md)
+- [Practical Workflows](../../../practical-workflows.md)
