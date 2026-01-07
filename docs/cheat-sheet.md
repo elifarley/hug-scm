@@ -106,6 +106,9 @@ hug bpullr  # **B**ranch **Pull** **R**ebase
 
 # Safe force push (for rewritten local history)
 hug bpushf  # **B**ranch **Push** **F**orce
+
+# Convert HTTPS remote to SSH
+hug remote2ssh  # Convert origin to SSH URL
 ```
 > **CRITICAL**: Always review before pushing. Run `hug lol` (**L**og **O**utgoing **L**ong) for a full preview of commits that will be pushed, followed by a final status check.
 

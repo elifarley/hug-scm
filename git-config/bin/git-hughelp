@@ -14,6 +14,7 @@ test $# -eq 0 && {
   echo '  s*  - Status operations'
   echo ' sh*  - SHow operations'
   echo '  t*  - Tag operations'
+  echo '  u*  - Utility commands'
   echo '  w*  - Working dir operations'
   echo ''
   echo "Use 'hug help [prefix]' to see commands with that prefix"
@@ -92,6 +93,18 @@ if [[ "$prefix" == "h" ]]; then
   echo "  --force: Skip confirmation prompts (use cautiously)"
   echo "  e.g., 'hug h back -u' (HEAD moves to origin/BRANCH, discard local commits)"
   echo "  e.g., 'hug h rewind 3 --force' (destructive, no prompt)"
+fi
+
+# Special handling for utilities
+if [[ "$prefix" == "u" ]]; then
+  echo ""
+  echo "Utilities (no prefix):"
+  echo "  init       - Initialize new repository"
+  echo "  clone      - Clone repository (auto-detects Git/Mercurial)"
+  echo "  remote2ssh - Convert remote HTTPS URL to SSH"
+  echo "  type       - Show Git object type"
+  echo "  dump       - Show Git object contents"
+  echo "  untrack    - Stop tracking files (keep locally)"
 fi
 
 exit 0

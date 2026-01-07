@@ -517,6 +517,7 @@ hug w wipdel [wip]    # Delete WIP branch without integration
 hug type <object>     # Show object type
 hug dump <object>     # Show object contents
 hug untrack <files>   # Stop tracking files but keep locally
+hug remote2ssh [<remote>]  # Convert remote URL from HTTPS to SSH (default: origin)
 ```
 
 #### Status & Show (`s*`, `sh*`)

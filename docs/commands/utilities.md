@@ -292,6 +292,66 @@ hug dump HEAD
 hug dump a1b2c3d
 ```
 
+### Remote2SSH (`hug remote2ssh`)
+
+Convert a remote URL from HTTPS to SSH format for GitHub repositories.
+
+#### Basic Usage
+
+```shell
+# Convert origin remote to SSH
+hug remote2ssh
+
+# Convert specific remote
+hug remote2ssh upstream
+```
+
+#### Features
+
+**Automatic URL Conversion**
+
+Converts GitHub HTTPS URLs to SSH format automatically:
+- `https://github.com/user/repo.git` → `git@github.com:user/repo.git`
+- Updates the remote URL in-place
+- Shows confirmation with `git remote -v`
+
+**Safety**
+
+- Read-only operation on remote configuration
+- Only modifies URL, not repository content
+- Works on any remote (defaults to `origin`)
+
+#### Examples
+
+**Convert default remote (origin):**
+```shell
+$ hug remote2ssh
+Updated origin remote to use SSH:
+origin  git@github.com:user/repo.git (fetch)
+origin  git@github.com:user/repo.git (push)
+```
+
+**Convert specific remote:**
+```shell
+$ hug remote2ssh upstream
+Updated upstream remote to use SSH:
+upstream  git@github.com:org/repo.git (fetch)
+upstream  git@github.com:org/repo.git (push)
+```
+
+::: tip When to Use SSH
+SSH authentication is preferred over HTTPS for:
+- **Passwordless pushing** - No need to enter credentials
+- **Scripted automation** - SSH keys work seamlessly in CI/CD
+- **Multiple repositories** - One SSH key for all GitHub repos
+
+Set up SSH keys first:
+```shell
+ssh-keygen -t ed25519 -C "your_email@example.com"
+# Add public key to GitHub Settings → SSH Keys
+```
+:::
+
 ### WIP Management
 
 See [Working Directory Commands](./working-dir.md#wip-work-in-progress) for WIP (Work In Progress) branch management commands.

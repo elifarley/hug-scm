@@ -30,6 +30,7 @@ This table is the **authoritative source** for Hug's command organization. All c
 | `m*` | Merge | Integrate branches with various strategies | `hug m`, `hug ma`, `hug mff`, `hug mkeep` | **M**erge |
 | `analyze*` | Advanced Analysis | Advanced repository analysis and insights | `hug analyze deps`, `hug analyze expert`, `hug analyze activity`, `hug analyze co-changes` | **ANALYZE** |
 | `stats*` | Repository Statistics | Quick repository statistics and metrics | `hug stats file`, `hug stats author`, `hug stats branch` | **STATS** |
+| `(no prefix)` | Utilities | Helper commands: init, clone, remote management, object inspection | `hug init`, `hug clone`, `hug remote2ssh`, `hug type`, `hug dump` | **UTILITY** |
 
 ## Visual Command Tree
 
@@ -165,6 +166,13 @@ Hug Commands
 │   ├── mkeep        # Merge (keep commit)
 │   ├── mff          # Fast-forward only
 │   └── ma           # Merge abort
+├── (no prefix) (Utilities: Helper Commands)
+│   ├── init           # Initialize new repository
+│   ├── clone          # Clone repository (auto-detect VCS)
+│   ├── remote2ssh     # Convert remote HTTPS to SSH
+│   ├── type           # Show Git object type
+│   ├── dump           # Show Git object contents
+│   └── untrack        # Stop tracking files
 ├── analyze* (Advanced Analysis)
 │   ├── analyze co-changes  # Find files that change together
 │   ├── analyze activity    # Temporal commit patterns
