@@ -16,7 +16,7 @@ ifeq ($(UV),)
     UV_CMD := uv
     PYTHON_CMD := python3
     PYTEST_CMD := python3 -m pytest
-    PIP_CMD := python3 -m pip
+    PIP_CMD := python3 -m pip install
     $(warning UV not found - falling back to python3...)
 else
     UV_AVAILABLE := true
