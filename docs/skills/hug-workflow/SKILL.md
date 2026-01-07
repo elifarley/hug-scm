@@ -51,6 +51,12 @@ Start: hug sla
 
 **NEVER stage**: Session artifacts like `.claude/settings.local.json`
 
+## Mapping: High-level intentions to Hug Commands
+
+1. To understand both which files were staged and what changes they contained so I can write an accurate commit message.
+    - `hug ss`
+
+
 ## Common Workflows
 
 ### Commit Changes
@@ -58,7 +64,7 @@ Start: hug sla
 ```sh
 hug sla                      # See all files
 hug a <files>                # Stage specific files
-hug sls                      # Verify staged files
+hug sls                      # List staged files
 hug c -m 'message'           # Commit
 ```
 
@@ -105,8 +111,9 @@ hug c -m 'original message'  # Re-commit
 ## Key git -> hug Commands Mapping
 | Git                              | Hug    | Description                                        |
 |----------------------------------|--------|----------------------------------------------------|
-| git diff --stat --patch          | hug su | Show unstaged changes then file stats              |
+| git diff --cached                | hug ss | Show staged changes then file stats                |
 | git diff --cached --stat --patch | hug ss | Show staged changes then file stats                |
+| git diff --stat --patch          | hug su | Show unstaged changes then file stats              |
 | git diff HEAD --stat --patch     | hug sw | Show all working directory changes then file stats |
 
 ## Key Commands Reference
