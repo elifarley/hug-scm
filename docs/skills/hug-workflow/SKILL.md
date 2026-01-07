@@ -1,16 +1,18 @@
 ---
 name: hug-workflow
 description: |
-  Git workflow management using Hug (enhanced Git replacement). Use for ALL Git operations.
-  Triggers: commit, amend, staging, git status, git log, repo inspection, fixing commits.
-  Use whenever Claude needs to: (1) Commit changes, (2) Inspect repo state, (3) Fix/amend commits,
-  (4) Stage/unstage files, (5) View history or diffs.
+   Git workflow management using Hug (enhanced Git replacement). Use for ALL Git operations.
+   Triggers: commit, amend, staging, git status, git log, repo inspection, fixing commits.
+   Use whenever Claude needs to: (1) Commit changes, (2) Inspect repo state, (3) Fix/amend commits,
+   (4) Stage/unstage files, (5) View history or diffs.
 allowed-tools: Bash(hug:*)
 ---
 
 # Hug Workflow
 
-Hug is a complete Git replacement with enhanced UX and safety features. Always use `hug` commands instead of `git`. Can accept existing git commands as well.
+Hug is a complete Git replacement with enhanced UX and safety features.
+Hug accepts existing git commands as well.
+CRUCIAL: When you want to run a git command, ALWAYS translate it to a `hug` equivalent instead.
 
 ## Critical Safety Rules
 
@@ -20,7 +22,7 @@ Hug is a complete Git replacement with enhanced UX and safety features. Always u
 
 **CRITICAL for `hug cm` (amend):**
 - `hug cm -m 'msg'` adds ANY staged files to the commit
-- ALWAYS run `hug sls` first to verify staging state
+- ALWAYS run `hug sls` first to list staged files
 - Use `hug usa` to unstage everything if you want message-only amend
 
 **Handling multi-line commit messages**
@@ -42,7 +44,7 @@ Start: hug sla
 │  └─ Stage ALL tracked? → hug a (no args, tracked files only)
 │  └─ Stage untracked too? → hug a <file1> <file2> ... (explicit form)
 │
-├─ Verify: hug sls (check staged files only)
+├─ Verify: hug sls (list staged files only)
 │
 └─ Commit with `hug c -m`
 ```
@@ -54,7 +56,7 @@ Start: hug sla
 ## Mapping: High-level intentions to Hug Commands
 
 1. To understand both which files were staged and what changes they contained so I can write an accurate commit message.
-    - `hug ss`
+   - `hug ss`
 
 
 ## Common Workflows
@@ -62,17 +64,17 @@ Start: hug sla
 ### Commit Changes
 
 ```sh
-hug sla                      # See all files
+hug sla                      # List S:*, U:*, UnTrck files
 hug a <files>                # Stage specific files
-hug sls                      # List staged files
+hug sls                      # List S:* files
 hug c -m 'message'           # Commit
 ```
 
 ### Inspect Repository State
 
 ```sh
-hug sla                      # All files (staged, unstaged, untracked)
-hug sls                      # Staged files only
+hug sla                      # List staged, unstaged, untracked files
+hug sls                      # List staged files only
 hug sh                       # Last commit details, including list of files
 hug llu                      # Outgoing commits (what would be pushed)
 ```
@@ -96,19 +98,20 @@ hug cm -m 'new message'      # Amends message only (keeps files intact)
 **Change message OR add files:**
 ```sh
 hug sla                      # Check which files to add
-hug a <files>                # Stage files to add
+hug a <files>                # Add files to stage
 hug cm -m 'message'          # Amends (message + staged files)
 ```
 
 **Remove files from commit:**
 ```sh
 hug back 1                   # Go back, keeping changes staged
-hug sls                      # Check staged files
+hug sls                      # List staged files
 hug us <files>               # Unstage unwanted files
 hug c -m 'original message'  # Re-commit
 ```
 
 ## Key git -> hug Commands Mapping
+ALWAYS use the Hug command that corresponds to the git command you're trying to run:
 | Git                              | Hug    | Description                                        |
 |----------------------------------|--------|----------------------------------------------------|
 | git diff --cached                | hug ss | Show staged changes then file stats                |
@@ -119,8 +122,9 @@ hug c -m 'original message'  # Re-commit
 ## Key Commands Reference
 
 **Status & Inspection:**
-- `hug sla` - List staged (S:*), unstaged (U:*) and untracked (UnTrck) files, with stats
+- `hug sl` - List staged (S:*) and unstaged (U:*) files, with stats
 - `hug sls` - List staged files only
+- `hug sla` - List staged (S:*), unstaged (U:*) and untracked (UnTrck) files
 - `hug sh`  - Last commit with full message and diff stats
 - `hug shp` - Same as `hug sh` + diff
 - `hug llu` - Outgoing commits

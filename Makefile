@@ -9,6 +9,23 @@ SHELL := /bin/bash
 MAKEFLAGS += --warn-undefined-variables
 MAKEFLAGS += --no-builtin-rules
 
+# UV detection for fast Python package management
+UV := $(shell command -v uv 2>/dev/null)
+ifeq ($(UV),)
+    UV_AVAILABLE := false
+    UV_CMD := uv
+    PYTHON_CMD := python3
+    PYTEST_CMD := python3 -m pytest
+    PIP_CMD := python3 -m pip
+    $(warning UV not found - falling back to python3...)
+else
+    UV_AVAILABLE := true
+    UV_CMD := uv
+    PYTHON_CMD := uv run python
+    PYTEST_CMD := uv run pytest
+    PIP_CMD := uv pip install
+endif
+
 # Terminal detection for colors
 TERM_COLOR := $(shell tput colors 2>/dev/null)
 ifeq ($(TERM_COLOR),0)
@@ -65,7 +82,7 @@ help: ## Show this help message
 	@grep -E '^vhs.*:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-20s$(RESET) %s\n", $$1, $$2}'
 	@printf "\n"
 	@printf "$(BOLD)Installation & Setup:$(RESET)\n"
-	@grep -E '^(install|deps-|optional-):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(RESET) %s\n", $$1, $$2}'
+	@grep -E '^(install|deps-|optional-|python-):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(RESET) %s\n", $$1, $$2}'
 	@printf "\n"
 	@printf "$(BOLD)Utilities:$(RESET)\n"
 	@grep -E '^(clean|demo-|mocks-):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-20s$(RESET) %s\n", $$1, $$2}'
@@ -148,7 +165,7 @@ test-check: ## Check test prerequisites without actually running tests
 	@echo "$(BLUE)Checking test prerequisites...$(RESET)"
 	./tests/run-tests.sh --check
 	@echo "$(BLUE)Checking Python test prerequisites...$(RESET)"
-	@if cd git-config/lib/python && python3 -m pytest --version >/dev/null 2>&1; then \
+	@if cd git-config/lib/python && $(PYTEST_CMD) --version >/dev/null 2>&1; then \
 		echo "$(GREEN)✓ pytest is available$(RESET)"; \
 	else \
 		echo "$(YELLOW)⚠ pytest not found - install with 'make test-deps-install' or 'make test-deps-py-install'$(RESET)"; \
@@ -157,31 +174,37 @@ test-check: ## Check test prerequisites without actually running tests
 test-lib-py: ## Run Python library tests using pytest
 	@echo "$(BLUE)Running Python library tests...$(RESET)"
 	@cd git-config/lib/python && \
-	if ! python3 -m pytest --version >/dev/null 2>&1; then \
+	if ! $(PYTEST_CMD) --version >/dev/null 2>&1; then \
 		echo "$(YELLOW)pytest not installed. Installing pytest and dev dependencies...$(RESET)"; \
-		python3 -m pip install -q -e ".[dev]" || \
+		$(PIP_CMD) -q -e ".[dev]" || \
 		(echo "$(YELLOW)Warning: Could not install dev dependencies. Tests will be skipped.$(RESET)" && exit 0); \
 	fi; \
-	python3 -m pytest tests/ -v --color=yes --tb=short $(if $(TEST_FILTER),-k "$(TEST_FILTER)")
+	$(PYTEST_CMD) tests/ -v --color=yes --tb=short $(if $(TEST_FILTER),-k "$(TEST_FILTER)")
 
 test-lib-py-coverage: ## Run Python library tests with coverage report
 	@echo "$(BLUE)Running Python library tests with coverage...$(RESET)"
 	@cd git-config/lib/python && \
-	python3 -m pip install -q -e ".[dev]" 2>/dev/null || true; \
-	python3 -m pytest tests/ -v --cov=. --cov-report=term-missing --cov-report=html
+	$(PIP_CMD) -q -e ".[dev]" 2>/dev/null || true; \
+	$(PYTEST_CMD) tests/ -v --cov=. --cov-report=term-missing --cov-report=html
 
 test-deps-install: ## Install all test dependencies (BATS + Python)
 	@echo "$(BLUE)Installing test dependencies...$(RESET)"
 	@echo "$(BLUE)Installing BATS dependencies...$(RESET)"
 	./tests/run-tests.sh --install-deps
 	@echo "$(BLUE)Installing Python test dependencies...$(RESET)"
-	@cd git-config/lib/python && python3 -m pip install -q -e ".[dev]" || \
+ifeq ($(UV_AVAILABLE),true)
+	@echo "$(CYAN)Using UV for fast dependency installation...$(RESET)"
+endif
+	@cd git-config/lib/python && $(PIP_CMD) -q -e ".[dev]" || \
 	(echo "$(YELLOW)Warning: Could not install Python dev dependencies. Python tests may not work.$(RESET)")
 	@echo "$(GREEN)All test dependencies installed$(RESET)"
 
 test-deps-py-install: ## Install Python test dependencies (pytest, coverage, etc.)
 	@echo "$(BLUE)Installing Python test dependencies...$(RESET)"
-	@cd git-config/lib/python && python3 -m pip install -e ".[dev]"
+ifeq ($(UV_AVAILABLE),true)
+	@echo "$(CYAN)Using UV for fast dependency installation...$(RESET)"
+endif
+	@cd git-config/lib/python && $(PIP_CMD) -e ".[dev]"
 	@echo "$(GREEN)Python test dependencies installed$(RESET)"
 
 optional-deps-install: ## Install optional dependencies (gum, etc.)
@@ -191,6 +214,52 @@ optional-deps-install: ## Install optional dependencies (gum, etc.)
 optional-deps-check: ## Check if optional dependencies are installed
 	@echo "$(BLUE)Checking optional dependencies...$(RESET)"
 	@bash bin/optional-deps-install.sh --check
+
+python-check: ## Check Python environment (UV, pytest, venv status)
+	@echo "$(BLUE)Python Environment Status:$(RESET)"
+	@echo ""
+	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+		echo "$(GREEN)✓ UV available$(RESET)"; \
+		$(UV) --version; \
+	else \
+		echo "$(YELLOW)⚠ UV not found (install with 'make python-install-uv')$(RESET)"; \
+	fi
+	@echo ""
+	@echo "Python:"
+	@$(PYTHON_CMD) --version
+	@echo ""
+	@echo "Virtual Environment:"
+	@if [ -d .venv ]; then \
+		echo "$(GREEN)✓ .venv/ exists$(RESET)"; \
+		ls -la .venv/bin/python3 2>/dev/null || echo "  $(YELLOW)⚠ No python3 in .venv/bin$(RESET)"; \
+	else \
+		echo "$(YELLOW)⚠ .venv/ does not exist$(RESET)"; \
+	fi
+	@echo ""
+	@echo "pytest:"
+	@if cd git-config/lib/python && $(PYTEST_CMD) --version >/dev/null 2>&1; then \
+		cd - > /dev/null && $(PYTEST_CMD) --version | sed 's/^/  /'; \
+	else \
+		echo "  $(YELLOW)⚠ pytest not found$(RESET)"; \
+	fi
+
+python-venv-create: ## Create virtual environment using UV (fast)
+	@echo "$(BLUE)Creating virtual environment...$(RESET)"
+ifeq ($(UV_AVAILABLE),true)
+	@$(UV) venv .venv
+	@echo "$(GREEN)✓ Virtual environment created with UV$(RESET)"
+else
+	@echo "$(YELLOW)UV not available, using python3 -m venv...$(RESET)"
+	@python3 -m venv .venv
+	@echo "$(GREEN)✓ Virtual environment created with python3$(RESET)"
+endif
+	@echo "$(CYAN)Run 'make test-deps-py-install' to install dependencies$(RESET)"
+
+python-install-uv: ## Install UV package manager
+	@echo "$(BLUE)Installing UV...$(RESET)"
+	@curl -LsSf https://astral.sh/uv/install.sh | sh
+	@echo "$(GREEN)UV installed successfully$(RESET)"
+	@echo "$(CYAN)Run 'source ~/.bashrc' or restart your shell to use UV$(RESET)"
 
 ##@ Mock Data Management
 
@@ -212,12 +281,12 @@ mocks-check: ## Check status of recorded mock data
 
 mocks-generate: ## Regenerate all mock data from real commands
 	@echo "$(BLUE)Regenerating all mock data...$(RESET)"
-	@cd git-config/lib/python/tests/fixtures && python3 generate_mocks.py
+	@cd git-config/lib/python/tests/fixtures && $(PYTHON_CMD) generate_mocks.py
 	@echo "$(GREEN)✓ All mock data regenerated successfully$(RESET)"
 
 mocks-generate-git: ## Regenerate Git command mocks only
 	@echo "$(BLUE)Regenerating Git command mocks...$(RESET)"
-	@cd git-config/lib/python/tests/fixtures && python3 generate_mocks.py
+	@cd git-config/lib/python/tests/fixtures && $(PYTHON_CMD) generate_mocks.py
 	@echo "$(GREEN)✓ Git mocks regenerated$(RESET)"
 
 mocks-regenerate: mocks-generate ## Alias for mocks-generate
@@ -239,18 +308,18 @@ mocks-clean-git: ## Remove Git command mocks only
 mocks-test-with-regenerate: ## Run Python tests and regenerate mocks on failure
 	@echo "$(BLUE)Running Python tests with mock regeneration...$(RESET)"
 	@cd git-config/lib/python && \
-	if ! python3 -m pytest tests/ -v --color=yes --tb=short; then \
+	if ! $(PYTEST_CMD) tests/ -v --color=yes --tb=short; then \
 		echo "$(YELLOW)Tests failed - regenerating mocks...$(RESET)"; \
-		cd tests/fixtures && python3 generate_mocks.py; \
+		cd tests/fixtures && $(PYTHON_CMD) generate_mocks.py; \
 		echo "$(BLUE)Retrying tests with fresh mocks...$(RESET)"; \
-		cd ../.. && python3 -m pytest tests/ -v --color=yes --tb=short; \
+		cd ../.. && $(PYTEST_CMD) tests/ -v --color=yes --tb=short; \
 	fi
 	@echo "$(GREEN)✓ Python tests passed$(RESET)"
 
 mocks-validate: ## Validate mock data integrity (TOML + output files match)
 	@echo "$(BLUE)Validating mock data integrity...$(RESET)"
 	@cd git-config/lib/python/tests/fixtures && \
-	python3 -c "import tomllib; from pathlib import Path; errors = []; \
+	$(PYTHON_CMD) -c "import tomllib; from pathlib import Path; errors = []; \
 [toml_file for toml_file in Path('mocks').rglob('*.toml') if (lambda f: ([errors.append(f'Missing: {f.parent / scenario.get(\"output_file\", \"\")}') for scenario in tomllib.load(open(f, 'rb')).get('scenario', []) if not (f.parent / scenario.get('output_file', '')).exists()], None)[1])(toml_file)]; \
 exit(1) if errors and print('\n'.join(errors)) else print('$(GREEN)✓ All mock data is valid$(RESET)')"
 
@@ -424,7 +493,7 @@ demo-repo-status: ## Show status of demo repository
 	echo "Remote: $$(git remote -v 2>/dev/null | head -1 || echo 'N/A')"; \
 	exit 0
 
-.PHONY: test test-bash test-unit test-integration test-lib test-check test-lib-py test-lib-py-coverage test-deps-install test-deps-py-install optional-deps-install optional-deps-check
+.PHONY: test test-bash test-unit test-integration test-lib test-check test-lib-py test-lib-py-coverage test-deps-install test-deps-py-install optional-deps-install optional-deps-check python-check python-venv-create python-install-uv
 .PHONY: mocks-check mocks-generate mocks-generate-git mocks-regenerate mocks-clean mocks-clean-git mocks-test-with-regenerate mocks-validate
 .PHONY: vhs-deps-install
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
