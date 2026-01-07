@@ -81,6 +81,7 @@ hug-scm/
 **Examples**:
 - `index.md` - Documentation homepage
 - `getting-started.md` - Installation, activation, first commands
+- `git-to-hug.md` - Git command translation guide (Git users transitioning to Hug)
 - `workflows.md` - Common workflows and use cases
 - `cheat-sheet.md` - Scenario-based quick reference
 - `command-map.md` - Complete command reference

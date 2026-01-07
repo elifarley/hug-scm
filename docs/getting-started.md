@@ -353,8 +353,13 @@ You now know the essential commands to safely manage your code with Hug. You can
 
 When you feel more confident, explore:
 
+- **[Git to Hug Translation](git-to-hug.md)** - Map your existing Git knowledge to Hug commands
 - **[Workflows Guide](workflows.md)** - Advanced patterns and real-world scenarios
 - **[Command Map](command-map.md)** - Complete command organization
 - **[Cheat Sheet](cheat-sheet.md)** - Quick syntax reference
+
+::: tip Coming from Git?
+Check the [Git to Hug Translation Guide](git-to-hug.md) to map your existing Git knowledge to Hug commands.
+:::
 
 **Ready to dive deeper?** The [Workflows Guide](workflows.md) shows you how to combine these basics into powerful development patterns.

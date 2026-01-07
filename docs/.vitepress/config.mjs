@@ -45,6 +45,7 @@ import { defineConfig } from 'vitepress'
           items: [
             { text: 'Installation', link: '/installation' },
             { text: 'Getting Started', link: '/getting-started' },
+            { text: 'Git to Hug Translation', link: '/git-to-hug' },
             { text: 'Workflows', link: '/workflows' },
             { text: '📚 Legacy: Beginner\'s Guide', link: '/hug-for-beginners' },
             { text: '📚 Legacy: Core Concepts', link: '/core-concepts' },
