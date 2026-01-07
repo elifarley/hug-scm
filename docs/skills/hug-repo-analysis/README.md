@@ -200,11 +200,10 @@ Recommended order for learning these skills:
 
 ## Additional Resources
 
-- [Main Hug SCM Documentation](../docs/)
-- [Command Reference](../../../README.md#command-reference)
-- [Practical Workflows](../../practical-workflows.md)
-- [Cookbook Recipes](../../cookbook.md)
-- [Testing Guide](../../../TESTING.md)
+- [Main Hug SCM Documentation](../../index.md)
+- [Command Reference](../../command-map.md)
+- [Workflows Guide](../../workflows.md)
+- [Testing Guide](https://github.com/elifarley/hug-scm/blob/main/TESTING.md)
 
 ## Contributing
 

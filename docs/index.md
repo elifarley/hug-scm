@@ -34,9 +34,9 @@ Key features:
 
 ## Claude Code Integration
 
-**🤖 AI-Powered Workflow**: [Hug Skills](skills/) - Claude Code skills for enhanced Hug assistance
+**🤖 AI-Powered Workflow**: [Hug Skills](skills/README.md) - Claude Code skills for enhanced Hug assistance
 
-If you use [Claude Code](https://claude.com/claude-code), install the `hug-workflow.skill` to get AI-assisted Git operations with built-in safety rules and best practices. See the [skills directory](skills/) for details.
+If you use [Claude Code](https://claude.com/claude-code), install the `hug-workflow` skill to get AI-assisted Git operations with built-in safety rules and best practices.
 
 ## Command Reference
 Start with the [Command Map](/command-map) for a quick overview of all families, or the [Cheat Sheet](/cheat-sheet) for daily workflows.
