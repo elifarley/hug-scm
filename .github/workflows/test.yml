@@ -26,7 +26,7 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Cache Hug dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.hug-deps
           key: ${{ runner.os }}-hug-deps-${{ hashFiles('tests/run-tests.sh', 'docs/screencasts/bin/vhs-build.sh', 'bin/optional-deps-install.sh') }}
