@@ -1,7 +1,7 @@
 test -e "$HOME"/.hug-scm || {
-  echo "$HOME/.hug-scm is missing. Before activating Hug, you must install it by running:"
-  echo "  make install"
-  exit 1
+  echo >&2 "$HOME/.hug-scm is missing. Before activating Hug, you must install it by running:"
+  echo >&2 "  make install"
+  return 1
 }
 
 . "$HOME"/.hug-scm
