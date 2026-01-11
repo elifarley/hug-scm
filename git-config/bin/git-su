@@ -7,7 +7,7 @@ set -euo pipefail
 
 show_help() {
   cat << 'EOF'
-hug su: Show status with patch of unstaged changes.
+hug su: Show status with patch of unstaged diff.
 
 USAGE:
     hug su [<file>] [-h, --help]
@@ -15,7 +15,7 @@ USAGE:
     hug su --browse-root
 
 ARGUMENTS:
-    <file>         Show unstaged changes for specific file (optional)
+    <file>         Show unstaged diff for specific file (optional)
     --             Interactive file selection from unstaged files (current directory scope)
 
 OPTIONS:
@@ -23,20 +23,20 @@ OPTIONS:
     -h, --help     Show this help
 
 DESCRIPTION:
-    Shows the diff of unstaged changes (modifications not yet staged). When
-    no file is specified, shows all unstaged changes. Use '--' to
+    Shows the diff of unstaged diff (modifications not yet staged). When
+    no file is specified, shows all unstaged diff. Use '--' to
     interactively select a file from unstaged files. By default, interactive
     selection is scoped to the current directory and subdirectories. Use
     --browse-root to browse the entire repository.
 
 EXAMPLES:
-    hug su                  # Show all unstaged changes
-    hug su file.txt         # Show unstaged changes for specific file
+    hug su                  # Show all unstaged diff
+    hug su file.txt         # Show unstaged diff for specific file
     hug su --               # Interactive file selection (current directory)
     hug su --browse-root    # Interactive file selection (full repository)
 
 SEE ALSO:
-    hug ss       : Show staged changes
+    hug ss       : Show staged diff
     hug sw       : Show working directory changes
     hug s        : Show status
 EOF
@@ -59,7 +59,7 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     select_opts+=("--cwd")
   fi
   
-  select_opts+=("--prompt" "Select file(s) to view unstaged changes...")
+  select_opts+=("--prompt" "Select file(s) to view unstaged diff...")
   
   mapfile -t files < <(select_files_with_status "${select_opts[@]}" || true)
   if [[ ${#files[@]} -eq 0 ]]; then
@@ -67,8 +67,9 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     exit 0
   fi
   for file in "${files[@]}"; do
-    printf '─────────────────── Unstaged changes for %s:\n' "$file"
+    printf '📝 🔀 Unstaged diff for %s:\n' "$file"
     git diff -- "$file"
+    printf '\n📝 📊 Unstaged file stats:\n'
     git diff --stat -- "$file"
   done
   git s
@@ -76,14 +77,16 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
 fi
 
 if test $# -eq 0; then
-  printf '─────────────────── Unstaged changes:\n'
+  printf '📝 🔀 Unstaged diff:\n'
   git diff
+  printf '\n📝 📊 Unstaged file stats:\n'
   git diff --stat
 else
   t="$1"; shift
-  printf '─────────────────── Unstaged changes for FILE:\n'
+  printf '📝 🔀 Unstaged diff for FILE:\n'
   test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
   git diff "$@" -- "${GIT_PREFIX}$t"
+  printf '\n📝 📊 Unstaged file stats:\n'
   git diff --stat "$@" -- "${GIT_PREFIX}$t"
 fi
 exec hug s

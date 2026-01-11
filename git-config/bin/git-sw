@@ -23,21 +23,20 @@ OPTIONS:
     -h, --help     Show this help
 
 DESCRIPTION:
-    Shows the diff of all working directory changes (staged + unstaged).
-    When no file is specified, shows all working directory changes. Use '--'
-    to interactively select a file from files with working directory changes.
-    By default, interactive selection is scoped to the current directory and
-    subdirectories. Use --browse-root to browse the entire repository.
+    Shows the diff of all working directory changes, split into unstaged and
+    staged sections. First shows unstaged diff with stats, then shows staged
+    changes with stats, separated by a divider. This effectively combines the
+    output of 'hug su' and 'hug ss'.
 
 EXAMPLES:
-    hug sw                  # Show all working directory changes
+    hug sw                  # Show all working directory changes (unstaged + staged)
     hug sw file.txt         # Show working directory changes for specific file
     hug sw --               # Interactive file selection (current directory)
     hug sw --browse-root    # Interactive file selection (full repository)
 
 SEE ALSO:
-    hug ss       : Show staged changes
-    hug su       : Show unstaged changes
+    hug ss       : Show staged diff
+    hug su       : Show unstaged diff
     hug s        : Show status
 EOF
 }
@@ -67,23 +66,57 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     exit 0
   fi
   for file in "${files[@]}"; do
-    printf '─────────────────── Working dir changes for %s:\n' "$file"
-    git diff HEAD -- "$file"
-    git diff HEAD --stat -- "$file"
+    # Show unstaged diff
+    printf '📝 🔀 Unstaged diff for %s:\n' "$file"
+    git diff -- "$file"
+    printf '\n📝 📊 Unstaged fle stats:\n'
+    git diff --stat -- "$file"
+    
+    # Separator
+    printf '\n═══════════════════════════════════════════════════════════════════\n\n'
+    
+    # Show staged diff
+    printf '📦 🔀 Staged diff for %s:\n' "$file"
+    git diff --cached -- "$file"
+    printf '\n📦 📊 Staged file stats:\n'
+    git diff --cached --stat -- "$file"
   done
   git s
   exit 0
 fi
 
 if test $# -eq 0; then
-  printf '─────────────────── Working dir changes:\n'
-  git diff HEAD
-  git diff HEAD --stat
+  # Show unstaged diff
+  printf '📝 🔀 Unstaged diff:\n'
+  git diff
+  printf '\n📝 📊 Unstaged file stats:\n'
+  git diff --stat
+  
+  # Separator
+  printf '\n═══════════════════════════════════════════════════════════════════\n\n'
+  
+  # Show staged diff
+  printf '📦 🔀 Staged diff:\n'
+  git diff --cached
+  printf '\n📦 📊 Staged file stats:\n'
+  git diff --cached --stat
 else
   t="$1"; shift
-  printf '─────────────────── Working dir changes for FILE:\n'
   test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
-  git diff "$@" HEAD -- "${GIT_PREFIX}$t"
-  git diff "$@" HEAD --stat -- "${GIT_PREFIX}$t"
+  
+  # Show unstaged diff for file
+  printf '📝 🔀 Unstaged diff for FILE:\n'
+  git diff "$@" -- "${GIT_PREFIX}$t"
+  printf '\n📝 📊 Unstaged file stats:\n'
+  git diff --stat "$@" -- "${GIT_PREFIX}$t"
+  
+  # Separator
+  printf '\n═══════════════════════════════════════════════════════════════════\n\n'
+  
+  # Show staged diff for file
+  printf '📦 🔀 Staged diff for FILE:\n'
+  git diff --cached "$@" -- "${GIT_PREFIX}$t"
+  printf '\n📦 📊 Staged file stats:\n'
+  git diff --cached --stat "$@" -- "${GIT_PREFIX}$t"
 fi
 exec hug s
