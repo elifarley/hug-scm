@@ -52,71 +52,31 @@ check_git_repo
 # Handle interactive file selection if requested
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   declare -a select_opts=("--staged" "--unstaged")
-  
+
   # Default to --cwd (current directory scope) unless --browse-root is specified
   if ! $browse_root; then
     select_opts+=("--cwd")
   fi
-  
+
   select_opts+=("--prompt" "Select file(s) to view uncommitted changes...")
-  
+
   mapfile -t files < <(select_files_with_status "${select_opts[@]}" || true)
   if [[ ${#files[@]} -eq 0 ]]; then
     info "No files with working directory changes available or cancelled."
     exit 0
   fi
   for file in "${files[@]}"; do
-    # Show unstaged diff
-    printf '📝 🔀 Unstaged diff for %s:\n' "$file"
-    git diff -- "$file"
-    printf '\n📝 📊 Unstaged fle stats:\n'
-    git diff --stat -- "$file"
-    
-    # Separator
-    printf '\n═══════════════════════════════════════════════════════════════════\n\n'
-    
-    # Show staged diff
-    printf '📦 🔀 Staged diff for %s:\n' "$file"
-    git diff --cached -- "$file"
-    printf '\n📦 📊 Staged file stats:\n'
-    git diff --cached --stat -- "$file"
+    show_combined_diff -- "$file"
   done
   git s
   exit 0
 fi
 
 if test $# -eq 0; then
-  # Show unstaged diff
-  printf '📝 🔀 Unstaged diff:\n'
-  git diff
-  printf '\n📝 📊 Unstaged file stats:\n'
-  git diff --stat
-  
-  # Separator
-  printf '\n═══════════════════════════════════════════════════════════════════\n\n'
-  
-  # Show staged diff
-  printf '📦 🔀 Staged diff:\n'
-  git diff --cached
-  printf '\n📦 📊 Staged file stats:\n'
-  git diff --cached --stat
+  show_combined_diff
 else
   t="$1"; shift
   test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
-  
-  # Show unstaged diff for file
-  printf '📝 🔀 Unstaged diff for FILE:\n'
-  git diff "$@" -- "${GIT_PREFIX}$t"
-  printf '\n📝 📊 Unstaged file stats:\n'
-  git diff --stat "$@" -- "${GIT_PREFIX}$t"
-  
-  # Separator
-  printf '\n═══════════════════════════════════════════════════════════════════\n\n'
-  
-  # Show staged diff for file
-  printf '📦 🔀 Staged diff for FILE:\n'
-  git diff --cached "$@" -- "${GIT_PREFIX}$t"
-  printf '\n📦 📊 Staged file stats:\n'
-  git diff --cached --stat "$@" -- "${GIT_PREFIX}$t"
+  show_combined_diff -- "${GIT_PREFIX}$t" "$@"
 fi
 exec hug s

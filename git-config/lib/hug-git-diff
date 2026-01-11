@@ -1,0 +1,333 @@
+# shellcheck shell=bash
+# Library: HUG Git diff formatting and display
+#
+# Provides unified diff output formatting for staged, unstaged, and combined
+# diff operations with emoji indicators, empty diff detection, and
+# consistent spacing.
+#
+# Functions:
+#   - show_staged_diff: Display staged diff with optional stats
+#   - show_unstaged_diff: Display unstaged diff with optional stats
+#   - show_combined_diff: Display both unstaged and staged diffs with separator
+#   - diff_has_staged_changes: Check if staged changes exist
+#   - diff_has_unstaged_changes: Check if unstaged changes exist
+
+################################################################################
+# Emoji and Display Configuration
+################################################################################
+
+# Emoji constants for diff display
+readonly EMOJI_STAGED="📦"
+readonly EMOJI_UNSTAGED="📝"
+readonly EMOJI_DIFF="🔀"
+readonly EMOJI_STATS="📊"
+
+# Separator line (59 chars: fits standard 80-column terminals with padding)
+readonly SEPARATOR_LINE="═══════════════════════════════════════════════════════════════════"
+
+# Get the emoji for a given diff type
+# Usage: _diff_emoji "staged"|"unstaged"|"diff"|"stats"
+# Parameters:
+#   $1 - Type of emoji to retrieve
+# Returns:
+#   The emoji indicator via printf
+_diff_emoji() {
+  case "$1" in
+    staged)   printf '%s' "$EMOJI_STAGED" ;;
+    unstaged) printf '%s' "$EMOJI_UNSTAGED" ;;
+    diff)     printf '%s' "$EMOJI_DIFF" ;;
+    stats)    printf '%s' "$EMOJI_STATS" ;;
+    *) return 1 ;;
+  esac
+}
+
+################################################################################
+# Diff State Detection Functions
+################################################################################
+
+# Check if there are any staged changes
+# Usage: diff_has_staged_changes
+# Returns:
+#   0 if staged changes exist, 1 otherwise
+diff_has_staged_changes() {
+  check_git_repo
+  git diff --cached --quiet 2>/dev/null
+  local exit_code=$?
+  # git diff --quiet returns 1 when there ARE differences, 0 when none
+  return $((exit_code == 1 ? 0 : 1))
+}
+
+# Check if there are any unstaged changes
+# Usage: diff_has_unstaged_changes
+# Returns:
+#   0 if unstaged changes exist, 1 otherwise
+diff_has_unstaged_changes() {
+  check_git_repo
+  git diff --quiet 2>/dev/null
+  local exit_code=$?
+  return $((exit_code == 1 ? 0 : 1))
+}
+
+################################################################################
+# Diff Display Functions
+################################################################################
+
+# Display staged diff with optional file-specific output and statistics
+# Usage: show_staged_diff [--no-stats] [--] [file] [git_args...]
+# Parameters:
+#   --no-stats - Omit the file statistics section (default: show stats)
+#   --         - Separator before file argument (optional, for POSIX compliance)
+#   file       - Optional file path to show diff for specific file only
+#   git_args   - Additional arguments to pass to git diff (e.g., pathspec options)
+# Environment:
+#   HUG_EMOJI_MODE - Controls emoji display (see library header)
+# Effects:
+#   Prints formatted staged diff to stdout
+# Note:
+#   Silently exits with no output if no staged changes exist
+show_staged_diff() {
+  local show_stats=true
+  local file=""
+  local -a git_args=()
+
+  # Parse options
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --no-stats)
+        show_stats=false
+        shift
+        ;;
+      --)
+        shift
+        file="${1:-}"
+        shift
+        break
+        ;;
+      *)
+        file="${1:-}"
+        shift
+        ;;
+    esac
+  done
+
+  # Remaining args are for git
+  git_args=("$@")
+
+  check_git_repo
+
+  # Check if staged changes exist before printing headers
+  if [[ -n "$file" ]]; then
+    # For specific file, we need to check if that specific file has staged changes
+    if ! git diff --cached --quiet -- "$file" "${git_args[@]}" 2>/dev/null; then
+      local staged_emoji diff_emoji stats_emoji
+      staged_emoji="$(_diff_emoji staged)"
+      diff_emoji="$(_diff_emoji diff)"
+      stats_emoji="$(_diff_emoji stats)"
+
+      printf '%s %s Staged diff for %s:\n' "$staged_emoji" "$diff_emoji" "$file"
+      git diff --cached "${git_args[@]}" -- "$file"
+
+      if $show_stats; then
+        printf '\n%s %s Staged file stats:\n' "$staged_emoji" "$stats_emoji"
+        git diff --cached --stat "${git_args[@]}" -- "$file"
+      fi
+    fi
+  else
+    # Check if any staged changes exist
+    if diff_has_staged_changes; then
+      local staged_emoji diff_emoji stats_emoji
+      staged_emoji="$(_diff_emoji staged)"
+      diff_emoji="$(_diff_emoji diff)"
+      stats_emoji="$(_diff_emoji stats)"
+
+      printf '%s %s Staged diff:\n' "$staged_emoji" "$diff_emoji"
+      git diff --cached "${git_args[@]}"
+
+      if $show_stats; then
+        printf '\n%s %s Staged file stats:\n' "$staged_emoji" "$stats_emoji"
+        git diff --cached --stat "${git_args[@]}"
+      fi
+    fi
+  fi
+}
+
+# Display unstaged diff with optional file-specific output and statistics
+# Usage: show_unstaged_diff [--no-stats] [--] [file] [git_args...]
+# Parameters:
+#   --no-stats - Omit the file statistics section (default: show stats)
+#   --         - Separator before file argument (optional, for POSIX compliance)
+#   file       - Optional file path to show diff for specific file only
+#   git_args   - Additional arguments to pass to git diff (e.g., pathspec options)
+# Environment:
+#   HUG_EMOJI_MODE - Controls emoji display (see library header)
+# Effects:
+#   Prints formatted unstaged diff to stdout
+# Note:
+#   Silently exits with no output if no unstaged changes exist
+show_unstaged_diff() {
+  local show_stats=true
+  local file=""
+  local -a git_args=()
+
+  # Parse options
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --no-stats)
+        show_stats=false
+        shift
+        ;;
+      --)
+        shift
+        file="${1:-}"
+        shift
+        break
+        ;;
+      *)
+        file="${1:-}"
+        shift
+        ;;
+    esac
+  done
+
+  # Remaining args are for git
+  git_args=("$@")
+
+  check_git_repo
+
+  # Check if unstaged changes exist before printing headers
+  if [[ -n "$file" ]]; then
+    # For specific file, we need to check if that specific file has unstaged changes
+    if ! git diff --quiet -- "$file" "${git_args[@]}" 2>/dev/null; then
+      local unstaged_emoji diff_emoji stats_emoji
+      unstaged_emoji="$(_diff_emoji unstaged)"
+      diff_emoji="$(_diff_emoji diff)"
+      stats_emoji="$(_diff_emoji stats)"
+
+      printf '%s %s Unstaged diff for %s:\n' "$unstaged_emoji" "$diff_emoji" "$file"
+      git diff "${git_args[@]}" -- "$file"
+
+      if $show_stats; then
+        printf '\n%s %s Unstaged file stats:\n' "$unstaged_emoji" "$stats_emoji"
+        git diff --stat "${git_args[@]}" -- "$file"
+      fi
+    fi
+  else
+    # Check if any unstaged changes exist
+    if diff_has_unstaged_changes; then
+      local unstaged_emoji diff_emoji stats_emoji
+      unstaged_emoji="$(_diff_emoji unstaged)"
+      diff_emoji="$(_diff_emoji diff)"
+      stats_emoji="$(_diff_emoji stats)"
+
+      printf '%s %s Unstaged diff:\n' "$unstaged_emoji" "$diff_emoji"
+      git diff "${git_args[@]}"
+
+      if $show_stats; then
+        printf '\n%s %s Unstaged file stats:\n' "$unstaged_emoji" "$stats_emoji"
+        git diff --stat "${git_args[@]}"
+      fi
+    fi
+  fi
+}
+
+# Display separator line between diff sections
+# Usage: show_diff_separator
+# Effects:
+#   Prints a visual separator line with consistent newline spacing
+show_diff_separator() {
+  printf '\n%s\n\n' "$SEPARATOR_LINE"
+}
+
+# Display both unstaged and staged diffs with separator
+# Usage: show_combined_diff [--no-stats] [--] [file] [git_args...]
+# Parameters:
+#   --no-stats - Omit the file statistics section (default: show stats)
+#   --         - Separator before file argument (optional, for POSIX compliance)
+#   file       - Optional file path to show diff for specific file only
+#   git_args   - Additional arguments to pass to git diff (e.g., pathspec options)
+# Environment:
+#   HUG_EMOJI_MODE - Controls emoji display (see library header)
+# Effects:
+#   Prints unstaged diff, separator, then staged diff to stdout
+# Note:
+#   Only shows separator if both unstaged and staged changes exist
+show_combined_diff() {
+  local show_stats=true
+  local file=""
+  local -a git_args=()
+
+  # Parse options
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --no-stats)
+        show_stats=false
+        shift
+        ;;
+      --)
+        shift
+        file="${1:-}"
+        shift
+        break
+        ;;
+      *)
+        file="${1:-}"
+        shift
+        ;;
+    esac
+  done
+
+  # Remaining args are for git
+  git_args=("$@")
+
+  check_git_repo
+
+  local stats_flag=""
+  $show_stats || stats_flag="--no-stats"
+
+  # Track whether we showed each section for separator decision
+  local showed_unstaged=false
+  local showed_staged=false
+
+  # Show unstaged diff
+  if [[ -n "$file" ]]; then
+    if ! git diff --quiet -- "$file" "${git_args[@]}" 2>/dev/null; then
+      show_unstaged_diff $stats_flag -- "$file" "${git_args[@]}"
+      showed_unstaged=true
+    fi
+  else
+    if diff_has_unstaged_changes; then
+      show_unstaged_diff $stats_flag "${git_args[@]}"
+      showed_unstaged=true
+    fi
+  fi
+
+  # Show separator only if both sections have content
+  if $showed_unstaged; then
+    if [[ -n "$file" ]]; then
+      if ! git diff --cached --quiet -- "$file" "${git_args[@]}" 2>/dev/null; then
+        show_diff_separator
+        showed_staged=true
+      fi
+    else
+      if diff_has_staged_changes; then
+        show_diff_separator
+        showed_staged=true
+      fi
+    fi
+  fi
+
+  # Show staged diff
+  if [[ -n "$file" ]]; then
+    if ! git diff --cached --quiet -- "$file" "${git_args[@]}" 2>/dev/null; then
+      if $showed_staged || ! $showed_unstaged; then
+        show_staged_diff $stats_flag -- "$file" "${git_args[@]}"
+      fi
+    fi
+  else
+    if diff_has_staged_changes; then
+      if $showed_staged || ! $showed_unstaged; then
+        show_staged_diff $stats_flag "${git_args[@]}"
+      fi
+    fi
+  fi
+}

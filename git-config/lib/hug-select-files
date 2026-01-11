@@ -29,6 +29,78 @@
 #   - If no --staged/--unstaged/--untracked/--ignored provided, falls back to all tracked files via 'git ls-files' (displayed plainly)
 #   - Without --cwd, lists files across entire repository
 #   - Without PATHSPECS, lists all files of the requested types
+
+# Helper function: Format staged file status
+# Input: $status - Git status code (A, M, D, R*, C*, U)
+# Output: Tab-delimited "status_text<tab>status_code"
+# Usage: IFS=$'\t' read -r status_text status_code <<< "$(_format_staged_status "$status")"
+_format_staged_status() {
+  local status="$1"
+  local status_text status_code
+
+  case "$status" in
+    A)  status_text="${GREEN}S:Add ${NC}"; status_code="S:Add" ;;
+    M)  status_text="${GREEN}S:${YELLOW}Mod ${NC}"; status_code="S:Mod" ;;
+    D)  status_text="${GREEN}S:${RED}Del ${NC}"; status_code="S:Del" ;;
+    R*) status_text="${GREEN}S:${CYAN}Ren ${NC}"; status_code="S:Ren" ;;
+    C*) status_text="${GREEN}S:${BLUE}Copy${NC}"; status_code="S:Copy" ;;
+    U)  status_text="${YELLOW}Cnflt ${NC}"; status_code="S:Cnflt" ;;
+    *)  status_text="${GREEN}S     ${NC}"; status_code="S:Unk" ;;
+  esac
+
+  printf '%s\t%s' "$status_text" "$status_code"
+}
+
+# Helper function: Format unstaged file status
+# Input: $status - Git status code (M, D, U)
+# Output: Tab-delimited "status_text<tab>status_code"
+# Usage: IFS=$'\t' read -r status_text status_code <<< "$(_format_unstaged_status "$status")"
+_format_unstaged_status() {
+  local status="$1"
+  local status_text status_code
+
+  case "$status" in
+    M) status_text="${RED}U:${YELLOW}Mod ${NC}"; status_code="U:Mod" ;;
+    D) status_text="${RED}U:Del ${NC}"; status_code="U:Del" ;;
+    U) status_text="${RED}${YELLOW}Cnflt${NC}"; status_code="U:Cnflt" ;;
+    *) status_text="${RED}U     ${NC}"; status_code="U:Unk" ;;
+  esac
+
+  printf '%s\t%s' "$status_text" "$status_code"
+}
+
+# Helper function: Format untracked file status
+# Input: none
+# Output: Tab-delimited "status_text<tab>status_code"
+# Usage: IFS=$'\t' read -r status_text status_code <<< "$(_format_untracked_status)"
+_format_untracked_status() {
+  local status_text="${MAGENTA}UnTrck${NC}"
+  local status_code="UnTrck"
+  printf '%s\t%s' "$status_text" "$status_code"
+}
+
+# Helper function: Format ignored file status
+# Input: none
+# Output: Tab-delimited "status_text<tab>status_code"
+# Usage: IFS=$'\t' read -r status_text status_code <<< "$(_format_ignored_status)"
+_format_ignored_status() {
+  local status_text="${GREY}Ignore${NC}"
+  local status_code="Ignore"
+  printf '%s\t%s' "$status_text" "$status_code"
+}
+
+# Helper function: Handle "no files found" case
+# Input: $scope_cwd - Boolean indicating if scoped to current directory
+# Output: Prints info message if scoped
+# Returns: 1 (failure)
+_handle_no_files_found() {
+  local scope_cwd="$1"
+  if $scope_cwd; then
+    info "No relevant files in current directory."
+  fi
+  return 1
+}
+
 list_files_with_status() {
   # Source priority definitions for sorting
   if [[ -f "${HUG_LIB_DIR}/hug-git-priorities" ]]; then
@@ -107,17 +179,8 @@ list_files_with_status() {
         [[ -z "$line" ]] && continue
         local status file
         IFS=$'\t' read -r status file <<< "$line"
-        local status_text
-        local status_code
-        case "$status" in
-          A)  status_text="${GREEN}S:Add ${NC}"; status_code="S:Add" ;;
-          M)  status_text="${GREEN}S:${YELLOW}Mod ${NC}"; status_code="S:Mod" ;;
-          D)  status_text="${GREEN}S:${RED}Del ${NC}"; status_code="S:Del" ;;
-          R*) status_text="${GREEN}S:${CYAN}Ren ${NC}"; status_code="S:Ren" ;;
-          C*) status_text="${GREEN}S:${BLUE}Copy${NC}"; status_code="S:Copy" ;;
-          U)  status_text="${YELLOW}Cnflt ${NC}"; status_code="S:Cnflt" ;;
-          *)  status_text="${GREEN}S     ${NC}"; status_code="S:Unk" ;;
-        esac
+        local status_text status_code
+        IFS=$'\t' read -r status_text status_code <<< "$(_format_staged_status "$status")"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
         status_codes+=("$status_code")
@@ -130,14 +193,8 @@ list_files_with_status() {
         [[ -z "$line" ]] && continue
         local status file
         IFS=$'\t' read -r status file <<< "$line"
-        local status_text
-        local status_code
-        case "$status" in
-          M) status_text="${RED}U:${YELLOW}Mod ${NC}"; status_code="U:Mod" ;;
-          D) status_text="${RED}U:Del ${NC}"; status_code="U:Del" ;;
-          U) status_text="${RED}${YELLOW}Cnflt${NC}"; status_code="U:Cnflt" ;;
-          *) status_text="${RED}U     ${NC}"; status_code="U:Unk" ;;
-        esac
+        local status_text status_code
+        IFS=$'\t' read -r status_text status_code <<< "$(_format_unstaged_status "$status")"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
         status_codes+=("$status_code")
@@ -148,10 +205,11 @@ list_files_with_status() {
       mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}" "${pathspecs[@]}")
       for file in "${untracked_files[@]}"; do
         [[ -z "$file" ]] && continue
-        local status_text="${MAGENTA}UnTrck${NC}"
+        local status_text status_code
+        IFS=$'\t' read -r status_text status_code <<< "$(_format_untracked_status)"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
-        status_codes+=("UnTrck")
+        status_codes+=("$status_code")
       done
     fi
 
@@ -159,10 +217,11 @@ list_files_with_status() {
       mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}" "${pathspecs[@]}")
       for file in "${ignored_files[@]}"; do
         [[ -z "$file" ]] && continue
-        local status_text="${GREY}Ignore${NC}"
+        local status_text status_code
+        IFS=$'\t' read -r status_text status_code <<< "$(_format_ignored_status)"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
-        status_codes+=("Ignore")
+        status_codes+=("$status_code")
       done
     fi
 
@@ -195,10 +254,8 @@ list_files_with_status() {
     done
 
     if [[ ${#unique_files[@]} -eq 0 ]]; then
-      if $scope_cwd; then
-        info "No relevant files in current directory."
-      fi
-      return 1
+      _handle_no_files_found "$scope_cwd"
+      return $?
     fi
 
     # Print the formatted list in sorted order
@@ -336,15 +393,7 @@ Install: https://github.com/charmbracelet/gum"
         local status file
         IFS=$'\t' read -r status file <<< "$line"
         local status_text
-        case "$status" in
-          A)  status_text="${GREEN}S:Add ${NC}" ;;
-          M)  status_text="${GREEN}S:${YELLOW}Mod ${NC}" ;;
-          D)  status_text="${GREEN}S:${RED}Del ${NC}" ;;
-          R*) status_text="${GREEN}S:${CYAN}Ren ${NC}" ;;
-          C*) status_text="${GREEN}S:${BLUE}Copy${NC}" ;;
-          U)  status_text="${YELLOW}Cnflt ${NC}" ;;
-          *)  status_text="${GREEN}S     ${NC}" ;;
-        esac
+        status_text=$(_format_staged_status "$status")
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
       done < <(list_staged_files "${status_flags[@]}")
@@ -366,12 +415,7 @@ Install: https://github.com/charmbracelet/gum"
         local status file
         IFS=$'\t' read -r status file <<< "$line"
         local status_text
-        case "$status" in
-          M) status_text="${RED}U:${YELLOW}Mod ${NC}" ;;
-          D) status_text="${RED}U:Del ${NC}" ;;
-          U) status_text="${RED}${YELLOW}Cnflt${NC}" ;;
-          *) status_text="${RED}U     ${NC}" ;;
-        esac
+        status_text=$(_format_unstaged_status "$status")
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
       done < <(list_unstaged_files "${status_flags[@]}")
@@ -386,13 +430,14 @@ Install: https://github.com/charmbracelet/gum"
     mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}")
     for file in "${untracked_files[@]}"; do
       [[ -z "$file" ]] && continue
-      local status_text="${MAGENTA}UnTrck${NC}"
-      files+=("$file")
+      local status_text
       if $use_status_formatting; then
+        status_text=$(_format_untracked_status)
         formatted_options+=("${status_text} ${file}")
       else
         formatted_options+=("$file")
       fi
+      files+=("$file")
     done
   fi
   
@@ -400,13 +445,14 @@ Install: https://github.com/charmbracelet/gum"
     mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}")
     for file in "${ignored_files[@]}"; do
       [[ -z "$file" ]] && continue
-      local status_text="${GREY}Ignore${NC}"
-      files+=("$file")
+      local status_text
       if $use_status_formatting; then
+        status_text=$(_format_ignored_status)
         formatted_options+=("${status_text} ${file}")
       else
         formatted_options+=("$file")
       fi
+      files+=("$file")
     done
   fi
   fi
@@ -426,10 +472,8 @@ Install: https://github.com/charmbracelet/gum"
   done
   
   if [[ ${#unique_files[@]} -eq 0 ]]; then
-    if $scope_cwd; then
-      info "No relevant files in current directory."
-    fi
-    return 1
+    _handle_no_files_found "$scope_cwd"
+    return $?
   fi
   
   # Calculate height for gum

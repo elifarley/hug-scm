@@ -23,7 +23,7 @@ OPTIONS:
     -h, --help     Show this help
 
 DESCRIPTION:
-    Shows the diff of unstaged diff (modifications not yet staged). When
+    Shows the unstaged diff (modifications not yet staged). When
     no file is specified, shows all unstaged diff. Use '--' to
     interactively select a file from unstaged files. By default, interactive
     selection is scoped to the current directory and subdirectories. Use
@@ -53,40 +53,31 @@ check_git_repo
 # Handle interactive file selection if requested
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   declare -a select_opts=("--unstaged")
-  
+
   # Default to --cwd (current directory scope) unless --browse-root is specified
   if ! $browse_root; then
     select_opts+=("--cwd")
   fi
-  
+
   select_opts+=("--prompt" "Select file(s) to view unstaged diff...")
-  
+
   mapfile -t files < <(select_files_with_status "${select_opts[@]}" || true)
   if [[ ${#files[@]} -eq 0 ]]; then
     info "No unstaged files available or cancelled."
     exit 0
   fi
   for file in "${files[@]}"; do
-    printf '📝 🔀 Unstaged diff for %s:\n' "$file"
-    git diff -- "$file"
-    printf '\n📝 📊 Unstaged file stats:\n'
-    git diff --stat -- "$file"
+    show_unstaged_diff -- "$file"
   done
   git s
   exit 0
 fi
 
 if test $# -eq 0; then
-  printf '📝 🔀 Unstaged diff:\n'
-  git diff
-  printf '\n📝 📊 Unstaged file stats:\n'
-  git diff --stat
+  show_unstaged_diff
 else
   t="$1"; shift
-  printf '📝 🔀 Unstaged diff for FILE:\n'
   test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
-  git diff "$@" -- "${GIT_PREFIX}$t"
-  printf '\n📝 📊 Unstaged file stats:\n'
-  git diff --stat "$@" -- "${GIT_PREFIX}$t"
+  show_unstaged_diff -- "${GIT_PREFIX}$t" "$@"
 fi
 exec hug s

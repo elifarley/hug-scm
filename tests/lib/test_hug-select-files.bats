@@ -459,3 +459,113 @@ create_merge_conflict() {
   [[ $untracked_priority -eq 60 ]]
   [[ $unstaged_priority -eq 70 ]]
 }
+
+################################################################################
+# Tests for helper functions (refactoring to eliminate code duplication)
+################################################################################
+
+@test "_format_staged_status: returns correct format for each status code" {
+  # Color variables are already defined by hug-common (loaded via test_helper)
+  local result status_text status_code
+
+  # Test Add (A)
+  result=$(_format_staged_status "A")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "S:Add" ]]
+  [[ "$status_text" =~ S:Add ]]
+
+  # Test Modify (M)
+  result=$(_format_staged_status "M")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "S:Mod" ]]
+  [[ "$status_text" =~ S:Mod ]]
+
+  # Test Delete (D)
+  result=$(_format_staged_status "D")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "S:Del" ]]
+  [[ "$status_text" =~ S:Del ]]
+
+  # Test Rename (R100 - should match R*)
+  result=$(_format_staged_status "R100")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "S:Ren" ]]
+  [[ "$status_text" =~ S:Ren ]]
+
+  # Test Copy (C100 - should match C*)
+  result=$(_format_staged_status "C100")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "S:Copy" ]]
+  [[ "$status_text" =~ S:Copy ]]
+
+  # Test Conflict (U)
+  result=$(_format_staged_status "U")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "S:Cnflt" ]]
+  [[ "$status_text" =~ Cnflt ]]
+
+  # Test Unknown (*)
+  result=$(_format_staged_status "X")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "S:Unk" ]]
+}
+
+@test "_format_unstaged_status: returns correct format for each status code" {
+  # Color variables are already defined by hug-common (loaded via test_helper)
+  local result status_text status_code
+
+  # Test Modify (M)
+  result=$(_format_unstaged_status "M")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "U:Mod" ]]
+  [[ "$status_text" =~ U:Mod ]]
+
+  # Test Delete (D)
+  result=$(_format_unstaged_status "D")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "U:Del" ]]
+  [[ "$status_text" =~ U:Del ]]
+
+  # Test Conflict (U)
+  result=$(_format_unstaged_status "U")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "U:Cnflt" ]]
+  [[ "$status_text" =~ Cnflt ]]
+
+  # Test Unknown (*)
+  result=$(_format_unstaged_status "X")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "U:Unk" ]]
+}
+
+@test "_format_untracked_status: returns correct format" {
+  # Color variables are already defined by hug-common (loaded via test_helper)
+  local result status_text status_code
+  result=$(_format_untracked_status)
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+
+  [[ "$status_code" == "UnTrck" ]]
+  [[ "$status_text" =~ UnTrck ]]
+}
+
+@test "_format_ignored_status: returns correct format" {
+  # Color variables are already defined by hug-common (loaded via test_helper)
+  local result status_text status_code
+  result=$(_format_ignored_status)
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+
+  [[ "$status_code" == "Ignore" ]]
+  [[ "$status_text" =~ Ignore ]]
+}
+
+@test "_handle_no_files_found: returns 1 and shows message when scoped" {
+  run _handle_no_files_found true
+  assert_failure
+  assert_output --partial "No relevant files in current directory."
+}
+
+@test "_handle_no_files_found: returns 1 and no message when not scoped" {
+  run _handle_no_files_found false
+  assert_failure
+  refute_output
+}
