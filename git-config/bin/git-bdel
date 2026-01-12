@@ -82,26 +82,25 @@ hug_bdel() {
   # If no branches specified, show interactive menu using library functions
   if [[ ${#branches_to_delete[@]} -eq 0 ]]; then
     # Check if there are any branches available for deletion before showing interface
-    declare -a available_branches=() available_hashes=() available_subjects=() available_tracks=()
     local available_current_branch="" available_max_len=""
 
-    if compute_local_branch_details available_current_branch available_max_len available_hashes available_branches available_tracks available_subjects "true"; then
-      declare -a filtered_branches=()
-      declare -a filtered_hashes=() filtered_subjects=() filtered_tracks=()
-      filter_branches available_branches available_hashes available_subjects available_tracks "$available_current_branch" \
-          filtered_branches filtered_hashes filtered_subjects filtered_tracks \
-          "true" "true" ""
-
-      if [[ ${#filtered_branches[@]} -eq 0 ]]; then
-        if [[ -n "$available_current_branch" && "$available_current_branch" != "HEAD" ]]; then
-          info "No other branches to delete (only current branch '$available_current_branch' exists)."
-        else
-          info "No branches to delete."
-        fi
-        exit 0
-      fi
-    else
+    if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/hug_git_branch.py" local)"; then
       info "No branches to delete."
+      exit 0
+    fi
+
+    declare -a filtered_branches=()
+    declare -a filtered_hashes=() filtered_subjects=() filtered_tracks=()
+    filter_branches branches hashes subjects tracks "$current_branch" \
+        filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+        "true" "true" ""
+
+    if [[ ${#filtered_branches[@]} -eq 0 ]]; then
+      if [[ -n "$current_branch" && "$current_branch" != "HEAD" ]]; then
+        info "No other branches to delete (only current branch '$current_branch' exists)."
+      else
+        info "No branches to delete."
+      fi
       exit 0
     fi
 

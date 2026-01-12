@@ -67,14 +67,11 @@ if $json_output; then
   exit 0
 fi
 
-# Compute branch details using batched operations for performance
-declare -a branches=() hashes=() subjects=() tracks=()
-max_len=""
-current_branch=""
-if ! compute_local_branch_details_batched current_branch max_len hashes branches tracks subjects true; then
+# Get branch details from Python module
+if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local)"; then
   printf "No local branches found.\n" >&2
   exit 1
 fi
 
-# Print non-interactive list
+# Print non-interactive list (display functions unchanged)
 print_branch_list "$current_branch" "$max_len" hashes branches tracks subjects "$search_terms"

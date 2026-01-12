@@ -152,12 +152,9 @@ fi
 # Interactive branch selection if needed
 if [[ -z "$branch_name" ]]; then
     # Show interactive branch selection using existing branch menu functions
-    declare -a branches=() hashes=() subjects=() tracks=()
-    max_len=""
-    current_branch=""
     selected_branch=""
 
-    if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects "true"; then
+    if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/hug_git_branch.py" local)"; then
         error "No local branches found."
         exit 1
     fi
@@ -179,7 +176,7 @@ if [[ -z "$branch_name" ]]; then
         exit 1
     fi
 
-    # Print interactive menu and get selection
+    # Print interactive menu and get selection (display functions unchanged)
     print_interactive_branch_menu selected_branch "$current_branch" "$max_len" available_hashes available_branches available_tracks available_subjects
 
     # If user cancelled, print a message and exit

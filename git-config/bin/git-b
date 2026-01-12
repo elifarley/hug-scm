@@ -129,10 +129,8 @@ fi
 # No branch argument provided - show interactive menu
 if [ "$remote_only" = true ]; then
   # Show remote branches only
-  declare -a branches=() hashes=() subjects=() remote_refs=()
-  max_len=""
   selected_branch=""
-  
+
   # Refresh remotes if flag set
   if [[ "$refresh_remotes" == true ]]; then
     info "Fetching remote branches..."
@@ -142,26 +140,27 @@ if [ "$remote_only" = true ]; then
       info "Remotes updated."
     fi
   fi
-  
-  if ! compute_remote_branch_details max_len hashes branches remote_refs subjects "true"; then
+
+  # Get remote branch details from Python module
+  if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" remote)"; then
     error "No remote branches found."
     exit 1
   fi
-  
-  # Create tracks array as empty (remote branches don't have upstream in this context)
+
+  # Build tracks array from remote_refs (Python gives us remote_refs)
   declare -a tracks=()
   for ((i=0; i<${#branches[@]}; i++)); do
     tracks+=("$CYAN[${remote_refs[i]}]")
   done
-  
+
   # Print interactive menu with remote branches
   # Note: We pass empty string for current_branch since we're showing remotes
   print_interactive_branch_menu selected_branch "" "$max_len" hashes branches tracks subjects
-  
+
   # Create local tracking branch for selected remote
   local_name="$selected_branch"
   remote_ref=""
-  
+
   # Find the corresponding remote ref for the selected branch
   for ((i=0; i<${#branches[@]}; i++)); do
     if [ "${branches[i]}" = "$selected_branch" ]; then
@@ -169,12 +168,12 @@ if [ "$remote_only" = true ]; then
       break
     fi
   done
-  
+
   if [ -z "$remote_ref" ]; then
     error "Could not find remote reference for branch '$selected_branch'."
     exit 1
   fi
-  
+
   info "Creating local branch '$local_name' tracking '$remote_ref'..."
   if git switch -c "$local_name" --track "$remote_ref"; then
     success "Switched to new branch '$local_name' (tracking $remote_ref)"
@@ -188,16 +187,14 @@ fi # remote_only
 # If not remote_only:
 
 # Show local branches (default behavior)
-declare -a branches=() hashes=() subjects=() tracks=()
-max_len=""
-current_branch=""
 selected_branch=""
 
-if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects "true"; then
+# Get local branch details from Python module
+if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local)"; then
   error "No local branches found."
   exit 1
 fi
 
-# Print interactive menu and get selection
+# Print interactive menu and get selection (display functions unchanged)
 print_interactive_branch_menu selected_branch "$current_branch" "$max_len" hashes branches tracks subjects
 exec git switch "$selected_branch"

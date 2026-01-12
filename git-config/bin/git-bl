@@ -41,14 +41,11 @@ search_terms="$*"
 # Early exit if not in Git repo
 check_git_repo
 
-# Compute branch details
-declare -a branches=() hashes=() subjects=() tracks=()
-max_len=""
-current_branch=""
-if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects false; then
+# Get branch details from Python module
+if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local)"; then
   printf "No local branches found.\n" >&2
   exit 1
 fi
 
-# Print non-interactive list
+# Print non-interactive list (display functions unchanged)
 print_branch_list "$current_branch" "$max_len" hashes branches tracks subjects "$search_terms"
