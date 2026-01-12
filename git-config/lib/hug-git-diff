@@ -13,6 +13,14 @@
 #   - diff_has_unstaged_changes: Check if unstaged changes exist
 
 ################################################################################
+# Idempotent Guards
+################################################################################
+
+# Prevent double-loading warnings
+[[ -n "${_HUG_GIT_DIFF_LOADED:-}" ]] && return 0
+readonly _HUG_GIT_DIFF_LOADED=1
+
+################################################################################
 # Emoji and Display Configuration
 ################################################################################
 
@@ -21,12 +29,14 @@ readonly EMOJI_STAGED="📦"
 readonly EMOJI_UNSTAGED="📝"
 readonly EMOJI_DIFF="🔀"
 readonly EMOJI_STATS="📊"
+readonly EMOJI_INFO="ℹ️"
+readonly EMOJI_COMMIT="📄️"
 
 # Separator line (59 chars: fits standard 80-column terminals with padding)
 readonly SEPARATOR_LINE="═══════════════════════════════════════════════════════════════════"
 
 # Get the emoji for a given diff type
-# Usage: _diff_emoji "staged"|"unstaged"|"diff"|"stats"
+# Usage: _diff_emoji "staged"|"unstaged"|"diff"|"stats"|"info"
 # Parameters:
 #   $1 - Type of emoji to retrieve
 # Returns:
@@ -37,6 +47,8 @@ _diff_emoji() {
     unstaged) printf '%s' "$EMOJI_UNSTAGED" ;;
     diff)     printf '%s' "$EMOJI_DIFF" ;;
     stats)    printf '%s' "$EMOJI_STATS" ;;
+    info)     printf '%s' "$EMOJI_INFO" ;;
+    commit)   printf '%s' "$EMOJI_COMMIT" ;;
     *) return 1 ;;
   esac
 }

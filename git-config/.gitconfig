@@ -216,13 +216,13 @@
   
   # ============================================================================
   # SHow object info (sh*)
-  # TODO: Move from aliases into their own scripts in bin/git-sh*
+  # NOTE: sh and shp are now implemented as scripts in bin/git-sh and bin/git-shp
   # ============================================================================
 
   # Show specific commit (defaults to last) with list of changed files
-  sh = log -1 --stat --pretty=logbody --date=human-local
+  #sh = log -1 --stat --pretty=logbody --date=human-local
   # Show specific commit (defaults to last) with patch
-  shp = show --pretty=logbody --date=human-local
+  #shp = show --pretty=logbody --date=human-local
   # Show files changed in a commit (usage: hug shc <commit-hash>)
   shc  = diff-tree --no-commit-id --name-only -r
   # Show file diff in a commit

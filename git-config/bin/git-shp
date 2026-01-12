@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-diff; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat << 'EOF'
+hug shp: Show specific commit with patch and file statistics.
+
+USAGE:
+    hug shp [<commit-ref>] [-h, --help]
+
+ARGUMENTS:
+    <commit-ref>    Commit reference (default: HEAD)
+
+OPTIONS:
+    -h, --help     Show this help
+
+DESCRIPTION:
+    Shows commit details with full patch and file statistics.
+    Displays commit hash, date, author, subject, body, the
+    complete diff/patch, and file statistics at the end.
+
+EXAMPLES:
+    hug shp                  # Show last commit with patch
+    hug shp abc123           # Show specific commit with patch
+    hug shp HEAD~2           # Show two commits ago with patch
+
+SEE ALSO:
+    hug sh       : Show commit with stats (no patch)
+    hug sl       : Show status
+EOF
+}
+
+# Parse arguments
+case "${1:-}" in
+  -h|--help)
+    show_help
+    exit 0
+    ;;
+esac
+
+commit_ref="${1:-HEAD}"
+
+check_git_repo
+
+# Get emoji indicators
+commit_emoji="$(_diff_emoji commit)"
+info_emoji="$(_diff_emoji info)"
+diff_emoji="$(_diff_emoji diff)"
+stats_emoji="$(_diff_emoji stats)"
+
+# Print heading
+printf '%s %s Commit info:\n' "$commit_emoji" "$info_emoji"
+
+# Show commit info without patch
+git show --pretty=logbody --date=human-local --no-patch "$commit_ref"
+
+# Print heading
+printf '%s %s Commit diff:\n' "$commit_emoji" "$diff_emoji"
+# Show the patch diff
+git show "$commit_ref" --pretty=format:""
+
+# Show file stats heading
+printf '\n%s %s Commit file stats:\n' "$commit_emoji" "$stats_emoji"
+
+# Show the file stats
+git show "$commit_ref" --pretty=format:"" --stat
+
+exit 0
