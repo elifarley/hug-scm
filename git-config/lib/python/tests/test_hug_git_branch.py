@@ -581,10 +581,10 @@ class TestGetLocalBranchDetails:
             mock_run.return_value = "main"
             mock_divergence.return_value = ("", "0", "0")
 
-            # Include a backup branch - each branch has 6 elements (5 fields + trailing empty from %00)
+            # Include a backup branch - each branch has 5 elements (refname, hash, subject, upstream, track)
             mock_for_each.return_value = [
-                "main", "abc123", "Initial commit", "origin/main", "[origin/main]", "",
-                "hug-backups/test", "def456", "Backup commit", "", "", ""
+                "main", "abc123", "Initial commit", "origin/main", "[origin/main]",
+                "hug-backups/test", "def456", "Backup commit", "", ""
             ]
 
             result = hug_git_branch.get_local_branch_details(exclude_backup=True, batch_divergence=False)
@@ -602,8 +602,8 @@ class TestGetLocalBranchDetails:
             mock_divergence.return_value = ("", "0", "0")
 
             mock_for_each.return_value = [
-                "main", "abc123", "Initial commit", "origin/main", "[origin/main]", "",
-                "hug-backups/test", "def456", "Backup commit", "", "", ""
+                "main", "abc123", "Initial commit", "origin/main", "[origin/main]",
+                "hug-backups/test", "def456", "Backup commit", "", ""
             ]
 
             result = hug_git_branch.get_local_branch_details(exclude_backup=False, batch_divergence=False)
@@ -633,11 +633,11 @@ class TestGetLocalBranchDetails:
             mock_run.return_value = "main"
             mock_divergence.return_value = ("", "0", "0")
 
-            # chunk_size is 5 with subjects - the format string has 5 fields ending with %00
+            # chunk_size is 5 with subjects - each branch has 5 elements (refname, hash, subject, upstream, track)
             mock_for_each.return_value = [
-                "main", "abc123", "Commit", "", "", "",
-                "very-long-branch-name", "def456", "Commit", "", "", "",
-                "short", "ghi789", "Commit", "", "", ""
+                "main", "abc123", "Commit", "", "",
+                "very-long-branch-name", "def456", "Commit", "", "",
+                "short", "ghi789", "Commit", "", ""
             ]
 
             result = hug_git_branch.get_local_branch_details(batch_divergence=False)
@@ -649,7 +649,7 @@ class TestGetLocalBranchDetails:
         with patch('hug_git_branch._run_git') as mock_run, \
              patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
             mock_run.return_value = ""  # Empty = detached
-            mock_for_each.return_value = ["main", "abc123", "Commit", "", "", ""]
+            mock_for_each.return_value = ["main", "abc123", "Commit", "", ""]
 
             result = hug_git_branch.get_local_branch_details()
 
@@ -846,13 +846,15 @@ class TestFindRemoteBranch:
 
     def test_finds_branch_by_short_name(self):
         """Should find remote branch by short name."""
+        from subprocess import CalledProcessError
+
+        def side_effect_func(*args, **kwargs):
+            if 'show-ref' in args[0]:
+                raise CalledProcessError(1, 'git')
+            return "origin/feature\nupstream/feature"
+
         with patch('hug_git_branch._run_git') as mock_run:
-            # First call: show-ref fails (CalledProcessError is caught)
-            # Second call: for-each-ref returns matches
-            mock_run.side_effect = [
-                CalledProcessError(1, 'git'),  # show-ref fails (caught by try-except)
-                "origin/feature\nupstream/feature"  # for-each-ref output
-            ]
+            mock_run.side_effect = side_effect_func
 
             result = hug_git_branch.find_remote_branch("feature")
 
@@ -861,11 +863,15 @@ class TestFindRemoteBranch:
 
     def test_prefers_origin_when_multiple_remotes(self):
         """Should prefer origin when multiple remotes have same branch."""
+        from subprocess import CalledProcessError
+
+        def side_effect_func(*args, **kwargs):
+            if 'show-ref' in args[0]:
+                raise CalledProcessError(1, 'git')
+            return "upstream/feature\nfork/feature\norigin/feature"
+
         with patch('hug_git_branch._run_git') as mock_run:
-            mock_run.side_effect = [
-                CalledProcessError(1, 'git'),  # show-ref fails
-                "upstream/feature\nfork/feature\norigin/feature"  # for-each-ref output
-            ]
+            mock_run.side_effect = side_effect_func
 
             result = hug_git_branch.find_remote_branch("feature")
 
@@ -873,11 +879,15 @@ class TestFindRemoteBranch:
 
     def test_returns_alphabetically_first_when_no_origin(self):
         """Should return alphabetically first when no origin match."""
+        from subprocess import CalledProcessError
+
+        def side_effect_func(*args, **kwargs):
+            if 'show-ref' in args[0]:
+                raise CalledProcessError(1, 'git')
+            return "fork/feature\nupstream/feature"
+
         with patch('hug_git_branch._run_git') as mock_run:
-            mock_run.side_effect = [
-                CalledProcessError(1, 'git'),
-                "fork/feature\nupstream/feature"
-            ]
+            mock_run.side_effect = side_effect_func
 
             result = hug_git_branch.find_remote_branch("feature")
 
@@ -886,11 +896,15 @@ class TestFindRemoteBranch:
 
     def test_returns_none_when_not_found(self):
         """Should return None when branch doesn't exist."""
+        from subprocess import CalledProcessError
+
+        def side_effect_func(*args, **kwargs):
+            if 'show-ref' in args[0]:
+                raise CalledProcessError(1, 'git')
+            return ""  # No matches from for-each-ref
+
         with patch('hug_git_branch._run_git') as mock_run:
-            mock_run.side_effect = [
-                CalledProcessError(1, 'git'),  # show-ref fails
-                ""  # No matches from for-each-ref
-            ]
+            mock_run.side_effect = side_effect_func
 
             result = hug_git_branch.find_remote_branch("nonexistent")
 
