@@ -24,31 +24,20 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Tuple
 
+
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description='Analyze file and line churn from Git history'
+    parser = argparse.ArgumentParser(description="Analyze file and line churn from Git history")
+    parser.add_argument("file", help="File to analyze")
+    parser.add_argument("--since", default=None, help="Only analyze commits since this date")
+    parser.add_argument(
+        "--format", choices=["json", "text"], default="json", help="Output format (default: json)"
     )
     parser.add_argument(
-        'file',
-        help='File to analyze'
-    )
-    parser.add_argument(
-        '--since',
-        default=None,
-        help='Only analyze commits since this date'
-    )
-    parser.add_argument(
-        '--format',
-        choices=['json', 'text'],
-        default='json',
-        help='Output format (default: json)'
-    )
-    parser.add_argument(
-        '--hot-threshold',
+        "--hot-threshold",
         type=int,
         default=3,
-        help='Minimum changes to consider a line "hot" (default: 3)'
+        help='Minimum changes to consider a line "hot" (default: 3)',
     )
 
     return parser.parse_args()
@@ -65,7 +54,7 @@ def get_line_history(filepath: str, since: str = None) -> Dict[int, int]:
     """
     # First, get current line count
     try:
-        with open(filepath, 'r') as f:
+        with open(filepath, "r") as f:
             total_lines = sum(1 for _ in f)
     except (FileNotFoundError, IOError) as e:
         print(f"Error reading file {filepath}: {e}", file=sys.stderr)
@@ -75,24 +64,25 @@ def get_line_history(filepath: str, since: str = None) -> Dict[int, int]:
 
     # For each line, use git log -L to count commits that touched it
     for line_num in range(1, total_lines + 1):
-        cmd = ['git', 'log', '-L', f'{line_num},{line_num}:{filepath}', '--oneline']
+        cmd = ["git", "log", "-L", f"{line_num},{line_num}:{filepath}", "--oneline"]
 
         if since:
-            cmd.insert(2, f'--since={since}')
+            cmd.insert(2, f"--since={since}")
 
         try:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                check=False  # git log -L returns non-zero if line never changed
+                check=False,  # git log -L returns non-zero if line never changed
             )
 
             # Count commits (only lines starting with commit hash in --oneline output)
             # Note: git log -L with --oneline includes diff context, not just commit headers
             if result.returncode == 0:
-                commit_count = len([l for l in result.stdout.strip().split('\n')
-                                   if re.match(r'^[a-f0-9]{7,}', l)])
+                commit_count = len(
+                    [l for l in result.stdout.strip().split("\n") if re.match(r"^[a-f0-9]{7,}", l)]
+                )
                 if commit_count > 0:
                     line_churn[line_num] = commit_count
             else:
@@ -112,38 +102,29 @@ def get_file_churn(filepath: str, since: str = None) -> Dict[str, any]:
 
     Returns: Dict with total_commits, authors, date_range, etc.
     """
-    cmd = ['git', 'log', '--follow', '--format=%H|%an|%ai', '--', filepath]
+    cmd = ["git", "log", "--follow", "--format=%H|%an|%ai", "--", filepath]
     if since:
-        cmd.insert(2, f'--since={since}')
+        cmd.insert(2, f"--since={since}")
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
         commits = []
         authors = set()
 
-        for line in result.stdout.strip().split('\n'):
+        for line in result.stdout.strip().split("\n"):
             if not line:
                 continue
-            hash_val, author, date = line.split('|', 2)
-            commits.append({
-                'hash': hash_val,
-                'author': author,
-                'date': date
-            })
+            hash_val, author, date = line.split("|", 2)
+            commits.append({"hash": hash_val, "author": author, "date": date})
             authors.add(author)
 
         return {
-            'total_commits': len(commits),
-            'unique_authors': len(authors),
-            'authors': list(authors),
-            'first_commit': commits[-1] if commits else None,
-            'last_commit': commits[0] if commits else None,
+            "total_commits": len(commits),
+            "unique_authors": len(authors),
+            "authors": list(authors),
+            "first_commit": commits[-1] if commits else None,
+            "last_commit": commits[0] if commits else None,
         }
 
     except subprocess.CalledProcessError as e:
@@ -159,6 +140,7 @@ def calculate_churn_score(changes: int, recency_days: int) -> float:
     Recent changes weighted higher.
     """
     import math
+
     decay_constant = 90  # 3 months
     recency_weight = math.exp(-recency_days / decay_constant)
     return changes * recency_weight
@@ -172,7 +154,7 @@ def analyze_churn(filepath: str, since: str = None, hot_threshold: int = 3) -> D
     """
     file_churn = get_file_churn(filepath, since)
     if not file_churn:
-        return {'error': 'Could not analyze file'}
+        return {"error": "Could not analyze file"}
 
     # Get line-level churn data
     line_churn = get_line_history(filepath, since)
@@ -181,31 +163,30 @@ def analyze_churn(filepath: str, since: str = None, hot_threshold: int = 3) -> D
     hot_lines = []
     for line_num, change_count in sorted(line_churn.items()):
         if change_count >= hot_threshold:
-            hot_lines.append({
-                'line_number': line_num,
-                'changes': change_count,
-                'churn_score': calculate_churn_score(change_count, 0)  # 0 days = max recency
-            })
+            hot_lines.append(
+                {
+                    "line_number": line_num,
+                    "changes": change_count,
+                    "churn_score": calculate_churn_score(change_count, 0),  # 0 days = max recency
+                }
+            )
 
     # Sort hot lines by change count (descending)
-    hot_lines.sort(key=lambda x: x['changes'], reverse=True)
+    hot_lines.sort(key=lambda x: x["changes"], reverse=True)
 
     result = {
-        'file': filepath,
-        'file_churn': file_churn,
-        'line_churn': line_churn,
-        'hot_lines': hot_lines,
-        'summary': {
-            'total_lines': len(line_churn) if line_churn else 0,
-            'lines_with_changes': sum(1 for c in line_churn.values() if c > 0),
-            'hot_lines_count': len(hot_lines),
-            'max_line_changes': max(line_churn.values()) if line_churn else 0,
-            'avg_line_changes': sum(line_churn.values()) / len(line_churn) if line_churn else 0
+        "file": filepath,
+        "file_churn": file_churn,
+        "line_churn": line_churn,
+        "hot_lines": hot_lines,
+        "summary": {
+            "total_lines": len(line_churn) if line_churn else 0,
+            "lines_with_changes": sum(1 for c in line_churn.values() if c > 0),
+            "hot_lines_count": len(hot_lines),
+            "max_line_changes": max(line_churn.values()) if line_churn else 0,
+            "avg_line_changes": sum(line_churn.values()) / len(line_churn) if line_churn else 0,
         },
-        'analysis_params': {
-            'since': since,
-            'hot_threshold': hot_threshold
-        }
+        "analysis_params": {"since": since, "hot_threshold": hot_threshold},
     }
 
     return result
@@ -219,44 +200,50 @@ def format_text_output(data: Dict) -> str:
     lines.append("")
 
     # File-level metrics
-    fc = data['file_churn']
+    fc = data["file_churn"]
     lines.append("File-level metrics:")
     lines.append(f"  Total commits: {fc['total_commits']}")
     lines.append(f"  Unique authors: {fc['unique_authors']}")
 
-    if fc['first_commit']:
-        lines.append(f"  First changed: {fc['first_commit']['date'][:10]} by {fc['first_commit']['author']}")
-    if fc['last_commit']:
-        lines.append(f"  Last changed: {fc['last_commit']['date'][:10]} by {fc['last_commit']['author']}")
+    if fc["first_commit"]:
+        lines.append(
+            f"  First changed: {fc['first_commit']['date'][:10]} by {fc['first_commit']['author']}"
+        )
+    if fc["last_commit"]:
+        lines.append(
+            f"  Last changed: {fc['last_commit']['date'][:10]} by {fc['last_commit']['author']}"
+        )
 
     # Line-level summary
-    if 'summary' in data:
+    if "summary" in data:
         lines.append("")
         lines.append("Line-level summary:")
-        s = data['summary']
+        s = data["summary"]
         lines.append(f"  Total lines analyzed: {s['total_lines']}")
         lines.append(f"  Lines with changes: {s['lines_with_changes']}")
-        lines.append(f"  Hot lines (≥{data['analysis_params']['hot_threshold']} changes): {s['hot_lines_count']}")
+        lines.append(
+            f"  Hot lines (≥{data['analysis_params']['hot_threshold']} changes): {s['hot_lines_count']}"
+        )
 
-        if s['max_line_changes'] > 0:
+        if s["max_line_changes"] > 0:
             lines.append(f"  Most changed line: {s['max_line_changes']} changes")
             lines.append(f"  Average changes per line: {s['avg_line_changes']:.2f}")
 
     # Hot lines details
-    if data.get('hot_lines'):
+    if data.get("hot_lines"):
         lines.append("")
         lines.append("Hot lines (most frequently changed):")
         lines.append("")
 
-        for hl in data['hot_lines'][:20]:  # Show top 20
-            line_num = hl['line_number']
-            changes = hl['changes']
+        for hl in data["hot_lines"][:20]:  # Show top 20
+            line_num = hl["line_number"]
+            changes = hl["changes"]
             lines.append(f"  Line {line_num:4d}: {changes:3d} changes")
 
-        if len(data['hot_lines']) > 20:
+        if len(data["hot_lines"]) > 20:
             lines.append(f"  ... and {len(data['hot_lines']) - 20} more hot lines")
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 def main():
@@ -264,20 +251,16 @@ def main():
     args = parse_args()
 
     # Analyze churn
-    data = analyze_churn(
-        args.file,
-        since=args.since,
-        hot_threshold=args.hot_threshold
-    )
+    data = analyze_churn(args.file, since=args.since, hot_threshold=args.hot_threshold)
 
     # Output
-    if args.format == 'json':
+    if args.format == "json":
         print(json.dumps(data, indent=2))
     else:
         print(format_text_output(data))
 
-    return 0 if 'error' not in data else 1
+    return 0 if "error" not in data else 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

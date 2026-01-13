@@ -26,36 +26,21 @@ from datetime import datetime
 from collections import defaultdict
 from typing import Dict, List, Tuple
 
+
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description='Analyze code ownership and expertise'
+    parser = argparse.ArgumentParser(description="Analyze code ownership and expertise")
+    parser.add_argument("target", nargs="?", help="File path to analyze (for file mode)")
+    parser.add_argument("--author", help="Author name (for author expertise mode)")
+    parser.add_argument("--since", default=None, help="Only consider commits since this date")
+    parser.add_argument(
+        "--format", choices=["json", "text"], default="text", help="Output format (default: text)"
     )
     parser.add_argument(
-        'target',
-        nargs='?',
-        help='File path to analyze (for file mode)'
-    )
-    parser.add_argument(
-        '--author',
-        help='Author name (for author expertise mode)'
-    )
-    parser.add_argument(
-        '--since',
-        default=None,
-        help='Only consider commits since this date'
-    )
-    parser.add_argument(
-        '--format',
-        choices=['json', 'text'],
-        default='text',
-        help='Output format (default: text)'
-    )
-    parser.add_argument(
-        '--decay-days',
+        "--decay-days",
         type=int,
         default=180,
-        help='Recency decay constant in days (default: 180 = 6 months)'
+        help="Recency decay constant in days (default: 180 = 6 months)",
     )
 
     return parser.parse_args()
@@ -67,38 +52,30 @@ def get_file_commit_history(filepath: str, since: str = None) -> List[Dict]:
 
     Returns: List of dicts with {hash, author, date, days_ago}
     """
-    cmd = ['git', 'log', '--follow', '--format=%H|%an|%ai', '--', filepath]
+    cmd = ["git", "log", "--follow", "--format=%H|%an|%ai", "--", filepath]
 
     if since:
-        cmd.insert(2, f'--since={since}')
+        cmd.insert(2, f"--since={since}")
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
         commits = []
         now = datetime.now()
 
-        for line in result.stdout.strip().split('\n'):
+        for line in result.stdout.strip().split("\n"):
             if not line:
                 continue
 
-            hash_val, author, date_str = line.split('|', 2)
+            hash_val, author, date_str = line.split("|", 2)
 
             # Parse date
-            commit_date = datetime.fromisoformat(date_str.replace(' ', 'T', 1).rsplit(' ', 1)[0])
+            commit_date = datetime.fromisoformat(date_str.replace(" ", "T", 1).rsplit(" ", 1)[0])
             days_ago = (now - commit_date).days
 
-            commits.append({
-                'hash': hash_val,
-                'author': author,
-                'date': date_str[:10],
-                'days_ago': days_ago
-            })
+            commits.append(
+                {"hash": hash_val, "author": author, "date": date_str[:10], "days_ago": days_ago}
+            )
 
         return commits
 
@@ -113,28 +90,23 @@ def get_author_files(author: str, since: str = None) -> Dict[str, int]:
 
     Returns: Dict of {filepath: commit_count}
     """
-    cmd = ['git', 'log', '--all', '--name-only', f'--author={author}', '--format=%H']
+    cmd = ["git", "log", "--all", "--name-only", f"--author={author}", "--format=%H"]
 
     if since:
-        cmd.insert(2, f'--since={since}')
+        cmd.insert(2, f"--since={since}")
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
         file_commits = defaultdict(int)
 
-        lines = result.stdout.strip().split('\n')
+        lines = result.stdout.strip().split("\n")
         i = 0
         while i < len(lines):
             line = lines[i].strip()
 
             # Check if this is a commit hash
-            if len(line) == 40 and all(c in '0123456789abcdef' for c in line.lower()):
+            if len(line) == 40 and all(c in "0123456789abcdef" for c in line.lower()):
                 # Process all non-empty lines after hash until next hash or end
                 i += 1
                 while i < len(lines):
@@ -146,7 +118,9 @@ def get_author_files(author: str, since: str = None) -> Dict[str, int]:
                         continue
 
                     # Check if we hit next commit hash
-                    if len(file_line) == 40 and all(c in '0123456789abcdef' for c in file_line.lower()):
+                    if len(file_line) == 40 and all(
+                        c in "0123456789abcdef" for c in file_line.lower()
+                    ):
                         # Don't increment i, we'll process this hash in outer loop
                         break
 
@@ -181,18 +155,22 @@ def calculate_file_ownership(commits: List[Dict], decay_days: int) -> List[Dict]
 
     Returns: List of {author, raw_commits, weighted_score, ownership_pct, classification}
     """
-    author_data = defaultdict(lambda: {'raw_commits': 0, 'weighted_score': 0.0, 'last_commit_days': float('inf')})
+    author_data = defaultdict(
+        lambda: {"raw_commits": 0, "weighted_score": 0.0, "last_commit_days": float("inf")}
+    )
 
     for commit in commits:
-        author = commit['author']
-        days_ago = commit['days_ago']
+        author = commit["author"]
+        days_ago = commit["days_ago"]
 
-        author_data[author]['raw_commits'] += 1
-        author_data[author]['weighted_score'] += calculate_recency_weight(days_ago, decay_days)
-        author_data[author]['last_commit_days'] = min(author_data[author]['last_commit_days'], days_ago)
+        author_data[author]["raw_commits"] += 1
+        author_data[author]["weighted_score"] += calculate_recency_weight(days_ago, decay_days)
+        author_data[author]["last_commit_days"] = min(
+            author_data[author]["last_commit_days"], days_ago
+        )
 
     # Calculate total weighted score
-    total_weighted = sum(data['weighted_score'] for data in author_data.values())
+    total_weighted = sum(data["weighted_score"] for data in author_data.values())
 
     if total_weighted == 0:
         return []
@@ -200,27 +178,29 @@ def calculate_file_ownership(commits: List[Dict], decay_days: int) -> List[Dict]
     # Build ownership list
     ownership = []
     for author, data in author_data.items():
-        ownership_pct = (data['weighted_score'] / total_weighted) * 100
+        ownership_pct = (data["weighted_score"] / total_weighted) * 100
 
         # Classify ownership level
         if ownership_pct >= 40:
-            classification = 'primary'
+            classification = "primary"
         elif ownership_pct >= 20:
-            classification = 'secondary'
+            classification = "secondary"
         else:
-            classification = 'historical'
+            classification = "historical"
 
-        ownership.append({
-            'author': author,
-            'raw_commits': data['raw_commits'],
-            'weighted_score': data['weighted_score'],
-            'ownership_pct': ownership_pct,
-            'classification': classification,
-            'last_commit_days': data['last_commit_days']
-        })
+        ownership.append(
+            {
+                "author": author,
+                "raw_commits": data["raw_commits"],
+                "weighted_score": data["weighted_score"],
+                "ownership_pct": ownership_pct,
+                "classification": classification,
+                "last_commit_days": data["last_commit_days"],
+            }
+        )
 
     # Sort by ownership percentage (descending)
-    ownership.sort(key=lambda x: x['ownership_pct'], reverse=True)
+    ownership.sort(key=lambda x: x["ownership_pct"], reverse=True)
 
     return ownership
 
@@ -252,14 +232,14 @@ def format_file_ownership_text(filepath: str, ownership: List[Dict]) -> str:
     lines.append("")
 
     # Group by classification
-    primary = [o for o in ownership if o['classification'] == 'primary']
-    secondary = [o for o in ownership if o['classification'] == 'secondary']
-    historical = [o for o in ownership if o['classification'] == 'historical']
+    primary = [o for o in ownership if o["classification"] == "primary"]
+    secondary = [o for o in ownership if o["classification"] == "secondary"]
+    historical = [o for o in ownership if o["classification"] == "historical"]
 
     if primary:
         lines.append("Primary maintainer:" if len(primary) == 1 else "Primary maintainers:")
         for owner in primary:
-            stale_warning = " ⚠️  Stale" if owner['last_commit_days'] > 180 else ""
+            stale_warning = " ⚠️  Stale" if owner["last_commit_days"] > 180 else ""
             lines.append(
                 f"  {owner['author']} "
                 f"({owner['ownership_pct']:.0f}%, {owner['raw_commits']} commits, "
@@ -270,7 +250,7 @@ def format_file_ownership_text(filepath: str, ownership: List[Dict]) -> str:
     if secondary:
         lines.append("Secondary:")
         for owner in secondary:
-            stale_warning = " ⚠️  Stale" if owner['last_commit_days'] > 180 else ""
+            stale_warning = " ⚠️  Stale" if owner["last_commit_days"] > 180 else ""
             lines.append(
                 f"  {owner['author']} "
                 f"({owner['ownership_pct']:.0f}%, {owner['raw_commits']} commits, "
@@ -281,14 +261,14 @@ def format_file_ownership_text(filepath: str, ownership: List[Dict]) -> str:
     if historical:
         lines.append("Historical:")
         for owner in historical:
-            stale_warning = " ⚠️  Stale" if owner['last_commit_days'] > 180 else ""
+            stale_warning = " ⚠️  Stale" if owner["last_commit_days"] > 180 else ""
             lines.append(
                 f"  {owner['author']} "
                 f"({owner['ownership_pct']:.0f}%, {owner['raw_commits']} commits, "
                 f"last: {format_days_ago(owner['last_commit_days'])}){stale_warning}"
             )
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 def format_author_expertise_text(author: str, files: Dict[str, int]) -> str:
@@ -300,7 +280,7 @@ def format_author_expertise_text(author: str, files: Dict[str, int]) -> str:
 
     if not files:
         lines.append("No files found.")
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     # Sort by commit count
     sorted_files = sorted(files.items(), key=lambda x: x[1], reverse=True)
@@ -313,7 +293,7 @@ def format_author_expertise_text(author: str, files: Dict[str, int]) -> str:
         lines.append("")
         lines.append(f"... and {len(sorted_files) - 20} more files")
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 def main():
@@ -324,12 +304,14 @@ def main():
     if args.author:
         files = get_author_files(args.author, args.since)
 
-        if args.format == 'json':
+        if args.format == "json":
             result = {
-                'author': args.author,
-                'total_files': len(files),
-                'files': [{'path': path, 'commits': count} for path, count in
-                         sorted(files.items(), key=lambda x: x[1], reverse=True)]
+                "author": args.author,
+                "total_files": len(files),
+                "files": [
+                    {"path": path, "commits": count}
+                    for path, count in sorted(files.items(), key=lambda x: x[1], reverse=True)
+                ],
             }
             print(json.dumps(result, indent=2))
         else:
@@ -355,12 +337,12 @@ def main():
     ownership = calculate_file_ownership(commits, args.decay_days)
 
     # Output
-    if args.format == 'json':
+    if args.format == "json":
         result = {
-            'file': filepath,
-            'total_commits': len(commits),
-            'decay_days': args.decay_days,
-            'ownership': ownership
+            "file": filepath,
+            "total_commits": len(commits),
+            "decay_days": args.decay_days,
+            "ownership": ownership,
         }
         print(json.dumps(result, indent=2))
     else:
@@ -369,5 +351,5 @@ def main():
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

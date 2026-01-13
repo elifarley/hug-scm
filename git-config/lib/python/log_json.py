@@ -45,21 +45,23 @@ def parse_log_with_stats(lines, include_stats=True, omit_body=False):
     in_numstat = False
 
     for line in lines:
-        line = line.rstrip('\n')
+        line = line.rstrip("\n")
 
         # Always check for new commit first - this prevents subsequent commit lines
         # from being absorbed into previous commit's body.
         # Accept only 40 char hashes (git commit SHAs are always 40 hexadecimal characters)
-        if re.match(r'^[0-9a-f]{40}\|~\|', line):
+        if re.match(r"^[0-9a-f]{40}\|~\|", line):
             # Process previous commit if exists
             if current_lines:
-                commit = parse_single_commit(current_lines, current_numstats, include_stats, omit_body)
+                commit = parse_single_commit(
+                    current_lines, current_numstats, include_stats, omit_body
+                )
                 if commit:
                     commits.append(commit)
             # Validate that commit line has enough fields before starting new commit
             # Expected format has 15 fields separated by |~|, but body (%B) spans multiple lines
             # so the first line might have 13 fields (up to and including start of body)
-            field_count = line.count('|~|') + 1
+            field_count = line.count("|~|") + 1
             if field_count >= 13:  # At least 13 fields required (relaxed from 14)
                 # Start new commit
                 current_lines = [line]
@@ -75,8 +77,8 @@ def parse_log_with_stats(lines, include_stats=True, omit_body=False):
         # Check if this is a numstat or name-status line
         # numstat: N\tM\tfilename (e.g., "10\t5\tsrc/file.py")
         # name-status: X\tfilename (e.g., "A\tsrc/file.py", "M\tsrc/file.py")
-        if '\t' in line and not '|~|' in line:
-            parts = line.split('\t')
+        if "\t" in line and not "|~|" in line:
+            parts = line.split("\t")
             # numstat has 3+ parts, name-status has 2+ parts
             if len(parts) >= 2:
                 # This is a numstat or name-status line
@@ -124,7 +126,7 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
     first_line = lines[0]
 
     # Join all lines and look for the parent/refs trailer at the end
-    full_text = '\n'.join(lines)
+    full_text = "\n".join(lines)
 
     # The last |~| separator should be followed by refs (or empty string)
     # The second-to-last |~| separator should be followed by parent hashes (or empty)
@@ -134,7 +136,7 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
     # Then reconstruct the body from the remaining text
     # Then extract parents and refs from the end
 
-    fields = first_line.split('|~|', 12)  # Split into at most 13 parts (0-12)
+    fields = first_line.split("|~|", 12)  # Split into at most 13 parts (0-12)
     if len(fields) < 13:
         return None
 
@@ -156,31 +158,31 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
     # The last line should end with: |~|parent_hashes|~|refs
     # Find the last two |~| separators
 
-    last_sep = full_text.rfind('|~|')
+    last_sep = full_text.rfind("|~|")
     if last_sep == -1:
         # Malformed - no trailer
         return None
 
-    refs_str = full_text[last_sep + 3:].strip()
+    refs_str = full_text[last_sep + 3 :].strip()
 
     # Find second-to-last separator
     remaining = full_text[:last_sep]
-    second_last_sep = remaining.rfind('|~|')
+    second_last_sep = remaining.rfind("|~|")
     if second_last_sep == -1:
         # Malformed
         return None
 
-    parents_str = remaining[second_last_sep + 3:].strip()
+    parents_str = remaining[second_last_sep + 3 :].strip()
 
     # Everything before that is the body
     body_end_pos = second_last_sep
 
     # Body starts after field 12 in first line
-    first_line_prefix = '|~|'.join(fields[:12]) + '|~|'
-    body_full = full_text[len(first_line_prefix):body_end_pos]
+    first_line_prefix = "|~|".join(fields[:12]) + "|~|"
+    body_full = full_text[len(first_line_prefix) : body_end_pos]
 
     # Extract subject and body from full body text
-    body_parts = body_full.strip().split('\n', 1)
+    body_parts = body_full.strip().split("\n", 1)
     body = body_parts[1].strip() if len(body_parts) > 1 else ""
 
     # Parse refs
@@ -188,11 +190,11 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
     if refs_str:
         # Filter out numstat lines that got mixed into refs
         # Numstat lines contain \t characters
-        if '\t' not in refs_str:
-            for ref in refs_str.split(','):
+        if "\t" not in refs_str:
+            for ref in refs_str.split(","):
                 ref = ref.strip()
-                if ' -> ' in ref:
-                    parts = ref.split(' -> ')
+                if " -> " in ref:
+                    parts = ref.split(" -> ")
                     refs.append(parts[0].strip())
                     refs.append(parts[1].strip())
                 else:
@@ -202,36 +204,34 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
     parents = []
     if parents_str:
         for parent_sha in parents_str.split():
-            parents.append({'sha': parent_sha})
+            parents.append({"sha": parent_sha})
 
     # Parse numstat or name-status lines
-    stats = {
-        'files_changed': 0,
-        'insertions': 0,
-        'deletions': 0
-    }
+    stats = {"files_changed": 0, "insertions": 0, "deletions": 0}
     files = []  # Detailed file changes for GitHub compatibility
 
     for line in numstat_lines:
-        parts = line.split('\t')
+        parts = line.split("\t")
         if len(parts) >= 3:
             # numstat format: N\tM\tfilename
             try:
-                add = 0 if parts[0] == '-' else int(parts[0])
-                delete = 0 if parts[1] == '-' else int(parts[1])
+                add = 0 if parts[0] == "-" else int(parts[0])
+                delete = 0 if parts[1] == "-" else int(parts[1])
                 filename = parts[2]
-                stats['insertions'] += add
-                stats['deletions'] += delete
-                stats['files_changed'] += 1
+                stats["insertions"] += add
+                stats["deletions"] += delete
+                stats["files_changed"] += 1
 
                 # Add file details to files array
-                files.append({
-                    'filename': filename,
-                    'status': 'modified',  # Default status
-                    'additions': add,
-                    'deletions': delete,
-                    'changes': add + delete
-                })
+                files.append(
+                    {
+                        "filename": filename,
+                        "status": "modified",  # Default status
+                        "additions": add,
+                        "deletions": delete,
+                        "changes": add + delete,
+                    }
+                )
             except ValueError:
                 # Not a valid numstat line
                 pass
@@ -242,24 +242,26 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
 
             # Map git status chars to GitHub-style status
             status_map = {
-                'A': 'added',
-                'M': 'modified',
-                'D': 'deleted',
-                'R': 'renamed',
-                'C': 'copied',
-                'T': 'type_changed',
-                'U': 'unmerged'
+                "A": "added",
+                "M": "modified",
+                "D": "deleted",
+                "R": "renamed",
+                "C": "copied",
+                "T": "type_changed",
+                "U": "unmerged",
             }
-            status = status_map.get(status_char, 'modified')
+            status = status_map.get(status_char, "modified")
 
-            files.append({
-                'filename': filename,
-                'status': status,
-                'additions': 0,  # name-status doesn't provide line counts
-                'deletions': 0,
-                'changes': 0
-            })
-            stats['files_changed'] += 1
+            files.append(
+                {
+                    "filename": filename,
+                    "status": status,
+                    "additions": 0,  # name-status doesn't provide line counts
+                    "deletions": 0,
+                    "changes": 0,
+                }
+            )
+            stats["files_changed"] += 1
 
     # Apply omit_body flag if requested
     if omit_body:
@@ -268,46 +270,48 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
     # Construct full message (GitHub compat)
     full_message = subject
     if body:
-        full_message = subject + '\n\n' + body
+        full_message = subject + "\n\n" + body
 
     # Build commit object
     commit = {
-        'sha': hash_val,
-        'sha_short': hash_short,
-        'author': {
-            'name': author_name,
-            'email': author_email,
-            'date': author_date,
-            'date_relative': author_date_relative
+        "sha": hash_val,
+        "sha_short": hash_short,
+        "author": {
+            "name": author_name,
+            "email": author_email,
+            "date": author_date,
+            "date_relative": author_date_relative,
         },
-        'committer': {
-            'name': committer_name,
-            'email': committer_email,
-            'date': committer_date,
-            'date_relative': committer_date_relative
+        "committer": {
+            "name": committer_name,
+            "email": committer_email,
+            "date": committer_date,
+            "date_relative": committer_date_relative,
         },
-        'message': full_message,
-        'subject': subject,
-        'body': body if body else None,
-        'tree': {'sha': tree_sha},
-        'parents': parents,
-        'refs': refs if refs else None
+        "message": full_message,
+        "subject": subject,
+        "body": body if body else None,
+        "tree": {"sha": tree_sha},
+        "parents": parents,
+        "refs": refs if refs else None,
     }
 
     # Conditionally add stats field
     if include_stats:
-        commit['stats'] = stats
-        commit['files'] = files
+        commit["stats"] = stats
+        commit["files"] = files
 
     return commit
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Format git log output as JSON')
-    parser.add_argument('--with-stats', action='store_true',
-                       help='Include file change statistics in output')
-    parser.add_argument('--no-body', action='store_true',
-                       help='Omit commit message body (subject only)')
+    parser = argparse.ArgumentParser(description="Format git log output as JSON")
+    parser.add_argument(
+        "--with-stats", action="store_true", help="Include file change statistics in output"
+    )
+    parser.add_argument(
+        "--no-body", action="store_true", help="Omit commit message body (subject only)"
+    )
     args = parser.parse_args()
 
     # Read all input
@@ -317,24 +321,17 @@ def main():
     commits = parse_log_with_stats(lines, include_stats=args.with_stats, omit_body=args.no_body)
 
     # Build output
-    output = {
-        'command': 'hug ll',
-        'commits': commits,
-        'summary': {'total_commits': len(commits)}
-    }
+    output = {"command": "hug ll", "commits": commits, "summary": {"total_commits": len(commits)}}
 
     if commits:
-        earliest = min(c['author']['date'] for c in commits)
-        latest = max(c['author']['date'] for c in commits)
-        output['summary']['date_range'] = {
-            'earliest': earliest,
-            'latest': latest
-        }
+        earliest = min(c["author"]["date"] for c in commits)
+        latest = max(c["author"]["date"] for c in commits)
+        output["summary"]["date_range"] = {"earliest": earliest, "latest": latest}
 
     # Output compact JSON (spaces after : and , for readability but no newlines)
     # Use separators with spaces to match bash JSON output format
-    print(json.dumps(output, separators=(', ', ': ')))
+    print(json.dumps(output, separators=(", ", ": ")))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

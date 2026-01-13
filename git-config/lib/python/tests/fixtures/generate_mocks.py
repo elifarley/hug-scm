@@ -33,13 +33,21 @@ def generate_git_log_follow_mocks():
             "command": ["git", "log", "--follow", "--format=%H|%an|%ai", "--", "{filepath}"],
             "scenario_name": "basic",
             "description": "Basic file history without filters",
-            "template_vars": {"filepath": "project.py"}
+            "template_vars": {"filepath": "project.py"},
         },
         {
-            "command": ["git", "log", "--follow", "--format=%H|%an|%ai", "--since={since}", "--", "{filepath}"],
+            "command": [
+                "git",
+                "log",
+                "--follow",
+                "--format=%H|%an|%ai",
+                "--since={since}",
+                "--",
+                "{filepath}",
+            ],
             "scenario_name": "with_since_filter",
             "description": "File history filtered by --since date",
-            "template_vars": {"filepath": "project.py", "since": "2 months ago"}
+            "template_vars": {"filepath": "project.py", "since": "2 months ago"},
         },
     ]
 
@@ -49,9 +57,9 @@ def generate_git_log_follow_mocks():
         repo_setup_script="git/churn-with-since.sh",
         metadata={
             "description": "Mock data for git log --follow (file churn analysis)",
-            "generated_by": "generate_mocks.py"
+            "generated_by": "generate_mocks.py",
         },
-        output_prefix="follow-"
+        output_prefix="follow-",
     )
 
     print("✓ Generated git log --follow mocks")
@@ -68,19 +76,26 @@ def generate_git_log_L_mocks():
             "command": ["git", "log", "-L", "{line_range}:{filepath}", "--oneline"],
             "scenario_name": "basic",
             "description": "Basic line history without filters",
-            "template_vars": {"line_range": "2,2", "filepath": "file.txt"}
+            "template_vars": {"line_range": "2,2", "filepath": "file.txt"},
         },
         {
-            "command": ["git", "log", "-L", "{line_range}:{filepath}", "--oneline", "--since={since}"],
+            "command": [
+                "git",
+                "log",
+                "-L",
+                "{line_range}:{filepath}",
+                "--oneline",
+                "--since={since}",
+            ],
             "scenario_name": "with_since_filter",
             "description": "Line history filtered by --since date",
-            "template_vars": {"line_range": "2,2", "filepath": "file.txt", "since": "1 month ago"}
+            "template_vars": {"line_range": "2,2", "filepath": "file.txt", "since": "1 month ago"},
         },
         {
             "command": ["git", "log", "-L", "{line_range}:{filepath}", "--oneline"],
             "scenario_name": "no_commits",
             "description": "Line that has never been modified (empty result)",
-            "template_vars": {"line_range": "1,1", "filepath": "file.txt"}
+            "template_vars": {"line_range": "1,1", "filepath": "file.txt"},
         },
     ]
 
@@ -90,9 +105,9 @@ def generate_git_log_L_mocks():
         repo_setup_script="git/churn-basic.sh",
         metadata={
             "description": "Mock data for git log -L (line history analysis)",
-            "generated_by": "generate_mocks.py"
+            "generated_by": "generate_mocks.py",
         },
-        output_prefix="L-line-"
+        output_prefix="L-line-",
     )
 
     print("✓ Generated git log -L mocks")
@@ -110,7 +125,7 @@ def generate_binary_file_mocks():
             "command": ["git", "log", "-L", "{line_range}:{filepath}", "--oneline"],
             "scenario_name": "binary_file",
             "description": "Git error when running -L on binary file",
-            "template_vars": {"line_range": "1,1", "filepath": "image.png"}
+            "template_vars": {"line_range": "1,1", "filepath": "image.png"},
         },
     ]
 
@@ -120,9 +135,9 @@ def generate_binary_file_mocks():
         repo_setup_script="git/churn-binary.sh",
         metadata={
             "description": "Mock data for binary file error handling",
-            "generated_by": "generate_mocks.py"
+            "generated_by": "generate_mocks.py",
         },
-        output_prefix="binary-"
+        output_prefix="binary-",
     )
 
     print("✓ Generated binary file error mocks")
@@ -139,24 +154,48 @@ def generate_activity_mocks():
     # Generate all three scenarios with their respective repos
     # Templates will be converted to string format in TOML for player.py matching
     burst_scenario = {
-        "command": ["git", "log", "--date=format:%Y-%m-%d %H:%M:%S %z", "--pretty=format:%ad|%an", "--follow", "--", "{filepath}"],
+        "command": [
+            "git",
+            "log",
+            "--date=format:%Y-%m-%d %H:%M:%S %z",
+            "--pretty=format:%ad|%an",
+            "--follow",
+            "--",
+            "{filepath}",
+        ],
         "scenario_name": "burst",
         "description": "Burst pattern - many commits in short time",
-        "template_vars": {"filepath": "file.py"}
+        "template_vars": {"filepath": "file.py"},
     }
 
     weekend_scenario = {
-        "command": ["git", "log", "--date=format:%Y-%m-%d %H:%M:%S %z", "--pretty=format:%ad|%an", "--follow", "--", "{filepath}"],
+        "command": [
+            "git",
+            "log",
+            "--date=format:%Y-%m-%d %H:%M:%S %z",
+            "--pretty=format:%ad|%an",
+            "--follow",
+            "--",
+            "{filepath}",
+        ],
         "scenario_name": "weekend",
         "description": "Weekend work pattern - commits on Saturday/Sunday",
-        "template_vars": {"filepath": "file.py"}
+        "template_vars": {"filepath": "file.py"},
     }
 
     empty_scenario = {
-        "command": ["git", "log", "--date=format:%Y-%m-%d %H:%M:%S %z", "--pretty=format:%ad|%an", "--follow", "--", "{filepath}"],
+        "command": [
+            "git",
+            "log",
+            "--date=format:%Y-%m-%d %H:%M:%S %z",
+            "--pretty=format:%ad|%an",
+            "--follow",
+            "--",
+            "{filepath}",
+        ],
         "scenario_name": "empty",
         "description": "No commits for file",
-        "template_vars": {"filepath": "nonexistent.py"}
+        "template_vars": {"filepath": "nonexistent.py"},
     }
 
     # Record burst scenario
@@ -166,9 +205,9 @@ def generate_activity_mocks():
         repo_setup_script="git/activity-burst.sh",
         metadata={
             "description": "Mock data for git log --follow (activity burst detection)",
-            "generated_by": "generate_mocks.py"
+            "generated_by": "generate_mocks.py",
         },
-        output_prefix="activity_"
+        output_prefix="activity_",
     )
 
     # Record weekend scenario
@@ -178,9 +217,9 @@ def generate_activity_mocks():
         repo_setup_script="git/activity-weekend.sh",
         metadata={
             "description": "Mock data for git log --follow (weekend activity)",
-            "generated_by": "generate_mocks.py"
+            "generated_by": "generate_mocks.py",
         },
-        output_prefix="activity_"
+        output_prefix="activity_",
     )
 
     # Record empty scenario
@@ -190,13 +229,14 @@ def generate_activity_mocks():
         repo_setup_script="git/activity-burst.sh",
         metadata={
             "description": "Mock data for git log --follow (no results)",
-            "generated_by": "generate_mocks.py"
+            "generated_by": "generate_mocks.py",
         },
-        output_prefix="activity_"
+        output_prefix="activity_",
     )
 
     # Now merge all three TOML files into one activity.toml
     import tomli_w
+
     if sys.version_info >= (3, 11):
         import tomllib
     else:
@@ -205,7 +245,7 @@ def generate_activity_mocks():
     final_scenarios = []
     final_metadata = {
         "description": "Mock data for git log --follow (activity analysis)",
-        "generated_by": "generate_mocks.py"
+        "generated_by": "generate_mocks.py",
     }
 
     # Read each file and collect scenarios
@@ -216,10 +256,7 @@ def generate_activity_mocks():
             final_scenarios.extend(data.get("scenario", []))
 
     # Write combined file
-    combined_data = {
-        "metadata": final_metadata,
-        "scenario": final_scenarios
-    }
+    combined_data = {"metadata": final_metadata, "scenario": final_scenarios}
     final_path = recorder_burst.mocks_dir / "log" / "activity.toml"
     with open(final_path, "wb") as f:
         tomli_w.dump(combined_data, f)
@@ -239,7 +276,7 @@ def generate_search_mocks():
 
     recorder = CommandMockRecorder("git")
 
-    field_sep = '|~|'
+    field_sep = "|~|"
     format_str = f"%H{field_sep}%h{field_sep}%an{field_sep}%ae{field_sep}%cn{field_sep}%ce{field_sep}%aI{field_sep}%ar{field_sep}%cI{field_sep}%cr{field_sep}%T{field_sep}%s{field_sep}%B{field_sep}%P{field_sep}%D"
 
     scenarios = [
@@ -247,31 +284,31 @@ def generate_search_mocks():
             "command": ["git", "log", f"--format={format_str}", "--grep={term}"],
             "scenario_name": "message_match",
             "description": "Search commit messages for 'fix'",
-            "template_vars": {"term": "fix"}
+            "template_vars": {"term": "fix"},
         },
         {
             "command": ["git", "log", f"--format={format_str}", "-S{code}"],
             "scenario_name": "code_match",
             "description": "Search code changes for 'def calculate'",
-            "template_vars": {"code": "def calculate"}
+            "template_vars": {"code": "def calculate"},
         },
         {
             "command": ["git", "log", f"--format={format_str}", "--name-status", "--grep={term}"],
             "scenario_name": "with_files",
             "description": "Search with file changes included",
-            "template_vars": {"term": "feature"}
+            "template_vars": {"term": "feature"},
         },
         {
             "command": ["git", "log", f"--format={format_str}", "--grep={term}"],
             "scenario_name": "no_match",
             "description": "Search with no results",
-            "template_vars": {"term": "nonexistent"}
+            "template_vars": {"term": "nonexistent"},
         },
         {
             "command": ["git", "log", f"--format={format_str}", "--invalid-flag"],
             "scenario_name": "git_error",
             "description": "Git command error",
-            "template_vars": {}
+            "template_vars": {},
         },
     ]
 
@@ -281,9 +318,9 @@ def generate_search_mocks():
         repo_setup_script="git/search-commits.sh",
         metadata={
             "description": "Mock data for git search commands",
-            "generated_by": "generate_mocks.py"
+            "generated_by": "generate_mocks.py",
         },
-        output_prefix="search_"
+        output_prefix="search_",
     )
 
     print("✓ Generated commit search mocks")

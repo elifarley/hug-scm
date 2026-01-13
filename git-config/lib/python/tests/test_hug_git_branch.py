@@ -22,6 +22,7 @@ import hug_git_branch
 # Test Fixtures
 ################################################################################
 
+
 @pytest.fixture
 def sample_branch_details():
     """Sample BranchDetails for testing."""
@@ -30,24 +31,15 @@ def sample_branch_details():
         max_len=10,
         branches=[
             hug_git_branch.BranchInfo(
-                name="main",
-                hash="abc123",
-                subject="Initial commit",
-                track="[origin/main: ahead 2]"
+                name="main", hash="abc123", subject="Initial commit", track="[origin/main: ahead 2]"
             ),
             hug_git_branch.BranchInfo(
-                name="feature",
-                hash="def456",
-                subject="Add feature",
-                track=""
+                name="feature", hash="def456", subject="Add feature", track=""
             ),
             hug_git_branch.BranchInfo(
-                name="bugfix",
-                hash="ghi789",
-                subject="Fix bug",
-                track="[upstream/bugfix: behind 1]"
-            )
-        ]
+                name="bugfix", hash="ghi789", subject="Fix bug", track="[upstream/bugfix: behind 1]"
+            ),
+        ],
     )
 
 
@@ -59,18 +51,15 @@ def sample_remote_branch_details():
         max_len=8,
         branches=[
             hug_git_branch.BranchInfo(
-                name="main",
-                hash="abc123",
-                subject="Main branch",
-                remote_ref="origin/main"
+                name="main", hash="abc123", subject="Main branch", remote_ref="origin/main"
             ),
             hug_git_branch.BranchInfo(
                 name="feature",
                 hash="def456",
                 subject="Feature branch",
-                remote_ref="upstream/feature"
-            )
-        ]
+                remote_ref="upstream/feature",
+            ),
+        ],
     )
 
 
@@ -82,22 +71,19 @@ def sample_wip_branch_details():
         max_len=12,
         branches=[
             hug_git_branch.BranchInfo(
-                name="WIP/test-feature",
-                hash="abc123",
-                subject="[WIP] Work in progress"
+                name="WIP/test-feature", hash="abc123", subject="[WIP] Work in progress"
             ),
             hug_git_branch.BranchInfo(
-                name="WIP/bug-fix",
-                hash="def456",
-                subject="[WIP] Fixing bug"
-            )
-        ]
+                name="WIP/bug-fix", hash="def456", subject="[WIP] Fixing bug"
+            ),
+        ],
     )
 
 
 ################################################################################
 # TestBranchInfo (dataclass tests)
 ################################################################################
+
 
 class TestBranchInfo:
     """Tests for BranchInfo dataclass."""
@@ -109,7 +95,7 @@ class TestBranchInfo:
             hash="abc123",
             subject="Initial commit",
             track="[origin/main]",
-            remote_ref="origin/main"
+            remote_ref="origin/main",
         )
         assert branch.name == "main"
         assert branch.hash == "abc123"
@@ -119,10 +105,7 @@ class TestBranchInfo:
 
     def test_branch_info_with_defaults(self):
         """Should create BranchInfo with default values."""
-        branch = hug_git_branch.BranchInfo(
-            name="feature",
-            hash="def456"
-        )
+        branch = hug_git_branch.BranchInfo(name="feature", hash="def456")
         assert branch.name == "feature"
         assert branch.hash == "def456"
         assert branch.subject == ""
@@ -134,6 +117,7 @@ class TestBranchInfo:
 # TestBranchDetails (dataclass + serialization tests)
 ################################################################################
 
+
 class TestBranchDetails:
     """Tests for BranchDetails dataclass and output methods."""
 
@@ -142,11 +126,11 @@ class TestBranchDetails:
         json_str = sample_branch_details.to_json()
         data = json.loads(json_str)
 
-        assert data['current_branch'] == 'main'
-        assert data['max_len'] == 10
-        assert len(data['branches']) == 3
-        assert data['branches'][0]['name'] == 'main'
-        assert data['branches'][0]['hash'] == 'abc123'
+        assert data["current_branch"] == "main"
+        assert data["max_len"] == 10
+        assert len(data["branches"]) == 3
+        assert data["branches"][0]["name"] == "main"
+        assert data["branches"][0]["hash"] == "abc123"
 
     def test_to_json_includes_all_branch_fields(self):
         """Should include all branch fields in JSON."""
@@ -159,40 +143,38 @@ class TestBranchDetails:
                     hash="def456",
                     subject="Add feature",
                     track="[origin/feature]",
-                    remote_ref="origin/feature"
+                    remote_ref="origin/feature",
                 )
-            ]
+            ],
         )
 
         json_str = details.to_json()
         data = json.loads(json_str)
 
-        branch = data['branches'][0]
-        assert 'name' in branch
-        assert 'hash' in branch
-        assert 'subject' in branch
-        assert 'track' in branch
-        assert 'remote_ref' in branch
+        branch = data["branches"][0]
+        assert "name" in branch
+        assert "hash" in branch
+        assert "subject" in branch
+        assert "track" in branch
+        assert "remote_ref" in branch
 
     def test_to_bash_declare_outputs_valid_declarations(self, sample_branch_details):
         """Should output bash declare statements."""
         bash_output = sample_branch_details.to_bash_declare()
 
-        assert 'declare current_branch=' in bash_output
-        assert 'declare max_len=10' in bash_output
-        assert 'declare -a branches=' in bash_output
-        assert 'declare -a hashes=' in bash_output
-        assert 'declare -a tracks=' in bash_output
-        assert 'declare -a subjects=' in bash_output
+        assert "declare current_branch=" in bash_output
+        assert "declare max_len=10" in bash_output
+        assert "declare -a branches=" in bash_output
+        assert "declare -a hashes=" in bash_output
+        assert "declare -a tracks=" in bash_output
+        assert "declare -a subjects=" in bash_output
 
     def test_to_bash_declare_includes_current_branch(self):
         """Should include current_branch in bash output."""
         details = hug_git_branch.BranchDetails(
             current_branch="main",
             max_len=10,
-            branches=[
-                hug_git_branch.BranchInfo(name="main", hash="abc123")
-            ]
+            branches=[hug_git_branch.BranchInfo(name="main", hash="abc123")],
         )
 
         bash_output = details.to_bash_declare()
@@ -203,9 +185,7 @@ class TestBranchDetails:
         details = hug_git_branch.BranchDetails(
             current_branch="main",
             max_len=25,
-            branches=[
-                hug_git_branch.BranchInfo(name="main", hash="abc123")
-            ]
+            branches=[hug_git_branch.BranchInfo(name="main", hash="abc123")],
         )
 
         bash_output = details.to_bash_declare()
@@ -218,50 +198,51 @@ class TestBranchDetails:
             max_len=10,
             branches=[
                 hug_git_branch.BranchInfo(name="main", hash="abc123", subject="Commit 1", track=""),
-                hug_git_branch.BranchInfo(name="feature", hash="def456", subject="Commit 2", track="[origin/feature]")
-            ]
+                hug_git_branch.BranchInfo(
+                    name="feature", hash="def456", subject="Commit 2", track="[origin/feature]"
+                ),
+            ],
         )
 
         bash_output = details.to_bash_declare()
 
-        assert 'declare -a branches=' in bash_output
-        assert 'declare -a hashes=' in bash_output
-        assert 'declare -a tracks=' in bash_output
-        assert 'declare -a subjects=' in bash_output
+        assert "declare -a branches=" in bash_output
+        assert "declare -a hashes=" in bash_output
+        assert "declare -a tracks=" in bash_output
+        assert "declare -a subjects=" in bash_output
 
-    def test_to_bash_declare_includes_remote_refs_for_remote_branches(self, sample_remote_branch_details):
+    def test_to_bash_declare_includes_remote_refs_for_remote_branches(
+        self, sample_remote_branch_details
+    ):
         """Should include remote_refs array when branches have remote_ref."""
         bash_output = sample_remote_branch_details.to_bash_declare()
 
-        assert 'declare -a remote_refs=' in bash_output
-        assert 'origin/main' in bash_output
-        assert 'upstream/feature' in bash_output
+        assert "declare -a remote_refs=" in bash_output
+        assert "origin/main" in bash_output
+        assert "upstream/feature" in bash_output
 
     def test_to_bash_declare_no_remote_refs_for_local_branches(self, sample_branch_details):
         """Should not include remote_refs array for local branches."""
         bash_output = sample_branch_details.to_bash_declare()
 
-        assert 'declare -a remote_refs=' not in bash_output
+        assert "declare -a remote_refs=" not in bash_output
 
     def test_to_bash_declare_empty_arrays(self):
         """Should handle empty branch list."""
-        details = hug_git_branch.BranchDetails(
-            current_branch="",
-            max_len=0,
-            branches=[]
-        )
+        details = hug_git_branch.BranchDetails(current_branch="", max_len=0, branches=[])
 
         bash_output = details.to_bash_declare()
 
-        assert 'declare -a branches=()' in bash_output
-        assert 'declare -a hashes=()' in bash_output
-        assert 'declare -a tracks=()' in bash_output
-        assert 'declare -a subjects=()' in bash_output
+        assert "declare -a branches=()" in bash_output
+        assert "declare -a hashes=()" in bash_output
+        assert "declare -a tracks=()" in bash_output
+        assert "declare -a subjects=()" in bash_output
 
 
 ################################################################################
 # TestBashEscape (utility function tests)
 ################################################################################
+
 
 class TestBashEscape:
     """Tests for _bash_escape function."""
@@ -307,14 +288,14 @@ class TestBashEscape:
     def test_handles_newlines_in_subjects(self):
         """Should preserve newlines in quoted strings."""
         result = hug_git_branch._bash_escape("line1\nline2")
-        assert 'line1' in result
-        assert 'line2' in result
+        assert "line1" in result
+        assert "line2" in result
 
     def test_handles_tabs(self):
         """Should handle tabs in strings."""
         result = hug_git_branch._bash_escape("test\ttab")
-        assert 'test' in result
-        assert 'tab' in result
+        assert "test" in result
+        assert "tab" in result
 
     def test_handles_empty_string(self):
         """Should handle empty string."""
@@ -329,15 +310,16 @@ class TestBashEscape:
     def test_handles_special_characters(self):
         """Should handle various special characters."""
         result = hug_git_branch._bash_escape("test: value! [tag] (paren)")
-        assert 'test:' in result
-        assert 'value!' in result
-        assert '[tag]' in result
-        assert '(paren)' in result
+        assert "test:" in result
+        assert "value!" in result
+        assert "[tag]" in result
+        assert "(paren)" in result
 
 
 ################################################################################
 # TestSanitizeString (utility function tests)
 ################################################################################
+
 
 class TestSanitizeString:
     """Tests for _sanitize_string function."""
@@ -384,72 +366,67 @@ class TestSanitizeString:
 # TestRunGit (git command execution tests)
 ################################################################################
 
+
 class TestRunGit:
     """Tests for _run_git function."""
 
     def test_runs_git_command_successfully(self):
         """Should run git command and return stdout."""
-        with patch('hug_git_branch.subprocess.run') as mock_run:
+        with patch("hug_git_branch.subprocess.run") as mock_run:
             mock_result = MagicMock()
             mock_result.stdout = "output\n"
             mock_run.return_value = mock_result
 
-            result = hug_git_branch._run_git(['status'])
+            result = hug_git_branch._run_git(["status"])
 
             assert result == "output"
             mock_run.assert_called_once_with(
-                ['git', 'status'],
-                capture_output=True,
-                text=True,
-                check=True
+                ["git", "status"], capture_output=True, text=True, check=True
             )
 
     def test_runs_git_command_with_check_false(self):
         """Should run git command without checking exit code."""
-        with patch('hug_git_branch.subprocess.run') as mock_run:
+        with patch("hug_git_branch.subprocess.run") as mock_run:
             mock_result = MagicMock()
             mock_result.stdout = "output\n"
             mock_run.return_value = mock_result
 
-            result = hug_git_branch._run_git(['status'], check=False)
+            result = hug_git_branch._run_git(["status"], check=False)
 
             assert result == "output"
             mock_run.assert_called_once_with(
-                ['git', 'status'],
-                capture_output=True,
-                text=True,
-                check=False
+                ["git", "status"], capture_output=True, text=True, check=False
             )
 
     def test_strips_trailing_newlines(self):
         """Should strip trailing newlines and carriage returns."""
-        with patch('hug_git_branch.subprocess.run') as mock_run:
+        with patch("hug_git_branch.subprocess.run") as mock_run:
             mock_result = MagicMock()
             mock_result.stdout = "output\n\r\n"
             mock_run.return_value = mock_result
 
-            result = hug_git_branch._run_git(['status'])
+            result = hug_git_branch._run_git(["status"])
 
             assert result == "output"
 
     def test_raises_on_non_zero_exit_when_check_true(self):
         """Should raise CalledProcessError on non-zero exit when check=True."""
-        with patch('hug_git_branch.subprocess.run') as mock_run:
-            mock_run.side_effect = CalledProcessError(1, 'git')
+        with patch("hug_git_branch.subprocess.run") as mock_run:
+            mock_run.side_effect = CalledProcessError(1, "git")
 
             with pytest.raises(CalledProcessError):
-                hug_git_branch._run_git(['status'], check=True)
+                hug_git_branch._run_git(["status"], check=True)
 
     def test_returns_false_when_check_false(self):
         """Should not raise when check=False even on non-zero exit."""
-        with patch('hug_git_branch.subprocess.run') as mock_run:
+        with patch("hug_git_branch.subprocess.run") as mock_run:
             # When check=False, _run_git catches the exception internally
             # Set up a mock result that will be returned
             mock_result = MagicMock()
             mock_result.stdout = ""
             mock_run.return_value = mock_result
 
-            result = hug_git_branch._run_git(['status'], check=False)
+            result = hug_git_branch._run_git(["status"], check=False)
 
             # Should complete without raising
             assert result is not None
@@ -459,12 +436,13 @@ class TestRunGit:
 # TestComputeDivergence (divergence calculation tests)
 ################################################################################
 
+
 class TestComputeDivergence:
     """Tests for _compute_divergence function."""
 
     def test_ahead_only_returns_correct_status(self):
         """Should return [ahead N] when only ahead."""
-        with patch('hug_git_branch._run_git') as mock_run:
+        with patch("hug_git_branch._run_git") as mock_run:
             mock_run.return_value = "3\t0"
 
             status, ahead, behind = hug_git_branch._compute_divergence("feature", "origin/main")
@@ -475,7 +453,7 @@ class TestComputeDivergence:
 
     def test_behind_only_returns_correct_status(self):
         """Should return [behind N] when only behind."""
-        with patch('hug_git_branch._run_git') as mock_run:
+        with patch("hug_git_branch._run_git") as mock_run:
             mock_run.return_value = "0\t2"
 
             status, ahead, behind = hug_git_branch._compute_divergence("feature", "origin/main")
@@ -486,7 +464,7 @@ class TestComputeDivergence:
 
     def test_even_returns_empty_status(self):
         """Should return empty string when even."""
-        with patch('hug_git_branch._run_git') as mock_run:
+        with patch("hug_git_branch._run_git") as mock_run:
             mock_run.return_value = "0\t0"
 
             status, ahead, behind = hug_git_branch._compute_divergence("feature", "origin/main")
@@ -497,7 +475,7 @@ class TestComputeDivergence:
 
     def test_ahead_and_behind_returns_correct_status(self):
         """Should return [ahead N, behind M] when diverged."""
-        with patch('hug_git_branch._run_git') as mock_run:
+        with patch("hug_git_branch._run_git") as mock_run:
             mock_run.return_value = "3\t2"
 
             status, ahead, behind = hug_git_branch._compute_divergence("feature", "origin/main")
@@ -508,7 +486,7 @@ class TestComputeDivergence:
 
     def test_handles_empty_output(self):
         """Should handle empty git output."""
-        with patch('hug_git_branch._run_git') as mock_run:
+        with patch("hug_git_branch._run_git") as mock_run:
             mock_run.return_value = ""
 
             status, ahead, behind = hug_git_branch._compute_divergence("feature", "origin/main")
@@ -519,7 +497,7 @@ class TestComputeDivergence:
 
     def test_handles_malformed_output(self):
         """Should handle malformed output (wrong format)."""
-        with patch('hug_git_branch._run_git') as mock_run:
+        with patch("hug_git_branch._run_git") as mock_run:
             mock_run.return_value = "invalid"
 
             status, ahead, behind = hug_git_branch._compute_divergence("feature", "origin/main")
@@ -530,8 +508,8 @@ class TestComputeDivergence:
 
     def test_handles_git_error(self):
         """Should handle git command errors gracefully."""
-        with patch('hug_git_branch._run_git') as mock_run:
-            mock_run.side_effect = CalledProcessError(1, 'git')
+        with patch("hug_git_branch._run_git") as mock_run:
+            mock_run.side_effect = CalledProcessError(1, "git")
 
             status, ahead, behind = hug_git_branch._compute_divergence("feature", "origin/main")
 
@@ -544,14 +522,17 @@ class TestComputeDivergence:
 # TestGetLocalBranchDetails (main function tests with mocks)
 ################################################################################
 
+
 class TestGetLocalBranchDetails:
     """Tests for get_local_branch_details function."""
 
     def test_returns_branch_details_with_subjects(self):
         """Should parse git for-each-ref output with subjects."""
-        with patch('hug_git_branch._run_git') as mock_run, \
-             patch('hug_git_branch._run_git_for_each_ref') as mock_for_each, \
-             patch('hug_git_branch._compute_divergence') as mock_divergence:
+        with (
+            patch("hug_git_branch._run_git") as mock_run,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+            patch("hug_git_branch._compute_divergence") as mock_divergence,
+        ):
             # Mock current branch
             mock_run.side_effect = [
                 "main",  # branch --show-current
@@ -562,7 +543,12 @@ class TestGetLocalBranchDetails:
 
             # Mock for-each-ref output
             mock_for_each.return_value = [
-                "main", "abc123", "Initial commit", "origin/main", "[origin/main: ahead 2]", ""
+                "main",
+                "abc123",
+                "Initial commit",
+                "origin/main",
+                "[origin/main: ahead 2]",
+                "",
             ]
 
             result = hug_git_branch.get_local_branch_details(include_subjects=True)
@@ -575,19 +561,31 @@ class TestGetLocalBranchDetails:
 
     def test_excludes_backup_branches_when_enabled(self):
         """Should exclude hug-backups/* branches when exclude_backup=True."""
-        with patch('hug_git_branch._run_git') as mock_run, \
-             patch('hug_git_branch._run_git_for_each_ref') as mock_for_each, \
-             patch('hug_git_branch._compute_divergence') as mock_divergence:
+        with (
+            patch("hug_git_branch._run_git") as mock_run,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+            patch("hug_git_branch._compute_divergence") as mock_divergence,
+        ):
             mock_run.return_value = "main"
             mock_divergence.return_value = ("", "0", "0")
 
             # Include a backup branch - each branch has 5 elements (refname, hash, subject, upstream, track)
             mock_for_each.return_value = [
-                "main", "abc123", "Initial commit", "origin/main", "[origin/main]",
-                "hug-backups/test", "def456", "Backup commit", "", ""
+                "main",
+                "abc123",
+                "Initial commit",
+                "origin/main",
+                "[origin/main]",
+                "hug-backups/test",
+                "def456",
+                "Backup commit",
+                "",
+                "",
             ]
 
-            result = hug_git_branch.get_local_branch_details(exclude_backup=True, batch_divergence=False)
+            result = hug_git_branch.get_local_branch_details(
+                exclude_backup=True, batch_divergence=False
+            )
 
             # Should not include backup branch
             assert len(result.branches) == 1
@@ -595,18 +593,30 @@ class TestGetLocalBranchDetails:
 
     def test_includes_backup_branches_when_disabled(self):
         """Should include hug-backups/* branches when exclude_backup=False."""
-        with patch('hug_git_branch._run_git') as mock_run, \
-             patch('hug_git_branch._run_git_for_each_ref') as mock_for_each, \
-             patch('hug_git_branch._compute_divergence') as mock_divergence:
+        with (
+            patch("hug_git_branch._run_git") as mock_run,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+            patch("hug_git_branch._compute_divergence") as mock_divergence,
+        ):
             mock_run.return_value = "main"
             mock_divergence.return_value = ("", "0", "0")
 
             mock_for_each.return_value = [
-                "main", "abc123", "Initial commit", "origin/main", "[origin/main]",
-                "hug-backups/test", "def456", "Backup commit", "", ""
+                "main",
+                "abc123",
+                "Initial commit",
+                "origin/main",
+                "[origin/main]",
+                "hug-backups/test",
+                "def456",
+                "Backup commit",
+                "",
+                "",
             ]
 
-            result = hug_git_branch.get_local_branch_details(exclude_backup=False, batch_divergence=False)
+            result = hug_git_branch.get_local_branch_details(
+                exclude_backup=False, batch_divergence=False
+            )
 
             # Should include backup branch
             assert len(result.branches) == 2
@@ -616,8 +626,10 @@ class TestGetLocalBranchDetails:
 
     def test_returns_none_when_no_branches(self):
         """Should return None when no branches exist."""
-        with patch('hug_git_branch._run_git') as mock_run, \
-             patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
+        with (
+            patch("hug_git_branch._run_git") as mock_run,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+        ):
             mock_run.return_value = "main"
             mock_for_each.return_value = []
 
@@ -627,17 +639,31 @@ class TestGetLocalBranchDetails:
 
     def test_calculates_max_len_correctly(self):
         """Should calculate maximum branch name length."""
-        with patch('hug_git_branch._run_git') as mock_run, \
-             patch('hug_git_branch._run_git_for_each_ref') as mock_for_each, \
-             patch('hug_git_branch._compute_divergence') as mock_divergence:
+        with (
+            patch("hug_git_branch._run_git") as mock_run,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+            patch("hug_git_branch._compute_divergence") as mock_divergence,
+        ):
             mock_run.return_value = "main"
             mock_divergence.return_value = ("", "0", "0")
 
             # chunk_size is 5 with subjects - each branch has 5 elements (refname, hash, subject, upstream, track)
             mock_for_each.return_value = [
-                "main", "abc123", "Commit", "", "",
-                "very-long-branch-name", "def456", "Commit", "", "",
-                "short", "ghi789", "Commit", "", ""
+                "main",
+                "abc123",
+                "Commit",
+                "",
+                "",
+                "very-long-branch-name",
+                "def456",
+                "Commit",
+                "",
+                "",
+                "short",
+                "ghi789",
+                "Commit",
+                "",
+                "",
             ]
 
             result = hug_git_branch.get_local_branch_details(batch_divergence=False)
@@ -646,8 +672,10 @@ class TestGetLocalBranchDetails:
 
     def test_detects_detached_head(self):
         """Should set current_branch to 'detached HEAD' when detached."""
-        with patch('hug_git_branch._run_git') as mock_run, \
-             patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
+        with (
+            patch("hug_git_branch._run_git") as mock_run,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+        ):
             mock_run.return_value = ""  # Empty = detached
             mock_for_each.return_value = ["main", "abc123", "Commit", "", ""]
 
@@ -657,14 +685,14 @@ class TestGetLocalBranchDetails:
 
     def test_without_subjects(self):
         """Should work without including subjects."""
-        with patch('hug_git_branch._run_git') as mock_run, \
-             patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
+        with (
+            patch("hug_git_branch._run_git") as mock_run,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+        ):
             mock_run.return_value = "main"
 
             # Without subjects, chunk size is smaller
-            mock_for_each.return_value = [
-                "main", "abc123", "origin/main", ""
-            ]
+            mock_for_each.return_value = ["main", "abc123", "origin/main", ""]
 
             result = hug_git_branch.get_local_branch_details(include_subjects=False)
 
@@ -673,13 +701,13 @@ class TestGetLocalBranchDetails:
 
     def test_divergence_calculation(self):
         """Should add divergence info to track strings when batch_divergence=True."""
-        with patch('hug_git_branch._run_git') as mock_run, \
-             patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
+        with (
+            patch("hug_git_branch._run_git") as mock_run,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+        ):
             mock_run.side_effect = ["main", "2\t1"]  # Current branch + divergence
 
-            mock_for_each.return_value = [
-                "main", "abc123", "Initial commit", "origin/main", "", ""
-            ]
+            mock_for_each.return_value = ["main", "abc123", "Initial commit", "origin/main", "", ""]
 
             result = hug_git_branch.get_local_branch_details(batch_divergence=True)
 
@@ -691,15 +719,20 @@ class TestGetLocalBranchDetails:
 # TestGetRemoteBranchDetails
 ################################################################################
 
+
 class TestGetRemoteBranchDetails:
     """Tests for get_remote_branch_details function."""
 
     def test_returns_remote_branch_details(self):
         """Should parse remote branches correctly."""
-        with patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
+        with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
             mock_for_each.return_value = [
-                "origin/main", "abc123", "Main branch",
-                "origin/feature", "def456", "Feature branch"
+                "origin/main",
+                "abc123",
+                "Main branch",
+                "origin/feature",
+                "def456",
+                "Feature branch",
             ]
 
             result = hug_git_branch.get_remote_branch_details()
@@ -713,10 +746,14 @@ class TestGetRemoteBranchDetails:
 
     def test_excludes_head_references(self):
         """Should exclude */HEAD references."""
-        with patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
+        with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
             mock_for_each.return_value = [
-                "origin/main", "abc123", "Main branch",
-                "origin/HEAD", "def456", "HEAD reference"
+                "origin/main",
+                "abc123",
+                "Main branch",
+                "origin/HEAD",
+                "def456",
+                "HEAD reference",
             ]
 
             result = hug_git_branch.get_remote_branch_details()
@@ -727,10 +764,8 @@ class TestGetRemoteBranchDetails:
 
     def test_extracts_branch_name_from_remote_ref(self):
         """Should strip remote prefix (e.g., origin/feature -> feature)."""
-        with patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
-            mock_for_each.return_value = [
-                "origin/feature", "abc123", "Feature commit"
-            ]
+        with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
+            mock_for_each.return_value = ["origin/feature", "abc123", "Feature commit"]
 
             result = hug_git_branch.get_remote_branch_details()
 
@@ -739,10 +774,8 @@ class TestGetRemoteBranchDetails:
 
     def test_sets_current_branch_to_empty_string(self):
         """Should set current_branch to empty for remote branches."""
-        with patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
-            mock_for_each.return_value = [
-                "origin/main", "abc123", "Main branch"
-            ]
+        with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
+            mock_for_each.return_value = ["origin/main", "abc123", "Main branch"]
 
             result = hug_git_branch.get_remote_branch_details()
 
@@ -750,7 +783,7 @@ class TestGetRemoteBranchDetails:
 
     def test_returns_none_when_no_remote_branches(self):
         """Should return None when no remote branches exist."""
-        with patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
+        with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
             mock_for_each.return_value = []
 
             result = hug_git_branch.get_remote_branch_details()
@@ -759,10 +792,14 @@ class TestGetRemoteBranchDetails:
 
     def test_calculates_max_len(self):
         """Should calculate maximum branch name length (without remote prefix)."""
-        with patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
+        with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
             mock_for_each.return_value = [
-                "origin/main", "abc123", "Commit",
-                "upstream/very-long-branch", "def456", "Commit"
+                "origin/main",
+                "abc123",
+                "Commit",
+                "upstream/very-long-branch",
+                "def456",
+                "Commit",
             ]
 
             result = hug_git_branch.get_remote_branch_details()
@@ -775,15 +812,20 @@ class TestGetRemoteBranchDetails:
 # TestGetWipBranchDetails
 ################################################################################
 
+
 class TestGetWipBranchDetails:
     """Tests for get_wip_branch_details function."""
 
     def test_returns_wip_branches_with_default_pattern(self):
         """Should find WIP/* branches with default pattern."""
-        with patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
+        with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
             mock_for_each.return_value = [
-                "WIP/test-feature", "abc123", "[WIP] Work in progress",
-                "WIP/bug-fix", "def456", "[WIP] Fixing bug"
+                "WIP/test-feature",
+                "abc123",
+                "[WIP] Work in progress",
+                "WIP/bug-fix",
+                "def456",
+                "[WIP] Fixing bug",
             ]
 
             result = hug_git_branch.get_wip_branch_details()
@@ -795,20 +837,24 @@ class TestGetWipBranchDetails:
 
     def test_uses_custom_ref_pattern(self):
         """Should use custom ref pattern when provided."""
-        with patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
+        with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
             mock_for_each.return_value = [
-                "temp/feature-1", "abc123", "Temp commit",
-                "temp/feature-2", "def456", "Temp commit"
+                "temp/feature-1",
+                "abc123",
+                "Temp commit",
+                "temp/feature-2",
+                "def456",
+                "Temp commit",
             ]
 
-            result = hug_git_branch.get_wip_branch_details(ref_pattern='refs/heads/temp/')
+            result = hug_git_branch.get_wip_branch_details(ref_pattern="refs/heads/temp/")
 
             assert result is not None
             assert len(result.branches) == 2
 
     def test_returns_none_when_no_wip_branches(self):
         """Should return None when no matching branches exist."""
-        with patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
+        with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
             mock_for_each.return_value = []
 
             result = hug_git_branch.get_wip_branch_details()
@@ -817,10 +863,8 @@ class TestGetWipBranchDetails:
 
     def test_sets_current_branch_to_empty(self):
         """Should set current_branch to empty for WIP listing."""
-        with patch('hug_git_branch._run_git_for_each_ref') as mock_for_each:
-            mock_for_each.return_value = [
-                "WIP/test", "abc123", "Commit"
-            ]
+        with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
+            mock_for_each.return_value = ["WIP/test", "abc123", "Commit"]
 
             result = hug_git_branch.get_wip_branch_details()
 
@@ -831,12 +875,13 @@ class TestGetWipBranchDetails:
 # TestFindRemoteBranch
 ################################################################################
 
+
 class TestFindRemoteBranch:
     """Tests for find_remote_branch function."""
 
     def test_finds_branch_by_full_remote_ref(self):
         """Should return full ref if given full ref exists."""
-        with patch('hug_git_branch._run_git') as mock_run:
+        with patch("hug_git_branch._run_git") as mock_run:
             # Mock show-ref --verify success - it returns empty string on success
             mock_run.return_value = ""
 
@@ -849,11 +894,11 @@ class TestFindRemoteBranch:
         from subprocess import CalledProcessError
 
         def side_effect_func(*args, **kwargs):
-            if 'show-ref' in args[0]:
-                raise CalledProcessError(1, 'git')
+            if "show-ref" in args[0]:
+                raise CalledProcessError(1, "git")
             return "origin/feature\nupstream/feature"
 
-        with patch('hug_git_branch._run_git') as mock_run:
+        with patch("hug_git_branch._run_git") as mock_run:
             mock_run.side_effect = side_effect_func
 
             result = hug_git_branch.find_remote_branch("feature")
@@ -866,11 +911,11 @@ class TestFindRemoteBranch:
         from subprocess import CalledProcessError
 
         def side_effect_func(*args, **kwargs):
-            if 'show-ref' in args[0]:
-                raise CalledProcessError(1, 'git')
+            if "show-ref" in args[0]:
+                raise CalledProcessError(1, "git")
             return "upstream/feature\nfork/feature\norigin/feature"
 
-        with patch('hug_git_branch._run_git') as mock_run:
+        with patch("hug_git_branch._run_git") as mock_run:
             mock_run.side_effect = side_effect_func
 
             result = hug_git_branch.find_remote_branch("feature")
@@ -882,11 +927,11 @@ class TestFindRemoteBranch:
         from subprocess import CalledProcessError
 
         def side_effect_func(*args, **kwargs):
-            if 'show-ref' in args[0]:
-                raise CalledProcessError(1, 'git')
+            if "show-ref" in args[0]:
+                raise CalledProcessError(1, "git")
             return "fork/feature\nupstream/feature"
 
-        with patch('hug_git_branch._run_git') as mock_run:
+        with patch("hug_git_branch._run_git") as mock_run:
             mock_run.side_effect = side_effect_func
 
             result = hug_git_branch.find_remote_branch("feature")
@@ -899,11 +944,11 @@ class TestFindRemoteBranch:
         from subprocess import CalledProcessError
 
         def side_effect_func(*args, **kwargs):
-            if 'show-ref' in args[0]:
-                raise CalledProcessError(1, 'git')
+            if "show-ref" in args[0]:
+                raise CalledProcessError(1, "git")
             return ""  # No matches from for-each-ref
 
-        with patch('hug_git_branch._run_git') as mock_run:
+        with patch("hug_git_branch._run_git") as mock_run:
             mock_run.side_effect = side_effect_func
 
             result = hug_git_branch.find_remote_branch("nonexistent")
@@ -915,6 +960,7 @@ class TestFindRemoteBranch:
 # TestMainFunction (CLI tests)
 ################################################################################
 
+
 class TestMainFunction:
     """Integration tests for main() CLI entry point."""
 
@@ -922,15 +968,17 @@ class TestMainFunction:
         """Should output bash declarations by default for local type."""
         import sys
 
-        monkeypatch.setattr(sys, 'argv', ['hug_git_branch.py', 'local'])
+        monkeypatch.setattr(sys, "argv", ["hug_git_branch.py", "local"])
 
-        with patch('hug_git_branch.get_local_branch_details') as mock_get:
+        with patch("hug_git_branch.get_local_branch_details") as mock_get:
             mock_get.return_value = hug_git_branch.BranchDetails(
                 current_branch="main",
                 max_len=10,
                 branches=[
-                    hug_git_branch.BranchInfo(name="main", hash="abc123", subject="Commit", track="")
-                ]
+                    hug_git_branch.BranchInfo(
+                        name="main", hash="abc123", subject="Commit", track=""
+                    )
+                ],
             )
 
             # The main function returns None on success, calls sys.exit() on failure
@@ -938,22 +986,24 @@ class TestMainFunction:
             captured = capsys.readouterr()
 
             assert result is None  # Success returns None
-            assert 'declare current_branch=' in captured.out
-            assert 'declare -a branches=' in captured.out
+            assert "declare current_branch=" in captured.out
+            assert "declare -a branches=" in captured.out
 
     def test_local_outputs_json_with_flag(self, monkeypatch, capsys):
         """Should output JSON with --json flag."""
         import sys
 
-        monkeypatch.setattr(sys, 'argv', ['hug_git_branch.py', 'local', '--json'])
+        monkeypatch.setattr(sys, "argv", ["hug_git_branch.py", "local", "--json"])
 
-        with patch('hug_git_branch.get_local_branch_details') as mock_get:
+        with patch("hug_git_branch.get_local_branch_details") as mock_get:
             mock_get.return_value = hug_git_branch.BranchDetails(
                 current_branch="main",
                 max_len=10,
                 branches=[
-                    hug_git_branch.BranchInfo(name="main", hash="abc123", subject="Commit", track="")
-                ]
+                    hug_git_branch.BranchInfo(
+                        name="main", hash="abc123", subject="Commit", track=""
+                    )
+                ],
             )
 
             result = hug_git_branch.main()
@@ -961,81 +1011,85 @@ class TestMainFunction:
 
             assert result is None  # Success returns None
             data = json.loads(captured.out)
-            assert 'branches' in data
-            assert data['current_branch'] == 'main'
+            assert "branches" in data
+            assert data["current_branch"] == "main"
 
     def test_remote_mode(self, monkeypatch, capsys):
         """Should handle remote branch queries."""
         import sys
 
-        monkeypatch.setattr(sys, 'argv', ['hug_git_branch.py', 'remote'])
+        monkeypatch.setattr(sys, "argv", ["hug_git_branch.py", "remote"])
 
-        with patch('hug_git_branch.get_remote_branch_details') as mock_get:
+        with patch("hug_git_branch.get_remote_branch_details") as mock_get:
             mock_get.return_value = hug_git_branch.BranchDetails(
                 current_branch="",
                 max_len=10,
                 branches=[
-                    hug_git_branch.BranchInfo(name="main", hash="abc123", subject="Commit", remote_ref="origin/main")
-                ]
+                    hug_git_branch.BranchInfo(
+                        name="main", hash="abc123", subject="Commit", remote_ref="origin/main"
+                    )
+                ],
             )
 
             result = hug_git_branch.main()
             captured = capsys.readouterr()
 
             assert result is None  # Success returns None
-            assert 'declare -a remote_refs=' in captured.out
+            assert "declare -a remote_refs=" in captured.out
 
     def test_wip_mode(self, monkeypatch, capsys):
         """Should handle WIP branch queries."""
         import sys
 
-        monkeypatch.setattr(sys, 'argv', ['hug_git_branch.py', 'wip'])
+        monkeypatch.setattr(sys, "argv", ["hug_git_branch.py", "wip"])
 
-        with patch('hug_git_branch.get_wip_branch_details') as mock_get:
+        with patch("hug_git_branch.get_wip_branch_details") as mock_get:
             mock_get.return_value = hug_git_branch.BranchDetails(
                 current_branch="",
                 max_len=10,
                 branches=[
                     hug_git_branch.BranchInfo(name="WIP/test", hash="abc123", subject="WIP commit")
-                ]
+                ],
             )
 
             result = hug_git_branch.main()
             captured = capsys.readouterr()
 
             assert result is None  # Success returns None
-            assert 'declare -a branches=' in captured.out
-            assert 'WIP/test' in captured.out
+            assert "declare -a branches=" in captured.out
+            assert "WIP/test" in captured.out
 
     def test_wip_custom_pattern(self, monkeypatch):
         """Should accept custom pattern for WIP branches."""
         import sys
 
-        monkeypatch.setattr(sys, 'argv', [
-            'hug_git_branch.py', 'wip', '--pattern', 'refs/heads/temp/'
-        ])
+        monkeypatch.setattr(
+            sys, "argv", ["hug_git_branch.py", "wip", "--pattern", "refs/heads/temp/"]
+        )
 
-        with patch('hug_git_branch.get_wip_branch_details') as mock_get:
+        with patch("hug_git_branch.get_wip_branch_details") as mock_get:
             mock_get.return_value = hug_git_branch.BranchDetails(
                 current_branch="",
                 max_len=10,
                 branches=[
-                    hug_git_branch.BranchInfo(name="temp/test", hash="abc123", subject="Temp commit")
-                ]
+                    hug_git_branch.BranchInfo(
+                        name="temp/test", hash="abc123", subject="Temp commit"
+                    )
+                ],
             )
 
             result = hug_git_branch.main()
 
             assert result is None  # Success returns None
-            mock_get.assert_called_once_with(include_subjects=True, ref_pattern='refs/heads/temp/')
+            mock_get.assert_called_once_with(include_subjects=True, ref_pattern="refs/heads/temp/")
 
     def test_exits_with_1_when_no_branches(self, monkeypatch):
         """Should exit with code 1 when no branches found."""
         import sys
 
-        monkeypatch.setattr(sys, 'argv', ['hug_git_branch.py', 'local'])
+        monkeypatch.setattr(sys, "argv", ["hug_git_branch.py", "local"])
 
-        with patch('hug_git_branch.get_local_branch_details') as mock_get:
+        with patch("hug_git_branch.get_local_branch_details") as mock_get:
             mock_get.return_value = None
 
             with pytest.raises(SystemExit) as exc_info:
@@ -1047,10 +1101,10 @@ class TestMainFunction:
         """Should exit with code 1 on git errors."""
         import sys
 
-        monkeypatch.setattr(sys, 'argv', ['hug_git_branch.py', 'local'])
+        monkeypatch.setattr(sys, "argv", ["hug_git_branch.py", "local"])
 
-        with patch('hug_git_branch.get_local_branch_details') as mock_get:
-            mock_get.side_effect = CalledProcessError(1, 'git')
+        with patch("hug_git_branch.get_local_branch_details") as mock_get:
+            mock_get.side_effect = CalledProcessError(1, "git")
 
             with pytest.raises(SystemExit) as exc_info:
                 hug_git_branch.main()
@@ -1061,9 +1115,9 @@ class TestMainFunction:
         """Should exit with code 1 on unexpected errors."""
         import sys
 
-        monkeypatch.setattr(sys, 'argv', ['hug_git_branch.py', 'local'])
+        monkeypatch.setattr(sys, "argv", ["hug_git_branch.py", "local"])
 
-        with patch('hug_git_branch.get_local_branch_details') as mock_get:
+        with patch("hug_git_branch.get_local_branch_details") as mock_get:
             mock_get.side_effect = Exception("Unexpected error")
 
             with pytest.raises(SystemExit) as exc_info:
@@ -1076,7 +1130,7 @@ class TestMainFunction:
         import sys
 
         # Simulate invalid argument by patching argparse
-        monkeypatch.setattr(sys, 'argv', ['hug_git_branch.py', 'unknown'])
+        monkeypatch.setattr(sys, "argv", ["hug_git_branch.py", "unknown"])
 
         # argparse will exit with code 2 for invalid arguments
         with pytest.raises(SystemExit) as exc_info:
@@ -1090,87 +1144,66 @@ class TestMainFunction:
 # TestEdgeCases
 ################################################################################
 
+
 class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""
 
     def test_handles_branch_names_with_special_chars(self):
         """Should handle branch names with special characters."""
         branch = hug_git_branch.BranchInfo(
-            name="feature/fix-1.2.3",
-            hash="abc123",
-            subject="Commit"
+            name="feature/fix-1.2.3", hash="abc123", subject="Commit"
         )
 
         bash_output = hug_git_branch.BranchDetails(
-            current_branch=branch.name,
-            max_len=20,
-            branches=[branch]
+            current_branch=branch.name, max_len=20, branches=[branch]
         ).to_bash_declare()
 
-        assert 'feature/fix-1.2.3' in bash_output
+        assert "feature/fix-1.2.3" in bash_output
 
     def test_handles_subjects_with_parentheses(self):
         """Should handle subjects with parentheses."""
         branch = hug_git_branch.BranchInfo(
-            name="main",
-            hash="abc123",
-            subject="Fix bug (issue #123)"
+            name="main", hash="abc123", subject="Fix bug (issue #123)"
         )
 
         bash_output = hug_git_branch.BranchDetails(
-            current_branch="main",
-            max_len=10,
-            branches=[branch]
+            current_branch="main", max_len=10, branches=[branch]
         ).to_bash_declare()
 
-        assert 'Fix bug (issue #123)' in bash_output
+        assert "Fix bug (issue #123)" in bash_output
 
     def test_handles_subjects_with_brackets(self):
         """Should handle subjects with square brackets."""
         branch = hug_git_branch.BranchInfo(
-            name="main",
-            hash="abc123",
-            subject="[WIP] Work in progress"
+            name="main", hash="abc123", subject="[WIP] Work in progress"
         )
 
         bash_output = hug_git_branch.BranchDetails(
-            current_branch="main",
-            max_len=10,
-            branches=[branch]
+            current_branch="main", max_len=10, branches=[branch]
         ).to_bash_declare()
 
-        assert '[WIP] Work in progress' in bash_output
+        assert "[WIP] Work in progress" in bash_output
 
     def test_handles_unicode_in_subjects(self):
         """Should handle unicode characters in commit subjects."""
         branch = hug_git_branch.BranchInfo(
-            name="main",
-            hash="abc123",
-            subject="Add emoji support ✨ 🎉"
+            name="main", hash="abc123", subject="Add emoji support ✨ 🎉"
         )
 
         bash_output = hug_git_branch.BranchDetails(
-            current_branch="main",
-            max_len=10,
-            branches=[branch]
+            current_branch="main", max_len=10, branches=[branch]
         ).to_bash_declare()
 
         # Should handle unicode without errors
-        assert '✨' in bash_output or bash_output  # Just check it doesn't crash
+        assert "✨" in bash_output or bash_output  # Just check it doesn't crash
 
     def test_handles_very_long_branch_names(self):
         """Should handle very long branch names."""
         long_name = "a" * 100
-        branch = hug_git_branch.BranchInfo(
-            name=long_name,
-            hash="abc123",
-            subject="Commit"
-        )
+        branch = hug_git_branch.BranchInfo(name=long_name, hash="abc123", subject="Commit")
 
         details = hug_git_branch.BranchDetails(
-            current_branch=long_name,
-            max_len=100,
-            branches=[branch]
+            current_branch=long_name, max_len=100, branches=[branch]
         )
 
         assert details.max_len == 100

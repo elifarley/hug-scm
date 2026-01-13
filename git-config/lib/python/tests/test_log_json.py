@@ -28,12 +28,12 @@ class TestParseLogWithStats:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['sha'] == 'abc123def456789012345678901234567890abcd'
-        assert commit['sha_short'] == 'abc123d'
-        assert commit['author']['name'] == 'Alice'
-        assert commit['author']['email'] == 'alice@example.com'
-        assert commit['subject'] == 'Fix bug'
-        assert commit['body'] is None
+        assert commit["sha"] == "abc123def456789012345678901234567890abcd"
+        assert commit["sha_short"] == "abc123d"
+        assert commit["author"]["name"] == "Alice"
+        assert commit["author"]["email"] == "alice@example.com"
+        assert commit["subject"] == "Fix bug"
+        assert commit["body"] is None
 
     def test_single_commit_with_body(self):
         """Test parsing commit with multi-line message body"""
@@ -45,8 +45,8 @@ class TestParseLogWithStats:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['subject'] == 'Add feature'
-        assert commit['body'] == 'This is a longer description.\nWith multiple lines.'
+        assert commit["subject"] == "Add feature"
+        assert commit["body"] == "This is a longer description.\nWith multiple lines."
 
     def test_single_commit_with_numstat(self):
         """Test parsing commit with file statistics"""
@@ -54,16 +54,16 @@ class TestParseLogWithStats:
             "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree789abc456def012345678901234567890ab|~|Update files|~|Update files\n|~||~|\n",
             "\n",
             "10\t5\tREADME.md\n",
-            "20\t3\tsrc/app.js\n"
+            "20\t3\tsrc/app.js\n",
         ]
 
         commits = parse_log_with_stats(lines)
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['stats']['files_changed'] == 2
-        assert commit['stats']['insertions'] == 30
-        assert commit['stats']['deletions'] == 8
+        assert commit["stats"]["files_changed"] == 2
+        assert commit["stats"]["insertions"] == 30
+        assert commit["stats"]["deletions"] == 8
 
     def test_binary_file_in_numstat(self):
         """Test handling binary files (marked with -)"""
@@ -71,7 +71,7 @@ class TestParseLogWithStats:
             "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree012abc456def789012345678901234567890|~|Add image|~|Add image\n|~||~|\n",
             "\n",
             "-\t-\timage.png\n",
-            "5\t2\tREADME.md\n"
+            "5\t2\tREADME.md\n",
         ]
 
         commits = parse_log_with_stats(lines)
@@ -79,9 +79,9 @@ class TestParseLogWithStats:
         assert len(commits) == 1
         commit = commits[0]
         # Binary file contributes to file count but not insertions/deletions
-        assert commit['stats']['files_changed'] == 2
-        assert commit['stats']['insertions'] == 5
-        assert commit['stats']['deletions'] == 2
+        assert commit["stats"]["files_changed"] == 2
+        assert commit["stats"]["insertions"] == 5
+        assert commit["stats"]["deletions"] == 2
 
     def test_multiple_commits(self):
         """Test parsing multiple commits"""
@@ -92,16 +92,16 @@ class TestParseLogWithStats:
             "\n",
             "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree678def012345678901234567890abcdef12|~|Second commit|~|Second commit\n|~||~|\n",
             "\n",
-            "20\t10\tfile2.txt\n"
+            "20\t10\tfile2.txt\n",
         ]
 
         commits = parse_log_with_stats(lines)
 
         assert len(commits) == 2
-        assert commits[0]['sha'] == 'abc123def456789012345678901234567890abcd'
-        assert commits[0]['stats']['insertions'] == 10
-        assert commits[1]['sha'] == 'def456abc789012345678901234567890abcdef0'
-        assert commits[1]['stats']['insertions'] == 20
+        assert commits[0]["sha"] == "abc123def456789012345678901234567890abcd"
+        assert commits[0]["stats"]["insertions"] == 10
+        assert commits[1]["sha"] == "def456abc789012345678901234567890abcdef0"
+        assert commits[1]["stats"]["insertions"] == 20
 
     def test_commit_with_refs(self):
         """Test parsing commit with branch/tag refs"""
@@ -113,10 +113,10 @@ class TestParseLogWithStats:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert 'HEAD' in commit['refs']
-        assert 'main' in commit['refs']
-        assert 'origin/main' in commit['refs']
-        assert 'tag: v1.0' in commit['refs']
+        assert "HEAD" in commit["refs"]
+        assert "main" in commit["refs"]
+        assert "origin/main" in commit["refs"]
+        assert "tag: v1.0" in commit["refs"]
 
     def test_commit_with_multiple_parents(self):
         """Test merge commit with multiple parents"""
@@ -128,9 +128,9 @@ class TestParseLogWithStats:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert len(commit['parents']) == 2
-        assert commit['parents'][0]['sha'] == 'parent1abc456def789012345678901234567890'
-        assert commit['parents'][1]['sha'] == 'parent2def789abc012345678901234567890ab'
+        assert len(commit["parents"]) == 2
+        assert commit["parents"][0]["sha"] == "parent1abc456def789012345678901234567890"
+        assert commit["parents"][1]["sha"] == "parent2def789abc012345678901234567890ab"
 
     def test_empty_input(self):
         """Test parsing empty input"""
@@ -144,16 +144,16 @@ class TestParseLogWithStats:
         """Test commit where no files changed (stats should be zero)"""
         lines = [
             "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree567abc456def789012345678901234567890|~|Empty commit|~|Empty commit\n|~||~|\n",
-            "\n"
+            "\n",
         ]
 
         commits = parse_log_with_stats(lines)
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['stats']['files_changed'] == 0
-        assert commit['stats']['insertions'] == 0
-        assert commit['stats']['deletions'] == 0
+        assert commit["stats"]["files_changed"] == 0
+        assert commit["stats"]["insertions"] == 0
+        assert commit["stats"]["deletions"] == 0
 
     def test_malformed_numstat_line(self):
         """Test that malformed numstat lines are skipped gracefully"""
@@ -162,7 +162,7 @@ class TestParseLogWithStats:
             "\n",
             "10\t5\tvalid_file.txt\n",
             "malformed line without tabs\n",
-            "20\t10\tanother_valid_file.txt\n"
+            "20\t10\tanother_valid_file.txt\n",
         ]
 
         commits = parse_log_with_stats(lines)
@@ -170,9 +170,9 @@ class TestParseLogWithStats:
         assert len(commits) == 1
         commit = commits[0]
         # Should only count the 2 valid numstat lines
-        assert commit['stats']['files_changed'] == 2
-        assert commit['stats']['insertions'] == 30
-        assert commit['stats']['deletions'] == 15
+        assert commit["stats"]["files_changed"] == 2
+        assert commit["stats"]["insertions"] == 30
+        assert commit["stats"]["deletions"] == 15
 
     def test_commit_with_special_characters_in_message(self):
         """Test commit message with special characters"""
@@ -184,8 +184,8 @@ class TestParseLogWithStats:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['subject'] == 'Fix "bug" in <module>'
-        assert 'special chars: $, %, &' in commit['body']
+        assert commit["subject"] == 'Fix "bug" in <module>'
+        assert "special chars: $, %, &" in commit["body"]
 
     def test_commit_with_empty_refs(self):
         """Test commit with no refs"""
@@ -197,7 +197,7 @@ class TestParseLogWithStats:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['refs'] is None
+        assert commit["refs"] is None
 
     def test_real_world_commit_format(self):
         """Test with a more realistic commit structure"""
@@ -206,23 +206,23 @@ class TestParseLogWithStats:
             "\n",
             "11\t3\tREADME.md\n",
             "47\t23\tdocs/planning/json-output-roadmap.md\n",
-            "213\t0\ttests/unit/test_json_output.bats\n"
+            "213\t0\ttests/unit/test_json_output.bats\n",
         ]
 
         commits = parse_log_with_stats(lines)
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['sha'] == 'e1bb93c05d8699243d43c9148a00804ae79cffff'
-        assert commit['sha_short'] == 'e1bb93c'
-        assert commit['author']['name'] == 'Elifarley C'
-        assert 'JSON output enables automation' in commit['body']
-        assert len(commit['parents']) == 1
-        assert 'HEAD' in commit['refs']
-        assert 'main' in commit['refs']
-        assert commit['stats']['files_changed'] == 3
-        assert commit['stats']['insertions'] == 271  # 11 + 47 + 213
-        assert commit['stats']['deletions'] == 26     # 3 + 23 + 0
+        assert commit["sha"] == "e1bb93c05d8699243d43c9148a00804ae79cffff"
+        assert commit["sha_short"] == "e1bb93c"
+        assert commit["author"]["name"] == "Elifarley C"
+        assert "JSON output enables automation" in commit["body"]
+        assert len(commit["parents"]) == 1
+        assert "HEAD" in commit["refs"]
+        assert "main" in commit["refs"]
+        assert commit["stats"]["files_changed"] == 3
+        assert commit["stats"]["insertions"] == 271  # 11 + 47 + 213
+        assert commit["stats"]["deletions"] == 26  # 3 + 23 + 0
 
 
 class TestEdgeCases:
@@ -232,14 +232,14 @@ class TestEdgeCases:
         """Test handling of incomplete commit lines"""
         lines = [
             "abc123|~|abc|~|Alice\n",  # Incomplete - missing fields
-            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree012abc456def789012345678901234567890|~|Valid commit|~|Valid commit\n|~||~|\n"
+            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree012abc456def789012345678901234567890|~|Valid commit|~|Valid commit\n|~||~|\n",
         ]
 
         commits = parse_log_with_stats(lines)
 
         # Should skip incomplete line and only parse valid commit
         assert len(commits) == 1
-        assert commits[0]['sha'] == 'def456abc789012345678901234567890abcdef0'
+        assert commits[0]["sha"] == "def456abc789012345678901234567890abcdef0"
 
     def test_blank_lines_between_commits(self):
         """Test that blank lines are handled correctly"""
@@ -248,7 +248,7 @@ class TestEdgeCases:
             "\n",
             "\n",
             "\n",
-            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree678def012345678901234567890abcdef12|~|Second|~|Second\n|~||~|\n"
+            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree678def012345678901234567890abcdef12|~|Second|~|Second\n|~||~|\n",
         ]
 
         commits = parse_log_with_stats(lines)
@@ -265,9 +265,9 @@ class TestEdgeCases:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['author']['name'] == 'José García'
-        assert '🎉' in commit['subject']
-        assert '中文' in commit['body']
+        assert commit["author"]["name"] == "José García"
+        assert "🎉" in commit["subject"]
+        assert "中文" in commit["body"]
 
 
 class TestConditionalStats:
@@ -278,34 +278,34 @@ class TestConditionalStats:
         lines = [
             "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Fix bug|~|Fix bug\n|~||~|\n",
             "\n",
-            "10\t5\tREADME.md\n"
+            "10\t5\tREADME.md\n",
         ]
 
         commits = parse_log_with_stats(lines, include_stats=True)
 
         assert len(commits) == 1
         commit = commits[0]
-        assert 'stats' in commit
-        assert commit['stats']['files_changed'] == 1
-        assert commit['stats']['insertions'] == 10
-        assert commit['stats']['deletions'] == 5
+        assert "stats" in commit
+        assert commit["stats"]["files_changed"] == 1
+        assert commit["stats"]["insertions"] == 10
+        assert commit["stats"]["deletions"] == 5
 
     def test_stats_excluded_when_flag_false(self):
         """Test stats field is absent when include_stats=False"""
         lines = [
             "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Fix bug|~|Fix bug\n|~||~|\n",
             "\n",
-            "10\t5\tREADME.md\n"
+            "10\t5\tREADME.md\n",
         ]
 
         commits = parse_log_with_stats(lines, include_stats=False)
 
         assert len(commits) == 1
         commit = commits[0]
-        assert 'stats' not in commit
+        assert "stats" not in commit
         # Verify other fields still present
-        assert commit['sha'] == 'abc123def456789012345678901234567890abcd'
-        assert commit['subject'] == 'Fix bug'
+        assert commit["sha"] == "abc123def456789012345678901234567890abcd"
+        assert commit["subject"] == "Fix bug"
 
     def test_stats_included_by_default(self):
         """Test stats field defaults to included (backward compatibility)"""
@@ -317,8 +317,8 @@ class TestConditionalStats:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert 'stats' in commit
-        assert commit['stats']['files_changed'] == 0
+        assert "stats" in commit
+        assert commit["stats"]["files_changed"] == 0
 
 
 class TestNoBodyFlag:
@@ -334,9 +334,9 @@ class TestNoBodyFlag:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['subject'] == 'Add feature'
-        assert commit['body'] is None
-        assert commit['message'] == 'Add feature'  # Should equal subject only
+        assert commit["subject"] == "Add feature"
+        assert commit["body"] is None
+        assert commit["message"] == "Add feature"  # Should equal subject only
 
     def test_body_included_when_flag_false(self):
         """Test body is present when omit_body=False"""
@@ -348,9 +348,12 @@ class TestNoBodyFlag:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['subject'] == 'Add feature'
-        assert commit['body'] == 'This is a detailed description.\nWith multiple lines.'
-        assert commit['message'] == 'Add feature\n\nThis is a detailed description.\nWith multiple lines.'
+        assert commit["subject"] == "Add feature"
+        assert commit["body"] == "This is a detailed description.\nWith multiple lines."
+        assert (
+            commit["message"]
+            == "Add feature\n\nThis is a detailed description.\nWith multiple lines."
+        )
 
     def test_body_included_by_default(self):
         """Test body defaults to included (backward compatibility)"""
@@ -362,8 +365,8 @@ class TestNoBodyFlag:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['body'] == 'Detailed body text.'
-        assert 'Detailed body text.' in commit['message']
+        assert commit["body"] == "Detailed body text."
+        assert "Detailed body text." in commit["message"]
 
     def test_no_body_with_subject_only_commit(self):
         """Test --no-body flag on commit that has no body anyway"""
@@ -375,9 +378,9 @@ class TestNoBodyFlag:
 
         assert len(commits) == 1
         commit = commits[0]
-        assert commit['subject'] == 'Quick fix'
-        assert commit['body'] is None
-        assert commit['message'] == 'Quick fix'
+        assert commit["subject"] == "Quick fix"
+        assert commit["body"] is None
+        assert commit["message"] == "Quick fix"
 
 
 class TestCombinedFlags:
@@ -388,31 +391,31 @@ class TestCombinedFlags:
         lines = [
             "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Update docs|~|Update docs\n\nAdded new examples.|~||~|\n",
             "\n",
-            "5\t2\tREADME.md\n"
+            "5\t2\tREADME.md\n",
         ]
 
         commits = parse_log_with_stats(lines, include_stats=False, omit_body=True)
 
         assert len(commits) == 1
         commit = commits[0]
-        assert 'stats' not in commit
-        assert commit['body'] is None
-        assert commit['message'] == 'Update docs'
-        assert commit['subject'] == 'Update docs'
+        assert "stats" not in commit
+        assert commit["body"] is None
+        assert commit["message"] == "Update docs"
+        assert commit["subject"] == "Update docs"
 
     def test_with_stats_no_body(self):
         """Test with stats included but body omitted"""
         lines = [
             "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Refactor code|~|Refactor code\n\nImproved performance.|~||~|\n",
             "\n",
-            "15\t8\tsrc/main.py\n"
+            "15\t8\tsrc/main.py\n",
         ]
 
         commits = parse_log_with_stats(lines, include_stats=True, omit_body=True)
 
         assert len(commits) == 1
         commit = commits[0]
-        assert 'stats' in commit
-        assert commit['stats']['insertions'] == 15
-        assert commit['body'] is None
-        assert commit['message'] == 'Refactor code'
+        assert "stats" in commit
+        assert commit["stats"]["insertions"] == 15
+        assert commit["body"] is None
+        assert commit["message"] == "Refactor code"

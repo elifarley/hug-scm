@@ -21,15 +21,15 @@ def dummy_git_function():
         ["git", "log", "--follow", "--format=%H|%an|%ai", "--", "project.py"],
         capture_output=True,
         text=True,
-        check=True
+        check=True,
     )
 
     # Parse output
     commits = []
-    for line in result.stdout.strip().split('\n'):
+    for line in result.stdout.strip().split("\n"):
         if line:
-            hash_val, author, date = line.split('|', 2)
-            commits.append({'hash': hash_val, 'author': author, 'date': date})
+            hash_val, author, date = line.split("|", 2)
+            commits.append({"hash": hash_val, "author": author, "date": date})
 
     return commits
 
@@ -43,12 +43,12 @@ class TestCommandMockFrameworkExample:
         mock_fn = command_mock.get_subprocess_mock("log/follow.toml", "basic")
 
         # Act
-        with patch('subprocess.run', side_effect=mock_fn):
+        with patch("subprocess.run", side_effect=mock_fn):
             result = dummy_git_function()
 
         # Assert
         assert len(result) == 5  # 5 commits in basic scenario (from churn-with-since.sh)
-        assert result[0]['author'] in ['Alice Smith', 'Bob Johnson']
+        assert result[0]["author"] in ["Alice Smith", "Bob Johnson"]
 
     def test_with_since_filter_scenario(self, command_mock):
         """Test using scenario with --since filter."""
@@ -57,16 +57,25 @@ class TestCommandMockFrameworkExample:
 
         def dummy_with_since():
             import subprocess
+
             result = subprocess.run(
-                ["git", "log", "--follow", "--format=%H|%an|%ai", "--since=2 months ago", "--", "project.py"],
+                [
+                    "git",
+                    "log",
+                    "--follow",
+                    "--format=%H|%an|%ai",
+                    "--since=2 months ago",
+                    "--",
+                    "project.py",
+                ],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
-            return len(result.stdout.strip().split('\n'))
+            return len(result.stdout.strip().split("\n"))
 
         # Act
-        with patch('subprocess.run', side_effect=mock_fn):
+        with patch("subprocess.run", side_effect=mock_fn):
             commit_count = dummy_with_since()
 
         # Assert
@@ -79,16 +88,17 @@ class TestCommandMockFrameworkExample:
 
         def dummy_binary_check():
             import subprocess
+
             result = subprocess.run(
                 ["git", "log", "-L", "1,1:image.png", "--oneline"],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
             )
             return result.returncode
 
         # Act
-        with patch('subprocess.run', side_effect=mock_fn):
+        with patch("subprocess.run", side_effect=mock_fn):
             returncode = dummy_binary_check()
 
         # Assert
@@ -101,10 +111,12 @@ class TestMultiScenarioMocking:
     def test_multiple_commands(self, command_mock):
         """Test function that calls multiple Git commands."""
         # Arrange - create mock that handles both commands
-        mock_fn = command_mock.get_multi_scenario_mock({
-            "git log --follow": ("log/follow.toml", "basic"),
-            "git log -L": ("log/L-line.toml", "basic")
-        })
+        mock_fn = command_mock.get_multi_scenario_mock(
+            {
+                "git log --follow": ("log/follow.toml", "basic"),
+                "git log -L": ("log/L-line.toml", "basic"),
+            }
+        )
 
         def dummy_multi_git():
             import subprocess
@@ -114,7 +126,7 @@ class TestMultiScenarioMocking:
                 ["git", "log", "--follow", "--format=%H|%an|%ai", "--", "project.py"],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
 
             # Second command: git log -L
@@ -122,13 +134,13 @@ class TestMultiScenarioMocking:
                 ["git", "log", "-L", "2,2:file.txt", "--oneline"],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
             )
 
-            return len(r1.stdout.split('\n')), len(r2.stdout.split('\n'))
+            return len(r1.stdout.split("\n")), len(r2.stdout.split("\n"))
 
         # Act
-        with patch('subprocess.run', side_effect=mock_fn):
+        with patch("subprocess.run", side_effect=mock_fn):
             follow_lines, L_lines = dummy_multi_git()
 
         # Assert
@@ -141,6 +153,7 @@ class TestDynamicScenarioSelection:
 
     def test_dynamic_scenario(self, command_mock):
         """Test with dynamic scenario selection."""
+
         # Arrange - scenario chosen based on command inspection
         def choose_scenario(cmd):
             if "--since" in cmd:
@@ -151,6 +164,7 @@ class TestDynamicScenarioSelection:
 
         def dummy_conditional(use_since: bool):
             import subprocess
+
             cmd = ["git", "log", "--follow", "--format=%H|%an|%ai", "--", "project.py"]
             if use_since:
                 cmd.insert(2, "--since=2 months ago")
@@ -159,7 +173,7 @@ class TestDynamicScenarioSelection:
             return result.stdout
 
         # Act & Assert - different scenarios based on parameter
-        with patch('subprocess.run', side_effect=mock_fn):
+        with patch("subprocess.run", side_effect=mock_fn):
             # Without --since: uses "basic" scenario
             output1 = dummy_conditional(use_since=False)
             assert len(output1) > 0

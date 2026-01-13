@@ -23,40 +23,18 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Any
 
+
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description='Analyze temporal commit activity patterns'
-    )
+    parser = argparse.ArgumentParser(description="Analyze temporal commit activity patterns")
+    parser.add_argument("--by-hour", action="store_true", help="Group commits by hour of day")
+    parser.add_argument("--by-day", action="store_true", help="Group commits by day of week")
+    parser.add_argument("--by-author", action="store_true", help="Break down activity by author")
     parser.add_argument(
-        '--by-hour',
-        action='store_true',
-        help='Group commits by hour of day'
+        "--format", choices=["json", "text"], default="text", help="Output format (default: text)"
     )
-    parser.add_argument(
-        '--by-day',
-        action='store_true',
-        help='Group commits by day of week'
-    )
-    parser.add_argument(
-        '--by-author',
-        action='store_true',
-        help='Break down activity by author'
-    )
-    parser.add_argument(
-        '--format',
-        choices=['json', 'text'],
-        default='text',
-        help='Output format (default: text)'
-    )
-    parser.add_argument(
-        '--since',
-        help='Description of time range (for display)'
-    )
-    parser.add_argument(
-        '--file',
-        help='Analyze activity for specific file'
-    )
+    parser.add_argument("--since", help="Description of time range (for display)")
+    parser.add_argument("--file", help="Analyze activity for specific file")
 
     return parser.parse_args()
 
@@ -72,26 +50,28 @@ def parse_git_log(stdin_input: str) -> List[Dict]:
     """
     commits = []
 
-    for line in stdin_input.strip().split('\n'):
+    for line in stdin_input.strip().split("\n"):
         if not line.strip():
             continue
 
         try:
-            timestamp_str, author = line.split('|', 1)
+            timestamp_str, author = line.split("|", 1)
 
             # Parse timestamp (format: "2024-03-20 14:32:15 -0400")
             # Remove timezone for simpler parsing
-            timestamp_parts = timestamp_str.rsplit(' ', 1)[0]
-            dt = datetime.strptime(timestamp_parts, '%Y-%m-%d %H:%M:%S')
+            timestamp_parts = timestamp_str.rsplit(" ", 1)[0]
+            dt = datetime.strptime(timestamp_parts, "%Y-%m-%d %H:%M:%S")
 
-            commits.append({
-                'timestamp': timestamp_str,
-                'author': author.strip(),
-                'hour': dt.hour,
-                'day_of_week': dt.strftime('%a'),  # Mon, Tue, etc.
-                'date': dt.date().isoformat(),
-                'datetime': dt
-            })
+            commits.append(
+                {
+                    "timestamp": timestamp_str,
+                    "author": author.strip(),
+                    "hour": dt.hour,
+                    "day_of_week": dt.strftime("%a"),  # Mon, Tue, etc.
+                    "date": dt.date().isoformat(),
+                    "datetime": dt,
+                }
+            )
 
         except (ValueError, IndexError) as e:
             print(f"Warning: Could not parse line: {line}", file=sys.stderr)
@@ -102,7 +82,15 @@ def parse_git_log(stdin_input: str) -> List[Dict]:
 
 def get_activity_commits(file_path: str, since: Optional[str] = None) -> List[Dict[str, Any]]:
     """Fetch activity commits for file via git log."""
-    cmd = ["git", "log", "--date=format:%Y-%m-%d %H:%M:%S %z", "--pretty=format:%ad|%an", "--follow", "--", file_path]
+    cmd = [
+        "git",
+        "log",
+        "--date=format:%Y-%m-%d %H:%M:%S %z",
+        "--pretty=format:%ad|%an",
+        "--follow",
+        "--",
+        file_path,
+    ]
     if since:
         cmd += ["--since", since]
     try:
@@ -123,22 +111,19 @@ def analyze_by_hour(commits: List[Dict], by_author: bool = False) -> Dict:
         # author -> hour -> count
         data = defaultdict(lambda: defaultdict(int))
         for commit in commits:
-            data[commit['author']][commit['hour']] += 1
+            data[commit["author"]][commit["hour"]] += 1
 
         return {
-            'type': 'by_hour_and_author',
-            'data': {author: dict(hours) for author, hours in data.items()}
+            "type": "by_hour_and_author",
+            "data": {author: dict(hours) for author, hours in data.items()},
         }
     else:
         # hour -> count
         data = defaultdict(int)
         for commit in commits:
-            data[commit['hour']] += 1
+            data[commit["hour"]] += 1
 
-        return {
-            'type': 'by_hour',
-            'data': dict(data)
-        }
+        return {"type": "by_hour", "data": dict(data)}
 
 
 def analyze_by_day(commits: List[Dict], by_author: bool = False) -> Dict:
@@ -147,30 +132,26 @@ def analyze_by_day(commits: List[Dict], by_author: bool = False) -> Dict:
 
     Returns: Dict with day buckets and counts
     """
-    day_order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    day_order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
     if by_author:
         # author -> day -> count
         data = defaultdict(lambda: defaultdict(int))
         for commit in commits:
-            data[commit['author']][commit['day_of_week']] += 1
+            data[commit["author"]][commit["day_of_week"]] += 1
 
         return {
-            'type': 'by_day_and_author',
-            'day_order': day_order,
-            'data': {author: dict(days) for author, days in data.items()}
+            "type": "by_day_and_author",
+            "day_order": day_order,
+            "data": {author: dict(days) for author, days in data.items()},
         }
     else:
         # day -> count
         data = defaultdict(int)
         for commit in commits:
-            data[commit['day_of_week']] += 1
+            data[commit["day_of_week"]] += 1
 
-        return {
-            'type': 'by_day',
-            'day_order': day_order,
-            'data': dict(data)
-        }
+        return {"type": "by_day", "day_order": day_order, "data": dict(data)}
 
 
 def detect_patterns(analysis: Dict) -> List[str]:
@@ -181,8 +162,8 @@ def detect_patterns(analysis: Dict) -> List[str]:
     """
     observations = []
 
-    if analysis['type'] == 'by_hour':
-        data = analysis['data']
+    if analysis["type"] == "by_hour":
+        data = analysis["data"]
 
         # Late night work (10pm - 4am)
         late_night = sum(data.get(h, 0) for h in [22, 23, 0, 1, 2, 3, 4])
@@ -198,11 +179,11 @@ def detect_patterns(analysis: Dict) -> List[str]:
             peak_hour = max(data.items(), key=lambda x: x[1])
             observations.append(f"Peak activity: {peak_hour[0]:02d}:00 ({peak_hour[1]} commits)")
 
-    elif analysis['type'] == 'by_day':
-        data = analysis['data']
+    elif analysis["type"] == "by_day":
+        data = analysis["data"]
 
         # Weekend work
-        weekend = data.get('Sat', 0) + data.get('Sun', 0)
+        weekend = data.get("Sat", 0) + data.get("Sun", 0)
         total = sum(data.values())
 
         if weekend > 0 and total > 0:
@@ -234,16 +215,18 @@ def create_histogram(data: Dict[int, int], max_width: int = 40) -> List[str]:
         count = data[key]
         if max_count > 0:
             bar_width = int((count / max_count) * max_width)
-            bar = '█' * bar_width
+            bar = "█" * bar_width
         else:
-            bar = ''
+            bar = ""
 
         lines.append(f"{key:02d}:00 {bar} {count}")
 
     return lines
 
 
-def create_day_histogram(data: Dict[str, int], day_order: List[str], max_width: int = 40) -> List[str]:
+def create_day_histogram(
+    data: Dict[str, int], day_order: List[str], max_width: int = 40
+) -> List[str]:
     """
     Create ASCII histogram for days of week.
 
@@ -259,9 +242,9 @@ def create_day_histogram(data: Dict[str, int], day_order: List[str], max_width: 
         count = data.get(day, 0)
         if max_count > 0:
             bar_width = int((count / max_count) * max_width)
-            bar = '█' * bar_width
+            bar = "█" * bar_width
         else:
-            bar = ''
+            bar = ""
 
         lines.append(f"{day} {bar} {count}")
 
@@ -278,30 +261,35 @@ def format_text_output(analysis: Dict, commits_count: int, time_range: str = Non
         lines.append(f"Commit Activity Analysis ({commits_count} commits):")
     lines.append("")
 
-    if analysis['type'] == 'by_hour':
+    if analysis["type"] == "by_hour":
         lines.append("Commits by Hour:")
         lines.append("")
-        lines.extend(create_histogram(analysis['data']))
+        lines.extend(create_histogram(analysis["data"]))
 
-    elif analysis['type'] == 'by_day':
+    elif analysis["type"] == "by_day":
         lines.append("Commits by Day of Week:")
         lines.append("")
-        lines.extend(create_day_histogram(analysis['data'], analysis['day_order']))
+        lines.extend(create_day_histogram(analysis["data"], analysis["day_order"]))
 
-    elif analysis['type'] == 'by_hour_and_author':
+    elif analysis["type"] == "by_hour_and_author":
         lines.append("Commits by Hour (per author):")
         lines.append("")
-        for author, hours in sorted(analysis['data'].items()):
+        for author, hours in sorted(analysis["data"].items()):
             lines.append(f"{author}:")
-            lines.extend(['  ' + line for line in create_histogram(hours, max_width=35)])
+            lines.extend(["  " + line for line in create_histogram(hours, max_width=35)])
             lines.append("")
 
-    elif analysis['type'] == 'by_day_and_author':
+    elif analysis["type"] == "by_day_and_author":
         lines.append("Commits by Day (per author):")
         lines.append("")
-        for author, days in sorted(analysis['data'].items()):
+        for author, days in sorted(analysis["data"].items()):
             lines.append(f"{author}:")
-            lines.extend(['  ' + line for line in create_day_histogram(days, analysis['day_order'], max_width=35)])
+            lines.extend(
+                [
+                    "  " + line
+                    for line in create_day_histogram(days, analysis["day_order"], max_width=35)
+                ]
+            )
             lines.append("")
 
     # Add pattern detection
@@ -312,7 +300,7 @@ def format_text_output(analysis: Dict, commits_count: int, time_range: str = Non
         for obs in observations:
             lines.append(f"  {obs}")
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 def main():
@@ -344,12 +332,12 @@ def main():
         hour_analysis = analyze_by_hour(commits, args.by_author)
         day_analysis = analyze_by_day(commits, args.by_author)
 
-        if args.format == 'json':
+        if args.format == "json":
             result = {
-                'commits_analyzed': len(commits),
-                'time_range': args.since,
-                'by_hour': hour_analysis,
-                'by_day': day_analysis
+                "commits_analyzed": len(commits),
+                "time_range": args.since,
+                "by_hour": hour_analysis,
+                "by_day": day_analysis,
             }
             print(json.dumps(result, indent=2))
         else:
@@ -360,12 +348,8 @@ def main():
         return 0
 
     # Output single analysis
-    if args.format == 'json':
-        result = {
-            'commits_analyzed': len(commits),
-            'time_range': args.since,
-            'analysis': analysis
-        }
+    if args.format == "json":
+        result = {"commits_analyzed": len(commits), "time_range": args.since, "analysis": analysis}
         print(json.dumps(result, indent=2))
     else:
         print(format_text_output(analysis, len(commits), args.since))
@@ -373,5 +357,5 @@ def main():
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

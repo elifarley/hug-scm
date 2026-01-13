@@ -22,34 +22,24 @@ import argparse
 from collections import defaultdict
 from typing import Dict, List, Tuple, Set
 
+
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description='Analyze co-change patterns from Git history'
+    parser = argparse.ArgumentParser(description="Analyze co-change patterns from Git history")
+    parser.add_argument(
+        "--commits", type=int, default=100, help="Number of commits to analyze (default: 100)"
     )
     parser.add_argument(
-        '--commits',
-        type=int,
-        default=100,
-        help='Number of commits to analyze (default: 100)'
-    )
-    parser.add_argument(
-        '--threshold',
+        "--threshold",
         type=float,
         default=0.30,
-        help='Minimum correlation threshold (0.0-1.0, default: 0.30)'
+        help="Minimum correlation threshold (0.0-1.0, default: 0.30)",
     )
     parser.add_argument(
-        '--format',
-        choices=['json', 'text'],
-        default='text',
-        help='Output format (default: text)'
+        "--format", choices=["json", "text"], default="text", help="Output format (default: text)"
     )
     parser.add_argument(
-        '--top',
-        type=int,
-        default=20,
-        help='Show top N co-change pairs (default: 20)'
+        "--top", type=int, default=20, help="Show top N co-change pairs (default: 20)"
     )
 
     return parser.parse_args()
@@ -73,7 +63,7 @@ def parse_git_log(stdin_input: str) -> List[Set[str]]:
     commits = []
     current_files = set()
 
-    for line in stdin_input.strip().split('\n'):
+    for line in stdin_input.strip().split("\n"):
         line = line.strip()
 
         if not line:
@@ -81,7 +71,7 @@ def parse_git_log(stdin_input: str) -> List[Set[str]]:
             if current_files:
                 commits.append(current_files)
                 current_files = set()
-        elif len(line) == 40 and all(c in '0123456789abcdef' for c in line):
+        elif len(line) == 40 and all(c in "0123456789abcdef" for c in line):
             # Looks like a commit hash - start of new commit
             if current_files:
                 commits.append(current_files)
@@ -97,7 +87,9 @@ def parse_git_log(stdin_input: str) -> List[Set[str]]:
     return commits
 
 
-def build_co_occurrence_matrix(commits: List[Set[str]]) -> Tuple[Dict[str, Dict[str, int]], Dict[str, int]]:
+def build_co_occurrence_matrix(
+    commits: List[Set[str]],
+) -> Tuple[Dict[str, Dict[str, int]], Dict[str, int]]:
     """
     Build co-occurrence matrix and file change counts.
 
@@ -124,9 +116,7 @@ def build_co_occurrence_matrix(commits: List[Set[str]]) -> Tuple[Dict[str, Dict[
 
 
 def calculate_correlations(
-    co_matrix: Dict[str, Dict[str, int]],
-    file_counts: Dict[str, int],
-    threshold: float
+    co_matrix: Dict[str, Dict[str, int]], file_counts: Dict[str, int], threshold: float
 ) -> List[Dict]:
     """
     Calculate correlation scores for file pairs.
@@ -150,17 +140,19 @@ def calculate_correlations(
             correlation = co_count / min(count_a, count_b)
 
             if correlation >= threshold:
-                correlations.append({
-                    'file_a': file_a,
-                    'file_b': file_b,
-                    'correlation': correlation,
-                    'co_changes': co_count,
-                    'changes_a': count_a,
-                    'changes_b': count_b
-                })
+                correlations.append(
+                    {
+                        "file_a": file_a,
+                        "file_b": file_b,
+                        "correlation": correlation,
+                        "co_changes": co_count,
+                        "changes_a": count_a,
+                        "changes_b": count_b,
+                    }
+                )
 
     # Sort by correlation (descending)
-    correlations.sort(key=lambda x: x['correlation'], reverse=True)
+    correlations.sort(key=lambda x: x["correlation"], reverse=True)
 
     return correlations
 
@@ -169,7 +161,9 @@ def format_text_output(correlations: List[Dict], threshold: float, total_commits
     """Format correlations as human-readable text."""
     lines = []
 
-    lines.append(f"Co-change Analysis (last {total_commits} commits, ≥{threshold:.0%} correlation):")
+    lines.append(
+        f"Co-change Analysis (last {total_commits} commits, ≥{threshold:.0%} correlation):"
+    )
     lines.append("")
 
     if not correlations:
@@ -178,19 +172,17 @@ def format_text_output(correlations: List[Dict], threshold: float, total_commits
         lines.append("Try:")
         lines.append("  - Lowering --threshold (e.g., 0.20)")
         lines.append("  - Increasing --commits (e.g., 200)")
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     # Group by correlation strength
-    high = [c for c in correlations if c['correlation'] >= 0.60]
-    medium = [c for c in correlations if 0.40 <= c['correlation'] < 0.60]
-    low = [c for c in correlations if c['correlation'] < 0.40]
+    high = [c for c in correlations if c["correlation"] >= 0.60]
+    medium = [c for c in correlations if 0.40 <= c["correlation"] < 0.60]
+    low = [c for c in correlations if c["correlation"] < 0.40]
 
     if high:
         lines.append("Strong coupling (≥60%):")
         for corr in high:
-            lines.append(
-                f"  {corr['file_a']} ↔ {corr['file_b']}"
-            )
+            lines.append(f"  {corr['file_a']} ↔ {corr['file_b']}")
             lines.append(
                 f"    {corr['correlation']:.0%} correlation "
                 f"({corr['co_changes']}/{min(corr['changes_a'], corr['changes_b'])} commits)"
@@ -200,9 +192,7 @@ def format_text_output(correlations: List[Dict], threshold: float, total_commits
     if medium:
         lines.append("Moderate coupling (40-60%):")
         for corr in medium:
-            lines.append(
-                f"  {corr['file_a']} ↔ {corr['file_b']}"
-            )
+            lines.append(f"  {corr['file_a']} ↔ {corr['file_b']}")
             lines.append(
                 f"    {corr['correlation']:.0%} correlation "
                 f"({corr['co_changes']}/{min(corr['changes_a'], corr['changes_b'])} commits)"
@@ -212,10 +202,7 @@ def format_text_output(correlations: List[Dict], threshold: float, total_commits
     if low:
         lines.append("Weak coupling (<40%):")
         for corr in low[:10]:  # Limit weak correlations shown
-            lines.append(
-                f"  {corr['file_a']} ↔ {corr['file_b']} "
-                f"({corr['correlation']:.0%})"
-            )
+            lines.append(f"  {corr['file_a']} ↔ {corr['file_b']} ({corr['correlation']:.0%})")
         if len(low) > 10:
             lines.append(f"  ... and {len(low) - 10} more pairs")
         lines.append("")
@@ -224,7 +211,7 @@ def format_text_output(correlations: List[Dict], threshold: float, total_commits
     lines.append("  High correlation = Files likely architecturally coupled")
     lines.append("  Consider: Co-locate, refactor into module, or document dependency")
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 def main():
@@ -236,7 +223,9 @@ def main():
 
     if not stdin_input.strip():
         print("Error: No input provided", file=sys.stderr)
-        print("Usage: git log --name-only --format=%H -n 50 | python3 co_changes.py", file=sys.stderr)
+        print(
+            "Usage: git log --name-only --format=%H -n 50 | python3 co_changes.py", file=sys.stderr
+        )
         return 1
 
     # Parse commits
@@ -254,15 +243,15 @@ def main():
 
     # Limit to top N
     if args.top and args.top < len(correlations):
-        correlations = correlations[:args.top]
+        correlations = correlations[: args.top]
 
     # Output
-    if args.format == 'json':
+    if args.format == "json":
         result = {
-            'commits_analyzed': len(commits),
-            'threshold': args.threshold,
-            'total_pairs': len(correlations),
-            'correlations': correlations
+            "commits_analyzed": len(commits),
+            "threshold": args.threshold,
+            "total_pairs": len(correlations),
+            "correlations": correlations,
         }
         print(json.dumps(result, indent=2))
     else:
@@ -271,5 +260,5 @@ def main():
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

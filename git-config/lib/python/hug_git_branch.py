@@ -20,6 +20,7 @@ import re
 
 class BranchType(Enum):
     """Branch type classification."""
+
     LOCAL = "local"
     REMOTE = "remote"
     WIP = "wip"
@@ -28,6 +29,7 @@ class BranchType(Enum):
 @dataclass
 class BranchInfo:
     """Single branch information."""
+
     name: str
     hash: str
     subject: str = ""
@@ -38,6 +40,7 @@ class BranchInfo:
 @dataclass
 class BranchDetails:
     """Complete branch listing result."""
+
     current_branch: str
     max_len: int
     branches: List[BranchInfo]
@@ -48,20 +51,22 @@ class BranchDetails:
         Returns a JSON object with current_branch, max_len, and branches array.
         Each branch has name, hash, subject, track, and remote_ref fields.
         """
-        return json.dumps({
-            'current_branch': self.current_branch,
-            'max_len': self.max_len,
-            'branches': [
-                {
-                    'name': b.name,
-                    'hash': b.hash,
-                    'subject': b.subject,
-                    'track': b.track,
-                    'remote_ref': b.remote_ref,
-                }
-                for b in self.branches
-            ]
-        })
+        return json.dumps(
+            {
+                "current_branch": self.current_branch,
+                "max_len": self.max_len,
+                "branches": [
+                    {
+                        "name": b.name,
+                        "hash": b.hash,
+                        "subject": b.subject,
+                        "track": b.track,
+                        "remote_ref": b.remote_ref,
+                    }
+                    for b in self.branches
+                ],
+            }
+        )
 
     def to_bash_declare(self) -> str:
         """Format as bash variable declarations.
@@ -111,8 +116,8 @@ def _bash_escape(s: str) -> str:
 
     Strategy: '...' with '\'' for embedded single quotes.
     """
-    s = s.replace('\\', '\\\\')  # Backslashes first (order matters)
-    s = s.replace("'", "'\\''")   # Single quotes
+    s = s.replace("\\", "\\\\")  # Backslashes first (order matters)
+    s = s.replace("'", "'\\''")  # Single quotes
     return f"'{s}'"
 
 
@@ -129,13 +134,8 @@ def _run_git(args: List[str], check: bool = True) -> str:
     Raises:
         subprocess.CalledProcessError: If command fails and check=True
     """
-    result = subprocess.run(
-        ['git'] + args,
-        capture_output=True,
-        text=True,
-        check=check
-    )
-    return result.stdout.rstrip('\n\r')
+    result = subprocess.run(["git"] + args, capture_output=True, text=True, check=check)
+    return result.stdout.rstrip("\n\r")
 
 
 def _run_git_for_each_ref(format_str: str, ref_pattern: str) -> List[str]:
@@ -148,15 +148,12 @@ def _run_git_for_each_ref(format_str: str, ref_pattern: str) -> List[str]:
     Returns:
         List of null-delimited field values
     """
-    output = _run_git([
-        'for-each-ref',
-        '--format=' + format_str,
-        '--sort=refname',
-        ref_pattern
-    ], check=False)
+    output = _run_git(
+        ["for-each-ref", "--format=" + format_str, "--sort=refname", ref_pattern], check=False
+    )
     if not output:
         return []
-    return output.split('\0')
+    return output.split("\0")
 
 
 def _sanitize_string(s: str) -> str:
@@ -180,29 +177,28 @@ def _compute_divergence(branch: str, upstream: str) -> tuple[str, str, str]:
         like "[ahead 2, behind 1]" or empty if no divergence
     """
     try:
-        divergence = _run_git([
-            'rev-list', '--left-right', '--count',
-            f'{branch}...{upstream}'
-        ], check=False)
+        divergence = _run_git(
+            ["rev-list", "--left-right", "--count", f"{branch}...{upstream}"], check=False
+        )
         if not divergence:
-            return '', '0', '0'
+            return "", "0", "0"
 
-        parts = divergence.split('\t')
+        parts = divergence.split("\t")
         if len(parts) != 2:
-            return '', '0', '0'
+            return "", "0", "0"
 
         ahead, behind = parts[0], parts[1]
 
-        if ahead != '0' and behind != '0':
-            return f'[ahead {ahead}, behind {behind}]', ahead, behind
-        elif ahead != '0':
-            return f'[ahead {ahead}]', ahead, behind
-        elif behind != '0':
-            return f'[behind {behind}]', ahead, behind
+        if ahead != "0" and behind != "0":
+            return f"[ahead {ahead}, behind {behind}]", ahead, behind
+        elif ahead != "0":
+            return f"[ahead {ahead}]", ahead, behind
+        elif behind != "0":
+            return f"[behind {behind}]", ahead, behind
 
-        return '', ahead, behind
+        return "", ahead, behind
     except subprocess.CalledProcessError:
-        return '', '0', '0'
+        return "", "0", "0"
 
 
 def get_local_branch_details(
@@ -224,18 +220,18 @@ def get_local_branch_details(
         subprocess.CalledProcessError: If git commands fail
     """
     # Get current branch
-    current_branch = _run_git(['branch', '--show-current'], check=False)
+    current_branch = _run_git(["branch", "--show-current"], check=False)
     if not current_branch:
-        current_branch = 'detached HEAD'
+        current_branch = "detached HEAD"
 
     # Build format string - include upstream and upstream:track for divergence info
-    format_str = '%(refname:short)%00%(objectname:short)'
+    format_str = "%(refname:short)%00%(objectname:short)"
     if include_subjects:
-        format_str += '%00%(subject)'
-    format_str += '%00%(upstream:short)%00%(upstream:track)%00'
+        format_str += "%00%(subject)"
+    format_str += "%00%(upstream:short)%00%(upstream:track)%00"
 
     # Get branch data
-    git_output = _run_git_for_each_ref(format_str, 'refs/heads/')
+    git_output = _run_git_for_each_ref(format_str, "refs/heads/")
     if not git_output:
         return None
 
@@ -250,10 +246,10 @@ def get_local_branch_details(
         hash_val = git_output[i + 1]
 
         # Skip backup branches
-        if exclude_backup and branch.startswith('hug-backups/'):
+        if exclude_backup and branch.startswith("hug-backups/"):
             continue
 
-        subject = ''
+        subject = ""
         if include_subjects:
             subject = _sanitize_string(git_output[i + 2])
             upstream_idx = i + 3
@@ -274,16 +270,18 @@ def get_local_branch_details(
             divergence_commands.append((len(branches), branch, upstream))
 
         # Build initial track string (without divergence info)
-        track = ''
+        track = ""
         if upstream:
-            track = f'[{upstream}]'
+            track = f"[{upstream}]"
 
-        branches.append(BranchInfo(
-            name=branch,
-            hash=hash_val,
-            subject=subject,
-            track=track,
-        ))
+        branches.append(
+            BranchInfo(
+                name=branch,
+                hash=hash_val,
+                subject=subject,
+                track=track,
+            )
+        )
 
     if not branches:
         return None
@@ -303,7 +301,7 @@ def get_local_branch_details(
         if idx in divergence_results:
             # Add divergence info to track string
             upstream_name = branch_info.track[1:-1]  # Remove [ and ]
-            branch_info.track = f'[{upstream_name}: {divergence_results[idx]}]'
+            branch_info.track = f"[{upstream_name}: {divergence_results[idx]}]"
 
     return BranchDetails(
         current_branch=current_branch,
@@ -326,13 +324,13 @@ def get_remote_branch_details(
         BranchDetails object or None if no remote branches exist
     """
     # Build format string
-    format_str = '%(refname:short)%00%(objectname:short)'
+    format_str = "%(refname:short)%00%(objectname:short)"
     if include_subjects:
-        format_str += '%00%(subject)'
-    format_str += '%00'
+        format_str += "%00%(subject)"
+    format_str += "%00"
 
     # Get remote branch data
-    git_output = _run_git_for_each_ref(format_str, 'refs/remotes/')
+    git_output = _run_git_for_each_ref(format_str, "refs/remotes/")
     if not git_output:
         return None
 
@@ -345,21 +343,21 @@ def get_remote_branch_details(
         remote_ref = _sanitize_string(git_output[i])
 
         # Skip HEAD references
-        if not remote_ref or remote_ref.endswith('/HEAD'):
+        if not remote_ref or remote_ref.endswith("/HEAD"):
             continue
 
         # Skip backup branches
-        if exclude_backup and remote_ref.startswith('hug-backups/'):
+        if exclude_backup and remote_ref.startswith("hug-backups/"):
             continue
 
         hash_val = git_output[i + 1]
 
-        subject = ''
+        subject = ""
         if include_subjects:
             subject = _sanitize_string(git_output[i + 2])
 
         # Extract local branch name by stripping remote prefix (e.g., "origin/feature" -> "feature")
-        parts = remote_ref.split('/', 1)
+        parts = remote_ref.split("/", 1)
         branch = parts[1] if len(parts) > 1 else remote_ref
 
         if not branch or branch == remote_ref:
@@ -368,18 +366,20 @@ def get_remote_branch_details(
         if len(branch) > max_len:
             max_len = len(branch)
 
-        branches.append(BranchInfo(
-            name=branch,
-            hash=hash_val,
-            subject=subject,
-            remote_ref=remote_ref,
-        ))
+        branches.append(
+            BranchInfo(
+                name=branch,
+                hash=hash_val,
+                subject=subject,
+                remote_ref=remote_ref,
+            )
+        )
 
     if not branches:
         return None
 
     return BranchDetails(
-        current_branch='',  # No concept of "current" for remote branches
+        current_branch="",  # No concept of "current" for remote branches
         max_len=max_len,
         branches=branches,
     )
@@ -387,7 +387,7 @@ def get_remote_branch_details(
 
 def get_wip_branch_details(
     include_subjects: bool = True,
-    ref_pattern: str = 'refs/heads/WIP/',
+    ref_pattern: str = "refs/heads/WIP/",
 ) -> Optional[BranchDetails]:
     """Get WIP/temporary branch details.
 
@@ -398,10 +398,10 @@ def get_wip_branch_details(
     Returns:
         BranchDetails object with branches matching WIP patterns
     """
-    format_str = '%(refname:short)%00%(objectname:short)'
+    format_str = "%(refname:short)%00%(objectname:short)"
     if include_subjects:
-        format_str += '%00%(subject)'
-    format_str += '%00'
+        format_str += "%00%(subject)"
+    format_str += "%00"
 
     git_output = _run_git_for_each_ref(format_str, ref_pattern)
     if not git_output:
@@ -418,24 +418,26 @@ def get_wip_branch_details(
 
         hash_val = git_output[i + 1]
 
-        subject = ''
+        subject = ""
         if include_subjects:
             subject = _sanitize_string(git_output[i + 2])
 
         if len(branch) > max_len:
             max_len = len(branch)
 
-        branches.append(BranchInfo(
-            name=branch,
-            hash=hash_val,
-            subject=subject,
-        ))
+        branches.append(
+            BranchInfo(
+                name=branch,
+                hash=hash_val,
+                subject=subject,
+            )
+        )
 
     if not branches:
         return None
 
     return BranchDetails(
-        current_branch='',  # No current branch concept for WIP listing
+        current_branch="",  # No current branch concept for WIP listing
         max_len=max_len,
         branches=branches,
     )
@@ -455,24 +457,21 @@ def find_remote_branch(branch_name: str) -> Optional[str]:
         otherwise returns the first match alphabetically.
     """
     # If branch_name already looks like a remote ref, check if it exists
-    if '/' in branch_name:
+    if "/" in branch_name:
         try:
-            _run_git(['show-ref', '--verify', '--quiet', f'refs/remotes/{branch_name}'])
+            _run_git(["show-ref", "--verify", "--quiet", f"refs/remotes/{branch_name}"])
             return branch_name
         except subprocess.CalledProcessError:
             pass
 
     # Get all remote branches, excluding HEAD
-    output = _run_git(['for-each-ref', '--format=%(refname:short)', 'refs/remotes/'])
-    remote_refs = [
-        line for line in output.split('\n')
-        if line and not line.endswith('/HEAD')
-    ]
+    output = _run_git(["for-each-ref", "--format=%(refname:short)", "refs/remotes/"])
+    remote_refs = [line for line in output.split("\n") if line and not line.endswith("/HEAD")]
 
     # Find matches
     matches = []
     for remote_ref in remote_refs:
-        ref_branch = remote_ref.split('/', 1)[1] if '/' in remote_ref else remote_ref
+        ref_branch = remote_ref.split("/", 1)[1] if "/" in remote_ref else remote_ref
         if ref_branch == branch_name:
             matches.append(remote_ref)
 
@@ -484,7 +483,7 @@ def find_remote_branch(branch_name: str) -> Optional[str]:
 
     # Prefer origin
     for match in matches:
-        if match.startswith('origin/'):
+        if match.startswith("origin/"):
             return match
 
     # Return first alphabetically
@@ -512,45 +511,29 @@ def main():
     """
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description='Get git branch information for Hug SCM'
+    parser = argparse.ArgumentParser(description="Get git branch information for Hug SCM")
+    parser.add_argument("type", choices=["local", "remote", "wip"], help="Branch type to query")
+    parser.add_argument(
+        "--json", action="store_true", help="Output JSON instead of bash declarations"
     )
     parser.add_argument(
-        'type',
-        choices=['local', 'remote', 'wip'],
-        help='Branch type to query'
-    )
-    parser.add_argument(
-        '--json',
-        action='store_true',
-        help='Output JSON instead of bash declarations'
-    )
-    parser.add_argument(
-        '--pattern',
-        default='refs/heads/WIP/',
-        help='Ref pattern for WIP branches (default: refs/heads/WIP/)'
+        "--pattern",
+        default="refs/heads/WIP/",
+        help="Ref pattern for WIP branches (default: refs/heads/WIP/)",
     )
 
     args = parser.parse_args()
 
     try:
         # Get branch details based on type
-        if args.type == 'local':
+        if args.type == "local":
             details = get_local_branch_details(
-                include_subjects=True,
-                exclude_backup=True,
-                batch_divergence=True
+                include_subjects=True, exclude_backup=True, batch_divergence=True
             )
-        elif args.type == 'remote':
-            details = get_remote_branch_details(
-                include_subjects=True,
-                exclude_backup=True
-            )
+        elif args.type == "remote":
+            details = get_remote_branch_details(include_subjects=True, exclude_backup=True)
         else:  # wip
-            details = get_wip_branch_details(
-                include_subjects=True,
-                ref_pattern=args.pattern
-            )
+            details = get_wip_branch_details(include_subjects=True, ref_pattern=args.pattern)
 
         # No branches found
         if not details or not details.branches:
@@ -565,9 +548,9 @@ def main():
     except subprocess.CalledProcessError:
         sys.exit(1)
     except Exception as e:
-        print(f'Error: {e}', file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

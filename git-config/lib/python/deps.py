@@ -31,6 +31,7 @@ from functools import lru_cache
 
 class TimeoutError(Exception):
     """Custom timeout exception."""
+
     pass
 
 
@@ -53,47 +54,27 @@ class timeout:
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description='Analyze commit dependencies via file overlap'
+    parser = argparse.ArgumentParser(description="Analyze commit dependencies via file overlap")
+    parser.add_argument("commit", nargs="?", help="Commit hash to analyze (for single commit mode)")
+    parser.add_argument("--all", action="store_true", help="Analyze all commits in repository")
+    parser.add_argument(
+        "--depth", type=int, default=1, help="Depth of dependency traversal (default: 1)"
     )
     parser.add_argument(
-        'commit',
-        nargs='?',
-        help='Commit hash to analyze (for single commit mode)'
+        "--threshold", type=int, default=2, help="Minimum file overlap for dependency (default: 2)"
+    )
+    parser.add_argument("--since", default=None, help="Only consider commits since this date")
+    parser.add_argument(
+        "--format",
+        choices=["json", "text", "graph"],
+        default="graph",
+        help="Output format (default: graph)",
     )
     parser.add_argument(
-        '--all',
-        action='store_true',
-        help='Analyze all commits in repository'
-    )
-    parser.add_argument(
-        '--depth',
-        type=int,
-        default=1,
-        help='Depth of dependency traversal (default: 1)'
-    )
-    parser.add_argument(
-        '--threshold',
-        type=int,
-        default=2,
-        help='Minimum file overlap for dependency (default: 2)'
-    )
-    parser.add_argument(
-        '--since',
-        default=None,
-        help='Only consider commits since this date'
-    )
-    parser.add_argument(
-        '--format',
-        choices=['json', 'text', 'graph'],
-        default='graph',
-        help='Output format (default: graph)'
-    )
-    parser.add_argument(
-        '--max-results',
+        "--max-results",
         type=int,
         default=20,
-        help='Maximum number of related commits to show (default: 20)'
+        help="Maximum number of related commits to show (default: 20)",
     )
 
     return parser.parse_args()
@@ -104,11 +85,7 @@ def run_git_command(cmd: List[str], timeout_seconds: int = 60) -> str:
     try:
         with timeout(timeout_seconds):
             result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=timeout_seconds
+                cmd, capture_output=True, text=True, check=True, timeout=timeout_seconds
             )
             return result.stdout.strip()
     except (subprocess.TimeoutExpired, TimeoutError) as e:
@@ -125,23 +102,19 @@ def get_commit_info(commit_hash: str) -> Optional[Dict]:
 
     Returns: Dict with commit metadata or None if commit not found
     """
-    output = run_git_command([
-        'git', 'log', '-1',
-        '--format=%H|%s|%an|%ai',
-        commit_hash
-    ])
+    output = run_git_command(["git", "log", "-1", "--format=%H|%s|%an|%ai", commit_hash])
 
     if not output:
         return None
 
-    hash_val, subject, author, date = output.split('|', 3)
+    hash_val, subject, author, date = output.split("|", 3)
 
     return {
-        'hash': hash_val[:7],  # Short hash
-        'full_hash': hash_val,
-        'subject': subject,
-        'author': author,
-        'date': date[:10]  # YYYY-MM-DD
+        "hash": hash_val[:7],  # Short hash
+        "full_hash": hash_val,
+        "subject": subject,
+        "author": author,
+        "date": date[:10],  # YYYY-MM-DD
     }
 
 
@@ -162,15 +135,14 @@ def get_commit_files(commit_hash: str) -> Set[str]:
     Returns: Set of file paths
     """
     # Use --root to handle initial commits properly
-    output = run_git_command([
-        'git', 'diff-tree', '--no-commit-id', '--name-only', '-r', '--root',
-        commit_hash
-    ])
+    output = run_git_command(
+        ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", commit_hash]
+    )
 
     if not output:
         return set()
 
-    return set(line.strip() for line in output.split('\n') if line.strip())
+    return set(line.strip() for line in output.split("\n") if line.strip())
 
 
 @lru_cache(maxsize=500)
@@ -206,17 +178,17 @@ def get_all_commits(since: Optional[str] = None) -> List[str]:
 
     Returns: List of commit hashes (newest first)
     """
-    cmd = ['git', 'log', '--all', '--format=%H']
+    cmd = ["git", "log", "--all", "--format=%H"]
 
     if since:
-        cmd.append(f'--since={since}')
+        cmd.append(f"--since={since}")
 
     output = run_git_command(cmd)
 
     if not output:
         return []
 
-    return [line.strip() for line in output.split('\n') if line.strip()]
+    return [line.strip() for line in output.split("\n") if line.strip()]
 
 
 def build_commit_file_index(commits: List[str]) -> Dict[str, Set[str]]:
@@ -236,9 +208,7 @@ def build_commit_file_index(commits: List[str]) -> Dict[str, Set[str]]:
 
 
 def find_related_commits(
-    commit_hash: str,
-    file_to_commits: Dict[str, Set[str]],
-    threshold: int = 2
+    commit_hash: str, file_to_commits: Dict[str, Set[str]], threshold: int = 2
 ) -> List[Tuple[str, int]]:
     """
     Find commits related to the given commit via file overlap.
@@ -261,11 +231,7 @@ def find_related_commits(
                 overlap_counts[related_commit] += 1
 
     # Filter by threshold and sort by overlap count
-    related = [
-        (commit, count)
-        for commit, count in overlap_counts.items()
-        if count >= threshold
-    ]
+    related = [(commit, count) for commit, count in overlap_counts.items() if count >= threshold]
 
     related.sort(key=lambda x: x[1], reverse=True)
 
@@ -278,7 +244,7 @@ def build_dependency_graph(
     depth: int = 1,
     threshold: int = 2,
     max_results: int = 20,
-    max_commits: int = 1000
+    max_commits: int = 1000,
 ) -> Dict[str, List[Tuple[str, int]]]:
     """
     Build dependency graph starting from root commit.
@@ -322,9 +288,7 @@ def build_dependency_graph(
 
 
 def format_graph_output(
-    root_commit: str,
-    graph: Dict[str, List[Tuple[str, int]]],
-    depth: int
+    root_commit: str, graph: Dict[str, List[Tuple[str, int]]], depth: int
 ) -> str:
     """Format dependency graph as ASCII tree."""
     lines = []
@@ -343,7 +307,7 @@ def format_graph_output(
 
     if root_commit not in graph or not graph[root_commit]:
         lines.append("No related commits found (no file overlap above threshold).")
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     lines.append(f"Related commits (depth={depth}):")
     lines.append("")
@@ -358,9 +322,7 @@ def format_graph_output(
         node_lines = []
 
         connector = "└─" if is_last else "├─"
-        node_lines.append(
-            f"{prefix}{connector} {info['hash']} ({overlap} files) {info['subject']}"
-        )
+        node_lines.append(f"{prefix}{connector} {info['hash']} ({overlap} files) {info['subject']}")
         node_lines.append(
             f"{prefix}{'   ' if is_last else '│  '}   {info['author']}, {info['date']}"
         )
@@ -370,20 +332,17 @@ def format_graph_output(
     # Show first level of dependencies
     related = graph.get(root_commit, [])
     for i, (commit_hash, overlap) in enumerate(related):
-        is_last = (i == len(related) - 1)
+        is_last = i == len(related) - 1
         node_lines = format_commit_node(commit_hash, overlap, "", is_last)
         lines.extend(node_lines)
 
     if len(related) == 0:
         lines.append("  (none)")
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
-def format_text_output(
-    root_commit: str,
-    graph: Dict[str, List[Tuple[str, int]]]
-) -> str:
+def format_text_output(root_commit: str, graph: Dict[str, List[Tuple[str, int]]]) -> str:
     """Format dependency graph as simple text list."""
     lines = []
 
@@ -398,28 +357,21 @@ def format_text_output(
 
     if not related:
         lines.append("No related commits found.")
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     for commit_hash, overlap in related:
         info = get_commit_info(commit_hash)
         if info:
             lines.append(
-                f"{info['hash']}  {info['subject'][:60]:60s}  "
-                f"({overlap} files)  {info['date']}"
+                f"{info['hash']}  {info['subject'][:60]:60s}  ({overlap} files)  {info['date']}"
             )
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
-def format_json_output(
-    root_commit: str,
-    graph: Dict[str, List[Tuple[str, int]]]
-) -> str:
+def format_json_output(root_commit: str, graph: Dict[str, List[Tuple[str, int]]]) -> str:
     """Format dependency graph as JSON."""
-    result = {
-        'root_commit': root_commit,
-        'dependencies': {}
-    }
+    result = {"root_commit": root_commit, "dependencies": {}}
 
     for commit_hash, related_list in graph.items():
         info = get_commit_info(commit_hash)
@@ -430,28 +382,24 @@ def format_json_output(
         for related_hash, overlap in related_list:
             related_info = get_commit_info(related_hash)
             if related_info:
-                related_commits.append({
-                    'hash': related_info['hash'],
-                    'full_hash': related_info['full_hash'],
-                    'subject': related_info['subject'],
-                    'author': related_info['author'],
-                    'date': related_info['date'],
-                    'file_overlap': overlap
-                })
+                related_commits.append(
+                    {
+                        "hash": related_info["hash"],
+                        "full_hash": related_info["full_hash"],
+                        "subject": related_info["subject"],
+                        "author": related_info["author"],
+                        "date": related_info["date"],
+                        "file_overlap": overlap,
+                    }
+                )
 
-        result['dependencies'][commit_hash] = {
-            'info': info,
-            'related': related_commits
-        }
+        result["dependencies"][commit_hash] = {"info": info, "related": related_commits}
 
     return json.dumps(result, indent=2)
 
 
 def analyze_all_commits(
-    commits: List[str],
-    file_to_commits: Dict[str, Set[str]],
-    threshold: int,
-    max_results: int
+    commits: List[str], file_to_commits: Dict[str, Set[str]], threshold: int, max_results: int
 ) -> Dict[str, List[Tuple[str, int]]]:
     """
     Analyze all commits and find highly coupled commit pairs.
@@ -469,32 +417,31 @@ def analyze_all_commits(
 
 
 def format_all_commits_output(
-    coupling: Dict[str, List[Tuple[str, int]]],
-    threshold: int,
-    output_format: str
+    coupling: Dict[str, List[Tuple[str, int]]], threshold: int, output_format: str
 ) -> str:
     """Format repository-wide coupling analysis."""
-    if output_format == 'json':
+    if output_format == "json":
         result = {
-            'threshold': threshold,
-            'total_commits_with_dependencies': len(coupling),
-            'coupling': {}
+            "threshold": threshold,
+            "total_commits_with_dependencies": len(coupling),
+            "coupling": {},
         }
 
         for commit, related in coupling.items():
             info = get_commit_info(commit)
             if info:
-                result['coupling'][commit] = {
-                    'info': info,
-                    'related_count': len(related),
-                    'top_related': [
+                result["coupling"][commit] = {
+                    "info": info,
+                    "related_count": len(related),
+                    "top_related": [
                         {
-                            'hash': get_commit_info(r[0])['hash'],
-                            'subject': get_commit_info(r[0])['subject'],
-                            'overlap': r[1]
+                            "hash": get_commit_info(r[0])["hash"],
+                            "subject": get_commit_info(r[0])["subject"],
+                            "overlap": r[1],
                         }
-                        for r in related[:5] if get_commit_info(r[0])
-                    ]
+                        for r in related[:5]
+                        if get_commit_info(r[0])
+                    ],
                 }
 
         return json.dumps(result, indent=2)
@@ -510,7 +457,7 @@ def format_all_commits_output(
     sorted_commits = sorted(
         coupling.items(),
         key=lambda x: (len(x[1]), max((r[1] for r in x[1]), default=0)),
-        reverse=True
+        reverse=True,
     )
 
     for commit, related in sorted_commits[:20]:  # Show top 20
@@ -525,8 +472,7 @@ def format_all_commits_output(
             related_info = get_commit_info(related_hash)
             if related_info:
                 lines.append(
-                    f"    {related_info['hash']} ({overlap} files) "
-                    f"{related_info['subject'][:50]}"
+                    f"    {related_info['hash']} ({overlap} files) {related_info['subject'][:50]}"
                 )
 
         if len(related) > 5:
@@ -537,7 +483,7 @@ def format_all_commits_output(
     if len(sorted_commits) > 20:
         lines.append(f"... and {len(sorted_commits) - 20} more commits")
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 def main():
@@ -577,7 +523,7 @@ def main():
         default_timeout = 120
 
     # Apply environment overrides
-    max_commits_limit = int(os.environ.get('HUG_ANALYZE_DEPS_MAX_COMMITS', max_commits_limit))
+    max_commits_limit = int(os.environ.get("HUG_ANALYZE_DEPS_MAX_COMMITS", max_commits_limit))
 
     # Build file-to-commits index
     file_to_commits = build_commit_file_index(all_commits)
@@ -585,10 +531,7 @@ def main():
     if args.all:
         # Analyze all commits
         coupling = analyze_all_commits(
-            all_commits,
-            file_to_commits,
-            args.threshold,
-            args.max_results
+            all_commits, file_to_commits, args.threshold, args.max_results
         )
 
         print(format_all_commits_output(coupling, args.threshold, args.format))
@@ -604,24 +547,24 @@ def main():
 
         # Build dependency graph with repository size limits
         graph = build_dependency_graph(
-            commit_info['full_hash'],
+            commit_info["full_hash"],
             file_to_commits,
             args.depth,
             args.threshold,
             args.max_results,
-            max_commits_limit
+            max_commits_limit,
         )
 
         # Format output
-        if args.format == 'json':
-            print(format_json_output(commit_info['full_hash'], graph))
-        elif args.format == 'text':
-            print(format_text_output(commit_info['full_hash'], graph))
+        if args.format == "json":
+            print(format_json_output(commit_info["full_hash"], graph))
+        elif args.format == "text":
+            print(format_text_output(commit_info["full_hash"], graph))
         else:  # graph
-            print(format_graph_output(commit_info['full_hash'], graph, args.depth))
+            print(format_graph_output(commit_info["full_hash"], graph, args.depth))
 
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
