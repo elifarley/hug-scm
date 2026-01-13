@@ -166,10 +166,28 @@ Git-specific JSON output helpers (uses hug-json).
 **Features:**
 - Unified status JSON output (`output_json_status_unified`)
 - Git status code mapping (`git_status_to_json_type`)
+- File parsing from --name-status output (`parse_file_to_json`)
 - File collection helpers (`collect_git_files_json`)
-- Common parsing patterns (`parse_git_status_line`, `git_file_to_json`)
 - Optimized for batch Git operations
 - Handles special characters in file paths and commit messages
+
+**File Object Schema:**
+```json
+{
+  "path": "path/to/file",
+  "status": "modified"  // added|modified|deleted|renamed|copied|conflict|untracked|ignored
+}
+```
+
+**Functions:**
+- `parse_file_to_json "$line"` - Parse `--name-status` output line to JSON object
+  - Input: `"M\tfile.txt"` from git's --name-status
+  - Output: `{"path": "file.txt", "status": "modified"}`
+  - Handles renamed/copied files: `"R100\told.txt\tnew.txt"` → `{"path": "new.txt", "status": "renamed"}`
+- `collect_git_files_json "$type" [flags...]` - Collect files of type as JSON array
+  - `$type`: `staged`|`unstaged`|`untracked`|`ignored`
+  - Returns: Comma-separated JSON objects for array embedding
+  - Supports `--cwd` flag for scoping
 
 **JSON Design Philosophy:**
 - Pure Bash for portability and dependency-free operation
@@ -177,6 +195,7 @@ Git-specific JSON output helpers (uses hug-json).
 - Simple formatting stays in Bash - faster startup, no dependencies
 - Complex processing can use Python via subprocess calls when needed
 - JSON output focuses on data transformation, not computation
+- File objects use zero subprocess spawns (pure Bash IFS parsing)
 
 ## Usage in Command Scripts
 

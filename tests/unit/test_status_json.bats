@@ -179,3 +179,75 @@ teardown() {
   echo "$output" | jq . >/dev/null
   assert_success "JSON should be clean without ANSI codes"
 }
+
+@test "hug sl --json: file objects have correct schema (no additions/deletions)" {
+  # Arrange
+  echo "modified" > file.txt
+  git add file.txt
+
+  # Act
+  run hug sl --json
+
+  # Assert
+  assert_success
+
+  # Verify JSON structure
+  local file_count
+  file_count=$(echo "$output" | jq '.staged | length')
+
+  # Check each file object
+  for i in $(seq 0 $((file_count - 1))); do
+    # Must have path and status
+    echo "$output" | jq -e ".staged[$i].path" >/dev/null || fail "Missing path field"
+    echo "$output" | jq -e ".staged[$i].status" >/dev/null || fail "Missing status field"
+
+    # Should NOT have additions/deletions fields
+    local has_additions
+    has_additions=$(echo "$output" | jq "has(\"additions\")" 2>/dev/null || echo "false")
+    [[ "$has_additions" == "false" ]] || fail "Should not have additions field"
+
+    local has_deletions
+    has_deletions=$(echo "$output" | jq "has(\"deletions\")" 2>/dev/null || echo "false")
+    [[ "$has_deletions" == "false" ]] || fail "Should not have deletions field"
+  done
+}
+
+@test "hug sl --json: handles renamed files correctly" {
+  # Arrange
+  echo "content" > old.txt
+  git add old.txt
+  git commit -m "add old"
+
+  git mv old.txt new.txt
+  git add -A
+
+  # Act
+  run hug sl --json
+
+  # Assert
+  assert_success
+  echo "$output" | jq -e '.staged[] | select(.status == "renamed")' >/dev/null || fail "Missing renamed status"
+  echo "$output" | jq -e '.staged[] | select(.path == "new.txt")' >/dev/null || fail "Missing new.txt path"
+}
+
+@test "hug sl --json: file object only contains path and status" {
+  # Arrange
+  echo "test content" > test.txt
+  git add test.txt
+
+  # Act
+  run hug sl --json
+
+  # Assert
+  assert_success
+
+  # Get the count of keys in the first staged file
+  local key_count
+  key_count=$(echo "$output" | jq '.staged[0] | keys | length')
+
+  # Should have exactly 2 keys (path and status)
+  [[ "$key_count" -eq 2 ]] || fail "Expected 2 keys (path and status), got: $key_count"
+
+  # Verify the keys are "path" and "status"
+  echo "$output" | jq -e '.staged[0] | has("path") and has("status")' >/dev/null || fail "Missing required keys"
+}

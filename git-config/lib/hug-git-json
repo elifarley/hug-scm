@@ -25,84 +25,74 @@ git_status_to_json_type() {
     R*) echo "renamed" ;;
     C*) echo "copied" ;;
     U) echo "conflict" ;;
-    ??) echo "untracked" ;;
-    !!) echo "ignored" ;;
+    \?\?) echo "untracked" ;;
+    \!\!) echo "ignored" ;;
     *) echo "unknown" ;;
   esac
 }
 
-# Parse tab-separated Git status line into variables
-# Usage: parse_git_status_line "status	file	additions	deletions"
-parse_git_status_line() {
+# Parse file status line (from --name-status) and create JSON object
+# Usage: parse_file_to_json "$line"
+# Input: "M\tfile.txt" from --name-status
+# Output: {"path": "file.txt", "status": "modified"}
+# For renamed/copied files: "R100\told.txt\tnew.txt" outputs new.txt
+parse_file_to_json() {
   local line="$1"
-  local status file additions deletions
-  IFS=$'\t' read -r status file additions deletions <<< "$line"
+  [[ -z "$line" ]] && return 1
 
-  printf '%s' "$status" "$file" "${additions:-0}" "${deletions:-0}"
-}
+  local status file
+  IFS=$'\t' read -r status file <<< "$line"
 
-# Build file JSON object from Git status line
-git_file_to_json() {
-  local line="$1"
-  local status_type="${2:-unknown}"
+  # Handle renamed/copied files: R100\told\tnew or C100\told\tnew
+  if [[ "$status" == R* ]] || [[ "$status" == C* ]]; then
+    local -a fields
+    IFS=$'\t' read -ra fields <<< "$line"
+    file="${fields[2]:-$file}"
+  fi
 
-  local status file additions deletions
-  status="$(parse_git_status_line "$line" | cut -d'' -f1)"
-  file="$(parse_git_status_line "$line" | cut -d'' -f2)"
-  additions="$(parse_git_status_line "$line" | cut -d'' -f3)"
-  deletions="$(parse_git_status_line "$line" | cut -d'' -f4)"
+  [[ -z "$file" ]] && return 1
 
-  to_json_object "path" "$file" "status" "$status_type" "additions" "$additions" "deletions" "$deletions"
+  local status_type
+  status_type="$(git_status_to_json_type "$status")"
+
+  to_json_object "path" "$file" "status" "$status_type"
 }
 
 # Collect files of specific type with JSON objects
+# Usage: collect_git_files_json "$type" [flags...]
+# Returns: Comma-separated JSON objects for array embedding
 collect_git_files_json() {
   local file_type="$1"
   shift
-  local list_flags=("$@")
+  local -a list_flags=("$@")
   local -a files=()
-  local -a status_flags=("${list_flags[@]}" "--status")
 
   case "$file_type" in
-    "staged")
+    "staged"|"unstaged")
+      local -a status_flags=("${list_flags[@]}" "--status")
+      local list_func="list_${file_type}_files"
+
       while IFS= read -r line; do
         [[ -z "$line" ]] && continue
-        local status_type
-        status="$(echo "$line" | cut -f1)"
-        status_type="$(git_status_to_json_type "$status")"
-        files+=("$(to_json_object "path" "$(echo "$line" | cut -f2)" "status" "$status_type" "additions" "$(echo "$line" | cut -f3)" "deletions" "$(echo "$line" | cut -f4)")")
-      done < <(list_staged_files "${status_flags[@]}")
+        local file_json
+        file_json="$(parse_file_to_json "$line")"
+        [[ -n "$file_json" ]] && files+=("$file_json")
+      done < <("$list_func" "${status_flags[@]}")
       ;;
-    "unstaged")
-      while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        local status_type
-        status="$(echo "$line" | cut -f1)"
-        status_type="$(git_status_to_json_type "$status")"
-        files+=("$(to_json_object "path" "$(echo "$line" | cut -f2)" "status" "$status_type" "additions" "$(echo "$line" | cut -f3)" "deletions" "$(echo "$line" | cut -f4)")")
-      done < <(list_unstaged_files "${status_flags[@]}")
-      ;;
-    "untracked")
-      mapfile -t temp_files < <(list_untracked_files "${list_flags[@]}")
+    "untracked"|"ignored")
+      local list_func="list_${file_type}_files"
+      local -a temp_files
+      mapfile -t temp_files < <("$list_func" "${list_flags[@]}")
       for file in "${temp_files[@]}"; do
         [[ -z "$file" ]] && continue
-        files+=("$(to_json_object "path" "$file" "status" "untracked")")
-      done
-      ;;
-    "ignored")
-      mapfile -t temp_files < <(list_ignored_files "${list_flags[@]}")
-      for file in "${temp_files[@]}"; do
-        [[ -z "$file" ]] && continue
-        files+=("$(to_json_object "path" "$file" "status" "ignored")")
+        files+=("$(to_json_object "path" "$file" "status" "$file_type")")
       done
       ;;
   esac
 
   # Print array as comma-separated JSON objects
-  if [ ${#files[@]} -gt 0 ]; then
+  if [[ ${#files[@]} -gt 0 ]]; then
     printf '%s' "$(IFS=','; echo "${files[*]}")"
-  else
-    printf ''
   fi
 }
 
