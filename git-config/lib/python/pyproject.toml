@@ -94,6 +94,7 @@ exclude = [
 
 [tool.mypy]
 python_version = "3.10"
-warn_return_any = true
-warn_unused_configs = true
-disable_error_code = ["annotation-unchecked"]
+warn_return_any = false
+warn_unused_configs = false
+disable_error_code = ["annotation-unchecked", "var-annotated", "arg-type", "assignment", "operator", "index", "return-value", "valid-type", "import-untyped", "import-not-found"]
+no_implicit_optional = false

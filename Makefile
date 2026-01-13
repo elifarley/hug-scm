@@ -30,6 +30,9 @@ endif
 # Terminal detection for colors (matches canonical framework)
 IS_TTY := $(shell test -t 1 && echo 1 || echo 0)
 
+# Python library directory (absolute path for CI reliability)
+PYTHON_LIB_DIR := $(realpath git-config/lib/python)
+
 ifeq ($(IS_TTY),1)
     BOLD := \033[1m
     RESET := \033[0m
@@ -558,9 +561,8 @@ lint-verbose: ## Run linting (detailed output)
 typecheck: ## Type check Python code (LLM-friendly: summary only)
 	@echo "$(BLUE)Type checking Python helpers...$(RESET)"
 	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
-		$(UV_CMD) run --directory git-config/lib/python mypy --no-pretty . 2>&1 | \
-			{ grep -q 'error:' && { cat; exit 1; } || echo "$(GREEN)✅ Type checking OK$(RESET)"; } || \
-			(echo "$(GREEN)✅ Type checking OK$(RESET)"; exit 0); \
+		$(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" mypy --no-pretty . 2>&1 | \
+			{ grep -vE '^(Success: no issues found|warning:)' | grep -q '.' && { cat; exit 1; } || echo "$(GREEN)✅ Type checking OK$(RESET)"; } \
 	else \
 		echo "$(YELLOW)⚠ UV not available - skipping type check$(RESET)"; \
 	fi
@@ -568,7 +570,7 @@ typecheck: ## Type check Python code (LLM-friendly: summary only)
 typecheck-verbose: ## Type check Python code (detailed)
 	@echo "$(BLUE)Type checking Python helpers...$(RESET)"
 	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
-		$(UV_CMD) run --directory git-config/lib/python mypy .; \
+		$(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" mypy .; \
 	else \
 		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
 	fi
