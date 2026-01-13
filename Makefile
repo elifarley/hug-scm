@@ -8,6 +8,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 MAKEFLAGS += --warn-undefined-variables
 MAKEFLAGS += --no-builtin-rules
+MAKEFLAGS += --no-print-directory
 
 # UV detection for fast Python package management
 UV := $(shell command -v uv 2>/dev/null)
@@ -26,19 +27,10 @@ else
     PIP_CMD := uv pip install
 endif
 
-# Terminal detection for colors
-TERM_COLOR := $(shell tput colors 2>/dev/null)
-ifeq ($(TERM_COLOR),0)
-    # No color support (redirects, CI without colors)
-    BOLD :=
-    RESET :=
-    GREEN :=
-    YELLOW :=
-    BLUE :=
-    CYAN :=
-    RED :=
-else
-    # Use ANSI codes
+# Terminal detection for colors (matches canonical framework)
+IS_TTY := $(shell test -t 1 && echo 1 || echo 0)
+
+ifeq ($(IS_TTY),1)
     BOLD := \033[1m
     RESET := \033[0m
     GREEN := \033[32m
@@ -46,11 +38,20 @@ else
     BLUE := \033[34m
     CYAN := \033[36m
     RED := \033[31m
+else
+    BOLD :=
+    RESET :=
+    GREEN :=
+    YELLOW :=
+    BLUE :=
+    CYAN :=
+    RED :=
 endif
 
 # Test customization variables (optional)
 TEST_FILE ?=
 TEST_FILTER ?=
+TEST_SHOW_ALL_RESULTS ?=
 
 DEMO_REPO_BASE := /tmp/demo-repo
 
@@ -89,7 +90,8 @@ help: ## Show this help message
 	@printf "$(BOLD)Gates:$(RESET)\n"
 	@printf "  $(GREEN)make check$(RESET)          - Fast merge gate (sanitize + unit tests)\n"
 	@printf "  $(GREEN)make check-verbose$(RESET)  - Merge gate with detailed output\n"
-	@printf "  $(GREEN)make validate$(RESET)       - Quick validation\n"
+	@printf "  $(GREEN)make validate$(RESET)       - Full release validation (sanitize + test + coverage)\n"
+	@printf "  $(GREEN)make coverage$(RESET)       - Enforce test coverage thresholds\n"
 	@printf "  $(GREEN)make pre-commit$(RESET)     - Pre-commit hook\n"
 	@printf "\n"
 	@printf "$(BOLD)Documentation:$(RESET)\n"
@@ -189,7 +191,7 @@ test-check: ## Check test prerequisites without actually running tests
 		echo "$(YELLOW)⚠ pytest not found - install with 'make test-deps-install' or 'make test-deps-py-install'$(RESET)"; \
 	fi
 
-test-lib-py: ## Run Python library tests using pytest
+test-lib-py: ## Run Python library tests (pytest, LLM-friendly)
 	@echo "$(BLUE)Running Python library tests...$(RESET)"
 	@cd git-config/lib/python && \
 	if ! $(PYTEST_CMD) --version >/dev/null 2>&1; then \
@@ -197,13 +199,23 @@ test-lib-py: ## Run Python library tests using pytest
 		$(PIP_CMD) -q -e ".[dev]" || \
 		(echo "$(YELLOW)Warning: Could not install dev dependencies. Tests will be skipped.$(RESET)" && exit 0); \
 	fi; \
-	$(PYTEST_CMD) tests/ -v --color=yes --tb=short $(if $(TEST_FILTER),-k "$(TEST_FILTER)")
+	$(PYTEST_CMD) tests/ -q --color=yes --tb=short $(if $(TEST_FILTER),-k "$(TEST_FILTER)")
 
 test-lib-py-coverage: ## Run Python library tests with coverage report
 	@echo "$(BLUE)Running Python library tests with coverage...$(RESET)"
 	@cd git-config/lib/python && \
 	$(PIP_CMD) -q -e ".[dev]" 2>/dev/null || true; \
 	$(PYTEST_CMD) tests/ -v --cov=. --cov-report=term-missing --cov-report=html
+
+test-lib-py-verbose: ## Run Python library tests (detailed output)
+	@echo "$(BLUE)Running Python library tests (verbose)...$(RESET)"
+	@cd git-config/lib/python && \
+	if ! $(PYTEST_CMD) --version >/dev/null 2>&1; then \
+		echo "$(YELLOW)pytest not installed. Installing pytest and dev dependencies...$(RESET)"; \
+		$(PIP_CMD) -q -e ".[dev]" || \
+		(echo "$(YELLOW)Warning: Could not install dev dependencies. Tests will be skipped.$(RESET)" && exit 0); \
+	fi; \
+	$(PYTEST_CMD) tests/ -v --color=yes --tb=short $(if $(TEST_FILTER),-k "$(TEST_FILTER)")
 
 test-unit-verbose: ## Run unit tests (detailed output)
 	@echo "$(BLUE)Running unit tests...$(RESET)"
@@ -567,26 +579,22 @@ sanitize: ## Run all static checks (format + lint + typecheck)
 	@$(MAKE) typecheck
 	@echo "$(GREEN)✅ Sanitize complete$(RESET)"
 
-check: sanitize test-unit ## Fast merge gate (sanitize + unit tests)
+check: sanitize test-check test-lib-py test-lib ## Fast merge gate (sanitize + some tests)
 	@echo "$(GREEN)✅ Checks passed$(RESET)"
-
-check-verbose: sanitize test-unit-verbose ## Merge gate with detailed output
-	@echo "$(GREEN)✅ Checks passed$(RESET)"
-
-validate: doctor test-quick ## Fast validation (environment + quick tests)
-	@echo "$(GREEN)✓ Validation complete$(RESET)"
 
 pre-commit: check ## Run checks and tests before commit (git hook target)
 	@echo "$(GREEN)✓ Pre-commit checks complete$(RESET)"
 
-ci: test ## Run full CI pipeline (all tests)
+coverage: test-lib-py-coverage ## Enforce test coverage thresholds
+	@echo "$(GREEN)✅ Coverage check complete$(RESET)"
+
+validate: sanitize test coverage ## Full release validation (sanitize + test + coverage)
+	@echo "$(GREEN)✅ Release validation complete$(RESET)"
+
+ci: test-by-category ## Run full CI pipeline (all tests)
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
 	@echo "$(GREEN)✓ CI Pipeline Complete$(RESET)"
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
-
-test-quick: ## Run tests without coverage (fast)
-	@echo "$(BLUE)Running quick tests...$(RESET)"
-	@$(MAKE) test-unit TEST_SHOW_ALL_RESULTS=0
 
 clean: ## Clean build artifacts and temporary files
 	@echo "$(BLUE)Cleaning build artifacts...$(RESET)"
@@ -655,10 +663,10 @@ demo-repo-status: ## Show status of demo repository
 	echo "Remote: $$(git remote -v 2>/dev/null | head -1 || echo 'N/A')"; \
 	exit 0
 
-.PHONY: test test-bash test-unit test-integration test-lib test-check test-lib-py test-lib-py-coverage test-deps-install test-deps-py-install optional-deps-install optional-deps-check python-check python-venv-create python-install-uv
+.PHONY: test test-bash test-unit test-integration test-lib test-check test-lib-py test-lib-py-verbose test-lib-py-coverage test-deps-install test-deps-py-install optional-deps-install optional-deps-check python-check python-venv-create python-install-uv
 .PHONY: mocks-check mocks-generate mocks-generate-git mocks-regenerate mocks-clean mocks-clean-git mocks-test-with-regenerate mocks-validate
 .PHONY: vhs-deps-install
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
 .PHONY: docs-dev docs-build docs-preview deps-docs
-.PHONY: format format-verbose lint lint-verbose typecheck typecheck-verbose sanitize check validate pre-commit ci test-quick install clean clean-all
+.PHONY: format format-verbose lint lint-verbose typecheck typecheck-verbose sanitize check pre-commit coverage validate ci install clean clean-all
 .PHONY: demo-repo demo-repo-simple demo-repo-workflows demo-repo-beginner demo-repo-all demo-clean demo-clean-all demo-repo-rebuild demo-repo-rebuild-all demo-repo-status
