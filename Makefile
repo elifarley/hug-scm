@@ -573,6 +573,11 @@ typecheck-verbose: ## Type check Python code (detailed)
 		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
 	fi
 
+static: ## Run all static checks that don't change the source code
+	@$(MAKE) lint
+	@$(MAKE) typecheck
+	@echo "$(GREEN)✅ Static checks complete$(RESET)"
+
 sanitize: ## Run all static checks (format + lint + typecheck)
 	@$(MAKE) format
 	@$(MAKE) lint
@@ -591,7 +596,7 @@ coverage: test-lib-py-coverage ## Enforce test coverage thresholds
 validate: sanitize test coverage ## Full release validation (sanitize + test + coverage)
 	@echo "$(GREEN)✅ Release validation complete$(RESET)"
 
-ci: test-by-category ## Run full CI pipeline (all tests)
+ci: static test-by-category ## Run full CI pipeline (all tests)
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
 	@echo "$(GREEN)✓ CI Pipeline Complete$(RESET)"
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
