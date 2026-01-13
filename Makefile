@@ -114,10 +114,10 @@ help: ## Show this help message
 
 ##@ Testing
 
-test: test-lib-py test-bash  ## Run all tests (BATS + pytest)
+test-lump: test-lib-py test-bash  ## Run all tests (BATS + pytest)
 	@echo "$(GREEN)All tests completed!$(RESET)"
 
-test-by-category: test-check test-lib-py test-lib test-unit test-integration ## Run all tests by category (fastest first)
+test: test-check test-lib-py test-lib test-unit test-integration ## Run all tests by category (fastest first)
 	@echo "$(GREEN)All tests completed!$(RESET)"
 
 test-bash: ## Run all BATS-based tests (or specific: TEST_FILE=... TEST_FILTER=... TEST_SHOW_ALL_RESULTS=1)
@@ -603,7 +603,7 @@ coverage: test-lib-py-coverage ## Enforce test coverage thresholds
 validate: sanitize test coverage ## Full release validation (sanitize + test + coverage)
 	@echo "$(GREEN)✅ Release validation complete$(RESET)"
 
-ci: static test-by-category ## Run full CI pipeline (all tests)
+ci: static test ## Run full CI pipeline (all tests)
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
 	@echo "$(GREEN)✓ CI Pipeline Complete$(RESET)"
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
