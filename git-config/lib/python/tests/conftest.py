@@ -10,13 +10,14 @@ from pathlib import Path
 
 import pytest
 
+# Import command mock framework from installed library
+# These must be imported before pytest due to E402 rules
+from command_mock.player import CommandMockPlayer
+from command_mock.recorder import CommandMockRecorder
+
 # Add parent directory to Python path for module imports
 PYTHON_LIB_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(PYTHON_LIB_DIR))
-
-# Import command mock framework from installed library
-from command_mock.recorder import CommandMockRecorder
-from command_mock.player import CommandMockPlayer
 
 
 def pytest_addoption(parser):

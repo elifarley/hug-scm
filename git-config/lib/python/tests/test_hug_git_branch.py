@@ -9,14 +9,13 @@ Following Google Python testing best practices:
 """
 
 import json
-import pytest
-from io import StringIO
-from unittest.mock import patch, MagicMock
 from subprocess import CalledProcessError
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Import module under test
 import hug_git_branch
-
 
 ################################################################################
 # Test Fixtures
@@ -569,7 +568,8 @@ class TestGetLocalBranchDetails:
             mock_run.return_value = "main"
             mock_divergence.return_value = ("", "0", "0")
 
-            # Include a backup branch - each branch has 5 elements (refname, hash, subject, upstream, track)
+            # Include a backup branch
+            # Each branch has 5 elements: refname, hash, subject, upstream, track
             mock_for_each.return_value = [
                 "main",
                 "abc123",
@@ -647,7 +647,8 @@ class TestGetLocalBranchDetails:
             mock_run.return_value = "main"
             mock_divergence.return_value = ("", "0", "0")
 
-            # chunk_size is 5 with subjects - each branch has 5 elements (refname, hash, subject, upstream, track)
+            # chunk_size is 5 with subjects
+            # Each branch has 5 elements: refname, hash, subject, upstream, track
             mock_for_each.return_value = [
                 "main",
                 "abc123",

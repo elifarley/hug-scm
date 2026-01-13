@@ -11,12 +11,12 @@ Usage:
     python3 json_transform.py commit_search <search_type> <search_term> [--with-files]
 """
 
-import sys
 import json
-import subprocess
 import os
+import subprocess
+import sys
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Any
 
 
 def transform_git_log_to_json(log_output: str, with_files: bool = False) -> str:
@@ -54,7 +54,7 @@ def transform_git_log_to_json(log_output: str, with_files: bool = False) -> str:
     return json.dumps(commits, ensure_ascii=False, indent=2, separators=(", ", ": "))
 
 
-def transform_git_status_to_json(status_output: str) -> Dict[str, Any]:
+def transform_git_status_to_json(status_output: str) -> dict[str, Any]:
     """
     Transform git status output to JSON with proper types.
 
@@ -150,8 +150,8 @@ def commit_search(
     search_term: str,
     with_files: bool = False,
     no_body: bool = False,
-    additional_args: List[str] = None,
-) -> Dict[str, Any]:
+    additional_args: list[str] = None,
+) -> dict[str, Any]:
     """
     Search commits and return JSON output in GitHub-compatible format.
 
@@ -172,7 +172,11 @@ def commit_search(
     # Format: hash|~|short|~|author_name|~|author_email|~|committer_name|~|committer_email|~|
     #         author_date|~|author_date_rel|~|committer_date|~|committer_date_rel|~|tree|~|
     #         subject|~|body|~|parents|~|refs
-    format_str = f"%H{field_sep}%h{field_sep}%an{field_sep}%ae{field_sep}%cn{field_sep}%ce{field_sep}%aI{field_sep}%ar{field_sep}%cI{field_sep}%cr{field_sep}%T{field_sep}%s{field_sep}%B{field_sep}%P{field_sep}%D"
+    format_str = (
+        f"%H{field_sep}%h{field_sep}%an{field_sep}%ae{field_sep}%cn{field_sep}%ce"
+        f"{field_sep}%aI{field_sep}%ar{field_sep}%cI{field_sep}%cr{field_sep}%T"
+        f"{field_sep}%s{field_sep}%B{field_sep}%P{field_sep}%D"
+    )
 
     # Build git log command
     cmd = ["git", "log", f"--format={format_str}"]
@@ -276,7 +280,8 @@ def main():
     elif command == "commit_search":
         if len(sys.argv) < 4:
             print(
-                "Usage: json_transform.py commit_search <type> <term> [--with-files] [--no-body] [git-args...]",
+                "Usage: json_transform.py commit_search <type> <term> ",
+                "[--with-files] [--no-body] [git-args...]",
                 file=sys.stderr,
             )
             sys.exit(1)

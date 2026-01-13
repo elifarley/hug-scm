@@ -7,20 +7,19 @@ git log transformation, and status transformation.
 """
 
 import json
-import subprocess
-from unittest.mock import patch, MagicMock
-import sys
 import os
+import sys
+from unittest.mock import patch
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from json_transform import (
+    _status_to_type,
+    commit_search,
     transform_git_log_to_json,
     transform_git_status_to_json,
     validate_json_schema,
-    commit_search,
-    _status_to_type,
 )
 
 
@@ -52,7 +51,9 @@ class TestTransformGitLogToJson:
         assert data == []
 
     def test_single_commit(self):
-        log_output = "abc123---HUG-FIELD-SEPARATOR---abc---HUG-FIELD-SEPARATOR---John Doe---HUG-FIELD-SEPARATOR---john@example.com---HUG-FIELD-SEPARATOR---2025-01-01 12:00:00 +0000---HUG-FIELD-SEPARATOR---Test commit"
+        log_output = (  # noqa: E501
+            "abc123---HUG-FIELD-SEPARATOR---abc---HUG-FIELD-SEPARATOR---John Doe---HUG-FIELD-SEPARATOR---john@example.com---HUG-FIELD-SEPARATOR---2025-01-01 12:00:00 +0000---HUG-FIELD-SEPARATOR---Test commit"  # noqa: E501
+        )
         result = transform_git_log_to_json(log_output)
         data = json.loads(result)
 
@@ -65,9 +66,9 @@ class TestTransformGitLogToJson:
         assert data[0]["message"] == "Test commit"
 
     def test_multiple_commits(self):
-        log_output = (
-            "abc123---HUG-FIELD-SEPARATOR---abc---HUG-FIELD-SEPARATOR---John Doe---HUG-FIELD-SEPARATOR---john@example.com---HUG-FIELD-SEPARATOR---2025-01-01 12:00:00 +0000---HUG-FIELD-SEPARATOR---First commit\x00"
-            "def456---HUG-FIELD-SEPARATOR---def---HUG-FIELD-SEPARATOR---Jane Smith---HUG-FIELD-SEPARATOR---jane@example.com---HUG-FIELD-SEPARATOR---2025-01-02 12:00:00 +0000---HUG-FIELD-SEPARATOR---Second commit"
+        log_output = (  # noqa: E501
+            "abc123---HUG-FIELD-SEPARATOR---abc---HUG-FIELD-SEPARATOR---John Doe---HUG-FIELD-SEPARATOR---john@example.com---HUG-FIELD-SEPARATOR---2025-01-01 12:00:00 +0000---HUG-FIELD-SEPARATOR---First commit\x00"  # noqa: E501
+            "def456---HUG-FIELD-SEPARATOR---def---HUG-FIELD-SEPARATOR---Jane Smith---HUG-FIELD-SEPARATOR---jane@example.com---HUG-FIELD-SEPARATOR---2025-01-02 12:00:00 +0000---HUG-FIELD-SEPARATOR---Second commit"  # noqa: E501
         )
         result = transform_git_log_to_json(log_output)
         data = json.loads(result)
@@ -77,7 +78,7 @@ class TestTransformGitLogToJson:
         assert data[1]["sha"] == "def456"
 
     def test_commit_with_special_characters(self):
-        log_output = 'abc123---HUG-FIELD-SEPARATOR---abc---HUG-FIELD-SEPARATOR---John "Doe"---HUG-FIELD-SEPARATOR---john@example.com---HUG-FIELD-SEPARATOR---2025-01-01 12:00:00 +0000---HUG-FIELD-SEPARATOR---Test "quoted" commit'
+        log_output = 'abc123---HUG-FIELD-SEPARATOR---abc---HUG-FIELD-SEPARATOR---John "Doe"---HUG-FIELD-SEPARATOR---john@example.com---HUG-FIELD-SEPARATOR---2025-01-01 12:00:00 +0000---HUG-FIELD-SEPARATOR---Test "quoted" commit'  # noqa: E501
         result = transform_git_log_to_json(log_output)
         data = json.loads(result)
 
@@ -222,7 +223,7 @@ class TestIntegration:
 
     def test_json_output_is_valid(self):
         """Test that all output is valid JSON"""
-        log_output = "abc123\x00abc\x00John Doe\x00john@example.com\x002025-01-01 12:00:00 +0000\x00Test commit\x00"
+        log_output = "abc123\x00abc\x00John Doe\x00john@example.com\x002025-01-01 12:00:00 +0000\x00Test commit\x00"  # noqa: E501
         result = transform_git_log_to_json(log_output)
 
         # Should not raise
@@ -231,7 +232,7 @@ class TestIntegration:
 
     def test_unicode_handling(self):
         """Test that Unicode characters are handled correctly"""
-        log_output = "abc123---HUG-FIELD-SEPARATOR---abc---HUG-FIELD-SEPARATOR---Café---HUG-FIELD-SEPARATOR---test@example.com---HUG-FIELD-SEPARATOR---2025-01-01 12:00:00 +0000---HUG-FIELD-SEPARATOR---Test café résumé"
+        log_output = "abc123---HUG-FIELD-SEPARATOR---abc---HUG-FIELD-SEPARATOR---Café---HUG-FIELD-SEPARATOR---test@example.com---HUG-FIELD-SEPARATOR---2025-01-01 12:00:00 +0000---HUG-FIELD-SEPARATOR---Test café résumé"  # noqa: E501
         result = transform_git_log_to_json(log_output)
         data = json.loads(result)
 

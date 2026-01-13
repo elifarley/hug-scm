@@ -4,15 +4,12 @@ Unit tests for log_json.py module.
 Tests the parsing of git log output with --numstat into JSON format.
 """
 
-import pytest
-import json
-from io import StringIO
-import sys
 import os
+import sys
 
 # Add parent directory to path to import log_json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from log_json import parse_log_with_stats, parse_single_commit
+from log_json import parse_log_with_stats
 
 
 class TestParseLogWithStats:
@@ -21,7 +18,7 @@ class TestParseLogWithStats:
     def test_single_commit_basic(self):
         """Test parsing a single commit without stats"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc456def789012345678901234567890|~|Fix bug|~|Fix bug\n|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc456def789012345678901234567890|~|Fix bug|~|Fix bug\n|~||~|\n"  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines)
@@ -38,7 +35,7 @@ class TestParseLogWithStats:
     def test_single_commit_with_body(self):
         """Test parsing commit with multi-line message body"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree456def789012345678901234567890abcdef|~|Add feature|~|Add feature\n\nThis is a longer description.\nWith multiple lines.|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree456def789012345678901234567890abcdef|~|Add feature|~|Add feature\n\nThis is a longer description.\nWith multiple lines.|~||~|\n"  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines)
@@ -51,7 +48,7 @@ class TestParseLogWithStats:
     def test_single_commit_with_numstat(self):
         """Test parsing commit with file statistics"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree789abc456def012345678901234567890ab|~|Update files|~|Update files\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree789abc456def012345678901234567890ab|~|Update files|~|Update files\n|~||~|\n",  # noqa: E501
             "\n",
             "10\t5\tREADME.md\n",
             "20\t3\tsrc/app.js\n",
@@ -68,7 +65,7 @@ class TestParseLogWithStats:
     def test_binary_file_in_numstat(self):
         """Test handling binary files (marked with -)"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree012abc456def789012345678901234567890|~|Add image|~|Add image\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree012abc456def789012345678901234567890|~|Add image|~|Add image\n|~||~|\n",  # noqa: E501
             "\n",
             "-\t-\timage.png\n",
             "5\t2\tREADME.md\n",
@@ -86,11 +83,11 @@ class TestParseLogWithStats:
     def test_multiple_commits(self):
         """Test parsing multiple commits"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree345abc456def789012345678901234567890|~|First commit|~|First commit\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree345abc456def789012345678901234567890|~|First commit|~|First commit\n|~||~|\n",  # noqa: E501
             "\n",
             "10\t5\tfile1.txt\n",
             "\n",
-            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree678def012345678901234567890abcdef12|~|Second commit|~|Second commit\n|~||~|\n",
+            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree678def012345678901234567890abcdef12|~|Second commit|~|Second commit\n|~||~|\n",  # noqa: E501
             "\n",
             "20\t10\tfile2.txt\n",
         ]
@@ -106,7 +103,7 @@ class TestParseLogWithStats:
     def test_commit_with_refs(self):
         """Test parsing commit with branch/tag refs"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree901abc456def789012345678901234567890|~|Tagged commit|~|Tagged commit\n|~||~|HEAD -> main, origin/main, tag: v1.0\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree901abc456def789012345678901234567890|~|Tagged commit|~|Tagged commit\n|~||~|HEAD -> main, origin/main, tag: v1.0\n"  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines)
@@ -121,7 +118,7 @@ class TestParseLogWithStats:
     def test_commit_with_multiple_parents(self):
         """Test merge commit with multiple parents"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree234abc456def789012345678901234567890|~|Merge branch|~|Merge branch\n|~|parent1abc456def789012345678901234567890 parent2def789abc012345678901234567890ab|~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree234abc456def789012345678901234567890|~|Merge branch|~|Merge branch\n|~|parent1abc456def789012345678901234567890 parent2def789abc012345678901234567890ab|~|\n"  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines)
@@ -143,7 +140,7 @@ class TestParseLogWithStats:
     def test_commit_with_no_stats(self):
         """Test commit where no files changed (stats should be zero)"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree567abc456def789012345678901234567890|~|Empty commit|~|Empty commit\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree567abc456def789012345678901234567890|~|Empty commit|~|Empty commit\n|~||~|\n",  # noqa: E501
             "\n",
         ]
 
@@ -158,7 +155,7 @@ class TestParseLogWithStats:
     def test_malformed_numstat_line(self):
         """Test that malformed numstat lines are skipped gracefully"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree890abc456def789012345678901234567890|~|Update|~|Update\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree890abc456def789012345678901234567890|~|Update|~|Update\n|~||~|\n",  # noqa: E501
             "\n",
             "10\t5\tvalid_file.txt\n",
             "malformed line without tabs\n",
@@ -177,7 +174,7 @@ class TestParseLogWithStats:
     def test_commit_with_special_characters_in_message(self):
         """Test commit message with special characters"""
         lines = [
-            'abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree123def456789012345678901234567890ab|~|Fix "bug" in <module>|~|Fix "bug" in <module>\n\nDetailed description with special chars: $, %, &|~||~|\n'
+            'abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree123def456789012345678901234567890ab|~|Fix "bug" in <module>|~|Fix "bug" in <module>\n\nDetailed description with special chars: $, %, &|~||~|\n'  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines)
@@ -190,7 +187,7 @@ class TestParseLogWithStats:
     def test_commit_with_empty_refs(self):
         """Test commit with no refs"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree456def789012345678901234567890abcdef|~|No refs|~|No refs\n|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree456def789012345678901234567890abcdef|~|No refs|~|No refs\n|~||~|\n"  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines)
@@ -202,7 +199,7 @@ class TestParseLogWithStats:
     def test_real_world_commit_format(self):
         """Test with a more realistic commit structure"""
         lines = [
-            "e1bb93c05d8699243d43c9148a00804ae79cffff|~|e1bb93c|~|Elifarley C|~|elifarley@gmail.com|~|Elifarley C|~|elifarley@gmail.com|~|2025-11-18T19:19:14-03:00|~|12 minutes ago|~|2025-11-18T19:19:14-03:00|~|12 minutes ago|~|tree258d41a972c0e71100a1c64ca75de03bfc694|~|feat: add comprehensive JSON output support for analysis commands (Phase 4a)|~|feat: add comprehensive JSON output support for analysis commands (Phase 4a)\n\nWHY: JSON output enables automation.\n\nWHAT: Added JSON support to 4 commands.\n\nIMPACT: Users can now pipe output to jq.|~|258d41a972c0e71100a1c64ca75de03bfc6943d1|~|HEAD -> main\n",
+            "e1bb93c05d8699243d43c9148a00804ae79cffff|~|e1bb93c|~|Elifarley C|~|elifarley@gmail.com|~|Elifarley C|~|elifarley@gmail.com|~|2025-11-18T19:19:14-03:00|~|12 minutes ago|~|2025-11-18T19:19:14-03:00|~|12 minutes ago|~|tree258d41a972c0e71100a1c64ca75de03bfc694|~|feat: add comprehensive JSON output support for analysis commands (Phase 4a)|~|feat: add comprehensive JSON output support for analysis commands (Phase 4a)\n\nWHY: JSON output enables automation.\n\nWHAT: Added JSON support to 4 commands.\n\nIMPACT: Users can now pipe output to jq.|~|258d41a972c0e71100a1c64ca75de03bfc6943d1|~|HEAD -> main\n",  # noqa: E501
             "\n",
             "11\t3\tREADME.md\n",
             "47\t23\tdocs/planning/json-output-roadmap.md\n",
@@ -232,7 +229,7 @@ class TestEdgeCases:
         """Test handling of incomplete commit lines"""
         lines = [
             "abc123|~|abc|~|Alice\n",  # Incomplete - missing fields
-            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree012abc456def789012345678901234567890|~|Valid commit|~|Valid commit\n|~||~|\n",
+            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree012abc456def789012345678901234567890|~|Valid commit|~|Valid commit\n|~||~|\n",  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines)
@@ -244,11 +241,11 @@ class TestEdgeCases:
     def test_blank_lines_between_commits(self):
         """Test that blank lines are handled correctly"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree345abc456def789012345678901234567890|~|First|~|First\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree345abc456def789012345678901234567890|~|First|~|First\n|~||~|\n",  # noqa: E501
             "\n",
             "\n",
             "\n",
-            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree678def012345678901234567890abcdef12|~|Second|~|Second\n|~||~|\n",
+            "def456abc789012345678901234567890abcdef0|~|def456a|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree678def012345678901234567890abcdef12|~|Second|~|Second\n|~||~|\n",  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines)
@@ -258,7 +255,7 @@ class TestEdgeCases:
     def test_unicode_in_commit_message(self):
         """Test handling of Unicode characters"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|José García|~|jose@example.com|~|José García|~|jose@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree901abc456def789012345678901234567890|~|Add emoji support 🎉|~|Add emoji support 🎉\n\nSupports UTF-8: ñ, é, 中文|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|José García|~|jose@example.com|~|José García|~|jose@example.com|~|2025-11-18T10:00:00Z|~|1 hour ago|~|2025-11-18T10:00:00Z|~|1 hour ago|~|tree901abc456def789012345678901234567890|~|Add emoji support 🎉|~|Add emoji support 🎉\n\nSupports UTF-8: ñ, é, 中文|~||~|\n"  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines)
@@ -276,7 +273,7 @@ class TestConditionalStats:
     def test_stats_included_when_flag_true(self):
         """Test stats field is present when include_stats=True"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Fix bug|~|Fix bug\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Fix bug|~|Fix bug\n|~||~|\n",  # noqa: E501
             "\n",
             "10\t5\tREADME.md\n",
         ]
@@ -293,7 +290,7 @@ class TestConditionalStats:
     def test_stats_excluded_when_flag_false(self):
         """Test stats field is absent when include_stats=False"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Fix bug|~|Fix bug\n|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Fix bug|~|Fix bug\n|~||~|\n",  # noqa: E501
             "\n",
             "10\t5\tREADME.md\n",
         ]
@@ -310,7 +307,7 @@ class TestConditionalStats:
     def test_stats_included_by_default(self):
         """Test stats field defaults to included (backward compatibility)"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Fix bug|~|Fix bug\n|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Fix bug|~|Fix bug\n|~||~|\n"  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines)  # No include_stats arg
@@ -327,7 +324,7 @@ class TestNoBodyFlag:
     def test_body_omitted_when_flag_true(self):
         """Test body is None and message=subject when omit_body=True"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Add feature|~|Add feature\n\nThis is a detailed description.\nWith multiple lines.|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Add feature|~|Add feature\n\nThis is a detailed description.\nWith multiple lines.|~||~|\n"  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines, omit_body=True)
@@ -341,7 +338,7 @@ class TestNoBodyFlag:
     def test_body_included_when_flag_false(self):
         """Test body is present when omit_body=False"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Add feature|~|Add feature\n\nThis is a detailed description.\nWith multiple lines.|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Add feature|~|Add feature\n\nThis is a detailed description.\nWith multiple lines.|~||~|\n"  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines, omit_body=False)
@@ -358,7 +355,7 @@ class TestNoBodyFlag:
     def test_body_included_by_default(self):
         """Test body defaults to included (backward compatibility)"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Add feature|~|Add feature\n\nDetailed body text.|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Add feature|~|Add feature\n\nDetailed body text.|~||~|\n"  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines)  # No omit_body arg
@@ -371,7 +368,7 @@ class TestNoBodyFlag:
     def test_no_body_with_subject_only_commit(self):
         """Test --no-body flag on commit that has no body anyway"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Quick fix|~|Quick fix\n|~||~|\n"
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Quick fix|~|Quick fix\n|~||~|\n"  # noqa: E501
         ]
 
         commits = parse_log_with_stats(lines, omit_body=True)
@@ -389,7 +386,7 @@ class TestCombinedFlags:
     def test_no_stats_no_body(self):
         """Test with both stats excluded and body omitted"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Update docs|~|Update docs\n\nAdded new examples.|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Alice|~|alice@example.com|~|Alice|~|alice@example.com|~|2025-11-18T10:00:00Z|~|2 hours ago|~|2025-11-18T10:00:00Z|~|2 hours ago|~|tree123abc|~|Update docs|~|Update docs\n\nAdded new examples.|~||~|\n",  # noqa: E501
             "\n",
             "5\t2\tREADME.md\n",
         ]
@@ -406,7 +403,7 @@ class TestCombinedFlags:
     def test_with_stats_no_body(self):
         """Test with stats included but body omitted"""
         lines = [
-            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Refactor code|~|Refactor code\n\nImproved performance.|~||~|\n",
+            "abc123def456789012345678901234567890abcd|~|abc123d|~|Bob|~|bob@example.com|~|Bob|~|bob@example.com|~|2025-11-18T11:00:00Z|~|1 hour ago|~|2025-11-18T11:00:00Z|~|1 hour ago|~|tree456def|~|Refactor code|~|Refactor code\n\nImproved performance.|~||~|\n",  # noqa: E501
             "\n",
             "15\t8\tsrc/main.py\n",
         ]

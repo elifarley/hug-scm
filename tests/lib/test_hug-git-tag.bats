@@ -118,8 +118,13 @@ teardown() {
 @test "tag_exists_remote: checks remote tag existence" {
   source "$HUG_HOME/git-config/lib/hug-git-tag"
 
-  # Add a fake remote
-  git remote add origin https://github.com/example/repo.git
+  # Add a local bare repository as remote (no GitHub prompts)
+  local remote_root
+  remote_root=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "hug-remote-origin-XXXXXX")
+  local remote_repo="$remote_root/origin.git"
+  git init --bare -q "$remote_repo"
+  HUG_TEST_REMOTE_REPOS+=("$remote_root")
+  git remote add origin "$remote_repo"
 
   # Test with non-existent remote tag
   run tag_exists_remote "nonexistent-tag"

@@ -18,6 +18,7 @@ Usage:
 
 import sys
 from pathlib import Path
+
 from command_mock.recorder import CommandMockRecorder
 
 
@@ -277,7 +278,11 @@ def generate_search_mocks():
     recorder = CommandMockRecorder("git")
 
     field_sep = "|~|"
-    format_str = f"%H{field_sep}%h{field_sep}%an{field_sep}%ae{field_sep}%cn{field_sep}%ce{field_sep}%aI{field_sep}%ar{field_sep}%cI{field_sep}%cr{field_sep}%T{field_sep}%s{field_sep}%B{field_sep}%P{field_sep}%D"
+    format_str = (
+        f"%H{field_sep}%h{field_sep}%an{field_sep}%ae{field_sep}%cn{field_sep}%ce"
+        f"{field_sep}%aI{field_sep}%ar{field_sep}%cI{field_sep}%cr{field_sep}%T"
+        f"{field_sep}%s{field_sep}%B{field_sep}%P{field_sep}%D"
+    )
 
     scenarios = [
         {

@@ -15,14 +15,11 @@ Example:
     python3 churn.py src/auth.js --since="3 months ago"
 """
 
-import sys
-import json
-import subprocess
 import argparse
+import json
 import re
-from collections import defaultdict
-from datetime import datetime
-from typing import Dict, List, Tuple
+import subprocess
+import sys
 
 
 def parse_args():
@@ -43,7 +40,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_line_history(filepath: str, since: str = None) -> Dict[int, int]:
+def get_line_history(filepath: str, since: str = None) -> dict[int, int]:
     """
     Get change count for each line using git log -L.
 
@@ -54,9 +51,9 @@ def get_line_history(filepath: str, since: str = None) -> Dict[int, int]:
     """
     # First, get current line count
     try:
-        with open(filepath, "r") as f:
+        with open(filepath) as f:
             total_lines = sum(1 for _ in f)
-    except (FileNotFoundError, IOError) as e:
+    except (OSError, FileNotFoundError) as e:
         print(f"Error reading file {filepath}: {e}", file=sys.stderr)
         return {}
 
@@ -81,7 +78,11 @@ def get_line_history(filepath: str, since: str = None) -> Dict[int, int]:
             # Note: git log -L with --oneline includes diff context, not just commit headers
             if result.returncode == 0:
                 commit_count = len(
-                    [l for l in result.stdout.strip().split("\n") if re.match(r"^[a-f0-9]{7,}", l)]
+                    [
+                        line
+                        for line in result.stdout.strip().split("\n")
+                        if re.match(r"^[a-f0-9]{7,}", line)
+                    ]
                 )
                 if commit_count > 0:
                     line_churn[line_num] = commit_count
@@ -96,7 +97,7 @@ def get_line_history(filepath: str, since: str = None) -> Dict[int, int]:
     return line_churn
 
 
-def get_file_churn(filepath: str, since: str = None) -> Dict[str, any]:
+def get_file_churn(filepath: str, since: str = None) -> dict[str, any]:
     """
     Calculate file-level churn metrics.
 
@@ -146,7 +147,7 @@ def calculate_churn_score(changes: int, recency_days: int) -> float:
     return changes * recency_weight
 
 
-def analyze_churn(filepath: str, since: str = None, hot_threshold: int = 3) -> Dict:
+def analyze_churn(filepath: str, since: str = None, hot_threshold: int = 3) -> dict:
     """
     Main analysis function.
 
@@ -192,7 +193,7 @@ def analyze_churn(filepath: str, since: str = None, hot_threshold: int = 3) -> D
     return result
 
 
-def format_text_output(data: Dict) -> str:
+def format_text_output(data: dict) -> str:
     """Format churn data as human-readable text."""
     lines = []
 
@@ -221,9 +222,8 @@ def format_text_output(data: Dict) -> str:
         s = data["summary"]
         lines.append(f"  Total lines analyzed: {s['total_lines']}")
         lines.append(f"  Lines with changes: {s['lines_with_changes']}")
-        lines.append(
-            f"  Hot lines (≥{data['analysis_params']['hot_threshold']} changes): {s['hot_lines_count']}"
-        )
+        hot_threshold = data["analysis_params"]["hot_threshold"]
+        lines.append(f"  Hot lines (≥{hot_threshold} changes): {s['hot_lines_count']}")
 
         if s["max_line_changes"] > 0:
             lines.append(f"  Most changed line: {s['max_line_changes']} changes")

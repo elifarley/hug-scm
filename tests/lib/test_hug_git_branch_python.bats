@@ -216,10 +216,29 @@ print('OK')
 # Remote Branch Tests
 ################################################################################
 
+# Helper function to create a local bare remote for testing
+setup_local_remote() {
+  local remote_name="${1:-origin}"
+  local remote_branch="${2:-main}"
+
+  # Create a local bare repository as remote
+  local remote_root
+  remote_root=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "hug-remote-${remote_name}-XXXXXX")
+  local remote_repo="$remote_root/${remote_name}.git"
+  git init --bare -q "$remote_repo"
+  HUG_TEST_REMOTE_REPOS+=("$remote_root")
+
+  # Add as remote and push current branches
+  git remote add "$remote_name" "$remote_repo"
+  git push -q "$remote_name" "$remote_branch" 2>/dev/null || true
+
+  # Fetch to create remote tracking branches
+  git fetch -q "$remote_name" 2>/dev/null || true
+}
+
 @test "python branch module: remote mode outputs remote_refs array" {
-  # Add a remote
-  git remote add origin https://github.com/test/test.git
-  git fetch origin main >&2 2>/dev/null || true
+  # Add a local remote (no GitHub prompts)
+  setup_local_remote origin main
 
   # Check if we have remote branches
   local has_remotes
@@ -239,9 +258,8 @@ print('OK')
 }
 
 @test "python branch module: remote mode eval works" {
-  # Add a remote
-  git remote add origin https://github.com/test/test.git
-  git fetch origin >&2 2>/dev/null || true
+  # Add a local remote (no GitHub prompts)
+  setup_local_remote origin main
 
   # Check if we have remote branches
   local has_remotes
@@ -261,9 +279,8 @@ print('OK')
 }
 
 @test "python branch module: remote excludes HEAD references" {
-  # Add a remote
-  git remote add origin https://github.com/test/test.git
-  git fetch origin >&2 2>/dev/null || true
+  # Add a local remote (no GitHub prompts)
+  setup_local_remote origin main
 
   # Check if we have remote branches
   local has_remotes
