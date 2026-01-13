@@ -392,8 +392,8 @@ Install: https://github.com/charmbracelet/gum"
         [[ -z "$line" ]] && continue
         local status file
         IFS=$'\t' read -r status file <<< "$line"
-        local status_text
-        status_text=$(_format_staged_status "$status")
+        local status_text status_code
+        IFS=$'\t' read -r status_text status_code <<< "$(_format_staged_status "$status")"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
       done < <(list_staged_files "${status_flags[@]}")
@@ -414,8 +414,8 @@ Install: https://github.com/charmbracelet/gum"
         [[ -z "$line" ]] && continue
         local status file
         IFS=$'\t' read -r status file <<< "$line"
-        local status_text
-        status_text=$(_format_unstaged_status "$status")
+        local status_text status_code
+        IFS=$'\t' read -r status_text status_code <<< "$(_format_unstaged_status "$status")"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
       done < <(list_unstaged_files "${status_flags[@]}")
@@ -430,9 +430,9 @@ Install: https://github.com/charmbracelet/gum"
     mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}")
     for file in "${untracked_files[@]}"; do
       [[ -z "$file" ]] && continue
-      local status_text
+      local status_text status_code
       if $use_status_formatting; then
-        status_text=$(_format_untracked_status)
+        IFS=$'\t' read -r status_text status_code <<< "$(_format_untracked_status)"
         formatted_options+=("${status_text} ${file}")
       else
         formatted_options+=("$file")
@@ -445,9 +445,9 @@ Install: https://github.com/charmbracelet/gum"
     mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}")
     for file in "${ignored_files[@]}"; do
       [[ -z "$file" ]] && continue
-      local status_text
+      local status_text status_code
       if $use_status_formatting; then
-        status_text=$(_format_ignored_status)
+        IFS=$'\t' read -r status_text status_code <<< "$(_format_ignored_status)"
         formatted_options+=("${status_text} ${file}")
       else
         formatted_options+=("$file")

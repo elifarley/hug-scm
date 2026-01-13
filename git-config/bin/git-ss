@@ -52,6 +52,9 @@ check_git_repo
 
 # Handle interactive file selection if requested
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
+  # Ensure GIT_PREFIX is set for path consistency with non-interactive path
+  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2>/dev/null || echo "")
+
   declare -a select_opts=("--staged")
 
   # Default to --cwd (current directory scope) unless --browse-root is specified
