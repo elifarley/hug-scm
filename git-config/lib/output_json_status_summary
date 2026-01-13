@@ -3,7 +3,8 @@
 # Used by git-s command
 
 # Load JSON utilities
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/../lib/hug-json"
 
 output_json_status_summary() {
@@ -11,9 +12,9 @@ output_json_status_summary() {
   local hash
   local branch
   local upstream
-  hash=$(git rev-parse --short HEAD 2>/dev/null || echo "")
-  branch=$(git branch --show-current 2>/dev/null || echo "detached HEAD")
-  upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
+  hash=$(git rev-parse --short HEAD 2> /dev/null || echo "")
+  branch=$(git branch --show-current 2> /dev/null || echo "detached HEAD")
+  upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2> /dev/null || echo "")
 
   # Get file counts and line stats
   local unstaged_files=0 unstaged_insertions=0 unstaged_deletions=0
@@ -43,7 +44,7 @@ output_json_status_summary() {
     local counts
     local left_count
     local right_count
-    counts=$(git rev-list --left-right --count HEAD...@{u} 2>/dev/null || echo "0	0")
+    counts=$(git rev-list --left-right --count HEAD...@{u} 2> /dev/null || echo "0	0")
     left_count=$(echo "$counts" | cut -f1)
     right_count=$(echo "$counts" | cut -f2)
 

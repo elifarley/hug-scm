@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
@@ -28,14 +29,14 @@ if [ $# -eq 0 ]; then
   # Only show interactive selection if gum is available
   if gum_available; then
     declare -a select_opts=("--single")
-    
+
     # Default to --cwd (current directory scope) unless --browse-root is specified
     if ! $browse_root; then
       select_opts+=("--cwd")
     fi
-    
+
     select_opts+=("--prompt" "Select file to view log with patches...")
-    
+
     file=""
     if ! file=$(select_files_with_status "${select_opts[@]}"); then
       info "No file selected or cancelled."
@@ -49,6 +50,7 @@ if [ $# -eq 0 ]; then
   fi
 fi
 
-file="$1"; shift
+file="$1"
+shift
 
 exec hug llf "$file" -p "$@"

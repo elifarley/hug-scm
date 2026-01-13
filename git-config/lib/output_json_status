@@ -3,7 +3,8 @@
 # Used by git-statusbase command
 
 # Load JSON utilities
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/../lib/hug-json"
 
 output_json_status() {
@@ -16,29 +17,29 @@ output_json_status() {
   # Parse arguments
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --staged)
-        include_staged=true
-        shift
-        ;;
-      --unstaged)
-        include_unstaged=true
-        shift
-        ;;
-      --untracked)
-        include_untracked=true
-        shift
-        ;;
-      --ignored)
-        include_ignored=true
-        shift
-        ;;
-      --cwd)
-        scope_cwd=true
-        shift
-        ;;
-      *)
-        shift
-        ;;
+    --staged)
+      include_staged=true
+      shift
+      ;;
+    --unstaged)
+      include_unstaged=true
+      shift
+      ;;
+    --untracked)
+      include_untracked=true
+      shift
+      ;;
+    --ignored)
+      include_ignored=true
+      shift
+      ;;
+    --cwd)
+      scope_cwd=true
+      shift
+      ;;
+    *)
+      shift
+      ;;
     esac
   done
 

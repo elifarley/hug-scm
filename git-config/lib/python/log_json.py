@@ -14,10 +14,10 @@ Input format expected:
     Then optionally followed by numstat lines and blank lines.
 """
 
-import sys
-import json
 import argparse
+import json
 import re
+import sys
 
 
 def parse_log_with_stats(lines, include_stats=True, omit_body=False):
@@ -77,7 +77,7 @@ def parse_log_with_stats(lines, include_stats=True, omit_body=False):
         # Check if this is a numstat or name-status line
         # numstat: N\tM\tfilename (e.g., "10\t5\tsrc/file.py")
         # name-status: X\tfilename (e.g., "A\tsrc/file.py", "M\tsrc/file.py")
-        if "\t" in line and not "|~|" in line:
+        if "\t" in line and "|~|" not in line:
             parts = line.split("\t")
             # numstat has 3+ parts, name-status has 2+ parts
             if len(parts) >= 2:
@@ -152,7 +152,7 @@ def parse_single_commit(lines, numstat_lines=None, include_stats=True, omit_body
     committer_date_relative = fields[9]
     tree_sha = fields[10]
     subject = fields[11]
-    body_start = fields[12]  # This is the start of %B (which includes subject line again)
+    fields[12]  # This is the start of %B (which includes subject line again)
 
     # Now we need to extract the body, parents, and refs from the full text
     # The last line should end with: |~|parent_hashes|~|refs

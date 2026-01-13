@@ -2,7 +2,8 @@
 # git-stats-file - File-level statistics and metrics
 # Part of the Hug tool suite
 
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -88,26 +89,26 @@ remaining_args=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --browse-root)
-      browse_root=true
-      shift
-      ;;
-    --since)
-      since_arg="$2"
-      shift 2
-      ;;
-    --json)
-      json_output=true
-      shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    *)
-      remaining_args+=("$1")
-      shift
-      ;;
+  --browse-root)
+    browse_root=true
+    shift
+    ;;
+  --since)
+    since_arg="$2"
+    shift 2
+    ;;
+  --json)
+    json_output=true
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  *)
+    remaining_args+=("$1")
+    shift
+    ;;
   esac
 done
 
@@ -159,7 +160,7 @@ if [ ! -f "$python_script" ]; then
 
   # Authors
   info "Authors:"
-  git log --follow --format='%an' -- "$file" | sort | uniq -c | sort -rn | head -5 | \
+  git log --follow --format='%an' -- "$file" | sort | uniq -c | sort -rn | head -5 |
     while read count author; do
       info "  $author ($count commits)"
     done

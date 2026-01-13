@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 # shellcheck source=../lib/hug-common
 . "$CMD_BASE/../lib/hug-common"
 # shellcheck source=../lib/hug-git-kit
@@ -8,11 +9,11 @@ CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 . "$CMD_BASE/../lib/hug-git-files"
 # shellcheck source=../lib/hug-git-state
 . "$CMD_BASE/../lib/hug-git-state"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-    cat << EOF
+  cat << EOF
 hug caa: Commit all changes (tracked + untracked + deletions).
 
 USAGE:
@@ -54,15 +55,15 @@ eval "$(parse_common_flags "$@")"
 commit_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -*)
-      # Unknown options after commons; let git commit handle them or error
-      commit_args+=("$1")
-      shift
-      ;;
-    *)
-      commit_args+=("$1")
-      shift
-      ;;
+  -*)
+    # Unknown options after commons; let git commit handle them or error
+    commit_args+=("$1")
+    shift
+    ;;
+  *)
+    commit_args+=("$1")
+    shift
+    ;;
   esac
 done
 
@@ -119,7 +120,7 @@ hug_caa() {
       printf "\n  UNSTAGED SUMMARY: %d modified, %d deleted\n" "$mod_count" "$del_count" >&2
     fi
 
-    local total_change_count=$(( ${#untracked[@]} + ${#staged[@]} + mod_count + del_count ))
+    local total_change_count=$((${#untracked[@]} + ${#staged[@]} + mod_count + del_count))
     printf "\nSummary: Would stage %s files and commit them.\n" "$total_change_count" >&2
 
     if [[ ${#commit_args[@]} -gt 0 ]]; then

@@ -6,11 +6,11 @@
 . "$HUG_HOME/git-config/lib/hug-git-kit"
 # shellcheck source=git-config/lib/hug-git-worktree
 . "$HUG_HOME/git-config/lib/hug-git-worktree"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-    cat << 'EOF'
+  cat << 'EOF'
 hug wtc: Create worktree for existing or new branch
 
 USAGE:
@@ -64,10 +64,10 @@ EOF
 check_git_repo
 
 # Parse arguments using getopt
-set +e  # Temporarily disable exit on error to capture getopt failure
+set +e # Temporarily disable exit on error to capture getopt failure
 PARSED=$(getopt --options hf --longoptions help,force,dry-run,new --name "hug wtc" -- "$@" 2>&1)
 getopt_status=$?
-set -e  # Re-enable exit on error
+set -e # Re-enable exit on error
 
 if [ $getopt_status -ne 0 ]; then
   # getopt failed - print the error message if available
@@ -86,130 +86,130 @@ new_branch=false
 
 # Process options
 while true; do
-    case "$1" in
-        -h|--help)
-            show_help
-            exit 0
-            ;;
-        -f|--force)
-            force=true
-            shift
-            ;;
-        --dry-run)
-            dry_run=true
-            shift
-            ;;
-        --new)
-            new_branch=true
-            shift
-            ;;
-        --)
-            shift
-            break
-            ;;
-        *)
-            error "Internal error in option parsing"
-            ;;
-    esac
+  case "$1" in
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -f | --force)
+    force=true
+    shift
+    ;;
+  --dry-run)
+    dry_run=true
+    shift
+    ;;
+  --new)
+    new_branch=true
+    shift
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *)
+    error "Internal error in option parsing"
+    ;;
+  esac
 done
 
 # Validate flag combinations
 if $force && $dry_run; then
-    error "Cannot use --force and --dry-run together. These flags are mutually exclusive."
-    exit 1
+  error "Cannot use --force and --dry-run together. These flags are mutually exclusive."
+  exit 1
 fi
 
 # Parse arguments
 if [[ $# -eq 0 ]]; then
-    # No arguments provided - show interactive branch selection
+  # No arguments provided - show interactive branch selection
+  branch_name=""
+  worktree_path=""
+elif [[ $# -eq 1 ]]; then
+  if [[ "$1" == "--" ]]; then
+    # Interactive branch selection
     branch_name=""
     worktree_path=""
-elif [[ $# -eq 1 ]]; then
-    if [[ "$1" == "--" ]]; then
-        # Interactive branch selection
-        branch_name=""
-        worktree_path=""
-    else
-        # Branch name provided
-        branch_name="$1"
-        worktree_path=""
-    fi
+  else
+    # Branch name provided
+    branch_name="$1"
+    worktree_path=""
+  fi
 elif [[ $# -eq 2 ]]; then
-    if [[ "$1" == "--" ]]; then
-        # Interactive branch selection, custom path provided
-        branch_name=""
-        worktree_path="$2"
-    else
-        # Branch name and path both provided
-        branch_name="$1"
-        worktree_path="$2"
-    fi
+  if [[ "$1" == "--" ]]; then
+    # Interactive branch selection, custom path provided
+    branch_name=""
+    worktree_path="$2"
+  else
+    # Branch name and path both provided
+    branch_name="$1"
+    worktree_path="$2"
+  fi
 elif [[ $# -gt 2 ]]; then
-    error "Too many arguments. Usage: hug wtc [branch] [path]. See 'hug wtc --help'."
-    exit 1
+  error "Too many arguments. Usage: hug wtc [branch] [path]. See 'hug wtc --help'."
+  exit 1
 fi
 
 # Interactive branch selection if needed
 if [[ -z "$branch_name" ]]; then
-    # Show interactive branch selection using existing branch menu functions
-    selected_branch=""
+  # Show interactive branch selection using existing branch menu functions
+  selected_branch=""
 
-    if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/hug_git_branch.py" local)"; then
-        error "No local branches found."
-        exit 1
+  if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/hug_git_branch.py" local)"; then
+    error "No local branches found."
+    exit 1
+  fi
+
+  # Filter out branches that already have worktrees
+  declare -a available_branches=() available_hashes=() available_subjects=() available_tracks=()
+  for ((i = 0; i < ${#branches[@]}; i++)); do
+    branch="${branches[i]}"
+    if branch_available_for_worktree "$branch"; then
+      available_branches+=("$branch")
+      available_hashes+=("${hashes[i]}")
+      available_subjects+=("${subjects[i]}")
+      available_tracks+=("${tracks[i]}")
     fi
+  done
 
-    # Filter out branches that already have worktrees
-    declare -a available_branches=() available_hashes=() available_subjects=() available_tracks=()
-    for ((i=0; i<${#branches[@]}; i++)); do
-        branch="${branches[i]}"
-        if branch_available_for_worktree "$branch"; then
-            available_branches+=("$branch")
-            available_hashes+=("${hashes[i]}")
-            available_subjects+=("${subjects[i]}")
-            available_tracks+=("${tracks[i]}")
-        fi
-    done
+  if [[ ${#available_branches[@]} -eq 0 ]]; then
+    error "All branches already have worktrees. Use 'hug wtl' to see existing worktrees."
+    exit 1
+  fi
 
-    if [[ ${#available_branches[@]} -eq 0 ]]; then
-        error "All branches already have worktrees. Use 'hug wtl' to see existing worktrees."
-        exit 1
-    fi
+  # Print interactive menu and get selection (display functions unchanged)
+  print_interactive_branch_menu selected_branch "$current_branch" "$max_len" available_hashes available_branches available_tracks available_subjects
 
-    # Print interactive menu and get selection (display functions unchanged)
-    print_interactive_branch_menu selected_branch "$current_branch" "$max_len" available_hashes available_branches available_tracks available_subjects
+  # If user cancelled, print a message and exit
+  if [[ -z "$selected_branch" ]]; then
+    info "Worktree creation cancelled."
+    exit 0
+  fi
 
-    # If user cancelled, print a message and exit
-    if [[ -z "$selected_branch" ]]; then
-        info "Worktree creation cancelled."
-        exit 0
-    fi
-
-    branch_name="$selected_branch"
+  branch_name="$selected_branch"
 fi
 
 # Create branch if needed (for non-interactive mode)
 if [[ -n "$branch_name" ]]; then
-    if ! create_branch_if_needed "$branch_name" "$new_branch" "$force"; then
-        error "Branch creation cancelled or failed."
-        exit 1
-    fi
+  if ! create_branch_if_needed "$branch_name" "$new_branch" "$force"; then
+    error "Branch creation cancelled or failed."
+    exit 1
+  fi
 fi
 
 # Generate path if not provided
 if [[ -z "$worktree_path" ]]; then
-    worktree_path=$(generate_worktree_path "$branch_name")
+  worktree_path=$(generate_worktree_path "$branch_name")
 
-    # Ensure path is unique (handle conflicts)
-    if [[ -e "$worktree_path" ]]; then
-        worktree_path=$(generate_unique_worktree_path "$branch_name")
-        info "Default path exists, using: $worktree_path"
-    fi
+  # Ensure path is unique (handle conflicts)
+  if [[ -e "$worktree_path" ]]; then
+    worktree_path=$(generate_unique_worktree_path "$branch_name")
+    info "Default path exists, using: $worktree_path"
+  fi
 fi
 
 # Convert relative path to absolute for validation
 if [[ ! "$worktree_path" = /* ]]; then
-    worktree_path="$(pwd)/$worktree_path"
+  worktree_path="$(pwd)/$worktree_path"
 fi
 
 # Show what we're about to do
@@ -218,9 +218,9 @@ printf "${BLUE}Worktree Creation Summary:${NC}\n"
 printf "  Branch: %s\n" "$branch_name"
 printf "  Path: %s\n" "${worktree_path/#$HOME/\~}"
 if "$dry_run"; then
-    printf "  Mode: %s\n" "DRY RUN"
+  printf "  Mode: %s\n" "DRY RUN"
 else
-    printf "  Mode: %s\n" "CREATE"
+  printf "  Mode: %s\n" "CREATE"
 fi
 echo
 

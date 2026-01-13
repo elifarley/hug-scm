@@ -8,8 +8,6 @@ Following Google Python testing best practices:
 """
 
 import json
-import pytest
-from datetime import datetime
 from io import StringIO
 from unittest.mock import patch
 

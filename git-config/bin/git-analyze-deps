@@ -2,7 +2,8 @@
 # git-analyze-deps - Show dependency graph for commits/files
 # Part of the Hug tool suite
 
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -121,53 +122,53 @@ max_results=20
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --all)
-      all_mode=true
-      shift
-      ;;
-    --depth)
-      depth="$2"
-      shift 2
-      ;;
-    --threshold)
-      threshold="$2"
-      shift 2
-      ;;
-    --since=*)
-      since_arg="${1#*=}"
-      shift
-      ;;
-    --since)
-      since_arg="$2"
-      shift 2
-      ;;
-    --format)
-      output_format="$2"
-      shift 2
-      ;;
-    --max-results)
-      max_results="$2"
-      shift 2
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -*)
+  --all)
+    all_mode=true
+    shift
+    ;;
+  --depth)
+    depth="$2"
+    shift 2
+    ;;
+  --threshold)
+    threshold="$2"
+    shift 2
+    ;;
+  --since=*)
+    since_arg="${1#*=}"
+    shift
+    ;;
+  --since)
+    since_arg="$2"
+    shift 2
+    ;;
+  --format)
+    output_format="$2"
+    shift 2
+    ;;
+  --max-results)
+    max_results="$2"
+    shift 2
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -*)
+    error "Unknown option: $1"
+    show_help
+    exit 1
+    ;;
+  *)
+    if [ -z "$commit" ]; then
+      commit="$1"
+    else
       error "Unknown option: $1"
       show_help
       exit 1
-      ;;
-    *)
-      if [ -z "$commit" ]; then
-        commit="$1"
-      else
-        error "Unknown option: $1"
-        show_help
-        exit 1
-      fi
-      shift
-      ;;
+    fi
+    shift
+    ;;
   esac
 done
 
@@ -193,7 +194,7 @@ if $all_mode; then
   fi
 
   # Use system timeout command as safety net if available
-  if command -v timeout >/dev/null 2>&1; then
+  if command -v timeout > /dev/null 2>&1; then
     exec timeout "$DEFAULT_TIMEOUT" python3 "$python_script" "${py_args[@]}"
   else
     exec python3 "$python_script" "${py_args[@]}"
@@ -231,7 +232,7 @@ Usage: hug analyze deps <commit>"
 fi
 
 # Validate commit exists
-if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
+if ! git rev-parse --verify "$commit" > /dev/null 2>&1; then
   error "Invalid commit: $commit"
   exit 1
 fi
@@ -244,7 +245,7 @@ if [ -n "$since_arg" ]; then
 fi
 
 # Use system timeout command as safety net if available
-if command -v timeout >/dev/null 2>&1; then
+if command -v timeout > /dev/null 2>&1; then
   exec timeout "$DEFAULT_TIMEOUT" python3 "$python_script" "${py_args[@]}"
 else
   exec python3 "$python_script" "${py_args[@]}"

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug bpush: Push the current branch and set upstream tracking.
 
 USAGE:
@@ -92,7 +93,7 @@ find_remote_by_url() {
 
 get_upstream_remote() {
   local upstream
-  if upstream="$(git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null)"; then
+  if upstream="$(git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2> /dev/null)"; then
     # Extract remote from upstream ref (e.g., "refs/remotes/origin/main" -> "origin")
     printf '%s\n' "${upstream#refs/remotes/}" | cut -d/ -f1
     return 0
@@ -104,7 +105,7 @@ has_upstream_for_target() {
   local target_remote="$1"
   local target_branch="$2"
   local current_upstream
-  if current_upstream="$(git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2>/dev/null)"; then
+  if current_upstream="$(git rev-parse --abbrev-ref --symbolic-full-name @{upstream} 2> /dev/null)"; then
     [[ "$current_upstream" == "refs/remotes/$target_remote/$target_branch" ]]
   else
     return 1
@@ -112,7 +113,7 @@ has_upstream_for_target() {
 }
 
 suggest_setup() {
-  cat <<'EOF' >&2
+  cat << 'EOF' >&2
 No upstream tracking or 'origin' remote found. Suggestions:
   - Add and push to 'origin': hug bpush origin <url>
   - Push to an existing remote with tracking: hug bpush -t <remote>
@@ -130,10 +131,10 @@ if [ -z "$branch" ]; then
 fi
 
 # Parse arguments using getopt
-set +e  # Temporarily disable exit on error to capture getopt failure
+set +e # Temporarily disable exit on error to capture getopt failure
 PARSED=$(getopt --options huft --longoptions help,update,force,unsafe,track --name "hug bpush" -- "$@" 2>&1)
 getopt_status=$?
-set -e  # Re-enable exit on error
+set -e # Re-enable exit on error
 
 if [ $getopt_status -ne 0 ]; then
   # getopt failed - print the error message if available
@@ -152,33 +153,33 @@ track=false
 
 while true; do
   case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -u|--update)
-      update=true
-      shift
-      ;;
-    -f|--force)
-      force_safe=true
-      shift
-      ;;
-    --unsafe)
-      force_unsafe=true
-      shift
-      ;;
-    -t|--track)
-      track=true
-      shift
-      ;;
-    --)
-      shift
-      break
-      ;;
-    *)
-      error "Internal error in option parsing"
-      ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -u | --update)
+    update=true
+    shift
+    ;;
+  -f | --force)
+    force_safe=true
+    shift
+    ;;
+  --unsafe)
+    force_unsafe=true
+    shift
+    ;;
+  -t | --track)
+    track=true
+    shift
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *)
+    error "Internal error in option parsing"
+    ;;
   esac
 done
 
@@ -191,87 +192,87 @@ is_url_arg=false
 is_remote_name_arg=false
 
 case $# in
-  0)
-    if upstream_remote="$(get_upstream_remote)"; then
-      remote="$upstream_remote"
-      printf "Pushing to existing upstream remote '%s'...\n" "$remote"
-      should_set_upstream=false
-    elif remote_exists "origin"; then
-      remote="origin"
-      printf "No upstream; pushing to default 'origin'...\n"
-      should_set_upstream=true
+0)
+  if upstream_remote="$(get_upstream_remote)"; then
+    remote="$upstream_remote"
+    printf "Pushing to existing upstream remote '%s'...\n" "$remote"
+    should_set_upstream=false
+  elif remote_exists "origin"; then
+    remote="origin"
+    printf "No upstream; pushing to default 'origin'...\n"
+    should_set_upstream=true
+  else
+    error "No upstream or 'origin' remote. See suggestions below."
+    suggest_setup
+  fi
+  ;;
+1)
+  arg="$1"
+  if is_url "$arg"; then
+    is_url_arg=true
+    url="$(normalize_url "$arg")"
+    if existing_remote="$(find_remote_by_url "$url")"; then
+      remote="$existing_remote"
+      printf "Using existing remote '%s' (%s)\n" "$remote" "$url"
     else
-      error "No upstream or 'origin' remote. See suggestions below."
-      suggest_setup
-    fi
-    ;;
-  1)
-    arg="$1"
-    if is_url "$arg"; then
-      is_url_arg=true
-      url="$(normalize_url "$arg")"
-      if existing_remote="$(find_remote_by_url "$url")"; then
-        remote="$existing_remote"
-        printf "Using existing remote '%s' (%s)\n" "$remote" "$url"
-      else
-        derived="$(derive_remote_name "$url")"
-        if remote_exists "$derived"; then
-          if $update; then
-            printf "Updating URL for existing remote '%s'\n" "$derived"
-            git remote set-url "$derived" "$url"
-            remote="$derived"
-          else
-            usage_error "Derived remote name '$derived' already exists but points to a different URL. Use --update or provide a remote name."
-          fi
-        else
-          if [ -z "$(git remote)" ]; then
-            derived="origin"
-          fi
-          printf "Adding remote '%s' for %s\n" "$derived" "$url"
-          git remote add "$derived" "$url"
-          remote="$derived"
-        fi
-      fi
-    else
-      is_remote_name_arg=true
-      remote="$arg"
-      if ! remote_exists "$remote"; then
-        error "Remote '$remote' not found."
-      fi
-    fi
-    ;;
-  2)
-    remote="$1"
-    url="$(normalize_url "$2")"
-    if ! [[ "$remote" =~ ^[A-Za-z0-9._-]+$ ]]; then
-      usage_error "Invalid remote name '$remote'."
-    fi
-    if remote_exists "$remote"; then
-      existing_url="$(normalize_url "$(git remote get-url --all "$remote" | head -n1)")"
-      if [ "$existing_url" != "$url" ]; then
+      derived="$(derive_remote_name "$url")"
+      if remote_exists "$derived"; then
         if $update; then
-          printf "Updating URL for '%s' to %s\n" "$remote" "$url"
-          git remote set-url "$remote" "$url"
+          printf "Updating URL for existing remote '%s'\n" "$derived"
+          git remote set-url "$derived" "$url"
+          remote="$derived"
         else
-          usage_error "Remote '$remote' points to '$existing_url', not '$url'. Use --update."
+          usage_error "Derived remote name '$derived' already exists but points to a different URL. Use --update or provide a remote name."
         fi
       else
-        printf "Remote '%s' already points to %s\n" "$remote" "$url"
+        if [ -z "$(git remote)" ]; then
+          derived="origin"
+        fi
+        printf "Adding remote '%s' for %s\n" "$derived" "$url"
+        git remote add "$derived" "$url"
+        remote="$derived"
+      fi
+    fi
+  else
+    is_remote_name_arg=true
+    remote="$arg"
+    if ! remote_exists "$remote"; then
+      error "Remote '$remote' not found."
+    fi
+  fi
+  ;;
+2)
+  remote="$1"
+  url="$(normalize_url "$2")"
+  if ! [[ "$remote" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    usage_error "Invalid remote name '$remote'."
+  fi
+  if remote_exists "$remote"; then
+    existing_url="$(normalize_url "$(git remote get-url --all "$remote" | head -n1)")"
+    if [ "$existing_url" != "$url" ]; then
+      if $update; then
+        printf "Updating URL for '%s' to %s\n" "$remote" "$url"
+        git remote set-url "$remote" "$url"
+      else
+        usage_error "Remote '$remote' points to '$existing_url', not '$url'. Use --update."
       fi
     else
-      printf "Adding remote '%s' for %s\n" "$remote" "$url"
-      git remote add "$remote" "$url"
+      printf "Remote '%s' already points to %s\n" "$remote" "$url"
     fi
-    ;;
-  *)
-    usage_error "Too many positional arguments."
-    ;;
+  else
+    printf "Adding remote '%s' for %s\n" "$remote" "$url"
+    git remote add "$remote" "$url"
+  fi
+  ;;
+*)
+  usage_error "Too many positional arguments."
+  ;;
 esac
 
 # Determine if we should set upstream (-u)
 should_set_upstream=false
 has_upstream=false
-if get_upstream_remote >/dev/null 2>&1; then
+if get_upstream_remote > /dev/null 2>&1; then
   has_upstream=true
   if ! has_upstream_for_target "$remote" "$branch"; then
     # Has upstream but not for this target
@@ -298,14 +299,14 @@ if $should_set_upstream; then
 fi
 if $force_unsafe; then
   push_args+=("--force")
-  tracking_note="$( $should_set_upstream && echo ' with upstream tracking' || echo '' )"
+  tracking_note="$($should_set_upstream && echo ' with upstream tracking' || echo '')"
   printf "Force-pushing branch '%s' to remote '%s' (unsafe)%s...\n" "$branch" "$remote" "$tracking_note"
 elif $force_safe; then
   push_args+=("--force-with-lease")
-  tracking_note="$( $should_set_upstream && echo ' with upstream tracking' || echo '' )"
+  tracking_note="$($should_set_upstream && echo ' with upstream tracking' || echo '')"
   printf "Force-pushing branch '%s' to remote '%s' (safe)%s...\n" "$branch" "$remote" "$tracking_note"
 else
-  tracking_note="$( $should_set_upstream && echo ' with upstream tracking' || echo '' )"
+  tracking_note="$($should_set_upstream && echo ' with upstream tracking' || echo '')"
   printf "Pushing branch '%s' to remote '%s'%s...\n" "$branch" "$remote" "$tracking_note"
 fi
 push_args+=("$remote" "$branch")

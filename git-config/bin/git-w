@@ -2,35 +2,76 @@
 # git-w - Working directory command gateway
 # Part of the Hug tool suite
 
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 
-case "${1:-}" in 
-  discard)      shift; git w-discard "$@" ;;
-  discard-all)  shift; git w-discard-all "$@" ;;
-  purge)        shift; git w-purge "$@" ;;
-  purge-all)    shift; git w-purge-all "$@" ;;
-  wipe)         shift; git w-wipe "$@" ;;
-  wipe-all)     shift; git w-wipe-all "$@" ;;
-  zap)          shift; git w-zap "$@" ;;
-  zap-all)      shift; git w-zap-all "$@" ;;
-  get)          shift; git w-get "$@" ;;
-  wip)          shift; git-w-wip "$@" ;;
-  wips)         shift; git-w-wip "$@" --stay ;;
-  unwip)        shift; git-w-unwip "$@" ;;
-  wipdel)       shift; git-w-wipdel "$@" ;;
-  *)             printf 'Usage: hug w <command> [args]\n' >&2;
-                 printf 'Commands:\n' >&2;
-                 printf '  discard      Discard changes (Unstaged / Staged) on some tracked files\n' >&2;
-                 printf '  discard-all  Discard changes (Unstaged / Staged) on ALL  tracked files\n' >&2;
-                 printf '  wipe         Wipe both Unstaged + Staged changes on some tracked files\n' >&2;
-                 printf '  wipe-all     Wipe both Unstaged + Staged changes on ALL  tracked files\n' >&2;
-                 printf '  purge        Remove     Untracked / Ignored files\n' >&2;
-                 printf '  purge-all    Remove ALL Untracked / Ignored files\n' >&2;
-                 printf '  zap          Factory reset on some files\n' >&2;
-                 printf '  zap-all      Factory reset on ALL  files\n' >&2;
-                 printf '  get          Get files from specific commit\n' >&2;
-                 printf '  wip          Park changes on new WIP branch\n' >&2;
-                 printf '  wips         Park changes on new WIP branch, stay on it\n' >&2;
-                 printf '  unwip        Unpark WIP: squash-merge to current + delete\n' >&2;
-                 printf '  wipdel       Delete WIP branch (no integration)\n' >&2;
-esac;
+case "${1:-}" in
+discard)
+  shift
+  git w-discard "$@"
+  ;;
+discard-all)
+  shift
+  git w-discard-all "$@"
+  ;;
+purge)
+  shift
+  git w-purge "$@"
+  ;;
+purge-all)
+  shift
+  git w-purge-all "$@"
+  ;;
+wipe)
+  shift
+  git w-wipe "$@"
+  ;;
+wipe-all)
+  shift
+  git w-wipe-all "$@"
+  ;;
+zap)
+  shift
+  git w-zap "$@"
+  ;;
+zap-all)
+  shift
+  git w-zap-all "$@"
+  ;;
+get)
+  shift
+  git w-get "$@"
+  ;;
+wip)
+  shift
+  git-w-wip "$@"
+  ;;
+wips)
+  shift
+  git-w-wip "$@" --stay
+  ;;
+unwip)
+  shift
+  git-w-unwip "$@"
+  ;;
+wipdel)
+  shift
+  git-w-wipdel "$@"
+  ;;
+*)
+  printf 'Usage: hug w <command> [args]\n' >&2
+  printf 'Commands:\n' >&2
+  printf '  discard      Discard changes (Unstaged / Staged) on some tracked files\n' >&2
+  printf '  discard-all  Discard changes (Unstaged / Staged) on ALL  tracked files\n' >&2
+  printf '  wipe         Wipe both Unstaged + Staged changes on some tracked files\n' >&2
+  printf '  wipe-all     Wipe both Unstaged + Staged changes on ALL  tracked files\n' >&2
+  printf '  purge        Remove     Untracked / Ignored files\n' >&2
+  printf '  purge-all    Remove ALL Untracked / Ignored files\n' >&2
+  printf '  zap          Factory reset on some files\n' >&2
+  printf '  zap-all      Factory reset on ALL  files\n' >&2
+  printf '  get          Get files from specific commit\n' >&2
+  printf '  wip          Park changes on new WIP branch\n' >&2
+  printf '  wips         Park changes on new WIP branch, stay on it\n' >&2
+  printf '  unwip        Unpark WIP: squash-merge to current + delete\n' >&2
+  printf '  wipdel       Delete WIP branch (no integration)\n' >&2
+  ;;
+esac

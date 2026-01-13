@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 Usage: hug w purge-all [OPTIONS]
 
 Remove untracked and/or ignored files across the entire repository.
@@ -32,38 +33,38 @@ flags_explicit=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -u|--untracked)
-      target_untracked=true
-      flags_explicit=true
-      shift
-      ;;
-    -i|--ignored)
-      target_ignored=true
-      flags_explicit=true
-      shift
-      ;;
-    --dry-run)
-      dry_run=true
-      shift
-      ;;
-    -f|--force)
-      force=true
-      shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -*)
-      error "unknown option: $1"
-      show_help >&2
-      exit 2
-      ;;
-    *)
-      error "positional arguments are not accepted (use 'git w purge' for path-specific)"
-      show_help >&2
-      exit 2
-      ;;
+  -u | --untracked)
+    target_untracked=true
+    flags_explicit=true
+    shift
+    ;;
+  -i | --ignored)
+    target_ignored=true
+    flags_explicit=true
+    shift
+    ;;
+  --dry-run)
+    dry_run=true
+    shift
+    ;;
+  -f | --force)
+    force=true
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -*)
+    error "unknown option: $1"
+    show_help >&2
+    exit 2
+    ;;
+  *)
+    error "positional arguments are not accepted (use 'git w purge' for path-specific)"
+    show_help >&2
+    exit 2
+    ;;
   esac
 done
 
@@ -81,7 +82,7 @@ build_preview() {
   elif $target_ignored; then
     preview_cmd+=("-X")
   fi
-  "${preview_cmd[@]}" 2>/dev/null
+  "${preview_cmd[@]}" 2> /dev/null
 }
 
 preview_output=$(build_preview)

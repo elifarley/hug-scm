@@ -2,7 +2,8 @@
 # git-stats-author - Author contribution statistics
 # Part of the Hug tool suite
 
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -104,30 +105,30 @@ remaining_args=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --since)
-      since_arg="$2"
-      shift 2
-      ;;
-    --until)
-      until_arg="$2"
-      shift 2
-      ;;
-    --top)
-      top_n="$2"
-      shift 2
-      ;;
-    --json)
-      json_output=true
-      shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    *)
-      remaining_args+=("$1")
-      shift
-      ;;
+  --since)
+    since_arg="$2"
+    shift 2
+    ;;
+  --until)
+    until_arg="$2"
+    shift 2
+    ;;
+  --top)
+    top_n="$2"
+    shift 2
+    ;;
+  --json)
+    json_output=true
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  *)
+    remaining_args+=("$1")
+    shift
+    ;;
   esac
 done
 
@@ -160,7 +161,7 @@ if [ -n "$author" ]; then
     echo "  \"commits\": $commit_count,"
 
     # Line stats
-    stats=$(git log --author="$author" --numstat --format= "${git_opts[@]}" | \
+    stats=$(git log --author="$author" --numstat --format= "${git_opts[@]}" |
       awk '{added+=$1; deleted+=$2} END {print added, deleted, added-deleted}')
     read added deleted net <<< "$stats"
     echo "  \"lines_added\": ${added:-0},"
@@ -168,7 +169,7 @@ if [ -n "$author" ]; then
     echo "  \"lines_net\": ${net:-0},"
 
     # Files touched
-    files_count=$(git log --author="$author" --name-only --format= "${git_opts[@]}" | \
+    files_count=$(git log --author="$author" --name-only --format= "${git_opts[@]}" |
       sort -u | grep -v '^$' | wc -l)
     echo "  \"files_touched\": ${files_count:-0}"
 
@@ -195,7 +196,7 @@ if [ -n "$author" ]; then
     # Line stats
     info ""
     info "Code changes:"
-    git log --author="$author" --numstat --format= "${git_opts[@]}" | \
+    git log --author="$author" --numstat --format= "${git_opts[@]}" |
       awk '{added+=$1; deleted+=$2} END {
         printf "  Added:   +%d lines\n", added;
         printf "  Deleted: -%d lines\n", deleted;
@@ -204,15 +205,15 @@ if [ -n "$author" ]; then
 
     # Files touched
     info ""
-    files_count=$(git log --author="$author" --name-only --format= "${git_opts[@]}" | \
+    files_count=$(git log --author="$author" --name-only --format= "${git_opts[@]}" |
       sort -u | grep -v '^$' | wc -l)
     info "Files: $files_count files touched"
 
     # Top files
     info ""
     info "Top files:"
-    git log --author="$author" --name-only --format= "${git_opts[@]}" | \
-      grep -v '^$' | sort | uniq -c | sort -rn | head -5 | \
+    git log --author="$author" --name-only --format= "${git_opts[@]}" |
+      grep -v '^$' | sort | uniq -c | sort -rn | head -5 |
       while read count file; do
         info "  $file ($count commits)"
       done
@@ -225,7 +226,7 @@ fi
 if $json_output; then
   # JSON array of authors
   echo "["
-  git shortlog -sn --all "${git_opts[@]}" | head -"$top_n" | \
+  git shortlog -sn --all "${git_opts[@]}" | head -"$top_n" |
     awk -v first=1 '{
       if (!first) print ",";
       first=0;
@@ -242,15 +243,15 @@ else
   info "Top $top_n contributors:"
   info ""
 
-  git shortlog -sn --all "${git_opts[@]}" | head -"$top_n" | nl | \
+  git shortlog -sn --all "${git_opts[@]}" | head -"$top_n" | nl |
     while read rank count author; do
       # Get line stats for this author
-      stats=$(git log --all --author="$author" --numstat --format= "${git_opts[@]}" | \
+      stats=$(git log --all --author="$author" --numstat --format= "${git_opts[@]}" |
         awk '{added+=$1; deleted+=$2} END {print added-deleted}')
       net_lines=${stats:-0}
 
       # Get files count
-      files=$(git log --all --author="$author" --name-only --format= "${git_opts[@]}" | \
+      files=$(git log --all --author="$author" --name-only --format= "${git_opts[@]}" |
         sort -u | grep -v '^$' | wc -l)
 
       info "$(printf '%2d. %-20s (%3d commits, %+6d lines, %3d files)' \

@@ -57,7 +57,7 @@ extract_files_from_hug_sh() {
 
   # Find the last non-empty line (summary line)
   local summary_line_idx=-1
-  for ((i=${#lines[@]}-1; i>=0; i--)); do
+  for ((i = ${#lines[@]} - 1; i >= 0; i--)); do
     if [[ -n "${lines[$i]}" ]]; then
       summary_line_idx=$i
       break
@@ -89,7 +89,7 @@ extract_files_from_hug_sh() {
   fi
 
   # Extract filenames from the file lines
-  for ((i=file_start_idx; i<summary_line_idx; i++)); do
+  for ((i = file_start_idx; i < summary_line_idx; i++)); do
     local line="${lines[$i]}"
 
     # Match lines with " | " pattern (file stats)
@@ -102,7 +102,7 @@ extract_files_from_hug_sh() {
       if [[ "$file_entry" =~ '^{(.*)[[:space:]]*=>[[:space:]]*(.*)}$' ]]; then
         local old_path="${BASH_REMATCH[1]}"
         local new_path="${BASH_REMATCH[2]}"
-        echo "$new_path"  # Use the new name
+        echo "$new_path" # Use the new name
       else
         echo "$file_entry"
       fi
@@ -132,13 +132,13 @@ extract_files_from_commit() {
   local commit="$1"
 
   # Validate commit exists
-  if ! git rev-parse --verify "$commit" >/dev/null 2>&1; then
+  if ! git rev-parse --verify "$commit" > /dev/null 2>&1; then
     error "Commit '$commit' does not exist"
     return 1
   fi
 
   # Get files directly from commit using optimized git command
-  git diff-tree --no-commit-id --name-only -r "$commit" 2>/dev/null || true
+  git diff-tree --no-commit-id --name-only -r "$commit" 2> /dev/null || true
 }
 
 # Parse --from-file and --from-commit flags from command line arguments
@@ -153,18 +153,18 @@ parse_from_file_and_commit_flags() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --from-file)
-        from_file="$2"
-        shift 2
-        ;;
-      --from-commit)
-        from_commit="$2"
-        shift 2
-        ;;
-      *)
-        remaining_ref+=("$1")
-        shift
-        ;;
+    --from-file)
+      from_file="$2"
+      shift 2
+      ;;
+    --from-commit)
+      from_commit="$2"
+      shift 2
+      ;;
+    *)
+      remaining_ref+=("$1")
+      shift
+      ;;
     esac
   done
 }

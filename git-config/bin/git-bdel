@@ -4,11 +4,11 @@
 . "$HUG_HOME/git-config/lib/hug-common"
 # shellcheck source=git-config/lib/hug-git-kit
 . "$HUG_HOME/git-config/lib/hug-git-kit"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-    cat << EOF
+  cat << EOF
 hug bdel: Delete one or more local branches safely
 
 USAGE:
@@ -59,26 +59,26 @@ eval "$(parse_common_flags "$@")"
 branches_to_delete=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -*)
-      error "Unknown option: $1. See 'hug bdel --help'."
-      ;;
-    *)
-      branches_to_delete+=("$1")
-      shift
-      ;;
+  -*)
+    error "Unknown option: $1. See 'hug bdel --help'."
+    ;;
+  *)
+    branches_to_delete+=("$1")
+    shift
+    ;;
   esac
 done
 
 check_git_repo
 
 # Get current branch name to prevent deletion
-current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+current_branch=$(git rev-parse --abbrev-ref HEAD 2> /dev/null || echo "")
 
 # --- Main function for 'hug bdel' ---
 hug_bdel() {
   local -a branches_to_delete=("$@")
   local -a formatted_to_delete=()
-  
+
   # If no branches specified, show interactive menu using library functions
   if [[ ${#branches_to_delete[@]} -eq 0 ]]; then
     # Check if there are any branches available for deletion before showing interface
@@ -92,8 +92,8 @@ hug_bdel() {
     declare -a filtered_branches=()
     declare -a filtered_hashes=() filtered_subjects=() filtered_tracks=()
     filter_branches branches hashes subjects tracks "$current_branch" \
-        filtered_branches filtered_hashes filtered_subjects filtered_tracks \
-        "true" "true" ""
+      filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+      "true" "true" ""
 
     if [[ ${#filtered_branches[@]} -eq 0 ]]; then
       if [[ -n "$current_branch" && "$current_branch" != "HEAD" ]]; then
@@ -106,27 +106,27 @@ hug_bdel() {
 
     # Use existing select_branches function for consistent UX
     if ! select_branches branches_to_delete \
-            --multi-select \
-            --exclude-current \
-            --exclude-backup \
-            --placeholder "Select branches to delete (<TAB> to select, Enter to confirm)..."; then
+      --multi-select \
+      --exclude-current \
+      --exclude-backup \
+      --placeholder "Select branches to delete (<TAB> to select, Enter to confirm)..."; then
       info "No branches selected."
       exit 0
     fi
   fi
-  
+
   # Validate that none of the branches is the current branch
   for branch in "${branches_to_delete[@]}"; do
     if [[ "$branch" == "$current_branch" ]]; then
       error "Cannot delete current branch '$current_branch'. Switch to another branch first."
     fi
-    
+
     validate_commitish "bdel argument" "$branch"
   done
-  
+
   # Set dry_run default if not already set by parse_common_flags
   local dry_run="${dry_run:-false}"
-  
+
   # Preview mode
   if [[ "${dry_run}" == "true" ]]; then
     info "Dry run: Would delete ${#branches_to_delete[@]} branch(es):"
@@ -138,20 +138,20 @@ hug_bdel() {
       # Fallback for CLI args (no formatted)
       for branch in "${branches_to_delete[@]}"; do
         local hash
-        hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
+        hash=$(git rev-parse --short "$branch" 2> /dev/null || echo "???????")
         printf "  - %s (%s)\n" "$branch" "$hash" >&2
       done
     fi
     print_dry_run_preview "delete the listed branches"
     return 0
   fi
-  
+
   # Confirmation prompt (unless --force)
   if [[ ${HUG_FORCE:-} != true ]]; then
     local count=${#branches_to_delete[@]}
     local branch_word="branch"
     [[ $count -gt 1 ]] && branch_word="branches"
-    
+
     warning "About to delete $count $branch_word:"
     if [[ ${#formatted_to_delete[@]} -gt 0 ]]; then
       for formatted in "${formatted_to_delete[@]}"; do
@@ -161,28 +161,28 @@ hug_bdel() {
       # Fallback for CLI args (no formatted)
       for branch in "${branches_to_delete[@]}"; do
         local hash
-        hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
+        hash=$(git rev-parse --short "$branch" 2> /dev/null || echo "???????")
         printf "  - %s (%s)\n" "$branch" "$hash" >&2
       done
     fi
     printf "\n" >&2
     prompt_confirm_warn "⚠️  Delete these ${branch_word}? [y/N]: "
   fi
-  
+
   # Perform deletion
   local deleted_count=0
   local failed_count=0
   local -a deleted_branches=()
   local -a failed_branches=()
-  
+
   for branch in "${branches_to_delete[@]}"; do
     # Determine delete flag based on force option
-    local delete_flag="-d"  # Safe delete (only merged)
+    local delete_flag="-d" # Safe delete (only merged)
     if [[ ${HUG_FORCE:-} == true ]]; then
-      delete_flag="-D"  # Force delete (even unmerged)
+      delete_flag="-D" # Force delete (even unmerged)
     fi
-    
-    if git branch "$delete_flag" "$branch" >/dev/null 2>&1; then
+
+    if git branch "$delete_flag" "$branch" > /dev/null 2>&1; then
       deleted_branches+=("$branch")
       deleted_count=$((deleted_count + 1))
     else
@@ -190,7 +190,7 @@ hug_bdel() {
       failed_count=$((failed_count + 1))
     fi
   done
-  
+
   # Report results
   if [[ $deleted_count -gt 0 ]]; then
     local branch_word="branch"
@@ -210,7 +210,7 @@ hug_bdel() {
       done
     fi
   fi
-  
+
   if [[ $failed_count -gt 0 ]]; then
     local branch_word="branch"
     [[ $failed_count -gt 1 ]] && branch_word="branches"
@@ -219,7 +219,7 @@ hug_bdel() {
     for branch in "${failed_branches[@]}"; do
       printf "  ✗ %s (not fully merged - use --force to delete anyway)\n" "$branch" >&2
     done
-    
+
     if [[ $deleted_count -eq 0 ]]; then
       exit 1
     fi

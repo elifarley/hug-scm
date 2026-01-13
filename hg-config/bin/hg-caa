@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # hug caa: Commit all changes (tracked + untracked + deletions)
 set -euo pipefail
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done
 check_hg_repo
 

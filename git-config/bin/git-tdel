@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit hug-git-tag; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                             # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug tdel: Interactive tag deletion with safety features.
 
 USAGE:
@@ -75,51 +76,51 @@ declare -a args=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -f|--force)
-      force=true
-      shift
-      ;;
-    -r|--remote)
-      delete_remote=true
-      shift
-      ;;
-    --dry-run)
-      dry_run=true
-      shift
-      ;;
-    -t|--type)
-      if [[ $# -lt 2 ]]; then
-        error "Option --type requires a value"
-        exit 1
-      fi
-      type_filter="$2"
-      if [[ "$type_filter" != "lightweight" && "$type_filter" != "annotated" && "$type_filter" != "signed" ]]; then
-        error "Invalid type filter: $type_filter. Must be: lightweight, annotated, or signed"
-        exit 1
-      fi
-      shift 2
-      ;;
-    -p|--pattern)
-      if [[ $# -lt 2 ]]; then
-        error "Option --pattern requires a value"
-        exit 1
-      fi
-      pattern="$2"
-      shift 2
-      ;;
-    -*)
-      error "Unknown option: $1"
-      show_help
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -f | --force)
+    force=true
+    shift
+    ;;
+  -r | --remote)
+    delete_remote=true
+    shift
+    ;;
+  --dry-run)
+    dry_run=true
+    shift
+    ;;
+  -t | --type)
+    if [[ $# -lt 2 ]]; then
+      error "Option --type requires a value"
       exit 1
-      ;;
-    *)
-      args+=("$1")
-      shift
-      ;;
+    fi
+    type_filter="$2"
+    if [[ "$type_filter" != "lightweight" && "$type_filter" != "annotated" && "$type_filter" != "signed" ]]; then
+      error "Invalid type filter: $type_filter. Must be: lightweight, annotated, or signed"
+      exit 1
+    fi
+    shift 2
+    ;;
+  -p | --pattern)
+    if [[ $# -lt 2 ]]; then
+      error "Option --pattern requires a value"
+      exit 1
+    fi
+    pattern="$2"
+    shift 2
+    ;;
+  -*)
+    error "Unknown option: $1"
+    show_help
+    exit 1
+    ;;
+  *)
+    args+=("$1")
+    shift
+    ;;
   esac
 done
 
@@ -132,7 +133,7 @@ if [ ${#args[@]} -gt 0 ]; then
   tag_to_delete="${args[0]}"
 
   # Check if tag exists
-  if ! git rev-parse --verify "refs/tags/$tag_to_delete" >/dev/null 2>&1; then
+  if ! git rev-parse --verify "refs/tags/$tag_to_delete" > /dev/null 2>&1; then
     error "Tag '$tag_to_delete' does not exist."
     exit 1
   fi
@@ -151,15 +152,15 @@ if [ ${#args[@]} -gt 0 ]; then
 
   printf "${RED}Delete tag:${NC} ${GREEN}%s${NC}" "$tag_to_delete"
   case "$tag_type" in
-    "lightweight")
-      printf " ${GREY}(lightweight)${NC}"
-      ;;
-    "annotated")
-      printf " ${BLUE}(annotated)${NC}"
-      ;;
-    "signed")
-      printf " ${GREEN}(signed)${NC}"
-      ;;
+  "lightweight")
+    printf " ${GREY}(lightweight)${NC}"
+    ;;
+  "annotated")
+    printf " ${BLUE}(annotated)${NC}"
+    ;;
+  "signed")
+    printf " ${GREEN}(signed)${NC}"
+    ;;
   esac
 
   if [[ "$exists_remote" == "true" ]]; then
@@ -186,7 +187,7 @@ if [ ${#args[@]} -gt 0 ]; then
   fi
 
   # Create backup
-  backup=$(backup_tag "$tag_to_delete" 2>/dev/null || echo "")
+  backup=$(backup_tag "$tag_to_delete" 2> /dev/null || echo "")
   if [[ -n "$backup" ]]; then
     info "Created backup: $backup"
   fi
@@ -202,7 +203,7 @@ if [ ${#args[@]} -gt 0 ]; then
   # Delete remote tag if requested
   if [[ "$delete_remote" == "true" && "$exists_remote" == "true" ]]; then
     info "Deleting from remote origin..."
-    if git push origin --delete "refs/tags/$tag_to_delete" 2>/dev/null; then
+    if git push origin --delete "refs/tags/$tag_to_delete" 2> /dev/null; then
       success "Deleted remote tag '$tag_to_delete'"
     else
       warn "Failed to delete remote tag '$tag_to_delete' (may need manual removal)"
@@ -285,15 +286,15 @@ for i in "${!selected_tags[@]}"; do
 
   printf "  ${GREEN}%s${NC}" "$tag"
   case "$tag_type" in
-    "lightweight")
-      printf " ${GREY}(lightweight)${NC}"
-      ;;
-    "annotated")
-      printf " ${BLUE}(annotated)${NC}"
-      ;;
-    "signed")
-      printf " ${GREEN}(signed)${NC}"
-      ;;
+  "lightweight")
+    printf " ${GREY}(lightweight)${NC}"
+    ;;
+  "annotated")
+    printf " ${BLUE}(annotated)${NC}"
+    ;;
+  "signed")
+    printf " ${GREEN}(signed)${NC}"
+    ;;
   esac
 
   # Check remote status
@@ -342,19 +343,19 @@ for tag in "${selected_tags[@]}"; do
   fi
 
   # Create backup
-  backup=$(backup_tag "$tag" 2>/dev/null || echo "")
+  backup=$(backup_tag "$tag" 2> /dev/null || echo "")
   if [[ -n "$backup" ]]; then
     info "Created backup for '$tag': $backup"
   fi
 
   # Delete local tag
-  if git tag -d "$tag" 2>/dev/null; then
+  if git tag -d "$tag" 2> /dev/null; then
     success "Deleted local tag: $tag"
     ((deleted_count++))
 
     # Delete remote tag if requested
     if [[ "$delete_remote" == "true" && "$exists_remote" == "true" ]]; then
-      if git push origin --delete "refs/tags/$tag" 2>/dev/null; then
+      if git push origin --delete "refs/tags/$tag" 2> /dev/null; then
         success "Deleted remote tag: $tag"
         ((remote_deleted_count++))
       else

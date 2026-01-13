@@ -20,7 +20,7 @@ gum_available() {
   fi
 
   # Check if gum command exists
-  command -v gum >/dev/null 2>&1
+  command -v gum > /dev/null 2>&1
 }
 
 # Function to get the next response in sequence
@@ -63,47 +63,31 @@ gum_log() {
 
 # Handle different gum commands
 case "$1" in
-  filter)
-    # For filter command, read all input lines and return selection
-    mapfile -t lines
+filter)
+  # For filter command, read all input lines and return selection
+  mapfile -t lines
 
-    # Optional: simulate cancellation via test env
-    if [[ -n "${HUG_TEST_GUM_INPUT_RETURN_CODE:-}" ]] && [ "${HUG_TEST_GUM_INPUT_RETURN_CODE}" -ne 0 ]; then
-      exit "${HUG_TEST_GUM_INPUT_RETURN_CODE}"
-    fi
+  # Optional: simulate cancellation via test env
+  if [[ -n "${HUG_TEST_GUM_INPUT_RETURN_CODE:-}" ]] && [ "${HUG_TEST_GUM_INPUT_RETURN_CODE}" -ne 0 ]; then
+    exit "${HUG_TEST_GUM_INPUT_RETURN_CODE}"
+  fi
 
-    # Check if we received any input
-    if [ ${#lines[@]} -eq 0 ]; then
-      # No input means no items to select
-      exit 1
-    fi
+  # Check if we received any input
+  if [ ${#lines[@]} -eq 0 ]; then
+    # No input means no items to select
+    exit 1
+  fi
 
-    # Check if we have sequential responses configured
-    if [[ -n "${HUG_TEST_GUM_RESPONSES:-}" ]]; then
-      # Check if we should provide a custom response (not in the list)
-      custom_response=$(_get_next_response)
+  # Check if we have sequential responses configured
+  if [[ -n "${HUG_TEST_GUM_RESPONSES:-}" ]]; then
+    # Check if we should provide a custom response (not in the list)
+    custom_response=$(_get_next_response)
 
-      
-      if [[ -n "$custom_response" ]]; then
-        # Custom response provided
-        printf '%s\n' "$custom_response"
-      else
-        # No more custom responses, use selection index
-        if [[ -n "${HUG_TEST_GUM_SELECTION_INDEX:-}" ]]; then
-          idx="$HUG_TEST_GUM_SELECTION_INDEX"
-          if [[ "$idx" =~ ^[0-9]+$ ]] && [ "$idx" -lt ${#lines[@]} ]; then
-            printf '%s\n' "${lines[$idx]}"
-          else
-            # Invalid index, return first line as fallback
-            printf '%s\n' "${lines[0]}"
-          fi
-        else
-          # Default: return first line
-          printf '%s\n' "${lines[0]}"
-        fi
-      fi
+    if [[ -n "$custom_response" ]]; then
+      # Custom response provided
+      printf '%s\n' "$custom_response"
     else
-      # Use the original selection index logic
+      # No more custom responses, use selection index
       if [[ -n "${HUG_TEST_GUM_SELECTION_INDEX:-}" ]]; then
         idx="$HUG_TEST_GUM_SELECTION_INDEX"
         if [[ "$idx" =~ ^[0-9]+$ ]] && [ "$idx" -lt ${#lines[@]} ]; then
@@ -117,182 +101,187 @@ case "$1" in
         printf '%s\n' "${lines[0]}"
       fi
     fi
-    # Ensure the mock terminates cleanly and does not linger
-    exit 0
-    ;;
-    
-  confirm)
-    # For confirm command, check if HUG_TEST_GUM_CONFIRM is set
-    # If "yes", return 0; if "no", return 1; otherwise use real gum
-    # 
-    # IMPORTANT: gum confirm outputs the prompt message to stderr, so we must
-    # echo it ourselves to ensure tests can verify the prompt appeared.
-    # Parse the prompt from arguments (skipping flags like --default=false)
-    prompt_msg=""
-    skip_next=false
-    for arg in "$@"; do
-      if $skip_next; then
-        skip_next=false
-        continue
-      fi
-      case "$arg" in
-        confirm) continue ;;
-        --default=*) continue ;;
-        --default) skip_next=true; continue ;;
-        --affirmative=*) continue ;;
-        --affirmative) skip_next=true; continue ;;
-        --negative=*) continue ;;
-        --negative) skip_next=true; continue ;;
-        *) prompt_msg="$arg" ;;
-      esac
-    done
-    
-    # Output the prompt to both stdout (for test visibility) and stderr (to mimic real gum)
-    if [[ -n "$prompt_msg" ]]; then
-      printf '%s ' "$prompt_msg"  # Output to stdout for test verification
-      printf '%s ' "$prompt_msg" >&2  # Also output to stderr to mimic real gum
-    fi
-    
-    if [[ "${HUG_TEST_GUM_CONFIRM:-}" == "yes" ]]; then
-      exit 0
-    elif [[ "${HUG_TEST_GUM_CONFIRM:-}" == "no" ]]; then
-      exit 1
-    else
-      # Fall back to real gum if available (use full path to avoid recursion)
-      if command -v /usr/bin/gum >/dev/null 2>&1 || command -v /usr/local/bin/gum >/dev/null 2>&1; then
-        # Find real gum (not the mock)
-        real_gum=$(PATH="${PATH#*:}" command -v gum 2>/dev/null || echo "")
-        if [[ -n "$real_gum" && "$real_gum" != "$0" ]]; then
-          "$real_gum" "$@"
-        else
-          # No real gum found, default to yes
-          exit 0
-        fi
+  else
+    # Use the original selection index logic
+    if [[ -n "${HUG_TEST_GUM_SELECTION_INDEX:-}" ]]; then
+      idx="$HUG_TEST_GUM_SELECTION_INDEX"
+      if [[ "$idx" =~ ^[0-9]+$ ]] && [ "$idx" -lt ${#lines[@]} ]; then
+        printf '%s\n' "${lines[$idx]}"
       else
-        # No real gum available, default to yes
-        exit 0
+        # Invalid index, return first line as fallback
+        printf '%s\n' "${lines[0]}"
       fi
+    else
+      # Default: return first line
+      printf '%s\n' "${lines[0]}"
     fi
-    ;;
-    
-  log)
-    # For log command, just pass through to real gum if available
-    # Otherwise, use our standalone implementation
-    if command -v /usr/bin/gum >/dev/null 2>&1 || command -v /usr/local/bin/gum >/dev/null 2>&1; then
-      # Find real gum (not the mock) 
-      real_gum=$(PATH="${PATH#*:}" command -v gum 2>/dev/null || echo "")
+  fi
+  # Ensure the mock terminates cleanly and does not linger
+  exit 0
+  ;;
+
+confirm)
+  # For confirm command, check if HUG_TEST_GUM_CONFIRM is set
+  # If "yes", return 0; if "no", return 1; otherwise use real gum
+  #
+  # IMPORTANT: gum confirm outputs the prompt message to stderr, so we must
+  # echo it ourselves to ensure tests can verify the prompt appeared.
+  # Parse the prompt from arguments (skipping flags like --default=false)
+  prompt_msg=""
+  skip_next=false
+  for arg in "$@"; do
+    if $skip_next; then
+      skip_next=false
+      continue
+    fi
+    case "$arg" in
+    confirm) continue ;;
+    --default=*) continue ;;
+    --default)
+      skip_next=true
+      continue
+      ;;
+    --affirmative=*) continue ;;
+    --affirmative)
+      skip_next=true
+      continue
+      ;;
+    --negative=*) continue ;;
+    --negative)
+      skip_next=true
+      continue
+      ;;
+    *) prompt_msg="$arg" ;;
+    esac
+  done
+
+  # Output the prompt to both stdout (for test visibility) and stderr (to mimic real gum)
+  if [[ -n "$prompt_msg" ]]; then
+    printf '%s ' "$prompt_msg"     # Output to stdout for test verification
+    printf '%s ' "$prompt_msg" >&2 # Also output to stderr to mimic real gum
+  fi
+
+  if [[ "${HUG_TEST_GUM_CONFIRM:-}" == "yes" ]]; then
+    exit 0
+  elif [[ "${HUG_TEST_GUM_CONFIRM:-}" == "no" ]]; then
+    exit 1
+  else
+    # Fall back to real gum if available (use full path to avoid recursion)
+    if command -v /usr/bin/gum > /dev/null 2>&1 || command -v /usr/local/bin/gum > /dev/null 2>&1; then
+      # Find real gum (not the mock)
+      real_gum=$(PATH="${PATH#*:}" command -v gum 2> /dev/null || echo "")
       if [[ -n "$real_gum" && "$real_gum" != "$0" ]]; then
         "$real_gum" "$@"
       else
-        shift  # Remove 'log' argument
-        message="$*"
-        if [[ -n "$message" ]]; then
-          echo "$message"
-        fi
+        # No real gum found, default to yes
+        exit 0
       fi
     else
-      shift  # Remove 'log' argument
-      # Simple implementation for testing
+      # No real gum available, default to yes
+      exit 0
+    fi
+  fi
+  ;;
+
+log)
+  # For log command, just pass through to real gum if available
+  # Otherwise, use our standalone implementation
+  if command -v /usr/bin/gum > /dev/null 2>&1 || command -v /usr/local/bin/gum > /dev/null 2>&1; then
+    # Find real gum (not the mock)
+    real_gum=$(PATH="${PATH#*:}" command -v gum 2> /dev/null || echo "")
+    if [[ -n "$real_gum" && "$real_gum" != "$0" ]]; then
+      "$real_gum" "$@"
+    else
+      shift # Remove 'log' argument
       message="$*"
       if [[ -n "$message" ]]; then
         echo "$message"
       fi
     fi
-    ;;
+  else
+    shift # Remove 'log' argument
+    # Simple implementation for testing
+    message="$*"
+    if [[ -n "$message" ]]; then
+      echo "$message"
+    fi
+  fi
+  ;;
 
-  input)
-    # For input command, use sequential response system
-    response=$(_get_next_response)
+input)
+  # For input command, use sequential response system
+  response=$(_get_next_response)
 
-    
-    # If we have a response, output it
-    if [[ -n "$response" ]]; then
-      printf '%s\n' "$response"
-      exit 0
-    elif [[ -n "${HUG_TEST_GUM_INPUT_RETURN_CODE:-}" ]]; then
-      # Allow tests to control return code (0=success, 1=cancelled)
-      exit "$HUG_TEST_GUM_INPUT_RETURN_CODE"
-    else
-      # Read from stdin or provide default behavior
-      if [[ -t 0 ]]; then
-        # Interactive input available
-        if read -r input; then
-          printf '%s\n' "$input"
-          exit 0
-        else
-          exit 1
-        fi
+  # If we have a response, output it
+  if [[ -n "$response" ]]; then
+    printf '%s\n' "$response"
+    exit 0
+  elif [[ -n "${HUG_TEST_GUM_INPUT_RETURN_CODE:-}" ]]; then
+    # Allow tests to control return code (0=success, 1=cancelled)
+    exit "$HUG_TEST_GUM_INPUT_RETURN_CODE"
+  else
+    # Read from stdin or provide default behavior
+    if [[ -t 0 ]]; then
+      # Interactive input available
+      if read -r input; then
+        printf '%s\n' "$input"
+        exit 0
       else
-        # No interactive input, simulate cancellation
         exit 1
       fi
+    else
+      # No interactive input, simulate cancellation
+      exit 1
     fi
-    ;;
+  fi
+  ;;
 
-  choose)
-    # For choose command (used for tag type selection)
-    # Check if we have pre-configured responses
-    if [[ -n "${HUG_TEST_GUM_RESPONSES:-}" ]]; then
-      response=$(_get_next_response)
+choose)
+  # For choose command (used for tag type selection)
+  # Check if we have pre-configured responses
+  if [[ -n "${HUG_TEST_GUM_RESPONSES:-}" ]]; then
+    response=$(_get_next_response)
+    printf '%s\n' "$response"
+    exit 0
+  elif [[ -n "${HUG_TEST_GUM_SELECTION_INDEX:-}" ]]; then
+    # Legacy support for single selection
+    types=("lightweight" "annotated" "signed")
+    idx="$HUG_TEST_GUM_SELECTION_INDEX"
+    if [[ "$idx" =~ ^[0-9]+$ ]] && [ "$idx" -lt ${#types[@]} ]; then
+      printf '%s\n' "${types[$idx]}"
+    else
+      printf '%s\n' "annotated" # Default fallback
+    fi
+    exit 0
+  else
+    # Default to annotated
+    printf '%s\n' "annotated"
+    exit 0
+  fi
+  ;;
+
+write)
+  # For write command, use sequential response system for multi-line input
+  # Check if we have pre-configured responses
+  if [[ -n "${HUG_TEST_GUM_RESPONSES:-}" ]]; then
+    response=$(_get_next_response)
+
+    # If response is multi-line (contains \n), split it
+    if [[ "$response" == *"\n"* ]]; then
+      printf '%s' "$response"
+    else
       printf '%s\n' "$response"
-      exit 0
-    elif [[ -n "${HUG_TEST_GUM_SELECTION_INDEX:-}" ]]; then
-      # Legacy support for single selection
-      types=("lightweight" "annotated" "signed")
-      idx="$HUG_TEST_GUM_SELECTION_INDEX"
-      if [[ "$idx" =~ ^[0-9]+$ ]] && [ "$idx" -lt ${#types[@]} ]; then
-        printf '%s\n' "${types[$idx]}"
-      else
-        printf '%s\n' "annotated"  # Default fallback
-      fi
-      exit 0
-    else
-      # Default to annotated
-      printf '%s\n' "annotated"
-      exit 0
     fi
-    ;;
-
-  write)
-    # For write command, use sequential response system for multi-line input
-    # Check if we have pre-configured responses
-    if [[ -n "${HUG_TEST_GUM_RESPONSES:-}" ]]; then
-      response=$(_get_next_response)
-
-      # If response is multi-line (contains \n), split it
-      if [[ "$response" == *"\n"* ]]; then
-        printf '%s' "$response"
-      else
-        printf '%s\n' "$response"
-      fi
-      exit 0
-    elif [[ -n "${HUG_TEST_GUM_INPUT:-}" ]]; then
-      # Single response for write command
-      printf '%s\n' "$HUG_TEST_GUM_INPUT"
-      exit 0
-    else
-      # Fallback to real gum
-      if command -v /usr/bin/gum >/dev/null 2>&1 || command -v /usr/local/bin/gum >/dev/null 2>&1; then
-        # Find real gum (not the mock)
-        real_gum=$(PATH="${PATH#*:}" command -v gum 2>/dev/null || echo "")
-        if [[ -n "$real_gum" && "$real_gum" != "$0" ]]; then
-          "$real_gum" "$@"
-        else
-          # No real gum, just exit successfully
-          exit 0
-        fi
-      else
-        # No real gum, just exit successfully
-        exit 0
-      fi
-    fi
-    ;;
-
-  *)
-    # For other commands, try to pass through to real gum
-    if command -v /usr/bin/gum >/dev/null 2>&1 || command -v /usr/local/bin/gum >/dev/null 2>&1; then
+    exit 0
+  elif [[ -n "${HUG_TEST_GUM_INPUT:-}" ]]; then
+    # Single response for write command
+    printf '%s\n' "$HUG_TEST_GUM_INPUT"
+    exit 0
+  else
+    # Fallback to real gum
+    if command -v /usr/bin/gum > /dev/null 2>&1 || command -v /usr/local/bin/gum > /dev/null 2>&1; then
       # Find real gum (not the mock)
-      real_gum=$(PATH="${PATH#*:}" command -v gum 2>/dev/null || echo "")
+      real_gum=$(PATH="${PATH#*:}" command -v gum 2> /dev/null || echo "")
       if [[ -n "$real_gum" && "$real_gum" != "$0" ]]; then
         "$real_gum" "$@"
       else
@@ -303,5 +292,23 @@ case "$1" in
       # No real gum, just exit successfully
       exit 0
     fi
-    ;;
+  fi
+  ;;
+
+*)
+  # For other commands, try to pass through to real gum
+  if command -v /usr/bin/gum > /dev/null 2>&1 || command -v /usr/local/bin/gum > /dev/null 2>&1; then
+    # Find real gum (not the mock)
+    real_gum=$(PATH="${PATH#*:}" command -v gum 2> /dev/null || echo "")
+    if [[ -n "$real_gum" && "$real_gum" != "$0" ]]; then
+      "$real_gum" "$@"
+    else
+      # No real gum, just exit successfully
+      exit 0
+    fi
+  else
+    # No real gum, just exit successfully
+    exit 0
+  fi
+  ;;
 esac

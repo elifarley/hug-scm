@@ -9,7 +9,6 @@ Following Google Python testing best practices:
 """
 
 import json
-import pytest
 from io import StringIO
 
 # Import module under test

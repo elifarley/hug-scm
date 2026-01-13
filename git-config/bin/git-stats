@@ -35,26 +35,26 @@ EOF
 }
 
 case "${1:-}" in
-  file)
-    shift
-    exec git stats-file "$@"
-    ;;
-  author)
-    shift
-    exec git stats-author "$@"
-    ;;
-  branch)
-    shift
-    exec git stats-branch "$@"
-    ;;
-  -h|--help|help)
-    show_help
-    ;;
-  *)
-    if [ -n "${1:-}" ]; then
-      printf 'Unknown stats command: %s\n\n' "$1" >&2
-    fi
-    show_help
-    exit 1
-    ;;
+file)
+  shift
+  exec git stats-file "$@"
+  ;;
+author)
+  shift
+  exec git stats-author "$@"
+  ;;
+branch)
+  shift
+  exec git stats-branch "$@"
+  ;;
+-h | --help | help)
+  show_help
+  ;;
+*)
+  if [ -n "${1:-}" ]; then
+    printf 'Unknown stats command: %s\n\n' "$1" >&2
+  fi
+  show_help
+  exit 1
+  ;;
 esac

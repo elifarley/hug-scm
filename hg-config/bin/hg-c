@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite - Mercurial version
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug c: Commit changes.
 
 USAGE:

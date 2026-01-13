@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -67,14 +68,14 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   # Show interactive file selection
   if gum_available; then
     declare -a select_opts=("--single")
-    
+
     # Default to --cwd (current directory scope) unless --browse-root is specified
     if ! $browse_root; then
       select_opts+=("--cwd")
     fi
-    
+
     select_opts+=("--prompt" "Select file to restrict search...")
-    
+
     file=""
     if file=$(select_files_with_status "${select_opts[@]}"); then
       exec hug ll -G "$regex_pattern" "$@" -- "$file"

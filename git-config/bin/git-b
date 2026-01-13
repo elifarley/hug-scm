@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug b: Switch to a branch, with interactive detailed menu if no args supplied.
 
 USAGE:
@@ -62,28 +63,28 @@ declare -a args=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -r|--remote)
-      remote_only=true
-      shift
-      ;;
-    -R|--refresh)
-      remote_only=true
-      refresh_remotes=true
-      shift
-      ;;
-    -*)
-      error "Unknown option: $1"
-      show_help
-      exit 1
-      ;;
-    *)
-      args+=("$1")
-      shift
-      ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -r | --remote)
+    remote_only=true
+    shift
+    ;;
+  -R | --refresh)
+    remote_only=true
+    refresh_remotes=true
+    shift
+    ;;
+  -*)
+    error "Unknown option: $1"
+    show_help
+    exit 1
+    ;;
+  *)
+    args+=("$1")
+    shift
+    ;;
   esac
 done
 
@@ -97,21 +98,21 @@ if [ ${#args[@]} -gt 0 ]; then
     error "The -r/--remote or -R/--refresh flag cannot be used with a branch argument."
     exit 1
   fi
-  
+
   branch_arg="${args[0]}"
-  
+
   # Check if branch exists locally
-  if git show-ref --verify --quiet "refs/heads/$branch_arg" 2>/dev/null; then
+  if git show-ref --verify --quiet "refs/heads/$branch_arg" 2> /dev/null; then
     # Local branch exists, switch to it normally
     exec git switch "${args[@]}"
   fi
-  
+
   # Local branch doesn't exist, check for remote branch
   remote_ref=""
   if remote_ref=$(find_remote_branch "$branch_arg"); then
     # Found a remote branch, create local tracking branch
-    local_name="${remote_ref#*/}"  # Strip remote prefix
-    
+    local_name="${remote_ref#*/}" # Strip remote prefix
+
     info "Creating local branch '$local_name' tracking '$remote_ref'..."
     if git switch -c "$local_name" --track "$remote_ref"; then
       success "Switched to new branch '$local_name' (tracking $remote_ref)"
@@ -149,7 +150,7 @@ if [ "$remote_only" = true ]; then
 
   # Build tracks array from remote_refs (Python gives us remote_refs)
   declare -a tracks=()
-  for ((i=0; i<${#branches[@]}; i++)); do
+  for ((i = 0; i < ${#branches[@]}; i++)); do
     tracks+=("$CYAN[${remote_refs[i]}]")
   done
 
@@ -162,7 +163,7 @@ if [ "$remote_only" = true ]; then
   remote_ref=""
 
   # Find the corresponding remote ref for the selected branch
-  for ((i=0; i<${#branches[@]}; i++)); do
+  for ((i = 0; i < ${#branches[@]}; i++)); do
     if [ "${branches[i]}" = "$selected_branch" ]; then
       remote_ref="${remote_refs[i]}"
       break

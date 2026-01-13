@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-    cat << EOF
+  cat << EOF
 hug h back: Make HEAD walk back some commits while keeping their changes staged. Uncommitted changes are preserved.
 
 USAGE:
@@ -50,8 +51,14 @@ upstream=false
 target_arg=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -u|--upstream) upstream=true; shift ;;
-    *) target_arg="$1"; shift ;;
+  -u | --upstream)
+    upstream=true
+    shift
+    ;;
+  *)
+    target_arg="$1"
+    shift
+    ;;
   esac
 done
 
@@ -64,7 +71,7 @@ if $upstream; then
 else
   # Use DRY helper for validation and target resolution
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
-  
+
   # Handle command-specific preview and confirmation
   handle_standard_operation "move back" "$target"
   target_short=$(git rev-parse --short "$target")
@@ -77,4 +84,3 @@ fi
 
 git reset --soft "$target"
 info "Moved HEAD back to $target (uncommitted changes preserved)."
-

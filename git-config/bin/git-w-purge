@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 Usage: hug w purge [OPTIONS] [<path>...]
 
 Remove untracked and/or ignored files for the given paths.
@@ -49,21 +50,21 @@ flags_explicit=false
 declare -a temp_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -u|--untracked)
-      target_untracked=true
-      flags_explicit=true
-      shift
-      ;;
-    -i|--ignored)
-      target_ignored=true
-      flags_explicit=true
-      shift
-      ;;
-    *)
-      # Keep other args for parse_common_flags
-      temp_args+=("$1")
-      shift
-      ;;
+  -u | --untracked)
+    target_untracked=true
+    flags_explicit=true
+    shift
+    ;;
+  -i | --ignored)
+    target_ignored=true
+    flags_explicit=true
+    shift
+    ;;
+  *)
+    # Keep other args for parse_common_flags
+    temp_args+=("$1")
+    shift
+    ;;
   esac
 done
 
@@ -92,23 +93,23 @@ if [[ $# -lt 1 ]]; then
     # --browse-root without explicit paths is valid (triggers UI with full scope)
     :
   fi
-  
+
   # Determine which file types to show based on flags
   declare -a select_opts=("--multi")
-  
+
   # Default to --cwd (current directory scope) unless --browse-root is specified
   if ! $browse_root; then
     select_opts+=("--cwd")
   fi
-  
+
   if $target_untracked; then
     select_opts+=("--untracked")
   fi
-  
+
   if $target_ignored; then
     select_opts+=("--ignored")
   fi
-  
+
   select_opts+=("--prompt" "Select files to purge...")
 
   paths=()
@@ -123,7 +124,7 @@ if [[ $# -lt 1 ]]; then
 Usage: hug w purge <file>..."
     exit 1
   fi
-  
+
   if [[ ${#paths[@]} -eq 0 ]]; then
     info "No files selected."
     exit 0
@@ -131,7 +132,7 @@ Usage: hug w purge <file>..."
 else
   # Explicit paths provided - check for conflicting flags
   check_browse_root_no_paths "$browse_root" true
-  
+
   paths=("$@")
 fi
 
@@ -143,23 +144,23 @@ while IFS= read -r -d '' entry; do
   status=${entry:0:2}
   path=${entry:3}
   case "$status" in
-    '??')
-      untracked_paths+=("$path")
-      ;;
-    '!!')
-      ignored_paths+=("$path")
-      ;;
-    *)
-      error "path '$path' is tracked or has staged changes; purge operates on untracked/ignored only"
-      exit 1
-      ;;
+  '??')
+    untracked_paths+=("$path")
+    ;;
+  '!!')
+    ignored_paths+=("$path")
+    ;;
+  *)
+    error "path '$path' is tracked or has staged changes; purge operates on untracked/ignored only"
+    exit 1
+    ;;
   esac
-done < <(git status --porcelain=v1 --ignored=matching -z -- "${paths[@]}" 2>/dev/null || true)
+done < <(git status --porcelain=v1 --ignored=matching -z -- "${paths[@]}" 2> /dev/null || true)
 
 dedupe_array untracked_paths
 dedupe_array ignored_paths
 
-(( ${#untracked_paths[@]} == 0 )) && (( ${#ignored_paths[@]} == 0 )) && {
+((${#untracked_paths[@]} == 0)) && ((${#ignored_paths[@]} == 0)) && {
   print_nothing_to_do "purge" "from the specified paths."
   exit 0
 }
@@ -173,7 +174,6 @@ fi
 # Convert paths to be relative to current directory for git clean
 convert_to_relative_paths untracked_paths
 convert_to_relative_paths ignored_paths
-
 
 remove_with_clean() {
   local mode_flags=()

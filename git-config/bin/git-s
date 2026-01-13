@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/../lib/hug-common"
 . "$CMD_BASE/../lib/output_json_status_summary"
 set -euo pipefail
@@ -17,9 +18,9 @@ test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
 # Check for --json flag
 for arg in "$@"; do
   case "$arg" in
-    --json)
-      json_output=true
-      ;;
+  --json)
+    json_output=true
+    ;;
   esac
 done
 
@@ -30,12 +31,12 @@ if $json_output; then
 fi
 
 # HEAD status line (inspired by hug sl)
-hash=$(git rev-parse --short HEAD 2>/dev/null || echo "")
-branch=$(git branch --show-current 2>/dev/null || echo "(detached HEAD)")
-upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "")
+hash=$(git rev-parse --short HEAD 2> /dev/null || echo "")
+branch=$(git branch --show-current 2> /dev/null || echo "(detached HEAD)")
+upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2> /dev/null || echo "")
 if [ -n "$upstream" ]; then
   status="${branch}...${upstream}"
-  counts=$(git rev-list --left-right --count HEAD...@{u} 2>/dev/null || echo "0	0")
+  counts=$(git rev-list --left-right --count HEAD...@{u} 2> /dev/null || echo "0	0")
   left_count=$(echo "$counts" | cut -f1)
   right_count=$(echo "$counts" | cut -f2)
   indicators=""
@@ -110,12 +111,12 @@ fi
 
 uncommitted_output=''
 # If no uncommitted changes at all, don't show uncommitted output
-(( staged_files + unstaged_files )) && uncommitted_output=" │ $unstaged_output │ $staged_output"
+((staged_files + unstaged_files)) && uncommitted_output=" │ $unstaged_output │ $staged_output"
 
 untracked_count=$(git ls-files --others --exclude-standard | wc -l)
-ignored_count=$(  git ls-files --others --exclude-standard --ignored | wc -l)
+ignored_count=$(git ls-files --others --exclude-standard --ignored | wc -l)
 non_tracked_output=''
-(( untracked_count + ignored_count )) && non_tracked_output=" │ ${MAGENTA}K$untracked_count$NC ${GREY}I$ignored_count$NC"
+((untracked_count + ignored_count)) && non_tracked_output=" │ ${MAGENTA}K$untracked_count$NC ${GREY}I$ignored_count$NC"
 
 # Combine and print full status line
 printf '%s %s 🌿%s%s%s\n' "$head_emoji" "$hash_colored" "$status_colored" "$uncommitted_output" "$non_tracked_output" >&2

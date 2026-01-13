@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
 # hug h back: Uncommit changes, keeping them in working directory
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug h back: Uncommit last changeset(s), keeping changes in working directory.
 
 USAGE:
@@ -54,15 +55,15 @@ if [[ $count -eq 1 ]]; then
   hg log -r . --template 'Changeset: {rev}:{node|short} {desc|firstline}\n'
 else
   printf "Affected changesets:\n"
-  hg log -r ".~$((count-1)):." --template '{rev}:{node|short} {desc|firstline}\n'
+  hg log -r ".~$((count - 1)):." --template '{rev}:{node|short} {desc|firstline}\n'
 fi
 
 prompt_confirm_warn "Proceed? [y/N]: "
 
 # Perform uncommit
-for ((i=0; i<count; i++)); do
+for ((i = 0; i < count; i++)); do
   if ! hg uncommit; then
-    error "Failed to uncommit (iteration $((i+1)))"
+    error "Failed to uncommit (iteration $((i + 1)))"
   fi
 done
 

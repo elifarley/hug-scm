@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
@@ -61,17 +62,30 @@ show_patch=false
 patch_file=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -u|--upstream) upstream=true; shift ;;
-    -t|--temporal) 
-      if [[ $# -lt 2 || "$2" == -* ]]; then
-        error "-t/--temporal requires a time specification (e.g., '3 days ago', '1 week ago', '2024-01-15')"
-      fi
-      temporal_spec="$2"
-      shift 2
-      ;;
-    -p|--patch) show_patch=true; shift ;;
-    --patch=*) show_patch=true; patch_file="${1#*=}"; shift ;;
-    *) target_arg="$1"; shift ;;
+  -u | --upstream)
+    upstream=true
+    shift
+    ;;
+  -t | --temporal)
+    if [[ $# -lt 2 || "$2" == -* ]]; then
+      error "-t/--temporal requires a time specification (e.g., '3 days ago', '1 week ago', '2024-01-15')"
+    fi
+    temporal_spec="$2"
+    shift 2
+    ;;
+  -p | --patch)
+    show_patch=true
+    shift
+    ;;
+  --patch=*)
+    show_patch=true
+    patch_file="${1#*=}"
+    shift
+    ;;
+  *)
+    target_arg="$1"
+    shift
+    ;;
   esac
 done
 
@@ -102,7 +116,7 @@ elif [[ -n "$temporal_spec" ]]; then
   # Resolve temporal specification to a commit
   start_point=$(resolve_temporal_to_commit "$temporal_spec" HEAD) || exit 1
   range="$start_point..HEAD"
-  if ! git rev-parse --verify "$start_point" >/dev/null 2>&1; then
+  if ! git rev-parse --verify "$start_point" > /dev/null 2>&1; then
     error "Unable to resolve temporal specification '${temporal_spec}' to a valid commit"
   fi
 else
@@ -110,7 +124,7 @@ else
   target=$(resolve_head_target "$target_input" 'HEAD~1')
   start_point="$target"
   range="$start_point..HEAD"
-  if ! git rev-parse --verify "$start_point" >/dev/null 2>&1; then
+  if ! git rev-parse --verify "$start_point" > /dev/null 2>&1; then
     error "Invalid target '${target_input:-$start_point}' (use N or commit ref)"
   fi
 fi

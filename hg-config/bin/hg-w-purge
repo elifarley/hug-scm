@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite - Mercurial version
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug w purge: Remove untracked files from specific paths.
 
 USAGE:
@@ -43,31 +44,31 @@ paths=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -u|--untracked)
-      untracked=true
-      shift
-      ;;
-    -i|--ignored)
-      ignored=true
-      untracked=false
-      shift
-      ;;
-    -f|--force)
-      force=true
-      shift
-      ;;
-    --dry-run)
-      dry_run=true
-      shift
-      ;;
-    *)
-      paths+=("$1")
-      shift
-      ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -u | --untracked)
+    untracked=true
+    shift
+    ;;
+  -i | --ignored)
+    ignored=true
+    untracked=false
+    shift
+    ;;
+  -f | --force)
+    force=true
+    shift
+    ;;
+  --dry-run)
+    dry_run=true
+    shift
+    ;;
+  *)
+    paths+=("$1")
+    shift
+    ;;
   esac
 done
 

@@ -8,12 +8,12 @@
 . "$HUG_HOME/git-config/lib/hug-file-input"
 # shellcheck source=git-config/lib/hug-select-files
 . "$HUG_HOME/git-config/lib/hug-select-files"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug a: Stage tracked files, or specific files if provided.
 
 USAGE:
@@ -63,26 +63,26 @@ remaining_args=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --from-file)
-      from_file="$2"
-      shift 2
-      ;;
-    --from-commit)
-      from_commit="$2"
-      shift 2
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    --)
-      # Don't process -- here, let parse_common_flags handle it
-      break
-      ;;
-    *)
-      remaining_args+=("$1")
-      shift
-      ;;
+  --from-file)
+    from_file="$2"
+    shift 2
+    ;;
+  --from-commit)
+    from_commit="$2"
+    shift 2
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  --)
+    # Don't process -- here, let parse_common_flags handle it
+    break
+    ;;
+  *)
+    remaining_args+=("$1")
+    shift
+    ;;
   esac
 done
 

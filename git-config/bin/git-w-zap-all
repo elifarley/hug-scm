@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 Usage: hug w zap-all [OPTIONS]
 
 Discard tracked changes and purge untracked/ignored files across the repository.
@@ -28,50 +29,50 @@ force=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --dry-run)
-      dry_run=true
-      shift
-      ;;
-    -f|--force)
-      force=true
-      shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -*)
-      opt=${1#-}
-      shift
-      for ((i=0; i<${#opt}; ++i)); do
-        char=${opt:i:1}
-        case "$char" in
-          *)
-            error "unknown option: -$char"
-            show_help >&2
-            exit 2
-            ;;
-        esac
-      done
-      ;;
-    *)
-      error "positional arguments are not accepted (zap-all affects the entire repository)"
-      show_help >&2
-      exit 2
-      ;;
+  --dry-run)
+    dry_run=true
+    shift
+    ;;
+  -f | --force)
+    force=true
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -*)
+    opt=${1#-}
+    shift
+    for ((i = 0; i < ${#opt}; ++i)); do
+      char=${opt:i:1}
+      case "$char" in
+      *)
+        error "unknown option: -$char"
+        show_help >&2
+        exit 2
+        ;;
+      esac
+    done
+    ;;
+  *)
+    error "positional arguments are not accepted (zap-all affects the entire repository)"
+    show_help >&2
+    exit 2
+    ;;
   esac
 done
 
 check_git_repo
 
 tracked_dirty=false
-if ! git diff --quiet >/dev/null 2>&1; then
+if ! git diff --quiet > /dev/null 2>&1; then
   tracked_dirty=true
-elif ! git diff --cached --quiet >/dev/null 2>&1; then
+elif ! git diff --cached --quiet > /dev/null 2>&1; then
   tracked_dirty=true
 fi
 
-clean_preview=$(git clean -n -d -x 2>/dev/null || true)
+clean_preview=$(git clean -n -d -x 2> /dev/null || true)
 
 if [[ "$tracked_dirty" == false && -z "$clean_preview" ]]; then
   print_nothing_to_do "zap"

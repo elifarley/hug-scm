@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
-show_help() { cat << EOF
+show_help() {
+  cat << EOF
 w-get: Get file contents from specific commit (without staging)
 
 USAGE:
@@ -55,285 +57,285 @@ EOF
 }
 
 confirm() {
-    local message="$1"
-    local expected="$2"
-    local response
+  local message="$1"
+  local expected="$2"
+  local response
 
-    while true; do
-        read -p "$message" response
-        case "$response" in
-            "$expected") return 0 ;;
-            [Qq]|[Qq][Uu][Ii][Tt]|[Cc][Aa][Nn][Cc][Ee][Ll])
-                printf "Cancelled.\n" >&2
-                exit 0
-                ;;
-            *)
-                printf "Invalid response. Please type '%s' or 'cancel': " "$expected" >&2
-                ;;
-        esac
-    done
+  while true; do
+    read -p "$message" response
+    case "$response" in
+    "$expected") return 0 ;;
+    [Qq] | [Qq][Uu][Ii][Tt] | [Cc][Aa][Nn][Cc][Ee][Ll])
+      printf "Cancelled.\n" >&2
+      exit 0
+      ;;
+    *)
+      printf "Invalid response. Please type '%s' or 'cancel': " "$expected" >&2
+      ;;
+    esac
+  done
 }
 
 # Reset all files to commit
 reset_all_files() {
-    local commit="$1"
-    local force="$2"
-    local commit_short
+  local commit="$1"
+  local force="$2"
+  local commit_short
 
-    commit_short=$(git rev-parse --short "$commit")
+  commit_short=$(git rev-parse --short "$commit")
 
-    if ! $force; then
-        printf "Will reset ALL files to commit %s (%s)\n" "$commit" "$commit_short" >&2
+  if ! $force; then
+    printf "Will reset ALL files to commit %s (%s)\n" "$commit" "$commit_short" >&2
+  fi
+
+  # Calculate all files that will be affected by the reset
+  local -a changed_files deleted_files added_files
+  local -a affected_files=()
+
+  mapfile -t changed_files < <(git diff --name-only "$commit" HEAD)
+  mapfile -t deleted_files < <(git ls-tree -r --name-only "$commit" | comm -13 <(git ls-tree -r --name-only HEAD) -)
+  mapfile -t added_files < <(git ls-tree -r --name-only HEAD | comm -23 <(git ls-tree -r --name-only "$commit") -)
+
+  # Combine into a single list of affected files
+  affected_files=("${changed_files[@]}" "${deleted_files[@]}" "${added_files[@]}")
+  dedupe_array affected_files
+
+  # Check for uncommitted changes only in the affected files
+  if ! $force; then
+    check_files_clean "${affected_files[@]}"
+  fi
+
+  if ! $force; then
+    # Show what will change
+    printf "Files that will be modified:\n" >&2
+    if [ ${#changed_files[@]} -gt 0 ]; then
+      printf "  %s\n" "${changed_files[@]}" >&2
+    else
+      printf "  (no changes from current HEAD)\n" >&2
     fi
 
-    # Calculate all files that will be affected by the reset
-    local -a changed_files deleted_files added_files
-    local -a affected_files=()
+    printf "\n" >&2
 
-    mapfile -t changed_files < <(git diff --name-only "$commit" HEAD)
-    mapfile -t deleted_files < <(git ls-tree -r --name-only "$commit" | comm -13 <(git ls-tree -r --name-only HEAD) -)
-    mapfile -t added_files < <(git ls-tree -r --name-only HEAD | comm -23 <(git ls-tree -r --name-only "$commit") -)
-    
-    # Combine into a single list of affected files
-    affected_files=("${changed_files[@]}" "${deleted_files[@]}" "${added_files[@]}")
-    dedupe_array affected_files
-
-    # Check for uncommitted changes only in the affected files
-    if ! $force; then
-        check_files_clean "${affected_files[@]}"
-    fi
-
-    if ! $force; then
-        # Show what will change
-        printf "Files that will be modified:\n" >&2
-        if [ ${#changed_files[@]} -gt 0 ]; then
-            printf "  %s\n" "${changed_files[@]}" >&2
-        else
-            printf "  (no changes from current HEAD)\n" >&2
-        fi
-
-        printf "\n" >&2
-
-        # Show files to be deleted
-        if [ ${#deleted_files[@]} -gt 0 ]; then
-            printf "Files that will be DELETED:\n" >&2
-            printf "  %s\n" "${deleted_files[@]}" >&2
-            printf "\n" >&2
-        fi
-
-        # Show files to be added
-        if [ ${#added_files[@]} -gt 0 ]; then
-            printf "Files that will be ADDED:\n" >&2
-            printf "  %s\n" "${added_files[@]}" >&2
-            printf "\n" >&2
-        fi
-
-        # Confirmation
-        warning "This will overwrite ALL files to their state in $commit_short"
-        confirm "Type \"reset\" to confirm: " "reset"
-    fi
-
-    # Perform the reset
-    if ! $force; then
-        printf "Resetting all files to %s...\n" "$commit" >&2
-    fi
-
-    # First, remove files that don't exist in target commit
+    # Show files to be deleted
     if [ ${#deleted_files[@]} -gt 0 ]; then
-        printf "%s\n" "${deleted_files[@]}" | xargs rm -f
+      printf "Files that will be DELETED:\n" >&2
+      printf "  %s\n" "${deleted_files[@]}" >&2
+      printf "\n" >&2
     fi
 
-    # Then restore files from target commit
-    git restore --source="$commit" --staged --worktree . 2>/dev/null || {
-        # Fallback for older git versions
-        git read-tree "$commit"
-        git checkout-index -a -f
-    }
+    # Show files to be added
+    if [ ${#added_files[@]} -gt 0 ]; then
+      printf "Files that will be ADDED:\n" >&2
+      printf "  %s\n" "${added_files[@]}" >&2
+      printf "\n" >&2
+    fi
 
-    success "All files reset to $commit_short"
+    # Confirmation
+    warning "This will overwrite ALL files to their state in $commit_short"
+    confirm "Type \"reset\" to confirm: " "reset"
+  fi
+
+  # Perform the reset
+  if ! $force; then
+    printf "Resetting all files to %s...\n" "$commit" >&2
+  fi
+
+  # First, remove files that don't exist in target commit
+  if [ ${#deleted_files[@]} -gt 0 ]; then
+    printf "%s\n" "${deleted_files[@]}" | xargs rm -f
+  fi
+
+  # Then restore files from target commit
+  git restore --source="$commit" --staged --worktree . 2> /dev/null || {
+    # Fallback for older git versions
+    git read-tree "$commit"
+    git checkout-index -a -f
+  }
+
+  success "All files reset to $commit_short"
 }
 
 # Reset specific files
 reset_specific_files() {
-    local commit="$1"
-    local force="$2"
-    shift 2
-    local files=("$@")
-    local commit_short
+  local commit="$1"
+  local force="$2"
+  shift 2
+  local files=("$@")
+  local commit_short
 
-    commit_short=$(git rev-parse --short "$commit")
+  commit_short=$(git rev-parse --short "$commit")
+
+  if ! $force; then
+    printf "Will reset files to commit %s (%s):\n" "$commit" "$commit_short" >&2
+  fi
+
+  local files_to_reset=()
+
+  # Validate each file
+  for file in "${files[@]}"; do
+    if ! $force; then
+      printf "Checking %s...\n" "$file" >&2
+    fi
+
+    # Check if file exists in target commit
+    check_file_in_commit "$commit" "$file"
 
     if ! $force; then
-        printf "Will reset files to commit %s (%s):\n" "$commit" "$commit_short" >&2
+      # Check for staged changes
+      check_file_staged "$file"
+
+      # Check for unstaged changes
+      check_file_unstaged "$file"
     fi
 
-    local files_to_reset=()
+    files_to_reset+=("$file")
+  done
 
-    # Validate each file
-    for file in "${files[@]}"; do
-        if ! $force; then
-            printf "Checking %s...\n" "$file" >&2
-        fi
+  # Show what will be reset
+  if [ ${#files_to_reset[@]} -gt 0 ]; then
+    if ! $force; then
+      printf "\nFiles to be reset:\n" >&2
+      printf "  %s\n" "${files_to_reset[@]}" >&2
 
-        # Check if file exists in target commit
-        check_file_in_commit "$commit" "$file"
+      # Show diff preview
+      printf "\nPreview of changes:\n" >&2
+      for file in "${files_to_reset[@]}"; do
+        preview_file_changes "$commit" "$file"
+      done
 
-        if ! $force; then
-            # Check for staged changes
-            check_file_staged "$file"
-
-            # Check for unstaged changes
-            check_file_unstaged "$file"
-        fi
-
-        files_to_reset+=("$file")
-    done
-
-    # Show what will be reset
-    if [ ${#files_to_reset[@]} -gt 0 ]; then
-        if ! $force; then
-            printf "\nFiles to be reset:\n" >&2
-            printf "  %s\n" "${files_to_reset[@]}" >&2
-
-            # Show diff preview
-            printf "\nPreview of changes:\n" >&2
-            for file in "${files_to_reset[@]}"; do
-                preview_file_changes "$commit" "$file"
-            done
-
-            # Confirmation
-            warning "This will overwrite the files above"
-            confirm "Reset these files? (y/N) " "y"
-        fi
-
-        # Perform the reset
-        if ! $force; then
-            printf "Resetting files...\n" >&2
-        fi
-        git restore --source="$commit" --worktree "${files_to_reset[@]}"
-
-        success "Files reset to $commit_short"
-    else
-        info "No files to reset"
+      # Confirmation
+      warning "This will overwrite the files above"
+      confirm "Reset these files? (y/N) " "y"
     fi
+
+    # Perform the reset
+    if ! $force; then
+      printf "Resetting files...\n" >&2
+    fi
+    git restore --source="$commit" --worktree "${files_to_reset[@]}"
+
+    success "Files reset to $commit_short"
+  else
+    info "No files to reset"
+  fi
 }
 
 # Main function
 main() {
-    test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
-      show_help
-      exit 0
-    }
+  test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+    show_help
+    exit 0
+  }
 
-    check_git_repo
+  check_git_repo
 
-    # Initialize state variables
-    local use_upstream=false
-    local use_integer_N=false
-    local integer_N=0
-    local commit=""
-    local target_identifier=""
+  # Initialize state variables
+  local use_upstream=false
+  local use_integer_N=false
+  local integer_N=0
+  local commit=""
+  local target_identifier=""
 
-    # 1. Parse custom flag first (-u|--upstream)
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -u|--upstream)
-                use_upstream=true
-                shift
-                ;;
-            *)
-                break
-                ;;
-        esac
-    done
+  # 1. Parse custom flag first (-u|--upstream)
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    -u | --upstream)
+      use_upstream=true
+      shift
+      ;;
+    *)
+      break
+      ;;
+    esac
+  done
 
-    # 2. Parse common flags (--browse-root, -f|--force, -h|--help, --)
-    eval "$(parse_common_flags "$@")"
+  # 2. Parse common flags (--browse-root, -f|--force, -h|--help, --)
+  eval "$(parse_common_flags "$@")"
 
-    # Initialize common flag variables if not set by parse_common_flags
-    : "${browse_root:=false}"
-    : "${force:=false}"
+  # Initialize common flag variables if not set by parse_common_flags
+  : "${browse_root:=false}"
+  : "${force:=false}"
 
-    # 3. Get target identifier (first non-flag argument)
-    if [[ $# -gt 0 ]]; then
-        target_identifier="$1"
-        shift
-    fi
-    # 4. Check for missing target
-    if [[ -z "$target_identifier" ]]; then
-        error "Missing target argument.
+  # 3. Get target identifier (first non-flag argument)
+  if [[ $# -gt 0 ]]; then
+    target_identifier="$1"
+    shift
+  fi
+  # 4. Check for missing target
+  if [[ -z "$target_identifier" ]]; then
+    error "Missing target argument.
        Usage: hug w get <commit> [file...]
        Use 'hug w get --help' for more information"
-        exit 1
+    exit 1
+  fi
+
+  # 5. Process the isolated target
+  if [[ "$target_identifier" == "-u" || "$target_identifier" == "--upstream" ]]; then
+    use_upstream=true
+  elif [[ "$target_identifier" =~ ^([0-9]|[1-9][0-9]?)$ ]]; then
+    use_integer_N=true
+    integer_N="$target_identifier"
+  else
+    commit="$target_identifier"
+  fi
+
+  # 6. Validate argument combinations
+  if $use_upstream && ($use_integer_N || [[ -n "$commit" ]]); then
+    error "Cannot specify --upstream with a specific commit or integer N."
+    exit 1
+  fi
+
+  # 7. Determine the target commit
+  if $use_upstream; then
+    commit=$(get_upstream_commit)
+  elif $use_integer_N; then
+    # Pass the remaining arguments (files) to the helper
+    commit=$(get_commit_n_back "$integer_N" "$@")
+  elif [[ -z "$commit" ]]; then
+    # This case should not be reached due to earlier checks, but as a fallback
+    error "Internal error: Could not determine target commit."
+    exit 1
+  fi
+
+  # 8. Validate commit
+  validate_commitish "--target" "$commit"
+
+  # 9. Check if user wants interactive file selection via --
+  if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
+    # Interactive file selection
+    declare -a select_opts=("--multi" "--staged" "--unstaged" "--untracked")
+
+    # Default to --cwd (current directory scope) unless --browse-root is specified
+    if ! $browse_root; then
+      select_opts+=("--cwd")
     fi
 
-    # 5. Process the isolated target
-    if [[ "$target_identifier" == "-u" || "$target_identifier" == "--upstream" ]]; then
-        use_upstream=true
-    elif [[ "$target_identifier" =~ ^([0-9]|[1-9][0-9]?)$ ]]; then
-        use_integer_N=true
-        integer_N="$target_identifier"
-    else
-        commit="$target_identifier"
+    select_opts+=("--prompt" "Select files to reset...")
+
+    selected_files=()
+    if ! mapfile -t selected_files < <(select_files_with_status "${select_opts[@]}"); then
+      info "No files selected or cancelled."
+      exit 0
     fi
 
-    # 6. Validate argument combinations
-    if $use_upstream && ( $use_integer_N || [[ -n "$commit" ]] ); then
-        error "Cannot specify --upstream with a specific commit or integer N."
-        exit 1
+    if [ ${#selected_files[@]} -eq 0 ]; then
+      info "No files selected."
+      exit 0
     fi
 
-    # 7. Determine the target commit
-    if $use_upstream; then
-        commit=$(get_upstream_commit)
-    elif $use_integer_N; then
-        # Pass the remaining arguments (files) to the helper
-        commit=$(get_commit_n_back "$integer_N" "$@")
-    elif [[ -z "$commit" ]]; then
-        # This case should not be reached due to earlier checks, but as a fallback
-        error "Internal error: Could not determine target commit."
-        exit 1
-    fi
+    # Reset selected files
+    reset_specific_files "$commit" "$force" "${selected_files[@]}"
+    exit 0
+  fi
 
-    # 8. Validate commit
-    validate_commitish "--target" "$commit"
-
-    # 9. Check if user wants interactive file selection via --
-    if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
-        # Interactive file selection
-        declare -a select_opts=("--multi" "--staged" "--unstaged" "--untracked")
-        
-        # Default to --cwd (current directory scope) unless --browse-root is specified
-        if ! $browse_root; then
-            select_opts+=("--cwd")
-        fi
-        
-        select_opts+=("--prompt" "Select files to reset...")
-        
-        selected_files=()
-        if ! mapfile -t selected_files < <(select_files_with_status "${select_opts[@]}"); then
-            info "No files selected or cancelled."
-            exit 0
-        fi
-        
-        if [ ${#selected_files[@]} -eq 0 ]; then
-            info "No files selected."
-            exit 0
-        fi
-        
-        # Reset selected files
-        reset_specific_files "$commit" "$force" "${selected_files[@]}"
-        exit 0
-    fi
-
-    # 10. Determine operation mode and execute
-    if [ $# -eq 0 ]; then
-        # Reset ALL files
-        reset_all_files "$commit" "$force"
-    else
-        # Reset specific files
-        reset_specific_files "$commit" "$force" "$@"
-    fi
+  # 10. Determine operation mode and execute
+  if [ $# -eq 0 ]; then
+    # Reset ALL files
+    reset_all_files "$commit" "$force"
+  else
+    # Reset specific files
+    reset_specific_files "$commit" "$force" "$@"
+  fi
 }
 
 # Run main function with all arguments

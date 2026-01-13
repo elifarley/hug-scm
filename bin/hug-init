@@ -21,7 +21,7 @@ set -euo pipefail
 # Returns: 0 if available, exits with error if not
 validate_vcs_available() {
   local vcs="$1"
-  if ! command -v "$vcs" >/dev/null 2>&1; then
+  if ! command -v "$vcs" > /dev/null 2>&1; then
     error "Error: '$vcs' command not found in PATH. Please install $vcs."
     exit 1
   fi
@@ -29,7 +29,7 @@ validate_vcs_available() {
 
 # Show usage
 show_help() {
-    cat <<EOF
+  cat << EOF
 Usage: hug init [--git|--hg] [--no-status] [dir] [options]
 
 Initialize a new Git or Mercurial repository. Defaults to Git.
@@ -49,79 +49,79 @@ EOF
 }
 
 # Parse arguments
-vcs="git"  # Default to Git
+vcs="git" # Default to Git
 run_status=true
 target_dir=""
 declare -a vcs_options=()
 
 # Initialize with Git default options (only for Git)
 if [[ "$vcs" == "git" ]]; then
-    vcs_options=("--initial-branch=main")
+  vcs_options=("--initial-branch=main")
 fi
 
 while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --git)
-            vcs="git"
-            # Add default Git options if switching from hg or on initial set
-            if [[ ! " ${vcs_options[*]} " =~ " --initial-branch=" ]]; then
-                vcs_options=("--initial-branch=main")
-            fi
-            shift
-            ;;
-        --hg)
-            vcs="hg"
-            # Remove Git-specific options when switching to Mercurial
-            vcs_options=()
-            shift
-            ;;
-        --no-status)
-            run_status=false
-            shift
-            ;;
-        --help|-h)
-            show_help
-            exit 0
-            ;;
-        --initial-branch=*)
-            # Handle --initial-branch specially to replace default
-            if [[ "$vcs" == "git" ]]; then
-                # Replace existing --initial-branch if present
-                declare -a new_options=()
-                for opt in "${vcs_options[@]}"; do
-                    if [[ ! "$opt" =~ ^--initial-branch= ]]; then
-                        new_options+=("$opt")
-                    fi
-                done
-                vcs_options=("${new_options[@]}")
-                vcs_options+=("$1")
-            else
-                # For Mercurial, just add the option (it will be ignored)
-                vcs_options+=("$1")
-            fi
-            shift
-            ;;
-        -*)
-            # Any other flag is a VCS option
-            vcs_options+=("$1")
-            shift
-            ;;
-        *)
-            # First non-flag argument is the directory
-            if [[ -z "$target_dir" ]]; then
-                target_dir="$1"
-            else
-                # Additional non-flag arguments are passed as options (shouldn't happen but handle it)
-                vcs_options+=("$1")
-            fi
-            shift
-            ;;
-    esac
+  case "$1" in
+  --git)
+    vcs="git"
+    # Add default Git options if switching from hg or on initial set
+    if [[ ! " ${vcs_options[*]} " =~ " --initial-branch=" ]]; then
+      vcs_options=("--initial-branch=main")
+    fi
+    shift
+    ;;
+  --hg)
+    vcs="hg"
+    # Remove Git-specific options when switching to Mercurial
+    vcs_options=()
+    shift
+    ;;
+  --no-status)
+    run_status=false
+    shift
+    ;;
+  --help | -h)
+    show_help
+    exit 0
+    ;;
+  --initial-branch=*)
+    # Handle --initial-branch specially to replace default
+    if [[ "$vcs" == "git" ]]; then
+      # Replace existing --initial-branch if present
+      declare -a new_options=()
+      for opt in "${vcs_options[@]}"; do
+        if [[ ! "$opt" =~ ^--initial-branch= ]]; then
+          new_options+=("$opt")
+        fi
+      done
+      vcs_options=("${new_options[@]}")
+      vcs_options+=("$1")
+    else
+      # For Mercurial, just add the option (it will be ignored)
+      vcs_options+=("$1")
+    fi
+    shift
+    ;;
+  -*)
+    # Any other flag is a VCS option
+    vcs_options+=("$1")
+    shift
+    ;;
+  *)
+    # First non-flag argument is the directory
+    if [[ -z "$target_dir" ]]; then
+      target_dir="$1"
+    else
+      # Additional non-flag arguments are passed as options (shouldn't happen but handle it)
+      vcs_options+=("$1")
+    fi
+    shift
+    ;;
+  esac
 done
 
 # Default to current directory if not specified
 if [[ -z "$target_dir" ]]; then
-    target_dir="."
+  target_dir="."
 fi
 
 # Validate VCS availability
@@ -129,26 +129,26 @@ validate_vcs_available "$vcs"
 
 # Create directory if specified and doesn't exist
 if [[ "$target_dir" != "." && ! -d "$target_dir" ]]; then
-    mkdir -p "$target_dir"
+  mkdir -p "$target_dir"
 fi
 
 # Check if already initialized
 if [[ "$target_dir" == "." ]]; then
-    if [[ "$vcs" == "git" && -d ".git" ]]; then
-        error "Error: Already a Git repository."
-        exit 1
-    elif [[ "$vcs" == "hg" && -d ".hg" ]]; then
-        error "Error: Already a Mercurial repository."
-        exit 1
-    fi
+  if [[ "$vcs" == "git" && -d ".git" ]]; then
+    error "Error: Already a Git repository."
+    exit 1
+  elif [[ "$vcs" == "hg" && -d ".hg" ]]; then
+    error "Error: Already a Mercurial repository."
+    exit 1
+  fi
 else
-    if [[ "$vcs" == "git" && -d "$target_dir/.git" ]]; then
-        error "Error: Already a Git repository at '$target_dir'."
-        exit 1
-    elif [[ "$vcs" == "hg" && -d "$target_dir/.hg" ]]; then
-        error "Error: Already a Mercurial repository at '$target_dir'."
-        exit 1
-    fi
+  if [[ "$vcs" == "git" && -d "$target_dir/.git" ]]; then
+    error "Error: Already a Git repository at '$target_dir'."
+    exit 1
+  elif [[ "$vcs" == "hg" && -d "$target_dir/.hg" ]]; then
+    error "Error: Already a Mercurial repository at '$target_dir'."
+    exit 1
+  fi
 fi
 
 # Execute init
@@ -157,28 +157,28 @@ info "Initializing $vcs_name repository..."
 
 # Build init command: vcs init [options] [dir]
 if [[ "$target_dir" == "." ]]; then
-    # Init in current directory - pass options only
-    init_cmd=("$vcs" init "${vcs_options[@]}")
+  # Init in current directory - pass options only
+  init_cmd=("$vcs" init "${vcs_options[@]}")
 else
-    # Init in specified directory - options before directory
-    init_cmd=("$vcs" init "${vcs_options[@]}" "$target_dir")
+  # Init in specified directory - options before directory
+  init_cmd=("$vcs" init "${vcs_options[@]}" "$target_dir")
 fi
 
 if "${init_cmd[@]}"; then
-    success "✓ Initialized $vcs_name repository in '$target_dir'."
-    
-    # Run status if enabled (skip on empty repos since status may fail)
-    if [[ "$run_status" == true ]]; then
-        cd "$target_dir"
-        # Check if repository has any commits before running status
-        if "$vcs" rev-parse HEAD >/dev/null 2>&1; then
-            hug s
-        else
-            info "Empty repository. Create your first commit to see status."
-        fi
+  success "✓ Initialized $vcs_name repository in '$target_dir'."
+
+  # Run status if enabled (skip on empty repos since status may fail)
+  if [[ "$run_status" == true ]]; then
+    cd "$target_dir"
+    # Check if repository has any commits before running status
+    if "$vcs" rev-parse HEAD > /dev/null 2>&1; then
+      hug s
+    else
+      info "Empty repository. Create your first commit to see status."
     fi
-    exit 0
+  fi
+  exit 0
 else
-    error "Initialization failed."
-    exit 1
+  error "Initialization failed."
+  exit 1
 fi

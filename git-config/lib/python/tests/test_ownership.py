@@ -11,9 +11,7 @@ calculate_file_ownership) rather than git-invoking functions which require
 subprocess mocking.
 """
 
-import pytest
 import math
-from datetime import datetime
 
 # Import module under test
 import ownership

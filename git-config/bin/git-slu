@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit hug-select-files output_json_status; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -15,13 +16,13 @@ json_output=false
 pathspecs=()
 for arg in "$@"; do
   case "$arg" in
-    --json)
-      json_output=true
-      ;;
-    *)
-      # Treat remaining arguments as pathspecs
-      pathspecs+=("$arg")
-      ;;
+  --json)
+    json_output=true
+    ;;
+  *)
+    # Treat remaining arguments as pathspecs
+    pathspecs+=("$arg")
+    ;;
   esac
 done
 
@@ -38,7 +39,7 @@ if $json_output; then
   output_json_status "${list_opts[@]}"
 else
   # Show unstaged files
-  if ! list_files_with_status "${list_opts[@]}" 2>/dev/null; then
+  if ! list_files_with_status "${list_opts[@]}" 2> /dev/null; then
     if [[ ${#pathspecs[@]} -gt 0 ]]; then
       pathspec_list=""
       printf -v pathspec_list "'%s' " "${pathspecs[@]}"

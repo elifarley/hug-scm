@@ -18,14 +18,13 @@ Example:
     python3 deps.py --all --threshold=3
 """
 
-import sys
-import os
-import json
 import argparse
-import subprocess
+import json
+import os
 import signal
+import subprocess
+import sys
 from collections import defaultdict
-from typing import Dict, List, Set, Tuple, Optional
 from functools import lru_cache
 
 
@@ -80,7 +79,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_git_command(cmd: List[str], timeout_seconds: int = 60) -> str:
+def run_git_command(cmd: list[str], timeout_seconds: int = 60) -> str:
     """Run git command and return output with timeout protection."""
     try:
         with timeout(timeout_seconds):
@@ -88,7 +87,7 @@ def run_git_command(cmd: List[str], timeout_seconds: int = 60) -> str:
                 cmd, capture_output=True, text=True, check=True, timeout=timeout_seconds
             )
             return result.stdout.strip()
-    except (subprocess.TimeoutExpired, TimeoutError) as e:
+    except (subprocess.TimeoutExpired, TimeoutError):
         print(f"Git command timed out: {' '.join(cmd)}", file=sys.stderr)
         return ""
     except subprocess.CalledProcessError as e:
@@ -96,7 +95,7 @@ def run_git_command(cmd: List[str], timeout_seconds: int = 60) -> str:
         return ""
 
 
-def get_commit_info(commit_hash: str) -> Optional[Dict]:
+def get_commit_info(commit_hash: str) -> dict | None:
     """
     Get commit information including hash, subject, author, and date.
 
@@ -119,7 +118,7 @@ def get_commit_info(commit_hash: str) -> Optional[Dict]:
 
 
 @lru_cache(maxsize=1000)
-def get_commit_info_cached(commit_hash: str) -> Optional[Dict]:
+def get_commit_info_cached(commit_hash: str) -> dict | None:
     """
     Cached version of get_commit_info.
 
@@ -128,7 +127,7 @@ def get_commit_info_cached(commit_hash: str) -> Optional[Dict]:
     return get_commit_info(commit_hash)
 
 
-def get_commit_files(commit_hash: str) -> Set[str]:
+def get_commit_files(commit_hash: str) -> set[str]:
     """
     Get list of files modified in a commit.
 
@@ -142,7 +141,7 @@ def get_commit_files(commit_hash: str) -> Set[str]:
     if not output:
         return set()
 
-    return set(line.strip() for line in output.split("\n") if line.strip())
+    return {line.strip() for line in output.split("\n") if line.strip()}
 
 
 @lru_cache(maxsize=500)
@@ -155,7 +154,7 @@ def get_commit_files_cached(commit_hash: str) -> frozenset:
     return frozenset(get_commit_files(commit_hash))
 
 
-def detect_repository_size(commits: List[str]) -> str:
+def detect_repository_size(commits: list[str]) -> str:
     """
     Detect repository size for strategy selection.
 
@@ -172,7 +171,7 @@ def detect_repository_size(commits: List[str]) -> str:
         return "massive"
 
 
-def get_all_commits(since: Optional[str] = None) -> List[str]:
+def get_all_commits(since: str | None = None) -> list[str]:
     """
     Get all commit hashes in the repository.
 
@@ -191,7 +190,7 @@ def get_all_commits(since: Optional[str] = None) -> List[str]:
     return [line.strip() for line in output.split("\n") if line.strip()]
 
 
-def build_commit_file_index(commits: List[str]) -> Dict[str, Set[str]]:
+def build_commit_file_index(commits: list[str]) -> dict[str, set[str]]:
     """
     Build index mapping each file to commits that modified it.
 
@@ -208,8 +207,8 @@ def build_commit_file_index(commits: List[str]) -> Dict[str, Set[str]]:
 
 
 def find_related_commits(
-    commit_hash: str, file_to_commits: Dict[str, Set[str]], threshold: int = 2
-) -> List[Tuple[str, int]]:
+    commit_hash: str, file_to_commits: dict[str, set[str]], threshold: int = 2
+) -> list[tuple[str, int]]:
     """
     Find commits related to the given commit via file overlap.
 
@@ -240,12 +239,12 @@ def find_related_commits(
 
 def build_dependency_graph(
     root_commit: str,
-    file_to_commits: Dict[str, Set[str]],
+    file_to_commits: dict[str, set[str]],
     depth: int = 1,
     threshold: int = 2,
     max_results: int = 20,
     max_commits: int = 1000,
-) -> Dict[str, List[Tuple[str, int]]]:
+) -> dict[str, list[tuple[str, int]]]:
     """
     Build dependency graph starting from root commit.
 
@@ -288,7 +287,7 @@ def build_dependency_graph(
 
 
 def format_graph_output(
-    root_commit: str, graph: Dict[str, List[Tuple[str, int]]], depth: int
+    root_commit: str, graph: dict[str, list[tuple[str, int]]], depth: int
 ) -> str:
     """Format dependency graph as ASCII tree."""
     lines = []
@@ -342,7 +341,7 @@ def format_graph_output(
     return "\n".join(lines)
 
 
-def format_text_output(root_commit: str, graph: Dict[str, List[Tuple[str, int]]]) -> str:
+def format_text_output(root_commit: str, graph: dict[str, list[tuple[str, int]]]) -> str:
     """Format dependency graph as simple text list."""
     lines = []
 
@@ -369,7 +368,7 @@ def format_text_output(root_commit: str, graph: Dict[str, List[Tuple[str, int]]]
     return "\n".join(lines)
 
 
-def format_json_output(root_commit: str, graph: Dict[str, List[Tuple[str, int]]]) -> str:
+def format_json_output(root_commit: str, graph: dict[str, list[tuple[str, int]]]) -> str:
     """Format dependency graph as JSON."""
     result = {"root_commit": root_commit, "dependencies": {}}
 
@@ -399,8 +398,8 @@ def format_json_output(root_commit: str, graph: Dict[str, List[Tuple[str, int]]]
 
 
 def analyze_all_commits(
-    commits: List[str], file_to_commits: Dict[str, Set[str]], threshold: int, max_results: int
-) -> Dict[str, List[Tuple[str, int]]]:
+    commits: list[str], file_to_commits: dict[str, set[str]], threshold: int, max_results: int
+) -> dict[str, list[tuple[str, int]]]:
     """
     Analyze all commits and find highly coupled commit pairs.
 
@@ -417,7 +416,7 @@ def analyze_all_commits(
 
 
 def format_all_commits_output(
-    coupling: Dict[str, List[Tuple[str, int]]], threshold: int, output_format: str
+    coupling: dict[str, list[tuple[str, int]]], threshold: int, output_format: str
 ) -> str:
     """Format repository-wide coupling analysis."""
     if output_format == "json":
@@ -511,16 +510,12 @@ def main():
     # Adjust parameters based on repository size
     if repo_size == "small":
         max_commits_limit = 500
-        default_timeout = 30
     elif repo_size == "medium":
         max_commits_limit = 1000
-        default_timeout = 60
     elif repo_size == "large":
         max_commits_limit = 2000
-        default_timeout = 90
     else:  # massive
         max_commits_limit = 5000
-        default_timeout = 120
 
     # Apply environment overrides
     max_commits_limit = int(os.environ.get("HUG_ANALYZE_DEPS_MAX_COMMITS", max_commits_limit))

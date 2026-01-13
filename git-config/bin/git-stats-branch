@@ -2,7 +2,8 @@
 # git-stats-branch - Branch statistics and metrics
 # Part of the Hug tool suite
 
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -106,30 +107,30 @@ remaining_args=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --base)
-      base_branch="$2"
-      shift 2
-      ;;
-    --all)
-      show_all=true
-      shift
-      ;;
-    --json)
-      json_output=true
-      shift
-      ;;
-    --)
-      # Interactive branch selection
-      shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    *)
-      remaining_args+=("$1")
-      shift
-      ;;
+  --base)
+    base_branch="$2"
+    shift 2
+    ;;
+  --all)
+    show_all=true
+    shift
+    ;;
+  --json)
+    json_output=true
+    shift
+    ;;
+  --)
+    # Interactive branch selection
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  *)
+    remaining_args+=("$1")
+    shift
+    ;;
   esac
 done
 
@@ -137,12 +138,12 @@ check_git_repo
 
 # Determine base branch if not specified
 if [ -z "$base_branch" ]; then
-  if git rev-parse --verify main >/dev/null 2>&1; then
+  if git rev-parse --verify main > /dev/null 2>&1; then
     base_branch="main"
-  elif git rev-parse --verify master >/dev/null 2>&1; then
+  elif git rev-parse --verify master > /dev/null 2>&1; then
     base_branch="master"
   else
-    base_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+    base_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
   fi
 fi
 
@@ -166,7 +167,7 @@ elif [[ "$show_all" != "true" ]]; then
   # Interactive mode: use select_branches to pick a branch
   if [[ "$interactive_mode" == "true" ]]; then
     if ! select_branches selected_branches \
-            --placeholder "Select branch for statistics..."; then
+      --placeholder "Select branch for statistics..."; then
       info "No branch selected."
       exit 0
     fi
@@ -187,7 +188,7 @@ else
 fi
 
 # Validate branch exists
-if [ -n "$branch" ] && ! git rev-parse --verify "$branch" >/dev/null 2>&1; then
+if [ -n "$branch" ] && ! git rev-parse --verify "$branch" > /dev/null 2>&1; then
   error "Branch not found: $branch"
 fi
 
@@ -195,7 +196,7 @@ fi
 if $show_all; then
   if $json_output; then
     echo "["
-    git for-each-ref --format='%(refname:short)' refs/heads/ | \
+    git for-each-ref --format='%(refname:short)' refs/heads/ |
       awk -v first=1 -v base="$base_branch" '{
         if (!first) print ",";
         first=0;
@@ -218,17 +219,17 @@ if $show_all; then
       info ""
       echo "$unmerged_branches" | while read -r br; do
         # Commits ahead/behind
-        ahead=$(git rev-list --count "$base_branch..$br" 2>/dev/null || echo "0")
-        behind=$(git rev-list --count "$br..$base_branch" 2>/dev/null || echo "0")
+        ahead=$(git rev-list --count "$base_branch..$br" 2> /dev/null || echo "0")
+        behind=$(git rev-list --count "$br..$base_branch" 2> /dev/null || echo "0")
 
         # Last commit info
-        last_commit=$(git log -1 --format='%cr' "$br" 2>/dev/null || echo "unknown")
-        last_author=$(git log -1 --format='%an' "$br" 2>/dev/null || echo "unknown")
+        last_commit=$(git log -1 --format='%cr' "$br" 2> /dev/null || echo "unknown")
+        last_author=$(git log -1 --format='%an' "$br" 2> /dev/null || echo "unknown")
 
         # Line stats
-        merge_base=$(git merge-base "$base_branch" "$br" 2>/dev/null || echo "")
+        merge_base=$(git merge-base "$base_branch" "$br" 2> /dev/null || echo "")
         if [ -n "$merge_base" ]; then
-          stats=$(git diff --numstat "$merge_base..$br" | \
+          stats=$(git diff --numstat "$merge_base..$br" |
             awk '{added+=$1; deleted+=$2} END {print added-deleted}')
           net_lines=${stats:-0}
         else
@@ -245,8 +246,8 @@ if $show_all; then
       info "Merged branches:"
       info ""
       echo "$merged_branches" | while read -r br; do
-        last_commit=$(git log -1 --format='%cr' "$br" 2>/dev/null || echo "unknown")
-        last_author=$(git log -1 --format='%an' "$br" 2>/dev/null || echo "unknown")
+        last_commit=$(git log -1 --format='%cr' "$br" 2> /dev/null || echo "unknown")
+        last_author=$(git log -1 --format='%an' "$br" 2> /dev/null || echo "unknown")
 
         info "  $(printf '%-25s %-15s %-12s [merged]' \
           "$br" "${last_author:0:15}" "${last_commit:0:12}")"
@@ -264,13 +265,13 @@ if $json_output; then
   echo "  \"base\": \"$base_branch\","
 
   # Commits ahead/behind
-  ahead=$(git rev-list --count "$base_branch..$branch" 2>/dev/null || echo "0")
-  behind=$(git rev-list --count "$branch..$base_branch" 2>/dev/null || echo "0")
+  ahead=$(git rev-list --count "$base_branch..$branch" 2> /dev/null || echo "0")
+  behind=$(git rev-list --count "$branch..$base_branch" 2> /dev/null || echo "0")
   echo "  \"commits_ahead\": $ahead,"
   echo "  \"commits_behind\": $behind,"
 
   # Total commits on branch
-  total=$(git rev-list --count "$branch" 2>/dev/null || echo "0")
+  total=$(git rev-list --count "$branch" 2> /dev/null || echo "0")
   echo "  \"total_commits\": $total,"
 
   # Merge status
@@ -281,9 +282,9 @@ if $json_output; then
   fi
 
   # Line stats
-  merge_base=$(git merge-base "$base_branch" "$branch" 2>/dev/null || echo "")
+  merge_base=$(git merge-base "$base_branch" "$branch" 2> /dev/null || echo "")
   if [ -n "$merge_base" ]; then
-    stats=$(git diff --numstat "$merge_base..$branch" | \
+    stats=$(git diff --numstat "$merge_base..$branch" |
       awk '{added+=$1; deleted+=$2} END {print added, deleted, added-deleted}')
     read added deleted net <<< "$stats"
     echo "  \"lines_added\": ${added:-0},"
@@ -313,8 +314,8 @@ else
   info ""
 
   # Commits ahead/behind
-  ahead=$(git rev-list --count "$base_branch..$branch" 2>/dev/null || echo "0")
-  behind=$(git rev-list --count "$branch..$base_branch" 2>/dev/null || echo "0")
+  ahead=$(git rev-list --count "$base_branch..$branch" 2> /dev/null || echo "0")
+  behind=$(git rev-list --count "$branch..$base_branch" 2> /dev/null || echo "0")
 
   info "Commits:"
   info "  $ahead commits ahead of $base_branch"
@@ -323,7 +324,7 @@ else
   # Authors
   if [ "$ahead" -gt 0 ]; then
     info "  Authors:"
-    git log --format='%an' "$base_branch..$branch" | sort | uniq -c | sort -rn | \
+    git log --format='%an' "$base_branch..$branch" | sort | uniq -c | sort -rn |
       while read count author; do
         info "    $author ($count commits)"
       done
@@ -339,7 +340,7 @@ else
   info "  Updated: $last_date ($last_relative)"
 
   # File changes
-  merge_base=$(git merge-base "$base_branch" "$branch" 2>/dev/null || echo "")
+  merge_base=$(git merge-base "$base_branch" "$branch" 2> /dev/null || echo "")
   if [ -n "$merge_base" ]; then
     info ""
     info "Changes (vs $base_branch):"
@@ -349,7 +350,7 @@ else
     info "  $files_changed files changed"
 
     # Line stats
-    git diff --numstat "$merge_base..$branch" | \
+    git diff --numstat "$merge_base..$branch" |
       awk '{added+=$1; deleted+=$2} END {
         printf "\n"
         printf "Code:\n"

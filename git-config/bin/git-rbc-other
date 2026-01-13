@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 # shellcheck source=../lib/hug-common
 . "$CMD_BASE/../lib/hug-common"
 # shellcheck source=../lib/hug-git-kit
 . "$CMD_BASE/../lib/hug-git-kit"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-    cat << EOF
+  cat << EOF
 hug rbc-other: Resolve the present rebase conflict by picking the "other" branch (target branch / incoming changes) version.
 
 USAGE:
@@ -44,8 +45,11 @@ eval "$(parse_common_flags "$@")"
 finish_all=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --all) finish_all=true; shift ;;
-    *) error "Unknown option: $1. See 'hug rbc-other --help'."; ;;
+  --all)
+    finish_all=true
+    shift
+    ;;
+  *) error "Unknown option: $1. See 'hug rbc-other --help'." ;;
   esac
 done
 
@@ -55,7 +59,7 @@ strategy="other"
 
 if $finish_all; then
   info "Resolving all remaining rebase conflicts with other (target branch) version."
-  rebase_finish_all "$strategy" || \
+  rebase_finish_all "$strategy" ||
     error "Failed to finish rebase automatically."
 
   success "Rebase completed successfully (all conflicts resolved with other version)."
@@ -63,5 +67,5 @@ if $finish_all; then
 fi
 
 info "Resolving 1 rebase conflicting commit with $strategy version."
-rebase_pick "$strategy" || \
+rebase_pick "$strategy" ||
   error "Failed to resolve conflict."

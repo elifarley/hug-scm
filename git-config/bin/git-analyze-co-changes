@@ -2,7 +2,8 @@
 # git-analyze-co-changes - Find files that frequently change together
 # Part of the Hug tool suite
 
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -72,35 +73,35 @@ json_output=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --since)
-      since_arg="$2"
-      shift 2
-      ;;
-    --threshold)
-      threshold="$2"
-      shift 2
-      ;;
-    --top)
-      top="$2"
-      shift 2
-      ;;
-    --json)
-      json_output=true
-      shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    [0-9]*)
-      commits="$1"
-      shift
-      ;;
-    *)
-      error "Unknown option: $1"
-      show_help
-      exit 1
-      ;;
+  --since)
+    since_arg="$2"
+    shift 2
+    ;;
+  --threshold)
+    threshold="$2"
+    shift 2
+    ;;
+  --top)
+    top="$2"
+    shift 2
+    ;;
+  --json)
+    json_output=true
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  [0-9]*)
+    commits="$1"
+    shift
+    ;;
+  *)
+    error "Unknown option: $1"
+    show_help
+    exit 1
+    ;;
   esac
 done
 

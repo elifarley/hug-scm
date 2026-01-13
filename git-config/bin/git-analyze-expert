@@ -2,7 +2,8 @@
 # git-analyze-expert - Identify code ownership and expertise
 # Part of the Hug tool suite
 
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -82,34 +83,34 @@ browse_root=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --author)
-      author="$2"
-      shift 2
-      ;;
-    --since)
-      since_arg="$2"
-      shift 2
-      ;;
-    --decay)
-      decay_days="$2"
-      shift 2
-      ;;
-    --json)
-      json_output=true
-      shift
-      ;;
-    --browse-root)
-      browse_root=true
-      shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    *)
-      target="$1"
-      shift
-      ;;
+  --author)
+    author="$2"
+    shift 2
+    ;;
+  --since)
+    since_arg="$2"
+    shift 2
+    ;;
+  --decay)
+    decay_days="$2"
+    shift 2
+    ;;
+  --json)
+    json_output=true
+    shift
+    ;;
+  --browse-root)
+    browse_root=true
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  *)
+    target="$1"
+    shift
+    ;;
   esac
 done
 

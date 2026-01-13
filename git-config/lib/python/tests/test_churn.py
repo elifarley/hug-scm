@@ -9,10 +9,10 @@ Following Google Python testing best practices:
 """
 
 import json
-import pytest
-from unittest.mock import patch, MagicMock, mock_open
-from io import StringIO
 import subprocess
+from unittest.mock import MagicMock, mock_open, patch
+
+import pytest
 
 # Import module under test
 import churn
@@ -833,7 +833,7 @@ class TestEdgeCases:
         }
 
         # All lines have 10 changes (above threshold of 3)
-        mock_line_history.return_value = {i: 10 for i in range(1, 51)}
+        mock_line_history.return_value = dict.fromkeys(range(1, 51), 10)
 
         # Act
         result = churn.analyze_churn("hot_file.py", hot_threshold=3)

@@ -24,31 +24,31 @@ set -euo pipefail
 # Returns: "git", "hg", or "unknown"
 detect_vcs_from_url() {
   local url="$1"
-  
+
   # Git patterns
   if [[ "$url" == *.git ]] || [[ "$url" == *.git/ ]]; then
     echo "git"
     return 0
   fi
-  
+
   # Check for popular Git hosting platforms
   if [[ "$url" =~ github\.com|gitlab\.com|bitbucket\.org/[^/]+/[^/]+\.git|gitea\.|codeberg\.org ]]; then
     echo "git"
     return 0
   fi
-  
+
   # Mercurial patterns
   if [[ "$url" == *.hg ]] || [[ "$url" == *.hg/ ]]; then
     echo "hg"
     return 0
   fi
-  
+
   # Check for Mercurial-specific patterns (less common but still supported)
   if echo "$url" | grep -q "hg\."; then
     echo "hg"
     return 0
   fi
-  
+
   echo "unknown"
   return 0
 }
@@ -58,7 +58,7 @@ detect_vcs_from_url() {
 # Returns: 0 if available, exits with error if not
 validate_vcs_available() {
   local vcs="$1"
-  if ! command -v "$vcs" >/dev/null 2>&1; then
+  if ! command -v "$vcs" > /dev/null 2>&1; then
     error "Error: '$vcs' command not found in PATH. Please install $vcs."
     exit 1
   fi
@@ -69,12 +69,12 @@ validate_vcs_available() {
 # Returns: 0 to proceed, exits if user cancels
 check_directory_exists() {
   local dir="$1"
-  
+
   # If directory doesn't exist, all good
   if [[ ! -d "$dir" ]]; then
     return 0
   fi
-  
+
   # Directory exists - prompt for confirmation
   if gum_available; then
     if ! gum confirm --default=false "Directory '$dir' exists. Overwrite?"; then
@@ -89,7 +89,7 @@ check_directory_exists() {
       exit 1
     fi
   fi
-  
+
   # Remove existing directory
   rm -rf "$dir"
 }
@@ -106,7 +106,7 @@ cleanup_failed_clone() {
 
 # Show usage
 show_help() {
-    cat <<EOF
+  cat << EOF
 Usage: hug clone [--git|--hg] [--no-status] <url> [dir] [options]
 
 Clone a Git or Mercurial repository. Auto-detects VCS from URL or prompts if ambiguous.
@@ -131,71 +131,71 @@ run_status=true
 declare -a args=()
 
 while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --git)
-            vcs="git"
-            shift
-            ;;
-        --hg)
-            vcs="hg"
-            shift
-            ;;
-        --no-status)
-            run_status=false
-            shift
-            ;;
-        --help|-h)
-            show_help
-            exit 0
-            ;;
-        *)
-            args+=("$1")
-            shift
-            ;;
-    esac
+  case "$1" in
+  --git)
+    vcs="git"
+    shift
+    ;;
+  --hg)
+    vcs="hg"
+    shift
+    ;;
+  --no-status)
+    run_status=false
+    shift
+    ;;
+  --help | -h)
+    show_help
+    exit 0
+    ;;
+  *)
+    args+=("$1")
+    shift
+    ;;
+  esac
 done
 
 # Check if we have a URL
 if [[ ${#args[@]} -eq 0 ]]; then
-    show_help
-    exit 1
+  show_help
+  exit 1
 fi
 
 url="${args[0]}"
 dir=""
 if [[ ${#args[@]} -gt 1 && ${args[1]} != -* ]]; then
-    dir="${args[1]}"
-    options=("${args[@]:2}")
+  dir="${args[1]}"
+  options=("${args[@]:2}")
 else
-    options=("${args[@]:1}")
+  options=("${args[@]:1}")
 fi
 
 # Auto-detect VCS if not specified
 if [[ -z "$vcs" ]]; then
-    auto_detected=true
-    vcs=$(detect_vcs_from_url "$url")
-    
-    if [[ "$vcs" == "unknown" ]]; then
-        # Prompt with gum if available, else fallback to read
-        if gum_available; then
-            vcs_choice=$(gum choose --header "Select VCS for '$url':" "Git" "Mercurial" || echo "")
-            if [[ -z "$vcs_choice" ]]; then
-                info "Cancelled."
-                exit 1
-            fi
-            vcs=$([[ "$vcs_choice" == "Git" ]] && echo "git" || echo "hg")
-        else
-            choice=''
-            read -rp "Ambiguous VCS for '$url'. (g)it or (h)g? " choice
-            vcs=$([[ ${choice,,} == g* ]] && echo "git" || echo "hg")
-        fi
+  auto_detected=true
+  vcs=$(detect_vcs_from_url "$url")
+
+  if [[ "$vcs" == "unknown" ]]; then
+    # Prompt with gum if available, else fallback to read
+    if gum_available; then
+      vcs_choice=$(gum choose --header "Select VCS for '$url':" "Git" "Mercurial" || echo "")
+      if [[ -z "$vcs_choice" ]]; then
+        info "Cancelled."
+        exit 1
+      fi
+      vcs=$([[ "$vcs_choice" == "Git" ]] && echo "git" || echo "hg")
+    else
+      choice=''
+      read -rp "Ambiguous VCS for '$url'. (g)it or (h)g? " choice
+      vcs=$([[ ${choice,,} == g* ]] && echo "git" || echo "hg")
     fi
+  fi
 fi
 
 # Show detection result
 if [[ "$auto_detected" == true && "$vcs" != "unknown" ]]; then
-    vcs_name=$([[ "$vcs" == "git" ]] && echo "Git" || echo "Mercurial")
-    info "Detected: $vcs_name"
+  vcs_name=$([[ "$vcs" == "git" ]] && echo "Git" || echo "Mercurial")
+  info "Detected: $vcs_name"
 fi
 
 # Validate VCS availability
@@ -204,7 +204,7 @@ validate_vcs_available "$vcs"
 # Determine target directory
 cloned_dir="${dir}"
 if [[ -z "$cloned_dir" ]]; then
-    cloned_dir=$(basename "${url%.*}")
+  cloned_dir=$(basename "${url%.*}")
 fi
 
 # Check if directory exists
@@ -212,26 +212,26 @@ check_directory_exists "$cloned_dir"
 
 # Set up cleanup trap
 cleanup_on_error() {
-    local exit_code=$?
-    if [[ $exit_code -ne 0 ]]; then
-        cleanup_failed_clone "$cloned_dir"
-    fi
-    exit $exit_code
+  local exit_code=$?
+  if [[ $exit_code -ne 0 ]]; then
+    cleanup_failed_clone "$cloned_dir"
+  fi
+  exit $exit_code
 }
 trap cleanup_on_error EXIT
 
 # Execute clone
 info "Cloning with $vcs..."
 if "$vcs" clone "$url" ${dir:+"$dir"} "${options[@]}"; then
-    trap - EXIT  # Clear trap on success
-    success "✓ Cloned successfully to '$cloned_dir'."
-    
-    # Run status if enabled
-    if [[ "$run_status" == true ]]; then
-        cd "$cloned_dir" && hug s
-    fi
-    exit 0
+  trap - EXIT # Clear trap on success
+  success "✓ Cloned successfully to '$cloned_dir'."
+
+  # Run status if enabled
+  if [[ "$run_status" == true ]]; then
+    cd "$cloned_dir" && hug s
+  fi
+  exit 0
 else
-    error "Clone failed."
-    exit 1
+  error "Clone failed."
+  exit 1
 fi

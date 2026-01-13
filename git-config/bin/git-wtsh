@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit hug-git-worktree; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                                  # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug wtsh: Show detailed information about worktrees in a comprehensive, readable format.
 
 USAGE:
@@ -152,9 +153,9 @@ get_commit_details() {
   if [[ -d "$worktree_path" ]]; then
     # Get commit details using git log
     local author date subject
-    author=$(git -C "$worktree_path" log -1 --format=%an "$commit_hash" 2>/dev/null || echo "Unknown")
-    date=$(git -C "$worktree_path" log -1 --format=%cr "$commit_hash" 2>/dev/null || echo "Unknown")
-    subject=$(git -C "$worktree_path" log -1 --format=%s "$commit_hash" 2>/dev/null || echo "Unknown")
+    author=$(git -C "$worktree_path" log -1 --format=%an "$commit_hash" 2> /dev/null || echo "Unknown")
+    date=$(git -C "$worktree_path" log -1 --format=%cr "$commit_hash" 2> /dev/null || echo "Unknown")
+    subject=$(git -C "$worktree_path" log -1 --format=%s "$commit_hash" 2> /dev/null || echo "Unknown")
 
     printf '%s|%s|%s' "$author" "$date" "$subject"
   fi
@@ -169,13 +170,13 @@ get_branch_info() {
     # Check if we're on a branch or detached HEAD
     if [[ -n "$branch_name" ]]; then
       local remote_tracking ahead_behind
-      remote_tracking=$(git -C "$worktree_path" for-each-ref --format='%(upstream:short)' "refs/heads/$branch_name" 2>/dev/null || echo "")
+      remote_tracking=$(git -C "$worktree_path" for-each-ref --format='%(upstream:short)' "refs/heads/$branch_name" 2> /dev/null || echo "")
 
       # Get ahead/behind information if there's a remote tracking branch
       if [[ -n "$remote_tracking" ]]; then
         local ahead behind
-        ahead=$(git -C "$worktree_path" rev-list --count "$remote_tracking..$branch_name" 2>/dev/null || echo "0")
-        behind=$(git -C "$worktree_path" rev-list --count "$branch_name..$remote_tracking" 2>/dev/null || echo "0")
+        ahead=$(git -C "$worktree_path" rev-list --count "$remote_tracking..$branch_name" 2> /dev/null || echo "0")
+        behind=$(git -C "$worktree_path" rev-list --count "$branch_name..$remote_tracking" 2> /dev/null || echo "0")
 
         if [[ "$ahead" -gt 0 && "$behind" -gt 0 ]]; then
           ahead_behind=" (↑$ahead ↓$behind)"
@@ -204,8 +205,8 @@ get_status_details() {
 
   if [[ "$is_dirty" == "true" ]]; then
     local staged_count unstaged_count total_changes
-    staged_count=$(git -C "$worktree_path" diff --cached --name-only 2>/dev/null | wc -l)
-    unstaged_count=$(git -C "$worktree_path" diff --name-only 2>/dev/null | wc -l)
+    staged_count=$(git -C "$worktree_path" diff --cached --name-only 2> /dev/null | wc -l)
+    unstaged_count=$(git -C "$worktree_path" diff --name-only 2> /dev/null | wc -l)
     total_changes=$((staged_count + unstaged_count))
 
     printf 'Dirty (%d files changed: %d staged, %d unstaged)' "$total_changes" "$staged_count" "$unstaged_count"
@@ -218,14 +219,14 @@ get_status_details() {
 show_worktree_details() {
   local current_worktree="$1"
   shift
-  
+
   # Check for --filtered flag (for search results, show exact count)
   local is_filtered=false
   if [[ "$1" == "--filtered" ]]; then
     is_filtered=true
     shift
   fi
-  
+
   local worktree_array=("$@")
 
   printf "${BLUE}Worktree Summary${NC}\n"
@@ -239,12 +240,12 @@ show_worktree_details() {
 
   # Count worktrees for display
   local display_count=${#worktree_array[@]}
-  
+
   # For non-filtered results (--all), subtract 1 for main worktree (semantic counting)
   # For filtered results, show exact count of matches
   if [[ "$is_filtered" == "false" ]]; then
     local main_repo
-    main_repo=$(git rev-parse --show-toplevel 2>/dev/null)
+    main_repo=$(git rev-parse --show-toplevel 2> /dev/null)
     for path in "${worktree_array[@]}"; do
       if [[ "$path" == "$main_repo" ]]; then
         display_count=$((display_count - 1))
@@ -259,17 +260,17 @@ show_worktree_details() {
   for path in "${worktree_array[@]}"; do
     # Get worktree information from existing functions
     local branch commit dirty locked
-    branch=$(git -C "$path" branch --show-current 2>/dev/null || echo "detached")
+    branch=$(git -C "$path" branch --show-current 2> /dev/null || echo "detached")
 
     # Get commit hash - try branch first, then HEAD
     if [[ "$branch" != "detached" ]]; then
-      commit=$(git -C "$path" rev-parse --short "$branch" 2>/dev/null || echo "unknown")
+      commit=$(git -C "$path" rev-parse --short "$branch" 2> /dev/null || echo "unknown")
     else
-      commit=$(git -C "$path" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+      commit=$(git -C "$path" rev-parse --short HEAD 2> /dev/null || echo "unknown")
     fi
 
     # Check if worktree is dirty
-    if git -C "$path" diff --quiet 2>/dev/null && git -C "$path" diff --cached --quiet 2>/dev/null; then
+    if git -C "$path" diff --quiet 2> /dev/null && git -C "$path" diff --cached --quiet 2> /dev/null; then
       dirty="false"
     else
       dirty="true"
@@ -277,7 +278,7 @@ show_worktree_details() {
 
     # Check if locked (simplified check)
     locked="false"
-    if ! git -C "$path" worktree list --porcelain 2>/dev/null | grep -A1 "^worktree $path\$" | grep -q "^locked"; then
+    if ! git -C "$path" worktree list --porcelain 2> /dev/null | grep -A1 "^worktree $path\$" | grep -q "^locked"; then
       locked="false"
     else
       locked="true"
@@ -351,23 +352,23 @@ show_all=false
 # Parse custom flags
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --all|-a)
-      show_all=true
-      shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -*)
-      error "Unknown option: $1"
-      show_help
-      exit 1
-      ;;
-    *)
-      # Treat remaining arguments as search term
-      break
-      ;;
+  --all | -a)
+    show_all=true
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -*)
+    error "Unknown option: $1"
+    show_help
+    exit 1
+    ;;
+  *)
+    # Treat remaining arguments as search term
+    break
+    ;;
   esac
 done
 
@@ -402,7 +403,7 @@ elif [[ "$show_all" == "false" && $# -eq 0 ]]; then
 elif [[ $# -gt 0 ]]; then
   # Multi-term search filtering (enhanced behavior)
   target_worktrees=()
-  search_terms="$*"  # Capture all search terms
+  search_terms="$*" # Capture all search terms
 
   for i in "${!worktree_paths[@]}"; do
     path="${worktree_paths[$i]}"

@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 # shellcheck source=../lib/hug-common
 . "$CMD_BASE/../lib/hug-common"
 # shellcheck source=../lib/hug-git-kit
 . "$CMD_BASE/../lib/hug-git-kit"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-    cat << EOF
+  cat << EOF
 hug bdel-backup: Delete backup branches with filtering options
 
 USAGE:
@@ -63,13 +64,13 @@ EOF
 keep_count=""
 delete_older_than=""
 backup_branches_to_delete=()
-formatted_backups_to_delete=()  # Parallel array for display purposes
+formatted_backups_to_delete=() # Parallel array for display purposes
 
 # Use getopt for parsing all options (common + custom)
-set +e  # Temporarily disable exit on error to capture getopt failure
+set +e # Temporarily disable exit on error to capture getopt failure
 PARSED=$(getopt --options hfqk:o: --longoptions help,force,quiet,dry-run,keep:,delete-older-than: --name "hug bdel-backup" -- "$@" 2>&1)
 getopt_status=$?
-set -e  # Re-enable exit on error
+set -e # Re-enable exit on error
 
 if [ $getopt_status -ne 0 ]; then
   # getopt failed - print the error message if available
@@ -88,41 +89,41 @@ force=false
 # Process all options
 while true; do
   case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -f|--force)
-      force=true
-      export HUG_FORCE=true
-      shift
-      ;;
-    -q|--quiet)
-      export HUG_QUIET=T
-      shift
-      ;;
-    --dry-run)
-      dry_run=true
-      shift
-      ;;
-    -k|--keep)
-      if ! [[ "$2" =~ ^[0-9]+$ ]]; then
-        error "Option -k/--keep requires a positive integer argument, got: $2"
-      fi
-      keep_count="$2"
-      shift 2
-      ;;
-    -o|--delete-older-than)
-      delete_older_than="$2"
-      shift 2
-      ;;
-    --)
-      shift
-      break
-      ;;
-    *)
-      error "Internal error in option parsing"
-      ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -f | --force)
+    force=true
+    export HUG_FORCE=true
+    shift
+    ;;
+  -q | --quiet)
+    export HUG_QUIET=T
+    shift
+    ;;
+  --dry-run)
+    dry_run=true
+    shift
+    ;;
+  -k | --keep)
+    if ! [[ "$2" =~ ^[0-9]+$ ]]; then
+      error "Option -k/--keep requires a positive integer argument, got: $2"
+    fi
+    keep_count="$2"
+    shift 2
+    ;;
+  -o | --delete-older-than)
+    delete_older_than="$2"
+    shift 2
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *)
+    error "Internal error in option parsing"
+    ;;
   esac
 done
 
@@ -163,14 +164,14 @@ normalize_backup_key() {
 is_older_than_pattern() {
   local backup="$1"
   local pattern="$2"
-  
+
   local backup_key
   backup_key=$(normalize_backup_key "$backup")
-  
+
   # Normalize pattern to match backup key format
   # Pattern can be: YYYY, YYYY-MM, YYYY-MM/DD, YYYY-MM/DD-HH, YYYY-MM/DD-HHMM
   local normalized_pattern="$pattern"
-  
+
   # Convert pattern to comparable format by expanding to end of period
   # Note: We use approximations (e.g., day 31) which is sufficient for
   # "older than" comparisons since we only care about the boundary
@@ -179,7 +180,7 @@ is_older_than_pattern() {
   # YYYY-MM/DD -> YYYY-MM/DD-2359 (end of day)
   # YYYY-MM/DD-HH -> YYYY-MM/DD-HH59 (end of hour)
   # YYYY-MM/DD-HHMM -> YYYY-MM/DD-HHMM (exact)
-  
+
   if [[ "$normalized_pattern" =~ ^[0-9]{4}$ ]]; then
     # YYYY -> YYYY-12/31-2359
     normalized_pattern="${normalized_pattern}-12/31-2359"
@@ -193,7 +194,7 @@ is_older_than_pattern() {
     # YYYY-MM/DD-HH -> YYYY-MM/DD-HH59
     normalized_pattern="${normalized_pattern}59"
   fi
-  
+
   # Compare lexicographically (works for YYYY-MM/DD-HHMM format)
   [[ "$backup_key" < "$normalized_pattern" || "$backup_key" == "$normalized_pattern" ]]
 }
@@ -203,7 +204,7 @@ is_older_than_pattern() {
 perform_deletion() {
   # Set dry_run default if not already set by parse_common_flags
   local dry_run="${dry_run:-false}"
-  
+
   # Preview mode
   if [[ "${dry_run}" == "true" ]]; then
     info "Dry run: Would delete ${#backup_branches_to_delete[@]} backup branch(es):"
@@ -217,20 +218,20 @@ perform_deletion() {
         local display_name
         display_name=$(format_backup_display_name "$branch")
         local hash
-        hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
+        hash=$(git rev-parse --short "$branch" 2> /dev/null || echo "???????")
         printf "  - %s (%s)\n" "$display_name" "$hash" >&2
       done
     fi
     print_dry_run_preview "delete the listed backup branches"
     return 0
   fi
-  
+
   # Confirmation prompt (unless --force)
   if [[ ${HUG_FORCE:-} != true ]]; then
     local count=${#backup_branches_to_delete[@]}
     local branch_word="backup branch"
     [[ $count -gt 1 ]] && branch_word="backup branches"
-    
+
     warning "About to delete $count $branch_word:"
     if [[ ${#formatted_backups_to_delete[@]} -gt 0 ]]; then
       for formatted in "${formatted_backups_to_delete[@]}"; do
@@ -242,22 +243,22 @@ perform_deletion() {
         local display_name
         display_name=$(format_backup_display_name "$branch")
         local hash
-        hash=$(git rev-parse --short "$branch" 2>/dev/null || echo "???????")
+        hash=$(git rev-parse --short "$branch" 2> /dev/null || echo "???????")
         printf "  - %s (%s)\n" "$display_name" "$hash" >&2
       done
     fi
     printf "\n" >&2
     prompt_confirm_warn "⚠️  Delete these ${branch_word}? [y/N]: "
   fi
-  
+
   # Perform deletion (always use -D for backups, they're intentionally unmerged)
   local deleted_count=0
   local failed_count=0
   local -a deleted_branches=()
   local -a failed_branches=()
-  
+
   for branch in "${backup_branches_to_delete[@]}"; do
-    if git branch -D "$branch" >/dev/null 2>&1; then
+    if git branch -D "$branch" > /dev/null 2>&1; then
       deleted_branches+=("$branch")
       deleted_count=$((deleted_count + 1))
     else
@@ -265,7 +266,7 @@ perform_deletion() {
       failed_count=$((failed_count + 1))
     fi
   done
-  
+
   # Report results
   if [[ $deleted_count -gt 0 ]]; then
     local branch_word="backup branch"
@@ -297,7 +298,7 @@ perform_deletion() {
       done
     fi
   fi
-  
+
   if [[ $failed_count -gt 0 ]]; then
     local branch_word="backup branch"
     [[ $failed_count -gt 1 ]] && branch_word="backup branches"
@@ -308,7 +309,7 @@ perform_deletion() {
       display_name=$(format_backup_display_name "$branch")
       printf "  ✗ %s\n" "$display_name" >&2
     done
-    
+
     if [[ $deleted_count -eq 0 ]]; then
       exit 1
     fi
@@ -318,7 +319,7 @@ perform_deletion() {
 # --- Main function for 'hug bdel-backup' ---
 hug_bdel_backup() {
   local -a backup_branches_to_delete=("$@")
-  
+
   # If explicit branch names provided, normalize and validate them first
   if [[ ${#backup_branches_to_delete[@]} -gt 0 ]]; then
     local -a normalized=()
@@ -330,30 +331,30 @@ hug_bdel_backup() {
       normalized+=("$branch")
     done
     backup_branches_to_delete=("${normalized[@]}")
-    
+
     # Validate all branches exist
     for branch in "${backup_branches_to_delete[@]}"; do
       validate_commitish "bdel-backup argument" "$branch"
     done
-    
+
     # Jump to deletion logic (skip interactive mode)
     perform_deletion
     return
   fi
-  
+
   # Get all backup branches
   local -a all_backups=()
   mapfile -t all_backups < <(get_backup_branches)
-  
+
   if [[ ${#all_backups[@]} -eq 0 ]]; then
     info "No backup branches found."
     exit 0
   fi
-  
+
   # Apply filters if specified
   local -a filtered_backups=()
   local -a deletion_candidates=()
-  
+
   if [[ -n "$delete_older_than" ]]; then
     # Filter by date pattern
     for backup in "${all_backups[@]}"; do
@@ -361,13 +362,13 @@ hug_bdel_backup() {
         deletion_candidates+=("$backup")
       fi
     done
-    
+
     if [[ ${#deletion_candidates[@]} -eq 0 ]]; then
       info "No backup branches older than '$delete_older_than' found."
       exit 0
     fi
   fi
-  
+
   if [[ -n "$keep_count" ]]; then
     # Sort ALL backups by date (newest first) to determine which to keep
     # Backup format: hug-backups/YYYY-MM/DD-HHMM.name
@@ -376,14 +377,14 @@ hug_bdel_backup() {
     mapfile -t sorted_all_backups < <(
       printf '%s\n' "${all_backups[@]}" | sort -r
     )
-    
+
     # Determine which backups to keep (the first keep_count from sorted list)
     local -a backups_to_keep=()
     local i
-    for ((i=0; i<keep_count && i<${#sorted_all_backups[@]}; i++)); do
+    for ((i = 0; i < keep_count && i < ${#sorted_all_backups[@]}; i++)); do
       backups_to_keep+=("${sorted_all_backups[i]}")
     done
-    
+
     if [[ -n "$delete_older_than" ]]; then
       # When both filters are used: delete = candidates - kept
       local -a final_deletion_list=()
@@ -399,12 +400,12 @@ hug_bdel_backup() {
           final_deletion_list+=("$backup")
         fi
       done
-      
+
       if [[ ${#final_deletion_list[@]} -eq 0 ]]; then
         info "All backups matching --delete-older-than are protected by --keep $keep_count. Nothing to delete."
         exit 0
       fi
-      
+
       backup_branches_to_delete=("${final_deletion_list[@]}")
     else
       # Only --keep is specified, delete all except the kept ones
@@ -413,7 +414,7 @@ hug_bdel_backup() {
         info "Found $total_count backup branch(es), which is <= --keep $keep_count. Nothing to delete."
         exit 0
       fi
-      
+
       # Delete all except the first keep_count
       backup_branches_to_delete=("${sorted_all_backups[@]:$keep_count}")
     fi
@@ -421,52 +422,52 @@ hug_bdel_backup() {
     # --delete-older-than was used without --keep, use candidates
     backup_branches_to_delete=("${deletion_candidates[@]}")
   fi
-  
+
   # If no explicit branches provided and no filters applied, show interactive menu
   if [[ ${#backup_branches_to_delete[@]} -eq 0 ]]; then
     # No explicit branches and no filters - show interactive menu
-    
+
     # Check if gum is available
     if ! gum_available; then
       error "Interactive mode requires 'gum' to be installed. Please install it or specify branch names directly.
        Install: https://github.com/charmbracelet/gum"
     fi
-    
+
     # Prepare formatted options for gum
     local -a formatted_options=()
     # Display names array for matching (parallel to all_backups by index)
     local -a display_names=()
-    
+
     for backup in "${all_backups[@]}"; do
       local display_name
       display_name=$(format_backup_display_name "$backup")
       local original_name
       original_name=$(extract_original_name "$backup")
       local hash
-      hash=$(git rev-parse --short "$backup" 2>/dev/null || echo "???????")
+      hash=$(git rev-parse --short "$backup" 2> /dev/null || echo "???????")
       local subject
-      subject=$(git log -1 --format='%s' "$backup" 2>/dev/null || echo "(no commit)")
-      
+      subject=$(git log -1 --format='%s' "$backup" 2> /dev/null || echo "(no commit)")
+
       # Format for gum: plain text
       local formatted="${display_name} → ${original_name} ${YELLOW}${hash}${NC} ${GREY}${subject}${NC}"
       formatted_options+=("$formatted")
       # Populate display_names for matching (normalized selection will match against this)
       display_names+=("$display_name")
     done
-    
+
     # Use gum_filter_by_index for selection with exact matching
     local -a selected_indices=()
     mapfile -t selected_indices < <(
       gum_filter_by_index formatted_options \
-                          "Select backup branches to delete (<TAB> to select, Enter to confirm)..." \
-                          --no-limit
+        "Select backup branches to delete (<TAB> to select, Enter to confirm)..." \
+        --no-limit
     )
-    
+
     if [ ${#selected_indices[@]} -eq 0 ]; then
       info "No backup branches selected."
       exit 0
     fi
-    
+
     # Extract selected backup branches and formatted lines using indices
     backup_branches_to_delete=()
     formatted_backups_to_delete=()
@@ -475,7 +476,7 @@ hug_bdel_backup() {
       formatted_backups_to_delete+=("${formatted_options[$idx]}")
     done
   fi
-  
+
   # Call the deletion function
   perform_deletion
 }

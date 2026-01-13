@@ -16,11 +16,10 @@ Example:
     git log --name-only --format=%H -n 50 | python3 co_changes.py --threshold=0.30
 """
 
-import sys
-import json
 import argparse
+import json
+import sys
 from collections import defaultdict
-from typing import Dict, List, Tuple, Set
 
 
 def parse_args():
@@ -45,7 +44,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_git_log(stdin_input: str) -> List[Set[str]]:
+def parse_git_log(stdin_input: str) -> list[set[str]]:
     """
     Parse git log --name-only output into list of file sets per commit.
 
@@ -88,8 +87,8 @@ def parse_git_log(stdin_input: str) -> List[Set[str]]:
 
 
 def build_co_occurrence_matrix(
-    commits: List[Set[str]],
-) -> Tuple[Dict[str, Dict[str, int]], Dict[str, int]]:
+    commits: list[set[str]],
+) -> tuple[dict[str, dict[str, int]], dict[str, int]]:
     """
     Build co-occurrence matrix and file change counts.
 
@@ -116,8 +115,8 @@ def build_co_occurrence_matrix(
 
 
 def calculate_correlations(
-    co_matrix: Dict[str, Dict[str, int]], file_counts: Dict[str, int], threshold: float
-) -> List[Dict]:
+    co_matrix: dict[str, dict[str, int]], file_counts: dict[str, int], threshold: float
+) -> list[dict]:
     """
     Calculate correlation scores for file pairs.
 
@@ -157,7 +156,7 @@ def calculate_correlations(
     return correlations
 
 
-def format_text_output(correlations: List[Dict], threshold: float, total_commits: int) -> str:
+def format_text_output(correlations: list[dict], threshold: float, total_commits: int) -> str:
     """Format correlations as human-readable text."""
     lines = []
 

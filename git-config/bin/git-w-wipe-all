@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Show help if requested
 test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
-  cat <<'EOF'
+  cat << 'EOF'
 hug w wipe-all: Wipe all staged and unstaged changes across repository
 
 USAGE:

@@ -6,11 +6,11 @@
 . "$HUG_HOME/git-config/lib/hug-git-kit"
 # shellcheck source=git-config/lib/hug-file-input
 . "$HUG_HOME/git-config/lib/hug-file-input"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-    cat << EOF
+  cat << EOF
 hug untrack: Stop tracking files but keep them locally
 
 USAGE:
@@ -71,36 +71,36 @@ remaining_args=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --from-file)
-      if [[ -n "$from_commit" ]]; then
-        error "Cannot use --from-file and --from-commit together. Use one or the other."
-      fi
-      from_file="$2"
-      shift 2
-      ;;
-    --from-commit)
-      if [[ -n "$from_file" ]]; then
-        error "Cannot use --from-commit and --from-file together. Use one or the other."
-      fi
-      from_commit="$2"
-      shift 2
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    --dry-run|--force|-f|--quiet)
-      # These will be handled by parse_common_flags
-      remaining_args+=("$1")
-      shift
-      ;;
-    -*)
-      error "Unknown option: $1. See 'hug untrack --help'."
-      ;;
-    *)
-      remaining_args+=("$1")
-      shift
-      ;;
+  --from-file)
+    if [[ -n "$from_commit" ]]; then
+      error "Cannot use --from-file and --from-commit together. Use one or the other."
+    fi
+    from_file="$2"
+    shift 2
+    ;;
+  --from-commit)
+    if [[ -n "$from_file" ]]; then
+      error "Cannot use --from-commit and --from-file together. Use one or the other."
+    fi
+    from_commit="$2"
+    shift 2
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  --dry-run | --force | -f | --quiet)
+    # These will be handled by parse_common_flags
+    remaining_args+=("$1")
+    shift
+    ;;
+  -*)
+    error "Unknown option: $1. See 'hug untrack --help'."
+    ;;
+  *)
+    remaining_args+=("$1")
+    shift
+    ;;
   esac
 done
 
@@ -121,8 +121,8 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
   files_to_untrack=()
   for arg in "${remaining_args[@]}"; do
     case "$arg" in
-      --dry-run|--force|-f|--quiet) ;;
-      *) files_to_untrack+=("$arg") ;;
+    --dry-run | --force | -f | --quiet) ;;
+    *) files_to_untrack+=("$arg") ;;
     esac
   done
 
@@ -133,8 +133,8 @@ else
   files_to_untrack=()
   for arg in "${remaining_args[@]}"; do
     case "$arg" in
-      --dry-run|--force|-f|--quiet) ;;
-      *) files_to_untrack+=("$arg") ;;
+    --dry-run | --force | -f | --quiet) ;;
+    *) files_to_untrack+=("$arg") ;;
     esac
   done
 fi
@@ -144,76 +144,76 @@ check_git_repo
 # --- Main function for 'hug untrack' ---
 hug_untrack() {
   local -a files_to_untrack=("$@")
-  
+
   # If no files specified, show interactive menu
   if [[ ${#files_to_untrack[@]} -eq 0 ]]; then
     local -a tracked_files=()
-    
+
     # Get all tracked files (excluding directories)
     mapfile -t tracked_files < <(
-      git ls-files 2>/dev/null || true
+      git ls-files 2> /dev/null || true
     )
-    
+
     if [[ ${#tracked_files[@]} -eq 0 ]]; then
       info "No tracked files to untrack."
       exit 0
     fi
-    
+
     # Check if gum is available
     if ! gum_available; then
       error "Interactive mode requires 'gum' to be installed. Please install it or specify file names directly.
        Install: https://github.com/charmbracelet/gum"
     fi
-    
+
     # Prepare formatted options for gum with file details
     local -a formatted_options=()
-    
+
     for file in "${tracked_files[@]}"; do
       # Get file modification status
       local status=""
-      if git diff --quiet -- "$file" 2>/dev/null && git diff --cached --quiet -- "$file" 2>/dev/null; then
+      if git diff --quiet -- "$file" 2> /dev/null && git diff --cached --quiet -- "$file" 2> /dev/null; then
         status="${GREEN}clean${NC}"
-      elif ! git diff --cached --quiet -- "$file" 2>/dev/null; then
+      elif ! git diff --cached --quiet -- "$file" 2> /dev/null; then
         status="${YELLOW}staged${NC}"
       else
         status="${YELLOW}modified${NC}"
       fi
-      
+
       # Format for gum: plain text with details
       local formatted="${file} ${status}"
       formatted_options+=("$formatted")
     done
-    
+
     # Use gum_filter_by_index for selection with exact matching
     local -a selected_indices=()
     mapfile -t selected_indices < <(
       gum_filter_by_index formatted_options \
-                          "Select files to untrack (<TAB> to select, Enter to confirm)..." \
-                          --no-limit
+        "Select files to untrack (<TAB> to select, Enter to confirm)..." \
+        --no-limit
     )
-    
+
     if [ ${#selected_indices[@]} -eq 0 ]; then
       info "No files selected."
       exit 0
     fi
-    
+
     # Extract selected files using indices
     files_to_untrack=()
     for idx in "${selected_indices[@]}"; do
       files_to_untrack+=("${tracked_files[$idx]}")
     done
   fi
-  
+
   # Validate that files exist and are tracked
   for file in "${files_to_untrack[@]}"; do
-    if ! git ls-files --error-unmatch "$file" >/dev/null 2>&1; then
+    if ! git ls-files --error-unmatch "$file" > /dev/null 2>&1; then
       error "File '$file' is not tracked by git."
     fi
   done
-  
+
   # Set dry_run default if not already set by parse_common_flags
   local dry_run="${dry_run:-false}"
-  
+
   # Preview mode
   if [[ "${dry_run}" == "true" ]]; then
     info "Dry run: Would untrack ${#files_to_untrack[@]} file(s):"
@@ -223,13 +223,13 @@ hug_untrack() {
     print_dry_run_preview "untrack the listed files (files will be kept locally)"
     return 0
   fi
-  
+
   # Confirmation prompt (unless --force) for potentially destructive operation
   if [[ ${HUG_FORCE:-} != true ]]; then
     local count=${#files_to_untrack[@]}
     local file_word="file"
     [[ $count -gt 1 ]] && file_word="files"
-    
+
     warning "About to untrack $count $file_word (files will be kept locally):"
     for file in "${files_to_untrack[@]}"; do
       printf "  - %s\n" "$file" >&2
@@ -239,22 +239,22 @@ hug_untrack() {
     printf "\n" >&2
     prompt_confirm_warn "⚠️  Proceed with untracking? [y/N]: "
   fi
-  
+
   # Perform untracking
-  if ! git rm --cached -- "${files_to_untrack[@]}" 2>/dev/null; then
+  if ! git rm --cached -- "${files_to_untrack[@]}" 2> /dev/null; then
     error "Failed to untrack files. Check file paths and permissions."
   fi
-  
+
   # Report results
   local count=${#files_to_untrack[@]}
   local file_word="file"
   [[ $count -gt 1 ]] && file_word="files"
-  
+
   success "Untracked $count $file_word (kept locally):"
   for file in "${files_to_untrack[@]}"; do
     printf "  ✓ %s\n" "$file" >&2
   done
-  
+
   printf "\n" >&2
   tip "Don't forget to add these files to .gitignore to prevent them from being tracked again."
 }

@@ -112,14 +112,17 @@ create_temp_repo_dir() {
 create_test_repo() {
   local test_repo
   test_repo=$(create_temp_repo_dir)
-  
+
   # Clean up if it exists
   rm -rf "$test_repo"
   mkdir -p "$test_repo"
-  
+
   # Initialize repo in subshell for isolation
   (
-    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
     git init -q --initial-branch=main
     git config --local user.email "test@hug-scm.test"
     git config --local user.name "Hug Test"
@@ -135,7 +138,7 @@ create_test_repo() {
     git add README.md
     git_commit_deterministic "Initial commit"
   )
-  
+
   echo "$test_repo"
 }
 
@@ -146,8 +149,11 @@ create_test_repo_with_history() {
   test_repo=$(create_test_repo)
 
   (
-    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
-    reset_fake_clock  # Start from epoch for reproducibility
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
+    reset_fake_clock # Start from epoch for reproducibility
 
     # Add a few more commits with deterministic timestamps
     echo "Feature 1" > feature1.txt
@@ -166,20 +172,23 @@ create_test_repo_with_history() {
 create_test_repo_with_changes() {
   local test_repo
   test_repo=$(create_test_repo)
-  
+
   (
-    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
     # Staged changes
     echo "Staged content" > staged.txt
     git add staged.txt
-    
+
     # Unstaged changes
     echo "Modified content" >> README.md
-    
+
     # Untracked file
     echo "Untracked content" > untracked.txt
   )
-  
+
   echo "$test_repo"
 }
 
@@ -199,14 +208,17 @@ create_test_repo_with_head_mixed_state() {
   test_repo=$(create_test_repo)
 
   (
-    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
     reset_fake_clock
 
     echo "ignored.txt" > .gitignore
     git add .gitignore
     git_commit_deterministic "Ignore ignored.txt"
 
-    cat <<'EOF' > tracked.txt
+    cat << 'EOF' > tracked.txt
 alpha baseline
 beta baseline
 gamma baseline
@@ -214,7 +226,7 @@ EOF
     git add tracked.txt
     git_commit_deterministic "Add tracked baseline"
 
-    cat <<'EOF' > tracked.txt
+    cat << 'EOF' > tracked.txt
 alpha commit
 beta baseline
 gamma baseline
@@ -223,7 +235,7 @@ EOF
     git add tracked.txt
     git_commit_deterministic "Touch tracked top and bottom"
 
-    cat <<'EOF' > tracked.txt
+    cat << 'EOF' > tracked.txt
 alpha staged
 beta baseline
 gamma baseline
@@ -249,10 +261,13 @@ create_test_repo_with_head_conflict_state() {
   test_repo=$(create_test_repo)
 
   (
-    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
     reset_fake_clock
 
-    cat <<'EOF' > tracked.txt
+    cat << 'EOF' > tracked.txt
 alpha baseline
 beta baseline
 gamma baseline
@@ -260,7 +275,7 @@ EOF
     git add tracked.txt
     git_commit_deterministic "Add tracked baseline"
 
-    cat <<'EOF' > tracked.txt
+    cat << 'EOF' > tracked.txt
 alpha head
 beta baseline
 gamma baseline
@@ -268,7 +283,7 @@ EOF
     git add tracked.txt
     git_commit_deterministic "Modify tracked top line"
 
-    cat <<'EOF' > tracked.txt
+    cat << 'EOF' > tracked.txt
 alpha local
 beta baseline
 gamma baseline
@@ -284,37 +299,40 @@ EOF
 create_test_repo_with_dated_commits() {
   local test_repo
   test_repo=$(create_test_repo)
-  
+
   (
-    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
-    
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
+
     # Create commits at specific times
     echo "day1" > day1.txt
     git add day1.txt
     GIT_COMMITTER_DATE="2024-01-01 10:00:00" GIT_AUTHOR_DATE="2024-01-01 10:00:00" \
       git commit -q -m "Day 1"
-    
+
     echo "day5" > day5.txt
     git add day5.txt
     GIT_COMMITTER_DATE="2024-01-05 10:00:00" GIT_AUTHOR_DATE="2024-01-05 10:00:00" \
       git commit -q -m "Day 5"
-    
+
     echo "day10" > day10.txt
     git add day10.txt
     GIT_COMMITTER_DATE="2024-01-10 10:00:00" GIT_AUTHOR_DATE="2024-01-10 10:00:00" \
       git commit -q -m "Day 10"
-    
+
     echo "day15" > day15.txt
     git add day15.txt
     GIT_COMMITTER_DATE="2024-01-15 10:00:00" GIT_AUTHOR_DATE="2024-01-15 10:00:00" \
       git commit -q -m "Day 15"
-    
+
     echo "day20" > day20.txt
     git add day20.txt
     GIT_COMMITTER_DATE="2024-01-20 10:00:00" GIT_AUTHOR_DATE="2024-01-20 10:00:00" \
       git commit -q -m "Day 20"
   )
-  
+
   echo "$test_repo"
 }
 
@@ -323,12 +341,12 @@ cleanup_test_repo() {
   # CRITICAL: Exit any test repo directory first to prevent getcwd errors
   local cwd
   cwd=$(pwd)
-  
+
   # If we're inside a test repo, exit it before cleanup
   if [[ "$cwd" == *"hug-test-repo"* || "$cwd" == *"hug-workflow-test"* || "$cwd" == *"hug-clone-test"* || "$cwd" == *"hug-remote-test"* ]]; then
     cd "$BATS_TEST_TMPDIR" || cd "$HOME"
   fi
-  
+
   # Cleanup TEST_REPO if set
   if [[ -n "${TEST_REPO:-}" && -d "$TEST_REPO" ]]; then
     # Remove any worktrees FIRST (they reference main repo)
@@ -340,29 +358,29 @@ cleanup_test_repo() {
           local wt="${BASH_REMATCH[1]}"
           # Only remove if it's not the main repo and directory exists
           if [[ "$wt" != "$TEST_REPO" && -d "$wt" ]]; then
-            rm -rf "$wt" 2>/dev/null || true
+            rm -rf "$wt" 2> /dev/null || true
           fi
         fi
-      done < <(git -C "$TEST_REPO" worktree list --porcelain 2>/dev/null || true)
-      
+      done < <(git -C "$TEST_REPO" worktree list --porcelain 2> /dev/null || true)
+
       # Prune worktree metadata
-      git -C "$TEST_REPO" worktree prune 2>/dev/null || true
+      git -C "$TEST_REPO" worktree prune 2> /dev/null || true
     fi
-    
+
     # Now safe to remove main repo
-    rm -rf "$TEST_REPO" 2>/dev/null || true
+    rm -rf "$TEST_REPO" 2> /dev/null || true
     unset TEST_REPO
   fi
-  
+
   # Clean up any orphaned test repos (older than 60 minutes)
   local cleanup_base="${BATS_TEST_TMPDIR:-/tmp}"
   find "$cleanup_base" -maxdepth 1 -name "hug-test-repo-*" -type d \
-    -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+    -mmin +60 -exec rm -rf {} + 2> /dev/null || true
 
   if [[ ${#HUG_TEST_REMOTE_REPOS[@]} -gt 0 ]]; then
     for remote_dir in "${HUG_TEST_REMOTE_REPOS[@]}"; do
       if [[ -d "$remote_dir" ]]; then
-        rm -rf "$remote_dir" 2>/dev/null || true
+        rm -rf "$remote_dir" 2> /dev/null || true
       fi
     done
     HUG_TEST_REMOTE_REPOS=()
@@ -405,7 +423,7 @@ assert_file_contains() {
     echo "Expected file to exist for content assertion: $file"
     return 1
   fi
-  if ! grep -F -- "$expected" "$file" >/dev/null; then
+  if ! grep -F -- "$expected" "$file" > /dev/null; then
     echo "Expected $file to contain: $expected"
     echo "Actual contents:"
     cat "$file"
@@ -421,7 +439,7 @@ assert_file_not_contains() {
     echo "Expected file to exist for content assertion: $file"
     return 1
   fi
-  if grep -F -- "$unexpected" "$file" >/dev/null; then
+  if grep -F -- "$unexpected" "$file" > /dev/null; then
     echo "Did not expect $file to contain: $unexpected"
     echo "Actual contents:"
     cat "$file"
@@ -450,7 +468,7 @@ assert_git_status_contains() {
   local expected="$1"
   local status
   status=$(git_status_porcelain)
-  if ! printf '%s\n' "$status" | grep -F -- "$expected" >/dev/null; then
+  if ! printf '%s\n' "$status" | grep -F -- "$expected" > /dev/null; then
     echo "Expected git status --porcelain=2 to contain: $expected"
     echo "Actual status:"
     printf '%s\n' "$status"
@@ -463,7 +481,7 @@ assert_git_status_not_contains() {
   local unexpected="$1"
   local status
   status=$(git_status_porcelain)
-  if printf '%s\n' "$status" | grep -F -- "$unexpected" >/dev/null; then
+  if printf '%s\n' "$status" | grep -F -- "$unexpected" > /dev/null; then
     echo "Did not expect git status --porcelain=2 to contain: $unexpected"
     echo "Actual status:"
     printf '%s\n' "$status"
@@ -483,7 +501,7 @@ require_git_version() {
   local required="$1"
   local current
   current=$(git --version | grep -oP '\d+\.\d+' | head -1)
-  
+
   if ! awk -v curr="$current" -v req="$required" 'BEGIN { exit !(curr >= req) }'; then
     skip "Git version $required or higher required (found $current)"
   fi
@@ -507,7 +525,7 @@ enable_gum_for_test() {
 # This enables test mode which bypasses TTY checks and allows gum to work in test environments
 enable_gum_simulation() {
   export HUG_TEST_MODE=true
-  export HUG_DISABLE_GUM=""  # Ensure gum is not disabled
+  export HUG_DISABLE_GUM="" # Ensure gum is not disabled
 }
 
 # Disable gum simulation for testing
@@ -556,7 +574,7 @@ setup_gum_mock() {
     # Fallback: calculate PROJECT_ROOT if not set
     PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   fi
-  
+
   tests_bin="$PROJECT_ROOT/tests/bin"
   export PATH="$tests_bin:$PATH"
 }
@@ -584,15 +602,15 @@ require_gum() { gum_available || error "gum not available in test environment"; 
 # Skip test if worktree commands are not fully implemented or supported
 require_worktree_support() {
   # Check if worktree commands exist and respond
-  if ! command -v hug &>/dev/null; then
+  if ! command -v hug &> /dev/null; then
     skip "hug command not found in PATH"
   fi
-  
+
   # Check if git worktree is supported (git 2.5+)
-  if ! git worktree list &>/dev/null 2>&1; then
+  if ! git worktree list &> /dev/null 2>&1; then
     skip "git worktree not supported in this git version (requires 2.5+)"
   fi
-  
+
   # Optional: Check if specific worktree commands are implemented
   # Commands may exist but not be fully functional yet
   # This allows tests to be written before full implementation
@@ -612,7 +630,7 @@ require_hg() {
 # Skip test if hg extension is not available
 require_hg_extension() {
   local ext="$1"
-  if ! hg help "$ext" >/dev/null 2>&1; then
+  if ! hg help "$ext" > /dev/null 2>&1; then
     skip "Mercurial extension '$ext' is not enabled"
   fi
 }
@@ -621,31 +639,34 @@ require_hg_extension() {
 create_test_hg_repo() {
   local test_repo
   test_repo=$(create_temp_repo_dir)
-  
+
   # Clean up if it exists
   rm -rf "$test_repo"
   mkdir -p "$test_repo"
-  
+
   # Initialize repo in subshell for isolation
   (
-    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
     hg init
-    
+
     # Configure test user
-    cat > .hg/hgrc <<EOF
+    cat > .hg/hgrc << EOF
 [ui]
 username = Hug Test <test@hug-scm.test>
 
 [extensions]
 purge =
 EOF
-    
+
     # Create initial commit
     echo "# Test Repository" > README.md
     hg add README.md
     hg commit -m "Initial commit" -q
   )
-  
+
   echo "$test_repo"
 }
 
@@ -653,19 +674,22 @@ EOF
 create_test_hg_repo_with_history() {
   local test_repo
   test_repo=$(create_test_hg_repo)
-  
+
   (
-    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
     # Add a few more commits
     echo "Feature 1" > feature1.txt
     hg add feature1.txt
     hg commit -m "Add feature 1" -q
-    
+
     echo "Feature 2" > feature2.txt
     hg add feature2.txt
     hg commit -m "Add feature 2" -q
   )
-  
+
   echo "$test_repo"
 }
 
@@ -673,20 +697,23 @@ create_test_hg_repo_with_history() {
 create_test_hg_repo_with_changes() {
   local test_repo
   test_repo=$(create_test_hg_repo)
-  
+
   (
-    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
     # Added file
     echo "Added content" > added.txt
     hg add added.txt
-    
+
     # Modified file
     echo "Modified content" >> README.md
-    
+
     # Untracked file
     echo "Untracked content" > untracked.txt
   )
-  
+
   echo "$test_repo"
 }
 
@@ -706,7 +733,10 @@ create_test_repo_with_cherry_pick_conflict() {
   test_repo=$(create_test_repo_with_history)
 
   (
-    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
 
     git checkout -q -b conflict-target HEAD~1
     echo "Feature 1 change on target branch" > feature1.txt
@@ -733,7 +763,10 @@ create_test_repo_with_remote_upstream() {
   HUG_TEST_REMOTE_REPOS+=("$remote_root")
 
   (
-    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
 
     git remote add origin "$remote_repo"
     git push -q origin main
@@ -749,7 +782,10 @@ create_test_repo_with_branches() {
   test_repo=$(create_test_repo_with_history)
 
   (
-    cd "$test_repo" || { echo "Failed to cd to $test_repo" >&2; exit 1; }
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
 
     # Create a feature branch with commits (existing functionality)
     git checkout -q -b feature/branch
@@ -824,8 +860,8 @@ create_demo_repo_simple() {
 
   # Run the setup script (output suppressed)
   if ! HUG_BIN_PATH="$PROJECT_ROOT/git-config/bin" \
-       PATH="$PATH:$PROJECT_ROOT/git-config/bin" \
-       bash "$setup_script" "$repo_path" >/dev/null 2>&1; then
+    PATH="$PATH:$PROJECT_ROOT/git-config/bin" \
+    bash "$setup_script" "$repo_path" > /dev/null 2>&1; then
     echo "Failed to create demo repo at $repo_path (script returned error)" >&2
     return 1
   fi
@@ -855,8 +891,8 @@ create_demo_repo_full() {
   # Call repo-setup script directly instead of via make
   # This avoids issues with make being called from within BATS
   HUG_BIN_PATH="$PROJECT_ROOT/git-config/bin" \
-  PATH="$PATH:$PROJECT_ROOT/git-config/bin" \
-  bash "$PROJECT_ROOT/docs/screencasts/bin/repo-setup.sh" "$repo_path" >/dev/null 2>&1
+    PATH="$PATH:$PROJECT_ROOT/git-config/bin" \
+    bash "$PROJECT_ROOT/docs/screencasts/bin/repo-setup.sh" "$repo_path" > /dev/null 2>&1
 
   # Verify repo was created successfully
   if [[ ! -d "$repo_path/.git" ]]; then
@@ -872,7 +908,7 @@ create_demo_repo_full() {
 # without being strict about formatting (spaces, quote style, ordering)
 
 assert_valid_json() {
-  echo "$output" | jq . >/dev/null || fail "Output is not valid JSON"
+  echo "$output" | jq . > /dev/null || fail "Output is not valid JSON"
 }
 
 assert_json_has_key() {
@@ -880,7 +916,7 @@ assert_json_has_key() {
   # Use 'type' to check if key exists (returns null for missing keys)
   # Don't use -e flag as it fails for false/null values
   local result
-  result=$(echo "$output" | jq "$jq_path | type" 2>/dev/null)
+  result=$(echo "$output" | jq "$jq_path | type" 2> /dev/null)
   [[ "$result" != "null" && -n "$result" ]] || fail "JSON missing key: $jq_path"
 }
 
@@ -894,7 +930,7 @@ assert_json_value() {
 
 assert_json_type() {
   local jq_path="$1"
-  local expected_type="$2"  # string, number, boolean, array, object, null
+  local expected_type="$2" # string, number, boolean, array, object, null
   local actual_type
   actual_type=$(echo "$output" | jq -r "$jq_path | type")
   [[ "$actual_type" == "$expected_type" ]] || fail "Expected $jq_path to be $expected_type, got $actual_type"
@@ -911,7 +947,7 @@ assert_json_array_length() {
 assert_json_contains() {
   local jq_path="$1"
   local search_term="$2"
-  echo "$output" | jq -e "$jq_path | contains(\"$search_term\")" >/dev/null || fail "$jq_path does not contain '$search_term'"
+  echo "$output" | jq -e "$jq_path | contains(\"$search_term\")" > /dev/null || fail "$jq_path does not contain '$search_term'"
 }
 
 ################################################################################
@@ -927,12 +963,15 @@ create_test_worktree() {
 
   # Ensure branch exists in test repo
   (
-    cd "$test_repo_path" || { echo "Failed to cd to $test_repo_path" >&2; exit 1; }
+    cd "$test_repo_path" || {
+      echo "Failed to cd to $test_repo_path" >&2
+      exit 1
+    }
 
     # Create branch if it doesn't exist
-    if ! git rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
-      git checkout -q -b "$branch" 2>/dev/null || {
-        git checkout -q master 2>/dev/null || git checkout -q main 2>/dev/null
+    if ! git rev-parse --verify "refs/heads/$branch" > /dev/null 2>&1; then
+      git checkout -q -b "$branch" 2> /dev/null || {
+        git checkout -q master 2> /dev/null || git checkout -q main 2> /dev/null
         git checkout -q -b "$branch"
       }
 
@@ -948,25 +987,28 @@ create_test_worktree() {
 
   # Create the worktree
   (
-    cd "$test_repo_path" || { echo "Failed to cd to $test_repo_path" >&2; exit 1; }
+    cd "$test_repo_path" || {
+      echo "Failed to cd to $test_repo_path" >&2
+      exit 1
+    }
 
     # Try to create worktree with force flag first
-    if ! git worktree add "$worktree_path" "$branch" --force >/dev/null 2>&1; then
+    if ! git worktree add "$worktree_path" "$branch" --force > /dev/null 2>&1; then
       # If force fails, the branch might be checked out, so create a temp branch
       current_branch=$(git branch --show-current)
       temp_branch="temp-worktree-branch-$(date +%s)"
 
       # Create temporary branch to free up the target branch
-      if git checkout -b "$temp_branch" >/dev/null 2>&1; then
+      if git checkout -b "$temp_branch" > /dev/null 2>&1; then
         # Now try to create the worktree
-        if git worktree add "$worktree_path" "$branch" >/dev/null 2>&1; then
+        if git worktree add "$worktree_path" "$branch" > /dev/null 2>&1; then
           # Success - switch back to original branch and clean up
-          git checkout "$current_branch" >/dev/null 2>&1
-          git branch -D "$temp_branch" >/dev/null 2>&1
+          git checkout "$current_branch" > /dev/null 2>&1
+          git branch -D "$temp_branch" > /dev/null 2>&1
         else
           # Still failed - clean up and exit
-          git checkout "$current_branch" >/dev/null 2>&1
-          git branch -D "$temp_branch" >/dev/null 2>&1
+          git checkout "$current_branch" > /dev/null 2>&1
+          git branch -D "$temp_branch" > /dev/null 2>&1
           echo "Failed to create worktree for branch $branch" >&2
           exit 1
         fi
@@ -998,7 +1040,7 @@ create_test_worktrees() {
   # Verify branches exist before creating worktrees
   local branch
   for branch in "${branches[@]}"; do
-    if ! git -C "$test_repo_path" rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
+    if ! git -C "$test_repo_path" rev-parse --verify "refs/heads/$branch" > /dev/null 2>&1; then
       echo "ERROR: branch '$branch' doesn't exist in $test_repo_path" >&2
       echo "Available branches:" >&2
       git -C "$test_repo_path" branch --format='%(refname:short)' >&2
@@ -1015,7 +1057,7 @@ create_test_worktrees() {
       echo "ERROR: failed to create worktree for branch '$branch'" >&2
       # Cleanup any worktrees created so far
       for wt in "${created_worktrees[@]}"; do
-        rm -rf "$wt" 2>/dev/null
+        rm -rf "$wt" 2> /dev/null
       done
       return 1
     fi
@@ -1033,14 +1075,14 @@ cleanup_test_worktrees() {
 
   # Remove all worktrees associated with the test repository
   if [[ -d "$test_repo" ]]; then
-    git -C "$test_repo" worktree list --porcelain 2>/dev/null | grep "^worktree " | cut -d' ' -f2 | while read -r wt; do
+    git -C "$test_repo" worktree list --porcelain 2> /dev/null | grep "^worktree " | cut -d' ' -f2 | while read -r wt; do
       if [[ "$wt" != "$test_repo" && -d "$wt" ]]; then
         rm -rf "$wt"
       fi
     done
 
     # Prune worktree metadata
-    git -C "$test_repo" worktree prune 2>/dev/null || true
+    git -C "$test_repo" worktree prune 2> /dev/null || true
   fi
 }
 
@@ -1055,7 +1097,10 @@ create_test_worktree_with_changes() {
 
   # Add uncommitted changes to the worktree
   (
-    cd "$worktree_path" || { echo "Failed to cd to $worktree_path" >&2; exit 1; }
+    cd "$worktree_path" || {
+      echo "Failed to cd to $worktree_path" >&2
+      exit 1
+    }
     echo "Uncommitted changes in $branch" > "uncommitted-${branch}.txt"
     git add "uncommitted-${branch}.txt"
     # Note: Don't commit - leave it staged for testing
@@ -1075,7 +1120,10 @@ create_test_worktree_with_dirty_changes() {
 
   # Add uncommitted (unstaged) changes to the worktree
   (
-    cd "$worktree_path" || { echo "Failed to cd to $worktree_path" >&2; exit 1; }
+    cd "$worktree_path" || {
+      echo "Failed to cd to $worktree_path" >&2
+      exit 1
+    }
     echo "Dirty changes in $branch" > "dirty-${branch}.txt"
     # Note: Don't even stage - leave it completely unstaged
   )
@@ -1100,7 +1148,7 @@ assert_worktree_exists() {
       found=true
       break
     fi
-  done < <(git worktree list --porcelain 2>/dev/null)
+  done < <(git worktree list --porcelain 2> /dev/null)
 
   $found || fail "Worktree $worktree_path not found in git worktree list"
 }
@@ -1113,7 +1161,7 @@ run_with_timeout() {
   local expected_exit_code="$2"
   shift 2
 
-  if command -v timeout >/dev/null 2>&1; then
+  if command -v timeout > /dev/null 2>&1; then
     run timeout "$timeout_seconds" bash -c "$*"
     # Accept timeout exit code as valid for hanging tests
     if [[ "$status" -eq 124 ]]; then
@@ -1154,7 +1202,7 @@ assert_worktree_not_exists() {
       found=true
       break
     fi
-  done < <(git worktree list --porcelain 2>/dev/null)
+  done < <(git worktree list --porcelain 2> /dev/null)
 
   ! $found || fail "Worktree $worktree_path still found in git worktree list"
 }
@@ -1166,7 +1214,7 @@ assert_worktree_branch() {
   local expected_branch="$2"
 
   local actual_branch
-  actual_branch=$(git -C "$worktree_path" branch --show-current 2>/dev/null || echo "")
+  actual_branch=$(git -C "$worktree_path" branch --show-current 2> /dev/null || echo "")
 
   [[ "$actual_branch" == "$expected_branch" ]] || fail "Worktree $worktree_path has branch '$actual_branch', expected '$expected_branch'"
 }
@@ -1176,7 +1224,7 @@ assert_worktree_branch() {
 assert_worktree_clean() {
   local worktree_path="$1"
 
-  git -C "$worktree_path" diff --quiet && git -C "$worktree_path" diff --cached --quiet || \
+  git -C "$worktree_path" diff --quiet && git -C "$worktree_path" diff --cached --quiet ||
     fail "Worktree $worktree_path has uncommitted changes"
 }
 
@@ -1186,9 +1234,9 @@ assert_worktree_dirty() {
   local worktree_path="$1"
 
   # Check for: unstaged changes, staged changes, or untracked files
-  if git -C "$worktree_path" diff --quiet && \
-     git -C "$worktree_path" diff --cached --quiet && \
-     [[ -z "$(git -C "$worktree_path" ls-files --others --exclude-standard)" ]]; then
+  if git -C "$worktree_path" diff --quiet &&
+    git -C "$worktree_path" diff --cached --quiet &&
+    [[ -z "$(git -C "$worktree_path" ls-files --others --exclude-standard)" ]]; then
     fail "Worktree $worktree_path is clean, expected dirty"
   fi
 }
@@ -1198,7 +1246,7 @@ assert_worktree_dirty() {
 # Returns: Number of additional worktrees (0 = only main, 1 = one additional created)
 get_worktree_count() {
   local total
-  total=$(git worktree list 2>/dev/null | wc -l)
+  total=$(git worktree list 2> /dev/null | wc -l)
   # Subtract 1 for main worktree to match user mental model
   if [[ $total -gt 0 ]]; then
     echo $((total - 1))
@@ -1214,7 +1262,7 @@ assert_worktree_count() {
   local actual_count
   actual_count=$(get_worktree_count)
 
-  [[ "$actual_count" == "$expected_count" ]] || \
+  [[ "$actual_count" == "$expected_count" ]] ||
     fail "Repository has $actual_count worktrees, expected $expected_count"
 }
 
@@ -1222,7 +1270,7 @@ assert_worktree_count() {
 # Usage: worktree_paths=$(get_worktree_paths)
 # Returns: Space-separated list of worktree paths
 get_worktree_paths() {
-  git worktree list --porcelain 2>/dev/null | grep "^worktree " | cut -d' ' -f2 | tr '\n' ' '
+  git worktree list --porcelain 2> /dev/null | grep "^worktree " | cut -d' ' -f2 | tr '\n' ' '
 }
 
 # Assert that text matches a regex pattern

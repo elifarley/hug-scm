@@ -46,15 +46,15 @@ install_test_deps() {
   clone_or_update https://github.com/bats-core/bats-file.git "$BATS_FILE_DIR"
 
   # Install jq for JSON validation and pretty-printing in tests
-  if ! command -v jq >/dev/null; then
+  if ! command -v jq > /dev/null; then
     echo "Installing jq for JSON tests..."
-    if command -v apt-get >/dev/null; then
+    if command -v apt-get > /dev/null; then
       sudo apt-get update && sudo apt-get install -y jq
-    elif command -v yum >/dev/null; then
+    elif command -v yum > /dev/null; then
       sudo yum install -y jq
-    elif command -v brew >/dev/null; then
+    elif command -v brew > /dev/null; then
       brew install jq
-    elif command -v pacman >/dev/null; then
+    elif command -v pacman > /dev/null; then
       sudo pacman -S jq
     else
       echo "⚠️ jq not found. Please install jq manually for JSON tests."
@@ -64,7 +64,7 @@ install_test_deps() {
 
 # Check if BATS is installed
 check_bats() {
-  if command -v bats >/dev/null; then
+  if command -v bats > /dev/null; then
     bats --version
     echo -e "${GREEN}✓ BATS is installed${NC}"
     return
@@ -80,7 +80,7 @@ check_bats() {
     export PATH
   fi
 
-  if ! command -v bats >/dev/null; then
+  if ! command -v bats > /dev/null; then
     echo -e "${RED}❌ Error: BATS installation failed${NC}"
     exit 1
   fi
@@ -93,10 +93,10 @@ check_bats() {
 check_helpers() {
   local missing=0
   local found_local=false
-  
+
   # Export for test_helper.bash
   export HUG_TEST_DEPS="$DEPS_DIR"
-  
+
   # Check local dependencies first
   for lib_dir in "$BATS_SUPPORT_DIR" "$BATS_ASSERT_DIR" "$BATS_FILE_DIR"; do
     if [[ -d "$lib_dir" ]]; then
@@ -104,19 +104,19 @@ check_helpers() {
       break
     fi
   done
-  
+
   if [[ "$found_local" == "true" ]]; then
     echo -e "${GREEN}✓ Using local BATS helper libraries${NC}"
     return
   fi
-  
+
   # Check system locations
   for lib in bats-support bats-assert bats-file; do
     if [[ ! -d "/usr/lib/bats/$lib" ]] && [[ ! -d "/usr/lib/$lib" ]] && [[ ! -d "/usr/local/lib/$lib" ]] && [[ ! -d "$HOME/.bats-libs/$lib" ]]; then
       missing=1
     fi
   done
-  
+
   if [[ $missing -eq 1 ]]; then
     echo -e "${YELLOW}⚠ Helper libraries not found, installing locally...${NC}"
     install_test_deps
@@ -145,16 +145,16 @@ run_tests() {
   local test_path="${1:-tests/}"
   local show_failing_only="${2:-true}"
   local extra_args=("${@:3}")
-  
+
   # If test_path is relative and we're not in project root, make it absolute
   if [[ ! "$test_path" =~ ^/ ]]; then
     test_path="$PROJECT_ROOT/$test_path"
   fi
-  
+
   # Ensure exports for parallel execution
   export HUG_TEST_DEPS="$DEPS_DIR"
   export PATH="$BATS_CORE_DIR/bin:$PATH"
-  
+
   # Find .bats files, excluding deps/
   local bats_files
   if [[ -f "$test_path" ]]; then
@@ -162,34 +162,34 @@ run_tests() {
   else
     bats_files=$(find "$test_path" -path "*/deps/*" -prune -o -name "*.bats" -print)
   fi
-  
+
   if [[ -z "$bats_files" ]]; then
     echo "No .bats files found in $test_path"
     return 1
   fi
-  
+
   echo ""
   echo -e "${GREEN}Running tests: $test_path${NC}"
   echo "----------------------------------------"
-  
+
   local test_result
   if [[ "$show_failing_only" == "true" ]]; then
     # Filter output to show only lines that don't start with checkmarks (passing tests)
     # This filters out lines matching the pattern: optional whitespace followed by ✓
     # We need to capture the exit code from bats, not from grep
-    set +e  # Temporarily disable exit on error
+    set +e # Temporarily disable exit on error
     local output
     output=$(bats --timing "${extra_args[@]}" $bats_files 2>&1)
     test_result=$?
-    set -e  # Re-enable exit on error
-    
+    set -e # Re-enable exit on error
+
     # Filter and display the output - remove lines starting with ✓ or "ok "
     echo "$output" | grep -v '^\s*✓' | grep -v '^ok '
   else
     bats --timing "${extra_args[@]}" $bats_files
     test_result=$?
   fi
-  
+
   if [[ $test_result -eq 0 ]]; then
     echo ""
     echo -e "${GREEN}✓ All tests passed!${NC}"
@@ -203,7 +203,7 @@ run_tests() {
 
 # Show usage
 show_help() {
-  cat <<EOF
+  cat << EOF
 Usage: $0 [OPTIONS] [TEST_PATH]
 
 Run Hug SCM test suite using BATS.
@@ -244,59 +244,59 @@ main() {
   local install_only=false
   local show_failing_only=true
   local extra_args=()
-  
+
   # Parse arguments
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -h|--help)
-        show_help
-        exit 0
-        ;;
-      -f|--filter)
-        extra_args+=("--filter" "$2")
-        shift 2
-        ;;
-      -j|--jobs)
-        extra_args+=("--jobs" "$2")
-        shift 2
-        ;;
-      -A|--show-all-results)
-        show_failing_only=false
-        shift
-        ;;
-      --unit)
-        test_path="tests/unit/"
-        shift
-        ;;
-      --integration)
-        test_path="tests/integration/"
-        shift
-        ;;
-      --lib)
-        test_path="tests/lib/"
-        shift
-        ;;
-      --check)
-        check_only=true
-        extra_args+=("--count")
-        shift
-        ;;
-      --install-deps)
-        install_only=true
-        shift
-        ;;
-      -*)
-        echo -e "${RED}Unknown option: $1${NC}"
-        show_help
-        exit 1
-        ;;
-      *)
-        test_path="$1"
-        shift
-        ;;
+    -h | --help)
+      show_help
+      exit 0
+      ;;
+    -f | --filter)
+      extra_args+=("--filter" "$2")
+      shift 2
+      ;;
+    -j | --jobs)
+      extra_args+=("--jobs" "$2")
+      shift 2
+      ;;
+    -A | --show-all-results)
+      show_failing_only=false
+      shift
+      ;;
+    --unit)
+      test_path="tests/unit/"
+      shift
+      ;;
+    --integration)
+      test_path="tests/integration/"
+      shift
+      ;;
+    --lib)
+      test_path="tests/lib/"
+      shift
+      ;;
+    --check)
+      check_only=true
+      extra_args+=("--count")
+      shift
+      ;;
+    --install-deps)
+      install_only=true
+      shift
+      ;;
+    -*)
+      echo -e "${RED}Unknown option: $1${NC}"
+      show_help
+      exit 1
+      ;;
+    *)
+      test_path="$1"
+      shift
+      ;;
     esac
   done
-  
+
   # Handle install-only mode
   if [[ "$install_only" == "true" ]]; then
     echo -e "${GREEN}Installing test dependencies...${NC}"
@@ -304,24 +304,24 @@ main() {
     echo -e "${GREEN}✓ Test dependencies installed successfully${NC}"
     exit 0
   fi
-  
+
   # Check prerequisites
   echo "Checking prerequisites..."
   check_bats
   check_helpers
   activate_hug
-  
+
   # Pre-flight check for temp dir isolation
   if [[ -z "${BATS_TEST_TMPDIR:-}" ]]; then
     echo -e "${YELLOW}⚠ Bats \$BATS_TEST_TMPDIR not set; using explicit /tmp isolation${NC}"
   fi
-  temp_dir=$(mktemp -d -t bats-check-XXXXXX 2>/dev/null || echo "failed")
+  temp_dir=$(mktemp -d -t bats-check-XXXXXX 2> /dev/null || echo "failed")
   if [[ "$temp_dir" == "failed" ]]; then
     echo -e "${RED}❌ Cannot create temp dirs; check /tmp permissions${NC}"
     exit 1
   fi
   rm -rf "$temp_dir"
-  
+
   # Run tests or only show test counts if `--check` present
   (run_tests "$test_path" "$show_failing_only" "${extra_args[@]}")
 

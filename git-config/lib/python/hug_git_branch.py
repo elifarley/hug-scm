@@ -9,13 +9,11 @@ This module maintains API compatibility with the bash library while using
 proper data structures (dataclasses) instead of nameref pass-by-reference.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Optional, Callable
-from enum import Enum
-import subprocess
 import json
+import subprocess
 import sys
-import re
+from dataclasses import dataclass
+from enum import Enum
 
 
 class BranchType(Enum):
@@ -43,7 +41,7 @@ class BranchDetails:
 
     current_branch: str
     max_len: int
-    branches: List[BranchInfo]
+    branches: list[BranchInfo]
 
     def to_json(self) -> str:
         """Serialize to JSON for bash consumption.
@@ -121,7 +119,7 @@ def _bash_escape(s: str) -> str:
     return f"'{s}'"
 
 
-def _run_git(args: List[str], check: bool = True) -> str:
+def _run_git(args: list[str], check: bool = True) -> str:
     """Run git command and return stdout.
 
     Args:
@@ -138,7 +136,7 @@ def _run_git(args: List[str], check: bool = True) -> str:
     return result.stdout.rstrip("\n\r")
 
 
-def _run_git_for_each_ref(format_str: str, ref_pattern: str) -> List[str]:
+def _run_git_for_each_ref(format_str: str, ref_pattern: str) -> list[str]:
     """Run git for-each-ref with null-delimited output.
 
     Args:
@@ -205,7 +203,7 @@ def get_local_branch_details(
     include_subjects: bool = True,
     exclude_backup: bool = True,
     batch_divergence: bool = True,
-) -> Optional[BranchDetails]:
+) -> BranchDetails | None:
     """Get local branch details with upstream tracking.
 
     Args:
@@ -235,9 +233,9 @@ def get_local_branch_details(
     if not git_output:
         return None
 
-    branches: List[BranchInfo] = []
+    branches: list[BranchInfo] = []
     max_len = 0
-    divergence_commands: List[tuple[int, str, str]] = []  # (index, branch, upstream)
+    divergence_commands: list[tuple[int, str, str]] = []  # (index, branch, upstream)
 
     # Parse output in chunks
     chunk_size = 5 if include_subjects else 4
@@ -259,7 +257,7 @@ def get_local_branch_details(
             track_idx = i + 3
 
         upstream = _sanitize_string(git_output[upstream_idx])
-        upstream_track = _sanitize_string(git_output[track_idx])
+        _sanitize_string(git_output[track_idx])
 
         # Update max length
         if len(branch) > max_len:
@@ -313,7 +311,7 @@ def get_local_branch_details(
 def get_remote_branch_details(
     include_subjects: bool = True,
     exclude_backup: bool = True,
-) -> Optional[BranchDetails]:
+) -> BranchDetails | None:
     """Get remote branch details.
 
     Args:
@@ -334,7 +332,7 @@ def get_remote_branch_details(
     if not git_output:
         return None
 
-    branches: List[BranchInfo] = []
+    branches: list[BranchInfo] = []
     max_len = 0
 
     # Parse output in chunks
@@ -388,7 +386,7 @@ def get_remote_branch_details(
 def get_wip_branch_details(
     include_subjects: bool = True,
     ref_pattern: str = "refs/heads/WIP/",
-) -> Optional[BranchDetails]:
+) -> BranchDetails | None:
     """Get WIP/temporary branch details.
 
     Args:
@@ -407,7 +405,7 @@ def get_wip_branch_details(
     if not git_output:
         return None
 
-    branches: List[BranchInfo] = []
+    branches: list[BranchInfo] = []
     max_len = 0
 
     chunk_size = 3 if include_subjects else 2
@@ -443,7 +441,7 @@ def get_wip_branch_details(
     )
 
 
-def find_remote_branch(branch_name: str) -> Optional[str]:
+def find_remote_branch(branch_name: str) -> str | None:
     """Find a remote branch matching the given branch name.
 
     Args:

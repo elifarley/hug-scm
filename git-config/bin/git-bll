@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit output_json_branch_list; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                                         # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug bll: List local branches in long format, showing short hash, upstream tracking info, and commit message title for each.
 
 USAGE:
@@ -38,18 +39,18 @@ EOF
 json_output=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --json)
-      json_output=true
-      shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    *)
-      # Treat remaining arguments as search terms
-      break
-      ;;
+  --json)
+    json_output=true
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  *)
+    # Treat remaining arguments as search terms
+    break
+    ;;
   esac
 done
 
@@ -62,7 +63,7 @@ check_git_repo
 # JSON output mode
 if $json_output; then
   # Get current branch for JSON
-  current_branch=$(git branch --show-current 2>/dev/null || echo "detached HEAD")
+  current_branch=$(git branch --show-current 2> /dev/null || echo "detached HEAD")
   output_json_branch_list "$current_branch"
   exit 0
 fi

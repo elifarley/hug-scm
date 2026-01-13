@@ -7,13 +7,13 @@
 . "$HUG_HOME/git-config/lib/hug-git-repo"
 . "$HUG_HOME/git-config/lib/hug-git-branch"
 . "$HUG_HOME/git-config/lib/hug-strings"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 PROG_NAME="hug w wipdel"
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug w wipdel: Delete a WIP branch created via `hug w wip` (no integration).
 
 USAGE:
@@ -53,32 +53,32 @@ branch_arg=""
 
 while (($#)); do
   case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -f|--force)
-      force_delete=true
-      ;;
-    --)
-      shift
-      if (($# > 1)); then
-        usage_error "Provide at most one branch name."
-      fi
-      if (($# == 1)); then
-        branch_arg="$1"
-      fi
-      break
-      ;;
-    -*)
-      usage_error "Unknown option '$1'."
-      ;;
-    *)
-      if [ -n "$branch_arg" ]; then
-        usage_error "Provide only one branch name."
-      fi
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -f | --force)
+    force_delete=true
+    ;;
+  --)
+    shift
+    if (($# > 1)); then
+      usage_error "Provide at most one branch name."
+    fi
+    if (($# == 1)); then
       branch_arg="$1"
-      ;;
+    fi
+    break
+    ;;
+  -*)
+    usage_error "Unknown option '$1'."
+    ;;
+  *)
+    if [ -n "$branch_arg" ]; then
+      usage_error "Provide only one branch name."
+    fi
+    branch_arg="$1"
+    ;;
   esac
   shift || break
 done

@@ -12,7 +12,7 @@ set -euo pipefail
 PROG_NAME="hug w unwip"
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug w unwip: Unpark a WIP branch by squash-merging it into the current branch and deleting the WIP branch.
 
 USAGE:
@@ -56,35 +56,35 @@ branch_arg=""
 
 while (($#)); do
   case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -f|--force)
-      force_delete=true
-      ;;
-    --no-squash)
-      no_squash=true
-      ;;
-    --)
-      shift
-      if (($# > 1)); then
-        usage_error "Provide at most one branch name."
-      fi
-      if (($# == 1)); then
-        branch_arg="$1"
-      fi
-      break
-      ;;
-    -*)
-      usage_error "Unknown option '$1'."
-      ;;
-    *)
-      if [ -n "$branch_arg" ]; then
-        usage_error "Provide only one branch name."
-      fi
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -f | --force)
+    force_delete=true
+    ;;
+  --no-squash)
+    no_squash=true
+    ;;
+  --)
+    shift
+    if (($# > 1)); then
+      usage_error "Provide at most one branch name."
+    fi
+    if (($# == 1)); then
       branch_arg="$1"
-      ;;
+    fi
+    break
+    ;;
+  -*)
+    usage_error "Unknown option '$1'."
+    ;;
+  *)
+    if [ -n "$branch_arg" ]; then
+      usage_error "Provide only one branch name."
+    fi
+    branch_arg="$1"
+    ;;
   esac
   shift || break
 done
@@ -132,17 +132,26 @@ else
   git diff --name-only "$current_branch"..."$branch" | head -10 >&2 || true
   printf '\n(Full preview: git diff %s..%s)\n' "$current_branch" "$branch" >&2
 
-  read -r -p "Proceed with $( [ "$no_squash" = true ] && printf 'regular ' || printf 'squash-' )merge? [y/n] " choice
+  read -r -p "Proceed with $([ "$no_squash" = true ] && printf 'regular ' || printf 'squash-')merge? [y/n] " choice
   if [[ "$choice" =~ ^[Yy] ]]; then
     if [ "$no_squash" = true ]; then
-      git merge "$branch" || { error "$PROG_NAME: Merge failed (conflicts?). Resolve manually with 'hug a && hug c', then delete with 'hug w wipdel %s'." "$branch"; exit 1; }
+      git merge "$branch" || {
+        error "$PROG_NAME: Merge failed (conflicts?). Resolve manually with 'hug a && hug c', then delete with 'hug w wipdel %s'." "$branch"
+        exit 1
+      }
     else
-      git merge --squash "$branch" || { error "$PROG_NAME: Squash-merge failed (conflicts?). Resolve with 'hug a && hug c', then delete with 'hug w wipdel %s'." "$branch"; exit 1; }
+      git merge --squash "$branch" || {
+        error "$PROG_NAME: Squash-merge failed (conflicts?). Resolve with 'hug a && hug c', then delete with 'hug w wipdel %s'." "$branch"
+        exit 1
+      }
       orig_msg="$(git log -1 --format='%s' "$branch" | sed 's/^\[WIP\] //' || echo "Complete WIP work")"
       orig_body="$(git log -1 --format='%b' "$branch")"
       commit_msg="Finish WIP: $orig_msg"
       [ -n "$orig_body" ] && commit_msg="$commit_msg\n\n$orig_body"
-      git commit -m "$commit_msg" || { error "$PROG_NAME: Commit after squash failed. Index is staged; run 'hug c' manually."; exit 1; }
+      git commit -m "$commit_msg" || {
+        error "$PROG_NAME: Commit after squash failed. Index is staged; run 'hug c' manually."
+        exit 1
+      }
     fi
     printf 'Unparked successfully.\n' >&2
     merge_performed=true
@@ -154,13 +163,13 @@ fi
 
 # Delete the WIP branch
 if [ "$force_delete" = true ]; then
-  if git branch -D "$branch" >/dev/null 2>&1; then
+  if git branch -D "$branch" > /dev/null 2>&1; then
     printf 'Force-deleted WIP branch %s.\n' "$branch"
   else
     error "$PROG_NAME: Failed to force-delete branch '$branch'."
   fi
 else
-  if git branch -d "$branch" >/dev/null 2>&1; then
+  if git branch -d "$branch" > /dev/null 2>&1; then
     printf 'Deleted WIP branch %s.\n' "$branch"
   else
     printf '%s: Branch "%s" is not fully merged. Re-run with --force to delete it.\n' "$PROG_NAME" "$branch" >&2

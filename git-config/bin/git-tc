@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit hug-git-tag; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                             # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug tc: Interactive tag creation with smart defaults.
 
 USAGE:
@@ -76,7 +77,7 @@ generate_tag_suggestions() {
 
   # Search for tags matching standard SemVer patterns (both v-prefixed and bare numbers)
   # We use multiple --list patterns to be efficient, avoiding full repo scans.
-  last_version=$(git tag --list "v[0-9]*.[0-9]*.[0-9]*" --list "[0-9]*.[0-9]*.[0-9]*" --sort=-version:refname | head -1 2>/dev/null || echo "")
+  last_version=$(git tag --list "v[0-9]*.[0-9]*.[0-9]*" --list "[0-9]*.[0-9]*.[0-9]*" --sort=-version:refname | head -1 2> /dev/null || echo "")
 
   if [[ -n "$last_version" ]]; then
     # Regex Breakdown:
@@ -107,7 +108,7 @@ generate_tag_suggestions() {
 
   # 3. Branch-based (e.g., feature/login-20231025)
   local branch_name
-  branch_name=$(git branch --show-current 2>/dev/null || echo "release")
+  branch_name=$(git branch --show-current 2> /dev/null || echo "release")
   # Sanitize branch name for tag usage (replace / with -)
   branch_name="${branch_name//\//-}"
   suggestions+=("${branch_name}-$(date +%Y%m%d)")
@@ -117,14 +118,14 @@ generate_tag_suggestions() {
 
 get_commit_subject() {
   local commit="$1"
-  git log -n 1 --pretty=format:%s "$commit" 2>/dev/null || echo ""
+  git log -n 1 --pretty=format:%s "$commit" 2> /dev/null || echo ""
 }
 
 validate_tag_exists_check() {
   local name="$1"
   local allow_force="$2"
 
-  if git rev-parse --verify "refs/tags/$name" >/dev/null 2>&1; then
+  if git rev-parse --verify "refs/tags/$name" > /dev/null 2>&1; then
     if [[ "$allow_force" == "false" ]]; then
       error "Tag '$name' already exists. Use --force to overwrite."
       exit 1
@@ -146,7 +147,7 @@ select_target_commit() {
     return 1 # Cancelled
   fi
 
-  if ! git rev-parse --verify "$result" >/dev/null 2>&1; then
+  if ! git rev-parse --verify "$result" > /dev/null 2>&1; then
     error "Invalid target: $result"
     exit 1
   fi
@@ -163,11 +164,14 @@ select_tag_name() {
     result=$(printf '%s\n' "${default_suggestions[@]}" | gum filter --prompt="Tag name (or type custom): ")
     # Fallback if gum returns empty but didn't error (user hit esc or enter on empty)
     if [[ -z "$result" ]]; then
-       # Try simple input if filter failed
-       result=$(prompt_input "Enter tag name")
+      # Try simple input if filter failed
+      result=$(prompt_input "Enter tag name")
     fi
   else
-    printf "Suggestions: %s\n" "$(IFS=', '; echo "${default_suggestions[*]}")"
+    printf "Suggestions: %s\n" "$(
+      IFS=', '
+      echo "${default_suggestions[*]}"
+    )"
     result=$(prompt_input "Enter tag name")
   fi
 
@@ -182,9 +186,9 @@ select_tag_type() {
     local choice
     choice=$(prompt_input "Select type (1-3)" "2")
     case "$choice" in
-      1|lightweight) echo "lightweight" ;;
-      3|signed)      echo "signed" ;;
-      *)             echo "annotated" ;;
+    1 | lightweight) echo "lightweight" ;;
+    3 | signed) echo "signed" ;;
+    *) echo "annotated" ;;
     esac
   fi
 }
@@ -221,26 +225,26 @@ perform_tag_creation() {
   local msg="${4:-}"
 
   case "$type" in
-    "lightweight")
-      git tag -f "$name" "$ref" && success "Created lightweight tag: $name"
-      ;;
-    "annotated")
-      git tag -f -a "$name" "$ref" -m "$msg" && success "Created annotated tag: $name"
-      ;;
-    "signed")
-      # GPG Configuration Check
-      if ! git config --get user.signingkey >/dev/null 2>&1; then
-        warn "No GPG signing key configured."
-        if ! prompt_confirm_warn "continue without GPG signing"; then
-          info "Tag creation cancelled."
-          exit 0
-        fi
-        # Fallback to annotated
-        git tag -f -a "$name" "$ref" -m "$msg" && success "Created annotated tag (GPG missing): $name"
-      else
-        git tag -f -s "$name" "$ref" -m "$msg" && success "Created signed tag: $name"
+  "lightweight")
+    git tag -f "$name" "$ref" && success "Created lightweight tag: $name"
+    ;;
+  "annotated")
+    git tag -f -a "$name" "$ref" -m "$msg" && success "Created annotated tag: $name"
+    ;;
+  "signed")
+    # GPG Configuration Check
+    if ! git config --get user.signingkey > /dev/null 2>&1; then
+      warn "No GPG signing key configured."
+      if ! prompt_confirm_warn "continue without GPG signing"; then
+        info "Tag creation cancelled."
+        exit 0
       fi
-      ;;
+      # Fallback to annotated
+      git tag -f -a "$name" "$ref" -m "$msg" && success "Created annotated tag (GPG missing): $name"
+    else
+      git tag -f -s "$name" "$ref" -m "$msg" && success "Created signed tag: $name"
+    fi
+    ;;
   esac
 }
 
@@ -258,14 +262,39 @@ declare -a args=()
 # Parse Flags (Same as before)
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -h|--help) show_help; exit 0 ;;
-    -a|--annotated) tag_type="annotated"; shift ;;
-    -s|--signed) tag_type="signed"; shift ;;
-    -m|--message) tag_message="$2"; tag_type="annotated"; shift 2 ;;
-    -f|--force) force=true; shift ;;
-    -i|--interactive) interactive=true; shift ;;
-    -*) error "Unknown option: $1"; exit 1 ;;
-    *) args+=("$1"); shift ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -a | --annotated)
+    tag_type="annotated"
+    shift
+    ;;
+  -s | --signed)
+    tag_type="signed"
+    shift
+    ;;
+  -m | --message)
+    tag_message="$2"
+    tag_type="annotated"
+    shift 2
+    ;;
+  -f | --force)
+    force=true
+    shift
+    ;;
+  -i | --interactive)
+    interactive=true
+    shift
+    ;;
+  -*)
+    error "Unknown option: $1"
+    exit 1
+    ;;
+  *)
+    args+=("$1")
+    shift
+    ;;
   esac
 done
 
@@ -280,8 +309,8 @@ if [[ "$interactive" == "true" || ${#args[@]} -eq 0 ]]; then
   interactive=true
   # Sanity check for TTY
   if ! gum_available && ! [[ -t 0 ]] && [[ ${#args[@]} -eq 0 ]]; then
-     error "Non-interactive environment requires arguments."
-     exit 1
+    error "Non-interactive environment requires arguments."
+    exit 1
   fi
 fi
 
@@ -293,20 +322,28 @@ if [[ "$interactive" == "true" ]]; then
     # Generate suggestions array
     suggestions_str=$(generate_tag_suggestions)
     if ! tag_name=$(select_tag_name "$suggestions_str"); then
-       info "Cancelled."; exit 0
+      info "Cancelled."
+      exit 0
     fi
   fi
 
   # 1.1 Validate Name
-  if [[ -z "$tag_name" ]]; then error "Tag name required"; exit 1; fi
-  if ! validate_tag_name "$tag_name"; then error "Invalid tag name format: $tag_name"; exit 1; fi
+  if [[ -z "$tag_name" ]]; then
+    error "Tag name required"
+    exit 1
+  fi
+  if ! validate_tag_name "$tag_name"; then
+    error "Invalid tag name format: $tag_name"
+    exit 1
+  fi
   validate_tag_exists_check "$tag_name" "$force"
 
   printf "  Name:    ${YELLOW}%s${NC}\n" "$tag_name"
 
   # 2. Target Commit
   if ! commit=$(select_target_commit "HEAD"); then
-    info "Cancelled."; exit 0
+    info "Cancelled."
+    exit 0
   fi
 
   printf "Target:    ${YELLOW}%s${NC}\n" "$commit"
@@ -314,7 +351,7 @@ if [[ "$interactive" == "true" ]]; then
   # 3. Tag Type
   # Only ask if not manually overridden by flag or inferred by -m
   if [[ "$tag_type" == "lightweight" && -z "$tag_message" ]]; then
-     tag_type=$(select_tag_type)
+    tag_type=$(select_tag_type)
   fi
 
   printf "  Type:    ${BLUE}%s${NC}\n" "$tag_type"
@@ -322,20 +359,27 @@ if [[ "$interactive" == "true" ]]; then
   # 4. Message
   # TODO when $tag_type IS lightweight, the test "$tag_type" != "lightweight" says it's not!
   if [[ "$tag_type" != "lightweight" && -z "$tag_message" ]]; then
-     tag_message=$(select_tag_message "$commit")
-     if [[ -z "$tag_message" ]]; then error "Message required for $tag_type tags"; exit 1; fi
+    tag_message=$(select_tag_message "$commit")
+    if [[ -z "$tag_message" ]]; then
+      error "Message required for $tag_type tags"
+      exit 1
+    fi
   fi
 
 # --- Non-Interactive Validation ---
 else
-  if [[ -z "$tag_name" ]]; then error "Tag name required"; exit 1; fi
+  if [[ -z "$tag_name" ]]; then
+    error "Tag name required"
+    exit 1
+  fi
   if ! validate_tag_name "$tag_name"; then
     error "Invalid tag name: $tag_name"
     exit 1
   fi
   validate_tag_exists_check "$tag_name" "$force"
   if [[ "$tag_type" != "lightweight" && -z "$tag_message" ]]; then
-    error "Message required for $tag_type tags"; exit 1
+    error "Message required for $tag_type tags"
+    exit 1
   fi
 
   # Safety Check: Require force if no interactive and no args (edge case protection)
@@ -359,7 +403,8 @@ echo ""
 
 if [[ "$interactive" == "true" ]]; then
   if ! prompt_confirm_safe "create this tag"; then
-    info "Cancelled."; exit 0
+    info "Cancelled."
+    exit 0
   fi
 fi
 

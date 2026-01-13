@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -65,30 +66,30 @@ no_body=false
 remaining_args=()
 for arg in "$@"; do
   case "$arg" in
-    --json)
-      json_output=true
-      export HUG_JSON_MODE="true"
-      ;;
-    --with-files)
-      with_files=true
-      ;;
-    --no-body)
-      no_body=true
-      ;;
-    *)
-      remaining_args+=("$arg")
-      ;;
+  --json)
+    json_output=true
+    export HUG_JSON_MODE="true"
+    ;;
+  --with-files)
+    with_files=true
+    ;;
+  --no-body)
+    no_body=true
+    ;;
+  *)
+    remaining_args+=("$arg")
+    ;;
   esac
 done
 set -- "${remaining_args[@]}"
 
 # Check if in git repo, handle errors appropriately
-if ! check_git_repo 2>/dev/null; then
+if ! check_git_repo 2> /dev/null; then
   if $json_output; then
     . "$CMD_BASE/../lib/hug-json"
     json_error "not_git_repo" "Not in a Git or Mercurial repository" 1
   else
-    check_git_repo  # Show normal error
+    check_git_repo # Show normal error
   fi
 fi
 
@@ -108,7 +109,7 @@ if $json_output; then
 
   # Build search response with batched git operations
   search_args=()
-  $with_files || search_args+=("--no-files")  # Don't need file status
+  $with_files || search_args+=("--no-files") # Don't need file status
   $no_body && search_args+=("--no-body")
 
   # Add remaining git log arguments
@@ -123,7 +124,7 @@ if $json_output; then
   $no_body && cmd_name="$cmd_name --no-body"
 
   # Count results
-  results_count=$(echo "$search_results" | jq 'length' 2>/dev/null || echo "0")
+  results_count=$(echo "$search_results" | jq 'length' 2> /dev/null || echo "0")
 
   # Wrap with metadata and output
   output_json_response "$cmd_name" "{\"search\":{\"type\":\"message\",\"term\":\"$search_term\",\"results_count\":$results_count,\"with_files\":$with_files},\"results\":$search_results}" --with-branch --with-head

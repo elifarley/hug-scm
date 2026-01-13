@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-    cat << EOF
+  cat << EOF
 hug h rewind: Make HEAD walk back some commits while DISCARDING their changes. Uncommitted changes are DISCARDED.
 
 USAGE:
@@ -50,8 +51,14 @@ upstream=false
 target_arg=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -u|--upstream) upstream=true; shift ;;
-    *) target_arg="$1"; shift ;;
+  -u | --upstream)
+    upstream=true
+    shift
+    ;;
+  *)
+    target_arg="$1"
+    shift
+    ;;
   esac
 done
 
@@ -60,7 +67,7 @@ check_git_repo
 if $upstream; then
   # Use DRY helper for validation, then handle upstream-specific logic
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
-  
+
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
   target=$(handle_upstream_operation "rewinding")
   if [[ -z "${target:-}" ]]; then
@@ -69,14 +76,17 @@ if $upstream; then
 else
   # Use DRY helper for validation and target resolution
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
-  
+
   # Handle command-specific preview and confirmation
   handle_standard_operation "rewinding" "$target" false
 
   printf '\n⚠️  This is PERMANENT and cannot be undone!\n' >&2
   if [[ ${HUG_FORCE:-} != true ]]; then
     read -p 'Type "rewind" to confirm: ' confirm >&2
-    [ "$confirm" = "rewind" ] || { info "Cancelled."; exit 1; }
+    [ "$confirm" = "rewind" ] || {
+      info "Cancelled."
+      exit 1
+    }
   fi
 fi
 

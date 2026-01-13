@@ -4,11 +4,11 @@
 . "$HUG_HOME/git-config/lib/hug-common"
 # shellcheck source=git-config/lib/hug-git-kit
 . "$HUG_HOME/git-config/lib/hug-git-kit"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-    cat << 'EOF'
+  cat << 'EOF'
 hug bc: Create a new branch and switch to it
 
 USAGE:
@@ -56,10 +56,10 @@ EOF
 check_git_repo
 
 # Parse arguments using getopt
-set +e  # Temporarily disable exit on error to capture getopt failure
+set +e # Temporarily disable exit on error to capture getopt failure
 PARSED=$(getopt --options ht: --longoptions help,point-to:,no-switch --name "hug bc" -- "$@" 2>&1)
 getopt_status=$?
-set -e  # Re-enable exit on error
+set -e # Re-enable exit on error
 
 if [ $getopt_status -ne 0 ]; then
   # getopt failed - print the error message if available
@@ -78,105 +78,105 @@ no_switch=false
 
 # Process options
 while true; do
-    case "$1" in
-        -h|--help)
-            show_help
-            exit 0
-            ;;
-        -t|--point-to)
-            validate_commitish "-t/--point-to" "$2"
-            point_to="$2"
-            shift 2
-            ;;
-        --no-switch)
-            no_switch=true
-            shift
-            ;;
-        --)
-            shift
-            break
-            ;;
-        *)
-            error "Internal error in option parsing"
-            ;;
-    esac
+  case "$1" in
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -t | --point-to)
+    validate_commitish "-t/--point-to" "$2"
+    point_to="$2"
+    shift 2
+    ;;
+  --no-switch)
+    no_switch=true
+    shift
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *)
+    error "Internal error in option parsing"
+    ;;
+  esac
 done
 
 # Collect branch name from remaining arguments
 if [[ $# -gt 1 ]]; then
-    error "Too many arguments. Expected one branch name. See 'hug bc --help'."
+  error "Too many arguments. Expected one branch name. See 'hug bc --help'."
 elif [[ $# -eq 1 ]]; then
-    branch_name="$1"
+  branch_name="$1"
 fi
 
 # If no branch name and no point-to, error
 if [[ -z "$branch_name" && -z "$point_to" ]]; then
-    error "Branch name is required. See 'hug bc --help'."
+  error "Branch name is required. See 'hug bc --help'."
 fi
 
 # If point-to is specified without a branch name, generate one
 if [[ -n "$point_to" && -z "$branch_name" ]]; then
-    # Check if point_to is a branch name
-    is_branch=false
-    if git show-ref --verify --quiet "refs/heads/$point_to" 2>/dev/null; then
-        is_branch=true
+  # Check if point_to is a branch name
+  is_branch=false
+  if git show-ref --verify --quiet "refs/heads/$point_to" 2> /dev/null; then
+    is_branch=true
+  fi
+
+  # Generate ISO datetime: YYYYMMDD-HHMM
+  iso_datetime=$(date +"%Y%m%d-%H%M")
+
+  # Clean the target name (remove refs/heads/, refs/tags/, etc.)
+  clean_target=$(echo "$point_to" | sed 's|^refs/[^/]*/||')
+
+  # For commit hashes, use short form (7 chars) for readability
+  if git rev-parse --verify --quiet "$point_to^{commit}" > /dev/null 2>&1; then
+    short_hash=$(git rev-parse --short=7 "$point_to")
+    # Only use short hash if the clean_target looks like a full hash (40 chars)
+    if [[ ${#clean_target} -eq 40 ]]; then
+      clean_target="$short_hash"
     fi
-    
-    # Generate ISO datetime: YYYYMMDD-HHMM
-    iso_datetime=$(date +"%Y%m%d-%H%M")
-    
-    # Clean the target name (remove refs/heads/, refs/tags/, etc.)
-    clean_target=$(echo "$point_to" | sed 's|^refs/[^/]*/||')
-    
-    # For commit hashes, use short form (7 chars) for readability
-    if git rev-parse --verify --quiet "$point_to^{commit}" >/dev/null 2>&1; then
-        short_hash=$(git rev-parse --short=7 "$point_to")
-        # Only use short hash if the clean_target looks like a full hash (40 chars)
-        if [[ ${#clean_target} -eq 40 ]]; then
-            clean_target="$short_hash"
-        fi
-    fi
-    
-    # Generate branch name based on whether target is a branch
-    if [[ "$is_branch" == "true" ]]; then
-        branch_name="${clean_target}.copy.${iso_datetime}"
+  fi
+
+  # Generate branch name based on whether target is a branch
+  if [[ "$is_branch" == "true" ]]; then
+    branch_name="${clean_target}.copy.${iso_datetime}"
+  else
+    branch_name="${clean_target}.branch.${iso_datetime}"
+  fi
+
+  # Ensure uniqueness by appending seconds if the name already exists
+  original_name="$branch_name"
+  counter=0
+  while git show-ref --verify --quiet "refs/heads/$branch_name" 2> /dev/null; do
+    if [[ $counter -eq 0 ]]; then
+      # First collision: try appending seconds
+      branch_name="${original_name}.$(date +%S)"
     else
-        branch_name="${clean_target}.branch.${iso_datetime}"
+      # Subsequent collisions: append counter
+      branch_name="${original_name}.$(date +%S).${counter}"
     fi
-    
-    # Ensure uniqueness by appending seconds if the name already exists
-    original_name="$branch_name"
-    counter=0
-    while git show-ref --verify --quiet "refs/heads/$branch_name" 2>/dev/null; do
-        if [[ $counter -eq 0 ]]; then
-            # First collision: try appending seconds
-            branch_name="${original_name}.$(date +%S)"
-        else
-            # Subsequent collisions: append counter
-            branch_name="${original_name}.$(date +%S).${counter}"
-        fi
-        counter=$((counter + 1))
-        # Safety check to prevent infinite loop
-        if [[ $counter -gt 100 ]]; then
-            error "Failed to generate unique branch name after 100 attempts"
-        fi
-    done
-    
-    if [[ "$branch_name" != "$original_name" ]]; then
-        warn "Generated name existed; using $branch_name"
+    counter=$((counter + 1))
+    # Safety check to prevent infinite loop
+    if [[ $counter -gt 100 ]]; then
+      error "Failed to generate unique branch name after 100 attempts"
     fi
-    
-    info "Auto-generated branch name: $branch_name"
+  done
+
+  if [[ "$branch_name" != "$original_name" ]]; then
+    warn "Generated name existed; using $branch_name"
+  fi
+
+  info "Auto-generated branch name: $branch_name"
 fi
 
 # Create and switch to the branch
 if [[ -n "$point_to" ]]; then
-    if [[ "$no_switch" == true ]]; then
-        git branch "$branch_name" "$point_to"
-        info "Created branch '$branch_name' pointing to $point_to (use 'hug b $branch_name' to switch)"
-        exit
-    fi
-    exec git switch -c "$branch_name" "$point_to"
+  if [[ "$no_switch" == true ]]; then
+    git branch "$branch_name" "$point_to"
+    info "Created branch '$branch_name' pointing to $point_to (use 'hug b $branch_name' to switch)"
+    exit
+  fi
+  exec git switch -c "$branch_name" "$point_to"
 fi
 
 test "$no_switch" != true && exec git switch -c "$branch_name"

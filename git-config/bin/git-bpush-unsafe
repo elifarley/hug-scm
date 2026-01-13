@@ -3,7 +3,7 @@
 
 # Show help if requested
 test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
-  cat <<'EOF'
+  cat << 'EOF'
 hug bpush-unsafe: Unsafe force push (use with extreme caution)
 
 USAGE:

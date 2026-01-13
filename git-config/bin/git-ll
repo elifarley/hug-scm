@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -82,34 +83,34 @@ git_args=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    --json)
-      json_output=true
-      shift
-      ;;
-    --with-stats)
-      with_stats=true
-      shift
-      ;;
-    --no-body)
-      no_body=true
-      shift
-      ;;
-    --all)
-      git_args+=("--all")
-      shift
-      ;;
-    -[0-9]*)
-      git_args+=("$1")
-      shift
-      ;;
-    *)
-      git_args+=("$1")
-      shift
-      ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  --json)
+    json_output=true
+    shift
+    ;;
+  --with-stats)
+    with_stats=true
+    shift
+    ;;
+  --no-body)
+    no_body=true
+    shift
+    ;;
+  --all)
+    git_args+=("--all")
+    shift
+    ;;
+  -[0-9]*)
+    git_args+=("$1")
+    shift
+    ;;
+  *)
+    git_args+=("$1")
+    shift
+    ;;
   esac
 done
 

@@ -6,11 +6,11 @@
 . "$HUG_HOME/git-config/lib/hug-git-kit"
 # shellcheck source=git-config/lib/hug-file-input
 . "$HUG_HOME/git-config/lib/hug-file-input"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-    cat << EOF
+  cat << EOF
 hug us: UnStage one or more files
 
 USAGE:
@@ -67,30 +67,30 @@ remaining_args=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --from-file)
-      from_file="$2"
-      shift 2
-      ;;
-    --from-commit)
-      from_commit="$2"
-      shift 2
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    --dry-run|--force|-f|--quiet)
-      # These will be handled by parse_common_flags
-      remaining_args+=("$1")
-      shift
-      ;;
-    -*)
-      error "Unknown option: $1. See 'hug us --help'."
-      ;;
-    *)
-      remaining_args+=("$1")
-      shift
-      ;;
+  --from-file)
+    from_file="$2"
+    shift 2
+    ;;
+  --from-commit)
+    from_commit="$2"
+    shift 2
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  --dry-run | --force | -f | --quiet)
+    # These will be handled by parse_common_flags
+    remaining_args+=("$1")
+    shift
+    ;;
+  -*)
+    error "Unknown option: $1. See 'hug us --help'."
+    ;;
+  *)
+    remaining_args+=("$1")
+    shift
+    ;;
   esac
 done
 
@@ -111,8 +111,8 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
   files_to_unstage=()
   for arg in "${remaining_args[@]}"; do
     case "$arg" in
-      --dry-run|--force|-f|--quiet) ;;
-      *) files_to_unstage+=("$arg") ;;
+    --dry-run | --force | -f | --quiet) ;;
+    *) files_to_unstage+=("$arg") ;;
     esac
   done
 
@@ -123,8 +123,8 @@ else
   files_to_unstage=()
   for arg in "${remaining_args[@]}"; do
     case "$arg" in
-      --dry-run|--force|-f|--quiet) ;;
-      *) files_to_unstage+=("$arg") ;;
+    --dry-run | --force | -f | --quiet) ;;
+    *) files_to_unstage+=("$arg") ;;
     esac
   done
 fi
@@ -134,94 +134,94 @@ check_git_repo
 # --- Main function for 'hug us' ---
 hug_us() {
   local -a files_to_unstage=("$@")
-  
+
   # If no files specified, show interactive menu
   if [[ ${#files_to_unstage[@]} -eq 0 ]]; then
     local -a staged_files=()
-    
+
     # Get all staged files
     mapfile -t staged_files < <(
-      git diff --cached --name-only 2>/dev/null || true
+      git diff --cached --name-only 2> /dev/null || true
     )
-    
+
     if [[ ${#staged_files[@]} -eq 0 ]]; then
       info "No staged files to unstage."
       exit 0
     fi
-    
+
     # Check if gum is available
     if ! gum_available; then
       error "Interactive mode requires 'gum' to be installed. Please install it or specify file names directly.
        Install: https://github.com/charmbracelet/gum"
     fi
-    
+
     # Prepare formatted options for gum with file details
     local -a formatted_options=()
-    
+
     for file in "${staged_files[@]}"; do
       # Skip empty file names (defensive)
       [[ -z "$file" ]] && continue
-      
+
       # Get file status (new, modified, etc.)
       local status
-      status=$(git diff --cached --name-status "$file" 2>/dev/null | cut -f1 || echo "M")
-      
+      status=$(git diff --cached --name-status "$file" 2> /dev/null | cut -f1 || echo "M")
+
       local status_text
       case "$status" in
-        A) status_text="${GREEN}new${NC}" ;;
-        M) status_text="${YELLOW}modified${NC}" ;;
-        D) status_text="${RED}deleted${NC}" ;;
-        R*) status_text="${BLUE}renamed${NC}" ;;
-        C*) status_text="${BLUE}copied${NC}" ;;
-        *) status_text="${GREY}changed${NC}" ;;
+      A) status_text="${GREEN}new${NC}" ;;
+      M) status_text="${YELLOW}modified${NC}" ;;
+      D) status_text="${RED}deleted${NC}" ;;
+      R*) status_text="${BLUE}renamed${NC}" ;;
+      C*) status_text="${BLUE}copied${NC}" ;;
+      *) status_text="${GREY}changed${NC}" ;;
       esac
-      
+
       # Format for gum: plain text with details
       local formatted="${file} ${status_text}"
       # Only add non-empty formatted options
       [[ -n "$formatted" ]] && formatted_options+=("$formatted")
     done
-    
+
     # Additional safety check: ensure we have formatted options
     if [[ ${#formatted_options[@]} -eq 0 ]]; then
       error "No valid staged files found to display. This may be a bug - please report it."
     fi
-    
+
     # Use gum_filter_by_index for selection with exact matching
     local -a selected_indices=()
     mapfile -t selected_indices < <(
       gum_filter_by_index formatted_options \
-                          "Select files to unstage (<TAB> to select, Enter to confirm)..." \
-                          --no-limit
+        "Select files to unstage (<TAB> to select, Enter to confirm)..." \
+        --no-limit
     )
-    
+
     if [ ${#selected_indices[@]} -eq 0 ]; then
       info "No files selected."
       exit 0
     fi
-    
+
     # Extract selected files using indices
     files_to_unstage=()
     for idx in "${selected_indices[@]}"; do
       files_to_unstage+=("${staged_files[$idx]}")
     done
   fi
-  
+
   # Validate that files exist and are staged
   for file in "${files_to_unstage[@]}"; do
-    if ! git ls-files --error-unmatch "$file" >/dev/null 2>&1; then
+    if ! git ls-files --error-unmatch "$file" > /dev/null 2>&1; then
       error "File '$file' is not tracked by git."
     fi
-    
+
     # Check if file is actually staged
-    if git diff --cached --quiet -- "$file" 2>/dev/null; then
+    if git diff --cached --quiet -- "$file" 2> /dev/null; then
       error "File '$file' is not staged."
     fi
   done
-  
+
   # Set dry_run default if not already set by parse_common_flags
   local dry_run="${dry_run:-false}"
-  
+
   # Preview mode
   if [[ "${dry_run}" == "true" ]]; then
     info "Dry run: Would unstage ${#files_to_unstage[@]} file(s):"
@@ -231,17 +231,17 @@ hug_us() {
     print_dry_run_preview "unstage the listed files"
     return 0
   fi
-  
+
   # Perform unstaging
-  if ! git restore --staged -- "${files_to_unstage[@]}" 2>/dev/null; then
+  if ! git restore --staged -- "${files_to_unstage[@]}" 2> /dev/null; then
     error "Failed to unstage files. Check file paths and permissions."
   fi
-  
+
   # Report results
   local count=${#files_to_unstage[@]}
   local file_word="file"
   [[ $count -gt 1 ]] && file_word="files"
-  
+
   success "Unstaged $count $file_word:"
   for file in "${files_to_unstage[@]}"; do
     printf "  ✓ %s\n" "$file" >&2

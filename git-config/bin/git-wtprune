@@ -6,11 +6,11 @@
 . "$HUG_HOME/git-config/lib/hug-git-kit"
 # shellcheck source=git-config/lib/hug-git-worktree
 . "$HUG_HOME/git-config/lib/hug-git-worktree"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-    cat << 'EOF'
+  cat << 'EOF'
 hug wtprune: Clean up stale worktree metadata
 
 USAGE:
@@ -61,57 +61,57 @@ verbose=false
 
 # Use GNU getopt for consistent argument parsing
 if ! PARSED=$(getopt --options="fhv" --longoptions="force,dry-run,verbose,help" --name="$0" -- "$@"); then
-    echo "Usage: $0 [-f|--force] [--dry-run] [-v|--verbose] [-h|--help]" >&2
-    exit 2
+  echo "Usage: $0 [-f|--force] [--dry-run] [-v|--verbose] [-h|--help]" >&2
+  exit 2
 fi
 
 eval set -- "$PARSED"
 
 while true; do
-    case "$1" in
-        -f|--force)
-            force=true
-            export HUG_FORCE=true
-            shift
-            ;;
-        --dry-run)
-            dry_run=true
-            shift
-            ;;
-        -v|--verbose)
-            verbose=true
-            shift
-            ;;
-        -h|--help)
-            show_help
-            exit 0
-            ;;
-        --)
-            shift
-            break
-            ;;
-        *)
-            echo "Internal error!" >&2
-            exit 1
-            ;;
-    esac
+  case "$1" in
+  -f | --force)
+    force=true
+    export HUG_FORCE=true
+    shift
+    ;;
+  --dry-run)
+    dry_run=true
+    shift
+    ;;
+  -v | --verbose)
+    verbose=true
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *)
+    echo "Internal error!" >&2
+    exit 1
+    ;;
+  esac
 done
 
 # Check for extra arguments
 if [[ $# -gt 0 ]]; then
-    echo "Error: Unexpected arguments: $*" >&2
-    echo "Usage: hug wtprune [-f|--force] [--dry-run] [-v|--verbose] [-h|--help]" >&2
-    exit 2
+  echo "Error: Unexpected arguments: $*" >&2
+  echo "Usage: hug wtprune [-f|--force] [--dry-run] [-v|--verbose] [-h|--help]" >&2
+  exit 2
 fi
 
 # Ensure we're in a git repository
-if ! git rev-parse --git-dir >/dev/null 2>&1; then
-    error "Not a git repository"
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+  error "Not a git repository"
 fi
 
 # Verbose output
 if $verbose; then
-    info "Scanning for orphaned worktrees..."
+  info "Scanning for orphaned worktrees..."
 fi
 
 # Call the existing library function

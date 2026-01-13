@@ -4,10 +4,10 @@ set -euo pipefail
 remote=${1:-origin}
 url=$(git remote get-url "$remote")
 if [[ "$url" =~ ^https://github\.com/ ]]; then
-    ssh_url="git@github.com:${url#https://github.com/}"
-    git remote set-url "$remote" "$ssh_url"
-    echo "Updated $remote remote to use SSH:"
-    exec git remote -v
+  ssh_url="git@github.com:${url#https://github.com/}"
+  git remote set-url "$remote" "$ssh_url"
+  echo "Updated $remote remote to use SSH:"
+  exec git remote -v
 fi
 
 echo "Remote $remote is not using HTTPS GitHub URL: $url"

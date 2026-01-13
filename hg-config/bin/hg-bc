@@ -4,12 +4,12 @@
 . "$HUG_HOME/hg-config/lib/hug-common"
 # shellcheck source=hg-config/lib/hug-hg-kit
 . "$HUG_HOME/hg-config/lib/hug-hg-kit"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite - Mercurial version
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug bc: Create a new bookmark and switch to it.
 
 USAGE:

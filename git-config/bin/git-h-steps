@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -55,8 +56,14 @@ file=""
 raw=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --raw) raw=true; shift ;;
-    *) if [[ -z "$file" ]]; then file="$1"; shift; else break; fi ;;
+  --raw)
+    raw=true
+    shift
+    ;;
+  *) if [[ -z "$file" ]]; then
+    file="$1"
+    shift
+  else break; fi ;;
   esac
 done
 
@@ -65,14 +72,14 @@ if [[ -z "$file" ]]; then
   # Only show interactive selection if gum is available
   if gum_available; then
     declare -a select_opts=("--single")
-    
+
     # Default to --cwd (current directory scope) unless --browse-root is specified
     if ! $browse_root; then
       select_opts+=("--cwd")
     fi
-    
+
     select_opts+=("--prompt" "Select file to analyze...")
-    
+
     if ! file=$(select_files_with_status "${select_opts[@]}"); then
       info "No file selected or cancelled."
       exit 0
@@ -90,7 +97,7 @@ if [ ! -e "$file" ]; then
   exit 1
 fi
 
-last_commit=$(git log -1 --follow --format=%H -- "$file" 2>/dev/null) || {
+last_commit=$(git log -1 --follow --format=%H -- "$file" 2> /dev/null) || {
   error "File '$file' has no commits in history (untracked or new)."
   exit 1
 }

@@ -17,14 +17,13 @@ Example:
     python3 ownership.py --author "Alice" --format=text
 """
 
-import sys
-import json
 import argparse
-import subprocess
+import json
 import math
-from datetime import datetime
+import subprocess
+import sys
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from datetime import datetime
 
 
 def parse_args():
@@ -46,7 +45,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_file_commit_history(filepath: str, since: str = None) -> List[Dict]:
+def get_file_commit_history(filepath: str, since: str = None) -> list[dict]:
     """
     Get commit history for a file with author and timestamp.
 
@@ -84,7 +83,7 @@ def get_file_commit_history(filepath: str, since: str = None) -> List[Dict]:
         return []
 
 
-def get_author_files(author: str, since: str = None) -> Dict[str, int]:
+def get_author_files(author: str, since: str = None) -> dict[str, int]:
     """
     Get all files touched by an author with commit counts.
 
@@ -149,7 +148,7 @@ def calculate_recency_weight(days_ago: int, decay_days: int) -> float:
     return math.exp(-days_ago / decay_days)
 
 
-def calculate_file_ownership(commits: List[Dict], decay_days: int) -> List[Dict]:
+def calculate_file_ownership(commits: list[dict], decay_days: int) -> list[dict]:
     """
     Calculate ownership percentages with recency weighting.
 
@@ -224,7 +223,7 @@ def format_days_ago(days: int) -> str:
         return f"{years} year{'s' if years > 1 else ''} ago"
 
 
-def format_file_ownership_text(filepath: str, ownership: List[Dict]) -> str:
+def format_file_ownership_text(filepath: str, ownership: list[dict]) -> str:
     """Format file ownership as human-readable text."""
     lines = []
 
@@ -271,7 +270,7 @@ def format_file_ownership_text(filepath: str, ownership: List[Dict]) -> str:
     return "\n".join(lines)
 
 
-def format_author_expertise_text(author: str, files: Dict[str, int]) -> str:
+def format_author_expertise_text(author: str, files: dict[str, int]) -> str:
     """Format author expertise as human-readable text."""
     lines = []
 

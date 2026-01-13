@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-hg-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
 # hug w zap-all: Complete cleanup of entire repository
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug w zap-all: Complete cleanup of entire repository.
 
 USAGE:
@@ -38,21 +39,21 @@ force=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -f|--force)
-      force=true
-      shift
-      ;;
-    --dry-run)
-      dry_run=true
-      shift
-      ;;
-    *)
-      error "Unknown option: $1"
-      ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -f | --force)
+    force=true
+    shift
+    ;;
+  --dry-run)
+    dry_run=true
+    shift
+    ;;
+  *)
+    error "Unknown option: $1"
+    ;;
   esac
 done
 
@@ -66,7 +67,7 @@ if $dry_run; then
   printf 'Dry run: Would perform complete cleanup of entire repository:\n'
   discard_all_uncommitted_changes --dry-run
   printf '\nWould also remove untracked files:\n'
-  if hg help purge >/dev/null 2>&1; then
+  if hg help purge > /dev/null 2>&1; then
     hg purge --print
   fi
   exit 0
@@ -82,7 +83,7 @@ fi
 discard_all_uncommitted_changes
 
 # Then purge all untracked files
-if hg help purge >/dev/null 2>&1; then
+if hg help purge > /dev/null 2>&1; then
   hg purge --all
 fi
 

@@ -3,7 +3,7 @@
 
 # Show help if requested
 test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
-  cat <<'EOF'
+  cat << 'EOF'
 hug bpushf: Force push current branch with lease (safer force push)
 
 USAGE:

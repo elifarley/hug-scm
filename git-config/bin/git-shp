@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit hug-git-diff; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -36,10 +37,10 @@ EOF
 
 # Parse arguments
 case "${1:-}" in
-  -h|--help)
-    show_help
-    exit 0
-    ;;
+-h | --help)
+  show_help
+  exit 0
+  ;;
 esac
 
 commit_ref="${1:-HEAD}"

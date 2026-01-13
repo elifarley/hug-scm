@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 # w-changes: quick working tree summary (staged, unstaged, untracked, ignored)
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 w-changes: Quick summary of working tree changes
 
 Usage:
@@ -30,21 +31,20 @@ eval "$(parse_common_flags "$@")"
 want_color=true
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --no-color)
-      want_color=false
-      shift
-      ;;
-    *)
-      printf 'Error: unknown option: %s\n' "$1" >&2
-      show_help >&2
-      exit 2
-      ;;
+  --no-color)
+    want_color=false
+    shift
+    ;;
+  *)
+    printf 'Error: unknown option: %s\n' "$1" >&2
+    show_help >&2
+    exit 2
+    ;;
   esac
 done
 
 # Early exit if not in Git repo
 check_git_repo
-
 
 # ---------- color palette ----------
 if $want_color && [[ -t 1 ]]; then
@@ -70,7 +70,7 @@ aggregate_diff() {
   else
     stats=$(git diff --numstat | awk 'BEGIN{f=0;i=0;d=0} NF{f++; i+=$1; d+=$2} END{printf "%d %d %d\n", f, i, d}')
   fi
-  read -r files ins del <<<"${stats:-"0 0 0"}"
+  read -r files ins del <<< "${stats:-"0 0 0"}"
   printf '%s' "$files $ins $del"
 }
 
@@ -87,7 +87,8 @@ capture_names() {
 }
 
 print_top_list() {
-  local title=$1; shift
+  local title=$1
+  shift
   local content=("$@")
   if [[ ${#content[@]} -eq 0 ]]; then
     return
@@ -100,8 +101,8 @@ print_top_list() {
 }
 
 # ---------- staged & unstaged stats ----------
-read -r staged_files staged_ins staged_del <<<"$(aggregate_diff staged)"
-read -r unstaged_files unstaged_ins unstaged_del <<<"$(aggregate_diff unstaged)"
+read -r staged_files staged_ins staged_del <<< "$(aggregate_diff staged)"
+read -r unstaged_files unstaged_ins unstaged_del <<< "$(aggregate_diff unstaged)"
 
 mapfile -t staged_samples < <(capture_names staged 5)
 mapfile -t unstaged_samples < <(capture_names unstaged 5)
@@ -115,8 +116,8 @@ while IFS= read -r -d '' entry; do
   status=${entry:0:2}
   path=${entry:3}
   case "$status" in
-    '??') untracked_paths+=("$path") ;;
-    '!!') ignored_paths+=("$path") ;;
+  '??') untracked_paths+=("$path") ;;
+  '!!') ignored_paths+=("$path") ;;
   esac
 done < <(git status --porcelain=v1 -z --ignored=matching --untracked-files=all)
 
@@ -125,25 +126,25 @@ summarize_paths() {
   local -n arr=$1
   local limit=$2
   local count=${#arr[@]}
-  if (( count == 0 )); then
+  if ((count == 0)); then
     return
   fi
   local output=()
-  local cap=$(( count < limit ? count : limit ))
+  local cap=$((count < limit ? count : limit))
   local i
-  for (( i=0; i<cap; ++i )); do
+  for ((i = 0; i < cap; ++i)); do
     output+=("    • ${arr[i]}")
   done
-  if (( count > cap )); then
+  if ((count > cap)); then
     output+=("    • … (+$((count - cap)) more)")
   fi
   printf '%s\n' "${output[@]}"
 }
 
 # ---------- display ----------
-total_changes=$(( staged_files + unstaged_files + ${#untracked_paths[@]} + ${#ignored_paths[@]} ))
+total_changes=$((staged_files + unstaged_files + ${#untracked_paths[@]} + ${#ignored_paths[@]}))
 
-if (( total_changes == 0 )); then
+if ((total_changes == 0)); then
   printf '%s%sWorking tree is clean.%s\n' "$FG_GREEN" "$BOLD" "$RESET"
   exit 0
 fi
@@ -158,16 +159,15 @@ printf '\n'
 print_top_list "Top staged paths" "${staged_samples[@]}"
 print_top_list "Top unstaged paths" "${unstaged_samples[@]}"
 
-if (( ${#untracked_paths[@]} > 0 )); then
+if ((${#untracked_paths[@]} > 0)); then
   printf '  %sUntracked samples%s\n' "$DIM" "$RESET"
   summarize_paths untracked_paths "$TOP_LIMIT"
 fi
 
-if (( ${#ignored_paths[@]} > 0 )); then
+if ((${#ignored_paths[@]} > 0)); then
   printf '  %sIgnored samples%s\n' "$DIM" "$RESET"
   summarize_paths ignored_paths "$TOP_LIMIT"
 fi
 
 printf '\n%sTip:%s Use %shug s%s for details, or %shug ss%s to inspect changes.\n' \
   "$DIM" "$RESET" "$FG_CYAN" "$RESET" "$FG_CYAN" "$RESET"
-

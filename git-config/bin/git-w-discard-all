@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 Usage: hug w discard-all [OPTIONS]
 
 Discard uncommitted changes on all tracked files across the entire working directory.
@@ -36,38 +37,38 @@ flags_explicit=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -u|--unstaged)
-      target_unstaged=true
-      flags_explicit=true
-      shift
-      ;;
-    -s|--staged)
-      target_staged=true
-      flags_explicit=true
-      shift
-      ;;
-    --dry-run)
-      dry_run=true
-      shift
-      ;;
-    -f|--force)
-      force=true
-      shift
-      ;;
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    -*)
-      error "unknown option: $1"
-      show_help >&2
-      exit 2
-      ;;
-    *)
-      error "positional arguments are not accepted (use 'git w discard' for path-specific)"
-      show_help >&2
-      exit 2
-      ;;
+  -u | --unstaged)
+    target_unstaged=true
+    flags_explicit=true
+    shift
+    ;;
+  -s | --staged)
+    target_staged=true
+    flags_explicit=true
+    shift
+    ;;
+  --dry-run)
+    dry_run=true
+    shift
+    ;;
+  -f | --force)
+    force=true
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -*)
+    error "unknown option: $1"
+    show_help >&2
+    exit 2
+    ;;
+  *)
+    error "positional arguments are not accepted (use 'git w discard' for path-specific)"
+    show_help >&2
+    exit 2
+    ;;
   esac
 done
 
@@ -81,17 +82,17 @@ check_git_repo
 declare -a unstaged_paths=() staged_paths=()
 empty=true
 if $target_unstaged; then
-  mapfile -t unstaged_paths < <(git diff --name-only 2>/dev/null || true)
+  mapfile -t unstaged_paths < <(git diff --name-only 2> /dev/null || true)
   dedupe_array unstaged_paths
   [[ ${#unstaged_paths[@]} -gt 0 ]] && empty=false
 fi
 if $target_staged; then
-  mapfile -t staged_paths < <(git diff --cached --name-only 2>/dev/null || true)
+  mapfile -t staged_paths < <(git diff --cached --name-only 2> /dev/null || true)
   dedupe_array staged_paths
   [[ ${#staged_paths[@]} -gt 0 ]] && empty=false
 fi
 
-total_changes=$(( ${#unstaged_paths[@]} + ${#staged_paths[@]} ))
+total_changes=$((${#unstaged_paths[@]} + ${#staged_paths[@]}))
 if [[ $total_changes -eq 0 ]]; then
   print_nothing_to_do "discard"
   exit 0

@@ -5,12 +5,12 @@
 # Consolidates common Git parsing patterns for JSON output.
 
 if [[ -n "${_HUG_GIT_JSON_LOADED:-}" ]]; then
-  return 0 2>/dev/null || :
+  return 0 2> /dev/null || :
 fi
 _HUG_GIT_JSON_LOADED=1
 
 # Load required libraries
-CMD_BASE="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || greadlink -f "${BASH_SOURCE[0]}")" || CMD_BASE="${BASH_SOURCE[0]}"
+CMD_BASE="$(readlink -f "${BASH_SOURCE[0]}" 2> /dev/null || greadlink -f "${BASH_SOURCE[0]}")" || CMD_BASE="${BASH_SOURCE[0]}"
 CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/hug-json"
 . "$CMD_BASE/hug-git-files"
@@ -19,15 +19,15 @@ CMD_BASE="$(dirname "$CMD_BASE")"
 git_status_to_json_type() {
   local status="$1"
   case "$status" in
-    A) echo "added" ;;
-    M) echo "modified" ;;
-    D) echo "deleted" ;;
-    R*) echo "renamed" ;;
-    C*) echo "copied" ;;
-    U) echo "conflict" ;;
-    \?\?) echo "untracked" ;;
-    \!\!) echo "ignored" ;;
-    *) echo "unknown" ;;
+  A) echo "added" ;;
+  M) echo "modified" ;;
+  D) echo "deleted" ;;
+  R*) echo "renamed" ;;
+  C*) echo "copied" ;;
+  U) echo "conflict" ;;
+  \?\?) echo "untracked" ;;
+  \!\!) echo "ignored" ;;
+  *) echo "unknown" ;;
   esac
 }
 
@@ -68,31 +68,34 @@ collect_git_files_json() {
   local -a files=()
 
   case "$file_type" in
-    "staged"|"unstaged")
-      local -a status_flags=("${list_flags[@]}" "--status")
-      local list_func="list_${file_type}_files"
+  "staged" | "unstaged")
+    local -a status_flags=("${list_flags[@]}" "--status")
+    local list_func="list_${file_type}_files"
 
-      while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        local file_json
-        file_json="$(parse_file_to_json "$line")"
-        [[ -n "$file_json" ]] && files+=("$file_json")
-      done < <("$list_func" "${status_flags[@]}")
-      ;;
-    "untracked"|"ignored")
-      local list_func="list_${file_type}_files"
-      local -a temp_files
-      mapfile -t temp_files < <("$list_func" "${list_flags[@]}")
-      for file in "${temp_files[@]}"; do
-        [[ -z "$file" ]] && continue
-        files+=("$(to_json_object "path" "$file" "status" "$file_type")")
-      done
-      ;;
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      local file_json
+      file_json="$(parse_file_to_json "$line")"
+      [[ -n "$file_json" ]] && files+=("$file_json")
+    done < <("$list_func" "${status_flags[@]}")
+    ;;
+  "untracked" | "ignored")
+    local list_func="list_${file_type}_files"
+    local -a temp_files
+    mapfile -t temp_files < <("$list_func" "${list_flags[@]}")
+    for file in "${temp_files[@]}"; do
+      [[ -z "$file" ]] && continue
+      files+=("$(to_json_object "path" "$file" "status" "$file_type")")
+    done
+    ;;
   esac
 
   # Print array as comma-separated JSON objects
   if [[ ${#files[@]} -gt 0 ]]; then
-    printf '%s' "$(IFS=','; echo "${files[*]}")"
+    printf '%s' "$(
+      IFS=','
+      echo "${files[*]}"
+    )"
   fi
 }
 
@@ -106,21 +109,21 @@ output_json_status_unified() {
   # Parse arguments
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --include-empty)
-        include_empty=true
-        shift
-        ;;
-      --filter)
-        filter_types="$2"
-        shift 2
-        ;;
-      --cwd-only)
-        scope_cwd=true
-        shift
-        ;;
-      *)
-        shift
-        ;;
+    --include-empty)
+      include_empty=true
+      shift
+      ;;
+    --filter)
+      filter_types="$2"
+      shift 2
+      ;;
+    --cwd-only)
+      scope_cwd=true
+      shift
+      ;;
+    *)
+      shift
+      ;;
     esac
   done
 
@@ -199,7 +202,7 @@ output_json_status_unified() {
       json+="\"$array_name\":["
       if [ ${#array_items[@]} -gt 0 ]; then
         printf -v array_str '%s,' "${array_items[@]}"
-        array_str="${array_str%,}"  # Remove trailing comma
+        array_str="${array_str%,}" # Remove trailing comma
         json+="$array_str"
       fi
       json+="]"
@@ -271,8 +274,8 @@ json_array_from_git_log_batch() {
       current_files=""
       file_array_index=0
     elif [[ "$name_status_flag" == "--name-status" ]] &&
-          [[ "$line" =~ ^[ADMRC][[:space:]]|[ADMRC][0-9]{3}[[:space:]] ]] ||
-          [[ "$line" =~ ^[ADMRC][[:space:]] ]]; then
+      [[ "$line" =~ ^[ADMRC][[:space:]]|[ADMRC][0-9]{3}[[:space:]] ]] ||
+      [[ "$line" =~ ^[ADMRC][[:space:]] ]]; then
       # Handle --name-status files lines (A/M/D/R/C status codes)
       if [[ -n "$current_files" ]]; then
         current_files+=",$(parse_file_status_line_to_json "$line")"
@@ -307,10 +310,10 @@ parse_commit_line_batch() {
     # Simple format: just commit hash
     commit_hash="$commit_line"
     # Get missing fields with separate call if needed for performance
-    subject=$(git log -1 --format=%s "$commit_hash" 2>/dev/null || echo "")
-    author_name=$(git log -1 --format=%an "$commit_hash" 2>/dev/null || echo "")
-    email=$(git log -1 --format=%ae "$commit_hash" 2>/dev/null || echo "")
-    date=$(git log -1 --format=%ci "$commit_hash" 2>/dev/null || echo "")
+    subject=$(git log -1 --format=%s "$commit_hash" 2> /dev/null || echo "")
+    author_name=$(git log -1 --format=%an "$commit_hash" 2> /dev/null || echo "")
+    email=$(git log -1 --format=%ae "$commit_hash" 2> /dev/null || echo "")
+    date=$(git log -1 --format=%ci "$commit_hash" 2> /dev/null || echo "")
   fi
 
 }
@@ -353,28 +356,31 @@ build_commit_json_batch() {
     IFS='---HUG-FIELD-SEPARATOR---' read -r commit_hash subject author_name author_email date <<< "$commit_line"
   else
     commit_hash="$commit_line"
-    subject=$(git log -1 --format=%s "$commit_hash" 2>/dev/null || echo "")
-    author_name=$(git log -1 --format=%an "$commit_hash" 2>/dev/null || echo "")
-    author_email=$(git log -1 --format=%ae "$commit_hash" 2>/dev/null || echo "")
-    date=$(git log -1 --format=%ci "$commit_hash" 2>/dev/null || echo "")
+    subject=$(git log -1 --format=%s "$commit_hash" 2> /dev/null || echo "")
+    author_name=$(git log -1 --format=%an "$commit_hash" 2> /dev/null || echo "")
+    author_email=$(git log -1 --format=%ae "$commit_hash" 2> /dev/null || echo "")
+    date=$(git log -1 --format=%ci "$commit_hash" 2> /dev/null || echo "")
   fi
 
   # Get short hash
   local short_hash
-  short_hash=$(git rev-parse --short "$commit_hash" 2>/dev/null || echo "${commit_hash:0:8}")
+  short_hash=$(git rev-parse --short "$commit_hash" 2> /dev/null || echo "${commit_hash:0:8}")
 
   # Get parent commits (for GitHub compatibility)
   local parents_json="[]"
   local parent_count
-  parent_count=$(git rev-list --count --parents "$commit_hash" 2>/dev/null | wc -w)
+  parent_count=$(git rev-list --count --parents "$commit_hash" 2> /dev/null | wc -w)
   if [[ $parent_count -gt 1 ]]; then
     local -a parents=()
     while IFS= read -r parent; do
-      [[ -n "$parent" ]] && parents+=("\"$(git rev-parse --short "$parent" 2>/dev/null || echo "$parent")\"")
-    done < <(git rev-parse --parents "$commit_hash" 2>/dev/null | tr ' ' '\n' | tail -n +2)
+      [[ -n "$parent" ]] && parents+=("\"$(git rev-parse --short "$parent" 2> /dev/null || echo "$parent")\"")
+    done < <(git rev-parse --parents "$commit_hash" 2> /dev/null | tr ' ' '\n' | tail -n +2)
 
     if [[ ${#parents[@]} -gt 0 ]]; then
-      parents_json="[$(IFS=','; echo "${parents[*]}")]"
+      parents_json="[$(
+        IFS=','
+        echo "${parents[*]}"
+      )]"
     fi
   fi
 
@@ -405,21 +411,21 @@ batch_commit_search() {
   local with_files=true
   local no_body=false
   local -a git_args=()
-  
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --no-files)
-        with_files=false
-        shift
-        ;;
-      --no-body)
-        no_body=true
-        shift
-        ;;
-      *)
-        git_args+=("$1")
-        shift
-        ;;
+    --no-files)
+      with_files=false
+      shift
+      ;;
+    --no-body)
+      no_body=true
+      shift
+      ;;
+    *)
+      git_args+=("$1")
+      shift
+      ;;
     esac
   done
 
@@ -429,12 +435,12 @@ batch_commit_search() {
   local -a python_args=()
   $with_files && python_args+=(--with-stats)
   $no_body && python_args+=(--no-body)
-  
+
   # Generate git log output and pipe to Python parser
   local -a git_log_args=(--format="$format" --grep="$search_term")
   $with_files && git_log_args+=(--numstat)
   git_log_args+=("${git_args[@]}")
-  
+
   git log "${git_log_args[@]}" | python3 "$python_cmd" "${python_args[@]}" | jq -c '.commits'
 }
 
@@ -448,21 +454,21 @@ batch_code_search() {
   local with_files=true
   local no_body=false
   local -a git_args=()
-  
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --no-files)
-        with_files=false
-        shift
-        ;;
-      --no-body)
-        no_body=true
-        shift
-        ;;
-      *)
-        git_args+=("$1")
-        shift
-        ;;
+    --no-files)
+      with_files=false
+      shift
+      ;;
+    --no-body)
+      no_body=true
+      shift
+      ;;
+    *)
+      git_args+=("$1")
+      shift
+      ;;
     esac
   done
 
@@ -472,12 +478,12 @@ batch_code_search() {
   local -a python_args=()
   $with_files && python_args+=(--with-stats)
   $no_body && python_args+=(--no-body)
-  
+
   # Generate git log output and pipe to Python parser
   local -a git_log_args=(--format="$format" -S"$search_pattern")
   $with_files && git_log_args+=(--numstat)
   git_log_args+=("${git_args[@]}")
-  
+
   git log "${git_log_args[@]}" | python3 "$python_cmd" "${python_args[@]}" | jq -c '.commits'
 }
 
@@ -493,26 +499,26 @@ batch_log_output() {
   local -a git_args=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --max)
-        max_items="$2"
-        shift 2
-        ;;
-      --stream)
-        stream_mode=true
-        shift
-        ;;
-      --numstat)
-        with_stats=true
-        shift
-        ;;
-      --no-body)
-        no_body=true
-        shift
-        ;;
-      *)
-        git_args+=("$1")
-        shift
-        ;;
+    --max)
+      max_items="$2"
+      shift 2
+      ;;
+    --stream)
+      stream_mode=true
+      shift
+      ;;
+    --numstat)
+      with_stats=true
+      shift
+      ;;
+    --no-body)
+      no_body=true
+      shift
+      ;;
+    *)
+      git_args+=("$1")
+      shift
+      ;;
     esac
   done
 
@@ -522,7 +528,7 @@ batch_log_output() {
   local -a python_args=()
   $with_stats && python_args+=(--with-stats)
   $no_body && python_args+=(--no-body)
-  
+
   # Build git log arguments
   local -a git_log_args=(--format="$format")
   [[ -n "$max_items" ]] && git_log_args+=("-n$max_items")
@@ -532,10 +538,10 @@ batch_log_output() {
   if $stream_mode; then
     # Streaming mode: output NDJSON for large result sets (one commit per line)
     # Parse Python JSON output and convert to NDJSON format
-    git log "${git_log_args[@]}" | python3 "$python_cmd" "${python_args[@]}" | \
+    git log "${git_log_args[@]}" | python3 "$python_cmd" "${python_args[@]}" |
       jq -c '.commits[]' | while read -r commit; do
-        printf '{"type":"commit","data":%s}\n' "$commit"
-      done
+      printf '{"type":"commit","data":%s}\n' "$commit"
+    done
   else
     # Normal mode: return full JSON object (includes command, commits, summary)
     git log "${git_log_args[@]}" | python3 "$python_cmd" "${python_args[@]}" | jq -c '.'

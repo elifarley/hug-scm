@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
@@ -8,7 +9,7 @@ set -euo pipefail
 PROG_NAME="hug w wip"
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug w wip: Park all uncommitted changes (tracked and untracked) on a new, separate WIP branch.
 Use WIP branches as pushable work-in-progress snapshots.
 
@@ -65,27 +66,27 @@ declare -a message_parts=()
 
 while (($#)); do
   case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    --stay)
-      stay_on_wip=true
-      ;;
-    --)
-      shift
-      while (($#)); do
-        message_parts+=("$1")
-        shift
-      done
-      break
-      ;;
-    -*)
-      usage_error "Unknown option '$1'."
-      ;;
-    *)
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  --stay)
+    stay_on_wip=true
+    ;;
+  --)
+    shift
+    while (($#)); do
       message_parts+=("$1")
-      ;;
+      shift
+    done
+    break
+    ;;
+  -*)
+    usage_error "Unknown option '$1'."
+    ;;
+  *)
+    message_parts+=("$1")
+    ;;
   esac
   shift || break
 done
@@ -116,10 +117,10 @@ if git rev-parse --verify --quiet "refs/heads/$branch_name"; then
   error "$PROG_NAME: Branch '$branch_name' already exists. Try a different message."
 fi
 
-git switch -c "$branch_name" >/dev/null
+git switch -c "$branch_name" > /dev/null
 
 cleanup() {
-  git switch "$previous_branch" >/dev/null 2>&1 || true
+  git switch "$previous_branch" > /dev/null 2>&1 || true
 }
 
 if [ "$stay_on_wip" = false ]; then
@@ -131,7 +132,7 @@ git add -A
 if git diff --cached --quiet; then
   trap - EXIT
   cleanup
-  git branch -D "$branch_name" >/dev/null 2>&1 || true
+  git branch -D "$branch_name" > /dev/null 2>&1 || true
   error "$PROG_NAME: Nothing to commit after staging. Check .gitignore or file filters."
 fi
 
@@ -142,7 +143,7 @@ if [ "$stay_on_wip" = true ]; then
   printf 'WIP saved on %s (commit %s). Stay on this branch to continue.\n' "$branch_name" "$wip_commit"
   printf 'Switch back anytime with: hug b %s\n' "$previous_branch"
 else
-  git switch "$previous_branch" >/dev/null
+  git switch "$previous_branch" > /dev/null
   trap - EXIT
   printf 'WIP saved on %s (commit %s). Switched back to %s.\n' "$branch_name" "$wip_commit" "$previous_branch"
   printf 'Resume later with: hug b %s\n' "$branch_name"

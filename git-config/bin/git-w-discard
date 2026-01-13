@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 Usage: hug w discard [OPTIONS] [<path>...]
 
 Discard tracked changes for the given paths.
@@ -50,19 +51,19 @@ flags_explicit=false
 # Parse custom flags first (non-common flags)
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -u|--unstaged)
-      target_unstaged=true
-      flags_explicit=true
-      shift
-      ;;
-    -s|--staged)
-      target_staged=true
-      flags_explicit=true
-      shift
-      ;;
-    *)
-      break
-      ;;
+  -u | --unstaged)
+    target_unstaged=true
+    flags_explicit=true
+    shift
+    ;;
+  -s | --staged)
+    target_staged=true
+    flags_explicit=true
+    shift
+    ;;
+  *)
+    break
+    ;;
   esac
 done
 
@@ -88,15 +89,15 @@ if [[ $# -lt 1 ]]; then
     # --browse-root without explicit paths is valid (triggers UI with full scope)
     :
   fi
-  
+
   # Determine which file types to show based on flags
   declare -a select_opts=("--multi")
-  
+
   # Default to --cwd (current directory scope) unless --browse-root is specified
   if ! $browse_root; then
     select_opts+=("--cwd")
   fi
-  
+
   if $target_staged && ! $target_unstaged; then
     select_opts+=("--staged")
     select_opts+=("--prompt" "Select staged files to discard...")
@@ -108,13 +109,13 @@ if [[ $# -lt 1 ]]; then
     select_opts+=("--staged" "--unstaged")
     select_opts+=("--prompt" "Select files to discard...")
   fi
-  
+
   paths=()
   if ! mapfile -t paths < <(select_files_with_status "${select_opts[@]}"); then
     info "No files selected or cancelled."
     exit 0
   fi
-  
+
   if [[ ${#paths[@]} -eq 0 ]]; then
     info "No files selected."
     exit 0
@@ -122,7 +123,7 @@ if [[ $# -lt 1 ]]; then
 else
   # Explicit paths provided - check for conflicting flags
   check_browse_root_no_paths "$browse_root" true
-  
+
   paths=("$@")
 fi
 
@@ -130,12 +131,12 @@ declare -a unstaged_paths=()
 declare -a staged_paths=()
 
 if $target_unstaged; then
-  mapfile -t unstaged_paths < <(git diff --name-only -- "${paths[@]}" 2>/dev/null || true)
+  mapfile -t unstaged_paths < <(git diff --name-only -- "${paths[@]}" 2> /dev/null || true)
   dedupe_array unstaged_paths
 fi
 
 if $target_staged; then
-  mapfile -t staged_paths < <(git diff --cached --name-only -- "${paths[@]}" 2>/dev/null || true)
+  mapfile -t staged_paths < <(git diff --cached --name-only -- "${paths[@]}" 2> /dev/null || true)
   dedupe_array staged_paths
 fi
 
@@ -146,10 +147,10 @@ fi
 
 # Main orchestrator for staged-only mode: Loops over files, checks flags, delegates to sub-functions
 handle_staged_only() {
-  local repo_root="$1"  # First arg: repo_root (passed explicitly)
-  shift  # Consume root, leaving paths as remaining args
+  local repo_root="$1" # First arg: repo_root (passed explicitly)
+  shift                # Consume root, leaving paths as remaining args
 
-  local -a staged_paths=("$@")  # Now captures only the expanded paths array
+  local -a staged_paths=("$@") # Now captures only the expanded paths array
 
   for file in "${staged_paths[@]}"; do
     local has_unstaged_flag=false
@@ -176,9 +177,9 @@ handle_staged_only() {
     fi
 
     # Complex case: Has unstaged changes - handle patch reversal (or merge-file from previous fix)
-    local failed_patch=""  # Temp for failure output (scoped to complex path)
+    local failed_patch="" # Temp for failure output (scoped to complex path)
     if ! discard_staged_with_unstaged "$file" "$repo_root" failed_patch; then
-      exit 1  # Propagate failure (prints already done in sub-function)
+      exit 1 # Propagate failure (prints already done in sub-function)
     fi
   done
 }
@@ -186,7 +187,7 @@ handle_staged_only() {
 # For staged-only mode, prepare a map of files with unstaged changes (compute if needed)
 declare -A has_unstaged
 if $target_staged && ! $target_unstaged && [[ $dry_run == false ]]; then
-  mapfile -t temp_unstaged_paths < <(git diff --name-only -- "${paths[@]}" 2>/dev/null || true)
+  mapfile -t temp_unstaged_paths < <(git diff --name-only -- "${paths[@]}" 2> /dev/null || true)
   dedupe_array temp_unstaged_paths
   for file in "${temp_unstaged_paths[@]}"; do
     has_unstaged["$file"]=true

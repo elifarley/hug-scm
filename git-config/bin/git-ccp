@@ -6,12 +6,12 @@
 . "$HUG_HOME/git-config/lib/hug-git-kit"
 # shellcheck source=git-config/lib/hug-file-input
 . "$HUG_HOME/git-config/lib/hug-file-input"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 hug ccp: Commit Cherry-Pick / Commit Clone / Carbon Copy (copy a commit onto HEAD).
 
 USAGE:
@@ -67,28 +67,28 @@ git_options=()
 
 while (($#)); do
   case "$1" in
-    -h|--help)
-      show_help
-      exit 0
-      ;;
-    --husk)
-      husk_mode=true
-      ;;
-    --)
-      shift
-      while (($#)); do
-        positional_args+=("$1")
-        shift
-      done
-      break
-      ;;
-    -*)
-      # Assume it's a git cherry-pick option (pass through)
-      git_options+=("$1")
-      ;;
-    *)
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  --husk)
+    husk_mode=true
+    ;;
+  --)
+    shift
+    while (($#)); do
       positional_args+=("$1")
-      ;;
+      shift
+    done
+    break
+    ;;
+  -*)
+    # Assume it's a git cherry-pick option (pass through)
+    git_options+=("$1")
+    ;;
+  *)
+    positional_args+=("$1")
+    ;;
   esac
   shift || break
 done

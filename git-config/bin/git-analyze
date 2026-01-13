@@ -2,7 +2,7 @@
 # git-analyze - Repository analysis gateway command
 # Part of the Hug tool suite
 
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat << 'EOF'
@@ -34,16 +34,28 @@ EOF
 }
 
 case "${1:-}" in
-  co-changes)     shift; git analyze-co-changes "$@" ;;
-  activity)       shift; git analyze-activity "$@" ;;
-  deps)           shift; git analyze-deps "$@" ;;
-  expert)         shift; git analyze-expert "$@" ;;
-  -h|--help|help) show_help ;;
-  *)
-    if [ -n "${1:-}" ]; then
-      printf 'Unknown analyze command: %s\n\n' "$1" >&2
-    fi
-    show_help
-    exit 1
-    ;;
+co-changes)
+  shift
+  git analyze-co-changes "$@"
+  ;;
+activity)
+  shift
+  git analyze-activity "$@"
+  ;;
+deps)
+  shift
+  git analyze-deps "$@"
+  ;;
+expert)
+  shift
+  git analyze-expert "$@"
+  ;;
+-h | --help | help) show_help ;;
+*)
+  if [ -n "${1:-}" ]; then
+    printf 'Unknown analyze command: %s\n\n' "$1" >&2
+  fi
+  show_help
+  exit 1
+  ;;
 esac

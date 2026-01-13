@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 # shellcheck source=../lib/hug-common
 . "$CMD_BASE/../lib/hug-common"
 # shellcheck source=../lib/hug-git-kit
 . "$CMD_BASE/../lib/hug-git-kit"
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-    cat << EOF
+  cat << EOF
 hug rb: Rebase the current branch onto a target branch, with automatic backup.
 
 USAGE:
@@ -49,20 +50,20 @@ no_backup=false
 target_branch=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --no-backup)
-      no_backup=true
-      shift
-      ;;
-    -*)
-      error "Unknown option: $1. See 'hug rb --help'."
-      ;;
-    *)
-      if [[ -n "$target_branch" ]]; then
-        error "Only one target branch allowed. See 'hug rb --help'."
-      fi
-      target_branch="$1"
-      shift
-      ;;
+  --no-backup)
+    no_backup=true
+    shift
+    ;;
+  -*)
+    error "Unknown option: $1. See 'hug rb --help'."
+    ;;
+  *)
+    if [[ -n "$target_branch" ]]; then
+      error "Only one target branch allowed. See 'hug rb --help'."
+    fi
+    target_branch="$1"
+    shift
+    ;;
   esac
 done
 

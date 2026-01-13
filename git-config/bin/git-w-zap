@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"; CMD_BASE="$(dirname "$CMD_BASE")"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
-  cat <<'EOF'
+  cat << 'EOF'
 Usage: hug w zap [OPTIONS] [<path>...]
 
 Wipe tracked changes and purge untracked / ignored files for the specified paths.
@@ -55,15 +56,15 @@ if [[ $# -lt 1 ]]; then
     # --browse-root without explicit paths is valid (triggers UI with full scope)
     :
   fi
-  
+
   # Show all types: staged, unstaged, untracked, ignored
   declare -a select_opts=("--multi" "--staged" "--unstaged" "--untracked" "--ignored")
-  
+
   # Default to --cwd (current directory scope) unless --browse-root is specified
   if ! $browse_root; then
     select_opts+=("--cwd")
   fi
-  
+
   select_opts+=("--prompt" "Select files to zap (complete cleanup)...")
 
   paths=()
@@ -78,7 +79,7 @@ if [[ $# -lt 1 ]]; then
 Usage: hug w zap <file>..."
     exit 1
   fi
-  
+
   if [[ ${#paths[@]} -eq 0 ]]; then
     info "No files selected."
     exit 0
@@ -86,7 +87,7 @@ Usage: hug w zap <file>..."
 else
   # Explicit paths provided - check for conflicting flags
   check_browse_root_no_paths "$browse_root" true
-  
+
   paths=("$@")
 fi
 
@@ -99,16 +100,16 @@ while IFS= read -r -d '' entry; do
   status=${entry:0:2}
   path=${entry:3}
   case "$status" in
-    '??'|'!!')
-      # Untracked or ignored
-      untracked_paths+=("$path")
-      ;;
-    *)
-      # Tracked file (modified, staged, etc.)
-      tracked_paths+=("$path")
-      ;;
+  '??' | '!!')
+    # Untracked or ignored
+    untracked_paths+=("$path")
+    ;;
+  *)
+    # Tracked file (modified, staged, etc.)
+    tracked_paths+=("$path")
+    ;;
   esac
-done < <(git status --porcelain=v1 --ignored=matching -z -- "${paths[@]}" 2>/dev/null || true)
+done < <(git status --porcelain=v1 --ignored=matching -z -- "${paths[@]}" 2> /dev/null || true)
 
 # Convert paths to be relative to current directory before passing to sub-commands
 # (git status returns repo-root-relative paths, but wipe/purge expect current-dir-relative)

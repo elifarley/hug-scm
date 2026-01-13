@@ -28,7 +28,7 @@ if command -v "git-$prefix" > /dev/null 2>&1; then
   echo
   "git-$prefix" --help
   echo
-elif [ -n "$(git config --get "alias.$prefix" 2>/dev/null)" ]; then
+elif [ -n "$(git config --get "alias.$prefix" 2> /dev/null)" ]; then
   git $prefix -h
   echo
 fi

@@ -15,13 +15,13 @@ Example:
     git log --format='%ai|%an' --since="3 months ago" | python3 activity.py --by-hour
 """
 
-import sys
-import json
 import argparse
+import json
 import subprocess
+import sys
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Any
 
 
 def parse_args():
@@ -39,7 +39,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_git_log(stdin_input: str) -> List[Dict]:
+def parse_git_log(stdin_input: str) -> list[dict]:
     """
     Parse git log output into commit records.
 
@@ -73,14 +73,14 @@ def parse_git_log(stdin_input: str) -> List[Dict]:
                 }
             )
 
-        except (ValueError, IndexError) as e:
+        except (ValueError, IndexError):
             print(f"Warning: Could not parse line: {line}", file=sys.stderr)
             continue
 
     return commits
 
 
-def get_activity_commits(file_path: str, since: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_activity_commits(file_path: str, since: str | None = None) -> list[dict[str, Any]]:
     """Fetch activity commits for file via git log."""
     cmd = [
         "git",
@@ -101,7 +101,7 @@ def get_activity_commits(file_path: str, since: Optional[str] = None) -> List[Di
         return []
 
 
-def analyze_by_hour(commits: List[Dict], by_author: bool = False) -> Dict:
+def analyze_by_hour(commits: list[dict], by_author: bool = False) -> dict:
     """
     Group commits by hour of day.
 
@@ -126,7 +126,7 @@ def analyze_by_hour(commits: List[Dict], by_author: bool = False) -> Dict:
         return {"type": "by_hour", "data": dict(data)}
 
 
-def analyze_by_day(commits: List[Dict], by_author: bool = False) -> Dict:
+def analyze_by_day(commits: list[dict], by_author: bool = False) -> dict:
     """
     Group commits by day of week.
 
@@ -154,7 +154,7 @@ def analyze_by_day(commits: List[Dict], by_author: bool = False) -> Dict:
         return {"type": "by_day", "day_order": day_order, "data": dict(data)}
 
 
-def detect_patterns(analysis: Dict) -> List[str]:
+def detect_patterns(analysis: dict) -> list[str]:
     """
     Detect interesting patterns in the data.
 
@@ -199,7 +199,7 @@ def detect_patterns(analysis: Dict) -> List[str]:
     return observations
 
 
-def create_histogram(data: Dict[int, int], max_width: int = 40) -> List[str]:
+def create_histogram(data: dict[int, int], max_width: int = 40) -> list[str]:
     """
     Create ASCII histogram bars.
 
@@ -225,8 +225,8 @@ def create_histogram(data: Dict[int, int], max_width: int = 40) -> List[str]:
 
 
 def create_day_histogram(
-    data: Dict[str, int], day_order: List[str], max_width: int = 40
-) -> List[str]:
+    data: dict[str, int], day_order: list[str], max_width: int = 40
+) -> list[str]:
     """
     Create ASCII histogram for days of week.
 
@@ -251,7 +251,7 @@ def create_day_histogram(
     return lines
 
 
-def format_text_output(analysis: Dict, commits_count: int, time_range: str = None) -> str:
+def format_text_output(analysis: dict, commits_count: int, time_range: str = None) -> str:
     """Format analysis as human-readable text."""
     lines = []
 
