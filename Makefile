@@ -561,8 +561,13 @@ lint-verbose: ## Run linting (detailed output)
 typecheck: ## Type check Python code (LLM-friendly: summary only)
 	@echo "$(BLUE)Type checking Python helpers...$(RESET)"
 	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
-		$(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" mypy --no-pretty . 2>&1 | \
-			{ grep -vE '^(Success: no issues found|warning:)' | grep -q '.' && { cat; exit 1; } || echo "$(GREEN)✅ Type checking OK$(RESET)"; } \
+		output=$$($(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" mypy --no-pretty . 2>&1); \
+		if echo "$$output" | grep -q 'Success: no issues found'; then \
+			echo "$(GREEN)✅ Type checking OK$(RESET)"; \
+		else \
+			echo "$$output" | grep -vE '^(Success: no issues found|warning:)'; \
+			exit 1; \
+		fi \
 	else \
 		echo "$(YELLOW)⚠ UV not available - skipping type check$(RESET)"; \
 	fi
