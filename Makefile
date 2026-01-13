@@ -63,29 +63,47 @@ DEMO_REPO_ENV := export PATH="$$PATH:$(HUG_BIN_PATH)" &&
 help: ## Show this help message
 	@printf "$(BOLD)$(CYAN)Hug SCM - Makefile Commands$(RESET)\n"
 	@printf "\n"
-	@printf "$(BOLD)Quick Start:$(RESET)\n"
-	@printf "  $(GREEN)make install$(RESET)         - Install Hug SCM\n"
-	@printf "  $(GREEN)make test-quick$(RESET)      - Run quick tests\n"
-	@printf "  $(GREEN)make validate$(RESET)        - Quick validation\n"
-	@printf "  $(GREEN)make pre-commit$(RESET)      - Run checks before commit\n"
+	@printf "$(BOLD)Environment:$(RESET)\n"
+	@printf "  $(GREEN)make doctor$(RESET)         - Check environment and tool readiness\n"
+	@printf "  $(GREEN)make dev-env-init$(RESET)   - Create virtual environment (one-time)\n"
+	@printf "  $(GREEN)make dev-deps-sync$(RESET)  - Sync dependencies from lockfiles\n"
 	@printf "\n"
 	@printf "$(BOLD)Code Quality:$(RESET)\n"
-	@grep -E '^(format|lint|check|validate|pre-commit|ci):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(RESET) %s\n", $$1, $$2}'
+	@printf "  $(GREEN)make format$(RESET)         - Format code (LLM-friendly)\n"
+	@printf "  $(GREEN)make format-verbose$(RESET) - Format code (show changes)\n"
+	@printf "  $(GREEN)make lint$(RESET)           - Run linting (LLM-friendly)\n"
+	@printf "  $(GREEN)make lint-verbose$(RESET)   - Run linting (detailed)\n"
+	@printf "  $(GREEN)make typecheck$(RESET)      - Type check Python (LLM-friendly)\n"
+	@printf "  $(GREEN)make typecheck-verbose$(RESET) - Type check Python (detailed)\n"
+	@printf "  $(GREEN)make sanitize$(RESET)       - Run all static checks (format + lint + typecheck)\n"
 	@printf "\n"
 	@printf "$(BOLD)Testing:$(RESET)\n"
-	@grep -E '^test.*:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-20s$(RESET) %s\n", $$1, $$2}'
+	@printf "  $(CYAN)make test-unit$(RESET)       - Run unit tests (LLM-friendly)\n"
+	@printf "  $(CYAN)make test-unit-verbose$(RESET) - Run unit tests (detailed)\n"
+	@printf "  $(CYAN)make test-integration$(RESET) - Run integration tests (LLM-friendly)\n"
+	@printf "  $(CYAN)make test-integration-verbose$(RESET) - Run integration tests (detailed)\n"
+	@printf "  $(CYAN)make test-lib-py$(RESET)     - Run Python library tests\n"
+	@printf "  $(CYAN)make test$(RESET)            - Run all tests (LLM-friendly)\n"
+	@printf "  $(CYAN)make test-verbose$(RESET)    - Run all tests (detailed)\n"
+	@printf "\n"
+	@printf "$(BOLD)Gates:$(RESET)\n"
+	@printf "  $(GREEN)make check$(RESET)          - Fast merge gate (sanitize + unit tests)\n"
+	@printf "  $(GREEN)make check-verbose$(RESET)  - Merge gate with detailed output\n"
+	@printf "  $(GREEN)make validate$(RESET)       - Quick validation\n"
+	@printf "  $(GREEN)make pre-commit$(RESET)     - Pre-commit hook\n"
 	@printf "\n"
 	@printf "$(BOLD)Documentation:$(RESET)\n"
-	@grep -E '^(docs-|deps-docs):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-20s$(RESET) %s\n", $$1, $$2}'
+	@grep -E '^(docs-|deps-docs):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-24s$(RESET) %s\n", $$1, $$2}'
 	@printf "\n"
 	@printf "$(BOLD)Screencasts (VHS):$(RESET)\n"
-	@grep -E '^vhs.*:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-20s$(RESET) %s\n", $$1, $$2}'
+	@grep -E '^vhs.*:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-24s$(RESET) %s\n", $$1, $$2}'
 	@printf "\n"
 	@printf "$(BOLD)Installation & Setup:$(RESET)\n"
-	@grep -E '^(install|deps-|optional-|python-):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(RESET) %s\n", $$1, $$2}'
+	@printf "  $(GREEN)make install$(RESET)        - Install Hug SCM\n"
+	@grep -E '^(deps-|optional-|python-):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-24s$(RESET) %s\n", $$1, $$2}'
 	@printf "\n"
 	@printf "$(BOLD)Utilities:$(RESET)\n"
-	@grep -E '^(clean|demo-|mocks-):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-20s$(RESET) %s\n", $$1, $$2}'
+	@grep -E '^(clean|demo-|mocks-):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-24s$(RESET) %s\n", $$1, $$2}'
 	@printf "\n"
 	@printf "For full test filtering options, see $(CYAN)TESTING.md$(RESET)\n"
 
@@ -187,6 +205,17 @@ test-lib-py-coverage: ## Run Python library tests with coverage report
 	$(PIP_CMD) -q -e ".[dev]" 2>/dev/null || true; \
 	$(PYTEST_CMD) tests/ -v --cov=. --cov-report=term-missing --cov-report=html
 
+test-unit-verbose: ## Run unit tests (detailed output)
+	@echo "$(BLUE)Running unit tests...$(RESET)"
+	@$(MAKE) test-unit TEST_SHOW_ALL_RESULTS=1
+
+test-integration-verbose: ## Run integration tests (detailed output)
+	@echo "$(BLUE)Running integration tests...$(RESET)"
+	@$(MAKE) test-integration TEST_SHOW_ALL_RESULTS=1
+
+test-verbose: ## Run all tests (detailed output)
+	@$(MAKE) test TEST_SHOW_ALL_RESULTS=1
+
 test-deps-install: ## Install all test dependencies (BATS + Python)
 	@echo "$(BLUE)Installing test dependencies...$(RESET)"
 	@echo "$(BLUE)Installing BATS dependencies...$(RESET)"
@@ -199,7 +228,13 @@ endif
 	(echo "$(YELLOW)Warning: Could not install Python dev dependencies. Python tests may not work.$(RESET)")
 	@echo "$(GREEN)All test dependencies installed$(RESET)"
 
-test-deps-py-install: ## Install Python test dependencies (pytest, coverage, etc.)
+test-deps-py-install: ## Install Python test dependencies (DEPRECATED: use 'dev-deps-sync')
+	@echo "$(YELLOW)⚠ 'test-deps-py-install' is deprecated, use 'make dev-deps-sync'$(RESET)"
+	@$(MAKE) dev-deps-sync
+
+dev-deps-sync: ## Sync dependencies from lockfiles
+	@echo "$(BLUE)Syncing dependencies...$(RESET)"
+	@test -d .venv || (printf "$(RED)❌ .venv not found$(RESET)\n" && printf "$(BLUE)ℹ️ Run: make dev-env-init$(RESET)\n" && exit 1)
 	@echo "$(BLUE)Installing Python test dependencies...$(RESET)"
 ifeq ($(UV_AVAILABLE),true)
 	@echo "$(CYAN)Using UV for fast dependency installation...$(RESET)"
@@ -207,43 +242,87 @@ endif
 	@cd git-config/lib/python && $(PIP_CMD) -e ".[dev]"
 	@echo "$(GREEN)Python test dependencies installed$(RESET)"
 
-optional-deps-install: ## Install optional dependencies (gum, etc.)
+optional-deps-install: ## Install optional dependencies (gum, shfmt, ShellCheck)
 	@echo "$(BLUE)Installing optional dependencies...$(RESET)"
 	@bash bin/optional-deps-install.sh
+	@echo "$(BLUE)Installing shfmt...$(RESET)"
+	@if command -v shfmt >/dev/null 2>&1; then \
+		echo "$(GREEN)✓ shfmt already installed$(RESET)"; \
+	else \
+		if [ "$$(uname)" = "Darwin" ]; then \
+			brew install shfmt 2>/dev/null || echo "$(YELLOW)⚠ Install shfmt manually from https://github.com/mvdan/sh$(RESET)"; \
+		elif [ -f /etc/debian_version ]; then \
+			sudo apt-get install -y shfmt 2>/dev/null || echo "$(YELLOW)⚠ Install shfmt manually from https://github.com/mvdan/sh$(RESET)"; \
+		else \
+			echo "$(YELLOW)⚠ Install shfmt manually from https://github.com/mvdan/sh$(RESET)"; \
+		fi; \
+	fi
+	@echo "$(BLUE)Installing ShellCheck...$(RESET)"
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		echo "$(GREEN)✓ ShellCheck already installed$(RESET)"; \
+	else \
+		if [ "$$(uname)" = "Darwin" ]; then \
+			brew install shellcheck 2>/dev/null || echo "$(YELLOW)⚠ Install ShellCheck manually from https://www.shellcheck.net/$(RESET)"; \
+		elif [ -f /etc/debian_version ]; then \
+			sudo apt-get install -y shellcheck 2>/dev/null || echo "$(YELLOW)⚠ Install ShellCheck manually from https://www.shellcheck.net/$(RESET)"; \
+		else \
+			echo "$(YELLOW)⚠ Install ShellCheck manually from https://www.shellcheck.net/$(RESET)"; \
+		fi; \
+	fi
 
 optional-deps-check: ## Check if optional dependencies are installed
 	@echo "$(BLUE)Checking optional dependencies...$(RESET)"
 	@bash bin/optional-deps-install.sh --check
 
-python-check: ## Check Python environment (UV, pytest, venv status)
-	@echo "$(BLUE)Python Environment Status:$(RESET)"
+doctor: ## Check environment and tool readiness
+	@echo "$(BLUE)Checking environment...$(RESET)"
 	@echo ""
+	@echo "Required tools:"
+	@command -v git >/dev/null || (printf "$(RED)❌ git not found$(RESET)\n" && exit 1)
+	@printf "$(GREEN)✅ git found$(RESET)\n"
+	@command -v bash >/dev/null || (printf "$(RED)❌ bash not found$(RESET)\n" && exit 1)
+	@printf "$(GREEN)✅ bash found$(RESET)\n"
+	@command -v python3 >/dev/null || (printf "$(RED)❌ python3 not found$(RESET)\n" && exit 1)
+	@printf "$(GREEN)✅ python3 found$(RESET)\n"
+	@echo ""
+	@echo "Optional tools (for static checks):"
+	@command -v shfmt >/dev/null || printf "$(YELLOW)⚠ shfmt not found (run 'make optional-deps-install')$(RESET)\n"
+	@command -v shellcheck >/dev/null || printf "$(YELLOW)⚠ ShellCheck not found (run 'make optional-deps-install')$(RESET)\n"
+	@echo ""
+	@echo "UV (for Python helpers):"
 	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
-		echo "$(GREEN)✓ UV available$(RESET)"; \
-		$(UV) --version; \
+		printf "$(GREEN)✅ UV available$(RESET)\n"; \
 	else \
-		echo "$(YELLOW)⚠ UV not found (install with 'make python-install-uv')$(RESET)"; \
+		printf "$(YELLOW)⚠ UV not found (optional, run 'make python-install-uv')$(RESET)\n"; \
 	fi
-	@echo ""
-	@echo "Python:"
-	@$(PYTHON_CMD) --version
 	@echo ""
 	@echo "Virtual Environment:"
 	@if [ -d .venv ]; then \
-		echo "$(GREEN)✓ .venv/ exists$(RESET)"; \
-		ls -la .venv/bin/python3 2>/dev/null || echo "  $(YELLOW)⚠ No python3 in .venv/bin$(RESET)"; \
+		printf "$(GREEN)✅ .venv/ exists$(RESET)\n"; \
 	else \
-		echo "$(YELLOW)⚠ .venv/ does not exist$(RESET)"; \
+		printf "$(YELLOW)⚠ .venv/ not found (run 'make dev-env-init')$(RESET)\n"; \
 	fi
 	@echo ""
-	@echo "pytest:"
+	@echo "Test frameworks:"
+	@./tests/run-tests.sh --check >/dev/null 2>&1 || (printf "$(RED)❌ BATS not ready$(RESET)\n" && exit 1)
+	@printf "$(GREEN)✅ BATS ready$(RESET)\n"
 	@if cd git-config/lib/python && $(PYTEST_CMD) --version >/dev/null 2>&1; then \
-		cd - > /dev/null && $(PYTEST_CMD) --version | sed 's/^/  /'; \
+		cd - > /dev/null && printf "$(GREEN)✅ pytest ready$(RESET)\n"; \
 	else \
-		echo "  $(YELLOW)⚠ pytest not found$(RESET)"; \
+		cd - > /dev/null && printf "$(YELLOW)⚠ pytest not found (run 'make test-deps-py-install')$(RESET)\n"; \
 	fi
+	@echo ""
+	@printf "$(GREEN)✅ Environment check complete$(RESET)\n"
 
-python-venv-create: ## Create virtual environment using UV (fast)
+python-check: ## Check Python environment (DEPRECATED: use 'doctor')
+	@echo "$(YELLOW)⚠ 'python-check' is deprecated, use 'make doctor'$(RESET)"
+	@$(MAKE) doctor
+
+python-venv-create: ## Create virtual environment using UV (fast) (DEPRECATED: use 'dev-env-init')
+	@echo "$(YELLOW)⚠ 'python-venv-create' is deprecated, use 'make dev-env-init'$(RESET)"
+	@$(MAKE) dev-env-init
+
+dev-env-init: ## Create virtual environment (one-time setup)
 	@echo "$(BLUE)Creating virtual environment...$(RESET)"
 ifeq ($(UV_AVAILABLE),true)
 	@$(UV) venv .venv
@@ -401,20 +480,103 @@ deps-docs: ## Install documentation dependencies
 
 ##@ Development
 
-format: ## Format code (placeholder for future shfmt integration)
-	@echo "$(YELLOW)⚠ format target not yet implemented$(RESET)"
-	@echo "$(CYAN)💡 Consider adding shfmt for Bash script formatting$(RESET)"
+format: ## Format code (LLM-friendly: summary only)
+	@echo "$(BLUE)Formatting Bash scripts...$(RESET)"
+	@if command -v shfmt >/dev/null 2>&1; then \
+		shfmt -w -i 2 -sr git-config/bin/ git-config/lib/ hg-config/bin/ hg-config/lib/ bin/ tests/ 2>/dev/null || true; \
+		echo "$(GREEN)✅ Bash formatting OK$(RESET)"; \
+	else \
+		echo "$(YELLOW)⚠ shfmt not found - run 'make optional-deps-install'$(RESET)"; \
+	fi
+	@echo "$(BLUE)Formatting Python helpers...$(RESET)"
+	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+		$(UV_CMD) run --directory git-config/lib/python ruff format --quiet .; \
+		echo "$(GREEN)✅ Python formatting OK$(RESET)"; \
+	else \
+		echo "$(YELLOW)⚠ UV not available - skipping Python formatting$(RESET)"; \
+	fi
+	@echo "$(GREEN)✅ Formatting complete$(RESET)"
 
-lint: ## Run linting checks (placeholder for future ShellCheck integration)
-	@echo "$(YELLOW)⚠ lint target not yet implemented$(RESET)"
-	@echo "$(CYAN)💡 Consider adding ShellCheck for Bash script linting$(RESET)"
+format-verbose: ## Format code (show changes)
+	@echo "$(BLUE)Formatting Bash scripts...$(RESET)"
+	@if command -v shfmt >/dev/null 2>&1; then \
+		shfmt -w -i 2 -sr -d git-config/bin/ git-config/lib/ hg-config/bin/ hg-config/lib/ bin/ tests/; \
+	else \
+		echo "$(YELLOW)⚠ shfmt not found$(RESET)"; \
+	fi
+	@echo "$(BLUE)Formatting Python helpers...$(RESET)"
+	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+		$(UV_CMD) run --directory git-config/lib/python ruff format .; \
+	else \
+		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
+	fi
 
-check: test-check ## Alias for test-check (check prerequisites)
+lint: ## Run linting checks (LLM-friendly: summary only)
+	@echo "$(BLUE)Linting Bash scripts...$(RESET)"
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck -S error git-config/bin/* git-config/lib/* hg-config/bin/* hg-config/lib/* bin/* tests/test_helper.bash tests/unit/*.bats tests/lib/*.bats tests/integration/*.bats 2>&1 | \
+			{ grep -q '^.*:[0-9]*:.*' && { cat; exit 1; } || echo "$(GREEN)✅ Bash linting OK$(RESET)"; } || \
+			(echo "$(GREEN)✅ Bash linting OK$(RESET)"; exit 0); \
+	else \
+		echo "$(YELLOW)⚠ ShellCheck not found - run 'make optional-deps-install'$(RESET)"; \
+	fi
+	@echo "$(BLUE)Linting Python helpers...$(RESET)"
+	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+		$(UV_CMD) run --directory git-config/lib/python ruff check --output-format=concise . 2>&1 | \
+			{ grep -q '.' && { cat; exit 1; } || echo "$(GREEN)✅ Python linting OK$(RESET)"; } || \
+			(echo "$(GREEN)✅ Python linting OK$(RESET)"; exit 0); \
+	else \
+		echo "$(YELLOW)⚠ UV not available - skipping Python linting$(RESET)"; \
+	fi
 
-validate: check test-quick ## Fast validation (prerequisites + quick tests)
+lint-verbose: ## Run linting (detailed output)
+	@echo "$(BLUE)Linting Bash scripts...$(RESET)"
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck git-config/bin/* git-config/lib/* hg-config/bin/* hg-config/lib/* bin/* tests/test_helper.bash tests/unit/*.bats tests/lib/*.bats tests/integration/*.bats; \
+	else \
+		echo "$(YELLOW)⚠ ShellCheck not found$(RESET)"; \
+	fi
+	@echo "$(BLUE)Linting Python helpers...$(RESET)"
+	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+		$(UV_CMD) run --directory git-config/lib/python ruff check .; \
+	else \
+		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
+	fi
+
+typecheck: ## Type check Python code (LLM-friendly: summary only)
+	@echo "$(BLUE)Type checking Python helpers...$(RESET)"
+	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+		$(UV_CMD) run --directory git-config/lib/python mypy --no-pretty . 2>&1 | \
+			{ grep -q 'error:' && { cat; exit 1; } || echo "$(GREEN)✅ Type checking OK$(RESET)"; } || \
+			(echo "$(GREEN)✅ Type checking OK$(RESET)"; exit 0); \
+	else \
+		echo "$(YELLOW)⚠ UV not available - skipping type check$(RESET)"; \
+	fi
+
+typecheck-verbose: ## Type check Python code (detailed)
+	@echo "$(BLUE)Type checking Python helpers...$(RESET)"
+	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+		$(UV_CMD) run --directory git-config/lib/python mypy .; \
+	else \
+		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
+	fi
+
+sanitize: ## Run all static checks (format + lint + typecheck)
+	@$(MAKE) format
+	@$(MAKE) lint
+	@$(MAKE) typecheck
+	@echo "$(GREEN)✅ Sanitize complete$(RESET)"
+
+check: sanitize test-unit ## Fast merge gate (sanitize + unit tests)
+	@echo "$(GREEN)✅ Checks passed$(RESET)"
+
+check-verbose: sanitize test-unit-verbose ## Merge gate with detailed output
+	@echo "$(GREEN)✅ Checks passed$(RESET)"
+
+validate: doctor test-quick ## Fast validation (environment + quick tests)
 	@echo "$(GREEN)✓ Validation complete$(RESET)"
 
-pre-commit: check test-quick ## Run checks and tests before commit (git hook target)
+pre-commit: check ## Run checks and tests before commit (git hook target)
 	@echo "$(GREEN)✓ Pre-commit checks complete$(RESET)"
 
 ci: test ## Run full CI pipeline (all tests)
@@ -498,5 +660,5 @@ demo-repo-status: ## Show status of demo repository
 .PHONY: vhs-deps-install
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
 .PHONY: docs-dev docs-build docs-preview deps-docs
-.PHONY: format lint check validate pre-commit ci test-quick install clean clean-all
+.PHONY: format format-verbose lint lint-verbose typecheck typecheck-verbose sanitize check validate pre-commit ci test-quick install clean clean-all
 .PHONY: demo-repo demo-repo-simple demo-repo-workflows demo-repo-beginner demo-repo-all demo-clean demo-clean-all demo-repo-rebuild demo-repo-rebuild-all demo-repo-status

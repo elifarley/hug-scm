@@ -1,0 +1,16 @@
+# ShellCheck configuration for Hug SCM
+# https://www.shellcheck.net/wiki/
+
+# Source sh files (Bash) - can't follow non-constant/dynamic sources
+disable=SC1090  # Can't follow non-constant source
+disable=SC1091  # Can't follow dynamic source
+
+# Allow common patterns in this codebase
+disable=SC2034  # Variable appears unused (may be used in sourced files)
+disable=SC2086  # Double quote to prevent globbing (intentional in some places)
+
+# Exclude test helper patterns
+disable=SC2155  # Declare and assign separately to avoid masking return values
+
+# Require all variables to be set (strict mode compatibility)
+require-variable-braces=true

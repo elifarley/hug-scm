@@ -47,14 +47,17 @@ jobs:
           hug help
 
       - name: Install test dependencies
-        run: make test-deps-install
-          
-      - name: Install optional dependencies
+        run: make dev-deps-sync
+
+      - name: Install optional dependencies (shfmt, ShellCheck)
         run: make optional-deps-install
 
-      - name: Check test prerequisites
-        run: make test-check optional-deps-check
-          
+      - name: Check environment
+        run: make doctor
+
+      - name: Run static checks
+        run: make sanitize
+
       - name: Run ${{ matrix.test_type }} tests
         run: make test-${{ matrix.test_type }}
 
