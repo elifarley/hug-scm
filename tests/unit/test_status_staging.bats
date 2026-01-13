@@ -94,7 +94,7 @@ teardown() {
   # Should show untracked file
   assert_output --partial "untracked.txt"
   # Should show summary with untracked count
-  assert_output --partial "K1"
+  assert_output --partial "K:1"
 }
 
 @test "hug ss: shows staged changes" {

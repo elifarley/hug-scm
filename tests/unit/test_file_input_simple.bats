@@ -94,7 +94,7 @@ setup() {
   assert_success
   # Check that both files were unstaged (no staged files should be shown)
   run hug sl
-  assert_output --partial "📦 - (Staged)"  # Should show no staged files
+  assert_output --partial "📦 Staged: -"  # Should show no staged files
 }
 
 @test "hug ccp: supports --husk flag" {

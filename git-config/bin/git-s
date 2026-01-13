@@ -93,21 +93,29 @@ fi
 head_colored="${head_color}HEAD${NC}"
 head_emoji="${ball_emoji} ${head_colored}:"
 
+# Helper function to format a section consistently
+# Usage: format_section <emoji> <label> <color> <file_count> <insertions> <deletions>
+format_section() {
+  local emoji="$1"
+  local label="$2"
+  local color="$3"
+  local files="$4"
+  local insertions="$5"
+  local deletions="$6"
+
+  if [[ $files -eq 0 ]]; then
+    echo "${emoji} ${label}: -"
+  else
+    echo "${color}${emoji} ${label}: ${files} files, +${insertions}/-${deletions} lines${NC}"
+  fi
+}
+
 # Build output components
 unstaged_output=""
 staged_output=""
 
-if [[ $unstaged_files -eq 0 ]]; then
-  unstaged_output="📝 - (Unstaged)"
-else
-  unstaged_output="${RED}📝 $unstaged_files files, +$unstaged_insertions/-$unstaged_deletions lines (Unstaged)${NC}"
-fi
-
-if [[ $staged_files -eq 0 ]]; then
-  staged_output="📦 - (Staged)"
-else
-  staged_output="${GREEN}📦 $staged_files files, +$staged_insertions/-$staged_deletions lines (Staged)${NC}"
-fi
+unstaged_output=$(format_section "📝" "Unstaged" "${RED}" "$unstaged_files" "$unstaged_insertions" "$unstaged_deletions")
+staged_output=$(format_section "📦" "Staged" "${GREEN}" "$staged_files" "$staged_insertions" "$staged_deletions")
 
 uncommitted_output=''
 # If no uncommitted changes at all, don't show uncommitted output
@@ -116,7 +124,7 @@ uncommitted_output=''
 untracked_count=$(git ls-files --others --exclude-standard | wc -l)
 ignored_count=$(git ls-files --others --exclude-standard --ignored | wc -l)
 non_tracked_output=''
-((untracked_count + ignored_count)) && non_tracked_output=" │ ${MAGENTA}K$untracked_count$NC ${GREY}I$ignored_count$NC"
+((untracked_count + ignored_count)) && non_tracked_output=" │ ${MAGENTA}K:${untracked_count}$NC ${GREY}I:${ignored_count}$NC"
 
 # Combine and print full status line
 printf '%s %s 🌿%s%s%s\n' "$head_emoji" "$hash_colored" "$status_colored" "$uncommitted_output" "$non_tracked_output" >&2
