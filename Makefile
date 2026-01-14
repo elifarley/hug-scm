@@ -10,12 +10,13 @@ MAKEFLAGS += --warn-undefined-variables
 MAKEFLAGS += --no-builtin-rules
 MAKEFLAGS += --no-print-directory
 
-# UV detection - deferred to runtime for CI compatibility
-# We check at runtime instead of parse time to handle UV installed mid-workflow
+# UV command - required for all Python operations
 UV_CMD := uv
-PYTHON_CMD := $(shell command -v uv >/dev/null 2>&1 && echo "uv run python" || echo "python3")
-PYTEST_CMD := $(shell command -v uv >/dev/null 2>&1 && echo "uv run pytest" || echo "python3 -m pytest")
-PIP_CMD := $(shell command -v uv >/dev/null 2>&1 && echo "uv pip install" || echo "python3 -m pip install")
+
+# Python commands - always use UV (required tool)
+PYTHON_CMD := uv run python
+PYTEST_CMD := uv run pytest
+PIP_CMD := uv pip install
 
 # Terminal detection for colors (matches canonical framework)
 IS_TTY := $(shell test -t 1 && echo 1 || echo 0)
@@ -290,11 +291,12 @@ doctor: ## Check environment and tool readiness
 	@command -v shfmt >/dev/null || printf "$(YELLOW)⚠ shfmt not found (run 'make optional-deps-install')$(RESET)\n"
 	@command -v shellcheck >/dev/null || printf "$(YELLOW)⚠ ShellCheck not found (run 'make optional-deps-install')$(RESET)\n"
 	@echo ""
-	@echo "UV (for Python helpers):"
+	@echo "UV (required for Python operations):"
 	@if command -v uv >/dev/null 2>&1; then \
 		printf "$(GREEN)✅ UV available$(RESET)\n"; \
 	else \
-		printf "$(YELLOW)⚠ UV not found (optional, run 'make python-install-uv')$(RESET)\n"; \
+		printf "$(RED)❌ UV not found (required, run 'make python-install-uv')$(RESET)\n"; \
+		exit 1; \
 	fi
 	@echo ""
 	@echo "Virtual Environment:"
@@ -325,14 +327,13 @@ python-venv-create: ## Create virtual environment using UV (fast) (DEPRECATED: u
 
 dev-env-init: ## Create virtual environment (one-time setup)
 	@echo "$(BLUE)Creating virtual environment...$(RESET)"
-	@if command -v uv >/dev/null 2>&1; then \
-		$(UV) venv .venv; \
-		echo "$(GREEN)✓ Virtual environment created with UV$(RESET)"; \
-	else \
-		echo "$(YELLOW)UV not available, using python3 -m venv...$(RESET)"; \
-		python3 -m venv .venv; \
-		echo "$(GREEN)✓ Virtual environment created with python3$(RESET)"; \
-	fi
+	@command -v uv >/dev/null 2>&1 || { \
+		printf "$(RED)❌ UV is required$(RESET)\n"; \
+		printf "$(CYAN)ℹ️  Install with: make python-install-uv$(RESET)\n"; \
+		exit 1; \
+	}
+	@$(UV_CMD) venv .venv
+	@echo "$(GREEN)✓ Virtual environment created with UV$(RESET)"
 	@echo "$(CYAN)Run 'make test-deps-py-install' to install dependencies$(RESET)"
 
 python-install-uv: ## Install UV package manager
