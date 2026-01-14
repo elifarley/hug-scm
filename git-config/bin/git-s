@@ -76,7 +76,16 @@ if ! git diff --quiet --cached; then
   staged_deletions=$(git diff --cached --numstat | awk '{sum += $2} END {print sum}')
 fi
 
+untracked_count=$(git ls-files --others --exclude-standard | wc -l)
+ignored_count=$(git ls-files --others --exclude-standard --ignored | wc -l)
+
 # Determine HEAD color and ball emoji based on changes
+# ⚫ White HEAD for clean repo
+# ⚪ Grey HEAD for ignored files only
+# 🟣 Magenta HEAD for untracked files only
+# 🟢 Green HEAD for staged changes only
+# 🔴 Red HEAD for unstaged changes only
+# 🟡 Yellow HEAD for mixed staged+unstaged
 if [ "$unstaged_files" -gt 0 ] && [ "$staged_files" -eq 0 ]; then
   head_color="${RED}"
   ball_emoji="🔴"
@@ -86,9 +95,15 @@ elif [ "$staged_files" -gt 0 ] && [ "$unstaged_files" -eq 0 ]; then
 elif [ "$unstaged_files" -gt 0 ] && [ "$staged_files" -gt 0 ]; then
   head_color="${YELLOW}"
   ball_emoji="🟡"
+elif [ "$untracked_count" -gt 0 ]; then
+  head_color="${MAGENTA}"
+  ball_emoji="🟣"
+elif [ "$ignored_count" -gt 0 ]; then
+  head_color="${GREY}"
+  ball_emoji="⚫"
 else
   head_color=""
-  ball_emoji="⚫"
+  ball_emoji="⚪"
 fi
 head_colored="${head_color}HEAD${NC}"
 head_emoji="${ball_emoji} ${head_colored}:"
@@ -121,8 +136,6 @@ uncommitted_output=''
 # If no uncommitted changes at all, don't show uncommitted output
 ((staged_files + unstaged_files)) && uncommitted_output=" │ $staged_output │ $unstaged_output"
 
-untracked_count=$(git ls-files --others --exclude-standard | wc -l)
-ignored_count=$(git ls-files --others --exclude-standard --ignored | wc -l)
 non_tracked_output=''
 ((untracked_count + ignored_count)) && non_tracked_output=" │ ${MAGENTA}K:${untracked_count}$NC ${GREY}I:${ignored_count}$NC"
 
