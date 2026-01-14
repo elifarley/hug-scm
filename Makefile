@@ -508,7 +508,7 @@ format-verbose: ## Format code (show changes)
 	fi
 	@echo "$(BLUE)Formatting Python helpers...$(RESET)"
 	@if command -v uv >/dev/null 2>&1; then \
-		$(UV_CMD) run --directory git-config/lib/python ruff format .; \
+		$(UV_CMD) run --directory git-config/lib/python --extra dev ruff format .; \
 	else \
 		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
 	fi
@@ -524,7 +524,7 @@ lint: ## Run linting checks (LLM-friendly: summary only)
 	fi
 	@echo "$(BLUE)Linting Python helpers...$(RESET)"
 	@if command -v uv >/dev/null 2>&1; then \
-		$(UV_CMD) run --directory git-config/lib/python ruff check --output-format=concise . 2>&1 | \
+		$(UV_CMD) run --directory git-config/lib/python --extra dev ruff check --output-format=concise . 2>&1 | \
 			{ grep -q '.' && { cat; exit 1; } || echo "$(GREEN)✅ Python linting OK$(RESET)"; } || \
 			(echo "$(GREEN)✅ Python linting OK$(RESET)"; exit 0); \
 	else \
@@ -540,7 +540,7 @@ lint-verbose: ## Run linting (detailed output)
 	fi
 	@echo "$(BLUE)Linting Python helpers...$(RESET)"
 	@if command -v uv >/dev/null 2>&1; then \
-		$(UV_CMD) run --directory git-config/lib/python ruff check .; \
+		$(UV_CMD) run --directory git-config/lib/python --extra dev ruff check .; \
 	else \
 		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
 	fi
@@ -548,7 +548,7 @@ lint-verbose: ## Run linting (detailed output)
 typecheck: ## Type check Python code (LLM-friendly: summary only)
 	@echo "$(BLUE)Type checking Python helpers...$(RESET)"
 	@if command -v uv >/dev/null 2>&1; then \
-		output=$$($(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" mypy --no-pretty . 2>&1); \
+		output=$$($(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" --extra dev mypy --no-pretty . 2>&1); \
 		if echo "$$output" | grep -q 'Success: no issues found'; then \
 			echo "$(GREEN)✅ Type checking OK$(RESET)"; \
 		else \
@@ -562,7 +562,7 @@ typecheck: ## Type check Python code (LLM-friendly: summary only)
 typecheck-verbose: ## Type check Python code (detailed)
 	@echo "$(BLUE)Type checking Python helpers...$(RESET)"
 	@if command -v uv >/dev/null 2>&1; then \
-		$(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" mypy .; \
+		$(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" --extra dev mypy .; \
 	else \
 		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
 	fi

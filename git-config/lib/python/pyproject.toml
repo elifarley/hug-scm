@@ -36,6 +36,7 @@ dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-mock>=3.10.0",
+    "ruff>=0.4.0",
 ]
 enhanced = [
     "numpy>=1.20.0",
