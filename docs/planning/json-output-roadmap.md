@@ -307,7 +307,7 @@ UnTrck untracked.txt
 
 **Current Output**:
 ```
-🔴 HEAD: b8527cd 🌿copilot/fix-failing-tests-one-more-time...origin/copilot/fix-failing-tests-one-more-time │ 📝 Unstaged: 4 files, +41/-2 lines │ 📦 Staged: - │ K:6 I:5029
+🔴 HEAD: b8527cd 🌿copilot/fix-failing-tests-one-more-time...origin/copilot/fix-failing-tests-one-more-time │ 📦 Staged: - │ 📝 Unstaged: 4 files, +41/-2 lines │ K:6 I:5029
 ```
 
 **Proposed JSON Format**:

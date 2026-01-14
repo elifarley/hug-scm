@@ -119,7 +119,7 @@ staged_output=$(format_section "📦" "Staged" "${GREEN}" "$staged_files" "$stag
 
 uncommitted_output=''
 # If no uncommitted changes at all, don't show uncommitted output
-((staged_files + unstaged_files)) && uncommitted_output=" │ $unstaged_output │ $staged_output"
+((staged_files + unstaged_files)) && uncommitted_output=" │ $staged_output │ $unstaged_output"
 
 untracked_count=$(git ls-files --others --exclude-standard | wc -l)
 ignored_count=$(git ls-files --others --exclude-standard --ignored | wc -l)
