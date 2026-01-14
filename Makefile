@@ -10,22 +10,12 @@ MAKEFLAGS += --warn-undefined-variables
 MAKEFLAGS += --no-builtin-rules
 MAKEFLAGS += --no-print-directory
 
-# UV detection for fast Python package management
-UV := $(shell command -v uv 2>/dev/null)
-ifeq ($(UV),)
-    UV_AVAILABLE := false
-    UV_CMD := uv
-    PYTHON_CMD := python3
-    PYTEST_CMD := python3 -m pytest
-    PIP_CMD := python3 -m pip install
-    $(warning UV not found - falling back to python3...)
-else
-    UV_AVAILABLE := true
-    UV_CMD := uv
-    PYTHON_CMD := uv run python
-    PYTEST_CMD := uv run pytest
-    PIP_CMD := uv pip install
-endif
+# UV detection - deferred to runtime for CI compatibility
+# We check at runtime instead of parse time to handle UV installed mid-workflow
+UV_CMD := uv
+PYTHON_CMD := $(shell command -v uv >/dev/null 2>&1 && echo "uv run python" || echo "python3")
+PYTEST_CMD := $(shell command -v uv >/dev/null 2>&1 && echo "uv run pytest" || echo "python3 -m pytest")
+PIP_CMD := $(shell command -v uv >/dev/null 2>&1 && echo "uv pip install" || echo "python3 -m pip install")
 
 # Terminal detection for colors (matches canonical framework)
 IS_TTY := $(shell test -t 1 && echo 1 || echo 0)
@@ -236,9 +226,7 @@ test-deps-install: ## Install all test dependencies (BATS + Python)
 	@echo "$(BLUE)Installing BATS dependencies...$(RESET)"
 	./tests/run-tests.sh --install-deps
 	@echo "$(BLUE)Installing Python test dependencies...$(RESET)"
-ifeq ($(UV_AVAILABLE),true)
-	@echo "$(CYAN)Using UV for fast dependency installation...$(RESET)"
-endif
+	@sh -c 'if command -v uv >/dev/null 2>&1; then echo "$(CYAN)Using UV for fast dependency installation...$(RESET)"; fi'
 	@cd git-config/lib/python && $(PIP_CMD) -q -e ".[dev]" || \
 	(echo "$(YELLOW)Warning: Could not install Python dev dependencies. Python tests may not work.$(RESET)")
 	@echo "$(GREEN)All test dependencies installed$(RESET)"
@@ -251,9 +239,7 @@ dev-deps-sync: ## Sync dependencies from lockfiles
 	@echo "$(BLUE)Syncing dependencies...$(RESET)"
 	@test -d .venv || (printf "$(RED)❌ .venv not found$(RESET)\n" && printf "$(BLUE)ℹ️ Run: make dev-env-init$(RESET)\n" && exit 1)
 	@echo "$(BLUE)Installing Python test dependencies...$(RESET)"
-ifeq ($(UV_AVAILABLE),true)
-	@echo "$(CYAN)Using UV for fast dependency installation...$(RESET)"
-endif
+	@sh -c 'if command -v uv >/dev/null 2>&1; then echo "$(CYAN)Using UV for fast dependency installation...$(RESET)"; fi'
 	@cd git-config/lib/python && $(PIP_CMD) -e ".[dev]"
 	@echo "$(GREEN)Python test dependencies installed$(RESET)"
 
@@ -305,7 +291,7 @@ doctor: ## Check environment and tool readiness
 	@command -v shellcheck >/dev/null || printf "$(YELLOW)⚠ ShellCheck not found (run 'make optional-deps-install')$(RESET)\n"
 	@echo ""
 	@echo "UV (for Python helpers):"
-	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+	@if command -v uv >/dev/null 2>&1; then \
 		printf "$(GREEN)✅ UV available$(RESET)\n"; \
 	else \
 		printf "$(YELLOW)⚠ UV not found (optional, run 'make python-install-uv')$(RESET)\n"; \
@@ -339,14 +325,14 @@ python-venv-create: ## Create virtual environment using UV (fast) (DEPRECATED: u
 
 dev-env-init: ## Create virtual environment (one-time setup)
 	@echo "$(BLUE)Creating virtual environment...$(RESET)"
-ifeq ($(UV_AVAILABLE),true)
-	@$(UV) venv .venv
-	@echo "$(GREEN)✓ Virtual environment created with UV$(RESET)"
-else
-	@echo "$(YELLOW)UV not available, using python3 -m venv...$(RESET)"
-	@python3 -m venv .venv
-	@echo "$(GREEN)✓ Virtual environment created with python3$(RESET)"
-endif
+	@if command -v uv >/dev/null 2>&1; then \
+		$(UV) venv .venv; \
+		echo "$(GREEN)✓ Virtual environment created with UV$(RESET)"; \
+	else \
+		echo "$(YELLOW)UV not available, using python3 -m venv...$(RESET)"; \
+		python3 -m venv .venv; \
+		echo "$(GREEN)✓ Virtual environment created with python3$(RESET)"; \
+	fi
 	@echo "$(CYAN)Run 'make test-deps-py-install' to install dependencies$(RESET)"
 
 python-install-uv: ## Install UV package manager
@@ -504,7 +490,7 @@ format: ## Format code (LLM-friendly: summary only)
 		echo "$(YELLOW)⚠ shfmt not found - run 'make optional-deps-install'$(RESET)"; \
 	fi
 	@echo "$(BLUE)Formatting Python helpers...$(RESET)"
-	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+	@if command -v uv >/dev/null 2>&1; then \
 		$(UV_CMD) run --directory git-config/lib/python ruff format --quiet .; \
 		echo "$(GREEN)✅ Python formatting OK$(RESET)"; \
 	else \
@@ -520,7 +506,7 @@ format-verbose: ## Format code (show changes)
 		echo "$(YELLOW)⚠ shfmt not found$(RESET)"; \
 	fi
 	@echo "$(BLUE)Formatting Python helpers...$(RESET)"
-	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+	@if command -v uv >/dev/null 2>&1; then \
 		$(UV_CMD) run --directory git-config/lib/python ruff format .; \
 	else \
 		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
@@ -536,7 +522,7 @@ lint: ## Run linting checks (LLM-friendly: summary only)
 		echo "$(YELLOW)⚠ ShellCheck not found - run 'make optional-deps-install'$(RESET)"; \
 	fi
 	@echo "$(BLUE)Linting Python helpers...$(RESET)"
-	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+	@if command -v uv >/dev/null 2>&1; then \
 		$(UV_CMD) run --directory git-config/lib/python ruff check --output-format=concise . 2>&1 | \
 			{ grep -q '.' && { cat; exit 1; } || echo "$(GREEN)✅ Python linting OK$(RESET)"; } || \
 			(echo "$(GREEN)✅ Python linting OK$(RESET)"; exit 0); \
@@ -552,7 +538,7 @@ lint-verbose: ## Run linting (detailed output)
 		echo "$(YELLOW)⚠ ShellCheck not found$(RESET)"; \
 	fi
 	@echo "$(BLUE)Linting Python helpers...$(RESET)"
-	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+	@if command -v uv >/dev/null 2>&1; then \
 		$(UV_CMD) run --directory git-config/lib/python ruff check .; \
 	else \
 		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
@@ -560,7 +546,7 @@ lint-verbose: ## Run linting (detailed output)
 
 typecheck: ## Type check Python code (LLM-friendly: summary only)
 	@echo "$(BLUE)Type checking Python helpers...$(RESET)"
-	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+	@if command -v uv >/dev/null 2>&1; then \
 		output=$$($(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" mypy --no-pretty . 2>&1); \
 		if echo "$$output" | grep -q 'Success: no issues found'; then \
 			echo "$(GREEN)✅ Type checking OK$(RESET)"; \
@@ -574,7 +560,7 @@ typecheck: ## Type check Python code (LLM-friendly: summary only)
 
 typecheck-verbose: ## Type check Python code (detailed)
 	@echo "$(BLUE)Type checking Python helpers...$(RESET)"
-	@if [ "$(UV_AVAILABLE)" = "true" ]; then \
+	@if command -v uv >/dev/null 2>&1; then \
 		$(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" mypy .; \
 	else \
 		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
