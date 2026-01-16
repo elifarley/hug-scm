@@ -79,13 +79,16 @@ fi
 untracked_count=$(git ls-files --others --exclude-standard | wc -l)
 ignored_count=$(git ls-files --others --exclude-standard --ignored | wc -l)
 
-# Determine HEAD color and ball emoji based on changes
-# ⚫ White HEAD for clean repo
-# ⚪ Grey HEAD for ignored files only
-# 🟣 Magenta HEAD for untracked files only
-# 🟢 Green HEAD for staged changes only
-# 🔴 Red HEAD for unstaged changes only
-# 🟡 Yellow HEAD for mixed staged+unstaged
+# Determine ball emoji color based on precedence:
+# Regardless of untracked and ignored:
+# - 🟡 Yellow: both staged and unstaged files
+# - 🔴 Red: unstaged files only
+# - 🟢 Green: staged files only
+# Regardless of ignored:
+# - 🟣 Magenta: untracked files only
+# Other colors:
+# - ⚫ Black: ignored files only
+# - ⚪ White: clean repo
 if [ "$unstaged_files" -gt 0 ] && [ "$staged_files" -eq 0 ]; then
   head_color="${RED}"
   ball_emoji="🔴"
