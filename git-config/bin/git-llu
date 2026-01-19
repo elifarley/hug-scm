@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug llu: Log commits ahead of upstream (outgoing commits).
+
+USAGE:
+    hug llu [options]
+
+OPTIONS:
+    --json         Output as JSON (machine-readable)
+    --with-stats   Include file change statistics (JSON mode only)
+    --no-body      Omit commit message body (JSON mode only)
+    -h, --help     Show this help
+
+DESCRIPTION:
+    Displays commits on current branch that are ahead of the tracking upstream
+    branch (i.e., commits that would be pushed). Shows detailed formatting with
+    graph, date, author, and message, followed by a repository status summary.
+
+    If there is no upstream branch or no outgoing commits, shows an informative
+    message instead.
+
+EXAMPLES:
+    hug llu                         # Show outgoing commits
+    hug llu --json                  # Output as JSON
+    hug llu --json --with-stats     # JSON with file change stats
+    hug llu --json --no-body        # JSON with subject only (faster)
+
+JSON OUTPUT (GitHub-compatible + Hug enhancements):
+    {
+      "commits": [
+        {
+          "sha": "full_hash",
+          "sha_short": "short_hash",
+          "author": {
+            "name": "...",
+            "email": "...",
+            "date": "ISO8601",
+            "date_relative": "2 hours ago"
+          },
+          "committer": {
+            "name": "...",
+            "email": "...",
+            "date": "ISO8601",
+            "date_relative": "2 hours ago"
+          },
+          "message": "subject\n\nbody",
+          "subject": "subject line",
+          "body": "body text",
+          "tree": {"sha": "tree_hash"},
+          "parents": [{"sha": "parent_hash"}],
+          "refs": ["HEAD", "main"],
+          "stats": {"files_changed": 3, "insertions": 10, "deletions": 5}
+        }
+      ],
+      "summary": {
+        "total_commits": 5,
+        "date_range": {"earliest": "...", "latest": "..."}
+      }
+    }
+
+SEE ALSO:
+    hug ll       : Log commits with detailed formatting
+    hug l        : Simpler one-line log
+    hug lu       : Simpler one-line log of outgoing commits
+    hug la       : Log all branches
+EOF
+}
+
+# Parse flags
+json_output=false
+with_stats=false
+no_body=false
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  --json)
+    json_output=true
+    shift
+    ;;
+  --with-stats)
+    with_stats=true
+    shift
+    ;;
+  --no-body)
+    no_body=true
+    shift
+    ;;
+  *)
+    echo "Unknown option: $1" >&2
+    echo "Use -h or --help for usage information" >&2
+    exit 1
+    ;;
+  esac
+done
+
+check_git_repo
+
+# Check if upstream is configured
+if ! upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null); then
+  if $json_output; then
+    echo '{"commits":[],"summary":{"total_commits":0,"error":"no_upstream"}}'
+  else
+    info "📭 No upstream branch configured for current branch"
+    # Show summary line anyway
+    exec hug s
+  fi
+  exit 0
+fi
+
+# Check if there are any outgoing commits
+commit_count=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "0")
+
+if [ "$commit_count" -eq 0 ]; then
+  if $json_output; then
+    echo '{"commits":[],"summary":{"total_commits":0}}'
+  else
+    info "📭 No outgoing commits (branch is up to date with ${upstream})"
+    # Show summary line anyway
+    exec hug s
+  fi
+  exit 0
+fi
+
+if $json_output; then
+  # JSON output mode - use batched operations for performance
+  # Load batch JSON utilities for optimized performance
+  . "$CMD_BASE/../lib/hug-git-json"
+
+  # Build batch log arguments
+  log_args=()
+  $with_stats && log_args+=("--numstat")
+  $no_body && log_args+=("--no-body")
+
+  # Add the revision range for outgoing commits
+  log_args+=("@{u}..HEAD")
+
+  # Use normal mode (array format) for better compatibility
+  # batch_log_output returns the full JSON from log_json.py which includes commits and summary
+  batch_log_output --max "${commit_count}" "${log_args[@]}"
+
+else
+  # Human-readable output
+  git log --graph --pretty=log1 --date=short @{u}..HEAD
+
+  # Show summary line
+  exec hug s
+fi
