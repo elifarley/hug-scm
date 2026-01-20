@@ -220,8 +220,8 @@
   #sh = log -1 --stat --pretty=logbody --date=human-local
   # Show specific commit (defaults to last) with patch
   #shp = show --pretty=logbody --date=human-local
-  # Show files changed in a commit (usage: hug shc <commit-hash>)
-  shc  = diff-tree --no-commit-id --name-only -r
+  # Show files changed in a commit - now implemented as git-config/bin/git-shc script with file stats
+  #shc  = diff-tree --no-commit-id --name-only -r
   # Show file diff in a commit
   shf = "!f() { \
     test $# -eq 0 -o \"$1\" = '-h' && { \

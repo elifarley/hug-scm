@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-diff; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat << 'EOF'
+hug shc: Show files changed in a specific commit with statistics.
+
+USAGE:
+    hug shc [<commit-ref>] [-h, --help]
+
+ARGUMENTS:
+    <commit-ref>    Commit reference (default: HEAD)
+
+OPTIONS:
+    -h, --help     Show this help
+
+DESCRIPTION:
+    Lists files changed in a commit with addition/deletion counts.
+    Use 'hug sh' for full commit details including message.
+
+EXAMPLES:
+    hug shc                  # Show files changed in last commit
+    hug shc abc123           # Show files changed in specific commit
+    hug shc HEAD~2           # Show files changed two commits ago
+
+SEE ALSO:
+    hug sh       : Show commit info with file stats
+    hug shp      : Show commit with patch
+EOF
+}
+
+# Parse arguments
+case "${1:-}" in
+-h | --help)
+  show_help
+  exit 0
+  ;;
+esac
+
+commit_ref="${1:-HEAD}"
+
+check_git_repo
+
+# Get emoji indicators
+commit_emoji="$(_diff_emoji commit)"
+stats_emoji="$(_diff_emoji stats)"
+
+# Show changed files with stats
+printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji"
+git diff-tree --no-commit-id --stat -r "$commit_ref"
+
+exit 0

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+for f in hug-common hug-git-kit hug-select-files; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
@@ -10,52 +10,59 @@ show_help() {
 hug h squash: Squashes specific commits into 1 with original messages combined.
 
 USAGE:
-    hug h squash [--quiet] [--force] [-i|--initial-message] [-m|--message MSG] [-e|--edit] [target]
+    hug h squash [OPTIONS] [target]
 
-OPTIONS:
-    [target]        Either empty, an integer N > 1, a COMMIT hash, -u/--upstream, or -t/--temporal TIME
-        (empty)         The last 2 commits will be squashed.
-        N               The last N commits will be squashed.
-        COMMIT          All commits above the target commit will be squashed.
-        -u, --upstream  Local-only commits (those above the upstream HEAD - the remote tip) will be squashed after read-only preview/confirmation (no fetch)
-        -t, --temporal TIME
-                        Specify commits by time instead of count/commit
-                        TIME can be relative (e.g., "3 days ago", "1 week ago")
-                        or absolute (e.g., "2024-01-15", "2024-01-15 10:30")
-                        Reference point is HEAD's commit time
+TARGET:
+    (empty)         Squash the last 2 commits (default)
+    N               Squash the last N commits
+    COMMIT          Squash all commits above the target commit
+    -u, --upstream  Squash local-only commits (above upstream HEAD)
+    -t, --temporal TIME
+                    Squash commits from TIME to HEAD
+                    TIME: relative ("3 days ago") or absolute ("2024-01-15")
+
+MESSAGE OPTIONS:
     -i, --initial-message
-                    Use first (oldest) squashed commit's full message (subject + body + footers) instead of concatenating all commit messages
+                    Use first (oldest) squashed commit's full message
     -m, --message MSG
-                    Use provided message directly (conflicts with -e and -i)
-    -e, --edit      Open editor to edit commit message (pre-populated with initial message if -i is used)
+                    Use provided message directly
+    -e, --edit      Open editor to edit commit message
+
+BEHAVIOR FLAGS:
     --quiet         Suppress output
     --force         Skip confirmation prompts (use with caution)
 
+SCRIPTING FLAGS:
+    --abort-if-staged
+                    Abort immediately if staged changes exist, avoiding
+                    interactive prompts. Use in scripts when you want to
+                    squash commits without accidentally including staged work.
+                    Exits with code 1, showing the staged files.
+
 DESCRIPTION:
-    Without [target], defaults to squashing the last 2 commits into 1 (intuitive for combining recent work
-    from the *last commit* with the *previous commit*).
-    HEAD goes back to target (like 'h back'), then commits changes from the target commits using the original HEAD's message.
-    Non-destructive to uncommitted work.
-    Pre-existing staged changes will be included - review with $(hug ss) first.
-    With -t/--temporal, squashes commits from the first commit at or after the specified time to HEAD.
+    Squashes commits into one, combining their changes. HEAD goes back to target
+    (like 'h back'), then commits all changes using the specified message strategy.
+
+    Pre-existing staged changes are included in the squash. Use --abort-if-staged
+    in scripts to prevent this, or review with 'hug ss' interactively.
 
 EXAMPLES:
-    hug h squash                       # Squash last 2 commits into 1 (concatenated messages)
-    hug h squash 3                     # Squash last 3 commits into 1
-    hug h squash 3 -i                  # Squash with first (oldest) squashed commit's full message
-    hug h squash 3 -m "feat: xyz"      # Squash with custom message
-    hug h squash 3 -e                  # Squash and open editor for message
-    hug h squash 3 -i -e               # Edit initial commit message in editor
-    hug h squash a1b2c3                # Keep a1b2c3 unchanged; Squash all commits above it into 1
-    hug h squash -u                    # Keep upstream tip unchanged; Squash local-only commits on top
-    hug h squash 3 --force             # Skip confirmation
-    hug h squash -t "3 days ago"       # Squash commits from 3 days ago to HEAD
-    hug h squash -t "1 week ago" -i    # Squash commits from 1 week ago with initial commit message
+    hug h squash                       # Squash last 2 commits
+    hug h squash 3                     # Squash last 3 commits
+    hug h squash 3 -i                  # Use first commit's message
+    hug h squash 3 -m "feat: xyz"      # Use custom message
+    hug h squash 3 -e                  # Edit message in editor
+    hug h squash a1b2c3                # Squash commits above a1b2c3
+    hug h squash -u                    # Squash local-only commits
+    hug h squash -t "3 days ago"       # Squash commits from 3 days ago
+    hug h squash 3 --abort-if-staged   # Abort if staged changes (scripting)
 
 SEE ALSO:
     hug h back    HEAD goes back only (no auto-commit)
     hug c         commit staged changes
     hug cm        amend last commit message
+    hug ss        show staged changes (diff)
+    hug sl        list staged and unstaged files
 EOF
 }
 
@@ -70,6 +77,7 @@ upstream=false
 use_initial_message=false
 custom_message=""
 open_editor=false
+abort_if_staged=false
 target_arg=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -92,6 +100,10 @@ while [[ $# -gt 0 ]]; do
     open_editor=true
     shift
     ;;
+  --abort-if-staged)
+    abort_if_staged=true
+    shift
+    ;;
   *)
     target_arg="$1"
     shift
@@ -108,6 +120,16 @@ fi
 
 if [[ -n "$custom_message" && "$use_initial_message" == true ]]; then
   error "Cannot use -m/--message and -i/--initial-message together (conflicting options)"
+fi
+
+# Scripting flag: early abort if staged changes exist
+if $abort_if_staged && has_staged_changes; then
+  printf '🚫 Aborting: staged changes detected (--abort-if-staged)\n' >&2
+  printf '\n📦 Staged files:\n' >&2
+  list_files_with_status --staged >&2 2> /dev/null || true
+  printf '\n' >&2
+  hug s >&2
+  exit 1
 fi
 
 # Capture original HEAD message BEFORE any reset
@@ -163,6 +185,15 @@ else
   fi
 
   if $should_prompt; then
+    # Show staged files info when prompting
+    printf '\n📦 Pre-existing staged files (will be included in squash):\n' >&2
+    list_files_with_status --staged >&2 2> /dev/null || true
+    printf '\n' >&2
+    hug s >&2
+    printf '\n' >&2
+    warn "These staged files will become part of the squashed commit together with the changes from the commits being squashed."
+    printf '\n' >&2
+
     if [[ -z "${target_arg:-}" || "${target_arg:-}" =~ ^[0-9]+$ ]]; then
       prompt_confirm_warn "Proceed with squash of last $commits_to_squash $commit_word (hug back + hug c)? [y/N]: "
     else
