@@ -58,3 +58,4 @@ npm-debug.log*
 /.claude/settings.local.json
 /.hitm/received.txt
 /.hitm/send.txt
+/.claude/agent-responses/
