@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for hug sh and hug shp commands
+# Tests for hug sh, shp, shc, and shcp commands
 
 # Load test helpers
 load '../test_helper'
@@ -262,4 +262,63 @@ teardown() {
   assert_success
   assert_output --partial "USAGE:"
   assert_output --partial "Show files changed"
+}
+
+# -----------------------------------------------------------------------------
+# hug shcp tests (show cumulative diff with stats)
+# -----------------------------------------------------------------------------
+
+@test "hug shcp: shows diff and stats for last commit" {
+  run hug shcp
+  assert_success
+  # Should show diff section
+  assert_output --partial "📄"
+  assert_output --partial "🔀"
+  assert_output --partial "Diff for HEAD:"
+  # Should show actual diff content
+  assert_output --partial "diff --git"
+  # Should show stats section
+  assert_output --partial "📊"
+  assert_output --partial "File stats:"
+}
+
+@test "hug shcp: numeric shorthand shows cumulative diff in last N commits" {
+  # hug shcp 2 should show cumulative diff in HEAD~2..HEAD
+  run hug shcp 2
+  assert_success
+  assert_output --partial "Cumulative diff for range HEAD~2..HEAD"
+  assert_output --partial "diff --git"
+  assert_output --partial "Cumulative file stats:"
+}
+
+@test "hug shcp: handles explicit range" {
+  run hug shcp HEAD~1..HEAD
+  assert_success
+  assert_output --partial "Cumulative diff for range HEAD~1..HEAD"
+  assert_output --partial "diff --git"
+  assert_output --partial "Cumulative file stats:"
+}
+
+@test "hug shcp: shows help with -h" {
+  run hug shcp -h
+  assert_success
+  assert_output --partial "USAGE:"
+  assert_output --partial "Show cumulative diff and file statistics"
+}
+
+@test "hug shcp: handles non-existent commit gracefully" {
+  run hug shcp nonexistent123abc
+  # git will error on invalid commit
+  assert_failure
+}
+
+@test "hug shcp: shows full diff content with additions and deletions" {
+  run hug shcp
+  assert_success
+  # Should show diff markers
+  assert_output --partial "---"
+  assert_output --partial "+++"
+  # Should show file stats summary
+  assert_output --partial "file"
+  assert_output --partial "changed"
 }

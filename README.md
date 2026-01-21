@@ -529,6 +529,7 @@ hug sla               # Status: List All (Full status with untracked files)
 hug sh [commit]       # SHow [commit] (with stat; default: last)
 hug shp [commit]      # SHow: with Patch (commit with patch)
 hug shc [N|commit|range] # SHow: Changed files (cumulative stats for N commits, commit, or range)
+hug shcp [N|commit|range] # SHow: Cumulative with Patch (diff + stats for N commits, commit, or range)
 hug shf <file> [commit] # SHow: File at [commit] (File diff in commit)
 ```
 

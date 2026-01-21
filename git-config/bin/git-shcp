@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-diff; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat << 'EOF'
+hug shcp: Show cumulative diff and file statistics for a commit or range.
+
+USAGE:
+    hug shcp [N|<commit-ref>|<range>] [OPTIONS]
+
+ARGUMENTS:
+    N               Number of commits from HEAD (1-999) → shows cumulative changes
+    <commit-ref>    Single commit reference (default: HEAD)
+    <range>         Commit range like HEAD~3..HEAD or main..feature
+
+OPTIONS:
+    -h, --help      Show this help
+
+DESCRIPTION:
+    Shows the full diff (patch) and file statistics for commits.
+    Accepts a commit count, single commit, or commit range.
+
+    For N (1-999), shows cumulative diff in last N commits.
+    For single commits, shows diff for that commit.
+    For ranges, shows cumulative diff across all commits in the range.
+
+    Use 'hug shc' for stats only (no diff).
+
+RANGE SYNTAX:
+    N                 Last N commits (shorthand for HEAD~N..HEAD)
+    <start>..<end>    Changes from start (exclusive) to end (inclusive)
+    main..feature     Commits in feature not in main
+
+USE CASES FOR RANGES:
+    Pre-squash review    See complete diff before squashing commits
+    Branch comparison    Review all code changes between branches
+    Release review       Full code audit for a release range
+    Code review prep     Complete diff of multiple commits
+
+EXAMPLES:
+    hug shcp                  # Diff and stats for last commit
+    hug shcp 3                # Cumulative diff in last 3 commits
+    hug shcp abc123           # Diff for specific commit
+    hug shcp HEAD~2           # Diff for commit two steps back
+    hug shcp HEAD~3..HEAD     # Cumulative diff in last 3 commits (explicit)
+    hug shcp main..feature    # All changes in feature branch vs main
+    hug shcp v1.0.0..v1.1.0   # Diff between two tags
+
+SEE ALSO:
+    hug shc      : Show changed files (stats only, no diff)
+    hug sh       : Show commit info with file stats
+    hug shp      : Show single commit with patch
+EOF
+}
+
+# Parse arguments
+case "${1:-}" in
+-h | --help)
+  show_help
+  exit 0
+  ;;
+esac
+
+commit_ref="${1:-HEAD}"
+
+check_git_repo
+
+# Resolve N (1-999) to range HEAD~N..HEAD, pass through other refs/ranges
+commit_ref=$(resolve_head_target_as_range "$commit_ref" "HEAD")
+
+# Get emoji indicators
+commit_emoji="$(_diff_emoji commit)"
+diff_emoji="$(_diff_emoji diff)"
+stats_emoji="$(_diff_emoji stats)"
+
+# Show diff and stats
+# Detect if argument is a range (contains ..) or a single commit
+if [[ "$commit_ref" == *..* ]]; then
+  # Range: use git diff
+  printf '%s %s Cumulative diff for range %s:\n' "$commit_emoji" "$diff_emoji" "$commit_ref"
+  git diff "$commit_ref"
+
+  printf '\n%s %s Cumulative file stats:\n' "$commit_emoji" "$stats_emoji"
+  git diff --stat "$commit_ref"
+else
+  # Single commit: use git diff-tree
+  printf '%s %s Diff for %s:\n' "$commit_emoji" "$diff_emoji" "$commit_ref"
+  git diff-tree -p --no-commit-id -r "$commit_ref"
+
+  printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji"
+  git diff-tree --no-commit-id --stat -r "$commit_ref"
+fi
+
+exit 0
