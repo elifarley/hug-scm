@@ -8,50 +8,97 @@ set -euo pipefail
 
 show_help() {
   cat << 'EOF'
-hug shc: Show files changed in a specific commit with statistics.
+hug shc: Show files changed in a commit or range with statistics.
 
 USAGE:
-    hug shc [<commit-ref>] [-h, --help]
+    hug shc [N|<commit-ref>|<range>] [OPTIONS]
 
 ARGUMENTS:
-    <commit-ref>    Commit reference (default: HEAD)
+    N               Number of commits from HEAD (1-999) → shows cumulative changes
+    <commit-ref>    Single commit reference (default: HEAD)
+    <range>         Commit range like HEAD~3..HEAD or main..feature
 
 OPTIONS:
-    -h, --help     Show this help
+    -q, --quiet     Suppress header line (also honors HUG_QUIET env var)
+    -h, --help      Show this help
 
 DESCRIPTION:
-    Lists files changed in a commit with addition/deletion counts.
+    Lists files changed with addition/deletion counts.
+    Accepts a commit count, single commit, or commit range.
+
+    For N (1-999), shows cumulative file changes in last N commits.
+    For single commits, shows files changed in that commit.
+    For ranges, shows cumulative file changes across all commits in the range.
+
     Use 'hug sh' for full commit details including message.
 
+RANGE SYNTAX:
+    N                 Last N commits (shorthand for HEAD~N..HEAD)
+    <start>..<end>    Changes from start (exclusive) to end (inclusive)
+    main..feature     Commits in feature not in main
+
+USE CASES FOR RANGES:
+    Pre-squash review    See cumulative impact before squashing commits
+    Branch comparison    Compare total changes between branches
+    Release review       Audit all changes in a release range
+    Code review prep     Understand scope of multiple commits
+
 EXAMPLES:
-    hug shc                  # Show files changed in last commit
-    hug shc abc123           # Show files changed in specific commit
-    hug shc HEAD~2           # Show files changed two commits ago
+    hug shc                  # Files changed in last commit
+    hug shc 3                # Cumulative changes in last 3 commits
+    hug shc abc123           # Files changed in specific commit
+    hug shc HEAD~2           # Files changed two commits ago
+    hug shc HEAD~3..HEAD     # Cumulative changes in last 3 commits (explicit)
+    hug shc main..feature    # All changes in feature branch vs main
+    hug shc v1.0.0..v1.1.0   # Changes between two tags
 
 SEE ALSO:
     hug sh       : Show commit info with file stats
     hug shp      : Show commit with patch
+    hug h files  : Preview files touched in commit range
+    hug h squash : Squash commits (uses shc for preview)
 EOF
 }
 
-# Parse arguments
-case "${1:-}" in
--h | --help)
-  show_help
-  exit 0
-  ;;
-esac
+# Parse common flags (-q/--quiet, -h/--help)
+eval "$(parse_common_flags "$@")"
 
-commit_ref="${1:-HEAD}"
+# Parse remaining arguments
+commit_ref=""
+for arg in "$@"; do
+  case "$arg" in
+  -h | --help | -q | --quiet) ;;  # Already handled by parse_common_flags
+  *)
+    commit_ref="$arg"
+    ;;
+  esac
+done
+
+commit_ref="${commit_ref:-HEAD}"
 
 check_git_repo
 
-# Get emoji indicators
-commit_emoji="$(_diff_emoji commit)"
-stats_emoji="$(_diff_emoji stats)"
+# Resolve N (1-999) to range HEAD~N..HEAD, pass through other refs/ranges
+commit_ref=$(resolve_head_target_as_range "$commit_ref" "HEAD")
 
 # Show changed files with stats
-printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji"
-git diff-tree --no-commit-id --stat -r "$commit_ref"
+# Detect if argument is a range (contains ..) or a single commit
+if [[ "$commit_ref" == *..* ]]; then
+  # Range: use git diff --stat
+  if [[ ${HUG_QUIET:-} != T ]]; then
+    commit_emoji="$(_diff_emoji commit)"
+    stats_emoji="$(_diff_emoji stats)"
+    printf '%s %s Changed files in range %s:\n' "$commit_emoji" "$stats_emoji" "$commit_ref"
+  fi
+  git diff --stat "$commit_ref"
+else
+  # Single commit: use git diff-tree
+  if [[ ${HUG_QUIET:-} != T ]]; then
+    commit_emoji="$(_diff_emoji commit)"
+    stats_emoji="$(_diff_emoji stats)"
+    printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji"
+  fi
+  git diff-tree --no-commit-id --stat -r "$commit_ref"
+fi
 
 exit 0

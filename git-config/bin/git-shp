@@ -11,9 +11,10 @@ show_help() {
 hug shp: Show specific commit with patch and file statistics.
 
 USAGE:
-    hug shp [<commit-ref>] [-h, --help]
+    hug shp [N|<commit-ref>] [-h, --help]
 
 ARGUMENTS:
+    N               Steps back from HEAD (1-999) → shows commit at HEAD~N
     <commit-ref>    Commit reference (default: HEAD)
 
 OPTIONS:
@@ -26,11 +27,13 @@ DESCRIPTION:
 
 EXAMPLES:
     hug shp                  # Show last commit with patch
+    hug shp 2                # Show commit two steps back (HEAD~2)
     hug shp abc123           # Show specific commit with patch
-    hug shp HEAD~2           # Show two commits ago with patch
+    hug shp HEAD~2           # Show two commits ago with patch (explicit)
 
 SEE ALSO:
     hug sh       : Show commit with stats (no patch)
+    hug shc      : Show changed files (stats only)
     hug sl       : Show status
 EOF
 }
@@ -43,9 +46,12 @@ case "${1:-}" in
   ;;
 esac
 
-commit_ref="${1:-HEAD}"
+commit_ref="${1:-}"
 
 check_git_repo
+
+# Resolve N (1-999) to HEAD~N, or use default HEAD
+commit_ref=$(resolve_head_target "$commit_ref" "HEAD")
 
 # Get emoji indicators
 commit_emoji="$(_diff_emoji commit)"

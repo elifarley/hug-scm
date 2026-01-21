@@ -213,3 +213,53 @@ teardown() {
   assert_output --partial "Merge feature 2"
   assert_output --partial "Commit diff:"
 }
+
+# -----------------------------------------------------------------------------
+# Numeric shorthand tests (N → HEAD~N convention)
+# -----------------------------------------------------------------------------
+
+@test "hug sh: numeric shorthand shows commit N steps back" {
+  # hug sh 1 should show HEAD~1 (Add feature 1)
+  run hug sh 1
+  assert_success
+  assert_output --partial "Add feature 1"
+}
+
+@test "hug shp: numeric shorthand shows commit N steps back with patch" {
+  # hug shp 1 should show HEAD~1 (Add feature 1) with patch
+  run hug shp 1
+  assert_success
+  assert_output --partial "Add feature 1"
+  assert_output --partial "diff --git"
+}
+
+# -----------------------------------------------------------------------------
+# hug shc tests (show changed files with stats)
+# -----------------------------------------------------------------------------
+
+@test "hug shc: shows changed files in last commit" {
+  run hug shc
+  assert_success
+  assert_output --partial "file"
+  assert_output --partial "changed"
+}
+
+@test "hug shc: numeric shorthand shows cumulative changes in last N commits" {
+  # hug shc 2 should show cumulative changes in HEAD~2..HEAD
+  run hug shc 2
+  assert_success
+  assert_output --partial "Changed files in range HEAD~2..HEAD"
+}
+
+@test "hug shc: handles explicit range" {
+  run hug shc HEAD~1..HEAD
+  assert_success
+  assert_output --partial "Changed files in range HEAD~1..HEAD"
+}
+
+@test "hug shc: shows help with -h" {
+  run hug shc -h
+  assert_success
+  assert_output --partial "USAGE:"
+  assert_output --partial "Show files changed"
+}

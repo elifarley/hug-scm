@@ -29,8 +29,8 @@ MESSAGE OPTIONS:
     -e, --edit      Open editor to edit commit message
 
 BEHAVIOR FLAGS:
-    --quiet         Suppress output
-    --force         Skip confirmation prompts (use with caution)
+    -q, --quiet     Suppress output
+    -f, --force     Skip confirmation prompts (use with caution)
 
 SCRIPTING FLAGS:
     --abort-if-staged
@@ -170,10 +170,9 @@ else
   if [[ ${HUG_QUIET:-} != T ]]; then
     printf 'Commits to be squashed:\n' >&2
     print_commit_list_in_range "$target_commit" HEAD >&2
-    printf '\nPreview: changes in %d %s.\n' \
-      "$commits_to_squash" "$commit_word" >&2
+    printf '\n' >&2
 
-    git diff --stat "$log_range" >&2
+    git shc "$log_range" >&2
   fi
 
   should_prompt=true

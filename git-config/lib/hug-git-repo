@@ -198,6 +198,35 @@ resolve_head_target() {
     fi
 }
 
+# Resolves a HEAD target as a range (for cumulative operations like stats)
+# Usage: range=$(resolve_head_target_as_range "arg" ["default"])
+# Parameters:
+#   $1 - User argument (empty, number 1-999, or commit range/reference)
+#   $2 - (Optional) Default target if arg is empty, defaults to "HEAD"
+# Output:
+#   Resolved range to stdout
+# Notes:
+#   - N (1-999) converts to range HEAD~N..HEAD (cumulative last N commits)
+#   - Existing ranges (containing ..) pass through unchanged
+#   - Single commits pass through unchanged
+# Examples:
+#   resolve_head_target_as_range "" -> "HEAD" (single commit)
+#   resolve_head_target_as_range "3" -> "HEAD~3..HEAD"
+#   resolve_head_target_as_range "abc123" -> "abc123"
+#   resolve_head_target_as_range "main..HEAD" -> "main..HEAD"
+resolve_head_target_as_range() {
+    local arg="${1:-}"
+    local default_target="${2:-HEAD}"
+
+    if [[ -z "$arg" ]]; then
+        printf '%s\n' "$default_target"
+    elif [[ "$arg" =~ ^[1-9][0-9]{0,2}$ ]]; then
+        printf 'HEAD~%s..HEAD\n' "$arg"
+    else
+        printf '%s\n' "$arg"
+    fi
+}
+
 ################################################################################
 # Commit History Navigation Functions
 ################################################################################

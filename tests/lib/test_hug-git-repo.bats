@@ -98,3 +98,44 @@ teardown() {
   assert_success
   assert_output "HEAD~5"
 }
+
+################################################################################
+# resolve_head_target_as_range TESTS
+################################################################################
+
+@test "resolve_head_target_as_range: returns default for empty arg" {
+  run resolve_head_target_as_range ""
+  assert_success
+  assert_output "HEAD"
+}
+
+@test "resolve_head_target_as_range: returns HEAD~N..HEAD for number" {
+  run resolve_head_target_as_range "3"
+  assert_success
+  assert_output "HEAD~3..HEAD"
+}
+
+@test "resolve_head_target_as_range: returns argument for commit hash" {
+  run resolve_head_target_as_range "abc123"
+  assert_success
+  assert_output "abc123"
+}
+
+@test "resolve_head_target_as_range: passes through existing range" {
+  run resolve_head_target_as_range "main..feature"
+  assert_success
+  assert_output "main..feature"
+}
+
+@test "resolve_head_target_as_range: uses custom default" {
+  run resolve_head_target_as_range "" "HEAD~1"
+  assert_success
+  assert_output "HEAD~1"
+}
+
+@test "resolve_head_target_as_range: handles large numbers as commit hashes" {
+  # Numbers >= 1000 should pass through as potential short hashes
+  run resolve_head_target_as_range "1234"
+  assert_success
+  assert_output "1234"
+}

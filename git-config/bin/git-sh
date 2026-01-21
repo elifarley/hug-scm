@@ -11,13 +11,15 @@ show_help() {
 hug sh: Show specific commit with file statistics.
 
 USAGE:
-    hug sh [<commit-ref>] [-h, --help]
+    hug sh [N|<commit-ref>] [OPTIONS]
 
 ARGUMENTS:
+    N               Steps back from HEAD (1-999) → shows commit at HEAD~N
     <commit-ref>    Commit reference (default: HEAD)
 
 OPTIONS:
-    -h, --help     Show this help
+    -q, --quiet     Suppress headers (also honors HUG_QUIET env var)
+    -h, --help      Show this help
 
 DESCRIPTION:
     Shows commit details with file statistics.
@@ -26,42 +28,55 @@ DESCRIPTION:
 
 EXAMPLES:
     hug sh                  # Show last commit
+    hug sh 2                # Show commit two steps back (HEAD~2)
     hug sh abc123           # Show specific commit
-    hug sh HEAD~2           # Show two commits ago
+    hug sh HEAD~2           # Show two commits ago (explicit)
 
 SEE ALSO:
     hug shp      : Show commit with patch
+    hug shc      : Show changed files (stats only)
     hug sl       : Show status
 EOF
 }
 
-# Parse arguments
-case "${1:-}" in
--h | --help)
-  show_help
-  exit 0
-  ;;
-esac
+# Parse common flags (-q/--quiet, -h/--help)
+eval "$(parse_common_flags "$@")"
 
-commit_ref="${1:-HEAD}"
+# Parse remaining arguments
+commit_ref=""
+for arg in "$@"; do
+  case "$arg" in
+  -h | --help | -q | --quiet) ;;  # Already handled by parse_common_flags
+  *)
+    commit_ref="$arg"
+    ;;
+  esac
+done
 
 check_git_repo
+
+# Resolve N (1-999) to HEAD~N, or use default HEAD
+commit_ref=$(resolve_head_target "$commit_ref" "HEAD")
 
 # Get emoji indicators
 commit_emoji="$(_diff_emoji commit)"
 info_emoji="$(_diff_emoji info)"
 stats_emoji="$(_diff_emoji stats)"
 
-# Print heading
-printf '%s %s Commit info:\n' "$commit_emoji" "$info_emoji"
+# Print commit info heading
+if [[ ${HUG_QUIET:-} != T ]]; then
+  printf '%s %s Commit info:\n' "$commit_emoji" "$info_emoji"
+fi
 
 # Show commit info without stats
 git log -1 --pretty=logbody --date=human-local "$commit_ref"
 
 # Show file stats heading
-printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji"
+if [[ ${HUG_QUIET:-} != T ]]; then
+  printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji"
+fi
 
-# Show the file stats
-git log -1 --stat --pretty=format:"" "$commit_ref"
+# Show file stats via git-shc (DRY)
+HUG_QUIET=T git shc "$commit_ref"
 
 exit 0
