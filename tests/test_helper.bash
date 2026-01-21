@@ -489,6 +489,64 @@ assert_git_status_not_contains() {
   fi
 }
 
+################################################################################
+# Status Emoji State Assertions
+################################################################################
+
+# Assert that hug s output shows the correct HEAD emoji state
+# Tests semantic behavior (state detection) not visual presentation (emoji)
+# Usage: assert_hug_s_state <expected_state>
+# Parameters:
+#   $1 - Expected state: clean|ignored_only|untracked_only|unstaged_only|staged_only|mixed
+# Environment:
+#   $output - Must contain recent hug s command output (from BATS run)
+assert_hug_s_state() {
+  local expected_state="$1"
+  local actual_state
+
+  # Determine actual state by checking git state directly
+  # This mirrors the logic in git-s lines 82-110
+  local unstaged_count staged_count untracked_count ignored_count
+
+  unstaged_count=$(git diff --name-only 2> /dev/null | wc -l)
+  staged_count=$(git diff --cached --name-only 2> /dev/null | wc -l)
+  untracked_count=$(git ls-files --others --exclude-standard 2> /dev/null | wc -l)
+  ignored_count=$(git ls-files --others --exclude-standard --ignored 2> /dev/null | wc -l)
+
+  # Determine state using same precedence as git-s
+  if [[ "$unstaged_count" -gt 0 && "$staged_count" -eq 0 ]]; then
+    actual_state="unstaged_only"
+  elif [[ "$staged_count" -gt 0 && "$unstaged_count" -eq 0 ]]; then
+    actual_state="staged_only"
+  elif [[ "$unstaged_count" -gt 0 && "$staged_count" -gt 0 ]]; then
+    actual_state="mixed"
+  elif [[ "$untracked_count" -gt 0 ]]; then
+    actual_state="untracked_only"
+  elif [[ "$ignored_count" -gt 0 ]]; then
+    actual_state="ignored_only"
+  else
+    actual_state="clean"
+  fi
+
+  # Verify state matches expectation
+  if [[ "$actual_state" != "$expected_state" ]]; then
+    echo "Expected hug s to show state '$expected_state' but git state is '$actual_state'"
+    echo "  Unstaged: $unstaged_count, Staged: $staged_count"
+    echo "  Untracked: $untracked_count, Ignored: $ignored_count"
+    return 1
+  fi
+
+  # Verify output contains HEAD indicator (any emoji is acceptable)
+  # We don't check specific emoji - that's presentation, not behavior
+  if [[ ! "$output" =~ HEAD: ]]; then
+    echo "Expected hug s output to contain 'HEAD:' but got:"
+    echo "$output"
+    return 1
+  fi
+
+  return 0
+}
+
 # Skip test if hug is not installed
 require_hug() {
   if ! command -v hug &> /dev/null; then

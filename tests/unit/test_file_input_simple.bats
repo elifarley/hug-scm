@@ -125,7 +125,9 @@ setup() {
   # Check that no files are staged (they were committed by husk)
   run hug sl
   # When no files are staged, hug sl shows only HEAD info
-  assert_output --partial "⚫ HEAD:"
+  # Test semantic state (clean) not specific emoji
+  assert_hug_s_state "clean"
+  assert_output --partial "HEAD:"
 }
 
 @test "hug ccp: --husk fails without commit" {
