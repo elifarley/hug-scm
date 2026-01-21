@@ -106,7 +106,7 @@ done
 check_git_repo
 
 # Check if upstream is configured
-if ! upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null); then
+if ! upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2> /dev/null); then
   if $json_output; then
     echo '{"commits":[],"summary":{"total_commits":0,"error":"no_upstream"}}'
   else
@@ -118,7 +118,7 @@ if ! upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/nu
 fi
 
 # Check if there are any outgoing commits
-commit_count=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "0")
+commit_count=$(git rev-list --count @{u}..HEAD 2> /dev/null || echo "0")
 
 if [ "$commit_count" -eq 0 ]; then
   if $json_output; then

@@ -46,7 +46,7 @@ eval "$(parse_common_flags "$@")"
 commit_ref=""
 for arg in "$@"; do
   case "$arg" in
-  -h | --help | -q | --quiet) ;;  # Already handled by parse_common_flags
+  -h | --help | -q | --quiet) ;; # Already handled by parse_common_flags
   *)
     commit_ref="$arg"
     ;;
