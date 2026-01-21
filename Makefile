@@ -18,21 +18,13 @@ PYTHON_CMD := uv run python
 PYTEST_CMD := uv run pytest
 PIP_CMD := uv pip install
 
-# Terminal detection for colors (matches canonical framework)
-IS_TTY := $(shell test -t 1 && echo 1 || echo 0)
+# Terminal color support detection (tput works in $(shell) context)
+TERM_COLOR := $(shell tput colors 2>/dev/null)
 
 # Python library directory (absolute path for CI reliability)
 PYTHON_LIB_DIR := $(realpath git-config/lib/python)
 
-ifeq ($(IS_TTY),1)
-    BOLD := \033[1m
-    RESET := \033[0m
-    GREEN := \033[32m
-    YELLOW := \033[33m
-    BLUE := \033[34m
-    CYAN := \033[36m
-    RED := \033[31m
-else
+ifeq ($(TERM_COLOR),0)
     BOLD :=
     RESET :=
     GREEN :=
@@ -40,6 +32,14 @@ else
     BLUE :=
     CYAN :=
     RED :=
+else
+    BOLD := \033[1m
+    RESET := \033[0m
+    GREEN := \033[32m
+    YELLOW := \033[33m
+    BLUE := \033[34m
+    CYAN := \033[36m
+    RED := \033[31m
 endif
 
 # Test customization variables (optional)
@@ -108,7 +108,12 @@ help: ## Show this help message
 test-lump: test-lib-py test-bash  ## Run all tests (BATS + pytest)
 	@echo "$(GREEN)All tests completed!$(RESET)"
 
-test: test-check test-lib-py test-lib test-unit test-integration ## Run all tests by category (fastest first)
+test: ## Run all tests by category (fastest first)
+	@$(MAKE) test-check
+	@$(MAKE) test-lib-py
+	@$(MAKE) test-lib
+	@$(MAKE) test-unit
+	@$(MAKE) test-integration
 	@echo "$(GREEN)All tests completed!$(RESET)"
 
 test-bash: ## Run all BATS-based tests (or specific: TEST_FILE=... TEST_FILTER=... TEST_SHOW_ALL_RESULTS=1)
@@ -220,7 +225,10 @@ test-integration-verbose: ## Run integration tests (detailed output)
 	@$(MAKE) test-integration TEST_SHOW_ALL_RESULTS=1
 
 test-verbose: ## Run all tests (detailed output)
-	@$(MAKE) test TEST_SHOW_ALL_RESULTS=1
+	@$(MAKE) test-unit-verbose
+	@$(MAKE) test-integration-verbose
+	@$(MAKE) test-lib-py-verbose
+	@$(MAKE) test-lib TEST_SHOW_ALL_RESULTS=1
 
 test-deps-install: ## Install all test dependencies (BATS + Python)
 	@echo "$(BLUE)Installing test dependencies...$(RESET)"
@@ -578,19 +586,38 @@ sanitize: ## Run all static checks (format + lint + typecheck)
 	@$(MAKE) typecheck
 	@echo "$(GREEN)✅ Sanitize complete$(RESET)"
 
-check: sanitize test-check test-lib-py test-lib ## Fast merge gate (sanitize + some tests)
+check: ## Fast merge gate (sanitize + some tests)
+	@$(MAKE) sanitize
+	@$(MAKE) test-check
+	@$(MAKE) test-lib-py
+	@$(MAKE) test-lib
 	@echo "$(GREEN)✅ Checks passed$(RESET)"
 
-pre-commit: check ## Run checks and tests before commit (git hook target)
+check-verbose: ## Merge gate with detailed output
+	@$(MAKE) sanitize
+	@$(MAKE) test-check
+	@$(MAKE) test-lib-py-verbose
+	@$(MAKE) test-lib TEST_SHOW_ALL_RESULTS=1
+	@$(MAKE) test-unit-verbose
+	@$(MAKE) test-integration-verbose
+	@echo "$(GREEN)✅ Checks passed$(RESET)"
+
+pre-commit: ## Run checks and tests before commit (git hook target)
+	@$(MAKE) check
 	@echo "$(GREEN)✓ Pre-commit checks complete$(RESET)"
 
 coverage: test-lib-py-coverage ## Enforce test coverage thresholds
 	@echo "$(GREEN)✅ Coverage check complete$(RESET)"
 
-validate: sanitize test coverage ## Full release validation (sanitize + test + coverage)
+validate: ## Full release validation (sanitize + test + coverage)
+	@$(MAKE) sanitize
+	@$(MAKE) test
+	@$(MAKE) coverage
 	@echo "$(GREEN)✅ Release validation complete$(RESET)"
 
-ci: static test ## Run full CI pipeline (all tests)
+ci: ## Run full CI pipeline (all tests)
+	@$(MAKE) static
+	@$(MAKE) test
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
 	@echo "$(GREEN)✓ CI Pipeline Complete$(RESET)"
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
@@ -667,5 +694,5 @@ demo-repo-status: ## Show status of demo repository
 .PHONY: vhs-deps-install
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
 .PHONY: docs-dev docs-build docs-preview deps-docs
-.PHONY: format format-verbose lint lint-verbose typecheck typecheck-verbose sanitize check pre-commit coverage validate ci install clean clean-all
+.PHONY: format format-verbose lint lint-verbose typecheck typecheck-verbose sanitize check check-verbose pre-commit coverage validate ci install clean clean-all
 .PHONY: demo-repo demo-repo-simple demo-repo-workflows demo-repo-beginner demo-repo-all demo-clean demo-clean-all demo-repo-rebuild demo-repo-rebuild-all demo-repo-status
