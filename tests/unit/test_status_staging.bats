@@ -105,6 +105,77 @@ teardown() {
   rm -rf "$single_commit_repo"
 }
 
+@test "hug s: works in 0-commit repository (completely empty)" {
+  # Create a completely fresh repo with no commits
+  local zero_commit_repo
+  zero_commit_repo=$(mktemp -d)
+  cd "$zero_commit_repo"
+  git init -q
+  git config user.name "Test User"
+  git config user.email "test@example.com"
+  
+  # Run hug s in 0-commit repo
+  run hug s
+  assert_success
+  # Should show HEAD (even though it doesn't exist yet)
+  assert_output --partial "HEAD"
+  # Should show branch (master/main)
+  [[ "$output" =~ (master|main) ]]
+  # Should show clean status indicator
+  assert_output --partial "⚪"
+  
+  # Cleanup
+  cd "$TEST_REPO"
+  rm -rf "$zero_commit_repo"
+}
+
+@test "hug s: shows untracked files in 0-commit repository" {
+  # Create a 0-commit repo with untracked files
+  local zero_commit_repo
+  zero_commit_repo=$(mktemp -d)
+  cd "$zero_commit_repo"
+  git init -q
+  git config user.name "Test User"
+  git config user.email "test@example.com"
+  echo "untracked" > file.txt
+  
+  # Run hug s
+  run hug s
+  assert_success
+  # Should show untracked count
+  assert_output --partial "K:1"
+  # Should show magenta ball emoji for untracked files
+  assert_output --partial "🟣"
+  
+  # Cleanup
+  cd "$TEST_REPO"
+  rm -rf "$zero_commit_repo"
+}
+
+@test "hug s: shows staged files in 0-commit repository" {
+  # Create a 0-commit repo with staged files
+  local zero_commit_repo
+  zero_commit_repo=$(mktemp -d)
+  cd "$zero_commit_repo"
+  git init -q
+  git config user.name "Test User"
+  git config user.email "test@example.com"
+  echo "new file" > file.txt
+  git add file.txt
+  
+  # Run hug s
+  run hug s
+  assert_success
+  # Should show staged changes
+  assert_output --partial "Staged: 1 files"
+  # Should show green ball emoji for staged-only changes
+  assert_output --partial "🟢"
+  
+  # Cleanup
+  cd "$TEST_REPO"
+  rm -rf "$zero_commit_repo"
+}
+
 @test "hug sl: shows status without untracked files" {
   run hug sl
   assert_success
