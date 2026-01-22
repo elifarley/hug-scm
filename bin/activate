@@ -1,3 +1,4 @@
+# shellcheck shell=sh
 test -e "$HOME"/.hug-scm || {
   echo >&2 "$HOME/.hug-scm is missing. Before activating Hug, you must install it by running:"
   echo >&2 "  make install"

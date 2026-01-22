@@ -491,107 +491,100 @@ deps-docs: ## Install documentation dependencies
 ##@ Development
 
 format: ## Format code (LLM-friendly: summary only)
-	@echo "$(BLUE)Formatting Bash scripts...$(RESET)"
+	@printf "$(BLUE)Formatting Bash scripts...$(RESET)\n"
 	@if command -v shfmt >/dev/null 2>&1; then \
 		shfmt -w -i 2 -sr git-config/bin/ git-config/lib/ hg-config/bin/ hg-config/lib/ bin/ tests/ 2>/dev/null || true; \
-		echo "$(GREEN)✅ Bash formatting OK$(RESET)"; \
+		printf "$(GREEN)✅ Bash formatting OK$(RESET)\n"; \
 	else \
-		echo "$(YELLOW)⚠ shfmt not found - run 'make optional-deps-install'$(RESET)"; \
+		printf "$(YELLOW)⚠ shfmt not found - run 'make optional-deps-install'$(RESET)\n"; \
 	fi
-	@echo "$(BLUE)Formatting Python helpers...$(RESET)"
+	@printf "$(BLUE)Formatting Python helpers...$(RESET)\n"
 	@if command -v uv >/dev/null 2>&1; then \
 		$(UV_CMD) run --directory git-config/lib/python ruff format --quiet .; \
-		echo "$(GREEN)✅ Python formatting OK$(RESET)"; \
+		printf "$(GREEN)✅ Python formatting OK$(RESET)\n"; \
 	else \
-		echo "$(YELLOW)⚠ UV not available - skipping Python formatting$(RESET)"; \
+		printf "$(YELLOW)⚠ UV not available - skipping Python formatting$(RESET)\n"; \
 	fi
-	@echo "$(GREEN)✅ Formatting complete$(RESET)"
+	@printf "$(GREEN)✅ Formatting complete$(RESET)\n"
 
 format-verbose: ## Format code (show changes)
-	@echo "$(BLUE)Formatting Bash scripts...$(RESET)"
+	@printf "$(BLUE)Formatting Bash scripts...$(RESET)\n"
 	@if command -v shfmt >/dev/null 2>&1; then \
 		shfmt -w -i 2 -sr -d git-config/bin/ git-config/lib/ hg-config/bin/ hg-config/lib/ bin/ tests/; \
 	else \
-		echo "$(YELLOW)⚠ shfmt not found$(RESET)"; \
+		printf "$(YELLOW)⚠ shfmt not found$(RESET)\n"; \
 	fi
-	@echo "$(BLUE)Formatting Python helpers...$(RESET)"
+	@printf "$(BLUE)Formatting Python helpers...$(RESET)\n"
 	@if command -v uv >/dev/null 2>&1; then \
 		$(UV_CMD) run --directory git-config/lib/python --extra dev ruff format .; \
 	else \
-		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
+		printf "$(YELLOW)⚠ UV not available$(RESET)\n"; \
 	fi
 
 lint: ## Run linting checks (LLM-friendly: summary only)
-	@echo "$(BLUE)Linting Bash scripts...$(RESET)"
+	@printf "$(BLUE)Linting Bash scripts...$(RESET)\n"
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck -S error git-config/bin/* git-config/lib/* hg-config/bin/* hg-config/lib/* bin/* tests/test_helper.bash tests/unit/*.bats tests/lib/*.bats tests/integration/*.bats 2>&1 | \
-			{ grep -q '^.*:[0-9]*:.*' && { cat; exit 1; } || echo "$(GREEN)✅ Bash linting OK$(RESET)"; } || \
-			(echo "$(GREEN)✅ Bash linting OK$(RESET)"; exit 0); \
+		shellcheck -S error $$(find git-config/bin git-config/lib hg-config/bin hg-config/lib bin tests -type f \( -name "*.bash" -o -name "hug-*" -o -name "activate" -o -name "*.bats" \) -not -path "*/.venv/*" -not -name "*.md") 2>&1 | \
+			{ grep -q 'line [0-9]*:' && { cat; exit 1; } || printf "$(GREEN)✅ Bash linting OK$(RESET)\n"; }; \
 	else \
-		echo "$(YELLOW)⚠ ShellCheck not found - run 'make optional-deps-install'$(RESET)"; \
+		printf "$(YELLOW)⚠ ShellCheck not found - run 'make optional-deps-install'$(RESET)\n"; \
 	fi
-	@echo "$(BLUE)Linting Python helpers...$(RESET)"
+	@printf "$(BLUE)Linting Python helpers...$(RESET)\n"
 	@if command -v uv >/dev/null 2>&1; then \
 		$(UV_CMD) run --directory git-config/lib/python --extra dev ruff check --output-format=concise . 2>&1 | \
-			{ grep -q '.' && { cat; exit 1; } || echo "$(GREEN)✅ Python linting OK$(RESET)"; } || \
-			(echo "$(GREEN)✅ Python linting OK$(RESET)"; exit 0); \
+			{ grep -vE "(VIRTUAL_ENV|All checks passed)" || true; } | { grep -q '.' && { cat; exit 1; } || printf "$(GREEN)✅ Python linting OK$(RESET)\n"; }; \
 	else \
-		echo "$(YELLOW)⚠ UV not available - skipping Python linting$(RESET)"; \
+		printf "$(YELLOW)⚠ UV not available - skipping Python linting$(RESET)\n"; \
 	fi
 
 lint-verbose: ## Run linting (detailed output)
-	@echo "$(BLUE)Linting Bash scripts...$(RESET)"
+	@printf "$(BLUE)Linting Bash scripts...$(RESET)\n"
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck git-config/bin/* git-config/lib/* hg-config/bin/* hg-config/lib/* bin/* tests/test_helper.bash tests/unit/*.bats tests/lib/*.bats tests/integration/*.bats; \
+		shellcheck $$(find git-config/bin git-config/lib hg-config/bin hg-config/lib bin tests -type f \( -name "*.bash" -o -name "hug-*" -o -name "activate" -o -name "*.bats" \) -not -path "*/.venv/*" -not -name "*.md"); \
 	else \
-		echo "$(YELLOW)⚠ ShellCheck not found$(RESET)"; \
+		printf "$(YELLOW)⚠ ShellCheck not found$(RESET)\n"; \
 	fi
-	@echo "$(BLUE)Linting Python helpers...$(RESET)"
+	@printf "$(BLUE)Linting Python helpers...$(RESET)\n"
 	@if command -v uv >/dev/null 2>&1; then \
 		$(UV_CMD) run --directory git-config/lib/python --extra dev ruff check .; \
 	else \
-		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
+		printf "$(YELLOW)⚠ UV not available$(RESET)\n"; \
 	fi
 
 typecheck: ## Type check Python code (LLM-friendly: summary only)
-	@echo "$(BLUE)Type checking Python helpers...$(RESET)"
+	@printf "$(BLUE)Type checking Python helpers...$(RESET)\n"
 	@if command -v uv >/dev/null 2>&1; then \
-		output=$$($(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" --extra dev mypy --no-pretty . 2>&1); \
-		if echo "$$output" | grep -q 'Success: no issues found'; then \
-			echo "$(GREEN)✅ Type checking OK$(RESET)"; \
-		else \
-			echo "$$output" | grep -vE '^(Success: no issues found|warning:)'; \
-			exit 1; \
-		fi \
+		$(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" --extra dev mypy --no-pretty . 2>&1 | \
+			{ grep -q 'error:' && { cat; exit 1; } || printf "$(GREEN)✅ Type checking OK$(RESET)\n"; }; \
 	else \
-		echo "$(YELLOW)⚠ UV not available - skipping type check$(RESET)"; \
+		printf "$(YELLOW)⚠ UV not available - skipping type check$(RESET)\n"; \
 	fi
 
 typecheck-verbose: ## Type check Python code (detailed)
-	@echo "$(BLUE)Type checking Python helpers...$(RESET)"
+	@printf "$(BLUE)Type checking Python helpers...$(RESET)\n"
 	@if command -v uv >/dev/null 2>&1; then \
 		$(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" --extra dev mypy .; \
 	else \
-		echo "$(YELLOW)⚠ UV not available$(RESET)"; \
+		printf "$(YELLOW)⚠ UV not available$(RESET)\n"; \
 	fi
 
 static: ## Run all static checks that don't change the source code
 	@$(MAKE) lint
 	@$(MAKE) typecheck
-	@echo "$(GREEN)✅ Static checks complete$(RESET)"
+	@printf "$(GREEN)✅ Static checks complete$(RESET)\n"
 
 sanitize: ## Run all static checks (format + lint + typecheck)
 	@$(MAKE) format
 	@$(MAKE) lint
 	@$(MAKE) typecheck
-	@echo "$(GREEN)✅ Sanitize complete$(RESET)"
+	@printf "$(GREEN)✅ Sanitize complete$(RESET)\n"
 
 check: ## Fast merge gate (sanitize + some tests)
 	@$(MAKE) sanitize
 	@$(MAKE) test-check
 	@$(MAKE) test-lib-py
 	@$(MAKE) test-lib
-	@echo "$(GREEN)✅ Checks passed$(RESET)"
+	@printf "$(GREEN)✅ Checks passed$(RESET)\n"
 
 check-verbose: ## Merge gate with detailed output
 	@$(MAKE) sanitize

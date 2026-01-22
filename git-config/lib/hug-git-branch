@@ -122,7 +122,7 @@ compute_local_branch_details() {
         # Build track string: [upstream: status] like 'git branch -vv'
         local track=""
         if [[ -n "$upstream_name" ]]; then
-            track="$CYAN[$upstream_name"
+            track="${CYAN}[${upstream_name}"
             if [[ -n "$status" ]]; then
                 track+=": $BLUE$(echo $status | tr -d '[]')$CYAN"
             fi
@@ -281,7 +281,7 @@ compute_local_branch_details_batched() {
 
         local track=""
         if [[ -n "$upstream" ]]; then
-            track="$CYAN[$upstream"
+            track="${CYAN}[${upstream}"
 
             # Use pre-computed divergence result
             local divergence_result="${divergence_results[divergence_index]:-0	0}"
