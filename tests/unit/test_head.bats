@@ -467,7 +467,7 @@ teardown() {
   assert_output "1"
 }
 
-@test "hug h undo with no commits handles gracefully" {
+@test "hug h undo: undoes root commit, files become untracked" {
   # Create a fresh repo at initial commit
   local test_repo
   test_repo=$(create_test_repo)
@@ -476,9 +476,64 @@ teardown() {
   # Try to undo when there's only one commit
   run hug h undo --force
   
-  # Should succeed with info message (no commits to undo)
+  # Should succeed and undo the root commit
   assert_success
-  assert_output --partial "Already at target"
+  assert_output --partial "Undone root commit"
+  
+  # File should still exist but be untracked (not staged)
+  assert_file_exists "README.md"
+  run git status --porcelain
+  assert_output "?? README.md"
+}
+
+@test "hug h back: undoes root commit, files stay staged" {
+  local test_repo
+  test_repo=$(create_test_repo)
+  cd "$test_repo"
+  
+  run hug h back --force
+  
+  assert_success
+  assert_output --partial "root commit undone"
+  
+  # File should be staged for new initial commit
+  run git status --porcelain
+  assert_output "A  README.md"
+}
+
+@test "hug h rollback on root commit: requires special confirmation" {
+  local test_repo
+  test_repo=$(create_test_repo)
+  cd "$test_repo"
+  
+  # Without proper confirmation, should fail
+  run bash -c 'echo "n" | hug h rollback'
+  assert_failure
+  assert_output --partial "Cancelled"
+}
+
+@test "hug h rollback on root commit: deletes tracked files, preserves untracked/ignored" {
+  local test_repo
+  test_repo=$(create_test_repo)
+  cd "$test_repo"
+  
+  # Add untracked and ignored files
+  echo "untracked content" > untracked.txt
+  echo "*.log" > .gitignore
+  echo "ignored content" > test.log
+  git add .gitignore
+  git commit --amend -m "Initial with gitignore"
+  
+  run bash -c 'echo "rollback" | hug h rollback'
+  assert_success
+  
+  # Tracked files deleted
+  assert_file_not_exists "README.md"
+  assert_file_not_exists ".gitignore"
+  
+  # Untracked and ignored files preserved
+  assert_file_exists "untracked.txt"
+  assert_file_exists "test.log"
 }
 
 @test "hug h operations preserve untracked files" {
@@ -490,6 +545,54 @@ teardown() {
   
   # Untracked file should still exist
   assert_file_exists "untracked.txt"
+}
+
+@test "hug h back: preserves untracked and ignored files" {
+  echo "untracked" > untracked.txt
+  echo "*.log" >> .gitignore
+  echo "ignored" > test.log
+  git add .gitignore && git commit -m "Add gitignore"
+  
+  run hug h back --force
+  assert_success
+  assert_file_exists "untracked.txt"
+  assert_file_exists "test.log"
+}
+
+@test "hug h undo: preserves untracked and ignored files" {
+  echo "untracked" > untracked.txt
+  echo "*.log" >> .gitignore
+  echo "ignored" > test.log
+  git add .gitignore && git commit -m "Add gitignore"
+  
+  run hug h undo --force
+  assert_success
+  assert_file_exists "untracked.txt"
+  assert_file_exists "test.log"
+}
+
+@test "hug h rollback: preserves untracked and ignored files" {
+  echo "untracked" > untracked.txt
+  echo "*.log" >> .gitignore
+  echo "ignored" > test.log
+  git add .gitignore && git commit -m "Add gitignore"
+  
+  run hug h rollback --force
+  assert_success
+  assert_file_exists "untracked.txt"
+  assert_file_exists "test.log"
+}
+
+@test "hug h rewind: preserves untracked and ignored files" {
+  echo "untracked" > untracked.txt
+  echo "*.log" >> .gitignore
+  echo "ignored" > test.log
+  git add .gitignore && git commit -m "Add gitignore"
+  
+  run bash -c 'echo "rewind" | hug h rewind'
+  assert_success
+  assert_file_exists "untracked.txt"
+  assert_file_exists "test.log"
 }
 
 # ============================================================================

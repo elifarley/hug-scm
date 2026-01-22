@@ -30,6 +30,10 @@ DESCRIPTION:
     For single commits, shows files changed in that commit.
     For ranges, shows cumulative file changes across all commits in the range.
 
+    This command is the canonical source for file statistics display.
+    It is used internally by other Hug commands (sh, shp, shcp, h files,
+    h squash, lol, cmv) via HUG_QUIET=T to provide consistent stats output.
+
     Use 'hug sh' for full commit details including message.
 
 RANGE SYNTAX:
@@ -54,9 +58,12 @@ EXAMPLES:
 
 SEE ALSO:
     hug sh       : Show commit info with file stats
-    hug shp      : Show commit with patch
+    hug shp      : Show commit with patch and stats
+    hug shcp     : Show cumulative diff and stats for range
     hug h files  : Preview files touched in commit range
     hug h squash : Squash commits (uses shc for preview)
+    hug lol      : Preview outgoing commits with stats
+    hug cmv      : Move commits between branches
 EOF
 }
 

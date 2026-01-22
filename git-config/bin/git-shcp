@@ -86,14 +86,14 @@ if [[ "$commit_ref" == *..* ]]; then
   git diff "$commit_ref"
 
   printf '\n%s %s Cumulative file stats:\n' "$commit_emoji" "$stats_emoji"
-  git diff --stat "$commit_ref"
+  HUG_QUIET=T git shc "$commit_ref"
 else
   # Single commit: use git diff-tree
   printf '%s %s Diff for %s:\n' "$commit_emoji" "$diff_emoji" "$commit_ref"
   git diff-tree -p --no-commit-id -r --root "$commit_ref"
 
   printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji"
-  git diff-tree --no-commit-id --stat -r --root "$commit_ref"
+  HUG_QUIET=T git shc "$commit_ref"
 fi
 
 exit 0

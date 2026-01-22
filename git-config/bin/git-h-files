@@ -176,6 +176,11 @@ if $show_patch; then
   fi
 fi
 
+# Show file stats first (no header - we provide contextual tip after)
+HUG_QUIET=T git shc "$range"
+
+# Provide contextual tip AFTER the stats block
+echo
 if $upstream; then
   upstream_short=$(git rev-parse --short "$start_point")
   tip "These $count files and their stats are affected by $local_commits local-only commits to upstream tip $upstream_short (e.g., via 'h back -u')."
@@ -187,5 +192,3 @@ elif [[ -n "$temporal_spec" ]]; then
 else
   tip "These $count files and their stats would be affected by moving HEAD to $start_point (e.g., via 'h back' or 'h rewind')."
 fi
-
-HUG_QUIET=T exec git shc "$range"

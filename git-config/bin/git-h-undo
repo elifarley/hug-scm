@@ -37,6 +37,11 @@ EXAMPLES:
 
 SEE ALSO:
     hug h back    Make HEAD walk back some commits while keeping their changes staged
+
+NOTES:
+    All your edits are preserved, but the entire staging area is cleared.
+    If you need to preserve staging, use 'hug h back' instead.
+    Untracked and ignored files are never affected.
 EOF
 }
 
@@ -80,6 +85,33 @@ if $upstream; then
 else
   # Use DRY helper for validation and target resolution
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
+
+  # Handle root commit scenario (target doesn't exist because we're at the first commit)
+  if ! git rev-parse --verify --quiet "$target" > /dev/null 2>&1 && is_at_root_commit; then
+    # Show preview of the root commit
+    if [[ ${HUG_QUIET:-} != T ]]; then
+      printf 'Commits to be affected:\n' >&2
+      hug ll HEAD~0 >&2
+      printf '\nPreview: changes in 1 commit:\n' >&2
+      git diff --stat --root HEAD >&2
+    fi
+
+    should_prompt=true
+    if [[ ${HUG_FORCE:-} == true ]]; then
+      should_prompt=false
+    elif ! has_staged_changes && ! has_unstaged_changes; then
+      should_prompt=false
+      info "No staged or unstaged changes detected; skipping confirmation."
+    fi
+
+    if $should_prompt; then
+      prompt_confirm_warn "Undo root commit? [y/N]: "
+    fi
+
+    reset_root_commit "mixed"
+    info "Undone root commit (changes preserved as untracked)."
+    exit 0
+  fi
 
   # Handle command-specific preview and confirmation
   handle_standard_operation "undo" "$target"

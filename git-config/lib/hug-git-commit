@@ -346,7 +346,7 @@ print_preview_summary() {
     if git diff --quiet "$range"; then
         printf 'No file changes.\n' >&2
     else
-        git diff --stat "$range" >&2
+        HUG_QUIET=T git shc "$range" >&2
     fi
 }
 

@@ -73,7 +73,7 @@ git show "$commit_ref" --pretty=format:""
 # Show file stats heading
 printf '\n%s %s Commit file stats:\n' "$commit_emoji" "$stats_emoji"
 
-# Show the file stats
-git show "$commit_ref" --pretty=format:"" --stat
+# Show the file stats via git-shc (DRY)
+HUG_QUIET=T git shc "$commit_ref"
 
 exit 0

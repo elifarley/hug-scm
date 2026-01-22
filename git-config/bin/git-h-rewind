@@ -37,6 +37,10 @@ EXAMPLES:
 
 SEE ALSO:
     hug h back    Make HEAD walk back some commits while keeping their changes staged
+
+NOTES:
+    WARNING: All uncommitted changes (staged AND unstaged) are permanently lost!
+    Untracked and ignored files are never affected.
 EOF
 }
 

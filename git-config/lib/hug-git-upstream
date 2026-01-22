@@ -128,3 +128,43 @@ handle_standard_operation() {
         fi
     fi
 }
+
+################################################################################
+# Root Commit Operations
+################################################################################
+
+# Resets the root commit (deletes HEAD reference)
+# Usage: reset_root_commit "mode"
+# Parameters:
+#   $1 - Reset mode: "soft" (files staged), "mixed" (files untracked), "keep" (tracked files deleted)
+# Note: For "keep" mode, ONLY tracked files from the commit are deleted.
+#       Untracked and ignored files are NEVER touched.
+reset_root_commit() {
+    local mode="$1"
+    
+    case "$mode" in
+        soft)
+            # Delete HEAD, files remain staged (ready to recommit)
+            git update-ref -d HEAD
+            ;;
+        mixed)
+            # Delete HEAD and unstage all files (become untracked)
+            git update-ref -d HEAD
+            git rm -r --cached . -q 2>/dev/null || true
+            ;;
+        keep)
+            # Delete HEAD and remove ONLY tracked files (untracked/ignored untouched)
+            local tracked_files
+            tracked_files=$(git ls-files)
+            git update-ref -d HEAD
+            if [[ -n "$tracked_files" ]]; then
+                echo "$tracked_files" | xargs rm -f 2>/dev/null || true
+                # Clean up empty directories (only those that contained tracked files)
+                echo "$tracked_files" | xargs -I{} dirname {} 2>/dev/null | sort -u | \
+                    while read -r dir; do
+                        [[ "$dir" != "." ]] && rmdir -p "$dir" 2>/dev/null || true
+                    done
+            fi
+            ;;
+    esac
+}

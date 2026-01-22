@@ -37,6 +37,12 @@ EXAMPLES:
 
 SEE ALSO:
     hug h back    Make HEAD walk back some commits while keeping their changes staged
+
+NOTES:
+    Refuses to run if you have local changes to files that would be modified.
+    Changes to other files are preserved (become unstaged).
+    Untracked and ignored files are never affected.
+    When rolling back the root commit, only tracked files are deleted.
 EOF
 }
 
@@ -73,6 +79,33 @@ if $upstream; then
 else
   # Use DRY helper for validation and target resolution
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
+
+  # Handle root commit scenario (target doesn't exist because we're at the first commit)
+  if ! git rev-parse --verify --quiet "$target" > /dev/null 2>&1 && is_at_root_commit; then
+    # Show what will be deleted (tracked files only)
+    tracked_count=$(git ls-files | wc -l | tr -d ' ')
+
+    warn "This will delete $tracked_count tracked file(s) from the root commit."
+    info "Untracked and ignored files will NOT be affected."
+
+    if [[ ${HUG_QUIET:-} != T ]]; then
+      printf '\nFiles to be deleted:\n' >&2
+      git ls-files >&2
+    fi
+
+    printf '\n' >&2
+    if [[ ${HUG_FORCE:-} != true ]]; then
+      read -rp "Type 'rollback' to confirm deletion: " confirm >&2
+      [[ "$confirm" == "rollback" ]] || {
+        info "Cancelled."
+        exit 1
+      }
+    fi
+
+    reset_root_commit "keep"
+    info "Rolled back root commit. $tracked_count tracked file(s) deleted."
+    exit 0
+  fi
 
   # Handle command-specific preview and confirmation
   handle_standard_operation "rollback" "$target"
