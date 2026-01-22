@@ -21,6 +21,90 @@ teardown() {
   [[ "$output" =~ (HEAD|master|Staged|Unstaged) ]]
 }
 
+@test "hug s: works in single-commit repository" {
+  # Create a fresh repo with only one commit (no parent)
+  local single_commit_repo
+  single_commit_repo=$(mktemp -d)
+  cd "$single_commit_repo"
+  git init -q
+  git config user.name "Test User"
+  git config user.email "test@example.com"
+  echo "initial" > file.txt
+  git add file.txt
+  git commit -q -m "Initial commit"
+  
+  # Run hug s in this single-commit repo
+  run hug s
+  assert_success
+  # Should show HEAD
+  assert_output --partial "HEAD"
+  # Should show branch (master/main)
+  [[ "$output" =~ (master|main) ]]
+  # Should show clean status indicator
+  assert_output --partial "⚪"
+  
+  # Cleanup
+  cd "$TEST_REPO"
+  rm -rf "$single_commit_repo"
+}
+
+@test "hug s: shows staged changes in single-commit repository" {
+  # Create a single-commit repo with staged changes
+  local single_commit_repo
+  single_commit_repo=$(mktemp -d)
+  cd "$single_commit_repo"
+  git init -q
+  git config user.name "Test User"
+  git config user.email "test@example.com"
+  echo "initial" > file.txt
+  git add file.txt
+  git commit -q -m "Initial commit"
+  
+  # Make changes and stage them
+  echo "modified" >> file.txt
+  git add file.txt
+  
+  # Run hug s
+  run hug s
+  assert_success
+  # Should show staged changes
+  assert_output --partial "Staged: 1 files"
+  # Should show green ball emoji for staged-only changes
+  assert_output --partial "🟢"
+  
+  # Cleanup
+  cd "$TEST_REPO"
+  rm -rf "$single_commit_repo"
+}
+
+@test "hug s: shows unstaged changes in single-commit repository" {
+  # Create a single-commit repo with unstaged changes
+  local single_commit_repo
+  single_commit_repo=$(mktemp -d)
+  cd "$single_commit_repo"
+  git init -q
+  git config user.name "Test User"
+  git config user.email "test@example.com"
+  echo "initial" > file.txt
+  git add file.txt
+  git commit -q -m "Initial commit"
+  
+  # Make unstaged changes
+  echo "modified" >> file.txt
+  
+  # Run hug s
+  run hug s
+  assert_success
+  # Should show unstaged changes
+  assert_output --partial "Unstaged: 1 files"
+  # Should show red ball emoji for unstaged changes
+  assert_output --partial "🔴"
+  
+  # Cleanup
+  cd "$TEST_REPO"
+  rm -rf "$single_commit_repo"
+}
+
 @test "hug sl: shows status without untracked files" {
   run hug sl
   assert_success
