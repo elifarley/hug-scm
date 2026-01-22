@@ -215,6 +215,53 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
+# Root commit tests
+# -----------------------------------------------------------------------------
+
+@test "hug sh: handles root commit (first commit with no parent)" {
+  # Get the initial commit hash
+  local root_commit
+  root_commit=$(git rev-list --max-parents=0 HEAD)
+
+  run hug sh "$root_commit"
+  assert_success
+  # Should show commit info
+  assert_output --partial "Commit info:"
+  # Should show file stats (this was broken before the --root fix)
+  assert_output --partial "File stats:"
+  # Should list files in the root commit
+  assert_output --partial "file"
+}
+
+@test "hug shc: handles root commit" {
+  # Get the initial commit hash
+  local root_commit
+  root_commit=$(git rev-list --max-parents=0 HEAD)
+
+  run hug shc "$root_commit"
+  assert_success
+  # Should show file stats
+  assert_output --partial "file"
+  # Should show line changes
+  assert_output --partial "+"
+}
+
+@test "hug shcp: handles root commit" {
+  # Get the initial commit hash
+  local root_commit
+  root_commit=$(git rev-list --max-parents=0 HEAD)
+
+  run hug shcp "$root_commit"
+  assert_success
+  # Should show diff section
+  assert_output --partial "Diff for"
+  # Should show actual diff
+  assert_output --partial "diff --git"
+  # Should show file stats
+  assert_output --partial "File stats:"
+}
+
+# -----------------------------------------------------------------------------
 # Numeric shorthand tests (N → HEAD~N convention)
 # -----------------------------------------------------------------------------
 

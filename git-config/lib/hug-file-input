@@ -138,7 +138,7 @@ extract_files_from_commit() {
   fi
 
   # Get files directly from commit using optimized git command
-  git diff-tree --no-commit-id --name-only -r "$commit" 2> /dev/null || true
+  git diff-tree --no-commit-id --name-only -r --root "$commit" 2> /dev/null || true
 }
 
 # Parse --from-file and --from-commit flags from command line arguments

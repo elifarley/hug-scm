@@ -98,7 +98,7 @@ else
     stats_emoji="$(_diff_emoji stats)"
     printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji"
   fi
-  git diff-tree --no-commit-id --stat -r "$commit_ref"
+  git diff-tree --no-commit-id --stat -r --root "$commit_ref"
 fi
 
 exit 0
