@@ -62,7 +62,7 @@ _format_unstaged_status() {
   case "$status" in
     M) status_text="${RED}U:${YELLOW}Mod ${NC}"; status_code="U:Mod" ;;
     D) status_text="${RED}U:Del ${NC}"; status_code="U:Del" ;;
-    U) status_text="${RED}${YELLOW}Cnflt${NC}"; status_code="U:Cnflt" ;;
+    U) status_text="${YELLOW}Cnflt${NC}"; status_code="U:Cnflt" ;;
     *) status_text="${RED}U     ${NC}"; status_code="U:Unk" ;;
   esac
 

@@ -145,6 +145,11 @@ list_unstaged_files() {
     fi
 
     if $with_status; then
+        # Temporary storage for conflict deduplication
+        # During merge conflicts, git returns both U (unmerged) and M (modified) for the same file
+        # We need to keep only U (conflict) when both exist
+        declare -A file_status_map=()
+
         while IFS= read -r line; do
             [[ -z "$line" ]] && continue
             local status old new file
@@ -155,11 +160,22 @@ list_unstaged_files() {
                 file="$old"
             fi
             [[ -z "$file" ]] && continue
-            # Always convert to current-dir relative paths
+
+            # CONFLICT DEDUPLICATION: U (conflict) takes precedence over M (modified)
+            # If file not seen yet, or current status is U (conflict), store this status
+            # This ensures that when git returns both M and U for the same file, only U is kept
+            if [[ -z "${file_status_map[$file]+_}" ]] || [[ "$status" == "U" ]]; then
+                file_status_map[$file]="$status"
+            fi
+        done < <("${git_cmd_base[@]}" 2>/dev/null || true)
+
+        # Output deduplicated results
+        for file in "${!file_status_map[@]}"; do
+            local status="${file_status_map[$file]}"
             local -a single=("$file")
             convert_to_relative_paths single
             printf '%s\t%s\n' "$status" "${single[0]}"
-        done < <("${git_cmd_base[@]}" 2>/dev/null || true)
+        done | sort  # Ensure consistent output order
     else
         local -a paths=()
         mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
