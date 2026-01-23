@@ -30,12 +30,12 @@ The Makefile targets have been renamed to align with the makefile-dev PRD canoni
 - **REMOVED**: `test-prd` - `test` is now PRD-compliant
 
 **Development Dependencies (dev- prefix added):**
-- **`dev-test-deps-install`** - Install test dependencies (was `test-deps-install`, now deprecated)
-- **`dev-optional-install`** - Install optional dependencies (was `optional-deps-install`, now deprecated)
-- **`dev-optional-check`** - Check optional dependencies (was `optional-deps-check`, now deprecated)
+- **`dev-test-deps-install`** - Install test dependencies (replaces removed `test-deps-install`)
+- **`dev-optional-install`** - Install optional dependencies (replaces removed `optional-deps-install`)
+- **`dev-optional-check`** - Check optional dependencies (replaces removed `optional-deps-check`)
 
 **Documentation:**
-- **`docs-deps-install`** - Install documentation dependencies (was `deps-docs`, now deprecated)
+- **`docs-deps-install`** - Install documentation dependencies (replaces removed `deps-docs`)
 
 **Migration Guide:**
 
@@ -57,37 +57,14 @@ The Makefile targets have been renamed to align with the makefile-dev PRD canoni
 # New: make sanitize-check
 ```
 
-**CI/CD updates:**
-- If you relied on `make check` including library tests, update to `make check-full`
-- If you relied on `make test` running all tests, update to `make test-full`
-- If you used `make test-deps-install`, update to `make dev-test-deps-install`
-- If you used `make optional-deps-install`, update to `make dev-optional-install`
-- If you used `make deps-docs`, update to `make docs-deps-install`
-
-**New Recommended Workflow:**
-```bash
-# Initial setup
-make doctor
-make dev-env-init
-make dev-deps-sync
-
-# Development iteration
-make sanitize-check   # Read-only static checks (no formatting)
-make sanitize         # Format + lint + typecheck
-make test             # Unit + integration tests (PRD-compliant)
-make check            # Fast merge gate (PRD-compliant)
-
-# Full validation (includes library tests)
-make test-full
-make check-full
-make validate-full
-```
-
-**Deprecated Targets (still available, show warnings):**
+**Removed Targets (breaking changes - no aliases available):**
 - `test-deps-install` → use `dev-test-deps-install`
 - `optional-deps-install` → use `dev-optional-install`
 - `optional-deps-check` → use `dev-optional-check`
 - `deps-docs` → use `docs-deps-install`
+- `static` → use `sanitize-check`
+- `check-prd` → use `check`
+- `test-prd` → use `test`
 
 ## [Unreleased] - 2025-01-13
 

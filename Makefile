@@ -297,10 +297,6 @@ dev-test-deps-install: ## Install all test dependencies (BATS + Python)
 	(printf "$(YELLOW)Warning: Could not install Python dev dependencies. Python tests may not work.$(RESET)\n")
 	$(call print_success,All test dependencies installed)
 
-test-deps-install: ## Install all test dependencies (DEPRECATED: use 'dev-test-deps-install')
-	$(call print_warning,⚠ 'test-deps-install' is deprecated, use 'make dev-test-deps-install')
-	@$(MAKE) dev-test-deps-install
-
 test-deps-py-install: ## Install Python test dependencies (DEPRECATED: use 'dev-deps-sync')
 	$(call print_warning,⚠ 'test-deps-py-install' is deprecated, use 'make dev-deps-sync')
 	@$(MAKE) dev-deps-sync
@@ -321,17 +317,9 @@ dev-optional-install: ## Install optional development dependencies (gum, shfmt, 
 	$(call print_info,Installing ShellCheck...)
 	$(call install_platform_pkg,shellcheck,https://www.shellcheck.net/)
 
-optional-deps-install: ## Install optional dependencies (DEPRECATED: use 'dev-optional-install')
-	$(call print_warning,⚠ 'optional-deps-install' is deprecated, use 'make dev-optional-install')
-	@$(MAKE) dev-optional-install
-
 dev-optional-check: ## Check if optional development dependencies are installed
 	$(call print_info,Checking optional dependencies...)
 	@bash bin/optional-deps-install.sh --check
-
-optional-deps-check: ## Check if optional dependencies are installed (DEPRECATED: use 'dev-optional-check')
-	$(call print_warning,⚠ 'optional-deps-check' is deprecated, use 'make dev-optional-check')
-	@$(MAKE) dev-optional-check
 
 doctor: ## Check environment and tool readiness
 	$(call print_info,Checking environment...)
@@ -539,10 +527,6 @@ install: ## Install Hug SCM to your home directory
 docs-deps-install: ## Install documentation dependencies
 	$(call print_info,Installing documentation dependencies...)
 	npm ci
-
-deps-docs: ## Install documentation dependencies (DEPRECATED: use 'docs-deps-install')
-	$(call print_warning,⚠ 'deps-docs' is deprecated, use 'make docs-deps-install')
-	@$(MAKE) docs-deps-install
 
 ##@ Development
 
@@ -822,12 +806,12 @@ demo-repo-status: ## Show status of demo repository
 	exit 0
 
 .PHONY: test test-bash test-unit test-integration test-lib test-check test-lib-py test-lib-py-verbose test-lib-py-coverage test-verbose test-full test-full-verbose
-.PHONY: dev-test-deps-install test-deps-install test-deps-py-install dev-optional-install optional-deps-install dev-optional-check optional-deps-check
+.PHONY: dev-test-deps-install test-deps-py-install dev-optional-install dev-optional-check
 .PHONY: python-check python-venv-create python-install-uv dev-deps-sync dev-env-init doctor
 .PHONY: mocks-check mocks-generate mocks-generate-git mocks-regenerate mocks-clean mocks-clean-git mocks-test-with-regenerate mocks-validate
 .PHONY: vhs-deps-install
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
-.PHONY: docs-dev docs-build docs-preview docs-deps-install deps-docs
+.PHONY: docs-dev docs-build docs-preview docs-deps-install
 .PHONY: format format-verbose lint lint-verbose lint-errors-only typecheck typecheck-verbose sanitize-check sanitize-check-verbose sanitize sanitize-verbose
 .PHONY: check check-verbose check-full check-full-verbose pre-commit coverage validate validate-full ci install clean clean-all
 .PHONY: debug-vars debug-self-test debug-dry-run debug
