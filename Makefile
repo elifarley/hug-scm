@@ -79,7 +79,7 @@ DEMO_REPO_ENV := export PATH="$$PATH:$(HUG_BIN_PATH)" &&
 #   $2 = Default directory for TEST_FILE basename (e.g., "tests/unit/")
 #   $3 = Flag to pass to run-tests.sh (e.g., "--unit", "--integration")
 define run_bats_test
-@echo "$(BLUE)Running $(1) tests...$(RESET)"
+@printf "$(BLUE)Running $(1) tests...$(RESET)\n"
 @if [ -n "$(TEST_FILE)" ]; then \
     case "$(TEST_FILE)" in \
     tests/*) \
@@ -100,9 +100,9 @@ endef
 define ensure_pytest
 @cd git-config/lib/python && \
     if ! $(PYTEST_CMD) --version >/dev/null 2>&1; then \
-        echo "$(YELLOW)pytest not installed. Installing pytest and dev dependencies...$(RESET)"; \
+        printf "$(YELLOW)pytest not installed. Installing pytest and dev dependencies...$(RESET)\n"; \
         $(PIP_CMD) -q -e ".[dev]" || \
-        (echo "$(YELLOW)Warning: Could not install dev dependencies. Tests will be skipped.$(RESET)" && exit 0); \
+        (printf "$(YELLOW)Warning: Could not install dev dependencies. Tests will be skipped.$(RESET)\n" && exit 0); \
     fi; \
     cd - > /dev/null
 endef
@@ -111,16 +111,37 @@ endef
 # Usage: $(call install_platform_pkg,<package-name>,<url>)
 define install_platform_pkg
 @if command -v $(1) >/dev/null 2>&1; then \
-    echo "$(GREEN)✓ $(1) already installed$(RESET)"; \
+    printf "$(GREEN)✓ $(1) already installed$(RESET)\n"; \
 else \
     if [ "$$(uname)" = "Darwin" ]; then \
-        brew install $(1) 2>/dev/null || echo "$(YELLOW)⚠ Install $(1) manually from $(2)$(RESET)"; \
+        brew install $(1) 2>/dev/null || printf "$(YELLOW)⚠ Install $(1) manually from $(2)$(RESET)\n"; \
     elif [ -f /etc/debian_version ]; then \
-        sudo apt-get install -y $(1) 2>/dev/null || echo "$(YELLOW)⚠ Install $(1) manually from $(2)$(RESET)"; \
+        sudo apt-get install -y $(1) 2>/dev/null || printf "$(YELLOW)⚠ Install $(1) manually from $(2)$(RESET)\n"; \
     else \
-        echo "$(YELLOW)⚠ Install $(1) manually from $(2)$(RESET)"; \
+        printf "$(YELLOW)⚠ Install $(1) manually from $(2)$(RESET)\n"; \
     fi; \
 fi
+endef
+
+# === Output Helper Macros ===
+# Usage: $(call print_info,Your message here)
+# These use printf to properly interpret ANSI escape sequences from Make variables
+# (Unlike echo, printf correctly interprets escape sequences passed from Make)
+
+define print_info
+@printf "$(BLUE)$(1)$(RESET)\n"
+endef
+
+define print_success
+@printf "$(GREEN)$(1)$(RESET)\n"
+endef
+
+define print_warning
+@printf "$(YELLOW)$(1)$(RESET)\n"
+endef
+
+define print_error
+@printf "$(RED)$(1)$(RESET)\n"
 endef
 
 ##@ General
@@ -140,6 +161,8 @@ help: ## Show this help message
 	@printf "  $(GREEN)make lint-verbose$(RESET)   - Run linting (detailed)\n"
 	@printf "  $(GREEN)make typecheck$(RESET)      - Type check Python (LLM-friendly)\n"
 	@printf "  $(GREEN)make typecheck-verbose$(RESET) - Type check Python (detailed)\n"
+	@printf "  $(GREEN)make sanitize-check$(RESET)  - Read-only static checks (lint + typecheck)\n"
+	@printf "  $(GREEN)make sanitize-check-verbose$(RESET) - Read-only static checks (detailed)\n"
 	@printf "  $(GREEN)make sanitize$(RESET)       - Run all static checks (format + lint + typecheck)\n"
 	@printf "  $(GREEN)make sanitize-verbose$(RESET) - Run all static checks (detailed)\n"
 	@printf "\n"
@@ -149,13 +172,18 @@ help: ## Show this help message
 	@printf "  $(CYAN)make test-integration$(RESET) - Run integration tests (LLM-friendly)\n"
 	@printf "  $(CYAN)make test-integration-verbose$(RESET) - Run integration tests (detailed)\n"
 	@printf "  $(CYAN)make test-lib-py$(RESET)     - Run Python library tests\n"
-	@printf "  $(CYAN)make test$(RESET)            - Run all tests (LLM-friendly)\n"
-	@printf "  $(CYAN)make test-verbose$(RESET)    - Run all tests (detailed)\n"
+	@printf "  $(CYAN)make test$(RESET)            - Run all behavioral tests (unit + integration)\n"
+	@printf "  $(CYAN)make test-verbose$(RESET)    - Run all behavioral tests (detailed)\n"
+	@printf "  $(CYAN)make test-full$(RESET)       - Run all tests including prerequisites and library tests\n"
+	@printf "  $(CYAN)make test-full-verbose$(RESET) - Run all tests with detailed output\n"
 	@printf "\n"
 	@printf "$(BOLD)Gates:$(RESET)\n"
 	@printf "  $(GREEN)make check$(RESET)          - Fast merge gate (sanitize + unit tests)\n"
 	@printf "  $(GREEN)make check-verbose$(RESET)  - Merge gate with detailed output\n"
+	@printf "  $(GREEN)make check-full$(RESET)     - Enhanced merge gate (includes library tests)\n"
+	@printf "  $(GREEN)make check-full-verbose$(RESET) - Enhanced merge gate with detailed output\n"
 	@printf "  $(GREEN)make validate$(RESET)       - Full release validation (sanitize + test + coverage)\n"
+	@printf "  $(GREEN)make validate-full$(RESET)  - Full release validation including library tests\n"
 	@printf "  $(GREEN)make coverage$(RESET)       - Enforce test coverage thresholds\n"
 	@printf "  $(GREEN)make pre-commit$(RESET)     - Pre-commit hook\n"
 	@printf "\n"
@@ -166,14 +194,14 @@ help: ## Show this help message
 	@printf "  $(CYAN)make debug$(RESET)           - Run all debug checks\n"
 	@printf "\n"
 	@printf "$(BOLD)Documentation:$(RESET)\n"
-	@grep -E '^(docs-|deps-docs):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-24s$(RESET) %s\n", $$1, $$2}'
+	@grep -E '^(docs-.*):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-24s$(RESET) %s\n", $$1, $$2}'
 	@printf "\n"
 	@printf "$(BOLD)Screencasts (VHS):$(RESET)\n"
 	@grep -E '^vhs.*:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-24s$(RESET) %s\n", $$1, $$2}'
 	@printf "\n"
 	@printf "$(BOLD)Installation & Setup:$(RESET)\n"
 	@printf "  $(GREEN)make install$(RESET)        - Install Hug SCM\n"
-	@grep -E '^(deps-|optional-|python-):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-24s$(RESET) %s\n", $$1, $$2}'
+	@grep -E '^(dev-.*):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-24s$(RESET) %s\n", $$1, $$2}'
 	@printf "\n"
 	@printf "$(BOLD)Utilities:$(RESET)\n"
 	@grep -E '^(clean|demo-|mocks-):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-24s$(RESET) %s\n", $$1, $$2}'
@@ -183,15 +211,20 @@ help: ## Show this help message
 ##@ Testing
 
 test-lump: test-lib-py test-bash  ## Run all tests (BATS + pytest)
-	@echo "$(GREEN)All tests completed!$(RESET)"
+	$(call print_success,All tests completed!)
 
-test: ## Run all tests by category (fastest first)
+test: ## Run all behavioral tests (PRD-compliant: unit + integration)
+	@$(MAKE) test-unit
+	@$(MAKE) test-integration
+	$(call print_success,✅ All tests completed!)
+
+test-full: ## Run all tests including prerequisites and library tests
 	@$(MAKE) test-check
 	@$(MAKE) test-lib-py
 	@$(MAKE) test-lib
 	@$(MAKE) test-unit
 	@$(MAKE) test-integration
-	@echo "$(GREEN)All tests completed!$(RESET)"
+	$(call print_success,✅ All tests completed!)
 
 test-bash: ## Run all BATS-based tests (or specific: TEST_FILE=... TEST_FILTER=... TEST_SHOW_ALL_RESULTS=1)
 	$(call run_bats_test,BATS,tests/,tests/)
@@ -206,83 +239,102 @@ test-lib: ## Run only library tests (or specific: TEST_FILE=... TEST_FILTER=... 
 	$(call run_bats_test,library,tests/lib/,--lib)
 
 test-check: ## Check test prerequisites without actually running tests
-	@echo "$(BLUE)Checking test prerequisites...$(RESET)"
+	$(call print_info,Checking test prerequisites...)
 	./tests/run-tests.sh --check
-	@echo "$(BLUE)Checking Python test prerequisites...$(RESET)"
+	$(call print_info,Checking Python test prerequisites...)
 	@if cd git-config/lib/python && $(PYTEST_CMD) --version >/dev/null 2>&1; then \
-		echo "$(GREEN)✓ pytest is available$(RESET)"; \
+		printf "$(GREEN)✓ pytest is available$(RESET)\n"; \
 	else \
-		echo "$(YELLOW)⚠ pytest not found - install with 'make test-deps-install' or 'make test-deps-py-install'$(RESET)"; \
+		printf "$(YELLOW)⚠ pytest not found - install with 'make test-deps-install' or 'make test-deps-py-install'$(RESET)\n"; \
 	fi
 
 test-lib-py: ## Run Python library tests (pytest, LLM-friendly)
-	@echo "$(BLUE)Running Python library tests...$(RESET)"
+	$(call print_info,Running Python library tests...)
 	$(ensure_pytest)
 	@cd git-config/lib/python && \
 	$(PYTEST_CMD) tests/ -q --color=yes --tb=short $(if $(TEST_FILTER),-k "$(TEST_FILTER)")
 
 test-lib-py-coverage: ## Run Python library tests with coverage report
-	@echo "$(BLUE)Running Python library tests with coverage...$(RESET)"
+	$(call print_info,Running Python library tests with coverage...)
 	$(ensure_pytest)
 	@cd git-config/lib/python && \
 	$(PYTEST_CMD) tests/ -v --cov=. --cov-report=term-missing --cov-report=html
 
 test-lib-py-verbose: ## Run Python library tests (detailed output)
-	@echo "$(BLUE)Running Python library tests (verbose)...$(RESET)"
+	$(call print_info,Running Python library tests (verbose)...)
 	$(ensure_pytest)
 	@cd git-config/lib/python && \
 	$(PYTEST_CMD) tests/ -v --color=yes --tb=short $(if $(TEST_FILTER),-k "$(TEST_FILTER)")
 
 test-unit-verbose: ## Run unit tests (detailed output)
-	@echo "$(BLUE)Running unit tests...$(RESET)"
+	$(call print_info,Running unit tests...)
 	@$(MAKE) test-unit TEST_SHOW_ALL_RESULTS=1
 
 test-integration-verbose: ## Run integration tests (detailed output)
-	@echo "$(BLUE)Running integration tests...$(RESET)"
+	$(call print_info,Running integration tests...)
 	@$(MAKE) test-integration TEST_SHOW_ALL_RESULTS=1
 
-test-verbose: ## Run all tests (detailed output)
+test-verbose: ## Run all behavioral tests (detailed output)
 	@$(MAKE) test-unit-verbose
 	@$(MAKE) test-integration-verbose
+	$(call print_success,✅ All tests completed!)
+
+test-full-verbose: ## Run all tests with detailed output
+	@$(MAKE) test-check
 	@$(MAKE) test-lib-py-verbose
 	@$(MAKE) test-lib TEST_SHOW_ALL_RESULTS=1
+	@$(MAKE) test-unit-verbose
+	@$(MAKE) test-integration-verbose
+	$(call print_success,✅ All tests completed!)
 
-test-deps-install: ## Install all test dependencies (BATS + Python)
-	@echo "$(BLUE)Installing test dependencies...$(RESET)"
-	@echo "$(BLUE)Installing BATS dependencies...$(RESET)"
+dev-test-deps-install: ## Install all test dependencies (BATS + Python)
+	$(call print_info,Installing test dependencies...)
+	$(call print_info,Installing BATS dependencies...)
 	./tests/run-tests.sh --install-deps
-	@echo "$(BLUE)Installing Python test dependencies...$(RESET)"
-	@sh -c 'if command -v uv >/dev/null 2>&1; then echo "$(CYAN)Using UV for fast dependency installation...$(RESET)"; fi'
+	$(call print_info,Installing Python test dependencies...)
+	@sh -c 'if command -v uv >/dev/null 2>&1; then printf "$(CYAN)Using UV for fast dependency installation...$(RESET)\n"; fi'
 	@cd git-config/lib/python && $(PIP_CMD) -q -e ".[dev]" || \
-	(echo "$(YELLOW)Warning: Could not install Python dev dependencies. Python tests may not work.$(RESET)")
-	@echo "$(GREEN)All test dependencies installed$(RESET)"
+	(printf "$(YELLOW)Warning: Could not install Python dev dependencies. Python tests may not work.$(RESET)\n")
+	$(call print_success,All test dependencies installed)
+
+test-deps-install: ## Install all test dependencies (DEPRECATED: use 'dev-test-deps-install')
+	$(call print_warning,⚠ 'test-deps-install' is deprecated, use 'make dev-test-deps-install')
+	@$(MAKE) dev-test-deps-install
 
 test-deps-py-install: ## Install Python test dependencies (DEPRECATED: use 'dev-deps-sync')
-	@echo "$(YELLOW)⚠ 'test-deps-py-install' is deprecated, use 'make dev-deps-sync'$(RESET)"
+	$(call print_warning,⚠ 'test-deps-py-install' is deprecated, use 'make dev-deps-sync')
 	@$(MAKE) dev-deps-sync
 
 dev-deps-sync: ## Sync dependencies from lockfiles
-	@echo "$(BLUE)Syncing dependencies...$(RESET)"
+	$(call print_info,Syncing dependencies...)
 	@test -d .venv || (printf "$(RED)❌ .venv not found$(RESET)\n" && printf "$(BLUE)ℹ️ Run: make dev-env-init$(RESET)\n" && exit 1)
-	@echo "$(BLUE)Installing Python test dependencies...$(RESET)"
-	@sh -c 'if command -v uv >/dev/null 2>&1; then echo "$(CYAN)Using UV for fast dependency installation...$(RESET)"; fi'
+	$(call print_info,Installing Python test dependencies...)
+	@sh -c 'if command -v uv >/dev/null 2>&1; then printf "$(CYAN)Using UV for fast dependency installation...$(RESET)\n"; fi'
 	@cd git-config/lib/python && $(PIP_CMD) -e ".[dev]"
-	@echo "$(GREEN)Python test dependencies installed$(RESET)"
+	$(call print_success,Python test dependencies installed)
 
-optional-deps-install: ## Install optional dependencies (gum, shfmt, ShellCheck)
-	@echo "$(BLUE)Installing optional dependencies...$(RESET)"
+dev-optional-install: ## Install optional development dependencies (gum, shfmt, ShellCheck)
+	$(call print_info,Installing optional dependencies...)
 	@bash bin/optional-deps-install.sh
-	@echo "$(BLUE)Installing shfmt...$(RESET)"
+	$(call print_info,Installing shfmt...)
 	$(call install_platform_pkg,shfmt,https://github.com/mvdan/sh)
-	@echo "$(BLUE)Installing ShellCheck...$(RESET)"
+	$(call print_info,Installing ShellCheck...)
 	$(call install_platform_pkg,shellcheck,https://www.shellcheck.net/)
 
-optional-deps-check: ## Check if optional dependencies are installed
-	@echo "$(BLUE)Checking optional dependencies...$(RESET)"
+optional-deps-install: ## Install optional dependencies (DEPRECATED: use 'dev-optional-install')
+	$(call print_warning,⚠ 'optional-deps-install' is deprecated, use 'make dev-optional-install')
+	@$(MAKE) dev-optional-install
+
+dev-optional-check: ## Check if optional development dependencies are installed
+	$(call print_info,Checking optional dependencies...)
 	@bash bin/optional-deps-install.sh --check
 
+optional-deps-check: ## Check if optional dependencies are installed (DEPRECATED: use 'dev-optional-check')
+	$(call print_warning,⚠ 'optional-deps-check' is deprecated, use 'make dev-optional-check')
+	@$(MAKE) dev-optional-check
+
 doctor: ## Check environment and tool readiness
-	@echo "$(BLUE)Checking environment...$(RESET)"
+	$(call print_info,Checking environment...)
 	@echo ""
 	@echo "Required tools:"
 	@command -v git >/dev/null || (printf "$(RED)❌ git not found$(RESET)\n" && exit 1)
@@ -293,8 +345,8 @@ doctor: ## Check environment and tool readiness
 	@printf "$(GREEN)✅ python3 found$(RESET)\n"
 	@echo ""
 	@echo "Optional tools (for static checks):"
-	@command -v shfmt >/dev/null || printf "$(YELLOW)⚠ shfmt not found (run 'make optional-deps-install')$(RESET)\n"
-	@command -v shellcheck >/dev/null || printf "$(YELLOW)⚠ ShellCheck not found (run 'make optional-deps-install')$(RESET)\n"
+	@command -v shfmt >/dev/null || printf "$(YELLOW)⚠ shfmt not found (run 'make dev-optional-install')$(RESET)\n"
+	@command -v shellcheck >/dev/null || printf "$(YELLOW)⚠ ShellCheck not found (run 'make dev-optional-install')$(RESET)\n"
 	@echo ""
 	@echo "UV (required for Python operations):"
 	@if command -v uv >/dev/null 2>&1; then \
@@ -323,41 +375,41 @@ doctor: ## Check environment and tool readiness
 	@printf "$(GREEN)✅ Environment check complete$(RESET)\n"
 
 python-check: ## Check Python environment (DEPRECATED: use 'doctor')
-	@echo "$(YELLOW)⚠ 'python-check' is deprecated, use 'make doctor'$(RESET)"
+	$(call print_warning,⚠ 'python-check' is deprecated, use 'make doctor')
 	@$(MAKE) doctor
 
 python-venv-create: ## Create virtual environment using UV (fast) (DEPRECATED: use 'dev-env-init')
-	@echo "$(YELLOW)⚠ 'python-venv-create' is deprecated, use 'make dev-env-init'$(RESET)"
+	$(call print_warning,⚠ 'python-venv-create' is deprecated, use 'make dev-env-init')
 	@$(MAKE) dev-env-init
 
 dev-env-init: ## Create virtual environment (one-time setup)
-	@echo "$(BLUE)Creating virtual environment...$(RESET)"
+	$(call print_info,Creating virtual environment...)
 	@command -v uv >/dev/null 2>&1 || { \
 		printf "$(RED)❌ UV is required$(RESET)\n"; \
 		printf "$(CYAN)ℹ️  Install with: make python-install-uv$(RESET)\n"; \
 		exit 1; \
 	}
 	@$(UV_CMD) venv .venv
-	@echo "$(GREEN)✓ Virtual environment created with UV$(RESET)"
-	@echo "$(CYAN)Run 'make test-deps-py-install' to install dependencies$(RESET)"
+	$(call print_success,✓ Virtual environment created with UV)
+	@printf "$(CYAN)Run 'make test-deps-py-install' to install dependencies$(RESET)\n"
 
 python-install-uv: ## Install UV package manager
-	@echo "$(BLUE)Installing UV...$(RESET)"
+	$(call print_info,Installing UV...)
 	@curl -LsSf https://astral.sh/uv/install.sh | sh
-	@echo "$(GREEN)UV installed successfully$(RESET)"
-	@echo "$(CYAN)Run 'source ~/.bashrc' or restart your shell to use UV$(RESET)"
+	$(call print_success,UV installed successfully)
+	@printf "$(CYAN)Run 'source ~/.bashrc' or restart your shell to use UV$(RESET)\n"
 
 ##@ Mock Data Management
 
 mocks-check: ## Check status of recorded mock data
-	@echo "$(BLUE)Checking mock data status...$(RESET)"
+	$(call print_info,Checking mock data status...)
 	@cd git-config/lib/python/tests/fixtures && \
 	if [ ! -d mocks/git/log ]; then \
-		echo "$(YELLOW)⚠ No mock data found$(RESET)"; \
+		printf "$(YELLOW)⚠ No mock data found$(RESET)\n"; \
 		echo "Run 'make mocks-generate' to create mock data"; \
 		exit 1; \
 	fi; \
-	echo "$(GREEN)✓ Mock data exists$(RESET)"; \
+	printf "$(GREEN)✓ Mock data exists$(RESET)\n"; \
 	echo ""; \
 	echo "TOML files:"; \
 	find mocks -name "*.toml" -type f | sed 's/^/  - /'; \
@@ -366,44 +418,44 @@ mocks-check: ## Check status of recorded mock data
 	find mocks -name "*.txt" -type f | wc -l | xargs printf "  %s output files\n"
 
 mocks-generate: ## Regenerate all mock data from real commands
-	@echo "$(BLUE)Regenerating all mock data...$(RESET)"
+	$(call print_info,Regenerating all mock data...)
 	@cd git-config/lib/python/tests/fixtures && $(PYTHON_CMD) generate_mocks.py
-	@echo "$(GREEN)✓ All mock data regenerated successfully$(RESET)"
+	$(call print_success,✓ All mock data regenerated successfully)
 
 mocks-generate-git: ## Regenerate Git command mocks only
-	@echo "$(BLUE)Regenerating Git command mocks...$(RESET)"
+	$(call print_info,Regenerating Git command mocks...)
 	@cd git-config/lib/python/tests/fixtures && $(PYTHON_CMD) generate_mocks.py
-	@echo "$(GREEN)✓ Git mocks regenerated$(RESET)"
+	$(call print_success,✓ Git mocks regenerated)
 
 mocks-regenerate: mocks-generate ## Alias for mocks-generate
 
 mocks-clean: ## Remove all generated mock data
-	@echo "$(BLUE)Cleaning mock data...$(RESET)"
+	$(call print_info,Cleaning mock data...)
 	@cd git-config/lib/python/tests/fixtures/mocks && \
 	find . -name "*.toml" -type f -delete && \
 	find . -name "*.txt" -type f -delete
-	@echo "$(GREEN)✓ Mock data cleaned$(RESET)"
-	@echo "$(YELLOW)Run 'make mocks-generate' to recreate$(RESET)"
+	$(call print_success,✓ Mock data cleaned)
+	$(call print_warning,Run 'make mocks-generate' to recreate)
 
 mocks-clean-git: ## Remove Git command mocks only
-	@echo "$(BLUE)Cleaning Git command mocks...$(RESET)"
+	$(call print_info,Cleaning Git command mocks...)
 	@rm -rf git-config/lib/python/tests/fixtures/mocks/git/log/*.toml
 	@rm -rf git-config/lib/python/tests/fixtures/mocks/git/log/outputs/*.txt
-	@echo "$(GREEN)✓ Git mocks cleaned$(RESET)"
+	$(call print_success,✓ Git mocks cleaned)
 
 mocks-test-with-regenerate: ## Run Python tests and regenerate mocks on failure
-	@echo "$(BLUE)Running Python tests with mock regeneration...$(RESET)"
+	$(call print_info,Running Python tests with mock regeneration...)
 	@cd git-config/lib/python && \
 	if ! $(PYTEST_CMD) tests/ -v --color=yes --tb=short; then \
-		echo "$(YELLOW)Tests failed - regenerating mocks...$(RESET)"; \
+		printf "$(YELLOW)Tests failed - regenerating mocks...$(RESET)\n"; \
 		cd tests/fixtures && $(PYTHON_CMD) generate_mocks.py; \
-		echo "$(BLUE)Retrying tests with fresh mocks...$(RESET)"; \
+		printf "$(BLUE)Retrying tests with fresh mocks...$(RESET)\n"; \
 		cd ../.. && $(PYTEST_CMD) tests/ -v --color=yes --tb=short; \
 	fi
-	@echo "$(GREEN)✓ Python tests passed$(RESET)"
+	$(call print_success,✓ Python tests passed)
 
 mocks-validate: ## Validate mock data integrity (TOML + output files match)
-	@echo "$(BLUE)Validating mock data integrity...$(RESET)"
+	$(call print_info,Validating mock data integrity...)
 	@cd git-config/lib/python/tests/fixtures && \
 	$(PYTHON_CMD) -c "import tomllib; from pathlib import Path; errors = []; \
 [toml_file for toml_file in Path('mocks').rglob('*.toml') if (lambda f: ([errors.append(f'Missing: {f.parent / scenario.get(\"output_file\", \"\")}') for scenario in tomllib.load(open(f, 'rb')).get('scenario', []) if not (f.parent / scenario.get('output_file', '')).exists()], None)[1])(toml_file)]; \
@@ -412,49 +464,49 @@ exit(1) if errors and print('\n'.join(errors)) else print('$(GREEN)✓ All mock 
 ##@ VHS Screencasts
 
 vhs-deps-install: ## Install VHS tool if not present
-	@echo "$(BLUE)Installing VHS dependencies...$(RESET)"
+	$(call print_info,Installing VHS dependencies...)
 	@bash docs/screencasts/bin/vhs-build.sh --install-deps
 
 vhs-check: vhs-deps-install ## Check if VHS is installed
-	@echo "$(BLUE)Checking VHS installation...$(RESET)"
+	$(call print_info,Checking VHS installation...)
 	@bash docs/screencasts/bin/vhs-build.sh --check
 
 vhs: demo-repo-rebuild-all vhs-deps-install ## Build all GIF/PNG images from VHS tape files
-	@echo "$(BLUE)Building all VHS screencasts...$(RESET)"
+	$(call print_info,Building all VHS screencasts...)
 	@bash docs/screencasts/bin/vhs-build.sh --all
 	@$(MAKE) vhs-strip-metadata
 
 vhs-build: vhs ## Alias for vhs target
 
 vhs-build-one: vhs-check ## Build a specific VHS tape file (usage: make vhs-build-one TAPE=filename.tape)
-	@echo "$(BLUE)Building VHS screencast: $(TAPE)$(RESET)"
+	$(call print_info,Building VHS screencast: $(TAPE))
 	@if [ -z "$(TAPE)" ]; then \
-		echo "$(YELLOW)Usage: make vhs-build-one TAPE=filename.tape$(RESET)"; \
+		printf "$(YELLOW)Usage: make vhs-build-one TAPE=filename.tape$(RESET)\n"; \
 		exit 1; \
 	fi
 	@bash docs/screencasts/bin/vhs-build.sh "$(TAPE)"
 	@$(MAKE) vhs-strip-metadata
 
 vhs-dry-run: ## Show what would be built without building
-	@echo "$(BLUE)Dry run - showing what would be built...$(RESET)"
+	$(call print_info,Dry run - showing what would be built...)
 	@bash docs/screencasts/bin/vhs-build.sh --dry-run --all
 
 vhs-strip-metadata: ## Strip metadata from all PNG/GIF images to make them deterministic
-	@echo "$(BLUE)Stripping metadata from images...$(RESET)"
-	@bash docs/screencasts/bin/vhs-strip-metadata.sh && echo "$(GREEN)Metadata stripped successfully$(RESET)"
+	$(call print_info,Stripping metadata from images...)
+	@bash docs/screencasts/bin/vhs-strip-metadata.sh && $(call print_success,Metadata stripped successfully)
 
 vhs-clean: ## Remove generated GIF/PNG files from VHS
 	@bash docs/screencasts/bin/vhs-clean.sh
 
 vhs-regenerate: demo-repo vhs-deps-install ## Regenerate VHS images for CI (demo + essential tapes)
-	@echo "$(BLUE)Regenerating VHS images...$(RESET)"
+	$(call print_info,Regenerating VHS images...)
 	@bash docs/screencasts/bin/vhs-build.sh hug-l.tape hug-lo.tape hug-lol.tape hug-sl-states.tape
-	@echo "$(BLUE)Cleaning up frame directories...$(RESET)"
+	$(call print_info,Cleaning up frame directories...)
 	@bash docs/screencasts/bin/vhs-cleanup-frames.sh
-	@echo "$(BLUE)Verifying cleanup...$(RESET)"
+	$(call print_info,Verifying cleanup...)
 	@bash docs/screencasts/bin/vhs-cleanup-frames.sh --verify-strict
 	@$(MAKE) vhs-strip-metadata
-	@echo "$(GREEN)VHS images regenerated successfully$(RESET)"
+	$(call print_success,VHS images regenerated successfully)
 
 vhs-commit-push: ## Commit and push VHS image changes (for CI/automation)
 	@bash docs/screencasts/bin/vhs-commit-push.sh
@@ -462,35 +514,42 @@ vhs-commit-push: ## Commit and push VHS image changes (for CI/automation)
 ##@ Documentation
 
 docs-dev: ## Start documentation development server
-	@echo "$(BLUE)Starting documentation server...$(RESET)"
+	$(call print_info,Starting documentation server...)
 	npm run docs:dev
 
 docs-build: ## Build documentation for production
-	@echo "$(BLUE)Building documentation...$(RESET)"
+	$(call print_info,Building documentation...)
 	npm run docs:build
 
 docs-preview: ## Preview built documentation
-	@echo "$(BLUE)Previewing documentation...$(RESET)"
+	$(call print_info,Previewing documentation...)
 	npm run docs:preview
 
 ##@ Installation
 
-install: ## Install Hug SCM
-	@echo "$(BLUE)Installing Hug SCM...$(RESET)"
+# NOTE: 'install' is a prohibited name in makefile-dev PRD (ambiguous).
+# Exception: This target installs the Hug SCM application itself, not dev dependencies.
+# Alternative names considered: user-install, app-install (kept 'install' for discoverability).
+install: ## Install Hug SCM to your home directory
+	$(call print_info,Installing Hug SCM...)
 	./install.sh
-	@echo "$(GREEN)Installation complete!$(RESET)"
+	$(call print_success,Installation complete!)
 	@echo "Run 'source bin/activate' to activate Hug"
 
-deps-docs: ## Install documentation dependencies
-	@echo "$(BLUE)Installing documentation dependencies...$(RESET)"
+docs-deps-install: ## Install documentation dependencies
+	$(call print_info,Installing documentation dependencies...)
 	npm ci
+
+deps-docs: ## Install documentation dependencies (DEPRECATED: use 'docs-deps-install')
+	$(call print_warning,⚠ 'deps-docs' is deprecated, use 'make docs-deps-install')
+	@$(MAKE) docs-deps-install
 
 ##@ Development
 
 ##@ Debugging
 
 debug-vars: ## Dump all Makefile variables for debugging
-	@echo "$(BLUE)=== Makefile Variables ===$(RESET)"
+	@printf "$(BLUE)=== Makefile Variables ===$(RESET)\n"
 	@echo "PYTHON_LIB_DIR=$(PYTHON_LIB_DIR)"
 	@echo "UV_CMD=$(UV_CMD)"
 	@echo "PYTHON_CMD=$(PYTHON_CMD)"
@@ -504,21 +563,21 @@ debug-vars: ## Dump all Makefile variables for debugging
 	@echo "MAKEFLAGS=$(MAKEFLAGS)"
 
 debug-self-test: ## Verify Makefile syntax and critical variables
-	@echo "$(BLUE)Testing Makefile syntax...$(RESET)"
+	$(call print_info,Testing Makefile syntax...)
 	@make -n test-unit >/dev/null 2>&1 || (printf "$(RED)✗ Makefile syntax error$(RESET)\n" && exit 1)
 	@printf "$(GREEN)✓ Syntax OK$(RESET)\n"
-	@echo "$(BLUE)Testing critical variables...$(RESET)"
+	$(call print_info,Testing critical variables...)
 	@test -n "$(PYTHON_LIB_DIR)" || (printf "$(RED)✗ PYTHON_LIB_DIR not set$(RESET)\n" && exit 1)
 	@test -d "$(PYTHON_LIB_DIR)" || printf "$(YELLOW)⚠ PYTHON_LIB_DIR directory doesn't exist yet$(RESET)\n"
 	@printf "$(GREEN)✓ Variables OK$(RESET)\n"
 
 debug-dry-run: ## Show what targets would execute without running
-	@echo "$(BLUE)Dry run - showing target recipes...$(RESET)"
+	$(call print_info,Dry run - showing target recipes...)
 	@echo "To see specific target recipe, use: make -n <target>"
 	@echo "Example: make -n test-unit"
 
 debug: debug-vars debug-self-test ## Run all debug checks
-	@echo "$(GREEN)✓ Debug checks complete$(RESET)"
+	$(call print_success,✓ Debug checks complete)
 
 format: ## Format code (LLM-friendly: summary only)
 	@printf "$(BLUE)Formatting Bash scripts...$(RESET)\n"
@@ -624,119 +683,137 @@ typecheck-verbose: ## Type check Python code (detailed)
 		printf "$(YELLOW)⚠ UV not available$(RESET)\n"; \
 	fi
 
-static: ## Run all static checks that don't change the source code
+sanitize-check: ## Read-only static checks (lint + typecheck)
 	@$(MAKE) lint
 	@$(MAKE) typecheck
 	@printf "$(GREEN)✅ Static checks complete$(RESET)\n"
 
+sanitize-check-verbose: ## Read-only static checks with detailed output
+	@$(MAKE) lint-verbose
+	@$(MAKE) typecheck-verbose
+	@printf "$(GREEN)✅ Static checks complete$(RESET)\n"
+
 sanitize: ## Run all static checks (format + lint + typecheck)
 	@$(MAKE) format
-	@$(MAKE) lint
-	@$(MAKE) typecheck
-	@printf "$(GREEN)✅ Sanitize complete$(RESET)\n"
+	@$(MAKE) sanitize-check
 
 sanitize-verbose: ## Run all static checks with detailed output
 	@$(MAKE) format-verbose
-	@$(MAKE) lint-verbose
-	@$(MAKE) typecheck-verbose
-	@printf "$(GREEN)✅ Sanitize complete$(RESET)\n"
+	@$(MAKE) sanitize-check-verbose
 
-check: ## Fast merge gate (sanitize + some tests)
+# === PRD-Compliant Fast Gate ===
+check: ## Fast merge gate (sanitize + unit tests only - PRD-compliant)
+	@$(MAKE) sanitize
+	@$(MAKE) test-unit
+	$(call print_success,✅ Fast checks passed)
+
+check-verbose: ## Fast merge gate with detailed output
+	@$(MAKE) sanitize-verbose
+	@$(MAKE) test-unit-verbose
+	$(call print_success,✅ Fast checks passed)
+
+check-full: ## Enhanced merge gate (includes library tests)
 	@$(MAKE) sanitize
 	@$(MAKE) test-check
 	@$(MAKE) test-lib-py
 	@$(MAKE) test-lib
-	@printf "$(GREEN)✅ Checks passed$(RESET)\n"
+	$(call print_success,✅ Enhanced checks passed)
 
-check-verbose: ## Merge gate with detailed output
-	@$(MAKE) sanitize
+check-full-verbose: ## Enhanced merge gate with detailed output
+	@$(MAKE) sanitize-verbose
 	@$(MAKE) test-check
 	@$(MAKE) test-lib-py-verbose
 	@$(MAKE) test-lib TEST_SHOW_ALL_RESULTS=1
 	@$(MAKE) test-unit-verbose
 	@$(MAKE) test-integration-verbose
-	@echo "$(GREEN)✅ Checks passed$(RESET)"
+	$(call print_success,✅ Enhanced checks passed)
 
 pre-commit: ## Run checks and tests before commit (git hook target)
 	@$(MAKE) check
-	@echo "$(GREEN)✓ Pre-commit checks complete$(RESET)"
+	$(call print_success,✓ Pre-commit checks complete)
 
 coverage: test-lib-py-coverage ## Enforce test coverage thresholds
-	@echo "$(GREEN)✅ Coverage check complete$(RESET)"
+	$(call print_success,✅ Coverage check complete)
 
 validate: ## Full release validation (sanitize + test + coverage)
 	@$(MAKE) sanitize
 	@$(MAKE) test
 	@$(MAKE) coverage
-	@echo "$(GREEN)✅ Release validation complete$(RESET)"
+	$(call print_success,✅ Release validation complete)
+
+validate-full: ## Full release validation including library tests
+	@$(MAKE) sanitize
+	@$(MAKE) test-full
+	@$(MAKE) coverage
+	$(call print_success,✅ Release validation complete)
 
 ci: ## Run full CI pipeline (all tests)
-	@$(MAKE) static
+	@$(MAKE) sanitize-check
 	@$(MAKE) test
-	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
-	@echo "$(GREEN)✓ CI Pipeline Complete$(RESET)"
-	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
+	@printf "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)\n"
+	@printf "$(GREEN)✓ CI Pipeline Complete$(RESET)\n"
+	@printf "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)\n"
 
 clean: ## Clean build artifacts and temporary files
-	@echo "$(BLUE)Cleaning build artifacts...$(RESET)"
+	$(call print_info,Cleaning build artifacts...)
 	rm -rf docs/.vitepress/dist
 	rm -rf docs/.vitepress/cache
 	rm -rf node_modules/.vite
-	@echo "$(GREEN)Clean complete!$(RESET)"
+	$(call print_success,Clean complete!)
 
 clean-all: clean demo-clean ## Clean everything including node_modules
-	@echo "$(BLUE)Cleaning everything...$(RESET)"
+	$(call print_info,Cleaning everything...)
 	rm -rf node_modules
-	@echo "$(GREEN)Deep clean complete!$(RESET)"
+	$(call print_success,Deep clean complete!)
 
 ##@ Demo Repository
 
 demo-repo: ## Create demo repository for tutorials and screencasts
-	@echo "$(BLUE)Creating demo repository...$(RESET)"
+	$(call print_info,Creating demo repository...)
 	@$(DEMO_REPO_ENV) bash docs/screencasts/bin/repo-setup.sh "$(DEMO_REPO_BASE)"
-	@echo "$(GREEN)Demo repository created at $(DEMO_REPO_BASE)$(RESET)"
+	$(call print_success,Demo repository created at $(DEMO_REPO_BASE))
 
 demo-repo-simple: ## Create simple demo repository for CI and quick testing
-	@echo "$(BLUE)Creating simple demo repository...$(RESET)"
+	$(call print_info,Creating simple demo repository...)
 	@$(DEMO_REPO_ENV) bash docs/screencasts/bin/repo-setup-simple.sh "$(DEMO_REPO_BASE)"
 
 demo-repo-workflows: ## Create workflows demo repository for practical workflows screencasts
-	@echo "$(BLUE)Creating workflows demo repository...$(RESET)"
+	$(call print_info,Creating workflows demo repository...)
 	@$(DEMO_REPO_ENV) bash docs/screencasts/practical-workflows/bin/repo-setup.sh "$(DEMO_WORKFLOWS_REPO)"
-	@echo "$(GREEN)Workflows demo repository created at $(DEMO_WORKFLOWS_REPO)$(RESET)"
+	$(call print_success,Workflows demo repository created at $(DEMO_WORKFLOWS_REPO))
 
 demo-repo-beginner: ## Create beginner demo repository for beginner tutorial screencasts
-	@echo "$(BLUE)Creating beginner demo repository...$(RESET)"
+	$(call print_info,Creating beginner demo repository...)
 	@$(DEMO_REPO_ENV) bash docs/screencasts/hug-for-beginners/bin/repo-setup.sh "$(DEMO_BEGINNER_REPO)"
-	@echo "$(GREEN)Beginner demo repository created at $(DEMO_BEGINNER_REPO)$(RESET)"
+	$(call print_success,Beginner demo repository created at $(DEMO_BEGINNER_REPO))
 
 demo-repo-all: demo-repo demo-repo-workflows demo-repo-beginner ## Create all demo repositories
 
 demo-clean: ## Clean demo repository and remote
-	@echo "$(BLUE)Cleaning demo repository...$(RESET)"
+	$(call print_info,Cleaning demo repository...)
 	@rm -rf $(DEMO_REPO_BASE) $(DEMO_REPO_BASE).git
-	@echo "$(GREEN)Demo repository cleaned$(RESET)"
+	$(call print_success,Demo repository cleaned)
 
 demo-clean-all: ## Clean all demo repositories
-	@echo "$(BLUE)Cleaning all demo repositories...$(RESET)"
+	$(call print_info,Cleaning all demo repositories...)
 	@rm -rf $(DEMO_REPO_BASE) $(DEMO_REPO_BASE).git
 	@rm -rf $(DEMO_WORKFLOWS_REPO) $(DEMO_WORKFLOWS_REPO).git
 	@rm -rf $(DEMO_BEGINNER_REPO) $(DEMO_BEGINNER_REPO).git
-	@echo "$(GREEN)All demo repositories cleaned$(RESET)"
+	$(call print_success,All demo repositories cleaned)
 
 demo-repo-rebuild: demo-clean demo-repo ## Rebuild demo repository from scratch
 
 demo-repo-rebuild-all: demo-clean-all demo-repo-all ## Rebuild all demo repositories from scratch
 
 demo-repo-status: ## Show status of demo repository
-	@echo "$(BLUE)Demo repository status:$(RESET)"
+	@printf "$(BLUE)Demo repository status:$(RESET)\n"
 	@if [ ! -d $(DEMO_REPO_BASE) ]; then \
-		echo "$(YELLOW)Demo repository does not exist$(RESET)"; \
+		printf "$(YELLOW)Demo repository does not exist$(RESET)\n"; \
 		echo "Run 'make demo-repo' to create it"; \
 		exit 1; \
 	fi; \
 	cd $(DEMO_REPO_BASE) && \
-	echo "$(GREEN)Repository exists$(RESET)" && \
+	printf "$(GREEN)Repository exists$(RESET)\n" && \
 	echo "" && \
 	echo "Commits: $$(git rev-list --all --count 2>/dev/null || echo 'N/A')" && \
 	echo "Branches: $$(git branch -a 2>/dev/null | wc -l || echo 'N/A')" && \
@@ -744,11 +821,14 @@ demo-repo-status: ## Show status of demo repository
 	echo "Remote: $$(git remote -v 2>/dev/null | head -1 || echo 'N/A')"; \
 	exit 0
 
-.PHONY: test test-bash test-unit test-integration test-lib test-check test-lib-py test-lib-py-verbose test-lib-py-coverage test-deps-install test-deps-py-install optional-deps-install optional-deps-check python-check python-venv-create python-install-uv
+.PHONY: test test-bash test-unit test-integration test-lib test-check test-lib-py test-lib-py-verbose test-lib-py-coverage test-verbose test-full test-full-verbose
+.PHONY: dev-test-deps-install test-deps-install test-deps-py-install dev-optional-install optional-deps-install dev-optional-check optional-deps-check
+.PHONY: python-check python-venv-create python-install-uv dev-deps-sync dev-env-init doctor
 .PHONY: mocks-check mocks-generate mocks-generate-git mocks-regenerate mocks-clean mocks-clean-git mocks-test-with-regenerate mocks-validate
 .PHONY: vhs-deps-install
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
-.PHONY: docs-dev docs-build docs-preview deps-docs
-.PHONY: format format-verbose lint lint-verbose lint-errors-only typecheck typecheck-verbose sanitize sanitize-verbose check check-verbose pre-commit coverage validate ci install clean clean-all
+.PHONY: docs-dev docs-build docs-preview docs-deps-install deps-docs
+.PHONY: format format-verbose lint lint-verbose lint-errors-only typecheck typecheck-verbose sanitize-check sanitize-check-verbose sanitize sanitize-verbose
+.PHONY: check check-verbose check-full check-full-verbose pre-commit coverage validate validate-full ci install clean clean-all
 .PHONY: debug-vars debug-self-test debug-dry-run debug
 .PHONY: demo-repo demo-repo-simple demo-repo-workflows demo-repo-beginner demo-repo-all demo-clean demo-clean-all demo-repo-rebuild demo-repo-rebuild-all demo-repo-status
