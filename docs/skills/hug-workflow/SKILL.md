@@ -64,7 +64,7 @@ Start: hug sla
 ### Commit Changes
 
 ```sh
-hug sla                      # List S:*, U:*, UnTrck files
+hug sla                      # List S:*, U:*, untrcK files
 hug a <files>                # Stage specific files
 hug sls                      # List S:* files
 hug c -m 'message'           # Commit
@@ -124,7 +124,7 @@ ALWAYS use the Hug command that corresponds to the git command you're trying to 
 **Status & Inspection:**
 - `hug sl` - List staged (S:*) and unstaged (U:*) files, with stats
 - `hug sls` - List staged files only
-- `hug sla` - List staged (S:*), unstaged (U:*) and untracked (UnTrck) files
+- `hug sla` - List staged (S:*), unstaged (U:*) and untracked (untrcK) files
 - `hug sh`  - Last commit with full message and diff stats
 - `hug shp` - Same as `hug sh` + diff
 - `hug llu` - Outgoing commits

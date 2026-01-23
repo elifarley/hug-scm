@@ -28,7 +28,7 @@ declare -gA STATUS_PRIORITY=(
   ["U:Mod"]=70    ["U:Del"]=70
 
   # Untracked files (new files, important but less urgent)
-  ["UnTrck"]=60
+  ["untrcK"]=60
 
   # Ignored files (lowest priority, rarely need attention)
   ["Ignore"]=50

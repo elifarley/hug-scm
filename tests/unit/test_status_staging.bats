@@ -831,7 +831,7 @@ teardown() {
 
   run hug slk src/
   assert_success
-  assert_output --partial "UnTrck src/"
+  assert_output --partial "untrcK src/"
 }
 
 @test "hug slk shows message when no untracked files" {

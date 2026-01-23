@@ -268,7 +268,7 @@ create_merge_conflict() {
   # Should show untracked file
   [[ "$output" =~ src/untracked.js ]]
   # Should have untracked label
-  [[ "$output" =~ UnTrck ]]
+  [[ "$output" =~ untrcK ]]
 }
 
 @test "list_files_with_status: shows all types with multiple flags" {
@@ -351,7 +351,7 @@ create_merge_conflict() {
   [[ "$output" =~ added.txt ]]
 }
 
-@test "list_files_with_status: correct file ordering by priority (UnTrck before U:*)" {
+@test "list_files_with_status: correct file ordering by priority (untrcK before U:*)" {
   # Create a mix of file types to test ordering
   echo "unstaged change" > unstaged.txt
   echo "tracked file" > tracked.txt
@@ -385,8 +385,8 @@ create_merge_conflict() {
   tracked_line_num=$(echo "$output" | grep -n " tracked.txt$" | cut -d: -f1 | head -1)
   staged_line_num=$(echo "$output" | grep -n " staged.txt$" | cut -d: -f1 | head -1)
 
-  # Verify that UnTrck appears BEFORE U:Mod (lower line number = higher in output)
-  # UnTrck (priority 60) should come before U:Mod (priority 70)
+  # Verify that untrcK appears BEFORE U:Mod (lower line number = higher in output)
+  # untrcK (priority 60) should come before U:Mod (priority 70)
   [[ $untracked_line_num -lt $tracked_line_num ]]
   [[ $unstaged_line_num -lt $tracked_line_num ]]
 
@@ -434,7 +434,7 @@ create_merge_conflict() {
   [[ $priority -eq 90 ]]  # Conflicts are still 90
 
   # Untracked files have lower priority (60)
-  priority=$(get_status_priority "UnTrck")
+  priority=$(get_status_priority "untrcK")
   [[ $priority -eq 60 ]]
 
   # Ignored files have lowest priority (50)
@@ -446,15 +446,15 @@ create_merge_conflict() {
   [[ $priority -eq 0 ]]
 }
 
-@test "get_status_priority: verifies UnTrck has lower priority than U:Mod" {
+@test "get_status_priority: verifies untrcK has lower priority than U:Mod" {
   # Load the priorities library
   load '../../git-config/lib/hug-git-priorities'
 
   local untracked_priority unstaged_priority
-  untracked_priority=$(get_status_priority "UnTrck")
+  untracked_priority=$(get_status_priority "untrcK")
   unstaged_priority=$(get_status_priority "U:Mod")
 
-  # UnTrck (60) should have lower priority than U:Mod (70)
+  # untrcK (60) should have lower priority than U:Mod (70)
   [[ $untracked_priority -lt $unstaged_priority ]]
   [[ $untracked_priority -eq 60 ]]
   [[ $unstaged_priority -eq 70 ]]
@@ -544,8 +544,8 @@ create_merge_conflict() {
   result=$(_format_untracked_status)
   IFS=$'\t' read -r status_text status_code <<< "$result"
 
-  [[ "$status_code" == "UnTrck" ]]
-  [[ "$status_text" =~ UnTrck ]]
+  [[ "$status_code" == "untrcK" ]]
+  [[ "$status_text" =~ untrcK ]]
 }
 
 @test "_format_ignored_status: returns correct format" {

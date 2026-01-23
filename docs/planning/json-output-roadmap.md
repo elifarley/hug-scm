@@ -178,7 +178,7 @@ Commands used daily that would provide immediate automation value.
 ```
 S:Add  new-file.txt          (+12 lines)
 U:Mod  README.md              (+5 -3 lines)
-UnTrck untracked.txt
+untrcK untracked.txt
 ```
 
 **Proposed JSON Format**:

@@ -22,7 +22,7 @@
 #   Examples:
 #     S:Add  staged.txt
 #     U:Mod  README.md
-#     UnTrck untracked.txt
+#     untrcK untracked.txt
 # Returns:
 #   0 if files found and listed, 1 if no files found
 # Defaults:
@@ -74,8 +74,8 @@ _format_unstaged_status() {
 # Output: Tab-delimited "status_text<tab>status_code"
 # Usage: IFS=$'\t' read -r status_text status_code <<< "$(_format_untracked_status)"
 _format_untracked_status() {
-  local status_text="${MAGENTA}UnTrck${NC}"
-  local status_code="UnTrck"
+  local status_text="${MAGENTA}untrcK${NC}"
+  local status_code="untrcK"
   printf '%s\t%s' "$status_text" "$status_code"
 }
 
