@@ -24,6 +24,25 @@ TERM_COLOR := $(shell tput colors 2>/dev/null)
 # Python library directory (absolute path for CI reliability)
 PYTHON_LIB_DIR := $(realpath git-config/lib/python)
 
+# === Directory Variables ===
+# Centralize demo repo paths (currently scattered)
+DEMO_BASE_DIR := /tmp
+DEMO_REPO_BASE := $(DEMO_BASE_DIR)/demo-repo
+DEMO_WORKFLOWS_REPO := $(DEMO_BASE_DIR)/workflows-repo
+DEMO_BEGINNER_REPO := $(DEMO_BASE_DIR)/beginner-repo
+
+# === Shell Script Discovery ===
+# Single source of truth for shellcheck targets (repeated 3x)
+BASH_SOURCES := $$(find git-config/bin git-config/lib hg-config/bin hg-config/lib bin tests \
+    -type f \( -name "*.bash" -o -name "hug-*" -o -name "activate" -o -name "*.bats" \) \
+    -not -path "*/.venv/*" -not -name "*.md")
+
+# === Path Validation ===
+# Fail fast if Python library directory is missing
+ifeq ($(PYTHON_LIB_DIR),)
+    $(error Python library directory not found at git-config/lib/python)
+endif
+
 ifeq ($(TERM_COLOR),0)
     BOLD :=
     RESET :=
@@ -47,11 +66,62 @@ TEST_FILE ?=
 TEST_FILTER ?=
 TEST_SHOW_ALL_RESULTS ?=
 
-DEMO_REPO_BASE := /tmp/demo-repo
-
 # Setup PATH for demo repository creation (includes hug commands)
 HUG_BIN_PATH := $(shell pwd)/git-config/bin
 DEMO_REPO_ENV := export PATH="$$PATH:$(HUG_BIN_PATH)" &&
+
+# === Reusable Macros ===
+
+# Macro: run_bats_test
+# Usage: $(call run_bats_test,<display-name>,<default-dir>,<flag>)
+# Parameters:
+#   $1 = Display name (e.g., "unit", "integration")
+#   $2 = Default directory for TEST_FILE basename (e.g., "tests/unit/")
+#   $3 = Flag to pass to run-tests.sh (e.g., "--unit", "--integration")
+define run_bats_test
+@echo "$(BLUE)Running $(1) tests...$(RESET)"
+@if [ -n "$(TEST_FILE)" ]; then \
+    case "$(TEST_FILE)" in \
+    tests/*) \
+        ./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+        ;; \
+    *) \
+        ADJUSTED_FILE="$(2)$$(basename "$(TEST_FILE)")"; \
+        ./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+        ;; \
+    esac; \
+else \
+    ./tests/run-tests.sh $(3) $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
+fi
+endef
+
+# Macro: ensure_pytest
+# Ensures pytest is available before running Python tests
+define ensure_pytest
+@cd git-config/lib/python && \
+    if ! $(PYTEST_CMD) --version >/dev/null 2>&1; then \
+        echo "$(YELLOW)pytest not installed. Installing pytest and dev dependencies...$(RESET)"; \
+        $(PIP_CMD) -q -e ".[dev]" || \
+        (echo "$(YELLOW)Warning: Could not install dev dependencies. Tests will be skipped.$(RESET)" && exit 0); \
+    fi; \
+    cd - > /dev/null
+endef
+
+# Macro: install_platform_pkg
+# Usage: $(call install_platform_pkg,<package-name>,<url>)
+define install_platform_pkg
+@if command -v $(1) >/dev/null 2>&1; then \
+    echo "$(GREEN)✓ $(1) already installed$(RESET)"; \
+else \
+    if [ "$$(uname)" = "Darwin" ]; then \
+        brew install $(1) 2>/dev/null || echo "$(YELLOW)⚠ Install $(1) manually from $(2)$(RESET)"; \
+    elif [ -f /etc/debian_version ]; then \
+        sudo apt-get install -y $(1) 2>/dev/null || echo "$(YELLOW)⚠ Install $(1) manually from $(2)$(RESET)"; \
+    else \
+        echo "$(YELLOW)⚠ Install $(1) manually from $(2)$(RESET)"; \
+    fi; \
+fi
+endef
 
 ##@ General
 
@@ -71,6 +141,7 @@ help: ## Show this help message
 	@printf "  $(GREEN)make typecheck$(RESET)      - Type check Python (LLM-friendly)\n"
 	@printf "  $(GREEN)make typecheck-verbose$(RESET) - Type check Python (detailed)\n"
 	@printf "  $(GREEN)make sanitize$(RESET)       - Run all static checks (format + lint + typecheck)\n"
+	@printf "  $(GREEN)make sanitize-verbose$(RESET) - Run all static checks (detailed)\n"
 	@printf "\n"
 	@printf "$(BOLD)Testing:$(RESET)\n"
 	@printf "  $(CYAN)make test-unit$(RESET)       - Run unit tests (LLM-friendly)\n"
@@ -87,6 +158,12 @@ help: ## Show this help message
 	@printf "  $(GREEN)make validate$(RESET)       - Full release validation (sanitize + test + coverage)\n"
 	@printf "  $(GREEN)make coverage$(RESET)       - Enforce test coverage thresholds\n"
 	@printf "  $(GREEN)make pre-commit$(RESET)     - Pre-commit hook\n"
+	@printf "\n"
+	@printf "$(BOLD)Debugging:$(RESET)\n"
+	@printf "  $(CYAN)make debug-vars$(RESET)      - Dump all Makefile variables\n"
+	@printf "  $(CYAN)make debug-self-test$(RESET) - Verify Makefile syntax and variables\n"
+	@printf "  $(CYAN)make debug-dry-run$(RESET)   - Show what would execute without running\n"
+	@printf "  $(CYAN)make debug$(RESET)           - Run all debug checks\n"
 	@printf "\n"
 	@printf "$(BOLD)Documentation:$(RESET)\n"
 	@grep -E '^(docs-|deps-docs):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-24s$(RESET) %s\n", $$1, $$2}'
@@ -117,68 +194,16 @@ test: ## Run all tests by category (fastest first)
 	@echo "$(GREEN)All tests completed!$(RESET)"
 
 test-bash: ## Run all BATS-based tests (or specific: TEST_FILE=... TEST_FILTER=... TEST_SHOW_ALL_RESULTS=1)
-	@echo "$(BLUE)Running BATS tests...$(RESET)"
-	@if [ -n "$(TEST_FILE)" ]; then \
-		case "$(TEST_FILE)" in \
-		tests/*) \
-			./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
-			;; \
-		*) \
-			ADJUSTED_FILE="tests/$$(basename "$(TEST_FILE)")"; \
-			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
-			;; \
-		esac; \
-	else \
-		./tests/run-tests.sh tests/ $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
-	fi
+	$(call run_bats_test,BATS,tests/,tests/)
 
 test-unit: ## Run only unit tests (or specific: TEST_FILE=... TEST_FILTER=... TEST_SHOW_ALL_RESULTS=1)
-	@echo "$(BLUE)Running unit tests...$(RESET)"
-	@if [ -n "$(TEST_FILE)" ]; then \
-		case "$(TEST_FILE)" in \
-		tests/*) \
-			./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
-			;; \
-		*) \
-			ADJUSTED_FILE="tests/unit/$$(basename "$(TEST_FILE)")"; \
-			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
-			;; \
-		esac; \
-	else \
-		./tests/run-tests.sh --unit $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
-	fi
+	$(call run_bats_test,unit,tests/unit/,--unit)
 
 test-integration: ## Run only integration tests (or specific: TEST_FILE=... TEST_FILTER=... TEST_SHOW_ALL_RESULTS=1)
-	@echo "$(BLUE)Running integration tests...$(RESET)"
-	@if [ -n "$(TEST_FILE)" ]; then \
-		case "$(TEST_FILE)" in \
-		tests/*) \
-			./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
-			;; \
-		*) \
-			ADJUSTED_FILE="tests/integration/$$(basename "$(TEST_FILE)")"; \
-			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
-			;; \
-		esac; \
-	else \
-		./tests/run-tests.sh --integration $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
-	fi
+	$(call run_bats_test,integration,tests/integration/,--integration)
 
 test-lib: ## Run only library tests (or specific: TEST_FILE=... TEST_FILTER=... TEST_SHOW_ALL_RESULTS=1)
-	@echo "$(BLUE)Running library tests...$(RESET)"
-	@if [ -n "$(TEST_FILE)" ]; then \
-		case "$(TEST_FILE)" in \
-		tests/*) \
-			./tests/run-tests.sh "$(TEST_FILE)" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
-			;; \
-		*) \
-			ADJUSTED_FILE="tests/lib/$$(basename "$(TEST_FILE)")"; \
-			./tests/run-tests.sh "$$ADJUSTED_FILE" $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
-			;; \
-		esac; \
-	else \
-		./tests/run-tests.sh --lib $(if $(TEST_SHOW_ALL_RESULTS),-A) $(if $(TEST_FILTER),-f "$(TEST_FILTER)"); \
-	fi
+	$(call run_bats_test,library,tests/lib/,--lib)
 
 test-check: ## Check test prerequisites without actually running tests
 	@echo "$(BLUE)Checking test prerequisites...$(RESET)"
@@ -192,28 +217,20 @@ test-check: ## Check test prerequisites without actually running tests
 
 test-lib-py: ## Run Python library tests (pytest, LLM-friendly)
 	@echo "$(BLUE)Running Python library tests...$(RESET)"
+	$(ensure_pytest)
 	@cd git-config/lib/python && \
-	if ! $(PYTEST_CMD) --version >/dev/null 2>&1; then \
-		echo "$(YELLOW)pytest not installed. Installing pytest and dev dependencies...$(RESET)"; \
-		$(PIP_CMD) -q -e ".[dev]" || \
-		(echo "$(YELLOW)Warning: Could not install dev dependencies. Tests will be skipped.$(RESET)" && exit 0); \
-	fi; \
 	$(PYTEST_CMD) tests/ -q --color=yes --tb=short $(if $(TEST_FILTER),-k "$(TEST_FILTER)")
 
 test-lib-py-coverage: ## Run Python library tests with coverage report
 	@echo "$(BLUE)Running Python library tests with coverage...$(RESET)"
+	$(ensure_pytest)
 	@cd git-config/lib/python && \
-	$(PIP_CMD) -q -e ".[dev]" 2>/dev/null || true; \
 	$(PYTEST_CMD) tests/ -v --cov=. --cov-report=term-missing --cov-report=html
 
 test-lib-py-verbose: ## Run Python library tests (detailed output)
 	@echo "$(BLUE)Running Python library tests (verbose)...$(RESET)"
+	$(ensure_pytest)
 	@cd git-config/lib/python && \
-	if ! $(PYTEST_CMD) --version >/dev/null 2>&1; then \
-		echo "$(YELLOW)pytest not installed. Installing pytest and dev dependencies...$(RESET)"; \
-		$(PIP_CMD) -q -e ".[dev]" || \
-		(echo "$(YELLOW)Warning: Could not install dev dependencies. Tests will be skipped.$(RESET)" && exit 0); \
-	fi; \
 	$(PYTEST_CMD) tests/ -v --color=yes --tb=short $(if $(TEST_FILTER),-k "$(TEST_FILTER)")
 
 test-unit-verbose: ## Run unit tests (detailed output)
@@ -256,29 +273,9 @@ optional-deps-install: ## Install optional dependencies (gum, shfmt, ShellCheck)
 	@echo "$(BLUE)Installing optional dependencies...$(RESET)"
 	@bash bin/optional-deps-install.sh
 	@echo "$(BLUE)Installing shfmt...$(RESET)"
-	@if command -v shfmt >/dev/null 2>&1; then \
-		echo "$(GREEN)✓ shfmt already installed$(RESET)"; \
-	else \
-		if [ "$$(uname)" = "Darwin" ]; then \
-			brew install shfmt 2>/dev/null || echo "$(YELLOW)⚠ Install shfmt manually from https://github.com/mvdan/sh$(RESET)"; \
-		elif [ -f /etc/debian_version ]; then \
-			sudo apt-get install -y shfmt 2>/dev/null || echo "$(YELLOW)⚠ Install shfmt manually from https://github.com/mvdan/sh$(RESET)"; \
-		else \
-			echo "$(YELLOW)⚠ Install shfmt manually from https://github.com/mvdan/sh$(RESET)"; \
-		fi; \
-	fi
+	$(call install_platform_pkg,shfmt,https://github.com/mvdan/sh)
 	@echo "$(BLUE)Installing ShellCheck...$(RESET)"
-	@if command -v shellcheck >/dev/null 2>&1; then \
-		echo "$(GREEN)✓ ShellCheck already installed$(RESET)"; \
-	else \
-		if [ "$$(uname)" = "Darwin" ]; then \
-			brew install shellcheck 2>/dev/null || echo "$(YELLOW)⚠ Install ShellCheck manually from https://www.shellcheck.net/$(RESET)"; \
-		elif [ -f /etc/debian_version ]; then \
-			sudo apt-get install -y shellcheck 2>/dev/null || echo "$(YELLOW)⚠ Install ShellCheck manually from https://www.shellcheck.net/$(RESET)"; \
-		else \
-			echo "$(YELLOW)⚠ Install ShellCheck manually from https://www.shellcheck.net/$(RESET)"; \
-		fi; \
-	fi
+	$(call install_platform_pkg,shellcheck,https://www.shellcheck.net/)
 
 optional-deps-check: ## Check if optional dependencies are installed
 	@echo "$(BLUE)Checking optional dependencies...$(RESET)"
@@ -490,6 +487,39 @@ deps-docs: ## Install documentation dependencies
 
 ##@ Development
 
+##@ Debugging
+
+debug-vars: ## Dump all Makefile variables for debugging
+	@echo "$(BLUE)=== Makefile Variables ===$(RESET)"
+	@echo "PYTHON_LIB_DIR=$(PYTHON_LIB_DIR)"
+	@echo "UV_CMD=$(UV_CMD)"
+	@echo "PYTHON_CMD=$(PYTHON_CMD)"
+	@echo "PYTEST_CMD=$(PYTEST_CMD)"
+	@echo "PIP_CMD=$(PIP_CMD)"
+	@echo "DEMO_REPO_BASE=$(DEMO_REPO_BASE)"
+	@echo "DEMO_WORKFLOWS_REPO=$(DEMO_WORKFLOWS_REPO)"
+	@echo "DEMO_BEGINNER_REPO=$(DEMO_BEGINNER_REPO)"
+	@echo "TERM_COLOR=$(TERM_COLOR)"
+	@echo "SHELL=$(SHELL)"
+	@echo "MAKEFLAGS=$(MAKEFLAGS)"
+
+debug-self-test: ## Verify Makefile syntax and critical variables
+	@echo "$(BLUE)Testing Makefile syntax...$(RESET)"
+	@make -n test-unit >/dev/null 2>&1 || (printf "$(RED)✗ Makefile syntax error$(RESET)\n" && exit 1)
+	@printf "$(GREEN)✓ Syntax OK$(RESET)\n"
+	@echo "$(BLUE)Testing critical variables...$(RESET)"
+	@test -n "$(PYTHON_LIB_DIR)" || (printf "$(RED)✗ PYTHON_LIB_DIR not set$(RESET)\n" && exit 1)
+	@test -d "$(PYTHON_LIB_DIR)" || printf "$(YELLOW)⚠ PYTHON_LIB_DIR directory doesn't exist yet$(RESET)\n"
+	@printf "$(GREEN)✓ Variables OK$(RESET)\n"
+
+debug-dry-run: ## Show what targets would execute without running
+	@echo "$(BLUE)Dry run - showing target recipes...$(RESET)"
+	@echo "To see specific target recipe, use: make -n <target>"
+	@echo "Example: make -n test-unit"
+
+debug: debug-vars debug-self-test ## Run all debug checks
+	@echo "$(GREEN)✓ Debug checks complete$(RESET)"
+
 format: ## Format code (LLM-friendly: summary only)
 	@printf "$(BLUE)Formatting Bash scripts...$(RESET)\n"
 	@if command -v shfmt >/dev/null 2>&1; then \
@@ -524,7 +554,7 @@ format-verbose: ## Format code (show changes)
 lint: ## Run linting checks (LLM-friendly: summary only)
 	@printf "$(BLUE)Linting Bash scripts...$(RESET)\n"
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		output=$$(shellcheck -S error $$(find git-config/bin git-config/lib hg-config/bin hg-config/lib bin tests -type f \( -name "*.bash" -o -name "hug-*" -o -name "activate" -o -name "*.bats" \) -not -path "*/.venv/*" -not -name "*.md") 2>&1); \
+		output=$$(shellcheck -S error $(BASH_SOURCES) 2>&1); \
 		if echo "$$output" | grep -q 'line [0-9]*:'; then \
 			printf "\n$${RED}✗ Bash linting errors found:$${RESET}\n"; \
 			echo "$$output"; \
@@ -537,8 +567,14 @@ lint: ## Run linting checks (LLM-friendly: summary only)
 	fi
 	@printf "$(BLUE)Linting Python helpers...$(RESET)\n"
 	@if command -v uv >/dev/null 2>&1; then \
-		$(UV_CMD) run --directory git-config/lib/python --extra dev ruff check --output-format=concise . 2>&1 | \
-			{ grep -vE "(VIRTUAL_ENV|All checks passed)" || true; } | { grep -q '.' && { cat; exit 1; } || printf "$(GREEN)✅ Python linting OK$(RESET)\n"; }; \
+		output=$$($(UV_CMD) run --directory git-config/lib/python --extra dev ruff check --output-format=concise . 2>&1 | grep -vE "(VIRTUAL_ENV|All checks passed)" || true); \
+		if [ -n "$$output" ]; then \
+			printf "$${RED}✗ Python linting errors found:$${RESET}\n"; \
+			echo "$$output"; \
+			exit 1; \
+		else \
+			printf "$(GREEN)✅ Python linting OK$(RESET)\n"; \
+		fi; \
 	else \
 		printf "$(YELLOW)⚠ UV not available - skipping Python linting$(RESET)\n"; \
 	fi
@@ -546,7 +582,7 @@ lint: ## Run linting checks (LLM-friendly: summary only)
 lint-verbose: ## Run linting (detailed output)
 	@printf "$(BLUE)Linting Bash scripts...$(RESET)\n"
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck $$(find git-config/bin git-config/lib hg-config/bin hg-config/lib bin tests -type f \( -name "*.bash" -o -name "hug-*" -o -name "activate" -o -name "*.bats" \) -not -path "*/.venv/*" -not -name "*.md"); \
+		shellcheck $(BASH_SOURCES); \
 	else \
 		printf "$(YELLOW)⚠ ShellCheck not found$(RESET)\n"; \
 	fi
@@ -560,7 +596,7 @@ lint-verbose: ## Run linting (detailed output)
 lint-errors-only: ## Run shellcheck showing only error-level issues (debug CI failures)
 	@printf "$(BLUE)Linting Bash scripts (error-level only)...$(RESET)\n"
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck -S error $$(find git-config/bin git-config/lib hg-config/bin hg-config/lib bin tests -type f \( -name "*.bash" -o -name "hug-*" -o -name "activate" -o -name "*.bats" \) -not -path "*/.venv/*" -not -name "*.md"); \
+		shellcheck -S error $(BASH_SOURCES); \
 	else \
 		printf "$(YELLOW)⚠ ShellCheck not found$(RESET)\n"; \
 	fi
@@ -568,8 +604,14 @@ lint-errors-only: ## Run shellcheck showing only error-level issues (debug CI fa
 typecheck: ## Type check Python code (LLM-friendly: summary only)
 	@printf "$(BLUE)Type checking Python helpers...$(RESET)\n"
 	@if command -v uv >/dev/null 2>&1; then \
-		$(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" --extra dev mypy --no-pretty . 2>&1 | \
-			{ grep -q 'error:' && { cat; exit 1; } || printf "$(GREEN)✅ Type checking OK$(RESET)\n"; }; \
+		output=$$($(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" --extra dev mypy --no-pretty . 2>&1); \
+		if echo "$$output" | grep -q 'error:'; then \
+			printf "$${RED}✗ Type checking errors found:$${RESET}\n"; \
+			echo "$$output"; \
+			exit 1; \
+		else \
+			printf "$(GREEN)✅ Type checking OK$(RESET)\n"; \
+		fi; \
 	else \
 		printf "$(YELLOW)⚠ UV not available - skipping type check$(RESET)\n"; \
 	fi
@@ -591,6 +633,12 @@ sanitize: ## Run all static checks (format + lint + typecheck)
 	@$(MAKE) format
 	@$(MAKE) lint
 	@$(MAKE) typecheck
+	@printf "$(GREEN)✅ Sanitize complete$(RESET)\n"
+
+sanitize-verbose: ## Run all static checks with detailed output
+	@$(MAKE) format-verbose
+	@$(MAKE) lint-verbose
+	@$(MAKE) typecheck-verbose
 	@printf "$(GREEN)✅ Sanitize complete$(RESET)\n"
 
 check: ## Fast merge gate (sanitize + some tests)
@@ -654,13 +702,13 @@ demo-repo-simple: ## Create simple demo repository for CI and quick testing
 
 demo-repo-workflows: ## Create workflows demo repository for practical workflows screencasts
 	@echo "$(BLUE)Creating workflows demo repository...$(RESET)"
-	@$(DEMO_REPO_ENV) bash docs/screencasts/practical-workflows/bin/repo-setup.sh /tmp/workflows-repo
-	@echo "$(GREEN)Workflows demo repository created at /tmp/workflows-repo$(RESET)"
+	@$(DEMO_REPO_ENV) bash docs/screencasts/practical-workflows/bin/repo-setup.sh "$(DEMO_WORKFLOWS_REPO)"
+	@echo "$(GREEN)Workflows demo repository created at $(DEMO_WORKFLOWS_REPO)$(RESET)"
 
 demo-repo-beginner: ## Create beginner demo repository for beginner tutorial screencasts
 	@echo "$(BLUE)Creating beginner demo repository...$(RESET)"
-	@$(DEMO_REPO_ENV) bash docs/screencasts/hug-for-beginners/bin/repo-setup.sh /tmp/beginner-repo
-	@echo "$(GREEN)Beginner demo repository created at /tmp/beginner-repo$(RESET)"
+	@$(DEMO_REPO_ENV) bash docs/screencasts/hug-for-beginners/bin/repo-setup.sh "$(DEMO_BEGINNER_REPO)"
+	@echo "$(GREEN)Beginner demo repository created at $(DEMO_BEGINNER_REPO)$(RESET)"
 
 demo-repo-all: demo-repo demo-repo-workflows demo-repo-beginner ## Create all demo repositories
 
@@ -672,8 +720,8 @@ demo-clean: ## Clean demo repository and remote
 demo-clean-all: ## Clean all demo repositories
 	@echo "$(BLUE)Cleaning all demo repositories...$(RESET)"
 	@rm -rf $(DEMO_REPO_BASE) $(DEMO_REPO_BASE).git
-	@rm -rf /tmp/workflows-repo /tmp/workflows-repo.git
-	@rm -rf /tmp/beginner-repo /tmp/beginner-repo.git
+	@rm -rf $(DEMO_WORKFLOWS_REPO) $(DEMO_WORKFLOWS_REPO).git
+	@rm -rf $(DEMO_BEGINNER_REPO) $(DEMO_BEGINNER_REPO).git
 	@echo "$(GREEN)All demo repositories cleaned$(RESET)"
 
 demo-repo-rebuild: demo-clean demo-repo ## Rebuild demo repository from scratch
@@ -701,5 +749,6 @@ demo-repo-status: ## Show status of demo repository
 .PHONY: vhs-deps-install
 .PHONY: vhs vhs-build vhs-build-one vhs-dry-run vhs-clean vhs-check vhs-regenerate vhs-commit-push
 .PHONY: docs-dev docs-build docs-preview deps-docs
-.PHONY: format format-verbose lint lint-verbose typecheck typecheck-verbose sanitize check check-verbose pre-commit coverage validate ci install clean clean-all
+.PHONY: format format-verbose lint lint-verbose lint-errors-only typecheck typecheck-verbose sanitize sanitize-verbose check check-verbose pre-commit coverage validate ci install clean clean-all
+.PHONY: debug-vars debug-self-test debug-dry-run debug
 .PHONY: demo-repo demo-repo-simple demo-repo-workflows demo-repo-beginner demo-repo-all demo-clean demo-clean-all demo-repo-rebuild demo-repo-rebuild-all demo-repo-status
