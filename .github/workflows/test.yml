@@ -61,7 +61,7 @@ jobs:
       - name: Run ${{ matrix.test_type }} tests
         run: t="${{ matrix.test_type }}"; if test "$t" != static; then t="test-$t"; fi; make "$t"
 
-      - name: Run all tests with verbose output
-        if: failure()
-        run: echo "no verbose option"
+      - name: Show linting errors on failure
+        if: failure() && matrix.test_type == 'static'
+        run: make lint-errors-only
 

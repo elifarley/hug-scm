@@ -524,8 +524,14 @@ format-verbose: ## Format code (show changes)
 lint: ## Run linting checks (LLM-friendly: summary only)
 	@printf "$(BLUE)Linting Bash scripts...$(RESET)\n"
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck -S error $$(find git-config/bin git-config/lib hg-config/bin hg-config/lib bin tests -type f \( -name "*.bash" -o -name "hug-*" -o -name "activate" -o -name "*.bats" \) -not -path "*/.venv/*" -not -name "*.md") 2>&1 | \
-			{ grep -q 'line [0-9]*:' && { cat; exit 1; } || printf "$(GREEN)✅ Bash linting OK$(RESET)\n"; }; \
+		output=$$(shellcheck -S error $$(find git-config/bin git-config/lib hg-config/bin hg-config/lib bin tests -type f \( -name "*.bash" -o -name "hug-*" -o -name "activate" -o -name "*.bats" \) -not -path "*/.venv/*" -not -name "*.md") 2>&1); \
+		if echo "$$output" | grep -q 'line [0-9]*:'; then \
+			printf "\n$${RED}✗ Bash linting errors found:$${RESET}\n"; \
+			echo "$$output"; \
+			exit 1; \
+		else \
+			printf "$(GREEN)✅ Bash linting OK$(RESET)\n"; \
+		fi; \
 	else \
 		printf "$(YELLOW)⚠ ShellCheck not found - run 'make optional-deps-install'$(RESET)\n"; \
 	fi
@@ -549,6 +555,14 @@ lint-verbose: ## Run linting (detailed output)
 		$(UV_CMD) run --directory git-config/lib/python --extra dev ruff check .; \
 	else \
 		printf "$(YELLOW)⚠ UV not available$(RESET)\n"; \
+	fi
+
+lint-errors-only: ## Run shellcheck showing only error-level issues (debug CI failures)
+	@printf "$(BLUE)Linting Bash scripts (error-level only)...$(RESET)\n"
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck -S error $$(find git-config/bin git-config/lib hg-config/bin hg-config/lib bin tests -type f \( -name "*.bash" -o -name "hug-*" -o -name "activate" -o -name "*.bats" \) -not -path "*/.venv/*" -not -name "*.md"); \
+	else \
+		printf "$(YELLOW)⚠ ShellCheck not found$(RESET)\n"; \
 	fi
 
 typecheck: ## Type check Python code (LLM-friendly: summary only)
