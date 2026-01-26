@@ -32,6 +32,31 @@ hug c -C HEAD~1          # Reuse message from previous commit
 hug c -c main~2          # Reuse and edit message from main branch
 ```
 
+### Commit Message Patterns
+
+Choose the right pattern based on your message complexity:
+
+**Simple single-line** (most common):
+```shell
+hug c -m "Fix typo in README"
+```
+
+**Multi-line from LLM** (natural formatting, no escaping):
+```shell
+hug c -F - <<'EOF'
+feat: add user authentication
+
+WHY: Users need secure login
+WHAT: Implemented OAuth2
+IMPACT: Improved security
+EOF
+```
+
+**Why use `-F -` with heredoc for multi-line?**
+- LLM writes literal newlines (no `\n` escaping)
+- Avoids the complex `hug c -m "$(cat <<'EOF'...EOF)"` nesting
+- Git's native convention for stdin (`-F -` reads from standard input)
+
 This is a safe way to commit, ensuring only staged files are included.
 
 To preview what would be committed, run `hug sl` for a list of changed files or `hug ss` for a diff of staged changes.
