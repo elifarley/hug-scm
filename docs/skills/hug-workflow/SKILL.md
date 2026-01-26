@@ -25,14 +25,25 @@ CRUCIAL: When you want to run a git command, ALWAYS translate it to a `hug` equi
 - ALWAYS run `hug sls` first to list staged files
 - Use `hug usa` to unstage everything if you want message-only amend
 
-**Handling multi-line commit messages**
+**Handling commit messages**
 
+Simple single-line (use -m):
 ```sh
-hug c -m "$(cat <<'EOF'
-[1 or more lines of carefully formatted content]
-EOF
-)"
+hug c -m "Fix typo in README"
 ```
+
+Multi-line from LLM (use -F - with heredoc):
+```sh
+hug c -F - <<'EOF'
+feat: add feature
+
+WHY: Users need this feature
+WHAT: Implementation details
+IMPACT: Benefits
+EOF
+```
+
+Note: This avoids the complex pattern `hug c -m "$(cat <<'EOF'...EOF)"` while keeping natural multi-line formatting.
 `
 ## Staging Decision Tree
 
