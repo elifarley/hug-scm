@@ -44,7 +44,7 @@ EOF
 ```
 
 Note: This avoids the complex pattern `hug c -m "$(cat <<'EOF'...EOF)"` while keeping natural multi-line formatting.
-`
+
 ## Staging Decision Tree
 
 ```
@@ -57,7 +57,7 @@ Start: hug sla
 │
 ├─ Verify: hug sls (list staged files only)
 │
-└─ Commit with `hug c -m`
+└─ Commit with `hug c` (supports `-m` for single-line or `-F - <<'EOF'..EOF` for multi-line)
 ```
 
 **RULE OF THUMB**: If you didn't intentionally create/modify the file as part of your current task, DON'T stage it!

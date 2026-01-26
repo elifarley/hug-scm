@@ -14,6 +14,8 @@ USAGE:
   hug c [OPTIONS]
 
 OPTIONS:
+  -m <"message">  Commit with single-line message
+  -F -  Commit with message from stdin
   -C <commit>, --reuse-message=<commit>  Reuse commit message from specified commit
   -c <commit>, --reedit-message=<commit>  Reuse and edit commit message from specified commit
   -h, --help     Show this help message and exit.
@@ -33,10 +35,12 @@ DESCRIPTION:
 
 EXAMPLES:
   hug a file.txt          # Stage a file
-  hug c -m "Add feature"  # Commit staged file with message
+  hug c -m "Add feature"  # Commit with inline message
   hug c -v                # Verbose commit
   hug c -C HEAD~1         # Reuse message from previous commit
   hug c -c main~2         # Reuse and edit message from main branch
+
+Note: For multi-line messages from LLMs, use `hug c -F - <<'EOF'` (heredoc).
 
 SEE ALSO:
   hug ca : For committing all changes to ALL tracked files (staged and unstaged)
