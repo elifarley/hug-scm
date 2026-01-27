@@ -14,6 +14,10 @@ check_git_repo
 # Parse arguments to determine what to show
 include_untracked=false
 json_output=false
+quiet=false
+if [[ ${HUG_QUIET:-} == T ]]; then
+  quiet=true
+fi
 pathspecs=()
 
 for arg in "$@"; do
@@ -26,6 +30,9 @@ for arg in "$@"; do
     ;;
   -uno | --untracked-files=no)
     include_untracked=false
+    ;;
+  -q | --quiet)
+    quiet=true
     ;;
   *)
     # Treat remaining arguments as pathspecs
@@ -73,6 +80,8 @@ else
     fi
   fi
 
-  # Show summary line
-  exec hug s
+  # Show summary line (unless quiet mode)
+  if ! $quiet; then
+    exec hug s
+  fi
 fi

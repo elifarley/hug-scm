@@ -11,7 +11,7 @@ show_help() {
 hug sw: Show status with patch of working directory changes.
 
 USAGE:
-    hug sw [<file>] [-h, --help]
+    hug sw [<file>] [-s, --stat] [-h, --help]
     hug sw --
     hug sw --browse-root
 
@@ -21,16 +21,19 @@ ARGUMENTS:
 
 OPTIONS:
     --browse-root  Browse full repository scope in file selector UI (default: current directory)
+    -s, --stat     Show only file statistics (omit patch)
+    -q, --quiet    Suppress summary line (also honors HUG_QUIET env var)
     -h, --help     Show this help
 
 DESCRIPTION:
     Shows the diff of all working directory changes, split into unstaged and
     staged sections. First shows unstaged diff with stats, then shows staged
-    changes with stats, separated by a divider. This effectively combines the
-    output of 'hug su' and 'hug ss'.
+    changes with stats, separated by a divider. By default shows both patch
+    and statistics. Use '--stat' to show statistics only.
 
 EXAMPLES:
     hug sw                  # Show all working directory changes (unstaged + staged)
+    hug sw --stat           # Show only statistics (no patches)
     hug sw file.txt         # Show working directory changes for specific file
     hug sw --               # Interactive file selection (current directory)
     hug sw --browse-root    # Interactive file selection (full repository)
@@ -47,6 +50,21 @@ eval "$(parse_common_flags "$@")"
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
+
+# Parse --stat flag
+stats_only=""
+remaining_args=()
+for arg in "$@"; do
+  case "$arg" in
+  -s | --stat)
+    stats_only="1"
+    ;;
+  *)
+    remaining_args+=("$arg")
+    ;;
+  esac
+done
+set -- "${remaining_args[@]}"
 
 check_git_repo
 
@@ -67,18 +85,22 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     exit 0
   fi
   for file in "${files[@]}"; do
-    show_combined_diff -- "$file"
+    show_combined_diff ${stats_only:+--stats-only} -- "$file"
   done
-  git s
+  if [[ ${HUG_QUIET:-} != T ]]; then
+    git s
+  fi
   exit 0
 fi
 
 if test $# -eq 0; then
-  show_combined_diff
+  show_combined_diff ${stats_only:+--stats-only}
 else
   t="$1"
   shift
   test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2> /dev/null || echo "")
-  show_combined_diff -- "${GIT_PREFIX}$t" "$@"
+  show_combined_diff ${stats_only:+--stats-only} -- "${GIT_PREFIX}$t" "$@"
 fi
-exec hug s
+if [[ ${HUG_QUIET:-} != T ]]; then
+  exec hug s
+fi

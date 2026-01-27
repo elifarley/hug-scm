@@ -266,6 +266,104 @@ teardown() {
   assert_output --partial "README.md"
 }
 
+@test "hug su --stat: shows only statistics without patch" {
+  # Verify unstaged changes exist
+  run git diff --name-only
+  assert_success
+  assert_output --partial "README.md"
+
+  # Run with --stat flag
+  run hug su --stat
+
+  assert_success
+
+  # Should show statistics header
+  assert_output --partial "Unstaged file stats"
+
+  # Should NOT show diff markers (@@) - these only appear in patches
+  refute_output --partial "@@"
+
+  # Should show file summary
+  assert_output --partial "README.md"
+}
+
+@test "hug su -s: short flag works for stats-only mode" {
+  run hug su -s
+
+  assert_success
+  assert_output --partial "Unstaged file stats"
+  refute_output --partial "@@"
+}
+
+@test "hug su --stat file.txt: shows stats for specific file" {
+  # Modify an existing tracked file (README.md exists from setup)
+  echo "more changes" >> README.md
+
+  run hug su --stat README.md
+
+  assert_success
+  # Should show stats for the modified file
+  assert_output --partial "Unstaged file stats"
+  assert_output --partial "README.md"
+  refute_output --partial "@@"
+}
+
+@test "hug su: default shows both patch and stats (no regression)" {
+  run hug su
+
+  assert_success
+
+  # Should show BOTH diff and stats
+  assert_output --partial "Unstaged diff"
+  assert_output --partial "@@"  # Diff markers
+  assert_output --partial "Unstaged file stats"
+}
+
+@test "hug ss --stat: shows only staged statistics" {
+  # Ensure staged.txt is staged
+  git add staged.txt
+
+  run hug ss --stat
+
+  assert_success
+  assert_output --partial "Staged file stats"
+  refute_output --partial "@@"
+  assert_output --partial "staged.txt"
+}
+
+@test "hug ss -s: short flag works for staged stats" {
+  run hug ss -s
+
+  assert_success
+  assert_output --partial "Staged file stats"
+  refute_output --partial "@@"
+}
+
+@test "hug sw --stat: shows only statistics for combined diff" {
+  run hug sw --stat
+
+  assert_success
+  assert_output --partial "Unstaged file stats"
+  assert_output --partial "Staged file stats"
+  refute_output --partial "@@"
+}
+
+@test "hug su --stat with no changes: shows appropriate message" {
+  # Create a fresh clean repo
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  run hug su --stat
+
+  assert_success
+  # When there are no unstaged changes, show_unstaged_diff exits silently
+  # and only the status summary is shown
+  [[ "$output" =~ (HEAD|clean|⚪) ]] || [[ -z "$output" ]]
+
+  cd "$TEST_REPO"
+}
+
 @test "hug sw: shows working directory changes" {
   run hug sw
   assert_success
@@ -813,6 +911,194 @@ teardown() {
   assert_output --partial "main.js"
   assert_output --partial "utils.js"
   refute_output --partial "script.py"
+}
+
+@test "hug sls: suppresses summary with --quiet flag" {
+  git add staged.txt
+  run hug sls --quiet
+  assert_success
+  assert_output --partial "S:Add"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug sls: suppresses summary with HUG_QUIET environment" {
+  git add staged.txt
+  export HUG_QUIET=T
+  run hug sls
+  assert_success
+  assert_output --partial "S:Add"
+  refute_output --partial "HEAD:"
+  unset HUG_QUIET
+}
+
+@test "hug sls: shows summary without quiet flag" {
+  git add staged.txt
+  run hug sls
+  assert_success
+  assert_output --partial "S:Add"
+  assert_output --partial "HEAD:"
+}
+
+@test "hug slu: suppresses summary with --quiet flag" {
+  run hug slu --quiet
+  assert_success
+  assert_output --partial "U:Mod"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug slu: suppresses summary with HUG_QUIET environment" {
+  export HUG_QUIET=T
+  run hug slu
+  assert_success
+  assert_output --partial "U:Mod"
+  refute_output --partial "HEAD:"
+  unset HUG_QUIET
+}
+
+@test "hug slk: suppresses summary with --quiet flag" {
+  run hug slk --quiet
+  assert_success
+  assert_output --partial "untrcK"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug slk: suppresses summary with HUG_QUIET environment" {
+  export HUG_QUIET=T
+  run hug slk
+  assert_success
+  assert_output --partial "untrcK"
+  refute_output --partial "HEAD:"
+  unset HUG_QUIET
+}
+
+@test "hug sli: suppresses summary with --quiet flag" {
+  echo "*.log" > .gitignore
+  git add .gitignore
+  git commit -m "Add gitignore" >/dev/null 2>&1
+  echo "log" > debug.log
+
+  run hug sli --quiet
+  assert_success
+  assert_output --partial "debug.log"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug sli: suppresses summary with HUG_QUIET environment" {
+  echo "*.log" > .gitignore
+  git add .gitignore
+  git commit -m "Add gitignore" >/dev/null 2>&1
+  echo "log" > debug.log
+
+  export HUG_QUIET=T
+  run hug sli
+  assert_success
+  assert_output --partial "debug.log"
+  refute_output --partial "HEAD:"
+  unset HUG_QUIET
+}
+
+@test "hug sl: suppresses summary with --quiet flag" {
+  run hug sl --quiet
+  assert_success
+  assert_output --partial "README.md"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug sl: suppresses summary with HUG_QUIET environment" {
+  export HUG_QUIET=T
+  run hug sl
+  assert_success
+  assert_output --partial "README.md"
+  refute_output --partial "HEAD:"
+  unset HUG_QUIET
+}
+
+@test "hug sla: suppresses summary with --quiet flag" {
+  run hug sla --quiet
+  assert_success
+  assert_output --partial "untracked.txt"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug sla: suppresses summary with HUG_QUIET environment" {
+  export HUG_QUIET=T
+  run hug sla
+  assert_success
+  assert_output --partial "untracked.txt"
+  refute_output --partial "HEAD:"
+  unset HUG_QUIET
+}
+
+@test "hug su: suppresses summary with --quiet flag" {
+  run hug su --quiet
+  assert_success
+  assert_output --partial "Unstaged diff"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug su: suppresses summary with HUG_QUIET environment" {
+  export HUG_QUIET=T
+  run hug su
+  assert_success
+  assert_output --partial "Unstaged diff"
+  refute_output --partial "HEAD:"
+  unset HUG_QUIET
+}
+
+@test "hug su --stat: suppresses summary with --quiet flag" {
+  run hug su --stat --quiet
+  assert_success
+  assert_output --partial "Unstaged file stats"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug ss: suppresses summary with --quiet flag" {
+  git add staged.txt
+  run hug ss --quiet
+  assert_success
+  assert_output --partial "Staged diff"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug ss: suppresses summary with HUG_QUIET environment" {
+  git add staged.txt
+  export HUG_QUIET=T
+  run hug ss
+  assert_success
+  assert_output --partial "Staged diff"
+  refute_output --partial "HEAD:"
+  unset HUG_QUIET
+}
+
+@test "hug ss --stat: suppresses summary with --quiet flag" {
+  git add staged.txt
+  run hug ss --stat --quiet
+  assert_success
+  assert_output --partial "Staged file stats"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug sw: suppresses summary with --quiet flag" {
+  run hug sw --quiet
+  assert_success
+  assert_output --partial "Unstaged diff"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug sw: suppresses summary with HUG_QUIET environment" {
+  export HUG_QUIET=T
+  run hug sw
+  assert_success
+  assert_output --partial "Unstaged diff"
+  refute_output --partial "HEAD:"
+  unset HUG_QUIET
+}
+
+@test "hug sw --stat: suppresses summary with --quiet flag" {
+  run hug sw --stat --quiet
+  assert_success
+  assert_output --partial "Unstaged file stats"
+  refute_output --partial "HEAD:"
 }
 
 @test "hug slu shows message when no unstaged files" {

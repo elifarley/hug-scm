@@ -92,30 +92,35 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 Show diffs inline for better inspection.
 
 - `hug ss [file]`: **S**tatus + **S**taged diff
-    - **Description**: Status + staged changes patch (for a file or all files). Use `--` to interactively select from staged files.
-    - **Example**: 
+    - **Description**: Status + staged changes patch (for a file or all files). By default shows both patch and statistics. Use `--stat` for statistics only or `--no-stats` for patch only. Use `--` to interactively select from staged files.
+    - **Example**:
       ```
-      hug ss                 # Show all staged changes
+      hug ss                 # Show all staged changes (patch + stats)
+      hug ss --stat          # Show only staged statistics
+      hug ss --no-stats      # Show only staged patch (no statistics)
       hug ss src/app.js      # Show staged changes for specific file
       hug ss --              # Interactive file selection from staged files
       ```
     - **Safety**: ✅ Read-only diff preview.
 
 - `hug su [file]`: **S**tatus + **U**nstaged diff
-    - **Description**: Status + unstaged changes patch. Use `--` to interactively select from unstaged files.
-    - **Example**: 
+    - **Description**: Status + unstaged changes patch. By default shows both patch and statistics. Use `--stat` for statistics only or `--no-stats` for patch only. Use `--` to interactively select from unstaged files.
+    - **Example**:
       ```
-      hug su                 # Show all unstaged changes
+      hug su                 # Show all unstaged changes (patch + stats)
+      hug su --stat          # Show only unstaged statistics
       hug su file.txt        # Show unstaged changes for specific file
+      hug su --stat file.txt # Show stats for specific file only
       hug su --              # Interactive file selection from unstaged files
       ```
     - **Safety**: ✅ Read-only diff preview.
 
 - `hug sw [file]`: **S**tatus + **W**orking directory diff
-    - **Description**: Status + working directory patch (staged + unstaged). Use `--` to interactively select from changed files.
-    - **Example**: 
+    - **Description**: Status + working directory patch (staged + unstaged). By default shows both patch and statistics. Use `--stat` for statistics only. Use `--` to interactively select from changed files.
+    - **Example**:
       ```
-      hug sw                 # Show all working directory changes
+      hug sw                 # Show all working directory changes (patch + stats)
+      hug sw --stat          # Show only statistics (no patches)
       hug sw .               # Show all changes in current directory
       hug sw --              # Interactive file selection from changed files
       ```

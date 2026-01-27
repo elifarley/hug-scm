@@ -11,7 +11,7 @@ show_help() {
 hug ss: Show status with patch of staged diff.
 
 USAGE:
-    hug ss [<file>] [-h, --help]
+    hug ss [<file>] [-s, --stat] [-h, --help]
     hug ss --
     hug ss --browse-root
 
@@ -21,18 +21,21 @@ ARGUMENTS:
 
 OPTIONS:
     --browse-root  Browse full repository scope in file selector UI (default: current directory)
+    -s, --stat     Show only file statistics (omit patch)
+    -q, --quiet    Suppress summary line (also honors HUG_QUIET env var)
     -h, --help     Show this help
 
 DESCRIPTION:
     Shows the staged diff (what will be committed). When no file
-    is specified, shows all staged diff. Use '--' to interactively select
-    a file from staged files. By default, interactive selection is scoped to
-    the current directory and subdirectories. Use --browse-root to browse the
-    entire repository.
+    is specified, shows all staged diff. By default shows both patch and
+    statistics. Use '--stat' to show statistics only, or '--no-stats' to
+    show patch only. Use '--' to interactively select a file from staged files.
 
 EXAMPLES:
-    hug ss                  # Show all staged diff
+    hug ss                  # Show all staged diff (patch + stats)
+    hug ss --stat           # Show only staged statistics
     hug ss file.txt         # Show staged diff for specific file
+    hug ss --stat file.txt  # Show stats for specific file only
     hug ss --               # Interactive file selection (current directory)
     hug ss --browse-root    # Interactive file selection (full repository)
 
@@ -48,6 +51,21 @@ eval "$(parse_common_flags "$@")"
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
+
+# Parse --stat flag
+stats_only=""
+remaining_args=()
+for arg in "$@"; do
+  case "$arg" in
+  -s | --stat)
+    stats_only="1"
+    ;;
+  *)
+    remaining_args+=("$arg")
+    ;;
+  esac
+done
+set -- "${remaining_args[@]}"
 
 check_git_repo
 
@@ -68,18 +86,22 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     exit 0
   fi
   for file in "${files[@]}"; do
-    show_staged_diff -- "$file"
+    show_staged_diff ${stats_only:+--stats-only} -- "$file"
   done
-  git s
+  if [[ ${HUG_QUIET:-} != T ]]; then
+    git s
+  fi
   exit 0
 fi
 
 if test $# -eq 0; then
-  show_staged_diff
+  show_staged_diff ${stats_only:+--stats-only}
 else
   t="$1"
   shift
   test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2> /dev/null || echo "")
-  show_staged_diff -- "${GIT_PREFIX}$t" "$@"
+  show_staged_diff ${stats_only:+--stats-only} -- "${GIT_PREFIX}$t" "$@"
 fi
-exec hug s
+if [[ ${HUG_QUIET:-} != T ]]; then
+  exec hug s
+fi
