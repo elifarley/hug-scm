@@ -36,6 +36,11 @@ done
 # Build list_files_with_status options for ignored files only
 list_opts=("--ignored")
 
+# Pass suppress-status flag when in quiet mode
+if $quiet; then
+  list_opts+=("--suppress-status")
+fi
+
 # Add pathspecs if provided
 if [[ ${#pathspecs[@]} -gt 0 ]]; then
   list_opts+=("${pathspecs[@]}")

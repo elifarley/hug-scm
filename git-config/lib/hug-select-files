@@ -101,6 +101,36 @@ _handle_no_files_found() {
   return 1
 }
 
+# Helper: Check if we can safely suppress status column
+# Returns 0 (true) if safe, 1 (false) if not safe
+# Usage: if _can_suppress_status "$include_staged" "$include_unstaged" "$include_untracked" "$include_ignored" "${status_codes[@]}"; then ...
+_can_suppress_status() {
+  local include_staged="$1"
+  local include_unstaged="$2"
+  local include_untracked="$3"
+  local include_ignored="$4"
+  shift 4
+  local -a status_codes=("$@")
+
+  # Must have exactly one file type
+  local type_count=0
+  $include_staged && ((type_count++))
+  $include_unstaged && ((type_count++))
+  $include_untracked && ((type_count++))
+  $include_ignored && ((type_count++))
+
+  [[ $type_count -ne 1 ]] && return 1
+
+  # Only untracked and ignored are safe (single status type)
+  # Staged and unstaged have multiple status types and are never safe
+  $include_untracked && return 0
+  $include_ignored && return 0
+
+  # Staged (S:Add, S:Mod, S:Del, S:Ren, S:Copy, S:Cnflt) and
+  # Unstaged (U:Mod, U:Del, U:Cnflt) have multiple status types
+  return 1
+}
+
 # Helper function: Parse tab-delimited status formatter output with validation
 # Input: $1 - Raw output from _format_*_status function
 # Output: Two space-separated values: status_text status_code
@@ -144,6 +174,7 @@ list_files_with_status() {
   local include_untracked=false
   local include_ignored=false
   local scope_cwd=false
+  local suppress_status=false
   local -a pathspecs=()
 
   # Parse arguments
@@ -167,6 +198,10 @@ list_files_with_status() {
         ;;
       --cwd)
         scope_cwd=true
+        shift
+        ;;
+      --suppress-status)
+        suppress_status=true
         shift
         ;;
       *)
@@ -210,7 +245,11 @@ list_files_with_status() {
         local status_text status_code
         IFS=$'\t' read -r status_text status_code <<< "$(_format_staged_status "$status")"
         files+=("$file")
-        formatted_options+=("${status_text} ${file}")
+        if $suppress_status; then
+          formatted_options+=("$file")
+        else
+          formatted_options+=("${status_text} ${file}")
+        fi
         status_codes+=("$status_code")
       done < <(list_staged_files "${status_flags[@]}" "${pathspecs[@]}")
     fi
@@ -224,7 +263,11 @@ list_files_with_status() {
         local status_text status_code
         IFS=$'\t' read -r status_text status_code <<< "$(_format_unstaged_status "$status")"
         files+=("$file")
-        formatted_options+=("${status_text} ${file}")
+        if $suppress_status; then
+          formatted_options+=("$file")
+        else
+          formatted_options+=("${status_text} ${file}")
+        fi
         status_codes+=("$status_code")
       done < <(list_unstaged_files "${status_flags[@]}" "${pathspecs[@]}")
     fi
@@ -236,7 +279,11 @@ list_files_with_status() {
         local status_text status_code
         IFS=$'\t' read -r status_text status_code <<< "$(_format_untracked_status)"
         files+=("$file")
-        formatted_options+=("${status_text} ${file}")
+        if $suppress_status; then
+          formatted_options+=("$file")
+        else
+          formatted_options+=("${status_text} ${file}")
+        fi
         status_codes+=("$status_code")
       done
     fi
@@ -248,9 +295,51 @@ list_files_with_status() {
         local status_text status_code
         IFS=$'\t' read -r status_text status_code <<< "$(_format_ignored_status)"
         files+=("$file")
-        formatted_options+=("${status_text} ${file}")
+        if $suppress_status; then
+          formatted_options+=("$file")
+        else
+          formatted_options+=("${status_text} ${file}")
+        fi
         status_codes+=("$status_code")
       done
+    fi
+
+    # Validate suppression is safe if requested
+    # If suppression was requested but not safe (e.g., conflicts), rebuild with status
+    if $suppress_status; then
+      if ! _can_suppress_status "$include_staged" "$include_unstaged" "$include_untracked" "$include_ignored" "${status_codes[@]}"; then
+        # Fallback to showing status if suppression not safe
+        suppress_status=false
+        # Rebuild formatted_options with status prefixes
+        formatted_options=()
+        local i
+        for i in "${!files[@]}"; do
+          local file="${files[$i]}"
+          local status_code="${status_codes[$i]}"
+
+          # Re-call formatters to get status_text
+          local raw_status_text
+          case "$status_code" in
+            S:Add)  raw_status_text=$(_format_staged_status "A") ;;
+            S:Mod)  raw_status_text=$(_format_staged_status "M") ;;
+            S:Del)  raw_status_text=$(_format_staged_status "D") ;;
+            S:Ren)  raw_status_text=$(_format_staged_status "R100") ;;
+            S:Copy) raw_status_text=$(_format_staged_status "C100") ;;
+            S:Cnflt) raw_status_text=$(_format_staged_status "U") ;;
+            S:Unk)  raw_status_text=$(_format_staged_status "X") ;;
+            U:Mod)  raw_status_text=$(_format_unstaged_status "M") ;;
+            U:Del)  raw_status_text=$(_format_unstaged_status "D") ;;
+            U:Cnflt) raw_status_text=$(_format_unstaged_status "U") ;;
+            U:Unk)  raw_status_text=$(_format_unstaged_status "X") ;;
+            untrcK) raw_status_text=$(_format_untracked_status) ;;
+            Ignore) raw_status_text=$(_format_ignored_status) ;;
+          esac
+
+          local status_text
+          IFS=$'\t' read -r status_text _ <<< "$raw_status_text"
+          formatted_options+=("${status_text} ${file}")
+        done
+      fi
     fi
 
     # Sort files by priority (ascending), then by file path (ascending)

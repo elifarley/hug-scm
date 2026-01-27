@@ -939,34 +939,38 @@ teardown() {
   assert_output --partial "HEAD:"
 }
 
-@test "hug slu: suppresses summary with --quiet flag" {
+@test "hug slu: suppresses summary but preserves status with --quiet flag" {
   run hug slu --quiet
   assert_success
-  assert_output --partial "U:Mod"
+  # Status column is preserved (slu has multiple status types: U:Mod, U:Del, U:Cnflt)
+  assert_output --partial "U:"
   refute_output --partial "HEAD:"
 }
 
-@test "hug slu: suppresses summary with HUG_QUIET environment" {
+@test "hug slu: suppresses summary but preserves status with HUG_QUIET environment" {
   export HUG_QUIET=T
   run hug slu
   assert_success
-  assert_output --partial "U:Mod"
+  # Status column is preserved (slu has multiple status types: U:Mod, U:Del, U:Cnflt)
+  assert_output --partial "U:"
   refute_output --partial "HEAD:"
   unset HUG_QUIET
 }
 
-@test "hug slk: suppresses summary with --quiet flag" {
+@test "hug slk: suppresses summary and status column with --quiet flag" {
   run hug slk --quiet
   assert_success
-  assert_output --partial "untrcK"
+  # Status column is suppressed in quiet mode for single-type commands
+  assert_output --partial "untracked.txt"
   refute_output --partial "HEAD:"
 }
 
-@test "hug slk: suppresses summary with HUG_QUIET environment" {
+@test "hug slk: suppresses summary and status column with HUG_QUIET environment" {
   export HUG_QUIET=T
   run hug slk
   assert_success
-  assert_output --partial "untrcK"
+  # Status column is suppressed in quiet mode for single-type commands
+  assert_output --partial "untracked.txt"
   refute_output --partial "HEAD:"
   unset HUG_QUIET
 }
@@ -1317,4 +1321,125 @@ teardown() {
   assert_output --partial "Unstaged file stats"
   refute_output --partial "@@"
   refute_output --partial "HEAD:"
+}
+
+################################################################################
+# --suppress-status (Quiet Mode Column Suppression) Tests
+################################################################################
+
+@test "hug slk -q: suppresses status column in quiet mode" {
+  run hug slk -q
+  assert_success
+  # Should show filename without status prefix
+  assert_output --partial "untracked.txt"
+  # Should NOT have status label
+  refute_output --partial "untrcK"
+}
+
+@test "hug slk --quiet: suppresses status column in quiet mode" {
+  run hug slk --quiet
+  assert_success
+  # Should show filename without status prefix
+  assert_output --partial "untracked.txt"
+  # Should NOT have status label
+  refute_output --partial "untrcK"
+}
+
+@test "hug slk with HUG_QUIET: suppresses status column" {
+  export HUG_QUIET=T
+  run hug slk
+  assert_success
+  # Should show filename without status prefix
+  assert_output --partial "untracked.txt"
+  # Should NOT have status label
+  refute_output --partial "untrcK"
+  unset HUG_QUIET
+}
+
+@test "hug slk: shows status column without quiet mode" {
+  run hug slk
+  assert_success
+  # Should show both filename AND status label
+  assert_output --partial "untracked.txt"
+  assert_output --partial "untrcK"
+}
+
+@test "hug sli -q: suppresses status column in quiet mode" {
+  echo "*.log" > .gitignore
+  git add .gitignore
+  git commit -m "Add gitignore" >/dev/null 2>&1
+  echo "log" > debug.log
+
+  run hug sli -q
+  assert_success
+  # Should show filename without status prefix
+  assert_output --partial "debug.log"
+  # Should NOT have status label
+  refute_output --partial "Ignore"
+}
+
+@test "hug sli --quiet: suppresses status column in quiet mode" {
+  echo "*.log" > .gitignore
+  git add .gitignore
+  git commit -m "Add gitignore" >/dev/null 2>&1
+  echo "log" > debug.log
+
+  run hug sli --quiet
+  assert_success
+  # Should show filename without status prefix
+  assert_output --partial "debug.log"
+  # Should NOT have status label
+  refute_output --partial "Ignore"
+}
+
+@test "hug sli with HUG_QUIET: suppresses status column" {
+  echo "*.log" > .gitignore
+  git add .gitignore
+  git commit -m "Add gitignore" >/dev/null 2>&1
+  echo "log" > debug.log
+
+  export HUG_QUIET=T
+  run hug sli
+  assert_success
+  # Should show filename without status prefix
+  assert_output --partial "debug.log"
+  # Should NOT have status label
+  refute_output --partial "Ignore"
+  unset HUG_QUIET
+}
+
+@test "hug sli: shows status column without quiet mode" {
+  echo "*.log" > .gitignore
+  git add .gitignore
+  git commit -m "Add gitignore" >/dev/null 2>&1
+  echo "log" > debug.log
+
+  run hug sli
+  assert_success
+  # Should show both filename AND status label
+  assert_output --partial "debug.log"
+  assert_output --partial "Ignore"
+}
+
+@test "hug slu -q: preserves status column (multiple status types)" {
+  run hug slu -q
+  assert_success
+  # Should show status (slu has multiple status types: U:Mod, U:Del, U:Cnflt)
+  assert_output --partial "U:"
+}
+
+@test "hug sls -q: preserves status column (multiple status types)" {
+  git add staged.txt
+
+  run hug sls -q
+  assert_success
+  # Should show status (sls cannot suppress due to multiple status types)
+  assert_output --partial "S:"
+}
+
+@test "hug sl: never suppresses status (multiple file types)" {
+  run hug sl -q
+  assert_success
+  # Should show status prefixes (sl has both staged and unstaged)
+  assert_output --partial "S:" || assert_output --partial "U:"
 }

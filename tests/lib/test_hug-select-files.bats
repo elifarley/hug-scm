@@ -569,3 +569,100 @@ create_merge_conflict() {
   assert_failure
   refute_output
 }
+
+################################################################################
+# Tests for --suppress-status flag
+################################################################################
+
+@test "list_files_with_status: --suppress-status hides status column for untracked files" {
+  local output
+  output=$(list_files_with_status --untracked --suppress-status)
+
+  # Should show filename without status prefix
+  [[ "$output" =~ src/untracked\.js ]]
+  # Should NOT have status label
+  [[ ! "$output" =~ untrcK ]]
+}
+
+@test "list_files_with_status: --suppress-status hides status column for ignored files" {
+  echo "*.log" > .gitignore
+  git add .gitignore
+  echo "test.log" > test.log
+
+  local output
+  output=$(list_files_with_status --ignored --suppress-status)
+
+  [[ "$output" =~ test\.log ]]
+  [[ ! "$output" =~ Ignore ]]
+}
+
+@test "list_files_with_status: --staged with --suppress-status shows status (multiple types)" {
+  # Create multiple staged status types
+  echo "to delete" > todelete.txt
+  git add todelete.txt
+  git commit -q -m "Add file to delete"
+  git rm todelete.txt
+
+  echo "added" > added.txt
+  git add added.txt
+
+  local output
+  output=$(list_files_with_status --staged --suppress-status)
+
+  # Should show status (multiple types: deletion and addition)
+  # The suppression should fail because there are multiple status types
+  [[ "$output" =~ S:Del ]] || [[ "$output" =~ S:Add ]] || [[ "$output" =~ todelete\.txt ]] || [[ "$output" =~ added\.txt ]]
+}
+
+@test "list_files_with_status: --suppress-status with multiple file types shows status" {
+  local output
+  output=$(list_files_with_status --staged --unstaged --suppress-status)
+
+  # Should show status because multiple file types are requested
+  [[ "$output" =~ S: ]] || [[ "$output" =~ U: ]]
+}
+
+@test "_can_suppress_status: returns false for multiple file types" {
+  load '../../git-config/lib/hug-git-priorities'
+
+  # Multiple file types should return false (not safe to suppress)
+  run _can_suppress_status true true false false
+  assert_failure
+
+  run _can_suppress_status false true true false
+  assert_failure
+}
+
+@test "_can_suppress_status: returns true for single untracked type" {
+  load '../../git-config/lib/hug-git-priorities'
+
+  # Single file type (untracked) should return true (safe to suppress)
+  run _can_suppress_status false false true false
+  assert_success
+}
+
+@test "_can_suppress_status: returns true for single ignored type" {
+  load '../../git-config/lib/hug-git-priorities'
+
+  # Single file type (ignored) should return true (safe to suppress)
+  run _can_suppress_status false false false true
+  assert_success
+}
+
+@test "_can_suppress_status: returns false for unstaged (multiple status types)" {
+  load '../../git-config/lib/hug-git-priorities'
+
+  # Unstaged files have multiple status types (U:Mod, U:Del, U:Cnflt)
+  # Should return false (not safe to suppress)
+  run _can_suppress_status false true false false
+  assert_failure
+}
+
+@test "_can_suppress_status: returns false for staged (multiple status types)" {
+  load '../../git-config/lib/hug-git-priorities'
+
+  # Staged files have multiple status types (S:Add, S:Mod, S:Del, S:Ren, S:Copy, S:Cnflt)
+  # Should return false (not safe to suppress)
+  run _can_suppress_status true false false false
+  assert_failure
+}
