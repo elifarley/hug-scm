@@ -46,26 +46,67 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (handles --browse-root, --, etc.)
-eval "$(parse_common_flags "$@")"
+# Parse all flags (common + command-specific) using getopt
+set +e
+PARSED=$(getopt --options hqs --longoptions help,quiet,stat,browse-root --name "hug ss" -- "$@" 2>&1)
+getopt_status=$?
+set -e
 
-# Initialize common flag variables if not set by parse_common_flags
-: "${browse_root:=false}"
+if [ $getopt_status -ne 0 ]; then
+  if [ -n "$PARSED" ]; then
+    echo "$PARSED" >&2
+  fi
+  exit 1
+fi
 
-# Parse --stat flag
-stats_only=""
-remaining_args=()
-for arg in "$@"; do
-  case "$arg" in
+eval set -- "$PARSED"
+
+# Initialize variables
+stats_only=false
+browse_root=false
+
+# Process all options
+while true; do
+  case "$1" in
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -q | --quiet)
+    export HUG_QUIET=T
+    shift
+    ;;
   -s | --stat)
-    stats_only="1"
+    stats_only=true
+    shift
+    ;;
+  --browse-root)
+    browse_root=true
+    export HUG_INTERACTIVE_FILE_SELECTION=true
+    shift
+    ;;
+  --)
+    shift
+    break
     ;;
   *)
-    remaining_args+=("$arg")
+    echo "Internal error in option parsing" >&2
+    exit 1
     ;;
   esac
 done
-set -- "${remaining_args[@]}"
+
+# Handle -- (interactive file selection) if present as last arg
+if [[ $# -gt 0 && "${!#}" = "--" ]]; then
+  export HUG_INTERACTIVE_FILE_SELECTION=true
+  set -- "${@:1:$(($# - 1))}"
+fi
+
+# Validate --browse-root without paths
+if $browse_root && [ $# -gt 0 ]; then
+  error "--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection."
+  exit 1
+fi
 
 check_git_repo
 
@@ -86,7 +127,11 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     exit 0
   fi
   for file in "${files[@]}"; do
-    show_staged_diff ${stats_only:+--stats-only} -- "$file"
+    if $stats_only; then
+      show_staged_diff --stats-only -- "$file"
+    else
+      show_staged_diff -- "$file"
+    fi
   done
   if [[ ${HUG_QUIET:-} != T ]]; then
     git s
@@ -95,12 +140,20 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
 fi
 
 if test $# -eq 0; then
-  show_staged_diff ${stats_only:+--stats-only}
+  if $stats_only; then
+    show_staged_diff --stats-only
+  else
+    show_staged_diff
+  fi
 else
   t="$1"
   shift
   test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2> /dev/null || echo "")
-  show_staged_diff ${stats_only:+--stats-only} -- "${GIT_PREFIX}$t" "$@"
+  if $stats_only; then
+    show_staged_diff --stats-only -- "${GIT_PREFIX}$t" "$@"
+  else
+    show_staged_diff -- "${GIT_PREFIX}$t" "$@"
+  fi
 fi
 if [[ ${HUG_QUIET:-} != T ]]; then
   exec hug s

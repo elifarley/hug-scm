@@ -1248,3 +1248,73 @@ teardown() {
   # Should show empty hash (double spaces)
   assert_output --partial "HEAD:  🌿"
 }
+
+################################################################################
+# Combined Short Flags Tests
+################################################################################
+
+@test "hug su -qs: combined flags work correctly" {
+  run hug su -qs
+  assert_success
+  assert_output --partial "Unstaged file stats"
+  refute_output --partial "@@"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug su -sq: combined flags work in reverse order" {
+  run hug su -sq
+  assert_success
+  assert_output --partial "Unstaged file stats"
+  refute_output --partial "@@"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug ss -qs: combined flags work correctly" {
+  git add staged.txt
+  run hug ss -qs
+  assert_success
+  assert_output --partial "Staged file stats"
+  refute_output --partial "@@"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug ss -sq: combined flags work in reverse order" {
+  git add staged.txt
+  run hug ss -sq
+  assert_success
+  assert_output --partial "Staged file stats"
+  refute_output --partial "@@"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug sw -qs: combined flags work correctly" {
+  run hug sw -qs
+  assert_success
+  assert_output --partial "Unstaged file stats"
+  refute_output --partial "@@"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug sw -sq: combined flags work in reverse order" {
+  run hug sw -sq
+  assert_success
+  assert_output --partial "Unstaged file stats"
+  refute_output --partial "@@"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug su --stat --quiet: long flags work in any order" {
+  run hug su --stat --quiet
+  assert_success
+  assert_output --partial "Unstaged file stats"
+  refute_output --partial "@@"
+  refute_output --partial "HEAD:"
+}
+
+@test "hug su --quiet --stat: long flags work in reverse order" {
+  run hug su --quiet --stat
+  assert_success
+  assert_output --partial "Unstaged file stats"
+  refute_output --partial "@@"
+  refute_output --partial "HEAD:"
+}
