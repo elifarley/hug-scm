@@ -177,6 +177,8 @@ show_staged_diff() {
         fi
         git diff --cached --stat "${git_args[@]}"
       fi
+    else
+      info "No staged changes."
     fi
   fi
 }
@@ -274,6 +276,8 @@ show_unstaged_diff() {
         fi
         git diff --stat "${git_args[@]}"
       fi
+    else
+      info "No unstaged changes."
     fi
   fi
 }
@@ -380,13 +384,20 @@ show_combined_diff() {
     if ! git diff --cached --quiet -- "$file" "${git_args[@]}" 2>/dev/null; then
       if $showed_staged || ! $showed_unstaged; then
         show_staged_diff $stats_flag $stats_only_flag -- "$file" "${git_args[@]}"
+        showed_staged=true
       fi
     fi
   else
     if diff_has_staged_changes; then
       if $showed_staged || ! $showed_unstaged; then
         show_staged_diff $stats_flag $stats_only_flag "${git_args[@]}"
+        showed_staged=true
       fi
     fi
+  fi
+
+  # Show info message if nothing was displayed
+  if ! $showed_unstaged && ! $showed_staged; then
+    info "No staged or unstaged changes."
   fi
 }

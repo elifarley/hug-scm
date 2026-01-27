@@ -357,9 +357,10 @@ teardown() {
   run hug su --stat
 
   assert_success
-  # When there are no unstaged changes, show_unstaged_diff exits silently
-  # and only the status summary is shown
-  [[ "$output" =~ (HEAD|clean|⚪) ]] || [[ -z "$output" ]]
+  # When there are no unstaged changes, show_unstaged_diff shows an info message
+  # and the status summary is shown
+  assert_output --partial "No unstaged changes"
+  [[ "$output" =~ (HEAD|clean|⚪) ]]
 
   cd "$TEST_REPO"
 }
