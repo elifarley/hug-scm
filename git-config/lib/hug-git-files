@@ -53,7 +53,7 @@ list_staged_files() {
     check_git_repo
 
     # Build git command with optional scoping
-    local -a git_cmd_base=("git" "diff" "--cached")
+    local -a git_cmd_base=("git" "diff" "--cached" "--find-renames")
     if $with_status; then
         git_cmd_base+=("--name-status")
     else
@@ -130,7 +130,7 @@ list_unstaged_files() {
     check_git_repo
 
     # Build git command with optional scoping
-    local -a git_cmd_base=("git" "diff")
+    local -a git_cmd_base=("git" "diff" "--find-renames")
     if $with_status; then
         git_cmd_base+=("--name-status")
     else

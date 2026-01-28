@@ -193,6 +193,49 @@ teardown() {
 # list_untracked_files TESTS
 ################################################################################
 
+@test "list_staged_files: detects renames when both old and new files are staged" {
+  # Create a file and commit it
+  echo "original content" > original.txt
+  git add original.txt
+  git commit -q -m "add original file"
+
+  # Manually rename and stage both files (simulates: mv old new && git add old new)
+  mv original.txt renamed.txt
+  git add original.txt renamed.txt
+
+  # Verify rename is detected (not separate delete+add)
+  mapfile -t lines < <(list_staged_files --status)
+
+  # Should have exactly one line with rename status (R100)
+  [[ ${#lines[@]} -eq 1 ]]
+  [[ "${lines[0]}" =~ R100.*renamed\.txt ]]
+
+  # Should NOT show separate delete or add entries
+  ! [[ "${lines[*]}" =~ $'\t'A\t ]]  # No separate Add
+  ! [[ "${lines[*]}" =~ $'\t'D\t ]]  # No separate Delete
+}
+
+@test "list_staged_files: git mv is detected as rename" {
+  # Create a file and commit it
+  echo "original content" > gitmv_original.txt
+  git add gitmv_original.txt
+  git commit -q -m "add original file"
+
+  # Use git mv (stages the rename automatically)
+  git mv gitmv_original.txt gitmv_renamed.txt
+
+  # Verify rename is detected
+  mapfile -t lines < <(list_staged_files --status)
+
+  # Should have exactly one line with rename status (R100)
+  [[ ${#lines[@]} -eq 1 ]]
+  [[ "${lines[0]}" =~ R100.*gitmv_renamed\.txt ]]
+}
+
+################################################################################
+# list_untracked_files TESTS
+################################################################################
+
 @test "list_untracked_files: lists all untracked files from subdirectory without --cwd" {
   cd src/components
   

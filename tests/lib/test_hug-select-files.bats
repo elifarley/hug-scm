@@ -526,6 +526,18 @@ create_merge_conflict() {
   [[ "$status_code" == "U:Del" ]]
   [[ "$status_text" =~ U:Del ]]
 
+  # Test Rename (R100)
+  result=$(_format_unstaged_status "R100")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "U:Ren" ]]
+  [[ "$status_text" =~ U:Ren ]]
+
+  # Test Copy (C100)
+  result=$(_format_unstaged_status "C100")
+  IFS=$'\t' read -r status_text status_code <<< "$result"
+  [[ "$status_code" == "U:Copy" ]]
+  [[ "$status_text" =~ U:Copy ]]
+
   # Test Conflict (U)
   result=$(_format_unstaged_status "U")
   IFS=$'\t' read -r status_text status_code <<< "$result"

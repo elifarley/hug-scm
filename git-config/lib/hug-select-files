@@ -52,7 +52,7 @@ _format_staged_status() {
 }
 
 # Helper function: Format unstaged file status
-# Input: $status - Git status code (M, D, U)
+# Input: $status - Git status code (M, D, U, R*, C*)
 # Output: Tab-delimited "status_text<tab>status_code"
 # Usage: IFS=$'\t' read -r status_text status_code <<< "$(_format_unstaged_status "$status")"
 _format_unstaged_status() {
@@ -62,6 +62,8 @@ _format_unstaged_status() {
   case "$status" in
     M) status_text="${RED}U:${YELLOW}Mod ${NC}"; status_code="U:Mod" ;;
     D) status_text="${RED}U:Del ${NC}"; status_code="U:Del" ;;
+    R*) status_text="${RED}U:${CYAN}Ren ${NC}"; status_code="U:Ren" ;;
+    C*) status_text="${RED}U:${BLUE}Copy${NC}"; status_code="U:Copy" ;;
     U) status_text="${YELLOW}Cnflt${NC}"; status_code="U:Cnflt" ;;
     *) status_text="${RED}U     ${NC}"; status_code="U:Unk" ;;
   esac
@@ -329,6 +331,8 @@ list_files_with_status() {
             S:Unk)  raw_status_text=$(_format_staged_status "X") ;;
             U:Mod)  raw_status_text=$(_format_unstaged_status "M") ;;
             U:Del)  raw_status_text=$(_format_unstaged_status "D") ;;
+            U:Ren)  raw_status_text=$(_format_unstaged_status "R100") ;;
+            U:Copy) raw_status_text=$(_format_unstaged_status "C100") ;;
             U:Cnflt) raw_status_text=$(_format_unstaged_status "U") ;;
             U:Unk)  raw_status_text=$(_format_unstaged_status "X") ;;
             untrcK) raw_status_text=$(_format_untracked_status) ;;
