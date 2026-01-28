@@ -30,7 +30,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: make deps-docs
+        run: make docs-deps-install
 
       - name: Build VitePress
         run: make docs-build
