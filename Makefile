@@ -599,7 +599,7 @@ lint: ## Run linting checks (LLM-friendly: summary only)
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		output=$$(shellcheck -S error $(BASH_SOURCES) 2>&1); \
 		if echo "$$output" | grep -q 'line [0-9]*:'; then \
-			printf "\n$${RED}✗ Bash linting errors found:$${RESET}\n"; \
+			printf "\n$(RED)✗ Bash linting errors found:$(RESET)\n"; \
 			echo "$$output"; \
 			exit 1; \
 		else \
@@ -612,7 +612,7 @@ lint: ## Run linting checks (LLM-friendly: summary only)
 	@if command -v uv >/dev/null 2>&1; then \
 		output=$$($(UV_CMD) run --directory git-config/lib/python --extra dev ruff check --output-format=concise . 2>&1 | grep -vE "(VIRTUAL_ENV|All checks passed)" || true); \
 		if [ -n "$$output" ]; then \
-			printf "$${RED}✗ Python linting errors found:$${RESET}\n"; \
+			printf "$(RED)✗ Python linting errors found:$(RESET)\n"; \
 			echo "$$output"; \
 			exit 1; \
 		else \
@@ -649,7 +649,7 @@ typecheck: ## Type check Python code (LLM-friendly: summary only)
 	@if command -v uv >/dev/null 2>&1; then \
 		output=$$($(UV_CMD) run --directory "$(PYTHON_LIB_DIR)" --extra dev mypy --no-pretty . 2>&1); \
 		if echo "$$output" | grep -q 'error:'; then \
-			printf "$${RED}✗ Type checking errors found:$${RESET}\n"; \
+			printf "$(RED)✗ Type checking errors found:$(RESET)\n"; \
 			echo "$$output"; \
 			exit 1; \
 		else \
