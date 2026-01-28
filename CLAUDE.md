@@ -366,6 +366,9 @@ make test-unit TEST_FILE=test_head.bats
 
 # Check documentation builds
 make docs-build
+
+# Verify static analysis passes (formatting, linting, type checking)
+make sanitize-check
 ```
 
 ## Commit Message Philosophy

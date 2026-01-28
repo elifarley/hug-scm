@@ -532,6 +532,58 @@ teardown_gum_mock
 4. **Hardcoding file paths** - use relative paths and test repos
 5. **Testing production code without isolation** - use create_test_repo()
 
+## ShellCheck Patterns for BATS Tests
+
+When working with BATS tests, you may encounter ShellCheck warnings specific to the BATS framework. Here are the established patterns for handling them:
+
+### SC2314: Function Negation (! function)
+
+Use inline `# shellcheck disable=SC2314` directive when testing that a function returns false:
+
+```bash
+@test "function: returns false for invalid input" {
+  # shellcheck disable=SC2314
+  ! worktree_exists "/nonexistent/path"
+}
+```
+
+**Critical**: The directive must be on the line **immediately before** the negated function call.
+
+**Examples in codebase**:
+- `tests/lib/test_hug-git-worktree.bats` (7 instances)
+- Tests for `worktree_exists`, `branch_available_for_worktree`, `is_worktree_not_main`
+
+### SC2315: Conditional Negation (! [[)
+
+Prefer folding the `!` into the conditional instead of using directives:
+
+```bash
+# Preferred:
+[[ ! " ${files[*]} " =~ " pattern " ]]
+
+# Not preferred (triggers SC2315):
+! [[ " ${files[*]} " =~ " pattern " ]]
+```
+
+**Examples in codebase**:
+- `tests/lib/test_hug-git-files.bats` (7 instances converted to `[[ ! ]]`)
+
+### When to Use Directives vs. Refactoring
+
+**Use directives** (SC2314 pattern):
+- For function negation where `! function` is the clearest idiom
+- When refactoring would reduce clarity
+- When the pattern is intentional and rare
+
+**Refactor code** (SC2315 pattern):
+- When folding `!` into `[[ ! ]]` improves readability
+- When the alternative is standard bash syntax
+- When the pattern appears frequently
+
+### Reference
+
+See `.shellcheckrc` for comprehensive project-wide suppressions with documented rationale. See [TESTING.md](../TESTING.md#shellcheck-integration) for full ShellCheck integration details.
+
 ## Gum Mock Migration Guide
 
 ### From `disable_gum_for_test` to Gum Mock

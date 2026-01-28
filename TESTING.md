@@ -10,6 +10,7 @@ This document provides comprehensive guidance on testing strategies, practices, 
 - [Test Structure](#test-structure)
 - [Writing Tests](#writing-tests)
 - [Running Tests](#running-tests)
+- [ShellCheck Integration](#shellcheck-integration)
 - [CI/CD Integration](#cicd-integration)
 - [Best Practices](#best-practices)
 - [Troubleshooting](#troubleshooting)
@@ -552,6 +553,108 @@ bats tests/
 bats --tap tests/unit/
 bats tests/unit/test_status_staging.bats
 ```
+
+## ShellCheck Integration
+
+Hug SCM uses ShellCheck for static analysis of Bash scripts, including BATS test files. The CI pipeline runs `make sanitize-check` which includes ShellCheck linting.
+
+### BATS-Specific Warnings
+
+ShellCheck has special rules for BATS tests that may trigger warnings for intentional patterns.
+
+#### SC2314: Function Negation in BATS
+
+When testing that a function returns false, use this pattern:
+
+```bash
+@test "function: returns false for invalid input" {
+  # shellcheck disable=SC2314
+  ! worktree_exists "/nonexistent/path"
+}
+```
+
+**Why**: The `! function_name` pattern is a clear BATS idiom for testing false returns. ShellCheck's suggestion to use `run ! function` requires BATS 1.5.0+ and changes test semantics. The directive preserves the idiomatic pattern while documenting the intentional exception.
+
+**Key Points**:
+- Directive must be on the line **immediately before** the negated call
+- Not on the same line, not after the command
+- Document why the pattern is intentional
+
+#### SC2315: Conditional Negation in BATS
+
+For negated conditionals, prefer folding the `!` into the condition:
+
+```bash
+# Before (triggers SC2315):
+! [[ " ${files[*]} " =~ " pattern " ]]
+
+# After (preferred):
+[[ ! " ${files[*]} " =~ " pattern " ]]
+```
+
+**Why**: Folding `!` into `[[ ! ... ]]` is standard bash syntax that:
+- Eliminates the need for suppression directives
+- Is more idiomatic and readable
+- Works consistently across all bash versions
+
+**Example in tests**:
+```bash
+@test "list_tracked_files: excludes parent files with --cwd" {
+  cd src/components
+  mapfile -t files < <(list_tracked_files --cwd)
+
+  # Should NOT include files from parent directories
+  [[ ! " ${files[*]} " =~ " root1.txt " ]]
+  [[ ! " ${files[*]} " =~ " helper.js " ]]
+}
+```
+
+### Project-Wide Suppressions
+
+See `.shellcheckrc` for documented suppressions covering:
+- BATS test framework patterns (SC2030, SC2031)
+- Nameref false positives (SC2178, SC2154)
+- Git-specific syntax (SC1083)
+- Intentional word splitting (SC2046, SC2206, SC2207)
+- And many more project-specific patterns
+
+Each suppression in `.shellcheckrc` includes a comment explaining **why** it's disabled.
+
+### Inline vs. Project-Wide Suppressions
+
+**Use inline directives (`# shellcheck disable=SCXXXX`) when**:
+- The warning is for a specific, intentional pattern in one test
+- The pattern is a BATS idiom that shouldn't be changed
+- The pattern is rare (only a few instances)
+
+**Add to `.shellcheckrc` when**:
+- The pattern is project-wide and appears in many files
+- The pattern is a fundamental design decision
+- The suppression applies to all Bash files, not just tests
+
+### Running ShellCheck
+
+```bash
+# Check all Bash scripts
+make lint
+
+# Check specific files
+shellcheck tests/lib/test_hug-git-worktree.bats
+
+# Full sanitize check (includes formatting + linting + type checking)
+make sanitize-check
+```
+
+### CI/CD Pipeline
+
+The `sanitize-check` job runs on every commit:
+1. Bash formatting (shfmt)
+2. Python formatting (black/ruff)
+3. Bash linting (ShellCheck)
+4. Python linting (ruff)
+5. Python type checking (mypy)
+
+Any ShellCheck warnings will cause CI to fail.
 
 ## CI/CD Integration
 

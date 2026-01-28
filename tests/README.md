@@ -171,6 +171,16 @@ make test-bash TEST_FILTER="working directory" TEST_SHOW_ALL_RESULTS=1
 make test-check                             # Verify BATS setup without running tests
 ```
 
+### ShellCheck Linting
+
+Before committing, ensure tests pass ShellCheck:
+
+```bash
+make sanitize-check  # Includes ShellCheck + formatting + type checking
+```
+
+See [TESTING.md](../TESTING.md#shellcheck-integration) for BATS-specific ShellCheck patterns (SC2314, SC2315).
+
 ### Advanced: Direct Invocation
 Only use direct commands for features not exposed by the Makefile:
 
