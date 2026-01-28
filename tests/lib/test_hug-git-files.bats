@@ -108,11 +108,11 @@ teardown() {
   # Should include files from current directory
   [[ " ${files[*]} " =~ " ComponentA.js " ]]
   [[ " ${files[*]} " =~ " ComponentB.js " ]]
-  
+
   # Should NOT include files from parent or sibling directories
-  ! [[ " ${files[*]} " =~ " root1.txt " ]]
-  ! [[ " ${files[*]} " =~ " helper.js " ]]
-  ! [[ " ${files[*]} " =~ " README.md " ]]
+  [[ ! " ${files[*]} " =~ " root1.txt " ]]
+  [[ ! " ${files[*]} " =~ " helper.js " ]]
+  [[ ! " ${files[*]} " =~ " README.md " ]]
 }
 
 @test "list_tracked_files: paths are relative to current directory" {
@@ -156,9 +156,9 @@ teardown() {
   
   # Should include file from current directory
   [[ " ${files[*]} " =~ " ComponentA.js " ]]
-  
+
   # Should NOT include staged file from parent directory
-  ! [[ " ${files[*]} " =~ " root1.txt " ]]
+  [[ ! " ${files[*]} " =~ " root1.txt " ]]
 }
 
 ################################################################################
@@ -184,9 +184,9 @@ teardown() {
   
   # Should include file from current directory
   [[ " ${files[*]} " =~ " ComponentA.js " ]]
-  
+
   # Should NOT include unstaged files from other directories
-  ! [[ " ${files[*]} " =~ " helper.js " ]]
+  [[ ! " ${files[*]} " =~ " helper.js " ]]
 }
 
 ################################################################################
@@ -211,8 +211,8 @@ teardown() {
   [[ "${lines[0]}" =~ R100.*renamed\.txt ]]
 
   # Should NOT show separate delete or add entries
-  ! [[ "${lines[*]}" =~ $'\t'A\t ]]  # No separate Add
-  ! [[ "${lines[*]}" =~ $'\t'D\t ]]  # No separate Delete
+  [[ ! "${lines[*]}" =~ $'\t'A\t ]]  # No separate Add
+  [[ ! "${lines[*]}" =~ $'\t'D\t ]]  # No separate Delete
 }
 
 @test "list_staged_files: git mv is detected as rename" {
@@ -257,7 +257,7 @@ teardown() {
   
   # Should include file from current directory
   [[ " ${files[*]} " =~ " local-untracked.js " ]]
-  
+
   # Should NOT include untracked files from parent directory
-  ! [[ " ${files[*]} " =~ " untracked.js " ]]
+  [[ ! " ${files[*]} " =~ " untracked.js " ]]
 }

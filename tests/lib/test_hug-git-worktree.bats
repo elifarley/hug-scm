@@ -84,10 +84,12 @@ teardown() {
 }
 
 @test "hug-git-worktree: worktree_exists returns false for non-existent worktree" {
+  # shellcheck disable=SC2314
   ! worktree_exists "/nonexistent/path"
 }
 
 @test "hug-git-worktree: worktree_exists returns false for empty path" {
+  # shellcheck disable=SC2314
   ! worktree_exists ""
 }
 
@@ -155,14 +157,17 @@ teardown() {
   # Create worktree for feature-1
   create_test_worktree "feature-1" "$TEST_REPO"
 
+  # shellcheck disable=SC2314
   ! branch_available_for_worktree "feature-1"
 }
 
 @test "hug-git-worktree: branch_available_for_worktree rejects non-existent branch" {
+  # shellcheck disable=SC2314
   ! branch_available_for_worktree "nonexistent-branch"
 }
 
 @test "hug-git-worktree: branch_available_for_worktree rejects empty branch name" {
+  # shellcheck disable=SC2314
   ! branch_available_for_worktree ""
 }
 
@@ -368,6 +373,7 @@ teardown() {
 
 @test "hug-git-worktree: is_worktree_not_main returns false for main repository" {
   cd "$TEST_REPO"
+  # shellcheck disable=SC2314
   ! is_worktree_not_main
 }
 
@@ -381,5 +387,6 @@ teardown() {
 
 @test "hug-git-worktree: is_worktree_not_main returns false when not in git repo" {
   cd /tmp
+  # shellcheck disable=SC2314
   ! is_worktree_not_main
 }
