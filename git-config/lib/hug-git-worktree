@@ -935,7 +935,7 @@ format_worktree_line() {
     [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
     [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
 
-    printf "%s%-20s %s (%s) %s\n" "$status_indicators" "$branch" "$commit" "$path_display"
+    printf "%s%-20s %s %s\n" "$status_indicators" "$branch" "$commit" "$path_display"
 }
 
 # Format worktree information for long listing (wtll)
@@ -960,7 +960,7 @@ format_worktree_long_line() {
     [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
     [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
 
-    printf "%s%-20s %s (%s) %s\n" "$status_indicators" "$branch" "$commit" "$path_display"
+    printf "%s%-20s %s %s\n" "$status_indicators" "$branch" "$commit" "$path_display"
 
     # Get commit subject and relative time
     local commit_subject

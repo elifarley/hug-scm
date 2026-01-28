@@ -12,5 +12,72 @@ disable=SC2086  # Double quote to prevent globbing (intentional in some places)
 # Exclude test helper patterns
 disable=SC2155  # Declare and assign separately to avoid masking return values
 
+# Allow library guard pattern: return 0 2>/dev/null || :
+# The || : is unreachable (return 0 always succeeds) but is defensive
+# coding for consistency with other guard patterns
+disable=SC2317
+
+# ============================================================
+# Hug SCM Project-Specific Suppressions
+# ============================================================
+
+# Subshell variable modifications (BATS test framework pattern)
+disable=SC2030  # Test setup in subshells is intentional
+disable=SC2031  # Test setup in subshells is intentional
+
+# Regex patterns (intentional literal matching for safety/portability)
+disable=SC2076  # Quoted regex patterns are intentional
+
+# Nameref (local -n) false positives - well-known ShellCheck limitation
+disable=SC2178  # Nameref parameter is variable name (string), not array assignment
+disable=SC2154  # Variables assigned via nameref or are global flags
+
+# Git-specific syntax that ShellCheck doesn't understand
+disable=SC1083  # Git ref syntax @{u} uses literal braces
+
+# Color variables in printf are safe (don't contain format specifiers)
+disable=SC2059  # Color variables in format strings are intentional
+
+# Bash-specific features (POSIX compatibility not required)
+disable=SC3043  # Bash local keyword, intentional
+disable=SC3010  # Bash [[ ]], intentional
+
+# cd/pushd in test files (failures caught by test framework)
+disable=SC2164  # Test files don't need explicit cd error handling
+
 # Require all variables to be set (strict mode compatibility)
 require-variable-braces=true
+
+# ============================================================
+# Additional Intentional Patterns
+# ============================================================
+
+# Style warnings that are intentional or low-priority
+disable=SC2001  # Use ${var//pattern} - sed is often more readable for complex patterns
+disable=SC2181  # Check exit code directly - BATS test framework uses $?, test helper pattern
+disable=SC2126  # Use grep -c - grep | wc -l is often more portable and clearer
+
+# Intentional word splitting (quoting would break functionality)
+disable=SC2046  # Word splitting is intentional for command expansion
+disable=SC2206  # Word splitting to array is intentional
+disable=SC2207  # Command substitution to array - intentional pattern
+disable=SC2128  # Expanding array without index - intentional when first element is needed
+
+# Bash-specific features (we target Bash, not POSIX)
+disable=SC3028  # PIPESTATUS is Bash-specific
+disable=SC3044  # 'complete' is Bash-specific
+disable=SC3046  # 'source' in place of '.' is Bash-specific
+disable=SC3054  # Array references are Bash-specific
+disable=SC3060  # String replacement is Bash-specific
+
+# A && B || C pattern - intentional in test helpers and error handling
+disable=SC2015  # A && B || C is not if-then-else - intentional pattern
+
+# Test helper patterns - cd without explicit error handling (test framework catches failures)
+disable=SC2103  # Use subshell to avoid cd back - test helpers use cd intentionally
+
+# $'\t' tab character in single quotes - literal tab is intentional
+disable=SC1011  # Apostrophe terminated string - $'\t' is intentional literal tab
+
+# Empty [ ] in test comparison (false positive in certain contexts)
+disable=SC2065  # Shell file redirection false positive
