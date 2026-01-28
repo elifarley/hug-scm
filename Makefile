@@ -608,9 +608,13 @@ lint: ## Run linting checks (LLM-friendly: summary only)
 	else \
 		printf "$(YELLOW)⚠ ShellCheck not found - run 'make optional-deps-install'$(RESET)\n"; \
 	fi
+	@# Pre-warm UV dependencies before linting to avoid download messages in output
+	@if command -v uv >/dev/null 2>&1; then \
+		$(UV_CMD) run --directory git-config/lib/python --extra dev --quiet ruff --version >/dev/null 2>&1 || true; \
+	fi
 	@printf "$(BLUE)Linting Python helpers...$(RESET)\n"
 	@if command -v uv >/dev/null 2>&1; then \
-		output=$$($(UV_CMD) run --directory git-config/lib/python --extra dev ruff check --output-format=concise . 2>&1 | grep -vE "(VIRTUAL_ENV|All checks passed)" || true); \
+		output=$$($(UV_CMD) run --directory git-config/lib/python --extra dev ruff check --output-format=concise . 2>&1 | grep -vE "(VIRTUAL_ENV|All checks passed|Downloading|Downloaded|Installed [0-9]+ packages)" || true); \
 		if [ -n "$$output" ]; then \
 			printf "$(RED)✗ Python linting errors found:$(RESET)\n"; \
 			echo "$$output"; \
