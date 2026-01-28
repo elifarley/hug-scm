@@ -1444,3 +1444,76 @@ teardown() {
   # Should show status prefixes (sl has both staged and unstaged)
   assert_output --partial "S:" || assert_output --partial "U:"
 }
+
+################################################################################
+# Double Dash (--) for Interactive File Selection Tests
+################################################################################
+
+@test "hug su --: triggers interactive file selection mode" {
+  # Test that -- sets HUG_INTERACTIVE_FILE_SELECTION environment variable
+  # by mocking gum and checking that the command exits due to no files
+  # In non-interactive mode, we'd see "Unstaged diff:" in output
+  # In interactive mode, the command tries to launch gum and exits early
+
+  # First verify normal mode shows diff
+  run hug su
+  assert_success
+  assert_output --partial "Unstaged diff"
+
+  # Now verify -- mode doesn't show the regular diff output
+  # It will fail because gum will exit with error when no TTY
+  run hug su --
+  # The command should fail (gum can't run) OR succeed with "No files" message
+  # Either way, it should NOT show the regular diff
+  refute_output --partial "Unstaged diff:"
+}
+
+@test "hug ss --: triggers interactive file selection mode" {
+  # Ensure there's a staged file
+  git add staged.txt
+
+  # First verify normal mode shows diff
+  run hug ss
+  assert_success
+  assert_output --partial "Staged diff"
+
+  # Now verify -- mode doesn't show the regular diff output
+  run hug ss --
+  # Should NOT show the regular diff (either fails due to gum or shows no files)
+  refute_output --partial "Staged diff:"
+}
+
+@test "hug sw --: triggers interactive file selection mode" {
+  # First verify normal mode shows diff
+  run hug sw
+  assert_success
+  # hug sw shows both unstaged and staged diffs
+  assert_output --partial "Unstaged diff"
+
+  # Now verify -- mode doesn't show the regular diff output
+  run hug sw --
+  # Should NOT show the regular diff (either fails due to gum or shows no files)
+  refute_output --partial "Unstaged diff"
+}
+
+@test "hug su -qs --: combined flags with interactive mode" {
+  # Test that combined short flags still work with --
+  # The bug was that combined flags broke -- detection
+
+  # First verify -qs works without --
+  run hug su -qs
+  assert_success
+  assert_output --partial "Unstaged file stats"
+
+  # Now verify -qs -- doesn't show stats (enters interactive mode)
+  run hug su -qs --
+  # Should NOT show the regular stats output
+  refute_output --partial "Unstaged file stats"
+}
+
+@test "hug su --stat --: long flag with interactive mode" {
+  # Test that --stat still works with interactive selection
+  run hug su --stat --
+  # Should enter interactive mode, not show stats immediately
+  refute_output --partial "Unstaged file stats"
+}

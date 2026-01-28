@@ -46,6 +46,13 @@ SEE ALSO:
 EOF
 }
 
+# Check if last argument is '--' before getopt processing (for interactive file selection)
+# Getopt consumes '--' as end-of-options marker, so we must detect it first
+if [[ $# -gt 0 && "${!#}" = "--" ]]; then
+  export HUG_INTERACTIVE_FILE_SELECTION=true
+  set -- "${@:1:$(($# - 1))}"
+fi
+
 # Parse all flags (common + command-specific) using getopt
 set +e
 PARSED=$(getopt --options hqs --longoptions help,quiet,stat,browse-root --name "hug ss" -- "$@" 2>&1)
@@ -95,12 +102,6 @@ while true; do
     ;;
   esac
 done
-
-# Handle -- (interactive file selection) if present as last arg
-if [[ $# -gt 0 && "${!#}" = "--" ]]; then
-  export HUG_INTERACTIVE_FILE_SELECTION=true
-  set -- "${@:1:$(($# - 1))}"
-fi
 
 # Validate --browse-root without paths
 if $browse_root && [ $# -gt 0 ]; then
