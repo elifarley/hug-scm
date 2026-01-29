@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-show; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug l: Log commits with graph visualization (one-line format).
+
+USAGE:
+    hug l [options] [<revision-range>] [-- <path>]
+
+OPTIONS:
+    <n>           Show single commit HEAD~n (0 → HEAD, 1 → HEAD~1, etc.)
+    -<n>          Show last n commits (e.g., -10)
+    --all         Show all branches
+    --oneline     One-line format (default)
+    --graph       Show graph (default)
+    --decorate    Show refs (default)
+    --no-color    Disable color output
+    -h, --help    Show this help
+
+DESCRIPTION:
+    Displays commit log with graph visualization and decorations in a compact
+    one-line format. This is the standard log view for quick commit history
+    inspection.
+
+    The N/-N syntax provides convenient navigation:
+    - N (0-999) shows a single commit at HEAD~N
+    - -N (1-999) shows a range of N commits ending at HEAD
+
+EXAMPLES:
+    hug l                         # Show commits on current branch
+    hug l 0                       # Show HEAD commit
+    hug l 1                       # Show HEAD~1 commit
+    hug l -10                     # Show last 10 commits
+    hug l --all                   # Show all branches
+    hug l main..feature           # Commits in feature not in main
+    hug l -- Documentation/       # Commits affecting Documentation/
+
+SYNTAX CONVENTION:
+    N              Single commit at HEAD~N (0-999)
+    -N             Range of N commits: HEAD~N..HEAD (1-999)
+    <ref>          Specific commit or branch reference
+    <ref>..<ref>   Explicit revision range
+
+    Numbers >= 1000 are passed through as refs (e.g., numeric tags).
+
+SEE ALSO:
+    hug ll       : Detailed log with date, author, message
+    hug la       : Log all branches (l --all)
+    hug lp       : Log with patches
+    hug lf       : Search commits by message
+    hug lc       : Search commits by code diff
+    hug sh       : Show single commit details
+EOF
+}
+
+# Parse flags
+git_args=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  --color | --no-color)
+    # Pass through color flags
+    git_args+=("$1")
+    shift
+    ;;
+  --oneline | --graph | --decorate)
+    # These are defaults, but allow explicit override
+    git_args+=("$1")
+    shift
+    ;;
+  --all)
+    git_args+=("--all")
+    shift
+    ;;
+  -[0-9]*)
+    # Negative N: -N → range of N commits (e.g., -10 → HEAD~10..HEAD)
+    if [[ "$1" =~ ^-[1-9][0-9]{0,2}$ ]]; then
+      resolved=$(resolve_commit_ref "$1")
+      git_args+=("$resolved")
+    else
+      # Pass through other dash-prefixed args
+      git_args+=("$1")
+    fi
+    shift
+    ;;
+  [0-9]*)
+    # Positive N (0-999) → Single commit at HEAD~N (0 → HEAD)
+    if [[ "$1" =~ ^[0-9]{1,3}$ ]]; then
+      resolved=$(resolve_commit_ref "$1")
+      # For single commit, limit log to 1 entry
+      git_args+=("-1" "$resolved")
+    else
+      # Numbers >= 1000 pass through as refs (e.g., numeric tags)
+      git_args+=("$1")
+    fi
+    shift
+    ;;
+  *)
+    git_args+=("$1")
+    shift
+    ;;
+  esac
+done
+
+check_git_repo
+
+# Default options for hug l (matching the original alias)
+git log --oneline --graph --decorate --color "${git_args[@]}"

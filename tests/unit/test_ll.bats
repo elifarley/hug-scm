@@ -59,6 +59,61 @@ teardown() {
   # Should show last 2 commits
 }
 
+@test "hug ll: N=0 shows HEAD commit" {
+  run hug ll 0
+  assert_success
+  assert_output --partial "Third commit"
+}
+
+@test "hug ll: N=1 shows HEAD~1 commit" {
+  run hug ll 1
+  assert_success
+  assert_output --partial "Second commit"
+}
+
+@test "hug ll: N=2 shows HEAD~2 commit" {
+  run hug ll 2
+  assert_success
+  assert_output --partial "First commit"
+}
+
+@test "hug ll: N with JSON output" {
+  run hug ll 0 --json
+  assert_success
+
+  # Validate JSON structure
+  run python3 -m json.tool <<< "$output"
+  assert_success
+
+  # Should have exactly 1 commit
+  run bash -c "echo '$output' | python3 -c 'import sys, json; print(len(json.load(sys.stdin)[\"commits\"]))'"
+  assert_output "1"
+}
+
+@test "hug ll: N=-n have different behavior" {
+  # N=1 shows single commit (HEAD~1)
+  run hug ll 1
+  assert_success
+  assert_output --partial "Second commit"
+  refute_output --partial "Third commit"
+
+  # -1 shows last commit (HEAD)
+  run hug ll -1
+  assert_success
+  assert_output --partial "Third commit"
+}
+
+@test "hug ll: N >= 1000 passes through as ref" {
+  # Create a numeric tag for testing
+  git tag 1234 HEAD
+
+  # N=1234 should pass through as a ref (the tag)
+  run hug ll 1234
+  assert_success
+  # Should show the commit that the tag points to
+  assert_output --partial "Third commit"
+}
+
 # =============================================================================
 # JSON OUTPUT
 # =============================================================================

@@ -1,0 +1,307 @@
+# shellcheck shell=bash
+# This file is a library to be sourced by shell scripts
+#
+# HUG-GIT-SHOW: Git commit display with unified N/-N resolution
+#
+# This library provides functions for:
+# - Unified N/-N commit reference resolution for enumeration commands
+# - Single and range commit display with dual output formats
+# - Standard human-readable format (with emoji indicators)
+# - LLM-friendly XML-tagged format (for AI/LLM consumption)
+#
+# N/-N SYNTAX CONVENTION:
+# - N (0-999) → Single commit HEAD~N (0 → HEAD)
+# - -N (1-999) → Range HEAD~N..HEAD (cumulative last N commits)
+# - Refs and ranges pass through unchanged
+#
+# All functions are designed to work with the hug-common library
+# and follow consistent patterns for error handling and user feedback.
+
+################################################################################
+# Idempotent Guards
+################################################################################
+
+# Prevent double-loading warnings
+[[ -n "${_HUG_GIT_SHOW_LOADED:-}" ]] && return 0
+readonly _HUG_GIT_SHOW_LOADED=1
+
+################################################################################
+# N/-N Resolution Functions
+################################################################################
+
+# Resolves a commit reference with unified N/-N syntax support
+# Usage: resolved_ref=$(resolve_commit_ref "target")
+# Parameters:
+#   $1 - Target specification (N, -N, ref, or range)
+#         - Empty string → "HEAD"
+#         - N (0-999) → "HEAD~N" (0 → HEAD)
+#         - -N (1-999) → "HEAD~N..HEAD"
+#         - Other → pass through unchanged (refs, ranges, etc.)
+# Output:
+#   Resolved git reference to stdout
+# Examples:
+#   resolve_commit_ref ""           → "HEAD"
+#   resolve_commit_ref "0"          → "HEAD"
+#   resolve_commit_ref "3"          → "HEAD~3"
+#   resolve_commit_ref "-3"         → "HEAD~3..HEAD"
+#   resolve_commit_ref "abc123"     → "abc123"
+#   resolve_commit_ref "main..HEAD" → "main..HEAD"
+resolve_commit_ref() {
+    local input="${1:-}"
+    local default="${2:-HEAD}"
+
+    # Empty target → default
+    if [[ -z "$input" ]]; then
+        printf '%s\n' "$default"
+        return 0
+    fi
+
+    # -N: Range of N commits (negative, 1-999)
+    if [[ "$input" =~ ^-[1-9][0-9]{0,2}$ ]]; then
+        local n="${input#-}"
+        printf 'HEAD~%s..HEAD\n' "$n"
+        return 0
+    fi
+
+    # N: Single commit HEAD~N (0-999)
+    if [[ "$input" =~ ^[0-9]{1,3}$ ]]; then
+        if [[ "$input" == "0" ]]; then
+            printf 'HEAD\n'
+        else
+            printf 'HEAD~%s\n' "$input"
+        fi
+        return 0
+    fi
+
+    # Pass through refs and ranges unchanged
+    printf '%s\n' "$input"
+    return 0
+}
+
+# Detects if a target is a commit range
+# Usage: if is_range "$target"; then echo "is range"; fi
+# Parameters:
+#   $1 - Target specification to check
+# Returns:
+#   0 if target is a range (contains ..), 1 otherwise
+# Examples:
+#   is_range "HEAD~3..HEAD"  → returns 0 (true)
+#   is_range "abc123"        → returns 1 (false)
+#   is_range "main"          → returns 1 (false)
+is_range() {
+    [[ "$1" == *..* ]]
+}
+
+################################################################################
+# Commit Display Functions
+################################################################################
+
+# Shows commits (single or range) in specified format
+# Usage: show_commits "target" "show_patch" "output_format"
+# Parameters:
+#   $1 - Target specification (N, -N, ref, or range)
+#   $2 - Show patch: "true" or "false"
+#   $3 - Output format: "standard" or "llm"
+# Environment:
+#   HUG_QUIET - If set to "T", suppresses headers in standard format
+# Effects:
+#   Prints commit information to stdout
+# Notes:
+#   - For ranges, iterates through each commit and shows individually
+#   - For single commits, shows directly
+#   - Uses resolve_commit_ref() for N/-N resolution
+show_commits() {
+    local target="$1"
+    local show_patch="${2:-false}"
+    local output_format="${3:-standard}"
+
+    check_git_repo
+
+    # Resolve the target using N/-N syntax
+    local resolved
+    resolved=$(resolve_commit_ref "$target")
+
+    # Check if it's a range
+    if is_range "$resolved"; then
+        # Range: iterate through commits in the range
+        local commits
+        commits=$(git rev-list --reverse "$resolved" 2>/dev/null) || {
+            error "Invalid range or no commits found: $resolved"
+        }
+
+        # Iterate through each commit
+        while IFS= read -r commit; do
+            [[ -n "$commit" ]] || continue
+            show_single_commit "$commit" "$show_patch" "$output_format"
+
+            # Add separator between commits in standard format (unless quiet)
+            if [[ "$output_format" == "standard" && "${HUG_QUIET:-}" != "T" ]]; then
+                printf '\n'
+            fi
+        done <<< "$commits"
+    else
+        # Single commit: show directly
+        show_single_commit "$resolved" "$show_patch" "$output_format"
+    fi
+}
+
+# Shows a single commit in the specified format
+# Usage: show_single_commit "commit" "show_patch" "output_format"
+# Parameters:
+#   $1 - Commit hash or reference
+#   $2 - Show patch: "true" or "false"
+#   $3 - Output format: "standard" or "llm"
+# Environment:
+#   HUG_QUIET - If set to "T", suppresses headers in standard format
+# Effects:
+#   Prints commit information to stdout
+# Notes:
+#   - Dispatches to _show_commit_standard or _show_commit_llm
+#   - Validates commit exists before displaying
+show_single_commit() {
+    local commit="$1"
+    local show_patch="$2"
+    local output_format="$3"
+
+    check_git_repo
+
+    # Validate commit exists
+    if ! git rev-parse --verify "$commit^{commit}" >/dev/null 2>&1; then
+        error "Invalid commit reference: $commit"
+    fi
+
+    # Dispatch to appropriate format function
+    case "$output_format" in
+        llm)
+            _show_commit_llm "$commit" "$show_patch"
+            ;;
+        standard|*)
+            _show_commit_standard "$commit" "$show_patch"
+            ;;
+    esac
+}
+
+################################################################################
+# Standard Format Functions
+################################################################################
+
+# Shows a single commit in standard human-readable format
+# Usage: _show_commit_standard "commit" "show_patch"
+# Parameters:
+#   $1 - Commit hash or reference
+#   $2 - Show patch: "true" or "false"
+# Environment:
+#   HUG_QUIET - If set to "T", suppresses section headers
+# Effects:
+#   Prints commit information to stdout with emoji indicators
+# Notes:
+#   - Replicates git-sh output format
+#   - Uses _diff_emoji for section indicators
+#   - Shows commit info, optional patch, and file stats
+_show_commit_standard() {
+    local commit="$1"
+    local show_patch="$2"
+
+    # Get emoji indicators (from hug-git-diff)
+    local commit_emoji info_emoji diff_emoji stats_emoji
+    commit_emoji="$(_diff_emoji commit)"
+    info_emoji="$(_diff_emoji info)"
+    diff_emoji="$(_diff_emoji diff)"
+    stats_emoji="$(_diff_emoji stats)"
+
+    # Print commit info heading
+    if [[ "${HUG_QUIET:-}" != "T" ]]; then
+        printf '%s %s Commit info:\n' "$commit_emoji" "$info_emoji"
+    fi
+
+    # Show commit info (hash, date, author, subject, body)
+    git log -1 --pretty=logbody --date=human-local "$commit"
+
+    # Show patch if requested
+    if [[ "$show_patch" == "true" ]]; then
+        if [[ "${HUG_QUIET:-}" != "T" ]]; then
+            printf '\n%s %s Commit diff:\n' "$commit_emoji" "$diff_emoji"
+        fi
+        # Show the patch diff (suppress commit info from git show)
+        git show "$commit" --pretty=format:""
+    fi
+
+    # Show file stats heading
+    if [[ "${HUG_QUIET:-}" != "T" ]]; then
+        printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji"
+    fi
+
+    # Show file stats via git-shc (DRY principle)
+    HUG_QUIET=T git shc "$commit"
+}
+
+################################################################################
+# LLM Format Functions
+################################################################################
+
+# Shows a single commit in LLM-friendly XML-tagged format
+# Usage: _show_commit_llm "commit" "show_patch"
+# Parameters:
+#   $1 - Commit hash or reference
+#   $2 - Show patch: "true" or "false"
+# Effects:
+#   Prints XML-tagged commit information to stdout
+# Notes:
+#   - Format: <commit hash="..." date="ISO8601"><msg>subject\n\nbody</msg></commit>
+#   - Date is truncated to minutes (YYYY-MM-DDTHH:MM)
+#   - Optional <diff> section if show_patch=true
+#   - All text content is XML-escaped
+_show_commit_llm() {
+    local commit="$1"
+    local show_patch="$2"
+
+    # Get commit metadata
+    local hash date subject body
+    hash=$(git log -1 --format="%H" "$commit")
+    # ISO 8601 date: 2025-01-15T14:32:00+00:00 → truncate to minutes: 2025-01-15T14:32
+    date=$(git log -1 --format="%ci" "$commit" | cut -d: -f1-2)
+    subject=$(git log -1 --format="%s" "$commit")
+    body=$(git log -1 --format="%b" "$commit")
+
+    # Escape XML special characters
+    subject=$(_xml_escape "$subject")
+    body=$(_xml_escape "$body")
+
+    # Print commit opening tag
+    printf '<commit hash="%s" date="%s">\n' "$hash" "$date"
+
+    # Print message section
+    printf '<msg>%s' "$subject"
+    if [[ -n "$body" ]]; then
+        printf '\n\n%s' "$body"
+    fi
+    printf '</msg>\n'
+
+    # Print diff section if requested
+    if [[ "$show_patch" == "true" ]]; then
+        printf '<diff><![CDATA[\n'
+        git show "$commit" --pretty=format:""
+        printf ']]></diff>\n'
+    fi
+
+    # Print commit closing tag
+    printf '</commit>\n'
+}
+
+# Escapes XML special characters in text
+# Usage: escaped_text=$(_xml_escape "text")
+# Parameters:
+#   $1 - Text to escape
+# Output:
+#   XML-escaped text to stdout
+# Notes:
+#   - Escapes: & → &amp;, < → &lt;, > → &gt;
+#   - Order matters: escape & first to avoid double-escaping
+_xml_escape() {
+    local text="$1"
+    # Escape in order: & first, then < and >
+    text="${text//&/&amp;}"
+    text="${text//</&lt;}"
+    text="${text//>/&gt;}"
+    printf '%s' "$text"
+}

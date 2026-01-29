@@ -55,7 +55,7 @@ teardown() {
   run hug sh -h
   assert_success
   assert_output --partial "USAGE:"
-  assert_output --partial "Show specific commit with file statistics"
+  assert_output --partial "Show commit(s) with file statistics"
 }
 
 @test "hug sh: handles HEAD~ notation" {
@@ -125,7 +125,7 @@ teardown() {
   run hug shp -h
   assert_success
   assert_output --partial "USAGE:"
-  assert_output --partial "Show specific commit with patch and file statistics"
+  assert_output --partial "Show commit(s) with patch and file statistics"
 }
 
 @test "hug shp: handles HEAD~ notation" {
@@ -291,9 +291,16 @@ teardown() {
   assert_output --partial "changed"
 }
 
-@test "hug shc: numeric shorthand shows cumulative changes in last N commits" {
-  # hug shc 2 should show cumulative changes in HEAD~2..HEAD
-  run hug shc 2
+@test "hug shc: numeric shorthand shows single commit N steps back" {
+  # hug shc 1 should show HEAD~1 (single commit with feature1.txt)
+  run hug shc 1
+  assert_success
+  assert_output --partial "feature1.txt"
+}
+
+@test "hug shc: numeric shorthand with -N shows cumulative changes in last N commits" {
+  # hug shc -2 should show cumulative changes in HEAD~2..HEAD
+  run hug shc -2
   assert_success
   assert_output --partial "Changed files in range HEAD~2..HEAD"
 }
@@ -329,11 +336,24 @@ teardown() {
   assert_output --partial "File stats:"
 }
 
-@test "hug shcp: numeric shorthand shows cumulative diff in last N commits" {
-  # hug shcp 2 should show cumulative diff in HEAD~2..HEAD
+@test "hug shcp: N shows single commit, -N shows range" {
+  # hug shcp 0 should show HEAD (edge case)
+  run hug shcp 0
+  assert_success
+  assert_output --partial "Diff for HEAD"
+  assert_output --partial "diff --git"
+
+  # hug shcp 2 should show single commit HEAD~2
   run hug shcp 2
   assert_success
-  assert_output --partial "Cumulative diff for range HEAD~2..HEAD"
+  assert_output --partial "Diff for HEAD~2"
+  assert_output --partial "diff --git"
+  assert_output --partial "File stats:"
+
+  # hug shcp -2 should show cumulative diff in HEAD~2..HEAD
+  run hug shcp -2
+  assert_success
+  assert_output --partial "Cumulative diff for range HEAD~2..HEAD:"
   assert_output --partial "diff --git"
   assert_output --partial "Cumulative file stats:"
 }

@@ -1,35 +1,46 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit hug-git-diff; do . "$CMD_BASE/../lib/$f"; done
+for f in hug-common hug-git-kit hug-git-show; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
 # Part of the Hug tool suite
 
 show_help() {
   cat << 'EOF'
-hug shp: Show specific commit with patch and file statistics.
+hug shp: Show commit(s) with patch and file statistics.
 
 USAGE:
-    hug shp [N|<commit-ref>] [-h, --help]
+    hug shp [N|-N|<commit-ref>|<range>] [OPTIONS]
 
 ARGUMENTS:
-    N               Steps back from HEAD (1-999) → shows commit at HEAD~N
+    N               Steps back from HEAD (0-999) → shows commit at HEAD~N (0 → HEAD)
+    -N              Range of N commits (1-999) → shows HEAD~N..HEAD
     <commit-ref>    Commit reference (default: HEAD)
+    <range>         Commit range (e.g., main..HEAD)
 
 OPTIONS:
-    -h, --help     Show this help
+    -q, --quiet     Suppress headers (also honors HUG_QUIET env var)
+    --llm           Output in LLM-friendly XML format
+    -h, --help      Show this help
 
 DESCRIPTION:
     Shows commit details with full patch and file statistics.
     Displays commit hash, date, author, subject, body, the
     complete diff/patch, and file statistics at the end.
 
+    N/-N SYNTAX CONVENTION:
+    - N (0-999) → Single commit at HEAD~N (0 → HEAD)
+    - -N (1-999) → Range of N commits (HEAD~N..HEAD)
+    - Numbers ≥ 1000 pass through as refs
+
 EXAMPLES:
     hug shp                  # Show last commit with patch
     hug shp 2                # Show commit two steps back (HEAD~2)
+    hug shp -3               # Show last 3 commits with patch (HEAD~3..HEAD)
     hug shp abc123           # Show specific commit with patch
-    hug shp HEAD~2           # Show two commits ago with patch (explicit)
+    hug shp main..HEAD       # Show commits in range with patch
+    hug shp --llm HEAD       # Show in LLM XML format with patch
 
 SEE ALSO:
     hug sh       : Show commit with stats (no patch)
@@ -38,42 +49,32 @@ SEE ALSO:
 EOF
 }
 
-# Parse arguments
-case "${1:-}" in
--h | --help)
-  show_help
-  exit 0
-  ;;
-esac
+# Parse common flags (-q/--quiet, -h/--help)
+eval "$(parse_common_flags "$@")"
 
-commit_ref="${1:-}"
+# Parse remaining arguments
+commit_ref=""
+show_llm=false
+for arg in "$@"; do
+  case "$arg" in
+  -h | --help | -q | --quiet) ;; # Already handled by parse_common_flags
+  --llm)
+    show_llm=true
+    ;;
+  *)
+    commit_ref="$arg"
+    ;;
+  esac
+done
 
-check_git_repo
+# Determine output format
+if [[ "$show_llm" == true ]]; then
+  output_format="llm"
+else
+  output_format="standard"
+fi
 
-# Resolve N (1-999) to HEAD~N, or use default HEAD
-commit_ref=$(resolve_head_target "$commit_ref" "HEAD")
-
-# Get emoji indicators
-commit_emoji="$(_diff_emoji commit)"
-info_emoji="$(_diff_emoji info)"
-diff_emoji="$(_diff_emoji diff)"
-stats_emoji="$(_diff_emoji stats)"
-
-# Print heading
-printf '%s %s Commit info:\n' "$commit_emoji" "$info_emoji"
-
-# Show commit info without patch
-git show --pretty=logbody --date=human-local --no-patch "$commit_ref"
-
-# Print heading
-printf '%s %s Commit diff:\n' "$commit_emoji" "$diff_emoji"
-# Show the patch diff
-git show "$commit_ref" --pretty=format:""
-
-# Show file stats heading
-printf '\n%s %s Commit file stats:\n' "$commit_emoji" "$stats_emoji"
-
-# Show the file stats via git-shc (DRY)
-HUG_QUIET=T git shc "$commit_ref"
+# Use hug-git-show library for commit display (show_patch=true)
+show_commits "$commit_ref" true "$output_format"
 
 exit 0
