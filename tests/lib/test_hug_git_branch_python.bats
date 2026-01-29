@@ -384,3 +384,107 @@ setup_local_remote() {
   # Should fail
   [ "$status" -eq 2 ]
 }
+
+################################################################################
+# Sort Order Tests
+################################################################################
+
+@test "python branch module: sorts by committerdate descending (newest first) by default" {
+  # Create branches with known commit order
+  git checkout -b branch_early
+  git commit --allow-empty -m "Early commit" --no-gpg-sign --quiet
+
+  sleep 1  # Ensure different timestamp
+
+  git checkout main
+  git checkout -b branch_late
+  git commit --allow-empty -m "Late commit" --no-gpg-sign --quiet
+
+  eval "$(python3 "$HUG_HOME/git-config/lib/python/hug_git_branch.py" local)"
+
+  # Verify branches exist
+  [[ ${#branches[@]} -ge 2 ]]
+
+  # Find positions of our test branches
+  local early_pos=-1 late_pos=-1
+  local i
+  for ((i = 0; i < ${#branches[@]}; i++)); do
+    if [[ "${branches[$i]}" == "branch_early" ]]; then
+      early_pos=$i
+    fi
+    if [[ "${branches[$i]}" == "branch_late" ]]; then
+      late_pos=$i
+    fi
+  done
+
+  # branch_late should appear before branch_early (newest first)
+  [[ $late_pos -lt $early_pos ]]
+
+  # Cleanup
+  git checkout main -q
+  git branch -D branch_early branch_late -q
+}
+
+@test "python branch module: --ascending sorts by committerdate ascending (oldest first)" {
+  # Create branches with known commit order
+  git checkout -b branch_early
+  git commit --allow-empty -m "Early commit" --no-gpg-sign --quiet
+
+  sleep 1  # Ensure different timestamp
+
+  git checkout main
+  git checkout -b branch_late
+  git commit --allow-empty -m "Late commit" --no-gpg-sign --quiet
+
+  eval "$(python3 "$HUG_HOME/git-config/lib/python/hug_git_branch.py" local --ascending)"
+
+  # Verify branches exist
+  [[ ${#branches[@]} -ge 2 ]]
+
+  # Find positions of our test branches
+  local early_pos=-1 late_pos=-1
+  local i
+  for ((i = 0; i < ${#branches[@]}; i++)); do
+    if [[ "${branches[$i]}" == "branch_early" ]]; then
+      early_pos=$i
+    fi
+    if [[ "${branches[$i]}" == "branch_late" ]]; then
+      late_pos=$i
+    fi
+  done
+
+  # branch_early should appear before branch_late (oldest first)
+  [[ $early_pos -lt $late_pos ]]
+
+  # Cleanup
+  git checkout main -q
+  git branch -D branch_early branch_late -q
+}
+
+@test "python branch module: wip mode respects sort order" {
+  # Create WIP branches with known commit order
+  git branch WIP/early-feature
+  git checkout WIP/early-feature -q
+  git commit --allow-empty -m "Early WIP commit" --no-gpg-sign --quiet
+
+  sleep 1
+
+  git checkout main -q
+  git branch WIP/late-feature
+  git checkout WIP/late-feature -q
+  git commit --allow-empty -m "Late WIP commit" --no-gpg-sign --quiet
+
+  # Test descending (newest first, default)
+  eval "$(python3 "$HUG_HOME/git-config/lib/python/hug_git_branch.py" wip)"
+  [[ ${#branches[@]} -ge 2 ]]
+  [[ "${branches[0]}" == "WIP/late-feature" ]]
+
+  # Test ascending (oldest first)
+  eval "$(python3 "$HUG_HOME/git-config/lib/python/hug_git_branch.py" wip --ascending)"
+  [[ ${#branches[@]} -ge 2 ]]
+  [[ "${branches[0]}" == "WIP/early-feature" ]]
+
+  # Cleanup
+  git checkout main -q
+  git branch -D WIP/early-feature WIP/late-feature -q
+}

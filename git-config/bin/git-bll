@@ -18,7 +18,8 @@ OPTIONS:
   --json         Output in JSON format instead of human-readable text.
 
 DESCRIPTION:
-  Displays each local branch sorted alphabetically. The current branch is highlighted in green and marked with an asterisk (*).
+  Displays each local branch sorted by commit date (oldest first, most recent at bottom).
+  The current branch is highlighted in green and marked with an asterisk (*).
   Each entry shows: branch name (short hash) [upstream tracking info, e.g., origin/main ahead 2].
   The commit message title follows.
   Remote tracking information is shown just as in 'git branch -vv'.
@@ -68,8 +69,8 @@ if $json_output; then
   exit 0
 fi
 
-# Get branch details from Python module
-if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local)"; then
+# Get branch details from Python module (ascending: oldest first, recent at bottom)
+if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local --ascending)"; then
   printf "No local branches found.\n" >&2
   exit 1
 fi

@@ -136,18 +136,33 @@ def _run_git(args: list[str], check: bool = True) -> str:
     return result.stdout.rstrip("\n\r")
 
 
-def _run_git_for_each_ref(format_str: str, ref_pattern: str) -> list[str]:
+def _run_git_for_each_ref(
+    format_str: str,
+    ref_pattern: str,
+    sort_ascending: bool = False,
+) -> list[str]:
     """Run git for-each-ref with null-delimited output.
 
     Args:
         format_str: Format string for --format (uses %00 as delimiter)
         ref_pattern: Ref pattern to query (e.g., 'refs/heads/')
+        sort_ascending: Sort order - False = descending (newest first),
+                        True = ascending (oldest first)
 
     Returns:
         List of null-delimited field values
     """
+    # Git for-each-ref sorting: -committerdate = descending (newest first),
+    # committerdate = ascending (oldest first)
+    sort_prefix = "-" if not sort_ascending else ""
     output = _run_git(
-        ["for-each-ref", "--format=" + format_str, "--sort=refname", ref_pattern], check=False
+        [
+            "for-each-ref",
+            "--format=" + format_str,
+            f"--sort={sort_prefix}committerdate",
+            ref_pattern,
+        ],
+        check=False,
     )
     if not output:
         return []
@@ -203,6 +218,7 @@ def get_local_branch_details(
     include_subjects: bool = True,
     exclude_backup: bool = True,
     batch_divergence: bool = True,
+    sort_ascending: bool = False,
 ) -> BranchDetails | None:
     """Get local branch details with upstream tracking.
 
@@ -210,6 +226,8 @@ def get_local_branch_details(
         include_subjects: Include commit subject messages
         exclude_backup: Exclude hug-backup/* branches
         batch_divergence: Use parallel divergence calculation for 5+ branches
+        sort_ascending: Sort order - False = descending (newest first),
+                        True = ascending (oldest first)
 
     Returns:
         BranchDetails object or None if no branches exist
@@ -229,7 +247,7 @@ def get_local_branch_details(
     format_str += "%00%(upstream:short)%00%(upstream:track)%00"
 
     # Get branch data
-    git_output = _run_git_for_each_ref(format_str, "refs/heads/")
+    git_output = _run_git_for_each_ref(format_str, "refs/heads/", sort_ascending)
     if not git_output:
         return None
 
@@ -311,12 +329,15 @@ def get_local_branch_details(
 def get_remote_branch_details(
     include_subjects: bool = True,
     exclude_backup: bool = True,
+    sort_ascending: bool = False,
 ) -> BranchDetails | None:
     """Get remote branch details.
 
     Args:
         include_subjects: Include commit subject messages
         exclude_backup: Exclude hug-backup/* remote branches
+        sort_ascending: Sort order - False = descending (newest first),
+                        True = ascending (oldest first)
 
     Returns:
         BranchDetails object or None if no remote branches exist
@@ -328,7 +349,7 @@ def get_remote_branch_details(
     format_str += "%00"
 
     # Get remote branch data
-    git_output = _run_git_for_each_ref(format_str, "refs/remotes/")
+    git_output = _run_git_for_each_ref(format_str, "refs/remotes/", sort_ascending)
     if not git_output:
         return None
 
@@ -386,12 +407,15 @@ def get_remote_branch_details(
 def get_wip_branch_details(
     include_subjects: bool = True,
     ref_pattern: str = "refs/heads/WIP/",
+    sort_ascending: bool = False,
 ) -> BranchDetails | None:
     """Get WIP/temporary branch details.
 
     Args:
         include_subjects: Include commit subject messages
         ref_pattern: Git ref pattern to search (default: refs/heads/WIP/)
+        sort_ascending: Sort order - False = descending (newest first),
+                        True = ascending (oldest first)
 
     Returns:
         BranchDetails object with branches matching WIP patterns
@@ -401,7 +425,7 @@ def get_wip_branch_details(
         format_str += "%00%(subject)"
     format_str += "%00"
 
-    git_output = _run_git_for_each_ref(format_str, ref_pattern)
+    git_output = _run_git_for_each_ref(format_str, ref_pattern, sort_ascending)
     if not git_output:
         return None
 
@@ -503,6 +527,7 @@ def main():
     Options:
         --json            Output JSON instead of bash declarations
         --pattern PATTERN Ref pattern for WIP branches (default: refs/heads/WIP/)
+        --ascending       Sort ascending (oldest first, recent at bottom)
 
     Outputs bash variable declarations by default, JSON with --json flag.
     Returns exit code 1 if no branches found or on error.
@@ -519,6 +544,11 @@ def main():
         default="refs/heads/WIP/",
         help="Ref pattern for WIP branches (default: refs/heads/WIP/)",
     )
+    parser.add_argument(
+        "--ascending",
+        action="store_true",
+        help="Sort ascending (oldest first, recent at bottom)",
+    )
 
     args = parser.parse_args()
 
@@ -526,12 +556,21 @@ def main():
         # Get branch details based on type
         if args.type == "local":
             details = get_local_branch_details(
-                include_subjects=True, exclude_backup=True, batch_divergence=True
+                include_subjects=True,
+                exclude_backup=True,
+                batch_divergence=True,
+                sort_ascending=args.ascending,
             )
         elif args.type == "remote":
-            details = get_remote_branch_details(include_subjects=True, exclude_backup=True)
+            details = get_remote_branch_details(
+                include_subjects=True, exclude_backup=True, sort_ascending=args.ascending
+            )
         else:  # wip
-            details = get_wip_branch_details(include_subjects=True, ref_pattern=args.pattern)
+            details = get_wip_branch_details(
+                include_subjects=True,
+                ref_pattern=args.pattern,
+                sort_ascending=args.ascending,
+            )
 
         # No branches found
         if not details or not details.branches:
