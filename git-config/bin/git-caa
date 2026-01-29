@@ -9,6 +9,8 @@ CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/../lib/hug-git-files"
 # shellcheck source=../lib/hug-git-state
 . "$CMD_BASE/../lib/hug-git-state"
+# shellcheck source=../lib/hug-git-commit
+. "$CMD_BASE/../lib/hug-git-commit"
 set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
@@ -184,6 +186,9 @@ hug_caa() {
   hug c "${commit_args[@]}"
 
   success "Committed all changes ($pre_commit_staged_count files staged and committed)."
+
+  # Suggest push command if applicable
+  suggest_next_push_command
 }
 
 hug_caa "${commit_args[@]}"

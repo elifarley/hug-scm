@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-commit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat << 'EOF'
+hug ca: Commit all tracked changes (staged + unstaged).
+
+USAGE:
+  hug ca [OPTIONS]
+
+OPTIONS:
+  -m <"message">  Commit with single-line message
+  -v             Verbose commit (show diff when committing)
+  -h, --help     Show this help message and exit.
+  (All other options are passed directly to 'git commit')
+
+DESCRIPTION:
+  This command commits all changes to tracked files, including both staged and
+  unstaged changes. It is equivalent to 'git commit -a'.
+
+  This is different from 'hug caa', which also commits untracked files.
+
+  Common use case: You've been editing files and want to commit all those
+  changes without having to stage them first.
+
+EXAMPLES:
+  hug ca -m "Fix bug in parser"     # Commit all tracked changes with inline message
+  hug ca -v                         # Verbose commit with diff preview
+  hug ca                            # Interactive commit (opens editor if no -m)
+
+SEE ALSO:
+  hug c  : Commit only staged changes
+  hug caa: Commit all changes (tracked + untracked)
+  hug cm : Modify the last commit (amend) with staged changes only
+  hug cma: Modify the last commit with all tracked changes
+EOF
+}
+
+# Parse common flags
+eval "$(parse_common_flags "$@")"
+
+# Early exit if not in Git repo
+check_git_repo
+
+info "Committing all tracked changes..."
+
+git commit -a "$@" && suggest_next_push_command

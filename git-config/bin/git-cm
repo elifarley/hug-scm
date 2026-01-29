@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-commit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat << 'EOF'
+hug cm: Commit amend - Modify the last commit with staged changes only.
+
+USAGE:
+  hug cm [OPTIONS]
+
+OPTIONS:
+  -m <"message">  Amend with a new commit message
+  -C <commit>     Reuse commit message from specified commit
+  -c <commit>     Reuse and edit commit message from specified commit
+  --no-edit       Amend without changing the commit message
+  -h, --help     Show this help message and exit.
+  (All other options are passed directly to 'git commit')
+
+DESCRIPTION:
+  Modifies the most recent commit by incorporating staged changes. Only staged
+  changes are added to the amended commit; unstaged changes remain untouched.
+
+  This is useful for:
+    - Adding forgotten files to the last commit
+    - Fixing the commit message of the last commit
+    - Making small adjustments to the last commit
+
+  WARNING: This rewrites history. Only amend commits that have not been pushed
+  to a shared repository.
+
+EXAMPLES:
+  hug cm -m "Better message"           # Amend last commit with new message
+  hug cm --no-edit                     # Amend without changing message
+  hug cm                               # Interactive amend (opens editor)
+  hug a file.txt && hug cm             # Stage file and amend to last commit
+
+SEE ALSO:
+  hug c  : Commit staged changes
+  hug ca : Commit all tracked changes
+  hug cma: Modify the last commit with ALL tracked changes
+  hug ccp: Cherry-pick commits
+EOF
+}
+
+# Parse common flags
+eval "$(parse_common_flags "$@")"
+
+# Early exit if not in Git repo
+check_git_repo
+
+info "Amending last commit with staged changes..."
+
+git commit --amend "$@" && suggest_next_push_command

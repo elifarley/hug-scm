@@ -381,3 +381,45 @@ print_commit_list_header() {
         printf '\n📤 %s%s:\n' "$header_type" "$commits_text" >&2
     fi
 }
+
+################################################################################
+# Post-Commit Push Suggestion Functions
+################################################################################
+
+# Suggests the appropriate push command after a successful commit
+# Usage: suggest_next_push_command
+#
+# Determines which push command to suggest based on:
+# 1. Whether an upstream branch exists
+# 2. Whether HEAD has diverged from upstream (indicating an amend of a pushed commit)
+#
+# Output: Tip message to stderr suggesting:
+#   - "hug bpush" if upstream exists and HEAD is ahead (fast-forward compatible)
+#   - "hug bpushf" if upstream exists and HEAD has diverged (amended pushed commit)
+#   - No suggestion if no upstream exists (branch not published yet)
+#
+# Environment:
+#   HUG_QUIET - If set to "true", suppresses all output
+#
+# Examples:
+#   suggest_next_push_command  # After commit on branch with upstream
+#   suggest_next_push_command  # After amending a pushed commit
+suggest_next_push_command() {
+    # Skip if quiet mode is enabled
+    [[ "${HUG_QUIET:-}" == "true" ]] && return 0
+
+    # Check if upstream exists
+    local upstream
+    upstream=$(git rev-parse --verify @{u} 2>/dev/null) || return 0
+
+    # Check if HEAD has diverged from upstream (amend of pushed commit)
+    # If upstream is an ancestor of HEAD, it's a fast-forward (normal commit)
+    # If not, HEAD has diverged (amended commit that was already pushed)
+    if git merge-base --is-ancestor @{u} HEAD 2>/dev/null; then
+        # Fast-forward compatible (new commits or amend of unpushed commit)
+        tip 'Ready to push? Use "hug bpush".'
+    else
+        # Diverged (amended commit that was already pushed)
+        tip 'Commit amended. Use "hug bpushf" to force-push safely.'
+    fi
+}

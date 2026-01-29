@@ -164,14 +164,8 @@
   #  COMMITS (c*)
   # ──────────────────────────────────────────────────────────────────
 
-  # Commit tracked files
-  ca = commit -a
-
-  # Modify (amend) last commit with staged changes only
-  cm = commit --amend
-
-  # Modify (amend) last commit with all tracked changes
-  cma = commit -a --amend
+  # Note: ca, cm, and cma are now implemented as wrapper scripts in
+  # git-config/bin/ to provide post-commit push suggestions
 
   # ──────────────────────────────────────────────────────────────────
   #  INTERACTIVE COMMITS

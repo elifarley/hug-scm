@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
+for f in hug-common hug-git-kit hug-git-commit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail                                                                # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
@@ -77,4 +77,4 @@ fi
 info "Committing staged changes..."
 
 # Run git commit directly without capturing output to allow interactive editor
-exec git commit "$@"
+git commit "$@" && suggest_next_push_command

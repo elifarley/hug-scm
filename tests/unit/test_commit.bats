@@ -944,3 +944,233 @@ HOOK
 }
 
 # Additional cmv edge cases...
+
+# -----------------------------------------------------------------------------
+# Post-Commit Push Suggestion Tests
+# -----------------------------------------------------------------------------
+
+@test "hug c: suggests bpush after commit on branch with upstream" {
+  # Setup repo with upstream
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Make a change and commit
+  echo "new content" > newfile.txt
+  git add newfile.txt
+
+  run hug c -m "New commit"
+  assert_success
+  assert_output --partial "Committing staged changes..."
+  # Should suggest bpush since we're on a branch with upstream
+  assert_output --partial "Ready to push? Use \"hug bpush\""
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug c: no suggestion when no upstream exists" {
+  create_test_repo_with_history
+
+  # Make a change on a branch without upstream
+  git checkout -q -b no-upstream-branch
+  echo "content" > newfile.txt
+  git add newfile.txt
+
+  run hug c -m "Commit without upstream"
+  assert_success
+  # Should NOT suggest push since there's no upstream
+  refute_output --partial "Ready to push? Use"
+  refute_output --partial "bpush"
+
+  git checkout -q main 2>/dev/null || git checkout -q master
+}
+
+@test "hug c: suggests bpushf after amending pushed commit" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Create and push a commit
+  echo "original content" > file.txt
+  git add file.txt
+  git commit -q -m "Original commit"
+  git push -q origin main 2>/dev/null || true
+
+  # Amend the commit to make it diverge from upstream
+  echo "amended content" >> file.txt
+  git add file.txt
+
+  run hug c --amend --no-edit
+  assert_success
+  # Should suggest bpushf since commit diverged from upstream
+  assert_output --partial "Commit amended. Use \"hug bpushf\" to force-push safely."
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug c: respects HUG_QUIET for suggestions" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Make a change and commit with quiet mode
+  echo "new content" > newfile.txt
+  git add newfile.txt
+
+  HUG_QUIET=true run hug c -m "New commit"
+  assert_success
+  # Should NOT suggest anything in quiet mode
+  refute_output --partial "Ready to push? Use"
+  refute_output --partial "bpush"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug ca: suggests bpush after commit all tracked" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Make unstaged changes
+  echo "tracked changes" > tracked.txt
+  git add tracked.txt
+
+  run hug ca -m "Commit all tracked"
+  assert_success
+  # Should suggest bpush since we're on a branch with upstream
+  assert_output --partial "Ready to push? Use \"hug bpush\""
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug caa: suggests bpush after commit all" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Make changes (tracked and untracked)
+  echo "tracked changes" > tracked.txt
+  echo "untracked content" > untracked.txt
+
+  run hug caa -m "Commit everything" --force
+  assert_success
+  # Should suggest bpush since we're on a branch with upstream
+  assert_output --partial "Ready to push? Use \"hug bpush\""
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cm: suggests bpushf after amending pushed commit" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Create and push initial commit
+  echo "initial" > amend.txt
+  git add amend.txt
+  git commit -q -m "Initial"
+  git push -q origin main 2>/dev/null || true
+
+  # Stage changes for amend
+  echo "amended" >> amend.txt
+  git add amend.txt
+
+  run hug cm --no-edit
+  assert_success
+  # Should suggest bpushf since we amended a pushed commit
+  assert_output --partial "Commit amended. Use \"hug bpushf\" to force-push safely."
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cm: suggests bpush after amending unpushed commit" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Create initial commit (not pushed)
+  echo "initial" > amend.txt
+  git add amend.txt
+  git commit -q -m "Initial"
+
+  # Stage changes for amend
+  echo "amended" >> amend.txt
+  git add amend.txt
+
+  run hug cm --no-edit
+  assert_success
+  # Should suggest bpush (not bpushf) since we haven't pushed yet
+  assert_output --partial "Ready to push? Use \"hug bpush\""
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cma: suggests bpushf after amending pushed commit with all tracked" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Create and push initial commit
+  echo "initial" > cma.txt
+  git add cma.txt
+  git commit -q -m "Initial"
+  git push -q origin main 2>/dev/null || true
+
+  # Make unstaged changes
+  echo "amended" >> cma.txt
+
+  run hug cma --no-edit
+  assert_success
+  # Should suggest bpushf since we amended a pushed commit
+  assert_output --partial "Commit amended. Use \"hug bpushf\" to force-push safely."
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cma: suggests bpush after amending unpushed commit" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Create initial commit (not pushed)
+  echo "initial" > cma.txt
+  git add cma.txt
+  git commit -q -m "Initial"
+
+  # Make unstaged changes
+  echo "amended" >> cma.txt
+
+  run hug cma --no-edit
+  assert_success
+  # Should suggest bpush (not bpushf) since we haven't pushed yet
+  assert_output --partial "Ready to push? Use \"hug bpush\""
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug c: no suggestion after commit on new branch without upstream" {
+  create_test_repo_with_history
+
+  # Create a new branch without setting upstream
+  git checkout -q -b feature-branch
+
+  echo "feature content" > feature.txt
+  git add feature.txt
+
+  run hug c -m "Feature commit"
+  assert_success
+  # Should NOT suggest push since there's no upstream
+  refute_output --partial "Ready to push? Use"
+  refute_output --partial "bpush"
+
+  git checkout -q main 2>/dev/null || git checkout -q master
+}
