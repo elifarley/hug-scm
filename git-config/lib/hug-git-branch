@@ -15,7 +15,7 @@
 ################################################################################
 
 # Computes details for local branches and populates output arrays
-# Usage: compute_local_branch_details current_branch max_len hashes branches tracks subjects [include_subjects]
+# Usage: compute_local_branch_details current_branch max_len hashes branches tracks subjects [include_subjects] [sort_context]
 # Parameters (all namerefs to output variables):
 #   $1 - Scalar to receive current branch name
 #   $2 - Scalar to receive max branch name length
@@ -24,10 +24,12 @@
 #   $5 - Array to receive tracking information
 #   $6 - Array to receive commit subjects
 #   $7 - (Optional) Boolean to include subjects (default: true); if false, skips subject computation and leaves subjects empty
+#   $8 - (Optional) Sort context for Python module: gum-single, gum-multi, static, or empty (default: uses bash implementation)
 # Returns:
 #   0 if branches found, 1 if no branches exist
 # Note:
 #   Arrays are cleared before population. Branches are sorted by name. Tracking info mimics 'git branch -vv' format.
+#   When sort_context is specified, uses Python module for date-based sorting instead of alphabetical.
 compute_local_branch_details() {
     local -n current_branch_ref="$1"
     local -n max_len_ref="$2"
@@ -36,6 +38,7 @@ compute_local_branch_details() {
     local -n tracks_ref="$5"
     local -n subjects_ref="$6"
     local include_subjects="${7:-false}"
+    local sort_context="${8:-}"
 
     # Clear outputs
     current_branch_ref=""
@@ -44,6 +47,23 @@ compute_local_branch_details() {
     hashes_ref=()
     subjects_ref=()
     tracks_ref=()
+
+    # If sort_context is specified, use Python module for date-based sorting
+    if [[ -n "$sort_context" ]]; then
+        local python_args=(local)
+        python_args+=(--sort-context="$sort_context")
+        if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/hug_git_branch.py" "${python_args[@]}")"; then
+            return 1
+        fi
+        # Python module sets variables: current_branch, max_len, branches, hashes, tracks, subjects
+        current_branch_ref="$current_branch"
+        max_len_ref="$max_len"
+        branches_ref=("${branches[@]}")
+        hashes_ref=("${hashes[@]}")
+        subjects_ref=("${subjects[@]}")
+        tracks_ref=("${tracks[@]}")
+        return 0
+    fi
 
     #
     # --- ROBUST SANITIZATION: CURRENT BRANCH ---
@@ -406,12 +426,13 @@ print_branch_list() {
 }
 
 # Prints an interactive menu for branch selection
-# Usage: print_interactive_branch_menu selected current_branch max_len hashes branches tracks subjects
+# Usage: print_interactive_branch_menu selected current_branch max_len hashes branches tracks subjects [placeholder]
 # Parameters (namerefs):
 #   $1 - Output variable to receive selected branch name
 #   $2 - Current branch name
 #   $3 - Maximum branch name length (for alignment)
 #   $4-$7 - Namerefs to arrays (hashes branches tracks subjects)
+#   $8 - (Optional) Placeholder text for gum filter prompt (default: "Pick one to switch to...")
 # Effects:
 #   Displays numbered menu and prompts for selection
 #   For repositories with 10 or more branches, uses gum filter (if installed) for
@@ -429,6 +450,7 @@ print_interactive_branch_menu() {
     local -n branches_ref="$5"
     local -n tracks_ref="$6"
     local -n subjects_ref="$7"
+    local placeholder="${8:-Pick one to switch to...}"
 
     local num_branches="${#branches_ref[@]}"
     if [[ $num_branches -eq 0 ]]; then
@@ -468,7 +490,7 @@ print_interactive_branch_menu() {
         done
         
         local index
-        index=$(get_gum_selection_index formatted_options "$num_branches branches; Pick one to switch to...")
+        index=$(get_gum_selection_index formatted_options "$placeholder")
         
         # SC2034: selected_ref is a nameref that assigns to caller's variable
         # shellcheck disable=SC2034
@@ -886,6 +908,7 @@ find_remote_branch() {
 #   --include-backup         Include backup branches in selection
 #   --placeholder TEXT       Custom placeholder text for selection prompt
 #   --filter-function NAME   Custom filter function name
+#   --sort-context CONTEXT   Sort context: gum-single, gum-multi, or static (default: gum-single for single-select, gum-multi for multi-select)
 # Parameters:
 #   $1 - Array name (string) that will receive selected branch names
 # Returns:
@@ -900,6 +923,7 @@ select_branches() {
     local exclude_backup=true
     local placeholder="Select branch"
     local filter_function=""
+    local sort_context=""
 
     # Parse options using simple loop (consistent with other library functions)
     while [[ $# -gt 0 ]]; do
@@ -932,6 +956,10 @@ select_branches() {
                 filter_function="$2"
                 shift 2
                 ;;
+            --sort-context)
+                sort_context="$2"
+                shift 2
+                ;;
             *)
                 error "select_branches(): Unknown option '$1'"
                 return 1
@@ -939,11 +967,23 @@ select_branches() {
         esac
     done
 
-    # Get branch data using existing library function
-    declare -a branches=() hashes=() subjects=() tracks=()
-    local current_branch="" max_len=""
+    # Determine sort context if not explicitly set
+    # gum-single: ascending (oldest first) for single-select with --reverse
+    # gum-multi: descending (newest first) for multi-select without --reverse
+    if [[ -z "$sort_context" ]]; then
+        if [[ "$multi_select" == "true" ]]; then
+            sort_context="gum-multi"
+        else
+            sort_context="gum-single"
+        fi
+    fi
 
-    if ! compute_local_branch_details current_branch max_len hashes branches tracks subjects "true"; then
+    # Get branch data using compute_local_branch_details with sort context
+    # Use different variable names to avoid shadowing Python module output
+    declare -a sel_branches=() sel_hashes=() sel_subjects=() sel_tracks=()
+    local sel_current_branch="" sel_max_len=""
+
+    if ! compute_local_branch_details sel_current_branch sel_max_len sel_hashes sel_branches sel_tracks sel_subjects "true" "$sort_context"; then
         error "No local branches found"
         return 1
     fi
@@ -951,7 +991,7 @@ select_branches() {
     # Apply filters using centralized filtering function
     declare -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
 
-    filter_branches branches hashes subjects tracks "$current_branch" \
+    filter_branches sel_branches sel_hashes sel_subjects sel_tracks "$sel_current_branch" \
         filtered_branches filtered_hashes filtered_subjects filtered_tracks \
         "$exclude_current" "$exclude_backup" "$filter_function"
 
@@ -965,12 +1005,12 @@ select_branches() {
 
     # Delegate to appropriate selection function
     if [[ "$multi_select" == "true" ]]; then
-        multi_select_branches "$result_array_name" "$current_branch" "$max_len" \
+        multi_select_branches "$result_array_name" "$sel_current_branch" "$sel_max_len" \
             filtered_hashes filtered_branches filtered_tracks filtered_subjects "$placeholder"
     else
         # For single selection, we need a temporary variable name
         local selected_branch=""
-        single_select_branch selected_branch "$current_branch" "$max_len" \
+        single_select_branch selected_branch "$sel_current_branch" "$sel_max_len" \
             filtered_hashes filtered_branches filtered_tracks filtered_subjects "$placeholder"
 
         # Move result to the output array if selection was made

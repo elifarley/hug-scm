@@ -191,11 +191,13 @@ fi # remote_only
 selected_branch=""
 
 # Get local branch details from Python module
-if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local)"; then
+# Use --sort-context=gum-single for ascending sort (oldest first)
+# This pairs with --reverse flag in gum filter to put cursor at bottom with newest branches
+if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local --sort-context=gum-single)"; then
   error "No local branches found."
   exit 1
 fi
 
 # Print interactive menu and get selection (display functions unchanged)
-print_interactive_branch_menu selected_branch "$current_branch" "$max_len" hashes branches tracks subjects
+print_interactive_branch_menu selected_branch "$current_branch" "$max_len" hashes branches tracks subjects "Pick one to switch to..."
 exec git switch "$selected_branch"

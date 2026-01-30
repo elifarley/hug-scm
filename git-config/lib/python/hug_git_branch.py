@@ -528,9 +528,16 @@ def main():
         --json            Output JSON instead of bash declarations
         --pattern PATTERN Ref pattern for WIP branches (default: refs/heads/WIP/)
         --ascending       Sort ascending (oldest first, recent at bottom)
+        --sort-context    Sort context: gum-single (ascending), gum-multi (descending),
+                         static (ascending, default)
 
     Outputs bash variable declarations by default, JSON with --json flag.
     Returns exit code 1 if no branches found or on error.
+
+    Sort context determines the sort order based on usage:
+    - gum-single: Ascending (oldest first) for single-select menus with --reverse flag
+    - gum-multi: Descending (newest first) for multi-select menus without --reverse flag
+    - static: Ascending (oldest first) for static output (default)
     """
     import argparse
 
@@ -549,8 +556,28 @@ def main():
         action="store_true",
         help="Sort ascending (oldest first, recent at bottom)",
     )
+    parser.add_argument(
+        "--sort-context",
+        choices=["gum-single", "gum-multi", "static"],
+        default=None,
+        help=("Sort context: gum-single (ascending), gum-multi (descending), static (ascending)"),
+    )
 
     args = parser.parse_args()
+
+    # Determine sort order based on context
+    # gum-single: ascending (oldest first) - cursor at bottom with --reverse
+    # gum-multi: descending (newest first) - cursor at top without --reverse
+    # static: ascending (oldest first) - terminal output, newest at bottom
+    # None (default): descending (newest first) - original behavior for backward compatibility
+    # --ascending flag overrides context for backward compatibility
+    if args.ascending:
+        sort_ascending = True
+    elif args.sort_context == "gum-single" or args.sort_context == "static":
+        sort_ascending = True
+    else:
+        # Default: descending (newest first) for gum-multi or when not specified
+        sort_ascending = False
 
     try:
         # Get branch details based on type
@@ -559,17 +586,17 @@ def main():
                 include_subjects=True,
                 exclude_backup=True,
                 batch_divergence=True,
-                sort_ascending=args.ascending,
+                sort_ascending=sort_ascending,
             )
         elif args.type == "remote":
             details = get_remote_branch_details(
-                include_subjects=True, exclude_backup=True, sort_ascending=args.ascending
+                include_subjects=True, exclude_backup=True, sort_ascending=sort_ascending
             )
         else:  # wip
             details = get_wip_branch_details(
                 include_subjects=True,
                 ref_pattern=args.pattern,
-                sort_ascending=args.ascending,
+                sort_ascending=sort_ascending,
             )
 
         # No branches found
