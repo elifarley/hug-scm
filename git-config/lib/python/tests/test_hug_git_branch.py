@@ -1082,7 +1082,9 @@ class TestMainFunction:
             result = hug_git_branch.main()
 
             assert result is None  # Success returns None
-            mock_get.assert_called_once_with(include_subjects=True, ref_pattern="refs/heads/temp/")
+            mock_get.assert_called_once_with(
+                include_subjects=True, ref_pattern="refs/heads/temp/", sort_ascending=False
+            )
 
     def test_exits_with_1_when_no_branches(self, monkeypatch):
         """Should exit with code 1 when no branches found."""
@@ -1208,3 +1210,333 @@ class TestEdgeCases:
         )
 
         assert details.max_len == 100
+
+
+################################################################################
+# TestSortContext (sort context parameter tests)
+################################################################################
+
+
+class TestSortContext:
+    """Tests for --sort-context parameter and sort order behavior."""
+
+    def test_gum_single_context_sorts_ascending(self, monkeypatch, capsys):
+        """Should sort ascending (oldest first) with --sort-context=gum-single."""
+        import sys
+
+        monkeypatch.setattr(
+            sys, "argv", ["hug_git_branch.py", "local", "--sort-context=gum-single"]
+        )
+
+        with (
+            patch("hug_git_branch.get_local_branch_details") as mock_get,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+            patch("hug_git_branch._run_git") as mock_run,
+        ):
+            mock_run.return_value = "main"
+            mock_for_each.return_value = [
+                "old",
+                "abc123",
+                "Old commit",
+                "",
+                "",
+                "new",
+                "def456",
+                "New commit",
+                "",
+                "",
+            ]
+            mock_get.return_value = hug_git_branch.BranchDetails(
+                current_branch="main",
+                max_len=10,
+                branches=[
+                    hug_git_branch.BranchInfo(
+                        name="old", hash="abc123", subject="Old commit", track=""
+                    ),
+                    hug_git_branch.BranchInfo(
+                        name="new", hash="def456", subject="New commit", track=""
+                    ),
+                ],
+            )
+
+            result = hug_git_branch.main()
+
+            assert result is None
+            # get_local_branch_details should be called with sort_ascending=True
+            mock_get.assert_called_once_with(
+                include_subjects=True,
+                exclude_backup=True,
+                batch_divergence=True,
+                sort_ascending=True,
+            )
+
+    def test_gum_multi_context_sorts_descending(self, monkeypatch, capsys):
+        """Should sort descending (newest first) with --sort-context=gum-multi."""
+        import sys
+
+        monkeypatch.setattr(sys, "argv", ["hug_git_branch.py", "local", "--sort-context=gum-multi"])
+
+        with (
+            patch("hug_git_branch.get_local_branch_details") as mock_get,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+            patch("hug_git_branch._run_git") as mock_run,
+        ):
+            mock_run.return_value = "main"
+            mock_for_each.return_value = [
+                "new",
+                "def456",
+                "New commit",
+                "",
+                "",
+                "old",
+                "abc123",
+                "Old commit",
+                "",
+                "",
+            ]
+            mock_get.return_value = hug_git_branch.BranchDetails(
+                current_branch="main",
+                max_len=10,
+                branches=[
+                    hug_git_branch.BranchInfo(
+                        name="new", hash="def456", subject="New commit", track=""
+                    ),
+                    hug_git_branch.BranchInfo(
+                        name="old", hash="abc123", subject="Old commit", track=""
+                    ),
+                ],
+            )
+
+            result = hug_git_branch.main()
+
+            assert result is None
+            # get_local_branch_details should be called with sort_ascending=False
+            mock_get.assert_called_once_with(
+                include_subjects=True,
+                exclude_backup=True,
+                batch_divergence=True,
+                sort_ascending=False,
+            )
+
+    def test_static_context_sorts_ascending(self, monkeypatch, capsys):
+        """Should sort ascending (oldest first) with --sort-context=static."""
+        import sys
+
+        monkeypatch.setattr(sys, "argv", ["hug_git_branch.py", "local", "--sort-context=static"])
+
+        with (
+            patch("hug_git_branch.get_local_branch_details") as mock_get,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+            patch("hug_git_branch._run_git") as mock_run,
+        ):
+            mock_run.return_value = "main"
+            mock_for_each.return_value = [
+                "old",
+                "abc123",
+                "Old commit",
+                "",
+                "",
+                "new",
+                "def456",
+                "New commit",
+                "",
+                "",
+            ]
+            mock_get.return_value = hug_git_branch.BranchDetails(
+                current_branch="main",
+                max_len=10,
+                branches=[
+                    hug_git_branch.BranchInfo(
+                        name="old", hash="abc123", subject="Old commit", track=""
+                    ),
+                    hug_git_branch.BranchInfo(
+                        name="new", hash="def456", subject="New commit", track=""
+                    ),
+                ],
+            )
+
+            result = hug_git_branch.main()
+
+            assert result is None
+            # get_local_branch_details should be called with sort_ascending=True
+            mock_get.assert_called_once_with(
+                include_subjects=True,
+                exclude_backup=True,
+                batch_divergence=True,
+                sort_ascending=True,
+            )
+
+    def test_default_no_sort_context_sorts_descending(self, monkeypatch, capsys):
+        """Should sort descending (newest first) by default (no --sort-context)."""
+        import sys
+
+        monkeypatch.setattr(sys, "argv", ["hug_git_branch.py", "local"])
+
+        with (
+            patch("hug_git_branch.get_local_branch_details") as mock_get,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+            patch("hug_git_branch._run_git") as mock_run,
+        ):
+            mock_run.return_value = "main"
+            mock_for_each.return_value = [
+                "new",
+                "def456",
+                "New commit",
+                "",
+                "",
+                "old",
+                "abc123",
+                "Old commit",
+                "",
+                "",
+            ]
+            mock_get.return_value = hug_git_branch.BranchDetails(
+                current_branch="main",
+                max_len=10,
+                branches=[
+                    hug_git_branch.BranchInfo(
+                        name="new", hash="def456", subject="New commit", track=""
+                    ),
+                    hug_git_branch.BranchInfo(
+                        name="old", hash="abc123", subject="Old commit", track=""
+                    ),
+                ],
+            )
+
+            result = hug_git_branch.main()
+
+            assert result is None
+            # Default behavior: sort_ascending=False (descending, newest first)
+            mock_get.assert_called_once_with(
+                include_subjects=True,
+                exclude_backup=True,
+                batch_divergence=True,
+                sort_ascending=False,
+            )
+
+    def test_ascending_flag_overrides_sort_context(self, monkeypatch, capsys):
+        """Should respect --ascending flag even when --sort-context is provided."""
+        import sys
+
+        # Both flags provided -- --ascending should take precedence
+        monkeypatch.setattr(
+            sys, "argv", ["hug_git_branch.py", "local", "--sort-context=gum-multi", "--ascending"]
+        )
+
+        with (
+            patch("hug_git_branch.get_local_branch_details") as mock_get,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+            patch("hug_git_branch._run_git") as mock_run,
+        ):
+            mock_run.return_value = "main"
+            mock_for_each.return_value = [
+                "old",
+                "abc123",
+                "Old commit",
+                "",
+                "",
+                "new",
+                "def456",
+                "New commit",
+                "",
+                "",
+            ]
+            mock_get.return_value = hug_git_branch.BranchDetails(
+                current_branch="main",
+                max_len=10,
+                branches=[
+                    hug_git_branch.BranchInfo(
+                        name="old", hash="abc123", subject="Old commit", track=""
+                    ),
+                    hug_git_branch.BranchInfo(
+                        name="new", hash="def456", subject="New commit", track=""
+                    ),
+                ],
+            )
+
+            result = hug_git_branch.main()
+
+            assert result is None
+            # --ascending flag should override context, resulting in ascending sort
+            mock_get.assert_called_once_with(
+                include_subjects=True,
+                exclude_backup=True,
+                batch_divergence=True,
+                sort_ascending=True,
+            )
+
+    def test_sort_context_with_remote_branches(self, monkeypatch, capsys):
+        """Should apply sort context to remote branches."""
+        import sys
+
+        monkeypatch.setattr(
+            sys, "argv", ["hug_git_branch.py", "remote", "--sort-context=gum-single"]
+        )
+
+        with (
+            patch("hug_git_branch.get_remote_branch_details") as mock_get,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+        ):
+            mock_for_each.return_value = [
+                "origin/old",
+                "abc123",
+                "Old commit",
+                "origin/new",
+                "def456",
+                "New commit",
+            ]
+            mock_get.return_value = hug_git_branch.BranchDetails(
+                current_branch="",
+                max_len=10,
+                branches=[
+                    hug_git_branch.BranchInfo(
+                        name="old", hash="abc123", subject="Old commit", remote_ref="origin/old"
+                    ),
+                    hug_git_branch.BranchInfo(
+                        name="new", hash="def456", subject="New commit", remote_ref="origin/new"
+                    ),
+                ],
+            )
+
+            result = hug_git_branch.main()
+
+            assert result is None
+            # Remote branches should also respect sort context
+            mock_get.assert_called_once_with(
+                include_subjects=True, exclude_backup=True, sort_ascending=True
+            )
+
+    def test_sort_context_with_wip_branches(self, monkeypatch, capsys):
+        """Should apply sort context to WIP branches."""
+        import sys
+
+        monkeypatch.setattr(sys, "argv", ["hug_git_branch.py", "wip", "--sort-context=gum-multi"])
+
+        with (
+            patch("hug_git_branch.get_wip_branch_details") as mock_get,
+            patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
+        ):
+            mock_for_each.return_value = [
+                "WIP/new",
+                "def456",
+                "New WIP",
+                "WIP/old",
+                "abc123",
+                "Old WIP",
+            ]
+            mock_get.return_value = hug_git_branch.BranchDetails(
+                current_branch="",
+                max_len=10,
+                branches=[
+                    hug_git_branch.BranchInfo(name="WIP/new", hash="def456", subject="New WIP"),
+                    hug_git_branch.BranchInfo(name="WIP/old", hash="abc123", subject="Old WIP"),
+                ],
+            )
+
+            result = hug_git_branch.main()
+
+            assert result is None
+            # WIP branches should also respect sort context (gum-multi = descending = False)
+            mock_get.assert_called_once_with(
+                include_subjects=True, ref_pattern="refs/heads/WIP/", sort_ascending=False
+            )
