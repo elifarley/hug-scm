@@ -218,9 +218,7 @@ def format_multi_select_options(
     return formatted_options
 
 
-def parse_user_input(
-    user_input: str, num_items: int, allow_all: bool = True
-) -> list[int]:
+def parse_user_input(user_input: str, num_items: int, allow_all: bool = True) -> list[int]:
     """Parse user selection input into 0-based indices.
 
     Supports:
@@ -484,9 +482,7 @@ def main():
     parser.add_argument("--dates", default="", help="Space-separated commit dates")
     parser.add_argument("--subjects", default="", help="Space-separated commit subjects")
     parser.add_argument("--tracks", default="", help="Space-separated tracking info")
-    parser.add_argument(
-        "--placeholder", default="Select branches", help="Prompt text for user"
-    )
+    parser.add_argument("--placeholder", default="Select branches", help="Prompt text for user")
     parser.add_argument(
         "--selection",
         default=None,

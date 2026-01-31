@@ -64,6 +64,10 @@ print_list() {
 #   $2 - Logic type: "OR" (any term matches) or "AND" (all terms match)
 #   $@+ - Field values to search against
 # Returns: 0 if match found according to logic, 1 otherwise
+#
+# Feature Flag:
+#   Set HUG_USE_PYTHON_SEARCH=false to use Bash implementation instead of Python.
+#   This allows for easy rollback if issues arise with the Python module.
 search_items_by_fields() {
   local search_terms="$1"
   local logic_type="${2:-OR}"
@@ -74,6 +78,26 @@ search_items_by_fields() {
     return 0  # No search terms means match everything
   fi
 
+  # Use Python implementation if feature flag is enabled (default)
+  if [[ "${HUG_USE_PYTHON_SEARCH:-true}" == "true" ]]; then
+    # Declare local variables before eval to prevent nameref conflicts
+    local -i _search_matched
+    local _search_logic
+    local -a _search_terms=()
+
+    # Build fields string for Python (space-separated)
+    local fields_string
+    fields_string=$(printf '%s ' "$@")
+
+    # Call Python module and eval its output
+    eval "$(python3 "${HUG_HOME:-$HOME}/git-config/lib/python/git/search.py" \
+              search --terms "$search_terms" --logic "$logic_type" --fields "$fields_string")"
+
+    # Return based on Python's result (0=match, 1=no match)
+    return "$_search_matched"
+  fi
+
+  # Bash fallback implementation
   # Split search terms into array
   local -a terms=($search_terms)
   local term_count=${#terms[@]}

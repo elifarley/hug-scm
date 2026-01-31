@@ -463,9 +463,7 @@ class TestMultiSelectBranches:
         assert "feature" in result.branches
         assert result.selected_indices == [0, 1]
 
-    def test_returns_all_branches_with_all_selection(
-        self, sample_branch_data, capsys
-    ):
+    def test_returns_all_branches_with_all_selection(self, sample_branch_data, capsys):
         """Should return all branches when 'all' is selected."""
         options = SelectOptions(
             placeholder="Select branches",
@@ -607,9 +605,7 @@ class TestMultiSelectBranches:
         assert "1:" in output or " 1:" in output
         assert "main" in output
 
-    def test_respects_environment_variable_for_testing(
-        self, sample_branch_data, monkeypatch
-    ):
+    def test_respects_environment_variable_for_testing(self, sample_branch_data, monkeypatch):
         """Should use HUG_TEST_NUMBERED_SELECTION when set."""
         monkeypatch.setenv("HUG_TEST_NUMBERED_SELECTION", "2,3")
 
@@ -632,9 +628,7 @@ class TestMultiSelectBranches:
         assert "feature" in result.branches
         assert "bugfix" in result.branches
 
-    def test_test_selection_overrides_environment(
-        self, sample_branch_data, monkeypatch
-    ):
+    def test_test_selection_overrides_environment(self, sample_branch_data, monkeypatch):
         """Test selection should override environment variable."""
         monkeypatch.setenv("HUG_TEST_NUMBERED_SELECTION", "1,2,3")
 
@@ -665,9 +659,7 @@ class TestMultiSelectBranches:
 class TestMainFunction:
     """Integration tests for main() CLI entry point."""
 
-    def test_select_command_outputs_bash_declarations(
-        self, monkeypatch, capsys
-    ):
+    def test_select_command_outputs_bash_declarations(self, monkeypatch, capsys):
         """Should output bash declarations for select command."""
         import sys
 
@@ -824,9 +816,7 @@ class TestMainFunction:
         assert "feature" in captured.out
         assert "abc123" in captured.out
 
-    def test_exits_with_error_on_inconsistent_arrays(
-        self, monkeypatch, capsys
-    ):
+    def test_exits_with_error_on_inconsistent_arrays(self, monkeypatch, capsys):
         """Should exit with error when arrays have inconsistent lengths from CLI."""
         import sys
 
