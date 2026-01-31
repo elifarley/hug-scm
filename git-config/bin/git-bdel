@@ -90,9 +90,9 @@ hug_bdel() {
     fi
 
     declare -a filtered_branches=()
-    declare -a filtered_hashes=() filtered_subjects=() filtered_tracks=()
-    filter_branches branches hashes subjects tracks "$current_branch" \
-      filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+    declare -a filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
+    filter_branches branches hashes subjects tracks dates "$current_branch" \
+      filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
       "true" "true" ""
 
     if [[ ${#filtered_branches[@]} -eq 0 ]]; then

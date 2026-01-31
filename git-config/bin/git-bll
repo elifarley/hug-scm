@@ -8,7 +8,7 @@ set -euo pipefail                                                               
 
 show_help() {
   cat << 'EOF'
-hug bll: List local branches in long format, showing short hash, upstream tracking info, and commit message title for each.
+hug bll: List local branches in long format, showing short hash, date, upstream tracking info, and commit message title for each.
 
 USAGE:
   hug bll [OPTIONS] [SEARCH_TERM]
@@ -20,7 +20,7 @@ OPTIONS:
 DESCRIPTION:
   Displays each local branch sorted by commit date (oldest first, most recent at bottom).
   The current branch is highlighted in green and marked with an asterisk (*).
-  Each entry shows: branch name (short hash) [upstream tracking info, e.g., origin/main ahead 2].
+  Each entry shows: branch name (short hash YYYY-MM-DD) [upstream tracking info, e.g., origin/main ahead 2].
   The commit message title follows.
   Remote tracking information is shown just as in 'git branch -vv'.
 
@@ -75,5 +75,5 @@ if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local --ascendi
   exit 1
 fi
 
-# Print non-interactive list (display functions unchanged)
-print_branch_list "$current_branch" "$max_len" hashes branches tracks subjects "$search_terms"
+# Print non-interactive list (display functions now include dates)
+print_branch_list "$current_branch" "$max_len" hashes dates branches tracks subjects "$search_terms"

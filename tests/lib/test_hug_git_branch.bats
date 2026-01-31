@@ -25,11 +25,12 @@ teardown() {
   local -a test_hashes=("abc123" "def456" "ghi789" "jkl012")
   local -a test_subjects=("Initial" "Feature" "More work" "Fix")
   local -a test_tracks=("[origin/main]" "" "" "")
+  local -a test_dates=()
 
   # Test filtering with current branch exclusion
-  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
-  filter_branches test_branches test_hashes test_subjects test_tracks "main" \
-      filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
+  filter_branches test_branches test_hashes test_subjects test_tracks test_dates "main" \
+      filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
       "true" "false" ""
 
   # Should exclude "main" (current branch)
@@ -45,11 +46,12 @@ teardown() {
   local -a test_hashes=("abc123" "def456" "backup1" "backup2")
   local -a test_subjects=("Initial" "Feature" "Backup" "Old backup")
   local -a test_tracks=("[origin/main]" "" "" "")
+  local -a test_dates=()
 
   # Test filtering with backup branch exclusion
-  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
-  filter_branches test_branches test_hashes test_subjects test_tracks "main" \
-      filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
+  filter_branches test_branches test_hashes test_subjects test_tracks test_dates "main" \
+      filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
       "false" "true" ""
 
   # Should exclude backup branches
@@ -64,6 +66,7 @@ teardown() {
   local -a test_hashes=("abc123" "def456" "ghi789" "jkl012")
   local -a test_subjects=("Initial" "Feature" "More work" "Fix")
   local -a test_tracks=("[origin/main]" "" "" "")
+  local -a test_dates=()
 
   # Define custom filter function (only allow branches starting with "feature")
   feature_filter() {
@@ -72,9 +75,9 @@ teardown() {
   }
 
   # Test filtering with custom filter
-  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
-  filter_branches test_branches test_hashes test_subjects test_tracks "main" \
-      filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
+  filter_branches test_branches test_hashes test_subjects test_tracks test_dates "main" \
+      filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
       "false" "false" "feature_filter"
 
   # Should only include feature branches
@@ -89,11 +92,12 @@ teardown() {
   local -a test_hashes=()
   local -a test_subjects=()
   local -a test_tracks=()
+  local -a test_dates=()
 
   # Test filtering with empty input
-  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
-  filter_branches test_branches test_hashes test_subjects test_tracks "" \
-      filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
+  filter_branches test_branches test_hashes test_subjects test_tracks test_dates "" \
+      filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
       "true" "true" ""
 
   # Should return empty arrays
@@ -108,6 +112,7 @@ teardown() {
   # Test data
   local -a test_branches=("main" "feature-1" "feature-2")
   local -a test_hashes=("abc123" "def456" "ghi789")
+  local -a test_dates=("2026-01-30" "2026-01-29" "2026-01-28")
   local -a test_subjects=("Initial" "Feature" "More work")
   local -a test_tracks=("[origin/main]" "" "")
   local -a result_branches=()
@@ -115,10 +120,10 @@ teardown() {
   # Test single selection with gum mock
   # With < 10 branches, uses numbered selection which needs input
   # Use input redirection to avoid subshell issues with pipes
-  # Parameters: result_array current_branch max_len hashes branches tracks subjects placeholder
+  # Parameters: result_array current_branch max_len hashes dates branches tracks subjects placeholder
   # Note: Pass array NAMES as strings, not the arrays themselves
   single_select_branch result_branches "main" "20" \
-      test_hashes test_branches test_tracks test_subjects "test prompt" < <(echo "1")
+      test_hashes test_dates test_branches test_tracks test_subjects "test prompt" < <(echo "1")
 
   # Verify selection worked
   [[ ${#result_branches[@]} -eq 1 ]]
@@ -325,11 +330,12 @@ teardown() {
   local -a test_hashes=("z123" "a456" "b789" "c012")
   local -a test_subjects=("Zebra" "Alpha" "Beta" "Gamma")
   local -a test_tracks=("" "" "" "")
+  local -a test_dates=()
 
   # Test filtering (no exclusions)
-  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
-  filter_branches test_branches test_hashes test_subjects test_tracks "" \
-      filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
+  filter_branches test_branches test_hashes test_subjects test_tracks test_dates "" \
+      filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
       "false" "false" ""
 
   # Should maintain original order
@@ -346,27 +352,28 @@ teardown() {
   local -a test_hashes=("abc123" "def456" "backup1" "ghi789" "jkl012")
   local -a test_subjects=("Initial" "Feature" "Backup" "More work" "Fix")
   local -a test_tracks=("[origin/main]" "" "" "[origin/feature-2]" "")
+  local -a test_dates=()
 
   # Test exclude current only
-  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
-  filter_branches test_branches test_hashes test_subjects test_tracks "main" \
-      filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
+  filter_branches test_branches test_hashes test_subjects test_tracks test_dates "main" \
+      filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
       "true" "false" ""
   [[ ${#filtered_branches[@]} -eq 4 ]]
   # Should exclude "main" but include backup branches
 
   # Test exclude backup only
-  filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
-  filter_branches test_branches test_hashes test_subjects test_tracks "main" \
-      filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+  filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
+  filter_branches test_branches test_hashes test_subjects test_tracks test_dates "main" \
+      filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
       "false" "true" ""
   [[ ${#filtered_branches[@]} -eq 4 ]]
   # Should exclude "hug-backups/test" but include main
 
   # Test exclude both
-  filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
-  filter_branches test_branches test_hashes test_subjects test_tracks "main" \
-      filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+  filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
+  filter_branches test_branches test_hashes test_subjects test_tracks test_dates "main" \
+      filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
       "true" "true" ""
   [[ ${#filtered_branches[@]} -eq 3 ]]
   # Should exclude both "main" and "hug-backups/test"
@@ -396,12 +403,13 @@ teardown() {
     local -a available_hashes=("abc123" "def456" "ghi789" "backup1")
     local -a available_subjects=("Initial" "Feature" "More work" "Backup")
     local -a available_tracks=("[origin/main]" "" "" "")
+    local -a available_dates=()
 
     # This is the BUGGY pattern from the original git-bdel code
     # Reusing input arrays as output arrays causes unbound variable error
     local -a filtered_branches=()
-    filter_branches available_branches available_hashes available_subjects available_tracks "main" \
-        filtered_branches available_hashes available_subjects available_tracks \
+    filter_branches available_branches available_hashes available_subjects available_tracks available_dates "main" \
+        filtered_branches available_hashes available_subjects available_tracks filtered_branches \
         "true" "true" ""
   '
 
@@ -419,17 +427,19 @@ teardown() {
   local -a original_hashes=("abc123" "def456" "ghi789" "backup1")
   local -a original_subjects=("Initial" "Feature" "More work" "Backup")
   local -a original_tracks=("[origin/main]" "" "" "")
+  local -a original_dates=()
 
   # Make copies for testing
   local -a test_branches=("${original_branches[@]}")
   local -a test_hashes=("${original_hashes[@]}")
   local -a test_subjects=("${original_subjects[@]}")
   local -a test_tracks=("${original_tracks[@]}")
+  local -a test_dates=()
 
   # Perform filtering with SEPARATE output arrays (the correct way)
-  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
-  filter_branches test_branches test_hashes test_subjects test_tracks "main" \
-      filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+  local -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
+  filter_branches test_branches test_hashes test_subjects test_tracks test_dates "main" \
+      filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
       "true" "true" ""
 
   # Verify input arrays are unchanged
@@ -457,20 +467,20 @@ teardown() {
   # compute_local_branch_details → filter_branches → select_branches
 
   # Test the complete integration chain
-  declare -a available_branches=() available_hashes=() available_subjects=() available_tracks=()
+  declare -a available_branches=() available_hashes=() available_subjects=() available_tracks=() available_dates=()
   local available_current_branch="" available_max_len=""
 
   # Step 1: Get real branch data from the test repo
-  if compute_local_branch_details available_current_branch available_max_len available_hashes available_branches available_tracks available_subjects "true"; then
+  if compute_local_branch_details available_current_branch available_max_len available_hashes available_branches available_tracks available_subjects available_dates "true"; then
     # Should have found some branches in the test repo
     [[ ${#available_branches[@]} -gt 0 ]]
     [[ ${#available_hashes[@]} -gt 0 ]]
 
     # Step 2: Filter the data (this was where the bug occurred)
     # Use SEPARATE output arrays to avoid the bug
-    declare -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
-    filter_branches available_branches available_hashes available_subjects available_tracks "$available_current_branch" \
-        filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+    declare -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
+    filter_branches available_branches available_hashes available_subjects available_tracks available_dates "$available_current_branch" \
+        filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
         "true" "true" ""
 
     # Step 3: Verify filtering worked without errors
@@ -536,13 +546,14 @@ teardown() {
   local -a input_hashes=("hash1" "hash2" "hash3")
   local -a input_subjects=("subj1" "subj2" "subj3")
   local -a input_tracks=("track1" "track2" "track3")
+  local -a input_dates=()
 
   # Test with completely different output array names
-  local -a output_branches=() output_hashes=() output_subjects=() output_tracks=()
+  local -a output_branches=() output_hashes=() output_subjects=() output_tracks=() output_dates=()
 
   # This should work regardless of the specific array names used
-  filter_branches input_branches input_hashes input_subjects input_tracks "branch1" \
-      output_branches output_hashes output_subjects output_tracks \
+  filter_branches input_branches input_hashes input_subjects input_tracks input_dates "branch1" \
+      output_branches output_hashes output_subjects output_tracks output_dates \
       "true" "false" ""
 
   # Verify it worked correctly

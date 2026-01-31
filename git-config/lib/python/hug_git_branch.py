@@ -30,6 +30,7 @@ class BranchInfo:
 
     name: str
     hash: str
+    date: str = ""  # Commit date in YYYY-MM-DD format
     subject: str = ""
     track: str = ""  # e.g., "[origin/main: 2 ahead, 1 behind]"
     remote_ref: str = ""  # Full remote ref for remote branches
@@ -47,7 +48,7 @@ class BranchDetails:
         """Serialize to JSON for bash consumption.
 
         Returns a JSON object with current_branch, max_len, and branches array.
-        Each branch has name, hash, subject, track, and remote_ref fields.
+        Each branch has name, hash, date, subject, track, and remote_ref fields.
         """
         return json.dumps(
             {
@@ -57,6 +58,7 @@ class BranchDetails:
                     {
                         "name": b.name,
                         "hash": b.hash,
+                        "date": b.date,
                         "subject": b.subject,
                         "track": b.track,
                         "remote_ref": b.remote_ref,
@@ -74,6 +76,7 @@ class BranchDetails:
         - max_len (scalar)
         - branches (array)
         - hashes (array)
+        - dates (array)
         - tracks (array)
         - subjects (array)
         - remote_refs (array, only for remote branches)
@@ -90,11 +93,13 @@ class BranchDetails:
         # Build arrays - use space-separated values for bash arrays
         branches_arr = " ".join(_bash_escape(b.name) for b in self.branches)
         hashes_arr = " ".join(_bash_escape(b.hash) for b in self.branches)
+        dates_arr = " ".join(_bash_escape(b.date) for b in self.branches)
         tracks_arr = " ".join(_bash_escape(b.track) for b in self.branches)
         subjects_arr = " ".join(_bash_escape(b.subject) for b in self.branches)
 
         lines.append(f"declare -a branches=({branches_arr})")
         lines.append(f"declare -a hashes=({hashes_arr})")
+        lines.append(f"declare -a dates=({dates_arr})")
         lines.append(f"declare -a tracks=({tracks_arr})")
         lines.append(f"declare -a subjects=({subjects_arr})")
 
@@ -241,7 +246,7 @@ def get_local_branch_details(
         current_branch = "detached HEAD"
 
     # Build format string - include upstream and upstream:track for divergence info
-    format_str = "%(refname:short)%00%(objectname:short)"
+    format_str = "%(refname:short)%00%(objectname:short)%00%(committerdate:short)"
     if include_subjects:
         format_str += "%00%(subject)"
     format_str += "%00%(upstream:short)%00%(upstream:track)%00"
@@ -256,10 +261,13 @@ def get_local_branch_details(
     divergence_commands: list[tuple[int, str, str]] = []  # (index, branch, upstream)
 
     # Parse output in chunks
-    chunk_size = 5 if include_subjects else 4
+    # Format: branch, hash, date, [subject], upstream, track
+    # chunk_size = 6 with subjects, 5 without
+    chunk_size = 6 if include_subjects else 5
     for i in range(0, len(git_output) - chunk_size + 1, chunk_size):
         branch = _sanitize_string(git_output[i])
         hash_val = git_output[i + 1]
+        date_val = git_output[i + 2]  # NEW: date field
 
         # Skip backup branches
         if exclude_backup and branch.startswith("hug-backups/"):
@@ -267,12 +275,12 @@ def get_local_branch_details(
 
         subject = ""
         if include_subjects:
-            subject = _sanitize_string(git_output[i + 2])
+            subject = _sanitize_string(git_output[i + 3])
+            upstream_idx = i + 4
+            track_idx = i + 5
+        else:
             upstream_idx = i + 3
             track_idx = i + 4
-        else:
-            upstream_idx = i + 2
-            track_idx = i + 3
 
         upstream = _sanitize_string(git_output[upstream_idx])
         _sanitize_string(git_output[track_idx])
@@ -294,6 +302,7 @@ def get_local_branch_details(
             BranchInfo(
                 name=branch,
                 hash=hash_val,
+                date=date_val,  # NEW: date field
                 subject=subject,
                 track=track,
             )
@@ -343,7 +352,7 @@ def get_remote_branch_details(
         BranchDetails object or None if no remote branches exist
     """
     # Build format string
-    format_str = "%(refname:short)%00%(objectname:short)"
+    format_str = "%(refname:short)%00%(objectname:short)%00%(committerdate:short)"
     if include_subjects:
         format_str += "%00%(subject)"
     format_str += "%00"
@@ -357,7 +366,9 @@ def get_remote_branch_details(
     max_len = 0
 
     # Parse output in chunks
-    chunk_size = 3 if include_subjects else 2
+    # Format: remote_ref, hash, date, [subject]
+    # chunk_size = 4 with subjects, 3 without
+    chunk_size = 4 if include_subjects else 3
     for i in range(0, len(git_output) - chunk_size + 1, chunk_size):
         remote_ref = _sanitize_string(git_output[i])
 
@@ -370,10 +381,11 @@ def get_remote_branch_details(
             continue
 
         hash_val = git_output[i + 1]
+        date_val = git_output[i + 2]  # NEW: date field
 
         subject = ""
         if include_subjects:
-            subject = _sanitize_string(git_output[i + 2])
+            subject = _sanitize_string(git_output[i + 3])
 
         # Extract local branch name by stripping remote prefix (e.g., "origin/feature" -> "feature")
         parts = remote_ref.split("/", 1)
@@ -389,6 +401,7 @@ def get_remote_branch_details(
             BranchInfo(
                 name=branch,
                 hash=hash_val,
+                date=date_val,  # NEW: date field
                 subject=subject,
                 remote_ref=remote_ref,
             )
@@ -420,7 +433,7 @@ def get_wip_branch_details(
     Returns:
         BranchDetails object with branches matching WIP patterns
     """
-    format_str = "%(refname:short)%00%(objectname:short)"
+    format_str = "%(refname:short)%00%(objectname:short)%00%(committerdate:short)"
     if include_subjects:
         format_str += "%00%(subject)"
     format_str += "%00"
@@ -432,17 +445,21 @@ def get_wip_branch_details(
     branches: list[BranchInfo] = []
     max_len = 0
 
-    chunk_size = 3 if include_subjects else 2
+    # Parse output in chunks
+    # Format: branch, hash, date, [subject]
+    # chunk_size = 4 with subjects, 3 without
+    chunk_size = 4 if include_subjects else 3
     for i in range(0, len(git_output) - chunk_size + 1, chunk_size):
         branch = _sanitize_string(git_output[i])
         if not branch:
             continue
 
         hash_val = git_output[i + 1]
+        date_val = git_output[i + 2]  # NEW: date field
 
         subject = ""
         if include_subjects:
-            subject = _sanitize_string(git_output[i + 2])
+            subject = _sanitize_string(git_output[i + 3])
 
         if len(branch) > max_len:
             max_len = len(branch)
@@ -451,6 +468,7 @@ def get_wip_branch_details(
             BranchInfo(
                 name=branch,
                 hash=hash_val,
+                date=date_val,  # NEW: date field
                 subject=subject,
             )
         )

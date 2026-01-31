@@ -15,7 +15,7 @@
 ################################################################################
 
 # Computes details for local branches and populates output arrays
-# Usage: compute_local_branch_details current_branch max_len hashes branches tracks subjects [include_subjects] [sort_context]
+# Usage: compute_local_branch_details current_branch max_len hashes branches tracks subjects dates [include_subjects] [sort_context]
 # Parameters (all namerefs to output variables):
 #   $1 - Scalar to receive current branch name
 #   $2 - Scalar to receive max branch name length
@@ -23,8 +23,9 @@
 #   $4 - Array to receive branch names
 #   $5 - Array to receive tracking information
 #   $6 - Array to receive commit subjects
-#   $7 - (Optional) Boolean to include subjects (default: true); if false, skips subject computation and leaves subjects empty
-#   $8 - (Optional) Sort context for Python module: gum-single, gum-multi, static, or empty (default: uses bash implementation)
+#   $7 - Array to receive commit dates (YYYY-MM-DD format)
+#   $8 - (Optional) Boolean to include subjects (default: true); if false, skips subject computation and leaves subjects empty
+#   $9 - (Optional) Sort context for Python module: gum-single, gum-multi, static, or empty (default: uses bash implementation)
 # Returns:
 #   0 if branches found, 1 if no branches exist
 # Note:
@@ -37,8 +38,9 @@ compute_local_branch_details() {
     local -n branches_ref="$4"
     local -n tracks_ref="$5"
     local -n subjects_ref="$6"
-    local include_subjects="${7:-false}"
-    local sort_context="${8:-}"
+    local -n dates_ref="$7"
+    local include_subjects="${8:-false}"
+    local sort_context="${9:-}"
 
     # Clear outputs
     current_branch_ref=""
@@ -47,6 +49,7 @@ compute_local_branch_details() {
     hashes_ref=()
     subjects_ref=()
     tracks_ref=()
+    dates_ref=()
 
     # If sort_context is specified, use Python module for date-based sorting
     if [[ -n "$sort_context" ]]; then
@@ -55,13 +58,14 @@ compute_local_branch_details() {
         if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/hug_git_branch.py" "${python_args[@]}")"; then
             return 1
         fi
-        # Python module sets variables: current_branch, max_len, branches, hashes, tracks, subjects
+        # Python module sets variables: current_branch, max_len, branches, hashes, tracks, subjects, dates
         current_branch_ref="$current_branch"
         max_len_ref="$max_len"
         branches_ref=("${branches[@]}")
         hashes_ref=("${hashes[@]}")
         subjects_ref=("${subjects[@]}")
         tracks_ref=("${tracks[@]}")
+        dates_ref=("${dates[@]:-}")  # Populate dates if available from Python
         return 0
     fi
 
@@ -74,7 +78,8 @@ compute_local_branch_details() {
     current_branch_ref=$(printf '%s' "$current_branch_raw" | tr -d '\n\r')
 
     # Build format: Include upstream:short separately for reliable name resolution
-    local format='%(refname:short)%00%(objectname:short)'
+    # Format: branch, hash, date, [subject], upstream
+    local format='%(refname:short)%00%(objectname:short)%00%(committerdate:short)'
     if [[ "$include_subjects" == "true" ]]; then
         format+='%00%(subject)'
     fi
@@ -86,13 +91,14 @@ compute_local_branch_details() {
         --format="$format" \
         --sort=refname refs/heads/)
 
-    # Iterate through the flat array in chunks of 3 or 4.
+    # Iterate through the flat array in chunks of 4 or 5.
+    # Format: branch, hash, date, [subject], upstream
     local i
-    local increment=3
-    local chunk_limit=2
+    local increment=4
+    local chunk_limit=3
     if [[ "$include_subjects" == "true" ]]; then
-        increment=4
-        chunk_limit=3
+        increment=5
+        chunk_limit=4
     fi
     for ((i = 0; i + chunk_limit < ${#git_output[@]}; i += increment)); do
         #
@@ -103,7 +109,7 @@ compute_local_branch_details() {
         local branch_raw="${git_output[i]}"
         local branch
         branch=$(printf '%s' "$branch_raw" | tr -d '\n\r')
-        
+
         # Skip backup branches (internal implementation detail)
         # Backup branches follow the pattern: hug-backups/**
         if [[ "$branch" == hug-backups/* ]]; then
@@ -111,10 +117,11 @@ compute_local_branch_details() {
         fi
 
         local hash="${git_output[i+1]}"
+        local date="${git_output[i+2]}"  # NEW: date field
 
         local subject=""
         if [[ "$include_subjects" == "true" ]]; then
-            local subject_raw="${git_output[i+2]}"
+            local subject_raw="${git_output[i+3]}"
             subject=$(printf '%s' "$subject_raw" | tr -d '\n\r')
         fi
 
@@ -160,6 +167,7 @@ compute_local_branch_details() {
 
         branches_ref+=("$branch")
         hashes_ref+=("$hash")
+        dates_ref+=("$date")  # NEW: date field
         if [[ "$include_subjects" == "true" ]]; then
             subjects_ref+=("$GREY${subject:-(no commit message)}$NC")
         fi
@@ -327,13 +335,13 @@ compute_local_branch_details_batched() {
 }
 
 # Prints a single formatted branch line (shared helper for list and menu)
-# Usage: print_branch_line prefix current_branch max_len i hashes_ref branches_ref tracks_ref subjects_ref
+# Usage: print_branch_line prefix current_branch max_len i hashes_ref dates_ref branches_ref tracks_ref subjects_ref
 # Parameters:
 #   $1 - Prefix string for the line (e.g., "" for list current, "  " for list non-current, "%d) " or "%d)   " for menu)
 #   $2 - Current branch name
 #   $3 - Maximum branch name length (for alignment)
 #   $4 - Index i in the arrays
-#   $5-$8 - Namerefs to arrays (hashes branches tracks subjects)
+#   $5-$9 - Namerefs to arrays (hashes dates branches tracks subjects)
 # Output:
 #   Formatted branch line to stdout; subject printed only if subjects array is non-empty
 # SC2178: Nameref declarations are intentional
@@ -344,26 +352,28 @@ print_branch_line() {
     local max_len="$3"
     local i="$4"
     local -n hashes_ref="$5"
-    local -n branches_ref="$6"
-    local -n tracks_ref="$7"
-    local -n subjects_ref="$8"
+    local -n dates_ref="$6"
+    local -n branches_ref="$7"
+    local -n tracks_ref="$8"
+    local -n subjects_ref="$9"
 
     local branch="${branches_ref[i]}"
     local hash="${hashes_ref[i]}"
+    local date="${dates_ref[i]:-}"  # Default to empty if dates array is empty
     local subject=""
     local track="${tracks_ref[i]}"
 
     if [ "$branch" = "$current_branch" ]; then
         if [ -n "$track" ]; then
-            printf "${prefix}${GREEN}* %7s %-*s %s${NC}" "$hash" "$max_len" "$branch" "$track"
+            printf "${prefix}${GREEN}* %7s ${BLUE}%s${NC} %-*s %s${NC}" "$hash" "$date" "$max_len" "$branch" "$track"
         else
-            printf "${prefix}${GREEN}* %7s %-*s${NC}" "$hash" "$max_len" "$branch"
+            printf "${prefix}${GREEN}* %7s ${BLUE}%s${NC} %-*s${NC}" "$hash" "$date" "$max_len" "$branch"
         fi
     else
         if [ -n "$track" ]; then
-            printf "${prefix}${YELLOW}%7s${NC} %-*s %s${NC}" "$hash" "$max_len" "$branch" "$track"
+            printf "${prefix}${YELLOW}%7s${NC} ${BLUE}%s${NC} %-*s %s${NC}" "$hash" "$date" "$max_len" "$branch" "$track"
         else
-            printf "${prefix}${YELLOW}%7s${NC} %-*s" "$hash" "$max_len" "$branch"
+            printf "${prefix}${YELLOW}%7s${NC} ${BLUE}%s${NC} %-*s" "$hash" "$date" "$max_len" "$branch"
         fi
     fi
 
@@ -376,12 +386,12 @@ print_branch_line() {
 }
 
 # Prints a non-interactive list of branches with details
-# Usage: print_branch_list current_branch max_len hashes branches tracks subjects [search_term]
+# Usage: print_branch_list current_branch max_len hashes dates branches tracks subjects [search_term]
 # Parameters:
 #   $1 - Current branch name
 #   $2 - Maximum branch name length (for alignment)
-#   $3-$6 - Namerefs to arrays (hashes branches tracks subjects)
-#   $7 - (Optional) Search term to filter by BRANCH NAME only (case-insensitive)
+#   $3-$7 - Namerefs to arrays (hashes dates branches tracks subjects)
+#   $8 - (Optional) Search term to filter by BRANCH NAME only (case-insensitive)
 # Output:
 #   Formatted branch list to stdout, with current branch highlighted in green;
 #   subjects printed only if subjects array is non-empty
@@ -391,10 +401,11 @@ print_branch_list() {
     local current_branch="$1"
     local max_len="$2"
     local hashes_name="$3"
-    local branches_name="$4"
-    local tracks_name="$5"
-    local subjects_name="$6"
-    local search_term="${7:-}"
+    local dates_name="$4"
+    local branches_name="$5"
+    local tracks_name="$6"
+    local subjects_name="$7"
+    local search_term="${8:-}"
 
     local -n hashes_ref="$hashes_name"
     local -n branches_ref="$branches_name"
@@ -421,18 +432,18 @@ print_branch_list() {
             prefix="  "
         fi
 
-        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$hashes_name" "$branches_name" "$tracks_name" "$subjects_name"
+        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$hashes_name" "$dates_name" "$branches_name" "$tracks_name" "$subjects_name"
     done
 }
 
 # Prints an interactive menu for branch selection
-# Usage: print_interactive_branch_menu selected current_branch max_len hashes branches tracks subjects [placeholder]
+# Usage: print_interactive_branch_menu selected current_branch max_len hashes dates branches tracks subjects [placeholder]
 # Parameters (namerefs):
 #   $1 - Output variable to receive selected branch name
 #   $2 - Current branch name
 #   $3 - Maximum branch name length (for alignment)
-#   $4-$7 - Namerefs to arrays (hashes branches tracks subjects)
-#   $8 - (Optional) Placeholder text for gum filter prompt (default: "Pick one to switch to...")
+#   $4-$8 - Namerefs to arrays (hashes dates branches tracks subjects)
+#   $9 - (Optional) Placeholder text for gum filter prompt (default: "Pick one to switch to...")
 # Effects:
 #   Displays numbered menu and prompts for selection
 #   For repositories with 10 or more branches, uses gum filter (if installed) for
@@ -447,10 +458,11 @@ print_interactive_branch_menu() {
     local current_branch="$2"
     local max_len="$3"
     local -n hashes_ref="$4"
-    local -n branches_ref="$5"
-    local -n tracks_ref="$6"
-    local -n subjects_ref="$7"
-    local placeholder="${8:-Pick one to switch to...}"
+    local -n dates_ref="$5"
+    local -n branches_ref="$6"
+    local -n tracks_ref="$7"
+    local -n subjects_ref="$8"
+    local placeholder="${9:-Pick one to switch to...}"
 
     local num_branches="${#branches_ref[@]}"
     if [[ $num_branches -eq 0 ]]; then
@@ -465,33 +477,34 @@ print_interactive_branch_menu() {
         for i in "${!branches_ref[@]}"; do
             local branch="${branches_ref[i]}"
             local hash="${hashes_ref[i]}"
+            local date="${dates_ref[i]:-}"  # Default to empty if dates array is empty
             local track="${tracks_ref[i]}"
             local subject=""
             if [[ ${#subjects_ref[@]} -gt 0 ]]; then
                 subject="${subjects_ref[i]}"
             fi
-            
-            # Format: "branch (hash) [track] subject"
+
+            # Format: "branch hash date [track] subject"
             # Current branch is marked with *
             local marker=""
             if [ "$branch" = "$current_branch" ]; then
                 marker="${GREEN}* "
             fi
-            
-            local formatted="${marker}${branch} $YELLOW$hash$NC"
+
+            local formatted="${marker}${branch} $YELLOW${hash}$NC $BLUE${date}$NC"
             if [ -n "$track" ]; then
                 formatted="$formatted $track"
             fi
             if [ -n "$subject" ]; then
                 formatted="$formatted $subject"
             fi
-            
+
             formatted_options+=("$formatted")
         done
-        
+
         local index
         index=$(get_gum_selection_index formatted_options "$placeholder")
-        
+
         # SC2034: selected_ref is a nameref that assigns to caller's variable
         # shellcheck disable=SC2034
         selected_ref="${branches_ref[$index]}"
@@ -509,7 +522,7 @@ print_interactive_branch_menu() {
         if [ "$branch" != "$current_branch" ]; then
             prefix="${num})   "
         fi
-        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$4" "$5" "$6" "$7"
+        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$4" "$5" "$6" "$7" "$8"
     done
 
     local index
@@ -980,19 +993,19 @@ select_branches() {
 
     # Get branch data using compute_local_branch_details with sort context
     # Use different variable names to avoid shadowing Python module output
-    declare -a sel_branches=() sel_hashes=() sel_subjects=() sel_tracks=()
+    declare -a sel_branches=() sel_hashes=() sel_subjects=() sel_tracks=() sel_dates=()
     local sel_current_branch="" sel_max_len=""
 
-    if ! compute_local_branch_details sel_current_branch sel_max_len sel_hashes sel_branches sel_tracks sel_subjects "true" "$sort_context"; then
+    if ! compute_local_branch_details sel_current_branch sel_max_len sel_hashes sel_branches sel_tracks sel_subjects sel_dates "true" "$sort_context"; then
         error "No local branches found"
         return 1
     fi
 
     # Apply filters using centralized filtering function
-    declare -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=()
+    declare -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
 
-    filter_branches sel_branches sel_hashes sel_subjects sel_tracks "$sel_current_branch" \
-        filtered_branches filtered_hashes filtered_subjects filtered_tracks \
+    filter_branches sel_branches sel_hashes sel_subjects sel_tracks sel_dates "$sel_current_branch" \
+        filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
         "$exclude_current" "$exclude_backup" "$filter_function"
 
     # Check if any branches remain after filtering
@@ -1006,12 +1019,12 @@ select_branches() {
     # Delegate to appropriate selection function
     if [[ "$multi_select" == "true" ]]; then
         multi_select_branches "$result_array_name" "$sel_current_branch" "$sel_max_len" \
-            filtered_hashes filtered_branches filtered_tracks filtered_subjects "$placeholder"
+            filtered_hashes filtered_dates filtered_branches filtered_tracks filtered_subjects "$placeholder"
     else
         # For single selection, we need a temporary variable name
         local selected_branch=""
         single_select_branch selected_branch "$sel_current_branch" "$sel_max_len" \
-            filtered_hashes filtered_branches filtered_tracks filtered_subjects "$placeholder"
+            filtered_hashes filtered_dates filtered_branches filtered_tracks filtered_subjects "$placeholder"
 
         # Move result to the output array if selection was made
         if [[ -n "$selected_branch" ]]; then
@@ -1024,40 +1037,43 @@ select_branches() {
 }
 
 # Centralized branch filtering function
-# Usage: filter_branches input_branches input_hashes input_subjects input_tracks current_branch output_branches output_hashes output_subjects output_tracks exclude_current exclude_backup [filter_function]
+# Usage: filter_branches input_branches input_hashes input_subjects input_tracks input_dates current_branch output_branches output_hashes output_subjects output_tracks output_dates exclude_current exclude_backup [filter_function]
 # Parameters:
-#   $1-4  - Input arrays (branches, hashes, subjects, tracks)
-#   $5    - Current branch name
-#   $6-9  - Output arrays (namerefs) for filtered results
-#   $10   - Boolean: exclude current branch
-#   $11   - Boolean: exclude backup branches
-#   $12   - Optional: custom filter function name
+#   $1-5  - Input arrays (branches, hashes, subjects, tracks, dates)
+#   $6    - Current branch name
+#   $7-11 - Output arrays (namerefs) for filtered results
+#   $12   - Boolean: exclude current branch
+#   $13   - Boolean: exclude backup branches
+#   $14   - Optional: custom filter function name
 filter_branches() {
     # Input arrays
     local -n input_branches_ref="$1"
     local -n input_hashes_ref="$2"
     local -n input_subjects_ref="$3"
     local -n input_tracks_ref="$4"
+    local -n input_dates_ref="$5"
 
     # Current branch
-    local current_branch="$5"
+    local current_branch="$6"
 
     # Output arrays (namerefs)
-    local -n output_branches_ref="$6"
-    local -n output_hashes_ref="$7"
-    local -n output_subjects_ref="$8"
-    local -n output_tracks_ref="$9"
+    local -n output_branches_ref="$7"
+    local -n output_hashes_ref="$8"
+    local -n output_subjects_ref="$9"
+    local -n output_tracks_ref="${10}"
+    local -n output_dates_ref="${11}"
 
     # Filter options
-    local exclude_current="${10}"
-    local exclude_backup="${11}"
-    local filter_function="${12:-}"
+    local exclude_current="${12}"
+    local exclude_backup="${13}"
+    local filter_function="${14:-}"
 
     # Clear output arrays
     output_branches_ref=()
     output_hashes_ref=()
     output_subjects_ref=()
     output_tracks_ref=()
+    output_dates_ref=()
 
     # Apply filters
     local i
@@ -1086,17 +1102,18 @@ filter_branches() {
         output_hashes_ref+=("${input_hashes_ref[i]}")
         output_subjects_ref+=("${input_subjects_ref[i]}")
         output_tracks_ref+=("${input_tracks_ref[i]}")
+        output_dates_ref+=("${input_dates_ref[i]:-}")  # Add date if available
     done
 }
 
 # Single branch selection function
-# Usage: single_select_branch result_variable current_branch max_len hashes branches tracks subjects placeholder
+# Usage: single_select_branch result_variable current_branch max_len hashes dates branches tracks subjects placeholder
 # Parameters:
 #   $1 - Variable name (string) to receive selected branch name
 #   $2 - Current branch name
 #   $3 - Maximum branch name length (for formatting)
-#   $4-7 - Arrays with branch data (hashes, branches, tracks, subjects)
-#   $8 - Placeholder text for selection prompt
+#   $4-8 - Arrays with branch data (hashes, dates, branches, tracks, subjects)
+#   $9 - Placeholder text for selection prompt
 # Returns:
 #   0 if branch selected, 1 if no selection
 single_select_branch() {
@@ -1104,22 +1121,23 @@ single_select_branch() {
     local current_branch="$2"
     local max_len="$3"
     local -n hashes_ref="$4"
-    local -n branches_ref="$5"
-    local -n tracks_ref="$6"
-    local -n subjects_ref="$7"
-    local placeholder="$8"
+    local -n dates_ref="$5"
+    local -n branches_ref="$6"
+    local -n tracks_ref="$7"
+    local -n subjects_ref="$8"
+    local placeholder="$9"
 
     # Use existing print_interactive_branch_menu function for consistency
     # Pass original parameter names, not the nameref variable names, to avoid circular reference
     print_interactive_branch_menu "$result_variable" "$current_branch" "$max_len" \
-        "$4" "$5" "$6" "$7" "$placeholder"
+        "$4" "$5" "$6" "$7" "$8" "$placeholder"
 }
 
 # Multi-branch selection function
-# Usage: multi_select_branches result_array_name current_branch max_len hashes branches tracks subjects placeholder
+# Usage: multi_select_branches result_array_name current_branch max_len hashes dates branches tracks subjects placeholder
 # Parameters:
 #   $1 - Array name (string) that will receive selected branch names
-#   $2-7 - Same as single_select_branch
+#   $2-8 - Same as single_select_branch
 # Returns:
 #   0 if branches selected, 1 if no selection
 multi_select_branches() {
@@ -1127,21 +1145,23 @@ multi_select_branches() {
     local current_branch="$2"
     local max_len="$3"
     local -n hashes_ref="$4"
-    local -n branches_ref="$5"
-    local -n tracks_ref="$6"
-    local -n subjects_ref="$7"
-    local placeholder="$8"
+    local -n dates_ref="$5"
+    local -n branches_ref="$6"
+    local -n tracks_ref="$7"
+    local -n subjects_ref="$8"
+    local placeholder="$9"
 
     # Clear result array
     eval "$result_array_name=()"
 
     # Build formatted options for multi-selection (similar to hug bdel pattern)
     local -a formatted_options=()
-    local branch hash subject track
+    local branch hash date subject track
 
     for ((i = 0; i < ${#branches_ref[@]}; i++)); do
         branch="${branches_ref[i]}"
         hash="${hashes_ref[i]}"
+        date="${dates_ref[i]:-}"
         subject="${subjects_ref[i]}"
         track="${tracks_ref[i]}"
 
@@ -1151,6 +1171,9 @@ multi_select_branches() {
             formatted="${branch}"
             if [[ -n "$hash" ]]; then
                 formatted+=" ${YELLOW}${hash}${NC}"
+            fi
+            if [[ -n "$date" ]]; then
+                formatted+=" ${BLUE}${date}${NC}"
             fi
             if [[ -n "$subject" ]]; then
                 formatted+=" ${GREY}${subject}${NC}"
