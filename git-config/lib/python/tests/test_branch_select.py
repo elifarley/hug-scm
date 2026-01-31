@@ -6,7 +6,6 @@ Following Google Python testing best practices:
 - Test edge cases and error conditions
 """
 
-import os
 import pytest
 
 from git.branch_select import (
