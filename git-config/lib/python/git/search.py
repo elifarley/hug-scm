@@ -187,7 +187,8 @@ def main():
 
     Bash integration example:
         local -a _search_terms=()
-        eval "$(python3 search.py search --terms "$search_terms" --logic "$logic" --fields "${fields[@]}")"
+        eval "$(python3 search.py search --terms "$search_terms" \\
+             --logic "$logic" --fields "${fields[@]}")"
         result=$_search_matched  # 0=match, 1=no match
     """
     parser = argparse.ArgumentParser(description="Search fields for Hug SCM")
