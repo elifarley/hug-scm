@@ -191,6 +191,12 @@ For each new Python helper:
 - ✅ `deps.py` - Dependency graph construction (423 lines, complete ✓)
 - ✅ `log_json.py` - Git log JSON formatting (256 lines, with tests ✓)
 
+### Bash-to-Python Migration Modules (git/ subdirectory):
+- ✅ `git/branch_filter.py` - Branch filtering with dataclasses (280 lines, 25 tests ✓)
+- ✅ `git/branch_select.py` - Multi-branch selection (625 lines, 61 tests ✓)
+- ✅ `git/worktree.py` - Worktree parsing (400 lines, 30 tests ✓)
+- ✅ `git/search.py` - Field-based search with OR/AND logic (233 lines, 51 tests ✓)
+
 ## JSON Transform Module (NEW)
 
 The `json_transform.py` module provides production-ready replacements for complex Bash parsing:
