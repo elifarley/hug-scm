@@ -970,74 +970,26 @@ multi_select_branches() {
                 --no-limit
         )
     else
-        # Fallback to numbered list for small numbers or when gum unavailable
-        if [[ "${HUG_USE_PYTHON_SELECT:-true}" == "true" ]]; then
-            # Python module: type-safe numbered list selection with dataclasses
-            local select_args=()
-            select_args+=(--branches "${branches_ref[*]}")
-            select_args+=(--hashes "${hashes_ref[*]}")
-            select_args+=(--dates "${dates_ref[*]}")
-            select_args+=(--subjects "${subjects_ref[*]}")
-            select_args+=(--tracks "${tracks_ref[*]}")
-            select_args+=(--placeholder "$placeholder")
-            select_args+=(--array-name "$result_array_name")
-            select_args+=(--no-gum)  # Explicitly disable gum (we're in numbered list mode)
+        # Numbered list selection using Python module
+        local select_args=()
+        select_args+=(--branches "${branches_ref[*]}")
+        select_args+=(--hashes "${hashes_ref[*]}")
+        select_args+=(--dates "${dates_ref[*]}")
+        select_args+=(--subjects "${subjects_ref[*]}")
+        select_args+=(--tracks "${tracks_ref[*]}")
+        select_args+=(--placeholder "$placeholder")
+        select_args+=(--array-name "$result_array_name")
+        select_args+=(--no-gum)  # Explicitly disable gum (we're in numbered list mode)
 
-            if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/branch_select.py" \
-                select "${select_args[@]}")"; then
-                return 1
-            fi
-            # Python module sets variables: $result_array_name and selected_indices
-            return 0
-        else
-            # Bash fallback: numbered list with manual parsing
-            echo "$placeholder"
-            echo
-
-            # Display numbered list
-            for ((i = 0; i < ${#formatted_options[@]}; i++)); do
-                printf "  %2d: %s\n" $((i + 1)) "${formatted_options[i]}"
-            done
-            echo
-
-            # Get user selection (support comma-separated numbers)
-            local selection
-            if [[ -n "${HUG_TEST_NUMBERED_SELECTION:-}" ]]; then
-                selection="${HUG_TEST_NUMBERED_SELECTION}"
-            else
-                read -r -p "Enter numbers to select (comma-separated, or 'a' for all): " selection
-            fi
-
-            # Parse selection
-            case "$selection" in
-                a|A|all)
-                    # Select all branches
-                    selected_indices=("${!branches_ref[@]}")
-                    ;;
-                '')
-                    # No selection
-                    return 1
-                    ;;
-                *)
-                    # Parse comma-separated numbers
-                    IFS=',' read -ra selected_indices <<< "$selection"
-                    # Convert to 0-based indexing and validate
-                    local -a valid_indices=()
-                    local idx
-                    for idx in "${selected_indices[@]}"; do
-                        # Remove whitespace and convert to 0-based
-                        idx=$((10#$idx - 1))
-                        if [[ $idx -ge 0 && $idx -lt ${#branches_ref[@]} ]]; then
-                            valid_indices+=("$idx")
-                        fi
-                    done
-                    selected_indices=("${valid_indices[@]}")
-                    ;;
-            esac
+        if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/branch_select.py" \
+            select "${select_args[@]}")"; then
+            return 1
         fi
+        # Python module sets variables: $result_array_name and selected_indices
+        return 0
     fi
 
-    # Convert indices back to branch names (only for gum mode or Bash fallback)
+    # Convert indices back to branch names (only for gum mode)
     if [[ ${#selected_indices[@]} -gt 0 ]]; then
         local idx
         for idx in "${selected_indices[@]}"; do
