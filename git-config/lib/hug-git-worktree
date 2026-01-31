@@ -31,6 +31,10 @@
 #            the question "do we have additional worktrees beyond the main one?"
 #            For commands that need to include the main worktree, use
 #            get_all_worktrees_including_main() instead.
+#
+# Feature Flag:
+#   Set HUG_USE_PYTHON_WORKTREE=false to use Bash implementation instead of Python.
+#   This allows for easy rollback if issues arise with the Python module.
 get_worktrees() {
     local -n paths_ref="$1"
     local -n branches_ref="$2"
@@ -52,26 +56,126 @@ get_worktrees() {
         return 1
     fi
 
-    # Use Python module for worktree parsing (type-safe, eliminates Bash state machine bugs)
-    local -a _wt_paths=() _wt_branches=() _wt_commits=()
-    local -a _wt_dirty_status=() _wt_locked_status=()
+    # Use Python module for worktree parsing if feature flag is enabled (default)
+    if [[ "${HUG_USE_PYTHON_WORKTREE:-true}" == "true" ]]; then
+        # Use Python module for worktree parsing (type-safe, eliminates Bash state machine bugs)
+        local -a _wt_paths=() _wt_branches=() _wt_commits=()
+        local -a _wt_dirty_status=() _wt_locked_status=()
 
-    if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/worktree.py" list \
-              --main-repo-path "$main_repo_path")"; then
+        if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/worktree.py" list \
+                  --main-repo-path "$main_repo_path")"; then
+            return 1
+        fi
+
+        # Check if any additional worktrees exist (Python module excludes main repo)
+        if [[ ${#_wt_paths[@]} -eq 0 ]]; then
+            return 1
+        fi
+
+        # Assign Python outputs to namerefs
+        paths_ref=("${_wt_paths[@]}")
+        branches_ref=("${_wt_branches[@]}")
+        commits_ref=("${_wt_commits[@]}")
+        status_ref=("${_wt_dirty_status[@]}")
+        locked_ref=("${_wt_locked_status[@]}")
+
+        return 0
+    fi
+
+    # Bash fallback implementation
+    # Parse git worktree list --porcelain output
+    local -a worktree_output
+    mapfile -t worktree_output < <(git worktree list --porcelain 2>/dev/null)
+
+    # Check if any additional worktrees exist (exclude main repo)
+    local has_additional_worktrees=false
+    local line
+    for line in "${worktree_output[@]}"; do
+        if [[ "$line" =~ ^worktree\ (.+) ]]; then
+            local worktree_path="${BASH_REMATCH[1]}"
+            if [[ "$worktree_path" != "$main_repo_path" ]]; then
+                has_additional_worktrees=true
+                break
+            fi
+        fi
+    done
+
+    if ! $has_additional_worktrees; then
         return 1
     fi
 
-    # Check if any additional worktrees exist (Python module excludes main repo)
-    if [[ ${#_wt_paths[@]} -eq 0 ]]; then
-        return 1
-    fi
+    # Parse worktrees (excluding main repo)
+    local current_path=""
+    local current_branch=""
+    local current_commit=""
+    local current_locked="false"
+    local i=0
 
-    # Assign Python outputs to namerefs
-    paths_ref=("${_wt_paths[@]}")
-    branches_ref=("${_wt_branches[@]}")
-    commits_ref=("${_wt_commits[@]}")
-    status_ref=("${_wt_dirty_status[@]}")
-    locked_ref=("${_wt_locked_status[@]}")
+    while [[ $i -lt ${#worktree_output[@]} ]]; do
+        local line="${worktree_output[$i]}"
+
+        case "$line" in
+            "worktree "*)
+                # If we have a previous worktree, store it (only if not main repo)
+                if [[ -n "$current_path" && "$current_path" != "$main_repo_path" ]]; then
+                    paths_ref+=("$current_path")
+                    branches_ref+=("$current_branch")
+                    commits_ref+=("$current_commit")
+
+                    # Check if worktree is dirty (modified, staged, or untracked files)
+                    # NOTE: We check both tracked changes (diff) and untracked files (status)
+                    if git -C "$current_path" diff --quiet 2>/dev/null && \
+                       git -C "$current_path" diff --cached --quiet 2>/dev/null && \
+                       [[ -z $(git -C "$current_path" ls-files --others --exclude-standard 2>/dev/null) ]]; then
+                        status_ref+=("false")
+                    else
+                        status_ref+=("true")
+                    fi
+
+                    locked_ref+=("$current_locked")
+                fi
+
+                # Start new worktree
+                current_path="${line#worktree }"
+                current_branch=""
+                current_commit=""
+                current_locked="false"
+                ;;
+            "branch "*)
+                current_branch="${line#branch refs/heads/}"
+                # Get commit hash for this branch
+                current_commit=$(git rev-parse --short "$current_branch" 2>/dev/null || echo "unknown")
+                ;;
+            "commit "*)
+                current_commit="${line#commit }"
+                current_commit=$(git rev-parse --short "$current_commit" 2>/dev/null || echo "unknown")
+                ;;
+            "locked")
+                current_locked="true"
+                ;;
+        esac
+
+        i=$((i + 1))
+    done
+
+    # Store the last worktree (only if not main repo)
+    if [[ -n "$current_path" && "$current_path" != "$main_repo_path" ]]; then
+        paths_ref+=("$current_path")
+        branches_ref+=("$current_branch")
+        commits_ref+=("$current_commit")
+
+        # Check if worktree is dirty (modified, staged, or untracked files)
+        # NOTE: We check both tracked changes (diff) and untracked files (status)
+        if git -C "$current_path" diff --quiet 2>/dev/null && \
+           git -C "$current_path" diff --cached --quiet 2>/dev/null && \
+           [[ -z $(git -C "$current_path" ls-files --others --exclude-standard 2>/dev/null) ]]; then
+            status_ref+=("false")
+        else
+            status_ref+=("true")
+        fi
+
+        locked_ref+=("$current_locked")
+    fi
 
     return 0
 }
@@ -104,6 +208,10 @@ get_worktrees() {
 #                need to know about ADDITIONAL worktrees, such as:
 #                - Deletion operations (can't delete main worktree)
 #                - Operations that only make sense with multiple worktrees
+#
+# Feature Flag:
+#   Set HUG_USE_PYTHON_WORKTREE=false to use Bash implementation instead of Python.
+#   This allows for easy rollback if issues arise with the Python module.
 get_all_worktrees_including_main() {
     local -n paths_ref="$1"
     local -n branches_ref="$2"
@@ -125,22 +233,109 @@ get_all_worktrees_including_main() {
         return 1
     fi
 
-    # Use Python module for worktree parsing (type-safe, eliminates Bash state machine bugs)
-    local -a _wt_paths=() _wt_branches=() _wt_commits=()
-    local -a _wt_dirty_status=() _wt_locked_status=()
+    # Use Python module for worktree parsing if feature flag is enabled (default)
+    if [[ "${HUG_USE_PYTHON_WORKTREE:-true}" == "true" ]]; then
+        # Use Python module for worktree parsing (type-safe, eliminates Bash state machine bugs)
+        local -a _wt_paths=() _wt_branches=() _wt_commits=()
+        local -a _wt_dirty_status=() _wt_locked_status=()
 
-    if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/worktree.py" list \
-              --include-main \
-              --main-repo-path "$main_repo_path")"; then
+        if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/worktree.py" list \
+                  --include-main \
+                  --main-repo-path "$main_repo_path")"; then
+            return 1
+        fi
+
+        # Assign Python outputs to namerefs
+        paths_ref=("${_wt_paths[@]}")
+        branches_ref=("${_wt_branches[@]}")
+        commits_ref=("${_wt_commits[@]}")
+        status_ref=("${_wt_dirty_status[@]}")
+        locked_ref=("${_wt_locked_status[@]}")
+
+        return 0
+    fi
+
+    # Bash fallback implementation
+    # Parse git worktree list --porcelain output
+    local -a worktree_output
+    mapfile -t worktree_output < <(git worktree list --porcelain 2>/dev/null)
+
+    if [[ ${#worktree_output[@]} -eq 0 ]]; then
         return 1
     fi
 
-    # Assign Python outputs to namerefs
-    paths_ref=("${_wt_paths[@]}")
-    branches_ref=("${_wt_branches[@]}")
-    commits_ref=("${_wt_commits[@]}")
-    status_ref=("${_wt_dirty_status[@]}")
-    locked_ref=("${_wt_locked_status[@]}")
+    # Parse ALL worktrees (INCLUDING main repo)
+    local current_path=""
+    local current_branch=""
+    local current_commit=""
+    local current_locked="false"
+    local i=0
+
+    while [[ $i -lt ${#worktree_output[@]} ]]; do
+        local line="${worktree_output[$i]}"
+
+        case "$line" in
+            "worktree "*)
+                # If we have a previous worktree, store it (including main repo)
+                if [[ -n "$current_path" ]]; then
+                    paths_ref+=("$current_path")
+                    branches_ref+=("$current_branch")
+                    commits_ref+=("$current_commit")
+
+                    # Check if worktree is dirty (modified, staged, or untracked files)
+                    # NOTE: We check both tracked changes (diff) and untracked files (status)
+                    if git -C "$current_path" diff --quiet 2>/dev/null && \
+                       git -C "$current_path" diff --cached --quiet 2>/dev/null && \
+                       [[ -z $(git -C "$current_path" ls-files --others --exclude-standard 2>/dev/null) ]]; then
+                        status_ref+=("false")
+                    else
+                        status_ref+=("true")
+                    fi
+
+                    locked_ref+=("$current_locked")
+                fi
+
+                # Start new worktree
+                current_path="${line#worktree }"
+                current_branch=""
+                current_commit=""
+                current_locked="false"
+                ;;
+            "branch "*)
+                current_branch="${line#branch refs/heads/}"
+                # Get commit hash for this branch
+                current_commit=$(git rev-parse --short "$current_branch" 2>/dev/null || echo "unknown")
+                ;;
+            "commit "*)
+                current_commit="${line#commit }"
+                current_commit=$(git rev-parse --short "$current_commit" 2>/dev/null || echo "unknown")
+                ;;
+            "locked")
+                current_locked="true"
+                ;;
+        esac
+
+        i=$((i + 1))
+    done
+
+    # Store the last worktree (including main repo)
+    if [[ -n "$current_path" ]]; then
+        paths_ref+=("$current_path")
+        branches_ref+=("$current_branch")
+        commits_ref+=("$current_commit")
+
+        # Check if worktree is dirty (modified, staged, or untracked files)
+        # NOTE: We check both tracked changes (diff) and untracked files (status)
+        if git -C "$current_path" diff --quiet 2>/dev/null && \
+           git -C "$current_path" diff --cached --quiet 2>/dev/null && \
+           [[ -z $(git -C "$current_path" ls-files --others --exclude-standard 2>/dev/null) ]]; then
+            status_ref+=("false")
+        else
+            status_ref+=("true")
+        fi
+
+        locked_ref+=("$current_locked")
+    fi
 
     return 0
 }
