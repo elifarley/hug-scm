@@ -252,8 +252,11 @@ def parse_worktree_list(
         elif line.startswith("branch "):
             # Other branch format (e.g., detached), extract after "branch "
             current_branch = ""  # Detached HEAD has no branch name
+        elif line.startswith("HEAD "):
+            # HEAD hash line (git worktree list --porcelain outputs HEAD, not commit)
+            current_commit = line[len("HEAD ") :].strip()
         elif line.startswith("commit "):
-            # Commit hash line
+            # Commit hash line (legacy format, some git versions use this)
             current_commit = line[len("commit ") :].strip()
         elif line == "locked":
             # Locked flag (no value)
