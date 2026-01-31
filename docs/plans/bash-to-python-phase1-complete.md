@@ -16,13 +16,15 @@ This plan guides the migration of fragile Bash functions to Python, eliminating 
 | 1 | `compute_local_branch_details_batched` | 6 namerefs | ✓ Deleted | -45 lines (dead code) |
 | 2 | `filter_branches` | **14 parameters** | ✓ Complete | ~280 Python lines |
 | 3 | `multi_select_branches` | 9 parameters | ✓ Complete | ~625 Python lines |
-| 4 | `get_worktrees` | State machine | ✓ Complete | ~200 Bash removed, ~400 Python |
+| 4 | `get_worktrees` | State machine | ✓ Complete | +138 net (with feature flag) |
 | 5 | `search_items_by_fields` | Variadic | ✓ Complete | ~50 Bash removed, ~730 Python |
 | Cleanup | Feature flag removal | 3 flags | ✓ Complete | ~145 Bash removed |
 
 **Total Progress:** 5 phases + cleanup complete (100%)
 
-**Total Bash Lines Removed:** ~655 lines
+**Total Bash Lines Removed:** ~655 lines (excluding Phase 4 feature flag code)
+
+**Note:** Phase 4 shows a net +138 lines due to Bash fallback restoration for the `HUG_USE_PYTHON_WORKTREE` feature flag. The initial integration removed 165 lines, then 221 lines were added back for the Bash fallback. This follows the established pattern of gradual rollout with feature flags.
 
 **Total Python Lines Added:** ~2,680 lines (modules + tests)
 
@@ -69,9 +71,12 @@ This plan guides the migration of fragile Bash functions to Python, eliminating 
 
 ## Phase 4: Complete - get_worktrees Migration ✓
 
+**Completion Date:** 2026-01-31
+**Implementation Commits:** `d27829a`, `eadc665`
+
 ### What Was Done
 
-Migrated `get_worktrees` and `get_all_worktrees_including_main` functions to Python, eliminating ~200 lines of duplicate Bash state machine code.
+Migrated `get_worktrees` and `get_all_worktrees_including_main` functions to Python, eliminating ~165 lines of duplicate Bash state machine code. Added `HUG_USE_PYTHON_WORKTREE` feature flag for gradual rollout with Bash fallback.
 
 ### Files Created
 
@@ -89,7 +94,11 @@ Migrated `get_worktrees` and `get_all_worktrees_including_main` functions to Pyt
 
 ### Files Modified
 
-1. `git-config/lib/hug-git-worktree` (~200 lines removed)
+1. `git-config/lib/hug-git-worktree`
+   - **Commit d27829a:** 165 lines removed, 82 lines added (Python integration)
+   - **Commit eadc665:** 221 lines added (Bash fallback restored for feature flag)
+   - Net change: +138 lines (with type safety and feature flag support)
+   - Added `HUG_USE_PYTHON_WORKTREE` feature flag (default: true)
    - Replaced state machine parser with Python calls
    - Added `--main-repo-path` parameter to ensure correct repo detection
 
@@ -117,9 +126,42 @@ def parse_worktree_list(
 - Python outputs: `_wt_paths`, `_wt_branches`, `_wt_commits`, `_wt_dirty_status`, `_wt_locked_status`
 - Bash function assigns via nameref to caller's variables (which may have any names)
 
+### Bug Fixed: HEAD vs Commit Parsing
+
+**Problem:** The Python module originally only handled `commit ` lines, but `git worktree list --porcelain` outputs `HEAD ` lines for detached HEAD worktrees.
+
+**Fix:** Added support for both formats:
+```python
+# Before: only handled "commit "
+if line.startswith("commit "):
+    commit = line.split(" ", 1)[1]
+
+# After: handles both "commit " and "HEAD "
+if line.startswith("commit ") or line.startswith("HEAD "):
+    commit = line.split(" ", 1)[1]
+```
+
+This bug was only discovered during integration testing with real git worktree output, demonstrating the value of integration testing even when unit tests pass.
+
+### Feature Flag Pattern
+
+Following the established pattern from Phases 2, 3, and 5:
+```bash
+if [[ "${HUG_USE_PYTHON_WORKTREE:-true}" == "true" ]]; then
+    # Python module implementation
+    eval "$(python3 ... worktree.py list ...)"
+else
+    # Bash fallback (original implementation)
+    # ... state machine parsing ...
+fi
+```
+
+**Feature flag:** `HUG_USE_PYTHON_WORKTREE` (default: true)
+
 **Test Results:**
 - **Python Tests:** 30/30 passing (100%)
-- **BATS Tests:** 39/39 passing (100%)
+- **BATS Library Tests:** 505/505 passing (100%)
+- **Worktree-specific BATS Tests:** 39/39 passing (100%)
 - **Linting:** All passing (ruff/flake8/mypy)
 - **Breaking Changes:** 0
 - **Regressions:** 0
@@ -273,6 +315,13 @@ All migrated functions now use Python-only implementations with no Bash fallback
    - **Fix:** Pass `--main-repo-path` argument explicitly from Bash caller
    - **Pattern:** Always detect repo path in Bash layer, pass to Python explicitly
 
+8. **HEAD vs Commit Line Format in Git Porcelain Output (Phase 4)**
+   - Git worktree list --porcelain outputs `HEAD ` lines for detached HEAD, not `commit `
+   - **Impact:** Python module only handled `commit ` lines, missed detached HEAD commits
+   - **Fix:** Handle both formats: `if line.startswith("commit ") or line.startswith("HEAD ")`
+   - **Lesson:** Always test with real git output, not just unit test mocks
+   - **Detection:** Integration tests with real git commands exposed this bug
+
 4. **Bash `declare` with `eval` Creates Local Scope Issues (Phase 4)**
    - `declare -a arr=()` BEFORE calling function that does `eval` can cause variable shadowing
    - **Impact:** Arrays set by eval appear empty in caller
@@ -294,6 +343,12 @@ All migrated functions now use Python-only implementations with no Bash fallback
    - `compute_local_branch_details_batched` was defined but never called
    - **Detection Method:** `grep -r "compute_local_branch_details_batched" git-config/`
    - **Lesson:** Always verify callers exist before assuming code is used
+
+9. **Integration Tests Catch Real Issues (Phase 4)**
+   - Unit tests with mocks may not expose bugs in real-world usage
+   - The HEAD vs commit format bug only appeared with real git output
+   - **Lesson:** Always run BATS integration tests after Python integration
+   - **Pattern:** Python unit tests for logic, BATS tests for real git behavior
 
 ### Pitfalls to Avoid
 
