@@ -743,11 +743,16 @@ select_branches() {
         return 1
     fi
 
-    # Apply filters using centralized filtering function
-    # Use Python module when feature flag is enabled (default: true)
+    # Apply filters using Python module
+    # Note: Custom filter function falls back to Bash (not yet supported in Python)
     declare -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
 
-    if [[ "${HUG_USE_PYTHON_FILTER:-true}" == "true" ]]; then
+    if [[ -n "$filter_function" ]]; then
+        # Custom filter function: use Bash fallback (not yet supported in Python)
+        filter_branches sel_branches sel_hashes sel_subjects sel_tracks sel_dates "$sel_current_branch" \
+            filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
+            "$exclude_current" "$exclude_backup" "$filter_function"
+    else
         # Python module: type-safe filtering with dataclasses
         local filter_args=()
         filter_args+=(--branches "${sel_branches[*]}")
@@ -768,24 +773,11 @@ select_branches() {
             filter_args+=(--include-backup)
         fi
 
-        # Note: Custom filter function not yet supported in Python
-        # Fall back to Bash if a custom filter is provided
-        if [[ -n "$filter_function" ]]; then
-            filter_branches sel_branches sel_hashes sel_subjects sel_tracks sel_dates "$sel_current_branch" \
-                filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
-                "$exclude_current" "$exclude_backup" "$filter_function"
-        else
-            if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/branch_filter.py" \
-                filter "${filter_args[@]}")"; then
-                return 1
-            fi
-            # Python module sets variables: filtered_branches, filtered_hashes, etc.
+        if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/branch_filter.py" \
+            filter "${filter_args[@]}")"; then
+            return 1
         fi
-    else
-        # Bash fallback: 14 positional parameters (fragile)
-        filter_branches sel_branches sel_hashes sel_subjects sel_tracks sel_dates "$sel_current_branch" \
-            filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
-            "$exclude_current" "$exclude_backup" "$filter_function"
+        # Python module sets variables: filtered_branches, filtered_hashes, etc.
     fi
 
     # Check if any branches remain after filtering
