@@ -14,7 +14,7 @@
 # Branch Information Functions
 ################################################################################
 
-# Computes details for local branches and populates output arrays
+# Computes details for local branches and populates output arrays using Python module
 # Usage: compute_local_branch_details current_branch max_len hashes branches tracks subjects dates [include_subjects] [sort_context]
 # Parameters (all namerefs to output variables):
 #   $1 - Scalar to receive current branch name
@@ -24,13 +24,15 @@
 #   $5 - Array to receive tracking information
 #   $6 - Array to receive commit subjects
 #   $7 - Array to receive commit dates (YYYY-MM-DD format)
-#   $8 - (Optional) Boolean to include subjects (default: true); if false, skips subject computation and leaves subjects empty
-#   $9 - (Optional) Sort context for Python module: gum-single, gum-multi, static, or empty (default: uses bash implementation)
+#   $8 - (Optional) Boolean to include subjects (default: true); passed to Python module
+#   $9 - (Optional) Sort context for Python module: gum-single, gum-multi, static (default: gum-single)
 # Returns:
 #   0 if branches found, 1 if no branches exist
 # Note:
-#   Arrays are cleared before population. Branches are sorted by name. Tracking info mimics 'git branch -vv' format.
-#   When sort_context is specified, uses Python module for date-based sorting instead of alphabetical.
+#   This function now exclusively uses the Python module (hug_git_branch.py) for type safety
+#   and to eliminate the "unbound variable" bugs that plagued the Bash implementation.
+#   Arrays are cleared before population. Branches are sorted by commit date based on context.
+#   Tracking info mimics 'git branch -vv' format.
 compute_local_branch_details() {
     local -n current_branch_ref="$1"
     local -n max_len_ref="$2"
@@ -39,8 +41,8 @@ compute_local_branch_details() {
     local -n tracks_ref="$5"
     local -n subjects_ref="$6"
     local -n dates_ref="$7"
-    local include_subjects="${8:-false}"
-    local sort_context="${9:-}"
+    local include_subjects="${8:-true}"
+    local sort_context="${9:-static}"
 
     # Clear outputs
     current_branch_ref=""
@@ -51,286 +53,26 @@ compute_local_branch_details() {
     tracks_ref=()
     dates_ref=()
 
-    # If sort_context is specified, use Python module for date-based sorting
-    if [[ -n "$sort_context" ]]; then
-        local python_args=(local)
-        python_args+=(--sort-context="$sort_context")
-        if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/hug_git_branch.py" "${python_args[@]}")"; then
-            return 1
-        fi
-        # Python module sets variables: current_branch, max_len, branches, hashes, tracks, subjects, dates
-        current_branch_ref="$current_branch"
-        max_len_ref="$max_len"
-        branches_ref=("${branches[@]}")
-        hashes_ref=("${hashes[@]}")
-        subjects_ref=("${subjects[@]}")
-        tracks_ref=("${tracks[@]}")
-        dates_ref=("${dates[@]:-}")  # Populate dates if available from Python
-        return 0
-    fi
+    # Use Python module for all branch detail computation
+    # This provides type safety and eliminates entire classes of bugs:
+    # - No "unbound variable" errors from positional parameter confusion
+    # - No array synchronization issues between parallel arrays
+    # - Consistent date-based sorting with context-aware ordering
+    local python_args=(local)
+    python_args+=(--sort-context="$sort_context")
 
-    #
-    # --- ROBUST SANITIZATION: CURRENT BRANCH ---
-    # Get the current branch and aggressively strip any trailing newline or
-    # carriage return characters to ensure string comparisons work correctly.
-    local current_branch_raw
-    current_branch_raw=$(git branch --show-current 2>/dev/null || echo "")
-    current_branch_ref=$(printf '%s' "$current_branch_raw" | tr -d '\n\r')
-
-    # Build format: Include upstream:short separately for reliable name resolution
-    # Format: branch, hash, date, [subject], upstream
-    local format='%(refname:short)%00%(objectname:short)%00%(committerdate:short)'
-    if [[ "$include_subjects" == "true" ]]; then
-        format+='%00%(subject)'
-    fi
-    format+='%00%(upstream:short)%00'
-
-    # Use mapfile for robust, atomic parsing of null-delimited data.
-    local -a git_output=()
-    mapfile -t -d '' git_output < <(git for-each-ref \
-        --format="$format" \
-        --sort=refname refs/heads/)
-
-    # Iterate through the flat array in chunks of 4 or 5.
-    # Format: branch, hash, date, [subject], upstream
-    local i
-    local increment=4
-    local chunk_limit=3
-    if [[ "$include_subjects" == "true" ]]; then
-        increment=5
-        chunk_limit=4
-    fi
-    for ((i = 0; i + chunk_limit < ${#git_output[@]}; i += increment)); do
-        #
-        # --- ROBUST SANITIZATION: BRANCH AND SUBJECT (if included) ---
-        # Read the raw values and then pipe them through 'tr' to delete any
-        # hidden \n or \r characters. This is the critical fix.
-        #
-        local branch_raw="${git_output[i]}"
-        local branch
-        branch=$(printf '%s' "$branch_raw" | tr -d '\n\r')
-
-        # Skip backup branches (internal implementation detail)
-        # Backup branches follow the pattern: hug-backups/**
-        if [[ "$branch" == hug-backups/* ]]; then
-            continue
-        fi
-
-        local hash="${git_output[i+1]}"
-        local date="${git_output[i+2]}"  # NEW: date field
-
-        local subject=""
-        if [[ "$include_subjects" == "true" ]]; then
-            local subject_raw="${git_output[i+3]}"
-            subject=$(printf '%s' "$subject_raw" | tr -d '\n\r')
-        fi
-
-        local upstream_name="${git_output[i + increment - 1]}"
-        upstream_name=$(printf '%s' "$upstream_name" | tr -d '\n\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')  # Trim whitespace
-
-        # Compute divergence status to mimic 'git branch -vv' (ahead/behind)
-        local status=""
-        if [[ -n "$upstream_name" ]]; then
-            local divergence
-            divergence=$(git rev-list --left-right --count "$branch...$upstream_name" 2>/dev/null || echo "")
-            if [[ -n "$divergence" ]]; then
-                local ahead behind
-                IFS='	' read -r ahead behind <<< "$divergence"
-                if [[ "$ahead" != "0" && "$behind" != "0" ]]; then
-                    status="[ahead $ahead behind $behind]"
-                elif [[ "$ahead" != "0" ]]; then
-                    status="[ahead $ahead]"
-                elif [[ "$behind" != "0" ]]; then
-                    status="[behind $behind]"
-                fi
-            fi
-        fi
-
-        # Build track string: [upstream: status] like 'git branch -vv'
-        local track=""
-        if [[ -n "$upstream_name" ]]; then
-            track="${CYAN}[${upstream_name}"
-            if [[ -n "$status" ]]; then
-                track+=": $BLUE$(echo $status | tr -d '[]')$CYAN"
-            fi
-            track+="]"
-        elif [[ -n "$status" ]]; then
-            # Fallback if name empty but status computable (rare)
-            track="$status"
-        fi
-
-        # Operate directly on the nameref to update the max length.
-        #
-        if (( ${#branch} > max_len_ref )); then
-            max_len_ref=${#branch}
-        fi
-
-        branches_ref+=("$branch")
-        hashes_ref+=("$hash")
-        dates_ref+=("$date")  # NEW: date field
-        if [[ "$include_subjects" == "true" ]]; then
-            subjects_ref+=("$GREY${subject:-(no commit message)}$NC")
-        fi
-        tracks_ref+=("$track")
-    done
-
-    # Check if any branches were found
-    if [ ${#branches_ref[@]} -eq 0 ]; then
+    if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/hug_git_branch.py" "${python_args[@]}")"; then
         return 1
     fi
 
-    return 0
-}
-
-# Batched version of compute_local_branch_details for optimized performance
-# Replaces per-branch git rev-list calls with single batched operation
-# Usage: compute_local_branch_details_batched current_branch max_len hashes branches tracks subjects
-# Parameters (all namerefs to output variables):
-#   $1 - Scalar to receive current branch name
-#   $2 - Scalar to receive max branch name length
-#   $3 - Array to receive commit hashes
-#   $4 - Array to receive branch names
-#   $5 - Array to receive tracking information
-#   $6 - Array to receive commit subjects
-# Returns:
-#   0 if branches found, 1 if no branches exist
-compute_local_branch_details_batched() {
-    local -n current_branch_ref="$1"
-    local -n max_len_ref="$2"
-    local -n hashes_ref="$3"
-    local -n branches_ref="$4"
-    local -n tracks_ref="$5"
-    local -n subjects_ref="$6"
-
-    # Clear outputs
-    current_branch_ref=""
-    max_len_ref=0
-    branches_ref=()
-    hashes_ref=()
-    subjects_ref=()
-    tracks_ref=()
-
-    # Get all branches with their upstream refs in a single call
-    # Format: branch, hash, subject, upstream, upstream:track
-    # We use null delimiters (%00) for all fields to handle special chars safely
-    local format='%(refname:short)%00%(objectname:short)%00%(subject)%00%(upstream:short)%00%(upstream:track)%00'
-
-    local -a git_output=()
-    mapfile -t -d '' git_output < <(git for-each-ref --format="$format" refs/heads/ 2>/dev/null)
-
-    if [[ ${#git_output[@]} -eq 0 ]]; then
-        return 1
-    fi
-
-    # Get current branch
-    # Rename local variable to avoid nameref collision if caller passed 'current_branch'
-    local curr_branch
-    curr_branch=$(git branch --show-current 2>/dev/null || echo "detached HEAD")
-    current_branch_ref="$curr_branch"
-
-    # Extract branch names and upstreams for batch divergence calculation
-    local -a branch_names=()
-    local -a upstream_names=()
-    local -a divergence_commands=()
-
-    # Iterate through flat array in chunks of 5
-    local i
-    for ((i = 0; i + 4 < ${#git_output[@]}; i += 5)); do
-        local branch_raw="${git_output[i]}"
-        local branch
-        branch=$(printf '%s' "$branch_raw" | tr -d '\n\r')
-
-        # Skip backup branches (internal implementation detail)
-        if [[ "$branch" == hug-backups/* ]]; then
-            continue
-        fi
-
-        local hash="${git_output[i+1]}"
-        hash=$(printf '%s' "$hash" | tr -d '\n\r')
-
-        local subject="${git_output[i+2]}"
-        subject=$(printf '%s' "$subject" | tr -d '\n\r')
-
-        local upstream="${git_output[i+3]}"
-        upstream=$(printf '%s' "$upstream" | tr -d '\n\r')
-
-        local track_info="${git_output[i+4]}" # Not used directly in divergence calc but preserved if we need it later
-
-        branch_names+=("$branch")
-        branches_ref+=("$branch")  # Fix: Populate the output array
-        upstream_names+=("$upstream")
-        hashes_ref+=("$hash")
-        subjects_ref+=("$GREY${subject:-(no commit message)}$NC")
-
-        # Update max length
-        if (( ${#branch} > max_len_ref )); then
-            max_len_ref=${#branch}
-        fi
-
-        # Build divergence command arguments if upstream exists
-        if [[ -n "$upstream" ]]; then
-            divergence_commands+=("$branch...$upstream")
-        else
-            divergence_commands+=("")
-        fi
-    done
-
-    # Batch compute divergence for all branches with upstreams
-    local -a divergence_results=()
-    if [[ ${#divergence_commands[@]} -gt 0 ]]; then
-        # Create a single git command for all divergence calculations
-        while IFS= read -r line; do
-            divergence_results+=("$line")
-        done < <({
-            # Generate left-right commands for all branches
-            for divergence in "${divergence_commands[@]}"; do
-                if [[ -n "$divergence" ]]; then
-                    echo "$divergence"
-                fi
-            done | \
-            # Run them in parallel with xargs if available, otherwise sequentially
-            if command -v xargs >/dev/null 2>&1 && [[ ${#divergence_commands[@]} -gt 5 ]]; then
-                xargs -I {} -P 4 git rev-list --left-right --count "{}" 2>/dev/null
-            else
-                while IFS= read -r divergence; do
-                    [[ -n "$divergence" ]] && git rev-list --left-right --count "$divergence" 2>/dev/null || echo "0	0"
-                done
-            fi
-        })
-    fi
-
-    # Build tracking strings with divergence results
-    local divergence_index=0
-    for i in "${!branch_names[@]}"; do
-        local branch="${branch_names[i]}"
-        local hash="${hashes_ref[i]}"
-        local subject="${subjects_ref[i]}"
-        local upstream="${upstream_names[i]}"
-
-        local track=""
-        if [[ -n "$upstream" ]]; then
-            track="${CYAN}[${upstream}"
-
-            # Use pre-computed divergence result
-            local divergence_result="${divergence_results[divergence_index]:-0	0}"
-            if [[ -n "$divergence_result" ]]; then
-                local ahead behind
-                IFS=$'\t' read -r ahead behind <<< "$divergence_result"
-                if [[ "$ahead" != "0" && "$behind" != "0" ]]; then
-                    track+=": $BLUE$ahead ahead, $behind behind$CYAN"
-                elif [[ "$ahead" != "0" ]]; then
-                    track+=": $BLUE$ahead ahead$CYAN"
-                elif [[ "$behind" != "0" ]]; then
-                    track+=": $BLUE$behind behind$CYAN"
-                fi
-                ((divergence_index++))
-            fi
-            track+="]"
-        fi
-
-        tracks_ref+=("$track")
-    done
-
+    # Python module sets variables: current_branch, max_len, branches, hashes, tracks, subjects, dates
+    current_branch_ref="$current_branch"
+    max_len_ref="$max_len"
+    branches_ref=("${branches[@]}")
+    hashes_ref=("${hashes[@]}")
+    subjects_ref=("${subjects[@]}")
+    tracks_ref=("${tracks[@]}")
+    dates_ref=("${dates[@]:-}")  # Populate dates if available from Python
     return 0
 }
 
@@ -1002,11 +744,49 @@ select_branches() {
     fi
 
     # Apply filters using centralized filtering function
+    # Use Python module when feature flag is enabled (default: true)
     declare -a filtered_branches=() filtered_hashes=() filtered_subjects=() filtered_tracks=() filtered_dates=()
 
-    filter_branches sel_branches sel_hashes sel_subjects sel_tracks sel_dates "$sel_current_branch" \
-        filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
-        "$exclude_current" "$exclude_backup" "$filter_function"
+    if [[ "${HUG_USE_PYTHON_FILTER:-true}" == "true" ]]; then
+        # Python module: type-safe filtering with dataclasses
+        local filter_args=()
+        filter_args+=(--branches "${sel_branches[*]}")
+        filter_args+=(--hashes "${sel_hashes[*]}")
+        filter_args+=(--subjects "${sel_subjects[*]}")
+        filter_args+=(--tracks "${sel_tracks[*]}")
+        filter_args+=(--dates "${sel_dates[*]}")
+        filter_args+=(--current-branch "$sel_current_branch")
+
+        if [[ "$exclude_current" == "true" ]]; then
+            filter_args+=(--exclude-current)
+        fi
+
+        # Backup exclusion (default: true)
+        if [[ "$exclude_backup" != "false" ]]; then
+            filter_args+=(--exclude-backup)
+        else
+            filter_args+=(--include-backup)
+        fi
+
+        # Note: Custom filter function not yet supported in Python
+        # Fall back to Bash if a custom filter is provided
+        if [[ -n "$filter_function" ]]; then
+            filter_branches sel_branches sel_hashes sel_subjects sel_tracks sel_dates "$sel_current_branch" \
+                filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
+                "$exclude_current" "$exclude_backup" "$filter_function"
+        else
+            if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/branch_filter.py" \
+                filter "${filter_args[@]}")"; then
+                return 1
+            fi
+            # Python module sets variables: filtered_branches, filtered_hashes, etc.
+        fi
+    else
+        # Bash fallback: 14 positional parameters (fragile)
+        filter_branches sel_branches sel_hashes sel_subjects sel_tracks sel_dates "$sel_current_branch" \
+            filtered_branches filtered_hashes filtered_subjects filtered_tracks filtered_dates \
+            "$exclude_current" "$exclude_backup" "$filter_function"
+    fi
 
     # Check if any branches remain after filtering
     if [[ ${#filtered_branches[@]} -eq 0 ]]; then
@@ -1156,6 +936,7 @@ multi_select_branches() {
 
     # Build formatted options for multi-selection (similar to hug bdel pattern)
     local -a formatted_options=()
+    local -a selected_indices=()
     local branch hash date subject track
 
     for ((i = 0; i < ${#branches_ref[@]}; i++)); do
@@ -1198,52 +979,73 @@ multi_select_branches() {
         )
     else
         # Fallback to numbered list for small numbers or when gum unavailable
-        echo "$placeholder"
-        echo
+        if [[ "${HUG_USE_PYTHON_SELECT:-true}" == "true" ]]; then
+            # Python module: type-safe numbered list selection with dataclasses
+            local select_args=()
+            select_args+=(--branches "${branches_ref[*]}")
+            select_args+=(--hashes "${hashes_ref[*]}")
+            select_args+=(--dates "${dates_ref[*]}")
+            select_args+=(--subjects "${subjects_ref[*]}")
+            select_args+=(--tracks "${tracks_ref[*]}")
+            select_args+=(--placeholder "$placeholder")
+            select_args+=(--array-name "$result_array_name")
+            select_args+=(--no-gum)  # Explicitly disable gum (we're in numbered list mode)
 
-        # Display numbered list
-        for ((i = 0; i < ${#formatted_options[@]}; i++)); do
-            printf "  %2d: %s\n" $((i + 1)) "${formatted_options[i]}"
-        done
-        echo
-
-        # Get user selection (support comma-separated numbers)
-        local selection
-        if [[ -n "${HUG_TEST_NUMBERED_SELECTION:-}" ]]; then
-            selection="${HUG_TEST_NUMBERED_SELECTION}"
-        else
-            read -r -p "Enter numbers to select (comma-separated, or 'a' for all): " selection
-        fi
-
-        # Parse selection
-        case "$selection" in
-            a|A|all)
-                # Select all branches
-                selected_indices=("${!branches_ref[@]}")
-                ;;
-            '')
-                # No selection
+            if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/branch_select.py" \
+                select "${select_args[@]}")"; then
                 return 1
-                ;;
-            *)
-                # Parse comma-separated numbers
-                IFS=',' read -ra selected_indices <<< "$selection"
-                # Convert to 0-based indexing and validate
-                local -a valid_indices=()
-                local idx
-                for idx in "${selected_indices[@]}"; do
-                    # Remove whitespace and convert to 0-based
-                    idx=$((10#$idx - 1))
-                    if [[ $idx -ge 0 && $idx -lt ${#branches_ref[@]} ]]; then
-                        valid_indices+=("$idx")
-                    fi
-                done
-                selected_indices=("${valid_indices[@]}")
-                ;;
-        esac
+            fi
+            # Python module sets variables: $result_array_name and selected_indices
+            return 0
+        else
+            # Bash fallback: numbered list with manual parsing
+            echo "$placeholder"
+            echo
+
+            # Display numbered list
+            for ((i = 0; i < ${#formatted_options[@]}; i++)); do
+                printf "  %2d: %s\n" $((i + 1)) "${formatted_options[i]}"
+            done
+            echo
+
+            # Get user selection (support comma-separated numbers)
+            local selection
+            if [[ -n "${HUG_TEST_NUMBERED_SELECTION:-}" ]]; then
+                selection="${HUG_TEST_NUMBERED_SELECTION}"
+            else
+                read -r -p "Enter numbers to select (comma-separated, or 'a' for all): " selection
+            fi
+
+            # Parse selection
+            case "$selection" in
+                a|A|all)
+                    # Select all branches
+                    selected_indices=("${!branches_ref[@]}")
+                    ;;
+                '')
+                    # No selection
+                    return 1
+                    ;;
+                *)
+                    # Parse comma-separated numbers
+                    IFS=',' read -ra selected_indices <<< "$selection"
+                    # Convert to 0-based indexing and validate
+                    local -a valid_indices=()
+                    local idx
+                    for idx in "${selected_indices[@]}"; do
+                        # Remove whitespace and convert to 0-based
+                        idx=$((10#$idx - 1))
+                        if [[ $idx -ge 0 && $idx -lt ${#branches_ref[@]} ]]; then
+                            valid_indices+=("$idx")
+                        fi
+                    done
+                    selected_indices=("${valid_indices[@]}")
+                    ;;
+            esac
+        fi
     fi
 
-    # Convert indices back to branch names
+    # Convert indices back to branch names (only for gum mode or Bash fallback)
     if [[ ${#selected_indices[@]} -gt 0 ]]; then
         local idx
         for idx in "${selected_indices[@]}"; do
