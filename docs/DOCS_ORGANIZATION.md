@@ -139,8 +139,11 @@ hug-scm/
 
 **Examples**:
 - `json-output-roadmap.md` - JSON output support roadmap
+- `bash-to-python-phase1-complete.md` - Phase 1-5 migration completion summary
+- `bash-to-python-cleanup-complete.md` - Cleanup completion summary
+- `bash-to-python-conventions.md` - Migration conventions and patterns
 
-**When to use**: Planning docs, roadmaps, feature proposals (not yet implemented)
+**When to use**: Planning docs, roadmaps, feature proposals, migration summaries
 
 ### 5. Meta/Tooling Documentation (`docs/meta/*.md`)
 
