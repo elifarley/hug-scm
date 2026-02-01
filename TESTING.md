@@ -431,6 +431,116 @@ Structure tests clearly:
 }
 ```
 
+### Testing Interactive Commands
+
+**CRITICAL LESSON**: Testing interactive gum commands requires the gum mock infrastructure. The naive approach of piping empty input (`echo '' | hug command`) fails in TTY environments.
+
+#### The Problem with Input Piping
+
+```bash
+# WRONG - Causes TTY errors or hangs in different environments
+run bash -c "echo '' | hug bdel 2>&1"
+# In CI: "unable to run filter: could not open a new TTY: open /dev/tty: no such device"
+# In TTY: Hangs indefinitely waiting for input
+```
+
+**Why it fails**: `gum filter` tries to open `/dev/tty` directly (not stdin), which:
+- In non-TTY CI: fails immediately with "no such device or address"
+- In TTY environments: causes the test to hang waiting for real user input
+
+#### The Solution: Gum Mock Infrastructure
+
+```bash
+@test "hug bdel (no args): enters interactive mode when no branches specified" {
+  # Create test branches...
+  git checkout -q -b test-feature-1
+  echo "f1" > f1.txt
+  git add f1.txt
+  git commit -q -m "feat 1"
+  git checkout -q main
+
+  # RIGHT - Use setup_gum_mock for all interactive tests
+  setup_gum_mock
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate user cancellation
+
+  run hug bdel
+  assert_success  # git-bdel exits 0 when user cancels gracefully
+  assert_output --partial "No branches selected."
+  refute_output --partial "unbound variable"
+
+  teardown_gum_mock
+}
+```
+
+#### How Gum Mock Works
+
+1. `setup_gum_mock()` adds `tests/bin` to the beginning of PATH
+2. A symlink `tests/bin/gum` points to `tests/bin/gum-mock`
+3. When hug commands call `gum`, they get the mock instead of real gum
+4. The mock reads environment variables to determine behavior:
+   - `HUG_TEST_GUM_INPUT_RETURN_CODE=1`: Simulate cancellation (exit code 1)
+   - `HUG_TEST_GUM_SELECTION_INDEX=0`: Select first item (0-based index)
+   - `HUG_TEST_GUM_CONFIRM=yes`: Confirm prompts with "yes"
+5. `teardown_gum_mock()` restores the original PATH
+
+#### Common Gum Mock Patterns
+
+**Simulate cancellation (Ctrl+C/ESC):**
+```bash
+setup_gum_mock
+export HUG_TEST_GUM_INPUT_RETURN_CODE=1
+
+run hug interactive-command
+assert_failure  # Command should fail when cancelled
+assert_output --partial "Cancelled"
+
+teardown_gum_mock
+```
+
+**Select specific item from menu:**
+```bash
+setup_gum_mock
+export HUG_TEST_GUM_SELECTION_INDEX=2  # Select third item (0-indexed)
+
+run hug interactive-command
+assert_success
+# Verify the third item was selected/processed
+
+teardown_gum_mock
+```
+
+**Auto-confirm all prompts:**
+```bash
+setup_gum_mock
+export HUG_TEST_GUM_CONFIRM="yes"
+
+run hug dangerous-command --force
+assert_success
+
+teardown_gum_mock
+```
+
+#### When Input Piping IS Acceptable
+
+For simple yes/no prompts (not gum filter menus), input piping works fine:
+
+```bash
+# OK for simple confirm prompts
+run bash -c 'echo "y" | hug cmv 1 feature'  # Confirm commit move
+run bash -c 'echo "n" | hug h back HEAD~1'  # Decline dangerous operation
+```
+
+**Decision tree:**
+- `gum filter`/`gum choose` menus → **Always use gum mock**
+- Simple yes/no prompts → **Input piping is OK**
+- `gum input` text entry → **Use gum mock or input piping**
+
+#### Additional Resources
+
+- `tests/bin/README.md` - Complete gum mock documentation
+- `tests/bin/gum-mock` - Mock implementation with all supported commands
+- `tests/test_helper.bash` - `setup_gum_mock()` and `teardown_gum_mock()` helpers
+
 ### Testing Destructive Operations
 
 Verify safety mechanisms:
@@ -438,10 +548,10 @@ Verify safety mechanisms:
 ```bash
 @test "hug w discard: requires confirmation without -f" {
   echo "change" >> file.txt
-  
+
   # Should timeout waiting for input
   run timeout 2 bash -c "echo '' | hug w discard file.txt 2>&1 || true"
-  
+
   # Change should remain
   run git diff file.txt
   assert_output --partial "change"

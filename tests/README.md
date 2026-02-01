@@ -349,6 +349,64 @@ All fixtures now use `git_commit_deterministic()` from `tests/lib/deterministic_
    - Demo repos have fixed timestamps → reproducible commit hashes
    - Demo repos have realistic commit patterns → more thorough testing
    - Demo repos are battle-tested → fewer surprises
+9. **ALWAYS Use Gum Mock for Interactive Tests**: Never pipe empty input to gum filter commands
+   - **WRONG**: `run bash -c "echo '' | hug bdel 2>&1"`
+   - **RIGHT**: Use `setup_gum_mock` + `export HUG_TEST_GUM_INPUT_RETURN_CODE=1` + `teardown_gum_mock`
+
+### Testing Interactive Commands (Gum Integration)
+
+**CRITICAL**: Interactive commands that use `gum filter` or `gum choose` must use the gum mock infrastructure.
+
+#### Why Input Piping Fails
+
+```bash
+# WRONG - This fails in TTY environments
+run bash -c "echo '' | hug bdel 2>&1"
+# Error: "unable to run filter: could not open a new TTY: open /dev/tty: no such device"
+```
+
+Gum filter opens `/dev/tty` directly (not stdin), causing:
+- **Non-TTY (CI)**: "no such device or address" error
+- **TTY environments**: Test hangs waiting for input
+
+#### Correct Pattern: Gum Mock
+
+```bash
+@test "hug bdel: interactive mode cancellation" {
+  # Create test branches...
+  git checkout -q -b feature-1
+  git commit --allow-empty -m "Feature 1"
+  git checkout -q main
+
+  # Use gum mock for all interactive tests
+  setup_gum_mock
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate Ctrl+C/ESC
+
+  run hug bdel
+  assert_success  # Graceful cancellation
+  assert_output --partial "No branches selected."
+
+  teardown_gum_mock
+}
+```
+
+#### Environment Variables
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `HUG_TEST_GUM_INPUT_RETURN_CODE` | Simulate cancellation (1) or success (0) | `export HUG_TEST_GUM_INPUT_RETURN_CODE=1` |
+| `HUG_TEST_GUM_SELECTION_INDEX` | Select Nth item from gum filter (0-indexed) | `export HUG_TEST_GUM_SELECTION_INDEX=2` |
+| `HUG_TEST_GUM_CONFIRM` | Auto-answer confirm prompts | `export HUG_TEST_GUM_CONFIRM=yes` |
+
+#### When to Use Each Approach
+
+| Scenario | Approach |
+|----------|----------|
+| `gum filter` / `gum choose` menus | **ALWAYS use setup_gum_mock** |
+| Simple yes/no confirmations | Input piping OK: `echo "y" \| hug command` |
+| `gum input` text prompts | Use gum mock OR input piping |
+
+See `tests/bin/README.md` for complete gum mock documentation.
 
 ## Advanced Usage
 

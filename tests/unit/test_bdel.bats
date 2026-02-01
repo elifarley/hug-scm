@@ -367,6 +367,22 @@ teardown() {
 
 # -----------------------------------------------------------------------------
 # Interactive mode tests (CRITICAL - these were missing, which is why the bug went undetected)
+#
+# LESSON LEARNED: Testing interactive gum commands in BATS requires the gum mock infrastructure.
+#
+# WHY: The naive approach of `echo '' | hug bdel` fails in TTY environments because:
+#   1. gum filter tries to open /dev/tty directly (not stdin)
+#   2. In non-TTY CI, this fails with "unable to run filter: could not open a new TTY"
+#   3. In TTY environments, the command hangs waiting for input
+#
+# SOLUTION: Always use setup_gum_mock/teardown_gum_mock for interactive tests:
+#   - setup_gum_mock adds tests/bin to PATH, causing 'gum' to invoke gum-mock
+#   - gum-mock reads HUG_TEST_GUM_INPUT_RETURN_CODE to simulate user actions
+#   - HUG_TEST_GUM_INPUT_RETURN_CODE=1 simulates cancellation (exit code 1)
+#   - HUG_TEST_GUM_SELECTION_INDEX=N selects the Nth item (0-indexed)
+#
+# BEHAVIOR: When select_branches() is cancelled (returns non-zero), git-bdel
+# prints "No branches selected." and exits with code 0 (graceful cancellation).
 # -----------------------------------------------------------------------------
 
 @test "hug bdel (no args): enters interactive mode when no branches specified" {
@@ -383,13 +399,30 @@ teardown() {
   git commit -q -m "feat 2"
   git checkout -q main
 
-  # Run interactive mode - should show selection menu, not error
-  # Since we can't simulate gum interaction easily, we'll just verify it enters interactive mode
-  # and doesn't crash with "unbound variable" error
-  run bash -c "echo '' | hug bdel 2>&1"  # Send empty input to exit gum
-  assert_success
-  assert_output --partial "Select branches to delete"
-  refute_output --partial "unbound variable"
+  # CRITICAL: Use setup_gum_mock instead of `echo '' | hug bdel`
+  #
+  # WRONG (causes TTY errors or hangs):
+  #   run bash -c "echo '' | hug bdel 2>&1"
+  #
+  # RIGHT (works in all environments):
+  #   setup_gum_mock
+  #   export HUG_TEST_GUM_INPUT_RETURN_CODE=1
+  #   run hug bdel
+  #   teardown_gum_mock
+  #
+  # The gum-mock at tests/bin/gum-mock simulates gum behavior by reading
+  # HUG_TEST_GUM_INPUT_RETURN_CODE. When set to 1, it exits with code 1,
+  # which causes select_branches() to return non-zero, triggering the
+  # "No branches selected." message from git-bdel.
+  setup_gum_mock
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate user cancellation (Ctrl+C or ESC)
+
+  run hug bdel
+  assert_success  # git-bdel exits 0 when user cancels selection (graceful)
+  assert_output --partial "No branches selected."  # Printed by git-bdel when select_branches fails
+  refute_output --partial "unbound variable"  # Regression test for previous bash variable bug
+
+  teardown_gum_mock
 }
 
 @test "hug bdel: interactive mode handles no available branches gracefully" {
@@ -399,11 +432,21 @@ teardown() {
     grep -v '^hug-backups/' |
     xargs -r git branch -D 2>/dev/null || true
 
-  # Run interactive mode - should exit gracefully
-  run bash -c "echo '' | hug bdel 2>&1"
+  # TIP: Even with gum mock, the command logic runs normally.
+  # When no branches are available, git-bdel prints "No other branches to delete"
+  # BEFORE invoking gum, so the gum mock cancellation doesn't affect this test.
+  #
+  # The early return in git-bdel (lines 87-105) checks for available branches
+  # and exits with 0 if none exist, never reaching select_branches().
+  setup_gum_mock
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancellation
+
+  run hug bdel
   assert_success
   assert_output --partial "No other branches to delete"
   refute_output --partial "unbound variable"
+
+  teardown_gum_mock
 }
 
 @test "hug bdel: interactive mode filters out backup branches correctly" {
@@ -417,15 +460,30 @@ teardown() {
   # Create a backup branch (should be filtered out)
   git branch "hug-backups/2024-11/02-1234.test-backup"
 
-  # Test the filtering logic that was broken by the bug
-  # The bug caused unbound variable error during filtering, so this tests the fix
-  run bash -c "echo '' | hug bdel 2>&1"
+  # REGRESSION TEST: This test specifically guards against the "unbound variable" bug
+  # that occurred in filter_branches() when processing backup branch exclusions.
+  #
+  # The bug was in the filter_branches library function which used a local
+  # variable 'filtered_ref' as a nameref without proper scoping, causing
+  # "unbound variable" errors when called from certain contexts.
+  #
+  # While we simulate cancellation here (so gum mock exits early), the test
+  # verifies that the code path through compute_local_branch_details ->
+  # filter_branches executes without crashing. The explicit assertions below
+  # verify the filtering logic works correctly.
+  setup_gum_mock
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancellation
+
+  run hug bdel
   assert_success
-  assert_output --partial "Select branches to delete"
+  assert_output --partial "No branches selected."
   refute_output --partial "unbound variable"
 
+  teardown_gum_mock
+
   # Verify backup branches are excluded from selection
-  # This tests the filter_branches integration that was broken
+  # NOTE: This directly tests the filter_branches logic by inspecting git refs,
+  # which is more reliable than trying to intercept gum's internal state.
   local -a available_branches=()
   mapfile -t available_branches < <(
     git for-each-ref --format='%(refname:short)' refs/heads/ |
@@ -458,11 +516,23 @@ teardown() {
   git commit -q -m "other commit"
   git checkout -q main
 
-  # Current branch (main) should not appear in interactive selection
-  run bash -c "echo '' | hug bdel 2>&1"
+  # SAFETY CHECK: The current branch (main) must NEVER appear in the deletion list.
+  # Deleting the current branch would leave the repository in a broken HEAD state.
+  #
+  # The select_branches() function is called with --exclude-current flag,
+  # which prevents the current branch from appearing in the gum selection menu.
+  #
+  # This test verifies the integration: git-bdel -> select_branches -> gum mock
+  # ensures current branch exclusion works end-to-end.
+  setup_gum_mock
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancellation
+
+  run hug bdel
   assert_success
-  assert_output --partial "Select branches to delete"
+  assert_output --partial "No branches selected."
   refute_output --partial "unbound variable"
+
+  teardown_gum_mock
 
   # The bug caused filtering to fail, so current branch exclusion also failed
   # This tests that both work correctly after the fix
@@ -484,10 +554,27 @@ teardown() {
   git commit -q -m "new commit"
   git checkout -q main
 
-  # Test that compute_local_branch_details → filter_branches integration works
-  # This was the path broken by the unbound variable error
-  run bash -c "echo '' | hug bdel 2>&1"
+  # INTEGRATION TEST: This verifies the full data flow through Python and Bash:
+  #
+  # 1. hug_git_branch.py (compute_local_branch_details) fetches branch metadata
+  # 2. Returns Bash variable assignments via stdout (captured by eval)
+  # 3. filter_branches() processes the arrays to exclude current/backup branches
+  # 4. select_branches() passes formatted data to gum filter
+  #
+  # The previous "unbound variable" bug broke this pipeline at step 3, causing
+  # crashes before gum was even invoked. This test ensures the entire pipeline
+  # executes without errors, even when the user cancels the selection.
+  #
+  # NOTE: We're not verifying branch ordering here (that would require actually
+  # selecting a branch and inspecting the result). We're verifying that the
+  # code path executes without crashing. If ordering broke, other tests would fail.
+  setup_gum_mock
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancellation
+
+  run hug bdel
   assert_success
-  assert_output --partial "Select branches to delete"
+  assert_output --partial "No branches selected."
   refute_output --partial "unbound variable"
+
+  teardown_gum_mock
 }

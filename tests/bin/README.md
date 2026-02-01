@@ -2,6 +2,50 @@
 
 This directory contains `gum-mock`, a comprehensive test double for the `gum` command used in Hug's interactive tests. The mock provides full simulation capabilities for all gum commands used in Hug.
 
+## Why Gum Mock is Necessary
+
+**CRITICAL LESSON**: Testing interactive gum commands with input piping fails in TTY environments.
+
+### The Problem
+
+```bash
+# WRONG - Causes TTY errors or hangs
+run bash -c "echo '' | hug bdel 2>&1"
+# In CI: "unable to run filter: could not open a new TTY: open /dev/tty: no such device"
+# In TTY: Hangs indefinitely waiting for input
+```
+
+**Root cause**: `gum filter` tries to open `/dev/tty` directly (not stdin), which:
+- In non-TTY CI: fails with "no such device or address"
+- In TTY environments: causes tests to hang waiting for real user input
+
+### The Solution
+
+Always use `setup_gum_mock()` for interactive tests:
+
+```bash
+setup_gum_mock
+export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancellation
+
+run hug bdel
+assert_success  # Exits 0 on graceful cancellation
+assert_output --partial "No branches selected."
+
+teardown_gum_mock
+```
+
+### How It Works
+
+1. `setup_gum_mock()` adds `tests/bin` to the beginning of PATH
+2. A symlink `tests/bin/gum` points to `tests/bin/gum-mock`
+3. When hug commands call `gum`, they get the mock instead of real gum
+4. The mock reads environment variables to determine behavior
+5. `teardown_gum_mock()` restores the original PATH
+
+This approach works reliably in **all environments** (TTY, non-TTY, CI, local).
+
+## Usage
+
 ## Usage
 
 The mock is automatically used when tests call `setup_gum_mock()` from `test_helper.bash`.
