@@ -544,6 +544,7 @@ class TestGetLocalBranchDetails:
             mock_for_each.return_value = [
                 "main",
                 "abc123",
+                "2024-01-15",
                 "Initial commit",
                 "origin/main",
                 "[origin/main: ahead 2]",
@@ -569,15 +570,17 @@ class TestGetLocalBranchDetails:
             mock_divergence.return_value = ("", "0", "0")
 
             # Include a backup branch
-            # Each branch has 5 elements: refname, hash, subject, upstream, track
+            # Each branch has 6 elements: refname, hash, date, subject, upstream, track
             mock_for_each.return_value = [
                 "main",
                 "abc123",
+                "2024-01-15",
                 "Initial commit",
                 "origin/main",
                 "[origin/main]",
                 "hug-backups/test",
                 "def456",
+                "2024-01-16",
                 "Backup commit",
                 "",
                 "",
@@ -604,11 +607,13 @@ class TestGetLocalBranchDetails:
             mock_for_each.return_value = [
                 "main",
                 "abc123",
+                "2024-01-15",
                 "Initial commit",
                 "origin/main",
                 "[origin/main]",
                 "hug-backups/test",
                 "def456",
+                "2024-01-16",
                 "Backup commit",
                 "",
                 "",
@@ -647,21 +652,24 @@ class TestGetLocalBranchDetails:
             mock_run.return_value = "main"
             mock_divergence.return_value = ("", "0", "0")
 
-            # chunk_size is 5 with subjects
-            # Each branch has 5 elements: refname, hash, subject, upstream, track
+            # chunk_size is 6 with subjects
+            # Each branch has 6 elements: refname, hash, date, subject, upstream, track
             mock_for_each.return_value = [
                 "main",
                 "abc123",
+                "2024-01-15",
                 "Commit",
                 "",
                 "",
                 "very-long-branch-name",
                 "def456",
+                "2024-01-16",
                 "Commit",
                 "",
                 "",
                 "short",
                 "ghi789",
+                "2024-01-17",
                 "Commit",
                 "",
                 "",
@@ -678,7 +686,7 @@ class TestGetLocalBranchDetails:
             patch("hug_git_branch._run_git_for_each_ref") as mock_for_each,
         ):
             mock_run.return_value = ""  # Empty = detached
-            mock_for_each.return_value = ["main", "abc123", "Commit", "", ""]
+            mock_for_each.return_value = ["main", "abc123", "2024-01-15", "Commit", "", ""]
 
             result = hug_git_branch.get_local_branch_details()
 
@@ -692,8 +700,8 @@ class TestGetLocalBranchDetails:
         ):
             mock_run.return_value = "main"
 
-            # Without subjects, chunk size is smaller
-            mock_for_each.return_value = ["main", "abc123", "origin/main", ""]
+            # Without subjects, chunk size is 5 (name, hash, date, upstream, track)
+            mock_for_each.return_value = ["main", "abc123", "2024-01-15", "origin/main", ""]
 
             result = hug_git_branch.get_local_branch_details(include_subjects=False)
 
@@ -708,7 +716,15 @@ class TestGetLocalBranchDetails:
         ):
             mock_run.side_effect = ["main", "2\t1"]  # Current branch + divergence
 
-            mock_for_each.return_value = ["main", "abc123", "Initial commit", "origin/main", "", ""]
+            mock_for_each.return_value = [
+                "main",
+                "abc123",
+                "2024-01-15",
+                "Initial commit",
+                "origin/main",
+                "",
+                "",
+            ]
 
             result = hug_git_branch.get_local_branch_details(batch_divergence=True)
 
@@ -730,9 +746,11 @@ class TestGetRemoteBranchDetails:
             mock_for_each.return_value = [
                 "origin/main",
                 "abc123",
+                "2024-01-15",
                 "Main branch",
                 "origin/feature",
                 "def456",
+                "2024-01-16",
                 "Feature branch",
             ]
 
@@ -751,9 +769,11 @@ class TestGetRemoteBranchDetails:
             mock_for_each.return_value = [
                 "origin/main",
                 "abc123",
+                "2024-01-15",
                 "Main branch",
                 "origin/HEAD",
                 "def456",
+                "2024-01-16",
                 "HEAD reference",
             ]
 
@@ -766,7 +786,12 @@ class TestGetRemoteBranchDetails:
     def test_extracts_branch_name_from_remote_ref(self):
         """Should strip remote prefix (e.g., origin/feature -> feature)."""
         with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
-            mock_for_each.return_value = ["origin/feature", "abc123", "Feature commit"]
+            mock_for_each.return_value = [
+                "origin/feature",
+                "abc123",
+                "2024-01-15",
+                "Feature commit",
+            ]
 
             result = hug_git_branch.get_remote_branch_details()
 
@@ -776,7 +801,7 @@ class TestGetRemoteBranchDetails:
     def test_sets_current_branch_to_empty_string(self):
         """Should set current_branch to empty for remote branches."""
         with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
-            mock_for_each.return_value = ["origin/main", "abc123", "Main branch"]
+            mock_for_each.return_value = ["origin/main", "abc123", "2024-01-15", "Main branch"]
 
             result = hug_git_branch.get_remote_branch_details()
 
@@ -797,9 +822,11 @@ class TestGetRemoteBranchDetails:
             mock_for_each.return_value = [
                 "origin/main",
                 "abc123",
+                "2024-01-15",
                 "Commit",
                 "upstream/very-long-branch",
                 "def456",
+                "2024-01-16",
                 "Commit",
             ]
 
@@ -823,9 +850,11 @@ class TestGetWipBranchDetails:
             mock_for_each.return_value = [
                 "WIP/test-feature",
                 "abc123",
+                "2024-01-15",
                 "[WIP] Work in progress",
                 "WIP/bug-fix",
                 "def456",
+                "2024-01-16",
                 "[WIP] Fixing bug",
             ]
 
@@ -842,9 +871,11 @@ class TestGetWipBranchDetails:
             mock_for_each.return_value = [
                 "temp/feature-1",
                 "abc123",
+                "2024-01-15",
                 "Temp commit",
                 "temp/feature-2",
                 "def456",
+                "2024-01-16",
                 "Temp commit",
             ]
 
@@ -865,7 +896,7 @@ class TestGetWipBranchDetails:
     def test_sets_current_branch_to_empty(self):
         """Should set current_branch to empty for WIP listing."""
         with patch("hug_git_branch._run_git_for_each_ref") as mock_for_each:
-            mock_for_each.return_value = ["WIP/test", "abc123", "Commit"]
+            mock_for_each.return_value = ["WIP/test", "abc123", "2024-01-15", "Commit"]
 
             result = hug_git_branch.get_wip_branch_details()
 
@@ -1237,11 +1268,13 @@ class TestSortContext:
             mock_for_each.return_value = [
                 "old",
                 "abc123",
+                "2024-01-15",
                 "Old commit",
                 "",
                 "",
                 "new",
                 "def456",
+                "2024-01-16",
                 "New commit",
                 "",
                 "",
@@ -1285,11 +1318,13 @@ class TestSortContext:
             mock_for_each.return_value = [
                 "new",
                 "def456",
+                "2024-01-16",
                 "New commit",
                 "",
                 "",
                 "old",
                 "abc123",
+                "2024-01-15",
                 "Old commit",
                 "",
                 "",
@@ -1333,11 +1368,13 @@ class TestSortContext:
             mock_for_each.return_value = [
                 "old",
                 "abc123",
+                "2024-01-15",
                 "Old commit",
                 "",
                 "",
                 "new",
                 "def456",
+                "2024-01-16",
                 "New commit",
                 "",
                 "",
@@ -1381,11 +1418,13 @@ class TestSortContext:
             mock_for_each.return_value = [
                 "new",
                 "def456",
+                "2024-01-16",
                 "New commit",
                 "",
                 "",
                 "old",
                 "abc123",
+                "2024-01-15",
                 "Old commit",
                 "",
                 "",
@@ -1432,11 +1471,13 @@ class TestSortContext:
             mock_for_each.return_value = [
                 "old",
                 "abc123",
+                "2024-01-15",
                 "Old commit",
                 "",
                 "",
                 "new",
                 "def456",
+                "2024-01-16",
                 "New commit",
                 "",
                 "",
@@ -1480,9 +1521,11 @@ class TestSortContext:
             mock_for_each.return_value = [
                 "origin/old",
                 "abc123",
+                "2024-01-15",
                 "Old commit",
                 "origin/new",
                 "def456",
+                "2024-01-16",
                 "New commit",
             ]
             mock_get.return_value = hug_git_branch.BranchDetails(
@@ -1519,9 +1562,11 @@ class TestSortContext:
             mock_for_each.return_value = [
                 "WIP/new",
                 "def456",
+                "2024-01-16",
                 "New WIP",
                 "WIP/old",
                 "abc123",
+                "2024-01-15",
                 "Old WIP",
             ]
             mock_get.return_value = hug_git_branch.BranchDetails(
