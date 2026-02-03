@@ -270,6 +270,148 @@ git config --global credential.helper store
 
 ## Other Utilities
 
+### Garbage Collection (`hug g`)
+
+Perform safe, controlled Git garbage collection with three modes of increasing space savings.
+
+#### Basic Usage
+
+```shell
+# Basic garbage collection (safe, preserves reflog)
+hug g
+
+# Expire reflog + gc (removes undo history)
+hug g --expire
+
+# Expire reflog + aggressive gc (maximum cleanup)
+hug g --aggressive
+
+# Preview what would be done
+hug g --dry-run
+hug g --expire --dry-run
+hug g --aggressive --dry-run
+
+# Skip confirmation prompts
+hug g -f
+hug g --expire --force
+hug g --aggressive -f
+
+# Suppress output
+hug g -q
+hug g --expire --quiet
+```
+
+#### Modes
+
+Hug provides three garbage collection modes with increasing space savings and destructiveness:
+
+| Mode | Git Operations | Space Savings | Danger Level | Confirmation |
+|------|---------------|---------------|--------------|--------------|
+| Basic | `git gc` | Mild | Low | Y/n (safe default) |
+| Expire | `git reflog expire --expire=now --all` + `git gc` | Medium | Medium | y/N (warning default) |
+| Aggressive | `git reflog expire --expire=now --all` + `git gc --prune=now --aggressive` | Maximum | Extreme | Type "aggressive" |
+
+#### Features
+
+**Basic Mode (Safe)**
+- Runs `git gc` only
+- Preserves reflog for undo operations
+- Safe to use anytime
+- Confirmation defaults to Yes
+
+**Expire Mode (Medium Risk)**
+- Expires reflog entries with `git reflog expire --expire=now --all`
+- Then runs `git gc`
+- Removes undo history - `hug h back` won't work after this
+- Confirmation defaults to No
+
+**Aggressive Mode (Maximum Cleanup)**
+- Expires reflog entries
+- Runs `git gc --prune=now --aggressive`
+- Maximum space savings
+- Cannot be undone - reflog history is permanently removed
+- May take significantly longer than other modes
+- Requires typing "aggressive" to confirm (without --force)
+
+**Safety Features**
+- `--dry-run`: Preview what would be done without applying changes
+- Progressive confirmation: safer modes have easier confirmation
+- `-f/--force`: Skip confirmation prompts when you're certain
+- `-q/--quiet`: Suppress informational output
+
+#### Examples
+
+**Basic cleanup (safe, daily use):**
+```shell
+hug g
+# Output:
+# ℹ️ Info: run garbage collection [Y/n]: y
+# ✅ Success: Garbage collection complete
+```
+
+**Medium cleanup (after major work):**
+```shell
+hug g --expire
+# Output:
+# ⚠️ Warning: ⚠ About to expire reflog and run garbage collection...
+# Proceed? [y/N]: y
+# ℹ️ Info: Expiring reflog entries...
+# ✅ Success: Garbage collection complete (reflog expired)
+```
+
+**Maximum cleanup (before archiving):**
+```shell
+hug g --aggressive
+# Output:
+# ⚠️ This will PERMANENTLY remove reflog history and cannot be undone!
+# ⚠️ Warning: ⚠ About to run aggressive garbage collection...
+# → Type "aggressive" to confirm: aggressive
+# ℹ️ Info: Running aggressive garbage collection (this may take a while)...
+# ✅ Success: Aggressive garbage collection complete
+```
+
+**Preview before cleanup:**
+```shell
+hug g --dry-run
+# Output:
+# ℹ️ Info: Would run: git gc
+```
+
+**Skip confirmation for automated scripts:**
+```shell
+hug g --force
+hug g --aggressive -f  # Skip typing "aggressive"
+```
+
+::: tip When to Use Each Mode
+- **Basic**: Regular maintenance, safe for daily use
+- **Expire**: After completing large features, when you won't need undo history
+- **Aggressive**: Before archiving old projects, when you need maximum space savings
+:::
+
+::: warning Aggressive Mode Risks
+The aggressive mode permanently removes reflog history, which means:
+- You cannot use `hug h back` to undo changes
+- You cannot recover deleted branches via reflog
+- The operation cannot be reversed
+
+Only use aggressive mode when you're certain you won't need undo history.
+:::
+
+#### Command Reference
+
+```
+Usage: hug g [OPTIONS]
+
+Options:
+      --expire           Expire reflog before gc (medium cleanup)
+      --aggressive       Expire reflog and run aggressive gc (maximum cleanup)
+      --dry-run          Show what would be done without applying changes
+  -f, --force            Skip confirmation prompts
+  -q, --quiet            Suppress output
+  -h, --help             Show this help
+```
+
 ### Untrack (`hug untrack`)
 
 Stop tracking files but keep them locally. Useful for files that should be ignored but were already committed.

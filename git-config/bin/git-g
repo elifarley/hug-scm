@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# Assume HUG_HOME is set (exported by hug or environment)
+# shellcheck source=git-config/lib/hug-common
+. "$HUG_HOME/git-config/lib/hug-common"
+# shellcheck source=git-config/lib/hug-git-gc
+. "$HUG_HOME/git-config/lib/hug-git-gc"
+# shellcheck source=git-config/lib/hug-git-repo
+. "$HUG_HOME/git-config/lib/hug-git-repo"
+set -euo pipefail # Exit on error, undefined vars, pipe failures
+# Part of the Hug tool suite
+
+show_help() {
+  cat << EOF
+hug g: Safe, controlled Git garbage collection
+
+Usage: hug g [OPTIONS]
+
+OPTIONS:
+    hug g [OPTIONS]
+
+OPTIONS:
+    --expire           Expire reflog before gc (medium cleanup, removes undo history)
+    --aggressive       Expire reflog and run aggressive gc (maximum cleanup, implies --expire)
+    --dry-run          Show what would be done without applying changes
+    -f, --force        Skip confirmation prompts
+    -q, --quiet        Suppress output (sets HUG_QUIET=T)
+    -h, --help         Show this help
+
+DESCRIPTION:
+    Perform git garbage collection with increasing levels of space savings.
+
+    Modes (increasing space savings):
+      hug g              Basic gc (safe, preserves reflog for undo operations)
+      hug g --expire     Expire reflog + gc (removes undo history)
+      hug g --aggressive Expire reflog + aggressive gc (maximum cleanup)
+
+    The --aggressive flag implies --expire (reflog expiration is required
+    for aggressive cleanup).
+
+    Safety levels:
+      • Basic mode: Uses safe confirmation (Y/n default)
+      • Expire mode: Uses warning confirmation (y/N default)
+      • Aggressive mode: Requires typing "aggressive" to confirm
+
+EXAMPLES:
+    hug g                          # Basic gc with confirmation
+    hug g --dry-run                # Preview what would be done
+    hug g --expire -f              # Expire reflog and gc, skip confirmation
+    hug g --aggressive             # Maximum cleanup (must type "aggressive")
+    hug g --aggressive -f          # Skip typing confirmation for aggressive mode
+
+SEE ALSO:
+    git gc                         # Git garbage collection documentation
+EOF
+}
+
+# Parse common flags (--dry-run, -f|--force, -q|--quiet, -h|--help)
+eval "$(parse_common_flags "$@")"
+
+# Set defaults for variables that may not be set by parse_common_flags
+: "${dry_run:=false}"
+: "${force:=false}"
+: "${quiet:=false}"
+
+# Parse custom flags (--expire, --aggressive)
+aggressive=false
+expire=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --aggressive)
+    aggressive=true
+    shift
+    ;;
+  --expire)
+    expire=true
+    shift
+    ;;
+  *)
+    error "unknown option: $1"
+    show_help >&2
+    exit 2
+    ;;
+  esac
+done
+
+# --aggressive implies --expire
+if $aggressive; then
+  expire=true
+fi
+
+check_git_repo
+
+# Determine mode and confirmation level
+if $aggressive; then
+  mode="aggressive"
+elif $expire; then
+  mode="expire"
+else
+  mode="basic"
+fi
+
+# Set force for library functions
+if $force; then
+  export HUG_FORCE=true
+fi
+
+# Handle dry-run mode (show preview and exit)
+if $dry_run; then
+  case "$mode" in
+  basic)
+    gc_basic true "$quiet"
+    ;;
+  expire)
+    gc_with_expire true "$quiet"
+    ;;
+  aggressive)
+    gc_aggressive true "$quiet"
+    ;;
+  esac
+  exit 0
+fi
+
+# Confirmation based on mode (only when not force and not dry-run)
+if ! $force; then
+  case "$mode" in
+  basic)
+    prompt_confirm_safe "run garbage collection"
+    ;;
+  expire)
+    print_action_preview "expire reflog and run garbage collection"
+    prompt_confirm_warn
+    ;;
+  aggressive)
+    printf '\n%s This will PERMANENTLY remove reflog history and cannot be undone!\n' "⚠️" >&2
+    print_action_preview "run aggressive garbage collection"
+    prompt_confirm_danger "aggressive"
+    ;;
+  esac
+fi
+
+# Execute the appropriate gc mode
+case "$mode" in
+basic)
+  gc_basic false "$quiet"
+  ;;
+expire)
+  gc_with_expire false "$quiet"
+  ;;
+aggressive)
+  gc_aggressive false "$quiet"
+  ;;
+esac

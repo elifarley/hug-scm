@@ -1,0 +1,141 @@
+# shellcheck shell=bash
+# Library: HUG Git garbage collection operations
+#
+# Provides safe, controlled Git garbage collection with three modes of
+# increasing space savings. Each mode trades off between safety and cleanup.
+#
+# Modes (increasing space savings):
+#   - Basic: git gc only (preserves reflog, safe)
+#   - Expire: git reflog expire + git gc (removes undo history)
+#   - Aggressive: reflog expire + git gc --aggressive (maximum cleanup)
+#
+# Depends on: hug-output for messaging
+
+################################################################################
+# Garbage Collection Functions
+################################################################################
+
+# Runs basic garbage collection without expiring reflog
+# Usage: gc_basic dry_run quiet
+# Parameters:
+#   $1 - Boolean: true for dry-run mode, false for actual execution
+#   $2 - Boolean: true to suppress informational output
+# Returns:
+#   0 on success, 1 on failure
+#
+# This is the safest mode - preserves reflog for undo operations.
+gc_basic() {
+  local dry_run="$1"
+  local quiet="$2"
+
+  if $dry_run; then
+    info "Would run: git gc"
+    return 0
+  fi
+
+  if ! $quiet; then
+    info "Running basic garbage collection..."
+  fi
+
+  if git gc 2>&1; then
+    if ! $quiet; then
+      success "Garbage collection complete"
+    fi
+    return 0
+  else
+    error "Garbage collection failed"
+    return 1
+  fi
+}
+
+# Runs garbage collection with reflog expiration
+# Usage: gc_with_expire dry_run quiet
+# Parameters:
+#   $1 - Boolean: true for dry-run mode, false for actual execution
+#   $2 - Boolean: true to suppress informational output
+# Returns:
+#   0 on success, 1 on failure
+#
+# This mode removes reflog history - undo operations will not be available
+# after this. Use with caution on repos where you might need to undo changes.
+gc_with_expire() {
+  local dry_run="$1"
+  local quiet="$2"
+
+  if $dry_run; then
+    info "Would run: git reflog expire --expire=now --all"
+    info "Would run: git gc"
+    return 0
+  fi
+
+  if ! $quiet; then
+    info "Expiring reflog entries..."
+  fi
+
+  if ! git reflog expire --expire=now --all 2>&1; then
+    error "Failed to expire reflog"
+    return 1
+  fi
+
+  if ! $quiet; then
+    info "Running garbage collection..."
+  fi
+
+  if git gc 2>&1; then
+    if ! $quiet; then
+      success "Garbage collection complete (reflog expired)"
+    fi
+    return 0
+  else
+    error "Garbage collection failed"
+    return 1
+  fi
+}
+
+# Runs aggressive garbage collection with reflog expiration
+# Usage: gc_aggressive dry_run quiet
+# Parameters:
+#   $1 - Boolean: true for dry-run mode, false for actual execution
+#   $2 - Boolean: true to suppress informational output
+# Returns:
+#   0 on success, 1 on failure
+#
+# This is the most aggressive mode - maximizes space savings but:
+# - Permanently removes reflog history
+# - Cannot be undone
+# - May take significantly longer than other modes
+# Use only when you're certain you won't need to undo anything.
+gc_aggressive() {
+  local dry_run="$1"
+  local quiet="$2"
+
+  if $dry_run; then
+    info "Would run: git reflog expire --expire=now --all"
+    info "Would run: git gc --prune=now --aggressive"
+    return 0
+  fi
+
+  if ! $quiet; then
+    info "Expiring reflog entries..."
+  fi
+
+  if ! git reflog expire --expire=now --all 2>&1; then
+    error "Failed to expire reflog"
+    return 1
+  fi
+
+  if ! $quiet; then
+    info "Running aggressive garbage collection (this may take a while)..."
+  fi
+
+  if ! git gc --prune=now --aggressive 2>&1; then
+    error "Garbage collection failed"
+    return 1
+  fi
+
+  if ! $quiet; then
+    success "Aggressive garbage collection complete"
+  fi
+
+  return 0
+}

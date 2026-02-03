@@ -256,6 +256,7 @@ Hug commands are organized by **semantic prefixes** that make them easy to disco
 | `c*` | Commits | `hug c`, `hug ca` |
 | `l*` | Logging & History | `hug l`, `hug lc` |
 | `f*` | File Inspection | `hug fa`, `hug fb` |
+| `g*` | Garbage Collection | `hug g`, `hug g --expire`, `hug g --aggressive` |
 | `t*` | Tagging | `hug t`, `hug tc` |
 | `r*` | Rebase | `hug rb`, `hug rbi`, `hug rbc`, `hug rba` |
 | `m*` | Merge | `hug m`, `hug ma`, `hug mff`, `hug mkeep` |
@@ -397,6 +398,15 @@ hug fb [file]                 # Short blame (author and line only) (interactive 
 hug fcon [file]               # List all contributors to a file (interactive if no file)
 hug fa [file]                 # Count commits per author for a file (interactive if no file)
 hug fborn [file]              # Show when file was added (interactive if no file)
+```
+
+#### 🗑️ Garbage Collection (`g*`)
+
+```shell
+hug g                        # Basic garbage collection (safe, preserves reflog)
+hug g --expire               # Expire reflog + gc (removes undo history)
+hug g --aggressive           # Expire reflog + aggressive gc (maximum cleanup)
+# All modes support: --dry-run, -f/--force, -q/--quiet
 ```
 
 #### 🔬 Advanced Analysis (`analyze`)
