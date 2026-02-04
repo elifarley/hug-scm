@@ -717,7 +717,8 @@ check-full-verbose: ## Enhanced merge gate with detailed output
 	$(call print_success,✅ Enhanced checks passed)
 
 pre-commit: ## Run checks and tests before commit (git hook target)
-	@$(MAKE) check
+	@$(MAKE) sanitize
+	@$(MAKE) test-full
 	$(call print_success,✓ Pre-commit checks complete)
 
 coverage: test-lib-py-coverage ## Enforce test coverage thresholds

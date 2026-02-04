@@ -22,12 +22,18 @@ ARGUMENTS:
 OPTIONS:
     -q, --quiet     Suppress headers (also honors HUG_QUIET env var)
     --llm           Output in LLM-friendly XML format
+    --stat          Show file statistics (default: true for standard format, false for LLM format)
     -h, --help      Show this help
 
 DESCRIPTION:
     Shows commit details with file statistics.
     Displays commit hash, date, author, subject, body,
     and list of changed files with modification counts.
+    
+    FILE STATISTICS:
+    - Standard format: File stats shown by default
+    - LLM format: File stats hidden by default (use --stat to show)
+    - Use --stat flag to explicitly control stats display regardless of format
 
     N/-N SYNTAX CONVENTION:
     - N (0-999) → Single commit at HEAD~N (0 → HEAD)
@@ -35,12 +41,13 @@ DESCRIPTION:
     - Numbers ≥ 1000 pass through as refs
 
 EXAMPLES:
-    hug sh                  # Show last commit
-    hug sh 2                # Show commit two steps back (HEAD~2)
-    hug sh -3               # Show last 3 commits (HEAD~3..HEAD)
-    hug sh abc123           # Show specific commit
-    hug sh main..HEAD       # Show commits in range
-    hug sh --llm HEAD       # Show in LLM XML format
+    hug sh                  # Show last commit with stats
+    hug sh 2                # Show commit two steps back (HEAD~2) with stats
+    hug sh -3               # Show last 3 commits (HEAD~3..HEAD) with stats
+    hug sh abc123           # Show specific commit with stats
+    hug sh main..HEAD       # Show commits in range with stats
+    hug sh --llm HEAD       # Show in LLM XML format (no stats by default)
+    hug sh --llm --stat HEAD # Show in LLM XML format WITH stats
 
 SEE ALSO:
     hug shp      : Show commit with patch
@@ -55,11 +62,15 @@ eval "$(parse_common_flags "$@")"
 # Parse remaining arguments
 commit_ref=""
 show_llm=false
+show_stats_explicit=false
 for arg in "$@"; do
   case "$arg" in
   -h | --help | -q | --quiet) ;; # Already handled by parse_common_flags
   --llm)
     show_llm=true
+    ;;
+  --stat)
+    show_stats_explicit=true
     ;;
   *)
     commit_ref="$arg"
@@ -67,14 +78,18 @@ for arg in "$@"; do
   esac
 done
 
-# Determine output format
+# Determine output format and stats behavior
 if [[ "$show_llm" == true ]]; then
   output_format="llm"
+  # For LLM format: stats hidden by default, shown only if --stat explicitly requested
+  show_stats=$show_stats_explicit
 else
   output_format="standard"
+  # For standard format: stats shown by default, can be suppressed with future --no-stat if needed
+  show_stats=true
 fi
 
 # Use hug-git-show library for commit display
-show_commits "$commit_ref" false "$output_format"
+show_commits "$commit_ref" false "$output_format" "$show_stats"
 
 exit 0

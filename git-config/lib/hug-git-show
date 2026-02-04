@@ -97,11 +97,12 @@ is_range() {
 ################################################################################
 
 # Shows commits (single or range) in specified format
-# Usage: show_commits "target" "show_patch" "output_format"
+# Usage: show_commits "target" "show_patch" "output_format" "show_stats"
 # Parameters:
 #   $1 - Target specification (N, -N, ref, or range)
 #   $2 - Show patch: "true" or "false"
 #   $3 - Output format: "standard" or "llm"
+#   $4 - Show stats: "true" or "false" (default: true)
 # Environment:
 #   HUG_QUIET - If set to "T", suppresses headers in standard format
 # Effects:
@@ -114,6 +115,7 @@ show_commits() {
     local target="$1"
     local show_patch="${2:-false}"
     local output_format="${3:-standard}"
+    local show_stats="${4:-true}"
 
     check_git_repo
 
@@ -132,7 +134,7 @@ show_commits() {
         # Iterate through each commit
         while IFS= read -r commit; do
             [[ -n "$commit" ]] || continue
-            show_single_commit "$commit" "$show_patch" "$output_format"
+            show_single_commit "$commit" "$show_patch" "$output_format" "$show_stats"
 
             # Add separator between commits in standard format (unless quiet)
             if [[ "$output_format" == "standard" && "${HUG_QUIET:-}" != "T" ]]; then
@@ -141,16 +143,17 @@ show_commits() {
         done <<< "$commits"
     else
         # Single commit: show directly
-        show_single_commit "$resolved" "$show_patch" "$output_format"
+        show_single_commit "$resolved" "$show_patch" "$output_format" "$show_stats"
     fi
 }
 
 # Shows a single commit in the specified format
-# Usage: show_single_commit "commit" "show_patch" "output_format"
+# Usage: show_single_commit "commit" "show_patch" "output_format" "show_stats"
 # Parameters:
 #   $1 - Commit hash or reference
 #   $2 - Show patch: "true" or "false"
 #   $3 - Output format: "standard" or "llm"
+#   $4 - Show stats: "true" or "false" (default: true)
 # Environment:
 #   HUG_QUIET - If set to "T", suppresses headers in standard format
 # Effects:
@@ -162,6 +165,7 @@ show_single_commit() {
     local commit="$1"
     local show_patch="$2"
     local output_format="$3"
+    local show_stats="${4:-true}"
 
     check_git_repo
 
@@ -173,10 +177,10 @@ show_single_commit() {
     # Dispatch to appropriate format function
     case "$output_format" in
         llm)
-            _show_commit_llm "$commit" "$show_patch"
+            _show_commit_llm "$commit" "$show_patch" "$show_stats"
             ;;
         standard|*)
-            _show_commit_standard "$commit" "$show_patch"
+            _show_commit_standard "$commit" "$show_patch" "$show_stats"
             ;;
     esac
 }
@@ -186,10 +190,11 @@ show_single_commit() {
 ################################################################################
 
 # Shows a single commit in standard human-readable format
-# Usage: _show_commit_standard "commit" "show_patch"
+# Usage: _show_commit_standard "commit" "show_patch" "show_stats"
 # Parameters:
 #   $1 - Commit hash or reference
 #   $2 - Show patch: "true" or "false"
+#   $3 - Show stats: "true" or "false" (default: true)
 # Environment:
 #   HUG_QUIET - If set to "T", suppresses section headers
 # Effects:
@@ -201,6 +206,7 @@ show_single_commit() {
 _show_commit_standard() {
     local commit="$1"
     local show_patch="$2"
+    local show_stats="${3:-true}"
 
     # Get emoji indicators (from hug-git-diff)
     local commit_emoji info_emoji diff_emoji stats_emoji
@@ -226,13 +232,16 @@ _show_commit_standard() {
         git show "$commit" --pretty=format:""
     fi
 
-    # Show file stats heading
-    if [[ "${HUG_QUIET:-}" != "T" ]]; then
-        printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji"
+    # Show file stats if requested
+    if [[ "$show_stats" == "true" ]]; then
+        # Show file stats heading
+        if [[ "${HUG_QUIET:-}" != "T" ]]; then
+            printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji"
+        fi
+        
+        # Show file stats via git-shc (DRY principle)
+        HUG_QUIET=T git shc "$commit"
     fi
-
-    # Show file stats via git-shc (DRY principle)
-    HUG_QUIET=T git shc "$commit"
 }
 
 ################################################################################
@@ -240,20 +249,23 @@ _show_commit_standard() {
 ################################################################################
 
 # Shows a single commit in LLM-friendly XML-tagged format
-# Usage: _show_commit_llm "commit" "show_patch"
+# Usage: _show_commit_llm "commit" "show_patch" "show_stats"
 # Parameters:
 #   $1 - Commit hash or reference
 #   $2 - Show patch: "true" or "false"
+#   $3 - Show stats: "true" or "false" (default: true)
 # Effects:
 #   Prints XML-tagged commit information to stdout
 # Notes:
-#   - Format: <commit hash="..." date="ISO8601"><msg>subject\n\nbody</msg></commit>
+#   - Format: <commit hash="..." date="ISO8601"><msg>subject\n\nbody</msg><stats>file stats</stats></commit>
 #   - Date is truncated to minutes (YYYY-MM-DDTHH:MM)
 #   - Optional <diff> section if show_patch=true
+#   - Optional <stats> section with file change statistics (shown when show_stats=true)
 #   - All text content is XML-escaped
 _show_commit_llm() {
     local commit="$1"
     local show_patch="$2"
+    local show_stats="${3:-true}"
 
     # Get commit metadata
     local hash date subject body
@@ -282,6 +294,19 @@ _show_commit_llm() {
         printf '<diff><![CDATA[\n'
         git show "$commit" --pretty=format:""
         printf ']]></diff>\n'
+    fi
+
+    # Print stats section if requested
+    if [[ "$show_stats" == "true" ]]; then
+        # Get raw stats from git-shc (without emoji headers)
+        local stats_output
+        stats_output=$(HUG_QUIET=T git shc "$commit" 2>/dev/null)
+        
+        if [[ -n "$stats_output" ]]; then
+            printf '<stats>\n'
+            printf '%s\n' "$stats_output"
+            printf '</stats>\n'
+        fi
     fi
 
     # Print commit closing tag
