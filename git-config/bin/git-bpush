@@ -283,7 +283,7 @@ if get_upstream_remote > /dev/null 2>&1; then
   fi
 else
   # No upstream at all
-  if $track || ($is_remote_name_arg && [ $# -eq 1 ]) || ([ $# -eq 0 ] && [ "$remote" = "origin" ]); then
+  if $track || (($is_remote_name_arg || $is_url_arg) && [ $# -eq 1 ]) || ([ $# -eq 0 ] && [ "$remote" = "origin" ]); then
     should_set_upstream=true
     printf "Setting upstream tracking to '%s/%s'...\n" "$remote" "$branch"
   fi
