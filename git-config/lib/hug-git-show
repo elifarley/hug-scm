@@ -324,9 +324,16 @@ _show_commit_llm() {
 #   - Order matters: escape & first to avoid double-escaping
 _xml_escape() {
     local text="$1"
-    # Escape in order: & first, then < and >
+    # Escape XML special characters: & < >
+    # Process in order to prevent double-escaping
+    
+    # First escape ampersands to prevent interference with lt/gt replacements
     text="${text//&/&amp;}"
+    
+    # Then escape less-than and greater-than signs
     text="${text//</&lt;}"
     text="${text//>/&gt;}"
+    
+    # Output result
     printf '%s' "$text"
 }
