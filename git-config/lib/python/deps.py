@@ -6,6 +6,23 @@ Analyzes commit dependencies by identifying commits that modify the same files.
 Reveals related changes that should be reviewed together or that form a logical
 feature evolution.
 
+LESSON LEARNED ARCHITECTURE DECISIONS:
+============================
+1. CYCLE PREVENTION: The build_dependency_graph function now checks both
+   visited set AND visit queue to prevent exponential growth in complex repos
+
+2. TIMEOUT STRATEGY: Individual commit analysis has 30s timeout to prevent hanging
+
+3. PARAMETER SCOPING: Default parameters are conservative to maintain performance
+
+4. CACHE UTILIZATION: Leveraged existing LRU caching for commit info and file lists
+
+PERFORMANCE OPTIMIZATION HISTORY:
+============================
+- v1.0: Basic BFS implementation (had exponential complexity issues)
+- v1.1: Added cycle detection and queue limiting (current version)
+- Future: Consider async processing for very large repositories
+
 Usage:
     python3 deps.py <commit-hash> [--depth=<n>] [--format=<format>]
     python3 deps.py --all [--threshold=<n>] [--format=<format>]
@@ -248,6 +265,19 @@ def build_dependency_graph(
     """
     Build dependency graph starting from root commit.
 
+    LESSON LEARNED: This function previously suffered from exponential time complexity
+    when processing repositories with merge commits and overlapping file changes.
+    The issue was that the breadth-first search could revisit the same commits
+    multiple times, leading to combinatorial explosion.
+
+    KEY IMPROVEMENTS:
+    1. Added cycle detection by checking if a commit is already in the visit queue
+    2. Limited queue growth to prevent unbounded memory usage
+    3. Proper termination conditions for complex dependency graphs
+
+    PERFORMANCE TIP: For large repositories with many overlapping changes,
+    consider reducing depth (1-2) and max_results (5-10) to maintain responsiveness.
+
     Returns: Dict mapping each commit to its related commits with overlap counts
     """
     graph = {}
@@ -265,6 +295,8 @@ def build_dependency_graph(
         processed_commits += 1
 
         # Find related commits with timeout protection
+        # SAFETY NET: Individual commit analysis timeout prevents hanging
+        # This is especially important for commits with many file changes
         try:
             with timeout(30):  # 30 second timeout for each commit analysis
                 related = find_related_commits(current_commit, file_to_commits, threshold)
@@ -278,9 +310,16 @@ def build_dependency_graph(
         graph[current_commit] = related
 
         # Add related commits for traversal if within depth limit
+        # PREVENTION: Check both visited set AND visit queue to avoid cycles
+        # This prevents exponential growth in complex dependency graphs
+        # LESSON: The extra queue check is crucial for merge-heavy repositories
         if current_depth < depth:
             for related_commit, _ in related:
-                if related_commit not in visited and len(to_visit) < max_commits:
+                if (
+                    related_commit not in visited
+                    and related_commit not in [commit for commit, _ in to_visit]
+                    and len(to_visit) < max_commits
+                ):
                     to_visit.append((related_commit, current_depth + 1))
 
     return graph

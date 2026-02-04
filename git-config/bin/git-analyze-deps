@@ -183,7 +183,10 @@ if [ ! -f "$python_script" ]; then
 fi
 
 # Set default timeout (configurable via environment variable)
-DEFAULT_TIMEOUT=${HUG_ANALYZE_DEPS_TIMEOUT:-120}
+# REDUCED TIMEOUT: Changed from 120s to 60s for better responsiveness
+# LESSON LEARNED: Long timeouts mask performance issues rather than solving them
+# PERFORMANCE TIP: Users can override with HUG_ANALYZE_DEPS_TIMEOUT env var
+DEFAULT_TIMEOUT=${HUG_ANALYZE_DEPS_TIMEOUT:-60}
 
 # Handle --all mode
 if $all_mode; then

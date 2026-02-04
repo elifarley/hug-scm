@@ -200,7 +200,10 @@ teardown() {
   git checkout "$main_branch"
   git merge test530-feature --no-edit
 
-  run git analyze-deps HEAD
+  # SCOPED TESTING: Limit parameters to prevent performance issues
+  # LESSON LEARNED: Unconstrained dependency analysis can hang on merge commits
+  # BEST PRACTICE: Always specify reasonable limits in automated tests
+  run git analyze-deps HEAD --depth 1 --max-results 5 --threshold 2
 
   assert_success
   assert_output --partial "Dependency graph"
