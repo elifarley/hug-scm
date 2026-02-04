@@ -60,6 +60,12 @@ EXAMPLES:
     hug shc HEAD~3..HEAD     # Cumulative changes in last 3 commits (explicit)
     hug shc main..feature    # All changes in feature branch vs main
     hug shc v1.0.0..v1.1.0   # Changes between two tags
+    
+    # Related commands for different perspectives:
+    hug ll -3 --json --with-stats  # Structured view of last 3 commits with stats
+    hug shcp -3                    # Same changes with full diff
+    hug sh                             # Commit details with brief stats
+    hug h files -3                 # Preview files touched (no stats)
 
 SEE ALSO:
     hug sh       : Show commit info with file stats
@@ -69,6 +75,7 @@ SEE ALSO:
     hug h squash : Squash commits (uses shc for preview)
     hug lol      : Preview outgoing commits with stats
     hug cmv      : Move commits between branches
+    hug ll       : Log commits with optional JSON/stats output
 EOF
 }
 

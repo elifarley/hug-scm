@@ -55,11 +55,19 @@ EXAMPLES:
     hug shcp HEAD~3..HEAD     # Cumulative diff in last 3 commits (explicit)
     hug shcp main..feature    # All changes in feature branch vs main
     hug shcp v1.0.0..v1.1.0   # Diff between two tags
+    
+    # Related commands for different levels of detail:
+    hug ll -3 --json --with-stats  # Structured commit list with stats
+    hug shc -3                     # Same changes, stats only (no diff)
+    hug sh                             # Commit info with brief stats
+    hug shp                            # Single commit with full patch
 
 SEE ALSO:
     hug shc      : Show changed files (stats only, no diff)
     hug sh       : Show commit info with file stats
     hug shp      : Show single commit with patch
+    hug ll       : Log commits with optional JSON/stats output
+    hug h files  : Preview files touched in commit range
 EOF
 }
 

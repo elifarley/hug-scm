@@ -36,6 +36,12 @@ EXAMPLES:
     hug ll --json --no-body        # JSON with subject only (faster)
     hug ll --json --with-stats --no-body  # Combined flags
     hug ll main..feature           # Commits in feature not in main
+    
+    # Related commands for different views:
+    hug ll -5 --json --with-stats  # Last 5 commits with stats (structured)
+    hug shc -5                     # Cumulative file stats for last 5 commits
+    hug shcp -5                    # Cumulative diff + stats for last 5 commits
+    hug llf <file> -10             # Last 10 commits affecting specific file
 
 JSON OUTPUT (GitHub-compatible + Hug enhancements):
     {
@@ -75,6 +81,9 @@ SEE ALSO:
     hug la       : Log all branches
     hug lp       : Log with patches
     hug lf       : Search commits by message
+    hug shc      : Show file change statistics for commits/ranges
+    hug shcp     : Show cumulative diff and stats for ranges
+    hug llf      : Log commits affecting specific files
 EOF
 }
 
