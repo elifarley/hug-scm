@@ -540,3 +540,41 @@ teardown() {
   assert_success
   assert_output "HEAD~09"
 }
+
+################################################################################
+# show_single_commit TESTS (stats behavior with new flags)
+################################################################################
+
+@test "show_single_commit: LLM format shows stats by default" {
+  run show_single_commit HEAD false llm true
+  assert_success
+  
+  # Should have stats section by default in LLM format
+  assert_output --partial "<stats>"
+  assert_output --partial "</stats>"
+}
+
+@test "show_single_commit: LLM format hides stats with show_stats=false" {
+  run show_single_commit HEAD false llm false
+  assert_success
+  
+  # Should NOT have stats section when show_stats=false
+  refute_output --partial "<stats>"
+  refute_output --partial "</stats>"
+}
+
+@test "show_single_commit: standard format shows stats by default" {
+  run show_single_commit HEAD false standard true
+  assert_success
+  
+  # Should have file stats section
+  assert_output --partial "File stats:"
+}
+
+@test "show_single_commit: standard format hides stats with show_stats=false" {
+  run show_single_commit HEAD false standard false
+  assert_success
+  
+  # Should NOT have file stats section
+  refute_output --partial "File stats:"
+}
