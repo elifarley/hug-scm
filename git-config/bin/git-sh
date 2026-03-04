@@ -93,7 +93,7 @@ if [[ "$show_llm" == true ]]; then
   elif [[ "$show_stats_explicit" == true ]]; then
     show_stats=true
   else
-    show_stats=true  # Default for LLM format
+    show_stats=true # Default for LLM format
   fi
 else
   output_format="standard"
@@ -103,7 +103,7 @@ else
   elif [[ "$show_stats_explicit" == true ]]; then
     show_stats=true
   else
-    show_stats=true  # Default for standard format
+    show_stats=true # Default for standard format
   fi
 fi
 

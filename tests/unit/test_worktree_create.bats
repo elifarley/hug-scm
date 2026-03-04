@@ -156,7 +156,7 @@ teardown() {
 
 @test "hug wtc: resolves path conflicts automatically" {
   # Create a directory at the default path location to force a conflict
-  local default_path="${TEST_REPO}-worktrees/feature-2"
+  local default_path="${TEST_REPO}.WT.feature-2"
   mkdir -p "$default_path"
   echo "existing file" > "$default_path/existing.txt"
 

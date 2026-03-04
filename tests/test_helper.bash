@@ -1041,7 +1041,7 @@ create_test_worktree() {
   )
 
   # Create worktree path outside the repository
-  local worktree_path="${test_repo_path}-wt-${branch}"
+  local worktree_path="${test_repo_path}.WT.${branch}"
 
   # Create the worktree
   (

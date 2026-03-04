@@ -130,7 +130,7 @@ prompt_confirm_danger() {
 # ✗ Overwriting or modifying existing data (use prompt_confirm_warn)
 # ✗ Irreversible or high-impact operations (use prompt_confirm_danger)
 #
-# Usage: prompt_confirm_safe "Create worktree for branch 'feature' at '../repo-worktrees/feature'?"
+# Usage: prompt_confirm_safe "Create worktree for branch 'feature' at '../repo.WT.feature'?"
 #
 # Returns: 0 if user confirms, 1 if cancelled (exits by default in non-interactive mode)
 #

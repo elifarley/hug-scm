@@ -80,8 +80,8 @@ hug wtl --json                       # Output in JSON format
 ```
 Worktrees:
 * [DIRTY] main                 (1b87e92) ~/IdeaProjects/hug-scm
-feature-auth         (a3f2b1c) ~/IdeaProjects/worktrees-hug-scm/feature-auth
-hotfix-patch         (d8e9f0a) ~/IdeaProjects/worktrees-hug-scm/hotfix-patch
+feature-auth         (a3f2b1c) ~/IdeaProjects/hug-scm.WT.feature-auth
+hotfix-patch         (d8e9f0a) ~/IdeaProjects/hug-scm.WT.hotfix-patch
 ```
 
 ### `hug wtll` - List Worktrees (Long Format)
@@ -112,7 +112,7 @@ Worktrees (long format):
   docs: update branching command documentation for search filtering feature
   Status: Modified ! (1 staged, 2 unstaged) ! | Locked: No
 
-feature-auth         a3f2b1c (~/IdeaProjects/worktrees-hug-scm/feature-auth)
+feature-auth         a3f2b1c (~/IdeaProjects/hug-scm.WT.feature-auth)
   feat: implement OAuth authentication flow
   Status: Clean ✓ | Locked: No
 ```
@@ -243,7 +243,7 @@ hug wtc feature-auth -f                        # Create without confirmation
 
 **Auto-generated Path Pattern:**
 ```
-../worktrees-<repo-name>/<branch-name>
+../<repo-name>.WT.<branch-name>
 ```
 
 ### `hug wtdel` - Remove Worktree
@@ -326,7 +326,7 @@ Both `hug wtl` and `hug wtll` support `--json` output for programmatic use:
       "current": true
     },
     {
-      "path": "/home/user/worktrees-project/feature-auth",
+      "path": "/home/user/project.WT.feature-auth",
       "branch": "feature-auth",
       "commit": "a3f2b1c",
       "dirty": false,
@@ -415,7 +415,7 @@ hug rb experiment-refactor main
 - Consider using prefixes: `feature/`, `bugfix/`, `hotfix/`, `experiment/`
 
 **Path Management:**
-- Let Hug auto-generate paths when possible (`../worktrees-<repo>/`)
+- Let Hug auto-generate paths when possible (`../<repo>.WT.<branch>`)
 - Keep worktree paths short and meaningful
 - Use consistent base directory for all worktrees
 

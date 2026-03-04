@@ -33,7 +33,7 @@ DESCRIPTION:
     work on multiple branches simultaneously without context switching overhead.
 
     If no path is provided, generates a smart default path outside the main
-    repository: ../<repo>-worktrees/<branch>
+    repository: ../<repo>.WT.<branch>
 
     By default, the branch must exist locally. With --new flag or with --force,
     non-existent branches will be created automatically from the current HEAD.

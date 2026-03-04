@@ -39,12 +39,12 @@ def sample_porcelain_with_worktrees():
 branch refs/heads/main
 commit abc1234def5678
 
-worktree /home/user/repo-worktrees/feature-1
+worktree /home/user/repo.WT.feature-1
 branch refs/heads/feature-1
 commit def5678901234
 locked
 
-worktree /home/user/repo-worktrees/bugfix-2
+worktree /home/user/repo.WT.bugfix-2
 branch refs/heads/bugfix-2
 commit 123456789abcd"""
 
@@ -55,7 +55,7 @@ def sample_porcelain_detached_head():
     return """worktree /home/user/repo
 HEAD abc1234def5678
 
-worktree /home/user/repo-worktrees/feature-1
+worktree /home/user/repo.WT.feature-1
 branch refs/heads/feature-1
 commit def5678901234"""
 
@@ -103,7 +103,7 @@ def worktree_info_main():
 def worktree_info_feature():
     """Sample WorktreeInfo for feature branch."""
     return WorktreeInfo(
-        path="/home/user/repo-worktrees/feature-1",
+        path="/home/user/repo.WT.feature-1",
         branch="feature-1",
         commit="def5678",
         is_dirty=False,
@@ -291,11 +291,11 @@ commit abc1234def5678"""
 branch refs/heads/main
 commit abc1234def5678
 
-worktree /home/user/repo-worktrees/feature-1
+worktree /home/user/repo.WT.feature-1
 branch refs/heads/feature-1
 commit def5678901234
 
-worktree /home/user/repo-worktrees/bugfix-2
+worktree /home/user/repo.WT.bugfix-2
 branch refs/heads/bugfix-2
 commit 123456789abcd"""
         result = parse_worktree_list(porcelain, "/home/user/repo", include_main=False)
@@ -311,7 +311,7 @@ commit 123456789abcd"""
 branch refs/heads/main
 commit abc1234def5678
 
-worktree /home/user/repo-worktrees/feature-1
+worktree /home/user/repo.WT.feature-1
 branch refs/heads/feature-1
 commit def5678901234"""
         result = parse_worktree_list(porcelain, "/home/user/repo", include_main=True)
@@ -333,7 +333,7 @@ HEAD abc1234def5678"""
     def test_locked_worktree_detected(self, mock_check_dirty):
         """Should detect locked worktrees."""
         mock_check_dirty.return_value = False
-        porcelain = """worktree /home/user/repo-worktrees/feature-1
+        porcelain = """worktree /home/user/repo.WT.feature-1
 branch refs/heads/feature-1
 commit def5678901234
 locked"""

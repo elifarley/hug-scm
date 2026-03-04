@@ -351,6 +351,10 @@ validate_worktree_creation_path() {
 # Generate smart default worktree path for a branch
 # Usage: path=$(generate_worktree_path "feature-auth")
 # Returns: Default worktree path outside main repository
+# Note: Uses flat sibling pattern ../{repo}.WT.{branch} instead of nested
+# ../{repo}-worktrees/{branch} to avoid breaking relative paths in submodules.
+# The .WT. infix provides strong visual identification when scanning directory
+# listings, clearly separating repo name from branch name.
 generate_worktree_path() {
     local branch="$1"
     local repo_name
@@ -366,17 +370,14 @@ generate_worktree_path() {
     # Make branch name safe for filesystem
     safe_branch=$(printf '%s' "$branch" | sed 's|/|-|g' | sed 's|\.|-|g' | tr '[:upper:]' '[:lower:]')
 
-    # Generate preferred path with auto-creation of parent directories
-    local preferred_path="../${repo_name}-worktrees/${safe_branch}"
-    local parent_dir=$(dirname "$preferred_path")
+    # Flat sibling path — no intermediate container directory needed.
+    # Parent (..) always exists since the repo itself lives there.
+    local preferred_path="../${repo_name}.WT.${safe_branch}"
 
-    # Auto-create parent directory if it doesn't exist
-    if [[ ! -d "$parent_dir" ]]; then
-        mkdir -p "$parent_dir" 2>/dev/null || {
-            # Fallback to absolute path in temp directory if auto-creation fails
-            printf '/tmp/hug-wt-%s-%s/%s' "$repo_name" "$$" "$safe_branch"
-            return 0
-        }
+    # Verify parent is writable; fallback to /tmp if not
+    if [[ ! -w "$(dirname "$preferred_path")" ]]; then
+        printf '/tmp/hug-wt-%s-%s-%s' "$repo_name" "$$" "$safe_branch"
+        return 0
     fi
 
     printf '%s' "$preferred_path"
