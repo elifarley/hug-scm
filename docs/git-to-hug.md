@@ -378,7 +378,7 @@ These have **no Git equivalent**—they're impossible with Git's plumbing alone.
 
 | Hug Command | Memory Hook | What It Does |
 |-------------|-------------|--------------|
-| `hug analyze co-changes` | **Co**-changes | Find files that change together (statistical correlation) |
+| `hug analyze co-changes <file>` | **Co**-changes | Find files related to a specific file (`--all` for repo-wide coupling) |
 | `hug analyze expert <file>` | **Expert** | Who knows this code? (recency-weighted ownership) |
 | `hug analyze deps <commit>` | **Dep**endencies | Find related commits via file overlap |
 | `hug analyze activity` | **Activity** | When/how does your team commit? |

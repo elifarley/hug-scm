@@ -28,7 +28,7 @@ This table is the **authoritative source** for Hug's command organization. All c
 | `t*` | Tagging | Manage tags for releases and milestones | `hug t`, `hug tc`, `hug ta`, `hug ts` | **T**ag |
 | `r*` | Rebase | Interactive history editing and rebasing | `hug rb`, `hug rbi`, `hug rbc`, `hug rba` | **R**ebase |
 | `m*` | Merge | Integrate branches with various strategies | `hug m`, `hug ma`, `hug mff`, `hug mkeep` | **M**erge |
-| `analyze*` | Advanced Analysis | Advanced repository analysis and insights | `hug analyze deps`, `hug analyze expert`, `hug analyze activity`, `hug analyze co-changes` | **ANALYZE** |
+| `analyze*` | Advanced Analysis | Advanced repository analysis and insights | `hug analyze deps`, `hug analyze expert`, `hug analyze activity`, `hug analyze co-changes <file>` | **ANALYZE** |
 | `stats*` | Repository Statistics | Quick repository statistics and metrics | `hug stats file`, `hug stats author`, `hug stats branch` | **STATS** |
 | `(no prefix)` | Utilities | Helper commands: init, clone, remote management, object inspection | `hug init`, `hug clone`, `hug remote2ssh`, `hug type`, `hug dump` | **UTILITY** |
 
@@ -174,7 +174,7 @@ Hug Commands
 │   ├── dump           # Show Git object contents
 │   └── untrack        # Stop tracking files
 ├── analyze* (Advanced Analysis)
-│   ├── analyze co-changes  # Find files that change together
+│   ├── analyze co-changes  # Find files related to one file (`--all` for repo-wide coupling)
 │   ├── analyze activity    # Temporal commit patterns
 │   ├── analyze deps        # Commit dependency graph
 │   └── analyze expert      # Code ownership and expertise

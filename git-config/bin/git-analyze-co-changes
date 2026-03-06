@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# git-analyze-co-changes - Find files that frequently change together
+# git-analyze-co-changes - Find files related by co-change history
 # Part of the Hug tool suite
 
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
@@ -9,7 +9,7 @@ set -euo pipefail
 
 show_help() {
   cat << 'EOF'
-hug analyze co-changes: Find files that frequently change together
+hug analyze co-changes: Find files related by co-change history
 
 USAGE:
     hug analyze co-changes <file> [options]

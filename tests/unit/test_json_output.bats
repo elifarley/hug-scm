@@ -19,7 +19,7 @@ validate_json() {
 }
 
 # =============================================================================
-# hug analyze co-changes --json
+# hug analyze co-changes <file> --json / --all --json
 # =============================================================================
 
 @test "hug analyze co-changes --json: produces valid JSON" {

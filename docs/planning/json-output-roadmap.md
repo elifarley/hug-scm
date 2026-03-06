@@ -67,7 +67,7 @@
 
 | Command | Purpose | Implementation | Test Coverage |
 |---------|---------|----------------|---------------|
-| `hug analyze co-changes` | Files that change together | Python (co_changes.py) | ✅ 6 tests |
+| `hug analyze co-changes <file>` / `--all` | File-focused or repo-wide co-change analysis | Python (co_changes.py) | ✅ tested |
 | `hug analyze expert` | Code ownership detection | Python (ownership.py) | ✅ 5 tests |
 | `hug stats file` | File-level statistics | Python (churn.py) | ✅ 5 tests |
 | `hug analyze activity` | Temporal commit patterns | Python (activity.py) | ✅ 6 tests |

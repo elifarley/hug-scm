@@ -540,7 +540,7 @@ These workflows use **statistical algorithms and graph analysis** impossible wit
 
 ### Architectural Coupling Analysis
 
-**Goal**: Find files that change together (architectural coupling).
+**Goal**: Find files related to a specific file, or identify repo-wide architectural coupling.
 
 ```bash
 # File-focused analysis

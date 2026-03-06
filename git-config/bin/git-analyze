@@ -2,7 +2,27 @@
 # git-analyze - Repository analysis gateway command
 # Part of the Hug tool suite
 
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+
 set -euo pipefail # Exit on error, undefined vars, pipe failures
+
+dispatch_analyze_subcommand() {
+  local subcommand="$1"
+  shift
+  local script_path="$CMD_BASE/git-analyze-$subcommand"
+
+  # EDUCATIONAL NOTE:
+  # Dispatch directly to the sibling script instead of re-entering Git via
+  # `git analyze-<subcommand>`. Git treats `--help` specially and may show a
+  # manpage lookup before the script's own `show_help()` can run. Direct exec
+  # keeps gateway help behavior aligned with what users expect from Hug.
+  if [[ -x "$script_path" ]]; then
+    exec "$script_path" "$@"
+  fi
+
+  exec git "analyze-$subcommand" "$@"
+}
 
 show_help() {
   cat << 'EOF'
@@ -12,7 +32,7 @@ USAGE:
     hug analyze <command> [args]
 
 COMMANDS:
-    co-changes      Find files that frequently change together
+    co-changes      Find files related to one target file or across the repo
     activity        Analyze temporal commit patterns and activity
     deps            Show dependency graph for commits/files
     expert          Identify code ownership and expertise areas
@@ -36,19 +56,19 @@ EOF
 case "${1:-}" in
 co-changes)
   shift
-  git analyze-co-changes "$@"
+  dispatch_analyze_subcommand "co-changes" "$@"
   ;;
 activity)
   shift
-  git analyze-activity "$@"
+  dispatch_analyze_subcommand "activity" "$@"
   ;;
 deps)
   shift
-  git analyze-deps "$@"
+  dispatch_analyze_subcommand "deps" "$@"
   ;;
 expert)
   shift
-  git analyze-expert "$@"
+  dispatch_analyze_subcommand "expert" "$@"
   ;;
 -h | --help | help) show_help ;;
 *)

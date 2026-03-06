@@ -13,8 +13,30 @@ teardown() {
   cleanup_test_repo
 }
 
+create_nested_co_change_history() {
+  mkdir -p src/components
+
+  cat > src/components/ComponentA.js <<'EOF'
+export const componentA = true;
+EOF
+  cat > src/components/helper.js <<'EOF'
+export const helper = true;
+EOF
+  git add src/components/ComponentA.js src/components/helper.js
+  git commit -q -m "feat: add nested co-change pair"
+
+  cat >> src/components/ComponentA.js <<'EOF'
+export const componentAUpdated = true;
+EOF
+  cat >> src/components/helper.js <<'EOF'
+export const helperUpdated = true;
+EOF
+  git add src/components/ComponentA.js src/components/helper.js
+  git commit -q -m "fix: update nested co-change pair"
+}
+
 @test "hug analyze co-changes: shows updated help" {
-  run git analyze-co-changes -h
+  run hug analyze co-changes --help
 
   assert_success
   assert_output --partial "hug analyze co-changes <file> [options]"
@@ -54,4 +76,36 @@ teardown() {
 
   assert_failure
   assert_output --partial "Positional commit counts were removed"
+}
+
+@test "hug analyze co-changes: normalizes nested repo paths from the repository root" {
+  create_nested_co_change_history
+
+  run hug analyze co-changes src/components/ComponentA.js --commits 20 --threshold 0.50
+
+  assert_success
+  assert_output --partial "Related files for src/components/ComponentA.js"
+  assert_output --partial "src/components/helper.js"
+}
+
+@test "hug analyze co-changes: normalizes cwd-relative nested paths from a subdirectory" {
+  create_nested_co_change_history
+  cd src/components
+
+  run hug analyze co-changes ComponentA.js --commits 20 --threshold 0.50
+
+  assert_success
+  assert_output --partial "Related files for src/components/ComponentA.js"
+  assert_output --partial "src/components/helper.js"
+}
+
+@test "hug analyze co-changes: rejects files outside the current repository" {
+  local outside_file
+  outside_file="$BATS_TEST_TMPDIR/outside-file.js"
+  echo "console.log('outside');" > "$outside_file"
+
+  run hug analyze co-changes "$outside_file"
+
+  assert_failure
+  assert_output --partial "File must be inside the current repository"
 }
