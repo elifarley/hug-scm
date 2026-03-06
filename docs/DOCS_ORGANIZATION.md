@@ -47,7 +47,8 @@ hug-scm/
 │   │   └── hug-completion-reference.md # Shell completion internals
 │   │
 │   ├── planning/                       # Planning & roadmap documents
-│   │   └── json-output-roadmap.md      # Future: JSON output support
+│   │   ├── json-output-roadmap.md      # Future: JSON output support
+│   │   └── co-changes-file-mode-plan.md # Co-change CLI redesign plan
 │   │
 │   ├── screencasts/                    # VHS tape files & guide
 │   │   ├── README.md                   # VHS guide (SINGLE SOURCE OF TRUTH)
@@ -139,6 +140,7 @@ hug-scm/
 
 **Examples**:
 - `json-output-roadmap.md` - JSON output support roadmap
+- `co-changes-file-mode-plan.md` - File-first redesign plan for co-change analysis
 - `bash-to-python-phase1-complete.md` - Phase 1-5 migration completion summary
 - `bash-to-python-cleanup-complete.md` - Cleanup completion summary
 - `bash-to-python-conventions.md` - Migration conventions and patterns
