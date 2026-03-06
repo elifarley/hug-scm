@@ -2,60 +2,78 @@
 # git-w - Working directory command gateway
 # Part of the Hug tool suite
 
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+
 set -euo pipefail # Exit on error, undefined vars, pipe failures
+
+dispatch_w_subcommand() {
+  local subcommand="$1"
+  shift
+  local script_path="$CMD_BASE/git-w-$subcommand"
+
+  # EDUCATIONAL NOTE:
+  # Gateway commands should forward directly to sibling scripts so subcommand
+  # flags like `--help` are interpreted by Hug itself rather than by Git.
+  if [[ -x "$script_path" ]]; then
+    exec "$script_path" "$@"
+  fi
+
+  exec git "w-$subcommand" "$@"
+}
 
 case "${1:-}" in
 discard)
   shift
-  git w-discard "$@"
+  dispatch_w_subcommand "discard" "$@"
   ;;
 discard-all)
   shift
-  git w-discard-all "$@"
+  dispatch_w_subcommand "discard-all" "$@"
   ;;
 purge)
   shift
-  git w-purge "$@"
+  dispatch_w_subcommand "purge" "$@"
   ;;
 purge-all)
   shift
-  git w-purge-all "$@"
+  dispatch_w_subcommand "purge-all" "$@"
   ;;
 wipe)
   shift
-  git w-wipe "$@"
+  dispatch_w_subcommand "wipe" "$@"
   ;;
 wipe-all)
   shift
-  git w-wipe-all "$@"
+  dispatch_w_subcommand "wipe-all" "$@"
   ;;
 zap)
   shift
-  git w-zap "$@"
+  dispatch_w_subcommand "zap" "$@"
   ;;
 zap-all)
   shift
-  git w-zap-all "$@"
+  dispatch_w_subcommand "zap-all" "$@"
   ;;
 get)
   shift
-  git w-get "$@"
+  dispatch_w_subcommand "get" "$@"
   ;;
 wip)
   shift
-  git-w-wip "$@"
+  dispatch_w_subcommand "wip" "$@"
   ;;
 wips)
   shift
-  git-w-wip "$@" --stay
+  dispatch_w_subcommand "wip" "$@" --stay
   ;;
 unwip)
   shift
-  git-w-unwip "$@"
+  dispatch_w_subcommand "unwip" "$@"
   ;;
 wipdel)
   shift
-  git-w-wipdel "$@"
+  dispatch_w_subcommand "wipdel" "$@"
   ;;
 *)
   printf 'Usage: hug w <command> [args]\n' >&2

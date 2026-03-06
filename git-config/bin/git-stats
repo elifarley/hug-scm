@@ -1,7 +1,27 @@
 #!/usr/bin/env bash
 # git-stats - Gateway for repository statistics commands
 # Part of the Hug tool suite
+
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+
 set -euo pipefail
+
+dispatch_stats_subcommand() {
+  local subcommand="$1"
+  shift
+  local script_path="$CMD_BASE/git-stats-$subcommand"
+
+  # EDUCATIONAL NOTE:
+  # Like other Hug gateways, direct dispatch keeps `hug stats <subcommand>
+  # --help` inside the subcommand's own parser instead of triggering Git's
+  # generic help handling first.
+  if [[ -x "$script_path" ]]; then
+    exec "$script_path" "$@"
+  fi
+
+  exec git "stats-$subcommand" "$@"
+}
 
 show_help() {
   cat << 'EOF'
@@ -37,15 +57,15 @@ EOF
 case "${1:-}" in
 file)
   shift
-  exec git stats-file "$@"
+  dispatch_stats_subcommand "file" "$@"
   ;;
 author)
   shift
-  exec git stats-author "$@"
+  dispatch_stats_subcommand "author" "$@"
   ;;
 branch)
   shift
-  exec git stats-branch "$@"
+  dispatch_stats_subcommand "branch" "$@"
   ;;
 -h | --help | help)
   show_help

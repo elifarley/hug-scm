@@ -2,36 +2,55 @@
 # git-h - HEAD command gateway
 # Part of the Hug tool suite
 
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+
 set -euo pipefail # Exit on error, undefined vars, pipe failures
+
+dispatch_h_subcommand() {
+  local subcommand="$1"
+  shift
+  local script_path="$CMD_BASE/git-h-$subcommand"
+
+  # EDUCATIONAL NOTE:
+  # Dispatch directly to the concrete script so `hug h <subcommand> --help`
+  # reaches the subcommand's own help text instead of letting Git intercept
+  # `--help` before the script can run.
+  if [[ -x "$script_path" ]]; then
+    exec "$script_path" "$@"
+  fi
+
+  exec git "h-$subcommand" "$@"
+}
 
 case "${1:-}" in
 files)
   shift
-  git h-files "$@"
+  dispatch_h_subcommand "files" "$@"
   ;;
 steps)
   shift
-  git h-steps "$@"
+  dispatch_h_subcommand "steps" "$@"
   ;;
 back)
   shift
-  git h-back "$@"
+  dispatch_h_subcommand "back" "$@"
   ;;
 undo)
   shift
-  git h-undo "$@"
+  dispatch_h_subcommand "undo" "$@"
   ;;
 rollback)
   shift
-  git h-rollback "$@"
+  dispatch_h_subcommand "rollback" "$@"
   ;;
 rewind)
   shift
-  git h-rewind "$@"
+  dispatch_h_subcommand "rewind" "$@"
   ;;
 squash)
   shift
-  git h-squash "$@"
+  dispatch_h_subcommand "squash" "$@"
   ;;
 *)
   printf 'Usage: hug h <command> [args]\n' >&2
