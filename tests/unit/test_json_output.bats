@@ -23,24 +23,27 @@ validate_json() {
 # =============================================================================
 
 @test "hug analyze co-changes --json: produces valid JSON" {
-  run hug analyze co-changes 10 --json
+  run hug analyze co-changes file1.txt --json
 
   assert_success
   validate_json "$output"
 }
 
 @test "hug analyze co-changes --json: contains expected fields" {
-  run hug analyze co-changes 10 --json
+  run hug analyze co-changes file1.txt --json
 
   assert_success
+  assert_output --partial '"mode": "file"'
   assert_output --partial '"commits_analyzed"'
   assert_output --partial '"threshold"'
-  assert_output --partial '"total_pairs"'
+  assert_output --partial '"result_count"'
+  assert_output --partial '"target_file": "file1.txt"'
+  assert_output --partial '"target_changes"'
   assert_output --partial '"correlations"'
 }
 
 @test "hug analyze co-changes --json: correlations have required fields" {
-  run hug analyze co-changes 10 --json
+  run hug analyze co-changes file1.txt --json
 
   assert_success
   assert_output --partial '"file_a"'
@@ -54,10 +57,19 @@ validate_json() {
 @test "hug analyze co-changes --json: can be piped to jq" {
   command -v jq >/dev/null || skip "jq not installed"
 
-  run bash -c "hug analyze co-changes 10 --json | jq -r '.commits_analyzed'"
+  run bash -c "hug analyze co-changes file1.txt --json | jq -r '.target_file'"
 
   assert_success
-  [[ "$output" =~ ^[0-9]+$ ]]  # Should be a number
+  assert_output "file1.txt"
+}
+
+@test "hug analyze co-changes --all --json: contains repository-wide mode metadata" {
+  run hug analyze co-changes --all --json
+
+  assert_success
+  validate_json "$output"
+  assert_output --partial '"mode": "all"'
+  assert_output --partial '"result_count"'
 }
 
 # =============================================================================
@@ -192,7 +204,7 @@ validate_json() {
 
 @test "All JSON outputs are valid and parseable by python json.tool" {
   # Test co-changes
-  run hug analyze co-changes 10 --json
+  run hug analyze co-changes file1.txt --json
   assert_success
   validate_json "$output"
 

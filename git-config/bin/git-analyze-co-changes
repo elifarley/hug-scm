@@ -12,78 +12,130 @@ show_help() {
 hug analyze co-changes: Find files that frequently change together
 
 USAGE:
-    hug analyze co-changes [<count>] [options]
+    hug analyze co-changes <file> [options]
+    hug analyze co-changes --all [options]
 
 ARGUMENTS:
-    <count>           Number of commits to analyze (default: 100)
+    <file>             Analyze files that commonly change with this file
 
 OPTIONS:
-    --since <date>    Only analyze commits since date
-    --threshold <pct> Minimum correlation (0.0-1.0, default: 0.30)
-    --top <n>         Show top N pairs (default: 20)
-    --json            Output as JSON
-    -h, --help        Show this help
+    --all              Analyze repository-wide file coupling
+    --commits <n>      Number of commits to analyze (default: 100)
+    --since <date>     Only analyze commits since date
+    --threshold <pct>  Minimum correlation (0.0-1.0, default: 0.30)
+    --top <n>          Show top N results (default: 20)
+    --json             Output as JSON
+    --browse-root      Browse full repository scope in file selector UI
+    -h, --help         Show this help
 
 DESCRIPTION:
-    Analyzes commit history to find files that are frequently modified
-    together. This helps identify:
-    - Related components that should be reviewed together
-    - Potential architectural coupling
-    - Files to check when modifying a specific file
+    File mode answers the most common question directly:
+    "Given this file, what other files usually change with it?"
+
+    Repo-wide mode (`--all`) answers the broader architectural question:
+    "Which file pairs are most strongly coupled overall?"
 
     Correlation formula: co_changes / min(changes_a, changes_b)
     This measures: "When the less-changed file changes, how often
     does the other file also change?"
 
 EXAMPLES:
-    hug analyze co-changes              # Last 100 commits, ≥30%
-    hug analyze co-changes 200          # Last 200 commits
-    hug analyze co-changes --threshold 0.50  # Only strong coupling
-    hug analyze co-changes --since="1 month ago"
-    hug analyze co-changes --json       # Machine-readable output
+    hug analyze co-changes src/auth/login.js
+    hug analyze co-changes src/auth/login.js --commits 200 --threshold 0.50
+    hug analyze co-changes --all --commits 200
+    hug analyze co-changes --all --since="1 month ago" --json
 
-OUTPUT FORMAT:
+OUTPUT FORMAT (file mode):
+    Related files for src/auth/login.js:
+
+    Strong coupling (≥60%):
+      src/auth/session.js
+        68% correlation (23/34 commits)
+
+OUTPUT FORMAT (--all):
     Co-change Analysis (last 100 commits, ≥30% correlation):
 
     Strong coupling (≥60%):
       src/auth/login.js ↔ src/auth/session.js
         68% correlation (23/34 commits)
 
-    Moderate coupling (40-60%):
-      src/api/users.js ↔ src/models/user.js
-        54% correlation (18/33 commits)
-
-    Interpretation:
-      High correlation = Files likely architecturally coupled
-      Consider: Co-locate, refactor into module, or document dependency
-
 SEE ALSO:
-    hug h files      : Files changed in commits
-    hug analyze deps : Commit dependency graph
-    hug stats file   : File-level statistics
+    hug h files        : Files changed in commits
+    hug analyze deps   : Commit dependency graph
+    hug stats file     : File-level statistics
+    hug analyze expert : Identify who knows a file best
 EOF
 }
 
+normalize_target_to_repo_relative() {
+  local input_path="$1"
+  local repo_root absolute_dir absolute_path
+
+  repo_root="$(git rev-parse --show-toplevel)"
+  absolute_dir="$(cd "$(dirname "$input_path")" && pwd -P)"
+  absolute_path="$absolute_dir/$(basename "$input_path")"
+
+  if [[ "$absolute_path" != "$repo_root"/* ]]; then
+    return 1
+  fi
+
+  # LESSON LEARNED: `git log --name-only` emits repo-root-relative paths, while
+  # users often pass cwd-relative paths. Normalizing once in the CLI keeps the
+  # Python helper focused on analysis instead of path semantics.
+  printf '%s\n' "${absolute_path#"$repo_root"/}"
+}
+
 # Parse arguments
+target=""
+all_mode=false
 commits=100
 since_arg=""
 threshold=0.30
 top=20
 json_output=false
+browse_root=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
+  --all)
+    all_mode=true
+    shift
+    ;;
+  --browse-root)
+    browse_root=true
+    shift
+    ;;
+  --commits)
+    commits="$2"
+    shift 2
+    ;;
+  --commits=*)
+    commits="${1#*=}"
+    shift
+    ;;
   --since)
     since_arg="$2"
     shift 2
+    ;;
+  --since=*)
+    since_arg="${1#*=}"
+    shift
     ;;
   --threshold)
     threshold="$2"
     shift 2
     ;;
+  --threshold=*)
+    threshold="${1#*=}"
+    shift
+    ;;
   --top)
     top="$2"
     shift 2
+    ;;
+  --top=*)
+    top="${1#*=}"
+    shift
     ;;
   --json)
     json_output=true
@@ -93,39 +145,90 @@ while [ $# -gt 0 ]; do
     show_help
     exit 0
     ;;
-  [0-9]*)
-    commits="$1"
-    shift
-    ;;
-  *)
+  -*)
     error "Unknown option: $1"
     show_help
     exit 1
+    ;;
+  *)
+    if [ -z "$target" ]; then
+      target="$1"
+      shift
+    else
+      error "Only one target file may be provided. Use --all for repository-wide analysis."
+      show_help
+      exit 1
+    fi
     ;;
   esac
 done
 
 check_git_repo
 
-# Check for Python helper
 python_script="$CMD_BASE/../lib/python/co_changes.py"
-
 if [ ! -f "$python_script" ]; then
   error "Co-change analysis not available: $python_script not found"
   exit 1
 fi
 
-# Build git log command
-git_cmd=(git log --name-only --format=%H)
+if $all_mode && [ -n "$target" ]; then
+  error "Choose either a target file or --all, not both."
+  exit 1
+fi
 
+if ! $all_mode && [ -z "$target" ]; then
+  if gum_available && [ -t 0 ]; then
+    declare -a select_opts=("--single")
+
+    if ! $browse_root; then
+      select_opts+=("--cwd")
+    fi
+
+    select_opts+=("--prompt" "Select file for co-change analysis...")
+
+    if ! target=$(select_files_with_status "${select_opts[@]}"); then
+      info "No file selected or cancelled."
+      exit 0
+    fi
+  else
+    error "File argument required.
+Usage: hug analyze co-changes <file>
+   or: hug analyze co-changes --all"
+    exit 1
+  fi
+fi
+
+if [ -n "$target" ]; then
+  if [[ "$target" =~ ^[0-9]+$ ]]; then
+    error "Positional commit counts were removed. Use --commits <n> or pass a file path."
+    exit 1
+  fi
+
+  if [ ! -f "$target" ]; then
+    error "File not found: $target"
+    exit 1
+  fi
+
+  if ! target="$(normalize_target_to_repo_relative "$target")"; then
+    error "File must be inside the current repository: $target"
+    exit 1
+  fi
+fi
+
+git_cmd=(git log --name-only --format=%H)
 if [ -n "$since_arg" ]; then
   git_cmd+=(--since="$since_arg")
 else
   git_cmd+=(-n "$commits")
 fi
 
-# Build Python command
 py_args=(--commits="$commits" --threshold="$threshold" --top="$top")
+
+if $all_mode; then
+  py_args+=(--all)
+else
+  py_args+=(--target-file "$target")
+fi
 
 if $json_output; then
   py_args+=(--format=json)
@@ -133,5 +236,4 @@ else
   py_args+=(--format=text)
 fi
 
-# Execute pipeline
 "${git_cmd[@]}" | python3 "$python_script" "${py_args[@]}"

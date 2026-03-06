@@ -68,7 +68,7 @@ Hug SCM delivers **four tiers of value** beyond raw Git:
 
 ```bash
 # Analysis with JSON output
-hug analyze co-changes 50 --json | jq '.correlations[0]'
+hug analyze co-changes --all --commits 50 --json | jq '.correlations[0]'
 hug analyze expert src/auth/login.js --json | jq '.ownership[0]'
 hug stats file README.md --json | jq '.file_churn'
 hug analyze activity --by-hour --json | jq '.analysis.data'
@@ -412,8 +412,8 @@ hug g --aggressive           # Expire reflog + aggressive gc (maximum cleanup)
 #### 🔬 Advanced Analysis (`analyze`)
 
 ```shell
-hug analyze co-changes [N]    # Find files that frequently change together
-hug analyze co-changes 200 --threshold 0.50  # Strong coupling only
+hug analyze co-changes <file> # Find files related to a specific file
+hug analyze co-changes --all --commits 200 --threshold 0.50  # Strong repo-wide coupling only
 hug analyze activity          # Temporal commit patterns (hour/day histograms)
 hug analyze activity --by-hour --by-author   # Per-author hour breakdown
 hug analyze expert <file>     # Identify code ownership and expertise

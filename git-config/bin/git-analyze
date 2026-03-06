@@ -18,7 +18,7 @@ COMMANDS:
     expert          Identify code ownership and expertise areas
 
 EXAMPLES:
-    hug analyze co-changes 50              # Analyze last 50 commits
+    hug analyze co-changes src/auth/login.js   # Files related to a target file
     hug analyze activity --by-hour         # Activity by hour of day
     hug analyze deps abc1234               # Dependencies for commit
     hug analyze expert src/auth/login.js   # Who owns this file

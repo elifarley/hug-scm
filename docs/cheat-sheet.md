@@ -185,8 +185,9 @@ hug w wipdel WIP/YY-MM-DD/HHMM.slug  # **W**ork **I**n **P**rogress **DEL**ete
 
 ```bash
 # Computational analysis (files that change together)
-hug analyze co-changes 100              # Find coupling in last 100 commits
-hug analyze co-changes --threshold 0.50 # Strong coupling only (≥50%)
+hug analyze co-changes <file>                     # Files related to one file
+hug analyze co-changes --all --commits 100        # Repo-wide coupling in last 100 commits
+hug analyze co-changes <file> --threshold 0.50    # Strong file coupling only (≥50%)
 
 # Code ownership & expertise
 hug analyze expert <file>               # Who owns this code? (recency-weighted)
@@ -212,7 +213,7 @@ hug stats branch feature/x              # Branch statistics
 hug lf "fix\|bug\|resolve" -i --all     # OR patterns in commit messages
 
 # JSON export for automation
-hug analyze co-changes --json           # Machine-readable coupling data
+hug analyze co-changes --all --json     # Machine-readable repo-wide coupling data
 hug analyze expert <file> --json        # Ownership data export
 hug stats file <file> --json            # File metrics export
 

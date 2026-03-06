@@ -97,7 +97,7 @@ All existing JSON implementations:
 ### ✅ Phase 4a Complete (Analysis Commands)
 
 The top-priority analysis commands now have full JSON support:
-1. ✅ `hug analyze co-changes --json`
+1. ✅ `hug analyze co-changes --all --json`
 2. ✅ `hug analyze expert --json`
 3. ✅ `hug stats file --json`
 4. ✅ `hug analyze activity --json`

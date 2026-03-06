@@ -543,17 +543,17 @@ These workflows use **statistical algorithms and graph analysis** impossible wit
 **Goal**: Find files that change together (architectural coupling).
 
 ```bash
-# Basic analysis (last 100 commits)
-hug analyze co-changes 100
+# File-focused analysis
+hug analyze co-changes src/problematic.ts
 
-# Strong coupling only
-hug analyze co-changes 200 --threshold 0.50    # ≥50% correlation
+# Repo-wide analysis (last 100 commits)
+hug analyze co-changes --all --commits 100
 
-# Top coupled pairs
-hug analyze co-changes --top 10
+# Strong repo-wide coupling only
+hug analyze co-changes --all --commits 200 --threshold 0.50
 
 # Export for dashboards
-hug analyze co-changes --json > coupling.json
+hug analyze co-changes --all --json > coupling.json
 ```
 
 **Algorithm**: Builds co-occurrence matrix from commit history, calculates correlation coefficients.
@@ -888,12 +888,12 @@ Build custom dashboards and reports:
 
 ```bash
 # Extract data
-hug analyze co-changes --json > coupling.json
+hug analyze co-changes --all --json > coupling.json
 hug analyze activity --json > activity.json
 hug stats file src/main.ts --json > file-stats.json
 
 # Process with jq, Python, or your analytics tool
-cat coupling.json | jq '.high_coupling_pairs'
+cat coupling.json | jq '.correlations[:5]'
 
 # Visualize in Grafana, custom dashboard, etc.
 ```
@@ -910,7 +910,7 @@ hug sl                                         # Better UX than git status
 hug lf "keyword" --with-files                  # Combined operations
 
 # Tier 3: Computational Analysis
-hug analyze co-changes --threshold 0.5         # Statistical algorithms
+hug analyze co-changes src/main.ts --threshold 0.5  # Statistical coupling for one file
 
 # Tier 4: Machine-Readable Export
 hug analyze expert src/main.ts --json          # Automation ready

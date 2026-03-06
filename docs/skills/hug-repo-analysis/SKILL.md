@@ -425,17 +425,17 @@ These commands perform **statistical analysis and graph algorithms** impossible 
 **Problem:** Which files change together? Reveals architectural coupling.
 
 ```bash
-# Analyze last 100 commits for co-changing files
-hug analyze co-changes 100
+# Analyze files related to one target file
+hug analyze co-changes src/problematic.ts
 
-# Strong coupling only (≥50% correlation)
-hug analyze co-changes --threshold 0.50
+# Strong repo-wide coupling only (≥50% correlation)
+hug analyze co-changes --all --threshold 0.50
 
 # Top 10 pairs
-hug analyze co-changes --top 10
+hug analyze co-changes --all --top 10
 
 # Machine-readable export
-hug analyze co-changes --json
+hug analyze co-changes --all --json
 ```
 
 **Algorithm:** Builds co-occurrence matrix from commit history, calculates Jaccard-like correlation coefficients.
@@ -602,7 +602,7 @@ hug fblame --churn --json src/auth.js
 
 ```bash
 # Build custom dashboards
-hug analyze co-changes --json > coupling.json
+hug analyze co-changes --all --json > coupling.json
 hug analyze expert --author "Alice" --json > alice-expertise.json
 hug analyze activity --json > team-health.json
 hug analyze deps --all --format json > commit-graph.json
@@ -695,8 +695,8 @@ hug fcon <file>              # contributors
 hug h steps <file>           # commits since change
 
 # Computational Analysis (with JSON export!)
-hug analyze co-changes 100              # files that change together
-hug analyze co-changes --json           # coupling data export
+hug analyze co-changes <file>           # files related to a target file
+hug analyze co-changes --all --json     # repository-wide coupling data export
 hug analyze expert <file>               # code ownership
 hug analyze expert <file> --json        # ownership data export
 hug analyze expert --author "Alice"     # expertise areas
