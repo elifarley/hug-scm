@@ -14,6 +14,13 @@ teardown() {
   cleanup_test_repo
 }
 
+create_interactive_tag_fixture() {
+  local i
+  for i in $(seq 1 10); do
+    git tag "release-$i" HEAD
+  done
+}
+
 @test "git-tl: lists tags with type indicators" {
   # Create different types of tags
   git tag v1.0.0 HEAD~2
@@ -280,6 +287,45 @@ teardown() {
 
   # Would need to mock 'git ls-remote' for full test
   assert_success
+}
+
+@test "git-tdel: interactive gum multi-select deletes the chosen tags" {
+  setup_gum_mock
+  create_interactive_tag_fixture
+
+  local -a ordered_tags=()
+  mapfile -t ordered_tags < <(git tag --sort=-version:refname)
+  export HUG_TEST_GUM_SELECTION_INDICES="1,4"
+
+  run hug tdel -f
+
+  assert_success
+  assert_output --partial "Deleted local tag: ${ordered_tags[1]}"
+  assert_output --partial "Deleted local tag: ${ordered_tags[4]}"
+
+  run git rev-parse --verify "refs/tags/${ordered_tags[1]}"
+  assert_failure
+
+  run git rev-parse --verify "refs/tags/${ordered_tags[4]}"
+  assert_failure
+
+  run git rev-parse --verify "refs/tags/${ordered_tags[0]}"
+  assert_success
+
+  teardown_gum_mock
+}
+
+@test "git-t: interactive browser exits cleanly when gum selection is cancelled" {
+  setup_gum_mock
+  create_interactive_tag_fixture
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1
+
+  run hug t
+
+  assert_success
+  assert_output --partial "No tag selected"
+
+  teardown_gum_mock
 }
 
 @test "git-t: interactive tag browser" {

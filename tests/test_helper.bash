@@ -651,7 +651,10 @@ teardown_gum_mock() {
 
   # Unset any mock-related environment variables
   unset HUG_TEST_GUM_SELECTION_INDEX
+  unset HUG_TEST_GUM_SELECTION_INDICES
   unset HUG_TEST_GUM_CONFIRM
+  unset HUG_TEST_GUM_INPUT
+  unset HUG_TEST_GUM_INPUT_RETURN_CODE
 }
 
 # Skip test if gum is not available

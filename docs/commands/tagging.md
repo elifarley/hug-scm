@@ -167,9 +167,6 @@ hug tdel -r v1.0.0
 # Preview deletions without executing
 hug tdel --dry-run
 
-# Delete multiple tags
-hug tdel --multi
-
 # Filter by type
 hug tdel --type annotated
 ```

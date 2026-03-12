@@ -50,7 +50,8 @@ hug-scm/
 │   │   ├── json-output-roadmap.md      # Future: JSON output support
 │   │   ├── co-changes-file-mode-plan.md # Co-change CLI redesign plan
 │   │   ├── 2026-03-06-whole-codebase-code-roast.md # Whole-repo engineering review
-│   │   └── 2026-03-06-codebase-hardening-action-plan.md # Ranked hardening roadmap
+│   │   ├── 2026-03-06-codebase-hardening-action-plan.md # Ranked hardening roadmap
+│   │   └── 2026-03-12-tag-selection-and-tdel-code-roast.md # Focused post-refactor engineering review
 │   │
 │   ├── screencasts/                    # VHS tape files & guide
 │   │   ├── README.md                   # VHS guide (SINGLE SOURCE OF TRUTH)
@@ -145,6 +146,7 @@ hug-scm/
 - `co-changes-file-mode-plan.md` - File-first redesign plan for co-change analysis
 - `2026-03-06-whole-codebase-code-roast.md` - Whole-repository engineering roast report
 - `2026-03-06-codebase-hardening-action-plan.md` - Ranked action plan derived from engineering review
+- `2026-03-12-tag-selection-and-tdel-code-roast.md` - Focused engineering roast for tag-selection hardening
 - `bash-to-python-phase1-complete.md` - Phase 1-5 migration completion summary
 - `bash-to-python-cleanup-complete.md` - Cleanup completion summary
 - `bash-to-python-conventions.md` - Migration conventions and patterns

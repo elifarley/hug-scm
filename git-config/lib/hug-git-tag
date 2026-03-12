@@ -554,6 +554,77 @@ print_detailed_tag_list() {
 # Selection Functions
 ################################################################################
 
+# Builds formatted tag rows for interactive selection.
+# Usage: _build_tag_select_options current_tag tags hashes types subjects formatted_options
+# WHY: Keep display formatting in one place so single-select and multi-select stay in lockstep.
+_build_tag_select_options() {
+    local current_tag="$1"
+    local -n tags_ref="$2"
+    local -n hashes_ref="$3"
+    local -n types_ref="$4"
+    local -n subjects_ref="$5"
+    local -n formatted_ref="$6"
+
+    formatted_ref=()
+
+    local i
+    for i in "${!tags_ref[@]}"; do
+        local option="${tags_ref[i]}"
+        if [[ "${tags_ref[i]}" == "$current_tag" ]]; then
+            option="* $option"
+        fi
+
+        case "${types_ref[i]}" in
+            "lightweight")
+                option="$option [L]"
+                ;;
+            "annotated")
+                option="$option [A]"
+                ;;
+            "signed")
+                option="$option [S]"
+                ;;
+        esac
+
+        option="$option ${hashes_ref[i]} ${subjects_ref[i]}"
+        formatted_ref+=("$option")
+    done
+}
+
+# Maps 0-based selection indices back to tag names with bounds checking.
+# Usage: _map_selected_tag_indices selected_tags selected_indices tags
+# Returns:
+#   0 if at least one valid tag was selected
+#   1 if no indices were provided
+#   2 if all indices were invalid
+_map_selected_tag_indices() {
+    local -n selected_ref="$1"
+    local -n indices_ref="$2"
+    local -n tags_ref="$3"
+
+    selected_ref=()
+
+    if [[ ${#indices_ref[@]} -eq 0 ]]; then
+        return 1
+    fi
+
+    local idx
+    for idx in "${indices_ref[@]}"; do
+        if [[ ! "$idx" =~ ^[0-9]+$ ]] || [[ "$idx" -lt 0 ]] || [[ "$idx" -ge ${#tags_ref[@]} ]]; then
+            warn "Skipped invalid tag selection index: $idx"
+            continue
+        fi
+
+        selected_ref+=("${tags_ref[idx]}")
+    done
+
+    if [[ ${#selected_ref[@]} -eq 0 ]]; then
+        return 2
+    fi
+
+    return 0
+}
+
 # Universal tag selection function
 # Usage: select_tags selected_tags [options]
 # Parameters:
@@ -563,7 +634,12 @@ print_detailed_tag_list() {
 #   --type TYPE       Filter by type (lightweight/annotated/signed)
 #   --pattern PATTERN Filter by name pattern
 #   --prompt TEXT     Custom prompt text
+# Returns:
+#   0 if one or more tags were selected
+#   1 if the selection was cancelled or left empty
+#   2 if no tags exist, no tags match the filters, or an internal selection error occurred
 select_tags() {
+    local selected_array_name="$1"
     local -n selected_ref="$1"
     shift
 
@@ -593,7 +669,7 @@ select_tags() {
                 ;;
             *)
                 error "Unknown option for select_tags: $1"
-                return 1
+                return 2
                 ;;
         esac
     done
@@ -605,7 +681,7 @@ select_tags() {
 
     if ! compute_tag_details current_tag max_len hashes tags types subjects dates signatures; then
         warn "No tags found in this repository."
-        return 1
+        return 2
     fi
 
     # Apply filters
@@ -633,69 +709,35 @@ select_tags() {
 
     if [[ ${#filtered_tags[@]} -eq 0 ]]; then
         warn "No tags match the specified filters."
-        return 1
+        return 2
     fi
 
     # Use gum if available and enough tags
     if gum_available && [[ ${#filtered_tags[@]} -ge 10 ]]; then
-        # Build formatted options for gum
         local -a formatted_options=()
-        for ((i = 0; i < ${#filtered_tags[@]}; i++)); do
-            local tag="${filtered_tags[i]}"
-            local hash="${filtered_hashes[i]}"
-            local type="${filtered_types[i]}"
-            local subject="${filtered_subjects[i]}"
+        _build_tag_select_options "$current_tag" filtered_tags filtered_hashes filtered_types filtered_subjects formatted_options
 
-            local option="$tag"
-            if [[ "$tag" == "$current_tag" ]]; then
-                option="* $option"
-            fi
-
-            # Add type indicator
-            case "$type" in
-                "lightweight")
-                    option="$option [L]"
-                    ;;
-                "annotated")
-                    option="$option [A]"
-                    ;;
-                "signed")
-                    option="$option [S]"
-                    ;;
-            esac
-
-            option="$option $hash $subject"
-            formatted_options+=("$option")
-        done
+        local selection_output=""
+        local -a selected_indices=()
 
         if [[ "$multi_select" == "true" ]]; then
-            # Multi-select with gum
-            local -a selected_indices=()
-            if [[ -n "$prompt" ]]; then
-                mapfile -t selected_indices < <(printf '%s\n' "${formatted_options[@]}" | gum filter --multi --prompt="$prompt " | nl -nrn | cut -f1)
-            else
-                mapfile -t selected_indices < <(printf '%s\n' "${formatted_options[@]}" | gum filter --multi | nl -nrn | cut -f1)
+            if ! selection_output=$(gum_filter_by_index formatted_options "$prompt" --no-limit); then
+                selected_ref=()
+                return 1
             fi
-
-            # Convert to tags (adjusting for 0-based indexing)
-            selected_ref=()
-            for idx in "${selected_indices[@]}"; do
-                selected_ref+=("${filtered_tags[$((idx-1))]}")
-            done
         else
-            # Single select with gum
-            local selection
-            if [[ -n "$prompt" ]]; then
-                selection=$(printf '%s\n' "${formatted_options[@]}" | gum filter --prompt="$prompt ")
-            else
-                selection=$(printf '%s\n' "${formatted_options[@]}" | gum filter)
+            if ! selection_output=$(gum_filter_by_index formatted_options "$prompt"); then
+                selected_ref=()
+                return 1
             fi
+        fi
 
-            # Extract tag name from selection (strip leading *, type indicators, hash, subject)
-            local tag_name
-            tag_name=$(echo "$selection" | sed -E 's/^\*? //; s/ \[L\]$//; s/ \[A\]$//; s/ \[S\]$//; s/ [a-f0-9]{7}.*//')
-
-            selected_ref=("$tag_name")
+        mapfile -t selected_indices <<< "$selection_output"
+        if _map_selected_tag_indices "$selected_array_name" selected_indices filtered_tags; then
+            :
+        else
+            map_status=$?
+            return "$map_status"
         fi
     else
         # Fallback to numbered list
@@ -733,15 +775,22 @@ select_tags() {
                 done
             done
 
-            # Convert to tags
-            selected_ref=()
-            for idx in "${selected_indices[@]}"; do
-                selected_ref+=("${filtered_tags[$idx]}")
-            done
+            if _map_selected_tag_indices "$selected_array_name" selected_indices filtered_tags; then
+                :
+            else
+                map_status=$?
+                if [[ $map_status -eq 1 ]]; then
+                    return 1
+                fi
+                return 2
+            fi
         else
             # Single select with numbered list
             local index
-            index=$(get_numbered_selection_index "${#filtered_tags[@]}")
+            if ! index=$(get_numbered_selection_index "${#filtered_tags[@]}"); then
+                selected_ref=()
+                return 1
+            fi
             selected_ref=("${filtered_tags[$index]}")
         fi
     fi

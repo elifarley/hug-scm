@@ -52,7 +52,6 @@ EXAMPLES:
   hug tdel --remote v1.0.0     # Delete locally and from origin
   hug tdel --dry-run           # Preview what would be deleted
   hug tdel                     # Interactive tag selection
-  hug tdel --multi             # Select multiple tags to delete
   hug tdel --type annotated    # Delete only annotated tags
   hug tdel --pattern "v1.*"    # Delete tags matching pattern
 
@@ -213,51 +212,6 @@ if [ ${#args[@]} -gt 0 ]; then
   exit 0
 fi
 
-# Interactive multi-tag selection mode
-# Get all tags
-current_tag=""
-max_len=0
-tags=()
-hashes=()
-types=()
-subjects=()
-dates=()
-signatures=()
-
-if ! compute_tag_details current_tag max_len hashes tags types subjects dates signatures; then
-  error "No tags found in this repository."
-  exit 1
-fi
-
-# Apply filters if specified
-filtered_tags=()
-filtered_hashes=()
-filtered_types=()
-filtered_subjects=()
-
-i=0
-for ((i = 0; i < ${#tags[@]}; i++)); do
-  # Type filter
-  if [[ -n "$type_filter" && "${types[i]}" != "$type_filter" ]]; then
-    continue
-  fi
-
-  # Pattern filter
-  if [[ -n "$pattern" && ! "${tags[i]}" =~ $pattern ]]; then
-    continue
-  fi
-
-  filtered_tags+=("${tags[i]}")
-  filtered_hashes+=("${hashes[i]}")
-  filtered_types+=("${types[i]}")
-  filtered_subjects+=("${subjects[i]}")
-done
-
-if [[ ${#filtered_tags[@]} -eq 0 ]]; then
-  error "No tags match the specified filters."
-  exit 1
-fi
-
 # Select multiple tags for deletion
 selected_tags=()
 select_options=()
@@ -270,11 +224,15 @@ fi
 
 select_options+=(--multi-select)
 select_options+=(--prompt "Select tags to delete")
-select_tags selected_tags "${select_options[@]}"
-
-if [[ ${#selected_tags[@]} -eq 0 ]]; then
-  info "No tags selected."
-  exit 0
+if select_tags selected_tags "${select_options[@]}"; then
+  :
+else
+  select_status=$?
+  if [[ $select_status -eq 1 ]]; then
+    info "No tags selected."
+    exit 0
+  fi
+  exit "$select_status"
 fi
 
 # Show what will be deleted
@@ -351,20 +309,20 @@ for tag in "${selected_tags[@]}"; do
   # Delete local tag
   if git tag -d "$tag" 2> /dev/null; then
     success "Deleted local tag: $tag"
-    ((deleted_count++))
+    deleted_count=$((deleted_count + 1))
 
     # Delete remote tag if requested
     if [[ "$delete_remote" == "true" && "$exists_remote" == "true" ]]; then
       if git push origin --delete "refs/tags/$tag" 2> /dev/null; then
         success "Deleted remote tag: $tag"
-        ((remote_deleted_count++))
+        remote_deleted_count=$((remote_deleted_count + 1))
       else
         warn "Failed to delete remote tag: $tag"
       fi
     fi
   else
     error "Failed to delete local tag: $tag"
-    ((failed_count++))
+    failed_count=$((failed_count + 1))
   fi
 done
 

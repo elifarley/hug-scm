@@ -247,7 +247,16 @@ if [[ -n "$pattern" ]]; then
 fi
 
 select_options+=(--prompt "Browse and select a tag")
-select_tags selected_tags "${select_options[@]}"
+if select_tags selected_tags "${select_options[@]}"; then
+  :
+else
+  select_status=$?
+  if [[ $select_status -eq 1 ]]; then
+    info "No tag selected."
+    exit 0
+  fi
+  exit "$select_status"
+fi
 
 selected_tag="${selected_tags[0]}"
 
