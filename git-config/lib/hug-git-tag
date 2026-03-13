@@ -554,43 +554,6 @@ print_detailed_tag_list() {
 # Selection Functions
 ################################################################################
 
-# Builds formatted tag rows for interactive selection.
-# Usage: _build_tag_select_options current_tag tags hashes types subjects formatted_options
-# WHY: Keep display formatting in one place so single-select and multi-select stay in lockstep.
-_build_tag_select_options() {
-    local current_tag="$1"
-    local -n tags_ref="$2"
-    local -n hashes_ref="$3"
-    local -n types_ref="$4"
-    local -n subjects_ref="$5"
-    local -n formatted_ref="$6"
-
-    formatted_ref=()
-
-    local i
-    for i in "${!tags_ref[@]}"; do
-        local option="${tags_ref[i]}"
-        if [[ "${tags_ref[i]}" == "$current_tag" ]]; then
-            option="* $option"
-        fi
-
-        case "${types_ref[i]}" in
-            "lightweight")
-                option="$option [L]"
-                ;;
-            "annotated")
-                option="$option [A]"
-                ;;
-            "signed")
-                option="$option [S]"
-                ;;
-        esac
-
-        option="$option ${hashes_ref[i]} ${subjects_ref[i]}"
-        formatted_ref+=("$option")
-    done
-}
-
 # Maps 0-based selection indices back to tag names with bounds checking.
 # Usage: _map_selected_tag_indices selected_tags selected_indices tags
 # Returns:
@@ -625,7 +588,7 @@ _map_selected_tag_indices() {
     return 0
 }
 
-# Universal tag selection function
+# Universal tag selection function — Python-backed adapter
 # Usage: select_tags selected_tags [options]
 # Parameters:
 #   $1 - Nameref to array to receive selected tags
@@ -638,33 +601,39 @@ _map_selected_tag_indices() {
 #   0 if one or more tags were selected
 #   1 if the selection was cancelled or left empty
 #   2 if no tags exist, no tags match the filters, or an internal selection error occurred
+#
+# WHY: This function delegates data-heavy work (tag discovery, filtering,
+# formatting, numbered-list interaction) to Python's tag_select.py, keeping
+# only gum integration and result mapping in Bash. This replaces ~130 lines
+# of parallel-array management with a thin adapter.
 select_tags() {
     local selected_array_name="$1"
     local -n selected_ref="$1"
     shift
 
     local multi_select=false
-    local type_filter=""
-    local pattern_filter=""
     local prompt="Select a tag"
+    local -a python_args=()
 
-    # Parse options
+    # Parse options — build python_args for passthrough
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --multi-select)
                 multi_select=true
+                python_args+=(--multi)
                 shift
                 ;;
             --type)
-                type_filter="$2"
+                python_args+=(--type "$2")
                 shift 2
                 ;;
             --pattern)
-                pattern_filter="$2"
+                python_args+=(--pattern "$2")
                 shift 2
                 ;;
             --prompt)
                 prompt="$2"
+                python_args+=(--prompt "$2")
                 shift 2
                 ;;
             *)
@@ -674,128 +643,76 @@ select_tags() {
         esac
     done
 
-    # Get tag details
-    local current_tag=""
-    local max_len=0
-    local -a tags=() hashes=() types=() subjects=() dates=() signatures=()
+    local tag_select_py="$HUG_HOME/git-config/lib/python/git/tag_select.py"
 
-    if ! compute_tag_details current_tag max_len hashes tags types subjects dates signatures; then
-        warn "No tags found in this repository."
-        return 2
-    fi
+    # Gum path: Python prepares data, Bash handles gum interaction
+    if gum_available; then
+        # shellcheck disable=SC2034  # variables set by eval from Python output
+        local -a filtered_tags=() formatted_options=()
+        local selection_status="" tag_count=0
 
-    # Apply filters
-    local -a filtered_tags=() filtered_hashes=() filtered_types=() filtered_subjects=()
-    local i
-    for ((i = 0; i < ${#tags[@]}; i++)); do
-        local tag="${tags[i]}"
-        local type="${types[i]}"
-
-        # Type filter
-        if [[ -n "$type_filter" && "$type" != "$type_filter" ]]; then
-            continue
+        if ! eval "$(python3 "$tag_select_py" prepare "${python_args[@]}")"; then
+            return 2
         fi
 
-        # Pattern filter
-        if [[ -n "$pattern_filter" && ! "$tag" =~ $pattern_filter ]]; then
-            continue
+        # Check for no-data states
+        if [[ "$selection_status" == "no_tags" || "$selection_status" == "no_matches" ]]; then
+            selected_ref=()
+            [[ "$selection_status" == "no_tags" ]] && warn "No tags found in this repository."
+            [[ "$selection_status" == "no_matches" ]] && warn "No tags match the specified filters."
+            return 2
         fi
 
-        filtered_tags+=("$tag")
-        filtered_hashes+=("${hashes[i]}")
-        filtered_types+=("$type")
-        filtered_subjects+=("${subjects[i]}")
-    done
-
-    if [[ ${#filtered_tags[@]} -eq 0 ]]; then
-        warn "No tags match the specified filters."
-        return 2
-    fi
-
-    # Use gum if available and enough tags
-    if gum_available && [[ ${#filtered_tags[@]} -ge 10 ]]; then
-        local -a formatted_options=()
-        _build_tag_select_options "$current_tag" filtered_tags filtered_hashes filtered_types filtered_subjects formatted_options
-
+        # Feed formatted options to gum
         local selection_output=""
+        local -a gum_flags=()
+        $multi_select && gum_flags+=(--no-limit)
+
+        if ! selection_output=$(gum_filter_by_index formatted_options "$prompt" "${gum_flags[@]}"); then
+            selected_ref=()
+            return 1
+        fi
+
+        # Map gum's returned indices to tag names
         local -a selected_indices=()
-
-        if [[ "$multi_select" == "true" ]]; then
-            if ! selection_output=$(gum_filter_by_index formatted_options "$prompt" --no-limit); then
-                selected_ref=()
-                return 1
-            fi
-        else
-            if ! selection_output=$(gum_filter_by_index formatted_options "$prompt"); then
-                selected_ref=()
-                return 1
-            fi
-        fi
-
         mapfile -t selected_indices <<< "$selection_output"
-        if _map_selected_tag_indices "$selected_array_name" selected_indices filtered_tags; then
-            :
-        else
-            map_status=$?
-            return "$map_status"
-        fi
-    else
-        # Fallback to numbered list
-        printf "%s:\n\n" "$prompt"
-
-        local i
-        for ((i = 0; i < ${#filtered_tags[@]}; i++)); do
-            local prefix="$((i + 1)))"
-            print_tag_line "$prefix" "$current_tag" "$max_len" "$i" filtered_tags filtered_hashes filtered_types filtered_subjects true
-        done
-
-        if [[ "$multi_select" == "true" ]]; then
-            # Multi-select with numbered list
-            local -a selected_indices=()
-            while true; do
-                printf "\nEnter numbers to select (comma-separated), or empty when done: "
-                read -r input
-
-                if [[ -z "$input" ]]; then
-                    break
-                fi
-
-                # Parse comma-separated numbers
-                local -a new_indices=()
-                IFS=',' read -ra new_indices <<< "$input"
-
-                for idx in "${new_indices[@]}"; do
-                    local num
-                    num=$(echo "$idx" | tr -d ' ')
-                    if [[ "$num" =~ ^[0-9]+$ ]] && [[ $num -ge 1 ]] && [[ $num -le ${#filtered_tags[@]} ]]; then
-                        selected_indices+=($((num-1)))
-                    else
-                        warn "Invalid selection: $num"
-                    fi
-                done
-            done
-
-            if _map_selected_tag_indices "$selected_array_name" selected_indices filtered_tags; then
-                :
-            else
-                map_status=$?
-                if [[ $map_status -eq 1 ]]; then
-                    return 1
-                fi
-                return 2
-            fi
-        else
-            # Single select with numbered list
-            local index
-            if ! index=$(get_numbered_selection_index "${#filtered_tags[@]}"); then
-                selected_ref=()
-                return 1
-            fi
-            selected_ref=("${filtered_tags[$index]}")
-        fi
+        _map_selected_tag_indices "$selected_array_name" selected_indices filtered_tags
+        return $?
     fi
 
-    return 0
+    # Non-gum path: Python handles everything (numbered list + user input)
+    # shellcheck disable=SC2034  # variables set by eval from Python output
+    local -a selected_tags=()
+    local selection_status=""
+
+    if ! eval "$(python3 "$tag_select_py" select "${python_args[@]}")"; then
+        return 2
+    fi
+
+    case "$selection_status" in
+        selected)
+            selected_ref=("${selected_tags[@]}")
+            return 0
+            ;;
+        cancelled)
+            selected_ref=()
+            return 1
+            ;;
+        no_tags)
+            warn "No tags found in this repository."
+            selected_ref=()
+            return 2
+            ;;
+        no_matches)
+            warn "No tags match the specified filters."
+            selected_ref=()
+            return 2
+            ;;
+        *)
+            selected_ref=()
+            return 2
+            ;;
+    esac
 }
 
 ################################################################################
