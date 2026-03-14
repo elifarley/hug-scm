@@ -197,6 +197,7 @@ For each new Python helper:
 - ✅ `git/worktree.py` - Worktree parsing (400 lines, 30 tests ✓)
 - ✅ `git/search.py` - Field-based search with OR/AND logic (233 lines, 51 tests ✓)
 - ✅ `git/tag_select.py` - Tag selection with direct git integration (700 lines, 93 tests ✓)
+- ✅ `git/worktree_select.py` - Worktree selection with cross-module import (488 lines, 60 tests ✓)
 
 ## JSON Transform Module (NEW)
 
