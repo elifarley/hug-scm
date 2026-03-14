@@ -77,72 +77,20 @@ show_current_worktree_only() {
 # Function to handle interactive worktree selection
 interactive_worktree_selection() {
   local current_worktree="$1"
-  shift
-  local worktree_array=("$@")
 
-  if [[ ${#worktree_array[@]} -eq 0 ]]; then
-    error "No worktrees found for interactive selection"
-    return 1
-  fi
-
-  # Check if gum is available
-  if ! gum_available; then
-    error "Interactive worktree selection requires 'gum' to be installed.
-Install gum: https://github.com/charmbracelet/gum"
-    return 1
-  fi
-
-  # Build formatted options for interactive selection
-  declare -a formatted_options=()
-  declare -a worktree_selection_paths=()
-
-  for i in "${!worktree_array[@]}"; do
-    local path="${worktree_array[$i]}"
-    local branch="${branches[$i]}"
-    local commit="${commits[$i]}"
-    local dirty="${status_dirty[$i]}"
-    local locked="${locked_status[$i]}"
-
-    # Build status indicators
-    local status_indicators=""
-    local path_display="${path/#$HOME/\~}"
-
-    # Check if current worktree
-    [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}[CURRENT]${NC} "
-    [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
-    [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
-
-    # Create formatted display string
-    local formatted="${status_indicators}${branch} (${commit}) → ${path_display}"
-    formatted_options+=("$formatted")
-    worktree_selection_paths+=("$path")
-  done
-
-  # Use gum filter for selection
-  local selection_output
-  if selection_output=$(printf '%s\n' "${formatted_options[@]}" | gum filter --header="Select worktree to show details (ESC to cancel)" --placeholder="Search worktrees..."); then
-    # Find the index of selected item
-    local selected_index=-1
-    for i in "${!formatted_options[@]}"; do
-      if [[ "${formatted_options[i]}" == "$selection_output" ]]; then
-        selected_index=$i
-        break
-      fi
-    done
-
-    if [[ $selected_index -ge 0 ]]; then
-      local selected_path="${worktree_selection_paths[$selected_index]}"
-      # Show details for selected worktree
-      show_worktree_details "$current_worktree" "$selected_path"
-      return 0
-    else
-      error "Invalid selection"
-      return 1
+  local selected_path=""
+  # WHY: Capture rc with || because inside `if ! cmd; then`, $? is always 0.
+  local select_rc=0
+  select_worktree selected_path --include-main --prompt "Select worktree to show details" || select_rc=$?
+  if [[ $select_rc -ne 0 ]]; then
+    if [[ $select_rc -eq 2 ]]; then
+      error "No worktrees found for interactive selection"
     fi
-  else
-    info "Worktree selection cancelled"
-    return 0
+    return $select_rc
   fi
+
+  show_worktree_details "$current_worktree" "$selected_path"
+  return 0
 }
 
 # Function to get detailed commit information

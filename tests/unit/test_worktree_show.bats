@@ -265,14 +265,16 @@ teardown() {
   [[ "${all_output//[[:space:]]/}" == "${a_output//[[:space:]]/}" ]] || fail "Output mismatch between --all and -a flags"
 }
 
-@test "hug wtsh: interactive mode requires gum" {
+@test "hug wtsh: interactive mode works without gum using numbered-list fallback" {
   cd "$TEST_REPO"
 
-  # Disable gum via environment variable
-  HUG_DISABLE_GUM=true run git-wtsh --
+  # Disable gum — select_worktree now falls back to the Python numbered-list
+  # path instead of requiring gum.  With no stdin input (BATS non-TTY), Python
+  # gets EOF and returns 'cancelled', so the command exits non-zero.
+  HUG_DISABLE_GUM=true run bash -c 'echo "" | git-wtsh --'
 
-  assert_failure
-  assert_output --partial "Interactive worktree selection requires 'gum' to be installed"
+  # Cancellation exits with code 1 (select_worktree rc=1 from Python 'cancelled')
+  assert_failure 1
 }
 
 @test "hug wtsh: interactive mode error when no worktrees" {

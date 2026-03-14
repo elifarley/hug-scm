@@ -48,15 +48,16 @@ teardown() {
 }
 
 @test "hug wt: shows interactive menu with multiple worktrees" {
-  # Since we have <10 worktrees, this uses numbered menu, not gum
-  # Use EOF simulation to test the interactive selection behavior
+  # Since we have <10 worktrees, this uses the Python numbered-list path.
+  # Empty input (echo) cancels selection; the command exits 0.
   run bash -c "echo | git-wt 2>&1"
 
-  # Should show interactive menu and handle cancellation gracefully
+  # Python shows the prompt and numbered list on stderr, then reads empty
+  # input and returns 'cancelled'.  git-wt exits 0 on cancellation.
   assert_success
   assert_output --partial "Select worktree to switch to"
-  assert_output --partial "Enter number"
-  assert_output --partial "Worktree selection cancelled"
+  # Python lists each worktree with a number prefix
+  assert_output --partial "1)"
 }
 
 @test "hug wt: detects dirty worktrees" {
