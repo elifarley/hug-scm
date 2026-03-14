@@ -19,6 +19,8 @@ Non-zero only for genuine Python failures (import error, git not found).
 
 from dataclasses import dataclass
 
+from git.worktree import WorktreeInfo
+
 
 @dataclass
 class WorktreeFilterOptions:
@@ -55,6 +57,36 @@ class WorktreeSelectionResult:
 
     status: str
     path: str
+
+
+def filter_worktrees(
+    worktrees: list[WorktreeInfo],
+    options: WorktreeFilterOptions,
+    main_path: str,
+    current_path: str,
+) -> list[WorktreeInfo]:
+    """Apply inclusion/exclusion filters to a list of worktrees.
+
+    Pure function — no side effects, no git calls.  The original list is
+    never mutated; a new list is always returned.
+
+    Args:
+        worktrees: Candidate worktrees to filter.
+        options: Filtering criteria (include_main, exclude_current).
+        main_path: Absolute path of the main repository worktree.
+            Compared against WorktreeInfo.path for the include_main filter.
+        current_path: Absolute path of the worktree the user is currently in.
+            Compared against WorktreeInfo.path for the exclude_current filter.
+
+    Returns:
+        A new list containing only the worktrees that pass all filters.
+    """
+    result = list(worktrees)  # Snapshot — never mutate the caller's list
+    if not options.include_main:
+        result = [w for w in result if w.path != main_path]
+    if options.exclude_current:
+        result = [w for w in result if w.path != current_path]
+    return result
 
 
 def _bash_escape(s: str) -> str:
