@@ -17,8 +17,10 @@ Exit codes: 0 always (status communicated through bash variables).
 Non-zero only for genuine Python failures (import error, git not found).
 """
 
+import argparse
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 
 from git.worktree import WorktreeInfo, parse_worktree_list
@@ -299,3 +301,174 @@ def _load_worktrees() -> tuple[list[WorktreeInfo], str, str]:
 
     worktrees = parse_worktree_list(porcelain, main_path, include_main=True)
     return worktrees, main_path, current_path
+
+
+# ---------------------------------------------------------------------------
+# CLI commands
+# ---------------------------------------------------------------------------
+
+
+def _cmd_prepare(options: WorktreeFilterOptions) -> str:
+    """Prepare worktree data for interactive selection via gum.
+
+    Loads all worktrees, applies the given filters, formats display rows, and
+    serialises everything to bash declare statements for the caller to eval.
+    The Bash side can then pass ``worktree_paths`` and ``formatted_options``
+    directly to ``gum choose``.
+
+    When no worktrees survive filtering (including the case where git is not
+    available), the output still contains all four variables with safe defaults
+    so the Bash caller can branch on ``selection_status`` without guards.
+
+    Args:
+        options: Filtering criteria (include_main, exclude_current).
+
+    Returns:
+        Multi-line string of bash declare statements, safe for eval.
+    """
+    worktrees, main_path, current_path = _load_worktrees()
+    if not worktrees:
+        # Pass through empty lists — worktrees_to_bash_declare handles defaults
+        return worktrees_to_bash_declare([], [])
+
+    filtered = filter_worktrees(worktrees, options, main_path, current_path)
+    if not filtered:
+        return worktrees_to_bash_declare([], [])
+
+    formatted = format_display_rows(filtered, current_path)
+    return worktrees_to_bash_declare(filtered, formatted)
+
+
+def _cmd_select(options: WorktreeFilterOptions, prompt: str) -> str:
+    """Interactively select a worktree from a numbered list printed to stderr.
+
+    Stdout is reserved for the bash declare output so the Bash caller can
+    capture it cleanly with ``$(...)`` without mixing in UI text.  All
+    interactive output (the numbered list and the prompt) goes to stderr.
+
+    Selection outcomes:
+    - Valid number   → status='selected', selected_path=<path>
+    - Empty input    → status='cancelled' (user pressed Enter to skip)
+    - Out-of-range   → status='cancelled' (silent; no second chance by design)
+    - Non-numeric    → status='cancelled' (ditto)
+    - EOFError       → status='cancelled' (Ctrl-D or piped /dev/null)
+    - No worktrees   → status='no_worktrees' (prompt never shown)
+
+    Design note: we intentionally do not retry on invalid input.  Retrying
+    creates a loop that complicates the Bash caller and makes tests harder to
+    write. Cancellation is cheap — the user can simply re-run the command.
+
+    Args:
+        options: Filtering criteria passed to filter_worktrees().
+        prompt:  Prompt string shown to the user above the input field.
+
+    Returns:
+        Two-line string of bash assignments for selected_path and
+        selection_status, safe for eval.
+    """
+    worktrees, main_path, current_path = _load_worktrees()
+    if not worktrees:
+        return selection_to_bash_declare(WorktreeSelectionResult(status="no_worktrees", path=""))
+
+    filtered = filter_worktrees(worktrees, options, main_path, current_path)
+    if not filtered:
+        return selection_to_bash_declare(WorktreeSelectionResult(status="no_worktrees", path=""))
+
+    formatted = format_display_rows(filtered, current_path)
+
+    # Print numbered menu to stderr so stdout remains clean for declare output
+    print(prompt, file=sys.stderr)
+    for i, row in enumerate(formatted, start=1):
+        print(f"  {i}) {row}", file=sys.stderr)
+
+    try:
+        raw = input()
+    except EOFError:
+        return selection_to_bash_declare(WorktreeSelectionResult(status="cancelled", path=""))
+
+    if not raw.strip():
+        return selection_to_bash_declare(WorktreeSelectionResult(status="cancelled", path=""))
+
+    try:
+        choice = int(raw.strip())
+    except ValueError:
+        return selection_to_bash_declare(WorktreeSelectionResult(status="cancelled", path=""))
+
+    if choice < 1 or choice > len(filtered):
+        return selection_to_bash_declare(WorktreeSelectionResult(status="cancelled", path=""))
+
+    selected = filtered[choice - 1]
+    return selection_to_bash_declare(WorktreeSelectionResult(status="selected", path=selected.path))
+
+
+def main(argv: list[str] | None = None) -> None:
+    """CLI entry point for worktree-select.
+
+    Commands:
+        prepare   Load and format worktrees for gum interactive picker.
+        select    Present a numbered list, read one selection from stdin.
+
+    Common flags (both commands):
+        --include-main    Include the main repository worktree in candidates.
+        --exclude-current Exclude the worktree the user is currently running in.
+
+    Select-only flags:
+        --prompt TEXT     Prompt string shown above the numbered list (stderr).
+
+    All output is printed to stdout so the Bash caller can capture it with
+    ``$(...)``.  Errors are written to stderr; exit code 1 on any exception.
+
+    Design: argv parameter allows tests to call main() without touching
+    sys.argv, keeping tests hermetic and avoiding global state mutations.
+    """
+    parser = argparse.ArgumentParser(
+        prog="worktree-select",
+        description="Worktree selection helper — outputs bash declare statements for eval.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    # Flags shared by both sub-commands are added to a common parent parser
+    # so they only have to be defined once (DRY).
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--include-main",
+        action="store_true",
+        default=False,
+        help="Include the main repository worktree in the candidate list.",
+    )
+    common.add_argument(
+        "--exclude-current",
+        action="store_true",
+        default=False,
+        help="Exclude the worktree the user is currently in.",
+    )
+
+    sub.add_parser("prepare", parents=[common], help="Prepare worktrees for gum picker.")
+
+    sel_parser = sub.add_parser("select", parents=[common], help="Numbered-list selection.")
+    sel_parser.add_argument(
+        "--prompt",
+        default="Select a worktree:",
+        help="Prompt shown above the numbered list on stderr.",
+    )
+
+    args = parser.parse_args(argv)
+
+    opts = WorktreeFilterOptions(
+        include_main=args.include_main,
+        exclude_current=args.exclude_current,
+    )
+
+    try:
+        if args.command == "prepare":
+            output = _cmd_prepare(opts)
+        else:
+            output = _cmd_select(opts, args.prompt)
+        print(output)
+    except Exception as exc:  # noqa: BLE001  — top-level safety net
+        print(f"worktree-select: error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

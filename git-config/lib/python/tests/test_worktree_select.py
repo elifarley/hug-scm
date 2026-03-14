@@ -462,3 +462,240 @@ class TestLoadWorktrees:
         # When common_dir == ".git", main_path must equal current_path (we're in main)
         assert main_path == "/home/user/repo"
         assert current_path == "/home/user/repo"
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by Task 6 tests
+# ---------------------------------------------------------------------------
+
+#: Minimal single-worktree tuple returned by a mocked _load_worktrees()
+_ONE_WORKTREE = WorktreeInfo(
+    path="/home/user/repo.WT.feature-1",
+    branch="feature-1",
+    commit="def5678",
+    is_dirty=False,
+    is_locked=False,
+)
+
+_TWO_WORKTREES = [
+    WorktreeInfo(
+        path="/home/user/repo.WT.feature-1",
+        branch="feature-1",
+        commit="def5678",
+        is_dirty=False,
+        is_locked=False,
+    ),
+    WorktreeInfo(
+        path="/home/user/repo.WT.bugfix-2",
+        branch="bugfix-2",
+        commit="123abcd",
+        is_dirty=False,
+        is_locked=False,
+    ),
+]
+
+#: Default load result: one linked worktree, main is the main repo
+_LOAD_RESULT_ONE = ([_ONE_WORKTREE], "/home/user/repo", "/home/user/repo")
+
+
+# ---------------------------------------------------------------------------
+# Import the new CLI functions (these will fail until implemented)
+# ---------------------------------------------------------------------------
+
+from git.worktree_select import _cmd_prepare, _cmd_select, main  # noqa: E402
+
+
+class TestCmdPrepare:
+    """Tests for _cmd_prepare() — the gum / interactive-picker preparation path.
+
+    _cmd_prepare() calls _load_worktrees(), filters with filter_worktrees(),
+    formats with format_display_rows(), and serialises to bash declare output
+    via worktrees_to_bash_declare().  All git I/O is exercised through the
+    _load_worktrees mock so tests remain hermetic.
+    """
+
+    def test_normal_output(self):
+        """One available worktree produces declare output with path and formatted row."""
+        opts = WorktreeFilterOptions(include_main=True, exclude_current=False)
+        with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
+            output = _cmd_prepare(opts)
+        # Core structural markers
+        assert "declare -a worktree_paths=" in output
+        assert "declare -a formatted_options=" in output
+        # The real worktree path must appear verbatim
+        assert "/home/user/repo.WT.feature-1" in output
+        # The formatted row must reference the branch name
+        assert "feature-1" in output
+        # Status must be 'ready' when worktrees exist
+        assert "selection_status='ready'" in output
+        assert "worktree_count=1" in output
+
+    def test_no_worktrees_when_load_fails(self):
+        """When _load_worktrees returns nothing, output carries no_worktrees status."""
+        opts = WorktreeFilterOptions()
+        with patch("git.worktree_select._load_worktrees", return_value=([], "", "")):
+            output = _cmd_prepare(opts)
+        assert "selection_status='no_worktrees'" in output
+        assert "declare -a worktree_paths=()" in output
+        assert "worktree_count=0" in output
+
+    def test_all_filtered_out_gives_no_worktrees(self):
+        """When all loaded worktrees are removed by filters, status is no_worktrees."""
+        # Only the main worktree exists; include_main=False removes it
+        main_only = WorktreeInfo(
+            path="/home/user/repo",
+            branch="main",
+            commit="abc1234",
+            is_dirty=False,
+            is_locked=False,
+        )
+        opts = WorktreeFilterOptions(include_main=False, exclude_current=False)
+        with patch(
+            "git.worktree_select._load_worktrees",
+            return_value=([main_only], "/home/user/repo", "/home/user/repo"),
+        ):
+            output = _cmd_prepare(opts)
+        assert "selection_status='no_worktrees'" in output
+        assert "worktree_count=0" in output
+
+
+class TestCmdSelect:
+    """Tests for _cmd_select() — the numbered-list interactive selection path.
+
+    _cmd_select() prints a numbered menu to stderr, reads one line from stdin,
+    and serialises the outcome via selection_to_bash_declare().  All git I/O
+    and user input are mocked so tests are fully hermetic and non-interactive.
+    """
+
+    def test_valid_selection(self):
+        """Entering '1' for a single-item list selects that worktree."""
+        opts = WorktreeFilterOptions()
+        with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
+            with patch("builtins.input", return_value="1"):
+                output = _cmd_select(opts, prompt="Pick worktree")
+        assert "selection_status='selected'" in output
+        assert "/home/user/repo.WT.feature-1" in output
+
+    def test_cancelled_on_empty_input(self):
+        """Pressing Enter (empty string) cancels the selection."""
+        opts = WorktreeFilterOptions()
+        with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
+            with patch("builtins.input", return_value=""):
+                output = _cmd_select(opts, prompt="Pick worktree")
+        assert "selection_status='cancelled'" in output
+        assert "selected_path=''" in output
+
+    def test_invalid_number_cancels(self):
+        """An out-of-range number (e.g. '99') cancels without raising."""
+        opts = WorktreeFilterOptions()
+        with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
+            with patch("builtins.input", return_value="99"):
+                output = _cmd_select(opts, prompt="Pick worktree")
+        assert "selection_status='cancelled'" in output
+
+    def test_non_numeric_input_cancels(self):
+        """Non-numeric text (e.g. 'abc') cancels without raising."""
+        opts = WorktreeFilterOptions()
+        with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
+            with patch("builtins.input", return_value="abc"):
+                output = _cmd_select(opts, prompt="Pick worktree")
+        assert "selection_status='cancelled'" in output
+
+    def test_eof_on_input_cancels(self):
+        """EOFError (Ctrl-D / piped /dev/null) cancels gracefully."""
+        opts = WorktreeFilterOptions()
+        with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
+            with patch("builtins.input", side_effect=EOFError):
+                output = _cmd_select(opts, prompt="Pick worktree")
+        assert "selection_status='cancelled'" in output
+
+    def test_no_worktrees_when_load_fails(self):
+        """When _load_worktrees returns nothing, status is no_worktrees (no prompt)."""
+        opts = WorktreeFilterOptions()
+        with patch("git.worktree_select._load_worktrees", return_value=([], "", "")):
+            # input() must NOT be called — no prompt to show
+            with patch("builtins.input", side_effect=AssertionError("input called unexpectedly")):
+                output = _cmd_select(opts, prompt="Pick worktree")
+        assert "selection_status='no_worktrees'" in output
+
+    def test_selects_second_item(self):
+        """Entering '2' with a two-item list selects the second worktree path."""
+        opts = WorktreeFilterOptions()
+        load_result = (_TWO_WORKTREES, "/home/user/repo", "/home/user/repo")
+        with patch("git.worktree_select._load_worktrees", return_value=load_result):
+            with patch("builtins.input", return_value="2"):
+                output = _cmd_select(opts, prompt="Pick worktree")
+        assert "selection_status='selected'" in output
+        assert "/home/user/repo.WT.bugfix-2" in output
+
+
+class TestMain:
+    """Tests for main() — argparse CLI entry point.
+
+    main() wires together argparse, WorktreeFilterOptions construction, and
+    dispatching to _cmd_prepare / _cmd_select.  Tests mock at the _cmd_prepare
+    / _cmd_select boundary so we only verify the wiring, not the inner logic.
+    """
+
+    def test_prepare_command_dispatches(self, capsys):
+        """'prepare' sub-command calls _cmd_prepare and prints its output."""
+        sentinel = "declare -a worktree_paths=()\nselection_status='no_worktrees'\nworktree_count=0"
+        with patch("git.worktree_select._cmd_prepare", return_value=sentinel) as mock_prep:
+            main(["prepare"])
+        captured = capsys.readouterr()
+        assert sentinel in captured.out
+        mock_prep.assert_called_once()
+
+    def test_select_command_dispatches(self, capsys):
+        """'select' sub-command calls _cmd_select and prints its output."""
+        sentinel = "selected_path=''\nselection_status='cancelled'"
+        with patch("git.worktree_select._cmd_select", return_value=sentinel) as mock_sel:
+            main(["select"])
+        captured = capsys.readouterr()
+        assert sentinel in captured.out
+        mock_sel.assert_called_once()
+
+    def test_include_main_flag(self):
+        """--include-main sets include_main=True on the filter options passed to _cmd_prepare."""
+        with patch("git.worktree_select._cmd_prepare", return_value="") as mock_prep:
+            main(["prepare", "--include-main"])
+        opts_used: WorktreeFilterOptions = mock_prep.call_args[0][0]
+        assert opts_used.include_main is True
+
+    def test_exclude_main_flag(self):
+        """Without --include-main, include_main defaults to False (safer for switching)."""
+        with patch("git.worktree_select._cmd_prepare", return_value="") as mock_prep:
+            main(["prepare"])
+        opts_used: WorktreeFilterOptions = mock_prep.call_args[0][0]
+        assert opts_used.include_main is False
+
+    def test_exclude_current_flag(self):
+        """--exclude-current sets exclude_current=True on the filter options."""
+        with patch("git.worktree_select._cmd_prepare", return_value="") as mock_prep:
+            main(["prepare", "--exclude-current"])
+        opts_used: WorktreeFilterOptions = mock_prep.call_args[0][0]
+        assert opts_used.exclude_current is True
+
+    def test_prompt_passed_to_select(self):
+        """--prompt value is forwarded to _cmd_select as the second argument."""
+        with patch("git.worktree_select._cmd_select", return_value="") as mock_sel:
+            main(["select", "--prompt", "Choose a worktree"])
+        _opts, prompt = mock_sel.call_args[0]
+        assert prompt == "Choose a worktree"
+
+    def test_default_prompt_for_select(self):
+        """When --prompt is omitted, _cmd_select receives a sensible default string."""
+        with patch("git.worktree_select._cmd_select", return_value="") as mock_sel:
+            main(["select"])
+        _opts, prompt = mock_sel.call_args[0]
+        # Non-empty; specific wording is an implementation detail
+        assert isinstance(prompt, str) and len(prompt) > 0
+
+    def test_exception_exits_nonzero(self, capsys):
+        """Unhandled exceptions in _cmd_prepare cause exit code 1 and stderr message."""
+        with patch("git.worktree_select._cmd_prepare", side_effect=RuntimeError("boom")):
+            with pytest.raises(SystemExit) as exc_info:
+                main(["prepare"])
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "boom" in captured.err
