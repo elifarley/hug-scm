@@ -18,7 +18,6 @@ from git.worktree_select import (
     worktrees_to_bash_declare,
 )
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures for WorktreeInfo objects
 # ---------------------------------------------------------------------------
@@ -153,9 +152,7 @@ class TestFilterWorktrees:
     def test_exclude_current_when_in_main(self, main_wt, feature_wt):
         """When current == main and both filters active, main is excluded only once."""
         opts = WorktreeFilterOptions(include_main=False, exclude_current=True)
-        result = filter_worktrees(
-            [main_wt, feature_wt], opts, main_wt.path, main_wt.path
-        )
+        result = filter_worktrees([main_wt, feature_wt], opts, main_wt.path, main_wt.path)
         # main excluded by include_main=False; current==main so no double-remove needed
         assert result == [feature_wt]
 
@@ -270,9 +267,7 @@ class TestFormatDisplayRows:
 
     def test_multiple_worktrees_preserves_order(self, main_wt, feature_wt, bugfix_wt):
         """Output list length and order exactly match the input list."""
-        rows = format_display_rows(
-            [main_wt, feature_wt, bugfix_wt], current_path="/other"
-        )
+        rows = format_display_rows([main_wt, feature_wt, bugfix_wt], current_path="/other")
         assert len(rows) == 3
         # Each row corresponds to the same-index input worktree
         assert "main" in rows[0]
@@ -419,14 +414,13 @@ class TestLoadWorktrees:
             common_dir="/home/user/repo/.git",
             porcelain=_PORCELAIN_TWO_WORKTREES,
         )
-        with patch("git.worktree_select._run_git", side_effect=side_effect), patch(
-            "git.worktree_select.parse_worktree_list"
-        ) as mock_parse:
+        with (
+            patch("git.worktree_select._run_git", side_effect=side_effect),
+            patch("git.worktree_select.parse_worktree_list") as mock_parse,
+        ):
             mock_wts = [
                 WorktreeInfo("/home/user/repo", "main", "abc1234", False, False),
-                WorktreeInfo(
-                    "/home/user/repo.WT.feature-1", "feature-1", "def5678", False, False
-                ),
+                WorktreeInfo("/home/user/repo.WT.feature-1", "feature-1", "def5678", False, False),
             ]
             mock_parse.return_value = mock_wts
             wts, main_path, current_path = _load_worktrees()
@@ -455,8 +449,9 @@ class TestLoadWorktrees:
             common_dir=".git",
             porcelain=_PORCELAIN_TWO_WORKTREES,
         )
-        with patch("git.worktree_select._run_git", side_effect=side_effect_main), patch(
-            "git.worktree_select.parse_worktree_list", return_value=[]
+        with (
+            patch("git.worktree_select._run_git", side_effect=side_effect_main),
+            patch("git.worktree_select.parse_worktree_list", return_value=[]),
         ):
             _, main_path, current_path = _load_worktrees()
         # When common_dir == ".git", main_path must equal current_path (we're in main)
