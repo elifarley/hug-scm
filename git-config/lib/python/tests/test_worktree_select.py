@@ -1,6 +1,7 @@
 """Unit tests for worktree_select.py — worktree selection with Python-owned filtering."""
 
 import os
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -9,6 +10,8 @@ from git.worktree_select import (
     WorktreeFilterOptions,
     WorktreeSelectionResult,
     _bash_escape,
+    _load_worktrees,
+    _run_git,
     filter_worktrees,
     format_display_rows,
     selection_to_bash_declare,
@@ -345,3 +348,117 @@ class TestSelectionToBashDeclare:
         output = selection_to_bash_declare(result)
         assert "selected_path=''" in output
         assert "selection_status='no_worktrees'" in output
+
+
+# ---------------------------------------------------------------------------
+# Porcelain output used across Task 5 tests
+# ---------------------------------------------------------------------------
+
+_PORCELAIN_TWO_WORKTREES = """\
+worktree /home/user/repo
+HEAD abc1234567890abcdef
+branch refs/heads/main
+
+worktree /home/user/repo.WT.feature-1
+HEAD def567890abcdef1234
+branch refs/heads/feature-1
+"""
+
+
+class TestRunGit:
+    """Tests for _run_git() — thin subprocess wrapper with failure-safe returns."""
+
+    def test_returns_stdout_stripped(self):
+        """Successful commands return stdout with leading/trailing whitespace removed."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "  /home/user/repo  \n"
+        with patch("git.worktree_select.subprocess.run", return_value=mock_result):
+            assert _run_git(["rev-parse", "--show-toplevel"]) == "/home/user/repo"
+
+    def test_returns_empty_on_failure(self):
+        """Non-zero exit codes return empty string (never raise)."""
+        mock_result = MagicMock()
+        mock_result.returncode = 128
+        mock_result.stdout = "fatal: not a git repository\n"
+        with patch("git.worktree_select.subprocess.run", return_value=mock_result):
+            assert _run_git(["rev-parse", "--show-toplevel"]) == ""
+
+    def test_returns_empty_on_timeout(self):
+        """TimeoutExpired exceptions are swallowed and return empty string."""
+        import subprocess
+
+        with patch(
+            "git.worktree_select.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=10),
+        ):
+            assert _run_git(["worktree", "list", "--porcelain"]) == ""
+
+
+class TestLoadWorktrees:
+    """Tests for _load_worktrees() — git integration that discovers paths and parses output."""
+
+    def _make_run_git_side_effect(self, toplevel: str, common_dir: str, porcelain: str):
+        """Build a side_effect function that returns canned responses per args."""
+
+        def side_effect(args: list[str]) -> str:
+            if "--show-toplevel" in args:
+                return toplevel
+            if "--git-common-dir" in args:
+                return common_dir
+            if "worktree" in args and "--porcelain" in args:
+                return porcelain
+            return ""
+
+        return side_effect
+
+    def test_returns_worktrees_and_paths(self):
+        """Happy path: returns parsed worktrees plus main and current paths."""
+        side_effect = self._make_run_git_side_effect(
+            toplevel="/home/user/repo.WT.feature-1",
+            common_dir="/home/user/repo/.git",
+            porcelain=_PORCELAIN_TWO_WORKTREES,
+        )
+        with patch("git.worktree_select._run_git", side_effect=side_effect), patch(
+            "git.worktree_select.parse_worktree_list"
+        ) as mock_parse:
+            mock_wts = [
+                WorktreeInfo("/home/user/repo", "main", "abc1234", False, False),
+                WorktreeInfo(
+                    "/home/user/repo.WT.feature-1", "feature-1", "def5678", False, False
+                ),
+            ]
+            mock_parse.return_value = mock_wts
+            wts, main_path, current_path = _load_worktrees()
+
+        assert wts == mock_wts
+        assert main_path == "/home/user/repo"
+        assert current_path == "/home/user/repo.WT.feature-1"
+        # parse_worktree_list called with include_main=True so filtering is deferred
+        mock_parse.assert_called_once_with(
+            _PORCELAIN_TWO_WORKTREES, "/home/user/repo", include_main=True
+        )
+
+    def test_returns_empty_when_not_in_repo(self):
+        """When not inside a git repo, returns three empty values without crashing."""
+        with patch("git.worktree_select._run_git", return_value=""):
+            wts, main_path, current_path = _load_worktrees()
+        assert wts == []
+        assert main_path == ""
+        assert current_path == ""
+
+    def test_detects_worktree_vs_main(self):
+        """main_path is derived from --git-common-dir, not --show-toplevel."""
+        # Simulate being in main repo: --git-common-dir returns ".git" (relative)
+        side_effect_main = self._make_run_git_side_effect(
+            toplevel="/home/user/repo",
+            common_dir=".git",
+            porcelain=_PORCELAIN_TWO_WORKTREES,
+        )
+        with patch("git.worktree_select._run_git", side_effect=side_effect_main), patch(
+            "git.worktree_select.parse_worktree_list", return_value=[]
+        ):
+            _, main_path, current_path = _load_worktrees()
+        # When common_dir == ".git", main_path must equal current_path (we're in main)
+        assert main_path == "/home/user/repo"
+        assert current_path == "/home/user/repo"

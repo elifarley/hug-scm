@@ -18,9 +18,10 @@ Non-zero only for genuine Python failures (import error, git not found).
 """
 
 import os
+import subprocess
 from dataclasses import dataclass
 
-from git.worktree import WorktreeInfo
+from git.worktree import WorktreeInfo, parse_worktree_list
 
 
 @dataclass
@@ -225,3 +226,76 @@ def _bash_escape(s: str) -> str:
     s = s.replace("\\", "\\\\")  # Backslashes first (order matters)
     s = s.replace("'", "'\\''")  # Single quotes using close-escape-reopen idiom
     return f"'{s}'"
+
+
+# ---------------------------------------------------------------------------
+# Git integration
+# ---------------------------------------------------------------------------
+
+
+def _run_git(args: list[str]) -> str:
+    """Run a git command and return stripped stdout; empty string on any failure.
+
+    Failure-safe by design: worktree selection is a UI helper — crashing the
+    shell with an unhandled exception would be far worse than silently returning
+    an empty result that the caller can handle gracefully.
+
+    Args:
+        args: Arguments appended after 'git --no-pager'.  Caller is responsible
+              for passing a complete, valid git sub-command.
+
+    Returns:
+        Stripped stdout on success, empty string on non-zero exit or exception.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "--no-pager"] + args,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return ""
+        return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return ""
+
+
+def _load_worktrees() -> tuple[list[WorktreeInfo], str, str]:
+    """Load all worktrees from git and detect the main and current worktree paths.
+
+    Two-step detection:
+    1. current_path  — git rev-parse --show-toplevel (the worktree the CWD is in)
+    2. main_path     — git rev-parse --git-common-dir
+         ".git"   → we ARE in the main repo; main_path == current_path
+         "<path>/.git" → strip /.git suffix to get the main worktree root
+
+    parse_worktree_list is called with include_main=True so all worktrees are
+    returned; filtering (which worktrees to offer the user) is deferred to
+    filter_worktrees() so the caller retains full control.
+
+    Returns:
+        (all_worktrees, main_repo_path, current_worktree_path)
+        On failure (not in a git repo, timeout, etc.): ([], "", "")
+    """
+    current_path = _run_git(["rev-parse", "--show-toplevel"])
+    if not current_path:
+        return [], "", ""
+
+    git_common_dir = _run_git(["rev-parse", "--git-common-dir"])
+    if git_common_dir == ".git":
+        # Relative ".git" means we're running from the main worktree itself
+        main_path = current_path
+    elif git_common_dir:
+        # Absolute path like /home/user/repo/.git — strip the /.git suffix
+        main_path = git_common_dir.removesuffix("/.git")
+    else:
+        # Fallback: treat current as main (single-worktree repos)
+        main_path = current_path
+
+    porcelain = _run_git(["worktree", "list", "--porcelain"])
+    if not porcelain:
+        return [], main_path, current_path
+
+    worktrees = parse_worktree_list(porcelain, main_path, include_main=True)
+    return worktrees, main_path, current_path
