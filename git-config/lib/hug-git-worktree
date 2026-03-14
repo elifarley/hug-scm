@@ -145,6 +145,129 @@ get_all_worktrees_including_main() {
     return 0
 }
 
+################################################################################
+# Worktree Interactive Selection — Python-backed adapter
+################################################################################
+
+# Universal worktree selection function — delegates to Python worktree_select.py
+# Usage: select_worktree selected_path_var [options]
+# Parameters:
+#   $1 - Name of variable to receive selected worktree path (nameref)
+# Options:
+#   --include-main      Include the main repository worktree in the list
+#   --exclude-current   Exclude the current worktree from the list
+#   --prompt TEXT       Custom prompt text for selection
+# Returns:
+#   0 if a worktree was selected (path stored in $1)
+#   1 if selection was cancelled by the user
+#   2 if no worktrees available, or an error occurred
+#
+# WHY: This function consolidates ~300 lines of triplicated menu-building and
+# gum-selection code from git-wt, git-wtdel, and git-wtsh into a single adapter.
+# Python handles filtering, formatting, and numbered-list interaction; Bash keeps
+# gum integration via the existing gum_filter_by_index API.
+#
+# DESIGN NOTE: The gum path is used only when gum is available AND there are
+# >= 10 worktrees (mirroring the original scripts' threshold). For < 10 items
+# the non-gum path (Python numbered list) is used regardless of gum availability
+# because the numbered list is simpler and more reliable at small scale.
+select_worktree() {
+    local -n _sw_result_ref="$1"
+    shift
+
+    local prompt="Select a worktree"
+    # filter_args: shared flags valid for both 'prepare' and 'select' subcommands
+    # (--include-main, --exclude-current).  --prompt is select-only and appended
+    # separately so it is never forwarded to the 'prepare' subcommand.
+    local -a filter_args=()
+
+    # Parse options — separate shared filter flags from the select-only --prompt
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --include-main)
+                filter_args+=(--include-main)
+                shift
+                ;;
+            --exclude-current)
+                filter_args+=(--exclude-current)
+                shift
+                ;;
+            --prompt)
+                prompt="$2"
+                shift 2
+                ;;
+            *)
+                error "Unknown option for select_worktree: $1"
+                return 2
+                ;;
+        esac
+    done
+
+    local worktree_select_py="$HUG_HOME/git-config/lib/python/git/worktree_select.py"
+
+    # Gum path: Python prepares data, Bash handles gum via gum_filter_by_index.
+    # Only use gum when there are >= 10 worktrees (same threshold as the original
+    # scripts); below that the numbered list is cleaner.
+    if gum_available; then
+        # shellcheck disable=SC2034  # variables set by eval from Python output
+        local -a worktree_paths=() formatted_options=()
+        local selection_status="" worktree_count=0
+
+        # 'prepare' only accepts filter_args (--include-main, --exclude-current)
+        if ! eval "$(python3 "$worktree_select_py" prepare "${filter_args[@]}")"; then
+            return 2
+        fi
+
+        # Check for no-data states
+        if [[ "$selection_status" != "ready" ]]; then
+            _sw_result_ref=""
+            return 2
+        fi
+
+        # Use gum for >= 10 items, fall through to numbered list otherwise
+        if [[ $worktree_count -ge 10 ]]; then
+            local selection_output=""
+            if ! selection_output=$(gum_filter_by_index formatted_options "$prompt"); then
+                _sw_result_ref=""
+                return 1
+            fi
+
+            # Map gum's returned index to worktree path
+            local selected_index
+            selected_index=$(head -1 <<< "$selection_output")
+            _sw_result_ref="${worktree_paths[$selected_index]}"
+            return 0
+        fi
+
+        # < 10 items with gum available: fall through to select mode below
+    fi
+
+    # Non-gum path (or < 10 items): Python handles numbered-list interaction.
+    # 'select' accepts filter_args plus --prompt for the displayed heading.
+    # shellcheck disable=SC2034  # variables set by eval from Python output
+    local selected_path=""
+    local selection_status=""
+
+    if ! eval "$(python3 "$worktree_select_py" select "${filter_args[@]}" --prompt "$prompt")"; then
+        return 2
+    fi
+
+    case "$selection_status" in
+        selected)
+            _sw_result_ref="$selected_path"
+            return 0
+            ;;
+        cancelled)
+            _sw_result_ref=""
+            return 1
+            ;;
+        *)
+            _sw_result_ref=""
+            return 2
+            ;;
+    esac
+}
+
 # Get current worktree path
 # Usage: current_path=$(get_current_worktree_path)
 # Returns: Absolute path to current worktree, or empty if not in a worktree

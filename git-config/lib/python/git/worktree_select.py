@@ -22,6 +22,20 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
+
+# When run as a script (python3 /path/to/worktree_select.py), Python does NOT
+# automatically add the package root to sys.path, so `from git.worktree import`
+# fails with ModuleNotFoundError.  We fix this by inserting the parent of the
+# `git/` package directory — i.e., git-config/lib/python/ — into sys.path
+# before the import.  We only do this when running as __main__ (script mode)
+# to avoid polluting the path when imported as a library.
+# WHY parent of __file__'s parent: __file__ is …/git/worktree_select.py, so
+# Path(__file__).parent is …/git/ and Path(__file__).parent.parent is …/python/.
+if __name__ == "__main__":
+    _pkg_root = str(Path(__file__).resolve().parent.parent)
+    if _pkg_root not in sys.path:
+        sys.path.insert(0, _pkg_root)
 
 from git.worktree import WorktreeInfo, parse_worktree_list
 
