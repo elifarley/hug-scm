@@ -11,6 +11,8 @@ from git.worktree_select import (
     _bash_escape,
     filter_worktrees,
     format_display_rows,
+    selection_to_bash_declare,
+    worktrees_to_bash_declare,
 )
 
 
@@ -278,3 +280,68 @@ class TestFormatDisplayRows:
         """Empty input produces empty output."""
         rows = format_display_rows([], current_path="/some/path")
         assert rows == []
+
+
+class TestWorktreesToBashDeclare:
+    """Tests for worktrees_to_bash_declare() — serialises worktrees for bash eval."""
+
+    def test_normal_output(self, main_wt, feature_wt):
+        """Normal case: paths and formatted rows appear in the output."""
+        rows = ["main (abc1234) → /home/user/repo", "feature-1 (def5678) → ~/feature"]
+        output = worktrees_to_bash_declare([main_wt, feature_wt], rows)
+        assert "declare -a worktree_paths=" in output
+        assert "declare -a formatted_options=" in output
+        assert "/home/user/repo" in output
+        assert "selection_status='ready'" in output
+        assert "worktree_count=2" in output
+
+    def test_empty_no_worktrees(self):
+        """Empty worktrees list produces empty arrays and no_worktrees status."""
+        output = worktrees_to_bash_declare([], [])
+        assert "declare -a worktree_paths=()" in output
+        assert "declare -a formatted_options=()" in output
+        assert "selection_status='no_worktrees'" in output
+        assert "worktree_count=0" in output
+
+    def test_empty_with_custom_status(self):
+        """Empty list with a custom status string uses that status."""
+        output = worktrees_to_bash_declare([], [], status="error")
+        assert "selection_status='error'" in output
+
+    def test_paths_with_spaces_escaped(self):
+        """Paths containing spaces are safely single-quoted for bash eval."""
+        wt = WorktreeInfo(
+            path="/home/user/my projects/repo",
+            branch="main",
+            commit="abc1234",
+            is_dirty=False,
+            is_locked=False,
+        )
+        output = worktrees_to_bash_declare([wt], ["main (abc1234) → ~/my projects/repo"])
+        # Space inside the path must be inside single quotes, not bare
+        assert "'/home/user/my projects/repo'" in output
+
+
+class TestSelectionToBashDeclare:
+    """Tests for selection_to_bash_declare() — serialises a WorktreeSelectionResult."""
+
+    def test_selected(self):
+        """A 'selected' result emits the path and 'selected' status."""
+        result = WorktreeSelectionResult(status="selected", path="/home/user/repo")
+        output = selection_to_bash_declare(result)
+        assert "selected_path='/home/user/repo'" in output
+        assert "selection_status='selected'" in output
+
+    def test_cancelled(self):
+        """A 'cancelled' result emits an empty path and 'cancelled' status."""
+        result = WorktreeSelectionResult(status="cancelled", path="")
+        output = selection_to_bash_declare(result)
+        assert "selected_path=''" in output
+        assert "selection_status='cancelled'" in output
+
+    def test_no_worktrees(self):
+        """A 'no_worktrees' result emits an empty path and 'no_worktrees' status."""
+        result = WorktreeSelectionResult(status="no_worktrees", path="")
+        output = selection_to_bash_declare(result)
+        assert "selected_path=''" in output
+        assert "selection_status='no_worktrees'" in output

@@ -137,6 +137,74 @@ def format_display_rows(worktrees: list[WorktreeInfo], current_path: str) -> lis
     return rows
 
 
+def worktrees_to_bash_declare(
+    worktrees: list[WorktreeInfo],
+    formatted: list[str],
+    status: str = "no_worktrees",
+) -> str:
+    """Serialise worktrees and display rows to bash declare statements.
+
+    Used by the 'prepare' CLI command (the gum path) so the Bash caller can
+    eval the output and obtain parallel arrays ready for gum choose.
+
+    Variables emitted:
+        worktree_paths       — bash array of absolute worktree paths
+        formatted_options    — bash array of plain-text display rows
+        selection_status     — 'ready' if worktrees present, else 'no_worktrees'
+                               (or a custom status provided by the caller)
+        worktree_count       — integer count of available worktrees
+
+    Design note: when the list is empty we still emit all four variables with
+    safe defaults so the Bash caller can branch on selection_status without
+    needing to guard against unbound variables.
+
+    Args:
+        worktrees: Filtered list of WorktreeInfo objects.
+        formatted: Parallel list of display strings (one per worktree).
+        status: Override status for empty-list case (default 'no_worktrees').
+
+    Returns:
+        Multi-line string of bash declare statements, safe for eval.
+    """
+    if not worktrees:
+        return (
+            "declare -a worktree_paths=()\n"
+            "declare -a formatted_options=()\n"
+            f"selection_status={_bash_escape(status)}\n"
+            "worktree_count=0"
+        )
+    lines: list[str] = []
+    paths_arr = " ".join(_bash_escape(w.path) for w in worktrees)
+    lines.append(f"declare -a worktree_paths=({paths_arr})")
+    opts_arr = " ".join(_bash_escape(f) for f in formatted)
+    lines.append(f"declare -a formatted_options=({opts_arr})")
+    lines.append("selection_status='ready'")
+    lines.append(f"worktree_count={len(worktrees)}")
+    return "\n".join(lines)
+
+
+def selection_to_bash_declare(result: WorktreeSelectionResult) -> str:
+    """Serialise a WorktreeSelectionResult to bash declare statements.
+
+    Used by the 'select' CLI command (the numbered-list path) so the Bash
+    caller can eval the output and branch on selection_status.
+
+    Variables emitted:
+        selected_path      — path of chosen worktree, or empty string
+        selection_status   — one of: 'selected', 'cancelled', 'no_worktrees', 'error'
+
+    Args:
+        result: Typed selection outcome from interactive selection logic.
+
+    Returns:
+        Two-line string of bash assignments, safe for eval.
+    """
+    lines: list[str] = []
+    lines.append(f"selected_path={_bash_escape(result.path)}")
+    lines.append(f"selection_status={_bash_escape(result.status)}")
+    return "\n".join(lines)
+
+
 def _bash_escape(s: str) -> str:
     """Escape a string for safe use inside bash declare statements.
 
