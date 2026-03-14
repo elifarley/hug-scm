@@ -1,0 +1,15 @@
+{
+  "planPath": "docs/plans/2026-03-13-worktree-selection-python-migration.md",
+  "tasks": [
+    {"id": 0, "subject": "Task 0: Baseline — verify all tests pass", "status": "pending"},
+    {"id": 1, "subject": "Task 1: Data model and _bash_escape", "status": "pending", "blockedBy": [0]},
+    {"id": 2, "subject": "Task 2: filter_worktrees() pure filtering", "status": "pending", "blockedBy": [1]},
+    {"id": 3, "subject": "Task 3: format_display_rows() display construction", "status": "pending", "blockedBy": [1]},
+    {"id": 4, "subject": "Task 4: Bash declare output functions", "status": "pending", "blockedBy": [1]},
+    {"id": 5, "subject": "Task 5: Git integration — _load_worktrees()", "status": "pending", "blockedBy": [1]},
+    {"id": 6, "subject": "Task 6: CLI entry point — prepare and select commands", "status": "pending", "blockedBy": [2, 3, 4, 5]},
+    {"id": 7, "subject": "Task 7-8: Bash adapter and command refactoring", "status": "pending", "blockedBy": [6]},
+    {"id": 8, "subject": "Task 9-10: BATS regression and documentation", "status": "pending", "blockedBy": [7]}
+  ],
+  "lastUpdated": "2026-03-13T19:00:00Z"
+}
