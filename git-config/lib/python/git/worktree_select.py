@@ -17,6 +17,7 @@ Exit codes: 0 always (status communicated through bash variables).
 Non-zero only for genuine Python failures (import error, git not found).
 """
 
+import os
 from dataclasses import dataclass
 
 from git.worktree import WorktreeInfo
@@ -87,6 +88,53 @@ def filter_worktrees(
     if options.exclude_current:
         result = [w for w in result if w.path != current_path]
     return result
+
+
+def format_display_rows(worktrees: list[WorktreeInfo], current_path: str) -> list[str]:
+    """Build formatted selection rows for interactive display.
+
+    Format per row (only non-empty tags appear):
+        "[CURRENT] [DIRTY] [LOCKED] branch (commit) → ~/path"
+
+    Design rationale — plain text, no ANSI:
+    - gum handles its own terminal styling; injecting ANSI here would conflict
+      with gum's colour management and break column alignment.
+    - The numbered-list fallback path also consumes these rows, so keeping them
+      plain text makes both paths consistent.
+
+    Args:
+        worktrees: Ordered list of worktrees to format.
+        current_path: Absolute path of the user's current worktree; used to
+            emit the [CURRENT] tag.
+
+    Returns:
+        A list of plain-text strings, one per input worktree, in the same order.
+    """
+    home = os.path.expanduser("~")
+    rows: list[str] = []
+    for wt in worktrees:
+        parts: list[str] = []
+
+        # Status tags (order matters for readability: who > state > lock)
+        if wt.path == current_path:
+            parts.append("[CURRENT]")
+        if wt.is_dirty:
+            parts.append("[DIRTY]")
+        if wt.is_locked:
+            parts.append("[LOCKED]")
+
+        # Branch + commit — detached HEAD has an empty branch field
+        branch_display = wt.branch if wt.branch else "(detached)"
+        parts.append(f"{branch_display} ({wt.commit})")
+
+        # Path: shorten to ~/... when possible to reduce line width
+        display_path = wt.path
+        if display_path.startswith(home):
+            display_path = "~" + display_path[len(home):]
+        parts.append(f"\u2192 {display_path}")  # → (U+2192 RIGHTWARDS ARROW)
+
+        rows.append(" ".join(parts))
+    return rows
 
 
 def _bash_escape(s: str) -> str:
