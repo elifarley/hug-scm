@@ -9,6 +9,11 @@ subtle divergence bugs.
 Public API:
     bash_escape(s)        — escape a Python string for bash single-quote context
     BashDeclareBuilder    — fluent builder for bash declare statements
+    parse_numbered_input  — parse user selection string → 0-based index list
+    get_selection_input   — read user selection with env-var / test_selection override
+    add_common_cli_args   — register shared argparse arguments on a parser
+
+    ANSI color constants: YELLOW, BLUE, GREY, CYAN, GREEN, NC
 
 Design decisions:
     - bash_escape is public (not _bash_escape) because it is shared
@@ -18,9 +23,33 @@ Design decisions:
       produce confusing late errors.
     - Fluent API (each add_* returns self) allows concise chaining without
       sacrificing readability.
+    - parse_numbered_input is ported verbatim from branch_select.parse_user_input
+      so all selection modules share identical parsing semantics going forward.
+    - get_selection_input encodes a three-level precedence chain used in every
+      selection module: test_selection arg > env var > stdin.  Centralising it
+      prevents subtle drift (e.g. one module reading a different env var name).
+    - add_common_cli_args accepts include_no_gum so that callers that never
+      drive gum (e.g. tag_select in numbered mode) don't advertise the flag.
 """
 
+import argparse
+import os
 import re
+
+################################################################################
+# ANSI color constants
+################################################################################
+
+# These values intentionally match branch_select.py so every module that
+# imports from selection_core produces visually consistent terminal output.
+# Using \x1b (ESC) is more explicit than \033 and avoids octal ambiguity.
+YELLOW = "\x1b[33m"   # branch names, tag names, commit hashes
+BLUE   = "\x1b[34m"   # dates, timestamps
+GREY   = "\x1b[90m"   # secondary info (commit subjects, descriptions)
+CYAN   = "\x1b[36m"   # tracking / remote info
+GREEN  = "\x1b[32m"   # positive indicators (current item, success)
+NC     = "\x1b[0m"    # No Color — reset all attributes
+
 
 ################################################################################
 # Variable name validation
@@ -194,3 +223,183 @@ class BashDeclareBuilder:
             declarations were added.
         """
         return "\n".join(self._lines)
+
+
+################################################################################
+# User input parsing
+################################################################################
+
+
+def parse_numbered_input(
+    user_input: str, num_items: int, allow_all: bool = True
+) -> list[int]:
+    """Parse a user selection string into a sorted list of 0-based indices.
+
+    This is the canonical implementation extracted from
+    branch_select.parse_user_input() so that every selection module shares
+    identical parsing semantics — previously each module duplicated this logic
+    and subtle differences crept in.
+
+    Supported formats:
+        ''         → []                  (no selection)
+        'a' / 'A'  → [0 .. num_items-1]  (select all, when allow_all=True)
+        'all'/'ALL'→ same as 'a'
+        '1'        → [0]                 (1-based display → 0-based index)
+        '1,3,5'    → [0, 2, 4]          (comma-separated)
+        '1-3'      → [0, 1, 2]          (inclusive range)
+        '1,3-5,7'  → [0, 2, 3, 4, 6]   (mixed)
+
+    Out-of-bounds numbers and malformed parts are silently skipped so the
+    function never raises for bad user input — it degrades gracefully.
+    Reverse ranges (e.g. '5-3') produce an empty range (Python range semantics).
+
+    Args:
+        user_input: Raw string typed by the user.
+        num_items:  Total number of selectable items.
+        allow_all:  When True (default), 'a'/'all' selects everything.
+                    Set to False when the caller handles its own "all" logic.
+
+    Returns:
+        Sorted list of unique 0-based indices within [0, num_items).
+
+    Examples:
+        >>> parse_numbered_input("1,2,3", 5)
+        [0, 1, 2]
+        >>> parse_numbered_input("1-3", 5)
+        [0, 1, 2]
+        >>> parse_numbered_input("all", 3)
+        [0, 1, 2]
+        >>> parse_numbered_input("1,3-5,7", 10)
+        [0, 2, 3, 4, 6]
+    """
+    user_input = user_input.strip()
+
+    # Empty input → nothing selected
+    if not user_input:
+        return []
+
+    # 'a' / 'all' shortcut — case-insensitive, gated by allow_all
+    if allow_all and user_input.lower() in ("a", "all"):
+        return list(range(num_items))
+
+    indices: set[int] = set()
+
+    for part in user_input.split(","):
+        part = part.strip()
+
+        if "-" in part:
+            # Range token, e.g. "3-7"
+            # split on the FIRST hyphen only so that negative numbers in the
+            # start position still parse; the end position cannot be negative
+            # in a valid range, so we leave error handling to the ValueError path.
+            try:
+                start_str, end_str = part.split("-", 1)
+                start_idx = max(0, int(start_str.strip()) - 1)        # 0-based, clamped
+                end_idx   = min(num_items - 1, int(end_str.strip()) - 1)  # 0-based, clamped
+                # When start_idx > end_idx (reverse range or out-of-bounds start)
+                # range() produces an empty sequence — no results, no error.
+                indices.update(range(start_idx, end_idx + 1))
+            except ValueError:
+                # Non-integer endpoints → skip this token silently
+                continue
+        else:
+            # Single number token
+            try:
+                idx = int(part) - 1  # 1-based display → 0-based index
+                if 0 <= idx < num_items:
+                    indices.add(idx)
+                # Out-of-bounds → silently ignored
+            except ValueError:
+                # Non-integer token → skip silently
+                continue
+
+    return sorted(indices)
+
+
+################################################################################
+# Selection input sourcing
+################################################################################
+
+
+def get_selection_input(
+    test_selection: str | None = None,
+    env_var: str = "HUG_TEST_NUMBERED_SELECTION",
+) -> str:
+    """Return user selection input from the highest-priority available source.
+
+    This function encodes the three-level precedence chain used across every
+    selection module.  Centralising it prevents subtle drift where modules read
+    different environment variable names or handle EOFError differently.
+
+    Precedence (first match wins):
+        1. test_selection argument  — if not None, returned as-is.
+           The sentinel for "not set" is None; an empty string "" is a valid
+           and deliberate choice that DOES short-circuit the chain.
+        2. env_var environment variable — if the named variable is set.
+        3. input() from stdin — the normal interactive path.
+        4. Empty string — returned silently when stdin raises EOFError
+           (e.g. non-interactive CI environments piping /dev/null to stdin).
+
+    Args:
+        test_selection: Pre-determined value for automated testing.  Pass None
+                        to fall through to the env var / stdin path.
+        env_var:        Name of the environment variable to check at level 2.
+                        Defaults to "HUG_TEST_NUMBERED_SELECTION".
+
+    Returns:
+        The user's selection string (may be empty).
+    """
+    # Level 1: explicit test_selection argument (None is the "not set" sentinel)
+    if test_selection is not None:
+        return test_selection
+
+    # Level 2: environment variable override (useful for shell-script test suites)
+    if env_var in os.environ:
+        return os.environ[env_var]
+
+    # Level 3 + 4: interactive stdin, with graceful EOFError fallback
+    try:
+        return input()
+    except EOFError:
+        return ""
+
+
+################################################################################
+# Shared argparse configuration
+################################################################################
+
+
+def add_common_cli_args(
+    parser: argparse.ArgumentParser,
+    include_no_gum: bool = False,
+) -> None:
+    """Register shared CLI arguments on an ArgumentParser.
+
+    Every selection-module CLI accepts --placeholder and --selection.
+    The --no-gum flag is optional: only callers that drive gum should advertise
+    it, because advertising an unknown flag confuses users who don't need it.
+
+    Args:
+        parser:         The ArgumentParser to augment.
+        include_no_gum: When True, also register --no-gum (action="store_true").
+                        Defaults to False.
+    """
+    parser.add_argument(
+        "--placeholder",
+        default="",
+        help="Prompt text displayed above the selection list.",
+    )
+    parser.add_argument(
+        "--selection",
+        default=None,
+        help=(
+            "Pre-selected input for automated testing "
+            "(simulates the user typing a selection)."
+        ),
+    )
+    if include_no_gum:
+        parser.add_argument(
+            "--no-gum",
+            action="store_true",
+            help="Disable gum usage and fall back to the numbered-list mode.",
+        )
