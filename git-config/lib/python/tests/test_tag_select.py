@@ -12,18 +12,17 @@ from unittest.mock import patch
 
 import pytest
 
+from git.selection_core import bash_escape, parse_numbered_input
 from git.tag_select import (
     TagFilterOptions,
     TagInfo,
     TagSelectionResult,
-    _bash_escape,
     _cmd_prepare,
     _cmd_select,
     _run_git,
     filter_tags,
     format_display_rows,
     load_tags,
-    parse_numbered_input,
     tags_to_bash_declare,
     to_bash_declare,
 )
@@ -187,31 +186,37 @@ class TestTagSelectionResult:
 
 
 class TestBashEscape:
-    """Tests for _bash_escape() — safe single-quote wrapping."""
+    """Tests for bash_escape() — safe single-quote wrapping.
+
+    These tests verify the canonical bash_escape() from selection_core still
+    behaves correctly when called from the tag_select context.  The authoritative
+    tests live in test_selection_core.py; these are retained to catch any
+    accidental import-path breakage.
+    """
 
     def test_simple_string(self):
         """Plain alphanumeric strings should be wrapped in single quotes."""
-        assert _bash_escape("hello") == "'hello'"
+        assert bash_escape("hello") == "'hello'"
 
     def test_string_with_single_quote(self):
         """Embedded single quotes should be escaped with the '\\'' idiom."""
-        assert _bash_escape("it's") == "'it'\\''s'"
+        assert bash_escape("it's") == "'it'\\''s'"
 
     def test_string_with_backslash(self):
         """Backslashes should be doubled so bash sees a literal backslash."""
-        assert _bash_escape("path\\to") == "'path\\\\to'"
+        assert bash_escape("path\\to") == "'path\\\\to'"
 
     def test_empty_string(self):
         """Empty string should produce two adjacent single quotes."""
-        assert _bash_escape("") == "''"
+        assert bash_escape("") == "''"
 
     def test_string_with_spaces(self):
         """Spaces are safe inside single quotes."""
-        assert _bash_escape("hello world") == "'hello world'"
+        assert bash_escape("hello world") == "'hello world'"
 
     def test_string_with_special_shell_chars(self):
         """Characters like $, !, *, ? are safe inside single quotes."""
-        result = _bash_escape("$HOME/*.txt")
+        result = bash_escape("$HOME/*.txt")
         assert result == "'$HOME/*.txt'"
 
 

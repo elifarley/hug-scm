@@ -31,6 +31,27 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
+
+# When run as a script (python3 /path/to/tag_select.py), Python does NOT
+# automatically add the package root to sys.path, so `from git.selection_core
+# import` fails with ModuleNotFoundError.  We fix this by inserting the parent
+# of the `git/` package directory — i.e., git-config/lib/python/ — into
+# sys.path before the import.  We only do this in __main__ (script mode) to
+# avoid polluting the path when imported as a library (e.g., by pytest).
+# WHY parent of __file__'s parent: __file__ is …/git/tag_select.py, so
+# Path(__file__).parent is …/git/ and Path(__file__).parent.parent is …/python/.
+if __name__ == "__main__":
+    _pkg_root = str(Path(__file__).resolve().parent.parent)
+    if _pkg_root not in sys.path:
+        sys.path.insert(0, _pkg_root)
+
+from git.selection_core import (
+    BashDeclareBuilder,
+    add_common_cli_args,
+    get_selection_input,
+    parse_numbered_input,
+)
 
 ################################################################################
 # Data model
@@ -101,42 +122,6 @@ class TagSelectionResult:
     status: str
     tags: list[str]
     indices: list[int]
-
-
-################################################################################
-# Bash escaping
-################################################################################
-
-
-def _bash_escape(s: str) -> str:
-    """Escape a string for safe use inside bash declare array literals.
-
-    Strategy: wrap in single quotes, using the '\\'' idiom for any embedded
-    single quote.  Backslashes are doubled first so that bash doesn't interpret
-    them as escape sequences.
-
-    This is the canonical escaping helper used by all to_bash_declare functions
-    in this codebase (worktree.py, branch_select.py use identical logic).
-
-    Args:
-        s: Arbitrary Python string to make safe for bash eval.
-
-    Returns:
-        Single-quoted, bash-safe string.
-
-    Examples:
-        >>> _bash_escape("hello")
-        "'hello'"
-        >>> _bash_escape("it's")
-        "'it'\\\\''s'"
-        >>> _bash_escape("path\\\\to")
-        "'path\\\\\\\\to'"
-    """
-    # Order matters: escape backslashes before touching single quotes,
-    # otherwise we would double-escape the backslashes we introduce.
-    s = s.replace("\\", "\\\\")
-    s = s.replace("'", "'\\''")
-    return f"'{s}'"
 
 
 ################################################################################
@@ -236,72 +221,6 @@ def format_display_rows(tags: list[TagInfo]) -> list[str]:
 
 
 ################################################################################
-# User input parsing
-################################################################################
-
-
-def parse_numbered_input(user_input: str, num_items: int) -> list[int]:
-    """Parse user selection input into 0-based indices.
-
-    Supports the same input formats as branch_select.parse_user_input() so
-    both selection surfaces behave identically:
-      - 'a' / 'all' / 'ALL' (case-insensitive) → select all items
-      - Comma-separated 1-based numbers: "1,2,3"
-      - Inclusive ranges: "2-4" → items 2, 3, 4
-      - Mixed: "1,3-5,7"
-      - Empty / whitespace → no selection
-
-    Out-of-range numbers are silently ignored; duplicates are deduplicated;
-    output is always sorted ascending.
-
-    Args:
-        user_input: Raw input string from stdin.
-        num_items: Total number of selectable items (upper bound for validation).
-
-    Returns:
-        Sorted list of unique 0-based indices in [0, num_items).
-    """
-    user_input = user_input.strip()
-
-    if not user_input:
-        return []
-
-    # "all" / "a" shortcuts — case-insensitive
-    if user_input.lower() in ("a", "all"):
-        return list(range(num_items))
-
-    indices: set[int] = set()
-
-    for part in user_input.split(","):
-        part = part.strip()
-
-        if "-" in part:
-            # Range: "start-end" (both 1-based, inclusive)
-            try:
-                start_str, end_str = part.split("-", 1)
-                start = int(start_str.strip())
-                end = int(end_str.strip())
-                # Convert to 0-based, clamp to valid range
-                start_idx = max(0, start - 1)
-                end_idx = min(num_items - 1, end - 1)
-                for i in range(start_idx, end_idx + 1):
-                    indices.add(i)
-            except ValueError:
-                continue  # malformed range token, skip silently
-        else:
-            # Single 1-based number
-            try:
-                num = int(part)
-                idx = num - 1  # convert to 0-based
-                if 0 <= idx < num_items:
-                    indices.add(idx)
-            except ValueError:
-                continue  # non-numeric token, skip silently
-
-    return sorted(indices)
-
-
-################################################################################
 # Bash declare output
 ################################################################################
 
@@ -311,7 +230,7 @@ def to_bash_declare(result: TagSelectionResult, array_name: str = "selected_tags
 
     Outputs two lines:
         declare -a <array_name>=('tag1' 'tag2' ...)
-        selection_status='status'
+        declare selection_status='status'
 
     All tag names are individually shell-escaped so that tags with special
     characters (spaces, single quotes, backslashes) survive the eval round-trip.
@@ -323,11 +242,12 @@ def to_bash_declare(result: TagSelectionResult, array_name: str = "selected_tags
     Returns:
         Multi-line string of bash variable declarations.
     """
-    lines: list[str] = []
-    tags_arr = " ".join(_bash_escape(t) for t in result.tags)
-    lines.append(f"declare -a {array_name}=({tags_arr})")
-    lines.append(f"selection_status={_bash_escape(result.status)}")
-    return "\n".join(lines)
+    return (
+        BashDeclareBuilder()
+        .add_array(array_name, result.tags)
+        .add_scalar("selection_status", result.status)
+        .build()
+    )
 
 
 def tags_to_bash_declare(tags: list[TagInfo], formatted: list[str], status: str = "no_tags") -> str:
@@ -351,26 +271,25 @@ def tags_to_bash_declare(tags: list[TagInfo], formatted: list[str], status: str 
         Multi-line string of bash variable declarations.
     """
     if not tags:
-        # Short-circuit: nothing to show — emit empty arrays + sentinel status
+        # Short-circuit: nothing to show — emit empty arrays + sentinel status.
+        # BashDeclareBuilder handles the empty-array case correctly.
         return (
-            "declare -a filtered_tags=()\n"
-            "declare -a formatted_options=()\n"
-            f"selection_status='{status}'\n"
-            "tag_count=0"
+            BashDeclareBuilder()
+            .add_array("filtered_tags", [])
+            .add_array("formatted_options", [])
+            .add_scalar("selection_status", status)
+            .add_int("tag_count", 0)
+            .build()
         )
 
-    lines: list[str] = []
-
-    tags_arr = " ".join(_bash_escape(t.name) for t in tags)
-    lines.append(f"declare -a filtered_tags=({tags_arr})")
-
-    opts_arr = " ".join(_bash_escape(f) for f in formatted)
-    lines.append(f"declare -a formatted_options=({opts_arr})")
-
-    lines.append("selection_status='ready'")
-    lines.append(f"tag_count={len(tags)}")
-
-    return "\n".join(lines)
+    return (
+        BashDeclareBuilder()
+        .add_array("filtered_tags", [t.name for t in tags])
+        .add_array("formatted_options", formatted)
+        .add_scalar("selection_status", "ready")
+        .add_int("tag_count", len(tags))
+        .build()
+    )
 
 
 ################################################################################
@@ -559,6 +478,7 @@ def _cmd_select(
     pattern: str | None,
     multi: bool,
     prompt: str,
+    test_selection: str | None = None,
 ) -> str:
     """Execute the 'select' CLI command (numbered-list path).
 
@@ -569,12 +489,19 @@ def _cmd_select(
     Printing to stderr ensures that 'eval "$(python3 tag_select.py select ...)"'
     works correctly — eval only processes stdout.
 
+    Input sourcing follows the three-level precedence chain from
+    get_selection_input(): test_selection arg > HUG_TEST_NUMBERED_SELECTION env
+    var > interactive stdin.  This allows automated tests and shell test suites
+    to inject selections without spawning a pseudo-TTY.
+
     Args:
         type_filter: Optional tag type to filter by.
         pattern: Optional regex pattern to filter tag names.
         multi: If True, allow comma/range multi-selection; otherwise take
             only the first selected item.
         prompt: Header text to display above the numbered list.
+        test_selection: Pre-determined selection for automated testing (passed
+            through to get_selection_input as the level-1 override).
 
     Returns:
         Bash declare statements as a string.
@@ -595,15 +522,13 @@ def _cmd_select(
         print(f"  {i + 1:2d}) {row}", file=sys.stderr)
     print(file=sys.stderr)
 
-    # Read user selection
-    try:
-        if multi:
-            user_input = input("Enter numbers to select (comma-separated, or 'a' for all): ")
-        else:
-            user_input = input("Enter number: ")
-    except EOFError:
-        # Non-interactive context (piped input exhausted)
-        user_input = ""
+    # Read user selection via the canonical three-level input chain:
+    # test_selection > HUG_TEST_NUMBERED_SELECTION env var > stdin.
+    if multi:
+        print("Enter numbers to select (comma-separated, or 'a' for all): ", end="", flush=True, file=sys.stderr)
+    else:
+        print("Enter number: ", end="", flush=True, file=sys.stderr)
+    user_input = get_selection_input(test_selection=test_selection)
 
     if not user_input.strip():
         return to_bash_declare(TagSelectionResult(status="cancelled", tags=[], indices=[]))
@@ -671,6 +596,9 @@ def main() -> None:
         default="Select a tag",
         help="Prompt header text (select command only)",
     )
+    # --selection enables automated testing without a pseudo-TTY.
+    # Shared with branch_select.py / worktree_select.py via add_common_cli_args.
+    add_common_cli_args(parser)
 
     args = parser.parse_args()
 
@@ -686,6 +614,7 @@ def main() -> None:
                 pattern=args.pattern,
                 multi=args.multi,
                 prompt=args.prompt,
+                test_selection=args.selection,
             )
         print(output)
 
