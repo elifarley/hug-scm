@@ -37,6 +37,13 @@ if __name__ == "__main__":
     if _pkg_root not in sys.path:
         sys.path.insert(0, _pkg_root)
 
+# selection_core is imported AFTER the sys.path fixup above so that both
+# script mode (__main__) and library-import mode resolve the package correctly.
+from git.selection_core import (
+    BashDeclareBuilder,
+    add_common_cli_args,
+    get_selection_input,
+)
 from git.worktree import WorktreeInfo, parse_worktree_list
 
 
@@ -147,7 +154,7 @@ def format_display_rows(worktrees: list[WorktreeInfo], current_path: str) -> lis
         # Path: shorten to ~/... when possible to reduce line width
         display_path = wt.path
         if display_path.startswith(home):
-            display_path = "~" + display_path[len(home):]
+            display_path = "~" + display_path[len(home) :]
         parts.append(f"\u2192 {display_path}")  # → (U+2192 RIGHTWARDS ARROW)
 
         rows.append(" ".join(parts))
@@ -185,19 +192,21 @@ def worktrees_to_bash_declare(
     """
     if not worktrees:
         return (
-            "declare -a worktree_paths=()\n"
-            "declare -a formatted_options=()\n"
-            f"selection_status={_bash_escape(status)}\n"
-            "worktree_count=0"
+            BashDeclareBuilder()
+            .add_array("worktree_paths", [])
+            .add_array("formatted_options", [])
+            .add_scalar("selection_status", status)
+            .add_int("worktree_count", 0)
+            .build()
         )
-    lines: list[str] = []
-    paths_arr = " ".join(_bash_escape(w.path) for w in worktrees)
-    lines.append(f"declare -a worktree_paths=({paths_arr})")
-    opts_arr = " ".join(_bash_escape(f) for f in formatted)
-    lines.append(f"declare -a formatted_options=({opts_arr})")
-    lines.append("selection_status='ready'")
-    lines.append(f"worktree_count={len(worktrees)}")
-    return "\n".join(lines)
+    return (
+        BashDeclareBuilder()
+        .add_array("worktree_paths", [w.path for w in worktrees])
+        .add_array("formatted_options", formatted)
+        .add_scalar("selection_status", "ready")
+        .add_int("worktree_count", len(worktrees))
+        .build()
+    )
 
 
 def selection_to_bash_declare(result: WorktreeSelectionResult) -> str:
@@ -214,34 +223,14 @@ def selection_to_bash_declare(result: WorktreeSelectionResult) -> str:
         result: Typed selection outcome from interactive selection logic.
 
     Returns:
-        Two-line string of bash assignments, safe for eval.
+        Two-line string of bash declare statements, safe for eval.
     """
-    lines: list[str] = []
-    lines.append(f"selected_path={_bash_escape(result.path)}")
-    lines.append(f"selection_status={_bash_escape(result.status)}")
-    return "\n".join(lines)
-
-
-def _bash_escape(s: str) -> str:
-    """Escape a string for safe use inside bash declare statements.
-
-    Strategy: wrap in single quotes, using the '\\'' idiom for embedded
-    single quotes. Backslashes doubled first so bash doesn't interpret them.
-
-    This is intentionally a module-local copy rather than importing from
-    worktree.py. The design explicitly avoids unifying _bash_escape across
-    modules at this stage — premature abstraction before the full module is
-    implemented would complicate future refactoring.
-
-    Args:
-        s: String to escape
-
-    Returns:
-        Escaped string wrapped in single quotes, safe for bash eval
-    """
-    s = s.replace("\\", "\\\\")  # Backslashes first (order matters)
-    s = s.replace("'", "'\\''")  # Single quotes using close-escape-reopen idiom
-    return f"'{s}'"
+    return (
+        BashDeclareBuilder()
+        .add_scalar("selected_path", result.path)
+        .add_scalar("selection_status", result.status)
+        .build()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +342,11 @@ def _cmd_prepare(options: WorktreeFilterOptions) -> str:
     return worktrees_to_bash_declare(filtered, formatted)
 
 
-def _cmd_select(options: WorktreeFilterOptions, prompt: str) -> str:
+def _cmd_select(
+    options: WorktreeFilterOptions,
+    prompt: str,
+    test_selection: str | None = None,
+) -> str:
     """Interactively select a worktree from a numbered list printed to stderr.
 
     Stdout is reserved for the bash declare output so the Bash caller can
@@ -372,12 +365,19 @@ def _cmd_select(options: WorktreeFilterOptions, prompt: str) -> str:
     creates a loop that complicates the Bash caller and makes tests harder to
     write. Cancellation is cheap — the user can simply re-run the command.
 
+    Input sourcing uses the three-level precedence chain from
+    get_selection_input(): test_selection arg > HUG_TEST_NUMBERED_SELECTION env
+    var > interactive stdin.  This lets automated tests and shell test suites
+    inject a selection without a pseudo-TTY.
+
     Args:
-        options: Filtering criteria passed to filter_worktrees().
-        prompt:  Prompt string shown to the user above the input field.
+        options:        Filtering criteria passed to filter_worktrees().
+        prompt:         Prompt string shown to the user above the input field.
+        test_selection: Pre-determined selection for automated testing (passed
+                        through to get_selection_input as the level-1 override).
 
     Returns:
-        Two-line string of bash assignments for selected_path and
+        Two-line string of bash declare statements for selected_path and
         selection_status, safe for eval.
     """
     worktrees, main_path, current_path = _load_worktrees()
@@ -395,10 +395,11 @@ def _cmd_select(options: WorktreeFilterOptions, prompt: str) -> str:
     for i, row in enumerate(formatted, start=1):
         print(f"  {i}) {row}", file=sys.stderr)
 
-    try:
-        raw = input()
-    except EOFError:
-        return selection_to_bash_declare(WorktreeSelectionResult(status="cancelled", path=""))
+    # Read user selection via the canonical three-level input chain:
+    # test_selection > HUG_TEST_NUMBERED_SELECTION env var > stdin.
+    # get_selection_input also handles EOFError (Ctrl-D / non-interactive stdin)
+    # by returning an empty string — no need for a separate try/except here.
+    raw = get_selection_input(test_selection=test_selection)
 
     if not raw.strip():
         return selection_to_bash_declare(WorktreeSelectionResult(status="cancelled", path=""))
@@ -428,6 +429,7 @@ def main(argv: list[str] | None = None) -> None:
 
     Select-only flags:
         --prompt TEXT     Prompt string shown above the numbered list (stderr).
+        --selection TEXT  Pre-determined selection for automated testing.
 
     All output is printed to stdout so the Bash caller can capture it with
     ``$(...)``.  Errors are written to stderr; exit code 1 on any exception.
@@ -465,6 +467,9 @@ def main(argv: list[str] | None = None) -> None:
         default="Select a worktree:",
         help="Prompt shown above the numbered list on stderr.",
     )
+    # --selection enables automated testing without a pseudo-TTY.
+    # Shared with tag_select.py / branch_select.py via add_common_cli_args.
+    add_common_cli_args(sel_parser)
 
     args = parser.parse_args(argv)
 
@@ -477,7 +482,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.command == "prepare":
             output = _cmd_prepare(opts)
         else:
-            output = _cmd_select(opts, args.prompt)
+            output = _cmd_select(opts, args.prompt, test_selection=args.selection)
         print(output)
     except Exception as exc:  # noqa: BLE001  — top-level safety net
         print(f"worktree-select: error: {exc}", file=sys.stderr)

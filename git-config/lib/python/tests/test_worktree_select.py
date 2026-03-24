@@ -5,11 +5,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from git.selection_core import bash_escape
 from git.worktree import WorktreeInfo
 from git.worktree_select import (
     WorktreeFilterOptions,
     WorktreeSelectionResult,
-    _bash_escape,
     _load_worktrees,
     _run_git,
     filter_worktrees,
@@ -89,25 +89,25 @@ class TestWorktreeSelectionResult:
 
 
 class TestBashEscape:
-    """Tests for _bash_escape function."""
+    """Tests for bash_escape (imported from selection_core — shared infrastructure)."""
 
     def test_simple_string(self):
-        assert _bash_escape("hello") == "'hello'"
+        assert bash_escape("hello") == "'hello'"
 
     def test_single_quotes(self):
-        result = _bash_escape("it's")
+        result = bash_escape("it's")
         assert result == "'it'\\''s'"
 
     def test_backslashes(self):
-        result = _bash_escape("path\\to")
+        result = bash_escape("path\\to")
         assert result == "'path\\\\to'"
 
     def test_spaces_in_path(self):
-        result = _bash_escape("/home/user/my repo")
+        result = bash_escape("/home/user/my repo")
         assert result == "'/home/user/my repo'"
 
     def test_empty_string(self):
-        assert _bash_escape("") == "''"
+        assert bash_escape("") == "''"
 
 
 class TestFilterWorktrees:
@@ -290,21 +290,23 @@ class TestWorktreesToBashDeclare:
         assert "declare -a worktree_paths=" in output
         assert "declare -a formatted_options=" in output
         assert "/home/user/repo" in output
-        assert "selection_status='ready'" in output
-        assert "worktree_count=2" in output
+        # BashDeclareBuilder emits 'declare name=value' for scalars
+        assert "declare selection_status='ready'" in output
+        # BashDeclareBuilder emits 'declare -i name=value' for integers
+        assert "declare -i worktree_count=2" in output
 
     def test_empty_no_worktrees(self):
         """Empty worktrees list produces empty arrays and no_worktrees status."""
         output = worktrees_to_bash_declare([], [])
         assert "declare -a worktree_paths=()" in output
         assert "declare -a formatted_options=()" in output
-        assert "selection_status='no_worktrees'" in output
-        assert "worktree_count=0" in output
+        assert "declare selection_status='no_worktrees'" in output
+        assert "declare -i worktree_count=0" in output
 
     def test_empty_with_custom_status(self):
         """Empty list with a custom status string uses that status."""
         output = worktrees_to_bash_declare([], [], status="error")
-        assert "selection_status='error'" in output
+        assert "declare selection_status='error'" in output
 
     def test_paths_with_spaces_escaped(self):
         """Paths containing spaces are safely single-quoted for bash eval."""
@@ -327,22 +329,23 @@ class TestSelectionToBashDeclare:
         """A 'selected' result emits the path and 'selected' status."""
         result = WorktreeSelectionResult(status="selected", path="/home/user/repo")
         output = selection_to_bash_declare(result)
-        assert "selected_path='/home/user/repo'" in output
-        assert "selection_status='selected'" in output
+        # BashDeclareBuilder emits 'declare name=value' for scalars
+        assert "declare selected_path='/home/user/repo'" in output
+        assert "declare selection_status='selected'" in output
 
     def test_cancelled(self):
         """A 'cancelled' result emits an empty path and 'cancelled' status."""
         result = WorktreeSelectionResult(status="cancelled", path="")
         output = selection_to_bash_declare(result)
-        assert "selected_path=''" in output
-        assert "selection_status='cancelled'" in output
+        assert "declare selected_path=''" in output
+        assert "declare selection_status='cancelled'" in output
 
     def test_no_worktrees(self):
         """A 'no_worktrees' result emits an empty path and 'no_worktrees' status."""
         result = WorktreeSelectionResult(status="no_worktrees", path="")
         output = selection_to_bash_declare(result)
-        assert "selected_path=''" in output
-        assert "selection_status='no_worktrees'" in output
+        assert "declare selected_path=''" in output
+        assert "declare selection_status='no_worktrees'" in output
 
 
 # ---------------------------------------------------------------------------
@@ -521,18 +524,19 @@ class TestCmdPrepare:
         assert "/home/user/repo.WT.feature-1" in output
         # The formatted row must reference the branch name
         assert "feature-1" in output
-        # Status must be 'ready' when worktrees exist
-        assert "selection_status='ready'" in output
-        assert "worktree_count=1" in output
+        # BashDeclareBuilder emits 'declare name=value' for scalars
+        assert "declare selection_status='ready'" in output
+        # BashDeclareBuilder emits 'declare -i name=value' for integers
+        assert "declare -i worktree_count=1" in output
 
     def test_no_worktrees_when_load_fails(self):
         """When _load_worktrees returns nothing, output carries no_worktrees status."""
         opts = WorktreeFilterOptions()
         with patch("git.worktree_select._load_worktrees", return_value=([], "", "")):
             output = _cmd_prepare(opts)
-        assert "selection_status='no_worktrees'" in output
+        assert "declare selection_status='no_worktrees'" in output
         assert "declare -a worktree_paths=()" in output
-        assert "worktree_count=0" in output
+        assert "declare -i worktree_count=0" in output
 
     def test_all_filtered_out_gives_no_worktrees(self):
         """When all loaded worktrees are removed by filters, status is no_worktrees."""
@@ -550,8 +554,8 @@ class TestCmdPrepare:
             return_value=([main_only], "/home/user/repo", "/home/user/repo"),
         ):
             output = _cmd_prepare(opts)
-        assert "selection_status='no_worktrees'" in output
-        assert "worktree_count=0" in output
+        assert "declare selection_status='no_worktrees'" in output
+        assert "declare -i worktree_count=0" in output
 
 
 class TestCmdSelect:
@@ -568,7 +572,16 @@ class TestCmdSelect:
         with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
             with patch("builtins.input", return_value="1"):
                 output = _cmd_select(opts, prompt="Pick worktree")
-        assert "selection_status='selected'" in output
+        # BashDeclareBuilder emits 'declare name=value' for scalars
+        assert "declare selection_status='selected'" in output
+        assert "/home/user/repo.WT.feature-1" in output
+
+    def test_valid_selection_via_test_selection_arg(self):
+        """test_selection kwarg injects a selection without touching builtins.input."""
+        opts = WorktreeFilterOptions()
+        with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
+            output = _cmd_select(opts, prompt="Pick worktree", test_selection="1")
+        assert "declare selection_status='selected'" in output
         assert "/home/user/repo.WT.feature-1" in output
 
     def test_cancelled_on_empty_input(self):
@@ -577,8 +590,8 @@ class TestCmdSelect:
         with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
             with patch("builtins.input", return_value=""):
                 output = _cmd_select(opts, prompt="Pick worktree")
-        assert "selection_status='cancelled'" in output
-        assert "selected_path=''" in output
+        assert "declare selection_status='cancelled'" in output
+        assert "declare selected_path=''" in output
 
     def test_invalid_number_cancels(self):
         """An out-of-range number (e.g. '99') cancels without raising."""
@@ -586,7 +599,7 @@ class TestCmdSelect:
         with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
             with patch("builtins.input", return_value="99"):
                 output = _cmd_select(opts, prompt="Pick worktree")
-        assert "selection_status='cancelled'" in output
+        assert "declare selection_status='cancelled'" in output
 
     def test_non_numeric_input_cancels(self):
         """Non-numeric text (e.g. 'abc') cancels without raising."""
@@ -594,7 +607,7 @@ class TestCmdSelect:
         with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
             with patch("builtins.input", return_value="abc"):
                 output = _cmd_select(opts, prompt="Pick worktree")
-        assert "selection_status='cancelled'" in output
+        assert "declare selection_status='cancelled'" in output
 
     def test_eof_on_input_cancels(self):
         """EOFError (Ctrl-D / piped /dev/null) cancels gracefully."""
@@ -602,7 +615,7 @@ class TestCmdSelect:
         with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
             with patch("builtins.input", side_effect=EOFError):
                 output = _cmd_select(opts, prompt="Pick worktree")
-        assert "selection_status='cancelled'" in output
+        assert "declare selection_status='cancelled'" in output
 
     def test_no_worktrees_when_load_fails(self):
         """When _load_worktrees returns nothing, status is no_worktrees (no prompt)."""
@@ -611,7 +624,7 @@ class TestCmdSelect:
             # input() must NOT be called — no prompt to show
             with patch("builtins.input", side_effect=AssertionError("input called unexpectedly")):
                 output = _cmd_select(opts, prompt="Pick worktree")
-        assert "selection_status='no_worktrees'" in output
+        assert "declare selection_status='no_worktrees'" in output
 
     def test_selects_second_item(self):
         """Entering '2' with a two-item list selects the second worktree path."""
@@ -620,7 +633,7 @@ class TestCmdSelect:
         with patch("git.worktree_select._load_worktrees", return_value=load_result):
             with patch("builtins.input", return_value="2"):
                 output = _cmd_select(opts, prompt="Pick worktree")
-        assert "selection_status='selected'" in output
+        assert "declare selection_status='selected'" in output
         assert "/home/user/repo.WT.bugfix-2" in output
 
 
