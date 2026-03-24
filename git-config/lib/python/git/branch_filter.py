@@ -11,6 +11,25 @@ Replaces hug-git-branch filter_branches() function.
 import argparse
 import sys
 from dataclasses import dataclass
+from pathlib import Path
+
+# When run as a script (python3 /path/to/branch_filter.py), Python does NOT
+# automatically add the package root to sys.path, so `from git.selection_core
+# import` fails with ModuleNotFoundError.  We fix this by inserting the parent
+# of the `git/` package directory — i.e. git-config/lib/python/ — into sys.path
+# before the import.  This guard runs only in __main__ (script mode) to avoid
+# polluting sys.path when the module is imported as a library (e.g. in tests
+# where pytest already sets PYTHONPATH correctly).
+# WHY parent.parent: __file__ is …/git/branch_filter.py, so
+# Path(__file__).parent is …/git/ and .parent.parent is …/python/.
+if __name__ == "__main__":
+    _pkg_root = str(Path(__file__).resolve().parent.parent)
+    if _pkg_root not in sys.path:
+        sys.path.insert(0, _pkg_root)
+
+# selection_core is imported AFTER the sys.path fixup above so that both
+# script mode (__main__) and library-import mode resolve the package correctly.
+from git.selection_core import BashDeclareBuilder, bash_escape
 
 
 @dataclass
@@ -54,39 +73,15 @@ class FilteredBranches:
         All strings are properly escaped for safe bash evaluation.
         Arrays maintain consistent lengths.
         """
-        lines = []
-
-        # Build arrays - use space-separated values for bash arrays
-        branches_arr = " ".join(_bash_escape(b) for b in self.branches)
-        hashes_arr = " ".join(_bash_escape(h) for h in self.hashes)
-        subjects_arr = " ".join(_bash_escape(s) for s in self.subjects)
-        tracks_arr = " ".join(_bash_escape(t) for t in self.tracks)
-        dates_arr = " ".join(_bash_escape(d) for d in self.dates)
-
-        lines.append(f"declare -a filtered_branches=({branches_arr})")
-        lines.append(f"declare -a filtered_hashes=({hashes_arr})")
-        lines.append(f"declare -a filtered_subjects=({subjects_arr})")
-        lines.append(f"declare -a filtered_tracks=({tracks_arr})")
-        lines.append(f"declare -a filtered_dates=({dates_arr})")
-
-        return "\n".join(lines)
-
-
-def _bash_escape(s: str) -> str:
-    """Escape string for safe bash declare usage.
-
-    Uses single quotes with inner quote escaping for maximum compatibility.
-    Handles: backslashes, single quotes, and most special characters.
-
-    Args:
-        s: String to escape
-
-    Returns:
-        Escaped string wrapped in single quotes
-    """
-    s = s.replace("\\", "\\\\")  # Backslashes first (order matters)
-    s = s.replace("'", "'\\''")  # Single quotes
-    return f"'{s}'"
+        return (
+            BashDeclareBuilder()
+            .add_array("filtered_branches", self.branches)
+            .add_array("filtered_hashes", self.hashes)
+            .add_array("filtered_subjects", self.subjects)
+            .add_array("filtered_tracks", self.tracks)
+            .add_array("filtered_dates", self.dates)
+            .build()
+        )
 
 
 def filter_branches(

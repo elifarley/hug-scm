@@ -14,16 +14,42 @@ Supports:
 """
 
 import argparse
-import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
-# ANSI color codes (matching hug-terminal)
-YELLOW = "\x1b[33m"
-BLUE = "\x1b[34m"
-GREY = "\x1b[90m"
-CYAN = "\x1b[36m"
-NC = "\x1b[0m"  # No Color
+# When run as a script (python3 /path/to/branch_select.py), Python does NOT
+# automatically add the package root to sys.path, so `from git.selection_core
+# import` fails with ModuleNotFoundError.  We fix this by inserting the parent
+# of the `git/` package directory — i.e. git-config/lib/python/ — into sys.path
+# before the import.  This guard runs only in __main__ (script mode) to avoid
+# polluting sys.path when the module is imported as a library (e.g. in tests
+# where pytest already sets PYTHONPATH correctly).
+# WHY parent.parent: __file__ is …/git/branch_select.py, so
+# Path(__file__).parent is …/git/ and .parent.parent is …/python/.
+if __name__ == "__main__":
+    _pkg_root = str(Path(__file__).resolve().parent.parent)
+    if _pkg_root not in sys.path:
+        sys.path.insert(0, _pkg_root)
+
+# All shared primitives live in selection_core — the single source of truth for
+# bash escaping, declare-statement generation, input parsing, and ANSI colors.
+# Importing them here (rather than re-defining locally) ensures that every
+# selection module produces byte-for-byte identical output and reads identical
+# environment variables for test overrides.
+# This import must come AFTER the sys.path fixup above so that both script mode
+# (__main__) and library-import mode (pytest) resolve the package correctly.
+from git.selection_core import (
+    BLUE,
+    CYAN,
+    GREY,
+    NC,
+    YELLOW,
+    BashDeclareBuilder,
+    bash_escape,
+    get_selection_input,
+    parse_numbered_input,
+)
 
 # Minimum items for gum usage (matches Bash constant)
 MIN_ITEMS_FOR_GUM = 10
@@ -71,76 +97,15 @@ class SelectedBranches:
         Returns:
             Bash declare statements as a string
         """
-        lines = []
-
-        # Build arrays - use space-separated values for bash arrays
-        branches_arr = " ".join(_bash_escape(b) for b in self.branches)
-        indices_arr = " ".join(str(i) for i in self.selected_indices)
-
-        lines.append(f"declare -a {array_name}=({branches_arr})")
-        lines.append(f"declare -a selected_indices=({indices_arr})")
-
-        return "\n".join(lines)
-
-
-def _bash_escape(s: str) -> str:
-    """Escape string for safe bash declare usage.
-
-    Uses single quotes with inner quote escaping for maximum compatibility.
-    Handles: backslashes, single quotes, and most special characters.
-
-    Args:
-        s: String to escape
-
-    Returns:
-        Escaped string wrapped in single quotes
-    """
-    s = s.replace("\\", "\\\\")  # Backslashes first (order matters)
-    s = s.replace("'", "'\\''")  # Single quotes
-    return f"'{s}'"
-
-
-def _should_use_gum(num_items: int, options: SelectOptions) -> bool:
-    """Determine if gum should be used for selection.
-
-    Args:
-        num_items: Number of items to select from
-        options: SelectOptions configuration
-
-    Returns:
-        True if gum should be used, False otherwise
-    """
-    if not options.use_gum:
-        return False
-
-    # Check HUG_DISABLE_GUM environment variable
-    if os.environ.get("HUG_DISABLE_GUM", "").lower() == "true":
-        return False
-
-    # Check if gum is available
-    # In test mode, we can assume gum is available if HUG_TEST_MODE is set
-    if os.environ.get("HUG_TEST_MODE", "").lower() == "true":
-        return num_items >= MIN_ITEMS_FOR_GUM
-
-    # Check if gum command exists
-    try:
-        import subprocess
-
-        subprocess.run(
-            ["command", "-v", "gum"],
-            shell=True,
-            check=True,
-            capture_output=True,
+        # BashDeclareBuilder handles escaping and validates variable names eagerly,
+        # so invalid array_name values produce a clear error at call time rather
+        # than silently emitting broken bash syntax.
+        return (
+            BashDeclareBuilder()
+            .add_array(array_name, self.branches)
+            .add_array("selected_indices", [str(i) for i in self.selected_indices])
+            .build()
         )
-        has_gum = True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        has_gum = False
-
-    if not has_gum:
-        return False
-
-    # Check if we have a TTY
-    return sys.stdout.isatty() and num_items >= MIN_ITEMS_FOR_GUM
 
 
 def format_multi_select_options(
@@ -218,95 +183,6 @@ def format_multi_select_options(
     return formatted_options
 
 
-def parse_user_input(user_input: str, num_items: int, allow_all: bool = True) -> list[int]:
-    """Parse user selection input into 0-based indices.
-
-    Supports:
-    - 'a' or 'all' or 'A' or 'ALL' -> select all items
-    - Comma-separated numbers: "1,2,3"
-    - Ranges: "1-5" (inclusive)
-    - Mixed: "1,3-5,7"
-    - Empty string -> no selection
-
-    Args:
-        user_input: Raw user input string
-        num_items: Total number of items available
-        allow_all: Whether 'a'/'all' selects all items (default: True)
-
-    Returns:
-        List of 0-based indices (sorted, unique, within bounds)
-
-    Examples:
-        >>> parse_user_input("1,2,3", 5)
-        [0, 1, 2]
-        >>> parse_user_input("1-3", 5)
-        [0, 1, 2]
-        >>> parse_user_input("all", 3)
-        [0, 1, 2]
-        >>> parse_user_input("1,3-5,7", 10)
-        [0, 2, 3, 4, 6]
-    """
-    user_input = user_input.strip()
-
-    # Handle empty input
-    if not user_input:
-        return []
-
-    # Handle 'all' or 'a' for select all
-    if allow_all and user_input.lower() in ("a", "all"):
-        return list(range(num_items))
-
-    indices = set()
-
-    # Split by comma and parse each part
-    for part in user_input.split(","):
-        part = part.strip()
-
-        # Handle range: "1-5"
-        if "-" in part:
-            try:
-                start_str, end_str = part.split("-", 1)
-                start = int(start_str.strip())
-                end = int(end_str.strip())
-
-                # Convert to 0-based and ensure inclusive range
-                start_idx = max(0, start - 1)
-                end_idx = min(num_items - 1, end - 1)
-
-                for i in range(start_idx, end_idx + 1):
-                    indices.add(i)
-            except ValueError:
-                # Invalid range format, skip this part
-                continue
-        else:
-            # Handle single number
-            try:
-                num = int(part)
-                idx = num - 1  # Convert to 0-based
-
-                if 0 <= idx < num_items:
-                    indices.add(idx)
-            except ValueError:
-                # Invalid number, skip this part
-                continue
-
-    # Return sorted list
-    return sorted(indices)
-
-
-def validate_indices(indices: list[int], num_items: int) -> list[int]:
-    """Validate and filter indices to be within bounds.
-
-    Args:
-        indices: List of 0-based indices
-        num_items: Total number of items available
-
-    Returns:
-        List of valid indices (0 <= idx < num_items)
-    """
-    return [idx for idx in indices if 0 <= idx < num_items]
-
-
 def multi_select_branches(
     branches: list[str],
     hashes: list[str],
@@ -368,15 +244,13 @@ def multi_select_branches(
         tracks=tracks,
     )
 
-    # Check if gum should be used
-    if _should_use_gum(num_items, options):
-        # Gum mode: output formatted options for Bash to handle
-        # In this case, we can't actually select from Python
-        # Return empty selection and let Bash handle it
-        # But we need to signal that gum should be used
-        # For now, we'll fall through to numbered list mode
-        # since gum interaction must be handled by Bash
-        pass
+    # NOTE: Gum integration is intentionally left as a no-op here.
+    # The original _should_use_gum() had a latent bug: passing a list as the
+    # first argument to subprocess.run(..., shell=True) is undefined behavior
+    # (shell=True + list argv ignores all elements after argv[0] on POSIX).
+    # The correct approach when gum detection is needed in Python is:
+    #   import shutil; shutil.which("gum")
+    # For now, gum interaction is handled by the Bash caller, not Python.
 
     # Numbered list mode
     # Display placeholder
@@ -390,26 +264,17 @@ def multi_select_branches(
 
     print()
 
-    # Get user selection
-    if options.test_selection is not None:
-        # Test mode: use pre-selected input
-        selection = options.test_selection
-    elif "HUG_TEST_NUMBERED_SELECTION" in os.environ:
-        # Test environment variable
-        selection = os.environ["HUG_TEST_NUMBERED_SELECTION"]
-    else:
-        # Interactive: read from stdin
-        try:
-            selection = input("Enter numbers to select (comma-separated, or 'a' for all): ")
-        except EOFError:
-            # Non-interactive environment
-            selection = ""
+    # Get user selection via the canonical three-level precedence chain:
+    # test_selection arg > HUG_TEST_NUMBERED_SELECTION env var > stdin.
+    # Using get_selection_input() instead of inlining this logic ensures every
+    # selection module reads the same env var and handles EOFError identically.
+    selection = get_selection_input(test_selection=options.test_selection)
 
-    # Parse selection
-    selected_indices = parse_user_input(selection, num_items, allow_all=True)
-
-    # Validate indices
-    selected_indices = validate_indices(selected_indices, num_items)
+    # parse_numbered_input is the canonical implementation from selection_core,
+    # replacing the former local parse_user_input() + validate_indices() pair.
+    # validate_indices() is now redundant: parse_numbered_input already clamps
+    # and filters indices to [0, num_items), so no second pass is needed.
+    selected_indices = parse_numbered_input(selection, num_items, allow_all=True)
 
     # Convert indices to branch names
     selected_branches = [branches[i] for i in selected_indices if i < len(branches)]

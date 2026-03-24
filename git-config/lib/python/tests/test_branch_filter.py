@@ -8,7 +8,8 @@ Following Google Python testing best practices:
 
 import pytest
 
-from git.branch_filter import FilteredBranches, FilterOptions, _bash_escape, filter_branches
+from git.branch_filter import FilteredBranches, FilterOptions, filter_branches
+from git.selection_core import bash_escape as _bash_escape
 
 ################################################################################
 # Test Fixtures
