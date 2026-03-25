@@ -1546,8 +1546,14 @@ class TestSingleSelectBranches:
 
         assert result.status == "cancelled"
 
-    def test_displays_numbered_list_to_stdout(self, branch_data, capsys):
-        """Branch names appear in the numbered-list output on stdout."""
+    def test_displays_numbered_list_to_stderr(self, branch_data, capsys):
+        """Branch names appear in the numbered-list output on stderr (not stdout).
+
+        WHY stderr: the Bash caller captures stdout with $(...) to eval only the
+        bash declare statements.  Mixing the menu into stdout would corrupt the
+        declare output and break the 'starts with declare' eval guard.
+        This mirrors worktree_select._cmd_select() which uses the same convention.
+        """
         from git.branch_select import SelectOptions, single_select_branches
 
         single_select_branches(
@@ -1561,8 +1567,9 @@ class TestSingleSelectBranches:
         )
 
         captured = capsys.readouterr()
-        output = captured.out
-        # Numbers must appear in the output (1-based)
+        # Menu must go to stderr — stdout must be clean for bash declare eval
+        output = captured.err
+        # Numbers must appear in the menu (1-based)
         assert "1" in output
         assert "2" in output
         assert "3" in output
@@ -1570,9 +1577,11 @@ class TestSingleSelectBranches:
         assert "main" in output
         assert "feature/login" in output
         assert "bugfix/crash" in output
+        # Declare statements must NOT appear on stderr (they go to stdout)
+        assert "declare" not in output
 
     def test_displays_current_branch_marker(self, branch_data, capsys):
-        """The current branch marker (GREEN '* ') appears in stdout output."""
+        """The current branch marker (GREEN '* ') appears in stderr output."""
         from git.branch_select import SelectOptions, single_select_branches
         from git.selection_core import GREEN
 
@@ -1587,8 +1596,8 @@ class TestSingleSelectBranches:
         )
 
         captured = capsys.readouterr()
-        # The GREEN ANSI escape should appear in the output (from the '* ' marker)
-        assert GREEN in captured.out
+        # The GREEN ANSI escape should appear on stderr (from the '* ' marker)
+        assert GREEN in captured.err
 
     def test_empty_subjects_treated_as_no_subject_column(self, capsys):
         """When all subjects are empty, no subject color codes appear in output."""
@@ -1607,7 +1616,9 @@ class TestSingleSelectBranches:
 
         captured = capsys.readouterr()
         # GREY is only used for subjects; when all are empty, no GREY should appear
+        # Check both stdout and stderr since the menu is now on stderr
         assert GREY not in captured.out
+        assert GREY not in captured.err
 
 
 ################################################################################

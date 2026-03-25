@@ -553,13 +553,16 @@ def single_select_branches(
         current_branch=current_branch,
     )
 
-    # Display the numbered list to stdout.
-    # Each row uses the pre-formatted string (ANSI colors included).
+    # Display the numbered list to stderr, NOT stdout.
+    # WHY stderr: the Bash caller captures stdout with $(...) to get only the
+    # bash declare statements for eval.  Mixing the menu into stdout would
+    # corrupt the declare output and break the eval guard ("starts with declare").
+    # This mirrors worktree_select.py's _cmd_select() which uses the same pattern.
     for i, option in enumerate(formatted_options):
         if option:  # skip empty rows (empty branch names)
-            print(f"  {i + 1:2d}: {option}")
+            print(f"  {i + 1:2d}: {option}", file=sys.stderr)
 
-    print()  # blank line before the prompt
+    print(file=sys.stderr)  # blank line before the prompt
 
     # Read input via the canonical three-level chain:
     # options.test_selection → HUG_TEST_NUMBERED_SELECTION env var → stdin
