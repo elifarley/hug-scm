@@ -35,6 +35,7 @@ def validate_indices(indices: list[int], num_items: int) -> list[int]:
     """
     return [idx for idx in indices if 0 <= idx < num_items]
 
+
 ################################################################################
 # Test Fixtures
 ################################################################################
@@ -1403,7 +1404,7 @@ class TestSingleSelectBranches:
 
     def test_returns_selected_status_with_branch_and_index(self, branch_data):
         """Selecting item '2' returns status='selected', branch='feature/login', index=1."""
-        from git.branch_select import SingleSelectResult, SelectOptions, single_select_branches
+        from git.branch_select import SelectOptions, SingleSelectResult, single_select_branches
 
         result = single_select_branches(
             branches=branch_data["branches"],
@@ -1475,7 +1476,7 @@ class TestSingleSelectBranches:
         assert result.index == -1
 
     def test_respects_hug_test_numbered_selection_env_var(self, branch_data, monkeypatch):
-        """HUG_TEST_NUMBERED_SELECTION env var provides the selection when test_selection is None."""
+        """HUG_TEST_NUMBERED_SELECTION env var provides selection."""
         from git.branch_select import SelectOptions, single_select_branches
 
         monkeypatch.setenv("HUG_TEST_NUMBERED_SELECTION", "3")
@@ -1641,11 +1642,12 @@ class TestMainFunctionPrepareCommand:
     def _run_main(self, monkeypatch, argv):
         """Helper: set sys.argv and call main(), return captured output."""
         import sys
+
         from git.branch_select import main
 
         monkeypatch.setattr(sys, "argv", argv)
-        from io import StringIO
         import contextlib
+        from io import StringIO
 
         buf = StringIO()
         with contextlib.redirect_stdout(buf):
@@ -1655,6 +1657,7 @@ class TestMainFunctionPrepareCommand:
     def test_prepare_outputs_formatted_options_array(self, monkeypatch, capsys):
         """prepare outputs a declare -a formatted_options array."""
         import sys
+
         from git.branch_select import main
 
         monkeypatch.setattr(
@@ -1680,6 +1683,7 @@ class TestMainFunctionPrepareCommand:
     def test_prepare_outputs_selection_status_ready(self, monkeypatch, capsys):
         """prepare outputs selection_status='ready' when branches are present."""
         import sys
+
         from git.branch_select import main
 
         monkeypatch.setattr(
@@ -1705,6 +1709,7 @@ class TestMainFunctionPrepareCommand:
     def test_prepare_outputs_branch_count(self, monkeypatch, capsys):
         """prepare outputs branch_count matching the number of branches."""
         import sys
+
         from git.branch_select import main
 
         monkeypatch.setattr(
@@ -1730,6 +1735,7 @@ class TestMainFunctionPrepareCommand:
     def test_prepare_green_marker_for_current_branch(self, monkeypatch, capsys):
         """prepare includes the GREEN '* ' marker for the current branch in formatted_options."""
         import sys
+
         from git.branch_select import main
         from git.selection_core import GREEN
 
@@ -1757,6 +1763,7 @@ class TestMainFunctionPrepareCommand:
     def test_prepare_three_branches(self, monkeypatch, capsys):
         """prepare correctly reports branch_count=3 for three branches."""
         import sys
+
         from git.branch_select import main
 
         monkeypatch.setattr(
@@ -1801,6 +1808,7 @@ class TestMainFunctionSingleSelectCommand:
     def test_single_select_with_valid_selection(self, monkeypatch, capsys):
         """'--selection 1' produces selected_branch and selection_status='selected'."""
         import sys
+
         from git.branch_select import main
 
         monkeypatch.setattr(
@@ -1830,6 +1838,7 @@ class TestMainFunctionSingleSelectCommand:
     def test_single_select_with_second_item(self, monkeypatch, capsys):
         """'--selection 2' picks the second branch."""
         import sys
+
         from git.branch_select import main
 
         monkeypatch.setattr(
@@ -1858,6 +1867,7 @@ class TestMainFunctionSingleSelectCommand:
     def test_single_select_empty_selection_cancelled(self, monkeypatch, capsys):
         """'--selection ""' (empty) produces selection_status='cancelled'."""
         import sys
+
         from git.branch_select import main
 
         monkeypatch.setattr(
@@ -1886,6 +1896,7 @@ class TestMainFunctionSingleSelectCommand:
     def test_single_select_includes_selected_index(self, monkeypatch, capsys):
         """The output includes declare -i selected_index with the correct 0-based value."""
         import sys
+
         from git.branch_select import main
 
         monkeypatch.setattr(
@@ -1913,6 +1924,7 @@ class TestMainFunctionSingleSelectCommand:
     def test_single_select_cancelled_has_index_minus_one(self, monkeypatch, capsys):
         """Cancelled selection emits selected_index=-1."""
         import sys
+
         from git.branch_select import main
 
         monkeypatch.setattr(

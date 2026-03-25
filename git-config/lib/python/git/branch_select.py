@@ -47,7 +47,6 @@ from git.selection_core import (
     NC,
     YELLOW,
     BashDeclareBuilder,
-    bash_escape,
     get_selection_input,
     parse_numbered_input,
 )
@@ -128,9 +127,9 @@ class SingleSelectResult:
         index:   0-based index of the selected branch; -1 if not selected.
     """
 
-    status: str   # "selected" | "cancelled" | "no_branches"
-    branch: str   # empty unless status == "selected"
-    index: int    # -1 if not selected
+    status: str  # "selected" | "cancelled" | "no_branches"
+    branch: str  # empty unless status == "selected"
+    index: int  # -1 if not selected
 
     def to_bash_declare(self) -> str:
         """Format as bash variable declarations for `eval` consumption.
@@ -672,7 +671,7 @@ def main():
     parser.add_argument(
         "--current-branch",
         default="",
-        help="Name of currently checked-out branch (used for the '* ' marker in single-select and prepare)",
+        help="Name of currently checked-out branch (for '* ' marker)",
     )
 
     args = parser.parse_args()

@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
 # selection_core is imported AFTER the sys.path fixup above so that both
 # script mode (__main__) and library-import mode resolve the package correctly.
-from git.selection_core import BashDeclareBuilder, bash_escape
+from git.selection_core import BashDeclareBuilder
 
 
 @dataclass

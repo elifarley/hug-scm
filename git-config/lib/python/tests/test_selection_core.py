@@ -15,7 +15,6 @@ Following Google Python testing best practices:
 """
 
 import argparse
-import os
 
 import pytest
 
@@ -32,7 +31,6 @@ from git.selection_core import (
     get_selection_input,
     parse_numbered_input,
 )
-
 
 ################################################################################
 # TestBashEscape
@@ -322,12 +320,12 @@ class TestInvalidVarNameParametrized:
     # the [a-zA-Z_][a-zA-Z0-9_]* rule so that we catch both "wrong first char"
     # and "wrong body char" defects independently.
     INVALID_NAMES = [
-        "1leading_digit",    # starts with digit
-        "my-var",            # contains hyphen
-        "my var",            # contains space
-        "",                  # empty string
-        "dot.name",          # contains dot
-        "dollar$sign",       # contains dollar sign
+        "1leading_digit",  # starts with digit
+        "my-var",  # contains hyphen
+        "my var",  # contains space
+        "",  # empty string
+        "dot.name",  # contains dot
+        "dollar$sign",  # contains dollar sign
     ]
 
     @pytest.mark.parametrize("invalid_name", INVALID_NAMES)
