@@ -1979,7 +1979,6 @@ class TestPerItemSubjectTrackFlags:
         import sys
 
         from git.branch_select import main
-        from git.selection_core import GREY
 
         monkeypatch.setattr(
             sys,
@@ -2014,7 +2013,6 @@ class TestPerItemSubjectTrackFlags:
         import sys
 
         from git.branch_select import main
-        from git.selection_core import CYAN
 
         monkeypatch.setattr(
             sys,
@@ -2129,7 +2127,6 @@ class TestPrepareNoEmptyRowFilter:
         format_single_select_options() maps to an empty string).  The empty
         row must appear in formatted_options so that gum index == Bash index.
         """
-        import sys
 
         from git.branch_select import format_single_select_options
 
