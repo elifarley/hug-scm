@@ -600,7 +600,7 @@ class TestMultiSelectBranches:
         assert "inconsistent lengths" in str(exc_info.value).lower()
 
     def test_outputs_numbered_list(self, sample_branch_data, capsys):
-        """Should output numbered list to stdout."""
+        """Should output numbered list to stderr (stdout reserved for declare output)."""
         options = SelectOptions(
             placeholder="Choose items",
             use_gum=False,
@@ -617,7 +617,7 @@ class TestMultiSelectBranches:
         )
 
         captured = capsys.readouterr()
-        output = captured.out
+        output = captured.err
 
         assert "Choose items" in output
         assert "1:" in output or " 1:" in output
@@ -924,7 +924,7 @@ class TestMainFunction:
         captured = capsys.readouterr()
 
         assert result is None
-        assert "Delete these branches" in captured.out
+        assert "Delete these branches" in captured.err
 
 
 ################################################################################
@@ -1948,3 +1948,230 @@ class TestMainFunctionSingleSelectCommand:
         captured = capsys.readouterr()
 
         assert "declare -i selected_index=-1" in captured.out
+
+
+################################################################################
+# TestPerItemSubjectTrackFlags
+################################################################################
+
+
+class TestPerItemSubjectTrackFlags:
+    """Tests for per-item --subject / --track repeated CLI flags (Fix C2).
+
+    When commit subjects or tracking strings contain spaces, the legacy
+    --subjects / --tracks space-split scalar form corrupts multi-word values.
+    The --subject / --track repeated flags (one per branch) solve this by
+    never performing a space-split.
+
+    These tests verify:
+    1. Per-item flags correctly pass multi-word subjects/tracks to formatters.
+    2. Per-item flags take precedence over legacy --subjects / --tracks.
+    3. Backward compatibility: legacy --subjects / --tracks still work when
+       the new flags are absent.
+    """
+
+    def test_per_item_subject_preserves_multi_word(self, monkeypatch, capsys):
+        """--subject flags must NOT split multi-word subjects on spaces.
+
+        WHY: 'Initial commit' passed via --subjects would split to
+        ['Initial', 'commit'] — the per-item form must keep it intact.
+        """
+        import sys
+
+        from git.branch_select import main
+        from git.selection_core import GREY
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "branch_select.py",
+                "prepare",
+                "--branches",
+                "main feature",
+                "--hashes",
+                "abc123 def456",
+                "--subject",
+                "Initial commit",  # multi-word — must survive as one token
+                "--subject",
+                "Add new feature",
+                "--current-branch",
+                "main",
+            ],
+        )
+
+        main()
+        captured = capsys.readouterr()
+
+        # The full multi-word subject must appear in the GREY-coloured output.
+        # If the subject were split on spaces, 'Initial' and 'commit' would be
+        # formatted as two separate tokens and the full phrase would be absent.
+        assert "Initial commit" in captured.out
+        assert "Add new feature" in captured.out
+
+    def test_per_item_track_preserves_multi_word(self, monkeypatch, capsys):
+        """--track flags must NOT split tracking strings containing spaces."""
+        import sys
+
+        from git.branch_select import main
+        from git.selection_core import CYAN
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "branch_select.py",
+                "prepare",
+                "--branches",
+                "main feature",
+                "--hashes",
+                "abc123 def456",
+                "--track",
+                "origin/main [ahead 2]",  # contains spaces
+                "--track",
+                "",
+                "--current-branch",
+                "main",
+            ],
+        )
+
+        main()
+        captured = capsys.readouterr()
+
+        assert "origin/main [ahead 2]" in captured.out
+
+    def test_per_item_flags_take_precedence_over_legacy(self, monkeypatch, capsys):
+        """When --subject is present, --subjects (legacy) must be ignored."""
+        import sys
+
+        from git.branch_select import main
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "branch_select.py",
+                "prepare",
+                "--branches",
+                "main",
+                "--hashes",
+                "abc123",
+                "--subjects",
+                "LEGACY IGNORED",  # should be ignored
+                "--subject",
+                "Correct subject",  # should win
+                "--current-branch",
+                "main",
+            ],
+        )
+
+        main()
+        captured = capsys.readouterr()
+
+        assert "Correct subject" in captured.out
+        # 'LEGACY' could appear as a substring in other tokens; check the full
+        # phrase is absent to confirm the legacy value was not used.
+        assert "LEGACY IGNORED" not in captured.out
+
+    def test_legacy_subjects_still_work_without_per_item(self, monkeypatch, capsys):
+        """--subjects (legacy space-split) still works when --subject is absent."""
+        import sys
+
+        from git.branch_select import main
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "branch_select.py",
+                "prepare",
+                "--branches",
+                "main feature",
+                "--hashes",
+                "abc123 def456",
+                "--subjects",
+                "InitCommit AddFeature",
+                "--current-branch",
+                "main",
+            ],
+        )
+
+        main()
+        captured = capsys.readouterr()
+
+        # Legacy split subjects are single-word here so no corruption occurs
+        assert "InitCommit" in captured.out
+        assert "AddFeature" in captured.out
+
+
+################################################################################
+# TestPrepareNoEmptyRowFilter (Fix I4)
+################################################################################
+
+
+class TestPrepareNoEmptyRowFilter:
+    """Tests for the 'prepare' command index-alignment fix (Fix I4).
+
+    The Bash caller (print_interactive_branch_menu) indexes into the
+    *unfiltered* branches_ref array using the index returned by gum.
+    If Python strips empty rows from formatted_options before returning them,
+    the gum index and the Bash array index diverge — silent wrong-branch
+    selection.
+
+    These tests verify that 'prepare' emits ALL rows (including empty ones)
+    so the index positions stay aligned.
+    """
+
+    def test_prepare_preserves_empty_rows_for_index_alignment(self, monkeypatch, capsys):
+        """prepare must NOT filter empty formatted_options rows.
+
+        Simulate a branch list that includes an empty-named branch (which
+        format_single_select_options() maps to an empty string).  The empty
+        row must appear in formatted_options so that gum index == Bash index.
+        """
+        import sys
+
+        from git.branch_select import format_single_select_options
+
+        # format_single_select_options emits '' for empty branch names.
+        # We test the formatter directly to confirm the contract.
+        formatted = format_single_select_options(
+            branches=["main", "", "feature"],
+            hashes=["abc", "", "def"],
+            dates=["2026-01-30", "", "2026-01-31"],
+            subjects=["Init", "", "Feat"],
+            tracks=["", "", ""],
+            current_branch="main",
+        )
+
+        # Three branches → three rows; the middle one must be empty (not dropped).
+        assert len(formatted) == 3
+        assert formatted[1] == ""  # empty branch preserved at index 1
+
+    def test_prepare_branch_count_matches_unfiltered_branches(self, monkeypatch, capsys):
+        """branch_count emitted by 'prepare' must equal len(branches), not len(non-empty)."""
+        import sys
+
+        from git.branch_select import main
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "branch_select.py",
+                "prepare",
+                "--branches",
+                "main feature bugfix",
+                "--hashes",
+                "abc123 def456 ghi789",
+                "--current-branch",
+                "main",
+            ],
+        )
+
+        main()
+        captured = capsys.readouterr()
+
+        # branch_count must equal the number of branches passed in (3),
+        # regardless of whether any formatted rows are empty.
+        assert "declare -i branch_count=3" in captured.out

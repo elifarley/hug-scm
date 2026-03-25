@@ -161,10 +161,16 @@ def filter_branches(
         # In Bash, this would call a user-provided function
         # For now, we skip this feature as it's rarely used
         if options.custom_filter:
-            # TODO: Implement custom filter function support
-            # This would require a way to call back into Bash or
-            # implement the filter logic in Python
-            pass
+            # Custom filter callbacks require calling back into Bash, which is
+            # not supported from the Python filter path.  Raising immediately
+            # prevents the silent no-op where the filter appears to run but has
+            # zero effect — a particularly dangerous failure mode for security-
+            # or correctness-sensitive callers.  Use the Bash fallback in
+            # hug-git-branch for custom filter support.
+            raise NotImplementedError(
+                f"Custom filter function '{options.custom_filter}' is not supported "
+                "in the Python filter path. Use the Bash fallback in hug-git-branch."
+            )
 
         # Branch passed all filters, add to output
         filtered_branches.append(branch)

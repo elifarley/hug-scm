@@ -379,6 +379,32 @@ class TestFilterBranches:
         assert "bugfix" in result.branches
         assert "hug-backups/tmp" in result.branches
 
+    def test_custom_filter_raises_not_implemented(self, sample_branch_data):
+        """custom_filter must raise NotImplementedError — not silently no-op.
+
+        WHY: A silent pass (the former TODO placeholder) is dangerous: the
+        caller sees every branch as if the filter ran successfully.  For any
+        security- or correctness-sensitive filter this is a hard-to-debug
+        failure.  Raising immediately surfaces the gap so callers use the
+        Bash fallback path instead.
+        """
+        options = FilterOptions(custom_filter="my_security_filter")
+
+        with pytest.raises(NotImplementedError) as exc_info:
+            filter_branches(
+                branches=sample_branch_data["branches"],
+                hashes=sample_branch_data["hashes"],
+                subjects=sample_branch_data["subjects"],
+                tracks=sample_branch_data["tracks"],
+                dates=sample_branch_data["dates"],
+                current_branch="main",
+                options=options,
+            )
+
+        error_msg = str(exc_info.value)
+        assert "my_security_filter" in error_msg
+        assert "not supported" in error_msg
+
 
 ################################################################################
 # TestMainFunction (CLI tests)

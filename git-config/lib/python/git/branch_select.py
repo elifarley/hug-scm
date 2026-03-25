@@ -363,20 +363,14 @@ def format_multi_select_options(
 
         parts = [branch]
 
-        # Add hash in YELLOW if available
-        if i < len(hashes) and hashes[i]:
+        # All arrays validated equal-length above; guard only on truthiness.
+        if hashes[i]:
             parts.append(f"{YELLOW}{hashes[i]}{NC}")
-
-        # Add date in BLUE if available
-        if i < len(dates) and dates[i]:
+        if dates[i]:
             parts.append(f"{BLUE}{dates[i]}{NC}")
-
-        # Add subject in GREY if available
-        if i < len(subjects) and subjects[i]:
+        if subjects[i]:
             parts.append(f"{GREY}{subjects[i]}{NC}")
-
-        # Add tracking info in CYAN if available
-        if i < len(tracks) and tracks[i]:
+        if tracks[i]:
             parts.append(f"{CYAN}[{tracks[i]}]{NC}")
 
         formatted_options.append(" ".join(parts))
@@ -454,16 +448,17 @@ def multi_select_branches(
     # For now, gum interaction is handled by the Bash caller, not Python.
 
     # Numbered list mode
-    # Display placeholder
-    print(options.placeholder)
-    print()
+    # Display to stderr — stdout is captured by Bash's $() for eval.
+    # Without this, menu text gets eval'd as shell commands (C1 regression fix).
+    print(options.placeholder, file=sys.stderr)
+    print(file=sys.stderr)
 
     # Display numbered list
     for i, option in enumerate(formatted_options):
         if option:  # Skip empty options
-            print(f"  {i + 1:2d}: {option}")
+            print(f"  {i + 1:2d}: {option}", file=sys.stderr)
 
-    print()
+    print(file=sys.stderr)
 
     # Get user selection via the canonical three-level precedence chain:
     # test_selection arg > HUG_TEST_NUMBERED_SELECTION env var > stdin.
@@ -650,8 +645,28 @@ def main():
     parser.add_argument("--branches", required=True, help="Space-separated branch names")
     parser.add_argument("--hashes", default="", help="Space-separated commit hashes")
     parser.add_argument("--dates", default="", help="Space-separated commit dates")
-    parser.add_argument("--subjects", default="", help="Space-separated commit subjects")
-    parser.add_argument("--tracks", default="", help="Space-separated tracking info")
+    # Legacy space-split scalars (kept for backward compatibility with callers
+    # that haven't been updated yet).  Prefer the repeated per-item flags below.
+    parser.add_argument("--subjects", default="", help="Space-separated commit subjects (legacy)")
+    parser.add_argument("--tracks", default="", help="Space-separated tracking info (legacy)")
+    # Per-item repeated flags: --subject / --track (one per branch).
+    # These are preferred over --subjects / --tracks because commit subjects and
+    # tracking strings may contain spaces, which would corrupt the space-split.
+    # When these flags are present they take precedence over --subjects/--tracks.
+    parser.add_argument(
+        "--subject",
+        action="append",
+        default=[],
+        dest="subjects_list",
+        help="Commit subject for one branch (repeat once per branch)",
+    )
+    parser.add_argument(
+        "--track",
+        action="append",
+        default=[],
+        dest="tracks_list",
+        help="Tracking info for one branch (repeat once per branch)",
+    )
     parser.add_argument("--placeholder", default="Select branches", help="Prompt text for user")
     parser.add_argument(
         "--selection",
@@ -681,8 +696,18 @@ def main():
         branches = args.branches.split() if args.branches else []
         hashes = args.hashes.split() if args.hashes else []
         dates = args.dates.split() if args.dates else []
-        subjects = args.subjects.split() if args.subjects else []
-        tracks = args.tracks.split() if args.tracks else []
+        # Prefer per-item repeated flags (--subject/--track) over the legacy
+        # space-split scalars (--subjects/--tracks).  The per-item form is safe
+        # for values containing spaces; the scalar form is only safe when
+        # subjects/tracks are guaranteed space-free (which they are not).
+        subjects = (
+            args.subjects_list
+            if args.subjects_list
+            else (args.subjects.split() if args.subjects else [])
+        )
+        tracks = (
+            args.tracks_list if args.tracks_list else (args.tracks.split() if args.tracks else [])
+        )
 
         # Pad shorter arrays with empty strings to match branches array length.
         # This allows callers to omit trailing empty fields without causing
@@ -738,9 +763,14 @@ def main():
                 tracks=tracks,
                 current_branch=args.current_branch,
             )
+            # IMPORTANT: do NOT filter empty rows here.
+            # The Bash caller (print_interactive_branch_menu) indexes into the
+            # *unfiltered* branches_ref array using the gum selection index.
+            # If we stripped empty rows the index returned by gum would point
+            # to the wrong branch — a latent misalignment bug (I4).
             print(
                 BashDeclareBuilder()
-                .add_array("formatted_options", [opt for opt in formatted if opt])
+                .add_array("formatted_options", formatted)
                 .add_scalar("selection_status", "ready")
                 .add_int("branch_count", num_branches)
                 .build()

@@ -232,16 +232,19 @@ print_interactive_branch_menu() {
     fi
 
     # Build Python CLI args from Bash arrays.
-    # WHY "${array[*]}" (not "${array[@]}"): space-separated scalar is what the
-    # Python CLI's --branches/--hashes/... flags expect; they split on spaces.
-    # Branch names with spaces would be ambiguous, but git disallows spaces in
-    # branch names so this is safe in practice.
+    # Branches, hashes, and dates never contain spaces (git enforces this for
+    # branch names; hashes are hex; dates are ISO tokens), so the space-joined
+    # scalar form is safe for those fields.
+    # Subjects and tracks MAY contain spaces (e.g. "Initial commit",
+    # "[origin/feature branch]"), so they are passed as repeated --subject /
+    # --track flags — one per item — to avoid space-split corruption.
     local -a python_args=()
     python_args+=(--branches "${branches_ref[*]}")
     python_args+=(--hashes   "${hashes_ref[*]}")
     python_args+=(--dates    "${dates_ref[*]:-}")
-    python_args+=(--subjects "${subjects_ref[*]}")
-    python_args+=(--tracks   "${tracks_ref[*]}")
+    # Subjects and tracks may contain spaces — pass per-item to avoid split corruption
+    for subj in "${subjects_ref[@]}"; do python_args+=(--subject "$subj"); done
+    for trk in "${tracks_ref[@]}"; do python_args+=(--track "$trk"); done
     python_args+=(--current-branch "$current_branch")
     python_args+=(--placeholder    "$placeholder")
 
@@ -1018,8 +1021,9 @@ multi_select_branches() {
         select_args+=(--branches "${branches_ref[*]}")
         select_args+=(--hashes "${hashes_ref[*]}")
         select_args+=(--dates "${dates_ref[*]}")
-        select_args+=(--subjects "${subjects_ref[*]}")
-        select_args+=(--tracks "${tracks_ref[*]}")
+        # Subjects and tracks may contain spaces — pass per-item to avoid split corruption
+        for subj in "${subjects_ref[@]}"; do select_args+=(--subject "$subj"); done
+        for trk in "${tracks_ref[@]}"; do select_args+=(--track "$trk"); done
         select_args+=(--placeholder "$placeholder")
         select_args+=(--array-name "$result_array_name")
         select_args+=(--no-gum)  # Explicitly disable gum (we're in numbered list mode)
