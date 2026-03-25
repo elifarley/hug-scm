@@ -43,12 +43,12 @@ import re
 # These values intentionally match branch_select.py so every module that
 # imports from selection_core produces visually consistent terminal output.
 # Using \x1b (ESC) is more explicit than \033 and avoids octal ambiguity.
-YELLOW = "\x1b[33m"   # branch names, tag names, commit hashes
-BLUE   = "\x1b[34m"   # dates, timestamps
-GREY   = "\x1b[90m"   # secondary info (commit subjects, descriptions)
-CYAN   = "\x1b[36m"   # tracking / remote info
-GREEN  = "\x1b[32m"   # positive indicators (current item, success)
-NC     = "\x1b[0m"    # No Color — reset all attributes
+YELLOW = "\x1b[33m"  # branch names, tag names, commit hashes
+BLUE = "\x1b[34m"  # dates, timestamps
+GREY = "\x1b[90m"  # secondary info (commit subjects, descriptions)
+CYAN = "\x1b[36m"  # tracking / remote info
+GREEN = "\x1b[32m"  # positive indicators (current item, success)
+NC = "\x1b[0m"  # No Color — reset all attributes
 
 
 ################################################################################
@@ -74,10 +74,7 @@ def _validate_var_name(name: str) -> None:
         ValueError: If name does not match [a-zA-Z_][a-zA-Z0-9_]*.
     """
     if not _VAR_NAME_RE.match(name):
-        raise ValueError(
-            f"Invalid bash variable name: {name!r}. "
-            "Must match [a-zA-Z_][a-zA-Z0-9_]*"
-        )
+        raise ValueError(f"Invalid bash variable name: {name!r}. Must match [a-zA-Z_][a-zA-Z0-9_]*")
 
 
 ################################################################################
@@ -230,9 +227,7 @@ class BashDeclareBuilder:
 ################################################################################
 
 
-def parse_numbered_input(
-    user_input: str, num_items: int, allow_all: bool = True
-) -> list[int]:
+def parse_numbered_input(user_input: str, num_items: int, allow_all: bool = True) -> list[int]:
     """Parse a user selection string into a sorted list of 0-based indices.
 
     This is the canonical implementation extracted from
@@ -294,8 +289,8 @@ def parse_numbered_input(
             # in a valid range, so we leave error handling to the ValueError path.
             try:
                 start_str, end_str = part.split("-", 1)
-                start_idx = max(0, int(start_str.strip()) - 1)        # 0-based, clamped
-                end_idx   = min(num_items - 1, int(end_str.strip()) - 1)  # 0-based, clamped
+                start_idx = max(0, int(start_str.strip()) - 1)  # 0-based, clamped
+                end_idx = min(num_items - 1, int(end_str.strip()) - 1)  # 0-based, clamped
                 # When start_idx > end_idx (reverse range or out-of-bounds start)
                 # range() produces an empty sequence — no results, no error.
                 indices.update(range(start_idx, end_idx + 1))
@@ -392,10 +387,7 @@ def add_common_cli_args(
     parser.add_argument(
         "--selection",
         default=None,
-        help=(
-            "Pre-selected input for automated testing "
-            "(simulates the user typing a selection)."
-        ),
+        help=("Pre-selected input for automated testing (simulates the user typing a selection)."),
     )
     if include_no_gum:
         parser.add_argument(

@@ -525,7 +525,12 @@ def _cmd_select(
     # Read user selection via the canonical three-level input chain:
     # test_selection > HUG_TEST_NUMBERED_SELECTION env var > stdin.
     if multi:
-        print("Enter numbers to select (comma-separated, or 'a' for all): ", end="", flush=True, file=sys.stderr)
+        print(
+            "Enter numbers to select (comma-separated, or 'a' for all): ",
+            end="",
+            flush=True,
+            file=sys.stderr,
+        )
     else:
         print("Enter number: ", end="", flush=True, file=sys.stderr)
     user_input = get_selection_input(test_selection=test_selection)

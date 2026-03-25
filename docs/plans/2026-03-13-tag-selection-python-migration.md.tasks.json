@@ -1,17 +1,17 @@
 {
   "planPath": "docs/plans/2026-03-13-tag-selection-python-migration.md",
   "tasks": [
-    {"id": 0, "subject": "Task 0: Baseline — verify all tests pass", "status": "pending"},
-    {"id": 1, "subject": "Task 1: Data model and bash escape", "status": "pending", "blockedBy": [0]},
-    {"id": 2, "subject": "Task 2: filter_tags() pure filtering logic", "status": "pending", "blockedBy": [1]},
-    {"id": 3, "subject": "Task 3: format_display_rows() display construction", "status": "pending", "blockedBy": [1]},
-    {"id": 4, "subject": "Task 4: parse_numbered_input() user input parsing", "status": "pending", "blockedBy": [1]},
-    {"id": 5, "subject": "Task 5: Bash declare output functions", "status": "pending", "blockedBy": [1]},
-    {"id": 6, "subject": "Task 6: load_tags() git subprocess integration", "status": "pending", "blockedBy": [1]},
-    {"id": 7, "subject": "Task 7: CLI entry point — prepare and select commands", "status": "pending", "blockedBy": [2, 3, 4, 5, 6]},
-    {"id": 8, "subject": "Task 8: Bash adapter — refactor select_tags() in hug-git-tag", "status": "pending", "blockedBy": [7]},
-    {"id": 9, "subject": "Task 9: BATS regression validation", "status": "pending", "blockedBy": [8]},
-    {"id": 10, "subject": "Task 10: Final cleanup and documentation", "status": "pending", "blockedBy": [9]}
+    {"id": 0, "subject": "Task 0: Baseline — verify all tests pass", "status": "completed"},
+    {"id": 1, "subject": "Task 1: Data model and bash escape", "status": "completed", "blockedBy": [0]},
+    {"id": 2, "subject": "Task 2: filter_tags() pure filtering logic", "status": "completed", "blockedBy": [1]},
+    {"id": 3, "subject": "Task 3: format_display_rows() display construction", "status": "completed", "blockedBy": [1]},
+    {"id": 4, "subject": "Task 4: parse_numbered_input() user input parsing", "status": "completed", "blockedBy": [1]},
+    {"id": 5, "subject": "Task 5: Bash declare output functions", "status": "completed", "blockedBy": [1]},
+    {"id": 6, "subject": "Task 6: load_tags() git subprocess integration", "status": "completed", "blockedBy": [1]},
+    {"id": 7, "subject": "Task 7: CLI entry point — prepare and select commands", "status": "completed", "blockedBy": [2, 3, 4, 5, 6]},
+    {"id": 8, "subject": "Task 8: Bash adapter — refactor select_tags() in hug-git-tag", "status": "completed", "blockedBy": [7]},
+    {"id": 9, "subject": "Task 9: BATS regression validation", "status": "completed", "blockedBy": [8]},
+    {"id": 10, "subject": "Task 10: Final cleanup and documentation", "status": "completed", "blockedBy": [9]}
   ],
-  "lastUpdated": "2026-03-13T12:00:00Z"
+  "lastUpdated": "2026-03-13T18:00:00Z"
 }

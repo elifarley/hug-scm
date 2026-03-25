@@ -11,6 +11,8 @@
 #   - gum_filter_select: wrapper for gum filter with standard flags
 #   - gum_filter_by_index: select items and return 0-based indices for flexible extraction
 
+# TODO Consider adopting https://github.com/rivo/tview
+
 ################################################################################
 # Gum Integration Helpers
 ################################################################################
