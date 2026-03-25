@@ -4,6 +4,23 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Unified Selection Framework (`selection_core.py`).** Shared toolkit for all Python selection modules: `bash_escape`, `BashDeclareBuilder`, `parse_numbered_input`, `get_selection_input`, `add_common_cli_args`, and ANSI color constants. Adding a new selection domain now requires ~50 lines instead of ~200.
+- **Branch single-select Python migration.** `print_interactive_branch_menu()` now delegates formatting and numbered-list interaction to Python via `branch_select.py prepare` and `single-select` commands. Eval output validated before execution.
+- **Per-item CLI args for subjects and tracks.** `--subject`/`--track` repeated flags replace space-joined `--subjects`/`--tracks` to prevent multi-word commit subjects from being split incorrectly.
+- **`parse_single_input()` for strict single-select.** Rejects anything that isn't exactly one valid integer, unlike the multi-select parser which silently skips invalid tokens.
+
+### Changed
+
+- **4 Python modules refactored onto `selection_core`.** `tag_select.py`, `worktree_select.py`, `branch_select.py`, and `branch_filter.py` now import shared utilities instead of maintaining local copies.
+- **`multi_select_branches()` menu display moved to stderr.** Prevents menu text from being captured by Bash `$()` and eval'd as shell commands.
+- **`branch_filter.py` `custom_filter` raises `NotImplementedError`.** Previously silently no-oped.
+
+### Removed
+
+- **`_should_use_gum()` from `branch_select.py`.** Dead code with a latent bug. Gum detection stays in Bash.
+
 ### Breaking Changes - Makefile Target Naming Normalization
 
 The Makefile targets have been renamed to align with the makefile-dev PRD canonical target taxonomy.
