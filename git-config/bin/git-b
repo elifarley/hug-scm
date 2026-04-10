@@ -122,8 +122,10 @@ if [ ${#args[@]} -gt 0 ]; then
       exit 1
     fi
   else
-    # Not found locally or remotely, let git switch handle it (will show error)
-    exec git switch "${args[@]}"
+    # We already checked both local and remote — own the error message
+    # instead of delegating to git switch for a less informative "fatal: invalid reference"
+    info "Use 'hug bc ${branch_arg}' to create it."
+    error "Branch '${branch_arg}' not found locally or on any remote."
   fi
 fi
 
