@@ -216,8 +216,15 @@ def selection_to_bash_declare(result: WorktreeSelectionResult) -> str:
     caller can eval the output and branch on selection_status.
 
     Variables emitted:
-        selected_path      — path of chosen worktree, or empty string
+        _sel_path          — path of chosen worktree, or empty string
         selection_status   — one of: 'selected', 'cancelled', 'no_worktrees', 'error'
+
+    WHY the '_sel_' prefix: The Bash caller (select_worktree) uses a nameref
+    that targets the caller's variable — typically named 'selected_path'.
+    Bash's 'declare' inside a function creates a function-local variable, so
+    eval'ing 'declare selected_path=...' would shadow the nameref target and
+    silently prevent the caller's variable from being updated.  The '_sel_'
+    prefix avoids this nameref scoping trap.
 
     Args:
         result: Typed selection outcome from interactive selection logic.
@@ -227,7 +234,7 @@ def selection_to_bash_declare(result: WorktreeSelectionResult) -> str:
     """
     return (
         BashDeclareBuilder()
-        .add_scalar("selected_path", result.path)
+        .add_scalar("_sel_path", result.path)
         .add_scalar("selection_status", result.status)
         .build()
     )

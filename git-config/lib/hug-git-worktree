@@ -244,8 +244,14 @@ select_worktree() {
 
     # Non-gum path (or < 10 items): Python handles numbered-list interaction.
     # 'select' accepts filter_args plus --prompt for the displayed heading.
+    #
+    # NAMEREF SAFETY: Python outputs '_sel_path' (not 'selected_path') to avoid
+    # shadowing the nameref target.  Bash's 'declare' inside a function creates
+    # a local; if the variable name matched the nameref target (typically
+    # 'selected_path'), the local would shadow it and the caller's variable
+    # would never be updated.  See ADR in worktree_select.py.
     # shellcheck disable=SC2034  # variables set by eval from Python output
-    local selected_path=""
+    local _sel_path=""
     local selection_status=""
 
     if ! eval "$(python3 "$worktree_select_py" select "${filter_args[@]}" --prompt "$prompt")"; then
@@ -254,7 +260,7 @@ select_worktree() {
 
     case "$selection_status" in
         selected)
-            _sw_result_ref="$selected_path"
+            _sw_result_ref="$_sel_path"
             return 0
             ;;
         cancelled)

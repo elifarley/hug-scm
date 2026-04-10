@@ -681,8 +681,14 @@ select_tags() {
     fi
 
     # Non-gum path: Python handles everything (numbered list + user input)
+    #
+    # NAMEREF SAFETY: Python outputs '_sel_tags' (not 'selected_tags') to avoid
+    # shadowing the nameref target.  Bash's 'declare' inside a function creates
+    # a local; if the array name matched the nameref target (typically
+    # 'selected_tags'), the local would shadow it and the caller's variable
+    # would never be updated.  See ADR in tag_select.py.
     # shellcheck disable=SC2034  # variables set by eval from Python output
-    local -a selected_tags=()
+    local -a _sel_tags=()
     local selection_status=""
 
     if ! eval "$(python3 "$tag_select_py" select "${python_args[@]}")"; then
@@ -691,7 +697,7 @@ select_tags() {
 
     case "$selection_status" in
         selected)
-            selected_ref=("${selected_tags[@]}")
+            selected_ref=("${_sel_tags[@]}")
             return 0
             ;;
         cancelled)

@@ -493,7 +493,7 @@ class TestToBashDeclare:
         """Selected result should output array and status variables."""
         result = TagSelectionResult(status="selected", tags=["v1.0.0", "v2.0.0"], indices=[0, 1])
         output = to_bash_declare(result)
-        assert "declare -a selected_tags=(" in output
+        assert "declare -a _sel_tags=(" in output
         assert "'v1.0.0'" in output
         assert "'v2.0.0'" in output
         assert "selection_status='selected'" in output
@@ -502,7 +502,7 @@ class TestToBashDeclare:
         """Cancelled result should output empty array and cancelled status."""
         result = TagSelectionResult(status="cancelled", tags=[], indices=[])
         output = to_bash_declare(result)
-        assert "declare -a selected_tags=()" in output
+        assert "declare -a _sel_tags=()" in output
         assert "selection_status='cancelled'" in output
 
     def test_custom_array_name(self):

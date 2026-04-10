@@ -292,12 +292,24 @@ print_interactive_branch_menu() {
     # visible on the terminal.  Suppressing stderr here would leave the user
     # staring at a blank screen with no prompt.
     #
-    # Locals populated by eval from Python single-select output:
-    #   selected_branch    — the chosen branch name (empty if cancelled)
-    #   selection_status   — "selected" | "cancelled" | "no_branches"
-    #   selected_index     — 0-based index (-1 if not selected)
+    # Python single-select outputs three declare statements:
+    #   declare selected_branch='...'    — chosen branch name (empty if cancelled)
+    #   declare selection_status='...'   — "selected" | "cancelled" | "no_branches"
+    #   declare -i selected_index=N      — 0-based index (-1 if not selected)
+    #
+    # NAMEREF SAFETY: We must NOT let eval create a variable named
+    # 'selected_branch' inside this function.  Bash's 'declare' inside a
+    # function creates a function-local variable, and a local named
+    # 'selected_branch' would shadow the nameref target (selected_ref →
+    # caller's "selected_branch").  The nameref would then write to the
+    # local instead of the caller's variable, leaving it empty and causing
+    # 'git switch ""' → "fatal: invalid reference:".
+    #
+    # Fix: strip the 'selected_branch' line before eval and use
+    # branches_ref[selected_index] instead — mirroring the gum path
+    # (line 277) which already avoids this pitfall.
     # shellcheck disable=SC2034
-    local selected_branch="" selection_status="" selected_index=-1
+    local selection_status="" selected_index=-1
 
     local python_out
     python_out=$(python3 "$HUG_HOME/git-config/lib/python/git/branch_select.py" \
@@ -308,12 +320,17 @@ print_interactive_branch_menu() {
         error "Python branch_select.py single-select failed."
         return 1
     fi
+    # Strip 'declare selected_branch=...' to prevent nameref shadow (see above).
+    # Only selection_status and selected_index are needed for our logic.
+    python_out=$(printf '%s\n' "$python_out" | grep -v '^declare selected_branch=')
     eval "$python_out"
 
     if [[ "$selection_status" == "selected" ]]; then
+        # Use branches_ref[index] instead of the eval'd selected_branch to
+        # avoid the nameref shadow (see NAMEREF SAFETY comment above).
         # SC2034: selected_ref is a nameref that assigns to caller's variable
         # shellcheck disable=SC2034
-        selected_ref="$selected_branch"
+        selected_ref="${branches_ref[$selected_index]}"
         return 0
     else
         info "Cancelled."

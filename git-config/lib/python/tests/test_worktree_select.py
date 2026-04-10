@@ -330,21 +330,21 @@ class TestSelectionToBashDeclare:
         result = WorktreeSelectionResult(status="selected", path="/home/user/repo")
         output = selection_to_bash_declare(result)
         # BashDeclareBuilder emits 'declare name=value' for scalars
-        assert "declare selected_path='/home/user/repo'" in output
+        assert "declare _sel_path='/home/user/repo'" in output
         assert "declare selection_status='selected'" in output
 
     def test_cancelled(self):
         """A 'cancelled' result emits an empty path and 'cancelled' status."""
         result = WorktreeSelectionResult(status="cancelled", path="")
         output = selection_to_bash_declare(result)
-        assert "declare selected_path=''" in output
+        assert "declare _sel_path=''" in output
         assert "declare selection_status='cancelled'" in output
 
     def test_no_worktrees(self):
         """A 'no_worktrees' result emits an empty path and 'no_worktrees' status."""
         result = WorktreeSelectionResult(status="no_worktrees", path="")
         output = selection_to_bash_declare(result)
-        assert "declare selected_path=''" in output
+        assert "declare _sel_path=''" in output
         assert "declare selection_status='no_worktrees'" in output
 
 
@@ -591,7 +591,7 @@ class TestCmdSelect:
             with patch("builtins.input", return_value=""):
                 output = _cmd_select(opts, prompt="Pick worktree")
         assert "declare selection_status='cancelled'" in output
-        assert "declare selected_path=''" in output
+        assert "declare _sel_path=''" in output
 
     def test_invalid_number_cancels(self):
         """An out-of-range number (e.g. '99') cancels without raising."""
@@ -656,7 +656,7 @@ class TestMain:
 
     def test_select_command_dispatches(self, capsys):
         """'select' sub-command calls _cmd_select and prints its output."""
-        sentinel = "selected_path=''\nselection_status='cancelled'"
+        sentinel = "_sel_path=''\nselection_status='cancelled'"
         with patch("git.worktree_select._cmd_select", return_value=sentinel) as mock_sel:
             main(["select"])
         captured = capsys.readouterr()

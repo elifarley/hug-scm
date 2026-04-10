@@ -225,7 +225,7 @@ def format_display_rows(tags: list[TagInfo]) -> list[str]:
 ################################################################################
 
 
-def to_bash_declare(result: TagSelectionResult, array_name: str = "selected_tags") -> str:
+def to_bash_declare(result: TagSelectionResult, array_name: str = "_sel_tags") -> str:
     """Serialize a TagSelectionResult to bash declare statements for eval.
 
     Outputs two lines:
@@ -235,9 +235,16 @@ def to_bash_declare(result: TagSelectionResult, array_name: str = "selected_tags
     All tag names are individually shell-escaped so that tags with special
     characters (spaces, single quotes, backslashes) survive the eval round-trip.
 
+    WHY the '_sel_' prefix default: The Bash caller (select_tags) uses a nameref
+    that targets the caller's variable — typically named 'selected_tags'.
+    Bash's 'declare' inside a function creates a function-local, so eval'ing
+    'declare -a selected_tags=(...)' would shadow the nameref target and
+    silently prevent the caller's variable from being updated.  The '_sel_'
+    prefix avoids this nameref scoping trap.
+
     Args:
         result: Selection outcome to serialize.
-        array_name: Name for the bash array variable (default: "selected_tags").
+        array_name: Name for the bash array variable (default: "_sel_tags").
 
     Returns:
         Multi-line string of bash variable declarations.
