@@ -562,6 +562,12 @@ def single_select_branches(
     # options.test_selection → HUG_TEST_NUMBERED_SELECTION env var → stdin
     selection = get_selection_input(test_selection=options.test_selection)
 
+    # get_selection_input returns None when the user presses ESC (detected via
+    # tty/termios character-mode read).  Treat it identically to empty input —
+    # both map to cancelled status.
+    if selection is None:
+        selection = ""
+
     # parse_single_input is strictly single-integer — it returns None for empty,
     # non-integer, comma-separated, range syntax, and out-of-bounds input.
     idx = parse_single_input(selection, num_items)

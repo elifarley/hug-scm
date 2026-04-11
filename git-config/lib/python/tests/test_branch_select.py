@@ -1495,6 +1495,29 @@ class TestSingleSelectBranches:
         assert result.branch == "bugfix/crash"
         assert result.index == 2
 
+    def test_cancelled_on_empty_string_selection(self, branch_data):
+        """Empty string selection (simulates pressing Enter with no input) is cancellation.
+
+        The ESC path (tty/termios character-mode read) returns None, which is
+        converted to "" before passing to parse_single_input.  We test the
+        downstream effect directly via test_selection="".
+        """
+        from git.branch_select import SelectOptions, single_select_branches
+
+        result = single_select_branches(
+            branches=branch_data["branches"],
+            hashes=branch_data["hashes"],
+            dates=branch_data["dates"],
+            subjects=branch_data["subjects"],
+            tracks=branch_data["tracks"],
+            current_branch=branch_data["current_branch"],
+            options=SelectOptions(test_selection=""),  # empty = cancelled
+        )
+
+        assert result.status == "cancelled"
+        assert result.branch == ""
+        assert result.index == -1
+
     def test_invalid_non_integer_input_returns_cancelled(self, branch_data):
         """Non-integer input like 'abc' returns status='cancelled'."""
         from git.branch_select import SelectOptions, single_select_branches

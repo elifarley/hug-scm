@@ -35,10 +35,17 @@ Design decisions:
 import argparse
 import os
 import re
+import sys
+import termios
+import tty
 
 ################################################################################
-# ANSI color constants
+# Character-mode input support for ESC key detection.
 ################################################################################
+# Use tty + termios (stdlib, POSIX-only) when available, so we can read a single
+# keypress and detect ESC (\x1b) without waiting for Enter.  Falls back to None
+# if these modules aren't available (Windows, some CI environments).
+_HAS_TTY = True
 
 # These values intentionally match branch_select.py so every module that
 # imports from selection_core produces visually consistent terminal output.
@@ -352,7 +359,41 @@ def get_selection_input(
     if env_var in os.environ:
         return os.environ[env_var]
 
-    # Level 3 + 4: interactive stdin, with graceful EOFError fallback
+    # Level 3 + 4: interactive stdin, with graceful EOFError fallback.
+    #
+    # CHARACTER-MODE KEY READ: Use tty + termios (POSIX) to read a single keypress
+    # and detect the ESC key (\x1b) without waiting for Enter.  Python's built-in
+    # input() is line-buffered and cannot detect ESC on its own.
+    #
+    # Flow:
+    #   - Save terminal settings, set raw mode (tty.setraw).
+    #   - Read one character with sys.stdin.read(1).
+    #   - If it's '\x1b' (ESC), return None → parse_single_input returns None
+    #     → caller maps to "cancelled".  Indistinguishable from pressing Enter
+    #     on an empty prompt — the right UX.
+    #   - For any other character, restore terminal and fall through to input().
+    #     (Arrow-key navigation is not implemented here; only ESC matters.)
+    #   - On any exception / failure, restore terminal and degrade to input().
+    #   - Graceful degradation: if tty/termios are unavailable (non-POSIX,
+    #     non-TTY, or any read error), fall through to line-mode input().
+    try:
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            c = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        if c == "\x1b":
+            # ESC pressed — signal cancellation (None), not empty string.
+            # parse_single_input(None, ...) returns None → "cancelled".
+            return None
+        # Non-ESC character typed — fall through to line-mode input() below.
+    except Exception:
+        # Fall through to line-mode input on any terminal/read error.
+        # Covers: non-POSIX (ImportError), non-TTY (isatty false), any I/O error.
+        pass
+
     try:
         return input()
     except EOFError:

@@ -542,6 +542,11 @@ def _cmd_select(
         print("Enter number: ", end="", flush=True, file=sys.stderr)
     user_input = get_selection_input(test_selection=test_selection)
 
+    # get_selection_input returns None when ESC is pressed (detected via
+    # tty/termios character-mode read).  Treat it identically to empty input.
+    if user_input is None:
+        user_input = ""
+
     if not user_input.strip():
         return to_bash_declare(TagSelectionResult(status="cancelled", tags=[], indices=[]))
 

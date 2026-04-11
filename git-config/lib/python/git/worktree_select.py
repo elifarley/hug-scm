@@ -408,6 +408,11 @@ def _cmd_select(
     # by returning an empty string — no need for a separate try/except here.
     raw = get_selection_input(test_selection=test_selection)
 
+    # get_selection_input returns None when ESC is pressed (detected via
+    # tty/termios character-mode read).  Treat it identically to empty input.
+    if raw is None:
+        raw = ""
+
     if not raw.strip():
         return selection_to_bash_declare(WorktreeSelectionResult(status="cancelled", path=""))
 
