@@ -82,6 +82,139 @@ if [[ ${#args[@]} -eq 1 ]]; then
   exec git merge --ff-only "$target"
 fi
 
-# --- Two-arg form: NOT YET IMPLEMENTED ---
-# Will be added in Task 4 with safety features (confirmation, worktree check, etc.)
-error "Two-arg form not yet implemented. See 'hug help mff'."
+# --- Two-arg form: move branch pointer ---
+# WHY: Allows advancing a non-checked-out branch to a new target without
+# switching to it. This is essential for release workflows where you want
+# to fast-forward a release branch after merging feature branches, or
+# update a tracking branch pointer from another branch's HEAD.
+#
+# SAFETY DESIGN:
+# - Validates both branch existence and target resolution upfront
+# - Handles checked-out branch specially (merge for ff, reset --hard for force)
+# - Ancestry check ensures only true fast-forwards by default
+# - Force moves require explicit confirmation (unless --force auto-confirms)
+# - Worktree conflict detection before pointer moves
+# - Reflog-aware undo hint after force moves
+branch="${args[0]}"
+target="${args[1]}"
+
+# Validate branch exists locally
+# WHY: A typo in the branch name would silently create a new branch via
+# `git branch -f`. Explicit validation catches this early with a clear message.
+if ! git show-ref --verify --quiet "refs/heads/$branch" 2> /dev/null; then
+  error "Branch '$branch' not found locally. See 'hug help mff'."
+fi
+
+# Validate target resolves to a commit
+# WHY: Using ^{commit} peels annotated tags to their underlying commit object,
+# ensuring both lightweight and annotated tags work correctly. Without this,
+# `git rev-parse v1.0.0` on an annotated tag returns the tag object, not the commit.
+target_sha=""
+if ! target_sha=$(git rev-parse --verify "$target^{commit}" 2> /dev/null); then
+  error "Cannot resolve '$target' as a commit. See 'hug help mff'."
+fi
+
+# Get branch's current SHA for comparison
+branch_sha=$(git rev-parse --verify "$branch")
+
+# Already at target? Short-circuit to avoid unnecessary work.
+if [[ "$branch_sha" = "$target_sha" ]]; then
+  info "'$branch' already points at $(git rev-parse --short "$target_sha")."
+  exit 0
+fi
+
+# Check if current branch is the target branch
+# WHY: When the branch IS the current branch, we must use `git merge --ff-only`
+# instead of `git branch -f`, because Git prohibits moving the current branch
+# reference directly (it's locked by HEAD).
+current_branch=$(git symbolic-ref --short HEAD 2> /dev/null || echo "")
+is_current_branch=false
+if [[ "$current_branch" = "$branch" ]]; then
+  is_current_branch=true
+fi
+
+# Determine if this is a fast-forward (cached for reuse in execute/report sections)
+is_fast_forward=true
+if ! git merge-base --is-ancestor "$branch_sha" "$target_sha" 2> /dev/null; then
+  is_fast_forward=false
+fi
+
+# Ancestry check (unless forced)
+# WHY: By default, only true fast-forwards are allowed. This prevents accidental
+# history loss when someone specifies branches in the wrong order (e.g.,
+# `hug mff main feature` when main is actually ahead of feature).
+if [[ "${HUG_FORCE:-false}" != true ]] && ! $is_fast_forward; then
+  error "Cannot fast-forward '$branch' to '$target' — branches have diverged.
+Use hug mff $branch $target --force to move anyway."
+fi
+
+# CRITICAL SAFETY: confirm before diverged force move
+# WHY: Even with --force, a non-fast-forward move loses reachable commits from
+# the branch's old position. The reflog mitigates this, but the user should
+# explicitly acknowledge the destructive nature. Note: prompt_confirm_warn
+# auto-confirms when HUG_FORCE=true, so --force skips this prompt.
+if [[ "${HUG_FORCE:-false}" == true ]] && ! $is_fast_forward; then
+  prompt_confirm_warn "Force-move '$branch' to '$target' (not a fast-forward)?"
+fi
+
+# Compute commit count for display
+commit_count=$(git rev-list --count "${branch_sha}..${target_sha}" 2> /dev/null || echo "?")
+
+# Dry-run: show what would happen without executing
+if [[ ${dry_run:-false} == true ]]; then
+  if [[ "${HUG_FORCE:-false}" == true ]]; then
+    info "Would move '$branch' to '$target' (--force, not a fast-forward)"
+  else
+    info "Would fast-forward '$branch' to '$target' ($commit_count commits ahead)"
+  fi
+  info "  $(git rev-parse --short "$branch_sha") → $(git rev-parse --short "$target_sha")"
+  exit 0
+fi
+
+# CRITICAL SAFETY: check for worktree conflicts before moving
+# WHY: `git branch -f` fails with a cryptic error if the branch is checked out
+# in another worktree. We detect this upfront and provide a clear, actionable
+# error message pointing to the correct remediation command.
+if ! $is_current_branch; then
+  if git worktree list --porcelain 2> /dev/null | grep -q "branch: refs/heads/$branch$"; then
+    error "Branch '$branch' is checked out in another worktree and cannot be moved.
+Remove the worktree first: hug worktree remove <path>"
+  fi
+fi
+
+# Execute the move
+if $is_current_branch; then
+  if [[ "${HUG_FORCE:-false}" == true ]] && ! $is_fast_forward; then
+    # Force-move checked-out branch: use git reset --hard
+    # WHY: `git branch -f` is blocked by Git for the checked-out branch, and
+    # `git merge --ff-only` refuses non-fast-forwards. `git reset --hard` moves
+    # both HEAD and the branch ref to the target, matching `git branch -f` semantics.
+    # The reflog records the old position, so `hug h back` can undo this.
+    if ! git reset --hard "$target" 2>&1; then
+      error "Failed to force-move branch '$branch'. See 'hug help mff'."
+    fi
+  else
+    # Fast-forward checked-out branch via merge
+    # WHY: Git locks the current branch's ref while it's checked out.
+    # `git branch -f` would fail; `git merge --ff-only` advances HEAD correctly.
+    git merge --ff-only "$target"
+  fi
+else
+  # Move non-checked-out branch pointer
+  # NOTE: `git branch -f` output may go to stderr, so we capture it for error wrapping.
+  if ! git branch -f "$branch" "$target" 2>&1; then
+    error "Failed to move branch '$branch'. See 'hug help mff'."
+  fi
+fi
+
+# Report result
+# WHY: Different messages for fast-forward vs force-move so the user clearly
+# understands what happened. Force-move includes an undo hint via reflog.
+if [[ "${HUG_FORCE:-false}" == true ]] && ! $is_fast_forward; then
+  success "Moved '$branch' to '$target' (--force, not a fast-forward)"
+  info "  $(git rev-parse --short "$branch_sha") → $(git rev-parse --short "$target_sha")"
+  info "Undo: hug h back (if on '$branch') or hug mff $branch $(git rev-parse --short "$branch_sha")"
+else
+  success "Fast-forwarded '$branch' to '$target' ($commit_count commits ahead)"
+  info "  $(git rev-parse --short "$branch_sha") → $(git rev-parse --short "$target_sha")"
+fi
