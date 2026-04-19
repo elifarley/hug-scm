@@ -1,0 +1,12 @@
+{
+  "planPath": "docs/plans/2026-04-19-mff-two-arg-impl.md",
+  "tasks": [
+    {"id": 0, "subject": "Task 1: Write failing tests for one-arg mff", "status": "pending"},
+    {"id": 1, "subject": "Task 2: Create git-mff script (one-arg passthrough)", "status": "pending", "blockedBy": [0]},
+    {"id": 2, "subject": "Task 3: Write failing tests for two-arg mff", "status": "pending", "blockedBy": [1]},
+    {"id": 3, "subject": "Task 4: Implement two-arg mff logic", "status": "pending", "blockedBy": [2]},
+    {"id": 4, "subject": "Task 5: Add cross-references to hug b and docs", "status": "pending", "blockedBy": [3]},
+    {"id": 5, "subject": "Task 6: Run full test suite and verify no regressions", "status": "pending", "blockedBy": [4]}
+  ],
+  "lastUpdated": "2026-04-19T12:00:00Z"
+}
