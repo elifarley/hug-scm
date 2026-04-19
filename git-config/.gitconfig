@@ -494,9 +494,8 @@
   # Usage: hug m <branch>; hug c
   m = merge --squash
 
-  # Merge with fast-forward only (fails if not possible)
-  # Usage: git mff <branch>
-  mff = merge --ff-only
+  # Merge with fast-forward only — now implemented as git-mff script
+  # Usage: hug mff <target> or hug mff <branch> <target>
 
   # Merge with no fast-forward (always create merge commit)
   # Usage: git mnf <branch>

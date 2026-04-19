@@ -50,8 +50,8 @@ setup_linear_branches() {
 # One-arg form (existing behavior)
 # -----------------------------------------------------------------------------
 
-@test "hug mff --help: shows help with cross-references" {
-  run hug mff --help
+@test "hug mff -h: shows help with cross-references" {
+  run hug mff -h
   assert_success
   assert_output --partial "hug mff:"
   assert_output --partial "USAGE:"

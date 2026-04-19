@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug mff: Fast-forward merge or move branch pointer
+
+USAGE:
+  hug mff <target>              # Fast-forward current branch to <target>
+  hug mff <branch> <target>     # Fast-forward <branch> to <target> (no switch)
+  hug mff <branch> <target> -f  # Force-move <branch> even if not a fast-forward
+
+OPTIONS:
+  -f, --force     Allow moving branch even when not a fast-forward
+  --dry-run       Preview the move without executing
+  -h, --help      Show this help message
+
+DESCRIPTION:
+  One-arg form: Fast-forward merges <target> into the current branch.
+  Fails if a true fast-forward is not possible. Equivalent to
+  'git merge --ff-only <target>'.
+
+  Two-arg form: Moves the <branch> pointer to <target> without switching
+  to it. By default, only allows pure fast-forward (target must be a
+  descendant of branch). Use --force to allow arbitrary moves.
+
+EXAMPLES:
+  hug mff feature            # Fast-forward current branch to feature
+  hug mff main feature       # Move main to feature (ff-only)
+  hug mff main feature -f    # Force-move main to feature
+  hug mff main v1.0.0        # Move main to tag v1.0.0
+  hug mff main abc1234       # Move main to commit abc1234
+
+SEE ALSO:
+  hug bmv    : Rename a branch (change its name)
+  hug b      : Switch to a branch
+  hug bpull  : Safe pull with fast-forward only
+
+FURTHER READING:
+  See 'git merge --help' and 'git branch --help'.
+EOF
+}
+
+check_git_repo
+
+# Parse flags
+force=false
+dry_run=false
+declare -a args=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  -f | --force)
+    force=true
+    shift
+    ;;
+  --dry-run)
+    dry_run=true
+    shift
+    ;;
+  --)
+    shift
+    break
+    ;;
+  -*)
+    error "Unknown option: $1"
+    ;;
+  *)
+    args+=("$1")
+    shift
+    ;;
+  esac
+done
+
+# Append remaining args after --
+args+=("$@")
+
+# Validate argument count
+if [[ ${#args[@]} -eq 0 ]]; then
+  error "Missing arguments. USAGE: hug mff <target> or hug mff <branch> <target>"
+elif [[ ${#args[@]} -gt 2 ]]; then
+  error "Too many arguments. Usage: hug mff <target> or hug mff <branch> <target>"
+fi
+
+# --- One-arg form: passthrough to git merge --ff-only ---
+if [[ ${#args[@]} -eq 1 ]]; then
+  target="${args[0]}"
+  if $dry_run; then
+    info "Would fast-forward current branch to '$target'"
+    exit 0
+  fi
+  exec git merge --ff-only "$target"
+fi
+
+# --- Two-arg form: NOT YET IMPLEMENTED ---
+# Will be added in Task 4 with safety features (confirmation, worktree check, etc.)
+error "Two-arg form not yet implemented. See: hug mff --help"
