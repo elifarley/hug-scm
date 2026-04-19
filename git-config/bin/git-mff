@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
@@ -46,31 +46,17 @@ EOF
 
 check_git_repo
 
-# Parse flags
-force=false
-dry_run=false
-declare -a args=()
+# Parse common flags (-f/--force, --dry-run, -q/--quiet, -h/--help)
+# parse_common_flags exports HUG_FORCE=true and sets dry_run=true,
+# so downstream code (e.g. confirmation prompts) sees the exported variable.
+eval "$(parse_common_flags "$@")"
 
+# Collect remaining positional arguments
+declare -a args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-  -h | --help)
-    show_help
-    exit 0
-    ;;
-  -f | --force)
-    force=true
-    shift
-    ;;
-  --dry-run)
-    dry_run=true
-    shift
-    ;;
-  --)
-    shift
-    break
-    ;;
   -*)
-    error "Unknown option: $1"
+    error "Unknown option: $1. See 'hug help mff'."
     ;;
   *)
     args+=("$1")
@@ -79,20 +65,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Append remaining args after --
-args+=("$@")
-
 # Validate argument count
 if [[ ${#args[@]} -eq 0 ]]; then
   error "Missing arguments. USAGE: hug mff <target> or hug mff <branch> <target>"
 elif [[ ${#args[@]} -gt 2 ]]; then
-  error "Too many arguments. Usage: hug mff <target> or hug mff <branch> <target>"
+  error "Too many arguments. USAGE: hug mff <target> or hug mff <branch> <target>"
 fi
 
 # --- One-arg form: passthrough to git merge --ff-only ---
 if [[ ${#args[@]} -eq 1 ]]; then
   target="${args[0]}"
-  if $dry_run; then
+  if [[ ${dry_run:-false} == true ]]; then
     info "Would fast-forward current branch to '$target'"
     exit 0
   fi
@@ -101,4 +84,4 @@ fi
 
 # --- Two-arg form: NOT YET IMPLEMENTED ---
 # Will be added in Task 4 with safety features (confirmation, worktree check, etc.)
-error "Two-arg form not yet implemented. See: hug mff --help"
+error "Two-arg form not yet implemented. See 'hug help mff'."
