@@ -93,3 +93,154 @@ setup_linear_branches() {
   assert_failure
   assert_output --partial "USAGE"
 }
+
+# Helper: create diverged branches
+# main: A -- B -- C -- D
+# feature:    B' -- E  (diverges from B)
+setup_diverged_branches() {
+  # main has initial commit (A)
+
+  echo "base" > base.txt
+  git add base.txt
+  git commit -m "Shared base B"
+
+  git checkout -q -b feature
+
+  echo "feat-only" > feat.txt
+  git add feat.txt
+  git commit -m "Feature commit E"
+
+  git checkout -q main
+
+  echo "main-only" > main.txt
+  git add main.txt
+  git commit -m "Main commit C"
+
+  echo "main-more" > main2.txt
+  git add main2.txt
+  git commit -m "Main commit D"
+}
+
+# -----------------------------------------------------------------------------
+# Two-arg form (new behavior)
+# -----------------------------------------------------------------------------
+
+@test "hug mff A B: fast-forwards non-checked-out branch" {
+  setup_linear_branches
+
+  # main is behind feature, feature is checked out
+  git checkout -q feature
+
+  run hug mff main feature
+  assert_success
+  assert_output --partial "Fast-forwarded"
+}
+
+@test "hug mff A B: moves branch pointer without switching" {
+  setup_linear_branches
+  git checkout -q feature
+
+  hug mff main feature
+
+  # main should now point to feature's commit
+  main_sha=$(git rev-parse main)
+  feature_sha=$(git rev-parse feature)
+  [ "$main_sha" = "$feature_sha" ]
+
+  # current branch should still be feature
+  current=$(git branch --show-current)
+  [ "$current" = "feature" ]
+}
+
+@test "hug mff A B: reports already-at-target" {
+  setup_linear_branches
+
+  # feature is ahead, fast-forward main to feature
+  hug mff main feature
+
+  # Now try again — should say already at target
+  run hug mff main feature
+  assert_success
+  assert_output --partial "already points at"
+}
+
+@test "hug mff A B: fails on diverged branches" {
+  setup_diverged_branches
+
+  run hug mff main feature
+  assert_failure
+  assert_output --partial "diverged"
+  assert_output --partial "--force"
+}
+
+@test "hug mff A B -f: force-moves diverged branch" {
+  setup_diverged_branches
+
+  run hug mff main feature --force
+  assert_success
+  assert_output --partial "Moved"
+  assert_output --partial "--force"
+
+  main_sha=$(git rev-parse main)
+  feature_sha=$(git rev-parse feature)
+  [ "$main_sha" = "$feature_sha" ]
+}
+
+@test "hug mff A B: target can be a tag" {
+  setup_linear_branches
+  git tag release-point feature
+  git checkout -q feature
+
+  run hug mff main release-point
+  assert_success
+  assert_output --partial "Fast-forwarded"
+}
+
+@test "hug mff A B: target can be a raw SHA" {
+  setup_linear_branches
+  target_sha=$(git rev-parse feature)
+  git checkout -q feature
+
+  run hug mff main "$target_sha"
+  assert_success
+  assert_output --partial "Fast-forwarded"
+}
+
+@test "hug mff A B: branch is current branch — delegates to merge" {
+  setup_linear_branches
+  # main is checked out, feature is ahead
+
+  run hug mff main feature
+  assert_success
+}
+
+@test "hug mff A B: error on non-existent branch" {
+  setup_linear_branches
+
+  run hug mff nonexistent feature
+  assert_failure
+  assert_output --partial "not found"
+}
+
+@test "hug mff A B: error on non-existent target" {
+  setup_linear_branches
+
+  run hug mff main nonexistent-target-xyz
+  assert_failure
+  assert_output --partial "Cannot resolve"
+}
+
+@test "hug mff A B --dry-run: shows preview without moving" {
+  setup_linear_branches
+  git checkout -q feature
+
+  main_before=$(git rev-parse main)
+
+  run hug mff main feature --dry-run
+  assert_success
+  assert_output --partial "Would fast-forward"
+
+  # Verify main was NOT moved
+  main_after=$(git rev-parse main)
+  [ "$main_before" = "$main_after" ]
+}
