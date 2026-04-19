@@ -27,7 +27,7 @@ Merge commands in Hug integrate changes from one branch into another using diffe
 |---------|-------------|---------|
 | `hug m <branch>` | **M**erge (squash) | Squash-merge branch into current (stages changes, you commit) |
 | `hug mkeep <branch>` | **M**erge **Keep** commit | Standard merge with merge commit (preserves branch history) |
-| `hug mff <branch>` | **M**erge **F**ast-**F**orward only | Fast-forward merge only (fails if merge needed) |
+| `hug mff <branch>` or `hug mff <branch> <target>` | **M**erge **F**ast-**F**orward only | Fast-forward merge or move branch pointer (fails if not ff) |
 | `hug ma` | **M**erge **A**bort | Abort merge in progress (escape from conflicts) |
 
 ## Understanding Merge Strategies
@@ -118,6 +118,20 @@ After `hug mff feature` (Fast-Forward):
 - **Description**: Performs a **fast-forward merge only**. This simply advances your current branch pointer to match `<branch-name>`, creating no merge commit. This only works if your current branch is a direct ancestor of `<branch-name>` (i.e., no divergence).
 
   **Best for**: Keeping branches aligned without merge commits, or ensuring no unexpected merges happen.
+
+  **Two-arg form:** `hug mff <branch> <target>` moves the `<branch>` pointer to `<target>` without switching to it. This only works as a fast-forward by default; use `--force` to allow arbitrary moves.
+
+  **Examples**:
+  ```shell
+  # Fast-forward main to feature without switching branches
+  hug mff main feature
+
+  # Force-move main to a specific tag
+  hug mff main v1.0.0 --force
+
+  # Preview without executing
+  hug mff main feature --dry-run
+  ```
 
 - **Example**:
   ```shell

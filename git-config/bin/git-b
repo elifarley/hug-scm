@@ -50,6 +50,7 @@ EXAMPLES:
 SEE ALSO:
   hug bll : Detailed non-interactive branch list
   hug bc  : Create and switch to a new branch
+  hug mff A B : Fast-forward branch A to B without switching
 
 FURTHER READING:
   See 'git switch --help' and 'git for-each-ref --help'.

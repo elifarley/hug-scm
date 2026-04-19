@@ -147,7 +147,7 @@ These map to custom scripts (see Section 2).
 
 ### Merge (m*)
 - `m <branch>`: Squash merge. Args: `<branch>` (required).
-- `mff <branch>`: FF-only merge. Args: as above.
+- `mff <branch> [<target>]`: FF-only merge, or move branch to target. Args: `<branch>` (required), `[<target>]` (optional; if given, moves branch without switching).
 - `mkeep <branch>`: No-FF merge. Args: as above.
 - `ma`: Abort merge. No args.
 

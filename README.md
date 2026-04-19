@@ -488,7 +488,7 @@ hug rbc               # Continue rebase
 hug rba               # Abort rebase
 hug rbs               # Skip commit in rebase
 hug m <branch>        # Squash-merge branch (no commit)
-hug mff <branch>      # Merge with fast-forward only
+hug mff <branch>      # Fast-forward merge (or: hug mff <branch> <target>)
 hug mkeep <branch>    # Merge with no fast-forward (create commit)
 hug ma                # Abort merge
 ```
