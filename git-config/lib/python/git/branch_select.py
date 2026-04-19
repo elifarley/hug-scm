@@ -466,6 +466,12 @@ def multi_select_branches(
     # selection module reads the same env var and handles EOFError identically.
     selection = get_selection_input(test_selection=options.test_selection)
 
+    # get_selection_input returns None when ESC is pressed (detected via
+    # tty/termios character-mode read).  Treat it identically to empty input,
+    # consistent with tag_select and worktree_select.
+    if selection is None:
+        selection = ""
+
     # parse_numbered_input is the canonical implementation from selection_core,
     # replacing the former local parse_user_input() + validate_indices() pair.
     # validate_indices() is now redundant: parse_numbered_input already clamps

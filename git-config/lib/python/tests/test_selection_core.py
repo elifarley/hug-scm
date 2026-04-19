@@ -15,6 +15,9 @@ Following Google Python testing best practices:
 """
 
 import argparse
+import os
+import pty
+import sys
 
 import pytest
 
@@ -611,6 +614,136 @@ class TestGetSelectionInput:
         # Do NOT pass env_var; rely on the default
         result = get_selection_input(test_selection=None)
         assert result == "default_env"
+
+
+################################################################################
+# TestGetSelectionInputRawMode
+################################################################################
+
+
+class TestGetSelectionInputRawMode:
+    """PTY-based tests for get_selection_input() exercising the real TTY code path.
+
+    The existing TestGetSelectionInput class mocks builtins.input, which bypasses
+    the termios raw-mode ESC-detection probe entirely.  These tests use
+    pty.openpty() to provide a real TTY so that the tty.setraw / sys.stdin.read(1)
+    path is exercised — the path where the double-tap bug lives.
+
+    Bug context: In get_selection_input(), the ESC-detection probe reads one
+    character via sys.stdin.read(1) in raw mode.  If the character is NOT ESC,
+    the code falls through to input() — but the character was already consumed.
+    The user must type their input again (the "double-tap" bug).
+
+    Test strategy:
+    - Open a pseudo-terminal with pty.openpty() so sys.stdin.fileno() is a TTY.
+    - Use a background thread to feed test data to the PTY master fd after a
+      short delay (simulating user typing).  The delay ensures the main thread
+      is blocking on sys.stdin.read(1) when data arrives — matching real usage.
+    - Patch sys.stdin to a file wrapping the slave fd.
+    - Delete HUG_TEST_NUMBERED_SELECTION so the function reaches the interactive
+      TTY path (levels 3-4 of the precedence chain).
+
+    Why threading: Data written to the PTY master before read(1) is called can
+    be lost due to TextIOWrapper buffering in the os.fdopen(slave_fd, "r") file
+    object.  Feeding data from a thread while the main thread blocks on read(1)
+    matches real terminal behavior and avoids the buffering issue.
+    """
+
+    @staticmethod
+    def _setup_pty(monkeypatch, data: bytes):
+        """Create a PTY, patch sys.stdin to slave, schedule data feed on master.
+
+        Returns (master_fd, slave_file, feed_thread).  The caller should join
+        the thread in its finally block.  Data is written to master_fd after a
+        50ms delay so the main thread is blocking on sys.stdin.read(1).
+        """
+        import threading
+        import time
+
+        master_fd, slave_fd = pty.openpty()
+        slave_file = os.fdopen(slave_fd, "r")
+        monkeypatch.setattr(sys, "stdin", slave_file)
+
+        def feed():
+            time.sleep(0.05)
+            os.write(master_fd, data)
+
+        feed_thread = threading.Thread(target=feed, daemon=True)
+        feed_thread.start()
+        return master_fd, slave_file, feed_thread
+
+    def test_non_esc_single_digit_not_consumed(self, monkeypatch):
+        """Typing '3<Enter>' at a real TTY should return '3'.
+
+        Regression test for the double-tap bug: the raw-mode ESC probe reads
+        one character with sys.stdin.read(1).  If it's not ESC, the character
+        must be prepended to input()'s result so the user doesn't have to
+        type it again.
+        """
+        monkeypatch.delenv("HUG_TEST_NUMBERED_SELECTION", raising=False)
+        master_fd, slave_file, feed_thread = self._setup_pty(monkeypatch, b"3\n")
+        try:
+            result = get_selection_input()
+            assert result == "3", (
+                f"Expected '3' but got {result!r}. The raw-mode ESC probe consumed the "
+                "digit before input() could read it (double-tap bug)."
+            )
+        finally:
+            feed_thread.join(timeout=1)
+            slave_file.close()
+            os.close(master_fd)
+
+    def test_esc_returns_none(self, monkeypatch):
+        """ESC keypress should return None (cancellation signal)."""
+        monkeypatch.delenv("HUG_TEST_NUMBERED_SELECTION", raising=False)
+        master_fd, slave_file, feed_thread = self._setup_pty(monkeypatch, b"\x1b")
+        try:
+            result = get_selection_input()
+            assert result is None, (
+                f"Expected None for ESC, but got {result!r}. ESC should signal cancellation."
+            )
+        finally:
+            feed_thread.join(timeout=1)
+            slave_file.close()
+            os.close(master_fd)
+
+    def test_non_esc_multi_digit(self, monkeypatch):
+        """Multi-digit input like '12' should return '12', not '2'.
+
+        The raw-mode probe consumes '1'; input() reads '2\\n'.
+        Userspace buffering must prepend '1' to get '12'.
+        """
+        monkeypatch.delenv("HUG_TEST_NUMBERED_SELECTION", raising=False)
+        master_fd, slave_file, feed_thread = self._setup_pty(monkeypatch, b"12\n")
+        try:
+            result = get_selection_input()
+            assert result == "12", (
+                f"Expected '12' but got {result!r}. The raw-mode ESC probe consumed the "
+                "first digit before input() could read the full input."
+            )
+        finally:
+            feed_thread.join(timeout=1)
+            slave_file.close()
+            os.close(master_fd)
+
+    def test_empty_newline_returns_empty_string(self, monkeypatch):
+        """Just Enter (newline) after raw-mode probe should return empty string.
+
+        The raw-mode read(1) consumes '\\n'; input() would block forever.
+        The newline early-return prevents this.  Key assertion: no crash, no hang.
+        """
+        monkeypatch.delenv("HUG_TEST_NUMBERED_SELECTION", raising=False)
+        master_fd, slave_file, feed_thread = self._setup_pty(monkeypatch, b"\n")
+        try:
+            result = get_selection_input()
+            assert isinstance(result, str), (
+                f"Expected a str (empty string from Enter key), but got {result!r}. "
+                "The raw-mode probe consumed the newline."
+            )
+        finally:
+            feed_thread.join(timeout=1)
+            slave_file.close()
+            os.close(master_fd)
 
 
 ################################################################################

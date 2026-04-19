@@ -326,7 +326,7 @@ def parse_numbered_input(user_input: str, num_items: int, allow_all: bool = True
 def get_selection_input(
     test_selection: str | None = None,
     env_var: str = "HUG_TEST_NUMBERED_SELECTION",
-) -> str:
+) -> str | None:
     """Return user selection input from the highest-priority available source.
 
     This function encodes the three-level precedence chain used across every
@@ -349,7 +349,8 @@ def get_selection_input(
                         Defaults to "HUG_TEST_NUMBERED_SELECTION".
 
     Returns:
-        The user's selection string (may be empty).
+        The user's selection string (may be empty), or None if the user
+        pressed ESC (cancellation signal detected via raw-mode TTY read).
     """
     # Level 1: explicit test_selection argument (None is the "not set" sentinel)
     if test_selection is not None:
@@ -376,6 +377,7 @@ def get_selection_input(
     #   - On any exception / failure, restore terminal and degrade to input().
     #   - Graceful degradation: if tty/termios are unavailable (non-POSIX,
     #     non-TTY, or any read error), fall through to line-mode input().
+    c = ""  # Will hold the consumed character from raw-mode probe
     try:
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
@@ -388,14 +390,21 @@ def get_selection_input(
             # ESC pressed — signal cancellation (None), not empty string.
             # parse_single_input(None, ...) returns None → "cancelled".
             return None
-        # Non-ESC character typed — fall through to line-mode input() below.
+        if c == "\n":
+            # User pressed Enter with no other input.  The newline was consumed
+            # by the raw-mode probe, so input() would block forever waiting for
+            # more data.  Return empty string — same as input() on a bare Enter.
+            return ""
+        # Non-ESC character consumed — will be prepended to input() result
+        # below.  os.write(fd, c) does NOT work: writing to the slave pty fd
+        # produces output on the master side, not readable input on the slave.
     except Exception:
         # Fall through to line-mode input on any terminal/read error.
-        # Covers: non-POSIX (ImportError), non-TTY (isatty false), any I/O error.
+        # c remains "" — input() proceeds normally without prepend.
         pass
 
     try:
-        return input()
+        return c + input()
     except EOFError:
         return ""
 
