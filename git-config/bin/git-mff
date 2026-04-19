@@ -90,7 +90,8 @@ fi
 #
 # SAFETY DESIGN:
 # - Validates both branch existence and target resolution upfront
-# - Handles checked-out branch specially (merge for ff, reset --hard for force)
+# - Rejects force-move on checked-out branch (DX-1: would discard uncommitted changes)
+# - Handles checked-out branch via merge --ff-only (force case rejected)
 # - Ancestry check ensures only true fast-forwards by default
 # - Force moves require explicit confirmation (unless --force auto-confirms)
 # - Worktree conflict detection before pointer moves
@@ -139,6 +140,15 @@ if ! git merge-base --is-ancestor "$branch_sha" "$target_sha" 2> /dev/null; then
   is_fast_forward=false
 fi
 
+# DX-1 SAFETY: reject force-move on checked-out branch
+# WHY: Force-moving the current branch when it's not a fast-forward would require
+# `git reset --hard`, which silently discards uncommitted changes. This is a
+# dangerous footgun. The user must switch away first so we can use `git branch -f`,
+# which is safe (operates on refs only, never touches the working tree).
+if $is_current_branch && [[ "${HUG_FORCE:-false}" == true ]] && ! $is_fast_forward; then
+  error "Cannot force-move checked-out branch '$branch'. Switch away first: hug b <other-branch>"
+fi
+
 # Ancestry check (unless forced)
 # WHY: By default, only true fast-forwards are allowed. This prevents accidental
 # history loss when someone specifies branches in the wrong order (e.g.,
@@ -148,11 +158,13 @@ if [[ "${HUG_FORCE:-false}" != true ]] && ! $is_fast_forward; then
 Use hug mff $branch $target --force to move anyway."
 fi
 
-# CRITICAL SAFETY: confirm before diverged force move
+# CRITICAL SAFETY: confirm before diverged force move (non-current branch only)
 # WHY: Even with --force, a non-fast-forward move loses reachable commits from
 # the branch's old position. The reflog mitigates this, but the user should
 # explicitly acknowledge the destructive nature. Note: prompt_confirm_warn
 # auto-confirms when HUG_FORCE=true, so --force skips this prompt.
+# Note: current branch case is already rejected above (DX-1), so this only
+# fires for non-checked-out branches.
 if [[ "${HUG_FORCE:-false}" == true ]] && ! $is_fast_forward; then
   prompt_confirm_warn "Force-move '$branch' to '$target' (not a fast-forward)?"
 fi
@@ -183,22 +195,16 @@ Remove the worktree first: hug worktree remove <path>"
 fi
 
 # Execute the move
+# WHY: Two distinct code paths based on whether the branch is checked out:
+# - Current branch: must use `git merge --ff-only` (Git locks the branch ref).
+#   Force-move on current branch is rejected above (DX-1 safety), so only ff here.
+# - Non-current branch: use `git branch -f` (safe ref-only operation).
 if $is_current_branch; then
-  if [[ "${HUG_FORCE:-false}" == true ]] && ! $is_fast_forward; then
-    # Force-move checked-out branch: use git reset --hard
-    # WHY: `git branch -f` is blocked by Git for the checked-out branch, and
-    # `git merge --ff-only` refuses non-fast-forwards. `git reset --hard` moves
-    # both HEAD and the branch ref to the target, matching `git branch -f` semantics.
-    # The reflog records the old position, so `hug h back` can undo this.
-    if ! git reset --hard "$target" 2>&1; then
-      error "Failed to force-move branch '$branch'. See 'hug help mff'."
-    fi
-  else
-    # Fast-forward checked-out branch via merge
-    # WHY: Git locks the current branch's ref while it's checked out.
-    # `git branch -f` would fail; `git merge --ff-only` advances HEAD correctly.
-    git merge --ff-only "$target"
-  fi
+  # Fast-forward checked-out branch via merge
+  # WHY: Git locks the current branch's ref while it's checked out.
+  # `git branch -f` would fail; `git merge --ff-only` advances HEAD correctly.
+  # Force-move case is already rejected above by DX-1 check.
+  git merge --ff-only "$target"
 else
   # Move non-checked-out branch pointer
   # NOTE: `git branch -f` output may go to stderr, so we capture it for error wrapping.

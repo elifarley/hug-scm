@@ -173,8 +173,10 @@ setup_diverged_branches() {
   assert_output --partial "--force"
 }
 
-@test "hug mff A B -f: force-moves diverged branch" {
+@test "hug mff A B -f: force-moves diverged non-checked-out branch" {
   setup_diverged_branches
+  # Switch away from main so force-move is allowed (DX-1: checked-out branch rejected)
+  git checkout -q feature
 
   run hug mff main feature --force
   assert_success
@@ -243,4 +245,13 @@ setup_diverged_branches() {
   # Verify main was NOT moved
   main_after=$(git rev-parse main)
   [ "$main_before" = "$main_after" ]
+}
+
+@test "hug mff A B -f: errors when branch is current and diverged" {
+  setup_diverged_branches
+
+  run hug mff main feature --force
+  assert_failure
+  assert_output --partial "Cannot force-move checked-out branch"
+  assert_output --partial "Switch away first"
 }
