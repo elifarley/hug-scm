@@ -158,16 +158,12 @@ if [[ "${HUG_FORCE:-false}" != true ]] && ! $is_fast_forward; then
 Use hug mff $branch $target --force to move anyway."
 fi
 
-# CRITICAL SAFETY: confirm before diverged force move (non-current branch only)
-# WHY: Even with --force, a non-fast-forward move loses reachable commits from
-# the branch's old position. The reflog mitigates this, but the user should
-# explicitly acknowledge the destructive nature. Note: prompt_confirm_warn
-# auto-confirms when HUG_FORCE=true, so --force skips this prompt.
-# Note: current branch case is already rejected above (DX-1), so this only
-# fires for non-checked-out branches.
-if [[ "${HUG_FORCE:-false}" == true ]] && ! $is_fast_forward; then
-  prompt_confirm_warn "Force-move '$branch' to '$target' (not a fast-forward)?"
-fi
+# NOTE: No confirmation prompt for diverged force moves.
+# WHY: The --force flag IS the user's explicit consent to a non-fast-forward move.
+# Adding a confirmation prompt on top would be dead code — the only way to reach
+# a diverged move is via --force, and prompt_confirm_warn auto-confirms when
+# HUG_FORCE=true. The safety model is: non-force → hard error; force → allowed.
+# The reflog provides undo capability after force moves.
 
 # Compute commit count for display
 commit_count=$(git rev-list --count "${branch_sha}..${target_sha}" 2> /dev/null || echo "?")
