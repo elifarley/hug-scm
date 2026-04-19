@@ -173,6 +173,27 @@ setup_diverged_branches() {
   assert_output --partial "--force"
 }
 
+@test "hug mff A B: divergence error shows commit counts and subjects" {
+  setup_diverged_branches
+
+  run hug mff main feature
+  assert_failure
+  assert_output --partial "'main' has"
+  assert_output --partial "commit(s) not in 'feature'"
+  assert_output --partial "Main commit C"
+  assert_output --partial "Main commit D"
+  assert_output --partial "'feature' has"
+  assert_output --partial "commit(s) not in 'main'"
+}
+
+@test "hug mff A B: divergence error shows hug ll inspect command" {
+  setup_diverged_branches
+
+  run hug mff main feature
+  assert_failure
+  assert_output --partial "Inspect: hug ll main...feature"
+}
+
 @test "hug mff A B -f: force-moves diverged non-checked-out branch" {
   setup_diverged_branches
   # Switch away from main so force-move is allowed (DX-1: checked-out branch rejected)

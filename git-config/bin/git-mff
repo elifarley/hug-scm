@@ -154,8 +154,26 @@ fi
 # history loss when someone specifies branches in the wrong order (e.g.,
 # `hug mff main feature` when main is actually ahead of feature).
 if [[ "${HUG_FORCE:-false}" != true ]] && ! $is_fast_forward; then
+  # WHY: The user needs to understand WHY the fast-forward failed, not just
+  # that it did. Showing commit counts and subjects from both sides gives
+  # immediate clarity without requiring the user to run additional commands.
+  branch_only_count=$(git rev-list --count "${target_sha}..${branch_sha}" 2> /dev/null || echo "?")
+  target_only_count=$(git rev-list --count "${branch_sha}..${target_sha}" 2> /dev/null || echo "?")
+
+  if [[ "$branch_only_count" != "?" && "$branch_only_count" -gt 0 ]]; then
+    info "'$branch' has $branch_only_count commit(s) not in '$target' (blocks fast-forward):"
+    while IFS= read -r line; do
+      info "  $line"
+    done < <(git log --format="%h %s" "${target_sha}..${branch_sha}" 2> /dev/null || true)
+  fi
+
+  if [[ "$target_only_count" != "?" && "$target_only_count" -gt 0 ]]; then
+    info "'$target' has $target_only_count commit(s) not in '$branch'"
+  fi
+
   error "Cannot fast-forward '$branch' to '$target' — branches have diverged.
-Use hug mff $branch $target --force to move anyway."
+Use hug mff $branch $target --force to move anyway.
+Inspect: hug ll ${branch}...${target}"
 fi
 
 # NOTE: No confirmation prompt for diverged force moves.
