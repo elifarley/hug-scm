@@ -160,7 +160,10 @@ if [ "$remote_only" = true ]; then
   # Print interactive menu with remote branches
   # Note: We pass empty array for dates since remote branches don't have dates in this context
   declare -a dates=()
-  print_interactive_branch_menu selected_branch "" "$max_len" hashes dates branches tracks subjects
+  if ! print_interactive_branch_menu selected_branch "" "$max_len" hashes dates branches tracks subjects; then
+    info "Cancelled."
+    exit 1
+  fi
 
   # Create local tracking branch for selected remote
   local_name="$selected_branch"
@@ -203,5 +206,8 @@ if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local --sort-co
 fi
 
 # Print interactive menu and get selection (display functions now include dates)
-print_interactive_branch_menu selected_branch "$current_branch" "$max_len" hashes dates branches tracks subjects "Pick one to switch to..."
+if ! print_interactive_branch_menu selected_branch "$current_branch" "$max_len" hashes dates branches tracks subjects "Pick one to switch to..."; then
+  info "Cancelled."
+  exit 1
+fi
 exec git switch "$selected_branch"

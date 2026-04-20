@@ -129,7 +129,10 @@ hug_brestore() {
     local index
 
     if [[ $num_backups -ge 10 ]] && gum_available; then
-      index=$(get_gum_selection_index formatted_options display_names "Select a backup branch to restore..." "$gum_height")
+      if ! index=$(get_gum_selection_index formatted_options "Select a backup branch to restore..."); then
+        info "Cancelled."
+        return 1
+      fi
     else
       printf "Select a backup branch to restore:\n\n" >&2
 
@@ -138,7 +141,10 @@ hug_brestore() {
         printf "%d) %s\n" "$num" "${display_lines[i]}" >&2
       done
 
-      index=$(get_numbered_selection_index "$num_backups")
+      if ! index=$(get_numbered_selection_index "$num_backups"); then
+        info "Cancelled."
+        return 1
+      fi
     fi
 
     backup_branch="${backups[$index]}"

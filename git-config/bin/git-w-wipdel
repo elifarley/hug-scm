@@ -87,7 +87,10 @@ check_git_repo
 
 branch_selected="$branch_arg"
 if [ -z "$branch_selected" ]; then
-  branch_selected="$(select_wip_branch "Select WIP branch to delete..." "$PROG_NAME")"
+  if ! branch_selected="$(select_wip_branch "Select WIP branch to delete..." "$PROG_NAME")"; then
+    info "Cancelled."
+    exit 1
+  fi
 fi
 
 branch="$(trim_message "$branch_selected")"

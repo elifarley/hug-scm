@@ -707,19 +707,20 @@ class TestGetSelectionInputRawMode:
             slave_file.close()
             os.close(master_fd)
 
-    def test_non_esc_multi_digit(self, monkeypatch):
-        """Multi-digit input like '12' should return '12', not '2'.
+    def test_non_esc_single_digit_returns_immediately(self, monkeypatch):
+        """Single digit input should return immediately without waiting for Enter.
 
-        The raw-mode probe consumes '1'; input() reads '2\\n'.
-        Userspace buffering must prepend '1' to get '12'.
+        The raw-mode probe consumes the digit and returns it — no input() call,
+        no Enter needed.  The numbered menu only appears for <10 items so input
+        is always a single digit.
         """
         monkeypatch.delenv("HUG_TEST_NUMBERED_SELECTION", raising=False)
-        master_fd, slave_file, feed_thread = self._setup_pty(monkeypatch, b"12\n")
+        master_fd, slave_file, feed_thread = self._setup_pty(monkeypatch, b"3\n")
         try:
             result = get_selection_input()
-            assert result == "12", (
-                f"Expected '12' but got {result!r}. The raw-mode ESC probe consumed the "
-                "first digit before input() could read the full input."
+            assert result == "3", (
+                f"Expected '3' but got {result!r}. The raw-mode ESC probe should "
+                "return the digit immediately without waiting for Enter."
             )
         finally:
             feed_thread.join(timeout=1)

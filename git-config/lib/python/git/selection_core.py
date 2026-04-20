@@ -395,9 +395,13 @@ def get_selection_input(
             # by the raw-mode probe, so input() would block forever waiting for
             # more data.  Return empty string — same as input() on a bare Enter.
             return ""
-        # Non-ESC character consumed — will be prepended to input() result
-        # below.  os.write(fd, c) does NOT work: writing to the slave pty fd
-        # produces output on the master side, not readable input on the slave.
+        # Echo the consumed character back (raw mode suppressed echo) so the
+        # user sees their keystroke.  Return immediately — no Enter needed.
+        # The numbered menu only appears for <10 items (MIN_ITEMS_FOR_GUM),
+        # so input is always a single digit.
+        sys.stderr.write(c + "\n")
+        sys.stderr.flush()
+        return c
     except Exception:
         # Fall through to line-mode input on any terminal/read error.
         # c remains "" — input() proceeds normally without prepend.

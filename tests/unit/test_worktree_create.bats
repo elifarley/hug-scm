@@ -138,7 +138,7 @@ teardown() {
   assert_failure  # Exits with code 1 due to cancellation
 
   # Should show cancellation message since no interactive selection possible
-  assert_output --partial "Cancelled"
+  assert_output --partial "cancelled"
 }
 
 @test "hug wtc: error when branch already has worktree" {
@@ -199,7 +199,7 @@ teardown() {
   assert_failure  # Exits with code 1 due to cancellation
 
   # Should show cancellation message since no interactive selection possible
-  assert_output --partial "Cancelled"
+  assert_output --partial "cancelled"
 }
 
 @test "hug wtc: creates worktree for main branch" {
