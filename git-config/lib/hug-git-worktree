@@ -281,6 +281,26 @@ get_current_worktree_path() {
     git rev-parse --show-toplevel 2>/dev/null || echo ""
 }
 
+# Get the MAIN worktree's absolute path (the original clone directory)
+# Usage: main_path=$(get_main_worktree_path)
+# Returns: Absolute path to the main worktree, or empty if not in a git repo
+#
+# WHY --git-common-dir: In linked worktrees, this returns the shared .git dir
+# of the original clone (e.g. /path/to/main-repo/.git). In the main worktree
+# itself it returns ".git" (relative). This single plumbing command is the
+# canonical way to distinguish main from linked worktrees.
+get_main_worktree_path() {
+    local common_dir
+    common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
+    if [[ "$common_dir" == ".git" ]]; then
+        # We ARE in the main worktree — --show-toplevel gives its path
+        git rev-parse --show-toplevel 2>/dev/null
+    else
+        # Linked worktree — common_dir is /path/to/main-repo/.git
+        dirname "$common_dir"
+    fi
+}
+
 # Check if worktree exists at given path
 # Usage: if worktree_exists "/path/to/worktree"; then ...
 # Returns: 0 if worktree exists, 1 if not
@@ -486,30 +506,28 @@ validate_worktree_creation_path() {
 # listings, clearly separating repo name from branch name.
 generate_worktree_path() {
     local branch="$1"
-    local repo_name
-    local safe_branch
-
     if [[ -z "$branch" ]]; then
         return 1
     fi
 
-    # Get repository name
-    repo_name=$(basename "$(get_current_worktree_path)")
+    # Always resolve from the MAIN worktree so paths are consistent
+    # regardless of which worktree we're invoked from.
+    local main_path repo_name parent_dir safe_branch
+    main_path=$(get_main_worktree_path) || return 1
+    repo_name=$(basename "$main_path")
+    parent_dir=$(dirname "$main_path")
 
     # Make branch name safe for filesystem
     safe_branch=$(printf '%s' "$branch" | sed 's|/|-|g' | sed 's|\.|-|g' | tr '[:upper:]' '[:lower:]')
 
-    # Flat sibling path — no intermediate container directory needed.
-    # Parent (..) always exists since the repo itself lives there.
-    local preferred_path="../${repo_name}.WT.${safe_branch}"
-
     # Verify parent is writable; fallback to /tmp if not
-    if [[ ! -w "$(dirname "$preferred_path")" ]]; then
+    if [[ ! -w "$parent_dir" ]]; then
         printf '/tmp/hug-wt-%s-%s-%s' "$repo_name" "$$" "$safe_branch"
         return 0
     fi
 
-    printf '%s' "$preferred_path"
+    # Absolute sibling path — always a direct sibling of the main worktree
+    printf '%s/%s.WT.%s' "$parent_dir" "$repo_name" "$safe_branch"
 }
 
 # Generate unique worktree path (handles conflicts)
@@ -882,19 +900,9 @@ show_worktree_summary() {
 # Usage: if is_worktree_not_main; then ...
 # Returns: 0 if in a worktree (not main), 1 if in main repository or not in git repo
 is_worktree_not_main() {
-    local main_repo
-    local current_dir
+    local current_dir main_repo
     current_dir=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
-
-    # Get the git directory and determine the main repository
-    main_repo=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
-    if [[ "$main_repo" == ".git" ]]; then
-        # If .git is in the current directory, the main repo is current directory
-        main_repo=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
-    else
-        # Remove .git suffix to get the main repo directory
-        main_repo=${main_repo%/.git}
-    fi
+    main_repo=$(get_main_worktree_path) || return 1
 
     # If current directory is not the main repository, we're in a worktree
     [[ "$current_dir" != "$main_repo" ]]
