@@ -9,6 +9,12 @@
 set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
+# TODO: Worktree path should always be a sibling of the MAIN worktree (../{repo}.WT.{branch}),
+# even when `hug wtc` is run from another worktree. Currently, generate_worktree_path() uses
+# the current directory's basename as the repo name, so running from e.g. repo.WT.feature
+# produces repo.WT.feature.WT.branch instead of repo.WT.branch. Fix by resolving the main
+# worktree's directory name before constructing the path.
+
 show_help() {
   cat << 'EOF'
 hug wtc: Create worktree for existing or new branch
