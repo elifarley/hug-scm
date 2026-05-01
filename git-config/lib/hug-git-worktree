@@ -610,9 +610,7 @@ create_worktree() {
     if git worktree add "${git_args[@]}" 2>/dev/null; then
         # Verify the worktree was actually created (in worktrees, .git is a file, not a directory)
         if [[ -f "$path/.git" ]]; then
-            success "Worktree created: $path"
-            info "Switch to it with: hug wt $path"
-            info "Or: cd $path"
+            success "Worktree created at $path"
             return 0
         else
             warning "Worktree creation appeared to succeed but directory is invalid"

@@ -120,7 +120,7 @@ teardown() {
 
   # Clean up the worktree
   local worktree_path
-  worktree_path=$(echo "$output" | grep "Success:" | sed 's/.*Success: Worktree created: //')
+  worktree_path=$(echo "$output" | grep "Success:" | sed 's/.*Success: Worktree created at //')
   rm -rf "$worktree_path"
 }
 
