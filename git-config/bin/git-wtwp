@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# git-wtwp: List worktrees filtered by exact branch names
+# Thin wrapper around git-wtl --branch
+
+show_help() {
+  cat << 'EOF'
+hug wtwp: List worktrees filtered by exact branch names.
+
+USAGE:
+  hug wtwp [OPTIONS] <branch> [branch...]
+
+OPTIONS:
+  -h, --help     Show this help message and exit.
+  --json         Output in JSON format instead of human-readable text.
+
+DESCRIPTION:
+  Displays worktrees that are checked out to the specified branch(es).
+  Multiple branches can be specified (OR logic: worktrees on any of the branches).
+
+  This is equivalent to: hug wtl --branch <branch1> --branch <branch2> ...
+
+EXAMPLES:
+  hug wtwp main                 # List worktrees on branch "main"
+  hug wtwp feat-1 feat-2        # List worktrees on "feat-1" OR "feat-2"
+  hug wtwp main --json          # JSON output for worktrees on "main"
+
+SEE ALSO:
+  hug wtl  : For listing worktrees with substring search
+  hug wtll : For listing worktrees in long form
+  hug wt   : For interactive worktree selection and switching
+  hug wtdel : For removing worktrees safely
+EOF
+}
+
+# Parse help flag before delegating
+case "${1:-}" in
+  -h|--help)
+    show_help
+    exit 0
+    ;;
+esac
+
+# Delegate to git-wtl with --branch flags
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+
+# Build arguments, passing through flags and adding --branch for positional args
+wtl_args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --*)
+      # Pass through flags (like --json)
+      wtl_args+=("$1")
+      shift
+      ;;
+    *)
+      # Treat positional args as branch names
+      wtl_args+=(--branch "$1")
+      shift
+      ;;
+  esac
+done
+
+exec "${CMD_BASE}/git-wtl" "${wtl_args[@]}"

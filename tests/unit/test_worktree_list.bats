@@ -190,19 +190,20 @@ teardown() {
 
   assert_success
   assert_output --partial "Worktrees:"
-  assert_output --partial "* main"
+  assert_output --partial "[CURRENT]"
+  assert_output --partial "main"
   assert_output --partial "feature-1"
   assert_output --partial "hotfix-1"
   assert_output --partial "("  # Should show commit in parentheses
 }
 
-@test "hug wtl: highlights current worktree with asterisk" {
+@test "hug wtl: highlights current worktree with [CURRENT] indicator" {
   cd "$TEST_REPO"
   run git-wtl
 
   assert_success
-  # Current worktree should have green asterisk (visible in raw output)
-  assert_output --partial "* main"
+  # Current worktree should have [CURRENT] indicator
+  assert_output --partial "[CURRENT]"
 }
 
 @test "hug wtl: shows dirty worktree indicator" {
@@ -263,7 +264,8 @@ teardown() {
 
   assert_success
   assert_output --partial "Worktrees:"
-  assert_output --partial "* main"
+  assert_output --partial "[CURRENT]"
+  assert_output --partial "main"
 }
 
 @test "hug wtl: error when not in git repository" {
@@ -288,7 +290,8 @@ teardown() {
 
   assert_success
   assert_output --partial "Worktrees (long format):"
-  assert_output --partial "* main"
+  assert_output --partial "[CURRENT]"
+  assert_output --partial "main"
   assert_output --partial "feature-1"
   assert_output --partial "hotfix-1"
   assert_output --partial "Status:"  # Should show status details
@@ -304,12 +307,12 @@ teardown() {
   assert_output --partial "Status:"
 }
 
-@test "hug wtll: highlights current worktree with asterisk" {
+@test "hug wtll: highlights current worktree with [CURRENT] indicator" {
   cd "$TEST_REPO"
   run git-wtll
 
   assert_success
-  assert_output --partial "* main"
+  assert_output --partial "[CURRENT]"
 }
 
 @test "hug wtll: shows detailed status for dirty worktrees" {
@@ -344,7 +347,8 @@ teardown() {
 
   assert_success
   assert_output --partial "Worktrees (long format):"
-  assert_output --partial "* main"
+  assert_output --partial "[CURRENT]"
+  assert_output --partial "main"
 }
 
 @test "hug wtll: error when not in git repository" {
@@ -537,4 +541,101 @@ teardown() {
   # Matches feature-1 only (1 additional worktree)
   assert_json_array_length '.worktrees' 1
   assert_json_value '.count' '1'
+}
+
+# Tests for branch filtering (--branch flag)
+
+@test "hug wtl: --branch filters by exact branch name" {
+  cd "$TEST_REPO"
+  run git-wtl --branch feature-1
+
+  assert_success
+  assert_output --partial "feature-1"
+  refute_output --partial "hotfix-1"
+  refute_output --partial "main"
+}
+
+@test "hug wtl: --branch accepts multiple values (OR logic)" {
+  cd "$TEST_REPO"
+  run git-wtl --branch feature-1 --branch hotfix-1
+
+  assert_success
+  assert_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+  refute_output --partial "main"
+}
+
+@test "hug wtl: --branch with no match returns error" {
+  cd "$TEST_REPO"
+  run git-wtl --branch nonexistent
+
+  assert_failure
+  assert_output --partial "No worktrees found matching"
+  assert_output --partial "--branch nonexistent"
+}
+
+@test "hug wtl: --branch combined with search term (AND logic)" {
+  cd "$TEST_REPO"
+  # Branch matches, search matches path
+  run git-wtl --branch feature-1 "$(basename "$FEATURE_WT")"
+  assert_success
+  assert_output --partial "feature-1"
+  
+  # Branch matches, search doesn't match path
+  run git-wtl --branch feature-1 "nonexistent-path"
+  assert_failure
+}
+
+@test "hug wtl: --branch is case-sensitive" {
+  cd "$TEST_REPO"
+  run git-wtl --branch Feature-1
+
+  assert_failure  # Should not match "feature-1"
+}
+
+@test "hug wtl: --branch with JSON output" {
+  cd "$TEST_REPO"
+  run git-wtl --json --branch feature-1
+
+  assert_success
+  assert_valid_json
+  assert_json_array_length '.worktrees' 1
+  assert_json_value '.worktrees[0].branch' 'feature-1'
+}
+
+@test "hug wtwp: wrapper lists worktrees by branch" {
+  cd "$TEST_REPO"
+  run git-wtwp feature-1
+
+  assert_success
+  assert_output --partial "feature-1"
+  refute_output --partial "hotfix-1"
+  refute_output --partial "main"
+}
+
+@test "hug wtwp: wrapper accepts multiple branches" {
+  cd "$TEST_REPO"
+  run git-wtwp feature-1 hotfix-1
+
+  assert_success
+  assert_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+}
+
+@test "hug wtwp: --help shows wrapper-specific help" {
+  run git-wtwp --help
+
+  assert_success
+  assert_output --partial "hug wtwp"
+  assert_output --partial "exact branch names"
+}
+
+@test "hug wtwp: with JSON output" {
+  cd "$TEST_REPO"
+  run git-wtwp feature-1 --json
+
+  assert_success
+  assert_valid_json
+  assert_json_array_length '.worktrees' 1
+  assert_json_value '.worktrees[0].branch' 'feature-1'
 }

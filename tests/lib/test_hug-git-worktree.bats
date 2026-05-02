@@ -265,18 +265,12 @@ teardown() {
   assert_worktree_branch "$new_path" "main"
 }
 
-@test "hug-git-worktree: create_worktree performs dry run correctly" {
-  local new_path="${TEST_REPO}-wt-test-dry-run"
-  run create_worktree "main" "$new_path" true true
-
-  assert_success
-  assert_output --partial "Would create worktree"
-  assert_worktree_not_exists "$new_path"
-}
+# NOTE: create_worktree no longer supports dry-run directly.
+# Dry-run is handled at the command level (git-wtc) and tested in test_worktree_create.bats.
 
 @test "hug-git-worktree: create_worktree fails with non-existent branch" {
   local new_path="${TEST_REPO}-wt-test-fail"
-  run create_worktree "nonexistent-branch" "$new_path" true false
+  run create_worktree "nonexistent-branch" "$new_path" true
 
   assert_failure
   assert_output --partial "Branch 'nonexistent-branch' does not exist locally"
@@ -288,7 +282,7 @@ teardown() {
   create_test_worktree "feature-1" "$TEST_REPO"
 
   local new_path="${TEST_REPO}-wt-test-checked-out"
-  run create_worktree "feature-1" "$new_path" true false
+  run create_worktree "feature-1" "$new_path" true
 
   assert_failure
   assert_output --partial "Branch 'feature-1' is already checked out"
@@ -299,27 +293,15 @@ teardown() {
   local feature_wt
   feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
 
-  run remove_worktree "$feature_wt" true false
+  run remove_worktree "$feature_wt" true
 
   assert_success
-  assert_output --partial "Worktree removed"
   assert_worktree_not_exists "$feature_wt"
-}
-
-@test "hug-git-worktree: remove_worktree performs dry run correctly" {
-  local feature_wt
-  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
-
-  run remove_worktree "$feature_wt" true true
-
-  assert_success
-  assert_output --partial "Would remove worktree"
-  assert_worktree_exists "$feature_wt"  # Should still exist
 }
 
 @test "hug-git-worktree: remove_worktree fails with current worktree" {
   cd "$TEST_REPO"
-  run remove_worktree "$TEST_REPO" true false
+  run remove_worktree "$TEST_REPO" true
 
   assert_failure
   assert_output --partial "Cannot remove current worktree"
@@ -329,7 +311,7 @@ teardown() {
   local feature_wt
   feature_wt=$(create_test_worktree_with_dirty_changes "feature-1" "$TEST_REPO")
 
-  run remove_worktree "$feature_wt" false false
+  run remove_worktree "$feature_wt" false
 
   assert_failure
   assert_output --partial "Worktree has uncommitted changes"
@@ -340,10 +322,9 @@ teardown() {
   local feature_wt
   feature_wt=$(create_test_worktree_with_dirty_changes "feature-1" "$TEST_REPO")
 
-  run remove_worktree "$feature_wt" true false
+  run remove_worktree "$feature_wt" true
 
   assert_success
-  assert_output --partial "Worktree removed"
   assert_worktree_not_exists "$feature_wt"
 }
 
@@ -393,4 +374,36 @@ teardown() {
   cd /tmp
   # shellcheck disable=SC2314
   ! is_worktree_not_main
+}
+
+# Tests for branch_matches_any function
+
+@test "hug-git-worktree: branch_matches_any exact match returns success" {
+  run branch_matches_any "feature-1" "feat-1" "feature-1" "main"
+  assert_success
+}
+
+@test "hug-git-worktree: branch_matches_any no match returns failure" {
+  run branch_matches_any "feature-1" "feat-1" "main"
+  assert_failure
+}
+
+@test "hug-git-worktree: branch_matches_any empty filters matches everything" {
+  run branch_matches_any "feature-1"
+  assert_success
+}
+
+@test "hug-git-worktree: branch_matches_any case-sensitive matching" {
+  run branch_matches_any "feature-1" "Feature-1" "MAIN"
+  assert_failure
+}
+
+@test "hug-git-worktree: branch_matches_any single filter match" {
+  run branch_matches_any "main" "main"
+  assert_success
+}
+
+@test "hug-git-worktree: branch_matches_any single filter no match" {
+  run branch_matches_any "main" "develop"
+  assert_failure
 }

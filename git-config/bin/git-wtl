@@ -14,8 +14,9 @@ USAGE:
   hug wtl [OPTIONS] [SEARCH_TERM]
 
 OPTIONS:
-  -h, --help     Show this help message and exit.
-  --json         Output in JSON format instead of human-readable text.
+  -h, --help         Show this help message and exit.
+  --json             Output in JSON format instead of human-readable text.
+  --branch BRANCH    Filter by exact branch name (repeatable, OR logic)
 
 DESCRIPTION:
   Displays each worktree sorted alphabetically. The current worktree is highlighted in green and marked with an asterisk (*).
@@ -26,28 +27,43 @@ DESCRIPTION:
     [DIRTY]   - Worktree has uncommitted changes
     [LOCKED]  - Worktree is locked (cannot be removed)
 
-  If a search term is provided, only worktrees containing the term (case-insensitive substring match on path or branch name) are displayed.
+  Filtering:
+    - Search term: Case-insensitive substring match on path or branch name
+    - --branch: Exact branch name match (case-sensitive, repeatable)
+    - Combined: Both filters must match (AND logic)
 
 EXAMPLES:
-  hug wtl                  # List all worktrees
-  hug wtl feature          # List worktrees containing "feature"
-  hug wtl /home/user/project  # List worktrees containing that path
-  hug wtl --json           # Output worktree information in JSON format
+  hug wtl                       # List all worktrees
+  hug wtl feature               # List worktrees containing "feature" (path or branch)
+  hug wtl --branch main         # List worktrees on branch "main" (exact match)
+  hug wtl --branch f1 --branch f2  # List worktrees on "f1" OR "f2"
+  hug wtl --branch main /home   # Branch is "main" AND path contains "/home"
+  hug wtl --json                # Output worktree information in JSON format
 
 SEE ALSO:
   hug wtll : For listing worktrees in long form
   hug wt   : For interactive worktree selection and switching
   hug wtdel : For removing worktrees safely
+  hug wtwp : For listing worktrees by exact branch names
 EOF
 }
 
 # Parse arguments
 json_output=false
+declare -a branch_filters=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --json)
     json_output=true
     shift
+    ;;
+  --branch)
+    if [[ -z "${2:-}" ]]; then
+      error "--branch requires a value"
+      exit 1
+    fi
+    branch_filters+=("$2")
+    shift 2
     ;;
   -h | --help)
     show_help
@@ -60,8 +76,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Capture search terms
+# Capture search terms (remaining positional args)
 search_terms="$*"
+
+# Convert branch_filters array to space-separated string for passing to functions
+branch_filters_str="${branch_filters[*]:-}"
 
 # Early exit if not in Git repo
 check_git_repo
@@ -70,7 +89,7 @@ check_git_repo
 if $json_output; then
   # Get current worktree path for JSON
   current_worktree=$(get_current_worktree_path)
-  output_worktree_json "$current_worktree" "$search_terms"
+  output_worktree_json "$current_worktree" "$search_terms" "$branch_filters_str"
   exit 0
 fi
 
@@ -100,15 +119,24 @@ for i in "${!worktree_paths[@]}"; do
   path_display="${path/#$HOME/\~}"
 
   # Check if current worktree
-  [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}*${NC} "
+  [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}[CURRENT]${NC} "
 
   # Add other status indicators
   [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
   [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
 
-  # Apply search filter if provided using unified search function
+  # Apply filters: Stage 1 (branch) + Stage 2 (search terms)
   show_worktree=true
-  if [[ -n "$search_terms" ]]; then
+  
+  # Stage 1: Apply branch filter (exact match, OR between branches)
+  if [[ -n "$branch_filters_str" ]]; then
+    if ! branch_matches_any "$branch" $branch_filters_str; then
+      show_worktree=false
+    fi
+  fi
+  
+  # Stage 2: Apply search term filter (substring match, existing behavior)
+  if $show_worktree && [[ -n "$search_terms" ]]; then
     # Use the unified search function from hug-arrays
     if search_worktree "$path" "$branch" "$search_terms" "OR"; then
       show_worktree=true
@@ -124,8 +152,11 @@ for i in "${!worktree_paths[@]}"; do
   fi
 done
 
-# Return error if search terms were provided but no matches found
-if [[ -n "$search_terms" && $match_count -eq 0 ]]; then
-  printf "No worktrees found matching: %s\n" "$search_terms" >&2
+# Return error if filters were provided but no matches found
+if [[ -n "$search_terms$branch_filters_str" && $match_count -eq 0 ]]; then
+  filter_desc=""
+  [[ -n "$branch_filters_str" ]] && filter_desc="--branch $branch_filters_str"
+  [[ -n "$search_terms" ]] && filter_desc="${filter_desc:+$filter_desc }$search_terms"
+  printf "No worktrees found matching: %s\n" "$filter_desc" >&2
   exit 1
 fi
