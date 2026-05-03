@@ -11,12 +11,15 @@ show_help() {
 hug wtl: List worktrees in short format, showing path, branch, and status.
 
 USAGE:
-  hug wtl [OPTIONS] [SEARCH_TERM]
+  hug wtl [OPTIONS] [branch...]
+
+ARGUMENTS:
+  [branch...]         Filter by exact branch name (case-sensitive, OR logic)
 
 OPTIONS:
-  -h, --help         Show this help message and exit.
-  --json             Output in JSON format instead of human-readable text.
-  -B, --branch BRANCH    Filter by exact branch name (repeatable, OR logic)
+  -h, --help          Show this help message and exit.
+  --json              Output in JSON format instead of human-readable text.
+  -s, --search TERM   Filter by substring match on path or branch (case-insensitive, repeatable, OR logic)
 
 DESCRIPTION:
   Displays each worktree sorted alphabetically. The current worktree is highlighted in green and marked with an asterisk (*).
@@ -30,41 +33,42 @@ DESCRIPTION:
     .  (inactive)
 
   Filtering:
-    - Search term: Case-insensitive substring match on path or branch name
-    - -B / --branch: Exact branch name match (case-sensitive, repeatable)
+    - Branch (positional): Exact match, case-sensitive. Multiple = OR logic.
+    - -s / --search: Case-insensitive substring match on path or branch. Multiple = OR logic.
     - Combined: Both filters must match (AND logic)
 
 EXAMPLES:
   hug wtl                       # List all worktrees
-  hug wtl feature               # List worktrees containing "feature" (path or branch)
-  hug wtl --branch main         # List worktrees on branch "main" (exact match)
-  hug wtl --branch f1 --branch f2  # List worktrees on "f1" OR "f2"
-  hug wtl --branch main /home   # Branch is "main" AND path contains "/home"
-  hug wtl --json                # Output worktree information in JSON format
+  hug wtl feature-auth          # List worktrees on branch "feature-auth" (exact match)
+  hug wtl feat-1 feat-2         # List worktrees on "feat-1" OR "feat-2"
+  hug wtl -s feature            # List worktrees containing "feature" (substring)
+  hug wtl -s auth -s api        # Substring search: "auth" OR "api"
+  hug wtl feat-1 -s api         # Branch is "feat-1" AND path/branch contains "api"
+  hug wtl --json                # Output in JSON format
 
 SEE ALSO:
   hug wtll : For listing worktrees in long form
   hug wt   : For interactive worktree selection and switching
   hug wtdel : For removing worktrees safely
-  hug wtwp : For listing worktrees by exact branch names
 EOF
 }
 
 # Parse arguments
 json_output=false
 declare -a branch_filters=()
+declare -a search_terms=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --json)
     json_output=true
     shift
     ;;
-  -B | --branch)
+  -s | --search)
     if [[ -z "${2:-}" ]]; then
-      error "--branch requires a value"
+      error "--search requires a value"
       exit 1
     fi
-    branch_filters+=("$2")
+    search_terms+=("$2")
     shift 2
     ;;
   -h | --help)
@@ -72,17 +76,16 @@ while [[ $# -gt 0 ]]; do
     exit 0
     ;;
   *)
-    # Treat remaining arguments as search terms
-    break
+    # Treat non-flag arguments as branch names (exact match)
+    branch_filters+=("$1")
+    shift
     ;;
   esac
 done
 
-# Capture search terms (remaining positional args)
-search_terms="$*"
-
-# Convert branch_filters array to space-separated string for passing to functions
+# Convert arrays to space-separated strings for passing to functions
 branch_filters_str="${branch_filters[*]:-}"
+search_terms_str="${search_terms[*]:-}"
 
 # Early exit if not in Git repo
 check_git_repo
@@ -91,7 +94,7 @@ check_git_repo
 if $json_output; then
   # Get current worktree path for JSON
   current_worktree=$(get_current_worktree_path)
-  output_worktree_json "$current_worktree" "$search_terms" "$branch_filters_str"
+  output_worktree_json "$current_worktree" "$search_terms_str" "$branch_filters_str"
   exit 0
 fi
 
@@ -113,13 +116,13 @@ printf "${BLUE}Worktrees:%s${NC}\n" ""
 print_worktree_legend
 
 # Use Python for filtering when branch filters or search terms are provided
-if [[ -n "$branch_filters_str" || -n "$search_terms" ]]; then
+if [[ -n "$branch_filters_str" || -n "$search_terms_str" ]]; then
   # Output arrays for filter_worktrees (nameref pattern).
   # IMPORTANT: Must NOT use names that collide with the function's internal
   # _wt_* locals — Bash namerefs resolve to the nearest scope first.
   declare -a filtered_paths=() filtered_branches=() filtered_commits=()
   declare -a filtered_dirty=() filtered_locked=()
-  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked "$branch_filters_str" "$search_terms"; then
+  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked "$branch_filters_str" "$search_terms_str"; then
     exit 1
   fi
 

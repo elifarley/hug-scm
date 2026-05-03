@@ -8,48 +8,48 @@ set -euo pipefail                                                               
 
 show_help() {
   cat << 'EOF'
-hug wtsh: Show detailed information about worktrees in a comprehensive, readable format.
+hug wtsh: Show detailed information about worktrees.
 
 USAGE:
-  hug wtsh [OPTIONS] [SEARCH_TERM]
+  hug wtsh [OPTIONS] [branch...]
   hug wtsh --           # Interactive worktree selection
 
+ARGUMENTS:
+  [branch...]         Filter by exact branch name (case-sensitive, OR logic)
+
 OPTIONS:
-  -h, --help     Show this help message and exit.
-  -a, --all      Show all worktrees (preserves current behavior)
+  -h, --help          Show this help message and exit.
+  -a, --all           Show all worktrees
+  -s, --search TERM   Filter by substring match on path or branch (case-insensitive, repeatable, OR logic)
 
 DESCRIPTION:
   Displays detailed information about worktrees with flexible viewing options:
 
   DEFAULT BEHAVIOR (no arguments):
-    Shows details for the CURRENT worktree only. This provides focused information
-    about your current working context.
+    Shows details for the CURRENT worktree only.
 
   --all FLAG:
-    Shows details for ALL worktrees (preserves existing hug wtsh behavior).
+    Shows details for ALL worktrees.
 
-  -- FLAG (interactive mode):
+  BRANCH NAME (positional):
+    Filter by exact branch name match (case-sensitive).
+    Multiple branches use OR logic.
+
+  -s / --search:
+    Case-insensitive substring match on path or branch name.
+    Multiple -s flags use OR logic.
+    Combined with branch: AND logic between both filter stages.
+
+  -- (interactive mode):
     Presents an interactive menu to select which worktree to display.
-    Uses gum filter for enhanced selection when available.
-
-  SEARCH TERM:
-    Filter worktrees by path or branch name (case-insensitive).
-    Preserves existing search functionality.
-
-INDICATORS:
-  *  current worktree
-  +  dirty (uncommitted changes)
-  #  locked
-  @  detached HEAD
-  .  (inactive)
 
 EXAMPLES:
-  hug wtsh                   # Current worktree only (new default)
-  hug wtsh --all             # All worktrees (preserves current behavior)
-  hug wtsh -a                # All worktrees (short alias for --all)
+  hug wtsh                   # Current worktree only
+  hug wtsh --all             # All worktrees
+  hug wtsh feature-auth      # Show worktree on branch "feature-auth" (exact match)
+  hug wtsh feat-1 feat-2     # Show worktrees on "feat-1" OR "feat-2"
+  hug wtsh -s auth            # Substring search for "auth"
   hug wtsh --                # Interactive worktree selection
-  hug wtsh feature           # Search/filter by branch name
-  hug wtsh /path/to/project  # Search/filter by path
 
 SEE ALSO:
   hug wtl  : For listing worktrees in short form
@@ -301,6 +301,8 @@ eval "$(parse_common_flags "$@")"
 
 # Initialize behavior flags
 show_all=false
+declare -a branch_filters=()
+declare -a search_terms_list=()
 
 # Parse custom flags
 while [[ $# -gt 0 ]]; do
@@ -308,6 +310,14 @@ while [[ $# -gt 0 ]]; do
   --all | -a)
     show_all=true
     shift
+    ;;
+  -s | --search)
+    if [[ -z "${2:-}" ]]; then
+      error "--search requires a value"
+      exit 1
+    fi
+    search_terms_list+=("$2")
+    shift 2
     ;;
   -h | --help)
     show_help
@@ -319,8 +329,9 @@ while [[ $# -gt 0 ]]; do
     exit 1
     ;;
   *)
-    # Treat remaining arguments as search term
-    break
+    # Treat non-flag arguments as branch names (exact match)
+    branch_filters+=("$1")
+    shift
     ;;
   esac
 done
@@ -347,30 +358,27 @@ if ! get_all_worktrees_including_main worktree_paths branches commits status_dir
   exit 1
 fi
 
+# Build filter strings
+branch_filters_str="${branch_filters[*]:-}"
+search_terms_str="${search_terms_list[*]:-}"
+
 # Handle different command modes
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" == "true" ]]; then
   interactive_worktree_selection "$current_worktree" "${worktree_paths[@]}"
-elif [[ "$show_all" == "false" && $# -eq 0 ]]; then
+elif [[ "$show_all" == "false" && -z "$branch_filters_str" && -z "$search_terms_str" ]]; then
   # Default: show current worktree only
   show_current_worktree_only "$current_worktree"
-elif [[ $# -gt 0 ]]; then
-  # Multi-term search filtering (enhanced behavior)
-  # WHY: Delegate filtering to library function (DRY — single source of truth).
-  # filter_worktrees() handles the Python subprocess call and no-match error.
-  search_terms="$*"
-
-  # Output arrays for filter_worktrees (nameref pattern).
-  # IMPORTANT: Must NOT use names that collide with the function's internal
-  # _wt_* locals — Bash namerefs resolve to the nearest scope first.
+elif [[ -n "$branch_filters_str" || -n "$search_terms_str" ]]; then
+  # Filtering by branch names and/or search terms
   declare -a filtered_paths=() filtered_branches=() filtered_commits=()
   declare -a filtered_dirty=() filtered_locked=()
-  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked "" "$search_terms"; then
+  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked "$branch_filters_str" "$search_terms_str"; then
     exit 1
   fi
 
   # Show details for matching worktrees (filtered=true: show exact count)
   show_worktree_details "$current_worktree" --filtered "${filtered_paths[@]}"
 else
-  # --all or -a behavior (existing default, subtract 1 for main)
+  # --all or -a behavior
   show_worktree_details "$current_worktree" "${worktree_paths[@]}"
 fi
