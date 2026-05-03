@@ -41,6 +41,38 @@ class WorktreeInfo:
     is_locked: bool
 
 
+def format_indicators(is_current: bool, is_dirty: bool,
+                      is_locked: bool, is_detached: bool) -> str:
+    """Build 4-char indicator string for worktree display.
+
+    Replaces verbose bracketed labels ([CURRENT]/[DIRTY]/[LOCKED]/[DETACHED])
+    with compact fixed-column characters for better scanability in worktree
+    list output.
+
+    Column layout: * + # @
+      * = current worktree (matches $GIT_DIR)
+      + = dirty (uncommitted changes present)
+      # = locked (git worktree lock)
+      @ = detached HEAD (no branch name)
+      . = inactive (placeholder for visual alignment)
+
+    Args:
+        is_current: True if this is the active worktree ($GIT_DIR matches).
+        is_dirty: True if the worktree has uncommitted changes.
+        is_locked: True if the worktree is locked via git worktree lock.
+        is_detached: True if HEAD is detached (no branch checked out).
+
+    Returns:
+        A 4-character string like "*+#@" or "..#.".
+    """
+    return "".join([
+        "*" if is_current else ".",
+        "+" if is_dirty else ".",
+        "#" if is_locked else ".",
+        "@" if is_detached else ".",
+    ])
+
+
 @dataclass
 class WorktreeList:
     """Result of worktree listing operation.

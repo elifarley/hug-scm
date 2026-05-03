@@ -15,6 +15,7 @@ from git.worktree import (
     WorktreeInfo,
     WorktreeList,
     _bash_escape,
+    format_indicators,
     parse_worktree_list,
     to_worktree_list,
 )
@@ -883,3 +884,45 @@ class TestWorktreeListToJson:
         json_str = result.to_json("/current")
         data = json.loads(json_str)
         assert data["worktrees"][0]["path"] == '/path/with"quotes'
+
+
+################################################################################
+# TestFormatIndicators
+################################################################################
+
+
+class TestFormatIndicators:
+    """Tests for format_indicators() -- 4-column single-char indicator string.
+
+    Column layout: * + # @
+      * = current worktree
+      + = dirty (uncommitted changes)
+      # = locked
+      @ = detached HEAD
+      . = inactive
+    """
+
+    def test_all_inactive(self):
+        """Clean, non-current, unlocked, attached -> ...."""
+        assert format_indicators(False, False, False, False) == "...."
+
+    def test_current_only(self):
+        assert format_indicators(True, False, False, False) == "*..."
+
+    def test_dirty_only(self):
+        assert format_indicators(False, True, False, False) == ".+.."
+
+    def test_locked_only(self):
+        assert format_indicators(False, False, True, False) == "..#."
+
+    def test_detached_only(self):
+        assert format_indicators(False, False, False, True) == "...@"
+
+    def test_all_active(self):
+        assert format_indicators(True, True, True, True) == "*+#@"
+
+    def test_current_and_dirty(self):
+        assert format_indicators(True, True, False, False) == "*+.."
+
+    def test_dirty_and_locked(self):
+        assert format_indicators(False, True, True, False) == ".+#."
