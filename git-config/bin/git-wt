@@ -29,12 +29,14 @@ DESCRIPTION:
   If a branch name is provided, finds and switches to the worktree for that branch.
   If no argument is given, displays an interactive menu of all worktrees.
   Each entry shows: branch name (short commit), status indicators, and path.
-  The current worktree is highlighted with [CURRENT] and marked in green.
+  The current worktree is highlighted with * and marked in green.
 
-  Status indicators:
-    [CURRENT] - The worktree you're currently in
-    [DIRTY]   - Worktree has uncommitted changes
-    [LOCKED]  - Worktree is locked (cannot be removed)
+  Indicators:
+    *  current worktree
+    +  dirty (uncommitted changes)
+    #  locked
+    @  detached HEAD
+    .  (inactive)
 
   For repositories with 10 or more worktrees, uses gum filter (if installed) for
   easier searching and selection. Otherwise, displays a numbered list.
@@ -107,7 +109,7 @@ if "$summary_output"; then
   additional_count=$((count > 0 ? count - 1 : 0))
 
   printf "${BLUE}Worktrees (%d)${NC}\n" "$additional_count"
-  echo
+  print_worktree_legend
 
   for i in "${!worktree_paths[@]}"; do
     path="${worktree_paths[$i]}"
@@ -116,17 +118,16 @@ if "$summary_output"; then
     dirty="${status_dirty[$i]}"
     locked="${locked_status[$i]}"
 
-    # Build status indicators
-    status_indicators=""
-    [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}[CURRENT]${NC} "
-    [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
-    [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
+    is_current="false"; [[ "$path" == "$current_worktree" ]] && is_current="true"
+    is_detached="false"; [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
+    status_indicators="$(format_worktree_indicators "$is_current" "$dirty" "$locked" "$is_detached") "
+    branch_display="${branch:-(detached)}"
 
     # Format path relative to home if possible
     display_path="${path/#$HOME/\~}"
 
     # Print worktree line
-    printf "  %s%s (%s) → %s\n" "$status_indicators" "$branch" "$commit" "$display_path"
+    printf "  %s%s (%s) → %s\n" "$status_indicators" "$branch_display" "$commit" "$display_path"
   done
 
   echo
