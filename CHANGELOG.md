@@ -16,6 +16,8 @@ All notable changes to the Hug SCM project will be documented in this file.
 - **4 Python modules refactored onto `selection_core`.** `tag_select.py`, `worktree_select.py`, `branch_select.py`, and `branch_filter.py` now import shared utilities instead of maintaining local copies.
 - **`multi_select_branches()` menu display moved to stderr.** Prevents menu text from being captured by Bash `$()` and eval'd as shell commands.
 - **`branch_filter.py` `custom_filter` raises `NotImplementedError`.** Previously silently no-oped.
+- **Worktree indicators changed format.** Worktree listing commands (`hug wtl`, `hug wt`, `hug wtll`, `hug wtsh`) now display single-character indicators (`* + # @`) instead of bracketed words (`[CURRENT]`, `[DIRTY]`, `[LOCKED]`, `[DETACHED]`). The new format is more compact and easier to scan. See `hug wtl --help` for the indicator legend.
+- **Migration note for script authors.** If you parse `hug wtl` output in scripts, update your grep patterns from `[CURRENT]`/`[DIRTY]` to `*`/`+`. For stable machine-readable output, prefer `hug wtl --json` which uses boolean fields and is not affected by display format changes.
 
 ### Removed
 
