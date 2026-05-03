@@ -330,6 +330,71 @@ get_worktree_count() {
 }
 
 ################################################################################
+# Worktree Status Detection Functions
+################################################################################
+
+# Check if a worktree has uncommitted changes and categorize them
+# Usage: get_worktree_dirty_details <path> <is_dirty_var> <details_var>
+# Parameters:
+#   $1 - Worktree path to check
+#   $2 - Name of variable to receive dirty status (true/false)
+#   $3 - Name of variable to receive dirty details string (empty if clean)
+# Returns:
+#   0 always (results in output variables)
+#
+# WHY nameref outputs: Caller can choose variable names, avoiding global namespace pollution.
+# Pattern matches existing hug-git-worktree conventions (e.g., get_worktrees uses namerefs).
+#
+# DIRTY DETAILS FORMAT:
+#   - "unstaged changes"
+#   - "staged changes"
+#   - "untracked files"
+#   - "unstaged changes, staged changes" (combined)
+#   - etc.
+#
+# WHY separate from hug-git-state: The hug-git-state functions (has_staged_changes,
+# has_unstaged_changes) operate on CWD, not arbitrary worktree paths. This function
+# uses git -C to check any worktree, making it suitable for batch operations.
+get_worktree_dirty_details() {
+    local worktree_path="$1"
+    local -n _gwd_is_dirty_ref="$2"
+    local -n _gwd_details_ref="$3"
+
+    local _gwd_dirty=false
+    local _gwd_det=""
+
+    # Check for unstaged changes (modified tracked files in working directory)
+    if ! git -C "$worktree_path" diff --quiet 2>/dev/null; then
+        _gwd_dirty=true
+        _gwd_det="unstaged changes"
+    fi
+
+    # Check for staged changes (files in index ready to commit)
+    if ! git -C "$worktree_path" diff --cached --quiet 2>/dev/null; then
+        _gwd_dirty=true
+        if [[ -n "$_gwd_det" ]]; then
+            _gwd_det="$_gwd_det, staged changes"
+        else
+            _gwd_det="staged changes"
+        fi
+    fi
+
+    # Check for untracked files (new files not in git)
+    if [[ -n "$(git -C "$worktree_path" ls-files --others --exclude-standard 2>/dev/null)" ]]; then
+        _gwd_dirty=true
+        if [[ -n "$_gwd_det" ]]; then
+            _gwd_det="$_gwd_det, untracked files"
+        else
+            _gwd_det="untracked files"
+        fi
+    fi
+
+    # WHY: Assign to nameref targets (not to local vars with same name as caller's vars)
+    _gwd_is_dirty_ref="$_gwd_dirty"
+    _gwd_details_ref="$_gwd_det"
+}
+
+################################################################################
 # Worktree Validation Functions
 ################################################################################
 

@@ -11,22 +11,24 @@ set -euo pipefail # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat << 'EOF'
-hug wtdel: Remove worktree safely
+hug wtdel: Remove worktree(s) safely
 
 USAGE:
-    hug wtdel [path] [options]
+    hug wtdel [path...] [options]
+    hug wtdel --branch <branch> [options]
     hug wtdel -h|--help
 
 ARGUMENTS:
-    [path]          Path to worktree to remove (optional, shows interactive menu)
+    [path...]         One or more worktree paths to remove (optional, shows interactive menu)
+    --branch <branch> Remove worktree checked out to specified branch
 
 OPTIONS:
-    -f, --force     Skip confirmation prompts and remove even with uncommitted changes
-    --dry-run       Show what would be removed without actually removing
-    -h, --help      Show this help
+    -f, --force       Skip confirmation prompts and remove even with uncommitted changes
+    --dry-run         Show what would be removed without actually removing
+    -h, --help        Show this help
 
 DESCRIPTION:
-    Removes a Git worktree safely. If no path is provided, shows an interactive
+    Removes Git worktree(s) safely. If no path is provided, shows an interactive
     menu of all available worktrees for selection.
 
     Safety features:
@@ -34,16 +36,20 @@ DESCRIPTION:
     - Warns about uncommitted changes (unless --force is used)
     - Requires confirmation before deletion (unless --force is used)
     - Automatically cleans up Git worktree metadata
+    - Supports batch removal of multiple worktrees
 
 EXAMPLES:
     hug wtdel                                 # Interactive selection of worktree to remove
     hug wtdel ../worktrees-repo/feature-auth  # Remove specific worktree
     hug wtdel ../feature-auth --dry-run       # Preview removal without doing it
     hug wtdel ../feature-auth -f              # Force remove without confirmation
+    hug wtdel --branch feat-1                 # Remove worktree for branch "feat-1"
+    hug wtdel path1 path2 path3 --force       # Batch remove multiple worktrees
 
 SEE ALSO:
     hug wt      List and switch between worktrees
     hug wtc     Create worktree for existing branch
+    hug wtl     List worktrees with optional branch filtering
 
 FURTHER READING:
     See 'git worktree remove --help' for underlying implementation details.
@@ -72,7 +78,7 @@ check_git_repo
 
 # Parse arguments using getopt
 set +e # Temporarily disable exit on error to capture getopt failure
-PARSED=$(getopt --options hf --longoptions help,force,dry-run --name "hug wtdel" -- "$@" 2>&1)
+PARSED=$(getopt --options hf --longoptions help,force,dry-run,branch: --name "hug wtdel" -- "$@" 2>&1)
 getopt_status=$?
 set -e # Re-enable exit on error
 
@@ -89,7 +95,8 @@ eval set -- "$PARSED"
 # Initialize variables
 force=false
 dry_run=false
-worktree_path=""
+branch_name=""
+declare -a worktree_paths=()
 
 # Process options
 while true; do
@@ -106,6 +113,10 @@ while true; do
     dry_run=true
     shift
     ;;
+  --branch)
+    branch_name="$2"
+    shift 2
+    ;;
   --)
     shift
     break
@@ -121,51 +132,225 @@ if [[ ${HUG_FORCE:-} == true ]]; then
   force=true
 fi
 
-# Parse arguments
-if [[ $# -gt 1 ]]; then
-  error "Too many arguments. Usage: hug wtdel [path]. See 'hug wtdel --help'."
+# Parse positional arguments as worktree paths (support multiple paths)
+while [[ $# -gt 0 ]]; do
+  worktree_paths+=("$1")
+  shift
+done
+
+# If --branch provided, resolve to worktree path
+if [[ -n "$branch_name" ]]; then
+  if [[ ${#worktree_paths[@]} -gt 0 ]]; then
+    error "--branch and path are mutually exclusive. Use one or the other."
+    exit 1
+  fi
+  
+  # Resolve branch to worktree path
+  worktree_path=$(get_worktree_path_by_branch "$branch_name" || true)
+  if [[ -z "$worktree_path" ]]; then
+    error "No worktree found for branch '$branch_name'"
+    exit 1
+  fi
+  
+  # Prevent removing main worktree via branch
+  main_worktree=$(get_main_worktree_path)
+  if [[ "$worktree_path" == "$main_worktree" ]]; then
+    error "Cannot remove the main worktree via --branch. Use a different branch or specify path directly."
+    exit 1
+  fi
+  
+  worktree_paths=("$worktree_path")
 fi
 
-if [[ $# -eq 1 ]]; then
-  worktree_path="$1"
-fi
+# Convert relative paths to absolute
+for i in "${!worktree_paths[@]}"; do
+  if [[ ! "${worktree_paths[$i]}" = /* ]]; then
+    worktree_paths[$i]="$(realpath "$(pwd)/${worktree_paths[$i]}" 2>/dev/null || echo "$(pwd)/${worktree_paths[$i]}")"
+  fi
+done
 
-# Convert relative path to absolute if provided
-if [[ -n "$worktree_path" && ! "$worktree_path" = /* ]]; then
-  worktree_path="$(realpath "$(pwd)/$worktree_path" 2> /dev/null || echo "$(pwd)/$worktree_path")"
-fi
-
-# If no path provided, show interactive menu
-if [[ -z "$worktree_path" ]]; then
+# If no paths provided (and no --branch), show interactive menu
+if [[ ${#worktree_paths[@]} -eq 0 ]]; then
   worktree_path=$(show_interactive_removal_menu)
   if [[ -z "$worktree_path" ]]; then
     exit 0 # User cancelled
   fi
+  worktree_paths=("$worktree_path")
 fi
 
-# Show what we're about to do
-echo
-printf "${BLUE}Worktree Removal Summary:${NC}\n"
-printf "  Path: %s\n" "${worktree_path/#$HOME/\~}"
-if "$dry_run"; then
-  printf "  Mode: %s\n" "DRY RUN"
-else
-  printf "  Mode: %s\n" "REMOVE"
-fi
+# Process each worktree path (batch support)
+removed=()
+failed=()
 
-# Check for uncommitted changes and show warning
-if git -C "$worktree_path" diff --quiet 2> /dev/null &&
-  git -C "$worktree_path" diff --cached --quiet 2> /dev/null &&
-  [[ -z "$(git -C "$worktree_path" ls-files --others --exclude-standard 2> /dev/null)" ]]; then
-  printf "  Status: %s\n" "Clean"
-else
-  if $force; then
-    printf "  Status: %s\n" "${RED}Dirty (will be lost)${NC}"
-  else
-    printf "  Status: %s\n" "${YELLOW}Dirty (will be preserved)${NC}"
+for worktree_path in "${worktree_paths[@]}"; do
+  # Skip empty paths
+  if [[ -z "$worktree_path" ]]; then
+    warning "Skipping empty path"
+    continue
   fi
-fi
-echo
 
-# Perform the removal
-remove_worktree "$worktree_path" "$force" "$dry_run"
+  # --- PRE-VALIDATION ---
+  # Validate worktree path (exists, is directory, is worktree)
+  # WHY: Don't use validate_worktree_path() in batch mode because it calls error() which exits.
+  # Instead, do inline checks that just return failure without exiting.
+  path_valid=true
+  if [[ ! -e "$worktree_path" ]]; then
+    warning "Worktree path does not exist: $worktree_path"
+    path_valid=false
+  elif [[ ! -d "$worktree_path" ]]; then
+    warning "Worktree path is not a directory: $worktree_path"
+    path_valid=false
+  elif ! worktree_exists "$worktree_path"; then
+    warning "Path is not a Git worktree: $worktree_path"
+    path_valid=false
+  fi
+  
+  if ! $path_valid; then
+    failed+=("$worktree_path")
+    continue
+  fi
+
+  # Get branch name for display
+  wt_branch=$(git -C "$worktree_path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+
+  # Prevent removal of current worktree
+  current_worktree=$(get_current_worktree_path)
+  if [[ "$worktree_path" == "$current_worktree" ]]; then
+    warning "Cannot remove the current worktree: $worktree_path"
+    failed+=("$worktree_path")
+    continue
+  fi
+
+  # Check if worktree is locked
+  if git worktree list --porcelain 2>/dev/null | grep -A1 "^worktree $worktree_path$" | grep -q "^locked"; then
+    warning "Worktree is locked: $worktree_path. Unlock it first with: git worktree unlock '$worktree_path'"
+    failed+=("$worktree_path")
+    continue
+  fi
+
+  # --- DETECT DIRTY STATUS ---
+  # WHY: Use library function instead of duplicating dirty detection logic.
+  # This follows DRY principle and makes the check reusable across commands.
+  is_dirty=false
+  dirty_details=""
+  get_worktree_dirty_details "$worktree_path" is_dirty dirty_details
+
+  # Block dirty removal without --force (before showing summary)
+  if $is_dirty && ! $force; then
+    echo
+    printf "${BLUE}Worktree Removal Summary:${NC}\n"
+    printf "  Branch: %s\n" "$wt_branch"
+    printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}"
+    printf "  Status: ${YELLOW}Dirty (%s)${NC}\n" "$dirty_details"
+    echo
+    warning "Worktree has uncommitted changes: $worktree_path. Commit/stash first, or use -f/--force to discard."
+    failed+=("$worktree_path")
+    continue
+  fi
+
+  # Build status text
+  if $is_dirty; then
+    status_text="${RED}Dirty -- $dirty_details (will be permanently lost)${NC}"
+  else
+    status_text="${GREEN}Clean${NC}"
+  fi
+
+  # --- DRY RUN ---
+  if $dry_run; then
+    echo
+    if [[ ${#worktree_paths[@]} -gt 1 ]]; then
+      printf "${BLUE}Worktree Removal Preview (DRY RUN) [$(( ${#failed[@]} + ${#removed[@]} + 1 ))/${#worktree_paths[@]}]:${NC}\n"
+    else
+      printf "${BLUE}Worktree Removal Preview (DRY RUN):${NC}\n"
+    fi
+    printf "  Branch: %s\n" "$wt_branch"
+    printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}"
+    printf "  Status: %s\n" "$status_text"
+    echo
+    if [[ ${#worktree_paths[@]} -eq 1 ]]; then
+      info "No changes made (dry run)."
+      exit 0
+    fi
+    removed+=("$worktree_path (dry run)")
+    continue
+  fi
+
+  # --- SUMMARY ---
+  echo
+  if [[ ${#worktree_paths[@]} -gt 1 ]]; then
+    printf "${BLUE}Worktree Removal Summary [$(( ${#failed[@]} + ${#removed[@]} + 1 ))/${#worktree_paths[@]}]:${NC}\n"
+  else
+    printf "${BLUE}Worktree Removal Summary:${NC}\n"
+  fi
+  printf "  Branch: %s\n" "$wt_branch"
+  printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}"
+  printf "  Status: %s\n" "$status_text"
+  echo
+
+  # --- SINGLE CONFIRMATION ---
+  if ! $force; then
+    if ! prompt_confirm_danger "remove"; then
+      info "Worktree removal cancelled: $worktree_path"
+      continue
+    fi
+  fi
+
+  # --- EXECUTE ---
+  git_wt_args=("$worktree_path")
+  if $force; then
+    git_wt_args+=("--force")
+  fi
+
+  git_err=""
+  removal_success=false
+  if ! git_err=$(git worktree remove "${git_wt_args[@]}" 2>&1); then
+    # Fallback to manual cleanup
+    warning "git worktree remove failed: $git_err"
+    info "Attempting manual cleanup..."
+    if rm -rf "$worktree_path" && git worktree prune 2>/dev/null; then
+      success "Worktree removed for '$wt_branch' (manual cleanup)"
+      removal_success=true
+    else
+      error "Failed to remove worktree: $worktree_path. Manual intervention required."
+    fi
+  else
+    # Verify removal
+    if [[ -d "$worktree_path" ]]; then
+      warning "Worktree directory still exists after removal. Running cleanup..."
+      rm -rf "$worktree_path" 2>/dev/null || true
+      git worktree prune 2>/dev/null || true
+    fi
+    removal_success=true
+  fi
+
+  # Run prune to clean up metadata
+  git worktree prune 2>/dev/null || true
+
+  # Track result
+  if $removal_success; then
+    success "Worktree removed for '$wt_branch'"
+    echo
+    tip "Branch '$wt_branch' still exists. To delete it: hug bdel $wt_branch"
+    removed+=("$worktree_path")
+  else
+    failed+=("$worktree_path")
+  fi
+done
+
+# --- BATCH SUMMARY ---
+if [[ ${#worktree_paths[@]} -gt 1 ]]; then
+  echo
+  printf "${BLUE}Batch Removal Summary:${NC}\n"
+  printf "  Removed: ${#removed[@]}\n"
+  if [[ ${#failed[@]} -gt 0 ]]; then
+    printf "  Failed: ${#failed[@]}\n"
+  fi
+  echo
+  
+  if [[ ${#failed[@]} -gt 0 ]]; then
+    exit 1
+  fi
+elif [[ ${#failed[@]} -gt 0 ]]; then
+  # Single path but failed
+  exit 1
+fi

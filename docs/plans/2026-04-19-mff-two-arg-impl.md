@@ -1,3 +1,4 @@
+<!-- /autoplan restore point: /home/ecc/.gstack/projects/elifarley-hug-scm/main-autoplan-restore-20260419-162929.md -->
 # mff Two-Arg Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:executing-plans to implement this plan task-by-task.
@@ -650,3 +651,169 @@ hug mff nonexistent feature  # Should error
 hug a -u
 hug c -m "chore: final cleanup after mff two-arg implementation"
 ```
+
+---
+
+## /autoplan Review Report
+
+### Decision Audit Trail
+
+| # | Phase | Decision | Classification | Principle | Rationale | Rejected |
+|---|-------|----------|-----------|-----------|----------|----------|
+| 1 | CEO | Keep mff as home for two-arg form | Taste | P3 pragmatic | One command with two forms is clearer than two commands | Separate `bmf` command |
+| 2 | CEO | Add prompt_confirm_warn for diverged force moves | Mechanical | P1 completeness | Both models flagged safety gap | None |
+| 3 | CEO | Add reflog hint after force moves | Mechanical | P1 completeness | Debuggability improvement | None |
+| 4 | CEO | Restructure TDD to be honest | Mechanical | P5 explicit | Task 2 includes full impl, making Tasks 3-4 theater | None |
+| 5 | CEO | Accept shell completion update expansion | Taste | P2 boil lakes | In blast radius, <1d CC | None |
+| 6 | CEO | Remove `$NC` from error string in script | Mechanical | P4 DRY | error() already adds colors | None |
+| 7 | CEO | Fix `hug bmv` reference (doesn't exist) | Mechanical | P4 DRY | No bmv command in codebase | None |
+| 8 | CEO | Wrap `git branch -f` in error handling | Mechanical | P1 completeness | Raw git errors are unfriendly | None |
+| 9 | CEO | Add test for confirmation prompt on force | Mechanical | P1 completeness | Safety feature must be tested | None |
+| 10 | CEO | Defer remote push integration | Taste | P3 pragmatic | Explicitly out of scope in design doc | None |
+| 11 | DX | Force on current branch: add explicit error | Mechanical | P5 explicit | Both voices flagged, help promises what command can't deliver | None |
+| 12 | DX | Add safety features to script body (confirm, reflog, worktree) | Mechanical | P1 completeness | CEO+Eng+DX all flagged independently | None |
+| 13 | DX | Fix tag resolution to use ^{commit} | Mechanical | P5 explicit | Both voices flagged, annotated tags silently wrong | None |
+| 14 | DX | Widen docs scope to README, merge.md quick table, completion ref | Mechanical | P1 completeness | 4 stale doc surfaces for user-visible syntax change | None |
+| 15 | DX | Fix bmv language: alias not script | Mechanical | P4 DRY | Public docs advertise bmv, review text contradicts | None |
+| 16 | DX | Add migration comment in .gitconfig | Mechanical | P1 completeness | Alias-to-script promotion needs backward compat note | None |
+| T-1 | User | Keep two-form mff | Taste | P3 pragmatic | User accepted recommended option | Separate command |
+| T-2 | User | Arg order: `<branch> <target>` | Taste | P3 pragmatic | User accepted recommended option | Reverse or named flags |
+| T-3 | User | Prompt on diverged, --force bypasses | Taste | P1 completeness | User accepted recommended option | No prompt or always prompt |
+
+### NOT in scope
+
+- Remote push after local branch move (deferred — requires `--push` flag, remote safety checks)
+- Protected branch warning (deferred — would need config file for protected branches)
+- Verbose mode showing commit range (deferred — nice-to-have)
+- Separate `bmf` command (rejected — `mff` already means fast-forward)
+
+### What already exists
+
+| Sub-problem | Existing code | Plan reuses? |
+|---|---|---|
+| Flag parsing | `hug-cli-flags` (GNU getopt) | Partial — plan uses simpler manual parsing (acceptable for 2 flags) |
+| Output formatting | `hug-output` (error, info, success) | Yes |
+| Git repo validation | `check_git_repo` in `hug-git-repo` | Yes |
+| Confirmation prompts | `hug-confirm` (prompt_confirm_warn, prompt_confirm_danger) | Needs to be added for force moves |
+| Branch existence check | `hug-git-branch` functions | Plan uses raw `git show-ref` (simpler, acceptable) |
+
+### Dream State Delta
+
+```
+CURRENT STATE → THIS PLAN → 12-MONTH IDEAL
+gitconfig alias → Full script with 1-arg + 2-arg → mff handles local + remote moves
+No branch pointer cmd → Ancestry validation + force → With --push for publishing
+No help/dry-run → --help, --dry-run → --push, --verbose, protected branch config
+```
+
+This plan gets us ~70% to the 12-month ideal. The remaining 30% (remote handling) is a natural follow-up.
+
+### Error & Rescue Registry
+
+| Codepath | What can go wrong | User sees | Rescued? |
+|---|---|---|---|
+| Branch validation | Branch doesn't exist | `Branch 'X' not found locally.` | Yes |
+| Target validation | Target doesn't resolve | `Cannot resolve 'X' as a commit.` | Yes |
+| Ancestry check | Branches diverged | `Cannot fast-forward... --force` | Yes |
+| Force move | User cancels confirmation | `Cancelled.` | Yes |
+| git branch -f | Git error (perms, disk) | Wrapped friendly error | Yes (auto-decided) |
+| Already at target | Same SHA | `'X' already points at Y.` | Yes |
+
+### Failure Modes Registry
+
+| Codepath | Failure mode | Rescued? | Tested? | User sees? | Logged? |
+|---|---|---|---|---|---|
+| One-arg passthrough | Not a fast-forward | Yes (git error) | Yes | Git message | N/A |
+| Two-arg ancestry | Diverged branches | Yes (error msg) | Yes | Error + --force hint | N/A |
+| Two-arg force | Accidental data loss | Yes (confirm) | Yes (auto) | Gum confirm dialog | N/A |
+| Two-arg force | Git branch -f fails | Yes (wrapped) | Yes | Friendly error | N/A |
+
+### Cross-Phase Themes
+
+No cross-phase themes — single-phase review (CEO only so far).
+
+### Completion Summary
+
+| Item | Status |
+|---|---|
+| Mode | SELECTIVE EXPANSION |
+| Scope | 4 files + 2 accepted expansions |
+| Critical issues | 1 (force-safety, resolved) |
+| High issues | 1 (TDD structure, resolved) |
+| Medium issues | 3 (naming, reflog, error wrapping) |
+| Expansions accepted | Reflog hint, shell completions |
+| Expansions deferred | Remote push, protected branches, verbose mode |
+| Codex concerns | 7 (5 addressed, 2 deferred as out-of-scope) |
+| Claude subagent concerns | 4 (all addressed) |
+
+### DX Review (Phase 3.5)
+
+#### DX Consensus Table
+
+| # | Finding | Claude | Codex | Consensus | Auto-decision |
+|---|---------|--------|-------|-----------|---------------|
+| DX-1 | Force on current branch: silently fails, help promises it works | Critical | High | Agree: explicit error | **P5 explicit**: Add error in two-arg path when `$is_current_branch && $force`: "Cannot force-move checked-out branch. Switch away first: hug b <other-branch>" |
+| DX-2 | Safety features missing from script: confirmation, reflog hint, worktree check | Critical | High | Agree: impl must match claims | **P1 completeness**: Add `prompt_confirm_warn` before diverged force moves, reflog hint after force, worktree check before `git branch -f`. All in Task 2 script body. |
+| DX-3 | Annotated tag resolution: uses `rev-parse --verify` not `^{commit}` | Medium | High | Agree: fix resolution | **P5 explicit**: Change `git rev-parse --verify "$target"` to `git rev-parse --verify "$target^{commit}"` |
+| DX-4 | Docs discoverability gap: README, merge.md quick table, completion ref all show one-arg only | High | High | Agree: widen scope | **P1 completeness**: Add Task 5.5 to update README.md:491, docs/commands/merge.md:30 quick table, docs/meta/hug-completion-reference.md:150 |
+| DX-5 | TDD structure fake: Task 2 ships full impl, Tasks 3-4 theater | Medium | Medium | Agree: restructure | **P5 explicit**: Already decided (CEO #4). Task 2 script body → one-arg stub only. Task 4 adds two-arg logic. |
+| DX-6 | Argument order ambiguous: `mff A B` not guessable | High | High | Agree but... | **Taste**: Keep `mff <branch> <target>` order (matches git mental model: "move branch to target"). Add explicit arg labels in help and error messages. |
+| DX-7 | bmv cross-ref: review says "doesn't exist" but public docs advertise it | Medium | Medium | Agree: fix | **P4 DRY**: `hug bmv` IS a valid command (gitconfig alias `bmv = branch -m`). Fix review text to say "alias, not script" and keep cross-ref. Update SEE ALSO to reference it correctly. |
+| DX-8 | Upgrade path: no migration note for alias-to-script change | Not raised | Weak | Agree: add note | **P1 completeness**: Add comment in .gitconfig noting the promotion, and a line in Task 5 commit message about backward compatibility. |
+
+#### DX Scorecard
+
+| Dimension | Score (1-5) | Notes |
+|-----------|-------------|-------|
+| Time to hello world | 3/5 | Install is clean (4 steps), but new mff two-arg has no copy-paste example in top docs |
+| Error messages | 2/5 → 4/5 | Currently mixed (force/worktree gaps). After fixes: clear errors with remediation hints |
+| CLI design | 4/5 | Naming memorable, prefix system strong. Two-arg overload costs guessability (-1) |
+| Documentation | 2/5 → 4/5 | Top docs stale for two-arg. After DX-4 fix: consistent across all surfaces |
+| Upgrade path | 2/5 → 3/5 | No migration note. After DX-8: comment in gitconfig, commit message context |
+
+**DX verdict**: Plan needs the 4 high-priority fixes (DX-1 through DX-4) before it's DX-ready. All are mechanical additions to the script body and docs scope. No architectural changes needed.
+
+#### DX Auto-decisions Applied to Plan
+
+1. **DX-1** → Task 2 script: add explicit error when `is_current_branch && force`
+2. **DX-2** → Task 2 script: add `prompt_confirm_warn` before diverged force, `info "Undo: hug h back"` reflog hint after force, worktree check before `git branch -f`
+3. **DX-3** → Task 2 script: change `$target` to `$target^{commit}` in `rev-parse`
+4. **DX-4** → New subtask: update README.md line 491, merge.md quick table line 30, completion ref line 150
+5. **DX-5** → Restructure Tasks 2-4 (already decided, reiterated)
+6. **DX-7** → Fix review text: bmv is alias not script, keep cross-ref
+7. **DX-8** → Add migration comment in .gitconfig, note backward compat in commit
+
+### Taste Decisions — RESOLVED
+
+| # | Decision | User choice |
+|---|----------|-------------|
+| T-1 | Keep `mff` as two-form command | **Accepted**: single command, two usage patterns |
+| T-2 | Argument order: `<branch> <target>` | **Accepted**: matches "move X to Y" mental model |
+| T-3 | Confirmation on diverged --force | **Accepted**: `prompt_confirm_warn` by default, `--force` bypasses (sets `HUG_FORCE=true`) |
+
+### Final Verdict: APPROVED
+
+Plan approved with 8 DX auto-decisions applied. No remaining taste decisions.
+
+### Implementation Checklist (Pre-Ship)
+
+Before marking this plan as shipped, verify:
+- [ ] Script includes `prompt_confirm_warn` before diverged force moves
+- [ ] Script includes explicit error when `is_current_branch && force`
+- [ ] Script uses `$target^{commit}` for tag resolution
+- [ ] Script includes worktree check before `git branch -f`
+- [ ] Script includes reflog hint after force move
+- [ ] `$NC` removed from error string
+- [ ] Task 2 is one-arg stub, Task 4 adds two-arg logic (honest TDD)
+- [ ] README.md:491 updated with two-arg syntax
+- [ ] docs/commands/merge.md quick table updated
+- [ ] docs/meta/hug-completion-reference.md updated
+- [ ] .gitconfig migration comment added
+- [ ] All tests pass: `make test`
+
+### Cross-Phase Themes (All Phases)
+
+1. **Safety gap closure**: CEO, Eng, and DX all independently flagged missing confirmation/reflog/worktree handling. Strong signal: must fix.
+2. **TDD honesty**: CEO and DX both flagged Tasks 2-4 as theater. Strong signal: must restructure.
+3. **Docs consistency**: DX flagged 4 stale doc surfaces. Must widen Task 5 scope.
+4. **bmv confusion**: Plan's review appendix vs public docs disagree on whether bmv "exists." Must fix language.

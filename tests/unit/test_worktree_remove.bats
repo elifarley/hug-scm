@@ -20,7 +20,7 @@ teardown() {
 @test "hug wtdel: shows help when --help flag is used" {
   run git-wtdel --help
   assert_success
-  assert_output --partial "hug wtdel: Remove worktree safely"
+  assert_output --partial "hug wtdel: Remove worktree(s) safely"
 }
 
 @test "hug wtdel: shows interactive menu when no path provided" {
@@ -56,8 +56,8 @@ teardown() {
   run git-wtdel "$FEATURE_WT" --dry-run
 
   assert_success
-  assert_output --partial "DRY RUN"
-  assert_output --partial "Would remove worktree"
+  assert_output --partial "Worktree Removal Preview (DRY RUN)"
+  assert_output --partial "No changes made (dry run)"
 
   # Worktree should still exist
   assert_worktree_exists "$FEATURE_WT"
@@ -81,7 +81,7 @@ teardown() {
   run git-wtdel "$FEATURE_WT"
 
   assert_failure
-  assert_output --partial "Cannot remove current worktree"
+  assert_output --partial "Cannot remove the current worktree"
 
   # Worktree should still exist
   assert_worktree_exists "$FEATURE_WT"
@@ -96,7 +96,7 @@ teardown() {
 
   assert_failure
   assert_output --partial "Worktree has uncommitted changes"
-  assert_output --partial "Commit or stash changes first, or use --force"
+  assert_output --partial "Commit/stash first, or use -f/--force to discard"
 
   # Worktree should still exist
   assert_worktree_exists "$FEATURE_WT"
@@ -110,7 +110,7 @@ teardown() {
   run git-wtdel "$FEATURE_WT" --force
 
   assert_success
-  assert_output --partial "Dirty (will be lost)"
+  assert_output --partial "will be permanently lost"
 
   # Worktree should be removed despite changes
   assert_worktree_not_exists "$FEATURE_WT"
@@ -235,12 +235,36 @@ teardown() {
   assert_worktree_not_exists "$FEATURE_WT"
 }
 
-@test "hug wtdel: fails with too many arguments" {
-  cd "$TEST_REPO"
-  run git-wtdel "$FEATURE_WT" "$HOTFIX_WT"
+# Note: Multiple arguments are now supported for batch removal
+# See test: "hug wtdel: multiple paths removes all successfully"
 
-  assert_failure
-  assert_output --partial "Too many arguments"
+@test "hug wtdel: shows branch name in removal summary" {
+  cd "$TEST_REPO"
+  run git-wtdel "$FEATURE_WT" --dry-run
+  assert_success
+  assert_output --partial "Branch: feature-1"
+}
+
+@test "hug wtdel: shows post-removal tip with branch deletion guidance" {
+  cd "$TEST_REPO"
+  run git-wtdel "$FEATURE_WT" --force
+  assert_success
+  assert_output --partial "Branch 'feature-1' still exists"
+  assert_output --partial "hug bdel"
+}
+
+@test "hug wtdel: handles locked worktree with manual cleanup fallback" {
+  cd "$TEST_REPO"
+  # Lock the worktree
+  git worktree lock "$FEATURE_WT"
+
+  run git-wtdel "$FEATURE_WT" --force
+  assert_success
+  # git worktree remove fails for locked worktrees, but manual cleanup succeeds
+  assert_output --partial "Worktree removed"
+
+  # Unlock (may already be cleaned up, ignore errors)
+  git worktree unlock "$FEATURE_WT" 2>/dev/null || true
 }
 
 @test "hug wtdel: error when not in git repository" {
@@ -249,4 +273,195 @@ teardown() {
 
   assert_failure
   assert_output --partial "Not in a git repository"
+}
+
+# Tests for --branch flag
+
+@test "hug wtdel: --branch flag removes worktree by branch name" {
+  cd "$TEST_REPO"
+  run git-wtdel --branch feature-1 --force
+
+  assert_success
+  assert_output --partial "Worktree removed"
+  assert_worktree_not_exists "$FEATURE_WT"
+}
+
+@test "hug wtdel: --branch flag errors when branch not found" {
+  cd "$TEST_REPO"
+  run git-wtdel --branch nonexistent-branch
+
+  assert_failure
+  assert_output --partial "No worktree found for branch"
+}
+
+@test "hug wtdel: --branch with --dry-run shows preview" {
+  cd "$TEST_REPO"
+  run git-wtdel --branch feature-1 --dry-run
+
+  assert_success
+  assert_output --partial "Worktree Removal Preview (DRY RUN)"
+  assert_output --partial "Branch: feature-1"
+  assert_worktree_exists "$FEATURE_WT"
+}
+
+@test "hug wtdel: --branch and path are mutually exclusive" {
+  cd "$TEST_REPO"
+  run git-wtdel --branch feature-1 "$FEATURE_WT"
+
+  assert_failure
+  assert_output --partial "mutually exclusive"
+}
+
+# Tests for multiple path support
+
+@test "hug wtdel: multiple paths removes all successfully" {
+  cd "$TEST_REPO"
+  run git-wtdel "$FEATURE_WT" "$HOTFIX_WT" --force
+
+  assert_success
+  assert_output --partial "Batch Removal Summary"
+  assert_output --partial "Removed: 2"
+  assert_worktree_not_exists "$FEATURE_WT"
+  assert_worktree_not_exists "$HOTFIX_WT"
+}
+
+@test "hug wtdel: multiple paths with --dry-run previews all" {
+  cd "$TEST_REPO"
+  run git-wtdel "$FEATURE_WT" "$HOTFIX_WT" --dry-run
+
+  assert_success
+  assert_output --partial "Worktree Removal Preview (DRY RUN)"
+  assert_output --partial "Branch: feature-1"
+  assert_output --partial "Branch: hotfix-1"
+  assert_worktree_exists "$FEATURE_WT"
+  assert_worktree_exists "$HOTFIX_WT"
+}
+
+@test "hug wtdel: multiple paths continues on error" {
+  cd "$TEST_REPO"
+  # Try to remove valid worktree and invalid path
+  run git-wtdel "$FEATURE_WT" "/nonexistent/path" --force
+
+  # Should fail because one path failed
+  assert_failure
+  assert_output --partial "Batch Removal Summary"
+  assert_output --partial "Removed: 1"
+  assert_output --partial "Failed: 1"
+  assert_worktree_not_exists "$FEATURE_WT"
+}
+
+@test "hug wtdel: multiple paths shows per-item progress" {
+  cd "$TEST_REPO"
+  run git-wtdel "$FEATURE_WT" "$HOTFIX_WT" --force
+
+  assert_success
+  # Should show progress indicators [1/2] and [2/2]
+  assert_output --partial "1/2"
+  assert_output --partial "2/2"
+}
+
+# Tests for dirty state handling
+
+@test "hug wtdel: blocks dirty worktree without --force" {
+  # Make worktree dirty with untracked file
+  echo "untracked" > "$FEATURE_WT/untracked.txt"
+  
+  cd "$TEST_REPO"
+  run git-wtdel "$FEATURE_WT"
+  
+  assert_failure
+  assert_output --partial "Worktree has uncommitted changes"
+  assert_output --partial "Commit/stash first, or use -f/--force to discard"
+  # Worktree should still exist
+  assert_worktree_exists "$FEATURE_WT"
+}
+
+@test "hug wtdel: removes dirty worktree with --force" {
+  # Make worktree dirty with staged changes
+  echo "staged" > "$FEATURE_WT/staged.txt"
+  git -C "$FEATURE_WT" add "staged.txt"
+  
+  cd "$TEST_REPO"
+  run git-wtdel "$FEATURE_WT" --force
+  
+  assert_success
+  assert_output --partial "will be permanently lost"
+  assert_worktree_not_exists "$FEATURE_WT"
+}
+
+@test "hug wtdel: HUG_FORCE environment variable enables force mode" {
+  cd "$TEST_REPO"
+  # Make worktree dirty
+  echo "dirty" > "$FEATURE_WT/dirty.txt"
+  
+  # Should fail without force
+  run git-wtdel "$FEATURE_WT"
+  assert_failure
+  
+  # Should succeed with HUG_FORCE
+  run env HUG_FORCE=true git-wtdel "$FEATURE_WT"
+  assert_success
+  assert_worktree_not_exists "$FEATURE_WT"
+}
+
+# Tests for main worktree protection
+
+@test "hug wtdel: --branch main blocks removal of main worktree" {
+  cd "$TEST_REPO"
+  # Get main branch name
+  local main_branch
+  main_branch=$(git branch --show-current)
+  
+  run git-wtdel --branch "$main_branch"
+  
+  assert_failure
+  assert_output --partial "Cannot remove the main worktree"
+}
+
+# Tests for batch mixed states
+
+@test "hug wtdel: batch with mixed dirty and clean worktrees" {
+  # Make one worktree dirty
+  echo "dirty" > "$FEATURE_WT/dirty.txt"
+  
+  cd "$TEST_REPO"
+  # Try to remove both without force - should fail on dirty one
+  run git-wtdel "$FEATURE_WT" "$HOTFIX_WT"
+  
+  # Should fail because dirty one is blocked
+  assert_failure
+  assert_output --partial "Worktree has uncommitted changes"
+  # Clean one should NOT be removed because dirty one blocked the batch
+  # (Actually, in current implementation, each is processed independently)
+  # The clean one would be removed after confirmation, dirty one would fail
+}
+
+@test "hug wtdel: batch removes clean worktrees even when some are dirty (with --force)" {
+  # Make one worktree dirty
+  echo "dirty" > "$FEATURE_WT/dirty.txt"
+  
+  cd "$TEST_REPO"
+  run git-wtdel "$FEATURE_WT" "$HOTFIX_WT" --force
+  
+  assert_success
+  assert_output --partial "Batch Removal Summary"
+  assert_output --partial "Removed: 2"
+  assert_worktree_not_exists "$FEATURE_WT"
+  assert_worktree_not_exists "$HOTFIX_WT"
+}
+
+# Tests for confirmation flow
+
+@test "hug wtdel: cancellation prevents removal" {
+  # Mock prompt_confirm_danger to return failure (user cancelled)
+  prompt_confirm_danger() { return 1; }
+  export -f prompt_confirm_danger
+  
+  cd "$TEST_REPO"
+  run git-wtdel "$FEATURE_WT"
+  
+  # Cancellation returns exit 1 but worktree should still exist
+  assert_failure
+  assert_output --partial "cancelled"
+  assert_worktree_exists "$FEATURE_WT"
 }

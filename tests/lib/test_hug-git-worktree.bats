@@ -407,3 +407,87 @@ teardown() {
   run branch_matches_any "main" "develop"
   assert_failure
 }
+
+# Tests for get_worktree_dirty_details function
+
+@test "hug-git-worktree: get_worktree_dirty_details returns clean for clean worktree" {
+  local feature_wt
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  
+  local is_dirty=""
+  local details=""
+  get_worktree_dirty_details "$feature_wt" is_dirty details
+  
+  [[ "$is_dirty" == "false" ]] || fail "Expected is_dirty=false, got '$is_dirty'"
+  [[ "$details" == "" ]] || fail "Expected empty details, got '$details'"
+}
+
+@test "hug-git-worktree: get_worktree_dirty_details detects unstaged changes" {
+  local feature_wt
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  
+  # Modify existing file (unstaged)
+  echo "dirty changes" >> "$feature_wt/README.md"
+  git -C "$feature_wt" add "README.md"
+  git -C "$feature_wt" reset HEAD "README.md" >/dev/null 2>&1
+  
+  local is_dirty=""
+  local details=""
+  get_worktree_dirty_details "$feature_wt" is_dirty details
+  
+  [[ "$is_dirty" == "true" ]] || fail "Expected is_dirty=true, got '$is_dirty'"
+  [[ "$details" == *"unstaged changes"* ]] || fail "Expected 'unstaged changes' in details, got '$details'"
+}
+
+@test "hug-git-worktree: get_worktree_dirty_details detects staged changes" {
+  local feature_wt
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  
+  # Stage a new file
+  echo "new file" > "$feature_wt/staged.txt"
+  git -C "$feature_wt" add "staged.txt"
+  
+  local is_dirty=""
+  local details=""
+  get_worktree_dirty_details "$feature_wt" is_dirty details
+  
+  [[ "$is_dirty" == "true" ]] || fail "Expected is_dirty=true, got '$is_dirty'"
+  [[ "$details" == *"staged changes"* ]] || fail "Expected 'staged changes' in details, got '$details'"
+}
+
+@test "hug-git-worktree: get_worktree_dirty_details detects untracked files" {
+  local feature_wt
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  
+  # Create untracked file
+  echo "untracked" > "$feature_wt/untracked.txt"
+  
+  local is_dirty=""
+  local details=""
+  get_worktree_dirty_details "$feature_wt" is_dirty details
+  
+  [[ "$is_dirty" == "true" ]] || fail "Expected is_dirty=true, got '$is_dirty'"
+  [[ "$details" == *"untracked files"* ]] || fail "Expected 'untracked files' in details, got '$details'"
+}
+
+@test "hug-git-worktree: get_worktree_dirty_details combines multiple change types" {
+  local feature_wt
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  
+  # Create untracked file
+  echo "untracked" > "$feature_wt/untracked.txt"
+  
+  # Modify and stage a file
+  echo "modified" >> "$feature_wt/README.md"
+  git -C "$feature_wt" add "README.md"
+  
+  local is_dirty=""
+  local details=""
+  get_worktree_dirty_details "$feature_wt" is_dirty details
+  
+  [[ "$is_dirty" == "true" ]] || fail "Expected is_dirty=true, got '$is_dirty'"
+  # Should contain at least two types (comma-separated)
+  local comma_count
+  comma_count=$(echo "$details" | tr -cd ',' | wc -c)
+  [[ $comma_count -ge 1 ]] || fail "Expected at least 2 change types in details, got '$details'"
+}
