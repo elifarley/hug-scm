@@ -118,8 +118,10 @@ if "$summary_output"; then
     dirty="${status_dirty[$i]}"
     locked="${locked_status[$i]}"
 
-    is_current="false"; [[ "$path" == "$current_worktree" ]] && is_current="true"
-    is_detached="false"; [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
+    is_current="false"
+    [[ "$path" == "$current_worktree" ]] && is_current="true"
+    is_detached="false"
+    [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
     status_indicators="$(format_worktree_indicators "$is_current" "$dirty" "$locked" "$is_detached") "
     branch_display="${branch:-(detached)}"
 
