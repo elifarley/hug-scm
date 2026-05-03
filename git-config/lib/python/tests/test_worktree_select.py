@@ -189,31 +189,29 @@ class TestFormatDisplayRows:
         assert "→" in rows[0]
 
     def test_current_indicator(self, feature_wt):
-        """The worktree the user is in receives a [CURRENT] prefix."""
+        """The worktree the user is in shows * in column 1."""
         rows = format_display_rows([feature_wt], current_path=feature_wt.path)
-        assert rows[0].startswith("[CURRENT]")
+        assert rows[0].startswith("*")
 
     def test_dirty_indicator(self, feature_wt):
-        """A dirty worktree (is_dirty=True) shows [DIRTY] label."""
+        """A dirty worktree shows + in column 2."""
         # feature_wt fixture has is_dirty=True
         rows = format_display_rows([feature_wt], current_path="/other")
-        assert "[DIRTY]" in rows[0]
+        assert ".+" in rows[0]
 
     def test_locked_indicator(self, bugfix_wt):
-        """A locked worktree (is_locked=True) shows [LOCKED] label."""
+        """A locked worktree shows # in column 3."""
         # bugfix_wt fixture has is_locked=True
         rows = format_display_rows([bugfix_wt], current_path="/other")
-        assert "[LOCKED]" in rows[0]
+        assert "..#" in rows[0]
 
     def test_clean_unlocked_no_indicators(self, main_wt):
-        """A clean, unlocked, non-current worktree has no bracket labels."""
+        """Clean, unlocked, non-current shows all dots."""
         rows = format_display_rows([main_wt], current_path="/other/path")
-        assert "[CURRENT]" not in rows[0]
-        assert "[DIRTY]" not in rows[0]
-        assert "[LOCKED]" not in rows[0]
+        assert rows[0].startswith("....")
 
     def test_all_indicators_combined(self):
-        """A current + dirty + locked worktree shows all three labels."""
+        """Current + dirty + locked shows *+#."""
         wt = WorktreeInfo(
             path="/home/user/wt",
             branch="all-flags",
@@ -222,9 +220,19 @@ class TestFormatDisplayRows:
             is_locked=True,
         )
         rows = format_display_rows([wt], current_path=wt.path)
-        assert "[CURRENT]" in rows[0]
-        assert "[DIRTY]" in rows[0]
-        assert "[LOCKED]" in rows[0]
+        assert rows[0].startswith("*+#.")
+
+    def test_detached_indicator(self):
+        """A detached HEAD worktree shows @ in column 4."""
+        wt = WorktreeInfo(
+            path="/home/user/wt",
+            branch="",
+            commit="aabbccd",
+            is_dirty=False,
+            is_locked=False,
+        )
+        rows = format_display_rows([wt], current_path="/other")
+        assert rows[0].startswith("...@")
 
     def test_path_shortened_with_home(self):
         """Paths under $HOME are displayed as ~/... to reduce visual noise."""

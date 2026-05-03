@@ -118,7 +118,7 @@ teardown() {
   # Summary should show dirty indicator
   run git-wt --summary
   assert_success
-  assert_output --partial "[DIRTY]"
+  assert_output --partial "+"
   assert_output --partial "feature-1"
 
   # Interactive remove menu test

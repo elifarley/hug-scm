@@ -50,6 +50,23 @@ if [[ "$local_loaded" == "false" ]]; then
 fi
 
 # Set up the test environment
+#
+# WHY: BATS 1.13.0 defines default setup_file()/teardown_file() that return 0
+# BEFORE sourcing the test file. When test_helper.bash is loaded inside setup()
+# (not at file level), its setup_file() definition arrives too late — BATS has
+# already called the no-op default. Moving PROJECT_ROOT/HUG_BIN/PATH setup to
+# file-level code ensures it runs whenever test_helper.bash is sourced, regardless
+# of whether setup_file() is called.
+#
+# NOTE: BATS_TEST_FILENAME is available once BATS begins executing the test file.
+# During file-level sourcing inside setup(), it IS set. We use a guard to avoid
+# clobbering if setup_file() also runs (future-proofing).
+if [[ -n "${BATS_TEST_FILENAME:-}" && -z "${PROJECT_ROOT:-}" ]]; then
+  export PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  export HUG_BIN="$PROJECT_ROOT/git-config/bin"
+  export PATH="$HUG_BIN:$PATH"
+fi
+
 setup_file() {
   # Export the project root for tests to use
   # BATS_TEST_FILENAME points to tests/unit/test_*.bats or tests/lib/test_*.bats

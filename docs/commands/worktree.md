@@ -27,9 +27,10 @@ A worktree is a separate working directory linked to the same repository. This e
 
 ### Worktree States
 
-- **[CURRENT]**: The worktree you're currently in
-- **[DIRTY]**: Worktree has uncommitted changes
-- **[LOCKED]**: Worktree is locked (cannot be removed)
+- **`*`** (current): The worktree you're currently in
+- **`+`** (dirty): Worktree has uncommitted changes
+- **`#`** (locked): Worktree is locked (cannot be removed)
+- **`@`** (detached): Worktree is in detached HEAD state
 
 ## Commands
 
@@ -51,7 +52,7 @@ hug wt --json             # Output worktree information in JSON format
 
 **Interactive Menu:**
 - Lists all available worktrees with status indicators
-- Shows current worktree with `[CURRENT]` marker
+- Shows current worktree with `*` marker
 - Supports keyboard selection and quick navigation
 
 ### `hug wtl` - List Worktrees (Short Format)
@@ -79,9 +80,11 @@ hug wtl --json                       # Output in JSON format
 **Output Format:**
 ```
 Worktrees:
-* [DIRTY] main                 (1b87e92) ~/IdeaProjects/hug-scm
-feature-auth         (a3f2b1c) ~/IdeaProjects/hug-scm.WT.feature-auth
-hotfix-patch         (d8e9f0a) ~/IdeaProjects/hug-scm.WT.hotfix-patch
+  * current  + dirty  # locked  @ detached
+
+*+.. main                 (1b87e92) ~/IdeaProjects/hug-scm
+.... feature-auth         (a3f2b1c) ~/IdeaProjects/hug-scm.WT.feature-auth
+.... hotfix-patch         (d8e9f0a) ~/IdeaProjects/hug-scm.WT.hotfix-patch
 ```
 
 ### `hug wtll` - List Worktrees (Long Format)
@@ -108,11 +111,13 @@ hug wtll --json                      # Output detailed information in JSON forma
 **Output Format:**
 ```
 Worktrees (long format):
-* [DIRTY] main                 1b87e92 (~/IdeaProjects/hug-scm)
+  * current  + dirty  # locked  @ detached
+
+*+.. main                 1b87e92 (~/IdeaProjects/hug-scm)
   docs: update branching command documentation for search filtering feature
   Status: Modified ! (1 staged, 2 unstaged) ! | Locked: No
 
-feature-auth         a3f2b1c (~/IdeaProjects/hug-scm.WT.feature-auth)
+.... feature-auth         a3f2b1c (~/IdeaProjects/hug-scm.WT.feature-auth)
   feat: implement OAuth authentication flow
   Status: Clean ✓ | Locked: No
 ```
@@ -171,7 +176,7 @@ Current: ~/IdeaProjects/hug-scm
 Worktrees (3 total)
 ───────────────────────
 
-[CURRENT] [DIRTY] ~/IdeaProjects/hug-scm (test-new-worktree)
+*+.. ~/IdeaProjects/hug-scm (test-new-worktree)
 ├─ Commit: deab0e2 fix: make hug wt actually change working directory (13 hours ago)
 ├─ Author: Elifarley C
 ├─ Branch: test-new-worktree (no remote)
@@ -179,7 +184,7 @@ Worktrees (3 total)
 ├─ Status: Dirty (2 files changed: 0 staged, 2 unstaged)
 └─ Config: Standard worktree (detached: no)
 
-~/workspaces-project/feature-auth (feature-auth)
+.... ~/workspaces-project/feature-auth (feature-auth)
 ├─ Commit: a3f2b1c feat: implement OAuth authentication (2 days ago)
 ├─ Author: Jane Smith
 ├─ Branch: feature-auth (origin/feature-auth ↑2)
@@ -187,7 +192,7 @@ Worktrees (3 total)
 ├─ Status: Clean
 └─ Config: Standard worktree (detached: no)
 
-~/workspaces-project/temp (abc1234) [DETACHED] [LOCKED]
+..#. ~/workspaces-project/temp (abc1234)
 ├─ Commit: abc1234 fix: security issue (1 week ago)
 ├─ Author: Bob Wilson
 ├─ Branch: detached HEAD
@@ -197,10 +202,13 @@ Worktrees (3 total)
 ```
 
 **Status Indicators:**
-- **[CURRENT]**: The worktree you're currently in
-- **[DIRTY]**: Worktree has uncommitted changes
-- **[LOCKED]**: Worktree is locked (cannot be removed)
-- **[DETACHED]**: Worktree is in detached HEAD state
+```
+  *  current worktree
+  +  dirty (uncommitted changes)
+  #  locked
+  @  detached HEAD
+  .  (inactive)
+```
 
 **Information Displayed:**
 - Worktree path and branch name with commit hash
