@@ -41,7 +41,7 @@ teardown() {
   assert_success
   # 3 total worktrees (main + 2 additional) = count shows 2
   assert_output --partial "Worktrees (2)"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
   assert_output --partial "main"
   assert_output --partial "feature-1"
   assert_output --partial "hotfix-1"
@@ -68,7 +68,7 @@ teardown() {
   run git-wt --summary
 
   assert_success
-  assert_output --partial "[DIRTY]"
+  assert_output --partial "+"
   assert_output --partial "feature-1"
 }
 
@@ -190,20 +190,20 @@ teardown() {
 
   assert_success
   assert_output --partial "Worktrees:"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
   assert_output --partial "main"
   assert_output --partial "feature-1"
   assert_output --partial "hotfix-1"
   assert_output --partial "("  # Should show commit in parentheses
 }
 
-@test "hug wtl: highlights current worktree with [CURRENT] indicator" {
+@test "hug wtl: highlights current worktree with * indicator" {
   cd "$TEST_REPO"
   run git-wtl
 
   assert_success
-  # Current worktree should have [CURRENT] indicator
-  assert_output --partial "[CURRENT]"
+  # Current worktree should have * indicator
+  assert_output --partial "*"
 }
 
 @test "hug wtl: shows dirty worktree indicator" {
@@ -214,7 +214,7 @@ teardown() {
   run git-wtl
 
   assert_success
-  assert_output --partial "[DIRTY]"
+  assert_output --partial "+"
   assert_output --partial "feature-1"
 }
 
@@ -264,7 +264,7 @@ teardown() {
 
   assert_success
   assert_output --partial "Worktrees:"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
   assert_output --partial "main"
 }
 
@@ -290,7 +290,7 @@ teardown() {
 
   assert_success
   assert_output --partial "Worktrees (long format):"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
   assert_output --partial "main"
   assert_output --partial "feature-1"
   assert_output --partial "hotfix-1"
@@ -307,12 +307,12 @@ teardown() {
   assert_output --partial "Status:"
 }
 
-@test "hug wtll: highlights current worktree with [CURRENT] indicator" {
+@test "hug wtll: highlights current worktree with * indicator" {
   cd "$TEST_REPO"
   run git-wtll
 
   assert_success
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtll: shows detailed status for dirty worktrees" {
@@ -323,7 +323,7 @@ teardown() {
   run git-wtll
 
   assert_success
-  assert_output --partial "[DIRTY]"
+  assert_output --partial "+"
   assert_output --partial "feature-1"
   assert_output --partial "Status: Modified"
 }
@@ -347,7 +347,7 @@ teardown() {
 
   assert_success
   assert_output --partial "Worktrees (long format):"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
   assert_output --partial "main"
 }
 

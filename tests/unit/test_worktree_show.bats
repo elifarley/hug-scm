@@ -38,7 +38,7 @@ teardown() {
   run git-wtsh
 
   assert_success
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
   assert_output --partial "main"
 
   # Should show commit information
@@ -59,10 +59,11 @@ teardown() {
   run git-wtsh
 
   assert_success
-  # Should have exactly one [CURRENT] indicator
+  # Should have exactly one * (current) indicator in worktree rows
+  # Strip ANSI codes and count lines starting with * (the indicator column)
   local current_count
-  current_count=$(echo "$output" | grep -o "\[CURRENT\]" | wc -l)
-  [[ "$current_count" == "1" ]] || fail "Expected exactly 1 [CURRENT] indicator, got $current_count"
+  current_count=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^\*' || true)
+  [[ "$current_count" == "1" ]] || fail "Expected exactly 1 current (*) indicator, got $current_count"
 }
 
 @test "hug wtsh: displays commit details correctly" {
@@ -113,7 +114,7 @@ teardown() {
   run git-wtsh
 
   assert_success
-  assert_output --partial "[DIRTY]"
+  assert_output --partial "+"
   assert_output --partial "Status: Dirty"
   assert_output --partial "files changed"
   assert_output --partial "staged"
@@ -177,7 +178,7 @@ teardown() {
 
   assert_success
   assert_output --partial "main"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: case-insensitive search filtering" {
@@ -186,7 +187,7 @@ teardown() {
 
   assert_success
   assert_output --partial "main"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: filters worktrees by search term" {
@@ -195,7 +196,7 @@ teardown() {
 
   assert_success
   assert_output --partial "main"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: displays author information correctly" {
@@ -236,7 +237,7 @@ teardown() {
   [[ "$worktree_count" == "1" ]] || fail "Expected exactly 1 worktree in default mode, got $worktree_count"
 
   # Should show current worktree indicator
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: --all flag shows all worktrees" {
@@ -247,7 +248,7 @@ teardown() {
   # Just main = 0 additional
   assert_output --partial "Worktrees (0 total)"
   # Should show current worktree when it's the only one
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: -a short flag works same as --all" {
@@ -325,7 +326,7 @@ teardown() {
 
   assert_success
   assert_output --partial "main"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: default behavior vs --all behavior difference" {
@@ -341,7 +342,7 @@ teardown() {
 
   assert_success
   # Both should succeed and show the same single worktree
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: help text shows new behavior examples" {
@@ -359,11 +360,11 @@ teardown() {
   run git-wtsh --help
 
   assert_success
-  assert_output --partial "STATUS INDICATORS:"
-  assert_output --partial "[CURRENT]"
-  assert_output --partial "[DIRTY]"
-  assert_output --partial "[LOCKED]"
-  assert_output --partial "[DETACHED]"
+  assert_output --partial "INDICATORS:"
+  assert_output --partial "*  current worktree"
+  assert_output --partial "+  dirty"
+  assert_output --partial "#  locked"
+  assert_output --partial "@  detached HEAD"
 }
 
 @test "hug wtsh: multiple worktrees with --all flag" {
@@ -381,10 +382,10 @@ teardown() {
   worktree_count=$(echo "$output" | grep -c "\ ([^[:space:]]*)$" || echo "0")
   [[ "$worktree_count" -ge 2 ]] || fail "Expected at least 2 worktrees with --all flag, got $worktree_count"
 
-  # Should have exactly one CURRENT worktree
+  # Should have exactly one CURRENT worktree (* indicator in indicator column)
   local current_count
-  current_count=$(echo "$output" | grep -o "\[CURRENT\]" | wc -l)
-  [[ "$current_count" == "1" ]] || fail "Expected exactly 1 [CURRENT] indicator, got $current_count"
+  current_count=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^\*' || true)
+  [[ "$current_count" == "1" ]] || fail "Expected exactly 1 current (*) indicator, got $current_count"
 
   # Cleanup
   git worktree remove "$worktree_path"
@@ -408,7 +409,7 @@ teardown() {
   [[ "$worktree_count" == "1" ]] || fail "Expected exactly 1 worktree in default mode, got $worktree_count"
 
   # Should show current worktree indicator
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 
   # Cleanup
   git worktree remove "$worktree_path"

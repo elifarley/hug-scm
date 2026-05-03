@@ -41,8 +41,7 @@ class WorktreeInfo:
     is_locked: bool
 
 
-def format_indicators(is_current: bool, is_dirty: bool,
-                      is_locked: bool, is_detached: bool) -> str:
+def format_indicators(is_current: bool, is_dirty: bool, is_locked: bool, is_detached: bool) -> str:
     """Build 4-char indicator string for worktree display.
 
     Replaces verbose bracketed labels ([CURRENT]/[DIRTY]/[LOCKED]/[DETACHED])
@@ -65,12 +64,14 @@ def format_indicators(is_current: bool, is_dirty: bool,
     Returns:
         A 4-character string like "*+#@" or "..#.".
     """
-    return "".join([
-        "*" if is_current else ".",
-        "+" if is_dirty else ".",
-        "#" if is_locked else ".",
-        "@" if is_detached else ".",
-    ])
+    return "".join(
+        [
+            "*" if is_current else ".",
+            "+" if is_dirty else ".",
+            "#" if is_locked else ".",
+            "@" if is_detached else ".",
+        ]
+    )
 
 
 @dataclass

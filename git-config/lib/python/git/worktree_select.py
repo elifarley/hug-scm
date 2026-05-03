@@ -44,7 +44,13 @@ from git.selection_core import (
     add_common_cli_args,
     get_selection_input,
 )
-from git.worktree import WorktreeInfo, WorktreeList, format_indicators, parse_worktree_list, to_worktree_list
+from git.worktree import (
+    WorktreeInfo,
+    WorktreeList,
+    format_indicators,
+    parse_worktree_list,
+    to_worktree_list,
+)
 
 
 @dataclass
