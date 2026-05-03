@@ -950,7 +950,7 @@ format_worktree_indicators() {
 
 # Print a one-line legend explaining the indicator characters.
 # Uses the same colors as the active indicators for visual association.
-# Suppressed by HUG_QUIET, non-TTY, or --json output.
+# Suppressed by HUG_QUIET or non-TTY. (JSON paths exit before reaching this call.)
 #
 # Usage: print_worktree_legend
 print_worktree_legend() {
