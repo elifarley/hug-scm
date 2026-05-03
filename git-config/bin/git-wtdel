@@ -14,22 +14,22 @@ show_help() {
 hug wtdel: Remove worktree(s) safely
 
 USAGE:
-    hug wtdel [path...] [options]
-    hug wtdel -B <branch> [options]
+    hug wtdel [branch...] [options]
+    hug wtdel -p <path> [options]
     hug wtdel -h|--help
 
 ARGUMENTS:
-    [path...]         One or more worktree paths to remove (optional, shows interactive menu)
-    -B, --branch <branch> Remove worktree checked out to specified branch
+    [branch...]       One or more branch names (exact match, removes worktree for each)
 
 OPTIONS:
+    -p, --path PATH   Target worktree by filesystem path (repeatable for batch)
     -f, --force       Skip confirmation prompts and remove even with uncommitted changes
     --dry-run         Show what would be removed without actually removing
     -h, --help        Show this help
 
 DESCRIPTION:
-    Removes Git worktree(s) safely. If no path is provided, shows an interactive
-    menu of all available worktrees for selection.
+    Removes Git worktree(s) safely. If no branch or path is provided, shows
+    an interactive menu of all available worktrees for selection.
 
     Safety features:
     - Prevents removal of current worktree
@@ -39,15 +39,13 @@ DESCRIPTION:
     - Supports batch removal of multiple worktrees
 
 EXAMPLES:
-    hug wtdel                                 # Interactive selection of worktree to remove
-    hug wtdel ../worktrees-repo/feature-auth  # Remove specific worktree
-    hug wtdel ../feature-auth --dry-run       # Preview removal without doing it
-    hug wtdel ../feature-auth -f              # Force remove without confirmation
-    hug wtdel -B feat-1                       # Remove worktree for branch "feat-1"
-    hug wtdel path1 path2 path3 --force       # Batch remove multiple worktrees
-
-    # Batch delete worktrees by branch using a loop:
-    for b in feat-1 feat-2 feat-3; do hug wtdel -B "$b" -f; done
+    hug wtdel                                 # Interactive selection
+    hug wtdel feature-auth                    # Remove worktree for branch "feature-auth"
+    hug wtdel feat-1 feat-2 feat-3            # Batch remove by branch names
+    hug wtdel feature-auth --dry-run          # Preview removal
+    hug wtdel feature-auth -f                 # Force remove without confirmation
+    hug wtdel -p /path/to/worktree            # Remove by path
+    hug wtdel -p /path/a -p /path/b --force  # Batch remove by paths
 
 SEE ALSO:
     hug wt      List and switch between worktrees
@@ -80,13 +78,12 @@ show_interactive_removal_menu() {
 check_git_repo
 
 # Parse arguments using getopt
-set +e # Temporarily disable exit on error to capture getopt failure
-PARSED=$(getopt --options hB:f --longoptions help,force,dry-run,branch: --name "hug wtdel" -- "$@" 2>&1)
+set +e
+PARSED=$(getopt --options hp:f --longoptions help,force,dry-run,path: --name "hug wtdel" -- "$@" 2>&1)
 getopt_status=$?
-set -e # Re-enable exit on error
+set -e
 
 if [ $getopt_status -ne 0 ]; then
-  # getopt failed - print the error message if available
   if [ -n "$PARSED" ]; then
     echo "$PARSED" >&2
   fi
@@ -98,8 +95,8 @@ eval set -- "$PARSED"
 # Initialize variables
 force=false
 dry_run=false
-branch_name=""
-declare -a worktree_paths=()
+declare -a branch_names=()
+declare -a explicit_paths=()
 
 # Process options
 while true; do
@@ -116,8 +113,8 @@ while true; do
     dry_run=true
     shift
     ;;
-  -B | --branch)
-    branch_name="$2"
+  -p | --path)
+    explicit_paths+=("$2")
     shift 2
     ;;
   --)
@@ -135,34 +132,36 @@ if [[ ${HUG_FORCE:-} == true ]]; then
   force=true
 fi
 
-# Parse positional arguments as worktree paths (support multiple paths)
+# Parse positional arguments as branch names
 while [[ $# -gt 0 ]]; do
-  worktree_paths+=("$1")
+  branch_names+=("$1")
   shift
 done
 
-# If --branch provided, resolve to worktree path
-if [[ -n "$branch_name" ]]; then
-  if [[ ${#worktree_paths[@]} -gt 0 ]]; then
-    error "--branch and path are mutually exclusive. Use one or the other."
-    exit 1
-  fi
+# Validate: can't mix branch names and explicit paths
+if [[ ${#branch_names[@]} -gt 0 && ${#explicit_paths[@]} -gt 0 ]]; then
+  error "Branch names and --path are mutually exclusive. Use one or the other."
+  exit 1
+fi
 
-  # Resolve branch to worktree path
-  worktree_path=$(get_worktree_path_by_branch "$branch_name" || true)
-  if [[ -z "$worktree_path" ]]; then
-    error "No worktree found for branch '$branch_name'"
-    exit 1
-  fi
-
-  # Prevent removing main worktree via branch
+# Resolve branch names to worktree paths
+declare -a worktree_paths=()
+if [[ ${#branch_names[@]} -gt 0 ]]; then
   main_worktree=$(get_main_worktree_path)
-  if [[ "$worktree_path" == "$main_worktree" ]]; then
-    error "Cannot remove the main worktree via --branch. Use a different branch or specify path directly."
-    exit 1
-  fi
-
-  worktree_paths=("$worktree_path")
+  for bn in "${branch_names[@]}"; do
+    worktree_path=$(get_worktree_path_by_branch "$bn" || true)
+    if [[ -z "$worktree_path" ]]; then
+      error "No worktree found for branch '$bn'"
+      exit 1
+    fi
+    if [[ "$worktree_path" == "$main_worktree" ]]; then
+      error "Cannot remove the main worktree (branch '$bn'). Use a different branch or specify -p for path."
+      exit 1
+    fi
+    worktree_paths+=("$worktree_path")
+  done
+elif [[ ${#explicit_paths[@]} -gt 0 ]]; then
+  worktree_paths=("${explicit_paths[@]}")
 fi
 
 # Convert relative paths to absolute
@@ -172,7 +171,7 @@ for i in "${!worktree_paths[@]}"; do
   fi
 done
 
-# If no paths provided (and no --branch), show interactive menu
+# If no paths provided (and no branch names), show interactive menu
 if [[ ${#worktree_paths[@]} -eq 0 ]]; then
   worktree_path=$(show_interactive_removal_menu)
   if [[ -z "$worktree_path" ]]; then

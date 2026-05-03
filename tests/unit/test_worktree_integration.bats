@@ -42,7 +42,7 @@ teardown() {
   assert_success
 
   # 5. Remove worktree
-  run git-wtdel "$feature_wt" --force
+  run git-wtdel -p "$feature_wt" --force
   assert_success
   assert_worktree_not_exists "$feature_wt"
 
@@ -94,7 +94,7 @@ teardown() {
   assert_json_value '.count' '3'
 
   # Clean up one worktree
-  run git-wtdel "$wt2" --force
+  run git-wtdel -p "$wt2" --force
   assert_success
   assert_worktree_not_exists "$wt2"
 
@@ -127,13 +127,13 @@ teardown() {
   assert_output --partial "cancelled"
 
   # Should succeed to preview dirty worktree with dry-run
-  run git-wtdel "$dirty_wt" --dry-run
+  run git-wtdel -p "$dirty_wt" --dry-run
   assert_success
   assert_output --partial "Worktree Removal Preview (DRY RUN)"
   assert_output --partial "Dirty"
 
   # Should succeed to remove with force
-  run git-wtdel "$dirty_wt" --force
+  run git-wtdel -p "$dirty_wt" --force
   assert_success
   assert_worktree_not_exists "$dirty_wt"
 }
@@ -190,7 +190,7 @@ teardown() {
   assert_output --partial "feature-2"
 
   # 8. Cleanup one feature worktree
-  run git-wtdel "$feature_a" --force
+  run git-wtdel -p "$feature_a" --force
   assert_success
 
   # 9. Other feature worktree should remain unaffected
@@ -232,7 +232,7 @@ teardown() {
   assert_failure  # Should have staged changes
 
   # 5. Can remove hotfix worktree when done
-  run git-wtdel "$hotfix_wt" --force
+  run git-wtdel -p "$hotfix_wt" --force
   assert_success
 
   # 6. Feature worktree remains unaffected
@@ -322,13 +322,13 @@ teardown() {
 
   # 3. Try to remove current worktree
   cd "$first_wt"
-  run env HUG_FORCE=true git-wtdel "$first_wt"
+  run env HUG_FORCE=true git-wtdel -p "$first_wt"
   assert_failure
   assert_output --partial "Cannot remove current worktree"
 
   # 4. Go back to main and remove successfully
   cd "$TEST_REPO"
-  run git-wtdel "$first_wt" --force
+  run git-wtdel -p "$first_wt" --force
   assert_success
   assert_worktree_not_exists "$first_wt"
 

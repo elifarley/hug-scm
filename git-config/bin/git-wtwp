@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # git-wtwp: List worktrees filtered by exact branch names
-# Thin wrapper around git-wtl --branch
+# Thin wrapper: delegates to git-wtl with positional branch args
 
 show_help() {
   cat << 'EOF'
@@ -17,7 +17,7 @@ DESCRIPTION:
   Displays worktrees that are checked out to the specified branch(es).
   Multiple branches can be specified (OR logic: worktrees on any of the branches).
 
-  This is equivalent to: hug wtl --branch <branch1> --branch <branch2> ...
+  This is equivalent to: hug wtl <branch1> <branch2> ...
 
 EXAMPLES:
   hug wtwp main                 # List worktrees on branch "main"
@@ -40,25 +40,8 @@ case "${1:-}" in
   ;;
 esac
 
-# Delegate to git-wtl with --branch flags
+# Delegate directly to git-wtl — positional args are already branch names
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 
-# Build arguments, passing through flags and adding --branch for positional args
-wtl_args=()
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-  --*)
-    # Pass through flags (like --json)
-    wtl_args+=("$1")
-    shift
-    ;;
-  *)
-    # Treat positional args as branch names
-    wtl_args+=(--branch "$1")
-    shift
-    ;;
-  esac
-done
-
-exec "${CMD_BASE}/git-wtl" "${wtl_args[@]}"
+exec "${CMD_BASE}/git-wtl" "$@"

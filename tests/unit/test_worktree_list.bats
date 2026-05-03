@@ -220,7 +220,7 @@ teardown() {
 
 @test "hug wtl: filters worktrees by search term" {
   cd "$TEST_REPO"
-  run git-wtl feature
+  run git-wtl -s feature
 
   assert_success
   assert_output --partial "feature-1"
@@ -230,7 +230,7 @@ teardown() {
 
 @test "hug wtl: filters worktrees by path" {
   cd "$TEST_REPO"
-  run git-wtl "$(basename "$FEATURE_WT")"
+  run git-wtl -s "$(basename "$FEATURE_WT")"
 
   assert_success
   assert_output --partial "feature-1"
@@ -239,7 +239,7 @@ teardown() {
 
 @test "hug wtl: case-insensitive search" {
   cd "$TEST_REPO"
-  run git-wtl FEATURE
+  run git-wtl -s FEATURE
 
   assert_success
   assert_output --partial "feature-1"
@@ -248,7 +248,7 @@ teardown() {
 
 @test "hug wtl: handles no matching search term" {
   cd "$TEST_REPO"
-  run git-wtl nonexistent
+  run git-wtl -s nonexistent
 
   # Should fail when no worktrees match the search term
   assert_failure
@@ -330,7 +330,7 @@ teardown() {
 
 @test "hug wtll: filters worktrees by search term" {
   cd "$TEST_REPO"
-  run git-wtll feature
+  run git-wtll -s feature
 
   assert_success
   assert_output --partial "feature-1"
@@ -410,7 +410,7 @@ teardown() {
 
 @test "hug wtll: JSON output includes search filtering" {
   cd "$TEST_REPO"
-  run git-wtll --json feature
+  run git-wtll --json -s feature
 
   assert_success
   assert_valid_json
@@ -450,7 +450,7 @@ teardown() {
 
 @test "hug wtl: supports multi-term search (OR logic)" {
   cd "$TEST_REPO"
-  run git-wtl feature hotfix
+  run git-wtl -s feature -s hotfix
 
   assert_success
   # Should show worktrees containing either "feature" OR "hotfix"
@@ -465,7 +465,7 @@ teardown() {
   git branch special-feature
   git worktree add "$special_wt" special-feature
 
-  run git-wtll special feature
+  run git-wtll -s special -s feature
 
   assert_success
   assert_output --partial "special-feature"
@@ -477,7 +477,7 @@ teardown() {
 
 @test "hug wtll: supports multi-term search (OR logic)" {
   cd "$TEST_REPO"
-  run git-wtll feature hotfix
+  run git-wtll -s feature -s hotfix
 
   assert_success
   # Should show worktrees containing either "feature" OR "hotfix"
@@ -487,7 +487,7 @@ teardown() {
 
 @test "hug wtl: multi-term search with no matches returns error" {
   cd "$TEST_REPO"
-  run git-wtl nonexistent1 nonexistent2
+  run git-wtl -s nonexistent1 -s nonexistent2
 
   assert_failure
   assert_output --partial "No worktrees found matching"
@@ -495,7 +495,7 @@ teardown() {
 
 @test "hug wtll: multi-term search with no matches returns error" {
   cd "$TEST_REPO"
-  run git-wtll nonexistent1 nonexistent2
+  run git-wtll -s nonexistent1 -s nonexistent2
 
   assert_failure
   assert_output --partial "No worktrees found matching"
@@ -503,7 +503,7 @@ teardown() {
 
 @test "hug wtl: multi-term search is case insensitive" {
   cd "$TEST_REPO"
-  run git-wtl FEATURE HOTFIX
+  run git-wtl -s FEATURE -s HOTFIX
 
   assert_success
   # Should find branches regardless of case
@@ -513,7 +513,7 @@ teardown() {
 
 @test "hug wtll: multi-term search is case insensitive" {
   cd "$TEST_REPO"
-  run git-wtll FEATURE HOTFIX
+  run git-wtll -s FEATURE -s HOTFIX
 
   assert_success
   # Should find branches regardless of case
@@ -523,7 +523,7 @@ teardown() {
 
 @test "hug wtl: JSON output supports multi-term search filtering" {
   cd "$TEST_REPO"
-  run git-wtl --json feature
+  run git-wtl --json -s feature
 
   assert_success
   assert_valid_json
@@ -534,7 +534,7 @@ teardown() {
 
 @test "hug wtll: JSON output supports multi-term search filtering" {
   cd "$TEST_REPO"
-  run git-wtll --json feature
+  run git-wtll --json -s feature
 
   assert_success
   assert_valid_json
@@ -543,11 +543,11 @@ teardown() {
   assert_json_value '.count' '1'
 }
 
-# Tests for branch filtering (--branch flag)
+# Tests for branch filtering (positional branch names)
 
-@test "hug wtl: --branch filters by exact branch name" {
+@test "hug wtl: positional branch filters by exact name" {
   cd "$TEST_REPO"
-  run git-wtl --branch feature-1
+  run git-wtl feature-1
 
   assert_success
   assert_output --partial "feature-1"
@@ -555,9 +555,9 @@ teardown() {
   refute_output --partial "main"
 }
 
-@test "hug wtl: --branch accepts multiple values (OR logic)" {
+@test "hug wtl: multiple positional branches (OR logic)" {
   cd "$TEST_REPO"
-  run git-wtl --branch feature-1 --branch hotfix-1
+  run git-wtl feature-1 hotfix-1
 
   assert_success
   assert_output --partial "feature-1"
@@ -565,37 +565,37 @@ teardown() {
   refute_output --partial "main"
 }
 
-@test "hug wtl: --branch with no match returns error" {
+@test "hug wtl: positional branch with no match returns error" {
   cd "$TEST_REPO"
-  run git-wtl --branch nonexistent
+  run git-wtl nonexistent
 
   assert_failure
   assert_output --partial "No worktrees found matching"
-  assert_output --partial "--branch nonexistent"
+  assert_output --partial "nonexistent"
 }
 
-@test "hug wtl: --branch combined with search term (AND logic)" {
+@test "hug wtl: positional branch combined with search term (AND logic)" {
   cd "$TEST_REPO"
   # Branch matches, search matches path
-  run git-wtl --branch feature-1 "$(basename "$FEATURE_WT")"
+  run git-wtl feature-1 -s "$(basename "$FEATURE_WT")"
   assert_success
   assert_output --partial "feature-1"
-  
+
   # Branch matches, search doesn't match path
-  run git-wtl --branch feature-1 "nonexistent-path"
+  run git-wtl feature-1 -s nonexistent-path
   assert_failure
 }
 
-@test "hug wtl: --branch is case-sensitive" {
+@test "hug wtl: positional branch is case-sensitive" {
   cd "$TEST_REPO"
-  run git-wtl --branch Feature-1
+  run git-wtl Feature-1
 
   assert_failure  # Should not match "feature-1"
 }
 
-@test "hug wtl: --branch with JSON output" {
+@test "hug wtl: positional branch with JSON output" {
   cd "$TEST_REPO"
-  run git-wtl --json --branch feature-1
+  run git-wtl --json feature-1
 
   assert_success
   assert_valid_json

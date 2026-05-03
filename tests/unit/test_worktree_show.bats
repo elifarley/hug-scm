@@ -123,7 +123,7 @@ teardown() {
 
 @test "hug wtsh: handles no matching search term" {
   cd "$TEST_REPO"
-  run git-wtsh nonexistent
+  run git-wtsh -s nonexistent
 
   assert_failure
   assert_output --partial "No worktrees found matching: nonexistent"
@@ -183,7 +183,7 @@ teardown() {
 
 @test "hug wtsh: case-insensitive search filtering" {
   cd "$TEST_REPO"
-  run git-wtsh MAIN
+  run git-wtsh -s MAIN
 
   assert_success
   assert_output --partial "main"
@@ -192,7 +192,7 @@ teardown() {
 
 @test "hug wtsh: filters worktrees by search term" {
   cd "$TEST_REPO"
-  run git-wtsh "$(basename "$TEST_REPO")"
+  run git-wtsh -s "$(basename "$TEST_REPO")"
 
   assert_success
   assert_output --partial "main"
@@ -352,19 +352,17 @@ teardown() {
   # Should show new behavior examples in help
   assert_output --partial "hug wtsh                   # Current worktree only"
   assert_output --partial "hug wtsh --all             # All worktrees"
-  assert_output --partial "hug wtsh -a                # All worktrees"
+  assert_output --partial "hug wtsh feature-auth      # Show worktree on branch"
   assert_output --partial "hug wtsh --                # Interactive worktree selection"
 }
 
-@test "hug wtsh: help text explains status indicators" {
+@test "hug wtsh: help text explains search flag" {
   run git-wtsh --help
 
   assert_success
-  assert_output --partial "INDICATORS:"
-  assert_output --partial "*  current worktree"
-  assert_output --partial "+  dirty"
-  assert_output --partial "#  locked"
-  assert_output --partial "@  detached HEAD"
+  assert_output --partial "-s, --search"
+  assert_output --partial "substring match"
+  assert_output --partial "case-insensitive"
 }
 
 @test "hug wtsh: multiple worktrees with --all flag" {
@@ -428,7 +426,7 @@ teardown() {
   git worktree add "$feature_wt" feature-search
   git worktree add "$hotfix_wt" hotfix-search
 
-  run git-wtsh feature hotfix
+  run git-wtsh -s feature -s hotfix
 
   assert_success
   # Should show details for worktrees matching either "feature" OR "hotfix"
@@ -450,7 +448,7 @@ teardown() {
   local special_wt="${TEST_REPO}-special-path"
   git worktree add "$special_wt" special-branch
 
-  run git-wtsh special branch
+  run git-wtsh -s special -s branch
 
   assert_success
   # Should find worktree with "special" in path AND "branch" in branch name
@@ -466,7 +464,7 @@ teardown() {
 
 @test "hug wtsh: multi-term search with no matches returns error" {
   cd "$TEST_REPO"
-  run git-wtsh nonexistent1 nonexistent2 nonexistent3
+  run git-wtsh -s nonexistent1 -s nonexistent2 -s nonexistent3
 
   assert_failure
   assert_output --partial "No worktrees found matching: nonexistent1 nonexistent2 nonexistent3"
@@ -479,7 +477,7 @@ teardown() {
   local test_wt="${TEST_REPO}-test-new-worktree"
   git worktree add "$test_wt" test-new-worktree
 
-  run git-wtsh TEST NEW
+  run git-wtsh -s TEST -s NEW
 
   assert_success
   # Should find worktree with "test" and "new" in branch name
@@ -499,7 +497,7 @@ teardown() {
   local test_wt="${TEST_REPO}-test-new-worktree"
   git worktree add "$test_wt" test-new-worktree
 
-  run git-wtsh test
+  run git-wtsh -s test
 
   assert_success
   # Should find worktree with "test" in branch name (path also matches but that's OK)
@@ -514,9 +512,24 @@ teardown() {
 
 @test "hug wtsh: multi-term search error message shows all terms" {
   cd "$TEST_REPO"
-  run git-wtsh foo bar baz
+  run git-wtsh -s foo -s bar -s baz
 
   assert_failure
   # Error message should show all search terms
   assert_output --partial "foo bar baz"
+}
+
+@test "hug wtsh: positional branch shows exact match" {
+  cd "$TEST_REPO"
+  git branch feature-test
+  local worktree_path="${TEST_REPO}-feature"
+  git worktree add "$worktree_path" feature-test
+
+  run git-wtsh feature-test
+  assert_success
+  assert_output --partial "feature-test"
+  refute_output --partial "main"
+
+  git worktree remove "$worktree_path"
+  git branch -D feature-test
 }
