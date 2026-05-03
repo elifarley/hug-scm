@@ -44,7 +44,7 @@ from git.selection_core import (
     add_common_cli_args,
     get_selection_input,
 )
-from git.worktree import WorktreeInfo, WorktreeList, parse_worktree_list, to_worktree_list
+from git.worktree import WorktreeInfo, WorktreeList, format_indicators, parse_worktree_list, to_worktree_list
 
 
 @dataclass
@@ -117,8 +117,14 @@ def filter_worktrees(
 def format_display_rows(worktrees: list[WorktreeInfo], current_path: str) -> list[str]:
     """Build formatted selection rows for interactive display.
 
-    Format per row (only non-empty tags appear):
-        "[CURRENT] [DIRTY] [LOCKED] branch (commit) → ~/path"
+    Format per row:
+        "*+#. branch (commit) → ~/path"
+
+    The 4-char indicator prefix uses fixed-column characters for scanability:
+        col 1: * = current, . = other
+        col 2: + = dirty,   . = clean
+        col 3: # = locked,  . = unlocked
+        col 4: @ = detached, . = on a branch
 
     Design rationale — plain text, no ANSI:
     - gum handles its own terminal styling; injecting ANSI here would conflict
@@ -129,7 +135,7 @@ def format_display_rows(worktrees: list[WorktreeInfo], current_path: str) -> lis
     Args:
         worktrees: Ordered list of worktrees to format.
         current_path: Absolute path of the user's current worktree; used to
-            emit the [CURRENT] tag.
+            set the * indicator.
 
     Returns:
         A list of plain-text strings, one per input worktree, in the same order.
@@ -137,15 +143,11 @@ def format_display_rows(worktrees: list[WorktreeInfo], current_path: str) -> lis
     home = os.path.expanduser("~")
     rows: list[str] = []
     for wt in worktrees:
-        parts: list[str] = []
-
-        # Status tags (order matters for readability: who > state > lock)
-        if wt.path == current_path:
-            parts.append("[CURRENT]")
-        if wt.is_dirty:
-            parts.append("[DIRTY]")
-        if wt.is_locked:
-            parts.append("[LOCKED]")
+        # Build 4-char indicator string (* + # @)
+        is_current = wt.path == current_path
+        is_detached = not wt.branch
+        indicators = format_indicators(is_current, wt.is_dirty, wt.is_locked, is_detached)
+        parts: list[str] = [indicators]
 
         # Branch + commit — detached HEAD has an empty branch field
         branch_display = wt.branch if wt.branch else "(detached)"
