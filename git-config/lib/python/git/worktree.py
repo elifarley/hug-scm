@@ -41,35 +41,32 @@ class WorktreeInfo:
     is_locked: bool
 
 
-def format_indicators(is_current: bool, is_dirty: bool, is_locked: bool, is_detached: bool) -> str:
-    """Build 4-char indicator string for worktree display.
+def format_indicators(is_dirty: bool, is_locked: bool) -> str:
+    """Build 2-char indicator string for worktree display.
 
-    Replaces verbose bracketed labels ([CURRENT]/[DIRTY]/[LOCKED]/[DETACHED])
-    with compact fixed-column characters for better scanability in worktree
-    list output.
-
-    Column layout: * + # @
-      * = current worktree (matches $GIT_DIR)
+    Column layout: + #
       + = dirty (uncommitted changes present)
       # = locked (git worktree lock)
-      @ = detached HEAD (no branch name)
       . = inactive (placeholder for visual alignment)
 
+    The * (current) and @ (detached) indicators are no longer columns --
+    they are part of the branch display in the calling code (format_display_rows).
+
+    WHY 2 columns instead of 4: The * and @ indicators convey branch context,
+    not worktree state. Embedding them in the branch display keeps the indicator
+    block focused on state flags and makes each row easier to scan at a glance.
+
     Args:
-        is_current: True if this is the active worktree ($GIT_DIR matches).
         is_dirty: True if the worktree has uncommitted changes.
         is_locked: True if the worktree is locked via git worktree lock.
-        is_detached: True if HEAD is detached (no branch checked out).
 
     Returns:
-        A 4-character string like "*+#@" or "..#.".
+        A 2-character string like "+#" or "..".
     """
     return "".join(
         [
-            "*" if is_current else ".",
             "+" if is_dirty else ".",
             "#" if is_locked else ".",
-            "@" if is_detached else ".",
         ]
     )
 

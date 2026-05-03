@@ -124,15 +124,17 @@ def format_display_rows(worktrees: list[WorktreeInfo], current_path: str) -> lis
     """Build formatted selection rows for interactive display.
 
     Format per row:
-        "*+#. branch (commit) → ~/path"
+        "+# *branch (commit) → ~/path"
 
-    The 4-char indicator prefix uses fixed-column characters for scanability:
-        col 1: * = current, . = other
-        col 2: + = dirty,   . = clean
-        col 3: # = locked,  . = unlocked
-        col 4: @ = detached, . = on a branch
+    The 2-char indicator prefix uses fixed-column characters for scanability:
+        col 1: + = dirty,   . = clean
+        col 2: # = locked,  . = unlocked
 
-    Design rationale — plain text, no ANSI:
+    Branch display embeds context flags inline:
+        * prefix = current worktree
+        @ detached = detached HEAD (no branch)
+
+    Design rationale -- plain text, no ANSI:
     - gum handles its own terminal styling; injecting ANSI here would conflict
       with gum's colour management and break column alignment.
     - The numbered-list fallback path also consumes these rows, so keeping them
@@ -141,7 +143,7 @@ def format_display_rows(worktrees: list[WorktreeInfo], current_path: str) -> lis
     Args:
         worktrees: Ordered list of worktrees to format.
         current_path: Absolute path of the user's current worktree; used to
-            set the * indicator.
+            set the * indicator in the branch display.
 
     Returns:
         A list of plain-text strings, one per input worktree, in the same order.
@@ -149,14 +151,18 @@ def format_display_rows(worktrees: list[WorktreeInfo], current_path: str) -> lis
     home = os.path.expanduser("~")
     rows: list[str] = []
     for wt in worktrees:
-        # Build 4-char indicator string (* + # @)
         is_current = wt.path == current_path
         is_detached = not wt.branch
-        indicators = format_indicators(is_current, wt.is_dirty, wt.is_locked, is_detached)
+        indicators = format_indicators(wt.is_dirty, wt.is_locked)
         parts: list[str] = [indicators]
 
-        # Branch + commit — detached HEAD has an empty branch field
-        branch_display = wt.branch if wt.branch else "(detached)"
+        # Branch display: * prefix for current, @ detached for detached HEAD
+        if is_detached:
+            branch_display = "*@ detached" if is_current else "@ detached"
+        elif is_current:
+            branch_display = f"*{wt.branch}"
+        else:
+            branch_display = wt.branch
         parts.append(f"{branch_display} ({wt.commit})")
 
         # Path: shorten to ~/... when possible to reduce line width

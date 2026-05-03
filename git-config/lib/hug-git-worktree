@@ -887,17 +887,15 @@ show_worktree_summary() {
         local dirty="${status_dirty[$i]}"
         local locked="${locked_status[$i]}"
 
-        # Build status indicators via centralized formatter
         local is_current="false"
         local is_detached="false"
         [[ "$path" == "$current_worktree" ]] && is_current="true"
-        # Detached HEAD fix: Python data source returns empty string, not "detached"
         [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
         local indicators
-        indicators="$(format_worktree_indicators "$is_current" "$dirty" "$locked" "$is_detached") "
+        indicators="$(format_worktree_indicators "$dirty" "$locked") "
 
-        # Branch display fallback: avoid blank column for detached worktrees
-        local branch_display="${branch:-(detached)}"
+        local branch_display
+        branch_display="$(format_worktree_branch_display "$is_current" "$is_detached" "$branch")"
         printf "  %s%-20s %s\n" "$indicators" "$branch_display" "($commit) → ${path/#$HOME/\~}"
     done
 
@@ -920,32 +918,64 @@ is_worktree_not_main() {
 # Worktree Indicator Formatting
 ################################################################################
 
-# Build 4-char ANSI indicator string for worktree display.
+# Build 2-char ANSI indicator string for worktree display.
 #
-# Column layout (always 4 chars, no spaces between):
-#   * = current worktree  (green)
+# Column layout (always 2 chars, no spaces between):
 #   + = dirty             (yellow)
 #   # = locked            (red)
-#   @ = detached HEAD     (cyan)
 #   . = inactive          (grey)
 #
-# Usage: format_worktree_indicators "$is_current" "$is_dirty" "$is_locked" "$is_detached"
+# The * (current) and @ (detached) indicators are no longer columns —
+# they move into the branch display (see format_worktree_branch_display).
+#
+# Usage: format_worktree_indicators "$is_dirty" "$is_locked"
 # All args are "true" or "false" strings.
-# Returns: 4-char colored string via printf (capture with $(...))
+# Returns: 2-char colored string via printf (capture with $(...))
 format_worktree_indicators() {
+    local is_dirty="${1:-false}"
+    local is_locked="${2:-false}"
+
+    local i1 i2
+
+    if [[ "$is_dirty" == "true" ]];   then i1="${YELLOW}+${NC}"; else i1="${GREY}.${NC}"; fi
+    if [[ "$is_locked" == "true" ]];  then i2="${RED}#${NC}";    else i2="${GREY}.${NC}"; fi
+
+    printf '%s%s' "$i1" "$i2"
+}
+
+# Build the branch display string with current/detached indicators.
+#
+# Color rules:
+#   Current, on branch:   *branch          (all GREEN)
+#   Current, detached:    *@ detached       (* GREEN, @ CYAN, " detached" GREEN)
+#   Not current, branch:  branch           (default terminal color)
+#   Not current, detached: @ detached       (all CYAN)
+#
+# Usage: format_worktree_branch_display "$is_current" "$is_detached" "$branch"
+#   is_current: "true" or "false"
+#   is_detached: "true" or "false"
+#   branch: branch name (empty or "detached" when detached)
+# Returns: colored branch display string via printf (capture with $(...))
+format_worktree_branch_display() {
     local is_current="${1:-false}"
-    local is_dirty="${2:-false}"
-    local is_locked="${3:-false}"
-    local is_detached="${4:-false}"
+    local is_detached="${2:-false}"
+    local branch="${3:-}"
 
-    local i1 i2 i3 i4
-
-    if [[ "$is_current" == "true" ]]; then i1="${GREEN}*${NC}"; else i1="${GREY}.${NC}"; fi
-    if [[ "$is_dirty" == "true" ]];   then i2="${YELLOW}+${NC}"; else i2="${GREY}.${NC}"; fi
-    if [[ "$is_locked" == "true" ]];  then i3="${RED}#${NC}";    else i3="${GREY}.${NC}"; fi
-    if [[ "$is_detached" == "true" ]]; then i4="${CYAN}@${NC}";  else i4="${GREY}.${NC}"; fi
-
-    printf '%s%s%s%s' "$i1" "$i2" "$i3" "$i4"
+    if [[ "$is_detached" == "true" ]]; then
+        if [[ "$is_current" == "true" ]]; then
+            # Current + detached: GREEN *, CYAN @, GREEN " detached"
+            printf '%s*%s%s@%s%s detached%s' "$GREEN" "$NC" "$CYAN" "$NC" "$GREEN" "$NC"
+        else
+            # Not current, detached: all CYAN
+            printf '%s@ detached%s' "$CYAN" "$NC"
+        fi
+    elif [[ "$is_current" == "true" ]]; then
+        # Current, on branch: all GREEN
+        printf '%s*%s%s' "$GREEN" "$branch" "$NC"
+    else
+        # Not current, on branch: default color
+        printf '%s' "$branch"
+    fi
 }
 
 # Print a one-line legend explaining the indicator characters.
@@ -958,8 +988,8 @@ print_worktree_legend() {
     [[ -n "${HUG_QUIET:-}" ]] && return 0
     [[ ! -t 1 ]] && return 0
 
-    printf "  %s current  %s dirty  %s locked  %s detached\n\n" \
-        "${GREEN}*${NC}" "${YELLOW}+${NC}" "${RED}#${NC}" "${CYAN}@${NC}"
+    printf "  %s dirty  %s locked  %s current\n\n" \
+        "${YELLOW}+${NC}" "${RED}#${NC}" "${GREEN}*${NC}"
 }
 
 ################################################################################
@@ -977,18 +1007,16 @@ format_worktree_line() {
     local dirty="$5"
     local locked="$6"
 
-    # Build status indicators
     local path_display="${path/#$HOME/\~}"
     local is_current="false"
     local is_detached="false"
     [[ "$path" == "$current_worktree" ]] && is_current="true"
-    # Detached HEAD fix: Python data source returns empty string, not "detached"
     [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
     local status_indicators
-    status_indicators="$(format_worktree_indicators "$is_current" "$dirty" "$locked" "$is_detached") "
+    status_indicators="$(format_worktree_indicators "$dirty" "$locked") "
 
-    # Branch display fallback: avoid blank column for detached worktrees
-    local branch_display="${branch:-(detached)}"
+    local branch_display
+    branch_display="$(format_worktree_branch_display "$is_current" "$is_detached" "$branch")"
     printf "%s%-20s %s %s\n" "$status_indicators" "$branch_display" "$commit" "$path_display"
 }
 
@@ -1003,18 +1031,16 @@ format_worktree_long_line() {
     local dirty="$5"
     local locked="$6"
 
-    # Build status indicators
     local path_display="${path/#$HOME/\~}"
     local is_current="false"
     local is_detached="false"
     [[ "$path" == "$current_worktree" ]] && is_current="true"
-    # Detached HEAD fix: Python data source returns empty string, not "detached"
     [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
     local status_indicators
-    status_indicators="$(format_worktree_indicators "$is_current" "$dirty" "$locked" "$is_detached") "
+    status_indicators="$(format_worktree_indicators "$dirty" "$locked") "
 
-    # Branch display fallback: avoid blank column for detached worktrees
-    local branch_display="${branch:-(detached)}"
+    local branch_display
+    branch_display="$(format_worktree_branch_display "$is_current" "$is_detached" "$branch")"
     printf "%s%-20s %s %s\n" "$status_indicators" "$branch_display" "$commit" "$path_display"
 
     # Get commit subject and relative time

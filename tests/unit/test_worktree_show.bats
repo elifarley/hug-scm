@@ -59,10 +59,13 @@ teardown() {
   run git-wtsh
 
   assert_success
-  # Should have exactly one * (current) indicator in worktree rows
-  # Strip ANSI codes and count lines starting with * (the indicator column)
+  # With the 2-column indicator redesign, * (current) lives in the branch
+  # display, not the indicator column.  The worktree header line looks like:
+  #   .. /path/to/repo (*main)
+  # So we look for (* (asterisk immediately inside the branch-display parens).
+  # Strip ANSI codes and count lines containing the current-worktree marker.
   local current_count
-  current_count=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^\*' || true)
+  current_count=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep -c '(\*' || true)
   [[ "$current_count" == "1" ]] || fail "Expected exactly 1 current (*) indicator, got $current_count"
 }
 
@@ -380,9 +383,11 @@ teardown() {
   worktree_count=$(echo "$output" | grep -c "\ ([^[:space:]]*)$" || echo "0")
   [[ "$worktree_count" -ge 2 ]] || fail "Expected at least 2 worktrees with --all flag, got $worktree_count"
 
-  # Should have exactly one CURRENT worktree (* indicator in indicator column)
+  # Should have exactly one CURRENT worktree (* in the branch display)
+  # With the 2-column indicator redesign, * lives in the branch-display
+  # parens:  .. /path (*main)  vs  .. /path (branch)
   local current_count
-  current_count=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^\*' || true)
+  current_count=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep -c '(\*' || true)
   [[ "$current_count" == "1" ]] || fail "Expected exactly 1 current (*) indicator, got $current_count"
 
   # Cleanup

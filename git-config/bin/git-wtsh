@@ -233,17 +233,15 @@ show_worktree_details() {
       locked="true"
     fi
 
-    # Build status indicators using centralized format_worktree_indicators()
     local is_current="false"
     local is_detached="false"
     [[ "$path" == "$current_worktree" ]] && is_current="true"
-    # Detached HEAD fix: branch --show-current returns empty string, not "detached"
     [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
     local indicators
-    indicators="$(format_worktree_indicators "$is_current" "$dirty" "$locked" "$is_detached") "
+    indicators="$(format_worktree_indicators "$dirty" "$locked") "
 
-    # Branch display fallback: avoid blank column for detached worktrees
-    local branch_display="${branch:-(detached)}"
+    local branch_display
+    branch_display="$(format_worktree_branch_display "$is_current" "$is_detached" "$branch")"
     local display_path="${path/#$HOME/\~}"
     printf "%s%s (%s)\n" "$indicators" "$display_path" "$branch_display"
 

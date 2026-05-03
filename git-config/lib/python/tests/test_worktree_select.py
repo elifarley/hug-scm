@@ -189,29 +189,30 @@ class TestFormatDisplayRows:
         assert "→" in rows[0]
 
     def test_current_indicator(self, feature_wt):
-        """The worktree the user is in shows * in column 1."""
+        """The worktree the user is in shows * prefix on the branch name."""
         rows = format_display_rows([feature_wt], current_path=feature_wt.path)
-        assert rows[0].startswith("*")
+        # * is now in the branch display, not in the indicator columns
+        assert "*feature-1" in rows[0]
 
     def test_dirty_indicator(self, feature_wt):
-        """A dirty worktree shows + in column 2."""
+        """A dirty worktree shows + in column 1 of the indicator block."""
         # feature_wt fixture has is_dirty=True
         rows = format_display_rows([feature_wt], current_path="/other")
-        assert ".+" in rows[0]
+        assert rows[0].startswith("+.")
 
     def test_locked_indicator(self, bugfix_wt):
-        """A locked worktree shows # in column 3."""
+        """A locked worktree shows # in column 2 of the indicator block."""
         # bugfix_wt fixture has is_locked=True
         rows = format_display_rows([bugfix_wt], current_path="/other")
-        assert "..#" in rows[0]
+        assert rows[0].startswith(".#")
 
     def test_clean_unlocked_no_indicators(self, main_wt):
-        """Clean, unlocked, non-current shows all dots."""
+        """Clean, unlocked, non-current shows two dots in the indicator block."""
         rows = format_display_rows([main_wt], current_path="/other/path")
-        assert rows[0].startswith("....")
+        assert rows[0].startswith("..")
 
     def test_all_indicators_combined(self):
-        """Current + dirty + locked shows *+#."""
+        """Current + dirty + locked shows +# indicator and * branch prefix."""
         wt = WorktreeInfo(
             path="/home/user/wt",
             branch="all-flags",
@@ -220,10 +221,11 @@ class TestFormatDisplayRows:
             is_locked=True,
         )
         rows = format_display_rows([wt], current_path=wt.path)
-        assert rows[0].startswith("*+#.")
+        # Indicator block is +#, branch display has * prefix
+        assert rows[0].startswith("+# *all-flags")
 
     def test_detached_indicator(self):
-        """A detached HEAD worktree shows @ in column 4."""
+        """A detached HEAD worktree shows '@ detached' in branch display."""
         wt = WorktreeInfo(
             path="/home/user/wt",
             branch="",
@@ -232,7 +234,8 @@ class TestFormatDisplayRows:
             is_locked=False,
         )
         rows = format_display_rows([wt], current_path="/other")
-        assert rows[0].startswith("...@")
+        # @ is now in branch display, not in indicator columns
+        assert "@ detached" in rows[0]
 
     def test_path_shortened_with_home(self):
         """Paths under $HOME are displayed as ~/... to reduce visual noise."""
@@ -262,7 +265,7 @@ class TestFormatDisplayRows:
         assert rows[0].count("~") == 0
 
     def test_detached_head_empty_branch(self):
-        """A detached HEAD worktree displays '(detached)' instead of a branch name."""
+        """A detached HEAD worktree displays '@ detached' instead of a branch name."""
         wt = WorktreeInfo(
             path="/home/user/repo.WT.detached",
             branch="",
@@ -271,7 +274,7 @@ class TestFormatDisplayRows:
             is_locked=False,
         )
         rows = format_display_rows([wt], current_path="/other")
-        assert "(detached)" in rows[0]
+        assert "@ detached" in rows[0]
 
     def test_multiple_worktrees_preserves_order(self, main_wt, feature_wt, bugfix_wt):
         """Output list length and order exactly match the input list."""

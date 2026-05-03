@@ -16,85 +16,78 @@
 load '../test_helper'
 
 # Strip ANSI escape sequences for reliable assertions.
-# Pattern matches ESC [ <digits> m sequences (SGR — Select Graphic Rendition).
-# Also handles bare ESC (e.g. tput sgr0 may emit ESC without trailing m).
 strip_ansi() {
   sed 's/\x1b\[[0-9;]*m//g; s/\x1b//g'
 }
 
-@test "format_worktree_indicators: all inactive produces four dots" {
-  # Act
-  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_indicators false false false false'
-
-  # Assert
+@test "format_worktree_indicators: all inactive produces two dots" {
+  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_indicators false false'
   assert_success
   local stripped
   stripped=$(echo "$output" | strip_ansi)
-  assert_equal "$stripped" "...."
+  assert_equal "$stripped" ".."
 }
 
-@test "format_worktree_indicators: current only shows asterisk in column 1" {
-  # Act
-  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_indicators true false false false'
-
-  # Assert
+@test "format_worktree_indicators: dirty only shows plus in column 1" {
+  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_indicators true false'
   assert_success
   local stripped
   stripped=$(echo "$output" | strip_ansi)
-  assert_equal "$stripped" "*..."
+  assert_equal "$stripped" "+."
 }
 
-@test "format_worktree_indicators: dirty only shows plus in column 2" {
-  # Act
-  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_indicators false true false false'
-
-  # Assert
+@test "format_worktree_indicators: locked only shows hash in column 2" {
+  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_indicators false true'
   assert_success
   local stripped
   stripped=$(echo "$output" | strip_ansi)
-  assert_equal "$stripped" ".+.."
+  assert_equal "$stripped" ".#"
 }
 
-@test "format_worktree_indicators: locked only shows hash in column 3" {
-  # Act
-  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_indicators false false true false'
-
-  # Assert
+@test "format_worktree_indicators: both active shows +#" {
+  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_indicators true true'
   assert_success
   local stripped
   stripped=$(echo "$output" | strip_ansi)
-  assert_equal "$stripped" "..#."
+  assert_equal "$stripped" "+#"
 }
 
-@test "format_worktree_indicators: detached only shows at-sign in column 4" {
-  # Act
-  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_indicators false false false true'
-
-  # Assert
-  assert_success
-  local stripped
-  stripped=$(echo "$output" | strip_ansi)
-  assert_equal "$stripped" "...@"
-}
-
-@test "format_worktree_indicators: all active shows all four indicator chars" {
-  # Act
-  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_indicators true true true true'
-
-  # Assert
-  assert_success
-  local stripped
-  stripped=$(echo "$output" | strip_ansi)
-  assert_equal "$stripped" "*+#@"
-}
-
-@test "format_worktree_indicators: default args produces four dots" {
-  # Act — no arguments; all should default to "false"
+@test "format_worktree_indicators: default args produces two dots" {
   run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_indicators'
-
-  # Assert
   assert_success
   local stripped
   stripped=$(echo "$output" | strip_ansi)
-  assert_equal "$stripped" "...."
+  assert_equal "$stripped" ".."
+}
+
+@test "format_worktree_branch_display: current on branch shows green star prefix" {
+  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_branch_display true false main'
+  assert_success
+  local stripped
+  stripped=$(echo "$output" | strip_ansi)
+  assert_equal "$stripped" "*main"
+}
+
+@test "format_worktree_branch_display: not current on branch shows plain name" {
+  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_branch_display false false feature-1'
+  assert_success
+  local stripped
+  stripped=$(echo "$output" | strip_ansi)
+  assert_equal "$stripped" "feature-1"
+}
+
+@test "format_worktree_branch_display: not current detached shows @ detached" {
+  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_branch_display false true'
+  assert_success
+  local stripped
+  stripped=$(echo "$output" | strip_ansi)
+  assert_equal "$stripped" "@ detached"
+}
+
+@test "format_worktree_branch_display: current detached shows *@ detached" {
+  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; format_worktree_branch_display true true'
+  assert_success
+  local stripped
+  stripped=$(echo "$output" | strip_ansi)
+  assert_equal "$stripped" "*@ detached"
 }
