@@ -19,13 +19,15 @@ OPTIONS:
   -B, --branch BRANCH    Filter by exact branch name (repeatable, OR logic)
 
 DESCRIPTION:
-  Displays each worktree sorted alphabetically. The current worktree is highlighted in green and marked with an asterisk (*).
-  Each entry shows: path [branch] (short commit) commit subject [status indicators].
+  Displays each worktree sorted alphabetically. The current worktree is highlighted in green.
+  Each entry shows: path [branch] (short commit) commit subject <indicators>.
 
-  Status indicators:
-    [CURRENT] - The worktree you're currently in
-    [DIRTY]   - Worktree has uncommitted changes
-    [LOCKED]  - Worktree is locked (cannot be removed)
+  Indicators:
+    *  current worktree
+    +  dirty (uncommitted changes)
+    #  locked
+    @  detached HEAD
+    .  (inactive)
 
   Filtering:
     - Search term: Case-insensitive substring match on path or branch name
@@ -107,6 +109,7 @@ current_worktree=$(get_current_worktree_path)
 # WHY: Delegate filtering to library function (DRY — single source of truth).
 # filter_worktrees() handles the Python subprocess call and no-match error.
 printf "${BLUE}Worktrees (long format):%s${NC}\n" ""
+print_worktree_legend
 
 # Use Python for filtering when branch filters or search terms are provided
 if [[ -n "$branch_filters_str" || -n "$search_terms" ]]; then
