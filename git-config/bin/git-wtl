@@ -22,10 +22,12 @@ DESCRIPTION:
   Displays each worktree sorted alphabetically. The current worktree is highlighted in green and marked with an asterisk (*).
   Each entry shows: path [branch] [status indicators] (short commit).
 
-  Status indicators:
-    [CURRENT] - The worktree you're currently in
-    [DIRTY]   - Worktree has uncommitted changes
-    [LOCKED]  - Worktree is locked (cannot be removed)
+  Indicators:
+    *  current worktree
+    +  dirty (uncommitted changes)
+    #  locked
+    @  detached HEAD
+    .  (inactive)
 
   Filtering:
     - Search term: Case-insensitive substring match on path or branch name
@@ -108,6 +110,7 @@ current_worktree=$(get_current_worktree_path)
 # WHY: Delegate filtering to library function (DRY — single source of truth).
 # filter_worktrees() handles the Python subprocess call and no-match error.
 printf "${BLUE}Worktrees:%s${NC}\n" ""
+print_worktree_legend
 
 # Use Python for filtering when branch filters or search terms are provided
 if [[ -n "$branch_filters_str" || -n "$search_terms" ]]; then
@@ -128,14 +131,16 @@ if [[ -n "$branch_filters_str" || -n "$search_terms" ]]; then
     dirty="${filtered_dirty[$i]}"
     locked="${filtered_locked[$i]}"
 
-    # Build status indicators
-    status_indicators=""
+    # Build status indicators via centralized library function
     path_display="${path/#$HOME/\~}"
-    [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}[CURRENT]${NC} "
-    [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
-    [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
+    is_current="false"
+    [[ "$path" == "$current_worktree" ]] && is_current="true"
+    is_detached="false"
+    [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
+    status_indicators="$(format_worktree_indicators "$is_current" "$dirty" "$locked" "$is_detached") "
+    branch_display="${branch:-(detached)}"
 
-    printf "%s%-20s %s %s\n" "$status_indicators" "$branch" "($commit)" "$path_display"
+    printf "%s%-20s %s %s\n" "$status_indicators" "$branch_display" "($commit)" "$path_display"
   done
 else
   # No filtering: use original loop (Python already loaded all worktrees)
@@ -147,18 +152,16 @@ else
     dirty="${status_dirty[$i]}"
     locked="${locked_status[$i]}"
 
-    # Build status indicators
-    status_indicators=""
+    # Build status indicators via centralized library function
     path_display="${path/#$HOME/\~}"
+    is_current="false"
+    [[ "$path" == "$current_worktree" ]] && is_current="true"
+    is_detached="false"
+    [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
+    status_indicators="$(format_worktree_indicators "$is_current" "$dirty" "$locked" "$is_detached") "
+    branch_display="${branch:-(detached)}"
 
-    # Check if current worktree
-    [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}[CURRENT]${NC} "
-
-    # Add other status indicators
-    [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
-    [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
-
-    printf "%s%-20s %s %s\n" "$status_indicators" "$branch" "($commit)" "$path_display"
+    printf "%s%-20s %s %s\n" "$status_indicators" "$branch_display" "($commit)" "$path_display"
     match_count=$((match_count + 1))
   done
 fi
