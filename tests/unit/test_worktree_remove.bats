@@ -81,7 +81,7 @@ teardown() {
   run git-wtdel "$FEATURE_WT"
 
   assert_failure
-  assert_output --partial "Cannot remove the current worktree"
+  assert_output --partial "Cannot remove current worktree"
 
   # Worktree should still exist
   assert_worktree_exists "$FEATURE_WT"

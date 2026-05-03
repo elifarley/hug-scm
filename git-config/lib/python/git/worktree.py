@@ -96,6 +96,28 @@ class WorktreeList:
         return "\n".join(lines)
 
 
+@dataclass
+class WorktreeDirtyInfo:
+    """Categorized dirty status for a worktree.
+
+    Provides detailed breakdown of uncommitted changes, enabling user-friendly
+    messages like "unstaged changes, untracked files" instead of just "dirty".
+
+    Attributes:
+        is_dirty: True if any uncommitted changes exist
+        has_unstaged: True if working directory has modified tracked files
+        has_staged: True if index has files ready to commit
+        has_untracked: True if new files exist that aren't in git
+        details: Human-readable summary (e.g., "unstaged changes, untracked files")
+    """
+
+    is_dirty: bool
+    has_unstaged: bool
+    has_staged: bool
+    has_untracked: bool
+    details: str
+
+
 def _bash_escape(s: str) -> str:
     """Escape string for safe bash declare usage.
 
@@ -127,6 +149,24 @@ def _check_worktree_dirty(worktree_path: str) -> bool:
     Returns:
         True if worktree has any uncommitted changes, False otherwise
     """
+    info = _check_worktree_dirty_details(worktree_path)
+    return info.is_dirty
+
+
+def _check_worktree_dirty_details(worktree_path: str) -> WorktreeDirtyInfo:
+    """Check if a worktree has uncommitted changes and categorize them.
+
+    Uses git subprocess calls to check for three types of changes:
+    - Unstaged changes: modified tracked files in working directory
+    - Staged changes: files in index ready to commit
+    - Untracked files: new files not in git
+
+    Args:
+        worktree_path: Path to the worktree directory
+
+    Returns:
+        WorktreeDirtyInfo with detailed breakdown of changes
+    """
     try:
         # Check for unstaged changes
         result = subprocess.run(
@@ -153,10 +193,34 @@ def _check_worktree_dirty(worktree_path: str) -> bool:
         )
         has_untracked = bool(result.stdout.strip())
 
-        return has_unstaged or has_staged or has_untracked
+        # Build human-readable details
+        parts = []
+        if has_unstaged:
+            parts.append("unstaged changes")
+        if has_staged:
+            parts.append("staged changes")
+        if has_untracked:
+            parts.append("untracked files")
+        details = ", ".join(parts)
+
+        is_dirty = has_unstaged or has_staged or has_untracked
+
+        return WorktreeDirtyInfo(
+            is_dirty=is_dirty,
+            has_unstaged=has_unstaged,
+            has_staged=has_staged,
+            has_untracked=has_untracked,
+            details=details,
+        )
     except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
-        # On error, assume not dirty to avoid false positives
-        return False
+        # On error, assume clean to avoid false positives
+        return WorktreeDirtyInfo(
+            is_dirty=False,
+            has_unstaged=False,
+            has_staged=False,
+            has_untracked=False,
+            details="",
+        )
 
 
 def parse_worktree_list(
@@ -363,85 +427,107 @@ def main():
 
     Usage:
         python3 worktree.py list [options]
+        python3 worktree.py dirty <path>
 
     Commands:
         list    List worktrees and output bash variable declarations
+        dirty   Check dirty status of a worktree and output categorized details
 
-    Options:
+    Options (for 'list'):
         --include-main    Include main repository in output (default: false)
 
     The command auto-detects the main repo path via git rev-parse --show-toplevel.
     Outputs bash variable declarations via to_bash_declare().
     Returns exit code 1 on error.
-
-    Example:
-        $ python3 worktree.py list
-        declare -a worktree_paths=('/path/to/feature')
-        declare -a worktree_branches=('feature')
-        declare -a worktree_commits=('abc1234')
-        declare -a worktree_dirty_status=('false')
-        declare -a worktree_locked_status=('false')
     """
-    parser = argparse.ArgumentParser(description="List git worktrees for Hug SCM")
-    parser.add_argument(
-        "command", choices=["list"], help="Command to run (currently only 'list' supported)"
-    )
-    parser.add_argument(
+    # Use subparsers for different commands
+    parser = argparse.ArgumentParser(description="Git worktree helpers for Hug SCM")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # 'list' subcommand
+    list_parser = subparsers.add_parser("list", help="List worktrees")
+    list_parser.add_argument(
         "--include-main",
         action="store_true",
         help="Include main repository in output (default: false)",
     )
-    parser.add_argument(
+    list_parser.add_argument(
         "--main-repo-path",
         default="",
         help="Main repository path (auto-detected if not provided)",
     )
 
+    # 'dirty' subcommand
+    dirty_parser = subparsers.add_parser("dirty", help="Check worktree dirty status")
+    dirty_parser.add_argument(
+        "path",
+        help="Worktree path to check",
+    )
+
     args = parser.parse_args()
 
     try:
-        # Get main repo path (from argument or auto-detect)
-        if args.main_repo_path:
-            main_repo_path = args.main_repo_path
-        else:
-            main_repo_path = _get_main_repo_path()
-            if not main_repo_path:
-                print("Error: Not in a git repository", file=sys.stderr)
-                sys.exit(1)
-
-        # Get porcelain output
-        porcelain_output = _get_worktree_porcelain()
-        if not porcelain_output:
-            # No worktrees or error - output empty arrays
-            result = WorktreeList(
-                paths=[],
-                branches=[],
-                commits=[],
-                dirty_status=[],
-                locked_status=[],
-            )
-            print(result.to_bash_declare())
-            return
-
-        # Parse worktrees
-        worktrees = parse_worktree_list(
-            porcelain_output=porcelain_output,
-            main_repo_path=main_repo_path,
-            include_main=args.include_main,
-        )
-
-        # Convert to WorktreeList
-        result = to_worktree_list(worktrees)
-
-        # Output bash declarations
-        print(result.to_bash_declare())
-
+        if args.command == "list":
+            _handle_list_command(args)
+        elif args.command == "dirty":
+            _handle_dirty_command(args.path)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"Unexpected error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def _handle_list_command(args):
+    """Handle the 'list' subcommand."""
+    # Get main repo path (from argument or auto-detect)
+    if args.main_repo_path:
+        main_repo_path = args.main_repo_path
+    else:
+        main_repo_path = _get_main_repo_path()
+        if not main_repo_path:
+            print("Error: Not in a git repository", file=sys.stderr)
+            sys.exit(1)
+
+    # Get porcelain output
+    porcelain_output = _get_worktree_porcelain()
+    if not porcelain_output:
+        # No worktrees or error - output empty arrays
+        result = WorktreeList(
+            paths=[],
+            branches=[],
+            commits=[],
+            dirty_status=[],
+            locked_status=[],
+        )
+        print(result.to_bash_declare())
+        return
+
+    # Parse worktrees
+    worktrees = parse_worktree_list(
+        porcelain_output=porcelain_output,
+        main_repo_path=main_repo_path,
+        include_main=args.include_main,
+    )
+
+    # Convert to WorktreeList
+    result = to_worktree_list(worktrees)
+
+    # Output bash declarations
+    print(result.to_bash_declare())
+
+
+def _handle_dirty_command(path: str):
+    """Handle the 'dirty' subcommand.
+
+    Outputs bash declare statements for:
+        _wt_dirty        - "true" or "false"
+        _wt_dirty_details - human-readable details string
+    """
+    info = _check_worktree_dirty_details(path)
+    print(f"_wt_dirty={'true' if info.is_dirty else 'false'}")
+    print(f"_wt_dirty_details='{info.details}'")
 
 
 if __name__ == "__main__":

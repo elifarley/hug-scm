@@ -216,7 +216,11 @@ for worktree_path in "${worktree_paths[@]}"; do
   # Prevent removal of current worktree
   current_worktree=$(get_current_worktree_path)
   if [[ "$worktree_path" == "$current_worktree" ]]; then
-    warning "Cannot remove the current worktree: $worktree_path"
+    if [[ ${#worktree_paths[@]} -gt 1 ]]; then
+      warning "Cannot remove the current worktree: $worktree_path"
+    else
+      error "Cannot remove current worktree: $worktree_path"
+    fi
     failed+=("$worktree_path")
     continue
   fi
@@ -235,8 +239,8 @@ for worktree_path in "${worktree_paths[@]}"; do
   dirty_details=""
   get_worktree_dirty_details "$worktree_path" is_dirty dirty_details
 
-  # Block dirty removal without --force (before showing summary)
-  if $is_dirty && ! $force; then
+  # Block dirty removal without --force (but allow dry-run to preview)
+  if $is_dirty && ! $force && ! $dry_run; then
     echo
     printf "${BLUE}Worktree Removal Summary:${NC}\n"
     printf "  Branch: %s\n" "$wt_branch"

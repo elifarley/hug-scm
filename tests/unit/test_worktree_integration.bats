@@ -126,10 +126,11 @@ teardown() {
   # Menu may or may not show due to timing, cancellation is expected
   assert_output --partial "cancelled"
 
-  # Should fail to remove without force
+  # Should succeed to preview dirty worktree with dry-run
   run git-wtdel "$dirty_wt" --dry-run
   assert_success
-  assert_output --partial "Would remove worktree"
+  assert_output --partial "Worktree Removal Preview (DRY RUN)"
+  assert_output --partial "Dirty"
 
   # Should succeed to remove with force
   run git-wtdel "$dirty_wt" --force
