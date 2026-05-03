@@ -36,11 +36,12 @@ DESCRIPTION:
     Filter worktrees by path or branch name (case-insensitive).
     Preserves existing search functionality.
 
-STATUS INDICATORS:
-  [CURRENT] - The worktree you're currently in
-  [DIRTY]   - Worktree has uncommitted changes
-  [LOCKED]  - Worktree is locked (cannot be removed)
-  [DETACHED] - Worktree is in detached HEAD state
+INDICATORS:
+  *  current worktree
+  +  dirty (uncommitted changes)
+  #  locked
+  @  detached HEAD
+  .  (inactive)
 
 EXAMPLES:
   hug wtsh                   # Current worktree only (new default)
@@ -232,15 +233,19 @@ show_worktree_details() {
       locked="true"
     fi
 
-    # Build status indicators
-    local indicators=""
-    [[ "$path" == "$current_worktree" ]] && indicators="${indicators}${GREEN}[CURRENT]${NC} "
-    [[ "$dirty" == "true" ]] && indicators="${indicators}${YELLOW}[DIRTY]${NC} "
-    [[ "$locked" == "true" ]] && indicators="${indicators}${RED}[LOCKED]${NC} "
-    [[ "$branch" == "detached" ]] && indicators="${indicators}${CYAN}[DETACHED]${NC} "
+    # Build status indicators using centralized format_worktree_indicators()
+    local is_current="false"
+    local is_detached="false"
+    [[ "$path" == "$current_worktree" ]] && is_current="true"
+    # Detached HEAD fix: branch --show-current returns empty string, not "detached"
+    [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
+    local indicators
+    indicators="$(format_worktree_indicators "$is_current" "$dirty" "$locked" "$is_detached") "
 
+    # Branch display fallback: avoid blank column for detached worktrees
+    local branch_display="${branch:-(detached)}"
     local display_path="${path/#$HOME/\~}"
-    printf "%s%s (%s)\n" "$indicators" "$display_path" "$branch"
+    printf "%s%s (%s)\n" "$indicators" "$display_path" "$branch_display"
 
     # Get detailed information
     printf "├─ Commit: %s " "$commit"
