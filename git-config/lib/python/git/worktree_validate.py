@@ -23,7 +23,6 @@ if __name__ == "__main__":
     if _pkg_root not in sys.path:
         sys.path.insert(0, _pkg_root)
 
-from git.selection_core import BashDeclareBuilder
 from git.worktree import parse_worktree_list
 
 
@@ -103,8 +102,9 @@ def validate_creation_path(path: str, auto_create_parent: bool = True) -> Valida
 
     if os.path.exists(path):
         return ValidationResult(
-            False, f"Target path already exists: {path}\n"
-            "Choose a different path or remove the existing directory"
+            False,
+            f"Target path already exists: {path}\n"
+            "Choose a different path or remove the existing directory",
         )
 
     parent_dir = os.path.dirname(path)
@@ -125,8 +125,9 @@ def validate_creation_path(path: str, auto_create_parent: bool = True) -> Valida
     main_repo = _get_main_repo_path()
     if main_repo and _is_path_inside(path, main_repo):
         return ValidationResult(
-            False, f"Cannot create worktree inside main repository: {path}\n"
-            "Choose a location outside the main repository"
+            False,
+            f"Cannot create worktree inside main repository: {path}\n"
+            "Choose a location outside the main repository",
         )
 
     return ValidationResult(True, "")

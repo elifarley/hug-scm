@@ -575,7 +575,7 @@ This comprehensive guide covers:
 | **User Guides** | `docs/*.md` | getting-started.md, workflows.md |
 | **Command Reference** | `docs/commands/*.md` | head.md, branching.md, status-staging.md |
 | **Architecture Decisions** | `docs/architecture/ADR-*.md` | ADR-001-automated-testing-strategy.md |
-| **Planning Docs** | `docs/planning/*.md` | json-output-roadmap.md |
+| **Planning Docs** | `docs/plans/*.md` | json-output-roadmap.md |
 | **VHS Screencasts** | `docs/screencasts/*.tape` | hug-sl-states.tape, template.tape |
 | **Meta/Tooling** | `docs/meta/*.md` | hug-completion-reference.md |
 | **Library Docs** | `git-config/lib/README.md` | Library function documentation |
@@ -588,7 +588,7 @@ This comprehensive guide covers:
 **Ask yourself:**
 
 1. **Is it an architectural decision?** → `docs/architecture/ADR-NNN-*.md`
-2. **Is it a planning/roadmap document?** → `docs/planning/*.md`
+2. **Is it a planning/roadmap document?** → `docs/plans/*.md`
 3. **Is it command reference?** → `docs/commands/*.md`
 4. **Is it a user guide?** → `docs/*.md`
 5. **Is it about VHS screenshots?** → `docs/screencasts/README.md` (single source of truth)
@@ -606,7 +606,7 @@ This comprehensive guide covers:
 
 **Do create:**
 - ✅ ADRs for architectural decisions
-- ✅ Planning docs in `docs/planning/` for roadmaps
+- ✅ Planning docs in `docs/plans/` for roadmaps
 - ✅ Command docs in `docs/commands/` organized by prefix
 - ✅ User guides in `docs/` for workflows and tutorials
 
@@ -626,7 +626,7 @@ This comprehensive guide covers:
 - **git-config/lib/README.md**: Library function documentation and patterns
 - **docs/**: VitePress site with command docs and architecture decisions
 - **docs/architecture/ADR-*.md**: Architectural decision records
-- **docs/planning/**: Planning and roadmap documents
+- **docs/plans/**: Planning and roadmap documents
 - **docs/screencasts/README.md**: VHS screenshot system guide (single source of truth)
 
 ## Useful References
