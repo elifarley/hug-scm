@@ -1,0 +1,238 @@
+---
+# Skipped Tests Analysis for Hug SCM
+# Generated: 2025-12-09
+# This document analyzes all currently skipped tests and provides fix recommendations
+
+summary:
+  total_skipped_tests: 15
+  categories:
+    - Missing dependencies: 6
+    - Help flag limitations: 2
+    - Framework limitations: 3
+    - Interactive tests: 3
+    - Test infrastructure issues: 1
+
+skipped_tests:
+
+  # HELP FLAG LIMITATIONS (2 tests)
+  - test_name: "hug c: shows help with --help"
+    file: "tests/unit/test_commit.bats:29"
+    reason: "git intercepts --help for man pages (use -h instead)"
+    category: "help_flag_limitations"
+    fix_approach: |
+      Test with -h flag instead of --help:
+      1. Replace --help with -h in test
+      2. Verify help output is displayed correctly
+      3. Document that --help is intercepted by git
+    effort_estimate: "Low (30 minutes)"
+    priority: "Medium"
+
+  - test_name: "hug lol: shows help with --help flag"
+    file: "tests/unit/test_log_outgoing.bats:28"
+    reason: "git intercepts --help for man pages (use -h instead)"
+    category: "help_flag_limitations"
+    fix_approach: |
+      Same as above - use -h instead of --help:
+      1. Change test to use -h flag
+      2. Verify help output works correctly
+      3. Update any related documentation
+    effort_estimate: "Low (30 minutes)"
+    priority: "Medium"
+
+  # MISSING DEPENDENCIES (6 tests)
+  - test_name: "hug sw --browse-root: triggers interactive mode when gum is available"
+    file: "tests/unit/test_status_staging.bats:368"
+    reason: "gum not available"
+    category: "missing_dependencies"
+    fix_approach: |
+      Replace gum availability check with proper gum mock testing:
+      1. Replace skip with setup_gum_mock
+      2. Set appropriate HUG_TEST_GUM_INPUT/SELECTION_INDEX
+      3. Remove timeout and test actual interactive behavior
+    effort_estimate: "Low (1 hour)"
+    priority: "Low"
+
+  - test_name: "hug ss --browse-root: triggers interactive mode"
+    file: "tests/unit/test_status_staging.bats:382"
+    reason: "gum not available"
+    category: "missing_dependencies"
+    fix_approach: |
+      Same as above - replace with gum mock:
+      1. Use setup_gum_mock instead of gum_available check
+      2. Test interactive file selection behavior
+      3. Remove timeout limitation
+    effort_estimate: "Low (1 hour)"
+    priority: "Low"
+
+  - test_name: "hug su --browse-root: triggers interactive mode"
+    file: "tests/unit/test_status_staging.bats:393"
+    reason: "gum not available"
+    category: "missing_dependencies"
+    fix_approach: |
+      Replace with gum mock testing:
+      1. Replace gum_available check with setup_gum_mock
+      2. Test interactive unstaged file selection
+      3. Verify proper behavior without timeout
+    effort_estimate: "Low (1 hour)"
+    priority: "Low"
+
+  - test_name: "hug a --browse-root: triggers interactive mode"
+    file: "tests/unit/test_status_staging.bats:404"
+    reason: "gum not available"
+    category: "missing_dependencies"
+    fix_approach: |
+      Replace with gum mock:
+      1. Use setup_gum_mock instead of skip
+      2. Test interactive file staging behavior
+      3. Remove timeout and test properly
+    effort_estimate: "Low (1 hour)"
+    priority: "Low"
+
+  - test_name: "hug wtdel: interactive worktree deletion with gum"
+    file: "tests/unit/test_worktree_remove.bats:221"
+    reason: "gum not available for interactive test"
+    category: "missing_dependencies"
+    fix_approach: |
+      Replace gum availability check with gum mock:
+      1. Replace 'if gum_available' with 'setup_gum_mock'
+      2. Use HUG_TEST_GUM_SELECTION_INDEX to control selection
+      3. Test both selection and cancellation paths
+    effort_estimate: "Low (1 hour)"
+    priority: "Medium"
+
+  - test_name: "hug ll --json: works with jq for filtering"
+    file: "tests/unit/test_ll.bats:167"
+    reason: "jq not installed"
+    category: "missing_dependencies"
+    fix_approach: |
+      Add conditional test execution:
+      1. Keep the skip if jq is not available
+      2. Add optional installation check in CI
+      3. Consider adding jq as a test dependency
+    effort_estimate: "Low (30 minutes)"
+    priority: "Low"
+
+  # FRAMEWORK LIMITATIONS (3 tests)
+  - test_name: "tag library: validate_tag_name function"
+    file: "tests/unit/test_tag_commands.bats:367"
+    reason: "TODO: Fix validate_tag_name test - BATS treats function return 1 as test failure"
+    category: "framework_limitations"
+    fix_approach: |
+      Test the function properly within BATS framework:
+      1. Run the function in a subshell to capture return code
+      2. Use run command with proper exit code checking
+      3. Test both valid and invalid tag names
+    effort_estimate: "Low (1 hour)"
+    priority: "Medium"
+
+  - test_name: "hug wtprune: requires worktrees for testing"
+    file: "tests/unit/test_worktree_prune.bats:26"
+    reason: "Could not create test worktrees for pruning tests"
+    category: "framework_limitations"
+    fix_approach: |
+      Fix worktree creation reliability:
+      1. Add better error handling in test setup
+      2. Create worktrees with more robust error checking
+      3. Add fallback test scenarios if worktrees can't be created
+    effort_estimate: "Medium (2-3 hours)"
+    priority: "Medium"
+
+  - test_name: "hug clone - skips status with --no-status flag"
+    file: "tests/integration/test_clone.bats:203"
+    reason: "Interactive prompt testing requires expect or similar tool"
+    category: "framework_limitations"
+    fix_approach: |
+      Use input piping instead of expect:
+      1. Replace interactive test with EOF simulation
+      2. Use echo "" | command to test cancellation
+      3. Test --no-status flag behavior directly
+    effort_estimate: "Low (1 hour)"
+    priority: "Low"
+
+  # TEST INFRASTRUCTURE (1 test)
+  - test_name: "hug init - supports Mercurial with --hg flag"
+    file: "tests/integration/test_init.bats:141"
+    reason: "Mercurial is not installed"
+    category: "test_infrastructure"
+    fix_approach: |
+      No fix needed - this is appropriate conditional testing:
+      1. Keep the skip when hg is not available
+      2. Consider adding hg to CI if Mercurial testing is desired
+      3. Document that this test runs only when hg is installed
+    effort_estimate: "None (as intended)"
+    priority: "N/A"
+
+  # INTERACTIVE TESTS (3 tests)
+  - test_name: "hug init - errors when hg not installed but --hg specified"
+    file: "tests/integration/test_init.bats:155"
+    reason: "Mercurial is installed"
+    category: "interactive_tests"
+    fix_approach: |
+      No fix needed - this is appropriate conditional testing:
+      1. This test only runs when hg is NOT installed
+      2. Tests error path for missing Mercurial
+      3. Keep as is
+    effort_estimate: "None (as intended)"
+    priority: "N/A"
+
+  - test_name: "hug clone with --hg when Mercurial not installed"
+    file: "tests/integration/test_clone.bats:178"
+    reason: "Mercurial is installed"
+    category: "interactive_tests"
+    fix_approach: |
+      No fix needed - appropriate conditional testing:
+      1. Tests error handling when trying to use hg clone without hg
+      2. Only runs in environments without hg installed
+      3. Keep as is
+    effort_estimate: "None (as intended)"
+    priority: "N/A"
+
+# Recommended Implementation Order
+implementation_priority:
+  # Phase 1: Quick Wins (Low effort, Medium/High priority)
+  - category: "help_flag_limitations"
+    reason: "Simple flag changes, immediate impact"
+    tests:
+      - "hug c: shows help with --help"
+      - "hug lol: shows help with --help flag"
+
+  # Phase 2: Framework Fixes (Low effort, Medium priority)
+  - category: "framework_limitations"
+    reason: "Fixes underlying test issues"
+    tests:
+      - "tag library: validate_tag_name function"
+
+  # Phase 3: Dependency Testing (Low effort, Low priority)
+  - category: "missing_dependencies"
+    reason: "Enables comprehensive testing of features"
+    tests:
+      - "hug sw --browse-root: triggers interactive mode when gum is available"
+      - "hug ss --browse-root: triggers interactive mode"
+      - "hug su --browse-root: triggers interactive mode"
+      - "hug a --browse-root: triggers interactive mode"
+      - "hug wtdel: interactive worktree deletion with gum"
+      - "hug ll --json: works with jq for filtering"
+
+  # Phase 4: Infrastructure Improvements (Medium effort, Medium priority)
+  - category: "framework_limitations"
+    reason: "Improves test reliability"
+    tests:
+      - "hug wtprune: requires worktrees for testing"
+      - "hug clone - skips status with --no-status flag"
+
+# Notes on Common Patterns
+common_patterns:
+  interactive_testing:
+    current_problem: "Some tests skip due to missing dependencies (gum)"
+    solution: "Use the existing gum mock system with setup_gum_mock"
+    benefits: "Enables comprehensive testing without manual intervention"
+
+  dependency_management:
+    current_problem: "Tests skip when optional dependencies are missing"
+    solution: "Add conditional testing or make dependencies required in CI"
+    benefits: "More complete test coverage in CI environments"
+
+  framework_limitations:
+    current_problem: "BATS framework limitations cause test skips"
+    solution: "Refactor tests to work within BATS constraints"
+    benefits: "Better test reliability and maintainability"
