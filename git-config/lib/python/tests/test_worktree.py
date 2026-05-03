@@ -892,37 +892,26 @@ class TestWorktreeListToJson:
 
 
 class TestFormatIndicators:
-    """Tests for format_indicators() -- 4-column single-char indicator string.
+    """Tests for format_indicators() -- 2-column single-char indicator string.
 
-    Column layout: * + # @
-      * = current worktree
+    Column layout: + #
       + = dirty (uncommitted changes)
       # = locked
-      @ = detached HEAD
       . = inactive
+
+    The * (current) and @ (detached) indicators are no longer columns;
+    they are embedded in the branch display by format_display_rows().
     """
 
     def test_all_inactive(self):
-        """Clean, non-current, unlocked, attached -> ...."""
-        assert format_indicators(False, False, False, False) == "...."
-
-    def test_current_only(self):
-        assert format_indicators(True, False, False, False) == "*..."
+        """Clean, unlocked -> .."""
+        assert format_indicators(False, False) == ".."
 
     def test_dirty_only(self):
-        assert format_indicators(False, True, False, False) == ".+.."
+        assert format_indicators(True, False) == "+."
 
     def test_locked_only(self):
-        assert format_indicators(False, False, True, False) == "..#."
-
-    def test_detached_only(self):
-        assert format_indicators(False, False, False, True) == "...@"
-
-    def test_all_active(self):
-        assert format_indicators(True, True, True, True) == "*+#@"
-
-    def test_current_and_dirty(self):
-        assert format_indicators(True, True, False, False) == "*+.."
+        assert format_indicators(False, True) == ".#"
 
     def test_dirty_and_locked(self):
-        assert format_indicators(False, True, True, False) == ".+#."
+        assert format_indicators(True, True) == "+#"
