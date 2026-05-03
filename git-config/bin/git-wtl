@@ -16,7 +16,7 @@ USAGE:
 OPTIONS:
   -h, --help         Show this help message and exit.
   --json             Output in JSON format instead of human-readable text.
-  --branch BRANCH    Filter by exact branch name (repeatable, OR logic)
+  -B, --branch BRANCH    Filter by exact branch name (repeatable, OR logic)
 
 DESCRIPTION:
   Displays each worktree sorted alphabetically. The current worktree is highlighted in green and marked with an asterisk (*).
@@ -29,7 +29,7 @@ DESCRIPTION:
 
   Filtering:
     - Search term: Case-insensitive substring match on path or branch name
-    - --branch: Exact branch name match (case-sensitive, repeatable)
+    - -B / --branch: Exact branch name match (case-sensitive, repeatable)
     - Combined: Both filters must match (AND logic)
 
 EXAMPLES:
@@ -57,7 +57,7 @@ while [[ $# -gt 0 ]]; do
     json_output=true
     shift
     ;;
-  --branch)
+  -B | --branch)
     if [[ -z "${2:-}" ]]; then
       error "--branch requires a value"
       exit 1
@@ -105,45 +105,28 @@ fi
 current_worktree=$(get_current_worktree_path)
 
 # Build and print worktree list
-# WHY: Delegate filtering to Python (DRY — single source of truth for branch/search
-# filtering). Python's filter_worktrees_by_criteria() handles both exact branch
-# matching (OR logic) and substring search (OR logic) with AND between stages.
+# WHY: Delegate filtering to library function (DRY — single source of truth).
+# filter_worktrees() handles the Python subprocess call and no-match error.
 printf "${BLUE}Worktrees:%s${NC}\n" ""
 
 # Use Python for filtering when branch filters or search terms are provided
 if [[ -n "$branch_filters_str" || -n "$search_terms" ]]; then
-  # Build branch filter args for Python
-  branch_args=()
-  for b in $branch_filters_str; do
-    branch_args+=(--branch "$b")
-  done
-
-  # Call Python filter subcommand
-  if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/worktree_select.py" filter \
-      --include-main \
-      --search "$search_terms" \
-      "${branch_args[@]}")"; then
-    printf "No worktrees found" >&2
-    exit 1
-  fi
-
-  # Python outputs _wt_paths, _wt_branches, _wt_commits, _wt_dirty_status, _wt_locked_status
-  match_count=${#_wt_paths[@]}
-  if [[ $match_count -eq 0 ]]; then
-    filter_desc=""
-    [[ -n "$branch_filters_str" ]] && filter_desc="--branch $branch_filters_str"
-    [[ -n "$search_terms" ]] && filter_desc="${filter_desc:+$filter_desc }$search_terms"
-    printf "No worktrees found matching: %s\n" "$filter_desc" >&2
+  # Output arrays for filter_worktrees (nameref pattern).
+  # IMPORTANT: Must NOT use names that collide with the function's internal
+  # _wt_* locals — Bash namerefs resolve to the nearest scope first.
+  declare -a filtered_paths=() filtered_branches=() filtered_commits=()
+  declare -a filtered_dirty=() filtered_locked=()
+  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked "$branch_filters_str" "$search_terms"; then
     exit 1
   fi
 
   # Display filtered results
-  for i in "${!_wt_paths[@]}"; do
-    path="${_wt_paths[$i]}"
-    branch="${_wt_branches[$i]}"
-    commit="${_wt_commits[$i]}"
-    dirty="${_wt_dirty_status[$i]}"
-    locked="${_wt_locked_status[$i]}"
+  for i in "${!filtered_paths[@]}"; do
+    path="${filtered_paths[$i]}"
+    branch="${filtered_branches[$i]}"
+    commit="${filtered_commits[$i]}"
+    dirty="${filtered_dirty[$i]}"
+    locked="${filtered_locked[$i]}"
 
     # Build status indicators
     status_indicators=""

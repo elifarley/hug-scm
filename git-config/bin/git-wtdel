@@ -15,12 +15,12 @@ hug wtdel: Remove worktree(s) safely
 
 USAGE:
     hug wtdel [path...] [options]
-    hug wtdel --branch <branch> [options]
+    hug wtdel -B <branch> [options]
     hug wtdel -h|--help
 
 ARGUMENTS:
     [path...]         One or more worktree paths to remove (optional, shows interactive menu)
-    --branch <branch> Remove worktree checked out to specified branch
+    -B, --branch <branch> Remove worktree checked out to specified branch
 
 OPTIONS:
     -f, --force       Skip confirmation prompts and remove even with uncommitted changes
@@ -43,8 +43,11 @@ EXAMPLES:
     hug wtdel ../worktrees-repo/feature-auth  # Remove specific worktree
     hug wtdel ../feature-auth --dry-run       # Preview removal without doing it
     hug wtdel ../feature-auth -f              # Force remove without confirmation
-    hug wtdel --branch feat-1                 # Remove worktree for branch "feat-1"
+    hug wtdel -B feat-1                       # Remove worktree for branch "feat-1"
     hug wtdel path1 path2 path3 --force       # Batch remove multiple worktrees
+
+    # Batch delete worktrees by branch using a loop:
+    for b in feat-1 feat-2 feat-3; do hug wtdel -B "$b" -f; done
 
 SEE ALSO:
     hug wt      List and switch between worktrees
@@ -78,7 +81,7 @@ check_git_repo
 
 # Parse arguments using getopt
 set +e # Temporarily disable exit on error to capture getopt failure
-PARSED=$(getopt --options hf --longoptions help,force,dry-run,branch: --name "hug wtdel" -- "$@" 2>&1)
+PARSED=$(getopt --options hB:f --longoptions help,force,dry-run,branch: --name "hug wtdel" -- "$@" 2>&1)
 getopt_status=$?
 set -e # Re-enable exit on error
 
@@ -113,7 +116,7 @@ while true; do
     dry_run=true
     shift
     ;;
-  --branch)
+  -B | --branch)
     branch_name="$2"
     shift 2
     ;;
@@ -144,28 +147,28 @@ if [[ -n "$branch_name" ]]; then
     error "--branch and path are mutually exclusive. Use one or the other."
     exit 1
   fi
-  
+
   # Resolve branch to worktree path
   worktree_path=$(get_worktree_path_by_branch "$branch_name" || true)
   if [[ -z "$worktree_path" ]]; then
     error "No worktree found for branch '$branch_name'"
     exit 1
   fi
-  
+
   # Prevent removing main worktree via branch
   main_worktree=$(get_main_worktree_path)
   if [[ "$worktree_path" == "$main_worktree" ]]; then
     error "Cannot remove the main worktree via --branch. Use a different branch or specify path directly."
     exit 1
   fi
-  
+
   worktree_paths=("$worktree_path")
 fi
 
 # Convert relative paths to absolute
 for i in "${!worktree_paths[@]}"; do
   if [[ ! "${worktree_paths[$i]}" = /* ]]; then
-    worktree_paths[$i]="$(realpath "$(pwd)/${worktree_paths[$i]}" 2>/dev/null || echo "$(pwd)/${worktree_paths[$i]}")"
+    worktree_paths[$i]="$(realpath "$(pwd)/${worktree_paths[$i]}" 2> /dev/null || echo "$(pwd)/${worktree_paths[$i]}")"
   fi
 done
 
@@ -204,14 +207,14 @@ for worktree_path in "${worktree_paths[@]}"; do
     warning "Path is not a Git worktree: $worktree_path"
     path_valid=false
   fi
-  
+
   if ! $path_valid; then
     failed+=("$worktree_path")
     continue
   fi
 
   # Get branch name for display
-  wt_branch=$(git -C "$worktree_path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+  wt_branch=$(git -C "$worktree_path" rev-parse --abbrev-ref HEAD 2> /dev/null || echo "unknown")
 
   # Prevent removal of current worktree
   current_worktree=$(get_current_worktree_path)
@@ -226,7 +229,7 @@ for worktree_path in "${worktree_paths[@]}"; do
   fi
 
   # Check if worktree is locked
-  if git worktree list --porcelain 2>/dev/null | grep -A1 "^worktree $worktree_path$" | grep -q "^locked"; then
+  if git worktree list --porcelain 2> /dev/null | grep -A1 "^worktree $worktree_path$" | grep -q "^locked"; then
     warning "Worktree is locked: $worktree_path. Unlock it first with: git worktree unlock '$worktree_path'"
     failed+=("$worktree_path")
     continue
@@ -263,7 +266,7 @@ for worktree_path in "${worktree_paths[@]}"; do
   if $dry_run; then
     echo
     if [[ ${#worktree_paths[@]} -gt 1 ]]; then
-      printf "${BLUE}Worktree Removal Preview (DRY RUN) [$(( ${#failed[@]} + ${#removed[@]} + 1 ))/${#worktree_paths[@]}]:${NC}\n"
+      printf "${BLUE}Worktree Removal Preview (DRY RUN) [$((${#failed[@]} + ${#removed[@]} + 1))/${#worktree_paths[@]}]:${NC}\n"
     else
       printf "${BLUE}Worktree Removal Preview (DRY RUN):${NC}\n"
     fi
@@ -282,7 +285,7 @@ for worktree_path in "${worktree_paths[@]}"; do
   # --- SUMMARY ---
   echo
   if [[ ${#worktree_paths[@]} -gt 1 ]]; then
-    printf "${BLUE}Worktree Removal Summary [$(( ${#failed[@]} + ${#removed[@]} + 1 ))/${#worktree_paths[@]}]:${NC}\n"
+    printf "${BLUE}Worktree Removal Summary [$((${#failed[@]} + ${#removed[@]} + 1))/${#worktree_paths[@]}]:${NC}\n"
   else
     printf "${BLUE}Worktree Removal Summary:${NC}\n"
   fi
@@ -311,7 +314,7 @@ for worktree_path in "${worktree_paths[@]}"; do
     # Fallback to manual cleanup
     warning "git worktree remove failed: $git_err"
     info "Attempting manual cleanup..."
-    if rm -rf "$worktree_path" && git worktree prune 2>/dev/null; then
+    if rm -rf "$worktree_path" && git worktree prune 2> /dev/null; then
       success "Worktree removed for '$wt_branch' (manual cleanup)"
       removal_success=true
     else
@@ -321,14 +324,14 @@ for worktree_path in "${worktree_paths[@]}"; do
     # Verify removal
     if [[ -d "$worktree_path" ]]; then
       warning "Worktree directory still exists after removal. Running cleanup..."
-      rm -rf "$worktree_path" 2>/dev/null || true
-      git worktree prune 2>/dev/null || true
+      rm -rf "$worktree_path" 2> /dev/null || true
+      git worktree prune 2> /dev/null || true
     fi
     removal_success=true
   fi
 
   # Run prune to clean up metadata
-  git worktree prune 2>/dev/null || true
+  git worktree prune 2> /dev/null || true
 
   # Track result
   if $removal_success; then
@@ -350,7 +353,7 @@ if [[ ${#worktree_paths[@]} -gt 1 ]]; then
     printf "  Failed: ${#failed[@]}\n"
   fi
   echo
-  
+
   if [[ ${#failed[@]} -gt 0 ]]; then
     exit 1
   fi

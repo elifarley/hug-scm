@@ -350,26 +350,21 @@ elif [[ "$show_all" == "false" && $# -eq 0 ]]; then
   show_current_worktree_only "$current_worktree"
 elif [[ $# -gt 0 ]]; then
   # Multi-term search filtering (enhanced behavior)
-  # WHY: Delegate filtering to Python (DRY — single source of truth for search
-  # filtering). Python's filter_by_search() handles substring matching.
-  search_terms="$*" # Capture all search terms
+  # WHY: Delegate filtering to library function (DRY — single source of truth).
+  # filter_worktrees() handles the Python subprocess call and no-match error.
+  search_terms="$*"
 
-  # Call Python filter subcommand
-  if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/worktree_select.py" filter \
-      --include-main \
-      --search "$search_terms")"; then
-    printf "No worktrees found matching: %s\n" "$search_terms" >&2
-    exit 1
-  fi
-
-  # Python outputs _wt_paths, _wt_branches, _wt_commits, _wt_dirty_status, _wt_locked_status
-  if [[ ${#_wt_paths[@]} -eq 0 ]]; then
-    printf "No worktrees found matching: %s\n" "$search_terms" >&2
+  # Output arrays for filter_worktrees (nameref pattern).
+  # IMPORTANT: Must NOT use names that collide with the function's internal
+  # _wt_* locals — Bash namerefs resolve to the nearest scope first.
+  declare -a filtered_paths=() filtered_branches=() filtered_commits=()
+  declare -a filtered_dirty=() filtered_locked=()
+  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked "" "$search_terms"; then
     exit 1
   fi
 
   # Show details for matching worktrees (filtered=true: show exact count)
-  show_worktree_details "$current_worktree" --filtered "${_wt_paths[@]}"
+  show_worktree_details "$current_worktree" --filtered "${filtered_paths[@]}"
 else
   # --all or -a behavior (existing default, subtract 1 for main)
   show_worktree_details "$current_worktree" "${worktree_paths[@]}"

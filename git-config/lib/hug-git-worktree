@@ -1138,3 +1138,75 @@ branch_matches_any() {
     done
     return 1
 }
+
+# Filter worktrees by branch and/or search terms via Python
+# Usage: filter_worktrees paths_ref branches_ref commits_ref dirty_ref locked_ref branch_filters_str search_terms
+# Parameters (namerefs for output arrays, then filter values):
+#   $1 - Nameref: array to receive filtered worktree paths
+#   $2 - Nameref: array to receive filtered branch names
+#   $3 - Nameref: array to receive filtered commit hashes
+#   $4 - Nameref: array to receive filtered dirty status (true/false)
+#   $5 - Nameref: array to receive filtered locked status (true/false)
+#   $6 - Branch filters (space-separated, exact match, OR logic). Empty = no filter.
+#   $7 - Search terms (substring match on path/branch, OR logic). Empty = no filter.
+# Returns:
+#   0 if matches found, 1 if no matches (prints error to stderr)
+#
+# WHY: Eliminates ~25 duplicated lines across git-wtl, git-wtll, and git-wtsh.
+# Each had an identical Python subprocess call + empty-result check + error message.
+# Centralizing here ensures consistent filtering semantics and error reporting.
+#
+# WHY namerefs: Python outputs `declare -a _wt_*` which creates function-local vars
+# when eval'd inside a function. We must copy to nameref targets before returning,
+# matching the pattern used by get_all_worktrees_including_main() (line 107).
+#
+# PITFALL — nameref name collision: Callers must NOT pass variable names that match
+# our internal locals (e.g. _wt_paths). Bash namerefs resolve to the nearest scope,
+# so if the caller's variable name matches a local inside this function, the nameref
+# will point to OUR local, not the caller's. Use distinct names like filtered_paths.
+filter_worktrees() {
+    local -n _fw_paths_ref="$1"
+    local -n _fw_branches_ref="$2"
+    local -n _fw_commits_ref="$3"
+    local -n _fw_dirty_ref="$4"
+    local -n _fw_locked_ref="$5"
+    local _fw_branch_filters="${6:-}"
+    local _fw_search="${7:-}"
+
+    # Build branch filter args for Python
+    local -a _fw_branch_args=()
+    if [[ -n "$_fw_branch_filters" ]]; then
+        local _fw_b
+        for _fw_b in $_fw_branch_filters; do
+            _fw_branch_args+=(--branch "$_fw_b")
+        done
+    fi
+
+    # Delegate to Python (DRY — single source of truth for filter logic)
+    # These are local arrays — must copy to namerefs before returning.
+    local -a _wt_paths=() _wt_branches=() _wt_commits=()
+    local -a _wt_dirty_status=() _wt_locked_status=()
+    if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/worktree_select.py" filter \
+        --include-main \
+        --search "$_fw_search" \
+        "${_fw_branch_args[@]}")"; then
+        return 1
+    fi
+
+    # Copy local arrays to caller's nameref targets
+    _fw_paths_ref=("${_wt_paths[@]}")
+    _fw_branches_ref=("${_wt_branches[@]}")
+    _fw_commits_ref=("${_wt_commits[@]}")
+    _fw_dirty_ref=("${_wt_dirty_status[@]}")
+    _fw_locked_ref=("${_wt_locked_status[@]}")
+
+    if [[ ${#_fw_paths_ref[@]} -eq 0 ]]; then
+        local _fw_desc=""
+        [[ -n "$_fw_branch_filters" ]] && _fw_desc="--branch $_fw_branch_filters"
+        [[ -n "$_fw_search" ]] && _fw_desc="${_fw_desc:+$_fw_desc }$_fw_search"
+        printf "No worktrees found matching: %s\n" "$_fw_desc" >&2
+        return 1
+    fi
+
+    return 0
+}

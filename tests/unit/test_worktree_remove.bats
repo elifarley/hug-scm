@@ -423,17 +423,32 @@ teardown() {
 @test "hug wtdel: batch with mixed dirty and clean worktrees" {
   # Make one worktree dirty
   echo "dirty" > "$FEATURE_WT/dirty.txt"
-  
+
+  # Without --force, the clean worktree reaches prompt_confirm_danger()
+  # which calls `gum input`. Real gum reads from /dev/tty directly and
+  # will block forever in a non-interactive Bats context. Use the gum
+  # mock (setup_gum_mock) + empty stdin so `gum input` exits 1 (cancel).
+  # WHY: HUG_TEST_MODE=true forces gum_available() to return true even
+  # though stdin is /dev/null (non-TTY), routing through the gum mock.
+  setup_gum_mock
+  export HUG_TEST_MODE=true
+  unset HUG_TEST_GUM_INPUT HUG_TEST_GUM_INPUT_RETURN_CODE HUG_TEST_GUM_RESPONSES
+
   cd "$TEST_REPO"
-  # Try to remove both without force - should fail on dirty one
-  run git-wtdel "$FEATURE_WT" "$HOTFIX_WT"
-  
-  # Should fail because dirty one is blocked
+  run bash -c "echo '' | git-wtdel '$FEATURE_WT' '$HOTFIX_WT' < /dev/null"
+
+  # Should fail because the dirty one is blocked (added to failed[]).
+  # Clean one reaches the confirm prompt, gum mock exits 1,
+  # and the command aborts with \"Cancelled.\".
   assert_failure
   assert_output --partial "Worktree has uncommitted changes"
-  # Clean one should NOT be removed because dirty one blocked the batch
-  # (Actually, in current implementation, each is processed independently)
-  # The clean one would be removed after confirmation, dirty one would fail
+  assert_output --partial "Cancelled"
+  # Neither worktree was removed
+  assert [ -d "$FEATURE_WT" ]
+  assert [ -d "$HOTFIX_WT" ]
+
+  unset HUG_TEST_MODE
+  teardown_gum_mock
 }
 
 @test "hug wtdel: batch removes clean worktrees even when some are dirty (with --force)" {

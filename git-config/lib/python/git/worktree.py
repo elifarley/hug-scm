@@ -116,20 +116,24 @@ class WorktreeList:
 
         worktrees = []
         for i, path in enumerate(self.paths):
-            worktrees.append({
-                "path": path,
-                "branch": self.branches[i],
-                "commit": self.commits[i],
-                "dirty": self.dirty_status[i] == "true",
-                "locked": self.locked_status[i] == "true",
-                "current": path == current_worktree,
-            })
+            worktrees.append(
+                {
+                    "path": path,
+                    "branch": self.branches[i],
+                    "commit": self.commits[i],
+                    "dirty": self.dirty_status[i] == "true",
+                    "locked": self.locked_status[i] == "true",
+                    "current": path == current_worktree,
+                }
+            )
 
-        return json.dumps({
-            "worktrees": worktrees,
-            "current": current_worktree,
-            "count": len(worktrees),
-        })
+        return json.dumps(
+            {
+                "worktrees": worktrees,
+                "current": current_worktree,
+                "count": len(worktrees),
+            }
+        )
 
 
 @dataclass
@@ -521,6 +525,7 @@ def main():
         help="Current worktree path for marking in JSON output",
     )
     json_parser.add_argument(
+        "-B",
         "--branch",
         action="append",
         default=[],

@@ -464,17 +464,23 @@ def _cmd_filter(
     """
     worktrees, main_path, current_path = _load_worktrees()
     if not worktrees:
-        return WorktreeList(paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]).to_bash_declare()
+        return WorktreeList(
+            paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]
+        ).to_bash_declare()
 
     # Stage 0: apply include/exclude filters
     filtered = filter_worktrees(worktrees, options, main_path, current_path)
     if not filtered:
-        return WorktreeList(paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]).to_bash_declare()
+        return WorktreeList(
+            paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]
+        ).to_bash_declare()
 
     # Stage 1+2: apply branch + search filters
     filtered = filter_worktrees_by_criteria(filtered, branch_filters, search_terms)
     if not filtered:
-        return WorktreeList(paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]).to_bash_declare()
+        return WorktreeList(
+            paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]
+        ).to_bash_declare()
 
     return to_worktree_list(filtered).to_bash_declare()
 
@@ -604,8 +610,11 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("prepare", parents=[common], help="Prepare worktrees for gum picker.")
 
     # 'filter' subcommand: apply branch + search filters, output filtered worktrees
-    filter_parser = sub.add_parser("filter", parents=[common], help="Filter worktrees by branch/search.")
+    filter_parser = sub.add_parser(
+        "filter", parents=[common], help="Filter worktrees by branch/search."
+    )
     filter_parser.add_argument(
+        "-B",
         "--branch",
         action="append",
         default=[],

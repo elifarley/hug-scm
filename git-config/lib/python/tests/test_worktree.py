@@ -607,8 +607,12 @@ class TestFilterByBranch:
         """Should match exact branch name."""
         worktrees = [
             WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
-            WorktreeInfo(path="/p2", branch="feature", commit="def", is_dirty=False, is_locked=False),
-            WorktreeInfo(path="/p3", branch="main-backup", commit="ghi", is_dirty=False, is_locked=False),
+            WorktreeInfo(
+                path="/p2", branch="feature", commit="def", is_dirty=False, is_locked=False
+            ),
+            WorktreeInfo(
+                path="/p3", branch="main-backup", commit="ghi", is_dirty=False, is_locked=False
+            ),
         ]
         result = filter_by_branch(worktrees, ["main"])
         assert len(result) == 1
@@ -672,8 +676,16 @@ class TestFilterBySearch:
     def test_substring_match_path(self):
         """Should match substring in path."""
         worktrees = [
-            WorktreeInfo(path="/home/user/repo.WT.feature", branch="feature", commit="abc", is_dirty=False, is_locked=False),
-            WorktreeInfo(path="/tmp/other", branch="main", commit="def", is_dirty=False, is_locked=False),
+            WorktreeInfo(
+                path="/home/user/repo.WT.feature",
+                branch="feature",
+                commit="abc",
+                is_dirty=False,
+                is_locked=False,
+            ),
+            WorktreeInfo(
+                path="/tmp/other", branch="main", commit="def", is_dirty=False, is_locked=False
+            ),
         ]
         result = filter_by_search(worktrees, "feature")
         assert len(result) == 1
@@ -682,7 +694,9 @@ class TestFilterBySearch:
     def test_substring_match_branch(self):
         """Should match substring in branch."""
         worktrees = [
-            WorktreeInfo(path="/p1", branch="feature-auth", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(
+                path="/p1", branch="feature-auth", commit="abc", is_dirty=False, is_locked=False
+            ),
             WorktreeInfo(path="/p2", branch="main", commit="def", is_dirty=False, is_locked=False),
         ]
         result = filter_by_search(worktrees, "auth")
@@ -692,7 +706,9 @@ class TestFilterBySearch:
     def test_case_insensitive(self):
         """Should be case-insensitive."""
         worktrees = [
-            WorktreeInfo(path="/P1/Feature", branch="Main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(
+                path="/P1/Feature", branch="Main", commit="abc", is_dirty=False, is_locked=False
+            ),
         ]
         result = filter_by_search(worktrees, "feature")
         assert len(result) == 1
@@ -700,8 +716,12 @@ class TestFilterBySearch:
     def test_or_logic_multiple_terms(self):
         """Should match ANY term (OR logic)."""
         worktrees = [
-            WorktreeInfo(path="/home/path1", branch="main", commit="abc", is_dirty=False, is_locked=False),
-            WorktreeInfo(path="/tmp/path2", branch="feat", commit="def", is_dirty=False, is_locked=False),
+            WorktreeInfo(
+                path="/home/path1", branch="main", commit="abc", is_dirty=False, is_locked=False
+            ),
+            WorktreeInfo(
+                path="/tmp/path2", branch="feat", commit="def", is_dirty=False, is_locked=False
+            ),
         ]
         result = filter_by_search(worktrees, "home feat")
         assert len(result) == 2
@@ -727,9 +747,27 @@ class TestFilterWorktreesByCriteria:
     def test_branch_and_search_and_logic(self):
         """Both branch and search must match (AND logic)."""
         worktrees = [
-            WorktreeInfo(path="/home/repo.WT.main", branch="main", commit="abc", is_dirty=False, is_locked=False),
-            WorktreeInfo(path="/tmp/repo.WT.main", branch="main", commit="def", is_dirty=False, is_locked=False),
-            WorktreeInfo(path="/home/repo.WT.feat", branch="feat", commit="ghi", is_dirty=False, is_locked=False),
+            WorktreeInfo(
+                path="/home/repo.WT.main",
+                branch="main",
+                commit="abc",
+                is_dirty=False,
+                is_locked=False,
+            ),
+            WorktreeInfo(
+                path="/tmp/repo.WT.main",
+                branch="main",
+                commit="def",
+                is_dirty=False,
+                is_locked=False,
+            ),
+            WorktreeInfo(
+                path="/home/repo.WT.feat",
+                branch="feat",
+                commit="ghi",
+                is_dirty=False,
+                is_locked=False,
+            ),
         ]
         # Branch is "main" AND path contains "/home"
         result = filter_worktrees_by_criteria(worktrees, ["main"], "/home")
@@ -749,8 +787,12 @@ class TestFilterWorktreesByCriteria:
     def test_search_filter_only(self):
         """Should filter by search only when branch filters are empty."""
         worktrees = [
-            WorktreeInfo(path="/home/path", branch="main", commit="abc", is_dirty=False, is_locked=False),
-            WorktreeInfo(path="/tmp/path", branch="feat", commit="def", is_dirty=False, is_locked=False),
+            WorktreeInfo(
+                path="/home/path", branch="main", commit="abc", is_dirty=False, is_locked=False
+            ),
+            WorktreeInfo(
+                path="/tmp/path", branch="feat", commit="def", is_dirty=False, is_locked=False
+            ),
         ]
         result = filter_worktrees_by_criteria(worktrees, [], "/home")
         assert len(result) == 1
@@ -775,6 +817,7 @@ class TestWorktreeListToJson:
             locked_status=["false"],
         )
         import json
+
         json_str = result.to_json("/path/to/wt")
         data = json.loads(json_str)
         assert len(data["worktrees"]) == 1
@@ -791,6 +834,7 @@ class TestWorktreeListToJson:
             locked_status=["false", "false"],
         )
         import json
+
         json_str = result.to_json("/path2")
         data = json.loads(json_str)
         assert data["worktrees"][0]["current"] is False
@@ -806,6 +850,7 @@ class TestWorktreeListToJson:
             locked_status=["true"],
         )
         import json
+
         json_str = result.to_json("/other")
         data = json.loads(json_str)
         wt = data["worktrees"][0]
@@ -815,10 +860,9 @@ class TestWorktreeListToJson:
 
     def test_json_empty_list(self):
         """Should handle empty worktree list."""
-        result = WorktreeList(
-            paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]
-        )
+        result = WorktreeList(paths=[], branches=[], commits=[], dirty_status=[], locked_status=[])
         import json
+
         json_str = result.to_json("/current")
         data = json.loads(json_str)
         assert data["worktrees"] == []
@@ -835,6 +879,7 @@ class TestWorktreeListToJson:
             locked_status=["false"],
         )
         import json
+
         json_str = result.to_json("/current")
         data = json.loads(json_str)
         assert data["worktrees"][0]["path"] == '/path/with"quotes'
