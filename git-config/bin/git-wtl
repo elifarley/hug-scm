@@ -137,8 +137,8 @@ if [[ -n "$branch_filters_str" || -n "$search_terms" ]]; then
     [[ "$path" == "$current_worktree" ]] && is_current="true"
     is_detached="false"
     [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
-    status_indicators="$(format_worktree_indicators "$is_current" "$dirty" "$locked" "$is_detached") "
-    branch_display="${branch:-(detached)}"
+    status_indicators="$(format_worktree_indicators "$dirty" "$locked") "
+    branch_display="$(format_worktree_branch_display "$is_current" "$is_detached" "$branch")"
 
     printf "%s%-20s %s %s\n" "$status_indicators" "$branch_display" "($commit)" "$path_display"
   done
@@ -158,8 +158,8 @@ else
     [[ "$path" == "$current_worktree" ]] && is_current="true"
     is_detached="false"
     [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
-    status_indicators="$(format_worktree_indicators "$is_current" "$dirty" "$locked" "$is_detached") "
-    branch_display="${branch:-(detached)}"
+    status_indicators="$(format_worktree_indicators "$dirty" "$locked") "
+    branch_display="$(format_worktree_branch_display "$is_current" "$is_detached" "$branch")"
 
     printf "%s%-20s %s %s\n" "$status_indicators" "$branch_display" "($commit)" "$path_display"
     match_count=$((match_count + 1))
