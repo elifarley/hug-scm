@@ -95,6 +95,42 @@ class WorktreeList:
 
         return "\n".join(lines)
 
+    def to_json(self, current_worktree: str = "") -> str:
+        """Serialize to JSON format for API consumption.
+
+        WHY: Replaces manual JSON construction in Bash output_worktree_json().
+        Python's json module handles proper string escaping (quotes, backslashes,
+        unicode) that Bash printf cannot safely do, preventing malformed JSON.
+
+        Output format matches the existing contract:
+        {"worktrees": [...], "current": "<path>", "count": <n>}
+
+        Args:
+            current_worktree: Absolute path of the current worktree for marking
+                the "current" field in the JSON output.
+
+        Returns:
+            JSON string with worktree array and metadata.
+        """
+        import json
+
+        worktrees = []
+        for i, path in enumerate(self.paths):
+            worktrees.append({
+                "path": path,
+                "branch": self.branches[i],
+                "commit": self.commits[i],
+                "dirty": self.dirty_status[i] == "true",
+                "locked": self.locked_status[i] == "true",
+                "current": path == current_worktree,
+            })
+
+        return json.dumps({
+            "worktrees": worktrees,
+            "current": current_worktree,
+            "count": len(worktrees),
+        })
+
 
 @dataclass
 class WorktreeDirtyInfo:
@@ -464,6 +500,38 @@ def main():
         help="Worktree path to check",
     )
 
+    # 'json' subcommand
+    json_parser = subparsers.add_parser(
+        "json",
+        help="Output worktree list as JSON",
+    )
+    json_parser.add_argument(
+        "--include-main",
+        action="store_true",
+        help="Include main repository in output (default: false)",
+    )
+    json_parser.add_argument(
+        "--main-repo-path",
+        default="",
+        help="Main repository path (auto-detected if not provided)",
+    )
+    json_parser.add_argument(
+        "--current",
+        default="",
+        help="Current worktree path for marking in JSON output",
+    )
+    json_parser.add_argument(
+        "--branch",
+        action="append",
+        default=[],
+        help="Filter by exact branch name (repeatable, OR logic).",
+    )
+    json_parser.add_argument(
+        "--search",
+        default="",
+        help="Search terms (substring match on path/branch, OR logic).",
+    )
+
     args = parser.parse_args()
 
     try:
@@ -471,6 +539,8 @@ def main():
             _handle_list_command(args)
         elif args.command == "dirty":
             _handle_dirty_command(args.path)
+        elif args.command == "json":
+            _handle_json_command(args)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -528,6 +598,68 @@ def _handle_dirty_command(path: str):
     info = _check_worktree_dirty_details(path)
     print(f"_wt_dirty={'true' if info.is_dirty else 'false'}")
     print(f"_wt_dirty_details='{info.details}'")
+
+
+def _handle_json_command(args):
+    """Handle the 'json' subcommand.
+
+    Loads worktrees, applies optional branch/search filters, and outputs JSON.
+    WHY: Replaces manual JSON construction in Bash output_worktree_json().
+    Python's json module ensures proper escaping of special characters.
+    """
+    import json
+
+    # Get main repo path
+    if args.main_repo_path:
+        main_repo_path = args.main_repo_path
+    else:
+        main_repo_path = _get_main_repo_path()
+        if not main_repo_path:
+            print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))
+            return
+
+    # Get porcelain output
+    porcelain_output = _get_worktree_porcelain()
+    if not porcelain_output:
+        print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))
+        return
+
+    # Parse worktrees
+    worktrees = parse_worktree_list(
+        porcelain_output=porcelain_output,
+        main_repo_path=main_repo_path,
+        include_main=args.include_main,
+    )
+
+    if not worktrees:
+        print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))
+        return
+
+    # Apply filters if provided (inline to avoid circular import with worktree_select)
+    if args.branch or args.search:
+        # Branch filter (exact match, OR logic)
+        if args.branch:
+            branch_set = set(args.branch)
+            worktrees = [wt for wt in worktrees if wt.branch in branch_set]
+
+        # Search filter (substring match, OR logic)
+        if args.search and args.search.strip() and worktrees:
+            terms = args.search.lower().split()
+            filtered = []
+            for wt in worktrees:
+                path_lower = wt.path.lower()
+                branch_lower = (wt.branch or "").lower()
+                if any(term in path_lower or term in branch_lower for term in terms):
+                    filtered.append(wt)
+            worktrees = filtered
+
+    if not worktrees:
+        print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))
+        return
+
+    # Convert to JSON
+    result = to_worktree_list(worktrees)
+    print(result.to_json(args.current))
 
 
 if __name__ == "__main__":

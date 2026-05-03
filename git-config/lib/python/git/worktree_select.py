@@ -44,7 +44,7 @@ from git.selection_core import (
     add_common_cli_args,
     get_selection_input,
 )
-from git.worktree import WorktreeInfo, parse_worktree_list
+from git.worktree import WorktreeInfo, WorktreeList, parse_worktree_list, to_worktree_list
 
 
 @dataclass
@@ -314,6 +314,96 @@ def _load_worktrees() -> tuple[list[WorktreeInfo], str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Filtering logic
+# ---------------------------------------------------------------------------
+
+
+def filter_by_branch(
+    worktrees: list[WorktreeInfo],
+    branch_filters: list[str],
+) -> list[WorktreeInfo]:
+    """Filter worktrees by exact branch name match (OR logic).
+
+    When multiple branch filters are provided, a worktree matches if its branch
+    equals ANY of the filters (OR logic). This matches the behavior of
+    `hug wtl --branch f1 --branch f2`.
+
+    Empty filter list returns all worktrees (no filtering).
+
+    Args:
+        worktrees: Candidate worktrees to filter.
+        branch_filters: List of exact branch names to match against.
+
+    Returns:
+        Worktrees whose branch exactly matches at least one filter.
+    """
+    if not branch_filters:
+        return list(worktrees)
+    filter_set = set(branch_filters)
+    return [wt for wt in worktrees if wt.branch in filter_set]
+
+
+def filter_by_search(
+    worktrees: list[WorktreeInfo],
+    search_terms: str,
+) -> list[WorktreeInfo]:
+    """Filter worktrees by substring match on path or branch (OR logic).
+
+    Splits search_terms by whitespace, then for each worktree checks if ANY
+    term matches (case-insensitive) against EITHER the path OR the branch.
+    This mirrors the Bash `search_worktree` function from hug-arrays.
+
+    Empty search terms returns all worktrees (no filtering).
+
+    Args:
+        worktrees: Candidate worktrees to filter.
+        search_terms: Space-separated search terms.
+
+    Returns:
+        Worktrees matching at least one search term in path or branch.
+    """
+    if not search_terms or not search_terms.strip():
+        return list(worktrees)
+
+    terms = search_terms.lower().split()
+    result = []
+    for wt in worktrees:
+        path_lower = wt.path.lower()
+        branch_lower = (wt.branch or "").lower()
+        for term in terms:
+            if term in path_lower or term in branch_lower:
+                result.append(wt)
+                break
+    return result
+
+
+def filter_worktrees_by_criteria(
+    worktrees: list[WorktreeInfo],
+    branch_filters: list[str],
+    search_terms: str,
+) -> list[WorktreeInfo]:
+    """Apply both branch and search filters (AND logic between stages).
+
+    Stage 1: branch filter (exact match, OR between branches)
+    Stage 2: search filter (substring match, OR between terms)
+
+    Both stages must pass (AND logic). This matches the semantics of:
+    `hug wtl --branch main /home` — branch is "main" AND path contains "/home".
+
+    Args:
+        worktrees: Candidate worktrees to filter.
+        branch_filters: Exact branch names (OR logic within stage).
+        search_terms: Substring search terms (OR logic within stage).
+
+    Returns:
+        Worktrees passing both filter stages.
+    """
+    result = filter_by_branch(worktrees, branch_filters)
+    result = filter_by_search(result, search_terms)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # CLI commands
 # ---------------------------------------------------------------------------
 
@@ -347,6 +437,46 @@ def _cmd_prepare(options: WorktreeFilterOptions) -> str:
 
     formatted = format_display_rows(filtered, current_path)
     return worktrees_to_bash_declare(filtered, formatted)
+
+
+def _cmd_filter(
+    options: WorktreeFilterOptions,
+    branch_filters: list[str],
+    search_terms: str,
+) -> str:
+    """Filter worktrees by branch and/or search criteria.
+
+    Loads all worktrees, applies inclusion/exclusion filters (from ``options``),
+    then applies branch filters (exact match, OR logic) and search filters
+    (substring match, OR logic). Both filter stages use AND logic between them.
+
+    Output is bash declare statements with parallel arrays matching the
+    structure expected by `get_all_worktrees_including_main` callers:
+        _wt_paths, _wt_branches, _wt_commits, _wt_dirty_status, _wt_locked_status
+
+    Args:
+        options: Inclusion/exclusion criteria (include_main, exclude_current).
+        branch_filters: Exact branch names to match (OR logic).
+        search_terms: Substring search terms (OR logic).
+
+    Returns:
+        Bash declare statements for filtered worktree arrays.
+    """
+    worktrees, main_path, current_path = _load_worktrees()
+    if not worktrees:
+        return WorktreeList(paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]).to_bash_declare()
+
+    # Stage 0: apply include/exclude filters
+    filtered = filter_worktrees(worktrees, options, main_path, current_path)
+    if not filtered:
+        return WorktreeList(paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]).to_bash_declare()
+
+    # Stage 1+2: apply branch + search filters
+    filtered = filter_worktrees_by_criteria(filtered, branch_filters, search_terms)
+    if not filtered:
+        return WorktreeList(paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]).to_bash_declare()
+
+    return to_worktree_list(filtered).to_bash_declare()
 
 
 def _cmd_select(
@@ -473,6 +603,20 @@ def main(argv: list[str] | None = None) -> None:
 
     sub.add_parser("prepare", parents=[common], help="Prepare worktrees for gum picker.")
 
+    # 'filter' subcommand: apply branch + search filters, output filtered worktrees
+    filter_parser = sub.add_parser("filter", parents=[common], help="Filter worktrees by branch/search.")
+    filter_parser.add_argument(
+        "--branch",
+        action="append",
+        default=[],
+        help="Filter by exact branch name (repeatable, OR logic).",
+    )
+    filter_parser.add_argument(
+        "--search",
+        default="",
+        help="Search terms (substring match on path/branch, OR logic).",
+    )
+
     sel_parser = sub.add_parser("select", parents=[common], help="Numbered-list selection.")
     sel_parser.add_argument(
         "--prompt",
@@ -493,6 +637,8 @@ def main(argv: list[str] | None = None) -> None:
     try:
         if args.command == "prepare":
             output = _cmd_prepare(opts)
+        elif args.command == "filter":
+            output = _cmd_filter(opts, args.branch, args.search)
         else:
             output = _cmd_select(opts, args.prompt, test_selection=args.selection)
         print(output)

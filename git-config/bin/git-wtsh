@@ -350,26 +350,26 @@ elif [[ "$show_all" == "false" && $# -eq 0 ]]; then
   show_current_worktree_only "$current_worktree"
 elif [[ $# -gt 0 ]]; then
   # Multi-term search filtering (enhanced behavior)
-  target_worktrees=()
+  # WHY: Delegate filtering to Python (DRY — single source of truth for search
+  # filtering). Python's filter_by_search() handles substring matching.
   search_terms="$*" # Capture all search terms
 
-  for i in "${!worktree_paths[@]}"; do
-    path="${worktree_paths[$i]}"
-    branch="${branches[$i]}"
+  # Call Python filter subcommand
+  if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/worktree_select.py" filter \
+      --include-main \
+      --search "$search_terms")"; then
+    printf "No worktrees found matching: %s\n" "$search_terms" >&2
+    exit 1
+  fi
 
-    # Use unified search function for multi-term filtering
-    if search_worktree "$path" "$branch" "$search_terms" "OR"; then
-      target_worktrees+=("$path")
-    fi
-  done
-
-  if [[ ${#target_worktrees[@]} -eq 0 ]]; then
+  # Python outputs _wt_paths, _wt_branches, _wt_commits, _wt_dirty_status, _wt_locked_status
+  if [[ ${#_wt_paths[@]} -eq 0 ]]; then
     printf "No worktrees found matching: %s\n" "$search_terms" >&2
     exit 1
   fi
 
   # Show details for matching worktrees (filtered=true: show exact count)
-  show_worktree_details "$current_worktree" --filtered "${target_worktrees[@]}"
+  show_worktree_details "$current_worktree" --filtered "${_wt_paths[@]}"
 else
   # --all or -a behavior (existing default, subtract 1 for main)
   show_worktree_details "$current_worktree" "${worktree_paths[@]}"

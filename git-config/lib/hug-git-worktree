@@ -1026,66 +1026,25 @@ output_worktree_json() {
     local current_worktree="$1"
     local search_terms="$2"
     local branch_filters_str="${3:-}"
-    declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
 
-    if ! get_worktrees worktree_paths branches commits status_dirty locked_status; then
-        printf '{"worktrees":[],"current":"%s","count":0}\n' "$current_worktree"
-        return 0
+    # WHY: Delegate to Python for JSON output (DRY — single source of truth).
+    # Python's json module handles proper string escaping (quotes, backslashes,
+    # unicode) that Bash printf cannot safely do, preventing malformed JSON.
+    # The filtering is also done in Python via filter_worktrees_by_criteria().
+
+    # Build branch filter args
+    local -a branch_args=()
+    if [[ -n "$branch_filters_str" ]]; then
+        local -a branch_filters_arr=($branch_filters_str)
+        for b in "${branch_filters_arr[@]}"; do
+            branch_args+=(--branch "$b")
+        done
     fi
 
-    local count=0
-    local first=true
-
-    printf '{"worktrees":['
-    for i in "${!worktree_paths[@]}"; do
-        local path="${worktree_paths[$i]}"
-        local branch="${branches[$i]}"
-        local commit="${commits[$i]}"
-        local dirty="${status_dirty[$i]}"
-        local locked="${locked_status[$i]}"
-        local is_current="false"
-
-        [[ "$path" == "$current_worktree" ]] && is_current="true"
-
-        # Stage 1: Apply branch filter (exact match, OR between branches)
-        if [[ -n "$branch_filters_str" ]]; then
-            local -a branch_filters_arr=($branch_filters_str)
-            if ! branch_matches_any "$branch" "${branch_filters_arr[@]}"; then
-                continue  # Skip this worktree
-            fi
-        fi
-
-        # Stage 2: Apply search term filter (substring match, existing behavior)
-        local show_worktree=true
-        if [[ -n "$search_terms" ]]; then
-            # Use the unified search function from hug-arrays
-            if search_worktree "$path" "$branch" "$search_terms" "OR"; then
-                show_worktree=true
-            else
-                show_worktree=false
-            fi
-        fi
-
-        # Only include worktree if it matches both criteria (or no filters provided)
-        if $show_worktree; then
-            if ! $first; then
-                printf ','
-            fi
-            first=false
-
-            printf '{'
-            printf '"path":"%s",' "$path"
-            printf '"branch":"%s",' "$branch"
-            printf '"commit":"%s",' "$commit"
-            printf '"dirty":%s,' "$dirty"
-            printf '"locked":%s,' "$locked"
-            printf '"current":%s' "$is_current"
-            printf '}'
-            count=$((count + 1))
-        fi
-    done
-
-    printf '],"current":"%s","count":%d}\n' "$current_worktree" "$count"
+    python3 "$HUG_HOME/git-config/lib/python/git/worktree.py" json \
+        --current "$current_worktree" \
+        --search "$search_terms" \
+        "${branch_args[@]}"
 }
 
 # Create branch if needed with proper prompts

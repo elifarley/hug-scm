@@ -18,6 +18,11 @@ from git.worktree import (
     parse_worktree_list,
     to_worktree_list,
 )
+from git.worktree_select import (
+    filter_by_branch,
+    filter_by_search,
+    filter_worktrees_by_criteria,
+)
 
 ################################################################################
 # Test Fixtures
@@ -579,3 +584,257 @@ commit abc1234def5678"""
             assert "Error: Not in a git repository" in captured.err
         finally:
             sys.argv = original_argv
+
+
+################################################################################
+# TestFilterByBranch
+################################################################################
+
+
+class TestFilterByBranch:
+    """Tests for filter_by_branch function."""
+
+    def test_empty_filter_returns_all(self):
+        """Should return all worktrees when no branch filters provided."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="feat", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_branch(worktrees, [])
+        assert len(result) == 2
+
+    def test_exact_match_single_filter(self):
+        """Should match exact branch name."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="feature", commit="def", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p3", branch="main-backup", commit="ghi", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_branch(worktrees, ["main"])
+        assert len(result) == 1
+        assert result[0].branch == "main"
+
+    def test_or_logic_multiple_filters(self):
+        """Should match ANY of the provided branch filters (OR logic)."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="feat1", commit="def", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p3", branch="feat2", commit="ghi", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_branch(worktrees, ["feat1", "feat2"])
+        assert len(result) == 2
+        assert {wt.branch for wt in result} == {"feat1", "feat2"}
+
+    def test_case_sensitive_matching(self):
+        """Should be case-sensitive (exact match)."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="Main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="main", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_branch(worktrees, ["main"])
+        assert len(result) == 1
+        assert result[0].branch == "main"
+
+    def test_no_match_returns_empty(self):
+        """Should return empty list when no branches match."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_branch(worktrees, ["nonexistent"])
+        assert result == []
+
+
+################################################################################
+# TestFilterBySearch
+################################################################################
+
+
+class TestFilterBySearch:
+    """Tests for filter_by_search function."""
+
+    def test_empty_search_returns_all(self):
+        """Should return all worktrees when search terms are empty."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="feat", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_search(worktrees, "")
+        assert len(result) == 2
+
+    def test_whitespace_search_returns_all(self):
+        """Should return all worktrees when search terms are only whitespace."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_search(worktrees, "   ")
+        assert len(result) == 1
+
+    def test_substring_match_path(self):
+        """Should match substring in path."""
+        worktrees = [
+            WorktreeInfo(path="/home/user/repo.WT.feature", branch="feature", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/tmp/other", branch="main", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_search(worktrees, "feature")
+        assert len(result) == 1
+        assert "feature" in result[0].path
+
+    def test_substring_match_branch(self):
+        """Should match substring in branch."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="feature-auth", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="main", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_search(worktrees, "auth")
+        assert len(result) == 1
+        assert result[0].branch == "feature-auth"
+
+    def test_case_insensitive(self):
+        """Should be case-insensitive."""
+        worktrees = [
+            WorktreeInfo(path="/P1/Feature", branch="Main", commit="abc", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_search(worktrees, "feature")
+        assert len(result) == 1
+
+    def test_or_logic_multiple_terms(self):
+        """Should match ANY term (OR logic)."""
+        worktrees = [
+            WorktreeInfo(path="/home/path1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/tmp/path2", branch="feat", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_search(worktrees, "home feat")
+        assert len(result) == 2
+
+
+################################################################################
+# TestFilterWorktreesByCriteria
+################################################################################
+
+
+class TestFilterWorktreesByCriteria:
+    """Tests for filter_worktrees_by_criteria (AND logic between stages)."""
+
+    def test_no_filters_returns_all(self):
+        """Should return all worktrees when no filters provided."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="feat", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_worktrees_by_criteria(worktrees, [], "")
+        assert len(result) == 2
+
+    def test_branch_and_search_and_logic(self):
+        """Both branch and search must match (AND logic)."""
+        worktrees = [
+            WorktreeInfo(path="/home/repo.WT.main", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/tmp/repo.WT.main", branch="main", commit="def", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/home/repo.WT.feat", branch="feat", commit="ghi", is_dirty=False, is_locked=False),
+        ]
+        # Branch is "main" AND path contains "/home"
+        result = filter_worktrees_by_criteria(worktrees, ["main"], "/home")
+        assert len(result) == 1
+        assert result[0].path == "/home/repo.WT.main"
+
+    def test_branch_filter_only(self):
+        """Should filter by branch only when search is empty."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="feat", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_worktrees_by_criteria(worktrees, ["feat"], "")
+        assert len(result) == 1
+        assert result[0].branch == "feat"
+
+    def test_search_filter_only(self):
+        """Should filter by search only when branch filters are empty."""
+        worktrees = [
+            WorktreeInfo(path="/home/path", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/tmp/path", branch="feat", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_worktrees_by_criteria(worktrees, [], "/home")
+        assert len(result) == 1
+        assert result[0].path == "/home/path"
+
+
+################################################################################
+# TestWorktreeListToJson
+################################################################################
+
+
+class TestWorktreeListToJson:
+    """Tests for WorktreeList.to_json method."""
+
+    def test_json_output_basic(self):
+        """Should produce valid JSON with worktree data."""
+        result = WorktreeList(
+            paths=["/path/to/wt"],
+            branches=["feature"],
+            commits=["abc1234"],
+            dirty_status=["false"],
+            locked_status=["false"],
+        )
+        import json
+        json_str = result.to_json("/path/to/wt")
+        data = json.loads(json_str)
+        assert len(data["worktrees"]) == 1
+        assert data["current"] == "/path/to/wt"
+        assert data["count"] == 1
+
+    def test_json_current_detection(self):
+        """Should mark current worktree correctly."""
+        result = WorktreeList(
+            paths=["/path1", "/path2"],
+            branches=["main", "feat"],
+            commits=["abc", "def"],
+            dirty_status=["false", "true"],
+            locked_status=["false", "false"],
+        )
+        import json
+        json_str = result.to_json("/path2")
+        data = json.loads(json_str)
+        assert data["worktrees"][0]["current"] is False
+        assert data["worktrees"][1]["current"] is True
+
+    def test_json_boolean_fields(self):
+        """Should output boolean values for dirty/locked/current."""
+        result = WorktreeList(
+            paths=["/p1"],
+            branches=["main"],
+            commits=["abc"],
+            dirty_status=["true"],
+            locked_status=["true"],
+        )
+        import json
+        json_str = result.to_json("/other")
+        data = json.loads(json_str)
+        wt = data["worktrees"][0]
+        assert wt["dirty"] is True
+        assert wt["locked"] is True
+        assert wt["current"] is False
+
+    def test_json_empty_list(self):
+        """Should handle empty worktree list."""
+        result = WorktreeList(
+            paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]
+        )
+        import json
+        json_str = result.to_json("/current")
+        data = json.loads(json_str)
+        assert data["worktrees"] == []
+        assert data["current"] == "/current"
+        assert data["count"] == 0
+
+    def test_json_escapes_special_characters(self):
+        """Should properly escape special characters in JSON."""
+        result = WorktreeList(
+            paths=['/path/with"quotes'],
+            branches=["main"],
+            commits=["abc"],
+            dirty_status=["false"],
+            locked_status=["false"],
+        )
+        import json
+        json_str = result.to_json("/current")
+        data = json.loads(json_str)
+        assert data["worktrees"][0]["path"] == '/path/with"quotes'

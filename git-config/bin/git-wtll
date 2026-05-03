@@ -86,32 +86,51 @@ fi
 current_worktree=$(get_current_worktree_path)
 
 # Build and print worktree list in long format
+# WHY: Delegate filtering to Python (DRY — single source of truth for search
+# filtering). Python's filter_by_search() handles substring matching on path/branch.
 printf "${BLUE}Worktrees (long format):%s${NC}\n" ""
-match_count=0
-for i in "${!worktree_paths[@]}"; do
-  path="${worktree_paths[$i]}"
-  branch="${branches[$i]}"
-  commit="${commits[$i]}"
-  dirty="${status_dirty[$i]}"
-  locked="${locked_status[$i]}"
 
-  # Apply search filter if provided using unified search function
-  show_worktree=true
-  if [[ -n "$search_terms" ]]; then
-    # Use the unified search function from hug-arrays
-    if search_worktree "$path" "$branch" "$search_terms" "OR"; then
-      show_worktree=true
-    else
-      show_worktree=false
-    fi
+# Use Python for filtering when search terms are provided
+if [[ -n "$search_terms" ]]; then
+  # Call Python filter subcommand
+  if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/worktree_select.py" filter \
+      --include-main \
+      --search "$search_terms")"; then
+    printf "No worktrees found" >&2
+    exit 1
   fi
 
-  # Only show worktree if it matches search criteria (or no search provided)
-  if $show_worktree; then
+  # Python outputs _wt_paths, _wt_branches, _wt_commits, _wt_dirty_status, _wt_locked_status
+  match_count=${#_wt_paths[@]}
+  if [[ $match_count -eq 0 ]]; then
+    printf "No worktrees found matching: %s\n" "$search_terms" >&2
+    exit 1
+  fi
+
+  # Display filtered results
+  for i in "${!_wt_paths[@]}"; do
+    path="${_wt_paths[$i]}"
+    branch="${_wt_branches[$i]}"
+    commit="${_wt_commits[$i]}"
+    dirty="${_wt_dirty_status[$i]}"
+    locked="${_wt_locked_status[$i]}"
+
+    format_worktree_long_line "$current_worktree" "$path" "$branch" "$commit" "$dirty" "$locked"
+  done
+else
+  # No filtering: use original loop
+  match_count=0
+  for i in "${!worktree_paths[@]}"; do
+    path="${worktree_paths[$i]}"
+    branch="${branches[$i]}"
+    commit="${commits[$i]}"
+    dirty="${status_dirty[$i]}"
+    locked="${locked_status[$i]}"
+
     format_worktree_long_line "$current_worktree" "$path" "$branch" "$commit" "$dirty" "$locked"
     match_count=$((match_count + 1))
-  fi
-done
+  done
+fi
 
 # Return error if search terms were provided but no matches found
 if [[ -n "$search_terms" && $match_count -eq 0 ]]; then

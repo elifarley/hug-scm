@@ -105,58 +105,77 @@ fi
 current_worktree=$(get_current_worktree_path)
 
 # Build and print worktree list
+# WHY: Delegate filtering to Python (DRY — single source of truth for branch/search
+# filtering). Python's filter_worktrees_by_criteria() handles both exact branch
+# matching (OR logic) and substring search (OR logic) with AND between stages.
 printf "${BLUE}Worktrees:%s${NC}\n" ""
-match_count=0
-for i in "${!worktree_paths[@]}"; do
-  path="${worktree_paths[$i]}"
-  branch="${branches[$i]}"
-  commit="${commits[$i]}"
-  dirty="${status_dirty[$i]}"
-  locked="${locked_status[$i]}"
 
-  # Build status indicators
-  status_indicators=""
-  path_display="${path/#$HOME/\~}"
+# Use Python for filtering when branch filters or search terms are provided
+if [[ -n "$branch_filters_str" || -n "$search_terms" ]]; then
+  # Build branch filter args for Python
+  branch_args=()
+  for b in $branch_filters_str; do
+    branch_args+=(--branch "$b")
+  done
 
-  # Check if current worktree
-  [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}[CURRENT]${NC} "
-
-  # Add other status indicators
-  [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
-  [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
-
-  # Apply filters: Stage 1 (branch) + Stage 2 (search terms)
-  show_worktree=true
-  
-  # Stage 1: Apply branch filter (exact match, OR between branches)
-  if [[ -n "$branch_filters_str" ]]; then
-    if ! branch_matches_any "$branch" $branch_filters_str; then
-      show_worktree=false
-    fi
-  fi
-  
-  # Stage 2: Apply search term filter (substring match, existing behavior)
-  if $show_worktree && [[ -n "$search_terms" ]]; then
-    # Use the unified search function from hug-arrays
-    if search_worktree "$path" "$branch" "$search_terms" "OR"; then
-      show_worktree=true
-    else
-      show_worktree=false
-    fi
+  # Call Python filter subcommand
+  if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/worktree_select.py" filter \
+      --include-main \
+      --search "$search_terms" \
+      "${branch_args[@]}")"; then
+    printf "No worktrees found" >&2
+    exit 1
   fi
 
-  # Only show worktree if it matches search criteria (or no search provided)
-  if $show_worktree; then
+  # Python outputs _wt_paths, _wt_branches, _wt_commits, _wt_dirty_status, _wt_locked_status
+  match_count=${#_wt_paths[@]}
+  if [[ $match_count -eq 0 ]]; then
+    filter_desc=""
+    [[ -n "$branch_filters_str" ]] && filter_desc="--branch $branch_filters_str"
+    [[ -n "$search_terms" ]] && filter_desc="${filter_desc:+$filter_desc }$search_terms"
+    printf "No worktrees found matching: %s\n" "$filter_desc" >&2
+    exit 1
+  fi
+
+  # Display filtered results
+  for i in "${!_wt_paths[@]}"; do
+    path="${_wt_paths[$i]}"
+    branch="${_wt_branches[$i]}"
+    commit="${_wt_commits[$i]}"
+    dirty="${_wt_dirty_status[$i]}"
+    locked="${_wt_locked_status[$i]}"
+
+    # Build status indicators
+    status_indicators=""
+    path_display="${path/#$HOME/\~}"
+    [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}[CURRENT]${NC} "
+    [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
+    [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
+
+    printf "%s%-20s %s %s\n" "$status_indicators" "$branch" "($commit)" "$path_display"
+  done
+else
+  # No filtering: use original loop (Python already loaded all worktrees)
+  match_count=0
+  for i in "${!worktree_paths[@]}"; do
+    path="${worktree_paths[$i]}"
+    branch="${branches[$i]}"
+    commit="${commits[$i]}"
+    dirty="${status_dirty[$i]}"
+    locked="${locked_status[$i]}"
+
+    # Build status indicators
+    status_indicators=""
+    path_display="${path/#$HOME/\~}"
+
+    # Check if current worktree
+    [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}[CURRENT]${NC} "
+
+    # Add other status indicators
+    [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
+    [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
+
     printf "%s%-20s %s %s\n" "$status_indicators" "$branch" "($commit)" "$path_display"
     match_count=$((match_count + 1))
-  fi
-done
-
-# Return error if filters were provided but no matches found
-if [[ -n "$search_terms$branch_filters_str" && $match_count -eq 0 ]]; then
-  filter_desc=""
-  [[ -n "$branch_filters_str" ]] && filter_desc="--branch $branch_filters_str"
-  [[ -n "$search_terms" ]] && filter_desc="${filter_desc:+$filter_desc }$search_terms"
-  printf "No worktrees found matching: %s\n" "$filter_desc" >&2
-  exit 1
+  done
 fi
