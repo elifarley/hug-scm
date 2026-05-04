@@ -272,6 +272,37 @@ fi
 # Actual operation here
 ```
 
+### Stdout/Stderr Discipline
+
+Commands that produce **listable, query, or data output** must keep stdout clean
+so the output is pipe-safe and scriptable — same discipline as `grep`, `ls`, `git log`.
+
+**The rule:**
+- **stdout** = machine-consumable data (the answer)
+- **stderr** = human-facing chatter (headers, legends, progress, tips, prompts, errors)
+
+**When it applies** — any command whose output a user might pipe or capture:
+listing commands (`hug wtl`, `hug wtll`, `hug sl*`, `hug ll*`, `hug bl*`, `hug t*`),
+query commands (`hug s`, `hug sx`, `hug sh*`, `hug stats*`), and any command with
+`--json` output.
+
+**When it does NOT apply:**
+- Purely interactive commands (`hug wt` interactive, `hug b`, `hug t` interactive)
+- Destructive actions producing no data output (`hug w-discard`, `hug h-back`)
+- Help text (`show_help` / `--help`)
+
+**How to comply:**
+1. Use library functions (`info`, `warning`, `success`, `tip`, `error`) for all
+   human-facing messages — they already route to stderr via `gum_log`.
+2. Decorative headers, legends, separators → stderr: `printf 'Header:\n' >&2`
+3. Data lines → stdout with no prefix: `printf '%s\n' "$result"`
+4. For commands passing through git output, let it flow to stdout naturally;
+   route wrapper messages to stderr.
+5. If a command has both data and chatter, add a `CAPTURING OUTPUT` section
+   to its help text (see `git-wtl` for the canonical example).
+
+**Reference implementation:** `git-wtl`
+
 ## Testing Strategy
 
 ### Framework: BATS (Bash Automated Testing System)
