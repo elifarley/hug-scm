@@ -547,7 +547,7 @@ teardown() {
   run git-wtdel -p "$FEATURE_WT" -p "$HOTFIX_WT" --force
   assert_success
   assert_output --partial "Pruned stale worktree entry"
-  assert_output --partial "Worktree removed for 'hotfix-1'"
+  assert_output --partial "Worktree removed for branch 'hotfix-1'"
   assert_output --partial "Batch Removal Summary"
   assert_output --partial "Removed: 2"
 

@@ -334,7 +334,8 @@ for worktree_path in "${worktree_paths[@]}"; do
     warning "git worktree remove failed: $git_err"
     info "Attempting manual cleanup..."
     if rm -rf "$worktree_path" && git worktree prune 2> /dev/null; then
-      success "Worktree removed for '$wt_branch' (manual cleanup)"
+      success "Worktree removed for branch '$wt_branch' (manual cleanup)"
+      info "Deleted directory: ${worktree_path/#$HOME/\~}"
       removal_success=true
     else
       error "Failed to remove worktree: $worktree_path. Manual intervention required."
@@ -354,7 +355,8 @@ for worktree_path in "${worktree_paths[@]}"; do
 
   # Track result
   if $removal_success; then
-    success "Worktree removed for '$wt_branch'"
+    success "Worktree removed for branch '$wt_branch'"
+    info "Deleted directory: ${worktree_path/#$HOME/\~}"
     echo
     tip "Branch '$wt_branch' still exists. To delete it: hug bdel $wt_branch"
     removed+=("$worktree_path")
