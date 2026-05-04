@@ -1,29 +1,28 @@
 #!/usr/bin/env bash
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit hug-git-worktree; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail                                                                  # Exit on error, undefined vars, pipe failures
-
-# Part of the Hug tool suite
+for f in hug-common hug-git-kit hug-git-worktree hug-cli-flags; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
 
 show_help() {
   cat << 'EOF'
-hug wtl: List worktrees in short format, showing path, branch, and status.
+hug wtl: List worktrees in short format, showing branch, path, and status.
 
 USAGE:
   hug wtl [OPTIONS] [branch...]
 
 ARGUMENTS:
-  [branch...]         Filter by exact branch name (case-sensitive, OR logic)
+  [branch...]         Filter by EXACT branch name (case-sensitive, OR logic)
 
 OPTIONS:
   -h, --help          Show this help message and exit.
+  -q, --quiet         Suppress legend line (listing still shown).
   --json              Output in JSON format instead of human-readable text.
-  -s, --search TERM   Filter by substring match on path or branch (case-insensitive, repeatable, OR logic)
+  -s, --search TERM   Filter by SUBSTRING match on path or branch (case-insensitive, repeatable, OR logic)
 
 DESCRIPTION:
-  Displays each worktree sorted alphabetically. The current worktree is highlighted in green and marked with an asterisk (*).
-  Each entry shows: path [branch] [status indicators] (short commit).
+  Displays each worktree sorted alphabetically. The current worktree is
+  highlighted and marked with an asterisk (*).
 
   Indicators:
     *  current worktree
@@ -33,27 +32,42 @@ DESCRIPTION:
     .  (inactive)
 
   Filtering:
-    - Branch (positional): Exact match, case-sensitive. Multiple = OR logic.
-    - -s / --search: Case-insensitive substring match on path or branch. Multiple = OR logic.
-    - Combined: Both filters must match (AND logic)
+    Positional [branch]:  EXACT match, case-sensitive. Multiple = OR logic.
+    -s / --search TERM:   SUBSTRING match, case-insensitive. Multiple = OR logic.
+    Combined: Both filters must match (AND logic).
+
+  NOTE: Positional arguments and -s have different semantics:
+    hug wtl feature-1     # Exact branch name "feature-1" only
+    hug wtl -s feature    # Any branch/path containing "feature"
+
+CAPTURING OUTPUT:
+  Listing lines go to stdout. Legend and errors go to stderr.
+  Colors are automatically stripped when output is piped.
+
+    worktrees=$(hug wtl)       # Capture listing to variable
+    hug wtl | grep main        # Pipe to other commands
+    hug wtl 2>/dev/null        # Suppress legend/errors
 
 EXAMPLES:
   hug wtl                       # List all worktrees
-  hug wtl feature-auth          # List worktrees on branch "feature-auth" (exact match)
-  hug wtl feat-1 feat-2         # List worktrees on "feat-1" OR "feat-2"
-  hug wtl -s feature            # List worktrees containing "feature" (substring)
-  hug wtl -s auth -s api        # Substring search: "auth" OR "api"
-  hug wtl feat-1 -s api         # Branch is "feat-1" AND path/branch contains "api"
-  hug wtl --json                # Output in JSON format
+  hug wtl feature-auth          # Exact branch "feature-auth"
+  hug wtl feat-1 feat-2         # Exact: "feat-1" OR "feat-2"
+  hug wtl -s feature            # Substring: anything containing "feature"
+  hug wtl -s auth -s api        # Substring: "auth" OR "api"
+  hug wtl feat-1 -s api         # Branch="feat-1" AND path/branch contains "api"
+  hug wtl --json                # JSON output
 
 SEE ALSO:
-  hug wtll : For listing worktrees in long form
-  hug wt   : For interactive worktree selection and switching
-  hug wtdel : For removing worktrees safely
+  hug wtll : Long-format listing with commit subjects
+  hug wt   : Interactive worktree selection and switching
+  hug wtdel : Remove worktrees safely
 EOF
 }
 
-# Parse arguments
+# Parse common flags first (handles -q, -h, --help)
+eval "$(parse_common_flags "$@")"
+
+# Parse command-specific arguments
 json_output=false
 declare -a branch_filters=()
 declare -a search_terms=()
@@ -71,9 +85,9 @@ while [[ $# -gt 0 ]]; do
     search_terms+=("$2")
     shift 2
     ;;
-  -h | --help)
-    show_help
-    exit 0
+  --)
+    shift
+    break
     ;;
   *)
     # Treat non-flag arguments as branch names (exact match)
@@ -92,14 +106,12 @@ check_git_repo
 
 # JSON output mode
 if $json_output; then
-  # Get current worktree path for JSON
   current_worktree=$(get_current_worktree_path)
   output_worktree_json "$current_worktree" "$search_terms_str" "$branch_filters_str"
   exit 0
 fi
 
 # Get worktree data
-# NOTE: wtl lists all worktrees, including the main repository
 declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
 if ! get_all_worktrees_including_main worktree_paths branches commits status_dirty locked_status; then
   printf "No worktrees found.\n" >&2
@@ -109,24 +121,17 @@ fi
 # Get current worktree path for comparison
 current_worktree=$(get_current_worktree_path)
 
-# Build and print worktree list
-# WHY: Delegate filtering to library function (DRY — single source of truth).
-# filter_worktrees() handles the Python subprocess call and no-match error.
-printf "${BLUE}Worktrees:%s${NC}\n" ""
+# Print legend to stderr (suppressed by -q or non-TTY)
 print_worktree_legend
 
-# Use Python for filtering when branch filters or search terms are provided
+# Build and print worktree list
 if [[ -n "$branch_filters_str" || -n "$search_terms_str" ]]; then
-  # Output arrays for filter_worktrees (nameref pattern).
-  # IMPORTANT: Must NOT use names that collide with the function's internal
-  # _wt_* locals — Bash namerefs resolve to the nearest scope first.
   declare -a filtered_paths=() filtered_branches=() filtered_commits=()
   declare -a filtered_dirty=() filtered_locked=()
   if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked "$branch_filters_str" "$search_terms_str"; then
     exit 1
   fi
 
-  # Display filtered results
   for i in "${!filtered_paths[@]}"; do
     path="${filtered_paths[$i]}"
     branch="${filtered_branches[$i]}"
@@ -134,7 +139,6 @@ if [[ -n "$branch_filters_str" || -n "$search_terms_str" ]]; then
     dirty="${filtered_dirty[$i]}"
     locked="${filtered_locked[$i]}"
 
-    # Build status indicators via centralized library function
     path_display="${path/#$HOME/\~}"
     is_current="false"
     [[ "$path" == "$current_worktree" ]] && is_current="true"
@@ -146,8 +150,6 @@ if [[ -n "$branch_filters_str" || -n "$search_terms_str" ]]; then
     printf "%s%-20s %s %s\n" "$status_indicators" "$branch_display" "($commit)" "$path_display"
   done
 else
-  # No filtering: use original loop (Python already loaded all worktrees)
-  match_count=0
   for i in "${!worktree_paths[@]}"; do
     path="${worktree_paths[$i]}"
     branch="${branches[$i]}"
@@ -155,7 +157,6 @@ else
     dirty="${status_dirty[$i]}"
     locked="${locked_status[$i]}"
 
-    # Build status indicators via centralized library function
     path_display="${path/#$HOME/\~}"
     is_current="false"
     [[ "$path" == "$current_worktree" ]] && is_current="true"
@@ -165,6 +166,5 @@ else
     branch_display="$(format_worktree_branch_display "$is_current" "$is_detached" "$branch")"
 
     printf "%s%-20s %s %s\n" "$status_indicators" "$branch_display" "($commit)" "$path_display"
-    match_count=$((match_count + 1))
   done
 fi

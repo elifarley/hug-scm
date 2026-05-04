@@ -189,7 +189,7 @@ teardown() {
   run git-wtl
 
   assert_success
-  assert_output --partial "Worktrees:"
+  # Header removed — listing lines go to stdout, legend to stderr
   assert_output --partial "*"
   assert_output --partial "main"
   assert_output --partial "feature-1"
@@ -263,7 +263,7 @@ teardown() {
   run git-wtl
 
   assert_success
-  assert_output --partial "Worktrees:"
+  # Only main worktree remains — should still be listed
   assert_output --partial "*"
   assert_output --partial "main"
 }
@@ -601,6 +601,63 @@ teardown() {
   assert_valid_json
   assert_json_array_length '.worktrees' 1
   assert_json_value '.worktrees[0].branch' 'feature-1'
+}
+
+# Tests for stdout/stderr discipline (capture-friendly output)
+
+@test "hug wtl: stdout contains only listing lines (no header, no legend)" {
+  cd "$TEST_REPO"
+  run git-wtl
+
+  assert_success
+  refute_output --partial "Worktrees:"
+  refute_output --partial "Legend:"
+  assert_output --partial "main"
+  assert_output --partial "feature-1"
+}
+
+@test "hug wtl: -q suppresses legend on stderr" {
+  cd "$TEST_REPO"
+  run git-wtl -q
+
+  assert_success
+  refute_output --partial "Legend:"
+}
+
+@test "hug wtl: piped output has no ANSI escape codes" {
+  cd "$TEST_REPO"
+  local tmpfile
+  tmpfile=$(mktemp)
+  git-wtl > "$tmpfile" 2>/dev/null
+  # Check no ANSI escape sequences (hug-terminal strips colors in non-TTY)
+  if grep -qP '\x1b\[' "$tmpfile"; then
+    rm -f "$tmpfile"
+    fail "Found ANSI escape codes in piped output"
+  fi
+  rm -f "$tmpfile"
+}
+
+@test "hug wtl: no-match error goes to stderr" {
+  cd "$TEST_REPO"
+  run git-wtl nonexistent
+
+  assert_failure
+  assert_output --partial "No worktrees found matching"
+}
+
+@test "hug wtl: help mentions capturing output" {
+  run git-wtl --help
+
+  assert_success
+  assert_output --partial "CAPTURING OUTPUT"
+}
+
+@test "hug wtl: help clarifies positional vs search semantics" {
+  run git-wtl --help
+
+  assert_success
+  assert_output --partial "EXACT"
+  assert_output --partial "SUBSTRING"
 }
 
 @test "hug wtwp: wrapper lists worktrees by branch" {
