@@ -201,15 +201,15 @@ for worktree_path in "${worktree_paths[@]}"; do
   if [[ ! -e "$worktree_path" ]]; then
     # WHY: Stale worktrees (directory deleted externally without git worktree remove)
     # leave orphaned metadata. Auto-pruning cleans this up instead of failing.
-    if git worktree list --porcelain 2>/dev/null | grep -qxF "worktree $worktree_path"; then
+    if git worktree list --porcelain 2> /dev/null | grep -qxF "worktree $worktree_path"; then
       info "Worktree directory already removed: ${worktree_path/#$HOME/\~}"
       if ! $dry_run; then
         info "Cleaning up orphaned Git metadata..."
         # WHY: Locked stale worktrees won't be pruned by 'git worktree prune'
         # unless explicitly unlocked first. The lock file is metadata-only and
         # the directory is already gone, so unlocking is safe.
-        git worktree unlock "$worktree_path" 2>/dev/null || true
-        git worktree prune 2>/dev/null
+        git worktree unlock "$worktree_path" 2> /dev/null || true
+        git worktree prune 2> /dev/null
         success "Pruned stale worktree entry: ${worktree_path/#$HOME/\~}"
       else
         info "Would prune stale worktree metadata (dry run)"

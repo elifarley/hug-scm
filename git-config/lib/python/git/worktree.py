@@ -244,8 +244,11 @@ def _check_worktree_dirty_details(worktree_path: str) -> WorktreeDirtyInfo:
     # ~15 seconds per stale entry in listing commands.
     if not os.path.isdir(worktree_path):
         return WorktreeDirtyInfo(
-            is_dirty=False, has_unstaged=False,
-            has_staged=False, has_untracked=False, details="",
+            is_dirty=False,
+            has_unstaged=False,
+            has_staged=False,
+            has_untracked=False,
+            details="",
         )
     try:
         # Check for unstaged changes

@@ -1,14 +1,14 @@
 {
   "planPath": "docs/plans/2026-05-03-worktree-branch-default-impl.md",
   "tasks": [
-    {"id": 0, "subject": "Task 1: Update git-wtdel — positional branches, -p/--path, remove -B", "status": "pending"},
-    {"id": 1, "subject": "Task 2: Update git-wtl — positional branches, -s/--search, remove -B", "status": "pending", "blockedBy": [0]},
-    {"id": 2, "subject": "Task 3: Update git-wtll — positional branches, -s/--search, remove -B", "status": "pending", "blockedBy": [1]},
-    {"id": 3, "subject": "Task 4: Update git-wtsh — positional branches, -s/--search", "status": "pending", "blockedBy": [1]},
-    {"id": 4, "subject": "Task 5: Simplify git-wtwp — direct pass-through to wtl", "status": "pending", "blockedBy": [1]},
-    {"id": 5, "subject": "Task 6: Update all worktree test files", "status": "pending", "blockedBy": [0, 1, 2, 3, 4]},
-    {"id": 6, "subject": "Task 7: Run full test suite and verify", "status": "pending", "blockedBy": [5]},
-    {"id": 7, "subject": "Task 8: Commit all changes", "status": "pending", "blockedBy": [6]}
+    {"id": 0, "subject": "Task 1: Update git-wtdel — positional branches, -p/--path, remove -B", "status": "completed"},
+    {"id": 1, "subject": "Task 2: Update git-wtl — positional branches, -s/--search, remove -B", "status": "completed"},
+    {"id": 2, "subject": "Task 3: Update git-wtll — positional branches, -s/--search, remove -B", "status": "completed"},
+    {"id": 3, "subject": "Task 4: Update git-wtsh — positional branches, -s/--search", "status": "completed"},
+    {"id": 4, "subject": "Task 5: Simplify git-wtwp — direct pass-through to wtl", "status": "completed"},
+    {"id": 5, "subject": "Task 6: Update all worktree test files", "status": "completed"},
+    {"id": 6, "subject": "Task 7: Run full test suite and verify", "status": "completed"},
+    {"id": 7, "subject": "Task 8: Commit all changes", "status": "completed"}
   ],
-  "lastUpdated": "2026-05-03T00:00:00Z"
+  "lastUpdated": "2026-05-03T12:00:00Z"
 }
