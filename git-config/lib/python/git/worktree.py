@@ -568,7 +568,7 @@ def main():
         help="Current worktree path for marking in JSON output",
     )
     json_parser.add_argument(
-        "-B",
+        "-b",
         "--branch",
         action="append",
         default=[],

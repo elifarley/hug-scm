@@ -237,7 +237,7 @@ delete_associated_branch() {
   # Subshell contains the exit so we can track outcome in branches_kept.
   if $is_merged; then
     if ! $_force; then
-      if ! ( prompt_confirm_warn "Also delete branch '$branch'?" ); then
+      if ! (prompt_confirm_warn "Also delete branch '$branch'?"); then
         return 1
       fi
     fi
@@ -246,7 +246,7 @@ delete_associated_branch() {
       local unmerged_count
       unmerged_count=$(git rev-list --count "${default_branch:-main}..$branch" 2> /dev/null || echo "?")
       warning "Branch '$branch' has $unmerged_count unmerged commit(s)"
-      if ! ( prompt_confirm_warn "Delete unmerged branch '$branch' anyway?" ); then
+      if ! (prompt_confirm_warn "Delete unmerged branch '$branch' anyway?"); then
         return 1
       fi
     fi

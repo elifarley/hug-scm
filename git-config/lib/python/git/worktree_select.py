@@ -647,7 +647,7 @@ def main(argv: list[str] | None = None) -> None:
         "filter", parents=[common], help="Filter worktrees by branch/search."
     )
     filter_parser.add_argument(
-        "-B",
+        "-b",
         "--branch",
         action="append",
         default=[],
