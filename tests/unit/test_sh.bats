@@ -148,6 +148,45 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
+# hug shp file-path tests (-- <path> filtering)
+# -----------------------------------------------------------------------------
+
+@test "hug shp: shows patch for specific file with -- separator" {
+  # Create a commit with multiple files
+  echo "file-a content" > file_a.txt
+  echo "file-b content" > file_b.txt
+  git add file_a.txt file_b.txt
+  git commit -m "Add two files" -q
+
+  run hug shp -- file_a.txt
+  assert_success
+  assert_output --partial "diff --git"
+  assert_output --partial "file_a.txt"
+  refute_output --partial "file_b.txt"
+}
+
+@test "hug shp: shows patch for specific file at commit ref" {
+  run hug shp HEAD -- feature2.txt
+  assert_success
+  assert_output --partial "diff --git"
+  assert_output --partial "feature2.txt"
+}
+
+@test "hug shp: shows patch for specific file with N shorthand" {
+  run hug shp 1 -- feature1.txt
+  assert_success
+  assert_output --partial "diff --git"
+  assert_output --partial "feature1.txt"
+  refute_output --partial "feature2.txt"
+}
+
+@test "hug shp: without -- treats argument as commit ref (backward compat)" {
+  run hug shp HEAD
+  assert_success
+  assert_output --partial "Commit diff:"
+}
+
+# -----------------------------------------------------------------------------
 # Edge cases and error handling
 # -----------------------------------------------------------------------------
 
