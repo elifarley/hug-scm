@@ -1,0 +1,20 @@
+{
+  "planPath": "docs/plans/2026-05-04-stdout-stderr-fix-impl.md",
+  "tasks": [
+    {"id": 0, "subject": "Task 0: Fix print_list() in hug-arrays → stderr", "status": "pending"},
+    {"id": 1, "subject": "Task 1: Fix hug-output section headers → stderr", "status": "pending", "blockedBy": [0]},
+    {"id": 2, "subject": "Task 2: Fix hug-git-discard status messages → stderr", "status": "pending", "blockedBy": [0]},
+    {"id": 3, "subject": "Task 3: Fix hug-git-worktree summary/prune → stderr", "status": "pending"},
+    {"id": 4, "subject": "Task 4: Fix hug-git-show section headers → stderr", "status": "pending"},
+    {"id": 5, "subject": "Task 5: Fix worktree display commands (wtsh, wtll, wt)", "status": "pending", "blockedBy": [3]},
+    {"id": 6, "subject": "Task 6: Fix worktree create/delete commands (wtc, wtdel)", "status": "pending", "blockedBy": [3]},
+    {"id": 7, "subject": "Task 7: Fix status/snapshot commands (sx, shc)", "status": "pending"},
+    {"id": 8, "subject": "Task 8: Fix HEAD operation commands (h-steps, h-files)", "status": "pending"},
+    {"id": 9, "subject": "Task 9: Fix tag operation commands (t, tc, tdel)", "status": "pending"},
+    {"id": 10, "subject": "Task 10: Fix working directory commands (w-discard, w-purge, w-purge-all, w-unwip)", "status": "pending", "blockedBy": [2]},
+    {"id": 11, "subject": "Task 11: Fix commit/staging commands (ccp, aa)", "status": "pending"},
+    {"id": 12, "subject": "Task 12: Fix stats + reverse violation (stats-author, stats-branch, log-outgoing)", "status": "pending"},
+    {"id": 13, "subject": "Task 13: Run full test suite and verify end-to-end", "status": "pending", "blockedBy": [5,6,7,8,9,10,11,12]}
+  ],
+  "lastUpdated": "2026-05-04T00:00:00Z"
+}
