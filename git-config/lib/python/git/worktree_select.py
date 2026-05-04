@@ -64,10 +64,13 @@ class WorktreeFilterOptions:
         exclude_current: If True, exclude the worktree the user is currently in.
             True for git-wt (can't switch to self) and git-wtdel (can't delete self).
             False for git-wtsh (may want to show current worktree details).
+        exclude_stale: If True, exclude worktrees whose directory does not exist
+            on disk. True by default to prevent phantom entries in interactive menus.
     """
 
     include_main: bool = True
     exclude_current: bool = False
+    exclude_stale: bool = True
 
 
 @dataclass
@@ -117,6 +120,8 @@ def filter_worktrees(
         result = [w for w in result if w.path != main_path]
     if options.exclude_current:
         result = [w for w in result if w.path != current_path]
+    if options.exclude_stale:
+        result = [w for w in result if os.path.isdir(w.path)]
     return result
 
 
@@ -482,8 +487,16 @@ def _cmd_filter(
             paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]
         ).to_bash_declare()
 
+    # Listing commands should show stale entries (diagnostic purpose).
+    # Interactive commands (prepare/select) filter them out by default.
+    listing_opts = WorktreeFilterOptions(
+        include_main=options.include_main,
+        exclude_current=options.exclude_current,
+        exclude_stale=False,
+    )
+
     # Stage 0: apply include/exclude filters
-    filtered = filter_worktrees(worktrees, options, main_path, current_path)
+    filtered = filter_worktrees(worktrees, listing_opts, main_path, current_path)
     if not filtered:
         return WorktreeList(
             paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]
@@ -620,6 +633,12 @@ def main(argv: list[str] | None = None) -> None:
         default=False,
         help="Exclude the worktree the user is currently in.",
     )
+    common.add_argument(
+        "--include-stale",
+        action="store_true",
+        default=False,
+        help="Include worktrees whose directories no longer exist (for debugging).",
+    )
 
     sub.add_parser("prepare", parents=[common], help="Prepare worktrees for gum picker.")
 
@@ -655,6 +674,7 @@ def main(argv: list[str] | None = None) -> None:
     opts = WorktreeFilterOptions(
         include_main=args.include_main,
         exclude_current=args.exclude_current,
+        exclude_stale=not args.include_stale,
     )
 
     try:

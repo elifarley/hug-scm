@@ -63,11 +63,13 @@ class TestWorktreeFilterOptions:
         opts = WorktreeFilterOptions()
         assert opts.include_main is True
         assert opts.exclude_current is False
+        assert opts.exclude_stale is True
 
     def test_custom_values(self):
-        opts = WorktreeFilterOptions(include_main=False, exclude_current=True)
+        opts = WorktreeFilterOptions(include_main=False, exclude_current=True, exclude_stale=False)
         assert opts.include_main is False
         assert opts.exclude_current is True
+        assert opts.exclude_stale is False
 
 
 class TestWorktreeSelectionResult:
@@ -115,7 +117,7 @@ class TestFilterWorktrees:
 
     def test_no_filters_returns_all(self, main_wt, feature_wt, bugfix_wt):
         """Default options (include_main=True, exclude_current=False) return all worktrees."""
-        opts = WorktreeFilterOptions(include_main=True, exclude_current=False)
+        opts = WorktreeFilterOptions(include_main=True, exclude_current=False, exclude_stale=False)
         result = filter_worktrees(
             [main_wt, feature_wt, bugfix_wt], opts, main_wt.path, feature_wt.path
         )
@@ -123,7 +125,7 @@ class TestFilterWorktrees:
 
     def test_exclude_main(self, main_wt, feature_wt, bugfix_wt):
         """include_main=False removes the main worktree from results."""
-        opts = WorktreeFilterOptions(include_main=False, exclude_current=False)
+        opts = WorktreeFilterOptions(include_main=False, exclude_current=False, exclude_stale=False)
         result = filter_worktrees(
             [main_wt, feature_wt, bugfix_wt], opts, main_wt.path, bugfix_wt.path
         )
@@ -133,7 +135,7 @@ class TestFilterWorktrees:
 
     def test_exclude_current(self, main_wt, feature_wt, bugfix_wt):
         """exclude_current=True removes only the worktree the user is currently in."""
-        opts = WorktreeFilterOptions(include_main=True, exclude_current=True)
+        opts = WorktreeFilterOptions(include_main=True, exclude_current=True, exclude_stale=False)
         result = filter_worktrees(
             [main_wt, feature_wt, bugfix_wt], opts, main_wt.path, feature_wt.path
         )
@@ -143,7 +145,7 @@ class TestFilterWorktrees:
 
     def test_exclude_main_and_current(self, main_wt, feature_wt, bugfix_wt):
         """git-wtdel scenario: exclude main AND current (user is in feature worktree)."""
-        opts = WorktreeFilterOptions(include_main=False, exclude_current=True)
+        opts = WorktreeFilterOptions(include_main=False, exclude_current=True, exclude_stale=False)
         result = filter_worktrees(
             [main_wt, feature_wt, bugfix_wt], opts, main_wt.path, feature_wt.path
         )
@@ -151,20 +153,20 @@ class TestFilterWorktrees:
 
     def test_exclude_current_when_in_main(self, main_wt, feature_wt):
         """When current == main and both filters active, main is excluded only once."""
-        opts = WorktreeFilterOptions(include_main=False, exclude_current=True)
+        opts = WorktreeFilterOptions(include_main=False, exclude_current=True, exclude_stale=False)
         result = filter_worktrees([main_wt, feature_wt], opts, main_wt.path, main_wt.path)
         # main excluded by include_main=False; current==main so no double-remove needed
         assert result == [feature_wt]
 
     def test_empty_input(self, main_wt):
         """Empty input list produces empty result regardless of options."""
-        opts = WorktreeFilterOptions(include_main=False, exclude_current=True)
+        opts = WorktreeFilterOptions(include_main=False, exclude_current=True, exclude_stale=False)
         result = filter_worktrees([], opts, main_wt.path, main_wt.path)
         assert result == []
 
     def test_all_excluded(self, main_wt):
         """When all worktrees are filtered out, returns an empty list."""
-        opts = WorktreeFilterOptions(include_main=False, exclude_current=True)
+        opts = WorktreeFilterOptions(include_main=False, exclude_current=True, exclude_stale=False)
         result = filter_worktrees([main_wt], opts, main_wt.path, main_wt.path)
         assert result == []
 
@@ -172,9 +174,43 @@ class TestFilterWorktrees:
         """filter_worktrees must not modify the original list (pure function guarantee)."""
         original = [main_wt, feature_wt, bugfix_wt]
         original_copy = list(original)
-        opts = WorktreeFilterOptions(include_main=False, exclude_current=True)
+        opts = WorktreeFilterOptions(include_main=False, exclude_current=True, exclude_stale=False)
         filter_worktrees(original, opts, main_wt.path, feature_wt.path)
         assert original == original_copy
+
+    def test_excludes_stale_by_default(self, main_wt, feature_wt, bugfix_wt):
+        """exclude_stale=True (default) removes worktrees whose dirs don't exist."""
+        opts = WorktreeFilterOptions(exclude_stale=True)
+        # feature_wt path doesn't exist on disk → filtered out
+        with patch("os.path.isdir", side_effect=lambda p: p != feature_wt.path):
+            result = filter_worktrees(
+                [main_wt, feature_wt, bugfix_wt], opts, main_wt.path, bugfix_wt.path
+            )
+        assert feature_wt not in result
+        assert main_wt in result
+        assert bugfix_wt in result
+
+    def test_include_stale_option(self, main_wt, feature_wt, bugfix_wt):
+        """exclude_stale=False keeps all worktrees even with missing dirs."""
+        opts = WorktreeFilterOptions(exclude_stale=False)
+        with patch("os.path.isdir", return_value=False):
+            result = filter_worktrees(
+                [main_wt, feature_wt, bugfix_wt], opts, main_wt.path, bugfix_wt.path
+            )
+        assert len(result) == 3
+
+    def test_stale_filter_combined_with_other_filters(self, main_wt, feature_wt, bugfix_wt):
+        """All three filters (include_main, exclude_current, exclude_stale) compose."""
+        opts = WorktreeFilterOptions(
+            include_main=False, exclude_current=True, exclude_stale=True
+        )
+        # main excluded by include_main=False, feature excluded by exclude_current,
+        # bugfix is stale (doesn't exist) → all filtered out
+        with patch("os.path.isdir", side_effect=lambda p: p != bugfix_wt.path):
+            result = filter_worktrees(
+                [main_wt, feature_wt, bugfix_wt], opts, main_wt.path, feature_wt.path
+            )
+        assert result == []
 
 
 class TestFormatDisplayRows:
@@ -525,7 +561,7 @@ class TestCmdPrepare:
 
     def test_normal_output(self):
         """One available worktree produces declare output with path and formatted row."""
-        opts = WorktreeFilterOptions(include_main=True, exclude_current=False)
+        opts = WorktreeFilterOptions(include_main=True, exclude_current=False, exclude_stale=False)
         with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
             output = _cmd_prepare(opts)
         # Core structural markers
@@ -559,7 +595,7 @@ class TestCmdPrepare:
             is_dirty=False,
             is_locked=False,
         )
-        opts = WorktreeFilterOptions(include_main=False, exclude_current=False)
+        opts = WorktreeFilterOptions(include_main=False, exclude_current=False, exclude_stale=False)
         with patch(
             "git.worktree_select._load_worktrees",
             return_value=([main_only], "/home/user/repo", "/home/user/repo"),
@@ -568,8 +604,42 @@ class TestCmdPrepare:
         assert "declare selection_status='no_worktrees'" in output
         assert "declare -i worktree_count=0" in output
 
+    def test_stale_worktrees_excluded_from_prepare(self):
+        """Stale worktrees (missing dir) are filtered out of prepare output."""
+        stale_wt = WorktreeInfo(
+            path="/nonexistent/stale-path",
+            branch="stale-branch",
+            commit="abc1234",
+            is_dirty=False,
+            is_locked=False,
+        )
+        load_result = ([stale_wt], "/home/user/repo", "/home/user/repo")
+        opts = WorktreeFilterOptions(exclude_stale=True)
+        with (
+            patch("git.worktree_select._load_worktrees", return_value=load_result),
+            patch("os.path.isdir", return_value=False),
+        ):
+            output = _cmd_prepare(opts)
+        assert "declare selection_status='no_worktrees'" in output
 
-class TestCmdSelect:
+    def test_stale_worktrees_included_when_flag_set(self):
+        """When exclude_stale=False, stale worktrees appear in prepare output."""
+        stale_wt = WorktreeInfo(
+            path="/nonexistent/stale-path",
+            branch="stale-branch",
+            commit="abc1234",
+            is_dirty=False,
+            is_locked=False,
+        )
+        load_result = ([stale_wt], "/home/user/repo", "/home/user/repo")
+        opts = WorktreeFilterOptions(exclude_stale=False)
+        with (
+            patch("git.worktree_select._load_worktrees", return_value=load_result),
+            patch("os.path.isdir", return_value=False),
+        ):
+            output = _cmd_prepare(opts)
+        assert "declare selection_status='ready'" in output
+        assert "stale-branch" in output
     """Tests for _cmd_select() — the numbered-list interactive selection path.
 
     _cmd_select() prints a numbered menu to stderr, reads one line from stdin,
@@ -579,7 +649,7 @@ class TestCmdSelect:
 
     def test_valid_selection(self):
         """Entering '1' for a single-item list selects that worktree."""
-        opts = WorktreeFilterOptions()
+        opts = WorktreeFilterOptions(exclude_stale=False)
         with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
             with patch("builtins.input", return_value="1"):
                 output = _cmd_select(opts, prompt="Pick worktree")
@@ -589,7 +659,7 @@ class TestCmdSelect:
 
     def test_valid_selection_via_test_selection_arg(self):
         """test_selection kwarg injects a selection without touching builtins.input."""
-        opts = WorktreeFilterOptions()
+        opts = WorktreeFilterOptions(exclude_stale=False)
         with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
             output = _cmd_select(opts, prompt="Pick worktree", test_selection="1")
         assert "declare selection_status='selected'" in output
@@ -597,7 +667,7 @@ class TestCmdSelect:
 
     def test_cancelled_on_empty_input(self):
         """Pressing Enter (empty string) cancels the selection."""
-        opts = WorktreeFilterOptions()
+        opts = WorktreeFilterOptions(exclude_stale=False)
         with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
             with patch("builtins.input", return_value=""):
                 output = _cmd_select(opts, prompt="Pick worktree")
@@ -606,7 +676,7 @@ class TestCmdSelect:
 
     def test_invalid_number_cancels(self):
         """An out-of-range number (e.g. '99') cancels without raising."""
-        opts = WorktreeFilterOptions()
+        opts = WorktreeFilterOptions(exclude_stale=False)
         with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
             with patch("builtins.input", return_value="99"):
                 output = _cmd_select(opts, prompt="Pick worktree")
@@ -614,7 +684,7 @@ class TestCmdSelect:
 
     def test_non_numeric_input_cancels(self):
         """Non-numeric text (e.g. 'abc') cancels without raising."""
-        opts = WorktreeFilterOptions()
+        opts = WorktreeFilterOptions(exclude_stale=False)
         with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
             with patch("builtins.input", return_value="abc"):
                 output = _cmd_select(opts, prompt="Pick worktree")
@@ -622,7 +692,7 @@ class TestCmdSelect:
 
     def test_eof_on_input_cancels(self):
         """EOFError (Ctrl-D / piped /dev/null) cancels gracefully."""
-        opts = WorktreeFilterOptions()
+        opts = WorktreeFilterOptions(exclude_stale=False)
         with patch("git.worktree_select._load_worktrees", return_value=_LOAD_RESULT_ONE):
             with patch("builtins.input", side_effect=EOFError):
                 output = _cmd_select(opts, prompt="Pick worktree")
@@ -639,7 +709,7 @@ class TestCmdSelect:
 
     def test_selects_second_item(self):
         """Entering '2' with a two-item list selects the second worktree path."""
-        opts = WorktreeFilterOptions()
+        opts = WorktreeFilterOptions(exclude_stale=False)
         load_result = (_TWO_WORKTREES, "/home/user/repo", "/home/user/repo")
         with patch("git.worktree_select._load_worktrees", return_value=load_result):
             with patch("builtins.input", return_value="2"):
@@ -647,8 +717,42 @@ class TestCmdSelect:
         assert "declare selection_status='selected'" in output
         assert "/home/user/repo.WT.bugfix-2" in output
 
+    def test_stale_worktrees_excluded_from_select(self):
+        """Stale worktrees are excluded from select menu (no_worktrees result)."""
+        stale_wt = WorktreeInfo(
+            path="/nonexistent/stale-path",
+            branch="stale-branch",
+            commit="abc1234",
+            is_dirty=False,
+            is_locked=False,
+        )
+        load_result = ([stale_wt], "/home/user/repo", "/home/user/repo")
+        opts = WorktreeFilterOptions(exclude_stale=True)
+        with (
+            patch("git.worktree_select._load_worktrees", return_value=load_result),
+            patch("os.path.isdir", return_value=False),
+        ):
+            output = _cmd_select(opts, prompt="Pick worktree")
+        assert "declare selection_status='no_worktrees'" in output
 
-class TestMain:
+    def test_stale_worktrees_included_when_flag_set(self):
+        """When exclude_stale=False, stale worktrees appear in select menu."""
+        stale_wt = WorktreeInfo(
+            path="/nonexistent/stale-path",
+            branch="stale-branch",
+            commit="abc1234",
+            is_dirty=False,
+            is_locked=False,
+        )
+        load_result = ([stale_wt], "/home/user/repo", "/home/user/repo")
+        opts = WorktreeFilterOptions(exclude_stale=False)
+        with (
+            patch("git.worktree_select._load_worktrees", return_value=load_result),
+            patch("os.path.isdir", return_value=False),
+            patch("builtins.input", return_value="1"),
+        ):
+            output = _cmd_select(opts, prompt="Pick worktree")
+        assert "declare selection_status='selected'" in output
     """Tests for main() — argparse CLI entry point.
 
     main() wires together argparse, WorktreeFilterOptions construction, and
@@ -718,3 +822,73 @@ class TestMain:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "boom" in captured.err
+
+    def test_include_stale_flag(self):
+        """--include-stale sets exclude_stale=False on the filter options."""
+        with patch("git.worktree_select._cmd_prepare", return_value="") as mock_prep:
+            main(["prepare", "--include-stale"])
+        opts_used: WorktreeFilterOptions = mock_prep.call_args[0][0]
+        assert opts_used.exclude_stale is False
+
+    def test_exclude_stale_default(self):
+        """Without --include-stale, exclude_stale defaults to True."""
+        with patch("git.worktree_select._cmd_prepare", return_value="") as mock_prep:
+            main(["prepare"])
+        opts_used: WorktreeFilterOptions = mock_prep.call_args[0][0]
+        assert opts_used.exclude_stale is True
+
+
+class TestCmdFilter:
+    """Tests for _cmd_filter() — listing commands keep stale entries for diagnostics."""
+
+    def test_filter_does_not_exclude_stale_by_default(self):
+        """Listing commands show stale worktrees even with default exclude_stale=True."""
+        stale_wt = WorktreeInfo(
+            path="/nonexistent/stale-path",
+            branch="stale-branch",
+            commit="abc1234",
+            is_dirty=False,
+            is_locked=False,
+        )
+        valid_wt = WorktreeInfo(
+            path="/home/user/repo.WT.feature-1",
+            branch="feature-1",
+            commit="def5678",
+            is_dirty=False,
+            is_locked=False,
+        )
+        load_result = ([stale_wt, valid_wt], "/home/user/repo", "/home/user/repo")
+        # Pass exclude_stale=True (default), but _cmd_filter overrides to False
+        opts = WorktreeFilterOptions(exclude_stale=True)
+        with (
+            patch("git.worktree_select._load_worktrees", return_value=load_result),
+            patch("os.path.isdir", side_effect=lambda p: p != stale_wt.path),
+        ):
+            from git.worktree_select import _cmd_filter
+            output = _cmd_filter(opts, [], "")
+        # Both worktrees appear in output — _cmd_filter overrides exclude_stale
+        assert "stale-path" in output
+        assert "feature-1" in output
+
+
+class TestAllStaleGivesNoWorktrees:
+    """Edge case: every worktree is stale."""
+
+    def test_all_stale_gives_no_worktrees(self):
+        """When all worktrees are stale, prepare returns no_worktrees status."""
+        stale1 = WorktreeInfo(
+            path="/nonexistent/a", branch="a", commit="abc1234",
+            is_dirty=False, is_locked=False,
+        )
+        stale2 = WorktreeInfo(
+            path="/nonexistent/b", branch="b", commit="def5678",
+            is_dirty=False, is_locked=False,
+        )
+        load_result = ([stale1, stale2], "/home/user/repo", "/home/user/repo")
+        opts = WorktreeFilterOptions(exclude_stale=True)
+        with (
+            patch("git.worktree_select._load_worktrees", return_value=load_result),
+            patch("os.path.isdir", return_value=False),
+        ):
+            output = _cmd_prepare(opts)
+        assert "declare selection_status='no_worktrees'" in output

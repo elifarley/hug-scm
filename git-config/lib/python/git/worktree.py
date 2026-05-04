@@ -17,6 +17,7 @@ Supports:
 """
 
 import argparse
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -237,6 +238,15 @@ def _check_worktree_dirty_details(worktree_path: str) -> WorktreeDirtyInfo:
     Returns:
         WorktreeDirtyInfo with detailed breakdown of changes
     """
+    # WHY: Stale worktrees (directory deleted externally) cause all three
+    # git subprocess calls to fail with exit code 128. Without this guard,
+    # each call takes up to 5 seconds (timeout) before failing — wasting
+    # ~15 seconds per stale entry in listing commands.
+    if not os.path.isdir(worktree_path):
+        return WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False,
+            has_staged=False, has_untracked=False, details="",
+        )
     try:
         # Check for unstaged changes
         result = subprocess.run(

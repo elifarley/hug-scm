@@ -490,3 +490,87 @@ teardown() {
   assert_worktree_not_exists "$FEATURE_WT"
   assert_worktree_not_exists "$HOTFIX_WT"
 }
+
+# Tests for stale worktree auto-prune
+
+@test "hug wtdel: auto-prunes stale worktree" {
+  # WHY: When a worktree directory is deleted externally without git worktree remove,
+  # the stale metadata remains. wtdel should detect this and auto-prune.
+  cd "$TEST_REPO"
+
+  # Delete the worktree directory externally, leaving stale metadata
+  rm -rf "$FEATURE_WT"
+
+  # Verify directory is gone but metadata remains
+  assert [ ! -d "$FEATURE_WT" ]
+  run git worktree list --porcelain
+  assert_output --partial "worktree $FEATURE_WT"
+
+  # wtdel should auto-prune the stale entry
+  run git-wtdel feature-1 --force
+  assert_success
+  assert_output --partial "directory already removed"
+  assert_output --partial "Pruned stale worktree entry"
+
+  # Verify metadata was cleaned up
+  run git worktree list --porcelain
+  refute_output --partial "worktree $FEATURE_WT"
+}
+
+@test "hug wtdel: stale path with --dry-run does not prune" {
+  cd "$TEST_REPO"
+
+  # Delete the worktree directory externally
+  rm -rf "$FEATURE_WT"
+
+  # --dry-run should report what it would do without actually pruning
+  run git-wtdel feature-1 --dry-run
+  assert_success
+  assert_output --partial "directory already removed"
+  assert_output --partial "Would prune stale worktree metadata (dry run)"
+
+  # Metadata should still exist
+  run git worktree list --porcelain
+  assert_output --partial "worktree $FEATURE_WT"
+}
+
+@test "hug wtdel: stale and valid batch" {
+  cd "$TEST_REPO"
+
+  # Make feature worktree stale (delete dir externally)
+  rm -rf "$FEATURE_WT"
+
+  # hotfix worktree is still valid
+  assert [ -d "$HOTFIX_WT" ]
+
+  # Batch: stale auto-pruned, valid removed normally
+  run git-wtdel -p "$FEATURE_WT" -p "$HOTFIX_WT" --force
+  assert_success
+  assert_output --partial "Pruned stale worktree entry"
+  assert_output --partial "Worktree removed for 'hotfix-1'"
+  assert_output --partial "Batch Removal Summary"
+  assert_output --partial "Removed: 2"
+
+  # Both should be cleaned up
+  run git worktree list --porcelain
+  refute_output --partial "worktree $FEATURE_WT"
+  refute_output --partial "worktree $HOTFIX_WT"
+}
+
+@test "hug wtdel: stale locked worktree auto-prunes" {
+  cd "$TEST_REPO"
+
+  # Lock the worktree, then make it stale
+  git worktree lock "$FEATURE_WT"
+  rm -rf "$FEATURE_WT"
+
+  # Even locked stale worktrees should auto-prune
+  # (lock is metadata-only, prune handles it)
+  run git-wtdel feature-1 --force
+  assert_success
+  assert_output --partial "Pruned stale worktree entry"
+
+  # Verify metadata was cleaned up
+  run git worktree list --porcelain
+  refute_output --partial "worktree $FEATURE_WT"
+}
