@@ -233,7 +233,7 @@ _show_commit_standard() {
 
     # Print commit info heading
     if [[ "${HUG_QUIET:-}" != "T" ]]; then
-        printf '%s %s Commit info:\n' "$commit_emoji" "$info_emoji"
+        printf '%s %s Commit info:\n' "$commit_emoji" "$info_emoji" >&2
     fi
 
     # Show commit info (hash, date, author, subject, body)
@@ -242,7 +242,7 @@ _show_commit_standard() {
     # Show patch if requested
     if [[ "$show_patch" == "true" ]]; then
         if [[ "${HUG_QUIET:-}" != "T" ]]; then
-            printf '\n%s %s Commit diff:\n' "$commit_emoji" "$diff_emoji"
+            printf '\n%s %s Commit diff:\n' "$commit_emoji" "$diff_emoji" >&2
         fi
         # Show the patch diff (suppress commit info from git show)
         # When file_path is given, restrict diff to that file only
@@ -257,7 +257,7 @@ _show_commit_standard() {
     if [[ "$show_stats" == "true" ]]; then
         # Show file stats heading
         if [[ "${HUG_QUIET:-}" != "T" ]]; then
-            printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji"
+            printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji" >&2
         fi
 
         # When file_path is given, use git diff-tree filtered to that file;
