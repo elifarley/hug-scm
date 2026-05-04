@@ -15,6 +15,7 @@ from git.worktree import (
     WorktreeInfo,
     WorktreeList,
     _bash_escape,
+    _check_worktree_dirty_details,
     format_indicators,
     parse_worktree_list,
     to_worktree_list,
@@ -915,3 +916,24 @@ class TestFormatIndicators:
 
     def test_dirty_and_locked(self):
         assert format_indicators(True, True) == "+#"
+
+
+################################################################################
+# TestStalePathGuard
+################################################################################
+
+
+class TestStalePathGuard:
+    """Tests for the isdir guard in _check_worktree_dirty_details()."""
+
+    def test_stale_path_returns_clean_without_subprocess(self):
+        """Non-existent path returns is_dirty=False with zero subprocess calls."""
+        with patch("git.worktree.subprocess.run") as mock_run:
+            result = _check_worktree_dirty_details("/nonexistent/path/that/does/not/exist")
+        # Must NOT have called any git subprocess
+        mock_run.assert_not_called()
+        assert result.is_dirty is False
+        assert result.has_unstaged is False
+        assert result.has_staged is False
+        assert result.has_untracked is False
+        assert result.details == ""
