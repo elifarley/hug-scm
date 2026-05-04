@@ -574,3 +574,146 @@ teardown() {
   run git worktree list --porcelain
   refute_output --partial "worktree $FEATURE_WT"
 }
+
+# Tests for --with-branch flag
+
+@test "hug wtdel: -B removes worktree and deletes merged branch" {
+  cd "$TEST_REPO"
+  # feature-1 is unmerged by default — merge it first
+  git merge feature-1 --no-ff -m "merge feature-1" > /dev/null 2>&1
+
+  run git-wtdel feature-1 -B --force
+  assert_success
+  assert_output --partial "Worktree removed"
+  assert_output --partial "Branch 'feature-1' deleted"
+  assert_worktree_not_exists "$FEATURE_WT"
+
+  # Verify branch is gone
+  run git rev-parse --verify "refs/heads/feature-1"
+  assert_failure
+}
+
+@test "hug wtdel: --with-branch works identically to -B" {
+  cd "$TEST_REPO"
+  git merge feature-1 --no-ff -m "merge feature-1" > /dev/null 2>&1
+
+  run git-wtdel feature-1 --with-branch --force
+  assert_success
+  assert_output --partial "Branch 'feature-1' deleted"
+  assert_worktree_not_exists "$FEATURE_WT"
+
+  run git rev-parse --verify "refs/heads/feature-1"
+  assert_failure
+}
+
+@test "hug wtdel: -B --dry-run previews branch deletion" {
+  cd "$TEST_REPO"
+  run git-wtdel feature-1 -B --dry-run
+
+  assert_success
+  assert_output --partial "Worktree Removal Preview (DRY RUN)"
+  assert_output --partial "would be deleted"
+  assert_worktree_exists "$FEATURE_WT"
+
+  # Branch should still exist
+  run git rev-parse --verify "refs/heads/feature-1"
+  assert_success
+}
+
+@test "hug wtdel: -B suppresses the 'hug bdel' tip" {
+  cd "$TEST_REPO"
+  git merge feature-1 --no-ff -m "merge feature-1" > /dev/null 2>&1
+
+  run git-wtdel feature-1 -B --force
+  assert_success
+  refute_output --partial "still exists"
+  refute_output --partial "hug bdel"
+}
+
+@test "hug wtdel: tip still shown when -B is NOT used" {
+  cd "$TEST_REPO"
+  run git-wtdel feature-1 --force
+  assert_success
+  assert_output --partial "still exists"
+  assert_output --partial "hug bdel"
+}
+
+@test "hug wtdel: help includes -B and --with-branch" {
+  run git-wtdel --help
+  assert_success
+  assert_output --partial -- "-B, --with-branch"
+}
+
+# Tests for branch states with -B
+
+@test "hug wtdel: -B with unmerged branch deletes on --force" {
+  cd "$TEST_REPO"
+  # feature-1 has its own commit not in main — unmerged
+  run git-wtdel feature-1 -B --force
+  assert_success
+  assert_output --partial "Branch 'feature-1' deleted"
+  assert_worktree_not_exists "$FEATURE_WT"
+
+  run git rev-parse --verify "refs/heads/feature-1"
+  assert_failure
+}
+
+@test "hug wtdel: -B with detached HEAD skips branch deletion silently" {
+  cd "$TEST_REPO"
+  # Create a detached HEAD worktree
+  local detached_wt="${TEST_REPO}.WT.detached-test"
+  git worktree add --detach "$detached_wt" HEAD > /dev/null 2>&1
+
+  run git-wtdel -p "$detached_wt" -B --force
+  assert_success
+  assert_output --partial "Worktree removed"
+  # Should NOT show any branch deletion message
+  refute_output --partial "Branch 'HEAD' deleted"
+  refute_output --partial "deleted"
+  assert_worktree_not_exists "$detached_wt"
+}
+
+@test "hug wtdel: -B batch with mixed merged and unmerged branches" {
+  cd "$TEST_REPO"
+  # Merge feature-1 into main so it's merged; hotfix-1 remains unmerged
+  git merge feature-1 --no-ff -m "merge feature-1" > /dev/null 2>&1
+
+  run git-wtdel feature-1 hotfix-1 -B --force
+  assert_success
+  assert_output --partial "Batch Removal Summary"
+  assert_output --partial "Removed: 2"
+  assert_output --partial "Branches deleted: 2"
+  assert_worktree_not_exists "$FEATURE_WT"
+  assert_worktree_not_exists "$HOTFIX_WT"
+
+  # Both branches should be gone (--force deletes unmerged too)
+  run git rev-parse --verify "refs/heads/feature-1"
+  assert_failure
+  run git rev-parse --verify "refs/heads/hotfix-1"
+  assert_failure
+}
+
+@test "hug wtdel: -B batch summary includes branch counts" {
+  cd "$TEST_REPO"
+  git merge feature-1 --no-ff -m "merge feature-1" > /dev/null 2>&1
+
+  run git-wtdel feature-1 hotfix-1 -B --force
+  assert_success
+  assert_output --partial "Batch Removal Summary"
+  assert_output --partial "Removed: 2"
+  assert_output --partial "Branches deleted: 2"
+}
+
+@test "hug wtdel: -B skips branch deletion gracefully when branch is gone" {
+  cd "$TEST_REPO"
+  # Use a detached HEAD worktree — the branch lookup will skip cleanly
+  local detached_wt="${TEST_REPO}.WT.detached-no-branch"
+  git worktree add --detach "$detached_wt" HEAD > /dev/null 2>&1
+
+  run git-wtdel -p "$detached_wt" -B --force
+  assert_success
+  assert_output --partial "Worktree removed"
+  # No branch deletion attempted for detached HEAD
+  refute_output --partial "deleted"
+  assert_worktree_not_exists "$detached_wt"
+}

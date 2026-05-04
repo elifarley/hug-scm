@@ -25,6 +25,7 @@ OPTIONS:
     -p, --path PATH   Target worktree by filesystem path (repeatable for batch)
     -f, --force       Skip confirmation prompts and remove even with uncommitted changes
     --dry-run         Show what would be removed without actually removing
+    -B, --with-branch Also delete the associated branch after removing the worktree
     -h, --help        Show this help
 
 DESCRIPTION:
@@ -48,6 +49,8 @@ EXAMPLES:
     hug wtdel feature-auth -f                 # Force remove without confirmation
     hug wtdel -p /path/to/worktree            # Remove by path
     hug wtdel -p /path/a -p /path/b --force  # Batch remove by paths
+    hug wtdel feature-auth -B              # Remove worktree and delete branch
+    hug wtdel feat-1 feat-2 -B --force     # Batch remove worktrees + branches
 
 SEE ALSO:
     hug wt      List and switch between worktrees
@@ -81,7 +84,7 @@ check_git_repo
 
 # Parse arguments using getopt
 set +e
-PARSED=$(getopt --options hp:f --longoptions help,force,dry-run,path: --name "hug wtdel" -- "$@" 2>&1)
+PARSED=$(getopt --options hp:fB --longoptions help,force,dry-run,path:,with-branch --name "hug wtdel" -- "$@" 2>&1)
 getopt_status=$?
 set -e
 
@@ -97,6 +100,7 @@ eval set -- "$PARSED"
 # Initialize variables
 force=false
 dry_run=false
+with_branch=false
 declare -a branch_names=()
 declare -a explicit_paths=()
 
@@ -113,6 +117,10 @@ while true; do
     ;;
   --dry-run)
     dry_run=true
+    shift
+    ;;
+  -B | --with-branch)
+    with_branch=true
     shift
     ;;
   -p | --path)
@@ -185,6 +193,84 @@ fi
 # Process each worktree path (batch support)
 removed=()
 failed=()
+branches_deleted=()
+branches_kept=()
+
+# Delete the branch associated with a removed worktree.
+# Args: $1=branch_name, $2=force (true/false), $3=dry_run (true/false)
+# Returns: 0=deleted, 1=skipped/declined, 2=no branch to delete
+delete_associated_branch() {
+  local branch="$1"
+  local _force="$2"
+  local _dry_run="$3"
+
+  # Skip detached HEAD or non-existent branches
+  if [[ -z "$branch" || "$branch" == "HEAD" || "$branch" == "(detached)" || "$branch" == "unknown" ]]; then
+    return 2
+  fi
+
+  # Check if branch still exists after worktree removal
+  if ! git rev-parse --verify "refs/heads/$branch" > /dev/null 2>&1; then
+    return 2
+  fi
+
+  # Determine merge status against default branch
+  local default_branch
+  default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@' || git branch --list main master | head -1 | tr -d ' *')
+
+  local is_merged=false
+  if git branch --merged "${default_branch:-main}" 2> /dev/null | grep -q "^[ *]*${branch}$"; then
+    is_merged=true
+  fi
+
+  # Dry run: just report what would happen
+  if $_dry_run; then
+    if $is_merged; then
+      info "Would delete branch '$branch' (merged)"
+    else
+      info "Would delete branch '$branch' (has unmerged commits)"
+    fi
+    return 0
+  fi
+
+  # WHY: prompt_confirm_warn calls exit 1 on decline, NOT return 1.
+  # Subshell contains the exit so we can track outcome in branches_kept.
+  if $is_merged; then
+    if ! $_force; then
+      if ! ( prompt_confirm_warn "Also delete branch '$branch'?" ); then
+        return 1
+      fi
+    fi
+  else
+    if ! $_force; then
+      local unmerged_count
+      unmerged_count=$(git rev-list --count "${default_branch:-main}..$branch" 2> /dev/null || echo "?")
+      warning "Branch '$branch' has $unmerged_count unmerged commit(s)"
+      if ! ( prompt_confirm_warn "Delete unmerged branch '$branch' anyway?" ); then
+        return 1
+      fi
+    fi
+  fi
+
+  # Use -D for unmerged, -d for merged
+  local delete_flag="-d"
+  if ! $is_merged; then
+    delete_flag="-D"
+  fi
+
+  if git branch "$delete_flag" "$branch" > /dev/null 2>&1; then
+    success "Branch '$branch' deleted"
+    return 0
+  else
+    # Force-delete as fallback (branch might not be fully merged even if we thought it was)
+    if git branch -D "$branch" > /dev/null 2>&1; then
+      success "Branch '$branch' deleted (force)"
+      return 0
+    fi
+    warning "Failed to delete branch '$branch'"
+    return 1
+  fi
+}
 
 for worktree_path in "${worktree_paths[@]}"; do
   # Skip empty paths
@@ -292,6 +378,9 @@ for worktree_path in "${worktree_paths[@]}"; do
     printf "  Branch: %s\n" "$wt_branch" >&2
     printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}" >&2
     printf "  Status: %s\n" "$status_text" >&2
+    if $with_branch; then
+      printf "  Branch: %s (would be deleted)\n" "$wt_branch" >&2
+    fi
     echo >&2
     if [[ ${#worktree_paths[@]} -eq 1 ]]; then
       info "No changes made (dry run)."
@@ -357,8 +446,22 @@ for worktree_path in "${worktree_paths[@]}"; do
   if $removal_success; then
     success "Worktree removed for branch '$wt_branch'"
     info "Deleted directory: ${worktree_path/#$HOME/\~}"
+
+    # Branch deletion (if --with-branch is active)
+    if $with_branch; then
+      branch_rc=0
+      delete_associated_branch "$wt_branch" "$force" "$dry_run" || branch_rc=$?
+      if [[ $branch_rc -eq 0 ]]; then
+        branches_deleted+=("$wt_branch")
+      elif [[ $branch_rc -eq 1 ]]; then
+        branches_kept+=("$wt_branch")
+      fi
+      # rc=2 means skipped (detached/non-existent) — no tracking needed
+    else
+      tip "Branch '$wt_branch' still exists. To delete it: hug bdel $wt_branch"
+    fi
+
     echo >&2
-    tip "Branch '$wt_branch' still exists. To delete it: hug bdel $wt_branch"
     removed+=("$worktree_path")
   else
     failed+=("$worktree_path")
@@ -372,6 +475,14 @@ if [[ ${#worktree_paths[@]} -gt 1 ]]; then
   printf "  Removed: ${#removed[@]}\n" >&2
   if [[ ${#failed[@]} -gt 0 ]]; then
     printf "  Failed: ${#failed[@]}\n" >&2
+  fi
+  if $with_branch; then
+    if [[ ${#branches_deleted[@]} -gt 0 ]]; then
+      printf "  Branches deleted: ${#branches_deleted[@]}\n" >&2
+    fi
+    if [[ ${#branches_kept[@]} -gt 0 ]]; then
+      printf "  Branches kept: ${#branches_kept[@]}\n" >&2
+    fi
   fi
   echo >&2
 
