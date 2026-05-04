@@ -11,13 +11,14 @@ show_help() {
 hug shp: Show commit(s) with patch and file statistics.
 
 USAGE:
-    hug shp [N|-N|<commit-ref>|<range>] [OPTIONS]
+    hug shp [N|-N|<commit-ref>|<range>] [OPTIONS] [-- <path>]
 
 ARGUMENTS:
     N               Steps back from HEAD (0-999) → shows commit at HEAD~N (0 → HEAD)
     -N              Range of N commits (1-999) → shows HEAD~N..HEAD
     <commit-ref>    Commit reference (default: HEAD)
     <range>         Commit range (e.g., main..HEAD)
+    <path>          File path to filter diff (after -- separator)
 
 OPTIONS:
     -q, --quiet     Suppress headers (also honors HUG_QUIET env var)
@@ -28,6 +29,9 @@ DESCRIPTION:
     Shows commit details with full patch and file statistics.
     Displays commit hash, date, author, subject, body, the
     complete diff/patch, and file statistics at the end.
+
+    When -- <path> is given, filters the diff and file stats
+    to only show changes for the specified file.
 
     N/-N SYNTAX CONVENTION:
     - N (0-999) → Single commit at HEAD~N (0 → HEAD)
@@ -41,18 +45,37 @@ EXAMPLES:
     hug shp abc123           # Show specific commit with patch
     hug shp main..HEAD       # Show commits in range with patch
     hug shp --llm HEAD       # Show in LLM XML format with patch
+    hug shp HEAD -- README.md    Show patch for README.md in last commit
+    hug shp 3 -- src/app.js      Show patch for src/app.js at HEAD~3
 
 SEE ALSO:
     hug sh       : Show commit with stats (no patch)
     hug shc      : Show changed files (stats only)
+    hug fcat     : View file content at a commit
     hug sl       : Show status
 EOF
 }
 
-# Parse common flags (-q/--quiet, -h/--help)
-eval "$(parse_common_flags "$@")"
+# Pre-parse -- <path> from raw args BEFORE parse_common_flags,
+# because parse_common_flags consumes -- for interactive file selection.
+file_path=""
+declare -a pre_parsed_args=()
+saw_separator=false
+for arg in "$@"; do
+  if $saw_separator; then
+    file_path="$arg"
+    saw_separator=false
+  elif [[ "$arg" == "--" ]]; then
+    saw_separator=true
+  else
+    pre_parsed_args+=("$arg")
+  fi
+done
 
-# Parse remaining arguments
+# Parse common flags (-q/--quiet, -h/--help) from the remaining args
+eval "$(parse_common_flags "${pre_parsed_args[@]}")"
+
+# Parse remaining arguments: <commit>
 commit_ref=""
 show_llm=false
 for arg in "$@"; do
@@ -75,6 +98,6 @@ else
 fi
 
 # Use hug-git-show library for commit display (show_patch=true)
-show_commits "$commit_ref" true "$output_format"
+show_commits "$commit_ref" true "$output_format" "true" "$file_path"
 
 exit 0

@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# hug fcat: View file content at a specific commit (read-only).
+#
+# Part of the f* (file inspection) family. Unlike destructive commands like
+# `hug w get`, this only prints content — it never modifies the working tree.
+#
+# DESIGN DECISION: N counts file-specific commits (not overall history),
+# matching `hug w get` behavior. This is more useful because files often
+# haven't changed in dozens of commits, so counting all commits would
+# almost always overshoot.
+
+CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug fcat: View file content at a specific commit (read-only).
+
+USAGE:
+    hug fcat <N> <path>           File content N file-specific commits back
+    hug fcat <commit> <path>      File content at specific commit
+    hug fcat -h, --help           Show this help
+
+ARGUMENTS:
+    <N>             Steps back through commits that changed <path> (0-99)
+                      0 = current content (HEAD)
+                      1 = before the last change to this file
+                      2 = before the second-to-last change, etc.
+                      Note: fcat 0 <file> is equivalent to cat <file>
+    <commit>        Commit hash, branch, tag, or other git ref
+    <path>          File path to view
+
+OPTIONS:
+    -h, --help      Show this help
+
+DESCRIPTION:
+    Prints file content at a specific commit without modifying the working
+    directory. Read-only — the file-cat of the hug f* file inspection family.
+
+    N counts only commits that changed the specified file (file-specific
+    counting), matching hug w get behavior. This is more useful than counting
+    all commits because files often haven't changed in dozens of commits.
+
+    Ranges (-N) are not supported — file content is per-commit.
+
+EXAMPLES:
+    hug fcat 0 README.md           Current content of README.md
+    hug fcat 1 src/app.js          Content before last change to src/app.js
+    hug fcat abc123 config.yml     Content at commit abc123
+    hug fcat main package.json     Content at main branch tip
+
+SEE ALSO:
+    hug w get    : Restore file to commit state (destructive)
+    hug shp -- <path> : Show diff for specific file in a commit
+    hug fb       : File blame (who changed each line)
+EOF
+}
+
+# Parse common flags (-h/--help)
+eval "$(parse_common_flags "$@")"
+
+check_git_repo
+
+# Collect positional arguments (skip already-handled flags)
+declare -a args=()
+for arg in "$@"; do
+  case "$arg" in
+  -h | --help | -q | --quiet) ;; # Handled by parse_common_flags
+  *)
+    args+=("$arg")
+    ;;
+  esac
+done
+
+# Validate argument count: need exactly <target> <path>
+if [[ ${#args[@]} -lt 2 ]]; then
+  error "Missing arguments. USAGE: hug fcat <N|commit> <path>
+
+ARGUMENTS:
+    <N|commit>    Number (0-99) or commit reference
+    <path>        File path to view
+
+Run 'hug help fcat' for details."
+fi
+
+target="${args[0]}"
+file_path="${args[1]}"
+
+# Reject ranges (-N) — file content is per-commit, not a range.
+# Regex catches -03, -3, -99, etc. but NOT -h or --help (already handled).
+if [[ "$target" =~ ^-[0-9]+$ ]]; then
+  error "Ranges are not supported. Use a single commit ref.
+  hug fcat <commit> <path>   View file at specific commit
+  hug fcat <N> <path>        View file N changes back (single commit)"
+fi
+
+# Resolve the target commit
+if [[ "$target" =~ ^[0-9]{1,2}$ ]]; then
+  # N (0-99): use file-specific commit counting via get_commit_n_back.
+  # This walks only commits that touched the given file, making N intuitive.
+  resolved_commit=$(get_commit_n_back "$target" "$file_path")
+else
+  # Commit ref: validate it resolves to a commit, then resolve to full hash
+  ensure_commit_exists "$target"
+  resolved_commit=$(git rev-parse --verify "$target^{commit}")
+fi
+
+# Validate file exists in the resolved commit.
+# check_file_in_commit prepends GIT_PREFIX internally for subdirectory support.
+check_file_in_commit "$resolved_commit" "$file_path"
+
+# Show file content at the resolved commit.
+# GIT_PREFIX is set by check_git_repo (called above); we prepend it to get
+# the repo-root-relative path that git show requires.
+git show "$resolved_commit:${GIT_PREFIX:-}$file_path"
