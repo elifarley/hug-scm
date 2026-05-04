@@ -263,12 +263,12 @@ for worktree_path in "${worktree_paths[@]}"; do
 
   # Block dirty removal without --force (but allow dry-run to preview)
   if $is_dirty && ! $force && ! $dry_run; then
-    echo
-    printf "${BLUE}Worktree Removal Summary:${NC}\n"
-    printf "  Branch: %s\n" "$wt_branch"
-    printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}"
-    printf "  Status: ${YELLOW}Dirty (%s)${NC}\n" "$dirty_details"
-    echo
+    echo >&2
+    printf "${BLUE}Worktree Removal Summary:${NC}\n" >&2
+    printf "  Branch: %s\n" "$wt_branch" >&2
+    printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}" >&2
+    printf "  Status: ${YELLOW}Dirty (%s)${NC}\n" "$dirty_details" >&2
+    echo >&2
     warning "Worktree has uncommitted changes: $worktree_path. Commit/stash first, or use -f/--force to discard."
     failed+=("$worktree_path")
     continue
@@ -283,16 +283,16 @@ for worktree_path in "${worktree_paths[@]}"; do
 
   # --- DRY RUN ---
   if $dry_run; then
-    echo
+    echo >&2
     if [[ ${#worktree_paths[@]} -gt 1 ]]; then
-      printf "${BLUE}Worktree Removal Preview (DRY RUN) [$((${#failed[@]} + ${#removed[@]} + 1))/${#worktree_paths[@]}]:${NC}\n"
+      printf "${BLUE}Worktree Removal Preview (DRY RUN) [$((${#failed[@]} + ${#removed[@]} + 1))/${#worktree_paths[@]}]:${NC}\n" >&2
     else
-      printf "${BLUE}Worktree Removal Preview (DRY RUN):${NC}\n"
+      printf "${BLUE}Worktree Removal Preview (DRY RUN):${NC}\n" >&2
     fi
-    printf "  Branch: %s\n" "$wt_branch"
-    printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}"
-    printf "  Status: %s\n" "$status_text"
-    echo
+    printf "  Branch: %s\n" "$wt_branch" >&2
+    printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}" >&2
+    printf "  Status: %s\n" "$status_text" >&2
+    echo >&2
     if [[ ${#worktree_paths[@]} -eq 1 ]]; then
       info "No changes made (dry run)."
       exit 0
@@ -302,16 +302,16 @@ for worktree_path in "${worktree_paths[@]}"; do
   fi
 
   # --- SUMMARY ---
-  echo
+  echo >&2
   if [[ ${#worktree_paths[@]} -gt 1 ]]; then
-    printf "${BLUE}Worktree Removal Summary [$((${#failed[@]} + ${#removed[@]} + 1))/${#worktree_paths[@]}]:${NC}\n"
+    printf "${BLUE}Worktree Removal Summary [$((${#failed[@]} + ${#removed[@]} + 1))/${#worktree_paths[@]}]:${NC}\n" >&2
   else
-    printf "${BLUE}Worktree Removal Summary:${NC}\n"
+    printf "${BLUE}Worktree Removal Summary:${NC}\n" >&2
   fi
-  printf "  Branch: %s\n" "$wt_branch"
-  printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}"
-  printf "  Status: %s\n" "$status_text"
-  echo
+  printf "  Branch: %s\n" "$wt_branch" >&2
+  printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}" >&2
+  printf "  Status: %s\n" "$status_text" >&2
+  echo >&2
 
   # --- SINGLE CONFIRMATION ---
   if ! $force; then
@@ -357,7 +357,7 @@ for worktree_path in "${worktree_paths[@]}"; do
   if $removal_success; then
     success "Worktree removed for branch '$wt_branch'"
     info "Deleted directory: ${worktree_path/#$HOME/\~}"
-    echo
+    echo >&2
     tip "Branch '$wt_branch' still exists. To delete it: hug bdel $wt_branch"
     removed+=("$worktree_path")
   else
@@ -367,13 +367,13 @@ done
 
 # --- BATCH SUMMARY ---
 if [[ ${#worktree_paths[@]} -gt 1 ]]; then
-  echo
-  printf "${BLUE}Batch Removal Summary:${NC}\n"
-  printf "  Removed: ${#removed[@]}\n"
+  echo >&2
+  printf "${BLUE}Batch Removal Summary:${NC}\n" >&2
+  printf "  Removed: ${#removed[@]}\n" >&2
   if [[ ${#failed[@]} -gt 0 ]]; then
-    printf "  Failed: ${#failed[@]}\n"
+    printf "  Failed: ${#failed[@]}\n" >&2
   fi
-  echo
+  echo >&2
 
   if [[ ${#failed[@]} -gt 0 ]]; then
     exit 1
