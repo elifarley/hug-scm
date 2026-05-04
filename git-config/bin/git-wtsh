@@ -178,12 +178,12 @@ show_worktree_details() {
 
   local worktree_array=("$@")
 
-  printf "${BLUE}Worktree Summary${NC}\n"
-  printf "───────────────────────\n"
-  printf "Current: %s\n\n" "${current_worktree/#$HOME/\~}"
+  printf "${BLUE}Worktree Summary${NC}\n" >&2
+  printf "───────────────────────\n" >&2
+  printf "Current: %s\n\n" "${current_worktree/#$HOME/\~}" >&2
 
   if [[ ${#worktree_array[@]} -eq 0 ]]; then
-    printf "${YELLOW}No worktrees found${NC}\n"
+    printf "${YELLOW}No worktrees found${NC}\n" >&2
     return 1
   fi
 
@@ -203,8 +203,8 @@ show_worktree_details() {
     done
   fi
 
-  printf "${BLUE}Worktrees (%d total)${NC}\n" "$display_count"
-  printf "───────────────────────\n\n"
+  printf "${BLUE}Worktrees (%d total)${NC}\n" "$display_count" >&2
+  printf "───────────────────────\n\n" >&2
 
   for path in "${worktree_array[@]}"; do
     # Get worktree information from existing functions
