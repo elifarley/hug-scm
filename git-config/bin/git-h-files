@@ -33,6 +33,12 @@ DESCRIPTION:
     With -t/--temporal, filters commits by time relative to HEAD's commit time.
     Use before 'h back N' or 'h rewind COMMIT' to see affected files.
 
+CAPTURING OUTPUT:
+  File stats go to stdout. Tips and contextual messages go to stderr.
+
+    files=$(hug h files 3)       # Capture file stats to variable
+    hug h files 3 2>/dev/null    # Suppress tips
+
 EXAMPLES:
     hug h files 3          # Files and stats in last 3 commits
     hug h files 3 -p       # Full patch and stats in last 3 commits
@@ -167,12 +173,12 @@ fi
 if $show_patch; then
   if [[ -n "$patch_file" ]]; then
     git diff "$range" -- "$patch_file"
-    printf '☝️ Patch for %s in range %s ☝️\n' "$patch_file" "$range"
-    echo
+    printf '☝️ Patch for %s in range %s ☝️\n' "$patch_file" "$range" >&2
+    echo >&2
   else
     git diff "$range"
-    printf '☝️ Full patch for range %s ☝️\n' "$range"
-    echo
+    printf '☝️ Full patch for range %s ☝️\n' "$range" >&2
+    echo >&2
   fi
 fi
 
@@ -180,7 +186,7 @@ fi
 HUG_QUIET=T git shc "$range"
 
 # Provide contextual tip AFTER the stats block
-echo
+echo >&2
 if $upstream; then
   upstream_short=$(git rev-parse --short "$start_point")
   tip "These $count files and their stats are affected by $local_commits local-only commits to upstream tip $upstream_short (e.g., via 'h back -u')."

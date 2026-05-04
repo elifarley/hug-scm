@@ -108,7 +108,7 @@ if "$summary_output"; then
   # Count of ADDITIONAL worktrees (excluding main)
   additional_count=$((count > 0 ? count - 1 : 0))
 
-  printf "${BLUE}Worktrees (%d)${NC}\n" "$additional_count"
+  printf "${BLUE}Worktrees (%d)${NC}\n" "$additional_count" >&2
   print_worktree_legend
 
   for i in "${!worktree_paths[@]}"; do

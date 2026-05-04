@@ -117,20 +117,20 @@ print_staged_unstaged_paths() {
   
   if [[ ${#staged_ref[@]} -gt 0 ]]; then
     if $target_staged && ! $target_unstaged; then
-      printf '  Staged paths (unstaged changes in these files would be preserved):\n'
+      printf '  Staged paths (unstaged changes in these files would be preserved):\n' >&2
     else
-      printf '  Staged paths:\n'
+      printf '  Staged paths:\n' >&2
     fi
     print_list '    ' "${staged_ref[@]}"
   fi
   
   if [[ ${#unstaged_ref[@]} -gt 0 ]]; then
-    printf '  Unstaged paths:\n'
+    printf '  Unstaged paths:\n' >&2
     print_list '    ' "${unstaged_ref[@]}"
   fi
   
   if $target_staged && $target_unstaged; then
-    printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
+    printf '  (Both staged and unstaged would be fully discarded for affected paths)\n' >&2
   fi
 }
 

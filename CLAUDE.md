@@ -300,8 +300,22 @@ query commands (`hug s`, `hug sx`, `hug sh*`, `hug stats*`), and any command wit
    route wrapper messages to stderr.
 5. If a command has both data and chatter, add a `CAPTURING OUTPUT` section
    to its help text (see `git-wtl` for the canonical example).
+6. Commands using `gum_log` helpers automatically strip colors when stdout
+   is not a TTY (piped or captured). For `printf`-based data output, use
+   the `-t 1` test: `[[ -t 1 ]] && color=$BLUE || color=`.
+7. `--json` output MUST go to stdout with zero non-JSON bytes. No headers,
+   no legends, no tips alongside JSON. Validate with:
+   `hug <cmd> --json | python3 -m json.tool`.
 
 **Reference implementation:** `git-wtl`
+
+**Testing stdout/stderr discipline:**
+- Suppress stderr and assert data is intact:
+  `run hug wtl 2>/dev/null; [[ "$output" == *"$branch"* ]]`
+- Assert stderr contains chatter:
+  `run hug wtl 2>&1 1>/dev/null; [[ "$output" == *"Legend"* ]]`
+- For `--json`, validate the output parses:
+  `run hug wtl --json; echo "$output" | python3 -m json.tool >/dev/null`
 
 ## Testing Strategy
 

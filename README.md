@@ -579,6 +579,13 @@ hug shf <file> [commit] # SHow: File at [commit] (File diff in commit)
 -   Built-in help with examples
 -   Smart completion with partial matching
 
+### 6. **Script-Friendly Output**
+
+-   Listing and query commands keep stdout clean for piping and capture
+-   Human-facing messages (headers, legends, tips) go to stderr
+-   `--json` flags provide structured, machine-readable output
+-   See `hug wtl --help` for the canonical CAPTURING OUTPUT example
+
 ## Testing
 
 Hug SCM uses [BATS (Bash Automated Testing System)](https://github.com/bats-core/bats-core) for automated testing. We have comprehensive test coverage for core commands and workflows.

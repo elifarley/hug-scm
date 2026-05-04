@@ -196,14 +196,14 @@ fi
 
 if $dry_run; then
   print_dry_run_preview "be discarded" "from the specified paths."
-  printf '\n'
+  printf '\n' >&2
   print_staged_unstaged_paths staged_paths unstaged_paths "$target_staged" "$target_unstaged"
   exit 0
 fi
 
 if ! $force; then
   print_action_preview "discard the listed changes" "from the specified paths."
-  printf '\n'
+  printf '\n' >&2
   print_staged_unstaged_paths staged_paths unstaged_paths "$target_staged" "$target_unstaged"
   prompt_confirm_danger 'discard'
 fi

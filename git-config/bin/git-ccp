@@ -114,7 +114,7 @@ if [[ "$husk_mode" == true ]]; then
     exit 0
   fi
 
-  printf "Staging %d file(s) from commit %s...\n" "${#files[@]}" "$source_commit"
+  printf "Staging %d file(s) from commit %s...\n" "${#files[@]}" "$source_commit" >&2
 
   # Stage the files (but only if they exist in the working directory)
   files_to_stage=()
@@ -134,7 +134,7 @@ if [[ "$husk_mode" == true ]]; then
   # Stage the files
   git add "${files_to_stage[@]}"
 
-  printf "Creating commit with message from %s...\n" "$source_commit"
+  printf "Creating commit with message from %s...\n" "$source_commit" >&2
   # Use git's native commit message reuse
   exec git commit -C "$source_commit"
 fi
@@ -149,5 +149,5 @@ for arg in "$@"; do
   validate_commitish "ccp argument" "$arg"
 done
 
-printf "Copying %s onto current branch...\n" "$*"
+printf "Copying %s onto current branch...\n" "$*" >&2
 exec git cherry-pick -x "${git_options[@]}" "$@"

@@ -825,17 +825,17 @@ prune_worktrees() {
     fi
 
     # Show what we found
-    echo "Found ${#orphaned_worktrees[@]} orphaned worktree(s):"
+    echo "Found ${#orphaned_worktrees[@]} orphaned worktree(s):" >&2
     printf '  %s\n' "${orphaned_worktrees[@]}"
 
     if $dry_run; then
-        echo "Would prune ${#orphaned_worktrees[@]} orphaned worktree(s)"
+        echo "Would prune ${#orphaned_worktrees[@]} orphaned worktree(s)" >&2
         return 0
     fi
 
     # Get confirmation unless forced
     if ! $force; then
-        echo "Pruning will remove references to these non-existent worktrees"
+        echo "Pruning will remove references to these non-existent worktrees" >&2
         if ! prompt_confirm_danger "prune"; then
             info "Worktree pruning cancelled"
             return 0
@@ -843,7 +843,7 @@ prune_worktrees() {
     fi
 
     # Prune the worktrees
-    echo "Pruning orphaned worktrees..."
+    echo "Pruning orphaned worktrees..." >&2
     if git worktree prune 2>/dev/null; then
         success "Pruned ${#orphaned_worktrees[@]} orphaned worktree(s)"
         return 0
@@ -876,9 +876,9 @@ show_worktree_summary() {
     current_worktree=$(get_current_worktree_path)
     local count=${#worktree_paths[@]}
 
-    echo
-    printf "${BLUE}Worktrees (%d):${NC}\n" "$count"
-    echo
+    echo >&2
+    printf "${BLUE}Worktrees (%d):${NC}\n" "$count" >&2
+    echo >&2
 
     for i in "${!worktree_paths[@]}"; do
         local path="${worktree_paths[$i]}"
@@ -899,7 +899,7 @@ show_worktree_summary() {
         printf "  %s%-20s %s\n" "$indicators" "$branch_display" "($commit) → ${path/#$HOME/\~}"
     done
 
-    echo
+    echo >&2
 }
 
 # Check if current directory is a worktree (not the main repository)

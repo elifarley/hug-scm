@@ -206,7 +206,7 @@ if ! $branch_exists; then
     branch_needs_creation=true # Will create without prompting
   else
     # Prompt once: branch doesn't exist, create it AND the worktree?
-    echo
+    echo >&2
     info "Branch '$branch_name' does not exist locally."
     if ! prompt_confirm_safe "Create branch '$branch_name' and its worktree?"; then
       exit 0
@@ -248,29 +248,29 @@ fi
 
 # --- DRY RUN ---
 if $dry_run; then
-  echo
-  printf "${BLUE}Worktree Creation Preview (DRY RUN):${NC}\n"
+  echo >&2
+  printf "${BLUE}Worktree Creation Preview (DRY RUN):${NC}\n" >&2
   if $branch_needs_creation; then
-    printf "  Branch: %s ${YELLOW}(new, from HEAD)${NC}\n" "$branch_name"
+    printf "  Branch: %s ${YELLOW}(new, from HEAD)${NC}\n" "$branch_name" >&2
   else
-    printf "  Branch: %s\n" "$branch_name"
+    printf "  Branch: %s\n" "$branch_name" >&2
   fi
-  printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}"
-  echo
+  printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}" >&2
+  echo >&2
   info "No changes made (dry run)."
   exit 0
 fi
 
 # --- SUMMARY ---
-echo
-printf "${BLUE}Worktree Creation Summary:${NC}\n"
+echo >&2
+printf "${BLUE}Worktree Creation Summary:${NC}\n" >&2
 if $branch_needs_creation; then
-  printf "  Branch: %s ${YELLOW}(new, from HEAD)${NC}\n" "$branch_name"
+  printf "  Branch: %s ${YELLOW}(new, from HEAD)${NC}\n" "$branch_name" >&2
 else
-  printf "  Branch: %s\n" "$branch_name"
+  printf "  Branch: %s\n" "$branch_name" >&2
 fi
-printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}"
-echo
+printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}" >&2
+echo >&2
 
 # --- SINGLE CONFIRMATION ---
 # Skip if forced, or if user already confirmed via branch-creation prompt
@@ -321,5 +321,5 @@ fi
 
 # --- SUCCESS ---
 success "Worktree created for '$branch_name'"
-echo
+echo >&2
 tip "To start working:  cd ${worktree_path/#$HOME/\~}"

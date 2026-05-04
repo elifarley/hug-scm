@@ -347,6 +347,21 @@ Both `hug wtl` and `hug wtll` support `--json` output for programmatic use:
 }
 ```
 
+## Script-Friendly Output
+
+Listing commands (`hug wtl`, `hug wtll`, `hug wtsh`) keep stdout clean so you can pipe or capture their output. Headers, legends, and status messages go to stderr.
+
+```bash
+# Capture listing for scripting
+worktrees=$(hug wtl)
+hug wtll | grep feature
+
+# Suppress non-data output
+hug wtl 2>/dev/null
+```
+
+Run `hug wtl --help` or `hug wtll --help` and see the CAPTURING OUTPUT section for details.
+
 ## Workflows
 
 ### Parallel Feature Development

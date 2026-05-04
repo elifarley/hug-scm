@@ -50,6 +50,13 @@ USE CASES FOR RANGES:
     Release review       Audit all changes in a release range
     Code review prep     Understand scope of multiple commits
 
+CAPTURING OUTPUT:
+  File stats go to stdout. Header line goes to stderr (suppress with -q).
+
+    files=$(hug shc -3)          # Capture changed files to variable
+    hug shc -q | wc -l           # Count changed files (quiet mode)
+    hug shc 2>/dev/null          # Suppress header only
+
 EXAMPLES:
     hug shc                  # Files changed in last commit (HEAD)
     hug shc 1                # Files changed in commit HEAD~1
@@ -109,7 +116,7 @@ if [[ "$commit_ref" == *..* ]]; then
   if [[ ${HUG_QUIET:-} != T ]]; then
     commit_emoji="$(_diff_emoji commit)"
     stats_emoji="$(_diff_emoji stats)"
-    printf '%s %s Changed files in range %s:\n' "$commit_emoji" "$stats_emoji" "$commit_ref"
+    printf '%s %s Changed files in range %s:\n' "$commit_emoji" "$stats_emoji" "$commit_ref" >&2
   fi
   git diff --stat "$commit_ref"
 else
@@ -117,7 +124,7 @@ else
   if [[ ${HUG_QUIET:-} != T ]]; then
     commit_emoji="$(_diff_emoji commit)"
     stats_emoji="$(_diff_emoji stats)"
-    printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji"
+    printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji" >&2
   fi
   git diff-tree --no-commit-id --stat -r --root "$commit_ref"
 fi

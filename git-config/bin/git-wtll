@@ -37,6 +37,14 @@ DESCRIPTION:
     - -s / --search: Case-insensitive substring match on path or branch. Multiple = OR logic.
     - Combined: Both filters must match (AND logic)
 
+CAPTURING OUTPUT:
+  Listing lines go to stdout. Headers and legends go to stderr.
+  Colors are automatically stripped when output is piped.
+
+    worktrees=$(hug wtll)        # Capture listing to variable
+    hug wtll | grep feature      # Pipe to other commands
+    hug wtll 2>/dev/null         # Suppress headers/legend
+
 EXAMPLES:
   hug wtll                       # List all worktrees in long format
   hug wtll feature-auth          # List worktrees on branch "feature-auth" (exact match)
@@ -112,7 +120,7 @@ current_worktree=$(get_current_worktree_path)
 # Build and print worktree list in long format
 # WHY: Delegate filtering to library function (DRY — single source of truth).
 # filter_worktrees() handles the Python subprocess call and no-match error.
-printf "${BLUE}Worktrees (long format):%s${NC}\n" ""
+printf "${BLUE}Worktrees (long format):%s${NC}\n" "" >&2
 print_worktree_legend
 
 # Use Python for filtering when branch filters or search terms are provided

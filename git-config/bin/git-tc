@@ -171,7 +171,7 @@ select_tag_name() {
     printf "Suggestions: %s\n" "$(
       IFS=', '
       echo "${default_suggestions[*]}"
-    )"
+    )" >&2
     result=$(prompt_input "Enter tag name")
   fi
 
@@ -182,7 +182,7 @@ select_tag_type() {
   if gum_available; then
     gum choose "lightweight" "annotated" "signed" --header="Select tag type"
   else
-    printf "  1) lightweight\n  2) annotated\n  3) signed\n"
+    printf "  1) lightweight\n  2) annotated\n  3) signed\n" >&2
     local choice
     choice=$(prompt_input "Select type (1-3)" "2")
     case "$choice" in
@@ -198,7 +198,7 @@ select_tag_message() {
   local default_msg
   default_msg=$(get_commit_subject "$commit_ref")
 
-  printf "\n${BLUE}Tag message:${NC}\n"
+  printf "\n${BLUE}Tag message:${NC}\n" >&2
 
   # Logic: If gum available, use write, else use standard prompt_input
   if gum_available; then
@@ -338,7 +338,7 @@ if [[ "$interactive" == "true" ]]; then
   fi
   validate_tag_exists_check "$tag_name" "$force"
 
-  printf "  Name:    ${YELLOW}%s${NC}\n" "$tag_name"
+  printf "  Name:    ${YELLOW}%s${NC}\n" "$tag_name" >&2
 
   # 2. Target Commit
   if ! commit=$(select_target_commit "HEAD"); then
@@ -346,7 +346,7 @@ if [[ "$interactive" == "true" ]]; then
     exit 0
   fi
 
-  printf "Target:    ${YELLOW}%s${NC}\n" "$commit"
+  printf "Target:    ${YELLOW}%s${NC}\n" "$commit" >&2
 
   # 3. Tag Type
   # Only ask if not manually overridden by flag or inferred by -m
@@ -354,7 +354,7 @@ if [[ "$interactive" == "true" ]]; then
     tag_type=$(select_tag_type)
   fi
 
-  printf "  Type:    ${BLUE}%s${NC}\n" "$tag_type"
+  printf "  Type:    ${BLUE}%s${NC}\n" "$tag_type" >&2
 
   # 4. Message
   # TODO when $tag_type IS lightweight, the test "$tag_type" != "lightweight" says it's not!
@@ -391,15 +391,15 @@ fi
 
 # --- Preview & Execute ---
 
-printf "\n${GREEN}Tag Summary:${NC}\n"
-printf "  Name:    ${YELLOW}%s${NC}\n" "$tag_name"
-printf "  Type:    ${BLUE}%s${NC}\n" "$tag_type"
-printf "  Commit:  ${YELLOW}%s${NC}\n" "$(git rev-parse --short "$commit")"
-[[ -n "$tag_message" ]] && printf "  Message: %s\n" "$tag_message"
+printf "\n${GREEN}Tag Summary:${NC}\n" >&2
+printf "  Name:    ${YELLOW}%s${NC}\n" "$tag_name" >&2
+printf "  Type:    ${BLUE}%s${NC}\n" "$tag_type" >&2
+printf "  Commit:  ${YELLOW}%s${NC}\n" "$(git rev-parse --short "$commit")" >&2
+[[ -n "$tag_message" ]] && printf "  Message: %s\n" "$tag_message" >&2
 
-printf "\n${BLUE}Commit preview:${NC}\n"
+printf "\n${BLUE}Commit preview:${NC}\n" >&2
 git log -n 1 --pretty=format:"%h %s (%ar)" "$commit" || echo "Commit not found"
-echo ""
+echo "" >&2
 
 if [[ "$interactive" == "true" ]]; then
   if ! prompt_confirm_safe "create this tag"; then
@@ -413,7 +413,7 @@ perform_tag_creation "$tag_type" "$tag_name" "$commit" "$tag_message"
 
 # Push
 if [[ "$interactive" == "true" ]]; then
-  echo ""
+  echo "" >&2
   if prompt_confirm_safe "push tag to remote origin"; then
     git push origin "refs/tags/$tag_name" || warn "Push failed (do it manually)"
   fi

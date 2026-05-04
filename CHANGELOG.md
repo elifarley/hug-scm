@@ -17,6 +17,7 @@ All notable changes to the Hug SCM project will be documented in this file.
 - **`multi_select_branches()` menu display moved to stderr.** Prevents menu text from being captured by Bash `$()` and eval'd as shell commands.
 - **`branch_filter.py` `custom_filter` raises `NotImplementedError`.** Previously silently no-oped.
 - **Worktree indicators changed format.** Worktree listing commands (`hug wtl`, `hug wt`, `hug wtll`, `hug wtsh`) now display single-character indicators (`* + # @`) instead of bracketed words (`[CURRENT]`, `[DIRTY]`, `[LOCKED]`, `[DETACHED]`). The new format is more compact and easier to scan. See `hug wtl --help` for the indicator legend.
+- **Stdout/stderr discipline enforced across 21 commands and 5 libraries.** Listing and query commands now route headers, legends, and tips to stderr, keeping stdout clean for piping. The `CAPTURING OUTPUT` help text section documents this for `wtl`, `wtll`, `wtsh`, `shc`, and `h-files`. Script authors relying on stdout capturing these headers should test with `2>/dev/null` to verify behavior.
 - **Migration note for script authors.** If you parse `hug wtl` output in scripts, update your grep patterns from `[CURRENT]`/`[DIRTY]` to `*`/`+`. For stable machine-readable output, prefer `hug wtl --json` which uses boolean fields and is not affected by display format changes.
 
 ### Removed

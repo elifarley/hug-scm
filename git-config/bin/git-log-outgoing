@@ -95,16 +95,16 @@ print_preview_summary "$local_commits" "commits" "$target_short" "$range"
 if [[ ${HUG_QUIET:-} != T ]]; then
   header_target="${remote_branch:-upstream}"
   print_commit_list_header "Outgoing" "$header_target" "false" "true"
-  print_commit_list_in_range "$target" HEAD >&2
+  print_commit_list_in_range "$target" HEAD
 fi
 
 # Core previews (always show, even in quiet, for safety)
 if [[ -n "$remote_branch" ]]; then
   test "${HUG_QUIET:-}" || printf '\nExact commits missing from %s:\n' "$remote_branch" >&2
-  git cherry -v "$target" HEAD >&2
+  git cherry -v "$target" HEAD
 else
   test "${HUG_QUIET:-}" || printf '\nExact commits missing from upstream:\n' >&2
-  git cherry -v @{upstream} HEAD >&2
+  git cherry -v @{upstream} HEAD
 fi
 
 test "${HUG_QUIET:-}" || printf '\n' >&2
