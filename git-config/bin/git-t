@@ -149,16 +149,16 @@ if [ ${#args[@]} -gt 0 ]; then
     tag_type=""
     tag_type=$(get_tag_type "$tag_arg")
 
-    printf "${GREEN}%s${NC} " "$tag_arg"
+    printf "${GREEN}%s${NC} " "$tag_arg" >&2
     case "$tag_type" in
     "lightweight")
-      printf "${GREY}(lightweight)${NC}\n\n"
+      printf "${GREY}(lightweight)${NC}\n\n" >&2
       ;;
     "annotated")
-      printf "${BLUE}(annotated)${NC}\n\n"
+      printf "${BLUE}(annotated)${NC}\n\n" >&2
       ;;
     "signed")
-      printf "${GREEN}(signed)${NC}\n\n"
+      printf "${GREEN}(signed)${NC}\n\n" >&2
       ;;
     esac
 
@@ -266,11 +266,11 @@ if [[ "$action" == "checkout" ]]; then
   if gum_available; then
     action=$(printf "checkout\nshow\ndelete" | gum choose --prompt="Action for '$selected_tag': ")
   else
-    printf "\nActions for '${GREEN}%s${NC}':\n" "$selected_tag"
-    printf "  1) checkout (switch to tag)\n"
-    printf "  2) show (view tag details)\n"
-    printf "  3) delete (remove tag)\n"
-    printf "\nSelect action (1-3): "
+    printf "\nActions for '${GREEN}%s${NC}':\n" "$selected_tag" >&2
+    printf "  1) checkout (switch to tag)\n" >&2
+    printf "  2) show (view tag details)\n" >&2
+    printf "  3) delete (remove tag)\n" >&2
+    printf "\nSelect action (1-3): " >&2
     read -r choice
 
     case "$choice" in
@@ -295,16 +295,16 @@ case "$action" in
   # Get tag type for display
   tag_type=$(get_tag_type "$selected_tag")
 
-  printf "${GREEN}%s${NC} " "$selected_tag"
+  printf "${GREEN}%s${NC} " "$selected_tag" >&2
   case "$tag_type" in
   "lightweight")
-    printf "${GREY}(lightweight)${NC}\n\n"
+    printf "${GREY}(lightweight)${NC}\n\n" >&2
     ;;
   "annotated")
-    printf "${BLUE}(annotated)${NC}\n\n"
+    printf "${BLUE}(annotated)${NC}\n\n" >&2
     ;;
   "signed")
-    printf "${GREEN}(signed)${NC}\n\n"
+    printf "${GREEN}(signed)${NC}\n\n" >&2
     ;;
   esac
 

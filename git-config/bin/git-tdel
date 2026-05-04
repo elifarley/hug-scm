@@ -149,27 +149,27 @@ if [ ${#args[@]} -gt 0 ]; then
   # Show what we're about to do
   tag_type=$(get_tag_type "$tag_to_delete")
 
-  printf "${RED}Delete tag:${NC} ${GREEN}%s${NC}" "$tag_to_delete"
+  printf "${RED}Delete tag:${NC} ${GREEN}%s${NC}" "$tag_to_delete" >&2
   case "$tag_type" in
   "lightweight")
-    printf " ${GREY}(lightweight)${NC}"
+    printf " ${GREY}(lightweight)${NC}" >&2
     ;;
   "annotated")
-    printf " ${BLUE}(annotated)${NC}"
+    printf " ${BLUE}(annotated)${NC}" >&2
     ;;
   "signed")
-    printf " ${GREEN}(signed)${NC}"
+    printf " ${GREEN}(signed)${NC}" >&2
     ;;
   esac
 
   if [[ "$exists_remote" == "true" ]]; then
     if [[ "$delete_remote" == "true" ]]; then
-      printf " ${RED}+ remote${NC}"
+      printf " ${RED}+ remote${NC}" >&2
     else
-      printf " ${YELLOW}(remote will remain)${NC}"
+      printf " ${YELLOW}(remote will remain)${NC}" >&2
     fi
   fi
-  printf "\n"
+  printf "\n" >&2
 
   # Dry run mode
   if [[ "$dry_run" == "true" ]]; then
@@ -236,35 +236,35 @@ else
 fi
 
 # Show what will be deleted
-printf "\n${RED}Tags to delete:${NC}\n"
+printf "\n${RED}Tags to delete:${NC}\n" >&2
 i=0
 for i in "${!selected_tags[@]}"; do
   tag="${selected_tags[i]}"
   tag_type=$(get_tag_type "$tag")
 
-  printf "  ${GREEN}%s${NC}" "$tag"
+  printf "  ${GREEN}%s${NC}" "$tag" >&2
   case "$tag_type" in
   "lightweight")
-    printf " ${GREY}(lightweight)${NC}"
+    printf " ${GREY}(lightweight)${NC}" >&2
     ;;
   "annotated")
-    printf " ${BLUE}(annotated)${NC}"
+    printf " ${BLUE}(annotated)${NC}" >&2
     ;;
   "signed")
-    printf " ${GREEN}(signed)${NC}"
+    printf " ${GREEN}(signed)${NC}" >&2
     ;;
   esac
 
   # Check remote status
   if tag_exists_remote "$tag"; then
     if [[ "$delete_remote" == "true" ]]; then
-      printf " ${RED}+ remote${NC}"
+      printf " ${RED}+ remote${NC}" >&2
     else
-      printf " ${YELLOW}(remote will remain)${NC}"
+      printf " ${YELLOW}(remote will remain)${NC}" >&2
     fi
   fi
 
-  printf "\n"
+  printf "\n" >&2
 done
 
 # Dry run mode
@@ -293,7 +293,7 @@ deleted_count=0
 failed_count=0
 remote_deleted_count=0
 
-printf "\n"
+printf "\n" >&2
 for tag in "${selected_tags[@]}"; do
   exists_remote=false
   if tag_exists_remote "$tag"; then
@@ -327,13 +327,13 @@ for tag in "${selected_tags[@]}"; do
 done
 
 # Summary
-printf "\n${GREEN}Deletion Summary:${NC}\n"
-printf "  Local tags deleted: $deleted_count\n"
+printf "\n${GREEN}Deletion Summary:${NC}\n" >&2
+printf "  Local tags deleted: $deleted_count\n" >&2
 if [[ "$delete_remote" == "true" ]]; then
-  printf "  Remote tags deleted: $remote_deleted_count\n"
+  printf "  Remote tags deleted: $remote_deleted_count\n" >&2
 fi
 if [[ $failed_count -gt 0 ]]; then
-  printf "  Failed deletions: $failed_count\n"
+  printf "  Failed deletions: $failed_count\n" >&2
 fi
 
 if [[ $failed_count -gt 0 ]]; then
