@@ -357,7 +357,7 @@ else
         printf "  Added:   +%d lines\n", added;
         printf "  Deleted: -%d lines\n", deleted;
         printf "  Net:     %+d lines\n", added-deleted
-      }'
+      }' >&2
 
     # Status
     info ""

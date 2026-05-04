@@ -95,13 +95,13 @@ fi
 
 if $dry_run; then
   print_dry_run_preview "be removed"
-  printf '\n%s\n' "$preview_output"
+  printf '\n%s\n' "$preview_output" >&2
   exit 0
 fi
 
 if ! $force; then
   print_action_preview "remove the listed entries"
-  printf '\n%s\n' "$preview_output"
+  printf '\n%s\n' "$preview_output" >&2
   prompt_confirm_danger 'purge-all'
 fi
 

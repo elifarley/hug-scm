@@ -167,7 +167,7 @@ dedupe_array ignored_paths
 
 if $dry_run; then
   print_dry_run_preview "be removed" "from the specified paths."
-  printf '\n'
+  printf '\n' >&2
   print_untracked_ignored_paths untracked_paths ignored_paths "$target_untracked" "$target_ignored"
   exit 0
 fi
@@ -186,7 +186,7 @@ remove_with_clean() {
 }
 
 print_action_preview "purge the listed entries" "from the specified paths."
-printf '\n'
+printf '\n' >&2
 print_untracked_ignored_paths untracked_paths ignored_paths "$target_untracked" "$target_ignored"
 
 # Prompt for confirmation unless force flag is set

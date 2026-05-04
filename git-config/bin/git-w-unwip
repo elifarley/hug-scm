@@ -167,13 +167,13 @@ fi
 # Delete the WIP branch
 if [ "$force_delete" = true ]; then
   if git branch -D "$branch" > /dev/null 2>&1; then
-    printf 'Force-deleted WIP branch %s.\n' "$branch"
+    printf 'Force-deleted WIP branch %s.\n' "$branch" >&2
   else
     error "$PROG_NAME: Failed to force-delete branch '$branch'."
   fi
 else
   if git branch -d "$branch" > /dev/null 2>&1; then
-    printf 'Deleted WIP branch %s.\n' "$branch"
+    printf 'Deleted WIP branch %s.\n' "$branch" >&2
   else
     printf '%s: Branch "%s" is not fully merged. Re-run with --force to delete it.\n' "$PROG_NAME" "$branch" >&2
     exit 1

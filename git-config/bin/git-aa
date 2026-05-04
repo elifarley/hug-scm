@@ -39,8 +39,8 @@ eval "$(parse_common_flags "$@")"
 
 test $# -gt 0 && {
   show_help
-  echo "Error: 'hug aa' stages everything in the repo; no paths expected."
-  echo "For specific files or directories, use 'hug a <path>'."
+  echo "Error: 'hug aa' stages everything in the repo; no paths expected." >&2
+  echo "For specific files or directories, use 'hug a <path>'." >&2
   exit 1
 }
 
