@@ -42,14 +42,16 @@ dedupe_array() {
 #   $1 - Title for the list
 #   $@ - Items to list (remaining arguments)
 # Output:
-#   Title with count, followed by indented items
+#   Title with count, followed by indented items (ALL on stderr)
+# NOTE: All output goes to stderr. This function is for human-facing labels
+# and lists (chatter), NOT machine-consumable data. For data output, use printf directly.
 print_list() {
   local title=$1
   shift
-  printf '%s (%d):\n' "$title" "$#"
+  printf '%s (%d):\n' "$title" "$#" >&2
   local item
   for item in "$@"; do
-    printf '  %s\n' "$item"
+    printf '  %s\n' "$item" >&2
   done
 }
 
