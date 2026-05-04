@@ -91,3 +91,22 @@ strip_ansi() {
   stripped=$(echo "$output" | strip_ansi)
   assert_equal "$stripped" "*@ detached"
 }
+
+@test "print_worktree_legend: outputs nothing to stdout (legend on stderr)" {
+  # BATS runs non-TTY, so the legend is suppressed entirely (non-TTY guard).
+  # Verify that stdout is empty regardless.
+  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; print_worktree_legend 2>/dev/null'
+  assert_success
+  # stdout should be empty — legend goes to stderr (or suppressed entirely in non-TTY)
+  assert_output ""
+}
+
+@test "print_worktree_legend: includes Legend prefix on stderr under TTY" {
+  # Force TTY-like conditions using script(1) to provide a pty
+  if ! command -v script >/dev/null 2>&1; then
+    skip "script command not available"
+  fi
+  run bash -c 'script -qc "source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; print_worktree_legend" /dev/null 2>&1'
+  assert_success
+  assert_output --partial "Legend:"
+}

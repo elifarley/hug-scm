@@ -988,8 +988,8 @@ print_worktree_legend() {
     [[ -n "${HUG_QUIET:-}" ]] && return 0
     [[ ! -t 1 ]] && return 0
 
-    printf "  %s dirty  %s locked  %s current\n\n" \
-        "${YELLOW}+${NC}" "${RED}#${NC}" "${GREEN}*${NC}"
+    printf "  Legend: %s dirty  %s locked  %s current\n" \
+        "${YELLOW}+${NC}" "${RED}#${NC}" "${GREEN}*${NC}" >&2
 }
 
 ################################################################################
