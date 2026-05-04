@@ -109,7 +109,7 @@ if [[ "$commit_ref" == *..* ]]; then
   if [[ ${HUG_QUIET:-} != T ]]; then
     commit_emoji="$(_diff_emoji commit)"
     stats_emoji="$(_diff_emoji stats)"
-    printf '%s %s Changed files in range %s:\n' "$commit_emoji" "$stats_emoji" "$commit_ref"
+    printf '%s %s Changed files in range %s:\n' "$commit_emoji" "$stats_emoji" "$commit_ref" >&2
   fi
   git diff --stat "$commit_ref"
 else
@@ -117,7 +117,7 @@ else
   if [[ ${HUG_QUIET:-} != T ]]; then
     commit_emoji="$(_diff_emoji commit)"
     stats_emoji="$(_diff_emoji stats)"
-    printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji"
+    printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji" >&2
   fi
   git diff-tree --no-commit-id --stat -r --root "$commit_ref"
 fi

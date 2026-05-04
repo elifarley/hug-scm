@@ -111,9 +111,9 @@ fi
 
 short_hash=$(git rev-parse --short "$last_commit")
 if [ "$steps" = "0" ]; then
-  echo "0 steps back from HEAD (last change in current commit);"
+  echo "0 steps back from HEAD (last change in current commit);" >&2
   hug ll -1
 else
-  echo "$steps steps back from HEAD (last commit $short_hash);"
+  echo "$steps steps back from HEAD (last commit $short_hash);" >&2
   hug ll "$last_commit" -1
 fi

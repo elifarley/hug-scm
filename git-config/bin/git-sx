@@ -93,10 +93,10 @@ print_top_list() {
   if [[ ${#content[@]} -eq 0 ]]; then
     return
   fi
-  printf '  %s%s%s\n' "$DIM" "$title" "$RESET"
+  printf '  %s%s%s\n' "$DIM" "$title" "$RESET" >&2
   local item
   for item in "${content[@]}"; do
-    printf '    • %s\n' "$item"
+    printf '    • %s\n' "$item" >&2
   done
 }
 
@@ -138,36 +138,36 @@ summarize_paths() {
   if ((count > cap)); then
     output+=("    • … (+$((count - cap)) more)")
   fi
-  printf '%s\n' "${output[@]}"
+  printf '%s\n' "${output[@]}" >&2
 }
 
 # ---------- display ----------
 total_changes=$((staged_files + unstaged_files + ${#untracked_paths[@]} + ${#ignored_paths[@]}))
 
 if ((total_changes == 0)); then
-  printf '%s%sWorking tree is clean.%s\n' "$FG_GREEN" "$BOLD" "$RESET"
+  printf '%s%sWorking tree is clean.%s\n' "$FG_GREEN" "$BOLD" "$RESET" >&2
   exit 0
 fi
 
-printf '%s%sWorking tree snapshot%s\n' "$BOLD" "$FG_CYAN" "$RESET"
-printf '  %-10s : %3d file(s)  +%d  -%d\n' "${FG_MAGENTA}Staged${RESET}" "$staged_files" "$staged_ins" "$staged_del"
-printf '  %-10s : %3d file(s)  +%d  -%d\n' "${FG_YELLOW}Unstaged${RESET}" "$unstaged_files" "$unstaged_ins" "$unstaged_del"
-printf '  %-10s : %3d item(s)\n' "${FG_RED}Untracked${RESET}" "${#untracked_paths[@]}"
-printf '  %-10s : %3d item(s)\n' "${DIM}Ignored${RESET}" "${#ignored_paths[@]}"
-printf '\n'
+printf '%s%sWorking tree snapshot%s\n' "$BOLD" "$FG_CYAN" "$RESET" >&2
+printf '  %-10s : %3d file(s)  +%d  -%d\n' "${FG_MAGENTA}Staged${RESET}" "$staged_files" "$staged_ins" "$staged_del" >&2
+printf '  %-10s : %3d file(s)  +%d  -%d\n' "${FG_YELLOW}Unstaged${RESET}" "$unstaged_files" "$unstaged_ins" "$unstaged_del" >&2
+printf '  %-10s : %3d item(s)\n' "${FG_RED}Untracked${RESET}" "${#untracked_paths[@]}" >&2
+printf '  %-10s : %3d item(s)\n' "${DIM}Ignored${RESET}" "${#ignored_paths[@]}" >&2
+printf '\n' >&2
 
 print_top_list "Top staged paths" "${staged_samples[@]}"
 print_top_list "Top unstaged paths" "${unstaged_samples[@]}"
 
 if ((${#untracked_paths[@]} > 0)); then
-  printf '  %sUntracked samples%s\n' "$DIM" "$RESET"
+  printf '  %sUntracked samples%s\n' "$DIM" "$RESET" >&2
   summarize_paths untracked_paths "$TOP_LIMIT"
 fi
 
 if ((${#ignored_paths[@]} > 0)); then
-  printf '  %sIgnored samples%s\n' "$DIM" "$RESET"
+  printf '  %sIgnored samples%s\n' "$DIM" "$RESET" >&2
   summarize_paths ignored_paths "$TOP_LIMIT"
 fi
 
 printf '\n%sTip:%s Use %shug s%s for details, or %shug ss%s to inspect changes.\n' \
-  "$DIM" "$RESET" "$FG_CYAN" "$RESET" "$FG_CYAN" "$RESET"
+  "$DIM" "$RESET" "$FG_CYAN" "$RESET" "$FG_CYAN" "$RESET" >&2
