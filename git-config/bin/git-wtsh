@@ -43,6 +43,12 @@ DESCRIPTION:
   -- (interactive mode):
     Presents an interactive menu to select which worktree to display.
 
+CAPTURING OUTPUT:
+  Worktree detail lines go to stdout. Summary header goes to stderr.
+
+    details=$(hug wtsh --all)    # Capture details to variable
+    hug wtsh --all 2>/dev/null   # Suppress summary header
+
 EXAMPLES:
   hug wtsh                   # Current worktree only
   hug wtsh --all             # All worktrees

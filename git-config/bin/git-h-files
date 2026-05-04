@@ -33,6 +33,12 @@ DESCRIPTION:
     With -t/--temporal, filters commits by time relative to HEAD's commit time.
     Use before 'h back N' or 'h rewind COMMIT' to see affected files.
 
+CAPTURING OUTPUT:
+  File stats go to stdout. Tips and contextual messages go to stderr.
+
+    files=$(hug h files 3)       # Capture file stats to variable
+    hug h files 3 2>/dev/null    # Suppress tips
+
 EXAMPLES:
     hug h files 3          # Files and stats in last 3 commits
     hug h files 3 -p       # Full patch and stats in last 3 commits
