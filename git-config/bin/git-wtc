@@ -147,7 +147,7 @@ fi
 
 # Validate --base commitish exists and is resolvable (fail-fast before prompts)
 if [[ -n "$base" ]]; then
-  if ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null 2>&1; then
+  if ! git rev-parse --verify --quiet "$base^{commit}" > /dev/null 2>&1; then
     error "Invalid start-point '$base': not a valid commit, branch, or tag"
   fi
 fi
