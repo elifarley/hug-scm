@@ -1424,10 +1424,192 @@ EOF
 @test "hug w purge: handles absolute paths from subdirectory" {
   mkdir -p subdir
   echo "temp" > subdir/temp.txt
-  
+
   cd subdir
   run hug w purge -f "$TEST_REPO/subdir/temp.txt"
   assert_success
-  
+
   assert_file_not_exists "temp.txt"
+}
+
+#################################################################################
+# Tests for hug w get reset-all (no file args)
+# These exercise the reset_all_files() code path including the git diff --diff-filter fix.
+#################################################################################
+
+@test "hug w get reset-all: removes files added after target commit" {
+  # Start clean: commit everything, remove untracked
+  git add -A && git commit -q -m "baseline"
+  local target_commit=$(git rev-parse HEAD)
+
+  # Add new files after target
+  echo "new file 1" > newfile1.txt
+  echo "new file 2" > newfile2.txt
+  git add newfile1.txt newfile2.txt
+  git commit -q -m "add new files"
+
+  # Reset all to target — files added after should be removed
+  run hug w get -f "$target_commit"
+  assert_success
+
+  assert_file_not_exists "newfile1.txt"
+  assert_file_not_exists "newfile2.txt"
+}
+
+@test "hug w get reset-all: restores files deleted after target commit" {
+  # Start clean
+  echo "keep me" > keep.txt
+  echo "restore me" > restore.txt
+  git add -A && git commit -q -m "baseline with restore.txt"
+  local target_commit=$(git rev-parse HEAD)
+
+  # Delete a file after target
+  git rm -q restore.txt
+  git commit -q -m "remove restore.txt"
+
+  # Reset all to target — deleted file should be restored
+  run hug w get -f "$target_commit"
+  assert_success
+
+  assert_file_exists "restore.txt"
+  run cat restore.txt
+  assert_output "restore me"
+}
+
+@test "hug w get reset-all: handles mixed changes (M+A+D)" {
+  # Create baseline with multiple files
+  echo "original A" > modify.txt
+  echo "original B" > delete.txt
+  git add -A && git commit -q -m "baseline"
+  local target_commit=$(git rev-parse HEAD)
+
+  # Modify one, delete one, add one
+  echo "modified A" > modify.txt
+  git rm -q delete.txt
+  echo "new file" > added.txt
+  git add -A && git commit -q -m "mixed changes"
+
+  # Reset all to target
+  run hug w get -f "$target_commit"
+  assert_success
+
+  # Modified file restored to original
+  run cat modify.txt
+  assert_output "original A"
+  # Deleted file restored
+  assert_file_exists "delete.txt"
+  run cat delete.txt
+  assert_output "original B"
+  # Added file removed
+  assert_file_not_exists "added.txt"
+}
+
+@test "hug w get reset-all: handles sort-order-conflicting paths" {
+  # Create paths that sort differently under tree-order vs LC_ALL=C.
+  # docs-dev.sh sorts before docs/ in tree-order (because git treats docs/ as "docs/")
+  # but may differ in LC_ALL=C sort depending on git version.
+  mkdir -p docs
+  echo "doc content" > docs/guide.md
+  echo "script content" > docs-dev.sh
+  git add -A && git commit -q -m "baseline with sort-conflicting paths"
+  local target_commit=$(git rev-parse HEAD)
+
+  # Modify both, add a new conflicting path
+  echo "updated doc" > docs/guide.md
+  echo "updated script" > docs-dev.sh
+  echo "new script" > docs-dev2.sh
+  git add -A && git commit -q -m "modify sort-conflicting paths"
+
+  # Reset all — no comm warnings should appear
+  run hug w get -f "$target_commit"
+  assert_success
+  # Verify stderr has no comm warnings
+  [[ "$output" != *"comm: file is not in sorted order"* ]]
+
+  # Files restored correctly
+  run cat docs/guide.md
+  assert_output "doc content"
+  run cat docs-dev.sh
+  assert_output "script content"
+  assert_file_not_exists "docs-dev2.sh"
+}
+
+@test "hug w get reset-all --dry-run: shows preview without making changes" {
+  echo "original" > file.txt
+  git add -A && git commit -q -m "baseline"
+  local target_commit=$(git rev-parse HEAD)
+
+  echo "modified" > file.txt
+  echo "new" > newfile.txt
+  git add -A && git commit -q -m "changes"
+
+  # Dry-run should preview without modifying anything
+  run hug w get -f --dry-run "$target_commit"
+  assert_success
+  # Should show dry-run message
+  [[ "$output" == *"Dry run"* ]]
+  # File should still have modified content
+  run cat file.txt
+  assert_output "modified"
+  # New file should still exist
+  assert_file_exists "newfile.txt"
+}
+
+@test "hug w get reset-all: with no changes shows clean message" {
+  git add -A && git commit -q -m "baseline"
+
+  # Reset to HEAD (no diff) — should show early-exit message
+  run hug w get -f HEAD
+  assert_success
+  [[ "$output" == *"no files to reset"* ]]
+}
+
+@test "hug w get reset-all: stderr has no comm warnings" {
+  echo "content" > file.txt
+  git add -A && git commit -q -m "baseline"
+  local target_commit=$(git rev-parse HEAD)
+
+  mkdir -p docs
+  echo "doc" > docs/guide.md
+  echo "script" > docs-dev.sh
+  git add -A && git commit -q -m "add conflicting paths"
+
+  # Reset to target and capture stderr explicitly
+  run hug w get -f "$target_commit" 2>&1
+  [[ "$output" != *"comm: file is not in sorted order"* ]]
+}
+
+@test "hug w get reset-all: safety check blocks with uncommitted changes" {
+  echo "original" > safety.txt
+  git add -A && git commit -q -m "baseline"
+  local target_commit=$(git rev-parse HEAD)
+
+  # Modify file after target
+  echo "modified" > safety.txt
+  git add safety.txt && git commit -q -m "modify safety.txt"
+
+  # Add local uncommitted changes to the file
+  echo "local change" >> safety.txt
+
+  # Without force, should fail because file has uncommitted changes
+  run hug w get "$target_commit"
+  assert_failure
+}
+
+@test "hug w get specific --dry-run: shows preview without making changes" {
+  echo "v1" > specific.txt
+  git add specific.txt
+  git commit -q -m "add specific v1"
+
+  echo "v2" > specific.txt
+  git add specific.txt
+  git commit -q -m "update specific v2"
+
+  # Dry-run should preview without modifying
+  run hug w get --dry-run -f HEAD~1 specific.txt
+  assert_success
+  [[ "$output" == *"Dry run"* ]]
+  # File should still have v2 content
+  run cat specific.txt
+  assert_output "v2"
 }
