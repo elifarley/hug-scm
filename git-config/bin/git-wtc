@@ -76,7 +76,7 @@ check_git_repo
 
 # Parse arguments using getopt
 set +e # Temporarily disable exit on error to capture getopt failure
-PARSED=$(getopt --options hf --longoptions help,force,dry-run,new --name "hug wtc" -- "$@" 2>&1)
+PARSED=$(getopt --options hf --longoptions help,force,dry-run,new,base: --name "hug wtc" -- "$@" 2>&1)
 getopt_status=$?
 set -e # Re-enable exit on error
 
@@ -94,6 +94,7 @@ eval set -- "$PARSED"
 force=false
 dry_run=false
 new_branch=false
+base=""
 
 # Process options
 while true; do
@@ -113,6 +114,10 @@ while true; do
   --new)
     new_branch=true
     shift
+    ;;
+  --base)
+    base="$2"
+    shift 2
     ;;
   --)
     shift
