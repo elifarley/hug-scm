@@ -27,6 +27,8 @@ OPTIONS:
                     creating worktrees for branches checked out elsewhere
     --dry-run       Show what would be done without creating the worktree
     --new           Automatically create branch if it doesn't exist
+    --base POINT    Create the new branch from POINT (commit, branch, tag, or ref)
+                    instead of HEAD. Implies --new. Errors if branch already exists.
     -h, --help      Show this help
 
 DESCRIPTION:
@@ -38,6 +40,7 @@ DESCRIPTION:
 
     By default, the branch must exist locally. With --new flag or with --force,
     non-existent branches will be created automatically from the current HEAD.
+    Use --base to create from a different start-point (branch, tag, commit, or ref).
 
     If the branch is currently checked out in the main worktree, --force is
     required to create a worktree for it.
@@ -55,6 +58,10 @@ EXAMPLES:
     hug wtc missing-branch -f               # Auto-create branch without prompting
     hug wtc feature-auth --dry-run          # Preview creation without doing it
     hug wtc feature-auth -f                 # Create without confirmation
+    hug wtc hotfix-123 --base v2.0          # Create branch from tag
+    hug wtc experiment --base main           # Create branch from main
+    hug wtc feature --base origin/develop    # Create branch from remote
+    hug wtc test-ref --base HEAD~3 --dry-run # Preview creation from relative ref
 
 SEE ALSO:
     hug wt      List and switch between worktrees
