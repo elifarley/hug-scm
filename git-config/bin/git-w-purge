@@ -18,6 +18,7 @@ Options:
       --browse-root  Browse full repository scope in file selector UI (default: current directory)
       --dry-run      Show what would be removed without deleting anything
   -f, --force        Skip confirmation prompt
+  -y, --yes          Skip confirmation prompts (keeps safe semantics)
   -h, --help         Show this help
 
 Behavior:

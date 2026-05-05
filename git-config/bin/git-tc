@@ -19,6 +19,7 @@ OPTIONS:
   -s, --signed          Create GPG-signed tag
   -m, --message MESSAGE Annotated tag message
   -f, --force           Force creation (overwrite existing tag)
+  -y, --yes             Skip confirmation prompts (keeps safe semantics)
   -i, --interactive     Force interactive mode (enabled by default with no args)
 
 ARGUMENTS:
@@ -281,6 +282,10 @@ while [[ $# -gt 0 ]]; do
     ;;
   -f | --force)
     force=true
+    shift
+    ;;
+  -y | --yes)
+    export HUG_YES=true
     shift
     ;;
   -i | --interactive)

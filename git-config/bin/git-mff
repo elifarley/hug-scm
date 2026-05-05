@@ -15,6 +15,7 @@ USAGE:
 
 OPTIONS:
   -f, --force     Allow moving branch even when not a fast-forward
+  -y, --yes       Skip confirmation prompts (keeps safe semantics)
   --dry-run       Preview the move without executing
   -h, --help      Show this help message
 

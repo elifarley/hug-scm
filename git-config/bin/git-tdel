@@ -16,6 +16,7 @@ USAGE:
 OPTIONS:
   -h, --help            Show this help message and exit.
   -f, --force           Skip confirmation prompts.
+  -y, --yes             Skip confirmation prompts (keeps safe semantics)
   -r, --remote          Also delete tag from remote origin.
   --dry-run             Show what would be deleted without actually deleting.
   -t, --type TYPE       Filter by tag type: lightweight, annotated, signed
@@ -81,6 +82,10 @@ while [[ $# -gt 0 ]]; do
     ;;
   -f | --force)
     force=true
+    shift
+    ;;
+  -y | --yes)
+    export HUG_YES=true
     shift
     ;;
   -r | --remote)

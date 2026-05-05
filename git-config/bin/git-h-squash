@@ -31,6 +31,7 @@ MESSAGE OPTIONS:
 BEHAVIOR FLAGS:
     -q, --quiet     Suppress output
     -f, --force     Skip confirmation prompts (use with caution)
+    -y, --yes       Skip confirmation prompts (keeps safe semantics)
 
 SCRIPTING FLAGS:
     --abort-if-staged
@@ -196,9 +197,9 @@ else
     printf '\n' >&2
 
     if [[ -z "${target_arg:-}" || "${target_arg:-}" =~ ^[0-9]+$ ]]; then
-      prompt_confirm_warn "Proceed with squash of last $commits_to_squash $commit_word (hug back + hug c)? [y/N]: "
+      prompt_confirm_danger "squash" "Rewrites history by combining commits into one"
     else
-      prompt_confirm_warn "Proceed with squash up to $target_display (hug back + hug c)? [y/N]: "
+      prompt_confirm_danger "squash" "Rewrites history by combining commits into one"
     fi
   fi
   target="$target_commit"

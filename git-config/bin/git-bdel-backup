@@ -28,6 +28,7 @@ OPTIONS:
                                 Example: -o 2024-11 deletes backups from Nov 2024 and earlier
     --dry-run                   Preview the delete operation without applying changes
     -f, --force                 Skip confirmation prompts
+    -y, --yes                   Skip confirmation prompts (keeps safe semantics)
     -q, --quiet                 Suppress output (sets HUG_QUIET=T)
     -h, --help                  Show this help
 

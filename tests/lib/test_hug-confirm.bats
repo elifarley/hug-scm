@@ -16,6 +16,7 @@ setup() {
 teardown() {
   unset HUG_DISABLE_GUM
   unset HUG_FORCE
+  unset HUG_YES
 }
 
 @test "hug-confirm: prompt_confirm_warn succeeds with HUG_FORCE" {
@@ -281,3 +282,86 @@ teardown() {
 
 # Note: gum mock tests for prompt_input are complex due to the mock behavior.
 # The function is already tested with the non-gum fallback, which exercises the same code path.
+
+# ============================================================================
+# HUG_YES tests: -y flag behavior across confirmation tiers
+# ============================================================================
+
+@test "hug-confirm: prompt_confirm_safe auto-confirms with HUG_YES" {
+  export HUG_YES=true
+  run prompt_confirm_safe "Create branch?"
+  assert_success
+}
+
+@test "hug-confirm: prompt_confirm_safe auto-confirms with HUG_FORCE" {
+  export HUG_FORCE=true
+  run prompt_confirm_safe "Create branch?"
+  assert_success
+}
+
+@test "hug-confirm: prompt_confirm_warn auto-confirms with HUG_YES" {
+  export HUG_YES=true
+  run prompt_confirm_warn "Delete branch?"
+  assert_success
+}
+
+@test "hug-confirm: prompt_confirm_warn auto-confirms with HUG_FORCE" {
+  export HUG_FORCE=true
+  run prompt_confirm_warn "Delete branch?"
+  assert_success
+}
+
+@test "hug-confirm: prompt_confirm_danger refuses with HUG_YES" {
+  export HUG_YES=true
+  run prompt_confirm_danger "rebase" "Rewrites commit history"
+  assert_failure
+  assert_output --partial "Dangerous operation requires --force"
+  assert_output --partial "Rewrites commit history"
+}
+
+@test "hug-confirm: prompt_confirm_danger auto-confirms with HUG_FORCE" {
+  export HUG_FORCE=true
+  run prompt_confirm_danger "rebase" "Rewrites commit history"
+  assert_success
+}
+
+@test "hug-confirm: prompt_confirm_danger with HUG_YES shows reason when provided" {
+  export HUG_YES=true
+  run prompt_confirm_danger "zap-all" "Deletes all untracked and ignored files permanently"
+  assert_failure
+  assert_output --partial "Dangerous operation requires --force"
+  assert_output --partial "Deletes all untracked and ignored files permanently"
+}
+
+@test "hug-confirm: prompt_confirm_danger with HUG_YES shows default reason when none provided" {
+  export HUG_YES=true
+  run prompt_confirm_danger "zap-all"
+  assert_failure
+  assert_output --partial "Dangerous operation requires --force"
+  assert_output --partial "This operation is irreversible and may cause data loss"
+}
+
+@test "hug-confirm: prompt_confirm_warn cancelled in non-interactive without HUG_YES or HUG_FORCE" {
+  unset HUG_YES
+  unset HUG_FORCE
+  # In BATS, stdin is piped so read fails → "Cancelled"
+  run prompt_confirm_warn "Delete branch?"
+  assert_failure
+  assert_output --partial "Cancelled"
+}
+
+@test "hug-confirm: prompt_confirm_safe cancelled in non-interactive without HUG_YES or HUG_FORCE" {
+  unset HUG_YES
+  unset HUG_FORCE
+  run prompt_confirm_safe "Create branch?"
+  assert_failure
+  assert_output --partial "Cancelled"
+}
+
+@test "hug-confirm: HUG_FORCE takes precedence over HUG_YES for danger" {
+  # Both set — HUG_FORCE wins, auto-confirms even dangerous ops
+  export HUG_FORCE=true
+  export HUG_YES=true
+  run prompt_confirm_danger "rebase" "Rewrites commit history"
+  assert_success
+}

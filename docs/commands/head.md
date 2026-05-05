@@ -151,7 +151,8 @@ All HEAD movement commands (`hug h back`, `hug h undo`, `hug h rollback`, `hug h
 - Sync to remote after local dev: `hug h squash -u` (all local-only commits squashed into 1), `hug h undo -u` (unstaged) etc.
 - Work with time-based ranges: `hug h back -t "1 week ago"` (move HEAD to a week ago), `hug h squash -t "3 days ago"` (squash last 3 days of work).
 - For quick squashing: `hug h squash N` (HEAD goes back + auto-commit with top-most message).
-- Use `--force` for non-interactive scripting (skips confirmations but prints other messages; combine with `--quiet` for minimal output).
+- Use `--force` for non-interactive scripting (skips confirmations but prints other messages; combine with `--quiet` for minimal output). HEAD commands are classified as dangerous (history-rewriting), so `-y` will **refuse** — use `--force` to override.
+- For safe operations (branch deletion, tag creation), use `-y` to skip confirmations while keeping safe semantics. For example, `hug bdel merged-branch -y` uses safe delete (`-d`), while `hug bdel merged-branch --force` uses force delete (`-D`).
 - Use [`hug sl` or `hug sw` (**S**tatus + **W**orking directory diff)](status-staging.md#quick-reference) to check status after any HEAD movement.
 - For interactive history editing (edit/squash multiple commits), see [Rebase Commands](rebase.md).
 - Aliases like `hug back` are available as shortcuts for `hug h back`.

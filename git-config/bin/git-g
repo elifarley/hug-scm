@@ -23,6 +23,7 @@ OPTIONS:
     --aggressive       Expire reflog and run aggressive gc (maximum cleanup, implies --expire)
     --dry-run          Show what would be done without applying changes
     -f, --force        Skip confirmation prompts
+    -y, --yes          Skip confirmation prompts (keeps safe semantics)
     -q, --quiet        Suppress output (sets HUG_QUIET=T)
     -h, --help         Show this help
 

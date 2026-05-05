@@ -18,6 +18,7 @@ USAGE:
 OPTIONS:
     --dry-run      Preview the rebase operation without applying changes
     -f, --force    Skip checks (e.g., working tree clean) and confirmation prompts (sets HUG_FORCE=true)
+    -y, --yes      Skip confirmation prompts (keeps safe semantics)
     --quiet        Suppress output (sets HUG_QUIET=T)
     --no-backup    Skip creating a backup branch (dangerous; use with caution)
     -h, --help     Show this help
@@ -161,7 +162,7 @@ hug_rb() {
     fi
 
     print_action_preview "rebase $num_commits $commit_word onto $target_branch"
-    prompt_confirm_warn
+    prompt_confirm_danger "rebase" "Rewrites commit history — existing commit hashes will change"
   fi
 
   # Perform Rebase

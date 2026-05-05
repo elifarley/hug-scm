@@ -27,6 +27,7 @@ ARGUMENTS:
 OPTIONS:
     --dry-run         Preview the staging and commit operation without applying changes
     -f, --force       Skip confirmation prompts (sets HUG_FORCE=true)
+    -y, --yes         Skip confirmation prompts (keeps safe semantics)
     --quiet           Suppress non-essential output (sets HUG_QUIET=T)
     -h, --help        Show this help
 

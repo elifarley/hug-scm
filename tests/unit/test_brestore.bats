@@ -90,7 +90,7 @@ create_backup_branch() {
 
 @test "hug brestore: warns when target branch already exists" {
   setup_gum_mock
-  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancelling gum input (danger prompt)
 
   # Create a backup of feature/branch
   local backup
@@ -100,7 +100,7 @@ create_backup_branch() {
   run hug brestore "$backup"
   assert_failure
   assert_output --partial "Branch 'feature/branch' already exists"
-  assert_output --partial "DESTRUCTIVE operation"
+  assert_output --partial "Cancelled."
 
   teardown_gum_mock
 }

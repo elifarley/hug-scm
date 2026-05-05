@@ -17,6 +17,7 @@ Options:
   -i, --ignored    Remove ignored files
       --dry-run    Show what would be removed without deleting anything
   -f, --force      Skip confirmation prompt
+  -y, --yes        Skip confirmation prompts (keeps safe semantics)
   -h, --help       Show this help
 
 Notes:
@@ -49,6 +50,10 @@ while [[ $# -gt 0 ]]; do
     ;;
   -f | --force)
     force=true
+    shift
+    ;;
+  -y | --yes)
+    export HUG_YES=true
     shift
     ;;
   -h | --help)

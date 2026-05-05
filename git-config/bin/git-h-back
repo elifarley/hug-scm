@@ -21,6 +21,7 @@ OPTIONS:
                     Reference point is HEAD's commit time
     --quiet         Suppress output (sets HUG_QUIET=T)
     --force         Skip confirmation prompts (use with caution)
+    -y, --yes       Skip confirmation prompts (keeps safe semantics)
 
 DESCRIPTION:
     Moves HEAD to target. With -u, runs a read-only preview/confirmation before discarding local-only commits to sync with remote tip.
@@ -87,7 +88,7 @@ else
     fi
 
     if [[ ${HUG_FORCE:-} != true ]] && has_staged_changes; then
-      prompt_confirm_warn "Move HEAD back (undo root commit)? [y/N]: "
+      prompt_confirm_danger "back" "Rewrites history by undoing root commit"
     fi
 
     reset_root_commit "soft"
@@ -99,7 +100,7 @@ else
   handle_standard_operation "move back" "$target"
   target_short=$(git rev-parse --short "$target")
   if has_staged_changes; then
-    prompt_confirm_warn "Move HEAD back to ${target_short}? [y/N]: "
+    prompt_confirm_danger "back" "Rewrites history by moving HEAD backwards"
   else
     info "No staged changes detected; skipping confirmation."
   fi
