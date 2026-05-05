@@ -81,16 +81,16 @@ _hug() {
             local opts=""
             case "$w_subcmd" in
                 discard|discard-all)
-                    opts="-u --unstaged -s --staged --dry-run -f --force -h --help"
+                    opts="-u --unstaged -s --staged --dry-run -f --force -y --yes -h --help"
                     ;;
                 purge|purge-all)
-                    opts="-u --untracked -i --ignored --dry-run -f --force -h --help"
+                    opts="-u --untracked -i --ignored --dry-run -f --force -y --yes -h --help"
                     ;;
                 wipe|wipe-all)
-                    opts="-u -s --dry-run -f --force -h --help"
+                    opts="-u -s --dry-run -f --force -y --yes -h --help"
                     ;;
                 zap|zap-all)
-                    opts="--dry-run -f --force -h --help"
+                    opts="--dry-run -f --force -y --yes -h --help"
                     ;;
                 wip|wips)
                     opts="--stay -h --help"
@@ -154,10 +154,10 @@ _hug() {
             local opts=""
             case "$h_subcmd" in
                 back|undo|rollback|rewind)
-                    opts="-u --upstream -t --temporal --force --quiet -h --help"
+                    opts="-u --upstream -t --temporal --force -y --yes --quiet -h --help"
                     ;;
                 squash)
-                    opts="-u --upstream -b --base-message -m --message -e --edit -t --temporal --force --quiet -h --help"
+                    opts="-u --upstream -b --base-message -m --message -e --edit -t --temporal --force -y --yes --quiet -h --help"
                     ;;
                 files)
                     opts="-u --upstream -t --temporal --quiet --stat -h --help"
@@ -201,7 +201,7 @@ _hug() {
     # Handle options for top-level HEAD commands (back, undo, rollback, rewind, squash, files)
     if [[ "$subcmd" =~ ^(back|undo|rollback|rewind)$ ]]; then
         if [[ $cur == -* ]]; then
-            COMPREPLY=( $(compgen -W "-u --upstream --force --quiet -h --help" -- "$cur" ) )
+            COMPREPLY=( $(compgen -W "-u --upstream --force -y --yes --quiet -h --help" -- "$cur" ) )
             return 0
         fi
         if git rev-parse --git-dir > /dev/null 2>&1; then
@@ -213,7 +213,7 @@ _hug() {
     
     if [[ "$subcmd" == "squash" ]]; then
         if [[ $cur == -* ]]; then
-            COMPREPLY=( $(compgen -W "-u --upstream -b --base-message -m --message -e --edit -t --temporal --force --quiet -h --help" -- "$cur" ) )
+            COMPREPLY=( $(compgen -W "-u --upstream -b --base-message -m --message -e --edit -t --temporal --force -y --yes --quiet -h --help" -- "$cur" ) )
             return 0
         fi
         if git rev-parse --git-dir > /dev/null 2>&1; then

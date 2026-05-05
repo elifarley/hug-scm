@@ -25,6 +25,7 @@ OPTIONS:
     --from-commit <commit> Use files changed in the specified commit
     --dry-run          Preview the untrack operation without applying changes
     -f, --force        Skip confirmation prompts (sets HUG_FORCE=true)
+    -y, --yes          Skip confirmation prompts (keeps safe semantics)
     --quiet            Suppress output (sets HUG_QUIET=T)
     -h, --help         Show this help
 

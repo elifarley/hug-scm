@@ -635,13 +635,13 @@ teardown() {
   hug a test.txt
   # Do NOT commit - we need staged changes
 
-  # Test declining confirmation
-  run bash -c 'echo "n" | hug h back HEAD~1'
+  # Test declining confirmation (wrong word → cancelled)
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "n" | hug h back HEAD~1'
   assert_failure
   assert_output --partial "Cancelled"
 
-  # Now test accepting confirmation with staged changes
-  run bash -c 'echo "y" | hug h back HEAD~1'
+  # Now test accepting confirmation by typing the exact action word
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "back" | hug h back HEAD~1'
   assert_success
   assert_output --partial "Moved HEAD back to"
 
@@ -717,7 +717,7 @@ teardown() {
 
 @test "hug h back: requires confirmation when staged changes exist" {
   setup_gum_mock
-  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancelling gum input (danger prompt)
 
   local original_head
   original_head=$(git rev-parse HEAD)
@@ -728,7 +728,6 @@ teardown() {
   # Test with gum mock - no need for stdin manipulation
   run hug h back
   assert_failure
-  assert_output --partial "Move HEAD back to"
   assert_output --partial "Cancelled."
 
   local new_head
@@ -880,7 +879,7 @@ teardown() {
 
 @test "hug h undo: requires confirmation when staged changes exist" {
   setup_gum_mock
-  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancelling gum input (danger prompt)
 
   local original_head
   original_head=$(git rev-parse HEAD)
@@ -890,7 +889,6 @@ teardown() {
 
   run hug h undo
   assert_failure
-  assert_output --partial "Undo commits back to"
   assert_output --partial "Cancelled."
 
   local head_after
@@ -905,7 +903,7 @@ teardown() {
 
 @test "hug h undo: requires confirmation when unstaged changes exist" {
   setup_gum_mock
-  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancelling gum input (danger prompt)
 
   local original_head
   original_head=$(git rev-parse HEAD)
@@ -914,7 +912,6 @@ teardown() {
 
   run hug h undo
   assert_failure
-  assert_output --partial "Undo commits back to"
   assert_output --partial "Cancelled."
 
   local head_after
@@ -1291,14 +1288,13 @@ teardown() {
 
 @test "hug h squash: requires confirmation when staged changes exist" {
   setup_gum_mock
-  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancelling gum input (danger prompt)
 
   echo "staged work" > staged.txt
   git add staged.txt
 
   run hug h squash
   assert_failure
-  assert_output --partial "Proceed with squash"
   assert_output --partial "Cancelled."
 
   run git ls-files --cached

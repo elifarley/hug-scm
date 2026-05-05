@@ -173,6 +173,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   hug bdel old-feature        # Delete single branch (merged only)
   hug bdel feat-1 feat-2      # Delete multiple branches
   hug bdel old-feat --force   # Force delete unmerged branch
+  hug bdel old-feat -y        # Skip confirmation (keeps safe -d delete)
   hug bdel --dry-run          # Preview what would be deleted
   ```
 - **Features**:
@@ -180,7 +181,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   - Excludes backup branches (use `hug bdel-backup` for those)
   - Shows confirmation with branch count before deletion
   - Safe by default: only deletes merged branches (use `--force` for unmerged)
-- **Safety**: Requires confirmation unless `--force` is used; fails if trying to delete unmerged branches without `--force`.
+- **Safety**: Requires confirmation unless `--force` or `-y` is used; fails if trying to delete unmerged branches without `--force`. Use `-y` to skip confirmations while keeping safe semantics (`-d` delete). Use `--force` to also escalate to force delete (`-D`).
 
 ### `hug bdel-backup [<backup>...] [--keep N] [--delete-older-than PATTERN]`
 - **Description**: Manage backup branches created by commands like `hug rb`. Supports filtering by date and keeping N most recent backups.

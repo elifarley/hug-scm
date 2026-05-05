@@ -21,6 +21,7 @@ OPTIONS:
                     Reference point is HEAD's commit time
     --quiet         Suppress output (sets HUG_QUIET=T)
     --force         Skip confirmation prompts (use with caution)
+    -y, --yes       Skip confirmation prompts (keeps safe semantics)
 
 DESCRIPTION:
     Moves HEAD back to target. With -u, runs a read-only preview/confirmation before discarding local-only commits to sync with remote tip.
@@ -109,7 +110,7 @@ else
 
   # Handle command-specific preview and confirmation
   handle_standard_operation "rollback" "$target"
-  prompt_confirm_warn "Rollback HEAD to $(git rev-parse --short "$target")? [y/N]: "
+  prompt_confirm_danger "rollback" "Rewrites history — uncommitted changes and later commits are discarded"
 fi
 
 git reset --keep "$target"

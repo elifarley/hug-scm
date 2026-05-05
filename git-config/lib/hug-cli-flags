@@ -69,6 +69,7 @@ parse_pathspecs() {
 # Parses common option flags for command scripts using GNU getopt
 # Usage: eval "$(parse_common_flags "$@")"
 # Recognizes flags:
+#   -y, --yes      Exports HUG_YES=true (skip confirmations, keep safe semantics)
 #   --dry-run      Sets dry_run=true
 #   -f, --force    Sets force=true, exports HUG_FORCE=true
 #   -q, --quiet    Exports HUG_QUIET=T
@@ -108,7 +109,7 @@ parse_common_flags() {
   # Use GNU getopt for enhanced parsing
   local parsed
   # Use -q to suppress getopt error messages, we'll handle them ourselves
-  parsed=$(getopt -q --options hfq --longoptions help,force,quiet,dry-run,browse-root --name "parse_common_flags" -- "$@")
+  parsed=$(getopt -q --options hfqy --longoptions help,force,quiet,dry-run,browse-root,yes --name "parse_common_flags" -- "$@")
   local getopt_status=$?
   
   # If getopt failed (status 1 = error in parameters), it means unknown options
@@ -127,6 +128,10 @@ parse_common_flags() {
         -f|--force)
           echo "force=true"
           echo "export HUG_FORCE=true"
+          shift
+          ;;
+        -y|--yes)
+          echo "export HUG_YES=true"
           shift
           ;;
         -q|--quiet)
@@ -192,6 +197,10 @@ parse_common_flags() {
       -f|--force)
         echo "force=true"
         echo "export HUG_FORCE=true"
+        shift
+        ;;
+      -y|--yes)
+        echo "export HUG_YES=true"
         shift
         ;;
       -q|--quiet)

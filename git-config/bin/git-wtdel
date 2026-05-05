@@ -24,6 +24,7 @@ ARGUMENTS:
 OPTIONS:
     -p, --path PATH   Target worktree by filesystem path (repeatable for batch)
     -f, --force       Skip confirmation prompts and remove even with uncommitted changes
+    -y, --yes         Skip confirmation prompts (keeps safe semantics)
     --dry-run         Show what would be removed without actually removing
     -B, --with-branch Also delete the associated branch after removing the worktree
     -h, --help        Show this help
@@ -84,7 +85,7 @@ check_git_repo
 
 # Parse arguments using getopt
 set +e
-PARSED=$(getopt --options hp:fB --longoptions help,force,dry-run,path:,with-branch --name "hug wtdel" -- "$@" 2>&1)
+PARSED=$(getopt --options hp:fBy --longoptions help,force,dry-run,path:,with-branch,yes --name "hug wtdel" -- "$@" 2>&1)
 getopt_status=$?
 set -e
 
@@ -113,6 +114,10 @@ while true; do
     ;;
   -f | --force)
     force=true
+    shift
+    ;;
+  -y | --yes)
+    export HUG_YES=true
     shift
     ;;
   --dry-run)

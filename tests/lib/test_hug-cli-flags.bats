@@ -13,6 +13,7 @@ teardown() {
   unset HUG_DISABLE_GUM
   unset HUG_FORCE
   unset HUG_QUIET
+  unset HUG_YES
   unset HUG_INTERACTIVE_FILE_SELECTION
 }
 
@@ -431,4 +432,45 @@ teardown() {
   assert_equal "${_pathspec_pre_args[0]}" "HEAD"
   assert_equal "${#_pathspec_pathspecs[@]}" "1"
   assert_equal "${_pathspec_pathspecs[0]}" "--help"
+}
+
+# ============================================================================
+# HUG_YES tests: -y/--yes flag parsing
+# ============================================================================
+
+@test "hug-cli-flags: parse_common_flags exports HUG_YES for -y" {
+  eval "$(parse_common_flags -y arg1)"
+
+  assert_equal "${HUG_YES:-}" "true"
+  assert_equal "$1" "arg1"
+}
+
+@test "hug-cli-flags: parse_common_flags exports HUG_YES for --yes" {
+  eval "$(parse_common_flags --yes arg1)"
+
+  assert_equal "${HUG_YES:-}" "true"
+  assert_equal "$1" "arg1"
+}
+
+@test "hug-cli-flags: parse_common_flags handles -y with other flags" {
+  eval "$(parse_common_flags -y --dry-run arg1)"
+
+  assert_equal "${HUG_YES:-}" "true"
+  assert_equal "$dry_run" "true"
+  assert_equal "$1" "arg1"
+}
+
+@test "hug-cli-flags: parse_common_flags handles -fy combined" {
+  eval "$(parse_common_flags -fy arg1)"
+
+  assert_equal "${HUG_FORCE:-}" "true"
+  assert_equal "${HUG_YES:-}" "true"
+  assert_equal "$1" "arg1"
+}
+
+@test "hug-cli-flags: parse_common_flags fallback handles -y" {
+  # Pass an unknown option to trigger the fallback path
+  eval "$(parse_common_flags -y --unknown-opt arg1 2>/dev/null)" || true
+
+  assert_equal "${HUG_YES:-}" "true"
 }

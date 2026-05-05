@@ -569,11 +569,11 @@ HOOK
   git checkout -q -b existing-target HEAD~1
   git checkout -q main
 
-  # Test accepting confirmation
+  # Test accepting confirmation (type the action word "move")
   export HUG_DISABLE_GUM=true  # Disable gum to use text-based prompts
-  run bash -c 'echo "y" | hug cmv 1 existing-target'
+  run bash -c 'echo "move" | hug cmv 1 existing-target'
   assert_success
-  assert_output --partial "Proceed with moving 1 commit to 'existing-target'?"
+  assert_output --partial "1 commit since"
 
   # Original branch reset back
   assert_equal "$(git rev-parse main)" "$(git rev-parse "$original_head~1")"
@@ -625,13 +625,12 @@ HOOK
   local expected_log
   expected_log=$(git log --oneline HEAD~1..HEAD)  # Range to move
 
-  # Test accepting confirmation to create new branch
+  # Test accepting confirmation to create new branch (type action word "move")
   export HUG_DISABLE_GUM=true  # Disable gum to use text-based prompts
-  run bash -c 'echo "y" | hug cmv 1 prompt-missing'
+  run bash -c 'echo "move" | hug cmv 1 prompt-missing'
   assert_success
   assert_output --partial "📊 1 commit since"
   assert_output --partial "📤 moving to prompt-missing (new branch):"
-  assert_output --partial "Branch 'prompt-missing' doesn't exist. Proceed with creating a new branch named 'prompt-missing' and moving 1 commit to it?"
 
   # Verify creation and reset to just before
   local target_before
@@ -662,11 +661,10 @@ HOOK
   local original_head
   original_head=$(git rev-parse HEAD)
 
-  # Test declining confirmation
+  # Test declining confirmation (wrong word typed → cancelled)
   export HUG_DISABLE_GUM=true  # Disable gum to use text-based prompts
   run bash -c 'echo "n" | hug cmv 1 abort-missing'
   assert_failure
-  assert_output --partial "Branch 'abort-missing' doesn't exist. Proceed with creating a new branch named 'abort-missing' and moving 1 commit to it?"
   assert_output --partial "Cancelled."
 
   # No changes

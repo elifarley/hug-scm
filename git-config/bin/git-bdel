@@ -21,6 +21,7 @@ ARGUMENTS:
 OPTIONS:
     --dry-run          Preview the delete operation without applying changes
     -f, --force        Skip confirmation prompts and force delete unmerged branches
+    -y, --yes          Skip confirmation prompts (keeps safe semantics)
     -q, --quiet        Suppress output (sets HUG_QUIET=T)
     -h, --help         Show this help
 

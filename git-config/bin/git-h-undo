@@ -21,6 +21,7 @@ OPTIONS:
                     Reference point is HEAD's commit time
     --quiet         Suppress output (sets HUG_QUIET=T)
     --force         Skip confirmation prompts (use with caution)
+    -y, --yes       Skip confirmation prompts (keeps safe semantics)
 
 DESCRIPTION:
     Moves HEAD to target. With -u, runs a read-only preview/confirmation before discarding local-only commits to sync with remote tip.
@@ -105,7 +106,7 @@ else
     fi
 
     if $should_prompt; then
-      prompt_confirm_warn "Undo root commit? [y/N]: "
+      prompt_confirm_danger "undo" "Rewrites history by undoing root commit"
     fi
 
     reset_root_commit "mixed"
@@ -125,7 +126,7 @@ else
   fi
 
   if $should_prompt; then
-    prompt_confirm_warn "Undo commits back to $(git rev-parse --short "$target")? [y/N]: "
+    prompt_confirm_danger "undo" "Rewrites history by undoing commits"
   fi
 fi
 
