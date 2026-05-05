@@ -27,6 +27,8 @@ OPTIONS:
                     creating worktrees for branches checked out elsewhere
     --dry-run       Show what would be done without creating the worktree
     --new           Automatically create branch if it doesn't exist
+    --base POINT    Create the new branch from POINT (commit, branch, tag, or ref)
+                    instead of HEAD. Implies --new. Errors if branch already exists.
     -h, --help      Show this help
 
 DESCRIPTION:
@@ -38,6 +40,7 @@ DESCRIPTION:
 
     By default, the branch must exist locally. With --new flag or with --force,
     non-existent branches will be created automatically from the current HEAD.
+    Use --base to create from a different start-point (branch, tag, commit, or ref).
 
     If the branch is currently checked out in the main worktree, --force is
     required to create a worktree for it.
@@ -55,6 +58,10 @@ EXAMPLES:
     hug wtc missing-branch -f               # Auto-create branch without prompting
     hug wtc feature-auth --dry-run          # Preview creation without doing it
     hug wtc feature-auth -f                 # Create without confirmation
+    hug wtc hotfix-123 --base v2.0          # Create branch from tag
+    hug wtc experiment --base main           # Create branch from main
+    hug wtc feature --base origin/develop    # Create branch from remote
+    hug wtc test-ref --base HEAD~3 --dry-run # Preview creation from relative ref
 
 SEE ALSO:
     hug wt      List and switch between worktrees
@@ -69,7 +76,7 @@ check_git_repo
 
 # Parse arguments using getopt
 set +e # Temporarily disable exit on error to capture getopt failure
-PARSED=$(getopt --options hf --longoptions help,force,dry-run,new --name "hug wtc" -- "$@" 2>&1)
+PARSED=$(getopt --options hf --longoptions help,force,dry-run,new,base: --name "hug wtc" -- "$@" 2>&1)
 getopt_status=$?
 set -e # Re-enable exit on error
 
@@ -87,6 +94,7 @@ eval set -- "$PARSED"
 force=false
 dry_run=false
 new_branch=false
+base=""
 
 # Process options
 while true; do
@@ -107,6 +115,10 @@ while true; do
     new_branch=true
     shift
     ;;
+  --base)
+    base="$2"
+    shift 2
+    ;;
   --)
     shift
     break
@@ -121,6 +133,18 @@ done
 if $force && $dry_run; then
   error "Cannot use --force and --dry-run together. These flags are mutually exclusive."
   exit 1
+fi
+
+# --base implies --new (user's intent is clearly to create from a specific point)
+if [[ -n "$base" ]]; then
+  new_branch=true
+fi
+
+# Validate --base commitish exists and is resolvable (fail-fast before prompts)
+if [[ -n "$base" ]]; then
+  if ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null 2>&1; then
+    error "Invalid start-point '$base': not a valid commit, branch, or tag"
+  fi
 fi
 
 # Parse arguments
@@ -199,6 +223,11 @@ if git rev-parse --verify "refs/heads/$branch_name" > /dev/null 2>&1; then
   branch_exists=true
 fi
 
+# --base is incompatible with existing branches
+if [[ -n "$base" ]] && $branch_exists; then
+  error "Branch '$branch_name' already exists; --base only applies when creating new branches"
+fi
+
 if ! $branch_exists; then
   if $dry_run; then
     branch_needs_creation=true # Just note it for preview, no mutations
@@ -246,12 +275,19 @@ if [[ ! "$worktree_path" = /* ]]; then
   worktree_path="$(pwd)/$worktree_path"
 fi
 
+# Determine start-point label for display
+if [[ -n "$base" ]]; then
+  start_point_label="${YELLOW}(new, from $base)${NC}"
+else
+  start_point_label="${YELLOW}(new, from HEAD)${NC}"
+fi
+
 # --- DRY RUN ---
 if $dry_run; then
   echo >&2
   printf "${BLUE}Worktree Creation Preview (DRY RUN):${NC}\n" >&2
   if $branch_needs_creation; then
-    printf "  Branch: %s ${YELLOW}(new, from HEAD)${NC}\n" "$branch_name" >&2
+    printf "  Branch: %s %s\n" "$branch_name" "$start_point_label" >&2
   else
     printf "  Branch: %s\n" "$branch_name" >&2
   fi
@@ -265,7 +301,7 @@ fi
 echo >&2
 printf "${BLUE}Worktree Creation Summary:${NC}\n" >&2
 if $branch_needs_creation; then
-  printf "  Branch: %s ${YELLOW}(new, from HEAD)${NC}\n" "$branch_name" >&2
+  printf "  Branch: %s %s\n" "$branch_name" "$start_point_label" >&2
 else
   printf "  Branch: %s\n" "$branch_name" >&2
 fi
@@ -281,13 +317,21 @@ if ! $force && ! $confirmed_via_branch_prompt; then
 fi
 
 # --- EXECUTE ---
+# TODO: Extract create_branch_from_base() library function shared with git-bc's --point-to
 # Create branch if needed
 if $branch_needs_creation; then
   git_err=""
-  if ! git_err=$(git branch "$branch_name" 2>&1); then
-    error "Failed to create branch '$branch_name': $git_err"
+  if [[ -n "$base" ]]; then
+    if ! git_err=$(git branch "$branch_name" "$base" 2>&1); then
+      error "Failed to create branch '$branch_name' from '$base': $git_err"
+    fi
+    info "Created branch '$branch_name' from $base ($(git rev-parse --short "$base"))"
+  else
+    if ! git_err=$(git branch "$branch_name" 2>&1); then
+      error "Failed to create branch '$branch_name': $git_err"
+    fi
+    info "Created branch '$branch_name' from $(git rev-parse --short HEAD)"
   fi
-  info "Created branch '$branch_name' from $(git rev-parse --short HEAD)"
 fi
 
 # Validate creation path
