@@ -83,6 +83,12 @@ EXAMPLES:
     hug sh                             # Commit details with brief stats
     hug h files -3                 # Preview files touched (no stats)
 
+GIT EQUIVALENTS:
+    git diff --stat HEAD                  →  hug shc
+    git diff-tree --stat -r HEAD          →  hug shc HEAD
+    git diff --stat HEAD~3..HEAD          →  hug shc -3
+    git diff --stat main..HEAD -- '*.py'  →  hug shc main..HEAD -- '*.py'
+
 SEE ALSO:
     hug sh       : Show commit info with file stats
     hug shp      : Show commit with patch and stats

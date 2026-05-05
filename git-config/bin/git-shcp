@@ -72,6 +72,12 @@ EXAMPLES:
     hug sh                             # Commit info with brief stats
     hug shp                            # Single commit with full patch
 
+GIT EQUIVALENTS:
+    git show HEAD                         →  hug shcp
+    git diff HEAD~3..HEAD                 →  hug shcp -3
+    git diff main..HEAD                   →  hug shcp main..HEAD
+    git diff main..HEAD -- '*.py'         →  hug shcp main..HEAD -- '*.py'
+
 SEE ALSO:
     hug shc      : Show changed files (stats only, no diff)
     hug sh       : Show commit info with file stats
