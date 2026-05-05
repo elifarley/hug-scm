@@ -11,13 +11,15 @@ show_help() {
 hug su: Show status with patch of unstaged diff.
 
 USAGE:
-    hug su [<file>] [-s, --stat] [-h, --help]
+    hug su [-s, --stat] [-q, --quiet] [-h, --help]
+    hug su [--] [<path>...]
     hug su --
     hug su --browse-root
 
 ARGUMENTS:
-    <file>         Show unstaged diff for specific file (optional)
-    --             Interactive file selection from unstaged files (current directory scope)
+    <path>...      Show unstaged diff for specific paths (optional, supports multiple)
+    --             With no paths: interactive file selection from unstaged files
+                   With paths: separates flags from pathspecs
 
 OPTIONS:
     --browse-root  Browse full repository scope in file selector UI (default: current directory)
@@ -29,13 +31,21 @@ DESCRIPTION:
     Shows the unstaged diff (modifications not yet staged). When
     no file is specified, shows all unstaged diff. By default shows both
     patch and statistics. Use '--stat' to show statistics only, or '--no-stats'
-    to show patch only. Use '--' to interactively select a file from unstaged files.
+    to show patch only. Use '--' alone to interactively select a file from unstaged files.
+
+PATH FILTERING:
+    Append -- <path>... to restrict output to matching paths.
+    Globs must be quoted to prevent shell expansion.
+
+    hug su -- src/ tests/          # Show diff for two directories
+    hug su --stat -- '*.java'      # Stats for Java files only
 
 EXAMPLES:
     hug su                  # Show all unstaged diff (patch + stats)
     hug su --stat           # Show only unstaged statistics
     hug su file.txt         # Show unstaged diff for specific file
     hug su --stat file.txt  # Show stats for specific file only
+    hug su -- src/ tests/   # Show diff for two directories
     hug su --               # Interactive file selection (current directory)
     hug su --browse-root    # Interactive file selection (full repository)
 
@@ -46,116 +56,5 @@ SEE ALSO:
 EOF
 }
 
-# Check if last argument is '--' before getopt processing (for interactive file selection)
-# Getopt consumes '--' as end-of-options marker, so we must detect it first
-if [[ $# -gt 0 && "${!#}" = "--" ]]; then
-  export HUG_INTERACTIVE_FILE_SELECTION=true
-  set -- "${@:1:$(($# - 1))}"
-fi
-
-# Parse all flags (common + command-specific) using getopt
-set +e
-PARSED=$(getopt --options hqs --longoptions help,quiet,stat,browse-root --name "hug su" -- "$@" 2>&1)
-getopt_status=$?
-set -e
-
-if [ $getopt_status -ne 0 ]; then
-  if [ -n "$PARSED" ]; then
-    echo "$PARSED" >&2
-  fi
-  exit 1
-fi
-
-eval set -- "$PARSED"
-
-# Initialize variables
-stats_only=false
-browse_root=false
-
-# Process all options
-while true; do
-  case "$1" in
-  -h | --help)
-    show_help
-    exit 0
-    ;;
-  -q | --quiet)
-    export HUG_QUIET=T
-    shift
-    ;;
-  -s | --stat)
-    stats_only=true
-    shift
-    ;;
-  --browse-root)
-    browse_root=true
-    export HUG_INTERACTIVE_FILE_SELECTION=true
-    shift
-    ;;
-  --)
-    shift
-    break
-    ;;
-  *)
-    echo "Internal error in option parsing" >&2
-    exit 1
-    ;;
-  esac
-done
-
-# Validate --browse-root without paths
-if $browse_root && [ $# -gt 0 ]; then
-  error "--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection."
-  exit 1
-fi
-
-check_git_repo
-
-# Handle interactive file selection if requested
-if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
-  declare -a select_opts=("--unstaged")
-
-  # Default to --cwd (current directory scope) unless --browse-root is specified
-  if ! $browse_root; then
-    select_opts+=("--cwd")
-  fi
-
-  select_opts+=("--prompt" "Select file(s) to view unstaged diff...")
-
-  mapfile -t files < <(select_files_with_status "${select_opts[@]}" || true)
-  if [[ ${#files[@]} -eq 0 ]]; then
-    info "No unstaged files available or cancelled."
-    exit 0
-  fi
-  for file in "${files[@]}"; do
-    if $stats_only; then
-      show_unstaged_diff --stats-only -- "$file"
-    else
-      show_unstaged_diff -- "$file"
-    fi
-  done
-  if [[ ${HUG_QUIET:-} != T ]]; then
-    git s
-  fi
-  exit 0
-fi
-
-if test $# -eq 0; then
-  if $stats_only; then
-    show_unstaged_diff --stats-only
-  else
-    show_unstaged_diff
-  fi
-else
-  t="$1"
-  shift
-  test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2> /dev/null || echo "")
-  if $stats_only; then
-    show_unstaged_diff --stats-only -- "${GIT_PREFIX}$t" "$@"
-  else
-    show_unstaged_diff -- "${GIT_PREFIX}$t" "$@"
-  fi
-fi
-if [[ ${HUG_QUIET:-} != T ]]; then
-  exec hug s
-fi
+# Delegate all argument processing and diff invocation to the shared driver
+_diff_cmd_setup "unstaged" "--unstaged" "Select file(s) to view unstaged diff..." "$@"

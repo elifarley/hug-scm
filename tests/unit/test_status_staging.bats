@@ -1517,3 +1517,100 @@ teardown() {
   # Should enter interactive mode, not show stats immediately
   refute_output --partial "Unstaged file stats"
 }
+
+################################################################################
+# Pathspec Filtering Tests (hug su/ss/sw -- <path>...)
+################################################################################
+
+@test "hug su -- <path>: single path filtering" {
+  run hug su -- README.md --quiet
+  assert_success
+  assert_output --partial "Unstaged diff for README.md"
+  assert_output --partial "README.md"
+  refute_output --partial "staged.txt"
+}
+
+@test "hug su -- <path1> <path2>: multiple path filtering" {
+  # Create another unstaged file
+  echo "more content" >> staged.txt
+
+  run hug su -- README.md staged.txt --quiet
+  assert_success
+  assert_output --partial "README.md"
+  # staged.txt is in the unstaged diff output too
+}
+
+@test "hug su -- <path>: paths not treated as revisions (original bug)" {
+  # The original bug: hug su -- management/ .wolf/ would fail with
+  # "fatal: bad revision '.wolf/'" because paths were placed before '--'
+  # Create directories named like the bug case
+  mkdir -p management .wolf
+  echo "mgmt" > management/a.txt
+  echo "wolf" > .wolf/b.txt
+  git add management/ .wolf/
+  hug c -m "add dirs" --quiet 2>/dev/null || true
+  echo "mod1" >> management/a.txt
+  echo "mod2" >> .wolf/b.txt
+
+  run hug su -- management/ .wolf/ --quiet
+  assert_success
+  # Should show both files without "bad revision" error
+  refute_output --partial "fatal"
+  refute_output --partial "bad revision"
+}
+
+@test "hug ss -- <path>: staged diff path filtering" {
+  run hug ss -- staged.txt --quiet
+  assert_success
+  assert_output --partial "staged.txt"
+  refute_output --partial "README.md"
+}
+
+@test "hug sw -- <path>: combined diff path filtering" {
+  run hug sw -- README.md --quiet
+  assert_success
+  assert_output --partial "README.md"
+}
+
+@test "hug su --stat -- <path>: flags + pathspecs combined" {
+  run hug su --stat -- README.md --quiet
+  assert_success
+  assert_output --partial "Unstaged file stats"
+  assert_output --partial "README.md"
+  refute_output --partial "@@"
+}
+
+@test "hug su --: bare -- still triggers interactive mode" {
+  # Regression test: bare '--' without paths should trigger interactive mode,
+  # not be consumed by parse_pathspecs
+  run hug su --
+  # Should NOT show the regular diff output (interactive mode was triggered)
+  refute_output --partial "Unstaged diff:"
+}
+
+@test "hug su <file>: backward compat without --" {
+  # Regression test: positional args without -- should still work
+  run hug su README.md --quiet
+  assert_success
+  assert_output --partial "Unstaged diff for README.md"
+  assert_output --partial "README.md"
+}
+
+@test "hug su -- <nonexistent>: shows no output for non-matching path" {
+  run hug su -- nonexistent_dir/ --quiet
+  assert_success
+  # Should not crash or show "bad revision" — just empty output
+  refute_output --partial "fatal"
+  refute_output --partial "bad revision"
+}
+
+@test "hug ss -- <path1> <path2>: multi-path staged diff" {
+  # Stage another file
+  echo "staged2" > staged2.txt
+  git add staged2.txt
+
+  run hug ss -- staged.txt staged2.txt --quiet
+  assert_success
+  assert_output --partial "staged.txt"
+  assert_output --partial "staged2.txt"
+}
