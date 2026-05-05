@@ -11,7 +11,7 @@ show_help() {
 hug shc: Show files changed in a commit or range with statistics.
 
 USAGE:
-    hug shc [N|<commit-ref>|<range>] [OPTIONS]
+    hug shc [N|<commit-ref>|<range>] [OPTIONS] [-- <path>...]
 
 ARGUMENTS:
     N               Single commit N steps back (0-999, 0 → HEAD)
@@ -22,6 +22,13 @@ ARGUMENTS:
 OPTIONS:
     -q, --quiet     Suppress header line (also honors HUG_QUIET env var)
     -h, --help      Show this help
+
+PATH FILTERING:
+    Append -- <path>... to restrict output to matching paths.
+    Globs must be quoted to prevent shell expansion.
+
+    hug shc main..HEAD -- '*.java'       # Stats for Java files in range
+    hug shc -3 -- src/lib/ tests/        # Stats for two directories
 
 DESCRIPTION:
     Lists files changed with addition/deletion counts.
@@ -67,7 +74,9 @@ EXAMPLES:
     hug shc HEAD~3..HEAD     # Cumulative changes in last 3 commits (explicit)
     hug shc main..feature    # All changes in feature branch vs main
     hug shc v1.0.0..v1.1.0   # Changes between two tags
-    
+    hug shc main..HEAD -- '*.java'     # Filtered stats for Java files
+    hug shc -3 -- src/lib/ tests/      # Filtered stats for directories
+
     # Related commands for different perspectives:
     hug ll -3 --json --with-stats  # Structured view of last 3 commits with stats
     hug shcp -3                    # Same changes with full diff
@@ -86,12 +95,14 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (-q/--quiet, -h/--help)
-eval "$(parse_common_flags "$@")"
+# Pre-parse pathspecs BEFORE parse_common_flags, which intercepts
+# trailing -- for interactive file selection.
+eval "$(parse_pathspecs "$@")"
+eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
 
-# Parse remaining arguments
+# Extract commit_ref from pre_args (NOT from original "$@")
 commit_ref=""
-for arg in "$@"; do
+for arg in "${_pathspec_pre_args[@]}"; do
   case "$arg" in
   -h | --help | -q | --quiet) ;; # Already handled by parse_common_flags
   *)
@@ -105,12 +116,19 @@ commit_ref="${commit_ref:-HEAD}"
 check_git_repo
 
 # Resolve N/-N using unified N/-N syntax convention
-# - N (0-999) → Single commit HEAD~N (0 → HEAD)
-# - -N (1-999) → Range HEAD~N..HEAD
 commit_ref=$(resolve_commit_ref "$commit_ref" "HEAD")
 
-# Show changed files with stats
-# Detect if argument is a range (contains ..) or a single commit
+# Build pathspec args for git commands: empty-array-safe under set -u.
+# When pathspecs are present, produces: -- <path1> <path2> ...
+# When absent, produces nothing (no args).
+pathspec_args=()
+if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  pathspec_args=(-- "${_pathspec_pathspecs[@]}")
+fi
+
+# Show changed files with stats, optionally filtered by pathspecs.
+# Detect if argument is a range (contains ..) or a single commit.
+stats_output=""
 if [[ "$commit_ref" == *..* ]]; then
   # Range: use git diff --stat
   if [[ ${HUG_QUIET:-} != T ]]; then
@@ -118,7 +136,7 @@ if [[ "$commit_ref" == *..* ]]; then
     stats_emoji="$(_diff_emoji stats)"
     printf '%s %s Changed files in range %s:\n' "$commit_emoji" "$stats_emoji" "$commit_ref" >&2
   fi
-  git diff --stat "$commit_ref"
+  stats_output=$(git diff --stat "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}")
 else
   # Single commit: use git diff-tree
   if [[ ${HUG_QUIET:-} != T ]]; then
@@ -126,7 +144,15 @@ else
     stats_emoji="$(_diff_emoji stats)"
     printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji" >&2
   fi
-  git diff-tree --no-commit-id --stat -r --root "$commit_ref"
+  stats_output=$(git diff-tree --no-commit-id --stat -r --root "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}")
+fi
+
+printf '%s\n' "$stats_output"
+
+# No-match hint: when pathspecs given but nothing matched, say so on stderr.
+# Does not affect exit code (stays 0 for scriptability).
+if [[ ${#_pathspec_pathspecs[@]} -gt 0 && ${HUG_QUIET:-} != T && -z "$stats_output" ]]; then
+  printf 'No files matching %s in %s\n' "${_pathspec_pathspecs[*]}" "$commit_ref" >&2
 fi
 
 exit 0

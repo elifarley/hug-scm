@@ -428,3 +428,144 @@ teardown() {
   assert_output --partial "file"
   assert_output --partial "changed"
 }
+
+# -----------------------------------------------------------------------------
+# hug shc path filtering tests (-- <path>...)
+# -----------------------------------------------------------------------------
+
+@test "hug shc: filters stats by single glob with --" {
+  # Create a commit with multiple file types
+  echo "java content" > App.java
+  echo "py content" > main.py
+  git add App.java main.py
+  git commit -m "Add mixed files" -q
+
+  run hug shc HEAD -- '*.java'
+  assert_success
+  assert_output --partial "App.java"
+  refute_output --partial "main.py"
+}
+
+@test "hug shc: filters stats by multiple pathspecs with --" {
+  # Create a commit with files in subdirectories
+  mkdir -p src/lib tests
+  echo "lib content" > src/lib/util.java
+  echo "test content" > tests/util_test.java
+  echo "other content" > other.txt
+  git add src/lib/ tests/ other.txt
+  git commit -m "Add multi-dir files" -q
+
+  run hug shc -3 -- src/lib/ tests/
+  assert_success
+  assert_output --partial "src/lib/"
+  assert_output --partial "tests/"
+  refute_output --partial "other.txt"
+}
+
+@test "hug shc: no-match shows stderr hint" {
+  run hug shc HEAD -- nonexistent_file.xyz
+  assert_success
+  # No file stats table (no .txt, .java, etc.) — just header + no-match hint
+  refute_output --partial ".txt"
+  refute_output --partial ".java"
+  # stderr hint should appear in combined output
+  assert_output --partial "No files matching"
+}
+
+@test "hug shc: bare -- with no paths is identical to no --" {
+  run hug shc --
+  assert_success
+  assert_output --partial "file"
+}
+
+@test "hug shc: quiet mode suppresses header with pathspecs" {
+  echo "q content" > qfile.txt
+  git add qfile.txt
+  git commit -m "Add qfile" -q
+
+  run hug shc -q -- '*.txt'
+  assert_success
+  # No header in output (quiet mode), only file stats
+  refute_output --partial "Changed files"
+}
+
+@test "hug shc: without -- behavior unchanged (regression)" {
+  run hug shc HEAD
+  assert_success
+  assert_output --partial "file"
+}
+
+@test "hug shc: root commit with pathspecs" {
+  local root_commit
+  root_commit=$(git rev-list --max-parents=0 HEAD)
+
+  # The root commit in test_helper creates initial.txt
+  run hug shc "$root_commit" -- '*.txt'
+  assert_success
+  assert_output --partial ".txt"
+}
+
+# -----------------------------------------------------------------------------
+# hug shcp path filtering tests (-- <path>...)
+# -----------------------------------------------------------------------------
+
+@test "hug shcp: filters both diff and stats by pathspec" {
+  # Create a commit with multiple files
+  echo "java content" > Filtered.java
+  echo "py content" > Unfiltered.py
+  git add Filtered.java Unfiltered.py
+  git commit -m "Add files for filter test" -q
+
+  run hug shcp HEAD -- '*.java'
+  assert_success
+  # Diff should be filtered
+  assert_output --partial "Filtered.java"
+  refute_output --partial "Unfiltered.py"
+  # Stats should also be filtered
+  assert_output --partial "File stats"
+}
+
+@test "hug shcp: filters single commit diff by pathspec" {
+  run hug shcp HEAD -- '*.txt'
+  assert_success
+  # Should show stats section
+  assert_output --partial "File stats"
+}
+
+@test "hug shcp: no-match shows empty diff and stats" {
+  run hug shcp HEAD -- nonexistent_file.xyz
+  assert_success
+  # Should still show section headers but no file content
+  assert_output --partial "Diff for"
+  assert_output --partial "File stats"
+}
+
+# -----------------------------------------------------------------------------
+# hug shp path filtering regression tests (after library upgrade)
+# -----------------------------------------------------------------------------
+
+@test "hug shp: single file pathspec still works after library upgrade" {
+  # Create a commit with multiple files
+  echo "a content" > a.txt
+  echo "b content" > b.txt
+  git add a.txt b.txt
+  git commit -m "Add a and b" -q
+
+  run hug shp HEAD -- a.txt
+  assert_success
+  assert_output --partial "diff --git"
+  assert_output --partial "a.txt"
+  refute_output --partial "b.txt"
+}
+
+@test "hug shp: warns when multiple pathspecs given" {
+  echo "c content" > c.txt
+  echo "d content" > d.txt
+  git add c.txt d.txt
+  git commit -m "Add c and d" -q
+
+  run hug shp HEAD -- c.txt d.txt
+  assert_success
+  # Should warn about extra pathspecs on stderr
+  [[ "$output" == *"Warning"* ]] || [[ "$output" == *"only supports single-file"* ]]
+}

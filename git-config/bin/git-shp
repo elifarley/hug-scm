@@ -18,7 +18,7 @@ ARGUMENTS:
     -N              Range of N commits (1-999) → shows HEAD~N..HEAD
     <commit-ref>    Commit reference (default: HEAD)
     <range>         Commit range (e.g., main..HEAD)
-    <path>          File path to filter diff (after -- separator)
+    <path>          File path to filter diff (after -- separator; first path used)
 
 OPTIONS:
     -q, --quiet     Suppress headers (also honors HUG_QUIET env var)
@@ -31,9 +31,19 @@ DESCRIPTION:
     complete diff/patch, and file statistics at the end.
 
     When -- <path> is given, filters the diff and file stats
-    to only show changes for the specified file.
+    to only show changes for the specified file. Only the first
+    path after -- is used; additional paths trigger a warning.
 
-    N/-N SYNTAX CONVENTION:
+PATH FILTERING:
+    Append -- <path> to filter to a single file.
+
+    hug shp HEAD -- README.md     # Patch for README.md only
+    hug shp 3 -- src/app.js       # Patch for src/app.js at HEAD~3
+
+    Note: Only one path is supported. If multiple paths are given,
+    only the first is used and a warning is printed to stderr.
+
+N/-N SYNTAX CONVENTION:
     - N (0-999) → Single commit at HEAD~N (0 → HEAD)
     - -N (1-999) → Range of N commits (HEAD~N..HEAD)
     - Numbers ≥ 1000 pass through as refs
@@ -45,8 +55,8 @@ EXAMPLES:
     hug shp abc123           # Show specific commit with patch
     hug shp main..HEAD       # Show commits in range with patch
     hug shp --llm HEAD       # Show in LLM XML format with patch
-    hug shp HEAD -- README.md    Show patch for README.md in last commit
-    hug shp 3 -- src/app.js      Show patch for src/app.js at HEAD~3
+    hug shp HEAD -- README.md    # Show patch for README.md in last commit
+    hug shp 3 -- src/app.js      # Show patch for src/app.js at HEAD~3
 
 SEE ALSO:
     hug sh       : Show commit with stats (no patch)
@@ -56,29 +66,15 @@ SEE ALSO:
 EOF
 }
 
-# Pre-parse -- <path> from raw args BEFORE parse_common_flags,
-# because parse_common_flags consumes -- for interactive file selection.
-file_path=""
-declare -a pre_parsed_args=()
-saw_separator=false
-for arg in "$@"; do
-  if $saw_separator; then
-    file_path="$arg"
-    saw_separator=false
-  elif [[ "$arg" == "--" ]]; then
-    saw_separator=true
-  else
-    pre_parsed_args+=("$arg")
-  fi
-done
+# Pre-parse pathspecs BEFORE parse_common_flags, which intercepts
+# trailing -- for interactive file selection.
+eval "$(parse_pathspecs "$@")"
+eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
 
-# Parse common flags (-q/--quiet, -h/--help) from the remaining args
-eval "$(parse_common_flags "${pre_parsed_args[@]}")"
-
-# Parse remaining arguments: <commit>
+# Extract commit_ref and --llm from pre_args (NOT from original "$@")
 commit_ref=""
 show_llm=false
-for arg in "$@"; do
+for arg in "${_pathspec_pre_args[@]}"; do
   case "$arg" in
   -h | --help | -q | --quiet) ;; # Already handled by parse_common_flags
   --llm)
@@ -89,6 +85,15 @@ for arg in "$@"; do
     ;;
   esac
 done
+
+# shp supports single-file filtering: use first pathspec only.
+file_path=""
+if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  file_path="${_pathspec_pathspecs[0]}"
+  if [[ ${#_pathspec_pathspecs[@]} -gt 1 ]]; then
+    printf 'Warning: shp only supports single-file filtering. Using first path: %s\n' "$file_path" >&2
+  fi
+fi
 
 # Determine output format
 if [[ "$show_llm" == true ]]; then

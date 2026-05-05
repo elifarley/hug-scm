@@ -98,7 +98,7 @@ These map to custom scripts (see Section 2).
 ### Show (sh*)
 - `sh [<commit>]`: Show commit with files. Args: `[<commit>]` (optional, default HEAD).
 - `shp [<commit>]`: Show commit patch. Args: as above.
-- `shc <commit>`: Files changed in commit. Args: `<commit>` (required).
+- `shc <commit>`: Files changed in commit. Args: `<commit>` (required), `[-- <path>...]` (optional pathspecs).
 - `shf <file> [git-show-opts]`: File diff in commit. Args: `<file>` (required), Git show options.
 
 ### Tags (t*)

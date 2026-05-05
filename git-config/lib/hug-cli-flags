@@ -5,6 +5,7 @@
 # Depends on: hug-output for consistent error reporting.
 # Requires: GNU getopt
 # Functions:
+#   - parse_pathspecs: split args at first -- into pre_args and pathspecs.
 #   - parse_common_flags: expand shared flags into shell assignments.
 #   - require_args: enforce minimum argument counts.
 #
@@ -14,6 +15,56 @@
 ################################################################################
 # Command Pattern Helpers
 ################################################################################
+
+# Splits "$@" at the first -- separator for pathspec-based commands.
+#
+# MUST run BEFORE parse_common_flags, which intercepts trailing -- for
+# interactive file selection. Commands that accept -- <path>... must
+# pre-parse pathspecs first, then pass only pre_args to parse_common_flags.
+#
+# Usage: eval "$(parse_pathspecs "$@")"
+# Output (shell code for eval):
+#   Sets two arrays in the caller's scope:
+#     _pathspec_pre_args   - everything before the first --
+#     _pathspec_pathspecs  - everything after the first --
+#
+# Rules:
+#   - Only the FIRST -- splits. Everything after is pathspec data,
+#     including literal --help, -foo, or paths named --.
+#   - If no -- found, all args go to _pathspec_pre_args
+#   - If -- is last arg (bare separator), _pathspec_pathspecs stays empty
+#
+# Example:
+#   parse_pathspecs HEAD -- '*.java' 'src/'
+#   → _pathspec_pre_args=(HEAD)  _pathspec_pathspecs=('*.java' 'src/')
+parse_pathspecs() {
+  local pre_args=()
+  local pathspecs=()
+  local saw_separator=false
+
+  for arg in "$@"; do
+    if $saw_separator; then
+      pathspecs+=("$arg")
+    elif [[ "$arg" == "--" ]]; then
+      saw_separator=true
+    else
+      pre_args+=("$arg")
+    fi
+  done
+
+  # Output shell code for eval — always emit both arrays
+  printf '_pathspec_pre_args=('
+  if [[ ${#pre_args[@]} -gt 0 ]]; then
+    printf ' %q' "${pre_args[@]}"
+  fi
+  printf ' )\n'
+
+  printf '_pathspec_pathspecs=('
+  if [[ ${#pathspecs[@]} -gt 0 ]]; then
+    printf ' %q' "${pathspecs[@]}"
+  fi
+  printf ' )\n'
+}
 
 # Parses common option flags for command scripts using GNU getopt
 # Usage: eval "$(parse_common_flags "$@")"
