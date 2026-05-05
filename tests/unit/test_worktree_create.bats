@@ -420,3 +420,92 @@ teardown() {
   worktree_path="$(cd "$(dirname "$worktree_path")" && pwd)/$(basename "$worktree_path")"
   assert_worktree_exists "$worktree_path"
 }
+
+# --- --base flag tests ---
+
+@test "hug wtc: --base creates branch from specified branch" {
+  # Create a new branch from feature-1 via --base, then worktree
+  run git-wtc from-feature1 --base feature-1 -f
+  assert_success
+  assert_output --partial "Created branch 'from-feature1' from feature-1"
+
+  # Verify worktree was created
+  local worktree_path
+  worktree_path=$(echo "$output" | grep "Path:" | sed 's/.*Path:[[:space:]]*//' | sed 's/\s*$//')
+  worktree_path="$(cd "$(dirname "$worktree_path")" && pwd)/$(basename "$worktree_path")"
+  assert_worktree_exists "$worktree_path"
+
+  # Verify the worktree has feature-1's file (not main's)
+  cd "$worktree_path"
+  assert_file_exists "feature1.txt"
+}
+
+@test "hug wtc: --base with tag creates branch from tag" {
+  # Create a tag on the current HEAD
+  git tag v1.0
+
+  # Add a commit on main so HEAD is past the tag
+  echo "post-tag" > post-tag.txt
+  git add post-tag.txt
+  git commit -q -m "post-tag commit"
+
+  run git-wtc from-tag --base v1.0 -f
+  assert_success
+  assert_output --partial "Created branch 'from-tag' from v1.0"
+
+  # Verify worktree exists and does NOT have the post-tag file
+  local worktree_path
+  worktree_path=$(echo "$output" | grep "Path:" | sed 's/.*Path:[[:space:]]*//' | sed 's/\s*$//')
+  worktree_path="$(cd "$(dirname "$worktree_path")" && pwd)/$(basename "$worktree_path")"
+  assert_worktree_exists "$worktree_path"
+  cd "$worktree_path"
+  assert_file_not_exists "post-tag.txt"
+}
+
+@test "hug wtc: --base HEAD~2 creates branch from relative ref" {
+  run git-wtc from-relative --base HEAD~2 -f
+  assert_success
+  assert_output --partial "Created branch 'from-relative' from HEAD~2"
+}
+
+@test "hug wtc: --base errors when branch already exists" {
+  # feature-1 already exists in the test repo
+  run git-wtc feature-1 --base main
+  assert_failure
+  assert_output --partial "already exists"
+  assert_output --partial "--base only applies when creating new branches"
+}
+
+@test "hug wtc: --base errors with invalid commitish" {
+  run git-wtc new-branch --base nonexistent-ref-xyz
+  assert_failure
+  assert_output --partial "Invalid start-point"
+  assert_output --partial "nonexistent-ref-xyz"
+}
+
+@test "hug wtc: --base implies --new without explicit flag" {
+  # Create a branch without --new -- should work because --base implies it
+  run git-wtc implied-new-branch --base main -f
+  assert_success
+  assert_output --partial "Created branch 'implied-new-branch'"
+  assert_output --partial "Worktree created for 'implied-new-branch'"
+}
+
+@test "hug wtc: --base with --dry-run shows start-point" {
+  run git-wtc dry-run-base --base main --dry-run
+  assert_success
+  assert_output --partial "Worktree Creation Preview (DRY RUN)"
+  assert_output --partial "new, from main"
+  assert_output --partial "No changes made (dry run)"
+
+  # Verify the branch was NOT created
+  run git rev-parse --verify "refs/heads/dry-run-base"
+  assert_failure
+}
+
+@test "hug wtc: --base with --force skips confirmation" {
+  run git-wtc force-base-branch --base feature-1 -f
+  assert_success
+  assert_output --partial "Created branch 'force-base-branch' from feature-1"
+  assert_output --partial "Worktree created for 'force-base-branch'"
+}
