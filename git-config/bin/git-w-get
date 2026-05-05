@@ -17,6 +17,7 @@ USAGE:
 
 OPTIONS:
     -f, --force     Force overwrite, ignoring any uncommitted changes and running non-interactively.
+    --dry-run       Preview what would be reset without making any changes.
     --browse-root   Browse full repository scope in file selector UI (default: current directory)
     <target>        Either an integer 0 <= N < 100, a COMMIT hash, or -u / --upstream
         N               Specifies how many commits to go back from a file's last change.
@@ -80,6 +81,7 @@ confirm() {
 reset_all_files() {
   local commit="$1"
   local force="$2"
+  local dry_run="${3:-false}"
   local commit_short
 
   commit_short=$(git rev-parse --short "$commit")
@@ -88,48 +90,68 @@ reset_all_files() {
     printf "Will reset ALL files to commit %s (%s)\n" "$commit" "$commit_short" >&2
   fi
 
-  # Calculate all files that will be affected by the reset
-  local -a changed_files deleted_files added_files
+  # Classify files by change type using git diff --diff-filter.
+  # --no-renames ensures deterministic classification: each file gets exactly one
+  # of M/A/D, never silently omitted as part of a rename pair.
+  # Direction: "$commit" HEAD means "what changed FROM target commit TO current HEAD".
+  # M = content differs, D = present in target but absent from HEAD, A = absent from target but present in HEAD.
+  local -a files_to_modify files_to_restore files_to_remove
   local -a affected_files=()
 
-  mapfile -t changed_files < <(git diff --name-only "$commit" HEAD)
-  mapfile -t deleted_files < <(git ls-tree -r --name-only "$commit" | comm -13 <(git ls-tree -r --name-only HEAD) -)
-  mapfile -t added_files < <(git ls-tree -r --name-only HEAD | comm -23 <(git ls-tree -r --name-only "$commit") -)
+  mapfile -t files_to_modify < <(git diff --name-only --no-renames --diff-filter=M "$commit" HEAD)
+  mapfile -t files_to_restore < <(git diff --name-only --no-renames --diff-filter=D "$commit" HEAD)
+  mapfile -t files_to_remove < <(git diff --name-only --no-renames --diff-filter=A "$commit" HEAD)
 
-  # Combine into a single list of affected files
-  affected_files=("${changed_files[@]}" "${deleted_files[@]}" "${added_files[@]}")
-  dedupe_array affected_files
+  # Combine into a single list of affected files for cleanliness checks.
+  affected_files=("${files_to_modify[@]}" "${files_to_restore[@]}" "${files_to_remove[@]}")
+  # No deduplication needed: --diff-filter=M/D/A with --no-renames produces
+  # disjoint sets by construction. Previously, the old `git diff --name-only`
+  # (no filter) captured M+A+D in `changed_files`, requiring deduplication.
+
+  # Early exit: no files differ between target and HEAD
+  if [ ${#files_to_modify[@]} -eq 0 ] && [ ${#files_to_restore[@]} -eq 0 ] && [ ${#files_to_remove[@]} -eq 0 ]; then
+    info "Already at target commit $commit_short — no files to reset."
+    return 0
+  fi
 
   # Check for uncommitted changes only in the affected files
   if ! $force; then
     check_files_clean "${affected_files[@]}"
   fi
 
-  if ! $force; then
+  if ! $force || $dry_run; then
     # Show what will change
-    printf "Files that will be modified:\n" >&2
-    if [ ${#changed_files[@]} -gt 0 ]; then
-      printf "  %s\n" "${changed_files[@]}" >&2
+    printf "Files that will be MODIFIED:\n" >&2
+    if [ ${#files_to_modify[@]} -gt 0 ]; then
+      printf "  %s\n" "${files_to_modify[@]}" >&2
     else
       printf "  (no changes from current HEAD)\n" >&2
     fi
 
     printf "\n" >&2
 
-    # Show files to be deleted
-    if [ ${#deleted_files[@]} -gt 0 ]; then
-      printf "Files that will be DELETED:\n" >&2
-      printf "  %s\n" "${deleted_files[@]}" >&2
+    # Show files to be restored (present in target, missing from HEAD)
+    if [ ${#files_to_restore[@]} -gt 0 ]; then
+      printf "Files that will be RESTORED:\n" >&2
+      printf "  %s\n" "${files_to_restore[@]}" >&2
       printf "\n" >&2
     fi
 
-    # Show files to be added
-    if [ ${#added_files[@]} -gt 0 ]; then
-      printf "Files that will be ADDED:\n" >&2
-      printf "  %s\n" "${added_files[@]}" >&2
+    # Show files to be removed (not in target commit)
+    if [ ${#files_to_remove[@]} -gt 0 ]; then
+      printf "Files that will be REMOVED:\n" >&2
+      printf "  %s\n" "${files_to_remove[@]}" >&2
       printf "\n" >&2
     fi
 
+    # Dry-run: preview only, no actual changes
+    if $dry_run; then
+      info "Dry run — no files were modified."
+      return 0
+    fi
+  fi
+
+  if ! $force; then
     # Confirmation
     warning "This will overwrite ALL files to their state in $commit_short"
     confirm "Type \"reset\" to confirm: " "reset"
@@ -140,9 +162,9 @@ reset_all_files() {
     printf "Resetting all files to %s...\n" "$commit" >&2
   fi
 
-  # First, remove files that don't exist in target commit
-  if [ ${#deleted_files[@]} -gt 0 ]; then
-    printf "%s\n" "${deleted_files[@]}" | xargs rm -f
+  # Remove files that don't exist in target commit
+  if [ ${#files_to_remove[@]} -gt 0 ]; then
+    printf "%s\n" "${files_to_remove[@]}" | xargs rm -f
   fi
 
   # Then restore files from target commit
@@ -159,7 +181,8 @@ reset_all_files() {
 reset_specific_files() {
   local commit="$1"
   local force="$2"
-  shift 2
+  local dry_run="${3:-false}"
+  shift 3
   local files=("$@")
   local commit_short
 
@@ -170,6 +193,7 @@ reset_specific_files() {
   fi
 
   local files_to_reset=()
+  local file
 
   # Validate each file
   for file in "${files[@]}"; do
@@ -193,7 +217,7 @@ reset_specific_files() {
 
   # Show what will be reset
   if [ ${#files_to_reset[@]} -gt 0 ]; then
-    if ! $force; then
+    if ! $force || $dry_run; then
       printf "\nFiles to be reset:\n" >&2
       printf "  %s\n" "${files_to_reset[@]}" >&2
 
@@ -203,6 +227,14 @@ reset_specific_files() {
         preview_file_changes "$commit" "$file"
       done
 
+      # Dry-run: preview only, no actual changes
+      if $dry_run; then
+        info "Dry run — no files were modified."
+        return 0
+      fi
+    fi
+
+    if ! $force; then
       # Confirmation
       warning "This will overwrite the files above"
       confirm "Reset these files? (y/N) " "y"
@@ -255,6 +287,7 @@ main() {
   # Initialize common flag variables if not set by parse_common_flags
   : "${browse_root:=false}"
   : "${force:=false}"
+  : "${dry_run:=false}"
 
   # 3. Get target identifier (first non-flag argument)
   if [[ $# -gt 0 ]]; then
@@ -324,17 +357,17 @@ main() {
     fi
 
     # Reset selected files
-    reset_specific_files "$commit" "$force" "${selected_files[@]}"
+    reset_specific_files "$commit" "$force" "$dry_run" "${selected_files[@]}"
     exit 0
   fi
 
   # 10. Determine operation mode and execute
   if [ $# -eq 0 ]; then
     # Reset ALL files
-    reset_all_files "$commit" "$force"
+    reset_all_files "$commit" "$force" "$dry_run"
   else
     # Reset specific files
-    reset_specific_files "$commit" "$force" "$@"
+    reset_specific_files "$commit" "$force" "$dry_run" "$@"
   fi
 }
 
