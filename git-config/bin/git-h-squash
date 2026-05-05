@@ -63,6 +63,8 @@ SEE ALSO:
     hug cm        amend last commit message
     hug ss        show staged changes (diff)
     hug sl        list staged and unstaged files
+    hug shc       : File stats for the range being squashed
+    hug shcp      : Full diff and stats before squashing
 EOF
 }
 

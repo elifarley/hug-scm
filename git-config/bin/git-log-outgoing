@@ -33,6 +33,8 @@ EXAMPLES:
 
 SEE ALSO:
     hug bpush   Safe push with previews
+    hug shc     : File change statistics for outgoing range
+    hug shcp    : Full diff and stats for outgoing range
 EOF
 }
 

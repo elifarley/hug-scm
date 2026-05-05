@@ -52,6 +52,7 @@ EXAMPLES:
 SEE ALSO:
     h back    : Actually perform the rewind (keep staged)
     h rewind  : Destructive rewind
+    hug shc   : File stats for the affected range
 EOF
 }
 

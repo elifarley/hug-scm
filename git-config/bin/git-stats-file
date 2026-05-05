@@ -78,6 +78,7 @@ SEE ALSO:
     hug fcon             : File contributors list
     hug fa               : Author commit counts for file
     hug analyze activity : Temporal activity patterns
+    hug shc              : Per-commit file change statistics
 EOF
 }
 

@@ -43,6 +43,7 @@ SEE ALSO:
     hug lf       : Search commits by message
     hug lc       : Search commits by code changes (literal text)
     hug llf      : Log commits for file
+    hug shc      : File change statistics for found commits
 EOF
 }
 

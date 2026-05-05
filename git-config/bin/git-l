@@ -54,6 +54,7 @@ SEE ALSO:
     hug lf       : Search commits by message
     hug lc       : Search commits by code diff
     hug sh       : Show single commit details
+    hug shc      : File change statistics for commits/ranges
 EOF
 }
 

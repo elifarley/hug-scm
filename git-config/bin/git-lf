@@ -50,6 +50,7 @@ SEE ALSO:
     hug lc       : Search commits by code changes
     hug lcr      : Search commits by regex code changes
     hug llf      : Log commits for file
+    hug shc      : File change statistics for found commits
 EOF
 }
 
