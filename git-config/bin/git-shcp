@@ -11,7 +11,7 @@ show_help() {
 hug shcp: Show cumulative diff and file statistics for a commit or range.
 
 USAGE:
-    hug shcp [N|<commit-ref>|<range>] [OPTIONS]
+    hug shcp [N|<commit-ref>|<range>] [OPTIONS] [-- <path>...]
 
 ARGUMENTS:
     N               Single commit N steps back (0-999, 0 → HEAD)
@@ -20,7 +20,15 @@ ARGUMENTS:
     <range>         Commit range like HEAD~3..HEAD or main..feature
 
 OPTIONS:
+    -q, --quiet     Suppress section headers (also honors HUG_QUIET env var)
     -h, --help      Show this help
+
+PATH FILTERING:
+    Append -- <path>... to restrict both diff and stats to matching paths.
+    Globs must be quoted to prevent shell expansion.
+
+    hug shcp main..HEAD -- '*.java'       # Diff + stats for Java files
+    hug shcp -3 -- src/lib/ tests/        # Diff + stats for directories
 
 DESCRIPTION:
     Shows the full diff (patch) and file statistics for commits.
@@ -51,11 +59,13 @@ EXAMPLES:
     hug shcp 0                # Diff for commit HEAD
     hug shcp -3               # Cumulative diff in last 3 commits
     hug shcp abc123           # Diff for specific commit
-    hug shcp HEAD~2           # Diff for commit two steps back
+    hug shcp HEAD~2           # Diff for commit two commits ago
     hug shcp HEAD~3..HEAD     # Cumulative diff in last 3 commits (explicit)
     hug shcp main..feature    # All changes in feature branch vs main
     hug shcp v1.0.0..v1.1.0   # Diff between two tags
-    
+    hug shcp main..HEAD -- '*.java'     # Filtered diff + stats for Java files
+    hug shcp -3 -- src/lib/ tests/      # Filtered diff + stats for directories
+
     # Related commands for different levels of detail:
     hug ll -3 --json --with-stats  # Structured commit list with stats
     hug shc -3                     # Same changes, stats only (no diff)
@@ -71,44 +81,56 @@ SEE ALSO:
 EOF
 }
 
-# Parse arguments
-case "${1:-}" in
--h | --help)
-  show_help
-  exit 0
-  ;;
-esac
+# Pre-parse pathspecs BEFORE parse_common_flags, which intercepts
+# trailing -- for interactive file selection.
+eval "$(parse_pathspecs "$@")"
+eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
 
-commit_ref="${1:-HEAD}"
+# Extract commit_ref from pre_args (NOT from original "$@")
+commit_ref=""
+for arg in "${_pathspec_pre_args[@]}"; do
+  case "$arg" in
+  -h | --help | -q | --quiet) ;; # Already handled by parse_common_flags
+  *)
+    commit_ref="$arg"
+    ;;
+  esac
+done
+
+commit_ref="${commit_ref:-HEAD}"
 
 check_git_repo
 
 # Resolve N/-N using unified N/-N syntax convention
-# - N (0-999) → Single commit HEAD~N (0 → HEAD)
-# - -N (1-999) → Range HEAD~N..HEAD
 commit_ref=$(resolve_commit_ref "$commit_ref" "HEAD")
+
+# Build pathspec args for git commands: empty-array-safe under set -u.
+pathspec_args=()
+if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  pathspec_args=(-- "${_pathspec_pathspecs[@]}")
+fi
 
 # Get emoji indicators
 commit_emoji="$(_diff_emoji commit)"
 diff_emoji="$(_diff_emoji diff)"
 stats_emoji="$(_diff_emoji stats)"
 
-# Show diff and stats
-# Detect if argument is a range (contains ..) or a single commit
+# Show diff and stats, both optionally filtered by pathspecs.
+# Detect if argument is a range (contains ..) or a single commit.
 if [[ "$commit_ref" == *..* ]]; then
   # Range: use git diff
   printf '%s %s Cumulative diff for range %s:\n' "$commit_emoji" "$diff_emoji" "$commit_ref"
-  git diff "$commit_ref"
+  git diff "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}"
 
   printf '\n%s %s Cumulative file stats:\n' "$commit_emoji" "$stats_emoji"
-  HUG_QUIET=T git shc "$commit_ref"
+  HUG_QUIET=T git shc "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}"
 else
   # Single commit: use git diff-tree
   printf '%s %s Diff for %s:\n' "$commit_emoji" "$diff_emoji" "$commit_ref"
-  git diff-tree -p --no-commit-id -r --root "$commit_ref"
+  git diff-tree -p --no-commit-id -r --root "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}"
 
   printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji"
-  HUG_QUIET=T git shc "$commit_ref"
+  HUG_QUIET=T git shc "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}"
 fi
 
 exit 0

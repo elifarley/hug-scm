@@ -260,12 +260,11 @@ _show_commit_standard() {
             printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji" >&2
         fi
 
-        # When file_path is given, use git diff-tree filtered to that file;
-        # otherwise fall back to the full git-shc stats (DRY principle).
-        # We use diff-tree instead of git-shc because git-shc has no
-        # pathspec filter -- adding one would couple it to file_path logic.
+        # Delegate to git-shc for stats display. git-shc now supports
+        # pathspec filtering via -- <path>, so the diff-tree workaround
+        # is no longer needed.
         if [[ -n "$file_path" ]]; then
-            git diff-tree --no-commit-id --stat -r --root "$commit" -- "$file_path"
+            HUG_QUIET=T git shc "$commit" -- "$file_path"
         else
             HUG_QUIET=T git shc "$commit"
         fi
@@ -334,11 +333,10 @@ _show_commit_llm() {
 
     # Print stats section if requested
     if [[ "$show_stats" == "true" ]]; then
-        # Get stats output; when file_path is given, use git diff-tree
-        # filtered to that file (git-shc has no pathspec filter).
+        # Get stats output via git-shc, which now supports pathspec filtering.
         local stats_output
         if [[ -n "$file_path" ]]; then
-            stats_output=$(git diff-tree --no-commit-id --stat -r --root "$commit" -- "$file_path" 2>/dev/null)
+            stats_output=$(HUG_QUIET=T git shc "$commit" -- "$file_path" 2>/dev/null)
         else
             stats_output=$(HUG_QUIET=T git shc "$commit" 2>/dev/null)
         fi

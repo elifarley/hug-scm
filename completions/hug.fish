@@ -251,8 +251,12 @@ complete -c hug -n "__fish_seen_subcommand_from sx" -f  # Suppress other suggest
 for sub in sh shp twc bwc bwnc bwm bwnm twp bwp
     complete -c hug -n "__fish_seen_subcommand_from $sub" -a "(__hug_complete_refs)" -d "Commit"
 end
-# shc: <commit>
+# shc: <commit> [-- <path>...]
 complete -c hug -n '__fish_seen_subcommand_from shc' -a "(__hug_complete_refs)" -d "Commit"
+complete -c hug -n '__fish_seen_subcommand_from shc; __fish_seen_subcommand_from --' -a "(__hug_complete_files)" -d "Path"
+# shcp: <commit> [-- <path>...]
+complete -c hug -n '__fish_seen_subcommand_from shcp' -a "(__hug_complete_refs)" -d "Commit"
+complete -c hug -n '__fish_seen_subcommand_from shcp; __fish_seen_subcommand_from --' -a "(__hug_complete_files)" -d "Path"
 # shf: <file> [show opts]
 complete -c hug -n '__fish_seen_subcommand_from shf' -a "(__hug_complete_files)" -d "File"
 complete -c hug -n '__fish_seen_subcommand_from shf' -a "$common_show_opts" -d "Git show options"
