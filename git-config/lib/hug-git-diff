@@ -85,13 +85,12 @@ diff_has_unstaged_changes() {
 ################################################################################
 
 # Display staged diff with optional file-specific output and statistics
-# Usage: show_staged_diff [--no-stats] [--stats-only] [--] [file] [git_args...]
+# Usage: show_staged_diff [--no-stats] [--stats-only] [--] [paths...]
 # Parameters:
-#   --no-stats - Omit the file statistics section (default: show stats)
+#   --no-stats  - Omit the file statistics section (default: show stats)
 #   --stats-only - Show only file statistics, omit patch (default: show both)
-#   --         - Separator before file argument (optional, for POSIX compliance)
-#   file       - Optional file path to show diff for specific file only
-#   git_args   - Additional arguments to pass to git diff (e.g., pathspec options)
+#   --          - Separator before path arguments
+#   paths       - Optional pathspecs to restrict diff scope (supports multiple)
 # Environment:
 #   HUG_EMOJI_MODE - Controls emoji display (see library header)
 # Effects:
@@ -101,8 +100,7 @@ diff_has_unstaged_changes() {
 show_staged_diff() {
   local show_stats=true
   local show_patch=true
-  local file=""
-  local -a git_args=()
+  local -a paths=()
 
   # Parse options
   while [[ $# -gt 0 ]]; do
@@ -117,34 +115,39 @@ show_staged_diff() {
         ;;
       --)
         shift
-        file="${1:-}"
-        shift
+        paths=("$@")
         break
         ;;
       *)
-        file="${1:-}"
-        shift
+        # Backward compat: positional args without -- are treated as paths
+        paths=("$@")
+        break
         ;;
     esac
   done
 
-  # Remaining args are for git
-  git_args=("$@")
+  # Build pathspec args for git commands: empty-array-safe under set -u.
+  # When paths are present, produces: -- <path1> <path2> ...
+  # When absent, produces nothing (no args).
+  local -a pathspec_args=()
+  if [[ ${#paths[@]} -gt 0 ]]; then
+    pathspec_args=(-- "${paths[@]}")
+  fi
 
   check_git_repo
 
   # Check if staged changes exist before printing headers
-  if [[ -n "$file" ]]; then
-    # For specific file, we need to check if that specific file has staged changes
-    if ! git diff --cached --quiet -- "$file" "${git_args[@]}" 2>/dev/null; then
+  if [[ ${#paths[@]} -gt 0 ]]; then
+    # For specific paths, check if those paths have staged changes
+    if ! git diff --cached --quiet "${pathspec_args[@]+"${pathspec_args[@]}"}" 2>/dev/null; then
       local staged_emoji diff_emoji stats_emoji
       staged_emoji="$(_diff_emoji staged)"
       diff_emoji="$(_diff_emoji diff)"
       stats_emoji="$(_diff_emoji stats)"
 
       if $show_patch; then
-        printf '%s %s Staged diff for %s:\n' "$staged_emoji" "$diff_emoji" "$file"
-        git diff --cached "${git_args[@]}" -- "$file"
+        printf '%s %s Staged diff for %s:\n' "$staged_emoji" "$diff_emoji" "${paths[*]}"
+        git diff --cached "${pathspec_args[@]+"${pathspec_args[@]}"}"
       fi
 
       if $show_stats; then
@@ -153,7 +156,7 @@ show_staged_diff() {
         else
           printf '%s %s Staged file stats:\n' "$staged_emoji" "$stats_emoji"
         fi
-        git diff --cached --stat "${git_args[@]}" -- "$file"
+        git diff --cached --stat "${pathspec_args[@]+"${pathspec_args[@]}"}"
       fi
     fi
   else
@@ -166,7 +169,7 @@ show_staged_diff() {
 
       if $show_patch; then
         printf '%s %s Staged diff:\n' "$staged_emoji" "$diff_emoji"
-        git diff --cached "${git_args[@]}"
+        git diff --cached
       fi
 
       if $show_stats; then
@@ -175,7 +178,7 @@ show_staged_diff() {
         else
           printf '%s %s Staged file stats:\n' "$staged_emoji" "$stats_emoji"
         fi
-        git diff --cached --stat "${git_args[@]}"
+        git diff --cached --stat
       fi
     else
       info "No staged changes."
@@ -184,13 +187,12 @@ show_staged_diff() {
 }
 
 # Display unstaged diff with optional file-specific output and statistics
-# Usage: show_unstaged_diff [--no-stats] [--stats-only] [--] [file] [git_args...]
+# Usage: show_unstaged_diff [--no-stats] [--stats-only] [--] [paths...]
 # Parameters:
-#   --no-stats - Omit the file statistics section (default: show stats)
+#   --no-stats  - Omit the file statistics section (default: show stats)
 #   --stats-only - Show only file statistics, omit patch (default: show both)
-#   --         - Separator before file argument (optional, for POSIX compliance)
-#   file       - Optional file path to show diff for specific file only
-#   git_args   - Additional arguments to pass to git diff (e.g., pathspec options)
+#   --          - Separator before path arguments
+#   paths       - Optional pathspecs to restrict diff scope (supports multiple)
 # Environment:
 #   HUG_EMOJI_MODE - Controls emoji display (see library header)
 # Effects:
@@ -200,8 +202,7 @@ show_staged_diff() {
 show_unstaged_diff() {
   local show_stats=true
   local show_patch=true
-  local file=""
-  local -a git_args=()
+  local -a paths=()
 
   # Parse options
   while [[ $# -gt 0 ]]; do
@@ -216,34 +217,37 @@ show_unstaged_diff() {
         ;;
       --)
         shift
-        file="${1:-}"
-        shift
+        paths=("$@")
         break
         ;;
       *)
-        file="${1:-}"
-        shift
+        # Backward compat: positional args without -- are treated as paths
+        paths=("$@")
+        break
         ;;
     esac
   done
 
-  # Remaining args are for git
-  git_args=("$@")
+  # Build pathspec args for git commands: empty-array-safe under set -u.
+  local -a pathspec_args=()
+  if [[ ${#paths[@]} -gt 0 ]]; then
+    pathspec_args=(-- "${paths[@]}")
+  fi
 
   check_git_repo
 
   # Check if unstaged changes exist before printing headers
-  if [[ -n "$file" ]]; then
-    # For specific file, we need to check if that specific file has unstaged changes
-    if ! git diff --quiet -- "$file" "${git_args[@]}" 2>/dev/null; then
+  if [[ ${#paths[@]} -gt 0 ]]; then
+    # For specific paths, check if those paths have unstaged changes
+    if ! git diff --quiet "${pathspec_args[@]+"${pathspec_args[@]}"}" 2>/dev/null; then
       local unstaged_emoji diff_emoji stats_emoji
       unstaged_emoji="$(_diff_emoji unstaged)"
       diff_emoji="$(_diff_emoji diff)"
       stats_emoji="$(_diff_emoji stats)"
 
       if $show_patch; then
-        printf '%s %s Unstaged diff for %s:\n' "$unstaged_emoji" "$diff_emoji" "$file"
-        git diff "${git_args[@]}" -- "$file"
+        printf '%s %s Unstaged diff for %s:\n' "$unstaged_emoji" "$diff_emoji" "${paths[*]}"
+        git diff "${pathspec_args[@]+"${pathspec_args[@]}"}"
       fi
 
       if $show_stats; then
@@ -252,7 +256,7 @@ show_unstaged_diff() {
         else
           printf '%s %s Unstaged file stats:\n' "$unstaged_emoji" "$stats_emoji"
         fi
-        git diff --stat "${git_args[@]}" -- "$file"
+        git diff --stat "${pathspec_args[@]+"${pathspec_args[@]}"}"
       fi
     fi
   else
@@ -265,7 +269,7 @@ show_unstaged_diff() {
 
       if $show_patch; then
         printf '%s %s Unstaged diff:\n' "$unstaged_emoji" "$diff_emoji"
-        git diff "${git_args[@]}"
+        git diff
       fi
 
       if $show_stats; then
@@ -274,7 +278,7 @@ show_unstaged_diff() {
         else
           printf '%s %s Unstaged file stats:\n' "$unstaged_emoji" "$stats_emoji"
         fi
-        git diff --stat "${git_args[@]}"
+        git diff --stat
       fi
     else
       info "No unstaged changes."
@@ -291,13 +295,12 @@ show_diff_separator() {
 }
 
 # Display both unstaged and staged diffs with separator
-# Usage: show_combined_diff [--no-stats] [--stats-only] [--] [file] [git_args...]
+# Usage: show_combined_diff [--no-stats] [--stats-only] [--] [paths...]
 # Parameters:
-#   --no-stats - Omit the file statistics section (default: show stats)
+#   --no-stats  - Omit the file statistics section (default: show stats)
 #   --stats-only - Show only file statistics, omit patch (default: show both)
-#   --         - Separator before file argument (optional, for POSIX compliance)
-#   file       - Optional file path to show diff for specific file only
-#   git_args   - Additional arguments to pass to git diff (e.g., pathspec options)
+#   --          - Separator before path arguments
+#   paths       - Optional pathspecs to restrict diff scope (supports multiple)
 # Environment:
 #   HUG_EMOJI_MODE - Controls emoji display (see library header)
 # Effects:
@@ -307,8 +310,7 @@ show_diff_separator() {
 show_combined_diff() {
   local show_stats=true
   local show_patch=true
-  local file=""
-  local -a git_args=()
+  local -a paths=()
 
   # Parse options
   while [[ $# -gt 0 ]]; do
@@ -323,28 +325,31 @@ show_combined_diff() {
         ;;
       --)
         shift
-        file="${1:-}"
-        shift
+        paths=("$@")
         break
         ;;
       *)
-        file="${1:-}"
-        shift
+        # Backward compat: positional args without -- are treated as paths
+        paths=("$@")
+        break
         ;;
     esac
   done
 
-  # Remaining args are for git
-  git_args=("$@")
+  # Build pathspec args for git commands: empty-array-safe under set -u.
+  local -a pathspec_args=()
+  if [[ ${#paths[@]} -gt 0 ]]; then
+    pathspec_args=(-- "${paths[@]}")
+  fi
 
   check_git_repo
 
-  local stats_flag=""
-  local stats_only_flag=""
+  # Build delegate flags for show_unstaged_diff/show_staged_diff
+  local -a delegate_flags=()
   if ! $show_stats; then
-    stats_flag="--no-stats"
+    delegate_flags=(--no-stats)
   elif ! $show_patch; then
-    stats_only_flag="--stats-only"
+    delegate_flags=(--stats-only)
   fi
 
   # Track whether we showed each section for separator decision
@@ -352,22 +357,22 @@ show_combined_diff() {
   local showed_staged=false
 
   # Show unstaged diff
-  if [[ -n "$file" ]]; then
-    if ! git diff --quiet -- "$file" "${git_args[@]}" 2>/dev/null; then
-      show_unstaged_diff $stats_flag $stats_only_flag -- "$file" "${git_args[@]}"
+  if [[ ${#paths[@]} -gt 0 ]]; then
+    if ! git diff --quiet "${pathspec_args[@]+"${pathspec_args[@]}"}" 2>/dev/null; then
+      show_unstaged_diff "${delegate_flags[@]+"${delegate_flags[@]}"}" -- "${paths[@]}"
       showed_unstaged=true
     fi
   else
     if diff_has_unstaged_changes; then
-      show_unstaged_diff $stats_flag $stats_only_flag "${git_args[@]}"
+      show_unstaged_diff "${delegate_flags[@]+"${delegate_flags[@]}"}"
       showed_unstaged=true
     fi
   fi
 
   # Show separator only if both sections have content
   if $showed_unstaged; then
-    if [[ -n "$file" ]]; then
-      if ! git diff --cached --quiet -- "$file" "${git_args[@]}" 2>/dev/null; then
+    if [[ ${#paths[@]} -gt 0 ]]; then
+      if ! git diff --cached --quiet "${pathspec_args[@]+"${pathspec_args[@]}"}" 2>/dev/null; then
         show_diff_separator
         showed_staged=true
       fi
@@ -380,17 +385,17 @@ show_combined_diff() {
   fi
 
   # Show staged diff
-  if [[ -n "$file" ]]; then
-    if ! git diff --cached --quiet -- "$file" "${git_args[@]}" 2>/dev/null; then
+  if [[ ${#paths[@]} -gt 0 ]]; then
+    if ! git diff --cached --quiet "${pathspec_args[@]+"${pathspec_args[@]}"}" 2>/dev/null; then
       if $showed_staged || ! $showed_unstaged; then
-        show_staged_diff $stats_flag $stats_only_flag -- "$file" "${git_args[@]}"
+        show_staged_diff "${delegate_flags[@]+"${delegate_flags[@]}"}" -- "${paths[@]}"
         showed_staged=true
       fi
     fi
   else
     if diff_has_staged_changes; then
       if $showed_staged || ! $showed_unstaged; then
-        show_staged_diff $stats_flag $stats_only_flag "${git_args[@]}"
+        show_staged_diff "${delegate_flags[@]+"${delegate_flags[@]}"}"
         showed_staged=true
       fi
     fi
@@ -401,3 +406,146 @@ show_combined_diff() {
     info "No staged or unstaged changes."
   fi
 }
+
+################################################################################
+# Diff Command Setup — shared driver for su/ss/sw command scripts
+################################################################################
+
+# Shared argument processing for diff command scripts (git-su, git-ss, git-sw).
+# Handles: interactive -- check, parse_pathspecs, getopt, browse-root validation,
+#          interactive file selection, path building, and diff invocation.
+#
+# Usage: _diff_cmd_setup <diff_type> <select_mode> <prompt> "$@"
+#
+# Parameters:
+#   diff_type   - "unstaged" | "staged" | "combined"
+#   select_mode - "--unstaged" | "--staged" | "--staged --unstaged"
+#                 (space-separated string, split internally)
+#   prompt      - Prompt for interactive file selection
+#   "$@"        - Command-line arguments
+#
+# Exports (for caller inspection):
+#   stats_only    - boolean: true if --stat flag was given
+#   browse_root   - boolean: true if --browse-root flag was given
+#
+# This function calls exit(), so it never returns to the caller.
+_diff_cmd_setup() {
+  local diff_type="$1"; shift
+  local select_mode="$1"; shift
+  local prompt="$1"; shift
+
+  # 1. Check if last argument is bare '--' (interactive file selection trigger)
+  if [[ $# -gt 0 && "${!#}" = "--" ]]; then
+    export HUG_INTERACTIVE_FILE_SELECTION=true
+    set -- "${@:1:$(($# - 1))}"
+  fi
+
+  # 2. Split args at first '--' into flags vs pathspecs
+  eval "$(parse_pathspecs "$@")"
+
+  # 3. Parse only the flags (not pathspecs) using getopt
+  set +e
+  PARSED=$(getopt --options hqs --longoptions help,quiet,stat,browse-root \
+    --name "hug s${diff_type:0:1}" -- "${_pathspec_pre_args[@]}" 2>&1)
+  local getopt_status=$?
+  set -e
+  if [ $getopt_status -ne 0 ]; then
+    [ -n "$PARSED" ] && echo "$PARSED" >&2
+    exit 1
+  fi
+  eval set -- "$PARSED"
+
+  # 4. Process options
+  local stats_only=false
+  local browse_root=false
+  while true; do
+    case "$1" in
+      -h|--help) show_help; exit 0 ;;
+      -q|--quiet) export HUG_QUIET=T; shift ;;
+      -s|--stat) stats_only=true; shift ;;
+      --browse-root) browse_root=true; export HUG_INTERACTIVE_FILE_SELECTION=true; shift ;;
+      --) shift; break ;;
+      *) echo "Internal error in option parsing" >&2; exit 1 ;;
+    esac
+  done
+
+  # 5. Validate --browse-root without paths
+  if $browse_root && { [ $# -gt 0 ] || [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; }; then
+    error "--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection."
+    exit 1
+  fi
+
+  check_git_repo
+
+  # 6. Handle interactive file selection
+  if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
+    # Split select_mode into array
+    local -a select_opts=($select_mode)
+    if ! $browse_root; then
+      select_opts+=("--cwd")
+    fi
+    select_opts+=("--prompt" "$prompt")
+
+    local -a files=()
+    mapfile -t files < <(select_files_with_status "${select_opts[@]}" || true)
+    if [[ ${#files[@]} -eq 0 ]]; then
+      local mode_desc=""
+      case "$diff_type" in
+        unstaged) mode_desc="unstaged files" ;;
+        staged) mode_desc="staged files" ;;
+        combined) mode_desc="files with working directory changes" ;;
+      esac
+      info "No ${mode_desc} available or cancelled."
+      exit 0
+    fi
+    for file in "${files[@]}"; do
+      local diff_func="_diff_invoke_$diff_type"
+      if $stats_only; then
+        "$diff_func" --stats-only -- "$file"
+      else
+        "$diff_func" -- "$file"
+      fi
+    done
+    if [[ ${HUG_QUIET:-} != T ]]; then
+      git s
+    fi
+    exit 0
+  fi
+
+  # 7. Build paths: from pathspecs (raw, no GIT_PREFIX) or positional args
+  local -a paths=()
+  if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+    paths=("${_pathspec_pathspecs[@]}")
+  elif [[ $# -gt 0 ]]; then
+    test "${GIT_PREFIX:-}" || GIT_PREFIX=$(git rev-parse --show-prefix 2> /dev/null || echo "")
+    for p in "$@"; do
+      paths+=("${GIT_PREFIX}$p")
+    done
+  fi
+
+  # 8. Invoke the appropriate diff function
+  local diff_func="_diff_invoke_$diff_type"
+  if [[ ${#paths[@]} -eq 0 ]]; then
+    if $stats_only; then
+      "$diff_func" --stats-only
+    else
+      "$diff_func"
+    fi
+  else
+    if $stats_only; then
+      "$diff_func" --stats-only -- "${paths[@]}"
+    else
+      "$diff_func" -- "${paths[@]}"
+    fi
+  fi
+
+  if [[ ${HUG_QUIET:-} != T ]]; then
+    exec hug s
+  fi
+}
+
+# Thin dispatchers that delegate to the actual diff display functions.
+# These exist so _diff_cmd_setup can call them by name via _diff_invoke_$type.
+_diff_invoke_unstaged() { show_unstaged_diff "$@"; }
+_diff_invoke_staged() { show_staged_diff "$@"; }
+_diff_invoke_combined() { show_combined_diff "$@"; }
