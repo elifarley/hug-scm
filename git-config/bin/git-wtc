@@ -275,12 +275,19 @@ if [[ ! "$worktree_path" = /* ]]; then
   worktree_path="$(pwd)/$worktree_path"
 fi
 
+# Determine start-point label for display
+if [[ -n "$base" ]]; then
+  start_point_label="${YELLOW}(new, from $base)${NC}"
+else
+  start_point_label="${YELLOW}(new, from HEAD)${NC}"
+fi
+
 # --- DRY RUN ---
 if $dry_run; then
   echo >&2
   printf "${BLUE}Worktree Creation Preview (DRY RUN):${NC}\n" >&2
   if $branch_needs_creation; then
-    printf "  Branch: %s ${YELLOW}(new, from HEAD)${NC}\n" "$branch_name" >&2
+    printf "  Branch: %s %s\n" "$branch_name" "$start_point_label" >&2
   else
     printf "  Branch: %s\n" "$branch_name" >&2
   fi
@@ -294,7 +301,7 @@ fi
 echo >&2
 printf "${BLUE}Worktree Creation Summary:${NC}\n" >&2
 if $branch_needs_creation; then
-  printf "  Branch: %s ${YELLOW}(new, from HEAD)${NC}\n" "$branch_name" >&2
+  printf "  Branch: %s %s\n" "$branch_name" "$start_point_label" >&2
 else
   printf "  Branch: %s\n" "$branch_name" >&2
 fi
