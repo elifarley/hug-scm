@@ -14,10 +14,10 @@ USAGE:
   hug cm [OPTIONS]
 
 OPTIONS:
-  -m <"message">  Amend with a new commit message
+  -m <"message">  Amend replacing the commit message
   -C <commit>     Reuse commit message from specified commit
-  -c <commit>     Reuse and edit commit message from specified commit
-  --no-edit       Amend without changing the commit message
+  -c <commit>     Open editor with commit message from specified commit
+  --no-edit       Amend keeping the same commit message
   -h, --help     Show this help message and exit.
   (All other options are passed directly to 'git commit')
 
@@ -30,14 +30,20 @@ DESCRIPTION:
     - Fixing the commit message of the last commit
     - Making small adjustments to the last commit
 
+  TIP: Run 'hug sls' first to verify exactly what's staged before amending.
+  Use 'hug a' to stage or 'hug us' to unstage specific files.
+
+  TIP: Use --no-edit when the commit message is fine and you just want to add
+  staged changes. This avoids opening an editor.
+
   WARNING: This rewrites history. Only amend commits that have not been pushed
   to a shared repository.
 
 EXAMPLES:
-  hug cm -m "Better message"           # Amend last commit with new message
-  hug cm --no-edit                     # Amend without changing message
-  hug cm                               # Interactive amend (opens editor)
-  hug a file.txt && hug cm             # Stage file and amend to last commit
+  hug a file.txt && hug cm --no-edit  # Stage file, amend keeping message
+  hug a file.txt && hug cm -m "msg"   # Stage file, amend replacing message
+  hug cm --no-edit                    # Amend staged changes, keeping message
+  hug cm -m "Better message"          # Amend replacing message. If no staged changes, only the message changes.
 
 SEE ALSO:
   hug c  : Commit staged changes

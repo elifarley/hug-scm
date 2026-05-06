@@ -314,7 +314,7 @@ while [[ $# -gt 0 ]]; do
     show_all=true
     shift
     ;;
-  -b|--branch)
+  -b | --branch)
     if [[ -z "${2:-}" ]]; then
       error "-b/--branch requires a value"
       exit 1

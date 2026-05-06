@@ -35,10 +35,12 @@ DESCRIPTION:
   WARNING: This rewrites history. Only amend commits that have not been pushed
   to a shared repository.
 
+  TIP: Use --no-edit when the commit message is fine and you just want to add
+  tracked changes. This avoids opening an editor.
+
 EXAMPLES:
+  hug cma --no-edit                    # Amend all tracked, same message
   hug cma -m "Fixed typo"              # Amend with all tracked changes, new message
-  hug cma --no-edit                    # Amend without changing message
-  hug cma                              # Interactive amend (opens editor)
 
 SEE ALSO:
   hug c  : Commit staged changes
