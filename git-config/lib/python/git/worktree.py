@@ -433,6 +433,93 @@ def parse_worktree_list(
     return worktrees
 
 
+def filter_by_branch(
+    worktrees: list[WorktreeInfo],
+    branch_filters: list[str],
+) -> list[WorktreeInfo]:
+    """Filter worktrees by exact branch name match (OR logic).
+
+    When multiple branch filters are provided, a worktree matches if its branch
+    equals ANY of the filters (OR logic). This matches the behavior of
+    `hug wtl --branch f1 --branch f2`.
+
+    Empty filter list returns all worktrees (no filtering).
+
+    Args:
+        worktrees: Candidate worktrees to filter.
+        branch_filters: List of exact branch names to match against.
+
+    Returns:
+        Worktrees whose branch exactly matches at least one filter.
+    """
+    if not branch_filters:
+        return list(worktrees)
+    filter_set = set(branch_filters)
+    return [wt for wt in worktrees if wt.branch in filter_set]
+
+
+def filter_by_search(
+    worktrees: list[WorktreeInfo],
+    search_terms: list[str],
+) -> list[WorktreeInfo]:
+    """Filter worktrees by substring match on path or branch (OR logic).
+
+    Each term in search_terms is checked independently (OR logic). For each
+    worktree, if ANY term matches (case-insensitive) against EITHER the path
+    OR the branch, the worktree is included.
+
+    Empty or whitespace-only terms are stripped; if no terms remain after
+    stripping, all worktrees are returned (no filtering).
+
+    Args:
+        worktrees: Candidate worktrees to filter.
+        search_terms: List of individual search terms (one per --search flag).
+
+    Returns:
+        Worktrees matching at least one search term in path or branch.
+    """
+    if not search_terms:
+        return list(worktrees)
+    terms = [t.lower() for t in search_terms if t.strip()]
+    if not terms:
+        return list(worktrees)
+    result = []
+    for wt in worktrees:
+        path_lower = wt.path.lower()
+        branch_lower = (wt.branch or "").lower()
+        for term in terms:
+            if term in path_lower or term in branch_lower:
+                result.append(wt)
+                break
+    return result
+
+
+def filter_worktrees_by_criteria(
+    worktrees: list[WorktreeInfo],
+    branch_filters: list[str],
+    search_terms: list[str],
+) -> list[WorktreeInfo]:
+    """Apply both branch and search filters (AND logic between stages).
+
+    Stage 1: branch filter (exact match, OR between branches)
+    Stage 2: search filter (substring match, OR between terms)
+
+    Both stages must pass (AND logic). This matches the semantics of:
+    `hug wtl --branch main /home` — branch is "main" AND path contains "/home".
+
+    Args:
+        worktrees: Candidate worktrees to filter.
+        branch_filters: Exact branch names (OR logic within stage).
+        search_terms: Individual search terms (OR logic within stage).
+
+    Returns:
+        Worktrees passing both filter stages.
+    """
+    result = filter_by_branch(worktrees, branch_filters)
+    result = filter_by_search(result, search_terms)
+    return result
+
+
 def to_worktree_list(worktrees: list[WorktreeInfo]) -> WorktreeList:
     """Convert list of WorktreeInfo to WorktreeList for bash output.
 
@@ -576,8 +663,9 @@ def main():
     )
     json_parser.add_argument(
         "--search",
-        default="",
-        help="Search terms (substring match on path/branch, OR logic).",
+        action="append",
+        default=[],
+        help="Search term (substring match on path/branch, repeatable, OR logic).",
     )
 
     args = parser.parse_args()
@@ -683,23 +771,9 @@ def _handle_json_command(args):
         print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))
         return
 
-    # Apply filters if provided (inline to avoid circular import with worktree_select)
+    # Apply filters if provided
     if args.branch or args.search:
-        # Branch filter (exact match, OR logic)
-        if args.branch:
-            branch_set = set(args.branch)
-            worktrees = [wt for wt in worktrees if wt.branch in branch_set]
-
-        # Search filter (substring match, OR logic)
-        if args.search and args.search.strip() and worktrees:
-            terms = args.search.lower().split()
-            filtered = []
-            for wt in worktrees:
-                path_lower = wt.path.lower()
-                branch_lower = (wt.branch or "").lower()
-                if any(term in path_lower or term in branch_lower for term in terms):
-                    filtered.append(wt)
-            worktrees = filtered
+        worktrees = filter_worktrees_by_criteria(worktrees, args.branch, args.search)
 
     if not worktrees:
         print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))

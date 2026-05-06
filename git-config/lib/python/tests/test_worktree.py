@@ -16,14 +16,12 @@ from git.worktree import (
     WorktreeList,
     _bash_escape,
     _check_worktree_dirty_details,
-    format_indicators,
-    parse_worktree_list,
-    to_worktree_list,
-)
-from git.worktree_select import (
     filter_by_branch,
     filter_by_search,
     filter_worktrees_by_criteria,
+    format_indicators,
+    parse_worktree_list,
+    to_worktree_list,
 )
 
 ################################################################################
@@ -664,15 +662,15 @@ class TestFilterBySearch:
             WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
             WorktreeInfo(path="/p2", branch="feat", commit="def", is_dirty=False, is_locked=False),
         ]
-        result = filter_by_search(worktrees, "")
+        result = filter_by_search(worktrees, [])
         assert len(result) == 2
 
-    def test_whitespace_search_returns_all(self):
+    def test_whitespace_only_terms_stripped(self):
         """Should return all worktrees when search terms are only whitespace."""
         worktrees = [
             WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
         ]
-        result = filter_by_search(worktrees, "   ")
+        result = filter_by_search(worktrees, ["   "])
         assert len(result) == 1
 
     def test_substring_match_path(self):
@@ -689,7 +687,7 @@ class TestFilterBySearch:
                 path="/tmp/other", branch="main", commit="def", is_dirty=False, is_locked=False
             ),
         ]
-        result = filter_by_search(worktrees, "feature")
+        result = filter_by_search(worktrees, ["feature"])
         assert len(result) == 1
         assert "feature" in result[0].path
 
@@ -701,7 +699,7 @@ class TestFilterBySearch:
             ),
             WorktreeInfo(path="/p2", branch="main", commit="def", is_dirty=False, is_locked=False),
         ]
-        result = filter_by_search(worktrees, "auth")
+        result = filter_by_search(worktrees, ["auth"])
         assert len(result) == 1
         assert result[0].branch == "feature-auth"
 
@@ -712,7 +710,7 @@ class TestFilterBySearch:
                 path="/P1/Feature", branch="Main", commit="abc", is_dirty=False, is_locked=False
             ),
         ]
-        result = filter_by_search(worktrees, "feature")
+        result = filter_by_search(worktrees, ["feature"])
         assert len(result) == 1
 
     def test_or_logic_multiple_terms(self):
@@ -725,8 +723,23 @@ class TestFilterBySearch:
                 path="/tmp/path2", branch="feat", commit="def", is_dirty=False, is_locked=False
             ),
         ]
-        result = filter_by_search(worktrees, "home feat")
+        result = filter_by_search(worktrees, ["home", "feat"])
         assert len(result) == 2
+
+    def test_mixed_empty_and_valid_terms(self):
+        """Should strip empty/whitespace terms, keep valid ones."""
+        worktrees = [
+            WorktreeInfo(
+                path="/home/path1", branch="main", commit="abc", is_dirty=False, is_locked=False
+            ),
+            WorktreeInfo(
+                path="/tmp/path2", branch="feat", commit="def", is_dirty=False, is_locked=False
+            ),
+        ]
+        # Only "home" survives after stripping empties/whitespace
+        result = filter_by_search(worktrees, ["", "   ", "home"])
+        assert len(result) == 1
+        assert result[0].path == "/home/path1"
 
 
 ################################################################################
@@ -743,7 +756,7 @@ class TestFilterWorktreesByCriteria:
             WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
             WorktreeInfo(path="/p2", branch="feat", commit="def", is_dirty=False, is_locked=False),
         ]
-        result = filter_worktrees_by_criteria(worktrees, [], "")
+        result = filter_worktrees_by_criteria(worktrees, [], [])
         assert len(result) == 2
 
     def test_branch_and_search_and_logic(self):
@@ -772,7 +785,7 @@ class TestFilterWorktreesByCriteria:
             ),
         ]
         # Branch is "main" AND path contains "/home"
-        result = filter_worktrees_by_criteria(worktrees, ["main"], "/home")
+        result = filter_worktrees_by_criteria(worktrees, ["main"], ["/home"])
         assert len(result) == 1
         assert result[0].path == "/home/repo.WT.main"
 
@@ -782,7 +795,7 @@ class TestFilterWorktreesByCriteria:
             WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
             WorktreeInfo(path="/p2", branch="feat", commit="def", is_dirty=False, is_locked=False),
         ]
-        result = filter_worktrees_by_criteria(worktrees, ["feat"], "")
+        result = filter_worktrees_by_criteria(worktrees, ["feat"], [])
         assert len(result) == 1
         assert result[0].branch == "feat"
 
@@ -796,7 +809,7 @@ class TestFilterWorktreesByCriteria:
                 path="/tmp/path", branch="feat", commit="def", is_dirty=False, is_locked=False
             ),
         ]
-        result = filter_worktrees_by_criteria(worktrees, [], "/home")
+        result = filter_worktrees_by_criteria(worktrees, [], ["/home"])
         assert len(result) == 1
         assert result[0].path == "/home/path"
 

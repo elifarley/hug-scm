@@ -1095,35 +1095,37 @@ get_worktree_commit_time() {
 }
 
 # Output worktree information in JSON format
-# Usage: output_worktree_json "$current_worktree" "$search_terms" "$branch_filters_str"
+# Usage: output_worktree_json "$current_worktree" search_terms_ref branch_filters_ref
 # Parameters:
 #   $1 - Current worktree path
-#   $2 - Search terms (space-separated, substring matching)
-#   $3 - Branch filters (space-separated, exact matching, optional)
+#   $2 - Nameref: search_terms array (substring matching, one --search per element)
+#   $3 - Nameref: branch_filters array (exact matching, one --branch per element)
 # Returns: JSON formatted worktree data
 output_worktree_json() {
-    local current_worktree="$1"
-    local search_terms="$2"
-    local branch_filters_str="${3:-}"
+    local _oj_current="$1"
+    local -n _oj_search_ref="$2"
+    local -n _oj_branch_ref="$3"
 
     # WHY: Delegate to Python for JSON output (DRY — single source of truth).
     # Python's json module handles proper string escaping (quotes, backslashes,
     # unicode) that Bash printf cannot safely do, preventing malformed JSON.
     # The filtering is also done in Python via filter_worktrees_by_criteria().
 
-    # Build branch filter args
-    local -a branch_args=()
-    if [[ -n "$branch_filters_str" ]]; then
-        local -a branch_filters_arr=($branch_filters_str)
-        for b in "${branch_filters_arr[@]}"; do
-            branch_args+=(--branch "$b")
-        done
-    fi
+    # Build args by iterating arrays (one flag per element)
+    local -a _oj_args=()
+    local _oj_term
+    for _oj_term in "${_oj_search_ref[@]}"; do
+        _oj_args+=(--search "$_oj_term")
+    done
+    local _oj_branch
+    for _oj_branch in "${_oj_branch_ref[@]}"; do
+        _oj_args+=(--branch "$_oj_branch")
+    done
 
     python3 "$HUG_HOME/git-config/lib/python/git/worktree.py" json \
-        --current "$current_worktree" \
-        --search "$search_terms" \
-        "${branch_args[@]}"
+        --current "$_oj_current" \
+        --include-main \
+        "${_oj_args[@]}"
 }
 
 # Create branch if needed with proper prompts
@@ -1219,15 +1221,15 @@ branch_matches_any() {
 }
 
 # Filter worktrees by branch and/or search terms via Python
-# Usage: filter_worktrees paths_ref branches_ref commits_ref dirty_ref locked_ref branch_filters_str search_terms
-# Parameters (namerefs for output arrays, then filter values):
+# Usage: filter_worktrees paths_ref branches_ref commits_ref dirty_ref locked_ref branch_filters_ref search_terms_ref
+# Parameters (namerefs for output arrays, then namerefs for filter arrays):
 #   $1 - Nameref: array to receive filtered worktree paths
 #   $2 - Nameref: array to receive filtered branch names
 #   $3 - Nameref: array to receive filtered commit hashes
 #   $4 - Nameref: array to receive filtered dirty status (true/false)
 #   $5 - Nameref: array to receive filtered locked status (true/false)
-#   $6 - Branch filters (space-separated, exact match, OR logic). Empty = no filter.
-#   $7 - Search terms (substring match on path/branch, OR logic). Empty = no filter.
+#   $6 - Nameref: branch_filters array (exact match, OR logic). Empty = no filter.
+#   $7 - Nameref: search_terms array (substring match, OR logic). Empty = no filter.
 # Returns:
 #   0 if matches found, 1 if no matches (prints error to stderr)
 #
@@ -1235,9 +1237,9 @@ branch_matches_any() {
 # Each had an identical Python subprocess call + empty-result check + error message.
 # Centralizing here ensures consistent filtering semantics and error reporting.
 #
-# WHY namerefs: Python outputs `declare -a _wt_*` which creates function-local vars
-# when eval'd inside a function. We must copy to nameref targets before returning,
-# matching the pattern used by get_all_worktrees_including_main() (line 107).
+# WHY namerefs for filters: The previous design used space-separated strings, which
+# breaks on branch names containing spaces and hides the delimiter contract. Array
+# namerefs make the interface explicit and safe.
 #
 # PITFALL — nameref name collision: Callers must NOT pass variable names that match
 # our internal locals (e.g. _wt_paths). Bash namerefs resolve to the nearest scope,
@@ -1249,17 +1251,19 @@ filter_worktrees() {
     local -n _fw_commits_ref="$3"
     local -n _fw_dirty_ref="$4"
     local -n _fw_locked_ref="$5"
-    local _fw_branch_filters="${6:-}"
-    local _fw_search="${7:-}"
+    local -n _fw_branch_filters_ref="$6"
+    local -n _fw_search_ref="$7"
 
-    # Build branch filter args for Python
-    local -a _fw_branch_args=()
-    if [[ -n "$_fw_branch_filters" ]]; then
-        local _fw_b
-        for _fw_b in $_fw_branch_filters; do
-            _fw_branch_args+=(--branch "$_fw_b")
-        done
-    fi
+    # Build args by iterating arrays (one flag per element)
+    local -a _fw_python_args=()
+    local _fw_b
+    for _fw_b in "${_fw_branch_filters_ref[@]}"; do
+        _fw_python_args+=(--branch "$_fw_b")
+    done
+    local _fw_s
+    for _fw_s in "${_fw_search_ref[@]}"; do
+        _fw_python_args+=(--search "$_fw_s")
+    done
 
     # Delegate to Python (DRY — single source of truth for filter logic)
     # These are local arrays — must copy to namerefs before returning.
@@ -1267,8 +1271,7 @@ filter_worktrees() {
     local -a _wt_dirty_status=() _wt_locked_status=()
     if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/worktree_select.py" filter \
         --include-main \
-        --search "$_fw_search" \
-        "${_fw_branch_args[@]}")"; then
+        "${_fw_python_args[@]}")"; then
         return 1
     fi
 
@@ -1280,12 +1283,66 @@ filter_worktrees() {
     _fw_locked_ref=("${_wt_locked_status[@]}")
 
     if [[ ${#_fw_paths_ref[@]} -eq 0 ]]; then
+        # Build human-readable error from both filter arrays
         local _fw_desc=""
-        [[ -n "$_fw_branch_filters" ]] && _fw_desc="--branch $_fw_branch_filters"
-        [[ -n "$_fw_search" ]] && _fw_desc="${_fw_desc:+$_fw_desc }$_fw_search"
-        printf "No worktrees found matching: %s\n" "$_fw_desc" >&2
+        if [[ ${#_fw_branch_filters_ref[@]} -gt 0 ]]; then
+            _fw_desc="branch: $(IFS=', '; echo "${_fw_branch_filters_ref[*]}")"
+        fi
+        if [[ ${#_fw_search_ref[@]} -gt 0 ]]; then
+            _fw_desc="${_fw_desc:+$_fw_desc, }search: $(IFS=', '; echo "${_fw_search_ref[*]}")"
+        fi
+        printf "No worktrees found matching: %s\n" "${_fw_desc:-<none>}" >&2
         return 1
     fi
 
     return 0
+}
+
+# Parse worktree filter arguments shared by wtl, wtll, and wtsh.
+# Usage: parse_worktree_filter_args search_terms_ref branch_filters_ref [--] "$@"
+# Parameters:
+#   $1 - Nameref: array to receive positional search terms (substring, OR logic)
+#   $2 - Nameref: array to receive -b/--branch filters (exact, OR logic)
+#   Remaining args are the CLI arguments to parse
+#
+# Semantics (per wtl/wtll/wtsh redesign):
+#   Positional args → search_terms[] (case-insensitive substring match)
+#   -b, --branch    → branch_filters[] (case-sensitive exact match, repeatable)
+#
+# WHY: Eliminates ~25 duplicated arg-parsing lines across git-wtl, git-wtll,
+# and git-wtsh. All three commands share identical semantics for -b and positional
+# args; centralizing ensures consistency and prevents copy-paste drift.
+parse_worktree_filter_args() {
+    local -n _pfa_search_ref="$1"
+    local -n _pfa_branch_ref="$2"
+    shift 2
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        -b|--branch)
+            if [[ -z "${2:-}" ]]; then
+                error "-b/--branch requires a value"
+                exit 1
+            fi
+            _pfa_branch_ref+=("$2")
+            shift 2
+            ;;
+        --)
+            shift
+            # After --, remaining args are search terms
+            for _pfa_arg in "$@"; do
+                _pfa_search_ref+=("$_pfa_arg")
+            done
+            shift $#
+            ;;
+        -*)
+            error "Unknown option: $1"
+            exit 1
+            ;;
+        *)
+            _pfa_search_ref+=("$1")
+            shift
+            ;;
+        esac
+    done
 }
