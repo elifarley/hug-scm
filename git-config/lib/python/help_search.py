@@ -217,6 +217,27 @@ KEYWORD_SPECS = [
 ]
 
 
+# Intent mode (!) is a genuinely different scorer family from /keyword.
+# token_set_ratio ignores word order and tolerates extra words, which fits
+# natural-language queries like "!save my work in progress" where the user
+# isn't typing precise terms. Lower min_threshold (75 vs /keyword's 80-90)
+# because token_set_ratio scores higher on average for partial-token matches
+# — same precision target, calibrated to the scorer's distribution.
+INTENT_SPECS = [
+    MatchSpec(field="description", scorer=_token_set, weight=0.95, min_threshold=75, label="desc"),
+    MatchSpec(
+        field="category_desc",
+        scorer=_token_set,
+        weight=0.90,
+        min_threshold=75,
+        label="@cat-desc",
+    ),
+    MatchSpec(
+        field="keywords", scorer=_token_set, weight=0.80, min_threshold=75, label="keywords"
+    ),
+]
+
+
 def derive_command_name(filename: str) -> str:
     """Derive the canonical hug command from a script filename.
 
@@ -428,6 +449,23 @@ def search_keyword(
     return [item for _, item, _ in run_search(query, commands, specs or KEYWORD_SPECS)]
 
 
+def search_intent(
+    commands: list[CommandInfo],
+    query: str,
+    specs: list[MatchSpec] | None = None,
+) -> list[CommandInfo]:
+    """Phrase / intent search via INTENT_SPECS (token-aware scoring).
+
+    Multi-word queries like `save my work in progress` are scored with
+    token_set_ratio so word order doesn't matter and stopwords don't sink
+    the match. Different scorer family from /keyword on purpose — `!intent`
+    is the natural-language path; `/keyword` is the precision path.
+
+    Pass `specs` to override the default INTENT_SPECS (used by tests).
+    """
+    return [item for _, item, _ in run_search(query, commands, specs or INTENT_SPECS)]
+
+
 def search_category(commands: list[CommandInfo], query: str) -> list[CommandInfo]:
     """Find commands belonging to a specific category (fuzzy matched)."""
     if not query.strip():
@@ -501,14 +539,15 @@ def main():
         print(format_results(results))
 
     elif args.mode == "!":
-        # Intent mode uses same logic as keyword (searches description).
-        # Kept as separate sigil for API symmetry and future semantic search.
+        # Intent mode is now token-aware via INTENT_SPECS — distinct from
+        # /keyword's per-field precision scoring. T4 promoted ! from a
+        # /keyword alias to its own search path.
         if not args.query:
             print("Usage: hug help !<intent>")
             print("Find commands by what you want to accomplish.")
             print("Example: hug help !push to remote")
             return
-        results = search_keyword(commands, args.query)
+        results = search_intent(commands, args.query)
         print(f"Commands for '{args.query}':")
         print(format_results(results))
 

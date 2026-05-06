@@ -14,6 +14,7 @@ from help_search import (
     parse_description_from_help,
     run_search,
     search_category,
+    search_intent,
     search_keyword,
 )
 
@@ -642,3 +643,71 @@ class TestThefuzzFallback:
         cmd = CommandInfo(command="hug bpush", description="", categories=[])
         results = search_keyword([cmd], "xyzzy12345", specs=custom_specs)
         assert results == []
+
+
+class TestIntentMode:
+    """!intent uses token_set_ratio — distinct from /keyword's precision scorer.
+
+    Phrase queries like 'save my work' should match via token-set semantics:
+    word order ignored, extra words tolerated, stopwords don't sink the score.
+    """
+
+    @pytest.fixture
+    def commands(self):
+        return [
+            CommandInfo(
+                command="hug w wip",
+                description="Park work-in-progress aside.",
+                categories=["working-dir", "parking"],
+                keywords=["save", "shelve", "stash", "park", "wip"],
+                category_desc="Park work-in-progress aside and unpark it later.",
+            ),
+            CommandInfo(
+                command="hug bpush",
+                description="Push the current branch to origin.",
+                categories=["push-pull"],
+                keywords=["push", "send", "upload", "publish"],
+                category_desc="Sync the local repository with remotes.",
+            ),
+            CommandInfo(
+                command="hug w wipdel",
+                description="Discard a parked WIP commit (destructive).",
+                categories=["working-dir", "parking"],
+                keywords=["discard-wip", "delete-park"],
+                category_desc="Park work-in-progress aside and unpark it later.",
+            ),
+        ]
+
+    def test_intent_token_aware_finds_via_keyword(self, commands):
+        # "save my work" — "save" is a per-command keyword on hug w wip.
+        # token_set_ratio treats query words as a set; "save" alone is enough
+        # to score 100 against the keyword "save".
+        results = search_intent(commands, "save my work")
+        assert any(r.command == "hug w wip" for r in results)
+
+    def test_intent_word_order_independent(self, commands):
+        # token_set_ratio is word-order-agnostic. "remote push" should yield
+        # the same set of matches as "push remote" (order may differ, set same).
+        a = {r.command for r in search_intent(commands, "remote push")}
+        b = {r.command for r in search_intent(commands, "push remote")}
+        assert a == b
+
+    def test_intent_does_not_match_destructive_neighbor(self, commands):
+        # F3 again, this time via the !intent path: per-command keywords
+        # mean wipdel can't inherit "save" from a sibling.
+        results = search_intent(commands, "save my work")
+        cmds = [r.command for r in results]
+        assert "hug w wipdel" not in cmds, (
+            f"DESTRUCTIVE regression in !intent: 'hug w wipdel' surfaced for "
+            f"'save my work': {cmds}"
+        )
+
+    def test_intent_separate_from_keyword(self, commands):
+        # The two modes use different SPEC lists. INTENT_SPECS uses
+        # token_set_ratio; KEYWORD_SPECS uses ratio + partial + WRatio.
+        # Single-word query exercises both modes — just verifying they
+        # both work without raising.
+        kw = search_keyword(commands, "push")
+        intent = search_intent(commands, "push")
+        assert any(r.command == "hug bpush" for r in kw)
+        assert any(r.command == "hug bpush" for r in intent)
