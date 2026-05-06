@@ -391,3 +391,180 @@ class TestMatchSpec:
         ]
         results = search_keyword(cmds, "undo")
         assert any(r.command == "hug h undo" for r in results)
+
+
+class TestQueryScriptParsing:
+    """_query_script must parse both `category` and `keywords` from --search-meta.
+
+    Folded from T1.5 — ordering note: T1.5 was originally placed before T3
+    in the plan, but its parsing tests depend on the production change in T3
+    (extending _query_script to read the keywords line). Co-locating the
+    tests with the implementation here keeps TDD honest.
+    """
+
+    @pytest.fixture
+    def script_with_keywords(self, tmp_path):
+        script = tmp_path / "git-w-wip"
+        script.write_text(
+            "#!/usr/bin/env bash\n"
+            "test \"${1:-}\" = '--search-meta' && {\n"
+            "  printf 'category = [\"working-dir\", \"parking\"]\\n'\n"
+            "  printf 'keywords = [\"save\", \"shelve\", \"stash\"]\\n'\n"
+            "  exit 0\n"
+            "}\n"
+            "test \"${1:-}\" = '--help' && {\n"
+            "  printf 'hug w wip: Park work-in-progress aside.\\n'\n"
+            "  exit 0\n"
+            "}\n"
+        )
+        script.chmod(0o755)
+        return script
+
+    @pytest.fixture
+    def script_without_keywords(self, tmp_path):
+        script = tmp_path / "git-bc"
+        script.write_text(
+            "#!/usr/bin/env bash\n"
+            "test \"${1:-}\" = '--search-meta' && {\n"
+            "  printf 'category = [\"branching\"]\\n'\n"
+            "  exit 0\n"
+            "}\n"
+            "test \"${1:-}\" = '--help' && {\n"
+            "  printf 'hug bc: Create a new branch and switch to it.\\n'\n"
+            "  exit 0\n"
+            "}\n"
+        )
+        script.chmod(0o755)
+        return script
+
+    def test_parses_keywords_when_present(self, script_with_keywords):
+        from help_search import _query_script
+
+        result = _query_script(script_with_keywords)
+        assert result is not None
+        assert result["keywords"] == ["save", "shelve", "stash"]
+
+    def test_keywords_default_empty_when_absent(self, script_without_keywords):
+        # Graceful degradation: un-bootstrapped commands keep working.
+        from help_search import _query_script
+
+        result = _query_script(script_without_keywords)
+        assert result is not None
+        assert result["keywords"] == []
+
+    def test_categories_parsed_unchanged_with_or_without_keywords(
+        self, script_with_keywords, script_without_keywords
+    ):
+        from help_search import _query_script
+
+        a = _query_script(script_with_keywords)
+        b = _query_script(script_without_keywords)
+        assert a["categories"] == ["working-dir", "parking"]
+        assert b["categories"] == ["branching"]
+
+
+class TestKeywordSpecs:
+    """KEYWORD_SPECS scores against name + description + category_desc + keywords.
+
+    Verifies the precision-tuned spec list: per-command keywords surface
+    matches that pure description scoring would miss, while direct matches
+    on description/name still outrank category-only proxies.
+    """
+
+    @pytest.fixture
+    def commands(self):
+        # Hydrated by hand to avoid depending on the real categories/ TOMLs
+        # in tests. The shape mirrors what hydrate_category_fields produces.
+        return [
+            CommandInfo(
+                command="hug w wip",
+                description="Park work-in-progress aside.",
+                categories=["working-dir", "parking"],
+                keywords=["save", "shelve", "stash", "park", "wip"],
+                category_desc="Working tree operations. Park work aside and unpark later.",
+            ),
+            CommandInfo(
+                command="hug w wipdel",
+                description="Discard a parked WIP commit (destructive).",
+                categories=["working-dir", "parking"],
+                keywords=["discard-wip", "delete-park"],
+                category_desc="Working tree operations. Park work aside and unpark later.",
+            ),
+            CommandInfo(
+                command="hug b",
+                description="Switch to a branch.",
+                categories=["branching"],
+                keywords=["switch", "checkout", "change-branch"],
+                category_desc="Create, list, switch, and delete branches.",
+            ),
+        ]
+
+    def test_finds_via_per_command_keyword(self, commands):
+        # "save" appears nowhere in description or name — only in keywords.
+        results = search_keyword(commands, "save")
+        assert any(r.command == "hug w wip" for r in results)
+
+    def test_destructive_neighbor_NOT_matched_by_keyword(self, commands):
+        # F3 regression: wipdel must NOT inherit "save" from a sibling.
+        # Per-command keywords prevent this; if F3 ever regresses (e.g.,
+        # someone moves keywords back to the category layer), this fails.
+        results = search_keyword(commands, "save")
+        cmds = [r.command for r in results]
+        assert "hug w wipdel" not in cmds, (
+            f"DESTRUCTIVE regression — 'hug w wipdel' surfaced for query 'save': {cmds}"
+        )
+
+    def test_direct_match_outranks_category_only(self, commands):
+        # "branch" is a direct match for hug b's description AND a category
+        # keyword (in switch / change-branch). hug w wip has no direct match
+        # on "branch" at all. hug b should rank ahead.
+        results = search_keyword(commands, "branch")
+        assert results, "expected at least one match for 'branch'"
+        assert results[0].command == "hug b"
+
+    def test_typo_tolerance_via_partial(self, commands):
+        # name~ partial scorer at weight 0.95 should still catch "wpi" → wip.
+        # If this fails, the 0.95 weight tune may be too aggressive.
+        results = search_keyword(commands, "wip")
+        assert any(r.command == "hug w wip" for r in results)
+
+
+class TestHydrateCategoryFields:
+    """hydrate_category_fields populates category_desc from CategoryMeta."""
+
+    def test_joins_multiple_category_descriptions(self):
+        from category_meta import CategoryMeta
+        from help_search import hydrate_category_fields
+
+        cmds = [
+            CommandInfo(
+                command="hug bpush",
+                description="Push to origin.",
+                categories=["branching", "push-pull"],
+            ),
+        ]
+        cat_meta = {
+            "branching": CategoryMeta(
+                name="branching",
+                label="Branching",
+                description="Branch operations.",
+                summary="Branch operations.",
+            ),
+            "push-pull": CategoryMeta(
+                name="push-pull",
+                label="Remote sync",
+                description="Sync with remotes.",
+                summary="Sync with remotes.",
+            ),
+        }
+        hydrate_category_fields(cmds, cat_meta)
+        # Order matches command.categories order.
+        assert "Branch operations." in cmds[0].category_desc
+        assert "Sync with remotes." in cmds[0].category_desc
+
+    def test_skips_unknown_categories(self):
+        from help_search import hydrate_category_fields
+
+        cmds = [CommandInfo(command="x", categories=["ghost"])]
+        hydrate_category_fields(cmds, {})  # no manifest for "ghost"
+        assert cmds[0].category_desc == ""

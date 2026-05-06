@@ -21,7 +21,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Fuzzy matching: optional dependency with fallback
+# Fuzzy matching: optional dependency with substring-only fallback.
+# WHY four scorers: each searchable field has its own noise profile.
+#   _ratio        — strict full-string comparison; right for short curated keywords
+#   _partial      — substring partial match; right for short queries vs long names
+#   _wratio       — hybrid (length-normalised + token-aware); right for free-text descriptions
+#   _token_set    — token-set comparison; ignores word order; right for !intent phrases
 try:
     from thefuzz import fuzz as _fuzz
 
@@ -33,10 +38,26 @@ try:
         # Categories are short known strings; partial_ratio over-matches.
         return _fuzz.ratio(query.lower(), target.lower())
 
+    def _ratio(query: str, target: str) -> int:
+        return _fuzz.ratio(query.lower(), target.lower())
+
+    def _partial(query: str, target: str) -> int:
+        return _fuzz.partial_ratio(query.lower(), target.lower())
+
+    def _wratio(query: str, target: str) -> int:
+        return _fuzz.WRatio(query.lower(), target.lower())
+
+    def _token_set(query: str, target: str) -> int:
+        return _fuzz.token_set_ratio(query.lower(), target.lower())
+
     HAS_THEFUZZ = True
 except ImportError:
     HAS_THEFUZZ = False
 
+    # Substring-only fallback: 100 if query is a substring of target, else 0.
+    # Loses precision but keeps the binary search functional without thefuzz.
+    # Per-spec thresholds in KEYWORD_SPECS / INTENT_SPECS still filter via
+    # this binary signal — meaning "match" or "no match" with no in-between.
     def _fuzzy_score(query: str, target: str) -> int:
         q, t = query.lower(), target.lower()
         return 100 if q in t else 0
@@ -45,14 +66,31 @@ except ImportError:
         q, t = query.lower(), target.lower()
         return 100 if q == t else 0
 
+    def _ratio(query: str, target: str) -> int:
+        q, t = query.lower(), target.lower()
+        return 100 if q == t else 0
+
+    def _partial(query: str, target: str) -> int:
+        q, t = query.lower(), target.lower()
+        return 100 if q in t else 0
+
+    def _wratio(query: str, target: str) -> int:
+        q, t = query.lower(), target.lower()
+        return 100 if q in t else 0
+
+    def _token_set(query: str, target: str) -> int:
+        # Best-effort token check: 100 if every query word appears in target.
+        q_words = set(query.lower().split())
+        t_words = set(target.lower().split())
+        return 100 if q_words and q_words.issubset(t_words) else 0
+
 
 # Gateway prefixes: scripts matching git-{X}-* are dispatched through git-{X}
 GATEWAY_PREFIXES = {"h", "w"}
 
-# Minimum relevance score (0-100) to include in results
-# partial_ratio is loose (substring matching) so keywords need a higher bar.
-# ratio() is strict (full-string) so categories can use a lower bar.
-MIN_KEYWORD_SCORE = 70
+# Minimum relevance score for the @category fuzzy-match path.
+# /keyword and !intent now use per-spec thresholds in KEYWORD_SPECS / INTENT_SPECS.
+# Categories are short known strings; ratio() keeps a single global floor here.
 MIN_CATEGORY_SCORE = 60
 
 # Default paths
@@ -62,11 +100,19 @@ _DEFAULT_CACHE_DIR = "/tmp/cache/hug"
 
 @dataclass
 class CommandInfo:
-    """Metadata for a single hug command."""
+    """Metadata for a single hug command.
+
+    `keywords` is parsed directly from each script's `--search-meta` output
+    (per-command, NOT inherited from the category — see /autoplan F3).
+    `category_desc` is hydrated at search time from CategoryMeta.description
+    so it can be matched as a search field without re-loading the TOML.
+    """
 
     command: str = ""
     description: str = ""
     categories: list[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
+    category_desc: str = ""
 
 
 @dataclass(frozen=True)
@@ -137,26 +183,31 @@ def run_search(
     return out
 
 
-# Behavior-preserving spec list for the existing search_keyword API.
-# Subsequent tasks (T3) introduce KEYWORD_SPECS with per-field thresholds;
-# this LEGACY list keeps the original "max score across description and
-# command-name, single threshold" semantics so existing tests stay green
-# during the refactor. Removed when KEYWORD_SPECS lands.
-KEYWORD_SPECS_LEGACY = [
+# Per-spec thresholds: partial_ratio>=70 on a free-text description is a
+# noisier signal than ratio>=88 on a curated keyword. Each scorer carries
+# its own floor so we tighten precision on noisy fields without losing
+# recall on curated ones. Tune as a unit with the T11 quality corpus.
+#
+# Field semantics:
+#   command       — full hug command (e.g. "hug bpush"); ratio for exact-ish,
+#                   partial_ratio for substring (caught at lower weight)
+#   description   — free-text from --help; WRatio's hybrid scoring fits best
+#   category_desc — joined CategoryMeta.description; WRatio for prose
+#   keywords      — per-command curated terms; ratio for exact-ish only
+#                   (each keyword is a separate match unit, see _read_field)
+KEYWORD_SPECS = [
+    MatchSpec(field="command", scorer=_ratio, weight=1.00, min_threshold=90, label="name="),
+    # name~ weight tuned 0.85→0.95 during T3: at 0.85 a typo like "undoo"
+    # against "hug h undo" (partial_ratio=89) scaled to 75 — below floor
+    # 80 — losing recall on common typos. 0.95 keeps the down-weight intent
+    # ("partial is fuzzier than ratio") while maintaining typo tolerance:
+    # 89×0.95 ≈ 84.5 ≥ 80 passes; partial_ratio<84 still rejected.
+    MatchSpec(field="command", scorer=_partial, weight=0.95, min_threshold=80, label="name~"),
+    MatchSpec(field="description", scorer=_wratio, weight=0.90, min_threshold=80, label="desc"),
     MatchSpec(
-        field="description",
-        scorer=_fuzzy_score,
-        weight=1.0,
-        min_threshold=MIN_KEYWORD_SCORE,
-        label="desc",
+        field="category_desc", scorer=_wratio, weight=0.80, min_threshold=80, label="@cat-desc"
     ),
-    MatchSpec(
-        field="command",
-        scorer=_fuzzy_score,
-        weight=1.0,
-        min_threshold=MIN_KEYWORD_SCORE,
-        label="name",
-    ),
+    MatchSpec(field="keywords", scorer=_ratio, weight=0.95, min_threshold=88, label="keywords"),
 ]
 
 
@@ -215,6 +266,16 @@ def _query_script(script_path: Path) -> dict | None:
     if not categories:
         return None
 
+    # Parse per-command keywords (optional): keywords = ["...", "..."]
+    # Absent line → empty list, which gracefully degrades to description-only
+    # scoring for commands that haven't been bootstrapped (see T0.5).
+    keywords = []
+    kw_match = re.search(r"keywords\s*=\s*\[(.*?)\]", meta_text)
+    if kw_match:
+        keywords = [
+            k.strip().strip('"').strip("'") for k in kw_match.group(1).split(",") if k.strip()
+        ]
+
     # Extract description from --help
     description = ""
     try:
@@ -238,6 +299,7 @@ def _query_script(script_path: Path) -> dict | None:
         "command": derive_command_name(filename),
         "description": description,
         "categories": categories,
+        "keywords": keywords,
         "mtime": script_path.stat().st_mtime,
     }
 
@@ -263,8 +325,15 @@ def collect_metadata(
     bin_dir: str | Path,
     cache_dir: str | Path = _DEFAULT_CACHE_DIR,
     use_cache: bool = True,
+    cat_meta: dict | None = None,
 ) -> list[CommandInfo]:
-    """Collect metadata from all git-* scripts, using cache when possible."""
+    """Collect metadata from all git-* scripts, using cache when possible.
+
+    When `cat_meta` is supplied, each command's `category_desc` field is
+    hydrated from CategoryMeta.description for scoring against by the
+    `@cat-desc` spec. Pass None to skip hydration (tests that don't need
+    category descriptions, or environments where the manifests aren't loaded).
+    """
     bin_path = Path(bin_dir)
     cache_file = Path(cache_dir) / "search-meta.cache"
 
@@ -310,21 +379,47 @@ def collect_metadata(
                 command=data["command"],
                 description=data["description"],
                 categories=data["categories"],
+                keywords=data.get("keywords", []),
             )
         )
 
-    return sorted(commands, key=lambda c: c.command)
+    commands = sorted(commands, key=lambda c: c.command)
+    if cat_meta:
+        hydrate_category_fields(commands, cat_meta)
+    return commands
 
 
-def search_keyword(commands: list[CommandInfo], query: str) -> list[CommandInfo]:
-    """Fuzzy search across description + command name.
+def hydrate_category_fields(commands: list[CommandInfo], cat_meta: dict) -> None:
+    """Populate `category_desc` on each command from CategoryMeta.description.
 
-    Refactored to delegate to run_search via KEYWORD_SPECS_LEGACY so the
-    underlying scoring engine is shared between modes. Behavior is
-    preserved: same scorer, same threshold, same fields. T3 swaps the
-    LEGACY spec list for the precision-tuned KEYWORD_SPECS.
+    Multiple categories per command are joined with " " so a single MatchSpec
+    against `category_desc` scores across all of them. CategoryMeta keywords
+    are NOT joined into commands — keywords live per-command via the
+    `--search-meta` protocol, see /autoplan F3.
     """
-    return [item for _, item, _ in run_search(query, commands, KEYWORD_SPECS_LEGACY)]
+    for cmd in commands:
+        descs = []
+        for cat_name in cmd.categories:
+            meta = cat_meta.get(cat_name)
+            if meta is not None:
+                descs.append(meta.description)
+        cmd.category_desc = " ".join(descs)
+
+
+def search_keyword(
+    commands: list[CommandInfo],
+    query: str,
+    specs: list[MatchSpec] | None = None,
+) -> list[CommandInfo]:
+    """Precision search via KEYWORD_SPECS (per-field scorers + thresholds).
+
+    Each command is scored against five fields: command name (ratio + partial),
+    description, category description, and per-command keywords. The best
+    spec wins per command; results sort by score descending.
+
+    Pass `specs` to override the default KEYWORD_SPECS (used by tests).
+    """
+    return [item for _, item, _ in run_search(query, commands, specs or KEYWORD_SPECS)]
 
 
 def search_category(commands: list[CommandInfo], query: str) -> list[CommandInfo]:
