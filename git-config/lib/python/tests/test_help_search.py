@@ -568,3 +568,77 @@ class TestHydrateCategoryFields:
         cmds = [CommandInfo(command="x", categories=["ghost"])]
         hydrate_category_fields(cmds, {})  # no manifest for "ghost"
         assert cmds[0].category_desc == ""
+
+
+class TestThefuzzFallback:
+    """Pin the substring-only fallback contract used when thefuzz is absent.
+
+    The fallback functions (_fb_equal, _fb_substring, _fb_token_subset) are
+    exposed at module level so this test runs regardless of whether thefuzz
+    is installed. They're also the bindings used by _ratio/_partial/_wratio/
+    _token_set in the no-thefuzz code path. Pinning their behavior here
+    means a future contributor can't silently break the fallback.
+    """
+
+    def test_fb_equal_strict_match(self):
+        from help_search import _fb_equal
+
+        assert _fb_equal("undo", "undo") == 100
+        assert _fb_equal("UNDO", "undo") == 100  # case-insensitive
+        assert _fb_equal("undo", "h undo") == 0  # not equal — substring doesn't count
+        assert _fb_equal("", "") == 100
+        assert _fb_equal("undo", "") == 0
+
+    def test_fb_substring_match(self):
+        from help_search import _fb_substring
+
+        assert _fb_substring("undo", "h undo") == 100
+        assert _fb_substring("UNDO", "h undo") == 100  # case-insensitive
+        assert _fb_substring("xyz", "h undo") == 0
+        assert _fb_substring("", "anything") == 100  # "" is a substring of anything
+
+    def test_fb_token_subset(self):
+        from help_search import _fb_token_subset
+
+        # Every query word appears in target → 100.
+        assert _fb_token_subset("save work", "save my work in progress") == 100
+        # Word order doesn't matter (token-set semantics).
+        assert _fb_token_subset("work save", "save my work in progress") == 100
+        # Missing query word → 0.
+        assert _fb_token_subset("save delete", "save my work in progress") == 0
+        # Empty query → 0 (no signal to match on).
+        assert _fb_token_subset("", "anything") == 0
+
+    def test_search_via_fallback_specs(self):
+        # Build a custom MatchSpec that uses the fallback scorer directly,
+        # bypassing whichever thefuzz/no-thefuzz binding production uses.
+        from help_search import _fb_substring
+
+        custom_specs = [
+            MatchSpec(
+                field="command",
+                scorer=_fb_substring,
+                weight=1.0,
+                min_threshold=80,
+                label="fb",
+            ),
+        ]
+        cmd = CommandInfo(command="hug bpush", description="", categories=[])
+        results = search_keyword([cmd], "push", specs=custom_specs)
+        assert any(r.command == "hug bpush" for r in results)
+
+    def test_fallback_no_false_positive(self):
+        from help_search import _fb_substring
+
+        custom_specs = [
+            MatchSpec(
+                field="command",
+                scorer=_fb_substring,
+                weight=1.0,
+                min_threshold=80,
+                label="fb",
+            ),
+        ]
+        cmd = CommandInfo(command="hug bpush", description="", categories=[])
+        results = search_keyword([cmd], "xyzzy12345", specs=custom_specs)
+        assert results == []

@@ -27,6 +27,33 @@ from pathlib import Path
 #   _partial      — substring partial match; right for short queries vs long names
 #   _wratio       — hybrid (length-normalised + token-aware); right for free-text descriptions
 #   _token_set    — token-set comparison; ignores word order; right for !intent phrases
+#
+# Fallback functions are defined at module level (always present) so tests can
+# pin their behavior even when thefuzz is installed. The try/except picks
+# which set of names is bound for production use.
+
+
+def _fb_equal(query: str, target: str) -> int:
+    """Fallback for ratio/WRatio: 100 iff strings equal (case-insensitive)."""
+    return 100 if query.lower() == target.lower() else 0
+
+
+def _fb_substring(query: str, target: str) -> int:
+    """Fallback for partial_ratio: 100 iff query is a substring of target."""
+    return 100 if query.lower() in target.lower() else 0
+
+
+def _fb_token_subset(query: str, target: str) -> int:
+    """Fallback for token_set_ratio: 100 iff every query word appears in target.
+
+    Loses the partial-token tolerance the real scorer has, but pins a
+    predictable binary signal for the no-thefuzz path.
+    """
+    q_words = set(query.lower().split())
+    t_words = set(target.lower().split())
+    return 100 if q_words and q_words.issubset(t_words) else 0
+
+
 try:
     from thefuzz import fuzz as _fuzz
 
@@ -53,36 +80,15 @@ try:
     HAS_THEFUZZ = True
 except ImportError:
     HAS_THEFUZZ = False
-
-    # Substring-only fallback: 100 if query is a substring of target, else 0.
-    # Loses precision but keeps the binary search functional without thefuzz.
+    # Bind production names to the fallback functions defined above.
     # Per-spec thresholds in KEYWORD_SPECS / INTENT_SPECS still filter via
-    # this binary signal — meaning "match" or "no match" with no in-between.
-    def _fuzzy_score(query: str, target: str) -> int:
-        q, t = query.lower(), target.lower()
-        return 100 if q in t else 0
-
-    def _fuzzy_score_strict(query: str, target: str) -> int:
-        q, t = query.lower(), target.lower()
-        return 100 if q == t else 0
-
-    def _ratio(query: str, target: str) -> int:
-        q, t = query.lower(), target.lower()
-        return 100 if q == t else 0
-
-    def _partial(query: str, target: str) -> int:
-        q, t = query.lower(), target.lower()
-        return 100 if q in t else 0
-
-    def _wratio(query: str, target: str) -> int:
-        q, t = query.lower(), target.lower()
-        return 100 if q in t else 0
-
-    def _token_set(query: str, target: str) -> int:
-        # Best-effort token check: 100 if every query word appears in target.
-        q_words = set(query.lower().split())
-        t_words = set(target.lower().split())
-        return 100 if q_words and q_words.issubset(t_words) else 0
+    # the binary 0/100 signal — "match" or "no match" with no in-between.
+    _fuzzy_score = _fb_substring
+    _fuzzy_score_strict = _fb_equal
+    _ratio = _fb_equal
+    _partial = _fb_substring
+    _wratio = _fb_substring
+    _token_set = _fb_token_subset
 
 
 # Gateway prefixes: scripts matching git-{X}-* are dispatched through git-{X}
