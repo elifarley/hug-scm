@@ -9,16 +9,16 @@ show_help() {
 hug wtl: List worktrees in short format, showing branch, path, and status.
 
 USAGE:
-  hug wtl [OPTIONS] [branch...]
+  hug wtl [OPTIONS] [SEARCH_TERMS...]
 
 ARGUMENTS:
-  [branch...]         Filter by EXACT branch name (case-sensitive, OR logic)
+  [SEARCH_TERMS...]   Substring match on path or branch (case-insensitive, OR logic)
 
 OPTIONS:
   -h, --help          Show this help message and exit.
   -q, --quiet         Suppress legend line (listing still shown).
   --json              Output in JSON format instead of human-readable text.
-  -s, --search TERM   Filter by SUBSTRING match on path or branch (case-insensitive, repeatable, OR logic)
+  -b, --branch NAME   Filter by EXACT branch name (case-sensitive, repeatable, OR logic)
 
 DESCRIPTION:
   Displays each worktree sorted alphabetically. The current worktree is
@@ -32,13 +32,9 @@ DESCRIPTION:
     .  (inactive)
 
   Filtering:
-    Positional [branch]:  EXACT match, case-sensitive. Multiple = OR logic.
-    -s / --search TERM:   SUBSTRING match, case-insensitive. Multiple = OR logic.
+    Positional args:     SUBSTRING match, case-insensitive, OR logic.
+    -b / --branch NAME:  EXACT match, case-sensitive, repeatable, OR logic.
     Combined: Both filters must match (AND logic).
-
-  NOTE: Positional arguments and -s have different semantics:
-    hug wtl feature-1     # Exact branch name "feature-1" only
-    hug wtl -s feature    # Any branch/path containing "feature"
 
 CAPTURING OUTPUT:
   Listing lines go to stdout. Legend and errors go to stderr.
@@ -50,11 +46,11 @@ CAPTURING OUTPUT:
 
 EXAMPLES:
   hug wtl                       # List all worktrees
-  hug wtl feature-auth          # Exact branch "feature-auth"
-  hug wtl feat-1 feat-2         # Exact: "feat-1" OR "feat-2"
-  hug wtl -s feature            # Substring: anything containing "feature"
-  hug wtl -s auth -s api        # Substring: "auth" OR "api"
-  hug wtl feat-1 -s api         # Branch="feat-1" AND path/branch contains "api"
+  hug wtl feat                  # Substring: anything containing "feat"
+  hug wtl feat api              # Substring: "feat" OR "api"
+  hug wtl -b main               # Exact branch "main" only
+  hug wtl -b main -b dev        # Exact: "main" OR "dev"
+  hug wtl feat -b main          # Substring "feat" AND exact branch "main"
   hug wtl --json                # JSON output
 
 SEE ALSO:
@@ -77,29 +73,29 @@ while [[ $# -gt 0 ]]; do
     json_output=true
     shift
     ;;
-  -s | --search)
+  -b|--branch)
     if [[ -z "${2:-}" ]]; then
-      error "--search requires a value"
+      error "-b/--branch requires a value"
       exit 1
     fi
-    search_terms+=("$2")
+    branch_filters+=("$2")
     shift 2
     ;;
   --)
     shift
-    break
+    for arg in "$@"; do search_terms+=("$arg"); done
+    shift $#
+    ;;
+  -*)
+    error "Unknown option: $1"
+    exit 1
     ;;
   *)
-    # Treat non-flag arguments as branch names (exact match)
-    branch_filters+=("$1")
+    search_terms+=("$1")
     shift
     ;;
   esac
 done
-
-# Convert arrays to space-separated strings for passing to functions
-branch_filters_str="${branch_filters[*]:-}"
-search_terms_str="${search_terms[*]:-}"
 
 # Early exit if not in Git repo
 check_git_repo
@@ -107,7 +103,7 @@ check_git_repo
 # JSON output mode
 if $json_output; then
   current_worktree=$(get_current_worktree_path)
-  output_worktree_json "$current_worktree" "$search_terms_str" "$branch_filters_str"
+  output_worktree_json "$current_worktree" search_terms branch_filters
   exit 0
 fi
 
@@ -125,10 +121,10 @@ current_worktree=$(get_current_worktree_path)
 print_worktree_legend
 
 # Build and print worktree list
-if [[ -n "$branch_filters_str" || -n "$search_terms_str" ]]; then
+if [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
   declare -a filtered_paths=() filtered_branches=() filtered_commits=()
   declare -a filtered_dirty=() filtered_locked=()
-  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked "$branch_filters_str" "$search_terms_str"; then
+  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked branch_filters search_terms; then
     exit 1
   fi
 

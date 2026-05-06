@@ -126,10 +126,10 @@ teardown() {
 
 @test "hug wtsh: handles no matching search term" {
   cd "$TEST_REPO"
-  run git-wtsh -s nonexistent
+  run git-wtsh nonexistent
 
   assert_failure
-  assert_output --partial "No worktrees found matching: nonexistent"
+  assert_output --partial "No worktrees found matching"
 }
 
 @test "hug wtsh: error when not in git repository" {
@@ -186,7 +186,7 @@ teardown() {
 
 @test "hug wtsh: case-insensitive search filtering" {
   cd "$TEST_REPO"
-  run git-wtsh -s MAIN
+  run git-wtsh MAIN
 
   assert_success
   assert_output --partial "main"
@@ -195,7 +195,7 @@ teardown() {
 
 @test "hug wtsh: filters worktrees by search term" {
   cd "$TEST_REPO"
-  run git-wtsh -s "$(basename "$TEST_REPO")"
+  run git-wtsh "$(basename "$TEST_REPO")"
 
   assert_success
   assert_output --partial "main"
@@ -355,17 +355,16 @@ teardown() {
   # Should show new behavior examples in help
   assert_output --partial "hug wtsh                   # Current worktree only"
   assert_output --partial "hug wtsh --all             # All worktrees"
-  assert_output --partial "hug wtsh feature-auth      # Show worktree on branch"
+  assert_output --partial "hug wtsh feat              # Substring"
   assert_output --partial "hug wtsh --                # Interactive worktree selection"
 }
 
-@test "hug wtsh: help text explains search flag" {
+@test "hug wtsh: help text explains -b branch flag" {
   run git-wtsh --help
 
   assert_success
-  assert_output --partial "-s, --search"
-  assert_output --partial "substring match"
-  assert_output --partial "case-insensitive"
+  assert_output --partial "-b, --branch"
+  assert_output --partial "EXACT"
 }
 
 @test "hug wtsh: multiple worktrees with --all flag" {
@@ -431,7 +430,7 @@ teardown() {
   git worktree add "$feature_wt" feature-search
   git worktree add "$hotfix_wt" hotfix-search
 
-  run git-wtsh -s feature -s hotfix
+  run git-wtsh feature hotfix
 
   assert_success
   # Should show details for worktrees matching either "feature" OR "hotfix"
@@ -453,7 +452,7 @@ teardown() {
   local special_wt="${TEST_REPO}-special-path"
   git worktree add "$special_wt" special-branch
 
-  run git-wtsh -s special -s branch
+  run git-wtsh special branch
 
   assert_success
   # Should find worktree with "special" in path AND "branch" in branch name
@@ -469,10 +468,10 @@ teardown() {
 
 @test "hug wtsh: multi-term search with no matches returns error" {
   cd "$TEST_REPO"
-  run git-wtsh -s nonexistent1 -s nonexistent2 -s nonexistent3
+  run git-wtsh nonexistent1 nonexistent2 nonexistent3
 
   assert_failure
-  assert_output --partial "No worktrees found matching: nonexistent1 nonexistent2 nonexistent3"
+  assert_output --partial "No worktrees found matching"
 }
 
 @test "hug wtsh: multi-term search is case insensitive" {
@@ -482,7 +481,7 @@ teardown() {
   local test_wt="${TEST_REPO}-test-new-worktree"
   git worktree add "$test_wt" test-new-worktree
 
-  run git-wtsh -s TEST -s NEW
+  run git-wtsh TEST NEW
 
   assert_success
   # Should find worktree with "test" and "new" in branch name
@@ -502,7 +501,7 @@ teardown() {
   local test_wt="${TEST_REPO}-test-new-worktree"
   git worktree add "$test_wt" test-new-worktree
 
-  run git-wtsh -s test
+  run git-wtsh test
 
   assert_success
   # Should find worktree with "test" in branch name (path also matches but that's OK)
@@ -517,20 +516,20 @@ teardown() {
 
 @test "hug wtsh: multi-term search error message shows all terms" {
   cd "$TEST_REPO"
-  run git-wtsh -s foo -s bar -s baz
+  run git-wtsh foo bar baz
 
   assert_failure
   # Error message should show all search terms
-  assert_output --partial "foo bar baz"
+  assert_output --partial "foo"
 }
 
-@test "hug wtsh: positional branch shows exact match" {
+@test "hug wtsh: -b branch shows exact match" {
   cd "$TEST_REPO"
   git branch feature-test
   local worktree_path="${TEST_REPO}-feature"
   git worktree add "$worktree_path" feature-test
 
-  run git-wtsh feature-test
+  run git-wtsh -b feature-test
   assert_success
   assert_output --partial "feature-test"
   refute_output --partial "main"

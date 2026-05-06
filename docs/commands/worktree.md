@@ -60,20 +60,28 @@ hug wt --json             # Output worktree information in JSON format
 Lists worktrees in a compact, scannable format.
 
 ```bash
-hug wtl [OPTIONS] [SEARCH_TERM]
+hug wtl [OPTIONS] [SEARCH_TERMS...]
 ```
 
 **Options:**
 - `-h, --help`: Show help message
 - `--json`: Output in JSON format
+- `-q, --quiet`: Suppress legend line
+- `-b, --branch NAME`: Filter by exact branch name (repeatable, OR logic)
+
+**Filtering:**
+- Positional args: substring match on path or branch (case-insensitive, OR logic)
+- `-b, --branch`: exact match on branch name (case-sensitive, repeatable, OR logic)
+- Combined: both filters must match (AND logic)
 
 **Examples:**
 ```bash
 hug wtl                              # List all worktrees
-hug wtl feature                      # Show worktrees containing "feature"
-hug wtl feature auth                 # Show worktrees with "feature" OR "auth"
-hug wtl bug fix                       # Show worktrees with "bug" OR "fix"
-hug wtl /home/user/project           # Show worktrees containing that path
+hug wtl feature                      # Substring: worktrees containing "feature"
+hug wtl feature auth                 # Substring: "feature" OR "auth"
+hug wtl -b main                      # Exact branch "main" only
+hug wtl -b main -b dev               # Exact: "main" OR "dev"
+hug wtl feat -b main                 # Substring "feat" AND exact branch "main"
 hug wtl --json                       # Output in JSON format
 ```
 
@@ -92,19 +100,20 @@ Worktrees:
 Lists worktrees with detailed information including commit subjects.
 
 ```bash
-hug wtll [OPTIONS] [SEARCH_TERM]
+hug wtll [OPTIONS] [SEARCH_TERMS...]
 ```
 
 **Options:**
 - `-h, --help`: Show help message
 - `--json`: Output in JSON format
+- `-b, --branch NAME`: Filter by exact branch name (repeatable, OR logic)
 
 **Examples:**
 ```bash
 hug wtll                             # List all worktrees with details
-hug wtll feature                     # Show worktrees containing "feature"
-hug wtll feature auth                # Show worktrees with "feature" OR "auth"
-hug wtll bug fix                     # Show worktrees with "bug" OR "fix"
+hug wtll feature                     # Substring: worktrees containing "feature"
+hug wtll feature auth                # Substring: "feature" OR "auth"
+hug wtll -b main                     # Exact branch "main" only
 hug wtll --json                      # Output detailed information in JSON format
 ```
 
@@ -127,13 +136,14 @@ Worktrees (long format):
 Displays detailed information about worktrees in a comprehensive, readable format with tree-style layout.
 
 ```bash
-hug wtsh [OPTIONS] [SEARCH_TERM]
+hug wtsh [OPTIONS] [SEARCH_TERMS...]
 hug wtsh --           # Interactive worktree selection
 ```
 
 **Options:**
 - `-h, --help`: Show help message
 - `-a, --all`: Show all worktrees (preserves current behavior)
+- `-b, --branch NAME`: Filter by exact branch name (repeatable, OR logic)
 
 **Behavior:**
 
@@ -149,8 +159,9 @@ hug wtsh --           # Interactive worktree selection
   Uses gum filter for enhanced selection when available.
 
 **SEARCH TERMS:**
-  Filter worktrees by path or branch name (case-insensitive).
-  Supports multiple search terms with OR logic.
+  Positional args: substring match on path or branch (case-insensitive, OR logic)
+  `-b, --branch`: exact match on branch name (case-sensitive, repeatable, OR logic)
+  Combined: both filters must match (AND logic)
 
 **Examples:**
 ```bash
@@ -159,12 +170,17 @@ hug wtsh --all             # All worktrees (preserves current behavior)
 hug wtsh -a                # All worktrees (short alias for --all)
 hug wtsh --                # Interactive worktree selection
 
-# Multi-term search examples
-hug wtsh feature           # Search by single term
-hug wtsh feature auth      # Search for worktrees with "feature" OR "auth"
-hug wtsh bug fix           # Search for worktrees with "bug" OR "fix"
-hug wtsh /path/to/project  # Search by specific path
-hug wtsh project home     # Search for worktrees with "project" OR "home"
+# Substring search (positional args)
+hug wtsh feature           # Substring: worktrees containing "feature"
+hug wtsh feature auth      # Substring: "feature" OR "auth"
+hug wtsh /path/to/project  # Substring: match by path
+
+# Exact branch filtering
+hug wtsh -b main           # Exact branch "main" only
+hug wtsh -b main -b dev    # Exact: "main" OR "dev"
+
+# Combined (AND logic)
+hug wtsh feat -b main      # Substring "feat" AND exact branch "main"
 ```
 
 **Output Format:**
@@ -218,9 +234,10 @@ Worktrees (3 total)
 - Worktree configuration (locked, detached state)
 
 **Search Filtering:**
-- Case-insensitive matching on worktree paths and branch names
-- Shows details for all matching worktrees
-- Error if no worktrees match the search term
+- Positional args: substring match on path or branch (case-insensitive, OR logic)
+- `-b, --branch`: exact match on branch name (case-sensitive, repeatable, OR logic)
+- Combined: both filters must match (AND logic)
+- Error if no worktrees match the filters
 
 ```
 

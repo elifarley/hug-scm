@@ -11,16 +11,16 @@ show_help() {
 hug wtsh: Show detailed information about worktrees.
 
 USAGE:
-  hug wtsh [OPTIONS] [branch...]
+  hug wtsh [OPTIONS] [SEARCH_TERMS...]
   hug wtsh --           # Interactive worktree selection
 
 ARGUMENTS:
-  [branch...]         Filter by exact branch name (case-sensitive, OR logic)
+  [SEARCH_TERMS...]   Substring match on path or branch (case-insensitive, OR logic)
 
 OPTIONS:
   -h, --help          Show this help message and exit.
   -a, --all           Show all worktrees
-  -s, --search TERM   Filter by substring match on path or branch (case-insensitive, repeatable, OR logic)
+  -b, --branch NAME   Filter by EXACT branch name (case-sensitive, repeatable, OR logic)
 
 DESCRIPTION:
   Displays detailed information about worktrees with flexible viewing options:
@@ -31,14 +31,13 @@ DESCRIPTION:
   --all FLAG:
     Shows details for ALL worktrees.
 
-  BRANCH NAME (positional):
-    Filter by exact branch name match (case-sensitive).
-    Multiple branches use OR logic.
-
-  -s / --search:
+  Positional args:
     Case-insensitive substring match on path or branch name.
-    Multiple -s flags use OR logic.
-    Combined with branch: AND logic between both filter stages.
+    Multiple terms use OR logic.
+
+  -b / --branch NAME:
+    Exact branch name match (case-sensitive), repeatable, OR logic.
+    Combined with search terms: AND logic between both filter stages.
 
   -- (interactive mode):
     Presents an interactive menu to select which worktree to display.
@@ -52,9 +51,9 @@ CAPTURING OUTPUT:
 EXAMPLES:
   hug wtsh                   # Current worktree only
   hug wtsh --all             # All worktrees
-  hug wtsh feature-auth      # Show worktree on branch "feature-auth" (exact match)
-  hug wtsh feat-1 feat-2     # Show worktrees on "feat-1" OR "feat-2"
-  hug wtsh -s auth            # Substring search for "auth"
+  hug wtsh feat              # Substring: anything containing "feat"
+  hug wtsh -b feature-auth   # Exact branch "feature-auth" only
+  hug wtsh -b main -b dev    # Exact: "main" OR "dev"
   hug wtsh --                # Interactive worktree selection
 
 SEE ALSO:
@@ -306,7 +305,7 @@ eval "$(parse_common_flags "$@")"
 # Initialize behavior flags
 show_all=false
 declare -a branch_filters=()
-declare -a search_terms_list=()
+declare -a search_terms=()
 
 # Parse custom flags
 while [[ $# -gt 0 ]]; do
@@ -315,17 +314,22 @@ while [[ $# -gt 0 ]]; do
     show_all=true
     shift
     ;;
-  -s | --search)
+  -b|--branch)
     if [[ -z "${2:-}" ]]; then
-      error "--search requires a value"
+      error "-b/--branch requires a value"
       exit 1
     fi
-    search_terms_list+=("$2")
+    branch_filters+=("$2")
     shift 2
     ;;
   -h | --help)
     show_help
     exit 0
+    ;;
+  --)
+    shift
+    for arg in "$@"; do search_terms+=("$arg"); done
+    shift $#
     ;;
   -*)
     error "Unknown option: $1"
@@ -333,8 +337,7 @@ while [[ $# -gt 0 ]]; do
     exit 1
     ;;
   *)
-    # Treat non-flag arguments as branch names (exact match)
-    branch_filters+=("$1")
+    search_terms+=("$1")
     shift
     ;;
   esac
@@ -362,21 +365,17 @@ if ! get_all_worktrees_including_main worktree_paths branches commits status_dir
   exit 1
 fi
 
-# Build filter strings
-branch_filters_str="${branch_filters[*]:-}"
-search_terms_str="${search_terms_list[*]:-}"
-
 # Handle different command modes
 if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" == "true" ]]; then
   interactive_worktree_selection "$current_worktree" "${worktree_paths[@]}"
-elif [[ "$show_all" == "false" && -z "$branch_filters_str" && -z "$search_terms_str" ]]; then
+elif [[ "$show_all" == "false" && ${#branch_filters[@]} -eq 0 && ${#search_terms[@]} -eq 0 ]]; then
   # Default: show current worktree only
   show_current_worktree_only "$current_worktree"
-elif [[ -n "$branch_filters_str" || -n "$search_terms_str" ]]; then
+elif [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
   # Filtering by branch names and/or search terms
   declare -a filtered_paths=() filtered_branches=() filtered_commits=()
   declare -a filtered_dirty=() filtered_locked=()
-  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked "$branch_filters_str" "$search_terms_str"; then
+  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked branch_filters search_terms; then
     exit 1
   fi
 

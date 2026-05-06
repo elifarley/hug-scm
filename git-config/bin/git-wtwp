@@ -17,7 +17,7 @@ DESCRIPTION:
   Displays worktrees that are checked out to the specified branch(es).
   Multiple branches can be specified (OR logic: worktrees on any of the branches).
 
-  This is equivalent to: hug wtl <branch1> <branch2> ...
+  This is equivalent to: hug wtl -b <branch1> -b <branch2> ...
 
 EXAMPLES:
   hug wtwp main                 # List worktrees on branch "main"
@@ -40,8 +40,16 @@ case "${1:-}" in
   ;;
 esac
 
-# Delegate directly to git-wtl — positional args are already branch names
+# Convert positional branch names to -b flags and delegate to git-wtl
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 
-exec "${CMD_BASE}/git-wtl" "$@"
+declare -a wtl_args=()
+for arg in "$@"; do
+  case "$arg" in
+  --json) wtl_args+=("$arg") ;;
+  *) wtl_args+=(-b "$arg") ;;
+  esac
+done
+
+exec "${CMD_BASE}/git-wtl" "${wtl_args[@]}"

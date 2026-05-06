@@ -11,15 +11,15 @@ show_help() {
 hug wtll: List worktrees in long format, showing path, branch, commit subject, and detailed status.
 
 USAGE:
-  hug wtll [OPTIONS] [branch...]
+  hug wtll [OPTIONS] [SEARCH_TERMS...]
 
 ARGUMENTS:
-  [branch...]         Filter by exact branch name (case-sensitive, OR logic)
+  [SEARCH_TERMS...]   Substring match on path or branch (case-insensitive, OR logic)
 
 OPTIONS:
   -h, --help          Show this help message and exit.
   --json              Output in JSON format instead of human-readable text.
-  -s, --search TERM   Filter by substring match on path or branch (case-insensitive, repeatable, OR logic)
+  -b, --branch NAME   Filter by EXACT branch name (case-sensitive, repeatable, OR logic)
 
 DESCRIPTION:
   Displays each worktree sorted alphabetically. The current worktree is highlighted in green.
@@ -33,9 +33,9 @@ DESCRIPTION:
     .  (inactive)
 
   Filtering:
-    - Branch (positional): Exact match, case-sensitive. Multiple = OR logic.
-    - -s / --search: Case-insensitive substring match on path or branch. Multiple = OR logic.
-    - Combined: Both filters must match (AND logic)
+    Positional args:     SUBSTRING match, case-insensitive, OR logic.
+    -b / --branch NAME:  EXACT match, case-sensitive, repeatable, OR logic.
+    Combined: Both filters must match (AND logic).
 
 CAPTURING OUTPUT:
   Listing lines go to stdout. Headers and legends go to stderr.
@@ -47,11 +47,10 @@ CAPTURING OUTPUT:
 
 EXAMPLES:
   hug wtll                       # List all worktrees in long format
-  hug wtll feature-auth          # List worktrees on branch "feature-auth" (exact match)
-  hug wtll feat-1 feat-2         # List worktrees on "feat-1" OR "feat-2"
-  hug wtll -s feature            # List worktrees containing "feature" (substring)
-  hug wtll -s auth -s api        # Substring search: "auth" OR "api"
-  hug wtll feat-1 -s api         # Branch is "feat-1" AND path/branch contains "api"
+  hug wtll feat                  # Substring: anything containing "feat"
+  hug wtll -b feature-auth       # Exact branch "feature-auth" only
+  hug wtll -b main -b dev        # Exact: "main" OR "dev"
+  hug wtll feat -b main          # Substring "feat" AND exact branch "main"
   hug wtll --json                # Output worktree information in JSON format
 
 SEE ALSO:
@@ -71,29 +70,33 @@ while [[ $# -gt 0 ]]; do
     json_output=true
     shift
     ;;
-  -s | --search)
+  -b|--branch)
     if [[ -z "${2:-}" ]]; then
-      error "--search requires a value"
+      error "-b/--branch requires a value"
       exit 1
     fi
-    search_terms+=("$2")
+    branch_filters+=("$2")
     shift 2
     ;;
-  -h | --help)
+  -h|--help)
     show_help
     exit 0
     ;;
+  --)
+    shift
+    for arg in "$@"; do search_terms+=("$arg"); done
+    shift $#
+    ;;
+  -*)
+    error "Unknown option: $1"
+    exit 1
+    ;;
   *)
-    # Treat non-flag arguments as branch names (exact match)
-    branch_filters+=("$1")
+    search_terms+=("$1")
     shift
     ;;
   esac
 done
-
-# Convert arrays to space-separated strings for passing to functions
-branch_filters_str="${branch_filters[*]:-}"
-search_terms_str="${search_terms[*]:-}"
 
 # Early exit if not in Git repo
 check_git_repo
@@ -102,7 +105,7 @@ check_git_repo
 if $json_output; then
   # Get current worktree path for JSON
   current_worktree=$(get_current_worktree_path)
-  output_worktree_json "$current_worktree" "$search_terms_str" "$branch_filters_str"
+  output_worktree_json "$current_worktree" search_terms branch_filters
   exit 0
 fi
 
@@ -124,13 +127,13 @@ printf "${BLUE}Worktrees (long format):%s${NC}\n" "" >&2
 print_worktree_legend
 
 # Use Python for filtering when branch filters or search terms are provided
-if [[ -n "$branch_filters_str" || -n "$search_terms_str" ]]; then
+if [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
   # Output arrays for filter_worktrees (nameref pattern).
   # IMPORTANT: Must NOT use names that collide with the function's internal
   # _wt_* locals — Bash namerefs resolve to the nearest scope first.
   declare -a filtered_paths=() filtered_branches=() filtered_commits=()
   declare -a filtered_dirty=() filtered_locked=()
-  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked "$branch_filters_str" "$search_terms_str"; then
+  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked branch_filters search_terms; then
     exit 1
   fi
 
