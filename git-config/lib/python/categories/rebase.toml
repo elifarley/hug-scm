@@ -1,0 +1,5 @@
+label       = "Rebase"
+description = """
+Replay commits onto another base.
+Continue, abort, or finish an in-progress rebase.
+"""

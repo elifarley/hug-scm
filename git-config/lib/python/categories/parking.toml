@@ -1,0 +1,5 @@
+label       = "Work-in-progress parking"
+description = """
+Park work-in-progress aside and unpark it later.
+Like a stash, but tracked as commits on a parking branch.
+"""

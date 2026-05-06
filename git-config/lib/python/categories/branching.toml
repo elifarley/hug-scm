@@ -1,0 +1,6 @@
+label       = "Branch operations"
+description = """
+Create, list, switch, and delete branches.
+Branches let you work on parallel lines of development without
+conflicting with shared code.
+"""

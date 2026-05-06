@@ -1,0 +1,4 @@
+label       = "Garbage collection"
+description = """
+Repository garbage collection and storage compaction.
+"""

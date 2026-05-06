@@ -1,0 +1,6 @@
+label       = "Commits"
+description = """
+Create, modify, and rewrite commits.
+Commits are atomic snapshots of work; amending and cherry-picking
+let you reshape history before sharing.
+"""

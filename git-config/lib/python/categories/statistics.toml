@@ -1,0 +1,4 @@
+label       = "Repository statistics"
+description = """
+Aggregate statistics about authorship, churn, and branch activity.
+"""
