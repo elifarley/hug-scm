@@ -17,6 +17,7 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -66,6 +67,97 @@ class CommandInfo:
     command: str = ""
     description: str = ""
     categories: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class MatchSpec:
+    """One scoring rule: which field of an item to read, how to score against
+    the query, what weight to apply, and what minimum threshold to require.
+
+    The `field` is read via getattr; for list-valued fields (e.g. categories),
+    each entry is scored independently — see `_read_field`. The `label` is
+    used by --explain output to show why a result matched.
+    """
+
+    field: str
+    scorer: Callable[[str, str], int]
+    weight: float
+    min_threshold: int
+    label: str
+
+
+def _read_field(item, field_name: str) -> list[str]:
+    """Return zero or more strings for `field_name` on `item`.
+
+    For composite fields (list-valued), returns each entry so each gets
+    independently scored. Strings return a single-element list. Anything
+    else returns []. Empty strings inside lists are skipped at scoring time.
+    """
+    val = getattr(item, field_name, "")
+    if isinstance(val, str):
+        return [val]
+    if isinstance(val, (list, tuple)):
+        return [str(v) for v in val]
+    return []
+
+
+def run_search(
+    query: str,
+    items: list,
+    specs: list[MatchSpec],
+) -> list[tuple[int, object, MatchSpec]]:
+    """Run a list of MatchSpec against each item; return sorted best-match list.
+
+    For each item: try every spec, keep the (scaled_score, item, spec) with
+    the highest scaled_score that meets its threshold. Sort descending by
+    score. Items with no spec meeting threshold are excluded.
+
+    WHY best-spec-per-item: a single result line shows ONE annotation in
+    --explain output ("matched on desc"/"matched on @cat-kw"/etc.). Picking
+    the highest-scoring spec keeps the annotation honest.
+    """
+    if not query.strip():
+        return []
+    out: list[tuple[int, object, MatchSpec]] = []
+    for item in items:
+        best: tuple[int, object, MatchSpec] | None = None
+        for spec in specs:
+            for value in _read_field(item, spec.field):
+                if not value:
+                    continue
+                raw = spec.scorer(query, value)
+                scaled = int(round(raw * spec.weight))
+                if scaled < spec.min_threshold:
+                    continue
+                if best is None or scaled > best[0]:
+                    best = (scaled, item, spec)
+        if best is not None:
+            out.append(best)
+    out.sort(key=lambda x: x[0], reverse=True)
+    return out
+
+
+# Behavior-preserving spec list for the existing search_keyword API.
+# Subsequent tasks (T3) introduce KEYWORD_SPECS with per-field thresholds;
+# this LEGACY list keeps the original "max score across description and
+# command-name, single threshold" semantics so existing tests stay green
+# during the refactor. Removed when KEYWORD_SPECS lands.
+KEYWORD_SPECS_LEGACY = [
+    MatchSpec(
+        field="description",
+        scorer=_fuzzy_score,
+        weight=1.0,
+        min_threshold=MIN_KEYWORD_SCORE,
+        label="desc",
+    ),
+    MatchSpec(
+        field="command",
+        scorer=_fuzzy_score,
+        weight=1.0,
+        min_threshold=MIN_KEYWORD_SCORE,
+        label="name",
+    ),
+]
 
 
 def derive_command_name(filename: str) -> str:
@@ -225,20 +317,14 @@ def collect_metadata(
 
 
 def search_keyword(commands: list[CommandInfo], query: str) -> list[CommandInfo]:
-    """Fuzzy search across description + command name."""
-    if not query.strip():
-        return []
-    scored = []
-    for cmd in commands:
-        search_fields = [cmd.description, cmd.command.replace("hug ", "")]
-        best_score = 0
-        for field_text in search_fields:
-            score = _fuzzy_score(query, field_text)
-            best_score = max(best_score, score)
-        if best_score >= MIN_KEYWORD_SCORE:
-            scored.append((best_score, cmd))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [cmd for _, cmd in scored]
+    """Fuzzy search across description + command name.
+
+    Refactored to delegate to run_search via KEYWORD_SPECS_LEGACY so the
+    underlying scoring engine is shared between modes. Behavior is
+    preserved: same scorer, same threshold, same fields. T3 swaps the
+    LEGACY spec list for the precision-tuned KEYWORD_SPECS.
+    """
+    return [item for _, item, _ in run_search(query, commands, KEYWORD_SPECS_LEGACY)]
 
 
 def search_category(commands: list[CommandInfo], query: str) -> list[CommandInfo]:

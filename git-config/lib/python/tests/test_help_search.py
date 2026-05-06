@@ -6,11 +6,13 @@ import pytest
 
 from help_search import (
     CommandInfo,
+    MatchSpec,
     collect_metadata,
     derive_command_name,
     format_results,
     list_categories,
     parse_description_from_help,
+    run_search,
     search_category,
     search_keyword,
 )
@@ -293,3 +295,99 @@ class TestCache:
         # Second call should detect mtime change and re-collect
         cmds2 = collect_metadata(mock_scripts, cache_dir=cache_dir, use_cache=True)
         assert cmds2[0].description == "Updated description."
+
+
+class TestMatchSpec:
+    """MatchSpec drives the generic run_search engine.
+
+    These tests use synthetic scorer functions (lambdas) to verify the
+    run_search machinery in isolation, independent of thefuzz availability.
+    """
+
+    def _info(self, **kw):
+        return CommandInfo(**kw)
+
+    def test_run_search_uses_field_value(self):
+        cmds = [
+            self._info(
+                command="hug bpush",
+                description="push to origin",
+                categories=["push-pull"],
+            )
+        ]
+        specs = [
+            MatchSpec(
+                field="description",
+                scorer=lambda q, t: 100 if q in t else 0,
+                weight=1.0,
+                min_threshold=50,
+                label="desc",
+            )
+        ]
+        results = run_search("push", cmds, specs)
+        assert len(results) == 1
+        score, cmd, spec = results[0]
+        assert cmd.command == "hug bpush"
+        assert score == 100
+        assert spec.label == "desc"
+
+    def test_run_search_applies_weight(self):
+        cmds = [self._info(command="x", description="desc", categories=[])]
+        specs = [
+            MatchSpec(
+                field="description",
+                scorer=lambda q, t: 100,
+                weight=0.5,
+                min_threshold=0,
+                label="desc",
+            )
+        ]
+        results = run_search("anything", cmds, specs)
+        assert results[0][0] == 50  # 100 * 0.5
+
+    def test_run_search_filters_below_threshold(self):
+        cmds = [self._info(command="x", description="d", categories=[])]
+        specs = [
+            MatchSpec(
+                field="description",
+                scorer=lambda q, t: 60,
+                weight=1.0,
+                min_threshold=80,
+                label="desc",
+            )
+        ]
+        assert run_search("q", cmds, specs) == []
+
+    def test_run_search_keeps_best_spec_per_command(self):
+        cmds = [self._info(command="hug a", description="d", categories=[])]
+        specs = [
+            MatchSpec(
+                field="description",
+                scorer=lambda q, t: 50,
+                weight=1.0,
+                min_threshold=0,
+                label="desc",
+            ),
+            MatchSpec(
+                field="description",
+                scorer=lambda q, t: 80,
+                weight=1.0,
+                min_threshold=0,
+                label="better",
+            ),
+        ]
+        score, _, spec = run_search("q", cmds, specs)[0]
+        assert score == 80
+        assert spec.label == "better"
+
+    def test_existing_search_keyword_uses_run_search(self):
+        # Regression: search_keyword still works after refactor.
+        cmds = [
+            CommandInfo(
+                command="hug h undo",
+                description="Move HEAD back, unstage changes.",
+                categories=["head"],
+            ),
+        ]
+        results = search_keyword(cmds, "undo")
+        assert any(r.command == "hug h undo" for r in results)
