@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-_hug_category='["head"]'; test "${1:-}" = '--search-meta' && { printf 'category = %s\n' "$_hug_category"; exit 0; }
+_hug_category='["head"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # git-h - HEAD command gateway
 # Part of the Hug tool suite
 

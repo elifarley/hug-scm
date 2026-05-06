@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-_hug_category='["analysis"]'; test "${1:-}" = '--search-meta' && { printf 'category = %s\n' "$_hug_category"; exit 0; }
+_hug_category='["analysis"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # git-analyze-co-changes - Find files related by co-change history
 # Part of the Hug tool suite
 

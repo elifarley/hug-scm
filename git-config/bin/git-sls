@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-_hug_category='["status", "staging"]'; test "${1:-}" = '--search-meta' && { printf 'category = %s\n' "$_hug_category"; exit 0; }
+_hug_category='["status", "staging"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit hug-select-files output_json_status; do . "$CMD_BASE/../lib/$f"; done

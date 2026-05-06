@@ -31,9 +31,9 @@ dir=$(dirname "$0")
 # Topic search dispatch — /keyword, @category, !intent
 # WHY uv run + --extra search: resolves venv + dependencies (thefuzz) without relying on system python3
 case "$prefix" in
-  /*)  exec uv run --directory "$dir/../lib/python" --extra search help_search.py "/" "${prefix#/}" ;;
-  @*)  exec uv run --directory "$dir/../lib/python" --extra search help_search.py "@" "${prefix#@}" ;;
-  !*)  exec uv run --directory "$dir/../lib/python" --extra search help_search.py "!" "${prefix#!}" ;;
+/*) exec uv run --directory "$dir/../lib/python" --extra search help_search.py "/" "${prefix#/}" ;;
+@*) exec uv run --directory "$dir/../lib/python" --extra search help_search.py "@" "${prefix#@}" ;;
+!*) exec uv run --directory "$dir/../lib/python" --extra search help_search.py "!" "${prefix#!}" ;;
 esac
 
 # Show help for exact command if exists (script preferred over alias)

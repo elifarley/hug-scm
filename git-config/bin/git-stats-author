@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-_hug_category='["statistics"]'; test "${1:-}" = '--search-meta' && { printf 'category = %s\n' "$_hug_category"; exit 0; }
+_hug_category='["statistics"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # git-stats-author - Author contribution statistics
 # Part of the Hug tool suite
 

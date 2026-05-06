@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-_hug_category='["working-dir", "parking"]'; test "${1:-}" = '--search-meta' && { printf 'category = %s\n' "$_hug_category"; exit 0; }
+_hug_category='["working-dir", "parking"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # Assume HUG_HOME is set (exported by hug or environment)
 # Import only needed library files
 . "$HUG_HOME/git-config/lib/hug-terminal"
