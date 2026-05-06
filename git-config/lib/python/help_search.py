@@ -50,7 +50,10 @@ except ImportError:
 GATEWAY_PREFIXES = {"h", "w"}
 
 # Minimum relevance score (0-100) to include in results
-MIN_SCORE = 55
+# partial_ratio is loose (substring matching) so keywords need a higher bar.
+# ratio() is strict (full-string) so categories can use a lower bar.
+MIN_KEYWORD_SCORE = 70
+MIN_CATEGORY_SCORE = 60
 
 # Default paths
 _DEFAULT_BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "bin")
@@ -84,9 +87,14 @@ def derive_command_name(filename: str) -> str:
 
 
 def parse_description_from_help(help_text: str) -> str:
-    """Extract one-line description from 'hug <cmd>: <description>' pattern."""
-    match = re.search(r"^hug\s+[^:]+:\s*(.+)$", help_text, re.MULTILINE)
-    return match.group(1).strip() if match else ""
+    """Extract one-line description from help output.
+
+    Matches both 'hug <cmd>: <desc>' and '<cmd>: <desc>' patterns.
+    Some scripts output 'hug h undo: ...' while gateway subcommands
+    output just 'h undo: ...' or 'bpush: ...'.
+    """
+    match = re.search(r"^(?:hug\s+)?([^:\n]+):\s*(.+)$", help_text, re.MULTILINE)
+    return match.group(2).strip() if match else ""
 
 
 def _query_script(script_path: Path) -> dict | None:
@@ -224,7 +232,7 @@ def search_keyword(commands: list[CommandInfo], query: str) -> list[CommandInfo]
         for field_text in search_fields:
             score = _fuzzy_score(query, field_text)
             best_score = max(best_score, score)
-        if best_score >= MIN_SCORE:
+        if best_score >= MIN_KEYWORD_SCORE:
             scored.append((best_score, cmd))
     scored.sort(key=lambda x: x[0], reverse=True)
     return [cmd for _, cmd in scored]
@@ -238,7 +246,7 @@ def search_category(commands: list[CommandInfo], query: str) -> list[CommandInfo
     for cmd in commands:
         for cat in cmd.categories:
             score = _fuzzy_score_strict(query, cat)
-            if score >= MIN_SCORE:
+            if score >= MIN_CATEGORY_SCORE:
                 results.append(cmd)
                 break
     return results
