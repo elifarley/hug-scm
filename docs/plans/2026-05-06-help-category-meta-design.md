@@ -1,8 +1,14 @@
 # Help Category Metadata + Search Quality Overhaul
 
 **Date**: 2026-05-06
-**Status**: Approved
+**Status**: Approved (revised after /autoplan dual-voice review)
 **Supersedes**: extends `2026-05-06-topic-search-design.md`
+**Revision note**: Original design placed keywords on per-category TOML
+manifests. Dual-voice review (Codex + Claude subagent) flagged that
+category-level keywords pollute precise commands (e.g. a `save` keyword on
+`parking` matches the destructive `wipdel`). Keywords are now per-command,
+declared via the existing `--search-meta` protocol. See
+`2026-05-06-help-category-meta-impl-autoplan-review.md` for the full review.
 
 ## Problem
 
@@ -41,7 +47,9 @@ layer that doubles as the discovery surface AND the relevance signal.
 
 ## Per-Category TOML Schema
 
-One file per category, filename = canonical category name.
+One file per category, filename = canonical category name. Categories now hold
+**only `label` + `description`** — keywords moved to per-command metadata
+(see "Per-Command Keywords" below).
 
 ```toml
 # git-config/lib/python/categories/branching.toml
@@ -51,17 +59,49 @@ Create, list, switch, and delete branches.
 Branches let you work on parallel lines of development without
 conflicting with shared code.
 """
-keywords    = [
-  "branch", "switch", "checkout", "tracking", "upstream",
-  "head", "ref", "rename"
-]
 ```
 
 | Field | Required | Notes |
 |---|---|---|
 | `label` | yes | Short title for the boxed header (e.g. `── @branching — Branch operations ──`) |
 | `description` | yes | Multi-line paragraph. First sentence ≤ 70 chars is shown in `@` listing |
-| `keywords` | yes (≥ 3) | Curated terms; matched with `ratio` (strict) — listing a word is an intentional claim |
+
+WHY no `keywords` here: a category-level keyword would propagate to every
+command in that category — including destructive siblings. Listing `save` on
+`parking` would make a `/save` query match `wipdel` (delete WIP) and `unpark`,
+not just `wip`. Keywords belong on the command they describe, not on the
+category bucket. See the dual-voice review in
+`2026-05-06-help-category-meta-impl-autoplan-review.md` (F3).
+
+## Per-Command Keywords
+
+Each script's existing `--search-meta` output is extended with a `keywords`
+TOML key alongside the existing `category` key:
+
+```bash
+# git-config/bin/git-w-wip
+_hug_category='["working-dir", "parking"]'
+_hug_keywords='["save", "shelve", "stash", "park", "wip"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
+```
+
+```bash
+# git-config/bin/git-w-wipdel  (destructive — note absence of "save")
+_hug_keywords='["discard-wip", "delete-park"]'
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `_hug_keywords` | optional | List of curated terms specific to this command. Empty/absent → no keyword-driven matches; falls back to description + category-description scoring |
+| `_hug_category` | required (existing) | Unchanged from prior design |
+
+Bootstrap target: the ~20 highest-traffic commands ship with `_hug_keywords`
+in the same commit that lands the architecture (T0.5). The remaining commands
+can be annotated incrementally — empty keywords gracefully degrade to
+description-only scoring.
 
 The 19 canonical categories from the prior design doc each get one file in the
 bootstrap commit: `analysis`, `branching`, `committing`, `files`, `garbage`,
@@ -210,7 +250,7 @@ returns a sorted list with each result's winning spec attached.
 | `name_partial` | `partial_ratio` | 0.85 | 80 |
 | `description` | `WRatio` | 0.90 | 80 |
 | `category_desc` | `WRatio` | 0.80 | 80 |
-| `category_kw` | `ratio` | 0.95 | 88 |
+| `keywords` | `ratio` | 0.95 | 88 |
 
 **`!intent` (phrase):**
 
@@ -218,7 +258,11 @@ returns a sorted list with each result's winning spec attached.
 |---|---|---|---|
 | `description` | `token_set_ratio` | 0.95 | 75 |
 | `category_desc` | `token_set_ratio` | 0.90 | 75 |
-| `category_kw` | `token_set_ratio` | 0.80 | 75 |
+| `keywords` | `token_set_ratio` | 0.80 | 75 |
+
+`keywords` is the per-command list parsed from `_hug_keywords`. Each keyword
+is a separate string read by `_read_field`, so `_ratio(query, "branch")` fires
+when the query equals one keyword exactly — no joined-string blunting.
 
 **`@category`:** unchanged scorer (`ratio` against category name, `MIN_CATEGORY_SCORE=60`),
 but output now hydrates label / description / keywords from `CategoryMeta`.

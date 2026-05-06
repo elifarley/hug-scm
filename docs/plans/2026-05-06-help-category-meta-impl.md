@@ -1,3 +1,4 @@
+<!-- /autoplan restore point: /home/ecc/.gstack/projects/elifarley-hug-scm/main-autoplan-restore-20260506-195239.md -->
 # Help Category Metadata + Search Quality Overhaul — Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:executing-plans to implement this plan task-by-task.
@@ -29,8 +30,36 @@ stays thin — only its no-arg tip line changes.
 optional dep), `tomllib` (stdlib in 3.11+) / `tomli` (already a dep for 3.10),
 `pytest`, BATS.
 
-**Reference:** `docs/plans/2026-05-06-help-category-meta-design.md` (commit
-`52d44e7`).
+**Reference:** `docs/plans/2026-05-06-help-category-meta-design.md` (revised
+after /autoplan dual-voice review). Review artifact:
+`docs/plans/2026-05-06-help-category-meta-impl-autoplan-review.md`.
+
+---
+
+## REVISION NOTE (2026-05-06, post /autoplan)
+
+The dual-voice CEO review (Codex + Claude subagent) converged on one
+structural concern: per-category keywords would propagate to every command
+in a category, including destructive siblings. A `save` keyword on
+`parking` would match `wipdel` (delete WIP). User accepted the **B-tweaked**
+re-frame:
+
+- Per-category TOMLs hold **only** `label` + `description` (used to render
+  `@<category>` page header).
+- Per-command `--search-meta` gains a `keywords` field — each command
+  declares its own curated terms.
+
+Tasks below are written for the revised architecture. Specifically:
+
+- **T0** (manifests) — drop `keywords` field from each category TOML.
+- **T0.5** (NEW) — bootstrap `_hug_keywords=` on ~20 high-traffic commands
+  before T1.
+- **T1** (loader) — relax keyword count requirement (no `>= 3 keywords`
+  schema check on category TOMLs).
+- **T3** (KEYWORD_SPECS) — `CommandInfo.keywords` is parsed directly from
+  `--search-meta`, replacing the hydrated `category_kw` field.
+- **T11** (corpus) — assertions still apply, target shifts: precise commands
+  (e.g. `wipdel`) MUST NOT surface in results for `save`/`shelve`.
 
 ---
 
@@ -62,25 +91,20 @@ loader so subsequent tasks can rely on real fixtures, not mocks.
 
 **Step 1: Create each TOML manifest**
 
-Schema for every file:
+Schema for every file (post-revision — no keywords):
 ```toml
 label       = "<short title shown in boxed header>"
 description = """
 <2-4 sentence paragraph describing the category>
 """
-keywords    = [
-  "<curated keyword>", "<curated keyword>", "<curated keyword>", ...
-]
 ```
 
-Required: `label` (string), `description` (string), `keywords` (≥3 entries).
+Required: `label` (string), `description` (string).
 
 **Authoring guidance:**
 - Description's **first sentence ≤ 70 chars** (it becomes the summary column
   in `hug help @`). Shorten or rephrase if needed.
-- Keywords are **curated**, not exhaustive — pick terms users would actually
-  type. Each keyword you list claims "this category IS about this word".
-- Lowercase keywords; allow hyphens.
+- Keywords now live on individual commands (see T0.5), not categories.
 
 **Reference content** (use these as the bootstrap; tune as needed):
 
@@ -299,7 +323,6 @@ for p in sorted(Path("categories").glob("*.toml")):
         d = tomllib.load(f)
     assert "label" in d, f"{p}: missing label"
     assert "description" in d, f"{p}: missing description"
-    assert "keywords" in d and len(d["keywords"]) >= 3, f"{p}: bad keywords"
     print(f"OK  {p.name}")
 '
 ```
@@ -308,7 +331,79 @@ Expected: 19 lines of `OK <name>.toml`.
 **Step 3: Commit**
 ```
 hug a git-config/lib/python/categories/
-hug c -m "feat: bootstrap 19 category TOML manifests for help discovery"
+hug c -m "feat: bootstrap 19 category TOML manifests (label + description only)"
+```
+
+---
+
+## Task 0.5: Bootstrap per-command keywords on top-20 commands
+
+**Files:**
+- Modify: ~20 of the highest-traffic `git-config/bin/git-*` scripts
+
+**WHY:** Keywords drive precise search. Empty keywords gracefully degrade to
+description-only matching, but the motivating examples (`/save → wip`,
+`/undo → h-back`, `/save my work → wip` via `!intent`) need bootstrap entries
+to land. The remaining ~80 commands can be annotated incrementally — never
+required, never schema-validated, but always recommended for high-traffic
+flows.
+
+**Step 1: Add `_hug_keywords` line above the existing `_hug_category` line**
+
+Pattern, applied to each script:
+
+```bash
+#!/usr/bin/env bash
+_hug_category='["working-dir", "parking"]'
+_hug_keywords='["save", "shelve", "stash", "park", "wip"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
+# ... rest of script unchanged ...
+```
+
+**Top-20 bootstrap targets** (subject to refinement based on actual usage):
+
+| Command | `_hug_keywords` |
+|---|---|
+| `git-w-wip` | `["save", "shelve", "stash", "park", "wip"]` |
+| `git-w-unwip` | `["unpark", "restore-wip", "pop", "unstash"]` |
+| `git-w-discard` | `["discard", "revert-changes", "undo-changes", "reset-file"]` |
+| `git-w-purge` | `["clean", "remove-untracked", "purge"]` |
+| `git-h-undo` | `["undo", "back", "unstage", "revert-stage"]` |
+| `git-h-back` | `["back", "rewind", "previous", "earlier"]` |
+| `git-h-rollback` | `["rollback", "revert-commit", "undo-commit"]` |
+| `git-h-rewind` | `["rewind", "destructive-back", "force-back"]` |
+| `git-h-squash` | `["squash", "combine-commits", "merge-commits"]` |
+| `git-bpush` | `["push", "send", "upload", "publish"]` |
+| `git-bpull` | `["pull", "fetch-merge", "sync-down"]` (if exists) |
+| `git-bc` | `["create-branch", "new-branch", "make-branch"]` |
+| `git-b` | `["switch", "checkout", "change-branch"]` |
+| `git-bdel` | `["delete-branch", "remove-branch", "drop-branch"]` |
+| `git-c` | `["commit", "save-snapshot", "record"]` |
+| `git-cm` | `["amend", "fixup", "edit-message"]` |
+| `git-a` | `["add", "stage", "track"]` |
+| `git-aa` | `["add-all", "stage-all", "track-everything"]` |
+| `git-us` | `["unstage", "reset-staged", "untrack-staged"]` |
+| `git-sw` | `["status-with-diff", "show-changes", "what-changed"]` |
+| `git-wtc` | `["create-worktree", "new-worktree", "linked-checkout"]` |
+
+(If a command in the list doesn't exist in the repo, skip it and move on.)
+
+**Step 2: Smoke test the new --search-meta output**
+
+```bash
+git-config/bin/git-w-wip --search-meta
+# Expected output:
+#   category = ["working-dir", "parking"]
+#   keywords = ["save", "shelve", "stash", "park", "wip"]
+```
+
+**Step 3: Commit**
+```
+hug a git-config/bin/
+hug c -m "feat: bootstrap _hug_keywords on top-20 high-traffic commands"
 ```
 
 ---
@@ -318,6 +413,16 @@ hug c -m "feat: bootstrap 19 category TOML manifests for help discovery"
 **Files:**
 - Create: `git-config/lib/python/category_meta.py`
 - Create: `git-config/lib/python/tests/test_category_meta.py`
+
+**Post-revision delta** (vs. original code samples below):
+- `CategoryMeta` dataclass: drop the `keywords: tuple[str, ...]` field.
+- Loader: drop the `if not isinstance(kws, list) or len(kws) < 3` validation.
+- Tests: drop `test_too_few_keywords_raises` and the `keywords` assertions
+  (e.g. `assert b.keywords == (...)`); the dataclass no longer has them.
+- Sample TOML fixtures in tests: drop the `keywords = [...]` line.
+
+The rest of the loader and validator (`load_categories`,
+`derive_summary`, `validate_against_scripts`) is unchanged.
 
 **Step 1: Write the failing test file**
 
@@ -766,14 +871,30 @@ hug c -m "refactor: introduce MatchSpec/run_search to drive scoring"
 
 ---
 
-## Task 3: Wire category metadata into search; new `KEYWORD_SPECS`
+## Task 3: Wire per-command keywords + category descriptions into `KEYWORD_SPECS`
 
 **Files:**
 - Modify: `git-config/lib/python/help_search.py`
 - Modify: `git-config/lib/python/tests/test_help_search.py`
 
-**WHY:** with `MatchSpec` in place, adding category fields is a one-line spec
-addition. This is where curated keywords first start influencing relevance.
+**Post-revision delta** (vs. original code below):
+- `CommandInfo` gets `keywords: list[str]` parsed directly from
+  `--search-meta` output (the `keywords = [...]` line). NOT hydrated from
+  CategoryMeta (CategoryMeta no longer has keywords).
+- `_query_script` parses both `category = [...]` and `keywords = [...]` from
+  the script's `--search-meta` stdout. If `keywords` line absent, default to
+  empty list.
+- `hydrate_category_fields` keeps the `category_desc` join from
+  CategoryMeta but drops the `category_kw` hydration entirely.
+- `KEYWORD_SPECS` last entry: `field="keywords"` (per-command list), not
+  `field="category_kw"`.
+- New regression test `test_destructive_command_not_matched_by_neighbor`:
+  verify that querying `/save` returns `wip` but **NOT** `wipdel` (the F3
+  regression — wipdel's keywords MUST NOT include `save`).
+
+**WHY:** with `MatchSpec` in place, adding the per-command `keywords` field
+is a one-line spec addition. This is where curated keywords first start
+influencing relevance.
 
 **Step 1: Extend `CommandInfo` with hydrated category metadata**
 
@@ -1733,6 +1854,23 @@ def test_intent_corpus(commands, query, expected_in_top3):
     results = [c.command for c in search_intent(commands, query)][:3]
     for cmd in expected_in_top3:
         assert cmd in results, f"{query!r}: {cmd} not in top-3 ({results})"
+
+
+# F3 regression — destructive commands must not be surfaced via category-keyword
+# pollution. With per-command keywords (post-revision), wipdel does NOT carry
+# `save` in its keyword list, so /save must NOT match it.
+@pytest.mark.parametrize("query,must_not_appear", [
+    ("save",  ["hug w wipdel", "hug w unwip"]),
+    ("stash", ["hug w wipdel"]),
+    ("undo",  ["hug w wipdel", "hug w purge"]),
+])
+def test_destructive_commands_not_polluted(commands, query, must_not_appear):
+    results = [c.command for c in search_keyword(commands, query)]
+    for cmd in must_not_appear:
+        assert cmd not in results, (
+            f"{query!r}: destructive command {cmd} surfaced — "
+            f"did keyword pollution slip back in? Got: {results}"
+        )
 ```
 
 **Step 2: Run corpus**
@@ -1896,14 +2034,15 @@ hug c -m "fix: address issues found during final validation"
 
 ---
 
-## Task Summary
+## Task Summary (revised)
 
 | # | Description | Depends on |
 |---|---|---|
-| 0 | Bootstrap 19 category TOML manifests | — |
-| 1 | TDD `category_meta.py` loader + validator | 0 |
+| 0 | Bootstrap 19 category TOML manifests (label + description only) | — |
+| 0.5 | Bootstrap `_hug_keywords` on top-20 high-traffic commands | 0 |
+| 1 | TDD `category_meta.py` loader + validator (no `keywords` schema check) | 0.5 |
 | 2 | TDD `MatchSpec` + `run_search` refactor (behavior-preserving) | 1 |
-| 3 | Wire category fields into `KEYWORD_SPECS`; new precision spec list | 2 |
+| 3 | Wire **per-command keywords** + category descriptions into `KEYWORD_SPECS` (F3 regression test) | 2 |
 | 4 | Token-aware `INTENT_SPECS` and `search_intent` | 3 |
 | 5 | Result cap + soft diversification + `--all` | 4 |
 | 6 | `--explain` flag with match-source annotation | 5 |
@@ -1911,6 +2050,6 @@ hug c -m "fix: address issues found during final validation"
 | 8 | Boxed `@<category>` page with stderr/stdout split | 7 |
 | 9 | Update `git-hughelp` no-arg tip lines | 8 |
 | 10 | Wire validation + cache extension into `main()` | 9 |
-| 11 | Quality regression corpus | 10 |
+| 11 | Quality regression corpus + F3 destructive-command regression | 10 |
 | 12 | Extend integration BATS tests | 11 |
 | 13 | Final validation | 12 |
