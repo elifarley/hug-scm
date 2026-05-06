@@ -8,7 +8,7 @@ set -euo pipefail
 
 show_help() {
   cat << 'EOF'
-hug ca: Commit all tracked changes (staged + unstaged).
+hug ca: Commit All tracked changes (staged + unstaged). No need to stage files first.
 
 USAGE:
   hug ca [OPTIONS]

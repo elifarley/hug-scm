@@ -8,7 +8,7 @@ set -euo pipefail
 
 show_help() {
   cat << 'EOF'
-hug cma: Commit amend all - Modify the last commit with ALL tracked changes.
+hug cma: Commit aMend All - Modify the last commit with ALL tracked changes. No need to stage files first.
 
 USAGE:
   hug cma [OPTIONS]

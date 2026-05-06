@@ -48,7 +48,7 @@ EXAMPLES:
 SEE ALSO:
   hug c  : Commit staged changes
   hug ca : Commit all tracked changes
-  hug cma: Modify the last commit with ALL tracked changes
+  hug cma: Modify the last commit with ALL tracked changes (no need to run `hug a` first)
   hug ccp: Cherry-pick commits
 EOF
 }

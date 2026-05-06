@@ -16,7 +16,7 @@ set -euo pipefail # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat << EOF
-hug caa: Commit all changes (tracked + untracked + deletions).
+hug caa: Commit All changes (tracked + untracked + deletions). No need to stage files first.
 
 USAGE:
     hug caa [COMMIT_OPTIONS] [--dry-run] [-f, --force] [--quiet] [-h, --help]
