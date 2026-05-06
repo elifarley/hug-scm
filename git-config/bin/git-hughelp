@@ -18,10 +18,23 @@ test $# -eq 0 && {
   echo '  w*  - Working dir operations'
   echo ''
   echo "Use 'hug help [prefix]' to see commands with that prefix"
+  echo ''
+  echo 'Topic search:'
+  echo '  hug help /keyword   - Search commands by keyword (fuzzy)'
+  echo '  hug help @category  - Browse commands by category'
+  echo '  hug help !intent    - Find commands by what you want to do'
   exit 0
 }
 prefix="$1"
 dir=$(dirname "$0")
+
+# Topic search dispatch — /keyword, @category, !intent
+# WHY uv run + --extra search: resolves venv + dependencies (thefuzz) without relying on system python3
+case "$prefix" in
+/*) exec uv run --directory "$dir/../lib/python" --extra search help_search.py "/" "${prefix#/}" ;;
+@*) exec uv run --directory "$dir/../lib/python" --extra search help_search.py "@" "${prefix#@}" ;;
+!*) exec uv run --directory "$dir/../lib/python" --extra search help_search.py "!" "${prefix#!}" ;;
+esac
 
 # Show help for exact command if exists (script preferred over alias)
 if command -v "git-$prefix" > /dev/null 2>&1; then

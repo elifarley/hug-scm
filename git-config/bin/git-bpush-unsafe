@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["push-pull"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # Part of the Hug tool suite
 
 # Show help if requested

@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["worktrees"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # git-wtwp: List worktrees filtered by exact branch names
 # Thin wrapper: delegates to git-wtl with positional branch args
 
