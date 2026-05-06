@@ -28,6 +28,11 @@ try:
     def _fuzzy_score(query: str, target: str) -> int:
         return _fuzz.partial_ratio(query.lower(), target.lower())
 
+    def _fuzzy_score_strict(query: str, target: str) -> int:
+        # ratio() is stricter than partial_ratio — full-string comparison, not substring.
+        # Categories are short known strings; partial_ratio over-matches.
+        return _fuzz.ratio(query.lower(), target.lower())
+
     HAS_THEFUZZ = True
 except ImportError:
     HAS_THEFUZZ = False
@@ -35,6 +40,10 @@ except ImportError:
     def _fuzzy_score(query: str, target: str) -> int:
         q, t = query.lower(), target.lower()
         return 100 if q in t else 0
+
+    def _fuzzy_score_strict(query: str, target: str) -> int:
+        q, t = query.lower(), target.lower()
+        return 100 if q == t else 0
 
 
 # Gateway prefixes: scripts matching git-{X}-* are dispatched through git-{X}
@@ -44,7 +53,7 @@ GATEWAY_PREFIXES = {"h", "w"}
 MIN_SCORE = 55
 
 # Default paths
-_DEFAULT_BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "bin")
+_DEFAULT_BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "bin")
 _DEFAULT_CACHE_DIR = "/tmp/cache/hug"
 
 
@@ -228,7 +237,7 @@ def search_category(commands: list[CommandInfo], query: str) -> list[CommandInfo
     results = []
     for cmd in commands:
         for cat in cmd.categories:
-            score = _fuzzy_score(query, cat)
+            score = _fuzzy_score_strict(query, cat)
             if score >= MIN_SCORE:
                 results.append(cmd)
                 break
