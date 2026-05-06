@@ -1,11 +1,12 @@
 {
   "planPath": "docs/plans/2026-05-06-help-category-meta-impl.md",
-  "revision": "B-tweaked (post /autoplan dual-voice review)",
+  "revision": "B-tweaked + autoplan-final (2026-05-06)",
   "tasks": [
     {"id": 0, "subject": "Task 0: Bootstrap 19 category TOML manifests (label + description only)", "status": "pending"},
-    {"id": "0.5", "subject": "Task 0.5: Bootstrap _hug_keywords on top-20 commands", "status": "pending", "blockedBy": [0]},
+    {"id": "0.5", "subject": "Task 0.5: Bootstrap _hug_keywords on top-20 commands + CLAUDE.md doc paragraph", "status": "pending", "blockedBy": [0]},
     {"id": 1, "subject": "Task 1: TDD category_meta.py loader + validator", "status": "pending", "blockedBy": ["0.5"]},
-    {"id": 2, "subject": "Task 2: TDD MatchSpec dataclass + run_search refactor", "status": "pending", "blockedBy": [1]},
+    {"id": "1.5", "subject": "Task 1.5: Test-gap closure (_query_script parsing + thefuzz fallback)", "status": "pending", "blockedBy": [1]},
+    {"id": 2, "subject": "Task 2: TDD MatchSpec dataclass + run_search refactor", "status": "pending", "blockedBy": ["1.5"]},
     {"id": 3, "subject": "Task 3: Wire per-command keywords + category descriptions into KEYWORD_SPECS", "status": "pending", "blockedBy": [2]},
     {"id": 4, "subject": "Task 4: Token-aware INTENT_SPECS + search_intent", "status": "pending", "blockedBy": [3]},
     {"id": 5, "subject": "Task 5: Result cap + soft diversification + --all flag", "status": "pending", "blockedBy": [4]},
@@ -18,5 +19,5 @@
     {"id": 12, "subject": "Task 12: Extend integration BATS tests", "status": "pending", "blockedBy": [11]},
     {"id": 13, "subject": "Task 13: Final validation", "status": "pending", "blockedBy": [12]}
   ],
-  "lastUpdated": "2026-05-06T00:00:00Z"
+  "lastUpdated": "2026-05-06T20:00:00Z"
 }

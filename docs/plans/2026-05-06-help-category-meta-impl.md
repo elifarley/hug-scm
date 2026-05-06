@@ -400,10 +400,29 @@ git-config/bin/git-w-wip --search-meta
 #   keywords = ["save", "shelve", "stash", "park", "wip"]
 ```
 
-**Step 3: Commit**
+**Step 3: Document the convention in `git-config/bin/CLAUDE.md`**
+
+Append a one-paragraph section so future contributors discover the
+convention without reading existing scripts:
+
+```markdown
+## Per-command keywords (optional)
+
+Scripts may declare `_hug_keywords='[...]'` alongside `_hug_category` so
+`hug help /<query>` and `hug help !<query>` can match curated terms not
+present in the command's description. Each keyword is a separate match
+unit (scored independently). Keep keywords specific to *this* command —
+do not add words that would also fit a destructive sibling. Empty/absent
+keywords gracefully fall back to description-only scoring.
+
+Example: `git-w-wip` declares `_hug_keywords='["save","shelve","stash"]'`;
+`git-w-wipdel` (destructive) does NOT include `save` or `stash`.
 ```
-hug a git-config/bin/
-hug c -m "feat: bootstrap _hug_keywords on top-20 high-traffic commands"
+
+**Step 4: Commit (single atomic commit covering both the script edits and the doc paragraph)**
+```
+hug a git-config/bin/ git-config/bin/CLAUDE.md
+hug c -m "feat: bootstrap _hug_keywords on top-20 commands + document convention"
 ```
 
 ---
@@ -693,6 +712,130 @@ Expected: `loaded 19 categories` and the summary string for branching.
 ```
 hug a git-config/lib/python/category_meta.py git-config/lib/python/tests/test_category_meta.py
 hug c -m "feat: add category_meta.py loader + validator with TDD coverage"
+```
+
+---
+
+## Task 1.5: Test gap closure — `_query_script` parsing + `thefuzz` fallback
+
+**Files:**
+- Modify: `git-config/lib/python/tests/test_help_search.py`
+- (No production code change; gap-closing tests only.)
+
+**WHY:** /autoplan Phase 3 (Eng review) identified three test gaps that
+weren't covered by the original plan. Fixing them as a dedicated task
+keeps the gap closure auditable and easy to revert if the underlying
+behavior shifts.
+
+**Step 1: Add `TestQueryScriptParsing` test class**
+
+```python
+class TestQueryScriptParsing:
+    """_query_script must parse both `category` and `keywords` from --search-meta."""
+
+    @pytest.fixture
+    def script_with_keywords(self, tmp_path):
+        script = tmp_path / "git-w-wip"
+        script.write_text(
+            "#!/usr/bin/env bash\n"
+            "test \"${1:-}\" = '--search-meta' && {\n"
+            "  printf 'category = [\"working-dir\", \"parking\"]\\n'\n"
+            "  printf 'keywords = [\"save\", \"shelve\", \"stash\"]\\n'\n"
+            "  exit 0\n"
+            "}\n"
+            "test \"${1:-}\" = '--help' && {\n"
+            "  printf 'hug w wip: Park work-in-progress aside.\\n'\n"
+            "  exit 0\n"
+            "}\n"
+        )
+        script.chmod(0o755)
+        return script
+
+    @pytest.fixture
+    def script_without_keywords(self, tmp_path):
+        script = tmp_path / "git-bc"
+        script.write_text(
+            "#!/usr/bin/env bash\n"
+            "test \"${1:-}\" = '--search-meta' && {\n"
+            "  printf 'category = [\"branching\"]\\n'\n"
+            "  exit 0\n"
+            "}\n"
+            "test \"${1:-}\" = '--help' && {\n"
+            "  printf 'hug bc: Create a new branch and switch to it.\\n'\n"
+            "  exit 0\n"
+            "}\n"
+        )
+        script.chmod(0o755)
+        return script
+
+    def test_parses_keywords_when_present(self, script_with_keywords):
+        from help_search import _query_script
+        result = _query_script(script_with_keywords)
+        assert result is not None
+        assert result["keywords"] == ["save", "shelve", "stash"]
+
+    def test_keywords_default_empty_when_absent(self, script_without_keywords):
+        from help_search import _query_script
+        result = _query_script(script_without_keywords)
+        assert result is not None
+        assert result["keywords"] == []  # graceful — un-bootstrapped command
+
+    def test_categories_parsed_unchanged_with_or_without_keywords(
+        self, script_with_keywords, script_without_keywords
+    ):
+        from help_search import _query_script
+        a = _query_script(script_with_keywords)
+        b = _query_script(script_without_keywords)
+        assert a["categories"] == ["working-dir", "parking"]
+        assert b["categories"] == ["branching"]
+```
+
+**Step 2: Add `TestThefuzzFallback`**
+
+```python
+class TestThefuzzFallback:
+    """When thefuzz is unavailable, the substring-only fallback must still work.
+
+    The fallback is binary (100 if substring match, 0 otherwise). Several
+    plan tasks depend on the scoring model behaving predictably under this
+    degraded mode — pinning it here.
+    """
+
+    def test_fallback_substring_match(self, monkeypatch):
+        # Force the fallback path even if thefuzz is installed.
+        import help_search as hs
+        monkeypatch.setattr(hs, "_ratio",      lambda q, t: 100 if q.lower() in t.lower() else 0)
+        monkeypatch.setattr(hs, "_partial",    lambda q, t: 100 if q.lower() in t.lower() else 0)
+        monkeypatch.setattr(hs, "_wratio",     lambda q, t: 100 if q.lower() in t.lower() else 0)
+        monkeypatch.setattr(hs, "_token_set",  lambda q, t: 100 if q.lower() in t.lower() else 0)
+
+        cmd = CommandInfo(command="hug bpush", description="Push current branch.",
+                          categories=["branching"])
+        results = hs.search_keyword([cmd], "push")
+        assert any(r.command == "hug bpush" for r in results)
+
+    def test_fallback_no_false_positive(self, monkeypatch):
+        import help_search as hs
+        monkeypatch.setattr(hs, "_ratio",      lambda q, t: 100 if q.lower() in t.lower() else 0)
+        monkeypatch.setattr(hs, "_partial",    lambda q, t: 100 if q.lower() in t.lower() else 0)
+        monkeypatch.setattr(hs, "_wratio",     lambda q, t: 100 if q.lower() in t.lower() else 0)
+        monkeypatch.setattr(hs, "_token_set",  lambda q, t: 100 if q.lower() in t.lower() else 0)
+
+        cmd = CommandInfo(command="hug bpush", description="Push current branch.",
+                          categories=["branching"])
+        results = hs.search_keyword([cmd], "xyzzy12345")
+        assert results == []
+```
+
+**Step 3: Run tests — verify all green**
+
+Run: `make test-lib-py TEST_FILTER=test_help_search`
+Expected: PASS — original tests + 5 new test methods (3 in TestQueryScriptParsing, 2 in TestThefuzzFallback).
+
+**Step 4: Commit**
+```
+hug a git-config/lib/python/tests/test_help_search.py
+hug c -m "test: close /autoplan-flagged gaps in _query_script parsing + thefuzz fallback"
 ```
 
 ---
@@ -2039,9 +2182,10 @@ hug c -m "fix: address issues found during final validation"
 | # | Description | Depends on |
 |---|---|---|
 | 0 | Bootstrap 19 category TOML manifests (label + description only) | — |
-| 0.5 | Bootstrap `_hug_keywords` on top-20 high-traffic commands | 0 |
+| 0.5 | Bootstrap `_hug_keywords` on top-20 commands + CLAUDE.md doc paragraph | 0 |
 | 1 | TDD `category_meta.py` loader + validator (no `keywords` schema check) | 0.5 |
-| 2 | TDD `MatchSpec` + `run_search` refactor (behavior-preserving) | 1 |
+| 1.5 | Test-gap closure: `_query_script` parsing + `thefuzz` fallback | 1 |
+| 2 | TDD `MatchSpec` + `run_search` refactor (behavior-preserving) | 1.5 |
 | 3 | Wire **per-command keywords** + category descriptions into `KEYWORD_SPECS` (F3 regression test) | 2 |
 | 4 | Token-aware `INTENT_SPECS` and `search_intent` | 3 |
 | 5 | Result cap + soft diversification + `--all` | 4 |
