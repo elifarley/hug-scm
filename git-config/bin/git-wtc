@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 _hug_category='["worktrees"]'
+_hug_keywords='["create-worktree", "new-worktree", "linked-checkout"]'
 test "${1:-}" = '--search-meta' && {
-  printf 'category = %s\n' "$_hug_category"
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
   exit 0
 }
 # Assume HUG_HOME is set (exported by hug or environment)

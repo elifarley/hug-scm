@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 _hug_category='["status"]'
+_hug_keywords='["status-with-diff", "show-changes", "what-changed"]'
 test "${1:-}" = '--search-meta' && {
-  printf 'category = %s\n' "$_hug_category"
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
   exit 0
 }
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
