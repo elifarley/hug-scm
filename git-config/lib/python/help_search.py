@@ -17,7 +17,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -102,7 +101,9 @@ def _query_script(script_path: Path) -> dict | None:
     try:
         meta_result = subprocess.run(
             [str(script_path), "--search-meta"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if meta_result.returncode != 0:
             return None
@@ -112,12 +113,10 @@ def _query_script(script_path: Path) -> dict | None:
 
     # Parse category from TOML: category = ["...", "..."]
     categories = []
-    cat_match = re.search(r'category\s*=\s*\[(.*?)\]', meta_text)
+    cat_match = re.search(r"category\s*=\s*\[(.*?)\]", meta_text)
     if cat_match:
         categories = [
-            c.strip().strip('"').strip("'")
-            for c in cat_match.group(1).split(",")
-            if c.strip()
+            c.strip().strip('"').strip("'") for c in cat_match.group(1).split(",") if c.strip()
         ]
 
     # Skip scripts with empty categories (not yet annotated)
@@ -129,7 +128,9 @@ def _query_script(script_path: Path) -> dict | None:
     try:
         help_result = subprocess.run(
             [str(script_path), "--help"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if help_result.returncode == 0:
             description = parse_description_from_help(help_result.stdout)
@@ -209,14 +210,16 @@ def collect_metadata(
 
     # Build CommandInfo list from cache
     commands = []
-    for name, data in cache.items():
+    for _name, data in cache.items():
         if not data.get("categories") or not data.get("description"):
             continue
-        commands.append(CommandInfo(
-            command=data["command"],
-            description=data["description"],
-            categories=data["categories"],
-        ))
+        commands.append(
+            CommandInfo(
+                command=data["command"],
+                description=data["description"],
+                categories=data["categories"],
+            )
+        )
 
     return sorted(commands, key=lambda c: c.command)
 

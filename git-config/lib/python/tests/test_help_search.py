@@ -1,19 +1,18 @@
 """Tests for help_search.py — topic search for hug help."""
 
 import json
+
 import pytest
-from pathlib import Path
-from unittest.mock import patch
+
 from help_search import (
     CommandInfo,
-    derive_command_name,
-    parse_description_from_help,
     collect_metadata,
-    search_keyword,
-    search_category,
-    list_categories,
+    derive_command_name,
     format_results,
-    GATEWAY_PREFIXES,
+    list_categories,
+    parse_description_from_help,
+    search_category,
+    search_keyword,
 )
 
 
@@ -62,7 +61,10 @@ class TestParseDescription:
 
     def test_extracts_from_inline_format(self):
         help_text = "hug bpushf: Force push current branch with lease (safer force push)\n\nUSAGE:"
-        assert parse_description_from_help(help_text) == "Force push current branch with lease (safer force push)"
+        assert (
+            parse_description_from_help(help_text)
+            == "Force push current branch with lease (safer force push)"
+        )
 
     def test_returns_empty_for_no_match(self):
         assert parse_description_from_help("some random text") == ""
@@ -91,7 +93,9 @@ class TestCollectMetadata:
             },
             "git-a": {
                 "search_meta": 'category = ["staging"]',
-                "help": "hug a: Stage tracked files, or specific files if provided.\n\nUSAGE:\n  hug a",
+                "help": (
+                    "hug a: Stage tracked files, or specific files if provided.\n\nUSAGE:\n  hug a"
+                ),
             },
             "git-bpushf": {
                 "search_meta": 'category = ["push-pull"]',
@@ -102,7 +106,7 @@ class TestCollectMetadata:
                 "help": "hug ss: Show staged diff.\n\nUSAGE:\n  hug ss",
             },
             "git-unknown": {
-                "search_meta": 'category = []',
+                "search_meta": "category = []",
                 "help": "",  # No description — should be excluded from search
             },
         }
@@ -148,10 +152,22 @@ class TestSearchKeyword:
     @pytest.fixture
     def commands(self):
         return [
-            CommandInfo(command="hug h undo", description="Move HEAD back, unstage changes.", categories=["head"]),
-            CommandInfo(command="hug bpush", description="Push current branch to origin.", categories=["branching", "push-pull"]),
-            CommandInfo(command="hug a", description="Stage tracked files.", categories=["staging"]),
-            CommandInfo(command="hug ss", description="Show staged diff.", categories=["status", "staging"]),
+            CommandInfo(
+                command="hug h undo",
+                description="Move HEAD back, unstage changes.",
+                categories=["head"],
+            ),
+            CommandInfo(
+                command="hug bpush",
+                description="Push current branch to origin.",
+                categories=["branching", "push-pull"],
+            ),
+            CommandInfo(
+                command="hug a", description="Stage tracked files.", categories=["staging"]
+            ),
+            CommandInfo(
+                command="hug ss", description="Show staged diff.", categories=["status", "staging"]
+            ),
         ]
 
     def test_finds_by_description(self, commands):
@@ -183,7 +199,11 @@ class TestSearchCategory:
     def commands(self):
         return [
             CommandInfo(command="hug h undo", description="Move HEAD back.", categories=["head"]),
-            CommandInfo(command="hug bpush", description="Push to origin.", categories=["branching", "push-pull"]),
+            CommandInfo(
+                command="hug bpush",
+                description="Push to origin.",
+                categories=["branching", "push-pull"],
+            ),
             CommandInfo(command="hug a", description="Stage files.", categories=["staging"]),
         ]
 
@@ -217,7 +237,9 @@ class TestListCategories:
 
 class TestFormatResults:
     def test_formats_single_result(self):
-        cmds = [CommandInfo(command="hug h undo", description="Move HEAD back.", categories=["head"])]
+        cmds = [
+            CommandInfo(command="hug h undo", description="Move HEAD back.", categories=["head"])
+        ]
         output = format_results(cmds)
         assert "hug h undo" in output
         assert "Move HEAD back." in output
@@ -263,7 +285,6 @@ class TestCache:
         # First call populates cache
         collect_metadata(mock_scripts, cache_dir=cache_dir, use_cache=True)
         # Modify script (newer mtime)
-        import time
         (mock_scripts / "git-a").write_text("""#!/usr/bin/env bash
 	test "${1:-}" = '--search-meta' && { printf 'category = ["staging"]\n'; exit 0; }
 	test "${1:-}" = '--help' && { printf 'hug a: Updated description.\n'; exit 0; }
