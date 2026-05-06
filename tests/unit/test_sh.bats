@@ -202,6 +202,67 @@ teardown() {
   assert_failure
 }
 
+# -----------------------------------------------------------------------------
+# Flag-as-ref protection (reject_flag_ref)
+#
+# When a flag like --stat is passed to a command that doesn't support it,
+# it used to be silently treated as a commit ref, producing confusing git
+# errors. Now these are caught early with a clear "Unknown flag" message
+# and the command's help is shown.
+# -----------------------------------------------------------------------------
+
+@test "hug shp: rejects unknown flag --stat with help" {
+  run hug shp HEAD --stat
+  assert_failure
+  assert_output --partial "Unknown flag: --stat"
+  # Should show the command's help so user sees valid options
+  assert_output --partial "USAGE:"
+  assert_output --partial "hug shp"
+}
+
+@test "hug shp: rejects unknown flag --no-stat" {
+  run hug shp --no-stat
+  assert_failure
+  assert_output --partial "Unknown flag: --no-stat"
+  assert_output --partial "USAGE:"
+}
+
+@test "hug shc: rejects unknown flag --stat with help" {
+  run hug shc --stat
+  assert_failure
+  assert_output --partial "Unknown flag: --stat"
+  assert_output --partial "USAGE:"
+  assert_output --partial "hug shc"
+}
+
+@test "hug shcp: rejects unknown flag --stat with help" {
+  run hug shcp HEAD --stat
+  assert_failure
+  assert_output --partial "Unknown flag: --stat"
+  assert_output --partial "USAGE:"
+  assert_output --partial "hug shcp"
+}
+
+@test "hug shcp: rejects unknown flag on range" {
+  run hug shcp HEAD~1..HEAD --stat
+  assert_failure
+  assert_output --partial "Unknown flag: --stat"
+}
+
+@test "hug shp: -N range not rejected as flag" {
+  # -2 is a valid range shorthand, not a flag
+  run hug shp -2
+  assert_success
+  refute_output --partial "Unknown flag"
+}
+
+@test "hug sh: --stat still works (not rejected)" {
+  # sh explicitly supports --stat — it must not be caught by reject_flag_ref
+  run hug sh --stat HEAD
+  assert_success
+  refute_output --partial "Unknown flag"
+}
+
 @test "hug sh: works with empty commit message" {
   echo "empty commit content" > empty.txt
   git add empty.txt

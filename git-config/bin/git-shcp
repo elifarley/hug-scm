@@ -105,6 +105,9 @@ done
 
 commit_ref="${commit_ref:-HEAD}"
 
+# Guard against mistyped flags treated as commit refs (e.g. hug shcp --stat)
+reject_flag_ref "$commit_ref"
+
 check_git_repo
 
 # Resolve N/-N using unified N/-N syntax convention

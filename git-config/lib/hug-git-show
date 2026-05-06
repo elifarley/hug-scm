@@ -26,6 +26,45 @@
 readonly _HUG_GIT_SHOW_LOADED=1
 
 ################################################################################
+# Flag-as-Ref Protection
+################################################################################
+
+# Guards against mistyped flags being silently treated as commit references.
+# When a command's argument parser doesn't recognize a flag (e.g. --stat on shp),
+# the flag falls through the *) catch-all and gets assigned as commit_ref.
+# This then produces confusing git errors instead of guiding the user.
+#
+# Usage: reject_flag_ref "$commit_ref" [help_func_name]
+# Parameters:
+#   $1 - The value to check
+#   $2 - Help function to call (default: show_help)
+# Behavior:
+#   - If value looks like a flag (--anything, or -x where x isn't all digits),
+#     prints an error, calls the help function, and exits with code 2.
+#   - -N patterns (like -3) are valid range shorthands and are NOT rejected.
+#   - If value doesn't look like a flag, does nothing (returns 0).
+# Examples:
+#   reject_flag_ref "--stat"         # → errors, shows help
+#   reject_flag_ref "--no-stat"      # → errors, shows help
+#   reject_flag_ref "-3"             # → passes through (valid -N range)
+#   reject_flag_ref "abc123"         # → passes through (valid ref)
+#   reject_flag_ref "main..HEAD"     # → passes through (valid range)
+reject_flag_ref() {
+  local arg="${1:-}"
+  local help_func="${2:-show_help}"
+
+  # -N (all digits after dash) is a valid range shorthand — let it through.
+  # --anything is always a flag.  -x (non-digit after dash) is also a flag.
+  if [[ "$arg" == --* ]] || { [[ "$arg" == -?* ]] && [[ ! "$arg" =~ ^-[0-9]+$ ]]; }; then
+    # Show help BEFORE error(), which calls exit and would skip this.
+    if type "$help_func" &>/dev/null; then
+      "$help_func" >&2
+    fi
+    error "Unknown flag: $arg" 2
+  fi
+}
+
+################################################################################
 # N/-N Resolution Functions
 ################################################################################
 
@@ -183,6 +222,8 @@ show_single_commit() {
     check_git_repo
 
     # Validate commit exists
+    # Validate commit exists — but first check for mistyped flags.
+    reject_flag_ref "$commit" show_help
     if ! git rev-parse --verify "$commit^{commit}" >/dev/null 2>&1; then
         error "Invalid commit reference: $commit"
     fi
