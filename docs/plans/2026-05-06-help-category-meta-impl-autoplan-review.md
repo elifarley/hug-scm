@@ -117,21 +117,222 @@ No graphical UI scope detected. Plan formats terminal text only.
 
 ---
 
-## Phase 3 — Eng Review
+## Phase 3 — Eng Review (post-revision)
 
-⏳ Pending premise gate decision. If user proceeds with plan as-written, will run with focus on Section 3 (Test Review) and Section 1 (Architecture).
+User accepted **B-tweaked**; plan now has 15 tasks (T0, T0.5, T1-T13). Eng
+review focuses on the revised architecture.
+
+### Step 0 — Scope challenge (against revised plan)
+
+Reading the revised plan against existing code: the change is structurally
+smaller than the original. `CommandInfo.keywords: list[str]` is parsed in
+`_query_script`; no separate hydration step needed (drops one function,
+`hydrate_category_fields` keeps only the `category_desc` join). One fewer
+field in `CategoryMeta`. Validation simpler (no `>= 3 keywords` check).
+Net: **fewer LOC** than the original plan, despite adding T0.5.
+
+### Section 1 — Architecture (ASCII dependency graph)
+
+```
+git-hughelp (bash, thin)
+  │
+  └─ exec uv run help_search.py
+       │
+       ├─ category_meta.py
+       │     ├─ load_categories()        ──> reads categories/*.toml
+       │     │                               (label, description only)
+       │     └─ validate_against_scripts() (strict; missing manifest = exit 1)
+       │
+       └─ help_search.py
+             ├─ collect_metadata()       ──> queries each git-* via --search-meta
+             │     └─ _query_script()    ──> parses category=[..] AND keywords=[..]
+             │     └─ hydrate_category_fields() (joins category_desc only)
+             │
+             ├─ MatchSpec / run_search   ──> generic field-by-field scorer
+             │
+             ├─ KEYWORD_SPECS (5 specs)  ──> name=, name~, desc, @cat-desc, keywords
+             ├─ INTENT_SPECS  (3 specs)  ──> desc, @cat-desc, keywords (token_set)
+             │
+             ├─ diversify()              ──> top-N + per-category soft cap
+             │
+             └─ format_*()               ──> @ listing / @<cat> page (boxed)
+                                             /<query>, !<query> with --explain
+```
+
+Coupling: low. `category_meta.py` knows nothing about `help_search.py`.
+`help_search.py` consumes `CategoryMeta` as data. Bash dispatcher untouched
+beyond the tip-line edit.
+
+### Section 2 — Code Quality
+
+- **DRY**: `MatchSpec.run_search` consolidates the previously ad-hoc
+  `search_keyword`/`search_category` loops. The new `_query_script` extension
+  parses two TOML keys with one regex pattern — no duplication.
+- **Naming**: `KEYWORD_SPECS` / `INTENT_SPECS` are explicit. `_hug_keywords`
+  follows the existing `_hug_category` convention. No surprises.
+- **Complexity**: `diversify()` is the highest-complexity new function (~15
+  lines, one loop with a counter dict). Cyclomatic ≤ 4. Acceptable.
+
+### Section 3 — Test Review (NEVER SKIP)
+
+| Path / behavior | Type | Coverage |
+|---|---|---|
+| `derive_summary` truncation | Unit (test_category_meta) | ✅ T1 |
+| TOML loader schema (label, description required) | Unit | ✅ T1 |
+| TOML loader: missing manifest → ValueError | Unit | ✅ T1 |
+| `validate_against_scripts` flags missing manifest | Unit | ✅ T1 |
+| `_query_script` parses `keywords = [..]` | Unit (test_help_search, NEW) | ⚠️ **GAP — add explicit unit test in T3** |
+| `_query_script` handles missing `keywords` line gracefully | Unit | ⚠️ **GAP — add in T3** |
+| `MatchSpec.run_search` weight + threshold + label | Unit | ✅ T2 |
+| `KEYWORD_SPECS` per-command keyword match | Unit | ✅ T3 |
+| F3 regression: `/save` does NOT match `wipdel` | Unit (corpus) | ✅ T11 (added in revision) |
+| `INTENT_SPECS` token-aware (word order) | Unit | ✅ T4 |
+| `diversify()` cap, soft-cap, penalty | Unit | ✅ T5 |
+| `--explain` annotation correctness | Unit | ✅ T6 |
+| `format_category_list` summary column | Unit | ✅ T7 |
+| `format_category_page` boxed + stream split | Unit | ✅ T8 |
+| Runtime validation exit 1 on missing manifest | Unit (subprocess test) | ✅ T10 |
+| Cache invalidation when categories/*.toml newer | Unit | ✅ T10 |
+| `thefuzz` fallback path (substring-only) | **Unit** | ❌ **GAP — Claude subagent flagged; add to T2 or T3** |
+| `hug help @<cat>` boxed page reaches stderr | BATS | ✅ T12 |
+| `hug help @<cat> | grep` pipe-safe | BATS | ✅ T12 |
+| `hug help !save my work` finds wip | BATS | ✅ T12 |
+| `--explain` BATS | BATS | ✅ T12 |
+| `--all` disables cap | BATS | ✅ T12 |
+| Validation failure exit 1 | BATS smoke | ✅ T12 |
+
+**3 test gaps to add to the plan** (non-blocking — engineers can patch in T3
+and T2 as needed):
+
+1. T3 unit test: `_query_script` parses both `category` and `keywords` lines
+   when both present.
+2. T3 unit test: `_query_script` returns empty `keywords` list when only
+   `category` line is emitted (graceful for un-bootstrapped commands).
+3. T2 or T3 unit test: with `thefuzz` mocked unavailable, the fallback
+   substring-only scorer still returns predictable binary scores. Test the
+   fallback branch explicitly.
+
+### Section 4 — Performance
+
+- `collect_metadata` runs ~100 subprocess calls per cold cache; warm cache
+  is O(1). Already addressed (existing behavior).
+- `run_search` is O(n_commands × n_specs) — for 100 commands × 5 specs = 500
+  ops per query. Negligible.
+- `diversify` is O(n_results × log n_results) for the post-penalty sort.
+  Negligible.
+- TOML parse is O(19 files × 1 KB) — < 5ms cold, cached after.
+
+No performance concerns.
+
+### Section 5 — Security
+
+- No new attack surface. `_hug_keywords` is parsed via regex
+  (`re.search(r'keywords\s*=\s*\[(.*?)\]')`), not `eval`/`exec`. No shell
+  injection vector.
+- TOML loaded via stdlib `tomllib` — battle-tested.
+- Strict validation on category manifests prevents typos from silently
+  becoming queryable categories.
+
+### Eng Phase Completion Summary
+
+| Section | Status |
+|---|---|
+| 0 Scope challenge | ✅ Plan structurally smaller post-revision |
+| 1 Architecture (ASCII graph) | ✅ Above |
+| 2 Code quality | ✅ DRY/naming/complexity all green |
+| 3 Test review | ⚠️ 3 gaps identified — engineers add inline |
+| 4 Performance | ✅ Negligible cost |
+| 5 Security | ✅ No new attack surface |
 
 ---
 
-## Phase 3.5 — DX Review
+## Phase 3.5 — DX Review (post-revision)
 
-⏳ Pending premise gate decision. If user proceeds, will run focused on TTHW for `hug help` discovery, error message quality (validation failures), and `--explain` UX.
+`hug` is a developer CLI. Users are intermediate-to-advanced devs using hug
+for daily VCS work (the primary persona is the hug-scm author + small team).
+
+### Developer Journey Map
+
+| Stage | What dev does | Friction |
+|---|---|---|
+| Discover | Types `hug help` | Sees command-group list + topic-search hints |
+| Browse categories | Types `hug help @` | Sees catalog with one-line summaries (NEW) |
+| Drill into category | Types `hug help @branching` | Sees boxed page with description + commands (NEW) |
+| Search by word | Types `hug help /branch` | Top-10 results, precise keyword matches |
+| Search by intent | Types `hug help !save my work` | Finds `wip` via per-command keyword (NEW) |
+| Debug a result | Adds `--explain` | Sees match-source annotation |
+| Inspect a single command | Types `hug help <command>` | Existing path, unchanged |
+
+### TTHW (Time To Hello World)
+
+- Cold start: zero install — ships with hug. < 5 seconds from "I want to find
+  the right command" to "I see candidates."
+- Onboarding for a new contributor adding a script: needs to know to add
+  `_hug_category` and (optionally) `_hug_keywords`. The latter is undocumented
+  beyond example scripts. **GAP** — add a one-paragraph mention in
+  `git-config/bin/CLAUDE.md` so future contributors discover the convention.
+
+### Error Message Quality (problem + cause + fix)
+
+| Error | Surface | Quality |
+|---|---|---|
+| Missing TOML for declared category | stderr + exit 1 | ✅ "category 'flubber' is referenced by a script but has no manifest at categories/flubber.toml" — names problem, cause, fix path |
+| Bad TOML schema | ValueError stack trace | ⚠️ Default Python traceback is noisy. **GAP** — consider catching at `main()` boundary and printing a shorter `error: <path>: <reason>` line. Plan-level only — easy follow-up. |
+| Empty `_hug_keywords` | Silent (graceful) | ✅ Intentional |
+
+### API/CLI Naming
+
+| Name | Guessable? | Consistency |
+|---|---|---|
+| `hug help @` | ✅ — sigil already in use | Matches `/`, `!` |
+| `hug help @<cat>` | ✅ | Matches existing pattern |
+| `--all` | ✅ — universal flag idiom | Matches other CLIs |
+| `--explain` | ✅ — common debug pattern | Matches `git diff --explain`, `pip --explain` |
+| `--categories-dir` | ⚠️ — testing/path override; only documented in `--help` | Acceptable for advanced flag |
+| `_hug_keywords=` (per-script) | ⚠️ — discoverable only by reading existing scripts | Mitigated by adding to CLAUDE.md (see TTHW gap above) |
+
+### Documentation
+
+- `git-config/CLAUDE.md` mentions `--search-meta` as an existing convention.
+  **GAP** — extend it to document `_hug_keywords` so contributors know to set
+  it on new commands.
+- The 19 category TOMLs serve as documentation for what each category covers.
+- Plan does not require user-facing release notes; the change is internal.
+
+### Upgrade Path
+
+- Existing `--search-meta` scripts work without `_hug_keywords` —
+  graceful fallback to description-only scoring.
+- Users running `hug help` after the upgrade see the new boxed pages
+  immediately; no opt-in.
+- Cache mtime detection handles category TOML updates automatically.
+- `--explain` is opt-in (off by default).
+
+### DX Scorecard
+
+| Dimension | Score | Notes |
+|---|---|---|
+| 1. Getting started < 5 min | 9/10 | Zero install; one command to discover |
+| 2. CLI naming guessable | 9/10 | Sigil + flag conventions consistent |
+| 3. Error messages actionable | 7/10 | Missing-manifest excellent; TOML schema errors raw — fix at follow-up |
+| 4. Docs findable & complete | 7/10 | TTHW gap for `_hug_keywords` convention; non-blocking |
+| 5. Upgrade path safe | 10/10 | Fully graceful; no breaking change |
+| 6. Dev environment friction-free | 9/10 | `make test-lib-py` already covers; uv handles venv |
+| 7. Escape hatches present | 9/10 | `--all`, `--categories-dir`, `--explain`, `HUG_HELP_EXPLAIN` env-var |
+| 8. Internal consistency | 9/10 | Per-command keywords mirror per-command categories — same shape |
+| **Overall** | **8.6/10** | Strong DX; 2 small gaps to patch in follow-up |
+
+### DX Phase Completion Summary
+
+- TTHW: < 5 sec for end users; ~2 min for new-script contributors (after CLAUDE.md gap is patched).
+- Two small gaps captured (test-plan inline; not blockers).
+- One nice-to-have (better TOML schema error message) deferred to TODOS.md.
 
 ---
 
 ## Phase 4 — Final Approval Gate
 
-⏳ Pending.
+(Below.)
 
 ---
 
