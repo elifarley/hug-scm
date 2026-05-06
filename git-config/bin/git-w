@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+_hug_category='["working-dir"]'; test "${1:-}" = '--search-meta' && { printf 'category = %s\n' "$_hug_category"; exit 0; }
 # git-w - Working directory command gateway
 # Part of the Hug tool suite
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+_hug_category='["utilities"]'; test "${1:-}" = '--search-meta' && { printf 'category = %s\n' "$_hug_category"; exit 0; }
 # Assume HUG_HOME is set (exported by hug or environment)
 # shellcheck source=git-config/lib/hug-common
 . "$HUG_HOME/git-config/lib/hug-common"
