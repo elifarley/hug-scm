@@ -979,14 +979,19 @@ format_worktree_branch_display() {
 }
 
 # Print a one-line legend explaining the indicator characters.
-# Uses the same colors as the active indicators for visual association.
-# Suppressed by HUG_QUIET or non-TTY. (JSON paths exit before reaching this call.)
+# Always emits to stderr (matches codebase chatter convention; see
+# info/warning/tip in hug-output). Suppressed only by HUG_QUIET (set
+# by -q where supported, or by the caller). JSON paths exit before
+# reaching this call.
+#
+# Note: hug-terminal keys color vars on stdout's TTY state, not stderr.
+# So `hug wtl 2>err.txt` (stdout TTY, stderr file) leaves ANSI escapes
+# in err.txt. That follows from the codebase's color policy and is not
+# specific to this function.
 #
 # Usage: print_worktree_legend
 print_worktree_legend() {
-    # Respect quiet mode and non-TTY
     [[ -n "${HUG_QUIET:-}" ]] && return 0
-    [[ ! -t 1 ]] && return 0
 
     printf "  Legend: %s dirty  %s locked  %s current\n" \
         "${YELLOW}+${NC}" "${RED}#${NC}" "${GREEN}*${NC}" >&2

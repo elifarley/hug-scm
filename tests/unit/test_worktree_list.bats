@@ -607,7 +607,11 @@ teardown() {
 
 @test "hug wtl: stdout contains only listing lines (no header, no legend)" {
   cd "$TEST_REPO"
-  run git-wtl
+  # Discard stderr so $output reflects stdout only. BATS' `run` merges
+  # stdout and stderr by default; without this redirect, the stderr-bound
+  # legend would appear in $output and the refute assertions below would
+  # fail spuriously.
+  run bash -c 'git-wtl 2>/dev/null'
 
   assert_success
   refute_output --partial "Worktrees:"
@@ -621,6 +625,55 @@ teardown() {
   run git-wtl -q
 
   assert_success
+  refute_output --partial "Legend:"
+}
+
+# Pipe-aware tests: legend goes to stderr, so 2>&1 1>/dev/null captures stderr only.
+# These tests would have caught the original "TTY guard on fd 1" bug.
+
+@test "hug wtl: legend visible on stderr when stdout is piped" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl 2>&1 1>/dev/null'
+  assert_success
+  assert_output --partial "Legend:"
+}
+
+@test "hug wtl: piped legend on stderr has no ANSI escape codes" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl 2>&1 1>/dev/null'
+  assert_success
+  if echo "$output" | grep -qP '\x1b\['; then
+    fail "Found ANSI escape codes in piped legend on stderr"
+  fi
+}
+
+@test "hug wtll: legend visible on stderr when stdout is piped" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtll 2>&1 1>/dev/null'
+  assert_success
+  assert_output --partial "Legend:"
+}
+
+@test "hug wtll: -q suppresses header and legend" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtll -q 2>&1 1>/dev/null'
+  assert_success
+  refute_output --partial "Worktrees (long format)"
+  refute_output --partial "Legend:"
+}
+
+@test "hug wt --summary: legend visible on stderr when stdout is piped" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wt --summary 2>&1 1>/dev/null'
+  assert_success
+  assert_output --partial "Legend:"
+}
+
+@test "hug wt --summary: -q suppresses header and legend" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wt --summary -q 2>&1 1>/dev/null'
+  assert_success
+  refute_output --partial "Worktrees ("
   refute_output --partial "Legend:"
 }
 
