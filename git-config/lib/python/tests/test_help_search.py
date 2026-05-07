@@ -410,8 +410,8 @@ class TestQueryScriptParsing:
         script.write_text(
             "#!/usr/bin/env bash\n"
             "test \"${1:-}\" = '--search-meta' && {\n"
-            "  printf 'category = [\"working-dir\", \"parking\"]\\n'\n"
-            "  printf 'keywords = [\"save\", \"shelve\", \"stash\"]\\n'\n"
+            '  printf \'category = ["working-dir", "parking"]\\n\'\n'
+            '  printf \'keywords = ["save", "shelve", "stash"]\\n\'\n'
             "  exit 0\n"
             "}\n"
             "test \"${1:-}\" = '--help' && {\n"
@@ -699,8 +699,7 @@ class TestIntentMode:
         results = search_intent(commands, "save my work")
         cmds = [r.command for r in results]
         assert "hug w wipdel" not in cmds, (
-            f"DESTRUCTIVE regression in !intent: 'hug w wipdel' surfaced for "
-            f"'save my work': {cmds}"
+            f"DESTRUCTIVE regression in !intent: 'hug w wipdel' surfaced for 'save my work': {cmds}"
         )
 
     def test_intent_separate_from_keyword(self, commands):
@@ -802,8 +801,7 @@ class TestDiversify:
 
     def test_format_results_overflow_note(self):
         cmds = [
-            CommandInfo(command=f"hug cmd{i}", description=f"d{i}", categories=[])
-            for i in range(3)
+            CommandInfo(command=f"hug cmd{i}", description=f"d{i}", categories=[]) for i in range(3)
         ]
         out = format_results(cmds, total=12)
         assert "Showing top 3 of 12" in out
@@ -811,8 +809,7 @@ class TestDiversify:
 
     def test_format_results_no_overflow_when_within_cap(self):
         cmds = [
-            CommandInfo(command=f"hug cmd{i}", description=f"d{i}", categories=[])
-            for i in range(3)
+            CommandInfo(command=f"hug cmd{i}", description=f"d{i}", categories=[]) for i in range(3)
         ]
         out = format_results(cmds, total=3)
         assert "Showing top" not in out
@@ -878,6 +875,7 @@ class TestExplain:
         # Ensure cmd2's line doesn't have a stray annotation
         cmd2_line = next(line for line in out.splitlines() if "hug b" in line)
         assert "[" not in cmd2_line
+
 
 class TestFormatCategoryListWithMeta:
     """`hug help @` (no query) shows summary column when cat_meta is supplied."""
@@ -1013,9 +1011,7 @@ class TestFormatCategoryPage:
     def test_split_streams_empty_data_when_no_commands(self):
         from help_search import format_category_page
 
-        header, data, footer = format_category_page(
-            self._meta(), [], width=72, split_streams=True
-        )
+        header, data, footer = format_category_page(self._meta(), [], width=72, split_streams=True)
         # Stdout is empty when no commands; header + footer still render.
         assert data == ""
         assert "@branching" in header
@@ -1072,9 +1068,7 @@ class TestRuntimeValidation:
         cache_dir = tmp_path / "cache"
         return bin_dir, cat_dir, cache_dir
 
-    def test_main_exits_1_when_category_missing_manifest(
-        self, tmp_path, monkeypatch, capsys
-    ):
+    def test_main_exits_1_when_category_missing_manifest(self, tmp_path, monkeypatch, capsys):
         bin_dir, cat_dir, cache_dir = self._build_orphan_repo(tmp_path)
         from help_search import main as help_main
 
@@ -1098,9 +1092,7 @@ class TestRuntimeValidation:
         assert "flubber" in err
         assert "categories/flubber.toml" in err
 
-    def test_main_exits_1_when_categories_dir_missing(
-        self, tmp_path, monkeypatch, capsys
-    ):
+    def test_main_exits_1_when_categories_dir_missing(self, tmp_path, monkeypatch, capsys):
         # Pointing --categories-dir at a non-existent path is a hard error,
         # not a silent degradation. Surfaces install-time setup mistakes.
         bin_dir = tmp_path / "bin"

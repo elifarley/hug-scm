@@ -121,7 +121,6 @@ def validate_against_scripts(
     """
     missing = sorted(used_categories - categories.keys())
     return [
-        f"category '{name}' is referenced by a script "
-        f"but has no manifest at categories/{name}.toml"
+        f"category '{name}' is referenced by a script but has no manifest at categories/{name}.toml"
         for name in missing
     ]

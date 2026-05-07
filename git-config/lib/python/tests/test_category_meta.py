@@ -50,8 +50,7 @@ class TestLoadCategories:
             '"""\n'
         )
         (d / "staging.toml").write_text(
-            'label = "Staging area"\n'
-            'description = "Stage and unstage changes."\n'
+            'label = "Staging area"\ndescription = "Stage and unstage changes."\n'
         )
         return d
 

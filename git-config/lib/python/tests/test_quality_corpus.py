@@ -119,8 +119,7 @@ def test_keyword_destructive_isolation(commands, query, must_not_appear):
     results = [c.command for c in search_keyword(commands, query, all_results=True)]
     for cmd in must_not_appear:
         assert cmd not in results, (
-            f"/{query}: destructive command {cmd!r} surfaced — F3 regressed. "
-            f"Got: {results}"
+            f"/{query}: destructive command {cmd!r} surfaced — F3 regressed. Got: {results}"
         )
 
 
@@ -137,6 +136,5 @@ def test_intent_destructive_isolation(commands, query, must_not_appear):
     results = [c.command for c in search_intent(commands, query, all_results=True)]
     for cmd in must_not_appear:
         assert cmd not in results, (
-            f"!{query!r}: destructive command {cmd!r} surfaced — F3 regressed. "
-            f"Got: {results}"
+            f"!{query!r}: destructive command {cmd!r} surfaced — F3 regressed. Got: {results}"
         )
