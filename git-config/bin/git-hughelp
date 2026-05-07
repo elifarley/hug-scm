@@ -24,6 +24,8 @@ test $# -eq 0 && {
   echo '  hug help @<category> - Learn about a category and list its commands'
   echo '  hug help /<keyword>  - Search commands by keyword (fuzzy)'
   echo "  hug help '!<intent>'   - Find commands by what you want to do"
+  echo '  hug help :           - List articles (mini-guides)'
+  echo '  hug help :<article>  - Read an article'
   exit 0
 }
 prefix="$1"
@@ -37,6 +39,7 @@ case "$prefix" in
 /*) exec uv run --directory "$dir/../lib/python" --extra search help_search.py "/" "${prefix#/}" "${@:2}" ;;
 @*) exec uv run --directory "$dir/../lib/python" --extra search help_search.py "@" "${prefix#@}" "${@:2}" ;;
 !*) exec uv run --directory "$dir/../lib/python" --extra search help_search.py "!" "${prefix#!}" "${@:2}" ;;
+:*) exec uv run --directory "$dir/../lib/python" --extra search help_search.py ":" "${prefix#:}" "${@:2}" ;;
 esac
 
 # Show help for exact command if exists (script preferred over alias)
