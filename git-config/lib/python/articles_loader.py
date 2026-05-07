@@ -348,6 +348,10 @@ def render_article(meta: ArticleMeta) -> None:
 
     if shutil.which("less"):
         try:
+            # WHY no timeout: less is an interactive pager — it blocks until
+            # the user presses q. A timeout would kill them mid-read. The
+            # OSError catch handles exec failure; normal interactive exit
+            # is not an error.
             subprocess.run(
                 ["less", "-RFX"],
                 input=rendered,

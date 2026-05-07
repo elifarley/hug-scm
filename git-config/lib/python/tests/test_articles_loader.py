@@ -166,6 +166,10 @@ class TestRenderArticle:
         assert "# Hug test article" in captured.out
         # No ANSI escape sequences in pipe-safe path.
         assert "\x1b[" not in captured.out
+        # Trailing-newline guard: shell prompt must land on a clean line.
+        assert captured.out.endswith("\n"), (
+            "stdout must end with newline so shell prompt lands on a clean line"
+        )
 
     def test_tty_without_gum_or_less_falls_back_to_print(
         self, capsys, monkeypatch
@@ -177,3 +181,7 @@ class TestRenderArticle:
         render_article(articles[0])
         captured = capsys.readouterr()
         assert "# Hug test article" in captured.out
+        # Trailing-newline guard: shell prompt must land on a clean line.
+        assert captured.out.endswith("\n"), (
+            "stdout must end with newline so shell prompt lands on a clean line"
+        )
