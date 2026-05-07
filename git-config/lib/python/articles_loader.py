@@ -117,3 +117,24 @@ def parse_article(path: Path) -> ArticleMeta:
         body=body,
         path=path,
     )
+
+
+def load_articles(directory: "str | Path") -> list[ArticleMeta]:
+    """Return every <slug>.md under `directory`, sorted by (order, slug).
+
+    Missing or empty directory returns []. Articles are an opt-in CLI
+    feature; absence is not an error. Parse errors propagate — strict
+    validation per the categories pattern (loud drift, not silent).
+
+    WHY sorted(glob) before building metas: glob order is filesystem-
+    dependent and non-deterministic across platforms. Pre-sorting by path
+    makes the secondary slug tiebreak deterministic without an extra pass —
+    Python's sort is stable, so equal-order slugs preserve their pre-sorted
+    (alphabetical by filename) order after the (order, slug) sort.
+    """
+    base = Path(directory)
+    if not base.is_dir():
+        return []
+    metas = [parse_article(p) for p in sorted(base.glob("*.md"))]
+    metas.sort(key=lambda m: (m.order, m.slug))
+    return metas
