@@ -1194,3 +1194,76 @@ class TestRepoIntegrityViaHelpSearch:
         out = format_results([cmd], details=details, explain=True)
         assert "[keywords, 90]" in out
         assert "[desc, 70]" not in out
+
+
+class TestArticleMode:
+    """`:`  mode dispatches to articles_loader."""
+
+    def test_bare_colon_lists_articles(self, capsys, monkeypatch, tmp_path):
+        # Stand up a minimal articles dir.
+        adir = tmp_path / "articles"
+        adir.mkdir()
+        (adir / "demo.md").write_text(
+            '+++\ntitle = "Demo"\nsummary = "Demo article."\n+++\n\n# Demo\n'
+        )
+        # Empty categories dir to keep validate_against_scripts happy.
+        (tmp_path / "cats").mkdir()
+        monkeypatch.setattr("sys.argv", [
+            "help_search.py", ":", "",
+            "--bin-dir", str(tmp_path),  # not used by : mode
+            "--articles-dir", str(adir),
+            "--cache-dir", str(tmp_path / "cache"),
+            "--categories-dir", str(tmp_path / "cats"),
+        ])
+
+        from help_search import main
+        main()
+        out = capsys.readouterr()
+        # Slug appears on stdout (body); chatter on stderr.
+        assert ":demo" in out.out
+        assert "Articles" in out.err
+
+    def test_colon_slug_renders_article(self, capsys, monkeypatch, tmp_path):
+        adir = tmp_path / "articles"
+        adir.mkdir()
+        (adir / "demo.md").write_text(
+            '+++\ntitle = "Demo"\nsummary = "Demo."\n+++\n\n# Demo\n\nBody.\n'
+        )
+        (tmp_path / "cats").mkdir()
+        monkeypatch.setattr("sys.argv", [
+            "help_search.py", ":", "demo",
+            "--bin-dir", str(tmp_path),
+            "--articles-dir", str(adir),
+            "--cache-dir", str(tmp_path / "cache"),
+            "--categories-dir", str(tmp_path / "cats"),
+        ])
+        # Force non-TTY so render_article emits raw markdown to stdout.
+        monkeypatch.setattr("sys.stdout.isatty", lambda: False)
+
+        from help_search import main
+        main()
+        out = capsys.readouterr()
+        assert "# Demo" in out.out
+        assert "Body." in out.out
+
+    def test_colon_unknown_slug_suggests(self, capsys, monkeypatch, tmp_path):
+        adir = tmp_path / "articles"
+        adir.mkdir()
+        (adir / "hug-101.md").write_text(
+            '+++\ntitle = "Hug 101"\nsummary = "Quickstart."\n+++\n\n# Hug 101\n'
+        )
+        (tmp_path / "cats").mkdir()
+        monkeypatch.setattr("sys.argv", [
+            "help_search.py", ":", "hug101",
+            "--bin-dir", str(tmp_path),
+            "--articles-dir", str(adir),
+            "--cache-dir", str(tmp_path / "cache"),
+            "--categories-dir", str(tmp_path / "cats"),
+        ])
+        from help_search import main
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 1
+        out = capsys.readouterr()
+        assert "no article named" in out.err
+        assert ":hug-101" in out.err
