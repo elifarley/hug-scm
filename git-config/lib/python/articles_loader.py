@@ -211,6 +211,12 @@ def format_article_list(
     footer is "". Caller still emits exit 0 — empty articles dir isn't
     an error.
 
+    The `width` parameter governs only the decorative header rule's length;
+    body lines are sized by the longest slug and the summary field (capped
+    indirectly via SUMMARY_MAX=70). This matches the behavior of
+    format_category_list in help_search.py — neither function truncates
+    user-facing data.
+
     WHY clamp width to [40, 100]: 40 avoids degenerate one-char slug columns
     on narrow terminals; 100 caps the rule so it doesn't span ultra-wide
     screens and become visually noisy. The default 72 matches a comfortable
@@ -238,7 +244,7 @@ def format_article_list(
         f"  :{a.slug:<{name_w - 1}}  — {a.summary}" for a in articles
     ]
     body = "\n".join(body_lines)
-    footer = "Tip: `hug help :<title>` to read an article."
+    footer = "Tip: `hug help :<article>` to read an article."
     return (rule, body, footer)
 
 

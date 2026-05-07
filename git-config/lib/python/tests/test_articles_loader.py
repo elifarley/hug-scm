@@ -136,7 +136,7 @@ class TestFormatArticleList:
         assert ":hug-test" in body
         assert "Fixture article for unit tests." in body
         assert "Articles" in header
-        assert "hug help :" in footer
+        assert "hug help :<article>" in footer
 
     def test_empty_listing_message(self):
         header, body, footer = format_article_list([], width=72)
