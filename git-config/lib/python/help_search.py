@@ -561,18 +561,33 @@ def list_categories(commands: list[CommandInfo]) -> list[str]:
 def format_results(
     commands: list[CommandInfo],
     total: int | None = None,
+    details: list[tuple[int, CommandInfo, MatchSpec]] | None = None,
+    explain: bool = False,
 ) -> str:
     """Format command results for terminal output.
 
     When `total` is supplied and exceeds `len(commands)`, an overflow note
     advertises the `--all` flag so users know results were capped.
+
+    When `explain=True` and `details` is supplied, each result line is
+    annotated with `[<label>, <score>]` showing which spec produced the
+    match. Off by default — keeps the default output clean. Tag identifies
+    results by `id()` (CommandInfo is mutable so it's not hashable).
     """
     if not commands:
         return "  (none)"
+    detail_map: dict[int, tuple[int, MatchSpec]] = {}
+    if details:
+        for score, item, spec in details:
+            detail_map[id(item)] = (score, spec)
     lines = []
     for cmd in commands:
         desc = cmd.description or "(no description)"
-        lines.append(f"  {cmd.command:24s} - {desc}")
+        line = f"  {cmd.command:24s} - {desc}"
+        if explain and id(cmd) in detail_map:
+            score, spec = detail_map[id(cmd)]
+            line += f"   [{spec.label}, {score}]"
+        lines.append(line)
     if total is not None and total > len(commands):
         lines.append("")
         lines.append(
@@ -605,7 +620,16 @@ def main():
         action="store_true",
         help="Disable result cap and per-category diversification.",
     )
+    parser.add_argument(
+        "--explain",
+        action="store_true",
+        help="Annotate each result with the matching field and score.",
+    )
     args = parser.parse_args()
+
+    # HUG_HELP_EXPLAIN=1 enables --explain via env var (handy when wrapping
+    # `hug help` in shell aliases or scripts that can't easily pass flags).
+    explain = args.explain or os.environ.get("HUG_HELP_EXPLAIN") == "1"
 
     commands = collect_metadata(args.bin_dir, cache_dir=args.cache_dir)
 
@@ -617,12 +641,15 @@ def main():
         capped, total = _run_with_specs(commands, args.query, KEYWORD_SPECS, args.all)
         results = [item for _, item, _ in capped]
         print(f"Keyword search for '{args.query}':")
-        print(format_results(results, total=total))
+        print(format_results(results, total=total, details=capped, explain=explain))
 
     elif args.mode == "@":
         if not args.query:
             print(format_category_list(commands))
             return
+        # @category uses search_category (single-scorer fuzzy match against
+        # the category name). No spec/score tuple to feed --explain, so the
+        # explain flag is intentionally a no-op here.
         results = search_category(commands, args.query)
         print(f"Commands in category '{args.query}':")
         print(format_results(results))
@@ -639,7 +666,7 @@ def main():
         capped, total = _run_with_specs(commands, args.query, INTENT_SPECS, args.all)
         results = [item for _, item, _ in capped]
         print(f"Commands for '{args.query}':")
-        print(format_results(results, total=total))
+        print(format_results(results, total=total, details=capped, explain=explain))
 
 
 if __name__ == "__main__":

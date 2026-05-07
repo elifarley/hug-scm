@@ -815,3 +815,96 @@ class TestDiversify:
         ]
         out = format_results(cmds, total=3)
         assert "Showing top" not in out
+
+
+class TestExplain:
+    """--explain annotates each result line with the winning spec's label + score."""
+
+    def test_format_results_explain_shows_label_and_score(self):
+        cmd = CommandInfo(
+            command="hug bc",
+            description="Create a new branch.",
+            categories=["branching"],
+        )
+        spec = MatchSpec(
+            field="description",
+            scorer=lambda q, t: 95,
+            weight=1.0,
+            min_threshold=80,
+            label="desc",
+        )
+        details = [(95, cmd, spec)]
+        out = format_results([cmd], details=details, explain=True)
+        assert "[desc, 95]" in out
+
+    def test_format_results_no_explain_omits_annotations(self):
+        cmd = CommandInfo(
+            command="hug bc",
+            description="Create a new branch.",
+            categories=["branching"],
+        )
+        # explain=False (default) — annotations must NOT appear even if
+        # details is supplied.
+        spec = MatchSpec(
+            field="description",
+            scorer=lambda q, t: 95,
+            weight=1.0,
+            min_threshold=80,
+            label="desc",
+        )
+        details = [(95, cmd, spec)]
+        out = format_results([cmd], details=details, explain=False)
+        assert "[desc" not in out
+
+    def test_explain_handles_command_without_details(self):
+        # If a command appears in `commands` but not in `details` (shouldn't
+        # happen in practice, but defend against caller error), the line
+        # renders without annotation rather than crashing.
+        cmd1 = CommandInfo(command="hug a", description="d1", categories=[])
+        cmd2 = CommandInfo(command="hug b", description="d2", categories=[])
+        spec = MatchSpec(
+            field="description",
+            scorer=lambda q, t: 90,
+            weight=1.0,
+            min_threshold=0,
+            label="desc",
+        )
+        details = [(90, cmd1, spec)]  # cmd2 NOT in details
+        out = format_results([cmd1, cmd2], details=details, explain=True)
+        assert "[desc, 90]" in out  # cmd1 annotated
+        # cmd2 line exists but no annotation
+        assert "hug b" in out
+        # Ensure cmd2's line doesn't have a stray annotation
+        cmd2_line = next(line for line in out.splitlines() if "hug b" in line)
+        assert "[" not in cmd2_line
+
+    def test_explain_uses_winning_spec_label(self):
+        # When run_search picks the best spec per command, format_results
+        # must show THAT spec's label — not a different one.
+        cmd = CommandInfo(
+            command="hug bc",
+            description="d",
+            categories=[],
+            keywords=["create-branch"],
+        )
+        # Two specs that both match; the higher-scoring one should win.
+        specs = [
+            MatchSpec(
+                field="description",
+                scorer=lambda q, t: 70,
+                weight=1.0,
+                min_threshold=0,
+                label="desc",
+            ),
+            MatchSpec(
+                field="keywords",
+                scorer=lambda q, t: 90,
+                weight=1.0,
+                min_threshold=0,
+                label="keywords",
+            ),
+        ]
+        details = run_search("create-branch", [cmd], specs)
+        out = format_results([cmd], details=details, explain=True)
+        assert "[keywords, 90]" in out
+        assert "[desc, 70]" not in out
