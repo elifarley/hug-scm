@@ -41,7 +41,7 @@ Four sigils cover all discovery modes:
 
 - `:article` — narrative articles (like this one)
 - `/keyword` — fuzzy keyword search across command summaries
-- `!intent` — natural-language intent search ("save my work in progress")
+- `'!intent'` — natural-language intent search (e.g. `'!save my work in progress'`)
 - `@category` — browse a whole command family
 
 ## Reading state
@@ -84,8 +84,8 @@ Listing commands:
 ## Staging, committing, amending
 
     hug a <files>                   # stage specific files (precise; prefer this)
-    hug a                           # stage all tracked changes
-    hug aa                          # stage everything, including untracked (broad)
+    hug a                           # stage all tracked changes (modifications only, not deletions)
+    hug aa                          # stage everything: new files, updates, deletions (broad)
 
     hug c -m "message"              # commit with message
     hug cm                          # amend last commit (run `hug help cm` for full set)
@@ -108,7 +108,9 @@ attempt a raw git command.
 
     hug wtc <branch> --new -y       # create new branch from HEAD + its worktree
     hug wtc <branch> -y             # create worktree for an existing branch
-    hug wtl [branch]                # list all worktrees, or just one
+    hug wtl                         # list all worktrees
+    hug wtl <search>                # filter by path/branch substring (OR logic)
+    hug wtl -b <branch>             # filter by exact branch name
     hug wtdel <branch> --force      # delete worktree (add --with-branch to drop branch too)
 
 Worktrees land at a canonical path chosen by hug. Never pass `.worktrees/`
