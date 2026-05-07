@@ -724,6 +724,11 @@ def main():
     parser.add_argument("--bin-dir", default=_DEFAULT_BIN_DIR, help="Directory with git-* scripts")
     parser.add_argument("--cache-dir", default=_DEFAULT_CACHE_DIR, help="Cache directory")
     parser.add_argument(
+        "--categories-dir",
+        default=_DEFAULT_CATEGORIES_DIR,
+        help="Directory containing per-category TOML manifests",
+    )
+    parser.add_argument(
         "--all",
         action="store_true",
         help="Disable result cap and per-category diversification.",
@@ -739,20 +744,35 @@ def main():
     # `hug help` in shell aliases or scripts that can't easily pass flags).
     explain = args.explain or os.environ.get("HUG_HELP_EXPLAIN") == "1"
 
-    # Load category manifests for hydration / display. Best-effort: a missing
-    # categories/ directory degrades gracefully to "no summaries" rather than
-    # crashing. T10 makes this strict (validation gate); for now keep loose.
-    cat_meta = {}
-    try:
-        from category_meta import load_categories
+    # Load category manifests. Loader errors (malformed TOML, missing
+    # required fields) are surfaced as hard failures — these mean the
+    # repository state is broken and we should refuse to operate rather
+    # than silently dropping the affected category.
+    from category_meta import load_categories, validate_against_scripts
 
-        cat_meta = load_categories(_DEFAULT_CATEGORIES_DIR)
-    except (FileNotFoundError, ValueError):
-        # Manifests missing or malformed — degrade silently. T10 will turn
-        # this into a hard error with a useful stderr message.
-        pass
+    try:
+        cat_meta = load_categories(args.categories_dir)
+    except FileNotFoundError:
+        print(
+            f"error: categories directory not found: {args.categories_dir}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     commands = collect_metadata(args.bin_dir, cache_dir=args.cache_dir, cat_meta=cat_meta)
+
+    # Strict validation: every category referenced by a script MUST have a
+    # manifest. Catches the most likely drift mode (a contributor adds a
+    # category to a script without bootstrapping the corresponding TOML).
+    used_categories = {c for cmd in commands for c in cmd.categories}
+    errors = validate_against_scripts(cat_meta, used_categories)
+    if errors:
+        for err in errors:
+            print(f"error: {err}", file=sys.stderr)
+        sys.exit(1)
 
     if args.mode == "/":
         if not args.query:
