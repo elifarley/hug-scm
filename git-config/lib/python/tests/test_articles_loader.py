@@ -65,12 +65,8 @@ class TestLoadArticles:
 
     def test_default_order_falls_back_to_alpha(self, tmp_path):
         # Two articles with same default order → alphabetical by slug.
-        (tmp_path / "bbb.md").write_text(
-            '+++\ntitle = "B"\nsummary = "b"\n+++\n\n# B\n'
-        )
-        (tmp_path / "aaa.md").write_text(
-            '+++\ntitle = "A"\nsummary = "a"\n+++\n\n# A\n'
-        )
+        (tmp_path / "bbb.md").write_text('+++\ntitle = "B"\nsummary = "b"\n+++\n\n# B\n')
+        (tmp_path / "aaa.md").write_text('+++\ntitle = "A"\nsummary = "a"\n+++\n\n# A\n')
         articles = load_articles(tmp_path)
         assert [a.slug for a in articles] == ["aaa", "bbb"]
 
@@ -171,9 +167,7 @@ class TestRenderArticle:
             "stdout must end with newline so shell prompt lands on a clean line"
         )
 
-    def test_tty_without_gum_or_less_falls_back_to_print(
-        self, capsys, monkeypatch
-    ):
+    def test_tty_without_gum_or_less_falls_back_to_print(self, capsys, monkeypatch):
         monkeypatch.setattr("sys.stdout.isatty", lambda: True)
         # No gum, no less → just prints body.
         monkeypatch.setattr("shutil.which", lambda name: None)

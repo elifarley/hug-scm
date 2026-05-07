@@ -859,9 +859,7 @@ def main():
         if not args.query:
             # Listing: route streams per stdout/stderr discipline.
             # Header/footer (chatter) → stderr; slug list (data) → stdout.
-            header, body, footer = format_article_list(
-                articles, width=_terminal_width()
-            )
+            header, body, footer = format_article_list(articles, width=_terminal_width())
             print(header, file=sys.stderr, flush=True)
             if body:
                 print(body, flush=True)

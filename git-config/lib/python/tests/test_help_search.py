@@ -1208,15 +1208,25 @@ class TestArticleMode:
         )
         # Empty categories dir to keep validate_against_scripts happy.
         (tmp_path / "cats").mkdir()
-        monkeypatch.setattr("sys.argv", [
-            "help_search.py", ":", "",
-            "--bin-dir", str(tmp_path),  # not used by : mode
-            "--articles-dir", str(adir),
-            "--cache-dir", str(tmp_path / "cache"),
-            "--categories-dir", str(tmp_path / "cats"),
-        ])
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "help_search.py",
+                ":",
+                "",
+                "--bin-dir",
+                str(tmp_path),  # not used by : mode
+                "--articles-dir",
+                str(adir),
+                "--cache-dir",
+                str(tmp_path / "cache"),
+                "--categories-dir",
+                str(tmp_path / "cats"),
+            ],
+        )
 
         from help_search import main
+
         main()
         out = capsys.readouterr()
         # Slug appears on stdout (body); chatter on stderr.
@@ -1230,17 +1240,27 @@ class TestArticleMode:
             '+++\ntitle = "Demo"\nsummary = "Demo."\n+++\n\n# Demo\n\nBody.\n'
         )
         (tmp_path / "cats").mkdir()
-        monkeypatch.setattr("sys.argv", [
-            "help_search.py", ":", "demo",
-            "--bin-dir", str(tmp_path),
-            "--articles-dir", str(adir),
-            "--cache-dir", str(tmp_path / "cache"),
-            "--categories-dir", str(tmp_path / "cats"),
-        ])
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "help_search.py",
+                ":",
+                "demo",
+                "--bin-dir",
+                str(tmp_path),
+                "--articles-dir",
+                str(adir),
+                "--cache-dir",
+                str(tmp_path / "cache"),
+                "--categories-dir",
+                str(tmp_path / "cats"),
+            ],
+        )
         # Force non-TTY so render_article emits raw markdown to stdout.
         monkeypatch.setattr("sys.stdout.isatty", lambda: False)
 
         from help_search import main
+
         main()
         out = capsys.readouterr()
         assert "# Demo" in out.out
@@ -1253,14 +1273,24 @@ class TestArticleMode:
             '+++\ntitle = "Hug 101"\nsummary = "Quickstart."\n+++\n\n# Hug 101\n'
         )
         (tmp_path / "cats").mkdir()
-        monkeypatch.setattr("sys.argv", [
-            "help_search.py", ":", "hug101",
-            "--bin-dir", str(tmp_path),
-            "--articles-dir", str(adir),
-            "--cache-dir", str(tmp_path / "cache"),
-            "--categories-dir", str(tmp_path / "cats"),
-        ])
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "help_search.py",
+                ":",
+                "hug101",
+                "--bin-dir",
+                str(tmp_path),
+                "--articles-dir",
+                str(adir),
+                "--cache-dir",
+                str(tmp_path / "cache"),
+                "--categories-dir",
+                str(tmp_path / "cats"),
+            ],
+        )
         from help_search import main
+
         with pytest.raises(SystemExit) as exc:
             main()
         assert exc.value.code == 1

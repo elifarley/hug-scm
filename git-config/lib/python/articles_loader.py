@@ -193,8 +193,10 @@ def _ratio(query: str, target: str) -> int:
 
         return fuzz.ratio(query.lower(), target.lower())
     except ImportError:  # pragma: no cover
-        return 100 if query.lower() == target.lower() else (
-            80 if query.lower() in target.lower() else 0
+        return (
+            100
+            if query.lower() == target.lower()
+            else (80 if query.lower() in target.lower() else 0)
         )
 
 
@@ -242,9 +244,7 @@ def format_article_list(
     # Without it, the em-dash column would be off by one when the slug is
     # the only article (edge case) or varies in length across articles.
     name_w = max(len(a.slug) + 1 for a in articles)  # +1 for leading ':'
-    body_lines = [
-        f"  :{a.slug:<{name_w - 1}}  — {a.summary}" for a in articles
-    ]
+    body_lines = [f"  :{a.slug:<{name_w - 1}}  — {a.summary}" for a in articles]
     body = "\n".join(body_lines)
     footer = "Tip: `hug help :<article>` to read an article."
     return (rule, body, footer)
