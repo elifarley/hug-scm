@@ -68,15 +68,21 @@ def parse_article(path: Path) -> ArticleMeta:
     line closes the frontmatter. Everything between is TOML; everything
     after (minus one optional blank line) is the markdown body.
     """
-    text = Path(path).read_text(encoding="utf-8")
+    # Normalise once: accept str-typed callers gracefully so that path.stem
+    # and every downstream attribute access works without repeated Path() wraps.
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
 
-    if not lines or lines[0].strip() != _FENCE:
+    # Strict sentinel match (no .strip()): fences are tokens, not prose.
+    # Whitespace tolerance would break the "MUST be exactly +++" contract
+    # stated in the docstring and yield confusing error messages on typos.
+    if not lines or lines[0] != _FENCE:
         raise ValueError(f"{path}: missing opening +++ frontmatter fence")
 
     end = None
     for i in range(1, len(lines)):
-        if lines[i].strip() == _FENCE:
+        if lines[i] == _FENCE:
             end = i
             break
     if end is None:
@@ -94,9 +100,7 @@ def parse_article(path: Path) -> ArticleMeta:
         raise ValueError(f"{path}: missing 'summary' in frontmatter")
     summary = str(data["summary"])
     if len(summary) > SUMMARY_MAX:
-        raise ValueError(
-            f"{path}: 'summary' exceeds {SUMMARY_MAX} chars (got {len(summary)})"
-        )
+        raise ValueError(f"{path}: 'summary' exceeds {SUMMARY_MAX} chars (got {len(summary)})")
 
     # Body: lines after the closing fence; strip one leading blank line
     # so authors can write `+++\n\n# Title` and have it render cleanly.

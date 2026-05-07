@@ -6,7 +6,6 @@ import pytest
 
 from articles_loader import (
     ArticleMeta,
-    SUMMARY_MAX,
     parse_article,
 )
 
@@ -26,6 +25,9 @@ class TestParseArticle:
         assert meta.order == 10
         assert meta.body.startswith("# Hug test article")
         assert "Subsection" in meta.body
+        # Guard the contract: parse_article must store the original Path so
+        # error messages and future --explain output can show the file source.
+        assert meta.path == FIXTURES / "hug-test.md"
 
     def test_missing_fences_raises(self):
         with pytest.raises(ValueError, match="frontmatter"):
@@ -36,14 +38,14 @@ class TestParseArticle:
             parse_article(BAD / "missing_title.md")
 
     def test_long_summary_raises(self):
-        with pytest.raises(ValueError, match="summary"):
+        # Match "exceeds" rather than "summary" so this test catches only the
+        # length-exceeded error and not a spurious "missing 'summary'" failure.
+        with pytest.raises(ValueError, match="exceeds"):
             parse_article(BAD / "long_summary.md")
 
     def test_default_order_when_absent(self, tmp_path):
         p = tmp_path / "x.md"
-        p.write_text(
-            '+++\ntitle   = "X"\nsummary = "S"\n+++\n\n# X\n'
-        )
+        p.write_text('+++\ntitle   = "X"\nsummary = "S"\n+++\n\n# X\n')
         meta = parse_article(p)
         assert meta.order == 100
         assert meta.slug == "x"
