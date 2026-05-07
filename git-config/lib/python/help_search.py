@@ -711,7 +711,7 @@ def format_category_list(
 
 def main():
     parser = argparse.ArgumentParser(description="Hug help topic search")
-    parser.add_argument("mode", choices=["/", "@", "!"], help="Search mode")
+    parser.add_argument("mode", choices=["/", "@", "!", ":"], help="Search mode")
     parser.add_argument("query", nargs="?", default="", help="Search query")
     parser.add_argument("--bin-dir", default=_DEFAULT_BIN_DIR, help="Directory with git-* scripts")
     parser.add_argument("--cache-dir", default=_DEFAULT_CACHE_DIR, help="Cache directory")
@@ -719,6 +719,11 @@ def main():
         "--categories-dir",
         default=_DEFAULT_CATEGORIES_DIR,
         help="Directory containing per-category TOML manifests",
+    )
+    parser.add_argument(
+        "--articles-dir",
+        default=os.path.join(os.path.dirname(__file__), "articles"),
+        help="Directory containing article markdown files",
     )
     parser.add_argument(
         "--all",
@@ -817,6 +822,68 @@ def main():
         results = [item for _, item, _ in capped]
         print(f"Commands for '{args.query}':")
         print(format_results(results, total=total, details=capped, explain=explain))
+
+    elif args.mode == ":":
+        # Article mode: load articles, dispatch by query presence.
+        # WHY a separate branch (not folded into / @ !): articles are a
+        # different content model (long-form prose, not commands), with
+        # a different storage model (markdown files vs script metadata)
+        # and different output (rendered body vs scored result lines).
+        # Sharing the dispatcher keeps the user-facing UX coherent
+        # (single `hug help <sigil>` surface), but the inner pipeline
+        # belongs in articles_loader.
+        #
+        # WHY lazy import here (not at module top): mirrors the existing
+        # lazy `from category_meta import ...` pattern in this function.
+        # Keeps help_search.py importable even if articles_loader.py has
+        # an issue (defense in depth), and avoids paying import cost for
+        # every / @ ! invocation that doesn't need articles.
+        from articles_loader import (
+            find_article,
+            format_article_list,
+            load_articles,
+            render_article,
+        )
+
+        # WHY only ValueError (not FileNotFoundError as load_categories does):
+        # load_articles returns [] for a missing/non-existent directory rather
+        # than raising — articles are an opt-in feature, absence is not an error.
+        # Only schema violations (malformed frontmatter, oversize summary, etc.)
+        # surface as ValueError. See Task 2's load_articles contract.
+        try:
+            articles = load_articles(args.articles_dir)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        if not args.query:
+            # Listing: route streams per stdout/stderr discipline.
+            # Header/footer (chatter) → stderr; slug list (data) → stdout.
+            header, body, footer = format_article_list(articles, width=_terminal_width())
+            print(header, file=sys.stderr, flush=True)
+            if body:
+                print(body, flush=True)
+            if footer:  # empty for "no articles" empty-list path; guard avoids spurious blank line
+                print(footer, file=sys.stderr, flush=True)
+            return
+
+        result = find_article(articles, args.query)
+        if result.found is not None:
+            render_article(result.found)
+            return
+
+        # Unknown slug: print informative error with fuzzy suggestions.
+        print(f"error: no article named ':{args.query}'", file=sys.stderr)
+        if result.suggestions:
+            print("", file=sys.stderr)
+            print("Did you mean:", file=sys.stderr)
+            for s in result.suggestions:
+                print(f"  :{s.slug}  — {s.summary}", file=sys.stderr)
+        # WHY exit 1 even when no suggestions: a slug that doesn't exist is an
+        # unambiguous error (unlike @<category>'s fuzzy fallback, which may
+        # legitimately return no matches as part of a "best-effort" listing).
+        # Shell scripts checking `hug help :foo` should be able to detect failure.
+        sys.exit(1)
 
 
 if __name__ == "__main__":
