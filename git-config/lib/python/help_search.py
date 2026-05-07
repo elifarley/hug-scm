@@ -845,6 +845,11 @@ def main():
             render_article,
         )
 
+        # WHY only ValueError (not FileNotFoundError as load_categories does):
+        # load_articles returns [] for a missing/non-existent directory rather
+        # than raising — articles are an opt-in feature, absence is not an error.
+        # Only schema violations (malformed frontmatter, oversize summary, etc.)
+        # surface as ValueError. See Task 2's load_articles contract.
         try:
             articles = load_articles(args.articles_dir)
         except ValueError as exc:
@@ -860,7 +865,7 @@ def main():
             print(header, file=sys.stderr, flush=True)
             if body:
                 print(body, flush=True)
-            if footer:
+            if footer:  # empty for "no articles" empty-list path; guard avoids spurious blank line
                 print(footer, file=sys.stderr, flush=True)
             return
 
@@ -876,6 +881,10 @@ def main():
             print("Did you mean:", file=sys.stderr)
             for s in result.suggestions:
                 print(f"  :{s.slug}  — {s.summary}", file=sys.stderr)
+        # WHY exit 1 even when no suggestions: a slug that doesn't exist is an
+        # unambiguous error (unlike @<category>'s fuzzy fallback, which may
+        # legitimately return no matches as part of a "best-effort" listing).
+        # Shell scripts checking `hug help :foo` should be able to detect failure.
         sys.exit(1)
 
 
