@@ -9,6 +9,7 @@ from help_search import (
     MatchSpec,
     collect_metadata,
     derive_command_name,
+    format_category_list,
     format_results,
     list_categories,
     parse_description_from_help,
@@ -878,7 +879,60 @@ class TestExplain:
         cmd2_line = next(line for line in out.splitlines() if "hug b" in line)
         assert "[" not in cmd2_line
 
-    def test_explain_uses_winning_spec_label(self):
+class TestFormatCategoryListWithMeta:
+    """`hug help @` (no query) shows summary column when cat_meta is supplied."""
+
+    def test_summary_column_present(self):
+        from category_meta import CategoryMeta
+        from help_search import format_category_list
+
+        cmds = [
+            CommandInfo(command="hug bc", description="", categories=["branching"]),
+            CommandInfo(command="hug b", description="", categories=["branching"]),
+            CommandInfo(command="hug a", description="", categories=["staging"]),
+        ]
+        cat_meta = {
+            "branching": CategoryMeta(
+                name="branching",
+                label="Branch ops",
+                description="Create, list, switch, and delete branches.",
+                summary="Create, list, switch, and delete branches.",
+            ),
+            "staging": CategoryMeta(
+                name="staging",
+                label="Staging area",
+                description="Stage and unstage changes.",
+                summary="Stage and unstage changes.",
+            ),
+        }
+        out = format_category_list(cmds, cat_meta=cat_meta)
+        assert "@branching" in out
+        assert "Create, list, switch, and delete branches" in out
+        assert "(2)" in out  # two branching commands
+        assert "to learn about a category and list its commands" in out
+
+    def test_falls_back_when_no_meta_supplied(self):
+        # Without cat_meta, the bare listing format (no summaries) still works.
+        cmds = [
+            CommandInfo(command="hug a", description="", categories=["staging"]),
+            CommandInfo(command="hug bc", description="", categories=["branching"]),
+        ]
+        out = format_category_list(cmds, cat_meta=None)
+        assert "@branching" in out
+        assert "@staging" in out
+        # No summary separator when no meta.
+        assert "—" not in out
+
+    def test_keyword_and_intent_hint_lines(self):
+        cmds = [CommandInfo(command="hug a", description="", categories=["staging"])]
+        out = format_category_list(cmds, cat_meta=None)
+        assert "/<keyword>" in out
+        assert "!<intent>" in out
+
+    def test_empty_categories(self):
+        out = format_category_list([], cat_meta=None)
+        assert "Available categories" in out
+        assert "(none)" in out
         # When run_search picks the best spec per command, format_results
         # must show THAT spec's label — not a different one.
         cmd = CommandInfo(

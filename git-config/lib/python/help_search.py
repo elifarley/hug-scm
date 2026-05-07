@@ -102,6 +102,7 @@ MIN_CATEGORY_SCORE = 60
 # Default paths
 _DEFAULT_BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "bin")
 _DEFAULT_CACHE_DIR = "/tmp/cache/hug"
+_DEFAULT_CATEGORIES_DIR = os.path.join(os.path.dirname(__file__), "categories")
 
 
 @dataclass
@@ -597,15 +598,41 @@ def format_results(
     return "\n".join(lines)
 
 
-def format_category_list(commands: list[CommandInfo]) -> str:
-    """Format the full category listing for '@' with no query."""
+def format_category_list(
+    commands: list[CommandInfo],
+    cat_meta: dict | None = None,
+) -> str:
+    """Format the full category listing for '@' with no query.
+
+    When `cat_meta` is supplied, each line is enriched with the category's
+    one-line summary (CategoryMeta.summary). Without cat_meta, falls back
+    to the bare `@<name>  (count)` shape — keeps the function usable in
+    tests and contexts without manifests loaded.
+    """
     cats = list_categories(commands)
-    lines = ["Available categories:"]
+    if not cats:
+        return "Available categories: (none)"
+
+    name_w = max(len(c) for c in cats)
+    counts = {c: sum(1 for cmd in commands if c in cmd.categories) for c in cats}
+    count_w = max(len(str(n)) for n in counts.values())
+
+    lines = ["Available categories:", ""]
     for cat in cats:
-        count = sum(1 for c in commands if cat in c.categories)
-        lines.append(f"  @{cat:16s} ({count} commands)")
-    lines.append("")
-    lines.append("Use 'hug help @<category>' to see commands in a category.")
+        meta = (cat_meta or {}).get(cat)
+        summary = meta.summary if meta else ""
+        sep = "  — " if summary else ""
+        lines.append(
+            f"  @{cat:<{name_w}}  ({counts[cat]:>{count_w}}){sep}{summary}".rstrip()
+        )
+    lines += [
+        "",
+        "Use `hug help @<category>` to learn about a category and list its commands.",
+        (
+            "Use `hug help /<keyword>` for keyword search, "
+            "or `hug help !<intent>` for natural-language search."
+        ),
+    ]
     return "\n".join(lines)
 
 
@@ -631,7 +658,20 @@ def main():
     # `hug help` in shell aliases or scripts that can't easily pass flags).
     explain = args.explain or os.environ.get("HUG_HELP_EXPLAIN") == "1"
 
-    commands = collect_metadata(args.bin_dir, cache_dir=args.cache_dir)
+    # Load category manifests for hydration / display. Best-effort: a missing
+    # categories/ directory degrades gracefully to "no summaries" rather than
+    # crashing. T10 makes this strict (validation gate); for now keep loose.
+    cat_meta = {}
+    try:
+        from category_meta import load_categories
+
+        cat_meta = load_categories(_DEFAULT_CATEGORIES_DIR)
+    except (FileNotFoundError, ValueError):
+        # Manifests missing or malformed — degrade silently. T10 will turn
+        # this into a hard error with a useful stderr message.
+        pass
+
+    commands = collect_metadata(args.bin_dir, cache_dir=args.cache_dir, cat_meta=cat_meta)
 
     if args.mode == "/":
         if not args.query:
@@ -645,7 +685,7 @@ def main():
 
     elif args.mode == "@":
         if not args.query:
-            print(format_category_list(commands))
+            print(format_category_list(commands, cat_meta=cat_meta))
             return
         # @category uses search_category (single-scorer fuzzy match against
         # the category name). No spec/score tuple to feed --explain, so the
