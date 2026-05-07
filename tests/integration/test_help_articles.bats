@@ -62,9 +62,12 @@ teardown() {
   cd "$TEST_TEMP_DIR"
   run hug help :hug-101
   assert_success
-  # Works for both gum-rendered (TTY) and raw-markdown (piped/non-TTY) paths.
-  assert_output --partial "Hug 101"
-  assert_output --partial "five-minute path"
+  # Tight match: "# Hug 101" only appears on the body's H1, not in listing output,
+  # so this unambiguously confirms the article body was rendered (not just a slug).
+  assert_output --partial "# Hug 101"
+  # Stable probe: "humane CLI on top of Git" is from the intro paragraph,
+  # far less likely to change during content edits than section headings.
+  assert_output --partial "humane CLI on top of Git"
 }
 
 @test "hug help :hug-101 is pipe-safe (raw markdown when not TTY)" {
