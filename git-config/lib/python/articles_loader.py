@@ -139,3 +139,77 @@ def load_articles(directory: str | Path) -> list[ArticleMeta]:
     metas = [parse_article(p) for p in sorted(base.glob("*.md"))]
     metas.sort(key=lambda m: (m.order, m.slug))
     return metas
+
+
+# ---------------------------------------------------------------------------
+# Article lookup: exact slug match + fuzzy fallback
+# ---------------------------------------------------------------------------
+
+# Fuzzy threshold: matches MIN_CATEGORY_SCORE in help_search.py.
+# Slugs are short, kebab-case, low-noise — strict ratio() with floor 60
+# accepts genuine typos ("hug-tst" → "hug-test") while rejecting
+# unrelated queries ("zzzzz"). Lowering this would surface noise;
+# raising it would miss obvious 1-char typos.
+_MIN_FUZZY_SCORE = 60
+_MAX_SUGGESTIONS = 3
+
+
+@dataclass(frozen=True)
+class FindResult:
+    """Result of looking up an article by slug.
+
+    `found` is the exact-match ArticleMeta or None.
+    `suggestions` is a list of fuzzy-matched ArticleMeta when found is
+    None — capped to _MAX_SUGGESTIONS so the error UI stays scannable.
+    """
+
+    found: ArticleMeta | None
+    suggestions: list[ArticleMeta]
+
+
+def _ratio(query: str, target: str) -> int:
+    """Strict full-string fuzzy ratio (0–100). Substring-only fallback.
+
+    Lazy import keeps articles_loader importable in environments without
+    thefuzz (the `--extra search` flag isn't passed). The fallback gives
+    a binary 0/100 signal — enough to gate suggestions when the optional
+    dep is absent.
+
+    WHY lazy rather than module-level try/except: module-level import
+    runs at collection time during tests; lazy import defers the failure
+    to the call site, which makes import errors easier to distinguish
+    from test failures. Mirrors the pattern in help_search.py.
+    """
+    try:
+        from thefuzz import fuzz  # type: ignore[import-not-found]
+
+        return fuzz.ratio(query.lower(), target.lower())
+    except ImportError:
+        return 100 if query.lower() == target.lower() else (
+            80 if query.lower() in target.lower() else 0
+        )
+
+
+def find_article(articles: list[ArticleMeta], query: str) -> FindResult:
+    """Look up by slug; on miss, return up to _MAX_SUGGESTIONS fuzzy hits.
+
+    Scoring fields: slug (primary, low-noise) + title (secondary, may
+    contain spaces). Take the better of the two per article. Suggestions
+    are sorted by score descending.
+
+    WHY score both slug and title: a user who types `:hug test` (spaces
+    instead of hyphens) would score low on slug but high on title,
+    so the title fallback surfaces the right article without requiring
+    exact kebab-case input.
+    """
+    for a in articles:
+        if a.slug == query:
+            return FindResult(found=a, suggestions=[])
+
+    scored: list[tuple[int, ArticleMeta]] = []
+    for a in articles:
+        score = max(_ratio(query, a.slug), _ratio(query, a.title))
+        if score >= _MIN_FUZZY_SCORE:
+            scored.append((score, a))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return FindResult(found=None, suggestions=[a for _, a in scored[:_MAX_SUGGESTIONS]])

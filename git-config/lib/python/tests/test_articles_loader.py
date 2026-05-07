@@ -6,6 +6,8 @@ import pytest
 
 from articles_loader import (
     ArticleMeta,
+    FindResult,
+    find_article,
     load_articles,
     parse_article,
 )
@@ -86,3 +88,28 @@ class TestLoadArticles:
         # for each failure mode are covered by TestParseArticle.
         with pytest.raises(ValueError):
             load_articles(BAD)
+
+
+class TestFindArticle:
+    """Lookup: exact slug match, else fuzzy suggestions."""
+
+    def test_exact_match(self):
+        articles = load_articles(FIXTURES)
+        result = find_article(articles, "hug-test")
+        assert result.found is not None
+        assert result.found.slug == "hug-test"
+        assert result.suggestions == []
+
+    def test_no_match_returns_suggestions(self):
+        articles = load_articles(FIXTURES)
+        result = find_article(articles, "hug-tst")  # typo
+        assert result.found is None
+        assert any(a.slug == "hug-test" for a in result.suggestions)
+
+    def test_unrelated_query_returns_empty_suggestions(self):
+        articles = load_articles(FIXTURES)
+        result = find_article(articles, "zzzzzzzzzzz")
+        assert result.found is None
+        # No fuzzy hits — empty suggestions, caller renders generic
+        # "no article" message.
+        assert result.suggestions == []
