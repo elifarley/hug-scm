@@ -239,9 +239,7 @@ INTENT_SPECS = [
         min_threshold=75,
         label="@cat-desc",
     ),
-    MatchSpec(
-        field="keywords", scorer=_token_set, weight=0.80, min_threshold=75, label="keywords"
-    ),
+    MatchSpec(field="keywords", scorer=_token_set, weight=0.80, min_threshold=75, label="keywords"),
 ]
 
 
@@ -517,9 +515,7 @@ def search_keyword(
     spec wins per command; results sort by score descending, then are
     diversified + capped to top 10 (override with `all_results=True`).
     """
-    capped, _total = _run_with_specs(
-        commands, query, specs or KEYWORD_SPECS, all_results
-    )
+    capped, _total = _run_with_specs(commands, query, specs or KEYWORD_SPECS, all_results)
     return [item for _, item, _ in capped]
 
 
@@ -537,9 +533,7 @@ def search_intent(
     the match. Diversified + capped to top 10 by default; pass
     `all_results=True` to disable.
     """
-    capped, _total = _run_with_specs(
-        commands, query, specs or INTENT_SPECS, all_results
-    )
+    capped, _total = _run_with_specs(commands, query, specs or INTENT_SPECS, all_results)
     return [item for _, item, _ in capped]
 
 
@@ -597,10 +591,7 @@ def format_results(
         lines.append(line)
     if total is not None and total > len(commands):
         lines.append("")
-        lines.append(
-            f"  Showing top {len(commands)} of {total}. "
-            f"Pass --all to see all matches."
-        )
+        lines.append(f"  Showing top {len(commands)} of {total}. Pass --all to see all matches.")
     return "\n".join(lines)
 
 
@@ -707,16 +698,13 @@ def format_category_list(
         meta = (cat_meta or {}).get(cat)
         summary = meta.summary if meta else ""
         sep = "  — " if summary else ""
-        lines.append(
-            f"  @{cat:<{name_w}}  ({counts[cat]:>{count_w}}){sep}{summary}".rstrip()
-        )
+        lines.append(f"  @{cat:<{name_w}}  ({counts[cat]:>{count_w}}){sep}{summary}".rstrip())
     lines += [
         "",
-        "Use `hug help @<category>` to learn about a category and list its commands.",
-        (
-            "Use `hug help /<keyword>` for keyword search, "
-            "or `hug help !<intent>` for natural-language search."
-        ),
+        "Tips:",
+        "`hug help @<category>` to learn about a category and list its commands.",
+        "`hug help /<keyword>` for keyword search.",
+        "`hug help '!<intent>'` for natural-language search.",
     ]
     return "\n".join(lines)
 
@@ -823,7 +811,7 @@ def main():
         if not args.query:
             print("Usage: hug help !<intent>")
             print("Find commands by what you want to accomplish.")
-            print("Example: hug help !push to remote")
+            print("Example: hug help '!push to remote'")
             return
         capped, total = _run_with_specs(commands, args.query, INTENT_SPECS, args.all)
         results = [item for _, item, _ in capped]

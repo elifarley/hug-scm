@@ -20,10 +20,10 @@ test $# -eq 0 && {
   echo "Use 'hug help [prefix]' to see commands with that prefix"
   echo ''
   echo 'Topic search:'
-  echo '  hug help /<keyword>  - Search commands by keyword (fuzzy)'
   echo '  hug help @           - List all categories'
   echo '  hug help @<category> - Learn about a category and list its commands'
-  echo '  hug help !<intent>   - Find commands by what you want to do'
+  echo '  hug help /<keyword>  - Search commands by keyword (fuzzy)'
+  echo '  hug help \'!<intent>\'   - Find commands by what you want to do'
   exit 0
 }
 prefix="$1"
