@@ -92,13 +92,15 @@ strip_ansi() {
   assert_equal "$stripped" "*@ detached"
 }
 
-@test "print_worktree_legend: outputs nothing to stdout (legend on stderr)" {
-  # BATS runs non-TTY, so the legend is suppressed entirely (non-TTY guard).
-  # Verify that stdout is empty regardless.
-  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; print_worktree_legend 2>/dev/null'
+@test "print_worktree_legend: emits Legend on stderr in non-TTY too" {
+  # Capture stderr only (1>/dev/null) so the assertion can see it.
+  # The earlier version of this test redirected stderr to /dev/null and
+  # asserted empty stdout, which silently passed regardless of whether
+  # the legend was emitted — that's how the "TTY guard on fd 1" bug went
+  # undetected. This form would have caught it.
+  run bash -c 'source git-config/lib/hug-terminal; source git-config/lib/hug-git-worktree; print_worktree_legend 2>&1 1>/dev/null'
   assert_success
-  # stdout should be empty — legend goes to stderr (or suppressed entirely in non-TTY)
-  assert_output ""
+  assert_output --partial "Legend:"
 }
 
 @test "print_worktree_legend: includes Legend prefix on stderr under TTY" {

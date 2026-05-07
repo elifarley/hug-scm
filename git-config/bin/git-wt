@@ -23,6 +23,7 @@ ARGUMENTS:
 
 OPTIONS:
   -h, --help            Show this help message and exit.
+  -q, --quiet           Suppress header and legend in --summary mode (data lines only).
   --summary             Show non-interactive summary of all worktrees.
   --json                Output worktree information in JSON format.
 
@@ -83,6 +84,10 @@ while [[ $# -gt 0 ]]; do
     json_output=true
     shift
     ;;
+  -q | --quiet)
+    export HUG_QUIET=T
+    shift
+    ;;
   -*)
     error "Unknown option: $1"
     show_help
@@ -113,7 +118,7 @@ if "$summary_output"; then
   # Count of ADDITIONAL worktrees (excluding main)
   additional_count=$((count > 0 ? count - 1 : 0))
 
-  printf "${BLUE}Worktrees (%d)${NC}\n" "$additional_count" >&2
+  [[ -z "${HUG_QUIET:-}" ]] && printf "${BLUE}Worktrees (%d)${NC}\n" "$additional_count" >&2
   print_worktree_legend
 
   for i in "${!worktree_paths[@]}"; do
