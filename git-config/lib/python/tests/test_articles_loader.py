@@ -10,6 +10,7 @@ from articles_loader import (
     format_article_list,
     load_articles,
     parse_article,
+    render_article,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "articles"
@@ -150,3 +151,29 @@ class TestFormatArticleList:
         lines = [ln for ln in body.split("\n") if " — " in ln]
         positions = {ln.index(" — ") for ln in lines}
         assert len(positions) == 1, f"slug columns misaligned: {positions}"
+
+
+class TestRenderArticle:
+    """Rendering pipeline: gum format if TTY+available, else raw markdown."""
+
+    def test_non_tty_emits_raw_markdown(self, capsys, monkeypatch):
+        # Force stdout.isatty() False so the function takes the pipe-safe path.
+        monkeypatch.setattr("sys.stdout.isatty", lambda: False)
+        articles = load_articles(FIXTURES)
+        render_article(articles[0])  # hug-test
+        captured = capsys.readouterr()
+        # Body is markdown source — heading marker visible.
+        assert "# Hug test article" in captured.out
+        # No ANSI escape sequences in pipe-safe path.
+        assert "\x1b[" not in captured.out
+
+    def test_tty_without_gum_or_less_falls_back_to_print(
+        self, capsys, monkeypatch
+    ):
+        monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+        # No gum, no less → just prints body.
+        monkeypatch.setattr("shutil.which", lambda name: None)
+        articles = load_articles(FIXTURES)
+        render_article(articles[0])
+        captured = capsys.readouterr()
+        assert "# Hug test article" in captured.out

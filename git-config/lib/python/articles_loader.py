@@ -21,6 +21,8 @@ visually. Matches Hugo/Zola conventions; not gratuitous novelty.
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -277,3 +279,89 @@ def find_article(articles: list[ArticleMeta], query: str) -> FindResult:
         found=None,
         suggestions=tuple(a for _, a in scored[:_MAX_SUGGESTIONS]),
     )
+
+
+# ---------------------------------------------------------------------------
+# Article rendering: TTY-aware pipeline
+# ---------------------------------------------------------------------------
+
+
+def _gum_format(markdown: str) -> str | None:
+    """Run `gum format` on markdown; return rendered ANSI or None on failure.
+
+    Returning None on failure (rather than raising) lets the caller fall
+    through to the next strategy — the project's stance is graceful
+    degradation when optional polish tools are absent.
+
+    WHY timeout=5: gum format is a local process with no network I/O; if it
+    hangs beyond 5 s something is badly wrong and we should not block the
+    user. Graceful fallback beats a frozen terminal.
+    """
+    if not shutil.which("gum"):
+        return None
+    try:
+        result = subprocess.run(
+            ["gum", "format"],
+            input=markdown,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout
+
+
+def render_article(meta: ArticleMeta) -> None:
+    """Render `meta.body` to stdout with TTY-aware polish.
+
+    Pipe-safe: when stdout is not a TTY (piped, captured), emit raw
+    markdown — predictable for `hug help :hug-101 | grep workflow`.
+
+    On a TTY: try `gum format` for polished ANSI output; pipe through
+    `less -RFX` so short articles print directly (`-F` quits if it fits)
+    and long articles get paged with colors preserved (`-R`) and the
+    screen not cleared on exit (`-X`, content stays in scrollback).
+
+    WHY `less -RFX`:
+      -R  pass ANSI color sequences through (required for gum output)
+      -F  exit immediately if the whole content fits one screen (avoids
+          jarring pager invocation for short articles)
+      -X  do not clear screen on exit (content stays in terminal scrollback
+          instead of vanishing — especially appreciated in iTerm/tmux)
+
+    WHY fallback chain (gum → less → direct write):
+    Each layer is optional tooling; absence is not an error. The user
+    always sees their article body regardless of what's installed.
+    """
+    body = meta.body
+    if not sys.stdout.isatty():
+        sys.stdout.write(body)
+        if not body.endswith("\n"):
+            sys.stdout.write("\n")
+        return
+
+    rendered = _gum_format(body) or body
+
+    if shutil.which("less"):
+        try:
+            subprocess.run(
+                ["less", "-RFX"],
+                input=rendered,
+                text=True,
+                check=False,
+            )
+            return
+        except OSError:
+            pass  # Fall through to direct write.
+            # WHY bare `pass`: OSError here means `less` exec failed after
+            # shutil.which returned a path (race or broken binary). We've
+            # already confirmed the intent to use less; now we gracefully
+            # degrade to the direct-write path below.
+
+    sys.stdout.write(rendered)
+    if not rendered.endswith("\n"):
+        sys.stdout.write("\n")
