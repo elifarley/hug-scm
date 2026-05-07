@@ -23,7 +23,7 @@ test $# -eq 0 && {
   echo '  hug help @           - List all categories'
   echo '  hug help @<category> - Learn about a category and list its commands'
   echo '  hug help /<keyword>  - Search commands by keyword (fuzzy)'
-  echo "  hug help '!<intent>'   - Find commands by what you want to do"
+  echo "  hug help '!<intent>' - Find commands by what you want to do"
   echo '  hug help :           - List articles (mini-guides)'
   echo '  hug help :<article>  - Read an article'
   exit 0
@@ -31,7 +31,7 @@ test $# -eq 0 && {
 prefix="$1"
 dir=$(dirname "$0")
 
-# Topic search dispatch — /keyword, @category, !intent
+# Topic search dispatch — /keyword, @category, !intent, :article
 # WHY uv run + --extra search: resolves venv + dependencies (thefuzz) without relying on system python3
 # Extra args after the sigil-prefixed query (--all, --explain, etc.) forward
 # to help_search.py via "${@:2}" so users can run e.g. `hug help /branch --explain`.
