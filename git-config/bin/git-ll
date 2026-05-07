@@ -14,7 +14,7 @@ show_help() {
 hug ll: Log commits with detailed formatting (graph, date, author, message).
 
 USAGE:
-    hug ll [options] [<revision-range>] [-- <path>]
+    hug ll [options] [<revision-range>|[remote/]<branch>] [-- <path>]
 
 OPTIONS:
     <n>           Show single commit HEAD~n (0 → HEAD, 1 → HEAD~1, etc.)
