@@ -79,9 +79,10 @@ class TestLoadArticles:
         assert load_articles(tmp_path / "nope") == []
 
     def test_propagates_parse_errors(self):
-        # The loader iterates files alphabetically; long_summary.md sorts
-        # before missing_title.md, so the first error is the summary-length
-        # violation. What matters is that *some* parse error propagates — the
-        # loader must not swallow individual file failures.
-        with pytest.raises(ValueError, match="exceeds"):
+        # Any file in the bad-fixture dir should cause a ValueError.
+        # We don't pin which specific error fires, because that depends on
+        # alphabetical ordering of the fixture filenames — adding a new bad
+        # fixture later shouldn't break this test. The exact error messages
+        # for each failure mode are covered by TestParseArticle.
+        with pytest.raises(ValueError):
             load_articles(BAD)
