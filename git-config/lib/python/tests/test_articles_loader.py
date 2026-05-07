@@ -7,6 +7,7 @@ import pytest
 from articles_loader import (
     ArticleMeta,
     find_article,
+    format_article_list,
     load_articles,
     parse_article,
 )
@@ -124,3 +125,28 @@ class TestFindArticle:
         result = find_article([], "anything")
         assert result.found is None
         assert result.suggestions == ()
+
+
+class TestFormatArticleList:
+    """Listing format: stdout-safe slug column + summary, stderr chatter separate."""
+
+    def test_listing_includes_slugs_and_summaries(self):
+        articles = load_articles(FIXTURES)
+        header, body, footer = format_article_list(articles, width=72)
+        assert ":hug-test" in body
+        assert "Fixture article for unit tests." in body
+        assert "Articles" in header
+        assert "hug help :" in footer
+
+    def test_empty_listing_message(self):
+        header, body, footer = format_article_list([], width=72)
+        assert body == ""
+        assert "No articles available yet" in header
+
+    def test_slug_column_aligns(self):
+        articles = load_articles(FIXTURES)
+        _, body, _ = format_article_list(articles, width=72)
+        # Both lines should have the em-dash separator at the same column.
+        lines = [ln for ln in body.split("\n") if " — " in ln]
+        positions = {ln.index(" — ") for ln in lines}
+        assert len(positions) == 1, f"slug columns misaligned: {positions}"

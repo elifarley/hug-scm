@@ -196,6 +196,52 @@ def _ratio(query: str, target: str) -> int:
         )
 
 
+def format_article_list(
+    articles: list[ArticleMeta],
+    width: int = 72,
+) -> tuple[str, str, str]:
+    """Render the `hug help :` listing as (header, body, footer) strings.
+
+    Returning three strings (instead of one) lets the caller route them
+    across stderr/stdout per the project discipline — `body` (the slug
+    lines) goes to stdout (pipe-safe, scriptable); `header` and `footer`
+    (chatter) go to stderr.
+
+    Empty list: header carries "No articles available yet."; body is "";
+    footer is "". Caller still emits exit 0 — empty articles dir isn't
+    an error.
+
+    WHY clamp width to [40, 100]: 40 avoids degenerate one-char slug columns
+    on narrow terminals; 100 caps the rule so it doesn't span ultra-wide
+    screens and become visually noisy. The default 72 matches a comfortable
+    terminal width used throughout help_search.py.
+
+    WHY name_w = max(len(slug)+1): the leading ':' is part of the visual
+    slug (":hug-test") but len(a.slug) excludes it, so +1 makes name_w
+    account for the full printed width of the slug column. This ensures
+    alignment holds even when slugs differ in length.
+
+    WHY em-dash (U+2014) as separator: mirrors format_category_list in
+    category_meta.py for visual consistency across all listing commands.
+    """
+    width = max(40, min(width, 100))
+    rule = "── Articles " + "─" * max(0, width - len("── Articles "))
+
+    if not articles:
+        return ("No articles available yet.", "", "")
+
+    # +1 accounts for the ':' prefix printed before the slug in each row.
+    # Without it, the em-dash column would be off by one when the slug is
+    # the only article (edge case) or varies in length across articles.
+    name_w = max(len(a.slug) + 1 for a in articles)  # +1 for leading ':'
+    body_lines = [
+        f"  :{a.slug:<{name_w - 1}}  — {a.summary}" for a in articles
+    ]
+    body = "\n".join(body_lines)
+    footer = "Tip: `hug help :<title>` to read an article."
+    return (rule, body, footer)
+
+
 def find_article(articles: list[ArticleMeta], query: str) -> FindResult:
     """Look up by slug; on miss, return up to _MAX_SUGGESTIONS fuzzy hits.
 
