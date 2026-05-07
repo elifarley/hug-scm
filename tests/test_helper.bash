@@ -608,12 +608,11 @@ disable_gum_simulation() {
   unset HUG_TEST_MODE
 }
 
-# Force gum to be unavailable for testing
-# This is useful when testing error paths that require gum to be disabled
-disable_gum_for_test() {
-  export HUG_DISABLE_GUM=true
-  unset HUG_TEST_MODE
-}
+# NOTE: disable_gum_for_test is defined once above (line ~591). Do NOT add a
+# second definition here — bash silently takes the last definition, and any
+# duplicate that calls `unset HUG_TEST_MODE` will poison the suite-global flag
+# causing gum-dependent tests that run later in the same process to hang
+# (gum_available() returns false → numbered-list selector blocks on stdin forever).
 
 # Configure gum mock to simulate cancellation
 # Useful for testing that commands handle cancelled gum interactions properly

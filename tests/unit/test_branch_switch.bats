@@ -128,7 +128,12 @@ EOF
   local original_path="$PATH"
   hash -r
 
-  run timeout 3 bash -c "PATH='$mock_dir:$PATH' hug b 2>&1"
+  # WHY HUG_TEST_MODE=true in the subshell: when BATS runs all unit test files
+  # in a single process, any earlier test that calls disable_gum_for_test()
+  # (which used to unset HUG_TEST_MODE) would poison this test's environment.
+  # Setting HUG_TEST_MODE explicitly inside the bash -c invocation makes this
+  # test immune to outer env pollution, regardless of evaluation order.
+  run timeout 3 bash -c "HUG_TEST_MODE=true PATH='$mock_dir:$PATH' hug b 2>&1"
   assert_success
 
   local after_branch
@@ -185,7 +190,10 @@ EOF
   before_branch=$(git branch --show-current)
   [ "$before_branch" = "main" ]
 
-  run timeout 3 bash -c "PATH='$mock_dir:$PATH' hug b 2>&1"
+  # WHY HUG_TEST_MODE=true: same env-isolation rationale as the companion test
+  # above — explicitly set in the subshell to survive env pollution from earlier
+  # test files calling disable_gum_for_test().
+  run timeout 3 bash -c "HUG_TEST_MODE=true PATH='$mock_dir:$PATH' hug b 2>&1"
   assert_success
 
   local after_branch
