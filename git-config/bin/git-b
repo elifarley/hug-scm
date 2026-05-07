@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 _hug_category='["branching"]'
-_hug_keywords='["switch", "checkout", "change-branch"]'
+_hug_keywords='["branch", "switch", "checkout", "change-branch"]'
 test "${1:-}" = '--search-meta' && {
   printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
   exit 0
