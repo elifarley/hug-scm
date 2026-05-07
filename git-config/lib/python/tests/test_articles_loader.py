@@ -6,7 +6,6 @@ import pytest
 
 from articles_loader import (
     ArticleMeta,
-    FindResult,
     find_article,
     load_articles,
     parse_article,
@@ -98,13 +97,19 @@ class TestFindArticle:
         result = find_article(articles, "hug-test")
         assert result.found is not None
         assert result.found.slug == "hug-test"
-        assert result.suggestions == []
+        # suggestions is a tuple (frozen=True on a list field would still allow
+        # mutation; tuple is genuinely immutable).
+        assert result.suggestions == ()
 
     def test_no_match_returns_suggestions(self):
         articles = load_articles(FIXTURES)
         result = find_article(articles, "hug-tst")  # typo
         assert result.found is None
-        assert any(a.slug == "hug-test" for a in result.suggestions)
+        # Check non-empty first so a missing suggestion gives a clear failure
+        # message rather than a silent False from `any()` on an empty sequence.
+        assert result.suggestions, "expected at least one suggestion"
+        # The closest fuzzy match should rank first.
+        assert result.suggestions[0].slug == "hug-test"
 
     def test_unrelated_query_returns_empty_suggestions(self):
         articles = load_articles(FIXTURES)
@@ -112,4 +117,10 @@ class TestFindArticle:
         assert result.found is None
         # No fuzzy hits — empty suggestions, caller renders generic
         # "no article" message.
-        assert result.suggestions == []
+        assert result.suggestions == ()
+
+    def test_empty_articles_list(self):
+        # Defensive: empty articles list returns no found, no suggestions.
+        result = find_article([], "anything")
+        assert result.found is None
+        assert result.suggestions == ()

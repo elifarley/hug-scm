@@ -159,32 +159,38 @@ class FindResult:
     """Result of looking up an article by slug.
 
     `found` is the exact-match ArticleMeta or None.
-    `suggestions` is a list of fuzzy-matched ArticleMeta when found is
-    None — capped to _MAX_SUGGESTIONS so the error UI stays scannable.
+    `suggestions` is fuzzy-matched ArticleMeta when found is None, capped
+    to _MAX_SUGGESTIONS. Stored as a tuple so frozen=True actually protects
+    against accidental mutation by callers (a list field would be
+    mutable-through despite frozen=True).
     """
 
     found: ArticleMeta | None
-    suggestions: list[ArticleMeta]
+    suggestions: tuple[ArticleMeta, ...]
 
 
 def _ratio(query: str, target: str) -> int:
-    """Strict full-string fuzzy ratio (0–100). Substring-only fallback.
+    """Strict full-string fuzzy ratio (0–100).
 
-    Lazy import keeps articles_loader importable in environments without
-    thefuzz (the `--extra search` flag isn't passed). The fallback gives
-    a binary 0/100 signal — enough to gate suggestions when the optional
-    dep is absent.
+    Uses `thefuzz.fuzz.ratio` when available (project's `[search]` extra).
+    The substring-only fallback handles exact equality and "query is a
+    prefix/substring of target" cases, but does NOT recognise edit-distance
+    typos — a one-char delete like "hug-tst" vs "hug-test" returns 0 in the
+    fallback path. In practice this means typo-suggestions for `hug help :`
+    require the search extra; without it, only exact and substring slug
+    matches surface in the suggestion list. Acceptable graceful degradation:
+    the user still gets the "no article named X" error, just without the
+    "did you mean" hint.
 
-    WHY lazy rather than module-level try/except: module-level import
-    runs at collection time during tests; lazy import defers the failure
-    to the call site, which makes import errors easier to distinguish
-    from test failures. Mirrors the pattern in help_search.py.
+    WHY lazy import: defers thefuzz ImportError to call-time (not module
+    import-time), so test failures from missing extras are easy to
+    distinguish from genuine code errors. Mirrors help_search.py.
     """
     try:
         from thefuzz import fuzz  # type: ignore[import-not-found]
 
         return fuzz.ratio(query.lower(), target.lower())
-    except ImportError:
+    except ImportError:  # pragma: no cover
         return 100 if query.lower() == target.lower() else (
             80 if query.lower() in target.lower() else 0
         )
@@ -193,18 +199,21 @@ def _ratio(query: str, target: str) -> int:
 def find_article(articles: list[ArticleMeta], query: str) -> FindResult:
     """Look up by slug; on miss, return up to _MAX_SUGGESTIONS fuzzy hits.
 
-    Scoring fields: slug (primary, low-noise) + title (secondary, may
-    contain spaces). Take the better of the two per article. Suggestions
-    are sorted by score descending.
+    Scoring fields: slug (kebab-case, low-noise) and title (free-form,
+    may contain spaces). Each article gets the better of its two field
+    scores; suggestions are sorted by score descending. The dual-field
+    approach lets queries like `hug-test` (slug-shaped) and `hug test`
+    (title-shaped) both land near the right article without forcing
+    users to know the canonical kebab-case slug.
 
-    WHY score both slug and title: a user who types `:hug test` (spaces
-    instead of hyphens) would score low on slug but high on title,
-    so the title fallback surfaces the right article without requiring
-    exact kebab-case input.
+    `query.strip()` is applied defensively so callers passing
+    whitespace-padded queries (e.g. from sloppy CLI parsing) still hit
+    exact matches.
     """
+    query = query.strip()  # defensive: tolerate accidental whitespace
     for a in articles:
         if a.slug == query:
-            return FindResult(found=a, suggestions=[])
+            return FindResult(found=a, suggestions=())
 
     scored: list[tuple[int, ArticleMeta]] = []
     for a in articles:
@@ -212,4 +221,7 @@ def find_article(articles: list[ArticleMeta], query: str) -> FindResult:
         if score >= _MIN_FUZZY_SCORE:
             scored.append((score, a))
     scored.sort(key=lambda x: x[0], reverse=True)
-    return FindResult(found=None, suggestions=[a for _, a in scored[:_MAX_SUGGESTIONS]])
+    return FindResult(
+        found=None,
+        suggestions=tuple(a for _, a in scored[:_MAX_SUGGESTIONS]),
+    )
