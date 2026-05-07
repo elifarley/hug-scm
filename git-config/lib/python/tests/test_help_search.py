@@ -933,6 +933,118 @@ class TestFormatCategoryListWithMeta:
         out = format_category_list([], cat_meta=None)
         assert "Available categories" in out
         assert "(none)" in out
+
+
+class TestFormatCategoryPage:
+    """`hug help @<category>` renders a boxed page with stderr/stdout split."""
+
+    def _meta(self):
+        from category_meta import CategoryMeta
+
+        return CategoryMeta(
+            name="branching",
+            label="Branch operations",
+            description=(
+                "Create, list, switch, and delete branches.\n"
+                "Branches let you work on parallel lines of development "
+                "without conflicting with shared code."
+            ),
+            summary="Create, list, switch, and delete branches.",
+        )
+
+    def test_includes_label_and_paragraph(self):
+        from help_search import format_category_page
+
+        cmd = CommandInfo(
+            command="hug bc",
+            description="Create a new branch and switch to it.",
+            categories=["branching"],
+        )
+        out = format_category_page(self._meta(), [cmd], width=72)
+        assert "@branching" in out
+        assert "Branch operations" in out
+        assert "Create, list, switch, and delete branches." in out
+        assert "hug bc" in out
+        assert "Create a new branch and switch to it." in out
+
+    def test_no_keywords_section(self):
+        # B-tweaked: keywords are NOT a category-level concept, so the page
+        # MUST NOT show a Keywords section. If a future change reintroduces
+        # category-level keywords, this test fires.
+        from help_search import format_category_page
+
+        out = format_category_page(self._meta(), [], width=72)
+        assert "Keywords" not in out
+
+    def test_command_count_in_header(self):
+        from help_search import format_category_page
+
+        cmds = [
+            CommandInfo(command=f"hug bc{i}", description=f"d{i}", categories=["branching"])
+            for i in range(3)
+        ]
+        out = format_category_page(self._meta(), cmds, width=72)
+        assert "Commands (3)" in out
+
+    def test_split_streams_returns_3_tuple(self):
+        # split_streams=True returns (header, data, footer). Header + footer
+        # → stderr (decorative); data → stdout. Splitting header from footer
+        # so the caller can flush data BETWEEN them, ensuring the "Tip:"
+        # line visually follows the command list in interactive TTYs.
+        from help_search import format_category_page
+
+        cmd = CommandInfo(command="hug bc", description="Create.", categories=["branching"])
+        result = format_category_page(self._meta(), [cmd], width=72, split_streams=True)
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+        header, data, footer = result
+        # Header has the box rules, name, description, "Commands (N)" line.
+        assert "──" in header
+        assert "@branching" in header
+        assert "Create, list, switch, and delete branches." in header
+        # Footer has only the Tip — no rules, no header.
+        assert "Tip:" in footer
+        assert "@branching" not in footer
+        # Stdout data has ONLY the command list — no rules, no chatter.
+        assert "──" not in data
+        assert "Tip:" not in data
+        assert "hug bc" in data
+
+    def test_split_streams_empty_data_when_no_commands(self):
+        from help_search import format_category_page
+
+        header, data, footer = format_category_page(
+            self._meta(), [], width=72, split_streams=True
+        )
+        # Stdout is empty when no commands; header + footer still render.
+        assert data == ""
+        assert "@branching" in header
+        assert "Tip:" in footer
+
+    def test_width_clamped_to_min_max(self):
+        # Tiny terminal (width=10) should not produce broken output.
+        from help_search import format_category_page
+
+        out = format_category_page(self._meta(), [], width=10)
+        # Implementation clamps to >= 40.
+        assert "@branching" in out
+
+    def test_long_description_word_wraps(self):
+        # textwrap should re-flow long descriptions to fit width.
+        from category_meta import CategoryMeta
+        from help_search import format_category_page
+
+        long_desc = " ".join(["word"] * 30)
+        meta = CategoryMeta(
+            name="x",
+            label="X",
+            description=long_desc,
+            summary=long_desc[:70],
+        )
+        out = format_category_page(meta, [], width=40)
+        # No single line exceeds width (allowing for trailing spaces stripped).
+        for line in out.splitlines():
+            assert len(line) <= 60, f"line too long: {line!r}"  # 40 + slack
         # When run_search picks the best spec per command, format_results
         # must show THAT spec's label — not a different one.
         cmd = CommandInfo(

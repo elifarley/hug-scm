@@ -17,6 +17,8 @@ import json
 import os
 import re
 import subprocess
+import sys
+import textwrap
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -598,6 +600,85 @@ def format_results(
     return "\n".join(lines)
 
 
+def _terminal_width(default: int = 72) -> int:
+    """Best-effort terminal width detection.
+
+    Returns os.get_terminal_size().columns when available; falls back to
+    `default` when stdout is not a TTY (piped, captured by tests, etc.).
+    """
+    try:
+        return os.get_terminal_size().columns
+    except OSError:
+        return default
+
+
+def _rule(title: str, width: int) -> str:
+    """Render a horizontal rule with a leading title segment.
+
+    `── <title> ─────────...` total length = width.
+    """
+    head = f"── {title} "
+    return head + "─" * max(0, width - len(head))
+
+
+def format_category_page(
+    meta: "CategoryMeta",
+    commands: list[CommandInfo],
+    width: int = 72,
+    split_streams: bool = False,
+) -> "str | tuple[str, str, str]":
+    """Render the `hug help @<category>` deep-dive page.
+
+    Layout (width-bounded):
+
+      ── @<name> — <label> ────────────────────────...
+      <description paragraph, word-wrapped>
+      ── Commands (N) ─────────────────────────────...
+        hug a    - description...
+        hug bc   - description...
+      Tip: `hug help <command>` for full help on any command.
+
+    When `split_streams=True`, returns `(header, data, footer)` as three
+    strings so the caller can interleave them across stderr (header,
+    footer) and stdout (data) per the project's stdout/stderr discipline.
+    Splitting header from footer matters because the caller needs to flush
+    `data` to stdout BEFORE the footer hits stderr — otherwise the
+    "Tip:" line visually lands before the command list in interactive TTYs.
+
+    Otherwise returns a single combined string for tests / non-TTY use.
+
+    No "Keywords" section: per-category keywords were dropped in B-tweaked
+    (they would propagate to destructive sibling commands — see /autoplan
+    F3). Per-command keywords surface via /keyword and !intent search,
+    not on the category browse page.
+    """
+    width = max(40, min(width, 100))
+
+    header: list[str] = [_rule(f"@{meta.name} — {meta.label}", width), ""]
+    if meta.description:
+        # textwrap collapses internal whitespace; flatten newlines so the
+        # description renders as one re-wrapped paragraph regardless of how
+        # the author hard-wrapped it in the TOML.
+        header += textwrap.wrap(meta.description.replace("\n", " ").strip(), width=width)
+    header += ["", _rule(f"Commands ({len(commands)})", width), ""]
+
+    data_lines: list[str] = []
+    for cmd in commands:
+        desc = cmd.description or "(no description)"
+        data_lines.append(f"  {cmd.command:24s} - {desc}")
+
+    footer = ["", "Tip: `hug help <command>` for full help on any command."]
+
+    if split_streams:
+        return (
+            "\n".join(header).rstrip("\n"),
+            "\n".join(data_lines),
+            "\n".join(footer).lstrip("\n"),
+        )
+
+    return "\n".join(header + data_lines + footer)
+
+
 def format_category_list(
     commands: list[CommandInfo],
     cat_meta: dict | None = None,
@@ -687,9 +768,26 @@ def main():
         if not args.query:
             print(format_category_list(commands, cat_meta=cat_meta))
             return
-        # @category uses search_category (single-scorer fuzzy match against
-        # the category name). No spec/score tuple to feed --explain, so the
-        # explain flag is intentionally a no-op here.
+        # First try an exact name hit; CategoryMeta has the boxed-page data.
+        meta = cat_meta.get(args.query) if cat_meta else None
+        if meta is not None:
+            cmds_in_cat = [c for c in commands if meta.name in c.categories]
+            header, data, footer = format_category_page(
+                meta, cmds_in_cat, width=_terminal_width(), split_streams=True
+            )
+            # Decorative chatter → stderr; command list → stdout. Header
+            # first, then data, then footer — flushing in that order so the
+            # tip ("Tip: hug help <command>...") visually follows the
+            # commands rather than preceding them. Keeps `hug help
+            # @branching | grep bpush` pipe-safe (only data hits stdout).
+            print(header, file=sys.stderr, flush=True)
+            if data:
+                print(data, flush=True)
+            print(footer, file=sys.stderr, flush=True)
+            return
+        # Fall back to fuzzy category-name match for typos / partial names.
+        # No boxed page in this path — search_category returns potentially
+        # multiple categories, so we render the legacy listing instead.
         results = search_category(commands, args.query)
         print(f"Commands in category '{args.query}':")
         print(format_results(results))
