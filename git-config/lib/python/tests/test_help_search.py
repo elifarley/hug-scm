@@ -711,3 +711,107 @@ class TestIntentMode:
         intent = search_intent(commands, "push")
         assert any(r.command == "hug bpush" for r in kw)
         assert any(r.command == "hug bpush" for r in intent)
+
+
+class TestDiversify:
+    """diversify caps + applies soft per-category penalty."""
+
+    def _scored(self, *items):
+        # items: tuples of (score, command, primary_category)
+        return [
+            (score, CommandInfo(command=name, description="", categories=[cat]), None)
+            for score, name, cat in items
+        ]
+
+    def test_caps_results(self):
+        from help_search import diversify
+
+        scored = self._scored(
+            (90, "hug a", "x"),
+            (89, "hug b", "x"),
+            (88, "hug c", "x"),
+            (87, "hug d", "x"),
+            (86, "hug e", "x"),
+            (85, "hug f", "x"),
+            (84, "hug g", "x"),
+            (83, "hug h", "x"),
+            (82, "hug i", "x"),
+            (81, "hug j", "x"),
+            (80, "hug k", "x"),
+        )
+        out = diversify(scored, cap=10, soft_cap_per_category=None)
+        assert len(out) == 10
+
+    def test_soft_diversify_penalises_same_category_excess(self):
+        # 4 results from 'branching' (scores 90/89/88/87), 1 from 'staging' (86).
+        # After 3 same-category, the 4th gets penalised. Penalty=5: 87 - 5*1 = 82.
+        # Result: staging at 86 should rank above branching's 4th at 82.
+        from help_search import diversify
+
+        scored = self._scored(
+            (90, "hug a", "branching"),
+            (89, "hug b", "branching"),
+            (88, "hug c", "branching"),
+            (87, "hug d", "branching"),  # penalised
+            (86, "hug e", "staging"),  # should outrank hug d after penalty
+        )
+        out = diversify(scored, cap=10, soft_cap_per_category=3, penalty=5)
+        cmds = [c.command for _, c, _ in out]
+        # hug e should now rank ahead of hug d.
+        assert cmds.index("hug e") < cmds.index("hug d"), (
+            f"diversification didn't fire — order was {cmds}"
+        )
+
+    def test_all_flag_disables_cap(self):
+        # cap=None and soft_cap=None means "show everything, in raw score order".
+        from help_search import diversify
+
+        scored = self._scored(*[(80 - i, f"hug{i}", "x") for i in range(15)])
+        out = diversify(scored, cap=None, soft_cap_per_category=None)
+        assert len(out) == 15
+        # Order should match input (already sorted by raw score descending).
+        assert [c.command for _, c, _ in out] == [f"hug{i}" for i in range(15)]
+
+    def test_search_keyword_caps_at_default(self):
+        # End-to-end through search_keyword: 12 matches, expect cap=10 default.
+        cmds = [
+            CommandInfo(
+                command=f"hug cmd{i}",
+                description=f"command {i} push the thing",
+                categories=["push-pull"],
+                keywords=["push"],
+            )
+            for i in range(12)
+        ]
+        results = search_keyword(cmds, "push")
+        assert len(results) == 10  # default cap
+
+    def test_search_keyword_all_results_disables_cap(self):
+        cmds = [
+            CommandInfo(
+                command=f"hug cmd{i}",
+                description=f"command {i} push the thing",
+                categories=["push-pull"],
+                keywords=["push"],
+            )
+            for i in range(12)
+        ]
+        results = search_keyword(cmds, "push", all_results=True)
+        assert len(results) == 12
+
+    def test_format_results_overflow_note(self):
+        cmds = [
+            CommandInfo(command=f"hug cmd{i}", description=f"d{i}", categories=[])
+            for i in range(3)
+        ]
+        out = format_results(cmds, total=12)
+        assert "Showing top 3 of 12" in out
+        assert "--all" in out
+
+    def test_format_results_no_overflow_when_within_cap(self):
+        cmds = [
+            CommandInfo(command=f"hug cmd{i}", description=f"d{i}", categories=[])
+            for i in range(3)
+        ]
+        out = format_results(cmds, total=3)
+        assert "Showing top" not in out

@@ -433,37 +433,107 @@ def hydrate_category_fields(commands: list[CommandInfo], cat_meta: dict) -> None
         cmd.category_desc = " ".join(descs)
 
 
+# Result-shaping defaults. Cap keeps the result list scannable; the soft
+# per-category cap nudges variety so a dominant category doesn't crowd out
+# niche-but-relevant commands. The penalty is small — a strong direct match
+# still beats a weak cross-category match.
+DEFAULT_RESULT_CAP = 10
+DEFAULT_SOFT_CAT_CAP = 3
+DEFAULT_DIVERSIFY_PENALTY = 5
+
+
+def diversify(
+    scored: list[tuple[int, CommandInfo, "MatchSpec | None"]],
+    cap: int | None = DEFAULT_RESULT_CAP,
+    soft_cap_per_category: int | None = DEFAULT_SOFT_CAT_CAP,
+    penalty: int = DEFAULT_DIVERSIFY_PENALTY,
+) -> list[tuple[int, CommandInfo, "MatchSpec | None"]]:
+    """Cap to `cap` results; gently penalise per-category overflow.
+
+    After `soft_cap_per_category` results from the same primary category,
+    each additional same-category hit gets `penalty * extra_count` subtracted
+    from its score, then the list is re-sorted. Strong direct matches still
+    beat weak cross-category hits — the penalty is small and proportional.
+
+    `cap=None` and/or `soft_cap_per_category=None` disable each axis (used
+    by `--all`). Primary category = first entry of cmd.categories.
+    """
+    if soft_cap_per_category is not None:
+        seen: dict[str, int] = {}
+        adjusted: list[tuple[int, CommandInfo, "MatchSpec | None"]] = []
+        for score, cmd, spec in scored:
+            primary = cmd.categories[0] if cmd.categories else ""
+            n = seen.get(primary, 0)
+            adj = score
+            if n >= soft_cap_per_category:
+                adj = max(0, score - penalty * (n - soft_cap_per_category + 1))
+            adjusted.append((adj, cmd, spec))
+            seen[primary] = n + 1
+        adjusted.sort(key=lambda x: x[0], reverse=True)
+        scored = adjusted
+    return scored if cap is None else scored[:cap]
+
+
+def _run_with_specs(
+    commands: list[CommandInfo],
+    query: str,
+    specs: list[MatchSpec],
+    all_results: bool,
+) -> tuple[list[tuple[int, CommandInfo, MatchSpec]], int]:
+    """Run + diversify; return (capped_tuples, total_before_cap).
+
+    Internal helper used by both search_keyword/search_intent (which discard
+    the metadata) and main() (which uses it for --explain annotations and
+    the overflow note). Returning the full tuple list + raw count keeps
+    every caller working from the same source of truth.
+    """
+    raw = run_search(query, commands, specs)
+    capped = diversify(
+        raw,
+        cap=None if all_results else DEFAULT_RESULT_CAP,
+        soft_cap_per_category=None if all_results else DEFAULT_SOFT_CAT_CAP,
+    )
+    return capped, len(raw)
+
+
 def search_keyword(
     commands: list[CommandInfo],
     query: str,
     specs: list[MatchSpec] | None = None,
+    *,
+    all_results: bool = False,
 ) -> list[CommandInfo]:
     """Precision search via KEYWORD_SPECS (per-field scorers + thresholds).
 
     Each command is scored against five fields: command name (ratio + partial),
     description, category description, and per-command keywords. The best
-    spec wins per command; results sort by score descending.
-
-    Pass `specs` to override the default KEYWORD_SPECS (used by tests).
+    spec wins per command; results sort by score descending, then are
+    diversified + capped to top 10 (override with `all_results=True`).
     """
-    return [item for _, item, _ in run_search(query, commands, specs or KEYWORD_SPECS)]
+    capped, _total = _run_with_specs(
+        commands, query, specs or KEYWORD_SPECS, all_results
+    )
+    return [item for _, item, _ in capped]
 
 
 def search_intent(
     commands: list[CommandInfo],
     query: str,
     specs: list[MatchSpec] | None = None,
+    *,
+    all_results: bool = False,
 ) -> list[CommandInfo]:
     """Phrase / intent search via INTENT_SPECS (token-aware scoring).
 
     Multi-word queries like `save my work in progress` are scored with
     token_set_ratio so word order doesn't matter and stopwords don't sink
-    the match. Different scorer family from /keyword on purpose — `!intent`
-    is the natural-language path; `/keyword` is the precision path.
-
-    Pass `specs` to override the default INTENT_SPECS (used by tests).
+    the match. Diversified + capped to top 10 by default; pass
+    `all_results=True` to disable.
     """
-    return [item for _, item, _ in run_search(query, commands, specs or INTENT_SPECS)]
+    capped, _total = _run_with_specs(
+        commands, query, specs or INTENT_SPECS, all_results
+    )
+    return [item for _, item, _ in capped]
 
 
 def search_category(commands: list[CommandInfo], query: str) -> list[CommandInfo]:
@@ -488,14 +558,27 @@ def list_categories(commands: list[CommandInfo]) -> list[str]:
     return sorted(cats)
 
 
-def format_results(commands: list[CommandInfo]) -> str:
-    """Format command results for terminal output."""
+def format_results(
+    commands: list[CommandInfo],
+    total: int | None = None,
+) -> str:
+    """Format command results for terminal output.
+
+    When `total` is supplied and exceeds `len(commands)`, an overflow note
+    advertises the `--all` flag so users know results were capped.
+    """
     if not commands:
         return "  (none)"
     lines = []
     for cmd in commands:
         desc = cmd.description or "(no description)"
         lines.append(f"  {cmd.command:24s} - {desc}")
+    if total is not None and total > len(commands):
+        lines.append("")
+        lines.append(
+            f"  Showing top {len(commands)} of {total}. "
+            f"Pass --all to see all matches."
+        )
     return "\n".join(lines)
 
 
@@ -517,6 +600,11 @@ def main():
     parser.add_argument("query", nargs="?", default="", help="Search query")
     parser.add_argument("--bin-dir", default=_DEFAULT_BIN_DIR, help="Directory with git-* scripts")
     parser.add_argument("--cache-dir", default=_DEFAULT_CACHE_DIR, help="Cache directory")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Disable result cap and per-category diversification.",
+    )
     args = parser.parse_args()
 
     commands = collect_metadata(args.bin_dir, cache_dir=args.cache_dir)
@@ -526,9 +614,10 @@ def main():
             print("Usage: hug help /<keyword>")
             print("Fuzzy search across command descriptions and names.")
             return
-        results = search_keyword(commands, args.query)
+        capped, total = _run_with_specs(commands, args.query, KEYWORD_SPECS, args.all)
+        results = [item for _, item, _ in capped]
         print(f"Keyword search for '{args.query}':")
-        print(format_results(results))
+        print(format_results(results, total=total))
 
     elif args.mode == "@":
         if not args.query:
@@ -547,9 +636,10 @@ def main():
             print("Find commands by what you want to accomplish.")
             print("Example: hug help !push to remote")
             return
-        results = search_intent(commands, args.query)
+        capped, total = _run_with_specs(commands, args.query, INTENT_SPECS, args.all)
+        results = [item for _, item, _ in capped]
         print(f"Commands for '{args.query}':")
-        print(format_results(results))
+        print(format_results(results, total=total))
 
 
 if __name__ == "__main__":
