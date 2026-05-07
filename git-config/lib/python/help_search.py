@@ -22,6 +22,10 @@ import textwrap
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from category_meta import CategoryMeta
 
 # Fuzzy matching: optional dependency with substring-only fallback.
 # WHY four scorers: each searchable field has its own noise profile.
@@ -446,11 +450,11 @@ DEFAULT_DIVERSIFY_PENALTY = 5
 
 
 def diversify(
-    scored: list[tuple[int, CommandInfo, "MatchSpec | None"]],
+    scored: list[tuple[int, CommandInfo, MatchSpec | None]],
     cap: int | None = DEFAULT_RESULT_CAP,
     soft_cap_per_category: int | None = DEFAULT_SOFT_CAT_CAP,
     penalty: int = DEFAULT_DIVERSIFY_PENALTY,
-) -> list[tuple[int, CommandInfo, "MatchSpec | None"]]:
+) -> list[tuple[int, CommandInfo, MatchSpec | None]]:
     """Cap to `cap` results; gently penalise per-category overflow.
 
     After `soft_cap_per_category` results from the same primary category,
@@ -463,7 +467,7 @@ def diversify(
     """
     if soft_cap_per_category is not None:
         seen: dict[str, int] = {}
-        adjusted: list[tuple[int, CommandInfo, "MatchSpec | None"]] = []
+        adjusted: list[tuple[int, CommandInfo, MatchSpec | None]] = []
         for score, cmd, spec in scored:
             primary = cmd.categories[0] if cmd.categories else ""
             n = seen.get(primary, 0)
