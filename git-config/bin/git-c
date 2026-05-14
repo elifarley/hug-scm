@@ -74,6 +74,10 @@ for arg in "$@"; do
   fi
 done
 
+# Detect --amend for accurate push suggestion
+_c_amend=false
+commit_args_indicate_amend "$@" && _c_amend=true
+
 # Check for staged changes upfront
 if ! $allow_empty && ! has_staged_changes; then
   info "No staged changes found.\n\nSuggestions:\n  - Stage files with 'hug a <files>' or 'hug aa' (all).\n  - To commit all changes (staged + unstaged), use 'hug ca'.\n  - For an empty commit, use 'hug c --allow-empty'.\n  - To preview staged changes, run 'hug sl' for a list or 'hug ss' for a diff."
@@ -83,4 +87,6 @@ fi
 info "Committing staged changes..."
 
 # Run git commit directly without capturing output to allow interactive editor
-git commit "$@" && suggest_next_push_command
+_suggest_args=()
+$_c_amend && _suggest_args+=(--amend)
+git commit "$@" && suggest_next_push_command "${_suggest_args[@]}"

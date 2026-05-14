@@ -54,4 +54,10 @@ check_git_repo
 
 info "Committing all tracked changes..."
 
-git commit -a "$@" && suggest_next_push_command
+# Detect --amend for accurate push suggestion
+_ca_amend=false
+commit_args_indicate_amend "$@" && _ca_amend=true
+
+_suggest_args=()
+$_ca_amend && _suggest_args+=(--amend)
+git commit -a "$@" && suggest_next_push_command "${_suggest_args[@]}"

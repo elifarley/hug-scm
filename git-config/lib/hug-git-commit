@@ -398,28 +398,46 @@ print_commit_list_header() {
 #   - "hug bpushf" if upstream exists and HEAD has diverged (amended pushed commit)
 #   - No suggestion if no upstream exists (branch not published yet)
 #
+# Parameters:
+#   --amend  Indicates the operation was an amend (affects message wording)
+#
 # Environment:
-#   HUG_QUIET - If set to "true", suppresses all output
+#   HUG_QUIET - If set (to "T"), suppresses all output
 #
 # Examples:
-#   suggest_next_push_command  # After commit on branch with upstream
-#   suggest_next_push_command  # After amending a pushed commit
+#   suggest_next_push_command            # After regular commit
+#   suggest_next_push_command --amend    # After amending a commit
 suggest_next_push_command() {
-    # Skip if quiet mode is enabled
-    [[ "${HUG_QUIET:-}" == "true" ]] && return 0
+    [[ "${HUG_QUIET:-}" == T ]] && return 0
 
-    # Check if upstream exists
+    local is_amend=false
+    [[ "${1:-}" == "--amend" ]] && is_amend=true
+
     local upstream
     upstream=$(git rev-parse --verify @{u} 2>/dev/null) || return 0
 
-    # Check if HEAD has diverged from upstream (amend of pushed commit)
-    # If upstream is an ancestor of HEAD, it's a fast-forward (normal commit)
-    # If not, HEAD has diverged (amended commit that was already pushed)
     if git merge-base --is-ancestor @{u} HEAD 2>/dev/null; then
-        # Fast-forward compatible (new commits or amend of unpushed commit)
         tip 'Ready to push? Use "hug bpush".'
-    else
-        # Diverged (amended commit that was already pushed)
+    elif $is_amend; then
         tip 'Commit amended. Use "hug bpushf" to force-push safely.'
+    else
+        tip 'Local and remote histories differ. Review with "hug lo", then rebase or force-push if intentional.'
     fi
+}
+
+# Detects whether args contain --amend, handling flags that consume their next arg (-m, -C, -c)
+# and respecting the -- terminator.
+# Usage: commit_args_indicate_amend "$@" && echo "amend detected"
+commit_args_indicate_amend() {
+    local i=1
+    while [[ $i -le $# ]]; do
+        local arg="${!i}"
+        case "$arg" in
+            --) return 1 ;;
+            --amend) return 0 ;;
+            -m|-C|-c) (( i += 1 )) ;;
+        esac
+        (( i += 1 ))
+    done
+    return 1
 }

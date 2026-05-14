@@ -192,9 +192,7 @@ hug_caa() {
   hug c "${commit_args[@]}"
 
   success "Committed all changes ($pre_commit_staged_count files staged and committed)."
-
-  # Suggest push command if applicable
-  suggest_next_push_command
+  # Push suggestion is shown by 'hug c' above; do not re-add here.
 }
 
 hug_caa "${commit_args[@]}"

@@ -1017,7 +1017,7 @@ HOOK
   echo "new content" > newfile.txt
   git add newfile.txt
 
-  HUG_QUIET=true run hug c -m "New commit"
+  HUG_QUIET=T run hug c -m "New commit"
   assert_success
   # Should NOT suggest anything in quiet mode
   refute_output --partial "Ready to push? Use"
@@ -1171,4 +1171,140 @@ HOOK
   refute_output --partial "bpush"
 
   git checkout -q main 2>/dev/null || git checkout -q master
+}
+
+@test "hug c: neutral diverged message after regular commit on diverged HEAD" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Create and push a commit
+  echo "original" > file.txt
+  git add file.txt
+  git commit -q -m "Original"
+  git push -q origin main 2>/dev/null || true
+
+  # Amend to diverge HEAD from upstream
+  echo "amended" >> file.txt
+  git add file.txt
+  git commit -q --amend --no-edit
+
+  # Now do a regular (non-amend) commit — should show neutral message
+  echo "new content" > newfile.txt
+  git add newfile.txt
+
+  run hug c -m "Regular commit on diverged HEAD"
+  assert_success
+  assert_output --partial "Local and remote histories differ"
+  refute_output --partial "Commit amended"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug caa: shows push suggestion only once" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  echo "tracked" > tracked.txt
+  echo "untracked" > untracked.txt
+
+  run hug caa -m "Commit all" --force
+  assert_success
+  # Count occurrences of push suggestion — should be exactly 1
+  local count
+  count=$(echo "$output" | grep -c "Ready to push")
+  [[ "$count" -eq 1 ]]
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug c: shows amended message with explicit --amend on diverged HEAD" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Create and push a commit
+  echo "original" > file.txt
+  git add file.txt
+  git commit -q -m "Original"
+  git push -q origin main 2>/dev/null || true
+
+  # Amend to diverge HEAD from upstream
+  echo "amended" >> file.txt
+  git add file.txt
+
+  run hug c --amend --no-edit
+  assert_success
+  assert_output --partial "Commit amended. Use \"hug bpushf\" to force-push safely."
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug ca: detects --amend and shows amended message on diverged HEAD" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Create and push a commit
+  echo "original" > file.txt
+  git add file.txt
+  git commit -q -m "Original"
+  git push -q origin main 2>/dev/null || true
+
+  # Amend via ca --amend
+  echo "amended" >> file.txt
+
+  run hug ca --amend --no-edit
+  assert_success
+  assert_output --partial "Commit amended. Use \"hug bpushf\" to force-push safely."
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug caa: detects --amend and shows amended message" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  # Create and push a commit
+  echo "original" > file.txt
+  git add file.txt
+  git commit -q -m "Original"
+  git push -q origin main 2>/dev/null || true
+
+  # Amend via caa --amend --no-edit --force
+  echo "amended" >> file.txt
+
+  run hug caa --amend --no-edit --force
+  assert_success
+  # Should show amended message exactly once
+  local count
+  count=$(echo "$output" | grep -c "Commit amended")
+  [[ "$count" -eq 1 ]]
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug c: respects HUG_QUIET=T via --quiet flag" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  echo "new content" > newfile.txt
+  git add newfile.txt
+
+  # --quiet sets HUG_QUIET=T via parse_common_flags
+  run hug c --quiet -m "Quiet commit"
+  assert_success
+  refute_output --partial "Ready to push? Use"
+  refute_output --partial "bpush"
+
+  popd >/dev/null
+  rm -rf "$repo"
 }

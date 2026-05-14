@@ -67,4 +67,4 @@ check_git_repo
 
 info "Amending last commit with staged changes..."
 
-git commit --amend "$@" && suggest_next_push_command
+git commit --amend "$@" && suggest_next_push_command --amend
