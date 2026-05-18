@@ -263,7 +263,7 @@ fi
 
 # Check if branch is checked out in the main worktree (requires --force)
 if $branch_exists && ! $force; then
-  main_wt_path=$(get_main_worktree_path)
+  main_wt_path=$(resolve_main_worktree_path)
   main_wt_branch=$(git -C "$main_wt_path" rev-parse --abbrev-ref HEAD 2> /dev/null || echo "")
   if [[ "$branch_name" == "$main_wt_branch" ]]; then
     error "Branch '$branch_name' is currently checked out in the main worktree. Use -f/--force to create a worktree for it anyway."

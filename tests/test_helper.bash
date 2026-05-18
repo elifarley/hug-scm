@@ -65,6 +65,16 @@ if [[ -n "${BATS_TEST_FILENAME:-}" && -z "${PROJECT_ROOT:-}" ]]; then
   export PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   export HUG_BIN="$PROJECT_ROOT/git-config/bin"
   export PATH="$HUG_BIN:$PATH"
+  # Override HUG_HOME to the project root derived from the test file's location.
+  # WHY: When tests run from a linked worktree, the shell's HUG_HOME (set by
+  # bin/activate via ~/.hug-scm) still points to the main-repo clone. Bin scripts
+  # in HUG_BIN source their libraries as "$HUG_HOME/git-config/lib/…", so without
+  # this override they would pick up the main-repo's unmodified libs instead of the
+  # worktree's in-progress versions — silently hiding rename / refactor bugs.
+  # Setting HUG_HOME = PROJECT_ROOT here is always safe: in the main repo these
+  # two values are identical; in a linked worktree this anchors lib lookups to the
+  # tree under test.
+  export HUG_HOME="$PROJECT_ROOT"
 fi
 
 setup_file() {
@@ -73,6 +83,11 @@ setup_file() {
   # We need to go up 2 levels to get to project root
   export PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   export HUG_BIN="$PROJECT_ROOT/git-config/bin"
+  # Mirror the file-level HUG_HOME override (see comment above).
+  # setup_file() can fire after the file-level block has already set HUG_HOME,
+  # but setting it here explicitly keeps the two paths in sync and ensures
+  # any direct invocation of setup_file() (e.g. by test tooling) also gets it.
+  export HUG_HOME="$PROJECT_ROOT"
 
   # Add hug to PATH for tests
   export PATH="$HUG_BIN:$PATH"

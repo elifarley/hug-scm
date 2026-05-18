@@ -282,14 +282,14 @@ get_current_worktree_path() {
 }
 
 # Get the MAIN worktree's absolute path (the original clone directory)
-# Usage: main_path=$(get_main_worktree_path)
+# Usage: main_path=$(resolve_main_worktree_path)
 # Returns: Absolute path to the main worktree, or empty if not in a git repo
 #
 # WHY --git-common-dir: In linked worktrees, this returns the shared .git dir
 # of the original clone (e.g. /path/to/main-repo/.git). In the main worktree
 # itself it returns ".git" (relative). This single plumbing command is the
 # canonical way to distinguish main from linked worktrees.
-get_main_worktree_path() {
+resolve_main_worktree_path() {
     local common_dir
     common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
     if [[ "$common_dir" == ".git" ]]; then
@@ -309,7 +309,7 @@ get_main_worktree_path() {
 # registry — regardless of whether $path is a plain clone, a linked
 # worktree, or a submodule worktree under <meta>/.git/modules/<sub>/.
 # This is the only CWD-independent anchor for `git worktree list/remove/...`.
-# Pattern mirrors get_main_worktree_path() above.
+# Pattern mirrors resolve_main_worktree_path() above.
 #
 # CRITICAL — absolutize the result. `--git-common-dir` returns the literal
 # string ".git" when $path is the main worktree of a plain clone (no linked
@@ -661,7 +661,7 @@ generate_worktree_path() {
     # Always resolve from the MAIN worktree so paths are consistent
     # regardless of which worktree we're invoked from.
     local main_path repo_name parent_dir safe_branch
-    main_path=$(get_main_worktree_path) || return 1
+    main_path=$(resolve_main_worktree_path) || return 1
     repo_name=$(basename "$main_path")
     parent_dir=$(dirname "$main_path")
 
@@ -1011,7 +1011,7 @@ show_worktree_summary() {
 is_worktree_not_main() {
     local current_dir main_repo
     current_dir=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
-    main_repo=$(get_main_worktree_path) || return 1
+    main_repo=$(resolve_main_worktree_path) || return 1
 
     # If current directory is not the main repository, we're in a worktree
     [[ "$current_dir" != "$main_repo" ]]

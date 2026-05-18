@@ -566,3 +566,19 @@ teardown() {
   comma_count=$(echo "$details" | tr -cd ',' | wc -c)
   [[ $comma_count -ge 1 ]] || fail "Expected at least 2 change types in details, got '$details'"
 }
+
+@test "resolve_main_worktree_path: returns repo path for plain clone" {
+  # Reassign TEST_REPO so teardown() handles cleanup automatically.
+  # cleanup_test_repo() ignores its argument — it only cleans up $TEST_REPO —
+  # so we must not use a separate local $repo variable here. Any plain git repo
+  # (including the branches-flavoured one) works because we only verify that
+  # resolve_main_worktree_path returns the main worktree root, not branch state.
+  TEST_REPO=$(create_test_repo)
+  cd "$TEST_REPO"
+  # No re-source needed: hug-git-worktree is already loaded via
+  # `load '../../git-config/lib/hug-git-worktree'` at the top of this file.
+  run resolve_main_worktree_path
+  assert_success
+  # Use realpath because macOS /tmp resolves to /private/tmp
+  [[ "$(realpath "$output")" == "$(realpath "$TEST_REPO")" ]]
+}

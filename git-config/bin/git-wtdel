@@ -167,7 +167,7 @@ fi
 # Resolve branch names to worktree paths
 declare -a worktree_paths=()
 if [[ ${#branch_names[@]} -gt 0 ]]; then
-  main_worktree=$(get_main_worktree_path)
+  main_worktree=$(resolve_main_worktree_path)
   for bn in "${branch_names[@]}"; do
     worktree_path=$(get_worktree_path_by_branch "$bn" || true)
     if [[ -z "$worktree_path" ]]; then
