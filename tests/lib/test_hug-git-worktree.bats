@@ -582,3 +582,68 @@ teardown() {
   # Use realpath because macOS /tmp resolves to /private/tmp
   [[ "$(realpath "$output")" == "$(realpath "$TEST_REPO")" ]]
 }
+
+@test "resolve_main_worktree_path: returns submodule WT path from submodule CWD" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$meta_repo/sub"
+  run resolve_main_worktree_path
+  assert_success
+  # MUST be the submodule's working tree, NOT <meta>/.git/modules anywhere.
+  [[ "$(realpath "$output")" == "$(realpath "$meta_repo/sub")" ]]
+  # Hard regression guard: result must not contain /.git/
+  [[ "$output" != *"/.git/"* ]]
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "resolve_main_worktree_path: returns main WT path from linked worktree CWD" {
+  # Reassign TEST_REPO so teardown() cleans it automatically.
+  TEST_REPO=$(create_test_repo_with_history)
+  cd "$TEST_REPO"
+  # Use --no-switch to stay on main so hug wtc can check out feat-1 in the
+  # new worktree (a branch already checked-out in the current tree cannot be
+  # simultaneously checked out in a linked worktree).
+  hug bc feat-1 --no-switch
+  hug wtc feat-1 -y
+  cd "$TEST_REPO.WT.feat-1"
+  run resolve_main_worktree_path
+  assert_success
+  [[ "$(realpath "$output")" == "$(realpath "$TEST_REPO")" ]]
+  hug wtdel feat-1 -f -B 2>/dev/null || true
+}
+
+@test "get_superproject_path: returns empty for plain clone" {
+  TEST_REPO=$(create_test_repo)
+  cd "$TEST_REPO"
+  run get_superproject_path
+  assert_success
+  [[ -z "$output" ]]
+}
+
+@test "get_superproject_path: returns meta path from submodule CWD" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$meta_repo/sub"
+  run get_superproject_path
+  assert_success
+  [[ "$(realpath "$output")" == "$(realpath "$meta_repo")" ]]
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "is_worktree_not_main: returns false when CWD is submodule's own WT (post-fix behavior)" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$meta_repo/sub"
+  # In the submodule's main WT, we are NOT in a "linked" worktree.
+  # shellcheck disable=SC2314
+  ! is_worktree_not_main
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "is_worktree_not_main: linked submodule worktree is correctly identified as non-main (regression guard)" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$wt_path"   # This IS a linked worktree of the submodule
+  is_worktree_not_main
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}

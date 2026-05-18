@@ -509,3 +509,52 @@ teardown() {
   assert_output --partial "Created branch 'force-base-branch' from feature-1"
   assert_output --partial "Worktree created for 'force-base-branch'"
 }
+
+@test "hug wtc: generates path outside .git/ when invoked from submodule CWD" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$meta_repo/sub"
+  hug b main 2>/dev/null || hug b master 2>/dev/null || true
+  run git-wtc new-branch --new -y
+  assert_success
+  local generated_path
+  generated_path=$(echo "$output" | grep "Path:" | sed 's/.*Path:[[:space:]]*//' | sed 's/\s*$//')
+  [[ "$generated_path" != *"/.git/"* ]]
+  [[ "$(dirname "$(realpath "$generated_path")")" == "$(realpath "$meta_repo")" ]]
+  # Eng E9: also assert Git's registered worktree state via owning gitdir
+  local sub_gitdir="$meta_repo/.git/modules/sub"
+  git --git-dir="$sub_gitdir" worktree list --porcelain | grep -qxF "worktree $generated_path"
+  git --git-dir="$sub_gitdir" worktree remove --force "$generated_path" 2>/dev/null || rm -rf "$generated_path"
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+# Eng E7: --base flag + submodule CWD
+@test "hug wtc: --base flag works from submodule CWD without .git/ path leakage" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$meta_repo/sub"
+  hug b main 2>/dev/null || hug b master 2>/dev/null || true
+  run git-wtc base-new-branch --base HEAD -y
+  assert_success
+  local generated_path
+  generated_path=$(echo "$output" | grep "Path:" | sed 's/.*Path:[[:space:]]*//' | sed 's/\s*$//')
+  [[ "$generated_path" != *"/.git/"* ]]
+  local sub_gitdir="$meta_repo/.git/modules/sub"
+  git --git-dir="$sub_gitdir" worktree remove --force "$generated_path" 2>/dev/null || rm -rf "$generated_path"
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+# Eng E10: linked WT of submodule as CWD
+@test "hug wtc: works from a linked submodule worktree CWD" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$wt_path"
+  run git-wtc another-branch --new -y
+  assert_success
+  local generated_path
+  generated_path=$(echo "$output" | grep "Path:" | sed 's/.*Path:[[:space:]]*//' | sed 's/\s*$//')
+  [[ "$generated_path" != *"/.git/"* ]]
+  local sub_gitdir="$meta_repo/.git/modules/sub"
+  git --git-dir="$sub_gitdir" worktree remove --force "$generated_path" 2>/dev/null || rm -rf "$generated_path"
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
