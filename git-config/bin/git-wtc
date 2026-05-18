@@ -42,8 +42,10 @@ DESCRIPTION:
     Creates a new Git worktree for the specified branch. Worktrees allow you to
     work on multiple branches simultaneously without context switching overhead.
 
-    If no path is provided, generates a smart default path outside the main
-    repository: ../<repo>.WT.<branch>
+    If no path is provided, generates a smart default path as a sibling of
+    the current working tree: ../<repo>.WT.<branch>. From a submodule, the
+    default is a sibling of the submodule (e.g. ../<sub>.WT.<branch>) —
+    placement is chosen so relative paths to sibling submodules remain valid.
 
     By default, the branch must exist locally. With --new flag or with --force,
     non-existent branches will be created automatically from the current HEAD.
@@ -378,3 +380,4 @@ fi
 success "Worktree created for '$branch_name'"
 echo >&2
 tip "To start working:  cd ${worktree_path/#$HOME/\~}"
+suggest_superproject_ignore "$worktree_path"

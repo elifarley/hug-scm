@@ -558,3 +558,78 @@ teardown() {
   git --git-dir="$sub_gitdir" worktree remove --force "$generated_path" 2>/dev/null || rm -rf "$generated_path"
   cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
 }
+
+@test "hug wtc: rejects user-supplied path under .git/" {
+  TEST_REPO=$(create_test_repo_with_branches)
+  cd "$TEST_REPO"
+  run git-wtc feature-1 "$TEST_REPO/.git/should-not-go-here" -f
+  assert_failure
+  assert_output --partial "Cannot create worktree under a .git/ directory"
+}
+
+@test "hug wtc: rejects .git/<missing>/wt without creating partial dir" {
+  TEST_REPO=$(create_test_repo_with_branches)
+  cd "$TEST_REPO"
+  run git-wtc feature-1 "$TEST_REPO/.git/never-existed/wt" -f
+  assert_failure
+  # Mkdir must NOT have created the intermediate directory (guard runs before mkdir)
+  [[ ! -d "$TEST_REPO/.git/never-existed" ]]
+}
+
+@test "hug wtc: emits superproject .gitignore tip from submodule CWD" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$meta_repo/sub"
+  hug b main 2>/dev/null || hug b master 2>/dev/null || true
+  run git-wtc new-branch --new -y
+  assert_success
+  assert_output --partial "Worktree is inside superproject"
+  assert_output --partial "*.WT.*/"
+  local generated
+  generated=$(echo "$output" | grep "Path:" | sed 's/.*Path:[[:space:]]*//' | sed 's/\s*$//')
+  rm -rf "$generated" 2>/dev/null || true
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "hug wtc: suppresses tip when *.WT.*/ already in superproject .gitignore" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  printf '*.WT.*/\n' >> "$meta_repo/.gitignore"
+  cd "$meta_repo/sub"
+  hug b main 2>/dev/null || hug b master 2>/dev/null || true
+  run git-wtc new-branch --new -y
+  assert_success
+  [[ "$output" != *"Worktree is inside superproject"* ]]
+  local generated
+  generated=$(echo "$output" | grep "Path:" | sed 's/.*Path:[[:space:]]*//' | sed 's/\s*$//')
+  rm -rf "$generated" 2>/dev/null || true
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+# Eng phase finding #E3
+@test "hug wtc: does NOT emit superproject tip when custom path is outside meta-repo" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$meta_repo/sub"
+  hug b main 2>/dev/null || hug b master 2>/dev/null || true
+  local custom_path
+  custom_path=$(mktemp -d)/external-wt
+  run git-wtc external-branch --new "$custom_path" -y
+  assert_success
+  [[ "$output" != *"Worktree is inside superproject"* ]]
+  local sub_gitdir="$meta_repo/.git/modules/sub"
+  git --git-dir="$sub_gitdir" worktree remove --force "$custom_path" 2>/dev/null || rm -rf "$custom_path"
+  rm -rf "$(dirname "$custom_path")"
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "hug wtc: does NOT emit superproject tip for plain clone" {
+  TEST_REPO=$(create_test_repo_with_branches)
+  cd "$TEST_REPO"
+  run git-wtc feature-1 -f
+  assert_success
+  [[ "$output" != *"Worktree is inside superproject"* ]]
+  local generated
+  generated=$(echo "$output" | grep "Path:" | sed 's/.*Path:[[:space:]]*//' | sed 's/\s*$//')
+  hug wtdel feature-1 -f -B 2>/dev/null || rm -rf "$generated"
+}

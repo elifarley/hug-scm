@@ -647,3 +647,41 @@ teardown() {
   is_worktree_not_main
   cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
 }
+
+@test "path_is_inside_dot_git: rejects paths under .git/" {
+  # Positive cases (must return 0 = inside .git)
+  path_is_inside_dot_git "/tmp/repo/.git"
+  path_is_inside_dot_git "/tmp/repo/.git/modules/sub"
+  path_is_inside_dot_git "/tmp/repo/.git/modules.WT.x"
+  path_is_inside_dot_git "/tmp/meta/.git/modules/sub.WT.feat-x"
+
+  # Negative cases (must return 1 = NOT inside .git)
+  # shellcheck disable=SC2314
+  ! path_is_inside_dot_git "/tmp/repo.WT.feat-x"
+  # shellcheck disable=SC2314
+  ! path_is_inside_dot_git "/tmp/foo.git/x"
+  # shellcheck disable=SC2314
+  ! path_is_inside_dot_git "/tmp/some/normal/path"
+}
+
+# Eng phase finding #E8: extend coverage to symlinks and relative paths
+@test "path_is_inside_dot_git: catches symlinks resolving into .git/" {
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  mkdir -p "$tmpdir/repo/.git"
+  ln -s "$tmpdir/repo/.git" "$tmpdir/link-to-gitdir"
+  path_is_inside_dot_git "$tmpdir/link-to-gitdir/inner"
+  rm -rf "$tmpdir"
+}
+
+@test "path_is_inside_dot_git: handles relative paths" {
+  local tmpdir orig_pwd
+  orig_pwd=$(pwd)
+  tmpdir=$(mktemp -d)
+  mkdir -p "$tmpdir/repo/.git/modules"
+  cd "$tmpdir/repo"
+  path_is_inside_dot_git ".git/modules/sub"
+  path_is_inside_dot_git "./.git/foo"
+  cd "$orig_pwd"
+  rm -rf "$tmpdir"
+}

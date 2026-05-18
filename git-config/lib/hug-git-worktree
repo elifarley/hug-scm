@@ -635,6 +635,21 @@ validate_worktree_creation_path() {
         path="$(pwd)/$path"
     fi
 
+    # Guard: refuse paths inside any .git directory.
+    # MUST run BEFORE the parent-directory mkdir below — otherwise a
+    # rejected path like <repo>/.git/newdir/wt would still cause
+    # mkdir -p to create <repo>/.git/newdir/ before failing.
+    #
+    # Message is plain user-facing language. DX phase finding #D1:
+    # earlier draft used "ancestor primitive returned a gitdir" which
+    # is debug language for the implementer, not guidance for a user
+    # who explicitly passed a .git/ path by mistake.
+    if path_is_inside_dot_git "$path"; then
+        warning "Cannot create worktree under a .git/ directory: $path"
+        info "The path must be outside any .git/ directory."
+        return 1
+    fi
+
     # Check if target already exists
     if [[ -e "$path" ]]; then
         warning "Target path already exists: $path"
@@ -686,6 +701,53 @@ validate_worktree_creation_path() {
     fi
 
     return 0
+}
+
+# Resolve $1 even when it doesn't exist yet (the wtc path is created
+# AFTER validation). Strategy: walk up the path until we find an
+# existing ancestor, canonicalize THAT, then re-append the missing
+# suffix lexically. This preserves symlink normalization for the
+# existing prefix without depending on `realpath -m` (GNU-only).
+#
+# Eng phase finding #E4: `readlink -f` returns exit 1 for non-existent
+# paths on Linux; falling back to the raw input loses the symlink
+# guarantee silently.
+#
+# WHY NOT `realpath -m`: BSD realpath (macOS) does not support `-m`. The
+# GNU-only flag would silently degrade on macOS, losing the symlink
+# guarantee without error. readlink -f / greadlink -f is the codebase's
+# established portable pattern (see hug-git-json:13).
+_path_resolve_lexical() {
+    local p="$1" suffix=""
+    [[ "$p" = /* ]] || p="$(pwd)/$p"
+    while [[ "$p" != "/" && ! -e "$p" ]]; do
+        suffix="/$(basename "$p")${suffix}"
+        p=$(dirname "$p")
+    done
+    local resolved
+    resolved=$(readlink -f "$p" 2>/dev/null || greadlink -f "$p" 2>/dev/null) || resolved="$p"
+    # WHY ${resolved%/}: when $p walks all the way to "/", readlink -f returns
+    # "/" (with trailing slash). Without stripping it, printf yields
+    # "//nonexistent-root/a/b" — cosmetic noise that breaks string compares.
+    # For normal paths readlink -f never returns a trailing slash, so this
+    # is a no-op in the common case.
+    printf '%s%s\n' "${resolved%/}" "$suffix"
+}
+
+# Returns 0 if $candidate's resolved path has any ancestor directory
+# named exactly ".git". Walks ancestors; performs no git invocations.
+#
+# WHY: Defense-in-depth guard against path-generation primitives that
+# return paths under a gitdir (the submodule mis-detection bug fixed
+# in Commit 2). Also catches user-supplied paths under .git/.
+path_is_inside_dot_git() {
+    local rp
+    rp=$(_path_resolve_lexical "$1")
+    while [[ "$rp" != "/" && -n "$rp" ]]; do
+        [[ "$(basename "$rp")" == ".git" ]] && return 0
+        rp=$(dirname "$rp")
+    done
+    return 1
 }
 
 ################################################################################
@@ -1500,4 +1562,61 @@ parse_worktree_filter_args() {
             ;;
         esac
     done
+}
+
+# Emits a one-line tip when the new worktree lives inside a superproject
+# AND the superproject's .gitignore (or any other ignore source) does
+# not already ignore the path. Silent otherwise.
+#
+# Probes via `git check-ignore --no-index` — the canonical plumbing that
+# honors every ignore source: root .gitignore, nested .gitignore files,
+# .git/info/exclude, global ignore, and negation rules. We pass the
+# generated worktree path directly; --no-index means we don't need the
+# path to exist yet (it doesn't, at this call point).
+#
+# Usage: suggest_superproject_ignore "/abs/path/to/new/worktree"
+suggest_superproject_ignore() {
+    local worktree_path="$1" super_path
+    super_path=$(get_superproject_path) || return 0
+    [[ -n "$super_path" ]] || return 0
+
+    # Eng phase finding #E3: only emit the tip if the WORKTREE PATH is
+    # actually inside the superproject. A user-supplied custom path
+    # (e.g. /tmp/x) or the /tmp/hug-wt-* fallback should NOT trigger
+    # this tip, even when CWD is in a submodule.
+    local rp_wt rp_super
+    rp_wt=$(_path_resolve_lexical "$worktree_path")
+    rp_super=$(readlink -f "$super_path" 2>/dev/null || greadlink -f "$super_path" 2>/dev/null) || rp_super="$super_path"
+    [[ "$rp_wt" == "$rp_super"/* ]] || return 0
+
+    # Eng phase finding #E1 (CRITICAL): `*.WT.*/` is a DIRECTORY pattern
+    # (trailing slash in gitignore semantics). `check-ignore` evaluates
+    # the path argument as a directory only if it has a trailing slash.
+    # Without `${worktree_path%/}/`, the probe falsely reports "not
+    # ignored" even when the rule is already present.
+    local ci_status
+    # check-ignore exit codes:
+    #   0   = path is already ignored → no tip needed
+    #   1   = path is NOT ignored → emit tip
+    #   128 = git error (e.g., gitdir vanished mid-call) → fail-open (no tip)
+    # WHY fail-open on 128: if the gitdir disappeared between
+    # get_superproject_path() and check-ignore, the user has bigger
+    # problems; emitting a misleading ".gitignore" advisory when the
+    # ignore state is unknowable is worse than silence.
+    #
+    # WHY "|| ci_status=$?": with set -euo pipefail active in the caller,
+    # any non-zero exit aborts immediately BEFORE the next statement runs.
+    # The "|| assignment" idiom is the POSIX-compliant way to capture a
+    # non-zero exit code without triggering errexit — the || short-circuits
+    # only when the left side fails, and assignment is always exit-0.
+    ci_status=0
+    git -C "$super_path" check-ignore --no-index -q "${worktree_path%/}/" 2>/dev/null || ci_status=$?
+    if [[ $ci_status -eq 1 ]]; then
+        # DX phase finding #D2: 2 tip lines (was 3); single-command form
+        # (no `cd &&` compound — copy-paste safer, handles spaces).
+        # DX phase finding #D5: bypass HUG_QUIET so the one-time advisory
+        # reaches automation users.
+        HUG_QUIET='' tip "Worktree is inside superproject ${super_path/#$HOME/\~} — add to its .gitignore:"
+        HUG_QUIET='' tip "    printf '*.WT.*/\\n' >> '${super_path}/.gitignore'"
+    fi
 }
