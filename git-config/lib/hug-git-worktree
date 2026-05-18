@@ -301,13 +301,116 @@ get_main_worktree_path() {
     fi
 }
 
+# Resolve the canonical shared gitdir for a worktree path.
+# Usage: gitdir=$(worktree_gitdir "/abs/path/to/worktree") || return 1
+#
+# WHY: `git -C "$path" rev-parse --git-common-dir` follows the `.git` file's
+# `gitdir:` indirection and returns the gitdir that OWNS the worktree
+# registry — regardless of whether $path is a plain clone, a linked
+# worktree, or a submodule worktree under <meta>/.git/modules/<sub>/.
+# This is the only CWD-independent anchor for `git worktree list/remove/...`.
+# Pattern mirrors get_main_worktree_path() above.
+#
+# CRITICAL — absolutize the result. `--git-common-dir` returns the literal
+# string ".git" when $path is the main worktree of a plain clone (no linked
+# worktrees). Passing that raw to `git --git-dir=".git"` would resolve
+# RELATIVE TO THE CALLER'S CWD, not $path — silently breaking every
+# downstream call when CWD ≠ $path. `--absolute-git-dir` would do this
+# for us but requires Git 2.13.0+ (May 2017); we do it ourselves for
+# portability.
+worktree_gitdir() {
+    local path="$1" gitdir
+    [[ -n "$path" && -d "$path" ]] || return 1
+    gitdir=$(git -C "$path" rev-parse --git-common-dir 2>/dev/null) || return 1
+    [[ "$gitdir" = /* ]] || gitdir="$path/$gitdir"
+    printf '%s\n' "$gitdir"
+}
+
 # Check if worktree exists at given path
 # Usage: if worktree_exists "/path/to/worktree"; then ...
 # Returns: 0 if worktree exists, 1 if not
+#
+# Submodule-safe: anchors `git worktree list` to the worktree's OWN gitdir
+# via worktree_gitdir(). Without this anchor, submodule worktrees are
+# invisible because CWD's gitdir doesn't own them.
+#
+# Uses `grep -qxF` (exact LINE match, fixed string) — substring match
+# would falsely return 0 for "/tmp/wt" when "/tmp/wt2" is registered.
 worktree_exists() {
+    local path="$1" gitdir
+    [[ -n "$path" ]] || return 1
+    gitdir=$(worktree_gitdir "$path") || return 1
+    git --git-dir="$gitdir" worktree list --porcelain 2>/dev/null \
+        | grep -qxF "worktree $path"
+}
+
+# Find the gitdir that REGISTERS a worktree path, even if the worktree
+# directory itself is gone from disk (stale orphan case).
+#
+# Usage: gitdir=$(find_worktree_owning_gitdir "/path") || return 1
+#
+# WHY: After a user does `rm -rf <wt-path>`, the worktree's `.git` file is
+# gone, so worktree_gitdir() can't resolve it. To prune the orphan metadata
+# we still need to know WHICH gitdir holds the registration. We search:
+#   1) CWD's gitdir (covers plain clones + when user is in the submodule)
+#   2) Every submodule gitdir under <cwd_gitdir>/modules/* (covers when
+#      user is in the meta-repo)
+# This handles the common topologies without needing the path to exist.
+find_worktree_owning_gitdir() {
     local path="$1"
-    # Use grep -F (fixed string) to match path exactly without regex interpretation
-    [[ -n "$path" ]] && git worktree list --porcelain 2>/dev/null | grep -qF "worktree $path"
+    [[ -n "$path" ]] || return 1
+
+    # Fast path: if the worktree directory still exists, use its own .git.
+    if [[ -e "$path/.git" ]]; then
+        local _own_gd
+        _own_gd=$(worktree_gitdir "$path") && { printf '%s\n' "$_own_gd"; return 0; }
+    fi
+
+    # Slow path: enumerate candidate gitdirs and check each.
+    local cwd_gd
+    cwd_gd=$(git rev-parse --git-common-dir 2>/dev/null) || return 1
+    [[ "$cwd_gd" = /* ]] || cwd_gd="$(pwd)/$cwd_gd"
+
+    local -a candidates=("$cwd_gd")
+    if [[ -d "$cwd_gd/modules" ]]; then
+        local sg
+        for sg in "$cwd_gd/modules"/*/; do
+            [[ -f "${sg}HEAD" ]] && candidates+=("${sg%/}")
+        done
+    fi
+
+    local gd
+    for gd in "${candidates[@]}"; do
+        if git --git-dir="$gd" worktree list --porcelain 2>/dev/null \
+            | grep -qxF "worktree $path"; then
+            printf '%s\n' "$gd"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Check whether a worktree is locked, anchoring to its owning gitdir.
+# Usage: if worktree_is_locked "/path" "/gitdir"; then ...
+#
+# WHY: The previous inline check (git-wtdel:347) was broken on two axes:
+#   1) `^worktree $path$` used regex matching against a path that could
+#      contain regex metacharacters (., *, [, ]).
+#   2) `grep -A1` only showed 1 line of context, but porcelain format
+#      emits `worktree\nHEAD\nbranch\n[locked]` — so `locked` is line 4
+#      of the record, not line 2. The check never matched real locks.
+# This parses the porcelain block-by-block: records separated by blank
+# lines, exact-string compare on the path, scan all lines within the
+# matched record for a `locked` attribute.
+worktree_is_locked() {
+    local path="$1" gitdir="$2"
+    [[ -n "$path" && -n "$gitdir" ]] || return 2
+    awk -v target="$path" '
+        /^worktree / { in_target = (substr($0, 10) == target); locked = 0; next }
+        /^locked/    { if (in_target) locked = 1 }
+        /^$/         { if (in_target && locked) { found = 1; exit } in_target = 0 }
+        END          { exit !(found || (in_target && locked)) }
+    ' < <(git --git-dir="$gitdir" worktree list --porcelain 2>/dev/null)
 }
 
 # Count number of ADDITIONAL worktrees (excluding main worktree)

@@ -213,23 +213,34 @@ delete_associated_branch() {
   local branch="$1"
   local _force="$2"
   local _dry_run="$3"
+  local gitdir="${4:-}"
 
   # Skip detached HEAD or non-existent branches
   if [[ -z "$branch" || "$branch" == "HEAD" || "$branch" == "(detached)" || "$branch" == "unknown" ]]; then
     return 2
   fi
 
+  # WHY $gitdir: For submodule worktrees, the branch lives in the SUBMODULE's
+  # gitdir, NOT CWD's gitdir (which is typically the meta-repo). Without
+  # anchoring, the unanchored variant would either (a) silently no-op when
+  # the meta-repo has no branch by that name, or (b) DELETE THE WRONG BRANCH
+  # when the meta-repo coincidentally has one with the same name.
+  # Caller always passes _wt_gitdir from the worktree being removed.
+  local _git_anchor=()
+  [[ -n "$gitdir" ]] && _git_anchor=(--git-dir="$gitdir")
+
   # Check if branch still exists after worktree removal
-  if ! git rev-parse --verify "refs/heads/$branch" > /dev/null 2>&1; then
+  if ! git "${_git_anchor[@]}" rev-parse --verify "refs/heads/$branch" > /dev/null 2>&1; then
     return 2
   fi
 
   # Determine merge status against default branch
   local default_branch
-  default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@' || git branch --list main master | head -1 | tr -d ' *')
+  default_branch=$(git "${_git_anchor[@]}" symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@' ||
+    git "${_git_anchor[@]}" branch --list main master | head -1 | tr -d ' *')
 
   local is_merged=false
-  if git branch --merged "${default_branch:-main}" 2> /dev/null | grep -q "^[ *]*${branch}$"; then
+  if git "${_git_anchor[@]}" branch --merged "${default_branch:-main}" 2> /dev/null | grep -q "^[ *]*${branch}$"; then
     is_merged=true
   fi
 
@@ -254,7 +265,7 @@ delete_associated_branch() {
   else
     if ! $_force; then
       local unmerged_count
-      unmerged_count=$(git rev-list --count "${default_branch:-main}..$branch" 2> /dev/null || echo "?")
+      unmerged_count=$(git "${_git_anchor[@]}" rev-list --count "${default_branch:-main}..$branch" 2> /dev/null || echo "?")
       warning "Branch '$branch' has $unmerged_count unmerged commit(s)"
       if ! (prompt_confirm_warn "Delete unmerged branch '$branch' anyway?"); then
         return 1
@@ -268,12 +279,12 @@ delete_associated_branch() {
     delete_flag="-D"
   fi
 
-  if git branch "$delete_flag" "$branch" > /dev/null 2>&1; then
+  if git "${_git_anchor[@]}" branch "$delete_flag" "$branch" > /dev/null 2>&1; then
     success "Branch '$branch' deleted"
     return 0
   else
     # Force-delete as fallback (branch might not be fully merged even if we thought it was)
-    if git branch -D "$branch" > /dev/null 2>&1; then
+    if git "${_git_anchor[@]}" branch -D "$branch" > /dev/null 2>&1; then
       success "Branch '$branch' deleted (force)"
       return 0
     fi
@@ -293,19 +304,29 @@ for worktree_path in "${worktree_paths[@]}"; do
   # Validate worktree path (exists, is directory, is worktree)
   # WHY: Don't use validate_worktree_path() in batch mode because it calls error() which exits.
   # Instead, do inline checks that just return failure without exiting.
+  #
+  # Submodule-safety note: every `git worktree …` call below must be
+  # anchored with --git-dir to the worktree's owning gitdir. CWD's gitdir
+  # is the meta-repo's in a submodule-worktree workflow, which does NOT
+  # own the submodule's worktree registry. _wt_gitdir captures the right
+  # anchor once per iteration; reset for each iteration (loop scope).
+  _wt_gitdir=""
   path_valid=true
   if [[ ! -e "$worktree_path" ]]; then
     # WHY: Stale worktrees (directory deleted externally without git worktree remove)
     # leave orphaned metadata. Auto-pruning cleans this up instead of failing.
-    if git worktree list --porcelain 2> /dev/null | grep -qxF "worktree $worktree_path"; then
+    # find_worktree_owning_gitdir() searches CWD's gitdir AND submodule
+    # gitdirs reachable from it, so stale submodule orphans are also pruned.
+    _orphan_gitdir=$(find_worktree_owning_gitdir "$worktree_path" 2> /dev/null || true)
+    if [[ -n "$_orphan_gitdir" ]]; then
       info "Worktree directory already removed: ${worktree_path/#$HOME/\~}"
       if ! $dry_run; then
         info "Cleaning up orphaned Git metadata..."
         # WHY: Locked stale worktrees won't be pruned by 'git worktree prune'
         # unless explicitly unlocked first. The lock file is metadata-only and
         # the directory is already gone, so unlocking is safe.
-        git worktree unlock "$worktree_path" 2> /dev/null || true
-        git worktree prune 2> /dev/null
+        git --git-dir="$_orphan_gitdir" worktree unlock "$worktree_path" 2> /dev/null || true
+        git --git-dir="$_orphan_gitdir" worktree prune 2> /dev/null
         success "Pruned stale worktree entry: ${worktree_path/#$HOME/\~}"
       else
         info "Would prune stale worktree metadata (dry run)"
@@ -328,6 +349,17 @@ for worktree_path in "${worktree_paths[@]}"; do
     continue
   fi
 
+  # Compute the gitdir that owns this worktree (used by all `git worktree …`
+  # calls below). worktree_exists() above just succeeded, so this MUST too;
+  # treat a failure here as a state inconsistency and skip explicitly.
+  # NB: NEVER use `local` outside a function body (git-config/bin/CLAUDE.md);
+  # this for-loop runs at top-level script scope.
+  _wt_gitdir=$(worktree_gitdir "$worktree_path") || {
+    warning "Failed to resolve gitdir for $worktree_path (internal state inconsistency)"
+    failed+=("$worktree_path")
+    continue
+  }
+
   # Get branch name for display
   wt_branch=$(git -C "$worktree_path" rev-parse --abbrev-ref HEAD 2> /dev/null || echo "unknown")
 
@@ -343,8 +375,11 @@ for worktree_path in "${worktree_paths[@]}"; do
     continue
   fi
 
-  # Check if worktree is locked
-  if git worktree list --porcelain 2> /dev/null | grep -A1 "^worktree $worktree_path$" | grep -q "^locked"; then
+  # Check if worktree is locked. worktree_is_locked() parses porcelain
+  # blocks correctly — the previous inline `grep -A1` was broken (porcelain
+  # emits 4 lines per record; `locked` is line 4, not line 2) and
+  # regex-unsafe (path metacharacters).
+  if worktree_is_locked "$worktree_path" "$_wt_gitdir"; then
     warning "Worktree is locked: $worktree_path. Unlock it first with: git worktree unlock '$worktree_path'"
     failed+=("$worktree_path")
     continue
@@ -428,11 +463,11 @@ for worktree_path in "${worktree_paths[@]}"; do
 
   git_err=""
   removal_success=false
-  if ! git_err=$(git worktree remove "${git_wt_args[@]}" 2>&1); then
+  if ! git_err=$(git --git-dir="$_wt_gitdir" worktree remove "${git_wt_args[@]}" 2>&1); then
     # Fallback to manual cleanup
     warning "git worktree remove failed: $git_err"
     info "Attempting manual cleanup..."
-    if rm -rf "$worktree_path" && git worktree prune 2> /dev/null; then
+    if rm -rf "$worktree_path" && git --git-dir="$_wt_gitdir" worktree prune 2> /dev/null; then
       success "Worktree removed for branch '$wt_branch' (manual cleanup)"
       info "Deleted directory: ${worktree_path/#$HOME/\~}"
       removal_success=true
@@ -444,13 +479,13 @@ for worktree_path in "${worktree_paths[@]}"; do
     if [[ -d "$worktree_path" ]]; then
       warning "Worktree directory still exists after removal. Running cleanup..."
       rm -rf "$worktree_path" 2> /dev/null || true
-      git worktree prune 2> /dev/null || true
+      git --git-dir="$_wt_gitdir" worktree prune 2> /dev/null || true
     fi
     removal_success=true
   fi
 
   # Run prune to clean up metadata
-  git worktree prune 2> /dev/null || true
+  git --git-dir="$_wt_gitdir" worktree prune 2> /dev/null || true
 
   # Track result
   if $removal_success; then
@@ -460,7 +495,9 @@ for worktree_path in "${worktree_paths[@]}"; do
     # Branch deletion (if --with-branch is active)
     if $with_branch; then
       branch_rc=0
-      delete_associated_branch "$wt_branch" "$force" "$dry_run" || branch_rc=$?
+      # Pass _wt_gitdir so branch-deletion runs against the right gitdir
+      # (the submodule's, not the meta-repo's) for submodule worktrees.
+      delete_associated_branch "$wt_branch" "$force" "$dry_run" "$_wt_gitdir" || branch_rc=$?
       if [[ $branch_rc -eq 0 ]]; then
         branches_deleted+=("$wt_branch")
       elif [[ $branch_rc -eq 1 ]]; then

@@ -1163,6 +1163,105 @@ cleanup_test_worktrees() {
   fi
 }
 
+# Create a meta-repo with one submodule and a worktree of the submodule.
+# This is the canonical fixture for testing submodule-namespace worktrees.
+#
+# Output (stdout, two lines):
+#   Line 1 — meta_repo path
+#   Line 2 — submodule worktree path
+#
+# Layout produced:
+#   <meta>/
+#   <meta>/.git/modules/sub/                  # submodule gitdir
+#   <meta>/.git/modules/sub.WT.<branch>/      # the submodule's worktree
+#   <meta>/sub/                                # submodule's main checkout
+#
+# WHY raw `git worktree add` (not `hug wtc`): the fixture must be
+# independent of the code under test. Coupling it to `hug wtc` would
+# hide fixture failures and make tests non-deterministic when `hug wtc`
+# itself has bugs.
+#
+# WHY `protocol.file.allow=always`: modern Git (CVE-2022-39253 hardening)
+# refuses local submodule URLs by default. Tests need to opt in.
+#
+# Returns non-zero with a clear stderr message if fixture setup fails,
+# so test failures point at the fixture rather than at downstream
+# "directory does not exist" cascades.
+create_test_submodule_worktree() {
+  local branch="${1:-sub-feature}"
+  local origin_repo meta_repo wt_path sub_gitdir
+
+  origin_repo=$(create_temp_repo_dir)
+  (
+    cd "$origin_repo" || exit 1
+    git init -q --initial-branch=main 2> /dev/null || git init -q
+    git config user.email "test@hug-scm.test"
+    git config user.name "Hug Test"
+    git symbolic-ref HEAD refs/heads/main 2> /dev/null || true
+    echo "sub" > sub.txt
+    git add sub.txt
+    git_commit_deterministic "Initial sub commit"
+    git checkout -q -b "$branch"
+    echo "branch" > branch.txt
+    git add branch.txt
+    git_commit_deterministic "Branch commit"
+    git checkout -q main 2> /dev/null || git checkout -q master 2> /dev/null
+  ) || {
+    echo "create_test_submodule_worktree: failed to init origin repo at $origin_repo" >&2
+    rm -rf "$origin_repo" 2> /dev/null
+    return 1
+  }
+
+  meta_repo=$(create_temp_repo_dir)
+  (
+    cd "$meta_repo" || exit 1
+    git init -q --initial-branch=main 2> /dev/null || git init -q
+    git config user.email "test@hug-scm.test"
+    git config user.name "Hug Test"
+    git symbolic-ref HEAD refs/heads/main 2> /dev/null || true
+    echo "meta" > meta.txt
+    git add meta.txt
+    git_commit_deterministic "Meta initial"
+    git -c protocol.file.allow=always submodule add -q "$origin_repo" sub
+    git_commit_deterministic "Add submodule"
+  ) || {
+    echo "create_test_submodule_worktree: failed to init meta repo at $meta_repo" >&2
+    rm -rf "$meta_repo" "$origin_repo" 2> /dev/null
+    return 1
+  }
+
+  sub_gitdir="$meta_repo/.git/modules/sub"
+  wt_path="$meta_repo/.git/modules/sub.WT.$branch"
+
+  # Explicit error check — silent fixture failures produce confusing
+  # "directory does not exist" test errors instead of "fixture broken".
+  local _wt_err
+  if ! _wt_err=$(git --git-dir="$sub_gitdir" worktree add "$wt_path" "$branch" 2>&1); then
+    echo "create_test_submodule_worktree: failed to add worktree '$branch' at $wt_path" >&2
+    echo "  sub_gitdir=$sub_gitdir" >&2
+    echo "  git stderr: $_wt_err" >&2
+    rm -rf "$meta_repo" "$origin_repo" 2> /dev/null
+    return 1
+  fi
+
+  printf '%s\n%s\n' "$meta_repo" "$wt_path"
+}
+
+# Cleanup helper for create_test_submodule_worktree.
+# Removes both the meta-repo (which contains the worktree as a child) and
+# the origin repo that the meta-repo's submodule pointed to. The origin
+# path isn't tracked here — caller is expected to clean it via /tmp TTL
+# (create_temp_repo_dir uses mktemp). This helper is best-effort.
+cleanup_test_submodule_worktree() {
+  local meta_repo="$1" wt_path="$2"
+  [[ -n "$meta_repo" ]] || return 0
+  if [[ -d "$meta_repo/.git/modules/sub" ]]; then
+    git --git-dir="$meta_repo/.git/modules/sub" worktree remove --force "$wt_path" 2> /dev/null || true
+  fi
+  rm -rf "$wt_path" 2> /dev/null || true
+  rm -rf "$meta_repo" 2> /dev/null || true
+}
+
 # Create a test worktree with uncommitted changes
 # Usage: worktree_path=$(create_test_worktree_with_changes "feature-branch" "/path/to/repo")
 create_test_worktree_with_changes() {
@@ -1208,26 +1307,43 @@ create_test_worktree_with_dirty_changes() {
   echo "$worktree_path"
 }
 
+# Resolve the canonical gitdir for a worktree path (test-helper variant).
+# Mirrors worktree_gitdir() from git-config/lib/hug-git-worktree but is
+# self-contained so test_helper.bash doesn't depend on lib sourcing order.
+#
+# Absolutize: --git-common-dir returns ".git" for main worktrees, which
+# would resolve relative to the TEST'S CWD and produce false negatives
+# (or worse, false positives matching a *different* gitdir).
+_assert_worktree_gitdir() {
+  local path="$1" gd
+  [[ -n "$path" && -d "$path" ]] || return 1
+  gd=$(git -C "$path" rev-parse --git-common-dir 2> /dev/null) || return 1
+  [[ "$gd" = /* ]] || gd="$path/$gd"
+  printf '%s\n' "$gd"
+}
+
 # Assert that a worktree exists and is valid
 # Usage: assert_worktree_exists "/path/to/worktree"
+#
+# Submodule-safe: anchors `git worktree list` to the worktree's own gitdir
+# instead of CWD's. Without this, the helper produces false negatives for
+# submodule worktrees when CWD is the meta-repo.
 assert_worktree_exists() {
-  local worktree_path="$1"
+  local worktree_path="$1" _gitdir
 
   assert_dir_exists "$worktree_path"
 
   # Check it's a valid git worktree (in worktrees, .git is a file, not a directory)
   [[ -f "$worktree_path/.git" ]] || fail "Worktree $worktree_path is not a valid git repository"
 
-  # Check it's listed in git worktree list
-  local found=false
-  while IFS= read -r line; do
-    if [[ "$line" == "worktree $worktree_path" ]]; then
-      found=true
-      break
-    fi
-  done < <(git worktree list --porcelain 2> /dev/null)
+  _gitdir=$(_assert_worktree_gitdir "$worktree_path") ||
+    fail "Cannot resolve gitdir for $worktree_path"
 
-  $found || fail "Worktree $worktree_path not found in git worktree list"
+  # grep -qxF: exact LINE match (substring match would falsely match
+  # /tmp/wt against /tmp/wt2's registration).
+  git --git-dir="$_gitdir" worktree list --porcelain 2> /dev/null |
+    grep -qxF "worktree $worktree_path" ||
+    fail "Worktree $worktree_path not found in git worktree list"
 }
 
 # Usage: run_with_timeout <timeout_seconds> [expected_exit_code] <command>
@@ -1267,21 +1383,38 @@ run_with_timeout() {
 
 # Assert that a worktree does not exist
 # Usage: assert_worktree_not_exists "/path/to/worktree"
+#
+# Submodule-safe: since the worktree path is gone (success case), we
+# can't resolve its gitdir from the path itself. Search candidate gitdirs
+# (parent's gitdir + submodule gitdirs reachable from it) for any
+# lingering registration.
 assert_worktree_not_exists() {
   local worktree_path="$1"
 
   assert_dir_not_exists "$worktree_path"
 
-  # Check it's not listed in git worktree list
-  local found=false
-  while IFS= read -r line; do
-    if [[ "$line" == "worktree $worktree_path" ]]; then
-      found=true
-      break
+  # Build candidate gitdir list to scan for stale registrations.
+  local -a candidates=()
+  local parent _parent_gd
+  parent=$(dirname "$worktree_path")
+  if [[ -d "$parent" ]]; then
+    _parent_gd=$(_assert_worktree_gitdir "$parent" 2> /dev/null) && candidates+=("$_parent_gd")
+    # If parent's gitdir hosts submodules, also check those.
+    if [[ -n "$_parent_gd" && -d "$_parent_gd/modules" ]]; then
+      local sg
+      for sg in "$_parent_gd/modules"/*/; do
+        [[ -f "${sg}HEAD" ]] && candidates+=("${sg%/}")
+      done
     fi
-  done < <(git worktree list --porcelain 2> /dev/null)
+  fi
 
-  ! $found || fail "Worktree $worktree_path still found in git worktree list"
+  local gd
+  for gd in "${candidates[@]}"; do
+    if git --git-dir="$gd" worktree list --porcelain 2> /dev/null |
+      grep -qxF "worktree $worktree_path"; then
+      fail "Worktree $worktree_path still found in git worktree list (gitdir=$gd)"
+    fi
+  done
 }
 
 # Assert that a worktree has the specified branch checked out

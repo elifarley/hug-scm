@@ -93,6 +93,81 @@ teardown() {
   ! worktree_exists ""
 }
 
+@test "hug-git-worktree: worktree_gitdir resolves shared gitdir for linked worktree" {
+  local feature_wt gitdir
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+
+  gitdir=$(worktree_gitdir "$feature_wt")
+  # Linked worktrees share the main repo's .git as their common dir.
+  [[ "$gitdir" = "$TEST_REPO/.git" ]] || { echo "got: $gitdir" >&2; false; }
+}
+
+@test "hug-git-worktree: worktree_gitdir absolutizes relative .git for main worktree" {
+  local gitdir
+  # In the main worktree, --git-common-dir returns the literal ".git" —
+  # the helper must absolutize it so callers can pass it to --git-dir
+  # safely regardless of CWD.
+  gitdir=$(worktree_gitdir "$TEST_REPO")
+  [[ "$gitdir" = /* ]] || { echo "expected absolute gitdir, got: $gitdir" >&2; false; }
+  [[ "$gitdir" = "$TEST_REPO/.git" ]] || { echo "expected $TEST_REPO/.git, got: $gitdir" >&2; false; }
+}
+
+@test "hug-git-worktree: worktree_gitdir returns failure for non-existent path" {
+  # shellcheck disable=SC2314
+  ! worktree_gitdir "/nonexistent/path-that-does-not-exist"
+}
+
+@test "hug-git-worktree: worktree_gitdir returns failure for empty path" {
+  # shellcheck disable=SC2314
+  ! worktree_gitdir ""
+}
+
+@test "hug-git-worktree: worktree_exists finds submodule worktree when CWD is meta-repo" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  [[ -n "$meta_repo" && -n "$wt_path" ]] || skip "submodule fixture setup failed (likely modern git restricting local submodules)"
+
+  cd "$meta_repo"
+  worktree_exists "$wt_path"
+
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "hug-git-worktree: worktree_exists finds submodule worktree when CWD is submodule checkout" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  [[ -n "$meta_repo" && -n "$wt_path" ]] || skip "submodule fixture setup failed"
+
+  cd "$meta_repo/sub"
+  worktree_exists "$wt_path"
+
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "hug-git-worktree: worktree_exists finds submodule worktree when CWD is the worktree itself" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  [[ -n "$meta_repo" && -n "$wt_path" ]] || skip "submodule fixture setup failed"
+
+  cd "$wt_path"
+  worktree_exists "$wt_path"
+
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "hug-git-worktree: worktree_exists does NOT match substring paths" {
+  # Regression test: previously used grep -qF (substring), now uses grep -qxF (exact line).
+  # If we register /tmp/foo and ask about /tmp/fo, the answer must be NO.
+  local feature_wt feature_wt_prefix
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  # Truncate one char — this prefix must NOT be reported as existing
+  feature_wt_prefix="${feature_wt%?}"
+
+  worktree_exists "$feature_wt"
+  # shellcheck disable=SC2314
+  ! worktree_exists "$feature_wt_prefix"
+}
+
 @test "hug-git-worktree: get_worktree_count returns correct count" {
   # Should start with 0 (main repository only)
   assert_equal "$(get_worktree_count)" 0

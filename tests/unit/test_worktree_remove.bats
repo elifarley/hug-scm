@@ -253,17 +253,30 @@ teardown() {
   assert_output --partial "hug bdel"
 }
 
-@test "hug wtdel: handles locked worktree with manual cleanup fallback" {
+@test "hug wtdel: refuses to remove a locked worktree (even with --force)" {
+  # PREVIOUS BEHAVIOR (bug): the lock-check at git-wtdel:347 used
+  # `grep -A1` which couldn't see line 4 of the porcelain record where
+  # `locked` actually appears. The check silently never matched, the
+  # locked worktree fell through to `git worktree remove` which failed,
+  # and the manual-cleanup fallback bypassed the lock entirely.
+  #
+  # CORRECT BEHAVIOR: locks express explicit user intent ("don't delete
+  # this"). `--force` is for "skip confirmation prompts and bypass
+  # dirty/submodule checks", not "ignore locks". Per `git-worktree(1)`,
+  # locks must be unlocked before deletion is allowed. The warning
+  # tells the user exactly how.
   cd "$TEST_REPO"
-  # Lock the worktree
   git worktree lock "$FEATURE_WT"
 
   run git-wtdel -p "$FEATURE_WT" --force
-  assert_success
-  # git worktree remove fails for locked worktrees, but manual cleanup succeeds
-  assert_output --partial "Worktree removed"
+  assert_failure
+  assert_output --partial "Worktree is locked"
+  assert_output --partial "Unlock it first"
 
-  # Unlock (may already be cleaned up, ignore errors)
+  # Worktree should still exist on disk and be registered
+  assert_worktree_exists "$FEATURE_WT"
+
+  # Unlock for teardown
   git worktree unlock "$FEATURE_WT" 2>/dev/null || true
 }
 
@@ -716,4 +729,98 @@ teardown() {
   # No branch deletion attempted for detached HEAD
   refute_output --partial "deleted"
   assert_worktree_not_exists "$detached_wt"
+}
+
+# ============================================================================
+# Submodule-worktree tests (fix for: hug wtdel false-rejection on submodule
+# worktrees + -B branch-deletion targeting the wrong gitdir)
+# ============================================================================
+
+@test "hug wtdel: --dry-run accepts submodule worktree by path (-p) from meta-repo CWD" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  [[ -n "$meta_repo" && -n "$wt_path" ]] || skip "submodule fixture setup failed"
+
+  cd "$meta_repo"
+  run git-wtdel -p "$wt_path" --dry-run
+
+  assert_success
+  refute_output --partial "Path is not a Git worktree"
+  assert_output --partial "DRY RUN"
+
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "hug wtdel: removes submodule worktree by path with --force from meta-repo CWD" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  [[ -n "$meta_repo" && -n "$wt_path" ]] || skip "submodule fixture setup failed"
+
+  cd "$meta_repo"
+  run git-wtdel -p "$wt_path" --force
+
+  assert_success
+  refute_output --partial "Path is not a Git worktree"
+  assert_output --partial "Worktree removed"
+  assert_worktree_not_exists "$wt_path"
+
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "hug wtdel -B: deletes submodule worktree AND its (submodule-local) branch" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  [[ -n "$meta_repo" && -n "$wt_path" ]] || skip "submodule fixture setup failed"
+
+  # Pre-condition: branch exists in submodule's gitdir
+  git --git-dir="$meta_repo/.git/modules/sub" rev-parse --verify refs/heads/sub-feat-x > /dev/null
+
+  cd "$meta_repo"
+  run git-wtdel -p "$wt_path" -B --force
+
+  assert_success
+  assert_output --partial "Worktree removed"
+  assert_output --partial "Branch 'sub-feat-x' deleted"
+  assert_worktree_not_exists "$wt_path"
+
+  # Branch should be gone from submodule's gitdir
+  ! git --git-dir="$meta_repo/.git/modules/sub" rev-parse --verify refs/heads/sub-feat-x > /dev/null 2>&1 \
+    || fail "Branch 'sub-feat-x' should have been deleted from submodule gitdir"
+
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "hug wtdel -B: does NOT touch meta-repo branch with same name (regression guard)" {
+  # Worst-case bug Codex caught: unanchored `git branch -D` would delete
+  # the meta-repo's branch instead of the submodule's, when they collide.
+  # This regression test creates a meta-repo branch with the SAME NAME as
+  # the submodule branch we're targeting, and verifies the meta-repo
+  # branch survives.
+  local meta_repo wt_path collision_branch="sub-feat-x"
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "$collision_branch")
+  [[ -n "$meta_repo" && -n "$wt_path" ]] || skip "submodule fixture setup failed"
+
+  # Create a colliding branch in the meta-repo itself
+  ( cd "$meta_repo" && git branch "$collision_branch" )
+
+  # Both branches now exist (in different gitdirs)
+  git --git-dir="$meta_repo/.git" rev-parse --verify "refs/heads/$collision_branch" > /dev/null \
+    || fail "fixture: meta-repo branch was not created"
+  git --git-dir="$meta_repo/.git/modules/sub" rev-parse --verify "refs/heads/$collision_branch" > /dev/null \
+    || fail "fixture: submodule branch missing"
+
+  cd "$meta_repo"
+  run git-wtdel -p "$wt_path" -B --force
+
+  assert_success
+
+  # Submodule branch deleted
+  ! git --git-dir="$meta_repo/.git/modules/sub" rev-parse --verify "refs/heads/$collision_branch" > /dev/null 2>&1 \
+    || fail "Submodule branch '$collision_branch' should have been deleted"
+
+  # Meta-repo branch SURVIVES (this is the regression-guard assertion)
+  git --git-dir="$meta_repo/.git" rev-parse --verify "refs/heads/$collision_branch" > /dev/null \
+    || fail "Meta-repo branch '$collision_branch' was wrongly deleted — submodule isolation broken"
+
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
 }
