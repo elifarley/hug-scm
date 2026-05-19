@@ -346,8 +346,8 @@ for worktree_path in "${worktree_paths[@]}"; do
     # gitdir but worktree_exists still rejected it, the user is most likely on
     # a hug version that pre-dates commit 1b046f8 (the May 2026 submodule
     # anchor fix). Hand them an exact, copy-pasteable version probe.
-    if [[ -f "$worktree_path/.git" ]] \
-       && grep -q '/\.git/modules/' "$worktree_path/.git" 2> /dev/null; then
+    if [[ -f "$worktree_path/.git" ]] &&
+      grep -q '/\.git/modules/' "$worktree_path/.git" 2> /dev/null; then
       info "Submodule worktree detected. If 'hug wtl' lists this path, your hug"
       info "install may pre-date commit 1b046f8 (May 2026 submodule anchor fix)."
       info "Verify with:  grep -q 'find_worktree_owning_gitdir()' \\"
