@@ -216,6 +216,34 @@ an independent encounter:
   layout, same warning, same workaround. The worktree path remained
   on disk because the workflow rule (CLAUDE.md hard rule against
   raw `git worktree remove` fallbacks) ruled out the alternative path.
+- **2026-05-19** — two merged feature branches in a submodule-heavy
+  meta-repo layout, routine post-merge cleanup. **Failure mode has
+  evolved**: `hug wtdel <branch> --force --with-branch` no longer emits
+  the "Path is not a Git worktree" warning — instead it accepts the
+  arguments, prints an informational diagnostic, and exits without
+  error:
+
+  ```
+  ℹ️ Info: Submodule worktree detected. If 'hug wtl' lists this path, your hug
+  ℹ️ Info: install may pre-date commit 1b046f8 (May 2026 submodule anchor fix).
+  ℹ️ Info: Verify with:  grep -q 'find_worktree_owning_gitdir()' \
+  ℹ️ Info:                  "$HUG_HOME/git-config/lib/hug-git-worktree" \
+  ℹ️ Info:                  && echo CURRENT || echo PRE-FIX
+  ```
+
+  Net outcome: identical to earlier encounters — `hug wtl` still lists
+  the worktree, the directory persists on disk, no non-zero exit code a
+  caller can branch on — but the surfaced UX changed from a warning to
+  a soft install-version hint. The observed path layout was
+  `<meta>/<submodule-name>.WT.<branch>` (sibling to the submodule's
+  working tree, **not** inside `<meta>/.git/`), distinct from the
+  `<meta>/.git/modules.WT.<branch>` layout described in the original
+  Reproducer — suggesting the underlying bug surfaces in **both**
+  submodule-worktree path layouts. The `1b046f8` commit reference in
+  the diagnostic implies the upstream fix has landed; pre-fix installs
+  still hit the failure mode regardless of which layout the worktree
+  uses. Workaround unavailable here (same CLAUDE.md rule against raw
+  `git worktree remove`), so both worktrees remained on disk.
 
 **Severity assessment:** P2 — functional UX gap with a documented
 workaround, but the workaround:
@@ -231,7 +259,8 @@ workaround, but the workaround:
    this path; that's the audience most invested in the worktree
    cleanup UX.
 
-The recurrence rate (3 independent encounters in 2 days, all from
+The recurrence rate (4 independent encounters across 5 days, all from
 the same single user's workflow) suggests this fix should be prioritized
 above bugs surfaced once. Anyone using submodule worktrees + `hug
-wtdel` is hitting it.
+wtdel` is hitting it — across **both** the in-`.git/modules` and the
+sibling-to-submodule path layouts.
