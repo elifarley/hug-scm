@@ -138,6 +138,7 @@ else
 
   # Preview changes
   printf '\nPreview of changes to unpark:\n' >&2
+  # SIGPIPE-safe: TODO (Commit 2)
   git diff --name-only "$current_branch"..."$branch" | head -10 >&2 || true
   printf '\n(Full preview: git diff %s..%s)\n' "$current_branch" "$branch" >&2
 

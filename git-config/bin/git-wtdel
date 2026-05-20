@@ -237,9 +237,11 @@ delete_associated_branch() {
   # Determine merge status against default branch
   local default_branch
   default_branch=$(git "${_git_anchor[@]}" symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@' ||
+    # SIGPIPE-safe: TODO (Commit 2)
     git "${_git_anchor[@]}" branch --list main master | head -1 | tr -d ' *')
 
   local is_merged=false
+  # SIGPIPE-safe: TODO (Commit 2)
   if git "${_git_anchor[@]}" branch --merged "${default_branch:-main}" 2> /dev/null | grep -q "^[ *]*${branch}$"; then
     is_merged=true
   fi

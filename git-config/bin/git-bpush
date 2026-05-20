@@ -55,6 +55,7 @@ usage_error() {
 
 remote_exists() {
   local name="$1"
+  # SIGPIPE-safe: TODO (Commit 2)
   git remote | grep -qxF "$name"
 }
 
@@ -254,6 +255,7 @@ case $# in
     usage_error "Invalid remote name '$remote'."
   fi
   if remote_exists "$remote"; then
+    # SIGPIPE-safe: TODO (Commit 2)
     existing_url="$(normalize_url "$(git remote get-url --all "$remote" | head -n1)")"
     if [ "$existing_url" != "$url" ]; then
       if $update; then

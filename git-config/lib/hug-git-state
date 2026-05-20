@@ -20,6 +20,7 @@
 # Returns:
 #   0 if there are pending changes, 1 if working tree is clean
 has_pending_changes() {
+  # SIGPIPE-safe: TODO (Commit 1)
   git status --porcelain=2 --untracked-files=normal | grep -q '.'
 }
 
@@ -136,6 +137,7 @@ preview_file_changes() {
   local file="${GIT_PREFIX}$2"
 
   printf "─ %s ─\n" "$file" >&2
+  # SIGPIPE-safe: TODO (Commit 2)
   if git diff --no-index -- "$file" <(git show "$commit:$file") 2>/dev/null | head -20 >&2; then
     printf "─ (showing first 20 lines) ─\n\n" >&2
   else

@@ -1313,6 +1313,7 @@ format_worktree_long_line() {
     # Get commit subject and relative time
     local commit_subject
     local commit_time
+    # SIGPIPE-safe: TODO (Commit 2)
     commit_subject=$(git -C "$path" log -1 --format=%s "$commit" 2>/dev/null | head -1)
     commit_time=$(git -C "$path" log -1 --format=%cr "$commit" 2>/dev/null)
 
@@ -1346,6 +1347,7 @@ get_worktree_commit_subject() {
     local worktree_path="$1"
 
     if [[ -d "$worktree_path" ]]; then
+        # SIGPIPE-safe: TODO (Commit 2)
         git -C "$worktree_path" log -1 --format=%s 2>/dev/null | head -1
     fi
 }

@@ -191,6 +191,7 @@ if [ -n "$author" ]; then
     # Date range
     if [ "$commit_count" -gt 0 ]; then
       first_date=$(git log --author="$author" --format='%ai' "${git_opts[@]}" | tail -1 | cut -d' ' -f1)
+      # SIGPIPE-safe: TODO (Commit 2)
       last_date=$(git log --author="$author" --format='%ai' "${git_opts[@]}" | head -1 | cut -d' ' -f1)
       info ""
       info "Time span:"
@@ -231,6 +232,7 @@ fi
 if $json_output; then
   # JSON array of authors
   echo "["
+  # SIGPIPE-safe: TODO (Commit 2)
   git shortlog -sn --all "${git_opts[@]}" | head -"$top_n" |
     awk -v first=1 '{
       if (!first) print ",";
@@ -248,6 +250,7 @@ else
   info "Top $top_n contributors:"
   info ""
 
+  # SIGPIPE-safe: TODO (Commit 2)
   git shortlog -sn --all "${git_opts[@]}" | head -"$top_n" | nl |
     while read rank count author; do
       # Get line stats for this author

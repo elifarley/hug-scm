@@ -280,6 +280,7 @@ if $json_output; then
   echo "  \"total_commits\": $total,"
 
   # Merge status
+  # SIGPIPE-safe: TODO (Commit 2)
   if git branch --merged "$base_branch" | grep -q "^[\* ] $branch$"; then
     echo "  \"merged\": true,"
   else
@@ -307,6 +308,7 @@ else
 
   # Check merge status
   merged=false
+  # SIGPIPE-safe: TODO (Commit 2)
   if git branch --merged "$base_branch" | grep -q "^[\* ] $branch$"; then
     merged=true
   fi
@@ -338,6 +340,7 @@ else
   # Age
   info ""
   info "Age:"
+  # SIGPIPE-safe: TODO (Commit 2)
   first_date=$(git log --format='%ai' --reverse "$branch" | head -1 | cut -d' ' -f1)
   last_date=$(git log -1 --format='%ai' "$branch" | cut -d' ' -f1)
   last_relative=$(git log -1 --format='%cr' "$branch")

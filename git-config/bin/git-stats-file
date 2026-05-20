@@ -166,6 +166,7 @@ if [ ! -f "$python_script" ]; then
 
   # Authors
   info "Authors:"
+  # SIGPIPE-safe: TODO (Commit 2)
   git log --follow --format='%an' -- "$file" | sort | uniq -c | sort -rn | head -5 |
     while read count author; do
       info "  $author ($count commits)"
@@ -177,6 +178,7 @@ if [ ! -f "$python_script" ]; then
   git log --follow --format='  %ai by %an' -- "$file" | tail -1
 
   info "Last commit:"
+  # SIGPIPE-safe: TODO (Commit 2)
   git log --follow --format='  %ai by %an' -- "$file" | head -1
 
   # Current size
