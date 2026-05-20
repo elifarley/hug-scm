@@ -237,8 +237,12 @@ tag_exists_remote() {
     local tag="$1"
     local remote="${2:-origin}"
 
-    # SIGPIPE-safe: TODO (Commit 1)
-    timeout 5 git -c credential.helper= ls-remote --tags "$remote" "refs/tags/$tag" 2>/dev/null | grep -q "refs/tags/$tag\$"
+    # Capture-then-filter: under pipefail, `ls-remote | grep -q` races on
+    # tag-heavy remotes. The `timeout 5` wrapper stays in front of git.
+    # See worktree_exists in hug-git-worktree for the canonical WHY.
+    local listing
+    listing=$(timeout 5 git -c credential.helper= ls-remote --tags "$remote" "refs/tags/$tag" 2>/dev/null) || return 1
+    grep -q "refs/tags/$tag\$" <<< "$listing"
 }
 
 ################################################################################

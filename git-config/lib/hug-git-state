@@ -20,8 +20,14 @@
 # Returns:
 #   0 if there are pending changes, 1 if working tree is clean
 has_pending_changes() {
-  # SIGPIPE-safe: TODO (Commit 1)
-  git status --porcelain=2 --untracked-files=normal | grep -q '.'
+  # Capture-then-filter (NOT pipe): under `set -o pipefail`, `git status | grep -q '.'`
+  # races when porcelain output is large (many untracked files). Grep matches the
+  # first line -> closes read end -> git gets SIGPIPE -> pipe exits 141 -> false
+  # negative on "are there changes?" -> callers skip safety checks they depend on.
+  # See worktree_exists in hug-git-worktree for the canonical WHY comment.
+  local porcelain
+  porcelain=$(git status --porcelain=2 --untracked-files=normal 2>/dev/null) || return 1
+  [[ -n "$porcelain" ]]
 }
 
 # Checks if there are staged changes (index dirty)

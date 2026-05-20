@@ -126,7 +126,21 @@ teardown() {
   echo "test" > file.txt
   git add file.txt
   git commit -q -m "test commit"
-  
+
   run is_binary_staged file.txt
   assert_failure
+}
+
+@test "has_pending_changes: returns true under pipefail with many untracked files (SIGPIPE regression)" {
+  # Create 1000+ untracked files to ensure git status output exceeds pipe buffer
+  # (64KB on Linux). Under the old pipe-based implementation, this would trigger
+  # SIGPIPE -> grep exits after first match -> git SIGPIPE -> false negative.
+  local i
+  for i in $(seq 1 1000); do
+    echo "content_$i" > "untracked_file_$i"
+  done
+
+  # Must detect changes even under pipefail (which hug scripts set)
+  run bash -c 'set -o pipefail; source "$HUG_HOME/git-config/lib/hug-common"; source "$HUG_HOME/git-config/lib/hug-git-repo"; source "$HUG_HOME/git-config/lib/hug-git-state"; has_pending_changes'
+  assert_success
 }

@@ -291,3 +291,22 @@ teardown() {
   assert_failure
   assert_output --partial "Cannot specify both --temporal and a target"
 }
+
+################################################################################
+# get_first_child_commit TESTS
+################################################################################
+
+@test "get_first_child_commit: returns first child commit under pipefail (SIGPIPE regression)" {
+  # The default setup creates 3 commits. Re-use them to build a linear history
+  # where we know the parent-child relationship.
+  # Setup: first (HEAD~2) <- second (HEAD~1) <- third (HEAD)
+  local parent
+  parent=$(git rev-parse HEAD~1)
+  local child
+  child=$(git rev-parse HEAD)
+
+  # Must return the immediate child of parent, even under pipefail
+  run bash -c "set -o pipefail; source '$HUG_HOME/git-config/lib/hug-common'; source '$HUG_HOME/git-config/lib/hug-git-repo'; source '$HUG_HOME/git-config/lib/hug-git-commit'; get_first_child_commit '$parent'"
+  assert_success
+  assert_output "$child"
+}

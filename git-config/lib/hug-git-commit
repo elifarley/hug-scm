@@ -297,11 +297,14 @@ get_first_commit_in_range() {
 get_first_child_commit() {
     local parent="$1"
 
-    # Search full history for the parent commit, extract first child
-    # The parent will appear as: <parent_hash> <child1> <child2> ...
-    # We want field $2 (first child)
-    # SIGPIPE-safe: TODO (Commit 1)
-    git rev-list --children HEAD 2>/dev/null | grep "^$parent " | head -1 | awk '{print $2}'
+    # Capture-then-filter: the original 4-stage pipe (rev-list | grep | head | awk)
+    # has TWO early-exit points (grep and head) that both trigger SIGPIPE under
+    # pipefail on large histories. Single-pass awk on captured output replaces
+    # all three filter stages cleanly.
+    # See worktree_exists in hug-git-worktree for the canonical WHY.
+    local children_output
+    children_output=$(git rev-list --children HEAD 2>/dev/null) || return 1
+    awk -v p="$parent" '$1 == p && NF > 1 { print $2; exit }' <<< "$children_output"
 }
 
 ################################################################################

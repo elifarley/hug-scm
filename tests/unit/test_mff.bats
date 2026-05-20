@@ -276,3 +276,45 @@ setup_diverged_branches() {
   assert_output --partial "Cannot force-move checked-out branch"
   assert_output --partial "Switch away first"
 }
+
+# -----------------------------------------------------------------------------
+# Worktree safety check (porcelain format fix)
+# -----------------------------------------------------------------------------
+
+@test "mff: rejects fast-forward of branch checked out in worktree" {
+  # WHY: Before the porcelain format fix, `git worktree list --porcelain` emits
+  # `branch refs/heads/X` (space, no colon) but the grep pattern used
+  # `branch: refs/heads/X` (with colon). The safety check NEVER matched, so
+  # `hug mff` on a branch checked out in another worktree gave a cryptic
+  # `git branch -f` error instead of the clear actionable message.
+  #
+  # Setup: main at C, feature at C-D-E, with feature checked out in a worktree.
+  # We switch to a temporary branch so `feature` is NOT the current branch,
+  # then try to move `feature` forward — the worktree check should block it.
+  setup_linear_branches
+
+  # Create a temporary branch to switch away from main
+  git checkout -q -b temp-branch
+
+  # Create a worktree for the feature branch so it's "checked out" there
+  local wt_path
+  wt_path=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "hug-mff-wt-XXXXXX")
+  git worktree add "$wt_path" feature 2>/dev/null || true
+
+  # Advance main beyond feature so we can try to fast-forward feature to main
+  git checkout -q main
+  echo "extra" > extra.txt
+  git add extra.txt
+  git commit -q -m "Extra commit on main"
+  git checkout -q temp-branch
+
+  # mff should detect that feature is checked out in worktree and refuse
+  run hug mff feature main
+  local mff_exit=$status
+
+  # Cleanup worktree before assertions to avoid side effects
+  git worktree remove "$wt_path" --force 2>/dev/null || rm -rf "$wt_path"
+
+  # The worktree safety check should have fired (error or early exit)
+  [ "$mff_exit" -ne 0 ] || fail "Expected mff to reject moving branch checked out in worktree"
+}
