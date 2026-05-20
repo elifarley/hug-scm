@@ -237,10 +237,10 @@ show_worktree_details() {
 
     # Check if locked (simplified check)
     locked="false"
-    # SIGPIPE-safe: TODO (Commit 2)
-    if ! git -C "$path" worktree list --porcelain 2> /dev/null | grep -A1 "^worktree $path\$" | grep -q "^locked"; then
-      locked="false"
-    else
+    # SIGPIPE-safe: capture-then-filter — grep -q would SIGPIPE git worktree list under pipefail
+    local wt_list_raw
+    wt_list_raw=$(git -C "$path" worktree list --porcelain 2>/dev/null) || wt_list_raw=""
+    if grep -A1 "^worktree $path\$" <<< "$wt_list_raw" | grep -q "^locked"; then
       locked="true"
     fi
 

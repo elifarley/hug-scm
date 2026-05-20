@@ -280,8 +280,9 @@ if $json_output; then
   echo "  \"total_commits\": $total,"
 
   # Merge status
-  # SIGPIPE-safe: TODO (Commit 2)
-  if git branch --merged "$base_branch" | grep -q "^[\* ] $branch$"; then
+  # SIGPIPE-safe: capture-then-filter — grep -q would SIGPIPE git branch under pipefail
+  _merged_branches=$(git branch --merged "$base_branch" 2>/dev/null) || _merged_branches=""
+  if grep -q "^[\* ] $branch$" <<< "$_merged_branches"; then
     echo "  \"merged\": true,"
   else
     echo "  \"merged\": false,"
@@ -308,8 +309,9 @@ else
 
   # Check merge status
   merged=false
-  # SIGPIPE-safe: TODO (Commit 2)
-  if git branch --merged "$base_branch" | grep -q "^[\* ] $branch$"; then
+  # SIGPIPE-safe: capture-then-filter — grep -q would SIGPIPE git branch under pipefail
+  _merged_branches2=$(git branch --merged "$base_branch" 2>/dev/null) || _merged_branches2=""
+  if grep -q "^[\* ] $branch$" <<< "$_merged_branches2"; then
     merged=true
   fi
 
@@ -340,8 +342,9 @@ else
   # Age
   info ""
   info "Age:"
-  # SIGPIPE-safe: TODO (Commit 2)
-  first_date=$(git log --format='%ai' --reverse "$branch" | head -1 | cut -d' ' -f1)
+  # SIGPIPE-safe: capture-then-filter — head -1 would SIGPIPE git log under pipefail
+  _first_commit_raw=$(git log --format='%ai' --reverse "$branch" 2>/dev/null) || _first_commit_raw=""
+  first_date=$(head -1 <<< "$_first_commit_raw" | cut -d' ' -f1)
   last_date=$(git log -1 --format='%ai' "$branch" | cut -d' ' -f1)
   last_relative=$(git log -1 --format='%cr' "$branch")
   info "  Created: $first_date"

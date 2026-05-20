@@ -55,8 +55,10 @@ usage_error() {
 
 remote_exists() {
   local name="$1"
-  # SIGPIPE-safe: TODO (Commit 2)
-  git remote | grep -qxF "$name"
+  # SIGPIPE-safe: capture-then-filter — grep -qxF would SIGPIPE git remote under pipefail
+  local remotes
+  remotes=$(git remote 2>/dev/null) || remotes=""
+  grep -qxF "$name" <<< "$remotes"
 }
 
 derive_remote_name() {
@@ -255,8 +257,11 @@ case $# in
     usage_error "Invalid remote name '$remote'."
   fi
   if remote_exists "$remote"; then
-    # SIGPIPE-safe: TODO (Commit 2)
-    existing_url="$(normalize_url "$(git remote get-url --all "$remote" | head -n1)")"
+    # SIGPIPE-safe: capture-then-filter — head -n1 would SIGPIPE git remote under pipefail
+    _url_raw=$(git remote get-url --all "$remote" 2>/dev/null) || _url_raw=""
+    _first_url=""
+    IFS= read -r _first_url <<< "$_url_raw"
+    existing_url="$(normalize_url "$_first_url")"
     if [ "$existing_url" != "$url" ]; then
       if $update; then
         printf "Updating URL for '%s' to %s\n" "$remote" "$url"

@@ -143,8 +143,11 @@ preview_file_changes() {
   local file="${GIT_PREFIX}$2"
 
   printf "─ %s ─\n" "$file" >&2
-  # SIGPIPE-safe: TODO (Commit 2)
-  if git diff --no-index -- "$file" <(git show "$commit:$file") 2>/dev/null | head -20 >&2; then
+  # SIGPIPE-safe: capture-then-filter — head -20 would SIGPIPE git diff under pipefail
+  local diff_output
+  diff_output=$(git diff --no-index -- "$file" <(git show "$commit:$file") 2>/dev/null) || diff_output=""
+  if [[ -n "$diff_output" ]]; then
+    head -20 <<< "$diff_output" >&2
     printf "─ (showing first 20 lines) ─\n\n" >&2
   else
     printf "─ (binary file or no changes) ─\n\n" >&2

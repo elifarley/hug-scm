@@ -236,13 +236,15 @@ delete_associated_branch() {
 
   # Determine merge status against default branch
   local default_branch
+  # SIGPIPE-safe: capture-then-filter — head -1 would SIGPIPE git branch under pipefail
   default_branch=$(git "${_git_anchor[@]}" symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@' ||
-    # SIGPIPE-safe: TODO (Commit 2)
-    git "${_git_anchor[@]}" branch --list main master | head -1 | tr -d ' *')
+    { _bl=$(git "${_git_anchor[@]}" branch --list main master 2>/dev/null) || _bl=""; head -1 <<< "$_bl" | tr -d ' *'; })
 
   local is_merged=false
-  # SIGPIPE-safe: TODO (Commit 2)
-  if git "${_git_anchor[@]}" branch --merged "${default_branch:-main}" 2> /dev/null | grep -q "^[ *]*${branch}$"; then
+  # SIGPIPE-safe: capture-then-filter — grep -q would SIGPIPE git branch under pipefail
+  local merged_branches
+  merged_branches=$(git "${_git_anchor[@]}" branch --merged "${default_branch:-main}" 2>/dev/null) || merged_branches=""
+  if grep -q "^[ *]*${branch}$" <<< "$merged_branches"; then
     is_merged=true
   fi
 

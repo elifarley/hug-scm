@@ -68,24 +68,26 @@ resolve_temporal_to_commit() {
         # Absolute time specification - use git's date parsing directly
         # Git understands various date formats and is cross-platform
         # We'll use --since with the time spec and let git parse it
-        local commit
-        # SIGPIPE-safe: TODO (Commit 2)
-        commit=$(git log --format="%H" --since="$time_spec" "$reference" --reverse 2>/dev/null | head -n 1)
+        local commit log_output
+        # SIGPIPE-safe: capture-then-filter — head -n 1 would SIGPIPE git under pipefail
+        log_output=$(git log --format="%H" --since="$time_spec" "$reference" --reverse 2>/dev/null) || log_output=""
+        IFS= read -r commit <<< "$log_output"
 
         if [[ -z "$commit" ]]; then
             error "Unable to parse time specification '$time_spec' or no commits found after that time"
             return 1
         fi
-        
+
         echo "$commit"
         return 0
     fi
-    
+
     # Find the first commit at or after the target time
     # We use --since with the target time and --reverse to get the oldest first
-    local commit
-    # SIGPIPE-safe: TODO (Commit 2)
-    commit=$(git log --format="%H" --since="@$target_time" "$reference" --reverse 2>/dev/null | head -n 1)
+    local commit log_output
+    # SIGPIPE-safe: capture-then-filter — head -n 1 would SIGPIPE git under pipefail
+    log_output=$(git log --format="%H" --since="@$target_time" "$reference" --reverse 2>/dev/null) || log_output=""
+    IFS= read -r commit <<< "$log_output"
 
     if [[ -z "$commit" ]]; then
         error "No commits found at or after '$time_spec' (relative to $reference)"
@@ -276,8 +278,12 @@ get_first_commit_in_range() {
     local start="$1"
     local end="${2:-HEAD}"
 
-    # SIGPIPE-safe: TODO (Commit 2)
-    git rev-list --reverse "$start..$end" 2>/dev/null | head -1
+    # SIGPIPE-safe: capture-then-filter — head -1 would SIGPIPE git rev-list under pipefail
+    local range_output
+    range_output=$(git rev-list --reverse "$start..$end" 2>/dev/null) || range_output=""
+    local first
+    IFS= read -r first <<< "$range_output"
+    printf '%s\n' "$first"
 }
 
 # Gets the first child commit of a parent

@@ -1313,8 +1313,10 @@ format_worktree_long_line() {
     # Get commit subject and relative time
     local commit_subject
     local commit_time
-    # SIGPIPE-safe: TODO (Commit 2)
-    commit_subject=$(git -C "$path" log -1 --format=%s "$commit" 2>/dev/null | head -1)
+    # SIGPIPE-safe: capture-then-filter — head -1 would SIGPIPE git log under pipefail
+    local subject_raw
+    subject_raw=$(git -C "$path" log -1 --format=%s "$commit" 2>/dev/null) || subject_raw=""
+    IFS= read -r commit_subject <<< "$subject_raw"
     commit_time=$(git -C "$path" log -1 --format=%cr "$commit" 2>/dev/null)
 
     # Format detailed status
@@ -1347,8 +1349,12 @@ get_worktree_commit_subject() {
     local worktree_path="$1"
 
     if [[ -d "$worktree_path" ]]; then
-        # SIGPIPE-safe: TODO (Commit 2)
-        git -C "$worktree_path" log -1 --format=%s 2>/dev/null | head -1
+        # SIGPIPE-safe: capture-then-filter — head -1 would SIGPIPE git log under pipefail
+        local subject_raw
+        subject_raw=$(git -C "$worktree_path" log -1 --format=%s 2>/dev/null) || subject_raw=""
+        local first_line
+        IFS= read -r first_line <<< "$subject_raw"
+        printf '%s\n' "$first_line"
     fi
 }
 

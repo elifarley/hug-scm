@@ -83,8 +83,11 @@ generate_tag_suggestions() {
 
   # Search for tags matching standard SemVer patterns (both v-prefixed and bare numbers)
   # We use multiple --list patterns to be efficient, avoiding full repo scans.
-  # SIGPIPE-safe: TODO (Commit 2)
-  last_version=$(git tag --list "v[0-9]*.[0-9]*.[0-9]*" --list "[0-9]*.[0-9]*.[0-9]*" --sort=-version:refname | head -1 2> /dev/null || echo "")
+  # SIGPIPE-safe: capture-then-filter — head -1 would SIGPIPE git tag under pipefail
+  local tags_raw
+  tags_raw=$(git tag --list "v[0-9]*.[0-9]*.[0-9]*" --list "[0-9]*.[0-9]*.[0-9]*" --sort=-version:refname 2>/dev/null) || tags_raw=""
+  IFS= read -r last_version <<< "$tags_raw"
+  last_version="${last_version:-}"
 
   if [[ -n "$last_version" ]]; then
     # Regex Breakdown:
