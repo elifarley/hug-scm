@@ -745,12 +745,44 @@ teardown() {
   assert_success
 }
 
-@test "worktree_exists: returns 1 for absent worktree under pipefail + large registry" {
-  # This test guards the false-negative case: an absent path must still
-  # return 1 after the fix (ensures capture-then-filter didn't accidentally
-  # invert the logic or use grep -c instead of grep -q).
+@test "worktree_exists: returns 1 for path that doesn't exist on disk (worktree_gitdir short-circuit)" {
+  # This test exercises the EARLY -d GUARD in worktree_gitdir, NOT the
+  # capture-then-filter grep path.  worktree_gitdir bails at:
+  #   [[ -n "$path" && -d "$path" ]] || return 1
+  # so worktree_exists never reaches the porcelain capture or grep call.
+  #
+  # Documents that absent-on-disk paths return 1 without consulting the
+  # registry at all.  The grep-path false-negative case (dir exists on disk
+  # but is NOT registered) is covered by the "unregistered dir" test below.
+  local absent_path="/tmp/hug-nonexistent-worktree-$$"
 
-  # Step 1 — NO target worktree is added. We only add padding orphans.
+  run bash -c '
+    set -o pipefail
+    source "'"$HUG_HOME"'/git-config/lib/hug-common"
+    source "'"$HUG_HOME"'/git-config/lib/hug-output"
+    source "'"$HUG_HOME"'/git-config/lib/hug-git-worktree"
+    worktree_exists "'"$absent_path"'"
+  '
+  assert_failure
+}
+
+@test "worktree_exists: returns 1 for unregistered dir under repo under pipefail + large registry" {
+  # This test exercises the CAPTURE-THEN-FILTER grep path — the code path
+  # that the false-negative regression test is actually meant to protect.
+  #
+  # A non-existent path short-circuits in worktree_gitdir's -d guard and
+  # never reaches the grep call (see the "short-circuit" test above).  We
+  # need a directory that EXISTS ON DISK but is NOT registered as a worktree.
+  # A plain subdirectory inside the meta-repo satisfies both requirements:
+  #   - `git -C "$path" rev-parse --git-common-dir` walks up and resolves the
+  #     meta-repo's gitdir → worktree_gitdir succeeds
+  #   - The path is absent from `git worktree list --porcelain` → grep fails
+  #     → worktree_exists returns 1
+  #
+  # The 100-orphan padding is kept so that SIGPIPE is reliably triggered on
+  # any hypothetical regression to a pipe-based implementation.
+
+  # Step 1 — add 100 throwaway worktrees so git has ≥100 records to write.
   local i pad_path
   for i in $(seq 1 100); do
     pad_path="${TEST_REPO}.WT.pad-${i}"
@@ -762,15 +794,22 @@ teardown() {
     rm -rf "$pad_path"  # orphan registration
   done
 
-  # Step 2 — query a path that was never registered.
-  local absent_path="/tmp/hug-nonexistent-worktree-$$"
+  # Step 2 — create a real directory INSIDE the meta-repo that was never
+  # registered with `git worktree add`.  It must be inside the repo so that
+  # `git -C <path> rev-parse --git-common-dir` can walk up to the meta-repo
+  # and return a valid gitdir.
+  local unregistered_path="${TEST_REPO}/never-registered-as-worktree"
+  mkdir -p "$unregistered_path"
 
+  # Step 3 — call worktree_exists under pipefail.  The path exists on disk
+  # (passes -d), worktree_gitdir resolves to the meta-repo's gitdir, the
+  # porcelain is captured, grep finds no matching line → returns 1.
   run bash -c '
     set -o pipefail
     source "'"$HUG_HOME"'/git-config/lib/hug-common"
     source "'"$HUG_HOME"'/git-config/lib/hug-output"
     source "'"$HUG_HOME"'/git-config/lib/hug-git-worktree"
-    worktree_exists "'"$absent_path"'"
+    worktree_exists "'"$unregistered_path"'"
   '
   assert_failure
 }

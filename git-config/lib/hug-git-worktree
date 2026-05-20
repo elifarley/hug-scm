@@ -486,11 +486,14 @@ find_worktree_owning_gitdir() {
 worktree_is_locked() {
     local path="$1" gitdir="$2"
     [[ -n "$path" && -n "$gitdir" ]] || return 2
-    # SIGPIPE-safe by construction: uses process substitution `< <(git ...)`,
-    # NOT a pipe. Process substitution feeds a file descriptor, not a pipeline
-    # stage — `set -o pipefail` only monitors pipeline exit codes, not fd
-    # reads. awk reads until EOF; git is never SIGPIPE'd regardless of how
-    # early awk exits. No capture-then-filter rewrite needed here.
+    # SIGPIPE-safe by construction (no rewrite needed):
+    # This function reads from process substitution `< <(git ...)`, NOT a pipe.
+    # Bash's `set -o pipefail` only tracks exit codes of `|` pipelines — it does
+    # not inspect the exit code of a process-substitution producer. Even if awk's
+    # early `exit` causes git to receive SIGPIPE (exit 141) on its next write,
+    # that 141 is invisible to this function's exit status. Empirically verified.
+    # See worktree_exists in this file for the SIGPIPE+pipefail+pipe race that
+    # DOES need a fix (and got one in commit e62809f).
     awk -v target="$path" '
         /^worktree / { in_target = (substr($0, 10) == target); locked = 0; next }
         /^locked/    { if (in_target) locked = 1 }
