@@ -1354,10 +1354,16 @@ assert_worktree_exists() {
   _gitdir=$(_assert_worktree_gitdir "$worktree_path") ||
     fail "Cannot resolve gitdir for $worktree_path"
 
+  # Capture-then-filter (NOT pipe) — `git | grep -q` races under `set -o pipefail`:
+  # grep matches → closes the read end → git gets SIGPIPE → pipe exits 141 → false-fail.
+  # See worktree_exists in git-config/lib/hug-git-worktree for the full WHY.
+  #
   # grep -qxF: exact LINE match (substring match would falsely match
   # /tmp/wt against /tmp/wt2's registration).
-  git --git-dir="$_gitdir" worktree list --porcelain 2> /dev/null |
-    grep -qxF "worktree $worktree_path" ||
+  local _porcelain
+  _porcelain=$(git --git-dir="$_gitdir" worktree list --porcelain 2> /dev/null) ||
+    fail "Cannot list worktrees for gitdir $_gitdir"
+  grep -qxF "worktree $worktree_path" <<< "$_porcelain" ||
     fail "Worktree $worktree_path not found in git worktree list"
 }
 
@@ -1423,10 +1429,13 @@ assert_worktree_not_exists() {
     fi
   fi
 
-  local gd
+  # Same capture-then-filter pattern as assert_worktree_exists — see its comment.
+  # Logic is inverted: FAIL when grep finds the path (worktree must NOT exist).
+  local gd _porcelain
   for gd in "${candidates[@]}"; do
-    if git --git-dir="$gd" worktree list --porcelain 2> /dev/null |
-      grep -qxF "worktree $worktree_path"; then
+    _porcelain=$(git --git-dir="$gd" worktree list --porcelain 2> /dev/null) ||
+      fail "Cannot list worktrees for gitdir $gd"
+    if grep -qxF "worktree $worktree_path" <<< "$_porcelain"; then
       fail "Worktree $worktree_path still found in git worktree list (gitdir=$gd)"
     fi
   done
