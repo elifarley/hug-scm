@@ -334,8 +334,19 @@ resolve_main_worktree_path() {
     # non-empty result. Eng phase finding #E5: bare awk-pipe silently succeeds
     # with empty output on corrupt or unexpected porcelain, propagating a
     # bogus empty anchor.
-    main_wt=$(git --git-dir="$gitdir" worktree list --porcelain 2>/dev/null \
-        | awk '/^worktree / { print substr($0, 10); exit }')
+    #
+    # Capture-then-filter (NOT pipe). See worktree_exists in this file for the
+    # full WHY. Summary: `git ... | awk '/^worktree/{ ...; exit }'` races under
+    # `set -o pipefail` — awk exits early, git gets SIGPIPE on the next write,
+    # the pipe exits 141, and the enclosing command substitution returns empty.
+    #
+    # IMPORTANT: `local porcelain` must be declared on a SEPARATE line from its
+    # assignment. `local porcelain=$(git ...)` always returns 0 because `local`
+    # itself is a builtin that exits 0 regardless — the git exit code is masked.
+    # This is a classic Bash footgun when error-propagation matters.
+    local porcelain
+    porcelain=$(git --git-dir="$gitdir" worktree list --porcelain 2>/dev/null) || return 1
+    main_wt=$(awk '/^worktree / { print substr($0, 10); exit }' <<< "$porcelain")
     [[ -n "$main_wt" ]] || return 1
     printf '%s\n' "$main_wt"
 }
@@ -387,8 +398,26 @@ worktree_exists() {
     local path="$1" gitdir
     [[ -n "$path" ]] || return 1
     gitdir=$(worktree_gitdir "$path") || return 1
-    git --git-dir="$gitdir" worktree list --porcelain 2>/dev/null \
-        | grep -qxF "worktree $path"
+    # Capture-then-filter (NOT pipe). Under `set -o pipefail` (active in
+    # git-wtdel and many other bin scripts), `git ... | grep -qxF ...`
+    # races: grep -q exits at the first match → closes the read end → git
+    # gets SIGPIPE on the next write → pipe exits 141. The function returns
+    # non-zero for a perfectly valid worktree whenever the registry is long
+    # enough for grep to win the race.
+    #
+    # Capture-then-filter eliminates the pipe entirely: git runs to
+    # completion, output is captured, grep operates on the captured string.
+    # The `|| return 1` is LOAD-BEARING: `set -e` does NOT propagate into
+    # command substitution subshells, so without the explicit guard a real
+    # git error (bad gitdir, EACCES) would silently set `porcelain=""` and
+    # we'd return false rather than "can't determine."
+    #
+    # IMPORTANT: keep `local porcelain` declared BEFORE the assignment.
+    # `local porcelain=$(git ...)` would mask the command's exit status
+    # because `local` always returns 0 — a classic Bash footgun.
+    local porcelain
+    porcelain=$(git --git-dir="$gitdir" worktree list --porcelain 2>/dev/null) || return 1
+    grep -qxF "worktree $path" <<< "$porcelain"
 }
 
 # Find the gitdir that REGISTERS a worktree path, even if the worktree
@@ -428,8 +457,13 @@ find_worktree_owning_gitdir() {
 
     local gd
     for gd in "${candidates[@]}"; do
-        if git --git-dir="$gd" worktree list --porcelain 2>/dev/null \
-            | grep -qxF "worktree $path"; then
+        # Capture-then-filter: same SIGPIPE race as worktree_exists — see that
+        # function for the full WHY comment. Here we use `||:` (no-op on error)
+        # rather than `|| return 1`: a single gitdir failing to list should not
+        # abort the search; we continue to the next candidate.
+        local _porcelain
+        _porcelain=$(git --git-dir="$gd" worktree list --porcelain 2>/dev/null) ||:
+        if grep -qxF "worktree $path" <<< "$_porcelain"; then
             printf '%s\n' "$gd"
             return 0
         fi
@@ -452,6 +486,11 @@ find_worktree_owning_gitdir() {
 worktree_is_locked() {
     local path="$1" gitdir="$2"
     [[ -n "$path" && -n "$gitdir" ]] || return 2
+    # SIGPIPE-safe by construction: uses process substitution `< <(git ...)`,
+    # NOT a pipe. Process substitution feeds a file descriptor, not a pipeline
+    # stage — `set -o pipefail` only monitors pipeline exit codes, not fd
+    # reads. awk reads until EOF; git is never SIGPIPE'd regardless of how
+    # early awk exits. No capture-then-filter rewrite needed here.
     awk -v target="$path" '
         /^worktree / { in_target = (substr($0, 10) == target); locked = 0; next }
         /^locked/    { if (in_target) locked = 1 }
@@ -912,7 +951,15 @@ remove_worktree() {
         has_changes=true
     fi
 
-    if git -C "$path" ls-files --others --exclude-standard 2>/dev/null | grep -q .; then
+    # Capture-then-test: `git | grep -q .` would race under pipefail and
+    # silently skip this safety gate (false-negative untracked-files detection).
+    # See worktree_exists in this file for the full WHY.
+    # Use `|| _untracked=""` rather than `|| return 1` — if git itself fails
+    # for any reason, treat as "no untracked detected" to match the original
+    # 2>/dev/null tolerance posture rather than aborting the function.
+    local _untracked
+    _untracked=$(git -C "$path" ls-files --others --exclude-standard 2>/dev/null) || _untracked=""
+    if [[ -n "$_untracked" ]]; then
         has_changes=true
     fi
 

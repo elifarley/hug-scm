@@ -685,3 +685,92 @@ teardown() {
   cd "$orig_pwd"
   rm -rf "$tmpdir"
 }
+
+# ---------------------------------------------------------------------------
+# SIGPIPE regression tests for worktree_exists under set -o pipefail
+# ---------------------------------------------------------------------------
+#
+# WHY these tests exist: under `set -o pipefail`, the old implementation
+# `git ... | grep -qxF "worktree $path"` races. grep -q exits at the first
+# match → closes the read end → git gets SIGPIPE on the next write → the
+# pipe exits 141. With a large registry the race is reliably triggered:
+# the fix (capture-then-filter) eliminates the pipe entirely.
+#
+# Padding scheme:
+#   1. Add the TARGET worktree FIRST — this maximises the race: when it is
+#      first in porcelain output, grep matches early, git still has 100
+#      records left to write, maximising SIGPIPE probability.
+#   2. Add 100 throwaway branches and their worktrees.
+#   3. `rm -rf` the throwaway DIRECTORIES on disk (but NOT the git metadata).
+#      git worktree list --porcelain does NOT auto-prune; orphaned
+#      registrations persist until an explicit prune, giving us 100 extra
+#      lines for git to write after grep has already exited.
+#   4. Wrap the call in `bash -c 'set -o pipefail; ...'` — BATS test bodies
+#      do not run under pipefail by default, so we must activate it manually
+#      to reproduce the production environment (git-wtdel sources hug-git-worktree
+#      after `set -euo pipefail`).
+
+@test "worktree_exists: returns 0 for valid worktree under pipefail + large registry" {
+  # PRE-FIX:  race causes SIGPIPE → pipe exits 141 → worktree_exists returns 1 (incorrect).
+  # POST-FIX: capture-then-filter → git runs to completion → returns 0 (correct).
+
+  # Step 1 — create the TARGET worktree (must be first in porcelain output
+  # so grep wins the race and git is SIGPIPE'd on the remaining records).
+  local wt_path
+  wt_path=$(create_test_worktree "pipefail-target" "$TEST_REPO")
+
+  # Step 2 — add 100 throwaway worktrees so git has ≥100 records to write
+  # after the target; then rm -rf the directories to create orphan entries.
+  local i pad_path
+  for i in $(seq 1 100); do
+    pad_path="${TEST_REPO}.WT.pad-${i}"
+    (
+      cd "$TEST_REPO"
+      git checkout -q -b "pad-${i}" 2>/dev/null || true
+      git worktree add "$pad_path" "pad-${i}" --force >/dev/null 2>&1 || true
+    )
+    rm -rf "$pad_path"  # orphan: registration stays, directory gone
+  done
+
+  # Step 3 — call worktree_exists under set -o pipefail in a fresh subshell.
+  # The exact source list mirrors what the test file loads at the top via
+  # `load`, but `bash -c` starts a fresh process so we must source manually.
+  run bash -c '
+    set -o pipefail
+    source "'"$HUG_HOME"'/git-config/lib/hug-common"
+    source "'"$HUG_HOME"'/git-config/lib/hug-output"
+    source "'"$HUG_HOME"'/git-config/lib/hug-git-worktree"
+    worktree_exists "'"$wt_path"'"
+  '
+  assert_success
+}
+
+@test "worktree_exists: returns 1 for absent worktree under pipefail + large registry" {
+  # This test guards the false-negative case: an absent path must still
+  # return 1 after the fix (ensures capture-then-filter didn't accidentally
+  # invert the logic or use grep -c instead of grep -q).
+
+  # Step 1 — NO target worktree is added. We only add padding orphans.
+  local i pad_path
+  for i in $(seq 1 100); do
+    pad_path="${TEST_REPO}.WT.pad-${i}"
+    (
+      cd "$TEST_REPO"
+      git checkout -q -b "pad-${i}" 2>/dev/null || true
+      git worktree add "$pad_path" "pad-${i}" --force >/dev/null 2>&1 || true
+    )
+    rm -rf "$pad_path"  # orphan registration
+  done
+
+  # Step 2 — query a path that was never registered.
+  local absent_path="/tmp/hug-nonexistent-worktree-$$"
+
+  run bash -c '
+    set -o pipefail
+    source "'"$HUG_HOME"'/git-config/lib/hug-common"
+    source "'"$HUG_HOME"'/git-config/lib/hug-output"
+    source "'"$HUG_HOME"'/git-config/lib/hug-git-worktree"
+    worktree_exists "'"$absent_path"'"
+  '
+  assert_failure
+}
