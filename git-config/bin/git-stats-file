@@ -167,7 +167,7 @@ if [ ! -f "$python_script" ]; then
   # Authors
   info "Authors:"
   # SIGPIPE-safe: capture-then-filter — head -5 would SIGPIPE git log under pipefail
-  _authors_raw=$(git log --follow --format='%an' -- "$file" 2>/dev/null) || _authors_raw=""
+  _authors_raw=$(git log --follow --format='%an' -- "$file" 2> /dev/null) || _authors_raw=""
   sort | uniq -c | sort -rn | head -5 <<< "$_authors_raw" |
     while read count author; do
       info "  $author ($count commits)"
@@ -180,7 +180,7 @@ if [ ! -f "$python_script" ]; then
 
   info "Last commit:"
   # SIGPIPE-safe: capture-then-filter — head -1 would SIGPIPE git log under pipefail
-  _last_commit_raw=$(git log --follow --format='  %ai by %an' -- "$file" 2>/dev/null) || _last_commit_raw=""
+  _last_commit_raw=$(git log --follow --format='  %ai by %an' -- "$file" 2> /dev/null) || _last_commit_raw=""
   head -1 <<< "$_last_commit_raw"
 
   # Current size

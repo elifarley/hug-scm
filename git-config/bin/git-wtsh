@@ -239,7 +239,7 @@ show_worktree_details() {
     locked="false"
     # SIGPIPE-safe: capture-then-filter — grep -q would SIGPIPE git worktree list under pipefail
     local wt_list_raw
-    wt_list_raw=$(git -C "$path" worktree list --porcelain 2>/dev/null) || wt_list_raw=""
+    wt_list_raw=$(git -C "$path" worktree list --porcelain 2> /dev/null) || wt_list_raw=""
     if grep -A1 "^worktree $path\$" <<< "$wt_list_raw" | grep -q "^locked"; then
       locked="true"
     fi

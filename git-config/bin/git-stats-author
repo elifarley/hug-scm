@@ -192,7 +192,7 @@ if [ -n "$author" ]; then
     if [ "$commit_count" -gt 0 ]; then
       first_date=$(git log --author="$author" --format='%ai' "${git_opts[@]}" | tail -1 | cut -d' ' -f1)
       # SIGPIPE-safe: capture-then-filter — head -1 would SIGPIPE git log under pipefail
-      _last_date_raw=$(git log --author="$author" --format='%ai' "${git_opts[@]}" 2>/dev/null) || _last_date_raw=""
+      _last_date_raw=$(git log --author="$author" --format='%ai' "${git_opts[@]}" 2> /dev/null) || _last_date_raw=""
       last_date=$(head -1 <<< "$_last_date_raw" | cut -d' ' -f1)
       info ""
       info "Time span:"
@@ -234,7 +234,7 @@ if $json_output; then
   # JSON array of authors
   echo "["
   # SIGPIPE-safe: capture-then-filter — head -"$top_n" would SIGPIPE git shortlog under pipefail
-  _shortlog_raw=$(git shortlog -sn --all "${git_opts[@]}" 2>/dev/null) || _shortlog_raw=""
+  _shortlog_raw=$(git shortlog -sn --all "${git_opts[@]}" 2> /dev/null) || _shortlog_raw=""
   head -"$top_n" <<< "$_shortlog_raw" |
     awk -v first=1 '{
       if (!first) print ",";
@@ -253,7 +253,7 @@ else
   info ""
 
   # SIGPIPE-safe: capture-then-filter — head -"$top_n" would SIGPIPE git shortlog under pipefail
-  _shortlog_human_raw=$(git shortlog -sn --all "${git_opts[@]}" 2>/dev/null) || _shortlog_human_raw=""
+  _shortlog_human_raw=$(git shortlog -sn --all "${git_opts[@]}" 2> /dev/null) || _shortlog_human_raw=""
   head -"$top_n" <<< "$_shortlog_human_raw" | nl |
     while read rank count author; do
       # Get line stats for this author

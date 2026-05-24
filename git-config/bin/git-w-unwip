@@ -139,7 +139,7 @@ else
   # Preview changes
   printf '\nPreview of changes to unpark:\n' >&2
   # SIGPIPE-safe: capture-then-filter — head -10 would SIGPIPE git diff under pipefail
-  _changed_files=$(git diff --name-only "$current_branch"..."$branch" 2>/dev/null) || _changed_files=""
+  _changed_files=$(git diff --name-only "$current_branch"..."$branch" 2> /dev/null) || _changed_files=""
   head -10 <<< "$_changed_files" >&2 || true
   printf '\n(Full preview: git diff %s..%s)\n' "$current_branch" "$branch" >&2
 

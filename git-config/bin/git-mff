@@ -216,7 +216,7 @@ if ! $is_current_branch; then
   #   (with colon). The safety check NEVER matched, giving users a cryptic
   #   `git branch -f` error instead of the clear actionable message.
   # NOTE: no `local` here — this is top-level script scope, not a function body.
-  wt_porcelain=$(git worktree list --porcelain 2>/dev/null) || {
+  wt_porcelain=$(git worktree list --porcelain 2> /dev/null) || {
     # Best-effort check: if worktree query fails, proceed and let git branch -f
     # surface its own error if there really is a conflict.
     warn "Could not query worktree registry; skipping worktree conflict check"
