@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 _hug_category='["branching"]'
-_hug_keywords='["delete-branch", "remove-branch", "drop-branch"]'
+_hug_keywords='["delete-branch", "remove-branch", "drop-branch", "remote-branch"]'
 test "${1:-}" = '--search-meta' && {
   printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
   exit 0
@@ -15,16 +15,22 @@ set -euo pipefail # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat << EOF
-hug bdel: Delete one or more local branches safely
+hug bdel: Delete one or more local or remote branches safely
 
 USAGE:
-    hug bdel [<branch>...] [--dry-run] [-f, --force] [-q, --quiet] [-h, --help]
+    hug bdel [<branch>...] [--remote] [--dry-run] [-f, --force] [-q, --quiet] [-h, --help]
 
 ARGUMENTS:
     <branch>...        One or more branch names to delete
-                       If not provided, shows interactive list for selection
+                       If not provided and --remote is NOT set, shows interactive
+                       list for selection. With --remote, branch names are required.
 
 OPTIONS:
+    -r, --remote       Delete remote branches instead of local
+                       Uses \`git push origin --delete\` for each branch.
+                       Skips current-branch guard (you can't be "on" a remote branch).
+                       Skips merged/unmerged distinction (not applicable to remote).
+                       Branch names must refer to remote-tracking refs (no origin/ prefix).
     --dry-run          Preview the delete operation without applying changes
     -f, --force        Skip confirmation prompts and force delete unmerged branches
     -y, --yes          Skip confirmation prompts (keeps safe semantics)
@@ -35,9 +41,14 @@ DESCRIPTION:
     Safely deletes one or more local branches. By default, only merged branches
     can be deleted. Use --force to delete unmerged branches.
 
-    When no branch names are provided, displays an interactive menu using gum filter
-    (if installed) for multi-selection. This makes it easy to select multiple
-    branches to delete at once.
+    With --remote, deletes branches from the remote (origin). Remote deletion
+    has no merged/unmerged concept — all specified branches are deleted.
+    Branch names should NOT include the remote prefix (use 'feature/x', not
+    'origin/feature/x').
+
+    When no branch names are provided (and --remote is not set), displays an
+    interactive menu using gum filter (if installed) for multi-selection. This
+    makes it easy to select multiple branches to delete at once.
 
     Backup branches (hug-backups/**) are not shown in the list. Use 'hug bdel-backup'
     to manage backup branches.
@@ -47,25 +58,38 @@ DESCRIPTION:
 
 EXAMPLES:
     hug bdel                              # Interactive: select branches to delete
-    hug bdel feature/old                  # Delete single branch
-    hug bdel feat-1 feat-2 feat-3        # Delete multiple branches
+    hug bdel feature/old                  # Delete single local branch
+    hug bdel feat-1 feat-2 feat-3        # Delete multiple local branches
     hug bdel --dry-run                    # Preview which branches would be deleted
     hug bdel feature/old --force          # Force delete even if unmerged
+    hug bdel --remote feature/old         # Delete remote branch
+    hug bdel --remote feat-1 feat-2      # Delete multiple remote branches
+    hug bdel --remote --dry-run feat-x   # Preview remote deletion
 
 SEE ALSO:
+    hug bdelr          Delete a remote branch (shorthand)
+    hug bdelf          Force-delete an unmerged local branch
     hug bdel-backup    Delete backup branches with filtering options
     hug bl             List local branches
+    hug brl            List remote branches
     hug brestore       Restore a branch from backup
 EOF
 }
 
 # Parse common flags (--dry-run, -f|--force, -q|--quiet, -h|--help)
+# NOTE: parse_common_flags does NOT know about -r/--remote, so it lands in
+# the remaining args via the fallback path. We intercept it below.
 eval "$(parse_common_flags "$@")"
 
-# Collect branch names
+# Collect branch names, intercepting --remote before it hits the unknown-option error.
+remote=false
 branches_to_delete=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
+  -r | --remote)
+    remote=true
+    shift
+    ;;
   -*)
     error "Unknown option: $1. See 'hug bdel --help'."
     ;;
@@ -78,13 +102,128 @@ done
 
 check_git_repo
 
-# Get current branch name to prevent deletion
-current_branch=$(git rev-parse --abbrev-ref HEAD 2> /dev/null || echo "")
+# Get current branch name to prevent deletion of current branch (local mode only).
+# Remote mode skips this — you cannot be "on" a remote branch.
+if [[ "$remote" == false ]]; then
+  current_branch=$(git rev-parse --abbrev-ref HEAD 2> /dev/null || echo "")
+else
+  # --remote requires at least one branch name (no interactive menu for remote).
+  if [[ ${#branches_to_delete[@]} -eq 0 ]]; then
+    error "--remote requires at least one branch name. Usage: hug bdel --remote <branch>..."
+  fi
+  current_branch=""
+fi
 
 # --- Main function for 'hug bdel' ---
+# Reads outer-scope variables: $remote, $current_branch, $dry_run, $HUG_FORCE
 hug_bdel() {
   local -a branches_to_delete=("$@")
   local -a formatted_to_delete=()
+
+  # Set dry_run default if not already set by parse_common_flags
+  local dry_run="${dry_run:-false}"
+
+  # ── Remote branch deletion path ──────────────────────────────────
+  # Remote mode is simpler: no interactive menu, no current-branch guard,
+  # no merged/unmerged distinction. Branch names refer to remote refs
+  # without the origin/ prefix (e.g. 'feature/x', not 'origin/feature/x').
+  if [[ "$remote" == true ]]; then
+    # Validate and normalize branch names for remote deletion.
+    # Reject anything that could match non-branch refs (tags, HEAD, arbitrary refspecs).
+    for branch in "${branches_to_delete[@]}"; do
+      if [[ -z "$branch" ]]; then
+        error "Branch name cannot be empty."
+      fi
+      if [[ "$branch" == -* ]]; then
+        error "Branch name '$branch' looks like a flag, not a branch."
+      fi
+      # Strip origin/ prefix if the user included it — common mistake.
+      if [[ "$branch" == origin/* ]]; then
+        local stripped="${branch#origin/}"
+        warning "Stripping 'origin/' prefix: '$branch' → '$stripped'"
+        # Replace in array (requires reconstruction since bash arrays are immutable)
+        local -a new_branches=()
+        for b in "${branches_to_delete[@]}"; do
+          [[ "$b" == "$branch" ]] && new_branches+=("$stripped") || new_branches+=("$b")
+        done
+        branches_to_delete=("${new_branches[@]}")
+      fi
+      # Reject names that could match non-branch refs.
+      if [[ "$branch" == refs/* || "$branch" == *:* || "$branch" == *"^"* || "$branch" == *"~"* || "$branch" == *"*"* || "$branch" == *"["* || "$branch" == *"{"* ]]; then
+        error "Branch name '$branch' contains characters unsafe for remote deletion. Use a plain branch name like 'feature/x'."
+      fi
+    done
+
+    # Dry-run preview
+    if [[ "${dry_run}" == "true" ]]; then
+      info "Dry run: Would delete ${#branches_to_delete[@]} remote branch(es):"
+      for branch in "${branches_to_delete[@]}"; do
+        printf "  - origin/%s\n" "$branch" >&2
+      done
+      print_dry_run_preview "delete the listed remote branches"
+      return 0
+    fi
+
+    # Confirmation prompt (unless --force)
+    if [[ ${HUG_FORCE:-} != true ]]; then
+      local count=${#branches_to_delete[@]}
+      local branch_word="branch"
+      [[ $count -gt 1 ]] && branch_word="branches"
+
+      warning "About to delete $count remote $branch_word:"
+      for branch in "${branches_to_delete[@]}"; do
+        printf "  - origin/%s\n" "$branch" >&2
+      done
+      printf "\n" >&2
+      prompt_confirm_warn "⚠️  Delete these remote ${branch_word}? [y/N]: "
+    fi
+
+    # Perform remote deletion
+    local deleted_count=0
+    local failed_count=0
+    local -a deleted_branches=()
+    local -a failed_branches=()
+
+    for branch in "${branches_to_delete[@]}"; do
+      # git push --delete removes the branch on the remote; --force is
+      # irrelevant for remote deletion (no merged/unmerged concept).
+      if git push origin --delete "$branch" > /dev/null 2>&1; then
+        deleted_branches+=("$branch")
+        deleted_count=$((deleted_count + 1))
+      else
+        failed_branches+=("$branch")
+        failed_count=$((failed_count + 1))
+      fi
+    done
+
+    # Report results
+    if [[ $deleted_count -gt 0 ]]; then
+      local branch_word="branch"
+      [[ $deleted_count -gt 1 ]] && branch_word="branches"
+      success "Deleted $deleted_count remote $branch_word:"
+      for branch in "${deleted_branches[@]}"; do
+        printf "  ✓ origin/%s\n" "$branch" >&2
+      done
+    fi
+
+    if [[ $failed_count -gt 0 ]]; then
+      local branch_word="branch"
+      [[ $failed_count -gt 1 ]] && branch_word="branches"
+      printf "\n" >&2
+      warning "Failed to delete $failed_count remote $branch_word:"
+      for branch in "${failed_branches[@]}"; do
+        printf "  ✗ origin/%s\n" "$branch" >&2
+      done
+
+      if [[ $deleted_count -eq 0 ]]; then
+        exit 1
+      fi
+    fi
+
+    return 0
+  fi
+
+  # ── Local branch deletion path (original behavior) ───────────────
 
   # If no branches specified, show interactive menu using library functions
   if [[ ${#branches_to_delete[@]} -eq 0 ]]; then
@@ -130,9 +269,6 @@ hug_bdel() {
 
     validate_commitish "bdel argument" "$branch"
   done
-
-  # Set dry_run default if not already set by parse_common_flags
-  local dry_run="${dry_run:-false}"
 
   # Preview mode
   if [[ "${dry_run}" == "true" ]]; then
