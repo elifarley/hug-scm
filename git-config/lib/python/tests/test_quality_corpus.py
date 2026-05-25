@@ -53,7 +53,7 @@ def commands():
         ("save", ["hug w wip"]),
         ("push", ["hug bpush"]),
         ("commit", ["hug c"]),
-        ("amend", ["hug cm"]),
+        ("amend", ["hug cmod"]),
         ("rollback", ["hug h rollback"]),
         ("rewind", ["hug h rewind"]),
         ("squash", ["hug h squash"]),

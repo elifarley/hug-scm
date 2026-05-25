@@ -116,7 +116,7 @@ end
 
 # List of all top-level Hug commands (unique from reference, alias-based + custom).
 # Note: wips has no hyphen (treated as single token for alias).
-set -l hug_tops alias l ll lla la llf llfp llfs lf lc lcr lau ld lp lo lol fblame fb fcon fa fborn a aa ai ap us usa untrack back undo rollback rewind squash files wip wips unwip get ca cm cma cii cim o cc caa sls sl sla sli s ss su sw sx sh shp shc shf t tc ta ts tr tm tma tpush tpull tpullf tdel tdelr tco twc twp b bs bl bll bla blr bc br bdel bdelf bdelr bwc bwp bwnc bwm bwnm bpush rb rbi rbc rba rbs m mff mkeep ma bpull bpullr pullall type dump remote2ssh h w c statusbase hughelp log-outgoing
+set -l hug_tops alias l ll lla la llf llfp llfs lf lc lcr lau ld lp lo lol fblame fb fcon fa fborn a aa ai ap us usa untrack back undo rollback rewind squash files wip wips unwip get ca cmod cmoda cii cim o cc caa sls sl sla sli s ss su sw sx sh shp shc shf t tc ta ts tr tm tma tpush tpull tpullf tdel tdelr tco twc twp b bs bl bll bla blr bc br bdel bdelf bdelr bwc bwp bwnc bwm bwnm bpush rb rbi rbc rba rbs m mff mkeep ma bpull bpullr pullall type dump remote2ssh h w c statusbase hughelp log-outgoing
 
 # Top-level completions: Custom Hug commands + standard Git subcommands.
 # Trigger ONLY if no subcommand seen (after 'hug ' only).
@@ -213,8 +213,8 @@ complete -c hug -n '__fish_seen_subcommand_from get' -a "(__hug_complete_refs)" 
 complete -c hug -n '__fish_seen_subcommand_from get' -a "(__hug_complete_files)" -d "Files"
 
 # Commits (c*)
-# ca/cm/cma/cii/cim/caa/o: No positional, Git commit options
-for sub in ca cm cma cii cim caa o
+# ca/cmod/cmoda/cii/cim/caa/o: No positional, Git commit options
+for sub in ca cmod cmoda cii cim caa o
     complete -c hug -n "__fish_seen_subcommand_from $sub" -a "$common_commit_opts" -d "Git commit options"
 end
 # cc: <commit-range> [cherry opts]

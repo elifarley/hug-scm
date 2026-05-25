@@ -20,8 +20,8 @@ CRUCIAL: When you want to run a git command, ALWAYS translate it to a `hug` equi
 1. Run `hug sla` - See ALL uncommitted files (staged, unstaged, untracked)
 2. Stage only intended files (see Staging Decision Tree below)
 
-**CRITICAL for `hug cm` (amend):**
-- `hug cm -m 'msg'` adds ANY staged files to the commit
+**CRITICAL for `hug cmod` (amend):**
+- `hug cmod -m 'msg'` adds ANY staged files to the commit
 - ALWAYS run `hug sls` first to list staged files
 - Use `hug usa` to unstage everything if you want message-only amend
 
@@ -103,14 +103,14 @@ hug ll                       # Log with file stats
 **Change message ONLY:**
 ```sh
 hug sls                      # CRITICAL: Verify NO files are staged
-hug cm -m 'new message'      # Amends message only (keeps files intact)
+hug cmod -m 'new message'      # Amends message only (keeps files intact)
 ```
 
 **Change message OR add files:**
 ```sh
 hug sla                      # Check which files to add
 hug a <files>                # Add files to stage
-hug cm -m 'message'          # Amends (message + staged files)
+hug cmod -m 'message'          # Amends (message + staged files)
 ```
 
 **Remove files from commit:**

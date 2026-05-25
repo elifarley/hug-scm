@@ -72,10 +72,10 @@ Save your changes to history.
 | `git commit` | `hug c` | **C**ommit | Works with staged, shorter to type |
 | `git commit -a -m` | `hug ca` | **C**ommit **A**ll | One command vs flag combo |
 | `git commit -a -A -m` | `hug caa` | **C**ommit **A**ll **A**ll | Includes untracked files explicitly |
-| `git commit --amend` | `hug cm` | **C**ommit **M**odify | Clearer intent, safer workflow |
+| `git commit --amend` | `hug cmod` | **C**ommit **MOD**ify | Clearer intent, safer workflow |
 
 ::: warning A Critical Difference
-`hug cm` (amend) adds **staged files** to the last commit. Always run `hug sls` first to check what's staged, or use `hug usa` to unstage everything if you only want to change the message.
+`hug cmod` (amend) adds **staged files** to the last commit. Always run `hug sls` first to check what's staged, or use `hug usa` to unstage everything if you only want to change the message.
 :::
 
 **Key insight**: Hug's `c*` commands follow a brevity hierarchy: `c` (staged only) → `ca` (all tracked) → `caa` (everything).
@@ -152,11 +152,11 @@ git commit --amend --no-edit
 # Make a change
 echo "fix" >> file.txt
 hug a file.txt
-hug cm -m "original message"  # Amend with staged files
+hug cmod -m "original message"  # Amend with staged files
 ```
 
 **Why Hug is better:**
-- `hug cm` makes amend intent explicit
+- `hug cmod` makes amend intent explicit
 - Safer workflow: requires checking staged files first
 - Auto-creates backup branch (`hug-backup-*`)
 
@@ -414,7 +414,7 @@ Print this out for your desk until you build muscle memory:
 | Stage all | `git add -A` | `hug aa` |
 | Commit staged | `git commit` | `hug c` |
 | Commit all tracked | `git commit -a -m` | `hug ca` |
-| Amend last commit | `git commit --amend` | `hug cm` |
+| Amend last commit | `git commit --amend` | `hug cmod` |
 | Create branch | `git checkout -b` | `hug bc` |
 | Switch branch | `git checkout` | `hug b` |
 | List branches | `git branch` | `hug bl` |

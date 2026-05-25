@@ -67,7 +67,7 @@ EXAMPLES:
 SEE ALSO:
     hug h back    HEAD goes back only (no auto-commit)
     hug c         commit staged changes
-    hug cm        amend last commit message
+    hug cmod      amend last commit message
     hug ss        show staged changes (diff)
     hug sl        list staged and unstaged files
     hug shc       : File stats for the range being squashed
@@ -271,4 +271,4 @@ if [ "$commits_to_squash" -gt 1 ]; then
   summary_word="commits"
 fi
 info "Squash complete: $commits_to_squash $summary_word combined into 1 with parent '$target_display'."
-tip 'Use `hug cm` to change the commit message of the last commit.'
+tip 'Use `hug cmod` to change the commit message of the last commit.'

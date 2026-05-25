@@ -62,7 +62,7 @@ The WIP workflow is a safer, more robust alternative to `git stash`. See the [WI
  
 **Workflow:**
 1.  **Stage the missing file**: `hug a forgotten-file.js` (**A**dd)
-2.  **Modify the most recent commit**: `hug cm` (**C**ommit **M**odify)
+2.  **Modify the most recent commit**: `hug cmod` (**C**ommit **MOD**ify)
     *   This opens your editor with the last commit message, allowing you to edit it. When you save and close, the staged changes will be added to that commit instead of creating a new one. This keeps your history clean.
 
 ![Modifying the last commit](img/practical-workflows/commit-modify.png)
