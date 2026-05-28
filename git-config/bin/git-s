@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 _hug_category='["status"]'
+_hug_keywords='["status", "summary", "overview", "state", "repo-state", "working-tree", "ball", "emoji"]'
 test "${1:-}" = '--search-meta' && {
-  printf 'category = %s\n' "$_hug_category"
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
   exit 0
 }
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
@@ -16,7 +17,7 @@ set -euo pipefail
 
 show_help() {
   cat << 'EOF'
-hug s: Quick summary of working and staged changes
+hug s: Quick summary of working tree state and staged changes
 
 USAGE:
   hug s [OPTIONS]
@@ -29,29 +30,66 @@ OUTPUT MODES:
 
 QUERY FLAGS:
   Extract individual fields for scripting. When any query flag is present,
-  the command enters query mode (fields printed to stdout, one per line).
+  the command enters query mode: fields are printed to stdout (one per
+  line by default), with no colored output or chatter on stderr.
+  Computation is lazy — only requested fields incur git operations.
 
-  -b, --branch     Current branch name.
-  -u, --upstream   Upstream tracking branch name.
+  -b, --branch     Current branch name (empty if detached).
+  -u, --upstream   Upstream tracking branch name (empty if none).
   -H, --hash       Full commit hash (HEAD).
   -s, --short-hash Short commit hash (HEAD).
   -A, --ahead      Number of commits ahead of upstream.
   -B, --behind     Number of commits behind upstream.
-  -C, --counts     Ahead/behind counts as "ahead behind".
+  -C, --counts     Combined ahead/behind as "ahead behind".
   -I, --ignored    Count of ignored files.
   -K, --untracked  Count of untracked files.
   -S, --staged     Count of staged files.
   -U, --unstaged   Count of unstaged files.
-      --ball       Ball emoji (🔴🟢🟡🟣⚫⚪).
-  -z, --null       Separate output with NUL instead of newline.
+      --ball       Ball emoji indicating repo state (see below).
+  -z, --null       Separate output with NUL (\0) instead of newline.
 
   Query flags are mutually exclusive with --json.
 
+DESCRIPTION:
+  Without flags, prints a colored one-line summary to stderr:
+
+    ⚪ HEAD: abc1234 🌿main...origin/main [ahead 2] │ 📦 Staged: ... │ K:3 I:0
+
+  The leading ball emoji encodes the most important state at a glance:
+
+    🟢 Green   — staged changes only (ready to commit)
+    🔴 Red     — unstaged changes only (uncommitted work)
+    🟡 Yellow  — both staged and unstaged changes
+    🟣 Purple  — untracked files only (no staged/unstaged)
+    ⚫ Black   — ignored files only
+    ⚪ White   — clean working tree
+
+  In query mode, each flag outputs its corresponding field value to stdout,
+  making it safe for pipes and scripting. Multiple flags output fields in
+  canonical order, space-separated (or NUL-separated with -z).
+
+CAPTURING OUTPUT:
+  Default mode outputs to stderr (safe to capture the summary line).
+  Query mode outputs to stdout with zero stderr chatter:
+    branch=$(hug s -b)          # Capture branch name
+    hug s -C -S -U              # "ahead behind staged unstaged"
+    hug s -z -b -H | xargs -0  # NUL-separated for unusual names
+
 EXAMPLES:
-  hug s                    # Show colored summary line
-  hug s --json             # Full JSON status
-  hug s -b                 # Print branch name (query mode)
-  hug s --hash --ball      # Print hash and ball emoji
+  hug s                         # Colored summary line (default mode)
+  hug s --json                  # Full JSON status object
+  hug s -b                      # Print branch name
+  hug s -H                      # Print full commit hash
+  hug s -b -H --ball            # Branch, hash, and state emoji
+  hug s -C -K                   # Ahead/behind counts and untracked count
+  hug s -z -b -H                # NUL-separated branch and hash
+
+SEE ALSO:
+  hug sl   : List file statuses with state labels (S:Mod, U:Del, etc.)
+  hug sla  : Like sl, including untracked files
+  hug sw   : Show patch + file stats of all working directory changes
+  hug ss   : Show patch + file stats of staged changes only
+  hug sh   : Show commit details with file statistics
 EOF
 }
 
