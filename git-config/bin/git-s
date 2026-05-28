@@ -10,30 +10,352 @@ CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/../lib/output_json_status_summary"
 set -euo pipefail
 
-# TODO
+# ---------------------------------------------------------------------------
+# Help text
+# ---------------------------------------------------------------------------
 
-# Parse arguments
-json_output=false
-test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
-  printf 's: Quick summary of working and staged changes\n' >&2
-  printf 'Usage: hug s [--json]\n' >&2
-  exit 1
+show_help() {
+  cat << 'EOF'
+hug s: Quick summary of working and staged changes
+
+USAGE:
+  hug s [OPTIONS]
+
+OPTIONS:
+  -h, --help       Show this help message and exit.
+
+OUTPUT MODES:
+      --json       Produce full JSON status output.
+
+QUERY FLAGS:
+  Extract individual fields for scripting. When any query flag is present,
+  the command enters query mode (fields printed to stdout, one per line).
+
+  -b, --branch     Current branch name.
+  -u, --upstream   Upstream tracking branch name.
+  -H, --hash       Full commit hash (HEAD).
+  -s, --short-hash Short commit hash (HEAD).
+  -A, --ahead      Number of commits ahead of upstream.
+  -B, --behind     Number of commits behind upstream.
+  -C, --counts     Ahead/behind counts as "ahead behind".
+  -I, --ignored    Count of ignored files.
+  -K, --untracked  Count of untracked files.
+  -S, --staged     Count of staged files.
+  -U, --unstaged   Count of unstaged files.
+      --ball       Ball emoji (🔴🟢🟡🟣⚫⚪).
+  -z, --null       Separate output with NUL instead of newline.
+
+  Query flags are mutually exclusive with --json.
+
+EXAMPLES:
+  hug s                    # Show colored summary line
+  hug s --json             # Full JSON status
+  hug s -b                 # Print branch name (query mode)
+  hug s --hash --ball      # Print hash and ball emoji
+EOF
 }
 
-# Check for --json flag
-for arg in "$@"; do
-  case "$arg" in
+# ---------------------------------------------------------------------------
+# Error helpers
+# ---------------------------------------------------------------------------
+
+error() {
+  printf 'hug s: %s\nRun '\''hug s --help'\'' for usage information.\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+# ---------------------------------------------------------------------------
+# Parse arguments using GNU getopt
+# ---------------------------------------------------------------------------
+
+# getopt short→long mapping:
+#   b=branch u=upstream H=hash s=short-hash A=ahead B=behind
+#   C=counts I=ignored K=untracked S=staged U=unstaged
+#   h=help z=null   --ball and --json are long-only
+set +e # Temporarily disable exit-on-error to capture getopt failure
+PARSED=$(getopt \
+  --options 'buHsABCIKSUhz' \
+  --longoptions 'branch,upstream,hash,short-hash,ahead,behind,counts,untracked,ignored,staged,unstaged,ball,json,help,null' \
+  --name 'hug s' \
+  -- "$@" 2>&1)
+getopt_status=$?
+set -e # Re-enable exit-on-error
+
+if [ $getopt_status -ne 0 ]; then
+  # getopt reports its own errors (e.g., unrecognized option).
+  # Suppress the stray " -- " line that getopt appends to its error output.
+  if [ -n "$PARSED" ]; then
+    printf '%s\n' "$PARSED" | grep -v '^ --$' >&2
+  fi
+  error "invalid arguments" 1
+fi
+
+eval set -- "$PARSED"
+
+# ---------------------------------------------------------------------------
+# Initialize flag variables
+# ---------------------------------------------------------------------------
+
+json_output=false
+
+# Query flags -- using _qs_ prefix (query-status) so Task 2 can extend these
+_qs_branch=false
+_qs_upstream=false
+_qs_hash=false
+_qs_short_hash=false
+_qs_ahead=false
+_qs_behind=false
+_qs_counts=false
+_qs_untracked=false
+_qs_ignored=false
+_qs_staged=false
+_qs_unstaged=false
+_qs_ball=false
+_qs_null=false
+
+# ---------------------------------------------------------------------------
+# Process parsed flags
+# ---------------------------------------------------------------------------
+
+while true; do
+  case "$1" in
+  -h | --help)
+    show_help
+    exit 0
+    ;;
   --json)
     json_output=true
+    shift
+    ;;
+  # Query flags
+  -b | --branch)
+    _qs_branch=true
+    shift
+    ;;
+  -u | --upstream)
+    _qs_upstream=true
+    shift
+    ;;
+  -H | --hash)
+    _qs_hash=true
+    shift
+    ;;
+  -s | --short-hash)
+    _qs_short_hash=true
+    shift
+    ;;
+  -A | --ahead)
+    _qs_ahead=true
+    shift
+    ;;
+  -B | --behind)
+    _qs_behind=true
+    shift
+    ;;
+  -C | --counts)
+    _qs_counts=true
+    shift
+    ;;
+  -I | --ignored)
+    _qs_ignored=true
+    shift
+    ;;
+  -K | --untracked)
+    _qs_untracked=true
+    shift
+    ;;
+  -S | --staged)
+    _qs_staged=true
+    shift
+    ;;
+  -U | --unstaged)
+    _qs_unstaged=true
+    shift
+    ;;
+  --ball)
+    _qs_ball=true
+    shift
+    ;;
+  -z | --null)
+    _qs_null=true
+    shift
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *)
+    error "internal error: unexpected argument '$1'" 2
     ;;
   esac
 done
 
-# Quick changes summary
+# ---------------------------------------------------------------------------
+# Detect query mode: any query flag activates it
+# ---------------------------------------------------------------------------
+
+is_query=false
+if $_qs_branch || $_qs_upstream || $_qs_hash || $_qs_short_hash ||
+  $_qs_ahead || $_qs_behind || $_qs_counts || $_qs_untracked ||
+  $_qs_ignored || $_qs_staged || $_qs_unstaged || $_qs_ball; then
+  is_query=true
+fi
+
+# --json and query flags are mutually exclusive
+if $json_output && $is_query; then
+  error "--json cannot be combined with query flags"
+fi
+
+# ---------------------------------------------------------------------------
+# Dispatch by mode
+# ---------------------------------------------------------------------------
+
 if $json_output; then
+  # JSON mode: delegate to the existing library function
   output_json_status_summary
   exit 0
 fi
+
+if $is_query; then
+  # =========================================================================
+  # Query mode: compute requested fields lazily, output to stdout.
+  #
+  # Design decisions (WHY):
+  #   - _qs_ prefix for all computed vars avoids collision with the
+  #     summary-line code below (which uses unprefixed names like $branch,
+  #     $hash, $upstream, etc.)
+  #   - Shared computations (e.g., ahead/behind from `git rev-list`) run
+  #     ONCE when any of -A, -B, -C are combined, via a single conditional block.
+  #   - Ball emoji reuses the same file-count queries as --ball depends on,
+  #     sharing results with -S/-U/-K/-I when those are also requested.
+  #   - All `wc -l` outputs pass through `tr -d ' '` for macOS compatibility
+  #     (macOS `wc -l` emits leading whitespace — Decision #9).
+  #   - All output goes to stdout; nothing to stderr. This keeps query mode
+  #     pipe-safe and scriptable (stdout/stderr discipline).
+  # =========================================================================
+
+  # --- branch ---
+  _qs_val_branch=""
+  $_qs_branch && _qs_val_branch=$(git branch --show-current 2> /dev/null || echo "")
+
+  # --- upstream ---
+  _qs_val_upstream=""
+  $_qs_upstream && _qs_val_upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2> /dev/null || echo "")
+
+  # --- full hash ---
+  _qs_val_hash=""
+  $_qs_hash && _qs_val_hash=$(git rev-parse HEAD 2> /dev/null || echo "")
+
+  # --- short hash ---
+  _qs_val_short_hash=""
+  $_qs_short_hash && _qs_val_short_hash=$(git rev-parse --short HEAD 2> /dev/null || echo "")
+
+  # --- ahead/behind (shared computation) ---
+  # Computed once when any of -A, -B, -C, or --ball (which doesn't need it,
+  # but keeping the guard tight) is requested.
+  _qs_val_ahead=""
+  _qs_val_behind=""
+  if { $_qs_ahead || $_qs_behind || $_qs_counts; }; then
+    _qs_upstream_ref=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2> /dev/null || echo "")
+    if [ -n "$_qs_upstream_ref" ]; then
+      _qs_counts_raw=$(git rev-list --left-right --count "HEAD...@{u}" 2> /dev/null || echo "0	0")
+      _qs_val_ahead=$(echo "$_qs_counts_raw" | cut -f1)
+      _qs_val_behind=$(echo "$_qs_counts_raw" | cut -f2)
+    else
+      _qs_val_ahead=0
+      _qs_val_behind=0
+    fi
+  fi
+
+  # --- file counts (staged, unstaged, untracked, ignored) ---
+  # Computed once when any of -S, -U, -K, -I, or --ball is requested.
+  _qs_val_staged=0
+  _qs_val_unstaged=0
+  _qs_val_untracked=0
+  _qs_val_ignored=0
+  if { $_qs_staged || $_qs_unstaged || $_qs_untracked || $_qs_ignored || $_qs_ball; }; then
+    if ! git diff --quiet --cached 2> /dev/null; then
+      _qs_val_staged=$(git diff --cached --name-only 2> /dev/null | wc -l | tr -d ' ')
+    fi
+    if ! git diff --quiet 2> /dev/null; then
+      _qs_val_unstaged=$(git diff --name-only 2> /dev/null | wc -l | tr -d ' ')
+    fi
+    _qs_val_untracked=$(git ls-files --others --exclude-standard 2> /dev/null | wc -l | tr -d ' ')
+    _qs_val_ignored=$(git ls-files --others --exclude-standard --ignored 2> /dev/null | wc -l | tr -d ' ')
+  fi
+
+  # --- ball emoji ---
+  # Same precedence as the summary-line ball logic (see "ball_emoji" in default mode below).
+  _qs_val_ball=""
+  if $_qs_ball; then
+    if [ "$_qs_val_unstaged" -gt 0 ] && [ "$_qs_val_staged" -eq 0 ]; then
+      _qs_val_ball="🔴"
+    elif [ "$_qs_val_staged" -gt 0 ] && [ "$_qs_val_unstaged" -eq 0 ]; then
+      _qs_val_ball="🟢"
+    elif [ "$_qs_val_unstaged" -gt 0 ] && [ "$_qs_val_staged" -gt 0 ]; then
+      _qs_val_ball="🟡"
+    elif [ "$_qs_val_untracked" -gt 0 ]; then
+      _qs_val_ball="🟣"
+    elif [ "$_qs_val_ignored" -gt 0 ]; then
+      _qs_val_ball="⚫"
+    else
+      _qs_val_ball="⚪"
+    fi
+  fi
+
+  # --- Build and emit output in canonical order ---
+  # Order: branch upstream hash short-hash ahead behind staged unstaged untracked ignored ball
+  #
+  # WHY direct printf instead of string concatenation:
+  #   Bash variables cannot hold NUL bytes (C-string limitation). When
+  #   -z/--null is active, we must write \0 directly via printf — accumulating
+  #   into a variable would silently drop the separator.
+
+  _qs_first=true
+  _qs_emit() {
+    local val="$1"
+    if $_qs_first; then
+      printf '%s' "$val"
+      _qs_first=false
+    else
+      if $_qs_null; then
+        printf '\0%s' "$val"
+      else
+        printf ' %s' "$val"
+      fi
+    fi
+  }
+
+  $_qs_branch && _qs_emit "$_qs_val_branch"
+  $_qs_upstream && _qs_emit "$_qs_val_upstream"
+  $_qs_hash && _qs_emit "$_qs_val_hash"
+  $_qs_short_hash && _qs_emit "$_qs_val_short_hash"
+
+  # -C outputs "ahead behind" as a single combined value (two integers,
+  # space-separated). This is the canonical way to get both in one flag.
+  # When combined with -A or -B individually, deduplication ensures no
+  # duplicate output (see the -C -A no-duplicate test).
+  if $_qs_counts; then
+    _qs_emit "${_qs_val_ahead} ${_qs_val_behind}"
+  else
+    $_qs_ahead && _qs_emit "$_qs_val_ahead"
+    $_qs_behind && _qs_emit "$_qs_val_behind"
+  fi
+
+  $_qs_staged && _qs_emit "$_qs_val_staged"
+  $_qs_unstaged && _qs_emit "$_qs_val_unstaged"
+  $_qs_untracked && _qs_emit "$_qs_val_untracked"
+  $_qs_ignored && _qs_emit "$_qs_val_ignored"
+  $_qs_ball && _qs_emit "$_qs_val_ball"
+
+  # Always append a trailing newline for terminal usability.
+  printf '\n'
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Default mode: colored summary line (original behavior, verbatim)
+# ---------------------------------------------------------------------------
 
 # HEAD status line (inspired by hug sl)
 hash=$(git rev-parse --short HEAD 2> /dev/null || echo "")

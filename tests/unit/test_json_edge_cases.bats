@@ -131,7 +131,7 @@ validate_json() {
   hug commit -m "initial file"
 
   hug mv "old_name.txt" "new_name.txt"
-  run hug s --json --staged
+  run hug s --json
   assert_success
   assert_valid_json
   # Should show renamed file with correct counts
@@ -332,7 +332,7 @@ validate_json() {
   hug add file*.txt
   hug commit -m "add many files"
 
-  run timeout 10s hug s --json --staged
+  run timeout 10s hug s --json
   assert_success
   assert_valid_json
   # Should have 0 staged files after commit
