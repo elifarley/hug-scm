@@ -281,6 +281,51 @@ load '../test_helper'
 }
 
 # ===========================================================================
+# -S tests: submodule names containing spaces (issue #157)
+# ===========================================================================
+
+@test "hug -S 'my lib' s: resolves submodule name with spaces" {
+  create_test_repo_with_submodule "my lib"
+  cd "$TEST_PARENT_REPO"
+  run hug -S "my lib" s
+  assert_success
+}
+
+@test "hug -S <nonexistent>: error lists full spaced name (not truncated)" {
+  create_test_repo_with_submodule "my lib"
+  cd "$TEST_PARENT_REPO"
+  run hug -S nonexistent s
+  assert_failure
+  assert_output --partial "not found"
+  # The "Available submodules" listing must show the FULL name "my lib",
+  # not the truncated "my" that the old first-space-split bug produced.
+  assert_output --partial "my lib"
+}
+
+@test "hug -S 'vendor deps' s: resolves by path when name has spaces" {
+  # When name == path (common case), both name and path resolution should work.
+  create_test_repo_with_submodule "vendor deps"
+  cd "$TEST_PARENT_REPO"
+  run hug -S "vendor deps" s
+  assert_success
+}
+
+@test "hug -C <repo> -S 'my lib' s: composition with spaced submodule name" {
+  create_test_repo_with_submodule "my lib"
+  cd /tmp  # not in the parent repo at all
+  run hug -C "$TEST_PARENT_REPO" -S "my lib" s
+  assert_success
+}
+
+@test "hug -S: resolves among multiple spaced-name submodules" {
+  # Two submodules both with spaces — exact match must distinguish them.
+  create_test_repo_with_submodule "my lib" "vendor deps"
+  cd "$TEST_PARENT_REPO"
+  run hug -S "vendor deps" s
+  assert_success
+}
+
+# ===========================================================================
 # Regression tests: existing behavior must not change
 # ===========================================================================
 
