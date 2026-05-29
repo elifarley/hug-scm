@@ -166,7 +166,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 ## Branch Deletion
 
 ### `hug bdel [<branch>...]`
-- **Description**: Interactively or directly delete one or more local branches. Supports multi-selection via `gum filter` when no branches specified.
+- **Description**: Interactively or directly delete one or more local or remote branches. Supports multi-selection via `gum filter` when no branches specified.
 - **Examples**:
   ```shell
   hug bdel                    # Interactive: select branches with gum filter
@@ -175,13 +175,17 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   hug bdel old-feat --force   # Force delete unmerged branch
   hug bdel old-feat -y        # Skip confirmation (keeps safe -d delete)
   hug bdel --dry-run          # Preview what would be deleted
+  hug bdel --remote feature   # Delete remote branch
+  hug bdel --remote feat-1 feat-2  # Delete multiple remote branches
+  hug bdel --remote --dry-run feat-x  # Preview remote deletion
   ```
 - **Features**:
   - Interactive multi-selection with `gum filter --no-limit` (when no branches specified)
   - Excludes backup branches (use `hug bdel-backup` for those)
   - Shows confirmation with branch count before deletion
   - Safe by default: only deletes merged branches (use `--force` for unmerged)
-- **Safety**: Requires confirmation unless `--force` or `-y` is used; fails if trying to delete unmerged branches without `--force`. Use `-y` to skip confirmations while keeping safe semantics (`-d` delete). Use `--force` to also escalate to force delete (`-D`).
+  - Remote deletion via `--remote` flag (uses `git push origin --delete`)
+- **Safety**: Requires confirmation unless `--force` or `-y` is used; fails if trying to delete unmerged branches without `--force`. Use `-y` to skip confirmations while keeping safe semantics (`-d` delete). Use `--force` to also escalate to force delete (`-D`). Remote deletion has no merged/unmerged concept — all specified branches are deleted.
 
 ### `hug bdel-backup [<backup>...] [--keep N] [--delete-older-than PATTERN]`
 - **Description**: Manage backup branches created by commands like `hug rb`. Supports filtering by date and keeping N most recent backups.

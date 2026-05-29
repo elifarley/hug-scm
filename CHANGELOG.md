@@ -4,6 +4,10 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Staged gitlinks (submodule pointers) now visible in `hug sls` and `hug sl`.** When `submodule.*.ignore` or `diff.ignoreSubmodules` is set, `git diff --cached` silently suppresses gitlink entries. `list_staged_files()` now passes `--ignore-submodules=none` so staged submodule pointer changes are never dropped, regardless of ignore settings.
+
 ### Added
 
 - **Unified Selection Framework (`selection_core.py`).** Shared toolkit for all Python selection modules: `bash_escape`, `BashDeclareBuilder`, `parse_numbered_input`, `get_selection_input`, `add_common_cli_args`, and ANSI color constants. Adding a new selection domain now requires ~50 lines instead of ~200.

@@ -81,7 +81,7 @@ fi
 hug_rb() {
   local target_branch="$1"
   local current_branch
-  local backup_name
+  local backup_name=""
 
   check_git_repo
 

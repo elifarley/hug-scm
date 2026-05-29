@@ -1063,7 +1063,7 @@ HOOK
   rm -rf "$repo"
 }
 
-@test "hug cm: suggests bpushf after amending pushed commit" {
+@test "hug cmod: suggests bpushf after amending pushed commit" {
   local repo
   repo=$(create_test_repo_with_remote_upstream)
   pushd "$repo" >/dev/null
@@ -1078,7 +1078,7 @@ HOOK
   echo "amended" >> amend.txt
   git add amend.txt
 
-  run hug cm --no-edit
+  run hug cmod --no-edit
   assert_success
   # Should suggest bpushf since we amended a pushed commit
   assert_output --partial "Commit amended. Use \"hug bpushf\" to force-push safely."
@@ -1087,7 +1087,7 @@ HOOK
   rm -rf "$repo"
 }
 
-@test "hug cm: suggests bpush after amending unpushed commit" {
+@test "hug cmod: suggests bpush after amending unpushed commit" {
   local repo
   repo=$(create_test_repo_with_remote_upstream)
   pushd "$repo" >/dev/null
@@ -1101,7 +1101,7 @@ HOOK
   echo "amended" >> amend.txt
   git add amend.txt
 
-  run hug cm --no-edit
+  run hug cmod --no-edit
   assert_success
   # Should suggest bpush (not bpushf) since we haven't pushed yet
   assert_output --partial "Ready to push? Use \"hug bpush\""
@@ -1110,7 +1110,7 @@ HOOK
   rm -rf "$repo"
 }
 
-@test "hug cma: suggests bpushf after amending pushed commit with all tracked" {
+@test "hug cmoda: suggests bpushf after amending pushed commit with all tracked" {
   local repo
   repo=$(create_test_repo_with_remote_upstream)
   pushd "$repo" >/dev/null
@@ -1124,7 +1124,7 @@ HOOK
   # Make unstaged changes
   echo "amended" >> cma.txt
 
-  run hug cma --no-edit
+  run hug cmoda --no-edit
   assert_success
   # Should suggest bpushf since we amended a pushed commit
   assert_output --partial "Commit amended. Use \"hug bpushf\" to force-push safely."
@@ -1133,7 +1133,7 @@ HOOK
   rm -rf "$repo"
 }
 
-@test "hug cma: suggests bpush after amending unpushed commit" {
+@test "hug cmoda: suggests bpush after amending unpushed commit" {
   local repo
   repo=$(create_test_repo_with_remote_upstream)
   pushd "$repo" >/dev/null
@@ -1146,7 +1146,7 @@ HOOK
   # Make unstaged changes
   echo "amended" >> cma.txt
 
-  run hug cma --no-edit
+  run hug cmoda --no-edit
   assert_success
   # Should suggest bpush (not bpushf) since we haven't pushed yet
   assert_output --partial "Ready to push? Use \"hug bpush\""

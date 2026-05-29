@@ -41,8 +41,8 @@ EXAMPLES:
 SEE ALSO:
   hug c  : Commit only staged changes
   hug caa: Commit all changes (tracked + untracked)
-  hug cm : Modify the last commit (amend) with staged changes only
-  hug cma: Modify the last commit with all tracked changes
+  hug cmod : Amend the last commit with staged changes only
+  hug cmoda: Amend the last commit with all tracked changes
 EOF
 }
 

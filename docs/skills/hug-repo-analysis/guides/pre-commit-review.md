@@ -149,7 +149,7 @@ hug c -m "refactor: extract validation logic"
 hug c
 
 # Amend last commit message
-hug cm
+hug cmod
 ```
 
 #### Message Quality Checks
@@ -277,7 +277,7 @@ hug c -m "refactor: extract common logic"
 ```bash
 # Made a typo in last commit?
 hug a typo-file.js
-hug cm  # amend without editing message
+hug cmod  # amend without editing message
 ```
 
 ### Review Large Changes
@@ -436,7 +436,7 @@ hug a --                     # interactive file selection
 # Committing
 hug c -m "type: message"     # commit with message
 hug c                        # commit (opens editor)
-hug cm                       # amend last commit
+hug cmod                       # amend last commit
 hug ca -m "message"          # commit all tracked
 
 # Review Commits
@@ -475,7 +475,7 @@ Before every commit:
 5. **Test before committing** - Don't break the build
 6. **Stage selectively** - Use `hug a <files>` not `hug aa`
 7. **Use patch staging** - For complex changes with `hug ap`
-8. **Amend freely** - Fix typos in last commit with `hug cm`
+8. **Amend freely** - Fix typos in last commit with `hug cmod`
 
 ## See Also
 

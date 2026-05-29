@@ -166,7 +166,7 @@
   #  COMMITS (c*)
   # ──────────────────────────────────────────────────────────────────
 
-  # Note: ca, cm, and cma are now implemented as wrapper scripts in
+  # Note: ca, cmod, and cmoda are now implemented as wrapper scripts in
   # git-config/bin/ to provide post-commit push suggestions
 
   # ──────────────────────────────────────────────────────────────────

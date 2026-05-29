@@ -132,7 +132,7 @@ Closes #123
 
 ```bash
 # Reword last commit
-hug cm  # opens editor
+hug cmod  # opens editor
 
 # Or specify new message
 git commit --amend -m "feat(auth): add JWT validation"
@@ -337,7 +337,7 @@ vim src/feature.js
 
 # Amend the commit
 hug a src/feature.js
-hug cm
+hug cmod
 
 # Continue rebase
 hug rbc
@@ -350,7 +350,7 @@ hug rbc
 ```bash
 # Remove from commit but keep in working dir
 git rm --cached secrets.env
-hug cm  # amend last commit
+hug cmod  # amend last commit
 
 # Add to .gitignore
 echo "secrets.env" >> .gitignore
@@ -419,7 +419,7 @@ hug rbi @{u}                 # interactive rebase
 hug h back n                 # reset n commits (keeps changes)
 
 # Commit Message Fixes
-hug cm                       # amend last commit
+hug cmod                       # amend last commit
 git commit --amend -m "new message"
 
 # Verification
@@ -456,7 +456,7 @@ hug bpushf                   # force push
 ### Scenario 2: Fix Commit Message
 
 ```bash
-hug cm                       # amend last commit
+hug cmod                       # amend last commit
 # or
 hug rbi HEAD~5               # reword older commits
 ```

@@ -22,7 +22,7 @@ This table is the **authoritative source** for Hug's command organization. All c
 | `s*` | Status & Staging | View repo state: summaries, diffs, staged/unstaged changes | `hug ss`, `hug su`, `hug sw`, `hug sx` | **S**tatus |
 | `a*` | Staging | Stage changes for commit: tracked, all, or interactive | `hug a`, `hug aa`, `hug ai`, `hug ap` | **A**dd/stage |
 | `b*` | Branching | Create, switch, list, delete, sync branches | `hug b`, `hug bc`, `hug bl`, `hug br` | **B**ranch |
-| `c*` | Commits | Create and amend commits | `hug c`, `hug ca`, `hug cm`, `hug caa` | **C**ommit |
+| `c*` | Commits | Create and amend commits | `hug c`, `hug ca`, `hug cmod`, `hug caa` | **C**ommit |
 | `l*` | Logging & History | Search and view history: messages, code, authors, files | `hug l`, `hug lc`, `hug lf`, `hug lu` | **L**og |
 | `f*` | File Inspection | Analyze file history: blame, contributors, origin | `hug fa`, `hug fb`, `hug fcon`, `hug fborn` | **F**ile |
 | `t*` | Tagging | Manage tags for releases and milestones | `hug t`, `hug tc`, `hug ta`, `hug ts` | **T**ag |
@@ -111,8 +111,8 @@ Hug Commands
 │   ├── c            # Commit staged
 │   ├── ca           # Commit All tracked
 │   ├── caa          # Commit Add All (tracked+untracked)
-│   ├── cm           # Commit Modify last (staged)
-│   ├── cma          # Commit Modify last (all tracked)
+│   ├── cmod         # Commit Modify (amend staged)
+│   ├── cmoda        # Commit Modify All (amend all tracked)
 │   ├── ccp          # Commit Copy (cherry-pick)
 │   ├── cii          # Commit Interactive (patch)
 │   ├── cim          # Commit Interactive Menu

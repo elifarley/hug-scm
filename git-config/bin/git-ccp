@@ -38,7 +38,7 @@ DESCRIPTION:
   of the source commit without applying its actual changes. This is useful when you
   want to apply similar changes to different content or create a template commit.
 
-  After cherry-picking, you can edit the new commit message with 'hug cm' if needed.
+  After cherry-picking, you can edit the new commit message with 'hug cmod' if needed.
   Note: Cherry-picking can lead to conflicts; resolve them with 'hug s' (status) and 'hug caa' (commit all).
 
 EXAMPLES:

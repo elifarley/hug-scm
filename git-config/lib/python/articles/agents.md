@@ -88,7 +88,7 @@ Listing commands:
     hug aa                          # stage everything: new files, updates, deletions (broad)
 
     hug c -m "message"              # commit with message
-    hug cm                          # amend last commit (run `hug help cm` for full set)
+    hug cmod                        # amend last commit (run `hug help cmod` for full set)
 
 `hug aa` is the wide net. Reach for it deliberately, not by default.
 
