@@ -1277,7 +1277,146 @@ cleanup_test_submodule_worktree() {
   rm -rf "$meta_repo" 2> /dev/null || true
 }
 
-# Create a test worktree with uncommitted changes
+# create_test_repo_with_submodule [name1 name2 ...]
+#
+# Creates a parent git repo with one or more submodules.  Each submodule is a
+# standalone git repo added as a local submodule, then initialized.
+#
+# Args:
+#   name1 name2 ...  Submodule directory names (default: "sub")
+#
+# Outputs (stdout): the parent repo path
+#
+# After calling, the following global variables are set:
+#   TEST_PARENT_REPO       — parent repo path (set IN ADDITION to stdout)
+#   TEST_SUBMODULE_NAMES   — bash array of submodule names (as given)
+#   TEST_SUBMODULE_PATHS   — bash array of absolute submodule checkout paths
+#   TEST_SUBMODULE_ORIGINS — bash array of origin repo paths (for cleanup)
+#
+# IMPORTANT — subshell gotcha: $() runs the function in a subshell, so
+# globals set inside will NOT propagate to the caller.  Tests that need the
+# global arrays must call the function directly (not via $() or `run`):
+#   create_test_repo_with_submodule sub1 sub2
+#   parent=$TEST_PARENT_REPO   # read the global instead of capturing stdout
+#
+# WHY global arrays instead of returning multiple values: Bash functions can
+# only return a single exit code and stdout string.  Tests commonly need all
+# four pieces (parent path, names for assertions, paths for file checks,
+# origins for cleanup), so globals are the pragmatic choice.  The stdout
+# print is kept for consistency with other helpers, but callers needing
+# globals MUST use TEST_PARENT_REPO instead of $().
+#
+# WHY `protocol.file.allow=always`: modern Git (CVE-2022-39253 hardening)
+# refuses local submodule URLs by default.  Tests that add local submodules
+# must opt in, otherwise `git submodule add` silently fails with an opaque
+# "repository does not exist" error.  See create_test_submodule_worktree
+# for the same hardening rationale.
+#
+# Requires: create_temp_repo_dir, git_commit_deterministic (from this file)
+create_test_repo_with_submodule() {
+  # Default to "sub" when no names provided
+  if [[ $# -eq 0 ]]; then
+    set -- "sub"
+  fi
+
+  local parent_repo
+  parent_repo=$(create_temp_repo_dir) || {
+    echo "create_test_repo_with_submodule: failed to create temp dir" >&2
+    return 1
+  }
+
+  # Initialize the parent repo with a first commit so submodules have a tree
+  # to attach to.  Without this, `git submodule add` fails because HEAD has
+  # no commits.
+  (
+    cd "$parent_repo" || exit 1
+    git init -q --initial-branch=main 2> /dev/null || git init -q
+    git config user.email "test@hug-scm.test"
+    git config user.name "Hug Test"
+    git symbolic-ref HEAD refs/heads/main 2> /dev/null || true
+    echo "parent" > parent.txt
+    git add parent.txt
+    git_commit_deterministic "Parent initial"
+  ) || {
+    echo "create_test_repo_with_submodule: failed to init parent repo at $parent_repo" >&2
+    rm -rf "$parent_repo" 2> /dev/null
+    return 1
+  }
+
+  # Reset global arrays — each call gets a clean slate even if a previous
+  # call left stale data.
+  TEST_SUBMODULE_NAMES=()
+  TEST_SUBMODULE_PATHS=()
+  TEST_SUBMODULE_ORIGINS=()
+
+  for name in "$@"; do
+    # Create a standalone origin repo for this submodule
+    local origin_repo
+    origin_repo=$(create_temp_repo_dir) || {
+      echo "create_test_repo_with_submodule: failed to create origin dir for '$name'" >&2
+      rm -rf "$parent_repo" "${TEST_SUBMODULE_ORIGINS[@]}" 2> /dev/null
+      return 1
+    }
+
+    (
+      cd "$origin_repo" || exit 1
+      git init -q --initial-branch=main 2> /dev/null || git init -q
+      git config user.email "test@hug-scm.test"
+      git config user.name "Hug Test"
+      git symbolic-ref HEAD refs/heads/main 2> /dev/null || true
+      echo "$name" > content.txt
+      git add content.txt
+      git_commit_deterministic "$name initial"
+    ) || {
+      echo "create_test_repo_with_submodule: failed to init origin repo '$name' at $origin_repo" >&2
+      rm -rf "$parent_repo" "$origin_repo" "${TEST_SUBMODULE_ORIGINS[@]}" 2> /dev/null
+      return 1
+    }
+
+    # Add the origin repo as a submodule in the parent.
+    # The `-c protocol.file.allow=always` is critical — without it, modern Git
+    # (post CVE-2022-39253) rejects file:// submodule URLs.
+    local _add_err
+    if ! _add_err=$(cd "$parent_repo" && git -c protocol.file.allow=always submodule add -q "$origin_repo" "$name" 2>&1); then
+      echo "create_test_repo_with_submodule: failed to add submodule '$name'" >&2
+      echo "  git stderr: $_add_err" >&2
+      rm -rf "$parent_repo" "$origin_repo" "${TEST_SUBMODULE_ORIGINS[@]}" 2> /dev/null
+      return 1
+    fi
+
+    # Commit the submodule addition (each submodule gets its own commit so
+    # tests can inspect `.gitmodules` incrementally if needed).
+    (
+      cd "$parent_repo" || exit 1
+      git_commit_deterministic "Add submodule $name"
+    ) || {
+      echo "create_test_repo_with_submodule: failed to commit submodule '$name'" >&2
+      rm -rf "$parent_repo" "$origin_repo" "${TEST_SUBMODULE_ORIGINS[@]}" 2> /dev/null
+      return 1
+    }
+
+    TEST_SUBMODULE_NAMES+=("$name")
+    TEST_SUBMODULE_PATHS+=("$parent_repo/$name")
+    TEST_SUBMODULE_ORIGINS+=("$origin_repo")
+  done
+
+  # Initialize all submodules so their working directories actually exist.
+  # `git submodule add` records the reference, but the checkout needs an
+  # explicit `update --init` to materialize files in the submodule dir.
+  (
+    cd "$parent_repo" || exit 1
+    git submodule update --init --recursive 2> /dev/null
+  ) || {
+    echo "create_test_repo_with_submodule: failed to initialize submodules" >&2
+    return 1
+  }
+
+  # Set global for callers that need the path AND the submodule arrays
+  # (since $() runs in a subshell and would lose the globals).
+  TEST_PARENT_REPO="$parent_repo"
+
+  printf '%s\n' "$parent_repo"
+}
 # Usage: worktree_path=$(create_test_worktree_with_changes "feature-branch" "/path/to/repo")
 create_test_worktree_with_changes() {
   local branch="$1"

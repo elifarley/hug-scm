@@ -3,11 +3,187 @@
 # Main dispatcher - detects repository type and delegates to appropriate SCM
 
 # Set HUG_HOME if not already set (fallback derivation)
+# WHY: HUG_HOME must be frozen BEFORE any cd, so library lookups remain correct
+# even after -C or -S changes the working directory.
 if [[ -z "${HUG_HOME:-}" ]]; then
   script_dir="$(cd "$(dirname "$0")" && pwd)"
   HUG_HOME="$(cd "$script_dir/../.." && pwd)"
 fi
 export HUG_HOME
+
+# ── Global flag parsing loop ──────────────────────────────────────────────────
+# WHY: Hug supports global flags (-C <path>, -S <submodule>, --submodule=<name>)
+# that must be consumed BEFORE the command name reaches the case statement or
+# SCM detection. This loop peels off global flags, leaving $1 = the command.
+#
+# DESIGN: Uses `cd` rather than `exec git -C` so that:
+#   1. SCM detection (git rev-parse / hg root) inspects the TARGET dir
+#   2. clone/init/help dispatch works from the cd'd directory
+#   3. No -C threading needed into the final exec calls
+#
+# SAFETY: Unknown flags (e.g., -p for git) fall through to `break` because they
+# aren't `-C`/`-S`/`--submodule`, so they remain in $@ for the command to handle.
+# Command names are never `-`-prefixed, so they also break correctly.
+# ────────────────────────────────────────────────────────────────────────────────
+
+while (($#)); do
+  case "$1" in
+  # -C <path>: change to directory before dispatching (mirrors git -C)
+  # This is SCM-agnostic: works for git, hg, clone, init, help.
+  -C)
+    # Guard: require an argument (prevents unbound $2 under set -u)
+    if [[ -z "${2:-}" ]]; then
+      echo "hug: -C requires a path argument" >&2
+      exit 1
+    fi
+    # Precheck: must be a directory (cd into a file would succeed but is wrong)
+    if [[ ! -d "$2" ]]; then
+      echo "hug: -C: not a directory: $2" >&2
+      exit 1
+    fi
+    # Use cd -- to handle paths starting with '-' (e.g., hug -C -weird-dir)
+    cd -- "$2" || exit 1
+    shift 2
+    ;;
+
+  # -S <name|path>: resolve and cd into a git submodule
+  # --submodule=<name|path>: long form (same resolution logic)
+  -S | --submodule=*)
+    local_submodule_arg=""
+    if [[ "$1" == "-S" ]]; then
+      # Short form: -S <name>
+      if [[ -z "${2:-}" ]]; then
+        echo "hug: -S requires a submodule name or path" >&2
+        exit 1
+      fi
+      local_submodule_arg="$2"
+      shift
+    else
+      # Long form: --submodule=<name>
+      local_submodule_arg="${1#--submodule=}"
+      if [[ -z "$local_submodule_arg" ]]; then
+        echo "hug: --submodule= requires a submodule name or path" >&2
+        exit 1
+      fi
+    fi
+    shift # consume the -S or --submodule=<name>
+
+    # ── Submodule resolution ──────────────────────────────────────────────
+    # Submodules are git-only. Detect hg repos early with a clear error.
+    # WHY git config --file: parses .gitmodules safely (handles spaces,
+    # quoting) unlike grep/awk approaches. Requires a git repo at CWD.
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+      if hg root > /dev/null 2>&1; then
+        echo "hug: -S: submodules are not supported in Mercurial repositories" >&2
+      else
+        echo "hug: -S: not in a Git repository (needed to resolve submodule '$local_submodule_arg')" >&2
+      fi
+      exit 1
+    fi
+
+    local_top_level="$(git rev-parse --show-toplevel)" || {
+      echo "hug: -S: cannot determine repository root" >&2
+      exit 1
+    }
+
+    local_modules_file="$local_top_level/.gitmodules"
+    if [[ ! -f "$local_modules_file" ]]; then
+      echo "hug: -S: no submodules configured (.gitmodules not found)" >&2
+      exit 1
+    fi
+
+    # Parse all submodule entries from .gitmodules using NUL-delimited output.
+    # git config --null --get-regexp outputs "key\nvalue\0" per entry.
+    # WHY --null: eliminates ambiguous space-based key/value splitting when
+    # submodule names or paths contain spaces (issue #157).
+    # WHY associative arrays: O(1) lookup replaces three O(N) loops, and the
+    # name-extraction logic (strip submodule. prefix + .path suffix) appears
+    # once instead of three separate times.
+    declare -A _sub_name_to_path
+    declare -A _sub_path_to_name
+    while IFS= read -r -d '' _entry; do
+      _entry_key="${_entry%%$'\n'*}"         # "submodule.<name>.path"
+      _entry_path="${_entry#*$'\n'}"         # "<path_value>"
+      _entry_name="${_entry_key#submodule.}" # "<name>.path"
+      _entry_name="${_entry_name%.path}"     # "<name>"
+      _sub_name_to_path["$_entry_name"]="$_entry_path"
+      _sub_path_to_name["$_entry_path"]="$_entry_name"
+    done < <(git config --file "$local_modules_file" --null --get-regexp '^submodule\..*\.path$')
+
+    if ((${#_sub_name_to_path[@]} == 0)); then
+      echo "hug: -S: no submodules configured in .gitmodules" >&2
+      exit 1
+    fi
+
+    # Resolve: try exact name match first, then exact path match.
+    # WHY associative arrays: O(1) lookup replaces O(N) scans.
+    local_resolved_path="${_sub_name_to_path[$local_submodule_arg]:-}"
+
+    # If no name match, try exact path match (user passed a relative path)
+    if [[ -z "$local_resolved_path" ]]; then
+      if [[ -v _sub_path_to_name[$local_submodule_arg] ]]; then
+        local_resolved_path="$local_submodule_arg"
+      fi
+    fi
+
+    if [[ -z "$local_resolved_path" ]]; then
+      echo "hug: -S: submodule '$local_submodule_arg' not found" >&2
+      echo "Available submodules:" >&2
+      # WHY sort: deterministic output for tests and scripting, unlike
+      # the old config-file-order listing which varied by git version.
+      while IFS= read -r _n; do
+        echo "  $_n" >&2
+      done < <(printf '%s\n' "${!_sub_name_to_path[@]}" | sort)
+      exit 1
+    fi
+
+    # Resolve relative to repo top-level, then canonicalize for containment check.
+    # WHY cd to top-level first: submodule paths in .gitmodules are relative
+    # to the repo root, not to CWD (which may have been changed by -C).
+    # WHY pwd -P: resolves symlinks so the prefix-based containment check cannot
+    # be bypassed by a symlink pointing outside the repository.
+    # WHY the || guard: if the submodule directory is missing (uninitialized and
+    # then rm'd), the cd inside $() fails silently — local_resolved_abs would be
+    # empty and the containment check would give a misleading error. We catch
+    # this early with the correct "not initialized" message instead.
+    local_resolved_abs="$(cd "$local_top_level" && cd -- "$local_resolved_path" 2> /dev/null && pwd -P)" || {
+      echo "hug: -S: submodule '$local_submodule_arg' is not initialized (directory missing)" >&2
+      echo "Run: git submodule update --init -- $local_resolved_path" >&2
+      exit 1
+    }
+
+    # Containment check: reject paths outside the repository
+    # WHY: prevents escape via symlinks, ../../../tricks, or absolute paths
+    local_top_level_canonical="$(cd "$local_top_level" && pwd -P)"
+    if [[ "$local_resolved_abs" != "$local_top_level_canonical"/* ]]; then
+      echo "hug: -S: path '$local_resolved_path' is outside the repository" >&2
+      exit 1
+    fi
+
+    # Check if submodule is initialized (directory exists with content)
+    if [[ ! -d "$local_resolved_abs" || -z "$(ls -A "$local_resolved_abs" 2> /dev/null)" ]]; then
+      echo "hug: -S: submodule '$local_submodule_arg' is not initialized" >&2
+      echo "Run: git submodule update --init -- $local_resolved_path" >&2
+      exit 1
+    fi
+
+    cd -- "$local_resolved_abs" || exit 1
+    ;;
+
+  # --: explicit end of global flags; pass remaining args to command
+  --)
+    shift
+    break
+    ;;
+
+  # Command name or unknown flag → stop consuming globals
+  # Unknown flags (like -f, --force, -p) fall through to the command.
+  # This is intentional: hug doesn't parse command-specific flags here.
+  *)
+    break
+    ;;
+  esac
+done
 
 # Handle commands that work outside repository
 case "${1:-}" in
