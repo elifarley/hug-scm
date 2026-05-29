@@ -249,15 +249,178 @@ teardown() {
 @test "list_untracked_files: lists only current directory untracked files with --cwd" {
   # Create untracked file in current directory
   echo "local untracked" > src/components/local-untracked.js
-  
+
   cd src/components
-  
+
   # With --cwd, should only list untracked files in current directory
   mapfile -t files < <(list_untracked_files --cwd)
-  
+
   # Should include file from current directory
   [[ " ${files[*]} " =~ " local-untracked.js " ]]
 
   # Should NOT include untracked files from parent directory
   [[ ! " ${files[*]} " =~ " untracked.js " ]]
+}
+
+################################################################################
+# list_staged_files GITLINK (submodule) TESTS
+################################################################################
+
+# Helper: create a test repo with a committed submodule and staged pointer bump
+setup_repo_with_gitlink() {
+  local test_repo
+  test_repo=$(create_test_repo)
+
+  local sub_src="${test_repo}-sub-src"
+  git init -q --initial-branch=main "$sub_src"
+  (
+    cd "$sub_src" || exit 1
+    git config --local user.email "test@hug-scm.test"
+    git config --local user.name "Hug Test"
+    echo "sub content" > README.md
+    git add README.md
+    git commit -q -m "sub init"
+  )
+
+  (
+    cd "$test_repo" || exit 1
+    git -c protocol.file.allow=always submodule add "$sub_src" mysub >/dev/null 2>&1
+    git commit -q -m "add submodule"
+
+    # Bump the submodule pointer
+    (cd mysub && echo "update" >> README.md && git add . && git commit -q -m "sub update")
+    git add mysub
+  )
+
+  echo "$test_repo"
+}
+
+# Helper: create a test repo with a newly added submodule (staged but not committed)
+setup_repo_with_new_gitlink() {
+  local test_repo
+  test_repo=$(create_test_repo)
+
+  local sub_src="${test_repo}-sub-src"
+  git init -q --initial-branch=main "$sub_src"
+  (
+    cd "$sub_src" || exit 1
+    git config --local user.email "test@hug-scm.test"
+    git config --local user.name "Hug Test"
+    echo "sub content" > README.md
+    git add README.md
+    git commit -q -m "sub init"
+  )
+
+  (
+    cd "$test_repo" || exit 1
+    git -c protocol.file.allow=always submodule add "$sub_src" newsub >/dev/null 2>&1
+  )
+
+  echo "$test_repo"
+}
+
+@test "list_staged_files: shows staged gitlink (submodule pointer bump)" {
+  TEST_REPO=$(setup_repo_with_gitlink)
+  cd "$TEST_REPO"
+
+  mapfile -t files < <(list_staged_files)
+
+  [[ ${#files[@]} -ge 1 ]]
+  [[ " ${files[*]} " =~ " mysub " ]]
+}
+
+@test "list_staged_files --status: shows gitlink with M status" {
+  TEST_REPO=$(setup_repo_with_gitlink)
+  cd "$TEST_REPO"
+
+  mapfile -t lines < <(list_staged_files --status)
+
+  # Should contain a line like "M\tmysub"
+  local found=false
+  for line in "${lines[@]}"; do
+    if [[ "$line" =~ ^M$'\t' && "$line" =~ mysub ]]; then
+      found=true
+      break
+    fi
+  done
+  [[ "$found" == true ]]
+}
+
+@test "list_staged_files: shows gitlink despite submodule.ignore=all" {
+  TEST_REPO=$(setup_repo_with_gitlink)
+  cd "$TEST_REPO"
+
+  # Set ignore config — this is the core bug this fix addresses
+  git config --local submodule.mysub.ignore all
+
+  mapfile -t files < <(list_staged_files)
+
+  [[ ${#files[@]} -ge 1 ]]
+  [[ " ${files[*]} " =~ " mysub " ]]
+}
+
+@test "list_staged_files: shows gitlink despite diff.ignoreSubmodules=all" {
+  TEST_REPO=$(setup_repo_with_gitlink)
+  cd "$TEST_REPO"
+
+  # Alternative ignore source
+  git config --local diff.ignoreSubmodules all
+
+  mapfile -t files < <(list_staged_files)
+
+  [[ ${#files[@]} -ge 1 ]]
+  [[ " ${files[*]} " =~ " mysub " ]]
+}
+
+@test "list_staged_files --cwd: excludes gitlink outside current directory" {
+  TEST_REPO=$(setup_repo_with_gitlink)
+  cd "$TEST_REPO"
+
+  # Create a subdirectory and cd into it
+  mkdir -p subdir && cd subdir
+
+  mapfile -t files < <(list_staged_files --cwd)
+
+  # mysub is at repo root, outside subdir — should not appear
+  [[ ! " ${files[*]} " =~ " mysub " ]]
+}
+
+@test "list_staged_files: shows new submodule addition as A status" {
+  TEST_REPO=$(setup_repo_with_new_gitlink)
+  cd "$TEST_REPO"
+
+  mapfile -t lines < <(list_staged_files --status)
+
+  # New submodule should appear as "A\tnewsub"
+  local found=false
+  for line in "${lines[@]}"; do
+    if [[ "$line" =~ ^A$'\t' && "$line" =~ newsub ]]; then
+      found=true
+      break
+    fi
+  done
+  [[ "$found" == true ]]
+}
+
+@test "list_staged_files: shows both regular files and gitlinks" {
+  # Regression guard: --ignore-submodules=none must not suppress regular files
+  TEST_REPO=$(setup_repo_with_gitlink)
+  cd "$TEST_REPO"
+
+  # Stage a regular file alongside the gitlink
+  echo "regular content" > regular.txt
+  git add regular.txt
+
+  git config --local submodule.mysub.ignore all
+
+  mapfile -t lines < <(list_staged_files --status)
+
+  # Both should appear
+  local found_regular=false found_gitlink=false
+  for line in "${lines[@]}"; do
+    [[ "$line" =~ regular\.txt ]] && found_regular=true
+    [[ "$line" =~ mysub ]] && found_gitlink=true
+  done
+  [[ "$found_regular" == true ]]
+  [[ "$found_gitlink" == true ]]
 }

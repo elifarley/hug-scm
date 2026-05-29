@@ -53,7 +53,11 @@ list_staged_files() {
     check_git_repo
 
     # Build git command with optional scoping
-    local -a git_cmd_base=("git" "diff" "--cached" "--find-renames")
+    # --ignore-submodules=none ensures staged gitlink entries appear even when
+    # submodule.*.ignore=all or diff.ignoreSubmodules is set. Without this flag,
+    # git treats the staged pointer change as "submodule output" and suppresses it,
+    # which violates the user's explicit staging intent (they ran `git add <sub>`).
+    local -a git_cmd_base=("git" "diff" "--cached" "--find-renames" "--ignore-submodules=none")
     if $with_status; then
         git_cmd_base+=("--name-status")
     else
