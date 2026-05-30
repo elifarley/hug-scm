@@ -19,7 +19,6 @@ The relaxed bar still catches real regressions: if a tuning change drops
 "hug bpush" out of top-5 for "push", that's a real quality problem.
 """
 
-import os
 from pathlib import Path
 
 import pytest
@@ -39,25 +38,6 @@ def commands():
     """Real repo commands, hydrated with real category metadata."""
     cats = load_categories(CATS)
     cmds = collect_metadata(BIN, use_cache=False, cat_meta=cats)
-    names = [c.command for c in cmds]
-    # DIAGNOSTIC: write to /tmp so CI logs reveal why bpush is missing.
-    # Removed after investigation — this is temporary.
-    import subprocess as _sp
-    _diag = "/tmp/_quality_corpus_diag.txt"
-    with open(_diag, "w") as f:
-        f.write(f"total_commands={len(names)}\n")
-        f.write(f"has_bpush={'hug bpush' in names}\n")
-        f.write(f"HUG_HOME={os.environ.get('HUG_HOME', '')}\n")
-        f.write(f"BIN={BIN}\n")
-        if "hug bpush" not in names:
-            _bpush = BIN / "git-bpush"
-            _r = _sp.run([str(_bpush), "--search-meta"], capture_output=True, text=True, timeout=5)
-            f.write(f"search_meta_rc={_r.returncode}\n")
-            f.write(f"search_meta_stdout={_r.stdout.strip()}\n")
-            _r2 = _sp.run([str(_bpush), "--help"], capture_output=True, text=True, timeout=5)
-            f.write(f"help_rc={_r2.returncode}\n")
-            f.write(f"help_stdout_len={len(_r2.stdout)}\n")
-            f.write(f"help_stderr={_r2.stderr[:300]}\n")
     return cmds
 
 

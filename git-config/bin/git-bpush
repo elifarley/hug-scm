@@ -131,6 +131,14 @@ EOF
   exit 1
 }
 
+# Early help exit — must precede check_git_repo so --help works outside a repo.
+# Without this, collect_metadata()'s --help subprocess fails on CI, dropping
+# bpush from search results (see test_quality_corpus.py /push corpus).
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
+  exit 0
+}
+
 # Early exit if not in Git repo
 check_git_repo
 
