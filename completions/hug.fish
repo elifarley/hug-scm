@@ -231,9 +231,24 @@ for sub in sl sla sli statusbase
     complete -c hug -n "__fish_seen_subcommand_from $sub" -s h -l help -d "Help"
 end
 
-# s: Quick summary (no args, no files)
-complete -c hug -n "__fish_seen_subcommand_from s" -f -d "Quick summary (no args)"
+# s: Quick summary (query flags for scripting)
+complete -c hug -n "__fish_seen_subcommand_from s" -f -d "Quick summary (query flags for scripting)"
 complete -c hug -n "__fish_seen_subcommand_from s" -s h -l help -d "Help"
+complete -c hug -n "__fish_seen_subcommand_from s" -s r -l remote -d "URL of tracking remote"
+complete -c hug -n "__fish_seen_subcommand_from s" -s b -l branch -d "Current branch name"
+complete -c hug -n "__fish_seen_subcommand_from s" -s u -l upstream -d "Upstream tracking branch"
+complete -c hug -n "__fish_seen_subcommand_from s" -s H -l hash -d "Full commit hash"
+complete -c hug -n "__fish_seen_subcommand_from s" -s s -l short-hash -d "Short commit hash"
+complete -c hug -n "__fish_seen_subcommand_from s" -s A -l ahead -d "Commits ahead of upstream"
+complete -c hug -n "__fish_seen_subcommand_from s" -s B -l behind -d "Commits behind upstream"
+complete -c hug -n "__fish_seen_subcommand_from s" -s C -l counts -d "Ahead/behind counts"
+complete -c hug -n "__fish_seen_subcommand_from s" -s I -l ignored -d "Ignored file count"
+complete -c hug -n "__fish_seen_subcommand_from s" -s K -l untracked -d "Untracked file count"
+complete -c hug -n "__fish_seen_subcommand_from s" -s S -l staged -d "Staged file count"
+complete -c hug -n "__fish_seen_subcommand_from s" -s U -l unstaged -d "Unstaged file count"
+complete -c hug -n "__fish_seen_subcommand_from s" -l ball -d "State emoji"
+complete -c hug -n "__fish_seen_subcommand_from s" -s z -l null -d "NUL-separated output"
+complete -c hug -n "__fish_seen_subcommand_from s" -l json -d "JSON status output"
 
 # ss/su/sw: Optional [<file>] + help
 for sub in ss su sw

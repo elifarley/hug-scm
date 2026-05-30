@@ -31,10 +31,12 @@ OUTPUT MODES:
 QUERY FLAGS:
   Extract individual fields for scripting. When any query flag is present,
   the command enters query mode: fields are printed to stdout (one per
-  line by default), with no colored output or chatter on stderr.
+  line, or space-separated with multiple flags), with no colored output
+  or chatter on stderr.
   Computation is lazy — only requested fields incur git operations.
 
   -b, --branch     Current branch name (empty if detached).
+  -r, --remote     URL of the tracking remote (empty if none).
   -u, --upstream   Upstream tracking branch name (empty if none).
   -H, --hash       Full commit hash (HEAD).
   -s, --short-hash Short commit hash (HEAD).
@@ -51,6 +53,8 @@ QUERY FLAGS:
   Query flags are mutually exclusive with --json.
 
 DESCRIPTION:
+  Empty output for -r means no upstream tracking branch is configured.
+
   Without flags, prints a colored one-line summary to stderr:
 
     ⚪ HEAD: abc1234 🌿main...origin/main [ahead 2] │ 📦 Staged: ... │ K:3 I:0
@@ -67,6 +71,8 @@ DESCRIPTION:
   In query mode, each flag outputs its corresponding field value to stdout,
   making it safe for pipes and scripting. Multiple flags output fields in
   canonical order, space-separated (or NUL-separated with -z).
+  Canonical order: branch remote upstream hash short-hash ahead behind
+  staged unstaged untracked ignored ball
 
 CAPTURING OUTPUT:
   Default mode outputs to stderr (safe to capture the summary line).
@@ -107,13 +113,13 @@ error() {
 # ---------------------------------------------------------------------------
 
 # getopt short→long mapping:
-#   b=branch u=upstream H=hash s=short-hash A=ahead B=behind
+#   b=branch r=remote u=upstream H=hash s=short-hash A=ahead B=behind
 #   C=counts I=ignored K=untracked S=staged U=unstaged
 #   h=help z=null   --ball and --json are long-only
 set +e # Temporarily disable exit-on-error to capture getopt failure
 PARSED=$(getopt \
-  --options 'buHsABCIKSUhz' \
-  --longoptions 'branch,upstream,hash,short-hash,ahead,behind,counts,untracked,ignored,staged,unstaged,ball,json,help,null' \
+  --options 'rbuHsABCIKSUhz' \
+  --longoptions 'remote,branch,upstream,hash,short-hash,ahead,behind,counts,untracked,ignored,staged,unstaged,ball,json,help,null' \
   --name 'hug s' \
   -- "$@" 2>&1)
 getopt_status=$?
@@ -138,6 +144,7 @@ json_output=false
 
 # Query flags -- using _qs_ prefix (query-status) so Task 2 can extend these
 _qs_branch=false
+_qs_remote=false
 _qs_upstream=false
 _qs_hash=false
 _qs_short_hash=false
@@ -168,6 +175,10 @@ while true; do
   # Query flags
   -b | --branch)
     _qs_branch=true
+    shift
+    ;;
+  -r | --remote)
+    _qs_remote=true
     shift
     ;;
   -u | --upstream)
@@ -233,7 +244,7 @@ done
 # ---------------------------------------------------------------------------
 
 is_query=false
-if $_qs_branch || $_qs_upstream || $_qs_hash || $_qs_short_hash ||
+if $_qs_branch || $_qs_remote || $_qs_upstream || $_qs_hash || $_qs_short_hash ||
   $_qs_ahead || $_qs_behind || $_qs_counts || $_qs_untracked ||
   $_qs_ignored || $_qs_staged || $_qs_unstaged || $_qs_ball; then
   is_query=true
@@ -275,6 +286,25 @@ if $is_query; then
   # --- branch ---
   _qs_val_branch=""
   $_qs_branch && _qs_val_branch=$(git branch --show-current 2> /dev/null || echo "")
+
+  # --- remote URL ---
+  # Resolution: extract remote name from tracking branch via git for-each-ref.
+  # Returns empty when no upstream is configured (detached HEAD, local-only branch).
+  # WHY for-each-ref instead of parameter expansion:
+  #   - Naturally handles detached HEAD (symbolic-ref fails → empty)
+  #   - No fragile string parsing of "origin/main" → "origin"
+  #   - Works with unusual remote names containing "/"
+  _qs_val_remote=""
+  if $_qs_remote; then
+    _qs_remote_name=""
+    _qs_sym_ref=$(git symbolic-ref -q HEAD 2>/dev/null || echo "")
+    if [ -n "$_qs_sym_ref" ]; then
+      _qs_remote_name=$(git for-each-ref --format='%(upstream:remotename)' "$_qs_sym_ref" 2>/dev/null || echo "")
+    fi
+    if [ -n "$_qs_remote_name" ]; then
+      _qs_val_remote=$(git remote get-url "$_qs_remote_name" 2>/dev/null || echo "")
+    fi
+  fi
 
   # --- upstream ---
   _qs_val_upstream=""
@@ -342,7 +372,7 @@ if $is_query; then
   fi
 
   # --- Build and emit output in canonical order ---
-  # Order: branch upstream hash short-hash ahead behind staged unstaged untracked ignored ball
+  # Order: branch remote upstream hash short-hash ahead behind staged unstaged untracked ignored ball
   #
   # WHY direct printf instead of string concatenation:
   #   Bash variables cannot hold NUL bytes (C-string limitation). When
@@ -365,6 +395,7 @@ if $is_query; then
   }
 
   $_qs_branch && _qs_emit "$_qs_val_branch"
+  $_qs_remote && _qs_emit "$_qs_val_remote"
   $_qs_upstream && _qs_emit "$_qs_val_upstream"
   $_qs_hash && _qs_emit "$_qs_val_hash"
   $_qs_short_hash && _qs_emit "$_qs_val_short_hash"

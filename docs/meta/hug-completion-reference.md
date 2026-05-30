@@ -202,7 +202,7 @@ Subcommands (gateway to specific scripts):
 - `caa [git-commit-opts]`: Commit all. No positional args. Options: Pass-through to `git commit`.
 
 ### s (Status Summary, via git-s)
-- `s`: Quick colored summary. No args/options (use `-h` for help).
+- `s`: Quick colored summary. Query flags: `-b`, `-r`, `-u`, `-H`, `-s`, `-A`, `-B`, `-C`, `-I`, `-K`, `-S`, `-U`, `--ball`, `-z`, `--json`.
 
 ### ss (Staged Status, via git-ss)
 - `ss [<file>]`: Status + staged patch. Args: `[<file>]` (optional). Use `-h` for help.
