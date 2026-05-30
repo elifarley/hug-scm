@@ -495,3 +495,206 @@ teardown() {
   cd "$TEST_REPO"
   rm -rf "$nongit_dir"
 }
+
+# ---------------------------------------------------------------------------
+# -r / --remote query flag tests
+# Outputs the fetch URL of the tracking remote (empty if no upstream).
+# Uses git for-each-ref --format='%(upstream:remotename)' + git remote get-url.
+# ---------------------------------------------------------------------------
+
+@test "hug s -r: outputs remote URL with upstream set" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  cd "$repo"
+
+  run hug s -r
+  assert_success
+  # Should output the remote URL (a local path to the bare repo)
+  [[ -n "$output" ]]
+  [[ "$output" == *"/origin.git" ]]
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s -r: empty output with no remote" {
+  # Fresh init, no remote at all
+  local no_remote_repo
+  no_remote_repo=$(mktemp -d)
+  git init -q "$no_remote_repo"
+  git -C "$no_remote_repo" config user.name "Test"
+  git -C "$no_remote_repo" config user.email "test@test.com"
+  echo "x" > "$no_remote_repo/file"
+  git -C "$no_remote_repo" add file
+  git -C "$no_remote_repo" commit -q -m "init"
+  cd "$no_remote_repo"
+
+  run hug s -r
+  assert_success
+  [[ -z "$output" ]]
+
+  cd "$TEST_REPO"
+  rm -rf "$no_remote_repo"
+}
+
+@test "hug s -r: empty output when origin exists but branch has no upstream" {
+  local no_upstream_repo
+  no_upstream_repo=$(mktemp -d)
+  git init -q "$no_upstream_repo"
+  git -C "$no_upstream_repo" config user.name "Test"
+  git -C "$no_upstream_repo" config user.email "test@test.com"
+  echo "x" > "$no_upstream_repo/file"
+  git -C "$no_upstream_repo" add file
+  git -C "$no_upstream_repo" commit -q -m "init"
+  # Add a remote but do NOT set upstream tracking
+  local remote_dir
+  remote_dir=$(mktemp -d)
+  git init --bare -q "$remote_dir"
+  git -C "$no_upstream_repo" remote add origin "$remote_dir"
+  cd "$no_upstream_repo"
+
+  run hug s -r
+  assert_success
+  [[ -z "$output" ]]
+
+  cd "$TEST_REPO"
+  rm -rf "$no_upstream_repo" "$remote_dir"
+}
+
+@test "hug s -b -r: outputs branch and remote URL space-separated" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  cd "$repo"
+
+  run hug s -b -r
+  assert_success
+  local branch url
+  branch=$(hug s -b)
+  url=$(hug s -r)
+  assert_output "$branch $url"
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s -b -r -u: outputs in canonical order" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  cd "$repo"
+
+  local branch remote_url upstream
+  branch=$(hug s -b)
+  remote_url=$(hug s -r)
+  upstream=$(hug s -u)
+
+  run hug s -b -r -u
+  assert_success
+  assert_output "$branch $remote_url $upstream"
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s -z -b -r -H: NUL-separated output" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  cd "$repo"
+
+  local branch remote_url hash
+  branch=$(hug s -b)
+  remote_url=$(hug s -r)
+  hash=$(hug s -H)
+
+  local nul_output
+  nul_output=$(hug s -z -b -r -H | xxd -p | tr -d '\n')
+  local expected_hex
+  expected_hex=$(printf '%s\0%s\0%s\n' "$branch" "$remote_url" "$hash" | xxd -p | tr -d '\n')
+  [[ "$nul_output" == "$expected_hex" ]]
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s -r: no output on stderr" {
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  cd "$repo"
+
+  run bash -c 'hug s -r 2>&1 1>/dev/null'
+  assert_success
+  [[ -z "$output" ]]
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s --remote: exits 0 (long form)" {
+  run hug s --remote
+  assert_success
+}
+
+@test "hug s -r: empty output in detached HEAD" {
+  local detached_repo
+  detached_repo=$(mktemp -d)
+  git init -q "$detached_repo"
+  git -C "$detached_repo" config user.name "Test"
+  git -C "$detached_repo" config user.email "test@test.com"
+  echo "x" > "$detached_repo/file"
+  git -C "$detached_repo" add file
+  git -C "$detached_repo" commit -q -m "init"
+  local sha
+  sha=$(git -C "$detached_repo" rev-parse HEAD)
+  git -C "$detached_repo" checkout -q "$sha"
+  cd "$detached_repo"
+
+  run hug s -r
+  assert_success
+  [[ -z "$output" ]]
+
+  cd "$TEST_REPO"
+  rm -rf "$detached_repo"
+}
+
+@test "hug s -r: outputs correct URL for non-origin remote" {
+  local repo
+  repo=$(mktemp -d)
+  git init -q --initial-branch=main "$repo"
+  git -C "$repo" config user.name "Test"
+  git -C "$repo" config user.email "test@test.com"
+  echo "x" > "$repo/file"
+  git -C "$repo" add file
+  git -C "$repo" commit -q -m "init"
+
+  # Create two remotes: origin and upstream
+  local origin_dir upstream_dir
+  origin_dir=$(mktemp -d)
+  upstream_dir=$(mktemp -d)
+  git init --bare -q "$origin_dir"
+  git init --bare -q "$upstream_dir"
+  git -C "$repo" remote add origin "$origin_dir"
+  git -C "$repo" remote add upstream "$upstream_dir"
+  # Push to both remotes (creates refs in bare repos)
+  git -C "$repo" push -q origin main
+  git -C "$repo" push -q upstream main
+  # Set upstream tracking to 'upstream/main' (not origin)
+  git -C "$repo" branch --set-upstream-to=upstream/main
+  cd "$repo"
+
+  run hug s -r
+  assert_success
+  # Should output the upstream remote URL, not origin
+  [[ "$output" == *"$upstream_dir"* ]]
+  [[ "$output" != *"$origin_dir"* ]]
+
+  cd "$TEST_REPO"
+  rm -rf "$repo" "$origin_dir" "$upstream_dir"
+}
+
+@test "hug s --json -r: exits with error (mutual exclusion)" {
+  run hug s --json -r
+  assert_failure
+  [[ "$output" =~ (cannot|incompatible|conflict) ]]
+}
+
+@test "hug s -r: exits 0 in default fixture" {
+  # The default setup (create_test_repo_with_changes) has no upstream
+  # so -r should output empty but exit 0
+  run hug s -r
+  assert_success
+  [[ -z "$output" ]]
+}

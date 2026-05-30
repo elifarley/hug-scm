@@ -27,7 +27,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 
 | Command | Memory Hook | Summary |
 | --- | --- | --- |
-| `hug s` | **S**tatus snapshot | Colored summary of staged/unstaged changes |
+| `hug s` | **S**tatus snapshot | Colored summary of staged/unstaged changes; supports query flags for scripting |
 | `hug sl` | **S**tatus + **L**ist | Status with listed tracked changes |
 | `hug sla` | **S**tatus + **L**ist **A**ll | Status including untracked files |
 | `hug ss` | **S**tatus + **S**taged | Show staged diff |
@@ -42,9 +42,38 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 
 ### Basic Status
 - `hug s`: **S**tatus snapshot
-    - **Description**: Quick colored summary of staged/unstaged changes (no untracked files).
-    - **Example**: `hug s` (always safe, no args).
+    - **Description**: Quick colored summary of staged/unstaged changes (no untracked files). Also supports query flags for scriptable field extraction.
+    - **Example**: `hug s` (always safe, no args), `hug s -r` (remote URL), `hug s -b -r -u` (branch, remote, upstream).
     - **Safety**: ✅ Read-only overview; nothing is modified.
+
+    ::: details Query Flags
+    When any query flag is passed, `hug s` enters **query mode**: individual fields are printed to stdout (one per line by default, NUL-separated with `-z`), with no colored output or chatter on stderr. Computation is lazy — only requested fields incur git operations.
+
+    | Flag | Field | Notes |
+    | --- | --- | --- |
+    | `-b, --branch` | Current branch name | Empty if detached HEAD |
+    | `-r, --remote` | URL of tracking remote | Empty if no upstream |
+    | `-u, --upstream` | Upstream tracking branch | Empty if none |
+    | `-H, --hash` | Full commit hash | HEAD |
+    | `-s, --short-hash` | Short commit hash | HEAD |
+    | `-A, --ahead` | Commits ahead of upstream | Count |
+    | `-B, --behind` | Commits behind upstream | Count |
+    | `-C, --counts` | Combined ahead/behind | `ahead behind` |
+    | `-I, --ignored` | Ignored file count | |
+    | `-K, --untracked` | Untracked file count | |
+    | `-S, --staged` | Staged file count | |
+    | `-U, --unstaged` | Unstaged file count | |
+    | `--ball` | State emoji | Encodes repo state |
+    | `-z, --null` | NUL separator | Use with other query flags |
+    | `--json` | Full JSON output | Mutually exclusive with query flags |
+
+    Query flags are mutually exclusive with `--json`. Combine freely:
+    ```
+    hug s -r                    # URL of tracking remote
+    hug s -b -r -u              # Branch, remote URL, upstream (tab-separated)
+    hug s -z -b -H | xargs -0  # NUL-separated for unusual names
+    ```
+    :::
 
 - `hug sl`: **S**tatus + **L**ist
     - **Description**: Status with a list of *uncommitted* tracked files (mirrors plain `git status`).
