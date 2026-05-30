@@ -284,11 +284,13 @@ setup_repo_with_gitlink() {
 
   (
     cd "$test_repo" || exit 1
+    git config --local user.email "test@hug-scm.test"
+    git config --local user.name "Hug Test"
     git -c protocol.file.allow=always submodule add "$sub_src" mysub >/dev/null 2>&1
     git commit -q -m "add submodule"
 
     # Bump the submodule pointer
-    (cd mysub && echo "update" >> README.md && git add . && git commit -q -m "sub update")
+    (cd mysub && git config --local user.email "test@hug-scm.test" && git config --local user.name "Hug Test" && echo "update" >> README.md && git add . && git commit -q -m "sub update")
     git add mysub
   )
 

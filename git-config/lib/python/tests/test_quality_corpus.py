@@ -37,7 +37,8 @@ CATS = REPO / "git-config" / "lib" / "python" / "categories"
 def commands():
     """Real repo commands, hydrated with real category metadata."""
     cats = load_categories(CATS)
-    return collect_metadata(BIN, use_cache=False, cat_meta=cats)
+    cmds = collect_metadata(BIN, use_cache=False, cat_meta=cats)
+    return cmds
 
 
 # -----------------------------------------------------------------------------

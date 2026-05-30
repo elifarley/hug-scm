@@ -6,6 +6,14 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ### Fixed
 
+- **`hug-common` self-resolves `HUG_HOME` from `BASH_SOURCE[1]`.** On CI where `HUG_HOME` is unset, `hug-common` now derives it from the sourcing script's path instead of calling the undefined `error` function and `exit 1` (which killed the parent). Fixes `test_quality_corpus.py` failures on GitHub Actions — 12 of 17 keyword/intent search tests were failing because `--help` subprocess invocations returned empty metadata.
+- **CI workflow persists `HUG_HOME` to `GITHUB_ENV`.** After `make install`, `HUG_HOME=$GITHUB_WORKSPACE` is written to `$GITHUB_ENV` so all subsequent steps in each matrix job inherit it. Defense-in-depth layer alongside the self-resolution fix.
+- **Python test conftest sets `HUG_HOME` for subprocesses.** An autouse session fixture walks up from `conftest.py` to find the repo root via `.git` marker detection, ensuring `HUG_HOME` is available even when tests run without prior activation.
+
+### Added
+
+- **BATS tests for `hug-common` HUG_HOME self-resolution.** Four new tests verify: derivation from `BASH_SOURCE`, preservation of existing values, graceful failure (`return 1` not `exit 1`), and caller survival on failure.
+
 - **Staged gitlinks (submodule pointers) now visible in `hug sls` and `hug sl`.** When `submodule.*.ignore` or `diff.ignoreSubmodules` is set, `git diff --cached` silently suppresses gitlink entries. `list_staged_files()` now passes `--ignore-submodules=none` so staged submodule pointer changes are never dropped, regardless of ignore settings.
 
 ### Added

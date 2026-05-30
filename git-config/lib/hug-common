@@ -45,12 +45,34 @@
 if [[ -n "${_HUG_COMMON_LOADED:-}" ]]; then
   return 0 2>/dev/null || :
 fi
-_HUG_COMMON_LOADED=1
 
 if [[ -z "${HUG_HOME:-}" ]]; then
-  error "HUG_HOME must be set to the Hug installation root directory"
-  exit 1
+  # Self-resolve from the sourcing script's path using readlink -f
+  # for symlink safety (matching CMD_BASE pattern in bin scripts).
+  # All bin scripts are in git-config/bin/, so dirname/../.. = repo root.
+  _hug_src="$(readlink -f "${BASH_SOURCE[1]:-$0}" 2>/dev/null || echo "${BASH_SOURCE[1]:-$0}")"
+  if _hug_candidate="$(cd "$(dirname "$_hug_src")/../.." 2>/dev/null && pwd)" \
+     && [[ -f "$_hug_candidate/git-config/lib/hug-common" ]]; then
+    HUG_HOME="$_hug_candidate"
+    export HUG_HOME
+  else
+    # return 1 (not exit 1) in a sourced file returns control to the caller.
+    # Note: bin scripts set set -euo pipefail AFTER sourcing, so return 1
+    # won't trigger immediate exit. The sourcing loop will continue, but
+    # HUG_LIB_DIR will be unset, and hug-git-kit will fail gracefully.
+    # _HUG_COMMON_LOADED is intentionally NOT set here so that a caller
+    # which handles the error (e.g., sets HUG_HOME and re-sources) can
+    # retry derivation instead of hitting the early-return guard.
+    printf 'hug-common: HUG_HOME not set and could not be derived from %s\n' "$_hug_src" >&2
+    return 1
+  fi
+  unset _hug_src _hug_candidate
 fi
+
+# Mark loaded only after HUG_HOME is confirmed available.
+# This ensures a failed derivation (return 1 above) doesn't poison
+# the guard — callers can fix HUG_HOME and re-source successfully.
+_HUG_COMMON_LOADED=1
 
 HUG_LIB_DIR="$HUG_HOME/git-config/lib"
 export HUG_LIB_DIR

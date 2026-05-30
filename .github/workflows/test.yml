@@ -38,7 +38,9 @@ jobs:
           git --version
 
       - name: Install Hug SCM
-        run: make install
+        run: |
+          make install
+          echo "HUG_HOME=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
 
       - name: Verify Hug installation
         run: |
