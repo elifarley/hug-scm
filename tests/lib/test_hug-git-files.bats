@@ -290,7 +290,7 @@ setup_repo_with_gitlink() {
     git commit -q -m "add submodule"
 
     # Bump the submodule pointer
-    (cd mysub && echo "update" >> README.md && git add . && git commit -q -m "sub update")
+    (cd mysub && git config --local user.email "test@hug-scm.test" && git config --local user.name "Hug Test" && echo "update" >> README.md && git add . && git commit -q -m "sub update")
     git add mysub
   )
 
