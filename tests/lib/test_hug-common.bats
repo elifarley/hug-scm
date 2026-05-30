@@ -353,18 +353,43 @@ WRAPPER
   # that dirname/../.. lands on the repo root.  If sourced from an arbitrary
   # location (e.g. a user's ~/bin or /tmp), the derivation should fail
   # gracefully with a non-zero return code and a diagnostic message.
+  # The loaded guard must NOT be set on failure so that a caller which handles
+  # the error (sets HUG_HOME and re-sources) can retry successfully.
 
   # Source hug-common from /tmp — dirname/../.. will be /, which won't contain
   # git-config/lib/hug-common, so derivation must fail.
-  run bash -c "
-    unset HUG_HOME _HUG_COMMON_LOADED
-    cd /tmp
-    source '$PROJECT_ROOT/git-config/lib/hug-common' 2>&1
-  "
+  # NOTE: `source` returns 1 but doesn't kill bash -c (no set -e), so we
+  # capture the source exit code separately.
+  # Use a wrapper script (not bash -c) to avoid BATS variable-inheritance
+  # quirks that can cause false positives.
+  local wrapper="/tmp/_test_hug_common_guard"
+  cat > "$wrapper" << 'WRAPPER'
+#!/usr/bin/env bash
+unset HUG_HOME _HUG_COMMON_LOADED
+cd /tmp
+HUG_COMMON_PATH="$1"
+source "$HUG_COMMON_PATH" 2>&1
+source_rc=$?
+if [[ -n "${_HUG_COMMON_LOADED:-}" ]]; then
+  echo 'BUG: guard set after failure'
+else
+  echo 'guard clear'
+fi
+echo "source_rc=$source_rc"
+WRAPPER
+  chmod +x "$wrapper"
 
-  assert_failure 1
+  run "$wrapper" "$PROJECT_ROOT/git-config/lib/hug-common"
+
+  # Cleanup
+  rm -f "$wrapper"
+
+  # The wrapper overall succeeds (last command is echo), but source returned 1
+  assert_success
   # The error message should mention the source path and the derivation failure
   assert_output --partial "HUG_HOME not set"
+  assert_output --partial "guard clear"
+  assert_output --partial "source_rc=1"
 }
 
 @test "hug-common does not call exit (uses return 1)" {
