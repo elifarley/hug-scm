@@ -5,6 +5,7 @@ This module provides common test fixtures and configuration following
 Google's Python testing best practices.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -18,6 +19,19 @@ from command_mock.recorder import CommandMockRecorder
 # Add parent directory to Python path for module imports
 PYTHON_LIB_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(PYTHON_LIB_DIR))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def ensure_hug_home():
+    """Set HUG_HOME for subprocess --help invocations during metadata collection."""
+    if not os.environ.get("HUG_HOME"):
+        # Walk up from conftest.py location to find repo root (.git marker)
+        candidate = Path(__file__).resolve().parent
+        while candidate != candidate.parent:
+            if (candidate / ".git").exists():
+                os.environ["HUG_HOME"] = str(candidate)
+                return
+            candidate = candidate.parent
 
 
 def pytest_addoption(parser):
