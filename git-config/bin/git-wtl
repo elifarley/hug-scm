@@ -24,6 +24,8 @@ OPTIONS:
   -q, --quiet         Suppress legend line (listing still shown).
   --json              Output in JSON format instead of human-readable text.
   -b, --branch NAME   Filter by EXACT branch name (case-sensitive, repeatable, OR logic)
+  -p, --path-only     Print only absolute paths (one per line). Exit 1 if 0 matches.
+  -e, --existing      Exclude worktrees whose directory doesn't exist on disk.
 
 DESCRIPTION:
   Displays each worktree sorted alphabetically. The current worktree is
@@ -48,6 +50,8 @@ CAPTURING OUTPUT:
     worktrees=$(hug wtl)       # Capture listing to variable
     hug wtl | grep main        # Pipe to other commands
     hug wtl 2>/dev/null        # Suppress legend/errors
+    hug wtl -b feat-x -p       # Get absolute path for exact branch (scriptable)
+    hug wtl -b feat-x -p -e    # Same, but only if directory still exists
 
 EXAMPLES:
   hug wtl                       # List all worktrees
@@ -57,6 +61,9 @@ EXAMPLES:
   hug wtl -b main -b dev        # Exact: "main" OR "dev"
   hug wtl feat -b main          # Substring "feat" AND exact branch "main"
   hug wtl --json                # JSON output
+  hug wtl -p                       # All worktrees, paths only
+  hug wtl -b main -p               # Path for exact branch
+  hug wtl feat -p -e               # Substring match, existing only, paths
 
 SEE ALSO:
   hug wtll : Long-format listing with commit subjects
@@ -72,6 +79,8 @@ eval "$(parse_common_flags "$@")"
 json_output=false
 declare -a branch_filters=()
 declare -a search_terms=()
+path_only=false
+existing_only=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --json)
@@ -85,6 +94,14 @@ while [[ $# -gt 0 ]]; do
     fi
     branch_filters+=("$2")
     shift 2
+    ;;
+  -p | --path-only)
+    path_only=true
+    shift
+    ;;
+  -e | --existing)
+    existing_only=true
+    shift
     ;;
   --)
     shift
@@ -105,10 +122,69 @@ done
 # Early exit if not in Git repo
 check_git_repo
 
+# --path-only and --json are mutually exclusive
+if $json_output && $path_only; then
+  error "--json and --path-only are mutually exclusive"
+  exit 1
+fi
+
 # JSON output mode
 if $json_output; then
   current_worktree=$(get_current_worktree_path)
-  output_worktree_json "$current_worktree" search_terms branch_filters
+  output_worktree_json "$current_worktree" search_terms branch_filters "$existing_only"
+  exit 0
+fi
+
+# ── Path-only output mode ──────────────────────────────────────────────────
+if $path_only; then
+  declare -a wt_paths=() wt_branches=() wt_commits=() wt_dirty=() wt_locked=()
+  if ! get_all_worktrees_including_main wt_paths wt_branches wt_commits wt_dirty wt_locked; then
+    printf "No worktrees found.\n" >&2
+    exit 1
+  fi
+
+  # Apply -b and search term filtering if provided
+  declare -a out_paths=()
+  if [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
+    declare -a f_branches=() f_commits=() f_dirty=() f_locked=()
+    if ! filter_worktrees out_paths f_branches f_commits f_dirty f_locked branch_filters search_terms; then
+      # filter_worktrees already printed the error
+      exit 1
+    fi
+  else
+    out_paths=("${wt_paths[@]}")
+  fi
+
+  # Apply --existing filter: skip worktrees whose directory is gone
+  if $existing_only; then
+    declare -a existing_paths=()
+    for p in "${out_paths[@]}"; do
+      [[ -d "$p" ]] && existing_paths+=("$p")
+    done
+    out_paths=("${existing_paths[@]}")
+  fi
+
+  # Exit 1 if no matches
+  if [[ ${#out_paths[@]} -eq 0 ]]; then
+    filter_context=""
+    if [[ ${#branch_filters[@]} -gt 0 ]]; then
+      filter_context=" for branch: ${branch_filters[*]}"
+    elif [[ ${#search_terms[@]} -gt 0 ]]; then
+      filter_context=" matching: ${search_terms[*]}"
+    fi
+    printf "No worktrees found%s\n" "$filter_context" >&2
+    exit 1
+  fi
+
+  # Print count to stderr if more than one match
+  if [[ ${#out_paths[@]} -gt 1 ]]; then
+    printf "%d worktrees found\n" "${#out_paths[@]}" >&2
+  fi
+
+  # Print absolute paths to stdout (one per line, no formatting)
+  for p in "${out_paths[@]}"; do
+    printf '%s\n' "$p"
+  done
   exit 0
 fi
 
@@ -133,8 +209,14 @@ if [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
     exit 1
   fi
 
+  # Track rows printed so --existing can detect when all matches were stale.
+  # Path-only mode already guards this at line ~168; normal mode needs the same
+  # semantic: 0 surviving rows → exit 1 with contextual error.
+  rows_printed=0
   for i in "${!filtered_paths[@]}"; do
     path="${filtered_paths[$i]}"
+    # --existing filter: skip stale worktrees
+    $existing_only && { [[ -d "$path" ]] || continue; }
     branch="${filtered_branches[$i]}"
     commit="${filtered_commits[$i]}"
     dirty="${filtered_dirty[$i]}"
@@ -149,10 +231,14 @@ if [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
     branch_display="$(format_worktree_branch_display "$is_current" "$is_detached" "$branch")"
 
     printf "%s%-20s %s %s\n" "$status_indicators" "$branch_display" "($commit)" "$path_display"
+    rows_printed=$((rows_printed + 1))
   done
 else
+  rows_printed=0
   for i in "${!worktree_paths[@]}"; do
     path="${worktree_paths[$i]}"
+    # --existing filter: skip stale worktrees
+    $existing_only && { [[ -d "$path" ]] || continue; }
     branch="${branches[$i]}"
     commit="${commits[$i]}"
     dirty="${status_dirty[$i]}"
@@ -167,5 +253,20 @@ else
     branch_display="$(format_worktree_branch_display "$is_current" "$is_detached" "$branch")"
 
     printf "%s%-20s %s %s\n" "$status_indicators" "$branch_display" "($commit)" "$path_display"
+    rows_printed=$((rows_printed + 1))
   done
+fi
+
+# When --existing filtered out every row, honor zero-match semantics.
+# Path-only mode handles this inline (lines 168-177); normal mode needs the
+# same treatment here.  Only fires when -e was requested AND nothing survived.
+if $existing_only && [[ $rows_printed -eq 0 ]]; then
+  filter_context=""
+  if [[ ${#branch_filters[@]} -gt 0 ]]; then
+    filter_context=" for branch: ${branch_filters[*]}"
+  elif [[ ${#search_terms[@]} -gt 0 ]]; then
+    filter_context=" matching: ${search_terms[*]}"
+  fi
+  printf "No existing worktrees found%s\n" "$filter_context" >&2
+  exit 1
 fi

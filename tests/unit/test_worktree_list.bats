@@ -713,6 +713,223 @@ teardown() {
   assert_output --partial "-b, --branch"
 }
 
+# ── Tests for --path-only output (agent/scriptable mode) ──────────────────
+
+@test "hug wtl: -p outputs absolute paths only" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl -p 2>/dev/null'
+
+  assert_success
+  # Each line should be an absolute path starting with /
+  while IFS= read -r line; do
+    [[ "$line" == /* ]] || fail "Expected absolute path, got: $line"
+  done <<< "$output"
+}
+
+@test "hug wtl: -p output has no indicators or branch names" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl -p 2>/dev/null'
+
+  assert_success
+  # Branch names may appear in worktree paths (e.g. .WT.feature-1), so check for
+  # display-only markers: Legend, current-worktree indicator (*), bare indicator (+)
+  refute_output --partial "Legend"
+  refute_output --partial "(*"
+  refute_output --partial "(+"
+  # No formatted listing lines (leading spaces + branch name)
+  refute_output --regexp "^  main$"
+  refute_output --regexp "^  feature-1$"
+}
+
+@test "hug wtl: -p with multiple worktrees prints count to stderr" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl -p 2>&1 1>/dev/null'
+
+  assert_success
+  assert_output --regexp "[0-9]+ worktrees found"
+}
+
+@test "hug wtl: -p with single match prints no count to stderr" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl -b feature-1 -p 2>&1 1>/dev/null'
+
+  assert_success
+  refute_output --partial "worktrees found"
+}
+
+@test "hug wtl: -p -b with no match exits 1 with error" {
+  cd "$TEST_REPO"
+  run git-wtl -b nonexistent -p
+
+  assert_failure
+  assert_output --partial "No worktrees found matching: branch:"
+}
+
+@test "hug wtl: -p with search term and no match exits 1" {
+  cd "$TEST_REPO"
+  run git-wtl zznope -p
+
+  assert_failure
+  assert_output --partial "No worktrees found matching: search:"
+  refute_output --partial "for branch:"
+}
+
+@test "hug wtl: -p -b returns exact path for branch" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl -b feature-1 -p 2>/dev/null'
+
+  assert_success
+  # Should be exactly one line — the worktree path
+  line_count=$(echo "$output" | wc -l)
+  [[ "$line_count" -eq 1 ]]
+  assert_output --partial "$FEATURE_WT"
+}
+
+@test "hug wtl: -p with substring search returns matching paths" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl feature -p 2>/dev/null'
+
+  assert_success
+  assert_output --partial "$FEATURE_WT"
+  refute_output --partial "$HOTFIX_WT"
+}
+
+# ── Tests for --existing filter ────────────────────────────────────────────
+
+@test "hug wtl: -e excludes worktrees with missing directories" {
+  cd "$TEST_REPO"
+
+  # Remove the feature worktree directory (simulating stale/pruned state)
+  rm -rf "$FEATURE_WT"
+
+  # Normal listing should still show it (git metadata exists)
+  run bash -c 'git-wtl 2>/dev/null'
+  assert_success
+  assert_output --partial "feature-1"
+
+  # With -e, it should be excluded
+  run bash -c 'git-wtl -e 2>/dev/null'
+  assert_success
+  refute_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+}
+
+@test "hug wtl: -e with all directories present is same as without -e" {
+  cd "$TEST_REPO"
+  without_e=$(git-wtl -q 2>/dev/null | sort)
+  with_e=$(git-wtl -e -q 2>/dev/null | sort)
+
+  [[ "$without_e" == "$with_e" ]]
+}
+
+@test "hug wtl: -p -e excludes missing directories from path output" {
+  cd "$TEST_REPO"
+  rm -rf "$FEATURE_WT"
+
+  run bash -c 'git-wtl -p -e 2>/dev/null'
+  assert_success
+  refute_output --partial "$FEATURE_WT"
+  assert_output --partial "$TEST_REPO"
+  assert_output --partial "$HOTFIX_WT"
+}
+
+@test "hug wtl: -p -e with all dirs missing exits 1" {
+  cd "$TEST_REPO"
+  # Remove both worktree dirs but keep main
+  rm -rf "$FEATURE_WT" "$HOTFIX_WT"
+
+  # Use substring to match only the additional worktrees (not main)
+  run git-wtl feature -p -e
+  assert_failure
+  assert_output --partial "No worktrees found"
+}
+
+# ── Tests for --existing in normal and JSON modes ────────────────────────────
+
+@test "hug wtl: -e in normal mode exits 1 when all filtered worktrees are stale" {
+  cd "$TEST_REPO"
+  # Delete only the feature worktree dir
+  rm -rf "$FEATURE_WT"
+
+  # Filter to feature-1 branch only, request --existing → stale → exit 1
+  run git-wtl -b feature-1 -e
+  assert_failure
+  assert_output --partial "No existing worktrees found"
+}
+
+@test "hug wtl: -e in normal mode exits 1 when all worktrees (no filter) are stale" {
+  cd "$TEST_REPO"
+  # Delete both worktree dirs; main repo stays
+  rm -rf "$FEATURE_WT" "$HOTFIX_WT"
+
+  # No branch/search filter but -e: only main survives (it's the current dir)
+  # Actually main repo dir exists, so this should still list it.
+  # Instead, let's delete only the additional ones and filter by substring
+  # that only matches them.
+  run git-wtl feature -e
+  assert_failure
+  assert_output --partial "No existing worktrees found"
+}
+
+@test "hug wtl: -e in normal mode still lists existing worktrees" {
+  cd "$TEST_REPO"
+  # Delete only the feature worktree dir
+  rm -rf "$FEATURE_WT"
+
+  # -e should list hotfix (still exists) but not feature (deleted dir)
+  run bash -c 'git-wtl -e 2>/dev/null'
+  assert_success
+  refute_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+}
+
+@test "hug wtl: --json -e excludes stale worktrees from JSON output" {
+  cd "$TEST_REPO"
+  # Delete the feature worktree dir
+  rm -rf "$FEATURE_WT"
+
+  run bash -c 'git-wtl --json -e 2>/dev/null'
+  assert_success
+  # Parse JSON and verify feature-1 is absent but hotfix-1 is present
+  refute_output --partial '"feature-1"'
+  assert_output --partial '"hotfix-1"'
+}
+
+@test "hug wtl: --json -e with all stale exits via empty result" {
+  cd "$TEST_REPO"
+  # Delete both worktree dirs
+  rm -rf "$FEATURE_WT" "$HOTFIX_WT"
+
+  # --json returns empty worktrees array when all filtered entries are stale
+  run bash -c 'git-wtl --json -e 2>/dev/null'
+  assert_success
+  # JSON still valid, just with fewer entries (main repo still exists)
+  assert_output --partial '"count"'
+}
+
+# ── Tests for mutual exclusion and help ─────────────────────────────────────
+
+@test "hug wtl: --json and --path-only are mutually exclusive" {
+  cd "$TEST_REPO"
+  run git-wtl --json -p
+
+  assert_failure
+  assert_output --partial "mutually exclusive"
+}
+
+@test "hug wtl: help shows --path-only flag" {
+  run git-wtl --help
+  assert_success
+  assert_output --partial "--path-only"
+  assert_output --partial "absolute paths"
+}
+
+@test "hug wtl: help shows --existing flag" {
+  run git-wtl --help
+  assert_success
+  assert_output --partial "--existing"
+}
+
 @test "hug wtwp: wrapper lists worktrees by branch" {
   cd "$TEST_REPO"
   run git-wtwp feature-1

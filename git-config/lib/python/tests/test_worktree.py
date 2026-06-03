@@ -17,6 +17,7 @@ from git.worktree import (
     _bash_escape,
     _check_worktree_dirty_details,
     filter_by_branch,
+    filter_by_existing,
     filter_by_search,
     filter_worktrees_by_criteria,
     format_indicators,
@@ -812,6 +813,105 @@ class TestFilterWorktreesByCriteria:
         result = filter_worktrees_by_criteria(worktrees, [], ["/home"])
         assert len(result) == 1
         assert result[0].path == "/home/path"
+
+
+################################################################################
+# TestFilterByExisting
+################################################################################
+
+
+class TestFilterByExisting:
+    """Tests for filter_by_existing function."""
+
+    def test_excludes_missing_directories(self, tmp_path):
+        """Should exclude worktrees whose directories don't exist."""
+        existing = tmp_path / "exists"
+        existing.mkdir()
+        missing = tmp_path / "gone"
+
+        worktrees = [
+            WorktreeInfo(str(existing), "main", "abc1234", False, False),
+            WorktreeInfo(str(missing), "feature", "def5678", False, False),
+        ]
+        result = filter_by_existing(worktrees)
+        assert len(result) == 1
+        assert result[0].branch == "main"
+
+    def test_all_existing_passes_through(self, tmp_path):
+        """Should return all worktrees when all directories exist."""
+        d1 = tmp_path / "wt1"
+        d1.mkdir()
+        d2 = tmp_path / "wt2"
+        d2.mkdir()
+
+        worktrees = [
+            WorktreeInfo(str(d1), "main", "abc1234", False, False),
+            WorktreeInfo(str(d2), "feature", "def5678", False, False),
+        ]
+        result = filter_by_existing(worktrees)
+        assert len(result) == 2
+
+    def test_all_missing_returns_empty(self, tmp_path):
+        """Should return empty list when all directories are gone."""
+        worktrees = [
+            WorktreeInfo(str(tmp_path / "gone1"), "main", "abc1234", False, False),
+            WorktreeInfo(str(tmp_path / "gone2"), "feature", "def5678", False, False),
+        ]
+        result = filter_by_existing(worktrees)
+        assert len(result) == 0
+
+    def test_empty_input_returns_empty(self):
+        """Should handle empty input list."""
+        result = filter_by_existing([])
+        assert result == []
+
+
+class TestFilterWorktreesByCriteriaWithExisting:
+    """Tests for filter_worktrees_by_criteria with existing_only parameter."""
+
+    def test_existing_only_filters_stale(self, tmp_path):
+        """Should exclude stale directories when existing_only=True."""
+        existing = tmp_path / "exists"
+        existing.mkdir()
+
+        worktrees = [
+            WorktreeInfo(str(existing), "main", "abc1234", False, False),
+            WorktreeInfo(str(tmp_path / "gone"), "feature", "def5678", False, False),
+        ]
+        result = filter_worktrees_by_criteria(worktrees, [], [], existing_only=True)
+        assert len(result) == 1
+        assert result[0].branch == "main"
+
+    def test_existing_only_false_includes_all(self, tmp_path):
+        """Should include stale directories when existing_only=False (default)."""
+        worktrees = [
+            WorktreeInfo(str(tmp_path / "gone1"), "main", "abc1234", False, False),
+            WorktreeInfo(str(tmp_path / "gone2"), "feature", "def5678", False, False),
+        ]
+        result = filter_worktrees_by_criteria(worktrees, [], [], existing_only=False)
+        assert len(result) == 2
+
+    def test_existing_only_combined_with_branch_filter(self, tmp_path):
+        """Should combine existing filter with branch filter (AND logic)."""
+        d1 = tmp_path / "main_wt"
+        d1.mkdir()
+
+        worktrees = [
+            WorktreeInfo(str(d1), "main", "abc1234", False, False),
+            WorktreeInfo(str(tmp_path / "gone_feat"), "feature", "def5678", False, False),
+        ]
+        # Filter: branch=main AND existing=True → only main survives
+        result = filter_worktrees_by_criteria(worktrees, ["main"], [], existing_only=True)
+        assert len(result) == 1
+        assert result[0].branch == "main"
+
+    def test_existing_only_stale_branch_excluded(self, tmp_path):
+        """Should return empty when the only matching branch is stale."""
+        worktrees = [
+            WorktreeInfo(str(tmp_path / "gone"), "feature", "def5678", False, False),
+        ]
+        result = filter_worktrees_by_criteria(worktrees, ["feature"], [], existing_only=True)
+        assert len(result) == 0
 
 
 ################################################################################
