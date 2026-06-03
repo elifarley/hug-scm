@@ -494,29 +494,51 @@ def filter_by_search(
     return result
 
 
+def filter_by_existing(worktrees: list[WorktreeInfo]) -> list[WorktreeInfo]:
+    """Filter out worktrees whose directory no longer exists on disk.
+
+    WHY: Stale worktrees (directory deleted externally but not pruned from git)
+    should be excludable via --existing. The check is os.path.isdir which is
+    fast (no subprocess) and matches the Bash [[ -d "$path" ]] semantics.
+
+    Args:
+        worktrees: Candidate worktrees to filter.
+
+    Returns:
+        Worktrees whose path directories still exist.
+    """
+    return [wt for wt in worktrees if os.path.isdir(wt.path)]
+
+
 def filter_worktrees_by_criteria(
     worktrees: list[WorktreeInfo],
     branch_filters: list[str],
     search_terms: list[str],
+    existing_only: bool = False,
 ) -> list[WorktreeInfo]:
-    """Apply both branch and search filters (AND logic between stages).
+    """Apply branch, search, and optional existing filters (AND logic between stages).
 
     Stage 1: branch filter (exact match, OR between branches)
     Stage 2: search filter (substring match, OR between terms)
+    Stage 3: existing filter (exclude stale directories) — only if existing_only=True
 
-    Both stages must pass (AND logic). This matches the semantics of:
-    `hug wtl --branch main /home` — branch is "main" AND path contains "/home".
+    All stages must pass (AND logic). This matches the semantics of:
+    `hug wtl --branch main /home -e` — branch is "main" AND path contains "/home"
+    AND directory still exists.
 
     Args:
         worktrees: Candidate worktrees to filter.
         branch_filters: Exact branch names (OR logic within stage).
         search_terms: Individual search terms (OR logic within stage).
+        existing_only: If True, exclude worktrees whose directories don't exist.
 
     Returns:
-        Worktrees passing both filter stages.
+        Worktrees passing all filter stages.
     """
     result = filter_by_branch(worktrees, branch_filters)
     result = filter_by_search(result, search_terms)
+    if existing_only:
+        result = filter_by_existing(result)
     return result
 
 
@@ -667,6 +689,13 @@ def main():
         default=[],
         help="Search term (substring match on path/branch, repeatable, OR logic).",
     )
+    json_parser.add_argument(
+        "-e",
+        "--existing",
+        action="store_true",
+        default=False,
+        help="Exclude worktrees whose directory doesn't exist on disk.",
+    )
 
     args = parser.parse_args()
 
@@ -772,8 +801,10 @@ def _handle_json_command(args):
         return
 
     # Apply filters if provided
-    if args.branch or args.search:
-        worktrees = filter_worktrees_by_criteria(worktrees, args.branch, args.search)
+    if args.branch or args.search or args.existing:
+        worktrees = filter_worktrees_by_criteria(
+            worktrees, args.branch, args.search, existing_only=args.existing
+        )
 
     if not worktrees:
         print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))

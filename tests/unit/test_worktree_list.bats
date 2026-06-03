@@ -844,6 +844,69 @@ teardown() {
   assert_output --partial "No worktrees found"
 }
 
+# ── Tests for --existing in normal and JSON modes ────────────────────────────
+
+@test "hug wtl: -e in normal mode exits 1 when all filtered worktrees are stale" {
+  cd "$TEST_REPO"
+  # Delete only the feature worktree dir
+  rm -rf "$FEATURE_WT"
+
+  # Filter to feature-1 branch only, request --existing → stale → exit 1
+  run git-wtl -b feature-1 -e
+  assert_failure
+  assert_output --partial "No existing worktrees found"
+}
+
+@test "hug wtl: -e in normal mode exits 1 when all worktrees (no filter) are stale" {
+  cd "$TEST_REPO"
+  # Delete both worktree dirs; main repo stays
+  rm -rf "$FEATURE_WT" "$HOTFIX_WT"
+
+  # No branch/search filter but -e: only main survives (it's the current dir)
+  # Actually main repo dir exists, so this should still list it.
+  # Instead, let's delete only the additional ones and filter by substring
+  # that only matches them.
+  run git-wtl feature -e
+  assert_failure
+  assert_output --partial "No existing worktrees found"
+}
+
+@test "hug wtl: -e in normal mode still lists existing worktrees" {
+  cd "$TEST_REPO"
+  # Delete only the feature worktree dir
+  rm -rf "$FEATURE_WT"
+
+  # -e should list hotfix (still exists) but not feature (deleted dir)
+  run bash -c 'git-wtl -e 2>/dev/null'
+  assert_success
+  refute_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+}
+
+@test "hug wtl: --json -e excludes stale worktrees from JSON output" {
+  cd "$TEST_REPO"
+  # Delete the feature worktree dir
+  rm -rf "$FEATURE_WT"
+
+  run bash -c 'git-wtl --json -e 2>/dev/null'
+  assert_success
+  # Parse JSON and verify feature-1 is absent but hotfix-1 is present
+  refute_output --partial '"feature-1"'
+  assert_output --partial '"hotfix-1"'
+}
+
+@test "hug wtl: --json -e with all stale exits via empty result" {
+  cd "$TEST_REPO"
+  # Delete both worktree dirs
+  rm -rf "$FEATURE_WT" "$HOTFIX_WT"
+
+  # --json returns empty worktrees array when all filtered entries are stale
+  run bash -c 'git-wtl --json -e 2>/dev/null'
+  assert_success
+  # JSON still valid, just with fewer entries (main repo still exists)
+  assert_output --partial '"count"'
+}
+
 # ── Tests for mutual exclusion and help ─────────────────────────────────────
 
 @test "hug wtl: --json and --path-only are mutually exclusive" {

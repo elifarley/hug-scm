@@ -1370,21 +1370,24 @@ get_worktree_commit_time() {
 }
 
 # Output worktree information in JSON format
-# Usage: output_worktree_json "$current_worktree" search_terms_ref branch_filters_ref
+# Usage: output_worktree_json "$current_worktree" search_terms_ref branch_filters_ref [existing_only]
 # Parameters:
 #   $1 - Current worktree path
 #   $2 - Nameref: search_terms array (substring matching, one --search per element)
 #   $3 - Nameref: branch_filters array (exact matching, one --branch per element)
+#   $4 - (optional) "true" to exclude worktrees whose directory doesn't exist
 # Returns: JSON formatted worktree data
 output_worktree_json() {
     local _oj_current="$1"
     local -n _oj_search_ref="$2"
     local -n _oj_branch_ref="$3"
+    local _oj_existing="${4:-false}"
 
     # WHY: Delegate to Python for JSON output (DRY — single source of truth).
     # Python's json module handles proper string escaping (quotes, backslashes,
     # unicode) that Bash printf cannot safely do, preventing malformed JSON.
-    # The filtering is also done in Python via filter_worktrees_by_criteria().
+    # Filtering (--branch, --search, --existing) is all handled in Python
+    # via filter_worktrees_by_criteria() — no Bash-side duplication needed.
 
     # Build args by iterating arrays (one flag per element)
     local -a _oj_args=()
@@ -1397,9 +1400,16 @@ output_worktree_json() {
         _oj_args+=(--branch "$_oj_branch")
     done
 
+    # Pass --existing so Python filters stale directories in JSON output
+    local _oj_existing_flag=()
+    if [[ "$_oj_existing" == "true" ]]; then
+        _oj_existing_flag=(--existing)
+    fi
+
     python3 "$HUG_HOME/git-config/lib/python/git/worktree.py" json \
         --current "$_oj_current" \
         --include-main \
+        "${_oj_existing_flag[@]}" \
         "${_oj_args[@]}"
 }
 
