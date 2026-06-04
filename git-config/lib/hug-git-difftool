@@ -35,6 +35,7 @@
 #   - dd_ref              : Arbitrary ref/range visual diff
 #   - dd_preflight        : Validate difftool config; print friendly error
 #   - dd_check_tty        : Refuse if stdout is not a TTY
+#   - dd_pick_and_diff    : Interactive file picker → single batched difftool call
 #   - dd_dispatch         : Parse subcommand / ref and dispatch
 
 ################################################################################
@@ -259,6 +260,87 @@ dd_ref() {
 }
 
 ################################################################################
+# Interactive file picker + batched difftool launch
+################################################################################
+
+# Show an interactive file picker for `hug dd --` (and subcommand variants).
+# After selection, launches exactly ONE difftool invocation with ALL chosen
+# files as pathspecs — never a per-file loop.
+#
+# WHY a single batched difftool call (not a loop):
+#   `git difftool --dir-diff` is designed to open ONE tool instance with ALL
+#   changed files side-by-side in two temp directories. Launching one per file
+#   defeats the "holistic directory view" that --dir-diff provides, and forces
+#   the user to close and re-open the tool for every selected file.
+#   The key semantic contract: select N files → exactly 1 tool window.
+#
+# WHY select_mode strings mirror _diff_cmd_setup:
+#   hug-git-diff's _diff_cmd_setup is the canonical interactive-selection
+#   driver for text diffs. We re-use the same select_files_with_status API
+#   and the same --staged / --unstaged flag vocabulary so both the text-diff
+#   and visual-diff pickers feel consistent to users and to future maintainers.
+#
+# Mode-to-select_mode mapping (exactly mirrors _diff_cmd_setup conventions):
+#   staged   → "--staged"            (index vs HEAD)
+#   unstaged → "--unstaged"          (worktree vs index)
+#   working  → "--staged --unstaged" (net worktree vs HEAD = all uncommitted)
+#
+# Usage: dd_pick_and_diff <mode>
+#   mode: "staged" | "unstaged" | "working"
+# Returns: 0 on success (even when user cancels — cancel is not an error)
+# Exits:   via the normal per-mode dispatchers after selection
+dd_pick_and_diff() {
+  local mode="$1"
+
+  # Build select_files_with_status flags for the requested mode.
+  # WHY array (not string): avoids word-splitting issues with the two-word
+  # "--staged --unstaged" case. Always pass --cwd to scope to the user's CWD,
+  # matching the _diff_cmd_setup convention (it adds --cwd when not --browse-root).
+  local -a select_opts=()
+  case "$mode" in
+    staged)
+      select_opts=(--staged --cwd --prompt "Select staged files for visual diff...")
+      ;;
+    unstaged)
+      select_opts=(--unstaged --cwd --prompt "Select unstaged files for visual diff...")
+      ;;
+    working)
+      # WHY both --staged and --unstaged:
+      #   "working" mode shows net worktree-vs-HEAD, which includes both staged
+      #   and unstaged changes. Offering only one category in the picker would
+      #   hide files the user might want to inspect in the visual diff.
+      select_opts=(--staged --unstaged --cwd --prompt "Select files for visual diff (working)...")
+      ;;
+    *)
+      error "dd_pick_and_diff: unknown mode '${mode}'. Expected staged|unstaged|working."
+      return 1
+      ;;
+  esac
+
+  # Run the interactive picker; collect selected file names.
+  # WHY `|| true`: select_files_with_status returns 1 on cancel/no-files;
+  # we handle the empty-array case explicitly below, so we must not let the
+  # non-zero exit abort the script under set -e.
+  local -a files=()
+  mapfile -t files < <(select_files_with_status "${select_opts[@]}" || true)
+
+  if [[ ${#files[@]} -eq 0 ]]; then
+    # User cancelled or no files available — not an error, just nothing to do.
+    info "No files selected or cancelled."
+    return 0
+  fi
+
+  # Launch exactly ONE difftool call with all selected files as pathspecs.
+  # WHY -- before file list: git difftool requires -- to disambiguate pathspecs
+  # from refs/flags (e.g. a file named "HEAD" would be misinterpreted otherwise).
+  case "$mode" in
+    staged)   run_visual_diff --cached -- "${files[@]}" ;;
+    unstaged) run_visual_diff -- "${files[@]}" ;;
+    working)  run_visual_diff HEAD -- "${files[@]}" ;;
+  esac
+}
+
+################################################################################
 # Argument parsing and dispatch
 ################################################################################
 
@@ -271,6 +353,19 @@ dd_ref() {
 #   dd w [-- path...]        → working (net)
 #   dd [-- path...]          → working (bare = default)
 #   dd <ref> [-- path...]    → ref/range (anything not s/u/w)
+#
+# Interactive file picker (trailing bare --):
+#   dd --                    → picker for working mode (HEAD)
+#   dd s --                  → picker for staged mode (--cached)
+#   dd u --                  → picker for unstaged mode (no ref)
+#   dd w --                  → picker for working mode (HEAD)
+#
+# WHY trailing bare `--` triggers the picker (not a dedicated flag):
+#   This is the established hug convention (see _diff_cmd_setup in
+#   hug-git-diff). A trailing `--` with NOTHING after it signals
+#   "I want to choose the paths interactively". `--` with paths after it
+#   is the standard pathspec separator. The two meanings are unambiguous
+#   because pathspecs follow immediately after `--`.
 #
 # The `--` separator before pathspecs is normalized here so each mode
 # function receives a clean `-- path...` suffix (never `-- --`).
@@ -287,6 +382,20 @@ dd_dispatch() {
 
   check_git_repo
 
+  # Detect interactive-picker trigger: trailing bare '--' (no pathspecs after it).
+  # WHY check BEFORE the main parse loop:
+  #   The hug convention (from _diff_cmd_setup) is that the LAST argument being
+  #   a bare '--' signals "let me pick files interactively". If we detected it
+  #   inside the loop, we would have already consumed all earlier args and would
+  #   need to rebuild mode/ref separately. Checking last-arg first is cleaner
+  #   and mirrors _diff_cmd_setup exactly.
+  local picker_mode=false
+  if [[ $# -gt 0 && "${!#}" == "--" ]]; then
+    picker_mode=true
+    # Strip the trailing '--' so the main parse loop only sees mode/ref.
+    set -- "${@:1:$(($# - 1))}"
+  fi
+
   # Parse arguments: split at first '--' into pre-args and pathspecs.
   # WHY manual split instead of getopt:
   #   getopt rearranges args; for `dd HEAD~3 -- file`, we need to keep
@@ -294,7 +403,6 @@ dd_dispatch() {
   local mode=""
   local ref=""
   local -a pathspecs=()
-  local found_separator=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -304,7 +412,6 @@ dd_dispatch() {
         ;;
       --)
         # Everything after '--' is a pathspec
-        found_separator=true
         shift
         pathspecs=("$@")
         break
@@ -329,6 +436,26 @@ dd_dispatch() {
         ;;
     esac
   done
+
+  # Interactive-picker path: resolve mode name and delegate to dd_pick_and_diff.
+  # The picker is not available for ref/range mode (no sensible "current changes"
+  # scope to list — the ref IS the scope).
+  if $picker_mode; then
+    if [[ -n "$ref" ]]; then
+      error "Interactive file picker (--) is not supported with a ref/range argument.
+  Use: hug dd <ref> -- <path>...  to scope a ref diff to specific paths."
+      return 1
+    fi
+    local pick_mode
+    case "${mode:-w}" in
+      s) pick_mode="staged" ;;
+      u) pick_mode="unstaged" ;;
+      w) pick_mode="working" ;;
+      *) pick_mode="working" ;;
+    esac
+    dd_pick_and_diff "$pick_mode"
+    return 0
+  fi
 
   # Build the normalized pathspec suffix: -- path1 path2 ...
   # WHY: every mode function expects either nothing or exactly "-- paths"

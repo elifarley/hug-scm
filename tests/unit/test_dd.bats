@@ -503,3 +503,111 @@ teardown() {
   assert_success
   assert_output --partial "NO"
 }
+
+# --------------------------------------------------------------------------- #
+# CATEGORY 9: Interactive file picker (test plan #10 and #11)
+# Triggered by a trailing bare '--' (same convention as _diff_cmd_setup).
+# Tests verify:
+#   #10: multi-file selection → exactly ONE difftool invocation with all files
+#   #11: cancel / empty selection → "No files selected" message, no difftool
+# --------------------------------------------------------------------------- #
+
+# Test plan #10 — interactive picker: multi-file selection → single difftool call.
+#
+# WHY gum-mock + HUG_TEST_GUM_SELECTION_INDICES:
+#   The real gum opens a TUI that blocks in CI. The gum-mock in tests/bin/
+#   intercepts `gum filter` and returns the lines at the given 0-based indices.
+#   We set indices "0,1" to select the first two listed files. This exercises
+#   the "multi-file selection collapses into one batched invocation" contract
+#   without launching a real TUI.
+#
+# WHY assert difftool called EXACTLY ONCE (via shim log line count):
+#   The key invariant is ONE tool window for all selected files, not one window
+#   per file. We count lines in the shim log: each difftool invocation writes
+#   its argv (one arg per line). The "difftool" token appears exactly once.
+@test "hug dd --: interactive picker selects multiple files → difftool invoked exactly once with all files" {
+  TEST_REPO=$(create_repo_with_staged_and_unstaged)
+  cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"
+  setup_git_shim
+  setup_gum_mock
+  # Select both available changed files (index 0 and 1 in the picker list)
+  export HUG_TEST_GUM_SELECTION_INDICES="0,1"
+
+  # 'hug dd --' defaults to working mode; '--' is the picker trigger
+  run git-dd --
+  assert_success
+
+  teardown_gum_mock
+
+  # The shim must have been called exactly once with "difftool" as arg[1].
+  # WHY grep for the literal word "difftool": the shim logs every argv token
+  # one per line; the first token for any difftool call is "difftool".
+  local difftool_call_count
+  difftool_call_count=$(grep -cxF "difftool" "$GIT_SHIM_LOG" || true)
+  if [[ "$difftool_call_count" -ne 1 ]]; then
+    fail "Expected exactly 1 difftool invocation, got ${difftool_call_count}. Log:\n$(cat "$GIT_SHIM_LOG")"
+  fi
+
+  # Working mode (bare --) must pass HEAD
+  assert_shim_logged "HEAD"
+  assert_shim_logged "--no-prompt"
+  # The -- separator must be present (pathspecs follow it)
+  assert_shim_logged "--"
+}
+
+# Test plan #10 (variant) — picker for staged mode: 'hug dd s --'
+# Verifies that the mode flag (s) is honoured and the invocation uses --cached.
+@test "hug dd s --: interactive picker for staged mode invokes difftool with --cached" {
+  TEST_REPO=$(create_repo_with_staged_and_unstaged)
+  cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"
+  setup_git_shim
+  setup_gum_mock
+  # Select the first staged file (staged.txt)
+  export HUG_TEST_GUM_SELECTION_INDICES="0"
+
+  run git-dd s --
+  assert_success
+
+  teardown_gum_mock
+
+  # Exactly one difftool call
+  local difftool_call_count
+  difftool_call_count=$(grep -cxF "difftool" "$GIT_SHIM_LOG" || true)
+  if [[ "$difftool_call_count" -ne 1 ]]; then
+    fail "Expected exactly 1 difftool invocation, got ${difftool_call_count}. Log:\n$(cat "$GIT_SHIM_LOG")"
+  fi
+
+  assert_shim_logged "--cached"
+  assert_shim_logged "--no-prompt"
+  assert_shim_logged "--"
+}
+
+# Test plan #11 — interactive picker: cancel / empty selection → no difftool.
+#
+# WHY HUG_TEST_GUM_INPUT_RETURN_CODE=1:
+#   gum-mock exits 1 when this variable is set to 1, which simulates the user
+#   pressing Escape or Ctrl-C to cancel the picker. select_files_with_status
+#   propagates the non-zero exit, mapfile produces an empty array, and the
+#   picker must print the cancellation message and exit 0 without calling git.
+@test "hug dd --: empty/cancelled picker prints message and does NOT launch difftool" {
+  TEST_REPO=$(create_repo_with_staged_and_unstaged)
+  cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"
+  setup_git_shim
+  setup_gum_mock
+  # Simulate user pressing Escape (gum exits 1 = cancel)
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1
+
+  run git-dd --
+  assert_success
+
+  teardown_gum_mock
+
+  # Must print the cancellation message
+  assert_output --partial "No files selected or cancelled"
+
+  # difftool must NOT have been invoked
+  assert_difftool_not_invoked
+}
