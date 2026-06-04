@@ -448,7 +448,12 @@ teardown() {
   TEST_REPO=$(create_test_repo)
   cd "$TEST_REPO"
 
-  run git-dd --help
+  # --help must work in ANY environment: non-TTY (HUG_TEST_MODE="" keeps the TTY
+  # guard live) AND with no difftool configured (GIT_CONFIG_GLOBAL=/dev/null).
+  # Help is documentation, not a tool launch, so it must precede BOTH guards.
+  # Regression guard: the TTY/preflight guards previously ran before --help,
+  # so `hug dd --help | less` failed with "requires a TTY".
+  HUG_TEST_MODE="" GIT_CONFIG_GLOBAL=/dev/null run git-dd --help
   assert_success
 
   # Must show usage with subcommands
@@ -456,17 +461,20 @@ teardown() {
   assert_output --partial "dd u"
   assert_output --partial "dd w"
 
+  # Must explain the net-vs-split semantics (the key conceptual caveat)
+  assert_output --partial "NET vs SPLIT"
+
   # Must have SEE ALSO referencing text-diff siblings
   assert_output --partial "SEE ALSO"
   [[ "$output" =~ ss|su|sw ]] \
     || fail "SEE ALSO should reference ss/su/sw"
 }
 
-@test "hug dd -h: shows help (short form)" {
+@test "hug dd -h: shows help (short form, works without TTY or difftool)" {
   TEST_REPO=$(create_test_repo)
   cd "$TEST_REPO"
 
-  run git-dd -h
+  HUG_TEST_MODE="" GIT_CONFIG_GLOBAL=/dev/null run git-dd -h
   assert_success
   assert_output --partial "dd s"
 }

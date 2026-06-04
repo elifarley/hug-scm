@@ -378,7 +378,23 @@ dd_dispatch() {
   local show_help_fn="${1:-show_help}"
   shift
 
-  # Guards run before argument parsing so they always fire regardless of mode.
+  # --help / -h must work in ANY environment (piped, redirected, no difftool
+  # configured): help is documentation, not a tool launch. Handle it BEFORE the
+  # guards below. Scan only up to the first '--' — a '--help' AFTER '--' is a
+  # pathspec (e.g. a file literally named '--help'), not a help request.
+  local _arg
+  for _arg in "$@"; do
+    case "$_arg" in
+      -h | --help)
+        "$show_help_fn"
+        exit 0
+        ;;
+      --) break ;;
+    esac
+  done
+
+  # Guards run before the remaining argument parsing so they always fire
+  # regardless of mode (s/u/w/ref).
   dd_check_tty
   dd_preflight
 
@@ -408,12 +424,8 @@ dd_dispatch() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -h|--help)
-        "$show_help_fn"
-        exit 0
-        ;;
       --)
-        # Everything after '--' is a pathspec
+        # Everything after '--' is a pathspec (-h/--help already handled above)
         shift
         pathspecs=("$@")
         break
