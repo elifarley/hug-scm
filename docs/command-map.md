@@ -19,7 +19,7 @@ This table is the **authoritative source** for Hug's command organization. All c
 | `h*` | HEAD Operations | Undo, rewind, and inspect commits without losing work | `hug h back`, `hug h undo`, `hug h files`, `hug h steps` | **H**EAD |
 | `w*` | Working Directory | Manage local changes: discard, clean, restore, park/unpark work | `hug w get`, `hug w wip`, `hug w zap`, `hug w purge` | **W**orking dir |
 | `wt*` | Worktree Management | Create, switch, list, remove worktrees for parallel development | `hug wt`, `hug wtc`, `hug wtl`, `hug wtll`, `hug wtdel` | **WT**orktree |
-| `s*` | Status & Staging | View repo state: summaries, diffs, staged/unstaged changes | `hug ss`, `hug su`, `hug sw`, `hug sx` | **S**tatus |
+| `s*` | Status & Staging | View repo state: summaries, diffs, staged/unstaged changes | `hug ss`, `hug su`, `hug sw`, `hug dd`, `hug sx` | **S**tatus |
 | `a*` | Staging | Stage changes for commit: tracked, all, or interactive | `hug a`, `hug aa`, `hug ai`, `hug ap` | **A**dd/stage |
 | `b*` | Branching | Create, switch, list, delete, sync branches | `hug b`, `hug bc`, `hug bl`, `hug br` | **B**ranch |
 | `c*` | Commits | Create and amend commits | `hug c`, `hug ca`, `hug cmod`, `hug caa` | **C**ommit |
@@ -75,6 +75,7 @@ Hug Commands
 │   ├── ss           # Status + Staged diff
 │   ├── su           # Status + Unstaged diff
 │   ├── sw           # Status + Working dir diff (both unstaged and staged)
+│   ├── dd           # Visual side-by-side difftool (dd s/u/w; bare = all uncommitted, net)
 │   └── sx           # eXtended summary
 ├── a* (Staging: Prepare Commit)
 │   ├── a            # Add tracked

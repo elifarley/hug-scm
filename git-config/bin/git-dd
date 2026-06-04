@@ -54,6 +54,13 @@ DESCRIPTION:
       (staged + unstaged, net). This is the key semantic difference from the
       original 'dd' gitconfig alias, which silently dropped staged changes.
 
+    NET vs SPLIT VIEW:
+      'dd w' is a single diff (HEAD vs worktree), so it collapses the
+      staged/unstaged boundary: a hunk staged then reverted cancels out, and
+      the result can differ from 'hug sw's two-section text view. For the
+      split, use 'hug dd s' + 'hug dd u', or the text view 'hug sw'.
+      Full walkthrough: docs/commands/status-staging.md ("Visual diff").
+
 PATH FILTERING:
     Append -- <path>... to restrict the diff to matching paths.
     Globs must be quoted to prevent shell expansion.
