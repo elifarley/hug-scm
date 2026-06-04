@@ -58,6 +58,7 @@ SEE ALSO:
     hug ss       : Show staged diff
     hug su       : Show unstaged diff
     hug s        : Show status
+    hug dd w     : Visual working-tree diff (difftool)
 EOF
 }
 
