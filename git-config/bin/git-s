@@ -297,12 +297,12 @@ if $is_query; then
   _qs_val_remote=""
   if $_qs_remote; then
     _qs_remote_name=""
-    _qs_sym_ref=$(git symbolic-ref -q HEAD 2>/dev/null || echo "")
+    _qs_sym_ref=$(git symbolic-ref -q HEAD 2> /dev/null || echo "")
     if [ -n "$_qs_sym_ref" ]; then
-      _qs_remote_name=$(git for-each-ref --format='%(upstream:remotename)' "$_qs_sym_ref" 2>/dev/null || echo "")
+      _qs_remote_name=$(git for-each-ref --format='%(upstream:remotename)' "$_qs_sym_ref" 2> /dev/null || echo "")
     fi
     if [ -n "$_qs_remote_name" ]; then
-      _qs_val_remote=$(git remote get-url "$_qs_remote_name" 2>/dev/null || echo "")
+      _qs_val_remote=$(git remote get-url "$_qs_remote_name" 2> /dev/null || echo "")
     fi
   fi
 
