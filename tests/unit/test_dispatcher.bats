@@ -432,3 +432,22 @@ load '../test_helper'
   assert_success
   assert_output --partial "command groups"
 }
+
+@test "hug version: reports the VERSION file contents" {
+  # Invoke the CHECKOUT's dispatcher explicitly. `run hug` resolves via PATH to
+  # the globally-installed hug: test_helper puts only git-config/bin on PATH
+  # (the git-* command scripts), NOT bin/ (the dispatcher), so `run hug` would
+  # NOT exercise this checkout's bin/hug. bin/hug reads "$HUG_HOME/VERSION", and
+  # test_helper sets HUG_HOME = PROJECT_ROOT. Asserting against $(cat …) keeps
+  # the test in sync with the file (no hard-coded number to drift).
+  run "$PROJECT_ROOT/bin/hug" version
+  assert_success
+  assert_output --partial "Hug SCM"
+  assert_output --partial "$(cat "$HUG_HOME/VERSION")"
+}
+
+@test "hug --version: reports the VERSION file contents (long form alias)" {
+  run "$PROJECT_ROOT/bin/hug" --version
+  assert_success
+  assert_output --partial "$(cat "$HUG_HOME/VERSION")"
+}
