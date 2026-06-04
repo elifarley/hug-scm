@@ -6,7 +6,7 @@ import { defineConfig } from 'vitepress'
     vite: {
       plugins: [pagefindPlugin()],
     },
-    base: '/hug-scm/',
+    base: '/',
     sitemap: {
       hostname: 'https://elifarley.github.io/hug-scm/'
     },
