@@ -11,6 +11,7 @@
 #   - show_combined_diff: Display both unstaged and staged diffs with separator
 #   - diff_has_staged_changes: Check if staged changes exist
 #   - diff_has_unstaged_changes: Check if unstaged changes exist
+#   - diff_has_working_changes: Check if net working-tree changes exist (vs HEAD)
 
 ################################################################################
 # Idempotent Guards

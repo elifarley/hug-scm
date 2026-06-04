@@ -245,6 +245,21 @@ teardown() {
   assert_shim_logged "--no-prompt"
 }
 
+# Rejection guard: combining a ref/range with the interactive picker (bare --)
+# is explicitly unsupported — the ref already scopes the diff, so there is no
+# "current changes" pool to pick from. The command must fail with a useful message.
+@test "hug dd <ref> --: interactive picker with a ref/range is rejected" {
+  TEST_REPO=$(create_test_repo_with_history)
+  cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"
+
+  # WHY no setup_git_shim: we expect early rejection before difftool is called.
+  # WHY create_test_repo_with_history: we need HEAD~1 to be a valid ref.
+  run git-dd HEAD~1 --
+  assert_failure
+  assert_output --partial "not supported"
+}
+
 # Test plan #8 — path scoping: dd w -- <file> → argv ends HEAD -- <file>
 @test "hug dd w -- <file>: passes path scope with single -- boundary" {
   TEST_REPO=$(create_repo_with_staged_and_unstaged)
@@ -485,10 +500,12 @@ teardown() {
   TEST_REPO=$(create_repo_with_staged_and_unstaged)
   cd "$TEST_REPO"
 
-  # Source the library directly
-  # shellcheck source=/dev/null
-  source "$PROJECT_ROOT/git-config/lib/hug-common"
-
+  # WHY source hug-common (not hug-git-diff directly): hug-common is the umbrella
+  # loader that chains into hug-git-diff (which defines diff_has_working_changes).
+  # This mirrors real command scripts and gives diff_has_working_changes access to
+  # all its transitive dependencies (colors, helpers, etc.).
+  # NOTE: the source here runs in the BATS test body and has no effect on the
+  # `run bash -c ...` subshell below — each subshell sources the library itself.
   # With both staged and unstaged changes, HEAD differs
   run bash -c "source '$PROJECT_ROOT/git-config/lib/hug-common' && cd '$TEST_REPO' && diff_has_working_changes && echo YES"
   assert_success
@@ -554,6 +571,17 @@ teardown() {
   assert_shim_logged "--no-prompt"
   # The -- separator must be present (pathspecs follow it)
   assert_shim_logged "--"
+
+  # Assert the ACTUAL selected file names appear as pathspecs after --.
+  # WHY this matters: counting the difftool call only proves ONE invocation
+  # occurred; it does NOT prove the files were forwarded as pathspecs.
+  # These assertions close the gap by verifying the shim log contains the
+  # concrete file names that selection indices 0 and 1 map to:
+  #   index 0 → staged.txt  (staged files are listed first by select_files_with_status)
+  #   index 1 → README.md   (unstaged files follow staged in the same call)
+  # The fixture create_repo_with_staged_and_unstaged creates these exact files.
+  assert_shim_logged "staged.txt"
+  assert_shim_logged "README.md"
 }
 
 # Test plan #10 (variant) — picker for staged mode: 'hug dd s --'

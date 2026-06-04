@@ -195,10 +195,10 @@ dd_staged() {
   # Pass all args (including -- separator) directly to the git commands.
   # WHY: git diff --quiet and git difftool both accept the same -- paths suffix,
   # so we can forward "$@" unchanged to both calls.
-  if ! git diff --cached --quiet "$@" 2>/dev/null; then
-    # git diff --quiet exits 1 when differences exist (the check we want)
-    true
-  else
+  # Early-return pattern: exit cleanly when there is nothing to show.
+  # WHY non-inverted form: clearer intent — the condition is "nothing to do".
+  # git diff --quiet exits 0 when NO differences exist (empty diff = quiet).
+  if git diff --cached --quiet "$@" 2>/dev/null; then
     info "No staged changes."
     return 0
   fi
@@ -214,9 +214,10 @@ dd_staged() {
 #
 # Usage: dd_unstaged [-- path...]
 dd_unstaged() {
-  if ! git diff --quiet "$@" 2>/dev/null; then
-    true
-  else
+  # Early-return pattern: exit cleanly when there is nothing to show.
+  # WHY non-inverted form: clearer intent — the condition is "nothing to do".
+  # git diff --quiet exits 0 when NO differences exist (empty diff = quiet).
+  if git diff --quiet "$@" 2>/dev/null; then
     info "No unstaged changes."
     return 0
   fi
@@ -313,6 +314,7 @@ dd_pick_and_diff() {
       ;;
     *)
       error "dd_pick_and_diff: unknown mode '${mode}'. Expected staged|unstaged|working."
+      # error() calls exit — unreachable; kept for shellcheck's fallthrough analysis
       return 1
       ;;
   esac
@@ -444,6 +446,7 @@ dd_dispatch() {
     if [[ -n "$ref" ]]; then
       error "Interactive file picker (--) is not supported with a ref/range argument.
   Use: hug dd <ref> -- <path>...  to scope a ref diff to specific paths."
+      # error() calls exit — unreachable; kept for shellcheck's fallthrough analysis
       return 1
     fi
     local pick_mode
