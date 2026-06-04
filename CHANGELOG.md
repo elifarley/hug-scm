@@ -4,6 +4,8 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-04
+
 ### Fixed
 
 - **`hug-common` self-resolves `HUG_HOME` from `BASH_SOURCE[1]`.** On CI where `HUG_HOME` is unset, `hug-common` now derives it from the sourcing script's path instead of calling the undefined `error` function and `exit 1` (which killed the parent). Fixes `test_quality_corpus.py` failures on GitHub Actions — 12 of 17 keyword/intent search tests were failing because `--help` subprocess invocations returned empty metadata.
@@ -16,10 +18,8 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 - **Staged gitlinks (submodule pointers) now visible in `hug sls` and `hug sl`.** When `submodule.*.ignore` or `diff.ignoreSubmodules` is set, `git diff --cached` silently suppresses gitlink entries. `list_staged_files()` now passes `--ignore-submodules=none` so staged submodule pointer changes are never dropped, regardless of ignore settings.
 
-### Added
-
 - **`hug dd` — visual side-by-side diff command family.** Opens a configured difftool (e.g. kitty diff) instead of a text patch: `hug dd s` (staged), `hug dd u` (unstaged), `hug dd w` / bare `hug dd` (all uncommitted — *net* worktree-vs-HEAD), and `hug dd <ref|range>`. The visual counterpart to `ss`/`su`/`sw`. `dd w` is a net view, so it intentionally differs from `sw`'s two-section split (a staged-then-reverted hunk cancels out) — see `docs/commands/status-staging.md` → "Visual diff". Productizes the former `dd` gitconfig alias into a real `git-dd` command with difftool preflight (friendly error when unconfigured), no-changes and non-TTY guards, `--no-prompt`, and an interactive `--` file picker. `--help` works without a TTY or a configured difftool.
-- **`hug version` / `hug --version` now reports a version number.** Added a `VERSION` file at the repo root (currently `1.1.0-dev`) and wired the dispatcher to print it. Previously `hug version` printed only a description with no number. Scripts can read it via `hug version` or the `VERSION` file directly.
+- **`hug version` / `hug --version` now reports a version number.** Added a `VERSION` file at the repo root and wired the dispatcher to print it. Previously `hug version` printed only a description with no number. Scripts can read it via `hug version` or the `VERSION` file directly.
 - **`hug s -r, --remote` query flag:** Outputs the fetch URL of the tracking remote (empty when no upstream is configured). Part of the `hug s` query flag system for scripting. Use `hug s -r` alone or combine: `hug s -b -r -u`.
 - **Unified Selection Framework (`selection_core.py`).** Shared toolkit for all Python selection modules: `bash_escape`, `BashDeclareBuilder`, `parse_numbered_input`, `get_selection_input`, `add_common_cli_args`, and ANSI color constants. Adding a new selection domain now requires ~50 lines instead of ~200.
 - **Branch single-select Python migration.** `print_interactive_branch_menu()` now delegates formatting and numbered-list interaction to Python via `branch_select.py prepare` and `single-select` commands. Eval output validated before execution.
@@ -101,9 +101,7 @@ The Makefile targets have been renamed to align with the makefile-dev PRD canoni
 - `check-prd` → use `check`
 - `test-prd` → use `test`
 
-## [Unreleased] - 2025-01-13
-
-### Changed - Makefile Canonical Targets
+### Changed - Makefile Canonical Targets (2025-01-13)
 
 The Makefile has been updated to comply with the canonical target taxonomy.
 **Breaking change:** Several make targets have been renamed.
