@@ -1,0 +1,355 @@
+# shellcheck shell=bash
+# Library: HUG Git visual diff (difftool) operations
+#
+# Provides the `hug dd` visual-diff family: staged (s), unstaged (u), and
+# working/net (w) side-by-side views via `git difftool --dir-diff`.
+#
+# Design decisions (see docs/plans/2026-06-04-visual-diff-flag-design.md):
+#
+# WHY a separate library (not folded into hug-git-diff):
+#   Text-diff and visual-diff are fundamentally different beasts — one writes
+#   patch text to stdout (pipe-safe), the other opens a blocking GUI that must
+#   hold a TTY. Separating them keeps hug-git-diff stdout-discipline clean and
+#   avoids polluting the text-diff library with GUI concerns.
+#
+# WHY dd w uses HEAD (not bare git difftool):
+#   `git difftool --dir-diff` with NO ref compares worktree-vs-index, which
+#   is UNSTAGED changes ONLY. Using `HEAD` gives net worktree-vs-HEAD = all
+#   uncommitted changes. The `dd w` variant was specifically designed to fix
+#   the "silent dropped staged changes" bug that the original `dd` gitconfig
+#   alias had.
+#
+# WHY --no-symlinks --dir-diff:
+#   --dir-diff: Opens the tool once with two temp directories (not per-file),
+#     giving a side-by-side view of all changed files simultaneously — the
+#     "visual diff" experience.
+#   --no-symlinks: Copies files into the temp dirs rather than symlinking.
+#     Some difftools (kitty, diff-so-fancy) cannot follow symlinks; also
+#     prevents accidental edits to the working tree via the temp dir.
+#
+# Functions:
+#   - run_visual_diff     : Core runner; wraps git difftool with guards
+#   - dd_staged           : Staged-only visual diff (--cached)
+#   - dd_unstaged         : Unstaged-only visual diff (no ref)
+#   - dd_working          : Net working-vs-HEAD visual diff (HEAD)
+#   - dd_ref              : Arbitrary ref/range visual diff
+#   - dd_preflight        : Validate difftool config; print friendly error
+#   - dd_check_tty        : Refuse if stdout is not a TTY
+#   - dd_dispatch         : Parse subcommand / ref and dispatch
+
+################################################################################
+# Idempotent Guard
+################################################################################
+
+# Prevent double-loading (mirrors pattern in hug-git-diff)
+[[ -n "${_HUG_GIT_DIFFTOOL_LOADED:-}" ]] && return 0
+readonly _HUG_GIT_DIFFTOOL_LOADED=1
+
+################################################################################
+# Guard: Difftool configuration preflight
+################################################################################
+
+# Verify that a difftool is configured; exit with a friendly error if not.
+#
+# WHY this matters:
+#   Without configuration, `git difftool` falls through to vimdiff (a blocking
+#   interactive terminal editor) or prompts per-file — both terrible UX for a
+#   command the user expects to open a GUI. This guard catches the "I just
+#   installed hug but haven't set up kitty/delta/etc." case early.
+#
+# Check order (either is sufficient):
+#   1. `diff.tool` key — the standard way to pick a difftool by name.
+#   2. Any `difftool.<name>.cmd` entry — covers inline-cmd configs without a
+#      `diff.tool` pointer (e.g. `difftool.meld.cmd = meld "$LOCAL" "$REMOTE"`).
+#
+# Usage: dd_preflight
+# Returns: exits 1 with error message if no difftool configured
+dd_preflight() {
+  # Check 1: diff.tool key
+  if git config diff.tool > /dev/null 2>&1; then
+    return 0
+  fi
+
+  # Check 2: any difftool.<name>.cmd entry
+  if git config --get-regexp 'difftool\..+\.cmd' > /dev/null 2>&1; then
+    return 0
+  fi
+
+  # No difftool configured — emit problem→cause→fix error and exit
+  error "$(cat << 'EOF'
+No difftool configured.
+
+  Problem: hug dd cannot launch a visual diff tool.
+  Cause:   Neither 'diff.tool' nor any 'difftool.<name>.cmd' is set in your
+           git config, so git would fall back to vimdiff or prompt per-file.
+  Fix:     Configure your preferred difftool. Examples:
+
+             # kitty (recommended for terminal users):
+             git config --global diff.tool kitty
+             git config --global difftool.kitty.cmd \
+               'kitty +kitten diff "$LOCAL" "$REMOTE"'
+
+             # delta / diff-so-fancy (pretty patches, not side-by-side):
+             git config --global diff.tool delta
+
+             # meld (classic GUI):
+             git config --global diff.tool meld
+
+           Then rerun: hug dd [s|u|w]
+EOF
+)"
+}
+
+################################################################################
+# Guard: Non-TTY check
+################################################################################
+
+# Refuse to launch a blocking GUI if stdout is not a TTY.
+#
+# WHY: `git difftool --dir-diff` opens a blocking external process. If stdout
+# is piped (e.g. `hug dd w | head`) or captured in CI, the tool would either
+# hang indefinitely or produce garbage output. This guard enforces the project's
+# stdout/stderr discipline: visual commands are TTY-only.
+#
+# WHY we check stdout (fd 1) not stdin (fd 0):
+#   The project convention for "are we interactive?" is stdout, not stdin.
+#   A piped-output (`cmd | grep`) scenario should be caught; reading from a
+#   file ("<< EOF") should still work if the tool writes to /dev/tty directly.
+#
+# The HUG_TEST_MODE bypass lets BATS tests skip this guard to test the
+# difftool-preflight and no-changes guards independently.
+#
+# Usage: dd_check_tty
+# Returns: exits 1 with error message if stdout is not a TTY
+dd_check_tty() {
+  # HUG_TEST_MODE: bypass the TTY guard in automated test environments.
+  # This is intentional: tests need to exercise the other guards (preflight,
+  # no-changes) without a real terminal. Real user sessions always have a TTY.
+  [[ "${HUG_TEST_MODE:-}" == "true" ]] && return 0
+
+  if [[ ! -t 1 ]]; then
+    error "hug dd requires an interactive terminal (TTY).
+
+  Problem: stdout is not a TTY (piped, redirected, or running in CI).
+  Cause:   Visual diff tools are blocking GUIs that must not hijack pipelines.
+  Fix:     Run 'hug dd [s|u|w]' directly in your terminal without piping."
+  fi
+}
+
+################################################################################
+# Core visual diff runner
+################################################################################
+
+# Run git difftool with the standard hug visual-diff flags.
+#
+# WHY --no-symlinks --dir-diff --no-prompt (always, no exceptions):
+#   These three flags form the invariant contract of `hug dd`:
+#   - --dir-diff:   One blocking tool call (not per-file)
+#   - --no-symlinks: Tool-compat + prevents accidental edits via tmp symlinks
+#   - --no-prompt:  Never ask "Launch tool for file X?" — hug owns the UX
+#
+# WHY strict-mode safety:
+#   set -euo pipefail is active. `git difftool` exits 1 when the user closes
+#   the tool early, when the tool binary is missing, or on other benign
+#   conditions. A naked call would abort the script. We capture the exit code
+#   explicitly and treat 0 and 1 as both "clean" exits (1 = user cancelled,
+#   which is normal operation, not a script error).
+#
+# Usage: run_visual_diff [extra_args...]
+#   extra_args: e.g. --cached / HEAD / HEAD~3 / -- path/to/file
+# Returns: 0 on success or user-cancel; propagates non-zero for genuine errors
+run_visual_diff() {
+  local dt_exit=0
+  # Disable exit-on-error for this call only.
+  # WHY: user closing the difftool early (exit 1) is a normal, expected event.
+  # We must not let set -e abort the entire hug command in that case.
+  set +e
+  git difftool --no-symlinks --dir-diff --no-prompt "$@"
+  dt_exit=$?
+  set -e
+
+  # Exit codes for git difftool:
+  #   0 — tool ran and exited cleanly
+  #   1 — user cancelled mid-review, tool missing, or trusted non-zero exit
+  # Both are acceptable "clean" exit states for a visual diff command.
+  # Anything higher than 1 suggests a genuine git error (e.g. invalid ref).
+  if [[ $dt_exit -gt 1 ]]; then
+    return $dt_exit
+  fi
+
+  return 0
+}
+
+################################################################################
+# Per-mode dispatchers
+################################################################################
+
+# Visual diff: staged changes (index vs HEAD)
+# Mirrors: hug ss (text diff staged)
+# Git invocation: git difftool --no-symlinks --dir-diff --no-prompt --cached [-- paths]
+#
+# Usage: dd_staged [-- path...]
+#   path args must be preceded by -- (e.g. -- src/ tests/)
+dd_staged() {
+  # Pass all args (including -- separator) directly to the git commands.
+  # WHY: git diff --quiet and git difftool both accept the same -- paths suffix,
+  # so we can forward "$@" unchanged to both calls.
+  if ! git diff --cached --quiet "$@" 2>/dev/null; then
+    # git diff --quiet exits 1 when differences exist (the check we want)
+    true
+  else
+    info "No staged changes."
+    return 0
+  fi
+
+  run_visual_diff --cached "$@"
+}
+
+# Visual diff: unstaged changes (worktree vs index)
+# Mirrors: hug su (text diff unstaged)
+# Git invocation: git difftool --no-symlinks --dir-diff --no-prompt [-- paths]
+#
+# WHY no ref here: bare `git difftool --dir-diff` is worktree-vs-index = unstaged.
+#
+# Usage: dd_unstaged [-- path...]
+dd_unstaged() {
+  if ! git diff --quiet "$@" 2>/dev/null; then
+    true
+  else
+    info "No unstaged changes."
+    return 0
+  fi
+
+  run_visual_diff "$@"
+}
+
+# Visual diff: net working-tree changes (worktree vs HEAD)
+# Mirrors: hug sw (text diff combined), but NET not split-section.
+# Git invocation: git difftool --no-symlinks --dir-diff --no-prompt HEAD [-- paths]
+#
+# WHY HEAD (the critical design decision, unanimously agreed in review):
+#   `git difftool --dir-diff` with NO ref = worktree-vs-index = UNSTAGED ONLY.
+#   That would silently drop staged changes — the original dd alias bug this
+#   command was designed to fix. Using HEAD = worktree-vs-last-commit gives the
+#   "all my uncommitted changes" view users expect from a "working diff".
+#
+# Usage: dd_working [-- path...]
+dd_working() {
+  if ! diff_has_working_changes "$@"; then
+    info "No changes."
+    return 0
+  fi
+
+  run_visual_diff HEAD "$@"
+}
+
+# Visual diff: arbitrary ref or commit range
+# Git invocation: git difftool --no-symlinks --dir-diff --no-prompt <ref> [-- paths]
+#
+# Usage: dd_ref <ref_or_range> [-- path...]
+dd_ref() {
+  local ref="$1"
+  shift
+  local -a pathspec_args=()
+  if [[ $# -gt 0 ]]; then
+    pathspec_args=("$@")
+  fi
+
+  run_visual_diff "$ref" "${pathspec_args[@]+"${pathspec_args[@]}"}"
+}
+
+################################################################################
+# Argument parsing and dispatch
+################################################################################
+
+# Parse `hug dd` arguments and dispatch to the correct mode.
+#
+# Argument grammar (in order of precedence):
+#   dd [-h|--help]           → show_help; exit 0
+#   dd s [-- path...]        → staged
+#   dd u [-- path...]        → unstaged
+#   dd w [-- path...]        → working (net)
+#   dd [-- path...]          → working (bare = default)
+#   dd <ref> [-- path...]    → ref/range (anything not s/u/w)
+#
+# The `--` separator before pathspecs is normalized here so each mode
+# function receives a clean `-- path...` suffix (never `-- --`).
+#
+# Usage: dd_dispatch [show_help_fn] "$@"
+#   show_help_fn: name of the show_help function in the calling script
+dd_dispatch() {
+  local show_help_fn="${1:-show_help}"
+  shift
+
+  # Guards run before argument parsing so they always fire regardless of mode.
+  dd_check_tty
+  dd_preflight
+
+  check_git_repo
+
+  # Parse arguments: split at first '--' into pre-args and pathspecs.
+  # WHY manual split instead of getopt:
+  #   getopt rearranges args; for `dd HEAD~3 -- file`, we need to keep
+  #   the ref (HEAD~3) in front of `--`. A simple loop is clearer.
+  local mode=""
+  local ref=""
+  local -a pathspecs=()
+  local found_separator=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        "$show_help_fn"
+        exit 0
+        ;;
+      --)
+        # Everything after '--' is a pathspec
+        found_separator=true
+        shift
+        pathspecs=("$@")
+        break
+        ;;
+      s|u|w)
+        if [[ -z "$mode" && -z "$ref" ]]; then
+          mode="$1"
+        else
+          # After a mode or ref has been set, treat as pathspec
+          pathspecs+=("$1")
+        fi
+        shift
+        ;;
+      *)
+        if [[ -z "$mode" ]]; then
+          # First positional arg that is not s/u/w is a ref
+          ref="$1"
+        else
+          pathspecs+=("$1")
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  # Build the normalized pathspec suffix: -- path1 path2 ...
+  # WHY: every mode function expects either nothing or exactly "-- paths"
+  # (never bare paths without --). This normalization prevents "-- --" double-
+  # dash issues if the user already supplied --.
+  local -a path_args=()
+  if [[ ${#pathspecs[@]} -gt 0 ]]; then
+    path_args=(-- "${pathspecs[@]}")
+  fi
+
+  # Dispatch
+  if [[ -n "$ref" ]]; then
+    dd_ref "$ref" "${path_args[@]+"${path_args[@]}"}"
+  else
+    case "${mode:-w}" in
+      s) dd_staged  "${path_args[@]+"${path_args[@]}"}" ;;
+      u) dd_unstaged "${path_args[@]+"${path_args[@]}"}" ;;
+      w) dd_working  "${path_args[@]+"${path_args[@]}"}" ;;
+      *)
+        error "Unknown subcommand '${mode}'. Use: hug dd [s|u|w] [-- <path>...]"
+        ;;
+    esac
+  fi
+}
