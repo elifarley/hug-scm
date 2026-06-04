@@ -168,7 +168,7 @@ If migration criteria are met:
 
 - [ADR-001: Automated Testing Strategy](ADR-001-automated-testing-strategy.md)
 - [ADR-002: Mercurial Support Architecture](ADR-002-mercurial-support-architecture.md)
-- [JSON Output Roadmap](../planning/json-output-roadmap.md)
+- [JSON Output Roadmap](https://github.com/elifarley/hug-scm/blob/main/mgmt/planning/json-output-roadmap.md) (internal planning doc; lives in the repo, not this site)
 
 ---
 
