@@ -48,6 +48,10 @@ So `dd w` is documented as "all uncommitted changes, net working-vs-HEAD"; the s
 in text `sw`. The original plan's `sw -d → git difftool --dir-diff` (no ref) was **unstaged-only**
 and silently dropped staged changes — that defect is designed out here.
 
+> **User-facing walkthrough lives elsewhere (single source of truth):** see
+> `docs/commands/status-staging.md` → "Visual diff: `hug dd`" for the three-trees model and a
+> worked cancellation example. This section records the *decision*; that doc explains it for users.
+
 ## Must-fix requirements (from review — baked in, not optional)
 
 1. **Difftool configuration** *(taste decision on approach, below)*: never fall through to raw

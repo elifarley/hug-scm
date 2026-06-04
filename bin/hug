@@ -203,6 +203,12 @@ help)
 --version | version)
   echo "Hug SCM - A humane interface for Git and Mercurial"
   echo "Part of the Hug tool suite"
+  # Report the version from the VERSION file at the install/repo root.
+  # HUG_HOME is frozen + exported above, so this is CWD-independent and works
+  # even after -C/-S changed the working directory.
+  if [[ -f "$HUG_HOME/VERSION" ]]; then
+    echo "Version: $(cat "$HUG_HOME/VERSION")"
+  fi
   exit 0
   ;;
 esac

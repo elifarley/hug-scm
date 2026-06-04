@@ -58,6 +58,7 @@ SEE ALSO:
     hug ss       : Show staged diff
     hug sw       : Show working directory changes
     hug s        : Show status
+    hug dd u     : Visual unstaged diff (difftool)
 EOF
 }
 

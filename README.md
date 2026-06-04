@@ -338,6 +338,7 @@ hug sli                     # Status with list of ignored files
 hug ss [file]               # Status with staged changes patch
 hug su [file]               # Status with unstaged changes patch
 hug sw [file]               # Status with working dir changes patch (staged and unstaged)
+hug dd [s|u|w] [file]       # Visual side-by-side diff via difftool (bare/w = all uncommitted, net)
 
 # Staging
 hug a [files]               # Stage tracked files (or all if no args)

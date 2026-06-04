@@ -13,6 +13,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 ## On This Page
 - [Quick Reference](#quick-reference)
 - [Status Commands (s*)](#status-commands-s)
+- [Visual diff (hug dd)](#visual-diff-hug-dd)
 - [Staging Commands (a*)](#staging-commands-a)
 - [Unstaging](#unstaging)
 - [Stash Commands (s* overlap)](#stash-commands-s-overlap)
@@ -33,6 +34,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 | `hug ss` | **S**tatus + **S**taged | Show staged diff |
 | `hug su` | **S**tatus + **U**nstaged | Show unstaged diff |
 | `hug sw` | **S**tatus + **W**orking | Combined staged and unstaged diff |
+| `hug dd` | **D**ir-**D**iff (visual) | Visual side-by-side difftool: `dd s`/`u`/`w` — see [Visual diff](#visual-diff-hug-dd) |
 | `hug a` | **A**dd tracked | Stage tracked changes |
 | `hug aa` | **A**dd **A**ll | Stage tracked and untracked changes |
 | `hug us` | **U**n**S**tage | Unstage specific files |
@@ -165,6 +167,51 @@ Show diffs inline for better inspection.
 > [!TIP] Scenario
 > **Task:** Review your commit before amending.  
 > **Flow:** Run `hug ss` to verify staged fixes, then `hug su` to ensure no leftovers remain before `hug caa`.
+
+## Visual diff: `hug dd`
+
+`hug dd` opens a **visual side-by-side difftool** (e.g. kitty diff) instead of printing a text patch. It's the visual counterpart to `ss`/`su`/`sw`, with matching `s`/`u`/`w` subcommands.
+
+| Command | Shows | Compares |
+| --- | --- | --- |
+| `hug dd s` | Staged | index vs HEAD |
+| `hug dd u` | Unstaged | worktree vs index |
+| `hug dd w` (or bare `hug dd`) | All uncommitted (net) | worktree vs HEAD |
+| `hug dd <ref\|range>` | A commit / range | as given (e.g. `hug dd HEAD~3`) |
+
+```sh
+hug dd s              # staged changes, visual
+hug dd u              # unstaged changes, visual
+hug dd w              # ALL uncommitted changes (same as bare `hug dd`)
+hug dd HEAD~3         # a commit / range
+hug dd w -- src/      # scope to a path
+hug dd --             # pick files interactively, then one difftool window
+```
+
+### Net view vs the two-section split
+
+Git holds your work as a chain of three snapshots:
+
+```
+HEAD (last commit)  →  index (staging area)  →  working tree (files on disk)
+```
+
+`hug sw` (text) shows this chain as **two diffs**: a *staged* section (`HEAD → index`) and an *unstaged* section (`index → worktree`). `hug dd w` shows only the **endpoints** as a single diff (`HEAD → worktree`) — it must, because `git difftool --dir-diff` opens the tool once on two snapshots and can't render two sections without launching it twice (poor UX).
+
+Collapsing the middle means the two steps can cancel out. Example — `config.txt` is `port = 80` at HEAD:
+
+1. Change it to `port = 8080` and **stage** it (index = `8080`).
+2. Then edit the working file **back** to `port = 80`.
+
+| View | Shows |
+| --- | --- |
+| `hug sw` | **two** changes: staged `80 → 8080`, unstaged `8080 → 80` |
+| `hug dd w` | **nothing** — HEAD (`80`) and worktree (`80`) are identical → `No changes.` |
+
+This is intentional, not a bug. `dd w` answers *"what does my tree look like vs my last commit?"* (the common case). When you need the exact staged-vs-unstaged split, use **`hug dd s` + `hug dd u`** (each diffs one link of the chain) or the text view **`hug sw`**.
+
+> [!TIP]
+> `hug dd` needs a difftool configured in git (`diff.tool` + `difftool.<name>.cmd`). It is interactive/TTY-only and refuses to run in a pipe — for pipe-safe patch output use `hug ss` / `hug su` / `hug sw`.
 
 ## Staging Commands (a*)
 

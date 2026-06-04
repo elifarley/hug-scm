@@ -68,6 +68,7 @@ SEE ALSO:
     hug shc      : Show changed files (stats only)
     hug fcat     : View file content at a commit
     hug sl       : Show status
+    hug dd       : Visual directory diff (difftool)
 EOF
 }
 

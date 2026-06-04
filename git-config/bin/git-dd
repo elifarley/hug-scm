@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# hug dd — visual side-by-side diff via git difftool --dir-diff
+#
+# Productizes the `dd` gitconfig alias into a first-class hug command with:
+# - Subcommands s/u/w mirroring the text-diff family ss/su/sw
+# - Difftool configuration preflight (friendly error if unconfigured)
+# - Non-TTY guard (refuses to hijack pipelines with a blocking GUI)
+# - No-changes guard (exits cleanly instead of launching on empty diff)
+# - Path scoping support
+# - Strict-mode safety (set -euo pipefail + difftool non-zero wrapping)
+#
+# See docs/plans/2026-06-04-visual-diff-flag-design.md for the full design.
+_hug_category='["show"]'
+_hug_keywords='["visual","difftool","kitty","side-by-side","gui-diff","dir-diff","visual-diff"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-difftool; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat << 'EOF'
+hug dd: Visual side-by-side diff via git difftool --dir-diff.
+
+USAGE:
+    hug dd [s|u|w] [-- <path>...]
+    hug dd <ref|range> [-- <path>...]
+    hug dd [-h, --help]
+
+SUBCOMMANDS:
+    s          Staged changes only (index vs HEAD) — mirrors hug ss
+    u          Unstaged changes only (worktree vs index) — mirrors hug su
+    w          Net working changes (worktree vs HEAD, all uncommitted) — mirrors hug sw
+    (bare)     Defaults to 'w' (all uncommitted changes)
+
+    <ref>      Show diff of a specific commit or range (e.g. HEAD~3, v1.0..HEAD)
+
+OPTIONS:
+    -h, --help Show this help
+
+DESCRIPTION:
+    Opens a visual side-by-side difftool (e.g. kitty diff) instead of printing
+    a text patch to stdout. Requires a difftool to be configured in git config
+    (see FIX section of the error message if not set).
+
+    WHY 'dd w' uses HEAD (not bare git difftool):
+      Bare 'git difftool --dir-diff' with no ref compares worktree-vs-index,
+      which is UNSTAGED ONLY. 'dd w' uses HEAD to show ALL uncommitted changes
+      (staged + unstaged, net). This is the key semantic difference from the
+      original 'dd' gitconfig alias, which silently dropped staged changes.
+
+    NET vs SPLIT VIEW:
+      'dd w' is a single diff (HEAD vs worktree), so it collapses the
+      staged/unstaged boundary: a hunk staged then reverted cancels out, and
+      the result can differ from 'hug sw's two-section text view. For the
+      split, use 'hug dd s' + 'hug dd u', or the text view 'hug sw'.
+      Full walkthrough: docs/commands/status-staging.md ("Visual diff").
+
+PATH FILTERING:
+    Append -- <path>... to restrict the diff to matching paths.
+    Globs must be quoted to prevent shell expansion.
+
+    hug dd w -- src/ tests/     # All uncommitted changes for two directories
+    hug dd s -- '*.java'        # Staged changes for Java files only
+
+EXAMPLES:
+    hug dd           # All uncommitted changes (net), visual side-by-side
+    hug dd s         # Staged changes only
+    hug dd u         # Unstaged changes only
+    hug dd w         # All uncommitted changes (same as bare dd)
+    hug dd HEAD~3    # Changes in last 3 commits
+    hug dd v1.0..HEAD  # Changes between tag and HEAD
+    hug dd w -- file.txt  # Scoped to a single file
+
+REQUIREMENTS:
+    A difftool must be configured in git config. Example setup for kitty:
+      git config --global diff.tool kitty
+      git config --global difftool.kitty.cmd 'kitty +kitten diff "$LOCAL" "$REMOTE"'
+
+CAPTURING OUTPUT:
+    hug dd is interactive and visual — it opens a blocking GUI in your
+    terminal. It is TTY-guarded and must not be piped or redirected.
+    For pipe-safe patch output, use: hug ss / hug su / hug sw
+
+SEE ALSO:
+    hug ss       : Show staged diff (text)
+    hug su       : Show unstaged diff (text)
+    hug sw       : Show all working changes (text, split view)
+    hug shp      : Show a commit with its full patch
+EOF
+}
+
+# Delegate all argument processing and dispatch to the shared library driver.
+# The library handles: TTY guard, difftool preflight, no-changes guard,
+# subcommand parsing, pathspec normalization, and invocation.
+dd_dispatch show_help "$@"

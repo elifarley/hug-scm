@@ -11,6 +11,7 @@
 #   - show_combined_diff: Display both unstaged and staged diffs with separator
 #   - diff_has_staged_changes: Check if staged changes exist
 #   - diff_has_unstaged_changes: Check if unstaged changes exist
+#   - diff_has_working_changes: Check if net working-tree changes exist (vs HEAD)
 
 ################################################################################
 # Idempotent Guards
@@ -77,6 +78,30 @@ diff_has_unstaged_changes() {
   check_git_repo
   git diff --quiet 2>/dev/null
   local exit_code=$?
+  return $((exit_code == 1 ? 0 : 1))
+}
+
+# Check if there are any working-tree changes relative to HEAD (net diff).
+#
+# WHY "working" means HEAD not index:
+#   `git diff HEAD` compares the entire working tree (both staged and unstaged
+#   changes) against the last commit. This is the "all uncommitted, net" view
+#   used by `hug dd w`. Contrast with `git diff` (unstaged only) and
+#   `git diff --cached` (staged only). Using HEAD ensures staged-and-then-
+#   reverted hunks cancel out correctly, reflecting what the commit would look
+#   like after `git commit -a`.
+#
+# Usage: diff_has_working_changes [-- path...]
+# Parameters:
+#   --      Separator before pathspec args (optional)
+#   path... Optional pathspecs to restrict check scope
+# Returns:
+#   0 if working-tree differs from HEAD, 1 if identical (nothing to diff)
+diff_has_working_changes() {
+  check_git_repo
+  git diff --quiet HEAD "$@" 2>/dev/null
+  local exit_code=$?
+  # git diff --quiet returns 1 when there ARE differences, 0 when none
   return $((exit_code == 1 ? 0 : 1))
 }
 
