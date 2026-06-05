@@ -23,121 +23,14 @@ load '../test_helper'
 # --------------------------------------------------------------------------- #
 # Helpers                                                                       #
 # --------------------------------------------------------------------------- #
-
-# Set up a git-command shim that logs difftool invocations to GIT_SHIM_LOG.
-# The shim is a `git` executable placed at the front of PATH.
-# Every `git difftool …` call writes its argv to GIT_SHIM_LOG (one arg per line)
-# then exits 0 (success, simulating the tool closed normally).
-# Every other `git …` call execs the real git transparently.
 #
-# WHY exec-the-real-git: the script under test also calls `git diff --quiet`,
-# `git config`, etc. — those must still work or the guards won't function.
-# WHY write-then-exit: avoids launching a real blocking GUI while still letting
-# all git plumbing succeed.
-#
-# WHY resolve real git BEFORE creating the shim:
-#   The shim must know the absolute path to the real git BEFORE it shadows it
-#   on PATH. Computing it after would find the shim itself (infinite loop).
-setup_git_shim() {
-  local shim_dir
-  shim_dir=$(mktemp -d)
-  GIT_SHIM_DIR="$shim_dir"
-  GIT_SHIM_LOG="$shim_dir/git-difftool.log"
-
-  # Resolve the real git BEFORE prepending the shim to PATH.
-  # This is critical: once the shim is on PATH, `command -v git` would resolve
-  # to the shim itself, causing infinite recursion.
-  local real_git
-  real_git=$(command -v git)
-
-  # Write the shim with the resolved absolute path embedded.
-  # We use printf to embed the real_git path safely (no quotes in heredoc).
-  cat > "$shim_dir/git" << SHIM
-#!/usr/bin/env bash
-if [[ "\${1:-}" == "difftool" ]]; then
-  # Log all arguments (one per line) so tests can grep for them
-  printf '%s\n' "\$@" >> "\${GIT_SHIM_LOG}"
-  exit 0
-fi
-# For everything else, exec the real git using its absolute path
-# (resolved before the shim was placed on PATH to avoid infinite recursion)
-exec "${real_git}" "\$@"
-SHIM
-  chmod +x "$shim_dir/git"
-
-  # Prepend shim dir so `git` resolves to our shim.
-  # HUG_BIN remains first so hug commands still resolve correctly — the shim
-  # only intercepts `git`, not `hug` or `git-dd`.
-  export PATH="$shim_dir:$PATH"
-  export GIT_SHIM_LOG GIT_SHIM_DIR
-}
-
-teardown_git_shim() {
-  [[ -n "${GIT_SHIM_DIR:-}" ]] && rm -rf "$GIT_SHIM_DIR"
-  unset GIT_SHIM_DIR GIT_SHIM_LOG
-}
-
-# Configure a fake difftool so git difftool does not launch any GUI.
-# When the tool IS invoked by git, it writes the resolved LOCAL/REMOTE tmp
-# paths to ARGV_LOG — so we can confirm the tool ran (or did NOT run).
-configure_fake_difftool() {
-  local repo_dir="${1:-$PWD}"
-  local log_file="${BATS_TEST_TMPDIR}/difftool-invocations.log"
-  ARGV_LOG="$log_file"
-  export ARGV_LOG
-
-  git -C "$repo_dir" config diff.tool fake
-  # ARGV_LOG must be exported so the cmd subshell can see it
-  git -C "$repo_dir" config difftool.fake.cmd \
-    'printf "invoked\n" >> "$ARGV_LOG"'
-  git -C "$repo_dir" config difftool.prompt false
-}
-
-# Verify that the git shim captured the given string in a difftool invocation.
-assert_shim_logged() {
-  local expected="$1"
-  if [[ ! -f "${GIT_SHIM_LOG:-}" ]]; then
-    fail "GIT_SHIM_LOG not found — shim not set up or difftool was never called"
-  fi
-  grep -qF -- "$expected" "$GIT_SHIM_LOG" \
-    || fail "Expected '${expected}' in git difftool argv log. Actual log:\n$(cat "$GIT_SHIM_LOG")"
-}
-
-# Like assert_shim_logged but matches a WHOLE argv line (exact), not a substring.
-# WHY (Eng review E3): substring matching cannot distinguish the old single-arg
-# `HEAD~1` from the new two-arg `HEAD~1^1` + `HEAD~1` (one contains the other),
-# so the endpoint-split regression would be undetectable. grep -x anchors the
-# full line, so reversed/duplicate/misplaced endpoints are caught.
-assert_shim_logged_exact() {
-  local expected="$1"
-  if [[ ! -f "${GIT_SHIM_LOG:-}" ]]; then
-    fail "GIT_SHIM_LOG not found — shim not set up or difftool was never called"
-  fi
-  grep -qxF -- "$expected" "$GIT_SHIM_LOG" \
-    || fail "Expected exact argv line '${expected}' in git difftool log. Actual log:\n$(cat "$GIT_SHIM_LOG")"
-}
-
-# Assert a token does NOT appear as a whole argv line (e.g. the old verbatim ref).
-refute_shim_logged_exact() {
-  local unexpected="$1"
-  if [[ -f "${GIT_SHIM_LOG:-}" ]] && grep -qxF -- "$unexpected" "$GIT_SHIM_LOG"; then
-    fail "Did NOT expect exact argv line '${unexpected}' in git difftool log. Actual log:\n$(cat "$GIT_SHIM_LOG")"
-  fi
-}
-
-# Verify the shim did NOT log a difftool invocation at all.
-assert_difftool_not_invoked() {
-  if [[ -f "${GIT_SHIM_LOG:-}" ]] && [[ -s "$GIT_SHIM_LOG" ]]; then
-    fail "git difftool was unexpectedly invoked. Log:\n$(cat "$GIT_SHIM_LOG")"
-  fi
-}
-
-# Verify the fake difftool was NOT invoked (no-changes guard check).
-assert_fake_tool_not_invoked() {
-  if [[ -f "${ARGV_LOG:-}" ]] && grep -q "invoked" "$ARGV_LOG"; then
-    fail "Fake difftool was unexpectedly invoked. Log:\n$(cat "$ARGV_LOG")"
-  fi
-}
+# The difftool test harness — the PATH `git` shim (setup_git_shim /
+# teardown_git_shim), the fake-difftool config (configure_fake_difftool), and the
+# argv assertions (assert_shim_logged, assert_shim_logged_exact,
+# refute_shim_logged_exact, assert_difftool_not_invoked, assert_fake_tool_not_invoked)
+# — lives in tests/test_helper.bash, shared with test_shv.bats (loaded above).
+# See that file's "Visual-diff (difftool) test harness" section for the rationale
+# (fake tool vs PATH shim, and why exact-line matching is required for endpoints).
 
 # --------------------------------------------------------------------------- #
 # Fixture helpers                                                               #
