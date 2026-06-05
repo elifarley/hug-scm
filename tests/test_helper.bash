@@ -200,6 +200,25 @@ create_test_repo_with_history() {
   echo "$test_repo"
 }
 
+# Create a test repository whose HEAD is an EMPTY commit (touches no files).
+# Used to exercise the dd/shv no-changes guard on the committish path: an empty
+# commit has a valid parent but a zero diff, so the guard must say "No changes
+# introduced" and not launch the tool.
+create_test_repo_with_empty_commit() {
+  local test_repo
+  test_repo=$(create_test_repo)
+
+  (
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
+    git commit --allow-empty -q -m "Empty commit (no file changes)"
+  )
+
+  echo "$test_repo"
+}
+
 # Create a test repository with uncommitted changes
 create_test_repo_with_changes() {
   local test_repo

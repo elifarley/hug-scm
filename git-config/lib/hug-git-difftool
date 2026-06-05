@@ -203,6 +203,7 @@ dd_staged() {
     return 0
   fi
 
+  dd_require_launchable
   run_visual_diff --cached "$@"
 }
 
@@ -222,6 +223,7 @@ dd_unstaged() {
     return 0
   fi
 
+  dd_require_launchable
   run_visual_diff "$@"
 }
 
@@ -242,22 +244,103 @@ dd_working() {
     return 0
   fi
 
+  dd_require_launchable
   run_visual_diff HEAD "$@"
 }
 
-# Visual diff: arbitrary ref or commit range
-# Git invocation: git difftool --no-symlinks --dir-diff --no-prompt <ref> [-- paths]
+# Run the pre-launch guards. Called LAZILY — right before an actual difftool
+# launch (or before the interactive picker, which needs a TTY) — NOT at the top
+# of dd_dispatch. WHY lazy (Eng review E2): so a no-op diff or an invalid ref is
+# reported as such, instead of failing first with "no difftool configured" or
+# "requires a TTY". Order: TTY first (cheapest, most common failure), then the
+# difftool-config preflight.
+dd_require_launchable() {
+  dd_check_tty
+  dd_preflight
+}
+
+# Visual diff of a commit's INTRODUCED changes, a commit range, or N/-N.
+# Engine shared by `hug dd <committish|range|N>` and `hug shv` (one source of
+# truth — see git-shv).
 #
-# Usage: dd_ref <ref_or_range> [-- path...]
-dd_ref() {
-  local ref="$1"
+# Semantics (mgmt/plans/2026-06-05-dd-visual-gateway-and-shv-design.md):
+#   - single commit C        → the diff C introduced = `C^1 C`
+#                              (root commit → `<empty-tree> C`, so all files show as added)
+#   - range A..B / A...B / -N → cumulative endpoint diff, passed through verbatim
+#   - N / -N                  → resolved via resolve_commit_ref (HEAD~N / HEAD~N..HEAD)
+#
+# WHY two explicit endpoint args (NOT `C^!`): `^!` is rev-list range syntax that
+# `git diff`/`git difftool` do NOT interpret as a two-endpoint range. The explicit
+# `<base> <commit>` form is unambiguous and lets us substitute the empty tree for
+# root commits.
+#
+# WHY an exit-code-safe no-changes guard: `git diff --quiet` returns 0 (no diff),
+# 1 (diff exists), or >1 (error: bad ref/range/pathspec). We must NOT fold >1 into
+# "no changes" (the latent bug in diff_has_working_changes); an invalid ref has to
+# surface as an error, never as a misleading "No changes".
+#
+# Usage: dd_commit_diff <token> [-- <path>...]
+dd_commit_diff() {
+  local token="$1"
   shift
   local -a pathspec_args=()
   if [[ $# -gt 0 ]]; then
     pathspec_args=("$@")
   fi
 
-  run_visual_diff "$ref" "${pathspec_args[@]+"${pathspec_args[@]}"}"
+  # A mistyped flag must never be silently treated as a ref (e.g. `dd --stat`).
+  reject_flag_ref "$token"
+
+  local resolved
+  resolved=$(resolve_commit_ref "$token")
+
+  # Compute the two diff endpoints.
+  local -a endpoints=()
+  if is_range "$resolved"; then
+    # git understands A..B / A...B directly as a two-endpoint diff.
+    endpoints=("$resolved")
+  else
+    # Single commit: validate it exists first, so a bad ref yields a clear error
+    # rather than a cryptic "ambiguous argument" from git diff.
+    if ! git rev-parse --verify --quiet "${resolved}^{commit}" > /dev/null 2>&1; then
+      local note=""
+      if [[ "$resolved" != "$token" ]]; then note=" (resolved to '${resolved}')"; fi
+      error "Not a valid commit: '${token}'${note}."
+    fi
+    if is_root_commit "$resolved"; then
+      # Root commit has no parent — diff against the empty tree so every file
+      # shows as added. Compute the empty-tree hash rather than hard-coding the
+      # SHA-1 constant, so this is correct for SHA-256 repos too. `git hash-object`
+      # without -w only hashes; it does not write an object.
+      local empty_tree
+      empty_tree=$(git hash-object -t tree /dev/null) \
+        || error "Could not compute the empty-tree hash for the root-commit diff."
+      endpoints=("$empty_tree" "$resolved")
+    else
+      # `^1` = explicit first parent (identical to `^`, but self-documenting: for
+      # a merge this is deliberately the first-parent diff, not a combined one).
+      endpoints=("${resolved}^1" "$resolved")
+    fi
+  fi
+
+  # No-changes guard (exit-code-safe — see header). Pathspecs are forwarded so a
+  # path-scoped empty diff also no-ops (and a non-matching path cannot
+  # false-positive while the commit has other changes).
+  local rc=0
+  git diff --quiet "${endpoints[@]}" "${pathspec_args[@]+"${pathspec_args[@]}"}" > /dev/null 2>&1 || rc=$?
+  case "$rc" in
+    0)
+      info "No changes introduced by '${token}'."
+      return 0
+      ;;
+    1) : ;; # differences exist — fall through and launch
+    *)
+      error "Could not diff '${token}' (resolved '${resolved}'); git exited ${rc}."
+      ;;
+  esac
+
+  dd_require_launchable
+  run_visual_diff "${endpoints[@]}" "${pathspec_args[@]+"${pathspec_args[@]}"}"
 }
 
 ################################################################################
@@ -393,11 +476,11 @@ dd_dispatch() {
     esac
   done
 
-  # Guards run before the remaining argument parsing so they always fire
-  # regardless of mode (s/u/w/ref).
-  dd_check_tty
-  dd_preflight
-
+  # We are about to inspect the working tree / commit graph, so we must be in a
+  # repo. The TTY + difftool-config guards are DEFERRED to dd_require_launchable,
+  # run lazily right before an actual launch (Eng review E2): so `dd <badref>`
+  # reports an invalid ref (not "no difftool configured"), and a no-op diff exits
+  # cleanly even with no difftool installed.
   check_git_repo
 
   # Detect interactive-picker trigger: trailing bare '--' (no pathspecs after it).
@@ -461,6 +544,8 @@ dd_dispatch() {
       # error() calls exit — unreachable; kept for shellcheck's fallthrough analysis
       return 1
     fi
+    # Interactive picker is TTY-bound (gum) and will launch the tool — guard now.
+    dd_require_launchable
     local pick_mode
     case "${mode:-w}" in
       s) pick_mode="staged" ;;
@@ -483,7 +568,7 @@ dd_dispatch() {
 
   # Dispatch
   if [[ -n "$ref" ]]; then
-    dd_ref "$ref" "${path_args[@]+"${path_args[@]}"}"
+    dd_commit_diff "$ref" "${path_args[@]+"${path_args[@]}"}"
   else
     case "${mode:-w}" in
       s) dd_staged  "${path_args[@]+"${path_args[@]}"}" ;;
