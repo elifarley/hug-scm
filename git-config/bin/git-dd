@@ -28,17 +28,34 @@ show_help() {
 hug dd: Visual side-by-side diff via git difftool --dir-diff.
 
 USAGE:
-    hug dd [s|u|w] [-- <path>...]
-    hug dd <ref|range> [-- <path>...]
+    hug dd [s|u|w] [-- <path>...]                       # working-tree diffs
+    hug dd [N|-N|<committish>|<range>] [-- <path>...]   # commit-history diffs
     hug dd [-h, --help]
 
-SUBCOMMANDS:
+WHAT dd SHOWS (read this first):
+    bare 'hug dd'   → your UNCOMMITTED changes (worktree vs HEAD — all of them).
+    hug dd HEAD     → the patch the HEAD COMMIT introduced (HEAD vs its parent).
+    These differ on purpose: bare 'dd' = "my current changes"; naming a commit
+    = "that commit's changes" (the visual twin of 'hug shp'). 'dd HEAD' is NOT
+    "my changes vs HEAD" — for that use bare 'hug dd' (or text 'hug sw').
+
+N/-N CONVENTION (same as hug sh / shp):
+    hug dd N    → the single commit HEAD~N (0 = HEAD): its introduced patch.
+    hug dd -N   → the last N commits as a range HEAD~N..HEAD (cumulative).
+    e.g.  hug dd 3   = the patch of the commit 3 back
+          hug dd -3  = the cumulative diff of the last 3 commits
+
+SUBCOMMANDS (working tree):
     s          Staged changes only (index vs HEAD) — mirrors hug ss
     u          Unstaged changes only (worktree vs index) — mirrors hug su
     w          Net working changes (worktree vs HEAD, all uncommitted) — mirrors hug sw
     (bare)     Defaults to 'w' (all uncommitted changes)
 
-    <ref>      Show diff of a specific commit or range (e.g. HEAD~3, v1.0..HEAD)
+COMMIT / RANGE (history):
+    <committish>   The diff that commit INTRODUCED (commit vs its first parent;
+                   a root commit shows every file as added). Visual twin of 'hug shp'.
+    <range>        A..B / A...B — the cumulative diff across the range.
+                   (Same thing under the show-family name: 'hug shv'.)
 
 OPTIONS:
     -h, --help Show this help
@@ -48,18 +65,17 @@ DESCRIPTION:
     a text patch to stdout. Requires a difftool to be configured in git config
     (see FIX section of the error message if not set).
 
-    WHY 'dd w' uses HEAD (not bare git difftool):
-      Bare 'git difftool --dir-diff' with no ref compares worktree-vs-index,
-      which is UNSTAGED ONLY. 'dd w' uses HEAD to show ALL uncommitted changes
-      (staged + unstaged, net). This is the key semantic difference from the
-      original 'dd' gitconfig alias, which silently dropped staged changes.
-
-    NET vs SPLIT VIEW:
+    NET vs SPLIT VIEW (working tree):
       'dd w' is a single diff (HEAD vs worktree), so it collapses the
       staged/unstaged boundary: a hunk staged then reverted cancels out, and
       the result can differ from 'hug sw's two-section text view. For the
       split, use 'hug dd s' + 'hug dd u', or the text view 'hug sw'.
       Full walkthrough: docs/commands/status-staging.md ("Visual diff").
+
+    MERGES & RANGES:
+      A merge commit is diffed against its FIRST parent (not a combined diff),
+      so 'dd <merge>' can differ from 'shp <merge>'. A range / -N shows the
+      cumulative endpoint diff (like 'hug shcp'), not one tool window per commit.
 
 PATH FILTERING:
     Append -- <path>... to restrict the diff to matching paths.
@@ -67,15 +83,16 @@ PATH FILTERING:
 
     hug dd w -- src/ tests/     # All uncommitted changes for two directories
     hug dd s -- '*.java'        # Staged changes for Java files only
+    hug dd HEAD -- README.md    # HEAD's patch, scoped to a single file
 
 EXAMPLES:
     hug dd           # All uncommitted changes (net), visual side-by-side
     hug dd s         # Staged changes only
     hug dd u         # Unstaged changes only
-    hug dd w         # All uncommitted changes (same as bare dd)
-    hug dd HEAD~3    # Changes in last 3 commits
-    hug dd v1.0..HEAD  # Changes between tag and HEAD
-    hug dd w -- file.txt  # Scoped to a single file
+    hug dd HEAD      # The patch HEAD introduced (= hug shp HEAD, visual)
+    hug dd 3         # The patch of the commit 3 back (HEAD~3)
+    hug dd -3        # Cumulative diff of the last 3 commits (HEAD~3..HEAD)
+    hug dd v1.0..HEAD  # Cumulative diff between tag and HEAD
 
 REQUIREMENTS:
     A difftool must be configured in git config. Example setup for kitty:
@@ -85,13 +102,14 @@ REQUIREMENTS:
 CAPTURING OUTPUT:
     hug dd is interactive and visual — it opens a blocking GUI in your
     terminal. It is TTY-guarded and must not be piped or redirected.
-    For pipe-safe patch output, use: hug ss / hug su / hug sw
+    For pipe-safe patch output, use: hug ss / hug su / hug sw / hug shp / hug shcp
 
 SEE ALSO:
     hug ss       : Show staged diff (text)
     hug su       : Show unstaged diff (text)
     hug sw       : Show all working changes (text, split view)
-    hug shp      : Show a commit with its full patch
+    hug shv      : Visual show — a commit's patch / a range's cumulative diff
+    hug shp      : Show a commit with its full patch (text)
 EOF
 }
 

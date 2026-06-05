@@ -46,6 +46,9 @@ See what's changed in your repository.
 | `git diff` | `hug su` | **S**tatus + **U**nstaged | Shows patch + stats automatically |
 | `git diff --staged` | `hug ss` | **S**tatus + **S**taged | Consistent naming, auto stats |
 | `git diff HEAD` | `hug sw` | **S**tatus + **W**orking | Combined view of all changes |
+| `git show <commit>` | `hug shp <commit>` | **SH**ow + **P**atch | A commit's patch (text), with stats |
+| `git show <commit>` (visual) | `hug shv <commit>` / `hug dd <commit>` | **SH**ow **V**isual | A commit's introduced patch, side-by-side in a difftool |
+| `git difftool` | `hug dd` (`s`/`u`/`w`) | **D**ir-**D**iff | Working-tree changes, visual side-by-side |
 
 **Key insight**: Hug's `s*` commands are all about **seeing** your repository state. The suffix tells you what to look at.
 

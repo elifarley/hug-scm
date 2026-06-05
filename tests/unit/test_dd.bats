@@ -23,99 +23,14 @@ load '../test_helper'
 # --------------------------------------------------------------------------- #
 # Helpers                                                                       #
 # --------------------------------------------------------------------------- #
-
-# Set up a git-command shim that logs difftool invocations to GIT_SHIM_LOG.
-# The shim is a `git` executable placed at the front of PATH.
-# Every `git difftool …` call writes its argv to GIT_SHIM_LOG (one arg per line)
-# then exits 0 (success, simulating the tool closed normally).
-# Every other `git …` call execs the real git transparently.
 #
-# WHY exec-the-real-git: the script under test also calls `git diff --quiet`,
-# `git config`, etc. — those must still work or the guards won't function.
-# WHY write-then-exit: avoids launching a real blocking GUI while still letting
-# all git plumbing succeed.
-#
-# WHY resolve real git BEFORE creating the shim:
-#   The shim must know the absolute path to the real git BEFORE it shadows it
-#   on PATH. Computing it after would find the shim itself (infinite loop).
-setup_git_shim() {
-  local shim_dir
-  shim_dir=$(mktemp -d)
-  GIT_SHIM_DIR="$shim_dir"
-  GIT_SHIM_LOG="$shim_dir/git-difftool.log"
-
-  # Resolve the real git BEFORE prepending the shim to PATH.
-  # This is critical: once the shim is on PATH, `command -v git` would resolve
-  # to the shim itself, causing infinite recursion.
-  local real_git
-  real_git=$(command -v git)
-
-  # Write the shim with the resolved absolute path embedded.
-  # We use printf to embed the real_git path safely (no quotes in heredoc).
-  cat > "$shim_dir/git" << SHIM
-#!/usr/bin/env bash
-if [[ "\${1:-}" == "difftool" ]]; then
-  # Log all arguments (one per line) so tests can grep for them
-  printf '%s\n' "\$@" >> "\${GIT_SHIM_LOG}"
-  exit 0
-fi
-# For everything else, exec the real git using its absolute path
-# (resolved before the shim was placed on PATH to avoid infinite recursion)
-exec "${real_git}" "\$@"
-SHIM
-  chmod +x "$shim_dir/git"
-
-  # Prepend shim dir so `git` resolves to our shim.
-  # HUG_BIN remains first so hug commands still resolve correctly — the shim
-  # only intercepts `git`, not `hug` or `git-dd`.
-  export PATH="$shim_dir:$PATH"
-  export GIT_SHIM_LOG GIT_SHIM_DIR
-}
-
-teardown_git_shim() {
-  [[ -n "${GIT_SHIM_DIR:-}" ]] && rm -rf "$GIT_SHIM_DIR"
-  unset GIT_SHIM_DIR GIT_SHIM_LOG
-}
-
-# Configure a fake difftool so git difftool does not launch any GUI.
-# When the tool IS invoked by git, it writes the resolved LOCAL/REMOTE tmp
-# paths to ARGV_LOG — so we can confirm the tool ran (or did NOT run).
-configure_fake_difftool() {
-  local repo_dir="${1:-$PWD}"
-  local log_file="${BATS_TEST_TMPDIR}/difftool-invocations.log"
-  ARGV_LOG="$log_file"
-  export ARGV_LOG
-
-  git -C "$repo_dir" config diff.tool fake
-  # ARGV_LOG must be exported so the cmd subshell can see it
-  git -C "$repo_dir" config difftool.fake.cmd \
-    'printf "invoked\n" >> "$ARGV_LOG"'
-  git -C "$repo_dir" config difftool.prompt false
-}
-
-# Verify that the git shim captured the given string in a difftool invocation.
-assert_shim_logged() {
-  local expected="$1"
-  if [[ ! -f "${GIT_SHIM_LOG:-}" ]]; then
-    fail "GIT_SHIM_LOG not found — shim not set up or difftool was never called"
-  fi
-  grep -qF -- "$expected" "$GIT_SHIM_LOG" \
-    || fail "Expected '${expected}' in git difftool argv log. Actual log:\n$(cat "$GIT_SHIM_LOG")"
-}
-
-# Verify the shim did NOT log a difftool invocation at all.
-assert_difftool_not_invoked() {
-  if [[ -f "${GIT_SHIM_LOG:-}" ]] && [[ -s "$GIT_SHIM_LOG" ]]; then
-    fail "git difftool was unexpectedly invoked. Log:\n$(cat "$GIT_SHIM_LOG")"
-  fi
-}
-
-# Verify the fake difftool was NOT invoked (no-changes guard check).
-assert_fake_tool_not_invoked() {
-  if [[ -f "${ARGV_LOG:-}" ]] && grep -q "invoked" "$ARGV_LOG"; then
-    fail "Fake difftool was unexpectedly invoked. Log:\n$(cat "$ARGV_LOG")"
-  fi
-}
+# The difftool test harness — the PATH `git` shim (setup_git_shim /
+# teardown_git_shim), the fake-difftool config (configure_fake_difftool), and the
+# argv assertions (assert_shim_logged, assert_shim_logged_exact,
+# refute_shim_logged_exact, assert_difftool_not_invoked, assert_fake_tool_not_invoked)
+# — lives in tests/test_helper.bash, shared with test_shv.bats (loaded above).
+# See that file's "Visual-diff (difftool) test harness" section for the rationale
+# (fake tool vs PATH shim, and why exact-line matching is required for endpoints).
 
 # --------------------------------------------------------------------------- #
 # Fixture helpers                                                               #
@@ -230,19 +145,26 @@ teardown() {
   assert_shim_logged "--no-prompt"
 }
 
-# Test plan #4 — ref / range forwarded verbatim
-@test "hug dd <ref>: forwards ref verbatim to git difftool" {
+# Engine: a single committish shows its INTRODUCED diff = `<C>^1 <C>` (two
+# explicit endpoint args), NOT the worktree-vs-ref forwarding of the old design.
+@test "hug dd <committish>: emits two-arg introduced-diff endpoints (C^1 C)" {
   TEST_REPO=$(create_test_repo_with_history)
   cd "$TEST_REPO"
   configure_fake_difftool "$TEST_REPO"
   setup_git_shim
 
-  # HEAD~1 is a valid ref in a repo with 2+ commits (created by create_test_repo_with_history)
+  # HEAD~1 = "Add feature 1"; its introduced diff is HEAD~1^1..HEAD~1.
   run git-dd HEAD~1
   assert_success
 
-  assert_shim_logged "HEAD~1"
+  # Exact argv lines — substring matching would falsely pass on the OLD behavior
+  # because "HEAD~1" is a substring of "HEAD~1^1" (Eng review E3).
+  assert_shim_logged_exact "HEAD~1^1"
+  assert_shim_logged_exact "HEAD~1"
   assert_shim_logged "--no-prompt"
+  # The old design forwarded a single bare ref with no parent endpoint; ensure
+  # we are NOT diffing against the worktree/bare HEAD.
+  refute_shim_logged_exact "HEAD"
 }
 
 # Rejection guard: combining a ref/range with the interactive picker (bare --)
@@ -646,4 +568,146 @@ teardown() {
 
   # difftool must NOT have been invoked
   assert_difftool_not_invoked
+}
+
+# --------------------------------------------------------------------------- #
+# CATEGORY 10: Commit-diff engine — introduced-diff endpoints, N/-N, ranges,
+# root + merge commits, exit-code discipline, pathspec x endpoint.
+# `dd <committish|range|N>` shows a commit's INTRODUCED diff (commit vs first
+# parent), NOT worktree-vs-ref. Endpoints are TWO explicit args; asserted EXACT.
+# --------------------------------------------------------------------------- #
+
+@test "hug dd HEAD: introduced diff of HEAD = HEAD^1 HEAD" {
+  TEST_REPO=$(create_test_repo_with_history); cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"; setup_git_shim
+  run git-dd HEAD
+  assert_success
+  assert_shim_logged_exact "HEAD^1"
+  assert_shim_logged_exact "HEAD"
+}
+
+@test "hug dd 0: N=0 resolves to HEAD → HEAD^1 HEAD" {
+  TEST_REPO=$(create_test_repo_with_history); cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"; setup_git_shim
+  run git-dd 0
+  assert_success
+  assert_shim_logged_exact "HEAD^1"
+  assert_shim_logged_exact "HEAD"
+}
+
+@test "hug dd N: N=1 resolves to HEAD~1 → HEAD~1^1 HEAD~1" {
+  TEST_REPO=$(create_test_repo_with_history); cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"; setup_git_shim
+  run git-dd 1
+  assert_success
+  assert_shim_logged_exact "HEAD~1^1"
+  assert_shim_logged_exact "HEAD~1"
+}
+
+@test "hug dd -N: -2 resolves to range HEAD~2..HEAD (single endpoint arg)" {
+  TEST_REPO=$(create_test_repo_with_history); cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"; setup_git_shim
+  run git-dd -2
+  assert_success
+  assert_shim_logged_exact "HEAD~2..HEAD"
+  # A range is ONE diff arg — there must be no synthesized parent endpoint.
+  refute_shim_logged_exact "HEAD~2..HEAD^1"
+}
+
+@test "hug dd <range>: A..B passed through verbatim as a single endpoint" {
+  TEST_REPO=$(create_test_repo_with_history); cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"; setup_git_shim
+  run git-dd HEAD~2..HEAD
+  assert_success
+  assert_shim_logged_exact "HEAD~2..HEAD"
+}
+
+# Root path: HEAD~2 is the README root (create_test_repo_with_history) and is NOT
+# HEAD — proving root detection works for an ARBITRARY ref (is_root_commit
+# <committish>), not just HEAD (Eng review E8).
+@test "hug dd <root>: root commit diffs against the empty tree" {
+  TEST_REPO=$(create_test_repo_with_history); cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"; setup_git_shim
+  local empty_tree; empty_tree=$(git hash-object -t tree /dev/null)
+  run git-dd HEAD~2
+  assert_success
+  assert_shim_logged_exact "$empty_tree"
+  assert_shim_logged_exact "HEAD~2"
+}
+
+# Merge commit → first-parent endpoints (m^1 m), built inline.
+@test "hug dd <merge>: uses first-parent endpoints (m^1 m)" {
+  TEST_REPO=$(create_test_repo); cd "$TEST_REPO"
+  local def; def=$(git rev-parse --abbrev-ref HEAD)
+  git checkout -q -b side
+  echo side > side.txt; git add side.txt; git commit -q -m "side commit"
+  git checkout -q "$def"
+  echo main >> README.md; git add README.md; git commit -q -m "main commit"
+  git merge -q --no-ff -m "merge side" side
+  configure_fake_difftool "$TEST_REPO"; setup_git_shim
+  run git-dd HEAD            # HEAD is the merge commit
+  assert_success
+  assert_shim_logged_exact "HEAD^1"
+  assert_shim_logged_exact "HEAD"
+}
+
+@test "hug dd <empty-commit>: no introduced changes → message, no launch" {
+  TEST_REPO=$(create_test_repo_with_empty_commit); cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"
+  run git-dd HEAD
+  assert_success
+  assert_output --partial "No changes introduced"
+  assert_fake_tool_not_invoked
+}
+
+@test "hug dd A..A: empty range → message, no launch" {
+  TEST_REPO=$(create_test_repo_with_history); cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"
+  run git-dd HEAD..HEAD
+  assert_success
+  assert_output --partial "No changes"
+  assert_fake_tool_not_invoked
+}
+
+# Exit-code discipline (Eng review E1): an invalid ref must ERROR, never read as
+# "No changes".
+@test "hug dd <invalid-ref>: errors (does NOT report 'no changes')" {
+  TEST_REPO=$(create_test_repo_with_history); cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"
+  run git-dd no-such-ref-xyz
+  assert_failure
+  refute_output --partial "No changes"
+  assert_fake_tool_not_invoked
+}
+
+@test "hug dd --stat: a flag is rejected, not treated as a ref" {
+  TEST_REPO=$(create_test_repo_with_history); cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"
+  run git-dd --stat
+  assert_failure
+  assert_output --partial "Unknown flag"
+}
+
+# Pathspec + endpoint: matching path → launch with endpoints + -- <file>.
+@test "hug dd <committish> -- <file>: scopes the introduced diff to a path" {
+  TEST_REPO=$(create_test_repo_with_history); cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"; setup_git_shim
+  # feature1.txt was added in HEAD~1; scope HEAD~1's diff to it.
+  run git-dd HEAD~1 -- feature1.txt
+  assert_success
+  assert_shim_logged_exact "HEAD~1^1"
+  assert_shim_logged_exact "--"
+  assert_shim_logged_exact "feature1.txt"
+}
+
+# Non-matching pathspec → guard forwards the pathspec, sees no diff, no launch
+# (proves pathspecs reach the no-changes guard — Eng review E5).
+@test "hug dd <committish> -- <unmatched>: pathspec forwarded to guard → no launch" {
+  TEST_REPO=$(create_test_repo_with_history); cd "$TEST_REPO"
+  configure_fake_difftool "$TEST_REPO"
+  # HEAD~1 introduced feature1.txt, not feature2.txt → empty scoped diff.
+  run git-dd HEAD~1 -- feature2.txt
+  assert_success
+  assert_output --partial "No changes introduced"
+  assert_fake_tool_not_invoked
 }

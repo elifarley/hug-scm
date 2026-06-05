@@ -338,7 +338,7 @@ hug sli                     # Status with list of ignored files
 hug ss [file]               # Status with staged changes patch
 hug su [file]               # Status with unstaged changes patch
 hug sw [file]               # Status with working dir changes patch (staged and unstaged)
-hug dd [s|u|w] [file]       # Visual side-by-side diff via difftool (bare/w = all uncommitted, net)
+hug dd [s|u|w|N|-N|committish|range] [-- <path>...] # Visual diff via difftool (s/u/w = working tree; bare = all uncommitted; committish = that commit's patch; range/-N = cumulative)
 
 # Staging
 hug a [files]               # Stage tracked files (or all if no args)
@@ -541,6 +541,7 @@ hug sh [commit]       # SHow [commit] (with stat; default: last)
 hug shp [commit]      # SHow: with Patch (commit with patch)
 hug shc [N|commit|range] [-- <path>...] # SHow: Changed files (cumulative stats, optionally filtered by path)
 hug shcp [N|commit|range] [-- <path>...] # SHow: Cumulative with Patch (diff + stats, optionally filtered by path)
+hug shv [N|commit|range] [-- <path>...]  # SHow: Visual (shp/shcp in a difftool; commit's patch or range's cumulative diff)
 hug shf <file> [commit] # SHow: File at [commit] (File diff in commit)
 ```
 
