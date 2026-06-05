@@ -8,7 +8,7 @@ import { defineConfig } from 'vitepress'
     },
     base: '/',
     sitemap: {
-      hostname: 'https://elifarley.github.io/hug-scm/'
+      hostname: 'http://hug-scm.orgecc.com/'
     },
     title: "Hug SCM CLI",
     description: "Documentation for Hug, a Humane Git CLI",
