@@ -26,110 +26,14 @@
 readonly _HUG_GIT_SHOW_LOADED=1
 
 ################################################################################
-# Flag-as-Ref Protection
+# Ref arithmetic lives in hug-git-repo
 ################################################################################
-
-# Guards against mistyped flags being silently treated as commit references.
-# When a command's argument parser doesn't recognize a flag (e.g. --stat on shp),
-# the flag falls through the *) catch-all and gets assigned as commit_ref.
-# This then produces confusing git errors instead of guiding the user.
-#
-# Usage: reject_flag_ref "$commit_ref" [help_func_name]
-# Parameters:
-#   $1 - The value to check
-#   $2 - Help function to call (default: show_help)
-# Behavior:
-#   - If value looks like a flag (--anything, or -x where x isn't all digits),
-#     prints an error, calls the help function, and exits with code 2.
-#   - -N patterns (like -3) are valid range shorthands and are NOT rejected.
-#   - If value doesn't look like a flag, does nothing (returns 0).
-# Examples:
-#   reject_flag_ref "--stat"         # → errors, shows help
-#   reject_flag_ref "--no-stat"      # → errors, shows help
-#   reject_flag_ref "-3"             # → passes through (valid -N range)
-#   reject_flag_ref "abc123"         # → passes through (valid ref)
-#   reject_flag_ref "main..HEAD"     # → passes through (valid range)
-reject_flag_ref() {
-  local arg="${1:-}"
-  local help_func="${2:-show_help}"
-
-  # -N (all digits after dash) is a valid range shorthand — let it through.
-  # --anything is always a flag.  -x (non-digit after dash) is also a flag.
-  if [[ "$arg" == --* ]] || { [[ "$arg" == -?* ]] && [[ ! "$arg" =~ ^-[0-9]+$ ]]; }; then
-    # Show help BEFORE error(), which calls exit and would skip this.
-    if type "$help_func" &>/dev/null; then
-      "$help_func" >&2
-    fi
-    error "Unknown flag: $arg" 2
-  fi
-}
-
-################################################################################
-# N/-N Resolution Functions
-################################################################################
-
-# Resolves a commit reference with unified N/-N syntax support
-# Usage: resolved_ref=$(resolve_commit_ref "target")
-# Parameters:
-#   $1 - Target specification (N, -N, ref, or range)
-#         - Empty string → "HEAD"
-#         - N (0-999) → "HEAD~N" (0 → HEAD)
-#         - -N (1-999) → "HEAD~N..HEAD"
-#         - Other → pass through unchanged (refs, ranges, etc.)
-# Output:
-#   Resolved git reference to stdout
-# Examples:
-#   resolve_commit_ref ""           → "HEAD"
-#   resolve_commit_ref "0"          → "HEAD"
-#   resolve_commit_ref "3"          → "HEAD~3"
-#   resolve_commit_ref "-3"         → "HEAD~3..HEAD"
-#   resolve_commit_ref "abc123"     → "abc123"
-#   resolve_commit_ref "main..HEAD" → "main..HEAD"
-resolve_commit_ref() {
-    local input="${1:-}"
-    local default="${2:-HEAD}"
-
-    # Empty target → default
-    if [[ -z "$input" ]]; then
-        printf '%s\n' "$default"
-        return 0
-    fi
-
-    # -N: Range of N commits (negative, 1-999)
-    if [[ "$input" =~ ^-[1-9][0-9]{0,2}$ ]]; then
-        local n="${input#-}"
-        printf 'HEAD~%s..HEAD\n' "$n"
-        return 0
-    fi
-
-    # N: Single commit HEAD~N (0-999)
-    if [[ "$input" =~ ^[0-9]{1,3}$ ]]; then
-        if [[ "$input" == "0" ]]; then
-            printf 'HEAD\n'
-        else
-            printf 'HEAD~%s\n' "$input"
-        fi
-        return 0
-    fi
-
-    # Pass through refs and ranges unchanged
-    printf '%s\n' "$input"
-    return 0
-}
-
-# Detects if a target is a commit range
-# Usage: if is_range "$target"; then echo "is range"; fi
-# Parameters:
-#   $1 - Target specification to check
-# Returns:
-#   0 if target is a range (contains ..), 1 otherwise
-# Examples:
-#   is_range "HEAD~3..HEAD"  → returns 0 (true)
-#   is_range "abc123"        → returns 1 (false)
-#   is_range "main"          → returns 1 (false)
-is_range() {
-    [[ "$1" == *..* ]]
-}
+# reject_flag_ref / resolve_commit_ref / is_range were hoisted to hug-git-repo
+# (pure ref arithmetic, zero display deps). Every command that needs them already
+# sources hug-git-kit, which loads hug-git-repo. WHY hoisted: the visual-diff
+# engine in hug-git-difftool needs the same resolution, and a difftool→show
+# dependency would be the wrong direction (show and difftool are orthogonal).
+# See mgmt/plans/2026-06-05-dd-visual-gateway-and-shv-design.md (T1).
 
 ################################################################################
 # Commit Display Functions
