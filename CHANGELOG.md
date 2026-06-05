@@ -4,6 +4,23 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-05
+
+### Added
+
+- **`hug shv` — visual show.** Renders a commit's patch (like `hug shp`) or a range's cumulative diff (like `hug shcp`) in your configured difftool instead of as text. `hug shv` defaults to HEAD; `hug shv <committish>`, `hug shv N`, `hug shv -N`, and `hug shv A..B` all work. It is a thin entry point over the same engine as `hug dd`'s commit mode, so `hug shv X` is identical to `hug dd X` for any commit/range/N. `shv s|u|w` is rejected with a redirect to `hug dd s|u|w` (it is commit-history only). Pathspec scoping mirrors `shcp` (multiple paths).
+- **`hug dd` accepts the `N`/`-N` convention** (the same shorthand as `hug sh`/`shp`): `hug dd 3` is the commit three back, `hug dd -3` is the cumulative diff of the last three commits.
+- **`is_root_commit <committish>` in `hug-git-repo`.** A per-ref companion to `is_at_root_commit` (which only answers for HEAD), so root-commit detection is correct for an arbitrary ref (e.g. `hug dd <root-sha>` reviewed from a non-root checkout).
+
+### Changed
+
+- **`hug dd <committish>` now shows that commit's *introduced* diff (commit vs its first parent), not worktree-vs-ref.** So **`hug dd HEAD` now matches `hug shp HEAD`** (visual), instead of silently behaving like bare `hug dd`. This makes `dd` a coherent visual-diff gateway: `s`/`u`/`w` (and bare `dd`) are working-tree views; a committish/range/N is a commit-history view. Bare `hug dd` is unchanged (still all uncommitted, worktree-vs-HEAD). A merge is diffed against its first parent (so `dd <merge>` can differ from `shp <merge>`'s combined diff); a root commit shows every file as added; a range is the cumulative endpoint diff. For working-tree-vs-a-ref, use a range (e.g. `hug dd main..HEAD`). This also fixes a latent bug: the old ref path lacked the no-changes guard, so `dd HEAD` launched an empty difftool on a clean tree; the engine now guards all paths and surfaces an error (rather than a misleading "no changes") on an invalid ref.
+- **Ref-arithmetic helpers hoisted to `hug-git-repo`.** `resolve_commit_ref`, `reject_flag_ref`, and `is_range` moved from `hug-git-show` to `hug-git-repo` (pure ref arithmetic, already in every caller's load chain) so the visual-diff engine reuses them without a difftool-to-show dependency. No behavior change for `sh`/`shp`/`shc`/`shcp`/`l`/`ll`.
+
+### Removed
+
+- **Stray test-debugging artifacts from the repo root** (`errors.txt`, `errors-grouped.txt`, `semantic-count-test.txt`, `file1.txt`, `file3.txt`, `TAG_TEST_FIXES_SUMMARY.md`, `skipped-tests-analysis.yaml`) committed by mistake in earlier sessions. Legitimate fixtures (screencast demos, Python test fixtures) are untouched.
+
 ## [1.1.0] - 2026-06-04
 
 ### Fixed
