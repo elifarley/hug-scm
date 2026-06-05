@@ -75,7 +75,7 @@ Hug Commands
 │   ├── ss           # Status + Staged diff
 │   ├── su           # Status + Unstaged diff
 │   ├── sw           # Status + Working dir diff (both unstaged and staged)
-│   ├── dd           # Visual side-by-side difftool (dd s/u/w; bare = all uncommitted, net)
+│   ├── dd           # Visual difftool: s/u/w (working) | committish/N (commit's patch) | range/-N (cumulative)
 │   └── sx           # eXtended summary
 ├── a* (Staging: Prepare Commit)
 │   ├── a            # Add tracked

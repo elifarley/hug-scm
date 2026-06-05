@@ -170,23 +170,34 @@ Show diffs inline for better inspection.
 
 ## Visual diff: `hug dd`
 
-`hug dd` opens a **visual side-by-side difftool** (e.g. kitty diff) instead of printing a text patch. It's the visual counterpart to `ss`/`su`/`sw`, with matching `s`/`u`/`w` subcommands.
+`hug dd` opens a **visual side-by-side difftool** (e.g. kitty diff) instead of printing a text patch. It's the **visual-diff gateway**: the `s`/`u`/`w` subcommands mirror the working-tree text family `ss`/`su`/`sw`, while a **committish / range / N** shows commit-history diffs — the visual counterpart to `shp`/`shcp` (also reachable under the show-family name `hug shv`).
 
 | Command | Shows | Compares |
 | --- | --- | --- |
 | `hug dd s` | Staged | index vs HEAD |
 | `hug dd u` | Unstaged | worktree vs index |
 | `hug dd w` (or bare `hug dd`) | All uncommitted (net) | worktree vs HEAD |
-| `hug dd <ref\|range>` | A commit / range | as given (e.g. `hug dd HEAD~3`) |
+| `hug dd <committish>` / `hug dd N` | That commit's **introduced** diff | commit vs its first parent (root → empty tree) |
+| `hug dd <range>` / `hug dd -N` | A range (cumulative) | endpoints, e.g. `HEAD~3..HEAD` |
 
 ```sh
 hug dd s              # staged changes, visual
 hug dd u              # unstaged changes, visual
 hug dd w              # ALL uncommitted changes (same as bare `hug dd`)
-hug dd HEAD~3         # a commit / range
+hug dd HEAD           # the patch HEAD introduced (= hug shp HEAD, visual)
+hug dd 3              # the patch of the commit 3 back (HEAD~3)
+hug dd -3             # cumulative diff of the last 3 commits (HEAD~3..HEAD)
+hug dd v1.0..HEAD     # cumulative diff across a range
 hug dd w -- src/      # scope to a path
 hug dd --             # pick files interactively, then one difftool window
 ```
+
+> [!NOTE]
+> A **committish** means *that commit's own patch* (like `git show`), so `hug dd HEAD`
+> shows HEAD's changes — distinct from bare `hug dd`, which shows your *uncommitted*
+> work. (`hug dd HEAD` ≡ `hug shp HEAD`, just visual.) A **range** (or `-N`) shows the
+> cumulative endpoint diff like `hug shcp`; a merge is diffed against its first parent.
+> Numbers use the same `N`/`-N` convention as `hug sh`.
 
 ### Net view vs the two-section split
 
