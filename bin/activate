@@ -6,7 +6,18 @@ test -e "$HOME"/.hug-scm || {
 }
 
 . "$HOME"/.hug-scm
-export HUG_HOME PATH="$HUG_HOME/bin:$HUG_HOME/git-config/bin:$PATH:$HOME/.hug-deps/bin"
+export HUG_HOME
+# Idempotent PATH setup: only prepend if not already present.
+# WHY: this file is sourced on every shell invocation (via 20-local.sh).
+# Without the guard, PATH grows by 4 entries each time.
+# GOTCHA: the `case ":$PATH:"` pattern (leading+trailing colons) is the
+# standard idempotent PATH trick. The colons prevent partial matches —
+# e.g., `/usr/bin` won't falsely match `/usr/local/bin`. Never replace
+# this with `echo $PATH | grep` — it breaks on substring matches.
+case ":$PATH:" in
+  *":$HUG_HOME/bin:"*) ;; # already on PATH — skip
+  *) export PATH="$HUG_HOME/bin:$HUG_HOME/git-config/bin:$PATH:$HOME/.hug-deps/bin" ;;
+esac
 alias h=hug
 alias g=hug
 
