@@ -126,11 +126,11 @@ teardown() {
   # Menu may or may not show due to timing, cancellation is expected
   assert_output --partial "cancelled"
 
-  # Should succeed to preview dirty worktree with dry-run
+  # Dirty worktree is blocked even with --dry-run (pre-flight safety gate, exit 3)
   run git-wtdel -p "$dirty_wt" --dry-run
-  assert_success
-  assert_output --partial "Worktree Removal Preview (DRY RUN)"
-  assert_output --partial "Dirty"
+  assert_failure 3
+  assert_output --partial "BLOCKED"
+  assert_output --partial "uncommitted changes"
 
   # Should succeed to remove with force
   run git-wtdel -p "$dirty_wt" --force
@@ -318,13 +318,13 @@ teardown() {
 
   run git-wtc feature-1 "${TEST_REPO}-duplicate-feature" --force
   assert_failure
-  assert_output --partial "already checked out in another worktree"
+  assert_output --partial "checked out in worktree"
 
-  # 3. Try to remove current worktree
+  # 3. Try to remove current worktree (blocked even with HUG_FORCE, exit 3)
   cd "$first_wt"
   run env HUG_FORCE=true git-wtdel -p "$first_wt"
-  assert_failure
-  assert_output --partial "Cannot remove current worktree"
+  assert_failure 3
+  assert_output --partial "current worktree"
 
   # 4. Go back to main and remove successfully
   cd "$TEST_REPO"
