@@ -175,7 +175,7 @@ if [[ ${#branch_names[@]} -gt 0 ]]; then
       exit 1
     fi
     if [[ "$worktree_path" == "$main_worktree" ]]; then
-      error "Cannot remove the main worktree (branch '$bn'). Use a different branch or specify -p for path."
+      error "Cannot remove the main worktree (branch '$bn'). Only linked worktrees can be removed."
       exit 1
     fi
     worktree_paths+=("$worktree_path")
@@ -329,12 +329,17 @@ for worktree_path in "${worktree_paths[@]}"; do
       info "Worktree directory already removed: ${worktree_path/#$HOME/\~}"
       if ! $dry_run; then
         info "Cleaning up orphaned Git metadata..."
-        # WHY: Locked stale worktrees won't be pruned by 'git worktree prune'
-        # unless explicitly unlocked first. The lock file is metadata-only and
-        # the directory is already gone, so unlocking is safe.
-        git --git-dir="$_orphan_gitdir" worktree unlock "$worktree_path" 2> /dev/null || true
-        git --git-dir="$_orphan_gitdir" worktree prune 2> /dev/null
-        success "Pruned stale worktree entry: ${worktree_path/#$HOME/\~}"
+        # Targeted prune: removes ONLY this entry's admin dir. The old code
+        # ran `git worktree prune` (global), which silently erased every
+        # OTHER stale entry too. Locked entries need no unlock: the lock
+        # marker lives inside the admin dir we delete.
+        if prune_worktree_entry "$_orphan_gitdir" "$worktree_path"; then
+          success "Pruned stale worktree entry: ${worktree_path/#$HOME/\~}"
+        else
+          warning "Could not locate the stale entry to prune: $worktree_path. Try: hug wtprune"
+          failed+=("$worktree_path")
+          continue
+        fi
       else
         info "Would prune stale worktree metadata (dry run)"
       fi
@@ -379,6 +384,20 @@ for worktree_path in "${worktree_paths[@]}"; do
     failed+=("$worktree_path")
     continue
   }
+
+  # SAFETY (P0): never operate on a gitdir's MAIN working tree. The
+  # branch-mode resolver already refuses main, but path-mode (-p) reached
+  # the removal step unguarded; git then refused ("is a main working tree")
+  # and the old rm -rf fallback DELETED THE ENTIRE MAIN REPO. Anchor the
+  # check to the TARGET's own gitdir (not CWD's) so submodule topologies
+  # resolve the correct main. Reproduced 2026-06-12; see design §3 A1.
+  _wt_main=$(main_worktree_of_gitdir "$_wt_gitdir" 2>/dev/null || true)
+  if [[ -n "$_wt_main" && "$worktree_path" == "$_wt_main" ]]; then
+    warning "Cannot remove the main worktree (${worktree_path/#$HOME/\~}). Only linked worktrees can be removed."
+    info "To work on something else, create a worktree: hug wtc <branch>"
+    failed+=("$worktree_path")
+    continue
+  fi
 
   # Get branch name for display
   wt_branch=$(git -C "$worktree_path" rev-parse --abbrev-ref HEAD 2> /dev/null || echo "unknown")
@@ -483,29 +502,35 @@ for worktree_path in "${worktree_paths[@]}"; do
 
   git_err=""
   removal_success=false
-  if ! git_err=$(git --git-dir="$_wt_gitdir" worktree remove "${git_wt_args[@]}" 2>&1); then
-    # Fallback to manual cleanup
-    warning "git worktree remove failed: $git_err"
-    info "Attempting manual cleanup..."
-    if rm -rf "$worktree_path" && git --git-dir="$_wt_gitdir" worktree prune 2> /dev/null; then
-      success "Worktree removed for branch '$wt_branch' (manual cleanup)"
-      info "Deleted directory: ${worktree_path/#$HOME/\~}"
-      removal_success=true
-    else
-      error "Failed to remove worktree: $worktree_path. Manual intervention required."
-    fi
-  else
-    # Verify removal
-    if [[ -d "$worktree_path" ]]; then
-      warning "Worktree directory still exists after removal. Running cleanup..."
-      rm -rf "$worktree_path" 2> /dev/null || true
-      git --git-dir="$_wt_gitdir" worktree prune 2> /dev/null || true
-    fi
+  if git_err=$(git --git-dir="$_wt_gitdir" worktree remove "${git_wt_args[@]}" 2>&1); then
     removal_success=true
+  elif $force && grep -qi 'submodule' <<< "$git_err"; then
+    # git demands --force TWICE for worktrees containing submodules. The user
+    # already opted into force; honor it through git's own escape hatch —
+    # still git-managed, never a blind filesystem delete.
+    if git_err=$(git --git-dir="$_wt_gitdir" worktree remove "$worktree_path" --force --force 2>&1); then
+      removal_success=true
+    fi
   fi
 
-  # Run prune to clean up metadata
-  git --git-dir="$_wt_gitdir" worktree prune 2> /dev/null || true
+  if ! $removal_success; then
+    # WHY no rm -rf fallback: git refuses removals for PRINCIPLED reasons
+    # (main worktree, locks, submodules). The old fallback treated every
+    # refusal as cruft and bulldozed it — that is how `-p <main> -f`
+    # deleted an entire repository. Hug never deletes files git refused
+    # to remove; we surface git's reason and stop.
+    warning "git worktree remove failed: $git_err"
+    info "Hug does not delete files git refused to remove. Resolve the cause above, or clean stale metadata with: hug wtprune"
+    failed+=("$worktree_path")
+    continue
+  fi
+
+  # Post-success: metadata is gone. If a husk directory somehow remains
+  # (rare; e.g. files created mid-removal), leave it — deleting user files
+  # is not hug's call. Tell the user instead.
+  if [[ -d "$worktree_path" ]]; then
+    warning "Worktree metadata removed but directory still exists: ${worktree_path/#$HOME/\~} (left untouched)"
+  fi
 
   # Track result
   if $removal_success; then

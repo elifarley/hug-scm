@@ -284,7 +284,37 @@ get_current_worktree_path() {
 # Resolve the main working-tree path that the CURRENT gitdir owns.
 # Usage: main_path=$(resolve_main_worktree_path)
 #
-# Implementation: two-tier approach for correctness across all topologies:
+# Thin CWD adapter over main_worktree_of_gitdir(). Kept because every existing
+# call-site expects zero-arg resolution anchored to CWD. The two-tier logic
+# (core.worktree → porcelain) lives in main_worktree_of_gitdir() — see that
+# function for the full rationale on submodule topology, SIGPIPE avoidance, and
+# the Bash `local` exit-code footgun.
+#
+# Returns: absolute path to main working tree, or non-zero if CWD is not in a
+# git repo (or is a bare repo).
+resolve_main_worktree_path() {
+    local gitdir
+    # Bare repos have no working tree — early return prevents nonsense paths
+    # downstream (e.g. <parent>/bare.git.WT.<branch> with .git in basename
+    # which would then trip the new path_is_inside_dot_git guard with a
+    # confusing error message). Eng phase finding #E6.
+    if [[ "$(git rev-parse --is-bare-repository 2>/dev/null)" == "true" ]]; then
+        return 1
+    fi
+    gitdir=$(worktree_gitdir "$(pwd)") || return 1
+    main_worktree_of_gitdir "$gitdir"
+}
+
+# Resolve the MAIN working tree owned by an EXPLICIT gitdir.
+# Usage: main_wt=$(main_worktree_of_gitdir "/abs/gitdir") || return 1
+#
+# WHY a separate function from resolve_main_worktree_path: wtdel path-mode
+# targets may belong to a DIFFERENT gitdir than the caller's CWD (submodule
+# worktrees, -p across repos). Anchoring to the target's own gitdir is the
+# only correct way to answer "is this path that gitdir's main worktree?" —
+# CWD-based resolution would compare against the WRONG main.
+#
+# Two-tier approach for correctness across all topologies:
 #
 # Tier 1 — core.worktree (submodule-specific): git stores the submodule
 #   working tree as a relative path in [core] worktree inside the gitdir's
@@ -302,53 +332,63 @@ get_current_worktree_path() {
 # main worktree — not the actual checked-out working tree at <meta>/sub.
 # Only core.worktree holds the correct working-tree path in that topology.
 #
-# WHY NOT dirname(--git-common-dir): dirname strips one segment from
-# <meta>/.git/modules/<sub> → <meta>/.git/modules, a directory of gitdirs,
-# not a working tree at all.
+# Capture-then-filter (NOT pipe). See worktree_exists in this file for the
+# full WHY. Summary: `git ... | awk '/^worktree/{ ...; exit }'` races under
+# `set -o pipefail` — awk exits early, git gets SIGPIPE on the next write,
+# the pipe exits 141, and the enclosing command substitution returns empty.
 #
-# Returns: absolute path to main working tree, or empty string + non-zero
-# if the current CWD is not inside a git repo.
-resolve_main_worktree_path() {
-    local gitdir core_wt main_wt
-    # Bare repos have no working tree — early return prevents nonsense paths
-    # downstream (e.g. <parent>/bare.git.WT.<branch> with .git in basename
-    # which would then trip the new path_is_inside_dot_git guard with a
-    # confusing error message). Eng phase finding #E6.
-    if [[ "$(git rev-parse --is-bare-repository 2>/dev/null)" == "true" ]]; then
-        return 1
-    fi
-    gitdir=$(worktree_gitdir "$(pwd)") || return 1
+# IMPORTANT: `local porcelain` must be declared on a SEPARATE line from its
+# assignment. `local porcelain=$(git ...)` always returns 0 because `local`
+# itself is a builtin that exits 0 regardless — the git exit code is masked.
+# This is a classic Bash footgun when error-propagation matters.
+main_worktree_of_gitdir() {
+    local gitdir="$1" core_wt main_wt
+    [[ -n "$gitdir" ]] || return 1
 
     # Tier 1: core.worktree — written by git for submodules; absent in plain
     # clones and linked worktrees. Resolve relative to the gitdir when not
     # an absolute path (git uses relative notation like "../../../sub").
     core_wt=$(git --git-dir="$gitdir" config --get core.worktree 2>/dev/null || true)
     if [[ -n "$core_wt" ]]; then
-        [[ "$core_wt" = /* ]] || core_wt="$(realpath "$gitdir/$core_wt")"
+        [[ "$core_wt" = /* ]] || core_wt="$(realpath "$gitdir/$core_wt" 2>/dev/null)" || return 1
         printf '%s\n' "$core_wt"
         return 0
     fi
 
     # Tier 2: porcelain — correct for plain clones and linked worktrees where
     # core.worktree is absent. Capture into a variable so we can verify
-    # non-empty result. Eng phase finding #E5: bare awk-pipe silently succeeds
-    # with empty output on corrupt or unexpected porcelain, propagating a
-    # bogus empty anchor.
-    #
-    # Capture-then-filter (NOT pipe). See worktree_exists in this file for the
-    # full WHY. Summary: `git ... | awk '/^worktree/{ ...; exit }'` races under
-    # `set -o pipefail` — awk exits early, git gets SIGPIPE on the next write,
-    # the pipe exits 141, and the enclosing command substitution returns empty.
-    #
-    # IMPORTANT: `local porcelain` must be declared on a SEPARATE line from its
-    # assignment. `local porcelain=$(git ...)` always returns 0 because `local`
-    # itself is a builtin that exits 0 regardless — the git exit code is masked.
-    # This is a classic Bash footgun when error-propagation matters.
+    # non-empty result.
     local porcelain
     porcelain=$(git --git-dir="$gitdir" worktree list --porcelain 2>/dev/null) || return 1
     main_wt=$(awk '/^worktree / { print substr($0, 10); exit }' <<< "$porcelain")
     [[ -n "$main_wt" ]] || return 1
     printf '%s\n' "$main_wt"
+}
+
+# Remove ONLY the admin entry that registers <wt-path> under <gitdir>.
+# Usage: prune_worktree_entry "/abs/gitdir" "/abs/wt-path" || return 1
+#
+# WHY NOT `git worktree prune`: prune is GLOBAL — it erases every stale
+# entry of that gitdir. wtdel used it per-removal, which silently destroyed
+# UNRELATED stale metadata. This helper is the targeted alternative: it
+# deletes exactly $gitdir/worktrees/<id> for the entry whose `gitdir` file
+# points at <wt-path>/.git, and nothing else.
+#
+# SAFETY: operates exclusively inside $gitdir/worktrees/ (admin metadata).
+# It never touches working files.
+prune_worktree_entry() {
+    local gitdir="$1" wt_path="$2" admin entry
+    [[ -n "$gitdir" && -n "$wt_path" ]] || return 1
+    local target="$wt_path/.git"
+    for admin in "$gitdir"/worktrees/*/; do
+        [[ -f "${admin}gitdir" ]] || continue
+        entry=$(<"${admin}gitdir")
+        if [[ "$entry" == "$target" ]]; then
+            rm -rf "${admin%/}"
+            return 0
+        fi
+    done
+    return 1
 }
 
 # Returns the superproject's working-tree path, or empty string if the

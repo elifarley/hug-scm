@@ -824,3 +824,83 @@ teardown() {
 
   cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
 }
+
+# ── Safety regression suite (design §3; P0 found 2026-06-12) ────────────────
+
+@test "hug wtdel: SAFETY P0 — -p <main> -f from linked worktree refuses, repo survives" {
+  cd "$FEATURE_WT"
+  run git-wtdel -p "$TEST_REPO" --force
+  assert_failure
+  assert_output --partial "Cannot remove the main worktree"
+  refute_output --partial "Deleted directory"
+  assert [ -d "$TEST_REPO/.git" ]
+  # Verify repo contents survive — main_extra.txt is the file committed on main
+  assert [ -f "$TEST_REPO/main_extra.txt" ]
+}
+
+@test "hug wtdel: SAFETY — git refusal leaves worktree intact (no rm -rf fallback)" {
+  # Verify the rm -rf fallback is GONE by injecting a fake git binary that
+  # refuses 'worktree remove'. If hug still had the rm -rf fallback, it would
+  # bulldoze the worktree despite git refusing. With our fix, it surfaces the
+  # error and leaves the worktree untouched.
+  #
+  # TECHNIQUE: Create a wrapper script that shadows the real git in PATH.
+  # We use bash -c with explicit PATH to ensure the wrapper is found BEFORE
+  # the real git. The wrapper passes through everything except 'worktree remove'.
+  # CRITICAL: hardcode the real git path to avoid infinite recursion (the
+  # wrapper itself IS named 'git', so $(which git) inside it would find itself).
+  cd "$TEST_REPO"
+
+  _REAL_GIT=$(command -v git)
+  _FAKE_DIR="$BATS_TEST_TMPDIR/git-fake-bin"
+  mkdir -p "$_FAKE_DIR"
+  cat > "$_FAKE_DIR/git" <<WRAPPER
+#!/usr/bin/env bash
+if [[ "\$*" == *"worktree remove"* ]]; then
+  echo "fatal: test-injected refusal" >&2
+  exit 1
+fi
+exec "$_REAL_GIT" "\$@"
+WRAPPER
+  chmod +x "$_FAKE_DIR/git"
+
+  # bash -c with PATH prepended ensures git-wtdel (a new bash process via its
+  # shebang) finds our wrapper first. HUG_FORCE=true bypasses the danger prompt.
+  run bash -c 'export PATH="'"$_FAKE_DIR"':$PATH" HUG_FORCE=true; git-wtdel -p "'"$FEATURE_WT"'"'
+  assert_failure
+  assert_output --partial "git worktree remove failed"
+  assert_output --partial "does not delete files git refused to remove"
+  assert [ -d "$FEATURE_WT" ]
+}
+
+@test "hug wtdel: SAFETY — -f retries submodule refusal via git --force --force" {
+  SUB_SRC="$BATS_TEST_TMPDIR/subsrc2"
+  git init -q "$SUB_SRC"
+  git -C "$SUB_SRC" config user.email t@e.c
+  git -C "$SUB_SRC" config user.name T
+  (cd "$SUB_SRC" && echo s > s.txt && git add . && git commit -qm sub)
+  (cd "$FEATURE_WT" && git -c protocol.file.allow=always submodule add -q "$SUB_SRC" sub && git commit -qm "add sub")
+
+  cd "$TEST_REPO"
+  run git-wtdel -p "$FEATURE_WT" --force
+  assert_success
+  assert_output --partial "Worktree removed"
+  assert_worktree_not_exists "$FEATURE_WT"
+}
+
+@test "hug wtdel: prune is scoped — unrelated stale entries survive a removal" {
+  cd "$TEST_REPO"
+  rm -rf "$FEATURE_WT"            # feature-1 becomes a stale entry
+
+  run git-wtdel hotfix-1 --force  # remove an UNRELATED healthy worktree
+  assert_success
+
+  # The old global prune would have erased feature-1's metadata here.
+  run git worktree list --porcelain
+  assert_output --partial "worktree $FEATURE_WT"
+
+  # And the stale entry is still individually addressable:
+  run git-wtdel feature-1 --force
+  assert_success
+  assert_output --partial "Pruned stale worktree entry"
+}

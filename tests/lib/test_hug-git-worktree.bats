@@ -813,3 +813,53 @@ teardown() {
   '
   assert_failure
 }
+
+# ── main_worktree_of_gitdir / prune_worktree_entry (P0 safety lib) ──────────
+
+@test "main_worktree_of_gitdir: resolves main from a linked worktree's gitdir" {
+  local wt gitdir
+  wt=$(create_test_worktree "libtest-mwd" "$TEST_REPO")
+  gitdir=$(worktree_gitdir "$wt")
+  run main_worktree_of_gitdir "$gitdir"
+  assert_success
+  assert_output "$(readlink -f "$TEST_REPO" 2>/dev/null || echo "$TEST_REPO")"
+}
+
+@test "main_worktree_of_gitdir: fails on empty arg" {
+  # shellcheck disable=SC2314
+  ! main_worktree_of_gitdir ""
+}
+
+@test "prune_worktree_entry: removes only the targeted stale entry" {
+  local wt1 wt2 gitdir
+  wt1=$(create_test_worktree "prune-test-1" "$TEST_REPO")
+  wt2=$(create_test_worktree "prune-test-2" "$TEST_REPO")
+  gitdir=$(worktree_gitdir "$TEST_REPO")
+  rm -rf "$wt1" "$wt2"
+
+  run prune_worktree_entry "$gitdir" "$wt1"
+  assert_success
+
+  run git worktree list --porcelain
+  refute_output --partial "worktree $wt1"
+  assert_output --partial "worktree $wt2"
+}
+
+@test "prune_worktree_entry: returns 1 when no entry matches" {
+  local gitdir
+  gitdir=$(worktree_gitdir "$TEST_REPO")
+  # shellcheck disable=SC2314
+  ! prune_worktree_entry "$gitdir" "/nonexistent/wt"
+}
+
+@test "prune_worktree_entry: handles locked stale entries (no unlock needed)" {
+  local wt gitdir
+  wt=$(create_test_worktree "prune-test-locked" "$TEST_REPO")
+  git worktree lock "$wt"
+  gitdir=$(worktree_gitdir "$TEST_REPO")
+  rm -rf "$wt"
+  run prune_worktree_entry "$gitdir" "$wt"
+  assert_success
+  run git worktree list --porcelain
+  refute_output --partial "worktree $wt"
+}
