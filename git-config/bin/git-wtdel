@@ -391,6 +391,50 @@ else
   done
 fi
 
+# Deduplicate plan records by resolved path (empty paths dedup by spec).
+# WHY: `hug wtdel feat feat --force` resolves both to the same path; without
+# dedup, the first EXECUTE removes the worktree and the second fails with
+# "not a working tree" — a partial removal that violates the all-or-nothing
+# batch contract introduced in this PR.
+if [[ ${#plan_specs[@]} -gt 1 ]]; then
+  declare -A _dedup_seen=()
+  declare -a _dedup_keep=()
+  for i in "${!plan_specs[@]}"; do
+    # Use resolved path as key; fall back to spec for no-worktree entries.
+    _key="${plan_paths[$i]:-${plan_specs[$i]}}"
+    if [[ -n "${_dedup_seen[$_key]+x}" ]]; then
+      warning "Duplicate target '${plan_specs[$i]}' — skipping (same as '${_dedup_seen[$_key]}')"
+    else
+      _dedup_seen["$_key"]="${plan_specs[$i]}"
+      _dedup_keep+=("$i")
+    fi
+  done
+  # Compact the plan arrays to only kept indices
+  if [[ ${#_dedup_keep[@]} -lt ${#plan_specs[@]} ]]; then
+    _new_specs=()
+    _new_paths=()
+    _new_branches=()
+    _new_gitdirs=()
+    _new_states=()
+    _new_details=()
+    for i in "${_dedup_keep[@]}"; do
+      _new_specs+=("${plan_specs[$i]}")
+      _new_paths+=("${plan_paths[$i]}")
+      _new_branches+=("${plan_branches[$i]}")
+      _new_gitdirs+=("${plan_gitdirs[$i]}")
+      _new_states+=("${plan_states[$i]}")
+      _new_details+=("${plan_details[$i]}")
+    done
+    plan_specs=("${_new_specs[@]}")
+    plan_paths=("${_new_paths[@]}")
+    plan_branches=("${_new_branches[@]}")
+    plan_gitdirs=("${_new_gitdirs[@]}")
+    plan_states=("${_new_states[@]}")
+    plan_details=("${_new_details[@]}")
+  fi
+  unset _dedup_seen _dedup_keep _key _new_specs _new_paths _new_branches _new_gitdirs _new_states _new_details
+fi
+
 # Phase 2: PRE-FLIGHT -- report the plan, abort if blocked/invalid
 n_total=${#plan_specs[@]}
 n_blocked=0

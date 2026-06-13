@@ -166,6 +166,9 @@ while true; do
     shift
     ;;
   -p | --path) # Explicit worktree path (alternative to positional arg)
+    if [[ -z "${2:-}" ]]; then
+      error_usage "-p/--path requires a non-empty value."
+    fi
     flag_path="$2"
     shift 2
     ;;
