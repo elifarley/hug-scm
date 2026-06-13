@@ -966,3 +966,37 @@ teardown() {
   assert_json_array_length '.worktrees' 1
   assert_json_value '.worktrees[0].branch' 'feature-1'
 }
+
+# ── Staleness display: (gone) instead of commit hash ─────────────────────────
+
+@test "hug wtl: stale worktree shows (gone) instead of commit" {
+  # Use the existing FEATURE_WT from setup instead of creating a duplicate
+  rm -rf "$FEATURE_WT"
+  cd "$TEST_REPO"
+  run git-wtl 2>/dev/null
+  assert_success
+  assert_output --partial "(gone)"
+  # The stale worktree line must show "(gone)", not a 7-char hex hash.
+  # Per-line grep (BATS --regexp spans lines via .* matching \n).
+  if echo "$output" | grep -qE 'feature-1[^(]*\([0-9a-f]{7}\)'; then
+    fail "stale worktree still shows hex commit hash"
+  fi
+}
+
+@test "hug wtl: usage errors exit 2" {
+  cd "$TEST_REPO"
+  run git-wtl --bogus
+  assert_failure 2
+  assert_output --partial "Unknown option"
+}
+
+@test "hug wtl: --json exposes missing and dirty_details" {
+  wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  echo dirty > "$wt/x.txt"
+  cd "$TEST_REPO"
+  run bash -c "git-wtl --json 2>/dev/null | python3 -m json.tool"
+  assert_success
+  assert_output --partial '"missing": false'
+  assert_output --partial '"dirty_details"'
+  assert_output --partial '"untracked"'
+}

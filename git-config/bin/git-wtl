@@ -89,8 +89,7 @@ while [[ $# -gt 0 ]]; do
     ;;
   -b | --branch)
     if [[ -z "${2:-}" ]]; then
-      error "-b/--branch requires a value"
-      exit 1
+      error_usage "Option -b/--branch requires a value."
     fi
     branch_filters+=("$2")
     shift 2
@@ -109,8 +108,7 @@ while [[ $# -gt 0 ]]; do
     shift $#
     ;;
   -*)
-    error "Unknown option: $1"
-    exit 1
+    error_usage "Unknown option: $1"
     ;;
   *)
     search_terms+=("$1")
@@ -124,8 +122,7 @@ check_git_repo
 
 # --path-only and --json are mutually exclusive
 if $json_output && $path_only; then
-  error "--json and --path-only are mutually exclusive"
-  exit 1
+  error_usage "--json and --path-only are mutually exclusive."
 fi
 
 # JSON output mode
@@ -222,6 +219,11 @@ if [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
     dirty="${filtered_dirty[$i]}"
     locked="${filtered_locked[$i]}"
 
+    # Stale entry: directory deleted externally but metadata remains.
+    # Show '(gone)' instead of a commit hash — self-documenting, no new
+    # legend symbol, no column shift (design §7/N6).
+    [[ -d "$path" ]] || commit="gone"
+
     path_display="${path/#$HOME/\~}"
     is_current="false"
     [[ "$path" == "$current_worktree" ]] && is_current="true"
@@ -243,6 +245,11 @@ else
     commit="${commits[$i]}"
     dirty="${status_dirty[$i]}"
     locked="${locked_status[$i]}"
+
+    # Stale entry: directory deleted externally but metadata remains.
+    # Show '(gone)' instead of a commit hash — self-documenting, no new
+    # legend symbol, no column shift (design §7/N6).
+    [[ -d "$path" ]] || commit="gone"
 
     path_display="${path/#$HOME/\~}"
     is_current="false"
