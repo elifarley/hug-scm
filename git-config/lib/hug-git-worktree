@@ -1318,6 +1318,72 @@ output_worktree_json() {
         "${_oj_args[@]}"
 }
 
+# Classify ONE wtdel target for pre-flight planning (design §4 phase 1).
+# Usage: wtdel_classify_target <abs-path> <force:true|false> \
+#            state_var gitdir_var branch_var detail_var
+# States: ok | stale | missing | not-worktree | main | current | locked | dirty
+#   stale  = registered in some reachable gitdir but directory gone (prunable)
+#   missing= not on disk AND not registered anywhere we can see
+# The caller decides which states are executable (ok, stale) vs blocked vs
+# invalid. This function NEVER exits and NEVER mutates anything.
+wtdel_classify_target() {
+    local _ct_path="$1" _ct_force="$2"
+    local -n _ct_state="$3" _ct_gitdir="$4" _ct_branch="$5" _ct_detail="$6"
+    _ct_state="" _ct_gitdir="" _ct_branch="" _ct_detail=""
+
+    if [[ ! -e "$_ct_path" ]]; then
+        local _ct_orphan
+        _ct_orphan=$(find_worktree_owning_gitdir "$_ct_path" 2>/dev/null || true)
+        if [[ -n "$_ct_orphan" ]]; then
+            _ct_state="stale"; _ct_gitdir="$_ct_orphan"
+            return 0
+        fi
+        _ct_state="missing"; _ct_detail="path does not exist and is not a registered worktree"
+        return 0
+    fi
+
+    if [[ ! -d "$_ct_path" ]] || ! worktree_exists "$_ct_path"; then
+        _ct_state="not-worktree"; _ct_detail="not a registered Git worktree"
+        return 0
+    fi
+
+    _ct_gitdir=$(worktree_gitdir "$_ct_path") || {
+        _ct_state="not-worktree"; _ct_detail="cannot resolve owning gitdir"
+        return 0
+    }
+    _ct_branch=$(git -C "$_ct_path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+
+    local _ct_main
+    _ct_main=$(main_worktree_of_gitdir "$_ct_gitdir" 2>/dev/null || true)
+    if [[ -n "$_ct_main" && "$_ct_path" == "$_ct_main" ]]; then
+        _ct_state="main"; _ct_detail="main worktree of its repository"
+        return 0
+    fi
+
+    if [[ "$_ct_path" == "$(get_current_worktree_path)" ]]; then
+        _ct_state="current"; _ct_detail="this is the current worktree"
+        return 0
+    fi
+
+    if worktree_is_locked "$_ct_path" "$_ct_gitdir"; then
+        _ct_state="locked"; _ct_detail="locked (git worktree unlock '$_ct_path')"
+        return 0
+    fi
+
+    local _ct_dirty=false _ct_dirty_details=""
+    get_worktree_dirty_details "$_ct_path" _ct_dirty _ct_dirty_details
+    if [[ "$_ct_dirty" == "true" ]]; then
+        _ct_detail="$_ct_dirty_details"
+        if [[ "$_ct_force" != "true" ]]; then
+            _ct_state="dirty"
+            return 0
+        fi
+    fi
+
+    _ct_state="ok"
+    return 0
+}
+
 # Get worktree path by branch name
 # Usage: path=$(get_worktree_path_by_branch "branch-name")
 # Returns: Path to worktree if branch has one, empty string otherwise

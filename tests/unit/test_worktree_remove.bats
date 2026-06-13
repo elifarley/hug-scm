@@ -34,21 +34,15 @@ teardown() {
 }
 
 @test "hug wtdel: removes worktree at specified path" {
-  setup_gum_mock
-  export HUG_TEST_GUM_CONFIRM=yes  # Simulate confirmation
-
   cd "$TEST_REPO"
-  # Use --force to bypass confirmation entirely and test the removal logic
   run git-wtdel -p "$FEATURE_WT" --force
 
   assert_success
-  assert_output --partial "Worktree Removal Summary"
+  assert_output --partial "Worktree Removal Plan"
   assert_output --partial "Worktree removed"
 
   # Verify worktree was removed
   assert_worktree_not_exists "$FEATURE_WT"
-
-  teardown_gum_mock
 }
 
 @test "hug wtdel: dry run shows what would be removed" {
@@ -56,7 +50,7 @@ teardown() {
   run git-wtdel -p "$FEATURE_WT" --dry-run
 
   assert_success
-  assert_output --partial "Worktree Removal Preview (DRY RUN)"
+  assert_output --partial "Worktree Removal Plan (DRY RUN)"
   assert_output --partial "No changes made (dry run)"
 
   # Worktree should still exist
@@ -80,8 +74,9 @@ teardown() {
   cd "$FEATURE_WT"
   run git-wtdel -p "$FEATURE_WT"
 
-  assert_failure
-  assert_output --partial "Cannot remove current worktree"
+  assert_failure 3
+  assert_output --partial "BLOCKED"
+  assert_output --partial "current worktree"
 
   # Worktree should still exist
   assert_worktree_exists "$FEATURE_WT"
@@ -94,9 +89,9 @@ teardown() {
   cd "$TEST_REPO"
   run git-wtdel -p "$FEATURE_WT"
 
-  assert_failure
-  assert_output --partial "Worktree has uncommitted changes"
-  assert_output --partial "Commit/stash first, or use -f/--force to discard"
+  assert_failure 3
+  assert_output --partial "BLOCKED: uncommitted changes"
+  assert_output --partial "Nothing removed"
 
   # Worktree should still exist
   assert_worktree_exists "$FEATURE_WT"
@@ -121,7 +116,8 @@ teardown() {
   run git-wtdel -p "/nonexistent/path"
 
   assert_failure
-  assert_output --partial "Worktree path does not exist"
+  assert_output --partial "INVALID"
+  assert_output --partial "Nothing removed"
 }
 
 @test "hug wtdel: fails when path is not a directory" {
@@ -133,7 +129,8 @@ teardown() {
   run git-wtdel -p "$fake_path"
 
   assert_failure
-  assert_output --partial "Worktree path is not a directory"
+  assert_output --partial "INVALID"
+  assert_output --partial "Nothing removed"
 
   # Clean up
   rm "$fake_path"
@@ -148,7 +145,8 @@ teardown() {
   run git-wtdel -p "$not_worktree"
 
   assert_failure
-  assert_output --partial "Path is not a Git worktree"
+  assert_output --partial "INVALID"
+  assert_output --partial "Nothing removed"
 
   # Clean up
   rmdir "$not_worktree"
@@ -238,11 +236,11 @@ teardown() {
 # Note: Multiple arguments are now supported for batch removal
 # See test: "hug wtdel: multiple paths removes all successfully"
 
-@test "hug wtdel: shows branch name in removal summary" {
+@test "hug wtdel: shows branch name in removal plan" {
   cd "$TEST_REPO"
   run git-wtdel -p "$FEATURE_WT" --dry-run
   assert_success
-  assert_output --partial "Branch: feature-1"
+  assert_output --partial "Target: $FEATURE_WT"
 }
 
 @test "hug wtdel: shows post-removal tip with branch deletion guidance" {
@@ -254,24 +252,17 @@ teardown() {
 }
 
 @test "hug wtdel: refuses to remove a locked worktree (even with --force)" {
-  # PREVIOUS BEHAVIOR (bug): the lock-check at git-wtdel:347 used
-  # `grep -A1` which couldn't see line 4 of the porcelain record where
-  # `locked` actually appears. The check silently never matched, the
-  # locked worktree fell through to `git worktree remove` which failed,
-  # and the manual-cleanup fallback bypassed the lock entirely.
-  #
-  # CORRECT BEHAVIOR: locks express explicit user intent ("don't delete
-  # this"). `--force` is for "skip confirmation prompts and bypass
-  # dirty/submodule checks", not "ignore locks". Per `git-worktree(1)`,
-  # locks must be unlocked before deletion is allowed. The warning
-  # tells the user exactly how.
+  # Locks express explicit user intent ("don't delete this"). `--force` is
+  # for "skip confirmation prompts and bypass dirty/submodule checks", not
+  # "ignore locks". Per `git-worktree(1)`, locks must be unlocked before
+  # deletion is allowed. The BLOCKED message tells the user exactly how.
   cd "$TEST_REPO"
   git worktree lock "$FEATURE_WT"
 
   run git-wtdel -p "$FEATURE_WT" --force
-  assert_failure
-  assert_output --partial "Worktree is locked"
-  assert_output --partial "Unlock it first"
+  assert_failure 3
+  assert_output --partial "BLOCKED"
+  assert_output --partial "locked"
 
   # Worktree should still exist on disk and be registered
   assert_worktree_exists "$FEATURE_WT"
@@ -304,7 +295,8 @@ teardown() {
   run git-wtdel nonexistent-branch
 
   assert_failure
-  assert_output --partial "No worktree found for branch"
+  assert_output --partial "no worktree found for branch 'nonexistent-branch'"
+  assert_output --partial "Nothing removed"
 }
 
 @test "hug wtdel: positional branch with --dry-run shows preview" {
@@ -312,8 +304,8 @@ teardown() {
   run git-wtdel feature-1 --dry-run
 
   assert_success
-  assert_output --partial "Worktree Removal Preview (DRY RUN)"
-  assert_output --partial "Branch: feature-1"
+  assert_output --partial "Worktree Removal Plan (DRY RUN)"
+  assert_output --partial "Target: feature-1"
   assert_worktree_exists "$FEATURE_WT"
 }
 
@@ -343,24 +335,19 @@ teardown() {
   run git-wtdel -p "$FEATURE_WT" -p "$HOTFIX_WT" --dry-run
 
   assert_success
-  assert_output --partial "Worktree Removal Preview (DRY RUN)"
-  assert_output --partial "Branch: feature-1"
-  assert_output --partial "Branch: hotfix-1"
+  assert_output --partial "DRY RUN"
+  assert_output --partial "Target:"
   assert_worktree_exists "$FEATURE_WT"
   assert_worktree_exists "$HOTFIX_WT"
 }
 
-@test "hug wtdel: multiple paths continues on error" {
+@test "hug wtdel: batch with an invalid path removes nothing (pre-flight)" {
   cd "$TEST_REPO"
-  # Try to remove valid worktree and invalid path
   run git-wtdel -p "$FEATURE_WT" -p "/nonexistent/path" --force
-
-  # Should fail because one path failed
   assert_failure
-  assert_output --partial "Batch Removal Summary"
-  assert_output --partial "Removed: 1"
-  assert_output --partial "Failed: 1"
-  assert_worktree_not_exists "$FEATURE_WT"
+  assert_output --partial "INVALID"
+  assert_output --partial "Nothing removed"
+  assert_worktree_exists "$FEATURE_WT"
 }
 
 @test "hug wtdel: multiple paths shows per-item progress" {
@@ -368,9 +355,9 @@ teardown() {
   run git-wtdel -p "$FEATURE_WT" -p "$HOTFIX_WT" --force
 
   assert_success
-  # Should show progress indicators [1/2] and [2/2]
-  assert_output --partial "1/2"
-  assert_output --partial "2/2"
+  # Plan phase shows per-item progress [1/2] and [2/2]
+  assert_output --partial "[1/2]"
+  assert_output --partial "[2/2]"
 }
 
 # Tests for dirty state handling
@@ -378,13 +365,13 @@ teardown() {
 @test "hug wtdel: blocks dirty worktree without --force" {
   # Make worktree dirty with untracked file
   echo "untracked" > "$FEATURE_WT/untracked.txt"
-  
+
   cd "$TEST_REPO"
   run git-wtdel -p "$FEATURE_WT"
 
-  assert_failure
-  assert_output --partial "Worktree has uncommitted changes"
-  assert_output --partial "Commit/stash first, or use -f/--force to discard"
+  assert_failure 3
+  assert_output --partial "BLOCKED: uncommitted changes"
+  assert_output --partial "Nothing removed"
   # Worktree should still exist
   assert_worktree_exists "$FEATURE_WT"
 }
@@ -426,9 +413,10 @@ teardown() {
   main_branch=$(git branch --show-current)
 
   run git-wtdel "$main_branch"
-  
-  assert_failure
-  assert_output --partial "Cannot remove the main worktree"
+
+  assert_failure 3
+  assert_output --partial "BLOCKED"
+  assert_output --partial "main worktree"
 }
 
 # Tests for batch mixed states
@@ -437,31 +425,16 @@ teardown() {
   # Make one worktree dirty
   echo "dirty" > "$FEATURE_WT/dirty.txt"
 
-  # Without --force, the clean worktree reaches prompt_confirm_danger()
-  # which calls `gum input`. Real gum reads from /dev/tty directly and
-  # will block forever in a non-interactive Bats context. Use the gum
-  # mock (setup_gum_mock) + empty stdin so `gum input` exits 1 (cancel).
-  # WHY: HUG_TEST_MODE=true forces gum_available() to return true even
-  # though stdin is /dev/null (non-TTY), routing through the gum mock.
-  setup_gum_mock
-  export HUG_TEST_MODE=true
-  unset HUG_TEST_GUM_INPUT HUG_TEST_GUM_INPUT_RETURN_CODE HUG_TEST_GUM_RESPONSES
-
   cd "$TEST_REPO"
-  run bash -c "echo '' | git-wtdel -p '$FEATURE_WT' -p '$HOTFIX_WT' < /dev/null"
+  run git-wtdel -p "$FEATURE_WT" -p "$HOTFIX_WT"
 
-  # Should fail because the dirty one is blocked (added to failed[]).
-  # Clean one reaches the confirm prompt, gum mock exits 1,
-  # and the command aborts with \"Cancelled.\".
-  assert_failure
-  assert_output --partial "Worktree has uncommitted changes"
-  assert_output --partial "Cancelled"
+  # Pre-flight blocks the dirty one -> nothing removed (all-or-nothing)
+  assert_failure 3
+  assert_output --partial "BLOCKED: uncommitted changes"
+  assert_output --partial "Nothing removed"
   # Neither worktree was removed
   assert [ -d "$FEATURE_WT" ]
   assert [ -d "$HOTFIX_WT" ]
-
-  unset HUG_TEST_MODE
-  teardown_gum_mock
 }
 
 @test "hug wtdel: batch removes clean worktrees even when some are dirty (with --force)" {
@@ -522,7 +495,6 @@ teardown() {
   # wtdel should auto-prune the stale entry
   run git-wtdel feature-1 --force
   assert_success
-  assert_output --partial "directory already removed"
   assert_output --partial "Pruned stale worktree entry"
 
   # Verify metadata was cleaned up
@@ -539,8 +511,8 @@ teardown() {
   # --dry-run should report what it would do without actually pruning
   run git-wtdel feature-1 --dry-run
   assert_success
-  assert_output --partial "directory already removed"
-  assert_output --partial "Would prune stale worktree metadata (dry run)"
+  assert_output --partial "Will prune stale entry"
+  assert_output --partial "No changes made (dry run)"
 
   # Metadata should still exist
   run git worktree list --porcelain
@@ -619,13 +591,13 @@ teardown() {
   assert_failure
 }
 
-@test "hug wtdel: -B --dry-run previews branch deletion" {
+@test "hug wtdel: -B --dry-run previews removal plan" {
   cd "$TEST_REPO"
   run git-wtdel feature-1 -B --dry-run
 
   assert_success
-  assert_output --partial "Worktree Removal Preview (DRY RUN)"
-  assert_output --partial "would be deleted"
+  assert_output --partial "Worktree Removal Plan (DRY RUN)"
+  assert_output --partial "Will remove"
   assert_worktree_exists "$FEATURE_WT"
 
   # Branch should still exist
@@ -827,11 +799,12 @@ teardown() {
 
 # ── Safety regression suite (design §3; P0 found 2026-06-12) ────────────────
 
-@test "hug wtdel: SAFETY P0 — -p <main> -f from linked worktree refuses, repo survives" {
+@test "hug wtdel: SAFETY P0 -- -p <main> -f from linked worktree refuses, repo survives" {
   cd "$FEATURE_WT"
   run git-wtdel -p "$TEST_REPO" --force
-  assert_failure
-  assert_output --partial "Cannot remove the main worktree"
+  assert_failure 3
+  assert_output --partial "BLOCKED"
+  assert_output --partial "main worktree"
   refute_output --partial "Deleted directory"
   assert [ -d "$TEST_REPO/.git" ]
   # Verify repo contents survive — main_extra.txt is the file committed on main
@@ -903,4 +876,71 @@ WRAPPER
   run git-wtdel feature-1 --force
   assert_success
   assert_output --partial "Pruned stale worktree entry"
+}
+
+# ============================================================================
+# Tests for pre-flight batch model, --json, -q, exit codes (design S4)
+# ============================================================================
+
+@test "hug wtdel: batch by branch with unknown branch removes nothing, exit 1" {
+  cd "$TEST_REPO"
+  run git-wtdel feature-1 bogus-branch --force
+  assert_failure 1
+  assert_output --partial "no worktree found for branch 'bogus-branch'"
+  assert_output --partial "Nothing removed"
+  assert_worktree_exists "$FEATURE_WT"
+}
+
+@test "hug wtdel: blocked classes exit 3" {
+  cd "$TEST_REPO"
+  echo dirty > "$FEATURE_WT/dirty.txt"
+  run git-wtdel feature-1            # dirty without -f
+  assert_failure 3
+  assert_output --partial "BLOCKED: uncommitted changes"
+}
+
+@test "hug wtdel: single danger confirmation covers the whole batch" {
+  # Use setup_gum_mock + HUG_TEST_MODE so gum_available() returns true
+  # and gum input returns "remove" (the confirmation word).
+  # HUG_TEST_GUM_INPUT makes the mock echo the word on gum input calls.
+  setup_gum_mock
+  export HUG_TEST_MODE=true
+  export HUG_TEST_GUM_INPUT="remove"
+  cd "$TEST_REPO"
+  run git-wtdel feature-1 hotfix-1
+  assert_success
+  assert_worktree_not_exists "$FEATURE_WT"
+  assert_worktree_not_exists "$HOTFIX_WT"
+  unset HUG_TEST_MODE
+  teardown_gum_mock
+}
+
+@test "hug wtdel: --json emits valid JSON on stdout only" {
+  cd "$TEST_REPO"
+  run bash -c "git-wtdel feature-1 --force --json 2>/dev/null | python3 -m json.tool"
+  assert_success
+  assert_output --partial '"state": "removed"'
+}
+
+@test "hug wtdel: --json --dry-run reports plan" {
+  cd "$TEST_REPO"
+  run bash -c "git-wtdel feature-1 --dry-run --json 2>/dev/null | python3 -m json.tool"
+  assert_success
+  assert_output --partial '"dry_run": true'
+  assert_worktree_exists "$FEATURE_WT"
+}
+
+@test "hug wtdel: -q suppresses chatter but not errors" {
+  cd "$TEST_REPO"
+  run git-wtdel feature-1 --force -q
+  assert_success
+  refute_output --partial "Worktree Removal Plan"
+  run git-wtdel bogus -q --force
+  assert_failure
+  assert_output --partial "Nothing removed"
+}
+
+@test "hug wtdel: unknown flag exits 2" {
+  run git-wtdel --bogus-flag
+  assert_failure 2
 }
