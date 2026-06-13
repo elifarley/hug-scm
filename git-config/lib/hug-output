@@ -14,6 +14,23 @@
 #   - print_action_preview: caution before destructive actions.
 
 ################################################################################
+# Exit-code convention (family-wide; design 2026-06-12 §6)
+#
+#   0 success (incl. dry-run and "nothing to do")
+#   1 operational failure (not found, git error, partial batch failure)
+#   2 usage error (unknown flag, bad combination, malformed value)
+#   3 blocked by safety (danger op without -f, main/current worktree,
+#     locked, dirty without -f, branch checked out elsewhere)
+#
+# Always non-zero on failure, so plain `if hug …` checks keep working.
+# Scripts that care can branch on $? ∈ {1,2,3}.
+################################################################################
+HUG_EX_OK=0
+HUG_EX_FAIL=1
+HUG_EX_USAGE=2
+HUG_EX_BLOCKED=3
+
+################################################################################
 # Output and User Interaction Functions
 ################################################################################
 
@@ -26,6 +43,12 @@ error() {
   HUG_QUIET='' gum_log "${RED}❌ Error$NC" "$@"
   exit "${2:-1}"
 }
+
+# error_usage "message" — usage errors (exit 2)
+error_usage() { error "$1" "$HUG_EX_USAGE"; }
+
+# error_blocked "message" — refused for safety (exit 3)
+error_blocked() { error "$1" "$HUG_EX_BLOCKED"; }
 
 # Prints a warning message to stderr
 # Usage: warning "message"
