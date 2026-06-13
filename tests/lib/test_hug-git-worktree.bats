@@ -331,78 +331,6 @@ teardown() {
   assert_equal "$unique_path" "$default_path"
 }
 
-@test "hug-git-worktree: create_worktree succeeds with valid inputs" {
-  local new_path="${TEST_REPO}-wt-test-create"
-  run create_worktree "main" "$new_path" true false
-
-  assert_success
-  assert_worktree_exists "$new_path"
-  assert_worktree_branch "$new_path" "main"
-}
-
-# NOTE: create_worktree no longer supports dry-run directly.
-# Dry-run is handled at the command level (git-wtc) and tested in test_worktree_create.bats.
-
-@test "hug-git-worktree: create_worktree fails with non-existent branch" {
-  local new_path="${TEST_REPO}-wt-test-fail"
-  run create_worktree "nonexistent-branch" "$new_path" true
-
-  assert_failure
-  assert_output --partial "Branch 'nonexistent-branch' does not exist locally"
-  assert_worktree_not_exists "$new_path"
-}
-
-@test "hug-git-worktree: create_worktree fails with checked out branch" {
-  # Create worktree for feature-1
-  create_test_worktree "feature-1" "$TEST_REPO"
-
-  local new_path="${TEST_REPO}-wt-test-checked-out"
-  run create_worktree "feature-1" "$new_path" true
-
-  assert_failure
-  assert_output --partial "Branch 'feature-1' is already checked out"
-  assert_worktree_not_exists "$new_path"
-}
-
-@test "hug-git-worktree: remove_worktree succeeds with valid inputs" {
-  local feature_wt
-  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
-
-  run remove_worktree "$feature_wt" true
-
-  assert_success
-  assert_worktree_not_exists "$feature_wt"
-}
-
-@test "hug-git-worktree: remove_worktree fails with current worktree" {
-  cd "$TEST_REPO"
-  run remove_worktree "$TEST_REPO" true
-
-  assert_failure
-  assert_output --partial "Cannot remove current worktree"
-}
-
-@test "hug-git-worktree: remove_worktree fails with dirty worktree without force" {
-  local feature_wt
-  feature_wt=$(create_test_worktree_with_dirty_changes "feature-1" "$TEST_REPO")
-
-  run remove_worktree "$feature_wt" false
-
-  assert_failure
-  assert_output --partial "Worktree has uncommitted changes"
-  assert_worktree_exists "$feature_wt"
-}
-
-@test "hug-git-worktree: remove_worktree removes dirty worktree with force" {
-  local feature_wt
-  feature_wt=$(create_test_worktree_with_dirty_changes "feature-1" "$TEST_REPO")
-
-  run remove_worktree "$feature_wt" true
-
-  assert_success
-  assert_worktree_not_exists "$feature_wt"
-}
-
 @test "hug-git-worktree: switch_to_worktree succeeds with valid path" {
   local feature_wt
   feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
@@ -812,4 +740,54 @@ teardown() {
     worktree_exists "'"$unregistered_path"'"
   '
   assert_failure
+}
+
+# ── main_worktree_of_gitdir / prune_worktree_entry (P0 safety lib) ──────────
+
+@test "main_worktree_of_gitdir: resolves main from a linked worktree's gitdir" {
+  local wt gitdir
+  wt=$(create_test_worktree "libtest-mwd" "$TEST_REPO")
+  gitdir=$(worktree_gitdir "$wt")
+  run main_worktree_of_gitdir "$gitdir"
+  assert_success
+  assert_output "$(readlink -f "$TEST_REPO" 2>/dev/null || echo "$TEST_REPO")"
+}
+
+@test "main_worktree_of_gitdir: fails on empty arg" {
+  # shellcheck disable=SC2314
+  ! main_worktree_of_gitdir ""
+}
+
+@test "prune_worktree_entry: removes only the targeted stale entry" {
+  local wt1 wt2 gitdir
+  wt1=$(create_test_worktree "prune-test-1" "$TEST_REPO")
+  wt2=$(create_test_worktree "prune-test-2" "$TEST_REPO")
+  gitdir=$(worktree_gitdir "$TEST_REPO")
+  rm -rf "$wt1" "$wt2"
+
+  run prune_worktree_entry "$gitdir" "$wt1"
+  assert_success
+
+  run git worktree list --porcelain
+  refute_output --partial "worktree $wt1"
+  assert_output --partial "worktree $wt2"
+}
+
+@test "prune_worktree_entry: returns 1 when no entry matches" {
+  local gitdir
+  gitdir=$(worktree_gitdir "$TEST_REPO")
+  # shellcheck disable=SC2314
+  ! prune_worktree_entry "$gitdir" "/nonexistent/wt"
+}
+
+@test "prune_worktree_entry: handles locked stale entries (no unlock needed)" {
+  local wt gitdir
+  wt=$(create_test_worktree "prune-test-locked" "$TEST_REPO")
+  git worktree lock "$wt"
+  gitdir=$(worktree_gitdir "$TEST_REPO")
+  rm -rf "$wt"
+  run prune_worktree_entry "$gitdir" "$wt"
+  assert_success
+  run git worktree list --porcelain
+  refute_output --partial "worktree $wt"
 }

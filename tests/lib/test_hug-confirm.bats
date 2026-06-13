@@ -319,6 +319,13 @@ teardown() {
   assert_output --partial "Rewrites commit history"
 }
 
+@test "prompt_confirm_danger: HUG_YES rejection exits 3 (blocked-by-safety)" {
+  export HUG_YES=true
+  run prompt_confirm_danger "remove"
+  assert_failure 3
+  assert_output --partial "requires --force (not -y)"
+}
+
 @test "hug-confirm: prompt_confirm_danger auto-confirms with HUG_FORCE" {
   export HUG_FORCE=true
   run prompt_confirm_danger "rebase" "Rewrites commit history"

@@ -284,7 +284,37 @@ get_current_worktree_path() {
 # Resolve the main working-tree path that the CURRENT gitdir owns.
 # Usage: main_path=$(resolve_main_worktree_path)
 #
-# Implementation: two-tier approach for correctness across all topologies:
+# Thin CWD adapter over main_worktree_of_gitdir(). Kept because every existing
+# call-site expects zero-arg resolution anchored to CWD. The two-tier logic
+# (core.worktree → porcelain) lives in main_worktree_of_gitdir() — see that
+# function for the full rationale on submodule topology, SIGPIPE avoidance, and
+# the Bash `local` exit-code footgun.
+#
+# Returns: absolute path to main working tree, or non-zero if CWD is not in a
+# git repo (or is a bare repo).
+resolve_main_worktree_path() {
+    local gitdir
+    # Bare repos have no working tree — early return prevents nonsense paths
+    # downstream (e.g. <parent>/bare.git.WT.<branch> with .git in basename
+    # which would then trip the new path_is_inside_dot_git guard with a
+    # confusing error message). Eng phase finding #E6.
+    if [[ "$(git rev-parse --is-bare-repository 2>/dev/null)" == "true" ]]; then
+        return 1
+    fi
+    gitdir=$(worktree_gitdir "$(pwd)") || return 1
+    main_worktree_of_gitdir "$gitdir"
+}
+
+# Resolve the MAIN working tree owned by an EXPLICIT gitdir.
+# Usage: main_wt=$(main_worktree_of_gitdir "/abs/gitdir") || return 1
+#
+# WHY a separate function from resolve_main_worktree_path: wtdel path-mode
+# targets may belong to a DIFFERENT gitdir than the caller's CWD (submodule
+# worktrees, -p across repos). Anchoring to the target's own gitdir is the
+# only correct way to answer "is this path that gitdir's main worktree?" —
+# CWD-based resolution would compare against the WRONG main.
+#
+# Two-tier approach for correctness across all topologies:
 #
 # Tier 1 — core.worktree (submodule-specific): git stores the submodule
 #   working tree as a relative path in [core] worktree inside the gitdir's
@@ -302,53 +332,63 @@ get_current_worktree_path() {
 # main worktree — not the actual checked-out working tree at <meta>/sub.
 # Only core.worktree holds the correct working-tree path in that topology.
 #
-# WHY NOT dirname(--git-common-dir): dirname strips one segment from
-# <meta>/.git/modules/<sub> → <meta>/.git/modules, a directory of gitdirs,
-# not a working tree at all.
+# Capture-then-filter (NOT pipe). See worktree_exists in this file for the
+# full WHY. Summary: `git ... | awk '/^worktree/{ ...; exit }'` races under
+# `set -o pipefail` — awk exits early, git gets SIGPIPE on the next write,
+# the pipe exits 141, and the enclosing command substitution returns empty.
 #
-# Returns: absolute path to main working tree, or empty string + non-zero
-# if the current CWD is not inside a git repo.
-resolve_main_worktree_path() {
-    local gitdir core_wt main_wt
-    # Bare repos have no working tree — early return prevents nonsense paths
-    # downstream (e.g. <parent>/bare.git.WT.<branch> with .git in basename
-    # which would then trip the new path_is_inside_dot_git guard with a
-    # confusing error message). Eng phase finding #E6.
-    if [[ "$(git rev-parse --is-bare-repository 2>/dev/null)" == "true" ]]; then
-        return 1
-    fi
-    gitdir=$(worktree_gitdir "$(pwd)") || return 1
+# IMPORTANT: `local porcelain` must be declared on a SEPARATE line from its
+# assignment. `local porcelain=$(git ...)` always returns 0 because `local`
+# itself is a builtin that exits 0 regardless — the git exit code is masked.
+# This is a classic Bash footgun when error-propagation matters.
+main_worktree_of_gitdir() {
+    local gitdir="$1" core_wt main_wt
+    [[ -n "$gitdir" ]] || return 1
 
     # Tier 1: core.worktree — written by git for submodules; absent in plain
     # clones and linked worktrees. Resolve relative to the gitdir when not
     # an absolute path (git uses relative notation like "../../../sub").
     core_wt=$(git --git-dir="$gitdir" config --get core.worktree 2>/dev/null || true)
     if [[ -n "$core_wt" ]]; then
-        [[ "$core_wt" = /* ]] || core_wt="$(realpath "$gitdir/$core_wt")"
+        [[ "$core_wt" = /* ]] || core_wt="$(realpath "$gitdir/$core_wt" 2>/dev/null)" || return 1
         printf '%s\n' "$core_wt"
         return 0
     fi
 
     # Tier 2: porcelain — correct for plain clones and linked worktrees where
     # core.worktree is absent. Capture into a variable so we can verify
-    # non-empty result. Eng phase finding #E5: bare awk-pipe silently succeeds
-    # with empty output on corrupt or unexpected porcelain, propagating a
-    # bogus empty anchor.
-    #
-    # Capture-then-filter (NOT pipe). See worktree_exists in this file for the
-    # full WHY. Summary: `git ... | awk '/^worktree/{ ...; exit }'` races under
-    # `set -o pipefail` — awk exits early, git gets SIGPIPE on the next write,
-    # the pipe exits 141, and the enclosing command substitution returns empty.
-    #
-    # IMPORTANT: `local porcelain` must be declared on a SEPARATE line from its
-    # assignment. `local porcelain=$(git ...)` always returns 0 because `local`
-    # itself is a builtin that exits 0 regardless — the git exit code is masked.
-    # This is a classic Bash footgun when error-propagation matters.
+    # non-empty result.
     local porcelain
     porcelain=$(git --git-dir="$gitdir" worktree list --porcelain 2>/dev/null) || return 1
     main_wt=$(awk '/^worktree / { print substr($0, 10); exit }' <<< "$porcelain")
     [[ -n "$main_wt" ]] || return 1
     printf '%s\n' "$main_wt"
+}
+
+# Remove ONLY the admin entry that registers <wt-path> under <gitdir>.
+# Usage: prune_worktree_entry "/abs/gitdir" "/abs/wt-path" || return 1
+#
+# WHY NOT `git worktree prune`: prune is GLOBAL — it erases every stale
+# entry of that gitdir. wtdel used it per-removal, which silently destroyed
+# UNRELATED stale metadata. This helper is the targeted alternative: it
+# deletes exactly $gitdir/worktrees/<id> for the entry whose `gitdir` file
+# points at <wt-path>/.git, and nothing else.
+#
+# SAFETY: operates exclusively inside $gitdir/worktrees/ (admin metadata).
+# It never touches working files.
+prune_worktree_entry() {
+    local gitdir="$1" wt_path="$2" admin entry
+    [[ -n "$gitdir" && -n "$wt_path" ]] || return 1
+    local target="$wt_path/.git"
+    for admin in "$gitdir"/worktrees/*/; do
+        [[ -f "${admin}gitdir" ]] || continue
+        entry=$(<"${admin}gitdir")
+        if [[ "$entry" == "$target" ]]; then
+            rm -rf "${admin%/}"
+            return 0
+        fi
+    done
+    return 1
 }
 
 # Returns the superproject's working-tree path, or empty string if the
@@ -857,141 +897,6 @@ generate_unique_worktree_path() {
 # Worktree Operations Functions
 ################################################################################
 
-# Create worktree — focused execution function
-# Callers are responsible for all UX (confirmation, dry-run, messaging).
-# Usage: create_worktree "feature-auth" "/path" [force]
-# Parameters:
-#   $1 - Branch name (must exist and not be checked out)
-#   $2 - Target path (parent must exist and be writable)
-#   $3 - Force flag passed to git worktree add (default: false)
-# Returns: 0 on success, 1 on failure (errors on stderr)
-create_worktree() {
-    local branch="$1"
-    local path="$2"
-    local force="${3:-false}"
-
-    # Validate inputs
-    if [[ -z "$branch" ]]; then
-        echo "Branch name cannot be empty" >&2
-        return 1
-    fi
-
-    if [[ -z "$path" ]]; then
-        echo "Worktree path cannot be empty" >&2
-        return 1
-    fi
-
-    # Validate branch exists
-    if ! git rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
-        echo "Branch '$branch' does not exist locally" >&2
-        return 1
-    fi
-
-    # Validate branch is available (not already checked out in another worktree)
-    if ! branch_available_for_worktree "$branch"; then
-        echo "Branch '$branch' is already checked out in another worktree" >&2
-        return 1
-    fi
-
-    # Validate creation path
-    if ! validate_worktree_creation_path "$path"; then
-        return 1
-    fi
-
-    # Create the worktree
-    local git_args=("$path" "$branch")
-    if $force; then
-        git_args+=("--force")
-    fi
-
-    local git_err
-    if ! git_err=$(git worktree add "${git_args[@]}" 2>&1); then
-        echo "git worktree add failed: $git_err" >&2
-        return 1
-    fi
-
-    # Verify the worktree was actually created (in worktrees, .git is a file, not a directory)
-    if [[ ! -f "$path/.git" ]]; then
-        echo "Worktree directory is invalid (missing .git file)" >&2
-        return 1
-    fi
-
-    return 0
-}
-
-# Remove worktree — focused execution function
-# Callers are responsible for all UX (confirmation, dry-run, messaging).
-# Usage: remove_worktree "/path/to/worktree" [force]
-# Parameters:
-#   $1 - Worktree path to remove
-#   $2 - Force removal even with uncommitted changes (default: false)
-# Returns: 0 on success, 1 on failure (errors on stderr)
-remove_worktree() {
-    local path="$1"
-    local force="${2:-false}"
-
-    # Validate worktree path
-    if ! validate_worktree_path "$path"; then
-        return 1
-    fi
-
-    # Prevent removal of current worktree
-    local current_worktree
-    current_worktree=$(get_current_worktree_path)
-    if [[ "$path" == "$current_worktree" ]]; then
-        echo "Cannot remove current worktree" >&2
-        return 1
-    fi
-
-    # Check for uncommitted changes
-    local has_changes=false
-
-    if ! git -C "$path" diff --quiet 2>/dev/null; then
-        has_changes=true
-    fi
-
-    if ! git -C "$path" diff --cached --quiet 2>/dev/null; then
-        has_changes=true
-    fi
-
-    # Capture-then-test: `git | grep -q .` would race under pipefail and
-    # silently skip this safety gate (false-negative untracked-files detection).
-    # See worktree_exists in this file for the full WHY.
-    # Use `|| _untracked=""` rather than `|| return 1` — if git itself fails
-    # for any reason, treat as "no untracked detected" to match the original
-    # 2>/dev/null tolerance posture rather than aborting the function.
-    local _untracked
-    _untracked=$(git -C "$path" ls-files --others --exclude-standard 2>/dev/null) || _untracked=""
-    if [[ -n "$_untracked" ]]; then
-        has_changes=true
-    fi
-
-    if $has_changes && ! $force; then
-        echo "Worktree has uncommitted changes" >&2
-        return 1
-    fi
-
-    # Remove the worktree
-    local git_args=("$path")
-    if $force; then
-        git_args+=("--force")
-    fi
-
-    local git_err
-    if git_err=$(git worktree remove "${git_args[@]}" 2>&1); then
-        return 0
-    fi
-
-    # Fallback to manual removal if git worktree remove fails
-    echo "git worktree remove failed: $git_err" >&2
-    if rm -rf "$path" && git worktree prune 2>/dev/null; then
-        return 0
-    fi
-
-    echo "Failed to remove worktree" >&2
-    return 1
-}
-
 # Switch to worktree with validation
 # Usage: switch_to_worktree "/path/to/worktree"
 # Parameters:
@@ -1413,35 +1318,70 @@ output_worktree_json() {
         "${_oj_args[@]}"
 }
 
-# Create branch if needed with proper prompts
-# Usage: create_branch_if_needed "branch-name" [new_flag] [force_flag]
-# Returns: 0 on success, 1 on failure or user cancellation
-create_branch_if_needed() {
-    local branch="$1"
-    local new_flag="${2:-false}"
-    local force_flag="${3:-false}"
+# Classify ONE wtdel target for pre-flight planning (design §4 phase 1).
+# Usage: wtdel_classify_target <abs-path> <force:true|false> \
+#            state_var gitdir_var branch_var detail_var
+# States: ok | stale | missing | not-worktree | main | current | locked | dirty
+#   stale  = registered in some reachable gitdir but directory gone (prunable)
+#   missing= not on disk AND not registered anywhere we can see
+# The caller decides which states are executable (ok, stale) vs blocked vs
+# invalid. This function NEVER exits and NEVER mutates anything.
+wtdel_classify_target() {
+    local _ct_path="$1" _ct_force="$2"
+    local -n _ct_state="$3" _ct_gitdir="$4" _ct_branch="$5" _ct_detail="$6"
+    _ct_state="" _ct_gitdir="" _ct_branch="" _ct_detail=""
 
-    # Check if branch already exists
-    if git rev-parse --verify "refs/heads/$branch" >/dev/null 2>&1; then
-        return 0  # Branch exists
+    if [[ ! -e "$_ct_path" ]]; then
+        local _ct_orphan
+        _ct_orphan=$(find_worktree_owning_gitdir "$_ct_path" 2>/dev/null || true)
+        if [[ -n "$_ct_orphan" ]]; then
+            _ct_state="stale"; _ct_gitdir="$_ct_orphan"
+            return 0
+        fi
+        _ct_state="missing"; _ct_detail="path does not exist and is not a registered worktree"
+        return 0
     fi
 
-    # Create branch based on flags
-    if $new_flag || $force_flag; then
-        # Create without prompting
-        git branch "$branch"
-        info "Created new branch '$branch'"
-    else
-        # Prompt to create
-        warning "Branch '$branch' does not exist locally."
-        info "Use --new flag to automatically create it."
-        if prompt_confirm_safe "Create branch '$branch'?"; then
-            git branch "$branch"
-            info "Created new branch '$branch'"
-        else
-            return 1
+    if [[ ! -d "$_ct_path" ]] || ! worktree_exists "$_ct_path"; then
+        _ct_state="not-worktree"; _ct_detail="not a registered Git worktree"
+        return 0
+    fi
+
+    _ct_gitdir=$(worktree_gitdir "$_ct_path") || {
+        _ct_state="not-worktree"; _ct_detail="cannot resolve owning gitdir"
+        return 0
+    }
+    _ct_branch=$(git -C "$_ct_path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+
+    local _ct_main
+    _ct_main=$(main_worktree_of_gitdir "$_ct_gitdir" 2>/dev/null || true)
+    if [[ -n "$_ct_main" && "$_ct_path" == "$_ct_main" ]]; then
+        _ct_state="main"; _ct_detail="main worktree of its repository"
+        return 0
+    fi
+
+    if [[ "$_ct_path" == "$(get_current_worktree_path)" ]]; then
+        _ct_state="current"; _ct_detail="this is the current worktree"
+        return 0
+    fi
+
+    if worktree_is_locked "$_ct_path" "$_ct_gitdir"; then
+        _ct_state="locked"; _ct_detail="locked (git worktree unlock '$_ct_path')"
+        return 0
+    fi
+
+    local _ct_dirty=false _ct_dirty_details=""
+    get_worktree_dirty_details "$_ct_path" _ct_dirty _ct_dirty_details
+    if [[ "$_ct_dirty" == "true" ]]; then
+        _ct_detail="$_ct_dirty_details"
+        if [[ "$_ct_force" != "true" ]]; then
+            _ct_state="dirty"
+            return 0
         fi
     fi
+
+    _ct_state="ok"
+    return 0
 }
 
 # Get worktree path by branch name

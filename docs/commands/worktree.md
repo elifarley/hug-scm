@@ -243,27 +243,37 @@ Worktrees (3 total)
 
 ### `hug wtc` - Create Worktree
 
-Creates a new worktree for an existing branch.
+Creates a new worktree for an existing or new branch.
 
 ```bash
 hug wtc <branch> [path] [options]
 ```
 
 **Arguments:**
-- `<branch>`: Name of existing branch to create worktree for
+- `<branch>`: Name of branch to create worktree for (existing or new)
 - `[path]`: Custom path for worktree (optional, auto-generated if not provided)
 
 **Options:**
-- `-f, --force`: Skip confirmation prompts
-- `--dry-run`: Show what would be done without creating the worktree
+- `-f, --force`: Skip confirmation prompts and allow creating worktrees for branches checked out elsewhere
+- `-y, --yes`: Skip confirmation prompts (NOT sufficient for blocked states requiring `-f`)
+- `--dry-run`: Show what would be done without creating the worktree (composes with `-f`)
+- `--new, -B, --with-branch`: Automatically create branch if it doesn't exist
+- `--base POINT`: Create the new branch from a specific commit, branch, tag, or ref (implies `--new`)
+- `-p, --path PATH`: Explicit worktree path (alternative to positional arg)
+- `-q, --quiet`: Suppress summary and informational output
+- `--json`: Emit results as JSON on stdout
 - `-h, --help`: Show help message
 
 **Examples:**
 ```bash
 hug wtc feature-auth                           # Create worktree with auto-generated path
 hug wtc feature-auth ~/work/feature            # Create worktree at custom path
-hug wtc feature-auth --dry-run                 # Preview creation without doing it
+hug wtc feature-auth --new                     # Create new branch and worktree
+hug wtc feature-auth -B                        # Same as --new
+hug wtc feature-auth --dry-run -f              # Preview with force semantics
 hug wtc feature-auth -f                        # Create without confirmation
+hug wtc hotfix-123 --base v2.0                 # Create branch from tag
+hug wtc scripty --new --json -y                # Scriptable JSON output to stdout
 ```
 
 **Auto-generated Path Pattern:**
@@ -273,33 +283,46 @@ hug wtc feature-auth -f                        # Create without confirmation
 
 ### `hug wtdel` - Remove Worktree
 
-Safely removes a worktree after checking for uncommitted changes.
+Safely removes one or more worktrees after validation.
 
 ```bash
-hug wtdel [path] [options]
+hug wtdel [branch...] [options]
+hug wtdel -p <path> [options]
 ```
 
 **Arguments:**
-- `[path]`: Path to worktree to remove (optional, shows interactive menu if not provided)
+- `[branch...]`: One or more branch names (repeatable for batch)
+- `-p, --path PATH`: Target by filesystem path (repeatable for batch)
 
 **Options:**
-- `-f, --force`: Skip confirmation prompts
+- `-f, --force`: Skip confirmation prompts and remove even with uncommitted changes
+- `-y, --yes`: Auto-confirm routine prompts (NOT sufficient for removal — use `-f`)
 - `--dry-run`: Show what would be removed without doing it
+- `-B, --with-branch`: Also delete the associated branch after removing the worktree
+- `-q, --quiet`: Suppress summary and informational output
+- `--json`: Emit results as JSON on stdout
 - `-h, --help`: Show help message
 
 **Examples:**
 ```bash
-hug wtdel                              # Show interactive menu of worktrees to remove
-hug wtdel ~/project-feature            # Remove specific worktree
-hug wtdel ~/project-feature --dry-run  # Preview removal without doing it
-hug wtdel ~/project-feature -f         # Remove without confirmation
+hug wtdel                                     # Interactive selection
+hug wtdel feature-auth                        # Remove worktree for branch
+hug wtdel feat-1 feat-2 feat-3                # Batch remove by branch names
+hug wtdel feature-auth --dry-run              # Preview removal
+hug wtdel feature-auth -f                     # Force remove without confirmation
+hug wtdel -p /path/to/worktree                # Remove by path
+hug wtdel feat-1 feat-2 -B --force            # Batch remove worktrees + branches
+hug wtdel feat-1 --json                       # Machine-readable result
 ```
 
 **Safety Features:**
+- Validates ALL targets before removing ANY (atomic batch semantics)
 - Checks for uncommitted changes before removal
 - Requires confirmation unless `--force` is used
 - Prevents removal of current worktree
-- Shows detailed removal summary
+- Shows pre-flight plan before execution
+- Scoped prune: only prunes the target stale entry, not unrelated ones
+- Never falls back to blind filesystem deletion
 
 ### `hug wtprune` - Clean Up Stale Worktree Metadata
 
@@ -337,7 +360,9 @@ hug wtprune --verbose                     # Detailed output with progress
 
 ## JSON Output
 
-Both `hug wtl` and `hug wtll` support `--json` output for programmatic use:
+`hug wtl`, `hug wtll`, `hug wtc`, and `hug wtdel` all support `--json` output for programmatic use. JSON is emitted on stdout with zero non-JSON bytes.
+
+### wtl --json
 
 ```json
 {
@@ -348,7 +373,9 @@ Both `hug wtl` and `hug wtll` support `--json` output for programmatic use:
       "commit": "1b87e92",
       "dirty": true,
       "locked": false,
-      "current": true
+      "current": true,
+      "missing": false,
+      "dirty_details": "2 staged, 3 unstaged"
     },
     {
       "path": "/home/user/project.WT.feature-auth",
@@ -356,12 +383,40 @@ Both `hug wtl` and `hug wtll` support `--json` output for programmatic use:
       "commit": "a3f2b1c",
       "dirty": false,
       "locked": false,
-      "current": false
+      "current": false,
+      "missing": false,
+      "dirty_details": ""
+    },
+    {
+      "path": "/home/user/project.WT.old-feature",
+      "branch": "old-feature",
+      "commit": "gone",
+      "dirty": false,
+      "locked": false,
+      "current": false,
+      "missing": true,
+      "dirty_details": ""
     }
   ],
   "current": "/home/user/project",
-  "count": 2
+  "count": 3
 }
+```
+
+Fields unique to JSON (not shown in human output):
+- `missing`: `true` when the worktree directory was deleted externally (stale metadata)
+- `dirty_details`: Human-readable breakdown of dirty state (e.g. `"2 staged, 3 unstaged"`)
+
+### wtc --json
+
+```json
+{"branch": "feature-auth", "path": "/home/user/project.WT.feature-auth", "created_branch": true, "base": "main", "start_point": "a3f2b1c"}
+```
+
+### wtdel --json
+
+```json
+{"dry_run": false, "targets": [{"spec": "feature-auth", "path": "/home/user/project.WT.feature-auth", "branch": "feature-auth", "state": "removed", "detail": ""}], "counts": {"removed": 1, "pruned": 0, "failed": 0}}
 ```
 
 ## Script-Friendly Output
@@ -375,9 +430,66 @@ hug wtll | grep feature
 
 # Suppress non-data output
 hug wtl 2>/dev/null
+
+# Get path for a specific branch (scriptable)
+path=$(hug wtl -p -b feature-auth)
+
+# Suppress summary chatter
+hug wtc feature-auth --new -q -y
+hug wtdel feature-auth -q
+
+# Parse JSON output
+hug wtl --json | python3 -m json.tool
+hug wtc feature-auth --new --json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['path'])"
 ```
 
-Run `hug wtl --help` or `hug wtll --help` and see the CAPTURING OUTPUT section for details.
+Run `hug wtl --help` and see the CAPTURING OUTPUT section for details.
+
+## Safety Model
+
+Worktree commands use a three-tier safety model to balance usability and protection.
+
+| Tier | Examples | `-y` | `-f` / `--force` |
+|------|----------|------|-------------------|
+| **Safe** | Create worktree for existing branch; confirm branch creation prompt | Answers yes | Not needed |
+| **Warn** | Remove clean worktree; remove stale entry | Answers yes | Not needed |
+| **Danger** | Remove dirty worktree; create worktree for branch checked out in main | Ignored | Required |
+
+**Key rules:**
+- `-y` auto-confirms routine prompts (safe and warn tiers). It does NOT authorize dangerous operations.
+- `-f` authorizes danger-tier operations AND also answers routine confirmations.
+- `-f` overrides blocked states (dirty worktree, branch checked out in main worktree).
+- When safety blocks a `-y` operation, the exit code is `3` (blocked), not `1` (operational failure).
+
+## Exit Codes
+
+All worktree commands share a common exit code convention.
+
+| Code | Meaning | Example |
+|------|---------|---------|
+| `0` | Success | `hug wtc feature-auth` |
+| `1` | Operational error | `hug wtl -b nonexistent` (no matches) |
+| `2` | Usage error (bad flags/arguments) | `hug wtc --unknown-flag` |
+| `3` | Blocked by safety (use `-f`) | `hug wtdel dirty-wt -y` (needs `-f`) |
+
+## Stale Worktrees
+
+A stale worktree is one whose directory was removed externally (e.g. `rm -rf`) without using `hug wtdel`. Git's metadata still references the directory.
+
+**Detection:**
+- `hug wtl` shows `(gone)` instead of a commit hash for stale entries
+- `hug wtl --json` includes `"missing": true` in the worktree object
+- `hug wtl -e` (or `--existing`) excludes stale entries entirely
+
+**Cleanup:**
+- `hug wtdel <stale-branch>` prunes only that specific stale entry
+- `hug wtprune` removes all stale entries at once
+
+**Important:** removing one worktree no longer prunes unrelated stale entries. Pruning is scoped to the target.
+
+## Deferred
+
+- **`hug wtc --detach`**: Create a worktree without a branch (inspect a commit/tag without branch creation). Deferred — see [elifarley/hug-scm#177](https://github.com/elifarley/hug-scm/issues/177).
 
 ## Workflows
 

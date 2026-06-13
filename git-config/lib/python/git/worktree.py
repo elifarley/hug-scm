@@ -20,7 +20,7 @@ import argparse
 import os
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -33,6 +33,10 @@ class WorktreeInfo:
         commit: Short commit hash (7 characters), empty if unavailable
         is_dirty: True if worktree has uncommitted changes
         is_locked: True if worktree is locked
+        missing: True if the worktree directory no longer exists on disk
+        dirty_details: Tuple of dirty-category labels, e.g. ("unstaged", "untracked").
+            Empty tuple when clean or missing. Uses tuple (not list) to avoid the
+            mutable-default-argument pitfall.
     """
 
     path: str
@@ -40,6 +44,8 @@ class WorktreeInfo:
     commit: str
     is_dirty: bool
     is_locked: bool
+    missing: bool = False
+    dirty_details: tuple = ()
 
 
 def format_indicators(is_dirty: bool, is_locked: bool) -> str:
@@ -85,6 +91,10 @@ class WorktreeList:
         commits: List of commit hashes (parallel to paths)
         dirty_status: List of "true"/"false" strings for bash (parallel to paths)
         locked_status: List of "true"/"false" strings for bash (parallel to paths)
+        missing_status: List of "true"/"false" strings (parallel to paths).
+            Not exposed in to_bash_declare — Bash derives (gone) from [[ -d ]].
+        dirty_details_list: List of tuple[str, ...] (parallel to paths).
+            Each tuple is a subset of ("staged", "unstaged", "untracked").
     """
 
     paths: list[str]
@@ -92,6 +102,8 @@ class WorktreeList:
     commits: list[str]
     dirty_status: list[str]
     locked_status: list[str]
+    missing_status: list[str] = field(default_factory=list)
+    dirty_details_list: list[tuple] = field(default_factory=list)
 
     def to_bash_declare(self) -> str:
         """Format as bash variable declarations.
@@ -155,6 +167,12 @@ class WorktreeList:
                     "dirty": self.dirty_status[i] == "true",
                     "locked": self.locked_status[i] == "true",
                     "current": path == current_worktree,
+                    "missing": self.missing_status[i] == "true"
+                    if i < len(self.missing_status)
+                    else False,
+                    "dirty_details": list(self.dirty_details_list[i])
+                    if i < len(self.dirty_details_list)
+                    else [],
                 }
             )
 
@@ -306,6 +324,31 @@ def _check_worktree_dirty_details(worktree_path: str) -> WorktreeDirtyInfo:
         )
 
 
+def _dirty_detail_labels(info: WorktreeDirtyInfo) -> tuple[str, ...]:
+    """Extract machine-readable dirty-category labels from a WorktreeDirtyInfo.
+
+    WHY: JSON consumers and structured output need categorized labels
+    ("staged", "unstaged", "untracked") rather than the human-readable
+    comma-separated string in WorktreeDirtyInfo.details. This helper keeps
+    the categorization logic DRY between parse_worktree_list (JSON enrichment)
+    and the dirty subcommand.
+
+    Args:
+        info: WorktreeDirtyInfo from _check_worktree_dirty_details.
+
+    Returns:
+        Tuple of matching labels, e.g. ("unstaged", "untracked"). Empty if clean.
+    """
+    parts: list[str] = []
+    if info.has_staged:
+        parts.append("staged")
+    if info.has_unstaged:
+        parts.append("unstaged")
+    if info.has_untracked:
+        parts.append("untracked")
+    return tuple(parts)
+
+
 def parse_worktree_list(
     porcelain_output: str,
     main_repo_path: str,
@@ -369,8 +412,12 @@ def parse_worktree_list(
                     should_include = False
 
                 if should_include:
-                    # Check dirty status via subprocess
-                    is_dirty = _check_worktree_dirty(current_path)
+                    # WHY: Call _check_worktree_dirty_details directly (not the
+                    # thin _check_worktree_dirty wrapper) so we get both the dirty
+                    # boolean AND the categorized labels in a single subprocess
+                    # round-trip.  Avoids 3 extra git invocations per worktree.
+                    dirty_info = _check_worktree_dirty_details(current_path)
+                    missing = not os.path.isdir(current_path)
 
                     # Shorten commit to 7 characters if present
                     short_commit = current_commit[:7] if current_commit else ""
@@ -380,8 +427,10 @@ def parse_worktree_list(
                             path=current_path,
                             branch=current_branch,
                             commit=short_commit,
-                            is_dirty=is_dirty,
+                            is_dirty=dirty_info.is_dirty,
                             is_locked=current_locked,
+                            missing=missing,
+                            dirty_details=_dirty_detail_labels(dirty_info),
                         )
                     )
 
@@ -417,7 +466,8 @@ def parse_worktree_list(
             should_include = False
 
         if should_include:
-            is_dirty = _check_worktree_dirty(current_path)
+            dirty_info = _check_worktree_dirty_details(current_path)
+            missing = not os.path.isdir(current_path)
             short_commit = current_commit[:7] if current_commit else ""
 
             worktrees.append(
@@ -425,8 +475,10 @@ def parse_worktree_list(
                     path=current_path,
                     branch=current_branch,
                     commit=short_commit,
-                    is_dirty=is_dirty,
+                    is_dirty=dirty_info.is_dirty,
                     is_locked=current_locked,
+                    missing=missing,
+                    dirty_details=_dirty_detail_labels(dirty_info),
                 )
             )
 
@@ -556,6 +608,8 @@ def to_worktree_list(worktrees: list[WorktreeInfo]) -> WorktreeList:
     commits = []
     dirty_status = []
     locked_status = []
+    missing_status = []
+    dirty_details_list = []
 
     for wt in worktrees:
         paths.append(wt.path)
@@ -563,6 +617,8 @@ def to_worktree_list(worktrees: list[WorktreeInfo]) -> WorktreeList:
         commits.append(wt.commit)
         dirty_status.append("true" if wt.is_dirty else "false")
         locked_status.append("true" if wt.is_locked else "false")
+        missing_status.append("true" if wt.missing else "false")
+        dirty_details_list.append(wt.dirty_details)
 
     return WorktreeList(
         paths=paths,
@@ -570,6 +626,8 @@ def to_worktree_list(worktrees: list[WorktreeInfo]) -> WorktreeList:
         commits=commits,
         dirty_status=dirty_status,
         locked_status=locked_status,
+        missing_status=missing_status,
+        dirty_details_list=dirty_details_list,
     )
 
 

@@ -4,6 +4,21 @@
 # Reusable confirmation helpers for interactive hug commands.
 # Depends on: hug-gum for charmbracelet integration, hug-output for messaging,
 #             hug-strings for input trimming.
+#
+# Confirmation tiers — the family-wide safety language (design 2026-06-12 §5):
+#
+#   Tier    | Used for                                  | -y / HUG_YES      | -f / HUG_FORCE
+#   --------+-------------------------------------------+-------------------+---------------
+#   safe    | additive/reversible (create branch/wt/tag)| auto-confirms     | auto-confirms
+#   warn    | destructive but recoverable (merged-branch| auto-confirms     | auto-confirms
+#           | delete, overwrite)                        |                   |
+#   danger  | irreversible / data loss (worktree remove,| HARD ERROR exit 3 | auto-confirms
+#           | wipe, reset)                              |                   |
+#
+# In one sentence: -y says yes to routine prompts but can NEVER authorize a
+# dangerous operation; only -f can. -f additionally overrides blocked states
+# (dirty worktree, branch checked out in the main checkout).
+#
 # Functions:
 #   - prompt_confirm_safe: yes/no confirmation with YES default for safe operations.
 #   - prompt_confirm_warn: yes/no confirmation with NO default for destructive operations.
@@ -15,7 +30,7 @@
 #   $1 - (Optional) Custom prompt text, defaults to "Proceed? [y/N]: "
 # Environment:
 #   HUG_FORCE - If true, automatically confirms without prompting
-#   HUG_YES   - If true, automatically confirms without prompting (keeps safe semantics)
+#   HUG_YES   - If true, automatically confirms without prompting. NOTE: warn-tier prompts guard RECOVERABLE destructive actions, so -y intentionally covers them; only danger-tier refuses -y.
 #   HUG_NONINTERACTIVE - If true, automatically cancels without prompting
 # Returns:
 #   0 if confirmed (or HUG_FORCE/HUG_YES is true)
@@ -73,7 +88,7 @@ prompt_confirm_danger() {
     return 0
   fi
   if [[ ${HUG_YES:-} == true ]]; then
-    error "Dangerous operation requires --force (not -y). Reason: ${2:-This operation is irreversible and may cause data loss}. Re-run with --force to override."
+    error "Dangerous operation requires --force (not -y). Reason: ${2:-This operation is irreversible and may cause data loss}. Re-run with --force to override." "$HUG_EX_BLOCKED"
   fi
 
   local action="$1"

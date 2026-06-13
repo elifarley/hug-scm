@@ -4,6 +4,27 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **P0: `wtdel -p <main-repo> --force` no longer deletes the entire main repository** — path-mode had no main-worktree guard, and the rm -rf fallback bulldozed git's refusal. Worktree removal now never falls back to a blind filesystem delete; it surfaces git's reason and stops.
+- **Scoped prune: removing worktree A no longer prunes unrelated stale entry B** — replaced global `git worktree prune` with targeted `prune_worktree_entry` that removes only the specific stale metadata row.
+
+### Changed
+
+- **Batch semantics: `wtdel` now validates ALL targets before removing ANY** — was best-effort; mixed-validity batches now remove nothing. Fix the blocked/invalid items and re-run.
+- **Single confirmation covers the whole batch** — was one confirmation per worktree.
+- **Exit codes now distinguish usage (2) vs safety-blocked (3) vs operational (1)** across the worktree family (wtc, wtdel, wtl).
+- **`-y` on danger-tier operations now exits 3** (was 1) — clearer signal that safety blocked the operation, not that it failed at runtime.
+- **`-f` and `--dry-run` now compose in `wtc`** — were mutually exclusive. `wtc feature --base HEAD~3 --dry-run -f` previews what force semantics would do.
+
+### Added
+
+- **`wtc`: `-p/--path`, `-B/--with-branch`, `--json`, `-q`, `HUG_FORCE` env support** — path and branch-creation flags bring parity with wtdel's interface; `--json` and `-q` enable scripting.
+- **`wtdel`: `--json`, `-q`, pre-flight plan display** — batch removals show a validated plan before execution; `--json` emits a structured result object on stdout.
+- **`wtl`: `(gone)` display for stale worktrees** — directories removed externally now show `(gone)` instead of a commit hash; `missing` and `dirty_details` fields in JSON output; usage errors exit 2.
+- **`HUG_EX_OK/FAIL/USAGE/BLOCKED` constants + `error_usage`/`error_blocked` helpers in hug-output** — shared exit-code convention for the worktree family.
+- **`main_worktree_of_gitdir` and `prune_worktree_entry` in hug-git-worktree lib** — targeted worktree metadata operations replacing global prune.
+
 ## [1.2.0] - 2026-06-05
 
 ### Added

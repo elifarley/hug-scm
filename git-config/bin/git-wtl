@@ -23,8 +23,10 @@ OPTIONS:
   -h, --help          Show this help message and exit.
   -q, --quiet         Suppress legend line (listing still shown).
   --json              Output in JSON format instead of human-readable text.
-  -b, --branch NAME   Filter by EXACT branch name (case-sensitive, repeatable, OR logic)
+  -b, --branch NAME   Filter by EXACT branch name (case-sensitive, repeatable, OR logic).
+                        (a branch checked out in several worktrees yields several rows)
   -p, --path-only     Print only absolute paths (one per line). Exit 1 if 0 matches.
+                        (output mode — unlike wtc/wtdel, where -p PATH targets a path)
   -e, --existing      Exclude worktrees whose directory doesn't exist on disk.
 
 DESCRIPTION:
@@ -65,6 +67,11 @@ EXAMPLES:
   hug wtl -b main -p               # Path for exact branch
   hug wtl feat -p -e               # Substring match, existing only, paths
 
+EXIT CODES:
+  0  success (including empty --json result)
+  1  no worktrees found (human mode) or operational error
+  2  usage error (bad flags/arguments)
+
 SEE ALSO:
   hug wtll : Long-format listing with commit subjects
   hug wt   : Interactive worktree selection and switching
@@ -89,8 +96,7 @@ while [[ $# -gt 0 ]]; do
     ;;
   -b | --branch)
     if [[ -z "${2:-}" ]]; then
-      error "-b/--branch requires a value"
-      exit 1
+      error_usage "Option -b/--branch requires a value."
     fi
     branch_filters+=("$2")
     shift 2
@@ -109,8 +115,7 @@ while [[ $# -gt 0 ]]; do
     shift $#
     ;;
   -*)
-    error "Unknown option: $1"
-    exit 1
+    error_usage "Unknown option: $1"
     ;;
   *)
     search_terms+=("$1")
@@ -124,8 +129,7 @@ check_git_repo
 
 # --path-only and --json are mutually exclusive
 if $json_output && $path_only; then
-  error "--json and --path-only are mutually exclusive"
-  exit 1
+  error_usage "--json and --path-only are mutually exclusive."
 fi
 
 # JSON output mode
@@ -222,6 +226,11 @@ if [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
     dirty="${filtered_dirty[$i]}"
     locked="${filtered_locked[$i]}"
 
+    # Stale entry: directory deleted externally but metadata remains.
+    # Show '(gone)' instead of a commit hash — self-documenting, no new
+    # legend symbol, no column shift (design §7/N6).
+    [[ -d "$path" ]] || commit="gone"
+
     path_display="${path/#$HOME/\~}"
     is_current="false"
     [[ "$path" == "$current_worktree" ]] && is_current="true"
@@ -243,6 +252,11 @@ else
     commit="${commits[$i]}"
     dirty="${status_dirty[$i]}"
     locked="${locked_status[$i]}"
+
+    # Stale entry: directory deleted externally but metadata remains.
+    # Show '(gone)' instead of a commit hash — self-documenting, no new
+    # legend symbol, no column shift (design §7/N6).
+    [[ -d "$path" ]] || commit="gone"
 
     path_display="${path/#$HOME/\~}"
     is_current="false"

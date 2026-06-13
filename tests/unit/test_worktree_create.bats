@@ -122,11 +122,12 @@ teardown() {
   assert_output --partial "To start working:"
 }
 
-@test "hug wtc: error when using --force and --dry-run together" {
-  # Test that --force and --dry-run are mutually exclusive
-  run git-wtc test-branch -f --dry-run
-  assert_failure
-  assert_output --partial "Cannot use --force and --dry-run together"
+@test "hug wtc: -f composes with --dry-run (previews, no error)" {
+  # After family parity: -f and --dry-run compose (no longer mutually exclusive)
+  run git-wtc some-new-branch --dry-run -f
+  assert_success
+  assert_output --partial "DRY RUN"
+  refute_output --partial "mutually exclusive"
 }
 
 @test "hug wtc: interactive mode with no branch argument" {
@@ -139,17 +140,18 @@ teardown() {
   assert_output --partial "cancelled"
 }
 
-@test "hug wtc: error when branch already has worktree" {
+@test "hug wtc: error when branch already has worktree (exit 3)" {
   # First, create a worktree for feature-1
   run git-wtc feature-1 -f
   assert_success
 
-  # Try to create another worktree for the same branch - should fail
+  # Try to create another worktree for the same branch - should fail with exit 3
   run git-wtc feature-1 -f
-  assert_failure
+  assert_failure 3
 
-  # Should show appropriate error message
-  assert_output --partial "already checked out in another worktree"
+  # Should show appropriate error message naming the holding worktree
+  assert_output --partial "checked out in worktree"
+  assert_output --partial "hug wtdel feature-1"
 }
 
 @test "hug wtc: dry-run with --new does NOT create branch (bug fix)" {
@@ -192,10 +194,11 @@ teardown() {
 
   # Try to create another worktree for the same branch
   run git-wtc feature-1 -f
-  assert_failure
+  assert_failure 3
 
-  # Error should contain useful information (not just "Failed to create worktree")
-  assert_output --partial "already checked out"
+  # Error should contain useful information (names holding worktree + removal hint)
+  assert_output --partial "checked out in worktree"
+  assert_output --partial "hug wtdel feature-1"
 }
 
 @test "hug wtc: single confirmation for new branch (not double prompt)" {
@@ -243,10 +246,10 @@ teardown() {
   assert_dir_exists "$default_path"
 }
 
-@test "hug wtc: error with too many arguments" {
-  # Test with too many arguments - should fail
+@test "hug wtc: error with too many arguments (exit 2)" {
+  # Test with too many arguments - should fail with usage error
   run git-wtc feature-1 extra-path another-arg
-  assert_failure
+  assert_failure 2
 
   # Should show appropriate error message
   assert_output --partial "Too many arguments"
@@ -320,7 +323,7 @@ teardown() {
 }
 
 @test "hug wtc: combined flag usage" {
-  # Test using --dry-run flag alone (no longer supports combining with -f)
+  # Test using --dry-run flag alone
   run git-wtc feature-1 --dry-run
   assert_success
   assert_output --partial "Worktree Creation Preview (DRY RUN)"
@@ -396,14 +399,14 @@ teardown() {
 
   # Test error when trying to create worktree for branch that already has one
   run git-wtc feature/branch -f
-  assert_failure
-  assert_output --partial "already checked out in another worktree"
+  assert_failure 3
+  assert_output --partial "checked out in worktree"
 }
 
-@test "hug wtc: error when branch is checked out in main worktree without -f" {
+@test "hug wtc: error when branch is checked out in main worktree without -f (exit 3)" {
   # main is the currently checked out branch in the test repo
   run git-wtc main
-  assert_failure
+  assert_failure 3
   assert_output --partial "currently checked out in the main worktree"
   assert_output --partial "--force"
 }
@@ -479,8 +482,9 @@ teardown() {
 @test "hug wtc: --base errors with invalid commitish" {
   run git-wtc new-branch --base nonexistent-ref-xyz
   assert_failure
-  assert_output --partial "Invalid start-point"
+  assert_output --partial "Cannot resolve --base"
   assert_output --partial "nonexistent-ref-xyz"
+  assert_output --partial "HEAD~N"
 }
 
 @test "hug wtc: --base implies --new without explicit flag" {
@@ -632,4 +636,74 @@ teardown() {
   local generated
   generated=$(echo "$output" | grep "Path:" | sed 's/.*Path:[[:space:]]*//' | sed 's/\s*$//')
   hug wtdel feature-1 -f -B 2>/dev/null || rm -rf "$generated"
+}
+
+# --- Family parity tests (env force, dry-run composition, -p/-B, --json, -q, exit codes) ---
+
+@test "hug wtc: HUG_FORCE env enables force semantics (main checkout)" {
+  cd "$TEST_REPO"
+  HUG_FORCE=true run git-wtc main
+  assert_success
+  assert_output --partial "Worktree created for 'main'"
+}
+
+@test "hug wtc: -p/--path places the worktree at the flag path" {
+  cd "$TEST_REPO"
+  target="$BATS_TEST_TMPDIR/custom-wt"
+  run git-wtc flagged --new -y -p "$target"
+  assert_success
+  assert [ -f "$target/.git" ]
+}
+
+@test "hug wtc: positional path plus -p is a usage error (exit 2)" {
+  cd "$TEST_REPO"
+  run git-wtc b1 /tmp/pos-path -p /tmp/flag-path
+  assert_failure 2
+  assert_output --partial "not both"
+}
+
+@test "hug wtc: -B is an alias of --new" {
+  cd "$TEST_REPO"
+  run git-wtc aliased-branch -B -y
+  assert_success
+  assert_output --partial "Created branch 'aliased-branch'"
+}
+
+@test "hug wtc: branch-in-use error names holding worktree, exit 3" {
+  wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  cd "$TEST_REPO"
+  run git-wtc feature-1 -y
+  assert_failure 3
+  assert_output --partial "checked out in worktree"
+  assert_output --partial "hug wtdel feature-1"
+}
+
+@test "hug wtc: --base HEAD~1 resolves (relative refs accepted)" {
+  cd "$TEST_REPO"
+  run git-wtc from-past --base HEAD~1 -y
+  assert_success
+  assert_output --partial "Created branch 'from-past'"
+}
+
+@test "hug wtc: --base unresolvable ref explains accepted forms" {
+  cd "$TEST_REPO"
+  run git-wtc oops --base HEAD~99 -y
+  assert_failure 1
+  assert_output --partial "Cannot resolve --base"
+  assert_output --partial "HEAD~N"
+}
+
+@test "hug wtc: --json emits parseable result object" {
+  cd "$TEST_REPO"
+  run bash -c "git-wtc jsonbranch --new -y --json 2>/dev/null | python3 -m json.tool"
+  assert_success
+  assert_output --partial '"created_branch": true'
+  assert_output --partial '"branch": "jsonbranch"'
+}
+
+@test "hug wtc: -q suppresses summary chatter" {
+  cd "$TEST_REPO"
+  run git-wtc quietbranch --new -y -q
+  assert_success
+  refute_output --partial "Worktree Creation Summary"
 }
