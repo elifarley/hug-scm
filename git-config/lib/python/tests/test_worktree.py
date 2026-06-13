@@ -262,14 +262,18 @@ class TestParseWorktreeList:
     @patch("git.worktree._check_worktree_dirty_details")
     def test_empty_input_returns_empty_list(self, mock_check_dirty):
         """Should return empty list for empty input."""
-        mock_check_dirty.return_value = WorktreeDirtyInfo(is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details="")
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         result = parse_worktree_list("", "/main/path", include_main=False)
         assert result == []
 
     @patch("git.worktree._check_worktree_dirty_details")
     def test_single_worktree_main_only_excluded(self, mock_check_dirty):
         """Should exclude main worktree when include_main=False."""
-        mock_check_dirty.return_value = WorktreeDirtyInfo(is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details="")
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main
 commit abc1234def5678"""
@@ -279,7 +283,9 @@ commit abc1234def5678"""
     @patch("git.worktree._check_worktree_dirty_details")
     def test_single_worktree_main_only_included(self, mock_check_dirty):
         """Should include main worktree when include_main=True."""
-        mock_check_dirty.return_value = WorktreeDirtyInfo(is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details="")
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main
 commit abc1234def5678"""
@@ -293,7 +299,9 @@ commit abc1234def5678"""
     @patch("git.worktree._check_worktree_dirty_details")
     def test_multiple_worktrees_excludes_main(self, mock_check_dirty):
         """Should return only additional worktrees when include_main=False."""
-        mock_check_dirty.return_value = WorktreeDirtyInfo(is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details="")
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main
 commit abc1234def5678
@@ -313,7 +321,9 @@ commit 123456789abcd"""
     @patch("git.worktree._check_worktree_dirty_details")
     def test_multiple_worktrees_includes_main(self, mock_check_dirty):
         """Should return all worktrees when include_main=True."""
-        mock_check_dirty.return_value = WorktreeDirtyInfo(is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details="")
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main
 commit abc1234def5678
@@ -329,7 +339,9 @@ commit def5678901234"""
     @patch("git.worktree._check_worktree_dirty_details")
     def test_detached_head_no_branch_line(self, mock_check_dirty):
         """Should handle detached HEAD (no branch line)."""
-        mock_check_dirty.return_value = WorktreeDirtyInfo(is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details="")
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 HEAD abc1234def5678"""
         result = parse_worktree_list(porcelain, "/home/user/repo", include_main=True)
@@ -339,7 +351,9 @@ HEAD abc1234def5678"""
     @patch("git.worktree._check_worktree_dirty_details")
     def test_locked_worktree_detected(self, mock_check_dirty):
         """Should detect locked worktrees."""
-        mock_check_dirty.return_value = WorktreeDirtyInfo(is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details="")
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo.WT.feature-1
 branch refs/heads/feature-1
 commit def5678901234
@@ -351,7 +365,9 @@ locked"""
     @patch("git.worktree._check_worktree_dirty_details")
     def test_commit_hash_shortened_to_7_chars(self, mock_check_dirty):
         """Should shorten commit hash to 7 characters."""
-        mock_check_dirty.return_value = WorktreeDirtyInfo(is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details="")
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main
 commit abc1234def5678"""
@@ -361,7 +377,9 @@ commit abc1234def5678"""
     @patch("git.worktree._check_worktree_dirty_details")
     def test_worktree_with_spaces_in_path(self, mock_check_dirty):
         """Should handle worktrees with spaces in path."""
-        mock_check_dirty.return_value = WorktreeDirtyInfo(is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details="")
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/my repo
 branch refs/heads/main
 commit abc1234def5678"""
@@ -372,7 +390,9 @@ commit abc1234def5678"""
     @patch("git.worktree._check_worktree_dirty_details")
     def test_missing_commit_line(self, mock_check_dirty):
         """Should handle missing commit line gracefully."""
-        mock_check_dirty.return_value = WorktreeDirtyInfo(is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details="")
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main"""
         result = parse_worktree_list(porcelain, "/home/user/repo", include_main=True)
@@ -382,7 +402,13 @@ branch refs/heads/main"""
     @patch("git.worktree._check_worktree_dirty_details")
     def test_dirty_status_checked(self, mock_check_dirty):
         """Should call _check_worktree_dirty_details for each worktree."""
-        mock_check_dirty.return_value = WorktreeDirtyInfo(is_dirty=True, has_unstaged=True, has_staged=False, has_untracked=False, details="unstaged changes")
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=True,
+            has_unstaged=True,
+            has_staged=False,
+            has_untracked=False,
+            details="unstaged changes",
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main
 commit abc1234def5678"""
@@ -1089,14 +1115,13 @@ class TestParseMissingWorktree:
     def test_parse_populates_dirty_details(self, mock_check_dirty, tmp_path):
         """dirty_details tuple reflects the categorized dirty state."""
         mock_check_dirty.return_value = WorktreeDirtyInfo(
-            is_dirty=True, has_unstaged=True, has_staged=False, has_untracked=True,
+            is_dirty=True,
+            has_unstaged=True,
+            has_staged=False,
+            has_untracked=True,
             details="unstaged changes, untracked files",
         )
-        porcelain = (
-            f"worktree {tmp_path}/repo\n"
-            "branch refs/heads/main\n"
-            "HEAD abc1234def\n"
-        )
+        porcelain = f"worktree {tmp_path}/repo\nbranch refs/heads/main\nHEAD abc1234def\n"
         wts = parse_worktree_list(porcelain, str(tmp_path / "repo"), include_main=True)
         assert len(wts) == 1
         assert wts[0].dirty_details == ("unstaged", "untracked")
@@ -1107,11 +1132,7 @@ class TestParseMissingWorktree:
         mock_check_dirty.return_value = WorktreeDirtyInfo(
             is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
         )
-        porcelain = (
-            f"worktree {tmp_path}/repo\n"
-            "branch refs/heads/main\n"
-            "HEAD abc1234def\n"
-        )
+        porcelain = f"worktree {tmp_path}/repo\nbranch refs/heads/main\nHEAD abc1234def\n"
         wts = parse_worktree_list(porcelain, str(tmp_path / "repo"), include_main=True)
         assert len(wts) == 1
         assert wts[0].dirty_details == ()
@@ -1125,8 +1146,12 @@ class TestToJsonIncludesMissingAndDirtyDetails:
         import json
 
         wt = WorktreeInfo(
-            path=str(tmp_path), branch="b", commit="abc1234",
-            is_dirty=True, is_locked=False, missing=False,
+            path=str(tmp_path),
+            branch="b",
+            commit="abc1234",
+            is_dirty=True,
+            is_locked=False,
+            missing=False,
             dirty_details=("untracked",),
         )
         result = to_worktree_list([wt])
@@ -1140,8 +1165,12 @@ class TestToJsonIncludesMissingAndDirtyDetails:
         import json
 
         wt = WorktreeInfo(
-            path=str(tmp_path / "gone"), branch="ghost", commit="def5678",
-            is_dirty=False, is_locked=False, missing=True,
+            path=str(tmp_path / "gone"),
+            branch="ghost",
+            commit="def5678",
+            is_dirty=False,
+            is_locked=False,
+            missing=True,
             dirty_details=(),
         )
         result = to_worktree_list([wt])
@@ -1155,8 +1184,11 @@ class TestToJsonIncludesMissingAndDirtyDetails:
         import json
 
         result = WorktreeList(
-            paths=[str(tmp_path)], branches=["main"], commits=["abc1234"],
-            dirty_status=["false"], locked_status=["false"],
+            paths=[str(tmp_path)],
+            branches=["main"],
+            commits=["abc1234"],
+            dirty_status=["false"],
+            locked_status=["false"],
         )
         data = json.loads(result.to_json(str(tmp_path)))
         row = data["worktrees"][0]

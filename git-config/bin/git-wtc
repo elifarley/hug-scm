@@ -113,7 +113,7 @@ if [ $getopt_status -ne 0 ]; then
   if [ -n "$PARSED" ]; then
     echo "$PARSED" >&2
   fi
-  exit 2  # usage error — unknown flag or malformed value (exit-code §6)
+  exit 2 # usage error — unknown flag or malformed value (exit-code §6)
 fi
 
 eval set -- "$PARSED"
@@ -149,7 +149,7 @@ while true; do
     new_branch=true
     shift
     ;;
-  -B | --with-branch)  # -B is a memorable alias for --new
+  -B | --with-branch) # -B is a memorable alias for --new
     new_branch=true
     shift
     ;;
@@ -157,15 +157,15 @@ while true; do
     base="$2"
     shift 2
     ;;
-  -q | --quiet)        # Suppress summary chatter (stdout stays clean)
+  -q | --quiet) # Suppress summary chatter (stdout stays clean)
     export HUG_QUIET=T
     shift
     ;;
-  --json)              # Machine-readable result object to stdout
+  --json) # Machine-readable result object to stdout
     json_output=true
     shift
     ;;
-  -p | --path)         # Explicit worktree path (alternative to positional arg)
+  -p | --path) # Explicit worktree path (alternative to positional arg)
     flag_path="$2"
     shift 2
     ;;
@@ -437,7 +437,9 @@ suggest_superproject_ignore "$worktree_path"
 # Emits a parseable result object when --json is requested.
 # All human-facing chatter above went to stderr; this is the only stdout.
 if $json_output; then
-  _created=false; _base_json=null; _sp_json=null
+  _created=false
+  _base_json=null
+  _sp_json=null
   if $branch_needs_creation; then
     _created=true
     [[ -n "$base" ]] && _base_json="\"$(json_escape "$base")\""

@@ -318,8 +318,8 @@ emit_wtdel_json_if_requested() {
   for j in "${!plan_specs[@]}"; do
     local outcome="${plan_states[$j]}"
     for r in "${removed[@]}"; do [[ "$r" == "${plan_paths[$j]}" ]] && outcome="removed"; done
-    for r in "${pruned[@]}";  do [[ "$r" == "${plan_paths[$j]}" ]] && outcome="pruned";  done
-    for r in "${failed[@]}";  do [[ "$r" == "${plan_paths[$j]}" ]] && outcome="failed";  done
+    for r in "${pruned[@]}"; do [[ "$r" == "${plan_paths[$j]}" ]] && outcome="pruned"; done
+    for r in "${failed[@]}"; do [[ "$r" == "${plan_paths[$j]}" ]] && outcome="failed"; done
     local _path_json="null"
     [[ -n "${plan_paths[$j]}" ]] && _path_json="\"$(json_escape "${plan_paths[$j]}")\""
     obj=$(to_json_nested \
@@ -366,7 +366,8 @@ add_plan_record() {
   local _ap_spec="$1" _ap_path="$2"
   local _ap_state="" _ap_gitdir="" _ap_branch="" _ap_detail=""
   if [[ -z "$_ap_path" ]]; then
-    _ap_state="no-worktree"; _ap_detail="no worktree found for branch '$_ap_spec'"
+    _ap_state="no-worktree"
+    _ap_detail="no worktree found for branch '$_ap_spec'"
   else
     wtdel_classify_target "$_ap_path" "$force" _ap_state _ap_gitdir _ap_branch _ap_detail
   fi
@@ -416,12 +417,27 @@ for i in "${!plan_specs[@]}"; do
       status_line="${GREEN}Will remove${NC}"
     fi
     ;;
-  stale)  status_line="${YELLOW}Will prune stale entry (directory already gone)${NC}" ;;
-  dirty)  status_line="${RED}BLOCKED: uncommitted changes (${plan_details[$i]}) -- commit/stash or use -f${NC}"; n_blocked=$((n_blocked + 1)) ;;
-  main)   status_line="${RED}BLOCKED: ${plan_details[$i]} -- only linked worktrees can be removed${NC}"; n_blocked=$((n_blocked + 1)) ;;
-  current) status_line="${RED}BLOCKED: ${plan_details[$i]} -- cd elsewhere first${NC}"; n_blocked=$((n_blocked + 1)) ;;
-  locked) status_line="${RED}BLOCKED: ${plan_details[$i]}${NC}"; n_blocked=$((n_blocked + 1)) ;;
-  *)      status_line="${RED}INVALID: ${plan_details[$i]}${NC}"; n_invalid=$((n_invalid + 1)) ;;
+  stale) status_line="${YELLOW}Will prune stale entry (directory already gone)${NC}" ;;
+  dirty)
+    status_line="${RED}BLOCKED: uncommitted changes (${plan_details[$i]}) -- commit/stash or use -f${NC}"
+    n_blocked=$((n_blocked + 1))
+    ;;
+  main)
+    status_line="${RED}BLOCKED: ${plan_details[$i]} -- only linked worktrees can be removed${NC}"
+    n_blocked=$((n_blocked + 1))
+    ;;
+  current)
+    status_line="${RED}BLOCKED: ${plan_details[$i]} -- cd elsewhere first${NC}"
+    n_blocked=$((n_blocked + 1))
+    ;;
+  locked)
+    status_line="${RED}BLOCKED: ${plan_details[$i]}${NC}"
+    n_blocked=$((n_blocked + 1))
+    ;;
+  *)
+    status_line="${RED}INVALID: ${plan_details[$i]}${NC}"
+    n_invalid=$((n_invalid + 1))
+    ;;
   esac
   [[ -z "${HUG_QUIET:-}" ]] && printf "  Status: %b\n" "$status_line" >&2
 done
@@ -446,7 +462,7 @@ if ! $force; then
   echo >&2
   n_prune=0
   for s in "${plan_states[@]}"; do [[ "$s" == stale ]] && n_prune=$((n_prune + 1)); done
-  warning "About to remove $((n_total - n_prune)) worktree(s)$( ((n_prune > 0)) && printf ' and prune %d stale entr(y/ies)' "$n_prune" )."
+  warning "About to remove $((n_total - n_prune)) worktree(s)$( ((n_prune > 0)) && printf ' and prune %d stale entr(y/ies)' "$n_prune")."
   # Guard: test mocks replace prompt_confirm_danger with a plain `return 1`,
   # and the real function exits itself on decline -- the guard keeps the
   # cancellation message in BOTH paths.
@@ -531,7 +547,7 @@ done
 if [[ $n_total -gt 1 && -z "${HUG_QUIET:-}" ]]; then
   echo >&2
   printf "${BLUE}Batch Removal Summary:${NC}\n" >&2
-  printf "  Removed: %d\n" "$(( ${#removed[@]} + ${#pruned[@]} ))" >&2
+  printf "  Removed: %d\n" "$((${#removed[@]} + ${#pruned[@]}))" >&2
   [[ ${#pruned[@]} -gt 0 ]] && printf "  (of which pruned stale entries: %d)\n" "${#pruned[@]}" >&2
   [[ ${#failed[@]} -gt 0 ]] && printf "  Failed: %d\n" "${#failed[@]}" >&2
   if $with_branch; then

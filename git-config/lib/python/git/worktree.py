@@ -167,8 +167,12 @@ class WorktreeList:
                     "dirty": self.dirty_status[i] == "true",
                     "locked": self.locked_status[i] == "true",
                     "current": path == current_worktree,
-                    "missing": self.missing_status[i] == "true" if i < len(self.missing_status) else False,
-                    "dirty_details": list(self.dirty_details_list[i]) if i < len(self.dirty_details_list) else [],
+                    "missing": self.missing_status[i] == "true"
+                    if i < len(self.missing_status)
+                    else False,
+                    "dirty_details": list(self.dirty_details_list[i])
+                    if i < len(self.dirty_details_list)
+                    else [],
                 }
             )
 
