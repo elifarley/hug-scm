@@ -31,15 +31,14 @@ ARGUMENTS:
 OPTIONS:
     -f, --force             Skip confirmation prompts, auto-create branches, and allow
                             creating worktrees for branches checked out elsewhere
-    -y, --yes               Skip confirmation prompts (keeps safe semantics)
+    -y, --yes               Skip confirmation prompts. NOT sufficient for operations requiring -f.
     --dry-run               Show what would be done without creating the worktree
-    --new                   Automatically create branch if it doesn't exist
-    -B, --with-branch       Alias for --new (mnemonic: "with [this] branch")
+    --new, -B, --with-branch  Automatically create branch if it doesn't exist
     --base POINT            Create the new branch from POINT (commit, branch, tag, or ref)
                             instead of HEAD. Implies --new. Errors if branch already exists.
     -p, --path PATH         Explicit worktree path (alternative to positional arg)
-    -q, --quiet             Suppress summary chatter (errors still shown)
-    --json                  Emit machine-readable result object to stdout
+    -q, --quiet             Suppress summary and informational output (errors and JSON remain)
+    --json                  Emit results as JSON on stdout (zero non-JSON bytes; pipe-safe)
     -h, --help              Show this help
 
 DESCRIPTION:
@@ -67,7 +66,7 @@ EXAMPLES:
     hug wtc feature-auth                    # Create worktree for existing branch
     hug wtc feature-auth --new              # Create new branch and worktree
     hug wtc feature-auth -B                 # Same as --new (alias)
-    hug wtc new-feature --new ~/work/feat   # Create new branch at custom path
+    hug wtc new-feature -B ~/work/feat      # Create new branch at custom path
     hug wtc new-feature -p ~/work/feat -B   # Same, using -p for path
     hug wtc missing-branch                  # Prompt to create branch if it doesn't exist
     hug wtc missing-branch -f               # Auto-create branch without prompting
@@ -77,9 +76,18 @@ EXAMPLES:
     hug wtc hotfix-123 --base v2.0          # Create branch from tag
     hug wtc experiment --base main           # Create branch from main
     hug wtc feature --base origin/develop    # Create branch from remote
-    hug wtc test-ref --base HEAD~3 --dry-run # Preview creation from relative ref
+    hug wtc test-ref --base HEAD~3 --dry-run -f  # Preview with force override
     hug wtc scripty --new --json -y         # Scriptable JSON output to stdout
     hug wtc quiet-branch --new -q -y        # Suppress summary chatter
+
+SAFETY:
+    -y answers yes to routine confirmations (safe and recoverable tiers).
+    It never authorizes dangerous operations — those require -f/--force.
+    -f also overrides blocked states (branch checked out in main worktree).
+
+EXIT CODES:
+    0  success            2  usage error (bad flags/arguments)
+    1  operational error  3  blocked by safety (use -f where appropriate)
 
 SEE ALSO:
     hug wt      List and switch between worktrees

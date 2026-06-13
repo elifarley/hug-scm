@@ -31,11 +31,11 @@ ARGUMENTS:
 OPTIONS:
     -p, --path PATH   Target worktree by filesystem path (repeatable for batch)
     -f, --force       Skip confirmation prompts and remove even with uncommitted changes
-    -y, --yes         Skip confirmation prompts (keeps safe semantics)
+    -y, --yes         Auto-confirm routine prompts. NOT sufficient for worktree removal (a dangerous operation) — use -f. See SAFETY.
     --dry-run         Show what would be removed without actually removing
     -B, --with-branch Also delete the associated branch after removing the worktree
-    -q, --quiet       Suppress human-facing chatter (errors still shown)
-    --json            Emit machine-readable JSON on stdout
+    -q, --quiet       Suppress summary and informational output (errors and JSON remain)
+    --json            Emit results as JSON on stdout (zero non-JSON bytes; pipe-safe)
     -h, --help        Show this help
 
 DESCRIPTION:
@@ -50,6 +50,7 @@ DESCRIPTION:
     - Automatically detects and prunes stale worktree metadata
       (directories removed externally without 'git worktree remove')
     - Supports batch removal of multiple worktrees
+    - Validates ALL targets before removing ANY (atomic batch semantics)
 
 EXAMPLES:
     hug wtdel                                 # Interactive selection
@@ -61,6 +62,21 @@ EXAMPLES:
     hug wtdel -p /path/a -p /path/b --force  # Batch remove by paths
     hug wtdel feature-auth -B              # Remove worktree and delete branch
     hug wtdel feat-1 feat-2 -B --force     # Batch remove worktrees + branches
+    hug wtdel feat-1 --json                # Machine-readable result on stdout
+    hug wtdel feat-1 -q                    # Suppress summary, keep errors
+
+SAFETY:
+    -y answers yes to routine confirmations (safe and recoverable tiers).
+    It never authorizes dangerous operations — those require -f/--force.
+    -f also overrides blocked states (dirty worktree, etc).
+
+    Batch removals are validated first: if ANY target is invalid or
+    blocked, NOTHING is removed (fix and re-run). One confirmation
+    covers the whole validated batch.
+
+EXIT CODES:
+    0  success            2  usage error (bad flags/arguments)
+    1  operational error  3  blocked by safety (use -f where appropriate)
 
 SEE ALSO:
     hug wt      List and switch between worktrees
