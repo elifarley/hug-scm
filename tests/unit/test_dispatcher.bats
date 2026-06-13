@@ -23,15 +23,23 @@
 
 load '../test_helper'
 
+setup() {
+  require_hug
+  TEST_REPO=$(create_test_repo)
+  cd "$TEST_REPO"
+}
+
+teardown() {
+  cleanup_test_repo
+}
+
 # ===========================================================================
 # -C tests: cd into target directory before dispatch
 # ===========================================================================
 
 @test "hug -C <repo> s: runs status in target repo" {
-  create_test_repo
   local other_repo
   other_repo=$(create_test_repo)
-  cd "$TEST_REPO"  # be in some repo
   run hug -C "$other_repo" s
   assert_success
   # Output should mention the other repo's HEAD, not ours
@@ -39,20 +47,16 @@ load '../test_helper'
 }
 
 @test "hug -C <repo> s --branch: reports target repo branch" {
-  create_test_repo
   local other_repo
   other_repo=$(create_test_repo)
-  cd "$TEST_REPO"
   run hug -C "$other_repo" s --branch
   assert_success
   assert_output --partial "main"
 }
 
 @test "hug -C <repo> ll -1: log from target repo" {
-  create_test_repo
   local other_repo
   other_repo=$(create_test_repo)
-  cd "$TEST_REPO"
   run hug -C "$other_repo" ll -1
   assert_success
   assert_output --partial "Initial commit"
@@ -102,7 +106,6 @@ load '../test_helper'
 }
 
 @test "hug -C '<path with spaces>': works with spaces in path" {
-  create_test_repo
   local spaced_dir
   spaced_dir=$(mktemp -d '/tmp/hug test repo XXXXXX')
   (
@@ -273,8 +276,6 @@ load '../test_helper'
 }
 
 @test "hug -S: error when repo has no submodules (.gitmodules missing)" {
-  create_test_repo
-  cd "$TEST_REPO"
   run hug -S anything s
   assert_failure
   assert_output --partial ".gitmodules"
@@ -330,8 +331,6 @@ load '../test_helper'
 # ===========================================================================
 
 @test "regression: hug s works without global flags" {
-  create_test_repo
-  cd "$TEST_REPO"
   run hug s
   assert_success
   assert_output --partial "HEAD"
@@ -372,8 +371,6 @@ load '../test_helper'
   # CRITICAL namespace overlap: `hug s -C` is a SUBCOMMAND flag (--counts)
   # that appears AFTER the command name. The global flag loop only consumes
   # flags BEFORE the command, so -C after `s` must pass through to git-s.
-  create_test_repo
-  cd "$TEST_REPO"
   # Stage a file so -C (counts) has something to report
   echo "x" > newfile.txt && git add newfile.txt
   run hug s -C
@@ -387,8 +384,6 @@ load '../test_helper'
 @test "regression: hug s -S still means --staged (not global -S)" {
   # Same namespace overlap as -C: `hug s -S` means --staged when it
   # appears after the command name.
-  create_test_repo
-  cd "$TEST_REPO"
   echo "x" > staged.txt && git add staged.txt
   run hug s -S
   assert_success
@@ -401,8 +396,6 @@ load '../test_helper'
   # -p is not a hug global flag, so the while-loop's `*) break` fires,
   # leaving -p in $@ for git to handle. The command should not fail with
   # "unknown flag" from hug's dispatcher.
-  create_test_repo
-  cd "$TEST_REPO"
   run hug -p s
   # git status -p is not a valid combination, so git itself may fail,
   # but the failure must come from git — not from hug's dispatcher.
@@ -414,8 +407,6 @@ load '../test_helper'
 }
 
 @test "regression: -- ends global flags, rest passes to command" {
-  create_test_repo
-  cd "$TEST_REPO"
   # -- should end the global flag loop; everything after goes to git
   run hug -- s
   assert_success
@@ -423,8 +414,6 @@ load '../test_helper'
 }
 
 @test "regression: hug with no args in git repo shows hughelp" {
-  create_test_repo
-  cd "$TEST_REPO"
   # No args → dispatcher's help branch fires (before SCM detection), showing
   # the top-level hughelp listing (exit 0). This is by design: hug with no
   # args is more helpful than git's raw error.
