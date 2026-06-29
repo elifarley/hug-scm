@@ -14,7 +14,8 @@ set -euo pipefail
 
 show_help() {
   cat << 'EOF'
-hug cmoda: Commit MODify All - Amend the last commit with ALL tracked changes. No need to stage files first.
+hug cmoda: Commit MODify All - Amend the last commit with ALL tracked changes (staged + unstaged).
+⚠️ In a dirty tree this includes every modified tracked file. Prefer 'hug cmod' after explicit 'hug a' for a narrower amend.
 
 USAGE:
   hug cmoda [OPTIONS]
@@ -38,6 +39,13 @@ DESCRIPTION:
 
   Untracked files are NOT included.
 
+  WARNING: Dirty-tree hazard. cmoda amends with EVERY modified tracked file. If
+  your working tree has changes unrelated to this amend, cmoda will fold them in.
+  To amend only specific files, stage them and use cmod instead:
+
+      hug a <file>...      # stage only the intended files
+      hug cmod --no-edit   # amend with ONLY the staged set
+
   WARNING: This rewrites history. Only amend commits that have not been pushed
   to a shared repository.
 
@@ -51,7 +59,7 @@ EXAMPLES:
 SEE ALSO:
   hug c    : Commit staged changes
   hug ca   : Commit all tracked changes
-  hug cmod : Amend the last commit with staged changes only
+  hug cmod : Amend the last commit with STAGED changes only (use when other files are dirty)
   hug caa  : Commit all changes (tracked + untracked)
 EOF
 }
