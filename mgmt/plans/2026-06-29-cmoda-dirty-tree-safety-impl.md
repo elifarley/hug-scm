@@ -1,5 +1,7 @@
 # cmoda Dirty-Tree Safety — Implementation Plan
 
+> ⚠️ **STATUS (2026-06-29): descoped to DOCS-ONLY after `/autoplan` review.** The runtime guard (Task 3) is **deferred to elifarley/hug-scm#191**. Implement only the corrected edits in **§ Review Outcome & Revised Scope** at the end of this file — they supersede the guard-referencing text in Tasks 1, 2, and 5 below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make `hug cmoda` honest and safe in a dirty tree — demote the convenience framing, warn about the scope hazard, and add a narrow runtime guard that confirms before folding unstaged work into an amend.
@@ -537,3 +539,66 @@ EOF
 **3. Type/name consistency:** `confirm_amend_all_scope` defined in Task 3, called in Task 3's git-cmoda edit. Helpers `has_staged_changes`/`has_unstaged_changes` (hug-git-state), `list_staged_files`/`list_unstaged_files --status` (hug-git-files), `prompt_confirm_warn`/`warning` (hug-confirm/hug-common) all confirmed reachable via git-cmoda's `hug-common hug-git-kit hug-git-commit` sourcing. ✓
 
 **Ordering:** Task 4 is the gate — run it after Tasks 1, 2, 3, 5 (reflected in blockedBy). Within a PR, commit per task.
+
+---
+
+## Review Outcome & Revised Scope (docs-only — 2026-06-29)
+
+`/autoplan` (CEO/Eng/DX × Claude + Codex, 6 voices) endorsed the docs changes and challenged the runtime guard. **Decision: ship docs-only; defer the guard to elifarley/hug-scm#191** (which captures the full review + the implementation fixes to carry forward). The blocking guard's mechanism was judged wrong as designed: the trigger `has_staged_changes && has_unstaged_changes` cannot infer intent (over- and under-fires), the non-interactive cancel is an unproven break for legitimate automation, `-y` would become a cargo-culted new footgun, and guarding the power command contradicts hug's shorter=safer / longer=more-powerful gradient.
+
+**This PR ships Tasks 1, 2, 5 only**, with wording corrected so the help text describes NO guard (none ships), drops internal jargon, and does not advertise `-f`. Task 3 is dropped; Task 4 is slimmed to docs verification. The edits below are authoritative and supersede the originals above.
+
+### Task 1 (revised) — `git-cmoda` help
+
+Tagline (currently line ~17) → replace with:
+```
+hug cmoda: Commit MODify All - Amend the last commit with ALL tracked changes (staged + unstaged).
+⚠️ In a dirty tree this includes every modified tracked file. Prefer 'hug cmod' after explicit 'hug a' for a narrower amend.
+```
+
+WARNING block — insert after `"Untracked files are NOT included."`, before the existing history-rewrite WARNING:
+```
+  WARNING: Dirty-tree hazard. cmoda amends with EVERY modified tracked file. If
+  your working tree has changes unrelated to this amend, cmoda will fold them in.
+  To amend only specific files, stage them and use cmod instead:
+
+      hug a <file>...      # stage only the intended files
+      hug cmod --no-edit   # amend with ONLY the staged set
+```
+
+SEE ALSO `cmod` line → `  hug cmod : Amend the last commit with STAGED changes only (use when other files are dirty)`
+
+### Task 2 (revised) — `git-cmod` help
+
+New TIP (after the existing "Run 'hug sls' first" TIP):
+```
+  TIP: Prefer 'hug cmod' over 'hug cmoda' when your working tree has unrelated
+  modified files. 'cmoda' includes every modified tracked file and will fold
+  unrelated work into the amended commit.
+```
+
+SEE ALSO `cmoda` line → `  hug cmoda: Amend the last commit with ALL tracked changes (includes every modified tracked file; avoid when other files are dirty)`
+
+### Task 3 — DEFERRED
+
+`confirm_amend_all_scope()`, the `git-cmoda` wiring, and all behavioral guard tests are deferred to **elifarley/hug-scm#191**. Do not implement here.
+
+### Task 4 (revised) — docs verification
+
+Run: `make test-lib-py TEST_FILTER=test_quality_corpus` ("amend" still surfaces `hug cmod` in top-5), `make docs-build`, `make sanitize`. No behavioral guard tests in this PR.
+
+### Task 5 (revised) — docs sync
+
+`docs/commands/commits.md` cmoda section — replace "so you don't need to stage them first." with (indented code inside the container avoids a nested fence):
+```
+::: warning Dirty-tree hazard
+Because `cmoda` includes **every** modified tracked file, a working tree with
+unrelated changes will have them folded into the amend. To amend only specific
+files, stage them and use `hug cmod`:
+
+    hug a <file>...      # stage only the intended files
+    hug cmod --no-edit   # amend with ONLY the staged set
+:::
+```
+
+`README.md` (line ~474) → `hug cmoda [-m msg]    # Commit: Modify All (Amend with all tracked changes — prefer cmod in dirty trees)`

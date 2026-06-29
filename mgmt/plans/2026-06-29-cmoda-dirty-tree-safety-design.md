@@ -5,6 +5,8 @@
 **Issue:** [elifarley/hug-scm#190](https://github.com/elifarley/hug-scm/issues/190)
 **Branch / worktree:** `fix-cmoda-dirty-tree-safety`
 
+> ⚠️ **STATUS (2026-06-29): runtime guard (§ Section 3) DEFERRED to elifarley/hug-scm#191 after `/autoplan` review.** This PR ships docs-only (Sections 1, 2, 5), with help text revised to describe no guard and to drop the `-f` advertisement. The guard design + review findings live in elifarley/hug-scm#191; the authoritative docs-only edits are in the implementation plan's "Review Outcome & Revised Scope" section.
+
 ## Problem
 
 `hug cmoda` (Commit MODify **A**ll) amends the last commit with **all tracked
