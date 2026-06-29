@@ -149,7 +149,16 @@ hug cmod -m "A completely new and corrected commit message"
 Amend the last commit with all tracked changes.
 
 Similar to `hug cmod` (**C**ommit **MOD**ify), this command amends the last commit.
-However, it automatically includes all changes to **ALL tracked files**, so you don't need to stage them first.
+However, it automatically includes all changes to **ALL tracked files**.
+
+::: warning Dirty-tree hazard
+Because `cmoda` includes **every** modified tracked file, a working tree with
+unrelated changes will have them folded into the amend. To amend only specific
+files, stage them and use `hug cmod`:
+
+    hug a <file>...      # stage only the intended files
+    hug cmod --no-edit   # amend with ONLY the staged set
+:::
 
 Running `hug cmoda` opens your editor with the existing commit message, making it perfect for small edits. To replace the message entirely without opening the editor, use the `-m` flag.
 

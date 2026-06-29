@@ -39,6 +39,10 @@ DESCRIPTION:
   TIP: Run 'hug sls' first to verify exactly what's staged before amending.
   Use 'hug a' to stage or 'hug us' to unstage specific files.
 
+  TIP: Prefer 'hug cmod' over 'hug cmoda' when your working tree has unrelated
+  modified files. 'cmoda' includes every modified tracked file and will fold
+  unrelated work into the amended commit.
+
   TIP: Use --no-edit when the commit message is fine and you just want to add
   staged changes. This avoids opening an editor.
 
@@ -54,7 +58,7 @@ EXAMPLES:
 SEE ALSO:
   hug c    : Commit staged changes
   hug ca   : Commit all tracked changes
-  hug cmoda: Amend the last commit with ALL tracked changes (no need to run `hug a` first)
+  hug cmoda: Amend the last commit with ALL tracked changes (includes every modified tracked file; avoid when other files are dirty)
   hug ccp  : Cherry-pick commits
 EOF
 }
