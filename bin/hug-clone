@@ -124,7 +124,7 @@ check_directory_exists() {
   fi
 
   # Remove existing directory
-  rm -rf "$dir"
+  rm -rf -- "$dir"
 }
 
 # Cleanup failed clone by removing partial directory
@@ -133,7 +133,7 @@ cleanup_failed_clone() {
   local dir="$1"
   if [[ -n "$dir" && -d "$dir" ]]; then
     info "Cleaning up partial clone at '$dir'..."
-    rm -rf "$dir"
+    rm -rf -- "$dir"
   fi
 }
 
@@ -272,9 +272,15 @@ if "$vcs" clone "$url" ${dir:+"$dir"} "${options[@]}"; then
   trap - EXIT # Clear trap on success
   success "✓ Cloned successfully to '$cloned_dir'."
 
-  # Run status if enabled
+  # Run status if enabled. `cd --` so a '-'-leading dir name is not misparsed as
+  # an option; on any failure, degrade to a warning instead of a raw shell error
+  # and non-zero exit after "success".
   if [[ "$run_status" == true ]]; then
-    cd "$cloned_dir" && hug s
+    if cd -- "$cloned_dir"; then
+      hug s
+    else
+      warning "Cloned, but could not enter '$cloned_dir' to show status."
+    fi
   fi
   exit 0
 else

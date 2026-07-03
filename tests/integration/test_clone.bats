@@ -311,3 +311,24 @@ create_test_repo_with_content() {
     assert_output --partial "Cloned successfully to 'myproj.hg'"
     assert_dir_exists "$TEST_CLONE_DIR/myproj.hg"
 }
+
+@test "hug clone - preserves a pre-existing directory when overwrite is declined" {
+    # Safety invariant behind the whole #193 fix: never destroy a directory the
+    # user did not confirm overwriting. disable_gum_for_test forces the `read`
+    # path so the piped "n" is deterministic (HUG_TEST_MODE would otherwise make
+    # gum_available true and the pipe would not answer the gum prompt).
+    disable_gum_for_test
+    local remote_repo="$TEST_CLONE_DIR/remote.git"
+    create_test_repo_with_content "$TEST_CLONE_DIR/source"
+    cd "$TEST_CLONE_DIR/source"
+    git clone --bare . "$remote_repo"
+
+    mkdir -p "$TEST_CLONE_DIR/precious"
+    echo "keep me" > "$TEST_CLONE_DIR/precious/data.txt"
+
+    cd "$TEST_CLONE_DIR"
+    run bash -c 'echo "n" | hug clone --git --no-status "file://'"$remote_repo"'" precious'
+    assert_failure
+    assert_output --partial "Cancelled"
+    assert_file_exists "$TEST_CLONE_DIR/precious/data.txt"
+}
