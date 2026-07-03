@@ -53,6 +53,39 @@ detect_vcs_from_url() {
   return 0
 }
 
+# Derive the directory name that `<vcs> clone <url>` will create for an IMPLICIT,
+# NON-bare clone (no explicit dir). The result drives the pre-clone existence
+# check, the success message, AND the post-clone `cd` — so it MUST match the
+# VCS's own naming, or those steps act on the wrong path. (#193)
+#
+#   git : mirrors guess_dir_name (builtin/clone.c) — strip trailing slashes,
+#         strip a trailing ".git", basename. CASE-SENSITIVE: ".GIT" is kept.
+#   hg  : mirrors Mercurial defaultdest() — basename of the path, and it does
+#         NOT strip ".hg" (verified: `hg 6.1 defaultdest('…/repo.hg')` == 'repo.hg').
+#         Stripping ".hg" here was the bug the review caught.
+#
+# WHY NOT ${url%.*}: it strips the shortest trailing ".<anything>", which for a
+# suffixless URL is the dot inside the hostname (github.com) — eating the whole
+# path back to the host.
+#
+# NOTE: bare/mirror clones (target "<name>.git", no working tree) are handled at
+# the call site, not here — this function is the non-bare humanish name.
+#
+# Usage: derive_clone_dir <url> <vcs>   (vcs is "git" or "hg")
+derive_clone_dir() {
+  local url="$1" vcs="$2"
+  # scp-like syntax (user@host:path, no scheme): the dir is under the path after
+  # the first ':'. basename alone would keep 'user@host:repo' for a no-slash path.
+  [[ "$url" != *"://"* && "$url" == *:* ]] && url="${url#*:}"
+  # Strip ALL trailing slashes (repo/// -> repo), matching both VCSes.
+  while [[ "$url" == */ ]]; do url="${url%/}"; done
+  # Git strips a trailing ".git"; Mercurial keeps ".hg".
+  [[ "$vcs" == git ]] && url="${url%.git}"
+  # basename strips any trailing slash the ".git" removal exposed (e.g. "x/.git"
+  # -> "x/" -> "x"), so no second slash-strip loop is needed here.
+  basename -- "$url"
+}
+
 # Validate VCS binary is available
 # Usage: validate_vcs_available <vcs>
 # Returns: 0 if available, exits with error if not
@@ -201,11 +234,24 @@ fi
 # Validate VCS availability
 validate_vcs_available "$vcs"
 
-# Determine target directory
+# Bare/mirror clones create "<name>.git" and have no working tree, so keep the
+# suffix and skip post-clone status. (Verified: `git clone --bare .../plain`
+# creates `plain.git`.) options[] is always set (possibly empty).
+is_bare=false
+for _opt in "${options[@]}"; do
+  case "$_opt" in --bare | --mirror) is_bare=true ;; esac
+done
+
+# Determine target directory. When no explicit dir is given, derive the same
+# name the VCS will create so the existence check, success message, and
+# post-clone `cd` all agree. (#193)
 cloned_dir="${dir}"
 if [[ -z "$cloned_dir" ]]; then
-  cloned_dir=$(basename "${url%.*}")
+  cloned_dir="$(derive_clone_dir "$url" "$vcs")"
+  [[ "$is_bare" == true ]] && cloned_dir="${cloned_dir}.git"
 fi
+# A bare/mirror repo has no working tree to enter; never run status on it.
+[[ "$is_bare" == true ]] && run_status=false
 
 # Check if directory exists
 check_directory_exists "$cloned_dir"

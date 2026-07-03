@@ -230,6 +230,28 @@ create_test_repo_with_content() {
     [[ "$result" == "unknown" ]]
 }
 
+@test "hug clone - derive_clone_dir derives target dir like git and hg" {
+    source "$HUG_HOME/git-config/lib/hug-common"
+    source <(sed -n '/^derive_clone_dir/,/^}/p' "$HUG_HOME/bin/hug-clone")
+
+    # --- git (mirrors guess_dir_name) ---
+    assert_equal "$(derive_clone_dir 'https://github.com/user/repo.git' git)" "repo"
+    assert_equal "$(derive_clone_dir 'https://github.com/nexu-io/open-design' git)" "open-design"
+    assert_equal "$(derive_clone_dir 'https://github.com/user/repo/' git)" "repo"
+    assert_equal "$(derive_clone_dir 'https://github.com/user/repo.git/' git)" "repo"
+    assert_equal "$(derive_clone_dir 'git@github.com:user/repo.git' git)" "repo"
+    assert_equal "$(derive_clone_dir 'git@github.com:user/repo' git)" "repo"
+    assert_equal "$(derive_clone_dir 'git@host:repo' git)" "repo"
+    assert_equal "$(derive_clone_dir 'https://github.com/user/my.repo' git)" "my.repo"
+    assert_equal "$(derive_clone_dir 'https://github.com/user/REPO.GIT' git)" "REPO.GIT"
+    assert_equal "$(derive_clone_dir 'ssh://git@github.com:22/user/repo.git' git)" "repo"
+    assert_equal "$(derive_clone_dir 'file:///abs/path/myrepo' git)" "myrepo"
+
+    # --- hg (mirrors defaultdest: NO .hg strip) ---
+    assert_equal "$(derive_clone_dir 'https://hg.example.com/repo.hg' hg)" "repo.hg"
+    assert_equal "$(derive_clone_dir 'https://hg.example.com/proj/myhg' hg)" "myhg"
+}
+
 @test "hug clone - cleans up on failure" {
     cd "$TEST_CLONE_DIR"
     
@@ -239,4 +261,53 @@ create_test_repo_with_content() {
     
     # Directory should not exist after failed clone
     assert_dir_not_exists "$TEST_CLONE_DIR/failed-clone"
+}
+
+@test "hug clone - reports correct dir and runs status for suffixless URL (#193)" {
+    # dotted.dir is intentional: it reproduces the old ${url%.*} bug, where the
+    # shortest ".*" match stripped ".dir/open-design" and basename gave "dotted".
+    local parent="$TEST_CLONE_DIR/dotted.dir"
+    mkdir -p "$parent"
+    create_test_repo_with_content "$TEST_CLONE_DIR/source"
+    cd "$TEST_CLONE_DIR/source"
+    git clone --bare . "$parent/open-design"
+
+    cd "$TEST_CLONE_DIR"
+    run hug clone --git "file://$parent/open-design"
+    assert_success
+    assert_output --partial "Cloned successfully to 'open-design'"
+    assert_output --partial "HEAD:"
+    refute_output --partial "No such file"
+    assert_dir_exists "$TEST_CLONE_DIR/open-design"
+}
+
+@test "hug clone - bare clone keeps .git suffix and skips status" {
+    local remote_repo="$TEST_CLONE_DIR/plain"
+    create_test_repo_with_content "$TEST_CLONE_DIR/source"
+    cd "$TEST_CLONE_DIR/source"
+    git clone --bare . "$remote_repo"
+
+    cd "$TEST_CLONE_DIR"
+    run hug clone --git "file://$remote_repo" --bare
+    assert_success
+    assert_output --partial "Cloned successfully to 'plain.git'"
+    refute_output --partial "HEAD:"
+    assert_dir_exists "$TEST_CLONE_DIR/plain.git"
+}
+
+@test "hug clone - hg keeps .hg suffix (oracle: matches real hg clone)" {
+    command -v hg >/dev/null 2>&1 || skip "Mercurial not installed"
+    # Source must NOT be a sibling of the clone destination — if both resolve to
+    # the same name under $TEST_CLONE_DIR, check_directory_exists fires an
+    # interactive TTY prompt that BATS cannot answer. Put the remote in a
+    # sub-directory so the destination path is clear.
+    local src_dir="$TEST_CLONE_DIR/sources"
+    mkdir -p "$src_dir"
+    local src="$src_dir/myproj.hg"
+    hg init "$src"
+    cd "$TEST_CLONE_DIR"
+    run hug clone --hg --no-status "file://$src"
+    assert_success
+    assert_output --partial "Cloned successfully to 'myproj.hg'"
+    assert_dir_exists "$TEST_CLONE_DIR/myproj.hg"
 }
