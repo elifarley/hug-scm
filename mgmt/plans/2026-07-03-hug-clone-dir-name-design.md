@@ -107,26 +107,29 @@ derive_clone_dir() {
   [[ "$url" != *"://"* && "$url" == *:* ]] && url="${url#*:}"
   # Strip ALL trailing slashes (repo/// -> repo), matching guess_dir_name.
   while [[ "$url" == */ ]]; do url="${url%/}"; done
-  # Strip the VCS-appropriate suffix — NOT "any .ext" — then any slashes it
-  # exposed (repo.git/ -> repo).
-  case "$vcs" in
-    git) url="${url%.git}" ;;
-    hg)  url="${url%.hg}" ;;
-  esac
-  while [[ "$url" == */ ]]; do url="${url%/}"; done
-  # Last path component. basename handles both '/'-paths and 'user/repo'.
+  # Git strips a trailing ".git"; Mercurial's defaultdest does NOT strip ".hg"
+  # (verified against hg 6.1 — see below), so only git strips.
+  [[ "$vcs" == git ]] && url="${url%.git}"
+  # basename strips any trailing slash the ".git" removal exposed (e.g. "x/.git"
+  # -> "x/" -> "x"), so no second slash-strip loop is needed.
   basename -- "$url"
 }
 ```
 
-**VCS-aware suffix stripping** (not strip-both) is deliberate: a git repo
-legitimately named `foo.hg` must remain `foo.hg`, and vice versa. `vcs` is always
-resolved to `git` or `hg` before this is called (the `unknown` → prompt path sets
-it), so the `case` never falls through in practice.
+**VCS-appropriate suffix stripping is deliberate — and asymmetric.** Git's
+`guess_dir_name` strips a trailing `.git`, but Mercurial's `defaultdest` does
+**NOT** strip `.hg` (verified against hg 6.1: `defaultdest('…/repo.hg')` returns
+`repo.hg`). So only git strips; `repo.hg` clones to `repo.hg` under hg. `vcs` is
+always resolved to `git` or `hg` before this is called (the `unknown` → prompt
+path sets it). An earlier draft stripped `.hg` for hg — that was wrong, and an
+adversarial review caught it.
 
-**Verified against real `git clone`** (hermetic, no network) for: `.git` suffix,
-suffixless, scp-style, trailing slash, `.git/`, dotted repo name (`my.repo`), and
-dotted parent path — our guess equals git's actual target in every case.
+**Verified against real `git clone` and `hg clone`** (hermetic, no network) for:
+`.git` suffix, suffixless, scp-style, trailing slash, `.git/`, dotted repo name
+(`my.repo`), dotted parent path, and hg `.hg` (kept) — our guess equals the VCS's
+actual target in every case. Bare/mirror clones (`--bare`/`--mirror`) name the
+target `<name>.git` with no working tree; those are handled at the call site
+(append `.git`, skip post-clone status).
 
 ### 2. Call site
 
@@ -193,7 +196,7 @@ Extract the function with `sed -n '/^derive_clone_dir/,/^}/p'` (as the existing
 | `git@github.com:user/repo.git` | git | `repo` |
 | `git@github.com:user/repo` | git | `repo` |
 | `https://github.com/user/my.repo` | git | `my.repo` |
-| `https://hg.example.com/repo.hg` | hg | `repo` |
+| `https://hg.example.com/repo.hg` | hg | `repo.hg` (hg keeps `.hg`) |
 | `git@host:repo` | git | `repo` (scp no-slash edge) |
 
 ### Integration — hermetic regression (#193)
