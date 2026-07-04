@@ -58,8 +58,12 @@ detect_vcs_from_url() {
 # check, the success message, AND the post-clone `cd` — so it MUST match the
 # VCS's own naming, or those steps act on the wrong path. (#193)
 #
-#   git : mirrors guess_dir_name (builtin/clone.c) — strip trailing slashes,
-#         strip a trailing ".git", basename. CASE-SENSITIVE: ".GIT" is kept.
+#   git : mirrors guess_dir_name (builtin/clone.c dir.c) — strip trailing
+#         slashes, strip a trailing ".bundle" (git-bundle sources), strip a
+#         trailing ".git", basename. CASE-SENSITIVE: ".GIT"/".BUNDLE" kept.
+#         Git uses an is_bundle flag to pick one suffix; we strip both since
+#         a .bundle URL can't also end in .git in practice (the impossible
+#         combo repo.bundle.git stays as-is in git too — verified).
 #   hg  : mirrors Mercurial defaultdest() — basename of the path, and it does
 #         NOT strip ".hg" (verified: `hg 6.1 defaultdest('…/repo.hg')` == 'repo.hg').
 #         Stripping ".hg" here was the bug the review caught.
@@ -79,7 +83,9 @@ derive_clone_dir() {
   [[ "$url" != *"://"* && "$url" == *:* ]] && url="${url#*:}"
   # Strip ALL trailing slashes (repo/// -> repo), matching both VCSes.
   while [[ "$url" == */ ]]; do url="${url%/}"; done
-  # Git strips a trailing ".git"; Mercurial keeps ".hg".
+  # Git strips a trailing ".bundle" (git-bundle sources) then ".git";
+  # Mercurial keeps ".hg" (defaultdest does NOT strip it).
+  [[ "$vcs" == git ]] && url="${url%.bundle}"
   [[ "$vcs" == git ]] && url="${url%.git}"
   # basename strips any trailing slash the ".git" removal exposed (e.g. "x/.git"
   # -> "x/" -> "x"), so no second slash-strip loop is needed here.

@@ -247,6 +247,13 @@ create_test_repo_with_content() {
     assert_equal "$(derive_clone_dir 'ssh://git@github.com:22/user/repo.git' git)" "repo"
     assert_equal "$(derive_clone_dir 'file:///abs/path/myrepo' git)" "myrepo"
 
+    # --- git: .bundle suffix (git-bundle sources, verified against real git clone) ---
+    assert_equal "$(derive_clone_dir '/tmp/repo.bundle' git)" "repo"
+    assert_equal "$(derive_clone_dir '/tmp/my.project.bundle' git)" "my.project"
+    assert_equal "$(derive_clone_dir 'https://example.com/repo.bundle' git)" "repo"
+    # Case-sensitive: ".BUNDLE" is kept
+    assert_equal "$(derive_clone_dir '/tmp/repo.BUNDLE' git)" "repo.BUNDLE"
+
     # --- hg (mirrors defaultdest: NO .hg strip) ---
     assert_equal "$(derive_clone_dir 'https://hg.example.com/repo.hg' hg)" "repo.hg"
     assert_equal "$(derive_clone_dir 'https://hg.example.com/proj/myhg' hg)" "myhg"
