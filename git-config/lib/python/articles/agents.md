@@ -4,16 +4,9 @@ summary = "Cheatsheet for AI coding agents driving hug end-to-end."
 order   = 20
 +++
 
-# Hug for AI agents
+Hug is a direct replacement for git. It supports any git command AND ADDITIONAL commands.
 
-This article is the portable version of the hug guidance any AI coding agent
-needs regardless of external config. Covers every operation that differs from
-raw git — commands you must use, commands you must never use, and exactly why.
-
-## Two non-negotiables
-
-**Always `hug`, never `git`.** The table below covers the highest-traffic
-substitutions:
+## Common git-to-hug translations
 
 | git command             | hug equivalent   |
 |-------------------------|------------------|
@@ -23,38 +16,51 @@ substitutions:
 | `git log`               | `hug ll`         |
 | `git merge --no-ff`     | `hug mkeep`      |
 
-**Always `hug bpush` with no branch argument.** `bpush` handles everything:
-auto `-u` on first push, force-with-lease for safe force-push (`-f`), and
-upstream switching (`-t`). Arguments to `bpush` are `<remote>` or `<url>`,
-NOT a branch name. Never use `hug push` or `git push`.
-
-Force-push variants exist, but default to the safe one:
-
-- `hug bpush -f` — force-with-lease (safe; aborts if upstream moved)
-- `hug bpushf` — alias for the above
-- `hug bpush-unsafe` — unconditional force push; avoid unless you mean it
 
 ## CWD discipline: use `hug -C <dir>`
 
 Keep hug commands self-documenting and CWD-independent. Pass the repo or
-worktree directory with `-C` instead of `cd`-ing just to run a command.
+worktree directory with `-C` (works as in `git -C`) instead of `cd`-ing just to run a command.
+The pattern to avoid is `cd <dir> && hug …`.
+GOOD:
+- `hug -C /my/repo ll`
+- `hug -C /my/repo.WT.feat-1 s`
+- `cd /my/repo-root.WT.feat-1` — then build / test / edit / hug there (working in a worktree)
+- `cd /my/build-dir && make && ./run-tests` — several non-hug commands
+BAD (never write these):
+- `hug ll` (relies on CWD — could be an unexpected dir!)
+- `cd /my/repo && hug ll` (cd-ing only to run a hug command — use `hug -C /my/repo ll` instead)
 
-    hug -C /my/repo ll
-    hug -C /my/repo.WT.feat-1 s
+## Common flags
 
-Plain `cd` is fine when entering a worktree to do real work there, but avoid
-`cd /my/repo && hug ll` — it is fragile and unnecessary.
+These conventions recur across hug commands; a command's own `-h` is authoritative.
+
+- `-y` — auto-confirm routine (safe, recoverable) confirmations, for
+  non-interactive agent use. Insufficient for dangerous operations; NOT a
+  substitute for `-f`.
+- `-f` / `--force` — authorize a **dangerous** operation (where `-y` is not
+  enough). Exact scope is command-specific: selects force-with-lease on
+  `hug bpush`, also overrides a dirty worktree on `hug wtdel`, skips the
+  confirmation on a `hug h *` HEAD move. Check the command's `-h`.
+- `--dry-run` — preview without acting. Supported by the destructive
+  working-tree commands (`hug w discard-all`, `w-purge`, `w-wipe`, `w-zap`)
+  and worktree deletion (`hug wtdel`, `wtprune`). NOT on `hug h *` HEAD moves
+  or `hug bpush`: preview a HEAD move via its reset-equivalent (table below)
+  plus `hug ss`/`hug su`, and a push via `hug llu`/`hug lol`.
+- `-q` / `--quiet` — suppress the human-facing summary/chatter (stderr) for
+  quieter automation.
 
 ## Discovery (use these first)
 
-    hug help @                      # best entry point — lists all categories
-    hug help <command>              # full help for a top-level command (never truncate)
-    hug help <subcmd> -h            # sub-command help (ALWAYS -h, never --help)
+- `hug help @`: Best entry point — lists all categories
+- `hug help <command>`: Full help for a top-level command (never truncate its output).
+   - Includes a "see also" footer listing related commands. Always read it when a command is unfamiliar — it often surfaces a better fit.
+   - Before running a related command for the first time, run `hug help` on it.
+- To get help on *sub-commands* (NEVER use `--help`, ALWAYS `-h`):
+   - `hug w get -h` - The top-level command is `w`. This gets help for its `get` sub-command.
+   - `hug h back -h` ...
 
-`hug help <command>` includes a "see also" footer listing related commands.
-Always read it when a command is unfamiliar — it often surfaces a better fit.
-
-Four sigils cover all discovery modes:
+`hug help` has 4 discovery sigils that cover all discovery modes:
 
 - `:article` — narrative articles (like this one)
 - `/keyword` — fuzzy keyword search across command summaries
@@ -63,173 +69,72 @@ Four sigils cover all discovery modes:
 
 ## Reading state
 
-    hug s                           # one-line summary (ball color + counts)
-    hug ll [remote/<branch>] -N     # last N commits, one per line
-    hug llu [-N]                    # outgoing commits (what would be pushed)
-    hug lol [-N]                    # outgoing commits + file stats
-    hug sh <committish>             # commit details + file stats
-    hug shp <committish>            # commit details + full patch
-    hug sh HEAD                     # details on the last commit
+- `hug s`: one-line summary (ball color + counts)
+- `hug ll [remote/<branch>] -N`: last N commits, one per line
+- `hug llu [-N]`: outgoing commits (what would be pushed)
+- `hug lol [-N]`: outgoing commits + file stats
+- `hug sh HEAD`: details on the last commit
+- `hug sh <committish>`: commit details + file stats
+- `hug shp <committish>`: commit details + file stats + full patch
 
 ### Scriptable status queries
 
-`hug s` prints human chatter to stderr and keeps stdout clean. Query flags
-capture single fields to stdout for scripts:
+`hug s` prints human chatter to stderr and keeps stdout clean.
+Query flags capture single fields to stdout for scripts:
+- `branch=$(hug s -b)` (empty if detached)
+- `upstream=$(hug s -u)` (empty if none)
+- `remote_url=$(hug s -r)` (empty if none)
+- `hash=$(hug s -H)`
 
-    branch=$(hug s -b)
-    upstream=$(hug s -u)
-    hash=$(hug s -H)
+| flag          | output                           |
+|---------------|----------------------------------|
+| -b, --branch  | current branch name              |
+| -u, --upstream| Upstream tracking branch name    |
+| -r, --remote  | URL of the tracking remote       |
+| -H, --hash    | full HEAD hash                   |
+| --ball        | Ball emoji w/ working-tree state |
 
-Available flags:
+Also:
+- Count of Staged, Unstaged, untracKed and Ignored files: --staged, --unstaged, --untracked, --ignored
+- Count of commits ahead and behind upstream: --ahead, --behind
 
-| flag            | output                                   |
-|-----------------|------------------------------------------|
-| `-b`, `--branch`| current branch name (empty if detached)  |
-| `-u`, `--upstream`| remote tracking branch (empty if none) |
-| `-H`, `--hash`  | full HEAD hash                           |
-| `--short-hash`  | short HEAD hash                          |
-| `--ahead`       | commits ahead of upstream                |
-| `--behind`      | commits behind upstream                  |
-| `--counts`      | ahead/behind as `+A -B`                 |
-| `--ball`        | ball color (🟡🔴🟢🟣⚫⚪)               |
-| `--staged`      | `true` if staged changes exist           |
-| `--unstaged`    | `true` if unstaged changes exist         |
-| `--untracked`   | `true` if untracked files exist          |
-| `--ignored`     | `true` if ignored files exist            |
+Combine 2 or more: `hug s -b -H` prints branch then hash, tab-separated.
 
-Combine: `hug s -b -H` prints branch then hash, tab-separated.
-Use `-z` for NUL-separated machine-safe output.
+### CWD diff (staged + unstaged)
 
-## CWD diff (staged + unstaged)
+- `hug ss`: staged only
+- `hug su`: unstaged only
+- `hug sw`: staged + unstaged changes (both)
 
-    hug sw                          # staged + unstaged changes (both)
-    hug ss                          # staged only
-    hug su                          # unstaged only
+Pass `--stat` to show file stats only (no patch body).
+Pass a single path to scope the diff to one file or directory.
 
-Pass `--stat` to show file stats only (no patch body). Pass a single path to
-scope the diff to one file or directory.
+### File listing — pick the right state
 
-## File listing — pick the right state
+State alphabet for files:
 
-State alphabet for tracked files:
-
-- `S:*` — staged; substates: `Mod`, `Del`, `Ren`, `Add` (Add = previously
-  untracked file that has been staged)
+- `S:*` — staged; substates: `Mod`, `Del`, `Ren`, `Add` (Add = previously untracked file that has been staged)
 - `U:*` — unstaged; substates: `Mod`, `Del`, `Ren`
-- `untrcK` — untracked (not yet staged)
-- `Ignore` — ignored by `.gitignore`
-- `Cnflt` — conflicted (usually shown automatically)
+- `untrcK` — untracKed (not yet staged)
+- `Ignore` — Ignored by `.gitignore`
+- `Cnflt` — conflict
 
 Listing commands:
 
-    hug sl                          # S:* + U:*
-    hug sls                         # S:* only  (e.g. S:Del  tmp.log)
-    hug slu                         # U:* only
-    hug sla                         # S:* + U:* + untrcK
-    hug slk                         # untracked only  (e.g. untrcK new-dir/)
-    hug sli                         # ignored only    (e.g. Ignore __pycache__/)
-
-## Staging, committing, amending
-
-    hug a <files>                   # stage specific files (precise; prefer this)
-    hug a                           # stage tracked files: modifications + deletions (NOT new/untracked)
-    hug aa                          # stage everything, incl. new/untracked files (broad)
-
-    hug c -m "message"              # commit staged changes
-    hug cmod                        # amend last commit with STAGED changes only
-    hug cmoda                       # amend last commit with ALL tracked changes
-
-`hug aa` is the wide net. Reach for it deliberately, not by default.
-
-### Commit vs amend
-
-Default to `hug c` when you mean "create a new commit from what is staged."
-Only reach for `hug cmod` when you intend to **rewrite HEAD** (e.g. fixing a
-commit you just made before pushing).
-
-- `hug cmod --no-edit` — amend HEAD with staged changes only, keep message.
-  Preferred when unrelated files are also modified: stage just the intended
-  files with `hug a`, then run this.
-- `hug cmod -m "msg"` — amend HEAD with staged changes only, replace message.
-- `hug cmoda --no-edit` — amend HEAD with all modified tracked files.
-  ⚠️ Scope-expanding: it folds every tracked modification into the amended
-  commit, including unrelated work. Only use when the tree is clean except for
-  one logical change.
-
-**Anti-pattern:** running `hug cmod` when you meant `hug c`. The new work gets
-folded into HEAD and rewrites history. Recover with `hug h back 1 --force`
-(HEAD back one, keep changes staged — soft-reset semantics), then run
-`hug c -m "msg"`.
-
-**Anti-pattern:** running `hug cmoda` in a tree with N unrelated changes. It
-silently captures them all. Recover the same way: `hug h back 1 --force`, then
-stage the files you actually want and use `hug cmod`.
-
-## HEAD vs working-directory operations — don't confuse them
-
-- `hug h *` commands **move HEAD** (rewind/undo/rollback commits). They do not
-  discard arbitrary uncommitted working-tree churn.
-- `hug w *` commands **change files** without touching HEAD (discard, restore,
-  stash-as-wip).
-
-**Common pitfall:** wanting to "discard dirty files before a fast-forward" and
-reaching for `hug h back --force` — that moves HEAD back a commit and is not
-what you wanted. For "discard uncommitted file changes, keep HEAD", use
-`hug w discard-all` (or `hug w wip` to park changes on a side branch).
-
-Equivalences:
-
-| hug command                 | git equivalent        | effect on working tree                |
-|-----------------------------|-----------------------|---------------------------------------|
-| `hug h back [N] --force`    | `git reset --soft`    | HEAD back N, changes kept **staged**  |
-| `hug h undo [N] --force`    | `git reset --mixed`   | HEAD back N, changes kept **unstaged**|
-| `hug h rewind [N] --force`  | `git reset --hard`    | HEAD back N, **discard all**          |
-| `hug h rollback [N]`        | —                     | HEAD back N, discard commits' content, preserve other uncommitted changes |
-
-If a merge or fast-forward is blocked by dirty files, stash or use
-`hug w discard-all` — do not touch HEAD.
-
-## Merging
-
-    hug mkeep <branch> [-m msg]     # merge --no-ff: always creates a merge commit
-    hug mff                         # fast-forward only
-
-Use `hug mkeep` instead of `git merge --no-ff`. The `-m` flag sets the merge
-commit message.
-
-## Worktrees — never `git worktree`
-
-**Always start branch-worthy work (feature/bugfix/refactor/multi-step) in a new
-worktree — never a bare branch in the main checkout.** Creating the worktree is
-the first step, before any other action on the task. WHY: isolation keeps your
-main checkout clean, enables parallel work, and stops half-finished edits from
-polluting the tree — critical for an autonomous agent. Load the `/hug-worktree`
-skill for the full ritual (guards, base-branch selection, cleanup).
-
-You MUST NEVER use `git worktree` for any operation. If you need a worktree
-operation not covered below, report exactly what you need and stop — do not
-attempt a raw git command.
-
-    hug wtc <branch> --new -y       # create new branch from HEAD + its worktree
-    hug wtc <branch> -y             # create worktree for an existing branch
-    hug wtl                         # list all worktrees
-    hug wtl <search>                # filter by path/branch substring (OR logic)
-    hug wtl -b <branch>             # filter by exact branch name
-    hug wtdel <branch> --force      # delete worktree (add --with-branch to drop branch too)
-
-Worktrees land at a canonical path chosen by hug. Never pass `.worktrees/`
-or any explicit path to these commands. `-y` answers yes to routine
-(safe, recoverable) confirmations — for non-interactive agent use, not a
-substitute for `-f`.
+- `hug sl`: S:* + U:*
+- `hug sls`: S:* only  (e.g. `S:Del  tmp.log`)
+- `hug slu`: U:* only
+- `hug sla`: S:* + U:* + untrcK
+- `hug slk`: untracked only  (e.g. `untrcK new-dir/`)
+- `hug sli`: ignored only    (e.g. `Ignore __pycache__/`)
 
 ## Decoding the summary line
 
-Commands like `hug s`, `hug sl`, and `hug sls` end with a summary line:
-
+Commands like `hug s`, `hug sl`, and `hug sls` end with a summary line. Ex.:
     🟣 HEAD: f0bd63f 🌿main...origin/main [ahead 3] │ K:19 I:16592
 
-- `K:` — count of untracked files
-- `I:` — count of ignored files
+- `K:` — count of untracKed files
+- `I:` — count of Ignored files
 
 Ball color encodes working-tree state (precedence: top → bottom):
 
@@ -242,8 +147,85 @@ Ball color encodes working-tree state (precedence: top → bottom):
 | ⚫ Black  | ignored files only                   |
 | ⚪ White  | clean repo                           |
 
-Yellow/Red/Green/Magenta override the entries below them. Untracked and
-ignored files are still counted in `K:`/`I:` regardless of which color shows.
+- Yellow/Red/Green aren't affected by untracked and ignored files;
+- Magenta isn't affected by ignored files;
+- Untracked and ignored files are still counted in `K:`/`I:` regardless of which color shows.
+
+## Staging, committing, amending
+
+- `hug a <files>`: stage specific files (precise; prefer this)
+- `hug a`: stage ALL tracked files: modifications + deletions (NOT new/untracked)
+- `hug aa`: stage everything, incl. new/untracked files (broad)
+- `hug us <file1> [<file2> ...]`: unstage files
+
+- `hug c -m "message"`: commit staged changes
+- `hug cmod -m "message"`: amend last commit with STAGED changes only (rewrites HEAD)
+   - **Caution:** `cmod` only amends with staged changes, but in a dirty tree it's easy to have staged files you are not even aware of. That's why it's important to run `hug ss` before to list what's currently staged and run `hug us <file1> [<file2> ...]` to unstage files you don't want included.
+   - If unrelated changes end up in the amended commit, recover with `hug h back 1 --force`, unstage unwanted files, and run `hug cmod --no-edit` again.
+- `hug cmod --no-edit` — amend HEAD with staged changes only, doesn't change the commit message.
+
+### Commit vs amend (and how to recover)
+
+Default to `hug c` when you mean "create a new commit from what is staged."
+Only reach for `hug cmod` when you intend to **rewrite HEAD** (e.g. fixing a commit you just made before pushing).
+
+**Anti-pattern:** running `hug cmod` when you meant `hug c`. The new work gets
+folded into HEAD and rewrites history. Recover with `hug h back 1 --force`
+(HEAD back one, keep changes staged — soft-reset semantics), then run `hug c -m "msg"`.
+
+## HEAD vs working-directory operations — don't confuse them
+
+- `hug h *` commands **move HEAD** to another commit (rewind/undo/rollback commits). They do not discard arbitrary uncommitted working-tree churn. `hug help @head` for the matrix.
+- `hug w *` commands **change files** without touching HEAD (discard, restore, stash-as-wip). `hug w -h` for the matrix.
+
+Equivalences:
+
+| hug command      | git equivalent     | effect                               |
+|------------------|--------------------|--------------------------------------|
+| `hug h back`     | `git reset --soft` | HEAD moves, changes kept **staged**  |
+| `hug h undo`     | `git reset --mixed`| HEAD moves, changes kept **unstaged**|
+| `hug h rewind`   | `git reset --hard` | HEAD moves, **discard all**          |
+| `hug h rollback` | `git reset --keep` | HEAD moves, discard commits' content, PRESERVE other uncommitted changes |
+
+If a merge or fast-forward is blocked by dirty files, stash or use `hug w discard-all` — do not touch HEAD.
+
+## Merging
+
+- `hug mkeep <branch> [-m msg]`: like `git merge --no-ff`: always creates a merge commit
+- `hug mff`: fast-forward only
+
+## Pushing
+
+**Always `hug bpush` with no branch argument.** `bpush` also works on first push without manual remote/branch spelling.
+Arguments to `bpush` are `<remote-name>` or `<url>` (or both), NEVER a branch name. Never use `hug push` nor `git push`.
+
+Use flag `--track` to set or switch upstream tracking to the target remote (default: preserve existing unless auto-setup applies).
+
+Force-push variants exist, but default to the safe one:
+
+- `hug bpush -f` — force-with-lease (safe; aborts if upstream moved)
+- `hug bpush-unsafe` — unconditional force push; avoid unless you mean it
+
+
+## Worktrees — never `git worktree`
+
+**Always start branch-worthy work (spec files/feature/bugfix/refactor/multi-step) in a new worktree — never a bare branch in the main checkout.**
+Creating the worktree is the first step, before any other action on the task.
+WHY: isolation keeps your main checkout clean, enables parallel agent work, and stops half-finished edits from polluting the tree — critical for an autonomous agent.
+**REQUIRED:** Load the `hug-worktree` skill for the full ritual (guards, base-branch selection, cleanup).
+
+You MUST NEVER use `git worktree` for any operation. If you need a worktree
+operation not covered below, report exactly what you need and stop — do not
+attempt a raw git command.
+
+- `hug wtc <branch> --new -y`: create new branch from HEAD + its worktree
+- `hug wtc <branch> -y`: create worktree for an existing branch
+- `hug wtl`: list all worktrees
+- `hug wtl <search>`: filter by path/branch substring (OR logic)
+- `hug wtl -b <branch>`: filter by exact branch name
+- `hug wtdel <branch> --force`: delete worktree (add --with-branch to drop branch too)
+
+Worktrees land at a canonical path chosen by hug. Never pass `.worktrees/` or any explicit path to these commands.
 
 ## Where to go next
 
