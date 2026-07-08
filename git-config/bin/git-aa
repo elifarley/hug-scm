@@ -34,7 +34,7 @@ EXAMPLES:
   # Note: No paths allowed; use 'hug a <path>' for specific files or directories.
 
 SEE ALSO:
-  hug a: Stage tracked files (updates only), or specific files if provided
+  hug a: Stage tracked changes (modifications + deletions), or specific files if provided
   hug ai: Invoke interactive add menu
   hug ap: Add patches interactively (no commit)
 EOF

@@ -227,10 +227,10 @@ This is intentional, not a bug. `dd w` answers *"what does my tree look like vs 
 ## Staging Commands (a*)
 
 - `hug a [files...]`: **A**dd tracked
-    - **Description**: Stage tracked changes (or specific files if provided). If no args, stages updates only. Use `--` to trigger interactive file selection UI.
+    - **Description**: Stage tracked changes (or specific files if provided). If no args, stages modifications and deletions of tracked files, but not new/untracked files (use `hug aa` for those). Use `--` to trigger interactive file selection UI.
     - **Example**:
       ```
-      hug a                     # Stage all tracked updates
+      hug a                     # Stage all tracked changes (modifications + deletions)
       hug a src/                # Stage directory, including non-tracked files
       hug a --                  # Interactive file selection (requires gum)
       ```

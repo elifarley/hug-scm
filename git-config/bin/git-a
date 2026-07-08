@@ -23,7 +23,7 @@ show_help() {
 hug a: Stage tracked files, or specific files if provided.
 
 USAGE:
-  hug a                # Stage all tracked files (updates only)
+  hug a                # Stage tracked changes: modifications + deletions (not new files)
   hug a .              # Stage current directory
   hug a <file>         # Stage specific files
   hug a --             # Interactive file selection (current directory scope)
@@ -40,7 +40,10 @@ OPTIONS:
 
 DESCRIPTION:
   Stage tracked files for commit. When no arguments are provided, stages all
-  tracked files that have been modified. Use '--' to interactively select
+  tracked changes: modifications AND deletions, but not new/untracked files
+  (this is 'git add -u'; use 'hug aa' to also include new files). Note: giving
+  an explicit path, e.g. 'hug a <dir>', DOES stage untracked files under it.
+  Use '--' to interactively select
   files to stage. By default, interactive selection is scoped to the current
   directory and subdirectories. Use --browse-root to browse the entire repository.
 

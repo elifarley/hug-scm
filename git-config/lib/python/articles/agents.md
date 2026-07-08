@@ -132,8 +132,8 @@ Listing commands:
 ## Staging, committing, amending
 
     hug a <files>                   # stage specific files (precise; prefer this)
-    hug a                           # stage all tracked changes (modifications only, not deletions)
-    hug aa                          # stage everything: new files, updates, deletions (broad)
+    hug a                           # stage tracked files: modifications + deletions (NOT new/untracked)
+    hug aa                          # stage everything, incl. new/untracked files (broad)
 
     hug c -m "message"              # commit staged changes
     hug cmod                        # amend last commit with STAGED changes only
@@ -218,7 +218,9 @@ attempt a raw git command.
     hug wtdel <branch> --force      # delete worktree (add --with-branch to drop branch too)
 
 Worktrees land at a canonical path chosen by hug. Never pass `.worktrees/`
-or any explicit path to these commands.
+or any explicit path to these commands. `-y` answers yes to routine
+(safe, recoverable) confirmations — for non-interactive agent use, not a
+substitute for `-f`.
 
 ## Decoding the summary line
 
@@ -246,7 +248,5 @@ ignored files are still counted in `K:`/`I:` regardless of which color shows.
 ## Where to go next
 
 - `hug help :hug-101` — beginner walkthrough of the daily loop
-- `hug help <command>` — full help for any specific command
-- `hug help @<category>` — browse a whole command family (e.g. `@branching`)
-- `hug help /<keyword>` — fuzzy keyword search (e.g. `/undo`)
-- `hug help '!<intent>'` — natural-language lookup (e.g. `'!save my work'`)
+- `hug help <command>` — full help for any specific command (mind its "see also" footer)
+- Reach for the discovery sigils above (`@` `/` `'!'` `:`) to find anything this cheatsheet omits.
