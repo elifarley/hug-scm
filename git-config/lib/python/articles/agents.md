@@ -219,6 +219,7 @@ operation not covered below, report exactly what you need and stop — do not
 attempt a raw git command.
 
 - `hug wtc <branch> --new -y`: create new branch from HEAD + its worktree
+- `hug wtc <branch> --base [remote/]<point> -y`: new branch from a start-point (branch/tag/ref); implies --new
 - `hug wtc <branch> -y`: create worktree for an existing branch
 - `hug wtl`: list all worktrees
 - `hug wtl <search>`: filter by path/branch substring (OR logic)
@@ -226,6 +227,7 @@ attempt a raw git command.
 - `hug wtdel <branch> --force`: delete worktree (add --with-branch to drop branch too)
 
 Worktrees land at a canonical path chosen by hug. Never pass `.worktrees/` or any explicit path to these commands.
+Base a new branch off an UP-TO-DATE integration branch (usually `origin/main` — `hug wtc <branch> --base origin/main -y`), not a stale local HEAD.
 
 ## Where to go next
 
