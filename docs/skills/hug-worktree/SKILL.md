@@ -1,6 +1,6 @@
 ---
 name: hug-worktree
-description: Use whenever starting branch-worthy work (spec/plan documents, features, bugfixes, refactors, multi-step tasks) — the worktree-first ritual.
+description: Use whenever starting branch-worthy work (features, bugfixes, refactors, spec/plan documents, multi-step tasks) — the worktree-first ritual.
 argument-hint: "[new-branch-name or task description]"
 allowed-tools: Bash
 ---
