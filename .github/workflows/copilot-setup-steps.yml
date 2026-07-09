@@ -44,6 +44,11 @@ jobs:
           make install
           source bin/activate
 
+      - name: Install UV package manager
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
       - name: Install test dependencies
         run: |
           make dev-env-init
