@@ -209,14 +209,7 @@ Force-push variants exist, but default to the safe one:
 
 ## Worktrees — never `git worktree`
 
-**Always start branch-worthy work (spec files/feature/bugfix/refactor/multi-step) in a new worktree — never a bare branch in the main checkout.**
-Creating the worktree is the first step, before any other action on the task.
-WHY: isolation keeps your main checkout clean, enables parallel agent work, and stops half-finished edits from polluting the tree — critical for an autonomous agent.
-**REQUIRED:** Load the `hug-worktree` skill for the full ritual (guards, base-branch selection, cleanup).
-
-You MUST NEVER use `git worktree` for any operation. If you need a worktree
-operation not covered below, report exactly what you need and stop — do not
-attempt a raw git command.
+**Always start branch-worthy work (spec/plan files, feature, bugfix, refactor, multi-step) in a new worktree — never a bare branch in the main checkout; it is the first step, before any other action.** WHY: isolation keeps the main checkout clean, enables parallel agent work, and stops half-finished edits from polluting the tree — critical for an autonomous agent.
 
 - `hug wtc <branch> --new -y`: create new branch from HEAD + its worktree
 - `hug wtc <branch> --base [remote/]<point> -y`: new branch from a start-point (branch/tag/ref); implies --new
@@ -226,11 +219,13 @@ attempt a raw git command.
 - `hug wtl -b <branch>`: filter by exact branch name
 - `hug wtdel <branch> --force`: delete worktree (add --with-branch to drop branch too)
 
-Worktrees land at a canonical path chosen by hug. Never pass `.worktrees/` or any explicit path to these commands.
-Base a new branch off an UP-TO-DATE integration branch (usually `origin/main` — `hug wtc <branch> --base origin/main -y`), not a stale local HEAD.
+Two hard rules: never `git worktree` (hard-blocked — use the `hug wt*` commands above); never pass an explicit path or `.worktrees/` (hug owns the canonical `<repo>.WT.<branch>` path). Base off an UP-TO-DATE integration branch (usually `origin/main`), not a stale local HEAD.
+
+**Full ritual — skip conditions, provisioning, work-inside discipline, cleanup, subagents:** `hug help :worktree`.
 
 ## Where to go next
 
 - `hug help :hug-101` — beginner walkthrough of the daily loop
+- `hug help :worktree` — the full branch-worthy-work worktree ritual
 - `hug help <command>` — full help for any specific command (mind its "see also" footer)
 - Reach for the discovery sigils above (`@` `/` `'!'` `:`) to find anything this cheatsheet omits.
