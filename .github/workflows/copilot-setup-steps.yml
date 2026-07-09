@@ -45,7 +45,9 @@ jobs:
           source bin/activate
 
       - name: Install test dependencies
-        run: make dev-deps-sync
+        run: |
+          make dev-env-init
+          make dev-deps-sync
 
       - name: Install VHS
         run: make vhs-deps-install
