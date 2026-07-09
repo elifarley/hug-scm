@@ -534,21 +534,22 @@ teardown() {
 }
 
 @test "hug untrack: untracks single file when specified" {
-  # Create and commit a file
-  echo "secret" > .env
-  git add .env
-  git commit -q -m "Add .env"
-  
+  # Create and commit a file. Avoid `.env` — it commonly sits in developers'
+  # global gitignores, which makes `git add` fail outside CI.
+  echo "secret" > secret.conf
+  git add secret.conf
+  git commit -q -m "Add secret.conf"
+
   # Untrack it with --force to skip confirmation
-  run hug untrack .env --force
+  run hug untrack secret.conf --force
   assert_success
   assert_output --partial "✅ Success: Untracked 1 file (kept locally):"
-  assert_output --partial ".env"
-  
+  assert_output --partial "secret.conf"
+
   # Verify file is untracked but still exists locally
   run git ls-files
-  refute_output --partial ".env"
-  assert_file_exist .env
+  refute_output --partial "secret.conf"
+  assert_file_exist secret.conf
 }
 
 @test "hug untrack: untracks multiple files when specified" {

@@ -10,21 +10,22 @@ setup() {
 }
 
 @test "hug untrack: supports --from-file flag" {
-  # Create and commit files
-  echo "secret" > .env
+  # Create and commit files. Avoid names that commonly appear in developers'
+  # global gitignores (e.g. `.env`) — those make `git add` fail outside CI.
+  echo "secret" > secret.conf
   echo "config" > config.local.json
   echo "public" > public.txt
-  hug add .env config.local.json public.txt
+  hug add secret.conf config.local.json public.txt
   hug c -m "Add files"
 
   # Create a file list with some files to untrack
-  echo -e ".env\nconfig.local.json" > files.txt
+  echo -e "secret.conf\nconfig.local.json" > files.txt
 
   # Test dry-run first
   run hug untrack --dry-run --from-file files.txt
   assert_success
   assert_output --partial "Would untrack 2 file(s)"
-  assert_output --partial ".env"
+  assert_output --partial "secret.conf"
   assert_output --partial "config.local.json"
 
   # Actually untrack the files
@@ -35,7 +36,7 @@ setup() {
   # Check that files are no longer tracked
   run hug ls-files
   assert_success
-  refute_output --partial ".env"
+  refute_output --partial "secret.conf"
   refute_output --partial "config.local.json"
   assert_output --partial "public.txt"  # Should still be tracked
 }
