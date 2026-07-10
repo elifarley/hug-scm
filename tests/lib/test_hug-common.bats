@@ -235,6 +235,24 @@ load '../test_helper'
   assert_output "hug-select-files sourced"
 }
 
+@test "hug-common: sources hug-clock library" {
+  # Codex #8: TDD guard for registration. If hug_clock_now is not a function
+  # after sourcing hug-common, the _hug_common_libs array is missing hug-clock.
+  # Act
+  export HUG_HOME="$BATS_TEST_DIRNAME/../.."
+  run bash -c "
+    cd '$BATS_TEST_DIRNAME/../..'
+    source 'git-config/lib/hug-common'
+    if declare -f hug_clock_now &>/dev/null; then
+      echo 'hug-clock sourced'
+    fi
+  "
+
+  # Assert
+  assert_success
+  assert_output "hug-clock sourced"
+}
+
 @test "hug-common: does not source hug-git-kit by default" {
   # Act
   export HUG_HOME="$BATS_TEST_DIRNAME/../.."

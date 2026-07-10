@@ -81,6 +81,7 @@ _hug_common_libs=(
   "hug-terminal"
   "hug-gum"
   "hug-output"
+  "hug-clock"
   "hug-strings"
   "hug-arrays"
   "hug-fs"
