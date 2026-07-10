@@ -72,15 +72,34 @@ hug_clock_now() { ... }
 hug_clock_epoch() { ... }
 ```
 
+**UTC contract (added per Codex review):** All `hug_clock_*` output is in
+**UTC** (`date -u`). Rationale: epoch-based fake-clock formatting via
+`date -d "@$epoch"` is timezone-dependent — the same epoch renders differently
+per `TZ`, which would make lib tests flake across machines (verified: on this
+dev box `946684800` renders as `19991231-2200`, not the `20000101-0000` the
+draft assumed). Pinning the library to UTC makes the override reproducible
+everywhere and is the right semantic for an epoch-input API. Callers that need
+local time can use plain `date` directly — `hug_clock_*` is the deterministic seam.
+
+**Portability contract (added per Codex review):** macOS BSD `date` does not
+support `date -d "@$epoch"`. The formatter must detect GNU vs BSD and use the
+right flag (`-d "@$epoch"` on GNU, `-r "$epoch"` on BSD). The repo targets
+Linux/macOS per ADR-001 and `tests/README.md:64`; CI is Ubuntu-only today, but
+macOS contributors must not be broken.
+
 **Override semantics:**
 
 - `HUG_FAKE_CLOCK` accepts a **unix epoch (integer seconds)**.
 - Empty / unset → real wall clock (zero behavioral change for existing users and
   CI runs that don't set it).
-- Invalid value → the functions detect the parse failure and **fall back to real
-  `date` with a stderr warning** rather than crashing. Rationale: a clock helper
+- Invalid value (non-numeric, OR numeric but `date` fails to format it) → the
+  functions detect the failure and **fall back to real `date` with a stderr
+  warning** rather than crashing or returning nonzero. Rationale: a clock helper
   must never take down a user-facing command over a bad env value. Tests set a
   controlled value, so the warning path is never exercised in CI.
+- `hug_clock_now` requires exactly one argument (the format string). Missing or
+  empty → returns a usage error. Guards against `set -u` aborts if a caller
+  forgets the arg.
 
 **Reference implementation (illustrative):**
 
@@ -88,11 +107,14 @@ hug_clock_epoch() { ... }
 # shellcheck shell=bash
 # Library: HUG clock — testable current-time helper
 #
-# Wraps GNU date with an optional HUG_FAKE_CLOCK override (unix epoch seconds).
-# When unset/empty, behaves identically to `date` — zero behavior change for
+# Wraps date with an optional HUG_FAKE_CLOCK override (unix epoch seconds).
+# All output is in UTC (date -u) so the override is reproducible across TZs.
+# When unset/empty, behaves identically to real date — zero behavior change for
 # real users. When set, all derived times come from the same instant, which
 # makes time-sensitive commands (e.g. git-bc's auto-generated branch names)
 # deterministic in tests.
+#
+# Portability: detects GNU vs BSD date and uses -d "@$epoch" / -r "$epoch".
 #
 # Why a library instead of inline in git-bc:
 #   - git-tc (date suggestions) and git-w-wip (timestamp stashes) also call
@@ -100,20 +122,45 @@ hug_clock_epoch() { ... }
 #     the override now means adopting it there later is a one-line change.
 #   - Matches the existing single-concern lib pattern (hug-fs, hug-strings).
 
+# Format a unix epoch per the platform's date. GNU uses -d, BSD uses -r.
+# Args: $1 = epoch seconds, $2 = format string. Output to stdout.
+# Returns nonzero (and prints nothing) if the formatter fails.
+_hug_clock_format_epoch() {
+  local epoch="$1" fmt="$2"
+  if date -u -d "@$epoch" +"$fmt" 2>/dev/null; then
+    return 0
+  fi
+  # BSD date fallback (macOS): -r <seconds>.
+  date -u -r "$epoch" +"$fmt" 2>/dev/null
+}
+
 hug_clock_now() {
+  # Require exactly one non-empty arg (the format string). Guards against
+  # `set -u` aborts in callers that source this lib and forget the arg.
+  if [[ $# -ne 1 || -z "${1:-}" ]]; then
+    printf 'hug_clock_now: usage: hug_clock_now "<format>"\n' >&2
+    return 2
+  fi
   local fmt="$1"
   local fake="${HUG_FAKE_CLOCK:-}"
   if [[ -n "$fake" ]]; then
     # Validate: must be a positive integer epoch.
     if [[ "$fake" =~ ^[0-9]+$ ]]; then
-      date -d "@$fake" +"$fmt"
-      return $?
+      local rendered
+      if rendered=$(_hug_clock_format_epoch "$fake" "$fmt") && [[ -n "$rendered" ]]; then
+        printf '%s\n' "$rendered"
+        return 0
+      fi
+      # Numeric but date couldn't format it (e.g. negative, or unsupported
+      # flags) → warn and fall back. Never crash a user command over a clock bug.
+      printf 'hug-clock: HUG_FAKE_CLOCK=%q could not be formatted; using real clock\n' \
+        "$fake" >&2
+    else
+      printf 'hug-clock: ignoring invalid HUG_FAKE_CLOCK=%q (expected unix epoch)\n' \
+        "$fake" >&2
     fi
-    # Bad override → warn and fall back. Never crash a user command over a clock bug.
-    printf 'hug-clock: ignoring invalid HUG_FAKE_CLOCK=%q (expected unix epoch)\n' \
-      "$fake" >&2
   fi
-  date +"$fmt"
+  date -u +"$fmt"
 }
 
 hug_clock_epoch() {
@@ -122,9 +169,17 @@ hug_clock_epoch() {
     printf '%s\n' "$fake"
     return 0
   fi
-  date +%s
+  date -u +%s
 }
 ```
+
+### Consumer contract note: `git-bc` and UTC
+
+Because `hug_clock_now` now returns UTC, `git-bc`'s auto-generated branch names
+will switch from local-time to UTC granularity. This is an intentional
+consequence of the UTC contract and is acceptable: the `YYYYMMDD-HHMM` suffix is
+a uniqueness hint, not user-facing display, and UTC makes it stable across
+machines. Documented in the commit message for the consumer change.
 
 ### Registration: `git-config/lib/hug-common`
 
@@ -159,29 +214,39 @@ When `HUG_FAKE_CLOCK` is set, all three calls derive from the same frozen
 instant — the minute and the seconds-suffix can never disagree, and two
 back-to-back `hug bc` calls always land in the same minute.
 
-### Test fix: `tests/unit/test_bc.bats`
+### Test fix: `tests/unit/test_bc.bats` — TWO tests, not one
 
-Rewrite the flaky test at line 334 to set `HUG_FAKE_CLOCK`:
+The flake at line 334 is the one the issue names. **Codex review surfaced a
+second identical flake at line 136** (`hug bc --no-switch --point-to: auto-
+generates unique name if conflict`) — same two-back-to-back-calls pattern, same
+minute-rollover failure mode, same `assert_output --partial "Generated name
+existed; using"`. Both must be fixed or the flake class persists.
+
+Rewrite the test at line 334 to set `HUG_FAKE_CLOCK`:
 
 ```bash
 @test "hug bc --point-to: collision on same-minute name produces unique suffix" {
   # Freeze wall clock so both calls land in the same minute, deterministically.
-  # Epoch 946684800 = 2000-01-01 00:00:00 UTC.
+  # Epoch 946684800 = 2000-01-01 00:00:00 UTC. With the UTC contract, hug_clock_now
+  # renders this as 20000101-0000 regardless of host TZ.
   export HUG_FAKE_CLOCK=946684800
 
   original_branch=$(git branch --show-current)
 
+  # First call: creates v1.0.0.branch.20000101-0000
   run hug bc --point-to v1.0.0
   assert_success
   first_branch=$(git branch --show-current)
+  assert_equal "$first_branch" "v1.0.0.branch.20000101-0000"
 
   git switch "$original_branch"
 
-  # Same frozen minute → name collides → git-bc appends seconds suffix.
+  # Same frozen minute → name collides → git-bc appends seconds suffix (.00 for this epoch).
   run hug bc --point-to v1.0.0
   assert_success
   assert_output --partial "Generated name existed; using"
   second_branch=$(git branch --show-current)
+  assert_equal "$second_branch" "v1.0.0.branch.20000101-0000.00"
 
   [[ "$first_branch" != "$second_branch" ]]
   git show-ref --verify "refs/heads/$first_branch" >/dev/null
@@ -189,10 +254,16 @@ Rewrite the flaky test at line 334 to set `HUG_FAKE_CLOCK`:
 }
 ```
 
-The test is also **renamed** from `auto-generated name is unique per minute` to
-`collision on same-minute name produces unique suffix`. The old name was a
-misnomer — the test has always exercised the collision path, not uniqueness per
-minute. The rename keeps `TEST_FILTER` queries honest.
+Apply the same `export HUG_FAKE_CLOCK=946684800` pin to the test at line 136
+(keep its existing assertions; the override just makes them deterministic).
+That test's branch-extraction via `git branch | grep ".branch."` is brittle but
+out of scope to rewrite here — the pin is the minimal fix.
+
+Both tests are **renamed** where the line-334 one changes from `auto-generated
+name is unique per minute` to `collision on same-minute name produces unique
+suffix`. The old name was a misnomer — the test has always exercised the
+collision path, not uniqueness per minute. The rename keeps `TEST_FILTER`
+queries honest.
 
 `HUG_FAKE_CLOCK` does not need explicit teardown: `test_helper.bash`'s per-test
 repo setup creates a fresh environment, and the export is scoped to the test
@@ -207,18 +278,24 @@ future adoption in `git-tc` / `git-w-wip` is safe.
 
 | Test | Setup | Assert |
 |---|---|---|
-| `hug_clock_now: returns real time when override unset` | `unset HUG_FAKE_CLOCK` | output matches `^[0-9]{8}-[0-9]{4}$` |
-| `hug_clock_now: honors HUG_FAKE_CLOCK epoch` | `HUG_FAKE_CLOCK=946684800` | `hug_clock_now "%Y%m%d-%H%M"` → `20000101-0000` |
+| `hug_clock_now: requires a format argument` | call with no args | returns nonzero (usage error to stderr) |
+| `hug_clock_now: returns real UTC time when override unset` | `unset HUG_FAKE_CLOCK` | output matches `^[0-9]{8}-[0-9]{4}$`; equals `date -u +"%Y%m%d-%H%M"` |
+| `hug_clock_now: honors HUG_FAKE_CLOCK epoch (UTC)` | `HUG_FAKE_CLOCK=946684800`, any host `TZ` | `hug_clock_now "%Y%m%d-%H%M"` → `20000101-0000` |
 | `hug_clock_now: seconds format honors override` | `HUG_FAKE_CLOCK=946684800` | `hug_clock_now "%S"` → `00` |
-| `hug_clock_now: invalid override warns and falls back` | `HUG_FAKE_CLOCK=not-a-number`, capture stderr+stdout | stdout is valid-format real time; stderr contains `ignoring invalid HUG_FAKE_CLOCK` |
-| `hug_clock_epoch: returns real epoch when unset` | `unset HUG_FAKE_CLOCK` | output is integer; within ±5 of `date +%s` |
+| `hug_clock_now: invalid override warns (stderr) and falls back (stdout)` | `HUG_FAKE_CLOCK=not-a-number`, `run --separate-stderr hug_clock_now "%Y%m%d-%H%M"` | `$output` matches real-UTC format; `$stderr` contains `ignoring invalid HUG_FAKE_CLOCK` |
+| `hug_clock_now: numeric-but-unformattable falls back` | `HUG_FAKE_CLOCK=99999999999999999999` (overflows) | returns success; stdout is real-UTC format; stderr contains `could not be formatted` |
+| `hug_clock_epoch: returns real epoch when unset` | `unset HUG_FAKE_CLOCK` | output is integer; within ±5 of `date -u +%s` |
 | `hug_clock_epoch: returns override verbatim` | `HUG_FAKE_CLOCK=946684800` | output is exactly `946684800` |
 | `hug_clock_epoch: invalid override falls back silently` | `HUG_FAKE_CLOCK=garbage` | output is integer real epoch |
 
-### 2. Unit test fix — `tests/unit/test_bc.bats:334`
+The invalid-override test uses `run --separate-stderr` so `$output` (stdout) and
+`$stderr` are asserted independently — per Codex finding #5, the old
+`run`-merges-streams approach contaminates the stdout regex with the warning.
 
-The rewritten test above. Deterministic by construction: with `HUG_FAKE_CLOCK`
-set, both `hug bc` calls provably land on the same frozen minute.
+### 2. Unit test fix — `tests/unit/test_bc.bats:334` AND `:136`
+
+Both rewritten as above. Deterministic by construction: with `HUG_FAKE_CLOCK`
+set, both `hug bc` calls provably land on the same frozen UTC minute.
 
 ### 3. Flake-reproduction verification — manual, not committed
 
@@ -252,16 +329,23 @@ unit test, not new user-facing behavior.
   `git-w-wip` (timestamp stashes, `git-w-wip:65/66`). These are the same class
   of latent flake, but YAGNI for this issue. The library is ready for them when
   needed — adoption is a one-line change per call site.
-- Changing the branch-name format. The user-visible `YYYYMMDD-HHMM` format and
-  the `.SS` / `.SS.N` collision suffix are unchanged.
+- Changing the branch-name **format** (still `YYYYMMDD-HHMM` + `.SS` / `.SS.N`).
+  The timezone of the suffix DOES change (local → UTC) as a documented
+  consequence of the UTC contract — see "Consumer contract note" above.
+- Rewriting the brittle `git branch | grep ".branch."` extraction in the test
+  at line 136. The override pin fixes the flake; the extraction refactor is
+  separate scope.
 
 ## Acceptance criteria
 
 - [ ] `git-config/lib/hug-clock` exists with `hug_clock_now` and `hug_clock_epoch`.
-- [ ] `hug-common` sources `hug-clock`.
+- [ ] All `hug_clock_*` output is UTC (`date -u`); formatter is GNU/BSD portable.
+- [ ] `hug_clock_now` validates its arg and returns usage error on missing/empty.
+- [ ] `hug-common` sources `hug-clock`; `test_hug-common.bats` asserts it.
 - [ ] `git-bc` uses `hug_clock_now` at all three former `date` call sites.
-- [ ] `tests/lib/test_hug_clock.bats` exists and passes, covering all 7 cases above.
-- [ ] `tests/unit/test_bc.bats:334` rewritten and renamed; sets `HUG_FAKE_CLOCK`.
-- [ ] 50× loop on the rewritten test passes 50/50.
+- [ ] `tests/lib/test_hug_clock.bats` exists and passes, covering all 9 cases above.
+- [ ] `tests/unit/test_bc.bats:334` rewritten + renamed; sets `HUG_FAKE_CLOCK`; asserts exact UTC branch names.
+- [ ] `tests/unit/test_bc.bats:136` ALSO sets `HUG_FAKE_CLOCK` (second flake surfaced by Codex review).
+- [ ] 50× loop on both pinned tests passes 50/50.
 - [ ] `make test-unit` is green with zero new failures.
-- [ ] No `date` call remains in `git-bc`'s name-generation block.
+- [ ] No bare `date` invocation (as a command, not the word in comments) remains in `git-bc`'s name-generation block.
