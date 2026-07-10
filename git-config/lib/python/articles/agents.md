@@ -154,9 +154,7 @@ Ball color encodes working-tree state (precedence: top → bottom):
 
 ## Staging, committing, amending
 
-- `hug a <files>`: stage specific files (precise; prefer this)
-- `hug a`: stage ALL tracked files: modifications + deletions (NOT new/untracked)
-- `hug aa`: stage everything, incl. new/untracked files (broad)
+- `hug a <file1> [<file2> ...]`: stage files
 - `hug us <file1> [<file2> ...]`: unstage files
 
 - `hug c -m "message"`: commit staged changes
