@@ -21,24 +21,28 @@ USAGE:
     hug rb <target-branch> [--dry-run] [-f, --force] [--quiet] [--no-backup] [-h, --help]
 
 OPTIONS:
-    --dry-run      Preview the rebase operation without applying changes
-    -f, --force    Skip checks (e.g., working tree clean) and confirmation prompts (sets HUG_FORCE=true)
-    -y, --yes      Skip confirmation prompts (keeps safe semantics)
-    --quiet        Suppress output (sets HUG_QUIET=T)
-    --no-backup    Skip creating a backup branch (dangerous; use with caution)
+    --dry-run      Preview the rebase (commits, diffstat, backup disposition, auth hint) without applying
+    -f, --force    Skip the working-tree-clean check AND authorize a --no-backup rebase (danger-tier)
+    -y, --yes      Authorize a backed-up rebase (warn-tier) — the non-interactive opt-in
+    --quiet        Suppress preview/chatter; does NOT authorize (use -y or -f for that)
+    --no-backup    Skip the backup branch (routes to danger-tier; needs -f non-interactively)
     -h, --help     Show this help
 
 DESCRIPTION:
     Rebases the current branch onto the specified target branch (e.g., 'main').
-    Automatically creates a backup branch before rebasing for safety.
-    If conflicts occur, the rebase pauses; use 'hug rbc', 'hug rbc-current', or 'hug rbc-other' to resolve.
-    To abort, run 'hug rba'.
-    WARNING: Rebasing rewrites history. Ensure your branch is pushed only to personal remotes.
+    Confirmation tier follows the backup (hug family invariant: -y clears warn, -f clears danger):
+      - warn-tier  = destructive but recoverable (a backup exists). '-y' authorizes non-interactively.
+      - danger-tier = no safety net. Needs '-f' non-interactively, OR type the word "rebase" interactively.
+      - Default (backup ON)   ⇒ warn-tier
+      - --no-backup           ⇒ danger-tier
+    A backup branch is created AFTER you authorize, so cancelling leaves nothing behind.
+    If conflicts occur, the rebase pauses; use 'hug rbc' to continue, 'hug rba' to abort.
 
 EXAMPLES:
-    hug rb main                    # Rebase current branch onto main (with backup and preview)
-    hug rb main --dry-run          # Preview commits and changes without rebasing
-    hug rb develop -f --no-backup  # Force rebase without checks or backup
+    hug rb main                    # Rebase onto main (backup, warn-tier prompt)
+    hug rb main -y                 # Non-interactive rebase with backup (warn-tier authorized)
+    hug rb main --dry-run          # Preview commits, backup name, and the auth flag you'll need
+    hug rb main --no-backup -f     # Rebase with no backup (danger-tier, force-authorized)
 
 SEE ALSO:
     hug rba        Abort the current rebase
@@ -78,28 +82,43 @@ if [[ -z "$target_branch" ]]; then
 fi
 
 # --- Internal function for 'hug rb' ---
+#
+# Flow: validate → tree_guard → build_plan → render_plan →
+#       (dry-run returns 0 | confirm(tier) → backup → rebase → status report).
+#
+# Fixes elifarley/hug-scm#205: honest exit codes (#3b), no orphan backups
+# (#2), documented non-interactive opt-in via -y (#1), dynamic tier replaces
+# the ad-hoc --no-backup guard (#3a), resurrected conflict guidance, and
+# --quiet no longer authorizes (D6).
 hug_rb() {
   local target_branch="$1"
+  local no_backup="$2"
   local current_branch
   local backup_name=""
 
   check_git_repo
 
-  # Validate target branch exists
+  # Validate target branch exists.
   ensure_commit_exists "$target_branch"
+
+  # D7: refuse to start if a rebase is already in progress. Must run BEFORE
+  # any side effect (backup creation would orphan; rebase would fail confusingly).
+  rb_assert_no_rebase_in_progress
 
   current_branch=$(git rev-parse --abbrev-ref HEAD)
   if [[ "$current_branch" == "HEAD" ]]; then
     error "You are in detached HEAD state. Please check out a branch first."
   fi
 
-  # Check if already on target
+  # Check if already on target.
   if [[ "$current_branch" == "$target_branch" ]]; then
     info "Already on '$target_branch'; nothing to rebase."
     return 0
   fi
 
-  # Check working tree unless forced
+  # Tree guard: clean check unless HUG_FORCE (-f warns + skips).
+  # NOTE: -y does NOT weaken this guard — -y authorizes the warn-tier
+  # confirmation, not the dirty-tree precondition. Only -f clears both.
   if [[ ${HUG_FORCE:-} != true ]]; then
     if has_pending_changes; then
       check_working_tree_clean
@@ -108,83 +127,65 @@ hug_rb() {
     warning "Force mode: Skipping working tree clean check (uncommitted changes may be lost)."
   fi
 
-  local dry_run="${dry_run:-false}"
+  # --- Plan (pure) ---
+  # Evaluates RB_PLAN_* vars. backup_name is best-effort; the post-create
+  # tip is authoritative (see resolve_backup_name / create_backup_branch).
+  eval "$(rb_build_plan "$target_branch" "$current_branch" "$no_backup")"
 
-  if [[ ${dry_run} == true ]]; then
-    local num_commits
-    num_commits=$(count_commits_in_range "$target_branch" HEAD)
-    local commit_word="commit"
-    [[ $num_commits -gt 1 ]] && commit_word="commits"
+  # --- Render (→ stderr; honors HUG_QUIET) ---
+  rb_render_plan
 
-    info "Dry run: Previewing rebase of current branch onto '$target_branch'."
-
-    printf 'Commits that would be rebased:\n' >&2
-    print_commit_list_in_range "$target_branch" HEAD >&2
-
-    local range_for_diff="$target_branch..HEAD"
-    if git diff --quiet "$range_for_diff"; then
-      printf '\nPreview: no file changes in %d %s.\n' "$num_commits" "$commit_word" >&2
-    else
-      printf '\nPreview: changes in %d %s:\n' "$num_commits" "$commit_word" >&2
-      git diff --stat "$range_for_diff" >&2
-    fi
-
+  # --- Dry-run stops here, before ANY side effect. ---
+  if [[ ${dry_run:-false} == true ]]; then
     print_dry_run_preview "be rebased onto $target_branch"
     return 0
   fi
 
-  # Create backup unless skipped
-  if [[ ${no_backup} != true ]]; then
-    backup_name=$(create_backup_branch HEAD "$current_branch")
-    if [[ $? -ne 0 ]]; then
+  # --- Confirmation (tier-aware). ---
+  # D6: --quiet does NOT authorize — the confirm runs regardless of HUG_QUIET.
+  # -y clears warn only (backup on); danger (--no-backup) still requires -f.
+  if [[ "${RB_PLAN_TIER}" == "danger" ]]; then
+    print_action_preview "rebase ${RB_PLAN_NUM_COMMITS} commit(s) onto ${target_branch} with NO BACKUP"
+    prompt_confirm_danger "rebase" "no backup will be created — recovery is impossible if this goes wrong"
+  else
+    print_action_preview "rebase ${RB_PLAN_NUM_COMMITS} commit(s) onto ${target_branch}"
+    prompt_confirm_warn
+  fi
+
+  # --- Backup AFTER authorization (D2: no orphan on cancel). ---
+  if [[ "${RB_PLAN_WILL_BACKUP}" == "true" ]]; then
+    backup_name=$(create_backup_branch HEAD "$current_branch") || {
       warn "Rebase aborted due to backup failure."
       return 1
-    fi
+    }
     tip "Backup of '$current_branch' created at: $backup_name"
   else
-    if [[ ${HUG_FORCE:-} != true ]]; then
-      error "--no-backup requires --force for safety."
-    fi
-    warning "Skipping backup branch creation (as requested with --force)."
+    warning "Skipping backup branch creation (--no-backup)."
   fi
 
-  # Confirmation unless forced or quiet
-  if [[ ${HUG_QUIET:-} != T && ${HUG_FORCE:-} != true ]]; then
-    local num_commits
-    num_commits=$(count_commits_in_range "$target_branch" HEAD)
-    local commit_word="commit"
-    [[ $num_commits -gt 1 ]] && commit_word="commits"
-
-    printf 'Commits to be rebased:\n' >&2
-    print_commit_list_in_range "$target_branch" HEAD >&2
-
-    local range_for_diff="$target_branch..HEAD"
-    if git diff --quiet "$range_for_diff"; then
-      printf '\nPreview: no file changes in %d %s to %s.\n' "$num_commits" "$commit_word" "$target_branch" >&2
-    else
-      printf '\nPreview: changes in %d %s to %s:\n' "$num_commits" "$commit_word" "$target_branch" >&2
-      git diff --stat "$range_for_diff" >&2
-    fi
-
-    print_action_preview "rebase $num_commits $commit_word onto $target_branch"
-    prompt_confirm_danger "rebase" "Rewrites commit history — existing commit hashes will change"
-  fi
-
-  # Perform Rebase
+  # --- Rebase (status-safe: stops set -e from short-circuiting). ---
   info "Starting rebase of '$current_branch' onto '$target_branch'..."
-  git rebase "$target_branch"
+  local rebase_status=0
+  git rebase "$target_branch" || rebase_status=$?
 
-  local rebase_status=$?
-  if [ $rebase_status -eq 0 ]; then
+  if [[ $rebase_status -eq 0 ]]; then
     success "Rebase onto '$target_branch' successful."
-    [[ -n "$backup_name" ]] && tip "Backup available at: $backup_name (can be deleted if no longer needed)."
+    if [[ -n "$backup_name" ]]; then
+      tip "Backup available at: $backup_name (can be deleted if no longer needed)."
+    fi
+    return 0
   else
+    # Resurrected branch: previously, `set -e` killed the script here on
+    # conflict and this guidance never printed. Now it does.
     warn "Rebase paused due to conflict or error."
     warn "  Resolve conflicts and run 'hug rbc' to continue."
     warn "  Or use 'hug rbc-current --all' / 'hug rbc-other --all' to auto-resolve all with one side."
     warn "  To abort, run 'hug rba'."
-    [[ -n "$backup_name" ]] && tip "Backup available at: $backup_name"
+    if [[ -n "$backup_name" ]]; then
+      tip "Backup available at: $backup_name"
+    fi
+    return "$rebase_status"
   fi
 }
 
-hug_rb "$target_branch"
+hug_rb "$target_branch" "$no_backup"
