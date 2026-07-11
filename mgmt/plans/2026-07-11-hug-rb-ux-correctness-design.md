@@ -98,18 +98,25 @@ Harden `git-config/lib/hug-git-backup`, mirroring the proven `git-bc` pattern:
 - Replace raw `date` with **`hug_clock_now`** → UTC and deterministic under `HUG_FAKE_CLOCK`
   (`create_backup_branch` is currently untestable for exactly this reason).
 - **Factor `resolve_backup_name <source> <base>`** — pure, read-only (probes `git show-ref`), echoes
-  the name it *would* create. `create_backup_branch` becomes `resolve_backup_name` + `git branch`.
-  The read-only resolver is what lets `--dry-run` show the concrete name (D4).
-- **Collision loop:** the default name stays **minute-precision** (`DD-HHMM.branch`, backward
-  compatible). On collision, widen to seconds **inside the time field** (`DD-HHMMSS.branch`) — this
-  is the one resolution step the parser accounts for. Encoding the uniquifier in the time field (not
-  after the branch name) means only `extract_original_name` needs a one-token regex widen
-  (`[0-9]{4}` → `[0-9]{4}([0-9]{2})?`); **`git-bdel-backup`'s date-prefix matching is untouched**
-  (`11-1006` still prefix-matches `11-100637`, the correct "delete the 10:06 backups" semantics).
-  If even the seconds form is taken (3+ backups of one branch in the same UTC second — only
-  reachable via a tight scripted retry loop), the loop is **bounded** and aborts with a clear error
-  rather than inventing an unparseable name; the operator retries a second later. This mirrors
-  `git-bc`'s bounded-loop philosophy while keeping `extract_original_name`'s contract crisp.
+  the name it *would* create. It is the read-only preview `--dry-run` uses (D4). `create_backup_branch`
+  wraps it and **loops around the actual `git branch` call, re-resolving on create failure** — a
+  pre-check alone would still race (TOCTOU), so uniqueness is guaranteed at the point of creation, not
+  at the point of preview.
+- **Collision ladder** — mirroring `git-bc`'s seconds-then-counter loop (bounded at 100 attempts).
+  The whole timestamp+disambiguator stays **before the `.branch` dot**, so the branch name is never
+  ambiguous:
+  - `hug-backups/YYYY-MM/DD-HHMM.branch` — default (backward compatible)
+  - `hug-backups/YYYY-MM/DD-HHMMSS.branch` — minute collision (widen to seconds)
+  - `hug-backups/YYYY-MM/DD-HHMMSS-N.branch` — same-second collision (N bounded)
+  **Two name-parsers must be updated deliberately — this is NOT a one-file change** (Codex caught the
+  earlier draft's "untouched" claim; verified against the code):
+  - `extract_original_name` (`hug-git-backup:80`) — widen the exact `DD-HHMM.` prefix to also accept
+    `DD-HHMMSS` and `DD-HHMMSS-N`.
+  - `git-bdel-backup` — `normalize_backup_key` (`:166`) captures exactly `[0-9]{4}` (HHMM), so a
+    seconds name **fails to normalize** and the un-normalized `hug-backups/…` string sorts as garbage
+    in the `--delete-older-than` lexicographic compare (`:205`). Update `normalize_backup_key` to
+    accept the widened form and map seconds names to a minute-precision comparison key, so
+    `11-100637` correctly counts as *newer* than a `11-1006` threshold.
 
 Belt-and-suspenders with D2: D2 removes the incident's cancel→retry collision and orphans; D3 also
 covers the residual two-successful-rebases-in-one-minute case and makes the whole thing testable.
@@ -119,11 +126,12 @@ covers the residual two-successful-rebases-in-one-minute case and makes the whol
 Eliminate the duplicated preview (the dry-run block `:113-133` and the confirm block `:158-167`
 both compute `num_commits`, print the commit list, and run `git diff`). Compute a **plan** once,
 **render** it once; dry-run is "render, then `return 0`". Both paths render the same plan, so the
-preview is faithful *by construction*.
+**scope and tier** are faithful *by construction* (the backup *name* is best-effort — see below).
 
-`--dry-run` shows a faithful, side-effect-free preview:
+`--dry-run` shows a side-effect-free preview:
 - **Scope** — "Would rebase N commits onto `<target>`" + diffstat (as today).
-- **Backup disposition** *(new)* — "Would create backup at `hug-backups/2026-07/11-1006.main`", or
+- **Backup disposition** *(new)* — "Would create backup at `hug-backups/2026-07/11-1006.main`" (the
+  name it would *currently* pick; clock/ref drift means the post-create tip is authoritative), or
   "Would **skip** backup (`--no-backup`)".
 - **Authorization hint** *(new)* — "warn-tier; a non-interactive run needs `-y`" /
   "danger-tier; needs `-f`" — directly pre-empts #1: preview first, learn the flag, then run.
@@ -148,10 +156,20 @@ Decouple output suppression from authorization. The confirm step runs regardless
 (and internally honors `-y`/`-f`); `--quiet` only suppresses the rendered preview and success/tip
 chatter.
 
+### D7 — Refuse to start when a rebase is already in progress
+
+Before any confirmation or backup, guard against an in-progress rebase, checking **both backends**:
+`.git/rebase-merge` (merge backend, the default) **and** `.git/rebase-apply` (apply/`am` backend). The
+existing `hug-git-rebase` helper (`:21`) checks only `rebase-merge`, so it is insufficient as-is —
+extend it or add the check in the plan's validate step. Without this guard, `hug rb` would create a
+fresh backup and *then* fail at `git rebase` with "rebase in progress", leaving an orphan backup and a
+confusing error. Point the user at `hug rbc` / `hug rba`. (Found by the Codex vet; verified.)
+
 ## New `hug_rb` control flow
 
 ```
-validate            # git repo, target exists, not detached, not already-on-target  (unchanged)
+validate            # git repo, target exists, not detached, not already-on-target,
+                    #   NOT mid-rebase (D7: rebase-merge OR rebase-apply)
 tree_guard          # clean check unless HUG_FORCE (-f warns + skips)                 (unchanged)
 plan = build_plan   # pure: current/target, num_commits, diffstat, will_backup→tier,
                     #       resolved backup_name, required non-interactive auth flag
@@ -187,13 +205,17 @@ Default = **warn** (backup created). `--no-backup` = **danger** (no backup).
 
 ## Library changes
 
-- **`hug-git-backup`**: add `resolve_backup_name` (pure); rewrite `create_backup_branch` to
-  `resolve` + `git branch` with the `hug_clock_now` collision loop; widen `extract_original_name`
-  to accept `DD-HHMM.` and `DD-HHMMSS.`; refresh the header doc-comment (name format, new function).
-  Ensure `hug-clock` is in the source chain wherever this runs (`git-bc` already relies on it via
-  the kit).
+- **`hug-git-backup`**: add `resolve_backup_name` (pure); rewrite `create_backup_branch` to loop
+  around the actual `git branch` (retry on collision) with the `hug_clock_now` ladder; widen
+  `extract_original_name` to accept `DD-HHMM.`, `DD-HHMMSS.`, and `DD-HHMMSS-N.`; refresh the header
+  doc-comment (name format, new function). `hug-clock` is already in the source chain via
+  `hug-common:80` (verified) — `git-bc` relies on the same.
+- **`git-bdel-backup`**: update `normalize_backup_key` (`:166`) to parse the widened timestamp and map
+  seconds names to a minute-precision comparison key, so `--delete-older-than` (`:205`) keeps correct
+  ordering. **Do not leave this file untouched** (Codex-verified coupling).
 - **`hug-git-rebase`**: house the `build_plan` / `render_plan` helpers so `git-rb` stays a thin
-  orchestrator (per `bin/CLAUDE.md`). Reuse existing `print_dry_run_preview` / `print_action_preview`.
+  orchestrator (per `bin/CLAUDE.md`); add/extend the in-progress-rebase guard to cover **both**
+  `rebase-merge` and `rebase-apply` (D7). Reuse `print_dry_run_preview` / `print_action_preview`.
 - **`git-rb`**: adopt the new flow; swap the confirm call per tier; rewrite `show_help` OPTIONS.
 
 ## Testing strategy (net-new)
@@ -208,10 +230,14 @@ Default = **warn** (backup created). `--no-backup` = **danger** (no backup).
   backups; same-minute collision under `HUG_FAKE_CLOCK` ⇒ unique name, no error; dry-run ⇒ HEAD and
   branch list unchanged.
 - **Dry-run preview:** asserts backup disposition + tier/auth hint + scope appear (stderr).
+- **Rebase-in-progress guard (D7):** with `.git/rebase-merge` OR `.git/rebase-apply` present, `hug rb`
+  refuses with a clear error and creates **no** backup.
 
 **Lib tests** (`tests/lib/`): `resolve_backup_name` read-only + deterministic under `HUG_FAKE_CLOCK`;
-collision → seconds → counter; `extract_original_name` returns the original for both `DD-HHMM.branch`
-and `DD-HHMMSS.branch`, including branch names containing dots/digits.
+the collision ladder `DD-HHMM` → `DD-HHMMSS` → `DD-HHMMSS-N`; `extract_original_name` returns the
+original for all three forms, including branch names containing dots/digits; and **`git-bdel-backup
+--delete-older-than`** correctly including/excluding seconds-precision names against a minute-precision
+threshold (the `normalize_backup_key` path Codex flagged).
 
 ## Docs & norms
 
@@ -225,14 +251,17 @@ and `DD-HHMMSS.branch`, including branch names containing dots/digits.
 
 ## Files touched
 
-`git-config/bin/git-rb`, `git-config/lib/hug-git-backup`, `git-config/lib/hug-git-rebase`,
-`tests/unit/test_rb.bats` (new), `tests/lib/*` (backup lib), plus help/doc text.
+`git-config/bin/git-rb`, `git-config/lib/hug-git-backup`, `git-config/bin/git-bdel-backup`,
+`git-config/lib/hug-git-rebase`, `tests/unit/test_rb.bats` (new), `tests/lib/*` (backup lib),
+plus help/doc text.
 
 ## Edge cases & risks
 
 - Old backups used raw **local**-time labels; new ones use **UTC** — cosmetic only (the label is not
   parsed for correctness; `extract_original_name` handles both formats).
-- `resolve_backup_name`→`git branch` TOCTOU is covered by the in-`create` collision loop.
+- `resolve_backup_name`→`git branch` TOCTOU: `create_backup_branch` loops around the real
+  `git branch` and re-resolves on failure (D3), so a name taken between preview and creation is
+  handled — a `resolve_backup_name` pre-check alone would not suffice.
 - On the real run, `render_plan` shows the plan's resolved name; if the clock or ref state moves
   between render and creation (rare), the post-creation "Backup created at …" tip is authoritative.
   Dry-run shows the resolved name with no creation to drift from.
