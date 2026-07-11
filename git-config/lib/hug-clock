@@ -81,11 +81,26 @@ hug_clock_now() {
 # Usage: hug_clock_epoch
 # Output:
 #   Integer epoch seconds to stdout.
+# Fail-safe:
+#   Same contract as hug_clock_now: if HUG_FAKE_CLOCK is numeric but date cannot
+#   format it (e.g. overflow), warns on stderr and falls back to the real clock.
 hug_clock_epoch() {
   local fake="${HUG_FAKE_CLOCK:-}"
-  if [[ -n "$fake" ]] && [[ "$fake" =~ ^[0-9]+$ ]]; then
-    printf '%s\n' "$fake"
-    return 0
+  if [[ -n "$fake" ]]; then
+    if [[ "$fake" =~ ^[0-9]+$ ]]; then
+      # Validate by attempting to format — same gate as hug_clock_now.
+      # An unformattable epoch (overflow) is not a valid override.
+      local rendered
+      if rendered=$(_hug_clock_format_epoch "$fake" "%Y%m%d-%H%M") && [[ -n "$rendered" ]]; then
+        printf '%s\n' "$fake"
+        return 0
+      fi
+      printf 'hug-clock: HUG_FAKE_CLOCK=%q could not be formatted; using real clock\n' \
+        "$fake" >&2
+    else
+      printf 'hug-clock: ignoring invalid HUG_FAKE_CLOCK=%q (expected unix epoch)\n' \
+        "$fake" >&2
+    fi
   fi
   date -u +%s
 }

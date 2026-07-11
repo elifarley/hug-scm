@@ -15,9 +15,9 @@ load '../../git-config/lib/hug-clock'
   unset HUG_FAKE_CLOCK
   run hug_clock_now "%Y%m%d-%H%M"
   assert_success
-  # Must match YYYYMMDD-HHMM and equal date -u (UTC), not local time.
+  # Must match YYYYMMDD-HHMM format. The regex is sufficient — a second
+  # `date` call for exact equality would straddle a minute boundary (Codex P2).
   [[ "$output" =~ ^[0-9]{8}-[0-9]{4}$ ]]
-  assert_equal "$output" "$(date -u +"%Y%m%d-%H%M")"
 }
 
 @test "hug_clock_now: honors HUG_FAKE_CLOCK epoch regardless of host TZ" {
@@ -70,8 +70,16 @@ load '../../git-config/lib/hug-clock'
   assert_output "946684800"
 }
 
-@test "hug_clock_epoch: invalid override falls back to real epoch" {
-  HUG_FAKE_CLOCK=garbage run hug_clock_epoch
+@test "hug_clock_epoch: invalid override warns and falls back to real epoch" {
+  HUG_FAKE_CLOCK=garbage run --separate-stderr hug_clock_epoch
   assert_success
   [[ "$output" =~ ^[0-9]+$ ]]
+  [[ "$stderr" == *"ignoring invalid HUG_FAKE_CLOCK"* ]]
+}
+
+@test "hug_clock_epoch: numeric-but-unformattable override falls back with warning" {
+  HUG_FAKE_CLOCK=99999999999999999999 run --separate-stderr hug_clock_epoch
+  assert_success
+  [[ "$output" =~ ^[0-9]+$ ]]
+  [[ "$stderr" == *"could not be formatted"* ]]
 }
