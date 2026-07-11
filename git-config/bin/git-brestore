@@ -38,7 +38,8 @@ OPTIONS:
 
 DESCRIPTION:
     Restores a branch from a backup created by commands like 'hug rb'.
-    Backup branches follow the naming convention: hug-backups/YYYY-MM/DD-HHMM.original-name
+    Backup branches follow the naming convention: hug-backups/YYYY-MM/DD-HHMM[SS[-N]].original-name
+    (where SS is seconds and N is a collision counter for same-second backups)
 
     If the target branch already exists, you will be prompted for confirmation as this is a
     destructive operation (the existing branch will be deleted and recreated).

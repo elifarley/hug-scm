@@ -344,7 +344,7 @@ Ready for more? These commands are useful for power users.
 
 | Git Command | Hug Equivalent | Memory Hook | Why Hug is Better |
 |-------------|----------------|-------------|-------------------|
-| `git rebase` | `hug rb` | **R**ebase | Consistent `r*` prefix |
+| `git rebase` | `hug rb` | **R**ebase | Consistent `r*` prefix. Creates a backup branch by default; `-y` for non-interactive (warn-tier), `--no-backup -f` for no backup (danger-tier) |
 | `git rebase -i` | `hug rbi` | **R**ebase **I**nteractive | Easier to remember |
 | `git rebase --continue` | `hug rbc` | **R**ebase **C**ontinue | Consistent continue/abort pattern |
 | `git rebase --abort` | `hug rba` | **R**ebase **A**bort | Consistent continue/abort pattern |

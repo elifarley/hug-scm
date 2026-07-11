@@ -29,6 +29,18 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ### Added
 
+- **`hug rb --dry-run` is now fully faithful** — previews commits, the backup name that will be created, and whether you'll need `-y` (warn-tier) or `-f` (danger-tier) for non-interactive use. Zero side effects.
+
+- **`hug rb` backup branch names now use seconds-precision naming** — form is `hug-backups/YYYY-MM/DD-HHMM[SS[-N]].<base>`, widened from the previous `DD-HHMM.<base>`. The widening only triggers on same-minute or same-second collisions (a rare event). Old `DD-HHMM` names still parse correctly everywhere in hug. **If you have scripts that match backup names with a strict regex**, widen your pattern from `[0-9]{4}` (HHMM) to `[0-9]{4}([0-9]{2}(-[0-9]+)?)?` to accept the new form. The minute-precision threshold for `hug bdel-backup --delete-older-than` is unchanged.
+
+- **`hug rb` confirmation tiers are now dynamic** — backup-on (default) ⇒ warn-tier (auto-confirms with `-y`); `--no-backup` ⇒ danger-tier (needs `-f` non-interactively). The ad-hoc `--no-backup requires --force` hard-error is removed; `--no-backup` now routes through the standard danger-tier confirm (type "rebase" interactively, or pass `-f`).
+
+- **`hug rb` exit codes are now honest** — `--no-backup -f` success returns 0 (previously returned 1 in some flows). Conflict guidance is now printed when a rebase pauses (previously the script died silently under `set -e`).
+
+- **`hug rb` now refuses to start when a rebase is already in progress** — detects `.git/rebase-merge` or `.git/rebase-apply` and exits with a clear error, preventing orphan backup branches.
+
+- **`hug rb --quiet` no longer silently authorizes the rebase** — pass `-y` (warn-tier) or `-f` (danger-tier) explicitly for non-interactive use. Quiet only suppresses chatter, not safety checks.
+
 - **`hug shv` — visual show.** Renders a commit's patch (like `hug shp`) or a range's cumulative diff (like `hug shcp`) in your configured difftool instead of as text. `hug shv` defaults to HEAD; `hug shv <committish>`, `hug shv N`, `hug shv -N`, and `hug shv A..B` all work. It is a thin entry point over the same engine as `hug dd`'s commit mode, so `hug shv X` is identical to `hug dd X` for any commit/range/N. `shv s|u|w` is rejected with a redirect to `hug dd s|u|w` (it is commit-history only). Pathspec scoping mirrors `shcp` (multiple paths).
 - **`hug dd` accepts the `N`/`-N` convention** (the same shorthand as `hug sh`/`shp`): `hug dd 3` is the commit three back, `hug dd -3` is the cumulative diff of the last three commits.
 - **`is_root_commit <committish>` in `hug-git-repo`.** A per-ref companion to `is_at_root_commit` (which only answers for HEAD), so root-commit detection is correct for an arbitrary ref (e.g. `hug dd <root-sha>` reviewed from a non-root checkout).

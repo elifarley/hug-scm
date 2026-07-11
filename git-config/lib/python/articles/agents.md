@@ -43,10 +43,11 @@ These conventions recur across hug commands; a command's own `-h` is authoritati
   `hug bpush`, also overrides a dirty worktree on `hug wtdel`, skips the
   confirmation on a `hug h *` HEAD move. Check the command's `-h`.
 - `--dry-run` — preview without acting. Supported by the destructive
-  working-tree commands (`hug w discard-all`, `w-purge`, `w-wipe`, `w-zap`)
-  and worktree deletion (`hug wtdel`, `wtprune`). NOT on `hug h *` HEAD moves
-  or `hug bpush`: preview a HEAD move via its reset-equivalent (table below)
-  plus `hug ss`/`hug su`, and a push via `hug llu`/`hug lol`.
+  working-tree commands (`hug w discard-all`, `w-purge`, `w-wipe`, `w-zap`),
+  worktree deletion (`hug wtdel`, `wtprune`), and `hug rb` (rebase with backup).
+  NOT on `hug h *` HEAD moves or `hug bpush`: preview a HEAD move via its
+  reset-equivalent (table below) plus `hug ss`/`hug su`, and a push via
+  `hug llu`/`hug lol`.
 - `-q` / `--quiet` — suppress the human-facing summary/chatter (stderr) for
   quieter automation.
 
