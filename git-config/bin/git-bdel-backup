@@ -157,13 +157,22 @@ if [[ -n "$delete_older_than" ]]; then
   fi
 fi
 
-# Helper function to normalize backup branch name format to comparison key
-# Converts: hug-backups/2024-11/02-1234.feature -> 2024-11/02-1234
-# The date-time portion follows YYYY-MM/DD-HHMM format for lexicographic comparison
+# Helper function to normalize backup branch name format to comparison key.
+# Converts the widened timestamp forms to a MINUTE-precision key so that
+# --delete-older-than lexicographic comparison stays correct when backups
+# exist at seconds precision (the new form from hug-git-backup):
+#   hug-backups/2024-11/02-1234.feature      -> 2024-11/02-1234
+#   hug-backups/2024-11/02-123456.feature    -> 2024-11/02-1234   (seconds dropped)
+#   hug-backups/2024-11/02-123456-7.feature  -> 2024-11/02-1234   (seconds+counter dropped)
+# Non-matching input passes through unchanged.
+#
+# NOTE: the seconds group `([0-9]{2}(-[0-9]+)?)?` is OPTIONAL (trailing `?`).
+# Making it required would break normalization of legacy DD-HHMM names
+# (eng-review Codex #2) and cause --delete-older-than to under-delete old
+# backups.
 normalize_backup_key() {
   local backup="$1"
-  # Extract the date-time portion (YYYY-MM/DD-HHMM)
-  echo "$backup" | sed -E 's|^hug-backups/([0-9]{4}-[0-9]{2}/[0-9]{2}-[0-9]{4})\..*$|\1|'
+  echo "$backup" | sed -E 's|^hug-backups/([0-9]{4}-[0-9]{2}/[0-9]{2}-[0-9]{4})([0-9]{2}(-[0-9]+)?)?\..*$|\1|'
 }
 
 # Helper function to check if a backup is older than the pattern
