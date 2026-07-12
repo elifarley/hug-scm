@@ -55,15 +55,24 @@ resolve_backup_name() {
   fi
 
   local ym dhm secs
-  ym=$(hug_clock_now "%Y-%m")
-  dhm=$(hug_clock_now "%d-%H%M")
+  # Capture the instant ONCE, then format components from it. Three separate
+  # hug_clock_now calls would each hit `date` independently and could straddle
+  # a year/month/day boundary, producing a chronologically impossible timestamp
+  # (e.g. ym="2024-12" paired with dhm="01-0000" from Jan 1). One epoch ⇒ one
+  # instant ⇒ the %Y-%m, %d-%H%M, and %S components are mutually consistent
+  # by construction. See hug_clock_format_epoch for the primitive.
+  local epoch
+  epoch=$(hug_clock_epoch)
+  ym=$(hug_clock_format_epoch "$epoch" "%Y-%m")
+  dhm=$(hug_clock_format_epoch "$epoch" "%d-%H%M")
   # Base name on the ladder: DD-HHMM.<base>
   local prefix="hug-backups/${ym}/${dhm}"
   local candidate="${prefix}.${base_name}"
 
   if git show-ref --verify --quiet "refs/heads/$candidate" 2>/dev/null; then
-    # Same-minute collision: widen to seconds.
-    secs=$(hug_clock_now "%S")
+    # Same-minute collision: widen to seconds. Reformat from the SAME captured
+    # epoch so the seconds belong to the same instant as the minute above.
+    secs=$(hug_clock_format_epoch "$epoch" "%S")
     candidate="${prefix}${secs}.${base_name}"
     local counter=1
     while git show-ref --verify --quiet "refs/heads/$candidate" 2>/dev/null; do

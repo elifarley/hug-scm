@@ -62,6 +62,30 @@ teardown() {
   assert_failure
 }
 
+@test "resolve_backup_name: year/month boundary — components stay mutually consistent" {
+  # Regression for the boundary race closed by capture-once-format-many.
+  # Before the fix, three hug_clock_now calls each hit `date` independently;
+  # across a year/month/day boundary they could produce an impossible name
+  # like "hug-backups/2024-12/01-0000.main" (Dec year-month paired with
+  # Jan 1 day-time) or "hug-backups/2025-01/31-2359.main" (Jan year-month
+  # paired with Dec 31 day-time). One captured epoch ⇒ all components refer
+  # to the same instant, by construction.
+  #
+  # 1735689599 = 2024-12-31 23:59:59 UTC. All components must be Dec 31.
+  HUG_FAKE_CLOCK=1735689599 run resolve_backup_name HEAD main
+  assert_success
+  assert_output "hug-backups/2024-12/31-2359.main"
+}
+
+@test "resolve_backup_name: one second later rolls every component together" {
+  # 1735689600 = 2025-01-01 00:00:00 UTC — one second after the test above.
+  # Year, month, day, hour, AND minute all roll simultaneously. If the
+  # capture-once invariant held, every component flips to Jan 1, 0000.
+  HUG_FAKE_CLOCK=1735689600 run resolve_backup_name HEAD main
+  assert_success
+  assert_output "hug-backups/2025-01/01-0000.main"
+}
+
 # -----------------------------------------------------------------------------
 # create_backup_branch — real creation, collision-safe
 # -----------------------------------------------------------------------------

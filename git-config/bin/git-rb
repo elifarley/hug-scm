@@ -128,7 +128,10 @@ hug_rb() {
   fi
 
   # --- Plan (pure) ---
-  # Evaluates RB_PLAN_* vars. backup_name is best-effort; the post-create
+  # Evaluates RB_PLAN_* vars. SAFE: rb_build_plan emits every value with
+  # printf %q (see hug-git-rebase), so injection via target/current branch
+  # names is impossible — a hostile name like 'x; rm -rf /' is quoted to a
+  # single literal argument. backup_name is best-effort; the post-create
   # tip is authoritative (see resolve_backup_name / create_backup_branch).
   eval "$(rb_build_plan "$target_branch" "$current_branch" "$no_backup")"
 
