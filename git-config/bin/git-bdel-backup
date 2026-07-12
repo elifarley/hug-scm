@@ -385,19 +385,25 @@ hug_bdel_backup() {
   fi
 
   if [[ -n "$keep_count" ]]; then
-    # Sort ALL backups by date (newest first) to determine which to keep
-    # Backup format: hug-backups/YYYY-MM/DD-HHMM.name
-    # The date format is designed for lexicographic sorting (newest first with -r)
+    # Sort ALL backups by date (oldest first) to determine which to keep.
+    # Backup format: hug-backups/YYYY-MM/DD-HHMM[SS[-N]].name
+    # Ascending sort ensures collision-ladder names order correctly:
+    #   DD-HHMMSS.name (first)  <  DD-HHMMSS-1.name (second, newer)
+    # because '-' (0x2D) < '.' (0x2E) in ASCII. With sort -r the order
+    # inverted, making --keep keep the older backup and delete the newer.
     local -a sorted_all_backups=()
     mapfile -t sorted_all_backups < <(
-      printf '%s\n' "${all_backups[@]}" | sort -r
+      printf '%s\n' "${all_backups[@]}" | sort
     )
 
-    # Determine which backups to keep (the first keep_count from sorted list)
+    # Determine which backups to keep (the last keep_count from sorted list)
     local -a backups_to_keep=()
     local i
-    for ((i = 0; i < keep_count && i < ${#sorted_all_backups[@]}; i++)); do
-      backups_to_keep+=("${sorted_all_backups[i]}")
+    local total=${#sorted_all_backups[@]}
+    for ((i = total - keep_count; i < total; i++)); do
+      if [[ $i -ge 0 ]]; then
+        backups_to_keep+=("${sorted_all_backups[i]}")
+      fi
     done
 
     if [[ -n "$delete_older_than" ]]; then
@@ -430,8 +436,8 @@ hug_bdel_backup() {
         exit 0
       fi
 
-      # Delete all except the first keep_count
-      backup_branches_to_delete=("${sorted_all_backups[@]:$keep_count}")
+      # Delete all except the last keep_count (newest)
+      backup_branches_to_delete=("${sorted_all_backups[@]::${#sorted_all_backups[@]}-keep_count}")
     fi
   elif [[ -n "$delete_older_than" ]]; then
     # --delete-older-than was used without --keep, use candidates
