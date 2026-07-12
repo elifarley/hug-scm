@@ -153,7 +153,7 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 - **Safety**: Prompts for confirmation if the new name exists.
 
 ### `hug brestore [<backup-branch>] [<target-branch>]`
-- **Description**: Restore a branch from a backup created by commands like `hug rb`. Backups follow the naming convention `hug-backups/YYYY-MM/DD-HHMM.original-name`. If no arguments are provided, shows an interactive menu of available backups. When there are 10 or more backup branches and [gum](https://github.com/charmbracelet/gum) is installed, uses an interactive filter for easier selection. Otherwise, displays a numbered list. If only the backup branch is specified, restores to the original branch name. If both arguments are provided, restores to a different branch name.
+- **Description**: Restore a branch from a backup created by commands like `hug rb`. Backups follow the naming convention `hug-backups/YYYY-MM/DD-HHMM[SS[-N]].original-name` (where `SS` is seconds and `N` is a collision counter). If no arguments are provided, shows an interactive menu of available backups. When there are 10 or more backup branches and [gum](https://github.com/charmbracelet/gum) is installed, uses an interactive filter for easier selection. Otherwise, displays a numbered list. If only the backup branch is specified, restores to the original branch name. If both arguments are provided, restores to a different branch name.
 - **Examples**:
   ```shell
   hug brestore                                      # Interactive: select from available backups (uses gum filter for 10+)
@@ -203,7 +203,8 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
   - `YYYY-MM` - Month (e.g., `2024-11`)
   - `YYYY-MM/DD` - Day (e.g., `2024-11/03`)
   - `YYYY-MM/DD-HH` - Hour (e.g., `2024-11/03-14`)
-  - `YYYY-MM/DD-HHMM` - Minute (e.g., `2024-11/03-1415`)
+  - `YYYY-MM/DD-HHMM` - Minute (e.g., `2024-11/03-1415`); this is the comparison threshold for `--delete-older-than`
+  - Seconds-precision names (`DD-HHMMSS`) are compared at the minute level (rounded down)
 - **Features**:
   - Interactive multi-selection with `gum filter --no-limit`
   - `--keep N`: Always preserve N most recent backups
@@ -308,7 +309,7 @@ These commands help inspect which branches relate to specific commits or states.
 - Use `hug blr` to list remote branches before deleting one with `hug bdelr`.
 - Queries like `bwc` and `bwm` are useful for cleanup before `bdel`.
 - Commands like `hug rb` automatically create backup branches in the `hug-backups/` namespace. Use `hug brestore` to restore them if needed.
-- Backup branches follow the naming convention `hug-backups/YYYY-MM/DD-HHMM.original-name`, making them easy to identify and clean up.
+- Backup branches follow the naming convention `hug-backups/YYYY-MM/DD-HHMM[SS[-N]].original-name` (where `SS` is seconds and `N` is a collision counter for same-second backups), making them easy to identify and clean up.
 - Pair `hug b -R` with `hug sl` (status) post-switch to verify sync. For detailed lists before interactive, use `hug blr` (remotes) or `hug bll` (locals with tracking).
 
 See [Status & Staging](status-staging) for checking changes after branching operations.
