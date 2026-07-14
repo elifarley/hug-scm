@@ -1,3 +1,4 @@
+<!-- /autoplan restore point: /home/ecc/.gstack/projects/elifarley-hug-scm/fix-207-208-visibility-autoplan-restore-20260714-173242.md -->
 # Visibility Batch (#207 + #208) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -19,7 +20,7 @@
 | File | Purpose | Commit |
 |------|---------|--------|
 | `git-config/lib/hug-arrays` | Add `--cap` / `--more-hint` to `print_list` (lines 39-56) | 1 |
-| `tests/lib/test_hug_arrays.bats` | New test file covering `print_list` API | 1 |
+| `tests/lib/test_hug-arrays.bats` | EXTEND existing file with `print_list` API tests | 1 |
 | `git-config/bin/git-c` | Replace `info "Committing staged changes..."` with capped preview (lines 82-92) | 2 |
 | `tests/unit/test_commit.bats` | Update existing `--quiet` test + add preview tests | 2 |
 | `git-config/lib/hug-git-state` | Fix remediation in `check_working_tree_clean` (lines 67-74) + `check_file_unstaged` (line 189) | 3 |
@@ -42,54 +43,38 @@
 
 **Files:**
 - Modify: `git-config/lib/hug-arrays:39-56` (function `print_list`)
-- Test: `tests/lib/test_hug_arrays.bats` (new file)
+- Modify: `tests/lib/test_hug-arrays.bats` (EXTEND — file already exists with 4 print_list tests at lines 86-126; add new --cap tests there)
 
 **Acceptance Criteria:**
-- [ ] `print_list "Title" a b c` (no flags) still prints `Title (3):\n  a\n  b\n  c\n` to stderr.
+- [ ] `print_list "Title" a b c` (no flags) still prints `Title (3):\n  a\n  b\n  c\n` to stderr (regression — existing 4 tests must still pass).
 - [ ] `print_list --cap 2 "Title" a b c d` prints title + first 2 items + overflow line `... (+2 more)` to stderr.
 - [ ] `print_list --cap 2 --more-hint "see more" "Title" a b c d` prints overflow line `... (+2 more — see more)`.
 - [ ] `print_list --cap 5 "Title" a b` (count ≤ cap) prints full list, no overflow line.
 - [ ] `print_list --cap 0 "Title" a b c` is treated as no-cap (full list, no overflow).
 - [ ] `print_list --cap 08 "Title" a b c d e f g h i` is treated as decimal 8 (no octal error).
 - [ ] `print_list --more-hint "x" "Title" a b c` (hint without cap) ignores hint, prints full list.
-- [ ] `print_list --cap` (no value after flag) prints error to stderr, returns 1.
+- [ ] `print_list --cap` (no value, end of args) prints "requires a value" to stderr, returns 1.
+- [ ] `print_list --cap T "Title" a b` (non-integer value) prints "non-negative integer" error, returns 1.
+- [ ] `print_list --cap 99999999999999999999999 "Title" a b` (overflow value) prints "out of range" error, returns 1 (bash arithmetic overflow guard).
+- [ ] `print_list --cap 5` (no title after flags) prints "requires a title" error, returns 1 (set -u safety).
 - [ ] `print_list --cap 3 -- "--my title--" a b c d` parses title after `--` delimiter.
 - [ ] All output goes to stderr; stdout is empty in every case.
+- [ ] `HUG_QUIET=T print_list "T" a b c` STILL produces output (print_list does NOT honor HUG_QUIET — it's data for dry-run callers; callers gate themselves).
 
-**Verify:** `make test-lib TEST_FILE=test_hug_arrays.bats` → all tests pass.
+**Verify:** `make test-lib TEST_FILE=test_hug-arrays.bats` → all tests pass (new tests + existing 4 print_list tests).
 
 **Steps:**
 
-- [ ] **Step 1: Write the failing test file**
+- [ ] **Step 1: Append the failing tests to `tests/lib/test_hug-arrays.bats`**
 
-Create `tests/lib/test_hug_arrays.bats`:
+The file already exists with 4 `print_list` tests (lines 86-126) covering basic title/items behavior. Append the new `--cap` API tests below them. Don't duplicate the existing coverage.
 
 ```bash
-#!/usr/bin/env bats
-
-# Tests for hug-arrays library — specifically the print_list function and
-# its --cap / --more-hint API added in the 207+208 visibility batch.
-# print_list is a human-facing helper: ALL output goes to stderr.
-
-load '../test_helper'
-
-# We need to source hug-arrays to call print_list directly.
-# It depends on hug-common for `info`/`error`/color helpers.
-setup() {
-  CMD_BASE="$(readlink -f "$BATS_TEST_DIRNAME/../../git-config/lib" 2>/dev/null)"
-  [ -d "$CMD_BASE" ] || CMD_BASE="$BATS_TEST_DIRNAME/../../git-config/lib"
-  . "$CMD_BASE/hug-common"
-  . "$CMD_BASE/hug-arrays"
-}
-
-@test "print_list: no flags — full list to stderr" {
-  run print_list "My Title" a b c
-  assert_success
-  assert_output --partial "My Title (3):"
-  assert_output --partial "  a"
-  assert_output --partial "  b"
-  assert_output --partial "  c"
-}
+# Append to existing tests/lib/test_hug-arrays.bats (which already loads
+# test_helper and hug-arrays at the top). These tests cover the new --cap
+# and --more-hint API. print_list is human-facing: ALL output goes to stderr.
+# Note: print_list does NOT honor HUG_QUIET (it is data output for dry-run
+# callers); callers gate at the call site if they want silence.
 
 @test "print_list: --cap with overflow — shows first N + overflow line" {
   run print_list --cap 2 "T" a b c d
@@ -144,11 +129,33 @@ setup() {
   refute_output --partial "more"
 }
 
-@test "print_list: --cap with no value — error, return 1" {
-  run print_list --cap "T" a b
+@test "print_list: --cap with no value (end of args) — error, return 1" {
+  # No title, no items — --cap is the LAST arg, value is missing.
+  run print_list --cap
   assert_failure
-  # The title "T" is consumed as the missing cap value -> error
   assert_output --partial "requires a value"
+}
+
+@test "print_list: --cap value not an integer — error, return 1" {
+  # --cap has a value (T), but T is non-numeric — different error message.
+  run print_list --cap T "Title" a b
+  assert_failure
+  assert_output --partial "non-negative integer"
+}
+
+@test "print_list: --cap value too large (overflow guard) — error, return 1" {
+  # Bash arithmetic silently overflows huge numbers; bound the cap to
+  # prevent silent corruption (cap=99999999999999999999999 wraps to garbage).
+  run print_list --cap 99999999999999999999999 "T" a b
+  assert_failure
+  assert_output --partial "out of range"
+}
+
+@test "print_list: --cap with no title/items — error, return 1" {
+  # Under set -u, `local title=$1` with no args fails. Guard against this.
+  run print_list --cap 5
+  assert_failure
+  assert_output --partial "requires a title"
 }
 
 @test "print_list: -- delimiter — leading-dash title parsed" {
@@ -159,16 +166,30 @@ setup() {
 }
 
 @test "print_list: all output on stderr, stdout empty" {
-  run bash -c 'source <(sed -n "1,80p" "'"$BATS_TEST_DIRNAME"'/../../git-config/lib/hug-common"); source <(sed -n "1,90p" "'"$BATS_TEST_DIRNAME"'/../../git-config/lib/hug-arrays"); print_list --cap 1 "T" a b 2>/dev/null'
+  # Source the full library files (NOT line-range slices — fragile across edits).
+  # Both files only define functions at top level; no execution side effects.
+  run bash -c '. "'"$BATS_TEST_DIRNAME"'/../../git-config/lib/hug-common"; . "'"$BATS_TEST_DIRNAME"'/../../git-config/lib/hug-arrays"; print_list --cap 1 "T" a b 2>/dev/null'
   assert_success
   assert_output ""
+}
+
+@test "print_list: HUG_QUIET does NOT suppress output (print_list is data, not chatter)" {
+  # Without HUG_QUIET, output appears
+  run bash -c '. "'"$BATS_TEST_DIRNAME"'/../../git-config/lib/hug-common"; . "'"$BATS_TEST_DIRNAME"'/../../git-config/lib/hug-arrays"; print_list "T" a b 2>&1'
+  assert_success
+  assert_output --partial "T (2):"
+  # With HUG_QUIET set, output STILL appears — print_list is used in dry-run paths
+  # where the file list IS the data. Callers gate themselves if they want silence.
+  run bash -c 'HUG_QUIET=T . "'"$BATS_TEST_DIRNAME"'/../../git-config/lib/hug-common"; HUG_QUIET=T . "'"$BATS_TEST_DIRNAME"'/../../git-config/lib/hug-arrays"; HUG_QUIET=T print_list "T" a b 2>&1'
+  assert_success
+  assert_output --partial "T (2):"
 }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-make test-lib TEST_FILE=test_hug_arrays.bats
+make test-lib TEST_FILE=test_hug-arrays.bats
 ```
 
 Expected: most tests FAIL because `print_list` doesn't accept `--cap` — it treats `--cap` as the title and shifts everything.
@@ -203,6 +224,16 @@ Replace the existing `print_list` function in `git-config/lib/hug-arrays` (lines
 #   - Empty / unset `--more-hint`: overflow line is `... (+M more)`.
 #     Non-empty: `... (+M more — <hint>)`.
 print_list() {
+  # NOTE: print_list does NOT honor HUG_QUIET. This is deliberate.
+  # Existing callers (hug-git-discard, hug-output) use print_list in DRY-RUN
+  # output paths where the file list IS the data the user needs (e.g.,
+  # `hug w discard --dry-run` prints the affected files via print_list). If
+  # print_list went quiet under HUG_QUIET, dry-run output would lose the file
+  # list while keeping the header — silent data loss in a safety path.
+  # Callers that want chatter-style suppression (like hug c's preview) must
+  # gate the call site themselves with [[ -z "${HUG_QUIET:-}" ]].
+  # (autoplan CEO C1 reverted after eng review confirmed this regression.)
+
   local cap=0
   local more_hint=""
   local has_more_hint=false
@@ -217,6 +248,14 @@ print_list() {
         local _cap_raw="$2"
         if ! [[ "$_cap_raw" =~ ^[0-9]+$ ]]; then
           printf 'print_list: --cap value must be a non-negative integer, got %q\n' "$_cap_raw" >&2
+          return 1
+        fi
+        # Overflow guard: bash arithmetic silently wraps huge numbers
+        # (99999999999999999999999 → 200376420520689663). Bound the cap to a
+        # sane upper limit so the silent wrap can't produce nonsense behavior.
+        # 100000 is generous — the largest realistic staged-file count is ~10k.
+        if [[ ${#_cap_raw} -gt 6 ]]; then
+          printf 'print_list: --cap value out of range (max 999999)\n' >&2
           return 1
         fi
         cap=$((10#$_cap_raw))
@@ -244,6 +283,13 @@ print_list() {
         ;;
     esac
   done
+
+  # No-title guard: under set -u, `local title=$1` with no args fails
+  # unbound. Detect explicitly and emit a helpful error.
+  if [[ $# -lt 1 ]]; then
+    printf 'print_list: requires a title (got only flags)\n' >&2
+    return 1
+  fi
 
   local title=$1
   shift
@@ -275,7 +321,7 @@ print_list() {
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-make test-lib TEST_FILE=test_hug_arrays.bats
+make test-lib TEST_FILE=test_hug-arrays.bats
 ```
 
 Expected: all tests PASS.
@@ -291,7 +337,7 @@ Expected: all tests PASS. Existing callers (`hug-git-discard`, `hug-output`) pas
 - [ ] **Step 6: Commit**
 
 ```bash
-git add git-config/lib/hug-arrays tests/lib/test_hug_arrays.bats
+git add git-config/lib/hug-arrays tests/lib/test_hug-arrays.bats
 git commit -m "feat(hug-arrays): print_list gains --cap and --more-hint flags
 
 WHY: hug c needs to render a potentially long staged-file list with an
@@ -324,7 +370,7 @@ because this is now a public helper API, not a one-off utility:
 IMPACT: Reusable truncation idiom, matching the shape already used by
 hug wtl, hug ll -10, and rb_render_plan. No behavior change for any
 existing caller; full test coverage of the new API in
-tests/lib/test_hug_arrays.bats. Sets up commit 2 (hug c preview) and
+tests/lib/test_hug-arrays.bats. Sets up commit 2 (hug c preview) and
 unblocks future 'preview staged files' needs elsewhere without new helpers."
 ```
 
@@ -354,17 +400,18 @@ unblocks future 'preview staged files' needs elsewhere without new helpers."
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/unit/test_commit.bats` (and update the existing `--quiet` test). First, update the existing test at line 93:
+Append to `tests/unit/test_commit.bats` (and update the existing `--quiet` test). The plan removes the old `info "Committing staged changes..."` line entirely, so EVERY existing assertion referencing that string must be updated. Six assertions currently reference it (verified by grep):
 
-```bash
-@test "hug c: works with --quiet (minimal output)" {
-  run hug c -m "Quiet commit" --quiet
-  assert_success
-  # The old "Committing staged changes..." line is gone; --quiet suppresses
-  # the new preview too (gum_log helpers honor HUG_QUIET).
-  refute_output --partial "Committing staged file(s)"
-}
-```
+| Line | Test name | Current assertion | New assertion |
+|------|-----------|-------------------|---------------|
+| 53 | `hug c: allows empty commit with --allow-empty` | `assert_output --partial "Committing staged changes..."` | **DELETE the assertion** (preview is skipped for `--allow-empty` with no staged files per D7; the test already verifies the commit at line 56-57) |
+| 66 | `hug c: commits staged changes with -m` | `assert_output --partial "Committing staged changes..."` | `assert_output --partial "Committing staged file(s) (1):"` |
+| 96 | `hug c: works with --quiet (minimal output)` | `refute_output --partial "Committing staged changes..."` | `refute_output --partial "Committing staged file(s)"` (still valid: `print_list` now honors `HUG_QUIET` per fix C1) |
+| 150 | first-commit test | `assert_output --partial "Committing staged changes..."` | `assert_output --partial "Committing staged file(s)"` |
+| 207 | editor-invocation test (asserts `--quiet` suppression) | `refute_output --partial "Committing staged changes..."  # Quiet suppresses` | `refute_output --partial "Committing staged file(s)"  # Quiet suppresses via HUG_QUIET` |
+| 962 | push-suggestion test | `assert_output --partial "Committing staged changes..."` | `assert_output --partial "Committing staged file(s)"` |
+
+Update each one in place. The string `"Committing staged file(s)"` (without count) is a safe partial-match for both 1-file and N-file cases.
 
 Then add these new tests at the end of `test_commit.bats`:
 
@@ -379,15 +426,21 @@ Then add these new tests at the end of `test_commit.bats`:
 }
 
 @test "hug c: preview caps at 10 with overflow marker" {
-  # Stage 12 files to trigger the cap
-  for i in $(seq 1 12); do
-    echo "content $i" > "capfile_$i.txt"
+  # Stage 12 files. Use ZERO-PADDED names so lexical order matches numeric
+  # order — `capfile_10.txt` lexically sorts BEFORE `capfile_2.txt` without
+  # padding, which would make the cap-test assertions nondeterministic.
+  for i in $(seq -w 1 12); do
+    echo "content $i" > "capfile_${i}.txt"
   done
   hug a capfile_*.txt
   run hug c -m "cap test"
   assert_success
   assert_output --partial "Committing staged file(s) (12):"
-  assert_output --partial "capfile_1.txt"
+  # First 10 lexically (with zero-pad) = capfile_01 .. capfile_10
+  assert_output --partial "capfile_01.txt"
+  assert_output --partial "capfile_10.txt"
+  # capfile_11 and capfile_12 are in the overflow
+  refute_output --partial "capfile_11.txt"
   refute_output --partial "capfile_12.txt"
   assert_output --partial "... (+2 more — run 'hug sls' for the full list)"
 }
@@ -398,18 +451,31 @@ Then add these new tests at the end of `test_commit.bats`:
   refute_output --partial "Committing staged file(s)"
 }
 
+@test "hug c: --quiet suppresses the preview (HUG_QUIET contract)" {
+  echo "quiet test" > quiet_preview.txt
+  hug a quiet_preview.txt
+  run hug c -m "quiet preview" --quiet
+  assert_success
+  refute_output --partial "Committing staged file(s)"
+  refute_output --partial "quiet_preview.txt"
+}
+
 @test "hug c: preview goes to stderr, git output to stdout" {
+  # Use the file-redirection pattern from the spec — `run` merges streams.
+  # Stage one file, then capture stdout and stderr separately.
   echo "stream test" > stream_test.txt
   hug a stream_test.txt
-  # Redirect stdout to a file; stderr to BATS captured output
-  run bash -c 'hug c -m "stream test" 2>/dev/null'
-  assert_success
-  # stdout (now in $output via bash -c) must NOT contain the preview
-  refute_output --partial "Committing staged file(s)"
-  refute_output --partial "stream_test.txt"
-  # And the inverse: with stderr merged but stdout dropped, preview IS visible
-  run bash -c 'hug c -m "stream test 2" 2>&1 1>/dev/null' || true
-  # (this second invocation fails because the file is already committed; that's fine)
+  local _out _err
+  _out=$(mktemp)
+  _err=$(mktemp)
+  hug c -m "stream test" >"$_out" 2>"$_err"
+  # stdout must NOT contain the preview header or the staged filename
+  ! grep -q "Committing staged file(s)" "$_out"
+  ! grep -q "stream_test.txt" "$_out"
+  # stderr MUST contain the preview header and the staged filename
+  grep -q "Committing staged file(s)" "$_err"
+  grep -q "stream_test.txt" "$_err"
+  rm -f "$_out" "$_err"
 }
 ```
 
@@ -458,8 +524,18 @@ fi
 # Show staged file names so agents/humans can spot unexpected entries
 # (e.g. left over from a soft-reset) BEFORE the commit lands — the post-commit
 # "N files changed" line is too late to abort cheaply. Skipped for explicit
-# --allow-empty invocations with nothing staged (D7).
-if $_has_staged; then
+# --allow-empty invocations with nothing staged (D7). Suppressed by --quiet
+# (HUG_QUIET) at the CALL SITE — print_list itself is data-only and stays
+# loud for dry-run callers like `hug w discard --dry-run`.
+#
+# ADVISORY scope: the preview reflects the index state at this instant.
+# `hug c` forwards arbitrary git options via `git commit "$@"`, so options
+# like -a/--all, --include, --only, --interactive, --patch can cause the
+# final commit to differ from this preview. This is acceptable for #207's
+# incident class (soft-reset leftovers in the index); agents passing those
+# options are explicitly opting into git's own semantics. Documented in the
+# commit message; not gated.
+if $_has_staged && [[ -z "${HUG_QUIET:-}" ]]; then
   mapfile -t _staged_files < <(git diff --cached --name-only 2>/dev/null || true)
   if [[ ${#_staged_files[@]} -gt 0 ]]; then
     print_list --cap 10 --more-hint "run 'hug sls' for the full list" \
@@ -597,12 +673,14 @@ setup() {
 }
 
 @test "check_working_tree_clean: dirty tree error offers wipe (not discard)" {
+  # create_test_repo already creates an initial commit (README.md) so HEAD is stable.
   cd "$(create_test_repo)" || exit 1
+  # Stage one new file (staged changes present)
   echo "staged content" > staged_file.txt
   git add staged_file.txt
-  echo "unstaged content" > unstaged_file.txt
-  # unstaged_file.txt is untracked; tracked-modify instead:
-  echo "modification" >> README.md 2>/dev/null || echo "modification" > tracked.txt && git add tracked.txt && echo "more" >> tracked.txt
+  # Modify the existing README.md (unstaged changes present) — README.md is
+  # guaranteed to exist because create_test_repo creates it.
+  echo "modification" >> README.md
 
   run check_working_tree_clean
   assert_failure
@@ -614,13 +692,11 @@ setup() {
 }
 
 @test "check_file_unstaged: error says hug w discard (not git w-discard)" {
+  # create_test_repo creates README.md in the initial commit. Modify it to
+  # create unstaged changes on a known-existing tracked file.
   cd "$(create_test_repo)" || exit 1
-  echo "unstaged content" >> README.md 2>/dev/null || {
-    echo "base" > tracked.txt && git add tracked.txt && git commit -q -m init && echo "mod" >> tracked.txt
-  }
-  local target="README.md"
-  [ -f README.md ] || target="tracked.txt"
-  run check_file_unstaged "$target"
+  echo "modification" >> README.md
+  run check_file_unstaged "README.md"
   assert_failure
   assert_output --partial "hug w discard"
   refute_output --partial "git w-discard"
@@ -651,11 +727,14 @@ For `tests/unit/test_rb.bats`, append these new tests at the end:
 }
 
 @test "hug rb: dirty-tree error offers wipe (not discard)" {
+  # create_test_repo_with_remote_upstream already has commits + upstream set,
+  # so HEAD is stable and `hug rb origin/main` reaches the tree guard.
   cd "$(create_test_repo_with_remote_upstream)" || exit 1
-  # Make the tree dirty (both staged and unstaged)
-  echo "staged" > staged.txt
-  git add staged.txt
-  echo "base" > unstaged.txt && git add unstaged.txt && git commit -q -m init && echo "more" >> unstaged.txt
+  # STAGED change: stage a new file
+  echo "staged content" > new_staged.txt
+  git add new_staged.txt
+  # UNSTAGED change: modify an existing tracked file (README.md exists from init)
+  echo "more" >> README.md
 
   run hug rb origin/main --dry-run
   assert_failure
@@ -701,6 +780,7 @@ check_working_tree_clean() {
        Unstaged changes: $unstaged_count files
        Staged changes: $staged_count files
 
+       Run 'hug sl' to see the full file list, then:
        Solutions:
        • Use 'hug w wip \"<msg>\"' to park all changes on a WIP branch
        • Use 'hug w wipe-all' to discard both staged and unstaged changes
@@ -744,15 +824,19 @@ Replace with:
 
 ```bash
   # Check if already on target. If so, point at the upstream tracking ref
-  # when one exists — the user almost certainly meant to sync with the
-  # remote, not rebase a branch onto itself. Detection is textual
-  # (current_branch == target_branch); equivalent refs like refs/heads/main
-  # fall through to the bare no-op, which is correct behavior.
+  # when one exists AND resolves — the user almost certainly meant to sync
+  # with the remote, not rebase a branch onto itself.
+  # Detection is textual (current_branch == target_branch); equivalent refs
+  # like `refs/heads/main` or `main^{commit}` do NOT match and fall through
+  # to the normal rebase flow, which is correct (those aren't no-ops anyway).
+  # We require `git rev-parse` to succeed on @{u} so a configured-but-never-
+  # fetched upstream (where the remote-tracking ref doesn't exist) falls back
+  # to the bare no-op rather than suggesting a command that would itself fail.
   # (elifarley/hug-scm#208)
   if [[ "$current_branch" == "$target_branch" ]]; then
     local _upstream
-    _upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
-    if [[ -n "$_upstream" && "$_upstream" != "$current_branch" ]]; then
+    if _upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null) \
+       && [[ -n "$_upstream" && "$_upstream" != "$current_branch" ]]; then
       info "Already on '$target_branch' — did you mean 'hug rb $_upstream' to sync with the upstream tracking ref?"
     else
       info "Already on '$target_branch'; nothing to rebase."
@@ -875,13 +959,14 @@ Design ref: docs/superpowers/specs/2026-07-14-visibility-batch-207-208-design.md
 
 ## Final Validation (after all three commits)
 
-- [ ] `make test` — full suite green.
+- [ ] `make test-full` — **NOT `make test`** (which only runs unit+integration, skipping lib tests). `make test-full` runs test-check + test-lib-py + test-lib + test-unit + test-integration. Since this plan adds lib tests (`test_hug-arrays.bats`, `test_hug-git-state.bats`), `make test` alone would NOT run them and silently pass with new code untested.
 - [ ] `grep -rn 'git w-' git-config/ .github/` returns zero runtime matches.
 - [ ] Manual repro #207: stage 12 files, `hug c -m x` — preview block appears on stderr before `[main <hash>]`.
 - [ ] Manual repro #208 same-name: `hug rb main` on main with upstream — pointer message.
 - [ ] Manual repro #208 remediation: dirty tree + `hug rb origin/main` — `wipe` suggestions.
+- [ ] **Remediation actually works:** run `hug w wipe-all -f` after the error, verify tree is now clean, re-run `hug rb origin/main` and verify it succeeds.
 - [ ] `hug bpush` (with `--track` if needed) to publish the branch.
-- [ ] Open PR closing #207 and #208.
+- [ ] Open PR closing #207 and #208. PR body should also **reference #190 as "related"** (not "closes") — the `hug c` preview establishes a precedent #190's `cmoda` runtime guard may follow, but #190 is not closed by this PR. **Also note the chatter-string change** in the PR description: `"Committing staged changes..."` → `"Committing staged file(s) (N):"`. Any external script grepping `hug c` stderr for the old string will need to update its pattern. (Internal: `hug c` is documented as interactive; the 6 in-repo test assertions are updated by Task 2.)
 
 ## Out of Scope (deferred)
 
@@ -889,3 +974,362 @@ Design ref: docs/superpowers/specs/2026-07-14-visibility-batch-207-208-design.md
 - #190 / #191 (`cmoda` dirty-tree docs + runtime guard) — different command shape.
 - `hug ca` / `hug caa` preview — not motivated by any incident.
 - Items-with-newlines handling in `print_list` — pre-existing.
+
+---
+
+<!-- AUTONOMOUS DECISION LOG -->
+
+## /autoplan CEO Phase Outputs
+
+### NOT in scope (CEO confirmation)
+
+| Item | Why deferred | Principle |
+|------|-------------|-----------|
+| `hug ca` / `hug caa` preview | No incident; `ca`'s purpose is "commit everything" so preview would be noise. Codex flagged this as incoherent under the stated "prevent unintended commits" promise (X4) — see User Challenge U2 at the final gate. | YAGNI (P3) |
+| Sweep all dirty-tree guards for stale remediation | Codex grep already confirmed only `hug-git-state` prints bad strings at runtime. Done. | P2 |
+| `hug help h back` doc audit (#196 class) | Separate issue, has its own thread. | P3 |
+| `print_list --json` | `print_list` is human-chatter by design. | YAGNI |
+| `--preview` skip flag | `--quiet` already exists. | YAGNI |
+
+### What already exists (leverage map)
+
+| Sub-problem | Existing code reused |
+|------------|---------------------|
+| Render capped list | `print_list` (extended, not rebuilt) |
+| Detect staged files | `has_staged_changes`, `git diff --cached --name-only` |
+| Detect upstream ref | `git rev-parse @{u}` |
+| Dirty-tree guard | `check_working_tree_clean` (fixed in-place) |
+| Same-name no-op | existing `current_branch == target_branch` branch |
+| Stderr printers | `info`, `warning`, `error`, `gum_log` (HUG_QUIET-aware) |
+| Test repo with upstream | `create_test_repo_with_remote_upstream` at test_helper.bash:967 |
+
+No DRY violations. No rebuilding of existing flows.
+
+### Dream state delta
+
+```
+CURRENT (today)                  THIS PLAN (after merge)            12-MONTH IDEAL
+─────────────                    ───────────────────                ──────────────
+hug c silently commits           hug c shows staged-file preview    Every state-modifying
+whatever's staged. Post-hoc      before commit; hug rb points       hug command previews
+"N files changed" is the         at upstream on same-name no-op;    its blast radius BEFORE
+only signal. hug rb silently     dirty-tree remediation actually    acting; every guard's
+no-ops on same-name; dirty-      unblocks the user.                 remediation is operationally
+tree errors suggest non-existent                                    correct; "Already on X"
+commands.                                                           always has a productive
+                                                                    next step.
+```
+
+Trajectory: plan moves toward the ideal. 3 of 4 ideals addressed. The "every command" sweep is correctly out of scope.
+
+### Implementation alternatives considered (0C-bis)
+
+| Approach | Effort | Risk | Pros | Cons | Verdict |
+|----------|--------|------|------|------|---------|
+| A. Three-commit batch (the plan) | S | Low | Atomic story; reusable infra; ships together | PR mixes lib + 2 fixes | **CHOSEN** |
+| B. Minimal-viable single commit | S | Low | Smallest diff; no blast radius | Duplicates cap pattern next time; violates lib principle | Rejected (P4 DRY) |
+| C. Full commit-family audit | M | Medium | Closes hazard class in one pass | Touches commands with no incident (YAGNI); larger PR | Rejected (P3 + spec D5) |
+
+Auto-decided per autoplan P3 (pragmatic) + P5 (explicit-over-clever). APPROACH A selected.
+
+### Mode selection
+
+**SELECTIVE EXPANSION** (default for "feature enhancement or iteration on existing system"). Complexity check: 8 files touched (6 modified + 2 new tests) — right at the threshold but each file has clear single responsibility. No expansions accepted.
+
+### Temporal interrogation (decision preview for implementer)
+
+| Hour | Decisions needed | Resolved in plan? |
+|------|-----------------|-------------------|
+| 1 (foundations) | `print_list` callers all pass Title only — strict superset | ✓ verified by grep |
+| 2-3 (core) | `_has_staged` dedup; `cap=$((10#$_cap_raw))` octal trap; `@{u}` abbrev-form | ✓ in code blocks |
+| 4-5 (integration) | `create_test_repo_with_remote_upstream` exists and sets upstream | ✓ verified |
+| 6+ (tests/polish) | "no `git w-` runtime strings remain" final grep | ✓ in validation |
+
+No open questions for the user from temporal analysis.
+
+## CEO DUAL VOICES — CONSENSUS TABLE
+
+```
+═══════════════════════════════════════════════════════════════════════
+  Dimension                                    Claude   Codex   Consensus
+  ──────────────────────────────────────────── ──────── ─────── ─────────
+  1. Premises valid?                            PARTIAL  NO      DISAGREE
+  2. Right problem to solve?                    YES      NO      DISAGREE
+  3. Scope calibration correct?                 YES      NO      DISAGREE
+  4. Alternatives sufficiently explored?        YES      YES     CONFIRMED
+  5. Competitive/market risks covered?          N/A      N/A     N/A
+  6. 6-month trajectory sound?                  YES      PARTIAL DISAGREE
+═══════════════════════════════════════════════════════════════════════
+Confirmed: 1. Disagree: 4. N/A: 1.
+```
+
+## Decision Audit Trail
+
+| # | Phase | Decision | Classification | Principle | Rationale |
+|---|-------|----------|---------------|-----------|-----------|
+| 1 | CEO 0C-bis | Approve Approach A (three-commit batch) | Mechanical | P3, P5 | DRY + explicit; B duplicates pattern, C overreaches |
+| 2 | CEO 0D | Mode: SELECTIVE EXPANSION | Mechanical | default | Iteration on existing commands |
+| 3 | CEO 0D | Defer `hug ca`/`caa` preview | Mechanical | P3 YAGNI | No incident; surfaced as User Challenge U2 (codex X4) |
+| 4 | CEO 0D | Defer `print_list --json` | Mechanical | YAGNI | Helper is human-chatter by design |
+| 5 | CEO C1 | Add `HUG_QUIET` gate to `print_list` | Mechanical | correctness | Every lib printer honors HUG_QUIET; print_list broke contract |
+| 6 | CEO C2 | Enumerate all 6 test assertions | Mechanical | correctness | Subagent found 5 plan missed |
+| 7 | CEO C3 | Delete `--allow-empty` line-53 assertion | Mechanical | correctness | Preview skipped for empty commits (D7) |
+| 8 | CEO C5 | Use file-redirection for stream-discipline test | Mechanical | correctness | Chained-`hug c` pattern was broken |
+| 9 | CEO C6 | Confirm `wip` is correct semantic for old `w-backup` | Mechanical | verified | No `hug w backup` exists; `wip` parks changes restorably |
+| 10 | CEO C8 | Add #190 to PR description as "related" | Mechanical | correctness | #190 not closed by this PR; precedent only |
+| 11 | CEO X6 | Confirm #209 correctly excluded | Mechanical | confirmed | Different blast radius, different PR |
+| 12 | CEO X9 | Note "no outcome metric" critique, defer | Mechanical | scope | Proxies acceptable for v1 |
+
+### Surfaced at Final Gate (NOT auto-decided)
+
+| ID | Source | Issue | Classification |
+|----|--------|-------|---------------|
+| U1 | Codex X1+X2+X3 | "Preview isn't actionable; root cause is index-state, not rendering" | **User Challenge** (but user already chose visibility-only in Q1; codex is re-litigating) |
+| U2 | Codex X4 + Claude C7 | `hug ca`/`caa` exclusion incoherent under stated promise | **Taste decision** |
+| U3 | Codex X5 | #190/#191 excluded for implementation reason, not customer-risk | **User Challenge** |
+| U4 | Codex X7 | `hug rb` suggestion conflates upstream with intent | **Taste decision** |
+| U5 | Codex X8 | Release structure: urgent fix hostage to debatable one | **User Challenge** |
+
+---
+
+## /autoplan Eng Phase Outputs
+
+### Architecture ASCII dependency graph
+
+```
+                       ┌─────────────────────────────┐
+                       │   git-config/lib/hug-arrays │
+                       │   ┌──────────────────────┐  │
+                       │   │ print_list [NEW API] │  │
+                       │   │  + --cap N           │  │
+                       │   │  + --more-hint T     │  │
+                       │   │  + overflow guard    │  │
+                       │   │  + no-title guard    │  │
+                       │   │  + octal defuse      │  │
+                       │   └──────────┬───────────┘  │
+                       └──────────────┼──────────────┘
+                                      │ sourced by (17 call sites incl.
+                                      │ git-w-purge, hug-git-discard,
+                                      │ hug-output — default behavior unchanged)
+                   ┌──────────────────┼──────────────────┐
+                   ▼                  ▼                  ▼
+        ┌──────────────────┐ ┌────────────────┐ ┌────────────────┐
+        │  git-config/bin/ │ │ git-config/lib/│ │ git-config/bin/│
+        │     git-c        │ │ hug-git-state  │ │    git-rb      │
+        │ ┌──────────────┐ │ │                │ │                │
+        │ │ NEW: preview │ │ │ FIX:           │ │ FIX: same-name │
+        │ │ calls        │ │ │ check_working_ │ │ no-op +@{u}    │
+        │ │ print_list   │ │ │ tree_clean     │ │ pointer, with  │
+        │ │ --cap 10     │ │ │ (wipe not      │ │ rev-parse      │
+        │ │ + HUG_QUIET  │ │ │  discard)      │ │ resolvability  │
+        │ │ call-site    │ │ │                │ │ check          │
+        │ │ gate         │ │ │ FIX:           │ │                │
+        │ │ + dedup      │ │ │ check_file_    │ │ uses check_    │
+        │ │ _has_staged  │ │ │ unstaged       │ │ working_tree_  │
+        │ └──────────────┘ │ │ (prefix only)  │ │ clean()        │
+        └──────────────────┘ └────────────────┘ └────────────────┘
+                   │                  │
+                   ▼                  ▼
+        ┌──────────────────────────────────────────┐
+        │ .github/copilot-instructions.md:467      │
+        │ FIX: git w-discard → hug w discard       │
+        └──────────────────────────────────────────┘
+
+Tests:
+  tests/lib/test_hug-arrays.bats (EXTEND — file already exists, 4 print_list tests)
+  tests/lib/test_hug-git-state.bats (NEW or extend)
+  tests/unit/test_commit.bats (extend, 6 assertion updates + 5 new tests)
+  tests/unit/test_rb.bats (extend, 3 new tests)
+```
+
+### ENG DUAL VOICES — CONSENSUS TABLE
+
+```
+═══════════════════════════════════════════════════════════════════════
+  Dimension                                    Claude   Codex   Consensus
+  ──────────────────────────────────────────── ──────── ─────── ─────────
+  1. Architecture sound?                        YES      YES     CONFIRMED
+  2. Test coverage sufficient?                  PARTIAL  NO      DISAGREE
+  3. Performance risks addressed?               YES      YES     CONFIRMED
+  4. Security threats covered?                  YES      PARTIAL DISAGREE
+  5. Error paths handled?                       YES      YES     CONFIRMED
+  6. Deployment risk manageable?                YES      YES     CONFIRMED
+═══════════════════════════════════════════════════════════════════════
+Confirmed: 4. Disagree: 2.
+```
+
+### Eng Findings reconciliation (Claude vs Codex)
+
+| # | Source | Finding | Severity | Verdict |
+|---|---|---|---|---|
+| E1 | Claude | HUG_QUIET in print_list breaks dry-run callers | CRITICAL | **Fixed**: reverted C1, gate at call site instead |
+| E2 | Claude | sed -n line-range test fragility | HIGH | **Fixed**: source full files |
+| E3 | Claude | Bare-repo `create_test_repo` assumption | HIGH | **Wrong**: helper creates initial commit (line 169-171); dismissed |
+| E4 | Claude | Operator precedence in test setup | MEDIUM | **Fixed**: explicit if/else, use README.md directly |
+| E5 | Claude | Dirty-tree test only creates unstaged | MEDIUM | **Fixed**: stage new_staged.txt + modify README.md |
+| E6 | Codex | Wrong test filename (`_` vs `-`) | BLOCKER | **Fixed**: extend existing test_hug-arrays.bats |
+| E7 | Codex | Missing-value test asserts wrong message | BLOCKER | **Fixed**: split into 2 tests (missing vs non-integer) |
+| E8 | Codex | Preview not reliable under -a/--only/--patch | HIGH | **Noted**: documented as ADVISORY in code comment |
+| E9 | Codex | Lexical-sort cap test assertion wrong | HIGH | **Fixed**: zero-padded filenames |
+| E10 | Codex | Bash arithmetic overflow on huge caps | HIGH | **Fixed**: 6-digit length guard |
+| E11 | Codex | set -u failure when no title after flags | HIGH | **Fixed**: no-title guard |
+| E12 | Codex | Command injection via @{u} / $file | HIGH | **Noted**: git ref-name rules already prevent; defensive comment only |
+| E13 | Codex | Semantic-vs-textual same-name detection; stale upstream | MEDIUM | **Fixed**: require rev-parse to succeed; clarify comment |
+| E14 | Codex | Remediation tests don't verify remedy actually works | MEDIUM | **Fixed**: added "run wipe-all, verify clean" step in validation |
+| E15 | Codex | `make test` excludes lib tests | MEDIUM | **Fixed**: mandate `make test-full` |
+
+### Test plan artifact
+
+Written to: `~/.gstack/projects/elifarley-hug-scm/fix-207-208-visibility-test-plan-20260714.md` (75 lines). Coverage matrix maps every new codepath to a test. One deferred gap (G1: "following wipe remedy cleans tree" — manual repro only; acceptable because it tests existing `git-w-wipe-all`, not this plan's changes).
+
+## Decision Audit Trail (Eng additions)
+
+| # | Phase | Decision | Classification | Principle | Rationale |
+|---|-------|----------|---------------|-----------|-----------|
+| 13 | Eng E1 | Revert CEO C1 (HUG_QUIET in print_list); gate at call site | Mechanical | correctness | print_list used in dry-run data paths; silence would lose data |
+| 14 | Eng E2 | Source full library files in tests, not sed -n slices | Mechanical | maintainability | line-range slices drift on edits |
+| 15 | Eng E4/E5 | Use explicit if/else + README.md in test setup | Mechanical | correctness | operator-precedence footgun |
+| 16 | Eng E6 | Extend existing test_hug-arrays.bats, don't create new | Mechanical | DRY | file already exists with 4 print_list tests |
+| 17 | Eng E7 | Split missing-value vs non-integer --cap tests | Mechanical | correctness | two distinct error branches |
+| 18 | Eng E9 | Zero-pad capfile names in cap test | Mechanical | determinism | lexical sort != numeric sort |
+| 19 | Eng E10 | 6-digit cap length guard (overflow defense) | Mechanical | correctness | bash arithmetic silently wraps |
+| 20 | Eng E11 | No-title guard (set -u safety) | Mechanical | correctness | `local title=$1` fails unbound |
+| 21 | Eng E13 | Require rev-parse success on @{u} | Mechanical | correctness | stale upstream → bad suggestion |
+| 22 | Eng E15 | Use `make test-full`, not `make test` | Mechanical | correctness | `make test` skips lib tests |
+
+---
+
+## /autoplan DX Phase Outputs
+
+### Developer persona (auto-decided)
+
+```
+TARGET DEVELOPER PERSONA
+========================
+Who:       AI agent (and the human scripting Git workflows it automates)
+Context:   Runs hug c / hug rb in automation scripts or interactively during
+           routine branch sync, commit, rebase flows
+Tolerance: Zero — agent runs commands non-interactively, can't read buried
+           signals. Human tolerates ~5s of confusion.
+Expects:   Stderr = chatter, stdout = data; --quiet works as documented;
+           remediation text actually unblocks them.
+```
+
+### DX Scorecard
+
+| # | Dimension | Score (0-10) | Notes |
+|---|-----------|--------------|-------|
+| 1 | Getting Started / TTHW | 9 | Plan doesn't touch install/onboarding |
+| 2 | API/CLI Ergonomics | 9 | `--cap`/`--more-hint` guessable; `hug rb <upstream>` suggestion is copy-pasteable |
+| 3 | Error Handling | 9 (was 5) | Dirty-tree remediation now works (`wipe` not `discard`); +`hug sl` pointer |
+| 4 | Documentation | 8 | copilot-instructions.md fixed; inline comments thorough |
+| 5 | Escape Hatches | 9 | `--quiet` (HUG_QUIET) gates preview at call site; `--allow-empty` skips |
+| 6 | Dev Environment Friction | 9 | Test infrastructure reused, not rebuilt |
+| 7 | Upgrade Path | 10 | Backward compatible for 17 existing callers; new flags opt-in |
+| 8 | Observability | 8 | Preview block observable; stderr/stdout discipline preserved |
+
+**Overall DX: 8.9/10** (estimated +1.4 from pre-plan baseline; largest gains in Error Handling and Documentation)
+
+### DX DUAL VOICES — CONSENSUS TABLE
+
+```
+═══════════════════════════════════════════════════════════════════════
+  Dimension                                    Claude   Codex   Consensus
+  ──────────────────────────────────────────── ──────── ─────── ─────────
+  1. Getting started < 5 min?                   YES      N/A     CONFIRMED
+  2. API/CLI naming guessable?                  YES      YES     CONFIRMED
+  3. Error messages actionable?                 YES      YES     CONFIRMED
+  4. Docs findable & complete?                  YES      YES     CONFIRMED
+  5. Upgrade path safe?                         YES      PARTIAL DISAGREE
+  6. Dev environment friction-free?             YES      YES     CONFIRMED
+═══════════════════════════════════════════════════════════════════════
+Confirmed: 5. Disagree: 1.
+```
+
+### DX Findings reconciliation (Claude vs Codex)
+
+| # | Source | Finding | Severity | Verdict |
+|---|---|---|---|---|
+| D-F4 | Claude | Advisory scope caveat absent from user-facing output | MEDIUM | **Taste decision** (T6 at gate) |
+| D-F18 | Claude | Silent `git diff --cached` failure | LOW | **Taste decision** (T7 at gate) |
+| D-F20 | Claude | Chatter string change breaks scripted greps | MEDIUM | **Fixed**: PR description note added |
+| D-F22 | Claude | Test filename underscore vs hyphen | MEDIUM | **Fixed**: all refs now `test_hug-arrays.bats` |
+| D-F25 | Claude | Duplicated test code blocks | LOW | **Fixed**: deleted leftover block |
+| D-F26 | Claude | `make test-full` target existence | MEDIUM | **Confirmed exists** at Makefile:223 |
+| D-X-P0 | Codex | Duplicated test block (markdown malformed) | BLOCKER | **Fixed**: deleted lines 188-285 |
+| D-X-P1-1 | Codex | `--`-prefixed title backward compat | HIGH | **Noted** in contract doc; no existing caller affected |
+| D-X-P1-2 | Codex | `--no-preview` escape hatch too coarse | HIGH | **Taste decision** (T8 at gate) |
+| D-X-P1-3 | Codex | `hug rb` says "sync" without fetching | HIGH | **Taste decision** (T9 at gate) |
+| D-X-P2 | Codex | Remediation lacks file-list pointer; preview lacks A/M/D/R | MEDIUM | **Partial fix**: added `hug sl` pointer; A/M/D/R deferred |
+
+## Decision Audit Trail (DX additions)
+
+| # | Phase | Decision | Classification | Principle | Rationale |
+|---|-------|----------|---------------|-----------|-----------|
+| 23 | DX D-F20 | Add chatter-string change note to PR description | Mechanical | backward compat | external scripts may grep old string |
+| 24 | DX D-F22 | Standardize test filename to `test_hug-arrays.bats` | Mechanical | correctness | match actual existing file |
+| 25 | DX D-F25/X-P0 | Delete duplicated test block | Mechanical | correctness | markdown rendering broken |
+| 26 | DX X-P2 | Add `hug sl` pointer to dirty-tree remediation | Mechanical | observability | dev needs to see file list before deciding |
+| 27 | DX X-P1-1 | Document `--`-prefix title contract (not silently break) | Mechanical | backward compat | no existing caller affected; contract explicit |
+
+---
+
+## /autoplan Cross-Phase Themes
+
+**Theme 1: Test quality.** Surfaced independently in Eng (Claude E2 fragility, E4/E5 setup bugs; Codex E6 filename, E7 message-split, E9 lexical sort) and DX (Claude F22 filename, F25 duplication; Codex X-P0 duplication). **High-confidence signal:** the plan's test code needed significant rework across both phases. Now addressed: deterministic naming, full-file sourcing, split error cases, zero-padded cap test, no duplication.
+
+**Theme 2: HUG_QUIET contract.** Surfaced in CEO (C1 — add to print_list) and Eng (E1 — revert, gate at call site instead). The contract tension between "print_list is data" vs "print_list is chatter" resolved in Eng's favor. **Single-phase decisions can be wrong; the dual-phase review caught the regression before it shipped.**
+
+**Theme 3: Bash footguns.** Eng codex caught three (octal-literal overflow, set -u no-title failure, lexical-sort cap test). None were on Claude's radar. **Codex's adversarial depth paid off here.**
+
+No other cross-phase themes. Each phase's other concerns were distinct.
+
+---
+
+## /autoplan Final Approval Gate Inputs
+
+### User Challenges (both models agree plan direction should change — NOT auto-decided)
+
+| ID | Source | Title | User's direction | Both models recommend | Why | If we're wrong, cost is |
+|----|--------|-------|-----------------|----------------------|-----|------------------------|
+| U1 | Codex CEO X1+X2+X3 | "Preview isn't actionable; root cause is index-state" | Visibility-only (Q1 choice) | Reconsider gate/preview model; address root cause at staging | Preview-then-immediately-commit gives no real decision point; agents receive output post-completion | User already chose A explicitly; revisiting opens the prompts-vs-visibility debate again |
+| U3 | Codex CEO X5 | #190/#191 excluded for implementation reason | Defer to separate PR | Make commit-safety policy explicit; commit to #190 priority next | "Different command shape" is implementation reason, not customer-risk; safety-branded batch shouldn't leave safety gap | Splitting #190 out is fine if priority is committed; merging it in expands scope 2x |
+| U5 | Codex CEO X8 | Release structure | Three-commit batch | Ship urgent fix (#208 remediation) independently of debatable preview model | Correcting non-existent commands shouldn't wait behind a new print_list API and a controversial safety model | Decoupling adds review overhead; the three commits share test infrastructure |
+
+### Taste Decisions (reasonable people could disagree — auto-decided, surfaced)
+
+| ID | Source | Title | Recommendation | Alternative |
+|----|--------|-------|----------------|-------------|
+| T6 | Claude DX F4 | Advisory scope caveat in user-facing preview output | **Skip** — code comment + commit msg suffice; adding `(advisory)` suffix adds noise to every preview | Add unconditional `(advisory — staged index snapshot)` suffix, OR detect `-a`/`--all`/`--only`/`--patch` and annotate |
+| T7 | Claude DX F18 | Silent `git diff --cached` failure observability | **Skip** — `|| true` is correct (preview never blocks); failure is extremely rare; adding warning adds noise | Add `warning "Could not list staged files (preview skipped)"` on failure path |
+| T8 | Codex DX P1-2 | `--no-preview` / `HUG_COMMIT_PREVIEW=0` escape hatch | **Skip** — `--quiet` + `2>/dev/null` cover the use cases; new flag is YAGNI | Add `--no-preview` flag and `HUG_COMMIT_PREVIEW=0` env var; document in `hug c --help` |
+| T9 | Codex DX P1-3 | `hug rb` "sync" wording | **Tighten** — change "sync with the upstream tracking ref" to "rebase onto the upstream tracking ref (run `hug f` first if you need fresh commits)" | Leave wording as-is |
+| U2 | Codex CEO X4 + Claude C7 | `hug ca`/`caa` exclusion | **Defer** — no incident; `ca`'s purpose is "commit everything" so preview is noise | Include `ca`/`caa` preview in this PR |
+| U4 | Codex CEO X7 | `hug rb` suggestion conflates upstream with intent | **Ship as-is** — detection is textual and requires rev-parse success; wording can be tightened via T9 | Drop the suggestion entirely; just fix the remediation text |
+
+### Auto-Decided: 27 decisions (see Decision Audit Trail above)
+
+### Review Scores Summary
+- **CEO:** Approach A (three-commit batch) approved; mode SELECTIVE EXPANSION; 5 scope expansions deferred
+- **CEO Voices:** Codex 9 concerns (3 user challenges, 2 taste, 4 mechanical), Claude 8 findings (1 critical, 4 high, 1 false alarm, 2 minor). Consensus 1/6 confirmed.
+- **Design:** SKIPPED (no UI scope detected)
+- **Eng:** Architecture sound; test plan artifact written; 3 bash footguns caught (overflow, set -u, lexical sort)
+- **Eng Voices:** Codex 10 findings (2 blockers, 5 high, 3 medium — all fixed), Claude 6 findings (1 critical, 2 high, 3 medium — all fixed or dismissed). Consensus 4/6 confirmed.
+- **DX:** Overall 8.9/10 (+1.4 from baseline); no regressions; largest gains in Error Handling (+4) and Documentation (+2)
+- **DX Voices:** Codex 5 findings (1 P0 blocker fixed, 3 P1 taste, 1 P2 partial-fix), Claude 8 findings (0 critical, 4 medium fixed, 3 low). Consensus 5/6 confirmed.
+
+### Deferred to TODOS.md (or future issues)
+
+- `hug ca` / `hug caa` preview (T6/U2) — log as future enhancement if an incident surfaces
+- `--no-preview` flag / `HUG_COMMIT_PREVIEW=0` env (T8) — log as future agent-ergonomics enhancement
+- A/M/D/R status codes in preview (Codex DX P2) — log as future observability enhancement
+- #190 / #191 cmoda dirty-tree docs + runtime guard (U3) — already open as separate issues; commit to priority
+- #209 hug w unwip exit code — already excluded, separate worktree/PR
+- `hug help h back` doc audit (#196 class) — separate issue
+
+### Implementation Tasks (aggregated across phases)
+
+The plan's three tasks (Task 1, 2, 3) are the implementation units. No additional tasks were generated by the review phases — all findings were folded back into the existing tasks' steps and acceptance criteria. The native task list (Tasks #11, #12, #13) reflects this structure.
+
+---
+
