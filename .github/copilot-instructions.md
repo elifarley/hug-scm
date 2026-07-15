@@ -464,7 +464,7 @@ git status --short
 hug sl  # calls git statusbase internally
 
 # Custom git extension
-git w-discard  # custom script in git-config/bin/
+hug w discard  # discards unstaged changes for specific files
 ```
 
 ### Testing in Sandboxed Environment

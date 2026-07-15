@@ -64,14 +64,21 @@ check_working_tree_clean() {
         unstaged_count=$(git diff --name-only | wc -l)
         staged_count=$(git diff --cached --name-only | wc -l)
 
+        # IMPORTANT: this guard fires when EITHER staged OR unstaged changes
+        # exist, so the remediation must offer operations that produce a
+        # FULLY clean tree. hug w discard[-all] defaults to unstaged-only —
+        # suggesting it here would leave staged changes (and the guard still
+        # firing), trapping the user in a loop. wipe[-all] does both.
+        # (elifarley/hug-scm#208)
         error "Working tree is not clean!
        Unstaged changes: $unstaged_count files
        Staged changes: $staged_count files
 
+       Run 'hug sl' to see the full file list, then:
        Solutions:
-       • Use 'git w-backup' to save changes first
-       • Use 'git w-discard-all' to discard changes
-       • Use 'git w-discard <file>' for specific files"
+       • Use 'hug w wip \"<msg>\"' to park all changes on a WIP branch
+       • Use 'hug w wipe-all' to discard both staged and unstaged changes
+       • Use 'hug w wipe <file>' for specific files"
     fi
 }
 
@@ -185,8 +192,11 @@ check_file_unstaged() {
   local file="${GIT_PREFIX}$1"
 
   if ! git diff --quiet -- "$file" 2>/dev/null; then
+    # check_file_unstaged only asserts UNSTAGED state — so 'discard'
+    # (unstaged-only by default) is the correct operation here, unlike
+    # check_working_tree_clean where both staged+unstaged matter.
     error "File '$file' has unstaged changes
-    Use 'git w-discard $file' to discard changes first"
+    Use 'hug w discard $file' to discard changes first"
   fi
 }
 
