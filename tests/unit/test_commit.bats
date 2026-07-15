@@ -50,7 +50,6 @@ teardown() {
 @test "hug c: allows empty commit with --allow-empty" {
   run hug c --allow-empty -m "Empty commit"
   assert_success
-  assert_output --partial "Committing staged changes..."
 
   # Verify commit exists
   run git log -1 --format=%s
@@ -63,7 +62,7 @@ teardown() {
 
   run hug c -m "Staged commit"
   assert_success
-  assert_output --partial "Committing staged changes..."
+  assert_output --partial "Committing staged file(s) (1):"
 
   local new_head
   new_head=$(git rev-parse HEAD)
@@ -93,9 +92,8 @@ teardown() {
 @test "hug c: works with --quiet (minimal output)" {
   run hug c -m "Quiet commit" --quiet
   assert_success
-  refute_output --partial "Committing staged changes..."
+  refute_output --partial "Committing staged file(s)"
 }
-
 @test "hug c: propagates git commit errors" {
   # Attempt commit without message and fake editor failure
   # Save and unset fallback environment variables to ensure consistent behavior
@@ -147,7 +145,7 @@ teardown() {
 
   run hug c -m "Initial commit"
   assert_success
-  assert_output --partial "Committing staged changes..."
+  assert_output --partial "Committing staged file(s)"
 
   run git log -1 --format=%s
   assert_output "Initial commit"
@@ -204,7 +202,7 @@ EDITORSCRIPT
   assert_success
   refute_output --partial "pathspec"
   refute_output --partial "empty string"
-  refute_output --partial "Committing staged changes..."  # Quiet suppresses
+  refute_output --partial "Committing staged file(s)"  # Quiet suppresses via HUG_QUIET call-site gate
 
   # Verify commit
   run git log -1 --format=%s
@@ -959,7 +957,7 @@ HOOK
 
   run hug c -m "New commit"
   assert_success
-  assert_output --partial "Committing staged changes..."
+  assert_output --partial "Committing staged file(s)"
   # Should suggest bpush since we're on a branch with upstream
   assert_output --partial "Ready to push? Use \"hug bpush\""
 
@@ -1307,4 +1305,89 @@ HOOK
 
   popd >/dev/null
   rm -rf "$repo"
+}
+
+# -----------------------------------------------------------------------------
+# Pre-commit staged-file preview tests (#207)
+# -----------------------------------------------------------------------------
+
+@test "hug c: pre-commit preview shows staged file name on stderr" {
+  # setup() stages staged.txt via create_test_repo_with_changes — unstage
+  # it first so we control exactly what's in the index for this test.
+  git restore --staged staged.txt
+  echo "stage me" > preview_one.txt
+  hug a preview_one.txt
+  run hug c -m "preview test"
+  assert_success
+  assert_output --partial "Committing staged file(s) (1):"
+  assert_output --partial "preview_one.txt"
+}
+
+@test "hug c: preview caps at 10 with overflow marker" {
+  # setup() stages staged.txt — unstage it first.
+  git restore --staged staged.txt
+  # Stage 12 files. Use ZERO-PADDED names so lexical order matches numeric
+  # order — `capfile_10.txt` lexically sorts BEFORE `capfile_2.txt` without
+  # padding, which would make the cap-test assertions nondeterministic.
+  for i in $(seq -w 1 12); do
+    echo "content $i" > "capfile_${i}.txt"
+  done
+  hug a capfile_*.txt
+  # Capture stderr separately to verify the cap without git's stdout noise.
+  # BATS `run` merges streams, so we use file-redirection here.
+  local _out _err
+  _out=$(mktemp)
+  _err=$(mktemp)
+  hug c -m "cap test" >"$_out" 2>"$_err"
+  local _exit=$?
+  # stderr must show total count (12) and the overflow marker
+  grep -q "Committing staged file(s) (12):" "$_err"
+  grep -q "capfile_01.txt" "$_err"
+  grep -q "capfile_10.txt" "$_err"
+  grep -q "... (+2 more — run 'hug sls' for the full list)" "$_err"
+  # The 11th and 12th files must NOT appear in the stderr preview
+  ! grep -q "capfile_11.txt" "$_err"
+  ! grep -q "capfile_12.txt" "$_err"
+  # stdout (git's commit output) contains all 12 files — that's expected.
+  grep -q "12 files changed" "$_out"
+  [[ $_exit -eq 0 ]]
+  rm -f "$_out" "$_err"
+}
+
+@test "hug c: --allow-empty with no staged files skips preview" {
+  # setup() stages staged.txt — unstage it first.
+  git restore --staged staged.txt
+  run hug c --allow-empty -m "empty"
+  assert_success
+  refute_output --partial "Committing staged file(s)"
+}
+
+@test "hug c: --quiet suppresses the preview (HUG_QUIET contract)" {
+  # setup() stages staged.txt — unstage it first.
+  git restore --staged staged.txt
+  echo "quiet test" > quiet_preview.txt
+  hug a quiet_preview.txt
+  run hug c -m "quiet preview" --quiet
+  assert_success
+  refute_output --partial "Committing staged file(s)"
+}
+
+@test "hug c: preview goes to stderr, git output to stdout" {
+  # Use the file-redirection pattern — `run` merges streams.
+  # Stage one file, then capture stdout and stderr separately.
+  # setup() stages staged.txt — unstage it first.
+  git restore --staged staged.txt
+  echo "stream test" > stream_test.txt
+  hug a stream_test.txt
+  local _out _err
+  _out=$(mktemp)
+  _err=$(mktemp)
+  hug c -m "stream test" >"$_out" 2>"$_err"
+  # stdout must NOT contain the preview header or the staged filename
+  ! grep -q "Committing staged file(s)" "$_out"
+  ! grep -q "stream_test.txt" "$_out"
+  # stderr MUST contain the preview header and the staged filename
+  grep -q "Committing staged file(s)" "$_err"
+  grep -q "stream_test.txt" "$_err"
+  rm -f "$_out" "$_err"
 }
