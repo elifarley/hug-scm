@@ -3,9 +3,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close #207 (silent-commit hazard on `hug c`) and #208 (`hug rb` same-name no-op + dirty-tree remediation text suggests non-existent commands) with three atomic commits in a single PR.
+**Goal:** Close #207 (silent-commit hazard on `hug c` and `hug a`) and #208 (`hug rb` same-name no-op + dirty-tree remediation text suggests non-existent commands) with four atomic commits in a single PR.
 
-**Architecture:** Add an optional `--cap` / `--more-hint` API to the existing `print_list` helper (lib infrastructure, default behavior unchanged), then thread it into `hug c` as a pre-commit staged-file preview. Separately, fix the dirty-tree remediation strings in `hug-git-state` (replacing operation-wrong `discard` suggestions with the correct `wipe` for full clean), and teach `hug rb`'s same-name no-op to point at the upstream tracking ref via `git rev-parse @{u}`. All three land in one worktree.
+**Architecture:** Add an optional `--cap` / `--more-hint` API to the existing `print_list` helper (lib infrastructure, default behavior unchanged), then thread it into `hug c` as a pre-commit RECOVERY preview. Separately, fix the dirty-tree remediation strings in `hug-git-state` (replacing operation-wrong `discard` suggestions with the correct `wipe` for full clean), and teach `hug rb`'s same-name no-op to point at the upstream tracking ref via `git rev-parse @{u}`. Finally, add a PREVENTION counterpart in `hug a` (Task 4): a one-line post-stage index summary so the agent sees they're staging into a populated index — the actual root-cause fix for #207, accepting codex's U1 challenge. All four land in one worktree.
+
+**Why four commits (not three):** Task 2's `hug c` preview is honestly a RECOVERY aid, not a gate (U1 accepted). The user accepted codex's challenge and asked for staging-time visibility to address the root cause. Task 4 (`hug a` index summary) delivers the PREVENTION counterpart. Together they close the full #207 hazard class: prevention at staging + recovery at commit.
 
 **Tech Stack:** Bash, BATS test framework, hug-scm conventions (`info`/`error` to stderr, `gum_log` for color/TTY handling, Makefile test targets).
 
@@ -28,6 +30,8 @@
 | `.github/copilot-instructions.md` | Fix line 467 stale `git w-discard` | 3 |
 | `tests/unit/test_rb.bats` | Same-name no-op tests | 3 |
 | `tests/lib/test_hug_git_state.bats` (or new) | Remediation-text assertions | 3 |
+| `git-config/bin/git-a` | Add post-stage index summary (Task 4, U1 accepted) | 4 |
+| `tests/unit/test_add.bats` (extend or create) | Index-summary tests | 4 |
 
 ### Decomposition rationale
 
@@ -528,13 +532,22 @@ fi
 # (HUG_QUIET) at the CALL SITE — print_list itself is data-only and stays
 # loud for dry-run callers like `hug w discard --dry-run`.
 #
-# ADVISORY scope: the preview reflects the index state at this instant.
+# HONEST scope: this preview is a RECOVERY/TRANSPARENCY aid, not a gate.
+# For interactive humans, the time window between the preview rendering and
+# git commit running is too short to read 10 filenames and Ctrl-C. For
+# agents, the output arrives only AFTER the commit completes — they can
+# spot the mismatch in their own transcript and recover (hug h back 1,
+# restage, recommit). This is still strictly better than today (no signal
+# at all), which is why we ship it — but it is NOT a prevention mechanism.
+# Prevention lives at staging time in `hug a` (see Task 4), not here.
+#
 # `hug c` forwards arbitrary git options via `git commit "$@"`, so options
 # like -a/--all, --include, --only, --interactive, --patch can cause the
-# final commit to differ from this preview. This is acceptable for #207's
-# incident class (soft-reset leftovers in the index); agents passing those
-# options are explicitly opting into git's own semantics. Documented in the
-# commit message; not gated.
+# final commit to differ from this preview. Acceptable for #207's incident
+# class (soft-reset leftovers in the index); agents passing those options
+# are explicitly opting into git's own semantics. (See T6 follow-up issue:
+# detect -a/--all and abort with an educational message pointing at hug
+# commands that stage explicitly.)
 if $_has_staged && [[ -z "${HUG_QUIET:-}" ]]; then
   mapfile -t _staged_files < <(git diff --cached --name-only 2>/dev/null || true)
   if [[ ${#_staged_files[@]} -gt 0 ]]; then
@@ -635,7 +648,7 @@ Design ref: docs/superpowers/specs/2026-07-14-visibility-batch-207-208-design.md
 - [ ] `check_working_tree_clean` with a dirty tree (staged OR unstaged) outputs an error containing `hug w wip "<msg>"`, `hug w wipe-all`, and `hug w wipe <file>`; does NOT contain `git w-`.
 - [ ] Following either `wipe` remedy leaves the tree actually clean (re-running the guard succeeds).
 - [ ] `check_file_unstaged` error contains `hug w discard` (NOT `git w-discard`) — `discard` stays because the function only asserts unstaged state.
-- [ ] `hug rb main` while on `main` with `origin/main` upstream prints `Already on 'main' — did you mean 'hug rb origin/main' to sync with the fetched upstream tracking ref?` to stderr, exits 0.
+- [ ] `hug rb main` while on `main` with `origin/main` upstream prints `Already on 'main' — did you mean 'hug rb origin/main'? (Rebases onto the last-fetched upstream tracking ref; run 'hug fetch' first if you need fresh commits.)` to stderr, exits 0.
 - [ ] `hug rb main` while on `main` with NO upstream prints `Already on 'main'; nothing to rebase.`, exits 0.
 - [ ] `hug rb main --dry-run` while on main (upstream set) prints the same pointer message.
 - [ ] `.github/copilot-instructions.md` no longer contains `git w-discard`.
@@ -837,7 +850,7 @@ Replace with:
     local _upstream
     if _upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null) \
        && [[ -n "$_upstream" && "$_upstream" != "$current_branch" ]]; then
-      info "Already on '$target_branch' — did you mean 'hug rb $_upstream' to sync with the upstream tracking ref?"
+      info "Already on '$target_branch' — did you mean 'hug rb $_upstream'? (Rebases onto the last-fetched upstream tracking ref; run 'hug fetch' first if you need fresh commits.)"
     else
       info "Already on '$target_branch'; nothing to rebase."
     fi
@@ -957,21 +970,280 @@ Design ref: docs/superpowers/specs/2026-07-14-visibility-batch-207-208-design.md
 
 ---
 
-## Final Validation (after all three commits)
+## Task 4: `hug a` post-stage index summary (closes #207 root cause)
+
+**Goal:** Add staging-time visibility to `hug a` so agents and humans see how many files are staged AFTER their `hug a` invocation, in the context where they can still act on it. This is the prevention mechanism the #207 root-cause analysis identified — the index was already populated from a soft-reset before the user ran `hug a file.txt`, and nothing told them.
+
+**Why this is in this PR (U1 accepted):** Task 2's `hug c` preview is honestly a RECOVERY aid, not a gate. The user accepted codex's challenge U1 and asked for staging-time visibility to address the root cause. This task delivers it: a one-line index summary printed by `hug a` after staging.
+
+**Files:**
+- Modify: `git-config/bin/git-a` (add post-stage summary)
+- Test: `tests/unit/test_add.bats` (extend — file likely exists; if not, create)
+
+**Acceptance Criteria:**
+- [ ] After `hug a <file>` succeeds, stderr contains a line like: `Staged 1 file. Index now has N file(s) staged total.` (where N includes files staged by prior commands).
+- [ ] After `hug a` (no args, stages all tracked modifications), stderr contains the same shape with the count of newly-staged files.
+- [ ] When the index has 0 files staged total after `hug a` (e.g., nothing to stage), the summary still prints: `Staged 0 files. Index now has 0 file(s) staged total.`
+- [ ] `--quiet` / `HUG_QUIET` suppresses the summary (same contract as other chatter — call-site gate).
+- [ ] When `git add` fails, no summary prints (early exit path).
+- [ ] Summary goes to stderr; stdout is empty (consistent with `hug a`'s current behavior).
+
+**Verify:** `make test-unit TEST_FILE=test_add.bats` → all tests pass.
+
+**Steps:**
+
+- [ ] **Step 1: Check whether `tests/unit/test_add.bats` exists**
+
+```bash
+ls tests/unit/test_add.bats 2>&1
+```
+
+If missing, create it; if present, extend it. (Plan handles both.)
+
+- [ ] **Step 2: Write the failing tests**
+
+Append (or create) `tests/unit/test_add.bats`:
+
+```bash
+@test "hug a: prints post-stage index summary" {
+  cd "$(create_test_repo)" || exit 1
+  echo "content" > new_file.txt
+  run hug a new_file.txt
+  assert_success
+  assert_output --partial "Staged 1 file."
+  assert_output --partial "Index now has 1 file(s) staged total."
+}
+
+@test "hug a: summary reflects cumulative index state" {
+  cd "$(create_test_repo)" || exit 1
+  # Pre-stage one file
+  echo "first" > a.txt
+  hug a a.txt 2>/dev/null  # quiet to suppress first summary
+  # Now stage a second — total should be 2
+  echo "second" > b.txt
+  run hug a b.txt
+  assert_success
+  assert_output --partial "Staged 1 file."
+  assert_output --partial "Index now has 2 file(s) staged total."
+}
+
+@test "hug a: with no args, counts all newly-staged modifications" {
+  cd "$(create_test_repo_with_history)" || exit 1
+  # Modify two existing tracked files
+  echo "mod1" >> README.md
+  echo "more" >> "$(ls *.md | grep -v README || echo README.md)" 2>/dev/null || echo "mod2" >> README.md
+  # Run hug a (no args) — stages all tracked modifications
+  run hug a
+  assert_success
+  # Should report at least 1 newly-staged file
+  assert_output --partial "Staged"
+  assert_output --partial "file(s) staged total."
+}
+
+@test "hug a: --quiet suppresses the index summary" {
+  cd "$(create_test_repo)" || exit 1
+  echo "content" > quiet_file.txt
+  run hug a quiet_file.txt --quiet
+  assert_success
+  refute_output --partial "Staged"
+  refute_output --partial "file(s) staged total."
+}
+
+@test "hug a: empty stage still prints summary" {
+  cd "$(create_test_repo)" || exit 1
+  # Run hug a with nothing to stage
+  run hug a
+  assert_success
+  assert_output --partial "Staged 0 files."
+}
+```
+
+- [ ] **Step 3: Run tests to verify they fail**
+
+```bash
+make test-unit TEST_FILE=test_add.bats
+```
+
+Expected: new tests FAIL — `hug a` doesn't print any summary today.
+
+- [ ] **Step 4: Implement the post-stage summary in `git-a`**
+
+Open `git-config/bin/git-a`. The current script has 4 `exec git add ...` exit points (lines 126, 152, 156, 158). We need to intercept ALL of them so the summary fires regardless of which path runs.
+
+The cleanest approach: replace the `exec git add ...` calls with a helper function that runs `git add`, captures the before/after staged counts, and prints the summary.
+
+Add this helper function near the top of the file (after the library sources, before the flag-parsing loop):
+
+```bash
+# Stage files and print a one-line index summary.
+# WHY (elifarley/hug-scm#207): an agent running `hug a file.txt` after a
+# soft-reset has no signal that the index was already populated with N other
+# files from the reset. The summary surfaces the cumulative count at the
+# moment the user can still act on it (unstage, inspect, abort) — making
+# this the PREVENTION counterpart to hug c's RECOVERY preview.
+# Usage: hug_add_with_summary <git add args...>
+# Output: stderr summary line on success, suppressed by HUG_QUIET.
+hug_add_with_summary() {
+  # Capture pre-stage count (files in index vs HEAD)
+  local _before
+  _before=$(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+
+  # Run the actual git add (forward all args, honor errors under set -e)
+  git add "$@"
+
+  # Capture post-stage count
+  local _after
+  _after=$(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+
+  # Newly-staged = after - before (clamped at 0; can be negative if git add
+  # unstaged something, but that's not a real add path)
+  local _new=$(( _after > _before ? _after - _before : 0 ))
+
+  # Print summary to stderr, suppressed by HUG_QUIET (call-site gate,
+  # consistent with hug c preview — do NOT check HUG_QUIET inside print_list
+  # or other helpers; see eng review finding E1).
+  if [[ -z "${HUG_QUIET:-}" ]]; then
+    printf 'Staged %d file%s. Index now has %d file(s) staged total.\n' \
+      "$_new" "$([[ $_new -eq 1 ]] && echo '' || echo 's')" "$_after" >&2
+  fi
+}
+```
+
+Then replace the four `exec git add ...` exit points:
+
+**Line 126** (`--from-file` / `--from-commit` path):
+```bash
+# OLD: exec git add "${files[@]}"
+# NEW:
+hug_add_with_summary "${files[@]}"
+```
+
+**Line 152** (interactive file selection path):
+```bash
+# OLD: exec git add "${files[@]}"
+# NEW:
+hug_add_with_summary "${files[@]}"
+```
+
+**Line 156** (no-args `git add -u` path):
+```bash
+# OLD: test ${#remaining_args[@]} -eq 0 && exec git add -u
+# NEW:
+if [[ ${#remaining_args[@]} -eq 0 ]]; then
+  hug_add_with_summary -u
+  exit 0
+fi
+```
+
+**Line 158** (explicit args path):
+```bash
+# OLD: exec git add "${remaining_args[@]}"
+# NEW:
+hug_add_with_summary "${remaining_args[@]}"
+```
+
+Note: removing `exec` means the script continues after `git add` rather than replacing the process. Since the summary is the last thing each path does, add explicit `exit 0` where the original used `exec` (as shown above for the `-u` path; the function-call paths naturally fall through to end-of-script).
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+```bash
+make test-unit TEST_FILE=test_add.bats
+```
+
+Expected: all tests PASS.
+
+- [ ] **Step 6: Run full unit suite to confirm no regressions**
+
+```bash
+make test-unit
+```
+
+Expected: all tests PASS. (Other tests may assert on `hug a`'s output; if any break, update them per the new summary line. Most existing tests will use `--quiet` or `2>/dev/null` already, so impact should be minimal.)
+
+- [ ] **Step 7: Manual smoke test**
+
+```bash
+_smoke=$(mktemp -d)
+cd "$_smoke" && git init -q
+git config user.email t@t; git config user.name t
+echo "base" > base.txt && git add base.txt && git commit -q -m init
+# Simulate soft-reset: stage multiple files, soft-reset, then hug a one more
+echo "a" > a.txt && git add a.txt
+echo "b" > b.txt && git add b.txt
+git reset --soft HEAD~0 2>/dev/null || true  # keeps index populated
+echo "target" > target.txt
+hug a target.txt
+# Expected: "Staged 1 file. Index now has N file(s) staged total." where N > 1
+# This is the prevention signal — user sees they're not staging into an empty index.
+cd / && rm -rf "$_smoke"
+```
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add git-config/bin/git-a tests/unit/test_add.bats
+git commit -m "feat(hug-a): print post-stage index summary (closes #207 root cause)
+
+WHY: The #207 incident root cause was index-state blindness — an agent ran
+'hug a file.txt' after a soft-reset that had populated the index with 13
+other files, and nothing told them. The Task 2 hug c preview is a RECOVERY
+aid (output arrives post-commit, too late to prevent); this task adds the
+PREVENTION counterpart: a one-line summary printed by hug a AFTER staging,
+showing how many files were just staged AND how many total are in the index.
+At this moment the user/agent can still act (unstage, inspect, abort).
+
+WHAT: hug_add_with_summary() helper wraps every git add exit point in git-a
+(four paths: --from-file/--from-commit, interactive, no-args, explicit).
+Captures staged-file count before and after, prints:
+  Staged <new> file(s). Index now has <total> file(s) staged total.
+Suppressed by --quiet / HUG_QUIET (call-site gate, same pattern as the
+hug c preview — do NOT check HUG_QUIET inside shared helpers per eng
+review E1).
+
+HOW: Two git diff --cached --name-only | wc -l calls (sub-millisecond each,
+index-only reads). The 'newly-staged' count is after - before, clamped at 0.
+The pluralization ('file' vs 'files') uses a small bash conditional so the
+output reads naturally for the 1-file case. Removing 'exec' from the four
+exit paths means the script continues to the summary line; exit 0 added
+where needed.
+
+IMPACT: Closes the prevention gap that the hug c preview alone couldn't
+address. An agent reading 'Index now has 14 files staged total' after
+running 'hug a file.txt' (expecting 1) immediately knows to inspect/unstage
+before reaching for hug c. Together with Task 2's recovery preview, this
+closes the full #207 hazard class: staging-time prevention + commit-time
+recovery. HONEST framing documented in both code comments.
+
+Related: #190 (cmoda dirty-tree docs) — follow-up worktree per autoplan
+commitment U3.
+
+Design ref: docs/superpowers/specs/2026-07-14-visibility-batch-207-208-design.md (#207, U1 accepted)."
+```
+
+---
+## Final Validation (after all four commits)
 
 - [ ] `make test-full` — **NOT `make test`** (which only runs unit+integration, skipping lib tests). `make test-full` runs test-check + test-lib-py + test-lib + test-unit + test-integration. Since this plan adds lib tests (`test_hug-arrays.bats`, `test_hug-git-state.bats`), `make test` alone would NOT run them and silently pass with new code untested.
 - [ ] `grep -rn 'git w-' git-config/ .github/` returns zero runtime matches.
-- [ ] Manual repro #207: stage 12 files, `hug c -m x` — preview block appears on stderr before `[main <hash>]`.
-- [ ] Manual repro #208 same-name: `hug rb main` on main with upstream — pointer message.
+- [ ] Manual repro #207 prevention: stage 2 files manually, then `hug a file3.txt` — stderr shows `Staged 1 file. Index now has 3 file(s) staged total.` (the prevention signal — user sees they're staging into a populated index).
+- [ ] Manual repro #207 recovery: stage 12 files, `hug c -m x` — preview block appears on stderr before `[main <hash>]`.
+- [ ] Manual repro #208 same-name: `hug rb main` on main with upstream — pointer message with `hug fetch` wording.
 - [ ] Manual repro #208 remediation: dirty tree + `hug rb origin/main` — `wipe` suggestions.
 - [ ] **Remediation actually works:** run `hug w wipe-all -f` after the error, verify tree is now clean, re-run `hug rb origin/main` and verify it succeeds.
 - [ ] `hug bpush` (with `--track` if needed) to publish the branch.
-- [ ] Open PR closing #207 and #208. PR body should also **reference #190 as "related"** (not "closes") — the `hug c` preview establishes a precedent #190's `cmoda` runtime guard may follow, but #190 is not closed by this PR. **Also note the chatter-string change** in the PR description: `"Committing staged changes..."` → `"Committing staged file(s) (N):"`. Any external script grepping `hug c` stderr for the old string will need to update its pattern. (Internal: `hug c` is documented as interactive; the 6 in-repo test assertions are updated by Task 2.)
+- [ ] Open PR closing #207 and #208. PR body should also **reference #190 as "related"** (not "closes") — the `hug c` preview establishes a precedent #190's `cmoda` runtime guard may follow, but #190 is not closed by this PR. **Also note the chatter-string change** in the PR description: `"Committing staged changes..."` → `"Committing staged file(s) (N):"`, plus a new summary line in `hug a` stderr. Any external script grepping either command's stderr for old strings will need to update its pattern. (Internal: `hug c`/`hug a` are documented as interactive; the in-repo test assertions are updated by Tasks 2 and 4.)
+- [ ] **After merge:** file a follow-up issue for T6 (`-a`/`--all`/`--only`/`--patch` detection in `hug c` — abort with educational message pointing at explicit-stage hug commands).
 
 ## Out of Scope (deferred)
 
 - #209 (`hug w unwip` exit code) — separate worktree / PR.
-- #190 / #191 (`cmoda` dirty-tree docs + runtime guard) — different command shape.
+- #190 / #191 (`cmoda` dirty-tree docs + runtime guard) — **commitment (U3 accepted):**
+  this PR ships the `hug c` preview precedent and the corrected dirty-tree
+  remediation pattern. #190 (cmoda docs update) and #191 (cmoda runtime guard
+  design) follow immediately as the next worktree/PR after this one merges,
+  applying the same operation-level remediation thinking to the `cmoda`/`cmod`
+  family. Not closed by this PR — but the policy is now explicit and the
+  implementation pattern is proven.
 - `hug ca` / `hug caa` preview — not motivated by any incident.
 - Items-with-newlines handling in `print_list` — pre-existing.
 
