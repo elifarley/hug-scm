@@ -206,6 +206,7 @@ count_backups() {
   run bash -c "hug rb main --no-backup </dev/null"
   assert_failure
   # The ad-hoc message must be gone.
+  # shellcheck disable=SC2314  # ! before assert is intentional negative assertion
   ! assert_output --partial "--no-backup requires --force"
 }
 

@@ -1346,7 +1346,9 @@ HOOK
   grep -q "capfile_10.txt" "$_err"
   grep -q "... (+2 more — run 'hug sls' for the full list)" "$_err"
   # The 11th and 12th files must NOT appear in the stderr preview
+  # shellcheck disable=SC2314  # ! before grep is intentional negative assertion
   ! grep -q "capfile_11.txt" "$_err"
+  # shellcheck disable=SC2314
   ! grep -q "capfile_12.txt" "$_err"
   # stdout (git's commit output) contains all 12 files — that's expected.
   grep -q "12 files changed" "$_out"
@@ -1384,7 +1386,9 @@ HOOK
   _err=$(mktemp)
   hug c -m "stream test" >"$_out" 2>"$_err"
   # stdout must NOT contain the preview header or the staged filename
+  # shellcheck disable=SC2314  # ! before grep is intentional negative assertion
   ! grep -q "Committing staged file(s)" "$_out"
+  # shellcheck disable=SC2314
   ! grep -q "stream_test.txt" "$_out"
   # stderr MUST contain the preview header and the staged filename
   grep -q "Committing staged file(s)" "$_err"
