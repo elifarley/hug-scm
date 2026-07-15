@@ -110,7 +110,7 @@ fi
 # does NOT honor HUG_QUIET (it's data for dry-run callers like hug w
 # discard --dry-run); we gate here so `hug c --quiet` gets silence.
 if $_has_staged && [[ -z "${HUG_QUIET:-}" ]]; then
-  mapfile -t _staged_files < <(git diff --cached --name-only 2>/dev/null || true)
+  mapfile -t _staged_files < <(git diff --cached --name-only 2> /dev/null || true)
   if [[ ${#_staged_files[@]} -gt 0 ]]; then
     print_list --cap 10 --more-hint "run 'hug sls' for the full list" \
       "Committing staged file(s)" "${_staged_files[@]}"

@@ -24,9 +24,11 @@ set -euo pipefail # Exit on error, undefined vars, pipe failures
 # this the PREVENTION counterpart to hug c's RECOVERY preview (Task 2).
 #
 # Design notes:
-# - Uses `git diff --cached --name-only | wc -l` twice (sub-millisecond
-#   each, index-only reads). Same pattern as git-c's preview.
-# - Newly-staged count = after - before, clamped at 0.
+# - Uses `git diff-files --name-only` (working tree vs index) before/after
+#   to count files whose staged content actually changed — this correctly
+#   reports restaging (editing an already-staged file and running `hug a`
+#   again) whereas a naive `git diff --cached --name-only | wc -l` diff
+#   would report "Staged 0 files" (elifarley/hug-scm#210).
 # - HUG_QUIET gate lives HERE (this is a git-a-specific helper, NOT a
 #   shared library function). Shared helpers like print_list must NOT check
 #   HUG_QUIET internally — see eng review finding E1.
@@ -36,26 +38,44 @@ set -euo pipefail # Exit on error, undefined vars, pipe failures
 #
 # Usage: hug_add_with_summary <git add args...>
 hug_add_with_summary() {
-  # Capture pre-stage count (files in index vs HEAD)
-  local _before
-  _before=$(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+  # Snapshot all "not-yet-in-index" files before git add:
+  #   - git diff-files: tracked files with working-tree changes
+  #   - git ls-files --others: untracked files
+  # Files that vanish from this union after the add are the ones actually
+  # staged — this correctly counts restaging (editing an already-staged
+  # file) and first-time staging of untracked files (elifarley/hug-scm#210).
+  local _pool_before _pool_after
+  _pool_before=$({
+    git diff-files --name-only 2> /dev/null
+    git ls-files --others --exclude-standard 2> /dev/null
+  } |
+    sort)
 
   # Run the actual git add (forward all args, honor errors under set -e)
   git add "$@"
 
-  # Capture post-stage count
-  local _after
-  _after=$(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+  _pool_after=$({
+    git diff-files --name-only 2> /dev/null
+    git ls-files --others --exclude-standard 2> /dev/null
+  } |
+    sort)
 
-  # Newly-staged = after - before (clamped at 0; can theoretically be
-  # negative if git add unstaged something via pathspec, but that's not a
-  # real add path).
-  local _new=$(( _after > _before ? _after - _before : 0 ))
+  # Files that left the pool = actually staged (restaged or newly added).
+  local _staged=0
+  if [[ -n "$_pool_before" ]]; then
+    _staged=$(comm -23 <(printf '%s\n' "$_pool_before") \
+      <(printf '%s\n' "${_pool_after:-}") |
+      wc -l | tr -d ' ')
+  fi
+
+  # Index total after the add (pathnames with diff vs HEAD).
+  local _index_after
+  _index_after=$(git diff --cached --name-only 2> /dev/null | wc -l | tr -d ' ')
 
   # Print summary to stderr, suppressed by HUG_QUIET.
   if [[ -z "${HUG_QUIET:-}" ]]; then
     printf 'Staged %d file%s. Index now has %d file(s) staged total.\n' \
-      "$_new" "$([[ $_new -eq 1 ]] && echo '' || echo 's')" "$_after" >&2
+      "$_staged" "$([[ $_staged -eq 1 ]] && echo '' || echo 's')" "$_index_after" >&2
   fi
 }
 
