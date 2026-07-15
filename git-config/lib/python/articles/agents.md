@@ -152,18 +152,23 @@ Ball color encodes working-tree state (precedence: top → bottom):
 - Magenta isn't affected by ignored files;
 - Untracked and ignored files are still counted in `K:`/`I:` regardless of which color shows.
 
-## Staging, committing, amending
+## Staging, committing
 
 - `hug a <file1> [<file2> ...]`: stage files
 - `hug us <file1> [<file2> ...]`: unstage files
 
 - `hug c -m "message"`: commit staged changes
+
+## Amending
+
 - `hug cmod -m "message"`: amend last commit with STAGED changes only (rewrites HEAD)
    - **Caution:** `cmod` only amends with staged changes, but in a dirty tree it's easy to have staged files you are not even aware of. That's why it's important to run `hug ss` before to list what's currently staged and run `hug us <file1> [<file2> ...]` to unstage files you don't want included.
    - If unrelated changes end up in the amended commit, recover with `hug h back 1 --force`, unstage unwanted files, and run `hug cmod --no-edit` again.
 - `hug cmod --no-edit` — amend HEAD with staged changes only, doesn't change the commit message.
 
-### Commit vs amend (and how to recover)
+Before running `cmod` (Commit MODify), ALWAYS run `hug s --short-hash` to check which commit is going to be amended (as HEAD may have moved).
+
+## Commit vs amend (and how to recover)
 
 Default to `hug c` when you mean "create a new commit from what is staged."
 Only reach for `hug cmod` when you intend to **rewrite HEAD** (e.g. fixing a commit you just made before pushing).
