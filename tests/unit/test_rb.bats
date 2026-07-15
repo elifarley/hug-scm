@@ -208,3 +208,46 @@ count_backups() {
   # The ad-hoc message must be gone.
   ! assert_output --partial "--no-backup requires --force"
 }
+
+# -----------------------------------------------------------------------------
+# elifarley/hug-scm#208 — same-name no-op pointer + dirty-tree remediation
+# -----------------------------------------------------------------------------
+
+@test "rb: same-name no-op points at upstream tracking ref" {
+  # create_test_repo_with_remote_upstream sets up main with origin/main as upstream
+  cd "$(create_test_repo_with_remote_upstream)" || exit 1
+  run hug rb main --dry-run
+  assert_success
+  assert_output --partial "Already on 'main'"
+  assert_output --partial "did you mean 'hug rb origin/main'"
+  assert_output --partial "run 'hug fetch' first"
+  # Exit code 0 — still a no-op
+}
+
+@test "rb: same-name no-op falls back when no upstream configured" {
+  cd "$(create_test_repo_with_history)" || exit 1
+  # No remote, no upstream — bare no-op message should fire
+  run hug rb main --dry-run
+  assert_success
+  assert_output --partial "Already on 'main'"
+  assert_output --partial "nothing to rebase"
+  refute_output --partial "did you mean"
+}
+
+@test "rb: dirty-tree error offers wipe (not discard)" {
+  # create_test_repo_with_remote_upstream already has commits + upstream set,
+  # so HEAD is stable and `hug rb origin/main` reaches the tree guard.
+  cd "$(create_test_repo_with_remote_upstream)" || exit 1
+  # STAGED change: stage a new file
+  echo "staged content" > new_staged.txt
+  git add new_staged.txt
+  # UNSTAGED change: modify an existing tracked file (README.md exists from init)
+  echo "more" >> README.md
+
+  run hug rb origin/main --dry-run
+  assert_failure
+  assert_output --partial "hug w wip"
+  assert_output --partial "hug w wipe-all"
+  assert_output --partial "hug sl"
+  refute_output --partial "git w-"
+}

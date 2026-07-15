@@ -110,9 +110,24 @@ hug_rb() {
     error "You are in detached HEAD state. Please check out a branch first."
   fi
 
-  # Check if already on target.
+  # Check if already on target. If so, point at the upstream tracking ref
+  # when one exists AND resolves — the user almost certainly meant to sync
+  # with the remote, not rebase a branch onto itself. Detection is textual
+  # (current_branch == target_branch); equivalent refs like `refs/heads/main`
+  # or `main^{commit}` do NOT match and fall through to the normal rebase
+  # flow, which is correct (those aren't no-ops anyway).
+  # We require `git rev-parse` to succeed on @{u} so a configured-but-never-
+  # fetched upstream (where the remote-tracking ref doesn't exist) falls back
+  # to the bare no-op rather than suggesting a command that would itself fail.
+  # (elifarley/hug-scm#208)
   if [[ "$current_branch" == "$target_branch" ]]; then
-    info "Already on '$target_branch'; nothing to rebase."
+    local _upstream
+    if _upstream=$(git rev-parse --abbrev-ref '@{u}' 2>/dev/null) \
+       && [[ -n "$_upstream" && "$_upstream" != "$current_branch" ]]; then
+      info "Already on '$target_branch' — did you mean 'hug rb $_upstream'? (Rebases onto the last-fetched upstream tracking ref; run 'hug fetch' first if you need fresh commits.)"
+    else
+      info "Already on '$target_branch'; nothing to rebase."
+    fi
     return 0
   fi
 

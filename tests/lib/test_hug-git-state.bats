@@ -131,6 +131,41 @@ teardown() {
   assert_failure
 }
 
+################################################################################
+# check_working_tree_clean — dirty-tree remediation text (elifarley/hug-scm#208)
+################################################################################
+
+@test "check_working_tree_clean: dirty tree error offers wipe (not discard)" {
+  # create_test_repo already creates an initial commit (README.md) so HEAD is stable.
+  cd "$(create_test_repo)" || exit 1
+  # Stage one new file (staged changes present)
+  echo "staged content" > staged_file.txt
+  git add staged_file.txt
+  # Modify the existing README.md (unstaged changes present) — README.md is
+  # guaranteed to exist because create_test_repo creates it.
+  echo "modification" >> README.md
+
+  run check_working_tree_clean
+  assert_failure
+  assert_output --partial "hug w wip"
+  assert_output --partial "hug w wipe-all"
+  assert_output --partial "hug w wipe <file>"
+  assert_output --partial "hug sl"
+  refute_output --partial "git w-"
+  refute_output --partial "hug w discard-all"
+}
+
+@test "check_file_unstaged: error says hug w discard (not git w-discard)" {
+  # create_test_repo creates README.md in the initial commit. Modify it to
+  # create unstaged changes on a known-existing tracked file.
+  cd "$(create_test_repo)" || exit 1
+  echo "modification" >> README.md
+  run check_file_unstaged "README.md"
+  assert_failure
+  assert_output --partial "hug w discard"
+  refute_output --partial "git w-discard"
+}
+
 @test "has_pending_changes: returns true under pipefail with many untracked files (SIGPIPE regression)" {
   # Create 1000+ untracked files to ensure git status output exceeds pipe buffer
   # (64KB on Linux). Under the old pipe-based implementation, this would trigger
