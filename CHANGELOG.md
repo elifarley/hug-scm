@@ -4,6 +4,18 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-07-15
+
+### Fixed
+
+- **Flaky `hug analyze deps: repository size detection` test** (issues #186, #204) — the BATS test intermittently failed under CI load with `git commit` exit 128 (index-lock contention from repeatedly touching the working tree). It now creates commits via `git_commit_deterministic … --allow-empty`, which counts toward the repository-size boundary without contending on the index, and uses the deterministic helper for reproducible hashes and explicit author identity. The test also gained a tighter `commit_count` guard and an honest scope note clarifying it is a classification + completion smoke test (the size→limit mapping is covered by the new Python unit tests). Test runs are now stable across repeated invocations.
+
+### Added
+
+- **Python unit tests for `detect_repository_size`** (`git-config/lib/python/tests/test_deps.py`) — parametrized boundary coverage (0, 99, 100, 999, 1000, 9999, 10000, 100000) for the small/medium/large/massive size classifier, plus a sequence-type acceptance test. These are fast, deterministic, and require no git repository.
+
+- **Optional extra-flags parameter** on the `commit_with_date` / `git_commit_deterministic` test helpers (`tests/lib/deterministic_git.bash`) — a backward-compatible 5th positional argument (defaults to empty) that lets test callers pass flags such as `--allow-empty` without re-implementing the deterministic-commit logic.
+
 ## [1.3.0] - 2026-07-15
 
 ### Added
