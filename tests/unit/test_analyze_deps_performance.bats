@@ -95,12 +95,19 @@ teardown() {
 }
 
 @test "hug analyze deps: repository size detection" {
-  # Create a repository with known number of commits (reduced from 75)
-  for i in {1..50}; do
-    echo "content $i" >> "size_test.txt"
-    git add "size_test.txt"
-    git commit -m "commit $i"
+  # WHY empty commits: this test's purpose is to exercise the repository size
+  # detection boundary (>= 100 commits -> "medium"). Empty commits count toward
+  # that boundary without repeatedly touching the working tree / index, which
+  # removes the flaky "git commit" exit 128 failures seen under CI load
+  # (issues #186 and #204). The deterministic helper also gives reproducible
+  # hashes and explicit identity, avoiding any inherited-environment surprises.
+  for i in {1..120}; do
+    git_commit_deterministic "commit $i" 60 "Hug Test" "test@hug-scm.test" --allow-empty
   done
+
+  # Verify we actually crossed into the "medium" size bucket
+  commit_count=$(git rev-list --all --count)
+  [[ "$commit_count" -ge 100 ]]
 
   # Should complete within reasonable time for medium repo
   run_with_timeout 40 0 git analyze-deps HEAD --threshold 1 --max-results 5
