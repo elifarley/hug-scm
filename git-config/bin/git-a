@@ -16,6 +16,49 @@ test "${1:-}" = '--search-meta' && {
 . "$HUG_HOME/git-config/lib/hug-select-files"
 set -euo pipefail # Exit on error, undefined vars, pipe failures
 
+# Stage files and print a one-line index summary.
+# WHY (elifarley/hug-scm#207): an agent running `hug a file.txt` after a
+# soft-reset has no signal that the index was already populated with N other
+# files from the reset. The summary surfaces the cumulative count at the
+# moment the user can still act on it (unstage, inspect, abort) — making
+# this the PREVENTION counterpart to hug c's RECOVERY preview (Task 2).
+#
+# Design notes:
+# - Uses `git diff --cached --name-only | wc -l` twice (sub-millisecond
+#   each, index-only reads). Same pattern as git-c's preview.
+# - Newly-staged count = after - before, clamped at 0.
+# - HUG_QUIET gate lives HERE (this is a git-a-specific helper, NOT a
+#   shared library function). Shared helpers like print_list must NOT check
+#   HUG_QUIET internally — see eng review finding E1.
+# - Removing `exec` from the four exit paths means the script continues
+#   after `git add` rather than replacing the process. The summary prints
+#   after git add returns, then the script exits naturally.
+#
+# Usage: hug_add_with_summary <git add args...>
+hug_add_with_summary() {
+  # Capture pre-stage count (files in index vs HEAD)
+  local _before
+  _before=$(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+
+  # Run the actual git add (forward all args, honor errors under set -e)
+  git add "$@"
+
+  # Capture post-stage count
+  local _after
+  _after=$(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ')
+
+  # Newly-staged = after - before (clamped at 0; can theoretically be
+  # negative if git add unstaged something via pathspec, but that's not a
+  # real add path).
+  local _new=$(( _after > _before ? _after - _before : 0 ))
+
+  # Print summary to stderr, suppressed by HUG_QUIET.
+  if [[ -z "${HUG_QUIET:-}" ]]; then
+    printf 'Staged %d file%s. Index now has %d file(s) staged total.\n' \
+      "$_new" "$([[ $_new -eq 1 ]] && echo '' || echo 's')" "$_after" >&2
+  fi
+}
+
 # Part of the Hug tool suite
 
 show_help() {
@@ -36,6 +79,7 @@ OPTIONS:
   --browse-root  Browse full repository scope in file selector UI (default: current directory)
   --from-file <file>    Read file list from file or stdin (use '-' for stdin)
   --from-commit <commit> Use files changed in the specified commit
+  -q, --quiet    Suppress the post-stage summary (sets HUG_QUIET=T)
   -h, --help     Show this help message and exit.
 
 DESCRIPTION:
@@ -84,6 +128,10 @@ while [[ $# -gt 0 ]]; do
     show_help
     exit 0
     ;;
+  -q | --quiet)
+    export HUG_QUIET=T
+    shift
+    ;;
   --)
     # Don't process -- here, let parse_common_flags handle it
     break
@@ -123,7 +171,8 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     exit 0
   fi
 
-  exec git add "${files[@]}"
+  hug_add_with_summary "${files[@]}"
+  exit 0
 fi
 
 # Handle interactive file selection if requested
@@ -149,10 +198,14 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     exit 0
   fi
 
-  exec git add "${files[@]}"
+  hug_add_with_summary "${files[@]}"
+  exit 0
 fi
 
 # Check if no arguments - stage all tracked modified files
-test ${#remaining_args[@]} -eq 0 && exec git add -u
+if [[ ${#remaining_args[@]} -eq 0 ]]; then
+  hug_add_with_summary -u
+  exit 0
+fi
 
-exec git add "${remaining_args[@]}"
+hug_add_with_summary "${remaining_args[@]}"
