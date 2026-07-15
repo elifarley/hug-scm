@@ -36,23 +36,116 @@ dedupe_array() {
   __array_ref=("${__unique[@]}")
 }
 
-# Prints a titled list of items
-# Usage: print_list "Title" item1 item2 item3...
+# Prints a titled list of items, with optional cap-and-overflow.
+# Usage: print_list [--cap N] [--more-hint "<text>"] [--] "Title" item1 item2 ...
 # Parameters:
-#   $1 - Title for the list
+#   --cap N          Cap the rendered list at N items; append an overflow line
+#                    when count > N. N=0 or absent disables capping.
+#   --more-hint "<text>"  Text appended to the overflow line. Ignored without --cap.
+#   --               End-of-flags delimiter (lets titles start with --).
+#   Title for the list (first positional after flags / --)
 #   $@ - Items to list (remaining arguments)
 # Output:
-#   Title with count, followed by indented items (ALL on stderr)
+#   Title with count, followed by indented items, optionally followed by an
+#   overflow line (ALL on stderr).
 # NOTE: All output goes to stderr. This function is for human-facing labels
 # and lists (chatter), NOT machine-consumable data. For data output, use printf directly.
+# NOTE: print_list does NOT honor HUG_QUIET. Existing callers (hug-git-discard,
+# hug-output) use print_list in DRY-RUN output paths where the file list IS the
+# data the user needs. If print_list went quiet under HUG_QUIET, dry-run output
+# would lose the file list while keeping the header — silent data loss in a
+# safety path. Callers that want chatter-style suppression (like hug c's preview)
+# must gate the call site themselves with [[ -z "${HUG_QUIET:-}" ]].
+# Flag-parsing contract:
+#   - Flags must precede the title. The first non-flag arg OR the arg after `--`
+#     is the title; everything else is an item.
+#   - `--cap` requires a following value; missing → error to stderr, return 1.
+#   - Repeated flags: last one wins.
+#   - `--cap <value>` validation: regex `^[0-9]+$`. The implementation normalizes
+#     via `cap=$((10#$_cap_raw))` to force decimal, defusing the bash octal-literal
+#     trap (e.g. `08` is invalid octal; `10#08` is decimal 8).
+#   - Empty / unset `--more-hint`: overflow line is `... (+M more)`.
+#     Non-empty: `... (+M more — <hint>)`.
 print_list() {
+  local cap=0
+  local more_hint=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --cap)
+        if [[ $# -lt 2 ]]; then
+          printf 'print_list: --cap requires a value\n' >&2
+          return 1
+        fi
+        local _cap_raw="$2"
+        if ! [[ "$_cap_raw" =~ ^[0-9]+$ ]]; then
+          printf 'print_list: --cap value must be a non-negative integer, got %q\n' "$_cap_raw" >&2
+          return 1
+        fi
+        # Overflow guard: bash arithmetic silently wraps huge numbers
+        # (99999999999999999999999 → 200376420520689663). Bound the cap to a
+        # sane upper limit so the silent wrap can't produce nonsense behavior.
+        # 100000 is generous — the largest realistic staged-file count is ~10k.
+        if [[ ${#_cap_raw} -gt 6 ]]; then
+          printf 'print_list: --cap value out of range (max 999999)\n' >&2
+          return 1
+        fi
+        cap=$((10#$_cap_raw))
+        shift 2
+        ;;
+      --more-hint)
+        if [[ $# -lt 2 ]]; then
+          printf 'print_list: --more-hint requires a value\n' >&2
+          return 1
+        fi
+        more_hint="$2"
+        shift 2
+        ;;
+      --)
+        shift
+        break
+        ;;
+      --*)
+        printf 'print_list: unknown option: %q\n' "$1" >&2
+        return 1
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  # No-title guard: under set -u, `local title=$1` with no args fails
+  # unbound. Detect explicitly and emit a helpful error.
+  if [[ $# -lt 1 ]]; then
+    printf 'print_list: requires a title (got only flags)\n' >&2
+    return 1
+  fi
+
   local title=$1
   shift
-  printf '%s (%d):\n' "$title" "$#" >&2
+
+  local total=$#
+  printf '%s (%d):\n' "$title" "$total" >&2
+
   local item
+  local shown=0
   for item in "$@"; do
+    if [[ $cap -gt 0 && $shown -ge $cap ]]; then
+      break
+    fi
     printf '  %s\n' "$item" >&2
+    shown=$((shown + 1))
   done
+
+  if [[ $cap -gt 0 && $total -gt $cap ]]; then
+    local remaining=$((total - cap))
+    if [[ -n "$more_hint" ]]; then
+      printf '... (+%d more — %s)\n' "$remaining" "$more_hint" >&2
+    else
+      printf '... (+%d more)\n' "$remaining" >&2
+    fi
+  fi
 }
 
 ################################################################################
