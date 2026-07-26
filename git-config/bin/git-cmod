@@ -49,11 +49,19 @@ DESCRIPTION:
   WARNING: This rewrites history. Only amend commits that have not been pushed
   to a shared repository.
 
+  Bare `hug cmod` (no -m/--no-edit/-C) is NOT a no-op and NOT a read. It
+  defaults to --no-edit semantics and STILL rewrites HEAD (new hash/timestamp,
+  folds in anything staged). To INSPECT which commit would be amended, use
+  `hug s --short-hash` or `hug sh HEAD` — never `cmod`. Running bare `cmod`
+  as a misguided "check HEAD" step on a published branch silently diverges
+  local main from origin and must never be pushed.
+
 EXAMPLES:
   hug a file.txt && hug cmod --no-edit  # Stage file, amend keeping message
   hug a file.txt && hug cmod -m "msg"   # Stage file, amend replacing message
   hug cmod --no-edit                    # Amend staged changes, keeping message
   hug cmod -m "Better message"          # Amend replacing message. If no staged changes, only the message changes.
+  hug s --short-hash                    # READ which commit HEAD points at (the correct "check before amend" step; NOT cmod)
 
 SEE ALSO:
   hug c    : Commit staged changes

@@ -165,6 +165,12 @@ Ball color encodes working-tree state (precedence: top → bottom):
    - **Caution:** `cmod` only amends with staged changes, but in a dirty tree it's easy to have staged files you are not even aware of. That's why it's important to run `hug ss` before to list what's currently staged and run `hug us <file1> [<file2> ...]` to unstage files you don't want included.
    - If unrelated changes end up in the amended commit, recover with `hug h back 1 --force`, unstage unwanted files, and run `hug cmod --no-edit` again.
 - `hug cmod --no-edit` — amend HEAD with staged changes only, doesn't change the commit message.
+- **`cmod` is ALWAYS a write — it is never a read and never a no-op.** Every
+  invocation rewrites HEAD: bare `hug cmod` (no args) defaults to `--no-edit`
+  semantics and still amends, folding whatever is staged into the current commit
+  and giving it a new hash/timestamp. There is no "safe" or "read-only" form. To
+  INSPECT HEAD (which commit would be amended, its hash/message), use `hug s`,
+  `hug s --short-hash`, or `hug sh HEAD` — never `cmod`.
 
 Before running `cmod` (Commit MODify), ALWAYS run `hug s --short-hash` to check which commit is going to be amended (as HEAD may have moved).
 
@@ -176,6 +182,15 @@ Only reach for `hug cmod` when you intend to **rewrite HEAD** (e.g. fixing a com
 **Anti-pattern:** running `hug cmod` when you meant `hug c`. The new work gets
 folded into HEAD and rewrites history. Recover with `hug h back 1 --force`
 (HEAD back one, keep changes staged — soft-reset semantics), then run `hug c -m "msg"`.
+
+**Anti-pattern:** running `hug cmod` (especially bare, as a misguided "check
+HEAD" / "touch HEAD" step) when you only wanted to READ state. `cmod` rewrites
+HEAD unconditionally, so on a *published* branch this silently diverges local
+`main` from `origin/main` (ahead 1, behind N) and must never be pushed. If the
+amended commit's content already exists on `origin/main`, recover by realigning
+local main to the remote: `hug h rewind origin/main --force` (then verify with
+`hug s` showing ⚫, no ahead/behind). `hug h back 1 --force` is the WRONG recovery
+here — it keeps the misfire's parent, not origin's tip.
 
 ## HEAD vs working-directory operations — don't confuse them
 

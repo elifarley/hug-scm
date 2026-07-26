@@ -127,7 +127,14 @@ Amend the last commit with staged changes.
 
 This command allows you to add staged changes to the previous commit without creating a new one. It's ideal for fixing small mistakes or adding forgotten files.
 
-When you run `hug cmod` (**C**ommit **MOD**ify) without flags, your editor will open with the previous commit message already populated. This is very convenient if you just need to fix a typo or slightly reword the message.
+**`cmod` is always a write — it is never a read and never a no-op.** Every
+invocation rewrites HEAD: bare `hug cmod` (no flags) defaults to `--no-edit`
+semantics in non-interactive contexts and still amends, folding whatever is
+staged into the current commit and giving it a new hash. There is no
+read-only or "safe preview" form. To inspect which commit would be amended
+(its hash/message), use `hug s --short-hash` or `hug sh HEAD` — never `cmod`.
+
+When you run `hug cmod` (**C**ommit **MOD**ify) without flags, your editor will open with the previous commit message already populated, ready for you to fix a typo or slightly reword it. This still rewrites HEAD (see above); it is convenient for editing the message, not for harmlessly inspecting it.
 
 If you want to replace the old message entirely, you can provide a new one directly with the `-m` flag, which avoids opening the editor.
 
@@ -135,9 +142,12 @@ If you want to replace the old message entirely, you can provide a new one direc
 
 **Examples:**
 ```shell
+# Read which commit HEAD points at BEFORE amending (the correct "check" step; NOT cmod)
+hug s --short-hash
+
 # Realize you forgot to add a file to the last commit
 hug a docs/forgotten-file.md
-# Open the editor to see the last message and confirm or tweak it
+# Open the editor to see the last message and confirm or tweak it (rewrites HEAD)
 hug cmod
 
 # Or... Replace the last commit message entirely without opening the editor
