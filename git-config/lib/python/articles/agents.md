@@ -165,12 +165,17 @@ Ball color encodes working-tree state (precedence: top → bottom):
    - **Caution:** `cmod` only amends with staged changes, but in a dirty tree it's easy to have staged files you are not even aware of. That's why it's important to run `hug ss` before to list what's currently staged and run `hug us <file1> [<file2> ...]` to unstage files you don't want included.
    - If unrelated changes end up in the amended commit, recover with `hug h back 1 --force`, unstage unwanted files, and run `hug cmod --no-edit` again.
 - `hug cmod --no-edit` — amend HEAD with staged changes only, doesn't change the commit message.
-- **`cmod` is ALWAYS a write — it is never a read and never a no-op.** Every
-  invocation rewrites HEAD: bare `hug cmod` (no args) defaults to `--no-edit`
-  semantics and still amends, folding whatever is staged into the current commit
-  and giving it a new hash/timestamp. There is no "safe" or "read-only" form. To
-  INSPECT HEAD (which commit would be amended, its hash/message), use `hug s`,
-  `hug s --short-hash`, or `hug sh HEAD` — never `cmod`.
+- **`cmod` is NEVER a read and has no safe preview form: it is a commit command.**
+  Bare `hug cmod` (no -m/--no-edit/-C) is not a reliable no-op either — its
+  behavior depends on the editor environment: with EDITOR set it opens an editor
+  (closing it amends HEAD); with no EDITOR (dumb terminal, CI, many agent
+  contexts) git errors "Terminal is dumb, but EDITOR unset" and leaves HEAD
+  unchanged — but that's an error path, not a guarantee, and a
+  backgrounded/detached editor can still let the amend proceed silently. So do
+  not treat bare cmod as a read. For a DETERMINISTIC non-interactive amend, pass
+  `--no-edit` (keep message) or `-m` (replace message). To INSPECT HEAD (which
+  commit would be amended, its hash/message), use `hug s`, `hug s --short-hash`,
+  or `hug sh HEAD` — never `cmod`.
 
 Before running `cmod` (Commit MODify), ALWAYS run `hug s --short-hash` to check which commit is going to be amended (as HEAD may have moved).
 
@@ -184,13 +189,16 @@ folded into HEAD and rewrites history. Recover with `hug h back 1 --force`
 (HEAD back one, keep changes staged — soft-reset semantics), then run `hug c -m "msg"`.
 
 **Anti-pattern:** running `hug cmod` (especially bare, as a misguided "check
-HEAD" / "touch HEAD" step) when you only wanted to READ state. `cmod` rewrites
-HEAD unconditionally, so on a *published* branch this silently diverges local
-`main` from `origin/main` (ahead 1, behind N) and must never be pushed. If the
-amended commit's content already exists on `origin/main`, recover by realigning
-local main to the remote: `hug h rewind origin/main --force` (then verify with
-`hug s` showing ⚫, no ahead/behind). `hug h back 1 --force` is the WRONG recovery
-here — it keeps the misfire's parent, not origin's tip.
+HEAD" / "touch HEAD" step) when you only wanted to READ state. On a *published*
+branch this can silently diverge local `main` from `origin/main` (ahead 1,
+behind N) and must never be pushed. If the amended commit's content already
+exists on `origin/main`, recover by realigning local main to the remote:
+`hug h rewind origin/main --force`. `hug h back 1 --force` is the WRONG recovery
+here — it keeps the misfire's parent, not origin's tip. ⚠️ `rewind` runs
+`git reset --hard` and destroys staged AND unstaged changes — so FIRST stash or
+commit any unrelated dirty-tree work (`hug w stash` / `hug c`), THEN rewind, or
+those changes are permanently lost. After rewinding, verify with `hug s`
+showing ⚫ (no ahead/behind).
 
 ## HEAD vs working-directory operations — don't confuse them
 
