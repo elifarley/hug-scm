@@ -30,6 +30,7 @@ OPTIONS:
   -h, --help     Show this help message and exit.
 
 DESCRIPTION:
+  Works regardless of the branch you're in (main, feature, in a worktree, etc).
   Without arguments the command pushes to the 'origin' remote. Supplying a
   single URL will create or update a matching remote and push to it. Supplying
   both a remote name and URL allows you to explicitly manage the remote.
