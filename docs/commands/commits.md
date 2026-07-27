@@ -127,26 +127,19 @@ Amend the last commit with staged changes.
 
 This command allows you to add staged changes to the previous commit without creating a new one. It's ideal for fixing small mistakes or adding forgotten files.
 
-**`cmod` is never a read and has no safe preview form: it is a commit command.**
-Bare `hug cmod` (no flags) is not a reliable no-op either — its behavior depends
-on the editor environment: with `EDITOR` set it opens an editor (closing it
-amends HEAD); with no `EDITOR` (dumb terminal, CI, many agent contexts) git
-errors "Terminal is dumb, but EDITOR unset" and leaves HEAD unchanged — but
-that is an error path, not a guarantee, and a backgrounded/detached editor can
-still let the amend proceed silently. Do not treat bare cmod as a read. For a
-deterministic non-interactive amend, pass `--no-edit` (keep the message) or
-`-m` (replace it). To inspect which commit would be amended (its hash/message),
-use `hug s --short-hash` or `hug sh HEAD` — never `cmod`.
-
 When you run `hug cmod` (**C**ommit **MOD**ify) without flags, your editor will open with the previous commit message already populated, ready for you to fix a typo or slightly reword it. This still rewrites HEAD (see above); it is convenient for editing the message, not for harmlessly inspecting it.
 
 If you want to replace the old message entirely, you can provide a new one directly with the `-m` flag, which avoids opening the editor.
+
+For a deterministic non-interactive amend, pass `--no-edit` (keep the message) or
+`-m` (replace it). To inspect which commit would be amended (its hash/message),
+use `hug s --short-hash` or `hug sh HEAD` — never `cmod`.
 
 **Usage:** `hug cmod`
 
 **Examples:**
 ```shell
-# Read which commit HEAD points at BEFORE amending (the correct "check" step; NOT cmod)
+# Read which commit HEAD points at BEFORE amending (the correct "check" step)
 hug s --short-hash
 
 # Realize you forgot to add a file to the last commit
