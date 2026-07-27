@@ -62,26 +62,6 @@ SEE ALSO:
 EOF
 }
 
-confirm() {
-  local message="$1"
-  local expected="$2"
-  local response
-
-  while true; do
-    read -p "$message" response
-    case "$response" in
-    "$expected") return 0 ;;
-    [Qq] | [Qq][Uu][Ii][Tt] | [Cc][Aa][Nn][Cc][Ee][Ll])
-      printf "Cancelled.\n" >&2
-      exit 0
-      ;;
-    *)
-      printf "Invalid response. Please type '%s' or 'cancel': " "$expected" >&2
-      ;;
-    esac
-  done
-}
-
 # Reset all files to commit
 #
 # 3-STATE GATE (mirrors reset_specific_files's contract, adapted to all-files):
