@@ -78,11 +78,19 @@ if $upstream; then
   # Use DRY helper for validation, then handle upstream-specific logic
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
 
-  # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
-  target=$(handle_upstream_operation "rewinding")
+  # handle_upstream_operation previews and (warn-tier) confirms. rewind is danger-tier,
+  # so suppress the warn gate via HUG_FORCE (preview still runs — HUG_QUIET != T) and
+  # apply the single danger gate below. The `|| exit $?` keeps a non-zero helper exit
+  # fatal (belt-and-suspenders; plain assignment already trips set -e today). The
+  # empty-target guard handles the "Already synced to upstream" exit 0 (helper exits 0
+  # inside the subshell -> empty stdout).
+  # `HUG_FORCE` is set inline-prefix (NOT exported) so it scopes to the helper subshell only —
+  # leaking it to the outer scope would auto-bypass the danger gate below (silent safety regression).
+  target=$(HUG_FORCE=true handle_upstream_operation "rewinding") || exit $?
   if [[ -z "${target:-}" ]]; then
     exit 0
   fi
+  prompt_confirm_danger "rewind" "git reset --hard to upstream is irreversible and cannot be undone"
 else
   # Use DRY helper for validation and target resolution
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
@@ -91,13 +99,7 @@ else
   handle_standard_operation "rewinding" "$target" false
 
   printf '\n⚠️  This is PERMANENT and cannot be undone!\n' >&2
-  if [[ ${HUG_FORCE:-} != true ]]; then
-    read -p 'Type "rewind" to confirm: ' confirm >&2
-    [ "$confirm" = "rewind" ] || {
-      info "Cancelled."
-      exit 1
-    }
-  fi
+  prompt_confirm_danger "rewind" "git reset --hard is irreversible and cannot be undone"
 fi
 
 printf 'Rewinding to %s...\n' "$target" >&2

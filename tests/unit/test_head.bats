@@ -589,7 +589,7 @@ teardown() {
   echo "ignored" > test.log
   git add .gitignore && git commit -m "Add gitignore"
   
-  run bash -c 'echo "rewind" | hug h rewind'
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "rewind" | hug h rewind'
   assert_success
   assert_file_exists "untracked.txt"
   assert_file_exists "test.log"
@@ -1026,17 +1026,17 @@ teardown() {
   target_commit=$(git rev-parse HEAD~1)
 
   # Test declining confirmation (wrong confirmation text)
-  run bash -c 'echo "not_rewind" | hug h rewind HEAD~1'
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "not_rewind" | hug h rewind HEAD~1'
   assert_failure
   assert_output --partial "Cancelled"
 
   # Test declining confirmation (empty input)
-  run bash -c 'echo "" | hug h rewind HEAD~1'
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "" | hug h rewind HEAD~1'
   assert_failure
   assert_output --partial "Cancelled"
 
   # Test accepting confirmation (exact "rewind" required)
-  run bash -c 'echo "rewind" | hug h rewind HEAD~1'
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "rewind" | hug h rewind HEAD~1'
   assert_success
   assert_output --partial "Rewind complete"
 
@@ -1854,4 +1854,94 @@ EOF
   # Staged changes should still be there
   run git diff --cached --name-only
   assert_output --partial "feature2.txt"
+}
+
+# ============================================================================
+# git-h-rewind: danger-tier gating (prompt_confirm_danger migration)
+# ============================================================================
+# Context: rewind's two paths now both gate via prompt_confirm_danger (the family
+# confirm tier), replacing a bespoke read -p and the inherited WARN tier from
+# handle_upstream_operation. The danger tier refuses -y (HUG_YES) with exit 3
+# (HUG_EX_BLOCKED) — only -f proceeds. These tests pin that gradient.
+
+@test "hug h rewind: -y is REFUSED (danger tier, exit 3)" {
+  create_test_repo_with_history
+  run hug h rewind -y HEAD~1
+  [ "$status" -eq 3 ]      # HUG_EX_BLOCKED, sourced transitively via hug-common
+  [ "$status" -ne 0 ]      # backstop: a sourcing-order regression fails noisily, not silently
+}
+
+@test "hug h rewind: -f proceeds without prompt" {
+  create_test_repo_with_history
+  local target=$(git rev-parse HEAD~1)
+  run hug h rewind -f HEAD~1
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$target" ]
+}
+
+@test "hug h rewind -u: already-synced short-circuits to exit 0 (empty-target guard intact)" {
+  # Build a synced upstream in TEST_REPO: push to a bare remote at the current HEAD,
+  # then set the branch's upstream tracking to it. handle_upstream_operation then
+  # finds 0 local-only commits -> "Already synced" -> exit 0 inside the subshell ->
+  # empty target -> the guard in git-h-rewind exits 0 (no `git reset --hard ""`).
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "rewind-origin-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$(git branch --show-current)"
+  git branch --set-upstream-to="origin/$(git branch --show-current)" >&2
+  run hug h rewind -u
+  assert_success
+  assert_output --partial "Already synced"
+}
+
+@test "hug h rewind -u: no upstream configured -> non-zero" {
+  create_test_repo_with_history
+  run hug h rewind -u
+  assert_failure
+}
+
+# ----------------------------------------------------------------------------
+# git-h-rewind -u: AHEAD-upstream danger-gate coverage (Fix I1)
+# ----------------------------------------------------------------------------
+# These pin the riskiest path: HUG_FORCE=true handle_upstream_operation -> non-empty
+# target -> prompt_confirm_danger. Without them, refactoring the inline-prefix into
+# an `export HUG_FORCE=true` (or a top-of-script assignment) would silently bypass
+# the danger gate and NO existing test would catch it. Reuses the already-synced
+# test's bare-remote fixture shape, but advances local 1 commit past origin so the
+# helper echoes a real target and the danger gate is the decision point.
+
+@test "hug h rewind -u: ahead-upstream danger gate — confirm proceeds" {
+  create_test_repo_with_history
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "rewind-ahead-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  echo "extra" > extra.txt; git add extra.txt; git commit -q -m "local ahead commit"
+  local remote_tip; remote_tip=$(git rev-parse "origin/$branch")
+
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "rewind" | hug h rewind -u'
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$remote_tip" ]   # rewound to upstream tip
+}
+
+@test "hug h rewind -u: ahead-upstream danger gate — wrong input cancels" {
+  create_test_repo_with_history
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "rewind-cancel-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  # Advance local 1 commit past origin so the helper yields a non-empty target.
+  echo "extra" > extra.txt; git add extra.txt; git commit -q -m "local ahead commit"
+  local head_before; head_before=$(git rev-parse HEAD)
+
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "no" | hug h rewind -u'
+  assert_failure
+  [ "$(git rev-parse HEAD)" = "$head_before" ]   # HEAD unchanged — gate cancelled
 }
