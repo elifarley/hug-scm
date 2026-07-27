@@ -183,6 +183,32 @@ reset_all_files() {
 }
 
 # Reset specific files
+#
+# 3-STATE GATE (replaces the per-file check_file_staged/check_file_unstaged
+# loop AND the bespoke `confirm "Reset these files? (y/N)"` prompt):
+#   • State A (clean)        — nothing unrecoverable can be lost, so no prompt,
+#                              no flag. Under no-TTY this SUCCEEDS (no `read`),
+#                              which is the whole point: a clean restore must
+#                              not demand -f (elifarley/hug-scm#218 Concern 1).
+#   • State B (dirty, not forced) — refuse, even under -y. -y auto-confirms
+#                              *prompts*; there is no prompt here, only a hard
+#                              refusal protecting uncommitted work. We delegate
+#                              to check_files_clean so the byte-locked
+#                              wipe/wipe-all remediation text stays the single
+#                              source of truth (do NOT printf our own refusal).
+#   • State C (dirty, forced)     — proceed. Notice fires ONLY when dirty > 0
+#                              (force-on-clean stays silent; today's force path
+#                              is silent and we keep it that way — no
+#                              "Discarding 0 file(s)" chatter). Wording is
+#                              "(will be overwritten)": specific-files never
+#                              `rm -f`s files that are absent from the target,
+#                              so "or deleted" would be a lie (that's
+#                              reset_all_files's contract).
+#
+# Override source: HUG_FORCE (exported by parse_common_flags when -f/--force is
+# parsed) is the single source of truth for the gate. The local `force` boolean
+# is the same fact used for the "skip verbose chatter when forced" display
+# branches; the spec calls for reading HUG_FORCE in the gate, so we do.
 reset_specific_files() {
   local commit="$1"
   local force="$2"
@@ -197,64 +223,72 @@ reset_specific_files() {
     printf "Will reset files to commit %s (%s):\n" "$commit" "$commit_short" >&2
   fi
 
+  # Validate existence per-file (genuinely per-file — only the cleanliness
+  # check was batched into the state gate below).
   local files_to_reset=()
   local file
-
-  # Validate each file
   for file in "${files[@]}"; do
     if ! $force; then
       printf "Checking %s...\n" "$file" >&2
     fi
-
-    # Check if file exists in target commit
     check_file_in_commit "$commit" "$file"
-
-    if ! $force; then
-      # Check for staged changes
-      check_file_staged "$file"
-
-      # Check for unstaged changes
-      check_file_unstaged "$file"
-    fi
-
     files_to_reset+=("$file")
   done
 
-  # Show what will be reset
-  if [ ${#files_to_reset[@]} -gt 0 ]; then
-    if ! $force || $dry_run; then
-      printf "\nFiles to be reset:\n" >&2
-      printf "  %s\n" "${files_to_reset[@]}" >&2
-
-      # Show diff preview
-      printf "\nPreview of changes:\n" >&2
-      for file in "${files_to_reset[@]}"; do
-        preview_file_changes "$commit" "$file"
-      done
-
-      # Dry-run: preview only, no actual changes
-      if $dry_run; then
-        info "Dry run — no files were modified."
-        return 0
-      fi
-    fi
-
-    if ! $force; then
-      # Confirmation
-      warning "This will overwrite the files above"
-      confirm "Reset these files? (y/N) " "y"
-    fi
-
-    # Perform the reset
-    if ! $force; then
-      printf "Resetting files...\n" >&2
-    fi
-    git restore --source="$commit" --worktree "${files_to_reset[@]}"
-
-    success "Files reset to $commit_short"
-  else
+  if [ ${#files_to_reset[@]} -eq 0 ]; then
     info "No files to reset"
+    return 0
   fi
+
+  # ---- STATE GATE ----
+  # get_dirty_files (lib/hug-git-state, added in Task 1) prints files with
+  # staged OR unstaged changes, deduped+sorted, one per line, returns 0 always.
+  local -a dirty_files=()
+  mapfile -t dirty_files < <(get_dirty_files "${files_to_reset[@]}")
+
+  if [ ${#dirty_files[@]} -eq 0 ]; then
+    # STATE A — clean: nothing unrecoverable can be lost, so no prompt, no flag.
+    if ! $force; then
+      info "Files are clean (no uncommitted changes); restoring ${#files_to_reset[@]} file(s) from $commit_short."
+    fi
+  else
+    # dirty set is non-empty
+    if [[ ${HUG_FORCE:-} != true ]]; then
+      # STATE B — dirty, not forced: refuse (even under -y; -y never authorizes
+      # destroying uncommitted work). check_files_clean exits 1 with the
+      # byte-locked wipe/wipe-all text naming the dirty files. Under --dry-run
+      # this refuses BEFORE any diff preview (refuse-before-preview).
+      check_files_clean "${files_to_reset[@]}"
+    fi
+    # STATE C — dirty + forced: proceed. dirty_files is non-empty here
+    # (we're in the else of the ${#dirty_files[@]} -eq 0 test above), so the
+    # notice fires unconditionally — force-on-clean was already routed through
+    # State A and never reaches this branch.
+    warning "Discarding uncommitted changes in ${#dirty_files[@]} file(s) (will be overwritten):"
+    printf "  %s\n" "${dirty_files[@]}" >&2
+  fi
+
+  # Show what will be reset (preview) — only meaningful when we will proceed.
+  # ! $force || $dry_run matches the old display branch: forced clean stays
+  # silent, but a forced --dry-run still shows the preview.
+  if ! $force || $dry_run; then
+    printf "\nFiles to be reset:\n" >&2
+    printf "  %s\n" "${files_to_reset[@]}" >&2
+    printf "\nPreview of changes:\n" >&2
+    for file in "${files_to_reset[@]}"; do
+      preview_file_changes "$commit" "$file"
+    done
+    if $dry_run; then
+      info "Dry run — no files were modified."
+      return 0
+    fi
+  fi
+
+  if ! $force; then
+    printf "Resetting files...\n" >&2
+  fi
+  git restore --source="$commit" --worktree "${files_to_reset[@]}"
+  success "Files reset to $commit_short"
 }
 
 # Main function

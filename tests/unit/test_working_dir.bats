@@ -1613,3 +1613,120 @@ EOF
   run cat specific.txt
   assert_output "v2"
 }
+
+# ---- Concern 1: clean path needs no flag; dirty path refuses unless -f ----
+# Every case pins `< /dev/null` (no-TTY) per tests/CLAUDE.md.
+# Background: git-w-get used to call a bespoke `confirm()` (a raw `read -p`
+# loop) for the specific-files path; that loop ignored HUG_YES/HUG_FORCE and
+# exited 1 under no-TTY, so even a CLEAN restore demanded `-f`. An agent
+# trained to reach for `-f` then silently destroys the next file's uncommitted
+# edits. The new 3-state gate (State A clean = proceed; State B dirty not
+# forced = refuse even under -y; State C dirty forced = overwrite with notice)
+# replaces that bespoke prompt — these tests pin each state.
+
+@test "hug w get (specific): clean file succeeds with NO flag under no-TTY" {
+  echo "Version 1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "Version 2" > t.txt; git add t.txt; git commit -q -m v2   # t.txt now clean (matches HEAD)
+
+  run bash -c 'hug w get HEAD~1 t.txt < /dev/null'
+  assert_success
+  assert_output --partial "Files are clean"
+  run cat t.txt
+  assert_output "Version 1"
+}
+
+@test "hug w get (specific): clean file succeeds with -y under no-TTY" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "v2" > t.txt; git add t.txt; git commit -q -m v2
+
+  run bash -c 'hug w get -y HEAD~1 t.txt < /dev/null'
+  assert_success
+  run cat t.txt
+  assert_output "v1"
+}
+
+@test "hug w get (specific): dirty file refuses without -f, names the file + wipe text" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "UNSTAGED" >> t.txt
+
+  run bash -c 'hug w get HEAD t.txt < /dev/null'
+  assert_failure
+  assert_output --partial "t.txt"
+  assert_output --partial "wipe"     # byte-locked check_files_clean text
+}
+
+@test "hug w get (specific): dirty file STILL refuses under -y (agent-safety guarantee)" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "UNSTAGED" >> t.txt
+
+  run bash -c 'hug w get -y HEAD t.txt < /dev/null'
+  assert_failure                     # -y must NOT authorize destroying uncommitted work
+}
+
+@test "hug w get (specific): dirty file with -f overwrites and names it (overwritten, not deleted)" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "UNSTAGED" >> t.txt
+
+  run bash -c 'hug w get -f HEAD t.txt < /dev/null'
+  assert_success
+  assert_output --partial "Discarding uncommitted changes in 1 file(s) (will be overwritten):"
+  assert_output --partial "t.txt"
+  run cat t.txt
+  assert_output "v1"                 # unstaged edit gone
+}
+
+@test "hug w get (specific): staged-only-dirty is treated as dirty by the gate" {
+  # Pins the gate's linchpin: get_dirty_files unions staged AND unstaged.
+  # A file with only a staged delta (no unstaged delta) MUST still count as
+  # dirty — otherwise State A would treat it as clean and silently overwrite
+  # the staged edit. The force variant is the right probe because the refuse
+  # path (State B) uses the same get_dirty_files and is already covered.
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "STAGED" >> t.txt; git add t.txt      # staged-only dirty (no unstaged delta)
+
+  run bash -c 'hug w get -f HEAD t.txt < /dev/null'
+  assert_success
+  assert_output --partial "Discarding uncommitted changes in 1 file(s) (will be overwritten):"
+  assert_output --partial "t.txt"
+}
+
+@test "hug w get (specific): --dry-run on dirty refuses (no diff preview) under no-TTY" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "UNSTAGED" >> t.txt
+
+  run bash -c 'hug w get --dry-run HEAD t.txt < /dev/null'
+  assert_failure
+  assert_output --partial "wipe"
+  [[ "$output" != *"Preview of changes"* ]]   # refuse-before-preview
+}
+
+@test "hug w get (specific): multi-file mixed refuses naming only the dirty file" {
+  echo "a" > a.txt; echo "b" > b.txt; git add a.txt b.txt; git commit -q -m init
+  echo "x" >> a.txt                  # a.txt dirty, b.txt clean
+
+  run bash -c 'hug w get HEAD a.txt b.txt < /dev/null'
+  assert_failure
+  assert_output --partial "a.txt"   # dirty file named; clean file's silence
+  # (b.txt not named) is proven by the -f variant two tests below asserting
+  # "Discarding ... 1 file(s)" — i.e. only a.txt counts. A negative multi-line
+  # literal here would be brittle against cosmetic wording shifts.
+}
+
+@test "hug w get (specific): multi-file mixed with -f overwrites naming only the dirty file" {
+  echo "a" > a.txt; echo "b" > b.txt; git add a.txt b.txt; git commit -q -m init
+  echo "x" >> a.txt                  # a.txt dirty
+
+  run bash -c 'hug w get -f HEAD a.txt b.txt < /dev/null'
+  assert_success
+  assert_output --partial "Discarding uncommitted changes in 1 file(s) (will be overwritten):"
+  assert_output --partial "a.txt"
+}
+
+@test "hug w get (specific): -f on clean stays silent (no 'Discarding 0 file(s)')" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "v2" > t.txt; git add t.txt; git commit -q -m v2
+
+  run bash -c 'hug w get -f HEAD~1 t.txt < /dev/null'
+  assert_success
+  [[ "$output" != *"Discarding 0 file(s)"* ]]
+}
