@@ -3,7 +3,7 @@
 - **Issue:** [elifarley/hug-scm#218](https://github.com/elifarley/hug-scm/issues/218)
 - **Related (pre-existing bug surfaced by this design):** [elifarley/hug-scm#220](https://github.com/elifarley/hug-scm/issues/220) — reset-all silent data loss; fixed in passing by File 2 step 3.
 - **Date:** 2026-07-26
-- **Status:** Design draft, under user review (revised after 6 code-roast rounds)
+- **Status:** Design draft, under user review (revised after 7 code-roast rounds)
 - **Scope:** Approach A (revised after code-roast) — fix `w get` (Concerns 1 & 2) + align one latent same-class sibling (`h-rewind`). `w-unwip` was **removed** from scope (see §1.3).
 
 > Line numbers cited below (e.g. "current lines 65–83") are anchors against the files as they stood at design time (2026-07-26, `main`). Re-resolve them at implementation time.
@@ -194,10 +194,12 @@ The two reset paths (`reset_specific_files`, `reset_all_files`) currently have *
 2. **Upstream path** — `handle_upstream_operation` is shared by 5 HEAD-movers of varying danger (`h-back`, `h-undo`, `h-rollback`, `cmv`, `h-rewind`), so do NOT add a tier param to it (out of scope, regression risk). The trap to avoid: calling `handle_upstream_operation "rewinding"` *then* a separate `prompt_confirm_danger` would **double-prompt in TTY** — `handle_upstream_operation` runs its own `prompt_confirm_warn` (hug-git-upstream:71), and on `y` returns the target, after which the danger gate fires a second time. The established idiom (already used by `h-undo:90`) is to invoke it with `HUG_FORCE=true`, which makes its internal `prompt_confirm_warn` auto-confirm (the warn gate is skipped) **while keeping the preview** (because `HUG_QUIET` is still not `T`, so lines 49–72's preview block still runs). Then the danger gate is the **single** real authorization:
    ```bash
    # upstream path: preview-only (warn auto-confirmed via HUG_FORCE), then the single danger gate
-   # The `|| exit $?` is REQUIRED: assignment-from-command-substitution is exempt from `set -e`,
-   # so a helper failure (e.g. error "Failed to get upstream commit." → exit 1 at hug-git-upstream:38)
-   # would otherwise leave $target empty and fall through. The empty-target guard then handles the
-   # "Already synced to upstream" exit 0 (hug-git-upstream:46, runs inside the subshell → empty stdout).
+   # The `|| exit $?` is belt-and-suspenders: a plain `target=$(…)` assignment already trips
+   # `set -e` on a non-zero helper exit today (the `set -e` exemption is only for `local`/`declare`/
+   # `export` declarations, and `target` is a plain re-assignment here — declared at h-rewind:79).
+   # The guard stays robust if this line is ever made `local` or moved into a conditional.
+   # The empty-target guard then handles the "Already synced to upstream" exit 0
+   # (hug-git-upstream:46, runs inside the subshell → empty stdout).
    target=$(HUG_FORCE=true handle_upstream_operation "rewinding") || exit $?
    [[ -z "${target:-}" ]] && exit 0
    prompt_confirm_danger "rewind" "git reset --hard to upstream is irreversible and cannot be undone"
@@ -219,6 +221,7 @@ Per `tests/CLAUDE.md`: interactive tests must use the **gum-mock** (`setup_gum_m
 ### Existing tests that must change
 
 - **`tests/unit/test_head.bats:1020`** (`hug h rewind: requires confirmation without --force`) currently does `echo "rewind" | hug h rewind HEAD~1` and asserts success. After switching to `prompt_confirm_danger`, piped-`echo` stdin is non-TTY → the helper's "Non-interactive environment: cancelled" branch fires → the test **breaks**. **Fix:** convert to gum-mock (`setup_gum_mock` + `export HUG_TEST_GUM_INPUT="rewind"`), and add a `-y`-refuses variant (`assert_failure`, danger tier). The decline cases (`echo "not_rewind"`, `echo ""`) become gum-mock cancellation (`HUG_TEST_GUM_INPUT_RETURN_CODE=1` or wrong input).
+- **`tests/unit/test_head.bats:586`** (`hug h rewind: preserves untracked and ignored files`) — its `:592` line does `echo "rewind" | hug h rewind` and breaks identically to :1020 (same bespoke-`read` → `prompt_confirm_danger` no-TTY issue). **Fix:** convert to gum-mock (`setup_gum_mock` + `export HUG_TEST_GUM_INPUT="rewind"`) so the confirmation path stays under test rather than being bypassed with `--force`. (A repo-wide sweep confirms :592 and the three lines inside :1020 are the ONLY piped-confirmation tests for affected commands — this list is complete.)
 - **`tests/unit/test_working_dir.bats`** existing `w get` tests (lines 180, 656, 672, 690, 707, 727, 1385, 1440, 1459, 1479, 1507, 1537, 1558, 1567, 1599 — enumerate by grepping `w get` in that file at implementation time) all pass `-f` on **clean** repos — they still pass (State C with empty dirty set). Add a no-`-f` companion to each that asserts the **clean path now succeeds without `-f`**.
 - **`tests/unit/test_working_dir.bats:1582`** (`w get reset-all: safety check blocks with uncommitted changes`) — the all-files State B refusal. Verify it still fails; update the asserted message to the (unchanged) `wipe`/`wipe-all` vocabulary. Add a `--force` companion asserting State C overwrites and **names the dirty file**.
 - **`tests/lib/test_hug-git-state.bats`**: add `get_dirty_files` coverage — (a) **clean file → count 0** (the joiner-bug regression: MUST be 0, not 1); (b) mixed set; (c) **no-arg whole-tree form** → matches `git status --porcelain` dirty set; (d) SIGPIPE-safety smoke with many files. Update any assertion on the old `check_file_unstaged` text. **Do NOT add expectations that `check_files_clean` text changed** — it is intentionally untouched (#208). (Grep confirms no test currently asserts the old `'Use .hug w discard'` single-file string in a way that breaks — the matches found are `w discard -f` command invocations, not message assertions. Verify during implementation.)
@@ -229,9 +232,9 @@ Per `tests/CLAUDE.md`: interactive tests must use the **gum-mock** (`setup_gum_m
 **`tests/unit/test_working_dir.bats`** (Concern 1). **Every case must pin `< /dev/null`** (per `tests/CLAUDE.md` §"Critical Issue: TTY Environment" — an unpinned confirm `read` hangs indefinitely in a TTY runner). Pattern: `run bash -c 'hug w get … < /dev/null'`.
 - Clean path, **no flag**, no-TTY (`< /dev/null`) → exit 0, message says "clean". (This is the regression test for the `get_dirty_files` joiner bug — it MUST assert exit 0, proving State A is reachable.)
 - Clean path, `-y` (`< /dev/null`) → exit 0.
-- Dirty path, no flag (`< /dev/null`) → exit ≠0, message names the dirty file + suggests `-f`.
+- Dirty path, no flag (`< /dev/null`) → exit ≠0, message names the dirty file + suggests `hug w wipe <file>` / `wipe-all` (the byte-locked `check_files_clean`/`check_working_tree_clean` text — see §1 Concern 2 reconciliation). That remediation is runnable under no-TTY once `-f` is appended to `wipe` (`git-w-wipe:46` → `git-w-discard:215` is danger-tier). Do NOT assert a "review" hint or a bare `-f` substring — neither appears in the locked text.
 - Dirty path, `-y` (`< /dev/null`) → **still refuses** (agent-safety guarantee), exit ≠0.
-- Dirty path, `-f` → exit 0, message names the discarded file (assert "overwritten or deleted" wording covers both sub-effects).
+- Dirty path, `-f` → exit 0, message names the discarded file (assert the **specific-files** `(will be overwritten)` wording — no "or deleted" here; that wording is all-files-only and is covered by the All-files bullets below).
 - `--dry-run` on dirty path (`< /dev/null`) → refuse message itemizing the dirty files (**no diff preview** — refuse-before-preview per §2) + exit ≠0.
 - Multi-file mixed (some clean, some dirty) → refuses naming only the dirty ones; `-f` overwrites naming only the dirty ones.
 - **All-files State C undercount regression:** `hug w get -f <commit>` (no file args) where a file *identical* between target and HEAD has uncommitted edits → the discard notice MUST name that file (proves the whole-tree `get_dirty_files` scope, not `affected_files`).
@@ -284,7 +287,7 @@ hug w get HEAD~1 f < /dev/null; echo "exit=$?"   # -> 0
 
 # C2 dirty path: refuses with improved message; suggested command is runnable with -f
 printf 'UNSTAGED\n' > f
-hug w get HEAD f < /dev/null; echo "exit=$?"      # -> non-zero, message suggests review + '-f'
+hug w get HEAD f < /dev/null; echo "exit=$?"      # -> non-zero; message itemizes 'f' and suggests 'hug w wipe f' (append '-f' for no-TTY)
 ```
 
 ---
