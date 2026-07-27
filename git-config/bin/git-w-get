@@ -22,6 +22,9 @@ USAGE:
 
 OPTIONS:
     -f, --force     Force overwrite, ignoring any uncommitted changes and running non-interactively.
+    -y, --yes       Has NO effect on the clean path (which needs no flag) and does NOT
+                    override the dirty-path refusal — only -f/--force overwrites
+                    uncommitted changes. (Routine-confirm flag; not a force substitute.)
     --dry-run       Preview what would be reset without making any changes.
     --browse-root   Browse full repository scope in file selector UI (default: current directory)
     <target>        Either an integer 0 <= N < 100, a COMMIT hash, or -u / --upstream

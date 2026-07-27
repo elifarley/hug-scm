@@ -27,6 +27,7 @@ OPTIONS:
                     Reference point is HEAD's commit time
     --quiet         Suppress output (sets HUG_QUIET=T)
     --force         Skip confirmation prompts (use with caution; highly destructive)
+    -y, --yes       Refused — rewind is danger-tier (git reset --hard); use --force.
 
 DESCRIPTION:
     Moves HEAD back to target (full clean). With -u, runs a read-only preview/confirmation before discarding local-only commits and uncommitted changes to sync with remote tip.
