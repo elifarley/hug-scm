@@ -49,11 +49,25 @@ DESCRIPTION:
   WARNING: This rewrites history. Only amend commits that have not been pushed
   to a shared repository.
 
+  `cmod` is NEVER read-only and has NO safe preview form: it is a commit command.
+  Bare `hug cmod` (no -m/--no-edit/-C) is not a no-op either — its behavior
+  depends on the editor environment, so it must never be relied on as harmless:
+    - Interactive shell with EDITOR set: opens the editor on the commit message
+      (the intended use). Closing the editor amends HEAD.
+    - No/empty EDITOR (dumb terminal, CI, many agent contexts): git errors with
+      "Terminal is dumb, but EDITOR unset" and HEAD is left unchanged — but this
+      is an ERROR path, not a guarantee, and a backgrounded/detached editor can
+      still let the amend proceed silently. Do not treat bare cmod as a read.
+  For a DETERMINISTIC non-interactive amend, pass --no-edit (keep message) or
+  -m (replace message) explicitly. To INSPECT which commit would be amended,
+  use `hug s --short-hash` or `hug sh HEAD`.
+
 EXAMPLES:
   hug a file.txt && hug cmod --no-edit  # Stage file, amend keeping message
   hug a file.txt && hug cmod -m "msg"   # Stage file, amend replacing message
   hug cmod --no-edit                    # Amend staged changes, keeping message
   hug cmod -m "Better message"          # Amend replacing message. If no staged changes, only the message changes.
+  hug s --short-hash                    # READ which commit HEAD points at (the correct "check before amend" step)
 
 SEE ALSO:
   hug c    : Commit staged changes

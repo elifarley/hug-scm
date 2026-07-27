@@ -162,9 +162,10 @@ Ball color encodes working-tree state (precedence: top → bottom):
 ## Amending
 
 - `hug cmod -m "message"`: amend last commit with STAGED changes only (rewrites HEAD)
-   - **Caution:** `cmod` only amends with staged changes, but in a dirty tree it's easy to have staged files you are not even aware of. That's why it's important to run `hug ss` before to list what's currently staged and run `hug us <file1> [<file2> ...]` to unstage files you don't want included.
+   - **Caution:** `cmod` only amends with staged changes, but in a dirty tree it's easy to have staged files you are not even aware of.
+  That's why it's important to run `hug ss` before to list what's currently staged and run `hug us <file1> [<file2> ...]` to unstage files you don't want included.
    - If unrelated changes end up in the amended commit, recover with `hug h back 1 --force`, unstage unwanted files, and run `hug cmod --no-edit` again.
-- `hug cmod --no-edit` — amend HEAD with staged changes only, doesn't change the commit message.
+- `hug cmod --no-edit` — amend HEAD with staged changes only, without changing the commit message.
 
 Before running `cmod` (Commit MODify), ALWAYS run `hug s --short-hash` to check which commit is going to be amended (as HEAD may have moved).
 
@@ -173,8 +174,8 @@ Before running `cmod` (Commit MODify), ALWAYS run `hug s --short-hash` to check 
 Default to `hug c` when you mean "create a new commit from what is staged."
 Only reach for `hug cmod` when you intend to **rewrite HEAD** (e.g. fixing a commit you just made before pushing).
 
-**Anti-pattern:** running `hug cmod` when you meant `hug c`. The new work gets
-folded into HEAD and rewrites history. Recover with `hug h back 1 --force`
+**Anti-pattern:** running `hug cmod` when you meant to create a new commit (`hug c` is the correct command).
+The new work gets folded into HEAD and rewrites history. Recover with `hug h back 1 --force`
 (HEAD back one, keep changes staged — soft-reset semantics), then run `hug c -m "msg"`.
 
 ## HEAD vs working-directory operations — don't confuse them
