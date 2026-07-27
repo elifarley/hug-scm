@@ -1731,6 +1731,50 @@ EOF
   [[ "$output" != *"Discarding 0 file(s)"* ]]
 }
 
+# ---- Concern 1 (interactive): the `--` picker path inherits the same gate ----
+#
+# `hug w get <commit> --` : parse_common_flags (lib/hug-cli-flags) detects the
+# TRAILING `--`, strips it, and exports HUG_INTERACTIVE_FILE_SELECTION=true.
+# git-w-get main() then branches into select_files_with_status (gum filter) and
+# feeds the chosen files straight into reset_specific_files — the SAME 3-state
+# gate the non-interactive specific-files path uses above. So the interactive
+# path inherits Concern 1's fix for free: a CLEAN selection needs no -f. This
+# smoke test pins that, driving the picker deterministically via the gum-mock
+# (HUG_TEST_GUM_SELECTION_INDICES selects listed lines by 0-based index).
+#
+# WHY the fixture is an UNTRACKED file that still exists in the TARGET commit
+# (and NOT a plain clean tracked file): select_files_with_status is invoked with
+# --staged --unstaged --untracked, so a clean TRACKED file never appears in the
+# picker — there would be nothing to select and the command would exit early with
+# "No files selected", never reaching reset_specific_files (a false-positive
+# pass). The ONLY category that is simultaneously (a) listed by the picker AND
+# (b) clean per get_dirty_files — which unions `git diff` + `git diff --cached`,
+# neither of which reports an untracked path — is an UNTRACKED file. Pairing it
+# with a target commit that still contains it satisfies check_file_in_commit, so
+# the flow reaches State A and restores without -f. This is the unique scenario
+# exercising "interactive + clean + no flag"; selecting a staged/unstaged file
+# would (correctly) trip State B and refuse.
+@test "hug w get -- (interactive): clean selection succeeds without -f" {
+  # Absorb the setup fixture (staged.txt / README.md / untracked.txt) so the
+  # picker list contains ONLY our file — selection index 0 is then deterministic
+  # (select_files_with_status lists staged → unstaged → untracked).
+  git add -A && git commit -q -m baseline
+
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1   # target HEAD~1 has t.txt=v1
+  git rm -q t.txt; git commit -q -m "drop t.txt"          # HEAD no longer tracks t.txt
+  echo "v2-local" > t.txt                                  # worktree copy is now UNTRACKED
+
+  setup_gum_mock
+  export HUG_TEST_GUM_SELECTION_INDICES=0   # picker lists only t.txt (untrcK) → index 0
+  run bash -c 'hug w get HEAD~1 -- < /dev/null'
+  teardown_gum_mock
+
+  assert_success
+  assert_output --partial "Files are clean"   # State A of reset_specific_files was reached
+  run cat t.txt
+  assert_output "v1"                          # restored from HEAD~1 with NO -f
+}
+
 # ---- #220: all-files gate must scope to the WHOLE tracked worktree ----
 
 @test "hug w get reset-all: dirty worktree with HEAD==target content is REFUSED (not 'Already at target')" {
