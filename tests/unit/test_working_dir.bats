@@ -1596,6 +1596,22 @@ EOF
   assert_failure
 }
 
+@test "hug w get reset-all: dirty whole tree STILL refuses under -y (agent-safety, all-files)" {
+  # All-files analog of the specific-files "dirty file STILL refuses under -y"
+  # invariant. The State-B gate for the WHOLE tree must check HUG_FORCE (not
+  # HUG_YES): under -y (HUG_YES only) a dirty tree is refused even though
+  # target == HEAD, so the "Already at target" early-exit — which sits AFTER the
+  # gate and also requires dirty-empty — must NOT fire. Pre-#218 an agent's -y
+  # could ride straight through to the wipe.
+  echo "a" > keep.txt; git add keep.txt; git commit -q -m base
+  local target=$(git rev-parse HEAD)         # target == HEAD content
+  echo "UNCOMMITTED" >> keep.txt              # worktree dirty (unstaged)
+
+  run bash -c "hug w get -y $target < /dev/null"
+  assert_failure                              # -y must NOT authorize destroying uncommitted work
+  [[ "$output" != *"Already at target"* ]]    # refuse fired before the early-exit
+}
+
 @test "hug w get specific --dry-run: shows preview without making changes" {
   echo "v1" > specific.txt
   git add specific.txt

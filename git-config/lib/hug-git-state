@@ -191,6 +191,11 @@ preview_file_changes() {
 #   GIT_PREFIX - Git prefix path (set automatically if not present)
 # Exits:
 #   With error if file has staged changes
+# Note:
+#   Retained as an exported library primitive for future callers — its only current
+#   caller (the w-get per-file loop) was removed in favor of the batched
+#   get_dirty_files gate. Mirrors check_file_unstaged's lib-hygiene rationale, so the
+#   staged/unstaged pair stays complete and the asymmetry is intentional, not an orphan.
 check_file_staged() {
   check_git_repo
   local file="${GIT_PREFIX}$1"

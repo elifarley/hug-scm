@@ -1945,3 +1945,27 @@ EOF
   assert_failure
   [ "$(git rev-parse HEAD)" = "$head_before" ]   # HEAD unchanged — gate cancelled
 }
+
+@test "hug h rewind -u: -y is REFUSED (danger tier, exit 3) on upstream path" {
+  # Upstream analog of the "-y is REFUSED (danger tier, exit 3)" test above, for
+  # the riskier path. handle_upstream_operation runs with an INLINE HUG_FORCE=true
+  # (scoped to its subshell) so it computes — but does not act on — a non-empty
+  # target; the OUTER prompt_confirm_danger is then the single decision point.
+  # -y (HUG_YES) must hit that danger gate and exit 3: it cannot ride the helper's
+  # suppressed warn gate through to `git reset --hard`. This is the inverted-gradient
+  # regression test — pre-fix, -y auto-confirmed via the warn gate and destroyed work.
+  # No HUG_DISABLE_GUM needed: the danger-tier refusal fires before any gum prompt.
+  create_test_repo_with_history
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "rewind-upstream-y-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  echo "extra" > extra.txt; git add extra.txt; git commit -q -m "local ahead commit"
+
+  run hug h rewind -u -y
+  [ "$status" -eq 3 ]      # HUG_EX_BLOCKED — -y cannot authorize the danger-tier upstream reset
+  [ "$status" -ne 0 ]      # backstop: a sourcing-order regression fails noisily, not silently
+}

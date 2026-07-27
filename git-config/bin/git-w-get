@@ -71,13 +71,13 @@ EOF
 #   • State A (clean)            — nothing unrecoverable can be lost, so no
 #                                  prompt, no flag. Falls through to the
 #                                  "Already at target" early-exit if the tree
-#                                  is also at the target (affected_files empty).
+#                                  is also at the target (no files differ).
 #   • State B (dirty, not forced) — refuse via check_working_tree_clean, which
 #                                  exits 1 with the byte-locked wipe/wipe-all
 #                                  remediation text + counts + `hug sl` pointer
 #                                  (do NOT printf our own refusal). Crucially
 #                                  the gate scopes to the WHOLE tracked worktree,
-#                                  not affected_files — see #220 note below.
+#                                  not just the changed files — see #220 note below.
 #   • State C (dirty, forced)     — proceed. Notice fires ONLY when dirty > 0
 #                                  (force-on-clean stays silent — no
 #                                  "Discarding 0 file(s)" chatter). Wording is
@@ -103,22 +103,22 @@ reset_all_files() {
   # of M/A/D, never silently omitted as part of a rename pair.
   # Direction: "$commit" HEAD means "what changed FROM target commit TO current HEAD".
   # M = content differs, D = present in target but absent from HEAD, A = absent from target but present in HEAD.
+  # Together these three arrays ARE the full target→HEAD diff set (every path
+  # that differs between $commit and HEAD). There is deliberately no concatenated
+  # "affected_files" variable: the gate below scopes to the WHOLE worktree, not
+  # this set — see the #220 note. (A concatenation would also need no dedup, the
+  # M/D/A filters being disjoint — but it is simply never needed.)
   local -a files_to_modify files_to_restore files_to_remove
-  local -a affected_files=()
 
   mapfile -t files_to_modify < <(git diff --name-only --no-renames --diff-filter=M "$commit" HEAD)
   mapfile -t files_to_restore < <(git diff --name-only --no-renames --diff-filter=D "$commit" HEAD)
   mapfile -t files_to_remove < <(git diff --name-only --no-renames --diff-filter=A "$commit" HEAD)
-  affected_files=("${files_to_modify[@]}" "${files_to_restore[@]}" "${files_to_remove[@]}")
-  # No deduplication needed: --diff-filter=M/D/A with --no-renames produces
-  # disjoint sets by construction. Previously, the old `git diff --name-only`
-  # (no filter) captured M+A+D in `changed_files`, requiring deduplication.
 
   # Compute the WHOLE-TREE dirty set ONCE, up front. The all-files reset runs
   # `git restore --staged --worktree .`, which destroys uncommitted edits even
-  # in files IDENTICAL between target and HEAD (absent from affected_files) —
+  # in files IDENTICAL between target and HEAD (absent from the diff set) —
   # so the gate AND the State-C notice must scope to the entire tracked
-  # worktree, not affected_files. (elifarley/hug-scm#220 undercount fix.)
+  # worktree, not just the files that differ. (elifarley/hug-scm#220 undercount fix.)
   # Shared by the State-B refuse, the State-C notice, and the early-exit
   # condition below. get_dirty_files with NO args reports the whole worktree
   # (lib/hug-git-state, Task 1); it returns 0 always (a reporting primitive
@@ -132,7 +132,7 @@ reset_all_files() {
   # is what makes -y (HUG_YES) NOT authorize destroying uncommitted work.
   # check_working_tree_clean exits 1 with byte-locked wipe/wipe-all text and
   # is the single source of truth for the refuse message; we do NOT printf
-  # our own. (Pre-#220 this used check_files_clean "${affected_files[@]}"
+  # our own. (Pre-#220 this used check_files_clean on the target→HEAD diff set,
   # which undercounted — a file identical between target and HEAD but with
   # uncommitted local edits was missed, and silently wiped by the reset.)
   if [[ ${HUG_FORCE:-} != true ]] && [ ${#dirty[@]} -gt 0 ]; then
@@ -140,8 +140,8 @@ reset_all_files() {
   fi
 
   # "Already at target" early-exit — AFTER the gate, and ONLY when
-  # affected_files is empty AND the tree is clean. (Pre-#220 it sat BEFORE
-  # the gate and fired on affected_files-empty ALONE, so `-f` on a dirty
+  # no files differ AND the tree is clean. (Pre-#220 it sat BEFORE
+  # the gate and fired on no-diff ALONE, so `-f` on a dirty
   # tree equal to target silently no-op'd, hiding the wipe. Requiring
   # dirty-empty too closes that leak: with target-tree == HEAD-tree but a
   # dirty worktree, the gate has already refused above when unforced, and
