@@ -82,6 +82,30 @@ check_working_tree_clean() {
     fi
 }
 
+# Reports files with staged OR unstaged changes (deduped, sorted), one per line.
+# Usage:
+#   mapfile -t dirty < <(get_dirty_files file1 file2 ...)   # scoped subset
+#   mapfile -t dirty < <(get_dirty_files)                    # whole worktree
+# Non-exiting; ALWAYS returns 0 (a reporting primitive must not leak the
+# emptiness test into $? — a bare caller under `set -euo pipefail` would die).
+# MUST mirror check_files_clean's ( … ) | sort -u idiom — one algorithm, two
+# consumers (this prints; check_files_clean errors+exits on non-empty).
+#
+# Why NOT a `$'\n'` joiner between two `$(…)`: a single newline passes
+# `[[ -n ]]`, so a clean repo would wrongly yield 1 entry. The `( … ) | sort -u`
+# subshell group reads all input before emitting, so sort cannot SIGPIPE its
+# producer.
+get_dirty_files() {
+  local -a dirty=()
+  if [[ $# -gt 0 ]]; then
+    mapfile -t dirty < <( ( git diff --name-only -- "$@"; git diff --cached --name-only -- "$@"; ) | sort -u )
+  else
+    mapfile -t dirty < <( ( git diff --name-only; git diff --cached --name-only; ) | sort -u )
+  fi
+  (( ${#dirty[@]} )) && printf '%s\n' "${dirty[@]}"
+  return 0
+}
+
 # Checks if specific files are clean (no staged or unstaged changes)
 # Usage: check_files_clean file1 file2 ...
 # Parameters:
@@ -95,11 +119,9 @@ check_files_clean() {
         return 0 # No files to check
     fi
 
-    # Optimization: use a single git command to check all files at once
-    mapfile -t files_with_changes < <( (
-        git diff --name-only -- "${files[@]}"
-        git diff --cached --name-only -- "${files[@]}"
-    ) | sort -u )
+    # D.R.Y.: delegate detection to get_dirty_files (one algorithm, two consumers).
+    local -a files_with_changes=()
+    mapfile -t files_with_changes < <(get_dirty_files "${files[@]}")
 
     if [ ${#files_with_changes[@]} -gt 0 ]; then
         error "Cannot proceed because some affected files have uncommitted changes.

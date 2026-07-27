@@ -179,3 +179,109 @@ teardown() {
   run bash -c 'set -o pipefail; source "$HUG_HOME/git-config/lib/hug-common"; source "$HUG_HOME/git-config/lib/hug-git-repo"; source "$HUG_HOME/git-config/lib/hug-git-state"; has_pending_changes'
   assert_success
 }
+
+################################################################################
+# get_dirty_files TESTS
+################################################################################
+
+@test "get_dirty_files: clean repo returns 0 and prints nothing" {
+  echo "test" > file.txt
+  git add file.txt
+  git commit -q -m "test commit"
+
+  run get_dirty_files
+  assert_success                 # MUST be 0 even when empty
+  assert_output ""
+}
+
+@test "get_dirty_files: clean repo yields ZERO mapfile entries (joiner-bug regression)" {
+  echo "test" > file.txt
+  git add file.txt
+  git commit -q -m "test commit"
+
+  local -a dirty=()
+  mapfile -t dirty < <(get_dirty_files)
+  [ "${#dirty[@]}" -eq 0 ]       # not 1
+}
+
+@test "get_dirty_files: lists unstaged-dirty file" {
+  echo "test" > file.txt
+  git add file.txt
+  git commit -q -m "test commit"
+  echo "modified" >> file.txt
+
+  run get_dirty_files
+  assert_success
+  assert_output "file.txt"
+}
+
+@test "get_dirty_files: lists staged-dirty file" {
+  echo "test" > file.txt
+  git add file.txt
+  git commit -q -m "test commit"
+  echo "modified" >> file.txt
+  git add file.txt
+
+  run get_dirty_files
+  assert_success
+  assert_output "file.txt"
+}
+
+@test "get_dirty_files: dedupes a file that is both staged and unstaged dirty" {
+  echo "test" > file.txt
+  git add file.txt
+  git commit -q -m "test commit"
+  echo "staged" >> file.txt
+  git add file.txt
+  echo "unstaged" >> file.txt    # now dirty in BOTH index and worktree
+
+  run get_dirty_files
+  assert_success
+  assert_output "file.txt"       # one line, not two
+}
+
+@test "get_dirty_files: scoped form reports only the named dirty file" {
+  echo "a" > a.txt; echo "b" > b.txt
+  git add a.txt b.txt
+  git commit -q -m "init"
+  echo "x" >> a.txt              # only a.txt dirty
+
+  run get_dirty_files a.txt b.txt
+  assert_success
+  assert_output "a.txt"
+}
+
+@test "get_dirty_files: no-arg whole-tree matches porcelain dirty set" {
+  echo "a" > a.txt; echo "b" > b.txt
+  git add a.txt b.txt
+  git commit -q -m "init"
+  echo "x" >> a.txt              # unstaged
+  echo "y" >> b.txt; git add b.txt   # staged
+
+  run get_dirty_files
+  assert_success
+  assert_output "a.txt
+b.txt"
+}
+
+@test "check_files_clean: still refuses dirty files with byte-locked wipe text (unchanged)" {
+  echo "a" > a.txt
+  git add a.txt
+  git commit -q -m "init"
+  echo "x" >> a.txt
+
+  run check_files_clean a.txt
+  assert_failure
+  assert_output --partial "Cannot proceed because some affected files have uncommitted changes."
+  assert_output --partial "a.txt"
+  assert_output --partial "hug w wipe-all"   # #208 byte-lock: wipe, not discard
+}
+
+@test "check_files_clean: passes when the named files are clean" {
+  echo "a" > a.txt
+  git add a.txt
+  git commit -q -m "init"
+
+  run check_files_clean a.txt
+  assert_success
+}
