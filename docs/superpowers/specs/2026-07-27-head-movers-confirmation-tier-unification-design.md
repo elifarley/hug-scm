@@ -35,7 +35,7 @@ elifarley/hug-scm#218 found this for `h-rewind` in isolation. The audit shows it
 | `h-rewind` | `reset --hard`, **no clean gate** | **YES — unrecoverable** | **danger** |
 | `h-cmv` | `reset --hard` on a **clean-gated** tree (comment: "safe since tree/index clean", git-cmv:~220) | No (refuses if dirty; history reflog-recoverable) | **warn** |
 | `h-squash` | combine commits | No (history only, reflog) | **warn** |
-| `h-rollback` | `reset --keep` (preserves other uncommitted changes) | No (reflog for commits) | **warn** |
+| `h-rollback` | `reset --keep` (preserves other uncommitted changes) — normal path | No (reflog for commits) | **warn** *(normal path only; the root-commit path runs `xargs rm -f` on tracked files with no clean gate — danger-tier risk, out of scope here, see §4)* |
 | `h-back` | `reset --soft` (changes kept staged) | No (nothing lost) | **warn** |
 | `h-undo` | `reset --mixed` (changes kept unstaged) | No (nothing lost) | **warn** |
 
@@ -64,6 +64,7 @@ handle_upstream_operation() {
     danger) prompt_confirm_danger "$action_word" "$danger_reason" ;;
     warn)   prompt_confirm_warn   "Proceed with $action_name to upstream? [y/N]: " ;;
     safe)   prompt_confirm_safe   "Proceed with $action_name to upstream?" ;;
+    *)      error "Unknown confirmation tier '$tier' for upstream operation '$action_name'." ;;  # fail LOUD, never skip the gate
   esac
   echo "$target"
 }
@@ -81,6 +82,15 @@ Each command sets `tier` (+ `action_word` + `danger_reason` where danger) near t
 
 One declaration, two consumers — they match **by construction**. A consistency-guard test (§6) asserts the two never diverge.
 
+### Step 3 — PRESERVE the conditional-skip logic (do not flatten it)
+
+Several commands gate confirmation **conditionally on tree state**, and the spec must not flatten that away. The tier param changes *which* prompt fires, never *whether* one fires:
+
+- **`h-undo`, `h-squash`** — upstream path wraps the helper in `if HUG_FORCE → call; elif dirty → call; else → info "…skipping confirmation" + HUG_FORCE=true call` (git-h-undo:84–91, git-h-squash:153–160). **On a clean tree, confirmation is skipped entirely.**
+- **`h-back`** — non-upstream path prompts only `if has_staged_changes`, else `info "No staged changes detected; skipping confirmation."` (git-h-back:108–112).
+
+The tier change replaces the **prompt call inside the confirmed branch** (`prompt_confirm_danger` → `prompt_confirm_warn` for the 5, or the helper's tier arg for upstream) and leaves the surrounding `if dirty … else skip` structure **byte-for-byte intact**. **Failure mode if ignored:** a literal "call `handle_upstream_operation` with the tier unconditionally" would make clean-tree `hug h squash -u` (no `-y`) prompt → cancel under no-TTY → exit 1, where today it succeeds — breaking clean-tree CI automation. The consistency-guard test (§6) must include a **clean-tree case** asserting the skip is preserved (clean `hug h undo` / `hug h squash -u` with no `-y` → exit 0, no prompt).
+
 ## 4. Per-command changes
 
 | Command | Non-upstream today → | Upstream today → | Net change |
@@ -93,8 +103,10 @@ One declaration, two consumers — they match **by construction**. A consistency
 | `h-cmv` | `prompt_confirm_danger` (git-cmv:184,217) → **`prompt_confirm_warn`** | warn ✓ | non-upstream lowered to warn |
 
 **Two headline effects:**
-1. **`h-rewind -u` is fixed properly** — no longer the weakest-gated destructive command; no longer needs the `HUG_FORCE` double-prompt workaround.
+1. **`h-rewind -u` gets a danger-tier gate** — no longer the weakest-gated destructive command; no longer needs the `HUG_FORCE` double-prompt workaround. **Caveat (honest scope):** the gate lives inside the helper's `if [[ HUG_QUIET != T ]]` block (hug-git-upstream:49–72), so `hug h rewind -u --quiet` runs **zero** confirmation gates — the danger gate is skipped along with the preview. This matches today's `--quiet` semantics (preview+confirm are one block) and is unchanged by this spec; see §7. Do not claim `-u` is "fully" gated without noting the `--quiet` escape hatch.
 2. **Five commands' non-upstream path gets easier** — `h-undo`, `h-back`, etc. no longer require typing a word to do a fully-recoverable reset; `-y` now works on them. A deliberate UX relaxation justified by the risk model (nothing unrecoverable is lost). `-f` still works everywhere.
+
+**Root-commit paths (h-undo, h-back, h-rollback) — out of scope, with one flag:** each has a separate root-commit branch (`reset_root_commit`, hug-git-upstream:142) that is **not** part of the upstream/non-upstream tier model and is untouched here. **One of them is danger-tier by this spec's own definition and currently mis-gated relative to its risk:** `h-rollback`'s root path runs `reset_root_commit "keep"` → `xargs rm -f` deleting tracked files with **no clean-tree gate** (h-rollback:~112, hug-git-upstream:155–167) — that destroys work, unlike the normal `reset --keep`. This spec does **not** change it (out of scope), but the §2 "rollback = warn" classification applies only to the normal path; the root path's gating is a separate concern. **Filed as a note in [elifarley/hug-scm#222](https://github.com/elifarley/hug-scm/issues/222)** for the root-path audit. The existing root-path tests (`test_head.bats:510,:527` — "on root commit: requires special confirmation") are unaffected by this spec's tier changes and must NOT be migrated.
 
 **Judgment call (accepted):** lowering the 5 non-upstream tiers danger→warn is a real behavior change for existing users/tests (piped `echo "undo" | hug h undo` tests break → become `-y`/`echo "y"`). The alternative (keep the 5 at danger, only raise `h-rewind` upstream) would leave upstream/non-upstream tiers diverging for those 5 — violating the "both paths same risk level" goal. Full consistency chosen; breakage handled by test migration (§6).
 
@@ -102,25 +114,28 @@ One declaration, two consumers — they match **by construction**. A consistency
 
 #218's spec File 3 plans an `h-rewind` both-paths→danger fix via the `HUG_FORCE=true handle_upstream_operation` wrapper + a separate `prompt_confirm_danger`. **This design supersedes that part of #218** — same `h-rewind` outcome, cleaner (a `tier=danger` param instead of the wrapper hack), and fixes the other 5 commands too.
 
-**Sequence (accepted): land #218 first, rework `h-rewind` here.** #218's core is `w get` (nearly done); it lands first. This spec then reworks #218's `h-rewind` File 3 into the tier-param form and adds the 5 other commands. Implementers: when this spec is implemented, #218's `h-rewind` changes already exist — replace the wrapper hack with `handle_upstream_operation "rewinding" danger "..."` and the non-upstream `prompt_confirm_danger` (already present from #218).
+**Sequence (accepted): land #218 first, rework `h-rewind` here.** #218's core is `w get` (nearly done); it lands first. This spec then reworks #218's `h-rewind` File 3 into the tier-param form and adds the 5 other commands. Implementers: when this spec is implemented, #218's `h-rewind` changes already exist — replace the wrapper hack with `handle_upstream_operation "rewinding" danger "rewind" "git reset --hard is irreversible"` (4 args: verb, tier, action-word, danger-reason — see §3 Step 1) and keep the non-upstream `prompt_confirm_danger` (already present from #218).
 
 ## 6. Testing & migration
 
 **Existing piped-confirm tests (verified inventory in `tests/unit/test_head.bats`):**
 
-| Test | Command | New tier | Migration |
+| Test | Command / path | Affected? | Migration |
 |---|---|---|---|
-| `:510` | rollback `echo "n"` (decline) | warn | warn honors piped `n` under no-TTY → likely no change; verify |
-| `:527` | rollback `echo "rollback"` | warn | → `echo "y"` (or `-y`) |
-| `:639` | back `echo "n"` (decline) | warn | no change; verify |
-| `:644` | back `echo "back"` | warn | → `echo "y"` (or `-y`) |
-| `:592` | rewind `echo "rewind"` | danger | → gum-mock (`HUG_TEST_GUM_INPUT="rewind"`) |
-| `:1034`, `:1039` | rewind decline/confirm | danger | → gum-mock |
+| `:510` | rollback **root-commit path** decline (`echo "n"`) | **NO** (root path, untouched — §4) | **Do NOT migrate** — stays as-is |
+| `:527` | rollback **root-commit path** confirm (`echo "rollback"`) | **NO** (root path, untouched — §4) | **Do NOT migrate** — stays as-is |
+| `:639` | back non-upstream decline (`HUG_DISABLE_GUM=true; echo "n"`) | yes → warn | warn declines on `n` → no change; verify |
+| `:644` | back non-upstream confirm (`HUG_DISABLE_GUM=true; echo "back"`) | yes → warn | → `echo "y"` (warn accepts `y`), keep `HUG_DISABLE_GUM=true` |
+| `:592` | rewind non-upstream confirm (`echo "rewind"`) | yes → danger | → gum-mock (`HUG_TEST_GUM_INPUT="rewind"`) |
+| `:1034`, `:1039` | rewind non-upstream decline/confirm | yes → danger | → gum-mock |
 | `tests/CLAUDE.md:247,251` | doc examples | — | update to match new tiers |
 
-(`h-undo`/`h-squash`/`h-cmv` had no piped-confirm tests in the audit; verify via `make test` during implementation.)
+(`h-undo`/`h-squash`/`h-cmv` had no piped-confirm tests in the audit; verify via `make test` during implementation. The `:510`/`:527` rollback tests exercise the **root-commit** branch, which this spec does not touch — an earlier draft wrongly listed them for warn-migration, which would have turned `:527`'s `assert_success` red.)
 
-**Mechanical note:** `prompt_confirm_warn` under no-TTY falls through to `read`, so piped `y`/`n` works — the 5 lowered commands need only `echo "<word>"` → `echo "y"`. Only the danger-tier `h-rewind` needs gum-mock (its typed-word gate doesn't read plain pipes; see `hug-confirm:109-118`).
+**Mechanical note (corrected — the suite default is gum-mock, not raw `read`):** `test_helper.bash:96` exports `HUG_TEST_MODE=true` suite-globally, and `gum_available` (hug-gum:27) returns true when `HUG_TEST_MODE=true`. So under the suite default a warn-tier prompt goes to **gum-mock's `confirm`**, which reads **`HUG_TEST_GUM_CONFIRM`** (gum-mock:186–188) — NOT `HUG_TEST_GUM_INPUT` (that drives the `input` subcommand used by danger's typed-word gate). Consequences for migrated tests:
+- To exercise warn via a piped `read`, you must set `HUG_DISABLE_GUM=true` first (as `:639`/`:644` already do) so `gum_available` is false and warn falls through to `read`. A bare `echo "y" | hug h undo` WITHOUT `HUG_DISABLE_GUM=true` hits gum-mock, which sees no `HUG_TEST_GUM_CONFIRM` → exit 1 regardless of the piped input.
+- Equivalently, use gum-mock directly: `setup_gum_mock` + `export HUG_TEST_GUM_CONFIRM=yes`.
+- danger-tier `h-rewind` typed-word: gum-mock `input` reads `HUG_TEST_GUM_INPUT="rewind"`.
 
 **New tests:**
 1. **Consistency guard (locks the design invariant):** for each of the 6 commands, assert upstream and non-upstream resolve to the **same tier** — `h-rewind -u` and `h-rewind HEAD~1` both refuse under `-y` (both danger → exit 3); `h-undo -u` and `h-undo HEAD~1` both proceed under `-y` (both warn → exit 0). This is the regression test for "both paths same risk level"; if anyone re-hardcodes a tier, it fails.
