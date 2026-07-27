@@ -1730,3 +1730,90 @@ EOF
   assert_success
   [[ "$output" != *"Discarding 0 file(s)"* ]]
 }
+
+# ---- #220: all-files gate must scope to the WHOLE tracked worktree ----
+
+@test "hug w get reset-all: dirty worktree with HEAD==target content is REFUSED (not 'Already at target')" {
+  echo "a" > keep.txt; git add keep.txt; git commit -q -m base
+  local target=$(git rev-parse HEAD)         # target == HEAD content
+  echo "UNCOMMITTED" >> keep.txt              # worktree dirty
+
+  run bash -c "hug w get $target < /dev/null"
+  assert_failure
+  [[ "$output" != *"Already at target"* ]]
+}
+
+@test "hug w get reset-all: -f with HEAD==target content + dirty worktree proceeds (not no-op)" {
+  echo "a" > keep.txt; git add keep.txt; git commit -q -m base
+  local target=$(git rev-parse HEAD)
+  echo "UNCOMMITTED" >> keep.txt
+
+  run bash -c "hug w get -f $target < /dev/null"
+  assert_success
+  [[ "$output" != *"Already at target"* ]]
+  assert_output --partial "Discarding uncommitted changes"
+  assert_output --partial "keep.txt"
+  run cat keep.txt
+  assert_output "a"                          # edit discarded, not silently kept
+}
+
+@test "hug w get reset-all: -f names a file identical between target and HEAD but locally edited (#220 undercount)" {
+  echo "x" > change.txt; echo "keep" > same.txt
+  git add change.txt same.txt; git commit -q -m base
+  local target=$(git rev-parse HEAD)
+  echo "y" >> change.txt; git add change.txt; git commit -q -m second   # change.txt differs; same.txt identical to target
+  echo "LOCAL" >> same.txt                  # uncommitted edit in a file IDENTICAL between target and HEAD
+
+  run bash -c "hug w get -f $target < /dev/null"
+  assert_success
+  assert_output --partial "same.txt"        # whole-tree scope catches it; affected_files would not
+}
+
+@test "hug w get reset-all: -f delete-case says 'overwritten or deleted'" {
+  echo "a" > a.txt; git add a.txt; git commit -q -m base
+  local target=$(git rev-parse HEAD)
+  echo "new" > added.txt; git add added.txt; git commit -q -m second    # added.txt absent from target
+  echo "LOCAL" >> added.txt                  # uncommitted edit in a file that will be rm -f'd
+
+  run bash -c "hug w get -f $target < /dev/null"
+  assert_success
+  assert_output --partial "overwritten or deleted"
+  assert_file_not_exists "added.txt"
+}
+
+@test "hug w get reset-all: -f companion to :1582 — force overwrites and names the dirty file" {
+  echo "original" > safety.txt
+  git add -A && git commit -q -m "baseline"
+  local target_commit=$(git rev-parse HEAD)
+  echo "modified" > safety.txt
+  git add safety.txt && git commit -q -m "modify safety.txt"
+  echo "local change" >> safety.txt
+
+  run hug w get -f "$target_commit"
+  assert_success
+  assert_output --partial "Discarding uncommitted changes"
+  assert_output --partial "safety.txt"
+}
+
+@test "hug w get reset-all: -f --dry-run on dirty prints notice + preview, does not modify" {
+  echo "a" > a.txt; git add a.txt; git commit -q -m base
+  local target=$(git rev-parse HEAD)
+  echo "b" > b.txt; git add b.txt; git commit -q -m second
+  echo "LOCAL" >> a.txt              # uncommitted edit in a file that will be restored
+
+  run bash -c "hug w get -f --dry-run $target < /dev/null"
+  assert_success
+  assert_output --partial "Discarding uncommitted changes"
+  assert_output --partial "Dry run"
+  run cat a.txt
+  assert_output "a"$'\n'"LOCAL"      # edit preserved — dry run did not modify
+}
+
+@test "hug w get reset-all: clean tree at target content early-exits with 'Already at target'" {
+  git add -A && git commit -q -m "baseline"   # absorb the dirty state from setup
+  local target=$(git rev-parse HEAD)          # clean tree, target == HEAD content
+
+  run bash -c "hug w get $target < /dev/null"
+  assert_success
+  assert_output --partial "Already at target commit"
+}

@@ -83,6 +83,26 @@ confirm() {
 }
 
 # Reset all files to commit
+#
+# 3-STATE GATE (mirrors reset_specific_files's contract, adapted to all-files):
+#   • State A (clean)            — nothing unrecoverable can be lost, so no
+#                                  prompt, no flag. Falls through to the
+#                                  "Already at target" early-exit if the tree
+#                                  is also at the target (affected_files empty).
+#   • State B (dirty, not forced) — refuse via check_working_tree_clean, which
+#                                  exits 1 with the byte-locked wipe/wipe-all
+#                                  remediation text + counts + `hug sl` pointer
+#                                  (do NOT printf our own refusal). Crucially
+#                                  the gate scopes to the WHOLE tracked worktree,
+#                                  not affected_files — see #220 note below.
+#   • State C (dirty, forced)     — proceed. Notice fires ONLY when dirty > 0
+#                                  (force-on-clean stays silent — no
+#                                  "Discarding 0 file(s)" chatter). Wording is
+#                                  "(will be overwritten or deleted)": all-files
+#                                  BOTH overwrites (git restore --staged
+#                                  --worktree .) AND `xargs rm -f`s files absent
+#                                  from target — so "or deleted" is the truth
+#                                  here, unlike specific-files' "overwritten".
 reset_all_files() {
   local commit="$1"
   local force="$2"
@@ -106,73 +126,89 @@ reset_all_files() {
   mapfile -t files_to_modify < <(git diff --name-only --no-renames --diff-filter=M "$commit" HEAD)
   mapfile -t files_to_restore < <(git diff --name-only --no-renames --diff-filter=D "$commit" HEAD)
   mapfile -t files_to_remove < <(git diff --name-only --no-renames --diff-filter=A "$commit" HEAD)
-
-  # Combine into a single list of affected files for cleanliness checks.
   affected_files=("${files_to_modify[@]}" "${files_to_restore[@]}" "${files_to_remove[@]}")
   # No deduplication needed: --diff-filter=M/D/A with --no-renames produces
   # disjoint sets by construction. Previously, the old `git diff --name-only`
   # (no filter) captured M+A+D in `changed_files`, requiring deduplication.
 
-  # Early exit: no files differ between target and HEAD
-  if [ ${#files_to_modify[@]} -eq 0 ] && [ ${#files_to_restore[@]} -eq 0 ] && [ ${#files_to_remove[@]} -eq 0 ]; then
+  # Compute the WHOLE-TREE dirty set ONCE, up front. The all-files reset runs
+  # `git restore --staged --worktree .`, which destroys uncommitted edits even
+  # in files IDENTICAL between target and HEAD (absent from affected_files) —
+  # so the gate AND the State-C notice must scope to the entire tracked
+  # worktree, not affected_files. (elifarley/hug-scm#220 undercount fix.)
+  # Shared by the State-B refuse, the State-C notice, and the early-exit
+  # condition below. get_dirty_files with NO args reports the whole worktree
+  # (lib/hug-git-state, Task 1); it returns 0 always (a reporting primitive
+  # must not leak emptiness into $? under `set -euo pipefail`).
+  local -a dirty=()
+  mapfile -t dirty < <(get_dirty_files)
+
+  # STATE B — dirty, not forced: refuse (whole-tree), before any preview.
+  # Override source is HUG_FORCE (not the local $force bool, which is
+  # display-chatter only — see reset_specific_files for the same split): this
+  # is what makes -y (HUG_YES) NOT authorize destroying uncommitted work.
+  # check_working_tree_clean exits 1 with byte-locked wipe/wipe-all text and
+  # is the single source of truth for the refuse message; we do NOT printf
+  # our own. (Pre-#220 this used check_files_clean "${affected_files[@]}"
+  # which undercounted — a file identical between target and HEAD but with
+  # uncommitted local edits was missed, and silently wiped by the reset.)
+  if [[ ${HUG_FORCE:-} != true ]] && [ ${#dirty[@]} -gt 0 ]; then
+    check_working_tree_clean # exits 1
+  fi
+
+  # "Already at target" early-exit — AFTER the gate, and ONLY when
+  # affected_files is empty AND the tree is clean. (Pre-#220 it sat BEFORE
+  # the gate and fired on affected_files-empty ALONE, so `-f` on a dirty
+  # tree equal to target silently no-op'd, hiding the wipe. Requiring
+  # dirty-empty too closes that leak: with target-tree == HEAD-tree but a
+  # dirty worktree, the gate has already refused above when unforced, and
+  # under -f the dirty set is non-empty so we fall through to State C.)
+  if [ ${#files_to_modify[@]} -eq 0 ] && [ ${#files_to_restore[@]} -eq 0 ] && [ ${#files_to_remove[@]} -eq 0 ] && [ ${#dirty[@]} -eq 0 ]; then
     info "Already at target commit $commit_short — no files to reset."
     return 0
   fi
 
-  # Check for uncommitted changes only in the affected files
-  if ! $force; then
-    check_files_clean "${affected_files[@]}"
+  # STATE C — dirty + forced: notice names every at-risk file. Says
+  # "overwritten or deleted" because the path below BOTH overwrites
+  # (git restore --staged --worktree .) AND `xargs rm -f`s files absent from
+  # target. (Contrast reset_specific_files, which never `rm -f`s — there the
+  # wording is "(will be overwritten)" with no "or deleted".)
+  if [[ ${HUG_FORCE:-} == true ]] && ((${#dirty[@]})); then
+    warning "Discarding uncommitted changes in ${#dirty[@]} file(s) (will be overwritten or deleted):"
+    printf "  %s\n" "${dirty[@]}" >&2
   fi
 
   if ! $force || $dry_run; then
-    # Show what will change
     printf "Files that will be MODIFIED:\n" >&2
     if [ ${#files_to_modify[@]} -gt 0 ]; then
       printf "  %s\n" "${files_to_modify[@]}" >&2
     else
       printf "  (no changes from current HEAD)\n" >&2
     fi
-
     printf "\n" >&2
-
-    # Show files to be restored (present in target, missing from HEAD)
     if [ ${#files_to_restore[@]} -gt 0 ]; then
       printf "Files that will be RESTORED:\n" >&2
       printf "  %s\n" "${files_to_restore[@]}" >&2
       printf "\n" >&2
     fi
-
-    # Show files to be removed (not in target commit)
     if [ ${#files_to_remove[@]} -gt 0 ]; then
       printf "Files that will be REMOVED:\n" >&2
       printf "  %s\n" "${files_to_remove[@]}" >&2
       printf "\n" >&2
     fi
-
-    # Dry-run: preview only, no actual changes
     if $dry_run; then
       info "Dry run — no files were modified."
       return 0
     fi
   fi
 
-  if ! $force; then
-    # Confirmation
-    warning "This will overwrite ALL files to their state in $commit_short"
-    confirm "Type \"reset\" to confirm: " "reset"
-  fi
-
   # Perform the reset
   if ! $force; then
     printf "Resetting all files to %s...\n" "$commit" >&2
   fi
-
-  # Remove files that don't exist in target commit
   if [ ${#files_to_remove[@]} -gt 0 ]; then
     printf "%s\n" "${files_to_remove[@]}" | xargs rm -f
   fi
-
-  # Then restore files from target commit
   git restore --source="$commit" --staged --worktree . 2> /dev/null || {
     # Fallback for older git versions
     git read-tree "$commit"
