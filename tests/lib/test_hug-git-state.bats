@@ -285,3 +285,37 @@ b.txt"
   run check_files_clean a.txt
   assert_success
 }
+
+@test "check_file_unstaged: review-first, no-TTY-runnable remediation text" {
+  echo "a" > a.txt
+  git add a.txt
+  git commit -q -m "init"
+  echo "x" >> a.txt              # unstaged only
+
+  run check_file_unstaged a.txt
+  assert_failure
+  assert_output --partial "has unstaged changes"
+  assert_output --partial "Review with 'hug sw a.txt'"
+  assert_output --partial "hug w discard -f a.txt"
+}
+
+@test "check_file_unstaged: passes when the file has no unstaged changes" {
+  echo "a" > a.txt
+  git add a.txt
+  git commit -q -m "init"
+
+  run check_file_unstaged a.txt
+  assert_success
+}
+
+# Guards the unstaged-only invariant: a file with staged changes but NO working-tree
+# delta must pass. If someone swapped the `git diff --quiet` (unstaged-only) probe for
+# a broader status check, this test would catch the semantic drift — and that drift is
+# exactly what would justify changing the remediation from 'discard' to 'wipe'.
+@test "check_file_unstaged: passes when the file is staged-only (no unstaged delta)" {
+  echo "a" > a.txt; git add a.txt; git commit -q -m "init"
+  echo "x" >> a.txt; git add a.txt          # fully staged, no working-tree delta
+
+  run check_file_unstaged a.txt
+  assert_success
+}

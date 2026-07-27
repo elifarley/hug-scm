@@ -217,8 +217,11 @@ check_file_unstaged() {
     # check_file_unstaged only asserts UNSTAGED state — so 'discard'
     # (unstaged-only by default) is the correct operation here, unlike
     # check_working_tree_clean where both staged+unstaged matter.
-    error "File '$file' has unstaged changes
-    Use 'hug w discard $file' to discard changes first"
+    # Review-first + runnable-under-no-TTY: the previous text nudged an unseen
+    # 'hug w discard' (itself blocked under no-TTY without -f), steering agents
+    # to destroy edits they never inspected (elifarley/hug-scm#218, Concern 2).
+    error "File '$file' has unstaged changes.
+    Review with 'hug sw $file' (or 'hug su $file'); if discarding is intended, run 'hug w discard -f $file'."
   fi
 }
 
