@@ -264,6 +264,33 @@ teardown() {
 b.txt"
 }
 
+################################################################################
+# get_untracked_files TESTS
+################################################################################
+
+@test "get_untracked_files: clean repo (no untracked) returns 0 and prints nothing" {
+  echo "test" > file.txt; git add file.txt; git commit -q -m "c"
+  run get_untracked_files
+  assert_success
+  assert_output ""
+}
+
+@test "get_untracked_files: lists an untracked file" {
+  echo "test" > file.txt; git add file.txt; git commit -q -m "c"
+  echo "u" > untracked.txt
+  run get_untracked_files
+  assert_success
+  assert_output "untracked.txt"
+}
+
+@test "get_untracked_files: scoped form lists only the named untracked file" {
+  echo "a" > a.txt; echo "b" > b.txt; git add a.txt b.txt; git commit -q -m "c"
+  echo "u" > u1.txt; echo "v" > u2.txt
+  run get_untracked_files u1.txt a.txt   # a.txt is tracked, u1.txt untracked
+  assert_success
+  assert_output "u1.txt"
+}
+
 @test "check_files_clean: still refuses dirty files with byte-locked wipe text (unchanged)" {
   echo "a" > a.txt
   git add a.txt

@@ -114,51 +114,53 @@ reset_all_files() {
   mapfile -t files_to_restore < <(git diff --name-only --no-renames --diff-filter=D "$commit" HEAD)
   mapfile -t files_to_remove < <(git diff --name-only --no-renames --diff-filter=A "$commit" HEAD)
 
-  # Compute the WHOLE-TREE dirty set ONCE, up front. The all-files reset runs
-  # `git restore --staged --worktree .`, which destroys uncommitted edits even
-  # in files IDENTICAL between target and HEAD (absent from the diff set) —
-  # so the gate AND the State-C notice must scope to the entire tracked
-  # worktree, not just the files that differ. (elifarley/hug-scm#220 undercount fix.)
-  # Shared by the State-B refuse, the State-C notice, and the early-exit
-  # condition below. get_dirty_files with NO args reports the whole worktree
-  # (lib/hug-git-state, Task 1); it returns 0 always (a reporting primitive
-  # must not leak emptiness into $? under `set -euo pipefail`).
-  local -a dirty=()
+  # Compute the whole-tree at-risk set: dirty (staged/unstaged tracked) PLUS untracked
+  # files the reset-all restore (`git restore --staged --worktree .`) would overwrite —
+  # i.e. untracked files present in the target commit (git diff can't see them;
+  # elifarley/hug-scm#225 P1). comm -12 keeps only paths on BOTH sides; both inputs
+  # are sorted (get_untracked_files sorts internally, ls-tree output is piped to sort)
+  # which comm REQUIRES — unsorted input yields silently wrong intersections.
+  local -a dirty=() untracked_in_target=() at_risk=()
   mapfile -t dirty < <(get_dirty_files)
+  mapfile -t untracked_in_target < <(comm -12 <(get_untracked_files) <(git ls-tree -r --name-only "$commit" | sort))
+  mapfile -t at_risk < <({
+    printf '%s\n' "${dirty[@]}"
+    printf '%s\n' "${untracked_in_target[@]}"
+  } | grep -v '^$' | sort -u)
 
-  # STATE B — dirty, not forced: refuse (whole-tree), before any preview.
-  # Override source is HUG_FORCE (not the local $force bool, which is
-  # display-chatter only — see reset_specific_files for the same split): this
-  # is what makes -y (HUG_YES) NOT authorize destroying uncommitted work.
-  # check_working_tree_clean exits 1 with byte-locked wipe/wipe-all text and
-  # is the single source of truth for the refuse message; we do NOT printf
-  # our own. (Pre-#220 this used check_files_clean on the target→HEAD diff set,
-  # which undercounted — a file identical between target and HEAD but with
-  # uncommitted local edits was missed, and silently wiped by the reset.)
-  if [[ ${HUG_FORCE:-} != true ]] && [ ${#dirty[@]} -gt 0 ]; then
-    check_working_tree_clean # exits 1
+  # STATE B — refuse if at-risk and not forced (before any preview). Override source
+  # is HUG_FORCE (not the local $force bool, which is display-chatter only): this is
+  # what makes -y (HUG_YES) NOT authorize destroying uncommitted work. When tracked
+  # files are dirty we defer to check_working_tree_clean (byte-locked wipe/wipe-all
+  # message, exits 1); when ONLY untracked-in-target files are at risk we emit a
+  # dedicated refusal. error() exits, so neither path falls through to the restore.
+  if [[ ${HUG_FORCE:-} != true ]] && [ ${#at_risk[@]} -gt 0 ]; then
+    if [ ${#dirty[@]} -gt 0 ]; then
+      check_working_tree_clean # byte-locked wipe/wipe-all message; exits 1
+    fi
+    # Only untracked-in-target file(s) at risk.
+    error "Cannot proceed: untracked file(s) would be overwritten by the restore:
+       $(printf '%s\n' "${untracked_in_target[@]}" | sed 's/^/       /')
+
+       These files exist in commit $commit_short and hold untracked local content.
+       Review them, or use -f/--force to overwrite."
   fi
 
-  # "Already at target" early-exit — AFTER the gate, and ONLY when
-  # no files differ AND the tree is clean. (Pre-#220 it sat BEFORE
-  # the gate and fired on no-diff ALONE, so `-f` on a dirty
-  # tree equal to target silently no-op'd, hiding the wipe. Requiring
-  # dirty-empty too closes that leak: with target-tree == HEAD-tree but a
-  # dirty worktree, the gate has already refused above when unforced, and
-  # under -f the dirty set is non-empty so we fall through to State C.)
-  if [ ${#files_to_modify[@]} -eq 0 ] && [ ${#files_to_restore[@]} -eq 0 ] && [ ${#files_to_remove[@]} -eq 0 ] && [ ${#dirty[@]} -eq 0 ]; then
+  # Early-exit: nothing to reset (no files differ AND nothing at risk). Requires
+  # at_risk empty too — an untracked-in-target file means the restore is NOT a no-op
+  # (it would materialize that path from the target commit), so we must not skip it.
+  if [ ${#files_to_modify[@]} -eq 0 ] && [ ${#files_to_restore[@]} -eq 0 ] && [ ${#files_to_remove[@]} -eq 0 ] && [ ${#at_risk[@]} -eq 0 ]; then
     info "Already at target commit $commit_short — no files to reset."
     return 0
   fi
 
-  # STATE C — dirty + forced: notice names every at-risk file. Says
-  # "overwritten or deleted" because the path below BOTH overwrites
-  # (git restore --staged --worktree .) AND `xargs rm -f`s files absent from
-  # target. (Contrast reset_specific_files, which never `rm -f`s — there the
-  # wording is "(will be overwritten)" with no "or deleted".)
-  if [[ ${HUG_FORCE:-} == true ]] && ((${#dirty[@]})); then
-    warning "Discarding uncommitted changes in ${#dirty[@]} file(s) (will be overwritten or deleted):"
-    printf "  %s\n" "${dirty[@]}" >&2
+  # STATE C — forced with at-risk files: notice names everything at risk. Says
+  # "overwritten or deleted" because the path below BOTH overwrites (git restore
+  # --staged --worktree .) AND `xargs rm -f`s files absent from target (contrast
+  # reset_specific_files, which never `rm -f`s — "(will be overwritten)" only).
+  if [[ ${HUG_FORCE:-} == true ]] && [ ${#at_risk[@]} -gt 0 ]; then
+    warning "Discarding uncommitted changes in ${#at_risk[@]} file(s) (will be overwritten or deleted):"
+    printf "  %s\n" "${at_risk[@]}" >&2
   fi
 
   if ! $force || $dry_run; then
@@ -259,32 +261,40 @@ reset_specific_files() {
     return 0
   fi
 
-  # ---- STATE GATE ----
-  # get_dirty_files (lib/hug-git-state, added in Task 1) prints files with
-  # staged OR unstaged changes, deduped+sorted, one per line, returns 0 always.
-  local -a dirty_files=()
+  # ---- STATE GATE. At-risk = files whose uncommitted content the restore would
+  # destroy: dirty (staged/unstaged) OR untracked. An untracked target file still
+  # holds uncommitted content the restore overwrites (it passed check_file_in_commit,
+  # so it exists in the target commit) — git diff cannot see it, so detect it
+  # explicitly (elifarley/hug-scm#225 P1).
+  local -a dirty_files=() untracked_files=() at_risk=()
   mapfile -t dirty_files < <(get_dirty_files "${files_to_reset[@]}")
+  mapfile -t untracked_files < <(get_untracked_files "${files_to_reset[@]}")
+  mapfile -t at_risk < <({
+    printf '%s\n' "${dirty_files[@]}"
+    printf '%s\n' "${untracked_files[@]}"
+  } | grep -v '^$' | sort -u)
 
-  if [ ${#dirty_files[@]} -eq 0 ]; then
-    # STATE A — clean: nothing unrecoverable can be lost, so no prompt, no flag.
+  if [ ${#at_risk[@]} -eq 0 ]; then
+    # STATE A — clean (nothing dirty, no untracked target): nothing to lose.
     if ! $force; then
       info "Files are clean (no uncommitted changes); restoring ${#files_to_reset[@]} file(s) from $commit_short."
     fi
   else
-    # dirty set is non-empty
     if [[ ${HUG_FORCE:-} != true ]]; then
-      # STATE B — dirty, not forced: refuse (even under -y; -y never authorizes
-      # destroying uncommitted work). check_files_clean exits 1 with the
-      # byte-locked wipe/wipe-all text naming the dirty files. Under --dry-run
-      # this refuses BEFORE any diff preview (refuse-before-preview).
-      check_files_clean "${files_to_reset[@]}"
+      # STATE B — refuse. Uncommitted content would be destroyed.
+      if [ ${#dirty_files[@]} -gt 0 ]; then
+        check_files_clean "${files_to_reset[@]}" # byte-locked wipe/wipe-all message; exits 1
+      fi
+      # Only untracked file(s) at risk (no staged/unstaged changes).
+      error "Cannot proceed: untracked file(s) would be overwritten by the restore:
+       $(printf '%s\n' "${untracked_files[@]}" | sed 's/^/       /')
+
+       These files exist in commit $commit_short and hold untracked local content.
+       Review them, or use -f/--force to overwrite."
     fi
-    # STATE C — dirty + forced: proceed. dirty_files is non-empty here
-    # (we're in the else of the ${#dirty_files[@]} -eq 0 test above), so the
-    # notice fires unconditionally — force-on-clean was already routed through
-    # State A and never reaches this branch.
-    warning "Discarding uncommitted changes in ${#dirty_files[@]} file(s) (will be overwritten):"
-    printf "  %s\n" "${dirty_files[@]}" >&2
+    # STATE C — forced: proceed, notice names every at-risk file.
+    warning "Discarding uncommitted changes in ${#at_risk[@]} file(s) (will be overwritten):"
+    printf "  %s\n" "${at_risk[@]}" >&2
   fi
 
   # Show what will be reset (preview) — only meaningful when we will proceed.

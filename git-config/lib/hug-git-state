@@ -106,6 +106,26 @@ get_dirty_files() {
   return 0
 }
 
+# Reports untracked files (respecting .gitignore via --exclude-standard), one per
+# line, sorted. Parallel to get_dirty_files but for UNTRACKED paths (which git diff
+# never reports). hug w get needs this: `git restore --source=<commit> --worktree`
+# overwrites an untracked file that exists in <commit>, destroying uncommitted content
+# the diff-based get_dirty_files cannot see (elifarley/hug-scm#225 P1).
+# Usage:
+#   mapfile -t u < <(get_untracked_files file1 ...)   # among named files
+#   mapfile -t u < <(get_untracked_files)             # whole worktree
+# Non-exiting; ALWAYS returns 0 (reporting primitive — must not leak emptiness into $?).
+get_untracked_files() {
+  local -a untracked=()
+  if [[ $# -gt 0 ]]; then
+    mapfile -t untracked < <(git ls-files --others --exclude-standard -- "$@" | sort)
+  else
+    mapfile -t untracked < <(git ls-files --others --exclude-standard | sort)
+  fi
+  (( ${#untracked[@]} )) && printf '%s\n' "${untracked[@]}"
+  return 0
+}
+
 # Checks if specific files are clean (no staged or unstaged changes)
 # Usage: check_files_clean file1 file2 ...
 # Parameters:
