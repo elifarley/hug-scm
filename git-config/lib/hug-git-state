@@ -82,6 +82,65 @@ check_working_tree_clean() {
     fi
 }
 
+# Reports files with staged OR unstaged changes (deduped, sorted), one per line.
+# Usage:
+#   mapfile -t dirty < <(get_dirty_files file1 file2 ...)   # scoped subset
+#   mapfile -t dirty < <(get_dirty_files)                    # whole worktree
+# Non-exiting; ALWAYS returns 0 (a reporting primitive must not leak the
+# emptiness test into $? — a bare caller under `set -euo pipefail` would die).
+# MUST mirror check_files_clean's ( … ) | sort -u idiom — one algorithm, two
+# consumers (this prints; check_files_clean errors+exits on non-empty).
+#
+# Why NOT a `$'\n'` joiner between two `$(…)`: a single newline passes
+# `[[ -n ]]`, so a clean repo would wrongly yield 1 entry. The `( … ) | sort -u`
+# subshell group reads all input before emitting, so sort cannot SIGPIPE its
+# producer.
+get_dirty_files() {
+  local -a dirty=()
+  if [[ $# -gt 0 ]]; then
+    mapfile -t dirty < <( ( git diff --name-only -- "$@"; git diff --cached --name-only -- "$@"; ) | sort -u )
+  else
+    mapfile -t dirty < <( ( git diff --name-only; git diff --cached --name-only; ) | sort -u )
+  fi
+  (( ${#dirty[@]} )) && printf '%s\n' "${dirty[@]}"
+  return 0
+}
+
+# Reports untracked files (respecting .gitignore via --exclude-standard), one per
+# line, sorted. Parallel to get_dirty_files but for UNTRACKED paths (which git diff
+# never reports). hug w get needs this: `git restore --source=<commit> --worktree`
+# overwrites an untracked file that exists in <commit>, destroying uncommitted content
+# the diff-based get_dirty_files cannot see (elifarley/hug-scm#225 P1).
+# Usage:
+#   mapfile -t u < <(get_untracked_files file1 ...)   # among named files
+#   mapfile -t u < <(get_untracked_files)             # whole worktree
+# Non-exiting; ALWAYS returns 0 (reporting primitive — must not leak emptiness into $?).
+get_untracked_files() {
+  local -a untracked=()
+  if [[ $# -gt 0 ]]; then
+    mapfile -t untracked < <(git ls-files --others --exclude-standard -- "$@" | sort -u)
+  else
+    mapfile -t untracked < <(git ls-files --others --exclude-standard | sort -u)
+  fi
+  (( ${#untracked[@]} )) && printf '%s\n' "${untracked[@]}"
+  return 0
+}
+
+# Refuse a restore that would overwrite UNTRACKED local content (no staged/unstaged
+# changes, but the target commit has these files and the worktree holds untracked
+# copies). Distinct from check_files_clean/check_working_tree_clean (byte-locked,
+# tracked-change refusals); untracked content needs its own message and must NOT
+# suggest `hug w wipe` (wipe only touches tracked changes). Exits 1 via error.
+# Usage: error_untracked_overwrite <commit_short> <file>...
+error_untracked_overwrite() {
+  local commit_short="$1"; shift
+  error "Cannot proceed: untracked file(s) would be overwritten by the restore:
+       $(printf '%s\n' "$@" | sed 's/^/       /')
+
+       These files exist in commit $commit_short and hold untracked local content.
+       Review them, or use -f/--force to overwrite."
+}
+
 # Checks if specific files are clean (no staged or unstaged changes)
 # Usage: check_files_clean file1 file2 ...
 # Parameters:
@@ -95,11 +154,9 @@ check_files_clean() {
         return 0 # No files to check
     fi
 
-    # Optimization: use a single git command to check all files at once
-    mapfile -t files_with_changes < <( (
-        git diff --name-only -- "${files[@]}"
-        git diff --cached --name-only -- "${files[@]}"
-    ) | sort -u )
+    # D.R.Y.: delegate detection to get_dirty_files (one algorithm, two consumers).
+    local -a files_with_changes=()
+    mapfile -t files_with_changes < <(get_dirty_files "${files[@]}")
 
     if [ ${#files_with_changes[@]} -gt 0 ]; then
         error "Cannot proceed because some affected files have uncommitted changes.
@@ -169,6 +226,11 @@ preview_file_changes() {
 #   GIT_PREFIX - Git prefix path (set automatically if not present)
 # Exits:
 #   With error if file has staged changes
+# Note:
+#   Retained as an exported library primitive for future callers — its only current
+#   caller (the w-get per-file loop) was removed in favor of the batched
+#   get_dirty_files gate. Mirrors check_file_unstaged's lib-hygiene rationale, so the
+#   staged/unstaged pair stays complete and the asymmetry is intentional, not an orphan.
 check_file_staged() {
   check_git_repo
   local file="${GIT_PREFIX}$1"
@@ -195,8 +257,11 @@ check_file_unstaged() {
     # check_file_unstaged only asserts UNSTAGED state — so 'discard'
     # (unstaged-only by default) is the correct operation here, unlike
     # check_working_tree_clean where both staged+unstaged matter.
-    error "File '$file' has unstaged changes
-    Use 'hug w discard $file' to discard changes first"
+    # Review-first + runnable-under-no-TTY: the previous text nudged an unseen
+    # 'hug w discard' (itself blocked under no-TTY without -f), steering agents
+    # to destroy edits they never inspected (elifarley/hug-scm#218, Concern 2).
+    error "File '$file' has unstaged changes.
+    Review with 'hug sw $file' (or 'hug su $file'); if discarding is intended, run 'hug w discard -f $file'."
   fi
 }
 
