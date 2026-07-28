@@ -118,12 +118,27 @@ get_dirty_files() {
 get_untracked_files() {
   local -a untracked=()
   if [[ $# -gt 0 ]]; then
-    mapfile -t untracked < <(git ls-files --others --exclude-standard -- "$@" | sort)
+    mapfile -t untracked < <(git ls-files --others --exclude-standard -- "$@" | sort -u)
   else
-    mapfile -t untracked < <(git ls-files --others --exclude-standard | sort)
+    mapfile -t untracked < <(git ls-files --others --exclude-standard | sort -u)
   fi
   (( ${#untracked[@]} )) && printf '%s\n' "${untracked[@]}"
   return 0
+}
+
+# Refuse a restore that would overwrite UNTRACKED local content (no staged/unstaged
+# changes, but the target commit has these files and the worktree holds untracked
+# copies). Distinct from check_files_clean/check_working_tree_clean (byte-locked,
+# tracked-change refusals); untracked content needs its own message and must NOT
+# suggest `hug w wipe` (wipe only touches tracked changes). Exits 1 via error.
+# Usage: error_untracked_overwrite <commit_short> <file>...
+error_untracked_overwrite() {
+  local commit_short="$1"; shift
+  error "Cannot proceed: untracked file(s) would be overwritten by the restore:
+       $(printf '%s\n' "$@" | sed 's/^/       /')
+
+       These files exist in commit $commit_short and hold untracked local content.
+       Review them, or use -f/--force to overwrite."
 }
 
 # Checks if specific files are clean (no staged or unstaged changes)

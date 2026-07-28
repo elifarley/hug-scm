@@ -1967,3 +1967,17 @@ EOF
   run cat t.txt
   assert_output "v1"
 }
+
+@test "hug w get (specific): mixed dirty + untracked targets refuse without -f, both preserved" {
+  echo "v1" > d.txt; echo "v1" > u.txt; git add d.txt u.txt; git commit -q -m v1
+  git rm -q u.txt; git commit -q -m "drop u.txt"   # HEAD: d.txt only; HEAD~1: both
+  echo "DIRTY" >> d.txt          # d.txt: tracked, unstaged-dirty
+  echo "UNTRACKED" > u.txt       # u.txt: untracked, exists in HEAD~1
+
+  run bash -c 'hug w get HEAD~1 d.txt u.txt < /dev/null'
+  assert_failure
+  run cat d.txt
+  assert_output "v1"$'\n'"DIRTY"   # dirty content preserved (refuse exited before restore)
+  run cat u.txt
+  assert_output "UNTRACKED"        # untracked content preserved
+}

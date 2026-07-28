@@ -72,13 +72,15 @@ EOF
 #                                  prompt, no flag. Falls through to the
 #                                  "Already at target" early-exit if the tree
 #                                  is also at the target (no files differ).
-#   • State B (dirty, not forced) — refuse via check_working_tree_clean, which
+#   • State B (at-risk, not forced) — refuse via check_working_tree_clean, which
 #                                  exits 1 with the byte-locked wipe/wipe-all
 #                                  remediation text + counts + `hug sl` pointer
 #                                  (do NOT printf our own refusal). Crucially
 #                                  the gate scopes to the WHOLE tracked worktree,
 #                                  not just the changed files — see #220 note below.
-#   • State C (dirty, forced)     — proceed. Notice fires ONLY when dirty > 0
+#                                  "At-risk" = dirty ∪ untracked-in-target (the
+#                                  restore would destroy either kind of content).
+#   • State C (at-risk, forced)   — proceed. Notice fires ONLY when at-risk > 0
 #                                  (force-on-clean stays silent — no
 #                                  "Discarding 0 file(s)" chatter). Wording is
 #                                  "(will be overwritten or deleted)": all-files
@@ -124,8 +126,15 @@ reset_all_files() {
   mapfile -t dirty < <(get_dirty_files)
   mapfile -t untracked_in_target < <(comm -12 <(get_untracked_files) <(git ls-tree -r --name-only "$commit" | sort))
   mapfile -t at_risk < <({
-    printf '%s\n' "${dirty[@]}"
-    printf '%s\n' "${untracked_in_target[@]}"
+    # Guard each expansion with (( ${#arr[@]} )) && so an EMPTY array never reaches
+    # "${arr[@]}": on bash < 4.4 that expansion raises "unbound variable" under set -u
+    # INSIDE the process substitution, killing the subshell -> mapfile sees nothing ->
+    # at_risk empty -> gate wrongly reports clean -> silent data loss in the exact P1
+    # case (the refuse path leaves dirty empty). ${#arr[@]} is a count and never errors
+    # under set -u; (( 0 )) short-circuits the && (and is exempt from set -e as a
+    # non-final &&-list member), so the printf is simply skipped. Safe pre-4.4.
+    ((${#dirty[@]})) && printf '%s\n' "${dirty[@]}"
+    ((${#untracked_in_target[@]})) && printf '%s\n' "${untracked_in_target[@]}"
   } | grep -v '^$' | sort -u)
 
   # STATE B — refuse if at-risk and not forced (before any preview). Override source
@@ -139,11 +148,7 @@ reset_all_files() {
       check_working_tree_clean # byte-locked wipe/wipe-all message; exits 1
     fi
     # Only untracked-in-target file(s) at risk.
-    error "Cannot proceed: untracked file(s) would be overwritten by the restore:
-       $(printf '%s\n' "${untracked_in_target[@]}" | sed 's/^/       /')
-
-       These files exist in commit $commit_short and hold untracked local content.
-       Review them, or use -f/--force to overwrite."
+    error_untracked_overwrite "$commit_short" "${untracked_in_target[@]}"
   fi
 
   # Early-exit: nothing to reset (no files differ AND nothing at risk). Requires
@@ -211,13 +216,15 @@ reset_all_files() {
 #                              no flag. Under no-TTY this SUCCEEDS (no `read`),
 #                              which is the whole point: a clean restore must
 #                              not demand -f (elifarley/hug-scm#218 Concern 1).
-#   • State B (dirty, not forced) — refuse, even under -y. -y auto-confirms
+#   • State B (at-risk, not forced) — refuse, even under -y. -y auto-confirms
 #                              *prompts*; there is no prompt here, only a hard
 #                              refusal protecting uncommitted work. We delegate
 #                              to check_files_clean so the byte-locked
 #                              wipe/wipe-all remediation text stays the single
 #                              source of truth (do NOT printf our own refusal).
-#   • State C (dirty, forced)     — proceed. Notice fires ONLY when dirty > 0
+#                              "At-risk" = dirty ∪ untracked (the restore would
+#                              destroy either kind of content).
+#   • State C (at-risk, forced)   — proceed. Notice fires ONLY when at-risk > 0
 #                              (force-on-clean stays silent; today's force path
 #                              is silent and we keep it that way — no
 #                              "Discarding 0 file(s)" chatter). Wording is
@@ -270,8 +277,10 @@ reset_specific_files() {
   mapfile -t dirty_files < <(get_dirty_files "${files_to_reset[@]}")
   mapfile -t untracked_files < <(get_untracked_files "${files_to_reset[@]}")
   mapfile -t at_risk < <({
-    printf '%s\n' "${dirty_files[@]}"
-    printf '%s\n' "${untracked_files[@]}"
+    # Guard each expansion (see reset_all_files): an empty "${arr[@]}" under set -u on
+    # bash < 4.4 kills the process substitution and silently disables this guard.
+    ((${#dirty_files[@]})) && printf '%s\n' "${dirty_files[@]}"
+    ((${#untracked_files[@]})) && printf '%s\n' "${untracked_files[@]}"
   } | grep -v '^$' | sort -u)
 
   if [ ${#at_risk[@]} -eq 0 ]; then
@@ -286,11 +295,7 @@ reset_specific_files() {
         check_files_clean "${files_to_reset[@]}" # byte-locked wipe/wipe-all message; exits 1
       fi
       # Only untracked file(s) at risk (no staged/unstaged changes).
-      error "Cannot proceed: untracked file(s) would be overwritten by the restore:
-       $(printf '%s\n' "${untracked_files[@]}" | sed 's/^/       /')
-
-       These files exist in commit $commit_short and hold untracked local content.
-       Review them, or use -f/--force to overwrite."
+      error_untracked_overwrite "$commit_short" "${untracked_files[@]}"
     fi
     # STATE C — forced: proceed, notice names every at-risk file.
     warning "Discarding uncommitted changes in ${#at_risk[@]} file(s) (will be overwritten):"
