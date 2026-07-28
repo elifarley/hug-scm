@@ -11,7 +11,7 @@
 
 > **Revision note (2026-07-28, post-review).** An implementation-grounded review replayed every "Verified" claim against the live code and found the original recovery design dead on arrival: re-invoking a mover command to recover forward **no-ops** (the aligned-target short-circuit, §4.1/Appendix A) and `cmv`'s hint ran on the wrong branch (§6/Appendix B). The fix adopted here: recovery is a **purpose-built primitive `hug h restore`** (§4, §7 Step 4) that never short-circuits forward targets, and `cmv` is **danger** (no complete recovery exists). Two design refinements followed: (a) the primitive's flags are the **names of the op being inverted** — `hug h restore <SHA> --back|--undo|--rollback|--rewind` — so the reset mode is implicit and mode-matched by construction (§4.2); (b) each restorable command's `--help` carries a **`RESTORE` section** naming its inverse, so recovery is discoverable from the command you ran (§7 Step 5). §5 is restated as two layers, §10 names the existing `get_dirty_files` primitive and adds the forward-target audit class, and the unverifiable "**Verified:**" prose is replaced by tests that execute the actual hug command (§8).
 >
-> **Re-roast revision (2026-07-28).** A second adversarial replay confirmed both prior Criticals genuinely resolved, then found two Major spec-text issues — now fixed: (1) the hint helper's `-y` vs §6/§8's `-f`+caveat contradiction, resolved to uniformly `-y` with the destroyed-edits caveat moved to the op's success output (the tree is tracked-clean post-reset, verified); (2) the empty-target guard (`[[ -z "$target" ]] && exit 0`) that the upstream call-site rewrite must preserve — `h-back`/`h-undo`/`h-rollback`/`h-squash` lack it today and crash exit 128 on a synced upstream. Minors also fixed: naming-caveat example corrected to "diverged with upstream ahead" (strictly-behind no-ops); the Step 5 drift claim (help is static text, guarded by the §8 test); `restore`'s full-SHA-only target guard; the danger typed-word; and a §4.1 precision clause.
+> **Re-roast revision (2026-07-28).** A second adversarial replay confirmed both prior Criticals genuinely resolved, then found two Major spec-text issues — now fixed: (1) the hint helper's `-y` vs §6/§8's `-f`+caveat contradiction, resolved to uniformly `-y` with the destroyed-edits caveat moved to the op's success output (the tree is tracked-clean post-reset, verified); (2) the empty-target guard (`[[ -z "$target" ]] && exit 0`) that the upstream call-site rewrite must preserve — `h-back`/`h-undo`/`h-rollback`/`h-squash` lack it today and crash exit 128 on a synced upstream. Minors also fixed: naming-caveat example corrected to "diverged with upstream ahead" (strictly-behind no-ops); the Step 5 drift claim (help is static text, guarded by the §8 test); `restore`'s narrow bare-numeric target guard (short SHAs resolve normally); the danger typed-word; and a §4.1 precision clause.
 
 ---
 
@@ -98,7 +98,7 @@ The recovery command is uniformly `hug h restore <pre-op-HEAD> --<op> -y`. Each 
 | `h-squash` | `hug h restore <pre-op-HEAD> --back -y` | squash inverts as a soft reset; `--back` forward restores original commits, index keeps the byte-identical squashed tree |
 | `cmv` | **— none; danger tier** | switches branch AND rewrites SHAs; no single same-branch reset recovers "exactly what changed" (§6) |
 
-**Target is the full pre-op SHA** (never a short hash or `HEAD~N` — those resolve differently after the op moves HEAD). Target parsing reuses the family's `resolve_target_with_temporal` → `git rev-parse --verify` path, which passes a full SHA through unchanged; `resolve_head_target`'s numeric regex `^[1-9][0-9]{0,2}$` cannot swallow a 40-hex SHA. **But that same regex *does* reinterpret a hand-typed 1–3-digit string as `HEAD~N`** (`hug-git-repo:327`) — so `restore`, the one command where a mis-resolved target is worst, **rejects non-full-SHA targets** (at minimum pure numerics) with a usage error (§7 Step 4a). The printed hints always carry full SHAs; this guards a human typing from memory.
+**The hint's target is the full pre-op SHA** (never a short hash or `HEAD~N` — those resolve differently after the op moves HEAD). The command itself parses targets through the family's `resolve_target_with_temporal` → `git rev-parse --verify` path, which accepts a full SHA, a short SHA, an explicit `HEAD~N`, or a branch/tag name. **The one input `restore` refuses is a bare 1–3-digit numeric** (e.g. `42`): `resolve_head_target`'s regex `^[1-9][0-9]{0,2}$` (`hug-git-repo:327`) silently reinterprets it as `HEAD~42`, and a human typing a short SHA-prefix from memory could mean the commit instead. The regex is bounded to 1–3 digits, so any 4+-char input — a short SHA like `a1b2`, or even `1234` — passes through and resolves normally (verified). This narrow guard, not a blanket full-SHA requirement, is what protects a recovery from a silent wrong-commit reset (§7 Step 4a).
 
 **Flag on the recovery command:** uniformly **`-y`** — `restore` is warn-tier in the recovery context (clean tree at recovery time, except the `--rewind`+dirty escalation which is danger by design). This dissolves the earlier draft's `-y`-vs-`-f` contradiction: recovery no longer re-invokes danger-tier `h-rewind`, so there is no per-op flag to disagree about.
 
@@ -200,7 +200,7 @@ Both paths then consume `$tier`. The dirty branch keeps #225's danger semantics 
 **(a) The primitive** (`git-config/bin/git-h-restore`), the inverse-of-a-mover reset:
 
 ```bash
-# Usage: hug h restore <full-40-hex-SHA> --back|--undo|--rollback|--rewind [-y|-f]
+# Usage: hug h restore <target> --back|--undo|--rollback|--rewind [-y|-f]
 #   op-flag REQUIRED (${op:?}) — names the op being inverted; its reset mode comes from
 #   ONE literal table, so the mode-match is by construction (no git mode at the call site).
 #   Warn-tier, EXCEPT --rewind (hard) on a dirty tracked tree ⇒ danger (refuses -y, exit 3).
@@ -213,10 +213,14 @@ case "${op:?usage: hug h restore <SHA> --back|--undo|--rollback|--rewind}" in
   *)        usage_error ;;  # unknown op — never a silent default mode
 esac
 
-# Recovery is the one place a mis-resolved target is worst: require a full SHA, never HEAD~N.
-# (resolve_head_target's numeric regex would silently read "42" as HEAD~42 — hug-git-repo:327.)
-[[ "${1:?target required}" =~ ^[0-9a-f]{40}$ ]] || usage_error "restore needs a full 40-hex SHA"
-target=$(git rev-parse --verify "$1^{commit}") || exit 1
+# The one genuinely ambiguous input: a bare 1–3 digit numeric, which resolve_head_target
+# silently reinterprets as HEAD~N (regex ^[1-9][0-9]{0,2}$, hug-git-repo:327). A human typing a
+# short SHA-prefix from memory ("42") might mean the commit, not HEAD~42 — so refuse the bare
+# form and ask for clarity; an explicit HEAD~N is fine. Short SHAs (4+ chars) are unambiguous —
+# the regex is bounded to 1–3 digits — and resolve normally, as do full SHAs / branch / tag names.
+[[ "${1:?target required}" =~ ^[1-9][0-9]{0,2}$ ]] && \
+  usage_error "ambiguous target '$1': reads as HEAD~$1 — pass a SHA (short or full) or explicit HEAD~N"
+target=$(resolve_target_with_temporal "" "" "$1" '') || exit 1
 
 # Never short-circuit on a forward target: only an EXACT match is a true no-op.
 if [ "$target" = "$(git rev-parse HEAD)" ]; then
@@ -288,7 +292,7 @@ This makes recovery discoverable from either direction — from the command you 
 3. The recovery command does **not** alter the working-tree/index state the op left (after `h-back`, recovery leaves changes staged; after `h-undo`, unstaged). Assert via `hug ss`/`hug su` before and after recovery being byte-identical.
 4. For `h-rollback`, assert the §5 invariant empirically through the *hug layer*: when the original rollback *runs* (dirty file outside the range), `hug h restore <pre-op-HEAD> --rollback -y` recovers exactly and preserves the uncommitted edits; when a dirty file is *in* the range, the original op aborts (exit non-zero, HEAD unchanged) so no recovery is needed.
 
-**`hug h restore` unit coverage:** exact-SHA target ⇒ "Already at …", exit 0, HEAD unchanged; forward (descendant) target ⇒ moves; `--rewind` on dirty tracked tree + `-y` ⇒ refused, exit 3; `--rewind` on clean tree + `-y` ⇒ proceeds; `--back`/`--undo`/`--rollback` on dirty tree + `-y` ⇒ proceeds (work preserved); missing op-flag ⇒ usage error (never a silent default mode); unknown op-flag ⇒ usage error; a non-full-SHA target (e.g. `42`, which the family would otherwise read as `HEAD~42`) ⇒ usage error, never a silent wrong-commit reset. **Op→mode table is asserted once**, so the §4.2 mapping (back≡soft, undo≡mixed, rollback≡keep, rewind≡hard) has a single test guarding it.
+**`hug h restore` unit coverage:** exact-SHA target ⇒ "Already at …", exit 0, HEAD unchanged; forward (descendant) target ⇒ moves; `--rewind` on dirty tracked tree + `-y` ⇒ refused, exit 3; `--rewind` on clean tree + `-y` ⇒ proceeds; `--back`/`--undo`/`--rollback` on dirty tree + `-y` ⇒ proceeds (work preserved); missing op-flag ⇒ usage error (never a silent default mode); unknown op-flag ⇒ usage error; a bare 1–3-digit numeric (e.g. `42`, which the family would otherwise read as `HEAD~42`) ⇒ usage error — but a short hex SHA (e.g. `a1b2`) and an explicit `HEAD~N` resolve normally (the guard rejects only the ambiguous bare numeric, never a silent wrong-commit reset). **Op→mode table is asserted once**, so the §4.2 mapping (back≡soft, undo≡mixed, rollback≡keep, rewind≡hard) has a single test guarding it.
 
 **`cmv` is danger:** no recovery hint is printed on success; decline ⇒ exit 1; `-y` ⇒ refused, exit 3 (danger); `-f` proceeds and the clean-gate (`git-cmv:130`) still refuses a dirty tree. Assert the current branch *changed* after success (the very fact that makes recovery incomplete).
 
