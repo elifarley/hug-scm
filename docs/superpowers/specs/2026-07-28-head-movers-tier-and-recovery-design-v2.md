@@ -10,6 +10,8 @@
 > Anchors (`file:line`) are against `origin/main` @ `1296dbf` (post-#225); the branch is rebased onto exactly this commit, so anchors and working tree agree. Re-resolve at implementation time if `origin/main` moves.
 
 > **Revision note (2026-07-28, post-review).** An implementation-grounded review replayed every "Verified" claim against the live code and found the original recovery design dead on arrival: re-invoking a mover command to recover forward **no-ops** (the aligned-target short-circuit, §4.1/Appendix A) and `cmv`'s hint ran on the wrong branch (§6/Appendix B). The fix adopted here: recovery is a **purpose-built primitive `hug h restore`** (§4, §7 Step 4) that never short-circuits forward targets, and `cmv` is **danger** (no complete recovery exists). Two design refinements followed: (a) the primitive's flags are the **names of the op being inverted** — `hug h restore <SHA> --back|--undo|--rollback|--rewind` — so the reset mode is implicit and mode-matched by construction (§4.2); (b) each restorable command's `--help` carries a **`RESTORE` section** naming its inverse, so recovery is discoverable from the command you ran (§7 Step 5). §5 is restated as two layers, §10 names the existing `get_dirty_files` primitive and adds the forward-target audit class, and the unverifiable "**Verified:**" prose is replaced by tests that execute the actual hug command (§8).
+>
+> **Re-roast revision (2026-07-28).** A second adversarial replay confirmed both prior Criticals genuinely resolved, then found two Major spec-text issues — now fixed: (1) the hint helper's `-y` vs §6/§8's `-f`+caveat contradiction, resolved to uniformly `-y` with the destroyed-edits caveat moved to the op's success output (the tree is tracked-clean post-reset, verified); (2) the empty-target guard (`[[ -z "$target" ]] && exit 0`) that the upstream call-site rewrite must preserve — `h-back`/`h-undo`/`h-rollback`/`h-squash` lack it today and crash exit 128 on a synced upstream. Minors also fixed: naming-caveat example corrected to "diverged with upstream ahead" (strictly-behind no-ops); the Step 5 drift claim (help is static text, guarded by the §8 test); `restore`'s full-SHA-only target guard; the danger typed-word; and a §4.1 precision clause.
 
 ---
 
@@ -56,7 +58,7 @@ if [ "$commits_to_affected" -eq 0 ]; then
         exit 0      # <-- reset line never reached
 ```
 
-After a rewind-family op the current HEAD is an *ancestor* of the pre-op HEAD, so `rev-list --count pre..HEAD` = **0** → "Already at target" → `exit 0`, HEAD unrestored. The short-circuit is **correct** for mover idempotency (re-running `h-back` when you're already there should do nothing); it is **lethal** for recovery, which must move *forward* to a descendant. The original spec's "**Verified:** all five commands accept an arbitrary target" verified target *parsing* (`rev-parse --verify` passes a full SHA through unchanged — that half is true), then asserted end-to-end recovery it never executed. `h-squash`'s hint happened to work, but by topological luck (the squash commit is a *sibling* of the pre-op tip, so `pre..HEAD ≠ 0`), not by any uniform property.
+After a rewind-family op the current HEAD is an *ancestor* of the pre-op HEAD, so `rev-list --count pre..HEAD` = **0** → "Already at target" → `exit 0`, HEAD unrestored. (Precisely, the exit fires when `skip_when_aligned` is true — the default for `h-back`/`h-undo`/`h-rollback` — or there are no pending changes; `h-rewind` passes `false` (`git-h-rewind:100`), but a post-rewind tree is tracked-clean, so the `|| ! has_pending_changes` clause at `hug-git-upstream:99` still trips it — every real recovery scenario hits the exit.) The short-circuit is **correct** for mover idempotency (re-running `h-back` when you're already there should do nothing); it is **lethal** for recovery, which must move *forward* to a descendant. The original spec's "**Verified:** all five commands accept an arbitrary target" verified target *parsing* (`rev-parse --verify` passes a full SHA through unchanged — that half is true), then asserted end-to-end recovery it never executed. `h-squash`'s hint happened to work, but by topological luck (the squash commit is a *sibling* of the pre-op tip, so `pre..HEAD ≠ 0`), not by any uniform property.
 
 **Conclusion:** recovery must not round-trip through `handle_standard_operation`'s aligned-target short-circuit. It gets its own primitive — but one named so the original instinct ("recover with the family you trust") survives: the flag is the *op being inverted*, not a raw git mode.
 
@@ -79,7 +81,7 @@ After a rewind-family op the current HEAD is an *ancestor* of the pre-op HEAD, s
 - **Same-branch by precondition.** It resets HEAD on the *current* branch. That is exactly right for the five ops that leave you on the same branch; it is exactly *wrong* for `cmv`, which is why `cmv` never emits it (§6).
 - **`h-squash` recovers with `--back`** (squash is `h-back`+recommit, so its inverse is a soft reset; §4.3). There is deliberately no `--squash` flag — the modes are a lower concept than the commands (four modes, five movers), and squash shares back's.
 
-> **Naming caveat — the op names are reset-mode selectors, NOT directions.** The mover family already moves HEAD in *either* direction: `hug h back -u` moves **forward** when the local branch is behind upstream, and `h-back`'s help frames the op as "Moves HEAD to target." The name `back` has a documented history of misleading agents into assuming backward-only. `restore`'s flags reuse these names **strictly as mode selectors** — `--back` means "the soft-reset mode `h-back` uses" — and the *direction* of a restore is determined entirely by where `<target>` sits relative to HEAD, never by the flag. The `RESTORE` help sections and the `restore --help` table (§7 Step 5) state the mode equivalence explicitly so the name cannot mislead a second time. (If the deceiving names ever outweigh the "recover the op you ran" locality, the fallback is preservation-semantic flags — `--keep-staged`/`--keep-unstaged`/`--keep`/`--discard` — which name what happens to your work and need no direction disclaimer.)
+> **Naming caveat — the op names are reset-mode selectors, NOT directions.** The mover family already moves HEAD in *either* direction: `hug h back -u` moves **forward** when the branch has **diverged** with upstream ahead (local commits exist *and* upstream has advanced — a strictly-behind, fast-forwardable branch instead no-ops there), and `h-back`'s help frames the op as "Moves HEAD to target." The name `back` has a documented history of misleading agents into assuming backward-only. `restore`'s flags reuse these names **strictly as mode selectors** — `--back` means "the soft-reset mode `h-back` uses" — and the *direction* of a restore is determined entirely by where `<target>` sits relative to HEAD, never by the flag. The `RESTORE` help sections and the `restore --help` table (§7 Step 5) state the mode equivalence explicitly so the name cannot mislead a second time. (If the deceiving names ever outweigh the "recover the op you ran" locality, the fallback is preservation-semantic flags — `--keep-staged`/`--keep-unstaged`/`--keep`/`--discard` — which name what happens to your work and need no direction disclaimer.)
 
 > **Relationship to [elifarley/hug-scm#229](https://github.com/elifarley/hug-scm/issues/229) (the systemic fix).** `restore`'s exact-SHA-equality no-op test above is the *local* instance of the `is_same_commit` primitive that [elifarley/hug-scm#229](https://github.com/elifarley/hug-scm/issues/229) generalizes for the whole family. That issue refines the shared distance helper into a `commit_offset` with an *enforced* contract — `0` ⟺ identity (short-circuited on SHA equality), `±N` ⟺ clean directional distance, **empty** ⟺ diverged/incomparable — so `offset == 0` becomes a *sound* alignment test rather than the lossy `count == 0` that caused Appendix A. Once those primitives land, `restore` can re-share the hardened `handle_standard_operation` (its "already at target" branch keyed off `is_same_commit`) instead of bypassing it; until then, bypassing is correct.
 
@@ -96,7 +98,7 @@ The recovery command is uniformly `hug h restore <pre-op-HEAD> --<op> -y`. Each 
 | `h-squash` | `hug h restore <pre-op-HEAD> --back -y` | squash inverts as a soft reset; `--back` forward restores original commits, index keeps the byte-identical squashed tree |
 | `cmv` | **— none; danger tier** | switches branch AND rewrites SHAs; no single same-branch reset recovers "exactly what changed" (§6) |
 
-**Target is the full pre-op SHA** (never a short hash or `HEAD~N` — those resolve differently after the op moves HEAD). Target parsing reuses the family's `resolve_target_with_temporal` → `git rev-parse --verify` path, which passes a full SHA through unchanged; `resolve_head_target`'s numeric regex `^[1-9][0-9]{0,2}$` cannot swallow a 40-hex SHA.
+**Target is the full pre-op SHA** (never a short hash or `HEAD~N` — those resolve differently after the op moves HEAD). Target parsing reuses the family's `resolve_target_with_temporal` → `git rev-parse --verify` path, which passes a full SHA through unchanged; `resolve_head_target`'s numeric regex `^[1-9][0-9]{0,2}$` cannot swallow a 40-hex SHA. **But that same regex *does* reinterpret a hand-typed 1–3-digit string as `HEAD~N`** (`hug-git-repo:327`) — so `restore`, the one command where a mis-resolved target is worst, **rejects non-full-SHA targets** (at minimum pure numerics) with a usage error (§7 Step 4a). The printed hints always carry full SHAs; this guards a human typing from memory.
 
 **Flag on the recovery command:** uniformly **`-y`** — `restore` is warn-tier in the recovery context (clean tree at recovery time, except the `--rewind`+dirty escalation which is danger by design). This dissolves the earlier draft's `-y`-vs-`-f` contradiction: recovery no longer re-invokes danger-tier `h-rewind`, so there is no per-op flag to disagree about.
 
@@ -123,12 +125,12 @@ Tier is a property of the command's op+state, **identical on both paths** (the b
 | `h-undo` | **warn** + hint | `--mixed` preserves working tree; `restore --undo` restores HEAD completely |
 | `h-rollback` (normal) | **warn** + hint | `--keep` preserves uncommitted work and refuses to run if a dirty file is in range; forward `restore --rollback` always succeeds (§5) |
 | `h-rollback` (root path) | **danger** ⚠️ (unchanged) | runs `xargs rm -f` on tracked files, no clean gate — out of scope here; see §10 |
-| `h-back` (root path) | **danger** ⚠️ (unchanged) | `git-h-back:87-101`: undoes the root commit (`reset_root_commit "soft"`); recovery at root is a guaranteed no-op (unborn HEAD ⇒ `rev-list` fails ⇒ count 0), so it must **not** be swept to warn |
+| `h-back` (root path) | **danger** ⚠️ (unchanged) | `git-h-back:87-103`: undoes the root commit (`reset_root_commit "soft"`); recovery at root is a guaranteed no-op (unborn HEAD ⇒ `rev-list` fails ⇒ count 0), so it must **not** be swept to warn |
 | `h-undo` (root path) | **danger** ⚠️ (unchanged) | `git-h-undo:96-119`: same root-commit reasoning as `h-back` |
 | `h-squash` | **warn** + hint | history rewrite; original commits reflog-recoverable via `restore --back` (soft) forward |
 | `cmv` | **danger** (clean-gated) ⚠️ **CHANGED from the original v2 warn** | clean-gate (`git-cmv:130`) keeps the `--hard` from destroying uncommitted work, but the op **switches the current branch** (`git-cmv:242-243`) and **rewrites SHAs** (cherry-pick). No single same-branch `hug h restore` recovers "exactly what changed" → not honestly warn (§2). Danger, no recovery hint. |
 | `h-rewind` (clean tree) | **warn** + hint | **CHANGED from #225's danger** — only HEAD moves; `restore --rewind` on the (clean) tree is a complete recovery |
-| `h-rewind` (dirty tree) | **danger** + partial hint | uncommitted edits destroyed (unrecoverable); the commit part is recoverable via `hug h restore <pre-op-HEAD> --rewind -f` — but the destroyed working-tree edits cannot be, and the hint says so explicitly |
+| `h-rewind` (dirty tree) | **danger** + partial hint | uncommitted edits destroyed (unrecoverable) — stated on the **op's own success output**, where the loss happens. The commit part is recoverable via `hug h restore <pre-op-HEAD> --rewind -y` (`-y` because the tree is tracked-clean after `reset --hard`; the destroyed working-tree edits cannot be recovered) |
 
 **Headline behavior changes vs. today:**
 1. `h-rewind` becomes **state-dependent**: clean ⇒ warn+hint (was unconditional danger from #225); dirty ⇒ danger (unchanged). This is the partial revert of #225 — see §9.
@@ -164,7 +166,9 @@ The `case` replaces the hardcoded `prompt_confirm_warn` at `hug-git-upstream:71`
 
 ### Step 2 — each command owns one tier; both paths consume it
 
-Each command sets `tier` (+ `action_word` + `danger_reason` where danger) near the top. Both the upstream call (`handle_upstream_operation "$verb" "$tier" …`) and the non-upstream gate (`prompt_confirm_${tier} …`) read it. One declaration, two consumers — they match **by construction**. A consistency-guard test (§8) asserts the two never diverge. **Root-commit paths keep their own `danger` gate** (`git-h-back:87-101`, `git-h-undo:96-119`): the one-tier-per-command sweep applies to the *normal* path only and must not lower the root path (§6).
+Each command sets `tier` (+ `action_word` + `danger_reason` where danger) near the top. Both the upstream call (`handle_upstream_operation "$verb" "$tier" …`) and the non-upstream gate (`prompt_confirm_${tier} …`) read it. One declaration, two consumers — they match **by construction**. A consistency-guard test (§8) asserts the two never diverge. **Root-commit paths keep their own `danger` gate** (`git-h-back:87-103`, `git-h-undo:96-119`): the one-tier-per-command sweep applies to the *normal* path only and must not lower the root path (§6).
+
+**Empty-target guard (load-bearing; a pre-existing bug now inside this edit region).** `handle_upstream_operation`'s "Already synced" `exit 0` (`hug-git-upstream:44-47`) fires *inside the caller's `$(...)` command-substitution subshell* — the parent receives **empty stdout and keeps running**, then crashes on `git rev-parse --short ""` (exit 128) against a synced or strictly-behind upstream. Today only `git-h-rewind:90-93` and `git-cmv:141-144` guard this (`[[ -z "${target:-}" ]] && exit 0`); `git-h-back:81`, `git-h-undo` (three sites: `:85/:87/:90`), `git-h-rollback:85`, and `git-h-squash` (three sites: `:154/:156/:159`) do **not**, and crash. **Every rewritten upstream call site must preserve or add the guard.** The recommended systemic fix is to move the synced-detection *out of the subshell* — the helper returns a distinguished non-zero status and the caller exits — so six call sites cannot each forget it (track under [elifarley/hug-scm#229](https://github.com/elifarley/hug-scm/issues/229)'s caller audit). Note also that "one declaration, two consumers" understates the real surface: `h-undo` and `h-squash` each have **three** upstream call sites.
 
 ### Step 3 — `h-rewind` becomes state-dependent
 
@@ -196,12 +200,12 @@ Both paths then consume `$tier`. The dirty branch keeps #225's danger semantics 
 **(a) The primitive** (`git-config/bin/git-h-restore`), the inverse-of-a-mover reset:
 
 ```bash
-# Usage: hug h restore <target> --back|--undo|--rollback|--rewind [-y|-f]
+# Usage: hug h restore <full-40-hex-SHA> --back|--undo|--rollback|--rewind [-y|-f]
 #   op-flag REQUIRED (${op:?}) — names the op being inverted; its reset mode comes from
 #   ONE literal table, so the mode-match is by construction (no git mode at the call site).
 #   Warn-tier, EXCEPT --rewind (hard) on a dirty tracked tree ⇒ danger (refuses -y, exit 3).
 
-case "${op:?usage: hug h restore <target> --back|--undo|--rollback|--rewind}" in
+case "${op:?usage: hug h restore <SHA> --back|--undo|--rollback|--rewind}" in
   back)     mode=soft  ;;   # ≡ reset --soft  — preserves staged
   undo)     mode=mixed ;;   # ≡ reset --mixed — preserves unstaged
   rollback) mode=keep  ;;   # ≡ reset --keep  — preserves uncommitted; aborts if dirty-in-range
@@ -209,7 +213,10 @@ case "${op:?usage: hug h restore <target> --back|--undo|--rollback|--rewind}" in
   *)        usage_error ;;  # unknown op — never a silent default mode
 esac
 
-target=$(resolve_target_with_temporal "" "" "${1:?target required}" '') || exit 1
+# Recovery is the one place a mis-resolved target is worst: require a full SHA, never HEAD~N.
+# (resolve_head_target's numeric regex would silently read "42" as HEAD~42 — hug-git-repo:327.)
+[[ "${1:?target required}" =~ ^[0-9a-f]{40}$ ]] || usage_error "restore needs a full 40-hex SHA"
+target=$(git rev-parse --verify "$1^{commit}") || exit 1
 
 # Never short-circuit on a forward target: only an EXACT match is a true no-op.
 if [ "$target" = "$(git rev-parse HEAD)" ]; then
@@ -221,7 +228,9 @@ tier=warn
 if [ "$mode" = hard ] && has_uncommitted_tracked_changes; then
   tier=danger   # --rewind would destroy uncommitted tracked edits (unrecoverable)
 fi
-prompt_confirm_${tier} ...    # warn auto-confirms with -y; danger needs -f / typed word
+# danger's typed word is the op name, consistent with the family (prompt_confirm_danger
+# requires it — hug-confirm:86); warn auto-confirms with -y.
+prompt_confirm_${tier} "$op" "git reset --$mode forward can destroy uncommitted tracked edits"
 
 git reset "$mode" "$target"   # reaches the reset for EVERY non-identical target — the point
 ```
@@ -245,6 +254,8 @@ Each warn-tier command captures `pre_op_head=$(git rev-parse HEAD)` **before** t
 
 **Placement invariant:** the hint prints only on the **success** path of the actual git op, never before it. A failed/aborted op prints no hint (nothing to recover). It is suppressed under `HUG_QUIET=T` (human-facing chatter → stderr, same discipline as the preview); `show_help` says so (§7 Step 5), since agents reading `-h` would otherwise expect a hint from a scripted op.
 
+**The hint is uniformly `-y` and forward-looking; the data-loss caveat lives on the op, not the hint.** The helper always prints `-y` because at recovery time the tree is tracked-clean — a `reset --soft`/`--mixed`/`--keep`/`--hard` op leaves no uncommitted *tracked* changes (verified) — so `-y` proceeds. The "your uncommitted edits were destroyed and cannot be recovered" signal for dirty `h-rewind` belongs on **the operation's own success output** (where the loss actually happens), NOT on the recovery hint, whose job is to point forward to the commit recovery. This keeps the helper two arguments forever and keeps §6/§8 consistent with §7.
+
 ### Step 5 — `RESTORE` sections in `show_help` (discoverability)
 
 The one legitimate argument for putting recovery *on* the original command (a `hug h back --restore` flag) was **discoverability** — finding the inverse from the command you ran. A separate `restore` noun must earn that discoverability back, and it does, cheaply: **every restorable command's `show_help` ends with a `RESTORE` section naming its exact inverse** and noting that the command prints it (SHA filled in) on success.
@@ -258,7 +269,7 @@ RESTORE
     filled in. (--back ≡ git reset --soft — your changes stay staged.)
 ```
 
-- Each restorable command (`h-back`, `h-undo`, `h-rollback`, `h-squash`, clean `h-rewind`) carries the section for **its own** op flag; the text is generated from the same §4.2 table, so help, hint, and primitive cannot drift.
+- Each restorable command (`h-back`, `h-undo`, `h-rollback`, `h-squash`, clean `h-rewind`) carries the section for **its own** op flag. `show_help` heredocs are **static text — not code-generated** from the §4.2 `case`; drift is instead prevented by the §8 discoverability test, which asserts each command's `RESTORE` section names the same op-flag its success hint prints (and §10's audit forbids hand-built recovery strings).
 - `h-rewind --help` documents the clean/dirty split (clean ⇒ `restore --rewind -y`; dirty ⇒ danger, `restore --rewind -f` recovers only the commits).
 - **`cmv --help` states it is NOT restorable** — danger tier; recovery is manual, branch-aware, multi-step (switch back to the source branch + reset there + repoint the target). Saying so explicitly is the honest counterpart to the warn-tier `RESTORE` sections.
 - `hug h restore --help` prints the full op→mode→preservation table and documents the required op-flag and the `--rewind`+dirty escalation.
@@ -269,19 +280,21 @@ This makes recovery discoverable from either direction — from the command you 
 
 **Consistency guard (locks the invariant):** for each command, assert upstream and non-upstream resolve to the **same tier** — e.g. `h-undo -u` and `h-undo HEAD~1` both proceed under `-y` (warn); `h-rewind -u` (dirty) and `h-rewind HEAD~1` (dirty) both refuse under `-y` (danger, exit 3). If anyone re-hardcodes a tier, this fails.
 
+**Empty-target / synced-upstream guard (locks Major #2):** `hug h back -u`, `h-undo -u`, `h-rollback -u` (all upstream call sites of each) on a synced or strictly-behind upstream ⇒ exit 0 ("Already synced"), **not** exit 128. Asserts every rewritten upstream call site preserves the `[[ -z "${target:-}" ]] && exit 0` guard (§7 Step 2).
+
 **Recovery-hint correctness (the §2 bar — the core of v2):** for each warn-tier command, after a successful op, assert:
 1. The printed recovery command, **executed as a real `hug` invocation** (never just `git rev-parse`-parsed), restores HEAD to the pre-op commit (`$(git rev-parse HEAD)` equals the captured pre-op SHA). *This test, run honestly, is what falsified the original design (Appendix A) — it must execute the hug command, not verify target parsing.*
 2. **Forward-target regression (the exact failure mode):** set up a state where the recovery target is a *descendant* of current HEAD, run the printed `hug h restore <pre-SHA> --<op> -y`, and assert HEAD **moved** (exit 0 *and* HEAD ≠ pre-recovery HEAD). Guards against anyone re-routing `restore` through the aligned-target short-circuit.
 3. The recovery command does **not** alter the working-tree/index state the op left (after `h-back`, recovery leaves changes staged; after `h-undo`, unstaged). Assert via `hug ss`/`hug su` before and after recovery being byte-identical.
 4. For `h-rollback`, assert the §5 invariant empirically through the *hug layer*: when the original rollback *runs* (dirty file outside the range), `hug h restore <pre-op-HEAD> --rollback -y` recovers exactly and preserves the uncommitted edits; when a dirty file is *in* the range, the original op aborts (exit non-zero, HEAD unchanged) so no recovery is needed.
 
-**`hug h restore` unit coverage:** exact-SHA target ⇒ "Already at …", exit 0, HEAD unchanged; forward (descendant) target ⇒ moves; `--rewind` on dirty tracked tree + `-y` ⇒ refused, exit 3; `--rewind` on clean tree + `-y` ⇒ proceeds; `--back`/`--undo`/`--rollback` on dirty tree + `-y` ⇒ proceeds (work preserved); missing op-flag ⇒ usage error (never a silent default mode); unknown op-flag ⇒ usage error. **Op→mode table is asserted once**, so the §4.2 mapping (back≡soft, undo≡mixed, rollback≡keep, rewind≡hard) has a single test guarding it.
+**`hug h restore` unit coverage:** exact-SHA target ⇒ "Already at …", exit 0, HEAD unchanged; forward (descendant) target ⇒ moves; `--rewind` on dirty tracked tree + `-y` ⇒ refused, exit 3; `--rewind` on clean tree + `-y` ⇒ proceeds; `--back`/`--undo`/`--rollback` on dirty tree + `-y` ⇒ proceeds (work preserved); missing op-flag ⇒ usage error (never a silent default mode); unknown op-flag ⇒ usage error; a non-full-SHA target (e.g. `42`, which the family would otherwise read as `HEAD~42`) ⇒ usage error, never a silent wrong-commit reset. **Op→mode table is asserted once**, so the §4.2 mapping (back≡soft, undo≡mixed, rollback≡keep, rewind≡hard) has a single test guarding it.
 
 **`cmv` is danger:** no recovery hint is printed on success; decline ⇒ exit 1; `-y` ⇒ refused, exit 3 (danger); `-f` proceeds and the clean-gate (`git-cmv:130`) still refuses a dirty tree. Assert the current branch *changed* after success (the very fact that makes recovery incomplete).
 
 **State-dependent `h-rewind`:**
 - Clean tree + no flag → proceeds at warn, prints `hug h restore <pre-op-HEAD> --rewind -y` hint; `-y` proceeds (was: refused).
-- Dirty tree + `-y` → refused, exit 3 (danger); `-f` proceeds, hint prints the commit-recovery command with an explicit "uncommitted edits were destroyed and cannot be recovered" caveat.
+- Dirty tree + `-y` → refused, exit 3 (danger); `-f` proceeds; the **op's success output** states "uncommitted edits were destroyed and cannot be recovered"; the recovery hint (commit part) is `hug h restore <pre-op-HEAD> --rewind -y` and proceeds (the tree is tracked-clean post-rewind).
 - Clean vs dirty tier selected by the **shared** `has_uncommitted_tracked_changes` predicate (§7 Step 3).
 
 **Conditional-skip preservation (do not flatten):** several commands skip the gate when the tree is clean (`h-back` prompts only `if has_staged_changes` at `git-h-back:108`; `h-undo`/`h-squash` use a `should_prompt` flag false when clean). The tier change replaces the **prompt call inside the confirmed branch**, leaving the surrounding `if dirty … else skip` byte-for-byte intact. Include a clean-tree case: `hug h undo` / `hug h squash -u` with no `-y` and a clean tree → exit 0, no prompt. (Failure mode if ignored: clean-tree CI automation breaks.) **When editing `git-h-squash`'s gate, fold in the pre-existing dead conditional at `git-h-squash:206/208`** (the if/else arms are byte-identical `prompt_confirm_danger "squash" …` calls).
@@ -336,7 +349,7 @@ The v1 spec's *mechanism* (the `tier` param on `handle_upstream_operation`, one-
 
 ## 12. Scope
 
-**In scope:** the `tier` param on `handle_upstream_operation`; per-command tier declarations (state-determined for `h-rewind`, warn for the four movers, **danger for `cmv`**) consumed by both paths; the **`hug h restore` primitive** (op-named flags, one op→mode table) + `emit_head_recovery_hint` helper + hints; **`RESTORE` help sections** on every restorable command + `restore --help` table; `h-rewind` clean/dirty split (partial #225 revert, §9); `has_uncommitted_tracked_changes` over `get_dirty_files` + `cmv`-gate unification; the §10 guard-completeness audit (incl. the forward-target class and the single op→mode table) as prerequisite; help-text `-y`/`-f`/recovery/`HUG_QUIET` docs; the consistency guard + recovery-correctness + forward-target regression + `restore` unit + discoverability + migration tests (§8); the `git-h-squash:206/208` dead-conditional cleanup folded into its gate edit.
+**In scope:** the `tier` param on `handle_upstream_operation`; per-command tier declarations (state-determined for `h-rewind`, warn for the four movers, **danger for `cmv`**) consumed by both paths; the **`hug h restore` primitive** (op-named flags, one op→mode table) + `emit_head_recovery_hint` helper + hints; **`RESTORE` help sections** on every restorable command + `restore --help` table; `h-rewind` clean/dirty split (partial #225 revert, §9); `has_uncommitted_tracked_changes` over `get_dirty_files` + `cmv`-gate unification; the §10 guard-completeness audit (incl. the forward-target class and the single op→mode table) as prerequisite; the empty-target guard on every rewritten upstream call site (pre-existing exit-128 crash, §7 Step 2); help-text `-y`/`-f`/recovery/`HUG_QUIET` docs; the consistency guard + recovery-correctness + forward-target regression + `restore` unit + discoverability + migration tests (§8); the `git-h-squash:206/208` dead-conditional cleanup folded into its gate edit.
 
 **Out of scope → separate specs under #222:** `--dry-run` coverage (concern #3); family-wide exit-code reconciliation / `check_*_clean` exit 1 vs documented exit 3 (concern #4); the `h-rollback`/`h-back`/`h-undo` root-path danger-tier fixes (§10 notes); a genuinely complete branch-aware recovery for `cmv` (would re-open its tier); the `handle_upstream_operation` `HUG_QUIET=T` confirmation-skip path (unchanged here — documented as the `--quiet` escape hatch).
 
