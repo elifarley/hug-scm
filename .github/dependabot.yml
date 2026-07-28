@@ -9,9 +9,9 @@ updates:
       time: "03:00"
     open-pull-requests-limit: 5
     reviewers:
-      - "ecc"
+      - "elifarley"
     assignees:
-      - "ecc"
+      - "elifarley"
     labels:
       - "dependencies"
       - "python"
@@ -29,9 +29,9 @@ updates:
       time: "03:00"
     open-pull-requests-limit: 5
     reviewers:
-      - "ecc"
+      - "elifarley"
     assignees:
-      - "ecc"
+      - "elifarley"
     labels:
       - "dependencies"
       - "python"
@@ -49,9 +49,9 @@ updates:
       time: "03:00"
     open-pull-requests-limit: 5
     reviewers:
-      - "ecc"
+      - "elifarley"
     assignees:
-      - "ecc"
+      - "elifarley"
     labels:
       - "dependencies"
       - "ci"
