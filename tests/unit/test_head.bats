@@ -2035,3 +2035,41 @@ EOF
   assert_output --partial "RESTORE"
   assert_output --partial "hug h restore"
 }
+
+# ============================================================================
+# git-h-rollback: warn-tier migration (normal path) + restore hint + upstream guard tests
+# ============================================================================
+# Context: h-rollback's normal path now gates via prompt_confirm_warn (warn tier),
+# following the same pattern as h-back and h-undo. The root-commit path STAYS
+# danger-tier (custom read -rp requiring "rollback" — no warn downgrade)
+# because it destroys all tracked files from the only commit with no reflog
+# parent to return to.
+
+@test "h-rollback: recovery hint printed on success" {
+  create_test_repo_with_history
+  run hug h rollback 1 --force
+  assert_success
+  assert_output --partial "hug h restore"
+  assert_output --partial "--rollback -y"
+}
+
+@test "h-rollback -u on synced upstream: exit 0, HEAD unchanged (empty-target guard)" {
+  create_test_repo_with_history
+  before=$(git rev-parse HEAD)
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "hrollback-synced-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  run hug h rollback -u -y
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$before" ]
+}
+
+@test "h-rollback --help documents RESTORE" {
+  run hug h rollback --help
+  assert_output --partial "RESTORE"
+  assert_output --partial "hug h restore"
+}
