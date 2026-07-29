@@ -640,8 +640,8 @@ teardown() {
   assert_failure
   assert_output --partial "Cancelled"
 
-  # Now test accepting confirmation by typing the exact action word
-  run bash -c 'export HUG_DISABLE_GUM=true; echo "back" | hug h back HEAD~1'
+  # Now test accepting confirmation by typing "y" (warn tier: yes/no prompt)
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "y" | hug h back HEAD~1'
   assert_success
   assert_output --partial "Moved HEAD back to"
 
@@ -717,7 +717,7 @@ teardown() {
 
 @test "hug h back: requires confirmation when staged changes exist" {
   setup_gum_mock
-  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancelling gum input (danger prompt)
+  export HUG_TEST_GUM_CONFIRM="no"    # Simulate cancelling gum confirm (warn prompt)
 
   local original_head
   original_head=$(git rev-parse HEAD)
@@ -1968,4 +1968,37 @@ EOF
   run hug h rewind -u -y
   [ "$status" -eq 3 ]      # HUG_EX_BLOCKED — -y cannot authorize the danger-tier upstream reset
   [ "$status" -ne 0 ]      # backstop: a sourcing-order regression fails noisily, not silently
+}
+
+# ============================================================================
+# git-h-back: warn-tier migration + restore hint + upstream guard tests
+# ============================================================================
+
+@test "h-back: recovery hint printed on success" {
+  create_test_repo_with_history
+  run hug h back 1 --force
+  assert_success
+  assert_output --partial "hug h restore"
+  assert_output --partial "--back -y"
+}
+
+@test "h-back -u on synced upstream: exit 0, HEAD unchanged (empty-target guard)" {
+  create_test_repo_with_history
+  before=$(git rev-parse HEAD)
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "hback-synced-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  run hug h back -u -y
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$before" ]
+}
+
+@test "h-back --help documents RESTORE" {
+  run hug h back --help
+  assert_output --partial "RESTORE"
+  assert_output --partial "hug h restore"
 }
