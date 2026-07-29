@@ -92,7 +92,11 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
 - Commit history navigation (`get_commit_n_back`)
 
 #### hug-git-state
-- Working tree state checks (`has_untracked_or_pending_changes`, `has_staged_changes`, `has_unstaged_changes`)
+- Working tree state checks:
+  - **Two-predicate dirty-detection model**: Hug uses two distinct predicates for different decision points:
+    - `has_uncommitted_tracked_changes` -- tracked-only (staged + unstaged), excludes untracked. Used for **tier/safety decisions** because no reset mode (`--soft`/`--mixed`/`--keep`/`--hard`) touches untracked files, so untracked files are irrelevant to safety.
+    - `has_untracked_or_pending_changes` (renamed from `has_pending_changes`) -- tracked + untracked. Used for **aligned-target gating** in `handle_standard_operation` where untracked files matter contextually.
+  - Other state checks: `has_staged_changes`, `has_unstaged_changes`
 - Cleanliness validation (`check_working_tree_clean`, `check_files_clean`)
 - File state checking (`check_file_in_commit`, `check_file_staged`, `check_file_unstaged`)
 - Binary file detection (`is_binary_staged`)
@@ -125,8 +129,10 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
 - Preview helpers (`print_preview_summary`, `print_commit_list_header`)
 
 #### hug-git-upstream
-- Handle upstream operations (`handle_upstream_operation`)
-- Handle standard operations (`handle_standard_operation`)
+- Handle upstream operations (`handle_upstream_operation`) -- takes a required `tier` parameter (warn/danger) for the upstream confirmation path. This closes the inverted confirmation gradient: previously every upstream path was gated at warn regardless of the operation's actual danger level.
+- Handle standard operations (`handle_standard_operation`) -- aligned-target gating uses `has_uncommitted_tracked_changes` (tracked-only) for the skip-when-aligned decision.
+- Recovery hint helper (`emit_head_recovery_hint`) -- emits the `hug h restore <SHA> --<op> -y` recovery command to stderr after a successful warn-tier HEAD-mover. Suppressed under `HUG_QUIET=T`. Used by h-back, h-undo, h-rollback, h-rewind (warn), and h-squash.
+- See also: `git-h-restore` -- the recovery primitive that `emit_head_recovery_hint` prints. Uses exact-SHA no-op (never the range-count gate) so it can move HEAD forward to a descendant commit.
 
 #### hug-git-backup
 - Create backup branches (`create_backup_branch`)
@@ -418,14 +424,19 @@ print_commit_list_in_range "origin/main" "HEAD"
 
 ```bash
 # For upstream operations (rewind to upstream, etc.)
-target=$(handle_upstream_operation "rewinding")
-# Displays preview, gets confirmation, returns upstream commit
+# The tier parameter (warn|danger) controls which prompt function is used.
+target=$(handle_upstream_operation "rewinding" "warn" "rewind" "danger reason")
+# Displays preview, gets tier-appropriate confirmation, returns upstream commit
 
 # For standard operations (back, undo, etc.)
 target=$(resolve_head_target "$1")
 handle_standard_operation "moving back" "$target"
 prompt_confirm_warn "Proceed? [y/N]: "
 # Displays preview, handles already-at-target case
+
+# Emit a recovery hint after a successful warn-tier HEAD-mover:
+# Prints "hug h restore <SHA> --<op> -y" to stderr.
+emit_head_recovery_hint "$pre_op_head" "back"
 ```
 
 ## Environment Variables

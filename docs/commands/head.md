@@ -15,6 +15,7 @@ These commands provide intuitive names and built-in safeguards for moving the br
 | `hug h squash [-u    |-t TIME] [-i|-e|-m] [--force]` | **H**EAD **S**quash | HEAD goes back + commit last N/local/specific commits as 1 (default: concatenated messages; -i: initial message; -m: custom message; -e: edit) |
 | `hug h files [-u     |-t TIME] [-p|--patch [FILE]]` | **H**EAD **F**iles | Preview files touched in the selected range (or local-only with -u, or by time with -t); optionally show patch (-p) before stats |
 | `hug h steps <file>` | **H**EAD **Steps** | Count steps back to find most recent file change (query for rewinds)              |
+| `hug h restore <SHA> --back\|--undo\|--rollback\|--rewind [-y\|-f]` | **H**EAD **Restore** | Recovery primitive: reset HEAD to a specific commit with a mode-matched reset (inverse of a prior HEAD-mover). See [Recovery](#recovery-h-restore). |
 
 ## Upstream Safety Workflow (`-u` / `--upstream`)
 Several HEAD commands (`hug h back`, `hug h rollback`, `hug h undo`, `hug h rewind`, `hug h squash`) share a read-only preview/confirmation helper when you pass `-u`/`--upstream`. It lists the commits above the upstream tip and shows their file change statistics before any reset happens, letting you cancel with zero repository changes. Use `--force` to skip the confirmation. `hug h files -u` uses the same preview data while staying read-only.
@@ -39,6 +40,8 @@ All HEAD movement commands (`hug h back`, `hug h undo`, `hug h rollback`, `hug h
   hug h back -t "2024-01-15"    # Move HEAD to first commit on or after Jan 15, 2024
   ```
 - **Safety**: Non-destructive; changes remain staged and can be inspected with `hug sl` (**S**tatus + **L**ist uncommitted files) and `hug ss` (**S**tatus + **S**taged diff) or re-committed. Previews commits and their file change statistics and requires y/n confirmation when staged changes are present (skipped with --force or when the staging area is clean); the preview helper is read-only, so no reset happens until you confirm. Cannot mix `-u` with explicit target or `-t`. Cannot mix `-t` with explicit target.
+- **Confirmation tier**: `warn` -- the operation is fully recoverable via `hug h restore`.
+- **RESTORE**: h-back is inverted by `hug h restore <pre-op-HEAD> --back -y`. After a successful operation, Hug prints this exact command with the pre-op SHA filled in. `--back` selects `git reset --soft`, which moves HEAD while keeping your changes staged (the index is not touched).
 - ![hug h back example](img/hug-h-back.png)
 
 ### `hug h undo [N|commit] [-u, --upstream] [-t, --temporal TIME] [--force]`
@@ -54,6 +57,8 @@ All HEAD movement commands (`hug h back`, `hug h undo`, `hug h rollback`, `hug h
   hug h undo -t "1 week ago"    # Move HEAD to first commit from 1 week ago
   ```
 - **Safety**: Non-destructive; changes remain in working directory and can be viewed with `hug su` (**S**tatus + **U**nstaged diff). Previews commits and their file change statistics and requires y/n confirmation when staged or unstaged changes are present (skipped with --force or when both the staging area and working tree are clean). Keeps protection when staged or unstaged work might be unintentionally merged into the undo, but skips the prompt when no staged or unstaged changes are present. The preview helper is read-only, so no reset happens until you confirm. Cannot mix `-u` with explicit target or `-t`. Cannot mix `-t` with explicit target.
+- **Confirmation tier**: `warn` -- the operation is fully recoverable via `hug h restore`.
+- **RESTORE**: h-undo is inverted by `hug h restore <pre-op-HEAD> --undo -y`. After a successful operation, Hug prints this exact command with the pre-op SHA filled in. `--undo` selects `git reset --mixed`, which moves HEAD and resets the index (your changes stay unstaged).
 - ![hug h undo example](img/hug-h-undo.png)
 
 ### `hug h rollback [N|commit] [-u, --upstream] [-t, --temporal TIME] [--force]`
@@ -69,6 +74,8 @@ All HEAD movement commands (`hug h back`, `hug h undo`, `hug h rollback`, `hug h
   hug h rollback -t "1 week ago"   # Rollback to first commit from 1 week ago
   ```
 - **Safety**: Aborts if it would overwrite uncommitted changes. Previews commits and their file change statistics and requires y/n confirmation (skipped with --force); the preview helper is read-only, so no reset happens until you confirm. Cannot mix `-u` with explicit target or `-t`. Cannot mix `-t` with explicit target. Use `hug h files` first to inspect.
+- **Confirmation tier**: `warn` -- the operation is fully recoverable via `hug h restore`. (Root-commit path remains `danger`: it destroys all tracked files from the only commit.)
+- **RESTORE**: h-rollback is inverted by `hug h restore <pre-op-HEAD> --rollback -y`. After a successful operation, Hug prints this exact command with the pre-op SHA filled in. `--rollback` selects `git reset --keep`, which preserves uncommitted local changes while moving HEAD back.
 
 ### `hug h rewind [N|commit] [-u, --upstream] [-t, --temporal TIME] [--force]`
 - **Description**: HEAD goes back by N commits (default: 1) or to a specific commit, moving to a clean state. Highly destructive! Discards all staged/unstaged changes in tracked files (untracked/ignored files are preserved). With `-u`, resets to upstream remote tip, discarding everything after it. With `-t/--temporal`, moves HEAD to the first commit at or after the specified time.
@@ -83,6 +90,10 @@ All HEAD movement commands (`hug h back`, `hug h undo`, `hug h rollback`, `hug h
   hug h rewind -t "1 week ago"   # Rewind to first commit from 1 week ago
   ```
 - **Safety**: Previews commits and their file change statistics to be discarded, requires typing "rewind" to confirm (skipped with --force). The preview helper is read-only; nothing changes until you confirm. Even if HEAD is already at the target, the command still hard-resets tracked changes in the index and working tree. Untracked files are safe. Cannot mix `-u` with explicit target or `-t`. Cannot mix `-t` with explicit target.
+- **Confirmation tier** (state-dependent): `h-rewind` is the only HEAD-mover whose tier depends on the working tree state:
+  - **Clean tree** (no tracked changes): `warn` tier. HEAD moves are fully recoverable via `hug h restore --rewind`. `-y` proceeds; `--force` skips the prompt.
+  - **Dirty tree** (tracked changes present): `danger` tier. Uncommitted tracked edits would be destroyed by `git reset --hard` and cannot be recovered. `-y` is **refused** (exit code 3); use `--force` to proceed with data loss.
+- **RESTORE**: h-rewind (clean tree) is inverted by `hug h restore <pre-op-HEAD> --rewind -y`. After a successful clean-tree operation, Hug prints this exact command with the pre-op SHA filled in. `--rewind` selects `git reset --hard`, restoring the tree to the exact pre-op state. On a dirty tree, the commit-recovery hint is still printed, but local edits are unrecoverable.
 
 ### `hug h squash [N|commit] [-u, --upstream] [-t, --temporal TIME] [-i|--initial-message] [-m|--message MSG] [-e|--edit] [--force]`
 - **Description**: Moves HEAD back by N commits (default: 2) or to a specific commit (like `h back`), then immediately commits the staged changes as one new commit. By default, combines all commit messages from squashed commits. Message behavior can be controlled with flags:
@@ -107,7 +118,61 @@ All HEAD movement commands (`hug h back`, `hug h undo`, `hug h rollback`, `hug h
   hug h squash -t "1 week ago" -i    # Squash commits from 1 week ago with initial commit message
   ```
 - **Safety**: Previews commits and their file change statistics affected and requires y/n confirmation when staged changes are present (skipped with --force or when the staging area is clean). Keeps protection when staged work might be unintentionally lumped into the squash, but skips the prompt when no staged changes are present. The shared preview helper is read-only; the squash only runs after you confirm. Aborts if no upstream set for `-u` or invalid target. If no staged changes after reset, skips commit and warns. Cannot mix `-u` with explicit target or `-t`. Cannot mix `-t` with explicit target. Cannot use `-m` with `-e` or `-i` (conflicting message options).
-- Pre-existing staged changes will be included - review with `hug ss` first.
+- **Confirmation tier**: `warn` -- the operation is fully recoverable via `hug h restore --back`.
+- **RESTORE**: h-squash is inverted by `hug h restore <pre-op-HEAD> --back -y`. After a successful operation, Hug prints this exact command with the pre-op SHA filled in. `--back` selects `git reset --soft`, which moves HEAD without touching the index -- the squashed commit's content stays staged. Pre-existing staged changes will be included - review with `hug ss` first.
+
+### `hug h restore <SHA> --back|--undo|--rollback|--rewind [-y, --yes] [-f, --force] [--quiet] [-h, --help]`
+- **Description**: Recovery primitive that resets HEAD to a specific commit, inverting a prior HEAD-mover operation. Unlike re-invoking the mover (which would short-circuit on the aligned-target check), `hug h restore` uses exact-SHA equality for its no-op test, allowing it to move HEAD **forward** to a descendant commit. The flag (`--back`/`--undo`/`--rollback`/`--rewind`) selects the `git reset` **mode** -- it does NOT encode direction; direction is determined solely by the target's position relative to HEAD.
+- **Required**: An op-mode flag (exactly one) and a target SHA. The target must not be a bare 1--3 digit numeric (ambiguous -- reads as `HEAD~N`); use a 4+ char SHA prefix or explicit `HEAD~N`.
+- **Flags**:
+  - `--back`: `git reset --soft` -- moves HEAD, keeps changes staged. For h-back / h-squash recovery.
+  - `--undo`: `git reset --mixed` -- moves HEAD, resets index. For h-undo recovery.
+  - `--rollback`: `git reset --keep` -- moves HEAD, preserves uncommitted changes. For h-rollback recovery.
+  - `--rewind`: `git reset --hard` -- moves HEAD, discards all tracked changes. For h-rewind recovery. **Danger** on a dirty tree (tracked changes present): `-y` is refused (exit 3); use `-f` to proceed with data loss.
+  - `-y`, `--yes`: Auto-confirm the warn-tier prompt.
+  - `-f`, `--force`: Force through danger-tier (needed for `--rewind` on dirty tree).
+- **Confirmation tier**: `warn` by default; escalates to `danger` only for `--rewind` on a dirty tracked tree.
+- **No-op**: When the target SHA equals HEAD exactly, prints "Already at" and exits 0 without modifying the repository.
+- **Example**:
+  ```shell
+  # Recover from h-back:
+  hug h restore abc123def --back -y
+
+  # Recover from h-undo:
+  hug h restore abc123def --undo -y
+
+  # Recover from h-rollback:
+  hug h restore abc123def --rollback -y
+
+  # Recover from h-rewind (clean tree):
+  hug h restore abc123def --rewind -y
+
+  # Force through danger (dirty tree):
+  hug h restore abc123def --rewind -f
+  ```
+- **RESTORE**: Each warn-tier HEAD-mover prints the exact `hug h restore` command to recover. Copy and run it immediately after the operation if you change your mind. The command is mode-matched to the operation that generated it -- `--back` for h-back/h-squash, `--undo` for h-undo, `--rollback` for h-rollback, `--rewind` for h-rewind.
+
+## Recovery (`hug h restore`)
+
+### Why a dedicated recovery command?
+
+Re-invoking a HEAD-mover (e.g., `hug h back abc123`) to recover forward **does not work** -- the mover's aligned-target check (`count_commits_in_range target HEAD == 0`) short-circuits to a no-op whenever the target is a descendant of HEAD. Since the pre-op HEAD is always ahead after a successful backward move, any re-invocation of the mover silently exits 0 without moving HEAD.
+
+`hug h restore` solves this with two design decisions:
+
+1. **Exact-SHA no-op**: The no-op gate is `[ "$target" = "$(git rev-parse HEAD)" ]` -- exact equality, never a range count. This is what allows recovery to move HEAD *forward* to a descendant commit.
+
+2. **Op-named flags select the reset mode**: `--back`/`--undo`/`--rollback`/`--rewind` map to `git reset --soft`/`--mixed`/`--keep`/`--hard` respectively. The flag names match the operation being inverted (not the direction), so the user sees `hug h restore <sha> --back` which reads naturally as "restore from a h-back".
+
+### Confirmation tiers
+
+| Scenario | Tier | `-y` behavior | `-f` behavior |
+|----------|------|---------------|---------------|
+| `--back`/`--undo`/`--rollback` (any tree) | `warn` | Proceeds | Proceeds |
+| `--rewind`, tracked-clean tree | `warn` | Proceeds | Proceeds |
+| `--rewind`, tracked-dirty tree | `danger` | **Refused** (exit 3) | Proceeds |
+
+The `--rewind`+dirty escalation is deliberate: `git reset --hard` destroys uncommitted tracked edits irreversibly. The danger gate ensures the user explicitly opts in to data loss with `--force`.
 
 ### `hug h files [N|commit] [options]`
 - **Description**: Preview unique files touched by commits in the specified range (default: last 1 commit), including line change stats. Optionally show full patch of changes (-p/--patch) or patch for a specific file (--patch=FILE) before the stats. Use -- with -p to interactively select a specific file for the patch instead of showing the full patch. With `-u`, previews files and stats in local-only commits (HEAD to upstream tip). With `-t/--temporal`, filters commits by time relative to HEAD's commit time. Useful before back, undo, rollback, or rewind to understand impact.
