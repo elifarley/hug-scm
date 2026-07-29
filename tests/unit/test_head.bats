@@ -589,7 +589,7 @@ teardown() {
   echo "ignored" > test.log
   git add .gitignore && git commit -m "Add gitignore"
   
-  run bash -c 'export HUG_DISABLE_GUM=true; echo "rewind" | hug h rewind'
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "y" | hug h rewind'
   assert_success
   assert_file_exists "untracked.txt"
   assert_file_exists "test.log"
@@ -1035,8 +1035,8 @@ teardown() {
   assert_failure
   assert_output --partial "Cancelled"
 
-  # Test accepting confirmation (exact "rewind" required)
-  run bash -c 'export HUG_DISABLE_GUM=true; echo "rewind" | hug h rewind HEAD~1'
+  # Test accepting confirmation (warn-tier: y/N on clean tree)
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "y" | hug h rewind HEAD~1'
   assert_success
   assert_output --partial "Rewind complete"
 
@@ -1857,18 +1857,34 @@ EOF
 }
 
 # ============================================================================
-# git-h-rewind: danger-tier gating (prompt_confirm_danger migration)
+# git-h-rewind: state-dependent tier (§9 signed off)
 # ============================================================================
-# Context: rewind's two paths now both gate via prompt_confirm_danger (the family
-# confirm tier), replacing a bespoke read -p and the inherited WARN tier from
-# handle_upstream_operation. The danger tier refuses -y (HUG_YES) with exit 3
-# (HUG_EX_BLOCKED) — only -f proceeds. These tests pin that gradient.
+# Context: §9 partial revert of #225 — clean-tree h-rewind has a full recovery path
+# (restore --rewind), so warn is honest; dirty stays danger (edits unrecoverable).
+# The tier is computed from has_uncommitted_tracked_changes before each path.
 
-@test "hug h rewind: -y is REFUSED (danger tier, exit 3)" {
+@test "hug h rewind: dirty tree + -y -> refused exit 3 (danger tier)" {
   create_test_repo_with_history
+  echo "dirty" >> feature1.txt
   run hug h rewind -y HEAD~1
   [ "$status" -eq 3 ]      # HUG_EX_BLOCKED, sourced transitively via hug-common
   [ "$status" -ne 0 ]      # backstop: a sourcing-order regression fails noisily, not silently
+}
+
+@test "hug h rewind: clean tree + -y -> proceeds (warn) + restore hint" {
+  create_test_repo_with_history
+  run hug h rewind 1 -y
+  assert_success
+  assert_output --partial "hug h restore"
+  assert_output --partial "--rewind -y"
+}
+
+@test "hug h rewind: dirty tree + -f -> proceeds + states edits unrecoverable" {
+  create_test_repo_with_history
+  echo "edit" >> feature1.txt
+  run hug h rewind 1 -f
+  assert_success
+  assert_output --partial "cannot be recovered"
 }
 
 @test "hug h rewind: -f proceeds without prompt" {
@@ -1923,7 +1939,7 @@ EOF
   echo "extra" > extra.txt; git add extra.txt; git commit -q -m "local ahead commit"
   local remote_tip; remote_tip=$(git rev-parse "origin/$branch")
 
-  run bash -c 'export HUG_DISABLE_GUM=true; echo "rewind" | hug h rewind -u'
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "y" | hug h rewind -u'
   assert_success
   [ "$(git rev-parse HEAD)" = "$remote_tip" ]   # rewound to upstream tip
 }
@@ -1946,15 +1962,13 @@ EOF
   [ "$(git rev-parse HEAD)" = "$head_before" ]   # HEAD unchanged — gate cancelled
 }
 
-@test "hug h rewind -u: -y is REFUSED (danger tier, exit 3) on upstream path" {
-  # Upstream analog of the "-y is REFUSED (danger tier, exit 3)" test above, for
-  # the riskier path. handle_upstream_operation runs with an INLINE HUG_FORCE=true
-  # (scoped to its subshell) so it computes — but does not act on — a non-empty
-  # target; the OUTER prompt_confirm_danger is then the single decision point.
-  # -y (HUG_YES) must hit that danger gate and exit 3: it cannot ride the helper's
-  # suppressed warn gate through to `git reset --hard`. This is the inverted-gradient
-  # regression test — pre-fix, -y auto-confirmed via the warn gate and destroyed work.
-  # No HUG_DISABLE_GUM needed: the danger-tier refusal fires before any gum prompt.
+@test "hug h rewind -u: dirty tree -y is REFUSED (danger tier, exit 3) on upstream path" {
+  # Upstream -y refusal when the tree is dirty (§9: state-dependent tier).
+  # handle_upstream_operation gates at the computed tier; with dirty tree,
+  # tier=danger so it refuses -y (exit 3). The OUTER case dispatch also sees
+  # danger and refuses -y. Pre-§9 fix, the whole thing was always danger-tier;
+  # now dirty stays danger and clean lowers to warn. No HUG_DISABLE_GUM needed:
+  # the danger-tier refusal fires before any gum prompt.
   create_test_repo_with_history
   local branch; branch=$(git branch --show-current)
   local remote_repo
@@ -1964,10 +1978,17 @@ EOF
   git push -q origin "$branch"
   git branch --set-upstream-to="origin/$branch" >&2
   echo "extra" > extra.txt; git add extra.txt; git commit -q -m "local ahead commit"
+  echo "dirty" >> feature1.txt
 
   run hug h rewind -u -y
   [ "$status" -eq 3 ]      # HUG_EX_BLOCKED — -y cannot authorize the danger-tier upstream reset
   [ "$status" -ne 0 ]      # backstop: a sourcing-order regression fails noisily, not silently
+}
+
+@test "hug h rewind --help documents RESTORE" {
+  run hug h rewind --help
+  assert_output --partial "RESTORE"
+  assert_output --partial "hug h restore"
 }
 
 # ============================================================================
