@@ -80,3 +80,19 @@ teardown() {
   assert_failure
   [ "$status" -eq 3 ]
 }
+
+################################################################################
+# emit_head_recovery_hint: quiet-aware recovery hint helper (Task 6)
+################################################################################
+
+@test "emit_head_recovery_hint: prints the restore command to stderr" {
+  run emit_head_recovery_hint "abc1234def5678" "back"
+  assert_success
+  [[ "$output" == *"hug h restore abc1234def5678 --back -y"* ]]
+}
+
+@test "emit_head_recovery_hint: suppressed under HUG_QUIET=T" {
+  HUG_QUIET=T run emit_head_recovery_hint "abc1234def5678" "back"
+  assert_success
+  [ -z "$output" ]
+}

@@ -179,3 +179,26 @@ reset_root_commit() {
             ;;
     esac
 }
+
+################################################################################
+# Recovery Hint Helper
+################################################################################
+
+# Emits the inverse restore command to stderr after a successful HEAD mover.
+# Called by warn-tier operations (h-back, h-undo, h-rollback, h-rewind, h-squash)
+# after `git reset` succeeds, so the SHA passed is the known-good pre-op HEAD.
+#
+# Usage: emit_head_recovery_hint <pre-op-HEAD> <op>
+#   <op> ∈ back|undo|rollback|rewind|squash — the caller's own operation name
+#   (the op being inverted). Each caller knows its own name, keeping this
+#   helper free of caller-specific logic.
+#
+# Suppressed under HUG_QUIET=T — this is human-facing chatter, mirroring the
+# gum_log quiet guard (hug-gum:42) per the stdout/stderr discipline.
+# Both args are required (${:?} hard-errors on missing arg).
+emit_head_recovery_hint() {
+  local pre_op_head="${1:?}" op="${2:?}"
+  test "${HUG_QUIET:-}" && return 0
+  printf '\nℹ️  HEAD moved. Recover with:\n    hug h restore %s --%s -y\n' \
+    "$pre_op_head" "$op" >&2
+}
