@@ -72,6 +72,14 @@ SEE ALSO:
     hug sl        list staged and unstaged files
     hug shc       : File stats for the range being squashed
     hug shcp      : Full diff and stats before squashing
+
+RESTORE
+    h-squash is inverted by:
+        hug h restore <pre-op-HEAD> --back -y
+    On a successful h-squash, hug prints this exact line with the pre-op SHA
+    filled in. (--back ≡ git reset --soft — your changes stay staged.)
+    Immediately after h-squash the tree is tracked-clean, so the printed -y hint
+    proceeds; h-squash recovers like h-back (soft reset to old HEAD).
 EOF
 }
 
@@ -122,6 +130,8 @@ done
 
 check_git_repo
 
+tier=warn # h-squash is warn-tier: --soft reset preserves all work; complete recovery exists via restore --back
+
 # Validate flag combinations
 if [[ -n "$custom_message" && "$open_editor" == true ]]; then
   error "Cannot use -m/--message and -e/--edit together (conflicting options)"
@@ -145,19 +155,15 @@ fi
 original_head=$(git rev-parse HEAD)
 
 if $upstream; then
-  # Use DRY helper for validation, then handle upstream-specific logic
-  resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~2' > /dev/null || exit 1
-
-  # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
-  # When the staging area is clean we temporarily set HUG_FORCE to bypass the confirmation prompt.
-  if [[ ${HUG_FORCE:-} == true ]]; then
-    target=$(handle_upstream_operation "squashing")
-  elif has_staged_changes; then
-    target=$(handle_upstream_operation "squashing")
-  else
-    info "No staged changes detected; skipping confirmation."
-    target=$(HUG_FORCE=true handle_upstream_operation "squashing")
-  fi
+  # handle_upstream_operation performs validation, preview, and tier-based
+  # confirmation (warn→prompt_confirm_warn). The HUG_FORCE=true inline-prefix
+  # hack is retired: the helper now gates at the operation's real tier instead
+  # of being bypassed. The empty-target guard ([[ -z "${target:-}" ]]) prevents
+  # the silent-orphan bug: an empty target would word-split into h-back's
+  # HEAD~1 default, fabricating a "[squash] 0 commits…" commit with exit 0.
+  target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~2') || exit 1
+  target=$(handle_upstream_operation "squashing" "$tier" "back" "discards local-only commits") || exit $?
+  [[ -z "${target:-}" ]] && exit 0
   commits_to_squash=$(count_commits_in_range "$target" HEAD)
 else
   # Use DRY helper for validation and target resolution
@@ -202,11 +208,7 @@ else
     warn "These staged files will become part of the squashed commit together with the changes from the commits being squashed."
     printf '\n' >&2
 
-    if [[ -z "${target_arg:-}" || "${target_arg:-}" =~ ^[0-9]+$ ]]; then
-      prompt_confirm_danger "squash" "Rewrites history by combining commits into one"
-    else
-      prompt_confirm_danger "squash" "Rewrites history by combining commits into one"
-    fi
+    prompt_confirm_warn "Squash commits and combine their changes? [y/N]: "
   fi
   target="$target_commit"
 fi
@@ -271,4 +273,5 @@ if [ "$commits_to_squash" -gt 1 ]; then
   summary_word="commits"
 fi
 info "Squash complete: $commits_to_squash $summary_word combined into 1 with parent '$target_display'."
+emit_head_recovery_hint "$original_head" "back"
 tip 'Use `hug cmod` to change the commit message of the last commit.'

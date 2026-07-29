@@ -1288,7 +1288,7 @@ teardown() {
 
 @test "hug h squash: requires confirmation when staged changes exist" {
   setup_gum_mock
-  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancelling gum input (danger prompt)
+  export HUG_TEST_GUM_CONFIRM="no"    # Simulate cancelling gum confirm (warn prompt)
 
   echo "staged work" > staged.txt
   git add staged.txt
@@ -1495,6 +1495,59 @@ EOF
   run hug h squash 2 -m
   assert_failure
   assert_output --partial "-m/--message requires a commit message argument"
+}
+
+# ============================================================================
+# git-h-squash: warn-tier migration + restore hint + upstream guard tests
+# ============================================================================
+
+@test "h-squash: recovery hint printed on success" {
+  create_test_repo_with_history
+  run hug h squash 1 --force
+  assert_success
+  assert_output --partial "hug h restore"
+  assert_output --partial "--back -y"
+}
+
+@test "h-squash -u on synced upstream: exit 0, HEAD unchanged, NO new commit created (empty-target guard)" {
+  create_test_repo_with_history
+  local before; before=$(git rev-parse HEAD)
+  local commit_count_before; commit_count_before=$(git rev-list --count HEAD)
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "hsquash-synced-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  run hug h squash -u -y
+  assert_success
+  # HEAD unchanged — the fix (empty-target guard) prevents the silent-orphan bug
+  # where an empty target word-splits into h-back's HEAD~1 default and
+  # fabricates a "[squash] 0 commits…" commit with exit 0.
+  [ "$(git rev-parse HEAD)" = "$before" ]
+  # No new commit created — this is the key assertion: exit-code-only passes
+  # against the bug because the fabricated commit also exits 0.
+  [ "$(git rev-list --count HEAD)" = "$commit_count_before" ]
+}
+
+@test "h-squash --help documents RESTORE" {
+  run hug h squash --help
+  assert_output --partial "RESTORE"
+  assert_output --partial "hug h restore"
+}
+
+@test "h-squash: dirty tree + -y → proceeds (warn tier, not refused)" {
+  create_test_repo_with_history
+  echo "dirty" >> feature1.txt
+  run hug h squash 1 -y
+  assert_success
+}
+
+@test "h-squash -u with no upstream configured -> non-zero" {
+  create_test_repo_with_history
+  run hug h squash -u
+  assert_failure
 }
 
 # ----------------------------------------------------------------------------
