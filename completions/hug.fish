@@ -375,6 +375,7 @@ complete -c hug -n "__fish_seen_subcommand_from h restore" -l rewind -d "Hard re
 complete -c hug -n "__fish_seen_subcommand_from h restore" -s y -l yes -d "Auto-confirm warn prompt"
 complete -c hug -n "__fish_seen_subcommand_from h restore" -l force -d "Force danger-tier"
 complete -c hug -n "__fish_seen_subcommand_from h restore" -l quiet -d "Quiet mode"
+complete -c hug -n "__fish_seen_subcommand_from h restore" -s h -l help -d "Show help"
 # h steps takes file argument
 complete -c hug -n "__fish_seen_subcommand_from h steps" -a "(__hug_complete_files)" -d "File"
 complete -c hug -n "__fish_seen_subcommand_from h steps" -l raw -d "Output just the number"

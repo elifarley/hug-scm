@@ -65,6 +65,9 @@ while [[ $# -gt 0 ]]; do
     show_help
     exit 0
     ;;
+  --*)
+    error_usage "Unknown flag: $1 (expected --back|--undo|--rollback|--rewind)"
+    ;;
   *)
     target_arg="$1"
     shift
@@ -73,6 +76,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 check_git_repo
+
+# The one genuinely ambiguous input: a bare 1–3 digit numeric, which resolve_head_target
+# silently reinterprets as HEAD~N (regex ^[1-9][0-9]{0,2}$, hug-git-repo:327). A human
+# typing a short SHA-prefix from memory ("42") might mean the commit, not HEAD~42 — so
+# refuse the bare form; an explicit HEAD~N is fine. Short SHAs (4+ chars) are unambiguous
+# (the regex is bounded to 1–3 digits) and resolve normally, as do full SHAs / names.
+[[ "${target_arg}" =~ ^[1-9][0-9]{0,2}$ ]] &&
+  error_usage "ambiguous target '$target_arg': reads as HEAD~$target_arg — pass a 4+-char SHA prefix or an explicit HEAD~N"
 
 # Dispatch op to reset mode.  The op flag is REQUIRED — if absent ${op:?} fails
 # with a clear message showing valid flags.
@@ -98,11 +109,19 @@ if [ "$target" = "$(git rev-parse HEAD)" ]; then
   exit 0
 fi
 
-# (Task 8 adds: bare-numeric guard, --rewind+dirty danger escalation, per-tier
-# prompt.  For now: warn-tier prompt for all ops.)
-# WHY -y covers warn: warn-tier prompts guard RECOVERABLE destructive actions,
-# so -y intentionally covers them (hug-confirm:33).  Only danger-tier refuses -y.
-prompt_confirm_warn "Reset --$mode to $(git rev-parse --short "$target")? [y/N]: "
+# WHY the two tiers take DIFFERENT argument forms: prompt_confirm_warn takes ONE arg
+# (the whole prompt string, hug-confirm:28); prompt_confirm_danger takes TWO (word +
+# reason, hug-confirm:76). A uniform "prompt_confirm_${tier}" call would mis-feed
+# prompt_confirm_warn, passing it a second arg it ignores (dropping the reason), and
+# would pass danger only one arg (missing the reason). So dispatch by tier explicitly.
+tier=warn
+if [ "$mode" = hard ] && has_uncommitted_tracked_changes; then
+  tier=danger # --rewind would destroy uncommitted tracked edits (unrecoverable)
+fi
+case "$tier" in
+danger) prompt_confirm_danger "$op" "git reset --$mode discards uncommitted tracked edits (unrecoverable)" ;;
+warn) prompt_confirm_warn "Reset --$mode to $(git rev-parse --short "$target")? Uncommitted work is preserved. [y/N]: " ;;
+esac
 
 git reset --"$mode" "$target"
 info "Restored HEAD to $(git rev-parse --short "$target") (--$op)."
