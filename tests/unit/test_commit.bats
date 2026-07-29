@@ -485,7 +485,7 @@ HOOK
   
   run hug cmv 1 target-branch --force
   assert_failure
-  assert_output --partial "Require clean working tree and index to proceed"
+  assert_output --partial "Require clean tracked working tree"
   
   popd >/dev/null
   rm -rf "$repo"
@@ -501,8 +501,39 @@ HOOK
   
   run hug cmv 1 target-branch --force
   assert_failure
-  assert_output --partial "Require clean working tree and index to proceed"
+  assert_output --partial "Require clean tracked working tree"
   
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: tracked-dirty tree still refuses the clean-gate (unified predicate)" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  # Modify a tracked file to create unstaged tracked changes
+  echo "dirty edit" >> feature1.txt
+
+  run hug cmv 1 newbranch --new --force
+  assert_failure
+  assert_output --partial "Require clean tracked working tree"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: untracked-only tree passes the clean-gate (reset --hard ignores untracked)" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  # Add an untracked file only — no tracked changes at all
+  echo "untracked" > scratch.txt
+
+  run hug cmv 1 newbranch --new --force
+  assert_success
+
   popd >/dev/null
   rm -rf "$repo"
 }
