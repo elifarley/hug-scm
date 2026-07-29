@@ -346,3 +346,34 @@ b.txt"
   run check_file_unstaged a.txt
   assert_success
 }
+
+################################################################################
+# has_uncommitted_tracked_changes TESTS
+################################################################################
+
+@test "has_uncommitted_tracked_changes: clean repo -> false" {
+  echo "test" > file.txt && git add file.txt && git commit -q -m "c1"
+  run has_uncommitted_tracked_changes
+  assert_failure
+}
+
+@test "has_uncommitted_tracked_changes: unstaged tracked change -> true" {
+  echo "test" > file.txt && git add file.txt && git commit -q -m "c1"
+  echo "more" >> file.txt
+  run has_uncommitted_tracked_changes
+  assert_success
+}
+
+@test "has_uncommitted_tracked_changes: staged change -> true" {
+  echo "test" > file.txt && git add file.txt && git commit -q -m "c1"
+  echo "more" >> file.txt && git add file.txt
+  run has_uncommitted_tracked_changes
+  assert_success
+}
+
+@test "has_uncommitted_tracked_changes: untracked-only -> false (excluded)" {
+  echo "test" > file.txt && git add file.txt && git commit -q -m "c1"
+  echo "untracked" > newfile.txt
+  run has_uncommitted_tracked_changes
+  assert_failure
+}

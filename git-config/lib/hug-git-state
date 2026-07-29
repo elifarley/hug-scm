@@ -106,6 +106,16 @@ get_dirty_files() {
   return 0
 }
 
+# Returns 0 if there are uncommitted TRACKED changes (staged or unstaged), 1 otherwise.
+# Untracked files are deliberately EXCLUDED: no reset mode (--soft/--mixed/--keep/--hard)
+# touches untracked files, so they are irrelevant to the safety/tier decisions that use this
+# predicate. Tracked-only by construction — get_dirty_files uses git diff, which never
+# reports untracked. This is the SINGLE tracked-dirty algorithm; do not add a parallel check.
+# Usage: if has_uncommitted_tracked_changes; then ...; fi
+# Returns:
+#   0 if tracked changes exist (staged, unstaged, or both), 1 if clean or untracked-only
+has_uncommitted_tracked_changes() { [ -n "$(get_dirty_files)" ]; }
+
 # Reports untracked files (respecting .gitignore via --exclude-standard), one per
 # line, sorted. Parallel to get_dirty_files but for UNTRACKED paths (which git diff
 # never reports). hug w get needs this: `git restore --source=<commit> --worktree`
