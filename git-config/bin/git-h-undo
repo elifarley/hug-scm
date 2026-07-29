@@ -49,6 +49,12 @@ NOTES:
     All your edits are preserved, but the entire staging area is cleared.
     If you need to preserve staging, use 'hug h back' instead.
     Untracked and ignored files are never affected.
+
+RESTORE
+    h-undo is inverted by:
+        hug h restore <pre-op-HEAD> --undo -y
+    On a successful h-undo, hug prints this exact line with the pre-op SHA
+    filled in. (--undo ≡ git reset --mixed — your changes stay unstaged.)
 EOF
 }
 
@@ -76,19 +82,22 @@ done
 
 check_git_repo
 
+tier=warn # h-undo is warn-tier: --mixed preserves all work; complete recovery exists
+
 if $upstream; then
   # Use DRY helper for validation, then handle upstream-specific logic
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
 
-  # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
+  # handle_upstream_operation performs validation, preview, confirmation and echoes the upstream commit.
   if [[ ${HUG_FORCE:-} == true ]]; then
-    target=$(handle_upstream_operation "undoing")
+    target=$(handle_upstream_operation "undoing" "$tier" "undo" "rewrites history by undoing commits") || exit $?
   elif has_staged_changes || has_unstaged_changes; then
-    target=$(handle_upstream_operation "undoing")
+    target=$(handle_upstream_operation "undoing" "$tier" "undo" "rewrites history by undoing commits") || exit $?
   else
     info "No staged or unstaged changes detected; skipping confirmation."
-    target=$(HUG_FORCE=true handle_upstream_operation "undoing")
+    target=$(HUG_FORCE=true handle_upstream_operation "undoing" "$tier" "undo" "rewrites history by undoing commits") || exit $?
   fi
+  [[ -z "${target:-}" ]] && exit 0
 else
   # Use DRY helper for validation and target resolution
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
@@ -112,7 +121,7 @@ else
     fi
 
     if $should_prompt; then
-      prompt_confirm_danger "undo" "Rewrites history by undoing root commit"
+      prompt_confirm_warn "Move HEAD back to undo root commit, keeping changes unstaged? [y/N]: "
     fi
 
     reset_root_commit "mixed"
@@ -132,9 +141,11 @@ else
   fi
 
   if $should_prompt; then
-    prompt_confirm_danger "undo" "Rewrites history by undoing commits"
+    prompt_confirm_warn "Move HEAD back, keeping changes unstaged? [y/N]: "
   fi
 fi
 
+pre_op_head=$(git rev-parse HEAD)
 git reset --mixed "$target"
 info "Moved HEAD back to $target to undo commits (uncommitted changes preserved)."
+emit_head_recovery_hint "$pre_op_head" "undo"

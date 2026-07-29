@@ -879,7 +879,7 @@ teardown() {
 
 @test "hug h undo: requires confirmation when staged changes exist" {
   setup_gum_mock
-  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancelling gum input (danger prompt)
+  export HUG_TEST_GUM_CONFIRM="no"    # Simulate cancelling gum confirm (warn prompt)
 
   local original_head
   original_head=$(git rev-parse HEAD)
@@ -903,7 +903,7 @@ teardown() {
 
 @test "hug h undo: requires confirmation when unstaged changes exist" {
   setup_gum_mock
-  export HUG_TEST_GUM_INPUT_RETURN_CODE=1  # Simulate cancelling gum input (danger prompt)
+  export HUG_TEST_GUM_CONFIRM="no"    # Simulate cancelling gum confirm (warn prompt)
 
   local original_head
   original_head=$(git rev-parse HEAD)
@@ -1999,6 +1999,39 @@ EOF
 
 @test "h-back --help documents RESTORE" {
   run hug h back --help
+  assert_output --partial "RESTORE"
+  assert_output --partial "hug h restore"
+}
+
+# ============================================================================
+# git-h-undo: warn-tier migration + restore hint + upstream guard tests
+# ============================================================================
+
+@test "h-undo: recovery hint printed on success" {
+  create_test_repo_with_history
+  run hug h undo 1 --force
+  assert_success
+  assert_output --partial "hug h restore"
+  assert_output --partial "--undo -y"
+}
+
+@test "h-undo -u on synced upstream: exit 0, HEAD unchanged (empty-target guard)" {
+  create_test_repo_with_history
+  before=$(git rev-parse HEAD)
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "hundo-synced-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  run hug h undo -u -y
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$before" ]
+}
+
+@test "h-undo --help documents RESTORE" {
+  run hug h undo --help
   assert_output --partial "RESTORE"
   assert_output --partial "hug h restore"
 }
