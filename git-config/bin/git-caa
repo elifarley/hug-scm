@@ -82,7 +82,7 @@ hug_caa() {
   local commit_args=("$@")
 
   # Check if there are any changes to stage/commit
-  if ! has_pending_changes; then
+  if ! has_untracked_or_pending_changes; then
     info "No changes to stage or commit."
     return 0
   fi

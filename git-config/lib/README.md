@@ -92,7 +92,7 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
 - Commit history navigation (`get_commit_n_back`)
 
 #### hug-git-state
-- Working tree state checks (`has_pending_changes`, `has_staged_changes`, `has_unstaged_changes`)
+- Working tree state checks (`has_untracked_or_pending_changes`, `has_staged_changes`, `has_unstaged_changes`)
 - Cleanliness validation (`check_working_tree_clean`, `check_files_clean`)
 - File state checking (`check_file_in_commit`, `check_file_staged`, `check_file_unstaged`)
 - Binary file detection (`is_binary_staged`)

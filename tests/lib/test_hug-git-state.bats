@@ -17,46 +17,46 @@ teardown() {
 }
 
 ################################################################################
-# has_pending_changes TESTS
+# has_untracked_or_pending_changes TESTS
 ################################################################################
 
-@test "has_pending_changes: returns false for clean repo" {
+@test "has_untracked_or_pending_changes: returns false for clean repo" {
   echo "test" > file.txt
   git add file.txt
   git commit -q -m "test commit"
   
-  run has_pending_changes
+  run has_untracked_or_pending_changes
   assert_failure
 }
 
-@test "has_pending_changes: returns true for unstaged changes" {
+@test "has_untracked_or_pending_changes: returns true for unstaged changes" {
   echo "test" > file.txt
   git add file.txt
   git commit -q -m "test commit"
   echo "modified" >> file.txt
   
-  run has_pending_changes
+  run has_untracked_or_pending_changes
   assert_success
 }
 
-@test "has_pending_changes: returns true for staged changes" {
+@test "has_untracked_or_pending_changes: returns true for staged changes" {
   echo "test" > file.txt
   git add file.txt
   git commit -q -m "test commit"
   echo "modified" >> file.txt
   git add file.txt
   
-  run has_pending_changes
+  run has_untracked_or_pending_changes
   assert_success
 }
 
-@test "has_pending_changes: returns true for untracked files" {
+@test "has_untracked_or_pending_changes: returns true for untracked files" {
   echo "test" > file.txt
   git add file.txt
   git commit -q -m "test commit"
   echo "untracked" > untracked.txt
   
-  run has_pending_changes
+  run has_untracked_or_pending_changes
   assert_success
 }
 
@@ -166,7 +166,7 @@ teardown() {
   refute_output --partial "git w-discard"
 }
 
-@test "has_pending_changes: returns true under pipefail with many untracked files (SIGPIPE regression)" {
+@test "has_untracked_or_pending_changes: returns true under pipefail with many untracked files (SIGPIPE regression)" {
   # Create 1000+ untracked files to ensure git status output exceeds pipe buffer
   # (64KB on Linux). Under the old pipe-based implementation, this would trigger
   # SIGPIPE -> grep exits after first match -> git SIGPIPE -> false negative.
@@ -176,7 +176,7 @@ teardown() {
   done
 
   # Must detect changes even under pipefail (which hug scripts set)
-  run bash -c 'set -o pipefail; source "$HUG_HOME/git-config/lib/hug-common"; source "$HUG_HOME/git-config/lib/hug-git-repo"; source "$HUG_HOME/git-config/lib/hug-git-state"; has_pending_changes'
+  run bash -c 'set -o pipefail; source "$HUG_HOME/git-config/lib/hug-common"; source "$HUG_HOME/git-config/lib/hug-git-repo"; source "$HUG_HOME/git-config/lib/hug-git-state"; has_untracked_or_pending_changes'
   assert_success
 }
 
