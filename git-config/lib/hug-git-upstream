@@ -15,9 +15,12 @@
 ################################################################################
 
 # Handles upstream validation, preview, and confirmation for operations
-# Usage: target=$(handle_upstream_operation "action_name")
+# Usage: target=$(handle_upstream_operation "action_name" tier "action_word" "danger_reason")
 # Parameters:
 #   $1 - Action description verb (e.g., "rewinding", "squashing")
+#   $2 - Confirmation tier: "warn" (prompt_confirm_warn) or "danger" (prompt_confirm_danger)
+#   $3 - Action word for danger confirmation (user must type this to confirm)
+#   $4 - (Optional) Danger reason shown when -y is used, explaining why --force is required
 # Output:
 #   Upstream commit hash to stdout
 # Environment:
@@ -27,8 +30,12 @@
 # Note:
 #   This helper is read-only: never mutates commits, index, or working tree
 #   After gathering preview information and confirmation, echoes upstream commit
+#   The tier parameter closes the inverted confirmation gradient that this whole design
+#   fixes: previously every upstream path was gated at warn regardless of the operation's
+#   actual danger level. Now each caller declares its own safety tier.
 handle_upstream_operation() {
-    local action_name="$1"
+    local action_name="$1" tier="${2:?handle_upstream_operation requires a confirmation tier}"
+    local action_word="$3" danger_reason="${4:-}"
 
     local target
     target=$(get_upstream_commit) || return 1  # Propagate failure if no upstream
@@ -68,7 +75,11 @@ handle_upstream_operation() {
         fi
 
         printf '\n⚠️  This action involves %s to upstream.\n' "$action_name" >&2
-        prompt_confirm_warn "Proceed with $action_name to upstream? [y/N]: "
+        case "$tier" in
+          danger) prompt_confirm_danger "$action_word" "$danger_reason" ;;
+          warn)   prompt_confirm_warn   "Proceed with $action_name to upstream? [y/N]: " ;;
+          *)      error "Unknown confirmation tier '$tier' for upstream operation '$action_name'." ;;
+        esac
     fi
 
     echo "$target"
