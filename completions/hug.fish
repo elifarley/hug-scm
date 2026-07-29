@@ -116,7 +116,7 @@ end
 
 # List of all top-level Hug commands (unique from reference, alias-based + custom).
 # Note: wips has no hyphen (treated as single token for alias).
-set -l hug_tops alias l ll lla la llf llfp llfs lf lc lcr lau ld lp lo lol fblame fb fcon fa fborn a aa ai ap us usa untrack back undo rollback rewind squash files wip wips unwip get ca cmod cmoda cii cim o cc caa sls sl sla sli s ss su sw sx sh shp shc shf t tc ta ts tr tm tma tpush tpull tpullf tdel tdelr tco twc twp b bs bl bll bla blr bc br bdel bdelf bdelr bwc bwp bwnc bwm bwnm bpush rb rbi rbc rba rbs m mff mkeep ma bpull bpullr pullall type dump remote2ssh h w c statusbase hughelp log-outgoing
+set -l hug_tops alias l ll lla la llf llfp llfs lf lc lcr lau ld lp lo lol fblame fb fcon fa fborn a aa ai ap us usa untrack back undo rollback rewind squash restore files wip wips unwip get ca cmod cmoda cii cim o cc caa sls sl sla sli s ss su sw sx sh shp shc shf t tc ta ts tr tm tma tpush tpull tpullf tdel tdelr tco twc twp b bs bl bll bla blr bc br bdel bdelf bdelr bwc bwp bwnc bwm bwnm bpush rb rbi rbc rba rbs m mff mkeep ma bpull bpullr pullall type dump remote2ssh h w c statusbase hughelp log-outgoing
 
 # Top-level completions: Custom Hug commands + standard Git subcommands.
 # Trigger ONLY if no subcommand seen (after 'hug ' only).
@@ -195,6 +195,15 @@ for sub in back undo rollback rewind squash files
     complete -c hug -n "__fish_seen_subcommand_from $sub" -l force -d "Skip confirmation"
     complete -c hug -n "__fish_seen_subcommand_from $sub" -l quiet -d "Quiet mode"
 end
+# restore specific (top-level alias)
+complete -c hug -n '__fish_seen_subcommand_from restore' -a "(__hug_complete_refs)" -d "Commit to restore to"
+complete -c hug -n '__fish_seen_subcommand_from restore' -l back -d "Soft reset (recover from h-back)"
+complete -c hug -n '__fish_seen_subcommand_from restore' -l undo -d "Mixed reset (recover from h-undo)"
+complete -c hug -n '__fish_seen_subcommand_from restore' -l rollback -d "Keep reset (recover from h-rollback)"
+complete -c hug -n '__fish_seen_subcommand_from restore' -l rewind -d "Hard reset (recover from h-rewind)"
+complete -c hug -n '__fish_seen_subcommand_from restore' -s y -l yes -d "Auto-confirm"
+complete -c hug -n '__fish_seen_subcommand_from restore' -l force -d "Skip confirmation"
+complete -c hug -n '__fish_seen_subcommand_from restore' -l quiet -d "Quiet mode"
 # files specific
 complete -c hug -n '__fish_seen_subcommand_from files' -l stat -d "Show line stats"
 
@@ -335,8 +344,8 @@ complete -c hug -n '__fish_seen_subcommand_from remote2ssh' -a "(__hug_complete_
 # These have explicit subcommands/options from reference.
 
 # h (HEAD operations)
-set -l h_subs back undo rollback rewind squash files steps
-complete -c hug -n '__fish_seen_subcommand_from h; not __fish_seen_subcommand_from (string escape -- $h_subs)' -f -a "back\t'Soft reset (keep staged)' undo\t'Mixed reset (keep unstaged)' rollback\t'Keep reset (preserve local)' rewind\t'Hard reset (destructive)' squash\t'Squash commits into one' files\t'Preview files in commits' steps\t'Count steps to file change'"
+set -l h_subs back undo rollback rewind restore squash files steps
+complete -c hug -n '__fish_seen_subcommand_from h; not __fish_seen_subcommand_from (string escape -- $h_subs)' -f -a "back\t'Soft reset (keep staged)' undo\t'Mixed reset (keep unstaged)' rollback\t'Keep reset (preserve local)' rewind\t'Hard reset (destructive)' restore\t'Recover from a mover (exact-SHA no-op)' squash\t'Squash commits into one' files\t'Preview files in commits' steps\t'Count steps to file change'"
 for sub in $h_subs
     complete -c hug -n "__fish_seen_subcommand_from h $sub" -s h -l help -d "Help"
     # Most h commands take refs/commits
@@ -358,6 +367,14 @@ for sub in back undo rollback rewind
     complete -c hug -n "__fish_seen_subcommand_from h $sub" -l force -d "Skip confirmation"
     complete -c hug -n "__fish_seen_subcommand_from h $sub" -l quiet -d "Quiet mode"
 end
+# h restore specific options
+complete -c hug -n "__fish_seen_subcommand_from h restore" -l back -d "Soft reset (recover from h-back)"
+complete -c hug -n "__fish_seen_subcommand_from h restore" -l undo -d "Mixed reset (recover from h-undo)"
+complete -c hug -n "__fish_seen_subcommand_from h restore" -l rollback -d "Keep reset (recover from h-rollback)"
+complete -c hug -n "__fish_seen_subcommand_from h restore" -l rewind -d "Hard reset (recover from h-rewind)"
+complete -c hug -n "__fish_seen_subcommand_from h restore" -s y -l yes -d "Auto-confirm warn prompt"
+complete -c hug -n "__fish_seen_subcommand_from h restore" -l force -d "Force danger-tier"
+complete -c hug -n "__fish_seen_subcommand_from h restore" -l quiet -d "Quiet mode"
 # h steps takes file argument
 complete -c hug -n "__fish_seen_subcommand_from h steps" -a "(__hug_complete_files)" -d "File"
 complete -c hug -n "__fish_seen_subcommand_from h steps" -l raw -d "Output just the number"

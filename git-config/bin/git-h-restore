@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+_hug_category='["head"]'
+_hug_keywords='["restore","recover","undo","rescue"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+# Part of the Hug tool suite
+#
+# git-h-restore — the recovery primitive.
+#
+# WHY this exists: re-invoking a mover (h-back/h-undo/h-rollback/h-rewind) to
+# recover forward no-ops via handle_standard_operation's count==0 gate (the
+# aligned-target short-circuit in hug-git-upstream:109-112).  Recovery requires
+# a purpose-built reset whose no-op test is EXACT SHA EQUALITY — the only test
+# that distinguishes "already there" from "need to move FORWARD to a descendant."
+#
+# Design decisions:
+#   - Op-named flags (--back/--undo/--rollback/--rewind) select the reset MODE;
+#     the flag DOES NOT encode direction.  Direction comes solely from target
+#     vs HEAD.
+#   - No-op only on exact SHA match (never the range-count gate).
+#   - Warn-tier prompt by default; safety additions (bare-numeric guard,
+#     --rewind+dirty danger escalation, per-tier prompt) arrive in Task 8.
+
+show_help() {
+  cat << EOF
+hug h restore: Reset HEAD to a commit as the inverse of a prior HEAD-mover (recovery).
+
+USAGE:
+    hug h restore <SHA> --back|--undo|--rollback|--rewind [-y|-f]
+
+FLAGS (one REQUIRED — names the op being inverted; the reset mode is implicit):
+    --back      \`git reset --soft\`   (recover h-back / h-squash; keeps changes staged)
+    --undo      \`git reset --mixed\`  (recover h-undo; keeps changes unstaged)
+    --rollback  \`git reset --keep\`   (recover h-rollback; preserves uncommitted, aborts if unsafe)
+    --rewind    \`git reset --hard\`   (recover h-rewind; danger if the tree has tracked changes)
+
+OPTIONS:
+    -y, --yes    Auto-confirm the warn-tier prompt
+    -f, --force  Force through danger-tier (--rewind on dirty tracked tree)
+    --quiet      Suppress output
+    -h, --help   Show this help
+EOF
+}
+
+# Parse common flags (--quiet, --force, -y, -h|--help).
+# Unknown flags (--back/--undo/--rollback/--rewind) pass through to $@.
+eval "$(parse_common_flags "$@")"
+
+# Manual flag loop: extract the REQUIRED op flag + positional target.
+op=""
+target_arg=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --back | --undo | --rollback | --rewind)
+    op="${1#--}"
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  *)
+    target_arg="$1"
+    shift
+    ;;
+  esac
+done
+
+check_git_repo
+
+# Dispatch op to reset mode.  The op flag is REQUIRED — if absent ${op:?} fails
+# with a clear message showing valid flags.
+case "${op:?usage: hug h restore <SHA> --back|--undo|--rollback|--rewind}" in
+back) mode=soft ;;
+undo) mode=mixed ;;
+rollback) mode=keep ;;
+rewind) mode=hard ;;
+*)
+  error "Unknown op flag: --$op (expected --back|--undo|--rollback|--rewind)"
+  exit 1
+  ;;
+esac
+
+# Resolve target.  target_arg is required — ${target_arg:?} fails helpfully.
+target=$(resolve_target_with_temporal "" "" "${target_arg:?target required}" '') || exit 1
+
+# The defining feature: no-op ONLY on exact SHA equality, never the range-count
+# gate.  This lets recovery move FORWARD to a descendant (re-invoking the mover
+# no-ops there via handle_standard_operation's count==0 bailout).
+if [ "$target" = "$(git rev-parse HEAD)" ]; then
+  info "Already at $(git rev-parse --short "$target"). Nothing to restore."
+  exit 0
+fi
+
+# (Task 8 adds: bare-numeric guard, --rewind+dirty danger escalation, per-tier
+# prompt.  For now: warn-tier prompt for all ops.)
+# WHY -y covers warn: warn-tier prompts guard RECOVERABLE destructive actions,
+# so -y intentionally covers them (hug-confirm:33).  Only danger-tier refuses -y.
+prompt_confirm_warn "Reset --$mode to $(git rev-parse --short "$target")? [y/N]: "
+
+git reset --"$mode" "$target"
+info "Restored HEAD to $(git rev-parse --short "$target") (--$op)."
