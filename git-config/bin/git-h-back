@@ -102,8 +102,12 @@ else
       git diff --stat --root HEAD >&2
     fi
 
+    # Root-commit path stays DANGER (spec §6): recovery at root is a guaranteed
+    # no-op (unborn HEAD ⇒ rev-list fails ⇒ count 0), so there is no complete
+    # recovery to license a warn tier. The non-root path below is warn because
+    # --soft preserves all work; this root path must NOT be swept along with it.
     if [[ ${HUG_FORCE:-} != true ]] && has_staged_changes; then
-      prompt_confirm_warn "Move HEAD back to undo root commit, keeping changes staged? [y/N]: "
+      prompt_confirm_danger "back" "Rewrites history by undoing root commit"
     fi
 
     reset_root_commit "soft"

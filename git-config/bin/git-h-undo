@@ -120,8 +120,13 @@ else
       info "No staged or unstaged changes detected; skipping confirmation."
     fi
 
+    # Root-commit path stays DANGER (spec §6): same root-commit reasoning as
+    # h-back — at root, recovery is a guaranteed no-op (unborn HEAD), so there
+    # is no complete recovery to license a warn tier. The non-root path below
+    # is warn because --mixed preserves all work; this root path must NOT be
+    # swept along with it.
     if $should_prompt; then
-      prompt_confirm_warn "Move HEAD back to undo root commit, keeping changes unstaged? [y/N]: "
+      prompt_confirm_danger "undo" "Rewrites history by undoing root commit"
     fi
 
     reset_root_commit "mixed"

@@ -259,6 +259,11 @@ if ! has_staged_changes; then
   warn "No changes staged after reset. Skipping commit (empty squash?)."
   target_display=$(git rev-parse --short "$target" 2> /dev/null || echo "$target")
   info "HEAD moved to $target_display."
+  # Empty-squash early exit: HEAD already moved and orphaned the squashed
+  # commits, so the recovery hint is needed here too — not only on the normal
+  # path below. Without this, zero-net-diff squashes (one commit adds, the next
+  # reverts) would leave the user with no way back despite HEAD having moved.
+  emit_head_recovery_hint "$original_head" "back"
   exit 0
 fi
 
