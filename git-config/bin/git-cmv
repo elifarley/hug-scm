@@ -38,7 +38,7 @@ DESCRIPTION:
 
     Previews are organized: 📊 summary + changes, followed by 📤 commit list (shown once).
 
-    IMPORTANT: For existing branches, commits are rewritten (new SHAs via cherry-pick). For new branches, original SHAs are preserved. To copy commits without modifying the source branch, use 'hug ccp' instead.
+    NOT RESTORABLE: cmv switches branch and rewrites SHAs (cherry-pick on existing branches). No single-command recovery exists -- recovery is manual, multi-step, and branch-aware. Use with caution. To copy commits without modifying the source branch, use 'hug ccp' instead.
 
 COMMON SCENARIOS:
     # Accidentally committed to wrong branch
@@ -138,7 +138,7 @@ fi
 original_head=$(git rev-parse HEAD)
 
 if $upstream; then
-  target=$(handle_upstream_operation "moving") || exit 1
+  target=$(handle_upstream_operation "moving" "danger" "cmv" "moves commits to another branch and rewrites SHAs; not auto-recoverable") || exit $?
   if [[ -z "${target:-}" ]]; then
     exit 0
   fi
@@ -181,7 +181,7 @@ if ! git rev-parse --verify "$branch_name" > /dev/null 2>&1; then
       is_new_branch=true
     else
       # Combined prompt for creation + move
-      if prompt_confirm_danger "move" "Rewrites history by moving commits to a different branch"; then
+      if prompt_confirm_danger "cmv" "moves commits to another branch and rewrites SHAs; not auto-recoverable"; then
         new_branch=true
         is_new_branch=true
       else
@@ -214,7 +214,7 @@ if $branch_exists; then
   fi
 
   if $should_prompt; then
-    prompt_confirm_danger "move" "Rewrites history by moving commits to a different branch"
+    prompt_confirm_danger "cmv" "moves commits to another branch and rewrites SHAs; not auto-recoverable"
   fi
 fi
 

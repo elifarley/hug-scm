@@ -600,7 +600,7 @@ HOOK
 
   # Test accepting confirmation (type the action word "move")
   export HUG_DISABLE_GUM=true  # Disable gum to use text-based prompts
-  run bash -c 'echo "move" | hug cmv 1 existing-target'
+  run bash -c 'echo "cmv" | hug cmv 1 existing-target'
   assert_success
   assert_output --partial "1 commit since"
 
@@ -656,7 +656,7 @@ HOOK
 
   # Test accepting confirmation to create new branch (type action word "move")
   export HUG_DISABLE_GUM=true  # Disable gum to use text-based prompts
-  run bash -c 'echo "move" | hug cmv 1 prompt-missing'
+  run bash -c 'echo "cmv" | hug cmv 1 prompt-missing'
   assert_success
   assert_output --partial "📊 1 commit since"
   assert_output --partial "📤 moving to prompt-missing (new branch):"
@@ -971,6 +971,96 @@ HOOK
 }
 
 # Additional cmv edge cases...
+
+# -----------------------------------------------------------------------------
+# cmv danger-tier migration: -y refusal, -f proceeds, no recovery hint, help
+# -----------------------------------------------------------------------------
+
+@test "hug cmv: -y is refused (danger tier, exit 3)" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  git checkout -q -b target-branch HEAD~1
+  git checkout -q main
+
+  run hug cmv 1 target-branch -y
+  [ "$status" -eq 3 ]      # HUG_EX_BLOCKED — danger-tier ops refuse -y
+  [ "$status" -ne 0 ]      # backstop: a sourcing-order regression fails noisily, not silently
+  assert_output --partial "Dangerous operation requires --force (not -y)"
+
+  # HEAD unchanged (operation didn't proceed)
+  run git branch --show-current
+  assert_output "main"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: -f proceeds (danger tier skips confirmation)" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  git checkout -q -b target-branch HEAD~1
+  git checkout -q main
+
+  run hug cmv 1 target-branch -f
+  assert_success
+
+  # Now on target-branch (operation completed)
+  run git branch --show-current
+  assert_output "target-branch"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: no recovery hint emitted on success" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  git checkout -q -b target-branch HEAD~1
+  git checkout -q main
+
+  run hug cmv 1 target-branch -f
+  assert_success
+  refute_output --partial "hug h restore"
+  refute_output --partial "recover"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: current branch changes after success (reason recovery is incomplete)" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+
+  run hug cmv 1 new-branch --new -f
+  assert_success
+
+  # Current branch changed from main to new-branch
+  run git branch --show-current
+  assert_output "new-branch"
+  refute_output "main"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: help states not restorable" {
+  run hug cmv -h
+  assert_output --partial "NOT RESTORABLE"
+  assert_output --partial "No single-command recovery exists"
+}
+
 
 # -----------------------------------------------------------------------------
 # Post-Commit Push Suggestion Tests
