@@ -96,7 +96,7 @@ handle_standard_operation() {
     commits_to_affected=$(count_commits_in_range "$target" HEAD)
 
     if [ "$commits_to_affected" -eq 0 ]; then
-        if [[ "$skip_when_aligned" == true ]] || ! has_untracked_or_pending_changes; then
+        if [[ "$skip_when_aligned" == true ]] || ! has_uncommitted_tracked_changes; then
             info "Already at target $(git rev-parse --short "$target"). No action taken."
             exit 0
         fi
