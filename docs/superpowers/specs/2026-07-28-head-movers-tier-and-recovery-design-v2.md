@@ -4,7 +4,7 @@
 - **Supersedes:** `docs/superpowers/specs/2026-07-27-head-movers-confirmation-tier-unification-design.md` (v1) — see §11 for what changed and why.
 - **Partially reverts:** the unconditional-danger `h-rewind` from [elifarley/hug-scm#225](https://github.com/elifarley/hug-scm/pull/225) (its *dirty-tree* danger stays; its *clean-tree* path lowers to warn). See §9 for the sign-off flag.
 - **Date:** 2026-07-28 (consolidated 2026-07-29)
-- **Status:** Design v2 — sign-off ready (refined through five review rounds, §13); §9 owner flag pending
+- **Status:** Design v2 — **approved** (owner sign-off 2026-07-29; refined through five review rounds, §13). Next: implement #222 (self-contained); #229 follows as the systemic companion.
 - **Branch/worktree:** `head-movers-tier-unify` (`~/src/hug-scm.WT.head-movers-tier-unify`), **rebased onto `origin/main` @ `1296dbf`** (post-#225)
 
 > Anchors (`file:line`) are against `origin/main` @ `1296dbf` (post-#225); the branch is rebased onto exactly this commit, so anchors and working tree agree. Re-resolve at implementation time if `origin/main` moves.
@@ -318,6 +318,8 @@ This makes recovery discoverable from either direction — from the command you 
 **Help text (concern #5):** warn-tier commands document `-y` auto-confirms + that a recovery hint is printed **and that the hint is suppressed under `HUG_QUIET=T`** (and carry the `RESTORE` section, §7 Step 5). Recovery-hint suppression is tested **directly**, not just via the help's claim: `HUG_QUIET=T hug h back 2 -y` prints **no** hint (the helper's `test "${HUG_QUIET:-}" && return 0` guard, §7 Step 4b).
 
 ## 9. Sign-off flag — partial revert of #225
+
+> **✅ Owner sign-off — approved 2026-07-29.** Clean-tree `h-rewind` lowers to warn + recovery hint; dirty-tree stays danger. The §10 guard-completeness audit is the prerequisite that lands with/before this change. Reversible: if `has_uncommitted_tracked_changes` ever proves incomplete, `h-rewind` reverts to unconditional danger.
 
 #225 made `h-rewind` **unconditionally danger** on both paths (the right call under v1's op-determined model). v2 lowers the **clean-tree** path to warn+hint. This is a deliberate behavior change requiring explicit owner sign-off:
 
