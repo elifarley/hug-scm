@@ -45,6 +45,12 @@ EXAMPLES:
 SEE ALSO:
     hug h back    Make HEAD walk back some commits while keeping their changes staged
 
+RESTORE
+    h-rollback is inverted by:
+        hug h restore <pre-op-HEAD> --rollback -y
+    On a successful h-rollback, hug prints this exact line with the pre-op SHA
+    filled in. (--rollback ≡ git reset --keep — your changes stay preserved.)
+
 NOTES:
     Refuses to run if you have local changes to files that would be modified.
     Changes to other files are preserved (become unstaged).
@@ -77,12 +83,16 @@ done
 
 check_git_repo
 
+tier=warn # h-rollback is warn-tier (normal path): --keep preserves local edits; complete recovery exists via restore
+# Root-commit path stays danger-tier (destroys all tracked files from the only commit; no reflog parent to return to).
+
 if $upstream; then
   # Use DRY helper for validation, then handle upstream-specific logic
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
 
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
-  target=$(handle_upstream_operation "rolling back")
+  target=$(handle_upstream_operation "rolling back" "$tier" "rollback" "applies reset --keep to upstream") || exit $?
+  [[ -z "${target:-}" ]] && exit 0
 else
   # Use DRY helper for validation and target resolution
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
@@ -116,8 +126,10 @@ else
 
   # Handle command-specific preview and confirmation
   handle_standard_operation "rollback" "$target"
-  prompt_confirm_danger "rollback" "Rewrites history — uncommitted changes and later commits are discarded"
+  prompt_confirm_warn "Roll back HEAD, discarding commit changes while preserving local work? [y/N]: "
 fi
 
+pre_op_head=$(git rev-parse HEAD)
 git reset --keep "$target"
 info "Roll back HEAD to $target done (uncommitted changes preserved)."
+emit_head_recovery_hint "$pre_op_head" "rollback"

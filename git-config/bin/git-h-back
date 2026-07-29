@@ -48,6 +48,12 @@ SEE ALSO:
 NOTES:
     Uncommitted changes (staged and unstaged) are fully preserved.
     Untracked and ignored files are never affected.
+
+RESTORE
+    h-back is inverted by:
+        hug h restore <pre-op-HEAD> --back -y
+    On a successful h-back, hug prints this exact line with the pre-op SHA
+    filled in. (--back ≡ git reset --soft — your changes stay staged.)
 EOF
 }
 
@@ -75,10 +81,13 @@ done
 
 check_git_repo
 
+tier=warn # h-back is warn-tier: --soft preserves all work; complete recovery exists
+
 if $upstream; then
   # handle_upstream_operation performs validation, preview, confirmation and echoes the upstream commit.
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
-  target=$(handle_upstream_operation "moving back")
+  target=$(handle_upstream_operation "moving back" "$tier" "back" "discards local-only commits") || exit $?
+  [[ -z "${target:-}" ]] && exit 0
 else
   # Use DRY helper for validation and target resolution
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
@@ -93,6 +102,10 @@ else
       git diff --stat --root HEAD >&2
     fi
 
+    # Root-commit path stays DANGER (spec §6): recovery at root is a guaranteed
+    # no-op (unborn HEAD ⇒ rev-list fails ⇒ count 0), so there is no complete
+    # recovery to license a warn tier. The non-root path below is warn because
+    # --soft preserves all work; this root path must NOT be swept along with it.
     if [[ ${HUG_FORCE:-} != true ]] && has_staged_changes; then
       prompt_confirm_danger "back" "Rewrites history by undoing root commit"
     fi
@@ -106,11 +119,13 @@ else
   handle_standard_operation "move back" "$target"
   target_short=$(git rev-parse --short "$target")
   if has_staged_changes; then
-    prompt_confirm_danger "back" "Rewrites history by moving HEAD backwards"
+    prompt_confirm_warn "Move HEAD back, keeping changes staged? [y/N]: "
   else
     info "No staged changes detected; skipping confirmation."
   fi
 fi
 
+pre_op_head=$(git rev-parse HEAD)
 git reset --soft "$target"
 info "Moved HEAD back to $target (uncommitted changes preserved)."
+emit_head_recovery_hint "$pre_op_head" "back"

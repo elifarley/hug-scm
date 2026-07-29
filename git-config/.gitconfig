@@ -137,6 +137,7 @@
   rollback = h rollback
   rewind = h rewind
   squash = h squash
+  restore = h restore
   files = h files
   filesp = h files -p
 

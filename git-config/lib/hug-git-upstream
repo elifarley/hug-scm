@@ -15,9 +15,12 @@
 ################################################################################
 
 # Handles upstream validation, preview, and confirmation for operations
-# Usage: target=$(handle_upstream_operation "action_name")
+# Usage: target=$(handle_upstream_operation "action_name" tier "action_word" "danger_reason")
 # Parameters:
 #   $1 - Action description verb (e.g., "rewinding", "squashing")
+#   $2 - Confirmation tier: "warn" (prompt_confirm_warn) or "danger" (prompt_confirm_danger)
+#   $3 - Action word for danger confirmation (user must type this to confirm)
+#   $4 - (Optional) Danger reason shown when -y is used, explaining why --force is required
 # Output:
 #   Upstream commit hash to stdout
 # Environment:
@@ -27,8 +30,12 @@
 # Note:
 #   This helper is read-only: never mutates commits, index, or working tree
 #   After gathering preview information and confirmation, echoes upstream commit
+#   The tier parameter closes the inverted confirmation gradient that this whole design
+#   fixes: previously every upstream path was gated at warn regardless of the operation's
+#   actual danger level. Now each caller declares its own safety tier.
 handle_upstream_operation() {
-    local action_name="$1"
+    local action_name="$1" tier="${2:?handle_upstream_operation requires a confirmation tier}"
+    local action_word="$3" danger_reason="${4:-}"
 
     local target
     target=$(get_upstream_commit) || return 1  # Propagate failure if no upstream
@@ -68,7 +75,11 @@ handle_upstream_operation() {
         fi
 
         printf '\n⚠️  This action involves %s to upstream.\n' "$action_name" >&2
-        prompt_confirm_warn "Proceed with $action_name to upstream? [y/N]: "
+        case "$tier" in
+          danger) prompt_confirm_danger "$action_word" "$danger_reason" ;;
+          warn)   prompt_confirm_warn   "Proceed with $action_name to upstream? [y/N]: " ;;
+          *)      error "Unknown confirmation tier '$tier' for upstream operation '$action_name'." ;;
+        esac
     fi
 
     echo "$target"
@@ -96,7 +107,7 @@ handle_standard_operation() {
     commits_to_affected=$(count_commits_in_range "$target" HEAD)
 
     if [ "$commits_to_affected" -eq 0 ]; then
-        if [[ "$skip_when_aligned" == true ]] || ! has_pending_changes; then
+        if [[ "$skip_when_aligned" == true ]] || ! has_uncommitted_tracked_changes; then
             info "Already at target $(git rev-parse --short "$target"). No action taken."
             exit 0
         fi
@@ -167,4 +178,27 @@ reset_root_commit() {
             fi
             ;;
     esac
+}
+
+################################################################################
+# Recovery Hint Helper
+################################################################################
+
+# Emits the inverse restore command to stderr after a successful HEAD mover.
+# Called by warn-tier operations (h-back, h-undo, h-rollback, h-rewind, h-squash)
+# after `git reset` succeeds, so the SHA passed is the known-good pre-op HEAD.
+#
+# Usage: emit_head_recovery_hint <pre-op-HEAD> <op>
+#   <op> ∈ back|undo|rollback|rewind|squash — the caller's own operation name
+#   (the op being inverted). Each caller knows its own name, keeping this
+#   helper free of caller-specific logic.
+#
+# Suppressed under HUG_QUIET=T — this is human-facing chatter, mirroring the
+# gum_log quiet guard (hug-gum:42) per the stdout/stderr discipline.
+# Both args are required (${:?} hard-errors on missing arg).
+emit_head_recovery_hint() {
+  local pre_op_head="${1:?}" op="${2:?}"
+  test "${HUG_QUIET:-}" && return 0
+  printf '\nℹ️  HEAD moved. Recover with:\n    hug h restore %s --%s -y\n' \
+    "$pre_op_head" "$op" >&2
 }

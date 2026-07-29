@@ -4,6 +4,40 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-29
+
+### Added
+
+- **`hug h restore` recovery primitive** (`hug h restore <SHA> --back|--undo|--rollback|--rewind`) — a purpose-built HEAD-mover that resets to any commit as the inverse of a prior op. Its op-named flag selects the reset mode by construction (one literal table); its no-op test is exact SHA equality (never the `count == 0` gate that makes re-invoking a mover silently no-op on forward targets). Bare-numeric guard rejects the 1–3-digit `HEAD~N` hijack. `--rewind` on a dirty tracked tree escalates to danger (exit 3). Registered in `.gitconfig`, the `git-h` gateway, and bash + fish completions.
+
+- **State-determined confirmation tiers** across the six HEAD-mover commands sharing `handle_upstream_operation` — `tier ⟺ completeness of the recovery command` (warn iff a complete recovery exists, danger iff something unrecoverable changes). The upstream helper gains a required `tier` param; each command declares its tier and both paths (upstream + non-upstream) consume it by construction.
+
+- **Recovery hints** — every warn-tier mover prints the exact `hug h restore <SHA> --<op> -y` command to stderr on success (quiet-aware via `HUG_QUIET`). Each restorable command's `--help` carries a `RESTORE` section naming its inverse.
+
+- **`has_uncommitted_tracked_changes` predicate** — a tracked-only dirty boolean over the existing `get_dirty_files` (staged + unstaged tracked, untracked excluded). The single safety/tier predicate; `has_pending_changes` renamed to `has_untracked_or_pending_changes` to make the untracked-inclusion explicit in the name.
+
+- **`emit_head_recovery_hint` library helper** — one quiet-aware function templating the recovery command from the caller's own op name (no hand-built hint strings).
+
+- **Integration tests** (11 new): recovery cycles (op → printed restore → HEAD restored + per-mode invariant), synced-upstream guard (exit 0, HEAD unchanged, no new commit across h-back/h-undo/h-rollback/h-squash), h-rewind clean/dirty e2e.
+
+### Changed
+
+- **`h-rewind` becomes state-dependent** (§9 owner-signed-off, partial revert of #225): clean tree ⇒ warn + `restore --rewind -y` hint (was unconditional danger); dirty tree stays danger. The `HUG_FORCE=true` wrapper hack for the upstream danger path is retired — passing `tier=danger` directly achieves the same gate.
+
+- **`h-back`/`h-undo`/`h-rollback`/`h-squash` lower to warn** on both paths (normal, non-root) with empty-target guard + restore hint + RESTORE help.
+
+- **`cmv` is danger** (was implicitly warn in the v2 draft): branch switch + SHA rewrite means no complete single-command recovery exists. Help states it is NOT restorable.
+
+- **`handle_standard_operation`'s aligned-target message** now keys on the tracked-only predicate — an untracked-only tree no longer triggers the misleading "local tracked changes will be reset" message.
+
+### Fixed
+
+- **`h-squash -u` silent-orphan bug** — on a synced upstream, the empty `$target` word-split into `hug h back`'s `HEAD~1` default, fabricating a `[squash] 0 commits…` commit with exit 0 and orphaning the user's commit. Fixed by adding the `[[ -z "$target" ]] && exit 0` guard to all upstream call sites (h-back, h-undo, h-rollback, h-squash).
+
+- **Empty-target exit-128 crash** — `h-back`/`h-undo`/`h-rollback -u` on a synced upstream crashed `git reset --soft|--mixed|--keep ""` (exit 128). Same guard fixes all four.
+
+- **Dead conditional in `git-h-squash:206/208`** — byte-identical `prompt_confirm_danger "squash"` if/else arms collapsed to one call.
+
 ## [1.3.1] - 2026-07-15
 
 ### Fixed
