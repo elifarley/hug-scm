@@ -96,3 +96,19 @@ teardown() {
   assert_success
   [ -z "$output" ]
 }
+
+################################################################################
+# handle_standard_operation: Defect-1 regression (forward target must NOT no-op)
+################################################################################
+
+@test "handle_standard_operation: forward (descendant) target does NOT no-op (Defect 1)" {
+  # HEAD at an ancestor; target is a descendant. Pre-fix this printed 'Already at target'.
+  # The old guard was `count target..HEAD == 0`, which is ALSO true when HEAD is BEHIND the
+  # target (a forward target), so the mover silently no-op'ed. is_aligned (exact SHA equality)
+  # is the correct guard: a forward target is NOT aligned and must proceed.
+  local descendant; descendant=$(git rev-parse HEAD)
+  git update-ref HEAD HEAD~1                  # move HEAD back one (plumbing; avoids git reset/checkout)
+  run handle_standard_operation "move back" "$descendant"
+  assert_success                              # returns past the guard (does not exit 0 early)
+  refute_output --partial "Already at target" # the guard was NOT taken
+}
