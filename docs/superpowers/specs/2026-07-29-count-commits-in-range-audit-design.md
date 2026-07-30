@@ -1,13 +1,22 @@
-# Design: Audit `count_commits_in_range` + callers — kill the `== 0 ⟹ aligned` idiom
+# Design (Phase 1): Audit `count_commits_in_range` + callers — kill the `== 0 ⟹ aligned` idiom
 
 - **Issue:** [elifarley/hug-scm#229](https://github.com/elifarley/hug-scm/issues/229)
 - **Related:** [elifarley/hug-scm#222](https://github.com/elifarley/hug-scm/issues/222) — HEAD-mover tier + recovery design; this is the primitive underneath its Critical #1 (recovery hints that silently no-op).
-- **Date:** 2026-07-29
-- **Status:** Design draft, revised after code-roast review (see §10)
+- **Phase:** **1 of 2.** This spec is the **core correctness fix**. **Phase 2** — direction-truthful previews + result messaging — is a separate, later spec: `2026-07-30-head-mover-direction-messaging-design.md`.
+- **Date:** 2026-07-30
+- **Status:** Design draft, under review (survived 5 code-roast rounds; decomposed for a minimal, high-confidence Phase 1)
 
-> Line numbers cited below are anchors against local `main` @ `36d2eea` (based on `origin/main` @ `1296dbf` at last fetch). Re-resolve at implementation time.
+> Line anchors are against local `main` @ `36d2eea` (based on `origin/main` @ `1296dbf` at last fetch). Re-resolve at implementation time.
 
 ---
+
+## 0. Why two phases
+
+#229's five acceptance criteria are all about **correctness**: audit the call sites, replace the unsafe alignment tests, stop the forward-target no-op, remove the `|| echo 0` swallow, document the contract. None of them ask for direction-truthful *messaging*.
+
+The direction-awareness work (making the movers say "Moved HEAD forward" instead of "back", and fixing the "changes in 0 commit:" preview) is real polish that the core fix *exposes* — but it lives in the mover tails and adds helpers, and it is where five roast rounds concentrated their churn (a process-global, then stdout-emission, then compute-in-tail; a voided guard; a stdout-contract collision; a dropped recovery hint). Coupling that polish to the safety fix would (a) widen the blast radius of the safety-critical change to all four mover tails, and (b) re-couple the two concerns that this project's norms ("minimum code that solves the problem; touch only what you must; atomic commits") ask us to separate.
+
+So: **Phase 1 ships the surgical safety fix with every helper contract untouched** (helpers called bare; `exit 0` guards intact; the `handle_upstream_operation` SHA captures — 8 sites across 6 callers — undisturbed). **Phase 2** adds direction-awareness as a single, isolated, independently-reviewable concern. Phase 1 deliberately leaves the forward-target preview/message cosmetically rough ("changes in 0 commit:" / "Moved HEAD back") — Phase 2 fixes both.
 
 ## 1. Problem — one shared helper idiom causes two correctness defects
 
@@ -30,7 +39,7 @@ count_commits_in_range() {
 1. `HEAD == start` — truly aligned; a no-op is correct.
 2. `HEAD` is **behind** `start` (`start` is a descendant / a forward target) — a target with real work to do.
 
-A one-directional count cannot distinguish these. `handle_standard_operation` conflates them (`hug-git-upstream:107-113`):
+A one-directional count cannot distinguish these. `handle_standard_operation` conflates them (`hug-git-upstream:101-141`; guard at `:107-113`):
 
 ```bash
 commits_to_affected=$(count_commits_in_range "$target" HEAD)
@@ -57,20 +66,22 @@ cmv's only real issue is Defect 2 (the swallow) plus a misleading message — fi
 
 ### Defect 2 — `|| echo 0` swallows errors into a valid-looking zero
 
-A failed `rev-list` (unborn HEAD at the root commit, invalid SHA) returns `0` — indistinguishable from "genuinely zero commits ahead." Callers then proceed as if aligned/empty. The root-commit recovery no-op noted in the #222 spec (§10) is this class. **Reproduced:** invalid `start` on an unborn HEAD → helper echoes `0`. An error masquerading as data is a latent correctness hazard across every caller.
+A failed `rev-list` (unborn HEAD at the root commit, invalid SHA) returns `0` — indistinguishable from "genuinely zero commits ahead." Callers then proceed as if aligned/empty. **Reproduced:** invalid `start` on an unborn HEAD → helper echoes `0`. An error masquerading as data is a latent correctness hazard across every caller.
 
-## 2. Decision — full scope (D + B + C + A)
+## 2. Decision — full scope for the CORE fix (D + B + C + A)
 
-| Option | What | In this design? |
+| Option | What | In Phase 1? |
 |---|---|---|
 | **D** | Document the one-directional contract; forbid the alignment idiom | ✅ docstring + `lib/README.md` |
-| **B** | Add a two-directional primitive `commits_ahead_behind` + thin `is_aligned` | ✅ §3 |
+| **B** | Add `commits_ahead_behind` + the `is_aligned` alignment predicate | ✅ §3 |
 | **C** | Stop swallowing `rev-list` failures — **strict propagation** | ✅ §4 |
 | **A** | Migrate every unsafe alignment caller to `is_aligned` | ✅ §5 |
 
-Chosen approach: **Approach 1 — two-directional primitive as the single source of truth.** Alignment and ahead-count are expressed by one well-named family, honoring the "one algorithm, N consumers" discipline #229 asks for. (Rejected: per-caller SHA-equality or local fixes — they fix the bug but leave two unrelated alignment idioms in the codebase.)
+**Approach: two-directional primitive as the single source of truth** for the alignment test. Alignment and ahead-count are expressed by one well-named family, honoring the "one algorithm, N consumers" discipline #229 asks for.
 
-**Error-path posture (C): strict propagation, not a `_strict` variant.** `count_commits_in_range` itself stops swallowing errors. This is the most correct option but means *every* caller — not just the 2 unsafe ones — must handle the new non-zero-on-failure exit. The audit in §4 covers all 9 call sites.
+**Error-path posture (C): strict propagation, not a `_strict` variant.** `count_commits_in_range` itself stops swallowing errors. This is the most correct option but means *every* caller — not just the unsafe ones — must handle the new non-zero-on-failure exit. The §4 audit covers all 9 call sites.
+
+**Deferred to Phase 2:** `direction_between` (forward/backward/diverged labeler), `report_head_move` (direction-truthful result line), the mover-tail threading, and the direction-cased preview. None are required by #229's acceptance criteria.
 
 ## 3. New library primitives — `git-config/lib/hug-git-commit`
 
@@ -82,17 +93,18 @@ Chosen approach: **Approach 1 — two-directional primitive as the single source
 #   git rev-list --left-right --count <start>...<end>
 #   <behind> = commits reachable from <start> but NOT <end>  (end is BEHIND start by this many)
 #   <ahead>  = commits reachable from <end>  but NOT <start> (end is AHEAD of start by this many)
-#   NOTE: output order is git's native --left-right order (first arg's exclusive count
-#   FIRST). Do NOT `read` this into named vars without respecting that order, or you
-#   will silently swap ahead/behind. When BOTH counts are > 0 the refs have DIVERGED
-#   (neither is an ancestor) — a sideways relationship; callers that label a single
-#   direction must handle this third case (Site 1 labels it "diverged"). (Shallow clones:
-#   the EQUALITY test via is_aligned is shallow-safe; raw ahead/behind COUNTS are not —
-#   caveat if a counting consumer ever appears.)
 # Alignment (<start> == <end>) ⟺ "0\t0".
 #
-# STRICT: a failed rev-list (invalid ref, unborn HEAD) propagates non-zero exit and
-# prints nothing — it is NEVER swallowed into a zero. Callers MUST handle failure.
+# NOTE: output order is git's native --left-right order (first arg's exclusive count
+# FIRST) — i.e. "<behind>\t<ahead>", which does NOT match this function's NAME word order
+# ("ahead_behind"). Consumers MUST parse into POSITIONAL field1/field2 (as is_aligned and
+# Phase 2's direction_between do); NEVER `read ahead behind <<< "…"` — that silently swaps
+# them. When BOTH counts are > 0 the refs have DIVERGED (neither is an ancestor) — a sideways
+# relationship. (Shallow clones: the EQUALITY test via is_aligned is shallow-safe; raw
+# ahead/behind COUNTS are not — caveat if a counting consumer appears.)
+#
+# STRICT: a failed rev-list (invalid ref, unborn HEAD) propagates non-zero exit and prints
+# nothing — it is NEVER swallowed into a zero. Callers MUST handle failure.
 commits_ahead_behind() {
   local start="${1:?commits_ahead_behind: start ref required}"
   local end="${2:?commits_ahead_behind: end ref required}"
@@ -100,28 +112,23 @@ commits_ahead_behind() {
 }
 ```
 
-**Why three-dot `...` not two-dot `..`:** the symmetric difference captures the *relationship* (ahead / behind / equal) in one git call — exactly what the alignment idiom needs and what a one-directional count cannot express. It is also independently useful ("how far behind is my branch?"), which a bare SHA-equality predicate is not.
-
 ### `is_aligned <a> <b>` — the single sanctioned alignment predicate
 
 ```bash
 # True (exit 0) iff <a> and <b> resolve to the SAME existing commit.
 #
-# This is the ONLY sanctioned alignment test. NEVER infer alignment from a
-# one-directional count_commits_in_range == 0 — that means "not ahead," which is
-# ALSO true when one ref is BEHIND the other (Defect 1). For the full relationship
-# (ahead/behind counts) use commits_ahead_behind(). See lib/README.md "Range counting".
+# This is the ONLY sanctioned alignment test. NEVER infer alignment from a one-directional
+# count_commits_in_range == 0 — that means "not ahead," which is ALSO true when one ref is
+# BEHIND the other (Defect 1). For the full ahead/behind relationship use
+# commits_ahead_behind(). See lib/README.md "Range counting".
 #
-# PRECONDITION: both <a> and <b> MUST resolve to existing commits. On an unborn
-# repo (no commits) rev-list exits 128 even for HEAD...HEAD, so is_aligned returns
-# NON-ZERO for the trivially-aligned case — a false NEGATIVE, never a false positive.
-# Callers must not invoke this before a commit exists; the codebase's standard
-# repo/commit-existence guards (check_git_repo / ensure_commit_exists) run first in
-# every mover, so this precondition holds at every call site. Documented + tested (§7).
+# PRECONDITION: both <a> and <b> MUST resolve to existing commits. On an unborn repo (no
+# commits) rev-list exits 128 even for HEAD...HEAD, so is_aligned returns NON-ZERO for the
+# trivially-aligned case — a false NEGATIVE, never a false positive. Movers run repo/commit-
+# existence guards first; and even if not, the loud-failure chain holds (commits_ahead_behind
+# ALSO exits non-zero on unborn → callers propagate). Documented + tested (§7).
 #
-# $'0\t0' uses ANSI-C quoting so \t is a real TAB (git's output field separator),
-# NOT the two characters backslash-t. Do NOT "simplify" to '0\t0' or "0\t0" — both
-# are literal backslash-t and never match.
+# $'0\t0' uses ANSI-C quoting so \t is a real TAB (git's field separator), NOT backslash-t.
 is_aligned() {
   local a="${1:?is_aligned: first ref required}"
   local b="${2:?is_aligned: second ref required}"
@@ -129,7 +136,7 @@ is_aligned() {
 }
 ```
 
-**Strictness note:** the `2>/dev/null` in `is_aligned` only suppresses git's stderr chatter; a `rev-list` failure yields an empty/non-matching string → non-zero exit, never a false "aligned." Defect 2's swallow appears nowhere in either new function. The unborn-HEAD case (above) is the one boundary where the answer is a false *negative*; it is documented as a precondition, not hidden.
+**Strictness note:** the `2>/dev/null` only suppresses git's stderr chatter; a `rev-list` failure yields an empty/non-matching string → non-zero exit, never a false "aligned." Defect 2's swallow appears nowhere in either new function. The unborn-HEAD case is the one boundary where the answer is a false *negative*; documented as a precondition, not hidden.
 
 ## 4. `count_commits_in_range` becomes strict (Defect 2) + caller audit
 
@@ -152,15 +159,14 @@ count_commits_in_range() {
 }
 ```
 
-### `count_commits_in_range_or_zero` — the STRICT-display twin (MAJOR #4)
+### `count_commits_in_range_or_zero` — the STRICT-display twin
 
-The two display-only call sites (`hug-git-rebase:238`, `git-h-files:202`) legitimately want a cosmetic `0` on `rev-list` failure. Giving each a local `|| echo 0` would re-introduce exactly the Defect-2 pattern (grep-findable, copy-pasteable onto a non-display site) with only a comment as guardrail. Instead, one **named** wrapper makes the function name itself the structural guardrail:
+The two display-only call sites (`hug-git-rebase:238`, `git-h-files:202`) legitimately want a cosmetic `0` on `rev-list` failure. A named wrapper makes the function name itself the structural guardrail (vs. a copy-pasteable `|| echo 0`):
 
 ```bash
-# STRICT-display twin of count_commits_in_range.
-# ONLY for display/tip text where a 0 on rev-list failure is cosmetically acceptable
-# (e.g. "in N commits since…"). NEVER use this for a branching or alignment decision —
-# there, count_commits_in_range's strict propagation MUST surface the failure.
+# STRICT-display twin. ONLY for display/tip text where a 0 on rev-list failure is
+# cosmetically acceptable. NEVER use for a branching/alignment decision — there,
+# count_commits_in_range's strict propagation MUST surface the failure.
 # Grep invariant: `|| echo 0` appears NOWHERE outside this single definition.
 count_commits_in_range_or_zero() {
   count_commits_in_range "$@" || echo 0
@@ -173,42 +179,42 @@ count_commits_in_range_or_zero() {
 
 | Site | Current `== 0` semantics | Class — the REAL invariant | Required change |
 |---|---|---|---|
-| `hug-git-upstream:107` `handle_standard_operation` | alignment/no-op | **UNSAFE (Defect 1)** — `== 0` is not alignment | **→ `is_aligned`** (§5) |
+| `hug-git-upstream:107` `handle_standard_operation` | alignment/no-op | **UNSAFE (Defect 1)** — `== 0` is not alignment | **→ `is_aligned`** (§5 Site 1) |
 | `git-cmv:160` | "no commits to move" | **SAFE-but-mis-messaged** — `== 0` IS the correct vacuous-op semantic: cmv's target must be an ancestor ("specific commit to move **above**", "reset the current branch **back**"); a descendant has nothing above it, so no-op is right. The defects are the misleading "already at target" message + Defect 2 — NOT alignment. Migrating to `is_aligned` would SHIP a forward hard-reset + branch switch on a "NOT RESTORABLE" command (`git-cmv:41`). | **Keep the `== 0` guard**; strictness only (`|| exit 1`); fix the message (§5 Site 2). **Do NOT migrate to `is_aligned`.** |
 | `hug-git-upstream:49` `handle_upstream_operation` | "no local commits ahead of upstream" | SAFE: `== 0` IS the correct no-op semantic for an upstream-aware op ("nothing to discard/push"), regardless of whether upstream itself is valid or ahead. Strictness change only. | `|| return 1` — on the (unexpected) rev-list failure, propagate loudly |
 | `git-log-outgoing:92` | "no outgoing commits" | SAFE: `== 0` IS the correct "nothing outgoing" semantic for an upstream-aware op | `|| exit 1` — loud exit on unexpected failure |
 | `git-h-files:122` | "no local-only commits" | SAFE: `== 0` IS the correct "already synced" semantic for an upstream-aware op | `|| exit 1` |
-| `git-h-squash:167` | (upstream branch) "no commits to squash" | SAFE: `== 0` IS the correct "nothing to squash" semantic | `|| exit 1` |
+| `git-h-squash:167` | (upstream branch) count feeds the upstream path; the `== 0` *decision* for that path lives in `handle_upstream_operation` (the `hug-git-upstream:49` row), not at `:167` itself | SAFE: the upstream no-op semantic is `handle_upstream_operation`'s ("nothing to squash"), which is correct; `:167` just supplies the count | `|| exit 1` |
 | `git-h-squash:176` (call; `== 0` test at `:177`) | "no commits to squash" | SAFE, and the `== 0` branch (`:177`) is **LIVE, not defensive**: `ensure_ancestor_of_head` delegates to `merge-base --is-ancestor`, which treats **equality as ancestry** (verified: exit 0 for HEAD vs HEAD), so `hug h squash <SHA-of-HEAD>` lands here. Deleting this branch would resurrect the exact "[squash] 0 commits…" orphan bug the file's own comment (`git-h-squash:161-163`) records having already suffered. | `|| exit 1` (strictness only); **do NOT remove the `== 0` branch** |
-| `hug-git-rebase:238` | display only (`num_commits` in plan) | SAFE: not a decision, just a number in the rendered plan | **→ `count_commits_in_range_or_zero`** (named wrapper, §4) |
-| `git-h-files:202` | display only (tip text "in N commits since…") | SAFE: not a decision, cosmetic count in a tip line | **→ `count_commits_in_range_or_zero`** (named wrapper, §4) |
+| `hug-git-rebase:238` | display only (`num_commits` in plan) | SAFE: not a decision, just a number in the rendered plan | **→ `count_commits_in_range_or_zero`** (named wrapper) |
+| `git-h-files:202` | display only (tip text "in N commits since…") | SAFE: not a decision, cosmetic count in a tip line | **→ `count_commits_in_range_or_zero`** (named wrapper) |
 
-**Why the "safe" defense matters (and why it is NOT "target validated upstream"):** a reviewer/implementer trusting a "validated upstream" defense would think the only risk is an invalid ref — obscuring the real invariant (semantic correctness of `== 0` for upstream-aware commands). A future refactor that changed what `get_upstream_commit` returns could turn a "safe" site unsafe without tripping that wrong reasoning. The real invariant — `== 0` means "no local commits ahead of upstream," which is the correct no-op — is what an implementer must preserve.
+**Why the "safe" defense matters (and why it is NOT "target validated upstream"):** a reviewer/implementer trusting a "validated upstream" defense would think the only risk is an invalid ref — obscuring the real invariant (semantic correctness of `== 0` for upstream-aware commands). The real invariant — `== 0` means "no local commits ahead of upstream," which is the correct no-op — is what an implementer must preserve. Preserve the §4 "REAL invariant" rationale **as comments at each call site** in the implementation — it is the audit's hardest-won insight and belongs at the point of use, not only here.
 
-**Discipline:** strictness is enforced structurally, not by prose. The library function never swallows; the ONLY sanctioned cosmetic-0 escape hatch is the **named** `count_commits_in_range_or_zero` wrapper (§4), and grep for `|| echo 0` must return exactly that one definition — nothing else. The two display sites call the wrapper rather than inlining the swallow, so a future maintainer cannot copy-paste Defect 2 back into a decision path.
+**Discipline:** strictness is enforced structurally, not by prose. The library function never swallows; the ONLY sanctioned cosmetic-0 escape hatch is the **named** `count_commits_in_range_or_zero` wrapper, and grep for `|| echo 0` must return exactly that one definition — nothing else. The two display sites call the wrapper rather than inlining the swallow.
 
-**Bash pitfall — declare, then assign.** Every `|| exit 1` / `|| return 1` above MUST attach to a bare assignment, not a `local` declaration: `local x=$(cmd) || exit 1` is **dead code**, because `local` (like `declare`/`export`) always exits 0 regardless of the command substitution's failure, masking the very error strictness is meant to surface (reproduced: the combined form survives with `x=''`; the split form propagates). The correct split — `local x; x=$(cmd) || exit 1` — is what Site 1's snippet demonstrates (`local rel field1 field2` then `rel=$(commits_ahead_behind …) || return 1`).
+**Bash pitfall — declare, then assign.** Every `|| exit 1` / `|| return 1` MUST attach to a bare assignment, not a `local` declaration: `local x=$(cmd) || exit 1` is **dead code**, because `local` (like `declare`/`export`) always exits 0 regardless of the command substitution's failure, masking the very error strictness is meant to surface (reproduced: the combined form survives with `x=''`; the split form propagates). The correct split — `local x; x=$(cmd) || exit 1`.
 
-**The 9 call sites split into two scopes — and the round-4 "add `local`" advice was wrong for one of them (round-5 MAJOR #3).** Bash has no block scope, so the distinction that matters is **function scope vs. script top-level**, not indentation:
+**The 9 call sites split into two scopes (round-5 MAJOR #3).** Bash has no block scope, so the distinction that matters is **function scope vs. script top-level**, not indentation:
 
-- **In a function** (3 sites): use the split form `local x; x=$(…) || exit 1`. Never the combined `local x=$(…) || exit 1` (dead code — see pitfall above).
-- **At script top-level** (6 sites — the indentation you see is from `if` blocks, NOT a function): a bare assignment `x=$(…)` propagates correctly under `set -e` (the script exits on a failing substitution). **Do NOT add `local` here — `local` outside a function is fatal** (proven: `bash -c 'set -euo pipefail; local x=1'` → "local: can only be used in a function", exit 1). The round-4 table told the implementer to "add `local`" at four top-level sites; following that would crash `h files` and `h squash`.
+- **In a function** (3 sites): use the split form `local x; x=$(…) || exit 1`. Never the combined form (dead code).
+- **At script top-level** (6 sites — the indentation is from `if` blocks, NOT a function): a bare assignment `x=$(…)` propagates correctly under `set -e` (the script exits on a failing substitution). **Do NOT add `local` here — `local` outside a function is fatal** (proven: `bash -c 'set -euo pipefail; local x=1'` → "local: can only be used in a function", exit 1).
 
-The danger an implementer must avoid: "tidying" a top-level bare assignment into `local foo=$(strict_count)` — which is both fatal (top-level) AND, if moved into a function, the dead-code masking form. Per-site scope + action (re-resolve at implementation time):
+Per-site scope + action (re-resolve at implementation time):
 
-| Site | Scope today | Form today | Action for strictification |
+This table is about **declaration form only** (function-scope split `local` vs script-top-level bare). The *semantic* strictification action (wrapper migration, `|| exit 1`) for each site is in the **audit table above** — "OK as-is" below means only that the *declaration form* needs no change.
+
+| Site | Scope today | Form today | Declaration-form action (semantic action: see audit table) |
 |---|---|---|---|
-| `hug-git-upstream:49` | function (`handle_upstream_operation`) | split `local` | OK as-is |
-| `hug-git-upstream:107` | function (`handle_standard_operation`) | split `local` | OK as-is (Site 1 rewrites this) |
-| `hug-git-rebase:237-238` | function (`rb_build_plan`) | split `local` | OK as-is |
+| `hug-git-upstream:49` | function (`handle_upstream_operation`) | split `local` | OK as-is (`|| return 1` per audit table) |
+| `hug-git-upstream:107` | function (`handle_standard_operation`) | split `local` | OK as-is (Site 1 rewrites this; `is_aligned` per audit table) |
+| `hug-git-rebase:237-238` | function (`rb_build_plan`) | split `local` | OK as-is (wrapper migration per audit table) |
 | `git-h-files:122` | **script top-level** (in `if $upstream` block) | bare assignment | **leave bare** (propagates via `set -e`); do NOT add `local` (fatal). Optionally add explicit `|| exit 1` for clarity |
-| `git-h-files:202` | **script top-level** | bare assignment | same — leave bare, do NOT add `local` |
-| `git-log-outgoing:92` | **script top-level** | bare assignment | leave bare |
-| `git-h-squash:167` | **script top-level** | bare assignment | leave bare, do NOT add `local` |
-| `git-h-squash:176` | **script top-level** | bare assignment | leave bare |
-| `git-cmv:160` | **script top-level** | bare assignment | leave bare |
-
-**Real Defect-2 enforcement (round-4 MAJOR #5, corrected round-5 MAJOR #4).** A line-based grep **cannot** be a complete invariant here: a correct two-line split (`local x;` then `x=$(count_commits_in_range …)`) puts the call on a line with no `local` and no `|| exit 1`, so any exclusion grep either misses it or flags it (the round-4 grep returned 12 lines on fully-compliant code — verified). The honest enforcement is therefore **runtime, not static**: the **per-site strict-propagation test** (§7) — for each of the 9 sites, feed an invalid start ref and assert the script/function exits non-zero rather than printing "0 commits"/"Already at target". That is what §8 credits. Keep a narrow `|| echo 0` **canary** as a secondary tripwire (it still catches the literal Defect-2 swallow reappearing), but do not present it as proof, and do not present any grep as a complete caller-invariant.
+| `git-h-files:202` | **script top-level** | bare assignment | leave bare, do NOT add `local` (wrapper per audit table) |
+| `git-log-outgoing:92` | **script top-level** | bare assignment | leave bare (`|| exit 1` per audit table) |
+| `git-h-squash:167` | **script top-level** | bare assignment | leave bare, do NOT add `local` (`|| exit 1` per audit table) |
+| `git-h-squash:176` | **script top-level** | bare assignment | leave bare (`|| exit 1` per audit table) |
+| `git-cmv:160` | **script top-level** | bare assignment | leave bare (keep guard + message fix, Site 2) |
 
 ## 5. Fixing the affected call sites (Defect 1)
 
@@ -216,7 +222,7 @@ The danger an implementer must avoid: "tidying" a top-level bare assignment into
 
 ### Site 1 — `handle_standard_operation` (`hug-git-upstream:101-141`)
 
-Replace the count-based guard with `is_aligned`, and compute the **full ahead/behind relationship** (not just the ahead-count) so the **preview** reports the correct range/count. The helper emits **nothing on stdout** and keeps its `exit 0` aligned-target early-exit — it is still called as a **bare statement** (not captured), so `exit 0` terminates the whole mover as today. The move **direction** is computed downstream in each mover's shared tail (see the design note), NOT by this helper:
+The minimal core fix: replace the count-based alignment guard with `is_aligned`, and make the preview's count strict. **The helper emits nothing on stdout and keeps its `exit 0` aligned-target early-exit — it is still called as a bare statement (not captured), so `exit 0` terminates the whole mover as today.** Direction-awareness (the "changes in 0 commit:" preview, the result message) is **Phase 2**; Phase 1 leaves the existing preview block unchanged.
 
 ```bash
 handle_standard_operation() {
@@ -226,168 +232,89 @@ handle_standard_operation() {
 
     # Defect-1 fix: alignment is an EXACT SHA relationship, never a one-directional
     # count == 0. A forward (descendant) target was silently no-op'ing here before.
-    # Called BARE by the movers, so `exit 0` terminates the whole mover (round-5 MAJOR #1:
-    # capturing this helper via $(…) would make `exit 0` quit only the subshell, and the
-    # mover would proceed to move HEAD right under the "Already at target" message).
+    # Called BARE by the movers, so `exit 0` terminates the whole mover. (Capturing this
+    # helper via $(…) would make `exit 0` quit only the subshell and the mover would
+    # proceed to move HEAD right under the "Already at target" message — verified bug.)
     if is_aligned "$target" HEAD; then
         if [[ "$skip_when_aligned" == true ]] || ! has_uncommitted_tracked_changes; then
             info "Already at target $(git rev-parse --short "$target"). No action taken."
             exit 0
         fi
-        [[ ${HUG_QUIET:-} != T ]] && info "No commits to $action_name; local tracked changes will be reset."
+        if [[ ${HUG_QUIET:-} != T ]]; then
+            info "No commits to $action_name; local tracked changes will be reset."
+        fi
         return 0
     fi
 
-    # NOT aligned. Compute the relationship ONCE (strict), for the PREVIEW only. Field names
-    # are POSITIONAL (field1/field2) — NOT semantic — correct only for the arg order
-    # ("$target" HEAD); positional names make that dependency explicit (round-4 MAJOR #1):
-    #   field1 = commits reachable from $target but not HEAD = HEAD-behind-target -> FORWARD magnitude
-    #   field2 = commits reachable from HEAD but not $target = HEAD-ahead-of-target -> BACKWARD magnitude
-    local rel field1 field2
-    rel=$(commits_ahead_behind "$target" HEAD) || return 1
-    field1=${rel%%$'\t'*}; field2=${rel##*$'\t'}
+    # NOT aligned. Count ahead-commits STRICTLY for the preview (was: swallow via || echo 0).
+    # For a forward target this count is 0 (HEAD is behind, not ahead); the preview then
+    # reads "changes in 0 commit:" above the diff stat — cosmetically rough, fixed in Phase 2.
+    # The operation PROCEEDS either way, which is the fix: resetting onto a descendant moves
+    # HEAD forward instead of no-op'ing.
+    local commits_to_affected
+    commits_to_affected=$(count_commits_in_range "$target" HEAD) || return 1
 
-    # Direction-cased preview (round-3 MAJOR #3): ALL THREE range-dependent artifacts must
-    # flip TOGETHER, or a forward move shows an empty commit list above a non-empty diff
-    # stat — the exact "changes in 0 commit:" symptom this audit exists to fix:
-    #   field1>0, field2==0 -> FORWARD  -> HEAD..target, count = field1
-    #   else (backward/diverged)        -> target..HEAD, count = field2
-    local list_start list_end diff_range count
-    if [ "$field1" -gt 0 ] && [ "$field2" -eq 0 ]; then
-        list_start="HEAD"; list_end="$target"; diff_range="HEAD..$target"; count="$field1"
-    else
-        list_start="$target"; list_end="HEAD"; diff_range="$target..HEAD"; count="$field2"
-    fi
-    local commit_word="commit"; [ "$count" -gt 1 ] && commit_word="commits"
-
-    printf 'Commits to be affected:\n' >&2
-    print_commit_list_in_range "$list_start" "$list_end" >&2   # was hardcoded: "$target" HEAD
-    if git diff --quiet "$diff_range"; then                    # was hardcoded: "$target..HEAD"
-        printf '\nPreview: no file changes in %d %s.\n' >&2 "$count" "$commit_word"
-    else
-        printf '\nPreview: changes in %d %s:\n' >&2 "$count" "$commit_word"
-        git diff --stat "$diff_range" >&2
-    fi
-    # Emits NOTHING on stdout. The mover computes the direction in its own tail.
+    # ...existing preview block unchanged in Phase 1 (commit list, diff --stat, pluralization
+    #     on $commits_to_affected / "$target..HEAD"); Phase 2 makes it direction-aware...
 }
 ```
 
-**Design note — compute the direction in the mover tail (round-5 unifying fix, adopted; user-confirmed).** Rounds 3–4 threaded the direction *out of* the helper — round 3 via a process-global, round 4 via stdout. Round 5 showed **both are wrong**: emitting on stdout (a) **voids the aligned-target guard** — `exit 0` inside `direction=$(handle_standard_operation …)` quits only the subshell, so the mover proceeds and moves HEAD under the "Already at target" message (reproduced); and (b) **collides with `handle_upstream_operation`'s documented stdout contract** ("upstream commit hash to stdout", `hug-git-upstream:24-25`), captured by 7 callers across 6 commands (`h-back/undo/rollback/rewind`, `git-cmv:141`, `git-h-squash:165`) — a second stdout payload would break every `-u` path.
+**Forward-target behavior after Phase 1 (the fix, enumerated for all four movers).** On a forward (descendant) target, `is_aligned` is false, so the guard no longer fires; the mover proceeds and its reset moves HEAD **forward** instead of printing "Already at target". Confirmation is **unchanged** — see the rule below.
 
-**Fix:** helpers emit nothing new and keep their existing stdout contracts; the direction is computed in each mover's **shared tail**, where `$target` and `$pre_op_head` (HEAD captured before the reset) are already live, via a thin `direction_between` wrapper — the single place direction is labeled for messaging ("one algorithm, N consumers"):
+| Caller | Pre-fix (forward target) | Post-fix Phase 1 (forward target, clean index) |
+|---|---|---|
+| `git-h-back` | "Already at target", exit 0 | clean → skips confirmation (as today), soft-reset **forward** (result line still says "back" — Phase 2 fixes the wording) |
+| `git-h-undo` | "Already at target", exit 0 | clean → skips confirmation (as today), mixed-reset **forward** (wording → Phase 2) |
+| `git-h-rollback` | "Already at target", exit 0 | warn prompt (as today), keep-reset forward ¹ (wording → Phase 2) |
+| `git-h-rewind` | "Already at target", exit 0 | **warn** prompt on a clean tree (state-dependent tier — see rule), hard-reset forward (wording → Phase 2) |
 
-```bash
-# direction_between <a> <b>: label how a move from <b> to <a> goes.
-#   a ancestor of b -> "backward"    a descendant of b -> "forward"
-#   a == b          -> "aligned"     neither           -> "diverged"
-direction_between() {
-  local a="${1:?}" b="${2:?}" rel f1 f2
-  rel=$(commits_ahead_behind "$a" "$b") || return 1
-  f1=${rel%%$'\t'*}; f2=${rel##*$'\t'}
-  if   [ "$f1" -gt 0 ] && [ "$f2" -eq 0 ]; then echo forward
-  elif [ "$f1" -eq 0 ] && [ "$f2" -gt 0 ]; then echo backward
-  elif [ "$f1" -eq 0 ] && [ "$f2" -eq 0 ]; then echo aligned
-  else echo diverged; fi
-}
-```
+¹ `git reset --keep` **aborts** ("Entry … not uptodate") if a file in the reset range has uncommitted edits — a pre-existing `--keep` condition, not design-caused; the forward path can hit it. Assumes a clean-in-range tree.
 
-The mover tail (shown for `git-h-back`; the other three are analogous) changes by **two lines** and preserves everything else — including the #222 recovery hint (round-5 MAJOR #5):
-
-```bash
-# git-h-back: helper called BARE (exit 0 still terminates the mover on aligned).
-handle_standard_operation "move back" "$target"
-if has_staged_changes; then
-    prompt_confirm_warn "Move HEAD, keeping changes staged? [y/N]: "   # tier+changes, direction-independent
-else
-    info "No staged changes detected; skipping confirmation."
-fi
-pre_op_head=$(git rev-parse HEAD)                          # preserved (round-5 MAJOR #5)
-git reset --soft "$target"
-direction=$(direction_between "$target" "$pre_op_head")    # ← NEW: computed in-tail
-report_head_move "$direction" "$target" "(uncommitted changes preserved)."  # ← NEW (was `info "Moved HEAD back…"`)
-emit_head_recovery_hint "$pre_op_head" "back"              # preserved (round-5 MAJOR #5)
-```
-
-`handle_upstream_operation` is **unchanged** (still `echo "$target"`; the 7 captures keep working). Its `-u` path converges on the same mover tail (`git-h-back:86-130`), so the tail's `direction_between "$target" "$pre_op_head"` yields `backward` there too (HEAD is ahead of the upstream tip) — fixing round-3 MAJOR #2 (the `-u` double-space) without touching the helper's stdout contract. The `-u` retained no-op (`local_commits == 0` → "Already synced", exit 0) is unchanged and intentionally SAFE (§4).
-
-**Behavioral changes — enumerated, not derived (round-1 MAJOR #4).** Post-fix, every `handle_standard_operation` caller gains a forward-target path. The spec's own standard (a behavior change "must be enumerated, not derived") applies to **all four** movers. The direction (computed in each mover's tail via `direction_between`) makes each caller's preview and messaging direction-truthful. The only observable change is the **message/preview wording** — confirmation behavior is **unchanged** (see the rule below):
-
-| Caller | Pre-fix (forward target) | Post-fix (forward target, clean index) | Changed observable |
-|---|---|---|---|
-| `git-h-back` | "Already at target", exit 0 | clean → skips confirmation (as today), soft-reset **forward**; result line via `report_head_move` → "Moved HEAD **forward**…" | message only (was "back") |
-| `git-h-undo` | "Already at target", exit 0 | clean → skips confirmation (as today), mixed-reset **forward**; `report_head_move` → "Moved HEAD **forward**…" | message only (was "back") |
-| `git-h-rollback` | "Already at target", exit 0 | warn prompt (as today), keep-reset forward; `report_head_move` → "… forward …" ¹ | message only (was "back") |
-| `git-h-rewind` | "Already at target", exit 0 | **warn** prompt on a clean tree (state-dependent tier — see rule below), hard-reset forward; `report_head_move` switches the verb (see below) | **verb** — there is no "back" string to flip; h-rewind's text is "Rewind HEAD to…?" / "Rewind complete" (`:122/:128/:130`), which would *lie* for a forward move, so the helper words it direction-truthfully |
-
-¹ `git reset --keep` **aborts** ("Entry … not uptodate") if a file in the reset range has uncommitted edits — a pre-existing `--keep` condition, not design-caused, but the forward path can hit it; the table's "keep-reset forward" assumes a clean-in-range tree.
-
-**Confirmation is direction-independent — do NOT add a forward-move prompt.** This codebase's prompts are *safety* gates (danger ⟺ can destroy unrecoverable uncommitted work; warn ⟺ destructive-but-recoverable), not "did you mean that?" UX nudges. A forward move's safety profile is identical to a backward move's, because:
-
-- The destructiveness of `reset --hard` (`h-rewind`) comes from discarding **uncommitted** work — that is orthogonal to direction. On a **clean** tree there is nothing to discard, so a forward `--hard` just moves HEAD to an already-committed descendant (`HEAD@{1}`-recoverable); it is no more destructive than a backward `--hard` on a clean tree.
-- A clean-tree move (any mode) loses no uncommitted work and is reflog-recoverable → at most warn-tier, and the existing changes-based prompts already fire precisely when there *is* work at risk.
-
-This is not a new principle — it is the **merged #231 (`head-movers-tier-unify`) model** already in the tree: the tier is computed from tracked-dirty *state*, not from the command. `git-h-rewind:89-94` sets `tier=warn` by default and escalates to `danger` only `if has_uncommitted_tracked_changes`; `h-back`/`h-undo`/`h-rollback` are fixed warn (`h-back`/`h-undo` additionally skip the prompt entirely when clean, since a soft/mixed reset loses nothing); `cmv` is fixed danger. Danger is per-state — the codification of "prompt ⟺ uncommitted work at risk." Therefore confirmation stays **tier + presence-of-changes**, exactly as today; direction affects only the wording. Prompting on a merely-surprising-but-safe, fully-recoverable move would re-introduce the confirmation-gradient noise that #218/#222 existed to remove. Callers use the direction (computed in the mover tail via `direction_between`) only to word the result truthfully — see the mover blueprint in the design note above.
-
-### Site 1b — centralized mover result message: `report_head_move <direction> <target> [extra]` (kills MAJOR #1 + #2)
-
-The four movers hand-roll near-identical result messages (`git-h-back:130`, `git-h-undo:155`, `git-h-rollback:134`, `git-h-rewind:128/:130`) that now all need direction-casing. Fixing that four times in prose is exactly the "N copies of one algorithm" the spec exists to remove — and it is how MAJOR #1 (h-rewind's "Rewind" verb lying on a forward move) and MAJOR #2 (the `-u` double-space) arise. **Centralize the result line in one PURE helper** that takes the direction as an explicit argument (no global — see Site 1):
-
-```bash
-# Words the post-move result line truthfully from a DIRECTION ARGUMENT (not a global),
-# so all four movers share ONE direction-casing site. `case` (not &&-chains) avoids any
-# `set -e` short-circuit hazard. The direction is passed by the caller (Site 1 / Site 1
-# -u), so there is no setter-before-reader ordering contract and no `set -u` footgun.
-#   backward -> "Moved HEAD back to <sha> <extra>"
-#   forward  -> "Moved HEAD forward to <sha> <extra>"   (NOT "back", NOT "Rewind complete")
-#   diverged -> "Moved HEAD to <sha> <extra>"           (neutral; neither ahead nor behind)
-#   ""(or *) -> "Moved HEAD to <sha> <extra>"           (defensive; should not happen)
-report_head_move() {
-  local direction="${1:-}" target="${2:?}" extra="${3:-}"
-  local word
-  case "$direction" in
-    forward)  word="forward" ;;
-    backward) word="back" ;;
-    diverged|'') word="" ;;        # neutral — neither ahead nor behind (or unset)
-    *)        word="" ;;
-  esac
-  info "Moved HEAD ${word:+$word }to $(git rev-parse --short "$target")${extra:+ $extra}"
-}
-```
-
-All four movers replace their hand-rolled result line with a `report_head_move` call, passing the direction they received from `handle_standard_operation`/`handle_upstream_operation`. h-rewind's "Rewind complete. Repository is now at …" (`:130`) becomes `report_head_move "$dir" "$target"`, which says "forward" on a forward move instead of lying. The per-mover `extra` (e.g. h-undo's "to undo commits") is the third arg; the contract is one direction-casing site, consumed by all four. (No `mode_noun` parameter: it was dead in an earlier draft — the verb is direction-derived, not mode-derived. If a mover needs its mode verb in the line, it's part of `extra`.)
-
-**`skip_when_aligned=false` + dirty-tree + forward-target (the `h-rewind` danger path):** pre-fix this hit the `count == 0` branch and, if the tree was dirty, printed "local tracked changes will be reset." Post-fix a forward target is not aligned, so it flows through the direction-aware preview. The **end-state is unchanged** (HEAD moves forward via the caller's reset; the danger prompt still fires because the tree is dirty — that is what makes `--hard` dangerous, not the direction); only the message wording differs. Pinned by the §7 smoke test.
+**Confirmation is direction-independent — do NOT add a forward-move prompt.** This codebase's prompts are *safety* gates (danger ⟺ can destroy unrecoverable uncommitted work; warn ⟺ destructive-but-recoverable), not "did you mean that?" UX nudges. A forward move's safety profile is identical to a backward move's: the destructiveness of `reset --hard` (`h-rewind`) comes from discarding **uncommitted** work — orthogonal to direction; on a clean tree a forward `--hard` just moves HEAD to an already-committed descendant (`HEAD@{1}`-recoverable). This is the **merged #231 (`head-movers-tier-unify`) model**: the tier is computed from tracked-dirty *state*, not the command — `git-h-rewind:89-94` sets `tier=warn` and escalates to `danger` only `if has_uncommitted_tracked_changes`; `h-back`/`h-undo`/`h-rollback` are fixed warn (`h-back`/`h-undo` additionally skip the prompt when clean); `cmv` is fixed danger. Therefore Phase 1 changes **no** confirmation behavior; it only stops the no-op. (Phase 2 makes the *wording* direction-truthful; it too adds no prompt.)
 
 ### Site 2 — `git-cmv` (`:156-164`) — keep the guard, fix strictness + message (NOT `is_aligned`)
 
-Per §4's reclassification, cmv's `== 0` is the **correct** vacuous-op semantic — a descendant target has nothing to move and the request is incoherent. The fix is strictness + a truthful message, **not** an `is_aligned` migration (which would ship a forward hard-reset + branch switch on a "NOT RESTORABLE" command):
+Per §4's reclassification, cmv's `== 0` is the **correct** vacuous-op semantic — a descendant target has nothing to move and the request is incoherent. The fix is strictness + a truthful message, **not** an `is_aligned` migration:
 
 ```bash
 target=$(git rev-parse "$target")
 
 # cmv target must be an ANCESTOR ("commit to move above", "reset branch back").
-# == 0 ⟹ vacuous operation (correct no-op). Strict: a bad ref now fails loudly
-# instead of masquerading as "0 commits". The OLD message lied ("already at
-# target") for a forward target — a forward target is NOT aligned, it is simply
-# an incoherent cmv request; say so.
+# == 0 ⟹ vacuous operation (correct no-op). Strict: a bad ref now fails loudly instead
+# of masquerading as "0 commits". The OLD message lied ("already at target") for a forward
+# target. NOTE: == 0 fires in TWO sub-cases — target == HEAD (aligned) OR target is a
+# descendant — so branch on is_aligned (Phase 1) for a message that is truthful in BOTH
+# (a single "is not an ancestor of HEAD" would LIE when aligned, since a commit is its own
+# ancestor — equality-as-ancestry, §4):
 commits_to_relocate=$(count_commits_in_range "$target" HEAD) || exit 1
 if [ "$commits_to_relocate" -eq 0 ]; then
-  info "No commits to move (target $(git rev-parse --short "$target") is not behind HEAD)."
+  if is_aligned "$target" HEAD; then
+    info "No commits to move (already at $(git rev-parse --short "$target"))."
+  else
+    info "No commits to move (target $(git rev-parse --short "$target") is a descendant of HEAD; cmv needs an ancestor target)."
+  fi
   exit 0
 fi
 ```
 
-If forward-reset semantics for cmv are ever wanted, that is a separate feature needing its own help-text change + confirmation story — not a drive-by in a correctness audit.
+(Both sub-cases are now truthful: aligned → "already at"; descendant → "is a descendant of HEAD; cmv needs an ancestor target." If forward-reset semantics for cmv are ever wanted, that is a separate feature needing its own help-text change + confirmation story — not a drive-by in a correctness audit.)
 
-### Site 3a — `git-h-restore` stale comment blocks MUST be rewritten (CRITICAL #1)
+### Site 3a — `git-h-restore` stale comment blocks MUST be rewritten
 
-`git-h-restore`'s **entire stated reason for existing** is built on the bug Site 1 fixes. Two comment blocks name the `count==0` forward no-op as the defining problem:
+`git-h-restore`'s **entire stated reason for existing** is built on the bug Site 1 fixes. Three comment blocks are affected:
 
 - **Header, `git-h-restore:16-20`** — "WHY this exists: re-invoking a mover … to recover forward no-ops **via handle_standard_operation's count==0 gate** (the aligned-target short-circuit in hug-git-upstream:109-112)."
-- **Header, `git-h-restore:27-28`** — "safety additions (bare-numeric guard, --rewind+dirty danger escalation, per-tier prompt) **arrive in Task 8**." These are ALREADY in the file (`:85-86`, `:117-120`) — stale regardless of this audit, but the stated goal is "git-h-restore carries no stale rationale," so the whole header block gets one coherent rewrite.
+- **Header, `git-h-restore:27-28`** — "safety additions (bare-numeric guard, --rewind+dirty danger escalation, per-tier prompt) **arrive in Task 8**." These are ALREADY in the file (`:85-86`, `:117-120`) — stale regardless of this audit.
 - **Inline, `git-h-restore:104-106`** — "The defining feature: no-op ONLY on exact SHA equality … This lets recovery move FORWARD to a descendant (re-invoking the mover **no-ops there via handle_standard_operation's count==0 bailout**)."
 
-After Site 1, the movers **no longer** have that no-op — `hug h back <descendant>` moves HEAD forward itself. The comments become factually wrong, and a future maintainer reading them concludes the bug still exists. This is exactly the docs/claims hazard the spec exists to eliminate; leaving it would move the defect rather than fix it. **The whole header block (:14-28) plus the inline comment (:104-106) must be rewritten** in the same PR to state `git-h-restore`'s now-actual purpose: an op-named-flag selector for the reset MODE, gated on exact SHA equality — independent of (and now redundant with) the movers' alignment gate. Suggested rewrite of the header WHY block:
+`git-h-restore` is **not** the only file citing the swallow mechanism (an earlier draft claimed it was — **false**, verified by grep). The root-commit **danger-tier rationale comments** in two movers cite the very `|| echo 0` behavior Defect-2 strictification deletes, and must be updated in the same PR:
+
+- **`git-h-back:105-108`** — "Root-commit path stays DANGER (spec §6): recovery at root is a guaranteed **no-op (unborn HEAD ⇒ rev-list fails ⇒ count 0)**, so there is no complete recovery to license a warn tier."
+- **`git-h-undo:123-126`** — "Root-commit path stays DANGER … at root, recovery is a guaranteed **no-op (unborn HEAD)** …"
+
+"rev-list fails ⇒ count 0" *is* the swallow. **Post-Phase-1 the mechanism changes:** re-invoking a mover to recover at root hits `is_aligned` non-zero (unborn, exit 128) → strict count propagates non-zero → the mover **exits ≠ 0 — a loud failure, not a silent no-op**. The danger-tier **decision survives** (a loud failure is still "no complete recovery," so the tier stands), but the comments' stated mechanism is stale and must be reworded to "recovery at root is a guaranteed **loud failure** (unborn HEAD ⇒ strict rev-list propagates non-zero ⇒ mover exits ≠ 0) — still no complete recovery, so the danger tier stands." (This is a behavior change — root recovery goes silent→loud — but an improvement; the root-recovery *fix* itself remains deferred to #222 §10, §9.) (Optional borderline touch-up: `hug-git-commit:196-197` "Let handle_standard_operation check if there are commits in range" — still literally true post-fix, but the tolerance it implies is gone.)
+
+After Site 1, the movers **no longer** have the forward no-op — `hug h back <descendant>` moves HEAD forward itself. The `git-h-restore` comments become factually wrong. **The whole header block (:14-28) plus the inline comment (:104-106) must be rewritten** in the same PR to state `git-h-restore`'s now-actual purpose: an op-named-flag selector for the reset MODE, gated on exact SHA equality — independent of (and now redundant with) the movers' alignment gate. Suggested rewrite of the header WHY block:
 
 ```text
 # WHY this exists: an explicit recovery primitive that resets HEAD to a prior
@@ -397,11 +324,7 @@ After Site 1, the movers **no longer** have that no-op — `hug h back <descenda
 # (hug-git-upstream); this command remains the dedicated, op-named inverse.
 ```
 
-(Grep confirms `git-h-restore` is the ONLY file referencing the `count==0` / aligned-target gate, so the docs-drift is bounded to this one file — no other comments need updating.)
-
 ### Site 3b — `git-h-restore:107` adopts `is_aligned`
-
-The local SHA-equality check switches to the canonical primitive:
 
 ```bash
 # Was: if [ "$target" = "$(git rev-parse HEAD)" ]; then
@@ -419,133 +342,86 @@ After Sites 3a + 3b, `is_aligned` is the **only** alignment idiom in the repo an
   - `count_commits_in_range` is a ONE-DIRECTIONAL ahead-count; `== 0` means "not ahead," NOT "aligned."
   - For alignment use `is_aligned`; for the ahead/behind relationship use `commits_ahead_behind`.
   - Both new functions + the now-strict `count_commits_in_range` propagate `rev-list` failures (Defect 2).
-- **`git-config/lib/README.md` — fix pre-existing drift + cross-reference `is_aligned`** (minor): `:98` and `:133` both describe `handle_standard_operation`'s aligned-target gating, but they CONTRADICT each other — `:98` attributes the predicate to `has_untracked_or_pending_changes`, while the code (`hug-git-upstream:110`) and `:133` both use `has_uncommitted_tracked_changes`. `:98` is stale; correct it to match `:133`/the code. While there, cross-reference `is_aligned` as the sanctioned alignment test at both `:98` and `:133`, so the README's "aligned-target gating" prose points at the primitive this audit introduces (the same docs-drift discipline as Site 3a).
-- **`git-config/lib/README.md:425-435` — refresh the helper-usage examples** (round-5 MAJOR #6): the `handle_upstream_operation` / `handle_standard_operation` examples go stale once this audit lands. Update them to (a) show `handle_standard_operation` called **bare** (its `exit 0` aligned-guard depends on NOT being captured), (b) document the new `direction_between` + `report_head_move` helpers with a worked mover-tail example, and (c) keep `handle_upstream_operation`'s example showing it **returns the upstream SHA** (the stdout contract this audit deliberately preserves). Also enumerate in the §5 table the full set of message changes the movers undergo (full→short SHA in the result line, the `h-rollback` sentence rewrite, h-rewind's verb), so the docs pass and the behavior table agree.
+- **`git-config/lib/README.md` — fix pre-existing drift + cross-reference `is_aligned`**: `:98` and `:133` both describe `handle_standard_operation`'s aligned-target gating, but they CONTRADICT each other — `:98` attributes the predicate to `has_untracked_or_pending_changes`, while the code (`hug-git-upstream:110`) and `:133` both use `has_uncommitted_tracked_changes`. `:98` is stale; correct it to match `:133`/the code. Cross-reference `is_aligned` as the sanctioned alignment test at both `:98` and `:133`.
+- **`git-config/lib/README.md:425-435`** — the `handle_standard_operation` usage example must show it called **bare** (its `exit 0` aligned-guard depends on NOT being captured). The direction-messaging helper examples (`direction_between`/`report_head_move`) are added in **Phase 2's** docs pass.
 
 ## 7. Testing strategy
 
 Per `git-config/lib/CLAUDE.md` ("elegant tests" for lib changes) and the project's BATS conventions.
 
 **`tests/lib/test_hug-git-commit.bats`** (EXTEND — **hyphens**; the existing `count_commits_in_range` tests at `:33-50` stay and survive strictification. Do NOT create an underscore-named twin):
-- `commits_ahead_behind`: ancestor pair → `"0\t<N>"`; descendant pair → `"<N>\t0"`; aligned → `"0\t0"`; invalid ref → non-zero exit, empty stdout.
-- `is_aligned`: same SHA → exit 0; ancestor → non-zero; descendant → non-zero; invalid ref → non-zero (never false-aligned); **unborn repo, `is_aligned HEAD HEAD` → non-zero (false NEGATIVE, documented precondition — CRITICAL #2)**.
-- `count_commits_in_range` strict: invalid start → non-zero exit, empty stdout (Defect-2 regression); missing `$1` → fails fast via `${1:?}` (MINOR #9).
+- `commits_ahead_behind`: ancestor pair → `"0\t<N>"`; descendant pair → `"<N>\t0"`; aligned → `"0\t0"`; diverged pair → `"<M>\t<N>"` (both >0); invalid ref → non-zero exit, empty stdout.
+- `is_aligned`: same SHA → exit 0; ancestor → non-zero; descendant → non-zero; invalid ref → non-zero (never false-aligned); **unborn repo, `is_aligned HEAD HEAD` → non-zero (false NEGATIVE, documented precondition)**.
+- `count_commits_in_range` strict: invalid start → non-zero exit, empty stdout (Defect-2 regression); missing `$1` → fails fast via `${1:?}`.
 - `count_commits_in_range_or_zero`: invalid start → echoes `0`, exit 0 (the named cosmetic twin).
 
 **`tests/lib/test_hug-upstream.bats`** (extend existing aligned-target tests):
-- **Defect-1 regression (the headline test):** descendant/forward target on a clean tree → `handle_standard_operation` does NOT print "Already at target", does NOT `exit 0` from the guard, and returns 0 *past* the alignment check (so the caller proceeds to its reset). The helper is read-only (it previews/confirms, then returns; the caller performs the reset), so the test asserts the guard is *not* taken — not that HEAD moves inside the helper. The companion smoke test (§7) asserts the end-to-end HEAD move through `hug h back`.
+- **Defect-1 regression (the headline test):** descendant/forward target on a clean tree → `handle_standard_operation` does NOT print "Already at target", does NOT `exit 0` from the guard, and returns 0 *past* the alignment check (so the caller proceeds to its reset). The helper is read-only (previews/confirms, then returns; the caller performs the reset), so the test asserts the guard is *not* taken — not that HEAD moves inside the helper.
+- **Aligned-guard-not-voided (helper called bare):** target == HEAD → prints "Already at target. No action taken.", exits 0, and does NOT proceed. Pins that `handle_standard_operation` is called as a bare statement; a regression to `direction=$(handle_standard_operation …)` would fail this (the capture form lets the mover proceed under the no-op message — verified bug).
 - Keep existing aligned + untracked-only / tracked-dirty tests (they now exercise `is_aligned`).
 
-**`tests/unit/test_commit.bats`** (EXTEND the "# hug cmv expectations" section, `:336+` — there is **no** `test_h_cmv.bats`): forward (descendant) target → still a clean no-op, but the message is now "No commits to move (target … is not behind HEAD)", NOT the false "already at target"; **assert the branch did NOT move forward** (pins that we did not ship the regression). Ancestor target → unchanged behavior.
+**`tests/unit/test_commit.bats`** (EXTEND the "# hug cmv expectations" section, `:336+` — there is **no** `test_h_cmv.bats`):
+- forward (descendant) target → clean no-op with message "No commits to move (target … is a descendant of HEAD; cmv needs an ancestor target)"; **assert the branch did NOT move forward** (pins that we did not ship the forward-hard-reset regression).
+- aligned target (`hug cmv HEAD <branch>` / `<SHA-of-HEAD>`) → clean no-op with message "No commits to move (already at …)" — NOT "is a descendant" (pins the `is_aligned` branch; the old single message lied here).
+- ancestor target → unchanged behavior (commits move).
 
-**`tests/unit/test_h_squash.bats`** (extend, or whichever file covers h-squash): `hug h squash <SHA-of-HEAD>` → "No commits to squash", exit 0, **no commit created** — pins the LIVE `== 0` branch (MAJOR #2) so nobody deletes it as "dead defense" and resurrects the 0-commit orphan bug.
+**`tests/unit/test_head.bats`** (extend, or whichever file covers h-squash): `hug h squash <SHA-of-HEAD>` → "No commits to squash", exit 0, **no commit created** — pins the LIVE `== 0` branch so nobody deletes it as "dead defense" and resurrects the 0-commit orphan bug.
 
 **`tests/unit/test_h_restore.bats`** (extend): aligned → no-op (unchanged via `is_aligned`); invalid SHA → error, not silent.
 
-**Forward-direction tests (behavioral MAJOR #4)** — in the per-command unit files (`tests/unit/test_head.bats` / the relevant mover file):
-- `h-back`/`h-undo` + forward target + **clean** index → confirmation still **skipped** (direction-independent; a clean tree loses nothing); HEAD moves forward; result message says "forward", not "back".
-- `h-back` + forward target + **staged** changes → warn prompt fires (same as the backward dirty case); message says "forward".
-- `h-rewind` + forward target + **clean** tree → **warn** prompt (state-dependent tier: clean→warn); HEAD moves forward.
-- `h-rewind` + forward target + **dirty** tree → **danger** prompt (the dirty tree, not the direction, is what makes `--hard` dangerous); HEAD moves forward.
-- backward target (the common case) → confirmation behavior **unchanged** (regression guard).
-- `handle_standard_operation` is called **bare** and emits nothing on stdout; the mover computes the direction via `direction_between "$target" "$pre_op_head"` and passes it to `report_head_move` (round-5 compute-in-tail; assert the helper leaves no process-global side effect).
+**Forward-mover smoke tests (the fix):**
+- `hug h back <descendant-SHA> -y` on a scratch repo moves HEAD rather than printing "Already at target" (the headline acceptance criterion; reproduced as a bug at design time, the test encodes the inverse).
+- `hug h rewind <descendant-SHA>` on a dirty tracked tree still fires the danger-tier confirmation and moves HEAD forward (`skip_when_aligned=false` + dirty-tree + forward-target path).
+- backward target (the common case) on each mover → confirmation behavior **unchanged** (regression guard).
 
-**Messaging / preview tests (round-3 MAJORs #1/#2/#3 + round-5 #1/#2/#5):**
-- `report_head_move` (unit): `backward` → "Moved HEAD back to …"; `forward` → "Moved HEAD **forward** to …"; `diverged` → neutral "Moved HEAD to …"; empty/`*` → neutral (no crash under `set -euo pipefail` — uses `case`, not `&&`-chains; pins round-4 CRITICAL #2).
-- `direction_between` (unit): ancestor→`backward`; descendant→`forward`; equal→`aligned`; sibling→`diverged`; invalid ref→non-zero. (The single direction-labeling site.)
-- **Aligned-guard-not-voided (round-5 CRUX, MAJOR #1):** `hug h back` (or any mover) with target == HEAD → prints "Already at target. No action taken.", exits 0, and does **NOT** then print "Moved HEAD …" nor move HEAD nor emit a recovery hint. Pins that `handle_standard_operation` is called **bare** (its `exit 0` terminates the mover); a regression to `direction=$(handle_standard_operation …)` would fail this test (the mover would proceed under the no-op message — reproduced at design time).
-- **`handle_upstream_operation` SHA contract preserved (round-5 MAJOR #2):** `target=$(handle_upstream_operation …)` still yields the upstream SHA (not a direction token) on all 7 capturing callers; no `-u` path renders a double-space or directionless result line.
-- **Recovery hint preserved (round-5 MAJOR #5):** after a successful warn-tier move, `emit_head_recovery_hint` still prints the `hug h restore <SHA> --<op> -y` line — i.e. the mover blueprint kept `pre_op_head` + the hint (not dropped).
-- `h-rewind` + forward target → result line does NOT say "Rewind complete"/"back"; it says "forward" (pins MAJOR #1 — the verb no longer lies).
-- `h back -u` with local commits ahead of upstream → result line has NO double space and reads "Moved HEAD back to …" (pins round-3 MAJOR #2 — the mover tail's `direction_between` yields `backward`; `handle_upstream_operation`'s SHA stdout is unchanged).
-- forward target preview → the commit list AND the `diff --stat` use `HEAD..target` and the count is the behind-count, so NO "changes in 0 commit:" above a non-empty stat (pins MAJOR #3 — all three artifacts flip together).
-- divergent target (`h back <sibling-branch-tip>`) → neutral "Moved HEAD to …", not "backward" (minor #2).
-- invalid SHA surviving `resolve_target_with_temporal` through a mover → loud non-zero failure (no silent "Already at target"); §7 currently pins invalid-SHA only for h-restore, so extend to at least one mover (edge case #4).
+**Per-site strict-propagation test (PRIMARY Defect-2 enforcement).** Exercise a `rev-list` failure (invalid start ref) at each call site and assert the site-specific contract — **split by class** (a blanket "all 9 exit non-zero" would FAIL against the correct implementation, since the 2 display sites legitimately return 0):
+- **7 strict sites** (`hug-git-upstream:49/:107`, `git-log-outgoing:92`, `git-h-files:122`, `git-h-squash:167/:176`, `git-cmv:160`): the script/function exits **non-zero** — NOT "0 commits"/"Already at target".
+- **2 display sites** (`hug-git-rebase:238`, `git-h-files:202`, via `count_commits_in_range_or_zero`): exit **0** with a cosmetic `0` in the rendered plan/tip (the wrapper's contract — intentional; do NOT strip the wrapper to make a strict test pass).
 
-**Smoke verification (acceptance criterion):** on a scratch repo, `hug h back <descendant-SHA> -y` moves HEAD rather than printing "Already at target." The current bug was reproduced this way at design time; the regression test encodes the inverse.
+This runtime test is what §8 credits — no line-based grep can serve as a complete caller-invariant (a correct two-line `local x; x=$(…)` split puts the call on a line a grep can't classify; a round-4 caller-invariant grep returned 12 false positives on compliant code — verified).
 
-**Smoke test — `skip_when_aligned=false` + dirty-tree + forward-target (the `h-rewind` danger path):** `hug h rewind <descendant-SHA>` on a repo with dirty tracked changes still fires the danger-tier confirmation and moves HEAD forward.
+**`|| echo 0` canary (secondary tripwire):** after implementation, `grep -rn '|| echo 0' git-config/` returns exactly one line — the body of `count_commits_in_range_or_zero`. A canary, not a proof (it misses `||echo 0`, `|| printf '0\n'`, multi-line, and the structural `local`-masking form); the per-site test above is the real enforcement.
 
-**Smoke test — forward-direction messaging:** `hug h back <descendant-SHA>` on a clean tree skips confirmation (as today) and prints "Moved HEAD **forward**", not "back".
-
-**Grep canary (secondary):** after implementation, `grep -rn '|| echo 0' git-config/` returns exactly one line — the body of `count_commits_in_range_or_zero`. This is a **tripwire, not a proof**: it misses formatting variants (`||echo 0`, `|| printf '0\n'`, multi-line) and the structural `local`-masking form (round-4 CRITICAL #1). Treat it as a canary, not the acceptance criterion.
-
-**Per-site strict-propagation test (PRIMARY Defect-2 enforcement — round-4 CRITICAL #1):** for each of the 9 call sites, exercise a `rev-list` failure (invalid start ref) and assert the script/function exits non-zero — NOT "Already at target"/"0 commits". Without this, the audit's central guarantee (Defect 2 fixed everywhere) is untested, and a careless `local foo=$(strict_count)` refactor at any site silently reverts it with green happy-path tests. **This runtime test is what §8 credits** — round 5 proved no line-based grep can serve as a complete caller-invariant (a correct two-line `local x; x=$(…)` split puts the call on a line the grep can't classify; the round-4 grep returned 12 false positives on compliant code). The `|| echo 0` canary above stays as a secondary tripwire only.
+**Edge-case behavior changes (enumerated, not derived):**
+- **Root-commit recovery (unborn HEAD):** pre-fix, re-invoking a mover to recover at root swallowed the rev-list failure to `0` → silent "Already at target" no-op. Post-fix, `is_aligned` returns non-zero (unborn, exit 128) → strict count propagates → the mover **exits non-zero (loud failure)**. The danger tier for the root path stands (a loud failure is still "no complete recovery"); the root-recovery *fix* itself stays deferred to #222 §10 (§9). Pin: a mover invoked to recover at root fails loudly, not silently.
+- **Garbage target leaking through `resolve_target_with_temporal`** (`hug-git-commit:198`'s `|| echo "$target_ref"` passes literals through): pre-fix → swallow → silent "Already at target ." exit 0; post-fix → `is_aligned` false + strict count's `fatal: ambiguous argument` → mover exits 1. A bonus loud-failure fix the strictification delivers; pin: an unresolvable target exits non-zero, not silent.
 
 **Sanitize gate:** `make sanitize` after implementation (per `makefile-rules.md`); shellcheck must pass on all touched bash.
 
 ## 8. Acceptance criteria → where addressed
 
-- [x] All **9** call sites audited; each `== 0` use classified safe / unsafe with the REAL invariant stated — §4 table. (2 unsafe → `is_aligned`; 6 safe-ahead-count → strictness; 1 safe-but-mis-messaged `git-cmv` → keep guard + message fix; 2 display → named wrapper. `git-h-restore` is a non-caller handled separately in §5 Sites 3a/3b.)
+- [x] All **9** call sites audited; each `== 0` use classified safe / unsafe with the REAL invariant stated — §4 table. (1 unsafe → `is_aligned`; 5 safe-ahead-count → strictness; 1 safe-but-mis-messaged `git-cmv` → keep guard + message fix; 2 display → named wrapper. `git-h-restore` is a non-caller handled in §5 Sites 3a/3b.)
 - [x] Every unsafe **alignment** test replaced with the two-directional primitive (`is_aligned`) — §5 (Site 1 `handle_standard_operation`, Site 3b `git-h-restore`). `git-cmv` deliberately **NOT** migrated (its `== 0` is the correct vacuous-op semantic; migration would ship a forward hard-reset on a "NOT RESTORABLE" command) — §1 counter-example + §4 + §5 Site 2.
-- [x] `handle_standard_operation` no longer no-ops on a forward (descendant) target — regression test in §7; the forward-target path is enumerated for **all four** movers (§5 table) with direction-truthful messaging/preview (direction computed in the mover tail via `direction_between`; helper called **bare** so its `exit 0` aligned-guard is intact — round-5 MAJOR #1) and **direction-independent confirmation** (unchanged — safety gates key on uncommitted work, not direction; a clean move loses nothing and is reflog-recoverable).
-- [x] `git-h-squash:177`'s `== 0` branch preserved (it is LIVE via `merge-base` equality-as-ancestry, not defensive) + regression test — §4 + §7.
-- [x] The `|| echo 0` swallow is removed (strict propagation); the only sanctioned cosmetic-0 escape is the NAMED `count_commits_in_range_or_zero` wrapper. Enforcement is the **per-site strict-propagation test** (§7, round-4 CRITICAL #1) — NOT a grep (round 5 proved no line-grep is complete: the round-4 caller-invariant returned 12 false positives on compliant code). The `|| echo 0` grep is a secondary canary only.
+- [x] `handle_standard_operation` no longer no-ops on a forward (descendant) target — regression test in §7; forward-target path enumerated for all four movers (§5 table); helper called **bare** so its `exit 0` aligned-guard is intact.
+- [x] `git-h-squash:177`'s `== 0` branch preserved (LIVE via `merge-base` equality-as-ancestry, not defensive) + regression test — §4 + §7.
+- [x] The `|| echo 0` swallow is removed (strict propagation); the only sanctioned cosmetic-0 escape is the NAMED `count_commits_in_range_or_zero` wrapper. Enforcement is the **per-site strict-propagation test** (§7), NOT a grep (no line-grep is complete); the `|| echo 0` grep is a secondary canary.
 - [x] Docstring + `lib/README.md` state the one-directional contract and forbid the alignment idiom — §6.
-- [x] `git-h-restore`'s stale rationale comments (whole header block :14-28 incl. the "arrive in Task 8" line + inline :104-106) rewritten so the spec doesn't move the docs-drift — §5 Site 3a (CRITICAL #1).
-- [x] `is_aligned`'s unborn-HEAD precondition documented + tested — §3 + §7 (CRITICAL #2).
-- [x] Mover result messaging centralized in `report_head_move` (single direction-casing site) — no direction-lying verb (h-rewind), no `-u` double-space, divergent targets worded neutrally — §5 Site 1b + §7 (round-3 MAJORs #1/#2).
-- [x] Site 1 preview block fully enumerated and direction-cased (commit list + diff stat + count flip together) — the "changes in 0 commit:" symptom fixed at its source — §5 Site 1 + §7 (round-3 MAJOR #3).
-- [x] `handle_upstream_operation`'s stdout contract (emit upstream SHA) is **UNCHANGED** — its 7 capturing callers keep working; the mover tail computes direction via `direction_between`, so the `-u` path has no double-space/directionless result (round-3 MAJOR #2 fixed without changing the helper — round-5 MAJOR #2). Mover tails preserve `pre_op_head` + `emit_head_recovery_hint` (round-5 MAJOR #5).
+- [x] Stale rationale comments citing the deleted swallow rewritten so the spec doesn't move the docs-drift — §5 Site 3a: `git-h-restore` whole header (:14-28 incl. "arrive in Task 8") + inline (:104-106), **plus** the root-commit danger-tier comments at `git-h-back:105-108` and `git-h-undo:123-126` (reworded "no-op" → "loud failure"; the danger tier stands). Root-recovery behavior change (silent no-op → loud failure) enumerated in §7.
+- [x] `is_aligned`'s unborn-HEAD precondition documented + tested — §3 + §7.
 
-## 9. Out of scope
+## 9. Out of scope (→ Phase 2 or elsewhere)
 
+- **Direction-truthful previews + result messaging** — the "changes in 0 commit:" preview and the "Moved HEAD back" (for a forward move) result line. → **Phase 2** (`2026-07-30-head-mover-direction-messaging-design.md`): `direction_between` + `report_head_move` + mover-tail threading. Phase 1 leaves these cosmetically rough on forward targets.
 - Root-commit recovery paths noted in #222 §10 (separate defect class; tracked there).
 - Any change to the *ahead-count callers'* semantics — they keep meaning "is `end` ahead of `start`?"; only their failure handling changes (§4).
-- Mercurial (`hg-config/`) — the issue scopes to Git. `hg` has no upstream-count analog here; no port required.
+- Mercurial (`hg-config/`) — the issue scopes to Git. No port required.
 
 ## 10. Review history
 
-**Round 1 — 2026-07-29 (code-roast).** All five substantive findings were independently re-verified against the codebase before amending; all held:
+This spec survived **five code-roast rounds**. The first three plus two user corrections hardened the core (the two-defect framing, the two-directional primitive, the cmv non-migration, the h-squash liveness, the per-state confirmation model). Rounds 3–5 also explored direction-truthful **messaging**, which churned (a process-global → stdout-emission → compute-in-tail; a voided guard; a stdout-contract collision; a dropped recovery hint) — round 5 showed four of its six MAJORs were regressions the messaging machinery itself introduced. **That is the motivation for the decomposition:** the messaging is now carved out to **Phase 2** so the safety-critical core (this spec) ships minimal and high-confidence, and the shell-runtime-subtle messaging gets its own focused review. Key verified facts preserved from the rounds:
 
-- **CRITICAL #1** — `git-h-restore` header (`:16-20`) AND inline (`:104-106`) comments name the `count==0` forward no-op as the file's reason for existing; Site 1 fixes that no-op, so both comments go stale. **Added §5 Site 3a** to rewrite both. (Verified: grep confirms `git-h-restore` is the only file with these references — drift is bounded.)
-- **CRITICAL #2** — `is_aligned HEAD HEAD` on an unborn repo returns non-zero (false negative). The "never false-aligned" claim survives, but the precondition was undocumented. **Tightened the §3 docstring** + added the §7 unborn-HEAD test row. (Verified empirically: `rev-list HEAD...HEAD` exits 128 on a fresh repo.)
-- **MAJOR #3** — audit-table "safe because target validated upstream" was the wrong invariant. **Rewrote the §4 table** to state the real one: `== 0` is the correct no-op semantic for upstream-aware commands.
-- **MAJOR #4** — two display sites' local `|| echo 0` re-introduced Defect 2 with only a comment as guardrail. **Added the named `count_commits_in_range_or_zero` wrapper** (§4) + a grep-invariant test (§7). (Verified: the only existing `|| echo 0` is `hug-git-commit:219`.)
-- **MAJOR #5** — `skip_when_aligned=false` + dirty-tree + forward-target (`h-rewind` danger path) message-flow change was undocumented. **Added to §5 Site 1** + a §7 smoke test. (Verified: `git-h-rewind:114` passes `false`.)
+- **Defect 1 + 2** reproduced empirically (forward-target no-op; `|| echo 0` swallow on unborn/invalid).
+- **`merge-base --is-ancestor HEAD HEAD` → exit 0** (equality-as-ancestry) ⇒ `git-h-squash:177`'s `== 0` branch is LIVE; `rev-list HEAD..HEAD` → 0.
+- **Unborn-HEAD `rev-list HEAD...HEAD` → exit 128** ⇒ `is_aligned` false-negative (never false-positive); documented precondition.
+- **`exit 0` inside `$(…)` exits only the subshell** ⇒ `handle_standard_operation` must be called bare for its aligned-guard to terminate the mover (the capture form voids it — verified bug; pinned by a §7 test).
+- **`local` at script top-level is fatal** ⇒ the 6 top-level call sites stay bare; only the 3 in-function sites use split `local`.
+- **No line-grep is a complete caller-invariant** ⇒ the per-site strict-propagation *test* is the enforcement; `|| echo 0` is a canary.
+- **`git-cmv` tail (`:222-253`)** hard-resets onto the target + switches branch ⇒ forward-target migration would ship harm; cmv keeps its guard.
+- **#231 per-state tier model** (`h-rewind` warn-clean/danger-dirty; `h-back/h-undo/h-rollback` warn; `cmv` danger) ⇒ confirmation is direction-independent.
 
-Also applied MINOR #8 (one anchor SHA in header) and MINOR #9 (`${1:?}` on the rewritten `count_commits_in_range`). MINOR #6/#7 (ANSI-C quoting note, docstring output naming) folded into the §3 `is_aligned` docstring.
+**Round 6 — 2026-07-30 (code-roast of the LEAN Phase 1).** 0 CRITICAL; the roast confirmed the core design "survived every empirical attack" (it called the cmv counter-example "the spec's crown jewel" and the `local`-pitfall section "institutional knowledge"). Three MAJORs, all spec-internal contradictions, fixed:
+- **§7 ↔ §4 contradiction** — the per-site enforcement test said "all 9 sites exit non-zero," but the 2 display sites (via the wrapper) correctly exit 0. Split the prescription: 7 strict (non-zero) / 2 display (exit 0 + cosmetic 0).
+- **Site 2 message half-truth** — `count == 0` fires when target == HEAD *or* a descendant; "is not an ancestor of HEAD" lies when aligned (equality-as-ancestry). Branched the message on `is_aligned` (aligned → "already at"; descendant → "is a descendant of HEAD").
+- **Site 3a false "only file" claim** — `git-h-back:105-108` and `git-h-undo:123-126` ALSO cite the deleted swallow (root-commit danger-tier comments). Extended the comment rewrite to them (reword "no-op" → "loud failure"; tier stands) and enumerated the root-recovery silent→loud behavior change (§7).
 
-**Round 2 — 2026-07-29 (code-roast re-review).** Five MAJORs, no CRITICALs. All five independently re-verified; all held. **Two reverse round-1 classifications — both reversals are correct:**
-
-- **MAJOR #1 (reversal)** — `git-cmv` is **SAFE-but-mis-messaged**, not UNSAFE. For cmv, `== 0` IS the correct vacuous-op semantic (target = "commit to move above"; op "resets the branch back"; tail runs `git reset --hard "$target"`); a descendant target has nothing above it. Round-1's `is_aligned` migration would ship a forward hard-reset + branch switch on a self-declared "NOT RESTORABLE" command (`git-cmv:41`). **Reclassified in §4; §5 Site 2 now keeps the guard** (strictness + truthful message only) and drops the `is_aligned` migration. (Verified: help text `:21/:30/:41`, tail `:222-253`.)
-- **MAJOR #2** — `git-h-squash:177`'s `== 0` branch is **LIVE, not "purely defensive"**: `ensure_ancestor_of_head` uses `merge-base --is-ancestor`, which treats equality as ancestry, so `hug h squash <SHA-of-HEAD>` lands there. Deleting it resurrects the 0-commit orphan bug the file's own comment (`:161-163`) records. **Rewrote the §4 rationale** ("do NOT remove the branch") + added a §7 regression test. (Verified: `merge-base --is-ancestor HEAD HEAD` → exit 0; `rev-list --count HEAD..HEAD` → 0.)
-- **MAJOR #3** — §1 overcounted the affected population: `git-h-restore` never *calls* `handle_standard_operation` (only references it in comments); the 4 real callers are `h-back/h-undo/h-rollback/h-rewind`. **Fixed §1**; h-restore is the workaround, not an instance. (Round-1's `grep -l` matched comment lines.)
-- **MAJOR #4 (behavioral)** — the round-1 forward-target enumeration covered only `h-rewind`; `h-back`/`h-undo` gain a forward move on a clean index, and all movers print direction-inverted "Moved HEAD back" for a forward move. **Decision: expose direction for truthful messaging/preview only; confirmation stays direction-independent.** §5 Site 1 computes the full relationship via `commits_ahead_behind`, exposes `HUG_HEAD_MOVE_DIRECTION`, and makes previews/messaging direction-truthful. An earlier draft added a "forward move confirms even when clean" rule; **the user correctly rejected it**: `reset --hard`'s destructiveness comes from discarding *uncommitted* work (orthogonal to direction), so a clean-tree forward move loses nothing and is reflog-recoverable — prompting on a merely-surprising-but-safe move would re-introduce the confirmation-gradient noise #218/#222 removed. Confirmation is tier + presence-of-changes, exactly as today; direction changes only the wording. Added a §5 enumeration table for all four movers + §7 forward-direction tests.
-- **MAJOR #5** — test-file references were wrong: `test_hug_git_commit.bats` (underscores) doesn't exist — the hyphenated `test_hug-git-commit.bats` does (count tests at `:33-50`); `test_h_cmv.bats` doesn't exist — cmv coverage is in `test_commit.bats` (`:336+`). **Fixed §7** to EXTEND the real files.
-
-Round-2 minors also applied: 9 (not 8) call sites (§2/§4/§8); `git-h-restore:27-28` "arrive in Task 8" folded into the Site 3a whole-header rewrite; `commits_ahead_behind` output-order + shallow-clone caveat in §3; header anchor reworded; grep-invariant relabeled a tripwire-not-proof; forward-target preview contradiction fixed by the direction-aware preview.
-
-**Post-roast user corrections (spec review):**
-1. **Dropped the "forward move confirms even when clean" rule** (an earlier MAJOR-#4 draft). `reset --hard`'s destructiveness comes from discarding *uncommitted* work — orthogonal to direction — so a clean-tree forward move loses nothing and is reflog-recoverable; prompting on mere surprise would dilute the gradient. Kept direction-exposure for truthful messaging/preview only; confirmation is direction-independent.
-2. **`h-rewind` is NOT always danger.** The merged #231 (`head-movers-tier-unify`) model computes the tier from tracked-dirty *state*: `git-h-rewind:89-94` is warn when clean, danger only when dirty; `h-back`/`h-undo`/`h-rollback` are fixed warn (h-back/h-undo skip the prompt when clean); `cmv` is fixed danger. Fixed the §5 table's h-rewind row (clean → warn, not danger), grounded the confirmation rule in this per-state model, and added an h-rewind clean→warn §7 test. This per-state tier model is the codification of the principle in correction #1.
-
-**Round 3 — 2026-07-30 (code-roast re-review).** No CRITICALs; three MAJORs, all in the mover messaging/preview path (the area rounds 1–2 expanded but under-enumerated). All three verified against the tree:
-
-- **MAJOR #1** — the §5 table's h-rewind row claimed a message flip "(was 'back')", but `git-h-rewind` has NO "back" message (`:122` "Rewind HEAD to…?", `:128` "Rewinding to…", `:130` "Rewind complete"); post-fix the "Rewind" verb would lie for a forward move. **Fixed:** corrected the row and centralized the result line in a `report_head_move` helper (§5 Site 1b) that words direction truthfully — killing the verb-lie at the source.
-- **MAJOR #2** — the movers' `-u` branch (`handle_upstream_operation`) converges on the SAME shared tail as the explicit-target branch (verified `git-h-back:86-130`), but the helper never emitted a direction, so the tail would print "Moved HEAD  to …" (double space). **Fixed (round 3):** `handle_upstream_operation` emits the direction on its proceed path; the `-u` path is enumerated in §5 + a §7 test. **(Round 4 superseded the mechanism:** the global was dropped in favor of threading the direction explicitly; the `-u` double-space hazard is gone structurally.)
-- **MAJOR #3** — Site 1's preview block was elided ("…"), yet it holds the three range-dependent artifacts (commit list, diff stat, count/word — `hug-git-upstream:121-140`) that must flip together; that block is exactly where the motivating "changes in 0 commit:" symptom lives. **Fixed:** replaced the ellipsis with the direction-cased block (range + count chosen by direction; all three artifacts use them).
-
-Round-3 minors also applied: squash call-site anchor `:176` (the `== 0` *test* is `:177` — §8/§10 correctly cite the branch); divergent targets labeled "diverged" with neutral wording (§3 docstring + Site 1 + §7); `lib/README.md:98` stale-predicate fix + `is_aligned` cross-refs at `:98`/`:133` (§6); the `local x=$(cmd)` exit-code-masking pitfall documented in §4. Structural choice adopted per the roast's simplification note: `report_head_move` makes the messaging path the spec's "one algorithm, N consumers" thesis instead of four prose fixes.
-
-**Round 4 — 2026-07-30 (code-roast re-review).** Two CRITICALs + five MAJORs. The roast rated the core design sound (B+/A-) and the two CRITICALs as implementation bugs the spec's own snippets would ship. All verified before amending:
-
-- **CRITICAL #2** — the round-3 `report_head_move` body used `&&`-chains at statement position (`[[ … ]] && word=""`), which is fragile under `set -e`, AND took a dead `mode_noun` parameter. **Adopted the structural fix:** the helper now takes the **direction as an explicit argument** (not a global) and uses `case`; the dead parameter is dropped. (Note: the roast's "crashes on diverged" claim was itself partially wrong — reproduced: the diverged path exits 0, not a crash — but the `&&`-pattern is genuinely fragile and `case` is cleaner, so the rewrite stands.)
-- **CRITICAL #1** — the §4 "all 9 call sites verified safe today" claim was **false**. Verified: `git-h-files:122/:202`, `git-h-squash:167/:176`, `git-log-outgoing:92`, `git-cmv:160` are *bare* assignments (implicit globals / script-scope), not split. An implementer "tidying" any into `local x=$(strict_count)` silently re-introduces Defect 2 via `local`'s exit-code masking — a *structural* swallow no `|| echo 0` grep catches. **Fixed:** replaced the blanket claim with a per-site declaration table + a per-site strict-propagation test.
-- **MAJOR #2** — the cmv non-migration (the spec's most controversial decision) cited a tail (`:222-253`) the spec never quoted. Verified the tail (`git reset --hard "$target"` + branch switch). **Fixed:** quoted the tail in §1 to close the question.
-- **MAJOR #1** — the `behind`/`ahead` field names were positional-but-semantic-looking (fragile to arg-order "tidying"). **Fixed:** renamed to `field1`/`field2` at the consumer with the dependency commented.
-- **MAJOR #3** — `HUG_HEAD_MOVE_DIRECTION` global: undocumented setter-before-reader contract, `set -u` footgun. **Fixed by adoption of the round-4 simplification:** **the global was dropped entirely.** `handle_standard_operation`/`handle_upstream_operation` emit the direction on stdout; movers capture and thread it explicitly to `report_head_move`. This removes the global, MAJOR #3, and the `set -u`/`set -e` bug class at the source. Cost: one redundant `git rev-list --count` (trivial).
-- **MAJOR #5** — the `|| echo 0` grep tripwire was listed as an acceptance criterion despite §7 admitting it's incomplete. **Fixed:** added the **complete caller-invariant** grep as the primary criterion; demoted `|| echo 0` to a secondary canary.
-
-The headline design change this round is **dropping the `HUG_HEAD_MOVE_DIRECTION` process-global** (3 of 4 rounds flagged global state as a liability) in favor of threading the direction explicitly — a smaller, more testable design.
-
-**Round 5 — 2026-07-30 (code-roast re-review).** 0 CRITICALs, 6 MAJORs, 4 MINORs — all in the shell-runtime-contracts layer rounds 1–4 never stress-tested. **Four of the six were regressions my own round-4 "emit direction on stdout" change introduced**; all six verified against the tree (and one roast sub-claim re-checked, as in round 4). User confirmed the unifying fix before this revision.
-
-- **MAJOR #1 (crux)** — round-4's `direction=$(handle_standard_operation …)` **voided the aligned guard**: `exit 0` inside `$(…)` quits only the subshell (reproduced), so the mover would proceed and move HEAD under "Already at target" — re-shipping the exact lie this audit kills. The house pattern (`… || exit $?; [[ -z "${target:-}" ]] && exit 0`) was omitted. **Fixed (unifying fix):** helpers are called **bare** again (emit nothing); the aligned `exit 0` terminates the whole mover.
-- **MAJOR #2** — round-4 also collided with `handle_upstream_operation`'s documented stdout contract ("upstream commit hash", captured by 7 callers across 6 commands incl. `git-cmv:141`/`git-h-squash:165`). **Fixed:** the helper's stdout is UNCHANGED; direction is computed downstream in the mover tail.
-- **MAJOR #3** — the round-4 per-site table told the implementer to "add `local`" at `git-h-files:122/:202` and `git-h-squash:167/:176`, but those are **script top-level** (only `show_help()` is a function; bash has no block scope), where `local` is **fatal** (proven: exit 1). **Fixed:** the table now distinguishes function-scope (split `local`, OK) from script-top-level (bare assignment, propagates via `set -e`; do NOT add `local`).
-- **MAJOR #4** — the round-4 "complete caller-invariant" grep **cannot pass on compliant code** (verified: 12 lines — a line-grep can't classify a two-line `local x; x=$(…)` split). **Fixed:** demoted to a canary; the **per-site strict-propagation test** is the real (runtime) enforcement, and §8 credits that.
-- **MAJOR #5** — the round-4 mover blueprint silently dropped `pre_op_head` + `emit_head_recovery_hint`, deleting the #222 recovery hint from all four movers. **Fixed:** the mover blueprint now shows the full tail with both preserved; §7 pins the hint.
-- **MAJOR #6** — `lib/README.md:425-435` helper examples go stale unmentioned, and the §5 table under-enumerated message changes. **Fixed:** added both to the §6 docs pass.
-
-**The unifying fix (user-confirmed): compute the direction in the mover tail.** Instead of threading direction *out of* the helpers (round-3 global, round-4 stdout — both wrong), a new `direction_between <a> <b>` wrapper (thin layer over `commits_ahead_behind`) labels the move in each mover's shared tail from `$target` + `$pre_op_head` (both already live there). Helpers keep their existing stdout contracts and `exit 0` semantics; each mover's diff shrinks to ~2 lines; MAJORs #1 and #2 die at the source. This supersedes the round-4 headline (the global is still gone, but the stdout-emission that replaced it is gone too).
+Minors also fixed: the two §4 tables disambiguated (scope table = declaration form only, cross-referencing the audit table); Site 1's `&&` one-liner reverted to the original `if` (avoids a `set -e` subtlety); the `git-h-squash:167` audit column clarified (its `== 0` decision lives in `handle_upstream_operation`); the `commits_ahead_behind` name-vs-output-order guard strengthened (consumers use positional `field1`/`field2`); and the `handle_upstream_operation` capture count corrected to 6 callers / 8 sites (in the Phase 2 spec). The roast also noted a **bonus** the strictification delivers: a garbage target leaking through `resolve_target_with_temporal` (`hug-git-commit:198`) now fails loudly instead of silently no-op'ing (§7).
