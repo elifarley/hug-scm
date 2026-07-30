@@ -970,6 +970,58 @@ HOOK
   rm -rf "$repo"
 }
 
+# cmv 0-commit guard: the `count == 0` no-op is CORRECT for cmv (its target must be an
+# ancestor — "commit to move above" / "reset branch back" — so a descendant has nothing
+# above it). These tests pin BOTH truthful sub-case messages AND the no-regression invariant
+# that the current branch never moves: a forward (descendant) target must NOT fall through
+# to the tail's `git reset --hard`, which would hard-reset the branch FORWARD + switch branch
+# on a 'NOT RESTORABLE' command. The message must branch on is_aligned because a commit is its
+# own ancestor (equality-as-ancestry): "already at" when aligned, "is a descendant" otherwise.
+@test "hug cmv: aligned target (HEAD) -> 'already at' message, branch unmoved" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  git checkout -q -b feature
+  local before
+  before=$(git rev-parse HEAD)
+
+  run env HUG_FORCE=true hug cmv HEAD main
+  assert_success
+  assert_output --partial "already at"
+  refute_output --partial "is a descendant"
+  # Current branch did NOT move (guard exits before any reset)
+  [ "$(git rev-parse HEAD)" = "$before" ]
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: descendant target -> 'is a descendant of HEAD' message, branch unmoved" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  git checkout -q -b feature
+  # Current HEAD becomes the FORWARD (descendant) target; then move feature back one commit so
+  # the target is a descendant of the new HEAD — an incoherent cmv request that must no-op.
+  local descendant
+  descendant=$(git rev-parse HEAD)
+  git reset -q --hard HEAD~1
+  local before
+  before=$(git rev-parse HEAD)
+
+  run env HUG_FORCE=true hug cmv "$descendant" main
+  assert_success
+  assert_output --partial "is a descendant of HEAD"
+  refute_output --partial "already at"
+  # Current branch did NOT move forward (no forward-hard-reset regression)
+  [ "$(git rev-parse HEAD)" = "$before" ]
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
 # Additional cmv edge cases...
 
 # -----------------------------------------------------------------------------
