@@ -13,19 +13,21 @@ set -euo pipefail
 #
 # git-h-restore — the recovery primitive.
 #
-# WHY this exists: re-invoking a mover (h-back/h-undo/h-rollback/h-rewind) to
-# recover forward no-ops via handle_standard_operation's count==0 gate (the
-# aligned-target short-circuit in hug-git-upstream:109-112).  Recovery requires
-# a purpose-built reset whose no-op test is EXACT SHA EQUALITY — the only test
-# that distinguishes "already there" from "need to move FORWARD to a descendant."
+# WHY this exists: an explicit recovery primitive that resets HEAD to a target commit as
+# the inverse of a HEAD-mover (h-back/h-undo/h-rollback/h-rewind). Its no-op test is EXACT
+# SHA equality (via is_aligned) — the only test that distinguishes "already there" from
+# "move to a different commit," including a FORWARD move to a descendant. The movers now
+# share this same is_aligned gate (hug-git-upstream), so re-invoking a mover to recover is
+# no longer a special case; this command remains the dedicated, op-named inverse.
 #
 # Design decisions:
 #   - Op-named flags (--back/--undo/--rollback/--rewind) select the reset MODE;
 #     the flag DOES NOT encode direction.  Direction comes solely from target
 #     vs HEAD.
 #   - No-op only on exact SHA match (never the range-count gate).
-#   - Warn-tier prompt by default; safety additions (bare-numeric guard,
-#     --rewind+dirty danger escalation, per-tier prompt) arrive in Task 8.
+#   - Warn-tier prompt by default. Safety additions are in place: the bare-numeric
+#     guard (below), the --rewind+dirty tier=danger escalation, and the per-tier
+#     warn/danger prompt dispatch (the case "$tier" block in the confirmation below).
 
 show_help() {
   cat << EOF
@@ -101,10 +103,11 @@ esac
 # Resolve target.  target_arg is required — ${target_arg:?} fails helpfully.
 target=$(resolve_target_with_temporal "" "" "${target_arg:?target required}" '') || exit 1
 
-# The defining feature: no-op ONLY on exact SHA equality, never the range-count
-# gate.  This lets recovery move FORWARD to a descendant (re-invoking the mover
-# no-ops there via handle_standard_operation's count==0 bailout).
-if [ "$target" = "$(git rev-parse HEAD)" ]; then
+# The defining feature: no-op ONLY on exact SHA equality (via is_aligned), never a
+# range-count gate. The movers now share this same is_aligned gate (hug-git-upstream), so
+# recovery and the movers agree on what 'already there' means; is_aligned (unlike a
+# one-directional count == 0) distinguishes 'aligned' from 'need to move forward'.
+if is_aligned "$target" HEAD; then
   info "Already at $(git rev-parse --short "$target"). Nothing to restore."
   exit 0
 fi
