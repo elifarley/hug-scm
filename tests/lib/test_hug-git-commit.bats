@@ -52,6 +52,101 @@ teardown() {
 }
 
 ################################################################################
+# commits_ahead_behind TESTS
+################################################################################
+
+@test "commits_ahead_behind: ancestor pair -> 0<TAB>N (end ahead of start)" {
+  run commits_ahead_behind HEAD~2 HEAD
+  assert_success
+  assert_output "$(printf '0\t2')"
+}
+
+@test "commits_ahead_behind: descendant pair -> N<TAB>0 (end behind start)" {
+  run commits_ahead_behind HEAD HEAD~2
+  assert_success
+  assert_output "$(printf '2\t0')"
+}
+
+@test "commits_ahead_behind: aligned -> 0<TAB>0" {
+  run commits_ahead_behind HEAD HEAD
+  assert_success
+  assert_output "$(printf '0\t0')"
+}
+
+@test "commits_ahead_behind: diverged pair -> both counts > 0" {
+  git switch -q -c side HEAD~1
+  echo x > side.txt; git add side.txt; git commit -qm "side commit"
+  git switch -q -
+  run commits_ahead_behind side HEAD
+  assert_success
+  assert_output "$(printf '1\t1')"
+}
+
+@test "commits_ahead_behind: invalid ref -> non-zero, empty stdout (strict)" {
+  # Acceptance criterion is "empty STDOUT": git's `fatal: ambiguous argument`
+  # diagnostic is emitted on STDERR and is deliberately NOT swallowed (loud
+  # failure — callers must see it and handle the non-zero exit). bats' default
+  # `run` MERGES stderr into $output, which would make `assert_output ""` fail
+  # on that diagnostic; --separate-stderr keeps $output = stdout ONLY, so we
+  # assert the real contract (stdout empty + non-zero exit) without touching the
+  # wanted stderr noise.
+  bats_require_minimum_version 1.5.0  # `run --separate-stderr` needs >= 1.5 (silences BW02)
+  run --separate-stderr commits_ahead_behind NO_SUCH_REF HEAD
+  assert_failure
+  assert_output ""
+  [ -n "$stderr" ]   # git's 'fatal: ambiguous argument' must survive (loud failure)
+}
+
+@test "commits_ahead_behind: missing args -> fails fast via \${1:?}" {
+  run commits_ahead_behind
+  assert_failure
+}
+
+################################################################################
+# is_aligned TESTS
+################################################################################
+
+@test "is_aligned: same SHA -> exit 0" {
+  run is_aligned HEAD HEAD
+  assert_success
+}
+
+@test "is_aligned: ancestor (not equal) -> non-zero" {
+  run is_aligned HEAD~1 HEAD
+  assert_failure
+}
+
+@test "is_aligned: descendant (not equal) -> non-zero" {
+  local descendant; descendant=$(git rev-parse HEAD)
+  git reset -q --hard HEAD~1
+  run is_aligned "$descendant" HEAD
+  assert_failure
+}
+
+@test "is_aligned: invalid ref -> non-zero (never a false positive)" {
+  run is_aligned NO_SUCH_REF HEAD
+  assert_failure
+}
+
+@test "is_aligned: unborn repo (no commits) -> non-zero (false NEGATIVE, documented)" {
+  # create_test_repo auto-commits an "Initial commit", so it is NOT unborn.
+  # Build a genuinely commit-less repo: mktemp -d yields the path (git init -q
+  # prints nothing to stdout, so it must NOT be captured for the path).
+  local empty_repo; empty_repo=$(mktemp -d)
+  git init -q "$empty_repo"
+  cd "$empty_repo"
+  run is_aligned HEAD HEAD
+  assert_failure
+  cd "$TEST_REPO"
+  rm -rf "$empty_repo"
+}
+
+@test "is_aligned: missing second arg -> fails fast via \${2:?}" {
+  run is_aligned HEAD
+  assert_failure
+}
+
+################################################################################
 # list_changed_files_in_range TESTS
 ################################################################################
 
