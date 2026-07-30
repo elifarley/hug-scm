@@ -2175,3 +2175,90 @@ EOF
   assert_output --partial "RESTORE"
   assert_output --partial "hug h restore"
 }
+
+# ============================================================================
+# #229 Phase-1 enforcement: forward-mover headline + per-site strict propagation
+# + loud edge-case failures
+# ============================================================================
+# These pin the audit's central guarantees END-TO-END (the library-level twins live in
+# tests/lib/test_hug-upstream.bats). Pre-#229 two defects let errors masquerade as data:
+#   • Defect-1: alignment was a one-directional `count target..HEAD == 0`, which is ALSO
+#     true when HEAD is BEHIND the target — so a FORWARD (descendant) move silently no-op'ed
+#     ("Already at target"). The fix gates on is_aligned (exact SHA equality).
+#   • Defect-2: count_commits_in_range swallowed a failed `git rev-list` into `echo 0`, so an
+#     invalid ref / missing upstream looked like an empty range ('0 commits' / 'Already synced',
+#     exit 0). The fix removed the swallow; every strict call site propagates non-zero.
+#
+# These pin the USER-VISIBLE guarantee (non-zero exit, never a silent no-op), NOT the exact strict
+# site. That mechanism is isolated one layer down by the primitive canary at
+# tests/lib/test_hug-git-commit.bats (count_commits_in_range strictness) — mutation-testing shows
+# re-adding the swallow merely RELOCATES the failure downstream (helper-tail `git diff --stat`,
+# `git rev-parse --short <garbage>`, `git rev-parse HEAD` on unborn HEAD), so these stay green by
+# design. Read them as "the command fails loudly," not "this specific line propagates."
+
+@test "hug h back <descendant>: moves HEAD FORWARD instead of no-op'ing (#229 headline)" {
+  # Defect-1, end-to-end. Build A/B/C (the fixture), record the tip C as the forward target,
+  # then move HEAD back to A so C is a true DESCENDANT of HEAD. Pre-fix this printed
+  # "Already at target" and left HEAD at A; post-fix the mover must walk HEAD forward to C.
+  local descendant
+  descendant=$(git rev-parse HEAD)   # capture the tip BEFORE moving — the forward target (C)
+  git reset -q --hard HEAD~2         # HEAD -> A (root); tree clean, descendant is ahead of HEAD
+
+  run env HUG_FORCE=true hug h back "$descendant"
+
+  assert_success
+  refute_output --partial "Already at target"          # the no-op guard must NOT fire for a forward target
+  [ "$(git rev-parse HEAD)" = "$descendant" ]          # HEAD actually moved FORWARD to the descendant
+}
+
+@test "hug h squash <invalid-ref>: rejected loudly (garbage ref) (#229)" {
+  # Garbage-ref rejection pin — NOT a Defect-2 regression pin. h-squash runs ensure_ancestor_of_head
+  # (ensure_commit_exists) BEFORE any count, and that guard predates #229, so an unresolvable ref is
+  # rejected up front: this command path never had a '0 commits' Defect-2 no-op history. The strict
+  # count site (git-h-squash:183) is defense-in-depth only — an ancestor-validated target can never
+  # fail rev-list, so it does not fire here. Guarantee pinned: a bad ref exits non-zero, loudly.
+  run env HUG_FORCE=true hug h squash NO_SUCH_REF_XYZ
+  assert_failure
+}
+
+@test "hug h files -u with no upstream: exits non-zero (strict), not silent (#229)" {
+  # Defect-2, command-level. The fixture has NO upstream, so get_upstream_commit exits non-zero
+  # (git-h-files:120) before the strict count site (git-h-files:125) is even reached. Pins the
+  # missing-upstream path as a loud failure rather than a silent empty preview.
+  run hug h files -u
+  assert_failure
+}
+
+@test "hug h back <garbage-target>: loud failure, never a silent 'Already at target' (#229)" {
+  # Defect-2 edge case. A non-resolving target through a mover: is_aligned(garbage, HEAD) is false
+  # (commits_ahead_behind fails -> non-zero), so handle_standard_operation proceeds to the strict
+  # count, which propagates the rev-list failure -> non-zero. Pre-fix the swallow produced
+  # '0 commits' -> "Already at target" with exit 0. NOTE: this runs at the 3-commit fixture (NOT
+  # root) — at a VALID root a non-resolving target instead takes the reset_root_commit path.
+  run env HUG_FORCE=true hug h back "definitely-not-a-ref-12345"
+  assert_failure
+  refute_output --partial "Already at target"
+}
+
+@test "hug h back recovering at root (unborn HEAD): loud failure, not a silent no-op (#229)" {
+  # Defect-2 edge case (spec §6): recovery at root is a GUARANTEED LOUD FAILURE. Once the root
+  # commit is undone, HEAD is UNBORN and every `git rev-list … HEAD` fails; the now-strict
+  # count_commits_in_range propagates that non-zero instead of swallowing it to 0 (which pre-fix
+  # rendered a misleading "Already at target" no-op). is_aligned(target, unborn-HEAD) is a
+  # false-NEGATIVE (never a false positive), so the mover falls through to the strict count and
+  # fails loudly.
+  #
+  # LESSON / why the input is NOT `h back 1` at a valid root: that input takes git-h-back's
+  # dedicated reset_root_commit branch and SUCCEEDS ("root commit undone", HEAD unborn) — already
+  # pinned above by "hug h back: undoes root commit, files stay staged". A naive
+  # `h back 1 at valid root -> assert_failure` is therefore WRONG; the genuine loud-failure state
+  # is the UNBORN HEAD reproduced here via `git update-ref -d HEAD` (what reset_root_commit runs).
+  local root_sha
+  root_sha=$(git rev-list --max-parents=0 HEAD)        # resolve while HEAD is still born
+  git update-ref -d HEAD                               # -> unborn HEAD: the post-root-undo recovery state
+
+  run env HUG_FORCE=true hug h back "$root_sha"
+
+  assert_failure
+  refute_output --partial "Already at target"          # must fail loudly, not no-op silently
+}
