@@ -199,7 +199,7 @@ if $upstream; then
 elif [[ -n "$temporal_spec" ]]; then
   start_point_short=$(git rev-parse --short "$start_point")
   start_point_date=$(git log -1 --format="%ci" "$start_point" | cut -d' ' -f1)
-  num_commits=$(count_commits_in_range "$start_point" HEAD)
+  num_commits=$(count_commits_in_range_or_zero "$start_point" HEAD)
   tip "These $count files and their stats were changed in $num_commits commits since '$temporal_spec' (first commit: $start_point_short from $start_point_date)."
 else
   tip "These $count files and their stats would be affected by moving HEAD to $start_point (e.g., via 'h back' or 'h rewind')."

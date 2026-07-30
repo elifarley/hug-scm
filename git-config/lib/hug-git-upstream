@@ -46,7 +46,7 @@ handle_upstream_operation() {
     fi
 
     local local_commits
-    local_commits=$(count_commits_in_range "$target" HEAD)
+    local_commits=$(count_commits_in_range "$target" HEAD) || return 1
 
     if [ "$local_commits" -eq 0 ]; then
         info "Already synced to upstream ($(git rev-parse --short "$target"))."

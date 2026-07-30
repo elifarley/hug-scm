@@ -147,6 +147,53 @@ teardown() {
 }
 
 ################################################################################
+# count_commits_in_range STRICTNESS TESTS (Defect 2)
+################################################################################
+
+@test "count_commits_in_range: invalid start -> non-zero, empty stdout (strict, no swallow)" {
+  bats_require_minimum_version 1.5.0
+  run --separate-stderr count_commits_in_range NO_SUCH_REF HEAD
+  assert_failure
+  assert_output ""        # stdout empty (git's fatal: is on stderr, deliberately uncaptured)
+}
+
+@test "count_commits_in_range: missing start arg -> fails fast via \${1:?}" {
+  run count_commits_in_range
+  assert_failure
+}
+
+################################################################################
+# count_commits_in_range_or_zero TESTS (named display wrapper)
+################################################################################
+
+@test "count_commits_in_range_or_zero: valid range -> same as strict count" {
+  run count_commits_in_range_or_zero HEAD~2 HEAD
+  assert_success
+  assert_output "2"
+}
+
+@test "count_commits_in_range_or_zero: single arg defaults end to HEAD" {
+  # The wrapper forwards "$@" verbatim, so the strict function's ${2:-HEAD} default must
+  # still apply through the passthrough: a lone start ref counts commits from <start> to
+  # HEAD. setup() makes 3 commits, so HEAD~1 -> 1.
+  run count_commits_in_range_or_zero HEAD~1
+  assert_success
+  assert_output "1"
+}
+
+@test "count_commits_in_range_or_zero: invalid start -> echoes 0, exit 0 (cosmetic)" {
+  # The wrapper swallows the FAILURE (non-zero exit -> cosmetic 0 on stdout), but git's
+  # `fatal: ambiguous argument` diagnostic still goes to STDERR. bats' default `run` MERGES
+  # stderr into $output, which would make `assert_output "0"` see that 3-line diagnostic + "0".
+  # The contract under test is stdout == "0" + exit 0, so split stderr out (same house pattern
+  # as the strict invalid-ref tests above; --separate-stderr needs bats >= 1.5).
+  bats_require_minimum_version 1.5.0
+  run --separate-stderr count_commits_in_range_or_zero NO_SUCH_REF HEAD
+  assert_success
+  assert_output "0"
+}
+
+################################################################################
 # list_changed_files_in_range TESTS
 ################################################################################
 

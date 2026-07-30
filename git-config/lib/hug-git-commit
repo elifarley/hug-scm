@@ -205,18 +205,44 @@ resolve_target_with_temporal() {
 # Commit Range Analysis Functions
 ################################################################################
 
-# Counts commits in a range
+# Counts how far <end> is AHEAD of <start> (commits reachable from <end> but not <start>).
 # Usage: count=$(count_commits_in_range "start" ["end"])
 # Parameters:
-#   $1 - Start commit (exclusive)
+#   $1 - Start commit (exclusive) — REQUIRED
 #   $2 - (Optional) End commit (inclusive), defaults to HEAD
 # Output:
-#   Number of commits in range to stdout
+#   Number of commits in range to stdout.
+#
+# ONE-DIRECTIONAL ahead-count: a result of 0 means "<end> is NOT ahead of <start>" — which
+# is TRUE in two distinct cases: (1) end == start (aligned), OR (2) end is BEHIND start.
+# Do NOT treat 0 as "aligned." For an alignment test use is_aligned(); for the full
+# ahead/behind relationship use commits_ahead_behind(). See lib/README.md "Range counting".
+#
+# STRICT: a failed rev-list (invalid ref, unborn HEAD) propagates non-zero exit and prints
+# nothing — it is NEVER swallowed into a 0. Callers MUST handle failure (this is the fix for
+# Defect 2 of elifarley/hug-scm#229; the old "echo 0 on failure" swallow let errors masquerade
+# as data).
+#
+# NOTE: the ${1:?} guard is a hard shell EXIT (not a catchable return) if this function is
+# called directly with a missing start arg; it is catchable via `|| exit 1`/`|| return 1`
+# only because callers invoke it inside a $(…) command substitution. Always pass a start ref.
 count_commits_in_range() {
-    local start="$1"
+    local start="${1:?count_commits_in_range: start ref required}"
     local end="${2:-HEAD}"
 
-    git rev-list --count "$start..$end" 2>/dev/null || echo 0
+    git rev-list --count "$start..$end"
+}
+
+# STRICT-display twin of count_commits_in_range.
+# Usage: count=$(count_commits_in_range_or_zero "start" ["end"])
+# ONLY for display/tip text where a 0 on rev-list failure is cosmetically acceptable
+# (e.g. a rendered plan or a "… in N commits since …" tip). NEVER use this for a branching
+# or alignment decision — there, count_commits_in_range's strict propagation MUST surface
+# the failure. Grep invariant: this "echo 0" swallow appears NOWHERE outside this one body line.
+# (These comments deliberately avoid the literal pipe-form of the pattern so the canary
+# `grep -rn '<pipe><pipe> echo 0' git-config/` stays at exactly ONE hit — don't re-add it.)
+count_commits_in_range_or_zero() {
+    count_commits_in_range "$@" || echo 0
 }
 
 # Returns the ahead/behind relationship between two commits as "<behind>\t<ahead>"
