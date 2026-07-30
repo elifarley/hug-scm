@@ -119,7 +119,10 @@ check_git_repo
 if $upstream; then
   start_point=$(get_upstream_commit) # This will exit if no upstream
   range="$start_point..HEAD"
-  local_commits=$(count_commits_in_range "$start_point" HEAD)
+  # Explicit '|| exit 1': belt-and-suspenders (set -e already exits on a failing
+  # top-level assignment). NOTE: this is script top level inside the `if` block —
+  # do NOT add 'local' here; 'local' outside a function is a fatal error.
+  local_commits=$(count_commits_in_range "$start_point" HEAD) || exit 1
   if [ "$local_commits" -eq 0 ]; then
     info "No local-only commits; already synced to upstream."
     exit 0

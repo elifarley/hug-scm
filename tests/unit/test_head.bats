@@ -1531,6 +1531,34 @@ EOF
   [ "$(git rev-list --count HEAD)" = "$commit_count_before" ]
 }
 
+@test "h-squash <SHA-of-HEAD>: live '== 0' branch -> 'No commits to squash', NO commit created (regression pin)" {
+  # Regression pin for git-h-squash's top-level '== 0' guard (fed by the
+  # non-upstream count site). This branch is LIVE, not dead code: passing the
+  # SHA of HEAD as the target sails through ensure_ancestor_of_head because
+  # `git merge-base --is-ancestor X X` treats EQUALITY as ancestry (exit 0), and
+  # with target == HEAD there are 0 commits in target..HEAD, so the guard fires
+  # ("No commits to squash", exit 0, no commit created). Pins the branch against
+  # a future "dead code" cleanup that mistakes it for unreachable — see the
+  # assertion-area comment below for what actually detects the regression.
+  local head_sha; head_sha=$(git rev-parse HEAD)
+  local before; before=$(git rev-parse HEAD)
+  local commit_count_before; commit_count_before=$(git rev-list --count HEAD)
+
+  run hug h squash "$head_sha" --force
+  assert_success
+  assert_output --partial "No commits to squash"
+
+  # The PRIMARY detector is the message assertion above: with the guard removed,
+  # this clean-repo fixture (create_test_repo_with_history commits everything)
+  # takes the buggy path ("Skipping commit (empty squash?)") and moves HEAD onto
+  # itself — fabricating NO commit — so 'assert_output --partial "No commits to
+  # squash"' is what catches the regression. The HEAD / commit-count checks below
+  # are defense-in-depth against a variant that WOULD fabricate a commit. (An
+  # exit-code-only check is useless: the buggy path also exits 0.)
+  [ "$(git rev-parse HEAD)" = "$before" ]
+  [ "$(git rev-list --count HEAD)" = "$commit_count_before" ]
+}
+
 @test "h-squash --help documents RESTORE" {
   run hug h squash --help
   assert_output --partial "RESTORE"

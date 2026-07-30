@@ -164,7 +164,10 @@ if $upstream; then
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~2') || exit 1
   target=$(handle_upstream_operation "squashing" "$tier" "back" "discards local-only commits") || exit $?
   [[ -z "${target:-}" ]] && exit 0
-  commits_to_squash=$(count_commits_in_range "$target" HEAD)
+  # Explicit '|| exit 1': belt-and-suspenders (set -e already exits on a failing
+  # top-level assignment). No '== 0' test here by design — the upstream no-op
+  # decision lives inside handle_upstream_operation, not at this count site.
+  commits_to_squash=$(count_commits_in_range "$target" HEAD) || exit 1
 else
   # Use DRY helper for validation and target resolution
   target_commit=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~2') || exit 1
@@ -173,7 +176,11 @@ else
   ensure_ancestor_of_head "$target_commit" "cannot squash onto it."
   log_range="$target_commit"..HEAD
   target_display=$(git rev-parse --short "$target_commit" 2> /dev/null || echo "$target_commit")
-  commits_to_squash=$(count_commits_in_range "$target_commit" HEAD)
+  # Explicit '|| exit 1': belt-and-suspenders (set -e already exits on a failing
+  # top-level assignment). The '== 0' branch below is LIVE, not dead code:
+  # merge-base --is-ancestor treats EQUALITY as ancestry, so 'h squash <SHA-of-HEAD>'
+  # reaches it ("No commits to squash", exit 0, no commit). Pinned in test_head.bats.
+  commits_to_squash=$(count_commits_in_range "$target_commit" HEAD) || exit 1
   if [ "$commits_to_squash" -eq 0 ]; then
     info "No commits to squash (already at $target_display)."
     exit 0
