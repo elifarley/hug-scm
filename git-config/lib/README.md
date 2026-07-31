@@ -458,7 +458,8 @@ print_commit_list_in_range "origin/main" "HEAD"
 # The tier parameter (warn|danger) controls which prompt function is used.
 # Prints the upstream commit SHA to stdout. Its internal ahead-count is STRICT
 # (count_commits_in_range) and carries `|| return 1`, so capture it with a guard
-# (callers use `|| exit $?`) -- set -e is suspended inside $(…):
+# (callers use `|| exit $?`, which suspends set -e inside the function body;
+#  that is why its internal ahead-count carries an explicit `|| return 1`):
 target=$(handle_upstream_operation "rewinding" "warn" "rewind" "danger reason") || exit $?
 
 # For standard operations (back, undo, etc.)
