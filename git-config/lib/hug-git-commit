@@ -234,7 +234,7 @@ count_commits_in_range() {
     git rev-list --count "$start..$end"
 }
 
-# STRICT-display twin of count_commits_in_range.
+# Display-only, failure-tolerant twin of count_commits_in_range.
 # Usage: count=$(count_commits_in_range_or_zero "start" ["end"])
 # ONLY for display/tip text where a 0 on rev-list failure is cosmetically acceptable
 # (e.g. a rendered plan or a "… in N commits since …" tip). NEVER use this for a branching
