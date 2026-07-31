@@ -158,15 +158,15 @@ target=$(git rev-parse "$target")
 
 # Early calculation for commits to relocate (for 0-commit early exit and prompts).
 # cmv's target MUST be an ancestor ("specific commit to move above", "reset branch back"),
-# so == 0 is the correct vacuous-op no-op — do NOT migrate this to is_aligned (a forward
+# so == 0 is the correct vacuous-op no-op — do NOT migrate this to is_same_commit (a forward
 # target is an incoherent cmv request, and falling through would hard-reset the branch
 # FORWARD + switch branch on a 'NOT RESTORABLE' command). Strict: a bad ref now fails
 # loudly instead of masquerading as '0 commits'. The OLD message lied ('already at target')
-# for a descendant target; branch on is_aligned so BOTH sub-cases are truthful (a commit is
+# for a descendant target; branch on is_same_commit so BOTH sub-cases are truthful (a commit is
 # its own ancestor — equality-as-ancestry — so 'is not an ancestor' would lie when aligned).
 commits_to_relocate=$(count_commits_in_range "$target" HEAD) || exit 1
 if [ "$commits_to_relocate" -eq 0 ]; then
-  if is_aligned "$target" HEAD; then
+  if is_same_commit "$target" HEAD; then
     info "No commits to move (already at $(git rev-parse --short "$target"))."
   else
     info "No commits to move (target $(git rev-parse --short "$target") is a descendant of HEAD; cmv needs an ancestor target)."

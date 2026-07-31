@@ -104,7 +104,7 @@ teardown() {
 @test "handle_standard_operation: forward (descendant) target does NOT no-op (Defect 1)" {
   # HEAD at an ancestor; target is a descendant. Pre-fix this printed 'Already at target'.
   # The old guard was `count target..HEAD == 0`, which is ALSO true when HEAD is BEHIND the
-  # target (a forward target), so the mover silently no-op'ed. is_aligned (exact SHA equality)
+  # target (a forward target), so the mover silently no-op'ed. is_same_commit (exact SHA equality)
   # is the correct guard: a forward target is NOT aligned and must proceed.
   local descendant; descendant=$(git rev-parse HEAD)
   git update-ref HEAD HEAD~1                  # move HEAD back one (plumbing; avoids git reset/checkout)
@@ -130,8 +130,8 @@ teardown() {
 # loudly," not "this specific guard propagates."
 
 @test "handle_standard_operation: invalid target -> non-zero (strict, not a silent no-op)" {
-  # A non-resolving target is NOT aligned: is_aligned is a false-NEGATIVE-only predicate
-  # (commits_ahead_behind fails -> non-zero -> the `[ … = 0\t0 ]` test is false), so the helper
+  # A non-resolving target is NOT aligned: is_same_commit is a false-NEGATIVE-only predicate
+  # (rev-parse --verify fails -> non-zero -> the SHA-equality test is false), so the helper
   # proceeds past the aligned-guard and fails loudly on the bad ref. The FIRST strict site it hits is
   # count_commits_in_range (`git rev-list --count NO_SUCH_REF..HEAD`), but that is NOT the only possible
   # failure point — re-adding the swallow there just relocates the failure to the helper-tail

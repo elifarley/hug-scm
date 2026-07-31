@@ -975,7 +975,7 @@ HOOK
 # above it). These tests pin BOTH truthful sub-case messages AND the no-regression invariant
 # that the current branch never moves: a forward (descendant) target must NOT fall through
 # to the tail's `git reset --hard`, which would hard-reset the branch FORWARD + switch branch
-# on a 'NOT RESTORABLE' command. The message must branch on is_aligned because a commit is its
+# on a 'NOT RESTORABLE' command. The message must branch on is_same_commit because a commit is its
 # own ancestor (equality-as-ancestry): "already at" when aligned, "is a descendant" otherwise.
 @test "hug cmv: aligned target (HEAD) -> 'already at' message, branch unmoved" {
   local repo

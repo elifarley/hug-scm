@@ -15,9 +15,9 @@ set -euo pipefail
 #
 # WHY this exists: an explicit recovery primitive that resets HEAD to a target commit as
 # the inverse of a HEAD-mover (h-back/h-undo/h-rollback/h-rewind). Its no-op test is EXACT
-# SHA equality (via is_aligned) — the only test that distinguishes "already there" from
+# SHA equality (via is_same_commit) — the only test that distinguishes "already there" from
 # "move to a different commit," including a FORWARD move to a descendant. The movers now
-# share this same is_aligned gate (hug-git-upstream), so re-invoking a mover to recover is
+# share this same is_same_commit gate (hug-git-upstream), so re-invoking a mover to recover is
 # no longer a special case; this command remains the dedicated, op-named inverse.
 #
 # Design decisions:
@@ -103,11 +103,11 @@ esac
 # Resolve target.  target_arg is required — ${target_arg:?} fails helpfully.
 target=$(resolve_target_with_temporal "" "" "${target_arg:?target required}" '') || exit 1
 
-# The defining feature: no-op ONLY on exact SHA equality (via is_aligned), never a
-# range-count gate. The movers now share this same is_aligned gate (hug-git-upstream), so
-# recovery and the movers agree on what 'already there' means; is_aligned (unlike a
+# The defining feature: no-op ONLY on exact SHA equality (via is_same_commit), never a
+# range-count gate. The movers now share this same is_same_commit gate (hug-git-upstream), so
+# recovery and the movers agree on what 'already there' means; is_same_commit (unlike a
 # one-directional count == 0) distinguishes 'aligned' from 'need to move forward'.
-if is_aligned "$target" HEAD; then
+if is_same_commit "$target" HEAD; then
   info "Already at $(git rev-parse --short "$target"). Nothing to restore."
   exit 0
 fi

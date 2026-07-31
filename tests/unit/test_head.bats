@@ -2184,7 +2184,7 @@ EOF
 # tests/lib/test_hug-upstream.bats). Pre-#229 two defects let errors masquerade as data:
 #   • Defect-1: alignment was a one-directional `count target..HEAD == 0`, which is ALSO
 #     true when HEAD is BEHIND the target — so a FORWARD (descendant) move silently no-op'ed
-#     ("Already at target"). The fix gates on is_aligned (exact SHA equality).
+#     ("Already at target"). The fix gates on is_same_commit (exact SHA equality).
 #   • Defect-2: count_commits_in_range swallowed a failed `git rev-list` into `echo 0`, so an
 #     invalid ref / missing upstream looked like an empty range ('0 commits' / 'Already synced',
 #     exit 0). The fix removed the swallow; every strict call site propagates non-zero.
@@ -2230,8 +2230,8 @@ EOF
 }
 
 @test "hug h back <garbage-target>: loud failure, never a silent 'Already at target' (#229)" {
-  # Defect-2 edge case. A non-resolving target through a mover: is_aligned(garbage, HEAD) is false
-  # (commits_ahead_behind fails -> non-zero), so handle_standard_operation proceeds to the strict
+  # Defect-2 edge case. A non-resolving target through a mover: is_same_commit(garbage, HEAD) is false
+  # (rev-parse --verify fails -> non-zero), so handle_standard_operation proceeds to the strict
   # count, which propagates the rev-list failure -> non-zero. Pre-fix the swallow produced
   # '0 commits' -> "Already at target" with exit 0. NOTE: this runs at the 3-commit fixture (NOT
   # root) — at a VALID root a non-resolving target instead takes the reset_root_commit path.
@@ -2244,7 +2244,7 @@ EOF
   # Defect-2 edge case (spec §6): recovery at root is a GUARANTEED LOUD FAILURE. Once the root
   # commit is undone, HEAD is UNBORN and every `git rev-list … HEAD` fails; the now-strict
   # count_commits_in_range propagates that non-zero instead of swallowing it to 0 (which pre-fix
-  # rendered a misleading "Already at target" no-op). is_aligned(target, unborn-HEAD) is a
+  # rendered a misleading "Already at target" no-op). is_same_commit(target, unborn-HEAD) is a
   # false-NEGATIVE (never a false positive), so the mover falls through to the strict count and
   # fails loudly.
   #

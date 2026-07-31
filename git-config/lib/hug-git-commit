@@ -215,8 +215,9 @@ resolve_target_with_temporal() {
 #
 # ONE-DIRECTIONAL ahead-count: a result of 0 means "<end> is NOT ahead of <start>" — which
 # is TRUE in two distinct cases: (1) end == start (aligned), OR (2) end is BEHIND start.
-# Do NOT treat 0 as "aligned." For an alignment test use is_aligned(); for the full
-# ahead/behind relationship use commits_ahead_behind(). See lib/README.md "Range counting".
+# Do NOT treat 0 as "aligned." For an identity test use is_same_commit(); for a signed
+# distance (with direction/magnitude, diverged vs. error distinguished) use commit_offset().
+# See lib/README.md "Range counting".
 #
 # STRICT: a failed rev-list (invalid ref, unborn HEAD) propagates non-zero exit and prints
 # nothing — it is NEVER swallowed into a 0. Callers MUST handle failure (this is the fix for
@@ -245,49 +246,56 @@ count_commits_in_range_or_zero() {
     count_commits_in_range "$@" || echo 0
 }
 
-# Returns the ahead/behind relationship between two commits as "<behind>\t<ahead>"
-# Usage: commits_ahead_behind "start" "end"
-# via the three-dot symmetric difference: git rev-list --left-right --count <start>...<end>
-#   <behind> = commits reachable from <start> but NOT <end>  (end is BEHIND start by this many)
-#   <ahead>  = commits reachable from <end>  but NOT <start> (end is AHEAD of start by this many)
-# Alignment (<start> == <end>) ⟺ "0\t0".
+# True (exit 0) iff <a> and <b> resolve to the SAME existing commit.
+# Usage: is_same_commit "a" "b"
 #
-# NOTE: output order is git's native --left-right order (first arg's exclusive count
-# FIRST) — i.e. "<behind>\t<ahead>", which does NOT match this function's NAME word order
-# ("ahead_behind"). Consumers MUST parse into POSITIONAL field1/field2; NEVER
-# `read ahead behind <<< "…"` — that silently swaps them. When BOTH counts are > 0 the
-# refs have DIVERGED (neither is an ancestor) — a sideways relationship. (Shallow clones:
-# the EQUALITY test via is_aligned is shallow-safe; raw ahead/behind COUNTS are not.)
+# This is the ONLY sanctioned identity/alignment test. NEVER infer alignment from a
+# one-directional count_commits_in_range == 0 — that means "not ahead," which is ALSO
+# true when one ref is BEHIND the other (Defect 1 of elifarley/hug-scm#229).
 #
-# STRICT: a failed rev-list (invalid ref, unborn HEAD) propagates non-zero exit and prints
-# nothing — it is NEVER swallowed into a zero. Callers MUST handle failure.
-commits_ahead_behind() {
-    local start="${1:?commits_ahead_behind: start ref required}"
-    local end="${2:?commits_ahead_behind: end ref required}"
-    git rev-list --left-right --count "$start...$end"
+# PRECONDITION: both <a> and <b> MUST resolve to existing commits. On an unborn repo
+# (no commits) rev-parse --verify fails, so is_same_commit returns NON-ZERO for the
+# trivially-aligned case — a false NEGATIVE, never a false positive. Movers run
+# repo/commit-existence guards first; and even if not, the loud-failure chain holds
+# (the rev-parse failure propagates → callers exit non-zero).
+is_same_commit() {
+    local a b
+    a=$(git rev-parse --verify --quiet "${1:?is_same_commit: first ref required}^{commit}") || return 1
+    b=$(git rev-parse --verify --quiet "${2:?is_same_commit: second ref required}^{commit}") || return 1
+    [ "$a" = "$b" ]
 }
 
-# True (exit 0) iff <a> and <b> resolve to the SAME existing commit.
-# Usage: is_aligned "a" "b"
+# Signed commit distance from <a> to <b> (default HEAD). 0 means IDENTITY (same commit),
+# NOT merely "not ahead" — the false-zero is unrepresentable by construction.
+# Usage: dispatch on $? — exit 2 (diverged) and exit 3 (error) need DISTINCT handling:
+#   offset=$(commit_offset "target" HEAD); rc=$?
+#   case $rc in
+#     0) use "$offset" ;;   # identity (0) or a clean signed distance (N / -N)
+#     2) handle_diverged ;; # incomparable histories — NOT an error, NOT a distance
+#     *) handle_error ;;    # exit 3: an unresolvable ref
+#   esac
+# (The naive `... || handle_error` alone conflates 2 with 3 — diverged is not an error.)
 #
-# This is the ONLY sanctioned alignment test. NEVER infer alignment from a one-directional
-# count_commits_in_range == 0 — that means "not ahead," which is ALSO true when one ref is
-# BEHIND the other (Defect 1 of elifarley/hug-scm#229). For the full ahead/behind
-# relationship use commits_ahead_behind().
+# Contract:
+#   a == b (identity) | stdout=0    exit=0 | at target — undeniable, short-circuited on SHA equality
+#   b ahead of a      | stdout=N    exit=0 | clean forward distance
+#   b behind a        | stdout=-N   exit=0 | forward target (recovery direction)
+#   diverged          | stdout=     exit=2 | incomparable — NOT 0, so never mistaken for aligned
+#   unresolvable ref  | stdout=     exit=3 | error — never a fake 0 (fixes the fallback-swallow, Defect 2)
 #
-# PRECONDITION: both <a> and <b> MUST resolve to existing commits. On an unborn repo (no
-# commits) rev-list exits 128 even for HEAD...HEAD, so is_aligned returns NON-ZERO for the
-# trivially-aligned case — a false NEGATIVE, never a false positive. Movers run repo/commit-
-# existence guards first; and even if not, the loud-failure chain holds (commits_ahead_behind
-# ALSO exits non-zero on unborn → callers propagate).
-#
-# $'0\t0' uses ANSI-C quoting so \t is a real TAB (git's field separator), NOT backslash-t.
-is_aligned() {
-    local a="${1:?is_aligned: first ref required}"
-    local b="${2:?is_aligned: second ref required}"
-    # stderr silenced: a boolean predicate must not spew in `if` contexts; the exit code still
-    # propagates, and a downstream strict count (commits_ahead_behind) surfaces the diagnostic.
-    [ "$(commits_ahead_behind "$a" "$b" 2>/dev/null)" = $'0\t0' ]
+# commit_offset == 0 is a SOUND alignment test — the lossy count == 0 of Defect 1 is gone
+# by construction. is_same_commit is the minimal boolean predicate for callers that need
+# only yes/no; commit_offset is for callers that also need direction/magnitude.
+commit_offset() {
+    local a b
+    a=$(git rev-parse --verify --quiet "${1:?commit_offset: first ref required}^{commit}") || return 3
+    b=$(git rev-parse --verify --quiet "${2:-HEAD}^{commit}") || return 3
+    [ "$a" = "$b" ] && { echo 0; return 0; }                        # identity: the undeniable 0
+    local behind ahead
+    read -r behind ahead < <(git rev-list --left-right --count "$a...$b") || return 3
+    if [ "$behind" -eq 0 ]; then echo "$ahead";   return 0; fi      # b ahead of a
+    if [ "$ahead"  -eq 0 ]; then echo "-$behind"; return 0; fi      # b behind a (forward target)
+    return 2                                                        # diverged: empty + distinct exit
 }
 
 # Prints a list of commits in a given range

@@ -37,9 +37,9 @@ teardown() {
   assert_output --partial "Already at"
 }
 
-@test "restore: aligned target (HEAD) -> 'Nothing to restore' no-op (via is_aligned)" {
-  # The aligned no-op must be preserved across the SHA-compare -> is_aligned migration:
-  # is_aligned "$target" HEAD is true when both resolve to the same commit, exactly the
+@test "restore: aligned target (HEAD) -> 'Nothing to restore' no-op (via is_same_commit)" {
+  # The aligned no-op must be preserved across the SHA-compare -> is_same_commit migration:
+  # is_same_commit "$target" HEAD is true when both resolve to the same commit, exactly the
   # "already there" case. An op flag (--back) is required even for the no-op path.
   run env HUG_FORCE=true hug h restore "$(git rev-parse HEAD)" --back
   assert_success
@@ -48,7 +48,7 @@ teardown() {
 
 @test "restore: invalid SHA -> loud failure (not silent)" {
   # A non-existent ref must NOT become a silent no-op. resolve_target_with_temporal does
-  # not validate — it echoes the unresolved ref (exit 0) — so the bad ref reaches is_aligned
+  # not validate — it echoes the unresolved ref (exit 0) — so the bad ref reaches is_same_commit
   # (which declines the no-op branch) and then fails loudly at the downstream
   # `git rev-parse --short` / `git reset` (exit 128).
   run env HUG_FORCE=true hug h restore NO_SUCH_REF_XYZ --back

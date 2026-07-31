@@ -96,7 +96,7 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
   - **Two-predicate dirty-detection model**: Hug uses two distinct predicates for different decision points:
     - `has_uncommitted_tracked_changes` -- tracked-only (staged + unstaged), excludes untracked. Used for **tier/safety decisions** AND for the **aligned-target gating** in `handle_standard_operation` (the skip-when-aligned decision), because no reset mode (`--soft`/`--mixed`/`--keep`/`--hard`) touches untracked files, so untracked files are irrelevant to safety.
     - `has_untracked_or_pending_changes` (renamed from `has_pending_changes`) -- tracked + untracked (the broadest dirtiness predicate). Used where untracked files matter contextually (e.g. `git-caa`, `git-rb`, `git-w-wip`) -- NOT for the aligned-target gate, which uses the tracked-only predicate above.
-    - **Alignment vs. dirtiness:** alignment itself (whether two refs resolve to the same commit) is tested with `is_aligned` -- NEVER with `count_commits_in_range … == 0` (which also reads `0` when one ref is *behind*). See the "Range counting" subsection under Commit Range Analysis.
+    - **Alignment vs. dirtiness:** alignment itself (whether two refs resolve to the same commit) is tested with `is_same_commit` -- NEVER with `count_commits_in_range … == 0` (which also reads `0` when one ref is *behind*). See the "Range counting" subsection under Commit Range Analysis.
   - Other state checks: `has_staged_changes`, `has_unstaged_changes`
 - Cleanliness validation (`check_working_tree_clean`, `check_files_clean`)
 - File state checking (`check_file_in_commit`, `check_file_staged`, `check_file_unstaged`)
@@ -125,14 +125,14 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
 
 #### hug-git-commit
 - Count commits in range (`count_commits_in_range` strict, `count_commits_in_range_or_zero` display-only)
-- Ahead/behind relationship and alignment (`commits_ahead_behind`, `is_aligned`) -- see "Range counting" below
+- Identity and signed distance (`is_same_commit`, `commit_offset`) -- see "Range counting" below
 - List changed files (`list_changed_files_in_range`, `count_changed_files_in_range`)
 - Print commit lists (`print_commit_list_in_range`)
 - Preview helpers (`print_preview_summary`, `print_commit_list_header`)
 
 #### hug-git-upstream
 - Handle upstream operations (`handle_upstream_operation`) -- takes a required `tier` parameter (warn/danger) for the upstream confirmation path. This closes the inverted confirmation gradient: previously every upstream path was gated at warn regardless of the operation's actual danger level.
-- Handle standard operations (`handle_standard_operation`) -- aligned-target gating uses `has_uncommitted_tracked_changes` (tracked-only) for the skip-when-aligned decision. Alignment itself is tested with `is_aligned` (exact SHA equality), NEVER a one-directional `count_commits_in_range … == 0` -- see the "Range counting" subsection. Callers invoke this helper BARE (not via `$(…)`) so its aligned-path `exit 0` terminates the mover.
+- Handle standard operations (`handle_standard_operation`) -- aligned-target gating uses `has_uncommitted_tracked_changes` (tracked-only) for the skip-when-aligned decision. Alignment itself is tested with `is_same_commit` (exact SHA equality), NEVER a one-directional `count_commits_in_range … == 0` -- see the "Range counting" subsection. Callers invoke this helper BARE (not via `$(…)`) so its aligned-path `exit 0` terminates the mover.
 - Recovery hint helper (`emit_head_recovery_hint`) -- emits the `hug h restore <SHA> --<op> -y` recovery command to stderr after a successful warn-tier HEAD-mover. Suppressed under `HUG_QUIET=T`. Used by h-back, h-undo, h-rollback, h-rewind (warn), and h-squash.
 - See also: `git-h-restore` -- the recovery primitive that `emit_head_recovery_hint` prints. Uses exact-SHA no-op (never the range-count gate) so it can move HEAD forward to a descendant commit.
 
@@ -428,16 +428,20 @@ print_commit_list_in_range "origin/main" "HEAD"
 
 - **`count_commits_in_range "start" ["end"]`** -- a ONE-DIRECTIONAL ahead-count: how far
   `end` is ahead of `start`. A result of `0` means "`end` is NOT ahead of `start`" — which
-  is true BOTH when `end == start` (aligned) AND when `end` is *behind* `start`. **Never
+  is true BOTH when `end == start` (identity) AND when `end` is *behind* `start`. **Never
   treat `0` as "aligned."** STRICT: a failed `rev-list` (invalid ref, unborn HEAD)
   propagates non-zero — it is NOT swallowed into `0`; callers must handle failure.
-- **`commits_ahead_behind "start" "end"`** -- the full relationship as `"<behind>\t<ahead>"`
-  (git's native `--left-right` order: the FIRST arg's exclusive count comes FIRST). `0\t0`
-  ⟺ aligned. Parse into POSITIONAL fields; never `read ahead behind <<< "…"` (that swaps
-  them, since the name order ≠ output order). Both counts > 0 ⟺ the refs have diverged.
-- **`is_aligned "a" "b"`** -- the ONLY sanctioned alignment test (exit 0 iff `a` and `b`
-  resolve to the same commit). Use this wherever you would otherwise write
-  `count_commits_in_range … == 0` to mean "aligned."
+- **`is_same_commit "a" "b"`** -- the ONLY sanctioned identity test. A minimal pure-boolean
+  predicate (exit 0 iff `a` and `b` resolve to the same commit) implemented via `git
+  rev-parse --verify --quiet …^{commit}` SHA equality -- NO `rev-list` traversal. Use this
+  wherever you would otherwise write `count_commits_in_range … == 0` to mean "same commit."
+  It is shallow-safe (rev-parse only resolves refs; it does not walk the graph).
+- **`commit_offset "a" ["b"]`** -- signed distance from `a` to `b` (default `HEAD`).
+  `0` means IDENTITY (short-circuited on SHA equality), NOT merely "not ahead." Positive
+  `N` = `b` is ahead of `a` (clean forward distance); negative `-N` = `b` is behind `a`
+  (forward target / recovery direction). Diverged ⟹ empty stdout + exit 2 (so the
+  false-zero is unrepresentable by construction). Unresolvable ref ⟹ empty stdout + exit 3.
+  Use this when a caller also needs direction/magnitude, not just yes/no.
 - **`count_commits_in_range_or_zero`** -- display-only twin: a cosmetic `0` on rev-list
   failure, for rendered plans / tip text only. NEVER for a branching or alignment decision.
   This is the single sanctioned `echo 0`-on-failure swallow — it appears nowhere else
@@ -461,12 +465,12 @@ target=$(resolve_head_target "$1")
 # Called BARE (a plain command, NOT $(…)): when HEAD is already at $target its
 # aligned-guard runs `exit 0`, terminating the whole mover. That guard depends on the
 # bare call -- do NOT capture this helper via $(…) or the exit is swallowed. Alignment
-# is tested with is_aligned (exact SHA), never a one-directional count == 0.
+# is tested with is_same_commit (exact SHA), never a one-directional count == 0.
 handle_standard_operation "moving back" "$target"
 prompt_confirm_warn "Proceed? [y/N]: "   # mover confirms AFTER the helper's preview
 
-# Alignment test -- the ONLY sanctioned way to ask "same commit?":
-if is_aligned "$target" HEAD; then
+# Identity test -- the ONLY sanctioned way to ask "same commit?":
+if is_same_commit "$target" HEAD; then
     info "Already at target; nothing to do."
 fi
 
