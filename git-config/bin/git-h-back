@@ -102,10 +102,11 @@ else
       git diff --stat --root HEAD >&2
     fi
 
-    # Root-commit path stays DANGER (spec §6): recovery at root is a guaranteed
-    # no-op (unborn HEAD ⇒ rev-list fails ⇒ count 0), so there is no complete
-    # recovery to license a warn tier. The non-root path below is warn because
-    # --soft preserves all work; this root path must NOT be swept along with it.
+    # Root-commit path stays DANGER (spec §6): recovery at root is a guaranteed LOUD FAILURE
+    # post-#229-Phase-1 (unborn HEAD ⇒ the now-strict rev-list propagates non-zero ⇒ the
+    # mover exits ≠ 0), so there is still no complete recovery to license a warn tier. The
+    # non-root path below is warn because --soft preserves all work; this root path must NOT
+    # be swept along with it.
     if [[ ${HUG_FORCE:-} != true ]] && has_staged_changes; then
       prompt_confirm_danger "back" "Rewrites history by undoing root commit"
     fi

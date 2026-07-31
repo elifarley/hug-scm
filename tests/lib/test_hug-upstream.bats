@@ -96,3 +96,57 @@ teardown() {
   assert_success
   [ -z "$output" ]
 }
+
+################################################################################
+# handle_standard_operation: Defect-1 regression (forward target must NOT no-op)
+################################################################################
+
+@test "handle_standard_operation: forward (descendant) target does NOT no-op (Defect 1)" {
+  # HEAD at an ancestor; target is a descendant. Pre-fix this printed 'Already at target'.
+  # The old guard was `count target..HEAD == 0`, which is ALSO true when HEAD is BEHIND the
+  # target (a forward target), so the mover silently no-op'ed. is_same_commit (exact SHA equality)
+  # is the correct guard: a forward target is NOT aligned and must proceed.
+  local descendant; descendant=$(git rev-parse HEAD)
+  git update-ref HEAD HEAD~1                  # move HEAD back one (plumbing; avoids git reset/checkout)
+  run handle_standard_operation "move back" "$descendant"
+  assert_success                              # returns past the guard (does not exit 0 early)
+  refute_output --partial "Already at target" # the guard was NOT taken
+}
+
+################################################################################
+# Defect-2 strict propagation: a bad ref / missing upstream must return non-zero
+################################################################################
+# WHY these exist: pre-#229, count_commits_in_range swallowed a failed rev-list into
+# `echo 0`, so an invalid ref or a missing upstream surfaced as a *plausible-looking*
+# zero count ("0 commits" / "Already synced") and the helper returned SUCCESS. The fix
+# removed the swallow; every strict call site now propagates non-zero. These two tests
+# pin that guarantee at the LIBRARY level (the command-level pins live in test_head.bats).
+#
+# They pin the USER-VISIBLE guarantee (non-zero return, never a silent no-op), NOT the exact strict
+# site. That mechanism is isolated one layer down by the primitive canary at
+# tests/lib/test_hug-git-commit.bats (count_commits_in_range strictness) — mutation-testing shows
+# re-adding the swallow merely RELOCATES the failure downstream (the helper-tail `git diff --stat`
+# still fails on the bad range), so these stay green by design. Read them as "the helper fails
+# loudly," not "this specific guard propagates."
+
+@test "handle_standard_operation: invalid target -> non-zero (strict, not a silent no-op)" {
+  # A non-resolving target is NOT aligned: is_same_commit is a false-NEGATIVE-only predicate
+  # (rev-parse --verify fails -> non-zero -> the SHA-equality test is false), so the helper
+  # proceeds past the aligned-guard and fails loudly on the bad ref. The FIRST strict site it hits is
+  # count_commits_in_range (`git rev-list --count NO_SUCH_REF..HEAD`), but that is NOT the only possible
+  # failure point — re-adding the swallow there just relocates the failure to the helper-tail
+  # `git diff --stat NO_SUCH_REF..HEAD` (see the section header). The pinned guarantee is the non-zero
+  # return + no misleading "Already at target"; pre-fix the swallow rendered a '0 commits' no-op (return 0).
+  run handle_standard_operation "move back" "NO_SUCH_REF_XYZ"
+  assert_failure
+  refute_output --partial "Already at target" # the misleading pre-fix no-op message must NOT appear
+}
+
+@test "handle_upstream_operation: no upstream -> non-zero (strict guarantee)" {
+  # create_test_repo_with_history configures NO upstream, so get_upstream_commit exits non-zero
+  # inside the $(…) substitution; `target=$(get_upstream_commit) || return 1` propagates it
+  # (hug-git-upstream:41). Pre-fix the missing upstream could be masked downstream; now the helper
+  # returns non-zero instead of echoing an empty target that word-splits into a bogus default.
+  run handle_upstream_operation "moving" warn "move" "reason"
+  assert_failure
+}
