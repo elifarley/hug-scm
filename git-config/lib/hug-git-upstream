@@ -156,6 +156,44 @@ handle_standard_operation() {
     fi
 }
 
+# Validates an EXPLICIT target for a backward HEAD-mover (h-back / h-undo / h-rollback).
+# Usage: validate_backward_target <target> <op> [<user_input>]
+# Parameters:
+#   $1 - resolved target (may be the raw ref if resolution failed upstream)
+#   $2 - mover name for messages: "back" | "undo" | "rollback"
+#   $3 - (Optional) the user's LITERAL input, quoted in error messages (defaults to $1)
+#
+# Contract — keep ISOMORPHIC to commit_offset's outcome table (hug-git-commit):
+#   unresolvable (exit 3)   -> error "'<input>' is not a valid commit", non-zero
+#   diverged     (exit 2)   -> silent pass — a valid SIDEWAYS move; today's behavior, NOT an error
+#   ahead        (offset<0) -> error "…is ahead of HEAD by N commit(s)…", non-zero
+#   self/ancestor (offset>=0)-> silent pass
+#
+# WHY this gate exists (#234): pre-fix, an unresolvable explicit target at the root commit
+# was indistinguishable from the legitimate "no parent of root" case, so `hug h back garbage`
+# triggered reset_root_commit — the most destructive path — on nonsense input. Callers ALSO
+# tighten their root-path guard to `[[ -z "$target_arg" ]]` (defense in depth).
+validate_backward_target() {
+    local target="$1" op="${2:?validate_backward_target: op required}" user_input="${3:-$1}"
+    local offset rc=0
+    # Capture via `|| rc=$?` — the assignment MUST sit left of `||`: a bare
+    # `offset=$(commit_offset …)` aborts a `set -e` caller at the assignment for exit 2/3,
+    # before the dispatch below can run (same failure class as the local-x-capture masking).
+    offset=$(commit_offset "$target" HEAD) || rc=$?
+    case $rc in
+      3) error "'$user_input' is not a valid commit" ;;
+      2) return 0 ;;   # diverged: valid sideways move — today's behavior, NOT an error
+      0) ;;
+      # unreachable today (commit_offset's exit surface is total over {0,2,3}) — but an
+      # `error`, not a bare return: a bare non-zero return would surface as a MESSAGELESS
+      # errexit abort, the opposite of this batch's loud-failure promise.
+      *) error "internal error: commit_offset returned unexpected status $rc for '$user_input'" ;;
+    esac
+    if [ "$offset" -lt 0 ]; then
+        error "hug h $op moves HEAD back, but '$user_input' is ahead of HEAD by ${offset#-} commit(s) (use 'hug h restore $user_input --$op' to move forward)"
+    fi
+}
+
 ################################################################################
 # Root Commit Operations
 ################################################################################

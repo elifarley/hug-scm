@@ -150,3 +150,46 @@ teardown() {
   run handle_upstream_operation "moving" warn "move" "reason"
   assert_failure
 }
+
+################################################################################
+# validate_backward_target: #234 — explicit targets must be valid BACKWARD moves
+################################################################################
+# NOTE on test layers: bats `run` DISABLES errexit, so these helper-layer tests would
+# pass green even on a capture idiom broken under set -e. The mover-layer e2e tests in
+# tests/unit/test_head.bats (real scripts under set -euo pipefail) are the layer that
+# catches that — do not delete them in favor of these.
+
+@test "validate_backward_target: garbage target -> 'not a valid commit', non-zero" {
+  run validate_backward_target "definitely-not-a-ref" "back"
+  assert_failure
+  assert_output --partial "'definitely-not-a-ref' is not a valid commit"
+}
+
+@test "validate_backward_target: forward (descendant) target -> 'ahead of HEAD' + pasteable restore hint" {
+  local descendant; descendant=$(git rev-parse HEAD)
+  git update-ref HEAD HEAD~1                  # plumbing: HEAD back one, descendant now ahead
+  run validate_backward_target "$descendant" "back"
+  assert_failure
+  assert_output --partial "is ahead of HEAD by 1 commit(s)"
+  assert_output --partial "hug h restore $descendant --back"
+}
+
+@test "validate_backward_target: diverged target -> silent pass (sideways move preserved)" {
+  git checkout -q -b diverger                 # branch at HEAD
+  echo "d" > diverger.txt; git add diverger.txt; git commit -q -m "branch diverges"
+  git checkout -q -                           # back to the original branch
+  echo "l" > local-only.txt; git add local-only.txt; git commit -q -m "HEAD diverges"
+  run validate_backward_target "diverger" "undo"
+  assert_success
+  [ -z "$output" ]                            # contract: diverged is silent — no info/warning either
+}
+
+@test "validate_backward_target: ancestor and self -> silent pass" {
+  run validate_backward_target "HEAD~1" "back"
+  assert_success
+  [ -z "$output" ]
+  local self; self=$(git rev-parse HEAD)
+  run validate_backward_target "$self" "back"
+  assert_success
+  [ -z "$output" ]
+}
