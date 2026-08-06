@@ -4,6 +4,11 @@
 # Load test helpers
 load '../test_helper'
 
+# run --separate-stderr is used below (bats >= 1.5) to assert stdout/stderr
+# discipline. GOTCHA: shell redirections like `2>/dev/null` on a `run` call are
+# NO-OPs — bats' run overrides them and merges both streams into $output.
+bats_require_minimum_version 1.5.0
+
 setup() {
   require_hug
   TEST_REPO=$(create_test_repo_with_changes)
@@ -12,6 +17,48 @@ setup() {
 
 teardown() {
   cleanup_test_repo
+}
+
+# Helper: repo with a real merge conflict (hug mkeep), plus a cleanly-merged
+# file and an unstaged modification, so slc's exactness is observable. Leaves
+# the repo in conflict state. Callers must capture: repo=$(create_slc_conflict_fixture)
+#
+# GOTCHA (git >= 2.34): `git merge` REFUSES (exit 128, no conflict created) when
+# the index differs from HEAD — any STAGED change blocks the merge, even a new
+# file the merge never touches ("would be overwritten by merge": the merged
+# tree would drop the staged path). So the pre-merge fixture must have a clean
+# index; staged.txt is therefore an UNSTAGED modification. After the merge
+# fails, side-only.txt lands STAGED in the index (merged, uncommitted) — that
+# is the real staged file slc must exclude.
+create_slc_conflict_fixture() {
+  local test_repo
+  test_repo=$(create_test_repo)
+
+  (
+    cd "$test_repo" || exit 1
+
+    echo "base" > conflict.txt
+    echo "base" > side-only.txt
+    echo "base" > staged.txt
+    git add -A
+    git commit -q -m "Add base files"
+
+    git switch -q -c side
+    echo "side" > conflict.txt
+    echo "side" > side-only.txt
+    git add -A
+    git commit -q -m "Side changes"
+
+    git switch -q main
+    echo "main" > conflict.txt
+    git add conflict.txt
+    git commit -q -m "Main change"
+
+    # Unstaged modification (staging it would block the merge — see GOTCHA)
+    echo "staged" > staged.txt
+  )
+
+  echo "$test_repo"
 }
 
 @test "hug s: shows status summary" {
@@ -1614,4 +1661,212 @@ teardown() {
   assert_success
   assert_output --partial "staged.txt"
   assert_output --partial "staged2.txt"
+}
+
+@test "hug slc: lists only conflicted files" {
+  local repo
+  repo=$(create_slc_conflict_fixture)
+  cd "$repo"
+
+  # Merge side into main: conflict.txt conflicts; side-only.txt merges cleanly
+  # (and lands STAGED — the real staged file slc must exclude); staged.txt stays
+  # an unrelated unstaged change (no overlap).
+  run hug mkeep side -m "merge side"
+  assert_failure  # merge conflict expected
+
+  run hug slc
+  assert_success
+  assert_output --partial "Cnflt"
+  assert_output --partial "conflict.txt"
+  refute_output --partial "side-only.txt"
+  refute_output --partial "staged.txt"
+}
+
+@test "hug slc -q: prints plain paths only" {
+  local repo
+  repo=$(create_slc_conflict_fixture)
+  cd "$repo"
+  run hug mkeep side -m "merge side"
+  assert_failure
+
+  run hug slc -q
+  assert_success
+  [[ "$output" == "conflict.txt" ]]
+}
+
+@test "hug slc: no conflicts gives empty stdout, exit 0, info on stderr" {
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  # --separate-stderr: $output = stdout only (must be empty), $stderr = chatter
+  run --separate-stderr -- hug slc
+  assert_success
+  [[ -z "$output" ]]
+
+  run --separate-stderr -- hug slc
+  assert_success
+  [[ "$stderr" == *"No conflicted files."* ]]
+}
+
+@test "hug slc --json: valid JSON with conflicted summary" {
+  local repo
+  repo=$(create_slc_conflict_fixture)
+  cd "$repo"
+  run hug mkeep side -m "merge side"
+  assert_failure
+
+  run hug slc --json
+  assert_success
+  # GOTCHA: capture the JSON NOW — each subsequent `run` clobbers $output
+  local json_out="$output"
+
+  # Zero non-JSON bytes: json.tool must parse the whole output
+  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
+  assert_success
+
+  run python3 -c "import json,sys; print(json.loads(sys.argv[1])['summary']['conflicted'])" "$json_out"
+  assert_output "1"
+
+  # Assert VALUES via python — the emitter formats `"key":  "value"` with a
+  # double space, so raw-substring matching on key/value pairs is brittle.
+  run python3 -c "import json,sys; print(json.loads(sys.argv[1])['conflicted'][0]['status'])" "$json_out"
+  assert_output "conflict"
+
+  # Path substring is safe (inside a quoted value; spacing-independent)
+  [[ "$json_out" == *'"conflict.txt"'* ]]
+}
+
+@test "hug slc with pathspec scoping" {
+  local repo
+  repo=$(create_slc_conflict_fixture)
+  cd "$repo"
+  run hug mkeep side -m "merge side"
+  assert_failure
+
+  run hug slc conflict.txt
+  assert_success
+  assert_output --partial "conflict.txt"
+
+  # Non-matching pathspec: empty stdout; info chatter on stderr
+  run --separate-stderr -- hug slc no-such-file.txt
+  assert_success
+  [[ -z "$output" ]]
+
+  run --separate-stderr -- hug slc no-such-file.txt
+  assert_success
+  [[ "$stderr" == *"No conflicted files matching 'no-such-file.txt' found."* ]]
+}
+
+@test "hug slc: -q suppresses the trailing summary; non-quiet shows it" {
+  local repo
+  repo=$(create_slc_conflict_fixture)
+  cd "$repo"
+  run hug mkeep side -m "merge side"
+  assert_failure
+
+  # Non-quiet: trailing `hug s` summary is chatter on stderr (stdout stays data)
+  run --separate-stderr -- hug slc
+  assert_success
+  [[ "$stderr" == *"HEAD"* ]]
+
+  run --separate-stderr -- hug slc -q
+  assert_success
+  [[ -z "$stderr" ]]
+}
+
+@test "hug slc: lists conflicted submodule pointers (gitlink)" {
+  local outer_repo
+  outer_repo=$(create_test_repo)
+  cd "$outer_repo"
+
+  # Embedded repo at inner/ — NOT `git submodule add` (git >= 2.38 blocks the
+  # file protocol without -c protocol.file.allow=always).
+  mkdir inner
+  (
+    cd inner
+    git init -q -b main
+    git config user.name "Test User"
+    git config user.email "test@example.com"
+    echo i1 > i.txt
+    git add -A
+    git commit -q -m "inner base"
+  )
+  git add inner
+  git commit -q -m "Add submodule pointer"
+  git branch side
+
+  # main bumps the pointer
+  (
+    cd inner
+    echo i2 > i.txt
+    git add -A
+    git commit -q -m "inner main bump"
+  )
+  git add inner
+  git commit -q -m "Bump pointer on main"
+
+  # side bumps a genuinely divergent pointer (rewind inner to its base first)
+  git switch -q side
+  (
+    cd inner
+    git reset -q --hard HEAD~1
+    echo i3 > i.txt
+    git add -A
+    git commit -q -m "inner side bump"
+  )
+  git add inner
+  git commit -q -m "Bump pointer on side"
+
+  # merge → gitlink conflict (UU inner)
+  git switch -q main
+  run hug mkeep side -m "merge side"
+  assert_failure
+
+  run hug slc
+  assert_success
+  assert_output --partial "inner"
+}
+
+@test "hug slc --json: pathspecs are ignored (documented contract)" {
+  local repo
+  repo=$(create_slc_conflict_fixture)
+  cd "$repo"
+  run hug mkeep side -m "merge side"
+  assert_failure
+
+  # A pathspec that matches nothing must NOT filter the JSON output
+  run hug slc --json no-such-file.txt
+  assert_success
+  local json_out="$output"
+  run python3 -c "import json,sys; print(json.loads(sys.argv[1])['summary']['conflicted'])" "$json_out"
+  assert_output "1"
+  [[ "$json_out" == *'"conflict.txt"'* ]]
+}
+
+@test "hug slc: HUG_QUIET=T prints plain paths, no summary" {
+  local repo
+  repo=$(create_slc_conflict_fixture)
+  cd "$repo"
+  run hug mkeep side -m "merge side"
+  assert_failure
+
+  HUG_QUIET=T run hug slc
+  assert_success
+  [[ "$output" == "conflict.txt" ]]
+}
+
+@test "hug slc --json -q: JSON wins" {
+  local repo
+  repo=$(create_slc_conflict_fixture)
+  cd "$repo"
+  run hug mkeep side -m "merge side"
+  assert_failure
+
+  run hug slc --json -q
+  assert_success
+  local json_out="$output"
+  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
+  assert_success
+  [[ "$json_out" == *'"conflict.txt"'* ]]
 }
