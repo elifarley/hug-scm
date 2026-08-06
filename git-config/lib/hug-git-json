@@ -185,7 +185,7 @@ output_json_status_unified() {
   # Build summary. The four legacy keys are ALWAYS present (unchanged
   # behavior); "conflicted" is filter-conditional so slu/sls/slk/sli --json
   # output stays byte-identical to today.
-  local total=$(( ${#staged_files[@]} + ${#unstaged_files[@]} + ${#untracked_files[@]} + ${#ignored_files[@]} ))
+  local total=$((${#staged_files[@]} + ${#unstaged_files[@]} + ${#untracked_files[@]} + ${#ignored_files[@]}))
   local -a summary_args=(
     "staged" "${#staged_files[@]}"
     "unstaged" "${#unstaged_files[@]}"
@@ -195,7 +195,7 @@ output_json_status_unified() {
   if [[ "$filter_types" == *"conflicted"* ]]; then
     # In mixed filters, total is a HYBRID: legacy fragment counts + truthful
     # conflicted count — the rationale lives at the count site ~8 lines above.
-    total=$(( total + conflicted_count ))
+    total=$((total + conflicted_count))
     summary_args+=("conflicted" "$conflicted_count")
   fi
   summary_args+=("total" "$total")
