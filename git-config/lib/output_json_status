@@ -12,6 +12,7 @@ output_json_status() {
   local include_unstaged=false
   local include_untracked=false
   local include_ignored=false
+  local include_conflicts=false
   local scope_cwd=false
 
   # Parse arguments
@@ -31,6 +32,10 @@ output_json_status() {
       ;;
     --ignored)
       include_ignored=true
+      shift
+      ;;
+    --conflicts)
+      include_conflicts=true
       shift
       ;;
     --cwd)
@@ -59,6 +64,9 @@ output_json_status() {
   fi
   if $include_ignored; then
     filter_types+="ignored,"
+  fi
+  if $include_conflicts; then
+    filter_types+="conflicted,"
   fi
 
   # Remove trailing comma if any
