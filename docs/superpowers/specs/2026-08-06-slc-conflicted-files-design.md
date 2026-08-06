@@ -102,6 +102,7 @@ git diff --name-only|--name-status --diff-filter=U [--] [pathspecs...]
 ```
 
 - **Summary shape**: the four existing keys (`staged`/`unstaged`/`untracked`/`ignored`) are **always present** — unchanged behavior; `conflicted` is added to `summary` and `total` **only when the filter requests it**. `slu --json`/`sls --json` output stays byte-identical to today (`hug s --json` is a separate emitter, `output_json_status_summary`, and is untouched by this change).
+- **Count semantics (2026-08-06 decision)**: `summary.conflicted` counts **files** (JSON objects) — deliberately unlike the four legacy keys, which count comma-split *fragments* (2 per file) due to a pre-existing pipeline quirk (`IFS=',' read -ra` on comma-joined objects). The legacy inflation is tracked separately as [elifarley/hug-scm#247](https://github.com/elifarley/hug-scm/issues/247); `slc` was made truthful now so the new command doesn't ship a wrong count.
 - Empty conflicts → `summary: {"staged": 0, "unstaged": 0, "untracked": 0, "ignored": 0, "conflicted": 0, "total": 0}`, no `conflicted` array, exit 0, zero non-JSON bytes on stdout.
 - Known cosmetic carry-over: envelope `command` field says `"hug status --json"` — same as `slu --json` today. Not worth plumbing a parameter (YAGNI; family-consistent).
 
