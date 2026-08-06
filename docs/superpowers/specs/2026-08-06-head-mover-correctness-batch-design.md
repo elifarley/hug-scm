@@ -72,7 +72,7 @@ Contract — kept deliberately ISOMORPHIC to `commit_offset`'s documented outcom
 |---|---|
 | unresolvable target (exit 3, empty stdout) | `error "'<target>' is not a valid commit"` + non-zero |
 | DIVERGED target (exit 2, empty stdout) | silent pass — a valid SIDEWAYS move; preserves today's behavior (see decision below) |
-| target AHEAD of HEAD (exit 0, offset < 0) | `error "hug h <op> moves HEAD back, but '<target>' is ahead of HEAD by N commit(s) (use 'hug h restore' to move forward)"` + non-zero |
+| target AHEAD of HEAD (exit 0, offset < 0) | `error "hug h <op> moves HEAD back, but '<target>' is ahead of HEAD by N commit(s) (use 'hug h restore <target> --<op>' to move forward)"` + non-zero |
 | target is HEAD or an ancestor (exit 0, offset >= 0) | silent pass, exit 0 |
 
 **Diverged policy — silent pass.** `hug h undo main` is a documented everyday invocation
@@ -102,10 +102,13 @@ validate_backward_target() {
       3) error "'$user_input' is not a valid commit" ;;
       2) return 0 ;;   # diverged: valid sideways move — today's behavior, NOT an error
       0) ;;
-      *) return 1 ;;   # unreachable; loud by construction
+      # unreachable today (commit_offset's exit surface is total over {0,2,3}) — but an
+      # `error`, not a bare return: a bare non-zero return here would surface as a
+      # MESSAGELESS errexit abort, the exact opposite of this batch's loud-failure promise
+      *) error "internal error: commit_offset returned unexpected status $rc for '$user_input'" ;;
     esac
     if [ "$offset" -lt 0 ]; then
-        error "hug h $op moves HEAD back, but '$user_input' is ahead of HEAD by ${offset#-} commit(s) (use 'hug h restore' to move forward)"
+        error "hug h $op moves HEAD back, but '$user_input' is ahead of HEAD by ${offset#-} commit(s) (use 'hug h restore $user_input --$op' to move forward)"
     fi
 }
 ```
@@ -118,7 +121,8 @@ internally-resolved `HEAD~1`.)
 **Docstring sync:** `commit_offset`'s Usage docstring in `hug-git-commit` teaches this
 capture idiom and shipped the broken `; rc=$?` form (this spec's first draft transcribed
 it). This batch fixes that docstring to the `|| rc=$?` form above — spec and library doc
-stay isomorphic, so neither can re-infect the other.
+stay isomorphic, so neither can re-infect the other. (Already applied on this spec
+branch in `afb753e`; verify-only at implementation time — do not re-apply.)
 
 **Test-layer warning:** BATS `run` DISABLES errexit, so helper-layer tests pass green on
 a broken capture idiom (probed). The mover-layer e2e — a real `hug h …` script under
@@ -130,8 +134,11 @@ mover-layer assertion that the diverged shape PROCEEDS rather than exiting silen
 **conditioned on a non-empty positional arg**:
 
 ```bash
-[[ -n "$target_arg" ]] && validate_backward_target "$target" "back" "$target_arg"
+[[ -n "$target_arg" ]] && validate_backward_target "$target" "<op>" "$target_arg"
 ```
+
+(`<op>` is each mover's own name — `"back"` in h-back, `"undo"` in h-undo, `"rollback"`
+in h-rollback — so the error text names the command the user actually ran.)
 
 EXPLICIT targets only. The DEFAULT `HEAD~1` is skipped by design: at the root commit it
 legitimately does not resolve — that unresolved default is precisely the trigger for the
@@ -248,10 +255,15 @@ more stub test covers it: redefine `commit_offset() { return 1; }` in a repo who
 is synced with upstream (so the `== 0` branch executes), assert `handle_upstream_operation`
 returns non-zero with no message conflated into the synced/behind paths.
 
-**#236 — README set-e attribution** (~git-config/lib/README.md:460): "set -e is suspended
-inside `$(…)`" is wrong — capture does not suspend errexit; the `|| exit $?` call context
-does (commands on the left of `||`, and functions called there). Reword to attribute the
-suspension to `|| exit $?` and state that this is why the `|| return 1` is load-bearing.
+**#236 — README set-e attribution** (~git-config/lib/README.md:460): reword to state BOTH
+axes precisely (probed on the project bash 5.1): errexit never fires MID-BODY inside
+`$(…)` — only the substitution's FINAL status propagates, via the assignment — and errexit
+is additionally disabled throughout any function called from a `||` position.
+`handle_upstream_operation` is always captured left of `|| exit $?`, so its internal
+`|| return 1` guards are the ONLY propagation path. (Do NOT transcribe the earlier draft's
+blanket clause "capture does not suspend errexit" — a mid-body `false` inside `$( )` does
+not abort, but a `( )` subshell inherits errexit and does; the axis-specific wording above
+is the one that is true.)
 
 **#239 — oxymoron reword** (git-config/lib/hug-git-commit:237): "STRICT-display twin" →
 "Display-only, failure-tolerant twin of `count_commits_in_range`". Keep the "NEVER use
