@@ -92,8 +92,17 @@ else
   # Use DRY helper for validation and target resolution
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
 
-  # Handle root commit scenario (target doesn't exist because we're at the first commit)
-  if ! git rev-parse --verify --quiet "$target" > /dev/null 2>&1 && is_at_root_commit; then
+  # #234: an EXPLICIT target must be a valid BACKWARD move — garbage fails loudly (never a
+  # root-recovery on nonsense input) and a forward target points at restore instead of moving
+  # HEAD through a backward-named command. The default HEAD~1 is skipped by design: at root it
+  # legitimately does not resolve — that unresolved default IS the root-recovery trigger below.
+  [[ -n "$target_arg" ]] && validate_backward_target "$target" "back" "$target_arg"
+
+  # Handle root commit scenario (target doesn't exist because we're at the first commit).
+  # Defense in depth (#234): the `[[ -z "$target_arg" ]]` clause makes root-recovery
+  # STRUCTURALLY unreachable for any explicit target, even if validate_backward_target is
+  # later refactored — only the default HEAD~1 (no positional) may land here.
+  if [[ -z "$target_arg" ]] && ! git rev-parse --verify --quiet "$target" > /dev/null 2>&1 && is_at_root_commit; then
     # Show preview of the root commit
     if [[ ${HUG_QUIET:-} != T ]]; then
       printf 'Commits to be affected:\n' >&2
