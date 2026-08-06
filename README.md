@@ -334,6 +334,7 @@ hug s                       # Quick summary of staged/unstaged changes
 hug sl                      # Status without untracked files
 hug sla                     # Full status with untracked files
 hug sli                     # Status with list of ignored files
+hug slc                     # Status with list of conflicted (unmerged) files
 
 hug ss [file]               # Status with staged changes patch
 hug su [file]               # Status with unstaged changes patch

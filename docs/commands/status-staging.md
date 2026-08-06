@@ -31,6 +31,10 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 | `hug s` | **S**tatus snapshot | Colored summary of staged/unstaged changes; supports query flags for scripting |
 | `hug sl` | **S**tatus + **L**ist | Status with listed tracked changes |
 | `hug sla` | **S**tatus + **L**ist **A**ll | Status including untracked files |
+| `hug sls` | **S**tatus + **L**ist **S**taged | Status with staged files only |
+| `hug slu` | **S**tatus + **L**ist **U**nstaged | Status with unstaged files only |
+| `hug slk` | **S**tatus + **L**ist untrac**K**ed | Status with untracked files only |
+| `hug slc` | **S**tatus + **L**ist **C**onflicts | Status with conflicted (unmerged) files only |
 | `hug ss` | **S**tatus + **S**taged | Show staged diff |
 | `hug su` | **S**tatus + **U**nstaged | Show unstaged diff |
 | `hug sw` | **S**tatus + **W**orking | Combined staged and unstaged diff |
@@ -112,6 +116,26 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
     - **Description**: Status plus ignored and untracked files to surface items in `.gitignore`.
     - **Example**: `hug sli`
     - **Safety**: ✅ Read-only (great for spotting generated artifacts).
+
+- `hug sls`: **S**tatus + **L**ist **S**taged
+    - **Description**: Status with staged files only.
+    - **Example**: `hug sls`
+    - **Safety**: ✅ Read-only.
+
+- `hug slu`: **S**tatus + **L**ist **U**nstaged
+    - **Description**: Status with unstaged files only (includes conflicted files, marked `Cnflt`).
+    - **Example**: `hug slu`
+    - **Safety**: ✅ Read-only.
+
+- `hug slk`: **S**tatus + **L**ist untrac**K**ed
+    - **Description**: Status with untracked files only.
+    - **Example**: `hug slk`
+    - **Safety**: ✅ Read-only.
+
+- `hug slc`: **S**tatus + **L**ist **C**onflicts
+    - **Description**: Status with conflicted (unmerged) files only — the native equivalent of `git diff --name-only --diff-filter=U`. Use `-q` for plain paths (scripting).
+    - **Example**: `hug slc`
+    - **Safety**: ✅ Read-only.
 
 > **Related:** After inspecting status, jump to [Detailed Patches](#detailed-patches) for inline diffs or hop over to [Working Directory (w*)](working-dir) to clean up files you find.
 

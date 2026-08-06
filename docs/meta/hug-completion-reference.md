@@ -89,6 +89,9 @@ These map to custom scripts (see Section 2).
 - `sl [git-status-opts]`: Status (no untracked). Args: Git status options.
 - `sla [git-status-opts]`: Status (long, with untracked). Args: as above.
 - `sli [git-status-opts]`: Ignored + untracked files + status. Args: as above.
+- `slu [git-status-opts]`: Unstaged files + status. Args: as above.
+- `slk [git-status-opts]`: Untracked files + status. Args: as above.
+- `slc [git-status-opts]`: Conflicted (unmerged) files + status. Args: as above.
 - `s`: Quick summary (custom). No args.
 - `ss [<file>]`: Status with staged patch. Args: `[<file>]` (optional).
 - `su [<file>]`: Status with unstaged patch. Args: as above.
