@@ -2332,3 +2332,36 @@ EOF
   assert_success
   [ "$(git rev-parse HEAD)" = "$target" ]                 # sideways move, NOT a silent exit
 }
+
+@test "hug h undo <garbage> at root: loud failure (#234 spot-check)" {
+  local test_repo; test_repo=$(create_test_repo)
+  cd "$test_repo"
+  run env HUG_FORCE=true hug h undo nope-ref
+  assert_failure
+  assert_output --partial "'nope-ref' is not a valid commit"
+}
+
+@test "hug h rollback <garbage> at root: loud failure (#234 spot-check)" {
+  local test_repo; test_repo=$(create_test_repo)
+  cd "$test_repo"
+  run env HUG_FORCE=true hug h rollback nope-ref
+  assert_failure
+  assert_output --partial "'nope-ref' is not a valid commit"
+}
+
+@test "hug h undo <diverged-branch>: proceeds (the documented 'hug h undo main' shape) (#234)" {
+  # docs/commands/head.md ships `hug h undo main` as an everyday example; on a branch whose
+  # main has advanced, the target is DIVERGED. The batch must preserve today's sideways
+  # preview/reset — a silent non-zero exit here would regress the everyday shape.
+  create_test_repo_with_history
+  git checkout -q -b advanced-main
+  echo "adv" > advanced.txt; git add advanced.txt; git commit -q -m "main advances"
+  git checkout -q -
+  echo "loc" > local-advance.txt; git add local-advance.txt; git commit -q -m "HEAD advances"
+  local target; target=$(git rev-parse advanced-main)
+
+  run env HUG_FORCE=true hug h undo advanced-main
+
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$target" ]
+}
