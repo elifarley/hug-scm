@@ -40,6 +40,38 @@ create_test_repo_with_structure() {
   echo "$test_repo"
 }
 
+# Helper: create a repo with a real merge conflict (one conflicted file)
+create_test_repo_with_conflict() {
+  local test_repo
+  test_repo=$(create_test_repo)
+
+  (
+    cd "$test_repo" || exit 1
+
+    echo "base" > conflict.txt
+    git add conflict.txt
+    git commit -q -m "Add base"
+
+    git switch -q -c side
+    echo "side" > conflict.txt
+    git add conflict.txt
+    git commit -q -m "Side change"
+
+    git switch -q main
+    echo "main" > conflict.txt
+    git add conflict.txt
+    git commit -q -m "Main change"
+
+    # Leaves the repo in conflict state; exit 1 is the expected merge failure.
+    # NOTE: git merge writes ALL its conflict chatter (Auto-merging, CONFLICT,
+    # "Automatic merge failed") to STDOUT — must redirect both streams, since
+    # this helper's stdout IS the echoed repo path that callers capture.
+    git merge --no-commit --no-ff side >/dev/null 2>&1 || true
+  )
+
+  echo "$test_repo"
+}
+
 setup() {
   require_hug
   TEST_REPO=$(create_test_repo_with_structure)
@@ -425,4 +457,67 @@ setup_repo_with_new_gitlink() {
   done
   [[ "$found_regular" == true ]]
   [[ "$found_gitlink" == true ]]
+}
+
+################################################################################
+# list_conflicted_files TESTS
+################################################################################
+
+@test "list_conflicted_files: lists exactly the conflicted files" {
+  local repo
+  repo=$(create_test_repo_with_conflict)
+  cd "$repo"
+
+  local output
+  output=$(list_conflicted_files)
+  [[ "$output" == "conflict.txt" ]]
+}
+
+@test "list_conflicted_files: --status outputs U status" {
+  local repo
+  repo=$(create_test_repo_with_conflict)
+  cd "$repo"
+
+  local output
+  output=$(list_conflicted_files --status)
+  [[ "$output" == $'U\tconflict.txt' ]]
+}
+
+@test "list_conflicted_files: pathspec scoping" {
+  local repo
+  repo=$(create_test_repo_with_conflict)
+  cd "$repo"
+
+  local output
+  output=$(list_conflicted_files -- conflict.txt)
+  [[ "$output" == "conflict.txt" ]]
+
+  output=$(list_conflicted_files -- no-such-file.txt)
+  [[ -z "$output" ]]
+}
+
+@test "list_conflicted_files: --cwd scopes to current directory" {
+  local repo
+  repo=$(create_test_repo_with_conflict)
+  cd "$repo"
+  mkdir -p sub
+  cd sub
+
+  local output
+  output=$(list_conflicted_files --cwd)
+  [[ -z "$output" ]]
+
+  cd ..
+  output=$(list_conflicted_files --cwd)
+  [[ "$output" == "conflict.txt" ]]
+}
+
+@test "list_conflicted_files: empty output when no conflicts" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  local output
+  output=$(list_conflicted_files)
+  [[ -z "$output" ]]
 }
