@@ -638,10 +638,10 @@ create_merge_conflict() {
   load '../../git-config/lib/hug-git-priorities'
 
   # Multiple file types should return false (not safe to suppress)
-  run _can_suppress_status true true false false
+  run _can_suppress_status true true false false false
   assert_failure
 
-  run _can_suppress_status false true true false
+  run _can_suppress_status false true true false false
   assert_failure
 }
 
@@ -649,7 +649,7 @@ create_merge_conflict() {
   load '../../git-config/lib/hug-git-priorities'
 
   # Single file type (untracked) should return true (safe to suppress)
-  run _can_suppress_status false false true false
+  run _can_suppress_status false false true false false
   assert_success
 }
 
@@ -657,7 +657,7 @@ create_merge_conflict() {
   load '../../git-config/lib/hug-git-priorities'
 
   # Single file type (ignored) should return true (safe to suppress)
-  run _can_suppress_status false false false true
+  run _can_suppress_status false false false true false
   assert_success
 }
 
@@ -666,7 +666,7 @@ create_merge_conflict() {
 
   # Unstaged files have multiple status types (U:Mod, U:Del, U:Cnflt)
   # Should return false (not safe to suppress)
-  run _can_suppress_status false true false false
+  run _can_suppress_status false true false false false
   assert_failure
 }
 
@@ -675,6 +675,46 @@ create_merge_conflict() {
 
   # Staged files have multiple status types (S:Add, S:Mod, S:Del, S:Ren, S:Copy, S:Cnflt)
   # Should return false (not safe to suppress)
-  run _can_suppress_status true false false false
+  run _can_suppress_status true false false false false
+  assert_failure
+}
+
+@test "list_files_with_status: --conflicts renders Cnflt-prefixed conflict files" {
+  create_merge_conflict
+
+  local output
+  output=$(list_files_with_status --conflicts)
+  [[ "$output" == *"Cnflt"*"conflict-file.txt"* ]]
+}
+
+@test "list_files_with_status: --conflicts --suppress-status prints plain paths" {
+  create_merge_conflict
+
+  local output
+  output=$(list_files_with_status --conflicts --suppress-status)
+  [[ "$output" == "conflict-file.txt" ]]
+}
+
+@test "list_files_with_status: --conflicts is empty and fails when no conflicts" {
+  # NOTE: use `run`, not `output=$(...)` — BATS test bodies run under set -e,
+  # so a command-substitution assignment whose command exits 1 (no conflicts)
+  # aborts the test before the assertions execute.
+  run list_files_with_status --conflicts 2>/dev/null
+  [[ $status -eq 1 ]]
+  [[ -z "$output" ]]
+}
+
+@test "_can_suppress_status: conflicts-only is suppress-safe" {
+  # NOTE: use `run`, not a direct call — inside the gate, `((type_count++))`
+  # evaluates to 0 (hence exit status 1) on its first increment, which trips
+  # BATS's set -e and kills a direct call before the gate's return value
+  # can be inspected. `run` (like all callers in production, which invoke the
+  # gate from an `if` condition) is errexit-exempt.
+  run _can_suppress_status false false false false true
+  assert_success
+}
+
+@test "_can_suppress_status: conflicts mixed with staged is not safe" {
+  run _can_suppress_status true false false false true
   assert_failure
 }
