@@ -1,7 +1,7 @@
 # Head-mover correctness batch — design
 
 Date: 2026-08-06
-Status: Approved (brainstorming, design sections §1–§5 validated)
+Status: Approved (brainstorming, design sections §1–§5 validated; spec-roast findings folded 2026-08-06)
 Tracks: elifarley/hug-scm#234, elifarley/hug-scm#237, elifarley/hug-scm#235, elifarley/hug-scm#236, elifarley/hug-scm#239
 Parent context: elifarley/hug-scm#222 (HEAD-mover family audit), elifarley/hug-scm#233 (count_commits_in_range audit, merged)
 
@@ -63,13 +63,44 @@ handlers):
 validate_backward_target <target> <op>
 ```
 
-Contract (built on `commit_offset`, one call resolves all three outcomes):
+Contract — kept deliberately ISOMORPHIC to `commit_offset`'s documented outcome table
+(hug-git-commit), so the two can never drift. All FOUR outcomes must be mapped; the naive
+`offset=$(commit_offset …) || return 1` form conflates exit 2 with exit 3 and is FORBIDDEN
+(the library's own comment warns about exactly this conflation):
 
-| Input | Result |
+| Input (`commit_offset "$target" HEAD`) | Result |
 |---|---|
-| unresolvable target (`commit_offset` exit 3) | `error "'<target>' is not a valid commit"` + non-zero |
-| target AHEAD of HEAD (`offset < 0`) | `error "hug h <op> moves HEAD back, but '<target>' is ahead of HEAD by N commit(s) (use 'hug h restore' to move forward)"` + non-zero |
-| target is HEAD or an ancestor (`offset >= 0`) | silent pass, exit 0 |
+| unresolvable target (exit 3, empty stdout) | `error "'<target>' is not a valid commit"` + non-zero |
+| DIVERGED target (exit 2, empty stdout) | silent pass — a valid SIDEWAYS move; preserves today's behavior (see decision below) |
+| target AHEAD of HEAD (exit 0, offset < 0) | `error "hug h <op> moves HEAD back, but '<target>' is ahead of HEAD by N commit(s) (use 'hug h restore' to move forward)"` + non-zero |
+| target is HEAD or an ancestor (exit 0, offset >= 0) | silent pass, exit 0 |
+
+**Diverged policy — silent pass.** `hug h undo main` is a documented everyday invocation
+(docs/commands/head.md) and, on a branch whose `main` has advanced, `main` is diverged
+from HEAD. Today the movers preview and reset to such a target (a sideways move); this
+batch must not change that (§5 "no behavior change"). Whether sideways moves through
+backward-named commands deserve their own semantics is exactly #230's question
+(sub-project A) — it is NOT decided here.
+
+**Mandated implementation shape** — dispatch on the exit code, never on the offset alone
+(on exit 2 stdout is EMPTY, so any `[ "$offset" … ]` test evaluates the empty string):
+
+```bash
+validate_backward_target() {
+    local target="$1" op="$2" offset rc
+    offset=$(commit_offset "$target" HEAD); rc=$?
+    case $rc in
+      3) error "'$target' is not a valid commit"; return 1 ;;
+      2) return 0 ;;   # diverged: valid sideways move — today's behavior, NOT an error
+      0) ;;
+      *) return 1 ;;   # unreachable; loud by construction
+    esac
+    if [ "$offset" -lt 0 ]; then
+        error "hug h $op moves HEAD back, but '$target' is ahead of HEAD by ${offset#-} commit(s) (use 'hug h restore' to move forward)"
+        return 1
+    fi
+}
+```
 
 **Wiring (identical seam in all three movers):** insert the call right after
 `resolve_target_with_temporal` in the NON-upstream path, before the root-path branch,
@@ -82,9 +113,10 @@ Contract (built on `commit_offset`, one call resolves all three outcomes):
 EXPLICIT targets only. The DEFAULT `HEAD~1` is skipped by design: at the root commit it
 legitimately does not resolve — that unresolved default is precisely the trigger for the
 root-recovery branch, so validating it would break the legitimate no-arg case. Temporal
-(`-t`) targets are out of scope of the gate too (already resolved-and-validated by
-`resolve_temporal_to_commit`; their forward-move behavior is the pre-existing post-#233
-semantics, and a target-by-time is not a "typed the wrong ref" mistake).
+(`-t`) targets are out of scope of the gate too: `resolve_temporal_to_commit` resolves
+exclusively within HEAD's own history (`git log … HEAD --reverse`), so a temporal target
+is ALWAYS an ancestor of HEAD — a valid backward move by construction — and a mistyped
+time spec is not the "typed the wrong ref" mistake this gate exists for.
 
 **Defense in depth:** the root-path guard additionally requires an empty positional arg:
 
@@ -102,6 +134,7 @@ target, so a future refactor of the validator cannot re-open the hole.
 |---|---|---|
 | `h back garbage` | error: not a valid commit | error: not a valid commit |
 | `h back <descendant>` | error: is ahead of HEAD | error: is ahead of HEAD |
+| `h back <diverged-ref>` | impossible (the root commit is an ancestor of every commit, so nothing diverges from it) | silent pass — sideways move, unchanged behavior |
 | `h back <ancestor>` | normal back move | normal back move (unchanged) |
 | `h back` (no arg) | root-recovery, danger tier (unchanged) | default move back 1 (unchanged) |
 
@@ -142,15 +175,26 @@ precisely what `commit_offset` distinguishes.
 ```bash
 if [ "$local_commits" -eq 0 ]; then
     local offset
-    offset=$(commit_offset "$target" HEAD) || return 1   # 0 aligned, -N behind; diverged unreachable
+    offset=$(commit_offset "$target" HEAD) || return 1   # 0 aligned, -N behind; diverged unreachable here (diverged ⇒ ahead > 0)
+    local target_short
+    target_short=$(git rev-parse --short "$target")
     if [ "$offset" -eq 0 ]; then
         info "Already synced to upstream ($target_short)."
         exit 0
     fi
+    local upstream_branch
+    upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
     info "Nothing to move: HEAD is ${offset#-} commit(s) behind upstream ($upstream_branch). Pull or rebase to catch up."
     exit 0
 fi
 ```
+
+`set -u` safety: every variable used above is computed INSIDE the branch (declaration and
+assignment on separate lines, per the `local x=$(…)` masking pitfall). The branch label
+uses the same detached-HEAD-safe computation as the preview block further down
+(`git symbolic-ref HEAD` guarded by `2>/dev/null || echo "upstream"`); neither
+`target_short` nor `upstream_branch` exists earlier in `handle_upstream_operation`, so
+they must not be referenced before this computation.
 
 Decisions:
 
@@ -163,13 +207,21 @@ Decisions:
 
 ## §3 Hygiene trio
 
-**#235 — pin `handle_upstream_operation`'s `|| return 1`.** The guard cannot fail
-naturally (if the upstream resolves, the count resolves), which is why it is untested —
-and deleting it currently keeps the suite green. Test design: source the lib, redefine
-`count_commits_in_range() { return 1; }` (bash redefinition shadows the library
+**#235 — pin `handle_upstream_operation`'s `|| return 1` — the count guard at
+hug-git-upstream:49 specifically** (the helper carries a SECOND `|| return 1` at :41 on
+`get_upstream_commit`; the plan must pin the :49 one, not that one). The :49 guard cannot
+fail naturally (if the upstream resolves, the count resolves), which is why it is
+untested — and deleting it currently keeps the suite green. Test design: source the lib,
+redefine `count_commits_in_range() { return 1; }` (bash redefinition shadows the library
 function), call `handle_upstream_operation` in a repo with a valid upstream, assert
 non-zero exit AND no preview output. Without the guard the stub's failure falls through
 into the preview block, so the test goes red — the regression it exists to prevent.
+
+**Symmetry:** §2 adds a NEW `|| return 1` guard (`offset=$(commit_offset …) || return 1`
+inside the `== 0` branch); it must not ship unpinned while its sibling gets pinned. One
+more stub test covers it: redefine `commit_offset() { return 1; }` in a repo whose HEAD
+is synced with upstream (so the `== 0` branch executes), assert `handle_upstream_operation`
+returns non-zero with no message conflated into the synced/behind paths.
 
 **#236 — README set-e attribution** (~git-config/lib/README.md:460): "set -e is suspended
 inside `$(…)`" is wrong — capture does not suspend errexit; the `|| exit $?` call context
@@ -185,18 +237,22 @@ for a branching or alignment decision" guidance verbatim.
 TDD throughout; only `make test-*` targets.
 
 - **#234 helper layer** (`tests/lib/test_hug-upstream.bats`): `validate_backward_target`
-  garbage → "not a valid commit"; forward/descendant → "is ahead of HEAD by N"; ancestor
-  and self → silent pass.
+  garbage → "not a valid commit"; forward/descendant → "is ahead of HEAD by N";
+  DIVERGED → silent pass (exit 0, no message); ancestor and self → silent pass.
 - **#234 mover layer** (`tests/unit/test_head.bats`): full matrix for `h back` at root
   (garbage → loud failure + root commit intact; `<descendant>` → loud failure; no-arg →
   root-recovery proceeds at danger tier; valid ancestor → normal move). Spot-checks of
-  the same three shapes for `h undo` and `h rollback` (identical wiring; per-command
-  matrices would be redundant).
+  the same shapes for `h undo` and `h rollback` (identical wiring; per-command matrices
+  would be redundant), PLUS a sideways spot-check for the documented everyday shape
+  (`hug h undo main` with an advanced `main` → proceeds to preview/reset, unchanged).
 - **#237** (`tests/lib/test_hug-upstream.bats`): aligned → "Already synced"; behind →
   "N commit(s) behind … pull or rebase"; exit 0 in both.
-- **#235**: the function-shadowing stub test above.
-- **Regression guard:** all existing targeted suites stay green (head 157, upstream 10,
-  restore 18, cmv 35, lib-commit 43). Valid backward targets behave identically.
+- **#235**: the two function-shadowing stub tests above.
+- **Regression guard,** stated by concern surface: every suite asserting the changed
+  "Already synced" message stays green — `test_workflows.bats` ×4 (h-back/-undo/-rollback/
+  -squash `-u` synced, integration) and `test_head.bats` ×1 (h-rewind `-u`) — and all
+  existing targeted suites stay green (head 157, upstream 10, restore 18, cmv 35,
+  lib-commit 43, workflows 22). Valid backward targets behave identically.
 - **Canary:** `grep -rn '|| echo 0' git-config/` stays at exactly 1 hit — new comments
   must not reintroduce the literal pipe-form (the #233 born-broken-canary lesson).
 
@@ -214,6 +270,18 @@ Explicitly NOT in this batch:
 - **No behavior change** for valid backward targets or any `-u` path beyond the truthful
   message.
 
+## §6 CHANGELOG entry
+
+`CHANGELOG.md` maintains an empty `## [Unreleased]` section and documents every
+user-visible change in detail (see the 1.4.0 entries). This batch ships two user-visible
+behavior changes and MUST add entries there:
+
+- **Fixed** — loud errors for invalid/forward explicit targets in `h back`/`h undo`/
+  `h rollback` (a garbage target could previously trigger the root-recovery path; a
+  forward target was a silent surprise): elifarley/hug-scm#234.
+- **Changed** — `-u` operations now report "N commit(s) behind upstream" instead of the
+  false "Already synced" when HEAD is behind: elifarley/hug-scm#237.
+
 ## Risks / notes
 
 - `validate_backward_target` adds one rev-parse + one rev-list traversal per explicit
@@ -224,3 +292,9 @@ Explicitly NOT in this batch:
 - #237's behind-message mentions pull/rebase generically; which one is right depends on
   the user's intent. This is informational guidance, not a command suggestion with
   force-semantics, so the generic wording is acceptable (Phase-2 messaging can refine).
+- **Sequencing with sub-project A:** the batch-A Phase-2 spec
+  (`2026-07-30-head-mover-direction-messaging-design.md`) records the `-u` retained
+  no-op (`local_commits == 0` → "Already synced", exit 0) as UNCHANGED context; this
+  batch rewrites exactly that branch's message (semantics preserved: exit 0 in-subshell
+  no-op, helper stdout contract `echo "$target"` intact). Either landing order works,
+  but A's spec text should be refreshed to match if this batch lands first.
