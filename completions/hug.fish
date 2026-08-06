@@ -116,7 +116,7 @@ end
 
 # List of all top-level Hug commands (unique from reference, alias-based + custom).
 # Note: wips has no hyphen (treated as single token for alias).
-set -l hug_tops alias l ll lla la llf llfp llfs lf lc lcr lau ld lp lo lol fblame fb fcon fa fborn a aa ai ap us usa untrack back undo rollback rewind squash restore files wip wips unwip get ca cmod cmoda cii cim o cc caa sls sl sla sli s ss su sw sx sh shp shc shf t tc ta ts tr tm tma tpush tpull tpullf tdel tdelr tco twc twp b bs bl bll bla blr bc br bdel bdelf bdelr bwc bwp bwnc bwm bwnm bpush rb rbi rbc rba rbs m mff mkeep ma bpull bpullr pullall type dump remote2ssh h w c statusbase hughelp log-outgoing
+set -l hug_tops alias l ll lla la llf llfp llfs lf lc lcr lau ld lp lo lol fblame fb fcon fa fborn a aa ai ap us usa untrack back undo rollback rewind squash restore files wip wips unwip get ca cmod cmoda cii cim o cc caa sls slc slu sla slk sli s ss su sw sx sh shp shc shf t tc ta ts tr tm tma tpush tpull tpullf tdel tdelr tco twc twp b bs bl bll bla blr bc br bdel bdelf bdelr bwc bwp bwnc bwm bwnm bpush rb rbi rbc rba rbs m mff mkeep ma bpull bpullr pullall type dump remote2ssh h w c statusbase hughelp log-outgoing
 
 # Top-level completions: Custom Hug commands + standard Git subcommands.
 # Trigger ONLY if no subcommand seen (after 'hug ' only).
@@ -234,8 +234,8 @@ complete -c hug -n '__fish_seen_subcommand_from cc' -a "$common_cherry_opts" -d 
 complete -c hug -n '__fish_seen_subcommand_from sls' -f
 
 # Status (s*)
-# sl/sla/sli/statusbase: Git status options only (no files)
-for sub in sl sla sli statusbase
+# sl family + statusbase: Git status options only (no files)
+for sub in sl slc slu sla slk sli statusbase
     complete -c hug -n "__fish_seen_subcommand_from $sub" -a "$common_status_opts" -d "Git status options"
     complete -c hug -n "__fish_seen_subcommand_from $sub" -s h -l help -d "Help"
 end
