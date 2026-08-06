@@ -1709,6 +1709,30 @@ create_slc_conflict_fixture() {
   [[ "$stderr" == *"No conflicted files."* ]]
 }
 
+@test "hug slc --json: empty conflicts still emits a valid envelope" {
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  run hug slc --json
+  assert_success
+  # GOTCHA: capture the JSON NOW — each subsequent `run` clobbers $output
+  local json_out="$output"
+
+  # Zero non-JSON bytes: json.tool must parse the whole output
+  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
+  assert_success
+
+  # Spec contract: all-zero summary, INCLUDING conflicted and total
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['summary']['conflicted'], d['summary']['total'])" "$json_out"
+  assert_output "0 0"
+
+  # Spec contract: NO conflicted array on the empty path — asserted via python
+  # (key absence is spacing-independent, unlike raw `"conflicted": [` matching)
+  run python3 -c "import json,sys; print('conflicted' in json.loads(sys.argv[1]))" "$json_out"
+  assert_output "False"
+}
+
 @test "hug slc --json: valid JSON with conflicted summary" {
   local repo
   repo=$(create_slc_conflict_fixture)

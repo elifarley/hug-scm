@@ -52,6 +52,7 @@ def commands():
         # Direct keyword matches (per-command _hug_keywords)
         ("undo", ["hug h undo"]),
         ("save", ["hug w wip"]),
+        ("conflict", ["hug slc"]),
         ("push", ["hug bpush"]),
         ("commit", ["hug c"]),
         ("amend", ["hug cmod"]),
