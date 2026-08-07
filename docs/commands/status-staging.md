@@ -133,7 +133,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
     - **Safety**: ✅ Read-only.
 
 - `hug slc`: **S**tatus + **L**ist **C**onflicts
-    - **Description**: Status with conflicted (unmerged) files only — the native equivalent of `git diff --name-only --diff-filter=U`. Use `-q` for plain paths (scripting).
+    - **Description**: Status with conflicted (unmerged) files only — the native equivalent of `git diff --name-only --diff-filter=U`. Use `-q` for plain paths (scripting); `--json` emits the unified status envelope with a `summary.conflicted` count. Pathspecs scope the text listing (`--json` ignores them).
     - **Example**: `hug slc`
     - **Safety**: ✅ Read-only.
 

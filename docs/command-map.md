@@ -71,6 +71,10 @@ Hug Commands
 │   ├── s            # Quick status
 │   ├── sl           # Status + List tracked
 │   ├── sla          # Status + List all (untracked)
+│   ├── sls          # Status + List staged
+│   ├── slu          # Status + List unstaged
+│   ├── slk          # Status + List untracked
+│   ├── slc          # Status + List conflicted (unmerged)
 │   ├── sli          # Status + List inc. ignored
 │   ├── ss           # Status + Staged diff
 │   ├── su           # Status + Unstaged diff
