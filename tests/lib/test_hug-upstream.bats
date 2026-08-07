@@ -250,3 +250,32 @@ advance_remote() {
   assert_output --partial "Pull or rebase to catch up"
   refute_output --partial "Already synced"
 }
+
+################################################################################
+# #235: pin the load-bearing `|| return 1` guards with function-shadowing stubs
+################################################################################
+# WHY stubs: the guards cannot fail naturally (a resolved upstream always counts), which is
+# exactly why they were untested — deleting them keeps every natural-path test green. Bash
+# redefinition shadows the library function for `run`'s subshell. If a guard is removed,
+# the stub's failure falls through into the preview/message blocks and these tests go red.
+
+@test "#235: count guard pinned — failing count_commits_in_range -> non-zero, no preview" {
+  # Pins the guard at hug-git-upstream:49 (NOT the get_upstream_commit guard at :41).
+  create_test_repo_with_history
+  setup_synced_upstream
+  advance_remote 1
+  count_commits_in_range() { return 1; }
+  run handle_upstream_operation "moving back" "warn" "back" "discards local-only commits"
+  assert_failure
+  refute_output --partial "Commits to be affected"
+}
+
+@test "#235 symmetry: commit_offset guard pinned — failing offset in the ==0 branch -> non-zero" {
+  create_test_repo_with_history
+  setup_synced_upstream                    # count is 0 -> the ==0 branch executes
+  commit_offset() { return 1; }
+  run handle_upstream_operation "moving back" "warn" "back" "discards local-only commits"
+  assert_failure
+  refute_output --partial "Already synced"
+  refute_output --partial "behind upstream"
+}

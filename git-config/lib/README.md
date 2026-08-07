@@ -458,7 +458,11 @@ print_commit_list_in_range "origin/main" "HEAD"
 # The tier parameter (warn|danger) controls which prompt function is used.
 # Prints the upstream commit SHA to stdout. Its internal ahead-count is STRICT
 # (count_commits_in_range) and carries `|| return 1`, so capture it with a guard
-# (callers use `|| exit $?`) -- set -e is suspended inside $(…):
+# (callers use `|| exit $?`). WHY the explicit `|| return 1` below is load-bearing, two
+# axes: errexit never fires MID-BODY inside $(…) — only the substitution's FINAL status
+# propagates, via the assignment — and errexit is additionally suspended throughout any
+# function called from a `||` position, which is exactly how every caller invokes this
+# helper. Its internal `|| return 1` guards are therefore the ONLY failure-propagation path:
 target=$(handle_upstream_operation "rewinding" "warn" "rewind" "danger reason") || exit $?
 
 # For standard operations (back, undo, etc.)
