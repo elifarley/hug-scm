@@ -4,7 +4,15 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-08-07
+
+### Added
+
+- **`-c/--count` flag across the `sl*` family** (`sl`, `sla`, `sls`, `slu`, `slk`, `sli`, `slc`) — prints only the number of matching files: a single integer on stdout, `0` when none, exit `0` (the `grep -c` idiom). Removes the `| wc -l` pipe for scripting (`hug slc -c` in a conflict-resolution hook: `0` → clean proceed, `>0` → act). Composes with pathspecs (`hug slu -c src/`), suppresses the trailing `hug s` summary, and is mutually exclusive with `--json`. Counts are NUL-safe (a filename containing a newline counts once) and deduplicated (a file both staged and unstaged counts once in `hug sl -c`); backed by a new `count_files_with_status` engine that avoids `local -n` so it runs on the Bash 4.0–4.2 floor (elifarley/hug-scm#245).
+
 ### Fixed
+
+- **Unified JSON pipeline `summary.*` counts now count files, not comma-fragments** — `slu`/`sls`/`slk`/`sli`/`slc`/`sl`/`sla --json` previously counted comma-split JSON fragments (a 2-field object inflated `summary.<type>` to 2), so one modified file reported `summary.unstaged = 2`. The collection contract now emits one JSON object per line and counts objects, so the summary matches the array length. This is a deliberate **behavior change** for consumer-visible counts (elifarley/hug-scm#247).
 
 - **`h back`/`h undo`/`h rollback` reject invalid and forward explicit targets loudly** — a garbage target could previously trigger the root-recovery path (undoing the root commit on nonsense input), and a forward target moved HEAD through a backward-named command; both now error, with forward targets pointing at `hug h restore <target> --<op>` (elifarley/hug-scm#234). Root-recovery is now reachable only with no positional target.
 
