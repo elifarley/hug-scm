@@ -165,6 +165,20 @@ teardown() {
   assert_output --partial "'definitely-not-a-ref' is not a valid commit"
 }
 
+@test "validate_backward_target: valid target + UNBORN HEAD -> 'cannot resolve HEAD' (not a target error) + restore hint" {
+  # When HEAD is unborn (the post-root-undo recovery state), commit_offset(target, HEAD)
+  # returns 3 because its SECOND arg fails — NOT because the target is invalid. The exit-3
+  # arm must disambiguate: a valid target means HEAD is the problem, and the natural recovery
+  # is `hug h restore <target> --<op>`. Pre-fix this mislabeled a valid SHA as "not a valid commit".
+  local saved; saved=$(git rev-parse HEAD)
+  git update-ref -d HEAD                           # -> unborn HEAD
+  run validate_backward_target "$saved" "back"
+  assert_failure
+  assert_output --partial "cannot resolve HEAD"
+  assert_output --partial "hug h restore $saved --back"
+  refute_output --partial "'$saved' is not a valid commit"
+}
+
 @test "validate_backward_target: forward (descendant) target -> 'ahead of HEAD' + pasteable restore hint" {
   local descendant; descendant=$(git rev-parse HEAD)
   git update-ref HEAD HEAD~1                  # plumbing: HEAD back one, descendant now ahead

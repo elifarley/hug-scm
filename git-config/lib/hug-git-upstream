@@ -196,7 +196,14 @@ validate_backward_target() {
     # before the dispatch below can run (same failure class as the local-x-capture masking).
     offset=$(commit_offset "$target" HEAD) || rc=$?
     case $rc in
-      3) error "'$user_input' is not a valid commit" ;;
+      3) # commit_offset returns 3 when EITHER arg is unresolvable. Disambiguate: if the
+      # TARGET itself resolves, the failure is HEAD's (e.g. unborn HEAD — the post-root-undo
+      # recovery state), not the target's. The natural recovery is hug h restore <target>.
+      if git rev-parse --verify --quiet "$target^{commit}" >/dev/null 2>&1; then
+        error "cannot resolve HEAD (unborn?) — use 'hug h restore $user_input --$op' to recover"
+      else
+        error "'$user_input' is not a valid commit"
+      fi ;;
       2) return 0 ;;   # diverged: valid sideways move — today's behavior, NOT an error
       0) ;;
       # unreachable today (commit_offset's exit surface is total over {0,2,3}) — but an
