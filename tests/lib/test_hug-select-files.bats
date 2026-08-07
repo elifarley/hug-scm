@@ -860,3 +860,16 @@ create_merge_conflict() {
   [[ "$(count_files_with_status conflicted c.txt)" == "1" ]]
   [[ "$(count_files_with_status conflicted no-such.txt)" == "0" ]]
 }
+
+@test "count_files_with_status: unknown state errors" {
+  # Defensive: a typo in the case patterns (staged/unstaged/all/...) would
+  # route valid input to the error branch; pin that the branch fires and
+  # reports the bad state, so a future pattern edit can't silently mis-count.
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  run count_files_with_status bogus-state
+  assert_failure
+  assert_output --partial "unknown state 'bogus-state'"
+}

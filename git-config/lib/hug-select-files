@@ -58,7 +58,11 @@ count_files_with_status() {
       # Renames emit a SECOND bare record for the old path ("old.txt\0" with no
       # XY prefix) — its pos2 is a filename char, not space/tab, so it is
       # skipped here (the rename already counted once via its "R  new" record).
-      # `if` keeps this safe under `set -e` (a bare `&& continue` would abort).
+      # IMPORTANT: this assumes porcelain v1 — `git status --porcelain -z`
+      # defaults to v1. Do NOT switch to `--porcelain=v2 -z`: v2's record layout
+      # ("XY<space>status...<space>path") moves the path separator off pos2 and
+      # would silently mis-count. `if` keeps this safe under `set -e`
+      # (a bare `&& continue` would abort).
       if [[ "${rec:2:1}" != " " && "${rec:2:1}" != $'\t' ]]; then
         continue
       fi
@@ -85,7 +89,8 @@ count_files_with_status() {
     ;;
   esac
 
-  # `wc -c` counts trailing whitespace on macOS; strip it (matches git-s/JSON emitters)
+  # macOS/BSD `wc` pads output with LEADING whitespace for column alignment;
+  # strip it (matches git-s:289 and the JSON emitters — Decision #9).
   count=$(printf '%s' "$count" | tr -d ' ')
   printf '%d\n' "$count"
 }
