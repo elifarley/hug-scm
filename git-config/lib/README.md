@@ -193,10 +193,16 @@ Git-specific JSON output helpers (uses hug-json).
   - Input: `"M\tfile.txt"` from git's --name-status
   - Output: `{"path": "file.txt", "status": "modified"}`
   - Handles renamed/copied files: `"R100\told.txt\tnew.txt"` → `{"path": "new.txt", "status": "renamed"}`
-- `collect_git_files_json "$type" [flags...]` - Collect files of type as JSON array
-  - `$type`: `staged`|`unstaged`|`untracked`|`ignored`|`conflicted`
-  - Returns: Comma-separated JSON objects for array embedding
+- `collect_git_files_json "$type" [flags...]` - Collect files of a type as JSON objects
+  - `$type`: `staged`|`unstaged`|`untracked`|`ignored`|`conflicted` (unknown types error)
+  - Prints one JSON object PER LINE to stdout (empty when none); `mapfile -t files < <(collect_git_files_json "$type")` yields the objects AND the file count (the array length)
+  - Line-per-object keeps the count truthful — a newline in a filename is escaped to `\n` by `json_escape`, so each line is exactly one object (regression pin: #247)
+  - Bash-4.0-safe: no nameref, no comma-split
   - Supports `--cwd` flag for scoping
+- `count_files_with_status <state> [pathspec...]` - Count files by state (the sl* `-c` engine)
+  - `<state>`: `staged`|`unstaged`|`untracked`|`ignored`|`conflicted`|`all`|`all+untracked`
+  - Prints an integer (0 when none, exit 0). NUL-safe (newline filenames count once) and Bash 4.0-safe (no nameref).
+  - `all`/`all+untracked` dedup via `git status --porcelain -z` (a file staged AND unstaged counts once)
 
 **JSON Design Philosophy:**
 - Pure Bash for portability and dependency-free operation

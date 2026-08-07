@@ -752,3 +752,111 @@ create_merge_conflict() {
   output=$(list_files_with_status --untracked --suppress-status)
   [[ "$output" == *$'a\x1fb.txt'* ]]
 }
+
+# =============================================================================
+# count_files_with_status (the sl* -c engine)
+# =============================================================================
+
+@test "count_files_with_status: counts each state correctly" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  # Make .gitignore tracked FIRST so ignored.log is recognized, but keep
+  # staged.txt staged (not committed) so the staged state is observable.
+  echo "*.log" > .gitignore
+  git add .gitignore
+  git commit -q -m "add gitignore"
+  touch ignored.log
+
+  echo "staged" > staged.txt
+  git add staged.txt
+  echo "mod" >> README.md
+  echo "untracked" > untracked.txt
+
+  [[ "$(count_files_with_status staged)" == "1" ]]
+  [[ "$(count_files_with_status unstaged)" == "1" ]]
+  [[ "$(count_files_with_status untracked)" == "1" ]]
+  [[ "$(count_files_with_status ignored)" == "1" ]]
+  # all = staged.txt (staged) + README.md (unstaged) = 2
+  [[ "$(count_files_with_status all)" == "2" ]]
+  # all+untracked = 2 + untracked.txt = 3
+  [[ "$(count_files_with_status all+untracked)" == "3" ]]
+}
+
+@test "count_files_with_status: dedups a file staged and unstaged" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  echo "v2" > README.md
+  git add README.md
+  echo "v3" >> README.md
+
+  # README.md is BOTH staged and unstaged → counts once in all
+  [[ "$(count_files_with_status all)" == "1" ]]
+  [[ "$(count_files_with_status staged)" == "1" ]]
+  [[ "$(count_files_with_status unstaged)" == "1" ]]
+}
+
+@test "count_files_with_status: pathspec scopes the count" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  echo "mod" >> README.md
+  echo "other" > other.txt
+  git add other.txt
+
+  [[ "$(count_files_with_status unstaged README.md)" == "1" ]]
+  [[ "$(count_files_with_status unstaged no-such.txt)" == "0" ]]
+  [[ "$(count_files_with_status all other.txt)" == "1" ]]
+}
+
+@test "count_files_with_status: newline-containing filename counts once (NUL-safe)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  touch "$(printf 'weird\nname.txt')"
+
+  # Line-based counting would split the name into 2; NUL-delimited counts 1
+  [[ "$(count_files_with_status untracked)" == "1" ]]
+}
+
+@test "count_files_with_status: rename counts once (skips bare old-path record)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  echo "old" > old.txt
+  git add old.txt
+  git commit -q -m "add old"
+  git mv old.txt new.txt
+
+  # git status --porcelain -z emits "R  new.txt\0old.txt\0" — the bare old.txt
+  # record must not be counted. Rename = 1 file.
+  [[ "$(count_files_with_status staged)" == "1" ]]
+  [[ "$(count_files_with_status all)" == "1" ]]
+}
+
+@test "count_files_with_status: conflicted counts unmerged files" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  echo "base" > c.txt
+  git add c.txt
+  git commit -q -m "base"
+  git switch -q -c side
+  echo "side" > c.txt
+  git commit -q -am "side"
+  git switch -q main
+  echo "main" > c.txt
+  git commit -q -am "main"
+  git merge --no-commit --no-ff side >/dev/null 2>&1 || true
+
+  [[ "$(count_files_with_status conflicted)" == "1" ]]
+  [[ "$(count_files_with_status conflicted c.txt)" == "1" ]]
+  [[ "$(count_files_with_status conflicted no-such.txt)" == "0" ]]
+}

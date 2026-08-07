@@ -20,6 +20,7 @@ check_git_repo
 include_untracked=false
 json_output=false
 quiet=false
+count_only=false
 if [[ ${HUG_QUIET:-} == T ]]; then
   quiet=true
 fi
@@ -29,6 +30,9 @@ for arg in "$@"; do
   case "$arg" in
   --json)
     json_output=true
+    ;;
+  -c | --count)
+    count_only=true
     ;;
   --long | -u | --untracked-files=all)
     include_untracked=true
@@ -58,6 +62,25 @@ if [[ ${#pathspecs[@]} -gt 0 ]]; then
 fi
 
 # TODO list files sorted by reverse status text (so that `S:*` files appear last, closer to the cursor line after the command has finished printing a lot of lines. The second field to sort should be the file path.
+
+# Count mode: print the number of matching files (the grep -c of listings).
+# NUL-safe + Bash-4.0-safe via count_files_with_status (hug-select-files):
+# counts git's NUL-delimited records, so newline-containing filenames count
+# once, and no `local -n` nameref (Bash 4.3+) is reached. The count is the
+# whole answer: it suppresses the trailing summary and is mutually exclusive
+# with --json (like `hug wtl`'s --json --path-only error). all/all+untracked
+# dedup a file that is both staged and unstaged (one MM record in porcelain).
+if $count_only; then
+  if $json_output; then
+    error "-c/--count and --json are mutually exclusive"
+  fi
+  if $include_untracked; then
+    count_files_with_status all+untracked "${pathspecs[@]}"
+  else
+    count_files_with_status all "${pathspecs[@]}"
+  fi
+  exit 0
+fi
 
 # JSON output mode
 if $json_output; then

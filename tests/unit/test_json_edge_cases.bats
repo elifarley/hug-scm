@@ -355,3 +355,67 @@ validate_json() {
   local count=$(echo "$output" | jq -r '.data.search.results_count')
   [[ "$count" -gt 0 ]] || fail "Expected results_count > 0, got: $count"
 }
+
+# =============================================================================
+# Unified JSON pipeline summary counts (regression pins for #247)
+#
+# output_json_status_unified (slu/sls/slk/sli/slc --json) used to count
+# comma-split JSON FRAGMENTS, not files: a 2-field object inflated the count
+# to 2, a rename (3 fields) to 3. These pins assert the counts are FILE counts.
+# =============================================================================
+
+@test "slu --json: summary.unstaged counts files, not fragments (#247)" {
+  # Fixture repo is clean; add 1 unstaged modification
+  echo "modified" >> README.md
+
+  run hug slu --json
+  assert_success
+  assert_valid_json
+  local json_out="$output"
+
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1])['summary']; print(d['unstaged'], d['total'])" "$json_out"
+  assert_output "1 1"
+}
+
+@test "sls --json: summary.staged counts a rename as 1 file (#247)" {
+  # A rename has 3 JSON fields (path, status, old_path) — the old pipeline
+  # would report 3. It must count as exactly 1 file.
+  hug mv feature1.txt feature1-renamed.txt
+
+  run hug sls --json
+  assert_success
+  assert_valid_json
+  local json_out="$output"
+
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1])['summary']; print(d['staged'], d['total'])" "$json_out"
+  assert_output "1 1"
+}
+
+@test "slu --json: summary counts are correct for mixed types (#247)" {
+  # 1 unstaged + 1 untracked + 1 ignored
+  echo "modified" >> README.md
+  echo "untracked" > new.txt
+  echo "*.log" > .gitignore
+  hug add .gitignore
+  hug commit -m "add gitignore"
+  touch ignored.log
+
+  # Each type's own command reports its truthful file count
+  run hug slu --json
+  assert_success
+  local json_out="$output"
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1])['summary']; print(d['unstaged'], d['total'])" "$json_out"
+  assert_output "1 1"
+
+  run hug slk --json
+  assert_success
+  local json_out="$output"
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1])['summary']; print(d['untracked'], d['total'])" "$json_out"
+  assert_output "1 1"
+
+  run hug sli --json
+  assert_success
+  local json_out="$output"
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1])['summary']; print(d['ignored'], d['total'])" "$json_out"
+  assert_output "1 1"
+}

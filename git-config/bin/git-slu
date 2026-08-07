@@ -19,6 +19,7 @@ check_git_repo
 # Parse arguments
 json_output=false
 quiet=false
+count_only=false
 if [[ ${HUG_QUIET:-} == T ]]; then
   quiet=true
 fi
@@ -27,6 +28,9 @@ for arg in "$@"; do
   case "$arg" in
   --json)
     json_output=true
+    ;;
+  -c | --count)
+    count_only=true
     ;;
   -q | --quiet)
     quiet=true
@@ -44,6 +48,20 @@ list_opts=("--unstaged")
 # Add pathspecs if provided
 if [[ ${#pathspecs[@]} -gt 0 ]]; then
   list_opts+=("${pathspecs[@]}")
+fi
+
+# Count mode: print the number of matching files (the grep -c of listings).
+# NUL-safe + Bash-4.0-safe via count_files_with_status (hug-select-files):
+# counts git's NUL-delimited records, so newline-containing filenames count
+# once, and no `local -n` nameref (Bash 4.3+) is reached. The count is the
+# whole answer: it suppresses the trailing summary and is mutually exclusive
+# with --json (like `hug wtl`'s --json --path-only error).
+if $count_only; then
+  if $json_output; then
+    error "-c/--count and --json are mutually exclusive"
+  fi
+  count_files_with_status unstaged "${pathspecs[@]}"
+  exit 0
 fi
 
 # JSON output mode
