@@ -383,18 +383,19 @@ list_files_with_status() {
       local status_code="${status_codes[$i]}"
       local priority
       priority=$(get_status_priority "$status_code")
-      sorted_entries+=("$priority|$status_code|$file|${formatted_options[$i]}")
+      # \x1f unit separator: filenames may contain | (which would corrupt a |-tuple); \x1f can't appear in practice, and NUL is impossible in bash strings
+      sorted_entries+=("$priority"$'\x1f'"$status_code"$'\x1f'"$file"$'\x1f'"${formatted_options[$i]}")
     done
 
     # Sort by priority (ascending, -n), then by file path (ascending)
-    IFS=$'\n' sorted_entries=($(sort -t'|' -k1,1n -k3,3 <<<"${sorted_entries[*]}"))
+    IFS=$'\n' sorted_entries=($(sort -t$'\x1f' -k1,1n -k3,3 <<<"${sorted_entries[*]}"))
 
     # Remove duplicates while preserving sorted order
     local -A seen=()
     local -a unique_files=()
     local -a unique_formatted=()
     for entry in "${sorted_entries[@]}"; do
-      IFS='|' read -r _ _ file formatted <<< "$entry"
+      IFS=$'\x1f' read -r _ _ file formatted <<< "$entry"
       if [[ -z "${seen[$file]+_}" ]] && [[ -n "$file" ]]; then
         seen["$file"]=1
         unique_files+=("$file")

@@ -718,3 +718,23 @@ create_merge_conflict() {
   run _can_suppress_status true false false false true
   assert_failure
 }
+
+@test "list_files_with_status: filenames containing | survive sorting" {
+  # Real conflict on a file whose name contains the old tuple separator
+  echo "base" > 'a|b.txt'
+  git add 'a|b.txt'
+  git commit -q -m "Add base"
+  git switch -q -c branch1
+  echo "one" > 'a|b.txt'
+  git add 'a|b.txt'
+  git commit -q -m "Change on branch1"
+  git switch -q main
+  echo "two" > 'a|b.txt'
+  git add 'a|b.txt'
+  git commit -q -m "Change on branch2"
+  git merge --no-commit --no-ff branch1 >/dev/null 2>&1 || true
+
+  local output
+  output=$(list_files_with_status --conflicts --suppress-status)
+  [[ "$output" == 'a|b.txt' ]]
+}
