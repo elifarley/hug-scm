@@ -193,3 +193,60 @@ teardown() {
   assert_success
   [ -z "$output" ]
 }
+
+################################################################################
+# handle_upstream_operation: truthful aligned-vs-behind messaging (#237)
+################################################################################
+# count(target..HEAD) == 0 means "not AHEAD" — also true when HEAD is BEHIND upstream.
+# Diverged cannot reach the branch (diverged ⇒ ahead > 0), so it is a clean 2-state split.
+
+# Shared fixture: repo + bare origin + push + attached upstream (HEAD synced with origin).
+setup_synced_upstream() {
+  local branch; branch=$(git branch --show-current)
+  REMOTE_REPO=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "up-synced-origin-XXXXXX")/origin.git
+  git init --bare -q "$REMOTE_REPO"
+  git remote add origin "$REMOTE_REPO"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+}
+
+# Advances origin by N empty commits (via a clone), leaving HEAD BEHIND upstream.
+# Fetches afterward so the LOCAL refs/remotes/origin/<branch> tracking ref updates —
+# @{u} resolves against the local ref, not the remote, so without the fetch the upstream
+# would still appear "aligned" with a stale SHA.
+# Pushes explicitly to refs/heads/<branch> — a fresh clone of a bare repo with mismatched
+# default branches (origin's HEAD vs. the test branch) lands on the WRONG branch otherwise,
+# advancing a sibling ref and leaving the tracked one untouched.
+advance_remote() {
+  local n="$1" clone_dir branch
+  branch=$(git branch --show-current)
+  clone_dir=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "up-advance-clone-XXXXXX")/clone
+  git clone -q -b "$branch" "$REMOTE_REPO" "$clone_dir"
+  local i=1
+  while [ "$i" -le "$n" ]; do
+    git -C "$clone_dir" -c user.email=test@test -c user.name=test \
+        commit -q --allow-empty -m "remote advance $i"
+    i=$((i + 1))
+  done
+  git -C "$clone_dir" push -q origin "HEAD:refs/heads/$branch"
+  git fetch -q origin
+}
+
+@test "handle_upstream_operation: aligned -> 'Already synced' (unchanged), exit 0 (#237)" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  run handle_upstream_operation "moving back" "warn" "back" "discards local-only commits"
+  assert_success
+  assert_output --partial "Already synced to upstream"
+}
+
+@test "handle_upstream_operation: HEAD BEHIND upstream -> truthful behind message, exit 0 (#237)" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  advance_remote 2
+  run handle_upstream_operation "moving back" "warn" "back" "discards local-only commits"
+  assert_success
+  assert_output --partial "Nothing to move: HEAD is 2 commit(s) behind upstream"
+  assert_output --partial "Pull or rebase to catch up"
+  refute_output --partial "Already synced"
+}

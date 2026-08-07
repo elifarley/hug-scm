@@ -49,7 +49,22 @@ handle_upstream_operation() {
     local_commits=$(count_commits_in_range "$target" HEAD) || return 1
 
     if [ "$local_commits" -eq 0 ]; then
-        info "Already synced to upstream ($(git rev-parse --short "$target"))."
+        # == 0 means "not AHEAD": aligned OR behind (diverged is unreachable here —
+        # diverged ⇒ ahead > 0). commit_offset distinguishes exactly these two states;
+        # this is its first production caller (#238).
+        local offset
+        offset=$(commit_offset "$target" HEAD) || return 1
+        local target_short
+        target_short=$(git rev-parse --short "$target")
+        if [ "$offset" -eq 0 ]; then
+            info "Already synced to upstream ($target_short)."
+            exit 0
+        fi
+        local upstream_branch
+        # Parity with the preview block's computation; the fallback cannot actually fire
+        # here (get_upstream_commit already resolved @{u}, which requires an attached HEAD).
+        upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
+        info "Nothing to move: HEAD is ${offset#-} commit(s) behind upstream ($upstream_branch). Pull or rebase to catch up."
         exit 0
     fi
 
