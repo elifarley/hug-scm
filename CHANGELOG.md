@@ -14,6 +14,16 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 - **`-u` operations report "N commit(s) behind upstream" instead of the false "Already synced" when HEAD is behind upstream** — aligned keeps its message; the exit-0 no-op contract is unchanged (elifarley/hug-scm#237).
 
+## [1.6.0] - 2026-08-07
+
+### Added
+
+- **`hug s` conflict visibility** — the summary line now shows a red `C:` count when files are unmerged, and the ball turns red for conflict state; `hug s --conflicted` prints the conflicted-file count to stdout (long-only, canonical order `staged unstaged untracked ignored conflicted ball`); `hug s --json` gains `status.conflicted_count` (elifarley/hug-scm#246).
+
+### Changed
+
+- **The red ball (🔴) now signals conflict state first** — when files are unmerged, the ball is red regardless of staged/unstaged mix (conflict is the highest-stakes working-tree state). Scripts that parsed 🔴 as strictly "unstaged changes only" now also see it during conflicts; the `--ball` query flag and help text reflect the widened precedence (elifarley/hug-scm#246).
+
 ## [1.5.0] - 2026-08-06
 
 ### Added

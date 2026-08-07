@@ -48,7 +48,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 
 ### Basic Status
 - `hug s`: **S**tatus snapshot
-    - **Description**: Quick colored summary of staged/unstaged changes (no untracked files). Also supports query flags for scriptable field extraction.
+    - **Description**: Quick colored summary of staged/unstaged changes, with a conflict count (`C:`) and red ball when files are unmerged. Also supports query flags for scriptable field extraction.
     - **Example**: `hug s` (always safe, no args), `hug s -r` (remote URL), `hug s -b -r -u` (branch, remote, upstream).
     - **Safety**: ✅ Read-only overview; nothing is modified.
 
@@ -69,6 +69,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
     | `-K, --untracked` | Untracked file count | |
     | `-S, --staged` | Staged file count | |
     | `-U, --unstaged` | Unstaged file count | |
+    | `--conflicted` | Conflicted (unmerged) file count | Long-only |
     | `--ball` | State emoji | Encodes repo state |
     | `-z, --null` | NUL separator | Use with other query flags |
     | `--json` | Full JSON output | Mutually exclusive with query flags |
@@ -77,6 +78,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
     ```
     hug s -r                    # URL of tracking remote
     hug s -b -r -u              # Branch, remote URL, upstream (tab-separated)
+    hug s --conflicted          # Count of conflicted (unmerged) files
     hug s -z -b -H | xargs -0  # NUL-separated for unusual names
     ```
     :::

@@ -263,6 +263,7 @@ complete -c hug -n "__fish_seen_subcommand_from s" -s I -l ignored -d "Ignored f
 complete -c hug -n "__fish_seen_subcommand_from s" -s K -l untracked -d "Untracked file count"
 complete -c hug -n "__fish_seen_subcommand_from s" -s S -l staged -d "Staged file count"
 complete -c hug -n "__fish_seen_subcommand_from s" -s U -l unstaged -d "Unstaged file count"
+complete -c hug -n "__fish_seen_subcommand_from s" -l conflicted -d "Conflicted (unmerged) file count"
 complete -c hug -n "__fish_seen_subcommand_from s" -l ball -d "State emoji"
 complete -c hug -n "__fish_seen_subcommand_from s" -s z -l null -d "NUL-separated output"
 complete -c hug -n "__fish_seen_subcommand_from s" -l json -d "JSON status output"
