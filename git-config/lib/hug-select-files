@@ -52,22 +52,40 @@ count_files_with_status() {
     all+untracked) want_index=true; want_worktree=true; want_untracked=true ;;
     esac
 
-    count=$(git status --porcelain -z -- "${pathspecs[@]}" 2>/dev/null | while IFS= read -r -d '' rec; do
+    # --untracked-files=all: without it, git COLLAPSES untracked files under a
+    # new directory into a single "?? dir/" record, so `sla -c` would count 1
+    # for two files (elifarley/hug-scm#257 review P1). `all` enumerates every
+    # file individually. Only needed when untracked files are requested.
+    local -a porcelain_opts=(--porcelain -z)
+    if $want_untracked; then
+      porcelain_opts+=(--untracked-files=all)
+    fi
+
+    count=$(git status "${porcelain_opts[@]}" -- "${pathspecs[@]}" 2>/dev/null | while IFS= read -r -d '' rec; do
       [[ -z "$rec" ]] && continue
-      # A porcelain status record is "XY<space>path" or "XY<tab>path" (rename).
-      # Renames emit a SECOND bare record for the old path ("old.txt\0" with no
-      # XY prefix) — its pos2 is a filename char, not space/tab, so it is
-      # skipped here (the rename already counted once via its "R  new" record).
-      # IMPORTANT: this assumes porcelain v1 — `git status --porcelain -z`
-      # defaults to v1. Do NOT switch to `--porcelain=v2 -z`: v2's record layout
+      # IMPORTANT: assumes porcelain v1 (`--porcelain -z` defaults to v1). Do
+      # NOT switch to `--porcelain=v2 -z`: v2's record layout
       # ("XY<space>status...<space>path") moves the path separator off pos2 and
-      # would silently mis-count. `if` keeps this safe under `set -e`
-      # (a bare `&& continue` would abort).
-      if [[ "${rec:2:1}" != " " && "${rec:2:1}" != $'\t' ]]; then
+      # would silently mis-count.
+      #
+      # Rename/copy records (XY starts with R/C) are followed by a SECOND bare
+      # record holding the OLD path ("old.txt\0", no XY prefix). Consume that
+      # bare record EXPLICITLY rather than inferring record type from a filename
+      # byte: an old path whose 3rd byte is a space/tab (e.g. a tracked file
+      # literally named "M  old") would fool a pos2 separator heuristic into
+      # counting it as a second status record (elifarley/hug-scm#257 review P2).
+      # `consume_rename_old` is set when we just saw R/C; cleared once consumed.
+      if [[ "${consume_rename_old:-}" == yes ]]; then
+        consume_rename_old=no
         continue
       fi
       local st="${rec:0:2}"
       local x="${st:0:1}" y="${st:1:1}"
+      # If this record is a rename/copy, the NEXT record is its bare old-path
+      # companion — flag it for consumption above.
+      if [[ "$x" == R || "$x" == C ]]; then
+        consume_rename_old=yes
+      fi
       # One marker per matching record (a record can match both slots — MM —
       # and must count once, not twice). `if` (not bare `&&` chains) keeps
       # this safe under `set -e` inside the pipeline subshell.

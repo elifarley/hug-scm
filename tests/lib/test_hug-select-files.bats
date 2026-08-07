@@ -840,6 +840,42 @@ create_merge_conflict() {
   [[ "$(count_files_with_status all)" == "1" ]]
 }
 
+@test "count_files_with_status: rename old-path mimicking a status record counts once" {
+  # Adversarial case (elifarley/hug-scm#257 review P2): a tracked file whose
+  # name looks like a porcelain status line ("M  old" — pos2 is a space). When
+  # renamed, git emits "R  new\0M  old\0"; a pos2 separator heuristic would read
+  # the bare "M  old" as a second staged status record. The explicit
+  # consume-the-old-path logic must count the rename as exactly 1.
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  printf 'content\n' > "M  old"
+  git add "M  old"
+  git commit -q -m "add status-shaped name"
+  git mv "M  old" new
+
+  [[ "$(count_files_with_status staged)" == "1" ]]
+  [[ "$(count_files_with_status all)" == "1" ]]
+}
+
+@test "count_files_with_status: all+untracked expands untracked dir to its files" {
+  # elifarley/hug-scm#257 review P1: without --untracked-files=all, git collapses
+  # two untracked files under a new directory into one "?? dir/" record, so the
+  # count undercounts. The all+untracked path (drives `sla -c`) must pass
+  # --untracked-files=all and count 2.
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  mkdir newdir
+  echo "f1" > newdir/f1.txt
+  echo "f2" > newdir/f2.txt
+
+  [[ "$(count_files_with_status untracked)" == "2" ]]
+  [[ "$(count_files_with_status all+untracked)" == "2" ]]
+}
+
 @test "count_files_with_status: conflicted counts unmerged files" {
   local repo
   repo=$(create_test_repo)
