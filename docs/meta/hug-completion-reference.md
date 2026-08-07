@@ -86,9 +86,13 @@ These map to custom scripts (see Section 2).
 - `caa`: Commit all (tracked + untracked). No args.
 
 ### Status (s*)
-- `sl [git-status-opts]`: Status (no untracked). Args: Git status options.
-- `sla [git-status-opts]`: Status (long, with untracked). Args: as above.
-- `sli [git-status-opts]`: Ignored + untracked files + status. Args: as above.
+- `sl [opts]`: Status (no untracked). Args: `--json`, `-q|--quiet`, untracked mode (`-uno` default, `-u|--long` show untracked), pathspecs.
+- `sla [opts]`: Status (long, with untracked). Args: as above.
+- `sls [opts]`: Staged files + status. Args: `--json`, `-q|--quiet`, pathspecs.
+- `sli [opts]`: Ignored + untracked files + status. Args: as above.
+- `slu [opts]`: Unstaged files + status. Args: as above.
+- `slk [opts]`: Untracked files + status. Args: as above.
+- `slc [opts]`: Conflicted (unmerged) files + status. Args: as above.
 - `s`: Quick summary (custom). No args.
 - `ss [<file>]`: Status with staged patch. Args: `[<file>]` (optional).
 - `su [<file>]`: Status with unstaged patch. Args: as above.

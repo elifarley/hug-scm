@@ -108,6 +108,7 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
 - List unstaged files (`list_unstaged_files`)
 - List untracked files (`list_untracked_files`)
 - List ignored files (`list_ignored_files`)
+- List conflicted files (`list_conflicted_files`)
 - List tracked files (`list_tracked_files`)
 - Support for `--cwd` scoping and `--status` information
 
@@ -193,7 +194,7 @@ Git-specific JSON output helpers (uses hug-json).
   - Output: `{"path": "file.txt", "status": "modified"}`
   - Handles renamed/copied files: `"R100\told.txt\tnew.txt"` → `{"path": "new.txt", "status": "renamed"}`
 - `collect_git_files_json "$type" [flags...]` - Collect files of type as JSON array
-  - `$type`: `staged`|`unstaged`|`untracked`|`ignored`
+  - `$type`: `staged`|`unstaged`|`untracked`|`ignored`|`conflicted`
   - Returns: Comma-separated JSON objects for array embedding
   - Supports `--cwd` flag for scoping
 

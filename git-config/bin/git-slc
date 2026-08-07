@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+_hug_category='["status"]'
+_hug_keywords='["conflict","unmerged","merge","rebase"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-select-files output_json_status; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# Part of the Hug tool suite
+
+# Show only conflicted (unmerged) files, then summary
+
+show_help() {
+  cat << 'EOF'
+hug slc: Show only conflicted (unmerged) files.
+One-word answer to 'which files are in conflict?' during a merge or rebase.
+
+USAGE:
+  hug slc [OPTIONS] [pathspec...]
+
+OPTIONS:
+  -q, --quiet       Print plain paths only (no status column, no summary).
+  --json            Output the unified JSON envelope (ignores pathspecs).
+  -h, --help        Show this help message and exit.
+
+DESCRIPTION:
+  Lists each conflicted (unmerged) file with the Cnflt prefix — the same
+  primitive as `git diff --diff-filter=U`, which lists every unmerged file
+  exactly once (no dedup needed) and surfaces unmerged gitlinks.
+  Pathspecs scope the text listing; with --json they are ignored by
+  contract — the envelope always describes the full conflicted state.
+EOF
+}
+
+# Parse arguments
+# NOTE: parsing runs BEFORE check_git_repo so `--help` works from any cwd.
+# help_search.py indexes scripts by running `<script> --help` and requiring
+# exit 0 with a parseable `hug <cmd>: <desc>` first line — an early exit is
+# what makes `hug help /conflict` discoverable (git-w-wip follows the same
+# ordering).
+json_output=false
+quiet=false
+if [[ ${HUG_QUIET:-} == T ]]; then
+  quiet=true
+fi
+pathspecs=()
+for arg in "$@"; do
+  case "$arg" in
+  --json)
+    json_output=true
+    ;;
+  -q | --quiet)
+    quiet=true
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  *)
+    # Treat remaining arguments as pathspecs
+    pathspecs+=("$arg")
+    ;;
+  esac
+done
+
+# Early exit if not in Git repo
+check_git_repo
+
+# Build list_files_with_status options for conflicted files only
+list_opts=("--conflicts")
+
+# Pass suppress-status flag when in quiet mode
+# (single-status-type listing — suppression is safe, same as git-sli/git-slk)
+if $quiet; then
+  list_opts+=("--suppress-status")
+fi
+
+# Add pathspecs if provided
+if [[ ${#pathspecs[@]} -gt 0 ]]; then
+  list_opts+=("${pathspecs[@]}")
+fi
+
+# JSON output mode
+if $json_output; then
+  output_json_status "${list_opts[@]}"
+else
+  # Show conflicted files
+  if ! list_files_with_status "${list_opts[@]}" 2> /dev/null; then
+    if [[ ${#pathspecs[@]} -gt 0 ]]; then
+      pathspec_list=""
+      printf -v pathspec_list "'%s' " "${pathspecs[@]}"
+      info "No conflicted files matching ${pathspec_list% } found."
+    else
+      info "No conflicted files."
+    fi
+  fi
+
+  # Show summary line (unless quiet mode)
+  if ! $quiet; then
+    exec hug s
+  fi
+fi

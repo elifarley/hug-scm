@@ -68,7 +68,7 @@ collect_git_files_json() {
   local -a files=()
 
   case "$file_type" in
-  "staged" | "unstaged")
+  "staged" | "unstaged" | "conflicted")
     local -a status_flags=("${list_flags[@]}" "--status")
     local list_func="list_${file_type}_files"
 
@@ -138,6 +138,8 @@ output_json_status_unified() {
   local -a unstaged_files=()
   local -a untracked_files=()
   local -a ignored_files=()
+  local -a conflicted_files=()
+  local conflicted_count=0
 
   if [[ "$filter_types" == *"staged"* ]]; then
     local result
@@ -163,14 +165,42 @@ output_json_status_unified() {
     [[ -n "$result" ]] && IFS=',' read -ra ignored_files <<< "$result"
   fi
 
-  # Build summary
+  if [[ "$filter_types" == *"conflicted"* ]]; then
+    local result
+    result="$(collect_git_files_json "conflicted" "${list_flags[@]}")"
+    if [[ -n "$result" ]]; then
+      IFS=',' read -ra conflicted_files <<< "$result"
+      # Summary counts: the pipeline's IFS=',' splitting counts FRAGMENTS
+      # (2 per JSON object), which inflates the legacy types' summary counts
+      # (pre-existing quirk — tracked as elifarley/hug-scm#247). Conflicted
+      # counts OBJECTS (one "path" key each) so summary.conflicted is the
+      # truthful file count. The count is EXACT: keys are emitted unescaped
+      # (constant "path"), while json_escape (hug-json:20) escapes quote
+      # bytes in values — so the literal "path" sequence can never occur
+      # in a value, and the grep hits exactly one key per object in all cases.
+      conflicted_count=$(grep -o '"path"' <<< "$result" | wc -l)
+    fi
+  fi
+
+  # Build summary. The four legacy keys are ALWAYS present (unchanged
+  # behavior); "conflicted" is filter-conditional so slu/sls/slk/sli --json
+  # output stays byte-identical to today.
+  local total=$((${#staged_files[@]} + ${#unstaged_files[@]} + ${#untracked_files[@]} + ${#ignored_files[@]}))
+  local -a summary_args=(
+    "staged" "${#staged_files[@]}"
+    "unstaged" "${#unstaged_files[@]}"
+    "untracked" "${#untracked_files[@]}"
+    "ignored" "${#ignored_files[@]}"
+  )
+  if [[ "$filter_types" == *"conflicted"* ]]; then
+    # In mixed filters, total is a HYBRID: legacy fragment counts + truthful
+    # conflicted count — the rationale lives at the count site ~8 lines above.
+    total=$((total + conflicted_count))
+    summary_args+=("conflicted" "$conflicted_count")
+  fi
+  summary_args+=("total" "$total")
   local summary
-  summary=$(to_json_object \
-    "staged" "${#staged_files[@]}" \
-    "unstaged" "${#unstaged_files[@]}" \
-    "untracked" "${#untracked_files[@]}" \
-    "ignored" "${#ignored_files[@]}" \
-    "total" "$((${#staged_files[@]} + ${#unstaged_files[@]} + ${#untracked_files[@]} + ${#ignored_files[@]}))")
+  summary=$(to_json_object "${summary_args[@]}")
 
   # Start JSON output (without spaces, will be added later)
   local json
@@ -221,6 +251,9 @@ output_json_status_unified() {
   fi
   if [[ "$filter_types" == *"ignored"* ]]; then
     add_file_array "ignored" "${ignored_files[@]}"
+  fi
+  if [[ "$filter_types" == *"conflicted"* ]]; then
+    add_file_array "conflicted" "${conflicted_files[@]}"
   fi
 
   # Close the object (only if we added arrays, otherwise already closed)

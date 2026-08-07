@@ -14,6 +14,7 @@
 #   --unstaged           Include unstaged files
 #   --untracked          Include untracked files
 #   --ignored            Include ignored files
+#   --conflicts          Include conflicted (unmerged) files
 #   --cwd                Scope file listing to current directory and subdirectories only
 #   PATHSPECS...          Pathspecs to filter files (wildcards, directories, file patterns)
 # Output:
@@ -26,7 +27,7 @@
 # Returns:
 #   0 if files found and listed, 1 if no files found
 # Defaults:
-#   - If no --staged/--unstaged/--untracked/--ignored provided, falls back to all tracked files via 'git ls-files' (displayed plainly)
+#   - If no --staged/--unstaged/--untracked/--ignored/--conflicts provided, falls back to all tracked files via 'git ls-files' (displayed plainly)
 #   - Without --cwd, lists files across entire repository
 #   - Without PATHSPECS, lists all files of the requested types
 
@@ -105,13 +106,14 @@ _handle_no_files_found() {
 
 # Helper: Check if we can safely suppress status column
 # Returns 0 (true) if safe, 1 (false) if not safe
-# Usage: if _can_suppress_status "$include_staged" "$include_unstaged" "$include_untracked" "$include_ignored" "${status_codes[@]}"; then ...
+# Usage: if _can_suppress_status "$include_staged" "$include_unstaged" "$include_untracked" "$include_ignored" "$include_conflicts" "${status_codes[@]}"; then ...
 _can_suppress_status() {
   local include_staged="$1"
   local include_unstaged="$2"
   local include_untracked="$3"
   local include_ignored="$4"
-  shift 4
+  local include_conflicts="$5"
+  shift 5
   local -a status_codes=("$@")
 
   # Must have exactly one file type
@@ -120,16 +122,19 @@ _can_suppress_status() {
   $include_unstaged && ((type_count++))
   $include_untracked && ((type_count++))
   $include_ignored && ((type_count++))
+  $include_conflicts && ((type_count++))
 
   [[ $type_count -ne 1 ]] && return 1
 
-  # Only untracked and ignored are safe (single status type)
-  # Staged and unstaged have multiple status types and are never safe
+  # Only single-status-type listings are safe to suppress:
+  # untracked, ignored, and conflicts (Cnflt is the sole conflict status).
+  # This is a TYPE-LEVEL gate — it does not inspect status_codes (the
+  # parameter is currently unused). Staged and unstaged span multiple
+  # status types and are never safe.
   $include_untracked && return 0
   $include_ignored && return 0
+  $include_conflicts && return 0
 
-  # Staged (S:Add, S:Mod, S:Del, S:Ren, S:Copy, S:Cnflt) and
-  # Unstaged (U:Mod, U:Del, U:Cnflt) have multiple status types
   return 1
 }
 
@@ -175,6 +180,7 @@ list_files_with_status() {
   local include_unstaged=false
   local include_untracked=false
   local include_ignored=false
+  local include_conflicts=false
   local scope_cwd=false
   local suppress_status=false
   local -a pathspecs=()
@@ -198,6 +204,10 @@ list_files_with_status() {
         include_ignored=true
         shift
         ;;
+      --conflicts)
+        include_conflicts=true
+        shift
+        ;;
       --cwd)
         scope_cwd=true
         shift
@@ -215,7 +225,7 @@ list_files_with_status() {
   done
 
   local has_includes=false
-  if $include_staged || $include_unstaged || $include_untracked || $include_ignored; then
+  if $include_staged || $include_unstaged || $include_untracked || $include_ignored || $include_conflicts; then
     has_includes=true
   fi
 
@@ -274,6 +284,24 @@ list_files_with_status() {
       done < <(list_unstaged_files "${status_flags[@]}" "${pathspecs[@]}")
     fi
 
+    if $include_conflicts; then
+      local -a status_flags=("${list_flags[@]}" "--status")
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local status file
+        IFS=$'\t' read -r status file <<< "$line"
+        local status_text status_code
+        IFS=$'\t' read -r status_text status_code <<< "$(_format_unstaged_status "$status")"
+        files+=("$file")
+        if $suppress_status; then
+          formatted_options+=("$file")
+        else
+          formatted_options+=("${status_text} ${file}")
+        fi
+        status_codes+=("$status_code")
+      done < <(list_conflicted_files "${status_flags[@]}" "${pathspecs[@]}")
+    fi
+
     if $include_untracked; then
       mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}" "${pathspecs[@]}")
       for file in "${untracked_files[@]}"; do
@@ -307,9 +335,9 @@ list_files_with_status() {
     fi
 
     # Validate suppression is safe if requested
-    # If suppression was requested but not safe (e.g., conflicts), rebuild with status
+    # If suppression was requested but not safe (e.g., staged+unstaged), rebuild with status
     if $suppress_status; then
-      if ! _can_suppress_status "$include_staged" "$include_unstaged" "$include_untracked" "$include_ignored" "${status_codes[@]}"; then
+      if ! _can_suppress_status "$include_staged" "$include_unstaged" "$include_untracked" "$include_ignored" "$include_conflicts" "${status_codes[@]}"; then
         # Fallback to showing status if suppression not safe
         suppress_status=false
         # Rebuild formatted_options with status prefixes
@@ -355,18 +383,33 @@ list_files_with_status() {
       local status_code="${status_codes[$i]}"
       local priority
       priority=$(get_status_priority "$status_code")
-      sorted_entries+=("$priority|$status_code|$file|${formatted_options[$i]}")
+      # Tuple fields are \x1f-separated. A filename may legally contain the
+      # unit-separator byte (git forbids only NUL and /), so escape it in the
+      # file field — unescaped on split below. \x1e is the escape char and the
+      # encodings \x1e1/\x1e2 are \x1f-free (a \x1f in the escape sequence would
+      # re-split on read). NUL itself is impossible in bash strings; a true
+      # NUL-delimited pipeline is tracked as elifarley/hug-scm#249.
+      local file_escaped="${file//$'\x1e'/$'\x1e2'}"
+      file_escaped="${file_escaped//$'\x1f'/$'\x1e1'}"
+      sorted_entries+=("$priority"$'\x1f'"$status_code"$'\x1f'"$file_escaped"$'\x1f'"${formatted_options[$i]}")
     done
 
     # Sort by priority (ascending, -n), then by file path (ascending)
-    IFS=$'\n' sorted_entries=($(sort -t'|' -k1,1n -k3,3 <<<"${sorted_entries[*]}"))
+    IFS=$'\n' sorted_entries=($(sort -t$'\x1f' -k1,1n -k3,3 <<<"${sorted_entries[*]}"))
 
     # Remove duplicates while preserving sorted order
     local -A seen=()
     local -a unique_files=()
     local -a unique_formatted=()
     for entry in "${sorted_entries[@]}"; do
-      IFS='|' read -r _ _ file formatted <<< "$entry"
+      # Split fields on \x1f; formatted is the RAW remainder (a filename may
+      # contain \x1f — never split it)
+      IFS=$'\x1f' read -r -a fields <<< "$entry"
+      file="${fields[2]}"
+      formatted="${entry#*$'\x1f'*$'\x1f'*$'\x1f'}"
+      # Unescape the file field (decode the \x1f-encoding before the \x1e-encoding)
+      file="${file//$'\x1e1'/$'\x1f'}"
+      file="${file//$'\x1e2'/$'\x1e'}"
       if [[ -z "${seen[$file]+_}" ]] && [[ -n "$file" ]]; then
         seen["$file"]=1
         unique_files+=("$file")

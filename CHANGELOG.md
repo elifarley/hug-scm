@@ -2,7 +2,23 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
-## [Unreleased]
+## [1.5.0] - 2026-08-06
+
+### Added
+
+- **`hug slc`** — list only conflicted (unmerged) files, the native equivalent of `git diff --name-only --diff-filter=U`. Each conflicted path is shown with the `Cnflt` marker; `-q` prints plain paths for piping straight into `xargs`; `--json` emits the unified status envelope with a truthful `summary.conflicted` count; pathspecs scope the text listing. Slots into the sl* family (`sl`, `sls`, `slu`, `sla`, `slk`, `sli`).
+
+- **`hug slc` discoverability** — keyword searchable via `hug help /conflict` and `hug help !conflict`, with full `--help`, backed by a quality-corpus regression pin.
+
+- **Fish completions** — `slc` registered, plus the previously missing `slu`/`slk` entries.
+
+### Fixed
+
+- **Filenames containing `|` no longer corrupt sl* listing output** — the renderer's internal sort tuples now use a unit separator instead of `|`, so a conflicted file like `a|b.txt` lists correctly in every sl* command (previously the path was garbled and the dedup key corrupted).
+
+### Changed
+
+- **sl* family documentation completed** — `sls`/`slu`/`slk` (previously undocumented) and the new `slc` are now documented across the command reference, agent cheat sheet, git-to-hug translation table, README, and completion reference.
 
 ## [1.4.0] - 2026-07-29
 

@@ -333,6 +333,10 @@ hug w wipdel <wip-branch>  # Deletes the WIP branch without merging
 hug s                       # Quick summary of staged/unstaged changes
 hug sl                      # Status without untracked files
 hug sla                     # Full status with untracked files
+hug sls                     # Status with staged files only
+hug slu                     # Status with unstaged files only
+hug slk                     # Status with untracked files only
+hug slc                     # Status with list of conflicted (unmerged) files
 hug sli                     # Status with list of ignored files
 
 hug ss [file]               # Status with staged changes patch

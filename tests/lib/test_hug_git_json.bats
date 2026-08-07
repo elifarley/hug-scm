@@ -183,3 +183,38 @@ source_hug_json_libs() {
   # [[ "$(git_status_to_json_type '!!')" == "ignored" ]]
   [[ "$(git_status_to_json_type "X")" == "unknown" ]]
 }
+
+@test "collect_git_files_json: collects conflicted files with conflict status" {
+  local TEST_REPO
+  source_hug_json_libs  # Source libraries before cd
+  TEST_REPO=$(create_test_repo_with_history)
+  cd "$TEST_REPO" || return 1
+
+  # Build a real merge conflict (raw git is fine inside tests)
+  echo "base" > conflict-file.txt
+  git add conflict-file.txt
+  git commit -q -m "Add base"
+  git switch -q -c branch1
+  echo "branch1 change" > conflict-file.txt
+  git add conflict-file.txt
+  git commit -q -m "Change on branch1"
+  git switch -q main
+  echo "branch2 change" > conflict-file.txt
+  git add conflict-file.txt
+  git commit -q -m "Change on branch2"
+  git merge --no-commit --no-ff branch1 2>/dev/null || true
+
+  run collect_git_files_json "conflicted"
+  assert_success
+  echo "$output" | grep -q '"path".*"conflict-file.txt"'
+  echo "$output" | grep -q '"status".*"conflict"'
+
+  # Pin summary.conflicted to the truthful object count (1 file, not the
+  # 2 fragment-split elements the legacy types count — elifarley/hug-scm#247).
+  # The emitter prints "conflicted":  "1" (to_json_object space + sed space).
+  run output_json_status_unified --filter conflicted
+  assert_success
+  echo "$output" | grep -qE '"conflicted": +"1"'
+  # Pin the array emission path (add_file_array) — otherwise untested.
+  echo "$output" | grep -q '"conflicted": \['
+}
