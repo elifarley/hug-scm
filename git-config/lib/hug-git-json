@@ -174,10 +174,10 @@ output_json_status_unified() {
       # (2 per JSON object), which inflates the legacy types' summary counts
       # (pre-existing quirk — tracked as elifarley/hug-scm#247). Conflicted
       # counts OBJECTS (one "path" key each) so summary.conflicted is the
-      # truthful file count. The grep assumes no filename contains the
-      # literal sequence "path" (json_escape leaves quote bytes — a
-      # pathological case, noted deliberately; the alternative
-      # fragment-division fails on the more realistic comma-in-filename case).
+      # truthful file count. The count is EXACT: keys are emitted unescaped
+      # (constant "path"), while json_escape (hug-json:20) escapes quote
+      # bytes in values — so the literal "path" sequence can never occur
+      # in a value, and the grep hits exactly one key per object in all cases.
       conflicted_count=$(grep -o '"path"' <<< "$result" | wc -l)
     fi
   fi
