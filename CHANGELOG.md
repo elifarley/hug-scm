@@ -2,6 +2,18 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **`h back`/`h undo`/`h rollback` reject invalid and forward explicit targets loudly** — a garbage target could previously trigger the root-recovery path (undoing the root commit on nonsense input), and a forward target moved HEAD through a backward-named command; both now error, with forward targets pointing at `hug h restore <target> --<op>` (elifarley/hug-scm#234). Root-recovery is now reachable only with no positional target.
+
+- **`commit_offset`'s Usage docstring corrected to the errexit-safe capture idiom** (`offset=$(…) || rc=$?`) — the previous form (capture, then read the status on the next line) is dead code under `set -e` for exactly the exit codes the dispatch exists to distinguish (related: elifarley/hug-scm#234).
+
+### Changed
+
+- **`-u` operations report "N commit(s) behind upstream" instead of the false "Already synced" when HEAD is behind upstream** — aligned keeps its message; the exit-0 no-op contract is unchanged (elifarley/hug-scm#237).
+
 ## [1.5.0] - 2026-08-06
 
 ### Added
@@ -83,8 +95,6 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 - **`hug c` stderr chatter string changed** from `Committing staged changes...` to `Committing staged file(s) (N):` (followed by file names). Any external script grepping `hug c` stderr for the old string will need to update its pattern. The new string is richer (count + names) and arrives BEFORE the commit lands, enabling recovery.
 - **`hug a` adds a new stderr line** (`Staged N file(s). Index now has M file(s) staged total.`) after every successful stage. External scripts parsing `hug a` stderr may see the new line; stdout is unchanged.
-
-## [Unreleased]
 
 ### Fixed
 
