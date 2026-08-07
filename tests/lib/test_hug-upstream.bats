@@ -150,3 +150,146 @@ teardown() {
   run handle_upstream_operation "moving" warn "move" "reason"
   assert_failure
 }
+
+################################################################################
+# validate_backward_target: #234 — explicit targets must be valid BACKWARD moves
+################################################################################
+# NOTE on test layers: bats `run` DISABLES errexit, so these helper-layer tests would
+# pass green even on a capture idiom broken under set -e. The mover-layer e2e tests in
+# tests/unit/test_head.bats (real scripts under set -euo pipefail) are the layer that
+# catches that — do not delete them in favor of these.
+
+@test "validate_backward_target: garbage target -> 'not a valid commit', non-zero" {
+  run validate_backward_target "definitely-not-a-ref" "back"
+  assert_failure
+  assert_output --partial "'definitely-not-a-ref' is not a valid commit"
+}
+
+@test "validate_backward_target: valid target + UNBORN HEAD -> 'cannot resolve HEAD' (not a target error) + restore hint" {
+  # When HEAD is unborn (the post-root-undo recovery state), commit_offset(target, HEAD)
+  # returns 3 because its SECOND arg fails — NOT because the target is invalid. The exit-3
+  # arm must disambiguate: a valid target means HEAD is the problem, and the natural recovery
+  # is `hug h restore <target> --<op>`. Pre-fix this mislabeled a valid SHA as "not a valid commit".
+  local saved; saved=$(git rev-parse HEAD)
+  git update-ref -d HEAD                           # -> unborn HEAD
+  run validate_backward_target "$saved" "back"
+  assert_failure
+  assert_output --partial "cannot resolve HEAD"
+  assert_output --partial "hug h restore $saved --back"
+  refute_output --partial "'$saved' is not a valid commit"
+}
+
+@test "validate_backward_target: forward (descendant) target -> 'ahead of HEAD' + pasteable restore hint" {
+  local descendant; descendant=$(git rev-parse HEAD)
+  git update-ref HEAD HEAD~1                  # plumbing: HEAD back one, descendant now ahead
+  run validate_backward_target "$descendant" "back"
+  assert_failure
+  assert_output --partial "is ahead of HEAD by 1 commit(s)"
+  assert_output --partial "hug h restore $descendant --back"
+}
+
+@test "validate_backward_target: diverged target -> silent pass (sideways move preserved)" {
+  git checkout -q -b diverger                 # branch at HEAD
+  echo "d" > diverger.txt; git add diverger.txt; git commit -q -m "branch diverges"
+  git checkout -q -                           # back to the original branch
+  echo "l" > local-only.txt; git add local-only.txt; git commit -q -m "HEAD diverges"
+  run validate_backward_target "diverger" "undo"
+  assert_success
+  [ -z "$output" ]                            # contract: diverged is silent — no info/warning either
+}
+
+@test "validate_backward_target: ancestor and self -> silent pass" {
+  run validate_backward_target "HEAD~1" "back"
+  assert_success
+  [ -z "$output" ]
+  local self; self=$(git rev-parse HEAD)
+  run validate_backward_target "$self" "back"
+  assert_success
+  [ -z "$output" ]
+}
+
+################################################################################
+# handle_upstream_operation: truthful aligned-vs-behind messaging (#237)
+################################################################################
+# count(target..HEAD) == 0 means "not AHEAD" — also true when HEAD is BEHIND upstream.
+# Diverged cannot reach the branch (diverged ⇒ ahead > 0), so it is a clean 2-state split.
+
+# Shared fixture: repo + bare origin + push + attached upstream (HEAD synced with origin).
+setup_synced_upstream() {
+  local branch; branch=$(git branch --show-current)
+  REMOTE_REPO=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "up-synced-origin-XXXXXX")/origin.git
+  git init --bare -q "$REMOTE_REPO"
+  git remote add origin "$REMOTE_REPO"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+}
+
+# Advances origin by N empty commits (via a clone), leaving HEAD BEHIND upstream.
+# Fetches afterward so the LOCAL refs/remotes/origin/<branch> tracking ref updates —
+# @{u} resolves against the local ref, not the remote, so without the fetch the upstream
+# would still appear "aligned" with a stale SHA.
+# Pushes explicitly to refs/heads/<branch> — a fresh clone of a bare repo with mismatched
+# default branches (origin's HEAD vs. the test branch) lands on the WRONG branch otherwise,
+# advancing a sibling ref and leaving the tracked one untouched.
+advance_remote() {
+  local n="$1" clone_dir branch
+  branch=$(git branch --show-current)
+  clone_dir=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "up-advance-clone-XXXXXX")/clone
+  git clone -q -b "$branch" "$REMOTE_REPO" "$clone_dir"
+  local i=1
+  while [ "$i" -le "$n" ]; do
+    git -C "$clone_dir" -c user.email=test@test -c user.name=test \
+        commit -q --allow-empty -m "remote advance $i"
+    i=$((i + 1))
+  done
+  git -C "$clone_dir" push -q origin "HEAD:refs/heads/$branch"
+  git fetch -q origin
+}
+
+@test "handle_upstream_operation: aligned -> 'Already synced' (unchanged), exit 0 (#237)" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  run handle_upstream_operation "moving back" "warn" "back" "discards local-only commits"
+  assert_success
+  assert_output --partial "Already synced to upstream"
+}
+
+@test "handle_upstream_operation: HEAD BEHIND upstream -> truthful behind message, exit 0 (#237)" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  advance_remote 2
+  run handle_upstream_operation "moving back" "warn" "back" "discards local-only commits"
+  assert_success
+  assert_output --partial "Nothing to move: HEAD is 2 commit(s) behind upstream"
+  assert_output --partial "Pull or rebase to catch up"
+  refute_output --partial "Already synced"
+}
+
+################################################################################
+# #235: pin the load-bearing `|| return 1` guards with function-shadowing stubs
+################################################################################
+# WHY stubs: the guards cannot fail naturally (a resolved upstream always counts), which is
+# exactly why they were untested — deleting them keeps every natural-path test green. Bash
+# redefinition shadows the library function for `run`'s subshell. If a guard is removed,
+# the stub's failure falls through into the preview/message blocks and these tests go red.
+
+@test "#235: count guard pinned — failing count_commits_in_range -> non-zero, no preview" {
+  # Pins the guard at hug-git-upstream:49 (NOT the get_upstream_commit guard at :41).
+  create_test_repo_with_history
+  setup_synced_upstream
+  advance_remote 1
+  count_commits_in_range() { return 1; }
+  run handle_upstream_operation "moving back" "warn" "back" "discards local-only commits"
+  assert_failure
+  refute_output --partial "Commits to be affected"
+}
+
+@test "#235 symmetry: commit_offset guard pinned — failing offset in the ==0 branch -> non-zero" {
+  create_test_repo_with_history
+  setup_synced_upstream                    # count is 0 -> the ==0 branch executes
+  commit_offset() { return 1; }
+  run handle_upstream_operation "moving back" "warn" "back" "discards local-only commits"
+  assert_failure
+  refute_output --partial "Already synced"
+  refute_output --partial "behind upstream"
+}

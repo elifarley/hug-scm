@@ -49,7 +49,22 @@ handle_upstream_operation() {
     local_commits=$(count_commits_in_range "$target" HEAD) || return 1
 
     if [ "$local_commits" -eq 0 ]; then
-        info "Already synced to upstream ($(git rev-parse --short "$target"))."
+        # == 0 means "not AHEAD": aligned OR behind (diverged is unreachable here —
+        # diverged ⇒ ahead > 0). commit_offset distinguishes exactly these two states;
+        # this is its first production caller (#238).
+        local offset
+        offset=$(commit_offset "$target" HEAD) || return 1
+        local target_short
+        target_short=$(git rev-parse --short "$target")
+        if [ "$offset" -eq 0 ]; then
+            info "Already synced to upstream ($target_short)."
+            exit 0
+        fi
+        local upstream_branch
+        # Parity with the preview block's computation; the fallback cannot actually fire
+        # here (get_upstream_commit already resolved @{u}, which requires an attached HEAD).
+        upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
+        info "Nothing to move: HEAD is ${offset#-} commit(s) behind upstream ($upstream_branch). Pull or rebase to catch up."
         exit 0
     fi
 
@@ -153,6 +168,51 @@ handle_standard_operation() {
                 "$commits_to_affected" "$commit_word"
             git diff --stat "$range_for_diff" >&2
         fi
+    fi
+}
+
+# Validates an EXPLICIT target for a backward HEAD-mover (h-back / h-undo / h-rollback).
+# Usage: validate_backward_target <target> <op> [<user_input>]
+# Parameters:
+#   $1 - resolved target (may be the raw ref if resolution failed upstream)
+#   $2 - mover name for messages: "back" | "undo" | "rollback"
+#   $3 - (Optional) the user's LITERAL input, quoted in error messages (defaults to $1)
+#
+# Contract — keep ISOMORPHIC to commit_offset's outcome table (hug-git-commit):
+#   unresolvable (exit 3)   -> error "'<input>' is not a valid commit", non-zero
+#   diverged     (exit 2)   -> silent pass — a valid SIDEWAYS move; today's behavior, NOT an error
+#   ahead        (offset<0) -> error "…is ahead of HEAD by N commit(s)…", non-zero
+#   self/ancestor (offset>=0)-> silent pass
+#
+# WHY this gate exists (#234): pre-fix, an unresolvable explicit target at the root commit
+# was indistinguishable from the legitimate "no parent of root" case, so `hug h back garbage`
+# triggered reset_root_commit — the most destructive path — on nonsense input. Callers ALSO
+# tighten their root-path guard to `[[ -z "$target_arg" ]]` (defense in depth).
+validate_backward_target() {
+    local target="$1" op="${2:?validate_backward_target: op required}" user_input="${3:-$1}"
+    local offset rc=0
+    # Capture via `|| rc=$?` — the assignment MUST sit left of `||`: a bare
+    # `offset=$(commit_offset …)` aborts a `set -e` caller at the assignment for exit 2/3,
+    # before the dispatch below can run (same failure class as the local-x-capture masking).
+    offset=$(commit_offset "$target" HEAD) || rc=$?
+    case $rc in
+      3) # commit_offset returns 3 when EITHER arg is unresolvable. Disambiguate: if the
+      # TARGET itself resolves, the failure is HEAD's (e.g. unborn HEAD — the post-root-undo
+      # recovery state), not the target's. The natural recovery is hug h restore <target>.
+      if git rev-parse --verify --quiet "$target^{commit}" >/dev/null 2>&1; then
+        error "cannot resolve HEAD (unborn?) — use 'hug h restore $user_input --$op' to recover"
+      else
+        error "'$user_input' is not a valid commit"
+      fi ;;
+      2) return 0 ;;   # diverged: valid sideways move — today's behavior, NOT an error
+      0) ;;
+      # unreachable today (commit_offset's exit surface is total over {0,2,3}) — but an
+      # `error`, not a bare return: a bare non-zero return would surface as a MESSAGELESS
+      # errexit abort, the opposite of this batch's loud-failure promise.
+      *) error "internal error: commit_offset returned unexpected status $rc for '$user_input'" ;;
+    esac
+    if [ "$offset" -lt 0 ]; then
+        error "hug h $op moves HEAD back, but '$user_input' is ahead of HEAD by ${offset#-} commit(s) (use 'hug h restore $user_input --$op' to move forward)"
     fi
 }
 
