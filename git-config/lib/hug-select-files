@@ -383,8 +383,15 @@ list_files_with_status() {
       local status_code="${status_codes[$i]}"
       local priority
       priority=$(get_status_priority "$status_code")
-      # \x1f unit separator: filenames may contain | (which would corrupt a |-tuple); \x1f can't appear in practice, and NUL is impossible in bash strings
-      sorted_entries+=("$priority"$'\x1f'"$status_code"$'\x1f'"$file"$'\x1f'"${formatted_options[$i]}")
+      # Tuple fields are \x1f-separated. A filename may legally contain the
+      # unit-separator byte (git forbids only NUL and /), so escape it in the
+      # file field — unescaped on split below. \x1e is the escape char and the
+      # encodings \x1e1/\x1e2 are \x1f-free (a \x1f in the escape sequence would
+      # re-split on read). NUL itself is impossible in bash strings; a true
+      # NUL-delimited pipeline is tracked as elifarley/hug-scm#249.
+      local file_escaped="${file//$'\x1e'/$'\x1e2'}"
+      file_escaped="${file_escaped//$'\x1f'/$'\x1e1'}"
+      sorted_entries+=("$priority"$'\x1f'"$status_code"$'\x1f'"$file_escaped"$'\x1f'"${formatted_options[$i]}")
     done
 
     # Sort by priority (ascending, -n), then by file path (ascending)
@@ -395,7 +402,14 @@ list_files_with_status() {
     local -a unique_files=()
     local -a unique_formatted=()
     for entry in "${sorted_entries[@]}"; do
-      IFS=$'\x1f' read -r _ _ file formatted <<< "$entry"
+      # Split fields on \x1f; formatted is the RAW remainder (a filename may
+      # contain \x1f — never split it)
+      IFS=$'\x1f' read -r -a fields <<< "$entry"
+      file="${fields[2]}"
+      formatted="${entry#*$'\x1f'*$'\x1f'*$'\x1f'}"
+      # Unescape the file field (decode the \x1f-encoding before the \x1e-encoding)
+      file="${file//$'\x1e1'/$'\x1f'}"
+      file="${file//$'\x1e2'/$'\x1e'}"
       if [[ -z "${seen[$file]+_}" ]] && [[ -n "$file" ]]; then
         seen["$file"]=1
         unique_files+=("$file")

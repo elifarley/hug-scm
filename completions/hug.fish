@@ -230,15 +230,23 @@ end
 complete -c hug -n '__fish_seen_subcommand_from cc' -a "(__hug_complete_refs)" -d "Commit range"
 complete -c hug -n '__fish_seen_subcommand_from cc' -a "$common_cherry_opts" -d "Cherry-pick options"
 
-# sls: No args
-complete -c hug -n '__fish_seen_subcommand_from sls' -f
-
 # Status (s*)
-# sl family + statusbase: Git status options only (no files)
-for sub in sl slc slu sla slk sli statusbase
+# sl/sla/statusbase: git status options (statusbase aliases)
+for sub in sl sla statusbase
     complete -c hug -n "__fish_seen_subcommand_from $sub" -a "$common_status_opts" -d "Git status options"
     complete -c hug -n "__fish_seen_subcommand_from $sub" -s h -l help -d "Help"
 end
+
+# Listing commands (sls/slu/slk/sli): only the flags their parse loop accepts
+for sub in sls slu slk sli
+    complete -c hug -n "__fish_seen_subcommand_from $sub" -s j -l json -d "JSON output"
+    complete -c hug -n "__fish_seen_subcommand_from $sub" -s q -l quiet -d "Suppress summary"
+end
+
+# slc: additionally parses -h/--help (show_help)
+complete -c hug -n '__fish_seen_subcommand_from slc' -s j -l json -d "JSON output"
+complete -c hug -n '__fish_seen_subcommand_from slc' -s q -l quiet -d "Suppress summary"
+complete -c hug -n '__fish_seen_subcommand_from slc' -s h -l help -d "Help"
 
 # s: Quick summary (query flags for scripting)
 complete -c hug -n "__fish_seen_subcommand_from s" -f -d "Quick summary (query flags for scripting)"

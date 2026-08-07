@@ -738,3 +738,17 @@ create_merge_conflict() {
   output=$(list_files_with_status --conflicts --suppress-status)
   [[ "$output" == 'a|b.txt' ]]
 }
+
+@test "list_files_with_status: filenames containing the unit separator survive sorting" {
+  # \x1f is legal in filenames (git forbids only NUL and /). Untracked files
+  # flow through the -z parser as RAW bytes (unlike conflicted files, which
+  # git C-quotes — tracked as elifarley/hug-scm#249), so the tuple escape
+  # round-trip must preserve the byte here.
+  echo "untracked" > $'a\x1fb.txt'
+
+  # The fixture repo has its own untracked files, so assert the raw byte
+  # survives as an intact line (the corruption mode was a garbled re-split)
+  local output
+  output=$(list_files_with_status --untracked --suppress-status)
+  [[ "$output" == *$'a\x1fb.txt'* ]]
+}
