@@ -8,7 +8,6 @@ test "${1:-}" = '--search-meta' && {
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/../lib/hug-common"
-. "$CMD_BASE/../lib/hug-git-kit"
 . "$CMD_BASE/../lib/output_json_status_summary"
 set -euo pipefail
 
@@ -361,9 +360,13 @@ if $is_query; then
     fi
     _qs_val_untracked=$(git ls-files --others --exclude-standard 2> /dev/null | wc -l | tr -d ' ')
     _qs_val_ignored=$(git ls-files --others --exclude-standard --ignored 2> /dev/null | wc -l | tr -d ' ')
-    # list_conflicted_files emits one blank line when there are no conflicts
-    # (printf '%s\n' with an empty array), so drop empty lines before counting.
-    _qs_val_conflicted=$(list_conflicted_files | sed '/^$/d' | wc -l | tr -d ' ')
+    # Count unmerged files directly via git, NOT via list_conflicted_files:
+    # that helper routes through convert_to_relative_paths (hug-git-repo), which
+    # uses `local -n` (Bash 4.3+ nameref) — invalid on the Bash 4.0–4.2 the
+    # project supports (docs/installation.md). Under `set -euo pipefail` the
+    # bad option would abort the whole status command. Raw plumbing matches the
+    # sibling counts above and the JSON emitter (output_json_status_summary).
+    _qs_val_conflicted=$(git diff --diff-filter=U --name-only 2> /dev/null | wc -l | tr -d ' ')
   fi
 
   # --- ball emoji ---
@@ -491,11 +494,14 @@ fi
 
 untracked_count=$(git ls-files --others --exclude-standard | wc -l)
 ignored_count=$(git ls-files --others --exclude-standard --ignored | wc -l)
-# list_conflicted_files emits one blank line when there are no conflicts
-# (printf '%s\n' with an empty array), so drop empty lines before counting.
-# `| tr -d ' '` matches the query-mode count (line ~366) and the JSON emitter:
-# macOS `wc -l` pads with leading whitespace, which would render `C:  N`.
-conflicted_count=$(list_conflicted_files | sed '/^$/d' | wc -l | tr -d ' ')
+# Count unmerged files directly via git, NOT via list_conflicted_files:
+# that helper routes through convert_to_relative_paths (hug-git-repo), which
+# uses `local -n` (Bash 4.3+ nameref) — invalid on the Bash 4.0–4.2 the
+# project supports (docs/installation.md). Under `set -euo pipefail` the bad
+# option would abort the status command on every default `hug s` invocation.
+# Raw plumbing matches the JSON emitter (output_json_status_summary).
+# `| tr -d ' '` guards against macOS `wc -l` leading-whitespace padding.
+conflicted_count=$(git diff --diff-filter=U --name-only 2> /dev/null | wc -l | tr -d ' ')
 
 # Determine ball emoji color based on precedence:
 # - 🔴 Red: conflicted (unmerged) files first — the highest-stakes state
