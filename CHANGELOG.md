@@ -4,6 +4,10 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`hug s` conflict visibility** — the summary line now shows a red `C:` count when files are unmerged, and the ball turns red for conflict state; `hug s --conflicted` prints the conflicted-file count to stdout (long-only, canonical order `staged unstaged untracked ignored conflicted ball`); `hug s --json` gains `status.conflicted_count` (elifarley/hug-scm#246).
+
 ### Fixed
 
 - **`h back`/`h undo`/`h rollback` reject invalid and forward explicit targets loudly** — a garbage target could previously trigger the root-recovery path (undoing the root commit on nonsense input), and a forward target moved HEAD through a backward-named command; both now error, with forward targets pointing at `hug h restore <target> --<op>` (elifarley/hug-scm#234). Root-recovery is now reachable only with no positional target.

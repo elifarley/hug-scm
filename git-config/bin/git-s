@@ -8,6 +8,7 @@ test "${1:-}" = '--search-meta' && {
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/../lib/hug-common"
+. "$CMD_BASE/../lib/hug-git-kit"
 . "$CMD_BASE/../lib/output_json_status_summary"
 set -euo pipefail
 
@@ -47,6 +48,7 @@ QUERY FLAGS:
   -K, --untracked  Count of untracked files.
   -S, --staged     Count of staged files.
   -U, --unstaged   Count of unstaged files.
+      --conflicted Count of conflicted (unmerged) files.
       --ball       Ball emoji indicating repo state (see below).
   -z, --null       Separate output with NUL (\0) instead of newline.
 
@@ -62,7 +64,7 @@ DESCRIPTION:
   The leading ball emoji encodes the most important state at a glance:
 
     🟢 Green   — staged changes only (ready to commit)
-    🔴 Red     — unstaged changes only (uncommitted work)
+    🔴 Red     — conflict state (unmerged files), else unstaged changes only
     🟡 Yellow  — both staged and unstaged changes
     🟣 Purple  — untracked files only (no staged/unstaged)
     ⚫ Black   — ignored files only
@@ -72,13 +74,14 @@ DESCRIPTION:
   making it safe for pipes and scripting. Multiple flags output fields in
   canonical order, space-separated (or NUL-separated with -z).
   Canonical order: branch remote upstream hash short-hash ahead behind
-  staged unstaged untracked ignored ball
+  staged unstaged untracked ignored conflicted ball
 
 CAPTURING OUTPUT:
   Default mode outputs to stderr (safe to capture the summary line).
   Query mode outputs to stdout with zero stderr chatter:
     branch=$(hug s -b)          # Capture branch name
     hug s -C -S -U              # "ahead behind staged unstaged"
+    hug s --conflicted          # Count of conflicted (unmerged) files
     hug s -z -b -H | xargs -0  # NUL-separated for unusual names
 
 EXAMPLES:
@@ -88,11 +91,13 @@ EXAMPLES:
   hug s -H                      # Print full commit hash
   hug s -b -H --ball            # Branch, hash, and state emoji
   hug s -C -K                   # Ahead/behind counts and untracked count
+  hug s --conflicted            # Count of conflicted (unmerged) files
   hug s -z -b -H                # NUL-separated branch and hash
 
 SEE ALSO:
   hug sl   : List file statuses with state labels (S:Mod, U:Del, etc.)
   hug sla  : Like sl, including untracked files
+  hug slc  : List conflicted (unmerged) files only
   hug sw   : Show patch + file stats of all working directory changes
   hug ss   : Show patch + file stats of staged changes only
   hug sh   : Show commit details with file statistics
@@ -115,11 +120,11 @@ error() {
 # getopt short→long mapping:
 #   b=branch r=remote u=upstream H=hash s=short-hash A=ahead B=behind
 #   C=counts I=ignored K=untracked S=staged U=unstaged
-#   h=help z=null   --ball and --json are long-only
+#   h=help z=null   --conflicted, --ball, and --json are long-only
 set +e # Temporarily disable exit-on-error to capture getopt failure
 PARSED=$(getopt \
   --options 'rbuHsABCIKSUhz' \
-  --longoptions 'remote,branch,upstream,hash,short-hash,ahead,behind,counts,untracked,ignored,staged,unstaged,ball,json,help,null' \
+  --longoptions 'remote,branch,upstream,hash,short-hash,ahead,behind,counts,untracked,ignored,staged,unstaged,conflicted,ball,json,help,null' \
   --name 'hug s' \
   -- "$@" 2>&1)
 getopt_status=$?
@@ -155,6 +160,7 @@ _qs_untracked=false
 _qs_ignored=false
 _qs_staged=false
 _qs_unstaged=false
+_qs_conflicted=false
 _qs_ball=false
 _qs_null=false
 
@@ -221,6 +227,10 @@ while true; do
     _qs_unstaged=true
     shift
     ;;
+  --conflicted)
+    _qs_conflicted=true
+    shift
+    ;;
   --ball)
     _qs_ball=true
     shift
@@ -246,7 +256,7 @@ done
 is_query=false
 if $_qs_branch || $_qs_remote || $_qs_upstream || $_qs_hash || $_qs_short_hash ||
   $_qs_ahead || $_qs_behind || $_qs_counts || $_qs_untracked ||
-  $_qs_ignored || $_qs_staged || $_qs_unstaged || $_qs_ball; then
+  $_qs_ignored || $_qs_staged || $_qs_unstaged || $_qs_conflicted || $_qs_ball; then
   is_query=true
 fi
 
@@ -335,13 +345,14 @@ if $is_query; then
     fi
   fi
 
-  # --- file counts (staged, unstaged, untracked, ignored) ---
-  # Computed once when any of -S, -U, -K, -I, or --ball is requested.
+  # --- file counts (staged, unstaged, untracked, ignored, conflicted) ---
+  # Computed once when any of -S, -U, -K, -I, --conflicted, or --ball is requested.
   _qs_val_staged=0
   _qs_val_unstaged=0
   _qs_val_untracked=0
   _qs_val_ignored=0
-  if { $_qs_staged || $_qs_unstaged || $_qs_untracked || $_qs_ignored || $_qs_ball; }; then
+  _qs_val_conflicted=0
+  if { $_qs_staged || $_qs_unstaged || $_qs_untracked || $_qs_ignored || $_qs_conflicted || $_qs_ball; }; then
     if ! git diff --quiet --cached 2> /dev/null; then
       _qs_val_staged=$(git diff --cached --name-only 2> /dev/null | wc -l | tr -d ' ')
     fi
@@ -350,13 +361,18 @@ if $is_query; then
     fi
     _qs_val_untracked=$(git ls-files --others --exclude-standard 2> /dev/null | wc -l | tr -d ' ')
     _qs_val_ignored=$(git ls-files --others --exclude-standard --ignored 2> /dev/null | wc -l | tr -d ' ')
+    # list_conflicted_files emits one blank line when there are no conflicts
+    # (printf '%s\n' with an empty array), so drop empty lines before counting.
+    _qs_val_conflicted=$(list_conflicted_files | sed '/^$/d' | wc -l | tr -d ' ')
   fi
 
   # --- ball emoji ---
   # Same precedence as the summary-line ball logic (see "ball_emoji" in default mode below).
   _qs_val_ball=""
   if $_qs_ball; then
-    if [ "$_qs_val_unstaged" -gt 0 ] && [ "$_qs_val_staged" -eq 0 ]; then
+    if [ "$_qs_val_conflicted" -gt 0 ]; then
+      _qs_val_ball="🔴"
+    elif [ "$_qs_val_unstaged" -gt 0 ] && [ "$_qs_val_staged" -eq 0 ]; then
       _qs_val_ball="🔴"
     elif [ "$_qs_val_staged" -gt 0 ] && [ "$_qs_val_unstaged" -eq 0 ]; then
       _qs_val_ball="🟢"
@@ -415,6 +431,7 @@ if $is_query; then
   $_qs_unstaged && _qs_emit "$_qs_val_unstaged"
   $_qs_untracked && _qs_emit "$_qs_val_untracked"
   $_qs_ignored && _qs_emit "$_qs_val_ignored"
+  $_qs_conflicted && _qs_emit "$_qs_val_conflicted"
   $_qs_ball && _qs_emit "$_qs_val_ball"
 
   # Always append a trailing newline for terminal usability.
@@ -474,8 +491,12 @@ fi
 
 untracked_count=$(git ls-files --others --exclude-standard | wc -l)
 ignored_count=$(git ls-files --others --exclude-standard --ignored | wc -l)
+# list_conflicted_files emits one blank line when there are no conflicts
+# (printf '%s\n' with an empty array), so drop empty lines before counting.
+conflicted_count=$(list_conflicted_files | sed '/^$/d' | wc -l)
 
 # Determine ball emoji color based on precedence:
+# - 🔴 Red: conflicted (unmerged) files first — the highest-stakes state
 # Regardless of untracked and ignored:
 # - 🟡 Yellow: both staged and unstaged files
 # - 🔴 Red: unstaged files only
@@ -485,7 +506,10 @@ ignored_count=$(git ls-files --others --exclude-standard --ignored | wc -l)
 # Other colors:
 # - ⚫ Black: ignored files only
 # - ⚪ White: clean repo
-if [ "$unstaged_files" -gt 0 ] && [ "$staged_files" -eq 0 ]; then
+if [ "$conflicted_count" -gt 0 ]; then
+  head_color="${RED}"
+  ball_emoji="🔴"
+elif [ "$unstaged_files" -gt 0 ] && [ "$staged_files" -eq 0 ]; then
   head_color="${RED}"
   ball_emoji="🔴"
 elif [ "$staged_files" -gt 0 ] && [ "$unstaged_files" -eq 0 ]; then
@@ -535,8 +559,12 @@ uncommitted_output=''
 # If no uncommitted changes at all, don't show uncommitted output
 ((staged_files + unstaged_files)) && uncommitted_output=" │ $staged_output │ $unstaged_output"
 
+# Conflict indicator: shown whenever conflicted files exist (mirrors K:/I:)
+conflicted_output=''
+((conflicted_count)) && conflicted_output=" │ ${RED}C:${conflicted_count}$NC"
+
 non_tracked_output=''
 ((untracked_count + ignored_count)) && non_tracked_output=" │ ${MAGENTA}K:${untracked_count}$NC ${GREY}I:${ignored_count}$NC"
 
 # Combine and print full status line
-printf '%s %s 🌿%s%s%s\n' "$head_emoji" "$hash_colored" "$status_colored" "$uncommitted_output" "$non_tracked_output" >&2
+printf '%s %s 🌿%s%s%s%s\n' "$head_emoji" "$hash_colored" "$status_colored" "$uncommitted_output" "$conflicted_output" "$non_tracked_output" >&2

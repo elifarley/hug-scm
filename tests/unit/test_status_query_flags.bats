@@ -698,3 +698,160 @@ teardown() {
   assert_success
   [[ -z "$output" ]]
 }
+
+# ---------------------------------------------------------------------------
+# --conflicted query flag (elifarley/hug-scm#246)
+# ---------------------------------------------------------------------------
+
+# Helper: repo in a real merge-conflict state (one conflicted file).
+# Builds the conflict with raw git (no dependency on the mkeep alias) so the
+# fixture is self-contained. Leaves the repo in conflict state.
+create_conflict_fixture() {
+  local test_repo
+  test_repo=$(create_test_repo)
+
+  (
+    cd "$test_repo" || exit 1
+
+    echo "base" > conflict.txt
+    git add conflict.txt
+    git commit -q -m "Add base"
+
+    git switch -q -c side
+    echo "side" > conflict.txt
+    git add conflict.txt
+    git commit -q -m "Side change"
+
+    git switch -q main
+    echo "main" > conflict.txt
+    git add conflict.txt
+    git commit -q -m "Main change"
+
+    # The merge fails, leaving conflict.txt unmerged
+    git merge side > /dev/null 2>&1 || true
+  )
+
+  echo "$test_repo"
+}
+
+@test "hug s --conflicted: outputs conflicted file count" {
+  local repo
+  repo=$(create_conflict_fixture)
+  cd "$repo"
+
+  run hug s --conflicted
+  assert_success
+  assert_output "1"
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s --conflicted: outputs 0 on clean repo" {
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  run hug s --conflicted
+  assert_success
+  assert_output "0"
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s --conflicted -S -U: canonical order (staged unstaged conflicted)" {
+  local repo
+  repo=$(create_conflict_fixture)
+  cd "$repo"
+
+  # In a conflict, the conflicted file counts as both staged and unstaged in
+  # git's eyes, so the exact numeric values aren't pinned — only the field
+  # ORDER: <staged> <unstaged> <conflicted>, three integers.
+  local re='^[0-9]+ [0-9]+ [0-9]+$'
+  run hug s -S -U --conflicted
+  assert_success
+  [[ "$output" =~ $re ]]
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s --conflicted --ball: red ball in conflict state" {
+  local repo
+  repo=$(create_conflict_fixture)
+  cd "$repo"
+
+  run hug s --conflicted --ball
+  assert_success
+  # Canonical order: conflicted count then ball emoji
+  assert_output "1 🔴"
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s --conflicted: no stderr chatter in query mode" {
+  local repo
+  repo=$(create_conflict_fixture)
+  cd "$repo"
+
+  run bash -c 'hug s --conflicted 2>&1 1>/dev/null'
+  assert_success
+  [[ -z "$output" ]]
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s: summary line shows C: count in conflict state" {
+  local repo
+  repo=$(create_conflict_fixture)
+  cd "$repo"
+
+  run hug s
+  assert_success
+  assert_output --partial "C:1"
+  assert_output --partial "🔴"
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s: summary line has no C: segment when clean" {
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  run hug s
+  assert_success
+  refute_output --partial "C:"
+  assert_output --partial "⚪"
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s --json: includes conflicted_count in status" {
+  local repo
+  repo=$(create_conflict_fixture)
+  cd "$repo"
+
+  run hug s --json
+  assert_success
+  local json_out="$output"
+
+  # Capture the value via python (spacing-independent)
+  run python3 -c "import json,sys; print(json.loads(sys.argv[1])['status']['conflicted_count'])" "$json_out"
+  assert_output "1"
+
+  cd "$TEST_REPO"
+}
+
+@test "hug s --json: conflicted_count is 0 on clean repo" {
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  run hug s --json
+  assert_success
+  local json_out="$output"
+
+  run python3 -c "import json,sys; print(json.loads(sys.argv[1])['status']['conflicted_count'])" "$json_out"
+  assert_output "0"
+
+  cd "$TEST_REPO"
+}
