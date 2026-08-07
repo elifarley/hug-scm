@@ -355,3 +355,89 @@ validate_json() {
   local count=$(echo "$output" | jq -r '.data.search.results_count')
   [[ "$count" -gt 0 ]] || fail "Expected results_count > 0, got: $count"
 }
+
+# =============================================================================
+# Unified JSON pipeline summary counts (regression pins for #247)
+#
+# output_json_status_unified (slu/sls/slk/sli/slc/sl/sla --json) used to count
+# comma-split JSON FRAGMENTS, not files: every emitted object has 2 fields
+# (path, status), so the old pipeline counted 2 fragments per file. These pins
+# assert the counts are FILE counts (objects), covering both single-filter
+# commands (slu/sls/slk/sli) and the mixed-filter sl/sla path.
+# =============================================================================
+
+@test "slu --json: summary.unstaged counts files, not fragments (#247)" {
+  # Fixture repo is clean; add 1 unstaged modification
+  echo "modified" >> README.md
+
+  run hug slu --json
+  assert_success
+  assert_valid_json
+  local json_out="$output"
+
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1])['summary']; print(d['unstaged'], d['total'])" "$json_out"
+  assert_output "1 1"
+}
+
+@test "sls --json: summary.staged counts a rename as 1 file (#247)" {
+  # A rename object has 2 JSON fields (path, status) — parse_file_to_json
+  # emits the NEW path only, never old_path. The old comma-split pipeline
+  # counted 2 fragments per object, so it reported summary.staged=2 for a
+  # single renamed file. Counting objects (lines) reports 1. (#247)
+  hug mv feature1.txt feature1-renamed.txt
+
+  run hug sls --json
+  assert_success
+  assert_valid_json
+  local json_out="$output"
+
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1])['summary']; print(d['staged'], d['total'])" "$json_out"
+  assert_output "1 1"
+}
+
+@test "sl --json: mixed-filter total counts files, not fragments (#247)" {
+  # sl/sla route through statusbase with a MIXED filter (--staged --unstaged),
+  # the only multi-type path. With 1 staged + 1 unstaged file the old
+  # comma-split pipeline reported staged=2, unstaged=2, total=4 (2 fragments
+  # per 2-field object). Object-counting reports the truthful file totals.
+  echo "staged" > staged.txt
+  hug add staged.txt
+  echo "modified" >> README.md
+
+  run hug sl --json
+  assert_success
+  assert_valid_json
+  local json_out="$output"
+
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1])['summary']; print(d['staged'], d['unstaged'], d['total'])" "$json_out"
+  assert_output "1 1 2"
+}
+
+@test "slu --json: summary counts are correct for mixed types (#247)" {
+  # 1 unstaged + 1 untracked + 1 ignored
+  echo "modified" >> README.md
+  echo "untracked" > new.txt
+  echo "*.log" > .gitignore
+  hug add .gitignore
+  hug commit -m "add gitignore"
+  touch ignored.log
+
+  # Each type's own command reports its truthful file count
+  run hug slu --json
+  assert_success
+  local json_out="$output"
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1])['summary']; print(d['unstaged'], d['total'])" "$json_out"
+  assert_output "1 1"
+
+  run hug slk --json
+  assert_success
+  local json_out="$output"
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1])['summary']; print(d['untracked'], d['total'])" "$json_out"
+  assert_output "1 1"
+
+  run hug sli --json
+  assert_success
+  local json_out="$output"
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1])['summary']; print(d['ignored'], d['total'])" "$json_out"
+  assert_output "1 1"
+}

@@ -29,12 +29,12 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 | Command | Memory Hook | Summary |
 | --- | --- | --- |
 | `hug s` | **S**tatus snapshot | Colored summary of staged/unstaged changes; supports query flags for scripting |
-| `hug sl` | **S**tatus + **L**ist | Status with listed tracked changes |
-| `hug sla` | **S**tatus + **L**ist **A**ll | Status including untracked files |
-| `hug sls` | **S**tatus + **L**ist **S**taged | Status with staged files only |
-| `hug slu` | **S**tatus + **L**ist **U**nstaged | Status with unstaged files only |
-| `hug slk` | **S**tatus + **L**ist untrac**K**ed | Status with untracked files only |
-| `hug slc` | **S**tatus + **L**ist **C**onflicts | Status with conflicted (unmerged) files only |
+| `hug sl` | **S**tatus + **L**ist | Status with listed tracked changes; `-c` counts them |
+| `hug sla` | **S**tatus + **L**ist **A**ll | Status including untracked files; `-c` counts them |
+| `hug sls` | **S**tatus + **L**ist **S**taged | Status with staged files only; `-c` counts them |
+| `hug slu` | **S**tatus + **L**ist **U**nstaged | Status with unstaged files only; `-c` counts them |
+| `hug slk` | **S**tatus + **L**ist untrac**K**ed | Status with untracked files only; `-c` counts them |
+| `hug slc` | **S**tatus + **L**ist **C**onflicts | Status with conflicted (unmerged) files only; `-c` counts them |
 | `hug ss` | **S**tatus + **S**taged | Show staged diff |
 | `hug su` | **S**tatus + **U**nstaged | Show unstaged diff |
 | `hug sw` | **S**tatus + **W**orking | Combined staged and unstaged diff |
@@ -136,8 +136,16 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 
 - `hug slc`: **S**tatus + **L**ist **C**onflicts
     - **Description**: Status with conflicted (unmerged) files only — the native equivalent of `git diff --name-only --diff-filter=U`. Use `-q` for plain paths (scripting); `--json` emits the unified status envelope with a `summary.conflicted` count. Pathspecs scope the text listing (`--json` ignores them).
-    - **Example**: `hug slc`
+    - **Example**: `hug slc`, `hug slc -c` (count of conflicts)
     - **Safety**: ✅ Read-only.
+
+> [!NOTE] `-c/--count` on the `sl*` family
+> Every `sl*` listing command (`sl`, `sla`, `sls`, `slu`, `slk`, `sli`, `slc`) accepts `-c/--count`: it prints only the number of matching files — a single integer on stdout, `0` when none, exit `0` (the `grep -c` idiom). It composes with pathspecs (`hug slc -c <path>` counts conflicts under `<path>`), suppresses the trailing `hug s` summary, and is **mutually exclusive with `--json`** (like `hug wtl`'s `--json --path-only` error). Counts are NUL-safe (a filename containing a newline counts once) and deduplicated (a file both staged and unstaged counts once in `hug sl -c`). `-q` is accepted alongside `-c` but redundant (the count is already bare).
+> ```
+> hug slc -c          # count conflicts (0 → clean, proceed)
+> hug slu -c src/     # count unstaged files under src/
+> if [[ $(hug slc -c) -gt 0 ]]; then ...; fi
+> ```
 
 > **Related:** After inspecting status, jump to [Detailed Patches](#detailed-patches) for inline diffs or hop over to [Working Directory (w*)](working-dir) to clean up files you find.
 
