@@ -746,6 +746,54 @@ create_conflict_fixture() {
   cd "$TEST_REPO"
 }
 
+# Multi-file conflict (N>1): every other conflict test uses the single-file
+# fixture, so a regression that hard-coded the count to 1 — or mis-counted a
+# multi-file conflict through the `sed '/^$/d' | wc -l` pipeline — would pass
+# the whole suite. This pins N>1 for both the query flag and the summary line.
+create_multi_conflict_fixture() {
+  local test_repo
+  test_repo=$(create_test_repo)
+
+  (
+    cd "$test_repo" || exit 1
+
+    # Two files diverge on both branches → both unmerged after the merge.
+    echo "base" > a.txt
+    echo "base" > b.txt
+    git add a.txt b.txt
+    git commit -q -m "Add base"
+
+    git switch -q -c side
+    echo "side-a" > a.txt
+    echo "side-b" > b.txt
+    git add a.txt b.txt
+    git commit -q -m "Side changes"
+
+    git switch -q main
+    echo "main-a" > a.txt
+    echo "main-b" > b.txt
+    git add a.txt b.txt
+    git commit -q -m "Main changes"
+
+    # The merge fails, leaving a.txt and b.txt unmerged
+    git merge side > /dev/null 2>&1 || true
+  )
+
+  echo "$test_repo"
+}
+
+@test "hug s --conflicted: counts multiple conflicted files (N>1)" {
+  local repo
+  repo=$(create_multi_conflict_fixture)
+  cd "$repo"
+
+  run hug s --conflicted
+  assert_success
+  assert_output "2"
+
+  cd "$TEST_REPO"
+}
+
 @test "hug s --conflicted: outputs 0 on clean repo" {
   local clean_repo
   clean_repo=$(create_test_repo)
@@ -812,6 +860,19 @@ create_conflict_fixture() {
   cd "$TEST_REPO"
 }
 
+@test "hug s: summary line shows C:N for multiple conflicted files" {
+  local repo
+  repo=$(create_multi_conflict_fixture)
+  cd "$repo"
+
+  run hug s
+  assert_success
+  assert_output --partial "C:2"
+  assert_output --partial "🔴"
+
+  cd "$TEST_REPO"
+}
+
 @test "hug s: summary line has no C: segment when clean" {
   local clean_repo
   clean_repo=$(create_test_repo)
@@ -854,4 +915,14 @@ create_conflict_fixture() {
   assert_output "0"
 
   cd "$TEST_REPO"
+}
+
+# --json + --conflicted are mutually exclusive: the diff added --conflicted to
+# the query-flag set that trips the line-264 guard ("--json cannot be combined
+# with query flags"). Every other query flag has its own --json-X pair test
+# (tests above for -b, --branch, -r); this pins the new flag to the same rule.
+@test "hug s --json --conflicted: exits with error (mutual exclusion)" {
+  run hug s --json --conflicted
+  assert_failure
+  [[ "$output" =~ (cannot|incompatible|conflict) ]]
 }

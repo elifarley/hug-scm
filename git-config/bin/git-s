@@ -493,7 +493,9 @@ untracked_count=$(git ls-files --others --exclude-standard | wc -l)
 ignored_count=$(git ls-files --others --exclude-standard --ignored | wc -l)
 # list_conflicted_files emits one blank line when there are no conflicts
 # (printf '%s\n' with an empty array), so drop empty lines before counting.
-conflicted_count=$(list_conflicted_files | sed '/^$/d' | wc -l)
+# `| tr -d ' '` matches the query-mode count (line ~366) and the JSON emitter:
+# macOS `wc -l` pads with leading whitespace, which would render `C:  N`.
+conflicted_count=$(list_conflicted_files | sed '/^$/d' | wc -l | tr -d ' ')
 
 # Determine ball emoji color based on precedence:
 # - 🔴 Red: conflicted (unmerged) files first — the highest-stakes state
