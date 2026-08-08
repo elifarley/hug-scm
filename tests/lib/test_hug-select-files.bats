@@ -891,6 +891,33 @@ create_merge_conflict() {
   rm -rf "$nonrepo"
 }
 
+@test "run_count_mode: prints the count and exits 0 (terminating wrapper)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo "staged" > staged.txt
+  git add staged.txt
+
+  # TERMINATING: run in a subshell via `run`; prints the count, exit 0.
+  run --separate-stderr run_count_mode staged
+  assert_success
+  assert_output "1"
+  [[ -z "$stderr" ]]
+}
+
+@test "run_count_mode: --json and -c are mutually exclusive" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo "staged" > staged.txt
+  git add staged.txt
+
+  run --separate-stderr run_count_mode --json staged
+  assert_failure
+  [[ "$stderr" == *"mutually exclusive"* ]]
+  [[ -z "$output" ]]   # no count printed on the mutex-violation path
+}
+
 @test "count_files_with_status: conflicted counts unmerged files" {
   local repo
   repo=$(create_test_repo)

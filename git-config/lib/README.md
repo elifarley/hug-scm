@@ -204,6 +204,9 @@ Git-specific JSON output helpers (uses hug-json).
   - Prints an integer (0 when none, exit 0). NUL-safe (newline filenames count once) and Bash 4.0-safe (no nameref).
   - `all`/`all+untracked` dedup via `git status --porcelain -z` (a file staged AND unstaged counts once)
   - Enforces the repo precondition internally (`check_git_repo`): exits 1 with "Not in a git repository" when called outside a repo (parity with `list_*_files`)
+- `run_count_mode [--json] <state> [pathspec...]` - Terminating wrapper for the sl* `-c/--count` dispatch
+  - Encapsulates the mutual-exclusion guard + `count_files_with_status` call + `exit 0` (formerly duplicated across the 6 `sl*` dispatchers)
+  - `--json` is mutually exclusive with `-c` (errors and exits); the function ALWAYS exits (never returns) — call it as a statement, never in `$(...)`
 
 **JSON Design Philosophy:**
 - Pure Bash for portability and dependency-free operation
