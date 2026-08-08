@@ -39,8 +39,11 @@
 #   (3) exit 0.
 # TERMINATING: calls `exit 0` (and `error`->exit 1 on the --json violation), so it
 #   NEVER returns -- a caller running it inside `if $count_only; then ...; fi` never
-#   reaches code below the block. Pass `--json` with `${json_output:+--json}` so the
-#   caller stays a single line. Do NOT capture this in $(...) : the subshell exit is
+#   reaches code below the block. Callers pass `--json` only when their json flag is
+#   true, e.g. `if $json_output; then run_count_mode --json <state> ...; else
+#   run_count_mode <state> ...; fi`. Do NOT use ${json_output:+--json}: hug stores
+#   booleans as the strings true/false, so :+ fires on the non-empty "false" too and
+#   would ALWAYS pass --json. Do NOT capture this in $(...) : the subshell exit is
 #   contained and the count is captured correctly, but the caller does NOT terminate
 #   -- in the dispatchers, execution falls through to the listing/summary code and
 #   prints BOTH the (captured) count AND the listing (broken output). Call it as a

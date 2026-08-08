@@ -92,18 +92,15 @@ if [[ ${#pathspecs[@]} -gt 0 ]]; then
   list_opts+=("${pathspecs[@]}")
 fi
 
-# Count mode: print the number of matching files (the grep -c of listings).
-# NUL-safe + Bash-4.0-safe via count_files_with_status (hug-select-files):
-# counts git's NUL-delimited records, so newline-containing filenames count
-# once, and no `local -n` nameref (Bash 4.3+) is reached. The count is the
-# whole answer: it suppresses the trailing summary and is mutually exclusive
-# with --json (like `hug wtl`'s --json --path-only error).
+# Count mode: -c/--count dispatch (see run_count_mode in hug-select-files).
+# --json passed only when $json_output is true (the codebase stores booleans as
+# true/false strings; ${json_output:+--json} would ALWAYS expand — see run_count_mode).
 if $count_only; then
   if $json_output; then
-    error "-c/--count and --json are mutually exclusive"
+    run_count_mode --json conflicted "${pathspecs[@]}"
+  else
+    run_count_mode conflicted "${pathspecs[@]}"
   fi
-  count_files_with_status conflicted "${pathspecs[@]}"
-  exit 0
 fi
 
 # JSON output mode
