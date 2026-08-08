@@ -81,7 +81,7 @@ for free from its bundle; `count_files_with_status` does not — its bundle (`hu
 doesn't carry `hug-git-repo`. The fix is to **declare** `hug-git-repo` in `hug-select-files`'s
 `Depends on:` header (line 5) so the new dependency is honest and discoverable, matching the
 codebase convention (modules declare deps; the caller sources them — `git-g` itself sources
-`hug-git-repo` explicitly at line 11 for exactly this reason). We do **not** auto-source
+`hug-git-repo` explicitly at line 13 for exactly this reason). We do **not** auto-source
 `hug-git-repo` from `hug-select-files`: `hug-common` is symlinked into `hg-config/lib`, so
 `hug-select-files` already loads in Mercurial contexts, and defensively sourcing the
 git-specific `hug-git-repo` (whose `check_git_repo` calls `git rev-parse`) there would
@@ -124,7 +124,7 @@ any existing in-repo caller — the entire `sl* -c` test suite cds into a repo f
 dispatchers load via `hug-git-kit`. A caller that sources only `hug-common` (which loads
 `hug-select-files` but not `hug-git-repo`) must source `hug-git-repo` itself, as the
 `Depends on:` header now declares — the same contract every other module in this codebase
-uses (callers source declared deps; `git-g` does this explicitly at line 11). #259's
+uses (callers source declared deps; `git-g` does this explicitly at line 13). #259's
 acceptance is met for every real caller.
 
 ## Section 2 — `run_count_mode` wrapper (#258)
@@ -147,8 +147,10 @@ Add directly above `count_files_with_status` in `hug-select-files`:
 #   NEVER returns — a caller running it inside `if $count_only; then ...; fi` never
 #   reaches code below the block. Pass `--json` with `${json_output:+--json}` so the
 #   caller stays a single line. Do NOT capture this in $(...) : the subshell exit is
-#   contained, the count is captured correctly, but the caller does NOT terminate
-#   (silent non-termination) — call it as a statement, never as a substitution.
+#   contained and the count is captured correctly, but the caller does NOT terminate
+#   — in the dispatchers, execution falls through to the listing/summary code and
+#   prints BOTH the (captured) count AND the listing (broken output). Call it as a
+#   statement, never as a substitution.
 run_count_mode() {
   local json=false
   [[ "${1:-}" == --json ]] && { json=true; shift; }
@@ -271,17 +273,22 @@ machines where `/tmp` is versioned:
   local nonrepo
   nonrepo=$(mktemp -d)   # fresh, guaranteed non-repo (setup() cds into a repo; leave it)
   cd "$nonrepo"
-  run count_files_with_status staged
+  run --separate-stderr count_files_with_status staged
   assert_failure
-  assert_output --partial "Not in a git repository"
+  [[ -z "$output" ]]                                  # stdout clean: no leaked count (the old silent-0)
+  [[ "$stderr" == *"Not in a git repository"* ]]      # stderr carries the clean HUG message
   rm -rf "$nonrepo"
 }
 ```
 
-`error` is in scope via `hug-common` (loaded at line 5 of the test file → `hug-output`);
-`check_git_repo` via `hug-git-kit` (line 6 → `hug-git-repo`). `run` runs in a subshell that
-inherits the sourced function, and `error`→`exit 1` is contained there (the same pattern
-`test_worktree_list.bats:142` relies on, though that test uses `cd /tmp`).
+Uses `run --separate-stderr` (BATS ≥1.6; the repo already uses it at
+`test_status_staging.bats:1947`) so the two halves of the acceptance — "no silent `0` on
+stdout" and "the clean message on stderr" — are pinned **independently**. (`gum_log`
+writes `>&2`, so the message lands on stderr; `check_git_repo` is the first executable line
+and `error`→`exit 1` runs before any `printf '%d\n'`, so stdout is structurally empty on
+the error path.) `error` is in scope via `hug-common` (line 5 → `hug-output`);
+`check_git_repo` via `hug-git-kit` (line 6 → `hug-git-repo`); `run` runs in a subshell that
+inherits the sourced function and contains the `error`→`exit 1`.
 
 ### Optional end-to-end test (only if it does not duplicate the lib test)
 
@@ -364,6 +371,12 @@ Mapped to the two issues:
 - Refactoring the `sl*` JSON/listing paths (out of scope; only the `-c` dispatch is
   factored).
 - Touching `sl`/`sla` directly (they delegate via aliases).
+- **`--json`/pathspec arg-parsing hardening** (roast MINOR 4) — `run_count_mode`'s
+  `--json` detection is position-only (`$1`), and the 6 dispatcher `case` blocks don't
+  honor `--` as a pathspec separator (a pre-existing limitation: a pathspec literally named
+  `--json` is consumed as the flag before it can reach the count logic). Both are
+  pre-existing and independent of this refactor; tracked as
+  [elifarley/hug-scm#260](https://github.com/elifarley/hug-scm/issues/260) (separate PR).
 
 ## Risks
 
@@ -373,15 +386,17 @@ Mapped to the two issues:
   unaffected (single state, no temp var).
 - **Terminating helper captured via `$(...)`:** if a future caller captures
   `run_count_mode` in command substitution, `exit 0` only exits the subshell and the
-  caller continues — a **silent non-termination** (NOT a wrong number: the count is
-  captured correctly into the variable). The docblock's TERMINATING note flags this and
-  the contract is "call as a statement, never capture." This is preferred over a
-  non-terminating core + explicit `; exit 0` at each call site: that alternative re-introduces
-  a *worse* failure mode (a forgotten `exit 0` at any of the 6 sites would print the count
-  AND fall through to the listing/summary code). The terminating design makes the
-  failure-free path the default. (The two roast reports split on this: one rated it an
-  acceptable Minor, the other a Major recommending the non-terminating redesign; verified
-  analysis supports keeping terminating — see §F-005.)
+  caller continues — the count is captured correctly (NOT a wrong number), but the caller
+  does not terminate, so in the dispatchers execution falls through to the
+  listing/summary code and prints BOTH the count AND the listing (broken output — the
+  same broken-output shape as a forgotten `exit 0`, but reachable only by violating the
+  "never capture" contract, i.e. 1 chance vs the non-terminating alternative's 6
+  call-sites). The docblock flags this and the contract is "call as a statement, never
+  capture." The terminating design is preferred because it makes the failure-free path the
+  default (0 forgotten-`exit 0` sites); the non-terminating alternative has 6. (The two
+  roast reports split on this: one rated it an acceptable Minor, the other a Major
+  recommending the non-terminating redesign; verified analysis supports keeping
+  terminating — see §F-005.)
 - **`--json` flag parsing vs. pathspecs starting with `--`:** a pathspec literally named
   `--json` would be mis-read as the flag. This is already broken upstream (the
   dispatchers' `case` collects anything not matching `--json`/`-c`/`-q` as a pathspec, so
@@ -428,7 +443,7 @@ not. `error` reaches the dispatchers via `hug-common` (→ `hug-output`, loaded 
 `hug-common:83`); `check_git_repo` via `hug-git-kit` (→ `hug-git-repo`, loaded at
 `hug-git-kit:30`). Corrected in the Architecture section and the test section. (The roast's
 aside that `git-g` "sources only `hug-common`" was itself inaccurate — `git-g` sources
-`hug-git-repo` explicitly at line 11 — but the core finding holds.)
+`hug-git-repo` explicitly at line 13 — but the core finding holds.)
 
 ### F-003 — Inaccurate "raw git error" description — FIXED
 
@@ -482,3 +497,22 @@ contract is uniform (error→exit 1 on the mutex violation, exit 0 on success).
   primitive's own header, one `grep` away).
 - Noted the `git-statusbase` dedup comment is relocated (to the primitive's header /
   helper docblock), not dropped — so a reviewer reads the diff as a move.
+
+### Re-roast (round 3) — no CRITICAL/MAJOR; four MINORs addressed
+
+A third `--spec` roast re-verified every load-bearing claim (F-001–F-005 all survived) and
+returned **no CRITICAL or MAJOR issues** — the spec was ready to proceed to the plan. Four
+MINORs, all addressed in this commit:
+
+- **M1 (test polish):** the #259 test now uses `run --separate-stderr` and asserts stdout
+  is empty (`[[ -z "$output" ]]`) AND stderr carries the message — pinning both halves of
+  the acceptance ("no silent `0`" + "clean message") independently.
+- **M2 (F-005 wording):** the `$(...)`-capture wording now states the downstream consequence
+  explicitly — the count is captured correctly but the caller does not terminate, so in the
+  dispatchers execution falls through to the listing code (broken output: count + listing).
+  The "1 contract-violation vs 6 forgotten-`exit 0` sites" symmetry is now explicit.
+- **M3 (factual nit):** `git-g` sources `hug-git-repo` at line **13** (line 11 is
+  `hug-git-gc`); the spec's "line 11" aside was corrected.
+- **M4 (arg-parsing follow-up):** the position-only `--json` detection in `run_count_mode`
+  and the pre-existing `--json`-as-pathspec limitation in the dispatcher `case` blocks are
+  out of scope here and tracked as [elifarley/hug-scm#260](https://github.com/elifarley/hug-scm/issues/260).
