@@ -234,7 +234,7 @@ count_commits_in_range() {
     git rev-list --count "$start..$end"
 }
 
-# STRICT-display twin of count_commits_in_range.
+# Display-only, failure-tolerant twin of count_commits_in_range.
 # Usage: count=$(count_commits_in_range_or_zero "start" ["end"])
 # ONLY for display/tip text where a 0 on rev-list failure is cosmetically acceptable
 # (e.g. a rendered plan or a "… in N commits since …" tip). NEVER use this for a branching
@@ -267,8 +267,13 @@ is_same_commit() {
 
 # Signed commit distance from <a> to <b> (default HEAD). 0 means IDENTITY (same commit),
 # NOT merely "not ahead" — the false-zero is unrepresentable by construction.
-# Usage: dispatch on $? — exit 2 (diverged) and exit 3 (error) need DISTINCT handling:
-#   offset=$(commit_offset "target" HEAD); rc=$?
+# Usage: dispatch on $? — exit 2 (diverged) and exit 3 (error) need DISTINCT handling.
+# Capture via `|| rc=$?` — the assignment MUST sit left of `||`: a bare
+# `offset=$(commit_offset …)` followed by `rc=$?` is DEAD CODE under `set -e`, because
+# the assignment statement's exit status IS the substitution's, so errexit aborts the
+# caller at the assignment for exactly exit 2 and 3 — before any dispatch can run.
+#   local offset rc=0
+#   offset=$(commit_offset "target" HEAD) || rc=$?
 #   case $rc in
 #     0) use "$offset" ;;   # identity (0) or a clean signed distance (N / -N)
 #     2) handle_diverged ;; # incomparable histories — NOT an error, NOT a distance

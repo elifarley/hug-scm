@@ -2196,19 +2196,23 @@ EOF
 # `git rev-parse --short <garbage>`, `git rev-parse HEAD` on unborn HEAD), so these stay green by
 # design. Read them as "the command fails loudly," not "this specific line propagates."
 
-@test "hug h back <descendant>: moves HEAD FORWARD instead of no-op'ing (#229 headline)" {
-  # Defect-1, end-to-end. Build A/B/C (the fixture), record the tip C as the forward target,
-  # then move HEAD back to A so C is a true DESCENDANT of HEAD. Pre-fix this printed
-  # "Already at target" and left HEAD at A; post-fix the mover must walk HEAD forward to C.
+@test "hug h back <descendant>: rejected loudly, points at restore (#234 narrows the #229 headline)" {
+  # Evolution: #229 made forward targets PROCEED through the movers; the #234 batch narrows
+  # that — a FORWARD explicit target through a backward-NAMED mover is a direction mistake,
+  # rejected loudly and pointing at restore (the sanctioned forward mover, which encodes the
+  # reset mode explicitly). A silent forward move through a command named "back" surprised
+  # users; restore is unambiguous.
   local descendant
   descendant=$(git rev-parse HEAD)   # capture the tip BEFORE moving — the forward target (C)
   git reset -q --hard HEAD~2         # HEAD -> A (root); tree clean, descendant is ahead of HEAD
 
   run env HUG_FORCE=true hug h back "$descendant"
 
-  assert_success
-  refute_output --partial "Already at target"          # the no-op guard must NOT fire for a forward target
-  [ "$(git rev-parse HEAD)" = "$descendant" ]          # HEAD actually moved FORWARD to the descendant
+  assert_failure
+  assert_output --partial "is ahead of HEAD by 2 commit(s)"
+  assert_output --partial "hug h restore"
+  refute_output --partial "Already at target"
+  [ "$(git rev-parse HEAD)" != "$descendant" ]   # HEAD did NOT move
 }
 
 @test "hug h squash <invalid-ref>: rejected loudly (garbage ref) (#229)" {
@@ -2248,11 +2252,11 @@ EOF
   # false-NEGATIVE (never a false positive), so the mover falls through to the strict count and
   # fails loudly.
   #
-  # LESSON / why the input is NOT `h back 1` at a valid root: that input takes git-h-back's
-  # dedicated reset_root_commit branch and SUCCEEDS ("root commit undone", HEAD unborn) — already
-  # pinned above by "hug h back: undoes root commit, files stay staged". A naive
-  # `h back 1 at valid root -> assert_failure` is therefore WRONG; the genuine loud-failure state
-  # is the UNBORN HEAD reproduced here via `git update-ref -d HEAD` (what reset_root_commit runs).
+  # LESSON / `h back 1` at a VALID root: since the #234 batch an explicit target is validated
+  # FIRST — `h back 1` (HEAD~1, unresolvable at root) fails loudly with "'1' is not a valid
+  # commit" (pinned below). The root-recovery branch is now reachable ONLY with no positional
+  # target (the `-z target_arg` structural guard), and the no-arg form stays pinned by
+  # "hug h back: undoes root commit, files stay staged".
   local root_sha
   root_sha=$(git rev-list --max-parents=0 HEAD)        # resolve while HEAD is still born
   git update-ref -d HEAD                               # -> unborn HEAD: the post-root-undo recovery state
@@ -2261,4 +2265,103 @@ EOF
 
   assert_failure
   refute_output --partial "Already at target"          # must fail loudly, not no-op silently
+}
+
+# ============================================================================
+# #234 enforcement: explicit targets are validated — garbage/forward fail loudly,
+# sideways (diverged) proceeds, root-recovery is no-arg-only
+# ============================================================================
+
+@test "hug h back <garbage> at root: loud failure, root commit intact (#234)" {
+  # THE reason this batch exists: pre-fix, a garbage explicit target at root was
+  # indistinguishable from "no parent of root" and triggered reset_root_commit.
+  local test_repo; test_repo=$(create_test_repo)
+  cd "$test_repo"
+  local root_sha; root_sha=$(git rev-parse HEAD)
+
+  run env HUG_FORCE=true hug h back definitely-not-a-ref
+
+  assert_failure
+  assert_output --partial "'definitely-not-a-ref' is not a valid commit"
+  [ "$(git rev-parse HEAD)" = "$root_sha" ]   # the destructive path never ran
+}
+
+@test "hug h back 1 at root: loud failure quoting the user's literal (#234 behavior change)" {
+  # HEAD~1 does not exist at root. Pre-fix this triggered root-recovery; an explicit target
+  # is a user assertion, so it now fails loudly — quoting what the user TYPED ('1'), not the
+  # internally-resolved HEAD~1 (the validator receives the literal input).
+  local test_repo; test_repo=$(create_test_repo)
+  cd "$test_repo"
+
+  run env HUG_FORCE=true hug h back 1
+
+  assert_failure
+  assert_output --partial "'1' is not a valid commit"
+}
+
+@test "hug h back <diverged-orphan-ref> at root: silent pass, sideways move preserved (#234)" {
+  # Orphan branches DO diverge from the root (no common ancestor) — the "diverged at root"
+  # shape is reachable. Policy: silent pass; today's sideways preview/reset, unchanged.
+  local test_repo; test_repo=$(create_test_repo)
+  cd "$test_repo"
+  local other_root; other_root=$(git rev-parse HEAD)
+  git checkout -q --orphan sideway
+  echo "s" > sideways.txt; git add sideways.txt; git commit -q -m "orphan root"
+
+  run env HUG_FORCE=true hug h back "$other_root"
+
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$other_root" ]   # sideways reset happened
+}
+
+@test "hug h back <diverged-branch>: proceeds (THE errexit-detection assertion) (#234)" {
+  # CRITICAL layer: this runs the REAL mover under set -euo pipefail. A broken capture idiom
+  # (offset=$(commit_offset …); rc=$?) dies silently at the assignment for exit 2; bats `run`
+  # at the HELPER layer cannot catch that (run disables errexit). This assertion — diverged
+  # target PROCEEDS instead of exiting silently — is the batch's only defense against a
+  # regression of the capture idiom.
+  create_test_repo_with_history
+  git checkout -q -b advanced-branch
+  echo "adv" > advanced.txt; git add advanced.txt; git commit -q -m "branch advances"
+  git checkout -q -
+  echo "loc" > local-advance.txt; git add local-advance.txt; git commit -q -m "HEAD advances"
+  local target; target=$(git rev-parse advanced-branch)   # diverged from HEAD
+
+  run env HUG_FORCE=true hug h back advanced-branch
+
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$target" ]                 # sideways move, NOT a silent exit
+}
+
+@test "hug h undo <garbage> at root: loud failure (#234 spot-check)" {
+  local test_repo; test_repo=$(create_test_repo)
+  cd "$test_repo"
+  run env HUG_FORCE=true hug h undo nope-ref
+  assert_failure
+  assert_output --partial "'nope-ref' is not a valid commit"
+}
+
+@test "hug h rollback <garbage> at root: loud failure (#234 spot-check)" {
+  local test_repo; test_repo=$(create_test_repo)
+  cd "$test_repo"
+  run env HUG_FORCE=true hug h rollback nope-ref
+  assert_failure
+  assert_output --partial "'nope-ref' is not a valid commit"
+}
+
+@test "hug h undo <diverged-branch>: proceeds (the documented 'hug h undo main' shape) (#234)" {
+  # docs/commands/head.md ships `hug h undo main` as an everyday example; on a branch whose
+  # main has advanced, the target is DIVERGED. The batch must preserve today's sideways
+  # preview/reset — a silent non-zero exit here would regress the everyday shape.
+  create_test_repo_with_history
+  git checkout -q -b advanced-main
+  echo "adv" > advanced.txt; git add advanced.txt; git commit -q -m "main advances"
+  git checkout -q -
+  echo "loc" > local-advance.txt; git add local-advance.txt; git commit -q -m "HEAD advances"
+  local target; target=$(git rev-parse advanced-main)
+
+  run env HUG_FORCE=true hug h undo advanced-main
+
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$target" ]
 }

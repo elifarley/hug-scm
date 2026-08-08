@@ -2,10 +2,153 @@
 # Library: HUG interactive file selection
 #
 # Implements gum-powered file selection with git status annotations.
-# Depends on: hug-gum, hug-output, hug-terminal, hug-git-files (for list_* functions), hug-git-priorities.
+# Depends on: hug-gum, hug-output, hug-terminal, hug-git-files (for list_* functions), hug-git-priorities, hug-git-repo (for check_git_repo, used by count_files_with_status).
 # Functions:
 #   - list_files_with_status: list staged/unstaged/untracked files with color-coded status (non-interactive).
 #   - select_files_with_status: filter staged/unstaged/untracked files interactively.
+#   - count_files_with_status: count files by state (NUL-safe, scriptable; the sl* `-c` engine; enforces the repo precondition via check_git_repo).
+#   - run_count_mode: terminating wrapper for the sl* -c/--count dispatch (mutual-exclusion guard + count + exit 0).
+
+# Count files in a given state — the grep -c of file listings.
+# Usage: count_files_with_status <state> [pathspec...]
+#   <state>: staged|unstaged|untracked|ignored|conflicted|all|all+untracked
+#     all            = staged + unstaged, deduplicated (a file in both counts once)
+#     all+untracked  = all + untracked, deduplicated (drives sl/sla -c)
+# Prints a single integer (newline-terminated) to stdout; 0 when none; exit 0.
+#
+# Design (why NUL-delimited records, not lines):
+#   - Filenames may contain newlines (git permits them); line-based counting
+#     (mapfile/wc -l) splits such a name into 2 — a silent over-count.
+#   - No `local -n` / nameref, so this works on the Bash 4.0–4.2 floor the
+#     project supports (docs/installation.md) — unlike list_files_with_status,
+#     which routes through convert_to_relative_paths (local -n, Bash 4.3+).
+#   - Multi-state counts (all/all+untracked) use `git status --porcelain -z`,
+#     which emits ONE record per file (MM for a file both staged and unstaged),
+#     so the count is deduplicated by construction.
+
+# run_count_mode — terminating wrapper for the sl* -c/--count dispatch.
+# Usage: run_count_mode [--json] <state> [pathspec...]
+#   <state>: the count_files_with_status enum (staged|unstaged|untracked|ignored|
+#           conflicted|all|all+untracked).
+# Encapsulates the -c dispatch previously duplicated (near-verbatim) across the 6 sl*
+# scripts (git-sls/slu/slk/sli/slc/statusbase):
+#   (1) --json is mutually exclusive with -c -> error + exit (like hug wtl's
+#       --json --path-only error),
+#   (2) delegate to count_files_with_status (which itself enforces the repo
+#       precondition -- #259),
+#   (3) exit 0.
+# TERMINATING: calls `exit 0` (and `error`->exit 1 on the --json violation), so it
+#   NEVER returns -- a caller running it inside `if $count_only; then ...; fi` never
+#   reaches code below the block. Callers pass `--json` only when their json flag is
+#   true, e.g. `if $json_output; then run_count_mode --json <state> ...; else
+#   run_count_mode <state> ...; fi`. Do NOT use ${json_output:+--json}: hug stores
+#   booleans as the strings true/false, so :+ fires on the non-empty "false" too and
+#   would ALWAYS pass --json. Do NOT capture this in $(...) : the subshell exit is
+#   contained and the count is captured correctly, but the caller does NOT terminate
+#   -- in the dispatchers, execution falls through to the listing/summary code and
+#   prints BOTH the (captured) count AND the listing (broken output). Call it as a
+#   statement, never as a substitution.
+run_count_mode() {
+  local json=false
+  [[ "${1:-}" == --json ]] && { json=true; shift; }
+  local state="${1:?run_count_mode: <state> required}"; shift
+  local -a pathspecs=("$@")
+  if $json; then
+    error "-c/--count and --json are mutually exclusive"
+  fi
+  count_files_with_status "$state" "${pathspecs[@]}"
+  exit 0
+}
+
+count_files_with_status() {
+  check_git_repo   # Parity with list_*_files: clean HUG error from any context (#259)
+  local state="$1"
+  shift
+  local -a pathspecs=("$@")
+  local count=0
+
+  case "$state" in
+  conflicted)
+    count=$(git diff --diff-filter=U --name-only -z -- "${pathspecs[@]}" 2>/dev/null | tr -cd '\0' | wc -c)
+    ;;
+  untracked)
+    count=$(git ls-files --others --exclude-standard -z -- "${pathspecs[@]}" 2>/dev/null | tr -cd '\0' | wc -c)
+    ;;
+  ignored)
+    count=$(git ls-files --others --exclude-standard --ignored -z -- "${pathspecs[@]}" 2>/dev/null | tr -cd '\0' | wc -c)
+    ;;
+  staged | unstaged | all | all+untracked)
+    # git status --porcelain -z emits "XY<tab>path\0" (X=index, Y=worktree).
+    # It dedups across staged+unstaged: a file in both is ONE "MM" record.
+    # Select by porcelain code position; skip untracked (??) unless requested.
+    local want_index=false want_worktree=false want_untracked=false
+    case "$state" in
+    staged) want_index=true ;;
+    unstaged) want_worktree=true ;;
+    all) want_index=true; want_worktree=true ;;
+    all+untracked) want_index=true; want_worktree=true; want_untracked=true ;;
+    esac
+
+    # --untracked-files=all: without it, git COLLAPSES untracked files under a
+    # new directory into a single "?? dir/" record, so `sla -c` would count 1
+    # for two files (elifarley/hug-scm#257 review P1). `all` enumerates every
+    # file individually. Only needed when untracked files are requested.
+    local -a porcelain_opts=(--porcelain -z)
+    if $want_untracked; then
+      porcelain_opts+=(--untracked-files=all)
+    fi
+
+    count=$(git status "${porcelain_opts[@]}" -- "${pathspecs[@]}" 2>/dev/null | while IFS= read -r -d '' rec; do
+      [[ -z "$rec" ]] && continue
+      # IMPORTANT: assumes porcelain v1 (`--porcelain -z` defaults to v1). Do
+      # NOT switch to `--porcelain=v2 -z`: v2's record layout
+      # ("XY<space>status...<space>path") moves the path separator off pos2 and
+      # would silently mis-count.
+      #
+      # Rename/copy records (XY starts with R/C) are followed by a SECOND bare
+      # record holding the OLD path ("old.txt\0", no XY prefix). Consume that
+      # bare record EXPLICITLY rather than inferring record type from a filename
+      # byte: an old path whose 3rd byte is a space/tab (e.g. a tracked file
+      # literally named "M  old") would fool a pos2 separator heuristic into
+      # counting it as a second status record (elifarley/hug-scm#257 review P2).
+      # `consume_rename_old` is set when we just saw R/C; cleared once consumed.
+      if [[ "${consume_rename_old:-}" == yes ]]; then
+        consume_rename_old=no
+        continue
+      fi
+      local st="${rec:0:2}"
+      local x="${st:0:1}" y="${st:1:1}"
+      # If this record is a rename/copy, the NEXT record is its bare old-path
+      # companion — flag it for consumption above.
+      if [[ "$x" == R || "$x" == C ]]; then
+        consume_rename_old=yes
+      fi
+      # One marker per matching record (a record can match both slots — MM —
+      # and must count once, not twice). `if` (not bare `&&` chains) keeps
+      # this safe under `set -e` inside the pipeline subshell.
+      local matched=false
+      if [[ "$st" == "??" ]]; then
+        if $want_untracked; then matched=true; fi
+      else
+        if $want_index && [[ "$x" != "." && "$x" != " " ]]; then
+          matched=true
+        elif $want_worktree && [[ "$y" != "." && "$y" != " " ]]; then
+          matched=true
+        fi
+      fi
+      if $matched; then printf x; fi
+    done | wc -c)
+    ;;
+  *)
+    error "count_files_with_status: unknown state '$state'"
+    ;;
+  esac
+
+  # macOS/BSD `wc` pads output with LEADING whitespace for column alignment;
+  # strip it (matches git-s:289 and the JSON emitters — Decision #9).
+  count=$(printf '%s' "$count" | tr -d ' ')
+  printf '%d\n' "$count"
+}
 
 # Non-interactive file listing with status annotations
 # Usage: list_files_with_status [OPTIONS] [PATHSPECS...]

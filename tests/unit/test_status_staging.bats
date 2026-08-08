@@ -1894,3 +1894,129 @@ create_slc_conflict_fixture() {
   assert_success
   [[ "$json_out" == *'"conflict.txt"'* ]]
 }
+
+# --- hug slc -c/--count ---
+
+@test "hug slc -c: prints only the file count" {
+  local repo
+  repo=$(create_slc_conflict_fixture)
+  cd "$repo"
+  run hug mkeep side -m "merge side"
+  assert_failure
+
+  run hug slc -c
+  assert_success
+  assert_output "1"
+}
+
+@test "hug slc -c: pathspec scopes the count" {
+  local repo
+  repo=$(create_slc_conflict_fixture)
+  cd "$repo"
+  run hug mkeep side -m "merge side"
+  assert_failure
+
+  run hug slc -c conflict.txt
+  assert_success
+  assert_output "1"
+
+  # A pathspec matching nothing → 0, exit 0 (the grep -c idiom)
+  run hug slc -c no-such-file.txt
+  assert_success
+  assert_output "0"
+}
+
+@test "hug slc -c: no conflicts prints 0, exit 0" {
+  local clean_repo
+  clean_repo=$(create_test_repo)
+  cd "$clean_repo"
+
+  run hug slc -c
+  assert_success
+  assert_output "0"
+}
+
+@test "hug slc -c: suppresses the trailing summary and wins over -q" {
+  local repo
+  repo=$(create_slc_conflict_fixture)
+  cd "$repo"
+  run hug mkeep side -m "merge side"
+  assert_failure
+
+  # -c with -q: stdout is exactly the count, no summary chatter
+  run --separate-stderr -- hug slc -c -q
+  assert_success
+  assert_output "1"
+  [[ -z "$stderr" ]]
+}
+
+@test "hug slc -c: -c + --json errors (mutually exclusive)" {
+  local repo
+  repo=$(create_slc_conflict_fixture)
+  cd "$repo"
+  run hug mkeep side -m "merge side"
+  assert_failure
+
+  # -c and --json are incompatible (like hug wtl's --json --path-only error)
+  run hug slc -c --json
+  assert_failure
+  assert_output --partial "mutually exclusive"
+}
+
+@test "hug slk -c: counts a newline-containing filename once (NUL-safe)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  # git permits newlines in filenames; line-based counting would over-count to 2
+  touch "$(printf 'weird\nname.txt')"
+
+  run hug slk -c
+  assert_success
+  assert_output "1"
+}
+
+# --- sl* family -c/--count ---
+
+@test "hug slu -c: counts unstaged files, scoped by pathspec" {
+  # TEST_REPO (from setup) has 1 unstaged change (README.md)
+  run hug slu -c
+  assert_success
+  assert_output "1"
+
+  # Pathspec that matches nothing → 0
+  run hug slu -c no-such-file.txt
+  assert_success
+  assert_output "0"
+}
+
+@test "hug sls -c / slk -c / sli -c: count staged/untracked/ignored" {
+  cd "$TEST_REPO"
+  # Fixture: staged.txt staged, README.md unstaged, untracked.txt untracked
+  run hug sls -c
+  assert_success
+  assert_output "1"
+
+  run hug slk -c
+  assert_success
+  assert_output "1"
+
+  echo "*.log" > .gitignore
+  touch ignored.log
+  run hug sli -c
+  assert_success
+  assert_output "1"
+}
+
+@test "hug sl -c / sla -c: count via git-statusbase aliases" {
+  cd "$TEST_REPO"
+  # Fixture: staged.txt staged, README.md unstaged, untracked.txt untracked.
+  # sl = staged+unstaged (2, deduplicated); sla = +untracked (3).
+  run hug sl -c
+  assert_success
+  assert_output "2"
+
+  run hug sla -c
+  assert_success
+  assert_output "3"
+}

@@ -23,6 +23,10 @@ USAGE:
   hug slc [OPTIONS] [pathspec...]
 
 OPTIONS:
+  -c, --count       Print only the number of matching files (the grep -c
+                    of listings): a single integer, 0 when none, exit 0.
+                    Suppresses the trailing summary. Mutually exclusive
+                    with --json.
   -q, --quiet       Print plain paths only (no status column, no summary).
   --json            Output the unified JSON envelope (ignores pathspecs).
   -h, --help        Show this help message and exit.
@@ -44,6 +48,7 @@ EOF
 # ordering).
 json_output=false
 quiet=false
+count_only=false
 if [[ ${HUG_QUIET:-} == T ]]; then
   quiet=true
 fi
@@ -52,6 +57,9 @@ for arg in "$@"; do
   case "$arg" in
   --json)
     json_output=true
+    ;;
+  -c | --count)
+    count_only=true
     ;;
   -q | --quiet)
     quiet=true
@@ -82,6 +90,17 @@ fi
 # Add pathspecs if provided
 if [[ ${#pathspecs[@]} -gt 0 ]]; then
   list_opts+=("${pathspecs[@]}")
+fi
+
+# Count mode: -c/--count dispatch (see run_count_mode in hug-select-files).
+# --json passed only when $json_output is true (the codebase stores booleans as
+# true/false strings; ${json_output:+--json} would ALWAYS expand — see run_count_mode).
+if $count_only; then
+  if $json_output; then
+    run_count_mode --json conflicted "${pathspecs[@]}"
+  else
+    run_count_mode conflicted "${pathspecs[@]}"
+  fi
 fi
 
 # JSON output mode

@@ -19,6 +19,7 @@ check_git_repo
 # Parse arguments
 json_output=false
 quiet=false
+count_only=false
 if [[ ${HUG_QUIET:-} == T ]]; then
   quiet=true
 fi
@@ -27,6 +28,9 @@ for arg in "$@"; do
   case "$arg" in
   --json)
     json_output=true
+    ;;
+  -c | --count)
+    count_only=true
     ;;
   -q | --quiet)
     quiet=true
@@ -49,6 +53,17 @@ fi
 # Add pathspecs if provided
 if [[ ${#pathspecs[@]} -gt 0 ]]; then
   list_opts+=("${pathspecs[@]}")
+fi
+
+# Count mode: -c/--count dispatch (see run_count_mode in hug-select-files).
+# --json passed only when $json_output is true (the codebase stores booleans as
+# true/false strings; ${json_output:+--json} would ALWAYS expand — see run_count_mode).
+if $count_only; then
+  if $json_output; then
+    run_count_mode --json untracked "${pathspecs[@]}"
+  else
+    run_count_mode untracked "${pathspecs[@]}"
+  fi
 fi
 
 # JSON output mode

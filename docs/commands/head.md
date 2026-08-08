@@ -122,7 +122,7 @@ All HEAD movement commands (`hug h back`, `hug h undo`, `hug h rollback`, `hug h
 - **RESTORE**: h-squash is inverted by `hug h restore <pre-op-HEAD> --back -y`. After a successful operation, Hug prints this exact command with the pre-op SHA filled in. `--back` selects `git reset --soft`, which moves HEAD without touching the index -- the squashed commit's content stays staged. Pre-existing staged changes will be included - review with `hug ss` first.
 
 ### `hug h restore <SHA> --back|--undo|--rollback|--rewind [-y, --yes] [-f, --force] [--quiet] [-h, --help]`
-- **Description**: Recovery primitive that resets HEAD to a specific commit, inverting a prior HEAD-mover operation. Unlike re-invoking the mover (which would short-circuit on the aligned-target check), `hug h restore` uses exact-SHA equality for its no-op test, allowing it to move HEAD **forward** to a descendant commit. The flag (`--back`/`--undo`/`--rollback`/`--rewind`) selects the `git reset` **mode** -- it does NOT encode direction; direction is determined solely by the target's position relative to HEAD.
+- **Description**: Recovery primitive that resets HEAD to a specific commit, inverting a prior HEAD-mover operation. Unlike re-invoking the mover (backward movers reject a forward target loudly — `hug h back <descendant>` errors and points here), `hug h restore` is the sanctioned forward mover: its no-op test is exact-SHA equality, never a range count, so it can move HEAD **forward** to a descendant commit. The flag (`--back`/`--undo`/`--rollback`/`--rewind`) selects the `git reset` **mode** -- it does NOT encode direction; direction is determined solely by the target's position relative to HEAD.
 - **Required**: An op-mode flag (exactly one) and a target SHA. The target must not be a bare 1--3 digit numeric (ambiguous -- reads as `HEAD~N`); use a 4+ char SHA prefix or explicit `HEAD~N`.
 - **Flags**:
   - `--back`: `git reset --soft` -- moves HEAD, keeps changes staged. For h-back / h-squash recovery.
@@ -156,7 +156,7 @@ All HEAD movement commands (`hug h back`, `hug h undo`, `hug h rollback`, `hug h
 
 ### Why a dedicated recovery command?
 
-Re-invoking a HEAD-mover (e.g., `hug h back abc123`) to recover forward **does not work** -- the mover's aligned-target check (`count_commits_in_range target HEAD == 0`) short-circuits to a no-op whenever the target is a descendant of HEAD. Since the pre-op HEAD is always ahead after a successful backward move, any re-invocation of the mover silently exits 0 without moving HEAD.
+Re-invoking a HEAD-mover (e.g., `hug h back abc123`) to recover forward **does not work** — backward movers validate direction: a descendant target is rejected with a loud error ("…is ahead of HEAD by N commit(s)… use `hug h restore <target> --<op>` to move forward"), because a forward move through a backward-named command is a direction mistake. Since the pre-op HEAD is always ahead after a successful backward move, forward recovery goes through `hug h restore`.
 
 `hug h restore` solves this with two design decisions:
 

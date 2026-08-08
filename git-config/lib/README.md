@@ -193,10 +193,20 @@ Git-specific JSON output helpers (uses hug-json).
   - Input: `"M\tfile.txt"` from git's --name-status
   - Output: `{"path": "file.txt", "status": "modified"}`
   - Handles renamed/copied files: `"R100\told.txt\tnew.txt"` → `{"path": "new.txt", "status": "renamed"}`
-- `collect_git_files_json "$type" [flags...]` - Collect files of type as JSON array
-  - `$type`: `staged`|`unstaged`|`untracked`|`ignored`|`conflicted`
-  - Returns: Comma-separated JSON objects for array embedding
+- `collect_git_files_json "$type" [flags...]` - Collect files of a type as JSON objects
+  - `$type`: `staged`|`unstaged`|`untracked`|`ignored`|`conflicted` (unknown types error)
+  - Prints one JSON object PER LINE to stdout (empty when none); `mapfile -t files < <(collect_git_files_json "$type")` yields the objects AND the file count (the array length)
+  - Line-per-object keeps the count truthful — a newline in a filename is escaped to `\n` by `json_escape`, so each line is exactly one object (regression pin: #247)
+  - Bash-4.0-safe: no nameref, no comma-split
   - Supports `--cwd` flag for scoping
+- `count_files_with_status <state> [pathspec...]` - Count files by state (the sl* `-c` engine)
+  - `<state>`: `staged`|`unstaged`|`untracked`|`ignored`|`conflicted`|`all`|`all+untracked`
+  - Prints an integer (0 when none, exit 0). NUL-safe (newline filenames count once) and Bash 4.0-safe (no nameref).
+  - `all`/`all+untracked` dedup via `git status --porcelain -z` (a file staged AND unstaged counts once)
+  - Enforces the repo precondition internally (`check_git_repo`): exits 1 with "Not in a git repository" when called outside a repo (parity with `list_*_files`)
+- `run_count_mode [--json] <state> [pathspec...]` - Terminating wrapper for the sl* `-c/--count` dispatch
+  - Encapsulates the mutual-exclusion guard + `count_files_with_status` call + `exit 0` (formerly duplicated across the 6 `sl*` dispatchers)
+  - `--json` is mutually exclusive with `-c` (errors and exits); the function ALWAYS exits (never returns) — call it as a statement, never in `$(...)`
 
 **JSON Design Philosophy:**
 - Pure Bash for portability and dependency-free operation
@@ -458,8 +468,11 @@ print_commit_list_in_range "origin/main" "HEAD"
 # The tier parameter (warn|danger) controls which prompt function is used.
 # Prints the upstream commit SHA to stdout. Its internal ahead-count is STRICT
 # (count_commits_in_range) and carries `|| return 1`, so capture it with a guard
-# (callers use `|| exit $?`, which suspends set -e inside the function body;
-#  that is why its internal ahead-count carries an explicit `|| return 1`):
+# (callers use `|| exit $?`). WHY the explicit `|| return 1` below is load-bearing, two
+# axes: errexit never fires MID-BODY inside $(…) — only the substitution's FINAL status
+# propagates, via the assignment — and errexit is additionally suspended throughout any
+# function called from a `||` position, which is exactly how every caller invokes this
+# helper. Its internal `|| return 1` guards are therefore the ONLY failure-propagation path:
 target=$(handle_upstream_operation "rewinding" "warn" "rewind" "danger reason") || exit $?
 
 # For standard operations (back, undo, etc.)

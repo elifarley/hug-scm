@@ -2,6 +2,36 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [Unreleased]
+
+## [1.7.0] - 2026-08-07
+
+### Added
+
+- **`-c/--count` flag across the `sl*` family** (`sl`, `sla`, `sls`, `slu`, `slk`, `sli`, `slc`) — prints only the number of matching files: a single integer on stdout, `0` when none, exit `0` (the `grep -c` idiom). Removes the `| wc -l` pipe for scripting (`hug slc -c` in a conflict-resolution hook: `0` → clean proceed, `>0` → act). Composes with pathspecs (`hug slu -c src/`), suppresses the trailing `hug s` summary, and is mutually exclusive with `--json`. Counts are NUL-safe (a filename containing a newline counts once) and deduplicated (a file both staged and unstaged counts once in `hug sl -c`); backed by a new `count_files_with_status` engine that avoids `local -n` so it runs on the Bash 4.0–4.2 floor (elifarley/hug-scm#245).
+
+### Fixed
+
+- **Unified JSON pipeline `summary.*` counts now count files, not comma-fragments** — `slu`/`sls`/`slk`/`sli`/`slc`/`sl`/`sla --json` previously counted comma-split JSON fragments (a 2-field object inflated `summary.<type>` to 2), so one modified file reported `summary.unstaged = 2`. The collection contract now emits one JSON object per line and counts objects, so the summary matches the array length. This is a deliberate **behavior change** for consumer-visible counts (elifarley/hug-scm#247).
+
+- **`h back`/`h undo`/`h rollback` reject invalid and forward explicit targets loudly** — a garbage target could previously trigger the root-recovery path (undoing the root commit on nonsense input), and a forward target moved HEAD through a backward-named command; both now error, with forward targets pointing at `hug h restore <target> --<op>` (elifarley/hug-scm#234). Root-recovery is now reachable only with no positional target.
+
+- **`commit_offset`'s Usage docstring corrected to the errexit-safe capture idiom** (`offset=$(…) || rc=$?`) — the previous form (capture, then read the status on the next line) is dead code under `set -e` for exactly the exit codes the dispatch exists to distinguish (related: elifarley/hug-scm#234).
+
+### Changed
+
+- **`-u` operations report "N commit(s) behind upstream" instead of the false "Already synced" when HEAD is behind upstream** — aligned keeps its message; the exit-0 no-op contract is unchanged (elifarley/hug-scm#237).
+
+## [1.6.0] - 2026-08-07
+
+### Added
+
+- **`hug s` conflict visibility** — the summary line now shows a red `C:` count when files are unmerged, and the ball turns red for conflict state; `hug s --conflicted` prints the conflicted-file count to stdout (long-only, canonical order `staged unstaged untracked ignored conflicted ball`); `hug s --json` gains `status.conflicted_count` (elifarley/hug-scm#246).
+
+### Changed
+
+- **The red ball (🔴) now signals conflict state first** — when files are unmerged, the ball is red regardless of staged/unstaged mix (conflict is the highest-stakes working-tree state). Scripts that parsed 🔴 as strictly "unstaged changes only" now also see it during conflicts; the `--ball` query flag and help text reflect the widened precedence (elifarley/hug-scm#246).
+
 ## [1.5.0] - 2026-08-06
 
 ### Added
@@ -83,8 +113,6 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 - **`hug c` stderr chatter string changed** from `Committing staged changes...` to `Committing staged file(s) (N):` (followed by file names). Any external script grepping `hug c` stderr for the old string will need to update its pattern. The new string is richer (count + names) and arrives BEFORE the commit lands, enabling recovery.
 - **`hug a` adds a new stderr line** (`Staged N file(s). Index now has M file(s) staged total.`) after every successful stage. External scripts parsing `hug a` stderr may see the new line; stdout is unchanged.
-
-## [Unreleased]
 
 ### Fixed
 

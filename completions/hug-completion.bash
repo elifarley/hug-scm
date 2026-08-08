@@ -204,7 +204,7 @@ _hug() {
     # Handle options for 'hug s' (query flags for scripting — no positional args)
     if [[ "$subcmd" == "s" ]]; then
         if [[ $cur == -* ]]; then
-            COMPREPLY=( $(compgen -W "-r --remote -b --branch -u --upstream -H --hash -s --short-hash -A --ahead -B --behind -C --counts -I --ignored -K --untracked -S --staged -U --unstaged --ball -z --null --json -h --help" -- "$cur" ) )
+            COMPREPLY=( $(compgen -W "-r --remote -b --branch -u --upstream -H --hash -s --short-hash -A --ahead -B --behind -C --counts -I --ignored -K --untracked -S --staged -U --unstaged --conflicted --ball -z --null --json -h --help" -- "$cur" ) )
         fi
         return 0
     fi
