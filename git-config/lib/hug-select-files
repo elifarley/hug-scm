@@ -51,7 +51,7 @@
 run_count_mode() {
   local json=false
   [[ "${1:-}" == --json ]] && { json=true; shift; }
-  local state="$1"; shift
+  local state="${1:?run_count_mode: <state> required}"; shift
   local -a pathspecs=("$@")
   if $json; then
     error "-c/--count and --json are mutually exclusive"
