@@ -2,11 +2,11 @@
 # Library: HUG interactive file selection
 #
 # Implements gum-powered file selection with git status annotations.
-# Depends on: hug-gum, hug-output, hug-terminal, hug-git-files (for list_* functions), hug-git-priorities.
+# Depends on: hug-gum, hug-output, hug-terminal, hug-git-files (for list_* functions), hug-git-priorities, hug-git-repo (for check_git_repo, used by count_files_with_status).
 # Functions:
 #   - list_files_with_status: list staged/unstaged/untracked files with color-coded status (non-interactive).
 #   - select_files_with_status: filter staged/unstaged/untracked files interactively.
-#   - count_files_with_status: count files by state (NUL-safe, scriptable; the sl* `-c` engine).
+#   - count_files_with_status: count files by state (NUL-safe, scriptable; the sl* `-c` engine; enforces the repo precondition via check_git_repo).
 
 # Count files in a given state — the grep -c of file listings.
 # Usage: count_files_with_status <state> [pathspec...]
@@ -25,6 +25,7 @@
 #     which emits ONE record per file (MM for a file both staged and unstaged),
 #     so the count is deduplicated by construction.
 count_files_with_status() {
+  check_git_repo   # Parity with list_*_files: clean HUG error from any context (#259)
   local state="$1"
   shift
   local -a pathspecs=("$@")

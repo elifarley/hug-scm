@@ -7,6 +7,10 @@ load '../../git-config/lib/hug-git-kit'
 load '../../git-config/lib/hug-gum'
 load '../../git-config/lib/hug-select-files'
 
+# run --separate-stderr is used below (bats >= 1.5) to assert stdout/stderr
+# independently for the non-repo parity test (#259).
+bats_require_minimum_version 1.5.0
+
 # Helper to create test repo with files in subdirectories
 create_test_repo_for_selection() {
   local test_repo
@@ -874,6 +878,17 @@ create_merge_conflict() {
 
   [[ "$(count_files_with_status untracked)" == "2" ]]
   [[ "$(count_files_with_status all+untracked)" == "2" ]]
+}
+
+@test "count_files_with_status: clean error outside a git repo (parity with list_*_files)" {
+  local nonrepo
+  nonrepo=$(mktemp -d)   # fresh, guaranteed non-repo (setup() cds into a repo; leave it)
+  cd "$nonrepo"
+  run --separate-stderr count_files_with_status staged
+  assert_failure
+  [[ -z "$output" ]]                                  # stdout clean: no leaked count (the old silent-0)
+  [[ "$stderr" == *"Not in a git repository"* ]]      # stderr carries the clean HUG message
+  rm -rf "$nonrepo"
 }
 
 @test "count_files_with_status: conflicted counts unmerged files" {

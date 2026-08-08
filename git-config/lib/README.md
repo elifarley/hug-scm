@@ -203,6 +203,7 @@ Git-specific JSON output helpers (uses hug-json).
   - `<state>`: `staged`|`unstaged`|`untracked`|`ignored`|`conflicted`|`all`|`all+untracked`
   - Prints an integer (0 when none, exit 0). NUL-safe (newline filenames count once) and Bash 4.0-safe (no nameref).
   - `all`/`all+untracked` dedup via `git status --porcelain -z` (a file staged AND unstaged counts once)
+  - Enforces the repo precondition internally (`check_git_repo`): exits 1 with "Not in a git repository" when called outside a repo (parity with `list_*_files`)
 
 **JSON Design Philosophy:**
 - Pure Bash for portability and dependency-free operation
