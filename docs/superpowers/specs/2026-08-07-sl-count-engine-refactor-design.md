@@ -145,12 +145,15 @@ Add directly above `count_files_with_status` in `hug-select-files`:
 #   (3) exit 0.
 # TERMINATING: calls `exit 0` (and `error`→exit 1 on the --json violation), so it
 #   NEVER returns — a caller running it inside `if $count_only; then ...; fi` never
-#   reaches code below the block. Pass `--json` with `${json_output:+--json}` so the
-#   caller stays a single line. Do NOT capture this in $(...) : the subshell exit is
-#   contained and the count is captured correctly, but the caller does NOT terminate
-#   — in the dispatchers, execution falls through to the listing/summary code and
-#   prints BOTH the (captured) count AND the listing (broken output). Call it as a
-#   statement, never as a substitution.
+#   reaches code below the block. Callers pass `--json` only when their json flag is
+#   true, e.g. `if $json_output; then run_count_mode --json <state> ...; else
+#   run_count_mode <state> ...; fi`. Do NOT use ${json_output:+--json}: hug stores
+#   booleans as the strings true/false, so :+ fires on the non-empty "false" too and
+#   would ALWAYS pass --json (making every -c invocation error as mutually exclusive).
+#   Do NOT capture this in $(...) : the subshell exit is contained and the count is
+#   captured correctly, but the caller does NOT terminate — in the dispatchers,
+#   execution falls through to the listing/summary code and prints BOTH the (captured)
+#   count AND the listing (broken output). Call it as a statement, never as a substitution.
 run_count_mode() {
   local json=false
   [[ "${1:-}" == --json ]] && { json=true; shift; }
@@ -166,10 +169,16 @@ run_count_mode() {
 
 ### Contract decisions
 
-- **`--json` as a flag, passed via `${json_output:+--json}`** — keeps each call site a
-  single line and the helper self-contained (no reliance on a caller global variable
-  name). The mutual-exclusion check lives inside the helper, so it cannot drift across
-  the 6 sites.
+- **`--json` as a flag, passed via the two-branch `if $json_output` idiom** — the caller
+  writes `if $json_output; then run_count_mode --json <state> ...; else run_count_mode
+  <state> ...; fi` (the codebase's established conditional-flag pattern, e.g.
+  git-statusbase's own `if $include_untracked; then list_opts+=(--untracked); fi`). The
+  mutual-exclusion check lives inside the helper, so it cannot drift across the 6 sites.
+  **Do NOT use `${json_output:+--json}`** — hug stores booleans as the strings
+  `"true"`/`"false"`, so `:+` fires on the non-empty `"false"` too and would ALWAYS pass
+  `--json` (every `-c` invocation would error as mutually exclusive). This was a defect in
+  earlier drafts of this spec (caught by TDD when all 16 `sl* -c` tests failed; missed by
+  3 roast rounds). See §Implementation note (json-flag idiom) below.
 - **Terminating (`exit 0`)** — matches #258's "(3) the exit 0" and the original blocks.
   Callers are top-level scripts that intend to terminate; none capture `run_count_mode`
   in `$(...)`. The helper **always exits** (error→exit 1 on the `--json` violation, exit 0
@@ -226,23 +235,28 @@ After:
 ```bash
 # Count mode: -c/--count dispatch (see run_count_mode in hug-select-files).
 if $count_only; then
-  run_count_mode ${json_output:+--json} staged "${pathspecs[@]}"
+  if $json_output; then
+    run_count_mode --json staged "${pathspecs[@]}"
+  else
+    run_count_mode staged "${pathspecs[@]}"
+  fi
 fi
 ```
 
 ### `git-statusbase` (branches `all` vs `all+untracked`)
 
 Keeps its existing `if $include_untracked` if/else, swapping the inner guard+exit for
-`run_count_mode`. No `local` (top-level, `set -e` footgun), so the two branches inline
-the state:
+`run_count_mode`. No `local` (top-level, `set -e` footgun), so a scratch var `_slc_state`
+selects `all+untracked` vs `all`, then the same two-branch over `$json_output`:
 
 ```bash
 # Count mode: -c/--count dispatch (see run_count_mode in hug-select-files).
 if $count_only; then
-  if $include_untracked; then
-    run_count_mode ${json_output:+--json} all+untracked "${pathspecs[@]}"
+  if $include_untracked; then _slc_state=all+untracked; else _slc_state=all; fi
+  if $json_output; then
+    run_count_mode --json "$_slc_state" "${pathspecs[@]}"
   else
-    run_count_mode ${json_output:+--json} all "${pathspecs[@]}"
+    run_count_mode "$_slc_state" "${pathspecs[@]}"
   fi
 fi
 ```
@@ -484,6 +498,28 @@ call sites).
   path the default.
 - The project already has terminating helpers (`handle_upstream_operation` `exit 0`s
   internally, per cerebrum).
+
+### Implementation note — the json-flag idiom (TDD-caught defect, post-roast)
+
+Early drafts of this spec (and the plan transcribed from it) prescribed passing `--json`
+at the call sites via `${json_output:+--json}`. That idiom is **broken** in this codebase:
+hug stores booleans as the literal strings `"true"`/`"false"`, and `${var:+word}` fires on
+ANY non-empty value — so `${json_output:+--json}` ALWAYS expands to `--json` (even when
+`json_output="false"`), making every `hug sl* -c` error as "mutually exclusive." This was
+caught by TDD during Task 3 (all 16 `sl* -c` unit tests failed on the first run with the
+`: +` form) — a defect that **3 spec-roast rounds missed** (the roasts verified the
+function body but not the call-site expansion semantics against the codebase's boolean
+convention). Corrected to the two-branch `if $json_output; then run_count_mode --json
+<state> ...; else run_count_mode <state> ...; fi` idiom — the codebase's established
+conditional-flag pattern (e.g. `git-statusbase`'s own `if $include_untracked; then
+list_opts+=(--untracked); fi`), which is regression-proof (no one will "simplify" an
+obvious two-branch back to `:+`). The `run_count_mode` docblock carries the "Do NOT use
+${json_output:+--json}" warning with the rationale. `run_count_mode`'s `[--json] <state>
+[pathspec...]` interface is UNCHANGED (consistent with the codebase's flag-based library
+functions like `list_files_with_status --staged`). Lesson: when a spec proposes a shell
+parameter-expansion idiom for conditionally passing a flag, verify it against how the
+codebase actually stores the controlling boolean — `${var:+word}` and a true/false-string
+boolean are a footgun combination.
 
 **Disposition:** kept the terminating helper; sharpened the docblock (the `$(...)`-capture
 behavior is now explicit) and the Risks section. The "always exits, never returns"
