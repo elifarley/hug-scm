@@ -37,8 +37,8 @@
   - Owns: path resolution (custom path OR generation + collision fallback), path validation, safe-tier confirmation, dry-run, branch-creation rollback on worktree failure.
   - Does NOT own: the "checked out elsewhere / main worktree" guards (callers do that before calling).
   - Prints THREE tab-separated fields to stdout on success: `RESOLVED_PATH<TAB>CREATED_BRANCH<TAB>DRY_RUN`, where `CREATED_BRANCH` and `DRY_RUN` are `true`/`false`. (Callers split on the tab to recover each; cmv needs only the path, wtc needs all three for its `--json` emitter.)
-  - Exit codes: 0 success (or dry-run preview), 1 operational error, 2 usage error, 3 blocked by safety.
-  - CRITICAL: it propagates its own failure status correctly; callers must NOT capture via `if ! x=$(func ...)` because `!` flips `$?`. Use `x=$(func ...); rc=$?` and branch on `rc`.
+  - Exit codes: 0 success (or dry-run preview), 1 cancelled (via `prompt_confirm_safe`, which `exit 1`s on decline) OR operational error, 2 usage error, 3 blocked by safety.
+  - CRITICAL — `set -euo pipefail` + command substitution: `x=$(func ...)` where `func` exits non-zero ABORTS the caller at that assignment; the `rc=$?` line never runs. Callers MUST use the `set -e`-exempt `if x=$(func ...); then ... else rc=$?; ...; fi` form (a command in an `if` condition is exempt). Do NOT use `x=$(func ...); rc=$?` — that is broken under `set -e`.
 
 - [ ] **Step 1: Write the failing library test**
 
@@ -102,7 +102,7 @@ Append to the end of `git-config/lib/hug-git-worktree`:
 # Create a worktree for a branch (create the branch if missing), returning the
 # resolved worktree path on stdout.
 #
-# Usage: create_worktree_for_branch <branch> [--base <point>] [--path <path>] [--force] [--quiet] [--dry-run]
+# Usage: create_worktree_for_branch <branch> [--base <point>] [--path <path>] [--force] [--quiet] [--dry-run] [--confirmed-branch]
 #   <branch>      Branch to create/worktree (created if missing).
 #   --base POINT  Create the branch from POINT (implies branch creation; errors
 #                 if the branch already exists).
@@ -111,16 +111,19 @@ Append to the end of `git-config/lib/hug-git-worktree`:
 #   --force       Skip safe-tier confirmation and allow force worktree creation.
 #   --quiet       Suppress informational chatter.
 #   --dry-run     Print the plan without creating anything.
+#   --confirmed-branch  Caller already confirmed branch creation; skip the branch
+#                 prompt and the worktree prompt (same single decision). Use when
+#                 the caller gathered the safe prompt first (cmv does this).
 #
-# Exit: 0 success (resolved path on stdout), 1 operational error, 2 usage error,
-#       3 blocked by safety.
+# Exit: 0 success (resolved path on stdout), 1 cancelled/operational error,
+#       2 usage error, 3 blocked by safety.
 #
 # NOTE: Callers own the "branch checked out elsewhere / main worktree" guards.
 #       This function only creates.
 create_worktree_for_branch() {
     local branch="${1:?create_worktree_for_branch requires a branch}"
     shift
-    local base="" custom_path="" force=false dry_run=false
+    local base="" custom_path="" force=false dry_run=false confirmed_branch=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
         --base) base="$2"; shift 2 ;;
@@ -128,6 +131,7 @@ create_worktree_for_branch() {
         --force) force=true; shift ;;
         --quiet) export HUG_QUIET=T; shift ;;
         --dry-run) dry_run=true; shift ;;
+        --confirmed-branch) confirmed_branch=true; shift ;;
         *) error_usage "Unknown option: $1" ;;
         esac
     done
@@ -144,13 +148,13 @@ create_worktree_for_branch() {
     if ! $branch_exists; then
         if $dry_run; then
             branch_needs_creation=true
-        elif [[ -n "$base" ]] || $force; then
+        elif [[ -n "$base" ]] || $force || $confirmed_branch; then
             branch_needs_creation=true
         else
             echo >&2
             info "Branch '$branch' does not exist locally."
             if ! prompt_confirm_safe "Create branch '$branch' and its worktree?"; then
-                exit 0
+                exit 1
             fi
             branch_needs_creation=true
             confirmed_via_branch_prompt=true
@@ -189,9 +193,9 @@ create_worktree_for_branch() {
         return 0
     fi
 
-    if ! $force && ! $confirmed_via_branch_prompt; then
+    if ! $force && ! $confirmed_via_branch_prompt && ! $confirmed_branch; then
         if ! prompt_confirm_safe "Create worktree?"; then
-            exit 0
+            exit 1
         fi
     fi
 
@@ -258,17 +262,19 @@ Replace `git-config/bin/git-wtc` lines 325-437 (from the `# Generate path if not
 # dry-run, and branch-creation rollback). wtc keeps the "checked out elsewhere /
 # main worktree" guards above, and the JSON output below.
 #
-# IMPORTANT: capture status BEFORE negating. `if ! x=$(func ...)` flips $? to 0
-# inside the branch, so a failed helper would look like success. Use rc directly.
+# IMPORTANT: use the set -e-exempt `if x=$(func ...)` form. A bare
+# `x=$(func ...); rc=$?` aborts at the assignment when func exits non-zero
+# (set -e), so the rc=$? line never runs. The if-condition form captures the
+# failure branch correctly.
 local _helper_out
-local _create_rc=0
-_helper_out=$(create_worktree_for_branch "$branch_name" \
+if _helper_out=$(create_worktree_for_branch "$branch_name" \
       $([[ -n "$base" ]] && echo "--base" "$base") \
       $([[ -n "$worktree_path" ]] && echo "--path" "$worktree_path") \
       $($force && echo "--force") \
-      $($dry_run && echo "--dry-run"))
-_create_rc=$?
-if [[ $_create_rc -ne 0 ]]; then
+      $($dry_run && echo "--dry-run")); then
+    :
+else
+    local _create_rc=$?
     exit $_create_rc
 fi
 
@@ -471,12 +477,15 @@ if $wt; then
     # Confirm-first: gather safe (worktree) + danger (move) prompts before mutating.
     # For -u, the danger prompt already happened in handle_upstream_operation; skip
     # the danger prompt here (never a second danger prompt for the same move).
+    local wt_safe_confirmed=false
     if ! $branch_exists && ! $new_branch && [[ ${HUG_FORCE:-} != true ]]; then
         if ! prompt_confirm_safe "Create branch '$branch_name' and its worktree?"; then
             info "Cancelled."
             exit 0
         fi
-        new_branch=true
+        # Track that WE confirmed the combined branch+worktree decision, so the
+        # helper skips its own safe prompts (single confirmation per decision).
+        wt_safe_confirmed=true
     fi
 
     # Danger-tier move prompt, but ONLY on the non-upstream path. The -u path
@@ -491,14 +500,17 @@ if $wt; then
     fi
 
     if [[ -z "$resolved_wt" ]]; then
-        # IMPORTANT: capture status before any negation. `if ! x=$(func ...)`
-        # flips $? to 0, so a failed helper would look like success.
-        local _create_rc=0 _helper_out _created_dummy _dry_dummy
-        _helper_out=$(create_worktree_for_branch "$branch_name" \
+        # IMPORTANT: use the set -e-exempt `if x=$(func ...)` form. A bare
+        # `x=$(func ...); rc=$?` aborts at the assignment under set -e when the
+        # helper exits non-zero, so rc is never captured.
+        local _helper_out _created_dummy _dry_dummy
+        if _helper_out=$(create_worktree_for_branch "$branch_name" \
               $([[ -n "$original_head" && ! $branch_exists ]] && echo "--base" "$original_head") \
-              $([[ ${HUG_FORCE:-} == true ]] && echo "--force"))
-        _create_rc=$?
-        if [[ $_create_rc -ne 0 ]]; then
+              $([[ ${HUG_FORCE:-} == true ]] && echo "--force") \
+              $( $wt_safe_confirmed && echo "--confirmed-branch" )); then
+            :
+        else
+            local _create_rc=$?
             exit $_create_rc
         fi
         IFS=$'\t' read -r resolved_wt _created_dummy _dry_dummy <<< "$_helper_out"
