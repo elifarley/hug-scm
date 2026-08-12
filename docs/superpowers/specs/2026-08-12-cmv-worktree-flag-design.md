@@ -95,7 +95,7 @@ No worktree created. The move runs via `git -C <wt> cherry-pick`, so the branch 
 
 1. Resolve the move target (`$target`) and capture `$original_head` (both before any mutation, as `git-cmv:138,151-157` already do).
 2. Resolve branch existence (prompt/`--new` **decision only** — branch creation happens inside the worktree call in step 4, not as an independent step).
-3. **Gather ALL confirmations before ANY mutation**: if a worktree will be created, the safe-tier prompt; then the danger-tier move prompt. `-y` therefore fails fast with the repo untouched (matching the `-u` path, whose `handle_upstream_operation` confirms danger before any worktree step).
+3. **Gather ALL confirmations before ANY mutation**: if a worktree will be created, the safe-tier prompt; then the danger-tier move prompt. For the `-u` path, the danger confirmation is the one `handle_upstream_operation` already performed during target resolution in step 1 (`hug-git-upstream:94`) — step 3 then adds **only** the safe-tier worktree prompt (if one is being created) and must NOT add a second danger prompt. `-y` therefore fails fast with the repo untouched in every path.
 4. **Create the worktree** (and the branch with it, if new) via `create_worktree_for_branch` — this step is additive and rolls back the branch if worktree creation fails (`git-wtc:406-412`).
 5. **Pick in the worktree FIRST** (cherry-pick case only): `git -C <wt-path> cherry-pick "$target".."$original_head"`. The moved commits remain reachable via the still-unmoved source branch while the pick is in flight. The detach case needs no pick (the branch is already at `$original_head`).
 6. **Reset the source branch to `$target` only after the pick succeeds.** A failed/aborted pick now leaves the repo genuinely untouched, and re-running the identical command retries the *same* move.
@@ -185,7 +185,7 @@ In `tests/unit/test_commit.bats` (cmv's home):
 
 1. **Flagship** (#2): `cmv 1 feature --new --wt` → main reset, feature at X (original SHA), wt exists, you stay on main.
 2. **Missing branch, no `--new`** (#1): prompt to create branch + worktree; `n` = nothing.
-3. **Existing branch, no wt** (#4): wt created, cherry-pick inside it, main reset; **assert feature's tip is X′ (content of X), not merely that a cherry-pick ran**.
+3. **Existing branch, no wt** (#4): wt created, cherry-pick inside it, main reset; **assert feature's tip is X′ (content of X) by matching the moved commit's subject/message — not merely that a cherry-pick ran, and not a value re-derived from cherry-pick itself**.
 4. **Existing branch + wt** (#5): no new wt; move via `git -C <wt> cherry-pick`; branch ref moves in place.
 5. **Detached leftover wt** (edge): fresh wt created at the **suffixed** path (`../proj.WT.<branch>-1`), stale one untouched.
 6. **Tier separation:** `-y` refuses the move (exit 3) **and no worktree or branch is created**; `-f` proceeds.
@@ -198,7 +198,7 @@ In `tests/unit/test_commit.bats` (cmv's home):
 - Replace `test_commit.bats:1073` ("no recovery hint emitted on success") with "recovery hint emitted on success (plain and --wt forms), suppressed under --quiet".
 - Replace `test_commit.bats:1110` ("help states not restorable") with "help states restorable via inverse cmv".
 
-**Code-comment to update (S4):** `git-cmv:163` embeds the 'NOT RESTORABLE' contract in a load-bearing comment — update it alongside the help text.
+**Code-comment to update (S4):** `git-cmv:163` embeds the 'NOT RESTORABLE' contract in a comment that also carries the load-bearing `== 0` guard rationale ("cmv's target MUST be an ancestor; a forward target would hard-reset the branch FORWARD"). When updating, **preserve that guard rationale** and adjust only the recovery-contract parenthetical — don't strip the guard explanation in the same edit.
 
 ## Section 8 — Verification commands
 
