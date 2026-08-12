@@ -1107,10 +1107,21 @@ HOOK
   rm -rf "$repo"
 }
 
-@test "hug cmv: help states not restorable" {
+@test "hug cmv: help documents RECOVERY (inverse cmv) instead of NOT RESTORABLE" {
   run hug cmv -h
-  assert_output --partial "NOT RESTORABLE"
-  assert_output --partial "No single-command recovery exists"
+  assert_success
+  assert_output --partial "RECOVERY:"
+  assert_output --partial "cmv is its own inverse"
+  # Old wording must be gone -- replaced by the inverse-cmv recovery paragraph.
+  refute_output --partial "NOT RESTORABLE"
+}
+
+@test "hug cmv: --wt is accepted and help documents it" {
+  run hug cmv -h
+  assert_success
+  assert_output --partial "--wt"
+  # OPTIONS wording capitalizes "Ensure" (sentence start, matching --new/--quiet style).
+  assert_output --partial "Ensure the target branch has a worktree"
 }
 
 

@@ -15,12 +15,15 @@ show_help() {
 hug cmv: Move (relocate) commits from current branch to another branch (new or existing).
 
 USAGE:
-    hug cmv [N|COMMIT] <target-branch> [--new] [-u, --upstream] [--quiet] [--force]
+    hug cmv [N|COMMIT] <target-branch> [--new] [--wt] [-u, --upstream] [--quiet] [--force]
 
 OPTIONS:
     [N|COMMIT]      Number of commits to move (default: 1) or specific commit to move above
     <target-branch> Required: Branch to move commits to
     --new           Create <target-branch> if it doesn't exist (from the move target commit)
+    --wt            Ensure the target branch has a worktree: create one if missing,
+                    otherwise reuse the existing one. The move is performed in/for
+                    that worktree and you stay on the source branch.
     -u, --upstream  Move local-only commits above upstream tip instead of [N|COMMIT]
     --quiet         Suppress output (sets HUG_QUIET=T)
     --force         Skip confirmation prompts (use with caution)
@@ -38,7 +41,11 @@ DESCRIPTION:
 
     Previews are organized: 📊 summary + changes, followed by 📤 commit list (shown once).
 
-    NOT RESTORABLE: cmv switches branch and rewrites SHAs (cherry-pick on existing branches). No single-command recovery exists -- recovery is manual, multi-step, and branch-aware. Use with caution. To copy commits without modifying the source branch, use 'hug ccp' instead.
+    RECOVERY: cmv is its own inverse. After a successful move, run the printed
+    inverse command to move the commits back (see the post-op hint). For new
+    branches SHAs are preserved; for existing branches the inverse cherry-picks
+    new SHAs. Requires an undrifted tree and knowing N + the original branch.
+    To copy commits without modifying the source branch, use 'hug ccp' instead.
 
 COMMON SCENARIOS:
     # Accidentally committed to wrong branch
@@ -87,6 +94,7 @@ eval "$(parse_common_flags "$@")"
 # Parse custom flags
 upstream=false
 new_branch=false
+wt=false # --wt: parsed here; behavior lands in a later task. No-op for now.
 target_arg=""
 branch_name=""
 while [[ $# -gt 0 ]]; do
@@ -97,6 +105,10 @@ while [[ $# -gt 0 ]]; do
     ;;
   --new)
     new_branch=true
+    shift
+    ;;
+  --wt)
+    wt=true
     shift
     ;;
   *)
