@@ -1628,6 +1628,7 @@ HOOK
   assert_worktree_branch "$wt" "cmv-target"
 
   popd >/dev/null
+  cleanup_test_worktrees "$repo"
   rm -rf "$repo"
 }
 
@@ -1657,5 +1658,140 @@ HOOK
   refute_output --partial "missing"
 
   popd >/dev/null
+  rm -rf "$repo"
+}
+
+# -----------------------------------------------------------------------------
+# hug cmv --wt expectations (Task 4: existing-branch paths)
+#   - Existing target branch WITHOUT a worktree: cmv creates one (via
+#     create_worktree_for_branch) and cherry-picks inside it BEFORE resetting
+#     the source. The moved commit lands on the target branch with a NEW SHA
+#     (cherry-pick, not detach); the source is rewound to $target only after
+#     the pick succeeds.
+#   - Existing target branch WITH a worktree: cmv reuses the existing worktree
+#     (no new worktree created) and cherry-picks inside it.
+#   - In both cases the user stays on the source branch.
+# -----------------------------------------------------------------------------
+
+@test "hug cmv: --wt existing branch without worktree — create wt + cherry-pick" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+  local target
+  target=$(git rev-parse HEAD~1)
+  local moved_subject
+  moved_subject=$(git log -1 --format=%s "$original_head")
+
+  # Existing branch, no worktree. NOTE: use a non-colliding branch name
+  # (create_test_repo_with_branches creates feature/branch which blocks
+  # 'feature' as a partial ref).
+  #
+  # WHY HEAD~2 (not HEAD~1): the moved commit is the one at $original_head
+  # ("Add main extra"). Cherry-picking it onto a target branched from HEAD~1
+  # reproduces main's tree exactly (same parent + same single-file delta).
+  # In this fixture the original commit and the cherry-pick happen within
+  # the same wall-clock second (the deterministic helpers cover only the
+  # first 3 commits; "Add main extra" is plain `git commit`), so tree +
+  # parent + author/committer dates all match and git writes a
+  # BYTE-IDENTICAL commit object — `refute_output "$original_head"` then
+  # fails nondeterministically (~1/3 of runs). Branching from HEAD~2 makes
+  # the parent's tree differ, so the cherry-pick ALWAYS gets a new SHA and
+  # the assertion is reliable. The moved commit's subject still matches
+  # regardless (that part is stable).
+  git checkout -q -b cmv-existing HEAD~2
+  git checkout -q main
+
+  run hug cmv 1 cmv-existing --wt --force
+  assert_success
+
+  # Source branch rewound to $target; user still on main.
+  assert_equal "$(git rev-parse main)" "$target"
+  run git branch --show-current
+  assert_output "main"
+
+  # cmv-existing now points at a NEW cherry-picked commit (cherry-pick
+  # writes a fresh committer date and the parent differs from main's, so
+  # the SHA always differs from $original_head). The subject assertion
+  # confirms the right commit was moved.
+  run git log -1 --format=%s cmv-existing
+  assert_output "$moved_subject"
+  run git rev-parse cmv-existing
+  refute_output "$original_head"
+
+  # Worktree exists for cmv-existing. Resolve its path via
+  # `git worktree list --porcelain` (get_worktree_path_by_branch is a lib
+  # function, not a test helper).
+  local wt
+  wt=$(git worktree list --porcelain | awk -v b="cmv-existing" '
+    /^worktree / { p = $2 }
+    /^branch /  { if ($2 == "refs/heads/" b || $2 == b) print p }
+  ')
+  [[ -n "$wt" ]] || fail "No worktree registered for branch cmv-existing"
+  assert_worktree_exists "$wt"
+  assert_worktree_branch "$wt" "cmv-existing"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
+
+@test "hug cmv: --wt existing branch with worktree — reuse, no new worktree" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+  local target
+  target=$(git rev-parse HEAD~1)
+
+  # Pre-create the branch and a worktree for it. create_test_worktree refuses
+  # to add a worktree for a branch that's currently checked out, so we create
+  # the branch from HEAD~2 (see test 1's HEAD~2 rationale — same-tree +
+  # same-second cherry-pick at HEAD~1 produces a nondeterministic SHA match
+  # that flakes refute_output), come back to main, then add the worktree.
+  git checkout -q -b cmv-existing2 HEAD~2
+  git checkout -q main
+  local pre_wt
+  pre_wt=$(create_test_worktree "cmv-existing2" "$repo")
+  assert_worktree_exists "$pre_wt"
+
+  # Count worktrees BEFORE cmv — reuse means this number must not grow.
+  # `git worktree list --porcelain` emits one "worktree <path>" stanza per
+  # worktree (main + linked), so the count of "^worktree " lines is the total.
+  local before_count
+  before_count=$(git worktree list --porcelain | grep -c '^worktree ')
+
+  run hug cmv 1 cmv-existing2 --wt --force
+  assert_success
+
+  # No new worktree created: count unchanged and the pre-existing one is
+  # still registered.
+  local after_count
+  after_count=$(git worktree list --porcelain | grep -c '^worktree ')
+  assert_equal "$after_count" "$before_count"
+  assert_worktree_exists "$pre_wt"
+
+  # Source branch rewound to $target; user still on main.
+  assert_equal "$(git rev-parse main)" "$target"
+  run git branch --show-current
+  assert_output "main"
+
+  # cmv-existing2 got the cherry-picked commit inside the reused worktree:
+  # HEAD of the worktree now carries the moved commit's subject.
+  local moved_subject
+  moved_subject=$(git log -1 --format=%s "$original_head")
+  run git -C "$pre_wt" log -1 --format=%s
+  assert_output "$moved_subject"
+  run git rev-parse cmv-existing2
+  refute_output "$original_head"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
   rm -rf "$repo"
 }
