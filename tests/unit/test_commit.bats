@@ -1579,3 +1579,83 @@ HOOK
   grep -q "stream_test.txt" "$_err"
   rm -f "$_out" "$_err"
 }
+
+# -----------------------------------------------------------------------------
+# hug cmv --wt expectations (Task 3: flagship new-branch path)
+#   - --wt creates the branch + worktree via create_worktree_for_branch.
+#   - For NEW branches (--new or auto): branch points at original_head (exact SHA
+#     preserved), source branch reset back to target, user STAYS on the source.
+#   - Confirm-first: safe (worktree) prompt + danger (move) prompt gathered
+#     before any mutation. --force skips both.
+#   - Missing branch without --new + decline -> exit, "Cancelled.", nothing mutated.
+# -----------------------------------------------------------------------------
+
+@test "hug cmv: --wt flagship — new branch + worktree, stays on source" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+  local target
+  target=$(git rev-parse HEAD~1)
+
+  # NOTE: 'feature' would collide with the 'feature/branch' ref that
+  # create_test_repo_with_branches sets up (refs/heads/feature/branch blocks
+  # refs/heads/feature). Use a non-colliding name.
+  run hug cmv 1 cmv-target --new --wt --force
+  assert_success
+
+  # Source reset back; still on main
+  assert_equal "$(git rev-parse main)" "$target"
+  run git branch --show-current
+  assert_output "main"
+
+  # cmv-target points at original_head (exact SHA preserved for new branches)
+  assert_equal "$(git rev-parse cmv-target)" "$original_head"
+
+  # Worktree exists for cmv-target at the resolved path. Resolve the path
+  # via `git worktree list --porcelain` (get_worktree_path_by_branch is a
+  # lib function, not a test helper).
+  local wt
+  wt=$(git worktree list --porcelain | awk -v b="cmv-target" '
+    /^worktree / { p = $2 }
+    /^branch /  { if ($2 == "refs/heads/" b || $2 == b) print p }
+  ')
+  [[ -n "$wt" ]] || fail "No worktree registered for branch cmv-target"
+  assert_worktree_exists "$wt"
+  assert_worktree_branch "$wt" "cmv-target"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: --wt missing branch without --new cancels (non-interactive) and mutates nothing" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # NOTE: piping stdin (`echo "n" | ...`) makes the test non-interactive —
+  # prompt_confirm_danger/safe hit the `[[ ! -t 0 ]]` non-interactive bail
+  # BEFORE comparing input. So this exercises the non-interactive cancellation
+  # path, not a real "n" decline. The value of the test is the no-mutation
+  # contract on cancellation, which holds either way.
+  run bash -c 'echo "n" | hug cmv 1 missing --wt'
+  assert_failure
+  assert_output --partial "Cancelled."
+
+  # main unchanged, no branch, no worktree
+  assert_equal "$(git rev-parse main)" "$original_head"
+  run git branch --list missing
+  refute_output
+  run git worktree list --porcelain
+  refute_output --partial "missing"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
