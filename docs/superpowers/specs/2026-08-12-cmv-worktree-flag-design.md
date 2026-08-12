@@ -155,6 +155,20 @@ $ hug wtdel feature -B           # remove the now-empty feature worktree + branc
 - Existing-branch move: `git -C <wt-path> cherry-pick <target>..HEAD` (no temp-branch dance needed inside the wt).
 - Update `docs/commands/commits.md`, command-map, help text, and add BATS tests for all 5 scenarios + guards + tier separation.
 
+### Section 6.1 — Documentation updates
+
+User-facing docs are updated **when the feature lands** (not before — the design spec is the only pre-implementation artifact). The full list:
+
+| File | Change |
+|---|---|
+| `docs/commands/commits.md` | cmv section: add `--wt` to usage line, scenario table, examples, safety notes |
+| `git-config/bin/git-cmv` help text | Add `--wt` to USAGE/OPTIONS/DESCRIPTION; update "NOT RESTORABLE" → inverse-cmv recovery wording |
+| `README.md` (line ~480) | cmv one-liner: `hug cmv [N] <branch> [--new]` → add `[--wt]` |
+| `docs/command-map.md` (line ~124) | cmv entry: note `--wt` |
+| `CHANGELOG.md` | Feature entry when released |
+
+**Not to update:** `docs/commands/worktree.md`, `git-config/lib/python/articles/agents.md`, `git-config/lib/python/articles/worktree.md` (worktree *management* docs — cmv is a commit command, not a worktree command; at most a "see also" cross-ref once it lands). `CLAUDE.md` / `.github/copilot-instructions.md` are command lists, no usage detail. Historical specs (2026-07-27/-28/-29/-30) stay as-is — they record the then-current danger-tier/not-restorable contract and are immutable once merged.
+
 ## Section 7 — Testing
 
 Add to `tests/unit/test_commit.bats` (cmv's home):
