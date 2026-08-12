@@ -323,118 +323,56 @@ if $branch_exists && ! $force; then
 fi
 
 # Generate path if not provided
-if [[ -z "$worktree_path" ]]; then
-  worktree_path=$(generate_worktree_path "$branch_name")
-
-  # Ensure path is unique (handle conflicts)
-  if [[ -e "$worktree_path" ]]; then
-    worktree_path=$(generate_unique_worktree_path "$branch_name")
-    info "Default path exists, using: $worktree_path"
-  fi
-fi
-
-# Convert relative path to absolute for validation
-if [[ ! "$worktree_path" = /* ]]; then
-  worktree_path="$(pwd)/$worktree_path"
-fi
-
-# Determine start-point label for display
-if [[ -n "$base" ]]; then
-  start_point_label="${YELLOW}(new, from $base)${NC}"
+# NOTE: path generation, collision fallback, validation, confirmation, branch
+# creation, worktree add, and rollback all live in create_worktree_for_branch
+# (git-config/lib/hug-git-worktree). wtc owns only the upstream guards above
+# (branch checked out elsewhere / main worktree) and the JSON output below.
+#
+# IMPORTANT: use the set -e-exempt `if x=$(func ...)` form. A bare
+# `x=$(func ...); rc=$?` aborts at the assignment when func exits non-zero
+# (set -e), so the rc=$? line never runs. The if-condition form captures the
+# failure branch correctly. The helper's own exit code (1/2/3) is propagated.
+#
+# Plain (non-local) vars: git-wtc is a top-level script, not a function, so
+# `local` is illegal here. These names are underscore-prefixed to avoid
+# colliding with the JSON block's variables below.
+_helper_out=""
+# `--confirmed-branch` is passed when wtc's pre-validation already collected
+# the user's yes on the combined "Create branch AND its worktree?" prompt
+# (lines 297-306 above). Without this flag, the helper would issue its OWN
+# combined prompt → double-prompt regression.
+#
+# Other cases need NO flag:
+#   --new without -f  → helper fires its combined prompt once (matches the
+#                       single "Create worktree?" prompt of the old code)
+#   --force           → `--force` makes the helper skip all prompts itself
+#   --dry-run         → `--dry-run` skips all prompts itself
+#   branch exists     → helper detects this and skips the branch prompt
+if _helper_out=$(create_worktree_for_branch "$branch_name" \
+  $([[ -n "$base" ]] && echo "--base" "$base") \
+  $([[ -n "$worktree_path" ]] && echo "--path" "$worktree_path") \
+  $($force && echo "--force") \
+  $($dry_run && echo "--dry-run") \
+  $($confirmed_via_branch_prompt && echo "--confirmed-branch")); then
+  :
 else
-  start_point_label="${YELLOW}(new, from HEAD)${NC}"
+  _create_rc=$?
+  exit "$_create_rc"
 fi
 
-# --- DRY RUN ---
-if $dry_run; then
-  [[ -z "${HUG_QUIET:-}" ]] && {
-    echo >&2
-    printf "${BLUE}Worktree Creation Preview (DRY RUN):${NC}\n" >&2
-    if $branch_needs_creation; then
-      printf "  Branch: %s %s\n" "$branch_name" "$start_point_label" >&2
-    else
-      printf "  Branch: %s\n" "$branch_name" >&2
-    fi
-    printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}" >&2
-    echo >&2
-  }
-  info "No changes made (dry run)."
+# Split the helper's three tab-separated fields.
+#   worktree_path          ← reassigned from helper output (RESOLVED path,
+#                            may differ from the input custom path when the
+#                            caller left it empty and the helper generated one)
+#   branch_needs_creation  ← bool the --json block reads as-is
+#   _wt_dry_run            ← "true"/"false"; dry-run is terminal (preview
+#                            already printed by the helper), so exit 0 below
+IFS=$'\t' read -r worktree_path branch_needs_creation _wt_dry_run <<< "$_helper_out"
+
+# Dry-run is terminal: preview already printed; do not reach the JSON block.
+if [[ "$_wt_dry_run" == "true" ]]; then
   exit 0
 fi
-
-# --- SUMMARY ---
-[[ -z "${HUG_QUIET:-}" ]] && {
-  echo >&2
-  printf "${BLUE}Worktree Creation Summary:${NC}\n" >&2
-  if $branch_needs_creation; then
-    printf "  Branch: %s %s\n" "$branch_name" "$start_point_label" >&2
-  else
-    printf "  Branch: %s\n" "$branch_name" >&2
-  fi
-  printf "  Path:   %s\n" "${worktree_path/#$HOME/\~}" >&2
-  echo >&2
-}
-
-# --- SINGLE CONFIRMATION ---
-# Skip if forced, or if user already confirmed via branch-creation prompt
-if ! $force && ! $confirmed_via_branch_prompt; then
-  if ! prompt_confirm_safe "Create worktree?"; then
-    exit 0
-  fi
-fi
-
-# --- EXECUTE ---
-# TODO: Extract create_branch_from_base() library function shared with git-bc's --point-to
-# Create branch if needed
-if $branch_needs_creation; then
-  git_err=""
-  if [[ -n "$base" ]]; then
-    if ! git_err=$(git branch "$branch_name" "$base" 2>&1); then
-      error "Failed to create branch '$branch_name' from '$base': $git_err"
-    fi
-    info "Created branch '$branch_name' from $base ($(git rev-parse --short "$base"))"
-  else
-    if ! git_err=$(git branch "$branch_name" 2>&1); then
-      error "Failed to create branch '$branch_name': $git_err"
-    fi
-    info "Created branch '$branch_name' from $(git rev-parse --short HEAD)"
-  fi
-fi
-
-# Validate creation path
-if ! validate_worktree_creation_path "$worktree_path"; then
-  # Rollback branch if we just created it
-  if $branch_needs_creation; then
-    git branch -d "$branch_name" 2> /dev/null || true
-    warning "Rolled back branch '$branch_name' (worktree path invalid)."
-  fi
-  exit 1
-fi
-
-# Create worktree (capture stderr instead of suppressing it)
-git_wt_args=("$worktree_path" "$branch_name")
-if $force; then
-  git_wt_args+=("--force")
-fi
-git_err=""
-if ! git_err=$(git worktree add "${git_wt_args[@]}" 2>&1); then
-  if $branch_needs_creation; then
-    git branch -d "$branch_name" 2> /dev/null || true
-    warning "Rolled back branch '$branch_name'."
-  fi
-  error "Failed to create worktree: $git_err"
-fi
-
-# Verify the worktree was actually created
-if [[ ! -f "$worktree_path/.git" ]]; then
-  error "Worktree creation appeared to succeed but the directory is invalid."
-fi
-
-# --- SUCCESS ---
-success "Worktree created for '$branch_name'"
-echo >&2
-tip "To start working:  cd ${worktree_path/#$HOME/\~}"
-suggest_superproject_ignore "$worktree_path"
 
 # --- JSON OUTPUT (stdout) ---
 # Emits a parseable result object when --json is requested.
