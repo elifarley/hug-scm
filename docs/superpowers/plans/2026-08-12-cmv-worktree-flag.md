@@ -32,12 +32,13 @@
 
 **Interfaces:**
 - Consumes: `generate_worktree_path`, `generate_unique_worktree_path`, `validate_worktree_creation_path`, `prompt_confirm_safe`, `info`, `warning`, `success`, `tip`, `suggest_superproject_ignore`, `error` (all already sourced in `hug-git-worktree` / `hug-common`).
-- Produces: `create_worktree_for_branch <branch> [--base <point>] [--force] [--quiet] [--dry-run]`
-  - Creates `<branch>` if it doesn't exist (from `--base`, else HEAD), then creates the worktree at the auto-generated (collision-fallback) path.
-  - Owns: path generation + collision fallback, path validation, safe-tier confirmation, dry-run, branch-creation rollback on worktree failure.
+- Produces: `create_worktree_for_branch <branch> [--base <point>] [--path <path>] [--force] [--quiet] [--dry-run]`
+  - Creates `<branch>` if it doesn't exist (from `--base`, else HEAD), then creates the worktree at the path from `--path` (a custom caller-supplied path) or, when `--path` is absent, the auto-generated (collision-fallback) path.
+  - Owns: path resolution (custom path OR generation + collision fallback), path validation, safe-tier confirmation, dry-run, branch-creation rollback on worktree failure.
   - Does NOT own: the "checked out elsewhere / main worktree" guards (callers do that before calling).
   - Prints the RESOLVED worktree path to stdout on success (this is how cmv learns the path).
   - Exit codes: 0 success, 1 operational error, 2 usage error, 3 blocked by safety.
+  - CRITICAL: it propagates its own failure status correctly; callers must NOT capture via `if ! x=$(func ...)` because `!` flips `$?`. Use `x=$(func ...); rc=$?` and branch on `rc`.
 
 - [ ] **Step 1: Write the failing library test**
 
@@ -95,10 +96,12 @@ Append to the end of `git-config/lib/hug-git-worktree`:
 # Create a worktree for a branch (create the branch if missing), returning the
 # resolved worktree path on stdout.
 #
-# Usage: create_worktree_for_branch <branch> [--base <point>] [--force] [--quiet] [--dry-run]
+# Usage: create_worktree_for_branch <branch> [--base <point>] [--path <path>] [--force] [--quiet] [--dry-run]
 #   <branch>      Branch to create/worktree (created if missing).
 #   --base POINT  Create the branch from POINT (implies branch creation; errors
 #                 if the branch already exists).
+#   --path PATH   Create the worktree at PATH (custom caller-supplied path).
+#                 When absent, auto-generate with collision fallback.
 #   --force       Skip safe-tier confirmation and allow force worktree creation.
 #   --quiet       Suppress informational chatter.
 #   --dry-run     Print the plan without creating anything.
@@ -111,10 +114,11 @@ Append to the end of `git-config/lib/hug-git-worktree`:
 create_worktree_for_branch() {
     local branch="${1:?create_worktree_for_branch requires a branch}"
     shift
-    local base="" force=false dry_run=false
+    local base="" custom_path="" force=false dry_run=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
         --base) base="$2"; shift 2 ;;
+        --path) custom_path="$2"; shift 2 ;;
         --force) force=true; shift ;;
         --quiet) export HUG_QUIET=T; shift ;;
         --dry-run) dry_run=true; shift ;;
@@ -148,10 +152,14 @@ create_worktree_for_branch() {
     fi
 
     local worktree_path
-    worktree_path=$(generate_worktree_path "$branch")
-    if [[ -e "$worktree_path" ]]; then
-        worktree_path=$(generate_unique_worktree_path "$branch")
-        info "Default path exists, using: $worktree_path"
+    if [[ -n "$custom_path" ]]; then
+        worktree_path="$custom_path"
+    else
+        worktree_path=$(generate_worktree_path "$branch")
+        if [[ -e "$worktree_path" ]]; then
+            worktree_path=$(generate_unique_worktree_path "$branch")
+            info "Default path exists, using: $worktree_path"
+        fi
     fi
 
     if [[ ! "$worktree_path" = /* ]]; then
@@ -242,17 +250,24 @@ Replace `git-config/bin/git-wtc` lines 325-437 (from the `# Generate path if not
 # Create worktree via shared library (owns path gen, validation, safe confirm,
 # dry-run, and branch-creation rollback). wtc keeps the "checked out elsewhere /
 # main worktree" guards above, and the JSON output below.
+#
+# IMPORTANT: capture status BEFORE negating. `if ! x=$(func ...)` flips $? to 0
+# inside the branch, so a failed helper would look like success. Use rc directly.
 local resolved_path
-if ! resolved_path=$(create_worktree_for_branch "$branch_name" \
+local _create_rc=0
+resolved_path=$(create_worktree_for_branch "$branch_name" \
       $([[ -n "$base" ]] && echo "--base" "$base") \
+      $([[ -n "$worktree_path" ]] && echo "--path" "$worktree_path") \
       $($force && echo "--force") \
-      $($dry_run && echo "--dry-run")); then
-  exit $?
+      $($dry_run && echo "--dry-run"))
+_create_rc=$?
+if [[ $_create_rc -ne 0 ]]; then
+    exit $_create_rc
 fi
 worktree_path="$resolved_path"
 ```
 
-Note: preserve the existing `--json` block and `branch_needs_creation`/`base` variables that the JSON output reads. The function must return the resolved path so `worktree_path` stays correct for JSON.
+Note: `worktree_path` above is the caller-supplied custom path (positional or `-p`) when present, else empty (auto-generated by the helper). Do NOT pass the auto-generated path in; let the helper generate it. Preserve the existing `--json` block and `branch_needs_creation`/`base` variables that the JSON output reads.
 
 - [ ] **Step 6: Run wtc tests to confirm no regression**
 
@@ -440,8 +455,8 @@ The key insertion (before the existing non-`--wt` tail) is:
 ```bash
 if $wt; then
     # Confirm-first: gather safe (worktree) + danger (move) prompts before mutating.
-    # For -u, the danger prompt already happened in handle_upstream_operation; only
-    # add the safe worktree prompt here (never a second danger prompt).
+    # For -u, the danger prompt already happened in handle_upstream_operation; skip
+    # the danger prompt here (never a second danger prompt for the same move).
     if ! $branch_exists && ! $new_branch && [[ ${HUG_FORCE:-} != true ]]; then
         if ! prompt_confirm_safe "Create branch '$branch_name' and its worktree?"; then
             info "Cancelled."
@@ -450,8 +465,9 @@ if $wt; then
         new_branch=true
     fi
 
-    # Danger-tier move prompt (skip under --force)
-    if [[ ${HUG_FORCE:-} != true ]]; then
+    # Danger-tier move prompt, but ONLY on the non-upstream path. The -u path
+    # already confirmed danger during handle_upstream_operation in step 1.
+    if ! $upstream && [[ ${HUG_FORCE:-} != true ]]; then
         prompt_confirm_danger "cmv" "moves commits to another branch and rewrites SHAs; not auto-recoverable"
     fi
 
@@ -461,10 +477,15 @@ if $wt; then
     fi
 
     if [[ -z "$resolved_wt" ]]; then
-        if ! resolved_wt=$(create_worktree_for_branch "$branch_name" \
+        # IMPORTANT: capture status before any negation. `if ! x=$(func ...)`
+        # flips $? to 0, so a failed helper would look like success.
+        local _create_rc=0
+        resolved_wt=$(create_worktree_for_branch "$branch_name" \
               $([[ -n "$original_head" && ! $branch_exists ]] && echo "--base" "$original_head") \
-              $([[ ${HUG_FORCE:-} == true ]] && echo "--force")); then
-            exit $?
+              $([[ ${HUG_FORCE:-} == true ]] && echo "--force"))
+        _create_rc=$?
+        if [[ $_create_rc -ne 0 ]]; then
+            exit $_create_rc
         fi
     fi
 
@@ -842,12 +863,16 @@ if [[ "$branch_name" == "$original_branch" ]]; then
     error_blocked "Target branch '$branch_name' is checked out in the current worktree. The --wt end-state requires the target to live in its own worktree."
 fi
 
-# Guard: existing branch with a STALE (registered-but-missing) worktree.
+# Guard: existing branch with a STALE (registered-but-missing) or LOCKED worktree.
 if $branch_exists; then
-    local _wt_path
+    local _wt_path _wt_gitdir
     if _wt_path=$(get_worktree_path_by_branch "$branch_name" 2>/dev/null); then
         if [[ -n "$_wt_path" && ! -d "$_wt_path" ]]; then
             error_blocked "Worktree for '$branch_name' is stale (missing dir: $_wt_path). Run 'hug wtdel $branch_name' or 'hug wtprune' first."
+        fi
+        _wt_gitdir=$(worktree_gitdir "$_wt_path" 2>/dev/null || true)
+        if [[ -n "$_wt_gitdir" ]] && worktree_is_locked "$_wt_path" "$_wt_gitdir"; then
+            error_blocked "Worktree for '$branch_name' is locked (git worktree unlock '$_wt_path'). Unlock it first."
         fi
     fi
 fi
@@ -974,14 +999,18 @@ Add to `tests/unit/test_commit.bats`:
   echo "feature work" > f.txt
   git add f.txt
   git commit -q -m "Feature work"
-  local feature_tip
-  feature_tip=$(git rev-parse HEAD)
 
-  # We're on feature; create a linked worktree for it, then run cmv --wt targeting main
-  # from that linked worktree — main is checked out in the MAIN worktree.
+  # Put the PRIMARY checkout back on main BEFORE creating the feature worktree.
+  # Otherwise main has no worktree when cmv runs and the reuse path is untested.
+  git checkout -q main
+
   local feature_wt
   feature_wt=$(create_test_worktree "feature" "$repo")
   pushd "$feature_wt" >/dev/null
+
+  # Count worktrees before, so we can assert no NEW one was created for main.
+  local before_count
+  before_count=$(git -C "$repo" worktree list --porcelain | grep -c '^worktree ')
 
   run hug cmv 1 main --wt --force
   assert_success
@@ -990,10 +1019,14 @@ Add to `tests/unit/test_commit.bats`:
   run git branch --show-current
   assert_output "feature"
 
+  # Worktree count unchanged — main was NOT given a new linked worktree.
+  local after_count
+  after_count=$(git -C "$repo" worktree list --porcelain | grep -c '^worktree ')
+  assert_equal "$after_count" "$before_count"
+
   popd >/dev/null
   # Back in main repo: feature lost the moved commit, main gained it
-  git checkout -q main
-  run git log -1 --format=%s main
+  run git -C "$repo" log -1 --format=%s main
   assert_output "Feature work"
 
   popd >/dev/null
