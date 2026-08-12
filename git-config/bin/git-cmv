@@ -178,7 +178,7 @@ target=$(git rev-parse "$target")
 # cmv's target MUST be an ancestor ("specific commit to move above", "reset branch back"),
 # so == 0 is the correct vacuous-op no-op — do NOT migrate this to is_same_commit (a forward
 # target is an incoherent cmv request, and falling through would hard-reset the branch
-# FORWARD + switch branch on a 'NOT RESTORABLE' command). Strict: a bad ref now fails
+# FORWARD + switch branch on a danger-tier command). Strict: a bad ref now fails
 # loudly instead of masquerading as '0 commits'. The OLD message lied ('already at target')
 # for a descendant target; branch on is_same_commit so BOTH sub-cases are truthful (a commit is
 # its own ancestor — equality-as-ancestry — so 'is not an ancestor' would lie when aligned).
@@ -381,3 +381,12 @@ else
   info "Moved $commits_to_relocate $commit_word to '$branch_name'. Now on '$branch_name'."
 fi
 tip "Commits relocated. Continue working on '$branch_name'."
+
+# Recovery: inverse cmv. Plain (non --wt) path: we are now ON $branch_name
+# and $original_branch has been rewound to $target. Running the same cmv
+# again with the arguments swapped (N commits, back to $original_branch)
+# replays those commits onto $original_branch, restoring the prior layout.
+# Suppressed under --quiet because tip() routes through gum_log, which
+# short-circuits when HUG_QUIET is set — mirroring the --wt path's own
+# recovery tip above.
+tip "Recovery: hug cmv $commits_to_relocate $original_branch"

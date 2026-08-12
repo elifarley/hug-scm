@@ -975,7 +975,7 @@ HOOK
 # above it). These tests pin BOTH truthful sub-case messages AND the no-regression invariant
 # that the current branch never moves: a forward (descendant) target must NOT fall through
 # to the tail's `git reset --hard`, which would hard-reset the branch FORWARD + switch branch
-# on a 'NOT RESTORABLE' command. The message must branch on is_same_commit because a commit is its
+# on a danger-tier command. The message must branch on is_same_commit because a commit is its
 # own ancestor (equality-as-ancestry): "already at" when aligned, "is a descendant" otherwise.
 @test "hug cmv: aligned target (HEAD) -> 'already at' message, branch unmoved" {
   local repo
@@ -1025,7 +1025,7 @@ HOOK
 # Additional cmv edge cases...
 
 # -----------------------------------------------------------------------------
-# cmv danger-tier migration: -y refusal, -f proceeds, no recovery hint, help
+# cmv danger-tier migration: -y refusal, -f proceeds, recovery hint, help
 # -----------------------------------------------------------------------------
 
 @test "hug cmv: -y is refused (danger tier, exit 3)" {
@@ -1070,7 +1070,16 @@ HOOK
   rm -rf "$repo"
 }
 
-@test "hug cmv: no recovery hint emitted on success" {
+@test "hug cmv: recovery hint emitted on success (plain form)" {
+  # NEW contract: cmv now has a recovery model (inverse cmv). The plain
+  # (non --wt) path emits an inverse-cmv recovery hint on success, mirroring
+  # the --wt path's "Recovery: cd $wt && hug cmv ... --wt" tip.
+  #
+  # WHY a fresh repo per assertion: the first `hug cmv` mutates the repo
+  # (main is reset to target; HEAD ends on target-branch). A second cmv in
+  # the same repo would have different semantics (target-branch is now HEAD),
+  # so the hint-suppression contract is verified in its own test below with
+  # its own repo — not chained here.
   local repo
   repo=$(create_test_repo_with_branches)
   pushd "$repo" >/dev/null
@@ -1079,10 +1088,54 @@ HOOK
   git checkout -q -b target-branch HEAD~1
   git checkout -q main
 
+  # Loud run: recovery hint IS emitted, naming the inverse cmv command
+  # that would restore the prior layout (N commits back to original_branch).
   run hug cmv 1 target-branch -f
   assert_success
-  refute_output --partial "hug h restore"
-  refute_output --partial "recover"
+  assert_output --partial "hug cmv 1 main"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: recovery hint suppressed under --quiet (plain form)" {
+  # Companion to the test above: --quiet suppresses the human-facing
+  # recovery hint (and all other chatter). Uses its own repo so the cmv
+  # semantics match the loud test exactly.
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  git checkout -q -b target-branch HEAD~1
+  git checkout -q main
+
+  run hug cmv 1 target-branch -f --quiet
+  assert_success
+  refute_output --partial "hug cmv 1 main"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: recovery hint also on new-branch plain path" {
+  # Convergence invariant: the recovery tip is placed AFTER the two info
+  # branches (new-branch vs existing-branch) converge, so BOTH paths must
+  # emit it. The earlier "emitted on success (plain form)" test only
+  # exercises the existing-branch path (target pre-created from HEAD~1).
+  # This test pins the new-branch path: target does NOT exist, cmv
+  # auto-creates it via the `--new` implied flow, then the recovery tip
+  # must still fire with the inverse-cmv recipe.
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+  git checkout -q main
+  # fresh-target-branch does NOT exist — cmv will auto-create it (new-branch
+  # path). Name avoids collisions with feature/branch, feature-1/2, hotfix-1.
+  run hug cmv 1 fresh-target-branch -f
+  assert_success
+  assert_output --partial "Created and moved"
+  assert_output --partial "hug cmv 1 main"
 
   popd >/dev/null
   rm -rf "$repo"
