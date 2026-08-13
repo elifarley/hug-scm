@@ -263,6 +263,40 @@ fi
 # function (bash errors: "local: can only be used in a function"). Plain
 # underscore-prefixed vars keep them out of the user's environment namespace.
 if $wt; then
+  # --- Safety guards: fail fast (exit 3 = error_blocked) on impossible or
+  # dangerous states BEFORE any mutation. No branch/worktree is created, no
+  # reset runs on a blocked exit. Each guard surfaces an actionable hint so
+  # the user knows how to recover without reading cmv's source.
+  #
+  # Guard 1: target == current branch. The --wt end-state requires the target
+  # to live in its OWN worktree, but the target is checked out in THIS
+  # worktree — we'd be asking for a worktree for the branch we're already on.
+  # Incoherent request; block it. (For the non-wt flow this case is vacuous;
+  # for --wt it is a real foot-gun.)
+  if [[ "$branch_name" == "$original_branch" ]]; then
+    error_blocked "Target branch '$branch_name' is checked out in the current worktree. The --wt end-state requires the target to live in its own worktree."
+  fi
+
+  # Guard 2: existing branch whose worktree is STALE (registered but missing
+  # dir) or LOCKED. A stale dir means git would refuse the operation or cmv
+  # would cherry-pick into a path-into-void; a locked worktree can't be
+  # (re)used by git. Point the user at the recovery command in either case.
+  # NOTE: `local` is ILLEGAL at top-level script scope (bash errors
+  # "local: can only be used in a function"). Use plain `_`-prefixed vars.
+  if $branch_exists; then
+    if _gwt_path=$(get_worktree_path_by_branch "$branch_name" 2> /dev/null); then
+      if [[ -n "$_gwt_path" && ! -d "$_gwt_path" ]]; then
+        error_blocked "Worktree for '$branch_name' is stale (missing dir: $_gwt_path). Run 'hug wtdel $branch_name' or 'hug wtprune' first."
+      fi
+      # Only probe lock state when the dir is intact (worktree_gitdir requires
+      # -d "$path"). A stale-dir branch already errored out above.
+      _gwt_gitdir=$(worktree_gitdir "$_gwt_path" 2> /dev/null || true)
+      if [[ -n "$_gwt_gitdir" ]] && worktree_is_locked "$_gwt_path" "$_gwt_gitdir"; then
+        error_blocked "Worktree for '$branch_name' is locked. Unlock it first: git worktree unlock '$_gwt_path'."
+      fi
+    fi
+  fi
+
   # Danger-tier move prompt. Confirm-first means: gather every prompt
   # BEFORE mutating anything. By the time we reach here, the existing
   # cmv flow has already prompted in three of the four shapes:

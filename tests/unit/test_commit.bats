@@ -1792,6 +1792,104 @@ HOOK
   rm -rf "$repo"
 }
 
+# -----------------------------------------------------------------------------
+# hug cmv --wt safety guards — must exit 3 (error_blocked) BEFORE any mutation
+# (no branch/worktree created, no reset). Each test asserts: exit 3 + main SHA unchanged.
+# -----------------------------------------------------------------------------
+
+@test "hug cmv: --wt target checked out in current worktree → error_blocked" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # Target == current branch (main). The --wt end-state wants target in its
+  # own worktree, but target IS this worktree's branch — incoherent. Must
+  # exit 3 (error_blocked) BEFORE mutating anything.
+  run hug cmv 1 main --wt --force
+  [ "$status" -eq 3 ]
+  assert_output --partial "checked out in the current worktree"
+
+  # No mutation: main untouched, no worktree created for main.
+  assert_equal "$(git rev-parse main)" "$original_head"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: --wt stale worktree dir → error suggesting wtdel/wtprune" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # Existing branch with a worktree, then make the worktree STALE by removing
+  # its dir while the registration remains. create_test_worktree refuses to
+  # add a worktree for the currently-checked-out branch, so branch off HEAD~2
+  # (off main's parent so the branch is distinct), come back to main, then
+  # create the worktree.
+  git checkout -q -b cmv-stale HEAD~2
+  git checkout -q main
+  local wt
+  wt=$(create_test_worktree "cmv-stale" "$repo")
+  assert_worktree_exists "$wt"
+  rm -rf "$wt"   # stale: registered but missing dir
+
+  run hug cmv 1 cmv-stale --wt --force
+  [ "$status" -eq 3 ]
+  # Assert on the state word (stable contract), not the recovery command
+  # (advisory wording). The wtdel hint is still verified as a secondary check.
+  assert_output --partial "stale"
+  assert_output --partial "wtdel"
+
+  # No mutation: main untouched, cmv-stale unchanged.
+  assert_equal "$(git rev-parse main)" "$original_head"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
+
+@test "hug cmv: --wt locked worktree → error suggesting unlock" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # Existing branch + LOCKED worktree (dir present, but locked). cmv cannot
+  # (re)use a locked worktree for the cherry-pick; git would refuse. Block
+  # with exit 3 + an unlock hint.
+  git checkout -q -b cmv-locked HEAD~2
+  git checkout -q main
+  local wt
+  wt=$(create_test_worktree "cmv-locked" "$repo")
+  assert_worktree_exists "$wt"
+  git worktree lock "$wt"
+
+  run hug cmv 1 cmv-locked --wt --force
+  [ "$status" -eq 3 ]
+  # Assert on the state word (stable contract), not the recovery command
+  # (advisory wording). The unlock hint is still verified as a secondary check.
+  assert_output --partial "locked"
+  assert_output --partial "unlock"
+
+  # No mutation: main untouched.
+  assert_equal "$(git rev-parse main)" "$original_head"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
+
 @test "hug cmv: --wt existing branch with worktree — reuse, no new worktree" {
   local repo
   repo=$(create_test_repo_with_branches)
