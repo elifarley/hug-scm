@@ -53,13 +53,14 @@ was noticed before push).
 The guard refuses an amend iff **all four** hold:
 
 1. **Content-null.**
-   - `cmod` (mode `staged`): index identical to HEAD — `git diff --cached --quiet` exits 0. **Exception — pathspec present** (`--` followed by paths): `git commit <pathspec>` runs in `--only` mode and takes the named paths' content from the **worktree**, not the index (probe-verified: empty index + worktree-modified file + pathspec amend folds the worktree content). The content check then becomes `git diff HEAD --quiet -- <pathspec>…` — worktree state vs HEAD, which is exactly what the amend folds.
+   - `cmod` (mode `staged`): index identical to HEAD — `git diff --cached --quiet` exits 0.
+   - **Exception — trailing paths present** (bare paths like `cmod --no-edit a.txt`, or paths after `--`): `git commit <pathspec>` runs in `--only` mode and takes the named paths' content from the **worktree**, not the index (probe-verified both forms: empty index + worktree-modified file + pathspec amend folds the worktree content). The content check then becomes `git diff HEAD --quiet -- <paths…>` — worktree state vs HEAD, which is exactly what the amend folds.
    - `cmoda` (mode `tracked`): no tracked changes anywhere — `git diff HEAD --quiet` exits 0 (covers staged + unstaged in one shot, exactly what `-a` would capture).
 2. **Keep-message intent.** The amend would deterministically reproduce HEAD's message, with no editor opening:
-   - `--no-edit` present (and no change-flag before `--`, per trigger 3), or
-   - `-C HEAD` / `--reuse-message=HEAD` — git replaces the message without an editor and the replacement is byte-identical (probe-verified churn: same message, new hash).
+   - `--no-edit` present (and no change-flag, per trigger 3), or
+   - `-C <ref>` / `--reuse-message=<ref>` / `-c <ref>` / `--reedit-message=<ref>` where `<ref>` **resolves to HEAD** and `--no-edit` is present — git replaces the message without an editor and the replacement is byte-identical (probe-verified churn for all four spellings, including `@`: same message, new hash). "Resolves to HEAD" means `git rev-parse --verify <ref>^{commit}` equals `git rev-parse HEAD` — literal string comparison is NOT sufficient (`@`, `HEAD~0`, a full SHA equal to HEAD are all HEAD).
    `-m`/`-F`/`-C <non-HEAD>` change the message; bare/`-c <commit>` (without `--no-edit`) open an editor where the message may change (the editor is the human gate) — all exempt.
-3. **No message-change flag** before a `--` separator. `-m`/`--message`, `-F`/`--file`, `-C <non-HEAD>`/`--reuse-message=<non-HEAD>`, `--signoff`/`--trailer` all change the message; so does `-c <commit> --no-edit` (git replaces the message silently — probe-verified); if both `-m` and `--no-edit` appear, `-m` wins (git uses the `-m` message; `--no-edit` only suppresses the editor) → message-change intent. The recognized set is exactly `amend_args_message_intent`'s (§2).
+3. **No message-change flag** before a `--` separator. `-m`/`--message`, `-F`/`--file`, `-C <non-HEAD>`/`--reuse-message=<non-HEAD>`, `--signoff`/`-s`, `--trailer`, `--fixup=`/`--squash=` all change the message (probe-verified: `-s` appends a Signed-off-by trailer; `--fixup=HEAD` replaces the message with "fixup! …"); so does `-c <non-HEAD> --no-edit` / `--reedit-message=<non-HEAD> --no-edit` (git replaces the message silently — probe-verified); if both `-m` and `--no-edit` appear, `-m` wins (git uses the `-m` message; `--no-edit` only suppresses the editor) → message-change intent. `-e`/`--edit` overrides `--no-edit` and opens the editor (probe-verified: a failing editor aborts the amend loudly) — an editor gate, not a message change. The recognized set is exactly `amend_args_message_intent`'s (§2).
 4. **No force** — `HUG_FORCE=true` (set by `parse_common_flags` from `-f`/`--force`, or exported in the environment) bypasses. `-y`/`HUG_YES` does not.
 
 Decision table for `hug cmod` (`cmoda` analogous, "empty" = "no tracked changes anywhere"):
@@ -67,14 +68,14 @@ Decision table for `hug cmod` (`cmoda` analogous, "empty" = "no tracked changes 
 | Index state | args | Result |
 |---|---|---|
 | staged changes | any | proceed (unchanged behavior) |
-| empty | `-m` / `-F` / `-C <non-HEAD>` / `--reuse-message=<non-HEAD>` / `--signoff` / `--trailer` | proceed — definite message change; honest info line |
-| empty | bare / `-c <commit>` / `--reedit-message=` (editor forms, no `--no-edit`) | proceed — the editor is the gate |
-| empty | `-C HEAD` / `--reuse-message=HEAD` | **refuse, exit 3** — message stays byte-identical; pure hash churn |
+| empty | `-m` / `-F` / `-C <non-HEAD>` / `--reuse-message=<non-HEAD>` / `--signoff` / `-s` / `--trailer` / `--fixup=` / `--squash=` | proceed — definite message change; honest info line |
+| empty | bare / `-c <commit>` / `--reedit-message=` / `-e` (editor forms, no `--no-edit`; `-e` opens the editor even with `--no-edit`) | proceed — the editor is the gate |
+| empty | `-C <ref>` / `--reuse-message=<ref>` / `-c <ref>` / `--reedit-message=<ref>` where `<ref>` resolves to HEAD, with `--no-edit` | **refuse, exit 3** — message stays byte-identical; pure hash churn |
 | empty | `--no-edit` | **refuse, exit 3** |
 | empty | `--no-edit -f` (or `HUG_FORCE=true`) | proceed; honest info line |
 | empty | `-m "msg" --no-edit` | proceed — `-m` wins: verified probe shows git uses the `-m` message and skips the editor |
-| empty | `--no-edit -- <pathspec>` (named paths worktree-modified) | proceed — `--only` mode folds worktree content, not the index |
-| empty | `--no-edit -- <pathspec>` (named paths identical to HEAD) | **refuse, exit 3** — the pathspec check (`diff HEAD -- <pathspec>`) is content-null |
+| empty | `--no-edit <paths>` (bare paths or after `--`; named paths worktree-modified) | proceed — `--only` mode folds worktree content, not the index |
+| empty | `--no-edit <paths>` (named paths identical to HEAD) | **refuse, exit 3** — the paths check (`diff HEAD -- <paths>`) is content-null |
 
 **Content-expanding passthrough flags re-mode the guard — never skip it.**
 `hug cmod` forwards arbitrary options to `git commit`, so `-a`/`--all` can
@@ -86,10 +87,30 @@ prevent. Instead, when `-a`/`--all` is present the guard switches to the
 `tracked` check (the cmoda one — `git diff HEAD --quiet`), which is the
 honest content model for `-a` semantics: worktree+index vs HEAD, exactly
 what `-a` folds. Dirty tree → rc 1 → proceed, no false refusal; clean
-tree → rc 0 → refuse. The interactive content flags (`-p`/`--patch`,
-`-i`/`--interactive`) are human-gated like the editor and need no
-special-casing. Same acceptance class as `git-c`'s #207 comment on
-passthrough options.
+tree → rc 0 → refuse.
+
+The interactive content flags (`-p`/`--patch`, `-i`/`--interactive`) get the
+same re-mode, not a skip: they are NOT reliably human-gated when the tree
+has nothing to select. Probe-verified: on a clean tree `--amend --no-edit -p`
+exits 0 and rewrites the hash with the tree byte-identical (no hunks → no
+prompt). So `-p`/`-i` present → `tracked` check: clean tree → refuse;
+dirty tree → rc 1 → proceed (the human then gates hunk selection inside
+git). Caveat, probe-verified: with stdin closed, `-p` auto-answers "n" to
+its own prompt and a dirty-tree amend still churns — the guard proceeds
+because content EXISTS, and whether it lands is git's interactive
+behavior; agents wanting deterministic content-folding should pass `-a`.
+`-i` alone on a clean tree also fails loudly inside git itself (exit 128,
+"No paths with --include/--only"), which the fail-open branch passes
+through. With an explicit path list, `-i` and `--only` behave like pathspec
+`--only` commits and the trailing-paths check above applies instead.
+
+The three content-shape flags are mutually exclusive — git rejects `-a`
+together with `-p`/`-i`/`--only` ("Only one of
+--include/--only/--all/--interactive/--patch can be used", probe-verified)
+and rejects `-a` with any path ("paths … with -a does not make sense",
+probe-verified) — so exactly one content model applies to any invocation:
+paths → pathspec check; `-a`/`-p`/`-i` → tracked check; otherwise → staged
+check. No mixed-mode case exists.
 
 **Simplification vs. the issue text:** the issue distinguishes "empty index"
 (refuse) from "a staged set whose resulting tree is identical to HEAD"
@@ -128,26 +149,34 @@ documented `-f` escape hatch, per the issue).
 
 Two new functions, following the scanning pattern of the existing
 `commit_args_indicate_amend` (skip `-m`/`-C`/`-c` values, respect the `--`
-terminator; `amend_args_message_intent` extends the value-skip to `-F`):
+terminator; `amend_args_message_intent` extends the value-skip to `-F`
+and resolves `-C`/`-c` values against HEAD — see the KEEP rule):
 
 ```bash
 # amend_args_message_intent "$@" — three-way scan of forwarded commit args.
 # Returns:
-#   0 = KEEP message    (--no-edit present and no change-flag before --;
-#                        also -C HEAD/--reuse-message=HEAD — the
-#                        replacement is byte-identical, probe-verified churn)
-#   1 = CHANGE message  (-m/-F/-C <non-HEAD>/--reuse-message=<non-HEAD>/
-#                        --signoff/--trailer present before --; also
-#                        -c <commit> --no-edit — git replaces the message
-#                        silently, no editor (probe-verified); wins over
-#                        --no-edit — probe-verified git behavior)
-#   2 = EDITOR decides  (bare, or -c/--reedit-message= form without
-#                        --no-edit)
+#   0 = KEEP message    (--no-edit present and no change-flag; also
+#                        -C <ref>/--reuse-message=<ref>/ -c <ref>/
+#                        --reedit-message=<ref> with --no-edit where <ref>
+#                        RESOLVES to HEAD (git rev-parse <ref>^{commit} ==
+#                        HEAD) — the replacement is byte-identical,
+#                        probe-verified churn. Literal matching is NOT
+#                        enough: @, HEAD~0, and HEAD's SHA are all HEAD.)
+#   1 = CHANGE message  (-m/-F/-s/--signoff/--trailer/--fixup=/--squash=/
+#                        -C <non-HEAD>/--reuse-message=<non-HEAD> present;
+#                        also -c <non-HEAD> --no-edit — git replaces the
+#                        message silently, no editor (probe-verified);
+#                        wins over --no-edit — probe-verified git behavior)
+#   2 = EDITOR decides  (bare, -e/--edit, or -c/--reedit-message= form
+#                        without --no-edit; -e overrides --no-edit and
+#                        opens the editor — probe-verified: a failing
+#                        editor aborts the amend loudly)
 # Message-source flags recognized (attached short forms -m<msg>/-C<ref>/
-# -F<file>/-c<ref> AND long passthrough forms, since cmod/cmoda forward
+# -F<file>/-c<ref>/-s AND long passthrough forms, since cmod/cmoda forward
 # arbitrary options to git commit): -m/--message, -C/--reuse-message,
-# -F/--file, --signoff, --trailer → change (1); -c/--reedit-message →
-# editor (2); -C HEAD/--reuse-message=HEAD → keep (0).
+# -F/--file, -s/--signoff, --trailer, --fixup=, --squash= → change (1);
+# -c/--reedit-message, -e/--edit → editor (2) unless a HEAD-resolving
+# value plus --no-edit makes them keep (0).
 # Scanning follows commit_args_indicate_amend: skip flag values, stop at --
 # (pathspec data after -- never counts).
 # WHY three-way: the guard needs "keep" (fires); the caller's info line
@@ -161,16 +190,18 @@ amend_args_message_intent()
 # Sets the caller global _amend_content_null=true|false so the caller picks
 # an honest info line (computed once, used twice — the git-c idiom).
 # Content model is the honest one for the amend's actual content source:
-#   - a -a/--all arg switches the check to `tracked` mode (worktree+index
-#     vs HEAD — what -a folds; a clean tree still refuses) — see §1;
-#   - a -- <pathspec> switches the check to `git diff HEAD --quiet --
-#     <pathspec>…` (--only mode folds worktree content, not the index).
-#     The refusal's "no staged changes" wording stays truthful: the
-#     pathspec check verifies the named paths' content is also absent.
-# An arg that both expands content AND names paths cannot reach the amend:
-# git rejects the combination outright ("paths '…' with -a does not make
-# sense", probe-verified) — so no mixed-mode case exists. When only one is
-# present, its branch applies.
+#   - trailing paths (bare, or after a -- pre-parsed by parse_pathspecs —
+#     see §4) switch the check to `git diff HEAD --quiet -- <paths>`
+#     (--only mode folds worktree content, not the index). The refusal's
+#     "no staged changes" wording stays truthful: the paths check verifies
+#     the named paths' content is also absent.
+#   - -a/--all, -p/--patch, -i/--interactive switch the check to `tracked`
+#     mode (worktree+index vs HEAD). A clean tree still refuses: -a and -p
+#     both silently churn with nothing to capture (probe-verified). With
+#     paths AND -p/-i/--only present, git is in --only mode and the paths
+#     branch applies instead. No mixed-mode case exists: git rejects -a
+#     with any path and rejects -a together with -p/-i/--only
+#     (probe-verified) — exactly one content model per invocation.
 #
 # WHY called BARE (never `$(guard_content_null_amend ...)`): error_blocked
 # must exit the SCRIPT. Captured via `local x=$(...)` the substitution's
@@ -222,10 +253,11 @@ changes..."` becomes **state-dependent** and moves **after** the guard (the
 
 | State | info line |
 |---|---|
-| content present | unchanged: "Amending last commit with staged changes…" (cmod) / "…with all tracked changes…" (cmoda) |
+| content present, staged source | unchanged: "Amending last commit with staged changes…" (cmod) / "…with all tracked changes…" (cmoda) |
+| content present, paths source | "Amending last commit with the named paths' changes…" (the staged wording would be a false claim — `--only` folds worktree, not index) |
 | content-null, forced | "Amending last commit (--force: no content change — only the hash will be rewritten)…" |
-| content-null, message flag (`-m`/`-F`/`-C <non-HEAD>`/`--signoff`/`--trailer`) | "Amending last commit (message change only — no staged changes)…" (cmoda: "…no tracked changes") |
-| content-null, editor form (bare/`-c` without `--no-edit`) | "Amending last commit (no content change; the editor decides the message)…" |
+| content-null, message flag (`-m`/`-F`/`-s`/`--signoff`/`--trailer`/`--fixup=`/`--squash=`/`-C <non-HEAD>`) | "Amending last commit (message change only — no staged changes)…" (cmoda: "…no tracked changes") |
+| content-null, editor form (bare/`-c` without `--no-edit`/`-e`) | "Amending last commit (no content change; the editor decides the message)…" |
 
 `suggest_next_push_command --amend` is unchanged (still after a successful
 amend).
@@ -235,15 +267,39 @@ amend).
 `git-cmod`:
 
 ```bash
-eval "$(parse_common_flags "$@")"
+# Pre-parse pathspecs FIRST: parse_common_flags intercepts a trailing --
+# (hug-cli-flags:21-23 "Commands that accept -- <path>... must pre-parse
+# pathspecs first"), so a pathspec-keyed guard that runs after it can never
+# see the separator. Same idiom as git-shp:76-77.
+eval "$(parse_pathspecs "$@")"
+eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
+# NOTE: the eval above did `set --` — $@ is now the stripped pre_args.
+# The guard receives pre_args (flag scan) plus pathspecs (content check)
+# as two groups; a literal -- between them keeps the guard's scanner honest.
 check_git_repo
-guard_content_null_amend staged "$@"          # exits 3 on refusal
-# pick honest info line from $_amend_content_null + amend_args_message_intent
-git commit --amend "$@" && suggest_next_push_command --amend
+guard_content_null_amend staged "${_pathspec_pre_args[@]}" \
+    -- "${_pathspec_pathspecs[@]}"                   # exits 3 on refusal
+# pick honest info line from $_amend_content_null + amend_args_message_intent:
+#   0=KEEP → content-null variants; 1=CHANGE → message-change line;
+#   2=EDITOR → editor line (only reachable when the guard proceeded)
+if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+    git commit --amend "$@" -- "${_pathspec_pathspecs[@]}" \
+        && suggest_next_push_command --amend
+else
+    git commit --amend "$@" && suggest_next_push_command --amend
+fi
 ```
 
-`git-cmoda`: identical, with `guard_content_null_amend tracked "$@"` and
-`git commit -a --amend "$@"`.
+The final `git commit --amend` re-inserts the pathspecs (with `--`) after
+the stripped pre_args — git's own parsing sees exactly what the user
+passed. Bare trailing paths (no `--`) live in `_pathspec_pre_args`; the
+guard's paths branch must treat trailing non-flag arguments as paths too
+(see §2).
+
+`git-cmoda`: identical, with `guard_content_null_amend tracked ...` and
+`git commit -a --amend "$@"` (cmoda's `-a` makes the tracked check the
+default; paths passed to cmoda still name `--only` content, and the same
+pre-parse applies).
 
 ### §5 — Help text
 
@@ -277,10 +333,10 @@ harness; capture HEAD hash before/after with `git rev-parse HEAD`, tree with
 
 **Determinism note (same-second identity, §1):** the content-null forced
 amends below assert hash churn, which requires a different committer
-timestamp. Tests 2/3/14 export `GIT_COMMITTER_DATE` (e.g.
+timestamp. Tests 2/3/18 export `GIT_COMMITTER_DATE` (e.g.
 `2030-01-01T00:00:00Z`) for the amend invocation so the churn is
-observable; content/message-changing amends (4/8/11/15/18) differ in tree or
-message and need no timestamp forcing.
+observable; content/message-changing amends (4/5/8/11/13/15/19/21/22)
+differ in tree or message and need no timestamp forcing.
 
 cmod:
 1. empty index + `--no-edit` → **exit 3**; HEAD hash unchanged; message unchanged; refusal text present; "with staged changes" absent from output.
@@ -295,20 +351,25 @@ cmod:
 10. empty index + `--no-edit -C HEAD` → **exit 3** (keep-message classification: message stays byte-identical).
 11. empty index + `--no-edit -- a.txt` (a.txt worktree-modified) → **proceeds** (pathspec `--only` folds worktree content; no false refusal).
 12. empty index + `--no-edit -- a.txt` (a.txt worktree-identical to HEAD) → **exit 3** (pathspec content check rc 0).
+13. empty index + `--no-edit a.txt` (a.txt worktree-modified, bare path no `--`) → **proceeds** (bare trailing paths are `--only` too; pins the pre-parse + bare-path detection).
+14. clean tree + `--no-edit -p` → **exit 3** (the `-p` re-mode: no hunks → git would churn silently; pins that `-p` never skips the guard).
+15. dirty tree + `--no-edit -p` → **proceeds** (tracked check rc 1; content exists).
+16. clean tree + `--no-edit -i` → git's own loud error surfaces (fail-open passes exit 128 through).
 
 cmoda:
 
-13. clean tree + `--no-edit` → exit 3; hash unchanged.
-14. clean tree + `--no-edit -f` (+ forced `GIT_COMMITTER_DATE`) → success; hash changed; tree/message identical; forced info line.
-15. clean tree + `-m "new msg"` → success; message-only amend.
-16. unstaged-only tracked changes + `--no-edit` → proceeds as today (no regression).
-17. staged-only tracked changes + `--no-edit` → proceeds (cmoda ≡ cmod case; no regression).
-18. intent-to-add file + `--no-edit` → proceeds (ITA shows in `diff HEAD`; `-a` folds the file's content).
+17. clean tree + `--no-edit` → exit 3; hash unchanged.
+18. clean tree + `--no-edit -f` (+ forced `GIT_COMMITTER_DATE`) → success; hash changed; tree/message identical; forced info line.
+19. clean tree + `-m "new msg"` → success; message-only amend.
+20. unstaged-only tracked changes + `--no-edit` → proceeds as today (no regression).
+21. staged-only tracked changes + `--no-edit` → proceeds (cmoda ≡ cmod case; no regression).
+22. intent-to-add file + `--no-edit` → proceeds (ITA shows in `diff HEAD`; `-a` folds the file's content).
 
 **Library — `tests/lib/test_hug-git-commit.bats`:**
 
-19. `amend_args_message_intent` table: `--no-edit` → 0; `-m x` → 1; `-m x --no-edit` → 1; `-C HEAD~1` → 1; `--reuse-message=HEAD~1` → 1; `-F msgfile` → 1; `-c X` → 2; `--reedit-message=X` → 2; bare → 2; `-m --no-edit` (value eats the flag) → 1; `--no-edit -- -m` (after `--` is pathspec data) → 0; `-m"attached"` → 1; `-CHEAD~1` (attached value) → 1; `-c X --no-edit` → 1 (git replaces the message silently, probe-verified); `--no-edit --signoff` → 1; `--no-edit --trailer Co-Authored-By: x <x@x>` → 1; `--no-edit -C HEAD` → 0; `--no-edit --reuse-message=HEAD` → 0.
-20. `guard_content_null_amend` fail-open: corrupt the index fixture (e.g. truncate `.git/index`) so `git diff` exits >1 → guard returns 0 without refusing. (Unborn HEAD is NOT this branch for the `staged` check — probe-verified: `git diff --cached --quiet` exits 0 there on an empty index, a truthful refusal; it IS the `>1` branch for the `tracked` check — see §1 fail-open.)
+23. `amend_args_message_intent` table (oracle: literal git outputs; the parentheticals below are what git demonstrably does, and the test asserts message equality after a real amend — NOT the spec's assertion): `--no-edit` → 0; `-m x` → 1; `-m x --no-edit` → 1; `-C HEAD~1` → 1; `--reuse-message=HEAD~1` → 1; `-F msgfile` → 1; `-c X` → 2; `--reedit-message=X` → 2; bare → 2; `-m --no-edit` (value eats the flag) → 1; `--no-edit -- -m` (after `--` is pathspec data) → 0; `-m"attached"` → 1; `-CHEAD~1` (attached value) → 1; `-c X --no-edit` → 1 (git replaces the message silently); `--no-edit --signoff` → 1; `-s` → 1; `--no-edit --trailer Co-Authored-By: x <x@x>` → 1; `--no-edit -C HEAD` → 0; `--no-edit --reuse-message=HEAD` → 0; `--no-edit -c HEAD` → 0; `--no-edit --reedit-message=HEAD` → 0; `--no-edit -C @` → 0 (HEAD alias); `--no-edit -c @` → 0; `--no-edit -C HEAD~0` → 0; `--no-edit --fixup=HEAD` → 1; `--no-edit --squash=HEAD` → 1; `--no-edit -e` → 2 (editor gate overrides --no-edit).
+24. `guard_content_null_amend` fail-open: corrupt the index fixture (e.g. truncate `.git/index`) so `git diff` exits >1 → guard returns 0 without refusing. (Unborn HEAD is NOT this branch for the `staged` check — probe-verified: `git diff --cached --quiet` exits 0 there on an empty index, a truthful refusal; it IS the `>1` branch for the `tracked` check — see §1 fail-open.)
+25. `guard_content_null_amend` paths branch: staged mode + `_pathspec_pathspecs=(a.txt)` with a.txt worktree-modified → rc 0 (proceeds); a.txt identical to HEAD → exit 3. Bare trailing path in pre_args → same paths branch.
 
 **Regression nets:**
 
@@ -326,7 +387,7 @@ cmoda:
 ## Out of scope
 
 - The **#191** cmoda dirty-tree prompt (staged subset + unstaged mix) — still deferred; its trigger is mutually exclusive with this guard's and composes cleanly later.
-- **Bare/`-c` editor forms without `--no-edit`** — the message outcome is unknowable pre-amend; the editor is the human gate. (`-c <commit> --no-edit` is NOT an editor form — git replaces the message silently; it is a message-change flag, trigger 3.)
+- **Bare/`-c` editor forms without `--no-edit`** — the message outcome is unknowable pre-amend; the editor is the human gate. (`-c <ref> --no-edit` is NOT an editor form — git replaces the message silently; it is a message-change flag unless `<ref>` resolves to HEAD, in which case it is keep-intent, trigger 2.)
 - **`--reset-author`/`--date` as message-equivalent intent** — covered by `-f` (per the issue's escape hatch).
 - **`hug c --amend`** passthrough — already refused by `git-c`'s empty-index guard (`git-c:87-90`).
 - **Post-hoc hash-compare warning** (approach 3) — rejected above.
@@ -341,13 +402,14 @@ the refusal message teaches `-f`. Release notes cover it.
 
 ## Acceptance criteria
 
-- [ ] `guard_content_null_amend` + `amend_args_message_intent` live in `hug-git-commit` with the §2 contracts (fail-open, bare-call WHY comments, `_amend_content_null` global).
+- [ ] `guard_content_null_amend` + `amend_args_message_intent` live in `hug-git-commit` with the §2 contracts (fail-open, bare-call WHY comments, `_amend_content_null` global, HEAD-resolving KEEP rule).
 - [ ] `cmod --no-edit` with an index identical to HEAD exits 3 with the §3 message; `-f`/`HUG_FORCE` bypass; `-y` does not.
 - [ ] `cmoda --no-edit` with zero tracked changes behaves identically (mode `tracked`).
-- [ ] The "with staged changes" info line prints **only** when staged changes exist; the three content-null info variants match §3.
+- [ ] The "with staged changes" info line prints **only** when staged changes exist; the content-null variants and the paths-source variant match §3.
 - [ ] Untracked-files note appears in refusals when untracked files exist.
-- [ ] Content-expanding passthrough flags (`-a`/`--all`) re-mode the guard to the tracked check — dirty tree proceeds, clean tree still refuses.
-- [ ] All §6 behavioral + library tests pass (including `-y` no-bypass, the `-a` re-mode, corrupt-index fail-open, and `GIT_COMMITTER_DATE`-deterministic hash-churn assertions).
+- [ ] Content-shape passthrough flags re-mode the guard — `-a`/`--all`/`-p`/`--patch`/`-i`/`--interactive` use the tracked check (dirty tree proceeds, clean tree refuses); trailing paths (bare or after `--`) use the paths check; exactly one model per invocation.
+- [ ] The §4 pre-parse idiom (`parse_pathspecs` before `parse_common_flags`) preserves original `"$@"` for the final `git commit --amend` — pathspec invocations proceed or refuse correctly (tests 11/12/13).
+- [ ] All §6 behavioral + library tests pass (including `-y` no-bypass, the `-a`/`-p` re-modes, bare-path detection, corrupt-index fail-open, and `GIT_COMMITTER_DATE`-deterministic hash-churn assertions).
 - [ ] Help texts carry the SAFETY GUARD section; `test_quality_corpus.py` stays green.
 - [ ] `docs/commands/commits.md`, `articles/agents.md`, `docs/skills/hug-workflow/SKILL.md`, `README.md`, `CHANGELOG.md` synced; `make docs-build` and `make sanitize-check` green.
 
@@ -356,10 +418,10 @@ the refusal message teaches `-f`. Release notes cover it.
 | File | Change |
 |---|---|
 | `git-config/lib/hug-git-commit` | + `amend_args_message_intent`, + `guard_content_null_amend` |
-| `git-config/bin/git-cmod` | guard call (`staged`), state-dependent info line, SAFETY GUARD help section |
+| `git-config/bin/git-cmod` | `parse_pathspecs` pre-parse, guard call (`staged`), state-dependent info line, SAFETY GUARD help section |
 | `git-config/bin/git-cmoda` | guard call (`tracked`), state-dependent info line, SAFETY GUARD help section |
 | `tests/lib/test_hug-git-commit.bats` | helper unit tests (arg-intent table, fail-open) |
-| `tests/unit/test_commit.bats` | 18 behavioral cases |
+| `tests/unit/test_commit.bats` | 22 behavioral cases |
 | `docs/commands/commits.md` | guard documented in cmod/cmoda sections |
 | `git-config/lib/python/articles/agents.md` | Amending section: guard one-liner |
 | `docs/skills/hug-workflow/SKILL.md` | agent skill: guard one-liner |
@@ -382,5 +444,5 @@ make docs-build               # VitePress still builds
 - Issue: [elifarley/hug-scm#263](https://github.com/elifarley/hug-scm/issues/263)
 - Family: [elifarley/hug-scm#190](https://github.com/elifarley/hug-scm/issues/190) (cmoda over-capture), [elifarley/hug-scm#191](https://github.com/elifarley/hug-scm/issues/191) (deferred cmoda guard design — `mgmt/plans/2026-06-29-cmoda-dirty-tree-safety-design.md`), [elifarley/hug-scm#207](https://github.com/elifarley/hug-scm/issues/207) (runtime visibility beats advisory TIPs)
 - Sources: `git-config/bin/git-cmod`, `git-config/bin/git-cmoda`, `git-config/bin/git-c` (empty-index guard precedent)
-- Libraries: `git-config/lib/hug-git-commit` (`commit_args_indicate_amend`, `suggest_next_push_command`), `git-config/lib/hug-output` (`error_blocked`, `HUG_EX_BLOCKED=3`), `git-config/lib/hug-cli-flags` (`parse_common_flags` strips `-f`/`-y`), `git-config/lib/hug-git-state` (`get_untracked_files`)
+- Libraries: `git-config/lib/hug-git-commit` (`commit_args_indicate_amend`, `suggest_next_push_command`), `git-config/lib/hug-output` (`error_blocked`, `HUG_EX_BLOCKED=3`), `git-config/lib/hug-cli-flags` (`parse_common_flags` strips `-f`/`-y`; `parse_pathspecs` pre-parses pathspecs — the §4 call site uses it before `parse_common_flags`), `git-config/lib/hug-git-state` (`get_untracked_files`)
 - Prior art: `mgmt/plans/2026-06-29-cmoda-dirty-tree-safety-design.md` §3 (guard placement + call-site ordering), `docs/superpowers/specs/2026-07-14-visibility-batch-207-208-design.md` (prevention vs. transparency-aid distinction)
