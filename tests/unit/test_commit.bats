@@ -2173,3 +2173,91 @@ HOOK
   cleanup_test_worktrees "$repo"
   rm -rf "$repo"
 }
+
+@test "hug cmod: refuses content-null amend with --no-edit (exit 3)" {
+  # create_test_repo_with_changes has staged.txt staged — unstage everything first
+  git restore --staged .
+  run hug cmod --no-edit
+  [ "$status" -eq 3 ]
+  assert_output --partial "Nothing to amend"
+}
+
+@test "hug cmod: -f bypasses the guard (hash churn with forced date)" {
+  git restore --staged .
+  local head_before
+  head_before=$(git rev-parse HEAD)
+  GIT_COMMITTER_DATE='2030-01-01T00:00:00Z' run hug cmod --no-edit -f
+  assert_success
+  [ "$(git rev-parse HEAD)" != "$head_before" ]
+  [ "$(git show -s --format=%T)" = "$(git rev-parse HEAD^{tree})" ]  # tree unchanged
+}
+
+@test "hug cmod: HUG_FORCE=true env bypass parity" {
+  git restore --staged .
+  local head_before
+  head_before=$(git rev-parse HEAD)
+  HUG_FORCE=true GIT_COMMITTER_DATE='2030-01-01T00:00:00Z' run hug cmod --no-edit
+  assert_success
+  [ "$(git rev-parse HEAD)" != "$head_before" ]
+}
+
+@test "hug cmod: -m with a new message proceeds" {
+  git restore --staged .
+  run hug cmod -m "new msg"
+  assert_success
+  [ "$(git log -1 --format=%s)" = "new msg" ]
+}
+
+@test "hug cmod: staged changes + --no-edit proceeds (no regression)" {
+  # setup already has staged.txt staged
+  run hug cmod --no-edit
+  assert_success
+  assert_output --partial "Amending last commit with staged changes"
+}
+
+@test "hug cmod: untracked-only tree + --no-edit → exit 3 + untracked note" {
+  git restore --staged .
+  run hug cmod --no-edit
+  [ "$status" -eq 3 ]
+  assert_output --partial "untracked file"
+}
+
+@test "hug cmod: -y does NOT bypass the guard" {
+  git restore --staged .
+  run hug cmod --no-edit -y
+  [ "$status" -eq 3 ]
+}
+
+@test "hug cmod: -a re-mode — dirty tree proceeds, clean tree refuses" {
+  git restore --staged .
+  # dirty tree: README.md has unstaged changes (from setup)
+  run hug cmod --no-edit -a
+  assert_success
+
+  # clean tree
+  git restore .
+  run hug cmod --no-edit -a
+  [ "$status" -eq 3 ]
+}
+
+@test "hug cmod: pathspec --only folds worktree content (proceeds when modified)" {
+  git restore --staged .
+  echo "modified" >> README.md
+  run hug cmod --no-edit -- README.md
+  assert_success
+  assert_output --partial "named paths"
+}
+
+@test "hug cmod: pathspec matching HEAD refuses (exit 3)" {
+  git restore --staged .
+  git restore .   # README.md must match HEAD: --only folds worktree content, so a modified worktree would legitimately proceed
+  run hug cmod --no-edit -- README.md
+  [ "$status" -eq 3 ]
+}
+
+@test "hug cmod: bare trailing path (no --) is a pathspec" {
+  git restore --staged .
+  echo "modified" >> README.md
+  run hug cmod --no-edit README.md
+  assert_success
+}
