@@ -210,7 +210,7 @@ amend_args_message_intent() {
     local head_msg
     head_msg=$(git log -1 --format=%B HEAD)
 
-    local has_no_edit=false
+    local has_no_edit=false has_source=false
     local -a m_values=() trailer_args=()
     local f_file= c_ref= reedit=false
 
@@ -220,38 +220,44 @@ amend_args_message_intent() {
             --no-edit) has_no_edit=true ;;
             -e|--edit) return 2 ;;
             --fixup|--squash|--fixup=*|--squash=*) return 1 ;;
-            -m|--message) m_values+=("$2"); shift ;;
+            -m|--message) has_source=true; m_values+=("$2"); shift ;;
             -m*|--message=*)
                 # bash 4.0 floor: no negative array indices — strip via expansion
+                has_source=true
                 local v="${1#-m}"
                 [[ "$1" == --message=* ]] && v="${1#--message=}"
                 m_values+=("$v")
                 ;;
-            -F|--file) f_file="$2"; shift ;;
+            -F|--file) has_source=true; f_file="$2"; shift ;;
             -F*|--file=*)
+                has_source=true
                 f_file="${1#-F}"
                 [[ "$1" == --file=* ]] && f_file="${1#--file=}"
                 ;;
             -C|--reuse-message|-c|--reedit-message)
+                has_source=true
                 c_ref="$2"
                 [[ "$1" == -c || "$1" == --reedit-message ]] && reedit=true
                 shift
                 ;;
             -C*|--reuse-message=*)
+                has_source=true
                 c_ref="${1#-C}"
                 [[ "$1" == --reuse-message=* ]] && c_ref="${1#--reuse-message=}"
                 ;;
             -c*|--reedit-message=*)
+                has_source=true
                 reedit=true
                 c_ref="${1#-c}"
                 [[ "$1" == --reedit-message=* ]] && c_ref="${1#--reedit-message=}"
                 ;;
             -s|--signoff)
+                has_source=true
                 # signoff line from the committer ident (git's own source)
                 trailer_args+=(--trailer "Signed-off-by: $(git var GIT_COMMITTER_IDENT 2>/dev/null | sed 's/ [0-9]* [+-][0-9]*$//')")
                 ;;
-            --trailer) trailer_args+=(--trailer "$2"); shift ;;
-            --trailer=*) trailer_args+=(--trailer "${1#--trailer=}") ;;
+            --trailer) has_source=true; trailer_args+=(--trailer "$2"); shift ;;
+            --trailer=*) has_source=true; trailer_args+=(--trailer "${1#--trailer=}") ;;
         esac
         shift
     done
@@ -285,7 +291,12 @@ amend_args_message_intent() {
         candidate=$(printf '%s\n' "$base_msg" | git interpret-trailers "${trailer_args[@]}" 2>/dev/null) || return 1
     fi
 
-    if [[ -n "$candidate" ]]; then
+    # Track source PRESENCE separately from candidate CONTENT: -m '' and an
+    # empty -F file are legitimate empty candidates (git replaces the
+    # message with nothing when --allow-empty-message permits), and must
+    # classify CHANGE (1), not fall through to KEEP. `has_source` is set by
+    # the scan whenever a source flag appears, even with an empty value.
+    if $has_source; then
         if [[ "$candidate" == "$head_msg" ]]; then return 0; fi
         return 1
     fi
@@ -329,16 +340,17 @@ guard_content_null_amend() {
         esac
     done
     # bare trailing paths (no --): non-flag tokens not consumed as values.
-    # Value-skip walk: -m/-C/-c/-F/--message/--file/--reuse-message/
-    # --reedit-message/--fixup/--squash/--trailer consume the NEXT token;
-    # any other non-dash token is a bare path.
+    # Value-skip walk over EVERY value-taking git commit option (from
+    # `git commit -h`): message sources, --author, --date, --cleanup,
+    # --pathspec-from-file, and the fixup/squash/trailer values. Any other
+    # non-dash token is a bare path.
     local -a flag_args=("$@")
     local i=0 tok
     while ((i < ${#flag_args[@]})); do
         tok="${flag_args[i]}"
         case "$tok" in
             --) break ;;
-            -m|-C|-c|-F|--message|--file|--reuse-message|--reedit-message|--fixup|--squash|--trailer)
+            -m|-C|-c|-F|-t|--message|--file|--reuse-message|--reedit-message|--fixup|--squash|--trailer|--author|--date|--cleanup|--pathspec-from-file)
                 ((i += 2)); continue ;;
             --*=*) ((i += 1)); continue ;;
             -*) ((i += 1)); continue ;;
@@ -356,12 +368,12 @@ guard_content_null_amend() {
     case "$check_mode" in
         paths)
             if ((${#paths[@]})); then
-                git diff --quiet HEAD -- "${paths[@]}"; rc=$?
+                rc=0; git diff --quiet HEAD -- "${paths[@]}" || rc=$?
             else
-                git diff --quiet HEAD; rc=$?
+                rc=0; git diff --quiet HEAD || rc=$?
             fi ;;
-        tracked) git diff --quiet HEAD; rc=$? ;;
-        staged)  git diff --quiet --cached; rc=$? ;;
+        tracked) rc=0; git diff --quiet HEAD || rc=$? ;;
+        staged)  rc=0; git diff --quiet --cached || rc=$? ;;
     esac
 
     # content-null is reported even when the amend will proceed — the
@@ -379,13 +391,18 @@ guard_content_null_amend() {
         return 0
     fi
 
-    local msg untracked_count
+    local msg untracked_count cmd_name scope_label
+    cmd_name="cmod"; scope_label="staged changes"
+    if [[ "$mode" == "tracked" ]]; then
+        cmd_name="cmoda"
+        scope_label="tracked changes"
+    fi
     untracked_count=$(get_untracked_files | wc -l)
-    msg="Nothing to amend — no staged changes and no message change; the amend would only rewrite HEAD's hash (same tree, same message)."
-    msg+=$'\n'"Stage changes first ('hug a <files>') or change the message ('hug cmod -m \"msg\"')."
+    msg="Nothing to amend — no $scope_label and no message change; the amend would only rewrite HEAD's hash (same tree, same message)."
+    msg+=$'\n'"Stage changes first ('hug a <files>') or change the message ('hug $cmd_name -m \"msg\"')."
     msg+=$'\n'"To re-hash/re-date HEAD anyway, re-run with -f/--force."
     if ((untracked_count > 0)); then
-        msg+=$'\n'$'\n'"Note: $untracked_count untracked file(s) exist; cmod never includes untracked files — stage them first with 'hug a <file>…' (bare 'hug a' only stages tracked changes) or 'hug aa'."
+        msg+=$'\n'$'\n'"Note: $untracked_count untracked file(s) exist; $cmd_name never includes untracked files — stage them first with 'hug a <file>…' (bare 'hug a' only stages tracked changes) or 'hug aa'."
     fi
     error_blocked "$msg"
 }
@@ -675,7 +692,18 @@ Expected: FAIL — current `git-cmoda` proceeds and churns.
 Mirror Task 2's call site in `git-cmoda` with these two changes:
 1. `guard_content_null_amend tracked "$@" -- "${_pathspec_pathspecs[@]}"` (mode `tracked`).
 2. The content-present info line: `info "Amending last commit with all tracked changes..."` (unchanged wording).
-3. The final commit: `git commit -a --amend "$@"` (unchanged — cmoda's `-a` is its own semantics, orthogonal to the guard).
+3. The final commit MUST re-insert the pathspecs exactly like cmod's — otherwise the pre-parse silently strips `-- <paths>` and `-a` then amends ALL tracked changes instead of the named set (which git would have rejected: "paths with -a does not make sense"):
+
+```bash
+if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+    git commit -a --amend "$@" -- "${_pathspec_pathspecs[@]}" \
+        && suggest_next_push_command --amend
+else
+    git commit -a --amend "$@" && suggest_next_push_command --amend
+fi
+```
+
+git then applies its own `-a`+paths rejection exactly as before the change.
 4. SAFETY GUARD help section with the mode-specific first sentence: `"cmoda refuses a content-null amend: with no tracked changes at all (nothing staged, nothing modified) and --no-edit, …"`.
 
 - [ ] **Step 4: Run tests**
