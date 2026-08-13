@@ -29,7 +29,7 @@ emptiness via stdout). Mirrors `git diff --name-only`.
 | Path format | **repo-relative** | What a diff-file-list consumer needs. Deliberately diverges from `hug wtl --path-only` (absolute), because the domains differ — a worktree path is inherently absolute, a changed-file path is inherently repo-relative. Tracked in #269. |
 | Exit code on zero matches | **0** | Aligns with `git diff --name-only` and the existing `shc` stat-mode "exit 0 for scriptability" philosophy. **Revises issue #266's written AC** (which said "exit 1, consistent with `wtl --path-only`") — the maintainer chose exit 0 during design. Diverges from `wtl --path-only` (exit 1); tracked in #269. |
 | Implementation home | New lib function `show_changed_file_names()` in `hug-git-show` | `git-shc` already sources `hug-git-show`; satisfies the repo's "scripts stay thin, work in lib/" rule (D.R.Y./SOLID). |
-| Flag plumbing | **Pre-strip** `-n/--name-only` from `"$@"` BEFORE `parse_pathspecs`/`parse_common_flags` | See "Bundled-flag hazard" below: post-eval peeling silently drops `-n` on bundled forms like `-nq`. Pre-stripping sidesteps both the extraction-loop last-wins swallow and any getopt bundling ambiguity. |
+| Flag plumbing | Borrow `git-wtl`'s reject-loop pattern: keep `parse_pathspecs` → `parse_common_flags` ordering, replace the extraction loop with a `wtl`-style `while` loop whose `-*` case delegates to `reject_flag_ref` | The proven codebase pattern for the loud-reject behavior. Two simpler designs (post-eval peel, pre-strip shim) were both refuted — see "Bundled-flag hazard". `reject_flag_ref` already lets valid `-N` through and rejects unknown `-`-tokens, so no fragile glob or second getopt is needed. `parse_pathspecs` must stay first because `shc` accepts `-- <pathspec>`. |
 | D.R.Y. consolidation | Replace `git-shc`'s inline `*..*` range check with `is_range()` | Eliminates a raw range-string check; uses the existing library function at `hug-git-repo:297`. Included per "maximize correctness / include it". |
 
 ## Architecture
@@ -91,31 +91,53 @@ Design points:
 
 ### 2. `git-shc` script changes
 
-**(a) Flag parsing — pre-strip BEFORE the shared parsers.** Add a small shim at the very top
-of `git-shc`, BEFORE the existing `eval parse_pathspecs` / `eval parse_common_flags` calls
-(currently `git-shc:111-112`):
+**(a) Flag parsing — adopt the `git-wtl` *reject-loop* pattern, but keep `git-shc`'s existing
+parser ordering.** This replaces `git-shc`'s current fragile extraction loop (which silently
+swallows unknown `-`-tokens via last-wins `*)`) with a `wtl`-style loop that has an explicit
+`-*` reject case. See "Bundled-flag hazard" for why every simpler alternative fails.
+
+**Critical ordering detail (verified):** unlike `wtl`, `git-shc` accepts `-- <pathspec>`
+arguments, so it MUST keep `parse_pathspecs` as the first stage — `parse_pathspecs` splits on
+`--` and protects the pathspec tokens from `parse_common_flags` (which would otherwise consume
+`--` for its own interactive-file-selection semantics and let the pathspec leak into
+`commit_ref`). `wtl` skips `parse_pathspecs` because it takes search terms, not pathspecs; `shc`
+cannot. So the restructured flow keeps the existing two-parser ordering and replaces only the
+extraction loop:
 
 ```bash
-# Pre-strip -n/--name-only before the shared parsers. This MUST happen before
-# parse_pathspecs/parse_common_flags — see "Bundled-flag hazard" below.
+# 1. parse_pathspecs FIRST (unchanged) — protects -- <pathspec> from parse_common_flags.
+eval "$(parse_pathspecs "$@")"
+# 2. parse_common_flags on the pre-args (unchanged) — consumes -q, -h, -f, -y, etc.
+eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
+# 3. NEW: wtl-style own loop over the remaining "$@", with an explicit -* reject.
+#    (Replaces the old extraction loop at git-shc:116-123 that had no -* case.)
 name_only=false
-declare -a shc_args=()
-for arg in "$@"; do
-  case "$arg" in
-  -n|--name-only) name_only=true ;;
-  *) shc_args+=("$arg") ;;
+commit_ref=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  -n|--name-only) name_only=true; shift ;;
+  -*)
+    # Any other -token: reject. reject_flag_ref lets valid -N range shorthands
+    # through (-3 → HEAD~3..HEAD) and rejects everything else (-nq, -qn, --foo).
+    reject_flag_ref "$1" && { commit_ref="$1"; shift; } ;;
+  *) commit_ref="$1"; shift ;;
   esac
 done
-# Then the existing flow runs on shc_args instead of "$@":
-eval "$(parse_pathspecs "${shc_args[@]}")"
-eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
 ```
 
-The existing `commit_ref` extraction loop (`git-shc:116-123`) is **unchanged** — it never sees
-`-n`/`--name-only`, so no new case is needed there.
+The `--` case is absent from the loop because `parse_pathspecs` (stage 1) already split it off
+into `_pathspec_pathspecs`; by stage 3, `--` is gone from `"$@"`.
 
-**Why pre-strip and not post-eval-peel:** a post-eval approach (matching `-n` in the extraction
-loop) silently fails on bundled forms. See "Bundled-flag hazard" for the verified failure.
+This borrows `wtl`'s *loop shape* (`-*` → reject) but keeps `git-shc`'s *parser stack*
+(`parse_pathspecs` → `parse_common_flags`), because `shc`'s pathspec support demands it. The
+only `shc`-specific deviation from a blind `error_usage` is delegating `-*` to `reject_flag_ref`
+(which already knows to allow `-N`), so valid range shorthands like `-3` keep working.
+
+**Why this design (and not pre-strip, post-eval-peel, or a second getopt):** all three simpler
+alternatives were tried and refuted by two successive code roasts (see "Bundled-flag hazard").
+This hybrid is the only design that (i) borrows a pattern already proven in this codebase,
+(ii) fails loud on unknown bundles, (iii) keeps shared-flag handling delegated to the shared
+parser instead of duplicating its optstring, AND (iv) preserves pathspec support.
 
 **(b) Output branch** — after `commit_ref` is resolved (existing line ~133), before the existing
 `--stat` path:
@@ -157,29 +179,39 @@ Behavioral parity between `--stat` and `--name-only` across every input form:
 The merge-commit row is preserved on purpose: changing it would make `--name-only` *diverge* from
 `--stat`, breaking parity. The fix belongs to #268, which will move both modes together.
 
-### Bundled-flag hazard (why pre-strip is mandatory)
+### Bundled-flag hazard (history of two refuted designs; the `wtl` pattern is the fix)
 
-An earlier draft of this spec peeled `-n` in the post-eval extraction loop, reasoning that
-`parse_common_flags` "passes unknown flags through to `$@`." That is **wrong**, and a code roast
-caught it. Reproduced on the real binary (`hug -C <repo> shc -nq HEAD` → stats output, exit 0):
+This spec went through **two refuted flag-parsing designs** before settling on the proven `wtl`
+pattern. Recording both failures so the next maintainer doesn't re-walk this path.
 
-- `parse_pathspecs` splits args on `--` only; it does NOT expand bundles. So `-nq HEAD` becomes
-  `_pathspec_pre_args=(-nq HEAD)`.
-- The extraction loop's `*)` branch assigns `commit_ref` on every non-flag token, **last-wins**.
-  `-nq` matches `*)` (it isn't `-n`), sets `commit_ref=-nq`, then `HEAD` overwrites it. `name_only`
-  stays `false`. Net effect: `-nq` is silently swallowed and the command runs in `--stat` mode.
-- Separated forms (`-n HEAD`, `-n -q HEAD`, `--name-only HEAD`) would work under post-eval peeling,
-  but the silent failure on bundles is a CRITICAL correctness hole — common CLI muscle memory
-  (`-nq` to suppress the header) produces wrong output with no error.
+**Root cause (the same for both failures):** `git-shc`'s extraction loop assigns `commit_ref`
+on every token that isn't an explicitly-listed flag, **last-wins**. So any unrecognized `-`-token
+that isn't the final positional is silently overwritten and lost — `reject_flag_ref` only ever
+sees the final `commit_ref` value, never the swallowed token. Reproduced on the real binary:
+`hug shc -nq HEAD` (current, unmodified script) → stats output, exit 0, `-nq` silently lost.
 
-**Pre-stripping** removes `-n`/`--name-only` from `"$@"` before *any* of the shared parsers see it,
-so neither `parse_pathspecs`'s pass-through nor the extraction loop's last-wins swallow can drop it.
-After pre-strip, `-nq HEAD` is *not* recognized as `-n` (it is an unknown bundle) and flows through
-to `reject_flag_ref "-nq"` → loud error, exit 2. That is the correct, fail-loud behavior for an
-ambiguous bundle — matching the existing `--stat`-rejection philosophy.
+**Refuted design 1 — post-eval peel (add a `-n` case to the extraction loop):** fails because
+`-nq` is not the literal `-n`, so it matches `*)`, gets overwritten by `HEAD`, and `name_only`
+stays false. Silent stats mode.
 
-The existing `--stat` rejection path (`--stat` → `commit_ref` → `reject_flag_ref`) is untouched by
-the pre-strip design.
+**Refuted design 2 — pre-strip shim (remove literal `-n`/`--name-only` from `$@` before the
+shared parsers):** fails for the *same* reason. Pre-stripping `-n` does nothing for `-nq`, which
+passes through `parse_pathspecs` as the literal token `-nq`, then hits the extraction loop's `*)`,
+gets overwritten by `HEAD`, and silently runs stats. (This was the round-1 fix; a second code
+roast proved it still silently dropped `-nq`.)
+
+**The fix — the `git-wtl` reject-loop pattern, adapted (Section 2a):** keep `git-shc`'s existing
+`parse_pathspecs` → `parse_common_flags` ordering (so pathspecs still work), then replace the
+extraction loop with a `while` loop whose `-*` case delegates to `reject_flag_ref`.
+`reject_flag_ref` lets valid `-N` range shorthands through and rejects every other unknown
+`-`-token (including `-nq`, `-qn`, `--foo`) with a loud error + exit 2. This is the only design
+that fails loud on bundles AND borrows a pattern already shipped in this codebase (`git-wtl`),
+without sacrificing pathspec support. Verified end-to-end for every input form, including
+`-n main..HEAD -- '*.py'` (pathspec preserved) and `-nq HEAD` (rejected) — see test 12.
+
+Bundles of `-n` with other flags (`-nq`, `-qn`) are deliberately **not supported** — they fail
+loud rather than silently misbehave. Users wanting both `-n` and `-q` must pass them separately
+(`-n -q`), exactly as `wtl` requires for its custom flags.
 
 ### No-match hint: `--name-only` intentionally omits it (by design)
 
@@ -221,8 +253,13 @@ CAPTURING OUTPUT additions:
 GIT EQUIVALENTS additions:
 ```
     git diff --name-only main..HEAD  →  hug shc -n main..HEAD
-    git diff-tree --name-only HEAD   →  hug shc -n HEAD
+    git diff-tree --no-commit-id --name-only -r --root HEAD  →  hug shc -n HEAD
 ```
+
+Note: the `git diff-tree` equivalent shows the *full* invocation hug uses internally —
+`--no-commit-id` (drop the commit-hash line), `-r` (recurse into subtrees), `--root` (support
+root commits). The shorter `git diff-tree --name-only HEAD` would prepend the commit hash and
+break the one-path-per-line contract this mode exists to provide.
 
 ## Tests
 
@@ -248,13 +285,16 @@ tests"), both the library function and the script flag are tested.
 ## Deliverables
 
 1. `show_changed_file_names()` in `git-config/lib/hug-git-show`
-2. `git-shc`: `-n/--name-only` flag (pre-strip shim) + output branch + `is_range()` consolidation + help text
+2. `git-shc`: `-n/--name-only` flag (`wtl`-style own-loop) + output branch + `is_range()` consolidation + help text
 3. Library tests (1–5) + script tests (6–12)
-4. **Sibling documentation** (every file that documents the `shc` command surface must mention `-n`):
+4. **Sibling documentation** — the complete hit list of files that document the `shc` command surface (verified by grep; each must mention `-n`):
    - `README.md:546` — extend the command signature to show `[OPTIONS]` and note `-n`.
    - `docs/commands/head.md:215` — add a `-n` example near the existing `hug shc HEAD~3..HEAD` line.
    - `docs/cookbook.md:191` — add a `hug shc -n` example alongside the existing `hug shc abc1234`.
+   - `docs/meta/hug-completion-reference.md:105` — add `[OPTIONS]` and `-n` to the `shc` args description (this is the canonical "what flags does this command take" listing — the worst omission if missed).
    - `docs/skills/hug-repo-analysis/guides/bug-hunting.md:104` — note `-n` for scriptable file extraction.
+   - `docs/skills/hug-repo-analysis/guides/pre-commit-review.md:310` — note `-n` for scriptable pre-commit file lists.
+   - `docs/skills/hug-repo-analysis/SKILL.md:113,287` — note `-n` alongside the existing `hug shc <hash>` recipes.
 5. Reference #268 and #269 from the PR body (already filed)
 
 ## Non-goals
