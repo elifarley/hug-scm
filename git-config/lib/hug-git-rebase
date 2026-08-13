@@ -235,7 +235,7 @@ rb_build_plan() {
   local no_backup="${3:-false}"
 
   local num_commits
-  num_commits=$(count_commits_in_range "$target_branch" HEAD)
+  num_commits=$(count_commits_in_range_or_zero "$target_branch" HEAD)
 
   local will_backup="true"
   local tier="warn"

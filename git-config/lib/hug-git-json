@@ -58,17 +58,31 @@ parse_file_to_json() {
   to_json_object "path" "$file" "status" "$status_type"
 }
 
-# Collect files of specific type with JSON objects
-# Usage: collect_git_files_json "$type" [flags...]
-# Returns: Comma-separated JSON objects for array embedding
+# Collect files of specific type as JSON objects
+# Usage: mapfile -t files < <(collect_git_files_json "$type" [flags...])
+#   - "$type": one of staged|unstaged|untracked|ignored|conflicted (unknown types error)
+#   - flags: passed through to the underlying list_* function
+# Prints one JSON object PER LINE to stdout; empty output when none.
+# The object count IS the line count (a newline in a filename is escaped to
+# the two-char sequence \n by json_escape, so each object is exactly one line).
+#
+# Design (Bash 4.0-safe, no nameref): the old stdout contract (comma-joined
+# objects) forced callers to `IFS=',' read -ra`, which counts JSON FRAGMENTS,
+# not files (a 2-field object is 2 fragments) — #247. Line-per-object keeps the
+# count truthful (regression pin: #247) and avoids `local -n` (Bash 4.3+), so
+# this function works on the Bash 4.0-4.2 floor the project supports
+# (docs/installation.md). NOTE: the underlying list_*_files functions still
+# route through convert_to_relative_paths (hug-git-repo), which uses `local -n`
+# (Bash 4.3+) — a pre-existing limitation shared by the whole family; the JSON
+# collection contract itself is nameref-free.
 collect_git_files_json() {
   local file_type="$1"
   shift
   local -a list_flags=("$@")
-  local -a files=()
+  local -a _items=()
 
   case "$file_type" in
-  "staged" | "unstaged")
+  "staged" | "unstaged" | "conflicted")
     local -a status_flags=("${list_flags[@]}" "--status")
     local list_func="list_${file_type}_files"
 
@@ -76,7 +90,7 @@ collect_git_files_json() {
       [[ -z "$line" ]] && continue
       local file_json
       file_json="$(parse_file_to_json "$line")"
-      [[ -n "$file_json" ]] && files+=("$file_json")
+      [[ -n "$file_json" ]] && _items+=("$file_json")
     done < <("$list_func" "${status_flags[@]}")
     ;;
   "untracked" | "ignored")
@@ -85,17 +99,20 @@ collect_git_files_json() {
     mapfile -t temp_files < <("$list_func" "${list_flags[@]}")
     for file in "${temp_files[@]}"; do
       [[ -z "$file" ]] && continue
-      files+=("$(to_json_object "path" "$file" "status" "$file_type")")
+      _items+=("$(to_json_object "path" "$file" "status" "$file_type")")
     done
+    ;;
+  *)
+    error "collect_git_files_json: unknown file type '$file_type'"
     ;;
   esac
 
-  # Print array as comma-separated JSON objects
-  if [[ ${#files[@]} -gt 0 ]]; then
-    printf '%s' "$(
-      IFS=','
-      echo "${files[*]}"
-    )"
+  # One JSON object per line. Newlines inside values are escaped by json_escape,
+  # so a printed line is always exactly one object — the caller's `mapfile`
+  # yields both the complete objects and the file count. Guarded: `printf '%s\n'`
+  # with no args would emit a single empty line, inflating mapfile to 1.
+  if [[ ${#_items[@]} -gt 0 ]]; then
+    printf '%s\n' "${_items[@]}"
   fi
 }
 
@@ -133,44 +150,54 @@ output_json_status_unified() {
     list_flags+=("--cwd")
   fi
 
-  # Collect files based on filter
+  # Collect files based on filter.
+  # collect_git_files_json prints one JSON object per line; mapfile yields both
+  # the complete objects (for the arrays) and the file count (${#arr[@]}).
+  # No comma-split, no nameref — the count is never re-derived from fragment
+  # text (which counts JSON FRAGMENTS, not files — #247 regression pin).
   local -a staged_files=()
   local -a unstaged_files=()
   local -a untracked_files=()
   local -a ignored_files=()
+  local -a conflicted_files=()
 
   if [[ "$filter_types" == *"staged"* ]]; then
-    local result
-    result="$(collect_git_files_json "staged" "${list_flags[@]}")"
-    [[ -n "$result" ]] && IFS=',' read -ra staged_files <<< "$result"
+    mapfile -t staged_files < <(collect_git_files_json "staged" "${list_flags[@]}")
   fi
 
   if [[ "$filter_types" == *"unstaged"* ]]; then
-    local result
-    result="$(collect_git_files_json "unstaged" "${list_flags[@]}")"
-    [[ -n "$result" ]] && IFS=',' read -ra unstaged_files <<< "$result"
+    mapfile -t unstaged_files < <(collect_git_files_json "unstaged" "${list_flags[@]}")
   fi
 
   if [[ "$filter_types" == *"untracked"* ]]; then
-    local result
-    result="$(collect_git_files_json "untracked" "${list_flags[@]}")"
-    [[ -n "$result" ]] && IFS=',' read -ra untracked_files <<< "$result"
+    mapfile -t untracked_files < <(collect_git_files_json "untracked" "${list_flags[@]}")
   fi
 
   if [[ "$filter_types" == *"ignored"* ]]; then
-    local result
-    result="$(collect_git_files_json "ignored" "${list_flags[@]}")"
-    [[ -n "$result" ]] && IFS=',' read -ra ignored_files <<< "$result"
+    mapfile -t ignored_files < <(collect_git_files_json "ignored" "${list_flags[@]}")
   fi
 
-  # Build summary
+  if [[ "$filter_types" == *"conflicted"* ]]; then
+    mapfile -t conflicted_files < <(collect_git_files_json "conflicted" "${list_flags[@]}")
+  fi
+
+  # Build summary. The four legacy keys are ALWAYS present (unchanged
+  # behavior); "conflicted" is filter-conditional so slu/sls/slk/sli --json
+  # output stays byte-identical to today. All counts are OBJECT counts
+  # (files), so `total` is uniform — no hybrid fragment/object arithmetic.
+  local total=$((${#staged_files[@]} + ${#unstaged_files[@]} + ${#untracked_files[@]} + ${#ignored_files[@]} + ${#conflicted_files[@]}))
+  local -a summary_args=(
+    "staged" "${#staged_files[@]}"
+    "unstaged" "${#unstaged_files[@]}"
+    "untracked" "${#untracked_files[@]}"
+    "ignored" "${#ignored_files[@]}"
+  )
+  if [[ "$filter_types" == *"conflicted"* ]]; then
+    summary_args+=("conflicted" "${#conflicted_files[@]}")
+  fi
+  summary_args+=("total" "$total")
   local summary
-  summary=$(to_json_object \
-    "staged" "${#staged_files[@]}" \
-    "unstaged" "${#unstaged_files[@]}" \
-    "untracked" "${#untracked_files[@]}" \
-    "ignored" "${#ignored_files[@]}" \
-    "total" "$((${#staged_files[@]} + ${#unstaged_files[@]} + ${#untracked_files[@]} + ${#ignored_files[@]}))")
+  summary=$(to_json_object "${summary_args[@]}")
 
   # Start JSON output (without spaces, will be added later)
   local json
@@ -221,6 +248,9 @@ output_json_status_unified() {
   fi
   if [[ "$filter_types" == *"ignored"* ]]; then
     add_file_array "ignored" "${ignored_files[@]}"
+  fi
+  if [[ "$filter_types" == *"conflicted"* ]]; then
+    add_file_array "conflicted" "${conflicted_files[@]}"
   fi
 
   # Close the object (only if we added arrays, otherwise already closed)

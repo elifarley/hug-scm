@@ -485,7 +485,7 @@ HOOK
   
   run hug cmv 1 target-branch --force
   assert_failure
-  assert_output --partial "Require clean working tree and index to proceed"
+  assert_output --partial "Require clean tracked working tree"
   
   popd >/dev/null
   rm -rf "$repo"
@@ -501,8 +501,39 @@ HOOK
   
   run hug cmv 1 target-branch --force
   assert_failure
-  assert_output --partial "Require clean working tree and index to proceed"
+  assert_output --partial "Require clean tracked working tree"
   
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: tracked-dirty tree still refuses the clean-gate (unified predicate)" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  # Modify a tracked file to create unstaged tracked changes
+  echo "dirty edit" >> feature1.txt
+
+  run hug cmv 1 newbranch --new --force
+  assert_failure
+  assert_output --partial "Require clean tracked working tree"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: untracked-only tree passes the clean-gate (reset --hard ignores untracked)" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  # Add an untracked file only — no tracked changes at all
+  echo "untracked" > scratch.txt
+
+  run hug cmv 1 newbranch --new --force
+  assert_success
+
   popd >/dev/null
   rm -rf "$repo"
 }
@@ -569,7 +600,7 @@ HOOK
 
   # Test accepting confirmation (type the action word "move")
   export HUG_DISABLE_GUM=true  # Disable gum to use text-based prompts
-  run bash -c 'echo "move" | hug cmv 1 existing-target'
+  run bash -c 'echo "cmv" | hug cmv 1 existing-target'
   assert_success
   assert_output --partial "1 commit since"
 
@@ -625,7 +656,7 @@ HOOK
 
   # Test accepting confirmation to create new branch (type action word "move")
   export HUG_DISABLE_GUM=true  # Disable gum to use text-based prompts
-  run bash -c 'echo "move" | hug cmv 1 prompt-missing'
+  run bash -c 'echo "cmv" | hug cmv 1 prompt-missing'
   assert_success
   assert_output --partial "📊 1 commit since"
   assert_output --partial "📤 moving to prompt-missing (new branch):"
@@ -939,7 +970,213 @@ HOOK
   rm -rf "$repo"
 }
 
+# cmv 0-commit guard: the `count == 0` no-op is CORRECT for cmv (its target must be an
+# ancestor — "commit to move above" / "reset branch back" — so a descendant has nothing
+# above it). These tests pin BOTH truthful sub-case messages AND the no-regression invariant
+# that the current branch never moves: a forward (descendant) target must NOT fall through
+# to the tail's `git reset --hard`, which would hard-reset the branch FORWARD + switch branch
+# on a danger-tier command. The message must branch on is_same_commit because a commit is its
+# own ancestor (equality-as-ancestry): "already at" when aligned, "is a descendant" otherwise.
+@test "hug cmv: aligned target (HEAD) -> 'already at' message, branch unmoved" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  git checkout -q -b feature
+  local before
+  before=$(git rev-parse HEAD)
+
+  run env HUG_FORCE=true hug cmv HEAD main
+  assert_success
+  assert_output --partial "already at"
+  refute_output --partial "is a descendant"
+  # Current branch did NOT move (guard exits before any reset)
+  [ "$(git rev-parse HEAD)" = "$before" ]
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: descendant target -> 'is a descendant of HEAD' message, branch unmoved" {
+  local repo
+  repo=$(create_test_repo_with_history)
+  pushd "$repo" >/dev/null
+
+  git checkout -q -b feature
+  # Current HEAD becomes the FORWARD (descendant) target; then move feature back one commit so
+  # the target is a descendant of the new HEAD — an incoherent cmv request that must no-op.
+  local descendant
+  descendant=$(git rev-parse HEAD)
+  git reset -q --hard HEAD~1
+  local before
+  before=$(git rev-parse HEAD)
+
+  run env HUG_FORCE=true hug cmv "$descendant" main
+  assert_success
+  assert_output --partial "is a descendant of HEAD"
+  refute_output --partial "already at"
+  # Current branch did NOT move forward (no forward-hard-reset regression)
+  [ "$(git rev-parse HEAD)" = "$before" ]
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
 # Additional cmv edge cases...
+
+# -----------------------------------------------------------------------------
+# cmv danger-tier migration: -y refusal, -f proceeds, recovery hint, help
+# -----------------------------------------------------------------------------
+
+@test "hug cmv: -y is refused (danger tier, exit 3)" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  git checkout -q -b target-branch HEAD~1
+  git checkout -q main
+
+  run hug cmv 1 target-branch -y
+  [ "$status" -eq 3 ]      # HUG_EX_BLOCKED — danger-tier ops refuse -y
+  [ "$status" -ne 0 ]      # backstop: a sourcing-order regression fails noisily, not silently
+  assert_output --partial "Dangerous operation requires --force (not -y)"
+
+  # HEAD unchanged (operation didn't proceed)
+  run git branch --show-current
+  assert_output "main"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: -f proceeds (danger tier skips confirmation)" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  git checkout -q -b target-branch HEAD~1
+  git checkout -q main
+
+  run hug cmv 1 target-branch -f
+  assert_success
+
+  # Now on target-branch (operation completed)
+  run git branch --show-current
+  assert_output "target-branch"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: recovery hint emitted on success (plain form)" {
+  # NEW contract: cmv now has a recovery model (inverse cmv). The plain
+  # (non --wt) path emits an inverse-cmv recovery hint on success, mirroring
+  # the --wt path's "Recovery: cd $wt && hug cmv ... --wt" tip.
+  #
+  # WHY a fresh repo per assertion: the first `hug cmv` mutates the repo
+  # (main is reset to target; HEAD ends on target-branch). A second cmv in
+  # the same repo would have different semantics (target-branch is now HEAD),
+  # so the hint-suppression contract is verified in its own test below with
+  # its own repo — not chained here.
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  git checkout -q -b target-branch HEAD~1
+  git checkout -q main
+
+  # Loud run: recovery hint IS emitted, naming the inverse cmv command
+  # that would restore the prior layout (N commits back to original_branch).
+  run hug cmv 1 target-branch -f
+  assert_success
+  assert_output --partial "hug cmv 1 main"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: recovery hint suppressed under --quiet (plain form)" {
+  # Companion to the test above: --quiet suppresses the human-facing
+  # recovery hint (and all other chatter). Uses its own repo so the cmv
+  # semantics match the loud test exactly.
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  git checkout -q -b target-branch HEAD~1
+  git checkout -q main
+
+  run hug cmv 1 target-branch -f --quiet
+  assert_success
+  refute_output --partial "hug cmv 1 main"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: recovery hint also on new-branch plain path" {
+  # Convergence invariant: the recovery tip is placed AFTER the two info
+  # branches (new-branch vs existing-branch) converge, so BOTH paths must
+  # emit it. The earlier "emitted on success (plain form)" test only
+  # exercises the existing-branch path (target pre-created from HEAD~1).
+  # This test pins the new-branch path: target does NOT exist, cmv
+  # auto-creates it via the `--new` implied flow, then the recovery tip
+  # must still fire with the inverse-cmv recipe.
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+  git checkout -q main
+  # fresh-target-branch does NOT exist — cmv will auto-create it (new-branch
+  # path). Name avoids collisions with feature/branch, feature-1/2, hotfix-1.
+  run hug cmv 1 fresh-target-branch -f
+  assert_success
+  assert_output --partial "Created and moved"
+  assert_output --partial "hug cmv 1 main"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: current branch changes after success (reason recovery is incomplete)" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+
+  run hug cmv 1 new-branch --new -f
+  assert_success
+
+  # Current branch changed from main to new-branch
+  run git branch --show-current
+  assert_output "new-branch"
+  refute_output "main"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: help documents RECOVERY (inverse cmv) instead of NOT RESTORABLE" {
+  run hug cmv -h
+  assert_success
+  assert_output --partial "RECOVERY:"
+  assert_output --partial "cmv is its own inverse"
+  # Old wording must be gone -- replaced by the inverse-cmv recovery paragraph.
+  refute_output --partial "NOT RESTORABLE"
+}
+
+@test "hug cmv: --wt is accepted and help documents it" {
+  run hug cmv -h
+  assert_success
+  assert_output --partial "--wt"
+  # OPTIONS wording capitalizes "Ensure" (sentence start, matching --new/--quiet style).
+  assert_output --partial "Ensure the target branch has a worktree"
+}
+
 
 # -----------------------------------------------------------------------------
 # Post-Commit Push Suggestion Tests
@@ -1394,4 +1631,545 @@ HOOK
   grep -q "Committing staged file(s)" "$_err"
   grep -q "stream_test.txt" "$_err"
   rm -f "$_out" "$_err"
+}
+
+# -----------------------------------------------------------------------------
+# hug cmv --wt expectations (Task 3: flagship new-branch path)
+#   - --wt creates the branch + worktree via create_worktree_for_branch.
+#   - For NEW branches (--new or auto): branch points at original_head (exact SHA
+#     preserved), source branch reset back to target, user STAYS on the source.
+#   - Confirm-first: safe (worktree) prompt + danger (move) prompt gathered
+#     before any mutation. --force skips both.
+#   - Missing branch without --new + decline -> exit, "Cancelled.", nothing mutated.
+# -----------------------------------------------------------------------------
+
+@test "hug cmv: --wt flagship — new branch + worktree, stays on source" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+  local target
+  target=$(git rev-parse HEAD~1)
+
+  # NOTE: 'feature' would collide with the 'feature/branch' ref that
+  # create_test_repo_with_branches sets up (refs/heads/feature/branch blocks
+  # refs/heads/feature). Use a non-colliding name.
+  run hug cmv 1 cmv-target --new --wt --force
+  assert_success
+
+  # Source reset back; still on main
+  assert_equal "$(git rev-parse main)" "$target"
+  run git branch --show-current
+  assert_output "main"
+
+  # cmv-target points at original_head (exact SHA preserved for new branches)
+  assert_equal "$(git rev-parse cmv-target)" "$original_head"
+
+  # Worktree exists for cmv-target at the resolved path. Resolve the path
+  # via `git worktree list --porcelain` (get_worktree_path_by_branch is a
+  # lib function, not a test helper).
+  local wt
+  wt=$(git worktree list --porcelain | awk -v b="cmv-target" '
+    /^worktree / { p = $2 }
+    /^branch /  { if ($2 == "refs/heads/" b || $2 == b) print p }
+  ')
+  [[ -n "$wt" ]] || fail "No worktree registered for branch cmv-target"
+  assert_worktree_exists "$wt"
+  assert_worktree_branch "$wt" "cmv-target"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
+
+@test "hug cmv: -u --wt moves local-only commits to a new branch + worktree, stays on source" {
+  # Pins the deliberate carve-out at git-cmv:~313 — the --wt block's danger
+  # prompt is guarded by `&& ! $upstream` because for -u the danger prompt
+  # ALREADY fired inside handle_upstream_operation (line 159, called with the
+  # "danger" tier). Without `! $upstream`, a `cmv -u --wt` would double-prompt
+  # danger. This test makes the -u + --wt combination executable contract,
+  # not just correct-by-inspection. See PR #264 review for the gap this closes.
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  local upstream_sha
+  upstream_sha=$(git rev-parse origin/main)
+
+  echo "local upstream wt" > local-u-wt.txt
+  git add local-u-wt.txt
+  git commit -q -m "Local upstream-wt commit"
+  local local_sha
+  local_sha=$(git rev-parse HEAD)
+
+  # -u resolves target to the upstream tip (origin/main) and fires the danger
+  # prompt inside handle_upstream_operation. The --wt block's danger-prompt
+  # guard (`! $upstream` at git-cmv:313) must SKIP its own prompt so there's
+  # no double danger prompt. --force bypasses the single prompt; the
+  # assertions below verify the --wt end-state held.
+  run hug cmv -u upstream-wt --new --wt --force
+  assert_success
+
+  # Source branch (main) reset to the upstream tip — -u semantics preserved.
+  assert_equal "$(git rev-parse main)" "$upstream_sha"
+
+  # User STAYS on the source branch (main) — the --wt end-state, unlike
+  # plain -u which switches to the target.
+  run git branch --show-current
+  assert_output "main"
+
+  # New target branch points at the original local HEAD (exact SHA preserved
+  # — the new-branch path).
+  assert_equal "$(git rev-parse upstream-wt)" "$local_sha"
+
+  # Worktree exists for upstream-wt. Resolve its path via `git worktree list`
+  # (get_worktree_path_by_branch is a lib fn, not a test helper) — same shape
+  # as the flagship --wt test above.
+  local wt
+  wt=$(git worktree list --porcelain | awk -v b="upstream-wt" '
+    /^worktree / { p = $2 }
+    /^branch /  { if ($2 == "refs/heads/" b || $2 == b) print p }
+  ')
+  [[ -n "$wt" ]] || fail "No worktree registered for branch upstream-wt"
+  assert_worktree_exists "$wt"
+  assert_worktree_branch "$wt" "upstream-wt"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
+
+@test "hug cmv: --wt missing branch without --new cancels (non-interactive) and mutates nothing" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # NOTE: piping stdin (`echo "n" | ...`) makes the test non-interactive —
+  # prompt_confirm_danger/safe hit the `[[ ! -t 0 ]]` non-interactive bail
+  # BEFORE comparing input. So this exercises the non-interactive cancellation
+  # path, not a real "n" decline. The value of the test is the no-mutation
+  # contract on cancellation, which holds either way.
+  run bash -c 'echo "n" | hug cmv 1 missing --wt'
+  assert_failure
+  assert_output --partial "Cancelled."
+
+  # main unchanged, no branch, no worktree
+  assert_equal "$(git rev-parse main)" "$original_head"
+  run git branch --list missing
+  refute_output
+  run git worktree list --porcelain
+  refute_output --partial "missing"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+# -----------------------------------------------------------------------------
+# hug cmv --wt expectations (Task 4: existing-branch paths)
+#   - Existing target branch WITHOUT a worktree: cmv creates one (via
+#     create_worktree_for_branch) and cherry-picks inside it BEFORE resetting
+#     the source. The moved commit lands on the target branch with a NEW SHA
+#     (cherry-pick, not detach); the source is rewound to $target only after
+#     the pick succeeds.
+#   - Existing target branch WITH a worktree: cmv reuses the existing worktree
+#     (no new worktree created) and cherry-picks inside it.
+#   - In both cases the user stays on the source branch.
+# -----------------------------------------------------------------------------
+
+@test "hug cmv: --wt existing branch without worktree — create wt + cherry-pick" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+  local target
+  target=$(git rev-parse HEAD~1)
+  local moved_subject
+  moved_subject=$(git log -1 --format=%s "$original_head")
+
+  # Existing branch, no worktree. NOTE: use a non-colliding branch name
+  # (create_test_repo_with_branches creates feature/branch which blocks
+  # 'feature' as a partial ref).
+  #
+  # WHY HEAD~2 (not HEAD~1): the moved commit is the one at $original_head
+  # ("Add main extra"). Cherry-picking it onto a target branched from HEAD~1
+  # reproduces main's tree exactly (same parent + same single-file delta).
+  # In this fixture the original commit and the cherry-pick happen within
+  # the same wall-clock second (the deterministic helpers cover only the
+  # first 3 commits; "Add main extra" is plain `git commit`), so tree +
+  # parent + author/committer dates all match and git writes a
+  # BYTE-IDENTICAL commit object — `refute_output "$original_head"` then
+  # fails nondeterministically (~1/3 of runs). Branching from HEAD~2 makes
+  # the parent's tree differ, so the cherry-pick ALWAYS gets a new SHA and
+  # the assertion is reliable. The moved commit's subject still matches
+  # regardless (that part is stable).
+  git checkout -q -b cmv-existing HEAD~2
+  git checkout -q main
+
+  run hug cmv 1 cmv-existing --wt --force
+  assert_success
+
+  # Source branch rewound to $target; user still on main.
+  assert_equal "$(git rev-parse main)" "$target"
+  run git branch --show-current
+  assert_output "main"
+
+  # cmv-existing now points at a NEW cherry-picked commit (cherry-pick
+  # writes a fresh committer date and the parent differs from main's, so
+  # the SHA always differs from $original_head). The subject assertion
+  # confirms the right commit was moved.
+  run git log -1 --format=%s cmv-existing
+  assert_output "$moved_subject"
+  run git rev-parse cmv-existing
+  refute_output "$original_head"
+
+  # Worktree exists for cmv-existing. Resolve its path via
+  # `git worktree list --porcelain` (get_worktree_path_by_branch is a lib
+  # function, not a test helper).
+  local wt
+  wt=$(git worktree list --porcelain | awk -v b="cmv-existing" '
+    /^worktree / { p = $2 }
+    /^branch /  { if ($2 == "refs/heads/" b || $2 == b) print p }
+  ')
+  [[ -n "$wt" ]] || fail "No worktree registered for branch cmv-existing"
+  assert_worktree_exists "$wt"
+  assert_worktree_branch "$wt" "cmv-existing"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
+
+# -----------------------------------------------------------------------------
+# hug cmv --wt safety guards — must exit 3 (error_blocked) BEFORE any mutation
+# (no branch/worktree created, no reset). Each test asserts: exit 3 + main SHA unchanged.
+# -----------------------------------------------------------------------------
+
+@test "hug cmv: --wt target checked out in current worktree → error_blocked" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # Target == current branch (main). The --wt end-state wants target in its
+  # own worktree, but target IS this worktree's branch — incoherent. Must
+  # exit 3 (error_blocked) BEFORE mutating anything.
+  run hug cmv 1 main --wt --force
+  [ "$status" -eq 3 ]
+  assert_output --partial "checked out in the current worktree"
+
+  # No mutation: main untouched, no worktree created for main.
+  assert_equal "$(git rev-parse main)" "$original_head"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: --wt stale worktree dir → error suggesting wtdel/wtprune" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # Existing branch with a worktree, then make the worktree STALE by removing
+  # its dir while the registration remains. create_test_worktree refuses to
+  # add a worktree for the currently-checked-out branch, so branch off HEAD~2
+  # (off main's parent so the branch is distinct), come back to main, then
+  # create the worktree.
+  git checkout -q -b cmv-stale HEAD~2
+  git checkout -q main
+  local wt
+  wt=$(create_test_worktree "cmv-stale" "$repo")
+  assert_worktree_exists "$wt"
+  rm -rf "$wt"   # stale: registered but missing dir
+
+  run hug cmv 1 cmv-stale --wt --force
+  [ "$status" -eq 3 ]
+  # Assert on the state word (stable contract), not the recovery command
+  # (advisory wording). The wtdel hint is still verified as a secondary check.
+  assert_output --partial "stale"
+  assert_output --partial "wtdel"
+
+  # No mutation: main untouched, cmv-stale unchanged.
+  assert_equal "$(git rev-parse main)" "$original_head"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
+
+@test "hug cmv: --wt locked worktree → error suggesting unlock" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # Existing branch + LOCKED worktree (dir present, but locked). cmv cannot
+  # (re)use a locked worktree for the cherry-pick; git would refuse. Block
+  # with exit 3 + an unlock hint.
+  git checkout -q -b cmv-locked HEAD~2
+  git checkout -q main
+  local wt
+  wt=$(create_test_worktree "cmv-locked" "$repo")
+  assert_worktree_exists "$wt"
+  git worktree lock "$wt"
+
+  run hug cmv 1 cmv-locked --wt --force
+  [ "$status" -eq 3 ]
+  # Assert on the state word (stable contract), not the recovery command
+  # (advisory wording). The unlock hint is still verified as a secondary check.
+  assert_output --partial "locked"
+  assert_output --partial "unlock"
+
+  # No mutation: main untouched.
+  assert_equal "$(git rev-parse main)" "$original_head"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
+
+@test "hug cmv: --wt existing branch with worktree — reuse, no new worktree" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+  local target
+  target=$(git rev-parse HEAD~1)
+
+  # Pre-create the branch and a worktree for it. create_test_worktree refuses
+  # to add a worktree for a branch that's currently checked out, so we create
+  # the branch from HEAD~2 (see test 1's HEAD~2 rationale — same-tree +
+  # same-second cherry-pick at HEAD~1 produces a nondeterministic SHA match
+  # that flakes refute_output), come back to main, then add the worktree.
+  git checkout -q -b cmv-existing2 HEAD~2
+  git checkout -q main
+  local pre_wt
+  pre_wt=$(create_test_worktree "cmv-existing2" "$repo")
+  assert_worktree_exists "$pre_wt"
+
+  # Count worktrees BEFORE cmv — reuse means this number must not grow.
+  # `git worktree list --porcelain` emits one "worktree <path>" stanza per
+  # worktree (main + linked), so the count of "^worktree " lines is the total.
+  local before_count
+  before_count=$(git worktree list --porcelain | grep -c '^worktree ')
+
+  run hug cmv 1 cmv-existing2 --wt --force
+  assert_success
+
+  # No new worktree created: count unchanged and the pre-existing one is
+  # still registered.
+  local after_count
+  after_count=$(git worktree list --porcelain | grep -c '^worktree ')
+  assert_equal "$after_count" "$before_count"
+  assert_worktree_exists "$pre_wt"
+
+  # Source branch rewound to $target; user still on main.
+  assert_equal "$(git rev-parse main)" "$target"
+  run git branch --show-current
+  assert_output "main"
+
+  # cmv-existing2 got the cherry-picked commit inside the reused worktree:
+  # HEAD of the worktree now carries the moved commit's subject.
+  local moved_subject
+  moved_subject=$(git log -1 --format=%s "$original_head")
+  run git -C "$pre_wt" log -1 --format=%s
+  assert_output "$moved_subject"
+  run git rev-parse cmv-existing2
+  refute_output "$original_head"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
+
+@test "hug cmv: --wt -y refuses move (exit 3) and creates nothing" {
+  # Tier-separation contract: -y / HUG_YES auto-confirms safe+warn only and
+  # HARD-REFUSES danger (exit 3). cmv --new --wt is danger-tier (rewrites
+  # SHAs, not auto-recoverable), so -y must refuse BEFORE any mutation —
+  # no branch created, no worktree created, main SHA unchanged. This test
+  # pins the confirm-first ordering: prompt_confirm_danger at git-cmv must
+  # fire BEFORE create_worktree_for_branch / git reset.
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # -y must NOT authorize a danger-tier move. Use a non-colliding branch
+  # name: create_test_repo_with_branches pre-creates 'feature/branch' which
+  # blocks 'feature' (refs/heads/feature/branch shadows refs/heads/feature).
+  run hug cmv 1 cmv-y-refuse --new --wt -y
+  [ "$status" -eq 3 ]      # HUG_EX_BLOCKED — danger-tier ops refuse -y
+  [ "$status" -ne 0 ]      # backstop: a sourcing-order regression fails noisily, not silently
+  assert_output --partial "Dangerous operation requires --force (not -y)"
+
+  # No side effects — confirm-first means the refusal fired before any
+  # mutation (no branch, no worktree, main unchanged).
+  run git branch --list cmv-y-refuse
+  refute_output --partial "cmv-y-refuse"
+  run git worktree list --porcelain
+  refute_output --partial "cmv-y-refuse"
+  assert_equal "$(git rev-parse main)" "$original_head"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "hug cmv: --wt target in main worktree reuses main, doesn't create one" {
+  # Task 8: pin the "main-inclusive resolver" — when the target branch is
+  # checked out in the MAIN worktree (not a linked one), cmv --wt must
+  # REUSE that main checkout instead of trying to `git worktree add` for
+  # it (git would refuse — main is already checked out). This is the §5
+  # recovery shape: undo a move FROM a linked worktree back to main.
+  #
+  # Scenario: linked worktree on cmv-mainreuse (one commit ahead of main).
+  # Run `hug cmv 1 main --wt` FROM that linked worktree. The 1 commit
+  # moves back to main, which already has a worktree (the main one) →
+  # no new worktree created → main gains the moved commit.
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+
+  # Base cmv-mainreuse at HEAD~1 (main's tip parent) so it has exactly one
+  # commit ("Feature work") to move back to main. Unlike the Task 4 tests,
+  # this test asserts the moved commit's SUBJECT (not its SHA), so no
+  # same-second SHA-flake concern applies here.
+  git checkout -q -b cmv-mainreuse HEAD~1
+  echo "feature work" > cmv_fr.txt
+  git add cmv_fr.txt
+  git commit -q -m "Feature work"
+
+  # Return the primary checkout to main BEFORE creating the linked
+  # worktree: create_test_worktree refuses to add a worktree for a branch
+  # that is currently checked out.
+  git checkout -q main
+
+  # Pre-create a linked worktree for cmv-mainreuse. The test runs FROM
+  # this worktree (pushd below), targeting main.
+  local feature_wt
+  feature_wt=$(create_test_worktree "cmv-mainreuse" "$repo")
+  assert_worktree_exists "$feature_wt"
+
+  # Count worktrees BEFORE the move — reuse means this number must not grow.
+  # git worktree list --porcelain emits one "^worktree <path>" stanza per
+  # worktree (main + linked), so the count of "^worktree " lines is total.
+  local before_count
+  before_count=$(git -C "$repo" worktree list --porcelain | grep -c '^worktree ')
+
+  # Run FROM the linked worktree, targeting main (checked out in the MAIN
+  # worktree). With --wt, the main-inclusive resolver
+  # (get_worktree_path_by_branch → get_all_worktrees_including_main) must
+  # return the main repo's path, so the create-worktree branch is skipped.
+  pushd "$feature_wt" >/dev/null
+  run hug cmv 1 main --wt --force
+  assert_success
+
+  # Source worktree: still on cmv-mainreuse, now rewound to main's prior
+  # tip (the moved commit is gone from here).
+  run git branch --show-current
+  assert_output "cmv-mainreuse"
+
+  popd >/dev/null
+
+  # No NEW worktree created — main was REUSED, not given a linked worktree.
+  local after_count
+  after_count=$(git -C "$repo" worktree list --porcelain | grep -c '^worktree ')
+  assert_equal "$after_count" "$before_count"
+
+  # Back in main repo: main GAINED the moved commit ("Feature work").
+  run git -C "$repo" log -1 --format=%s main
+  assert_output "Feature work"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
+
+# -----------------------------------------------------------------------------
+# Task 9: Detached-leftover path-collision test.
+#
+# WHY this test exists: create_worktree_for_branch's auto-path resolution
+# (generate_worktree_path) MUST NOT blindly overwrite a directory that already
+# occupies the canonical path. When a stale detached worktree sits at
+# <repo>.WT.<branch>, the fresh worktree must land at the suffixed fallback
+# (<repo>.WT.<branch>-1) via generate_unique_worktree_path, leaving the
+# leftover for `hug wtdel` to clean up later. This pins the §1 path promise
+# ("the worktree lands where we say it will") for the collision edge case.
+#
+# Fixture note: we pre-occupy the path with a DETACHED worktree (no branch
+# ref). The awk resolver keys on `branch refs/heads/<name>`, so only the
+# fresh worktree matches — the detached leftover has no `branch` line and
+# is correctly ignored by the resolver. This is what lets the test
+# distinguish "fresh landed at -1" from "fresh overwrote the leftover".
+# -----------------------------------------------------------------------------
+@test "hug cmv: --wt detached leftover at auto path → new wt lands at -1" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # Branch name MUST match generate_worktree_path's sanitization rules
+  # (lowercase, no '/' or '.') so the canonical path is exactly
+  # <repo>.WT.cmv-collide. Pick a name that does not collide with the
+  # fixture's existing refs (feature/branch, feature-1, feature-2, hotfix-1).
+  local branch_name="cmv-collide"
+  local base_path
+  base_path="$(dirname "$repo")/$(basename "$repo").WT.${branch_name}"
+
+  # Simulate a stale detached worktree at the canonical auto path. The fresh
+  # worktree for `branch_name` would otherwise try to land here.
+  git worktree add --detach "$base_path" HEAD~2 >/dev/null 2>&1
+  [[ -d "$base_path" ]] || fail "Fixture setup: detached leftover not created at $base_path"
+
+  run hug cmv 1 "$branch_name" --new --wt --force
+  assert_success
+
+  # Resolve the FRESH worktree's path: the detached leftover has no `branch`
+  # line, so only the worktree whose branch == refs/heads/cmv-collide matches.
+  local resolved
+  resolved=$(git worktree list --porcelain | awk -v b="$branch_name" '
+    /^worktree / { p = $2 }
+    /^branch /  { if ($2 == "refs/heads/" b) print p }
+  ')
+  [[ "$resolved" == "${base_path}-1" ]] \
+    || fail "Expected fresh worktree at suffixed path ${base_path}-1, got '$resolved'"
+
+  # The stale detached leftover MUST be untouched (still exists at the
+  # canonical path). cleanup_test_worktrees handles its removal at teardown;
+  # we only assert it survived the cmv run.
+  [[ -d "$base_path" ]] \
+    || fail "Stale detached leftover was removed/overwritten at $base_path"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
 }

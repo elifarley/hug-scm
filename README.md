@@ -333,6 +333,10 @@ hug w wipdel <wip-branch>  # Deletes the WIP branch without merging
 hug s                       # Quick summary of staged/unstaged changes
 hug sl                      # Status without untracked files
 hug sla                     # Full status with untracked files
+hug sls                     # Status with staged files only
+hug slu                     # Status with unstaged files only
+hug slk                     # Status with untracked files only
+hug slc                     # Status with list of conflicted (unmerged) files
 hug sli                     # Status with list of ignored files
 
 hug ss [file]               # Status with staged changes patch
@@ -473,7 +477,7 @@ hug caa [-m msg]      # Commit: All All (tracked + untracked + deletions)
 hug cmod [-m msg]     # Commit: MODify (Amend last commit with staged changes)
 hug cmoda [-m msg]    # Commit: MODify All (Amend last commit with all tracked changes — prefer cmod in dirty trees)
 hug ccp <commit>      # Commit Copy (cherry-pick commit onto current branch)
-hug cmv [N] <branch> [--new] # Commit MoVe: Relocate commits to another branch (resets source, switches to target)
+hug cmv [N] <branch> [--new] [--wt] # Commit MoVe: Relocate commits to another branch (resets source; --wt also creates/reuses its worktree)
                              #   - New branches: preserves original SHAs (no conflicts)
                              #   - Existing branches: creates new SHAs via cherry-pick (may conflict)
 hug cii               # Interactive patch commit (add --patch then commit)

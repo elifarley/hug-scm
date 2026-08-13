@@ -52,6 +52,147 @@ teardown() {
 }
 
 ################################################################################
+# commit_offset TESTS
+################################################################################
+
+@test "commit_offset: ancestor pair -> stdout=N (b ahead of a)" {
+  run commit_offset HEAD~2 HEAD
+  assert_success
+  assert_output "2"
+}
+
+@test "commit_offset: descendant pair -> stdout=-N (b behind a)" {
+  run commit_offset HEAD HEAD~2
+  assert_success
+  assert_output "-2"
+}
+
+@test "commit_offset: identity -> stdout=0 exit=0" {
+  run commit_offset HEAD HEAD
+  assert_success
+  assert_output "0"
+}
+
+@test "commit_offset: diverged -> empty stdout, exit 2" {
+  git switch -q -c side HEAD~1
+  echo x > side.txt; git add side.txt; git commit -qm "side commit"
+  git switch -q -
+  # bats' default `run` MERGES stderr into $output. commit_offset emits nothing
+  # on stdout for the diverged case (the contract: empty + distinct exit code),
+  # but git's rev-list may write to stderr; --separate-stderr keeps $output =
+  # stdout ONLY so we assert the real contract.
+  bats_require_minimum_version 1.5.0
+  run --separate-stderr commit_offset side HEAD
+  [ "$status" -eq 2 ]
+  assert_output ""
+}
+
+@test "commit_offset: invalid ref -> empty stdout, exit 3 (never a fake 0)" {
+  # STRICT: an unresolvable ref is exit 3 with EMPTY stdout — the lossy
+  # `|| echo 0` swallow of Defect 2 is gone by construction.
+  bats_require_minimum_version 1.5.0
+  run --separate-stderr commit_offset NO_SUCH_REF HEAD
+  [ "$status" -eq 3 ]
+  assert_output ""
+}
+
+@test "commit_offset: missing args -> fails fast via \${1:?}" {
+  run commit_offset
+  assert_failure
+}
+
+################################################################################
+# is_same_commit TESTS
+################################################################################
+
+@test "is_same_commit: same SHA -> exit 0" {
+  run is_same_commit HEAD HEAD
+  assert_success
+}
+
+@test "is_same_commit: ancestor (not equal) -> non-zero" {
+  run is_same_commit HEAD~1 HEAD
+  assert_failure
+}
+
+@test "is_same_commit: descendant (not equal) -> non-zero" {
+  local descendant; descendant=$(git rev-parse HEAD)
+  git reset -q --hard HEAD~1
+  run is_same_commit "$descendant" HEAD
+  assert_failure
+}
+
+@test "is_same_commit: invalid ref -> non-zero (never a false positive)" {
+  run is_same_commit NO_SUCH_REF HEAD
+  assert_failure
+}
+
+@test "is_same_commit: unborn repo (no commits) -> non-zero (false NEGATIVE, documented)" {
+  # create_test_repo auto-commits an "Initial commit", so it is NOT unborn.
+  # Build a genuinely commit-less repo: mktemp -d yields the path (git init -q
+  # prints nothing to stdout, so it must NOT be captured for the path).
+  local empty_repo; empty_repo=$(mktemp -d)
+  git init -q "$empty_repo"
+  cd "$empty_repo"
+  run is_same_commit HEAD HEAD
+  assert_failure
+  cd "$TEST_REPO"
+  rm -rf "$empty_repo"
+}
+
+@test "is_same_commit: missing second arg -> fails fast via \${2:?}" {
+  run is_same_commit HEAD
+  assert_failure
+}
+
+################################################################################
+# count_commits_in_range STRICTNESS TESTS (Defect 2)
+################################################################################
+
+@test "count_commits_in_range: invalid start -> non-zero, empty stdout (strict, no swallow)" {
+  bats_require_minimum_version 1.5.0
+  run --separate-stderr count_commits_in_range NO_SUCH_REF HEAD
+  assert_failure
+  assert_output ""        # stdout empty (git's fatal: is on stderr, deliberately uncaptured)
+}
+
+@test "count_commits_in_range: missing start arg -> fails fast via \${1:?}" {
+  run count_commits_in_range
+  assert_failure
+}
+
+################################################################################
+# count_commits_in_range_or_zero TESTS (named display wrapper)
+################################################################################
+
+@test "count_commits_in_range_or_zero: valid range -> same as strict count" {
+  run count_commits_in_range_or_zero HEAD~2 HEAD
+  assert_success
+  assert_output "2"
+}
+
+@test "count_commits_in_range_or_zero: single arg defaults end to HEAD" {
+  # The wrapper forwards "$@" verbatim, so the strict function's ${2:-HEAD} default must
+  # still apply through the passthrough: a lone start ref counts commits from <start> to
+  # HEAD. setup() makes 3 commits, so HEAD~1 -> 1.
+  run count_commits_in_range_or_zero HEAD~1
+  assert_success
+  assert_output "1"
+}
+
+@test "count_commits_in_range_or_zero: invalid start -> echoes 0, exit 0 (cosmetic)" {
+  # The wrapper swallows the FAILURE (non-zero exit -> cosmetic 0 on stdout), but git's
+  # `fatal: ambiguous argument` diagnostic still goes to STDERR. bats' default `run` MERGES
+  # stderr into $output, which would make `assert_output "0"` see that 3-line diagnostic + "0".
+  # The contract under test is stdout == "0" + exit 0, so split stderr out (same house pattern
+  # as the strict invalid-ref tests above; --separate-stderr needs bats >= 1.5).
+  bats_require_minimum_version 1.5.0
+  run --separate-stderr count_commits_in_range_or_zero NO_SUCH_REF HEAD
+  assert_success
+  assert_output "0"
+}
+
+################################################################################
 # list_changed_files_in_range TESTS
 ################################################################################
 

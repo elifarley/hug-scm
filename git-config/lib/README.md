@@ -92,7 +92,12 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
 - Commit history navigation (`get_commit_n_back`)
 
 #### hug-git-state
-- Working tree state checks (`has_pending_changes`, `has_staged_changes`, `has_unstaged_changes`)
+- Working tree state checks:
+  - **Two-predicate dirty-detection model**: Hug uses two distinct predicates for different decision points:
+    - `has_uncommitted_tracked_changes` -- tracked-only (staged + unstaged), excludes untracked. Used for **tier/safety decisions** AND for the **aligned-target gating** in `handle_standard_operation` (the skip-when-aligned decision), because no reset mode (`--soft`/`--mixed`/`--keep`/`--hard`) touches untracked files, so untracked files are irrelevant to safety.
+    - `has_untracked_or_pending_changes` (renamed from `has_pending_changes`) -- tracked + untracked (the broadest dirtiness predicate). Used where untracked files matter contextually (e.g. `git-caa`, `git-rb`, `git-w-wip`) -- NOT for the aligned-target gate, which uses the tracked-only predicate above.
+    - **Alignment vs. dirtiness:** alignment itself (whether two refs resolve to the same commit) is tested with `is_same_commit` -- NEVER with `count_commits_in_range … == 0` (which also reads `0` when one ref is *behind*). See the "Range counting" subsection under Commit Range Analysis.
+  - Other state checks: `has_staged_changes`, `has_unstaged_changes`
 - Cleanliness validation (`check_working_tree_clean`, `check_files_clean`)
 - File state checking (`check_file_in_commit`, `check_file_staged`, `check_file_unstaged`)
 - Binary file detection (`is_binary_staged`)
@@ -103,6 +108,7 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
 - List unstaged files (`list_unstaged_files`)
 - List untracked files (`list_untracked_files`)
 - List ignored files (`list_ignored_files`)
+- List conflicted files (`list_conflicted_files`)
 - List tracked files (`list_tracked_files`)
 - Support for `--cwd` scoping and `--status` information
 
@@ -119,14 +125,17 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
 - Selection helpers (`get_gum_selection_index`, `get_numbered_selection_index`)
 
 #### hug-git-commit
-- Count commits in range (`count_commits_in_range`)
+- Count commits in range (`count_commits_in_range` strict, `count_commits_in_range_or_zero` display-only)
+- Identity and signed distance (`is_same_commit`, `commit_offset`) -- see "Range counting" below
 - List changed files (`list_changed_files_in_range`, `count_changed_files_in_range`)
 - Print commit lists (`print_commit_list_in_range`)
 - Preview helpers (`print_preview_summary`, `print_commit_list_header`)
 
 #### hug-git-upstream
-- Handle upstream operations (`handle_upstream_operation`)
-- Handle standard operations (`handle_standard_operation`)
+- Handle upstream operations (`handle_upstream_operation`) -- takes a required `tier` parameter (warn/danger) for the upstream confirmation path. This closes the inverted confirmation gradient: previously every upstream path was gated at warn regardless of the operation's actual danger level.
+- Handle standard operations (`handle_standard_operation`) -- aligned-target gating uses `has_uncommitted_tracked_changes` (tracked-only) for the skip-when-aligned decision. Alignment itself is tested with `is_same_commit` (exact SHA equality), NEVER a one-directional `count_commits_in_range … == 0` -- see the "Range counting" subsection. Callers invoke this helper BARE (not via `$(…)`) so its aligned-path `exit 0` terminates the mover.
+- Recovery hint helper (`emit_head_recovery_hint`) -- emits the `hug h restore <SHA> --<op> -y` recovery command to stderr after a successful warn-tier HEAD-mover. Suppressed under `HUG_QUIET=T`. Used by h-back, h-undo, h-rollback, h-rewind (warn), and h-squash.
+- See also: `git-h-restore` -- the recovery primitive that `emit_head_recovery_hint` prints. Uses exact-SHA no-op (never the range-count gate) so it can move HEAD forward to a descendant commit.
 
 #### hug-git-backup
 - Create backup branches (`create_backup_branch`)
@@ -184,10 +193,20 @@ Git-specific JSON output helpers (uses hug-json).
   - Input: `"M\tfile.txt"` from git's --name-status
   - Output: `{"path": "file.txt", "status": "modified"}`
   - Handles renamed/copied files: `"R100\told.txt\tnew.txt"` → `{"path": "new.txt", "status": "renamed"}`
-- `collect_git_files_json "$type" [flags...]` - Collect files of type as JSON array
-  - `$type`: `staged`|`unstaged`|`untracked`|`ignored`
-  - Returns: Comma-separated JSON objects for array embedding
+- `collect_git_files_json "$type" [flags...]` - Collect files of a type as JSON objects
+  - `$type`: `staged`|`unstaged`|`untracked`|`ignored`|`conflicted` (unknown types error)
+  - Prints one JSON object PER LINE to stdout (empty when none); `mapfile -t files < <(collect_git_files_json "$type")` yields the objects AND the file count (the array length)
+  - Line-per-object keeps the count truthful — a newline in a filename is escaped to `\n` by `json_escape`, so each line is exactly one object (regression pin: #247)
+  - Bash-4.0-safe: no nameref, no comma-split
   - Supports `--cwd` flag for scoping
+- `count_files_with_status <state> [pathspec...]` - Count files by state (the sl* `-c` engine)
+  - `<state>`: `staged`|`unstaged`|`untracked`|`ignored`|`conflicted`|`all`|`all+untracked`
+  - Prints an integer (0 when none, exit 0). NUL-safe (newline filenames count once) and Bash 4.0-safe (no nameref).
+  - `all`/`all+untracked` dedup via `git status --porcelain -z` (a file staged AND unstaged counts once)
+  - Enforces the repo precondition internally (`check_git_repo`): exits 1 with "Not in a git repository" when called outside a repo (parity with `list_*_files`)
+- `run_count_mode [--json] <state> [pathspec...]` - Terminating wrapper for the sl* `-c/--count` dispatch
+  - Encapsulates the mutual-exclusion guard + `count_files_with_status` call + `exit 0` (formerly duplicated across the 6 `sl*` dispatchers)
+  - `--json` is mutually exclusive with `-c` (errors and exits); the function ALWAYS exits (never returns) — call it as a statement, never in `$(...)`
 
 **JSON Design Philosophy:**
 - Pure Bash for portability and dependency-free operation
@@ -404,7 +423,9 @@ fi
 ### Commit Range Analysis
 
 ```bash
-# Count commits between two refs
+# Count commits between two refs -- a ONE-DIRECTIONAL ahead-count: how far HEAD is AHEAD
+# of origin/main. A result of 0 means "HEAD is NOT ahead" (true when aligned OR behind) --
+# it does NOT mean "aligned". STRICT: a bad ref propagates non-zero, never swallowed to 0.
 count=$(count_commits_in_range "origin/main" "HEAD")
 
 # List changed files
@@ -414,18 +435,63 @@ files=$(list_changed_files_in_range "origin/main" "HEAD")
 print_commit_list_in_range "origin/main" "HEAD"
 ```
 
+#### Range counting -- pick the right primitive
+
+- **`count_commits_in_range "start" ["end"]`** -- a ONE-DIRECTIONAL ahead-count: how far
+  `end` is ahead of `start`. A result of `0` means "`end` is NOT ahead of `start`" — which
+  is true BOTH when `end == start` (identity) AND when `end` is *behind* `start`. **Never
+  treat `0` as "aligned."** STRICT: a failed `rev-list` (invalid ref, unborn HEAD)
+  propagates non-zero — it is NOT swallowed into `0`; callers must handle failure.
+- **`is_same_commit "a" "b"`** -- the ONLY sanctioned identity test. A minimal pure-boolean
+  predicate (exit 0 iff `a` and `b` resolve to the same commit) implemented via `git
+  rev-parse --verify --quiet …^{commit}` SHA equality -- NO `rev-list` traversal. Use this
+  wherever you would otherwise write `count_commits_in_range … == 0` to mean "same commit."
+  It is shallow-safe (rev-parse only resolves refs; it does not walk the graph).
+- **`commit_offset "a" ["b"]`** -- signed distance from `a` to `b` (default `HEAD`).
+  `0` means IDENTITY (short-circuited on SHA equality), NOT merely "not ahead." Positive
+  `N` = `b` is ahead of `a` (clean forward distance); negative `-N` = `b` is behind `a`
+  (forward target / recovery direction). Diverged ⟹ empty stdout + exit 2 (so the
+  false-zero is unrepresentable by construction). Unresolvable ref ⟹ empty stdout + exit 3.
+  Use this when a caller also needs direction/magnitude, not just yes/no.
+- **`count_commits_in_range_or_zero`** -- display-only twin: a cosmetic `0` on rev-list
+  failure, for rendered plans / tip text only. NEVER for a branching or alignment decision.
+  This is the single sanctioned `echo 0`-on-failure swallow — it appears nowhere else
+  (the canary `grep -rn '<pipe><pipe> echo 0' git-config/` must stay at exactly one hit;
+  here `<pipe><pipe>` stands for the shell OR operator, written obfuscatedly so this README
+  doesn't itself trip the canary -- the real command greps for that operator immediately
+  followed by `echo 0`).
+
 ### Operation Handlers
 
 ```bash
 # For upstream operations (rewind to upstream, etc.)
-target=$(handle_upstream_operation "rewinding")
-# Displays preview, gets confirmation, returns upstream commit
+# The tier parameter (warn|danger) controls which prompt function is used.
+# Prints the upstream commit SHA to stdout. Its internal ahead-count is STRICT
+# (count_commits_in_range) and carries `|| return 1`, so capture it with a guard
+# (callers use `|| exit $?`). WHY the explicit `|| return 1` below is load-bearing, two
+# axes: errexit never fires MID-BODY inside $(…) — only the substitution's FINAL status
+# propagates, via the assignment — and errexit is additionally suspended throughout any
+# function called from a `||` position, which is exactly how every caller invokes this
+# helper. Its internal `|| return 1` guards are therefore the ONLY failure-propagation path:
+target=$(handle_upstream_operation "rewinding" "warn" "rewind" "danger reason") || exit $?
 
 # For standard operations (back, undo, etc.)
 target=$(resolve_head_target "$1")
+# Called BARE (a plain command, NOT $(…)): when HEAD is already at $target its
+# aligned-guard runs `exit 0`, terminating the whole mover. That guard depends on the
+# bare call -- do NOT capture this helper via $(…) or the exit is swallowed. Alignment
+# is tested with is_same_commit (exact SHA), never a one-directional count == 0.
 handle_standard_operation "moving back" "$target"
-prompt_confirm_warn "Proceed? [y/N]: "
-# Displays preview, handles already-at-target case
+prompt_confirm_warn "Proceed? [y/N]: "   # mover confirms AFTER the helper's preview
+
+# Identity test -- the ONLY sanctioned way to ask "same commit?":
+if is_same_commit "$target" HEAD; then
+    info "Already at target; nothing to do."
+fi
+
+# Emit a recovery hint after a successful warn-tier HEAD-mover:
+# Prints "hug h restore <SHA> --<op> -y" to stderr.
+emit_head_recovery_hint "$pre_op_head" "back"
 ```
 
 ## Environment Variables

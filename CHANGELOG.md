@@ -4,6 +4,92 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-08-13
+
+### Added
+
+- **`cmv --wt`** — move commits to a branch AND ensure it has a worktree (create if missing, reuse if present), staying on the source branch. Move is danger-tier; worktree creation is safe-tier; recovery is the inverse cmv. The new branch is created at the original HEAD (exact SHA preserved); an existing target branch is cherry-picked into its worktree. Safety guards block (exit 3) when the target is the current branch or its worktree is stale/locked. Extracts a shared `create_worktree_for_branch` helper from `wtc` so both `wtc` and `cmv` share one worktree-creation path.
+
+## [1.7.0] - 2026-08-07
+
+### Added
+
+- **`-c/--count` flag across the `sl*` family** (`sl`, `sla`, `sls`, `slu`, `slk`, `sli`, `slc`) — prints only the number of matching files: a single integer on stdout, `0` when none, exit `0` (the `grep -c` idiom). Removes the `| wc -l` pipe for scripting (`hug slc -c` in a conflict-resolution hook: `0` → clean proceed, `>0` → act). Composes with pathspecs (`hug slu -c src/`), suppresses the trailing `hug s` summary, and is mutually exclusive with `--json`. Counts are NUL-safe (a filename containing a newline counts once) and deduplicated (a file both staged and unstaged counts once in `hug sl -c`); backed by a new `count_files_with_status` engine that avoids `local -n` so it runs on the Bash 4.0–4.2 floor (elifarley/hug-scm#245).
+
+### Fixed
+
+- **Unified JSON pipeline `summary.*` counts now count files, not comma-fragments** — `slu`/`sls`/`slk`/`sli`/`slc`/`sl`/`sla --json` previously counted comma-split JSON fragments (a 2-field object inflated `summary.<type>` to 2), so one modified file reported `summary.unstaged = 2`. The collection contract now emits one JSON object per line and counts objects, so the summary matches the array length. This is a deliberate **behavior change** for consumer-visible counts (elifarley/hug-scm#247).
+
+- **`h back`/`h undo`/`h rollback` reject invalid and forward explicit targets loudly** — a garbage target could previously trigger the root-recovery path (undoing the root commit on nonsense input), and a forward target moved HEAD through a backward-named command; both now error, with forward targets pointing at `hug h restore <target> --<op>` (elifarley/hug-scm#234). Root-recovery is now reachable only with no positional target.
+
+- **`commit_offset`'s Usage docstring corrected to the errexit-safe capture idiom** (`offset=$(…) || rc=$?`) — the previous form (capture, then read the status on the next line) is dead code under `set -e` for exactly the exit codes the dispatch exists to distinguish (related: elifarley/hug-scm#234).
+
+### Changed
+
+- **`-u` operations report "N commit(s) behind upstream" instead of the false "Already synced" when HEAD is behind upstream** — aligned keeps its message; the exit-0 no-op contract is unchanged (elifarley/hug-scm#237).
+
+## [1.6.0] - 2026-08-07
+
+### Added
+
+- **`hug s` conflict visibility** — the summary line now shows a red `C:` count when files are unmerged, and the ball turns red for conflict state; `hug s --conflicted` prints the conflicted-file count to stdout (long-only, canonical order `staged unstaged untracked ignored conflicted ball`); `hug s --json` gains `status.conflicted_count` (elifarley/hug-scm#246).
+
+### Changed
+
+- **The red ball (🔴) now signals conflict state first** — when files are unmerged, the ball is red regardless of staged/unstaged mix (conflict is the highest-stakes working-tree state). Scripts that parsed 🔴 as strictly "unstaged changes only" now also see it during conflicts; the `--ball` query flag and help text reflect the widened precedence (elifarley/hug-scm#246).
+
+## [1.5.0] - 2026-08-06
+
+### Added
+
+- **`hug slc`** — list only conflicted (unmerged) files, the native equivalent of `git diff --name-only --diff-filter=U`. Each conflicted path is shown with the `Cnflt` marker; `-q` prints plain paths for piping straight into `xargs`; `--json` emits the unified status envelope with a truthful `summary.conflicted` count; pathspecs scope the text listing. Slots into the sl* family (`sl`, `sls`, `slu`, `sla`, `slk`, `sli`).
+
+- **`hug slc` discoverability** — keyword searchable via `hug help /conflict` and `hug help !conflict`, with full `--help`, backed by a quality-corpus regression pin.
+
+- **Fish completions** — `slc` registered, plus the previously missing `slu`/`slk` entries.
+
+### Fixed
+
+- **Filenames containing `|` no longer corrupt sl* listing output** — the renderer's internal sort tuples now use a unit separator instead of `|`, so a conflicted file like `a|b.txt` lists correctly in every sl* command (previously the path was garbled and the dedup key corrupted).
+
+### Changed
+
+- **sl* family documentation completed** — `sls`/`slu`/`slk` (previously undocumented) and the new `slc` are now documented across the command reference, agent cheat sheet, git-to-hug translation table, README, and completion reference.
+
+## [1.4.0] - 2026-07-29
+
+### Added
+
+- **`hug h restore` recovery primitive** (`hug h restore <SHA> --back|--undo|--rollback|--rewind`) — a purpose-built HEAD-mover that resets to any commit as the inverse of a prior op. Its op-named flag selects the reset mode by construction (one literal table); its no-op test is exact SHA equality (never the `count == 0` gate that makes re-invoking a mover silently no-op on forward targets). Bare-numeric guard rejects the 1–3-digit `HEAD~N` hijack. `--rewind` on a dirty tracked tree escalates to danger (exit 3). Registered in `.gitconfig`, the `git-h` gateway, and bash + fish completions.
+
+- **State-determined confirmation tiers** across the six HEAD-mover commands sharing `handle_upstream_operation` — `tier ⟺ completeness of the recovery command` (warn iff a complete recovery exists, danger iff something unrecoverable changes). The upstream helper gains a required `tier` param; each command declares its tier and both paths (upstream + non-upstream) consume it by construction.
+
+- **Recovery hints** — every warn-tier mover prints the exact `hug h restore <SHA> --<op> -y` command to stderr on success (quiet-aware via `HUG_QUIET`). Each restorable command's `--help` carries a `RESTORE` section naming its inverse.
+
+- **`has_uncommitted_tracked_changes` predicate** — a tracked-only dirty boolean over the existing `get_dirty_files` (staged + unstaged tracked, untracked excluded). The single safety/tier predicate; `has_pending_changes` renamed to `has_untracked_or_pending_changes` to make the untracked-inclusion explicit in the name.
+
+- **`emit_head_recovery_hint` library helper** — one quiet-aware function templating the recovery command from the caller's own op name (no hand-built hint strings).
+
+- **Integration tests** (11 new): recovery cycles (op → printed restore → HEAD restored + per-mode invariant), synced-upstream guard (exit 0, HEAD unchanged, no new commit across h-back/h-undo/h-rollback/h-squash), h-rewind clean/dirty e2e.
+
+### Changed
+
+- **`h-rewind` becomes state-dependent** (§9 owner-signed-off, partial revert of #225): clean tree ⇒ warn + `restore --rewind -y` hint (was unconditional danger); dirty tree stays danger. The `HUG_FORCE=true` wrapper hack for the upstream danger path is retired — passing `tier=danger` directly achieves the same gate.
+
+- **`h-back`/`h-undo`/`h-rollback`/`h-squash` lower to warn** on both paths (normal, non-root) with empty-target guard + restore hint + RESTORE help.
+
+- **`cmv` is danger** (was implicitly warn in the v2 draft): branch switch + SHA rewrite means no complete single-command recovery exists. Help states it is NOT restorable.
+
+- **`handle_standard_operation`'s aligned-target message** now keys on the tracked-only predicate — an untracked-only tree no longer triggers the misleading "local tracked changes will be reset" message.
+
+### Fixed
+
+- **`h-squash -u` silent-orphan bug** — on a synced upstream, the empty `$target` word-split into `hug h back`'s `HEAD~1` default, fabricating a `[squash] 0 commits…` commit with exit 0 and orphaning the user's commit. Fixed by adding the `[[ -z "$target" ]] && exit 0` guard to all upstream call sites (h-back, h-undo, h-rollback, h-squash).
+
+- **Empty-target exit-128 crash** — `h-back`/`h-undo`/`h-rollback -u` on a synced upstream crashed `git reset --soft|--mixed|--keep ""` (exit 128). Same guard fixes all four.
+
+- **Dead conditional in `git-h-squash:206/208`** — byte-identical `prompt_confirm_danger "squash"` if/else arms collapsed to one call.
+
 ## [1.3.1] - 2026-07-15
 
 ### Fixed
@@ -33,8 +119,6 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 - **`hug c` stderr chatter string changed** from `Committing staged changes...` to `Committing staged file(s) (N):` (followed by file names). Any external script grepping `hug c` stderr for the old string will need to update its pattern. The new string is richer (count + names) and arrives BEFORE the commit lands, enabling recovery.
 - **`hug a` adds a new stderr line** (`Staged N file(s). Index now has M file(s) staged total.`) after every successful stage. External scripts parsing `hug a` stderr may see the new line; stdout is unchanged.
-
-## [Unreleased]
 
 ### Fixed
 

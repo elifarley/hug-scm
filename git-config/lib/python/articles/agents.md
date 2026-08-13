@@ -125,6 +125,7 @@ Listing commands:
 - `hug sl`: S:* + U:*
 - `hug sls`: S:* only  (e.g. `S:Del  tmp.log`)
 - `hug slu`: U:* only
+- `hug slc`: conflict only  (e.g. `Cnflt conflict.txt`)
 - `hug sla`: S:* + U:* + untrcK
 - `hug slk`: untracked only  (e.g. `untrcK new-dir/`)
 - `hug sli`: ignored only    (e.g. `Ignore __pycache__/`)

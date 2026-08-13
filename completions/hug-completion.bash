@@ -156,6 +156,9 @@ _hug() {
                 back|undo|rollback|rewind)
                     opts="-u --upstream -t --temporal --force -y --yes --quiet -h --help"
                     ;;
+                restore)
+                    opts="--back --undo --rollback --rewind --force -y --yes --quiet -h --help"
+                    ;;
                 squash)
                     opts="-u --upstream -b --base-message -m --message -e --edit -t --temporal --force -y --yes --quiet -h --help"
                     ;;
@@ -174,7 +177,7 @@ _hug() {
         
         # Complete arguments for h subcommands
         case "$h_subcmd" in
-            back|undo|rollback|rewind|squash|files)
+            back|undo|rollback|rewind|restore|squash|files)
                 if git rev-parse --git-dir > /dev/null 2>&1; then
                     local ref_candidates=$(git for-each-ref --format='%(refname:short)' refs/ 2>/dev/null || true)
                     COMPREPLY=( $(compgen -W "$ref_candidates" -- "$cur" ) )
@@ -201,7 +204,7 @@ _hug() {
     # Handle options for 'hug s' (query flags for scripting — no positional args)
     if [[ "$subcmd" == "s" ]]; then
         if [[ $cur == -* ]]; then
-            COMPREPLY=( $(compgen -W "-r --remote -b --branch -u --upstream -H --hash -s --short-hash -A --ahead -B --behind -C --counts -I --ignored -K --untracked -S --staged -U --unstaged --ball -z --null --json -h --help" -- "$cur" ) )
+            COMPREPLY=( $(compgen -W "-r --remote -b --branch -u --upstream -H --hash -s --short-hash -A --ahead -B --behind -C --counts -I --ignored -K --untracked -S --staged -U --unstaged --conflicted --ball -z --null --json -h --help" -- "$cur" ) )
         fi
         return 0
     fi
@@ -222,6 +225,18 @@ _hug() {
     if [[ "$subcmd" == "squash" ]]; then
         if [[ $cur == -* ]]; then
             COMPREPLY=( $(compgen -W "-u --upstream -b --base-message -m --message -e --edit -t --temporal --force -y --yes --quiet -h --help" -- "$cur" ) )
+            return 0
+        fi
+        if git rev-parse --git-dir > /dev/null 2>&1; then
+            local ref_candidates=$(git for-each-ref --format='%(refname:short)' refs/ 2>/dev/null || true)
+            COMPREPLY=( $(compgen -W "$ref_candidates" -- "$cur" ) )
+        fi
+        return 0
+    fi
+
+    if [[ "$subcmd" == "restore" ]]; then
+        if [[ $cur == -* ]]; then
+            COMPREPLY=( $(compgen -W "--back --undo --rollback --rewind --force -y --yes --quiet -h --help" -- "$cur" ) )
             return 0
         fi
         if git rev-parse --git-dir > /dev/null 2>&1; then

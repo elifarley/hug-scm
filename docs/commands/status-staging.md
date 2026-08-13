@@ -29,8 +29,12 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 | Command | Memory Hook | Summary |
 | --- | --- | --- |
 | `hug s` | **S**tatus snapshot | Colored summary of staged/unstaged changes; supports query flags for scripting |
-| `hug sl` | **S**tatus + **L**ist | Status with listed tracked changes |
-| `hug sla` | **S**tatus + **L**ist **A**ll | Status including untracked files |
+| `hug sl` | **S**tatus + **L**ist | Status with listed tracked changes; `-c` counts them |
+| `hug sla` | **S**tatus + **L**ist **A**ll | Status including untracked files; `-c` counts them |
+| `hug sls` | **S**tatus + **L**ist **S**taged | Status with staged files only; `-c` counts them |
+| `hug slu` | **S**tatus + **L**ist **U**nstaged | Status with unstaged files only; `-c` counts them |
+| `hug slk` | **S**tatus + **L**ist untrac**K**ed | Status with untracked files only; `-c` counts them |
+| `hug slc` | **S**tatus + **L**ist **C**onflicts | Status with conflicted (unmerged) files only; `-c` counts them |
 | `hug ss` | **S**tatus + **S**taged | Show staged diff |
 | `hug su` | **S**tatus + **U**nstaged | Show unstaged diff |
 | `hug sw` | **S**tatus + **W**orking | Combined staged and unstaged diff |
@@ -44,7 +48,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 
 ### Basic Status
 - `hug s`: **S**tatus snapshot
-    - **Description**: Quick colored summary of staged/unstaged changes (no untracked files). Also supports query flags for scriptable field extraction.
+    - **Description**: Quick colored summary of staged/unstaged changes, with a conflict count (`C:`) and red ball when files are unmerged. Also supports query flags for scriptable field extraction.
     - **Example**: `hug s` (always safe, no args), `hug s -r` (remote URL), `hug s -b -r -u` (branch, remote, upstream).
     - **Safety**: ✅ Read-only overview; nothing is modified.
 
@@ -65,6 +69,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
     | `-K, --untracked` | Untracked file count | |
     | `-S, --staged` | Staged file count | |
     | `-U, --unstaged` | Unstaged file count | |
+    | `--conflicted` | Conflicted (unmerged) file count | Long-only |
     | `--ball` | State emoji | Encodes repo state |
     | `-z, --null` | NUL separator | Use with other query flags |
     | `--json` | Full JSON output | Mutually exclusive with query flags |
@@ -73,6 +78,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
     ```
     hug s -r                    # URL of tracking remote
     hug s -b -r -u              # Branch, remote URL, upstream (tab-separated)
+    hug s --conflicted          # Count of conflicted (unmerged) files
     hug s -z -b -H | xargs -0  # NUL-separated for unusual names
     ```
     :::
@@ -112,6 +118,34 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
     - **Description**: Status plus ignored and untracked files to surface items in `.gitignore`.
     - **Example**: `hug sli`
     - **Safety**: ✅ Read-only (great for spotting generated artifacts).
+
+- `hug sls`: **S**tatus + **L**ist **S**taged
+    - **Description**: Status with staged files only.
+    - **Example**: `hug sls`
+    - **Safety**: ✅ Read-only.
+
+- `hug slu`: **S**tatus + **L**ist **U**nstaged
+    - **Description**: Status with unstaged files only (includes conflicted files, marked `Cnflt`).
+    - **Example**: `hug slu`
+    - **Safety**: ✅ Read-only.
+
+- `hug slk`: **S**tatus + **L**ist untrac**K**ed
+    - **Description**: Status with untracked files only.
+    - **Example**: `hug slk`
+    - **Safety**: ✅ Read-only.
+
+- `hug slc`: **S**tatus + **L**ist **C**onflicts
+    - **Description**: Status with conflicted (unmerged) files only — the native equivalent of `git diff --name-only --diff-filter=U`. Use `-q` for plain paths (scripting); `--json` emits the unified status envelope with a `summary.conflicted` count. Pathspecs scope the text listing (`--json` ignores them).
+    - **Example**: `hug slc`, `hug slc -c` (count of conflicts)
+    - **Safety**: ✅ Read-only.
+
+> [!NOTE] `-c/--count` on the `sl*` family
+> Every `sl*` listing command (`sl`, `sla`, `sls`, `slu`, `slk`, `sli`, `slc`) accepts `-c/--count`: it prints only the number of matching files — a single integer on stdout, `0` when none, exit `0` (the `grep -c` idiom). It composes with pathspecs (`hug slc -c <path>` counts conflicts under `<path>`), suppresses the trailing `hug s` summary, and is **mutually exclusive with `--json`** (like `hug wtl`'s `--json --path-only` error). Counts are NUL-safe (a filename containing a newline counts once) and deduplicated (a file both staged and unstaged counts once in `hug sl -c`). `-q` is accepted alongside `-c` but redundant (the count is already bare).
+> ```
+> hug slc -c          # count conflicts (0 → clean, proceed)
+> hug slu -c src/     # count unstaged files under src/
+> if [[ $(hug slc -c) -gt 0 ]]; then ...; fi
+> ```
 
 > **Related:** After inspecting status, jump to [Detailed Patches](#detailed-patches) for inline diffs or hop over to [Working Directory (w*)](working-dir) to clean up files you find.
 

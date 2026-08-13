@@ -319,11 +319,261 @@ teardown() {
 @test "workflow: safety - confirm dialogs prevent accidents" {
   # Create changes
   echo "Important change" >> README.md
-  
+
   # Try to discard without force (should timeout waiting for input)
   run timeout 2 bash -c "echo '' | hug w discard README.md 2>&1 || true"
-  
+
   # File should still have changes (operation didn't complete)
   run git diff README.md
   assert_output --partial "Important change"
+}
+
+# ============================================================================
+# HEAD-mover warn-tier recovery cycles (Tasks 1-8 unified model)
+# ============================================================================
+# Each warn-tier mover prints a recovery hint that uses `hug h restore <SHA> --<op> -y`.
+# These tests verify that executing the printed hint restores HEAD to the pre-op commit
+# and that the per-mode invariant holds (tracked-clean for all modes except squash,
+# where --back soft-reset leaves the squashed content staged).
+
+@test "workflow: h-back recovery cycle — restore HEAD + tracked-clean" {
+  # Build one more commit so we have room to move.
+  echo "extra" > extra.txt; git add extra.txt; git commit -q -m "Extra commit"
+  local pre_op_head; pre_op_head=$(git rev-parse HEAD)
+
+  run hug h back 1 --force
+  assert_success
+  # Recovery hint is on stderr (captured by run). Format:
+  #   ℹ️  HEAD moved. Recover with:
+  #       hug h restore <40-char-SHA> --back -y
+  local recovery_cmd
+  recovery_cmd=$(echo "$output" | grep -oE 'hug h restore [a-f0-9]{40} --back -y' | head -1)
+  [[ -n "$recovery_cmd" ]]
+
+  run bash -c "$recovery_cmd"
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$pre_op_head" ]
+  # --back = soft reset: index stays; after restoring to pre-op HEAD the tree is clean.
+  [ -z "$(git diff --cached --name-only)" ]
+  [ -z "$(git diff --name-only)" ]
+}
+
+@test "workflow: h-undo recovery cycle — restore HEAD + tracked-clean" {
+  echo "extra" > extra.txt; git add extra.txt; git commit -q -m "Extra commit"
+  local pre_op_head; pre_op_head=$(git rev-parse HEAD)
+
+  run hug h undo 1 --force
+  assert_success
+  local recovery_cmd
+  recovery_cmd=$(echo "$output" | grep -oE 'hug h restore [a-f0-9]{40} --undo -y' | head -1)
+  [[ -n "$recovery_cmd" ]]
+
+  run bash -c "$recovery_cmd"
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$pre_op_head" ]
+  # --undo = mixed reset: after restore, HEAD equals index = pre-op.
+  [ -z "$(git diff --cached --name-only)" ]
+  [ -z "$(git diff --name-only)" ]
+}
+
+@test "workflow: h-rollback recovery cycle — restore HEAD + tracked-clean" {
+  echo "extra" > extra.txt; git add extra.txt; git commit -q -m "Extra commit"
+  local pre_op_head; pre_op_head=$(git rev-parse HEAD)
+
+  run hug h rollback 1 --force
+  assert_success
+  local recovery_cmd
+  recovery_cmd=$(echo "$output" | grep -oE 'hug h restore [a-f0-9]{40} --rollback -y' | head -1)
+  [[ -n "$recovery_cmd" ]]
+
+  run bash -c "$recovery_cmd"
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$pre_op_head" ]
+  # --rollback = keep reset: on a clean tree it's equivalent to hard; after restore, clean.
+  [ -z "$(git diff --cached --name-only)" ]
+  [ -z "$(git diff --name-only)" ]
+}
+
+@test "workflow: h-rewind (clean tree, warn tier) recovery cycle — restore HEAD + tracked-clean" {
+  # Use create_test_repo_with_history: 3 commits, clean tree → warn tier.
+  local TEST_RW
+  TEST_RW=$(create_test_repo_with_history)
+  (
+    cd "$TEST_RW" || exit 1
+    local pre_op_head; pre_op_head=$(git rev-parse HEAD)
+
+    run hug h rewind 1 --force
+    assert_success
+    local recovery_cmd
+    recovery_cmd=$(echo "$output" | grep -oE 'hug h restore [a-f0-9]{40} --rewind -y' | head -1)
+    [[ -n "$recovery_cmd" ]]
+
+    run bash -c "$recovery_cmd"
+    assert_success
+    [ "$(git rev-parse HEAD)" = "$pre_op_head" ]
+    # --rewind = hard reset: everything matches pre-op.
+    [ -z "$(git diff --cached --name-only)" ]
+    [ -z "$(git diff --name-only)" ]
+  )
+  rm -rf "$TEST_RW"
+}
+
+@test "workflow: h-squash recovery cycle — restore HEAD (changes stay staged via --back)" {
+  # Squash needs at least 2 commits above the target. create_test_repo_with_history
+  # gives us 3 commits (Initial + Feature 1 + Feature 2), so `squash 2` squashes
+  # the last 2 into 1, leaving the Initial commit as the base.
+  local TEST_SQ
+  TEST_SQ=$(create_test_repo_with_history)
+  (
+    cd "$TEST_SQ" || exit 1
+    local pre_op_head; pre_op_head=$(git rev-parse HEAD)
+
+    # Squash last 2 commits.
+    run hug h squash 2 --force
+    assert_success
+    local recovery_cmd
+    recovery_cmd=$(echo "$output" | grep -oE 'hug h restore [a-f0-9]{40} --back -y' | head -1)
+    [[ -n "$recovery_cmd" ]]
+
+    run bash -c "$recovery_cmd"
+    assert_success
+    [ "$(git rev-parse HEAD)" = "$pre_op_head" ]
+    # --back = soft reset: the squashed commit's content is now staged (index
+    # matches the squash commit's tree, not pre-op HEAD).  HEAD is restored;
+    # clean-invariant does NOT apply here — that's expected.
+  )
+  rm -rf "$TEST_SQ"
+}
+
+# ============================================================================
+# Synced-upstream guards: four crashers (h-back, h-undo, h-rollback, h-squash)
+# ============================================================================
+# When the branch is fully pushed (zero local-only commits), the upstream path
+# must exit 0 without altering HEAD or creating new commits.  The empty-target
+# guard in each command prevents a zero-count target from being passed through
+# to reset (which would silently fabricate invalid state).
+
+@test "workflow: h-back -u synced-upstream — exit 0, HEAD unchanged, no new commit" {
+  create_test_repo_with_history
+  local before; before=$(git rev-parse HEAD)
+  local commit_count_before; commit_count_before=$(git rev-list --count HEAD)
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "back-upstream-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+
+  run hug h back -u
+  assert_success
+  assert_output --partial "Already synced"
+  [ "$(git rev-parse HEAD)" = "$before" ]
+  [ "$(git rev-list --count HEAD)" = "$commit_count_before" ]
+}
+
+@test "workflow: h-undo -u synced-upstream — exit 0, HEAD unchanged, no new commit" {
+  create_test_repo_with_history
+  local before; before=$(git rev-parse HEAD)
+  local commit_count_before; commit_count_before=$(git rev-list --count HEAD)
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "undo-upstream-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+
+  run hug h undo -u
+  assert_success
+  assert_output --partial "Already synced"
+  [ "$(git rev-parse HEAD)" = "$before" ]
+  [ "$(git rev-list --count HEAD)" = "$commit_count_before" ]
+}
+
+@test "workflow: h-rollback -u synced-upstream — exit 0, HEAD unchanged, no new commit" {
+  create_test_repo_with_history
+  local before; before=$(git rev-parse HEAD)
+  local commit_count_before; commit_count_before=$(git rev-list --count HEAD)
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "rollback-upstream-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+
+  run hug h rollback -u
+  assert_success
+  assert_output --partial "Already synced"
+  [ "$(git rev-parse HEAD)" = "$before" ]
+  [ "$(git rev-list --count HEAD)" = "$commit_count_before" ]
+}
+
+@test "workflow: h-squash -u synced-upstream — exit 0, HEAD unchanged, no new commit" {
+  create_test_repo_with_history
+  local before; before=$(git rev-parse HEAD)
+  local commit_count_before; commit_count_before=$(git rev-list --count HEAD)
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "squash-upstream-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+
+  run hug h squash -u
+  assert_success
+  assert_output --partial "Already synced"
+  [ "$(git rev-parse HEAD)" = "$before" ]
+  [ "$(git rev-list --count HEAD)" = "$commit_count_before" ]
+}
+
+# ============================================================================
+# h-rewind: clean→warn / dirty→danger e2e (§9 state-dependent tier)
+# ============================================================================
+
+@test "workflow: h-rewind e2e — clean tree → warn tier, recovery hint printed" {
+  local TEST_CL
+  TEST_CL=$(create_test_repo_with_history)
+  (
+    cd "$TEST_CL" || exit 1
+    local pre_op_head; pre_op_head=$(git rev-parse HEAD)
+
+    # Clean tree: h-rewind should be warn-tier → -y proceeds, hint printed.
+    run hug h rewind 1 -y
+    assert_success
+    assert_output --partial "hug h restore"
+    assert_output --partial "--rewind -y"
+
+    # Verify HEAD moved backward.
+    [ "$(git rev-parse HEAD)" != "$pre_op_head" ]
+    # Tracked-clean after successful rewind.
+    [ -z "$(git diff --cached --name-only)" ]
+    [ -z "$(git diff --name-only)" ]
+  )
+  rm -rf "$TEST_CL"
+}
+
+@test "workflow: h-rewind e2e — dirty tree → danger tier, -y refused, -f proceeds with unrecoverable warning" {
+  local TEST_DT
+  TEST_DT=$(create_test_repo_with_history)
+  (
+    cd "$TEST_DT" || exit 1
+
+    # Dirty the tree with a tracked change.
+    echo "local edit" >> feature1.txt
+
+    # -y is refused (danger tier blocks soft confirmation).
+    run hug h rewind 1 -y
+    [ "$status" -eq 3 ]
+
+    # -f proceeds, but the post-op message must state edits are unrecoverable.
+    run hug h rewind 1 -f
+    assert_success
+    assert_output --partial "cannot be recovered"
+    # The commit-recovery hint is still emitted (commit, not edits).
+    assert_output --partial "hug h restore"
+  )
+  rm -rf "$TEST_DT"
 }

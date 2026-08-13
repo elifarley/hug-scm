@@ -71,6 +71,10 @@ Hug Commands
 │   ├── s            # Quick status
 │   ├── sl           # Status + List tracked
 │   ├── sla          # Status + List all (untracked)
+│   ├── sls          # Status + List staged
+│   ├── slu          # Status + List unstaged
+│   ├── slk          # Status + List untracked
+│   ├── slc          # Status + List conflicted (unmerged)
 │   ├── sli          # Status + List inc. ignored
 │   ├── ss           # Status + Staged diff
 │   ├── su           # Status + Unstaged diff
@@ -117,7 +121,7 @@ Hug Commands
 │   ├── ccp          # Commit Copy (cherry-pick)
 │   ├── cii          # Commit Interactive (patch)
 │   ├── cim          # Commit Interactive Menu
-│   └── cmv          # Commit Move to branch
+│   └── cmv          # Commit Move to branch (--wt: also create/reuse its worktree)
 ├── l* (Logging: History Search)
 │   ├── l            # Oneline log
 │   ├── la           # Oneline log (all branches)

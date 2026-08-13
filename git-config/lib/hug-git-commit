@@ -205,18 +205,102 @@ resolve_target_with_temporal() {
 # Commit Range Analysis Functions
 ################################################################################
 
-# Counts commits in a range
+# Counts how far <end> is AHEAD of <start> (commits reachable from <end> but not <start>).
 # Usage: count=$(count_commits_in_range "start" ["end"])
 # Parameters:
-#   $1 - Start commit (exclusive)
+#   $1 - Start commit (exclusive) — REQUIRED
 #   $2 - (Optional) End commit (inclusive), defaults to HEAD
 # Output:
-#   Number of commits in range to stdout
+#   Number of commits in range to stdout.
+#
+# ONE-DIRECTIONAL ahead-count: a result of 0 means "<end> is NOT ahead of <start>" — which
+# is TRUE in two distinct cases: (1) end == start (aligned), OR (2) end is BEHIND start.
+# Do NOT treat 0 as "aligned." For an identity test use is_same_commit(); for a signed
+# distance (with direction/magnitude, diverged vs. error distinguished) use commit_offset().
+# See lib/README.md "Range counting".
+#
+# STRICT: a failed rev-list (invalid ref, unborn HEAD) propagates non-zero exit and prints
+# nothing — it is NEVER swallowed into a 0. Callers MUST handle failure (this is the fix for
+# Defect 2 of elifarley/hug-scm#229; the old "echo 0 on failure" swallow let errors masquerade
+# as data).
+#
+# NOTE: the ${1:?} guard is a hard shell EXIT (not a catchable return) if this function is
+# called directly with a missing start arg; it is catchable via `|| exit 1`/`|| return 1`
+# only because callers invoke it inside a $(…) command substitution. Always pass a start ref.
 count_commits_in_range() {
-    local start="$1"
+    local start="${1:?count_commits_in_range: start ref required}"
     local end="${2:-HEAD}"
 
-    git rev-list --count "$start..$end" 2>/dev/null || echo 0
+    git rev-list --count "$start..$end"
+}
+
+# Display-only, failure-tolerant twin of count_commits_in_range.
+# Usage: count=$(count_commits_in_range_or_zero "start" ["end"])
+# ONLY for display/tip text where a 0 on rev-list failure is cosmetically acceptable
+# (e.g. a rendered plan or a "… in N commits since …" tip). NEVER use this for a branching
+# or alignment decision — there, count_commits_in_range's strict propagation MUST surface
+# the failure. Grep invariant: this "echo 0" swallow appears NOWHERE outside this one body line.
+# (These comments deliberately avoid the literal pipe-form of the pattern so the canary
+# `grep -rn '<pipe><pipe> echo 0' git-config/` stays at exactly ONE hit — don't re-add it.)
+count_commits_in_range_or_zero() {
+    count_commits_in_range "$@" || echo 0
+}
+
+# True (exit 0) iff <a> and <b> resolve to the SAME existing commit.
+# Usage: is_same_commit "a" "b"
+#
+# This is the ONLY sanctioned identity/alignment test. NEVER infer alignment from a
+# one-directional count_commits_in_range == 0 — that means "not ahead," which is ALSO
+# true when one ref is BEHIND the other (Defect 1 of elifarley/hug-scm#229).
+#
+# PRECONDITION: both <a> and <b> MUST resolve to existing commits. On an unborn repo
+# (no commits) rev-parse --verify fails, so is_same_commit returns NON-ZERO for the
+# trivially-aligned case — a false NEGATIVE, never a false positive. Movers run
+# repo/commit-existence guards first; and even if not, the loud-failure chain holds
+# (the rev-parse failure propagates → callers exit non-zero).
+is_same_commit() {
+    local a b
+    a=$(git rev-parse --verify --quiet "${1:?is_same_commit: first ref required}^{commit}") || return 1
+    b=$(git rev-parse --verify --quiet "${2:?is_same_commit: second ref required}^{commit}") || return 1
+    [ "$a" = "$b" ]
+}
+
+# Signed commit distance from <a> to <b> (default HEAD). 0 means IDENTITY (same commit),
+# NOT merely "not ahead" — the false-zero is unrepresentable by construction.
+# Usage: dispatch on $? — exit 2 (diverged) and exit 3 (error) need DISTINCT handling.
+# Capture via `|| rc=$?` — the assignment MUST sit left of `||`: a bare
+# `offset=$(commit_offset …)` followed by `rc=$?` is DEAD CODE under `set -e`, because
+# the assignment statement's exit status IS the substitution's, so errexit aborts the
+# caller at the assignment for exactly exit 2 and 3 — before any dispatch can run.
+#   local offset rc=0
+#   offset=$(commit_offset "target" HEAD) || rc=$?
+#   case $rc in
+#     0) use "$offset" ;;   # identity (0) or a clean signed distance (N / -N)
+#     2) handle_diverged ;; # incomparable histories — NOT an error, NOT a distance
+#     *) handle_error ;;    # exit 3: an unresolvable ref
+#   esac
+# (The naive `... || handle_error` alone conflates 2 with 3 — diverged is not an error.)
+#
+# Contract:
+#   a == b (identity) | stdout=0    exit=0 | at target — undeniable, short-circuited on SHA equality
+#   b ahead of a      | stdout=N    exit=0 | clean forward distance
+#   b behind a        | stdout=-N   exit=0 | forward target (recovery direction)
+#   diverged          | stdout=     exit=2 | incomparable — NOT 0, so never mistaken for aligned
+#   unresolvable ref  | stdout=     exit=3 | error — never a fake 0 (fixes the fallback-swallow, Defect 2)
+#
+# commit_offset == 0 is a SOUND alignment test — the lossy count == 0 of Defect 1 is gone
+# by construction. is_same_commit is the minimal boolean predicate for callers that need
+# only yes/no; commit_offset is for callers that also need direction/magnitude.
+commit_offset() {
+    local a b
+    a=$(git rev-parse --verify --quiet "${1:?commit_offset: first ref required}^{commit}") || return 3
+    b=$(git rev-parse --verify --quiet "${2:-HEAD}^{commit}") || return 3
+    [ "$a" = "$b" ] && { echo 0; return 0; }                        # identity: the undeniable 0
+    local behind ahead
+    read -r behind ahead < <(git rev-list --left-right --count "$a...$b") || return 3
+    if [ "$behind" -eq 0 ]; then echo "$ahead";   return 0; fi      # b ahead of a
+    if [ "$ahead"  -eq 0 ]; then echo "-$behind"; return 0; fi      # b behind a (forward target)
+    return 2                                                        # diverged: empty + distinct exit
 }
 
 # Prints a list of commits in a given range

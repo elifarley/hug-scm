@@ -1628,3 +1628,212 @@ suggest_superproject_ignore() {
         HUG_QUIET='' tip "    printf '*.WT.*/\\n' >> '${super_path}/.gitignore'"
     fi
 }
+
+################################################################################
+# Create a worktree for a branch (create the branch if missing), returning the
+# resolved worktree path on stdout.
+#
+# Usage: create_worktree_for_branch <branch> [--base <point>] [--path <path>] [--force] [--quiet] [--dry-run] [--confirmed-branch]
+#   <branch>      Branch to create/worktree (created if missing).
+#   --base POINT  Create the branch from POINT (implies branch creation; errors
+#                 if the branch already exists).
+#   --path PATH   Create the worktree at PATH (custom caller-supplied path).
+#                 When absent, auto-generate with collision fallback.
+#   --force       Skip safe-tier confirmation and allow force worktree creation.
+#   --quiet       Suppress informational chatter.
+#   --dry-run     Print the plan without creating anything.
+#   --confirmed-branch  Caller already confirmed branch creation; skip the branch
+#                 prompt and the worktree prompt (same single decision). Use when
+#                 the caller gathered the safe prompt first (cmv does this).
+#
+# Stdout (on success): THREE tab-separated fields:
+#   RESOLVED_PATH<TAB>CREATED_BRANCH<TAB>DRY_RUN
+# where CREATED_BRANCH and DRY_RUN are the strings "true" or "false".
+#
+# Exit: 0 success (or dry-run preview), 1 operational error or user cancel,
+#       2 usage error (unknown option). Callers own safety-block guards; this
+#       function does not emit exit 3.
+#
+# NOTE: Callers own the "branch checked out elsewhere / main worktree" guards.
+#       This function only creates — it does NOT check whether the branch is
+#       already checked out in another worktree. Validate BEFORE calling.
+#
+# Rollback: if the function creates the branch and then the worktree creation
+# fails (invalid path, `git worktree add` error, post-create sanity check), the
+# newly-created branch is deleted so the repo is left in its prior state.
+create_worktree_for_branch() {
+    local branch="${1:?create_worktree_for_branch requires a branch}"
+    shift
+    local base="" custom_path="" force=false dry_run=false confirmed_branch=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        --base) base="$2"; shift 2 ;;
+        --path) custom_path="$2"; shift 2 ;;
+        --force) force=true; shift ;;
+        --quiet) export HUG_QUIET=T; shift ;;
+        --dry-run) dry_run=true; shift ;;
+        --confirmed-branch) confirmed_branch=true; shift ;;
+        *) error_usage "Unknown option: $1" ;;
+        esac
+    done
+
+    local branch_exists=false branch_needs_creation=false confirmed_via_branch_prompt=false
+    if git rev-parse --verify "refs/heads/$branch" > /dev/null 2>&1; then
+        branch_exists=true
+    fi
+
+    # --base only makes sense when creating a new branch.
+    if [[ -n "$base" ]] && $branch_exists; then
+        error "Branch '$branch' already exists; --base only applies when creating new branches"
+    fi
+
+    # Decide whether to create the branch, gating on confirmation when needed.
+    # The dry-run path skips prompts (preview only); --base/--force/--confirmed-branch
+    # authorize creation without a prompt; otherwise we ask once for the combined
+    # "create branch AND its worktree" decision (single prompt, not two).
+    if ! $branch_exists; then
+        if $dry_run; then
+            branch_needs_creation=true
+        elif [[ -n "$base" ]] || $force || $confirmed_branch; then
+            branch_needs_creation=true
+        else
+            echo >&2
+            info "Branch '$branch' does not exist locally."
+            # prompt_confirm_safe exits 1 on cancel (we never reach the `then`).
+            if ! prompt_confirm_safe "Create branch '$branch' and its worktree?"; then
+                exit 1
+            fi
+            branch_needs_creation=true
+            confirmed_via_branch_prompt=true
+        fi
+    fi
+
+    # Resolve the worktree path: caller-supplied OR auto-generated with a
+    # collision fallback (generate_unique_worktree_path appends a suffix).
+    local worktree_path
+    if [[ -n "$custom_path" ]]; then
+        worktree_path="$custom_path"
+    else
+        worktree_path=$(generate_worktree_path "$branch")
+        if [[ -e "$worktree_path" ]]; then
+            worktree_path=$(generate_unique_worktree_path "$branch")
+            info "Default path exists, using: $worktree_path"
+        fi
+    fi
+
+    # Relative paths are made absolute against the caller's CWD so validation
+    # and `git worktree add` see a stable, unambiguous target.
+    if [[ ! "$worktree_path" = /* ]]; then
+        worktree_path="$(pwd)/$worktree_path"
+    fi
+
+    # Start-point label for display: distinguishes "new from HEAD" vs
+    # "new from <base>". Existing wtc output (and its tests) expect this
+    # exact "(new, from X)" wording in both the dry-run preview and the
+    # pre-confirmation summary.
+    local start_point_label
+    if [[ -n "$base" ]]; then
+        start_point_label="(new, from $base)"
+    else
+        start_point_label="(new, from HEAD)"
+    fi
+
+    # Dry-run is a pure preview — no branch, no worktree, no prompts.
+    if $dry_run; then
+        [[ -z "${HUG_QUIET:-}" ]] && {
+            echo >&2
+            printf 'Worktree Creation Preview (DRY RUN):\n' >&2
+            if $branch_needs_creation; then
+                printf '  Branch: %s %s\n' "$branch" "$start_point_label" >&2
+            else
+                printf '  Branch: %s\n' "$branch" >&2
+            fi
+            printf '  Path:   %s\n' "${worktree_path/#$HOME/\~}" >&2
+            echo >&2
+        }
+        info "No changes made (dry run)."
+        printf '%s\t%s\t%s\n' "$worktree_path" "$branch_needs_creation" "true"
+        return 0
+    fi
+
+    # Pre-confirmation summary. wtc's existing tests grep the `Path:` line
+    # out of this block to learn where the worktree landed (auto-generated
+    # paths included), so the wording must be preserved verbatim.
+    [[ -z "${HUG_QUIET:-}" ]] && {
+        echo >&2
+        printf 'Worktree Creation Summary:\n' >&2
+        if $branch_needs_creation; then
+            printf '  Branch: %s %s\n' "$branch" "$start_point_label" >&2
+        else
+            printf '  Branch: %s\n' "$branch" >&2
+        fi
+        printf '  Path:   %s\n' "${worktree_path/#$HOME/\~}" >&2
+        echo >&2
+    }
+
+    # Single confirmation for the worktree itself. Skipped when the caller
+    # already authorized (force / confirmed-branch) OR the branch-creation
+    # prompt above already covered it (combined decision, no double-prompt).
+    if ! $force && ! $confirmed_via_branch_prompt && ! $confirmed_branch; then
+        # prompt_confirm_safe exits 1 on cancel.
+        if ! prompt_confirm_safe "Create worktree?"; then
+            exit 1
+        fi
+    fi
+
+    # Create the branch first (if needed). On any later failure we delete it
+    # so a failed `wtc` / `cmv --wt` doesn't leave a dangling branch behind.
+    if $branch_needs_creation; then
+        local git_err=""
+        if [[ -n "$base" ]]; then
+            if ! git_err=$(git branch "$branch" "$base" 2>&1); then
+                error "Failed to create branch '$branch' from '$base': $git_err"
+            fi
+            info "Created branch '$branch' from $base ($(git rev-parse --short "$base"))"
+        else
+            if ! git_err=$(git branch "$branch" 2>&1); then
+                error "Failed to create branch '$branch': $git_err"
+            fi
+            info "Created branch '$branch' from $(git rev-parse --short HEAD)"
+        fi
+    fi
+
+    # Validate the target path BEFORE attempting worktree creation. If it's
+    # unusable (inside the repo, non-empty, etc.) we roll back the branch.
+    if ! validate_worktree_creation_path "$worktree_path"; then
+        if $branch_needs_creation; then
+            git branch -d "$branch" 2> /dev/null || true
+            warning "Rolled back branch '$branch' (worktree path invalid)."
+        fi
+        exit 1
+    fi
+
+    # Actual worktree creation. `--force` mirrors the caller's authorization
+    # into git (e.g. branch checked out in main worktree — callers gate this).
+    local git_wt_args=("$worktree_path" "$branch")
+    if $force; then
+        git_wt_args+=("--force")
+    fi
+    git_err=""
+    if ! git_err=$(git worktree add "${git_wt_args[@]}" 2>&1); then
+        if $branch_needs_creation; then
+            git branch -d "$branch" 2> /dev/null || true
+            warning "Rolled back branch '$branch'."
+        fi
+        error "Failed to create worktree: $git_err"
+    fi
+
+    # Post-create sanity check: a linked worktree has a `.git` file (pointer).
+    # If git reported success but no `.git` exists, treat it as a hard failure.
+    if [[ ! -f "$worktree_path/.git" ]]; then
+        error "Worktree creation appeared to succeed but the directory is invalid."
+    fi
+
+    success "Worktree created for '$branch'"
+    echo >&2
+    tip "To start working:  cd ${worktree_path/#$HOME/\~}"
+    suggest_superproject_ignore "$worktree_path"
+
+    # Three tab-separated fields — callers (wtc, cmv) consume them positionally.
+    printf '%s\t%s\t%s\n' "$worktree_path" "$branch_needs_creation" "false"
+}

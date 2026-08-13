@@ -108,7 +108,7 @@ fi
 
 check_git_repo
 
-if ! has_pending_changes; then
+if ! has_untracked_or_pending_changes; then
   printf '%s: No changes detected. Run "hug sl" to confirm the working tree state.\n' "$PROG_NAME" >&2
   exit 0
 fi

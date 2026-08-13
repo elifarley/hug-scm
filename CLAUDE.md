@@ -199,7 +199,7 @@ Commands are organized by semantic prefixes:
 |--------|----------|----------|
 | `h*` | HEAD operations | h, h-back, h-undo, h-squash, h-rewind, h-rollback |
 | `w*` | Working directory | w, w-discard, w-wipe, w-purge, w-zap, w-unwip, w-get |
-| `s*` | Status & staging | s, a, aa, us, usa, sl, sla, ss, su, sw |
+| `s*` | Status & staging | s, a, aa, us, usa, sl, sla, sls, slu, slk, slc, sli, ss, su, sw |
 | `b*` | Branching | b, bc, bl, bpush, bpull, bdel, bpullr |
 | `c*` | Commits | c, ca, caa, cm, cma, ccp, cmv |
 | `l*` | Logging | l, ll, la, lp, lf, lc, lau, ld |

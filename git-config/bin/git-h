@@ -53,6 +53,10 @@ rewind)
   shift
   dispatch_h_subcommand "rewind" "$@"
   ;;
+restore)
+  shift
+  dispatch_h_subcommand "restore" "$@"
+  ;;
 squash)
   shift
   dispatch_h_subcommand "squash" "$@"
@@ -66,6 +70,7 @@ squash)
   printf '  undo          Move HEAD back, unstage changes\n' >&2
   printf '  rollback      Rollback commit, preserve local work\n' >&2
   printf '  rewind        Rewind to clean state (destructive)\n' >&2
+  printf '  restore       Restore HEAD to a commit (recovery from mover)\n' >&2
   printf '  squash        Squash last N commits into 1 with original message\n' >&2
   printf '\nAll support -u/--upstream to target remote tip (e.g., h back -u)\n' >&2
   ;;

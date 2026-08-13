@@ -30,7 +30,7 @@ setup() {
 }
 
 @test "hug-git-kit: sources hug-git-state functions" {
-  declare -F has_pending_changes >/dev/null
+  declare -F has_untracked_or_pending_changes >/dev/null
 }
 
 @test "hug-git-kit: sources hug-git-files functions" {

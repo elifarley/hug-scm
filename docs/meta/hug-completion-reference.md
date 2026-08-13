@@ -86,9 +86,13 @@ These map to custom scripts (see Section 2).
 - `caa`: Commit all (tracked + untracked). No args.
 
 ### Status (s*)
-- `sl [git-status-opts]`: Status (no untracked). Args: Git status options.
-- `sla [git-status-opts]`: Status (long, with untracked). Args: as above.
-- `sli [git-status-opts]`: Ignored + untracked files + status. Args: as above.
+- `sl [opts]`: Status (no untracked). Args: `--json`, `-c|--count`, `-q|--quiet`, untracked mode (`-uno` default, `-u|--long` show untracked), pathspecs.
+- `sla [opts]`: Status (long, with untracked). Args: as above.
+- `sls [opts]`: Staged files + status. Args: `--json`, `-c|--count`, `-q|--quiet`, pathspecs.
+- `sli [opts]`: Ignored + untracked files + status. Args: as above.
+- `slu [opts]`: Unstaged files + status. Args: as above.
+- `slk [opts]`: Untracked files + status. Args: as above.
+- `slc [opts]`: Conflicted (unmerged) files + status. Args: as above.
 - `s`: Quick summary (custom). No args.
 - `ss [<file>]`: Status with staged patch. Args: `[<file>]` (optional).
 - `su [<file>]`: Status with unstaged patch. Args: as above.
@@ -202,7 +206,7 @@ Subcommands (gateway to specific scripts):
 - `caa [git-commit-opts]`: Commit all. No positional args. Options: Pass-through to `git commit`.
 
 ### s (Status Summary, via git-s)
-- `s`: Quick colored summary. Query flags: `-b`, `-r`, `-u`, `-H`, `-s`, `-A`, `-B`, `-C`, `-I`, `-K`, `-S`, `-U`, `--ball`, `-z`, `--json`.
+- `s`: Quick colored summary. Query flags: `-b`, `-r`, `-u`, `-H`, `-s`, `-A`, `-B`, `-C`, `-I`, `-K`, `-S`, `-U`, `--conflicted`, `--ball`, `-z`, `--json`.
 
 ### ss (Staged Status, via git-ss)
 - `ss [<file>]`: Status + staged patch. Args: `[<file>]` (optional). Use `-h` for help.

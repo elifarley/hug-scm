@@ -135,7 +135,7 @@ hug_rb() {
   # NOTE: -y does NOT weaken this guard — -y authorizes the warn-tier
   # confirmation, not the dirty-tree precondition. Only -f clears both.
   if [[ ${HUG_FORCE:-} != true ]]; then
-    if has_pending_changes; then
+    if has_untracked_or_pending_changes; then
       check_working_tree_clean
     fi
   else

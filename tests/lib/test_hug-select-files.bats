@@ -7,6 +7,10 @@ load '../../git-config/lib/hug-git-kit'
 load '../../git-config/lib/hug-gum'
 load '../../git-config/lib/hug-select-files'
 
+# run --separate-stderr is used below (bats >= 1.5) to assert stdout/stderr
+# independently for the non-repo parity test (#259).
+bats_require_minimum_version 1.5.0
+
 # Helper to create test repo with files in subdirectories
 create_test_repo_for_selection() {
   local test_repo
@@ -638,10 +642,10 @@ create_merge_conflict() {
   load '../../git-config/lib/hug-git-priorities'
 
   # Multiple file types should return false (not safe to suppress)
-  run _can_suppress_status true true false false
+  run _can_suppress_status true true false false false
   assert_failure
 
-  run _can_suppress_status false true true false
+  run _can_suppress_status false true true false false
   assert_failure
 }
 
@@ -649,7 +653,7 @@ create_merge_conflict() {
   load '../../git-config/lib/hug-git-priorities'
 
   # Single file type (untracked) should return true (safe to suppress)
-  run _can_suppress_status false false true false
+  run _can_suppress_status false false true false false
   assert_success
 }
 
@@ -657,7 +661,7 @@ create_merge_conflict() {
   load '../../git-config/lib/hug-git-priorities'
 
   # Single file type (ignored) should return true (safe to suppress)
-  run _can_suppress_status false false false true
+  run _can_suppress_status false false false true false
   assert_success
 }
 
@@ -666,7 +670,7 @@ create_merge_conflict() {
 
   # Unstaged files have multiple status types (U:Mod, U:Del, U:Cnflt)
   # Should return false (not safe to suppress)
-  run _can_suppress_status false true false false
+  run _can_suppress_status false true false false false
   assert_failure
 }
 
@@ -675,6 +679,275 @@ create_merge_conflict() {
 
   # Staged files have multiple status types (S:Add, S:Mod, S:Del, S:Ren, S:Copy, S:Cnflt)
   # Should return false (not safe to suppress)
-  run _can_suppress_status true false false false
+  run _can_suppress_status true false false false false
   assert_failure
+}
+
+@test "list_files_with_status: --conflicts renders Cnflt-prefixed conflict files" {
+  create_merge_conflict
+
+  local output
+  output=$(list_files_with_status --conflicts)
+  [[ "$output" == *"Cnflt"*"conflict-file.txt"* ]]
+}
+
+@test "list_files_with_status: --conflicts --suppress-status prints plain paths" {
+  create_merge_conflict
+
+  local output
+  output=$(list_files_with_status --conflicts --suppress-status)
+  [[ "$output" == "conflict-file.txt" ]]
+}
+
+@test "list_files_with_status: --conflicts is empty and fails when no conflicts" {
+  # NOTE: use `run`, not `output=$(...)` — BATS test bodies run under set -e,
+  # so a command-substitution assignment whose command exits 1 (no conflicts)
+  # aborts the test before the assertions execute.
+  run list_files_with_status --conflicts 2>/dev/null
+  [[ $status -eq 1 ]]
+  [[ -z "$output" ]]
+}
+
+@test "_can_suppress_status: conflicts-only is suppress-safe" {
+  # NOTE: use `run`, not a direct call — inside the gate, `((type_count++))`
+  # evaluates to 0 (hence exit status 1) on its first increment, which trips
+  # BATS's set -e and kills a direct call before the gate's return value
+  # can be inspected. `run` (like all callers in production, which invoke the
+  # gate from an `if` condition) is errexit-exempt.
+  run _can_suppress_status false false false false true
+  assert_success
+}
+
+@test "_can_suppress_status: conflicts mixed with staged is not safe" {
+  run _can_suppress_status true false false false true
+  assert_failure
+}
+
+@test "list_files_with_status: filenames containing | survive sorting" {
+  # Real conflict on a file whose name contains the old tuple separator
+  echo "base" > 'a|b.txt'
+  git add 'a|b.txt'
+  git commit -q -m "Add base"
+  git switch -q -c branch1
+  echo "one" > 'a|b.txt'
+  git add 'a|b.txt'
+  git commit -q -m "Change on branch1"
+  git switch -q main
+  echo "two" > 'a|b.txt'
+  git add 'a|b.txt'
+  git commit -q -m "Change on branch2"
+  git merge --no-commit --no-ff branch1 >/dev/null 2>&1 || true
+
+  local output
+  output=$(list_files_with_status --conflicts --suppress-status)
+  [[ "$output" == 'a|b.txt' ]]
+}
+
+@test "list_files_with_status: filenames containing the unit separator survive sorting" {
+  # \x1f is legal in filenames (git forbids only NUL and /). Untracked files
+  # flow through the -z parser as RAW bytes (unlike conflicted files, which
+  # git C-quotes — tracked as elifarley/hug-scm#249), so the tuple escape
+  # round-trip must preserve the byte here.
+  echo "untracked" > $'a\x1fb.txt'
+
+  # The fixture repo has its own untracked files, so assert the raw byte
+  # survives as an intact line (the corruption mode was a garbled re-split)
+  local output
+  output=$(list_files_with_status --untracked --suppress-status)
+  [[ "$output" == *$'a\x1fb.txt'* ]]
+}
+
+# =============================================================================
+# count_files_with_status (the sl* -c engine)
+# =============================================================================
+
+@test "count_files_with_status: counts each state correctly" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  # Make .gitignore tracked FIRST so ignored.log is recognized, but keep
+  # staged.txt staged (not committed) so the staged state is observable.
+  echo "*.log" > .gitignore
+  git add .gitignore
+  git commit -q -m "add gitignore"
+  touch ignored.log
+
+  echo "staged" > staged.txt
+  git add staged.txt
+  echo "mod" >> README.md
+  echo "untracked" > untracked.txt
+
+  [[ "$(count_files_with_status staged)" == "1" ]]
+  [[ "$(count_files_with_status unstaged)" == "1" ]]
+  [[ "$(count_files_with_status untracked)" == "1" ]]
+  [[ "$(count_files_with_status ignored)" == "1" ]]
+  # all = staged.txt (staged) + README.md (unstaged) = 2
+  [[ "$(count_files_with_status all)" == "2" ]]
+  # all+untracked = 2 + untracked.txt = 3
+  [[ "$(count_files_with_status all+untracked)" == "3" ]]
+}
+
+@test "count_files_with_status: dedups a file staged and unstaged" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  echo "v2" > README.md
+  git add README.md
+  echo "v3" >> README.md
+
+  # README.md is BOTH staged and unstaged → counts once in all
+  [[ "$(count_files_with_status all)" == "1" ]]
+  [[ "$(count_files_with_status staged)" == "1" ]]
+  [[ "$(count_files_with_status unstaged)" == "1" ]]
+}
+
+@test "count_files_with_status: pathspec scopes the count" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  echo "mod" >> README.md
+  echo "other" > other.txt
+  git add other.txt
+
+  [[ "$(count_files_with_status unstaged README.md)" == "1" ]]
+  [[ "$(count_files_with_status unstaged no-such.txt)" == "0" ]]
+  [[ "$(count_files_with_status all other.txt)" == "1" ]]
+}
+
+@test "count_files_with_status: newline-containing filename counts once (NUL-safe)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  touch "$(printf 'weird\nname.txt')"
+
+  # Line-based counting would split the name into 2; NUL-delimited counts 1
+  [[ "$(count_files_with_status untracked)" == "1" ]]
+}
+
+@test "count_files_with_status: rename counts once (skips bare old-path record)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  echo "old" > old.txt
+  git add old.txt
+  git commit -q -m "add old"
+  git mv old.txt new.txt
+
+  # git status --porcelain -z emits "R  new.txt\0old.txt\0" — the bare old.txt
+  # record must not be counted. Rename = 1 file.
+  [[ "$(count_files_with_status staged)" == "1" ]]
+  [[ "$(count_files_with_status all)" == "1" ]]
+}
+
+@test "count_files_with_status: rename old-path mimicking a status record counts once" {
+  # Adversarial case (elifarley/hug-scm#257 review P2): a tracked file whose
+  # name looks like a porcelain status line ("M  old" — pos2 is a space). When
+  # renamed, git emits "R  new\0M  old\0"; a pos2 separator heuristic would read
+  # the bare "M  old" as a second staged status record. The explicit
+  # consume-the-old-path logic must count the rename as exactly 1.
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  printf 'content\n' > "M  old"
+  git add "M  old"
+  git commit -q -m "add status-shaped name"
+  git mv "M  old" new
+
+  [[ "$(count_files_with_status staged)" == "1" ]]
+  [[ "$(count_files_with_status all)" == "1" ]]
+}
+
+@test "count_files_with_status: all+untracked expands untracked dir to its files" {
+  # elifarley/hug-scm#257 review P1: without --untracked-files=all, git collapses
+  # two untracked files under a new directory into one "?? dir/" record, so the
+  # count undercounts. The all+untracked path (drives `sla -c`) must pass
+  # --untracked-files=all and count 2.
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  mkdir newdir
+  echo "f1" > newdir/f1.txt
+  echo "f2" > newdir/f2.txt
+
+  [[ "$(count_files_with_status untracked)" == "2" ]]
+  [[ "$(count_files_with_status all+untracked)" == "2" ]]
+}
+
+@test "count_files_with_status: clean error outside a git repo (parity with list_*_files)" {
+  local nonrepo
+  nonrepo=$(mktemp -d)   # fresh, guaranteed non-repo (setup() cds into a repo; leave it)
+  cd "$nonrepo"
+  run --separate-stderr count_files_with_status staged
+  assert_failure
+  [[ -z "$output" ]]                                  # stdout clean: no leaked count (the old silent-0)
+  [[ "$stderr" == *"Not in a git repository"* ]]      # stderr carries the clean HUG message
+  rm -rf "$nonrepo"
+}
+
+@test "run_count_mode: prints the count and exits 0 (terminating wrapper)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo "staged" > staged.txt
+  git add staged.txt
+
+  # TERMINATING: run in a subshell via `run`; prints the count, exit 0.
+  run --separate-stderr run_count_mode staged
+  assert_success
+  assert_output "1"
+  [[ -z "$stderr" ]]
+}
+
+@test "run_count_mode: --json and -c are mutually exclusive" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo "staged" > staged.txt
+  git add staged.txt
+
+  run --separate-stderr run_count_mode --json staged
+  assert_failure
+  [[ "$stderr" == *"mutually exclusive"* ]]
+  [[ -z "$output" ]]   # no count printed on the mutex-violation path
+}
+
+@test "count_files_with_status: conflicted counts unmerged files" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  echo "base" > c.txt
+  git add c.txt
+  git commit -q -m "base"
+  git switch -q -c side
+  echo "side" > c.txt
+  git commit -q -am "side"
+  git switch -q main
+  echo "main" > c.txt
+  git commit -q -am "main"
+  git merge --no-commit --no-ff side >/dev/null 2>&1 || true
+
+  [[ "$(count_files_with_status conflicted)" == "1" ]]
+  [[ "$(count_files_with_status conflicted c.txt)" == "1" ]]
+  [[ "$(count_files_with_status conflicted no-such.txt)" == "0" ]]
+}
+
+@test "count_files_with_status: unknown state errors" {
+  # Defensive: a typo in the case patterns (staged/unstaged/all/...) would
+  # route valid input to the error branch; pin that the branch fires and
+  # reports the bad state, so a future pattern edit can't silently mis-count.
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  run count_files_with_status bogus-state
+  assert_failure
+  assert_output --partial "unknown state 'bogus-state'"
 }
