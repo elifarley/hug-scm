@@ -1946,3 +1946,38 @@ HOOK
   cleanup_test_worktrees "$repo"
   rm -rf "$repo"
 }
+
+@test "hug cmv: --wt -y refuses move (exit 3) and creates nothing" {
+  # Tier-separation contract: -y / HUG_YES auto-confirms safe+warn only and
+  # HARD-REFUSES danger (exit 3). cmv --new --wt is danger-tier (rewrites
+  # SHAs, not auto-recoverable), so -y must refuse BEFORE any mutation —
+  # no branch created, no worktree created, main SHA unchanged. This test
+  # pins the confirm-first ordering: prompt_confirm_danger at git-cmv must
+  # fire BEFORE create_worktree_for_branch / git reset.
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # -y must NOT authorize a danger-tier move. Use a non-colliding branch
+  # name: create_test_repo_with_branches pre-creates 'feature/branch' which
+  # blocks 'feature' (refs/heads/feature/branch shadows refs/heads/feature).
+  run hug cmv 1 cmv-y-refuse --new --wt -y
+  [ "$status" -eq 3 ]      # HUG_EX_BLOCKED — danger-tier ops refuse -y
+  [ "$status" -ne 0 ]      # backstop: a sourcing-order regression fails noisily, not silently
+  assert_output --partial "Dangerous operation requires --force (not -y)"
+
+  # No side effects — confirm-first means the refusal fired before any
+  # mutation (no branch, no worktree, main unchanged).
+  run git branch --list cmv-y-refuse
+  refute_output --partial "cmv-y-refuse"
+  run git worktree list --porcelain
+  refute_output --partial "cmv-y-refuse"
+  assert_equal "$(git rev-parse main)" "$original_head"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
