@@ -418,6 +418,77 @@ teardown() {
   assert_output --partial "Show files changed"
 }
 
+@test "hug shc -n: prints repo-relative paths only for single commit" {
+  run hug shc -n HEAD
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shc --name-only: long flag works identically" {
+  run hug shc --name-only HEAD
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shc -n: range prints cumulative paths" {
+  run hug shc -n HEAD~2..HEAD
+  assert_success
+  assert_line "feature1.txt"
+  assert_line "feature2.txt"
+}
+
+@test "hug shc -n: N/-N forms work" {
+  run hug shc -n -2
+  assert_success
+  # -2 resolves to HEAD~2..HEAD (valid: 3-commit fixture's oldest reachable is HEAD~2).
+  # The range diff is relative to the HEAD~2 tree, so README.md (already present at HEAD~2)
+  # is NOT listed — only files changed across the range appear.
+  assert_line "feature1.txt"
+  assert_line "feature2.txt"
+  run hug shc -n HEAD~1
+  assert_success
+  # HEAD~1 is the single commit that added feature1.txt (diff-tree --root lists only its own files).
+  assert_output "feature1.txt"
+}
+
+@test "hug shc -n: pathspec filtering works" {
+  # Range must actually contain feature1.txt for the filter to match. HEAD~2..HEAD does
+  # (feature1.txt is added in that range); HEAD~1..HEAD would contain only feature2.txt.
+  run hug shc -n HEAD~2..HEAD -- 'feature1.txt'
+  assert_success
+  assert_output "feature1.txt"
+}
+
+@test "hug shc -n: no-match pathspec exits 0 with empty stdout, no stderr hint" {
+  run hug shc -n HEAD -- '*.nomatch'
+  assert_success
+  assert_output ""
+  refute_output --partial "No files matching"
+}
+
+@test "hug shc -n: bundled -nq is rejected, not silently run in stats mode" {
+  run hug shc -nq HEAD
+  assert_failure
+  assert_output --partial "USAGE:"
+  run hug shc -qn HEAD
+  assert_failure
+  assert_output --partial "USAGE:"
+}
+
+@test "hug shc -n: stdout is data-only, no human chatter" {
+  run hug shc -n HEAD
+  assert_success
+  # No header emoji/legend on stdout — pure data
+  refute_output --partial "Changed files"
+  refute_output --partial "📊"
+}
+
+@test "hug shc -n: regression -- still rejects --stat with help" {
+  run hug shc --stat
+  assert_failure
+  assert_output --partial "hug shc"
+}
+
 # -----------------------------------------------------------------------------
 # hug shcp tests (show cumulative diff with stats)
 # -----------------------------------------------------------------------------
