@@ -4,6 +4,12 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-08-13
+
+### Added
+
+- **`cmv --wt`** — move commits to a branch AND ensure it has a worktree (create if missing, reuse if present), staying on the source branch. Move is danger-tier; worktree creation is safe-tier; recovery is the inverse cmv. The new branch is created at the original HEAD (exact SHA preserved); an existing target branch is cherry-picked into its worktree. Safety guards block (exit 3) when the target is the current branch or its worktree is stale/locked. Extracts a shared `create_worktree_for_branch` helper from `wtc` so both `wtc` and `cmv` share one worktree-creation path.
+
 ## [1.7.0] - 2026-08-07
 
 ### Added

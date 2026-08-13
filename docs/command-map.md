@@ -121,7 +121,7 @@ Hug Commands
 │   ├── ccp          # Commit Copy (cherry-pick)
 │   ├── cii          # Commit Interactive (patch)
 │   ├── cim          # Commit Interactive Menu
-│   └── cmv          # Commit Move to branch
+│   └── cmv          # Commit Move to branch (--wt: also create/reuse its worktree)
 ├── l* (Logging: History Search)
 │   ├── l            # Oneline log
 │   ├── la           # Oneline log (all branches)

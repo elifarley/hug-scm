@@ -791,3 +791,73 @@ teardown() {
   run git worktree list --porcelain
   refute_output --partial "worktree $wt"
 }
+
+# ── create_worktree_for_branch (extracted from git-wtc; cmv --wt will reuse) ──
+
+@test "create_worktree_for_branch: creates a new branch + worktree and prints resolved path + created_branch" {
+  local repo
+  repo=$(create_test_repo)
+  pushd "$repo" >/dev/null
+
+  # Capture stdout (the 3 tab-separated fields) and stderr separately.
+  # Human chatter (info/success/tip) goes to stderr; stdout is data-only.
+  # `--force` alone authorizes branch creation + skips prompts; no env var needed.
+  local out rc path created dry
+  out=$(create_worktree_for_branch feature-x --base HEAD --force 2>/dev/null) && rc=$? || rc=$?
+  [[ $rc -eq 0 ]] || fail "create_worktree_for_branch exited $rc; stdout=[$out]"
+  IFS=$'\t' read -r path created dry <<< "$out"
+  assert_equal "$created" "true"
+  assert_equal "$dry" "false"
+
+  # Branch exists and worktree is valid
+  git rev-parse --verify refs/heads/feature-x >/dev/null
+  assert_worktree_exists "$path"
+  assert_worktree_branch "$path" "feature-x"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "create_worktree_for_branch: reuses existing branch without --base" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q -b existing-wt
+  git checkout -q main
+
+  local out rc path created dry
+  out=$(create_worktree_for_branch existing-wt --force 2>/dev/null) && rc=$? || rc=$?
+  [[ $rc -eq 0 ]] || fail "create_worktree_for_branch exited $rc; stdout=[$out]"
+  IFS=$'\t' read -r path created dry <<< "$out"
+  assert_equal "$created" "false"
+  assert_equal "$dry" "false"
+  assert_worktree_exists "$path"
+  assert_worktree_branch "$path" "existing-wt"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "create_worktree_for_branch: --dry-run prints plan, third field true, creates nothing" {
+  local repo
+  repo=$(create_test_repo)
+  pushd "$repo" >/dev/null
+
+  # Dry-run captures the plan on stderr and the 3 TSV fields on stdout.
+  # No prompts, no branch creation, no worktree dir.
+  local out rc path created dry
+  out=$(create_worktree_for_branch dryrun-x --base HEAD --dry-run 2>/dev/null) && rc=$? || rc=$?
+  [[ $rc -eq 0 ]] || fail "create_worktree_for_branch --dry-run exited $rc; stdout=[$out]"
+  IFS=$'\t' read -r path created dry <<< "$out"
+  assert_equal "$created" "true"
+  assert_equal "$dry" "true"
+
+  # Nothing was created: no branch, no worktree directory at the planned path.
+  run git rev-parse --verify refs/heads/dryrun-x
+  assert_failure
+  [[ ! -d "$path" ]]
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
