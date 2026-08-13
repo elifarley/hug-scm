@@ -474,7 +474,7 @@ hug bwnm [commit]     # Branches not merged into commit
 hug c [-m msg]        # Commit (staged changes)
 hug ca [-m msg]       # Commit: All (all tracked changes)
 hug caa [-m msg]      # Commit: All All (tracked + untracked + deletions)
-hug cmod [-m msg]     # Commit: MODify (Amend last commit with staged changes)
+hug cmod [-m msg]     # Commit: MODify (Amend last commit with staged changes — refuses no-op amends without -f)
 hug cmoda [-m msg]    # Commit: MODify All (Amend last commit with all tracked changes — prefer cmod in dirty trees)
 hug ccp <commit>      # Commit Copy (cherry-pick commit onto current branch)
 hug cmv [N] <branch> [--new] [--wt] # Commit MoVe: Relocate commits to another branch (resets source; --wt also creates/reuses its worktree)

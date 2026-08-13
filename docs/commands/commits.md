@@ -135,6 +135,12 @@ For a deterministic non-interactive amend, pass `--no-edit` (keep the message) o
 `-m` (replace it). To inspect which commit would be amended (its hash/message),
 use `hug s --short-hash` or `hug sh HEAD` — never `cmod`.
 
+**Safety guard:** `cmod` refuses a **content-null amend** — an amend with
+nothing staged and no message change (`--no-edit`) — with exit 3, because it
+would silently rewrite HEAD's hash (same tree, same message). Stage changes
+first (`hug a <files>`) or pass `-m` to change the message. To deliberately
+re-hash/re-date HEAD, re-run with `-f`.
+
 **Usage:** `hug cmod`
 
 **Examples:**
@@ -168,6 +174,12 @@ files, stage them and use `hug cmod`:
 :::
 
 Running `hug cmoda` opens your editor with the existing commit message, making it perfect for small edits. To replace the message entirely without opening the editor, use the `-m` flag.
+
+**Safety guard:** `cmoda` refuses a **content-null amend** — an amend with
+nothing staged or modified and no message change (`--no-edit`) — with exit 3, because it
+would silently rewrite HEAD's hash (same tree, same message). Stage changes
+first (`hug a <files>`) or pass `-m` to change the message. To deliberately
+re-hash/re-date HEAD, re-run with `-f`.
 
 Usage: `hug cmoda`
 

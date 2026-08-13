@@ -4,6 +4,10 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`cmod`/`cmoda` refuse content-null amends** — `cmod --no-edit` with nothing staged (or `cmoda` in a clean tree) now exits 3 instead of silently rewriting HEAD's hash (same tree, same message) and printing the misleading "Amending last commit with staged changes" line. Stage changes or pass `-m`; `-f` only for a deliberate re-hash/re-date. `-y` does NOT bypass (semantic guard, not confirmation) (elifarley/hug-scm#263).
+
 ## [1.8.0] - 2026-08-13
 
 ### Added
