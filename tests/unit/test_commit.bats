@@ -1685,6 +1685,63 @@ HOOK
   rm -rf "$repo"
 }
 
+@test "hug cmv: -u --wt moves local-only commits to a new branch + worktree, stays on source" {
+  # Pins the deliberate carve-out at git-cmv:~313 — the --wt block's danger
+  # prompt is guarded by `&& ! $upstream` because for -u the danger prompt
+  # ALREADY fired inside handle_upstream_operation (line 159, called with the
+  # "danger" tier). Without `! $upstream`, a `cmv -u --wt` would double-prompt
+  # danger. This test makes the -u + --wt combination executable contract,
+  # not just correct-by-inspection. See PR #264 review for the gap this closes.
+  local repo
+  repo=$(create_test_repo_with_remote_upstream)
+  pushd "$repo" >/dev/null
+
+  local upstream_sha
+  upstream_sha=$(git rev-parse origin/main)
+
+  echo "local upstream wt" > local-u-wt.txt
+  git add local-u-wt.txt
+  git commit -q -m "Local upstream-wt commit"
+  local local_sha
+  local_sha=$(git rev-parse HEAD)
+
+  # -u resolves target to the upstream tip (origin/main) and fires the danger
+  # prompt inside handle_upstream_operation. The --wt block's danger-prompt
+  # guard (`! $upstream` at git-cmv:313) must SKIP its own prompt so there's
+  # no double danger prompt. --force bypasses the single prompt; the
+  # assertions below verify the --wt end-state held.
+  run hug cmv -u upstream-wt --new --wt --force
+  assert_success
+
+  # Source branch (main) reset to the upstream tip — -u semantics preserved.
+  assert_equal "$(git rev-parse main)" "$upstream_sha"
+
+  # User STAYS on the source branch (main) — the --wt end-state, unlike
+  # plain -u which switches to the target.
+  run git branch --show-current
+  assert_output "main"
+
+  # New target branch points at the original local HEAD (exact SHA preserved
+  # — the new-branch path).
+  assert_equal "$(git rev-parse upstream-wt)" "$local_sha"
+
+  # Worktree exists for upstream-wt. Resolve its path via `git worktree list`
+  # (get_worktree_path_by_branch is a lib fn, not a test helper) — same shape
+  # as the flagship --wt test above.
+  local wt
+  wt=$(git worktree list --porcelain | awk -v b="upstream-wt" '
+    /^worktree / { p = $2 }
+    /^branch /  { if ($2 == "refs/heads/" b || $2 == b) print p }
+  ')
+  [[ -n "$wt" ]] || fail "No worktree registered for branch upstream-wt"
+  assert_worktree_exists "$wt"
+  assert_worktree_branch "$wt" "upstream-wt"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
+
 @test "hug cmv: --wt missing branch without --new cancels (non-interactive) and mutates nothing" {
   local repo
   repo=$(create_test_repo_with_branches)
