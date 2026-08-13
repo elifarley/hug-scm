@@ -204,19 +204,23 @@ Append to `tests/unit/test_sh.bats` in the `hug shc tests` section (after the ex
 }
 
 @test "hug shc -n: N/-N forms work" {
-  run hug shc -n -3
+  run hug shc -n -2
   assert_success
-  # HEAD~3..HEAD range in the 3-commit fixture
-  assert_line "README.md"
+  # -2 resolves to HEAD~2..HEAD (valid: 3-commit fixture's oldest reachable is HEAD~2).
+  # The range diff is relative to the HEAD~2 tree, so README.md (already present at HEAD~2)
+  # is NOT listed — only files changed across the range appear.
   assert_line "feature1.txt"
   assert_line "feature2.txt"
-  run hug shc -n HEAD~2
+  run hug shc -n HEAD~1
   assert_success
+  # HEAD~1 is the single commit that added feature1.txt (diff-tree --root lists only its own files).
   assert_output "feature1.txt"
 }
 
 @test "hug shc -n: pathspec filtering works" {
-  run hug shc -n HEAD~1..HEAD -- 'feature1.txt'
+  # Range must actually contain feature1.txt for the filter to match. HEAD~2..HEAD does
+  # (feature1.txt is added in that range); HEAD~1..HEAD would contain only feature2.txt.
+  run hug shc -n HEAD~2..HEAD -- 'feature1.txt'
   assert_success
   assert_output "feature1.txt"
 }
