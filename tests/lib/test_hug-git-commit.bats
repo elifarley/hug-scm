@@ -519,6 +519,23 @@ check_intent() {
   check_intent 0 --no-edit -m x -m y
 }
 
+@test "amend_args_message_intent: unborn HEAD is silent (no git stderr leak)" {
+  # Regression (#263 review): on an unborn branch, resolving HEAD for the
+  # candidate message fails. The guard must not leak git's
+  # `fatal: ambiguous argument 'HEAD'` to stderr before the caller's exit-3
+  # refusal — silence it with 2>/dev/null.
+  local empty
+  empty=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "hug-unborn-XXXXXX")
+  git init -q --initial-branch=main "$empty"
+  cd "$empty"
+  git config --local user.email "test@hug-scm.test"
+  git config --local user.name "Hug Test"
+  run amend_args_message_intent --no-edit
+  assert_success
+  refute_output --partial "fatal:"
+  refute_output --partial "ambiguous argument"
+}
+
 ################################################################################
 # guard_content_null_amend TESTS (spec §6 tests 24/25)
 ################################################################################
@@ -557,5 +574,20 @@ check_intent() {
 
 @test "guard_content_null_amend: paths branch refuses when named path matches HEAD" {
   run guard_content_null_amend staged --no-edit -- file1.txt
+  [ "$status" -eq 3 ]
+}
+
+@test "guard_content_null_amend: --template value is skipped (not a bare path)" {
+  # Regression (#263 review): the bare-path value-skip list omitted the long
+  # `--template <file>` space form (only `-t` was listed). The file after
+  # --template must be consumed as its value, not collected as a bare
+  # pathspec — else a worktree-modified template file makes
+  # `git diff HEAD -- <file>` exit 1 and lets the guard PROCEED into a no-op
+  # amend (silent hash churn).
+  echo "worktree edit" >> file1.txt   # tracked file, modified in worktree
+  # Clean index + KEEP message + template value consumed ⇒ refuse (exit 3).
+  # If file1.txt were misread as a path, the diff check would see the
+  # worktree modification and proceed (return 0).
+  run guard_content_null_amend staged --no-edit --template file1.txt
   [ "$status" -eq 3 ]
 }

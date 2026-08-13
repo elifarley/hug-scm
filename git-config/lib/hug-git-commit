@@ -568,7 +568,7 @@ commit_args_indicate_amend() {
 # call returning 1/2 kills the script (the commit_offset errexit lesson).
 amend_args_message_intent() {
     local head_msg
-    head_msg=$(git log -1 --format=%B HEAD)
+    head_msg=$(git log -1 --format=%B HEAD 2>/dev/null)
 
     local has_no_edit=false has_source=false
     local -a m_values=() trailer_args=()
@@ -710,7 +710,7 @@ guard_content_null_amend() {
         tok="${flag_args[i]}"
         case "$tok" in
             --) break ;;
-            -m|-C|-c|-F|-t|--message|--file|--reuse-message|--reedit-message|--fixup|--squash|--trailer|--author|--date|--cleanup|--pathspec-from-file)
+            -m|-C|-c|-F|-t|--template|--message|--file|--reuse-message|--reedit-message|--fixup|--squash|--trailer|--author|--date|--cleanup|--pathspec-from-file)
                 ((i += 2)); continue ;;
             --*=*) ((i += 1)); continue ;;
             -*) ((i += 1)); continue ;;
