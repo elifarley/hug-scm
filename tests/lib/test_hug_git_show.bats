@@ -578,3 +578,41 @@ teardown() {
   # Should NOT have file stats section
   refute_output --partial "File stats:"
 }
+
+################################################################################
+# show_changed_file_names TESTS
+################################################################################
+
+@test "show_changed_file_names: single commit prints repo-relative paths" {
+  run show_changed_file_names "HEAD"
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "show_changed_file_names: range prints cumulative paths" {
+  run show_changed_file_names "HEAD~2..HEAD"
+  assert_success
+  # Cumulative across feature1 + feature2 commits (README is the base, excluded by range)
+  assert_line "feature1.txt"
+  assert_line "feature2.txt"
+}
+
+@test "show_changed_file_names: root commit lists files via --root" {
+  local root_sha
+  root_sha=$(git rev-list --max-parents=0 HEAD)
+  run show_changed_file_names "$root_sha"
+  assert_success
+  assert_output "README.md"
+}
+
+@test "show_changed_file_names: pathspec filters output" {
+  run show_changed_file_names "HEAD~2..HEAD" "feature1.txt"
+  assert_success
+  assert_output "feature1.txt"
+}
+
+@test "show_changed_file_names: no-match pathspec exits 0 with empty stdout" {
+  run show_changed_file_names "HEAD" "*.nomatch"
+  assert_success
+  assert_output ""
+}

@@ -143,6 +143,43 @@ show_single_commit() {
     esac
 }
 
+# Prints the repo-relative paths of files changed in a commit or range, one per
+# line — the --name-only equivalent of git-shc's --stat output.
+#
+# Usage: show_changed_file_names "commit_or_range" [pathspec...]
+# Parameters:
+#   $1   - Commit ref, range, or N/-N form (resolved internally via
+#          resolve_commit_ref, so the function is independently testable without
+#          the script wrapper).
+#   $2.. - Optional pathspecs (already-exploded args, passed as-is).
+# Output:
+#   Repo-relative file paths to stdout, one per line. Empty on no matches.
+# Exit codes:
+#   0 always (zero matches → empty stdout — caller detects emptiness via stdout).
+# Environment:
+#   None read; does NOT honor HUG_QUIET (output is pure data — no header by design).
+# Notes:
+#   - Mirrors git-shc's dispatch EXACTLY: is_range → git diff --name-only,
+#     else git diff-tree --no-commit-id --name-only -r --root.
+#   - Merge-commit single-commit shows nothing (same as --stat) — known parity,
+#     see elifarley/hug-scm#268 for the pre-existing bug this preserves.
+#   - Bundled-flag handling lives in the git-shc script wrapper, NOT here.
+show_changed_file_names() {
+    local target="${1:-HEAD}"
+    shift || true
+    local -a path_args=()
+    [[ $# -gt 0 ]] && path_args=(-- "$@")
+
+    local resolved
+    resolved=$(resolve_commit_ref "$target" "HEAD")
+
+    if is_range "$resolved"; then
+        git diff --name-only "$resolved" "${path_args[@]+"${path_args[@]}"}"
+    else
+        git diff-tree --no-commit-id --name-only -r --root "$resolved" "${path_args[@]+"${path_args[@]}"}"
+    fi
+}
+
 ################################################################################
 # Standard Format Functions
 ################################################################################
