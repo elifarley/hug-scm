@@ -451,3 +451,111 @@ teardown() {
   assert_success
   assert_output "$child"
 }
+
+################################################################################
+# amend_args_message_intent TESTS (spec §6 test 23)
+################################################################################
+
+# Helper: assert the classifier's return code for a given arg vector.
+# Uses `run` — bare calls returning 1/2 would trip BATS errexit.
+check_intent() {
+  local expected="$1"; shift
+  run amend_args_message_intent "$@"
+  [[ "$status" -eq "$expected" ]] \
+    || { echo "expected intent $expected for args [$*], got status $status" >&2; return 1; }
+}
+
+@test "amend_args_message_intent: keep/change/editor classification table" {
+  # setup() puts HEAD at "third commit"
+
+  # KEEP (0): --no-edit alone, HEAD-resolving refs, identical candidates
+  check_intent 0 --no-edit
+  check_intent 0 --no-edit -C HEAD
+  check_intent 0 --no-edit --reuse-message=HEAD
+  check_intent 0 --no-edit -c HEAD
+  check_intent 0 --no-edit --reedit-message=HEAD
+  check_intent 0 --no-edit -C @
+  check_intent 0 --no-edit -C HEAD~0
+  check_intent 0 --no-edit -m "third commit"
+  check_intent 0 --no-edit -- -m          # after -- is pathspec data
+
+  # CHANGE (1): candidate differs
+  check_intent 1 -m x
+  check_intent 1 -m x --no-edit
+  check_intent 1 -C HEAD~1                # "second commit" differs
+  check_intent 1 --reuse-message=HEAD~1
+  check_intent 1 -c X --no-edit           # silent replacement (probe-verified)
+  check_intent 1 --no-edit --signoff      # signoff absent from "third commit"
+  check_intent 1 -s
+  check_intent 1 -m"attached"
+  check_intent 1 -CHEAD~1                 # attached value
+  check_intent 1 --no-edit --fixup=HEAD
+  check_intent 1 --no-edit --fixup amend:HEAD   # space form
+  check_intent 1 --no-edit --squash=HEAD
+  check_intent 1 --no-edit --trailer "Co-Authored-By: x <x@x>"   # absent
+
+  # EDITOR (2): not statically decidable
+  check_intent 2                          # bare
+  check_intent 2 -c X                     # -c without --no-edit opens editor
+  check_intent 2 --reedit-message=X
+  check_intent 2 --no-edit -e             # -e overrides --no-edit AND -m
+  check_intent 2 -m x -e
+}
+
+@test "amend_args_message_intent: -F identical file and trailer dedupe are KEEP" {
+  # Candidate == HEAD when -F file content matches HEAD message
+  git log -1 --format=%B > ident.txt
+  check_intent 0 --no-edit -F ident.txt
+
+  # Candidate == HEAD when the signoff trailer already exists (dedupe).
+  # Test repo ident is "Hug Test <test@hug-scm.test>" (create_test_repo).
+  git commit -q --amend -m "$(printf 'third commit\n\nSigned-off-by: Hug Test <test@hug-scm.test>')"
+  check_intent 0 --no-edit -s
+}
+
+@test "amend_args_message_intent: multi -m concatenates paragraphs (candidate join)" {
+  # -m a -m b produces "a\n\nb" — a candidate that CAN equal HEAD's message
+  git commit -q --amend -m "$(printf 'x\n\ny')"
+  check_intent 0 --no-edit -m x -m y
+}
+
+################################################################################
+# guard_content_null_amend TESTS (spec §6 tests 24/25)
+################################################################################
+
+@test "guard_content_null_amend: refuses staged content-null amend (exit 3)" {
+  run guard_content_null_amend staged --no-edit
+  [ "$status" -eq 3 ]
+  assert_output --partial "Nothing to amend"
+}
+
+@test "guard_content_null_amend: bypasses on HUG_FORCE" {
+  HUG_FORCE=true guard_content_null_amend staged --no-edit
+  [ $? -eq 0 ]
+  [ "$_amend_content_null" = "true" ]
+}
+
+@test "guard_content_null_amend: message-change proceeds and reports content-null" {
+  guard_content_null_amend staged --no-edit -m "different"
+  [ $? -eq 0 ]
+  [ "$_amend_content_null" = "true" ]     # caller needs this for the honest info line
+}
+
+@test "guard_content_null_amend: fail-open on corrupt index (rc>1 proceeds)" {
+  echo "garbage" > .git/index
+  run guard_content_null_amend staged --no-edit
+  assert_success
+}
+
+@test "guard_content_null_amend: paths branch folds worktree content (proceed when modified)" {
+  # setup has clean index (all committed). Add worktree change to file1.txt
+  echo "worktree edit" >> file1.txt
+  guard_content_null_amend staged --no-edit -- file1.txt
+  [ $? -eq 0 ]
+  [ "$_amend_content_null" = "false" ]
+}
+
+@test "guard_content_null_amend: paths branch refuses when named path matches HEAD" {
+  run guard_content_null_amend staged --no-edit -- file1.txt
+  [ "$status" -eq 3 ]
+}

@@ -7,6 +7,7 @@
 # - Counting commits in ranges
 # - Listing commits and changed files
 # - Preview summaries and headers
+# - Amend safety guards (`amend_args_message_intent`, `guard_content_null_amend`)
 #
 # All functions are designed to work with the hug-common library
 # and follow consistent patterns for error handling and user feedback.
@@ -537,4 +538,231 @@ commit_args_indicate_amend() {
         (( i += 1 ))
     done
     return 1
+}
+
+# amend_args_message_intent "$@" — three-way scan of forwarded commit args.
+# Computes the CANDIDATE message (what the amend would produce) for the
+# statically-decidable flags and compares it byte-for-byte against HEAD's
+# message. No literal ref comparison anywhere — semantic comparison only.
+# Returns:
+#   0 = KEEP message    (candidate == HEAD's message)
+#   1 = CHANGE message  (candidate differs from HEAD's message)
+#   2 = EDITOR decides  (bare, -e/--edit, or -c/--reedit-message without
+#                        --no-edit)
+# Evaluation order mirrors git's own grammar:
+#   -e/--edit beats everything (opens the editor);
+#   --fixup/--squash guarantee a prefixed (different) message;
+#   message source: -m values concatenate with "\n\n" (git multi -m);
+#   -F file content; -C <ref> / -c <ref> WITH --no-edit → the ref's
+#   message (silent replacement); -c WITHOUT --no-edit → editor;
+#   trailers (-s/--signoff, --trailer <k: v>) append onto the source
+#   result via git interpret-trailers, which dedupes the exact line;
+#   unresolvable -F/-C/-c source → CHANGE (1): git will produce its own
+#   loud error downstream (fail-open).
+# Config caveat: trailer.ifexists/ifmissing alter dedupe; computed under
+# DEFAULT config — a mispredict is a loud refusal or proceed, never silent.
+# Scanning follows commit_args_indicate_amend: skip flag values, stop at --.
+# WHY three-way: the guard needs "keep" (fires); the caller's info line
+# needs "change"/"editor" to stay honest. Callers MUST capture via
+# `rc=0; amend_args_message_intent "$@" || rc=$?` — under `set -e` a bare
+# call returning 1/2 kills the script (the commit_offset errexit lesson).
+amend_args_message_intent() {
+    local head_msg
+    head_msg=$(git log -1 --format=%B HEAD)
+
+    local has_no_edit=false has_source=false
+    local -a m_values=() trailer_args=()
+    local f_file= c_ref= reedit=false
+
+    while (($#)); do
+        case "$1" in
+            --) break ;;
+            --no-edit) has_no_edit=true ;;
+            -e|--edit) return 2 ;;
+            --fixup|--squash|--fixup=*|--squash=*) return 1 ;;
+            -m|--message) has_source=true; m_values+=("$2"); shift ;;
+            -m*|--message=*)
+                # bash 4.0 floor: no negative array indices — strip via expansion
+                has_source=true
+                local v="${1#-m}"
+                [[ "$1" == --message=* ]] && v="${1#--message=}"
+                m_values+=("$v")
+                ;;
+            -F|--file) has_source=true; f_file="$2"; shift ;;
+            -F*|--file=*)
+                has_source=true
+                f_file="${1#-F}"
+                [[ "$1" == --file=* ]] && f_file="${1#--file=}"
+                ;;
+            -C|--reuse-message|-c|--reedit-message)
+                has_source=true
+                c_ref="$2"
+                [[ "$1" == -c || "$1" == --reedit-message ]] && reedit=true
+                shift
+                ;;
+            -C*|--reuse-message=*)
+                has_source=true
+                c_ref="${1#-C}"
+                [[ "$1" == --reuse-message=* ]] && c_ref="${1#--reuse-message=}"
+                ;;
+            -c*|--reedit-message=*)
+                has_source=true
+                reedit=true
+                c_ref="${1#-c}"
+                [[ "$1" == --reedit-message=* ]] && c_ref="${1#--reedit-message=}"
+                ;;
+            -s|--signoff)
+                has_source=true
+                # signoff line from the committer ident (git's own source)
+                trailer_args+=(--trailer "Signed-off-by: $(git var GIT_COMMITTER_IDENT 2>/dev/null | sed 's/ [0-9]* [+-][0-9]*$//')")
+                ;;
+            --trailer) has_source=true; trailer_args+=(--trailer "$2"); shift ;;
+            --trailer=*) has_source=true; trailer_args+=(--trailer "${1#--trailer=}") ;;
+        esac
+        shift
+    done
+
+    # -c/--reedit-message WITHOUT --no-edit opens the editor.
+    if $reedit && ! $has_no_edit; then
+        return 2
+    fi
+
+    local candidate=""
+    if ((${#m_values[@]})); then
+        # git concatenates multiple -m with a blank line between paragraphs
+        # (bash 4.0 floor: no array-join tricks — explicit loop)
+        local sep="" v
+        for v in "${m_values[@]}"; do
+            candidate+="$sep$v"
+            sep=$'\n\n'
+        done
+    elif [[ -n "$f_file" ]]; then
+        candidate=$(cat "$f_file" 2>/dev/null) || return 1
+    elif [[ -n "$c_ref" ]]; then
+        candidate=$(git log -1 --format=%B "$c_ref" 2>/dev/null) || return 1
+    fi
+
+    if ((${#trailer_args[@]})); then
+        # Append (and dedupe) onto the source result, or HEAD's message
+        # when there is no source. interpret-trailers dedupes the exact
+        # "key: value" line (probe TT1).
+        local base_msg="$candidate"
+        [[ -n "$base_msg" ]] || base_msg="$head_msg"
+        candidate=$(printf '%s\n' "$base_msg" | git interpret-trailers "${trailer_args[@]}" 2>/dev/null) || return 1
+    fi
+
+    # Track source PRESENCE separately from candidate CONTENT: -m '' and an
+    # empty -F file are legitimate empty candidates (git replaces the
+    # message with nothing when --allow-empty-message permits), and must
+    # classify CHANGE (1), not fall through to KEEP. `has_source` is set by
+    # the scan whenever a source flag appears, even with an empty value.
+    if $has_source; then
+        if [[ "$candidate" == "$head_msg" ]]; then return 0; fi
+        return 1
+    fi
+
+    if $has_no_edit; then return 0; fi
+    return 2   # bare — the editor decides
+}
+
+# guard_content_null_amend <staged|tracked> "$@" [-- <paths...>]
+# Refuses a content-null amend (exit 3 via error_blocked) unless HUG_FORCE.
+# Sets the caller global _amend_content_null=true|false so the caller picks
+# an honest info line (computed once, used twice — the git-c idiom).
+# ALWAYS computes content-null (even when the message changes) — the info
+# line for a message-only amend needs it. Refusal requires content-null
+# AND keep-message AND no HUG_FORCE.
+# Content model is the honest one for the amend's actual content source:
+#   - trailing paths (bare, or after the -- group) → `git diff HEAD --quiet
+#     -- <paths>` (--only mode folds worktree content, not the index)
+#   - -a/--all, -p/--patch, -i/--interactive → tracked check (worktree+index
+#     vs HEAD); a clean tree still refuses (probe-verified churn)
+#   - otherwise → mode argument (staged = git diff --cached; tracked =
+#     git diff HEAD)
+# Fail-open: rc>1 proceeds (never refuse on a corrupt index or unborn HEAD).
+# WHY called BARE (never $(guard_content_null_amend ...)): error_blocked must
+# exit the SCRIPT — captured, the refusal dies in the subshell (the exact
+# head-mover lesson). Assumes parse_common_flags already ran: -f/-y/-q are
+# stripped from "$@" and HUG_FORCE/HUG_YES are set.
+guard_content_null_amend() {
+    local mode="$1"; shift
+
+    # --- content model (always computed) ---
+    local -a paths=()
+    local check_mode="$mode"
+    local saw_ddash=false
+    for arg in "$@"; do
+        $saw_ddash && paths+=("$arg") && continue
+        case "$arg" in
+            --) saw_ddash=true ;;
+            -a|--all|-p|--patch|-i|--interactive) check_mode=tracked ;;
+            --only) check_mode=paths ;;
+        esac
+    done
+    # bare trailing paths (no --): non-flag tokens not consumed as values.
+    # Value-skip walk over EVERY value-taking git commit option (from
+    # `git commit -h`): message sources, --author, --date, --cleanup,
+    # --pathspec-from-file, and the fixup/squash/trailer values. Any other
+    # non-dash token is a bare path.
+    local -a flag_args=("$@")
+    local i=0 tok
+    while ((i < ${#flag_args[@]})); do
+        tok="${flag_args[i]}"
+        case "$tok" in
+            --) break ;;
+            -m|-C|-c|-F|-t|--message|--file|--reuse-message|--reedit-message|--fixup|--squash|--trailer|--author|--date|--cleanup|--pathspec-from-file)
+                ((i += 2)); continue ;;
+            --*=*) ((i += 1)); continue ;;
+            -*) ((i += 1)); continue ;;
+            *) paths+=("$tok"); check_mode=paths; ((i += 1)) ;;
+        esac
+    done
+    # Paths win over -a/-p/-i whenever present: git treats an explicit path
+    # list as --only content even alongside -p/-i (probe-verified); -a with
+    # paths is rejected by git itself ("does not make sense") before the
+    # amend ever runs, so the paths check is the honest one either way.
+    ((${#paths[@]})) && check_mode=paths
+
+    # --- the honest diff check ---
+    local rc=0
+    case "$check_mode" in
+        paths)
+            if ((${#paths[@]})); then
+                rc=0; git diff --quiet HEAD -- "${paths[@]}" || rc=$?
+            else
+                rc=0; git diff --quiet HEAD || rc=$?
+            fi ;;
+        tracked) rc=0; git diff --quiet HEAD || rc=$? ;;
+        staged)  rc=0; git diff --quiet --cached || rc=$? ;;
+    esac
+
+    # content-null is reported even when the amend will proceed — the
+    # caller's info line for a message-only amend depends on it.
+    if ((rc == 0)); then _amend_content_null=true; else _amend_content_null=false; fi
+    if ((rc != 0)); then return 0; fi          # content exists → never refuse
+
+    # --- message intent ---
+    local msg_rc=0
+    amend_args_message_intent "$@" || msg_rc=$?
+    if ((msg_rc != 0)); then return 0; fi      # CHANGE/EDITOR → proceed
+
+    # --- refusal (unless forced) ---
+    if [[ "${HUG_FORCE:-}" == "true" ]]; then
+        return 0
+    fi
+
+    local msg untracked_count cmd_name scope_label
+    cmd_name="cmod"; scope_label="staged changes"
+    if [[ "$mode" == "tracked" ]]; then
+        cmd_name="cmoda"
+        scope_label="tracked changes"
+    fi
+    untracked_count=$(get_untracked_files | wc -l)
+    msg="Nothing to amend — no $scope_label and no message change; the amend would only rewrite HEAD's hash (same tree, same message)."
+    msg+=$'\n'"Stage changes first ('hug a <files>') or change the message ('hug $cmd_name -m \"msg\"')."
+    msg+=$'\n'"To re-hash/re-date HEAD anyway, re-run with -f/--force."
+    if ((untracked_count > 0)); then
+        msg+=$'\n'$'\n'"Note: $untracked_count untracked file(s) exist; $cmd_name never includes untracked files — stage them first with 'hug a <file>…' (bare 'hug a' only stages tracked changes) or 'hug aa'."
+    fi
+    error_blocked "$msg"
 }
