@@ -1981,3 +1981,75 @@ HOOK
   popd >/dev/null
   rm -rf "$repo"
 }
+
+@test "hug cmv: --wt target in main worktree reuses main, doesn't create one" {
+  # Task 8: pin the "main-inclusive resolver" — when the target branch is
+  # checked out in the MAIN worktree (not a linked one), cmv --wt must
+  # REUSE that main checkout instead of trying to `git worktree add` for
+  # it (git would refuse — main is already checked out). This is the §5
+  # recovery shape: undo a move FROM a linked worktree back to main.
+  #
+  # Scenario: linked worktree on cmv-mainreuse (one commit ahead of main).
+  # Run `hug cmv 1 main --wt` FROM that linked worktree. The 1 commit
+  # moves back to main, which already has a worktree (the main one) →
+  # no new worktree created → main gains the moved commit.
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+
+  # Base cmv-mainreuse at HEAD~1 (main's tip parent) so it has exactly one
+  # commit ("Feature work") to move back to main. Unlike the Task 4 tests,
+  # this test asserts the moved commit's SUBJECT (not its SHA), so no
+  # same-second SHA-flake concern applies here.
+  git checkout -q -b cmv-mainreuse HEAD~1
+  echo "feature work" > cmv_fr.txt
+  git add cmv_fr.txt
+  git commit -q -m "Feature work"
+
+  # Return the primary checkout to main BEFORE creating the linked
+  # worktree: create_test_worktree refuses to add a worktree for a branch
+  # that is currently checked out.
+  git checkout -q main
+
+  # Pre-create a linked worktree for cmv-mainreuse. The test runs FROM
+  # this worktree (pushd below), targeting main.
+  local feature_wt
+  feature_wt=$(create_test_worktree "cmv-mainreuse" "$repo")
+  assert_worktree_exists "$feature_wt"
+
+  # Count worktrees BEFORE the move — reuse means this number must not grow.
+  # git worktree list --porcelain emits one "^worktree <path>" stanza per
+  # worktree (main + linked), so the count of "^worktree " lines is total.
+  local before_count
+  before_count=$(git -C "$repo" worktree list --porcelain | grep -c '^worktree ')
+
+  # Run FROM the linked worktree, targeting main (checked out in the MAIN
+  # worktree). With --wt, the main-inclusive resolver
+  # (get_worktree_path_by_branch → get_all_worktrees_including_main) must
+  # return the main repo's path, so the create-worktree branch is skipped.
+  pushd "$feature_wt" >/dev/null
+  run hug cmv 1 main --wt --force
+  assert_success
+
+  # Source worktree: still on cmv-mainreuse, now rewound to main's prior
+  # tip (the moved commit is gone from here).
+  run git branch --show-current
+  assert_output "cmv-mainreuse"
+
+  popd >/dev/null
+
+  # No NEW worktree created — main was REUSED, not given a linked worktree.
+  local after_count
+  after_count=$(git -C "$repo" worktree list --porcelain | grep -c '^worktree ')
+  assert_equal "$after_count" "$before_count"
+
+  # Back in main repo: main GAINED the moved commit ("Feature work").
+  run git -C "$repo" log -1 --format=%s main
+  assert_output "Feature work"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
