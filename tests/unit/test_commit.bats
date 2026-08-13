@@ -2053,3 +2053,66 @@ HOOK
   cleanup_test_worktrees "$repo"
   rm -rf "$repo"
 }
+
+# -----------------------------------------------------------------------------
+# Task 9: Detached-leftover path-collision test.
+#
+# WHY this test exists: create_worktree_for_branch's auto-path resolution
+# (generate_worktree_path) MUST NOT blindly overwrite a directory that already
+# occupies the canonical path. When a stale detached worktree sits at
+# <repo>.WT.<branch>, the fresh worktree must land at the suffixed fallback
+# (<repo>.WT.<branch>-1) via generate_unique_worktree_path, leaving the
+# leftover for `hug wtdel` to clean up later. This pins the §1 path promise
+# ("the worktree lands where we say it will") for the collision edge case.
+#
+# Fixture note: we pre-occupy the path with a DETACHED worktree (no branch
+# ref). The awk resolver keys on `branch refs/heads/<name>`, so only the
+# fresh worktree matches — the detached leftover has no `branch` line and
+# is correctly ignored by the resolver. This is what lets the test
+# distinguish "fresh landed at -1" from "fresh overwrote the leftover".
+# -----------------------------------------------------------------------------
+@test "hug cmv: --wt detached leftover at auto path → new wt lands at -1" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q main
+  local original_head
+  original_head=$(git rev-parse HEAD)
+
+  # Branch name MUST match generate_worktree_path's sanitization rules
+  # (lowercase, no '/' or '.') so the canonical path is exactly
+  # <repo>.WT.cmv-collide. Pick a name that does not collide with the
+  # fixture's existing refs (feature/branch, feature-1, feature-2, hotfix-1).
+  local branch_name="cmv-collide"
+  local base_path
+  base_path="$(dirname "$repo")/$(basename "$repo").WT.${branch_name}"
+
+  # Simulate a stale detached worktree at the canonical auto path. The fresh
+  # worktree for `branch_name` would otherwise try to land here.
+  git worktree add --detach "$base_path" HEAD~2 >/dev/null 2>&1
+  [[ -d "$base_path" ]] || fail "Fixture setup: detached leftover not created at $base_path"
+
+  run hug cmv 1 "$branch_name" --new --wt --force
+  assert_success
+
+  # Resolve the FRESH worktree's path: the detached leftover has no `branch`
+  # line, so only the worktree whose branch == refs/heads/cmv-collide matches.
+  local resolved
+  resolved=$(git worktree list --porcelain | awk -v b="$branch_name" '
+    /^worktree / { p = $2 }
+    /^branch /  { if ($2 == "refs/heads/" b) print p }
+  ')
+  [[ "$resolved" == "${base_path}-1" ]] \
+    || fail "Expected fresh worktree at suffixed path ${base_path}-1, got '$resolved'"
+
+  # The stale detached leftover MUST be untouched (still exists at the
+  # canonical path). cleanup_test_worktrees handles its removal at teardown;
+  # we only assert it survived the cmv run.
+  [[ -d "$base_path" ]] \
+    || fail "Stale detached leftover was removed/overwritten at $base_path"
+
+  popd >/dev/null
+  cleanup_test_worktrees "$repo"
+  rm -rf "$repo"
+}
