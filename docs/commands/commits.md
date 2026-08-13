@@ -12,7 +12,7 @@ The `c*` commands handle creating and modifying commits, making it easier to rec
 | `hug cmod`  | **C**ommit **MOD**ify                 | Amend last commit with staged changes only        |
 | `hug cmoda` | **C**ommit **MOD**ify **A**ll tracked | Amend last commit with all tracked changes        |
 | `hug ccp` | **C**ommit **C**o**P**y (cherry-pick) | Copy a commit from another branch onto HEAD        |
-| `hug cmv [N|commit] \<branch\> [--new] [-u, --upstream] [--force]` | **C**ommit **M**o**V**e | Move commits to another branch (like mv for files) |
+| `hug cmv [N|commit] \<branch\> [--new] [--wt] [-u, --upstream] [--force]` | **C**ommit **M**o**V**e | Move commits to another branch (like mv for files) |
 
 ## hug c (Commit staged)
 
@@ -217,7 +217,7 @@ Applies the changes from a specific commit on top of the current HEAD, creating 
 
 Move (relocate) commits from the current branch to another branch (new or existing), like `mv` for files. After the move, switches to and stays on the target branch.
 
-**Usage:** `hug cmv [N|commit] \<branch\> [--new] [-u, --upstream] [--force]`
+**Usage:** `hug cmv [N|commit] \<branch\> [--new] [--wt] [-u, --upstream] [--force]`
 
 **Description**: Moves the last N commits (default: 1) or commits above a specific commit from the current branch to \<branch\>, preserving individual commit history. Then resets the current branch back.
 
@@ -241,6 +241,12 @@ Result:  Now on 'main' with 6 commits (new SHAs via cherry-pick)
 - **Existing branches**: Cherry-picks commits onto target (creates NEW commit SHAs, may conflict)
 
 If \<branch\> missing without --new: Combined prompt "Branch 'X' doesn't exist. Proceed with creating a new branch named 'X' and moving N commit(s) to it?" (y/n); auto-creates with --force (no prompt). Use --new for explicit non-interactive creation. With -u, moves local-only commits above the upstream tip (read-only preview/confirmation; no fetch). Post-move: You'll end up on the target branch for easy continuation.
+
+**`--wt` (worktree):** ensure the target branch has a worktree. Create one if
+missing, otherwise reuse the existing one. The move is performed in/for that
+worktree, and you stay on the source branch. Auto-generated path only
+(`../<repo>.WT.<branch>`). The move is danger-tier; worktree creation is
+safe-tier.
 
 **When to Use What:**
 

@@ -128,6 +128,17 @@ hug cmv -u feature/local-work      # Move all local-only commits to new branch
 
 This moves ALL commits that aren't yet on the remote, perfect for when you've been working offline or forgot to create a branch from the start.
 
+**One-shot worktree variant:**
+
+```bash
+hug cmv 3 feature/new-feature --new --wt
+```
+
+Creates `feature/new-feature` at your current HEAD, moves the last 3 commits
+there, resets your current branch, creates a worktree for the new branch, and
+leaves you on your original branch. Work on the feature in the new worktree,
+no manual branch-switching.
+
 **Why `cmv` is powerful:**
 - **One command instead of many**: No need for multiple git commands with arcane flags
 - **Safe by default**: Shows you what will happen and asks for confirmation (use `--force` to skip)
