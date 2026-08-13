@@ -111,6 +111,7 @@ hug shp
 
 # Show files changed in specific commit
 hug shc a1b2c3d
+hug shc -n <commit-hash>      # files changed, paths only (pipe-safe)
 ```
 
 ### 3. Finding When Things Changed
@@ -285,6 +286,7 @@ hug llf <file>               # see all commits
 # 4. Examine suspect commits
 hug shp <commit-hash>        # full diff
 hug shc <commit-hash>        # files changed
+hug shc -n <commit-hash>      # files changed, paths only (pipe-safe)
 
 # 5. Check related changes
 hug h files <commit-hash>    # what else changed with it?

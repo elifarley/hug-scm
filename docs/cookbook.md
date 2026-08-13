@@ -189,6 +189,7 @@ This page provides step-by-step solutions for common, real-world version control
 
     # See all files added in that commit
     hug shc abc1234
+    hug shc -n abc1234        # same, but paths only (repo-relative, pipe-safe)
     ```
 
 3.  **Trace the File's Evolution**
