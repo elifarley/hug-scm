@@ -52,6 +52,18 @@ DESCRIPTION:
   TIP: Use --no-edit when the commit message is fine and you just want to add
   tracked changes. This avoids opening an editor.
 
+  SAFETY GUARD:
+  cmoda refuses a content-null amend: with no tracked changes at all (nothing
+  staged, nothing modified) and --no-edit (no message change either), the
+  amend would only rewrite HEAD's hash — same tree, same message (unless
+  --date/--reset-author were passed, metadata too) — which is almost always
+  a mistake (e.g. running cmoda on an already-clean tree). The refusal exits
+  3 with an actionable message.
+    - Stage changes first ('hug a <files>' — bare 'hug a' only stages tracked
+      changes) or pass -m to change the message.
+    - To re-hash/re-date HEAD anyway, re-run with -f/--force.
+    - -y does NOT bypass the guard (it is not a confirmation).
+
 EXAMPLES:
   hug cmoda --no-edit                    # Amend all tracked, same message
   hug cmoda -m "Fixed typo"              # Amend with all tracked changes, new message
@@ -64,12 +76,28 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags
-eval "$(parse_common_flags "$@")"
-
-# Early exit if not in Git repo
+# Pre-parse pathspecs FIRST: parse_common_flags intercepts a trailing --
+# (hug-cli-flags:21-23 "Commands that accept -- <path>... must pre-parse
+# pathspecs first"). Same idiom as git-shp:76-77.
+eval "$(parse_pathspecs "$@")"
+eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
+# NOTE: the eval above did `set --` — $@ is now the STRIPPED pre_args
+# (-f/-y/-q removed, HUG_FORCE/HUG_YES set). The guard scans $@ (matching
+# its precondition), NOT _pathspec_pre_args (which still holds the
+# unstripped originals). Pathspecs pass as a separate group after a
+# literal --; bare trailing paths (no --) remain inside $@ and the guard
+# treats trailing non-flag args as paths.
 check_git_repo
-
+guard_content_null_amend tracked "$@" \
+  -- "${_pathspec_pathspecs[@]}" # exits 3 on refusal
 info "Amending last commit with all tracked changes..."
-
-git commit -a --amend "$@" && suggest_next_push_command --amend
+# The final commit MUST re-insert the pathspecs: otherwise the pre-parse
+# silently strips `-- <paths>` and `-a` would amend ALL tracked changes
+# (git would have rejected "-a with paths"). Re-inserting lets git apply its
+# own -a+paths rejection exactly as before the change.
+if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  git commit -a --amend "$@" -- "${_pathspec_pathspecs[@]}" &&
+    suggest_next_push_command --amend
+else
+  git commit -a --amend "$@" && suggest_next_push_command --amend
+fi

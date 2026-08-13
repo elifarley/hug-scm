@@ -2261,3 +2261,42 @@ HOOK
   run hug cmod --no-edit README.md
   assert_success
 }
+
+@test "hug cmoda: refuses content-null amend on clean tree (exit 3)" {
+  git restore --staged .
+  git restore .
+  run hug cmoda --no-edit
+  [ "$status" -eq 3 ]
+  assert_output --partial "Nothing to amend"
+}
+
+@test "hug cmoda: -f bypasses (hash churn, forced date)" {
+  git restore --staged .
+  git restore .
+  local head_before
+  head_before=$(git rev-parse HEAD)
+  GIT_COMMITTER_DATE='2030-01-01T00:00:00Z' run hug cmoda --no-edit -f
+  assert_success
+  [ "$(git rev-parse HEAD)" != "$head_before" ]
+}
+
+@test "hug cmoda: dirty tree + --no-edit proceeds (no regression)" {
+  # setup has unstaged README.md change
+  run hug cmoda --no-edit
+  assert_success
+}
+
+@test "hug cmoda: -a re-mode — clean tree refuses" {
+  git restore --staged .
+  git restore .
+  run hug cmoda --no-edit -a
+  [ "$status" -eq 3 ]
+}
+
+@test "hug cmoda: -m new message on clean tree proceeds (message-only)" {
+  git restore --staged .
+  git restore .
+  run hug cmoda -m "new msg"
+  assert_success
+  [ "$(git log -1 --format=%s)" = "new msg" ]
+}
