@@ -2300,3 +2300,49 @@ HOOK
   assert_success
   [ "$(git log -1 --format=%s)" = "new msg" ]
 }
+
+@test "hug cmoda: pathspec re-insertion — git's -a+paths rejection still fires" {
+  # cmoda pre-parses `-- <path>` and MUST re-insert the pathspecs into the
+  # final `git commit -a --amend -- <paths>` call. If the re-insertion were
+  # lost, `-a` would silently amend ALL tracked changes. With a worktree-
+  # modified named path, the guard proceeds (content exists) and git itself
+  # must refuse "-a with paths does not make sense".
+  git restore --staged .
+  git restore .
+  echo "modified" >> README.md
+  local head_before
+  head_before=$(git rev-parse HEAD)
+  run hug cmoda --no-edit -- README.md
+  assert_failure
+  assert_output --partial "-a does not make sense"
+  [ "$(git rev-parse HEAD)" = "$head_before" ]
+}
+
+@test "hug cmoda: -y does NOT bypass the guard (clean tree)" {
+  git restore --staged .
+  git restore .
+  run hug cmoda --no-edit -y
+  [ "$status" -eq 3 ]
+  assert_output --partial "Nothing to amend"
+}
+
+@test "hug cmod: bare (no flags) proceeds with editor info line" {
+  # Classifier returns 2 (EDITOR decides) and the guard must return 0, so a
+  # bare cmod with no staged changes and no message flag reaches the editor.
+  # The info line proves the classifier/guard path, not just a commit.
+  git restore --staged .
+  git restore .
+  local fake_editor
+  fake_editor=$(mktemp)
+  cat > "$fake_editor" <<'EDITORSCRIPT'
+#!/bin/bash
+echo "Bare cmod editor message" > "$1"
+EDITORSCRIPT
+  chmod +x "$fake_editor"
+  GIT_COMMITTER_DATE='2030-01-01T00:00:00Z' GIT_EDITOR="$fake_editor" run hug cmod
+  assert_success
+  assert_output --partial "the editor decides the message"
+  run git log -1 --format=%s
+  assert_output "Bare cmod editor message"
+  rm -f "$fake_editor"
+}

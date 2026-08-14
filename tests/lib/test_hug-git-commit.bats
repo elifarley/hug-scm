@@ -482,6 +482,7 @@ check_intent() {
   # CHANGE (1): candidate differs
   check_intent 1 -m x
   check_intent 1 -m x --no-edit
+  check_intent 1 -m ''                    # empty candidate, source present → CHANGE
   check_intent 1 -C HEAD~1                # "second commit" differs
   check_intent 1 --reuse-message=HEAD~1
   check_intent 1 -c X --no-edit           # silent replacement (probe-verified)
@@ -511,6 +512,21 @@ check_intent() {
   # Test repo ident is "Hug Test <test@hug-scm.test>" (create_test_repo).
   git commit -q --amend -m "$(printf 'third commit\n\nSigned-off-by: Hug Test <test@hug-scm.test>')"
   check_intent 0 --no-edit -s
+}
+
+@test "amend_args_message_intent: attached forms classify same as space forms" {
+  # --message=X mirrors -m X (CHANGE when candidate differs, KEEP when equal)
+  check_intent 1 --message=x
+  check_intent 0 --no-edit --message="third commit"
+
+  # --file=X mirrors -F X (candidate is the file's content)
+  git log -1 --format=%B > ident.txt
+  check_intent 0 --no-edit --file=ident.txt
+  printf 'different\n' > diff.txt
+  check_intent 1 --no-edit --file=diff.txt
+
+  # --trailer=X mirrors --trailer X (absent trailer → CHANGE)
+  check_intent 1 --no-edit --trailer="Co-Authored-By: x <x@x>"
 }
 
 @test "amend_args_message_intent: multi -m concatenates paragraphs (candidate join)" {
@@ -561,6 +577,15 @@ check_intent() {
 @test "guard_content_null_amend: fail-open on corrupt index (rc>1 proceeds)" {
   echo "garbage" > .git/index
   run guard_content_null_amend staged --no-edit
+  assert_success
+}
+
+@test "guard_content_null_amend: fail-open on corrupt index in tracked mode (rc>1 proceeds)" {
+  # Tracked mode runs `git diff HEAD` (worktree+index vs HEAD), which exits
+  # 128 on a corrupt index. The guard must fail OPEN (return 0) for rc>1 —
+  # never refuse on a broken index.
+  echo "garbage" > .git/index
+  run guard_content_null_amend tracked --no-edit
   assert_success
 }
 
