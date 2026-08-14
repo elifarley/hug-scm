@@ -592,7 +592,7 @@ amend_args_message_intent() {
     local head_msg
     head_msg=$(git log -1 --format=%B HEAD 2>/dev/null)
 
-    local has_no_edit=false has_source=false
+    local has_no_edit=false has_source=false edit_requested=false
     local -a m_values=() trailer_args=()
     local f_file= c_ref= reedit=false
 
@@ -601,9 +601,12 @@ amend_args_message_intent() {
             --) break ;;
             --no-edit) has_no_edit=true ;;
             -e|--edit)
-                # -e under a no-op editor keeps the message → KEEP
-                amend_editor_is_noop && return 0
-                return 2 ;;
+                # Do NOT decide here: a REAL editor always wins (handled at
+                # the end → EDITOR), but under a no-op editor the SOURCE
+                # candidate (-m/-F/-C/-c) still decides — -e -m "other" +
+                # GIT_EDITOR=true commits "other" (probe), so an early
+                # KEEP here would falsely refuse a message-changing amend.
+                edit_requested=true ;;
             --fixup|--squash|--fixup=*|--squash=*) return 1 ;;
             # "${2:-}" + guarded shift: a trailing value-flag (cmod -m as the
             # LAST arg) must not crash on an unbound $2 under set -u — an
@@ -659,10 +662,13 @@ amend_args_message_intent() {
         shift
     done
 
-    # -c/--reedit-message WITHOUT --no-edit opens the editor.
-    if $reedit && ! $has_no_edit; then
-        amend_editor_is_noop && return 0
-        return 2
+    # An editor is in play (-e, or -c/--reedit-message without --no-edit):
+    # a REAL editor decides everything (2) — checked BEFORE candidate
+    # computation, so an unresolvable source ref cannot preempt the editor
+    # verdict. A no-op editor cannot alter the message, so for it the
+    # source candidate below decides.
+    if $edit_requested || { $reedit && ! $has_no_edit; }; then
+        amend_editor_is_noop || return 2
     fi
 
     local candidate=""
@@ -674,6 +680,11 @@ amend_args_message_intent() {
             candidate+="$sep$v"
             sep=$'\n\n'
         done
+    elif [[ "$f_file" == "-" ]]; then
+        # -F - reads the message from STDIN — consuming it here would starve
+        # git's own read (probe: guard ate stdin, git then aborted on the
+        # empty message). Not statically decidable: fail open, git decides.
+        return 1
     elif [[ -n "$f_file" ]]; then
         candidate=$(cat "$f_file" 2>/dev/null) || return 1
     elif [[ -n "$c_ref" ]]; then
@@ -689,6 +700,7 @@ amend_args_message_intent() {
         candidate=$(printf '%s\n' "$base_msg" | git interpret-trailers "${trailer_args[@]}" 2>/dev/null) || return 1
     fi
 
+    # Track source PRESENCE separately from candidate CONTENT: -m '' and an
     # Track source PRESENCE separately from candidate CONTENT: -m '' and an
     # empty -F file are legitimate empty candidates (git replaces the
     # message with nothing when --allow-empty-message permits), and must
@@ -782,9 +794,20 @@ guard_content_null_amend() {
         tok="${flag_args[i]}"
         case "$tok" in
             --) break ;;
-            -m|-C|-c|-F|-i|-t|--include|--template|--message|--file|--reuse-message|--reedit-message|--fixup|--squash|--trailer|--author|--date|--cleanup|--pathspec-from-file)
+            -m|-C|-c|-F|-i|-t|-u|--include|--untracked-files|--template|--message|--file|--reuse-message|--reedit-message|--fixup|--squash|--trailer|--author|--date|--cleanup|--pathspec-from-file)
                 ((i += 2)); continue ;;
             --*=*) ((i += 1)); continue ;;
+            -[A-Za-z][A-Za-z]*)
+                # Clustered short options (e.g. -am, -em): git's parse-options
+                # accepts them, but we do not statically decode clusters — the
+                # value after -am would otherwise be misread as a bare
+                # pathspec, collapsing the check and falsely refusing a
+                # legitimate staged amend (probe: `cmod --no-edit -am "msg"`
+                # with staged content exited 3 "no changes for the named
+                # paths" while native git amends). Fail open, git decides.
+                _amend_content_null=false
+                return 0
+                ;;
             -*) ((i += 1)); continue ;;
             *)
                 paths+=("$tok")

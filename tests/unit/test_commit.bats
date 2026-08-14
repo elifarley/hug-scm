@@ -2431,3 +2431,36 @@ EDITORSCRIPT
   run hug cmoda --no-edit
   assert_success
 }
+
+@test "hug cmod: clustered -am with staged content proceeds (stock git idiom)" {
+  # Round-2 adversarial probe: the guard misread the -am message value as a
+  # bare pathspec and refused a legitimate staged amend (exit 3, "no changes
+  # for the named paths") while native git amends. Clusters now fail open.
+  run hug cmod --no-edit -am "clustered message"
+  assert_success
+  [ "$(git log -1 --format=%s)" = "clustered message" ]
+}
+
+@test "hug cmod: commit-msg hook proceed prints the honest hook line" {
+  # The hook fail-open is the only path to msg_rc==0 + content-null + no
+  # force; the info line must not claim an editor will run under --no-edit.
+  git restore --staged .
+  git restore .
+  local hooks_dir
+  hooks_dir=$(git rev-parse --absolute-git-dir)/hooks
+  mkdir -p "$hooks_dir"
+  printf '#!/bin/sh\nexit 0\n' > "$hooks_dir/commit-msg"
+  chmod +x "$hooks_dir/commit-msg"
+  run hug cmod --no-edit
+  assert_success
+  assert_output --partial "a commit-msg hook may rewrite the message"
+}
+
+@test "hug cmod: -e with -m under no-op editor amends the source message" {
+  # GIT_EDITOR=true must not turn -e into "message stays HEAD's" — git
+  # commits the -m source (round-2 probe NATIVE A).
+  git restore --staged .
+  GIT_EDITOR=true run hug cmod -e -m "edited source msg"
+  assert_success
+  [ "$(git log -1 --format=%s)" = "edited source msg" ]
+}

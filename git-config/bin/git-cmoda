@@ -80,7 +80,14 @@ EOF
 # (hug-cli-flags:21-23 "Commands that accept -- <path>... must pre-parse
 # pathspecs first"). Same idiom as git-shp:76-77.
 eval "$(parse_pathspecs "$@")"
-eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
+# Empty-array-safe under `set -u` (bash 4.0–4.3 would fatal on the bare
+# expansion; fixed upstream in 4.4 — the lib documents a Bash-4.0 floor):
+# expand the array only inside the count-guarded branch.
+if ((${#_pathspec_pre_args[@]})); then
+  eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
+else
+  eval "$(parse_common_flags)"
+fi
 # NOTE: the eval above did `set --` — $@ is now the STRIPPED pre_args
 # (-f/-y/-q removed, HUG_FORCE/HUG_YES set). The guard scans $@ (matching
 # its precondition), NOT _pathspec_pre_args (which still holds the
@@ -88,8 +95,12 @@ eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
 # literal --; bare trailing paths (no --) remain inside $@ and the guard
 # treats trailing non-flag args as paths.
 check_git_repo
-guard_content_null_amend tracked "$@" \
-  -- "${_pathspec_pathspecs[@]}" # exits 3 on refusal
+# exits 3 on refusal; same empty-array safety as the pre-args eval above.
+if ((${#_pathspec_pathspecs[@]})); then
+  guard_content_null_amend tracked "$@" -- "${_pathspec_pathspecs[@]}"
+else
+  guard_content_null_amend tracked "$@"
+fi
 # pick honest info line from $_amend_content_null + amend_args_message_intent
 # (mirrors git-cmod; spec §3 five-state table with cmoda wording). Capture
 # idiom: rc=0; fn || rc=$? — a bare call returning 1/2 would kill the script
@@ -101,8 +112,12 @@ if [[ "${_amend_content_null:-false}" == "true" ]]; then
     info "Amending last commit (--force: no content change — only the hash will be rewritten)..."
   elif ((_msg_rc == 1)); then
     info "Amending last commit (message change only — no tracked changes)..."
-  else
+  elif ((_msg_rc == 2)); then
     info "Amending last commit (no content change; the editor decides the message)..."
+  else
+    # msg_rc==0 with content-null and no force is only reachable via the
+    # guard's commit-msg-hook fail-open — no editor will run under --no-edit.
+    info "Amending last commit (no content change; a commit-msg hook may rewrite the message)..."
   fi
 else
   info "Amending last commit with all tracked changes..."

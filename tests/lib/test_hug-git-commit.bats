@@ -700,8 +700,44 @@ check_intent() {
   # a content-null amend is refusable instead of silently re-hashing.
   GIT_EDITOR=true check_intent 0
   GIT_EDITOR=: check_intent 0 -e
-  GIT_EDITOR=cat check_intent 0 -c X
+  GIT_EDITOR=cat check_intent 0 -c HEAD
   GIT_EDITOR=vi check_intent 2   # real editor still punts
+}
+
+@test "amend_args_message_intent: no-op editor lets the SOURCE decide (-e/-c with -m)" {
+  # Round-2 adversarial probes: -e does not discard -m under a no-op
+  # editor — the source candidate still decides; same for -c <ref>
+  # without --no-edit. git commits the source message (probes NATIVE A/B).
+  GIT_EDITOR=: check_intent 1 -e -m "totally different"
+  GIT_EDITOR=true check_intent 0 -e -m "third commit"
+  GIT_EDITOR=cat check_intent 1 -c HEAD~1
+  GIT_EDITOR=vi check_intent 2 -e -m "totally different"   # real editor wins
+  GIT_EDITOR=vi check_intent 2 -c HEAD~1
+}
+
+@test "amend_args_message_intent: -F - (stdin) fails open without reading" {
+  # Reading stdin here would starve git's own -F - read (probe: guard ate
+  # the message, git aborted on empty). Must return CHANGE immediately.
+  check_intent 1 --no-edit -F -
+}
+
+@test "guard_content_null_amend: clustered short flags fail open (proceed)" {
+  # `-am "msg"` is a stock git idiom (-a + -m). Statically decoding
+  # clusters is out of scope: misreading the message as a bare pathspec
+  # refused a legitimate staged amend (round-2 probe) — fail open.
+  echo mod >> file1.txt
+  git add file1.txt
+  guard_content_null_amend staged --no-edit -am "with content"
+  [ "$_amend_content_null" = "false" ]
+}
+
+@test "guard_content_null_amend: -u <when> value is skipped (not a bare path)" {
+  # `--untracked-files no` separate form: without the skip, "no" becomes a
+  # phantom pathspec and a staged-content amend falsely refuses.
+  echo mod >> file1.txt
+  git add file1.txt
+  guard_content_null_amend staged --no-edit -u no
+  [ "$_amend_content_null" = "false" ]
 }
 
 @test "amend_args_message_intent: trailing value-flag does not crash (fail-open)" {
