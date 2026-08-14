@@ -174,7 +174,17 @@ create_test_repo() {
     # install their own hooks (e.g. the commit-msg rejection test in
     # test_commit.bats). Pin each test repo to its own hooks dir so the suite
     # behaves identically with or without a global override (elifarley/hug-scm#184).
+    # Do NOT "simplify" to `git rev-parse --git-path hooks`: --git-path resolves
+    # THROUGH any configured hooksPath, so on an affected machine it returns the
+    # GLOBAL hooks dir and the pin silently re-pins the config it overrides.
     git config --local core.hooksPath "$(git rev-parse --absolute-git-dir)/hooks"
+
+    # Hermetic ignores (elifarley/hug-scm#197): a developer-machine global
+    # core.excludesFile (e.g. one listing .env) makes `git add .env` refuse
+    # with "The following paths are ignored", breaking fixtures that stage
+    # dotfiles. Point the fixture at /dev/null so only the repo's own
+    # .gitignore applies — identical to a stock clone with no global config.
+    git config --local core.excludesFile /dev/null
 
     # Configure git aliases needed by hug commands
     # These are from git-config/.gitconfig

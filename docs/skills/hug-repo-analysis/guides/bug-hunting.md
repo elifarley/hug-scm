@@ -102,6 +102,7 @@ hug shp <commit-hash>
 
 # See what files changed together
 hug shc <commit-hash>
+hug shc -n <commit-hash>      # paths only, for piping into other tools
 
 # See all files in that timeframe
 hug h files <commit-hash>

@@ -308,6 +308,7 @@ Each commit should be atomic (single logical change):
 ```bash
 # Check files in commit
 hug shc HEAD
+hug shc -n HEAD               # paths only — scriptable pre-commit file list
 
 # If too many unrelated files, consider splitting
 hug h back  # undo commit

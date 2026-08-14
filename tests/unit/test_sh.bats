@@ -418,6 +418,145 @@ teardown() {
   assert_output --partial "Show files changed"
 }
 
+@test "hug shc -n: prints repo-relative paths only for single commit" {
+  run hug shc -n HEAD
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shc --name-only: long flag works identically" {
+  run hug shc --name-only HEAD
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shc -n: range prints cumulative paths" {
+  run hug shc -n HEAD~2..HEAD
+  assert_success
+  assert_line "feature1.txt"
+  assert_line "feature2.txt"
+}
+
+@test "hug shc -n: N/-N forms work" {
+  run hug shc -n -2
+  assert_success
+  # -2 resolves to HEAD~2..HEAD (valid: 3-commit fixture's oldest reachable is HEAD~2).
+  # The range diff is relative to the HEAD~2 tree, so README.md (already present at HEAD~2)
+  # is NOT listed — only files changed across the range appear.
+  assert_line "feature1.txt"
+  assert_line "feature2.txt"
+  run hug shc -n HEAD~1
+  assert_success
+  # HEAD~1 is the single commit that added feature1.txt (diff-tree --root lists only its own files).
+  assert_output "feature1.txt"
+}
+
+@test "hug shc -n: pathspec filtering works" {
+  # Range must actually contain feature1.txt for the filter to match. HEAD~2..HEAD does
+  # (feature1.txt is added in that range); HEAD~1..HEAD would contain only feature2.txt.
+  run hug shc -n HEAD~2..HEAD -- 'feature1.txt'
+  assert_success
+  assert_output "feature1.txt"
+}
+
+@test "hug shc -n: no-match pathspec exits 0 with empty stdout, no stderr hint" {
+  run hug shc -n HEAD -- '*.nomatch'
+  assert_success
+  assert_output ""
+  refute_output --partial "No files matching"
+}
+
+@test "hug shc -n: bundled -nq is rejected, not silently run in stats mode" {
+  run hug shc -nq HEAD
+  assert_failure
+  assert_output --partial "USAGE:"
+  run hug shc -qn HEAD
+  assert_failure
+  assert_output --partial "USAGE:"
+}
+
+@test "hug shc -n: stdout is data-only, no human chatter" {
+  run hug shc -n HEAD
+  assert_success
+  # No header emoji/legend on stdout — pure data
+  refute_output --partial "Changed files"
+  refute_output --partial "📊"
+}
+
+@test "hug shc -n: regression -- still rejects --stat with help" {
+  run hug shc --stat
+  assert_failure
+  assert_output --partial "hug shc"
+}
+
+@test "hug shc -n: bare -n defaults to HEAD" {
+  run hug shc -n
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shc -n: invalid commit ref fails non-zero" {
+  run hug shc -n nonexistent123abc
+  assert_failure
+}
+
+@test "hug shc -n: mixed --stat HEAD also rejected (bundled-flag regression lock)" {
+  # Old pre-reject-loop behavior ran stats mode silently for `--stat HEAD`;
+  # the loop must reject the long-flag spelling exactly like -nq/-qn.
+  run hug shc --stat HEAD
+  assert_failure
+  assert_output --partial "USAGE:"
+}
+
+@test "hug shc -n: HUG_QUIET does not suppress data output" {
+  run env HUG_QUIET=T hug shc -n HEAD
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shc -n: range no-match pathspec exits 0 with empty stdout" {
+  # Mirrors the single-commit no-match test onto the range (git diff) branch
+  # so both dispatch arms of show_changed_file_names are covered.
+  run hug shc -n HEAD~2..HEAD -- '*.nomatch'
+  assert_success
+  assert_output ""
+}
+
+@test "hug shc -n: paths with spaces and non-ASCII print raw, not C-quoted" {
+  echo "space" > "my file.txt"
+  printf 'uni' > "unicodé.txt"
+  git add "my file.txt" "unicodé.txt"
+  git commit -qm "weird names"
+  run hug shc -n HEAD
+  assert_success
+  assert_line "my file.txt"
+  assert_line "unicodé.txt"
+  refute_output --partial '\303'
+}
+
+@test "hug shc -n: rename lists only the new path in both modes" {
+  git mv feature2.txt renamed.txt
+  git commit -qm "rename feature2"
+  run hug shc -n HEAD
+  assert_success
+  assert_output "renamed.txt"
+  run hug shc -n HEAD~1..HEAD
+  assert_success
+  assert_output "renamed.txt"
+}
+
+@test "hug shc -n: merge commit shows nothing (parity with --stat, issue 268)" {
+  git checkout -q -b side HEAD~1
+  echo side > side.txt
+  git add side.txt
+  git commit -qm "side change"
+  git checkout -q main
+  git merge -q --no-ff side -m "Merge side" >/dev/null 2>&1
+  run hug shc -n HEAD
+  assert_success
+  assert_output ""
+}
+
 # -----------------------------------------------------------------------------
 # hug shcp tests (show cumulative diff with stats)
 # -----------------------------------------------------------------------------

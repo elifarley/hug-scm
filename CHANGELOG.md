@@ -4,6 +4,19 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-08-14
+
+### Added
+
+- **`hug shc -n` / `--name-only`** — print only the changed-file paths of a commit, count, or range: repo-relative, one per line, no stats and no header on stdout. Built for pipes and scripts — `files=$(hug shc -n main..HEAD)` just works: exit 0 with empty stdout on zero matches, paths print raw (never C-quoted), renames list the new path only, and pathspec filtering composes (`hug shc -n main..HEAD -- '*.py'`). Unknown bundled flags like `-nq` are rejected loudly instead of silently running stats mode (elifarley/hug-scm#266).
+
+### Fixed
+
+- **`shc -n` output is byte-stable across machines and configs** — `core.quotePath`, `diff.relative`, `diff.ignoreSubmodules`, and rename detection are pinned in the underlying calls, so the same repo yields identical output everywhere; before, non-ASCII paths could print C-quoted and single-commit vs range modes disagreed on renames (cross-model adversarial review finding; the `sl*` family tracks the same class in elifarley/hug-scm#249).
+- **Invalid refs fail honestly in `-n` mode** — a bad ref propagates a non-zero exit; zero matches still exit 0 with empty stdout (the previously documented "exit 0 always" was false).
+- **`make docs-build` works again** — internal planning dirs (`docs/plans/`, `docs/planning/`, `docs/superpowers/`) are excluded from the VitePress build, which had failed the entire site deploy since 2026-08-12 on an angle-bracket token in planning prose parsed as an unclosed HTML element (elifarley/hug-scm#170).
+- **Local test runs match CI on machines with a global git ignore file** — test fixtures pin `core.excludesFile=/dev/null`, extending the v1.8.1 hooks hermeticity to the global-excludes class (elifarley/hug-scm#197): `make test-lib` no longer fails where a global ignore lists `.env`.
+
 ## [1.8.1] - 2026-08-14
 
 ### Fixed

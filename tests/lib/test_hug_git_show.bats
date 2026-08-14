@@ -578,3 +578,66 @@ teardown() {
   # Should NOT have file stats section
   refute_output --partial "File stats:"
 }
+
+################################################################################
+# show_changed_file_names TESTS
+################################################################################
+
+@test "show_changed_file_names: single commit prints repo-relative paths" {
+  run show_changed_file_names "HEAD"
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "show_changed_file_names: range prints cumulative paths" {
+  run show_changed_file_names "HEAD~2..HEAD"
+  assert_success
+  # Cumulative across feature1 + feature2 commits (README is the base, excluded by range)
+  assert_line "feature1.txt"
+  assert_line "feature2.txt"
+}
+
+@test "show_changed_file_names: root commit lists files via --root" {
+  local root_sha
+  root_sha=$(git rev-list --max-parents=0 HEAD)
+  run show_changed_file_names "$root_sha"
+  assert_success
+  assert_output "README.md"
+}
+
+@test "show_changed_file_names: pathspec filters output" {
+  run show_changed_file_names "HEAD~2..HEAD" "feature1.txt"
+  assert_success
+  assert_output "feature1.txt"
+}
+
+@test "show_changed_file_names: no-match pathspec exits 0 with empty stdout" {
+  run show_changed_file_names "HEAD" "*.nomatch"
+  assert_success
+  assert_output ""
+}
+
+@test "show_changed_file_names: 0-arg call defaults to HEAD" {
+  run show_changed_file_names
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "show_changed_file_names: N/-N forms resolve internally" {
+  # The docstring advertises internal resolution so the function is testable
+  # without the script wrapper — exercise the raw forms directly.
+  run show_changed_file_names "-2"
+  assert_success
+  assert_line "feature1.txt"
+  assert_line "feature2.txt"
+  run show_changed_file_names "1"
+  assert_success
+  assert_output "feature1.txt"
+}
+
+@test "show_changed_file_names: invalid ref propagates git failure" {
+  # Contract (docstring): 0 on success/zero matches, non-zero when git rejects
+  # the ref — the function does NOT validate refs itself.
+  run show_changed_file_names "nonexistent123abc"
+  assert_failure
+}
