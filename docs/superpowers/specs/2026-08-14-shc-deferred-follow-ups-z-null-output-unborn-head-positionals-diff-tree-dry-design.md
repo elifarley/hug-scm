@@ -65,7 +65,7 @@ emoji, and error policy stay at call sites (exactly as the issue sketches).
 
 ```bash
 # Runs the canonical pinned changed-files invocation for a commit or range.
-# Usage: pinned_diff [--null] <format> <target> [pathspec...]
+# Usage: pinned_diff [--null] <format> <resolved_ref> [pathspec...]
 # Parameters:
 #   --null   - Optional, FIRST arg: NUL-separated output (--name-only only).
 #   $1       - Format: --name-only | --stat. Anything else is a caller bug.
@@ -81,8 +81,11 @@ emoji, and error policy stay at call sites (exactly as the issue sketches).
 #   NUL-terminated and never C-quoted (git's -z semantics — output must NEVER
 #   be captured into a shell variable; bash strips NUL bytes).
 # Exit codes:
-#   The underlying git command's. Nothing is swallowed here; callers own
-#   error policy (2>/dev/null, || true, branding).
+#   2    - usage errors this function rejects itself: too few core args,
+#          unknown format, --null with --stat (all via error_usage).
+#   Else - the underlying git command's (0 on success; 128 + git's fatal on
+#          a bad ref). Nothing is swallowed here; callers own error policy
+#          (2>/dev/null, || true, branding).
 # Environment:
 #   None read; does NOT honor HUG_QUIET (pure data by design).
 # Pins (every invocation, immune to user/server config — the determinism
@@ -99,8 +102,8 @@ emoji, and error policy stay at call sites (exactly as the issue sketches).
 #                                  range branch)
 #   --ignore-submodules=none       defeats a user's diff.ignoreSubmodules
 # Notes:
-#   - Dispatch: is_range <target> → `git diff <format> <pins> <target>`;
-#     else → `git diff-tree --no-commit-id <format> -r --root <pins> <target>`.
+#   - Dispatch: is_range <resolved_ref> → `git diff <format> <pins> <resolved_ref>`;
+#     else → `git diff-tree --no-commit-id <format> -r --root <pins> <resolved_ref>`.
 #   - --null with --stat is rejected via error_usage (NUL is a --name-only
 #     contract; --stat is human-formatted).
 #   - Merge-commit single-commit shows nothing (diff-tree without -m) — known
@@ -160,7 +163,7 @@ transitively via hug-common's lib list; `is_range` is defined in hug-git-repo).
 
 | Site | Before | After |
 |---|---|---|
-| `hug-git-show: show_changed_file_names` (line ~183) | own git calls; pins duplicated across its range/single branches | resolve ref → `pinned_diff ${z:+"--null"} --name-only "$resolved" "$@"`; doc contract unchanged (exit-128 propagation, no HUG_QUIET) |
+| `hug-git-show: show_changed_file_names` (line ~183) | own git calls; pins duplicated across its range/single branches | resolve ref → `pinned_diff "${zflag[@]+"${zflag[@]}"}" --name-only "$resolved" "$@"` (zflag array, the same idiom pinned_diff itself uses — sketches get transcribed, so no ad-hoc expansion forms); doc contract unchanged (exit-128 propagation, no HUG_QUIET) |
 | `git-shc` stats path (line ~201) | two unpinned branches (`git diff --stat` / `git diff-tree --stat`) | one `stats_output=$(pinned_diff --stat "$commit_ref" …)`; emoji headers stay in the script, keyed off `is_range` |
 | `hug-file-input: extract_files_from_commit` (line ~141) | unpinned `git diff-tree --no-commit-id --name-only -r --root` | same rev-parse guard + `pinned_diff --name-only "$commit" 2>/dev/null \|\| true` — the swallow policy stays AT the call site. Post-refactor the swallow ALSO masks exit 127 (an unsourced `pinned_diff`), not just git's 128: document that dependency in hug-file-input's header comment and in the swallow comment itself. Not a live bug — every current consumer loads hug-git-diff via hug-common's lib list — but a future consumer that drops hug-common inherits a silently-empty file list |
 
@@ -309,8 +312,10 @@ unpinned, not rawness. Newer gits changed `--stat` quoting/width handling as lat
 2.54, so CI's git gets its own probe before commit 2 lands its changelog claims (probe
 item 6 below).
 
-Non-deltas (regression safety): for plain-ASCII paths with default-ish config, output is
-byte-identical to today — that expectation is itself a test. Merge-commit parity
+Non-deltas (regression safety): for plain-ASCII paths, ABSENT renames (see the rename
+deltas above — a rename flips `5 files changed` to `4 files changed` on the
+single-commit branch), and default-ish config, output is byte-identical to today — that
+expectation is itself a test. Merge-commit parity
 ([elifarley/hug-scm#268](https://github.com/elifarley/hug-scm/issues/268)) is preserved
 unchanged.
 
@@ -339,6 +344,18 @@ re-confirmation where an item says so — "verified on the floor" does not imply
    BOTH dispatch branches, on the floor git AND CI's git. Already probed on 2.34.1:
    byte-identical — the pin is inert for `--stat` (this is what dropped delta row 1);
    re-confirm on CI's git before commit 2 lands its changelog claims.
+7. Range-branch `-z` shape: `git diff -z --name-only <range>` — final entry
+   NUL-terminated, no trailing newline, no commit-id entry (diff porcelain never prints
+   one). `shc -n -z main..HEAD` emits exactly this stream, and item 1's diff-tree probe
+   does not cover it — they are different git code paths. (Pre-probed on 2.34.1: raw
+   `caf\303\251.txt` bytes + NUL, no trailing newline; still bake the assertion into the
+   plan.)
+8. `--find-renames` on the diff-tree branch is bounded by `diff.renameLimit`; exceeding
+   it emits an inexact-rename warning to stderr — a NEW stats-mode stderr emission the
+   unpinned command never produced. Decide deliberately before commit 2: accept
+   (stderr-only, informative) or pin `-c diff.renameLimit=<higher>` into the flag set.
+   Probe with a fixture over the limit on the floor git — the default limit is
+   version-dependent, so measure, don't assume.
 
 ## Help text additions (in `git-shc` show_help)
 
@@ -361,6 +378,13 @@ OPTIONS:
   note.
 - `GIT EQUIVALENTS`: add the `-z` line (`git diff-tree -z --no-commit-id --name-only -r
   --root HEAD → hug shc -n -z HEAD`).
+- Stale internal-caller claims in the same help block (git-shc:52-54: "used internally
+  by other Hug commands (sh, shp, shcp, h files, h squash, lol, cmv) via HUG_QUIET=T") —
+  both qualifiers are refuted by the audit step below: git-h-squash:197 uses NO
+  HUG_QUIET (pipes the header to `>&2`), and lol/cmv never invoke `git shc`. Replace
+  with the verified picture: "used internally by h files, h squash, shcp, and via
+  hug-git-show/hug-git-commit by sh, shp and commit-range flows — most pass
+  HUG_QUIET=T; h squash redirects the header to stderr instead."
 
 ## Tests
 
