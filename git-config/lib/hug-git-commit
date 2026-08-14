@@ -550,7 +550,9 @@ commit_args_indicate_amend() {
 #   2 = EDITOR decides  (bare, -e/--edit, or -c/--reedit-message without
 #                        --no-edit)
 # Evaluation order mirrors git's own grammar:
-#   -e/--edit beats everything (opens the editor);
+#   -e/--edit beats everything (opens the editor — but a NO-OP editor
+#   (GIT_EDITOR=true/:/cat/echo — the CI/agent norm) keeps the message, so
+#   those EDITOR cases classify KEEP via amend_editor_is_noop);
 #   --fixup/--squash guarantee a prefixed (different) message;
 #   message source: -m values concatenate with "\n\n" (git multi -m);
 #   -F file content; -C <ref> / -c <ref> WITH --no-edit → the ref's
@@ -566,6 +568,26 @@ commit_args_indicate_amend() {
 # needs "change"/"editor" to stay honest. Callers MUST capture via
 # `rc=0; amend_args_message_intent "$@" || rc=$?` — under `set -e` a bare
 # call returning 1/2 kills the script (the commit_offset errexit lesson).
+# amend_editor_is_noop — true when the editor git would launch cannot change
+# the message. CI and agent environments (hug's own primary audience) set
+# GIT_EDITOR=true (or : / cat / echo); under a no-op editor an "editor
+# decides" amend IS statically decidable — the message will be HEAD's
+# message — so the classifier treats those EDITOR cases as KEEP and the
+# guard can refuse a bare content-null amend instead of letting it silently
+# re-hash HEAD. Resolution mirrors git's own priority (GIT_EDITOR >
+# core.editor > VISUAL > EDITOR, collapsed by `git var GIT_EDITOR`).
+# "false" is deliberately NOT no-op: git errors on it, failing the amend
+# (fail-open — still EDITOR, guard proceeds, git speaks).
+amend_editor_is_noop() {
+    local ed="${GIT_EDITOR:-$(git var GIT_EDITOR 2>/dev/null || true)}"
+    # git var prints the PLAIN logical value (verified: "vim", "editor");
+    # no prefix to strip — and stripping would destroy the literal ":" editor.
+    case "$ed" in
+        true|:|cat|echo|/bin/true|/usr/bin/true) return 0 ;;
+    esac
+    return 1
+}
+
 amend_args_message_intent() {
     local head_msg
     head_msg=$(git log -1 --format=%B HEAD 2>/dev/null)
@@ -578,9 +600,16 @@ amend_args_message_intent() {
         case "$1" in
             --) break ;;
             --no-edit) has_no_edit=true ;;
-            -e|--edit) return 2 ;;
+            -e|--edit)
+                # -e under a no-op editor keeps the message → KEEP
+                amend_editor_is_noop && return 0
+                return 2 ;;
             --fixup|--squash|--fixup=*|--squash=*) return 1 ;;
-            -m|--message) has_source=true; m_values+=("$2"); shift ;;
+            # "${2:-}" + guarded shift: a trailing value-flag (cmod -m as the
+            # LAST arg) must not crash on an unbound $2 under set -u — an
+            # empty value classifies CHANGE (fail-open), and git emits its own
+            # clear "switch requires a value" error downstream.
+            -m|--message) has_source=true; m_values+=("${2:-}"); (($# >= 2)) && shift || true ;;
             -m*|--message=*)
                 # bash 4.0 floor: no negative array indices — strip via expansion
                 has_source=true
@@ -588,7 +617,7 @@ amend_args_message_intent() {
                 [[ "$1" == --message=* ]] && v="${1#--message=}"
                 m_values+=("$v")
                 ;;
-            -F|--file) has_source=true; f_file="$2"; shift ;;
+            -F|--file) has_source=true; f_file="${2:-}"; (($# >= 2)) && shift || true ;;
             -F*|--file=*)
                 has_source=true
                 f_file="${1#-F}"
@@ -596,9 +625,9 @@ amend_args_message_intent() {
                 ;;
             -C|--reuse-message|-c|--reedit-message)
                 has_source=true
-                c_ref="$2"
+                c_ref="${2:-}"
                 [[ "$1" == -c || "$1" == --reedit-message ]] && reedit=true
-                shift
+                (($# >= 2)) && shift || true
                 ;;
             -C*|--reuse-message=*)
                 has_source=true
@@ -616,7 +645,15 @@ amend_args_message_intent() {
                 # signoff line from the committer ident (git's own source)
                 trailer_args+=(--trailer "Signed-off-by: $(git var GIT_COMMITTER_IDENT 2>/dev/null | sed 's/ [0-9]* [+-][0-9]*$//')")
                 ;;
-            --trailer) has_source=true; trailer_args+=(--trailer "$2"); shift ;;
+            # Empty --trailer value (trailing flag): append nothing — an empty
+            # trailer transforms nothing, so with no other source the empty
+            # candidate classifies CHANGE (fail-open; git errors "requires a
+            # value" downstream) instead of comparing equal-to-HEAD KEEP.
+            --trailer)
+                has_source=true
+                [[ -n "${2:-}" ]] && trailer_args+=(--trailer "${2:-}") || true
+                (($# >= 2)) && shift || true
+                ;;
             --trailer=*) has_source=true; trailer_args+=(--trailer "${1#--trailer=}") ;;
         esac
         shift
@@ -624,6 +661,7 @@ amend_args_message_intent() {
 
     # -c/--reedit-message WITHOUT --no-edit opens the editor.
     if $reedit && ! $has_no_edit; then
+        amend_editor_is_noop && return 0
         return 2
     fi
 
@@ -657,11 +695,25 @@ amend_args_message_intent() {
     # classify CHANGE (1), not fall through to KEEP. `has_source` is set by
     # the scan whenever a source flag appears, even with an empty value.
     if $has_source; then
-        if [[ "$candidate" == "$head_msg" ]]; then return 0; fi
+        # Compare NORMALIZED forms: git applies --cleanup=whitespace to
+        # -m/-F sources before committing (trailing per-line WS stripped,
+        # blank lines squeezed) — the same transform `git stripspace`
+        # performs. A candidate differing only by normalizable whitespace
+        # (e.g. -m "msg " with a trailing space) commits to HEAD's exact
+        # message, making the amend content-null — the incident class this
+        # guard exists to block; comparing raw bytes mispredicts CHANGE and
+        # waves it through (probe-verified). head_msg comes back from git
+        # already-clean, so normalizing it is a harmless no-op. If stripspace
+        # itself fails, fall back to the raw comparison (fail-open CHANGE).
+        local norm_cand="$candidate" norm_head="$head_msg"
+        norm_cand=$(printf '%s\n' "$candidate" | git stripspace 2>/dev/null) || norm_cand="$candidate"
+        norm_head=$(printf '%s\n' "$head_msg" | git stripspace 2>/dev/null) || norm_head="$head_msg"
+        if [[ "$norm_cand" == "$norm_head" ]]; then return 0; fi
         return 1
     fi
 
     if $has_no_edit; then return 0; fi
+    amend_editor_is_noop && return 0
     return 2   # bare — the editor decides
 }
 
@@ -675,11 +727,15 @@ amend_args_message_intent() {
 # Content model is the honest one for the amend's actual content source:
 #   - trailing paths (bare, or after the -- group) → `git diff HEAD --quiet
 #     -- <paths>` (--only mode folds worktree content, not the index)
-#   - -a/--all, -p/--patch, -i/--interactive → tracked check (worktree+index
-#     vs HEAD); a clean tree still refuses (probe-verified churn)
+#   - -a/--all, -p/--patch, -i/--interactive/--include → tracked check
+#     (worktree+index vs HEAD); a clean tree still refuses (probe-verified
+#     churn). --include keeps the tracked check even with paths (staged +
+#     paths union — a paths-only check would drop the index).
 #   - otherwise → mode argument (staged = git diff --cached; tracked =
 #     git diff HEAD)
-# Fail-open: rc>1 proceeds (never refuse on a corrupt index or unborn HEAD).
+# Fail-open: rc>1 proceeds (never refuse on a corrupt index or unborn HEAD);
+# --pathspec-from-file (content in an uninspectable file/stdin) proceeds; a
+# commit-msg hook that could rewrite the message proceeds.
 # WHY called BARE (never $(guard_content_null_amend ...)): error_blocked must
 # exit the SCRIPT — captured, the refusal dies in the subshell (the exact
 # head-mover lesson). Assumes parse_common_flags already ran: -f/-y/-q are
@@ -690,13 +746,29 @@ guard_content_null_amend() {
     # --- content model (always computed) ---
     local -a paths=()
     local check_mode="$mode"
-    local saw_ddash=false
+    local saw_ddash=false include_mode=false
     for arg in "$@"; do
         $saw_ddash && paths+=("$arg") && continue
         case "$arg" in
             --) saw_ddash=true ;;
-            -a|--all|-p|--patch|-i|--interactive) check_mode=tracked ;;
+            # -i is git's --include (verified: `git commit -h` maps -i to
+            # --include, NOT --interactive): content = staged PLUS the named
+            # paths. The tracked check (worktree+index vs HEAD) is a superset
+            # of that union, so it stays the honest refusal check; include_mode
+            # then stops the paths-win override below from collapsing to a
+            # paths-ONLY check that would drop the index entirely.
+            -a|--all|-p|--patch|-i|--interactive|--include)
+                check_mode=tracked
+                [[ "$arg" == -i || "$arg" == --include ]] && include_mode=true
+                ;;
             --only) check_mode=paths ;;
+            # paths arrive from a file (or stdin via '-') — not statically
+            # decidable. Never claim "nothing to amend" about content we did
+            # not inspect: fail open and let git amend or complain itself.
+            --pathspec-from-file|--pathspec-from-file=*|--pathspec-file-nul)
+                _amend_content_null=false
+                return 0
+                ;;
         esac
     done
     # bare trailing paths (no --): non-flag tokens not consumed as values.
@@ -710,18 +782,29 @@ guard_content_null_amend() {
         tok="${flag_args[i]}"
         case "$tok" in
             --) break ;;
-            -m|-C|-c|-F|-t|--template|--message|--file|--reuse-message|--reedit-message|--fixup|--squash|--trailer|--author|--date|--cleanup|--pathspec-from-file)
+            -m|-C|-c|-F|-i|-t|--include|--template|--message|--file|--reuse-message|--reedit-message|--fixup|--squash|--trailer|--author|--date|--cleanup|--pathspec-from-file)
                 ((i += 2)); continue ;;
             --*=*) ((i += 1)); continue ;;
             -*) ((i += 1)); continue ;;
-            *) paths+=("$tok"); check_mode=paths; ((i += 1)) ;;
+            *)
+                paths+=("$tok")
+                # bare paths imply --only content — UNLESS --include holds:
+                # its content is staged PLUS paths (see include_mode above).
+                if ! $include_mode; then check_mode=paths; fi
+                ((i += 1)) ;;
         esac
     done
-    # Paths win over -a/-p/-i whenever present: git treats an explicit path
+    # Paths win over -a/-p whenever present: git treats an explicit path
     # list as --only content even alongside -p/-i (probe-verified); -a with
     # paths is rejected by git itself ("does not make sense") before the
     # amend ever runs, so the paths check is the honest one either way.
-    ((${#paths[@]})) && check_mode=paths
+    # EXCEPT --include: its contract is staged PLUS named paths — the
+    # override would drop the index from the check and falsely refuse a
+    # staged-content amend (probe: `cmod --no-edit --include <clean-path>`
+    # with staged content was refused as "no staged changes").
+    if ((${#paths[@]})) && ! $include_mode; then
+        check_mode=paths
+    fi
 
     # --- the honest diff check ---
     local rc=0
@@ -751,12 +834,33 @@ guard_content_null_amend() {
         return 0
     fi
 
-    local msg untracked_count cmd_name scope_label
-    cmd_name="cmod"; scope_label="staged changes"
-    if [[ "$mode" == "tracked" ]]; then
-        cmd_name="cmoda"
-        scope_label="tracked changes"
+    # A commit-msg hook runs on the amend itself and may rewrite the message
+    # (Gerrit Change-Id is the canonical case): "same message" is then not
+    # statically decidable — proceed rather than refuse with a claim the hook
+    # falsifies (probe: a hook appending Change-Id made the refusal text
+    # factually wrong on a state plain git would re-message). core.hooksPath
+    # (absolute, relative-to-top, or a test-repo hermeticity pin) resolves
+    # before the default <gitdir>/hooks.
+    local hooks_dir
+    hooks_dir=$(git config core.hooksPath 2>/dev/null) || {
+        hooks_dir=$(git rev-parse --git-path hooks 2>/dev/null) || hooks_dir=""
+    }
+    if [[ -n "$hooks_dir" && -x "$hooks_dir/commit-msg" ]]; then
+        return 0
     fi
+
+    local msg untracked_count cmd_name scope_label
+    cmd_name="cmod"
+    [[ "$mode" == "tracked" ]] && cmd_name="cmoda"
+    # scope names the content model ACTUALLY checked, not the caller's mode:
+    # `cmod -a` and pathspec forms run tracked/paths checks — the refusal
+    # must not claim "no staged changes" about a tracked check (probe:
+    # mislabeled for `cmod --no-edit -a` and `cmod --no-edit -- <paths>`).
+    case "$check_mode" in
+        paths)   scope_label="changes for the named paths" ;;
+        tracked) scope_label="tracked changes" ;;
+        *)       scope_label="staged changes" ;;
+    esac
     untracked_count=$(get_untracked_files | wc -l)
     msg="Nothing to amend — no $scope_label and no message change; the amend would only rewrite HEAD's hash (same tree, same message)."
     msg+=$'\n'"Stage changes first ('hug a <files>') or change the message ('hug $cmd_name -m \"msg\"')."

@@ -4,10 +4,20 @@
 load '../test_helper'
 load '../../git-config/lib/hug-common'
 load '../../git-config/lib/hug-git-repo'
+# hug-git-state provides get_untracked_files — the guard's refusal path
+# calls it for the untracked-files note. Runtime (hug-git-kit) sources it;
+# without it here the note branch dies as "command not found" and the note
+# is silently untestable (found by ship's testing specialist).
+load '../../git-config/lib/hug-git-state'
 load '../../git-config/lib/hug-git-commit'
 
 setup() {
   require_hug
+  # Pin a REAL editor: amend_args_message_intent classifies no-op editors
+  # (GIT_EDITOR=true/:/cat/echo — the agent-machine norm) as KEEP, which
+  # would flip the EDITOR(2) expectations in the classification table on
+  # machines that export GIT_EDITOR=true. vi is never a no-op → deterministic.
+  export GIT_EDITOR=vi
   TEST_REPO=$(create_test_repo)
   cd "$TEST_REPO"
   
@@ -615,4 +625,91 @@ check_intent() {
   # worktree modification and proceed (return 0).
   run guard_content_null_amend staged --no-edit --template file1.txt
   [ "$status" -eq 3 ]
+}
+
+@test "guard_content_null_amend: refusal includes the untracked-files note" {
+  # Needs hug-git-state loaded (get_untracked_files); without it the note
+  # branch crashed invisibly and no test could pin the note's presence.
+  echo "spare" > extra.txt
+  run guard_content_null_amend staged --no-edit
+  [ "$status" -eq 3 ]
+  assert_output --partial "untracked file(s) exist"
+  refute_output --partial "command not found"
+}
+
+@test "amend_args_message_intent: -m equal after cleanup normalization is KEEP" {
+  # git applies --cleanup=whitespace to -m before committing: a candidate
+  # differing only by normalizable whitespace (trailing space, blank-line
+  # runs) commits to HEAD's exact message — the amend is content-null and
+  # the guard must refuse it (red-team probe: '-m "msg "' sailed through).
+  check_intent 0 --no-edit -m "third commit"    # exact
+  check_intent 0 --no-edit -m "third commit "   # trailing space
+  check_intent 0 --no-edit -m "third commit
+
+"                                                # trailing blank lines
+  check_intent 1 --no-edit -m "third commitx"   # genuinely different
+}
+
+@test "guard_content_null_amend: --pathspec-from-file fails open (proceeds)" {
+  # Content arrives from a file (or stdin) — not statically decidable.
+  # The guard must never claim "nothing to amend" about uninspected
+  # content (red-team probe: worktree-modified path listed in the file was
+  # refused as "no staged changes").
+  _amend_content_null=unset-sentinel
+  guard_content_null_amend staged --no-edit --pathspec-from-file=/dev/null
+  [ "$_amend_content_null" = "false" ]
+  guard_content_null_amend staged --no-edit --pathspec-from-file=p.txt
+  guard_content_null_amend staged --no-edit --pathspec-file-nul
+}
+
+@test "guard_content_null_amend: --include keeps the index in the check" {
+  # -i/--include content = staged PLUS named paths. A paths-only check
+  # drops the index and falsely refuses staged content (red-team probe).
+  echo mod >> file1.txt
+  git add file1.txt                       # staged-only: worktree clean again
+  guard_content_null_amend staged --no-edit --include file2.txt
+  [ "$_amend_content_null" = "false" ]
+  guard_content_null_amend staged --no-edit -i file2.txt
+  [ "$_amend_content_null" = "false" ]
+  # ddash group too: `--include -- <paths>` must not collapse to paths-only
+  guard_content_null_amend staged --no-edit --include -- file2.txt
+  [ "$_amend_content_null" = "false" ]
+  # and the clean-tree counterpart still refuses honestly
+  git restore --staged .
+  git restore .
+  run guard_content_null_amend staged --no-edit --include file2.txt
+  [ "$status" -eq 3 ]
+}
+
+@test "guard_content_null_amend: commit-msg hook makes KEEP undecidable (proceeds)" {
+  # A commit-msg hook rewrites the message on the amend itself (Gerrit
+  # Change-Id), so "same message" cannot be claimed — refusing would lie
+  # (red-team probe). Presence of an executable commit-msg hook → proceed.
+  local hooks_dir
+  hooks_dir=$(git rev-parse --absolute-git-dir)/hooks
+  mkdir -p "$hooks_dir"
+  printf '#!/bin/sh\nexit 0\n' > "$hooks_dir/commit-msg"
+  chmod +x "$hooks_dir/commit-msg"
+  run guard_content_null_amend staged --no-edit
+  assert_success
+}
+
+@test "amend_args_message_intent: no-op editor resolves EDITOR to KEEP" {
+  # GIT_EDITOR=true/:/cat/echo (CI and agent norm) cannot change the
+  # message, so "editor decides" is decidable: bare/-e classify KEEP and
+  # a content-null amend is refusable instead of silently re-hashing.
+  GIT_EDITOR=true check_intent 0
+  GIT_EDITOR=: check_intent 0 -e
+  GIT_EDITOR=cat check_intent 0 -c X
+  GIT_EDITOR=vi check_intent 2   # real editor still punts
+}
+
+@test "amend_args_message_intent: trailing value-flag does not crash (fail-open)" {
+  # `cmod -m` as the LAST arg: $2 is unset — must classify CHANGE (git
+  # errors "switch requires a value" downstream), never crash on an
+  # unbound variable under set -u.
+  check_intent 1 --no-edit -m
+  check_intent 1 --no-edit -F
+  check_intent 1 --no-edit -C
+  check_intent 1 --no-edit --trailer
 }
