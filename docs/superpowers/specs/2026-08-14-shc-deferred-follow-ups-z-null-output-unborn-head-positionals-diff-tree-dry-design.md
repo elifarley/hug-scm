@@ -188,9 +188,19 @@ quoted token per line — safe, but not the path; the pin changes nothing here);
 
 **Blast radius (verified by grep):** `show_changed_file_names` has exactly one bin caller
 (git-shc) + tests. `extract_files_from_commit` has four (git-a, git-ccp, git-untrack,
-git-us) — they receive raw, rename-collapsed, repo-relative paths instead of
-config-dependent output, which is strictly more correct for paths fed back into git
-commands.
+git-us) — they receive raw, repo-relative, submodule-deterministic paths instead of
+config-dependent output: strictly more deterministic, and strictly better for non-ASCII
+path handling. The rename pin is a TRADE-OFF here, not an improvement: these are
+action-list consumers (git-a:181 `mapfile < <(extract_files_from_commit …)` →
+`hug_add_with_summary`; git-us/git-untrack same shape around their `--from-commit` paths;
+git-ccp: `mapfile < <(extract_files_from_commit "$source_commit")`), and rename collapse
+drops the deleted side of a rename from the list — staging/untrack silently stop covering
+the old path (probe receipt in the delta table). Accepted deliberately: D4 locks ONE
+flag set, and per-consumer pin selection would re-open the divergence D4 exists to close.
+If field use shows the missing deletion side bites (rename-heavy `--from-commit` flows),
+the documented escape hatch is a two-mode helper (display pins vs action pins) — a future
+spec, not this one. The PR body must present this as a registered trade-off with the four
+consumers audited — never as "strictly more correct".
 
 ### 3. `git-shc` script changes (items 1–3)
 
@@ -272,11 +282,19 @@ the deletion explicitly so the implementer doesn't ship a dead builder.
 These are the point of the unification: the pins stop protecting one of three sites.
 All deltas are tested and cited in the PR body as intended changes.
 
+PR-body rule: cite each delta at its verified scope. The rename delta below is
+single-commit-branch-only at default config — the range branch ALREADY collapses renames
+(`diff.renames` defaults true in porcelain since git 2.9; probe on 2.34.1: unpinned
+`git diff --stat A..B` prints `b.txt => renamed-b.txt | 0`), so the pin's range-branch
+effect is hostile-config normalization, not a user-visible change.
+
 | Site | Delta | Old → New |
 |---|---|---|
-| stats | rename | two lines (del old + add new) → one `{old => new}` line |
+| stats, single-commit branch (diff-tree) | rename | two lines (del old + add new) → one `{old => new}` line — probe on 2.34.1: `5 files changed` → `4 files changed` on the rename fixture (plumbing does no rename detection unpinned) |
+| stats, range branch (git diff) | rename | NO delta at default config — porcelain already collapses. The pin normalizes only hostile config (probe: `-c diff.renames=false` prints two lines; pinned prints one). Do NOT cite this as a user-visible change in the PR body |
 | stats | submodules | honored user `diff.ignoreSubmodules` → always shown (`=none` resets it) |
-| `extract_files_from_commit` (git-a, git-ccp, git-untrack, git-us) | non-ASCII paths, rename, submodules | config-dependent output → non-ASCII raw (quotePath pin; structural chars STAY C-quoted in line mode — git's behavior, not a hug delta), rename-collapsed (new path only), submodule-deterministic |
+| `extract_files_from_commit` (git-a, git-ccp, git-untrack, git-us) | non-ASCII paths, submodules | config-dependent output → non-ASCII raw (quotePath pin; structural chars STAY C-quoted in line mode — git's behavior, not a hug delta), submodule-deterministic |
+| git-a/us/untrack/ccp `--from-commit` on a rename commit | action-list completeness | REGISTERED TRADE-OFF, not an improvement: today the list carries BOTH sides of a rename (unpinned diff-tree does no rename detection); after the pin it carries the new path only — `hug a --from-commit <rename-commit>` stages the new path but NOT the old path's deletion, silently (probe: unpinned lists `b.txt` + `renamed-b.txt`; pinned lists `renamed-b.txt` only). Cite in the PR body with the four consumers audited |
 | all sites | `diff.relative` | paths always repo-relative even if a user sets `diff.relative=true` (belt-and-braces for tree-to-tree diffs; uniformity is the win) |
 
 **Probe-refuted delta (dropped from this table):** "stats special-char paths:
@@ -349,8 +367,8 @@ OPTIONS:
 | File | Covers |
 |---|---|
 | `tests/lib/test_hug_git_diff.bats` **(new)** | `pinned_diff`: range/single dispatch; `--name-only`/`--stat`; `--null` NUL output; `--null`+`--stat` → exit 2; unknown format → exit 2; pins honored under hostile config (test repo sets `core.quotePath=true`, `diff.renames=false`, `diff.ignoreSubmodules=all` → output still raw / rename-collapsed / submodules shown); pathspec passthrough; bad ref → exit 128 |
-| `tests/unit/test_sh.bats` (shc section) | `shc -n -z`: NUL-separated (od/xxd assertion), incl. filename with embedded newline (`$'we\nird'`) — line mode asserts ONE C-quoted line `"we\nird"` (the actual before-behavior — git never split it), `-z` mode asserts raw bytes + NUL terminator; `shc -z` w/o `-n` → exit 2 + usage message; second positional → exit 2 naming both tokens (stats mode AND `-n` mode); unborn HEAD (`git init` only) → branded message, exit 1, no raw `fatal:` (all ref forms: none, `1`, `-3`, `main..HEAD`); stats deltas (rename collapse; special-char paths stay C-quoted → byte-identity pinned vs unpinned per the probe-refuted-delta note); existing `-n` line-mode tests stay green |
-| `tests/lib/test_hug-file-input.bats` | `extract_files_from_commit`: raw paths under `core.quotePath=true`; rename → new path only |
+| `tests/unit/test_sh.bats` (shc section) | `shc -n -z`: NUL-separated (od/xxd assertion), incl. filename with embedded newline (`$'we\nird'`) — line mode asserts ONE C-quoted line `"we\nird"` (the actual before-behavior — git never split it), `-z` mode asserts raw bytes + NUL terminator; `shc -z` w/o `-n` → exit 2 + usage message; second positional → exit 2 naming both tokens (stats mode AND `-n` mode); unborn HEAD (`git init` only) → branded message, exit 1, no raw `fatal:` (all ref forms: none, `1`, `-3`, `main..HEAD`); stats rename delta on a SINGLE-COMMIT fixture (two lines → one `{old => new}` line); range-branch rename asserted UNCHANGED at default config (already collapses — the pin's range effect is hostile-config-only: pinned vs `-c diff.renames=false`); special-char paths stay C-quoted (byte-identity pinned vs unpinned, per the probe-refuted-delta note); existing `-n` line-mode tests stay green |
+| `tests/lib/test_hug-file-input.bats` | `extract_files_from_commit`: raw paths under `core.quotePath=true`; rename → new path only, with a comment pinning the registered trade-off (the old path's absence from action lists is deliberate — see delta table) |
 | `tests/lib/test_hug_git_show.bats` | `show_changed_file_names` regression (thin-wrapper refactor keeps line-mode byte-identical); `-z` leading-token passthrough |
 
 **NUL-testing technique (project learning, mandatory):** bash cannot hold NUL — assert
@@ -377,6 +395,10 @@ verified step, not an assumption.
 - `README.md` — the shc synopsis line (~546) gains `-z` alongside `-n`; prerequisites
   gain the minimum-supported-git declaration (floor 2.34 — see the probe discipline
   above).
+- `docs/meta/hug-completion-reference.md` — the shc entry (~105) enumerates today's flags
+  (`[-n|--name-only]`); add `[-z|--null]` (requires `-n`) and the one-positional rule.
+  This is the authoritative surface for completion authors — leaving it stale is the
+  same omission class as 05817b7, one grep away from the other doc fixes.
 - `CHANGELOG.md` — entry under `## [Unreleased]`. Repo convention: changelog + version
   bump land inside the feature PR (v1.9.0 precedent, c37d716). The prior shc feature
   needed a post-ship doc-fix commit (05817b7) for exactly this omission class — don't
@@ -391,7 +413,8 @@ verified step, not an assumption.
    lib README entry (pins everywhere; behavior deltas registered above).
 3. `feat(shc)`: `-z/--null` + second-positional rejection + unborn-HEAD guard + help/docs
    updates (docs/commands/head.md, lib README, README.md synopsis + minimum-git
-   prerequisite, CHANGELOG.md `[Unreleased]` entry — see Docs).
+   prerequisite, docs/meta/hug-completion-reference.md shc entry, CHANGELOG.md
+   `[Unreleased]` entry — see Docs).
 
 ## Non-goals
 
