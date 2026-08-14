@@ -358,16 +358,29 @@ via a pipe (`hug shc -n -z | od -An -c` / `xxd -p`), NEVER via BATS `$output` (i
 NUL bytes and the assertion would vacuously pass on the wrong output). Same class as the
 `sl*` NUL work tracked in [elifarley/hug-scm#249](https://github.com/elifarley/hug-scm/issues/249).
 
-**Audit step (before commit 3 lands):** grep every internal `git shc` caller
-(`HUG_QUIET=T git shc …` in sh, shp, shcp, h files/squash, lol, cmv) and confirm none
-passes two positionals — spot-check says they pass one ref + optional `--` pathspecs;
-the spec makes it a verified step, not an assumption.
+**Audit step (before commit 3 lands):** grep every internal `git shc` caller and
+confirm none passes two positionals. The verified literal call sites (grep of
+git-config/bin + git-config/lib): git-h-files:195, git-h-squash:197 (note: does NOT use
+`HUG_QUIET=T` — sends full header output to `>&2`), git-shcp:140,147,
+hug-git-show:267,269,339,341 (this is how `git-sh`/`git-shp` reach shc — they contain
+no literal call themselves), and hug-git-commit:447. (`lol` is a .gitconfig alias for
+log-outgoing, and neither it nor `git-cmv` invokes `git shc` — both were phantom
+entries in an earlier draft of this list.) Spot-check: all nine sites pass exactly one
+positional + optional `--` pathspecs — none trips the new guard. The spec makes this a
+verified step, not an assumption.
 
 ## Docs
 
 - `docs/commands/head.md` — `shc` section: `-z` flag, positional rule, deltas note.
 - `git-config/lib/README.md` — `pinned_diff` entry (the canonical invocation; when to
   call it vs `show_changed_file_names`).
+- `README.md` — the shc synopsis line (~546) gains `-z` alongside `-n`; prerequisites
+  gain the minimum-supported-git declaration (floor 2.34 — see the probe discipline
+  above).
+- `CHANGELOG.md` — entry under `## [Unreleased]`. Repo convention: changelog + version
+  bump land inside the feature PR (v1.9.0 precedent, c37d716). The prior shc feature
+  needed a post-ship doc-fix commit (05817b7) for exactly this omission class — don't
+  pay that tax twice.
 - PR body: `Closes elifarley/hug-scm#274`, cites the behavior-delta table.
 
 ## Deliverables — 3 atomic commits, each independently green
@@ -377,7 +390,8 @@ the spec makes it a verified step, not an assumption.
 2. `refactor`: adopt `pinned_diff` at the three call sites + delta/regression tests +
    lib README entry (pins everywhere; behavior deltas registered above).
 3. `feat(shc)`: `-z/--null` + second-positional rejection + unborn-HEAD guard + help/docs
-   updates.
+   updates (docs/commands/head.md, lib README, README.md synopsis + minimum-git
+   prerequisite, CHANGELOG.md `[Unreleased]` entry — see Docs).
 
 ## Non-goals
 
