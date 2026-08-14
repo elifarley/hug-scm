@@ -489,6 +489,74 @@ teardown() {
   assert_output --partial "hug shc"
 }
 
+@test "hug shc -n: bare -n defaults to HEAD" {
+  run hug shc -n
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shc -n: invalid commit ref fails non-zero" {
+  run hug shc -n nonexistent123abc
+  assert_failure
+}
+
+@test "hug shc -n: mixed --stat HEAD also rejected (bundled-flag regression lock)" {
+  # Old pre-reject-loop behavior ran stats mode silently for `--stat HEAD`;
+  # the loop must reject the long-flag spelling exactly like -nq/-qn.
+  run hug shc --stat HEAD
+  assert_failure
+  assert_output --partial "USAGE:"
+}
+
+@test "hug shc -n: HUG_QUIET does not suppress data output" {
+  run env HUG_QUIET=T hug shc -n HEAD
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shc -n: range no-match pathspec exits 0 with empty stdout" {
+  # Mirrors the single-commit no-match test onto the range (git diff) branch
+  # so both dispatch arms of show_changed_file_names are covered.
+  run hug shc -n HEAD~2..HEAD -- '*.nomatch'
+  assert_success
+  assert_output ""
+}
+
+@test "hug shc -n: paths with spaces and non-ASCII print raw, not C-quoted" {
+  echo "space" > "my file.txt"
+  printf 'uni' > "unicodé.txt"
+  git add "my file.txt" "unicodé.txt"
+  git commit -qm "weird names"
+  run hug shc -n HEAD
+  assert_success
+  assert_line "my file.txt"
+  assert_line "unicodé.txt"
+  refute_output --partial '\303'
+}
+
+@test "hug shc -n: rename lists only the new path in both modes" {
+  git mv feature2.txt renamed.txt
+  git commit -qm "rename feature2"
+  run hug shc -n HEAD
+  assert_success
+  assert_output "renamed.txt"
+  run hug shc -n HEAD~1..HEAD
+  assert_success
+  assert_output "renamed.txt"
+}
+
+@test "hug shc -n: merge commit shows nothing (parity with --stat, issue 268)" {
+  git checkout -q -b side HEAD~1
+  echo side > side.txt
+  git add side.txt
+  git commit -qm "side change"
+  git checkout -q main
+  git merge -q --no-ff side -m "Merge side" >/dev/null 2>&1
+  run hug shc -n HEAD
+  assert_success
+  assert_output ""
+}
+
 # -----------------------------------------------------------------------------
 # hug shcp tests (show cumulative diff with stats)
 # -----------------------------------------------------------------------------

@@ -28,7 +28,9 @@ OPTIONS:
     -q, --quiet     Suppress header line (also honors HUG_QUIET env var)
     -n, --name-only Print ONLY changed file paths (repo-relative), one per line.
                     No stats, no header on stdout, no elision. Exit 0 even on
-                    zero matches (detect via empty stdout). Machine-parseable.
+                    zero matches (detect via empty stdout). Machine-parseable:
+                    paths print raw (no C-quoting) and renames list the new
+                    path only. Assumes filenames contain no newlines.
     -h, --help      Show this help
 
 PATH FILTERING:
@@ -122,7 +124,10 @@ EOF
 eval "$(parse_pathspecs "$@")"
 eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
 
-# Extract commit_ref and the -n/--name-only flag from pre_args.
+# Extract commit_ref and the -n/--name-only flag from the positional args left
+# by parse_common_flags (it consumes common flags and re-sets "$@" to the
+# remainder; pathspecs were already split off by parse_pathspecs — so iterate
+# "$@" here, never _pathspec_pre_args or the original arguments).
 # git-wtl-style reject-loop: any unrecognized -token is rejected loud via
 # reject_flag_ref (which lets valid -N range shorthands through). Without this,
 # the old last-wins extraction silently swallowed unknown tokens like -nq and
@@ -137,11 +142,13 @@ while [[ $# -gt 0 ]]; do
     ;;
   -*)
     # Any other -token: reject. reject_flag_ref allows -N (e.g. -3 → HEAD~3..HEAD)
-    # and rejects everything else (-nq, -qn, --foo) with help + exit 2.
-    reject_flag_ref "$1" && {
-      commit_ref="$1"
-      shift
-    }
+    # and rejects everything else (-nq, -qn, --foo) with help + exit 2. Called
+    # straight-line on purpose: it either exits or approves the token, and an
+    # && block here would skip the shift on a non-zero return, spinning this
+    # loop forever on the same token.
+    reject_flag_ref "$1"
+    commit_ref="$1"
+    shift
     ;;
   *)
     commit_ref="$1"

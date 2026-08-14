@@ -150,17 +150,33 @@ show_single_commit() {
 # Parameters:
 #   $1   - Commit ref, range, or N/-N form (resolved internally via
 #          resolve_commit_ref, so the function is independently testable without
-#          the script wrapper).
+#          the script wrapper; git-shc's pre-resolution of the same ref is
+#          redundant but harmless — resolve_commit_ref is idempotent on its
+#          own outputs).
 #   $2.. - Optional pathspecs (already-exploded args, passed as-is).
 # Output:
 #   Repo-relative file paths to stdout, one per line. Empty on no matches.
+#   Paths print raw (never C-quoted) even when they contain non-ASCII bytes.
 # Exit codes:
-#   0 always (zero matches → empty stdout — caller detects emptiness via stdout).
+#   0 on success, including zero matches (empty stdout — callers detect
+#   emptiness via stdout). Non-zero when the underlying git command fails:
+#   an invalid ref propagates git's exit 128 and its fatal message on stderr.
 # Environment:
 #   None read; does NOT honor HUG_QUIET (output is pure data — no header by design).
 # Notes:
-#   - Mirrors git-shc's dispatch EXACTLY: is_range → git diff --name-only,
-#     else git diff-tree --no-commit-id --name-only -r --root.
+#   - Mirrors git-shc's dispatch: is_range → git diff --name-only, else
+#     git diff-tree --no-commit-id --name-only -r --root. A third near-copy of
+#     the diff-tree flag set lives in hug-file-input's extract_files_from_commit
+#     — keep them in sync (consolidation tracked as a follow-up issue).
+#   - Output-shape pins (adversarial review, cross-model confirmed):
+#     core.quotePath=false keeps paths raw; diff.relative=false keeps them
+#     repo-relative; --ignore-submodules=none defeats a user's
+#     diff.ignoreSubmodules config; --find-renames forces rename detection in
+#     BOTH branches so a rename lists only the new path identically in
+#     single-commit and range modes (diff-tree without -M would list old+new,
+#     diverging from `git diff --name-only`, the documented equivalent).
+#   - One-path-per-line assumes filenames contain no newlines; NUL-separated
+#     output would need a separate -z flag (follow-up).
 #   - Merge-commit single-commit shows nothing (same as --stat) — known parity,
 #     see elifarley/hug-scm#268 for the pre-existing bug this preserves.
 #   - Bundled-flag handling lives in the git-shc script wrapper, NOT here.
@@ -174,9 +190,11 @@ show_changed_file_names() {
     resolved=$(resolve_commit_ref "$target" "HEAD")
 
     if is_range "$resolved"; then
-        git diff --name-only "$resolved" "${path_args[@]+"${path_args[@]}"}"
+        git -c core.quotePath=false -c diff.relative=false diff --name-only --find-renames --ignore-submodules=none \
+            "$resolved" "${path_args[@]+"${path_args[@]}"}"
     else
-        git diff-tree --no-commit-id --name-only -r --root "$resolved" "${path_args[@]+"${path_args[@]}"}"
+        git -c core.quotePath=false -c diff.relative=false diff-tree --no-commit-id --name-only -r --root --find-renames --ignore-submodules=none \
+            "$resolved" "${path_args[@]+"${path_args[@]}"}"
     fi
 }
 

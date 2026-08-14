@@ -616,3 +616,28 @@ teardown() {
   assert_success
   assert_output ""
 }
+
+@test "show_changed_file_names: 0-arg call defaults to HEAD" {
+  run show_changed_file_names
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "show_changed_file_names: N/-N forms resolve internally" {
+  # The docstring advertises internal resolution so the function is testable
+  # without the script wrapper — exercise the raw forms directly.
+  run show_changed_file_names "-2"
+  assert_success
+  assert_line "feature1.txt"
+  assert_line "feature2.txt"
+  run show_changed_file_names "1"
+  assert_success
+  assert_output "feature1.txt"
+}
+
+@test "show_changed_file_names: invalid ref propagates git failure" {
+  # Contract (docstring): 0 on success/zero matches, non-zero when git rejects
+  # the ref — the function does NOT validate refs itself.
+  run show_changed_file_names "nonexistent123abc"
+  assert_failure
+}
