@@ -52,7 +52,7 @@ plumbing (touching the same lines twice otherwise):
 | D1 | Scope: all four items | Item 4's helper is item 1's natural home; items 2–3 are small |
 | D2 | Flag: `-z, --null`; **requires** `-n` (`shc -z` alone → usage error, exit 2) | Family convention (`git-s` ships `-z, --null`); mirrors the `-nq` reject-loop philosophy; git's own `-z` implies no format |
 | D3 | Second positional → `error_usage` (exit 2) naming both tokens | Issue's recommendation; a second ref is always a mistake (pathspecs go after `--`) |
-| D4 | Pins everywhere: stats path and `extract_files_from_commit` gain the determinism pins, with tested behavior deltas | One flag set is the point of item 4; parameterized pins would preserve the divergence the issue complains about |
+| D4 | Pins everywhere: stats path and `extract_files_from_commit` gain the determinism pins, with tested behavior deltas. The rename axis is a TWO-VALUED CONTRACT: display callers pin `--find-renames` (collapsed), action-list callers pin `--no-renames` (both sides) | One flag set is the point of item 4; parameterized pins would preserve the divergence the issue complains about. Amendment (user-directed during roast reception): `hug a --from-commit` & co. were working fine — a consolidation must not silently drop the deleted side of a rename from action lists. The determinism pins stay non-negotiable everywhere; the rename stance is pinned EXPLICITLY in both directions (never config-dependent, never a per-site ad-hoc pick) |
 | D5 | Branded error for **unborn HEAD only**; invalid refs keep today's raw git fatal (exit 128) | Preserves `show_changed_file_names`'s documented exit-128 contract; matches the issue's scope |
 | D6 | Approach A: one pinned runner function in `hug-git-diff` (vs. delegating to hug-git-show, vs. a shared flag array) | Kills the fourth near-duplication too (pins repeated across `show_changed_file_names`'s own branches); reachable from every call site via `hug-git-kit` |
 
@@ -65,9 +65,14 @@ emoji, and error policy stay at call sites (exactly as the issue sketches).
 
 ```bash
 # Runs the canonical pinned changed-files invocation for a commit or range.
-# Usage: pinned_diff [--null] <format> <resolved_ref> [pathspec...]
+# Usage: pinned_diff [--null] [--no-renames] <format> <resolved_ref> [pathspec...]
 # Parameters:
-#   --null   - Optional, FIRST arg: NUL-separated output (--name-only only).
+#   --null       - Optional leading flag: NUL-separated output (--name-only only).
+#   --no-renames - Optional leading flag: renames list BOTH sides — the ACTION-LIST
+#                  contract (staging/untrack lists need the deleted side). Default is
+#                  the DISPLAY contract (--find-renames: new path only / collapsed
+#                  `{old => new}` stat line). Both stances are explicit and
+#                  config-immune — neither depends on the user's diff.renames.
 #   $1       - Format: --name-only | --stat. Anything else is a caller bug.
 #   $2       - resolved_ref: an ALREADY-RESOLVED commit ref or range (anything
 #              is_range() recognizes). N/-N shorthand resolution is the CALLER's
@@ -96,10 +101,11 @@ emoji, and error policy stay at call sites (exactly as the issue sketches).
 #                                  tab) in line mode regardless of this config — -z is
 #                                  the only fully-raw stream (probe-verified, git 2.34.1)
 #   -c diff.relative=false         paths stay repo-relative
-#   --find-renames                 a rename lists the new path only, in BOTH
-#                                  dispatch branches (diff-tree without -M
-#                                  would list old+new and diverge from the
-#                                  range branch)
+#   --find-renames / --no-renames  the rename CONTRACT, pinned explicitly in both
+#                                  directions. Default (--find-renames, display):
+#                                  a rename lists the new path only, in BOTH dispatch
+#                                  branches. --no-renames (action lists): both sides.
+#                                  Neither stance reads the user's diff.renames.
 #   --ignore-submodules=none       defeats a user's diff.ignoreSubmodules
 # Notes:
 #   - Dispatch: is_range <resolved_ref> → `git diff <format> <pins> <resolved_ref>`;
@@ -116,13 +122,14 @@ the name-only branch):
 
 ```bash
 pinned_diff() {
-    local null_mode=false
+    local null_mode=false no_renames=false
     [[ "${1:-}" == "--null" ]] && { null_mode=true; shift; }
+    [[ "${1:-}" == "--no-renames" ]] && { no_renames=true; shift; }
     # Arg-count guard BEFORE any positional read: under set -u, touching $1/$2 with
     # too few args dies as "unbound variable" (exit 1) — a caller bug must surface
     # as error_usage (exit 2), not a raw bash trace.
     if [[ $# -lt 2 ]]; then
-        error_usage "pinned_diff: expected [--null] <format> <resolved_ref> [pathspec...]"
+        error_usage "pinned_diff: expected [--null] [--no-renames] <format> <resolved_ref> [pathspec...]"
     fi
     local format="$1" resolved_ref="$2"
     shift 2
@@ -130,6 +137,11 @@ pinned_diff() {
     [[ $# -gt 0 ]] && path_args=(-- "$@")
     local -a zflag=()
     $null_mode && zflag=(-z)
+    # Rename stance is a never-empty scalar, so plain "$rename_flag" is set -u-safe
+    # without the + guard the possibly-empty arrays need. Explicit BOTH ways — the
+    # invocation never inherits the user's diff.renames config.
+    local rename_flag=--find-renames
+    $no_renames && rename_flag=--no-renames
 
     if [[ "$format" != "--name-only" && "$format" != "--stat" ]]; then
         error_usage "pinned_diff: unknown format '$format' (expected --name-only or --stat)"
@@ -140,12 +152,12 @@ pinned_diff() {
 
     if is_range "$resolved_ref"; then
         git -c core.quotePath=false -c diff.relative=false \
-            diff "$format" "${zflag[@]+"${zflag[@]}"}" --find-renames --ignore-submodules=none \
+            diff "$format" "${zflag[@]+"${zflag[@]}"}" "$rename_flag" --ignore-submodules=none \
             "$resolved_ref" "${path_args[@]+"${path_args[@]}"}"
     else
         git -c core.quotePath=false -c diff.relative=false \
             diff-tree --no-commit-id "$format" -r --root "${zflag[@]+"${zflag[@]}"}" \
-            --find-renames --ignore-submodules=none \
+            "$rename_flag" --ignore-submodules=none \
             "$resolved_ref" "${path_args[@]+"${path_args[@]}"}"
     fi
 }
@@ -165,7 +177,7 @@ transitively via hug-common's lib list; `is_range` is defined in hug-git-repo).
 |---|---|---|
 | `hug-git-show: show_changed_file_names` (line ~183) | own git calls; pins duplicated across its range/single branches | resolve ref → `pinned_diff "${zflag[@]+"${zflag[@]}"}" --name-only "$resolved" "$@"` (zflag array, the same idiom pinned_diff itself uses — sketches get transcribed, so no ad-hoc expansion forms); doc contract unchanged (exit-128 propagation, no HUG_QUIET) |
 | `git-shc` stats path (line ~201) | two unpinned branches (`git diff --stat` / `git diff-tree --stat`) | one `stats_output=$(pinned_diff --stat "$commit_ref" …)`; emoji headers stay in the script, keyed off `is_range` |
-| `hug-file-input: extract_files_from_commit` (line ~141) | unpinned `git diff-tree --no-commit-id --name-only -r --root` | same rev-parse guard + `pinned_diff --name-only "$commit" 2>/dev/null \|\| true` — the swallow policy stays AT the call site. Post-refactor the swallow ALSO masks exit 127 (an unsourced `pinned_diff`), not just git's 128: document that dependency in hug-file-input's header comment and in the swallow comment itself. Not a live bug — every current consumer loads hug-git-diff via hug-common's lib list — but a future consumer that drops hug-common inherits a silently-empty file list |
+| `hug-file-input: extract_files_from_commit` (line ~141) | unpinned `git diff-tree --no-commit-id --name-only -r --root` | same rev-parse guard + `pinned_diff --no-renames --name-only "$commit" 2>/dev/null \|\| true` — ACTION-LIST contract: renames keep BOTH sides, output byte-identical to today (probe receipt in the delta table). The swallow policy stays AT the call site. Post-refactor the swallow ALSO masks exit 127 (an unsourced `pinned_diff`), not just git's 128: document that dependency in hug-file-input's header comment and in the swallow comment itself. Not a live bug — every current consumer loads hug-git-diff via hug-common's lib list — but a future consumer that drops hug-common inherits a silently-empty file list |
 
 `show_changed_file_names` gains an optional leading `-z`/`--null` (mirrors the CLI
 vocabulary; `pinned_diff` itself takes only the long form):
@@ -193,17 +205,14 @@ quoted token per line — safe, but not the path; the pin changes nothing here);
 (git-shc) + tests. `extract_files_from_commit` has four (git-a, git-ccp, git-untrack,
 git-us) — they receive raw, repo-relative, submodule-deterministic paths instead of
 config-dependent output: strictly more deterministic, and strictly better for non-ASCII
-path handling. The rename pin is a TRADE-OFF here, not an improvement: these are
-action-list consumers (git-a:181 `mapfile < <(extract_files_from_commit …)` →
+path handling. These are ACTION-LIST consumers (git-a:181 `mapfile < <(extract_files_from_commit …)` →
 `hug_add_with_summary`; git-us/git-untrack same shape around their `--from-commit` paths;
-git-ccp: `mapfile < <(extract_files_from_commit "$source_commit")`), and rename collapse
-drops the deleted side of a rename from the list — staging/untrack silently stop covering
-the old path (probe receipt in the delta table). Accepted deliberately: D4 locks ONE
-flag set, and per-consumer pin selection would re-open the divergence D4 exists to close.
-If field use shows the missing deletion side bites (rename-heavy `--from-commit` flows),
-the documented escape hatch is a two-mode helper (display pins vs action pins) — a future
-spec, not this one. The PR body must present this as a registered trade-off with the four
-consumers audited — never as "strictly more correct".
+git-ccp: `mapfile < <(extract_files_from_commit "$source_commit")`), so they call
+`pinned_diff --no-renames`: both sides of a rename keep listing and their behavior is
+byte-identical to today (probe: `diff` clean against the unpinned invocation). The
+rename axis is the ONE pin that is a contract rather than a constant — display callers
+pin collapse, action callers pin expansion — and it is explicit in both directions, so
+no call site ever inherits the user's `diff.renames` config.
 
 ### 3. `git-shc` script changes (items 1–3)
 
@@ -297,7 +306,7 @@ effect is hostile-config normalization, not a user-visible change.
 | stats, range branch (git diff) | rename | NO delta at default config — porcelain already collapses. The pin normalizes only hostile config (probe: `-c diff.renames=false` prints two lines; pinned prints one). Do NOT cite this as a user-visible change in the PR body |
 | stats | submodules | honored user `diff.ignoreSubmodules` → always shown (`=none` resets it) |
 | `extract_files_from_commit` (git-a, git-ccp, git-untrack, git-us) | non-ASCII paths, submodules | config-dependent output → non-ASCII raw (quotePath pin; structural chars STAY C-quoted in line mode — git's behavior, not a hug delta), submodule-deterministic |
-| git-a/us/untrack/ccp `--from-commit` on a rename commit | action-list completeness | REGISTERED TRADE-OFF, not an improvement: today the list carries BOTH sides of a rename (unpinned diff-tree does no rename detection); after the pin it carries the new path only — `hug a --from-commit <rename-commit>` stages the new path but NOT the old path's deletion, silently (probe: unpinned lists `b.txt` + `renamed-b.txt`; pinned lists `renamed-b.txt` only). Cite in the PR body with the four consumers audited |
+| git-a/us/untrack/ccp `--from-commit` on a rename commit | action-list completeness | NO CHANGE — deliberately. The action contract pins `--no-renames`: both sides of a rename keep listing, byte-identical to today (probe on 2.34.1: today's unpinned output == pinned `--no-renames` output, `diff` clean). An earlier draft applied the display pin (`--find-renames`) here and registered the lost deletion side as a trade-off — rejected in review: `hug a --from-commit` was working, and a consolidation must not silently shrink action lists |
 | all sites | `diff.relative` | paths always repo-relative even if a user sets `diff.relative=true` (belt-and-braces for tree-to-tree diffs; uniformity is the win) |
 
 **Probe-refuted delta (dropped from this table):** "stats special-char paths:
@@ -314,8 +323,10 @@ item 6 below).
 
 Non-deltas (regression safety): for plain-ASCII paths, ABSENT renames (see the rename
 deltas above — a rename flips `5 files changed` to `4 files changed` on the
-single-commit branch), and default-ish config, output is byte-identical to today — that
-expectation is itself a test. Merge-commit parity
+single-commit DISPLAY branch), and default-ish config, output is byte-identical to
+today — that expectation is itself a test. The action-list path is stronger:
+byte-identical INCLUDING renames (`--no-renames` probe receipt in the delta table) —
+`hug a --from-commit` and its three siblings keep their exact working behavior. Merge-commit parity
 ([elifarley/hug-scm#268](https://github.com/elifarley/hug-scm/issues/268)) is preserved
 unchanged.
 
@@ -350,12 +361,20 @@ re-confirmation where an item says so — "verified on the floor" does not imply
    does not cover it — they are different git code paths. (Pre-probed on 2.34.1: raw
    `caf\303\251.txt` bytes + NUL, no trailing newline; still bake the assertion into the
    plan.)
-8. `--find-renames` on the diff-tree branch is bounded by `diff.renameLimit`; exceeding
-   it emits an inexact-rename warning to stderr — a NEW stats-mode stderr emission the
+8. `--find-renames` (display modes only — the `--no-renames` action path runs no rename
+   detection) on the diff-tree branch is bounded by `diff.renameLimit`; exceeding it
+   emits an inexact-rename warning to stderr — a NEW stats-mode stderr emission the
    unpinned command never produced. Decide deliberately before commit 2: accept
    (stderr-only, informative) or pin `-c diff.renameLimit=<higher>` into the flag set.
    Probe with a fixture over the limit on the floor git — the default limit is
    version-dependent, so measure, don't assume.
+9. Rename-contract mechanics (pre-probed on 2.34.1, receipts baked into the delta
+   table; re-confirm on the floor): `--no-renames` is accepted by BOTH `git diff-tree`
+   and `git diff` (exit 0); `diff.renames` config does NOT affect diff-tree plumbing
+   (both sides listed under `-c diff.renames=true`) but DOES affect the porcelain range
+   branch — which `--no-renames` overrides. Conclusion encoded in the design: the
+   explicit stance is belt-and-braces on the single branch, load-bearing on the range
+   branch, and self-documenting everywhere.
 
 ## Help text additions (in `git-shc` show_help)
 
@@ -390,9 +409,9 @@ OPTIONS:
 
 | File | Covers |
 |---|---|
-| `tests/lib/test_hug_git_diff.bats` **(new)** | `pinned_diff`: range/single dispatch; `--name-only`/`--stat`; `--null` NUL output; `--null`+`--stat` → exit 2; unknown format → exit 2; pins honored under hostile config (test repo sets `core.quotePath=true`, `diff.renames=false`, `diff.ignoreSubmodules=all` → output still raw / rename-collapsed / submodules shown); pathspec passthrough; bad ref → exit 128 |
+| `tests/lib/test_hug_git_diff.bats` **(new)** | `pinned_diff`: range/single dispatch; `--name-only`/`--stat`; `--null` NUL output; `--null`+`--stat` → exit 2; unknown format → exit 2; pins honored under hostile config (test repo sets `core.quotePath=true`, `diff.renames=false`, `diff.ignoreSubmodules=all` → output still raw / rename-collapsed / submodules shown); `--no-renames`: both rename sides listed, overriding hostile `diff.renames=true` on the range branch; pathspec passthrough; bad ref → exit 128 |
 | `tests/unit/test_sh.bats` (shc section) | `shc -n -z`: NUL-separated (od/xxd assertion), incl. filename with embedded newline (`$'we\nird'`) — line mode asserts ONE C-quoted line `"we\nird"` (the actual before-behavior — git never split it), `-z` mode asserts raw bytes + NUL terminator; `shc -z` w/o `-n` → exit 2 + usage message; second positional → exit 2 naming both tokens (stats mode AND `-n` mode); unborn HEAD (`git init` only) → branded message, exit 1, no raw `fatal:` (all ref forms: none, `1`, `-3`, `main..HEAD`); stats rename delta on a SINGLE-COMMIT fixture (two lines → one `{old => new}` line); range-branch rename asserted UNCHANGED at default config (already collapses — the pin's range effect is hostile-config-only: pinned vs `-c diff.renames=false`); special-char paths stay C-quoted (byte-identity pinned vs unpinned, per the probe-refuted-delta note); existing `-n` line-mode tests stay green |
-| `tests/lib/test_hug-file-input.bats` | `extract_files_from_commit`: raw paths under `core.quotePath=true`; rename → new path only, with a comment pinning the registered trade-off (the old path's absence from action lists is deliberate — see delta table) |
+| `tests/lib/test_hug-file-input.bats` | `extract_files_from_commit`: raw paths under `core.quotePath=true`; rename → BOTH sides listed, byte-identical with today (the action contract; a comment explains why action lists must not collapse renames) |
 | `tests/lib/test_hug_git_show.bats` | `show_changed_file_names` regression (thin-wrapper refactor keeps line-mode byte-identical); `-z` leading-token passthrough |
 
 **NUL-testing technique (project learning, mandatory):** bash cannot hold NUL — assert
