@@ -167,6 +167,7 @@ Ball color encodes working-tree state (precedence: top → bottom):
   That's why it's important to run `hug ss` before to list what's currently staged and run `hug us <file1> [<file2> ...]` to unstage files you don't want included.
    - If unrelated changes end up in the amended commit, recover with `hug h back 1 --force`, unstage unwanted files, and run `hug cmod --no-edit` again.
 - `hug cmod --no-edit` — amend HEAD with staged changes only, without changing the commit message.
+- **Safety guard:** `cmod`/`cmoda` refuse content-null amends (exit 3) — nothing staged (cmod) / no tracked changes (cmoda) with `--no-edit`. Stage or pass `-m`; `-f` only for a deliberate re-hash/re-date.
 
 Before running `cmod` (Commit MODify), ALWAYS run `hug s --short-hash` to check which commit is going to be amended (as HEAD may have moved).
 

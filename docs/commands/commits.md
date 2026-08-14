@@ -135,7 +135,20 @@ For a deterministic non-interactive amend, pass `--no-edit` (keep the message) o
 `-m` (replace it). To inspect which commit would be amended (its hash/message),
 use `hug s --short-hash` or `hug sh HEAD` — never `cmod`.
 
-**Usage:** `hug cmod`
+**Safety guard:** `cmod` refuses a **content-null amend** — an amend with
+nothing staged and no message change (`--no-edit`, or a `-m`/`-F`/`-C`
+message that normalizes to the existing one; under a no-op editor like
+`GIT_EDITOR=true`, a bare amend counts as no message change too) — with
+exit 3, because it would silently rewrite HEAD's hash (same tree, same
+message). Stage changes first (`hug a <files>`) or pass `-m` with a
+genuinely different message. To deliberately re-hash/re-date HEAD, re-run
+with `-f`.
+
+Pass `-- <paths>` to fold only the named paths' changes into the amend (git's
+`--only` mode) — no staging needed. The safety guard applies to this form too:
+named paths with no changes and no message change are refused.
+
+**Usage:** `hug cmod [-- <paths>...]`
 
 **Examples:**
 ```shell
@@ -146,6 +159,9 @@ hug s --short-hash
 hug a docs/forgotten-file.md
 # Open the editor to see the last message and confirm or tweak it (rewrites HEAD)
 hug cmod
+
+# Or... Amend with ONLY the named paths' changes (no staging needed)
+hug cmod --no-edit -- docs/forgotten-file.md
 
 # Or... Replace the last commit message entirely without opening the editor
 hug cmod -m "A completely new and corrected commit message"
@@ -168,6 +184,15 @@ files, stage them and use `hug cmod`:
 :::
 
 Running `hug cmoda` opens your editor with the existing commit message, making it perfect for small edits. To replace the message entirely without opening the editor, use the `-m` flag.
+
+**Safety guard:** `cmoda` refuses a **content-null amend** — an amend with
+nothing staged or modified and no message change (`--no-edit`, or a
+`-m`/`-F`/`-C` message that normalizes to the existing one; under a no-op
+editor like `GIT_EDITOR=true`, a bare amend counts as no message change
+too) — with exit 3, because it would silently rewrite HEAD's hash (same
+tree, same message). Stage changes first (`hug a <files>`) or pass `-m`
+with a genuinely different message. To deliberately re-hash/re-date HEAD,
+re-run with `-f`.
 
 Usage: `hug cmoda`
 

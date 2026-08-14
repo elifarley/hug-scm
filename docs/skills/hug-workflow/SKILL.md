@@ -24,6 +24,7 @@ CRUCIAL: When you want to run a git command, ALWAYS translate it to a `hug` equi
 - `hug cmod -m 'msg'` adds ANY staged files to the commit
 - ALWAYS run `hug sls` first to list staged files
 - Use `hug usa` to unstage everything if you want message-only amend
+- **Safety guard:** `cmod`/`cmoda` refuse content-null amends (exit 3) — stage files first or pass `-m`; `-f` only for a deliberate re-hash/re-date.
 
 **Handling commit messages**
 
