@@ -147,12 +147,12 @@ else
   if [[ "$choice" =~ ^[Yy] ]]; then
     if [ "$no_squash" = true ]; then
       git merge "$branch" || {
-        error "$PROG_NAME: Merge failed (conflicts?). Resolve manually with 'hug a && hug c', then delete with 'hug w wipdel %s'." "$branch"
+        error "$PROG_NAME: Merge failed (conflicts?). Resolve manually with 'hug a && hug c', then delete with 'hug w wipdel $branch'."
         exit 1
       }
     else
       git merge --squash "$branch" || {
-        error "$PROG_NAME: Squash-merge failed (conflicts?). Resolve with 'hug a && hug c', then delete with 'hug w wipdel %s'." "$branch"
+        error "$PROG_NAME: Squash-merge failed (conflicts?). Resolve with 'hug a && hug c', then delete with 'hug w wipdel $branch'."
         exit 1
       }
       orig_msg="$(git log -1 --format='%s' "$branch" | sed 's/^\[WIP\] //' || echo "Complete WIP work")"

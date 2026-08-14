@@ -90,7 +90,23 @@ eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
 check_git_repo
 guard_content_null_amend tracked "$@" \
   -- "${_pathspec_pathspecs[@]}" # exits 3 on refusal
-info "Amending last commit with all tracked changes..."
+# pick honest info line from $_amend_content_null + amend_args_message_intent
+# (mirrors git-cmod; spec §3 five-state table with cmoda wording). Capture
+# idiom: rc=0; fn || rc=$? — a bare call returning 1/2 would kill the script
+# under set -e (the commit_offset errexit lesson).
+_msg_rc=0
+amend_args_message_intent "$@" || _msg_rc=$?
+if [[ "${_amend_content_null:-false}" == "true" ]]; then
+  if [[ "${HUG_FORCE:-}" == "true" ]]; then
+    info "Amending last commit (--force: no content change — only the hash will be rewritten)..."
+  elif ((_msg_rc == 1)); then
+    info "Amending last commit (message change only — no tracked changes)..."
+  else
+    info "Amending last commit (no content change; the editor decides the message)..."
+  fi
+else
+  info "Amending last commit with all tracked changes..."
+fi
 # The final commit MUST re-insert the pathspecs: otherwise the pre-parse
 # silently strips `-- <paths>` and `-a` would amend ALL tracked changes
 # (git would have rejected "-a with paths"). Re-inserting lets git apply its
