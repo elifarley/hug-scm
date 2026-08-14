@@ -174,22 +174,15 @@ create_test_repo() {
     # install their own hooks (e.g. the commit-msg rejection test in
     # test_commit.bats). Pin each test repo to its own hooks dir so the suite
     # behaves identically with or without a global override (elifarley/hug-scm#184).
+    # Do NOT "simplify" to `git rev-parse --git-path hooks`: --git-path resolves
+    # THROUGH any configured hooksPath, so on an affected machine it returns the
+    # GLOBAL hooks dir and the pin silently re-pins the config it overrides.
     git config --local core.hooksPath "$(git rev-parse --absolute-git-dir)/hooks"
 
     # Configure git aliases needed by hug commands
     # These are from git-config/.gitconfig
     git config --local alias.ll "log --graph --pretty=log1 --date=short"
     git config --local pretty.log1 "%C(bold blue)%h%C(reset) %C(white)%ad%C(reset) %C(dim white)%an%C(reset)%C(auto)%d%C(reset) %s"
-
-    # Pin hooks to this fixture's own hooks dir (elifarley/hug-scm#184): a
-    # machine-global core.hooksPath (husky, lefthook, personal hooks dir)
-    # otherwise overrides the fixture hooks that tests install, breaking them
-    # only on machines that set it — CI never does, so the breakage hides.
-    # Absolute path on purpose: `git rev-parse --git-path hooks` resolves
-    # THROUGH any configured hooksPath, so on an affected machine it returns
-    # the GLOBAL hooks dir and the pin becomes a no-op (re-pinning the very
-    # config we are overriding). $PWD is the fixture root right here.
-    git config --local core.hooksPath "$PWD/.git/hooks"
 
     # Create initial commit with deterministic timestamp
     reset_fake_clock
