@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["branching"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 # shellcheck source=../lib/hug-common
@@ -27,12 +32,14 @@ ARGUMENTS:
 OPTIONS:
     --dry-run          Preview the restore operation without applying changes
     -f, --force        Skip confirmation prompts (sets HUG_FORCE=true)
+    -y, --yes          Skip confirmation prompts (keeps safe semantics)
     --quiet            Suppress output (sets HUG_QUIET=T)
     -h, --help         Show this help
 
 DESCRIPTION:
     Restores a branch from a backup created by commands like 'hug rb'.
-    Backup branches follow the naming convention: hug-backups/YYYY-MM/DD-HHMM.original-name
+    Backup branches follow the naming convention: hug-backups/YYYY-MM/DD-HHMM[SS[-N]].original-name
+    (where SS is seconds and N is a collision counter for same-second backups)
 
     If the target branch already exists, you will be prompted for confirmation as this is a
     destructive operation (the existing branch will be deleted and recreated).
@@ -129,7 +136,10 @@ hug_brestore() {
     local index
 
     if [[ $num_backups -ge 10 ]] && gum_available; then
-      index=$(get_gum_selection_index formatted_options display_names "Select a backup branch to restore..." "$gum_height")
+      if ! index=$(get_gum_selection_index formatted_options "Select a backup branch to restore..."); then
+        info "Cancelled."
+        return 1
+      fi
     else
       printf "Select a backup branch to restore:\n\n" >&2
 
@@ -138,7 +148,10 @@ hug_brestore() {
         printf "%d) %s\n" "$num" "${display_lines[i]}" >&2
       done
 
-      index=$(get_numbered_selection_index "$num_backups")
+      if ! index=$(get_numbered_selection_index "$num_backups"); then
+        info "Cancelled."
+        return 1
+      fi
     fi
 
     backup_branch="${backups[$index]}"
@@ -208,7 +221,7 @@ hug_brestore() {
       warning "Branch '$target_branch' already exists at commit $current_target_hash"
       warning "Restoring will DELETE the existing branch and recreate it at $backup_short"
       printf "\n" >&2
-      prompt_confirm_warn "⚠️  This is a DESTRUCTIVE operation. Proceed? [y/N]: "
+      prompt_confirm_danger "restore" "Deletes existing branch and recreates it at backup point"
     fi
   fi
 

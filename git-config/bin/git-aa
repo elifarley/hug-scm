@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["staging"]'
+_hug_keywords='["add-all", "stage-all", "track-everything"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
@@ -28,7 +34,7 @@ EXAMPLES:
   # Note: No paths allowed; use 'hug a <path>' for specific files or directories.
 
 SEE ALSO:
-  hug a: Stage tracked files (updates only), or specific files if provided
+  hug a: Stage tracked changes (modifications + deletions), or specific files if provided
   hug ai: Invoke interactive add menu
   hug ap: Add patches interactively (no commit)
 EOF
@@ -39,8 +45,8 @@ eval "$(parse_common_flags "$@")"
 
 test $# -gt 0 && {
   show_help
-  echo "Error: 'hug aa' stages everything in the repo; no paths expected."
-  echo "For specific files or directories, use 'hug a <path>'."
+  echo "Error: 'hug aa' stages everything in the repo; no paths expected." >&2
+  echo "For specific files or directories, use 'hug a <path>'." >&2
   exit 1
 }
 

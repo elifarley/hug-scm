@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["statistics"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # git-stats-file - File-level statistics and metrics
 # Part of the Hug tool suite
 
@@ -78,6 +83,7 @@ SEE ALSO:
     hug fcon             : File contributors list
     hug fa               : Author commit counts for file
     hug analyze activity : Temporal activity patterns
+    hug shc              : Per-commit file change statistics
 EOF
 }
 
@@ -160,7 +166,9 @@ if [ ! -f "$python_script" ]; then
 
   # Authors
   info "Authors:"
-  git log --follow --format='%an' -- "$file" | sort | uniq -c | sort -rn | head -5 |
+  # SIGPIPE-safe: capture-then-filter — head -5 would SIGPIPE git log under pipefail
+  _authors_raw=$(git log --follow --format='%an' -- "$file" 2> /dev/null) || _authors_raw=""
+  sort | uniq -c | sort -rn | head -5 <<< "$_authors_raw" |
     while read count author; do
       info "  $author ($count commits)"
     done
@@ -171,7 +179,9 @@ if [ ! -f "$python_script" ]; then
   git log --follow --format='  %ai by %an' -- "$file" | tail -1
 
   info "Last commit:"
-  git log --follow --format='  %ai by %an' -- "$file" | head -1
+  # SIGPIPE-safe: capture-then-filter — head -1 would SIGPIPE git log under pipefail
+  _last_commit_raw=$(git log --follow --format='  %ai by %an' -- "$file" 2> /dev/null) || _last_commit_raw=""
+  head -1 <<< "$_last_commit_raw"
 
   # Current size
   if [ -f "$file" ]; then

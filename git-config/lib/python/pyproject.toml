@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=82.0.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,7 @@ name = "hug-scm-python-helpers"
 version = "1.0.0"
 description = "Python analysis helpers for Hug SCM"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 authors = [
     {name = "Hug SCM Contributors"}
 ]
@@ -15,7 +15,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -23,7 +22,7 @@ classifiers = [
 ]
 dependencies = [
     "tomli>=2.0.0; python_version < '3.11'",
-    "tomli-w>=1.0.0",
+    "tomli-w>=1.2.0",
     "orgecc-command-mock>=0.1.5"
 ]
 
@@ -34,12 +33,15 @@ py-modules = ["activity", "churn", "co_changes", "ownership"]
 dev = [
     "mypy>=1.0.0",
     "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "pytest-mock>=3.10.0",
+    "pytest-cov>=7.1.0",
+    "pytest-mock>=3.15.1",
     "ruff>=0.4.0",
 ]
+search = [
+    "thefuzz>=0.22.0",
+]
 enhanced = [
-    "numpy>=1.20.0",
+    "numpy>=2.0.2",
     "plotext>=5.0.0",
     "networkx>=2.6.0",
 ]

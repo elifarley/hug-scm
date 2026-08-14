@@ -14,6 +14,23 @@
 #   - print_action_preview: caution before destructive actions.
 
 ################################################################################
+# Exit-code convention (family-wide; design 2026-06-12 §6)
+#
+#   0 success (incl. dry-run and "nothing to do")
+#   1 operational failure (not found, git error, partial batch failure)
+#   2 usage error (unknown flag, bad combination, malformed value)
+#   3 blocked by safety (danger op without -f, main/current worktree,
+#     locked, dirty without -f, branch checked out elsewhere)
+#
+# Always non-zero on failure, so plain `if hug …` checks keep working.
+# Scripts that care can branch on $? ∈ {1,2,3}.
+################################################################################
+HUG_EX_OK=0
+HUG_EX_FAIL=1
+HUG_EX_USAGE=2
+HUG_EX_BLOCKED=3
+
+################################################################################
 # Output and User Interaction Functions
 ################################################################################
 
@@ -23,9 +40,19 @@
 #   $1 - Error message to display
 #   $2 - (Optional) Exit code, defaults to 1
 error() {
-  HUG_QUIET='' gum_log "${RED}❌ Error$NC" "$@"
+  # Render ONLY the message: $2 is the exit code per the contract above.
+  # Forwarding "$@" leaked the numeric code to the renderer — every
+  # error_blocked refusal printed a stray "3: " line (gum's fallback
+  # printf formats each extra arg as "prefix: arg").
+  HUG_QUIET='' gum_log "${RED}❌ Error$NC" "$1"
   exit "${2:-1}"
 }
+
+# error_usage "message" — usage errors (exit 2)
+error_usage() { error "$1" "$HUG_EX_USAGE"; }
+
+# error_blocked "message" — refused for safety (exit 3)
+error_blocked() { error "$1" "$HUG_EX_BLOCKED"; }
 
 # Prints a warning message to stderr
 # Usage: warning "message"
@@ -117,20 +144,20 @@ print_staged_unstaged_paths() {
   
   if [[ ${#staged_ref[@]} -gt 0 ]]; then
     if $target_staged && ! $target_unstaged; then
-      printf '  Staged paths (unstaged changes in these files would be preserved):\n'
+      printf '  Staged paths (unstaged changes in these files would be preserved):\n' >&2
     else
-      printf '  Staged paths:\n'
+      printf '  Staged paths:\n' >&2
     fi
     print_list '    ' "${staged_ref[@]}"
   fi
   
   if [[ ${#unstaged_ref[@]} -gt 0 ]]; then
-    printf '  Unstaged paths:\n'
+    printf '  Unstaged paths:\n' >&2
     print_list '    ' "${unstaged_ref[@]}"
   fi
   
   if $target_staged && $target_unstaged; then
-    printf '  (Both staged and unstaged would be fully discarded for affected paths)\n'
+    printf '  (Both staged and unstaged would be fully discarded for affected paths)\n' >&2
   fi
 }
 

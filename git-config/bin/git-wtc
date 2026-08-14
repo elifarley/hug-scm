@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["worktrees"]'
+_hug_keywords='["create-worktree", "new-worktree", "linked-checkout"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 # Assume HUG_HOME is set (exported by hug or environment)
 # shellcheck source=git-config/lib/hug-common
 . "$HUG_HOME/git-config/lib/hug-common"
@@ -23,20 +29,33 @@ ARGUMENTS:
     [path]          Custom path for worktree (optional, auto-generated if not provided).
 
 OPTIONS:
-    -f, --force     Skip confirmation prompts and auto-create branches
-    --dry-run       Show what would be done without creating the worktree
-    --new           Automatically create branch if it doesn't exist
-    -h, --help      Show this help
+    -f, --force             Skip confirmation prompts, auto-create branches, and allow
+                            creating worktrees for branches checked out elsewhere
+    -y, --yes               Skip confirmation prompts. NOT sufficient for operations requiring -f.
+    --dry-run               Show what would be done without creating the worktree
+    --new, -B, --with-branch  Automatically create branch if it doesn't exist
+    --base POINT            Create the new branch from POINT (commit, branch, tag, or ref)
+                            instead of HEAD. Implies --new. Errors if branch already exists.
+    -p, --path PATH         Explicit worktree path (alternative to positional arg)
+    -q, --quiet             Suppress summary and informational output (errors and JSON remain)
+    --json                  Emit results as JSON on stdout (zero non-JSON bytes; pipe-safe)
+    -h, --help              Show this help
 
 DESCRIPTION:
     Creates a new Git worktree for the specified branch. Worktrees allow you to
     work on multiple branches simultaneously without context switching overhead.
 
-    If no path is provided, generates a smart default path outside the main
-    repository: ../<repo>.WT.<branch>
+    If no path is provided, generates a smart default path as a sibling of
+    the current working tree: ../<repo>.WT.<branch>. From a submodule, the
+    default is a sibling of the submodule (e.g. ../<sub>.WT.<branch>) —
+    placement is chosen so relative paths to sibling submodules remain valid.
 
     By default, the branch must exist locally. With --new flag or with --force,
     non-existent branches will be created automatically from the current HEAD.
+    Use --base to create from a different start-point (branch, tag, commit, or ref).
+
+    If the branch is currently checked out in the main worktree, --force is
+    required to create a worktree for it.
 
     Interactive mode shows only branches that don't already have worktrees,
     preventing duplicate worktree creation errors.
@@ -46,11 +65,29 @@ EXAMPLES:
     hug wtc --                              # Interactive branch selection, auto-generated path
     hug wtc feature-auth                    # Create worktree for existing branch
     hug wtc feature-auth --new              # Create new branch and worktree
-    hug wtc new-feature --new ~/work/feat   # Create new branch at custom path
+    hug wtc feature-auth -B                 # Same as --new (alias)
+    hug wtc new-feature -B ~/work/feat      # Create new branch at custom path
+    hug wtc new-feature -p ~/work/feat -B   # Same, using -p for path
     hug wtc missing-branch                  # Prompt to create branch if it doesn't exist
     hug wtc missing-branch -f               # Auto-create branch without prompting
     hug wtc feature-auth --dry-run          # Preview creation without doing it
+    hug wtc feature-auth --dry-run -f       # Preview with force semantics (compose)
     hug wtc feature-auth -f                 # Create without confirmation
+    hug wtc hotfix-123 --base v2.0          # Create branch from tag
+    hug wtc experiment --base main           # Create branch from main
+    hug wtc feature --base origin/develop    # Create branch from remote
+    hug wtc test-ref --base HEAD~3 --dry-run -f  # Preview with force override
+    hug wtc scripty --new --json -y         # Scriptable JSON output to stdout
+    hug wtc quiet-branch --new -q -y        # Suppress summary chatter
+
+SAFETY:
+    -y answers yes to routine confirmations (safe and recoverable tiers).
+    It never authorizes dangerous operations — those require -f/--force.
+    -f also overrides blocked states (branch checked out in main worktree).
+
+EXIT CODES:
+    0  success            2  usage error (bad flags/arguments)
+    1  operational error  3  blocked by safety (use -f where appropriate)
 
 SEE ALSO:
     hug wt      List and switch between worktrees
@@ -64,8 +101,10 @@ EOF
 check_git_repo
 
 # Parse arguments using getopt
+# NOTE: hug-common already sources hug-json, so json_escape / to_json_nested
+# are available without an explicit source here.
 set +e # Temporarily disable exit on error to capture getopt failure
-PARSED=$(getopt --options hf --longoptions help,force,dry-run,new --name "hug wtc" -- "$@" 2>&1)
+PARSED=$(getopt --options hfyBqp: --longoptions help,force,dry-run,new,with-branch,base:,yes,quiet,json,path: --name "hug wtc" -- "$@" 2>&1)
 getopt_status=$?
 set -e # Re-enable exit on error
 
@@ -74,7 +113,7 @@ if [ $getopt_status -ne 0 ]; then
   if [ -n "$PARSED" ]; then
     echo "$PARSED" >&2
   fi
-  exit 1
+  exit 2 # usage error — unknown flag or malformed value (exit-code §6)
 fi
 
 eval set -- "$PARSED"
@@ -83,6 +122,9 @@ eval set -- "$PARSED"
 force=false
 dry_run=false
 new_branch=false
+base=""
+json_output=false
+flag_path=""
 
 # Process options
 while true; do
@@ -95,6 +137,10 @@ while true; do
     force=true
     shift
     ;;
+  -y | --yes)
+    export HUG_YES=true
+    shift
+    ;;
   --dry-run)
     dry_run=true
     shift
@@ -102,6 +148,29 @@ while true; do
   --new)
     new_branch=true
     shift
+    ;;
+  -B | --with-branch) # -B is a memorable alias for --new
+    new_branch=true
+    shift
+    ;;
+  --base)
+    base="$2"
+    shift 2
+    ;;
+  -q | --quiet) # Suppress summary chatter (stdout stays clean)
+    export HUG_QUIET=T
+    shift
+    ;;
+  --json) # Machine-readable result object to stdout
+    json_output=true
+    shift
+    ;;
+  -p | --path) # Explicit worktree path (alternative to positional arg)
+    if [[ -z "${2:-}" ]]; then
+      error_usage "-p/--path requires a non-empty value."
+    fi
+    flag_path="$2"
+    shift 2
     ;;
   --)
     shift
@@ -113,10 +182,22 @@ while true; do
   esac
 done
 
-# Validate flag combinations
-if $force && $dry_run; then
-  error "Cannot use --force and --dry-run together. These flags are mutually exclusive."
-  exit 1
+# Honor HUG_FORCE environment variable (parity with wtdel; design §5).
+# This lets scripts set HUG_FORCE=true instead of passing -f on every invocation.
+if [[ ${HUG_FORCE:-} == true ]]; then
+  force=true
+fi
+
+# --base implies --new (user's intent is clearly to create from a specific point)
+if [[ -n "$base" ]]; then
+  new_branch=true
+fi
+
+# Validate --base commitish exists and is resolvable (fail-fast before prompts)
+if [[ -n "$base" ]]; then
+  if ! git rev-parse --verify --quiet "$base^{commit}" > /dev/null 2>&1; then
+    error "Cannot resolve --base '$base' to a commit. Branches, tags, hashes, and relative refs (HEAD~N) are all accepted — verify the ref exists (try: hug ll)."
+  fi
 fi
 
 # Parse arguments
@@ -145,8 +226,16 @@ elif [[ $# -eq 2 ]]; then
     worktree_path="$2"
   fi
 elif [[ $# -gt 2 ]]; then
-  error "Too many arguments. Usage: hug wtc [branch] [path]. See 'hug wtc --help'."
-  exit 1
+  error_usage "Too many arguments. Usage: hug wtc [branch] [path]. See 'hug wtc --help'."
+fi
+
+# If -p/--path was given, merge it into worktree_path (error on conflict).
+# This runs AFTER the $# case block so positional args are already captured.
+if [[ -n "$flag_path" ]]; then
+  if [[ -n "$worktree_path" ]]; then
+    error_usage "Provide the worktree path either as a positional argument or via -p/--path, not both."
+  fi
+  worktree_path="$flag_path"
 fi
 
 # Interactive branch selection if needed
@@ -178,52 +267,130 @@ if [[ -z "$branch_name" ]]; then
 
   # Print interactive menu and get selection (display functions unchanged)
   declare -a available_dates=()
-  print_interactive_branch_menu selected_branch "$current_branch" "$max_len" available_hashes available_dates available_branches available_tracks available_subjects
-
-  # If user cancelled, print a message and exit
-  if [[ -z "$selected_branch" ]]; then
+  if ! print_interactive_branch_menu selected_branch "$current_branch" "$max_len" available_hashes available_dates available_branches available_tracks available_subjects; then
     info "Worktree creation cancelled."
-    exit 0
+    exit 1
   fi
 
   branch_name="$selected_branch"
 fi
 
-# Create branch if needed (for non-interactive mode)
-if [[ -n "$branch_name" ]]; then
-  if ! create_branch_if_needed "$branch_name" "$new_branch" "$force"; then
-    error "Branch creation cancelled or failed."
-    exit 1
+# --- PRE-VALIDATION ---
+branch_exists=false
+branch_needs_creation=false
+confirmed_via_branch_prompt=false
+
+if git rev-parse --verify "refs/heads/$branch_name" > /dev/null 2>&1; then
+  branch_exists=true
+fi
+
+# --base is incompatible with existing branches
+if [[ -n "$base" ]] && $branch_exists; then
+  error "Branch '$branch_name' already exists; --base only applies when creating new branches"
+fi
+
+if ! $branch_exists; then
+  if $dry_run; then
+    branch_needs_creation=true # Just note it for preview, no mutations
+  elif $new_branch || $force; then
+    branch_needs_creation=true # Will create without prompting
+  else
+    # Prompt once: branch doesn't exist, create it AND the worktree?
+    echo >&2
+    info "Branch '$branch_name' does not exist locally."
+    if ! prompt_confirm_safe "Create branch '$branch_name' and its worktree?"; then
+      exit 0
+    fi
+    branch_needs_creation=true
+    confirmed_via_branch_prompt=true # Skip second confirmation
+  fi
+fi
+
+# Validate branch availability (only for existing branches)
+# exit-code §6: blocked by safety (exit 3)
+if $branch_exists && ! branch_available_for_worktree "$branch_name"; then
+  holding_wt=$(get_worktree_path_by_branch "$branch_name" || true)
+  error_blocked "Branch '$branch_name' is checked out in worktree ${holding_wt:-<unknown>}. Remove it first (hug wtdel $branch_name) or pick another branch."
+fi
+
+# Check if branch is checked out in the main worktree (requires --force)
+if $branch_exists && ! $force; then
+  main_wt_path=$(resolve_main_worktree_path)
+  main_wt_branch=$(git -C "$main_wt_path" rev-parse --abbrev-ref HEAD 2> /dev/null || echo "")
+  if [[ "$branch_name" == "$main_wt_branch" ]]; then
+    error_blocked "Branch '$branch_name' is currently checked out in the main worktree. Use -f/--force to create a worktree for it anyway."
   fi
 fi
 
 # Generate path if not provided
-if [[ -z "$worktree_path" ]]; then
-  worktree_path=$(generate_worktree_path "$branch_name")
-
-  # Ensure path is unique (handle conflicts)
-  if [[ -e "$worktree_path" ]]; then
-    worktree_path=$(generate_unique_worktree_path "$branch_name")
-    info "Default path exists, using: $worktree_path"
-  fi
-fi
-
-# Convert relative path to absolute for validation
-if [[ ! "$worktree_path" = /* ]]; then
-  worktree_path="$(pwd)/$worktree_path"
-fi
-
-# Show what we're about to do
-echo
-printf "${BLUE}Worktree Creation Summary:${NC}\n"
-printf "  Branch: %s\n" "$branch_name"
-printf "  Path: %s\n" "${worktree_path/#$HOME/\~}"
-if "$dry_run"; then
-  printf "  Mode: %s\n" "DRY RUN"
+# NOTE: path generation, collision fallback, validation, confirmation, branch
+# creation, worktree add, and rollback all live in create_worktree_for_branch
+# (git-config/lib/hug-git-worktree). wtc owns only the upstream guards above
+# (branch checked out elsewhere / main worktree) and the JSON output below.
+#
+# IMPORTANT: use the set -e-exempt `if x=$(func ...)` form. A bare
+# `x=$(func ...); rc=$?` aborts at the assignment when func exits non-zero
+# (set -e), so the rc=$? line never runs. The if-condition form captures the
+# failure branch correctly. The helper's own exit code (1/2/3) is propagated.
+#
+# Plain (non-local) vars: git-wtc is a top-level script, not a function, so
+# `local` is illegal here. These names are underscore-prefixed to avoid
+# colliding with the JSON block's variables below.
+_helper_out=""
+# `--confirmed-branch` is passed when wtc's pre-validation already collected
+# the user's yes on the combined "Create branch AND its worktree?" prompt
+# (lines 297-306 above). Without this flag, the helper would issue its OWN
+# combined prompt → double-prompt regression.
+#
+# Other cases need NO flag:
+#   --new without -f  → helper fires its combined prompt once (matches the
+#                       single "Create worktree?" prompt of the old code)
+#   --force           → `--force` makes the helper skip all prompts itself
+#   --dry-run         → `--dry-run` skips all prompts itself
+#   branch exists     → helper detects this and skips the branch prompt
+if _helper_out=$(create_worktree_for_branch "$branch_name" \
+  $([[ -n "$base" ]] && echo "--base" "$base") \
+  $([[ -n "$worktree_path" ]] && echo "--path" "$worktree_path") \
+  $($force && echo "--force") \
+  $($dry_run && echo "--dry-run") \
+  $($confirmed_via_branch_prompt && echo "--confirmed-branch")); then
+  :
 else
-  printf "  Mode: %s\n" "CREATE"
+  _create_rc=$?
+  exit "$_create_rc"
 fi
-echo
 
-# Perform the creation
-create_worktree "$branch_name" "$worktree_path" "$force" "$dry_run"
+# Split the helper's three tab-separated fields.
+#   worktree_path          ← reassigned from helper output (RESOLVED path,
+#                            may differ from the input custom path when the
+#                            caller left it empty and the helper generated one)
+#   branch_needs_creation  ← bool the --json block reads as-is
+#   _wt_dry_run            ← "true"/"false"; dry-run is terminal (preview
+#                            already printed by the helper), so exit 0 below
+IFS=$'\t' read -r worktree_path branch_needs_creation _wt_dry_run <<< "$_helper_out"
+
+# Dry-run is terminal: preview already printed; do not reach the JSON block.
+if [[ "$_wt_dry_run" == "true" ]]; then
+  exit 0
+fi
+
+# --- JSON OUTPUT (stdout) ---
+# Emits a parseable result object when --json is requested.
+# All human-facing chatter above went to stderr; this is the only stdout.
+if $json_output; then
+  _created=false
+  _base_json=null
+  _sp_json=null
+  if $branch_needs_creation; then
+    _created=true
+    [[ -n "$base" ]] && _base_json="\"$(json_escape "$base")\""
+    _sp_json="\"$(git rev-parse --short "refs/heads/$branch_name")\""
+  fi
+  to_json_nested \
+    branch "\"$(json_escape "$branch_name")\"" \
+    path "\"$(json_escape "$worktree_path")\"" \
+    created_branch "$_created" \
+    base "$_base_json" \
+    start_point "$_sp_json"
+  printf '\n'
+fi

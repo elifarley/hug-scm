@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["committing"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 # shellcheck source=../lib/hug-common
@@ -16,7 +21,7 @@ set -euo pipefail # Exit on error, undefined vars, pipe failures
 
 show_help() {
   cat << EOF
-hug caa: Commit all changes (tracked + untracked + deletions).
+hug caa: Commit All changes (tracked + untracked + deletions). No need to stage files first.
 
 USAGE:
     hug caa [COMMIT_OPTIONS] [--dry-run] [-f, --force] [--quiet] [-h, --help]
@@ -27,6 +32,7 @@ ARGUMENTS:
 OPTIONS:
     --dry-run         Preview the staging and commit operation without applying changes
     -f, --force       Skip confirmation prompts (sets HUG_FORCE=true)
+    -y, --yes         Skip confirmation prompts (keeps safe semantics)
     --quiet           Suppress non-essential output (sets HUG_QUIET=T)
     -h, --help        Show this help
 
@@ -76,7 +82,7 @@ hug_caa() {
   local commit_args=("$@")
 
   # Check if there are any changes to stage/commit
-  if ! has_pending_changes; then
+  if ! has_untracked_or_pending_changes; then
     info "No changes to stage or commit."
     return 0
   fi
@@ -186,9 +192,7 @@ hug_caa() {
   hug c "${commit_args[@]}"
 
   success "Committed all changes ($pre_commit_staged_count files staged and committed)."
-
-  # Suggest push command if applicable
-  suggest_next_push_command
+  # Push suggestion is shown by 'hug c' above; do not re-add here.
 }
 
 hug_caa "${commit_args[@]}"

@@ -42,7 +42,7 @@ teardown() {
   assert_success
 
   # 5. Remove worktree
-  run git-wtdel "$feature_wt" --force
+  run git-wtdel -p "$feature_wt" --force
   assert_success
   assert_worktree_not_exists "$feature_wt"
 
@@ -94,7 +94,7 @@ teardown() {
   assert_json_value '.count' '3'
 
   # Clean up one worktree
-  run git-wtdel "$wt2" --force
+  run git-wtdel -p "$wt2" --force
   assert_success
   assert_worktree_not_exists "$wt2"
 
@@ -118,7 +118,7 @@ teardown() {
   # Summary should show dirty indicator
   run git-wt --summary
   assert_success
-  assert_output --partial "[DIRTY]"
+  assert_output --partial "+"
   assert_output --partial "feature-1"
 
   # Interactive remove menu test
@@ -126,13 +126,14 @@ teardown() {
   # Menu may or may not show due to timing, cancellation is expected
   assert_output --partial "cancelled"
 
-  # Should fail to remove without force
-  run git-wtdel "$dirty_wt" --dry-run
-  assert_success
-  assert_output --partial "Would remove worktree"
+  # Dirty worktree is blocked even with --dry-run (pre-flight safety gate, exit 3)
+  run git-wtdel -p "$dirty_wt" --dry-run
+  assert_failure 3
+  assert_output --partial "BLOCKED"
+  assert_output --partial "uncommitted changes"
 
   # Should succeed to remove with force
-  run git-wtdel "$dirty_wt" --force
+  run git-wtdel -p "$dirty_wt" --force
   assert_success
   assert_worktree_not_exists "$dirty_wt"
 }
@@ -189,7 +190,7 @@ teardown() {
   assert_output --partial "feature-2"
 
   # 8. Cleanup one feature worktree
-  run git-wtdel "$feature_a" --force
+  run git-wtdel -p "$feature_a" --force
   assert_success
 
   # 9. Other feature worktree should remain unaffected
@@ -231,7 +232,7 @@ teardown() {
   assert_failure  # Should have staged changes
 
   # 5. Can remove hotfix worktree when done
-  run git-wtdel "$hotfix_wt" --force
+  run git-wtdel -p "$hotfix_wt" --force
   assert_success
 
   # 6. Feature worktree remains unaffected
@@ -317,17 +318,17 @@ teardown() {
 
   run git-wtc feature-1 "${TEST_REPO}-duplicate-feature" --force
   assert_failure
-  assert_output --partial "already checked out in another worktree"
+  assert_output --partial "checked out in worktree"
 
-  # 3. Try to remove current worktree
+  # 3. Try to remove current worktree (blocked even with HUG_FORCE, exit 3)
   cd "$first_wt"
-  run env HUG_FORCE=true git-wtdel "$first_wt"
-  assert_failure
-  assert_output --partial "Cannot remove current worktree"
+  run env HUG_FORCE=true git-wtdel -p "$first_wt"
+  assert_failure 3
+  assert_output --partial "current worktree"
 
   # 4. Go back to main and remove successfully
   cd "$TEST_REPO"
-  run git-wtdel "$first_wt" --force
+  run git-wtdel -p "$first_wt" --force
   assert_success
   assert_worktree_not_exists "$first_wt"
 

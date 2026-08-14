@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+_hug_category='["committing"]'
+_hug_keywords='["amend", "fixup", "edit-message", "modify", "all"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-commit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat << 'EOF'
+hug cmoda: Commit MODify All - Amend the last commit with ALL tracked changes (staged + unstaged).
+⚠️ In a dirty tree this includes every modified tracked file. Prefer 'hug cmod' after explicit 'hug a' for a narrower amend.
+
+USAGE:
+  hug cmoda [OPTIONS]
+
+OPTIONS:
+  -m <"message">  Amend with a new commit message
+  -C <commit>     Reuse commit message from specified commit
+  -c <commit>     Reuse and edit commit message from specified commit
+  --no-edit       Amend without changing the commit message
+  -h, --help     Show this help message and exit.
+  (All other options are passed directly to 'git commit')
+
+DESCRIPTION:
+  Modifies the most recent commit by incorporating ALL tracked changes (both
+  staged and unstaged). This is equivalent to staging all tracked changes and
+  then amending the last commit.
+
+  This is the most comprehensive amend option - it includes:
+    - All currently staged changes
+    - All unstaged modifications to tracked files
+
+  Untracked files are NOT included.
+
+  WARNING: Dirty-tree hazard. cmoda amends with EVERY modified tracked file. If
+  your working tree has changes unrelated to this amend, cmoda will fold them in.
+  To amend only specific files, stage them and use cmod instead:
+
+      hug a <file>...      # stage only the intended files
+      hug cmod --no-edit   # amend with ONLY the staged set
+
+  WARNING: This rewrites history. Only amend commits that have not been pushed
+  to a shared repository.
+
+  TIP: Use --no-edit when the commit message is fine and you just want to add
+  tracked changes. This avoids opening an editor.
+
+  SAFETY GUARD:
+  cmoda refuses a content-null amend: with no tracked changes at all (nothing
+  staged, nothing modified) and --no-edit (no message change either), the
+  amend would only rewrite HEAD's hash — same tree, same message (unless
+  --date/--reset-author were passed, metadata too) — which is almost always
+  a mistake (e.g. running cmoda on an already-clean tree). The refusal exits
+  3 with an actionable message.
+    - Stage changes first ('hug a <files>' — bare 'hug a' only stages tracked
+      changes) or pass -m to change the message.
+    - To re-hash/re-date HEAD anyway, re-run with -f/--force.
+    - -y does NOT bypass the guard (it is not a confirmation).
+
+EXAMPLES:
+  hug cmoda --no-edit                    # Amend all tracked, same message
+  hug cmoda -m "Fixed typo"              # Amend with all tracked changes, new message
+
+SEE ALSO:
+  hug c    : Commit staged changes
+  hug ca   : Commit all tracked changes
+  hug cmod : Amend the last commit with STAGED changes only (use when other files are dirty)
+  hug caa  : Commit all changes (tracked + untracked)
+EOF
+}
+
+# Pre-parse pathspecs FIRST: parse_common_flags intercepts a trailing --
+# (hug-cli-flags:21-23 "Commands that accept -- <path>... must pre-parse
+# pathspecs first"). Same idiom as git-shp:76-77.
+eval "$(parse_pathspecs "$@")"
+# Empty-array-safe under `set -u` (bash 4.0–4.3 would fatal on the bare
+# expansion; fixed upstream in 4.4 — the lib documents a Bash-4.0 floor):
+# expand the array only inside the count-guarded branch.
+if ((${#_pathspec_pre_args[@]})); then
+  eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
+else
+  eval "$(parse_common_flags)"
+fi
+# NOTE: the eval above did `set --` — $@ is now the STRIPPED pre_args
+# (-f/-y/-q removed, HUG_FORCE/HUG_YES set). The guard scans $@ (matching
+# its precondition), NOT _pathspec_pre_args (which still holds the
+# unstripped originals). Pathspecs pass as a separate group after a
+# literal --; bare trailing paths (no --) remain inside $@ and the guard
+# treats trailing non-flag args as paths.
+check_git_repo
+# exits 3 on refusal; same empty-array safety as the pre-args eval above.
+if ((${#_pathspec_pathspecs[@]})); then
+  guard_content_null_amend tracked "$@" -- "${_pathspec_pathspecs[@]}"
+else
+  guard_content_null_amend tracked "$@"
+fi
+# pick honest info line from $_amend_content_null + amend_args_message_intent
+# (mirrors git-cmod; spec §3 five-state table with cmoda wording). Capture
+# idiom: rc=0; fn || rc=$? — a bare call returning 1/2 would kill the script
+# under set -e (the commit_offset errexit lesson).
+_msg_rc=0
+amend_args_message_intent "$@" || _msg_rc=$?
+if [[ "${_amend_content_null:-false}" == "true" ]]; then
+  if [[ "${HUG_FORCE:-}" == "true" ]]; then
+    info "Amending last commit (--force: no content change — only the hash will be rewritten)..."
+  elif ((_msg_rc == 1)); then
+    info "Amending last commit (message change only — no tracked changes)..."
+  elif ((_msg_rc == 2)); then
+    info "Amending last commit (no content change; the editor decides the message)..."
+  else
+    # msg_rc==0 with content-null and no force is only reachable via the
+    # guard's commit-msg-hook fail-open — no editor will run under --no-edit.
+    info "Amending last commit (no content change; a commit-msg hook may rewrite the message)..."
+  fi
+else
+  info "Amending last commit with all tracked changes..."
+fi
+# The final commit MUST re-insert the pathspecs: otherwise the pre-parse
+# silently strips `-- <paths>` and `-a` would amend ALL tracked changes
+# (git would have rejected "-a with paths"). Re-inserting lets git apply its
+# own -a+paths rejection exactly as before the change.
+if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  git commit -a --amend "$@" -- "${_pathspec_pathspecs[@]}" &&
+    suggest_next_push_command --amend
+else
+  git commit -a --amend "$@" && suggest_next_push_command --amend
+fi

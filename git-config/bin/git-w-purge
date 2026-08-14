@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["working-dir"]'
+_hug_keywords='["clean", "remove-untracked", "purge"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
@@ -18,6 +24,7 @@ Options:
       --browse-root  Browse full repository scope in file selector UI (default: current directory)
       --dry-run      Show what would be removed without deleting anything
   -f, --force        Skip confirmation prompt
+  -y, --yes          Skip confirmation prompts (keeps safe semantics)
   -h, --help         Show this help
 
 Behavior:
@@ -167,7 +174,7 @@ dedupe_array ignored_paths
 
 if $dry_run; then
   print_dry_run_preview "be removed" "from the specified paths."
-  printf '\n'
+  printf '\n' >&2
   print_untracked_ignored_paths untracked_paths ignored_paths "$target_untracked" "$target_ignored"
   exit 0
 fi
@@ -186,7 +193,7 @@ remove_with_clean() {
 }
 
 print_action_preview "purge the listed entries" "from the specified paths."
-printf '\n'
+printf '\n' >&2
 print_untracked_ignored_paths untracked_paths ignored_paths "$target_untracked" "$target_ignored"
 
 # Prompt for confirmation unless force flag is set

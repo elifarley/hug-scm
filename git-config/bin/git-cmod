@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+_hug_category='["committing"]'
+_hug_keywords='["amend", "fixup", "edit-message", "modify"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-commit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat << 'EOF'
+hug cmod: Commit MODify - Amend the last commit with staged changes only.
+
+USAGE:
+  hug cmod [OPTIONS]
+
+OPTIONS:
+  -m <"message">  Amend replacing the commit message
+  -C <commit>     Reuse commit message from specified commit
+  -c <commit>     Open editor with commit message from specified commit
+  --no-edit       Amend keeping the same commit message
+  -h, --help     Show this help message and exit.
+  (All other options are passed directly to 'git commit')
+
+DESCRIPTION:
+  Modifies the most recent commit by incorporating staged changes. Only staged
+  changes are added to the amended commit; unstaged changes remain untouched.
+
+  This is useful for:
+    - Adding forgotten files to the last commit
+    - Fixing the commit message of the last commit
+    - Making small adjustments to the last commit
+
+  TIP: Run 'hug sls' first to verify exactly what's staged before amending.
+  Use 'hug a' to stage or 'hug us' to unstage specific files.
+
+  TIP: Prefer 'hug cmod' over 'hug cmoda' when your working tree has unrelated
+  modified files. 'cmoda' includes every modified tracked file and will fold
+  unrelated work into the amended commit.
+
+  TIP: Use --no-edit when the commit message is fine and you just want to add
+  staged changes. This avoids opening an editor.
+
+  WARNING: This rewrites history. Only amend commits that have not been pushed
+  to a shared repository.
+
+  `cmod` is NEVER read-only and has NO safe preview form: it is a commit command.
+  Bare `hug cmod` (no -m/--no-edit/-C) is not a no-op either — its behavior
+  depends on the editor environment, so it must never be relied on as harmless:
+    - Interactive shell with EDITOR set: opens the editor on the commit message
+      (the intended use). Closing the editor amends HEAD.
+    - No/empty EDITOR (dumb terminal, CI, many agent contexts): git errors with
+      "Terminal is dumb, but EDITOR unset" and HEAD is left unchanged — but this
+      is an ERROR path, not a guarantee, and a backgrounded/detached editor can
+      still let the amend proceed silently. Do not treat bare cmod as a read.
+  For a DETERMINISTIC non-interactive amend, pass --no-edit (keep message) or
+  -m (replace message) explicitly. To INSPECT which commit would be amended,
+  use `hug s --short-hash` or `hug sh HEAD`.
+
+  SAFETY GUARD:
+  cmod refuses a content-null amend: with nothing staged and --no-edit (no
+  message change either), the amend would only rewrite HEAD's hash — same
+  tree, same message (unless --date/--reset-author were passed, metadata
+  too) — which is almost always a mistake (e.g. running cmod
+  before staging). The refusal exits 3 with an actionable message.
+    - Stage changes first ('hug a <files>' — bare 'hug a' only stages tracked
+      changes) or pass -m to change the message.
+    - To re-hash/re-date HEAD anyway, re-run with -f/--force.
+    - -y does NOT bypass the guard (it is not a confirmation).
+
+EXAMPLES:
+  hug a file.txt && hug cmod --no-edit  # Stage file, amend keeping message
+  hug a file.txt && hug cmod -m "msg"   # Stage file, amend replacing message
+  hug cmod --no-edit                    # Amend staged changes, keeping message
+  hug cmod -m "Better message"          # Amend replacing message. If no staged changes, only the message changes.
+  hug s --short-hash                    # READ which commit HEAD points at (the correct "check before amend" step)
+
+SEE ALSO:
+  hug c    : Commit staged changes
+  hug ca   : Commit all tracked changes
+  hug cmoda: Amend the last commit with ALL tracked changes (includes every modified tracked file; avoid when other files are dirty)
+  hug ccp  : Cherry-pick commits
+EOF
+}
+
+# Pre-parse pathspecs FIRST: parse_common_flags intercepts a trailing --
+# (hug-cli-flags:21-23 "Commands that accept -- <path>... must pre-parse
+# pathspecs first"). Same idiom as git-shp:76-77.
+eval "$(parse_pathspecs "$@")"
+# Empty-array-safe under `set -u` (bash 4.0–4.3 would fatal on the bare
+# expansion; fixed upstream in 4.4 — the lib documents a Bash-4.0 floor):
+# expand the array only inside the count-guarded branch.
+if ((${#_pathspec_pre_args[@]})); then
+  eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
+else
+  eval "$(parse_common_flags)"
+fi
+# NOTE: the eval above did `set --` — $@ is now the STRIPPED pre_args
+# (-f/-y/-q removed, HUG_FORCE/HUG_YES set). The guard scans $@ (matching
+# its precondition), NOT _pathspec_pre_args (which still holds the
+# unstripped originals). Pathspecs pass as a separate group after a
+# literal --; bare trailing paths (no --) remain inside $@ and the guard
+# treats trailing non-flag args as paths.
+check_git_repo
+# exits 3 on refusal; same empty-array safety as the pre-args eval above.
+if ((${#_pathspec_pathspecs[@]})); then
+  guard_content_null_amend staged "$@" -- "${_pathspec_pathspecs[@]}"
+else
+  guard_content_null_amend staged "$@"
+fi
+# pick honest info line from $_amend_content_null + amend_args_message_intent.
+# Capture idiom: rc=0; fn || rc=$? — a bare call returning 1/2 would kill
+# the script under set -e (the commit_offset errexit lesson).
+_msg_rc=0
+amend_args_message_intent "$@" || _msg_rc=$?
+if [[ "${_amend_content_null:-false}" == "true" ]]; then
+  if [[ "${HUG_FORCE:-}" == "true" ]]; then
+    info "Amending last commit (--force: no content change — only the hash will be rewritten)..."
+  elif ((_msg_rc == 1)); then
+    info "Amending last commit (message change only — no staged changes)..."
+  elif ((_msg_rc == 2)); then
+    info "Amending last commit (no content change; the editor decides the message)..."
+  else
+    # msg_rc==0 with content-null and no force is only reachable via the
+    # guard's commit-msg-hook fail-open — no editor will run under --no-edit.
+    info "Amending last commit (no content change; a commit-msg hook may rewrite the message)..."
+  fi
+else
+  if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+    info "Amending last commit with the named paths' changes..."
+  else
+    info "Amending last commit with staged changes..."
+  fi
+fi
+if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  git commit --amend "$@" -- "${_pathspec_pathspecs[@]}" &&
+    suggest_next_push_command --amend
+else
+  git commit --amend "$@" && suggest_next_push_command --amend
+fi

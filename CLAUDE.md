@@ -1,3 +1,10 @@
+# OpenWolf
+
+@.wolf/OPENWOLF.md
+
+This project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.
+
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -192,7 +199,7 @@ Commands are organized by semantic prefixes:
 |--------|----------|----------|
 | `h*` | HEAD operations | h, h-back, h-undo, h-squash, h-rewind, h-rollback |
 | `w*` | Working directory | w, w-discard, w-wipe, w-purge, w-zap, w-unwip, w-get |
-| `s*` | Status & staging | s, a, aa, us, usa, sl, sla, ss, su, sw |
+| `s*` | Status & staging | s, a, aa, us, usa, sl, sla, sls, slu, slk, slc, sli, ss, su, sw |
 | `b*` | Branching | b, bc, bl, bpush, bpull, bdel, bpullr |
 | `c*` | Commits | c, ca, caa, cm, cma, ccp, cmv |
 | `l*` | Logging | l, ll, la, lp, lf, lc, lau, ld |
@@ -271,6 +278,51 @@ if $dry_run; then
 fi
 # Actual operation here
 ```
+
+### Stdout/Stderr Discipline
+
+Commands that produce **listable, query, or data output** must keep stdout clean
+so the output is pipe-safe and scriptable — same discipline as `grep`, `ls`, `git log`.
+
+**The rule:**
+- **stdout** = machine-consumable data (the answer)
+- **stderr** = human-facing chatter (headers, legends, progress, tips, prompts, errors)
+
+**When it applies** — any command whose output a user might pipe or capture:
+listing commands (`hug wtl`, `hug wtll`, `hug sl*`, `hug ll*`, `hug bl*`, `hug t*`),
+query commands (`hug s`, `hug sx`, `hug sh*`, `hug stats*`), and any command with
+`--json` output.
+
+**When it does NOT apply:**
+- Purely interactive commands (`hug wt` interactive, `hug b`, `hug t` interactive)
+- Destructive actions producing no data output (`hug w-discard`, `hug h-back`)
+- Help text (`show_help` / `--help`)
+
+**How to comply:**
+1. Use library functions (`info`, `warning`, `success`, `tip`, `error`) for all
+   human-facing messages — they already route to stderr via `gum_log`.
+2. Decorative headers, legends, separators → stderr: `printf 'Header:\n' >&2`
+3. Data lines → stdout with no prefix: `printf '%s\n' "$result"`
+4. For commands passing through git output, let it flow to stdout naturally;
+   route wrapper messages to stderr.
+5. If a command has both data and chatter, add a `CAPTURING OUTPUT` section
+   to its help text (see `git-wtl` for the canonical example).
+6. Commands using `gum_log` helpers automatically strip colors when stdout
+   is not a TTY (piped or captured). For `printf`-based data output, use
+   the `-t 1` test: `[[ -t 1 ]] && color=$BLUE || color=`.
+7. `--json` output MUST go to stdout with zero non-JSON bytes. No headers,
+   no legends, no tips alongside JSON. Validate with:
+   `hug <cmd> --json | python3 -m json.tool`.
+
+**Reference implementation:** `git-wtl`
+
+**Testing stdout/stderr discipline:**
+- Suppress stderr and assert data is intact:
+  `run hug wtl 2>/dev/null; [[ "$output" == *"$branch"* ]]`
+- Assert stderr contains chatter:
+  `run hug wtl 2>&1 1>/dev/null; [[ "$output" == *"Legend"* ]]`
+- For `--json`, validate the output parses:
+  `run hug wtl --json; echo "$output" | python3 -m json.tool >/dev/null`
 
 ## Testing Strategy
 
@@ -575,7 +627,7 @@ This comprehensive guide covers:
 | **User Guides** | `docs/*.md` | getting-started.md, workflows.md |
 | **Command Reference** | `docs/commands/*.md` | head.md, branching.md, status-staging.md |
 | **Architecture Decisions** | `docs/architecture/ADR-*.md` | ADR-001-automated-testing-strategy.md |
-| **Planning Docs** | `docs/planning/*.md` | json-output-roadmap.md |
+| **Planning Docs** | `mgmt/plans/*.md` | json-output-roadmap.md |
 | **VHS Screencasts** | `docs/screencasts/*.tape` | hug-sl-states.tape, template.tape |
 | **Meta/Tooling** | `docs/meta/*.md` | hug-completion-reference.md |
 | **Library Docs** | `git-config/lib/README.md` | Library function documentation |
@@ -588,7 +640,7 @@ This comprehensive guide covers:
 **Ask yourself:**
 
 1. **Is it an architectural decision?** → `docs/architecture/ADR-NNN-*.md`
-2. **Is it a planning/roadmap document?** → `docs/planning/*.md`
+2. **Is it a planning/roadmap document?** → `mgmt/plans/*.md`
 3. **Is it command reference?** → `docs/commands/*.md`
 4. **Is it a user guide?** → `docs/*.md`
 5. **Is it about VHS screenshots?** → `docs/screencasts/README.md` (single source of truth)
@@ -606,7 +658,7 @@ This comprehensive guide covers:
 
 **Do create:**
 - ✅ ADRs for architectural decisions
-- ✅ Planning docs in `docs/planning/` for roadmaps
+- ✅ Planning docs in `mgmt/plans/` for roadmaps
 - ✅ Command docs in `docs/commands/` organized by prefix
 - ✅ User guides in `docs/` for workflows and tutorials
 
@@ -626,7 +678,7 @@ This comprehensive guide covers:
 - **git-config/lib/README.md**: Library function documentation and patterns
 - **docs/**: VitePress site with command docs and architecture decisions
 - **docs/architecture/ADR-*.md**: Architectural decision records
-- **docs/planning/**: Planning and roadmap documents
+- **mgmt/plans/**: Planning and roadmap documents
 - **docs/screencasts/README.md**: VHS screenshot system guide (single source of truth)
 
 ## Useful References

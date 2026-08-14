@@ -148,6 +148,45 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
+# hug shp file-path tests (-- <path> filtering)
+# -----------------------------------------------------------------------------
+
+@test "hug shp: shows patch for specific file with -- separator" {
+  # Create a commit with multiple files
+  echo "file-a content" > file_a.txt
+  echo "file-b content" > file_b.txt
+  git add file_a.txt file_b.txt
+  git commit -m "Add two files" -q
+
+  run hug shp -- file_a.txt
+  assert_success
+  assert_output --partial "diff --git"
+  assert_output --partial "file_a.txt"
+  refute_output --partial "file_b.txt"
+}
+
+@test "hug shp: shows patch for specific file at commit ref" {
+  run hug shp HEAD -- feature2.txt
+  assert_success
+  assert_output --partial "diff --git"
+  assert_output --partial "feature2.txt"
+}
+
+@test "hug shp: shows patch for specific file with N shorthand" {
+  run hug shp 1 -- feature1.txt
+  assert_success
+  assert_output --partial "diff --git"
+  assert_output --partial "feature1.txt"
+  refute_output --partial "feature2.txt"
+}
+
+@test "hug shp: without -- treats argument as commit ref (backward compat)" {
+  run hug shp HEAD
+  assert_success
+  assert_output --partial "Commit diff:"
+}
+
+# -----------------------------------------------------------------------------
 # Edge cases and error handling
 # -----------------------------------------------------------------------------
 
@@ -161,6 +200,67 @@ teardown() {
   run hug shp nonexistent123abc
   # git will error on invalid commit
   assert_failure
+}
+
+# -----------------------------------------------------------------------------
+# Flag-as-ref protection (reject_flag_ref)
+#
+# When a flag like --stat is passed to a command that doesn't support it,
+# it used to be silently treated as a commit ref, producing confusing git
+# errors. Now these are caught early with a clear "Unknown flag" message
+# and the command's help is shown.
+# -----------------------------------------------------------------------------
+
+@test "hug shp: rejects unknown flag --stat with help" {
+  run hug shp HEAD --stat
+  assert_failure
+  assert_output --partial "Unknown flag: --stat"
+  # Should show the command's help so user sees valid options
+  assert_output --partial "USAGE:"
+  assert_output --partial "hug shp"
+}
+
+@test "hug shp: rejects unknown flag --no-stat" {
+  run hug shp --no-stat
+  assert_failure
+  assert_output --partial "Unknown flag: --no-stat"
+  assert_output --partial "USAGE:"
+}
+
+@test "hug shc: rejects unknown flag --stat with help" {
+  run hug shc --stat
+  assert_failure
+  assert_output --partial "Unknown flag: --stat"
+  assert_output --partial "USAGE:"
+  assert_output --partial "hug shc"
+}
+
+@test "hug shcp: rejects unknown flag --stat with help" {
+  run hug shcp HEAD --stat
+  assert_failure
+  assert_output --partial "Unknown flag: --stat"
+  assert_output --partial "USAGE:"
+  assert_output --partial "hug shcp"
+}
+
+@test "hug shcp: rejects unknown flag on range" {
+  run hug shcp HEAD~1..HEAD --stat
+  assert_failure
+  assert_output --partial "Unknown flag: --stat"
+}
+
+@test "hug shp: -N range not rejected as flag" {
+  # -2 is a valid range shorthand, not a flag
+  run hug shp -2
+  assert_success
+  refute_output --partial "Unknown flag"
+}
+
+@test "hug sh: --stat still works (not rejected)" {
+  # sh explicitly supports --stat — it must not be caught by reject_flag_ref
+  run hug sh --stat HEAD
+  assert_success
+  refute_output --partial "Unknown flag"
 }
 
 @test "hug sh: works with empty commit message" {
@@ -318,6 +418,145 @@ teardown() {
   assert_output --partial "Show files changed"
 }
 
+@test "hug shc -n: prints repo-relative paths only for single commit" {
+  run hug shc -n HEAD
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shc --name-only: long flag works identically" {
+  run hug shc --name-only HEAD
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shc -n: range prints cumulative paths" {
+  run hug shc -n HEAD~2..HEAD
+  assert_success
+  assert_line "feature1.txt"
+  assert_line "feature2.txt"
+}
+
+@test "hug shc -n: N/-N forms work" {
+  run hug shc -n -2
+  assert_success
+  # -2 resolves to HEAD~2..HEAD (valid: 3-commit fixture's oldest reachable is HEAD~2).
+  # The range diff is relative to the HEAD~2 tree, so README.md (already present at HEAD~2)
+  # is NOT listed — only files changed across the range appear.
+  assert_line "feature1.txt"
+  assert_line "feature2.txt"
+  run hug shc -n HEAD~1
+  assert_success
+  # HEAD~1 is the single commit that added feature1.txt (diff-tree --root lists only its own files).
+  assert_output "feature1.txt"
+}
+
+@test "hug shc -n: pathspec filtering works" {
+  # Range must actually contain feature1.txt for the filter to match. HEAD~2..HEAD does
+  # (feature1.txt is added in that range); HEAD~1..HEAD would contain only feature2.txt.
+  run hug shc -n HEAD~2..HEAD -- 'feature1.txt'
+  assert_success
+  assert_output "feature1.txt"
+}
+
+@test "hug shc -n: no-match pathspec exits 0 with empty stdout, no stderr hint" {
+  run hug shc -n HEAD -- '*.nomatch'
+  assert_success
+  assert_output ""
+  refute_output --partial "No files matching"
+}
+
+@test "hug shc -n: bundled -nq is rejected, not silently run in stats mode" {
+  run hug shc -nq HEAD
+  assert_failure
+  assert_output --partial "USAGE:"
+  run hug shc -qn HEAD
+  assert_failure
+  assert_output --partial "USAGE:"
+}
+
+@test "hug shc -n: stdout is data-only, no human chatter" {
+  run hug shc -n HEAD
+  assert_success
+  # No header emoji/legend on stdout — pure data
+  refute_output --partial "Changed files"
+  refute_output --partial "📊"
+}
+
+@test "hug shc -n: regression -- still rejects --stat with help" {
+  run hug shc --stat
+  assert_failure
+  assert_output --partial "hug shc"
+}
+
+@test "hug shc -n: bare -n defaults to HEAD" {
+  run hug shc -n
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shc -n: invalid commit ref fails non-zero" {
+  run hug shc -n nonexistent123abc
+  assert_failure
+}
+
+@test "hug shc -n: mixed --stat HEAD also rejected (bundled-flag regression lock)" {
+  # Old pre-reject-loop behavior ran stats mode silently for `--stat HEAD`;
+  # the loop must reject the long-flag spelling exactly like -nq/-qn.
+  run hug shc --stat HEAD
+  assert_failure
+  assert_output --partial "USAGE:"
+}
+
+@test "hug shc -n: HUG_QUIET does not suppress data output" {
+  run env HUG_QUIET=T hug shc -n HEAD
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shc -n: range no-match pathspec exits 0 with empty stdout" {
+  # Mirrors the single-commit no-match test onto the range (git diff) branch
+  # so both dispatch arms of show_changed_file_names are covered.
+  run hug shc -n HEAD~2..HEAD -- '*.nomatch'
+  assert_success
+  assert_output ""
+}
+
+@test "hug shc -n: paths with spaces and non-ASCII print raw, not C-quoted" {
+  echo "space" > "my file.txt"
+  printf 'uni' > "unicodé.txt"
+  git add "my file.txt" "unicodé.txt"
+  git commit -qm "weird names"
+  run hug shc -n HEAD
+  assert_success
+  assert_line "my file.txt"
+  assert_line "unicodé.txt"
+  refute_output --partial '\303'
+}
+
+@test "hug shc -n: rename lists only the new path in both modes" {
+  git mv feature2.txt renamed.txt
+  git commit -qm "rename feature2"
+  run hug shc -n HEAD
+  assert_success
+  assert_output "renamed.txt"
+  run hug shc -n HEAD~1..HEAD
+  assert_success
+  assert_output "renamed.txt"
+}
+
+@test "hug shc -n: merge commit shows nothing (parity with --stat, issue 268)" {
+  git checkout -q -b side HEAD~1
+  echo side > side.txt
+  git add side.txt
+  git commit -qm "side change"
+  git checkout -q main
+  git merge -q --no-ff side -m "Merge side" >/dev/null 2>&1
+  run hug shc -n HEAD
+  assert_success
+  assert_output ""
+}
+
 # -----------------------------------------------------------------------------
 # hug shcp tests (show cumulative diff with stats)
 # -----------------------------------------------------------------------------
@@ -388,4 +627,145 @@ teardown() {
   # Should show file stats summary
   assert_output --partial "file"
   assert_output --partial "changed"
+}
+
+# -----------------------------------------------------------------------------
+# hug shc path filtering tests (-- <path>...)
+# -----------------------------------------------------------------------------
+
+@test "hug shc: filters stats by single glob with --" {
+  # Create a commit with multiple file types
+  echo "java content" > App.java
+  echo "py content" > main.py
+  git add App.java main.py
+  git commit -m "Add mixed files" -q
+
+  run hug shc HEAD -- '*.java'
+  assert_success
+  assert_output --partial "App.java"
+  refute_output --partial "main.py"
+}
+
+@test "hug shc: filters stats by multiple pathspecs with --" {
+  # Create a commit with files in subdirectories
+  mkdir -p src/lib tests
+  echo "lib content" > src/lib/util.java
+  echo "test content" > tests/util_test.java
+  echo "other content" > other.txt
+  git add src/lib/ tests/ other.txt
+  git commit -m "Add multi-dir files" -q
+
+  run hug shc -3 -- src/lib/ tests/
+  assert_success
+  assert_output --partial "src/lib/"
+  assert_output --partial "tests/"
+  refute_output --partial "other.txt"
+}
+
+@test "hug shc: no-match shows stderr hint" {
+  run hug shc HEAD -- nonexistent_file.xyz
+  assert_success
+  # No file stats table (no .txt, .java, etc.) — just header + no-match hint
+  refute_output --partial ".txt"
+  refute_output --partial ".java"
+  # stderr hint should appear in combined output
+  assert_output --partial "No files matching"
+}
+
+@test "hug shc: bare -- with no paths is identical to no --" {
+  run hug shc --
+  assert_success
+  assert_output --partial "file"
+}
+
+@test "hug shc: quiet mode suppresses header with pathspecs" {
+  echo "q content" > qfile.txt
+  git add qfile.txt
+  git commit -m "Add qfile" -q
+
+  run hug shc -q -- '*.txt'
+  assert_success
+  # No header in output (quiet mode), only file stats
+  refute_output --partial "Changed files"
+}
+
+@test "hug shc: without -- behavior unchanged (regression)" {
+  run hug shc HEAD
+  assert_success
+  assert_output --partial "file"
+}
+
+@test "hug shc: root commit with pathspecs" {
+  local root_commit
+  root_commit=$(git rev-list --max-parents=0 HEAD)
+
+  # The root commit in test_helper creates initial.txt
+  run hug shc "$root_commit" -- '*.txt'
+  assert_success
+  assert_output --partial ".txt"
+}
+
+# -----------------------------------------------------------------------------
+# hug shcp path filtering tests (-- <path>...)
+# -----------------------------------------------------------------------------
+
+@test "hug shcp: filters both diff and stats by pathspec" {
+  # Create a commit with multiple files
+  echo "java content" > Filtered.java
+  echo "py content" > Unfiltered.py
+  git add Filtered.java Unfiltered.py
+  git commit -m "Add files for filter test" -q
+
+  run hug shcp HEAD -- '*.java'
+  assert_success
+  # Diff should be filtered
+  assert_output --partial "Filtered.java"
+  refute_output --partial "Unfiltered.py"
+  # Stats should also be filtered
+  assert_output --partial "File stats"
+}
+
+@test "hug shcp: filters single commit diff by pathspec" {
+  run hug shcp HEAD -- '*.txt'
+  assert_success
+  # Should show stats section
+  assert_output --partial "File stats"
+}
+
+@test "hug shcp: no-match shows empty diff and stats" {
+  run hug shcp HEAD -- nonexistent_file.xyz
+  assert_success
+  # Should still show section headers but no file content
+  assert_output --partial "Diff for"
+  assert_output --partial "File stats"
+}
+
+# -----------------------------------------------------------------------------
+# hug shp path filtering regression tests (after library upgrade)
+# -----------------------------------------------------------------------------
+
+@test "hug shp: single file pathspec still works after library upgrade" {
+  # Create a commit with multiple files
+  echo "a content" > a.txt
+  echo "b content" > b.txt
+  git add a.txt b.txt
+  git commit -m "Add a and b" -q
+
+  run hug shp HEAD -- a.txt
+  assert_success
+  assert_output --partial "diff --git"
+  assert_output --partial "a.txt"
+  refute_output --partial "b.txt"
+}
+
+@test "hug shp: warns when multiple pathspecs given" {
+  echo "c content" > c.txt
+  echo "d content" > d.txt
+  git add c.txt d.txt
+  git commit -m "Add c and d" -q
+
+  run hug shp HEAD -- c.txt d.txt
+  assert_success
+  # Should warn about extra pathspecs on stderr
+  [[ "$output" == *"Warning"* ]] || [[ "$output" == *"only supports single-file"* ]]
 }

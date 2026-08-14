@@ -1,0 +1,6 @@
+label       = "HEAD operations"
+description = """
+Move HEAD around safely.
+Undo, rollback, rewind, or squash commits while keeping local
+work intact when possible.
+"""

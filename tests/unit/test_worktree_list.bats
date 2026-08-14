@@ -41,22 +41,23 @@ teardown() {
   assert_success
   # 3 total worktrees (main + 2 additional) = count shows 2
   assert_output --partial "Worktrees (2)"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
   assert_output --partial "main"
   assert_output --partial "feature-1"
   assert_output --partial "hotfix-1"
 }
 
 @test "hug wt: shows interactive menu with multiple worktrees" {
-  # Since we have <10 worktrees, this uses numbered menu, not gum
-  # Use EOF simulation to test the interactive selection behavior
+  # Since we have <10 worktrees, this uses the Python numbered-list path.
+  # Empty input (echo) cancels selection; the command exits 0.
   run bash -c "echo | git-wt 2>&1"
 
-  # Should show interactive menu and handle cancellation gracefully
+  # Python shows the prompt and numbered list on stderr, then reads empty
+  # input and returns 'cancelled'.  git-wt exits 0 on cancellation.
   assert_success
   assert_output --partial "Select worktree to switch to"
-  assert_output --partial "Enter number"
-  assert_output --partial "Worktree selection cancelled"
+  # Python lists each worktree with a number prefix
+  assert_output --partial "1)"
 }
 
 @test "hug wt: detects dirty worktrees" {
@@ -67,7 +68,7 @@ teardown() {
   run git-wt --summary
 
   assert_success
-  assert_output --partial "[DIRTY]"
+  assert_output --partial "+"
   assert_output --partial "feature-1"
 }
 
@@ -188,20 +189,21 @@ teardown() {
   run git-wtl
 
   assert_success
-  assert_output --partial "Worktrees:"
-  assert_output --partial "* main"
+  # Header removed — listing lines go to stdout, legend to stderr
+  assert_output --partial "*"
+  assert_output --partial "main"
   assert_output --partial "feature-1"
   assert_output --partial "hotfix-1"
   assert_output --partial "("  # Should show commit in parentheses
 }
 
-@test "hug wtl: highlights current worktree with asterisk" {
+@test "hug wtl: highlights current worktree with * indicator" {
   cd "$TEST_REPO"
   run git-wtl
 
   assert_success
-  # Current worktree should have green asterisk (visible in raw output)
-  assert_output --partial "* main"
+  # Current worktree should have * indicator
+  assert_output --partial "*"
 }
 
 @test "hug wtl: shows dirty worktree indicator" {
@@ -212,11 +214,11 @@ teardown() {
   run git-wtl
 
   assert_success
-  assert_output --partial "[DIRTY]"
+  assert_output --partial "+"
   assert_output --partial "feature-1"
 }
 
-@test "hug wtl: filters worktrees by search term" {
+@test "hug wtl: filters worktrees by search term (positional substring)" {
   cd "$TEST_REPO"
   run git-wtl feature
 
@@ -226,7 +228,7 @@ teardown() {
   refute_output --partial "hotfix"
 }
 
-@test "hug wtl: filters worktrees by path" {
+@test "hug wtl: filters worktrees by path (positional substring)" {
   cd "$TEST_REPO"
   run git-wtl "$(basename "$FEATURE_WT")"
 
@@ -235,7 +237,7 @@ teardown() {
   refute_output --partial "main"
 }
 
-@test "hug wtl: case-insensitive search" {
+@test "hug wtl: case-insensitive substring search" {
   cd "$TEST_REPO"
   run git-wtl FEATURE
 
@@ -261,8 +263,9 @@ teardown() {
   run git-wtl
 
   assert_success
-  assert_output --partial "Worktrees:"
-  assert_output --partial "* main"
+  # Only main worktree remains — should still be listed
+  assert_output --partial "*"
+  assert_output --partial "main"
 }
 
 @test "hug wtl: error when not in git repository" {
@@ -287,7 +290,8 @@ teardown() {
 
   assert_success
   assert_output --partial "Worktrees (long format):"
-  assert_output --partial "* main"
+  assert_output --partial "*"
+  assert_output --partial "main"
   assert_output --partial "feature-1"
   assert_output --partial "hotfix-1"
   assert_output --partial "Status:"  # Should show status details
@@ -303,12 +307,12 @@ teardown() {
   assert_output --partial "Status:"
 }
 
-@test "hug wtll: highlights current worktree with asterisk" {
+@test "hug wtll: highlights current worktree with * indicator" {
   cd "$TEST_REPO"
   run git-wtll
 
   assert_success
-  assert_output --partial "* main"
+  assert_output --partial "*"
 }
 
 @test "hug wtll: shows detailed status for dirty worktrees" {
@@ -319,12 +323,12 @@ teardown() {
   run git-wtll
 
   assert_success
-  assert_output --partial "[DIRTY]"
+  assert_output --partial "+"
   assert_output --partial "feature-1"
   assert_output --partial "Status: Modified"
 }
 
-@test "hug wtll: filters worktrees by search term" {
+@test "hug wtll: filters worktrees by search term (positional substring)" {
   cd "$TEST_REPO"
   run git-wtll feature
 
@@ -343,7 +347,8 @@ teardown() {
 
   assert_success
   assert_output --partial "Worktrees (long format):"
-  assert_output --partial "* main"
+  assert_output --partial "*"
+  assert_output --partial "main"
 }
 
 @test "hug wtll: error when not in git repository" {
@@ -365,8 +370,8 @@ teardown() {
   assert_json_has_key '.worktrees'
   assert_json_has_key '.current'
   assert_json_has_key '.count'
-  # wtl excludes main, so 3 total - 1 main = 2 additional
-  assert_json_value '.count' '2'
+  # 3 total (main + feature-1 + hotfix-1), JSON includes main
+  assert_json_value '.count' '3'
 }
 
 @test "hug wtll: supports --json output" {
@@ -378,8 +383,8 @@ teardown() {
   assert_json_has_key '.worktrees'
   assert_json_has_key '.current'
   assert_json_has_key '.count'
-  # wtll excludes main, so 3 total - 1 main = 2 additional
-  assert_json_value '.count' '2'
+  # 3 total (main + feature-1 + hotfix-1), JSON includes main
+  assert_json_value '.count' '3'
 }
 
 @test "hug wtl: JSON output includes required fields" {
@@ -391,8 +396,8 @@ teardown() {
 
   # Check that worktrees array has correct structure
   assert_json_type '.worktrees' 'array'
-  # wtl excludes main, so 3 total - 1 main = 2 additional
-  assert_json_array_length '.worktrees' 2
+  # 3 total (main + feature-1 + hotfix-1), JSON includes main
+  assert_json_array_length '.worktrees' 3
 
   # Check individual worktree has required fields
   assert_json_has_key '.worktrees[0].path'
@@ -413,7 +418,7 @@ teardown() {
   assert_json_value '.worktrees[0].branch' 'feature-1'
 }
 
-@test "hug wtl: JSON output handles no worktrees" {
+@test "hug wtl: JSON output includes main worktree" {
   # Clean up additional worktrees (main remains)
   cleanup_test_worktrees "$TEST_REPO"
 
@@ -422,12 +427,12 @@ teardown() {
 
   assert_success
   assert_valid_json
-  # wtl excludes main, so should be 0
-  assert_json_array_length '.worktrees' 0
-  assert_json_value '.count' '0'
+  # JSON now includes main worktree (--include-main added for consistency)
+  assert_json_array_length '.worktrees' 1
+  assert_json_value '.count' '1'
 }
 
-@test "hug wtll: JSON output handles no worktrees" {
+@test "hug wtll: JSON output includes main worktree" {
   # Clean up additional worktrees (main remains)
   cleanup_test_worktrees "$TEST_REPO"
 
@@ -436,9 +441,9 @@ teardown() {
 
   assert_success
   assert_valid_json
-  # wtll excludes main, so should be 0
-  assert_json_array_length '.worktrees' 0
-  assert_json_value '.count' '0'
+  # JSON now includes main worktree (--include-main added for consistency)
+  assert_json_array_length '.worktrees' 1
+  assert_json_value '.count' '1'
 }
 
 # NEW MULTI-TERM SEARCH TESTS
@@ -516,7 +521,7 @@ teardown() {
   assert_output --partial "hotfix-1"
 }
 
-@test "hug wtl: JSON output supports multi-term search filtering" {
+@test "hug wtl: JSON output supports search filtering" {
   cd "$TEST_REPO"
   run git-wtl --json feature
 
@@ -527,7 +532,7 @@ teardown() {
   assert_json_value '.count' '1'
 }
 
-@test "hug wtll: JSON output supports multi-term search filtering" {
+@test "hug wtll: JSON output supports search filtering" {
   cd "$TEST_REPO"
   run git-wtll --json feature
 
@@ -536,4 +541,462 @@ teardown() {
   # Matches feature-1 only (1 additional worktree)
   assert_json_array_length '.worktrees' 1
   assert_json_value '.count' '1'
+}
+
+# Tests for branch filtering (-b exact match)
+
+@test "hug wtl: -b filters by exact branch name" {
+  cd "$TEST_REPO"
+  run git-wtl -b feature-1
+
+  assert_success
+  assert_output --partial "feature-1"
+  refute_output --partial "hotfix-1"
+  refute_output --partial "main"
+}
+
+@test "hug wtl: multiple -b branches (OR logic)" {
+  cd "$TEST_REPO"
+  run git-wtl -b feature-1 -b hotfix-1
+
+  assert_success
+  assert_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+  refute_output --partial "main"
+}
+
+@test "hug wtl: -b with no match returns error" {
+  cd "$TEST_REPO"
+  run git-wtl -b nonexistent
+
+  assert_failure
+  assert_output --partial "No worktrees found matching"
+  assert_output --partial "nonexistent"
+}
+
+@test "hug wtl: positional substring combined with -b branch (AND logic)" {
+  cd "$TEST_REPO"
+  # Branch matches, substring matches path
+  run git-wtl -b feature-1 "$(basename "$FEATURE_WT")"
+  assert_success
+  assert_output --partial "feature-1"
+
+  # Branch matches, substring doesn't match
+  run git-wtl -b feature-1 nonexistent-path
+  assert_failure
+}
+
+@test "hug wtl: -b is case-sensitive exact match" {
+  cd "$TEST_REPO"
+  run git-wtl -b Feature-1
+
+  assert_failure  # Should not match "feature-1"
+}
+
+@test "hug wtl: -b branch with JSON output" {
+  cd "$TEST_REPO"
+  run git-wtl --json -b feature-1
+
+  assert_success
+  assert_valid_json
+  assert_json_array_length '.worktrees' 1
+  assert_json_value '.worktrees[0].branch' 'feature-1'
+}
+
+# Tests for stdout/stderr discipline (capture-friendly output)
+
+@test "hug wtl: stdout contains only listing lines (no header, no legend)" {
+  cd "$TEST_REPO"
+  # Discard stderr so $output reflects stdout only. BATS' `run` merges
+  # stdout and stderr by default; without this redirect, the stderr-bound
+  # legend would appear in $output and the refute assertions below would
+  # fail spuriously.
+  run bash -c 'git-wtl 2>/dev/null'
+
+  assert_success
+  refute_output --partial "Worktrees:"
+  refute_output --partial "Legend:"
+  assert_output --partial "main"
+  assert_output --partial "feature-1"
+}
+
+@test "hug wtl: -q suppresses legend on stderr" {
+  cd "$TEST_REPO"
+  run git-wtl -q
+
+  assert_success
+  refute_output --partial "Legend:"
+}
+
+# Pipe-aware tests: legend goes to stderr, so 2>&1 1>/dev/null captures stderr only.
+# These tests would have caught the original "TTY guard on fd 1" bug.
+
+@test "hug wtl: legend visible on stderr when stdout is piped" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl 2>&1 1>/dev/null'
+  assert_success
+  assert_output --partial "Legend:"
+}
+
+@test "hug wtl: piped legend on stderr has no ANSI escape codes" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl 2>&1 1>/dev/null'
+  assert_success
+  if echo "$output" | grep -qP '\x1b\['; then
+    fail "Found ANSI escape codes in piped legend on stderr"
+  fi
+}
+
+@test "hug wtll: legend visible on stderr when stdout is piped" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtll 2>&1 1>/dev/null'
+  assert_success
+  assert_output --partial "Legend:"
+}
+
+@test "hug wtll: -q suppresses header and legend" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtll -q 2>&1 1>/dev/null'
+  assert_success
+  refute_output --partial "Worktrees (long format)"
+  refute_output --partial "Legend:"
+}
+
+@test "hug wt --summary: legend visible on stderr when stdout is piped" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wt --summary 2>&1 1>/dev/null'
+  assert_success
+  assert_output --partial "Legend:"
+}
+
+@test "hug wt --summary: -q suppresses header and legend" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wt --summary -q 2>&1 1>/dev/null'
+  assert_success
+  refute_output --partial "Worktrees ("
+  refute_output --partial "Legend:"
+}
+
+@test "hug wtl: piped output has no ANSI escape codes" {
+  cd "$TEST_REPO"
+  local tmpfile
+  tmpfile=$(mktemp)
+  git-wtl > "$tmpfile" 2>/dev/null
+  # Check no ANSI escape sequences (hug-terminal strips colors in non-TTY)
+  if grep -qP '\x1b\[' "$tmpfile"; then
+    rm -f "$tmpfile"
+    fail "Found ANSI escape codes in piped output"
+  fi
+  rm -f "$tmpfile"
+}
+
+@test "hug wtl: no-match error goes to stderr" {
+  cd "$TEST_REPO"
+  run git-wtl nonexistent
+
+  assert_failure
+  assert_output --partial "No worktrees found matching"
+}
+
+@test "hug wtl: help mentions capturing output" {
+  run git-wtl --help
+
+  assert_success
+  assert_output --partial "CAPTURING OUTPUT"
+}
+
+@test "hug wtl: help clarifies positional substring vs -b exact" {
+  run git-wtl --help
+
+  assert_success
+  assert_output --partial "SUBSTRING"
+  assert_output --partial "-b, --branch"
+}
+
+# ── Tests for --path-only output (agent/scriptable mode) ──────────────────
+
+@test "hug wtl: -p outputs absolute paths only" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl -p 2>/dev/null'
+
+  assert_success
+  # Each line should be an absolute path starting with /
+  while IFS= read -r line; do
+    [[ "$line" == /* ]] || fail "Expected absolute path, got: $line"
+  done <<< "$output"
+}
+
+@test "hug wtl: -p output has no indicators or branch names" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl -p 2>/dev/null'
+
+  assert_success
+  # Branch names may appear in worktree paths (e.g. .WT.feature-1), so check for
+  # display-only markers: Legend, current-worktree indicator (*), bare indicator (+)
+  refute_output --partial "Legend"
+  refute_output --partial "(*"
+  refute_output --partial "(+"
+  # No formatted listing lines (leading spaces + branch name)
+  refute_output --regexp "^  main$"
+  refute_output --regexp "^  feature-1$"
+}
+
+@test "hug wtl: -p with multiple worktrees prints count to stderr" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl -p 2>&1 1>/dev/null'
+
+  assert_success
+  assert_output --regexp "[0-9]+ worktrees found"
+}
+
+@test "hug wtl: -p with single match prints no count to stderr" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl -b feature-1 -p 2>&1 1>/dev/null'
+
+  assert_success
+  refute_output --partial "worktrees found"
+}
+
+@test "hug wtl: -p -b with no match exits 1 with error" {
+  cd "$TEST_REPO"
+  run git-wtl -b nonexistent -p
+
+  assert_failure
+  assert_output --partial "No worktrees found matching: branch:"
+}
+
+@test "hug wtl: -p with search term and no match exits 1" {
+  cd "$TEST_REPO"
+  run git-wtl zznope -p
+
+  assert_failure
+  assert_output --partial "No worktrees found matching: search:"
+  refute_output --partial "for branch:"
+}
+
+@test "hug wtl: -p -b returns exact path for branch" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl -b feature-1 -p 2>/dev/null'
+
+  assert_success
+  # Should be exactly one line — the worktree path
+  line_count=$(echo "$output" | wc -l)
+  [[ "$line_count" -eq 1 ]]
+  assert_output --partial "$FEATURE_WT"
+}
+
+@test "hug wtl: -p with substring search returns matching paths" {
+  cd "$TEST_REPO"
+  run bash -c 'git-wtl feature -p 2>/dev/null'
+
+  assert_success
+  assert_output --partial "$FEATURE_WT"
+  refute_output --partial "$HOTFIX_WT"
+}
+
+# ── Tests for --existing filter ────────────────────────────────────────────
+
+@test "hug wtl: -e excludes worktrees with missing directories" {
+  cd "$TEST_REPO"
+
+  # Remove the feature worktree directory (simulating stale/pruned state)
+  rm -rf "$FEATURE_WT"
+
+  # Normal listing should still show it (git metadata exists)
+  run bash -c 'git-wtl 2>/dev/null'
+  assert_success
+  assert_output --partial "feature-1"
+
+  # With -e, it should be excluded
+  run bash -c 'git-wtl -e 2>/dev/null'
+  assert_success
+  refute_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+}
+
+@test "hug wtl: -e with all directories present is same as without -e" {
+  cd "$TEST_REPO"
+  without_e=$(git-wtl -q 2>/dev/null | sort)
+  with_e=$(git-wtl -e -q 2>/dev/null | sort)
+
+  [[ "$without_e" == "$with_e" ]]
+}
+
+@test "hug wtl: -p -e excludes missing directories from path output" {
+  cd "$TEST_REPO"
+  rm -rf "$FEATURE_WT"
+
+  run bash -c 'git-wtl -p -e 2>/dev/null'
+  assert_success
+  refute_output --partial "$FEATURE_WT"
+  assert_output --partial "$TEST_REPO"
+  assert_output --partial "$HOTFIX_WT"
+}
+
+@test "hug wtl: -p -e with all dirs missing exits 1" {
+  cd "$TEST_REPO"
+  # Remove both worktree dirs but keep main
+  rm -rf "$FEATURE_WT" "$HOTFIX_WT"
+
+  # Use substring to match only the additional worktrees (not main)
+  run git-wtl feature -p -e
+  assert_failure
+  assert_output --partial "No worktrees found"
+}
+
+# ── Tests for --existing in normal and JSON modes ────────────────────────────
+
+@test "hug wtl: -e in normal mode exits 1 when all filtered worktrees are stale" {
+  cd "$TEST_REPO"
+  # Delete only the feature worktree dir
+  rm -rf "$FEATURE_WT"
+
+  # Filter to feature-1 branch only, request --existing → stale → exit 1
+  run git-wtl -b feature-1 -e
+  assert_failure
+  assert_output --partial "No existing worktrees found"
+}
+
+@test "hug wtl: -e in normal mode exits 1 when all worktrees (no filter) are stale" {
+  cd "$TEST_REPO"
+  # Delete both worktree dirs; main repo stays
+  rm -rf "$FEATURE_WT" "$HOTFIX_WT"
+
+  # No branch/search filter but -e: only main survives (it's the current dir)
+  # Actually main repo dir exists, so this should still list it.
+  # Instead, let's delete only the additional ones and filter by substring
+  # that only matches them.
+  run git-wtl feature -e
+  assert_failure
+  assert_output --partial "No existing worktrees found"
+}
+
+@test "hug wtl: -e in normal mode still lists existing worktrees" {
+  cd "$TEST_REPO"
+  # Delete only the feature worktree dir
+  rm -rf "$FEATURE_WT"
+
+  # -e should list hotfix (still exists) but not feature (deleted dir)
+  run bash -c 'git-wtl -e 2>/dev/null'
+  assert_success
+  refute_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+}
+
+@test "hug wtl: --json -e excludes stale worktrees from JSON output" {
+  cd "$TEST_REPO"
+  # Delete the feature worktree dir
+  rm -rf "$FEATURE_WT"
+
+  run bash -c 'git-wtl --json -e 2>/dev/null'
+  assert_success
+  # Parse JSON and verify feature-1 is absent but hotfix-1 is present
+  refute_output --partial '"feature-1"'
+  assert_output --partial '"hotfix-1"'
+}
+
+@test "hug wtl: --json -e with all stale exits via empty result" {
+  cd "$TEST_REPO"
+  # Delete both worktree dirs
+  rm -rf "$FEATURE_WT" "$HOTFIX_WT"
+
+  # --json returns empty worktrees array when all filtered entries are stale
+  run bash -c 'git-wtl --json -e 2>/dev/null'
+  assert_success
+  # JSON still valid, just with fewer entries (main repo still exists)
+  assert_output --partial '"count"'
+}
+
+# ── Tests for mutual exclusion and help ─────────────────────────────────────
+
+@test "hug wtl: --json and --path-only are mutually exclusive" {
+  cd "$TEST_REPO"
+  run git-wtl --json -p
+
+  assert_failure
+  assert_output --partial "mutually exclusive"
+}
+
+@test "hug wtl: help shows --path-only flag" {
+  run git-wtl --help
+  assert_success
+  assert_output --partial "--path-only"
+  assert_output --partial "absolute paths"
+}
+
+@test "hug wtl: help shows --existing flag" {
+  run git-wtl --help
+  assert_success
+  assert_output --partial "--existing"
+}
+
+@test "hug wtwp: wrapper lists worktrees by branch" {
+  cd "$TEST_REPO"
+  run git-wtwp feature-1
+
+  assert_success
+  assert_output --partial "feature-1"
+  refute_output --partial "hotfix-1"
+  refute_output --partial "main"
+}
+
+@test "hug wtwp: wrapper accepts multiple branches" {
+  cd "$TEST_REPO"
+  run git-wtwp feature-1 hotfix-1
+
+  assert_success
+  assert_output --partial "feature-1"
+  assert_output --partial "hotfix-1"
+}
+
+@test "hug wtwp: --help shows wrapper-specific help" {
+  run git-wtwp --help
+
+  assert_success
+  assert_output --partial "hug wtwp"
+  assert_output --partial "exact branch names"
+}
+
+@test "hug wtwp: with JSON output" {
+  cd "$TEST_REPO"
+  run git-wtwp feature-1 --json
+
+  assert_success
+  assert_valid_json
+  assert_json_array_length '.worktrees' 1
+  assert_json_value '.worktrees[0].branch' 'feature-1'
+}
+
+# ── Staleness display: (gone) instead of commit hash ─────────────────────────
+
+@test "hug wtl: stale worktree shows (gone) instead of commit" {
+  # Use the existing FEATURE_WT from setup instead of creating a duplicate
+  rm -rf "$FEATURE_WT"
+  cd "$TEST_REPO"
+  run git-wtl 2>/dev/null
+  assert_success
+  assert_output --partial "(gone)"
+  # The stale worktree line must show "(gone)", not a 7-char hex hash.
+  # Per-line grep (BATS --regexp spans lines via .* matching \n).
+  if echo "$output" | grep -qE 'feature-1[^(]*\([0-9a-f]{7}\)'; then
+    fail "stale worktree still shows hex commit hash"
+  fi
+}
+
+@test "hug wtl: usage errors exit 2" {
+  cd "$TEST_REPO"
+  run git-wtl --bogus
+  assert_failure 2
+  assert_output --partial "Unknown option"
+}
+
+@test "hug wtl: --json exposes missing and dirty_details" {
+  wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  echo dirty > "$wt/x.txt"
+  cd "$TEST_REPO"
+  run bash -c "git-wtl --json 2>/dev/null | python3 -m json.tool"
+  assert_success
+  assert_output --partial '"missing": false'
+  assert_output --partial '"dirty_details"'
+  assert_output --partial '"untracked"'
 }

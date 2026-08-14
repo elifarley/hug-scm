@@ -589,7 +589,7 @@ teardown() {
   echo "ignored" > test.log
   git add .gitignore && git commit -m "Add gitignore"
   
-  run bash -c 'echo "rewind" | hug h rewind'
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "y" | hug h rewind'
   assert_success
   assert_file_exists "untracked.txt"
   assert_file_exists "test.log"
@@ -635,13 +635,13 @@ teardown() {
   hug a test.txt
   # Do NOT commit - we need staged changes
 
-  # Test declining confirmation
-  run bash -c 'echo "n" | hug h back HEAD~1'
+  # Test declining confirmation (wrong word → cancelled)
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "n" | hug h back HEAD~1'
   assert_failure
   assert_output --partial "Cancelled"
 
-  # Now test accepting confirmation with staged changes
-  run bash -c 'echo "y" | hug h back HEAD~1'
+  # Now test accepting confirmation by typing "y" (warn tier: yes/no prompt)
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "y" | hug h back HEAD~1'
   assert_success
   assert_output --partial "Moved HEAD back to"
 
@@ -717,7 +717,7 @@ teardown() {
 
 @test "hug h back: requires confirmation when staged changes exist" {
   setup_gum_mock
-  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+  export HUG_TEST_GUM_CONFIRM="no"    # Simulate cancelling gum confirm (warn prompt)
 
   local original_head
   original_head=$(git rev-parse HEAD)
@@ -728,7 +728,6 @@ teardown() {
   # Test with gum mock - no need for stdin manipulation
   run hug h back
   assert_failure
-  assert_output --partial "Move HEAD back to"
   assert_output --partial "Cancelled."
 
   local new_head
@@ -880,7 +879,7 @@ teardown() {
 
 @test "hug h undo: requires confirmation when staged changes exist" {
   setup_gum_mock
-  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+  export HUG_TEST_GUM_CONFIRM="no"    # Simulate cancelling gum confirm (warn prompt)
 
   local original_head
   original_head=$(git rev-parse HEAD)
@@ -890,7 +889,6 @@ teardown() {
 
   run hug h undo
   assert_failure
-  assert_output --partial "Undo commits back to"
   assert_output --partial "Cancelled."
 
   local head_after
@@ -905,7 +903,7 @@ teardown() {
 
 @test "hug h undo: requires confirmation when unstaged changes exist" {
   setup_gum_mock
-  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+  export HUG_TEST_GUM_CONFIRM="no"    # Simulate cancelling gum confirm (warn prompt)
 
   local original_head
   original_head=$(git rev-parse HEAD)
@@ -914,7 +912,6 @@ teardown() {
 
   run hug h undo
   assert_failure
-  assert_output --partial "Undo commits back to"
   assert_output --partial "Cancelled."
 
   local head_after
@@ -1029,17 +1026,17 @@ teardown() {
   target_commit=$(git rev-parse HEAD~1)
 
   # Test declining confirmation (wrong confirmation text)
-  run bash -c 'echo "not_rewind" | hug h rewind HEAD~1'
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "not_rewind" | hug h rewind HEAD~1'
   assert_failure
   assert_output --partial "Cancelled"
 
   # Test declining confirmation (empty input)
-  run bash -c 'echo "" | hug h rewind HEAD~1'
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "" | hug h rewind HEAD~1'
   assert_failure
   assert_output --partial "Cancelled"
 
-  # Test accepting confirmation (exact "rewind" required)
-  run bash -c 'echo "rewind" | hug h rewind HEAD~1'
+  # Test accepting confirmation (warn-tier: y/N on clean tree)
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "y" | hug h rewind HEAD~1'
   assert_success
   assert_output --partial "Rewind complete"
 
@@ -1291,14 +1288,13 @@ teardown() {
 
 @test "hug h squash: requires confirmation when staged changes exist" {
   setup_gum_mock
-  export HUG_TEST_GUM_CONFIRM=no  # Simulate "no" response
+  export HUG_TEST_GUM_CONFIRM="no"    # Simulate cancelling gum confirm (warn prompt)
 
   echo "staged work" > staged.txt
   git add staged.txt
 
   run hug h squash
   assert_failure
-  assert_output --partial "Proceed with squash"
   assert_output --partial "Cancelled."
 
   run git ls-files --cached
@@ -1499,6 +1495,87 @@ EOF
   run hug h squash 2 -m
   assert_failure
   assert_output --partial "-m/--message requires a commit message argument"
+}
+
+# ============================================================================
+# git-h-squash: warn-tier migration + restore hint + upstream guard tests
+# ============================================================================
+
+@test "h-squash: recovery hint printed on success" {
+  create_test_repo_with_history
+  run hug h squash 1 --force
+  assert_success
+  assert_output --partial "hug h restore"
+  assert_output --partial "--back -y"
+}
+
+@test "h-squash -u on synced upstream: exit 0, HEAD unchanged, NO new commit created (empty-target guard)" {
+  create_test_repo_with_history
+  local before; before=$(git rev-parse HEAD)
+  local commit_count_before; commit_count_before=$(git rev-list --count HEAD)
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "hsquash-synced-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  run hug h squash -u -y
+  assert_success
+  # HEAD unchanged — the fix (empty-target guard) prevents the silent-orphan bug
+  # where an empty target word-splits into h-back's HEAD~1 default and
+  # fabricates a "[squash] 0 commits…" commit with exit 0.
+  [ "$(git rev-parse HEAD)" = "$before" ]
+  # No new commit created — this is the key assertion: exit-code-only passes
+  # against the bug because the fabricated commit also exits 0.
+  [ "$(git rev-list --count HEAD)" = "$commit_count_before" ]
+}
+
+@test "h-squash <SHA-of-HEAD>: live '== 0' branch -> 'No commits to squash', NO commit created (regression pin)" {
+  # Regression pin for git-h-squash's top-level '== 0' guard (fed by the
+  # non-upstream count site). This branch is LIVE, not dead code: passing the
+  # SHA of HEAD as the target sails through ensure_ancestor_of_head because
+  # `git merge-base --is-ancestor X X` treats EQUALITY as ancestry (exit 0), and
+  # with target == HEAD there are 0 commits in target..HEAD, so the guard fires
+  # ("No commits to squash", exit 0, no commit created). Pins the branch against
+  # a future "dead code" cleanup that mistakes it for unreachable — see the
+  # assertion-area comment below for what actually detects the regression.
+  local head_sha; head_sha=$(git rev-parse HEAD)
+  local before; before=$(git rev-parse HEAD)
+  local commit_count_before; commit_count_before=$(git rev-list --count HEAD)
+
+  run hug h squash "$head_sha" --force
+  assert_success
+  assert_output --partial "No commits to squash"
+
+  # The PRIMARY detector is the message assertion above: with the guard removed,
+  # this clean-repo fixture (create_test_repo_with_history commits everything)
+  # takes the buggy path ("Skipping commit (empty squash?)") and moves HEAD onto
+  # itself — fabricating NO commit — so 'assert_output --partial "No commits to
+  # squash"' is what catches the regression. The HEAD / commit-count checks below
+  # are defense-in-depth against a variant that WOULD fabricate a commit. (An
+  # exit-code-only check is useless: the buggy path also exits 0.)
+  [ "$(git rev-parse HEAD)" = "$before" ]
+  [ "$(git rev-list --count HEAD)" = "$commit_count_before" ]
+}
+
+@test "h-squash --help documents RESTORE" {
+  run hug h squash --help
+  assert_output --partial "RESTORE"
+  assert_output --partial "hug h restore"
+}
+
+@test "h-squash: dirty tree + -y → proceeds (warn tier, not refused)" {
+  create_test_repo_with_history
+  echo "dirty" >> feature1.txt
+  run hug h squash 1 -y
+  assert_success
+}
+
+@test "h-squash -u with no upstream configured -> non-zero" {
+  create_test_repo_with_history
+  run hug h squash -u
+  assert_failure
 }
 
 # ----------------------------------------------------------------------------
@@ -1858,4 +1935,433 @@ EOF
   # Staged changes should still be there
   run git diff --cached --name-only
   assert_output --partial "feature2.txt"
+}
+
+# ============================================================================
+# git-h-rewind: state-dependent tier (§9 signed off)
+# ============================================================================
+# Context: §9 partial revert of #225 — clean-tree h-rewind has a full recovery path
+# (restore --rewind), so warn is honest; dirty stays danger (edits unrecoverable).
+# The tier is computed from has_uncommitted_tracked_changes before each path.
+
+@test "hug h rewind: dirty tree + -y -> refused exit 3 (danger tier)" {
+  create_test_repo_with_history
+  echo "dirty" >> feature1.txt
+  run hug h rewind -y HEAD~1
+  [ "$status" -eq 3 ]      # HUG_EX_BLOCKED, sourced transitively via hug-common
+  [ "$status" -ne 0 ]      # backstop: a sourcing-order regression fails noisily, not silently
+}
+
+@test "hug h rewind: clean tree + -y -> proceeds (warn) + restore hint" {
+  create_test_repo_with_history
+  run hug h rewind 1 -y
+  assert_success
+  assert_output --partial "hug h restore"
+  assert_output --partial "--rewind -y"
+}
+
+@test "hug h rewind: dirty tree + -f -> proceeds + states edits unrecoverable" {
+  create_test_repo_with_history
+  echo "edit" >> feature1.txt
+  run hug h rewind 1 -f
+  assert_success
+  assert_output --partial "cannot be recovered"
+}
+
+@test "hug h rewind: -f proceeds without prompt" {
+  create_test_repo_with_history
+  local target=$(git rev-parse HEAD~1)
+  run hug h rewind -f HEAD~1
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$target" ]
+}
+
+@test "hug h rewind -u: already-synced short-circuits to exit 0 (empty-target guard intact)" {
+  # Build a synced upstream in TEST_REPO: push to a bare remote at the current HEAD,
+  # then set the branch's upstream tracking to it. handle_upstream_operation then
+  # finds 0 local-only commits -> "Already synced" -> exit 0 inside the subshell ->
+  # empty target -> the guard in git-h-rewind exits 0 (no `git reset --hard ""`).
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "rewind-origin-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$(git branch --show-current)"
+  git branch --set-upstream-to="origin/$(git branch --show-current)" >&2
+  run hug h rewind -u
+  assert_success
+  assert_output --partial "Already synced"
+}
+
+@test "hug h rewind -u: no upstream configured -> non-zero" {
+  create_test_repo_with_history
+  run hug h rewind -u
+  assert_failure
+}
+
+# ----------------------------------------------------------------------------
+# git-h-rewind -u: AHEAD-upstream danger-gate coverage (Fix I1)
+# ----------------------------------------------------------------------------
+# These pin the riskiest path: HUG_FORCE=true handle_upstream_operation -> non-empty
+# target -> prompt_confirm_danger. Without them, refactoring the inline-prefix into
+# an `export HUG_FORCE=true` (or a top-of-script assignment) would silently bypass
+# the danger gate and NO existing test would catch it. Reuses the already-synced
+# test's bare-remote fixture shape, but advances local 1 commit past origin so the
+# helper echoes a real target and the danger gate is the decision point.
+
+@test "hug h rewind -u: ahead-upstream danger gate — confirm proceeds" {
+  create_test_repo_with_history
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "rewind-ahead-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  echo "extra" > extra.txt; git add extra.txt; git commit -q -m "local ahead commit"
+  local remote_tip; remote_tip=$(git rev-parse "origin/$branch")
+
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "y" | hug h rewind -u'
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$remote_tip" ]   # rewound to upstream tip
+}
+
+@test "hug h rewind -u: ahead-upstream danger gate — wrong input cancels" {
+  create_test_repo_with_history
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "rewind-cancel-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  # Advance local 1 commit past origin so the helper yields a non-empty target.
+  echo "extra" > extra.txt; git add extra.txt; git commit -q -m "local ahead commit"
+  local head_before; head_before=$(git rev-parse HEAD)
+
+  run bash -c 'export HUG_DISABLE_GUM=true; echo "no" | hug h rewind -u'
+  assert_failure
+  [ "$(git rev-parse HEAD)" = "$head_before" ]   # HEAD unchanged — gate cancelled
+}
+
+@test "hug h rewind -u: dirty tree -y is REFUSED (danger tier, exit 3) on upstream path" {
+  # Upstream -y refusal when the tree is dirty (§9: state-dependent tier).
+  # handle_upstream_operation gates at the computed tier; with dirty tree,
+  # tier=danger so it refuses -y (exit 3). The OUTER case dispatch also sees
+  # danger and refuses -y. Pre-§9 fix, the whole thing was always danger-tier;
+  # now dirty stays danger and clean lowers to warn. No HUG_DISABLE_GUM needed:
+  # the danger-tier refusal fires before any gum prompt.
+  create_test_repo_with_history
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "rewind-upstream-y-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  echo "extra" > extra.txt; git add extra.txt; git commit -q -m "local ahead commit"
+  echo "dirty" >> feature1.txt
+
+  run hug h rewind -u -y
+  [ "$status" -eq 3 ]      # HUG_EX_BLOCKED — -y cannot authorize the danger-tier upstream reset
+  [ "$status" -ne 0 ]      # backstop: a sourcing-order regression fails noisily, not silently
+}
+
+@test "hug h rewind --help documents RESTORE" {
+  run hug h rewind --help
+  assert_output --partial "RESTORE"
+  assert_output --partial "hug h restore"
+}
+
+# ============================================================================
+# git-h-back: warn-tier migration + restore hint + upstream guard tests
+# ============================================================================
+
+@test "h-back: recovery hint printed on success" {
+  create_test_repo_with_history
+  run hug h back 1 --force
+  assert_success
+  assert_output --partial "hug h restore"
+  assert_output --partial "--back -y"
+}
+
+@test "h-back -u on synced upstream: exit 0, HEAD unchanged (empty-target guard)" {
+  create_test_repo_with_history
+  before=$(git rev-parse HEAD)
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "hback-synced-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  run hug h back -u -y
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$before" ]
+}
+
+@test "h-back --help documents RESTORE" {
+  run hug h back --help
+  assert_output --partial "RESTORE"
+  assert_output --partial "hug h restore"
+}
+
+# ============================================================================
+# git-h-undo: warn-tier migration + restore hint + upstream guard tests
+# ============================================================================
+
+@test "h-undo: recovery hint printed on success" {
+  create_test_repo_with_history
+  run hug h undo 1 --force
+  assert_success
+  assert_output --partial "hug h restore"
+  assert_output --partial "--undo -y"
+}
+
+@test "h-undo -u on synced upstream: exit 0, HEAD unchanged (empty-target guard)" {
+  create_test_repo_with_history
+  before=$(git rev-parse HEAD)
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "hundo-synced-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  run hug h undo -u -y
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$before" ]
+}
+
+@test "h-undo --help documents RESTORE" {
+  run hug h undo --help
+  assert_output --partial "RESTORE"
+  assert_output --partial "hug h restore"
+}
+
+# ============================================================================
+# git-h-rollback: warn-tier migration (normal path) + restore hint + upstream guard tests
+# ============================================================================
+# Context: h-rollback's normal path now gates via prompt_confirm_warn (warn tier),
+# following the same pattern as h-back and h-undo. The root-commit path STAYS
+# danger-tier (custom read -rp requiring "rollback" — no warn downgrade)
+# because it destroys all tracked files from the only commit with no reflog
+# parent to return to.
+
+@test "h-rollback: recovery hint printed on success" {
+  create_test_repo_with_history
+  run hug h rollback 1 --force
+  assert_success
+  assert_output --partial "hug h restore"
+  assert_output --partial "--rollback -y"
+}
+
+@test "h-rollback -u on synced upstream: exit 0, HEAD unchanged (empty-target guard)" {
+  create_test_repo_with_history
+  before=$(git rev-parse HEAD)
+  local branch; branch=$(git branch --show-current)
+  local remote_repo
+  remote_repo=$(mktemp -d -p "${BATS_TEST_TMPDIR}" -t "hrollback-synced-XXXXXX")/origin.git
+  git init --bare -q "$remote_repo"
+  git remote add origin "$remote_repo"
+  git push -q origin "$branch"
+  git branch --set-upstream-to="origin/$branch" >&2
+  run hug h rollback -u -y
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$before" ]
+}
+
+@test "h-rollback --help documents RESTORE" {
+  run hug h rollback --help
+  assert_output --partial "RESTORE"
+  assert_output --partial "hug h restore"
+}
+
+# ============================================================================
+# #229 Phase-1 enforcement: forward-mover headline + per-site strict propagation
+# + loud edge-case failures
+# ============================================================================
+# These pin the audit's central guarantees END-TO-END (the library-level twins live in
+# tests/lib/test_hug-upstream.bats). Pre-#229 two defects let errors masquerade as data:
+#   • Defect-1: alignment was a one-directional `count target..HEAD == 0`, which is ALSO
+#     true when HEAD is BEHIND the target — so a FORWARD (descendant) move silently no-op'ed
+#     ("Already at target"). The fix gates on is_same_commit (exact SHA equality).
+#   • Defect-2: count_commits_in_range swallowed a failed `git rev-list` into `echo 0`, so an
+#     invalid ref / missing upstream looked like an empty range ('0 commits' / 'Already synced',
+#     exit 0). The fix removed the swallow; every strict call site propagates non-zero.
+#
+# These pin the USER-VISIBLE guarantee (non-zero exit, never a silent no-op), NOT the exact strict
+# site. That mechanism is isolated one layer down by the primitive canary at
+# tests/lib/test_hug-git-commit.bats (count_commits_in_range strictness) — mutation-testing shows
+# re-adding the swallow merely RELOCATES the failure downstream (helper-tail `git diff --stat`,
+# `git rev-parse --short <garbage>`, `git rev-parse HEAD` on unborn HEAD), so these stay green by
+# design. Read them as "the command fails loudly," not "this specific line propagates."
+
+@test "hug h back <descendant>: rejected loudly, points at restore (#234 narrows the #229 headline)" {
+  # Evolution: #229 made forward targets PROCEED through the movers; the #234 batch narrows
+  # that — a FORWARD explicit target through a backward-NAMED mover is a direction mistake,
+  # rejected loudly and pointing at restore (the sanctioned forward mover, which encodes the
+  # reset mode explicitly). A silent forward move through a command named "back" surprised
+  # users; restore is unambiguous.
+  local descendant
+  descendant=$(git rev-parse HEAD)   # capture the tip BEFORE moving — the forward target (C)
+  git reset -q --hard HEAD~2         # HEAD -> A (root); tree clean, descendant is ahead of HEAD
+
+  run env HUG_FORCE=true hug h back "$descendant"
+
+  assert_failure
+  assert_output --partial "is ahead of HEAD by 2 commit(s)"
+  assert_output --partial "hug h restore"
+  refute_output --partial "Already at target"
+  [ "$(git rev-parse HEAD)" != "$descendant" ]   # HEAD did NOT move
+}
+
+@test "hug h squash <invalid-ref>: rejected loudly (garbage ref) (#229)" {
+  # Garbage-ref rejection pin — NOT a Defect-2 regression pin. h-squash runs ensure_ancestor_of_head
+  # (ensure_commit_exists) BEFORE any count, and that guard predates #229, so an unresolvable ref is
+  # rejected up front: this command path never had a '0 commits' Defect-2 no-op history. The strict
+  # count site (git-h-squash:183) is defense-in-depth only — an ancestor-validated target can never
+  # fail rev-list, so it does not fire here. Guarantee pinned: a bad ref exits non-zero, loudly.
+  run env HUG_FORCE=true hug h squash NO_SUCH_REF_XYZ
+  assert_failure
+}
+
+@test "hug h files -u with no upstream: exits non-zero (strict), not silent (#229)" {
+  # Defect-2, command-level. The fixture has NO upstream, so get_upstream_commit exits non-zero
+  # (git-h-files:120) before the strict count site (git-h-files:125) is even reached. Pins the
+  # missing-upstream path as a loud failure rather than a silent empty preview.
+  run hug h files -u
+  assert_failure
+}
+
+@test "hug h back <garbage-target>: loud failure, never a silent 'Already at target' (#229)" {
+  # Defect-2 edge case. A non-resolving target through a mover: is_same_commit(garbage, HEAD) is false
+  # (rev-parse --verify fails -> non-zero), so handle_standard_operation proceeds to the strict
+  # count, which propagates the rev-list failure -> non-zero. Pre-fix the swallow produced
+  # '0 commits' -> "Already at target" with exit 0. NOTE: this runs at the 3-commit fixture (NOT
+  # root) — at a VALID root a non-resolving target instead takes the reset_root_commit path.
+  run env HUG_FORCE=true hug h back "definitely-not-a-ref-12345"
+  assert_failure
+  refute_output --partial "Already at target"
+}
+
+@test "hug h back recovering at root (unborn HEAD): loud failure, not a silent no-op (#229)" {
+  # Defect-2 edge case (spec §6): recovery at root is a GUARANTEED LOUD FAILURE. Once the root
+  # commit is undone, HEAD is UNBORN and every `git rev-list … HEAD` fails; the now-strict
+  # count_commits_in_range propagates that non-zero instead of swallowing it to 0 (which pre-fix
+  # rendered a misleading "Already at target" no-op). is_same_commit(target, unborn-HEAD) is a
+  # false-NEGATIVE (never a false positive), so the mover falls through to the strict count and
+  # fails loudly.
+  #
+  # LESSON / `h back 1` at a VALID root: since the #234 batch an explicit target is validated
+  # FIRST — `h back 1` (HEAD~1, unresolvable at root) fails loudly with "'1' is not a valid
+  # commit" (pinned below). The root-recovery branch is now reachable ONLY with no positional
+  # target (the `-z target_arg` structural guard), and the no-arg form stays pinned by
+  # "hug h back: undoes root commit, files stay staged".
+  local root_sha
+  root_sha=$(git rev-list --max-parents=0 HEAD)        # resolve while HEAD is still born
+  git update-ref -d HEAD                               # -> unborn HEAD: the post-root-undo recovery state
+
+  run env HUG_FORCE=true hug h back "$root_sha"
+
+  assert_failure
+  refute_output --partial "Already at target"          # must fail loudly, not no-op silently
+}
+
+# ============================================================================
+# #234 enforcement: explicit targets are validated — garbage/forward fail loudly,
+# sideways (diverged) proceeds, root-recovery is no-arg-only
+# ============================================================================
+
+@test "hug h back <garbage> at root: loud failure, root commit intact (#234)" {
+  # THE reason this batch exists: pre-fix, a garbage explicit target at root was
+  # indistinguishable from "no parent of root" and triggered reset_root_commit.
+  local test_repo; test_repo=$(create_test_repo)
+  cd "$test_repo"
+  local root_sha; root_sha=$(git rev-parse HEAD)
+
+  run env HUG_FORCE=true hug h back definitely-not-a-ref
+
+  assert_failure
+  assert_output --partial "'definitely-not-a-ref' is not a valid commit"
+  [ "$(git rev-parse HEAD)" = "$root_sha" ]   # the destructive path never ran
+}
+
+@test "hug h back 1 at root: loud failure quoting the user's literal (#234 behavior change)" {
+  # HEAD~1 does not exist at root. Pre-fix this triggered root-recovery; an explicit target
+  # is a user assertion, so it now fails loudly — quoting what the user TYPED ('1'), not the
+  # internally-resolved HEAD~1 (the validator receives the literal input).
+  local test_repo; test_repo=$(create_test_repo)
+  cd "$test_repo"
+
+  run env HUG_FORCE=true hug h back 1
+
+  assert_failure
+  assert_output --partial "'1' is not a valid commit"
+}
+
+@test "hug h back <diverged-orphan-ref> at root: silent pass, sideways move preserved (#234)" {
+  # Orphan branches DO diverge from the root (no common ancestor) — the "diverged at root"
+  # shape is reachable. Policy: silent pass; today's sideways preview/reset, unchanged.
+  local test_repo; test_repo=$(create_test_repo)
+  cd "$test_repo"
+  local other_root; other_root=$(git rev-parse HEAD)
+  git checkout -q --orphan sideway
+  echo "s" > sideways.txt; git add sideways.txt; git commit -q -m "orphan root"
+
+  run env HUG_FORCE=true hug h back "$other_root"
+
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$other_root" ]   # sideways reset happened
+}
+
+@test "hug h back <diverged-branch>: proceeds (THE errexit-detection assertion) (#234)" {
+  # CRITICAL layer: this runs the REAL mover under set -euo pipefail. A broken capture idiom
+  # (offset=$(commit_offset …); rc=$?) dies silently at the assignment for exit 2; bats `run`
+  # at the HELPER layer cannot catch that (run disables errexit). This assertion — diverged
+  # target PROCEEDS instead of exiting silently — is the batch's only defense against a
+  # regression of the capture idiom.
+  create_test_repo_with_history
+  git checkout -q -b advanced-branch
+  echo "adv" > advanced.txt; git add advanced.txt; git commit -q -m "branch advances"
+  git checkout -q -
+  echo "loc" > local-advance.txt; git add local-advance.txt; git commit -q -m "HEAD advances"
+  local target; target=$(git rev-parse advanced-branch)   # diverged from HEAD
+
+  run env HUG_FORCE=true hug h back advanced-branch
+
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$target" ]                 # sideways move, NOT a silent exit
+}
+
+@test "hug h undo <garbage> at root: loud failure (#234 spot-check)" {
+  local test_repo; test_repo=$(create_test_repo)
+  cd "$test_repo"
+  run env HUG_FORCE=true hug h undo nope-ref
+  assert_failure
+  assert_output --partial "'nope-ref' is not a valid commit"
+}
+
+@test "hug h rollback <garbage> at root: loud failure (#234 spot-check)" {
+  local test_repo; test_repo=$(create_test_repo)
+  cd "$test_repo"
+  run env HUG_FORCE=true hug h rollback nope-ref
+  assert_failure
+  assert_output --partial "'nope-ref' is not a valid commit"
+}
+
+@test "hug h undo <diverged-branch>: proceeds (the documented 'hug h undo main' shape) (#234)" {
+  # docs/commands/head.md ships `hug h undo main` as an everyday example; on a branch whose
+  # main has advanced, the target is DIVERGED. The batch must preserve today's sideways
+  # preview/reset — a silent non-zero exit here would regress the everyday shape.
+  create_test_repo_with_history
+  git checkout -q -b advanced-main
+  echo "adv" > advanced.txt; git add advanced.txt; git commit -q -m "main advances"
+  git checkout -q -
+  echo "loc" > local-advance.txt; git add local-advance.txt; git commit -q -m "HEAD advances"
+  local target; target=$(git rev-parse advanced-main)
+
+  run env HUG_FORCE=true hug h undo advanced-main
+
+  assert_success
+  [ "$(git rev-parse HEAD)" = "$target" ]
 }

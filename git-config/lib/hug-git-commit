@@ -7,6 +7,7 @@
 # - Counting commits in ranges
 # - Listing commits and changed files
 # - Preview summaries and headers
+# - Amend safety guards (`amend_args_message_intent`, `guard_content_null_amend`)
 #
 # All functions are designed to work with the hug-common library
 # and follow consistent patterns for error handling and user feedback.
@@ -68,23 +69,27 @@ resolve_temporal_to_commit() {
         # Absolute time specification - use git's date parsing directly
         # Git understands various date formats and is cross-platform
         # We'll use --since with the time spec and let git parse it
-        local commit
-        commit=$(git log --format="%H" --since="$time_spec" "$reference" --reverse 2>/dev/null | head -n 1)
-        
+        local commit log_output
+        # SIGPIPE-safe: capture-then-filter — head -n 1 would SIGPIPE git under pipefail
+        log_output=$(git log --format="%H" --since="$time_spec" "$reference" --reverse 2>/dev/null) || log_output=""
+        IFS= read -r commit <<< "$log_output"
+
         if [[ -z "$commit" ]]; then
             error "Unable to parse time specification '$time_spec' or no commits found after that time"
             return 1
         fi
-        
+
         echo "$commit"
         return 0
     fi
-    
+
     # Find the first commit at or after the target time
     # We use --since with the target time and --reverse to get the oldest first
-    local commit
-    commit=$(git log --format="%H" --since="@$target_time" "$reference" --reverse 2>/dev/null | head -n 1)
-    
+    local commit log_output
+    # SIGPIPE-safe: capture-then-filter — head -n 1 would SIGPIPE git under pipefail
+    log_output=$(git log --format="%H" --since="@$target_time" "$reference" --reverse 2>/dev/null) || log_output=""
+    IFS= read -r commit <<< "$log_output"
+
     if [[ -z "$commit" ]]; then
         error "No commits found at or after '$time_spec' (relative to $reference)"
         return 1
@@ -201,18 +206,102 @@ resolve_target_with_temporal() {
 # Commit Range Analysis Functions
 ################################################################################
 
-# Counts commits in a range
+# Counts how far <end> is AHEAD of <start> (commits reachable from <end> but not <start>).
 # Usage: count=$(count_commits_in_range "start" ["end"])
 # Parameters:
-#   $1 - Start commit (exclusive)
+#   $1 - Start commit (exclusive) — REQUIRED
 #   $2 - (Optional) End commit (inclusive), defaults to HEAD
 # Output:
-#   Number of commits in range to stdout
+#   Number of commits in range to stdout.
+#
+# ONE-DIRECTIONAL ahead-count: a result of 0 means "<end> is NOT ahead of <start>" — which
+# is TRUE in two distinct cases: (1) end == start (aligned), OR (2) end is BEHIND start.
+# Do NOT treat 0 as "aligned." For an identity test use is_same_commit(); for a signed
+# distance (with direction/magnitude, diverged vs. error distinguished) use commit_offset().
+# See lib/README.md "Range counting".
+#
+# STRICT: a failed rev-list (invalid ref, unborn HEAD) propagates non-zero exit and prints
+# nothing — it is NEVER swallowed into a 0. Callers MUST handle failure (this is the fix for
+# Defect 2 of elifarley/hug-scm#229; the old "echo 0 on failure" swallow let errors masquerade
+# as data).
+#
+# NOTE: the ${1:?} guard is a hard shell EXIT (not a catchable return) if this function is
+# called directly with a missing start arg; it is catchable via `|| exit 1`/`|| return 1`
+# only because callers invoke it inside a $(…) command substitution. Always pass a start ref.
 count_commits_in_range() {
-    local start="$1"
+    local start="${1:?count_commits_in_range: start ref required}"
     local end="${2:-HEAD}"
 
-    git rev-list --count "$start..$end" 2>/dev/null || echo 0
+    git rev-list --count "$start..$end"
+}
+
+# Display-only, failure-tolerant twin of count_commits_in_range.
+# Usage: count=$(count_commits_in_range_or_zero "start" ["end"])
+# ONLY for display/tip text where a 0 on rev-list failure is cosmetically acceptable
+# (e.g. a rendered plan or a "… in N commits since …" tip). NEVER use this for a branching
+# or alignment decision — there, count_commits_in_range's strict propagation MUST surface
+# the failure. Grep invariant: this "echo 0" swallow appears NOWHERE outside this one body line.
+# (These comments deliberately avoid the literal pipe-form of the pattern so the canary
+# `grep -rn '<pipe><pipe> echo 0' git-config/` stays at exactly ONE hit — don't re-add it.)
+count_commits_in_range_or_zero() {
+    count_commits_in_range "$@" || echo 0
+}
+
+# True (exit 0) iff <a> and <b> resolve to the SAME existing commit.
+# Usage: is_same_commit "a" "b"
+#
+# This is the ONLY sanctioned identity/alignment test. NEVER infer alignment from a
+# one-directional count_commits_in_range == 0 — that means "not ahead," which is ALSO
+# true when one ref is BEHIND the other (Defect 1 of elifarley/hug-scm#229).
+#
+# PRECONDITION: both <a> and <b> MUST resolve to existing commits. On an unborn repo
+# (no commits) rev-parse --verify fails, so is_same_commit returns NON-ZERO for the
+# trivially-aligned case — a false NEGATIVE, never a false positive. Movers run
+# repo/commit-existence guards first; and even if not, the loud-failure chain holds
+# (the rev-parse failure propagates → callers exit non-zero).
+is_same_commit() {
+    local a b
+    a=$(git rev-parse --verify --quiet "${1:?is_same_commit: first ref required}^{commit}") || return 1
+    b=$(git rev-parse --verify --quiet "${2:?is_same_commit: second ref required}^{commit}") || return 1
+    [ "$a" = "$b" ]
+}
+
+# Signed commit distance from <a> to <b> (default HEAD). 0 means IDENTITY (same commit),
+# NOT merely "not ahead" — the false-zero is unrepresentable by construction.
+# Usage: dispatch on $? — exit 2 (diverged) and exit 3 (error) need DISTINCT handling.
+# Capture via `|| rc=$?` — the assignment MUST sit left of `||`: a bare
+# `offset=$(commit_offset …)` followed by `rc=$?` is DEAD CODE under `set -e`, because
+# the assignment statement's exit status IS the substitution's, so errexit aborts the
+# caller at the assignment for exactly exit 2 and 3 — before any dispatch can run.
+#   local offset rc=0
+#   offset=$(commit_offset "target" HEAD) || rc=$?
+#   case $rc in
+#     0) use "$offset" ;;   # identity (0) or a clean signed distance (N / -N)
+#     2) handle_diverged ;; # incomparable histories — NOT an error, NOT a distance
+#     *) handle_error ;;    # exit 3: an unresolvable ref
+#   esac
+# (The naive `... || handle_error` alone conflates 2 with 3 — diverged is not an error.)
+#
+# Contract:
+#   a == b (identity) | stdout=0    exit=0 | at target — undeniable, short-circuited on SHA equality
+#   b ahead of a      | stdout=N    exit=0 | clean forward distance
+#   b behind a        | stdout=-N   exit=0 | forward target (recovery direction)
+#   diverged          | stdout=     exit=2 | incomparable — NOT 0, so never mistaken for aligned
+#   unresolvable ref  | stdout=     exit=3 | error — never a fake 0 (fixes the fallback-swallow, Defect 2)
+#
+# commit_offset == 0 is a SOUND alignment test — the lossy count == 0 of Defect 1 is gone
+# by construction. is_same_commit is the minimal boolean predicate for callers that need
+# only yes/no; commit_offset is for callers that also need direction/magnitude.
+commit_offset() {
+    local a b
+    a=$(git rev-parse --verify --quiet "${1:?commit_offset: first ref required}^{commit}") || return 3
+    b=$(git rev-parse --verify --quiet "${2:-HEAD}^{commit}") || return 3
+    [ "$a" = "$b" ] && { echo 0; return 0; }                        # identity: the undeniable 0
+    local behind ahead
+    read -r behind ahead < <(git rev-list --left-right --count "$a...$b") || return 3
+    if [ "$behind" -eq 0 ]; then echo "$ahead";   return 0; fi      # b ahead of a
+    if [ "$ahead"  -eq 0 ]; then echo "-$behind"; return 0; fi      # b behind a (forward target)
+    return 2                                                        # diverged: empty + distinct exit
 }
 
 # Prints a list of commits in a given range
@@ -274,7 +363,12 @@ get_first_commit_in_range() {
     local start="$1"
     local end="${2:-HEAD}"
 
-    git rev-list --reverse "$start..$end" 2>/dev/null | head -1
+    # SIGPIPE-safe: capture-then-filter — head -1 would SIGPIPE git rev-list under pipefail
+    local range_output
+    range_output=$(git rev-list --reverse "$start..$end" 2>/dev/null) || range_output=""
+    local first
+    IFS= read -r first <<< "$range_output"
+    printf '%s\n' "$first"
 }
 
 # Gets the first child commit of a parent
@@ -294,10 +388,14 @@ get_first_commit_in_range() {
 get_first_child_commit() {
     local parent="$1"
 
-    # Search full history for the parent commit, extract first child
-    # The parent will appear as: <parent_hash> <child1> <child2> ...
-    # We want field $2 (first child)
-    git rev-list --children HEAD 2>/dev/null | grep "^$parent " | head -1 | awk '{print $2}'
+    # Capture-then-filter: the original 4-stage pipe (rev-list | grep | head | awk)
+    # has TWO early-exit points (grep and head) that both trigger SIGPIPE under
+    # pipefail on large histories. Single-pass awk on captured output replaces
+    # all three filter stages cleanly.
+    # See worktree_exists in hug-git-worktree for the canonical WHY.
+    local children_output
+    children_output=$(git rev-list --children HEAD 2>/dev/null) || return 1
+    awk -v p="$parent" '$1 == p && NF > 1 { print $2; exit }' <<< "$children_output"
 }
 
 ################################################################################
@@ -398,28 +496,400 @@ print_commit_list_header() {
 #   - "hug bpushf" if upstream exists and HEAD has diverged (amended pushed commit)
 #   - No suggestion if no upstream exists (branch not published yet)
 #
+# Parameters:
+#   --amend  Indicates the operation was an amend (affects message wording)
+#
 # Environment:
-#   HUG_QUIET - If set to "true", suppresses all output
+#   HUG_QUIET - If set (to "T"), suppresses all output
 #
 # Examples:
-#   suggest_next_push_command  # After commit on branch with upstream
-#   suggest_next_push_command  # After amending a pushed commit
+#   suggest_next_push_command            # After regular commit
+#   suggest_next_push_command --amend    # After amending a commit
 suggest_next_push_command() {
-    # Skip if quiet mode is enabled
-    [[ "${HUG_QUIET:-}" == "true" ]] && return 0
+    [[ "${HUG_QUIET:-}" == T ]] && return 0
 
-    # Check if upstream exists
+    local is_amend=false
+    [[ "${1:-}" == "--amend" ]] && is_amend=true
+
     local upstream
     upstream=$(git rev-parse --verify @{u} 2>/dev/null) || return 0
 
-    # Check if HEAD has diverged from upstream (amend of pushed commit)
-    # If upstream is an ancestor of HEAD, it's a fast-forward (normal commit)
-    # If not, HEAD has diverged (amended commit that was already pushed)
     if git merge-base --is-ancestor @{u} HEAD 2>/dev/null; then
-        # Fast-forward compatible (new commits or amend of unpushed commit)
         tip 'Ready to push? Use "hug bpush".'
-    else
-        # Diverged (amended commit that was already pushed)
+    elif $is_amend; then
         tip 'Commit amended. Use "hug bpushf" to force-push safely.'
+    else
+        tip 'Local and remote histories differ. Review with "hug lo", then rebase or force-push if intentional.'
     fi
+}
+
+# Detects whether args contain --amend, handling flags that consume their next arg (-m, -C, -c)
+# and respecting the -- terminator.
+# Usage: commit_args_indicate_amend "$@" && echo "amend detected"
+commit_args_indicate_amend() {
+    local i=1
+    while [[ $i -le $# ]]; do
+        local arg="${!i}"
+        case "$arg" in
+            --) return 1 ;;
+            --amend) return 0 ;;
+            -m|-C|-c) (( i += 1 )) ;;
+        esac
+        (( i += 1 ))
+    done
+    return 1
+}
+
+# amend_args_message_intent "$@" — three-way scan of forwarded commit args.
+# Computes the CANDIDATE message (what the amend would produce) for the
+# statically-decidable flags and compares it byte-for-byte against HEAD's
+# message. No literal ref comparison anywhere — semantic comparison only.
+# Returns:
+#   0 = KEEP message    (candidate == HEAD's message)
+#   1 = CHANGE message  (candidate differs from HEAD's message)
+#   2 = EDITOR decides  (bare, -e/--edit, or -c/--reedit-message without
+#                        --no-edit)
+# Evaluation order mirrors git's own grammar:
+#   -e/--edit beats everything (opens the editor — but a NO-OP editor
+#   (GIT_EDITOR=true/:/cat/echo — the CI/agent norm) keeps the message, so
+#   those EDITOR cases classify KEEP via amend_editor_is_noop);
+#   --fixup/--squash guarantee a prefixed (different) message;
+#   message source: -m values concatenate with "\n\n" (git multi -m);
+#   -F file content; -C <ref> / -c <ref> WITH --no-edit → the ref's
+#   message (silent replacement); -c WITHOUT --no-edit → editor;
+#   trailers (-s/--signoff, --trailer <k: v>) append onto the source
+#   result via git interpret-trailers, which dedupes the exact line;
+#   unresolvable -F/-C/-c source → CHANGE (1): git will produce its own
+#   loud error downstream (fail-open).
+# Config caveat: trailer.ifexists/ifmissing alter dedupe; computed under
+# DEFAULT config — a mispredict is a loud refusal or proceed, never silent.
+# Scanning follows commit_args_indicate_amend: skip flag values, stop at --.
+# WHY three-way: the guard needs "keep" (fires); the caller's info line
+# needs "change"/"editor" to stay honest. Callers MUST capture via
+# `rc=0; amend_args_message_intent "$@" || rc=$?` — under `set -e` a bare
+# call returning 1/2 kills the script (the commit_offset errexit lesson).
+# amend_editor_is_noop — true when the editor git would launch cannot change
+# the message. CI and agent environments (hug's own primary audience) set
+# GIT_EDITOR=true (or : / cat / echo); under a no-op editor an "editor
+# decides" amend IS statically decidable — the message will be HEAD's
+# message — so the classifier treats those EDITOR cases as KEEP and the
+# guard can refuse a bare content-null amend instead of letting it silently
+# re-hash HEAD. Resolution mirrors git's own priority (GIT_EDITOR >
+# core.editor > VISUAL > EDITOR, collapsed by `git var GIT_EDITOR`).
+# "false" is deliberately NOT no-op: git errors on it, failing the amend
+# (fail-open — still EDITOR, guard proceeds, git speaks).
+amend_editor_is_noop() {
+    local ed="${GIT_EDITOR:-$(git var GIT_EDITOR 2>/dev/null || true)}"
+    # git var prints the PLAIN logical value (verified: "vim", "editor");
+    # no prefix to strip — and stripping would destroy the literal ":" editor.
+    case "$ed" in
+        true|:|cat|echo|/bin/true|/usr/bin/true) return 0 ;;
+    esac
+    return 1
+}
+
+amend_args_message_intent() {
+    local head_msg
+    head_msg=$(git log -1 --format=%B HEAD 2>/dev/null)
+
+    local has_no_edit=false has_source=false edit_requested=false
+    local -a m_values=() trailer_args=()
+    local f_file= c_ref= reedit=false
+
+    while (($#)); do
+        case "$1" in
+            --) break ;;
+            --no-edit) has_no_edit=true ;;
+            -e|--edit)
+                # Do NOT decide here: a REAL editor always wins (handled at
+                # the end → EDITOR), but under a no-op editor the SOURCE
+                # candidate (-m/-F/-C/-c) still decides — -e -m "other" +
+                # GIT_EDITOR=true commits "other" (probe), so an early
+                # KEEP here would falsely refuse a message-changing amend.
+                edit_requested=true ;;
+            --fixup|--squash|--fixup=*|--squash=*) return 1 ;;
+            # "${2:-}" + guarded shift: a trailing value-flag (cmod -m as the
+            # LAST arg) must not crash on an unbound $2 under set -u — an
+            # empty value classifies CHANGE (fail-open), and git emits its own
+            # clear "switch requires a value" error downstream.
+            -m|--message) has_source=true; m_values+=("${2:-}"); (($# >= 2)) && shift || true ;;
+            -m*|--message=*)
+                # bash 4.0 floor: no negative array indices — strip via expansion
+                has_source=true
+                local v="${1#-m}"
+                [[ "$1" == --message=* ]] && v="${1#--message=}"
+                m_values+=("$v")
+                ;;
+            -F|--file) has_source=true; f_file="${2:-}"; (($# >= 2)) && shift || true ;;
+            -F*|--file=*)
+                has_source=true
+                f_file="${1#-F}"
+                [[ "$1" == --file=* ]] && f_file="${1#--file=}"
+                ;;
+            -C|--reuse-message|-c|--reedit-message)
+                has_source=true
+                c_ref="${2:-}"
+                [[ "$1" == -c || "$1" == --reedit-message ]] && reedit=true
+                (($# >= 2)) && shift || true
+                ;;
+            -C*|--reuse-message=*)
+                has_source=true
+                c_ref="${1#-C}"
+                [[ "$1" == --reuse-message=* ]] && c_ref="${1#--reuse-message=}"
+                ;;
+            -c*|--reedit-message=*)
+                has_source=true
+                reedit=true
+                c_ref="${1#-c}"
+                [[ "$1" == --reedit-message=* ]] && c_ref="${1#--reedit-message=}"
+                ;;
+            -s|--signoff)
+                has_source=true
+                # signoff line from the committer ident (git's own source)
+                trailer_args+=(--trailer "Signed-off-by: $(git var GIT_COMMITTER_IDENT 2>/dev/null | sed 's/ [0-9]* [+-][0-9]*$//')")
+                ;;
+            # Empty --trailer value (trailing flag): append nothing — an empty
+            # trailer transforms nothing, so with no other source the empty
+            # candidate classifies CHANGE (fail-open; git errors "requires a
+            # value" downstream) instead of comparing equal-to-HEAD KEEP.
+            --trailer)
+                has_source=true
+                [[ -n "${2:-}" ]] && trailer_args+=(--trailer "${2:-}") || true
+                (($# >= 2)) && shift || true
+                ;;
+            --trailer=*) has_source=true; trailer_args+=(--trailer "${1#--trailer=}") ;;
+        esac
+        shift
+    done
+
+    # An editor is in play (-e, or -c/--reedit-message without --no-edit):
+    # a REAL editor decides everything (2) — checked BEFORE candidate
+    # computation, so an unresolvable source ref cannot preempt the editor
+    # verdict. A no-op editor cannot alter the message, so for it the
+    # source candidate below decides.
+    if $edit_requested || { $reedit && ! $has_no_edit; }; then
+        amend_editor_is_noop || return 2
+    fi
+
+    local candidate=""
+    if ((${#m_values[@]})); then
+        # git concatenates multiple -m with a blank line between paragraphs
+        # (bash 4.0 floor: no array-join tricks — explicit loop)
+        local sep="" v
+        for v in "${m_values[@]}"; do
+            candidate+="$sep$v"
+            sep=$'\n\n'
+        done
+    elif [[ "$f_file" == "-" ]]; then
+        # -F - reads the message from STDIN — consuming it here would starve
+        # git's own read (probe: guard ate stdin, git then aborted on the
+        # empty message). Not statically decidable: fail open, git decides.
+        return 1
+    elif [[ -n "$f_file" ]]; then
+        candidate=$(cat "$f_file" 2>/dev/null) || return 1
+    elif [[ -n "$c_ref" ]]; then
+        candidate=$(git log -1 --format=%B "$c_ref" 2>/dev/null) || return 1
+    fi
+
+    if ((${#trailer_args[@]})); then
+        # Append (and dedupe) onto the source result, or HEAD's message
+        # when there is no source. interpret-trailers dedupes the exact
+        # "key: value" line (probe TT1).
+        local base_msg="$candidate"
+        [[ -n "$base_msg" ]] || base_msg="$head_msg"
+        candidate=$(printf '%s\n' "$base_msg" | git interpret-trailers "${trailer_args[@]}" 2>/dev/null) || return 1
+    fi
+
+    # Track source PRESENCE separately from candidate CONTENT: -m '' and an
+    # Track source PRESENCE separately from candidate CONTENT: -m '' and an
+    # empty -F file are legitimate empty candidates (git replaces the
+    # message with nothing when --allow-empty-message permits), and must
+    # classify CHANGE (1), not fall through to KEEP. `has_source` is set by
+    # the scan whenever a source flag appears, even with an empty value.
+    if $has_source; then
+        # Compare NORMALIZED forms: git applies --cleanup=whitespace to
+        # -m/-F sources before committing (trailing per-line WS stripped,
+        # blank lines squeezed) — the same transform `git stripspace`
+        # performs. A candidate differing only by normalizable whitespace
+        # (e.g. -m "msg " with a trailing space) commits to HEAD's exact
+        # message, making the amend content-null — the incident class this
+        # guard exists to block; comparing raw bytes mispredicts CHANGE and
+        # waves it through (probe-verified). head_msg comes back from git
+        # already-clean, so normalizing it is a harmless no-op. If stripspace
+        # itself fails, fall back to the raw comparison (fail-open CHANGE).
+        local norm_cand="$candidate" norm_head="$head_msg"
+        norm_cand=$(printf '%s\n' "$candidate" | git stripspace 2>/dev/null) || norm_cand="$candidate"
+        norm_head=$(printf '%s\n' "$head_msg" | git stripspace 2>/dev/null) || norm_head="$head_msg"
+        if [[ "$norm_cand" == "$norm_head" ]]; then return 0; fi
+        return 1
+    fi
+
+    if $has_no_edit; then return 0; fi
+    amend_editor_is_noop && return 0
+    return 2   # bare — the editor decides
+}
+
+# guard_content_null_amend <staged|tracked> "$@" [-- <paths...>]
+# Refuses a content-null amend (exit 3 via error_blocked) unless HUG_FORCE.
+# Sets the caller global _amend_content_null=true|false so the caller picks
+# an honest info line (computed once, used twice — the git-c idiom).
+# ALWAYS computes content-null (even when the message changes) — the info
+# line for a message-only amend needs it. Refusal requires content-null
+# AND keep-message AND no HUG_FORCE.
+# Content model is the honest one for the amend's actual content source:
+#   - trailing paths (bare, or after the -- group) → `git diff HEAD --quiet
+#     -- <paths>` (--only mode folds worktree content, not the index)
+#   - -a/--all, -p/--patch, -i/--interactive/--include → tracked check
+#     (worktree+index vs HEAD); a clean tree still refuses (probe-verified
+#     churn). --include keeps the tracked check even with paths (staged +
+#     paths union — a paths-only check would drop the index).
+#   - otherwise → mode argument (staged = git diff --cached; tracked =
+#     git diff HEAD)
+# Fail-open: rc>1 proceeds (never refuse on a corrupt index or unborn HEAD);
+# --pathspec-from-file (content in an uninspectable file/stdin) proceeds; a
+# commit-msg hook that could rewrite the message proceeds.
+# WHY called BARE (never $(guard_content_null_amend ...)): error_blocked must
+# exit the SCRIPT — captured, the refusal dies in the subshell (the exact
+# head-mover lesson). Assumes parse_common_flags already ran: -f/-y/-q are
+# stripped from "$@" and HUG_FORCE/HUG_YES are set.
+guard_content_null_amend() {
+    local mode="$1"; shift
+
+    # --- content model (always computed) ---
+    local -a paths=()
+    local check_mode="$mode"
+    local saw_ddash=false include_mode=false
+    for arg in "$@"; do
+        $saw_ddash && paths+=("$arg") && continue
+        case "$arg" in
+            --) saw_ddash=true ;;
+            # -i is git's --include (verified: `git commit -h` maps -i to
+            # --include, NOT --interactive): content = staged PLUS the named
+            # paths. The tracked check (worktree+index vs HEAD) is a superset
+            # of that union, so it stays the honest refusal check; include_mode
+            # then stops the paths-win override below from collapsing to a
+            # paths-ONLY check that would drop the index entirely.
+            -a|--all|-p|--patch|-i|--interactive|--include)
+                check_mode=tracked
+                [[ "$arg" == -i || "$arg" == --include ]] && include_mode=true
+                ;;
+            --only) check_mode=paths ;;
+            # paths arrive from a file (or stdin via '-') — not statically
+            # decidable. Never claim "nothing to amend" about content we did
+            # not inspect: fail open and let git amend or complain itself.
+            --pathspec-from-file|--pathspec-from-file=*|--pathspec-file-nul)
+                _amend_content_null=false
+                return 0
+                ;;
+        esac
+    done
+    # bare trailing paths (no --): non-flag tokens not consumed as values.
+    # Value-skip walk over EVERY value-taking git commit option (from
+    # `git commit -h`): message sources, --author, --date, --cleanup,
+    # --pathspec-from-file, and the fixup/squash/trailer values. Any other
+    # non-dash token is a bare path.
+    local -a flag_args=("$@")
+    local i=0 tok
+    while ((i < ${#flag_args[@]})); do
+        tok="${flag_args[i]}"
+        case "$tok" in
+            --) break ;;
+            -m|-C|-c|-F|-i|-t|-u|--include|--untracked-files|--template|--message|--file|--reuse-message|--reedit-message|--fixup|--squash|--trailer|--author|--date|--cleanup|--pathspec-from-file)
+                ((i += 2)); continue ;;
+            --*=*) ((i += 1)); continue ;;
+            -[A-Za-z][A-Za-z]*)
+                # Clustered short options (e.g. -am, -em): git's parse-options
+                # accepts them, but we do not statically decode clusters — the
+                # value after -am would otherwise be misread as a bare
+                # pathspec, collapsing the check and falsely refusing a
+                # legitimate staged amend (probe: `cmod --no-edit -am "msg"`
+                # with staged content exited 3 "no changes for the named
+                # paths" while native git amends). Fail open, git decides.
+                _amend_content_null=false
+                return 0
+                ;;
+            -*) ((i += 1)); continue ;;
+            *)
+                paths+=("$tok")
+                # bare paths imply --only content — UNLESS --include holds:
+                # its content is staged PLUS paths (see include_mode above).
+                if ! $include_mode; then check_mode=paths; fi
+                ((i += 1)) ;;
+        esac
+    done
+    # Paths win over -a/-p whenever present: git treats an explicit path
+    # list as --only content even alongside -p/-i (probe-verified); -a with
+    # paths is rejected by git itself ("does not make sense") before the
+    # amend ever runs, so the paths check is the honest one either way.
+    # EXCEPT --include: its contract is staged PLUS named paths — the
+    # override would drop the index from the check and falsely refuse a
+    # staged-content amend (probe: `cmod --no-edit --include <clean-path>`
+    # with staged content was refused as "no staged changes").
+    if ((${#paths[@]})) && ! $include_mode; then
+        check_mode=paths
+    fi
+
+    # --- the honest diff check ---
+    local rc=0
+    case "$check_mode" in
+        paths)
+            if ((${#paths[@]})); then
+                rc=0; git diff --quiet HEAD -- "${paths[@]}" || rc=$?
+            else
+                rc=0; git diff --quiet HEAD || rc=$?
+            fi ;;
+        tracked) rc=0; git diff --quiet HEAD || rc=$? ;;
+        staged)  rc=0; git diff --quiet --cached || rc=$? ;;
+    esac
+
+    # content-null is reported even when the amend will proceed — the
+    # caller's info line for a message-only amend depends on it.
+    if ((rc == 0)); then _amend_content_null=true; else _amend_content_null=false; fi
+    if ((rc != 0)); then return 0; fi          # content exists → never refuse
+
+    # --- message intent ---
+    local msg_rc=0
+    amend_args_message_intent "$@" || msg_rc=$?
+    if ((msg_rc != 0)); then return 0; fi      # CHANGE/EDITOR → proceed
+
+    # --- refusal (unless forced) ---
+    if [[ "${HUG_FORCE:-}" == "true" ]]; then
+        return 0
+    fi
+
+    # A commit-msg hook runs on the amend itself and may rewrite the message
+    # (Gerrit Change-Id is the canonical case): "same message" is then not
+    # statically decidable — proceed rather than refuse with a claim the hook
+    # falsifies (probe: a hook appending Change-Id made the refusal text
+    # factually wrong on a state plain git would re-message). core.hooksPath
+    # (absolute, relative-to-top, or a test-repo hermeticity pin) resolves
+    # before the default <gitdir>/hooks.
+    local hooks_dir
+    hooks_dir=$(git config core.hooksPath 2>/dev/null) || {
+        hooks_dir=$(git rev-parse --git-path hooks 2>/dev/null) || hooks_dir=""
+    }
+    if [[ -n "$hooks_dir" && -x "$hooks_dir/commit-msg" ]]; then
+        return 0
+    fi
+
+    local msg untracked_count cmd_name scope_label
+    cmd_name="cmod"
+    [[ "$mode" == "tracked" ]] && cmd_name="cmoda"
+    # scope names the content model ACTUALLY checked, not the caller's mode:
+    # `cmod -a` and pathspec forms run tracked/paths checks — the refusal
+    # must not claim "no staged changes" about a tracked check (probe:
+    # mislabeled for `cmod --no-edit -a` and `cmod --no-edit -- <paths>`).
+    case "$check_mode" in
+        paths)   scope_label="changes for the named paths" ;;
+        tracked) scope_label="tracked changes" ;;
+        *)       scope_label="staged changes" ;;
+    esac
+    untracked_count=$(get_untracked_files | wc -l)
+    msg="Nothing to amend — no $scope_label and no message change; the amend would only rewrite HEAD's hash (same tree, same message)."
+    msg+=$'\n'"Stage changes first ('hug a <files>') or change the message ('hug $cmd_name -m \"msg\"')."
+    msg+=$'\n'"To re-hash/re-date HEAD anyway, re-run with -f/--force."
+    if ((untracked_count > 0)); then
+        msg+=$'\n'$'\n'"Note: $untracked_count untracked file(s) exist; $cmd_name never includes untracked files — stage them first with 'hug a <file>…' (bare 'hug a' only stages tracked changes) or 'hug aa'."
+    fi
+    error_blocked "$msg"
 }

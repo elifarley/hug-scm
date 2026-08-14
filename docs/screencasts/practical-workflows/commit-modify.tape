@@ -21,7 +21,7 @@ Sleep 500ms
 Type "" Enter
 Type "hug a src/app.test.js" Enter
 Sleep 500ms
-Type "hug cm -m 'feat: Add feature with tests'" Enter
+Type "hug cmod -m 'feat: Add feature with tests'" Enter
 Sleep 500ms
 Type "" Enter
 Type "hug l -2" Enter

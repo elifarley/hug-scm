@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["head"]'
+_hug_keywords='["rewind", "destructive-back", "force-back"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
@@ -21,6 +27,8 @@ OPTIONS:
                     Reference point is HEAD's commit time
     --quiet         Suppress output (sets HUG_QUIET=T)
     --force         Skip confirmation prompts (use with caution; highly destructive)
+    -y, --yes       Without tracked edits: proceeds (warn — fully recoverable).
+                    With tracked edits: refused (danger — edits unrecoverable); use --force.
 
 DESCRIPTION:
     Moves HEAD back to target (full clean). With -u, runs a read-only preview/confirmation before discarding local-only commits and uncommitted changes to sync with remote tip.
@@ -38,8 +46,18 @@ EXAMPLES:
 SEE ALSO:
     hug h back    Make HEAD walk back some commits while keeping their changes staged
 
+RESTORE
+    h-rewind is inverted by:
+        hug h restore <pre-op-HEAD> --rewind -y
+    On a successful h-rewind of a CLEAN tree, hug prints this exact line with the
+    pre-op SHA filled in. (--rewind ≡ git reset --hard back to the old HEAD.)
+    Immediately after h-rewind the tree is tracked-clean, so the printed -y hint
+    proceeds; restore --rewind -f is needed only if you dirty the tree before
+    recovering.
+
 NOTES:
-    WARNING: All uncommitted changes (staged AND unstaged) are permanently lost!
+    Clean tree: HEAD moves only — fully recoverable via restore --rewind.
+    Dirty tree: uncommitted tracked edits are DESTROYED and cannot be recovered.
     Untracked and ignored files are never affected.
 EOF
 }
@@ -68,12 +86,23 @@ done
 
 check_git_repo
 
+# tier computed from tracked-dirty state. Clean tree → warn (HEAD moves only;
+# fully recoverable via restore --rewind). Dirty tree → danger (tracked edits
+# would be destroyed by --hard → unrecoverable data loss).
+tier=warn # default: no tracked changes → safe, full recovery exists
+if has_uncommitted_tracked_changes; then
+  tier=danger
+fi
+
 if $upstream; then
-  # Use DRY helper for validation, then handle upstream-specific logic
+  # Use DRY helper for validation, then handle upstream-specific logic.
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
 
-  # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
-  target=$(handle_upstream_operation "rewinding")
+  # handle_upstream_operation performs validation, preview, and tier-based
+  # confirmation (danger→prompt_confirm_danger, warn→prompt_confirm_warn).
+  # Passing $tier directly retires the HUG_FORCE=true inline-prefix hack: the
+  # helper now gates at the operation's real tier instead of being bypassed.
+  target=$(handle_upstream_operation "rewinding" "$tier" "rewind" "git reset --hard to upstream is irreversible") || exit $?
   if [[ -z "${target:-}" ]]; then
     exit 0
   fi
@@ -84,16 +113,31 @@ else
   # Handle command-specific preview and confirmation
   handle_standard_operation "rewinding" "$target" false
 
-  printf '\n⚠️  This is PERMANENT and cannot be undone!\n' >&2
-  if [[ ${HUG_FORCE:-} != true ]]; then
-    read -p 'Type "rewind" to confirm: ' confirm >&2
-    [ "$confirm" = "rewind" ] || {
-      info "Cancelled."
-      exit 1
-    }
-  fi
+  case "$tier" in
+  danger)
+    printf '\n⚠️  This is PERMANENT and cannot be undone!\n' >&2
+    prompt_confirm_danger "rewind" "git reset --hard is irreversible and cannot be undone"
+    ;;
+  warn)
+    prompt_confirm_warn "Rewind HEAD to $(git rev-parse --short "$target")? [y/N]: "
+    ;;
+  esac
 fi
 
+pre_op_head=$(git rev-parse HEAD)
 printf 'Rewinding to %s...\n' "$target" >&2
 git reset --hard "$target"
 printf 'Rewind complete. Repository is now at %s\n' "$(git rev-parse --short "$target")" >&2
+
+# Post-op messaging varies by tier per §9:
+#   dirty (danger) — edits are unrecoverable; print the commit-recovery hint
+#   clean (warn)   — full recovery exists; print restore --rewind -y
+case "$tier" in
+danger)
+  warning "Uncommitted edits were destroyed and cannot be recovered."
+  emit_head_recovery_hint "$pre_op_head" "rewind"
+  ;;
+warn)
+  emit_head_recovery_hint "$pre_op_head" "rewind"
+  ;;
+esac

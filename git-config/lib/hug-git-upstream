@@ -15,9 +15,12 @@
 ################################################################################
 
 # Handles upstream validation, preview, and confirmation for operations
-# Usage: target=$(handle_upstream_operation "action_name")
+# Usage: target=$(handle_upstream_operation "action_name" tier "action_word" "danger_reason")
 # Parameters:
 #   $1 - Action description verb (e.g., "rewinding", "squashing")
+#   $2 - Confirmation tier: "warn" (prompt_confirm_warn) or "danger" (prompt_confirm_danger)
+#   $3 - Action word for danger confirmation (user must type this to confirm)
+#   $4 - (Optional) Danger reason shown when -y is used, explaining why --force is required
 # Output:
 #   Upstream commit hash to stdout
 # Environment:
@@ -27,8 +30,12 @@
 # Note:
 #   This helper is read-only: never mutates commits, index, or working tree
 #   After gathering preview information and confirmation, echoes upstream commit
+#   The tier parameter closes the inverted confirmation gradient that this whole design
+#   fixes: previously every upstream path was gated at warn regardless of the operation's
+#   actual danger level. Now each caller declares its own safety tier.
 handle_upstream_operation() {
-    local action_name="$1"
+    local action_name="$1" tier="${2:?handle_upstream_operation requires a confirmation tier}"
+    local action_word="$3" danger_reason="${4:-}"
 
     local target
     target=$(get_upstream_commit) || return 1  # Propagate failure if no upstream
@@ -39,10 +46,25 @@ handle_upstream_operation() {
     fi
 
     local local_commits
-    local_commits=$(count_commits_in_range "$target" HEAD)
+    local_commits=$(count_commits_in_range "$target" HEAD) || return 1
 
     if [ "$local_commits" -eq 0 ]; then
-        info "Already synced to upstream ($(git rev-parse --short "$target"))."
+        # == 0 means "not AHEAD": aligned OR behind (diverged is unreachable here —
+        # diverged ⇒ ahead > 0). commit_offset distinguishes exactly these two states;
+        # this is its first production caller (#238).
+        local offset
+        offset=$(commit_offset "$target" HEAD) || return 1
+        local target_short
+        target_short=$(git rev-parse --short "$target")
+        if [ "$offset" -eq 0 ]; then
+            info "Already synced to upstream ($target_short)."
+            exit 0
+        fi
+        local upstream_branch
+        # Parity with the preview block's computation; the fallback cannot actually fire
+        # here (get_upstream_commit already resolved @{u}, which requires an attached HEAD).
+        upstream_branch=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2>/dev/null || echo "upstream")
+        info "Nothing to move: HEAD is ${offset#-} commit(s) behind upstream ($upstream_branch). Pull or rebase to catch up."
         exit 0
     fi
 
@@ -68,7 +90,11 @@ handle_upstream_operation() {
         fi
 
         printf '\n⚠️  This action involves %s to upstream.\n' "$action_name" >&2
-        prompt_confirm_warn "Proceed with $action_name to upstream? [y/N]: "
+        case "$tier" in
+          danger) prompt_confirm_danger "$action_word" "$danger_reason" ;;
+          warn)   prompt_confirm_warn   "Proceed with $action_name to upstream? [y/N]: " ;;
+          *)      error "Unknown confirmation tier '$tier' for upstream operation '$action_name'." ;;
+        esac
     fi
 
     echo "$target"
@@ -87,25 +113,41 @@ handle_upstream_operation() {
 # Note:
 #   This helper is read-only: never mutates commits, index, or working tree
 #   Displays commit list and file change statistics for the operation
+#   Alignment is guarded by is_same_commit (EXACT SHA equality) — NOT a one-directional
+#   count == 0, which is also true when HEAD is BEHIND the target (see Defect-1 fix below).
+#   Called BARE by the movers (plain command, not $(…)), so the aligned-path exit 0
+#   terminates the whole mover. Preserve this contract; do not capture via $(…).
 handle_standard_operation() {
     local action_name="$1"
     local target="$2"
     local skip_when_aligned="${3:-true}"
 
-    local commits_to_affected
-    commits_to_affected=$(count_commits_in_range "$target" HEAD)
-
-    if [ "$commits_to_affected" -eq 0 ]; then
-        if [[ "$skip_when_aligned" == true ]] || ! has_pending_changes; then
+    # Defect-1 fix (#229): alignment is an EXACT SHA relationship (is_same_commit), never a
+    # one-directional count == 0 (which is ALSO true when HEAD is BEHIND the target). A
+    # forward (descendant) target used to no-op here; now only a truly-aligned target does.
+    # Called BARE by the movers (plain command, not $(…)), so this exit 0 terminates the
+    # whole mover — preserved on purpose; do not capture this helper via $(…).
+    if is_same_commit "$target" HEAD; then
+        if [[ "$skip_when_aligned" == true ]] || ! has_uncommitted_tracked_changes; then
             info "Already at target $(git rev-parse --short "$target"). No action taken."
             exit 0
         fi
-
         if [[ ${HUG_QUIET:-} != T ]]; then
             info "No commits to $action_name; local tracked changes will be reset."
         fi
         return 0
     fi
+
+    # NOT aligned. Count ahead-commits STRICTLY for the preview (the old "echo 0" swallow
+    # lived inside count_commits_in_range's body — removed in #229 Defect 2; this site now
+    # propagates strictly).
+    # `|| return 1` is belt-and-suspenders here: this function is called BARE (set -e active),
+    # unlike handle_upstream_operation which is called via `|| exit $?` (set -e suppressed)
+    # and therefore REQUIRES its own guard. For a forward target this count is 0 (HEAD is
+    # behind) and the preview reads "changes in 0 commit:" above the diff stat — cosmetically
+    # rough; Phase 2 makes it direction-aware. The operation PROCEEDS either way.
+    local commits_to_affected
+    commits_to_affected=$(count_commits_in_range "$target" HEAD) || return 1
 
     if [[ ${HUG_QUIET:-} != T ]]; then
         local range_for_diff
@@ -126,6 +168,51 @@ handle_standard_operation() {
                 "$commits_to_affected" "$commit_word"
             git diff --stat "$range_for_diff" >&2
         fi
+    fi
+}
+
+# Validates an EXPLICIT target for a backward HEAD-mover (h-back / h-undo / h-rollback).
+# Usage: validate_backward_target <target> <op> [<user_input>]
+# Parameters:
+#   $1 - resolved target (may be the raw ref if resolution failed upstream)
+#   $2 - mover name for messages: "back" | "undo" | "rollback"
+#   $3 - (Optional) the user's LITERAL input, quoted in error messages (defaults to $1)
+#
+# Contract — keep ISOMORPHIC to commit_offset's outcome table (hug-git-commit):
+#   unresolvable (exit 3)   -> error "'<input>' is not a valid commit", non-zero
+#   diverged     (exit 2)   -> silent pass — a valid SIDEWAYS move; today's behavior, NOT an error
+#   ahead        (offset<0) -> error "…is ahead of HEAD by N commit(s)…", non-zero
+#   self/ancestor (offset>=0)-> silent pass
+#
+# WHY this gate exists (#234): pre-fix, an unresolvable explicit target at the root commit
+# was indistinguishable from the legitimate "no parent of root" case, so `hug h back garbage`
+# triggered reset_root_commit — the most destructive path — on nonsense input. Callers ALSO
+# tighten their root-path guard to `[[ -z "$target_arg" ]]` (defense in depth).
+validate_backward_target() {
+    local target="$1" op="${2:?validate_backward_target: op required}" user_input="${3:-$1}"
+    local offset rc=0
+    # Capture via `|| rc=$?` — the assignment MUST sit left of `||`: a bare
+    # `offset=$(commit_offset …)` aborts a `set -e` caller at the assignment for exit 2/3,
+    # before the dispatch below can run (same failure class as the local-x-capture masking).
+    offset=$(commit_offset "$target" HEAD) || rc=$?
+    case $rc in
+      3) # commit_offset returns 3 when EITHER arg is unresolvable. Disambiguate: if the
+      # TARGET itself resolves, the failure is HEAD's (e.g. unborn HEAD — the post-root-undo
+      # recovery state), not the target's. The natural recovery is hug h restore <target>.
+      if git rev-parse --verify --quiet "$target^{commit}" >/dev/null 2>&1; then
+        error "cannot resolve HEAD (unborn?) — use 'hug h restore $user_input --$op' to recover"
+      else
+        error "'$user_input' is not a valid commit"
+      fi ;;
+      2) return 0 ;;   # diverged: valid sideways move — today's behavior, NOT an error
+      0) ;;
+      # unreachable today (commit_offset's exit surface is total over {0,2,3}) — but an
+      # `error`, not a bare return: a bare non-zero return would surface as a MESSAGELESS
+      # errexit abort, the opposite of this batch's loud-failure promise.
+      *) error "internal error: commit_offset returned unexpected status $rc for '$user_input'" ;;
+    esac
+    if [ "$offset" -lt 0 ]; then
+        error "hug h $op moves HEAD back, but '$user_input' is ahead of HEAD by ${offset#-} commit(s) (use 'hug h restore $user_input --$op' to move forward)"
     fi
 }
 
@@ -167,4 +254,27 @@ reset_root_commit() {
             fi
             ;;
     esac
+}
+
+################################################################################
+# Recovery Hint Helper
+################################################################################
+
+# Emits the inverse restore command to stderr after a successful HEAD mover.
+# Called by warn-tier operations (h-back, h-undo, h-rollback, h-rewind, h-squash)
+# after `git reset` succeeds, so the SHA passed is the known-good pre-op HEAD.
+#
+# Usage: emit_head_recovery_hint <pre-op-HEAD> <op>
+#   <op> ∈ back|undo|rollback|rewind|squash — the caller's own operation name
+#   (the op being inverted). Each caller knows its own name, keeping this
+#   helper free of caller-specific logic.
+#
+# Suppressed under HUG_QUIET=T — this is human-facing chatter, mirroring the
+# gum_log quiet guard (hug-gum:42) per the stdout/stderr discipline.
+# Both args are required (${:?} hard-errors on missing arg).
+emit_head_recovery_hint() {
+  local pre_op_head="${1:?}" op="${2:?}"
+  test "${HUG_QUIET:-}" && return 0
+  printf '\nℹ️  HEAD moved. Recover with:\n    hug h restore %s --%s -y\n' \
+    "$pre_op_head" "$op" >&2
 }

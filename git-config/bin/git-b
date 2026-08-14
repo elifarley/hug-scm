@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["branching"]'
+_hug_keywords='["branch", "switch", "checkout", "change-branch"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
@@ -50,6 +56,7 @@ EXAMPLES:
 SEE ALSO:
   hug bll : Detailed non-interactive branch list
   hug bc  : Create and switch to a new branch
+  hug mff A B : Fast-forward branch A to B without switching
 
 FURTHER READING:
   See 'git switch --help' and 'git for-each-ref --help'.
@@ -122,8 +129,10 @@ if [ ${#args[@]} -gt 0 ]; then
       exit 1
     fi
   else
-    # Not found locally or remotely, let git switch handle it (will show error)
-    exec git switch "${args[@]}"
+    # We already checked both local and remote — own the error message
+    # instead of delegating to git switch for a less informative "fatal: invalid reference"
+    info "Use 'hug bc ${branch_arg}' to create it."
+    error "Branch '${branch_arg}' not found locally or on any remote."
   fi
 fi
 
@@ -157,7 +166,10 @@ if [ "$remote_only" = true ]; then
   # Print interactive menu with remote branches
   # Note: We pass empty array for dates since remote branches don't have dates in this context
   declare -a dates=()
-  print_interactive_branch_menu selected_branch "" "$max_len" hashes dates branches tracks subjects
+  if ! print_interactive_branch_menu selected_branch "" "$max_len" hashes dates branches tracks subjects; then
+    info "Cancelled."
+    exit 1
+  fi
 
   # Create local tracking branch for selected remote
   local_name="$selected_branch"
@@ -200,5 +212,8 @@ if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local --sort-co
 fi
 
 # Print interactive menu and get selection (display functions now include dates)
-print_interactive_branch_menu selected_branch "$current_branch" "$max_len" hashes dates branches tracks subjects "Pick one to switch to..."
+if ! print_interactive_branch_menu selected_branch "$current_branch" "$max_len" hashes dates branches tracks subjects "Pick one to switch to..."; then
+  info "Cancelled."
+  exit 1
+fi
 exec git switch "$selected_branch"

@@ -1,7 +1,7 @@
 # Hug SCM Python Helper Dependencies
 
 # Required: TOML support for test fixtures (Python < 3.11)
-tomli>=2.0.0; python_version < '3.11'
+tomli>=2.4.1; python_version < '3.11'
 tomli-w>=1.0.0
 
 # Optional: Fast matrix operations for co-change analysis

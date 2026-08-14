@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["head"]'
+_hug_keywords='["squash", "combine-commits", "merge-commits"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit hug-select-files; do . "$CMD_BASE/../lib/$f"; done
@@ -31,6 +37,7 @@ MESSAGE OPTIONS:
 BEHAVIOR FLAGS:
     -q, --quiet     Suppress output
     -f, --force     Skip confirmation prompts (use with caution)
+    -y, --yes       Skip confirmation prompts (keeps safe semantics)
 
 SCRIPTING FLAGS:
     --abort-if-staged
@@ -60,9 +67,19 @@ EXAMPLES:
 SEE ALSO:
     hug h back    HEAD goes back only (no auto-commit)
     hug c         commit staged changes
-    hug cm        amend last commit message
+    hug cmod      amend last commit message
     hug ss        show staged changes (diff)
     hug sl        list staged and unstaged files
+    hug shc       : File stats for the range being squashed
+    hug shcp      : Full diff and stats before squashing
+
+RESTORE
+    h-squash is inverted by:
+        hug h restore <pre-op-HEAD> --back -y
+    On a successful h-squash, hug prints this exact line with the pre-op SHA
+    filled in. (--back ≡ git reset --soft — your changes stay staged.)
+    Immediately after h-squash the tree is tracked-clean, so the printed -y hint
+    proceeds; h-squash recovers like h-back (soft reset to old HEAD).
 EOF
 }
 
@@ -113,6 +130,8 @@ done
 
 check_git_repo
 
+tier=warn # h-squash is warn-tier: --soft reset preserves all work; complete recovery exists via restore --back
+
 # Validate flag combinations
 if [[ -n "$custom_message" && "$open_editor" == true ]]; then
   error "Cannot use -m/--message and -e/--edit together (conflicting options)"
@@ -136,20 +155,19 @@ fi
 original_head=$(git rev-parse HEAD)
 
 if $upstream; then
-  # Use DRY helper for validation, then handle upstream-specific logic
-  resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~2' > /dev/null || exit 1
-
-  # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
-  # When the staging area is clean we temporarily set HUG_FORCE to bypass the confirmation prompt.
-  if [[ ${HUG_FORCE:-} == true ]]; then
-    target=$(handle_upstream_operation "squashing")
-  elif has_staged_changes; then
-    target=$(handle_upstream_operation "squashing")
-  else
-    info "No staged changes detected; skipping confirmation."
-    target=$(HUG_FORCE=true handle_upstream_operation "squashing")
-  fi
-  commits_to_squash=$(count_commits_in_range "$target" HEAD)
+  # handle_upstream_operation performs validation, preview, and tier-based
+  # confirmation (warn→prompt_confirm_warn). The HUG_FORCE=true inline-prefix
+  # hack is retired: the helper now gates at the operation's real tier instead
+  # of being bypassed. The empty-target guard ([[ -z "${target:-}" ]]) prevents
+  # the silent-orphan bug: an empty target would word-split into h-back's
+  # HEAD~1 default, fabricating a "[squash] 0 commits…" commit with exit 0.
+  target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~2') || exit 1
+  target=$(handle_upstream_operation "squashing" "$tier" "back" "discards local-only commits") || exit $?
+  [[ -z "${target:-}" ]] && exit 0
+  # Explicit '|| exit 1': belt-and-suspenders (set -e already exits on a failing
+  # top-level assignment). No '== 0' test here by design — the upstream no-op
+  # decision lives inside handle_upstream_operation, not at this count site.
+  commits_to_squash=$(count_commits_in_range "$target" HEAD) || exit 1
 else
   # Use DRY helper for validation and target resolution
   target_commit=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~2') || exit 1
@@ -158,7 +176,11 @@ else
   ensure_ancestor_of_head "$target_commit" "cannot squash onto it."
   log_range="$target_commit"..HEAD
   target_display=$(git rev-parse --short "$target_commit" 2> /dev/null || echo "$target_commit")
-  commits_to_squash=$(count_commits_in_range "$target_commit" HEAD)
+  # Explicit '|| exit 1': belt-and-suspenders (set -e already exits on a failing
+  # top-level assignment). The '== 0' branch below is LIVE, not dead code:
+  # merge-base --is-ancestor treats EQUALITY as ancestry, so 'h squash <SHA-of-HEAD>'
+  # reaches it ("No commits to squash", exit 0, no commit). Pinned in test_head.bats.
+  commits_to_squash=$(count_commits_in_range "$target_commit" HEAD) || exit 1
   if [ "$commits_to_squash" -eq 0 ]; then
     info "No commits to squash (already at $target_display)."
     exit 0
@@ -193,11 +215,7 @@ else
     warn "These staged files will become part of the squashed commit together with the changes from the commits being squashed."
     printf '\n' >&2
 
-    if [[ -z "${target_arg:-}" || "${target_arg:-}" =~ ^[0-9]+$ ]]; then
-      prompt_confirm_warn "Proceed with squash of last $commits_to_squash $commit_word (hug back + hug c)? [y/N]: "
-    else
-      prompt_confirm_warn "Proceed with squash up to $target_display (hug back + hug c)? [y/N]: "
-    fi
+    prompt_confirm_warn "Squash commits and combine their changes? [y/N]: "
   fi
   target="$target_commit"
 fi
@@ -248,6 +266,11 @@ if ! has_staged_changes; then
   warn "No changes staged after reset. Skipping commit (empty squash?)."
   target_display=$(git rev-parse --short "$target" 2> /dev/null || echo "$target")
   info "HEAD moved to $target_display."
+  # Empty-squash early exit: HEAD already moved and orphaned the squashed
+  # commits, so the recovery hint is needed here too — not only on the normal
+  # path below. Without this, zero-net-diff squashes (one commit adds, the next
+  # reverts) would leave the user with no way back despite HEAD having moved.
+  emit_head_recovery_hint "$original_head" "back"
   exit 0
 fi
 
@@ -262,4 +285,5 @@ if [ "$commits_to_squash" -gt 1 ]; then
   summary_word="commits"
 fi
 info "Squash complete: $commits_to_squash $summary_word combined into 1 with parent '$target_display'."
-tip 'Use `hug cm` to change the commit message of the last commit.'
+emit_head_recovery_hint "$original_head" "back"
+tip 'Use `hug cmod` to change the commit message of the last commit.'

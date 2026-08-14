@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["show"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit hug-git-diff hug-git-show; do . "$CMD_BASE/../lib/$f"; done
@@ -11,7 +16,7 @@ show_help() {
 hug shc: Show files changed in a commit or range with statistics.
 
 USAGE:
-    hug shc [N|<commit-ref>|<range>] [OPTIONS]
+    hug shc [N|<commit-ref>|<range>] [OPTIONS] [-- <path>...]
 
 ARGUMENTS:
     N               Single commit N steps back (0-999, 0 → HEAD)
@@ -21,7 +26,19 @@ ARGUMENTS:
 
 OPTIONS:
     -q, --quiet     Suppress header line (also honors HUG_QUIET env var)
+    -n, --name-only Print ONLY changed file paths (repo-relative), one per line.
+                    No stats, no header on stdout, no elision. Exit 0 even on
+                    zero matches (detect via empty stdout). Machine-parseable:
+                    paths print raw (no C-quoting) and renames list the new
+                    path only. Assumes filenames contain no newlines.
     -h, --help      Show this help
+
+PATH FILTERING:
+    Append -- <path>... to restrict output to matching paths.
+    Globs must be quoted to prevent shell expansion.
+
+    hug shc main..HEAD -- '*.java'       # Stats for Java files in range
+    hug shc -3 -- src/lib/ tests/        # Stats for two directories
 
 DESCRIPTION:
     Lists files changed with addition/deletion counts.
@@ -50,6 +67,16 @@ USE CASES FOR RANGES:
     Release review       Audit all changes in a release range
     Code review prep     Understand scope of multiple commits
 
+CAPTURING OUTPUT:
+  File stats go to stdout. Header line goes to stderr (suppress with -q).
+
+    files=$(hug shc -3)          # Capture changed files to variable
+    hug shc -q | wc -l           # Count changed files (quiet mode)
+    hug shc 2>/dev/null          # Suppress header only
+    hug shc -n main..HEAD            # Paths only (repo-relative, pipe-safe)
+    files=$(hug shc -n -3)           # Capture changed-file list to a variable
+    hug shc -n main..HEAD -- '*.py'  # Paths only, filtered to Python files
+
 EXAMPLES:
     hug shc                  # Files changed in last commit (HEAD)
     hug shc 1                # Files changed in commit HEAD~1
@@ -60,12 +87,25 @@ EXAMPLES:
     hug shc HEAD~3..HEAD     # Cumulative changes in last 3 commits (explicit)
     hug shc main..feature    # All changes in feature branch vs main
     hug shc v1.0.0..v1.1.0   # Changes between two tags
-    
+    hug shc main..HEAD -- '*.java'     # Filtered stats for Java files
+    hug shc -3 -- src/lib/ tests/      # Filtered stats for directories
+
     # Related commands for different perspectives:
     hug ll -3 --json --with-stats  # Structured view of last 3 commits with stats
     hug shcp -3                    # Same changes with full diff
     hug sh                             # Commit details with brief stats
     hug h files -3                 # Preview files touched (no stats)
+
+GIT EQUIVALENTS:
+    git diff --stat HEAD                  →  hug shc
+    git diff-tree --stat -r HEAD          →  hug shc HEAD
+    git diff --stat HEAD~3..HEAD          →  hug shc -3
+    git diff --stat main..HEAD -- '*.py'  →  hug shc main..HEAD -- '*.py'
+    git diff --name-only main..HEAD  →  hug shc -n main..HEAD
+    git diff-tree --no-commit-id --name-only -r --root HEAD  →  hug shc -n HEAD
+    # The full diff-tree invocation (--no-commit-id -r --root) is what hug uses
+    # internally; dropping those flags would prepend the commit hash and break
+    # the one-path-per-line contract.
 
 SEE ALSO:
     hug sh       : Show commit info with file stats
@@ -79,16 +119,40 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (-q/--quiet, -h/--help)
-eval "$(parse_common_flags "$@")"
+# Pre-parse pathspecs BEFORE parse_common_flags, which intercepts
+# trailing -- for interactive file selection.
+eval "$(parse_pathspecs "$@")"
+eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
 
-# Parse remaining arguments
+# Extract commit_ref and the -n/--name-only flag from the positional args left
+# by parse_common_flags (it consumes common flags and re-sets "$@" to the
+# remainder; pathspecs were already split off by parse_pathspecs — so iterate
+# "$@" here, never _pathspec_pre_args or the original arguments).
+# git-wtl-style reject-loop: any unrecognized -token is rejected loud via
+# reject_flag_ref (which lets valid -N range shorthands through). Without this,
+# the old last-wins extraction silently swallowed unknown tokens like -nq and
+# the command ran in --stat mode. See the spec's "Bundled-flag hazard" section.
+name_only=false
 commit_ref=""
-for arg in "$@"; do
-  case "$arg" in
-  -h | --help | -q | --quiet) ;; # Already handled by parse_common_flags
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  -n | --name-only)
+    name_only=true
+    shift
+    ;;
+  -*)
+    # Any other -token: reject. reject_flag_ref allows -N (e.g. -3 → HEAD~3..HEAD)
+    # and rejects everything else (-nq, -qn, --foo) with help + exit 2. Called
+    # straight-line on purpose: it either exits or approves the token, and an
+    # && block here would skip the shift on a non-zero return, spinning this
+    # loop forever on the same token.
+    reject_flag_ref "$1"
+    commit_ref="$1"
+    shift
+    ;;
   *)
-    commit_ref="$arg"
+    commit_ref="$1"
+    shift
     ;;
   esac
 done
@@ -98,28 +162,51 @@ commit_ref="${commit_ref:-HEAD}"
 check_git_repo
 
 # Resolve N/-N using unified N/-N syntax convention
-# - N (0-999) → Single commit HEAD~N (0 → HEAD)
-# - -N (1-999) → Range HEAD~N..HEAD
 commit_ref=$(resolve_commit_ref "$commit_ref" "HEAD")
 
-# Show changed files with stats
-# Detect if argument is a range (contains ..) or a single commit
-if [[ "$commit_ref" == *..* ]]; then
+# --name-only mode: print repo-relative paths only, no stats/header.
+# Pure data output (no HUG_QUIET coupling, no no-match hint) by design —
+# callers detect empty via stdout. See spec "No-match hint" section.
+if $name_only; then
+  show_changed_file_names "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
+  exit 0
+fi
+
+# Build pathspec args for git commands: empty-array-safe under set -u.
+# When pathspecs are present, produces: -- <path1> <path2> ...
+# When absent, produces nothing (no args).
+pathspec_args=()
+if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  pathspec_args=(-- "${_pathspec_pathspecs[@]}")
+fi
+
+# Show changed files with stats, optionally filtered by pathspecs.
+# Detect if argument is a range (contains ..) or a single commit.
+stats_output=""
+if is_range "$commit_ref"; then
   # Range: use git diff --stat
   if [[ ${HUG_QUIET:-} != T ]]; then
     commit_emoji="$(_diff_emoji commit)"
     stats_emoji="$(_diff_emoji stats)"
-    printf '%s %s Changed files in range %s:\n' "$commit_emoji" "$stats_emoji" "$commit_ref"
+    printf '%s %s Changed files in range %s:\n' "$commit_emoji" "$stats_emoji" "$commit_ref" >&2
   fi
-  git diff --stat "$commit_ref"
+  stats_output=$(git diff --stat "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}")
 else
   # Single commit: use git diff-tree
   if [[ ${HUG_QUIET:-} != T ]]; then
     commit_emoji="$(_diff_emoji commit)"
     stats_emoji="$(_diff_emoji stats)"
-    printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji"
+    printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji" >&2
   fi
-  git diff-tree --no-commit-id --stat -r --root "$commit_ref"
+  stats_output=$(git diff-tree --no-commit-id --stat -r --root "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}")
+fi
+
+printf '%s\n' "$stats_output"
+
+# No-match hint: when pathspecs given but nothing matched, say so on stderr.
+# Does not affect exit code (stays 0 for scriptability).
+if [[ ${#_pathspec_pathspecs[@]} -gt 0 && ${HUG_QUIET:-} != T && -z "$stats_output" ]]; then
+  printf 'No files matching %s in %s\n' "${_pathspec_pathspecs[*]}" "$commit_ref" >&2
 fi
 
 exit 0

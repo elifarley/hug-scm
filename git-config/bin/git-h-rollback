@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["head"]'
+_hug_keywords='["rollback", "revert-commit", "undo-commit"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
@@ -21,6 +27,7 @@ OPTIONS:
                     Reference point is HEAD's commit time
     --quiet         Suppress output (sets HUG_QUIET=T)
     --force         Skip confirmation prompts (use with caution)
+    -y, --yes       Skip confirmation prompts (keeps safe semantics)
 
 DESCRIPTION:
     Moves HEAD back to target. With -u, runs a read-only preview/confirmation before discarding local-only commits to sync with remote tip.
@@ -37,6 +44,12 @@ EXAMPLES:
 
 SEE ALSO:
     hug h back    Make HEAD walk back some commits while keeping their changes staged
+
+RESTORE
+    h-rollback is inverted by:
+        hug h restore <pre-op-HEAD> --rollback -y
+    On a successful h-rollback, hug prints this exact line with the pre-op SHA
+    filled in. (--rollback ≡ git reset --keep — your changes stay preserved.)
 
 NOTES:
     Refuses to run if you have local changes to files that would be modified.
@@ -70,18 +83,31 @@ done
 
 check_git_repo
 
+tier=warn # h-rollback is warn-tier (normal path): --keep preserves local edits; complete recovery exists via restore
+# Root-commit path stays danger-tier (destroys all tracked files from the only commit; no reflog parent to return to).
+
 if $upstream; then
   # Use DRY helper for validation, then handle upstream-specific logic
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
 
   # handle_upstream_operation performs a read-only preview/confirmation and echoes the upstream commit.
-  target=$(handle_upstream_operation "rolling back")
+  target=$(handle_upstream_operation "rolling back" "$tier" "rollback" "applies reset --keep to upstream") || exit $?
+  [[ -z "${target:-}" ]] && exit 0
 else
   # Use DRY helper for validation and target resolution
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
 
-  # Handle root commit scenario (target doesn't exist because we're at the first commit)
-  if ! git rev-parse --verify --quiet "$target" > /dev/null 2>&1 && is_at_root_commit; then
+  # #234: an EXPLICIT target must be a valid BACKWARD move — garbage fails loudly (never a
+  # root-recovery on nonsense input) and a forward target points at restore instead of moving
+  # HEAD through a backward-named command. The default HEAD~1 is skipped by design: at root it
+  # legitimately does not resolve — that unresolved default IS the root-recovery trigger below.
+  [[ -n "$target_arg" ]] && validate_backward_target "$target" "rollback" "$target_arg"
+
+  # Handle root commit scenario (target doesn't exist because we're at the first commit).
+  # Defense in depth (#234): the `[[ -z "$target_arg" ]]` clause makes root-recovery
+  # STRUCTURALLY unreachable for any explicit target, even if validate_backward_target is
+  # later refactored — only the default HEAD~1 (no positional) may land here.
+  if [[ -z "$target_arg" ]] && ! git rev-parse --verify --quiet "$target" > /dev/null 2>&1 && is_at_root_commit; then
     # Show what will be deleted (tracked files only)
     tracked_count=$(git ls-files | wc -l | tr -d ' ')
 
@@ -109,8 +135,10 @@ else
 
   # Handle command-specific preview and confirmation
   handle_standard_operation "rollback" "$target"
-  prompt_confirm_warn "Rollback HEAD to $(git rev-parse --short "$target")? [y/N]: "
+  prompt_confirm_warn "Roll back HEAD, discarding commit changes while preserving local work? [y/N]: "
 fi
 
+pre_op_head=$(git rev-parse HEAD)
 git reset --keep "$target"
 info "Roll back HEAD to $target done (uncommitted changes preserved)."
+emit_head_recovery_hint "$pre_op_head" "rollback"

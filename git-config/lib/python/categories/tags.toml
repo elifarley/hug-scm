@@ -1,0 +1,5 @@
+label       = "Tags"
+description = """
+Create, list, move, and delete tags.
+Tags are immutable named pointers; useful for releases.
+"""

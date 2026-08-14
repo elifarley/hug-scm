@@ -1,0 +1,4 @@
+label       = "Merging"
+description = """
+Merge branches together via fast-forward or merge commits.
+"""

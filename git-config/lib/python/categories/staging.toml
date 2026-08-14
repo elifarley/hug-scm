@@ -1,0 +1,5 @@
+label       = "Staging area"
+description = """
+Stage and unstage changes for the next commit.
+The staging area is the buffer between working tree and history.
+"""

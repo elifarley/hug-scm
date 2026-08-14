@@ -46,9 +46,6 @@ hug-scm/
 │   ├── meta/                           # Meta/tooling documentation
 │   │   └── hug-completion-reference.md # Shell completion internals
 │   │
-│   ├── planning/                       # Planning & roadmap documents
-│   │   └── json-output-roadmap.md      # Future: JSON output support
-│   │
 │   ├── screencasts/                    # VHS tape files & guide
 │   │   ├── README.md                   # VHS guide (SINGLE SOURCE OF TRUTH)
 │   │   ├── template.tape               # Template for new tape files
@@ -66,8 +63,15 @@ hug-scm/
 ├── hg-config/lib/                      # Mercurial implementation libraries
 │   └── README.md                       # Mercurial library docs
 │
-└── tests/                              # Test suite
-    └── README.md                       # Test suite documentation
+├── tests/                              # Test suite
+│   └── README.md                       # Test suite documentation
+│
+└── mgmt/                               # Internal planning artifacts (NOT published)
+    ├── plans/                          # Planning & roadmap documents
+    │   ├── json-output-roadmap.md      # Future: JSON output support
+    │   └── ...                         # Feature design/impl plans
+    ├── planning/                       # Incident write-ups, bug-fix planning docs
+    └── specs/                          # Architecture specs & design docs
 ```
 
 ## Documentation Categories
@@ -131,14 +135,18 @@ hug-scm/
 
 **When to use**: Major architectural decisions (framework choices, structural changes, design patterns)
 
-### 4. Planning & Roadmap (`docs/planning/*.md`)
+### 4. Planning & Roadmap (`mgmt/plans/*.md` and `mgmt/planning/*.md`)
 
-**Purpose**: Future features, roadmaps, and planning documents
+**Purpose**: Future features, roadmaps, and planning documents (internal — not published to the docs site)
 
-**Location**: `docs/planning/`
+**Location**: `mgmt/plans/` (design/impl plans) and `mgmt/planning/` (incident & bug-fix planning)
 
 **Examples**:
 - `json-output-roadmap.md` - JSON output support roadmap
+- `co-changes-file-mode-plan.md` - File-first redesign plan for co-change analysis
+- `2026-03-06-whole-codebase-code-roast.md` - Whole-repository engineering roast report
+- `2026-03-06-codebase-hardening-action-plan.md` - Ranked action plan derived from engineering review
+- `2026-03-12-tag-selection-and-tdel-code-roast.md` - Focused engineering roast for tag-selection hardening
 - `bash-to-python-phase1-complete.md` - Phase 1-5 migration completion summary
 - `bash-to-python-cleanup-complete.md` - Cleanup completion summary
 - `bash-to-python-conventions.md` - Migration conventions and patterns
@@ -241,7 +249,7 @@ hug-scm/
    → `docs/architecture/ADR-NNN-*.md`
 
 2. **Is it a planning/roadmap document?**
-   → `docs/planning/*.md`
+   → `mgmt/plans/*.md` (design/impl plans) or `mgmt/planning/*.md` (incident/bugfix planning)
 
 3. **Is it command reference?**
    → `docs/commands/*.md`
@@ -392,7 +400,7 @@ make docs-preview # Preview production build
 **Task**: Plan multi-repository support
 
 **Steps**:
-1. Create `docs/planning/multi-repo-roadmap.md`
+1. Create `mgmt/plans/multi-repo-roadmap.md`
 2. Include: problem statement, proposed solution, open questions
 3. When decided, create `docs/architecture/ADR-003-multi-repo-support.md`
 4. After implementation, update user docs (`workflows.md`, etc.)

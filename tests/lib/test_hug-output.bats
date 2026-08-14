@@ -281,14 +281,26 @@ teardown() {
   source 'git-config/lib/hug-arrays'
   untracked=("new1.txt")
   ignored=(".DS_Store")
-  
+
   # Act - only target untracked
   run print_untracked_ignored_paths untracked ignored true false
-  
+
   # Assert
   assert_success
   assert_output --partial "Untracked"
   assert_output --partial "new1.txt"
   refute_output --partial "Ignored"
   refute_output --partial ".DS_Store"
+}
+
+@test "error_usage: exits with code 2" {
+  run error_usage "bad flag"
+  assert_failure 2
+  assert_output --partial "bad flag"
+}
+
+@test "error_blocked: exits with code 3" {
+  run error_blocked "nope"
+  assert_failure 3
+  assert_output --partial "nope"
 }

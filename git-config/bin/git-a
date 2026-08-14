@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["staging"]'
+_hug_keywords='["add", "stage", "track"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 # Assume HUG_HOME is set (exported by hug or environment)
 # shellcheck source=git-config/lib/hug-common
 . "$HUG_HOME/git-config/lib/hug-common"
@@ -10,6 +16,69 @@
 . "$HUG_HOME/git-config/lib/hug-select-files"
 set -euo pipefail # Exit on error, undefined vars, pipe failures
 
+# Stage files and print a one-line index summary.
+# WHY (elifarley/hug-scm#207): an agent running `hug a file.txt` after a
+# soft-reset has no signal that the index was already populated with N other
+# files from the reset. The summary surfaces the cumulative count at the
+# moment the user can still act on it (unstage, inspect, abort) — making
+# this the PREVENTION counterpart to hug c's RECOVERY preview (Task 2).
+#
+# Design notes:
+# - Uses `git diff-files --name-only` (working tree vs index) before/after
+#   to count files whose staged content actually changed — this correctly
+#   reports restaging (editing an already-staged file and running `hug a`
+#   again) whereas a naive `git diff --cached --name-only | wc -l` diff
+#   would report "Staged 0 files" (elifarley/hug-scm#210).
+# - HUG_QUIET gate lives HERE (this is a git-a-specific helper, NOT a
+#   shared library function). Shared helpers like print_list must NOT check
+#   HUG_QUIET internally — see eng review finding E1.
+# - Removing `exec` from the four exit paths means the script continues
+#   after `git add` rather than replacing the process. The summary prints
+#   after git add returns, then the script exits naturally.
+#
+# Usage: hug_add_with_summary <git add args...>
+hug_add_with_summary() {
+  # Snapshot all "not-yet-in-index" files before git add:
+  #   - git diff-files: tracked files with working-tree changes
+  #   - git ls-files --others: untracked files
+  # Files that vanish from this union after the add are the ones actually
+  # staged — this correctly counts restaging (editing an already-staged
+  # file) and first-time staging of untracked files (elifarley/hug-scm#210).
+  local _pool_before _pool_after
+  _pool_before=$({
+    git diff-files --name-only 2> /dev/null
+    git ls-files --others --exclude-standard 2> /dev/null
+  } |
+    sort)
+
+  # Run the actual git add (forward all args, honor errors under set -e)
+  git add "$@"
+
+  _pool_after=$({
+    git diff-files --name-only 2> /dev/null
+    git ls-files --others --exclude-standard 2> /dev/null
+  } |
+    sort)
+
+  # Files that left the pool = actually staged (restaged or newly added).
+  local _staged=0
+  if [[ -n "$_pool_before" ]]; then
+    _staged=$(comm -23 <(printf '%s\n' "$_pool_before") \
+      <(printf '%s\n' "${_pool_after:-}") |
+      wc -l | tr -d ' ')
+  fi
+
+  # Index total after the add (pathnames with diff vs HEAD).
+  local _index_after
+  _index_after=$(git diff --cached --name-only 2> /dev/null | wc -l | tr -d ' ')
+
+  # Print summary to stderr, suppressed by HUG_QUIET.
+  if [[ -z "${HUG_QUIET:-}" ]]; then
+    printf 'Staged %d file%s. Index now has %d file(s) staged total.\n' \
+      "$_staged" "$([[ $_staged -eq 1 ]] && echo '' || echo 's')" "$_index_after" >&2
+  fi
+}
+
 # Part of the Hug tool suite
 
 show_help() {
@@ -17,7 +86,7 @@ show_help() {
 hug a: Stage tracked files, or specific files if provided.
 
 USAGE:
-  hug a                # Stage all tracked files (updates only)
+  hug a                # Stage tracked changes: modifications + deletions (not new files)
   hug a .              # Stage current directory
   hug a <file>         # Stage specific files
   hug a --             # Interactive file selection (current directory scope)
@@ -30,11 +99,15 @@ OPTIONS:
   --browse-root  Browse full repository scope in file selector UI (default: current directory)
   --from-file <file>    Read file list from file or stdin (use '-' for stdin)
   --from-commit <commit> Use files changed in the specified commit
+  -q, --quiet    Suppress the post-stage summary (sets HUG_QUIET=T)
   -h, --help     Show this help message and exit.
 
 DESCRIPTION:
   Stage tracked files for commit. When no arguments are provided, stages all
-  tracked files that have been modified. Use '--' to interactively select
+  tracked changes: modifications AND deletions, but not new/untracked files
+  (this is 'git add -u'; use 'hug aa' to also include new files). Note: giving
+  an explicit path, e.g. 'hug a <dir>', DOES stage untracked files under it.
+  Use '--' to interactively select
   files to stage. By default, interactive selection is scoped to the current
   directory and subdirectories. Use --browse-root to browse the entire repository.
 
@@ -75,6 +148,10 @@ while [[ $# -gt 0 ]]; do
     show_help
     exit 0
     ;;
+  -q | --quiet)
+    export HUG_QUIET=T
+    shift
+    ;;
   --)
     # Don't process -- here, let parse_common_flags handle it
     break
@@ -114,7 +191,8 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     exit 0
   fi
 
-  exec git add "${files[@]}"
+  hug_add_with_summary "${files[@]}"
+  exit 0
 fi
 
 # Handle interactive file selection if requested
@@ -140,10 +218,14 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     exit 0
   fi
 
-  exec git add "${files[@]}"
+  hug_add_with_summary "${files[@]}"
+  exit 0
 fi
 
 # Check if no arguments - stage all tracked modified files
-test ${#remaining_args[@]} -eq 0 && exec git add -u
+if [[ ${#remaining_args[@]} -eq 0 ]]; then
+  hug_add_with_summary -u
+  exit 0
+fi
 
-exec git add "${remaining_args[@]}"
+hug_add_with_summary "${remaining_args[@]}"

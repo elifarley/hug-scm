@@ -6,9 +6,15 @@ import { defineConfig } from 'vitepress'
     vite: {
       plugins: [pagefindPlugin()],
     },
-    base: '/hug-scm/',
+    // Internal planning/spec prose is NOT user-facing docs, and VitePress parses
+    // every .md as a Vue SFC — a literal angle-bracket token (e.g. <commit-ref>)
+    // in an unfenced ASCII diagram reads as an unclosed element and fails the
+    // whole build (elifarley/hug-scm#170). Exclude the internal dirs from
+    // compilation; the deploy workflow then publishes only user-facing pages.
+    srcExclude: ['plans/**', 'planning/**', 'superpowers/**'],
+    base: '/',
     sitemap: {
-      hostname: 'https://elifarley.github.io/hug-scm/'
+      hostname: 'http://hug-scm.orgecc.com/'
     },
     title: "Hug SCM CLI",
     description: "Documentation for Hug, a Humane Git CLI",

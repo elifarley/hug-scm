@@ -83,6 +83,10 @@ Hug SCM uses a **hybrid architecture** for test repository creation, optimized f
 - Reproducible commit hashes across all test runs
 - Zero non-deterministic commit creation in entire suite
 
+**Hermetic Test Repositories**
+- Each git test repo pins a repo-local `core.hooksPath` (set in `tests/test_helper.bash`), so a developer machine's global hooks override cannot redirect test hooks away from the repo's own hooks directory — the suite behaves identically with or without a global `core.hooksPath` ([elifarley/hug-scm#184](https://github.com/elifarley/hug-scm/issues/184))
+- Repo helpers verify that `cd` actually arrived at the temp repo directory and abort loudly on mismatch — otherwise a failed temp-dir resolution would silently commit test fixtures into whatever repository hosts the test run (worktree contamination)
+
 **Key Insight:** Both patterns are optimal for their use cases. Demo repos provide realism for integration tests; fixtures provide speed for unit tests. Attempting to use only one pattern would sacrifice either performance (10x slower) or realism. The hybrid approach leverages the strengths of both.
 
 ## Quick Start

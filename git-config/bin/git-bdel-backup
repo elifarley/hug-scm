@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["branching"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 # shellcheck source=../lib/hug-common
@@ -28,6 +33,7 @@ OPTIONS:
                                 Example: -o 2024-11 deletes backups from Nov 2024 and earlier
     --dry-run                   Preview the delete operation without applying changes
     -f, --force                 Skip confirmation prompts
+    -y, --yes                   Skip confirmation prompts (keeps safe semantics)
     -q, --quiet                 Suppress output (sets HUG_QUIET=T)
     -h, --help                  Show this help
 
@@ -151,13 +157,22 @@ if [[ -n "$delete_older_than" ]]; then
   fi
 fi
 
-# Helper function to normalize backup branch name format to comparison key
-# Converts: hug-backups/2024-11/02-1234.feature -> 2024-11/02-1234
-# The date-time portion follows YYYY-MM/DD-HHMM format for lexicographic comparison
+# Helper function to normalize backup branch name format to comparison key.
+# Converts the widened timestamp forms to a MINUTE-precision key so that
+# --delete-older-than lexicographic comparison stays correct when backups
+# exist at seconds precision (the new form from hug-git-backup):
+#   hug-backups/2024-11/02-1234.feature      -> 2024-11/02-1234
+#   hug-backups/2024-11/02-123456.feature    -> 2024-11/02-1234   (seconds dropped)
+#   hug-backups/2024-11/02-123456-7.feature  -> 2024-11/02-1234   (seconds+counter dropped)
+# Non-matching input passes through unchanged.
+#
+# NOTE: the seconds group `([0-9]{2}(-[0-9]+)?)?` is OPTIONAL (trailing `?`).
+# Making it required would break normalization of legacy DD-HHMM names
+# (eng-review Codex #2) and cause --delete-older-than to under-delete old
+# backups.
 normalize_backup_key() {
   local backup="$1"
-  # Extract the date-time portion (YYYY-MM/DD-HHMM)
-  echo "$backup" | sed -E 's|^hug-backups/([0-9]{4}-[0-9]{2}/[0-9]{2}-[0-9]{4})\..*$|\1|'
+  echo "$backup" | sed -E 's|^hug-backups/([0-9]{4}-[0-9]{2}/[0-9]{2}-[0-9]{4})([0-9]{2}(-[0-9]+)?)?\..*$|\1|'
 }
 
 # Helper function to check if a backup is older than the pattern
@@ -370,19 +385,25 @@ hug_bdel_backup() {
   fi
 
   if [[ -n "$keep_count" ]]; then
-    # Sort ALL backups by date (newest first) to determine which to keep
-    # Backup format: hug-backups/YYYY-MM/DD-HHMM.name
-    # The date format is designed for lexicographic sorting (newest first with -r)
+    # Sort ALL backups by date (oldest first) to determine which to keep.
+    # Backup format: hug-backups/YYYY-MM/DD-HHMM[SS[-N]].name
+    # Ascending sort ensures collision-ladder names order correctly:
+    #   DD-HHMMSS.name (first)  <  DD-HHMMSS-1.name (second, newer)
+    # because '-' (0x2D) < '.' (0x2E) in ASCII. With sort -r the order
+    # inverted, making --keep keep the older backup and delete the newer.
     local -a sorted_all_backups=()
     mapfile -t sorted_all_backups < <(
-      printf '%s\n' "${all_backups[@]}" | sort -r
+      printf '%s\n' "${all_backups[@]}" | sort
     )
 
-    # Determine which backups to keep (the first keep_count from sorted list)
+    # Determine which backups to keep (the last keep_count from sorted list)
     local -a backups_to_keep=()
     local i
-    for ((i = 0; i < keep_count && i < ${#sorted_all_backups[@]}; i++)); do
-      backups_to_keep+=("${sorted_all_backups[i]}")
+    local total=${#sorted_all_backups[@]}
+    for ((i = total - keep_count; i < total; i++)); do
+      if [[ $i -ge 0 ]]; then
+        backups_to_keep+=("${sorted_all_backups[i]}")
+      fi
     done
 
     if [[ -n "$delete_older_than" ]]; then
@@ -415,8 +436,8 @@ hug_bdel_backup() {
         exit 0
       fi
 
-      # Delete all except the first keep_count
-      backup_branches_to_delete=("${sorted_all_backups[@]:$keep_count}")
+      # Delete all except the last keep_count (newest)
+      backup_branches_to_delete=("${sorted_all_backups[@]::${#sorted_all_backups[@]}-keep_count}")
     fi
   elif [[ -n "$delete_older_than" ]]; then
     # --delete-older-than was used without --keep, use candidates

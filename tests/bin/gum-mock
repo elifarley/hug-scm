@@ -78,6 +78,28 @@ filter)
     exit 1
   fi
 
+  # Support deterministic multi-select in tests using 0-based indices.
+  # WHY: command-level tests run in a separate process, so shell-function mocks
+  # are not available there. Returning the chosen lines keeps the mock faithful
+  # to gum's real contract.
+  if [[ -n "${HUG_TEST_GUM_SELECTION_INDICES:-}" ]]; then
+    IFS=',' read -ra indices <<< "$HUG_TEST_GUM_SELECTION_INDICES"
+    emitted=false
+    for raw_idx in "${indices[@]}"; do
+      idx="${raw_idx//[[:space:]]/}"
+      if [[ "$idx" =~ ^[0-9]+$ ]] && [ "$idx" -lt ${#lines[@]} ]; then
+        printf '%s\n' "${lines[$idx]}"
+        emitted=true
+      fi
+    done
+
+    if [[ "$emitted" == true ]]; then
+      exit 0
+    fi
+
+    exit 1
+  fi
+
   # Check if we have sequential responses configured
   if [[ -n "${HUG_TEST_GUM_RESPONSES:-}" ]]; then
     # Check if we should provide a custom response (not in the list)

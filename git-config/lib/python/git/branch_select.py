@@ -14,16 +14,42 @@ Supports:
 """
 
 import argparse
-import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
-# ANSI color codes (matching hug-terminal)
-YELLOW = "\x1b[33m"
-BLUE = "\x1b[34m"
-GREY = "\x1b[90m"
-CYAN = "\x1b[36m"
-NC = "\x1b[0m"  # No Color
+# When run as a script (python3 /path/to/branch_select.py), Python does NOT
+# automatically add the package root to sys.path, so `from git.selection_core
+# import` fails with ModuleNotFoundError.  We fix this by inserting the parent
+# of the `git/` package directory — i.e. git-config/lib/python/ — into sys.path
+# before the import.  This guard runs only in __main__ (script mode) to avoid
+# polluting sys.path when the module is imported as a library (e.g. in tests
+# where pytest already sets PYTHONPATH correctly).
+# WHY parent.parent: __file__ is …/git/branch_select.py, so
+# Path(__file__).parent is …/git/ and .parent.parent is …/python/.
+if __name__ == "__main__":
+    _pkg_root = str(Path(__file__).resolve().parent.parent)
+    if _pkg_root not in sys.path:
+        sys.path.insert(0, _pkg_root)
+
+# All shared primitives live in selection_core — the single source of truth for
+# bash escaping, declare-statement generation, input parsing, and ANSI colors.
+# Importing them here (rather than re-defining locally) ensures that every
+# selection module produces byte-for-byte identical output and reads identical
+# environment variables for test overrides.
+# This import must come AFTER the sys.path fixup above so that both script mode
+# (__main__) and library-import mode (pytest) resolve the package correctly.
+from git.selection_core import (
+    BLUE,
+    CYAN,
+    GREEN,
+    GREY,
+    NC,
+    YELLOW,
+    BashDeclareBuilder,
+    get_selection_input,
+    parse_numbered_input,
+)
 
 # Minimum items for gum usage (matches Bash constant)
 MIN_ITEMS_FOR_GUM = 10
@@ -71,76 +97,216 @@ class SelectedBranches:
         Returns:
             Bash declare statements as a string
         """
-        lines = []
-
-        # Build arrays - use space-separated values for bash arrays
-        branches_arr = " ".join(_bash_escape(b) for b in self.branches)
-        indices_arr = " ".join(str(i) for i in self.selected_indices)
-
-        lines.append(f"declare -a {array_name}=({branches_arr})")
-        lines.append(f"declare -a selected_indices=({indices_arr})")
-
-        return "\n".join(lines)
-
-
-def _bash_escape(s: str) -> str:
-    """Escape string for safe bash declare usage.
-
-    Uses single quotes with inner quote escaping for maximum compatibility.
-    Handles: backslashes, single quotes, and most special characters.
-
-    Args:
-        s: String to escape
-
-    Returns:
-        Escaped string wrapped in single quotes
-    """
-    s = s.replace("\\", "\\\\")  # Backslashes first (order matters)
-    s = s.replace("'", "'\\''")  # Single quotes
-    return f"'{s}'"
-
-
-def _should_use_gum(num_items: int, options: SelectOptions) -> bool:
-    """Determine if gum should be used for selection.
-
-    Args:
-        num_items: Number of items to select from
-        options: SelectOptions configuration
-
-    Returns:
-        True if gum should be used, False otherwise
-    """
-    if not options.use_gum:
-        return False
-
-    # Check HUG_DISABLE_GUM environment variable
-    if os.environ.get("HUG_DISABLE_GUM", "").lower() == "true":
-        return False
-
-    # Check if gum is available
-    # In test mode, we can assume gum is available if HUG_TEST_MODE is set
-    if os.environ.get("HUG_TEST_MODE", "").lower() == "true":
-        return num_items >= MIN_ITEMS_FOR_GUM
-
-    # Check if gum command exists
-    try:
-        import subprocess
-
-        subprocess.run(
-            ["command", "-v", "gum"],
-            shell=True,
-            check=True,
-            capture_output=True,
+        # BashDeclareBuilder handles escaping and validates variable names eagerly,
+        # so invalid array_name values produce a clear error at call time rather
+        # than silently emitting broken bash syntax.
+        return (
+            BashDeclareBuilder()
+            .add_array(array_name, self.branches)
+            .add_array("selected_indices", [str(i) for i in self.selected_indices])
+            .build()
         )
-        has_gum = True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        has_gum = False
 
-    if not has_gum:
-        return False
 
-    # Check if we have a TTY
-    return sys.stdout.isatty() and num_items >= MIN_ITEMS_FOR_GUM
+@dataclass
+class SingleSelectResult:
+    """Result of a single-branch selection operation.
+
+    Models one of three outcomes:
+        "selected"    — user picked a branch; branch and index are populated.
+        "cancelled"   — user pressed Enter / gave empty or invalid input.
+        "no_branches" — no branches were available to select.
+
+    This explicit status field replaces the implicit convention of using
+    exit codes or empty-string sentinels, which was the source of subtle
+    bugs in the Bash implementation.
+
+    Attributes:
+        status:  One of "selected", "cancelled", "no_branches".
+        branch:  Selected branch name; empty string unless status == "selected".
+        index:   0-based index of the selected branch; -1 if not selected.
+    """
+
+    status: str  # "selected" | "cancelled" | "no_branches"
+    branch: str  # empty unless status == "selected"
+    index: int  # -1 if not selected
+
+    def to_bash_declare(self) -> str:
+        """Format as bash variable declarations for `eval` consumption.
+
+        Outputs three bash `declare` statements in this order:
+            declare selected_branch='...'   — branch name (empty if not selected)
+            declare selection_status='...'  — one of: selected/cancelled/no_branches
+            declare -i selected_index=N     — 0-based index (-1 if not selected)
+
+        Variable naming mirrors worktree_select (selected_path → selected_branch)
+        so Bash adapters have a consistent shape across all selection modules.
+
+        Returns:
+            Three-line string of bash declare statements, safe for eval.
+        """
+        # BashDeclareBuilder validates variable names eagerly and handles
+        # bash_escape() for all string values — no manual escaping needed here.
+        b = BashDeclareBuilder()
+        b.add_scalar("selected_branch", self.branch)
+        b.add_scalar("selection_status", self.status)
+        b.add_int("selected_index", self.index)
+        return b.build()
+
+
+def parse_single_input(user_input: str, num_items: int) -> int | None:
+    """Parse user input for single-branch selection — strict single-integer parser.
+
+    This intentionally differs from parse_numbered_input (the multi-select parser)
+    in two important ways:
+
+    1. STRICT — any input that is not exactly one integer in range returns None.
+       Multi-select silently skips bad tokens; single-select treats them as
+       cancellation because there is no ambiguity to resolve.
+
+    2. NO RANGE / NO ALL — '1-3', 'a', 'all' are all invalid for single-select.
+       They return None, not a partial result.
+
+    This strictness is intentional UX: if the user types '1,2' or '1-3' in a
+    single-select prompt, returning the first match silently would be confusing.
+    Returning None (→ cancelled) forces them to type exactly one number.
+
+    Args:
+        user_input: Raw string typed by the user.
+        num_items:  Total number of selectable items (1-based display).
+
+    Returns:
+        0-based index within [0, num_items) on success, or None on any failure:
+        - empty / whitespace-only input
+        - non-integer token (including commas, hyphens, 'all', 'a')
+        - out-of-bounds number (0, negative, or > num_items)
+    """
+    stripped = user_input.strip()
+
+    # Empty input → cancelled (user pressed Enter)
+    if not stripped:
+        return None
+
+    # Reject any input containing commas or hyphens — these are multi-select
+    # syntax.  Accepting them silently (like parse_numbered_input does) would
+    # be confusing: "1,2" should not silently select only index 0.
+    if "," in stripped or "-" in stripped:
+        return None
+
+    # Reject 'a' / 'all' (multi-select "select all" shortcut)
+    if stripped.lower() in ("a", "all"):
+        return None
+
+    # Require a bare integer — anything else (e.g. '2 3', 'abc') is invalid
+    try:
+        one_based = int(stripped)
+    except ValueError:
+        return None
+
+    # Convert from 1-based display index to 0-based internal index
+    zero_based = one_based - 1
+
+    # Validate bounds: must be within [0, num_items)
+    if zero_based < 0 or zero_based >= num_items:
+        return None
+
+    return zero_based
+
+
+def format_single_select_options(
+    branches: list[str],
+    hashes: list[str],
+    dates: list[str],
+    subjects: list[str],
+    tracks: list[str],
+    current_branch: str,
+) -> list[str]:
+    """Format branch options for single-select display.
+
+    Each row uses the same color scheme as format_multi_select_options with one
+    addition: the current branch receives a green '* ' prefix so the user
+    immediately recognises where HEAD is.
+
+    Format per row:
+        [GREEN '* ' NC] <branch-name> [YELLOW hash NC] [BLUE date NC]
+                        [GREY subject NC] [CYAN [track] NC]
+
+    The '* ' prefix mimics `git branch` output conventions, which most Git users
+    already know.  Non-current branches get two plain spaces to keep alignment.
+
+    Color scheme:
+        Current marker: GREEN
+        Hash:           YELLOW
+        Date:           BLUE
+        Subject:        GREY  (secondary / lower-information-density)
+        Track:          CYAN
+
+    Args:
+        branches:       List of branch names.
+        hashes:         Parallel list of short commit hashes.
+        dates:          Parallel list of commit dates.
+        subjects:       Parallel list of commit subjects.
+        tracks:         Parallel list of tracking-remote info strings.
+        current_branch: Name of the currently checked-out branch (may be empty).
+                        A branch whose name exactly matches this string gets the
+                        green '* ' prefix.
+
+    Returns:
+        List of ANSI-coloured display strings, one per input branch, in the
+        same order.  Empty branch names produce empty strings (same as
+        format_multi_select_options for consistency).
+
+    Raises:
+        ValueError: If input arrays have inconsistent lengths.
+    """
+    # Validate parallel arrays up front — fail fast with a clear message rather
+    # than producing silently misaligned output for the user.
+    array_lengths = {
+        "branches": len(branches),
+        "hashes": len(hashes),
+        "dates": len(dates),
+        "subjects": len(subjects),
+        "tracks": len(tracks),
+    }
+    if len(set(array_lengths.values())) > 1:
+        raise ValueError(
+            f"Input arrays have inconsistent lengths: {array_lengths}. "
+            "All arrays must be parallel with the same length."
+        )
+
+    formatted_options: list[str] = []
+
+    for i, branch in enumerate(branches):
+        if not branch:
+            # Preserve index alignment — empty branch name → empty row
+            formatted_options.append("")
+            continue
+
+        # Current-branch marker: green '* ' prefix (matches git branch output)
+        # Non-current branches get two plain spaces to keep visual alignment.
+        if branch == current_branch:
+            prefix = f"{GREEN}* {NC}"
+        else:
+            prefix = "  "
+
+        parts = [f"{prefix}{branch}"]
+
+        # Optional fields — only emitted when non-empty to avoid blank tokens
+        if hashes[i]:
+            parts.append(f"{YELLOW}{hashes[i]}{NC}")
+
+        if dates[i]:
+            parts.append(f"{BLUE}{dates[i]}{NC}")
+
+        if subjects[i]:
+            parts.append(f"{GREY}{subjects[i]}{NC}")
+
+        if tracks[i]:
+            parts.append(f"{CYAN}{tracks[i]}{NC}")
+
+        formatted_options.append(" ".join(parts))
+
+    return formatted_options
 
 
 def format_multi_select_options(
@@ -197,114 +363,19 @@ def format_multi_select_options(
 
         parts = [branch]
 
-        # Add hash in YELLOW if available
-        if i < len(hashes) and hashes[i]:
+        # All arrays validated equal-length above; guard only on truthiness.
+        if hashes[i]:
             parts.append(f"{YELLOW}{hashes[i]}{NC}")
-
-        # Add date in BLUE if available
-        if i < len(dates) and dates[i]:
+        if dates[i]:
             parts.append(f"{BLUE}{dates[i]}{NC}")
-
-        # Add subject in GREY if available
-        if i < len(subjects) and subjects[i]:
+        if subjects[i]:
             parts.append(f"{GREY}{subjects[i]}{NC}")
-
-        # Add tracking info in CYAN if available
-        if i < len(tracks) and tracks[i]:
+        if tracks[i]:
             parts.append(f"{CYAN}[{tracks[i]}]{NC}")
 
         formatted_options.append(" ".join(parts))
 
     return formatted_options
-
-
-def parse_user_input(user_input: str, num_items: int, allow_all: bool = True) -> list[int]:
-    """Parse user selection input into 0-based indices.
-
-    Supports:
-    - 'a' or 'all' or 'A' or 'ALL' -> select all items
-    - Comma-separated numbers: "1,2,3"
-    - Ranges: "1-5" (inclusive)
-    - Mixed: "1,3-5,7"
-    - Empty string -> no selection
-
-    Args:
-        user_input: Raw user input string
-        num_items: Total number of items available
-        allow_all: Whether 'a'/'all' selects all items (default: True)
-
-    Returns:
-        List of 0-based indices (sorted, unique, within bounds)
-
-    Examples:
-        >>> parse_user_input("1,2,3", 5)
-        [0, 1, 2]
-        >>> parse_user_input("1-3", 5)
-        [0, 1, 2]
-        >>> parse_user_input("all", 3)
-        [0, 1, 2]
-        >>> parse_user_input("1,3-5,7", 10)
-        [0, 2, 3, 4, 6]
-    """
-    user_input = user_input.strip()
-
-    # Handle empty input
-    if not user_input:
-        return []
-
-    # Handle 'all' or 'a' for select all
-    if allow_all and user_input.lower() in ("a", "all"):
-        return list(range(num_items))
-
-    indices = set()
-
-    # Split by comma and parse each part
-    for part in user_input.split(","):
-        part = part.strip()
-
-        # Handle range: "1-5"
-        if "-" in part:
-            try:
-                start_str, end_str = part.split("-", 1)
-                start = int(start_str.strip())
-                end = int(end_str.strip())
-
-                # Convert to 0-based and ensure inclusive range
-                start_idx = max(0, start - 1)
-                end_idx = min(num_items - 1, end - 1)
-
-                for i in range(start_idx, end_idx + 1):
-                    indices.add(i)
-            except ValueError:
-                # Invalid range format, skip this part
-                continue
-        else:
-            # Handle single number
-            try:
-                num = int(part)
-                idx = num - 1  # Convert to 0-based
-
-                if 0 <= idx < num_items:
-                    indices.add(idx)
-            except ValueError:
-                # Invalid number, skip this part
-                continue
-
-    # Return sorted list
-    return sorted(indices)
-
-
-def validate_indices(indices: list[int], num_items: int) -> list[int]:
-    """Validate and filter indices to be within bounds.
-
-    Args:
-        indices: List of 0-based indices
-        num_items: Total number of items available
-
-    Returns:
-        List of valid indices (0 <= idx < num_items)
-    """
-    return [idx for idx in indices if 0 <= idx < num_items]
 
 
 def multi_select_branches(
@@ -368,48 +439,44 @@ def multi_select_branches(
         tracks=tracks,
     )
 
-    # Check if gum should be used
-    if _should_use_gum(num_items, options):
-        # Gum mode: output formatted options for Bash to handle
-        # In this case, we can't actually select from Python
-        # Return empty selection and let Bash handle it
-        # But we need to signal that gum should be used
-        # For now, we'll fall through to numbered list mode
-        # since gum interaction must be handled by Bash
-        pass
+    # NOTE: Gum integration is intentionally left as a no-op here.
+    # The original _should_use_gum() had a latent bug: passing a list as the
+    # first argument to subprocess.run(..., shell=True) is undefined behavior
+    # (shell=True + list argv ignores all elements after argv[0] on POSIX).
+    # The correct approach when gum detection is needed in Python is:
+    #   import shutil; shutil.which("gum")
+    # For now, gum interaction is handled by the Bash caller, not Python.
 
     # Numbered list mode
-    # Display placeholder
-    print(options.placeholder)
-    print()
+    # Display to stderr — stdout is captured by Bash's $() for eval.
+    # Without this, menu text gets eval'd as shell commands (C1 regression fix).
+    print(options.placeholder, file=sys.stderr)
+    print(file=sys.stderr)
 
     # Display numbered list
     for i, option in enumerate(formatted_options):
         if option:  # Skip empty options
-            print(f"  {i + 1:2d}: {option}")
+            print(f"  {i + 1:2d}: {option}", file=sys.stderr)
 
-    print()
+    print(file=sys.stderr)
 
-    # Get user selection
-    if options.test_selection is not None:
-        # Test mode: use pre-selected input
-        selection = options.test_selection
-    elif "HUG_TEST_NUMBERED_SELECTION" in os.environ:
-        # Test environment variable
-        selection = os.environ["HUG_TEST_NUMBERED_SELECTION"]
-    else:
-        # Interactive: read from stdin
-        try:
-            selection = input("Enter numbers to select (comma-separated, or 'a' for all): ")
-        except EOFError:
-            # Non-interactive environment
-            selection = ""
+    # Get user selection via the canonical three-level precedence chain:
+    # test_selection arg > HUG_TEST_NUMBERED_SELECTION env var > stdin.
+    # Using get_selection_input() instead of inlining this logic ensures every
+    # selection module reads the same env var and handles EOFError identically.
+    selection = get_selection_input(test_selection=options.test_selection)
 
-    # Parse selection
-    selected_indices = parse_user_input(selection, num_items, allow_all=True)
+    # get_selection_input returns None when ESC is pressed (detected via
+    # tty/termios character-mode read).  Treat it identically to empty input,
+    # consistent with tag_select and worktree_select.
+    if selection is None:
+        selection = ""
 
-    # Validate indices
-    selected_indices = validate_indices(selected_indices, num_items)
+    # parse_numbered_input is the canonical implementation from selection_core,
+    # replacing the former local parse_user_input() + validate_indices() pair.
+    # validate_indices() is now redundant: parse_numbered_input already clamps
+    # and filters indices to [0, num_items), so no second pass is needed.
+    selected_indices = parse_numbered_input(selection, num_items, allow_all=True)
 
     # Convert indices to branch names
     selected_branches = [branches[i] for i in selected_indices if i < len(branches)]
@@ -418,6 +485,103 @@ def multi_select_branches(
         branches=selected_branches,
         selected_indices=selected_indices,
     )
+
+
+def single_select_branches(
+    branches: list[str],
+    hashes: list[str],
+    dates: list[str],
+    subjects: list[str],
+    tracks: list[str],
+    current_branch: str,
+    options: SelectOptions,
+) -> SingleSelectResult:
+    """Interactively select a single branch from a numbered list.
+
+    This is the single-branch counterpart of multi_select_branches().  It uses:
+      - format_single_select_options() for display (green '* ' on current branch)
+      - get_selection_input() for the canonical three-level input chain
+        (test_selection arg > HUG_TEST_NUMBERED_SELECTION env var > stdin)
+      - parse_single_input() for STRICT single-integer validation — any input
+        that is not exactly one valid integer returns None (→ cancelled).
+
+    WHY strict parsing: multi-select silently skips bad tokens because there are
+    multiple valid answers; for single-select '1,2' should NOT silently pick the
+    first match — that would be confusing and hard to debug.  Cancellation is cheap;
+    the user simply re-runs and types one number.
+
+    Outcome:
+        "selected"    — user typed a valid 1-based number → branch + index set
+        "cancelled"   — empty, invalid, or out-of-bounds input
+        "no_branches" — branches list was empty; prompt is never shown
+
+    Numbered list is printed to stdout (same as multi_select_branches) so Bash
+    callers that capture stdout via $(...) see the menu alongside the declare output.
+    This mirrors the existing multi_select_branches() convention; the worktree_select
+    module uses stderr to keep stdout clean, but branch_select has always used stdout
+    for the numbered list.
+
+    Args:
+        branches:       List of branch names.
+        hashes:         Parallel list of short commit hashes.
+        dates:          Parallel list of commit dates.
+        subjects:       Parallel list of commit subjects (may all be empty).
+        tracks:         Parallel list of tracking-remote info strings.
+        current_branch: Name of the currently checked-out branch; may be empty.
+        options:        SelectOptions — only test_selection is consulted here.
+
+    Returns:
+        SingleSelectResult with status, branch, and 0-based index.
+
+    Raises:
+        ValueError: If input arrays have inconsistent lengths.
+    """
+    num_items = len(branches)
+
+    # Guard: empty list → no_branches immediately (don't waste time formatting)
+    if num_items == 0:
+        return SingleSelectResult(status="no_branches", branch="", index=-1)
+
+    # Delegate formatting to the canonical single-select formatter so color
+    # choices (GREEN marker for current branch) stay DRY.
+    formatted_options = format_single_select_options(
+        branches=branches,
+        hashes=hashes,
+        dates=dates,
+        subjects=subjects,
+        tracks=tracks,
+        current_branch=current_branch,
+    )
+
+    # Display the numbered list to stderr, NOT stdout.
+    # WHY stderr: the Bash caller captures stdout with $(...) to get only the
+    # bash declare statements for eval.  Mixing the menu into stdout would
+    # corrupt the declare output and break the eval guard ("starts with declare").
+    # This mirrors worktree_select.py's _cmd_select() which uses the same pattern.
+    for i, option in enumerate(formatted_options):
+        if option:  # skip empty rows (empty branch names)
+            print(f"  {i + 1:2d}: {option}", file=sys.stderr)
+
+    print(file=sys.stderr)  # blank line before the prompt
+
+    # Read input via the canonical three-level chain:
+    # options.test_selection → HUG_TEST_NUMBERED_SELECTION env var → stdin
+    selection = get_selection_input(test_selection=options.test_selection)
+
+    # get_selection_input returns None when the user presses ESC (detected via
+    # tty/termios character-mode read).  Treat it identically to empty input —
+    # both map to cancelled status.
+    if selection is None:
+        selection = ""
+
+    # parse_single_input is strictly single-integer — it returns None for empty,
+    # non-integer, comma-separated, range syntax, and out-of-bounds input.
+    idx = parse_single_input(selection, num_items)
+
+    if idx is None:
+        return SingleSelectResult(status="cancelled", branch="", index=-1)
+
+    return SingleSelectResult(status="selected", branch=branches[idx], index=idx)
 
 
 def format_options_for_gum(
@@ -451,37 +615,70 @@ def main():
     Usage:
         python3 branch_select.py select [options]
         python3 branch_select.py format-options [options]
+        python3 branch_select.py prepare [options]
+        python3 branch_select.py single-select [options]
 
     Commands:
-        select           Run interactive selection (numbered list mode)
+        select           Run interactive multi-branch selection (numbered list mode)
         format-options   Output formatted options for gum (one per line)
+        prepare          Format options for gum path (outputs bash declare statements)
+        single-select    Run interactive single-branch selection
 
-    Options:
-        --branches LIST      Space-separated branch names
-        --hashes LIST        Space-separated commit hashes
-        --dates LIST         Space-separated commit dates
-        --subjects LIST      Space-separated commit subjects
-        --tracks LIST        Space-separated tracking info
+    Options (all commands):
+        --branches LIST          Space-separated branch names
+        --hashes LIST            Space-separated commit hashes
+        --dates LIST             Space-separated commit dates
+        --subjects LIST          Space-separated commit subjects
+        --tracks LIST            Space-separated tracking info
+        --current-branch NAME    Name of current branch (for '* ' marker)
+
+    Multi-select / format-options options:
         --placeholder STR    Prompt text (default: "Select branches")
-        --selection STR      Pre-selected input for testing (simulates user typing)
         --array-name NAME    Name for result array (default: "selected_branches")
         --no-gum             Disable gum usage
 
-    Outputs bash variable declarations for 'select' command.
-    Outputs formatted options (one per line) for 'format-options' command.
-    Returns exit code 1 on error.
+    Single-select / prepare options:
+        --selection STR      Pre-selected input for testing (simulates user typing)
+
+    Output:
+        select        → bash array declare statements (selected_branches, selected_indices)
+        format-options→ formatted option lines (one per stdout line, for gum)
+        prepare       → bash declare: formatted_options[], selection_status, branch_count
+        single-select → bash declare: selected_branch, selection_status, selected_index
+
+    Exit code: 0 on success, 1 on error.
     """
     parser = argparse.ArgumentParser(description="Multi-branch selection for Hug SCM")
     parser.add_argument(
         "command",
-        choices=["select", "format-options"],
+        choices=["select", "format-options", "prepare", "single-select"],
         help="Command to run",
     )
     parser.add_argument("--branches", required=True, help="Space-separated branch names")
     parser.add_argument("--hashes", default="", help="Space-separated commit hashes")
     parser.add_argument("--dates", default="", help="Space-separated commit dates")
-    parser.add_argument("--subjects", default="", help="Space-separated commit subjects")
-    parser.add_argument("--tracks", default="", help="Space-separated tracking info")
+    # Legacy space-split scalars (kept for backward compatibility with callers
+    # that haven't been updated yet).  Prefer the repeated per-item flags below.
+    parser.add_argument("--subjects", default="", help="Space-separated commit subjects (legacy)")
+    parser.add_argument("--tracks", default="", help="Space-separated tracking info (legacy)")
+    # Per-item repeated flags: --subject / --track (one per branch).
+    # These are preferred over --subjects / --tracks because commit subjects and
+    # tracking strings may contain spaces, which would corrupt the space-split.
+    # When these flags are present they take precedence over --subjects/--tracks.
+    parser.add_argument(
+        "--subject",
+        action="append",
+        default=[],
+        dest="subjects_list",
+        help="Commit subject for one branch (repeat once per branch)",
+    )
+    parser.add_argument(
+        "--track",
+        action="append",
+        default=[],
+        dest="tracks_list",
+        help="Tracking info for one branch (repeat once per branch)",
+    )
     parser.add_argument("--placeholder", default="Select branches", help="Prompt text for user")
     parser.add_argument(
         "--selection",
@@ -498,6 +695,11 @@ def main():
         action="store_true",
         help="Disable gum usage",
     )
+    parser.add_argument(
+        "--current-branch",
+        default="",
+        help="Name of currently checked-out branch (for '* ' marker)",
+    )
 
     args = parser.parse_args()
 
@@ -506,10 +708,22 @@ def main():
         branches = args.branches.split() if args.branches else []
         hashes = args.hashes.split() if args.hashes else []
         dates = args.dates.split() if args.dates else []
-        subjects = args.subjects.split() if args.subjects else []
-        tracks = args.tracks.split() if args.tracks else []
+        # Prefer per-item repeated flags (--subject/--track) over the legacy
+        # space-split scalars (--subjects/--tracks).  The per-item form is safe
+        # for values containing spaces; the scalar form is only safe when
+        # subjects/tracks are guaranteed space-free (which they are not).
+        subjects = (
+            args.subjects_list
+            if args.subjects_list
+            else (args.subjects.split() if args.subjects else [])
+        )
+        tracks = (
+            args.tracks_list if args.tracks_list else (args.tracks.split() if args.tracks else [])
+        )
 
-        # Pad shorter arrays with empty strings to match branches array length
+        # Pad shorter arrays with empty strings to match branches array length.
+        # This allows callers to omit trailing empty fields without causing
+        # "inconsistent lengths" errors in the formatting functions.
         max_len = max(len(branches), len(hashes), len(dates), len(subjects), len(tracks))
 
         def pad_array(arr, target_len):
@@ -522,7 +736,8 @@ def main():
         tracks = pad_array(tracks, max_len)
 
         if args.command == "format-options":
-            # Output formatted options for gum (one per line)
+            # Output formatted options for gum (one per line).
+            # The Bash caller passes these lines directly to gum_filter_by_index.
             formatted = format_options_for_gum(
                 branches=branches,
                 hashes=hashes,
@@ -535,15 +750,73 @@ def main():
                     print(option)
             return
 
-        # Command: select
-        # Build options
+        if args.command == "prepare":
+            # Prepare branch data for the gum interactive picker path.
+            # Outputs bash declare statements so the Bash caller can eval the
+            # output and pass formatted_options directly to gum choose.
+            # When the branch list is empty we still emit all variables with safe
+            # defaults so the caller can branch on selection_status without guards.
+            num_branches = len(branches)
+            if num_branches == 0:
+                print(
+                    BashDeclareBuilder()
+                    .add_array("formatted_options", [])
+                    .add_scalar("selection_status", "no_branches")
+                    .add_int("branch_count", 0)
+                    .build()
+                )
+                return
+
+            formatted = format_single_select_options(
+                branches=branches,
+                hashes=hashes,
+                dates=dates,
+                subjects=subjects,
+                tracks=tracks,
+                current_branch=args.current_branch,
+            )
+            # IMPORTANT: do NOT filter empty rows here.
+            # The Bash caller (print_interactive_branch_menu) indexes into the
+            # *unfiltered* branches_ref array using the gum selection index.
+            # If we stripped empty rows the index returned by gum would point
+            # to the wrong branch — a latent misalignment bug (I4).
+            print(
+                BashDeclareBuilder()
+                .add_array("formatted_options", formatted)
+                .add_scalar("selection_status", "ready")
+                .add_int("branch_count", num_branches)
+                .build()
+            )
+            return
+
+        if args.command == "single-select":
+            # Single-branch selection: display numbered list, read one number,
+            # output a SingleSelectResult as bash declare statements.
+            options = SelectOptions(
+                placeholder=args.placeholder,
+                use_gum=not args.no_gum,
+                test_selection=args.selection,
+            )
+            result = single_select_branches(
+                branches=branches,
+                hashes=hashes,
+                dates=dates,
+                subjects=subjects,
+                tracks=tracks,
+                current_branch=args.current_branch,
+                options=options,
+            )
+            print(result.to_bash_declare())
+            return
+
+        # Command: select (multi-branch)
         options = SelectOptions(
             placeholder=args.placeholder,
             use_gum=not args.no_gum,
             test_selection=args.selection,
         )
 
-        # Run selection
+        # Run multi-branch selection
         result = multi_select_branches(
             branches=branches,
             hashes=hashes,

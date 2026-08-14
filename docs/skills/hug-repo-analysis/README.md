@@ -166,7 +166,7 @@ const hotSpots = Array.from(fileChanges.entries())
 
 ```typescript
 // Example: Advanced analysis with JSON export
-const coChanges = await execCommand('hug analyze co-changes src/main.ts --format json');
+const coChanges = await execCommand('hug analyze co-changes src/main.ts --json');
 const ownership = await execCommand('hug analyze ownership src/main.ts --format json');
 const deps = await execCommand('hug analyze deps HEAD --format json');
 

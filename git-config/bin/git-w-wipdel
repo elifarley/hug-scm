@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["working-dir", "parking"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # Assume HUG_HOME is set (exported by hug or environment)
 # Import only needed library files
 . "$HUG_HOME/git-config/lib/hug-terminal"
@@ -87,7 +92,10 @@ check_git_repo
 
 branch_selected="$branch_arg"
 if [ -z "$branch_selected" ]; then
-  branch_selected="$(select_wip_branch "Select WIP branch to delete..." "$PROG_NAME")"
+  if ! branch_selected="$(select_wip_branch "Select WIP branch to delete..." "$PROG_NAME")"; then
+    info "Cancelled."
+    exit 1
+  fi
 fi
 
 branch="$(trim_message "$branch_selected")"

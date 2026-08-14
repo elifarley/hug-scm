@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["status"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit hug-select-files output_json_status; do . "$CMD_BASE/../lib/$f"; done
@@ -14,6 +19,7 @@ check_git_repo
 # Parse arguments
 json_output=false
 quiet=false
+count_only=false
 if [[ ${HUG_QUIET:-} == T ]]; then
   quiet=true
 fi
@@ -22,6 +28,9 @@ for arg in "$@"; do
   case "$arg" in
   --json)
     json_output=true
+    ;;
+  -c | --count)
+    count_only=true
     ;;
   -q | --quiet)
     quiet=true
@@ -39,6 +48,17 @@ list_opts=("--unstaged")
 # Add pathspecs if provided
 if [[ ${#pathspecs[@]} -gt 0 ]]; then
   list_opts+=("${pathspecs[@]}")
+fi
+
+# Count mode: -c/--count dispatch (see run_count_mode in hug-select-files).
+# --json passed only when $json_output is true (the codebase stores booleans as
+# true/false strings; ${json_output:+--json} would ALWAYS expand — see run_count_mode).
+if $count_only; then
+  if $json_output; then
+    run_count_mode --json unstaged "${pathspecs[@]}"
+  else
+    run_count_mode unstaged "${pathspecs[@]}"
+  fi
 fi
 
 # JSON output mode

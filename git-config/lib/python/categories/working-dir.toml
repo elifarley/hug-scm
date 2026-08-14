@@ -1,0 +1,6 @@
+label       = "Working directory"
+description = """
+Working-directory operations.
+Discard, wipe, purge, restore, or pull files in the working tree
+without touching commit history.
+"""

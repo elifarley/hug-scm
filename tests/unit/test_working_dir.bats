@@ -1424,10 +1424,560 @@ EOF
 @test "hug w purge: handles absolute paths from subdirectory" {
   mkdir -p subdir
   echo "temp" > subdir/temp.txt
-  
+
   cd subdir
   run hug w purge -f "$TEST_REPO/subdir/temp.txt"
   assert_success
-  
+
   assert_file_not_exists "temp.txt"
+}
+
+#################################################################################
+# Tests for hug w get reset-all (no file args)
+# These exercise the reset_all_files() code path including the git diff --diff-filter fix.
+#################################################################################
+
+@test "hug w get reset-all: removes files added after target commit" {
+  # Start clean: commit everything, remove untracked
+  git add -A && git commit -q -m "baseline"
+  local target_commit=$(git rev-parse HEAD)
+
+  # Add new files after target
+  echo "new file 1" > newfile1.txt
+  echo "new file 2" > newfile2.txt
+  git add newfile1.txt newfile2.txt
+  git commit -q -m "add new files"
+
+  # Reset all to target — files added after should be removed
+  run hug w get -f "$target_commit"
+  assert_success
+
+  assert_file_not_exists "newfile1.txt"
+  assert_file_not_exists "newfile2.txt"
+}
+
+@test "hug w get reset-all: restores files deleted after target commit" {
+  # Start clean
+  echo "keep me" > keep.txt
+  echo "restore me" > restore.txt
+  git add -A && git commit -q -m "baseline with restore.txt"
+  local target_commit=$(git rev-parse HEAD)
+
+  # Delete a file after target
+  git rm -q restore.txt
+  git commit -q -m "remove restore.txt"
+
+  # Reset all to target — deleted file should be restored
+  run hug w get -f "$target_commit"
+  assert_success
+
+  assert_file_exists "restore.txt"
+  run cat restore.txt
+  assert_output "restore me"
+}
+
+@test "hug w get reset-all: handles mixed changes (M+A+D)" {
+  # Create baseline with multiple files
+  echo "original A" > modify.txt
+  echo "original B" > delete.txt
+  git add -A && git commit -q -m "baseline"
+  local target_commit=$(git rev-parse HEAD)
+
+  # Modify one, delete one, add one
+  echo "modified A" > modify.txt
+  git rm -q delete.txt
+  echo "new file" > added.txt
+  git add -A && git commit -q -m "mixed changes"
+
+  # Reset all to target
+  run hug w get -f "$target_commit"
+  assert_success
+
+  # Modified file restored to original
+  run cat modify.txt
+  assert_output "original A"
+  # Deleted file restored
+  assert_file_exists "delete.txt"
+  run cat delete.txt
+  assert_output "original B"
+  # Added file removed
+  assert_file_not_exists "added.txt"
+}
+
+@test "hug w get reset-all: handles sort-order-conflicting paths" {
+  # Create paths that sort differently under tree-order vs LC_ALL=C.
+  # docs-dev.sh sorts before docs/ in tree-order (because git treats docs/ as "docs/")
+  # but may differ in LC_ALL=C sort depending on git version.
+  mkdir -p docs
+  echo "doc content" > docs/guide.md
+  echo "script content" > docs-dev.sh
+  git add -A && git commit -q -m "baseline with sort-conflicting paths"
+  local target_commit=$(git rev-parse HEAD)
+
+  # Modify both, add a new conflicting path
+  echo "updated doc" > docs/guide.md
+  echo "updated script" > docs-dev.sh
+  echo "new script" > docs-dev2.sh
+  git add -A && git commit -q -m "modify sort-conflicting paths"
+
+  # Reset all — no comm warnings should appear
+  run hug w get -f "$target_commit"
+  assert_success
+  # Verify stderr has no comm warnings
+  [[ "$output" != *"comm: file is not in sorted order"* ]]
+
+  # Files restored correctly
+  run cat docs/guide.md
+  assert_output "doc content"
+  run cat docs-dev.sh
+  assert_output "script content"
+  assert_file_not_exists "docs-dev2.sh"
+}
+
+@test "hug w get reset-all --dry-run: shows preview without making changes" {
+  echo "original" > file.txt
+  git add -A && git commit -q -m "baseline"
+  local target_commit=$(git rev-parse HEAD)
+
+  echo "modified" > file.txt
+  echo "new" > newfile.txt
+  git add -A && git commit -q -m "changes"
+
+  # Dry-run should preview without modifying anything
+  run hug w get -f --dry-run "$target_commit"
+  assert_success
+  # Should show dry-run message
+  [[ "$output" == *"Dry run"* ]]
+  # File should still have modified content
+  run cat file.txt
+  assert_output "modified"
+  # New file should still exist
+  assert_file_exists "newfile.txt"
+}
+
+@test "hug w get reset-all: with no changes shows clean message" {
+  git add -A && git commit -q -m "baseline"
+
+  # Reset to HEAD (no diff) — should show early-exit message
+  run hug w get -f HEAD
+  assert_success
+  [[ "$output" == *"no files to reset"* ]]
+}
+
+@test "hug w get reset-all: stderr has no comm warnings" {
+  echo "content" > file.txt
+  git add -A && git commit -q -m "baseline"
+  local target_commit=$(git rev-parse HEAD)
+
+  mkdir -p docs
+  echo "doc" > docs/guide.md
+  echo "script" > docs-dev.sh
+  git add -A && git commit -q -m "add conflicting paths"
+
+  # Reset to target and capture stderr explicitly
+  run hug w get -f "$target_commit" 2>&1
+  [[ "$output" != *"comm: file is not in sorted order"* ]]
+}
+
+@test "hug w get reset-all: safety check blocks with uncommitted changes" {
+  echo "original" > safety.txt
+  git add -A && git commit -q -m "baseline"
+  local target_commit=$(git rev-parse HEAD)
+
+  # Modify file after target
+  echo "modified" > safety.txt
+  git add safety.txt && git commit -q -m "modify safety.txt"
+
+  # Add local uncommitted changes to the file
+  echo "local change" >> safety.txt
+
+  # Without force, should fail because file has uncommitted changes
+  run hug w get "$target_commit"
+  assert_failure
+}
+
+@test "hug w get reset-all: dirty whole tree STILL refuses under -y (agent-safety, all-files)" {
+  # All-files analog of the specific-files "dirty file STILL refuses under -y"
+  # invariant. The State-B gate for the WHOLE tree must check HUG_FORCE (not
+  # HUG_YES): under -y (HUG_YES only) a dirty tree is refused even though
+  # target == HEAD, so the "Already at target" early-exit — which sits AFTER the
+  # gate and also requires dirty-empty — must NOT fire. Pre-#218 an agent's -y
+  # could ride straight through to the wipe.
+  echo "a" > keep.txt; git add keep.txt; git commit -q -m base
+  local target=$(git rev-parse HEAD)         # target == HEAD content
+  echo "UNCOMMITTED" >> keep.txt              # worktree dirty (unstaged)
+
+  run bash -c "hug w get -y $target < /dev/null"
+  assert_failure                              # -y must NOT authorize destroying uncommitted work
+  [[ "$output" != *"Already at target"* ]]    # refuse fired before the early-exit
+}
+
+@test "hug w get specific --dry-run: shows preview without making changes" {
+  echo "v1" > specific.txt
+  git add specific.txt
+  git commit -q -m "add specific v1"
+
+  echo "v2" > specific.txt
+  git add specific.txt
+  git commit -q -m "update specific v2"
+
+  # Dry-run should preview without modifying
+  run hug w get --dry-run -f HEAD~1 specific.txt
+  assert_success
+  [[ "$output" == *"Dry run"* ]]
+  # File should still have v2 content
+  run cat specific.txt
+  assert_output "v2"
+}
+
+# ---- Concern 1: clean path needs no flag; dirty path refuses unless -f ----
+# Every case pins `< /dev/null` (no-TTY) per tests/CLAUDE.md.
+# Background: git-w-get used to call a bespoke `confirm()` (a raw `read -p`
+# loop) for the specific-files path; that loop ignored HUG_YES/HUG_FORCE and
+# exited 1 under no-TTY, so even a CLEAN restore demanded `-f`. An agent
+# trained to reach for `-f` then silently destroys the next file's uncommitted
+# edits. The new 3-state gate (State A clean = proceed; State B dirty not
+# forced = refuse even under -y; State C dirty forced = overwrite with notice)
+# replaces that bespoke prompt — these tests pin each state.
+
+@test "hug w get (specific): clean file succeeds with NO flag under no-TTY" {
+  echo "Version 1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "Version 2" > t.txt; git add t.txt; git commit -q -m v2   # t.txt now clean (matches HEAD)
+
+  run bash -c 'hug w get HEAD~1 t.txt < /dev/null'
+  assert_success
+  assert_output --partial "Files are clean"
+  run cat t.txt
+  assert_output "Version 1"
+}
+
+@test "hug w get (specific): clean file succeeds with -y under no-TTY" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "v2" > t.txt; git add t.txt; git commit -q -m v2
+
+  run bash -c 'hug w get -y HEAD~1 t.txt < /dev/null'
+  assert_success
+  run cat t.txt
+  assert_output "v1"
+}
+
+@test "hug w get (specific): dirty file refuses without -f, names the file + wipe text" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "UNSTAGED" >> t.txt
+
+  run bash -c 'hug w get HEAD t.txt < /dev/null'
+  assert_failure
+  assert_output --partial "t.txt"
+  assert_output --partial "wipe"     # byte-locked check_files_clean text
+}
+
+@test "hug w get (specific): dirty file STILL refuses under -y (agent-safety guarantee)" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "UNSTAGED" >> t.txt
+
+  run bash -c 'hug w get -y HEAD t.txt < /dev/null'
+  assert_failure                     # -y must NOT authorize destroying uncommitted work
+}
+
+@test "hug w get (specific): dirty file with -f overwrites and names it (overwritten, not deleted)" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "UNSTAGED" >> t.txt
+
+  run bash -c 'hug w get -f HEAD t.txt < /dev/null'
+  assert_success
+  assert_output --partial "Discarding uncommitted changes in 1 file(s) (will be overwritten):"
+  assert_output --partial "t.txt"
+  run cat t.txt
+  assert_output "v1"                 # unstaged edit gone
+}
+
+@test "hug w get (specific): staged-only-dirty is treated as dirty by the gate" {
+  # Pins the gate's linchpin: get_dirty_files unions staged AND unstaged.
+  # A file with only a staged delta (no unstaged delta) MUST still count as
+  # dirty — otherwise State A would treat it as clean and silently overwrite
+  # the staged edit. The force variant is the right probe because the refuse
+  # path (State B) uses the same get_dirty_files and is already covered.
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "STAGED" >> t.txt; git add t.txt      # staged-only dirty (no unstaged delta)
+
+  run bash -c 'hug w get -f HEAD t.txt < /dev/null'
+  assert_success
+  assert_output --partial "Discarding uncommitted changes in 1 file(s) (will be overwritten):"
+  assert_output --partial "t.txt"
+}
+
+@test "hug w get (specific): --dry-run on dirty refuses (no diff preview) under no-TTY" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "UNSTAGED" >> t.txt
+
+  run bash -c 'hug w get --dry-run HEAD t.txt < /dev/null'
+  assert_failure
+  assert_output --partial "wipe"
+  [[ "$output" != *"Preview of changes"* ]]   # refuse-before-preview
+}
+
+@test "hug w get (specific): multi-file mixed refuses naming only the dirty file" {
+  echo "a" > a.txt; echo "b" > b.txt; git add a.txt b.txt; git commit -q -m init
+  echo "x" >> a.txt                  # a.txt dirty, b.txt clean
+
+  run bash -c 'hug w get HEAD a.txt b.txt < /dev/null'
+  assert_failure
+  assert_output --partial "a.txt"   # dirty file named; clean file's silence
+  # (b.txt not named) is proven by the -f variant two tests below asserting
+  # "Discarding ... 1 file(s)" — i.e. only a.txt counts. A negative multi-line
+  # literal here would be brittle against cosmetic wording shifts.
+}
+
+@test "hug w get (specific): multi-file mixed with -f overwrites naming only the dirty file" {
+  echo "a" > a.txt; echo "b" > b.txt; git add a.txt b.txt; git commit -q -m init
+  echo "x" >> a.txt                  # a.txt dirty
+
+  run bash -c 'hug w get -f HEAD a.txt b.txt < /dev/null'
+  assert_success
+  assert_output --partial "Discarding uncommitted changes in 1 file(s) (will be overwritten):"
+  assert_output --partial "a.txt"
+}
+
+@test "hug w get (specific): -f on clean stays silent (no 'Discarding 0 file(s)')" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "v2" > t.txt; git add t.txt; git commit -q -m v2
+
+  run bash -c 'hug w get -f HEAD~1 t.txt < /dev/null'
+  assert_success
+  [[ "$output" != *"Discarding 0 file(s)"* ]]
+}
+
+# ---- Concern 1 + #225 (interactive): the `--` picker path inherits the same gate ----
+#
+# `hug w get <commit> --` : parse_common_flags (lib/hug-cli-flags) detects the
+# TRAILING `--`, strips it, and exports HUG_INTERACTIVE_FILE_SELECTION=true.
+# git-w-get main() then branches into select_files_with_status (gum filter) and
+# feeds the chosen files straight into reset_specific_files — the SAME at-risk
+# gate the non-interactive specific-files path uses above, so the interactive
+# path inherits BOTH Concern 1 (a genuinely clean restore needs no -f) AND the
+# #225 P1 guard (an untracked restore target is at-risk and refuses without -f).
+#
+# WHY this asserts a REFUSAL, not a clean success: select_files_with_status lists
+# --staged --unstaged --untracked, i.e. ONLY changed files. A file that is also
+# restorable (passes check_file_in_commit — exists in the target commit) is
+# necessarily at-risk: a staged/unstaged tracked file is dirty, and an untracked
+# file present in the target is the #225 data-loss case. So there is NO "clean
+# interactive selection" — pre-#225 this test asserted the untracked-in-target
+# selection "succeeded without -f", but that was the bug: `git restore
+# --source=<commit> --worktree` overwrites an untracked file that exists in
+# <commit>, and the diff-based get_dirty_files never saw it. The gate now refuses
+# it. These tests pin the corrected interactive behavior (refuse without -f,
+# overwrite with -f), driving the picker deterministically via the gum-mock
+# (HUG_TEST_GUM_SELECTION_INDICES selects listed lines by 0-based index).
+@test "hug w get -- (interactive): untracked-in-target selection refuses without -f (#225 P1 guard inherited)" {
+  # Absorb the setup fixture (staged.txt / README.md / untracked.txt) so the
+  # picker list contains ONLY our file — selection index 0 is then deterministic
+  # (select_files_with_status lists staged → unstaged → untracked).
+  git add -A && git commit -q -m baseline
+
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1   # target HEAD~1 has t.txt=v1
+  git rm -q t.txt; git commit -q -m "drop t.txt"          # HEAD no longer tracks t.txt
+  echo "v2-local" > t.txt                                  # worktree copy is now UNTRACKED
+
+  setup_gum_mock
+  export HUG_TEST_GUM_SELECTION_INDICES=0   # picker lists only t.txt (untrcK) → index 0
+  run bash -c 'hug w get HEAD~1 -- < /dev/null'
+  teardown_gum_mock
+
+  assert_failure                             # #225: untracked-in-target is at-risk → refuse
+  assert_output --partial "untracked"
+  run cat t.txt
+  assert_output "v2-local"                   # NOT overwritten — uncommitted content preserved
+}
+
+@test "hug w get -- (interactive): untracked-in-target selection with -f overwrites (#225 P1)" {
+  git add -A && git commit -q -m baseline
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  git rm -q t.txt; git commit -q -m "drop t.txt"
+  echo "v2-local" > t.txt
+
+  setup_gum_mock
+  export HUG_TEST_GUM_SELECTION_INDICES=0
+  run bash -c 'hug w get -f HEAD~1 -- < /dev/null'
+  teardown_gum_mock
+
+  assert_success
+  assert_output --partial "Discarding uncommitted changes in 1 file(s) (will be overwritten):"
+  run cat t.txt
+  assert_output "v1"                         # force overwrites the untracked content
+}
+
+# ---- #220: all-files gate must scope to the WHOLE tracked worktree ----
+
+@test "hug w get reset-all: dirty worktree with HEAD==target content is REFUSED (not 'Already at target')" {
+  echo "a" > keep.txt; git add keep.txt; git commit -q -m base
+  local target=$(git rev-parse HEAD)         # target == HEAD content
+  echo "UNCOMMITTED" >> keep.txt              # worktree dirty
+
+  run bash -c "hug w get $target < /dev/null"
+  assert_failure
+  [[ "$output" != *"Already at target"* ]]
+}
+
+@test "hug w get reset-all: -f with HEAD==target content + dirty worktree proceeds (not no-op)" {
+  echo "a" > keep.txt; git add keep.txt; git commit -q -m base
+  local target=$(git rev-parse HEAD)
+  echo "UNCOMMITTED" >> keep.txt
+
+  run bash -c "hug w get -f $target < /dev/null"
+  assert_success
+  [[ "$output" != *"Already at target"* ]]
+  assert_output --partial "Discarding uncommitted changes"
+  assert_output --partial "keep.txt"
+  run cat keep.txt
+  assert_output "a"                          # edit discarded, not silently kept
+}
+
+@test "hug w get reset-all: -f names a file identical between target and HEAD but locally edited (#220 undercount)" {
+  echo "x" > change.txt; echo "keep" > same.txt
+  git add change.txt same.txt; git commit -q -m base
+  local target=$(git rev-parse HEAD)
+  echo "y" >> change.txt; git add change.txt; git commit -q -m second   # change.txt differs; same.txt identical to target
+  echo "LOCAL" >> same.txt                  # uncommitted edit in a file IDENTICAL between target and HEAD
+
+  run bash -c "hug w get -f $target < /dev/null"
+  assert_success
+  assert_output --partial "same.txt"        # whole-tree scope catches it; affected_files would not
+}
+
+@test "hug w get reset-all: -f delete-case says 'overwritten or deleted'" {
+  echo "a" > a.txt; git add a.txt; git commit -q -m base
+  local target=$(git rev-parse HEAD)
+  echo "new" > added.txt; git add added.txt; git commit -q -m second    # added.txt absent from target
+  echo "LOCAL" >> added.txt                  # uncommitted edit in a file that will be rm -f'd
+
+  run bash -c "hug w get -f $target < /dev/null"
+  assert_success
+  assert_output --partial "overwritten or deleted"
+  assert_file_not_exists "added.txt"
+}
+
+@test "hug w get reset-all: -f companion to :1582 — force overwrites and names the dirty file" {
+  echo "original" > safety.txt
+  git add -A && git commit -q -m "baseline"
+  local target_commit=$(git rev-parse HEAD)
+  echo "modified" > safety.txt
+  git add safety.txt && git commit -q -m "modify safety.txt"
+  echo "local change" >> safety.txt
+
+  run hug w get -f "$target_commit"
+  assert_success
+  assert_output --partial "Discarding uncommitted changes"
+  assert_output --partial "safety.txt"
+}
+
+@test "hug w get reset-all: -f --dry-run on dirty prints notice + preview, does not modify" {
+  echo "a" > a.txt; git add a.txt; git commit -q -m base
+  local target=$(git rev-parse HEAD)
+  echo "b" > b.txt; git add b.txt; git commit -q -m second
+  echo "LOCAL" >> a.txt              # uncommitted edit in a file that will be restored
+
+  run bash -c "hug w get -f --dry-run $target < /dev/null"
+  assert_success
+  assert_output --partial "Discarding uncommitted changes"
+  assert_output --partial "Dry run"
+  run cat a.txt
+  assert_output "a"$'\n'"LOCAL"      # edit preserved — dry run did not modify
+}
+
+@test "hug w get reset-all: clean tree at target content early-exits with 'Already at target'" {
+  git add -A && git commit -q -m "baseline"   # absorb the dirty state from setup
+  local target=$(git rev-parse HEAD)          # clean tree, target == HEAD content
+
+  run bash -c "hug w get $target < /dev/null"
+  assert_success
+  assert_output --partial "Already at target commit"
+}
+
+# ---- elifarley/hug-scm#225 (P1): untracked restore targets are data-loss ----
+#
+# `git restore --source=<commit> --worktree <path>` OVERWRITES an untracked file
+# that exists in <commit>, and git diff (the basis of get_dirty_files) NEVER lists
+# untracked files. Pre-fix, a path that was absent from HEAD, present in the target
+# commit, and holding an untracked local file was classified CLEAN → the gate
+# proceeded without -f → unrecoverable overwrite of the untracked content. The gate
+# now unions untracked-into the at-risk set. These tests pin BOTH paths (specific
+# and reset-all) refusing without -f and overwriting with -f.
+#
+# WHY the specific tests need NO base cleanup but reset-all does: the specific gate
+# scopes get_dirty_files/get_untracked_files to the named file (t.txt), so setup's
+# leftover dirty files (staged.txt/README.md) are invisible to it. The reset-all gate
+# checks the WHOLE tree, so it must first absorb setup's dirty state (baseline commit)
+# — otherwise README.md/staged.txt make `dirty` non-empty and the refusal routes to
+# check_working_tree_clean's wipe text, never reaching the untracked branch under test.
+
+@test "hug w get (specific): untracked target file refuses without -f (P1 data-loss guard)" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  git rm -q t.txt; git commit -q -m "remove t.txt"   # HEAD has no t.txt; HEAD~1 does
+  echo "UNTRACKED-LOCAL" > t.txt                      # t.txt now untracked
+
+  run bash -c 'hug w get HEAD~1 t.txt < /dev/null'
+  assert_failure
+  assert_output --partial "untracked"
+  run cat t.txt
+  assert_output "UNTRACKED-LOCAL"                     # NOT overwritten
+}
+
+@test "hug w get (specific): untracked target file with -f overwrites (P1)" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  git rm -q t.txt; git commit -q -m "remove t.txt"
+  echo "UNTRACKED-LOCAL" > t.txt
+
+  run bash -c 'hug w get -f HEAD~1 t.txt < /dev/null'
+  assert_success
+  run cat t.txt
+  assert_output "v1"                                  # overwritten by force
+}
+
+@test "hug w get reset-all: untracked file present in target refuses without -f (P1)" {
+  git add -A && git commit -q -m "baseline"           # absorb setup's dirty state → clean tracked tree
+  echo "v1" > t.txt; echo "keep" > keep.txt; git add t.txt keep.txt; git commit -q -m v1
+  git rm -q t.txt; git commit -q -m "remove t.txt"   # HEAD: keep.txt only; HEAD~1: both
+  echo "UNTRACKED-LOCAL" > t.txt                      # t.txt untracked, exists in HEAD~1
+
+  run bash -c 'hug w get HEAD~1 < /dev/null'
+  assert_failure
+  assert_output --partial "untracked"
+  run cat t.txt
+  assert_output "UNTRACKED-LOCAL"
+}
+
+@test "hug w get reset-all: untracked file present in target with -f overwrites (P1)" {
+  git add -A && git commit -q -m "baseline"           # absorb setup's dirty state → clean tracked tree
+  echo "v1" > t.txt; echo "keep" > keep.txt; git add t.txt keep.txt; git commit -q -m v1
+  git rm -q t.txt; git commit -q -m "remove t.txt"
+  echo "UNTRACKED-LOCAL" > t.txt
+
+  run bash -c 'hug w get -f HEAD~1 < /dev/null'
+  assert_success
+  run cat t.txt
+  assert_output "v1"
+}
+
+@test "hug w get (specific): clean tracked file still succeeds without -f (no false positive)" {
+  echo "v1" > t.txt; git add t.txt; git commit -q -m v1
+  echo "v2" > t.txt; git add t.txt; git commit -q -m v2   # t.txt clean (matches HEAD)
+  run bash -c 'hug w get HEAD~1 t.txt < /dev/null'
+  assert_success
+  run cat t.txt
+  assert_output "v1"
+}
+
+@test "hug w get (specific): mixed dirty + untracked targets refuse without -f, both preserved" {
+  echo "v1" > d.txt; echo "v1" > u.txt; git add d.txt u.txt; git commit -q -m v1
+  git rm -q u.txt; git commit -q -m "drop u.txt"   # HEAD: d.txt only; HEAD~1: both
+  echo "DIRTY" >> d.txt          # d.txt: tracked, unstaged-dirty
+  echo "UNTRACKED" > u.txt       # u.txt: untracked, exists in HEAD~1
+
+  run bash -c 'hug w get HEAD~1 d.txt u.txt < /dev/null'
+  assert_failure
+  run cat d.txt
+  assert_output "v1"$'\n'"DIRTY"   # dirty content preserved (refuse exited before restore)
+  run cat u.txt
+  assert_output "UNTRACKED"        # untracked content preserved
 }

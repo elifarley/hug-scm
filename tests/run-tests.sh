@@ -155,6 +155,12 @@ run_tests() {
   export HUG_TEST_DEPS="$DEPS_DIR"
   export PATH="$BATS_CORE_DIR/bin:$PATH"
 
+  # Suspender: abort any single test that hangs beyond ${BATS_TEST_TIMEOUT:-60}s
+  # instead of stalling the whole suite. Overridable via the environment for
+  # legitimately slow tests. Belt-and-suspenders protection against regressions
+  # like a confirm prompt reading stdin in non-interactive contexts.
+  export BATS_TEST_TIMEOUT="${BATS_TEST_TIMEOUT:-60}"
+
   # Find .bats files, excluding deps/
   local bats_files
   if [[ -f "$test_path" ]]; then

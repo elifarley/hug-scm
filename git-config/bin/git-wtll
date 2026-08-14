@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["worktrees"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit hug-git-worktree; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
@@ -11,28 +16,48 @@ show_help() {
 hug wtll: List worktrees in long format, showing path, branch, commit subject, and detailed status.
 
 USAGE:
-  hug wtll [OPTIONS] [SEARCH_TERM]
+  hug wtll [OPTIONS] [SEARCH_TERMS...]
+
+ARGUMENTS:
+  [SEARCH_TERMS...]   Substring match on path or branch (case-insensitive, OR logic)
 
 OPTIONS:
-  -h, --help     Show this help message and exit.
-  --json         Output in JSON format instead of human-readable text.
+  -h, --help          Show this help message and exit.
+  -q, --quiet         Suppress header and legend (data lines only).
+  --json              Output in JSON format instead of human-readable text.
+  -b, --branch NAME   Filter by EXACT branch name (case-sensitive, repeatable, OR logic)
 
 DESCRIPTION:
-  Displays each worktree sorted alphabetically. The current worktree is highlighted in green and marked with an asterisk (*).
-  Each entry shows: path [branch] (short commit) commit subject [status indicators].
+  Displays each worktree sorted alphabetically. The current worktree is highlighted in green.
+  Each entry shows: path [branch] (short commit) commit subject <indicators>.
 
-  Status indicators:
-    [CURRENT] - The worktree you're currently in
-    [DIRTY]   - Worktree has uncommitted changes
-    [LOCKED]  - Worktree is locked (cannot be removed)
+  Indicators:
+    *  current worktree
+    +  dirty (uncommitted changes)
+    #  locked
+    @  detached HEAD
+    .  (inactive)
 
-  If a search term is provided, only worktrees containing the term (case-insensitive substring match on path or branch name) are displayed.
+  Filtering:
+    Positional args:     SUBSTRING match, case-insensitive, OR logic.
+    -b / --branch NAME:  EXACT match, case-sensitive, repeatable, OR logic.
+    Combined: Both filters must match (AND logic).
+
+CAPTURING OUTPUT:
+  Listing lines go to stdout. Headers and legends go to stderr.
+  Colors are automatically stripped when output is piped.
+
+    worktrees=$(hug wtll)        # Capture listing to variable
+    hug wtll | grep feature      # Pipe to other commands
+    hug wtll 2>/dev/null         # Suppress headers/legend
 
 EXAMPLES:
-  hug wtll                  # List all worktrees in long format
-  hug wtll feature          # List worktrees containing "feature"
-  hug wtll /home/user/project  # List worktrees containing that path
-  hug wtll --json           # Output worktree information in JSON format
+  hug wtll                       # List all worktrees in long format
+  hug wtll feat                  # Substring: anything containing "feat"
+  hug wtll -b feature-auth       # Exact branch "feature-auth" only
+  hug wtll -b main -b dev        # Exact: "main" OR "dev"
+  hug wtll feat -b main          # Substring "feat" AND exact branch "main"
+  hug wtll --json                # Output worktree information in JSON format
 
 SEE ALSO:
   hug wtl : For listing worktrees in short form
@@ -43,25 +68,45 @@ EOF
 
 # Parse arguments
 json_output=false
+declare -a branch_filters=()
+declare -a search_terms=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --json)
     json_output=true
     shift
     ;;
+  -b | --branch)
+    if [[ -z "${2:-}" ]]; then
+      error "-b/--branch requires a value"
+      exit 1
+    fi
+    branch_filters+=("$2")
+    shift 2
+    ;;
   -h | --help)
     show_help
     exit 0
     ;;
+  -q | --quiet)
+    export HUG_QUIET=T
+    shift
+    ;;
+  --)
+    shift
+    for arg in "$@"; do search_terms+=("$arg"); done
+    shift $#
+    ;;
+  -*)
+    error "Unknown option: $1"
+    exit 1
+    ;;
   *)
-    # Treat remaining arguments as search terms
-    break
+    search_terms+=("$1")
+    shift
     ;;
   esac
 done
-
-# Capture search terms
-search_terms="$*"
 
 # Early exit if not in Git repo
 check_git_repo
@@ -70,7 +115,7 @@ check_git_repo
 if $json_output; then
   # Get current worktree path for JSON
   current_worktree=$(get_current_worktree_path)
-  output_worktree_json "$current_worktree" "$search_terms"
+  output_worktree_json "$current_worktree" search_terms branch_filters
   exit 0
 fi
 
@@ -86,35 +131,43 @@ fi
 current_worktree=$(get_current_worktree_path)
 
 # Build and print worktree list in long format
-printf "${BLUE}Worktrees (long format):%s${NC}\n" ""
-match_count=0
-for i in "${!worktree_paths[@]}"; do
-  path="${worktree_paths[$i]}"
-  branch="${branches[$i]}"
-  commit="${commits[$i]}"
-  dirty="${status_dirty[$i]}"
-  locked="${locked_status[$i]}"
+# WHY: Delegate filtering to library function (DRY — single source of truth).
+# filter_worktrees() handles the Python subprocess call and no-match error.
+[[ -z "${HUG_QUIET:-}" ]] && printf "${BLUE}Worktrees (long format):%s${NC}\n" "" >&2
+print_worktree_legend
 
-  # Apply search filter if provided using unified search function
-  show_worktree=true
-  if [[ -n "$search_terms" ]]; then
-    # Use the unified search function from hug-arrays
-    if search_worktree "$path" "$branch" "$search_terms" "OR"; then
-      show_worktree=true
-    else
-      show_worktree=false
-    fi
+# Use Python for filtering when branch filters or search terms are provided
+if [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
+  # Output arrays for filter_worktrees (nameref pattern).
+  # IMPORTANT: Must NOT use names that collide with the function's internal
+  # _wt_* locals — Bash namerefs resolve to the nearest scope first.
+  declare -a filtered_paths=() filtered_branches=() filtered_commits=()
+  declare -a filtered_dirty=() filtered_locked=()
+  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked branch_filters search_terms; then
+    exit 1
   fi
 
-  # Only show worktree if it matches search criteria (or no search provided)
-  if $show_worktree; then
+  # Display filtered results
+  for i in "${!filtered_paths[@]}"; do
+    path="${filtered_paths[$i]}"
+    branch="${filtered_branches[$i]}"
+    commit="${filtered_commits[$i]}"
+    dirty="${filtered_dirty[$i]}"
+    locked="${filtered_locked[$i]}"
+
+    format_worktree_long_line "$current_worktree" "$path" "$branch" "$commit" "$dirty" "$locked"
+  done
+else
+  # No filtering: use original loop
+  match_count=0
+  for i in "${!worktree_paths[@]}"; do
+    path="${worktree_paths[$i]}"
+    branch="${branches[$i]}"
+    commit="${commits[$i]}"
+    dirty="${status_dirty[$i]}"
+    locked="${locked_status[$i]}"
+
     format_worktree_long_line "$current_worktree" "$path" "$branch" "$commit" "$dirty" "$locked"
     match_count=$((match_count + 1))
-  fi
-done
-
-# Return error if search terms were provided but no matches found
-if [[ -n "$search_terms" && $match_count -eq 0 ]]; then
-  printf "No worktrees found matching: %s\n" "$search_terms" >&2
-  exit 1
+  done
 fi

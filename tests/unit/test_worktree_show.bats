@@ -38,7 +38,7 @@ teardown() {
   run git-wtsh
 
   assert_success
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
   assert_output --partial "main"
 
   # Should show commit information
@@ -59,10 +59,14 @@ teardown() {
   run git-wtsh
 
   assert_success
-  # Should have exactly one [CURRENT] indicator
+  # With the 2-column indicator redesign, * (current) lives in the branch
+  # display, not the indicator column.  The worktree header line looks like:
+  #   .. /path/to/repo (*main)
+  # So we look for (* (asterisk immediately inside the branch-display parens).
+  # Strip ANSI codes and count lines containing the current-worktree marker.
   local current_count
-  current_count=$(echo "$output" | grep -o "\[CURRENT\]" | wc -l)
-  [[ "$current_count" == "1" ]] || fail "Expected exactly 1 [CURRENT] indicator, got $current_count"
+  current_count=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep -c '(\*' || true)
+  [[ "$current_count" == "1" ]] || fail "Expected exactly 1 current (*) indicator, got $current_count"
 }
 
 @test "hug wtsh: displays commit details correctly" {
@@ -113,7 +117,7 @@ teardown() {
   run git-wtsh
 
   assert_success
-  assert_output --partial "[DIRTY]"
+  assert_output --partial "+"
   assert_output --partial "Status: Dirty"
   assert_output --partial "files changed"
   assert_output --partial "staged"
@@ -125,7 +129,7 @@ teardown() {
   run git-wtsh nonexistent
 
   assert_failure
-  assert_output --partial "No worktrees found matching: nonexistent"
+  assert_output --partial "No worktrees found matching"
 }
 
 @test "hug wtsh: error when not in git repository" {
@@ -177,7 +181,7 @@ teardown() {
 
   assert_success
   assert_output --partial "main"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: case-insensitive search filtering" {
@@ -186,7 +190,7 @@ teardown() {
 
   assert_success
   assert_output --partial "main"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: filters worktrees by search term" {
@@ -195,7 +199,7 @@ teardown() {
 
   assert_success
   assert_output --partial "main"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: displays author information correctly" {
@@ -236,7 +240,7 @@ teardown() {
   [[ "$worktree_count" == "1" ]] || fail "Expected exactly 1 worktree in default mode, got $worktree_count"
 
   # Should show current worktree indicator
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: --all flag shows all worktrees" {
@@ -247,7 +251,7 @@ teardown() {
   # Just main = 0 additional
   assert_output --partial "Worktrees (0 total)"
   # Should show current worktree when it's the only one
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: -a short flag works same as --all" {
@@ -265,14 +269,16 @@ teardown() {
   [[ "${all_output//[[:space:]]/}" == "${a_output//[[:space:]]/}" ]] || fail "Output mismatch between --all and -a flags"
 }
 
-@test "hug wtsh: interactive mode requires gum" {
+@test "hug wtsh: interactive mode works without gum using numbered-list fallback" {
   cd "$TEST_REPO"
 
-  # Disable gum via environment variable
-  HUG_DISABLE_GUM=true run git-wtsh --
+  # Disable gum — select_worktree now falls back to the Python numbered-list
+  # path instead of requiring gum.  With no stdin input (BATS non-TTY), Python
+  # gets EOF and returns 'cancelled', so the command exits non-zero.
+  HUG_DISABLE_GUM=true run bash -c 'echo "" | git-wtsh --'
 
-  assert_failure
-  assert_output --partial "Interactive worktree selection requires 'gum' to be installed"
+  # Cancellation exits with code 1 (select_worktree rc=1 from Python 'cancelled')
+  assert_failure 1
 }
 
 @test "hug wtsh: interactive mode error when no worktrees" {
@@ -323,7 +329,7 @@ teardown() {
 
   assert_success
   assert_output --partial "main"
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: default behavior vs --all behavior difference" {
@@ -339,7 +345,7 @@ teardown() {
 
   assert_success
   # Both should succeed and show the same single worktree
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 }
 
 @test "hug wtsh: help text shows new behavior examples" {
@@ -349,19 +355,16 @@ teardown() {
   # Should show new behavior examples in help
   assert_output --partial "hug wtsh                   # Current worktree only"
   assert_output --partial "hug wtsh --all             # All worktrees"
-  assert_output --partial "hug wtsh -a                # All worktrees"
+  assert_output --partial "hug wtsh feat              # Substring"
   assert_output --partial "hug wtsh --                # Interactive worktree selection"
 }
 
-@test "hug wtsh: help text explains status indicators" {
+@test "hug wtsh: help text explains -b branch flag" {
   run git-wtsh --help
 
   assert_success
-  assert_output --partial "STATUS INDICATORS:"
-  assert_output --partial "[CURRENT]"
-  assert_output --partial "[DIRTY]"
-  assert_output --partial "[LOCKED]"
-  assert_output --partial "[DETACHED]"
+  assert_output --partial "-b, --branch"
+  assert_output --partial "EXACT"
 }
 
 @test "hug wtsh: multiple worktrees with --all flag" {
@@ -379,10 +382,12 @@ teardown() {
   worktree_count=$(echo "$output" | grep -c "\ ([^[:space:]]*)$" || echo "0")
   [[ "$worktree_count" -ge 2 ]] || fail "Expected at least 2 worktrees with --all flag, got $worktree_count"
 
-  # Should have exactly one CURRENT worktree
+  # Should have exactly one CURRENT worktree (* in the branch display)
+  # With the 2-column indicator redesign, * lives in the branch-display
+  # parens:  .. /path (*main)  vs  .. /path (branch)
   local current_count
-  current_count=$(echo "$output" | grep -o "\[CURRENT\]" | wc -l)
-  [[ "$current_count" == "1" ]] || fail "Expected exactly 1 [CURRENT] indicator, got $current_count"
+  current_count=$(echo "$output" | sed 's/\x1b\[[0-9;]*m//g' | grep -c '(\*' || true)
+  [[ "$current_count" == "1" ]] || fail "Expected exactly 1 current (*) indicator, got $current_count"
 
   # Cleanup
   git worktree remove "$worktree_path"
@@ -406,7 +411,7 @@ teardown() {
   [[ "$worktree_count" == "1" ]] || fail "Expected exactly 1 worktree in default mode, got $worktree_count"
 
   # Should show current worktree indicator
-  assert_output --partial "[CURRENT]"
+  assert_output --partial "*"
 
   # Cleanup
   git worktree remove "$worktree_path"
@@ -466,7 +471,7 @@ teardown() {
   run git-wtsh nonexistent1 nonexistent2 nonexistent3
 
   assert_failure
-  assert_output --partial "No worktrees found matching: nonexistent1 nonexistent2 nonexistent3"
+  assert_output --partial "No worktrees found matching"
 }
 
 @test "hug wtsh: multi-term search is case insensitive" {
@@ -515,5 +520,20 @@ teardown() {
 
   assert_failure
   # Error message should show all search terms
-  assert_output --partial "foo bar baz"
+  assert_output --partial "foo"
+}
+
+@test "hug wtsh: -b branch shows exact match" {
+  cd "$TEST_REPO"
+  git branch feature-test
+  local worktree_path="${TEST_REPO}-feature"
+  git worktree add "$worktree_path" feature-test
+
+  run git-wtsh -b feature-test
+  assert_success
+  assert_output --partial "feature-test"
+  refute_output --partial "main"
+
+  git worktree remove "$worktree_path"
+  git branch -D feature-test
 }

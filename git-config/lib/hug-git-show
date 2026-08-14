@@ -26,83 +26,27 @@
 readonly _HUG_GIT_SHOW_LOADED=1
 
 ################################################################################
-# N/-N Resolution Functions
+# Ref arithmetic lives in hug-git-repo
 ################################################################################
-
-# Resolves a commit reference with unified N/-N syntax support
-# Usage: resolved_ref=$(resolve_commit_ref "target")
-# Parameters:
-#   $1 - Target specification (N, -N, ref, or range)
-#         - Empty string → "HEAD"
-#         - N (0-999) → "HEAD~N" (0 → HEAD)
-#         - -N (1-999) → "HEAD~N..HEAD"
-#         - Other → pass through unchanged (refs, ranges, etc.)
-# Output:
-#   Resolved git reference to stdout
-# Examples:
-#   resolve_commit_ref ""           → "HEAD"
-#   resolve_commit_ref "0"          → "HEAD"
-#   resolve_commit_ref "3"          → "HEAD~3"
-#   resolve_commit_ref "-3"         → "HEAD~3..HEAD"
-#   resolve_commit_ref "abc123"     → "abc123"
-#   resolve_commit_ref "main..HEAD" → "main..HEAD"
-resolve_commit_ref() {
-    local input="${1:-}"
-    local default="${2:-HEAD}"
-
-    # Empty target → default
-    if [[ -z "$input" ]]; then
-        printf '%s\n' "$default"
-        return 0
-    fi
-
-    # -N: Range of N commits (negative, 1-999)
-    if [[ "$input" =~ ^-[1-9][0-9]{0,2}$ ]]; then
-        local n="${input#-}"
-        printf 'HEAD~%s..HEAD\n' "$n"
-        return 0
-    fi
-
-    # N: Single commit HEAD~N (0-999)
-    if [[ "$input" =~ ^[0-9]{1,3}$ ]]; then
-        if [[ "$input" == "0" ]]; then
-            printf 'HEAD\n'
-        else
-            printf 'HEAD~%s\n' "$input"
-        fi
-        return 0
-    fi
-
-    # Pass through refs and ranges unchanged
-    printf '%s\n' "$input"
-    return 0
-}
-
-# Detects if a target is a commit range
-# Usage: if is_range "$target"; then echo "is range"; fi
-# Parameters:
-#   $1 - Target specification to check
-# Returns:
-#   0 if target is a range (contains ..), 1 otherwise
-# Examples:
-#   is_range "HEAD~3..HEAD"  → returns 0 (true)
-#   is_range "abc123"        → returns 1 (false)
-#   is_range "main"          → returns 1 (false)
-is_range() {
-    [[ "$1" == *..* ]]
-}
+# reject_flag_ref / resolve_commit_ref / is_range were hoisted to hug-git-repo
+# (pure ref arithmetic, zero display deps). Every command that needs them already
+# sources hug-git-kit, which loads hug-git-repo. WHY hoisted: the visual-diff
+# engine in hug-git-difftool needs the same resolution, and a difftool→show
+# dependency would be the wrong direction (show and difftool are orthogonal).
+# See mgmt/plans/2026-06-05-dd-visual-gateway-and-shv-design.md (T1).
 
 ################################################################################
 # Commit Display Functions
 ################################################################################
 
 # Shows commits (single or range) in specified format
-# Usage: show_commits "target" "show_patch" "output_format" "show_stats"
+# Usage: show_commits "target" "show_patch" "output_format" "show_stats" ["file_path"]
 # Parameters:
 #   $1 - Target specification (N, -N, ref, or range)
 #   $2 - Show patch: "true" or "false"
 #   $3 - Output format: "standard" or "llm"
 #   $4 - Show stats: "true" or "false" (default: true)
+#   $5 - File path: optional pathspec to restrict output to a single file (default: "")
 # Environment:
 #   HUG_QUIET - If set to "T", suppresses headers in standard format
 # Effects:
@@ -111,11 +55,13 @@ is_range() {
 #   - For ranges, iterates through each commit and shows individually
 #   - For single commits, shows directly
 #   - Uses resolve_commit_ref() for N/-N resolution
+#   - When file_path is non-empty, filters rev-list and per-commit diffs/stats
 show_commits() {
     local target="$1"
     local show_patch="${2:-false}"
     local output_format="${3:-standard}"
     local show_stats="${4:-true}"
+    local file_path="${5:-}"
 
     check_git_repo
 
@@ -126,15 +72,22 @@ show_commits() {
     # Check if it's a range
     if is_range "$resolved"; then
         # Range: iterate through commits in the range
+        # When file_path is given, filter rev-list to only commits touching that file
         local commits
-        commits=$(git rev-list --reverse "$resolved" 2>/dev/null) || {
-            error "Invalid range or no commits found: $resolved"
-        }
+        if [[ -n "$file_path" ]]; then
+            commits=$(git rev-list --reverse "$resolved" -- "$file_path" 2>/dev/null) || {
+                error "Invalid range or no commits found: $resolved"
+            }
+        else
+            commits=$(git rev-list --reverse "$resolved" 2>/dev/null) || {
+                error "Invalid range or no commits found: $resolved"
+            }
+        fi
 
         # Iterate through each commit
         while IFS= read -r commit; do
             [[ -n "$commit" ]] || continue
-            show_single_commit "$commit" "$show_patch" "$output_format" "$show_stats"
+            show_single_commit "$commit" "$show_patch" "$output_format" "$show_stats" "$file_path"
 
             # Add separator between commits in standard format (unless quiet)
             if [[ "$output_format" == "standard" && "${HUG_QUIET:-}" != "T" ]]; then
@@ -143,17 +96,18 @@ show_commits() {
         done <<< "$commits"
     else
         # Single commit: show directly
-        show_single_commit "$resolved" "$show_patch" "$output_format" "$show_stats"
+        show_single_commit "$resolved" "$show_patch" "$output_format" "$show_stats" "$file_path"
     fi
 }
 
 # Shows a single commit in the specified format
-# Usage: show_single_commit "commit" "show_patch" "output_format" "show_stats"
+# Usage: show_single_commit "commit" "show_patch" "output_format" "show_stats" ["file_path"]
 # Parameters:
 #   $1 - Commit hash or reference
 #   $2 - Show patch: "true" or "false"
 #   $3 - Output format: "standard" or "llm"
 #   $4 - Show stats: "true" or "false" (default: true)
+#   $5 - File path: optional pathspec to restrict output to a single file (default: "")
 # Environment:
 #   HUG_QUIET - If set to "T", suppresses headers in standard format
 # Effects:
@@ -161,15 +115,19 @@ show_commits() {
 # Notes:
 #   - Dispatches to _show_commit_standard or _show_commit_llm
 #   - Validates commit exists before displaying
+#   - When file_path is non-empty, restricts diff and stats to that file
 show_single_commit() {
     local commit="$1"
     local show_patch="$2"
     local output_format="$3"
     local show_stats="${4:-true}"
+    local file_path="${5:-}"
 
     check_git_repo
 
     # Validate commit exists
+    # Validate commit exists — but first check for mistyped flags.
+    reject_flag_ref "$commit" show_help
     if ! git rev-parse --verify "$commit^{commit}" >/dev/null 2>&1; then
         error "Invalid commit reference: $commit"
     fi
@@ -177,12 +135,67 @@ show_single_commit() {
     # Dispatch to appropriate format function
     case "$output_format" in
         llm)
-            _show_commit_llm "$commit" "$show_patch" "$show_stats"
+            _show_commit_llm "$commit" "$show_patch" "$show_stats" "$file_path"
             ;;
         standard|*)
-            _show_commit_standard "$commit" "$show_patch" "$show_stats"
+            _show_commit_standard "$commit" "$show_patch" "$show_stats" "$file_path"
             ;;
     esac
+}
+
+# Prints the repo-relative paths of files changed in a commit or range, one per
+# line — the --name-only equivalent of git-shc's --stat output.
+#
+# Usage: show_changed_file_names "commit_or_range" [pathspec...]
+# Parameters:
+#   $1   - Commit ref, range, or N/-N form (resolved internally via
+#          resolve_commit_ref, so the function is independently testable without
+#          the script wrapper; git-shc's pre-resolution of the same ref is
+#          redundant but harmless — resolve_commit_ref is idempotent on its
+#          own outputs).
+#   $2.. - Optional pathspecs (already-exploded args, passed as-is).
+# Output:
+#   Repo-relative file paths to stdout, one per line. Empty on no matches.
+#   Paths print raw (never C-quoted) even when they contain non-ASCII bytes.
+# Exit codes:
+#   0 on success, including zero matches (empty stdout — callers detect
+#   emptiness via stdout). Non-zero when the underlying git command fails:
+#   an invalid ref propagates git's exit 128 and its fatal message on stderr.
+# Environment:
+#   None read; does NOT honor HUG_QUIET (output is pure data — no header by design).
+# Notes:
+#   - Mirrors git-shc's dispatch: is_range → git diff --name-only, else
+#     git diff-tree --no-commit-id --name-only -r --root. A third near-copy of
+#     the diff-tree flag set lives in hug-file-input's extract_files_from_commit
+#     — keep them in sync (consolidation tracked as a follow-up issue).
+#   - Output-shape pins (adversarial review, cross-model confirmed):
+#     core.quotePath=false keeps paths raw; diff.relative=false keeps them
+#     repo-relative; --ignore-submodules=none defeats a user's
+#     diff.ignoreSubmodules config; --find-renames forces rename detection in
+#     BOTH branches so a rename lists only the new path identically in
+#     single-commit and range modes (diff-tree without -M would list old+new,
+#     diverging from `git diff --name-only`, the documented equivalent).
+#   - One-path-per-line assumes filenames contain no newlines; NUL-separated
+#     output would need a separate -z flag (follow-up).
+#   - Merge-commit single-commit shows nothing (same as --stat) — known parity,
+#     see elifarley/hug-scm#268 for the pre-existing bug this preserves.
+#   - Bundled-flag handling lives in the git-shc script wrapper, NOT here.
+show_changed_file_names() {
+    local target="${1:-HEAD}"
+    shift || true
+    local -a path_args=()
+    [[ $# -gt 0 ]] && path_args=(-- "$@")
+
+    local resolved
+    resolved=$(resolve_commit_ref "$target" "HEAD")
+
+    if is_range "$resolved"; then
+        git -c core.quotePath=false -c diff.relative=false diff --name-only --find-renames --ignore-submodules=none \
+            "$resolved" "${path_args[@]+"${path_args[@]}"}"
+    else
+        git -c core.quotePath=false -c diff.relative=false diff-tree --no-commit-id --name-only -r --root --find-renames --ignore-submodules=none \
+            "$resolved" "${path_args[@]+"${path_args[@]}"}"
+    fi
 }
 
 ################################################################################
@@ -190,11 +203,12 @@ show_single_commit() {
 ################################################################################
 
 # Shows a single commit in standard human-readable format
-# Usage: _show_commit_standard "commit" "show_patch" "show_stats"
+# Usage: _show_commit_standard "commit" "show_patch" "show_stats" ["file_path"]
 # Parameters:
 #   $1 - Commit hash or reference
 #   $2 - Show patch: "true" or "false"
 #   $3 - Show stats: "true" or "false" (default: true)
+#   $4 - File path: optional pathspec to restrict output to a single file (default: "")
 # Environment:
 #   HUG_QUIET - If set to "T", suppresses section headers
 # Effects:
@@ -203,10 +217,12 @@ show_single_commit() {
 #   - Replicates git-sh output format
 #   - Uses _diff_emoji for section indicators
 #   - Shows commit info, optional patch, and file stats
+#   - When file_path is non-empty, restricts diff and stats to that file
 _show_commit_standard() {
     local commit="$1"
     local show_patch="$2"
     local show_stats="${3:-true}"
+    local file_path="${4:-}"
 
     # Get emoji indicators (from hug-git-diff)
     local commit_emoji info_emoji diff_emoji stats_emoji
@@ -217,7 +233,7 @@ _show_commit_standard() {
 
     # Print commit info heading
     if [[ "${HUG_QUIET:-}" != "T" ]]; then
-        printf '%s %s Commit info:\n' "$commit_emoji" "$info_emoji"
+        printf '%s %s Commit info:\n' "$commit_emoji" "$info_emoji" >&2
     fi
 
     # Show commit info (hash, date, author, subject, body)
@@ -226,21 +242,32 @@ _show_commit_standard() {
     # Show patch if requested
     if [[ "$show_patch" == "true" ]]; then
         if [[ "${HUG_QUIET:-}" != "T" ]]; then
-            printf '\n%s %s Commit diff:\n' "$commit_emoji" "$diff_emoji"
+            printf '\n%s %s Commit diff:\n' "$commit_emoji" "$diff_emoji" >&2
         fi
         # Show the patch diff (suppress commit info from git show)
-        git show "$commit" --pretty=format:""
+        # When file_path is given, restrict diff to that file only
+        if [[ -n "$file_path" ]]; then
+            git show "$commit" --pretty=format:"" -- "$file_path"
+        else
+            git show "$commit" --pretty=format:""
+        fi
     fi
 
     # Show file stats if requested
     if [[ "$show_stats" == "true" ]]; then
         # Show file stats heading
         if [[ "${HUG_QUIET:-}" != "T" ]]; then
-            printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji"
+            printf '\n%s %s File stats:\n' "$commit_emoji" "$stats_emoji" >&2
         fi
-        
-        # Show file stats via git-shc (DRY principle)
-        HUG_QUIET=T git shc "$commit"
+
+        # Delegate to git-shc for stats display. git-shc now supports
+        # pathspec filtering via -- <path>, so the diff-tree workaround
+        # is no longer needed.
+        if [[ -n "$file_path" ]]; then
+            HUG_QUIET=T git shc "$commit" -- "$file_path"
+        else
+            HUG_QUIET=T git shc "$commit"
+        fi
     fi
 }
 
@@ -249,11 +276,12 @@ _show_commit_standard() {
 ################################################################################
 
 # Shows a single commit in LLM-friendly XML-tagged format
-# Usage: _show_commit_llm "commit" "show_patch" "show_stats"
+# Usage: _show_commit_llm "commit" "show_patch" "show_stats" ["file_path"]
 # Parameters:
 #   $1 - Commit hash or reference
 #   $2 - Show patch: "true" or "false"
 #   $3 - Show stats: "true" or "false" (default: true)
+#   $4 - File path: optional pathspec to restrict output to a single file (default: "")
 # Effects:
 #   Prints XML-tagged commit information to stdout
 # Notes:
@@ -262,10 +290,12 @@ _show_commit_standard() {
 #   - Optional <diff> section if show_patch=true
 #   - Optional <stats> section with file change statistics (shown when show_stats=true)
 #   - All text content is XML-escaped
+#   - When file_path is non-empty, restricts diff and stats to that file
 _show_commit_llm() {
     local commit="$1"
     local show_patch="$2"
     local show_stats="${3:-true}"
+    local file_path="${4:-}"
 
     # Get commit metadata
     local hash date subject body
@@ -292,16 +322,25 @@ _show_commit_llm() {
     # Print diff section if requested
     if [[ "$show_patch" == "true" ]]; then
         printf '<diff><![CDATA[\n'
-        git show "$commit" --pretty=format:""
+        # When file_path is given, restrict diff to that file only
+        if [[ -n "$file_path" ]]; then
+            git show "$commit" --pretty=format:"" -- "$file_path"
+        else
+            git show "$commit" --pretty=format:""
+        fi
         printf ']]></diff>\n'
     fi
 
     # Print stats section if requested
     if [[ "$show_stats" == "true" ]]; then
-        # Get raw stats from git-shc (without emoji headers)
+        # Get stats output via git-shc, which now supports pathspec filtering.
         local stats_output
-        stats_output=$(HUG_QUIET=T git shc "$commit" 2>/dev/null)
-        
+        if [[ -n "$file_path" ]]; then
+            stats_output=$(HUG_QUIET=T git shc "$commit" -- "$file_path" 2>/dev/null)
+        else
+            stats_output=$(HUG_QUIET=T git shc "$commit" 2>/dev/null)
+        fi
+
         if [[ -n "$stats_output" ]]; then
             printf '<stats>\n'
             printf '%s\n' "$stats_output"

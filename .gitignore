@@ -59,3 +59,4 @@ npm-debug.log*
 /.hitm/received.txt
 /.hitm/send.txt
 /.claude/agent-responses/
+.gstack/

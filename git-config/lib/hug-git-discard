@@ -41,12 +41,12 @@ discard_all_unstaged() {
   dedupe_array affected_files
 
   if [[ ${#affected_files[@]} -eq 0 ]]; then
-    printf 'No unstaged changes to discard in the repository.\n'
+    printf 'No unstaged changes to discard in the repository.\n' >&2
     return 0
   fi
 
   if $dry_run; then
-    printf 'Dry run: Would discard unstaged changes from the following files:\n'
+    printf 'Dry run: Would discard unstaged changes from the following files:\n' >&2
     print_list '  ' "${affected_files[@]}"
     return 0
   fi
@@ -56,7 +56,7 @@ discard_all_unstaged() {
     error "Failed to discard all unstaged changes. Check for submodules or permissions."
   fi
 
-  printf 'Discarded all unstaged changes from the repository (preserving staged changes).\n'
+  printf 'Discarded all unstaged changes from the repository (preserving staged changes).\n' >&2
   print_list 'Affected files:' "${affected_files[@]}"
 }
 
@@ -121,13 +121,13 @@ discard_all_uncommitted_changes() {
 
   if [[ ${#affected_files[@]} -eq 0 ]]; then
     if ! $dry_run; then
-      printf 'No uncommitted changes to discard in the repository.\n'
+      printf 'No uncommitted changes to discard in the repository.\n' >&2
     fi
     return 0
   fi
 
   if $dry_run; then
-    printf 'Dry run: Would discard all uncommitted changes from the following files:\n'
+    printf 'Dry run: Would discard all uncommitted changes from the following files:\n' >&2
     print_list '  ' "${affected_files[@]}"
     return 0
   fi
@@ -137,7 +137,7 @@ discard_all_uncommitted_changes() {
     error "Failed to discard all uncommitted changes. If submodules are dirty, run: git submodule foreach --recursive git restore --source=HEAD --staged --worktree ."
   fi
 
-  printf 'Successfully discarded all uncommitted changes in the repository.\n'
+  printf 'Successfully discarded all uncommitted changes in the repository.\n' >&2
   print_list 'Affected files:' "${affected_files[@]}"
   return 0
 }
@@ -164,13 +164,13 @@ discard_uncommitted_changes() {
 
   if [[ ${#target_files_ref[@]} -eq 0 ]]; then
     if ! $dry_run; then
-      printf 'No uncommitted changes to discard for the specified paths.\n'
+      printf 'No uncommitted changes to discard for the specified paths.\n' >&2
     fi
     return 0
   fi
 
   if $dry_run; then
-    printf 'Dry run: Would discard all uncommitted changes from the following paths:\n'
+    printf 'Dry run: Would discard all uncommitted changes from the following paths:\n' >&2
     print_list '  ' "${target_files_ref[@]}"
     return 0
   fi
@@ -213,7 +213,7 @@ discard_staged_no_unstaged() {
   if ! git restore --source=HEAD --staged --worktree -- "$relative_file"; then
     error "Failed to discard staged changes for '$file' (no unstaged)."
   fi
-  printf 'Discarded staged changes from %s\n' "$file"
+  printf 'Discarded staged changes from %s\n' "$file" >&2
 }
 
 # Discards staged changes for a file with unstaged changes
@@ -301,7 +301,7 @@ discard_staged_with_unstaged() {
   if $success; then
     trap - RETURN
     rm -f "$unstaged_patch" "$sanitized_patch" "$rej_file"
-    printf 'Discarded staged changes from %s (unstaged preserved)\n' "$file"
+    printf 'Discarded staged changes from %s (unstaged preserved)\n' "$file" >&2
     return 0
   else
     # Failure: Preserve files, print guidance (clean any markers if present)
@@ -367,15 +367,15 @@ discard_all_staged() {
 
   if [[ ${#staged_paths[@]} -eq 0 ]]; then
     if ! $dry_run; then
-      printf 'No staged changes to discard in the repository.\n'
+      printf 'No staged changes to discard in the repository.\n' >&2
     fi
     return 0
   fi
 
   if $dry_run; then
-    printf 'Dry run: Would discard staged changes from the following files (unstaged preserved):\n'
+    printf 'Dry run: Would discard staged changes from the following files (unstaged preserved):\n' >&2
     for file in "${staged_paths[@]}"; do
-      printf '  %s\n' "$file"
+      printf '  %s\n' "$file" >&2
     done
     return 0
   fi
@@ -421,7 +421,7 @@ discard_all_staged() {
     fi
   done
 
-  printf 'Successfully discarded all staged changes in the repository (unstaged preserved where applicable).\n'
+  printf 'Successfully discarded all staged changes in the repository (unstaged preserved where applicable).\n' >&2
   return 0
 }
 
@@ -437,7 +437,7 @@ handle_dry_run_confirmation() {
   local message=$2
   
   if $dry_run; then
-    printf 'Dry run: %s\n' "$message"
+    printf 'Dry run: %s\n' "$message" >&2
     exit 0
   fi
 }
@@ -457,7 +457,7 @@ check_no_changes() {
   
   if [[ $count -eq 0 ]]; then
     if ! $dry_run; then
-      printf '%s\n' "$message"
+      printf '%s\n' "$message" >&2
     fi
     exit 0
   fi

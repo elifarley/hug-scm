@@ -40,6 +40,38 @@ create_test_repo_with_structure() {
   echo "$test_repo"
 }
 
+# Helper: create a repo with a real merge conflict (one conflicted file)
+create_test_repo_with_conflict() {
+  local test_repo
+  test_repo=$(create_test_repo)
+
+  (
+    cd "$test_repo" || exit 1
+
+    echo "base" > conflict.txt
+    git add conflict.txt
+    git commit -q -m "Add base"
+
+    git switch -q -c side
+    echo "side" > conflict.txt
+    git add conflict.txt
+    git commit -q -m "Side change"
+
+    git switch -q main
+    echo "main" > conflict.txt
+    git add conflict.txt
+    git commit -q -m "Main change"
+
+    # Leaves the repo in conflict state; exit 1 is the expected merge failure.
+    # NOTE: git merge writes ALL its conflict chatter (Auto-merging, CONFLICT,
+    # "Automatic merge failed") to STDOUT — must redirect both streams, since
+    # this helper's stdout IS the echoed repo path that callers capture.
+    git merge --no-commit --no-ff side >/dev/null 2>&1 || true
+  )
+
+  echo "$test_repo"
+}
+
 setup() {
   require_hug
   TEST_REPO=$(create_test_repo_with_structure)
@@ -249,15 +281,243 @@ teardown() {
 @test "list_untracked_files: lists only current directory untracked files with --cwd" {
   # Create untracked file in current directory
   echo "local untracked" > src/components/local-untracked.js
-  
+
   cd src/components
-  
+
   # With --cwd, should only list untracked files in current directory
   mapfile -t files < <(list_untracked_files --cwd)
-  
+
   # Should include file from current directory
   [[ " ${files[*]} " =~ " local-untracked.js " ]]
 
   # Should NOT include untracked files from parent directory
   [[ ! " ${files[*]} " =~ " untracked.js " ]]
+}
+
+################################################################################
+# list_staged_files GITLINK (submodule) TESTS
+################################################################################
+
+# Helper: create a test repo with a committed submodule and staged pointer bump
+setup_repo_with_gitlink() {
+  local test_repo
+  test_repo=$(create_test_repo)
+
+  local sub_src="${test_repo}-sub-src"
+  git init -q --initial-branch=main "$sub_src"
+  (
+    cd "$sub_src" || exit 1
+    git config --local user.email "test@hug-scm.test"
+    git config --local user.name "Hug Test"
+    echo "sub content" > README.md
+    git add README.md
+    git commit -q -m "sub init"
+  )
+
+  (
+    cd "$test_repo" || exit 1
+    git config --local user.email "test@hug-scm.test"
+    git config --local user.name "Hug Test"
+    git -c protocol.file.allow=always submodule add "$sub_src" mysub >/dev/null 2>&1
+    git commit -q -m "add submodule"
+
+    # Bump the submodule pointer
+    (cd mysub && git config --local user.email "test@hug-scm.test" && git config --local user.name "Hug Test" && echo "update" >> README.md && git add . && git commit -q -m "sub update")
+    git add mysub
+  )
+
+  echo "$test_repo"
+}
+
+# Helper: create a test repo with a newly added submodule (staged but not committed)
+setup_repo_with_new_gitlink() {
+  local test_repo
+  test_repo=$(create_test_repo)
+
+  local sub_src="${test_repo}-sub-src"
+  git init -q --initial-branch=main "$sub_src"
+  (
+    cd "$sub_src" || exit 1
+    git config --local user.email "test@hug-scm.test"
+    git config --local user.name "Hug Test"
+    echo "sub content" > README.md
+    git add README.md
+    git commit -q -m "sub init"
+  )
+
+  (
+    cd "$test_repo" || exit 1
+    git -c protocol.file.allow=always submodule add "$sub_src" newsub >/dev/null 2>&1
+  )
+
+  echo "$test_repo"
+}
+
+@test "list_staged_files: shows staged gitlink (submodule pointer bump)" {
+  TEST_REPO=$(setup_repo_with_gitlink)
+  cd "$TEST_REPO"
+
+  mapfile -t files < <(list_staged_files)
+
+  [[ ${#files[@]} -ge 1 ]]
+  [[ " ${files[*]} " =~ " mysub " ]]
+}
+
+@test "list_staged_files --status: shows gitlink with M status" {
+  TEST_REPO=$(setup_repo_with_gitlink)
+  cd "$TEST_REPO"
+
+  mapfile -t lines < <(list_staged_files --status)
+
+  # Should contain a line like "M\tmysub"
+  local found=false
+  for line in "${lines[@]}"; do
+    if [[ "$line" =~ ^M$'\t' && "$line" =~ mysub ]]; then
+      found=true
+      break
+    fi
+  done
+  [[ "$found" == true ]]
+}
+
+@test "list_staged_files: shows gitlink despite submodule.ignore=all" {
+  TEST_REPO=$(setup_repo_with_gitlink)
+  cd "$TEST_REPO"
+
+  # Set ignore config — this is the core bug this fix addresses
+  git config --local submodule.mysub.ignore all
+
+  mapfile -t files < <(list_staged_files)
+
+  [[ ${#files[@]} -ge 1 ]]
+  [[ " ${files[*]} " =~ " mysub " ]]
+}
+
+@test "list_staged_files: shows gitlink despite diff.ignoreSubmodules=all" {
+  TEST_REPO=$(setup_repo_with_gitlink)
+  cd "$TEST_REPO"
+
+  # Alternative ignore source
+  git config --local diff.ignoreSubmodules all
+
+  mapfile -t files < <(list_staged_files)
+
+  [[ ${#files[@]} -ge 1 ]]
+  [[ " ${files[*]} " =~ " mysub " ]]
+}
+
+@test "list_staged_files --cwd: excludes gitlink outside current directory" {
+  TEST_REPO=$(setup_repo_with_gitlink)
+  cd "$TEST_REPO"
+
+  # Create a subdirectory and cd into it
+  mkdir -p subdir && cd subdir
+
+  mapfile -t files < <(list_staged_files --cwd)
+
+  # mysub is at repo root, outside subdir — should not appear
+  [[ ! " ${files[*]} " =~ " mysub " ]]
+}
+
+@test "list_staged_files: shows new submodule addition as A status" {
+  TEST_REPO=$(setup_repo_with_new_gitlink)
+  cd "$TEST_REPO"
+
+  mapfile -t lines < <(list_staged_files --status)
+
+  # New submodule should appear as "A\tnewsub"
+  local found=false
+  for line in "${lines[@]}"; do
+    if [[ "$line" =~ ^A$'\t' && "$line" =~ newsub ]]; then
+      found=true
+      break
+    fi
+  done
+  [[ "$found" == true ]]
+}
+
+@test "list_staged_files: shows both regular files and gitlinks" {
+  # Regression guard: --ignore-submodules=none must not suppress regular files
+  TEST_REPO=$(setup_repo_with_gitlink)
+  cd "$TEST_REPO"
+
+  # Stage a regular file alongside the gitlink
+  echo "regular content" > regular.txt
+  git add regular.txt
+
+  git config --local submodule.mysub.ignore all
+
+  mapfile -t lines < <(list_staged_files --status)
+
+  # Both should appear
+  local found_regular=false found_gitlink=false
+  for line in "${lines[@]}"; do
+    [[ "$line" =~ regular\.txt ]] && found_regular=true
+    [[ "$line" =~ mysub ]] && found_gitlink=true
+  done
+  [[ "$found_regular" == true ]]
+  [[ "$found_gitlink" == true ]]
+}
+
+################################################################################
+# list_conflicted_files TESTS
+################################################################################
+
+@test "list_conflicted_files: lists exactly the conflicted files" {
+  local repo
+  repo=$(create_test_repo_with_conflict)
+  cd "$repo"
+
+  local output
+  output=$(list_conflicted_files)
+  [[ "$output" == "conflict.txt" ]]
+}
+
+@test "list_conflicted_files: --status outputs U status" {
+  local repo
+  repo=$(create_test_repo_with_conflict)
+  cd "$repo"
+
+  local output
+  output=$(list_conflicted_files --status)
+  [[ "$output" == $'U\tconflict.txt' ]]
+}
+
+@test "list_conflicted_files: pathspec scoping" {
+  local repo
+  repo=$(create_test_repo_with_conflict)
+  cd "$repo"
+
+  local output
+  output=$(list_conflicted_files -- conflict.txt)
+  [[ "$output" == "conflict.txt" ]]
+
+  output=$(list_conflicted_files -- no-such-file.txt)
+  [[ -z "$output" ]]
+}
+
+@test "list_conflicted_files: --cwd scopes to current directory" {
+  local repo
+  repo=$(create_test_repo_with_conflict)
+  cd "$repo"
+  mkdir -p sub
+  cd sub
+
+  local output
+  output=$(list_conflicted_files --cwd)
+  [[ -z "$output" ]]
+
+  cd ..
+  output=$(list_conflicted_files --cwd)
+  [[ "$output" == "conflict.txt" ]]
+}
+
+@test "list_conflicted_files: empty output when no conflicts" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+
+  local output
+  output=$(list_conflicted_files)
+  [[ -z "$output" ]]
 }

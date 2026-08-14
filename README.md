@@ -68,7 +68,7 @@ Hug SCM delivers **four tiers of value** beyond raw Git:
 
 ```bash
 # Analysis with JSON output
-hug analyze co-changes 50 --json | jq '.correlations[0]'
+hug analyze co-changes --all --commits 50 --json | jq '.correlations[0]'
 hug analyze expert src/auth/login.js --json | jq '.ownership[0]'
 hug stats file README.md --json | jq '.file_churn'
 hug analyze activity --by-hour --json | jq '.analysis.data'
@@ -333,11 +333,16 @@ hug w wipdel <wip-branch>  # Deletes the WIP branch without merging
 hug s                       # Quick summary of staged/unstaged changes
 hug sl                      # Status without untracked files
 hug sla                     # Full status with untracked files
+hug sls                     # Status with staged files only
+hug slu                     # Status with unstaged files only
+hug slk                     # Status with untracked files only
+hug slc                     # Status with list of conflicted (unmerged) files
 hug sli                     # Status with list of ignored files
 
 hug ss [file]               # Status with staged changes patch
 hug su [file]               # Status with unstaged changes patch
 hug sw [file]               # Status with working dir changes patch (staged and unstaged)
+hug dd [s|u|w|N|-N|committish|range] [-- <path>...] # Visual diff via difftool (s/u/w = working tree; bare = all uncommitted; committish = that commit's patch; range/-N = cumulative)
 
 # Staging
 hug a [files]               # Stage tracked files (or all if no args)
@@ -412,8 +417,8 @@ hug g --aggressive           # Expire reflog + aggressive gc (maximum cleanup)
 #### 🔬 Advanced Analysis (`analyze`)
 
 ```shell
-hug analyze co-changes [N]    # Find files that frequently change together
-hug analyze co-changes 200 --threshold 0.50  # Strong coupling only
+hug analyze co-changes <file> # Find files related to a specific file
+hug analyze co-changes --all --commits 200 --threshold 0.50  # Strong repo-wide coupling only
 hug analyze activity          # Temporal commit patterns (hour/day histograms)
 hug analyze activity --by-hour --by-author   # Per-author hour breakdown
 hug analyze expert <file>     # Identify code ownership and expertise
@@ -469,10 +474,10 @@ hug bwnm [commit]     # Branches not merged into commit
 hug c [-m msg]        # Commit (staged changes)
 hug ca [-m msg]       # Commit: All (all tracked changes)
 hug caa [-m msg]      # Commit: All All (tracked + untracked + deletions)
-hug cm [-m msg]       # Commit: Modify (Amend last commit with staged changes)
-hug cma [-m msg]      # Commit: Modify (Amend last commit with all tracked changes)
+hug cmod [-m msg] [-- <paths>] # Commit: MODify (Amend last commit with staged changes — refuses no-op amends without -f)
+hug cmoda [-m msg]    # Commit: MODify All (Amend last commit with all tracked changes — prefer cmod in dirty trees; refuses no-op amends without -f)
 hug ccp <commit>      # Commit Copy (cherry-pick commit onto current branch)
-hug cmv [N] <branch> [--new] # Commit MoVe: Relocate commits to another branch (resets source, switches to target)
+hug cmv [N] <branch> [--new] [--wt] # Commit MoVe: Relocate commits to another branch (resets source; --wt also creates/reuses its worktree)
                              #   - New branches: preserves original SHAs (no conflicts)
                              #   - Existing branches: creates new SHAs via cherry-pick (may conflict)
 hug cii               # Interactive patch commit (add --patch then commit)
@@ -488,7 +493,7 @@ hug rbc               # Continue rebase
 hug rba               # Abort rebase
 hug rbs               # Skip commit in rebase
 hug m <branch>        # Squash-merge branch (no commit)
-hug mff <branch>      # Merge with fast-forward only
+hug mff <branch>      # Fast-forward merge (or: hug mff <branch> <target>)
 hug mkeep <branch>    # Merge with no fast-forward (create commit)
 hug ma                # Abort merge
 ```
@@ -538,8 +543,9 @@ hug sl                # Status: List (without untracked files)
 hug sla               # Status: List All (Full status with untracked files)
 hug sh [commit]       # SHow [commit] (with stat; default: last)
 hug shp [commit]      # SHow: with Patch (commit with patch)
-hug shc [N|commit|range] # SHow: Changed files (cumulative stats for N commits, commit, or range)
-hug shcp [N|commit|range] # SHow: Cumulative with Patch (diff + stats for N commits, commit, or range)
+hug shc [N|commit|range] [-n] [-- <path>...] # SHow: Changed files (cumulative stats, or -n for paths only)
+hug shcp [N|commit|range] [-- <path>...] # SHow: Cumulative with Patch (diff + stats, optionally filtered by path)
+hug shv [N|commit|range] [-- <path>...]  # SHow: Visual (shp/shcp in a difftool; commit's patch or range's cumulative diff)
 hug shf <file> [commit] # SHow: File at [commit] (File diff in commit)
 ```
 
@@ -578,6 +584,13 @@ hug shf <file> [commit] # SHow: File at [commit] (File diff in commit)
 -   Related commands share prefixes
 -   Built-in help with examples
 -   Smart completion with partial matching
+
+### 6. **Script-Friendly Output**
+
+-   Listing and query commands keep stdout clean for piping and capture
+-   Human-facing messages (headers, legends, tips) go to stderr
+-   `--json` flags provide structured, machine-readable output
+-   See `hug wtl --help` for the canonical CAPTURING OUTPUT example
 
 ## Testing
 

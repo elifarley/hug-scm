@@ -9,10 +9,10 @@ The `c*` commands handle creating and modifying commits, making it easier to rec
 | `hug c`   | **C**ommit staged                     | Commit staged changes                              |
 | `hug ca`  | **C**ommit **A**ll tracked            | Commit ALL tracked changes                         |
 | `hug caa` | **C**ommit **A**dd **A**ll            | Stage and commit ALL changes (tracked + untracked) |
-| `hug cm`  | **C**ommit **M**odify                 | Modify last commit with staged changes only        |
-| `hug cma` | **C**ommit **M**odify **A**ll tracked | Modify last commit with all tracked changes        |
+| `hug cmod`  | **C**ommit **MOD**ify                 | Amend last commit with staged changes only        |
+| `hug cmoda` | **C**ommit **MOD**ify **A**ll tracked | Amend last commit with all tracked changes        |
 | `hug ccp` | **C**ommit **C**o**P**y (cherry-pick) | Copy a commit from another branch onto HEAD        |
-| `hug cmv [N|commit] \<branch\> [--new] [-u, --upstream] [--force]` | **C**ommit **M**o**V**e | Move commits to another branch (like mv for files) |
+| `hug cmv [N|commit] \<branch\> [--new] [--wt] [-u, --upstream] [--force]` | **C**ommit **M**o**V**e | Move commits to another branch (like mv for files) |
 
 ## hug c (Commit staged)
 
@@ -121,48 +121,89 @@ hug caa -m "Add new feature with all related files"
 Stages all current changes (staged and unstaged) and creates a new commit.
 It is a convenient shortcut for `hug aa && hug c`.
 
-## hug cm (Commit Modify)
+## hug cmod (Commit MODify)
 
-Modify the last commit with staged changes.
+Amend the last commit with staged changes.
 
 This command allows you to add staged changes to the previous commit without creating a new one. It's ideal for fixing small mistakes or adding forgotten files.
 
-When you run `hug cm` (**C**ommit **M**odify) without flags, your editor will open with the previous commit message already populated. This is very convenient if you just need to fix a typo or slightly reword the message.
+When you run `hug cmod` (**C**ommit **MOD**ify) without flags, your editor will open with the previous commit message already populated, ready for you to fix a typo or slightly reword it. This still rewrites HEAD (see above); it is convenient for editing the message, not for harmlessly inspecting it.
 
 If you want to replace the old message entirely, you can provide a new one directly with the `-m` flag, which avoids opening the editor.
 
-**Usage:** `hug cm`
+For a deterministic non-interactive amend, pass `--no-edit` (keep the message) or
+`-m` (replace it). To inspect which commit would be amended (its hash/message),
+use `hug s --short-hash` or `hug sh HEAD` — never `cmod`.
+
+**Safety guard:** `cmod` refuses a **content-null amend** — an amend with
+nothing staged and no message change (`--no-edit`, or a `-m`/`-F`/`-C`
+message that normalizes to the existing one; under a no-op editor like
+`GIT_EDITOR=true`, a bare amend counts as no message change too) — with
+exit 3, because it would silently rewrite HEAD's hash (same tree, same
+message). Stage changes first (`hug a <files>`) or pass `-m` with a
+genuinely different message. To deliberately re-hash/re-date HEAD, re-run
+with `-f`.
+
+Pass `-- <paths>` to fold only the named paths' changes into the amend (git's
+`--only` mode) — no staging needed. The safety guard applies to this form too:
+named paths with no changes and no message change are refused.
+
+**Usage:** `hug cmod [-- <paths>...]`
 
 **Examples:**
 ```shell
+# Read which commit HEAD points at BEFORE amending (the correct "check" step)
+hug s --short-hash
+
 # Realize you forgot to add a file to the last commit
 hug a docs/forgotten-file.md
-# Open the editor to see the last message and confirm or tweak it
-hug cm
+# Open the editor to see the last message and confirm or tweak it (rewrites HEAD)
+hug cmod
+
+# Or... Amend with ONLY the named paths' changes (no staging needed)
+hug cmod --no-edit -- docs/forgotten-file.md
 
 # Or... Replace the last commit message entirely without opening the editor
-hug cm -m "A completely new and corrected commit message"
+hug cmod -m "A completely new and corrected commit message"
 ```
 
-## hug cma
+## hug cmoda (Commit MODify All)
 
-Modify the last commit with all tracked changes.
+Amend the last commit with all tracked changes.
 
-Similar to `hug cm` (**C**ommit **M**odify), this command modifies the last commit.
-However, it automatically includes all changes to **ALL tracked files**, so you don't need to stage them first.
+Similar to `hug cmod` (**C**ommit **MOD**ify), this command amends the last commit.
+However, it automatically includes all changes to **ALL tracked files**.
 
-Running `hug cma` opens your editor with the existing commit message, making it perfect for small edits. To replace the message entirely without opening the editor, use the `-m` flag.
+::: warning Dirty-tree hazard
+Because `cmoda` includes **every** modified tracked file, a working tree with
+unrelated changes will have them folded into the amend. To amend only specific
+files, stage them and use `hug cmod`:
 
-Usage: `hug cma`
+    hug a <file>...      # stage only the intended files
+    hug cmod --no-edit   # amend with ONLY the staged set
+:::
+
+Running `hug cmoda` opens your editor with the existing commit message, making it perfect for small edits. To replace the message entirely without opening the editor, use the `-m` flag.
+
+**Safety guard:** `cmoda` refuses a **content-null amend** — an amend with
+nothing staged or modified and no message change (`--no-edit`, or a
+`-m`/`-F`/`-C` message that normalizes to the existing one; under a no-op
+editor like `GIT_EDITOR=true`, a bare amend counts as no message change
+too) — with exit 3, because it would silently rewrite HEAD's hash (same
+tree, same message). Stage changes first (`hug a <files>`) or pass `-m`
+with a genuinely different message. To deliberately re-hash/re-date HEAD,
+re-run with `-f`.
+
+Usage: `hug cmoda`
 
 **Examples:**
 ```shell
 # After committing, you make a quick change to a file you just committed
 # Open the editor to adjust the commit message
-hug cma
+hug cmoda
 
 # Modify and provide a new message in one step
-hug cma -m "Add new feature (with all files)"
+hug cmoda -m "Add new feature (with all files)"
 ```
 
 ## hug ccp (Commit Copy)
@@ -201,7 +242,7 @@ Applies the changes from a specific commit on top of the current HEAD, creating 
 
 Move (relocate) commits from the current branch to another branch (new or existing), like `mv` for files. After the move, switches to and stays on the target branch.
 
-**Usage:** `hug cmv [N|commit] \<branch\> [--new] [-u, --upstream] [--force]`
+**Usage:** `hug cmv [N|commit] \<branch\> [--new] [--wt] [-u, --upstream] [--force]`
 
 **Description**: Moves the last N commits (default: 1) or commits above a specific commit from the current branch to \<branch\>, preserving individual commit history. Then resets the current branch back.
 
@@ -225,6 +266,12 @@ Result:  Now on 'main' with 6 commits (new SHAs via cherry-pick)
 - **Existing branches**: Cherry-picks commits onto target (creates NEW commit SHAs, may conflict)
 
 If \<branch\> missing without --new: Combined prompt "Branch 'X' doesn't exist. Proceed with creating a new branch named 'X' and moving N commit(s) to it?" (y/n); auto-creates with --force (no prompt). Use --new for explicit non-interactive creation. With -u, moves local-only commits above the upstream tip (read-only preview/confirmation; no fetch). Post-move: You'll end up on the target branch for easy continuation.
+
+**`--wt` (worktree):** ensure the target branch has a worktree. Create one if
+missing, otherwise reuse the existing one. The move is performed in/for that
+worktree, and you stay on the source branch. Auto-generated path only
+(`../<repo>.WT.<branch>`). The move is danger-tier; worktree creation is
+safe-tier.
 
 **When to Use What:**
 
@@ -292,8 +339,8 @@ hug cmv 3 bugfix --force        # Skip confirmation (auto-create if missing)
 ## Tips
 - Use `hug s` (**S**tatus) or `hug sl` (**S**tatus + **L**ist) to check what you are about to commit, especially before using `hug c` (**C**ommit).
 - `hug ca` (**C**ommit **A**ll tracked) and `hug caa` (**C**ommit **A**dd **A**ll) are great for speed, but be sure you want to commit *all* changes. For more selective commits, stage files individually with `hug a` (**A**dd) or `hug aa` (**A**dd **A**ll) and then use `hug c` (**C**ommit).
-- Use `hug cm` (**C**ommit **M**odify) or `hug cma` (**C**ommit **M**odify **A**ll tracked) to fix mistakes in your last commit (e.g., forgotten changes or typos in the message) without creating extra "fixup" commits. This keeps your history cleaner.
+- Use `hug cmod` (**C**ommit **MOD**ify) or `hug cmoda` (**C**ommit **MOD**ify **A**ll tracked) to fix mistakes in your last commit (e.g., forgotten changes or typos in the message) without creating extra "fixup" commits. This keeps your history cleaner.
 
 \> [!WARNING]
-\> Avoid using `hug cm` (**C**ommit **M**odify) or `hug cma` (**C**ommit **M**odify **A**ll tracked) on commits that have already been pushed to a remote repository (like GitHub).
+\> Avoid using `hug cmod` (**C**ommit **MOD**ify) or `hug cmoda` (**C**ommit **MOD**ify **A**ll tracked) on commits that have already been pushed to a remote repository (like GitHub).
 \> Modifying a commit rewrites history, which can create significant problems for anyone who has already pulled your changes.

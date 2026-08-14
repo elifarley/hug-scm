@@ -563,3 +563,76 @@ teardown() {
   [[ "${output_hashes[0]}" == "hash2" ]]
   [[ "${output_hashes[1]}" == "hash3" ]]
 }
+
+# -----------------------------------------------------------------------------
+# Cancellation return-code contract tests
+# Library helpers MUST return 1 on cancel, never call exit.
+# This ensures callers (command scripts) own the "Cancelled." message.
+# -----------------------------------------------------------------------------
+
+@test "get_gum_selection_index: returns 1 on cancellation (no exit)" {
+  setup_gum_mock
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1
+
+  local -a items=("alpha" "beta" "gamma")
+  run get_gum_selection_index items "Pick one"
+  [ "$status" -eq 1 ]
+  # Must NOT contain "Cancelled." — that's the caller's job
+  [[ "$output" != *"Cancelled."* ]]
+
+  teardown_gum_mock
+}
+
+@test "get_numbered_selection_index: returns 1 on test-mode invalid input" {
+  # Provide a value outside valid range to trigger the cancel branch
+  export HUG_TEST_NUMBERED_SELECTION="99"
+  run get_numbered_selection_index 3
+  [ "$status" -eq 1 ]
+}
+
+@test "print_interactive_branch_menu: returns 1 on gum cancellation" {
+  setup_gum_mock
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1
+  export HUG_QUIET=true
+
+  # Need enough branches to trigger gum path (>= MIN_ITEMS_FOR_GUM = 10)
+  local -a branches=() hashes=() subjects=() tracks=() dates=()
+  for i in $(seq 0 10); do
+    branches+=("branch-$i")
+    hashes+=("h$i")
+    subjects+=("Subject $i")
+    tracks+=("")
+    dates+=("2026-01-0$((i % 9 + 1))")
+  done
+
+  local selected=""
+  run print_interactive_branch_menu selected "branch-0" "10" hashes dates branches tracks subjects "Pick one..."
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"exit"* ]]
+
+  teardown_gum_mock
+}
+
+@test "select_branches: returns 1 on gum cancel (full pipeline)" {
+  setup_gum_mock
+  export HUG_TEST_GUM_INPUT_RETURN_CODE=1
+
+  declare -a selected_branches=()
+
+  compute_local_branch_details() {
+    local -n _current_branch_ref=$1 _max_len_ref=$2 _hashes_ref=$3 \
+            _branches_ref=$4 _tracks_ref=$5 _subjects_ref=$6
+    _current_branch_ref="main"
+    _max_len_ref="20"
+    _branches_ref=("main" "f1" "f2" "f3" "f4" "f5" "f6" "f7" "f8" "f9")
+    _hashes_ref=(h0 h1 h2 h3 h4 h5 h6 h7 h8 h9)
+    _tracks_ref=("[origin/main]" "" "" "" "" "" "" "" "" "")
+    _subjects_ref=("M" "1" "2" "3" "4" "5" "6" "7" "8" "9")
+    return 0
+  }
+
+  run select_branches selected_branches --include-current
+  [ "$status" -ne 0 ]
+
+  teardown_gum_mock
+}

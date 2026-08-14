@@ -103,11 +103,12 @@ teardown() {
   [ "$current" = "local-only" ]
 }
 
-@test "hug b <nonexistent-branch>: shows error when branch not found locally or remotely" {
+@test "hug b <nonexistent-branch>: shows error and hint when branch not found locally or remotely" {
   run hug b nonexistent-branch
   assert_failure
-  # Git's own error message should appear (can vary by git version)
-  assert_output --regexp "(did not match|invalid reference)"
+  # Hug owns the error — no longer delegates to git switch's generic "invalid reference"
+  assert_output --partial "not found locally or on any remote"
+  assert_output --partial "hug bc nonexistent-branch"
 }
 
 @test "hug b <remote-branch>: handles branch with same name as local but different content" {

@@ -12,9 +12,16 @@ from unittest.mock import patch
 import pytest
 
 from git.worktree import (
+    WorktreeDirtyInfo,
     WorktreeInfo,
     WorktreeList,
     _bash_escape,
+    _check_worktree_dirty_details,
+    filter_by_branch,
+    filter_by_existing,
+    filter_by_search,
+    filter_worktrees_by_criteria,
+    format_indicators,
     parse_worktree_list,
     to_worktree_list,
 )
@@ -252,27 +259,33 @@ class TestWorktreeList:
 class TestParseWorktreeList:
     """Tests for parse_worktree_list state machine parser."""
 
-    @patch("git.worktree._check_worktree_dirty")
+    @patch("git.worktree._check_worktree_dirty_details")
     def test_empty_input_returns_empty_list(self, mock_check_dirty):
         """Should return empty list for empty input."""
-        mock_check_dirty.return_value = False
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         result = parse_worktree_list("", "/main/path", include_main=False)
         assert result == []
 
-    @patch("git.worktree._check_worktree_dirty")
+    @patch("git.worktree._check_worktree_dirty_details")
     def test_single_worktree_main_only_excluded(self, mock_check_dirty):
         """Should exclude main worktree when include_main=False."""
-        mock_check_dirty.return_value = False
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main
 commit abc1234def5678"""
         result = parse_worktree_list(porcelain, "/home/user/repo", include_main=False)
         assert result == []
 
-    @patch("git.worktree._check_worktree_dirty")
+    @patch("git.worktree._check_worktree_dirty_details")
     def test_single_worktree_main_only_included(self, mock_check_dirty):
         """Should include main worktree when include_main=True."""
-        mock_check_dirty.return_value = False
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main
 commit abc1234def5678"""
@@ -283,10 +296,12 @@ commit abc1234def5678"""
         assert result[0].commit == "abc1234"
         assert result[0].is_locked is False
 
-    @patch("git.worktree._check_worktree_dirty")
+    @patch("git.worktree._check_worktree_dirty_details")
     def test_multiple_worktrees_excludes_main(self, mock_check_dirty):
         """Should return only additional worktrees when include_main=False."""
-        mock_check_dirty.return_value = False
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main
 commit abc1234def5678
@@ -303,10 +318,12 @@ commit 123456789abcd"""
         assert result[0].branch == "feature-1"
         assert result[1].branch == "bugfix-2"
 
-    @patch("git.worktree._check_worktree_dirty")
+    @patch("git.worktree._check_worktree_dirty_details")
     def test_multiple_worktrees_includes_main(self, mock_check_dirty):
         """Should return all worktrees when include_main=True."""
-        mock_check_dirty.return_value = False
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main
 commit abc1234def5678
@@ -319,20 +336,24 @@ commit def5678901234"""
         assert result[0].branch == "main"
         assert result[1].branch == "feature-1"
 
-    @patch("git.worktree._check_worktree_dirty")
+    @patch("git.worktree._check_worktree_dirty_details")
     def test_detached_head_no_branch_line(self, mock_check_dirty):
         """Should handle detached HEAD (no branch line)."""
-        mock_check_dirty.return_value = False
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 HEAD abc1234def5678"""
         result = parse_worktree_list(porcelain, "/home/user/repo", include_main=True)
         assert len(result) == 1
         assert result[0].branch == ""  # Empty for detached HEAD
 
-    @patch("git.worktree._check_worktree_dirty")
+    @patch("git.worktree._check_worktree_dirty_details")
     def test_locked_worktree_detected(self, mock_check_dirty):
         """Should detect locked worktrees."""
-        mock_check_dirty.return_value = False
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo.WT.feature-1
 branch refs/heads/feature-1
 commit def5678901234
@@ -341,20 +362,24 @@ locked"""
         assert len(result) == 1
         assert result[0].is_locked is True
 
-    @patch("git.worktree._check_worktree_dirty")
+    @patch("git.worktree._check_worktree_dirty_details")
     def test_commit_hash_shortened_to_7_chars(self, mock_check_dirty):
         """Should shorten commit hash to 7 characters."""
-        mock_check_dirty.return_value = False
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main
 commit abc1234def5678"""
         result = parse_worktree_list(porcelain, "/home/user/repo", include_main=True)
         assert result[0].commit == "abc1234"
 
-    @patch("git.worktree._check_worktree_dirty")
+    @patch("git.worktree._check_worktree_dirty_details")
     def test_worktree_with_spaces_in_path(self, mock_check_dirty):
         """Should handle worktrees with spaces in path."""
-        mock_check_dirty.return_value = False
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/my repo
 branch refs/heads/main
 commit abc1234def5678"""
@@ -362,20 +387,28 @@ commit abc1234def5678"""
         assert len(result) == 1
         assert result[0].path == "/home/user/my repo"
 
-    @patch("git.worktree._check_worktree_dirty")
+    @patch("git.worktree._check_worktree_dirty_details")
     def test_missing_commit_line(self, mock_check_dirty):
         """Should handle missing commit line gracefully."""
-        mock_check_dirty.return_value = False
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main"""
         result = parse_worktree_list(porcelain, "/home/user/repo", include_main=True)
         assert len(result) == 1
         assert result[0].commit == ""  # Empty when no commit line
 
-    @patch("git.worktree._check_worktree_dirty")
+    @patch("git.worktree._check_worktree_dirty_details")
     def test_dirty_status_checked(self, mock_check_dirty):
-        """Should call _check_worktree_dirty for each worktree."""
-        mock_check_dirty.return_value = True  # Worktree is dirty
+        """Should call _check_worktree_dirty_details for each worktree."""
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=True,
+            has_unstaged=True,
+            has_staged=False,
+            has_untracked=False,
+            details="unstaged changes",
+        )
         porcelain = """worktree /home/user/repo
 branch refs/heads/main
 commit abc1234def5678"""
@@ -579,3 +612,585 @@ commit abc1234def5678"""
             assert "Error: Not in a git repository" in captured.err
         finally:
             sys.argv = original_argv
+
+
+################################################################################
+# TestFilterByBranch
+################################################################################
+
+
+class TestFilterByBranch:
+    """Tests for filter_by_branch function."""
+
+    def test_empty_filter_returns_all(self):
+        """Should return all worktrees when no branch filters provided."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="feat", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_branch(worktrees, [])
+        assert len(result) == 2
+
+    def test_exact_match_single_filter(self):
+        """Should match exact branch name."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(
+                path="/p2", branch="feature", commit="def", is_dirty=False, is_locked=False
+            ),
+            WorktreeInfo(
+                path="/p3", branch="main-backup", commit="ghi", is_dirty=False, is_locked=False
+            ),
+        ]
+        result = filter_by_branch(worktrees, ["main"])
+        assert len(result) == 1
+        assert result[0].branch == "main"
+
+    def test_or_logic_multiple_filters(self):
+        """Should match ANY of the provided branch filters (OR logic)."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="feat1", commit="def", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p3", branch="feat2", commit="ghi", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_branch(worktrees, ["feat1", "feat2"])
+        assert len(result) == 2
+        assert {wt.branch for wt in result} == {"feat1", "feat2"}
+
+    def test_case_sensitive_matching(self):
+        """Should be case-sensitive (exact match)."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="Main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="main", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_branch(worktrees, ["main"])
+        assert len(result) == 1
+        assert result[0].branch == "main"
+
+    def test_no_match_returns_empty(self):
+        """Should return empty list when no branches match."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_branch(worktrees, ["nonexistent"])
+        assert result == []
+
+
+################################################################################
+# TestFilterBySearch
+################################################################################
+
+
+class TestFilterBySearch:
+    """Tests for filter_by_search function."""
+
+    def test_empty_search_returns_all(self):
+        """Should return all worktrees when search terms are empty."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="feat", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_search(worktrees, [])
+        assert len(result) == 2
+
+    def test_whitespace_only_terms_stripped(self):
+        """Should return all worktrees when search terms are only whitespace."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_search(worktrees, ["   "])
+        assert len(result) == 1
+
+    def test_substring_match_path(self):
+        """Should match substring in path."""
+        worktrees = [
+            WorktreeInfo(
+                path="/home/user/repo.WT.feature",
+                branch="feature",
+                commit="abc",
+                is_dirty=False,
+                is_locked=False,
+            ),
+            WorktreeInfo(
+                path="/tmp/other", branch="main", commit="def", is_dirty=False, is_locked=False
+            ),
+        ]
+        result = filter_by_search(worktrees, ["feature"])
+        assert len(result) == 1
+        assert "feature" in result[0].path
+
+    def test_substring_match_branch(self):
+        """Should match substring in branch."""
+        worktrees = [
+            WorktreeInfo(
+                path="/p1", branch="feature-auth", commit="abc", is_dirty=False, is_locked=False
+            ),
+            WorktreeInfo(path="/p2", branch="main", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_by_search(worktrees, ["auth"])
+        assert len(result) == 1
+        assert result[0].branch == "feature-auth"
+
+    def test_case_insensitive(self):
+        """Should be case-insensitive."""
+        worktrees = [
+            WorktreeInfo(
+                path="/P1/Feature", branch="Main", commit="abc", is_dirty=False, is_locked=False
+            ),
+        ]
+        result = filter_by_search(worktrees, ["feature"])
+        assert len(result) == 1
+
+    def test_or_logic_multiple_terms(self):
+        """Should match ANY term (OR logic)."""
+        worktrees = [
+            WorktreeInfo(
+                path="/home/path1", branch="main", commit="abc", is_dirty=False, is_locked=False
+            ),
+            WorktreeInfo(
+                path="/tmp/path2", branch="feat", commit="def", is_dirty=False, is_locked=False
+            ),
+        ]
+        result = filter_by_search(worktrees, ["home", "feat"])
+        assert len(result) == 2
+
+    def test_mixed_empty_and_valid_terms(self):
+        """Should strip empty/whitespace terms, keep valid ones."""
+        worktrees = [
+            WorktreeInfo(
+                path="/home/path1", branch="main", commit="abc", is_dirty=False, is_locked=False
+            ),
+            WorktreeInfo(
+                path="/tmp/path2", branch="feat", commit="def", is_dirty=False, is_locked=False
+            ),
+        ]
+        # Only "home" survives after stripping empties/whitespace
+        result = filter_by_search(worktrees, ["", "   ", "home"])
+        assert len(result) == 1
+        assert result[0].path == "/home/path1"
+
+
+################################################################################
+# TestFilterWorktreesByCriteria
+################################################################################
+
+
+class TestFilterWorktreesByCriteria:
+    """Tests for filter_worktrees_by_criteria (AND logic between stages)."""
+
+    def test_no_filters_returns_all(self):
+        """Should return all worktrees when no filters provided."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="feat", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_worktrees_by_criteria(worktrees, [], [])
+        assert len(result) == 2
+
+    def test_branch_and_search_and_logic(self):
+        """Both branch and search must match (AND logic)."""
+        worktrees = [
+            WorktreeInfo(
+                path="/home/repo.WT.main",
+                branch="main",
+                commit="abc",
+                is_dirty=False,
+                is_locked=False,
+            ),
+            WorktreeInfo(
+                path="/tmp/repo.WT.main",
+                branch="main",
+                commit="def",
+                is_dirty=False,
+                is_locked=False,
+            ),
+            WorktreeInfo(
+                path="/home/repo.WT.feat",
+                branch="feat",
+                commit="ghi",
+                is_dirty=False,
+                is_locked=False,
+            ),
+        ]
+        # Branch is "main" AND path contains "/home"
+        result = filter_worktrees_by_criteria(worktrees, ["main"], ["/home"])
+        assert len(result) == 1
+        assert result[0].path == "/home/repo.WT.main"
+
+    def test_branch_filter_only(self):
+        """Should filter by branch only when search is empty."""
+        worktrees = [
+            WorktreeInfo(path="/p1", branch="main", commit="abc", is_dirty=False, is_locked=False),
+            WorktreeInfo(path="/p2", branch="feat", commit="def", is_dirty=False, is_locked=False),
+        ]
+        result = filter_worktrees_by_criteria(worktrees, ["feat"], [])
+        assert len(result) == 1
+        assert result[0].branch == "feat"
+
+    def test_search_filter_only(self):
+        """Should filter by search only when branch filters are empty."""
+        worktrees = [
+            WorktreeInfo(
+                path="/home/path", branch="main", commit="abc", is_dirty=False, is_locked=False
+            ),
+            WorktreeInfo(
+                path="/tmp/path", branch="feat", commit="def", is_dirty=False, is_locked=False
+            ),
+        ]
+        result = filter_worktrees_by_criteria(worktrees, [], ["/home"])
+        assert len(result) == 1
+        assert result[0].path == "/home/path"
+
+
+################################################################################
+# TestFilterByExisting
+################################################################################
+
+
+class TestFilterByExisting:
+    """Tests for filter_by_existing function."""
+
+    def test_excludes_missing_directories(self, tmp_path):
+        """Should exclude worktrees whose directories don't exist."""
+        existing = tmp_path / "exists"
+        existing.mkdir()
+        missing = tmp_path / "gone"
+
+        worktrees = [
+            WorktreeInfo(str(existing), "main", "abc1234", False, False),
+            WorktreeInfo(str(missing), "feature", "def5678", False, False),
+        ]
+        result = filter_by_existing(worktrees)
+        assert len(result) == 1
+        assert result[0].branch == "main"
+
+    def test_all_existing_passes_through(self, tmp_path):
+        """Should return all worktrees when all directories exist."""
+        d1 = tmp_path / "wt1"
+        d1.mkdir()
+        d2 = tmp_path / "wt2"
+        d2.mkdir()
+
+        worktrees = [
+            WorktreeInfo(str(d1), "main", "abc1234", False, False),
+            WorktreeInfo(str(d2), "feature", "def5678", False, False),
+        ]
+        result = filter_by_existing(worktrees)
+        assert len(result) == 2
+
+    def test_all_missing_returns_empty(self, tmp_path):
+        """Should return empty list when all directories are gone."""
+        worktrees = [
+            WorktreeInfo(str(tmp_path / "gone1"), "main", "abc1234", False, False),
+            WorktreeInfo(str(tmp_path / "gone2"), "feature", "def5678", False, False),
+        ]
+        result = filter_by_existing(worktrees)
+        assert len(result) == 0
+
+    def test_empty_input_returns_empty(self):
+        """Should handle empty input list."""
+        result = filter_by_existing([])
+        assert result == []
+
+
+class TestFilterWorktreesByCriteriaWithExisting:
+    """Tests for filter_worktrees_by_criteria with existing_only parameter."""
+
+    def test_existing_only_filters_stale(self, tmp_path):
+        """Should exclude stale directories when existing_only=True."""
+        existing = tmp_path / "exists"
+        existing.mkdir()
+
+        worktrees = [
+            WorktreeInfo(str(existing), "main", "abc1234", False, False),
+            WorktreeInfo(str(tmp_path / "gone"), "feature", "def5678", False, False),
+        ]
+        result = filter_worktrees_by_criteria(worktrees, [], [], existing_only=True)
+        assert len(result) == 1
+        assert result[0].branch == "main"
+
+    def test_existing_only_false_includes_all(self, tmp_path):
+        """Should include stale directories when existing_only=False (default)."""
+        worktrees = [
+            WorktreeInfo(str(tmp_path / "gone1"), "main", "abc1234", False, False),
+            WorktreeInfo(str(tmp_path / "gone2"), "feature", "def5678", False, False),
+        ]
+        result = filter_worktrees_by_criteria(worktrees, [], [], existing_only=False)
+        assert len(result) == 2
+
+    def test_existing_only_combined_with_branch_filter(self, tmp_path):
+        """Should combine existing filter with branch filter (AND logic)."""
+        d1 = tmp_path / "main_wt"
+        d1.mkdir()
+
+        worktrees = [
+            WorktreeInfo(str(d1), "main", "abc1234", False, False),
+            WorktreeInfo(str(tmp_path / "gone_feat"), "feature", "def5678", False, False),
+        ]
+        # Filter: branch=main AND existing=True → only main survives
+        result = filter_worktrees_by_criteria(worktrees, ["main"], [], existing_only=True)
+        assert len(result) == 1
+        assert result[0].branch == "main"
+
+    def test_existing_only_stale_branch_excluded(self, tmp_path):
+        """Should return empty when the only matching branch is stale."""
+        worktrees = [
+            WorktreeInfo(str(tmp_path / "gone"), "feature", "def5678", False, False),
+        ]
+        result = filter_worktrees_by_criteria(worktrees, ["feature"], [], existing_only=True)
+        assert len(result) == 0
+
+
+################################################################################
+# TestWorktreeListToJson
+################################################################################
+
+
+class TestWorktreeListToJson:
+    """Tests for WorktreeList.to_json method."""
+
+    def test_json_output_basic(self):
+        """Should produce valid JSON with worktree data."""
+        result = WorktreeList(
+            paths=["/path/to/wt"],
+            branches=["feature"],
+            commits=["abc1234"],
+            dirty_status=["false"],
+            locked_status=["false"],
+        )
+        import json
+
+        json_str = result.to_json("/path/to/wt")
+        data = json.loads(json_str)
+        assert len(data["worktrees"]) == 1
+        assert data["current"] == "/path/to/wt"
+        assert data["count"] == 1
+
+    def test_json_current_detection(self):
+        """Should mark current worktree correctly."""
+        result = WorktreeList(
+            paths=["/path1", "/path2"],
+            branches=["main", "feat"],
+            commits=["abc", "def"],
+            dirty_status=["false", "true"],
+            locked_status=["false", "false"],
+        )
+        import json
+
+        json_str = result.to_json("/path2")
+        data = json.loads(json_str)
+        assert data["worktrees"][0]["current"] is False
+        assert data["worktrees"][1]["current"] is True
+
+    def test_json_boolean_fields(self):
+        """Should output boolean values for dirty/locked/current."""
+        result = WorktreeList(
+            paths=["/p1"],
+            branches=["main"],
+            commits=["abc"],
+            dirty_status=["true"],
+            locked_status=["true"],
+        )
+        import json
+
+        json_str = result.to_json("/other")
+        data = json.loads(json_str)
+        wt = data["worktrees"][0]
+        assert wt["dirty"] is True
+        assert wt["locked"] is True
+        assert wt["current"] is False
+
+    def test_json_empty_list(self):
+        """Should handle empty worktree list."""
+        result = WorktreeList(paths=[], branches=[], commits=[], dirty_status=[], locked_status=[])
+        import json
+
+        json_str = result.to_json("/current")
+        data = json.loads(json_str)
+        assert data["worktrees"] == []
+        assert data["current"] == "/current"
+        assert data["count"] == 0
+
+    def test_json_escapes_special_characters(self):
+        """Should properly escape special characters in JSON."""
+        result = WorktreeList(
+            paths=['/path/with"quotes'],
+            branches=["main"],
+            commits=["abc"],
+            dirty_status=["false"],
+            locked_status=["false"],
+        )
+        import json
+
+        json_str = result.to_json("/current")
+        data = json.loads(json_str)
+        assert data["worktrees"][0]["path"] == '/path/with"quotes'
+
+
+################################################################################
+# TestFormatIndicators
+################################################################################
+
+
+class TestFormatIndicators:
+    """Tests for format_indicators() -- 2-column single-char indicator string.
+
+    Column layout: + #
+      + = dirty (uncommitted changes)
+      # = locked
+      . = inactive
+
+    The * (current) and @ (detached) indicators are no longer columns;
+    they are embedded in the branch display by format_display_rows().
+    """
+
+    def test_all_inactive(self):
+        """Clean, unlocked -> .."""
+        assert format_indicators(False, False) == ".."
+
+    def test_dirty_only(self):
+        assert format_indicators(True, False) == "+."
+
+    def test_locked_only(self):
+        assert format_indicators(False, True) == ".#"
+
+    def test_dirty_and_locked(self):
+        assert format_indicators(True, True) == "+#"
+
+
+################################################################################
+# TestStalePathGuard
+################################################################################
+
+
+class TestStalePathGuard:
+    """Tests for the isdir guard in _check_worktree_dirty_details()."""
+
+    def test_stale_path_returns_clean_without_subprocess(self):
+        """Non-existent path returns is_dirty=False with zero subprocess calls."""
+        with patch("git.worktree.subprocess.run") as mock_run:
+            result = _check_worktree_dirty_details("/nonexistent/path/that/does/not/exist")
+        # Must NOT have called any git subprocess
+        mock_run.assert_not_called()
+        assert result.is_dirty is False
+        assert result.has_unstaged is False
+        assert result.has_staged is False
+        assert result.has_untracked is False
+        assert result.details == ""
+
+
+################################################################################
+# TestParseMissingWorktree - missing + dirty_details fields
+################################################################################
+
+
+class TestParseMissingWorktree:
+    """Tests for the missing and dirty_details fields on WorktreeInfo."""
+
+    @patch("git.worktree._check_worktree_dirty_details")
+    def test_parse_marks_missing_worktree(self, mock_check_dirty, tmp_path):
+        """WorktreeInfo.missing is True when the directory doesn't exist on disk."""
+        main = tmp_path / "repo"
+        main.mkdir()
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
+        porcelain = (
+            f"worktree {main}\n"
+            "branch refs/heads/main\n"
+            "HEAD abc1234def\n"
+            "\n"
+            f"worktree {tmp_path}/ghost\n"
+            "branch refs/heads/ghost\n"
+            "HEAD abc1234def\n"
+        )
+        wts = parse_worktree_list(porcelain, str(main), include_main=True)
+        by_branch = {w.branch: w for w in wts}
+        assert by_branch["main"].missing is False
+        assert by_branch["ghost"].missing is True
+        # Missing worktrees should have empty dirty_details (no subprocess ran)
+        assert by_branch["ghost"].dirty_details == ()
+
+    @patch("git.worktree._check_worktree_dirty_details")
+    def test_parse_populates_dirty_details(self, mock_check_dirty, tmp_path):
+        """dirty_details tuple reflects the categorized dirty state."""
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=True,
+            has_unstaged=True,
+            has_staged=False,
+            has_untracked=True,
+            details="unstaged changes, untracked files",
+        )
+        porcelain = f"worktree {tmp_path}/repo\nbranch refs/heads/main\nHEAD abc1234def\n"
+        wts = parse_worktree_list(porcelain, str(tmp_path / "repo"), include_main=True)
+        assert len(wts) == 1
+        assert wts[0].dirty_details == ("unstaged", "untracked")
+
+    @patch("git.worktree._check_worktree_dirty_details")
+    def test_clean_worktree_has_empty_dirty_details(self, mock_check_dirty, tmp_path):
+        """Clean worktrees have empty dirty_details tuple."""
+        mock_check_dirty.return_value = WorktreeDirtyInfo(
+            is_dirty=False, has_unstaged=False, has_staged=False, has_untracked=False, details=""
+        )
+        porcelain = f"worktree {tmp_path}/repo\nbranch refs/heads/main\nHEAD abc1234def\n"
+        wts = parse_worktree_list(porcelain, str(tmp_path / "repo"), include_main=True)
+        assert len(wts) == 1
+        assert wts[0].dirty_details == ()
+
+
+class TestToJsonIncludesMissingAndDirtyDetails:
+    """Tests for WorktreeList.to_json() including missing and dirty_details."""
+
+    def test_to_json_includes_missing_and_dirty_details(self, tmp_path):
+        """JSON output exposes 'missing' (bool) and 'dirty_details' (list)."""
+        import json
+
+        wt = WorktreeInfo(
+            path=str(tmp_path),
+            branch="b",
+            commit="abc1234",
+            is_dirty=True,
+            is_locked=False,
+            missing=False,
+            dirty_details=("untracked",),
+        )
+        result = to_worktree_list([wt])
+        data = json.loads(result.to_json(str(tmp_path)))
+        row = data["worktrees"][0]
+        assert row["missing"] is False
+        assert row["dirty_details"] == ["untracked"]
+
+    def test_to_json_missing_worktree(self, tmp_path):
+        """JSON output shows missing=True for stale worktrees."""
+        import json
+
+        wt = WorktreeInfo(
+            path=str(tmp_path / "gone"),
+            branch="ghost",
+            commit="def5678",
+            is_dirty=False,
+            is_locked=False,
+            missing=True,
+            dirty_details=(),
+        )
+        result = to_worktree_list([wt])
+        data = json.loads(result.to_json(str(tmp_path)))
+        row = data["worktrees"][0]
+        assert row["missing"] is True
+        assert row["dirty_details"] == []
+
+    def test_to_json_empty_dirty_details_defaults(self, tmp_path):
+        """Legacy WorktreeList (no missing_status/dirty_details_list) defaults gracefully."""
+        import json
+
+        result = WorktreeList(
+            paths=[str(tmp_path)],
+            branches=["main"],
+            commits=["abc1234"],
+            dirty_status=["false"],
+            locked_status=["false"],
+        )
+        data = json.loads(result.to_json(str(tmp_path)))
+        row = data["worktrees"][0]
+        assert row["missing"] is False
+        assert row["dirty_details"] == []

@@ -134,6 +134,10 @@ teardown() {
 }
 
 @test "hug bc --no-switch --point-to: auto-generates unique name if conflict" {
+  # Codex #4 (review of the #200 fix): this test had the SAME minute-rollover
+  # flake as the --point-to test below. Pin the clock so both back-to-back
+  # auto-named calls land in the same minute and the collision path fires.
+  export HUG_FAKE_CLOCK=946684800
   original_branch=$(git branch --show-current)
   
   # First create to cause potential conflict (but with seconds uniqueness)
@@ -331,29 +335,68 @@ teardown() {
   [ "$current" = "feature/my-new-feature" ]
 }
 
-@test "hug bc --point-to: auto-generated name is unique per minute" {
-  # Get current branch
+@test "hug bc --point-to: collision on same-minute name produces unique suffix" {
+  # Freeze wall clock so both calls land in the same UTC minute, deterministically.
+  # Without this, the test flakes near a minute boundary (elifarley/hug-scm#200):
+  # the second call would generate a fresh, non-colliding name and the
+  # "Generated name existed; using" assertion would fail.
+  # Epoch 946684800 = 2000-01-01 00:00:00 UTC → renders as 20000101-0000 under
+  # hug_clock_now's UTC contract, regardless of host TZ.
+  export HUG_FAKE_CLOCK=946684800
+
   original_branch=$(git branch --show-current)
-  
-  # Create first branch
+
+  # First call: creates v1.0.0.branch.20000101-0000
   run hug bc --point-to v1.0.0
   assert_success
   first_branch=$(git branch --show-current)
-  
-  # Switch back to original
+  # Codex #7: assert the exact UTC name, not just "collision happened".
+  assert_equal "$first_branch" "v1.0.0.branch.20000101-0000"
+
   git switch "$original_branch"
-  
-  # Try to create another branch from same tag in same minute
-  # This should succeed with a unique name (adds seconds)
+
+  # Second call in the same frozen minute → name collides → git-bc appends
+  # the seconds suffix (".00" for this epoch) and warns.
   run hug bc --point-to v1.0.0
   assert_success
   assert_output --partial "Generated name existed; using"
   second_branch=$(git branch --show-current)
-  
-  # Verify branches are different but both exist
+  assert_equal "$second_branch" "v1.0.0.branch.20000101-0000.00"
+
+  # Both branches exist and are distinct (the suffix made the second unique).
   [ "$first_branch" != "$second_branch" ]
   git show-ref --verify "refs/heads/$first_branch" >/dev/null
   git show-ref --verify "refs/heads/$second_branch" >/dev/null
+}
+
+@test "hug bc --point-to: year/month boundary — minute prefix stays consistent" {
+  # Regression for the boundary race closed by capture-once-format-many in
+  # git-bc. Before the fix, iso_datetime and the seconds suffix were captured
+  # by separate hug_clock_now calls; across a minute boundary the suffix could
+  # describe a different instant than the prefix. Pin a boundary-adjacent
+  # epoch and assert the auto-name's minute component is the Dec 31 minute.
+  # 1735689599 = 2024-12-31 23:59:59 UTC.
+  export HUG_FAKE_CLOCK=1735689599
+  run hug bc --point-to v1.0.0
+  assert_success
+  current=$(git branch --show-current)
+  # Minute prefix must be the Dec 31 23:59 minute, NOT Jan 1 00:00.
+  assert_equal "$current" "v1.0.0.branch.20241231-2359"
+}
+
+@test "hug bc --point-to: collision at boundary keeps seconds consistent with minute" {
+  # Same boundary instant, but force the collision path by pre-creating the
+  # minute-precision name. The seconds suffix (".59") must belong to the SAME
+  # instant as the minute prefix — i.e. the Dec 31 23:59:59 second, not a
+  # fresh "00" from a re-read clock that crossed into Jan 1.
+  export HUG_FAKE_CLOCK=1735689599
+  git branch "v1.0.0.branch.20241231-2359" HEAD
+  run hug bc --point-to v1.0.0
+  assert_success
+  assert_output --partial "Generated name existed; using"
+  current=$(git branch --show-current)
+  # Seconds suffix ".59" = the :59 of 23:59:59 — same instant as the prefix.
+  assert_equal "$current" "v1.0.0.branch.20241231-2359.59"
 }
 
 @test "hug bc: validates repo is a git repository" {

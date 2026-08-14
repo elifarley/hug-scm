@@ -38,6 +38,12 @@ output_json_status_summary() {
   untracked_count=$(git ls-files --others --exclude-standard | wc -l)
   ignored_count=$(git ls-files --others --exclude-standard --ignored | wc -l)
 
+  # Get conflicted (unmerged) file count.
+  # `| tr -d ' '` matches the count convention in git-s: macOS `wc -l` pads with
+  # leading whitespace, which would corrupt the JSON number (e.g. " 0" → invalid).
+  local conflicted_count
+  conflicted_count=$(git diff --diff-filter=U --name-only | wc -l | tr -d ' ')
+
   # Build branch info
   local branch_info
   if [ -n "$upstream" ]; then
@@ -73,6 +79,7 @@ output_json_status_summary() {
     "unstaged_files" "$unstaged_files" \
     "untracked_count" "$untracked_count" \
     "ignored_count" "$ignored_count" \
+    "conflicted_count" "$conflicted_count" \
     "staged_insertions" "$staged_insertions" \
     "staged_deletions" "$staged_deletions" \
     "unstaged_insertions" "$unstaged_insertions" \

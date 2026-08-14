@@ -3,55 +3,148 @@
 #
 # HUG-GIT-BACKUP: Git branch backup management
 #
-# This library provides functions for:
-# - Creating backup branches before destructive operations
-# - Listing and managing backup branches
-# - Extracting metadata from backup branch names
+# Backup branch name format (UTC via hug_clock_now; deterministic under
+# HUG_FAKE_CLOCK so retries within the same minute never collide):
 #
-# All functions are designed to work with the hug-common library
-# and follow consistent patterns for error handling and user feedback.
+#   hug-backups/YYYY-MM/DD-HHMM.<base>        — default
+#   hug-backups/YYYY-MM/DD-HHMMSS.<base>      — same-minute collision (widen to seconds)
+#   hug-backups/YYYY-MM/DD-HHMMSS-N.<base>    — same-second collision (N=1..100)
+#
+# The whole timestamp+disambiguator stays BEFORE the `.<base>` dot, so the
+# branch name is never ambiguous. `extract_original_name` and
+# `git-bdel-backup normalize_backup_key` both parse this widened form.
+#
+# Why hug_clock_now instead of raw `date`: raw `date` is local-time and
+# minute-precision only, which made create_backup_branch (a) untestable
+# and (b) collide on retry within the same minute (#205 sub-bug 2). See
+# `git-bc` for the same proven pattern.
+#
+# Functions:
+#   - resolve_backup_name:   PURE read-only preview of the name that would be
+#                            created right now. Used by --dry-run.
+#   - create_backup_branch:  Creates the branch (looping on collision).
+#   - get_backup_branches:   Lists existing backups.
+#   - extract_original_name: Reverse-maps a backup name to its original base.
+#   - format_backup_display_name: Strips the hug-backups/ prefix for display.
 ################################################################################
 # Branch Backup
 ################################################################################
 
-# 🛡️ (Internal Helper) Creates a standardized backup branch.
+# (Pure) Compute the backup name that *would* be created right now.
 #
-# It's used by other 'hug' commands before they perform a
-# destructive operation.
+# Read-only: probes `git show-ref` to skip over already-taken names on the
+# collision ladder. No git writes. This is what --dry-run calls to show the
+# "Backup created at …" line without side effects.
 #
-# @param $1  The commit or branch to back up (e.g., "HEAD", "my-feature")
-# @param $2  The base name for the new branch (e.g., "my-feature")
-#
-# @output  The name of the created backup branch (e.g., "hug-backups/2025-11/01-0815.my-feature")
-# @return  0 on success, 1 on failure
-#
-create_backup_branch() {
-  local source_ref="$1"
-  local base_name="$2"
+# @param $1  source_ref   unused for naming (kept for symmetry with
+#                         create_backup_branch); only validated non-empty.
+# @param $2  base_name    original branch name (e.g. "feature/v2.3")
+# @output  the resolved backup name on stdout
+# @return  0 on success, 1 on missing args
+resolve_backup_name() {
+  local source_ref="${1:-}"
+  local base_name="${2:-}"
 
-  # --- 1. Validation ---
-  if [ -z "$source_ref" ]; then
-    error "Error (internal): create_backup_branch requires a source reference." >&2
+  if [[ -z "$source_ref" ]]; then
+    error "Error (internal): resolve_backup_name requires a source reference." >&2
+    return 1
+  fi
+  if [[ -z "$base_name" ]]; then
+    error "Error (internal): resolve_backup_name requires a base name." >&2
     return 1
   fi
 
-  if [ -z "$base_name" ]; then
+  local ym dhm secs
+  # Capture the instant ONCE, then format components from it. Three separate
+  # hug_clock_now calls would each hit `date` independently and could straddle
+  # a year/month/day boundary, producing a chronologically impossible timestamp
+  # (e.g. ym="2024-12" paired with dhm="01-0000" from Jan 1). One epoch ⇒ one
+  # instant ⇒ the %Y-%m, %d-%H%M, and %S components are mutually consistent
+  # by construction. See hug_clock_format_epoch for the primitive.
+  local epoch
+  epoch=$(hug_clock_epoch)
+  ym=$(hug_clock_format_epoch "$epoch" "%Y-%m")
+  dhm=$(hug_clock_format_epoch "$epoch" "%d-%H%M")
+  # Base name on the ladder: DD-HHMM.<base>
+  local prefix="hug-backups/${ym}/${dhm}"
+  local candidate="${prefix}.${base_name}"
+
+  if git show-ref --verify --quiet "refs/heads/$candidate" 2>/dev/null; then
+    # Same-minute collision: widen to seconds. Reformat from the SAME captured
+    # epoch so the seconds belong to the same instant as the minute above.
+    secs=$(hug_clock_format_epoch "$epoch" "%S")
+    candidate="${prefix}${secs}.${base_name}"
+    local counter=1
+    while git show-ref --verify --quiet "refs/heads/$candidate" 2>/dev/null; do
+      if [[ $counter -gt 100 ]]; then
+        error "Error (internal): resolve_backup_name could not find a unique name after 100 attempts." >&2
+        return 1
+      fi
+      candidate="${prefix}${secs}-${counter}.${base_name}"
+      counter=$((counter + 1))
+    done
+  fi
+
+  printf '%s\n' "$candidate"
+}
+
+# 🛡️ (Internal Helper) Creates a standardized backup branch.
+#
+# Used by 'hug rb' (and future destructive commands) before they perform a
+# destructive operation. The name is resolved via resolve_backup_name and
+# then created for real; if the actual `git branch` call fails (TOCTOU:
+# another process took the name between resolve and create), the name is
+# re-resolved and retried, bounded at 100 attempts.
+#
+# @param $1  source_ref   commit/branch to back up (e.g. "HEAD")
+# @param $2  base_name    original branch name
+# @output  the created backup branch name on stdout
+# @return  0 on success, 1 on failure (args, or 100-attempt exhaustion)
+create_backup_branch() {
+  local source_ref="${1:-}"
+  local base_name="${2:-}"
+
+  if [[ -z "$source_ref" ]]; then
+    error "Error (internal): create_backup_branch requires a source reference." >&2
+    return 1
+  fi
+  if [[ -z "$base_name" ]]; then
     error "Error (internal): create_backup_branch requires a base name." >&2
     return 1
   fi
 
-  # --- 2. Generate Name ---
-  # Example: hug-backups/2025-11/01-0815.my-feature
-  local backup_name="hug-backups/$(date +'%Y-%m/%d-%H%M').$base_name"
+  local attempt=0
+  local backup_name
+  local branch_err=""
+  while true; do
+    if [[ $attempt -gt 100 ]]; then
+      error "Error (internal): create_backup_branch failed to find a unique name after 100 attempts." >&2
+      return 1
+    fi
 
-  # --- 3. Create Branch ---
-  if ! git branch "$backup_name" "$source_ref" >/dev/null 2>&1; then
-    error "Error (internal): Failed to create backup branch '$backup_name'." >&2
-    return 1
-  fi
+    # Re-resolve each iteration: the ladder depends only on current refs
+    # and the current clock instant, both of which can move between attempts.
+    backup_name=$(resolve_backup_name "$source_ref" "$base_name") || return 1
 
-  # --- 4. Output the name to stdout ---
-  echo "$backup_name"
+    # Capture stderr so we can distinguish a COLLISION (name now exists) from
+    # a real failure (invalid source ref, bad chars, lock, permissions, etc.).
+    # Without this, an invalid source_ref would loop 100x then report a
+    # misleading "uniqueness" error (eng-review Codex finding #7).
+    if branch_err=$(git branch "$backup_name" "$source_ref" 2>&1 >/dev/null); then
+      printf '%s\n' "$backup_name"
+      return 0
+    fi
+
+    # Retry ONLY if the failure is actually a collision (the candidate name
+    # now exists as a real ref — meaning a concurrent writer took it between
+    # resolve and create). Any other error surfaces immediately.
+    if ! git show-ref --verify --quiet "refs/heads/$backup_name" 2>/dev/null; then
+      error "Error (internal): create_backup_branch failed for '$backup_name': $branch_err" >&2
+      return 1
+    fi
+
+    attempt=$((attempt + 1))
+  done
 }
 
 # Gets list of backup branches
@@ -65,29 +158,33 @@ get_backup_branches() {
   git for-each-ref --format='%(refname:short)' 'refs/heads/hug-backups/**' 2>/dev/null || true
 }
 
-# Extracts original branch name from a backup branch name
+# Extracts original branch name from a backup branch name.
+# Accepts all three timestamp forms produced by create_backup_branch:
+#   hug-backups/YYYY-MM/DD-HHMM.<base>
+#   hug-backups/YYYY-MM/DD-HHMMSS.<base>
+#   hug-backups/YYYY-MM/DD-HHMMSS-N.<base>
 # Usage: original=$(extract_original_name "hug-backups/2024-11/02-1234.feature")
 # Parameters:
-#   $1 - Backup branch name (e.g., "hug-backups/2024-11/02-1234.feature")
+#   $1 - Backup branch name
 # Output:
-#   Original branch name (e.g., "feature") to stdout
+#   Original branch name on stdout (unchanged input if no match)
 # Note:
-#   Backup format: hug-backups/YYYY-MM/DD-HHMM.branch-name
-#   Returns empty string if name doesn't match expected format
+#   The regex strips the YYYY-MM/ prefix and the DD-HHMM[SS[-N]] timestamp,
+#   leaving everything after the dot — so base names containing dots or
+#   digits (e.g. "feature/v2.3") survive intact.
 extract_original_name() {
   local backup="$1"
-  # Remove the hug-backups/YYYY-MM/DD-HHMM. prefix
-  echo "$backup" | sed -E 's|^hug-backups/[0-9][0-9][0-9][0-9]-[0-9][0-9]/[0-9][0-9]-[0-9][0-9][0-9][0-9]\.||'
+  # Match: hug-backups/YYYY-MM/ then DD-HHMM with optional SS and optional -N,
+  # then a literal dot, then capture the rest (which may itself contain dots).
+  echo "$backup" | sed -E 's|^hug-backups/[0-9]{4}-[0-9]{2}/[0-9]{2}-[0-9]{4}([0-9]{2}(-[0-9]+)?)?\.||'
 }
 
 # Formats a backup branch name for display by removing the common prefix
 # Usage: display_name=$(format_backup_display_name "hug-backups/2024-11/02-1234.feature")
 # Parameters:
-#   $1 - Backup branch name (e.g., "hug-backups/2024-11/02-1234.feature")
+#   $1 - Backup branch name
 # Output:
 #   Display-friendly name (e.g., "2024-11/02-1234.feature") to stdout
-# Note:
-#   Removes only the "hug-backups/" prefix to avoid visual clutter
 format_backup_display_name() {
   local backup="$1"
   echo "$backup" | sed 's|^hug-backups/||'

@@ -1,37 +1,65 @@
 #!/usr/bin/env bash
+_hug_category='["head"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # git-h - HEAD command gateway
 # Part of the Hug tool suite
 
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+
 set -euo pipefail # Exit on error, undefined vars, pipe failures
+
+dispatch_h_subcommand() {
+  local subcommand="$1"
+  shift
+  local script_path="$CMD_BASE/git-h-$subcommand"
+
+  # EDUCATIONAL NOTE:
+  # Dispatch directly to the concrete script so `hug h <subcommand> --help`
+  # reaches the subcommand's own help text instead of letting Git intercept
+  # `--help` before the script can run.
+  if [[ -x "$script_path" ]]; then
+    exec "$script_path" "$@"
+  fi
+
+  exec git "h-$subcommand" "$@"
+}
 
 case "${1:-}" in
 files)
   shift
-  git h-files "$@"
+  dispatch_h_subcommand "files" "$@"
   ;;
 steps)
   shift
-  git h-steps "$@"
+  dispatch_h_subcommand "steps" "$@"
   ;;
 back)
   shift
-  git h-back "$@"
+  dispatch_h_subcommand "back" "$@"
   ;;
 undo)
   shift
-  git h-undo "$@"
+  dispatch_h_subcommand "undo" "$@"
   ;;
 rollback)
   shift
-  git h-rollback "$@"
+  dispatch_h_subcommand "rollback" "$@"
   ;;
 rewind)
   shift
-  git h-rewind "$@"
+  dispatch_h_subcommand "rewind" "$@"
+  ;;
+restore)
+  shift
+  dispatch_h_subcommand "restore" "$@"
   ;;
 squash)
   shift
-  git h-squash "$@"
+  dispatch_h_subcommand "squash" "$@"
   ;;
 *)
   printf 'Usage: hug h <command> [args]\n' >&2
@@ -42,6 +70,7 @@ squash)
   printf '  undo          Move HEAD back, unstage changes\n' >&2
   printf '  rollback      Rollback commit, preserve local work\n' >&2
   printf '  rewind        Rewind to clean state (destructive)\n' >&2
+  printf '  restore       Restore HEAD to a commit (recovery from mover)\n' >&2
   printf '  squash        Squash last N commits into 1 with original message\n' >&2
   printf '\nAll support -u/--upstream to target remote tip (e.g., h back -u)\n' >&2
   ;;

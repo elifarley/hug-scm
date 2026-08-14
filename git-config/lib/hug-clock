@@ -1,0 +1,124 @@
+# shellcheck shell=bash
+# Library: HUG clock — testable current-time helper
+#
+# Wraps date with an optional HUG_FAKE_CLOCK override (unix epoch seconds).
+# ALL output is UTC (date -u) so the override is reproducible across host TZs.
+# When unset/empty, behaves identically to real `date -u` — zero behavior
+# change for real users apart from UTC (documented in the spec). When set, all
+# derived times come from the same instant, making time-sensitive commands
+# (e.g. git-bc's auto-generated branch names) deterministic in tests.
+#
+# Portability: detects GNU vs BSD date and uses -d "@$epoch" / -r "$epoch".
+# macOS ships BSD date which lacks -d; the repo supports macOS per ADR-001.
+#
+# Why a library instead of inline in git-bc:
+#   - git-tc (date suggestions) and git-w-wip (timestamp stashes) also call
+#     `date` directly and are the same class of latent test flake. Centralizing
+#     the override now means adopting it there later is a one-line change.
+#   - Matches the existing single-concern lib pattern (hug-fs, hug-strings).
+#
+# Functions:
+#   - hug_clock_now:          formatted current UTC time, honoring HUG_FAKE_CLOCK.
+#   - hug_clock_epoch:        current UTC unix epoch, honoring HUG_FAKE_CLOCK.
+#   - hug_clock_format_epoch: format a CAPTURED epoch into any date string.
+
+################################################################################
+# Clock Functions
+################################################################################
+
+# Format a captured unix epoch per the platform's date.
+#
+# This is the capture-once-format-many primitive: callers capture a single
+# instant via `hug_clock_epoch`, then format as many components (year-month,
+# day-hour-minute, seconds, …) as they need from THAT epoch. Three separate
+# `hug_clock_now` calls would each hit `date` independently and could
+# straddle a year/month/day/hour/minute boundary, producing a
+# chronologically impossible timestamp (e.g. ym="2024-12" paired with
+# dhm="01-0000" from Jan 1). One epoch ⇒ one instant ⇒ consistent components.
+#
+# Portability: GNU date uses `-d "@$epoch"`, BSD date (macOS) uses `-r $epoch`.
+# The repo supports macOS per ADR-001.
+#
+# Args:
+#   $1 - epoch seconds (unix timestamp). Required.
+#   $2 - GNU/BSD date format string (e.g. "%Y-%m", "%d-%H%M", "%S"). Required.
+# Output:
+#   Formatted UTC time string to stdout.
+# Returns:
+#   0 on success, nonzero if both GNU and BSD formatters fail.
+hug_clock_format_epoch() {
+  local epoch="$1" fmt="$2"
+  # GNU date (Linux): -d "@<epoch>"
+  if date -u -d "@$epoch" +"$fmt" 2>/dev/null; then
+    return 0
+  fi
+  # BSD date (macOS): -r <seconds>
+  date -u -r "$epoch" +"$fmt" 2>/dev/null
+}
+
+# Print formatted current UTC time to stdout, honoring HUG_FAKE_CLOCK if set.
+# Usage: hug_clock_now "%Y%m%d-%H%M"
+# Parameters:
+#   $1 - GNU/BSD date format string (e.g. "%Y%m%d-%H%M", "%S"). Required.
+# Output:
+#   Formatted UTC time string to stdout.
+# Fail-safe:
+#   If HUG_FAKE_CLOCK is set but invalid (non-numeric, or numeric-but-unformattable),
+#   warns on stderr and falls back to the real UTC clock. Never crashes a calling
+#   command over a bad env value.
+# Returns:
+#   0 on success, 2 on missing/empty format argument.
+hug_clock_now() {
+  # Codex #6: validate arg count to avoid set -u aborts in callers.
+  if [[ $# -ne 1 || -z "${1:-}" ]]; then
+    printf 'hug_clock_now: usage: hug_clock_now "<format>"\n' >&2
+    return 2
+  fi
+  local fmt="$1"
+  local fake="${HUG_FAKE_CLOCK:-}"
+  if [[ -n "$fake" ]]; then
+    if [[ "$fake" =~ ^[0-9]+$ ]]; then
+      local rendered
+      # Codex #3: capture output; if formatting fails, warn-and-fall-back rather
+      # than propagating nonzero under set -euo pipefail.
+      if rendered=$(hug_clock_format_epoch "$fake" "$fmt") && [[ -n "$rendered" ]]; then
+        printf '%s\n' "$rendered"
+        return 0
+      fi
+      printf 'hug-clock: HUG_FAKE_CLOCK=%q could not be formatted; using real clock\n' \
+        "$fake" >&2
+    else
+      printf 'hug-clock: ignoring invalid HUG_FAKE_CLOCK=%q (expected unix epoch)\n' \
+        "$fake" >&2
+    fi
+  fi
+  date -u +"$fmt"
+}
+
+# Print current UTC unix epoch (seconds) to stdout, honoring HUG_FAKE_CLOCK.
+# Usage: hug_clock_epoch
+# Output:
+#   Integer epoch seconds to stdout.
+# Fail-safe:
+#   Same contract as hug_clock_now: if HUG_FAKE_CLOCK is numeric but date cannot
+#   format it (e.g. overflow), warns on stderr and falls back to the real clock.
+hug_clock_epoch() {
+  local fake="${HUG_FAKE_CLOCK:-}"
+  if [[ -n "$fake" ]]; then
+    if [[ "$fake" =~ ^[0-9]+$ ]]; then
+      # Validate by attempting to format — same gate as hug_clock_now.
+      # An unformattable epoch (overflow) is not a valid override.
+      local rendered
+      if rendered=$(hug_clock_format_epoch "$fake" "%Y%m%d-%H%M") && [[ -n "$rendered" ]]; then
+        printf '%s\n' "$fake"
+        return 0
+      fi
+      printf 'hug-clock: HUG_FAKE_CLOCK=%q could not be formatted; using real clock\n' \
+        "$fake" >&2
+    else
+      printf 'hug-clock: ignoring invalid HUG_FAKE_CLOCK=%q (expected unix epoch)\n' \
+        "$fake" >&2
+    fi
+  fi
+  date -u +%s
+}

@@ -1,0 +1,5 @@
+label       = "Remote sync"
+description = """
+Sync the local repository with remotes.
+Push branches, fetch updates, pull and rebase, set upstream tracking.
+"""

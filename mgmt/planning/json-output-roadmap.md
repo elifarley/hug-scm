@@ -67,7 +67,7 @@
 
 | Command | Purpose | Implementation | Test Coverage |
 |---------|---------|----------------|---------------|
-| `hug analyze co-changes` | Files that change together | Python (co_changes.py) | ✅ 6 tests |
+| `hug analyze co-changes <file>` / `--all` | File-focused or repo-wide co-change analysis | Python (co_changes.py) | ✅ tested |
 | `hug analyze expert` | Code ownership detection | Python (ownership.py) | ✅ 5 tests |
 | `hug stats file` | File-level statistics | Python (churn.py) | ✅ 5 tests |
 | `hug analyze activity` | Temporal commit patterns | Python (activity.py) | ✅ 6 tests |
@@ -97,7 +97,7 @@ All existing JSON implementations:
 ### ✅ Phase 4a Complete (Analysis Commands)
 
 The top-priority analysis commands now have full JSON support:
-1. ✅ `hug analyze co-changes --json`
+1. ✅ `hug analyze co-changes --all --json`
 2. ✅ `hug analyze expert --json`
 3. ✅ `hug stats file --json`
 4. ✅ `hug analyze activity --json`

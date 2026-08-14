@@ -185,3 +185,110 @@ rebase_finish_all() {
   echo ""
   echo "State: Successfully rebased."
 }
+
+################################################################################
+# hug rb orchestration helpers (plan → render → execute)
+#
+# These keep git-rb a thin orchestrator (per bin/CLAUDE.md): the pure
+# structuring (rb_build_plan) and the stderr-only rendering (rb_render_plan)
+# live here so git-rb's job is just "validate → plan → (dry-run|confirm) → execute".
+# rb_assert_no_rebase_in_progress gates entry so a paused rebase doesn't get a
+# fresh backup+rebase heaped on top of it (D7).
+################################################################################
+
+# Error and return non-zero if a rebase is already in progress.
+# Checks BOTH backends:
+#   - rebase-merge  (the merge backend; the default)
+#   - rebase-apply  (the apply/`am` backend)
+# Uses `git rev-parse --git-path` to resolve the path WORKTREE-AWARE
+# (eng-review Codex #1): in linked worktrees, `.git` is a FILE pointing at
+# the main repo's worktrees/<name>/ dir, so a literal `.git/rebase-merge`
+# check would silently miss an in-progress rebase and create the orphan
+# backup this guard exists to prevent. `--git-path` resolves correctly in
+# both plain repos and linked worktrees.
+rb_assert_no_rebase_in_progress() {
+  local sub
+  for sub in "rebase-merge" "rebase-apply"; do
+    local dir
+    dir=$(git rev-parse --git-path "$sub" 2>/dev/null || true)
+    if [[ -n "$dir" && -d "$dir" ]]; then
+      echo "Error: A rebase is already in progress (found $dir). Run 'hug rbc' to continue after resolving conflicts, or 'hug rba' to abort, then retry." >&2
+      return 1
+    fi
+  done
+  return 0
+}
+
+# (Pure) Build the rebase plan as VAR=value lines on stdout for the caller
+# to eval. Read-only: no git writes, no confirmations.
+#
+# @param $1  target_branch   the branch to rebase onto
+# @param $2  current_branch  the branch being rebased
+# @param $3  no_backup       "true" or "false" — whether --no-backup was passed
+# @output  VAR=value lines:
+#   RB_PLAN_TARGET, RB_PLAN_CURRENT, RB_PLAN_NUM_COMMITS, RB_PLAN_WILL_BACKUP,
+#   RB_PLAN_TIER (warn|danger), RB_PLAN_AUTH_FLAG (-y|-f),
+#   RB_PLAN_BACKUP_NAME (best-effort; may drift if clock/ref moves before create)
+rb_build_plan() {
+  local target_branch="$1"
+  local current_branch="$2"
+  local no_backup="${3:-false}"
+
+  local num_commits
+  num_commits=$(count_commits_in_range_or_zero "$target_branch" HEAD)
+
+  local will_backup="true"
+  local tier="warn"
+  local auth_flag="-y"
+  local backup_name=""
+  if [[ "$no_backup" == "true" ]]; then
+    will_backup="false"
+    tier="danger"
+    auth_flag="-f"
+  else
+    # Best-effort preview name. The post-create tip is authoritative; see
+    # resolve_backup_name for the TOCTOU story.
+    backup_name=$(resolve_backup_name HEAD "$current_branch")
+  fi
+
+  printf 'RB_PLAN_TARGET=%q\n' "$target_branch"
+  printf 'RB_PLAN_CURRENT=%q\n' "$current_branch"
+  printf 'RB_PLAN_NUM_COMMITS=%d\n' "$num_commits"
+  printf 'RB_PLAN_WILL_BACKUP=%s\n' "$will_backup"
+  printf 'RB_PLAN_TIER=%s\n' "$tier"
+  printf 'RB_PLAN_AUTH_FLAG=%s\n' "$auth_flag"
+  printf 'RB_PLAN_BACKUP_NAME=%q\n' "$backup_name"
+}
+
+# Render the plan to stderr (stdout stays clean for scriptability).
+# Honors HUG_QUIET=T (renders nothing — --quiet is for automation).
+rb_render_plan() {
+  [[ "${HUG_QUIET:-}" == "T" ]] && return 0
+
+  local num_commits="${RB_PLAN_NUM_COMMITS:-0}"
+  local commit_word="commit"
+  [[ "$num_commits" -gt 1 ]] && commit_word="commits"
+
+  printf 'Commits to be rebased:\n' >&2
+  print_commit_list_in_range "${RB_PLAN_TARGET}" HEAD >&2
+
+  local range_for_diff="${RB_PLAN_TARGET}..HEAD"
+  if git diff --quiet "$range_for_diff"; then
+    printf '\nPreview: no file changes in %d %s.\n' "$num_commits" "$commit_word" >&2
+  else
+    printf '\nPreview: changes in %d %s:\n' "$num_commits" "$commit_word" >&2
+    git diff --stat "$range_for_diff" >&2
+  fi
+
+  if [[ "${RB_PLAN_WILL_BACKUP}" == "true" ]]; then
+    printf '\nBackup: would create backup at %s\n' "${RB_PLAN_BACKUP_NAME}" >&2
+  else
+    printf '\nBackup: would SKIP backup (--no-backup)\n' >&2
+  fi
+
+  if [[ "${RB_PLAN_TIER}" == "warn" ]]; then
+    printf 'Authorization: warn-tier; a non-interactive run needs %s\n' "${RB_PLAN_AUTH_FLAG}" >&2
+  else
+    printf 'Authorization: danger-tier; needs %s (typed-word confirmation interactively)\n' "${RB_PLAN_AUTH_FLAG}" >&2
+  fi
+}

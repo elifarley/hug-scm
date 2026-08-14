@@ -21,7 +21,7 @@ teardown() {
 @test "hug bdel --help: shows help message" {
   run bash -c "hug bdel -h 2>&1"
   assert_success
-  assert_output --partial "hug bdel: Delete one or more local branches safely"
+  assert_output --partial "hug bdel: Delete one or more local or remote branches safely"
   assert_output --partial "USAGE:"
   assert_output --partial "EXAMPLES:"
 }

@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["utilities"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # Assume HUG_HOME is set (exported by hug or environment)
 # shellcheck source=git-config/lib/hug-common
 . "$HUG_HOME/git-config/lib/hug-common"
@@ -25,6 +30,7 @@ OPTIONS:
     --from-commit <commit> Use files changed in the specified commit
     --dry-run          Preview the untrack operation without applying changes
     -f, --force        Skip confirmation prompts (sets HUG_FORCE=true)
+    -y, --yes          Skip confirmation prompts (keeps safe semantics)
     --quiet            Suppress output (sets HUG_QUIET=T)
     -h, --help         Show this help
 

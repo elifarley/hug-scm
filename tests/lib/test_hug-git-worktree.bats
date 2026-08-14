@@ -93,6 +93,81 @@ teardown() {
   ! worktree_exists ""
 }
 
+@test "hug-git-worktree: worktree_gitdir resolves shared gitdir for linked worktree" {
+  local feature_wt gitdir
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+
+  gitdir=$(worktree_gitdir "$feature_wt")
+  # Linked worktrees share the main repo's .git as their common dir.
+  [[ "$gitdir" = "$TEST_REPO/.git" ]] || { echo "got: $gitdir" >&2; false; }
+}
+
+@test "hug-git-worktree: worktree_gitdir absolutizes relative .git for main worktree" {
+  local gitdir
+  # In the main worktree, --git-common-dir returns the literal ".git" —
+  # the helper must absolutize it so callers can pass it to --git-dir
+  # safely regardless of CWD.
+  gitdir=$(worktree_gitdir "$TEST_REPO")
+  [[ "$gitdir" = /* ]] || { echo "expected absolute gitdir, got: $gitdir" >&2; false; }
+  [[ "$gitdir" = "$TEST_REPO/.git" ]] || { echo "expected $TEST_REPO/.git, got: $gitdir" >&2; false; }
+}
+
+@test "hug-git-worktree: worktree_gitdir returns failure for non-existent path" {
+  # shellcheck disable=SC2314
+  ! worktree_gitdir "/nonexistent/path-that-does-not-exist"
+}
+
+@test "hug-git-worktree: worktree_gitdir returns failure for empty path" {
+  # shellcheck disable=SC2314
+  ! worktree_gitdir ""
+}
+
+@test "hug-git-worktree: worktree_exists finds submodule worktree when CWD is meta-repo" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  [[ -n "$meta_repo" && -n "$wt_path" ]] || skip "submodule fixture setup failed (likely modern git restricting local submodules)"
+
+  cd "$meta_repo"
+  worktree_exists "$wt_path"
+
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "hug-git-worktree: worktree_exists finds submodule worktree when CWD is submodule checkout" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  [[ -n "$meta_repo" && -n "$wt_path" ]] || skip "submodule fixture setup failed"
+
+  cd "$meta_repo/sub"
+  worktree_exists "$wt_path"
+
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "hug-git-worktree: worktree_exists finds submodule worktree when CWD is the worktree itself" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  [[ -n "$meta_repo" && -n "$wt_path" ]] || skip "submodule fixture setup failed"
+
+  cd "$wt_path"
+  worktree_exists "$wt_path"
+
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "hug-git-worktree: worktree_exists does NOT match substring paths" {
+  # Regression test: previously used grep -qF (substring), now uses grep -qxF (exact line).
+  # If we register /tmp/foo and ask about /tmp/fo, the answer must be NO.
+  local feature_wt feature_wt_prefix
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  # Truncate one char — this prefix must NOT be reported as existing
+  feature_wt_prefix="${feature_wt%?}"
+
+  worktree_exists "$feature_wt"
+  # shellcheck disable=SC2314
+  ! worktree_exists "$feature_wt_prefix"
+}
+
 @test "hug-git-worktree: get_worktree_count returns correct count" {
   # Should start with 0 (main repository only)
   assert_equal "$(get_worktree_count)" 0
@@ -214,14 +289,18 @@ teardown() {
   local generated_path
   generated_path=$(generate_worktree_path "feature-1")
 
-  assert_equal "$generated_path" "../$(basename "$TEST_REPO").WT.feature-1"
+  local parent_dir
+  parent_dir=$(dirname "$TEST_REPO")
+  assert_equal "$generated_path" "${parent_dir}/$(basename "$TEST_REPO").WT.feature-1"
 }
 
 @test "hug-git-worktree: generate_worktree_path sanitizes branch name" {
   local generated_path
   generated_path=$(generate_worktree_path "feature/auth.v2")
 
-  assert_equal "$generated_path" "../$(basename "$TEST_REPO").WT.feature-auth-v2"
+  local parent_dir
+  parent_dir=$(dirname "$TEST_REPO")
+  assert_equal "$generated_path" "${parent_dir}/$(basename "$TEST_REPO").WT.feature-auth-v2"
 }
 
 @test "hug-git-worktree: generate_unique_worktree_path returns unique path" {
@@ -250,97 +329,6 @@ teardown() {
   unique_path=$(generate_unique_worktree_path "feature-unique")
 
   assert_equal "$unique_path" "$default_path"
-}
-
-@test "hug-git-worktree: create_worktree succeeds with valid inputs" {
-  local new_path="${TEST_REPO}-wt-test-create"
-  run create_worktree "main" "$new_path" true false
-
-  assert_success
-  assert_worktree_exists "$new_path"
-  assert_worktree_branch "$new_path" "main"
-}
-
-@test "hug-git-worktree: create_worktree performs dry run correctly" {
-  local new_path="${TEST_REPO}-wt-test-dry-run"
-  run create_worktree "main" "$new_path" true true
-
-  assert_success
-  assert_output --partial "Would create worktree"
-  assert_worktree_not_exists "$new_path"
-}
-
-@test "hug-git-worktree: create_worktree fails with non-existent branch" {
-  local new_path="${TEST_REPO}-wt-test-fail"
-  run create_worktree "nonexistent-branch" "$new_path" true false
-
-  assert_failure
-  assert_output --partial "Branch 'nonexistent-branch' does not exist locally"
-  assert_worktree_not_exists "$new_path"
-}
-
-@test "hug-git-worktree: create_worktree fails with checked out branch" {
-  # Create worktree for feature-1
-  create_test_worktree "feature-1" "$TEST_REPO"
-
-  local new_path="${TEST_REPO}-wt-test-checked-out"
-  run create_worktree "feature-1" "$new_path" true false
-
-  assert_failure
-  assert_output --partial "Branch 'feature-1' is already checked out"
-  assert_worktree_not_exists "$new_path"
-}
-
-@test "hug-git-worktree: remove_worktree succeeds with valid inputs" {
-  local feature_wt
-  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
-
-  run remove_worktree "$feature_wt" true false
-
-  assert_success
-  assert_output --partial "Worktree removed"
-  assert_worktree_not_exists "$feature_wt"
-}
-
-@test "hug-git-worktree: remove_worktree performs dry run correctly" {
-  local feature_wt
-  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
-
-  run remove_worktree "$feature_wt" true true
-
-  assert_success
-  assert_output --partial "Would remove worktree"
-  assert_worktree_exists "$feature_wt"  # Should still exist
-}
-
-@test "hug-git-worktree: remove_worktree fails with current worktree" {
-  cd "$TEST_REPO"
-  run remove_worktree "$TEST_REPO" true false
-
-  assert_failure
-  assert_output --partial "Cannot remove current worktree"
-}
-
-@test "hug-git-worktree: remove_worktree fails with dirty worktree without force" {
-  local feature_wt
-  feature_wt=$(create_test_worktree_with_dirty_changes "feature-1" "$TEST_REPO")
-
-  run remove_worktree "$feature_wt" false false
-
-  assert_failure
-  assert_output --partial "Worktree has uncommitted changes"
-  assert_worktree_exists "$feature_wt"
-}
-
-@test "hug-git-worktree: remove_worktree removes dirty worktree with force" {
-  local feature_wt
-  feature_wt=$(create_test_worktree_with_dirty_changes "feature-1" "$TEST_REPO")
-
-  run remove_worktree "$feature_wt" true false
-
-  assert_success
-  assert_output --partial "Worktree removed"
-  assert_worktree_not_exists "$feature_wt"
 }
 
 @test "hug-git-worktree: switch_to_worktree succeeds with valid path" {
@@ -389,4 +377,487 @@ teardown() {
   cd /tmp
   # shellcheck disable=SC2314
   ! is_worktree_not_main
+}
+
+# Tests for branch_matches_any function
+
+@test "hug-git-worktree: branch_matches_any exact match returns success" {
+  run branch_matches_any "feature-1" "feat-1" "feature-1" "main"
+  assert_success
+}
+
+@test "hug-git-worktree: branch_matches_any no match returns failure" {
+  run branch_matches_any "feature-1" "feat-1" "main"
+  assert_failure
+}
+
+@test "hug-git-worktree: branch_matches_any empty filters matches everything" {
+  run branch_matches_any "feature-1"
+  assert_success
+}
+
+@test "hug-git-worktree: branch_matches_any case-sensitive matching" {
+  run branch_matches_any "feature-1" "Feature-1" "MAIN"
+  assert_failure
+}
+
+@test "hug-git-worktree: branch_matches_any single filter match" {
+  run branch_matches_any "main" "main"
+  assert_success
+}
+
+@test "hug-git-worktree: branch_matches_any single filter no match" {
+  run branch_matches_any "main" "develop"
+  assert_failure
+}
+
+# Tests for get_worktree_dirty_details function
+
+@test "hug-git-worktree: get_worktree_dirty_details returns clean for clean worktree" {
+  local feature_wt
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  
+  local is_dirty=""
+  local details=""
+  get_worktree_dirty_details "$feature_wt" is_dirty details
+  
+  [[ "$is_dirty" == "false" ]] || fail "Expected is_dirty=false, got '$is_dirty'"
+  [[ "$details" == "" ]] || fail "Expected empty details, got '$details'"
+}
+
+@test "hug-git-worktree: get_worktree_dirty_details detects unstaged changes" {
+  local feature_wt
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  
+  # Modify existing file (unstaged)
+  echo "dirty changes" >> "$feature_wt/README.md"
+  git -C "$feature_wt" add "README.md"
+  git -C "$feature_wt" reset HEAD "README.md" >/dev/null 2>&1
+  
+  local is_dirty=""
+  local details=""
+  get_worktree_dirty_details "$feature_wt" is_dirty details
+  
+  [[ "$is_dirty" == "true" ]] || fail "Expected is_dirty=true, got '$is_dirty'"
+  [[ "$details" == *"unstaged changes"* ]] || fail "Expected 'unstaged changes' in details, got '$details'"
+}
+
+@test "hug-git-worktree: get_worktree_dirty_details detects staged changes" {
+  local feature_wt
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  
+  # Stage a new file
+  echo "new file" > "$feature_wt/staged.txt"
+  git -C "$feature_wt" add "staged.txt"
+  
+  local is_dirty=""
+  local details=""
+  get_worktree_dirty_details "$feature_wt" is_dirty details
+  
+  [[ "$is_dirty" == "true" ]] || fail "Expected is_dirty=true, got '$is_dirty'"
+  [[ "$details" == *"staged changes"* ]] || fail "Expected 'staged changes' in details, got '$details'"
+}
+
+@test "hug-git-worktree: get_worktree_dirty_details detects untracked files" {
+  local feature_wt
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  
+  # Create untracked file
+  echo "untracked" > "$feature_wt/untracked.txt"
+  
+  local is_dirty=""
+  local details=""
+  get_worktree_dirty_details "$feature_wt" is_dirty details
+  
+  [[ "$is_dirty" == "true" ]] || fail "Expected is_dirty=true, got '$is_dirty'"
+  [[ "$details" == *"untracked files"* ]] || fail "Expected 'untracked files' in details, got '$details'"
+}
+
+@test "hug-git-worktree: get_worktree_dirty_details combines multiple change types" {
+  local feature_wt
+  feature_wt=$(create_test_worktree "feature-1" "$TEST_REPO")
+  
+  # Create untracked file
+  echo "untracked" > "$feature_wt/untracked.txt"
+  
+  # Modify and stage a file
+  echo "modified" >> "$feature_wt/README.md"
+  git -C "$feature_wt" add "README.md"
+  
+  local is_dirty=""
+  local details=""
+  get_worktree_dirty_details "$feature_wt" is_dirty details
+  
+  [[ "$is_dirty" == "true" ]] || fail "Expected is_dirty=true, got '$is_dirty'"
+  # Should contain at least two types (comma-separated)
+  local comma_count
+  comma_count=$(echo "$details" | tr -cd ',' | wc -c)
+  [[ $comma_count -ge 1 ]] || fail "Expected at least 2 change types in details, got '$details'"
+}
+
+@test "resolve_main_worktree_path: returns repo path for plain clone" {
+  # Reassign TEST_REPO so teardown() handles cleanup automatically.
+  # cleanup_test_repo() ignores its argument — it only cleans up $TEST_REPO —
+  # so we must not use a separate local $repo variable here. Any plain git repo
+  # (including the branches-flavoured one) works because we only verify that
+  # resolve_main_worktree_path returns the main worktree root, not branch state.
+  TEST_REPO=$(create_test_repo)
+  cd "$TEST_REPO"
+  # No re-source needed: hug-git-worktree is already loaded via
+  # `load '../../git-config/lib/hug-git-worktree'` at the top of this file.
+  run resolve_main_worktree_path
+  assert_success
+  # Use realpath because macOS /tmp resolves to /private/tmp
+  [[ "$(realpath "$output")" == "$(realpath "$TEST_REPO")" ]]
+}
+
+@test "resolve_main_worktree_path: returns submodule WT path from submodule CWD" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$meta_repo/sub"
+  run resolve_main_worktree_path
+  assert_success
+  # MUST be the submodule's working tree, NOT <meta>/.git/modules anywhere.
+  [[ "$(realpath "$output")" == "$(realpath "$meta_repo/sub")" ]]
+  # Hard regression guard: result must not contain /.git/
+  [[ "$output" != *"/.git/"* ]]
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "resolve_main_worktree_path: returns main WT path from linked worktree CWD" {
+  # Reassign TEST_REPO so teardown() cleans it automatically.
+  TEST_REPO=$(create_test_repo_with_history)
+  cd "$TEST_REPO"
+  # Use --no-switch to stay on main so hug wtc can check out feat-1 in the
+  # new worktree (a branch already checked-out in the current tree cannot be
+  # simultaneously checked out in a linked worktree).
+  hug bc feat-1 --no-switch
+  hug wtc feat-1 -y
+  cd "$TEST_REPO.WT.feat-1"
+  run resolve_main_worktree_path
+  assert_success
+  [[ "$(realpath "$output")" == "$(realpath "$TEST_REPO")" ]]
+  hug wtdel feat-1 -f -B 2>/dev/null || true
+}
+
+@test "get_superproject_path: returns empty for plain clone" {
+  TEST_REPO=$(create_test_repo)
+  cd "$TEST_REPO"
+  run get_superproject_path
+  assert_success
+  [[ -z "$output" ]]
+}
+
+@test "get_superproject_path: returns meta path from submodule CWD" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$meta_repo/sub"
+  run get_superproject_path
+  assert_success
+  [[ "$(realpath "$output")" == "$(realpath "$meta_repo")" ]]
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "is_worktree_not_main: returns false when CWD is submodule's own WT (post-fix behavior)" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$meta_repo/sub"
+  # In the submodule's main WT, we are NOT in a "linked" worktree.
+  # shellcheck disable=SC2314
+  ! is_worktree_not_main
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "is_worktree_not_main: linked submodule worktree is correctly identified as non-main (regression guard)" {
+  local meta_repo wt_path
+  { read -r meta_repo; read -r wt_path; } < <(create_test_submodule_worktree "sub-feat-x")
+  cd "$wt_path"   # This IS a linked worktree of the submodule
+  is_worktree_not_main
+  cleanup_test_submodule_worktree "$meta_repo" "$wt_path"
+}
+
+@test "path_is_inside_dot_git: rejects paths under .git/" {
+  # Positive cases (must return 0 = inside .git)
+  path_is_inside_dot_git "/tmp/repo/.git"
+  path_is_inside_dot_git "/tmp/repo/.git/modules/sub"
+  path_is_inside_dot_git "/tmp/repo/.git/modules.WT.x"
+  path_is_inside_dot_git "/tmp/meta/.git/modules/sub.WT.feat-x"
+
+  # Negative cases (must return 1 = NOT inside .git)
+  # shellcheck disable=SC2314
+  ! path_is_inside_dot_git "/tmp/repo.WT.feat-x"
+  # shellcheck disable=SC2314
+  ! path_is_inside_dot_git "/tmp/foo.git/x"
+  # shellcheck disable=SC2314
+  ! path_is_inside_dot_git "/tmp/some/normal/path"
+}
+
+# Eng phase finding #E8: extend coverage to symlinks and relative paths
+@test "path_is_inside_dot_git: catches symlinks resolving into .git/" {
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  mkdir -p "$tmpdir/repo/.git"
+  ln -s "$tmpdir/repo/.git" "$tmpdir/link-to-gitdir"
+  path_is_inside_dot_git "$tmpdir/link-to-gitdir/inner"
+  rm -rf "$tmpdir"
+}
+
+@test "path_is_inside_dot_git: handles relative paths" {
+  local tmpdir orig_pwd
+  orig_pwd=$(pwd)
+  tmpdir=$(mktemp -d)
+  mkdir -p "$tmpdir/repo/.git/modules"
+  cd "$tmpdir/repo"
+  path_is_inside_dot_git ".git/modules/sub"
+  path_is_inside_dot_git "./.git/foo"
+  cd "$orig_pwd"
+  rm -rf "$tmpdir"
+}
+
+# ---------------------------------------------------------------------------
+# SIGPIPE regression tests for worktree_exists under set -o pipefail
+# ---------------------------------------------------------------------------
+#
+# WHY these tests exist: under `set -o pipefail`, the old implementation
+# `git ... | grep -qxF "worktree $path"` races. grep -q exits at the first
+# match → closes the read end → git gets SIGPIPE on the next write → the
+# pipe exits 141. With a large registry the race is reliably triggered:
+# the fix (capture-then-filter) eliminates the pipe entirely.
+#
+# Padding scheme:
+#   1. Add the TARGET worktree FIRST — this maximises the race: when it is
+#      first in porcelain output, grep matches early, git still has 100
+#      records left to write, maximising SIGPIPE probability.
+#   2. Add 100 throwaway branches and their worktrees.
+#   3. `rm -rf` the throwaway DIRECTORIES on disk (but NOT the git metadata).
+#      git worktree list --porcelain does NOT auto-prune; orphaned
+#      registrations persist until an explicit prune, giving us 100 extra
+#      lines for git to write after grep has already exited.
+#   4. Wrap the call in `bash -c 'set -o pipefail; ...'` — BATS test bodies
+#      do not run under pipefail by default, so we must activate it manually
+#      to reproduce the production environment (git-wtdel sources hug-git-worktree
+#      after `set -euo pipefail`).
+
+@test "worktree_exists: returns 0 for valid worktree under pipefail + large registry" {
+  # PRE-FIX:  race causes SIGPIPE → pipe exits 141 → worktree_exists returns 1 (incorrect).
+  # POST-FIX: capture-then-filter → git runs to completion → returns 0 (correct).
+
+  # Step 1 — create the TARGET worktree (must be first in porcelain output
+  # so grep wins the race and git is SIGPIPE'd on the remaining records).
+  local wt_path
+  wt_path=$(create_test_worktree "pipefail-target" "$TEST_REPO")
+
+  # Step 2 — add 100 throwaway worktrees so git has ≥100 records to write
+  # after the target; then rm -rf the directories to create orphan entries.
+  local i pad_path
+  for i in $(seq 1 100); do
+    pad_path="${TEST_REPO}.WT.pad-${i}"
+    (
+      cd "$TEST_REPO"
+      git checkout -q -b "pad-${i}" 2>/dev/null || true
+      git worktree add "$pad_path" "pad-${i}" --force >/dev/null 2>&1 || true
+    )
+    rm -rf "$pad_path"  # orphan: registration stays, directory gone
+  done
+
+  # Step 3 — call worktree_exists under set -o pipefail in a fresh subshell.
+  # The exact source list mirrors what the test file loads at the top via
+  # `load`, but `bash -c` starts a fresh process so we must source manually.
+  run bash -c '
+    set -o pipefail
+    source "'"$HUG_HOME"'/git-config/lib/hug-common"
+    source "'"$HUG_HOME"'/git-config/lib/hug-output"
+    source "'"$HUG_HOME"'/git-config/lib/hug-git-worktree"
+    worktree_exists "'"$wt_path"'"
+  '
+  assert_success
+}
+
+@test "worktree_exists: returns 1 for path that doesn't exist on disk (worktree_gitdir short-circuit)" {
+  # This test exercises the EARLY -d GUARD in worktree_gitdir, NOT the
+  # capture-then-filter grep path.  worktree_gitdir bails at:
+  #   [[ -n "$path" && -d "$path" ]] || return 1
+  # so worktree_exists never reaches the porcelain capture or grep call.
+  #
+  # Documents that absent-on-disk paths return 1 without consulting the
+  # registry at all.  The grep-path false-negative case (dir exists on disk
+  # but is NOT registered) is covered by the "unregistered dir" test below.
+  local absent_path="/tmp/hug-nonexistent-worktree-$$"
+
+  run bash -c '
+    set -o pipefail
+    source "'"$HUG_HOME"'/git-config/lib/hug-common"
+    source "'"$HUG_HOME"'/git-config/lib/hug-output"
+    source "'"$HUG_HOME"'/git-config/lib/hug-git-worktree"
+    worktree_exists "'"$absent_path"'"
+  '
+  assert_failure
+}
+
+@test "worktree_exists: returns 1 for unregistered dir under repo under pipefail + large registry" {
+  # This test exercises the CAPTURE-THEN-FILTER grep path — the code path
+  # that the false-negative regression test is actually meant to protect.
+  #
+  # A non-existent path short-circuits in worktree_gitdir's -d guard and
+  # never reaches the grep call (see the "short-circuit" test above).  We
+  # need a directory that EXISTS ON DISK but is NOT registered as a worktree.
+  # A plain subdirectory inside the meta-repo satisfies both requirements:
+  #   - `git -C "$path" rev-parse --git-common-dir` walks up and resolves the
+  #     meta-repo's gitdir → worktree_gitdir succeeds
+  #   - The path is absent from `git worktree list --porcelain` → grep fails
+  #     → worktree_exists returns 1
+  #
+  # The 100-orphan padding is kept so that SIGPIPE is reliably triggered on
+  # any hypothetical regression to a pipe-based implementation.
+
+  # Step 1 — add 100 throwaway worktrees so git has ≥100 records to write.
+  local i pad_path
+  for i in $(seq 1 100); do
+    pad_path="${TEST_REPO}.WT.pad-${i}"
+    (
+      cd "$TEST_REPO"
+      git checkout -q -b "pad-${i}" 2>/dev/null || true
+      git worktree add "$pad_path" "pad-${i}" --force >/dev/null 2>&1 || true
+    )
+    rm -rf "$pad_path"  # orphan registration
+  done
+
+  # Step 2 — create a real directory INSIDE the meta-repo that was never
+  # registered with `git worktree add`.  It must be inside the repo so that
+  # `git -C <path> rev-parse --git-common-dir` can walk up to the meta-repo
+  # and return a valid gitdir.
+  local unregistered_path="${TEST_REPO}/never-registered-as-worktree"
+  mkdir -p "$unregistered_path"
+
+  # Step 3 — call worktree_exists under pipefail.  The path exists on disk
+  # (passes -d), worktree_gitdir resolves to the meta-repo's gitdir, the
+  # porcelain is captured, grep finds no matching line → returns 1.
+  run bash -c '
+    set -o pipefail
+    source "'"$HUG_HOME"'/git-config/lib/hug-common"
+    source "'"$HUG_HOME"'/git-config/lib/hug-output"
+    source "'"$HUG_HOME"'/git-config/lib/hug-git-worktree"
+    worktree_exists "'"$unregistered_path"'"
+  '
+  assert_failure
+}
+
+# ── main_worktree_of_gitdir / prune_worktree_entry (P0 safety lib) ──────────
+
+@test "main_worktree_of_gitdir: resolves main from a linked worktree's gitdir" {
+  local wt gitdir
+  wt=$(create_test_worktree "libtest-mwd" "$TEST_REPO")
+  gitdir=$(worktree_gitdir "$wt")
+  run main_worktree_of_gitdir "$gitdir"
+  assert_success
+  assert_output "$(readlink -f "$TEST_REPO" 2>/dev/null || echo "$TEST_REPO")"
+}
+
+@test "main_worktree_of_gitdir: fails on empty arg" {
+  # shellcheck disable=SC2314
+  ! main_worktree_of_gitdir ""
+}
+
+@test "prune_worktree_entry: removes only the targeted stale entry" {
+  local wt1 wt2 gitdir
+  wt1=$(create_test_worktree "prune-test-1" "$TEST_REPO")
+  wt2=$(create_test_worktree "prune-test-2" "$TEST_REPO")
+  gitdir=$(worktree_gitdir "$TEST_REPO")
+  rm -rf "$wt1" "$wt2"
+
+  run prune_worktree_entry "$gitdir" "$wt1"
+  assert_success
+
+  run git worktree list --porcelain
+  refute_output --partial "worktree $wt1"
+  assert_output --partial "worktree $wt2"
+}
+
+@test "prune_worktree_entry: returns 1 when no entry matches" {
+  local gitdir
+  gitdir=$(worktree_gitdir "$TEST_REPO")
+  # shellcheck disable=SC2314
+  ! prune_worktree_entry "$gitdir" "/nonexistent/wt"
+}
+
+@test "prune_worktree_entry: handles locked stale entries (no unlock needed)" {
+  local wt gitdir
+  wt=$(create_test_worktree "prune-test-locked" "$TEST_REPO")
+  git worktree lock "$wt"
+  gitdir=$(worktree_gitdir "$TEST_REPO")
+  rm -rf "$wt"
+  run prune_worktree_entry "$gitdir" "$wt"
+  assert_success
+  run git worktree list --porcelain
+  refute_output --partial "worktree $wt"
+}
+
+# ── create_worktree_for_branch (extracted from git-wtc; cmv --wt will reuse) ──
+
+@test "create_worktree_for_branch: creates a new branch + worktree and prints resolved path + created_branch" {
+  local repo
+  repo=$(create_test_repo)
+  pushd "$repo" >/dev/null
+
+  # Capture stdout (the 3 tab-separated fields) and stderr separately.
+  # Human chatter (info/success/tip) goes to stderr; stdout is data-only.
+  # `--force` alone authorizes branch creation + skips prompts; no env var needed.
+  local out rc path created dry
+  out=$(create_worktree_for_branch feature-x --base HEAD --force 2>/dev/null) && rc=$? || rc=$?
+  [[ $rc -eq 0 ]] || fail "create_worktree_for_branch exited $rc; stdout=[$out]"
+  IFS=$'\t' read -r path created dry <<< "$out"
+  assert_equal "$created" "true"
+  assert_equal "$dry" "false"
+
+  # Branch exists and worktree is valid
+  git rev-parse --verify refs/heads/feature-x >/dev/null
+  assert_worktree_exists "$path"
+  assert_worktree_branch "$path" "feature-x"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "create_worktree_for_branch: reuses existing branch without --base" {
+  local repo
+  repo=$(create_test_repo_with_branches)
+  pushd "$repo" >/dev/null
+
+  git checkout -q -b existing-wt
+  git checkout -q main
+
+  local out rc path created dry
+  out=$(create_worktree_for_branch existing-wt --force 2>/dev/null) && rc=$? || rc=$?
+  [[ $rc -eq 0 ]] || fail "create_worktree_for_branch exited $rc; stdout=[$out]"
+  IFS=$'\t' read -r path created dry <<< "$out"
+  assert_equal "$created" "false"
+  assert_equal "$dry" "false"
+  assert_worktree_exists "$path"
+  assert_worktree_branch "$path" "existing-wt"
+
+  popd >/dev/null
+  rm -rf "$repo"
+}
+
+@test "create_worktree_for_branch: --dry-run prints plan, third field true, creates nothing" {
+  local repo
+  repo=$(create_test_repo)
+  pushd "$repo" >/dev/null
+
+  # Dry-run captures the plan on stderr and the 3 TSV fields on stdout.
+  # No prompts, no branch creation, no worktree dir.
+  local out rc path created dry
+  out=$(create_worktree_for_branch dryrun-x --base HEAD --dry-run 2>/dev/null) && rc=$? || rc=$?
+  [[ $rc -eq 0 ]] || fail "create_worktree_for_branch --dry-run exited $rc; stdout=[$out]"
+  IFS=$'\t' read -r path created dry <<< "$out"
+  assert_equal "$created" "true"
+  assert_equal "$dry" "true"
+
+  # Nothing was created: no branch, no worktree directory at the planned path.
+  run git rev-parse --verify refs/heads/dryrun-x
+  assert_failure
+  [[ ! -d "$path" ]]
+
+  popd >/dev/null
+  rm -rf "$repo"
 }

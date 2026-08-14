@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["worktrees"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # Assume HUG_HOME is set (exported by hug or environment)
 # shellcheck source=git-config/lib/hug-common
 . "$HUG_HOME/git-config/lib/hug-common"
@@ -6,44 +11,77 @@
 . "$HUG_HOME/git-config/lib/hug-git-kit"
 # shellcheck source=git-config/lib/hug-git-worktree
 . "$HUG_HOME/git-config/lib/hug-git-worktree"
+# shellcheck source=git-config/lib/hug-json
+. "$HUG_HOME/git-config/lib/hug-json"
 set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
   cat << 'EOF'
-hug wtdel: Remove worktree safely
+hug wtdel: Remove worktree(s) safely
 
 USAGE:
-    hug wtdel [path] [options]
+    hug wtdel [branch...] [options]
+    hug wtdel -p <path> [options]
     hug wtdel -h|--help
 
 ARGUMENTS:
-    [path]          Path to worktree to remove (optional, shows interactive menu)
+    [branch...]       One or more branch names (exact match, removes worktree for each)
 
 OPTIONS:
-    -f, --force     Skip confirmation prompts and remove even with uncommitted changes
-    --dry-run       Show what would be removed without actually removing
-    -h, --help      Show this help
+    -p, --path PATH   Target worktree by filesystem path (repeatable for batch)
+    -f, --force       Skip confirmation prompts and remove even with uncommitted changes
+    -y, --yes         Auto-confirm routine prompts. NOT sufficient for worktree removal (a dangerous operation) — use -f. See SAFETY.
+    --dry-run         Show what would be removed without actually removing
+    -B, --with-branch Also delete the associated branch after removing the worktree
+    -q, --quiet       Suppress summary and informational output (errors and JSON remain)
+    --json            Emit results as JSON on stdout (zero non-JSON bytes; pipe-safe)
+    -h, --help        Show this help
 
 DESCRIPTION:
-    Removes a Git worktree safely. If no path is provided, shows an interactive
-    menu of all available worktrees for selection.
+    Removes Git worktree(s) safely. If no branch or path is provided, shows
+    an interactive menu of all available worktrees for selection.
 
     Safety features:
     - Prevents removal of current worktree
     - Warns about uncommitted changes (unless --force is used)
     - Requires confirmation before deletion (unless --force is used)
     - Automatically cleans up Git worktree metadata
+    - Automatically detects and prunes stale worktree metadata
+      (directories removed externally without 'git worktree remove')
+    - Supports batch removal of multiple worktrees
+    - Validates ALL targets before removing ANY (atomic batch semantics)
 
 EXAMPLES:
-    hug wtdel                                 # Interactive selection of worktree to remove
-    hug wtdel ../worktrees-repo/feature-auth  # Remove specific worktree
-    hug wtdel ../feature-auth --dry-run       # Preview removal without doing it
-    hug wtdel ../feature-auth -f              # Force remove without confirmation
+    hug wtdel                                 # Interactive selection
+    hug wtdel feature-auth                    # Remove worktree for branch "feature-auth"
+    hug wtdel feat-1 feat-2 feat-3            # Batch remove by branch names
+    hug wtdel feature-auth --dry-run          # Preview removal
+    hug wtdel feature-auth -f                 # Force remove without confirmation
+    hug wtdel -p /path/to/worktree            # Remove by path
+    hug wtdel -p /path/a -p /path/b --force  # Batch remove by paths
+    hug wtdel feature-auth -B              # Remove worktree and delete branch
+    hug wtdel feat-1 feat-2 -B --force     # Batch remove worktrees + branches
+    hug wtdel feat-1 --json                # Machine-readable result on stdout
+    hug wtdel feat-1 -q                    # Suppress summary, keep errors
+
+SAFETY:
+    -y answers yes to routine confirmations (safe and recoverable tiers).
+    It never authorizes dangerous operations — those require -f/--force.
+    -f also overrides blocked states (dirty worktree, etc).
+
+    Batch removals are validated first: if ANY target is invalid or
+    blocked, NOTHING is removed (fix and re-run). One confirmation
+    covers the whole validated batch.
+
+EXIT CODES:
+    0  success            2  usage error (bad flags/arguments)
+    1  operational error  3  blocked by safety (use -f where appropriate)
 
 SEE ALSO:
     hug wt      List and switch between worktrees
     hug wtc     Create worktree for existing branch
+    hug wtl     List worktrees with optional branch filtering
 
 FURTHER READING:
     See 'git worktree remove --help' for underlying implementation details.
@@ -51,153 +89,36 @@ EOF
 }
 
 show_interactive_removal_menu() {
-  declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
-
-  # NOTE: Using get_worktrees (excludes main) because main worktree cannot be deleted
-  if ! get_worktrees worktree_paths branches commits status_dirty locked_status; then
-    info "No worktrees found."
-    return 1
-  fi
-
-  local current_worktree
-  current_worktree=$(get_current_worktree_path)
-
-  # Build menu items with context
-  declare -a menu_items=()
-  declare -a worktree_selection_paths=()
-
-  for i in "${!worktree_paths[@]}"; do
-    local path="${worktree_paths[$i]}"
-    local branch="${branches[$i]}"
-    local commit="${commits[$i]}"
-    local dirty="${status_dirty[$i]}"
-    local locked="${locked_status[$i]}"
-
-    # Skip current worktree (can't remove it)
-    if [[ "$path" == "$current_worktree" ]]; then
-      continue
-    fi
-
-    # Build status indicators
-    local status_indicators=""
-    [[ "$dirty" == "true" ]] && status_indicators="${YELLOW}[DIRTY]${NC} "
-    [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
-
-    # Format path relative to home if possible
-    local display_path
-    display_path="${path/#$HOME/\~}"
-
-    # Create menu item
-    local menu_item="${status_indicators}${branch} (${commit}) → ${display_path}"
-    menu_items+=("$menu_item")
-    worktree_selection_paths+=("$path")
-  done
-
-  if [[ ${#menu_items[@]} -eq 0 ]]; then
-    info "No removable worktrees found (only current worktree exists)."
-    return 1
-  fi
-
-  # Interactive selection
-  # Note: All prompts go to stderr so they're visible when stdout is captured
-  echo >&2
-  printf "${BLUE}Select worktree to remove:${NC}\n" >&2
-
-  local selected_index=-1
-
-  if [[ ${#menu_items[@]} -lt 10 ]]; then
-    # Show numbered menu for fewer worktrees
-    echo >&2
-    for i in "${!menu_items[@]}"; do
-      printf "  %2d) %s\n" $((i + 1)) "${menu_items[i]}" >&2
-    done
-    echo >&2
-
-    # Get user selection
-    while true; do
-      printf "${BLUE}Enter number (1-%d) or press Enter to cancel:${NC} " ${#menu_items[@]} >&2
-      read -r selection
-
-      if [[ -z "$selection" ]]; then
-        info "Worktree removal cancelled"
-        return 1
-      fi
-
-      if [[ "$selection" =~ ^[0-9]+$ ]] && [[ $selection -ge 1 ]] && [[ $selection -le ${#menu_items[@]} ]]; then
-        selected_index=$((selection - 1))
-        break
-      else
-        printf "${RED}Invalid selection. Please enter a number between 1 and %d.${NC}\n" ${#menu_items[@]} >&2
-      fi
-    done
-  else
-    # Use gum filter for many worktrees
-    if gum_available; then
-      local selection_output
-      if selection_output=$(printf '%s\n' "${menu_items[@]}" | gum filter --header="Select worktree to remove (ESC to cancel)"); then
-        # Find the index of the selected item
-        for i in "${!menu_items[@]}"; do
-          if [[ "${menu_items[i]}" == "$selection_output" ]]; then
-            selected_index=$i
-            break
-          fi
-        done
-      else
-        info "Worktree removal cancelled"
-        return 1
-      fi
+  local selected_path=""
+  # WHY: Capture rc with || because inside `if ! cmd; then`, $? is always 0.
+  local select_rc=0
+  select_worktree selected_path --exclude-current --prompt "Select worktree to remove" || select_rc=$?
+  if [[ $select_rc -ne 0 ]]; then
+    if [[ $select_rc -eq 2 ]]; then
+      info "No removable worktrees found."
     else
-      # Fallback to numbered menu even for many items if gum is not available
-      echo >&2
-      for i in "${!menu_items[@]}"; do
-        printf "  %2d) %s\n" $((i + 1)) "${menu_items[i]}" >&2
-      done
-      echo >&2
-
-      while true; do
-        printf "${BLUE}Enter number (1-%d) or press Enter to cancel:${NC} " ${#menu_items[@]} >&2
-        read -r selection
-
-        if [[ -z "$selection" ]]; then
-          info "Worktree removal cancelled"
-          return 1
-        fi
-
-        if [[ "$selection" =~ ^[0-9]+$ ]] && [[ $selection -ge 1 ]] && [[ $selection -le ${#menu_items[@]} ]]; then
-          selected_index=$((selection - 1))
-          break
-        else
-          printf "${RED}Invalid selection. Please enter a number between 1 and %d.${NC}\n" ${#menu_items[@]} >&2
-        fi
-      done
+      # rc=1: user cancelled (pressed Enter / gave empty input)
+      info "Worktree removal cancelled"
     fi
-  fi
-
-  # Return selected path
-  if [[ $selected_index -ge 0 ]]; then
-    selected_path="${worktree_selection_paths[selected_index]}"
-    printf '%s' "$selected_path"
-    return 0
-  else
-    error "Invalid worktree selection"
     return 1
   fi
+  printf '%s' "$selected_path"
+  return 0
 }
 
 check_git_repo
 
 # Parse arguments using getopt
-set +e # Temporarily disable exit on error to capture getopt failure
-PARSED=$(getopt --options hf --longoptions help,force,dry-run --name "hug wtdel" -- "$@" 2>&1)
+set +e
+PARSED=$(getopt --options hp:fByq --longoptions help,force,dry-run,path:,with-branch,yes,quiet,json --name "hug wtdel" -- "$@" 2>&1)
 getopt_status=$?
-set -e # Re-enable exit on error
+set -e
 
 if [ $getopt_status -ne 0 ]; then
-  # getopt failed - print the error message if available
   if [ -n "$PARSED" ]; then
     echo "$PARSED" >&2
   fi
-  exit 1
+  exit 2
 fi
 
 eval set -- "$PARSED"
@@ -205,7 +126,10 @@ eval set -- "$PARSED"
 # Initialize variables
 force=false
 dry_run=false
-worktree_path=""
+with_branch=false
+json_output=false
+declare -a branch_names=()
+declare -a explicit_paths=()
 
 # Process options
 while true; do
@@ -218,9 +142,29 @@ while true; do
     force=true
     shift
     ;;
+  -y | --yes)
+    export HUG_YES=true
+    shift
+    ;;
+  -q | --quiet)
+    export HUG_QUIET=T
+    shift
+    ;;
+  --json)
+    json_output=true
+    shift
+    ;;
   --dry-run)
     dry_run=true
     shift
+    ;;
+  -B | --with-branch)
+    with_branch=true
+    shift
+    ;;
+  -p | --path)
+    explicit_paths+=("$2")
+    shift 2
     ;;
   --)
     shift
@@ -237,51 +181,429 @@ if [[ ${HUG_FORCE:-} == true ]]; then
   force=true
 fi
 
-# Parse arguments
-if [[ $# -gt 1 ]]; then
-  error "Too many arguments. Usage: hug wtdel [path]. See 'hug wtdel --help'."
+# Parse positional arguments as branch names
+while [[ $# -gt 0 ]]; do
+  branch_names+=("$1")
+  shift
+done
+
+# Validate: can't mix branch names and explicit paths
+if [[ ${#branch_names[@]} -gt 0 && ${#explicit_paths[@]} -gt 0 ]]; then
+  error_usage "Branch names and --path are mutually exclusive. Use one or the other."
 fi
 
-if [[ $# -eq 1 ]]; then
-  worktree_path="$1"
+# Populate worktree_paths from explicit --path args (relative -> absolute)
+declare -a worktree_paths=()
+if [[ ${#explicit_paths[@]} -gt 0 ]]; then
+  worktree_paths=("${explicit_paths[@]}")
 fi
 
-# Convert relative path to absolute if provided
-if [[ -n "$worktree_path" && ! "$worktree_path" = /* ]]; then
-  worktree_path="$(realpath "$(pwd)/$worktree_path" 2> /dev/null || echo "$(pwd)/$worktree_path")"
-fi
+# Convert relative paths to absolute
+for i in "${!worktree_paths[@]}"; do
+  if [[ ! "${worktree_paths[$i]}" = /* ]]; then
+    worktree_paths[$i]="$(realpath "$(pwd)/${worktree_paths[$i]}" 2> /dev/null || echo "$(pwd)/${worktree_paths[$i]}")"
+  fi
+done
 
-# If no path provided, show interactive menu
-if [[ -z "$worktree_path" ]]; then
+# If no paths provided (and no branch names), show interactive menu
+if [[ ${#worktree_paths[@]} -eq 0 && ${#branch_names[@]} -eq 0 ]]; then
   worktree_path=$(show_interactive_removal_menu)
   if [[ -z "$worktree_path" ]]; then
     exit 0 # User cancelled
   fi
+  worktree_paths=("$worktree_path")
 fi
 
-# Show what we're about to do
-echo
-printf "${BLUE}Worktree Removal Summary:${NC}\n"
-printf "  Path: %s\n" "${worktree_path/#$HOME/\~}"
-if "$dry_run"; then
-  printf "  Mode: %s\n" "DRY RUN"
-else
-  printf "  Mode: %s\n" "REMOVE"
-fi
+# Delete the branch associated with a removed worktree.
+# Args: $1=branch_name, $2=force (true/false), $3=dry_run (true/false)
+# Returns: 0=deleted, 1=skipped/declined, 2=no branch to delete
+delete_associated_branch() {
+  local branch="$1"
+  local _force="$2"
+  local _dry_run="$3"
+  local gitdir="${4:-}"
 
-# Check for uncommitted changes and show warning
-if git -C "$worktree_path" diff --quiet 2> /dev/null &&
-  git -C "$worktree_path" diff --cached --quiet 2> /dev/null &&
-  [[ -z "$(git -C "$worktree_path" ls-files --others --exclude-standard 2> /dev/null)" ]]; then
-  printf "  Status: %s\n" "Clean"
-else
-  if $force; then
-    printf "  Status: %s\n" "${RED}Dirty (will be lost)${NC}"
+  # Skip detached HEAD or non-existent branches
+  if [[ -z "$branch" || "$branch" == "HEAD" || "$branch" == "(detached)" || "$branch" == "unknown" ]]; then
+    return 2
+  fi
+
+  # WHY $gitdir: For submodule worktrees, the branch lives in the SUBMODULE's
+  # gitdir, NOT CWD's gitdir (which is typically the meta-repo). Without
+  # anchoring, the unanchored variant would either (a) silently no-op when
+  # the meta-repo has no branch by that name, or (b) DELETE THE WRONG BRANCH
+  # when the meta-repo coincidentally has one with the same name.
+  # Caller always passes _wt_gitdir from the worktree being removed.
+  local _git_anchor=()
+  [[ -n "$gitdir" ]] && _git_anchor=(--git-dir="$gitdir")
+
+  # Check if branch still exists after worktree removal
+  if ! git "${_git_anchor[@]}" rev-parse --verify "refs/heads/$branch" > /dev/null 2>&1; then
+    return 2
+  fi
+
+  # Determine merge status against default branch
+  local default_branch
+  # SIGPIPE-safe: capture-then-filter -- head -1 would SIGPIPE git branch under pipefail
+  default_branch=$(git "${_git_anchor[@]}" symbolic-ref refs/remotes/origin/HEAD 2> /dev/null | sed 's@^refs/remotes/origin/@@' ||
+    {
+      _bl=$(git "${_git_anchor[@]}" branch --list main master 2> /dev/null) || _bl=""
+      head -1 <<< "$_bl" | tr -d ' *'
+    })
+
+  local is_merged=false
+  # SIGPIPE-safe: capture-then-filter -- grep -q would SIGPIPE git branch under pipefail
+  local merged_branches
+  merged_branches=$(git "${_git_anchor[@]}" branch --merged "${default_branch:-main}" 2> /dev/null) || merged_branches=""
+  if grep -q "^[ *]*${branch}$" <<< "$merged_branches"; then
+    is_merged=true
+  fi
+
+  # Dry run: just report what would happen
+  if $_dry_run; then
+    if $is_merged; then
+      info "Would delete branch '$branch' (merged)"
+    else
+      info "Would delete branch '$branch' (has unmerged commits)"
+    fi
+    return 0
+  fi
+
+  # WHY: prompt_confirm_warn calls exit 1 on decline, NOT return 1.
+  # Subshell contains the exit so we can track outcome in branches_kept.
+  if $is_merged; then
+    if ! $_force; then
+      if ! (prompt_confirm_warn "Also delete branch '$branch'?"); then
+        return 1
+      fi
+    fi
   else
-    printf "  Status: %s\n" "${YELLOW}Dirty (will be preserved)${NC}"
+    if ! $_force; then
+      local unmerged_count
+      unmerged_count=$(git "${_git_anchor[@]}" rev-list --count "${default_branch:-main}..$branch" 2> /dev/null || echo "?")
+      warning "Branch '$branch' has $unmerged_count unmerged commit(s)"
+      if ! (prompt_confirm_warn "Delete unmerged branch '$branch' anyway?"); then
+        return 1
+      fi
+    fi
+  fi
+
+  # Use -D for unmerged, -d for merged
+  local delete_flag="-d"
+  if ! $is_merged; then
+    delete_flag="-D"
+  fi
+
+  if git "${_git_anchor[@]}" branch "$delete_flag" "$branch" > /dev/null 2>&1; then
+    success "Branch '$branch' deleted"
+    return 0
+  else
+    # Force-delete as fallback (branch might not be fully merged even if we thought it was)
+    if git "${_git_anchor[@]}" branch -D "$branch" > /dev/null 2>&1; then
+      success "Branch '$branch' deleted (force)"
+      return 0
+    fi
+    warning "Failed to delete branch '$branch'"
+    return 1
+  fi
+}
+
+# Emits the plan/result as JSON on stdout. Zero non-JSON bytes on stdout.
+# WHY: Defined as a function (not inlined) so we can call it at multiple
+# exit points (pre-flight abort, dry-run exit, normal completion) without
+# duplicating the JSON assembly logic.
+emit_wtdel_json_if_requested() {
+  $json_output || return 0
+  local items="" obj
+  for j in "${!plan_specs[@]}"; do
+    local outcome="${plan_states[$j]}"
+    for r in "${removed[@]}"; do [[ "$r" == "${plan_paths[$j]}" ]] && outcome="removed"; done
+    for r in "${pruned[@]}"; do [[ "$r" == "${plan_paths[$j]}" ]] && outcome="pruned"; done
+    for r in "${failed[@]}"; do [[ "$r" == "${plan_paths[$j]}" ]] && outcome="failed"; done
+    local _path_json="null"
+    [[ -n "${plan_paths[$j]}" ]] && _path_json="\"$(json_escape "${plan_paths[$j]}")\""
+    obj=$(to_json_nested \
+      spec "\"$(json_escape "${plan_specs[$j]}")\"" \
+      path "$_path_json" \
+      branch "\"$(json_escape "${plan_branches[$j]}")\"" \
+      state "\"$(json_escape "$outcome")\"" \
+      detail "\"$(json_escape "${plan_details[$j]}")\"")
+    [[ -n "$items" ]] && items+=", "
+    items+="$obj"
+  done
+  to_json_nested \
+    dry_run "$dry_run" \
+    targets "[$items]" \
+    counts "$(to_json_nested removed "${#removed[@]}" pruned "${#pruned[@]}" failed "${#failed[@]}")"
+  printf '\n'
+}
+
+# Process worktree removal: 4-phase pipeline (design S4)
+# Phase 1: RESOLVE -- every spec becomes a classified plan record
+# Phase 2: PRE-FLIGHT -- report plan, abort if anything blocked/invalid
+# Phase 3: CONFIRM -- one danger confirmation for the whole batch
+# Phase 4: EXECUTE -- perform the removals
+
+removed=()
+pruned=()
+failed=()
+branches_deleted=()
+branches_kept=()
+
+# Phase 1: RESOLVE -- classify every target
+plan_specs=()
+plan_paths=()
+plan_branches=()
+plan_gitdirs=()
+plan_states=()
+plan_details=()
+
+# add_plan_record: turns one user-specified target into a classified plan record.
+# Branch-mode: spec=branch name, path=resolved path (empty if no worktree).
+# Path-mode:   spec=path, path=same path.
+# WHY a function: keeps the plan-array population DRY between branch and path modes.
+add_plan_record() {
+  local _ap_spec="$1" _ap_path="$2"
+  local _ap_state="" _ap_gitdir="" _ap_branch="" _ap_detail=""
+  if [[ -z "$_ap_path" ]]; then
+    _ap_state="no-worktree"
+    _ap_detail="no worktree found for branch '$_ap_spec'"
+  else
+    wtdel_classify_target "$_ap_path" "$force" _ap_state _ap_gitdir _ap_branch _ap_detail
+  fi
+  plan_specs+=("$_ap_spec")
+  plan_paths+=("$_ap_path")
+  plan_branches+=("${_ap_branch:-$_ap_spec}")
+  plan_gitdirs+=("$_ap_gitdir")
+  plan_states+=("$_ap_state")
+  plan_details+=("$_ap_detail")
+}
+
+if [[ ${#branch_names[@]} -gt 0 ]]; then
+  for bn in "${branch_names[@]}"; do
+    wt_path=$(get_worktree_path_by_branch "$bn" || true)
+    add_plan_record "$bn" "$wt_path"
+  done
+else
+  for worktree_path in "${worktree_paths[@]}"; do
+    [[ -z "$worktree_path" ]] && continue
+    add_plan_record "$worktree_path" "$worktree_path"
+  done
+fi
+
+# Deduplicate plan records by resolved path (empty paths dedup by spec).
+# WHY: `hug wtdel feat feat --force` resolves both to the same path; without
+# dedup, the first EXECUTE removes the worktree and the second fails with
+# "not a working tree" — a partial removal that violates the all-or-nothing
+# batch contract introduced in this PR.
+if [[ ${#plan_specs[@]} -gt 1 ]]; then
+  declare -A _dedup_seen=()
+  declare -a _dedup_keep=()
+  for i in "${!plan_specs[@]}"; do
+    # Use resolved path as key; fall back to spec for no-worktree entries.
+    _key="${plan_paths[$i]:-${plan_specs[$i]}}"
+    if [[ -n "${_dedup_seen[$_key]+x}" ]]; then
+      warning "Duplicate target '${plan_specs[$i]}' — skipping (same as '${_dedup_seen[$_key]}')"
+    else
+      _dedup_seen["$_key"]="${plan_specs[$i]}"
+      _dedup_keep+=("$i")
+    fi
+  done
+  # Compact the plan arrays to only kept indices
+  if [[ ${#_dedup_keep[@]} -lt ${#plan_specs[@]} ]]; then
+    _new_specs=()
+    _new_paths=()
+    _new_branches=()
+    _new_gitdirs=()
+    _new_states=()
+    _new_details=()
+    for i in "${_dedup_keep[@]}"; do
+      _new_specs+=("${plan_specs[$i]}")
+      _new_paths+=("${plan_paths[$i]}")
+      _new_branches+=("${plan_branches[$i]}")
+      _new_gitdirs+=("${plan_gitdirs[$i]}")
+      _new_states+=("${plan_states[$i]}")
+      _new_details+=("${plan_details[$i]}")
+    done
+    plan_specs=("${_new_specs[@]}")
+    plan_paths=("${_new_paths[@]}")
+    plan_branches=("${_new_branches[@]}")
+    plan_gitdirs=("${_new_gitdirs[@]}")
+    plan_states=("${_new_states[@]}")
+    plan_details=("${_new_details[@]}")
+  fi
+  unset _dedup_seen _dedup_keep _key _new_specs _new_paths _new_branches _new_gitdirs _new_states _new_details
+fi
+
+# Phase 2: PRE-FLIGHT -- report the plan, abort if blocked/invalid
+n_total=${#plan_specs[@]}
+n_blocked=0
+n_invalid=0
+
+for i in "${!plan_specs[@]}"; do
+  state="${plan_states[$i]}"
+  hdr="Worktree Removal Plan"
+  [[ $n_total -gt 1 ]] && hdr+=" [$((i + 1))/$n_total]"
+  $dry_run && hdr+=" (DRY RUN)"
+
+  [[ -z "${HUG_QUIET:-}" ]] && {
+    echo >&2
+    printf "${BLUE}%s:${NC}\n" "$hdr" >&2
+    printf "  Target: %s\n" "${plan_specs[$i]}" >&2
+    [[ -n "${plan_paths[$i]}" ]] && printf "  Path:   %s\n" "${plan_paths[$i]/#$HOME/\~}" >&2
+  }
+
+  case "$state" in
+  ok)
+    if [[ -n "${plan_details[$i]}" ]]; then
+      status_line="${RED}Will remove -- ${plan_details[$i]} (will be permanently lost)${NC}"
+    else
+      status_line="${GREEN}Will remove${NC}"
+    fi
+    ;;
+  stale) status_line="${YELLOW}Will prune stale entry (directory already gone)${NC}" ;;
+  dirty)
+    status_line="${RED}BLOCKED: uncommitted changes (${plan_details[$i]}) -- commit/stash or use -f${NC}"
+    n_blocked=$((n_blocked + 1))
+    ;;
+  main)
+    status_line="${RED}BLOCKED: ${plan_details[$i]} -- only linked worktrees can be removed${NC}"
+    n_blocked=$((n_blocked + 1))
+    ;;
+  current)
+    status_line="${RED}BLOCKED: ${plan_details[$i]} -- cd elsewhere first${NC}"
+    n_blocked=$((n_blocked + 1))
+    ;;
+  locked)
+    status_line="${RED}BLOCKED: ${plan_details[$i]}${NC}"
+    n_blocked=$((n_blocked + 1))
+    ;;
+  *)
+    status_line="${RED}INVALID: ${plan_details[$i]}${NC}"
+    n_invalid=$((n_invalid + 1))
+    ;;
+  esac
+  [[ -z "${HUG_QUIET:-}" ]] && printf "  Status: %b\n" "$status_line" >&2
+done
+
+if [[ $((n_blocked + n_invalid)) -gt 0 ]]; then
+  emit_wtdel_json_if_requested
+  echo >&2
+  if [[ $n_blocked -gt 0 ]]; then
+    error_blocked "Nothing removed: $n_blocked blocked, $n_invalid invalid of $n_total target(s). Fix the items above and re-run."
+  fi
+  error "Nothing removed: $n_invalid invalid of $n_total target(s). Fix the items above and re-run."
+fi
+
+# Phase 3: CONFIRM + DRY-RUN exit
+if $dry_run; then
+  emit_wtdel_json_if_requested
+  info "No changes made (dry run)."
+  exit 0
+fi
+
+if ! $force; then
+  echo >&2
+  n_prune=0
+  for s in "${plan_states[@]}"; do [[ "$s" == stale ]] && n_prune=$((n_prune + 1)); done
+  warning "About to remove $((n_total - n_prune)) worktree(s)$( ((n_prune > 0)) && printf ' and prune %d stale entr(y/ies)' "$n_prune")."
+  # Guard: test mocks replace prompt_confirm_danger with a plain `return 1`,
+  # and the real function exits itself on decline -- the guard keeps the
+  # cancellation message in BOTH paths.
+  if ! prompt_confirm_danger "remove"; then
+    info "Worktree removal cancelled"
+    exit 1
   fi
 fi
-echo
 
-# Perform the removal
-remove_worktree "$worktree_path" "$force" "$dry_run"
+# Phase 4: EXECUTE
+for i in "${!plan_specs[@]}"; do
+  worktree_path="${plan_paths[$i]}"
+  wt_branch="${plan_branches[$i]}"
+  _wt_gitdir="${plan_gitdirs[$i]}"
+
+  case "${plan_states[$i]}" in
+  stale)
+    if prune_worktree_entry "$_wt_gitdir" "$worktree_path"; then
+      success "Pruned stale worktree entry: ${worktree_path/#$HOME/\~}"
+      pruned+=("$worktree_path")
+    else
+      warning "Could not locate the stale entry to prune: $worktree_path. Try: hug wtprune"
+      failed+=("$worktree_path")
+    fi
+    continue
+    ;;
+  ok) ;;
+  esac
+
+  git_wt_args=("$worktree_path")
+  $force && git_wt_args+=("--force")
+
+  git_err=""
+  removal_success=false
+  if git_err=$(git --git-dir="$_wt_gitdir" worktree remove "${git_wt_args[@]}" 2>&1); then
+    removal_success=true
+  elif $force && grep -qi 'submodule' <<< "$git_err"; then
+    # git demands --force TWICE for worktrees containing submodules. The user
+    # already opted into force; honor it through git's own escape hatch --
+    # still git-managed, never a blind filesystem delete.
+    if git_err=$(git --git-dir="$_wt_gitdir" worktree remove "$worktree_path" --force --force 2>&1); then
+      removal_success=true
+    fi
+  fi
+
+  if ! $removal_success; then
+    # WHY no rm -rf fallback: git refuses removals for PRINCIPLED reasons
+    # (main worktree, locks, submodules). The old fallback treated every
+    # refusal as cruft and bulldozed it -- that is how `-p <main> -f`
+    # deleted an entire repository. Hug never deletes files git refused
+    # to remove; we surface git's reason and stop.
+    warning "git worktree remove failed: $git_err"
+    info "Hug does not delete files git refused to remove. Resolve the cause above, or clean stale metadata with: hug wtprune"
+    failed+=("$worktree_path")
+    continue
+  fi
+
+  # Post-success: metadata is gone. If a husk directory somehow remains
+  # (rare; e.g. files created mid-removal), leave it -- deleting user files
+  # is not hug's call. Tell the user instead.
+  [[ -d "$worktree_path" ]] && warning "Worktree metadata removed but directory still exists: ${worktree_path/#$HOME/\~} (left untouched)"
+
+  success "Worktree removed for branch '$wt_branch'"
+  info "Deleted directory: ${worktree_path/#$HOME/\~}"
+
+  if $with_branch; then
+    branch_rc=0
+    delete_associated_branch "$wt_branch" "$force" "$dry_run" "$_wt_gitdir" || branch_rc=$?
+    if [[ $branch_rc -eq 0 ]]; then
+      branches_deleted+=("$wt_branch")
+    elif [[ $branch_rc -eq 1 ]]; then
+      branches_kept+=("$wt_branch")
+    fi
+  else
+    tip "Branch '$wt_branch' still exists. To delete it: hug bdel $wt_branch"
+  fi
+
+  removed+=("$worktree_path")
+done
+
+# Summary + exit
+if [[ $n_total -gt 1 && -z "${HUG_QUIET:-}" ]]; then
+  echo >&2
+  printf "${BLUE}Batch Removal Summary:${NC}\n" >&2
+  printf "  Removed: %d\n" "$((${#removed[@]} + ${#pruned[@]}))" >&2
+  [[ ${#pruned[@]} -gt 0 ]] && printf "  (of which pruned stale entries: %d)\n" "${#pruned[@]}" >&2
+  [[ ${#failed[@]} -gt 0 ]] && printf "  Failed: %d\n" "${#failed[@]}" >&2
+  if $with_branch; then
+    [[ ${#branches_deleted[@]} -gt 0 ]] && printf "  Branches deleted: %d\n" "${#branches_deleted[@]}" >&2
+    [[ ${#branches_kept[@]} -gt 0 ]] && printf "  Branches kept: %d\n" "${#branches_kept[@]}" >&2
+  fi
+  echo >&2
+fi
+
+emit_wtdel_json_if_requested
+
+if [[ ${#failed[@]} -gt 0 ]]; then
+  exit 1
+fi
+exit 0

@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["working-dir"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
@@ -17,6 +22,7 @@ Options:
   -i, --ignored    Remove ignored files
       --dry-run    Show what would be removed without deleting anything
   -f, --force      Skip confirmation prompt
+  -y, --yes        Skip confirmation prompts (keeps safe semantics)
   -h, --help       Show this help
 
 Notes:
@@ -49,6 +55,10 @@ while [[ $# -gt 0 ]]; do
     ;;
   -f | --force)
     force=true
+    shift
+    ;;
+  -y | --yes)
+    export HUG_YES=true
     shift
     ;;
   -h | --help)
@@ -95,13 +105,13 @@ fi
 
 if $dry_run; then
   print_dry_run_preview "be removed"
-  printf '\n%s\n' "$preview_output"
+  printf '\n%s\n' "$preview_output" >&2
   exit 0
 fi
 
 if ! $force; then
   print_action_preview "remove the listed entries"
-  printf '\n%s\n' "$preview_output"
+  printf '\n%s\n' "$preview_output" >&2
   prompt_confirm_danger 'purge-all'
 fi
 

@@ -1,81 +1,198 @@
 #!/usr/bin/env bash
+_hug_category='["worktrees"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit hug-git-worktree; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail                                                                  # Exit on error, undefined vars, pipe failures
-
-# Part of the Hug tool suite
+for f in hug-common hug-git-kit hug-git-worktree hug-cli-flags; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
 
 show_help() {
   cat << 'EOF'
-hug wtl: List worktrees in short format, showing path, branch, and status.
+hug wtl: List worktrees in short format, showing branch, path, and status.
 
 USAGE:
-  hug wtl [OPTIONS] [SEARCH_TERM]
+  hug wtl [OPTIONS] [SEARCH_TERMS...]
+
+ARGUMENTS:
+  [SEARCH_TERMS...]   Substring match on path or branch (case-insensitive, OR logic)
 
 OPTIONS:
-  -h, --help     Show this help message and exit.
-  --json         Output in JSON format instead of human-readable text.
+  -h, --help          Show this help message and exit.
+  -q, --quiet         Suppress legend line (listing still shown).
+  --json              Output in JSON format instead of human-readable text.
+  -b, --branch NAME   Filter by EXACT branch name (case-sensitive, repeatable, OR logic).
+                        (a branch checked out in several worktrees yields several rows)
+  -p, --path-only     Print only absolute paths (one per line). Exit 1 if 0 matches.
+                        (output mode — unlike wtc/wtdel, where -p PATH targets a path)
+  -e, --existing      Exclude worktrees whose directory doesn't exist on disk.
 
 DESCRIPTION:
-  Displays each worktree sorted alphabetically. The current worktree is highlighted in green and marked with an asterisk (*).
-  Each entry shows: path [branch] [status indicators] (short commit).
+  Displays each worktree sorted alphabetically. The current worktree is
+  highlighted and marked with an asterisk (*).
 
-  Status indicators:
-    [CURRENT] - The worktree you're currently in
-    [DIRTY]   - Worktree has uncommitted changes
-    [LOCKED]  - Worktree is locked (cannot be removed)
+  Indicators:
+    *  current worktree
+    +  dirty (uncommitted changes)
+    #  locked
+    @  detached HEAD
+    .  (inactive)
 
-  If a search term is provided, only worktrees containing the term (case-insensitive substring match on path or branch name) are displayed.
+  Filtering:
+    Positional args:     SUBSTRING match, case-insensitive, OR logic.
+    -b / --branch NAME:  EXACT match, case-sensitive, repeatable, OR logic.
+    Combined: Both filters must match (AND logic).
+
+CAPTURING OUTPUT:
+  Listing lines go to stdout. Legend and errors go to stderr.
+  Colors are automatically stripped when output is piped.
+
+    worktrees=$(hug wtl)       # Capture listing to variable
+    hug wtl | grep main        # Pipe to other commands
+    hug wtl 2>/dev/null        # Suppress legend/errors
+    hug wtl -b feat-x -p       # Get absolute path for exact branch (scriptable)
+    hug wtl -b feat-x -p -e    # Same, but only if directory still exists
 
 EXAMPLES:
-  hug wtl                  # List all worktrees
-  hug wtl feature          # List worktrees containing "feature"
-  hug wtl /home/user/project  # List worktrees containing that path
-  hug wtl --json           # Output worktree information in JSON format
+  hug wtl                       # List all worktrees
+  hug wtl feat                  # Substring: anything containing "feat"
+  hug wtl feat api              # Substring: "feat" OR "api"
+  hug wtl -b main               # Exact branch "main" only
+  hug wtl -b main -b dev        # Exact: "main" OR "dev"
+  hug wtl feat -b main          # Substring "feat" AND exact branch "main"
+  hug wtl --json                # JSON output
+  hug wtl -p                       # All worktrees, paths only
+  hug wtl -b main -p               # Path for exact branch
+  hug wtl feat -p -e               # Substring match, existing only, paths
+
+EXIT CODES:
+  0  success (including empty --json result)
+  1  no worktrees found (human mode) or operational error
+  2  usage error (bad flags/arguments)
 
 SEE ALSO:
-  hug wtll : For listing worktrees in long form
-  hug wt   : For interactive worktree selection and switching
-  hug wtdel : For removing worktrees safely
+  hug wtll : Long-format listing with commit subjects
+  hug wt   : Interactive worktree selection and switching
+  hug wtdel : Remove worktrees safely
 EOF
 }
 
-# Parse arguments
+# Parse common flags first (handles -q, -h, --help)
+eval "$(parse_common_flags "$@")"
+
+# Parse command-specific arguments
 json_output=false
+declare -a branch_filters=()
+declare -a search_terms=()
+path_only=false
+existing_only=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --json)
     json_output=true
     shift
     ;;
-  -h | --help)
-    show_help
-    exit 0
+  -b | --branch)
+    if [[ -z "${2:-}" ]]; then
+      error_usage "Option -b/--branch requires a value."
+    fi
+    branch_filters+=("$2")
+    shift 2
+    ;;
+  -p | --path-only)
+    path_only=true
+    shift
+    ;;
+  -e | --existing)
+    existing_only=true
+    shift
+    ;;
+  --)
+    shift
+    for arg in "$@"; do search_terms+=("$arg"); done
+    shift $#
+    ;;
+  -*)
+    error_usage "Unknown option: $1"
     ;;
   *)
-    # Treat remaining arguments as search terms
-    break
+    search_terms+=("$1")
+    shift
     ;;
   esac
 done
 
-# Capture search terms
-search_terms="$*"
-
 # Early exit if not in Git repo
 check_git_repo
 
+# --path-only and --json are mutually exclusive
+if $json_output && $path_only; then
+  error_usage "--json and --path-only are mutually exclusive."
+fi
+
 # JSON output mode
 if $json_output; then
-  # Get current worktree path for JSON
   current_worktree=$(get_current_worktree_path)
-  output_worktree_json "$current_worktree" "$search_terms"
+  output_worktree_json "$current_worktree" search_terms branch_filters "$existing_only"
+  exit 0
+fi
+
+# ── Path-only output mode ──────────────────────────────────────────────────
+if $path_only; then
+  declare -a wt_paths=() wt_branches=() wt_commits=() wt_dirty=() wt_locked=()
+  if ! get_all_worktrees_including_main wt_paths wt_branches wt_commits wt_dirty wt_locked; then
+    printf "No worktrees found.\n" >&2
+    exit 1
+  fi
+
+  # Apply -b and search term filtering if provided
+  declare -a out_paths=()
+  if [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
+    declare -a f_branches=() f_commits=() f_dirty=() f_locked=()
+    if ! filter_worktrees out_paths f_branches f_commits f_dirty f_locked branch_filters search_terms; then
+      # filter_worktrees already printed the error
+      exit 1
+    fi
+  else
+    out_paths=("${wt_paths[@]}")
+  fi
+
+  # Apply --existing filter: skip worktrees whose directory is gone
+  if $existing_only; then
+    declare -a existing_paths=()
+    for p in "${out_paths[@]}"; do
+      [[ -d "$p" ]] && existing_paths+=("$p")
+    done
+    out_paths=("${existing_paths[@]}")
+  fi
+
+  # Exit 1 if no matches
+  if [[ ${#out_paths[@]} -eq 0 ]]; then
+    filter_context=""
+    if [[ ${#branch_filters[@]} -gt 0 ]]; then
+      filter_context=" for branch: ${branch_filters[*]}"
+    elif [[ ${#search_terms[@]} -gt 0 ]]; then
+      filter_context=" matching: ${search_terms[*]}"
+    fi
+    printf "No worktrees found%s\n" "$filter_context" >&2
+    exit 1
+  fi
+
+  # Print count to stderr if more than one match
+  if [[ ${#out_paths[@]} -gt 1 ]]; then
+    printf "%d worktrees found\n" "${#out_paths[@]}" >&2
+  fi
+
+  # Print absolute paths to stdout (one per line, no formatting)
+  for p in "${out_paths[@]}"; do
+    printf '%s\n' "$p"
+  done
   exit 0
 fi
 
 # Get worktree data
-# NOTE: wtl lists all worktrees, including the main repository
 declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
 if ! get_all_worktrees_including_main worktree_paths branches commits status_dirty locked_status; then
   printf "No worktrees found.\n" >&2
@@ -85,47 +202,85 @@ fi
 # Get current worktree path for comparison
 current_worktree=$(get_current_worktree_path)
 
+# Print legend to stderr (suppressed by -q or non-TTY)
+print_worktree_legend
+
 # Build and print worktree list
-printf "${BLUE}Worktrees:%s${NC}\n" ""
-match_count=0
-for i in "${!worktree_paths[@]}"; do
-  path="${worktree_paths[$i]}"
-  branch="${branches[$i]}"
-  commit="${commits[$i]}"
-  dirty="${status_dirty[$i]}"
-  locked="${locked_status[$i]}"
-
-  # Build status indicators
-  status_indicators=""
-  path_display="${path/#$HOME/\~}"
-
-  # Check if current worktree
-  [[ "$path" == "$current_worktree" ]] && status_indicators="${GREEN}*${NC} "
-
-  # Add other status indicators
-  [[ "$dirty" == "true" ]] && status_indicators="${status_indicators}${YELLOW}[DIRTY]${NC} "
-  [[ "$locked" == "true" ]] && status_indicators="${status_indicators}${RED}[LOCKED]${NC} "
-
-  # Apply search filter if provided using unified search function
-  show_worktree=true
-  if [[ -n "$search_terms" ]]; then
-    # Use the unified search function from hug-arrays
-    if search_worktree "$path" "$branch" "$search_terms" "OR"; then
-      show_worktree=true
-    else
-      show_worktree=false
-    fi
+if [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
+  declare -a filtered_paths=() filtered_branches=() filtered_commits=()
+  declare -a filtered_dirty=() filtered_locked=()
+  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked branch_filters search_terms; then
+    exit 1
   fi
 
-  # Only show worktree if it matches search criteria (or no search provided)
-  if $show_worktree; then
-    printf "%s%-20s %s %s\n" "$status_indicators" "$branch" "($commit)" "$path_display"
-    match_count=$((match_count + 1))
-  fi
-done
+  # Track rows printed so --existing can detect when all matches were stale.
+  # Path-only mode already guards this at line ~168; normal mode needs the same
+  # semantic: 0 surviving rows → exit 1 with contextual error.
+  rows_printed=0
+  for i in "${!filtered_paths[@]}"; do
+    path="${filtered_paths[$i]}"
+    # --existing filter: skip stale worktrees
+    $existing_only && { [[ -d "$path" ]] || continue; }
+    branch="${filtered_branches[$i]}"
+    commit="${filtered_commits[$i]}"
+    dirty="${filtered_dirty[$i]}"
+    locked="${filtered_locked[$i]}"
 
-# Return error if search terms were provided but no matches found
-if [[ -n "$search_terms" && $match_count -eq 0 ]]; then
-  printf "No worktrees found matching: %s\n" "$search_terms" >&2
+    # Stale entry: directory deleted externally but metadata remains.
+    # Show '(gone)' instead of a commit hash — self-documenting, no new
+    # legend symbol, no column shift (design §7/N6).
+    [[ -d "$path" ]] || commit="gone"
+
+    path_display="${path/#$HOME/\~}"
+    is_current="false"
+    [[ "$path" == "$current_worktree" ]] && is_current="true"
+    is_detached="false"
+    [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
+    status_indicators="$(format_worktree_indicators "$dirty" "$locked") "
+    branch_display="$(format_worktree_branch_display "$is_current" "$is_detached" "$branch")"
+
+    printf "%s%-20s %s %s\n" "$status_indicators" "$branch_display" "($commit)" "$path_display"
+    rows_printed=$((rows_printed + 1))
+  done
+else
+  rows_printed=0
+  for i in "${!worktree_paths[@]}"; do
+    path="${worktree_paths[$i]}"
+    # --existing filter: skip stale worktrees
+    $existing_only && { [[ -d "$path" ]] || continue; }
+    branch="${branches[$i]}"
+    commit="${commits[$i]}"
+    dirty="${status_dirty[$i]}"
+    locked="${locked_status[$i]}"
+
+    # Stale entry: directory deleted externally but metadata remains.
+    # Show '(gone)' instead of a commit hash — self-documenting, no new
+    # legend symbol, no column shift (design §7/N6).
+    [[ -d "$path" ]] || commit="gone"
+
+    path_display="${path/#$HOME/\~}"
+    is_current="false"
+    [[ "$path" == "$current_worktree" ]] && is_current="true"
+    is_detached="false"
+    [[ -z "$branch" || "$branch" == "detached" ]] && is_detached="true"
+    status_indicators="$(format_worktree_indicators "$dirty" "$locked") "
+    branch_display="$(format_worktree_branch_display "$is_current" "$is_detached" "$branch")"
+
+    printf "%s%-20s %s %s\n" "$status_indicators" "$branch_display" "($commit)" "$path_display"
+    rows_printed=$((rows_printed + 1))
+  done
+fi
+
+# When --existing filtered out every row, honor zero-match semantics.
+# Path-only mode handles this inline (lines 168-177); normal mode needs the
+# same treatment here.  Only fires when -e was requested AND nothing survived.
+if $existing_only && [[ $rows_printed -eq 0 ]]; then
+  filter_context=""
+  if [[ ${#branch_filters[@]} -gt 0 ]]; then
+    filter_context=" for branch: ${branch_filters[*]}"
+  elif [[ ${#search_terms[@]} -gt 0 ]]; then
+    filter_context=" matching: ${search_terms[*]}"
+  fi
+  printf "No existing worktrees found%s\n" "$filter_context" >&2
   exit 1
 fi

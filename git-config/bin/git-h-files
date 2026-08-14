@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["head"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
@@ -33,6 +38,12 @@ DESCRIPTION:
     With -t/--temporal, filters commits by time relative to HEAD's commit time.
     Use before 'h back N' or 'h rewind COMMIT' to see affected files.
 
+CAPTURING OUTPUT:
+  File stats go to stdout. Tips and contextual messages go to stderr.
+
+    files=$(hug h files 3)       # Capture file stats to variable
+    hug h files 3 2>/dev/null    # Suppress tips
+
 EXAMPLES:
     hug h files 3          # Files and stats in last 3 commits
     hug h files 3 -p       # Full patch and stats in last 3 commits
@@ -46,6 +57,7 @@ EXAMPLES:
 SEE ALSO:
     h back    : Actually perform the rewind (keep staged)
     h rewind  : Destructive rewind
+    hug shc   : File stats for the affected range
 EOF
 }
 
@@ -107,7 +119,10 @@ check_git_repo
 if $upstream; then
   start_point=$(get_upstream_commit) # This will exit if no upstream
   range="$start_point..HEAD"
-  local_commits=$(count_commits_in_range "$start_point" HEAD)
+  # Explicit '|| exit 1': belt-and-suspenders (set -e already exits on a failing
+  # top-level assignment). NOTE: this is script top level inside the `if` block —
+  # do NOT add 'local' here; 'local' outside a function is a fatal error.
+  local_commits=$(count_commits_in_range "$start_point" HEAD) || exit 1
   if [ "$local_commits" -eq 0 ]; then
     info "No local-only commits; already synced to upstream."
     exit 0
@@ -167,12 +182,12 @@ fi
 if $show_patch; then
   if [[ -n "$patch_file" ]]; then
     git diff "$range" -- "$patch_file"
-    printf '☝️ Patch for %s in range %s ☝️\n' "$patch_file" "$range"
-    echo
+    printf '☝️ Patch for %s in range %s ☝️\n' "$patch_file" "$range" >&2
+    echo >&2
   else
     git diff "$range"
-    printf '☝️ Full patch for range %s ☝️\n' "$range"
-    echo
+    printf '☝️ Full patch for range %s ☝️\n' "$range" >&2
+    echo >&2
   fi
 fi
 
@@ -180,14 +195,14 @@ fi
 HUG_QUIET=T git shc "$range"
 
 # Provide contextual tip AFTER the stats block
-echo
+echo >&2
 if $upstream; then
   upstream_short=$(git rev-parse --short "$start_point")
   tip "These $count files and their stats are affected by $local_commits local-only commits to upstream tip $upstream_short (e.g., via 'h back -u')."
 elif [[ -n "$temporal_spec" ]]; then
   start_point_short=$(git rev-parse --short "$start_point")
   start_point_date=$(git log -1 --format="%ci" "$start_point" | cut -d' ' -f1)
-  num_commits=$(count_commits_in_range "$start_point" HEAD)
+  num_commits=$(count_commits_in_range_or_zero "$start_point" HEAD)
   tip "These $count files and their stats were changed in $num_commits commits since '$temporal_spec' (first commit: $start_point_short from $start_point_date)."
 else
   tip "These $count files and their stats would be affected by moving HEAD to $start_point (e.g., via 'h back' or 'h rewind')."

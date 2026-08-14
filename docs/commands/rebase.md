@@ -22,14 +22,28 @@ This is a powerful tool and should be used with care, especially on branches sha
 > A rebase can also be initiated by other commands, such as [`hug bpullr`](branching.md#hug-bpullr) when pulling changes from a remote branch. The conflict resolution workflow described below applies in those cases as well.
 
 ### `hug rb <branch-name>`
--   **Description**: Updates your current branch by re-applying its commits on top of the latest commit from `<branch-name>`. This is the standard way to update a feature branch with the latest changes from `main`.
-- **Example**:
+-   **Description**: Updates your current branch by re-applying its commits on top of the latest commit from `<branch-name>`. This is the standard way to update a feature branch with the latest changes from `main`. A backup branch is automatically created in the `hug-backups/` namespace before rebase starts.
+
+- **Examples**:
   ```shell
-  # While on 'my-feature', update it with the latest from 'main'
+  # Rebase current branch onto main (backup auto-created, warn-tier prompt)
   hug rb main
+
+  # Non-interactive rebase (warn-tier authorized — for scripts/CI)
+  hug rb main -y
+
+  # Preview what would happen (commits, backup name, auth flag — zero side effects)
+  hug rb main --dry-run
+
+  # Rebase with NO backup (danger-tier — needs -f)
+  hug rb main --no-backup -f
   ```
 
--  **Safety**: **Never rebase a public branch** that others have pulled and are working on. This command can also cause merge conflicts if both branches modified the same files.
+  Roughly equivalent to the raw-Git ritual `git branch backup-$(date +%s) && git rebase main`,
+  but with collision-proof backup naming (`hug-backups/YYYY-MM/DD-HHMM[SS[-N]].<base>`),
+  honest exit codes, and a faithful preview.
+
+-  **Safety**: **Never rebase a public branch** that others have pulled and are working on. This command can also cause merge conflicts if both branches modified the same files. The `-y` flag authorizes the rebase non-interactively (warn-tier); `--no-backup` requires `-f` (danger-tier).
 
 ### `hug rbi <commit-ish>`
 -   **Description**: Starts an **interactive rebase**, opening an editor with a list of commits from your branch. It allows you to clean up your history *before* merging by letting you `pick`, `reword`, `edit`, `squash`, `fixup`, or `drop` commits.

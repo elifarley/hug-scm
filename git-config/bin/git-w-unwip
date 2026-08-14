@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["working-dir", "parking"]'
+_hug_keywords='["unpark", "restore-wip", "pop", "unstash"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 # Assume HUG_HOME is set (exported by hug or environment)
 # Import only needed library files
 . "$HUG_HOME/git-config/lib/hug-terminal"
@@ -98,7 +104,10 @@ fi
 
 branch_selected="$branch_arg"
 if [ -z "$branch_selected" ]; then
-  branch_selected="$(select_wip_branch "Select WIP branch to unpark..." "$PROG_NAME")"
+  if ! branch_selected="$(select_wip_branch "Select WIP branch to unpark..." "$PROG_NAME")"; then
+    info "Cancelled."
+    exit 1
+  fi
 fi
 
 branch="$(trim_message "$branch_selected")"
@@ -129,19 +138,21 @@ else
 
   # Preview changes
   printf '\nPreview of changes to unpark:\n' >&2
-  git diff --name-only "$current_branch"..."$branch" | head -10 >&2 || true
+  # SIGPIPE-safe: capture-then-filter — head -10 would SIGPIPE git diff under pipefail
+  _changed_files=$(git diff --name-only "$current_branch"..."$branch" 2> /dev/null) || _changed_files=""
+  head -10 <<< "$_changed_files" >&2 || true
   printf '\n(Full preview: git diff %s..%s)\n' "$current_branch" "$branch" >&2
 
   read -r -p "Proceed with $([ "$no_squash" = true ] && printf 'regular ' || printf 'squash-')merge? [y/n] " choice
   if [[ "$choice" =~ ^[Yy] ]]; then
     if [ "$no_squash" = true ]; then
       git merge "$branch" || {
-        error "$PROG_NAME: Merge failed (conflicts?). Resolve manually with 'hug a && hug c', then delete with 'hug w wipdel %s'." "$branch"
+        error "$PROG_NAME: Merge failed (conflicts?). Resolve manually with 'hug a && hug c', then delete with 'hug w wipdel $branch'."
         exit 1
       }
     else
       git merge --squash "$branch" || {
-        error "$PROG_NAME: Squash-merge failed (conflicts?). Resolve with 'hug a && hug c', then delete with 'hug w wipdel %s'." "$branch"
+        error "$PROG_NAME: Squash-merge failed (conflicts?). Resolve with 'hug a && hug c', then delete with 'hug w wipdel $branch'."
         exit 1
       }
       orig_msg="$(git log -1 --format='%s' "$branch" | sed 's/^\[WIP\] //' || echo "Complete WIP work")"
@@ -164,13 +175,13 @@ fi
 # Delete the WIP branch
 if [ "$force_delete" = true ]; then
   if git branch -D "$branch" > /dev/null 2>&1; then
-    printf 'Force-deleted WIP branch %s.\n' "$branch"
+    printf 'Force-deleted WIP branch %s.\n' "$branch" >&2
   else
     error "$PROG_NAME: Failed to force-delete branch '$branch'."
   fi
 else
   if git branch -d "$branch" > /dev/null 2>&1; then
-    printf 'Deleted WIP branch %s.\n' "$branch"
+    printf 'Deleted WIP branch %s.\n' "$branch" >&2
   else
     printf '%s: Branch "%s" is not fully merged. Re-run with --force to delete it.\n' "$PROG_NAME" "$branch" >&2
     exit 1

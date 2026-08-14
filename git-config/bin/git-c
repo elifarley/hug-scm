@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["committing"]'
+_hug_keywords='["commit", "save-snapshot", "record"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit hug-git-commit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
@@ -45,8 +51,8 @@ Note: For multi-line messages from LLMs, use `hug c -F - <<'EOF'` (heredoc).
 SEE ALSO:
   hug ca : For committing all changes to ALL tracked files (staged and unstaged)
   hug caa: For committing all changes to ALL tracked and untracked files.
-  hug cm : For modifying the last commit with staged changes only.
-  hug cma: For modifying the last commit with ALL tracked changes.
+  hug cmod : For amending the last commit with staged changes only.
+  hug cmoda: For amending the last commit with ALL tracked changes.
   hug a  : Stage tracked files, or specific files if provided.
   hug aa : Stage everything (tracked + untracked + deletions)
   hug ccp: Cherry-pick commits with the --husk flag for template commits
@@ -68,13 +74,50 @@ for arg in "$@"; do
   fi
 done
 
-# Check for staged changes upfront
-if ! $allow_empty && ! has_staged_changes; then
-  info "No staged changes found.\n\nSuggestions:\n  - Stage files with 'hug a <files>' or 'hug aa' (all).\n  - To commit all changes (staged + unstaged), use 'hug ca'.\n  - For an empty commit, use 'hug c --allow-empty'.\n  - To preview staged changes, run 'hug sl' for a list or 'hug ss' for a diff."
+# Detect --amend for accurate push suggestion
+_c_amend=false
+commit_args_indicate_amend "$@" && _c_amend=true
+
+# Check for staged changes upfront — compute once, use twice.
+# (Previously has_staged_changes was re-evaluated in the rejection guard AND
+#  would have been re-evaluated by the preview condition. One call, one truth.)
+_has_staged=false
+has_staged_changes && _has_staged=true
+
+if ! $allow_empty && ! $_has_staged; then
+  info "No staged changes found.\n\nSuggestions:\n  - Stage files with 'hug a <files>'.\n  - To commit all changes (staged + unstaged), use 'hug ca'.\n  - For an empty commit, use 'hug c --allow-empty'.\n  - To preview staged changes, run 'hug sl' for a list or 'hug ss' for a diff."
   exit 1
 fi
 
-info "Committing staged changes..."
+# HONEST scope: this preview is a RECOVERY/TRANSPARENCY aid, not a gate.
+# For interactive humans, the time window between the preview rendering and
+# git commit running is too short to read 10 filenames and Ctrl-C. For
+# agents, the output arrives only AFTER the commit completes — they can
+# spot the mismatch in their own transcript and recover (hug h back 1,
+# restage, recommit). This is still strictly better than today (no signal
+# at all), which is why we ship it — but it is NOT a prevention mechanism.
+# Prevention lives at staging time in `hug a` (see Task 4), not here.
+#
+# `hug c` forwards arbitrary git options via `git commit "$@"`, so options
+# like -a/--all, --include, --only, --interactive, --patch can cause the
+# final commit to differ from this preview. Acceptable for #207's incident
+# class (soft-reset leftovers in the index); agents passing those options
+# are explicitly opting into git's own semantics. (See T6 follow-up issue:
+# detect -a/--all and abort with an educational message pointing at hug
+# commands that stage explicitly.)
+#
+# Suppressed by --quiet/HUG_QUIET via call-site gate. print_list itself
+# does NOT honor HUG_QUIET (it's data for dry-run callers like hug w
+# discard --dry-run); we gate here so `hug c --quiet` gets silence.
+if $_has_staged && [[ -z "${HUG_QUIET:-}" ]]; then
+  mapfile -t _staged_files < <(git diff --cached --name-only 2> /dev/null || true)
+  if [[ ${#_staged_files[@]} -gt 0 ]]; then
+    print_list --cap 10 --more-hint "run 'hug sls' for the full list" \
+      "Committing staged file(s)" "${_staged_files[@]}"
+  fi
+fi
 
 # Run git commit directly without capturing output to allow interactive editor
-git commit "$@" && suggest_next_push_command
+_suggest_args=()
+$_c_amend && _suggest_args+=(--amend)
+git commit "$@" && suggest_next_push_command "${_suggest_args[@]}"

@@ -11,7 +11,7 @@ Hug SCM isn't just a wrapper around Git; it's a philosophy for interacting with 
 
 Hug is built on three main principles:
 
-1.  **Safety First**: Destructive operations should be difficult to perform accidentally. Hug uses confirmations (`-f` to force), previews (`--dry-run`), and safer defaults (like `h back` for a soft reset) to prevent data loss. The most destructive commands, like `h rewind`, have the longest names and strictest confirmations.
+1.  **Safety First**: Destructive operations should be difficult to perform accidentally. Hug uses a three-tier confirmation system (`-y` for safe skipping, `-f`/`--force` for dangerous override), previews (`--dry-run`), and safer defaults (like `h back` for a soft reset) to prevent data loss. The most destructive commands, like `h rewind`, have the longest names and strictest confirmations.
 2.  **Intuitive Mnemonics**: Commands are grouped by prefixes that map to a specific area of Git (`h*` for HEAD, `w*` for Working Directory, etc.). Suffixes add specificity, making commands easy to remember (e.g., `hug bl` -> **B**ranch **L**ist).
 3.  **Progressive Disclosure**: Simple commands (`hug s`) provide a high-level summary. More detailed commands (`hug sl`, `hug sla`...) reveal more information. This keeps your workflow clean and focused, allowing you to "zoom in" on details only when you need them.
 

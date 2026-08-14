@@ -50,12 +50,44 @@ if [[ "$local_loaded" == "false" ]]; then
 fi
 
 # Set up the test environment
+#
+# WHY: BATS 1.13.0 defines default setup_file()/teardown_file() that return 0
+# BEFORE sourcing the test file. When test_helper.bash is loaded inside setup()
+# (not at file level), its setup_file() definition arrives too late — BATS has
+# already called the no-op default. Moving PROJECT_ROOT/HUG_BIN/PATH setup to
+# file-level code ensures it runs whenever test_helper.bash is sourced, regardless
+# of whether setup_file() is called.
+#
+# NOTE: BATS_TEST_FILENAME is available once BATS begins executing the test file.
+# During file-level sourcing inside setup(), it IS set. We use a guard to avoid
+# clobbering if setup_file() also runs (future-proofing).
+if [[ -n "${BATS_TEST_FILENAME:-}" && -z "${PROJECT_ROOT:-}" ]]; then
+  export PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+  export HUG_BIN="$PROJECT_ROOT/git-config/bin"
+  export PATH="$HUG_BIN:$PATH"
+  # Override HUG_HOME to the project root derived from the test file's location.
+  # WHY: When tests run from a linked worktree, the shell's HUG_HOME (set by
+  # bin/activate via ~/.hug-scm) still points to the main-repo clone. Bin scripts
+  # in HUG_BIN source their libraries as "$HUG_HOME/git-config/lib/…", so without
+  # this override they would pick up the main-repo's unmodified libs instead of the
+  # worktree's in-progress versions — silently hiding rename / refactor bugs.
+  # Setting HUG_HOME = PROJECT_ROOT here is always safe: in the main repo these
+  # two values are identical; in a linked worktree this anchors lib lookups to the
+  # tree under test.
+  export HUG_HOME="$PROJECT_ROOT"
+fi
+
 setup_file() {
   # Export the project root for tests to use
   # BATS_TEST_FILENAME points to tests/unit/test_*.bats or tests/lib/test_*.bats
   # We need to go up 2 levels to get to project root
   export PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   export HUG_BIN="$PROJECT_ROOT/git-config/bin"
+  # Mirror the file-level HUG_HOME override (see comment above).
+  # setup_file() can fire after the file-level block has already set HUG_HOME,
+  # but setting it here explicitly keeps the two paths in sync and ensures
+  # any direct invocation of setup_file() (e.g. by test tooling) also gets it.
+  export HUG_HOME="$PROJECT_ROOT"
 
   # Add hug to PATH for tests
   export PATH="$HUG_BIN:$PATH"
@@ -123,9 +155,36 @@ create_test_repo() {
       echo "Failed to cd to $test_repo" >&2
       exit 1
     }
+    # `cd ""` is a silent no-op in bash (CWD unchanged). If temp-dir
+    # resolution ever fails and test_repo comes back empty, the unguarded
+    # helper re-inits and commits fixtures into whatever repo hosts CWD —
+    # the worktree-contamination incident (junk "Initial commit" landed on
+    # the branch under test, authored "Hug Test"). Verifying arrival makes
+    # that failure loud instead of destructive.
+    [[ "$PWD" == "$test_repo" ]] || {
+      echo "repo helper: cd arrived at '$PWD', expected '$test_repo' — aborting to protect the host repo" >&2
+      exit 1
+    }
     git init -q --initial-branch=main
     git config --local user.email "test@hug-scm.test"
     git config --local user.name "Hug Test"
+
+    # Hermetic hooks: a developer-machine global core.hooksPath would redirect
+    # every repo's hooks away from .git/hooks/, silently breaking tests that
+    # install their own hooks (e.g. the commit-msg rejection test in
+    # test_commit.bats). Pin each test repo to its own hooks dir so the suite
+    # behaves identically with or without a global override (elifarley/hug-scm#184).
+    # Do NOT "simplify" to `git rev-parse --git-path hooks`: --git-path resolves
+    # THROUGH any configured hooksPath, so on an affected machine it returns the
+    # GLOBAL hooks dir and the pin silently re-pins the config it overrides.
+    git config --local core.hooksPath "$(git rev-parse --absolute-git-dir)/hooks"
+
+    # Hermetic ignores (elifarley/hug-scm#197): a developer-machine global
+    # core.excludesFile (e.g. one listing .env) makes `git add .env` refuse
+    # with "The following paths are ignored", breaking fixtures that stage
+    # dotfiles. Point the fixture at /dev/null so only the repo's own
+    # .gitignore applies — identical to a stock clone with no global config.
+    git config --local core.excludesFile /dev/null
 
     # Configure git aliases needed by hug commands
     # These are from git-config/.gitconfig
@@ -163,6 +222,25 @@ create_test_repo_with_history() {
     echo "Feature 2" > feature2.txt
     git add feature2.txt
     git_commit_deterministic "Add feature 2"
+  )
+
+  echo "$test_repo"
+}
+
+# Create a test repository whose HEAD is an EMPTY commit (touches no files).
+# Used to exercise the dd/shv no-changes guard on the committish path: an empty
+# commit has a valid parent but a zero diff, so the guard must say "No changes
+# introduced" and not launch the tool.
+create_test_repo_with_empty_commit() {
+  local test_repo
+  test_repo=$(create_test_repo)
+
+  (
+    cd "$test_repo" || {
+      echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
+    git commit --allow-empty -q -m "Empty commit (no file changes)"
   )
 
   echo "$test_repo"
@@ -387,6 +465,107 @@ cleanup_test_repo() {
   fi
 }
 
+################################################################################
+# Visual-diff (difftool) test harness — shared by test_dd.bats and test_shv.bats
+################################################################################
+# WHY a fake difftool + a PATH git-shim: `git difftool` launches a blocking GUI,
+# useless in CI. The fake difftool makes it a no-op that records it ran; the
+# git-shim records the exact argv passed to `git difftool` (so we can assert
+# endpoints) while exec-ing the real git for everything else (diff --quiet,
+# config, rev-parse — needed by the guards). Shim → assert WHICH flags; fake
+# tool → assert the tool was NOT launched (no-changes guard).
+# NOTE: test_dd.bats still carries local copies of these; they are identical and
+# shadow these harmlessly. A follow-up can drop the locals onto this shared copy.
+
+# `git` shim at the front of PATH: logs `git difftool` argv (one arg/line) to
+# GIT_SHIM_LOG then exits 0; exec's the real git for everything else.
+setup_git_shim() {
+  local shim_dir
+  shim_dir=$(mktemp -d)
+  GIT_SHIM_DIR="$shim_dir"
+  GIT_SHIM_LOG="$shim_dir/git-difftool.log"
+
+  # Resolve the real git BEFORE prepending the shim (else `command -v git` finds
+  # the shim itself → infinite recursion).
+  local real_git
+  real_git=$(command -v git)
+
+  cat > "$shim_dir/git" << SHIM
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "difftool" ]]; then
+  printf '%s\n' "\$@" >> "\${GIT_SHIM_LOG}"
+  exit 0
+fi
+exec "${real_git}" "\$@"
+SHIM
+  chmod +x "$shim_dir/git"
+
+  export PATH="$shim_dir:$PATH"
+  export GIT_SHIM_LOG GIT_SHIM_DIR
+}
+
+teardown_git_shim() {
+  [[ -n "${GIT_SHIM_DIR:-}" ]] && rm -rf "$GIT_SHIM_DIR"
+  unset GIT_SHIM_DIR GIT_SHIM_LOG
+}
+
+# Configure a fake difftool so `git difftool` does not launch a GUI; when git DOES
+# invoke it, it appends "invoked" to ARGV_LOG so we can assert it ran / did not.
+configure_fake_difftool() {
+  local repo_dir="${1:-$PWD}"
+  local log_file="${BATS_TEST_TMPDIR}/difftool-invocations.log"
+  ARGV_LOG="$log_file"
+  export ARGV_LOG
+
+  git -C "$repo_dir" config diff.tool fake
+  git -C "$repo_dir" config difftool.fake.cmd 'printf "invoked\n" >> "$ARGV_LOG"'
+  git -C "$repo_dir" config difftool.prompt false
+}
+
+# Assert the git-shim captured the given string as a SUBSTRING of some argv line.
+assert_shim_logged() {
+  local expected="$1"
+  if [[ ! -f "${GIT_SHIM_LOG:-}" ]]; then
+    fail "GIT_SHIM_LOG not found — shim not set up or difftool was never called"
+  fi
+  grep -qF -- "$expected" "$GIT_SHIM_LOG" ||
+    fail "Expected '${expected}' in git difftool argv log. Actual log:\n$(cat "$GIT_SHIM_LOG")"
+}
+
+# Assert the git-shim captured the given string as a WHOLE argv line (exact).
+# WHY exact: substring matching cannot tell `HEAD~1` from `HEAD~1^1` (one contains
+# the other), so endpoint-split / reversed-endpoint regressions would be undetectable.
+assert_shim_logged_exact() {
+  local expected="$1"
+  if [[ ! -f "${GIT_SHIM_LOG:-}" ]]; then
+    fail "GIT_SHIM_LOG not found — shim not set up or difftool was never called"
+  fi
+  grep -qxF -- "$expected" "$GIT_SHIM_LOG" ||
+    fail "Expected exact argv line '${expected}' in git difftool log. Actual log:\n$(cat "$GIT_SHIM_LOG")"
+}
+
+# Assert a token does NOT appear as a whole argv line.
+refute_shim_logged_exact() {
+  local unexpected="$1"
+  if [[ -f "${GIT_SHIM_LOG:-}" ]] && grep -qxF -- "$unexpected" "$GIT_SHIM_LOG"; then
+    fail "Did NOT expect exact argv line '${unexpected}' in git difftool log. Actual log:\n$(cat "$GIT_SHIM_LOG")"
+  fi
+}
+
+# Assert the git-shim logged NO difftool invocation at all.
+assert_difftool_not_invoked() {
+  if [[ -f "${GIT_SHIM_LOG:-}" ]] && [[ -s "$GIT_SHIM_LOG" ]]; then
+    fail "git difftool was unexpectedly invoked. Log:\n$(cat "$GIT_SHIM_LOG")"
+  fi
+}
+
+# Assert the fake difftool was NOT invoked (no-changes guard check).
+assert_fake_tool_not_invoked() {
+  if [[ -f "${ARGV_LOG:-}" ]] && grep -q "invoked" "$ARGV_LOG"; then
+    fail "Fake difftool was unexpectedly invoked. Log:\n$(cat "$ARGV_LOG")"
+  fi
+}
+
 # Assert that a command's output contains a string (case-insensitive)
 assert_output_contains() {
   local expected="$1"
@@ -591,12 +770,11 @@ disable_gum_simulation() {
   unset HUG_TEST_MODE
 }
 
-# Force gum to be unavailable for testing
-# This is useful when testing error paths that require gum to be disabled
-disable_gum_for_test() {
-  export HUG_DISABLE_GUM=true
-  unset HUG_TEST_MODE
-}
+# NOTE: disable_gum_for_test is defined once above (line ~591). Do NOT add a
+# second definition here — bash silently takes the last definition, and any
+# duplicate that calls `unset HUG_TEST_MODE` will poison the suite-global flag
+# causing gum-dependent tests that run later in the same process to hang
+# (gum_available() returns false → numbered-list selector blocks on stdin forever).
 
 # Configure gum mock to simulate cancellation
 # Useful for testing that commands handle cancelled gum interactions properly
@@ -651,7 +829,10 @@ teardown_gum_mock() {
 
   # Unset any mock-related environment variables
   unset HUG_TEST_GUM_SELECTION_INDEX
+  unset HUG_TEST_GUM_SELECTION_INDICES
   unset HUG_TEST_GUM_CONFIRM
+  unset HUG_TEST_GUM_INPUT
+  unset HUG_TEST_GUM_INPUT_RETURN_CODE
 }
 
 # Skip test if gum is not available
@@ -706,6 +887,16 @@ create_test_hg_repo() {
   (
     cd "$test_repo" || {
       echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
+    # `cd ""` is a silent no-op in bash (CWD unchanged). If temp-dir
+    # resolution ever fails and test_repo comes back empty, the unguarded
+    # helper re-inits and commits fixtures into whatever repo hosts CWD —
+    # the worktree-contamination incident (junk "Initial commit" landed on
+    # the branch under test, authored "Hug Test"). Verifying arrival makes
+    # that failure loud instead of destructive.
+    [[ "$PWD" == "$test_repo" ]] || {
+      echo "repo helper: cd arrived at '$PWD', expected '$test_repo' — aborting to protect the host repo" >&2
       exit 1
     }
     hg init
@@ -1144,7 +1335,245 @@ cleanup_test_worktrees() {
   fi
 }
 
-# Create a test worktree with uncommitted changes
+# Create a meta-repo with one submodule and a worktree of the submodule.
+# This is the canonical fixture for testing submodule-namespace worktrees.
+#
+# Output (stdout, two lines):
+#   Line 1 — meta_repo path
+#   Line 2 — submodule worktree path
+#
+# Layout produced:
+#   <meta>/
+#   <meta>/.git/modules/sub/                  # submodule gitdir
+#   <meta>/.git/modules/sub.WT.<branch>/      # the submodule's worktree
+#   <meta>/sub/                                # submodule's main checkout
+#
+# WHY raw `git worktree add` (not `hug wtc`): the fixture must be
+# independent of the code under test. Coupling it to `hug wtc` would
+# hide fixture failures and make tests non-deterministic when `hug wtc`
+# itself has bugs.
+#
+# WHY `protocol.file.allow=always`: modern Git (CVE-2022-39253 hardening)
+# refuses local submodule URLs by default. Tests need to opt in.
+#
+# Returns non-zero with a clear stderr message if fixture setup fails,
+# so test failures point at the fixture rather than at downstream
+# "directory does not exist" cascades.
+create_test_submodule_worktree() {
+  local branch="${1:-sub-feature}"
+  local origin_repo meta_repo wt_path sub_gitdir
+
+  origin_repo=$(create_temp_repo_dir)
+  (
+    cd "$origin_repo" || exit 1
+    git init -q --initial-branch=main 2> /dev/null || git init -q
+    git config user.email "test@hug-scm.test"
+    git config user.name "Hug Test"
+    git symbolic-ref HEAD refs/heads/main 2> /dev/null || true
+    echo "sub" > sub.txt
+    git add sub.txt
+    git_commit_deterministic "Initial sub commit"
+    git checkout -q -b "$branch"
+    echo "branch" > branch.txt
+    git add branch.txt
+    git_commit_deterministic "Branch commit"
+    git checkout -q main 2> /dev/null || git checkout -q master 2> /dev/null
+  ) || {
+    echo "create_test_submodule_worktree: failed to init origin repo at $origin_repo" >&2
+    rm -rf "$origin_repo" 2> /dev/null
+    return 1
+  }
+
+  meta_repo=$(create_temp_repo_dir)
+  (
+    cd "$meta_repo" || exit 1
+    git init -q --initial-branch=main 2> /dev/null || git init -q
+    git config user.email "test@hug-scm.test"
+    git config user.name "Hug Test"
+    git symbolic-ref HEAD refs/heads/main 2> /dev/null || true
+    echo "meta" > meta.txt
+    git add meta.txt
+    git_commit_deterministic "Meta initial"
+    git -c protocol.file.allow=always submodule add -q "$origin_repo" sub
+    git_commit_deterministic "Add submodule"
+  ) || {
+    echo "create_test_submodule_worktree: failed to init meta repo at $meta_repo" >&2
+    rm -rf "$meta_repo" "$origin_repo" 2> /dev/null
+    return 1
+  }
+
+  sub_gitdir="$meta_repo/.git/modules/sub"
+  wt_path="$meta_repo/.git/modules/sub.WT.$branch"
+
+  # Explicit error check — silent fixture failures produce confusing
+  # "directory does not exist" test errors instead of "fixture broken".
+  local _wt_err
+  if ! _wt_err=$(git --git-dir="$sub_gitdir" worktree add "$wt_path" "$branch" 2>&1); then
+    echo "create_test_submodule_worktree: failed to add worktree '$branch' at $wt_path" >&2
+    echo "  sub_gitdir=$sub_gitdir" >&2
+    echo "  git stderr: $_wt_err" >&2
+    rm -rf "$meta_repo" "$origin_repo" 2> /dev/null
+    return 1
+  fi
+
+  printf '%s\n%s\n' "$meta_repo" "$wt_path"
+}
+
+# Cleanup helper for create_test_submodule_worktree.
+# Removes both the meta-repo (which contains the worktree as a child) and
+# the origin repo that the meta-repo's submodule pointed to. The origin
+# path isn't tracked here — caller is expected to clean it via /tmp TTL
+# (create_temp_repo_dir uses mktemp). This helper is best-effort.
+cleanup_test_submodule_worktree() {
+  local meta_repo="$1" wt_path="$2"
+  [[ -n "$meta_repo" ]] || return 0
+  if [[ -d "$meta_repo/.git/modules/sub" ]]; then
+    git --git-dir="$meta_repo/.git/modules/sub" worktree remove --force "$wt_path" 2> /dev/null || true
+  fi
+  rm -rf "$wt_path" 2> /dev/null || true
+  rm -rf "$meta_repo" 2> /dev/null || true
+}
+
+# create_test_repo_with_submodule [name1 name2 ...]
+#
+# Creates a parent git repo with one or more submodules.  Each submodule is a
+# standalone git repo added as a local submodule, then initialized.
+#
+# Args:
+#   name1 name2 ...  Submodule directory names (default: "sub")
+#
+# Outputs (stdout): the parent repo path
+#
+# After calling, the following global variables are set:
+#   TEST_PARENT_REPO       — parent repo path (set IN ADDITION to stdout)
+#   TEST_SUBMODULE_NAMES   — bash array of submodule names (as given)
+#   TEST_SUBMODULE_PATHS   — bash array of absolute submodule checkout paths
+#   TEST_SUBMODULE_ORIGINS — bash array of origin repo paths (for cleanup)
+#
+# IMPORTANT — subshell gotcha: $() runs the function in a subshell, so
+# globals set inside will NOT propagate to the caller.  Tests that need the
+# global arrays must call the function directly (not via $() or `run`):
+#   create_test_repo_with_submodule sub1 sub2
+#   parent=$TEST_PARENT_REPO   # read the global instead of capturing stdout
+#
+# WHY global arrays instead of returning multiple values: Bash functions can
+# only return a single exit code and stdout string.  Tests commonly need all
+# four pieces (parent path, names for assertions, paths for file checks,
+# origins for cleanup), so globals are the pragmatic choice.  The stdout
+# print is kept for consistency with other helpers, but callers needing
+# globals MUST use TEST_PARENT_REPO instead of $().
+#
+# WHY `protocol.file.allow=always`: modern Git (CVE-2022-39253 hardening)
+# refuses local submodule URLs by default.  Tests that add local submodules
+# must opt in, otherwise `git submodule add` silently fails with an opaque
+# "repository does not exist" error.  See create_test_submodule_worktree
+# for the same hardening rationale.
+#
+# Requires: create_temp_repo_dir, git_commit_deterministic (from this file)
+create_test_repo_with_submodule() {
+  # Default to "sub" when no names provided
+  if [[ $# -eq 0 ]]; then
+    set -- "sub"
+  fi
+
+  local parent_repo
+  parent_repo=$(create_temp_repo_dir) || {
+    echo "create_test_repo_with_submodule: failed to create temp dir" >&2
+    return 1
+  }
+
+  # Initialize the parent repo with a first commit so submodules have a tree
+  # to attach to.  Without this, `git submodule add` fails because HEAD has
+  # no commits.
+  (
+    cd "$parent_repo" || exit 1
+    git init -q --initial-branch=main 2> /dev/null || git init -q
+    git config user.email "test@hug-scm.test"
+    git config user.name "Hug Test"
+    git symbolic-ref HEAD refs/heads/main 2> /dev/null || true
+    echo "parent" > parent.txt
+    git add parent.txt
+    git_commit_deterministic "Parent initial"
+  ) || {
+    echo "create_test_repo_with_submodule: failed to init parent repo at $parent_repo" >&2
+    rm -rf "$parent_repo" 2> /dev/null
+    return 1
+  }
+
+  # Reset global arrays — each call gets a clean slate even if a previous
+  # call left stale data.
+  TEST_SUBMODULE_NAMES=()
+  TEST_SUBMODULE_PATHS=()
+  TEST_SUBMODULE_ORIGINS=()
+
+  for name in "$@"; do
+    # Create a standalone origin repo for this submodule
+    local origin_repo
+    origin_repo=$(create_temp_repo_dir) || {
+      echo "create_test_repo_with_submodule: failed to create origin dir for '$name'" >&2
+      rm -rf "$parent_repo" "${TEST_SUBMODULE_ORIGINS[@]}" 2> /dev/null
+      return 1
+    }
+
+    (
+      cd "$origin_repo" || exit 1
+      git init -q --initial-branch=main 2> /dev/null || git init -q
+      git config user.email "test@hug-scm.test"
+      git config user.name "Hug Test"
+      git symbolic-ref HEAD refs/heads/main 2> /dev/null || true
+      echo "$name" > content.txt
+      git add content.txt
+      git_commit_deterministic "$name initial"
+    ) || {
+      echo "create_test_repo_with_submodule: failed to init origin repo '$name' at $origin_repo" >&2
+      rm -rf "$parent_repo" "$origin_repo" "${TEST_SUBMODULE_ORIGINS[@]}" 2> /dev/null
+      return 1
+    }
+
+    # Add the origin repo as a submodule in the parent.
+    # The `-c protocol.file.allow=always` is critical — without it, modern Git
+    # (post CVE-2022-39253) rejects file:// submodule URLs.
+    local _add_err
+    if ! _add_err=$(cd "$parent_repo" && git -c protocol.file.allow=always submodule add -q "$origin_repo" "$name" 2>&1); then
+      echo "create_test_repo_with_submodule: failed to add submodule '$name'" >&2
+      echo "  git stderr: $_add_err" >&2
+      rm -rf "$parent_repo" "$origin_repo" "${TEST_SUBMODULE_ORIGINS[@]}" 2> /dev/null
+      return 1
+    fi
+
+    # Commit the submodule addition (each submodule gets its own commit so
+    # tests can inspect `.gitmodules` incrementally if needed).
+    (
+      cd "$parent_repo" || exit 1
+      git_commit_deterministic "Add submodule $name"
+    ) || {
+      echo "create_test_repo_with_submodule: failed to commit submodule '$name'" >&2
+      rm -rf "$parent_repo" "$origin_repo" "${TEST_SUBMODULE_ORIGINS[@]}" 2> /dev/null
+      return 1
+    }
+
+    TEST_SUBMODULE_NAMES+=("$name")
+    TEST_SUBMODULE_PATHS+=("$parent_repo/$name")
+    TEST_SUBMODULE_ORIGINS+=("$origin_repo")
+  done
+
+  # Initialize all submodules so their working directories actually exist.
+  # `git submodule add` records the reference, but the checkout needs an
+  # explicit `update --init` to materialize files in the submodule dir.
+  (
+    cd "$parent_repo" || exit 1
+    git submodule update --init --recursive 2> /dev/null
+  ) || {
+    echo "create_test_repo_with_submodule: failed to initialize submodules" >&2
+    return 1
+  }
+
+  # Set global for callers that need the path AND the submodule arrays
+  # (since $() runs in a subshell and would lose the globals).
+  TEST_PARENT_REPO="$parent_repo"
+
+  printf '%s\n' "$parent_repo"
+}
 # Usage: worktree_path=$(create_test_worktree_with_changes "feature-branch" "/path/to/repo")
 create_test_worktree_with_changes() {
   local branch="$1"
@@ -1189,26 +1618,49 @@ create_test_worktree_with_dirty_changes() {
   echo "$worktree_path"
 }
 
+# Resolve the canonical gitdir for a worktree path (test-helper variant).
+# Mirrors worktree_gitdir() from git-config/lib/hug-git-worktree but is
+# self-contained so test_helper.bash doesn't depend on lib sourcing order.
+#
+# Absolutize: --git-common-dir returns ".git" for main worktrees, which
+# would resolve relative to the TEST'S CWD and produce false negatives
+# (or worse, false positives matching a *different* gitdir).
+_assert_worktree_gitdir() {
+  local path="$1" gd
+  [[ -n "$path" && -d "$path" ]] || return 1
+  gd=$(git -C "$path" rev-parse --git-common-dir 2> /dev/null) || return 1
+  [[ "$gd" = /* ]] || gd="$path/$gd"
+  printf '%s\n' "$gd"
+}
+
 # Assert that a worktree exists and is valid
 # Usage: assert_worktree_exists "/path/to/worktree"
+#
+# Submodule-safe: anchors `git worktree list` to the worktree's own gitdir
+# instead of CWD's. Without this, the helper produces false negatives for
+# submodule worktrees when CWD is the meta-repo.
 assert_worktree_exists() {
-  local worktree_path="$1"
+  local worktree_path="$1" _gitdir
 
   assert_dir_exists "$worktree_path"
 
   # Check it's a valid git worktree (in worktrees, .git is a file, not a directory)
   [[ -f "$worktree_path/.git" ]] || fail "Worktree $worktree_path is not a valid git repository"
 
-  # Check it's listed in git worktree list
-  local found=false
-  while IFS= read -r line; do
-    if [[ "$line" == "worktree $worktree_path" ]]; then
-      found=true
-      break
-    fi
-  done < <(git worktree list --porcelain 2> /dev/null)
+  _gitdir=$(_assert_worktree_gitdir "$worktree_path") ||
+    fail "Cannot resolve gitdir for $worktree_path"
 
-  $found || fail "Worktree $worktree_path not found in git worktree list"
+  # Capture-then-filter (NOT pipe) — `git | grep -q` races under `set -o pipefail`:
+  # grep matches → closes the read end → git gets SIGPIPE → pipe exits 141 → false-fail.
+  # See worktree_exists in git-config/lib/hug-git-worktree for the full WHY.
+  #
+  # grep -qxF: exact LINE match (substring match would falsely match
+  # /tmp/wt against /tmp/wt2's registration).
+  local _porcelain
+  _porcelain=$(git --git-dir="$_gitdir" worktree list --porcelain 2> /dev/null) ||
+    fail "Cannot list worktrees for gitdir $_gitdir"
+  grep -qxF "worktree $worktree_path" <<< "$_porcelain" ||
+    fail "Worktree $worktree_path not found in git worktree list"
 }
 
 # Usage: run_with_timeout <timeout_seconds> [expected_exit_code] <command>
@@ -1248,21 +1700,41 @@ run_with_timeout() {
 
 # Assert that a worktree does not exist
 # Usage: assert_worktree_not_exists "/path/to/worktree"
+#
+# Submodule-safe: since the worktree path is gone (success case), we
+# can't resolve its gitdir from the path itself. Search candidate gitdirs
+# (parent's gitdir + submodule gitdirs reachable from it) for any
+# lingering registration.
 assert_worktree_not_exists() {
   local worktree_path="$1"
 
   assert_dir_not_exists "$worktree_path"
 
-  # Check it's not listed in git worktree list
-  local found=false
-  while IFS= read -r line; do
-    if [[ "$line" == "worktree $worktree_path" ]]; then
-      found=true
-      break
+  # Build candidate gitdir list to scan for stale registrations.
+  local -a candidates=()
+  local parent _parent_gd
+  parent=$(dirname "$worktree_path")
+  if [[ -d "$parent" ]]; then
+    _parent_gd=$(_assert_worktree_gitdir "$parent" 2> /dev/null) && candidates+=("$_parent_gd")
+    # If parent's gitdir hosts submodules, also check those.
+    if [[ -n "$_parent_gd" && -d "$_parent_gd/modules" ]]; then
+      local sg
+      for sg in "$_parent_gd/modules"/*/; do
+        [[ -f "${sg}HEAD" ]] && candidates+=("${sg%/}")
+      done
     fi
-  done < <(git worktree list --porcelain 2> /dev/null)
+  fi
 
-  ! $found || fail "Worktree $worktree_path still found in git worktree list"
+  # Same capture-then-filter pattern as assert_worktree_exists — see its comment.
+  # Logic is inverted: FAIL when grep finds the path (worktree must NOT exist).
+  local gd _porcelain
+  for gd in "${candidates[@]}"; do
+    _porcelain=$(git --git-dir="$gd" worktree list --porcelain 2> /dev/null) ||
+      fail "Cannot list worktrees for gitdir $gd"
+    if grep -qxF "worktree $worktree_path" <<< "$_porcelain"; then
+      fail "Worktree $worktree_path still found in git worktree list (gitdir=$gd)"
+    fi
+  done
 }
 
 # Assert that a worktree has the specified branch checked out

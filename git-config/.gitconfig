@@ -137,6 +137,7 @@
   rollback = h rollback
   rewind = h rewind
   squash = h squash
+  restore = h restore
   files = h files
   filesp = h files -p
 
@@ -166,7 +167,7 @@
   #  COMMITS (c*)
   # ──────────────────────────────────────────────────────────────────
 
-  # Note: ca, cm, and cma are now implemented as wrapper scripts in
+  # Note: ca, cmod, and cmoda are now implemented as wrapper scripts in
   # git-config/bin/ to provide post-commit push suggestions
 
   # ──────────────────────────────────────────────────────────────────
@@ -494,9 +495,8 @@
   # Usage: hug m <branch>; hug c
   m = merge --squash
 
-  # Merge with fast-forward only (fails if not possible)
-  # Usage: git mff <branch>
-  mff = merge --ff-only
+  # Merge with fast-forward only — now implemented as git-mff script
+  # Usage: hug mff <target> or hug mff <branch> <target>
 
   # Merge with no fast-forward (always create merge commit)
   # Usage: git mnf <branch>

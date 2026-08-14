@@ -27,11 +27,13 @@ FAKE_CLOCK_CURRENT=$FAKE_CLOCK_EPOCH
 #   $2 - Seconds to add to clock (optional, default: 3600 = 1 hour)
 #   $3 - Author name (optional, default: "Hug Test")
 #   $4 - Author email (optional, default: "test@hug-scm.test")
+#   $5 - Extra git commit flags (optional, e.g. "--allow-empty")
 commit_with_date() {
   local message="$1"
   local seconds_offset="${2:-3600}"  # Default: 1 hour increment
   local author_name="${3:-Hug Test}" # Flexible author identity
   local author_email="${4:-test@hug-scm.test}"
+  local extra_flags="${5:-}"
 
   FAKE_CLOCK_CURRENT=$((FAKE_CLOCK_CURRENT + seconds_offset))
   local commit_date="${FAKE_CLOCK_CURRENT} +0000"
@@ -42,7 +44,7 @@ commit_with_date() {
     GIT_COMMITTER_EMAIL="$author_email" \
     GIT_AUTHOR_DATE="$commit_date" \
     GIT_COMMITTER_DATE="$commit_date" \
-    git commit -q -m "$message"
+    git commit -q -m "$message" $extra_flags
 }
 
 # Enhanced backward-compatible function
@@ -51,14 +53,16 @@ commit_with_date() {
 #   $2 - Seconds to add to clock (optional, default: 3600 = 1 hour)
 #   $3 - Author name (optional, default: "Hug Test")
 #   $4 - Author email (optional, default: "test@hug-scm.test")
+#   $5 - Extra git commit flags (optional, e.g. "--allow-empty")
 git_commit_deterministic() {
   local message="$1"
   local seconds_offset="${2:-3600}"
   local author_name="${3:-Hug Test}"           # NEW: Optional author parameter
   local author_email="${4:-test@hug-scm.test}" # NEW: Optional email parameter
+  local extra_flags="${5:-}"
 
   # Delegate to consolidated function for DRY compliance
-  commit_with_date "$message" "$seconds_offset" "$author_name" "$author_email"
+  commit_with_date "$message" "$seconds_offset" "$author_name" "$author_email" "$extra_flags"
 }
 
 # Convenience functions for common test scenarios

@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["working-dir", "parking"]'
+_hug_keywords='["save", "shelve", "stash", "park", "wip"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
@@ -102,7 +108,7 @@ fi
 
 check_git_repo
 
-if ! has_pending_changes; then
+if ! has_untracked_or_pending_changes; then
   printf '%s: No changes detected. Run "hug sl" to confirm the working tree state.\n' "$PROG_NAME" >&2
   exit 0
 fi

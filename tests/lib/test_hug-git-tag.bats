@@ -22,6 +22,13 @@ teardown() {
   cleanup_test_repo
 }
 
+create_gum_selection_tags() {
+  local i
+  for i in $(seq 1 10); do
+    git tag "release-$i" HEAD
+  done
+}
+
 @test "compute_tag_details: populates arrays correctly" {
   source "$HUG_HOME/git-config/lib/hug-git-tag"
 
@@ -309,4 +316,82 @@ teardown() {
   # This would need interactive input, so just test that the function exists
   # and can be called without errors
   type select_tags
+}
+
+@test "select_tags: gum multi-select maps selections back to the correct tags" {
+  source "$HUG_HOME/git-config/lib/hug-common"
+  source "$HUG_HOME/git-config/lib/hug-gum"
+  source "$HUG_HOME/git-config/lib/hug-git-tag"
+
+  create_gum_selection_tags
+  local -a ordered_tags=()
+  mapfile -t ordered_tags < <(git tag --sort=-version:refname)
+
+  gum_available() { return 0; }
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      local -a options=()
+      mapfile -t options
+      printf '%s\n' "${options[1]}" "${options[4]}"
+      return 0
+    fi
+    return 1
+  }
+
+  local -a selected=()
+  select_tags selected --multi-select --prompt "Select tags"
+
+  [[ ${#selected[@]} -eq 2 ]]
+  [[ "${selected[0]}" == "${ordered_tags[1]}" ]]
+  [[ "${selected[1]}" == "${ordered_tags[4]}" ]]
+}
+
+@test "select_tags: gum single-select maps the chosen row to the correct tag" {
+  source "$HUG_HOME/git-config/lib/hug-common"
+  source "$HUG_HOME/git-config/lib/hug-gum"
+  source "$HUG_HOME/git-config/lib/hug-git-tag"
+
+  create_gum_selection_tags
+  local -a ordered_tags=()
+  mapfile -t ordered_tags < <(git tag --sort=-version:refname)
+
+  gum_available() { return 0; }
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      local -a options=()
+      mapfile -t options
+      printf '%s\n' "${options[3]}"
+      return 0
+    fi
+    return 1
+  }
+
+  local -a selected=()
+  select_tags selected --prompt "Select a tag"
+
+  [[ ${#selected[@]} -eq 1 ]]
+  [[ "${selected[0]}" == "${ordered_tags[3]}" ]]
+}
+
+@test "select_tags: gum cancellation returns without crashing" {
+  source "$HUG_HOME/git-config/lib/hug-common"
+  source "$HUG_HOME/git-config/lib/hug-gum"
+  source "$HUG_HOME/git-config/lib/hug-git-tag"
+
+  create_gum_selection_tags
+
+  gum_available() { return 0; }
+  gum() {
+    if [[ "$1" == "filter" ]]; then
+      return 1
+    fi
+    return 1
+  }
+
+  local -a selected=("sentinel")
+  if select_tags selected --multi-select --prompt "Select tags"; then
+    false
+  fi
+
+  [[ ${#selected[@]} -eq 0 ]]
 }

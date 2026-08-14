@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+_hug_category='["branching", "merge"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+show_help() {
+  cat << 'EOF'
+hug mff: Fast-forward merge or move branch pointer
+
+USAGE:
+  hug mff <target>              # Fast-forward current branch to <target>
+  hug mff <branch> <target>     # Fast-forward <branch> to <target> (no switch)
+  hug mff <branch> <target> -f  # Force-move <branch> even if not a fast-forward
+
+OPTIONS:
+  -f, --force     Allow moving branch even when not a fast-forward
+  -y, --yes       Skip confirmation prompts (keeps safe semantics)
+  --dry-run       Preview the move without executing
+  -h, --help      Show this help message
+
+DESCRIPTION:
+  One-arg form: Fast-forward merges <target> into the current branch.
+  Fails if a true fast-forward is not possible. Equivalent to
+  'git merge --ff-only <target>'.
+
+  Two-arg form: Moves the <branch> pointer to <target> without switching
+  to it. By default, only allows pure fast-forward (target must be a
+  descendant of branch). Use --force to allow arbitrary moves.
+
+EXAMPLES:
+  hug mff feature            # Fast-forward current branch to feature
+  hug mff main feature       # Move main to feature (ff-only)
+  hug mff main feature -f    # Force-move main to feature
+  hug mff main v1.0.0        # Move main to tag v1.0.0
+  hug mff main abc1234       # Move main to commit abc1234
+
+SEE ALSO:
+  hug bmv    : Rename a branch (change its name)
+  hug b      : Switch to a branch
+  hug bpull  : Safe pull with fast-forward only
+
+FURTHER READING:
+  See 'git merge --help' and 'git branch --help'.
+EOF
+}
+
+check_git_repo
+
+# Parse common flags (-f/--force, --dry-run, -q/--quiet, -h/--help)
+# parse_common_flags exports HUG_FORCE=true and sets dry_run=true,
+# so downstream code (e.g. confirmation prompts) sees the exported variable.
+eval "$(parse_common_flags "$@")"
+
+# Collect remaining positional arguments
+declare -a args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  -*)
+    error "Unknown option: $1. See 'hug help mff'."
+    ;;
+  *)
+    args+=("$1")
+    shift
+    ;;
+  esac
+done
+
+# Validate argument count
+if [[ ${#args[@]} -eq 0 ]]; then
+  error "Missing arguments. USAGE: hug mff <target> or hug mff <branch> <target>"
+elif [[ ${#args[@]} -gt 2 ]]; then
+  error "Too many arguments. USAGE: hug mff <target> or hug mff <branch> <target>"
+fi
+
+# --- One-arg form: passthrough to git merge --ff-only ---
+if [[ ${#args[@]} -eq 1 ]]; then
+  target="${args[0]}"
+  if [[ ${dry_run:-false} == true ]]; then
+    info "Would fast-forward current branch to '$target'"
+    exit 0
+  fi
+  exec git merge --ff-only "$target"
+fi
+
+# --- Two-arg form: move branch pointer ---
+# WHY: Allows advancing a non-checked-out branch to a new target without
+# switching to it. This is essential for release workflows where you want
+# to fast-forward a release branch after merging feature branches, or
+# update a tracking branch pointer from another branch's HEAD.
+#
+# SAFETY DESIGN:
+# - Validates both branch existence and target resolution upfront
+# - Rejects force-move on checked-out branch (DX-1: would discard uncommitted changes)
+# - Handles checked-out branch via merge --ff-only (force case rejected)
+# - Ancestry check ensures only true fast-forwards by default
+# - Force moves require explicit confirmation (unless --force auto-confirms)
+# - Worktree conflict detection before pointer moves
+# - Reflog-aware undo hint after force moves
+branch="${args[0]}"
+target="${args[1]}"
+
+# Validate branch exists locally
+# WHY: A typo in the branch name would silently create a new branch via
+# `git branch -f`. Explicit validation catches this early with a clear message.
+if ! git show-ref --verify --quiet "refs/heads/$branch" 2> /dev/null; then
+  error "Branch '$branch' not found locally. See 'hug help mff'."
+fi
+
+# Validate target resolves to a commit
+# WHY: Using ^{commit} peels annotated tags to their underlying commit object,
+# ensuring both lightweight and annotated tags work correctly. Without this,
+# `git rev-parse v1.0.0` on an annotated tag returns the tag object, not the commit.
+target_sha=""
+if ! target_sha=$(git rev-parse --verify "$target^{commit}" 2> /dev/null); then
+  error "Cannot resolve '$target' as a commit. See 'hug help mff'."
+fi
+
+# Get branch's current SHA for comparison
+branch_sha=$(git rev-parse --verify "$branch")
+
+# Already at target? Short-circuit to avoid unnecessary work.
+if [[ "$branch_sha" = "$target_sha" ]]; then
+  info "'$branch' already points at $(git rev-parse --short "$target_sha")."
+  exit 0
+fi
+
+# Check if current branch is the target branch
+# WHY: When the branch IS the current branch, we must use `git merge --ff-only`
+# instead of `git branch -f`, because Git prohibits moving the current branch
+# reference directly (it's locked by HEAD).
+current_branch=$(git symbolic-ref --short HEAD 2> /dev/null || echo "")
+is_current_branch=false
+if [[ "$current_branch" = "$branch" ]]; then
+  is_current_branch=true
+fi
+
+# Determine if this is a fast-forward (cached for reuse in execute/report sections)
+is_fast_forward=true
+if ! git merge-base --is-ancestor "$branch_sha" "$target_sha" 2> /dev/null; then
+  is_fast_forward=false
+fi
+
+# DX-1 SAFETY: reject force-move on checked-out branch
+# WHY: Force-moving the current branch when it's not a fast-forward would require
+# `git reset --hard`, which silently discards uncommitted changes. This is a
+# dangerous footgun. The user must switch away first so we can use `git branch -f`,
+# which is safe (operates on refs only, never touches the working tree).
+if $is_current_branch && [[ "${HUG_FORCE:-false}" == true ]] && ! $is_fast_forward; then
+  error "Cannot force-move checked-out branch '$branch'. Switch away first: hug b <other-branch>"
+fi
+
+# Ancestry check (unless forced)
+# WHY: By default, only true fast-forwards are allowed. This prevents accidental
+# history loss when someone specifies branches in the wrong order (e.g.,
+# `hug mff main feature` when main is actually ahead of feature).
+if [[ "${HUG_FORCE:-false}" != true ]] && ! $is_fast_forward; then
+  # WHY: The user needs to understand WHY the fast-forward failed, not just
+  # that it did. Showing commit counts and subjects from both sides gives
+  # immediate clarity without requiring the user to run additional commands.
+  branch_only_count=$(git rev-list --count "${target_sha}..${branch_sha}" 2> /dev/null || echo "?")
+  target_only_count=$(git rev-list --count "${branch_sha}..${target_sha}" 2> /dev/null || echo "?")
+
+  if [[ "$branch_only_count" != "?" && "$branch_only_count" -gt 0 ]]; then
+    info "'$branch' has $branch_only_count commit(s) not in '$target' (blocks fast-forward):"
+    while IFS= read -r line; do
+      info "  $line"
+    done < <(git log --format="%h %s" "${target_sha}..${branch_sha}" 2> /dev/null || true)
+  fi
+
+  if [[ "$target_only_count" != "?" && "$target_only_count" -gt 0 ]]; then
+    info "'$target' has $target_only_count commit(s) not in '$branch'"
+  fi
+
+  error "Cannot fast-forward '$branch' to '$target' — branches have diverged.
+Use hug mff $branch $target --force to move anyway.
+Inspect: hug ll ${branch}...${target}"
+fi
+
+# NOTE: No confirmation prompt for diverged force moves.
+# WHY: The --force flag IS the user's explicit consent to a non-fast-forward move.
+# Adding a confirmation prompt on top would be dead code — the only way to reach
+# a diverged move is via --force, and prompt_confirm_warn auto-confirms when
+# HUG_FORCE=true. The safety model is: non-force → hard error; force → allowed.
+# The reflog provides undo capability after force moves.
+
+# Compute commit count for display
+commit_count=$(git rev-list --count "${branch_sha}..${target_sha}" 2> /dev/null || echo "?")
+
+# Dry-run: show what would happen without executing
+if [[ ${dry_run:-false} == true ]]; then
+  if [[ "${HUG_FORCE:-false}" == true ]]; then
+    info "Would move '$branch' to '$target' (--force, not a fast-forward)"
+  else
+    info "Would fast-forward '$branch' to '$target' ($commit_count commits ahead)"
+  fi
+  info "  $(git rev-parse --short "$branch_sha") → $(git rev-parse --short "$target_sha")"
+  exit 0
+fi
+
+# CRITICAL SAFETY: check for worktree conflicts before moving
+# WHY: `git branch -f` fails with a cryptic error if the branch is checked out
+# in another worktree. We detect this upfront and provide a clear, actionable
+# error message pointing to the correct remediation command.
+if ! $is_current_branch; then
+  # Capture-then-filter AND fix porcelain format mismatch:
+  # Bug 1 (SIGPIPE): `git worktree list --porcelain | grep -q` races under pipefail
+  #   when many worktrees are registered. See worktree_exists in hug-git-worktree.
+  # Bug 2 (hidden): `git worktree list --porcelain` emits `branch refs/heads/X`
+  #   (space separator, no colon), but the original grep used `branch: refs/heads/`
+  #   (with colon). The safety check NEVER matched, giving users a cryptic
+  #   `git branch -f` error instead of the clear actionable message.
+  # NOTE: no `local` here — this is top-level script scope, not a function body.
+  wt_porcelain=$(git worktree list --porcelain 2> /dev/null) || {
+    # Best-effort check: if worktree query fails, proceed and let git branch -f
+    # surface its own error if there really is a conflict.
+    warn "Could not query worktree registry; skipping worktree conflict check"
+    true
+  }
+  if grep -q "branch refs/heads/$branch$" <<< "$wt_porcelain"; then
+    error "Branch '$branch' is checked out in another worktree and cannot be moved.
+Remove the worktree first: hug worktree remove <path>"
+  fi
+fi
+
+# Execute the move
+# WHY: Two distinct code paths based on whether the branch is checked out:
+# - Current branch: must use `git merge --ff-only` (Git locks the branch ref).
+#   Force-move on current branch is rejected above (DX-1 safety), so only ff here.
+# - Non-current branch: use `git branch -f` (safe ref-only operation).
+if $is_current_branch; then
+  # Fast-forward checked-out branch via merge
+  # WHY: Git locks the current branch's ref while it's checked out.
+  # `git branch -f` would fail; `git merge --ff-only` advances HEAD correctly.
+  # Force-move case is already rejected above by DX-1 check.
+  git merge --ff-only "$target"
+else
+  # Move non-checked-out branch pointer
+  # NOTE: `git branch -f` output may go to stderr, so we capture it for error wrapping.
+  if ! git branch -f "$branch" "$target" 2>&1; then
+    error "Failed to move branch '$branch'. See 'hug help mff'."
+  fi
+fi
+
+# Report result
+# WHY: Different messages for fast-forward vs force-move so the user clearly
+# understands what happened. Force-move includes an undo hint via reflog.
+if [[ "${HUG_FORCE:-false}" == true ]] && ! $is_fast_forward; then
+  success "Moved '$branch' to '$target' (--force, not a fast-forward)"
+  info "  $(git rev-parse --short "$branch_sha") → $(git rev-parse --short "$target_sha")"
+  info "Undo: hug h back (if on '$branch') or hug mff $branch $(git rev-parse --short "$branch_sha")"
+else
+  success "Fast-forwarded '$branch' to '$target' ($commit_count commits ahead)"
+  info "  $(git rev-parse --short "$branch_sha") → $(git rev-parse --short "$target_sha")"
+fi

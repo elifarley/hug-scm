@@ -26,10 +26,10 @@ jobs:
     # If you do not check out your code, Copilot will do this for you.
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: "npm"
@@ -44,8 +44,15 @@ jobs:
           make install
           source bin/activate
 
+      - name: Install UV package manager
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
       - name: Install test dependencies
-        run: make dev-deps-sync
+        run: |
+          make dev-env-init
+          make dev-deps-sync
 
       - name: Install VHS
         run: make vhs-deps-install

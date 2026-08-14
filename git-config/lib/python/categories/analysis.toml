@@ -1,0 +1,5 @@
+label       = "Repository analysis"
+description = """
+Analyse history, ownership, and dependencies across the codebase.
+Surfaces hot spots, expert authors, and co-changing files.
+"""

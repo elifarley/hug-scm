@@ -1,0 +1,6 @@
+label       = "Worktrees"
+description = """
+Manage git worktrees.
+Create, list, switch, prune, and remove additional working trees
+sharing a single repository.
+"""

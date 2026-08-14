@@ -337,6 +337,7 @@ Hug provides three garbage collection modes with increasing space savings and de
 - `--dry-run`: Preview what would be done without applying changes
 - Progressive confirmation: safer modes have easier confirmation
 - `-f/--force`: Skip confirmation prompts when you're certain
+- `-y/--yes`: Skip confirmation prompts for safe operations (dangerous ops still require --force)
 - `-q/--quiet`: Suppress informational output
 
 #### Examples

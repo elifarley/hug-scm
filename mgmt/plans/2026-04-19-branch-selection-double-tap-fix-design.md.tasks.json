@@ -1,0 +1,12 @@
+{
+  "planPath": "docs/plans/2026-04-19-branch-selection-double-tap-fix-design.md",
+  "tasks": [
+    {"id": 1, "subject": "Task 1: Write pty-based tests exposing the double-tap bug", "status": "completed"},
+    {"id": 2, "subject": "Task 2: Run the new test to verify it fails (demonstrates the bug)", "status": "completed"},
+    {"id": 3, "subject": "Task 3: Fix the bug — userspace buffering in selection_core.py + None guard in branch_select.py", "status": "completed"},
+    {"id": 4, "subject": "Task 3.5: Fix existing None-crash bug in branch multi-select", "status": "completed"},
+    {"id": 5, "subject": "Task 4: Run all tests to verify fix and no regressions", "status": "completed"},
+    {"id": 6, "subject": "Task 5: Commit the fix", "status": "completed"}
+  ],
+  "lastUpdated": "2026-04-19T22:30:00Z"
+}

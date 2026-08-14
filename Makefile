@@ -14,8 +14,10 @@ MAKEFLAGS += --no-print-directory
 UV_CMD := uv
 
 # Python commands - always use UV (required tool)
+# WHY --extra search --extra dev: thefuzz (fuzzy matching for help_search.py) is in [search] extra.
+# Without it, pytest runs but fuzzy-match tests fail with the substring-only fallback.
 PYTHON_CMD := uv run python
-PYTEST_CMD := uv run pytest
+PYTEST_CMD := uv run --extra dev --extra search pytest
 PIP_CMD := uv pip install
 
 # Terminal color support detection (tput works in $(shell) context)
@@ -101,7 +103,7 @@ define ensure_pytest
 @cd git-config/lib/python && \
     if ! $(PYTEST_CMD) --version >/dev/null 2>&1; then \
         printf "$(YELLOW)pytest not installed. Installing pytest and dev dependencies...$(RESET)\n"; \
-        $(PIP_CMD) -q -e ".[dev]" || \
+        $(PIP_CMD) -q -e ".[dev,search]" || \
         (printf "$(YELLOW)Warning: Could not install dev dependencies. Tests will be skipped.$(RESET)\n" && exit 0); \
     fi; \
     cd - > /dev/null
@@ -306,7 +308,7 @@ dev-deps-sync: ## Sync dependencies from lockfiles
 	@test -d .venv || (printf "$(RED)❌ .venv not found$(RESET)\n" && printf "$(BLUE)ℹ️ Run: make dev-env-init$(RESET)\n" && exit 1)
 	$(call print_info,Installing Python test dependencies...)
 	@sh -c 'if command -v uv >/dev/null 2>&1; then printf "$(CYAN)Using UV for fast dependency installation...$(RESET)\n"; fi'
-	@cd git-config/lib/python && $(PIP_CMD) -e ".[dev]"
+	@cd git-config/lib/python && $(PIP_CMD) -e ".[dev,search]"
 	$(call print_success,Python test dependencies installed)
 
 dev-optional-install: ## Install optional development dependencies (gum, shfmt, ShellCheck)

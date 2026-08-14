@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# hug shv — visual show: a commit's patch (like shp) or a range's cumulative
+# diff (like shcp), rendered in your difftool instead of as text.
+#
+# Thin wrapper over the SHARED dd_commit_diff engine (hug-git-difftool) — the
+# exact engine `hug dd <committish|range|N>` uses, so `shv X` is identical to
+# `dd X` for any commit / range / N. shv is the show-family-named door (shp/shcp
+# → shv) for discoverability; dd is the visual-diff gateway. WHY a separate
+# command (not a `--visual` flag on shp): a flag would make shp conditionally
+# TTY-only and break its stdout/pipe discipline; a separate command isolates the
+# blocking-GUI concern — the same rationale that made dd separate from sw.
+_hug_category='["show"]'
+_hug_keywords='["visual","difftool","shp","shcp","patch","side-by-side","gui-diff","dir-diff"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit hug-git-difftool; do . "$CMD_BASE/../lib/$f"; done
+set -euo pipefail
+
+# Part of the Hug tool suite
+
+show_help() {
+  cat << 'EOF'
+hug shv: Visual show — a commit's patch or a range's cumulative diff, in a difftool.
+
+USAGE:
+    hug shv [N|-N|<committish>|<range>] [-- <path>...]
+    hug shv [-h, --help]
+
+shv is the visual counterpart to hug shp (a single commit) AND hug shcp (a range):
+    hug shv            # HEAD's own patch, visually (default)
+    hug shv HEAD       # same as above
+    hug shv <commit>   # the diff that commit INTRODUCED (commit vs its first parent)
+    hug shv 3          # the patch of the commit 3 back (HEAD~3)
+    hug shv -3         # cumulative diff of the last 3 commits (HEAD~3..HEAD)
+    hug shv A..B       # cumulative diff across a range
+    hug shv HEAD -- src/   # scoped to paths (multiple paths allowed, like shcp)
+
+N/-N CONVENTION (same as hug sh / shp):
+    N  (0-999) → single commit HEAD~N (0 = HEAD): its introduced patch
+    -N (1-999) → range HEAD~N..HEAD (cumulative)
+
+RELATIONSHIP TO dd:
+    `hug shv X` is identical to `hug dd X` for any commit / range / N — one shared
+    engine. Reach for whichever name fits: `dd` = "visual diff gateway"; `shv` =
+    "visual shp / shcp". For WORKING-TREE diffs use `hug dd s|u|w` — shv is
+    commit-history only.
+
+    A single commit is diffed against its FIRST parent, so `shv <merge>` can
+    differ from `shp <merge>` (which renders a combined diff), and a root commit
+    shows every file as added. A range / -N shows the cumulative endpoint diff
+    (like shcp), not one tool window per commit.
+
+CAPTURING OUTPUT:
+    shv is interactive and visual (a blocking GUI); it is TTY-guarded and must
+    not be piped or redirected. For pipe-safe text, use: hug shp / hug shcp.
+
+REQUIREMENTS:
+    A difftool must be configured in git config (see `hug dd` for setup).
+
+SEE ALSO:
+    hug shp      : Show a commit with its full patch (text)
+    hug shcp     : Show a range's cumulative patch + stats (text)
+    hug dd       : Visual diff gateway (working tree + commit / range)
+EOF
+}
+
+# --help / -h before any guard (help is documentation, not a tool launch).
+# Scan only up to the first '--' (a '--help' AFTER '--' is a pathspec).
+for _arg in "$@"; do
+  case "$_arg" in
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  --) break ;;
+  esac
+done
+
+# Split args into a single leading token (committish / N / range) and pathspecs.
+# Everything after the first '--' is a pathspec; the token defaults to HEAD.
+token=""
+pathspecs=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --)
+    shift
+    pathspecs=("$@")
+    break
+    ;;
+  *)
+    if [[ -z "$token" ]]; then
+      token="$1"
+    else
+      # shv shows ONE commit/range — a second bare token is a usage error.
+      error "hug shv takes a single commit/range, then optional '-- <path>...'. Unexpected: '$1'"
+    fi
+    shift
+    ;;
+  esac
+done
+
+# shv is commit-history only — redirect the working-tree subcommands so a user
+# who typed `shv s` gets a pointer instead of a confusing "not a valid commit".
+case "$token" in
+s | u | w)
+  error "hug shv shows a commit's diff, not working-tree changes.
+  For a visual working-tree diff use:  hug dd ${token}
+  For the text equivalents use:        hug ss | hug su | hug sw"
+  ;;
+esac
+
+[[ -z "$token" ]] && token="HEAD"
+
+check_git_repo
+
+# Delegate to the shared engine: it handles flag-rejection (e.g. `shv --stat`),
+# N/-N resolution, endpoint computation (C^1 C / empty-tree / range), the
+# exit-code-safe no-changes guard, the lazy TTY + difftool-preflight guards, and
+# the single batched difftool launch. One source of truth with `hug dd`.
+if [[ ${#pathspecs[@]} -gt 0 ]]; then
+  dd_commit_diff "$token" -- "${pathspecs[@]}"
+else
+  dd_commit_diff "$token"
+fi

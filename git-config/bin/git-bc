@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["branching"]'
+_hug_keywords='["create-branch", "new-branch", "make-branch"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 # Assume HUG_HOME is set (exported by hug or environment)
 # shellcheck source=git-config/lib/hug-common
 . "$HUG_HOME/git-config/lib/hug-common"
@@ -122,8 +128,20 @@ if [[ -n "$point_to" && -z "$branch_name" ]]; then
     is_branch=true
   fi
 
-  # Generate ISO datetime: YYYYMMDD-HHMM
-  iso_datetime=$(date +"%Y%m%d-%H%M")
+  # Generate ISO datetime: YYYYMMDD-HHMM (UTC).
+  # UTC, not local, because the suffix is a uniqueness hint, not user-facing
+  # display, and UTC makes it stable across machines. Tests pin
+  # HUG_FAKE_CLOCK to make this deterministic (#200).
+  #
+  # Capture the instant ONCE via hug_clock_epoch, then format the minute AND
+  # the seconds (on collision) from that same epoch. Three separate
+  # hug_clock_now calls would each hit `date` independently and could
+  # straddle a minute boundary, so the seconds suffix would describe a
+  # different instant than the minute prefix (e.g. "...20000101-0000.59"
+  # where :59 belongs to 00:00:59 but the minute was captured at 00:00:00).
+  # One epoch ⇒ one instant ⇒ consistent prefix and suffix by construction.
+  _bc_epoch=$(hug_clock_epoch)
+  iso_datetime=$(hug_clock_format_epoch "$_bc_epoch" "%Y%m%d-%H%M")
 
   # Clean the target name (remove refs/heads/, refs/tags/, etc.)
   clean_target=$(echo "$point_to" | sed 's|^refs/[^/]*/||')
@@ -144,16 +162,18 @@ if [[ -n "$point_to" && -z "$branch_name" ]]; then
     branch_name="${clean_target}.branch.${iso_datetime}"
   fi
 
-  # Ensure uniqueness by appending seconds if the name already exists
+  # Ensure uniqueness by appending seconds if the name already exists.
+  # The seconds come from the SAME captured epoch as the minute prefix, so
+  # the suffix always describes the same instant — no second-boundary drift.
   original_name="$branch_name"
   counter=0
   while git show-ref --verify --quiet "refs/heads/$branch_name" 2> /dev/null; do
     if [[ $counter -eq 0 ]]; then
-      # First collision: try appending seconds
-      branch_name="${original_name}.$(date +%S)"
+      # First collision: append seconds from the captured epoch.
+      branch_name="${original_name}.$(hug_clock_format_epoch "$_bc_epoch" "%S")"
     else
-      # Subsequent collisions: append counter
-      branch_name="${original_name}.$(date +%S).${counter}"
+      # Subsequent collisions: append counter after the seconds suffix.
+      branch_name="${original_name}.$(hug_clock_format_epoch "$_bc_epoch" "%S").${counter}"
     fi
     counter=$((counter + 1))
     # Safety check to prevent infinite loop

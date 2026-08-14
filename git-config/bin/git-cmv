@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
+_hug_category='["committing"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
+for f in hug-common hug-git-kit hug-git-worktree; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
@@ -10,15 +15,19 @@ show_help() {
 hug cmv: Move (relocate) commits from current branch to another branch (new or existing).
 
 USAGE:
-    hug cmv [N|COMMIT] <target-branch> [--new] [-u, --upstream] [--quiet] [--force]
+    hug cmv [N|COMMIT] <target-branch> [--new] [--wt] [-u, --upstream] [--quiet] [--force]
 
 OPTIONS:
     [N|COMMIT]      Number of commits to move (default: 1) or specific commit to move above
     <target-branch> Required: Branch to move commits to
     --new           Create <target-branch> if it doesn't exist (from the move target commit)
+    --wt            Ensure the target branch has a worktree: create one if missing,
+                    otherwise reuse the existing one. The move is performed in/for
+                    that worktree and you stay on the source branch.
     -u, --upstream  Move local-only commits above upstream tip instead of [N|COMMIT]
     --quiet         Suppress output (sets HUG_QUIET=T)
     --force         Skip confirmation prompts (use with caution)
+    -y, --yes       Skip confirmation prompts (keeps safe semantics)
 
 DESCRIPTION:
     Moves the specified commits from the current branch to <target-branch> by detaching (new branches) or cherry-picking (existing) and resetting the current branch back. Preserves individual commit history. If <target-branch> missing without --new, prompts to create (auto-creates with --force). Use --new for explicit non-interactive creation.
@@ -32,7 +41,11 @@ DESCRIPTION:
 
     Previews are organized: 📊 summary + changes, followed by 📤 commit list (shown once).
 
-    IMPORTANT: For existing branches, commits are rewritten (new SHAs via cherry-pick). For new branches, original SHAs are preserved. To copy commits without modifying the source branch, use 'hug ccp' instead.
+    RECOVERY: cmv is its own inverse. After a successful move, run the printed
+    inverse command to move the commits back (see the post-op hint). For new
+    branches SHAs are preserved; for existing branches the inverse cherry-picks
+    new SHAs. Requires an undrifted tree and knowing N + the original branch.
+    To copy commits without modifying the source branch, use 'hug ccp' instead.
 
 COMMON SCENARIOS:
     # Accidentally committed to wrong branch
@@ -81,6 +94,12 @@ eval "$(parse_common_flags "$@")"
 # Parse custom flags
 upstream=false
 new_branch=false
+new_branch_passed=false # True ONLY when --new was explicitly on the CLI.
+# Distinct from $new_branch, which the missing-branch
+# resolve path also sets true after a danger prompt.
+# Used by the --wt block to decide whether the move's
+# danger prompt still needs to fire.
+wt=false # --wt: ensure target branch has a worktree (create if missing).
 target_arg=""
 branch_name=""
 while [[ $# -gt 0 ]]; do
@@ -91,6 +110,11 @@ while [[ $# -gt 0 ]]; do
     ;;
   --new)
     new_branch=true
+    new_branch_passed=true
+    shift
+    ;;
+  --wt)
+    wt=true
     shift
     ;;
   *)
@@ -120,9 +144,9 @@ fi
 
 check_git_repo
 
-# Require clean working tree and index (no staged or unstaged changes)
-if has_staged_changes || has_unstaged_changes; then
-  error "Require clean working tree and index to proceed (no staged or unstaged changes; untracked ok). Unstaged changes would be lost during reset."
+# Require clean working tree and index (unified tracked-dirty check)
+if has_uncommitted_tracked_changes; then
+  error "Require clean tracked working tree and index to proceed (unstaged or staged tracked changes; untracked ok). Tracked changes would be lost during reset."
 fi
 
 original_branch=$(git branch --show-current)
@@ -132,7 +156,7 @@ fi
 original_head=$(git rev-parse HEAD)
 
 if $upstream; then
-  target=$(handle_upstream_operation "moving") || exit 1
+  target=$(handle_upstream_operation "moving" "danger" "cmv" "moves commits to another branch and rewrites SHAs; not auto-recoverable") || exit $?
   if [[ -z "${target:-}" ]]; then
     exit 0
   fi
@@ -150,10 +174,21 @@ fi
 # Resolve target to actual SHA (important: do this before reset changes HEAD)
 target=$(git rev-parse "$target")
 
-# Early calculation for commits to relocate (for 0-commit early exit and prompts)
-commits_to_relocate=$(count_commits_in_range "$target" HEAD)
+# Early calculation for commits to relocate (for 0-commit early exit and prompts).
+# cmv's target MUST be an ancestor ("specific commit to move above", "reset branch back"),
+# so == 0 is the correct vacuous-op no-op — do NOT migrate this to is_same_commit (a forward
+# target is an incoherent cmv request, and falling through would hard-reset the branch
+# FORWARD + switch branch on a danger-tier command). Strict: a bad ref now fails
+# loudly instead of masquerading as '0 commits'. The OLD message lied ('already at target')
+# for a descendant target; branch on is_same_commit so BOTH sub-cases are truthful (a commit is
+# its own ancestor — equality-as-ancestry — so 'is not an ancestor' would lie when aligned).
+commits_to_relocate=$(count_commits_in_range "$target" HEAD) || exit 1
 if [ "$commits_to_relocate" -eq 0 ]; then
-  info "No commits to move (already at target)."
+  if is_same_commit "$target" HEAD; then
+    info "No commits to move (already at $(git rev-parse --short "$target"))."
+  else
+    info "No commits to move (target $(git rev-parse --short "$target") is a descendant of HEAD; cmv needs an ancestor target)."
+  fi
   exit 0
 fi
 commit_word="commit"
@@ -175,7 +210,7 @@ if ! git rev-parse --verify "$branch_name" > /dev/null 2>&1; then
       is_new_branch=true
     else
       # Combined prompt for creation + move
-      if prompt_confirm_warn "Branch '$branch_name' doesn't exist. Proceed with creating a new branch named '$branch_name' and moving $commits_to_relocate $commit_word to it? [y/N]: "; then
+      if prompt_confirm_danger "cmv" "moves commits to another branch and rewrites SHAs; not auto-recoverable"; then
         new_branch=true
         is_new_branch=true
       else
@@ -208,8 +243,144 @@ if $branch_exists; then
   fi
 
   if $should_prompt; then
-    prompt_confirm_warn "Proceed with moving $commits_to_relocate $commit_word to '$branch_name'? [y/N]: "
+    prompt_confirm_danger "cmv" "moves commits to another branch and rewrites SHAs; not auto-recoverable"
   fi
+fi
+
+# --- --wt path: ensure target branch has a worktree, then perform the move
+# there and LEAVE THE USER ON THE SOURCE BRANCH. Branch+worktree creation is
+# safe-tier; the move itself is danger-tier. Confirm-first: every prompt is
+# gathered before any mutation.
+#
+# Ordering rationale: for existing branches we cherry-pick into the worktree
+# FIRST (tree is clean there), then reset the source — never the reverse, or
+# the cherry-pick range "$target..$original_head" would be unreachable after
+# the source's HEAD moves back. For new branches, the helper creates the
+# branch at $original_head so no cherry-pick is needed; the source's own
+# reset is independent.
+#
+# NOTE: `local` is ILLEGAL here — this is top-level script scope, not a
+# function (bash errors: "local: can only be used in a function"). Plain
+# underscore-prefixed vars keep them out of the user's environment namespace.
+if $wt; then
+  # --- Safety guards: fail fast (exit 3 = error_blocked) on impossible or
+  # dangerous states BEFORE any mutation. No branch/worktree is created, no
+  # reset runs on a blocked exit. Each guard surfaces an actionable hint so
+  # the user knows how to recover without reading cmv's source.
+  #
+  # Guard 1: target == current branch. The --wt end-state requires the target
+  # to live in its OWN worktree, but the target is checked out in THIS
+  # worktree — we'd be asking for a worktree for the branch we're already on.
+  # Incoherent request; block it. (For the non-wt flow this case is vacuous;
+  # for --wt it is a real foot-gun.)
+  if [[ "$branch_name" == "$original_branch" ]]; then
+    error_blocked "Target branch '$branch_name' is checked out in the current worktree. The --wt end-state requires the target to live in its own worktree."
+  fi
+
+  # Guard 2: existing branch whose worktree is STALE (registered but missing
+  # dir) or LOCKED. A stale dir means git would refuse the operation or cmv
+  # would cherry-pick into a path-into-void; a locked worktree can't be
+  # (re)used by git. Point the user at the recovery command in either case.
+  # NOTE: `local` is ILLEGAL at top-level script scope (bash errors
+  # "local: can only be used in a function"). Use plain `_`-prefixed vars.
+  if $branch_exists; then
+    if _gwt_path=$(get_worktree_path_by_branch "$branch_name" 2> /dev/null); then
+      if [[ -n "$_gwt_path" && ! -d "$_gwt_path" ]]; then
+        error_blocked "Worktree for '$branch_name' is stale (missing dir: $_gwt_path). Run 'hug wtdel $branch_name' or 'hug wtprune' first."
+      fi
+      # Only probe lock state when the dir is intact (worktree_gitdir requires
+      # -d "$path"). A stale-dir branch already errored out above.
+      _gwt_gitdir=$(worktree_gitdir "$_gwt_path" 2> /dev/null || true)
+      if [[ -n "$_gwt_gitdir" ]] && worktree_is_locked "$_gwt_path" "$_gwt_gitdir"; then
+        error_blocked "Worktree for '$branch_name' is locked. Unlock it first: git worktree unlock '$_gwt_path'."
+      fi
+    fi
+  fi
+
+  # Danger-tier move prompt. Confirm-first means: gather every prompt
+  # BEFORE mutating anything. By the time we reach here, the existing
+  # cmv flow has already prompted in three of the four shapes:
+  #   - existing branch (incl. --new on an existing branch): the confirm
+  #     block just above this.
+  #   - missing branch, no --new:  the resolve block above (which exits
+  #                                on decline — so reaching here means
+  #                                the user accepted).
+  #   - -u:                        handle_upstream_operation.
+  # The ONLY shape that arrives unconfirmed is `--new` on a MISSING
+  # branch (the resolve block's `else` set is_new_branch=true without
+  # prompting). $new_branch_passed && ! $branch_exists is the
+  # discriminator for that case.
+  if $new_branch_passed && ! $branch_exists && [[ ${HUG_FORCE:-} != true ]] && ! $upstream; then
+    prompt_confirm_danger "cmv" "moves commits to another branch and rewrites SHAs; not auto-recoverable"
+  fi
+
+  # Reuse the worktree if the branch already has one; otherwise create it.
+  _resolved_wt=""
+  if $branch_exists; then
+    # get_worktree_path_by_branch returns 1 with empty output when no
+    # worktree holds the branch — tolerate that without aborting.
+    _resolved_wt=$(get_worktree_path_by_branch "$branch_name") || _resolved_wt=""
+  fi
+
+  if [[ -z "$_resolved_wt" ]]; then
+    # IMPORTANT (set -e discipline): a bare `x=$(func ...); rc=$?`
+    # ABORTS at the assignment when the helper exits non-zero, so rc
+    # is never captured. The `if ! x=$(func); then rc=$?; exit; fi`
+    # form is the only safe shape under `set -e`.
+    #
+    # --base is passed ONLY for the new-branch case so the helper
+    # creates the branch at the exact original_head SHA (preserving
+    # history). For existing branches we omit --base; the helper
+    # refuses it anyway (it errors when the branch already exists).
+    # Build the --base arg conditionally. We can't use the `$( ... && echo )`
+    # trick for two-word output (it would either drop the value or mangle
+    # quoting), so assemble into a positional array instead.
+    _cmv_wt_create_args=("$branch_name")
+    if ! $branch_exists; then
+      _cmv_wt_create_args+=(--base "$original_head")
+    fi
+    if [[ ${HUG_FORCE:-} == true ]]; then
+      _cmv_wt_create_args+=(--force)
+    fi
+    if ! _helper_out=$(create_worktree_for_branch "${_cmv_wt_create_args[@]}"); then
+      _create_rc=$?
+      exit "$_create_rc"
+    fi
+    # Helper prints three tab-separated fields to stdout:
+    # RESOLVED_PATH <TAB> CREATED_BRANCH <TAB> DRY_RUN. cmv consumes
+    # only the path; the other two are for --json consumers (wtc).
+    IFS=$'\t' read -r _resolved_wt _created_dummy _dry_dummy <<< "$_helper_out"
+  fi
+
+  # Pick-then-reset (see ordering rationale in the block header above).
+  if $branch_exists; then
+    # The cherry-pick happens in a LINKED worktree the user may not have in
+    # mind. Under set -e a conflict would abort the script with raw git output
+    # and leave that worktree mid-CHERRY_PICKING — disorienting and unrecoverable
+    # without a hint. Wrap it: on failure, point the user at the worktree and
+    # tell them exactly how to finish or abort. The source branch is untouched
+    # at this point (the rewind happens AFTER this block succeeds), so we can
+    # truthfully say "source unchanged" in the warning.
+    if ! git -C "$_resolved_wt" cherry-pick "$target".."$original_head"; then
+      warning "Cherry-pick conflict in worktree '$_resolved_wt'."
+      warning "Source branch '$original_branch' is unchanged."
+      tip "Resolve in worktree: cd $_resolved_wt && hug ccp $target..$original_head"
+      tip "Or abort: git -C $_resolved_wt cherry-pick --abort"
+      exit 1
+    fi
+  fi
+  # Source branch rewound to target. The clean-tree gate at line ~142
+  # guarantees no tracked changes to lose; untracked files survive.
+  git reset --hard "$target"
+
+  test "${HUG_QUIET:-f}" = T && exit
+
+  info "Moved $commits_to_relocate $commit_word to '$branch_name' (worktree: $_resolved_wt). Still on '$original_branch'."
+  tip "Recovery: cd $_resolved_wt && hug cmv $commits_to_relocate $original_branch --wt"
+  # Skip the non-wt tail below (the legacy cmv flow): we've already reset
+  # the source and the user stays on $original_branch (we never checked
+  # out the target branch).
+  exit 0
 fi
 
 # Reset original branch to target (safe since tree/index clean)
@@ -244,3 +415,12 @@ else
   info "Moved $commits_to_relocate $commit_word to '$branch_name'. Now on '$branch_name'."
 fi
 tip "Commits relocated. Continue working on '$branch_name'."
+
+# Recovery: inverse cmv. Plain (non --wt) path: we are now ON $branch_name
+# and $original_branch has been rewound to $target. Running the same cmv
+# again with the arguments swapped (N commits, back to $original_branch)
+# replays those commits onto $original_branch, restoring the prior layout.
+# Suppressed under --quiet because tip() routes through gum_log, which
+# short-circuits when HUG_QUIET is set — mirroring the --wt path's own
+# recovery tip above.
+tip "Recovery: hug cmv $commits_to_relocate $original_branch"

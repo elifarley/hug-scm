@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["history"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit hug-git-show; do . "$CMD_BASE/../lib/$f"; done
@@ -9,7 +14,7 @@ show_help() {
 hug ll: Log commits with detailed formatting (graph, date, author, message).
 
 USAGE:
-    hug ll [options] [<revision-range>] [-- <path>]
+    hug ll [options] [<revision-range>|[remote/]<branch>] [-- <path>]
 
 OPTIONS:
     <n>           Show single commit HEAD~n (0 → HEAD, 1 → HEAD~1, etc.)

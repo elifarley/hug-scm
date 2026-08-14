@@ -331,6 +331,9 @@ hug w purge --dry-run
 
 # Then execute with -f to skip confirmation
 hug w zap-all -f  # after reviewing dry-run output
+
+# For safe operations, use -y to skip confirmation without escalating semantics
+hug bdel merged-branch -y   # uses safe delete (-d), not force delete (-D)
 ```
 
 ### Interactive Selection

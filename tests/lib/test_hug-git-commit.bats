@@ -4,10 +4,20 @@
 load '../test_helper'
 load '../../git-config/lib/hug-common'
 load '../../git-config/lib/hug-git-repo'
+# hug-git-state provides get_untracked_files — the guard's refusal path
+# calls it for the untracked-files note. Runtime (hug-git-kit) sources it;
+# without it here the note branch dies as "command not found" and the note
+# is silently untestable (found by ship's testing specialist).
+load '../../git-config/lib/hug-git-state'
 load '../../git-config/lib/hug-git-commit'
 
 setup() {
   require_hug
+  # Pin a REAL editor: amend_args_message_intent classifies no-op editors
+  # (GIT_EDITOR=true/:/cat/echo — the agent-machine norm) as KEEP, which
+  # would flip the EDITOR(2) expectations in the classification table on
+  # machines that export GIT_EDITOR=true. vi is never a no-op → deterministic.
+  export GIT_EDITOR=vi
   TEST_REPO=$(create_test_repo)
   cd "$TEST_REPO"
   
@@ -49,6 +59,147 @@ teardown() {
   run count_commits_in_range HEAD~1
   assert_success
   assert_output "1"
+}
+
+################################################################################
+# commit_offset TESTS
+################################################################################
+
+@test "commit_offset: ancestor pair -> stdout=N (b ahead of a)" {
+  run commit_offset HEAD~2 HEAD
+  assert_success
+  assert_output "2"
+}
+
+@test "commit_offset: descendant pair -> stdout=-N (b behind a)" {
+  run commit_offset HEAD HEAD~2
+  assert_success
+  assert_output "-2"
+}
+
+@test "commit_offset: identity -> stdout=0 exit=0" {
+  run commit_offset HEAD HEAD
+  assert_success
+  assert_output "0"
+}
+
+@test "commit_offset: diverged -> empty stdout, exit 2" {
+  git switch -q -c side HEAD~1
+  echo x > side.txt; git add side.txt; git commit -qm "side commit"
+  git switch -q -
+  # bats' default `run` MERGES stderr into $output. commit_offset emits nothing
+  # on stdout for the diverged case (the contract: empty + distinct exit code),
+  # but git's rev-list may write to stderr; --separate-stderr keeps $output =
+  # stdout ONLY so we assert the real contract.
+  bats_require_minimum_version 1.5.0
+  run --separate-stderr commit_offset side HEAD
+  [ "$status" -eq 2 ]
+  assert_output ""
+}
+
+@test "commit_offset: invalid ref -> empty stdout, exit 3 (never a fake 0)" {
+  # STRICT: an unresolvable ref is exit 3 with EMPTY stdout — the lossy
+  # `|| echo 0` swallow of Defect 2 is gone by construction.
+  bats_require_minimum_version 1.5.0
+  run --separate-stderr commit_offset NO_SUCH_REF HEAD
+  [ "$status" -eq 3 ]
+  assert_output ""
+}
+
+@test "commit_offset: missing args -> fails fast via \${1:?}" {
+  run commit_offset
+  assert_failure
+}
+
+################################################################################
+# is_same_commit TESTS
+################################################################################
+
+@test "is_same_commit: same SHA -> exit 0" {
+  run is_same_commit HEAD HEAD
+  assert_success
+}
+
+@test "is_same_commit: ancestor (not equal) -> non-zero" {
+  run is_same_commit HEAD~1 HEAD
+  assert_failure
+}
+
+@test "is_same_commit: descendant (not equal) -> non-zero" {
+  local descendant; descendant=$(git rev-parse HEAD)
+  git reset -q --hard HEAD~1
+  run is_same_commit "$descendant" HEAD
+  assert_failure
+}
+
+@test "is_same_commit: invalid ref -> non-zero (never a false positive)" {
+  run is_same_commit NO_SUCH_REF HEAD
+  assert_failure
+}
+
+@test "is_same_commit: unborn repo (no commits) -> non-zero (false NEGATIVE, documented)" {
+  # create_test_repo auto-commits an "Initial commit", so it is NOT unborn.
+  # Build a genuinely commit-less repo: mktemp -d yields the path (git init -q
+  # prints nothing to stdout, so it must NOT be captured for the path).
+  local empty_repo; empty_repo=$(mktemp -d)
+  git init -q "$empty_repo"
+  cd "$empty_repo"
+  run is_same_commit HEAD HEAD
+  assert_failure
+  cd "$TEST_REPO"
+  rm -rf "$empty_repo"
+}
+
+@test "is_same_commit: missing second arg -> fails fast via \${2:?}" {
+  run is_same_commit HEAD
+  assert_failure
+}
+
+################################################################################
+# count_commits_in_range STRICTNESS TESTS (Defect 2)
+################################################################################
+
+@test "count_commits_in_range: invalid start -> non-zero, empty stdout (strict, no swallow)" {
+  bats_require_minimum_version 1.5.0
+  run --separate-stderr count_commits_in_range NO_SUCH_REF HEAD
+  assert_failure
+  assert_output ""        # stdout empty (git's fatal: is on stderr, deliberately uncaptured)
+}
+
+@test "count_commits_in_range: missing start arg -> fails fast via \${1:?}" {
+  run count_commits_in_range
+  assert_failure
+}
+
+################################################################################
+# count_commits_in_range_or_zero TESTS (named display wrapper)
+################################################################################
+
+@test "count_commits_in_range_or_zero: valid range -> same as strict count" {
+  run count_commits_in_range_or_zero HEAD~2 HEAD
+  assert_success
+  assert_output "2"
+}
+
+@test "count_commits_in_range_or_zero: single arg defaults end to HEAD" {
+  # The wrapper forwards "$@" verbatim, so the strict function's ${2:-HEAD} default must
+  # still apply through the passthrough: a lone start ref counts commits from <start> to
+  # HEAD. setup() makes 3 commits, so HEAD~1 -> 1.
+  run count_commits_in_range_or_zero HEAD~1
+  assert_success
+  assert_output "1"
+}
+
+@test "count_commits_in_range_or_zero: invalid start -> echoes 0, exit 0 (cosmetic)" {
+  # The wrapper swallows the FAILURE (non-zero exit -> cosmetic 0 on stdout), but git's
+  # `fatal: ambiguous argument` diagnostic still goes to STDERR. bats' default `run` MERGES
+  # stderr into $output, which would make `assert_output "0"` see that 3-line diagnostic + "0".
+  # The contract under test is stdout == "0" + exit 0, so split stderr out (same house pattern
+  # as the strict invalid-ref tests above; --separate-stderr needs bats >= 1.5).
+  bats_require_minimum_version 1.5.0
+  run --separate-stderr count_commits_in_range_or_zero NO_SUCH_REF HEAD
+  assert_success
+  assert_output "0"
 }
 
 ################################################################################
@@ -290,4 +441,311 @@ teardown() {
   run resolve_target_with_temporal false "3 days ago" "HEAD~1" "HEAD~2"
   assert_failure
   assert_output --partial "Cannot specify both --temporal and a target"
+}
+
+################################################################################
+# get_first_child_commit TESTS
+################################################################################
+
+@test "get_first_child_commit: returns first child commit under pipefail (SIGPIPE regression)" {
+  # The default setup creates 3 commits. Re-use them to build a linear history
+  # where we know the parent-child relationship.
+  # Setup: first (HEAD~2) <- second (HEAD~1) <- third (HEAD)
+  local parent
+  parent=$(git rev-parse HEAD~1)
+  local child
+  child=$(git rev-parse HEAD)
+
+  # Must return the immediate child of parent, even under pipefail
+  run bash -c "set -o pipefail; source '$HUG_HOME/git-config/lib/hug-common'; source '$HUG_HOME/git-config/lib/hug-git-repo'; source '$HUG_HOME/git-config/lib/hug-git-commit'; get_first_child_commit '$parent'"
+  assert_success
+  assert_output "$child"
+}
+
+################################################################################
+# amend_args_message_intent TESTS (spec §6 test 23)
+################################################################################
+
+# Helper: assert the classifier's return code for a given arg vector.
+# Uses `run` — bare calls returning 1/2 would trip BATS errexit.
+check_intent() {
+  local expected="$1"; shift
+  run amend_args_message_intent "$@"
+  [[ "$status" -eq "$expected" ]] \
+    || { echo "expected intent $expected for args [$*], got status $status" >&2; return 1; }
+}
+
+@test "amend_args_message_intent: keep/change/editor classification table" {
+  # setup() puts HEAD at "third commit"
+
+  # KEEP (0): --no-edit alone, HEAD-resolving refs, identical candidates
+  check_intent 0 --no-edit
+  check_intent 0 --no-edit -C HEAD
+  check_intent 0 --no-edit --reuse-message=HEAD
+  check_intent 0 --no-edit -c HEAD
+  check_intent 0 --no-edit --reedit-message=HEAD
+  check_intent 0 --no-edit -C @
+  check_intent 0 --no-edit -C HEAD~0
+  check_intent 0 --no-edit -m "third commit"
+  check_intent 0 --no-edit -- -m          # after -- is pathspec data
+
+  # CHANGE (1): candidate differs
+  check_intent 1 -m x
+  check_intent 1 -m x --no-edit
+  check_intent 1 -m ''                    # empty candidate, source present → CHANGE
+  check_intent 1 -C HEAD~1                # "second commit" differs
+  check_intent 1 --reuse-message=HEAD~1
+  check_intent 1 -c X --no-edit           # silent replacement (probe-verified)
+  check_intent 1 --no-edit --signoff      # signoff absent from "third commit"
+  check_intent 1 -s
+  check_intent 1 -m"attached"
+  check_intent 1 -CHEAD~1                 # attached value
+  check_intent 1 --no-edit --fixup=HEAD
+  check_intent 1 --no-edit --fixup amend:HEAD   # space form
+  check_intent 1 --no-edit --squash=HEAD
+  check_intent 1 --no-edit --trailer "Co-Authored-By: x <x@x>"   # absent
+
+  # EDITOR (2): not statically decidable
+  check_intent 2                          # bare
+  check_intent 2 -c X                     # -c without --no-edit opens editor
+  check_intent 2 --reedit-message=X
+  check_intent 2 --no-edit -e             # -e overrides --no-edit AND -m
+  check_intent 2 -m x -e
+}
+
+@test "amend_args_message_intent: -F identical file and trailer dedupe are KEEP" {
+  # Candidate == HEAD when -F file content matches HEAD message
+  git log -1 --format=%B > ident.txt
+  check_intent 0 --no-edit -F ident.txt
+
+  # Candidate == HEAD when the signoff trailer already exists (dedupe).
+  # Test repo ident is "Hug Test <test@hug-scm.test>" (create_test_repo).
+  git commit -q --amend -m "$(printf 'third commit\n\nSigned-off-by: Hug Test <test@hug-scm.test>')"
+  check_intent 0 --no-edit -s
+}
+
+@test "amend_args_message_intent: attached forms classify same as space forms" {
+  # --message=X mirrors -m X (CHANGE when candidate differs, KEEP when equal)
+  check_intent 1 --message=x
+  check_intent 0 --no-edit --message="third commit"
+
+  # --file=X mirrors -F X (candidate is the file's content)
+  git log -1 --format=%B > ident.txt
+  check_intent 0 --no-edit --file=ident.txt
+  printf 'different\n' > diff.txt
+  check_intent 1 --no-edit --file=diff.txt
+
+  # --trailer=X mirrors --trailer X (absent trailer → CHANGE)
+  check_intent 1 --no-edit --trailer="Co-Authored-By: x <x@x>"
+}
+
+@test "amend_args_message_intent: multi -m concatenates paragraphs (candidate join)" {
+  # -m a -m b produces "a\n\nb" — a candidate that CAN equal HEAD's message
+  git commit -q --amend -m "$(printf 'x\n\ny')"
+  check_intent 0 --no-edit -m x -m y
+}
+
+@test "amend_args_message_intent: unborn HEAD is silent (no git stderr leak)" {
+  # Regression (#263 review): on an unborn branch, resolving HEAD for the
+  # candidate message fails. The guard must not leak git's
+  # `fatal: ambiguous argument 'HEAD'` to stderr before the caller's exit-3
+  # refusal — silence it with 2>/dev/null.
+  local empty
+  empty=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "hug-unborn-XXXXXX")
+  git init -q --initial-branch=main "$empty"
+  cd "$empty"
+  git config --local user.email "test@hug-scm.test"
+  git config --local user.name "Hug Test"
+  run amend_args_message_intent --no-edit
+  assert_success
+  refute_output --partial "fatal:"
+  refute_output --partial "ambiguous argument"
+}
+
+################################################################################
+# guard_content_null_amend TESTS (spec §6 tests 24/25)
+################################################################################
+
+@test "guard_content_null_amend: refuses staged content-null amend (exit 3)" {
+  run guard_content_null_amend staged --no-edit
+  [ "$status" -eq 3 ]
+  assert_output --partial "Nothing to amend"
+}
+
+@test "guard_content_null_amend: bypasses on HUG_FORCE" {
+  HUG_FORCE=true guard_content_null_amend staged --no-edit
+  [ $? -eq 0 ]
+  [ "$_amend_content_null" = "true" ]
+}
+
+@test "guard_content_null_amend: message-change proceeds and reports content-null" {
+  guard_content_null_amend staged --no-edit -m "different"
+  [ $? -eq 0 ]
+  [ "$_amend_content_null" = "true" ]     # caller needs this for the honest info line
+}
+
+@test "guard_content_null_amend: fail-open on corrupt index (rc>1 proceeds)" {
+  echo "garbage" > .git/index
+  run guard_content_null_amend staged --no-edit
+  assert_success
+}
+
+@test "guard_content_null_amend: fail-open on corrupt index in tracked mode (rc>1 proceeds)" {
+  # Tracked mode runs `git diff HEAD` (worktree+index vs HEAD), which exits
+  # 128 on a corrupt index. The guard must fail OPEN (return 0) for rc>1 —
+  # never refuse on a broken index.
+  echo "garbage" > .git/index
+  run guard_content_null_amend tracked --no-edit
+  assert_success
+}
+
+@test "guard_content_null_amend: paths branch folds worktree content (proceed when modified)" {
+  # setup has clean index (all committed). Add worktree change to file1.txt
+  echo "worktree edit" >> file1.txt
+  guard_content_null_amend staged --no-edit -- file1.txt
+  [ $? -eq 0 ]
+  [ "$_amend_content_null" = "false" ]
+}
+
+@test "guard_content_null_amend: paths branch refuses when named path matches HEAD" {
+  run guard_content_null_amend staged --no-edit -- file1.txt
+  [ "$status" -eq 3 ]
+}
+
+@test "guard_content_null_amend: --template value is skipped (not a bare path)" {
+  # Regression (#263 review): the bare-path value-skip list omitted the long
+  # `--template <file>` space form (only `-t` was listed). The file after
+  # --template must be consumed as its value, not collected as a bare
+  # pathspec — else a worktree-modified template file makes
+  # `git diff HEAD -- <file>` exit 1 and lets the guard PROCEED into a no-op
+  # amend (silent hash churn).
+  echo "worktree edit" >> file1.txt   # tracked file, modified in worktree
+  # Clean index + KEEP message + template value consumed ⇒ refuse (exit 3).
+  # If file1.txt were misread as a path, the diff check would see the
+  # worktree modification and proceed (return 0).
+  run guard_content_null_amend staged --no-edit --template file1.txt
+  [ "$status" -eq 3 ]
+}
+
+@test "guard_content_null_amend: refusal includes the untracked-files note" {
+  # Needs hug-git-state loaded (get_untracked_files); without it the note
+  # branch crashed invisibly and no test could pin the note's presence.
+  echo "spare" > extra.txt
+  run guard_content_null_amend staged --no-edit
+  [ "$status" -eq 3 ]
+  assert_output --partial "untracked file(s) exist"
+  refute_output --partial "command not found"
+}
+
+@test "amend_args_message_intent: -m equal after cleanup normalization is KEEP" {
+  # git applies --cleanup=whitespace to -m before committing: a candidate
+  # differing only by normalizable whitespace (trailing space, blank-line
+  # runs) commits to HEAD's exact message — the amend is content-null and
+  # the guard must refuse it (red-team probe: '-m "msg "' sailed through).
+  check_intent 0 --no-edit -m "third commit"    # exact
+  check_intent 0 --no-edit -m "third commit "   # trailing space
+  check_intent 0 --no-edit -m "third commit
+
+"                                                # trailing blank lines
+  check_intent 1 --no-edit -m "third commitx"   # genuinely different
+}
+
+@test "guard_content_null_amend: --pathspec-from-file fails open (proceeds)" {
+  # Content arrives from a file (or stdin) — not statically decidable.
+  # The guard must never claim "nothing to amend" about uninspected
+  # content (red-team probe: worktree-modified path listed in the file was
+  # refused as "no staged changes").
+  _amend_content_null=unset-sentinel
+  guard_content_null_amend staged --no-edit --pathspec-from-file=/dev/null
+  [ "$_amend_content_null" = "false" ]
+  guard_content_null_amend staged --no-edit --pathspec-from-file=p.txt
+  guard_content_null_amend staged --no-edit --pathspec-file-nul
+}
+
+@test "guard_content_null_amend: --include keeps the index in the check" {
+  # -i/--include content = staged PLUS named paths. A paths-only check
+  # drops the index and falsely refuses staged content (red-team probe).
+  echo mod >> file1.txt
+  git add file1.txt                       # staged-only: worktree clean again
+  guard_content_null_amend staged --no-edit --include file2.txt
+  [ "$_amend_content_null" = "false" ]
+  guard_content_null_amend staged --no-edit -i file2.txt
+  [ "$_amend_content_null" = "false" ]
+  # ddash group too: `--include -- <paths>` must not collapse to paths-only
+  guard_content_null_amend staged --no-edit --include -- file2.txt
+  [ "$_amend_content_null" = "false" ]
+  # and the clean-tree counterpart still refuses honestly
+  git restore --staged .
+  git restore .
+  run guard_content_null_amend staged --no-edit --include file2.txt
+  [ "$status" -eq 3 ]
+}
+
+@test "guard_content_null_amend: commit-msg hook makes KEEP undecidable (proceeds)" {
+  # A commit-msg hook rewrites the message on the amend itself (Gerrit
+  # Change-Id), so "same message" cannot be claimed — refusing would lie
+  # (red-team probe). Presence of an executable commit-msg hook → proceed.
+  local hooks_dir
+  hooks_dir=$(git rev-parse --absolute-git-dir)/hooks
+  mkdir -p "$hooks_dir"
+  printf '#!/bin/sh\nexit 0\n' > "$hooks_dir/commit-msg"
+  chmod +x "$hooks_dir/commit-msg"
+  run guard_content_null_amend staged --no-edit
+  assert_success
+}
+
+@test "amend_args_message_intent: no-op editor resolves EDITOR to KEEP" {
+  # GIT_EDITOR=true/:/cat/echo (CI and agent norm) cannot change the
+  # message, so "editor decides" is decidable: bare/-e classify KEEP and
+  # a content-null amend is refusable instead of silently re-hashing.
+  GIT_EDITOR=true check_intent 0
+  GIT_EDITOR=: check_intent 0 -e
+  GIT_EDITOR=cat check_intent 0 -c HEAD
+  GIT_EDITOR=vi check_intent 2   # real editor still punts
+}
+
+@test "amend_args_message_intent: no-op editor lets the SOURCE decide (-e/-c with -m)" {
+  # Round-2 adversarial probes: -e does not discard -m under a no-op
+  # editor — the source candidate still decides; same for -c <ref>
+  # without --no-edit. git commits the source message (probes NATIVE A/B).
+  GIT_EDITOR=: check_intent 1 -e -m "totally different"
+  GIT_EDITOR=true check_intent 0 -e -m "third commit"
+  GIT_EDITOR=cat check_intent 1 -c HEAD~1
+  GIT_EDITOR=vi check_intent 2 -e -m "totally different"   # real editor wins
+  GIT_EDITOR=vi check_intent 2 -c HEAD~1
+}
+
+@test "amend_args_message_intent: -F - (stdin) fails open without reading" {
+  # Reading stdin here would starve git's own -F - read (probe: guard ate
+  # the message, git aborted on empty). Must return CHANGE immediately.
+  check_intent 1 --no-edit -F -
+}
+
+@test "guard_content_null_amend: clustered short flags fail open (proceed)" {
+  # `-am "msg"` is a stock git idiom (-a + -m). Statically decoding
+  # clusters is out of scope: misreading the message as a bare pathspec
+  # refused a legitimate staged amend (round-2 probe) — fail open.
+  echo mod >> file1.txt
+  git add file1.txt
+  guard_content_null_amend staged --no-edit -am "with content"
+  [ "$_amend_content_null" = "false" ]
+}
+
+@test "guard_content_null_amend: -u <when> value is skipped (not a bare path)" {
+  # `--untracked-files no` separate form: without the skip, "no" becomes a
+  # phantom pathspec and a staged-content amend falsely refuses.
+  echo mod >> file1.txt
+  git add file1.txt
+  guard_content_null_amend staged --no-edit -u no
+  [ "$_amend_content_null" = "false" ]
+}
+
+@test "amend_args_message_intent: trailing value-flag does not crash (fail-open)" {
+  # `cmod -m` as the LAST arg: $2 is unset — must classify CHANGE (git
+  # errors "switch requires a value" downstream), never crash on an
+  # unbound variable under set -u.
+  check_intent 1 --no-edit -m
+  check_intent 1 --no-edit -F
+  check_intent 1 --no-edit -C
+  check_intent 1 --no-edit --trailer
 }

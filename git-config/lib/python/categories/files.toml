@@ -1,0 +1,5 @@
+label       = "File inspection"
+description = """
+Inspect history, contents, and ownership of specific files.
+Trace when a file appeared, what it touched, who wrote each line.
+"""

@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["history", "push-pull"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
@@ -33,6 +38,8 @@ EXAMPLES:
 
 SEE ALSO:
     hug bpush   Safe push with previews
+    hug shc     : File change statistics for outgoing range
+    hug shcp    : Full diff and stats for outgoing range
 EOF
 }
 
@@ -82,7 +89,11 @@ else
   target_short=$(git rev-parse --short "$target")
 fi
 
-local_commits=$(count_commits_in_range "$target" HEAD)
+# Explicit '|| exit 1': this is script top level under `set -e`, which already
+# exits on a failing bare assignment, so this is belt-and-suspenders — it
+# normalizes the exit code and keeps the strict propagation obvious to a future
+# reader (and safe against a later `set +e`). Not a behavior change on valid refs.
+local_commits=$(count_commits_in_range "$target" HEAD) || exit 1
 
 if [ "$local_commits" -eq 0 ]; then
   info "No outgoing changes (already synced to $target_short)."
@@ -95,16 +106,16 @@ print_preview_summary "$local_commits" "commits" "$target_short" "$range"
 if [[ ${HUG_QUIET:-} != T ]]; then
   header_target="${remote_branch:-upstream}"
   print_commit_list_header "Outgoing" "$header_target" "false" "true"
-  print_commit_list_in_range "$target" HEAD >&2
+  print_commit_list_in_range "$target" HEAD
 fi
 
 # Core previews (always show, even in quiet, for safety)
 if [[ -n "$remote_branch" ]]; then
   test "${HUG_QUIET:-}" || printf '\nExact commits missing from %s:\n' "$remote_branch" >&2
-  git cherry -v "$target" HEAD >&2
+  git cherry -v "$target" HEAD
 else
   test "${HUG_QUIET:-}" || printf '\nExact commits missing from upstream:\n' >&2
-  git cherry -v @{upstream} HEAD >&2
+  git cherry -v @{upstream} HEAD
 fi
 
 test "${HUG_QUIET:-}" || printf '\n' >&2

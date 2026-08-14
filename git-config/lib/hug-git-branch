@@ -190,9 +190,28 @@ print_branch_list() {
 #   Displays numbered menu and prompts for selection
 #   For repositories with 10 or more branches, uses gum filter (if installed) for
 #   easier searching and selection. Otherwise, displays a numbered list.
-#   Loops until valid selection is made
 # Output:
-#   Selected branch name via nameref parameter; subjects printed only if subjects array is non-empty
+#   Selected branch name via nameref parameter
+#
+# WHY Python-backed:
+#   The old Bash implementation built formatted_options[] inline in a loop,
+#   duplicating color/formatting logic already living in branch_select.py.
+#   Moving formatting to Python (single source of truth) eliminates that
+#   duplication and makes it easier to adjust the display format in one place.
+#
+# DESIGN: Two paths mirror the worktree_select.py adapter pattern:
+#   1. Gum path (>=MIN_ITEMS_FOR_GUM + gum available):
+#      Python 'prepare' command formats options → Bash calls gum via
+#      get_gum_selection_index → maps result index back to branch name.
+#   2. Non-gum path:
+#      Python 'single-select' handles display (stderr) + input + output
+#      (stdout: declare statements) in one call; Bash evals the result.
+#
+# EVAL GUARD:
+#   Before evaling Python output, we validate it is non-empty AND starts
+#   with "declare" to prevent executing arbitrary or malformed output.
+#   This guards against Python failures, PATH issues, or partial output.
+#
 # SC2178: These nameref declarations are intentional and correct
 # shellcheck disable=SC2178
 print_interactive_branch_menu() {
@@ -212,67 +231,112 @@ print_interactive_branch_menu() {
         return 1
     fi
 
-    # Use gum filter for 10+ branches if gum is available
+    # Build Python CLI args from Bash arrays.
+    # Branches, hashes, and dates never contain spaces (git enforces this for
+    # branch names; hashes are hex; dates are ISO tokens), so the space-joined
+    # scalar form is safe for those fields.
+    # Subjects and tracks MAY contain spaces (e.g. "Initial commit",
+    # "[origin/feature branch]"), so they are passed as repeated --subject /
+    # --track flags — one per item — to avoid space-split corruption.
+    local -a python_args=()
+    python_args+=(--branches "${branches_ref[*]}")
+    python_args+=(--hashes   "${hashes_ref[*]}")
+    python_args+=(--dates    "${dates_ref[*]:-}")
+    # Subjects and tracks may contain spaces — pass per-item to avoid split corruption
+    for subj in "${subjects_ref[@]}"; do python_args+=(--subject "$subj"); done
+    for trk in "${tracks_ref[@]}"; do python_args+=(--track "$trk"); done
+    python_args+=(--current-branch "$current_branch")
+    python_args+=(--placeholder    "$placeholder")
+
+    # Gum path: Python formats options; Bash handles gum interaction.
+    # Only use gum when available AND branch count >= threshold.
     if [[ $num_branches -ge $MIN_ITEMS_FOR_GUM ]] && gum_available; then
-        local -a formatted_options=()
-        local i
-        for i in "${!branches_ref[@]}"; do
-            local branch="${branches_ref[i]}"
-            local hash="${hashes_ref[i]}"
-            local date="${dates_ref[i]:-}"  # Default to empty if dates array is empty
-            local track="${tracks_ref[i]}"
-            local subject=""
-            if [[ ${#subjects_ref[@]} -gt 0 ]]; then
-                subject="${subjects_ref[i]}"
-            fi
-
-            # Format: "branch hash date [track] subject"
-            # Current branch is marked with *
-            local marker=""
-            if [ "$branch" = "$current_branch" ]; then
-                marker="${GREEN}* "
-            fi
-
-            local formatted="${marker}${branch} $YELLOW${hash}$NC $BLUE${date}$NC"
-            if [ -n "$track" ]; then
-                formatted="$formatted $track"
-            fi
-            if [ -n "$subject" ]; then
-                formatted="$formatted $subject"
-            fi
-
-            formatted_options+=("$formatted")
-        done
-
-        local index
-        index=$(get_gum_selection_index formatted_options "$placeholder")
-
-        # SC2034: selected_ref is a nameref that assigns to caller's variable
+        # Declare locals that 'eval' will populate from Python output.
+        # 'selection_status' and 'branch_count' are set by Python; 'formatted_options'
+        # is the array of ANSI-colored rows passed to gum.
         # shellcheck disable=SC2034
-        selected_ref="${branches_ref[$index]}"
-        return 0
+        local selection_status="" branch_count=0
+        local -a formatted_options=()
+
+        local python_out
+        # WHY no 2>/dev/null: 'prepare' only formats data; any stderr output
+        # here is a genuine Python error worth surfacing to the user.
+        # || true: prevent set -e from aborting on non-zero Python exit
+        python_out=$(python3 "$HUG_HOME/git-config/lib/python/git/branch_select.py" \
+            prepare "${python_args[@]}") || true
+
+        # EVAL GUARD: validate Python stdout before eval to prevent executing
+        # malformed or empty output.  A valid response starts with "declare"
+        # (the first line of every BashDeclareBuilder.build() output).
+        if [[ -n "$python_out" ]] && [[ "$python_out" == declare* ]]; then
+            eval "$python_out"
+            local index
+            if ! index=$(get_gum_selection_index formatted_options "$placeholder"); then
+                return 1
+            fi
+            # SC2034: selected_ref is a nameref that assigns to caller's variable
+            # shellcheck disable=SC2034
+            selected_ref="${branches_ref[$index]}"
+            return 0
+        fi
+
+        # Python prepare failed or returned unexpected output — fall through to
+        # the non-gum numbered-list path so the user can still make a selection.
+        error "Branch formatting failed; falling back to numbered list."
     fi
 
-    # Fallback to numbered list for < 10 branches or when gum is not available
-    printf "Select a branch to switch to:\n\n"
-
-    local i
-    for i in "${!branches_ref[@]}"; do
-        local num=$((i + 1))
-        local branch="${branches_ref[i]}"
-        local prefix="$num) "
-        if [ "$branch" != "$current_branch" ]; then
-            prefix="${num})   "
-        fi
-        print_branch_line "$prefix" "$current_branch" "$max_len" "$i" "$4" "$5" "$6" "$7" "$8"
-    done
-
-    local index
-    index=$(get_numbered_selection_index "$num_branches")
-    # SC2034: selected_ref is a nameref that assigns to caller's variable
+    # Non-gum path: Python handles numbered-list display (on stderr so stdout
+    # remains clean for the declare output) and reads user input.
+    # WHY stderr for display: the Bash caller captures stdout with $(...) to
+    # get only the declare statements for eval.  Mixing menu text into stdout
+    # would break the eval guard above.
+    # WHY no 2>/dev/null: the numbered-list menu goes to stderr and MUST be
+    # visible on the terminal.  Suppressing stderr here would leave the user
+    # staring at a blank screen with no prompt.
+    #
+    # Python single-select outputs three declare statements:
+    #   declare selected_branch='...'    — chosen branch name (empty if cancelled)
+    #   declare selection_status='...'   — "selected" | "cancelled" | "no_branches"
+    #   declare -i selected_index=N      — 0-based index (-1 if not selected)
+    #
+    # NAMEREF SAFETY: We must NOT let eval create a variable named
+    # 'selected_branch' inside this function.  Bash's 'declare' inside a
+    # function creates a function-local variable, and a local named
+    # 'selected_branch' would shadow the nameref target (selected_ref →
+    # caller's "selected_branch").  The nameref would then write to the
+    # local instead of the caller's variable, leaving it empty and causing
+    # 'git switch ""' → "fatal: invalid reference:".
+    #
+    # Fix: strip the 'selected_branch' line before eval and use
+    # branches_ref[selected_index] instead — mirroring the gum path
+    # (line 277) which already avoids this pitfall.
     # shellcheck disable=SC2034
-    selected_ref="${branches_ref[$index]}"
-    return 0
+    local selection_status="" selected_index=-1
+
+    local python_out
+    python_out=$(python3 "$HUG_HOME/git-config/lib/python/git/branch_select.py" \
+        single-select "${python_args[@]}") || true
+
+    # EVAL GUARD: same validation as the gum path above.
+    if [[ -z "$python_out" ]] || ! [[ "$python_out" == declare* ]]; then
+        error "Python branch_select.py single-select failed."
+        return 1
+    fi
+    # Strip 'declare selected_branch=...' to prevent nameref shadow (see above).
+    # Only selection_status and selected_index are needed for our logic.
+    python_out=$(printf '%s\n' "$python_out" | grep -v '^declare selected_branch=')
+    eval "$python_out"
+
+    if [[ "$selection_status" == "selected" ]]; then
+        # Use branches_ref[index] instead of the eval'd selected_branch to
+        # avoid the nameref shadow (see NAMEREF SAFETY comment above).
+        # SC2034: selected_ref is a nameref that assigns to caller's variable
+        # shellcheck disable=SC2034
+        selected_ref="${branches_ref[$selected_index]}"
+        return 0
+    else
+        return 1
+    fi
 }
 
 # Interactive Selection Helpers
@@ -289,8 +353,8 @@ readonly MIN_ITEMS_FOR_GUM=10
 #   $2 - Placeholder text for gum prompt
 # Output:
 #   Index of matched item to stdout
-# Exits:
-#   With "Cancelled." if no selection, error if no match
+# Returns:
+#   0 on success, 1 on cancellation or no match
 get_gum_selection_index() {
     local formatted_options_name="$1"
     local -n formatted_options_ref="$formatted_options_name"
@@ -304,8 +368,8 @@ get_gum_selection_index() {
     
     local index
     if ! index=$(gum_filter_by_index "$formatted_options_name" "$placeholder"); then
-        info "Cancelled."
-        exit 1
+        # Caller owns the cancellation message
+        return 1
     fi
     
     echo "$index"
@@ -318,8 +382,8 @@ get_gum_selection_index() {
 #   $1 - Number of items in the list
 # Output:
 #   Selected index to stdout
-# Exits:
-#   With "Cancelled." if read fails or invalid input persists
+# Returns:
+#   0 on success, 1 on cancellation (EOF or invalid test input)
 get_numbered_selection_index() {
     local num_items="$1"
 
@@ -335,16 +399,14 @@ get_numbered_selection_index() {
             echo "$((ts_choice - 1))"
             return 0
         else
-            info "Cancelled."
-            exit 1
+            return 1
         fi
     fi
 
     local choice
     printf "Enter choice (1-%d): " "$num_items" >&2
     if ! read -r choice; then
-        info "Cancelled."
-        exit 1
+        return 1
     fi
 
     while true; do
@@ -354,8 +416,7 @@ get_numbered_selection_index() {
         else
             printf "Invalid choice. Please enter a number between 1 and %d: " "$num_items" >&2
             if ! read -r choice; then
-                info "Cancelled."
-                exit 1
+                return 1
             fi
         fi
     done
@@ -439,7 +500,7 @@ compute_wip_branch_details() {
 
 # Interactive WIP branch selection using gum
 # Usage: select_wip_branch <placeholder_text> <prog_name>
-# Returns: selected branch name on stdout, exits on cancel or error
+# Returns: selected branch name on stdout; returns 1 on cancel or error
 # Example: branch=$(select_wip_branch "Select WIP branch to delete..." "hug w wipdel")
 select_wip_branch() {
     local placeholder="$1"
@@ -476,8 +537,7 @@ select_wip_branch() {
     # Use gum_filter_by_index for selection with exact matching
     local index
     if ! index=$(gum_filter_by_index formatted_options "$placeholder"); then
-        info "Cancelled."
-        exit 0
+        return 1
     fi
     
     # Return the selected branch name using the index
@@ -795,8 +855,10 @@ select_branches() {
     else
         # For single selection, we need a temporary variable name
         local selected_branch=""
-        single_select_branch selected_branch "$sel_current_branch" "$sel_max_len" \
-            filtered_hashes filtered_dates filtered_branches filtered_tracks filtered_subjects "$placeholder"
+        if ! single_select_branch selected_branch "$sel_current_branch" "$sel_max_len" \
+            filtered_hashes filtered_dates filtered_branches filtered_tracks filtered_subjects "$placeholder"; then
+            return 1
+        fi
 
         # Move result to the output array if selection was made
         if [[ -n "$selected_branch" ]]; then
@@ -975,8 +1037,9 @@ multi_select_branches() {
         select_args+=(--branches "${branches_ref[*]}")
         select_args+=(--hashes "${hashes_ref[*]}")
         select_args+=(--dates "${dates_ref[*]}")
-        select_args+=(--subjects "${subjects_ref[*]}")
-        select_args+=(--tracks "${tracks_ref[*]}")
+        # Subjects and tracks may contain spaces — pass per-item to avoid split corruption
+        for subj in "${subjects_ref[@]}"; do select_args+=(--subject "$subj"); done
+        for trk in "${tracks_ref[@]}"; do select_args+=(--track "$trk"); done
         select_args+=(--placeholder "$placeholder")
         select_args+=(--array-name "$result_array_name")
         select_args+=(--no-gum)  # Explicitly disable gum (we're in numbered list mode)

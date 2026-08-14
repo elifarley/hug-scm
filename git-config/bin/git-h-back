@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+_hug_category='["head"]'
+_hug_keywords='["back", "rewind", "previous", "earlier"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\nkeywords = %s\n' "$_hug_category" "$_hug_keywords"
+  exit 0
+}
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done
@@ -21,6 +27,7 @@ OPTIONS:
                     Reference point is HEAD's commit time
     --quiet         Suppress output (sets HUG_QUIET=T)
     --force         Skip confirmation prompts (use with caution)
+    -y, --yes       Skip confirmation prompts (keeps safe semantics)
 
 DESCRIPTION:
     Moves HEAD to target. With -u, runs a read-only preview/confirmation before discarding local-only commits to sync with remote tip.
@@ -41,6 +48,12 @@ SEE ALSO:
 NOTES:
     Uncommitted changes (staged and unstaged) are fully preserved.
     Untracked and ignored files are never affected.
+
+RESTORE
+    h-back is inverted by:
+        hug h restore <pre-op-HEAD> --back -y
+    On a successful h-back, hug prints this exact line with the pre-op SHA
+    filled in. (--back ≡ git reset --soft — your changes stay staged.)
 EOF
 }
 
@@ -68,16 +81,28 @@ done
 
 check_git_repo
 
+tier=warn # h-back is warn-tier: --soft preserves all work; complete recovery exists
+
 if $upstream; then
   # handle_upstream_operation performs validation, preview, confirmation and echoes the upstream commit.
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
-  target=$(handle_upstream_operation "moving back")
+  target=$(handle_upstream_operation "moving back" "$tier" "back" "discards local-only commits") || exit $?
+  [[ -z "${target:-}" ]] && exit 0
 else
   # Use DRY helper for validation and target resolution
   target=$(resolve_target_with_temporal "$upstream" "$temporal_spec" "$target_arg" 'HEAD~1') || exit 1
 
-  # Handle root commit scenario (target doesn't exist because we're at the first commit)
-  if ! git rev-parse --verify --quiet "$target" > /dev/null 2>&1 && is_at_root_commit; then
+  # #234: an EXPLICIT target must be a valid BACKWARD move — garbage fails loudly (never a
+  # root-recovery on nonsense input) and a forward target points at restore instead of moving
+  # HEAD through a backward-named command. The default HEAD~1 is skipped by design: at root it
+  # legitimately does not resolve — that unresolved default IS the root-recovery trigger below.
+  [[ -n "$target_arg" ]] && validate_backward_target "$target" "back" "$target_arg"
+
+  # Handle root commit scenario (target doesn't exist because we're at the first commit).
+  # Defense in depth (#234): the `[[ -z "$target_arg" ]]` clause makes root-recovery
+  # STRUCTURALLY unreachable for any explicit target, even if validate_backward_target is
+  # later refactored — only the default HEAD~1 (no positional) may land here.
+  if [[ -z "$target_arg" ]] && ! git rev-parse --verify --quiet "$target" > /dev/null 2>&1 && is_at_root_commit; then
     # Show preview of the root commit
     if [[ ${HUG_QUIET:-} != T ]]; then
       printf 'Commits to be affected:\n' >&2
@@ -86,8 +111,13 @@ else
       git diff --stat --root HEAD >&2
     fi
 
+    # Root-commit path stays DANGER (spec §6): recovery at root is a guaranteed LOUD FAILURE
+    # post-#229-Phase-1 (unborn HEAD ⇒ the now-strict rev-list propagates non-zero ⇒ the
+    # mover exits ≠ 0), so there is still no complete recovery to license a warn tier. The
+    # non-root path below is warn because --soft preserves all work; this root path must NOT
+    # be swept along with it.
     if [[ ${HUG_FORCE:-} != true ]] && has_staged_changes; then
-      prompt_confirm_warn "Move HEAD back (undo root commit)? [y/N]: "
+      prompt_confirm_danger "back" "Rewrites history by undoing root commit"
     fi
 
     reset_root_commit "soft"
@@ -99,11 +129,13 @@ else
   handle_standard_operation "move back" "$target"
   target_short=$(git rev-parse --short "$target")
   if has_staged_changes; then
-    prompt_confirm_warn "Move HEAD back to ${target_short}? [y/N]: "
+    prompt_confirm_warn "Move HEAD back, keeping changes staged? [y/N]: "
   else
     info "No staged changes detected; skipping confirmation."
   fi
 fi
 
+pre_op_head=$(git rev-parse HEAD)
 git reset --soft "$target"
 info "Moved HEAD back to $target (uncommitted changes preserved)."
+emit_head_recovery_hint "$pre_op_head" "back"

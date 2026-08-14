@@ -13,6 +13,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 ## On This Page
 - [Quick Reference](#quick-reference)
 - [Status Commands (s*)](#status-commands-s)
+- [Visual diff (hug dd)](#visual-diff-hug-dd)
 - [Staging Commands (a*)](#staging-commands-a)
 - [Unstaging](#unstaging)
 - [Stash Commands (s* overlap)](#stash-commands-s-overlap)
@@ -27,12 +28,17 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 
 | Command | Memory Hook | Summary |
 | --- | --- | --- |
-| `hug s` | **S**tatus snapshot | Colored summary of staged/unstaged changes |
-| `hug sl` | **S**tatus + **L**ist | Status with listed tracked changes |
-| `hug sla` | **S**tatus + **L**ist **A**ll | Status including untracked files |
+| `hug s` | **S**tatus snapshot | Colored summary of staged/unstaged changes; supports query flags for scripting |
+| `hug sl` | **S**tatus + **L**ist | Status with listed tracked changes; `-c` counts them |
+| `hug sla` | **S**tatus + **L**ist **A**ll | Status including untracked files; `-c` counts them |
+| `hug sls` | **S**tatus + **L**ist **S**taged | Status with staged files only; `-c` counts them |
+| `hug slu` | **S**tatus + **L**ist **U**nstaged | Status with unstaged files only; `-c` counts them |
+| `hug slk` | **S**tatus + **L**ist untrac**K**ed | Status with untracked files only; `-c` counts them |
+| `hug slc` | **S**tatus + **L**ist **C**onflicts | Status with conflicted (unmerged) files only; `-c` counts them |
 | `hug ss` | **S**tatus + **S**taged | Show staged diff |
 | `hug su` | **S**tatus + **U**nstaged | Show unstaged diff |
 | `hug sw` | **S**tatus + **W**orking | Combined staged and unstaged diff |
+| `hug dd` | **D**ir-**D**iff (visual) | Visual side-by-side difftool: `dd s`/`u`/`w` — see [Visual diff](#visual-diff-hug-dd) |
 | `hug a` | **A**dd tracked | Stage tracked changes |
 | `hug aa` | **A**dd **A**ll | Stage tracked and untracked changes |
 | `hug us` | **U**n**S**tage | Unstage specific files |
@@ -42,9 +48,40 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 
 ### Basic Status
 - `hug s`: **S**tatus snapshot
-    - **Description**: Quick colored summary of staged/unstaged changes (no untracked files).
-    - **Example**: `hug s` (always safe, no args).
+    - **Description**: Quick colored summary of staged/unstaged changes, with a conflict count (`C:`) and red ball when files are unmerged. Also supports query flags for scriptable field extraction.
+    - **Example**: `hug s` (always safe, no args), `hug s -r` (remote URL), `hug s -b -r -u` (branch, remote, upstream).
     - **Safety**: ✅ Read-only overview; nothing is modified.
+
+    ::: details Query Flags
+    When any query flag is passed, `hug s` enters **query mode**: individual fields are printed to stdout (one per line by default, NUL-separated with `-z`), with no colored output or chatter on stderr. Computation is lazy — only requested fields incur git operations.
+
+    | Flag | Field | Notes |
+    | --- | --- | --- |
+    | `-b, --branch` | Current branch name | Empty if detached HEAD |
+    | `-r, --remote` | URL of tracking remote | Empty if no upstream |
+    | `-u, --upstream` | Upstream tracking branch | Empty if none |
+    | `-H, --hash` | Full commit hash | HEAD |
+    | `-s, --short-hash` | Short commit hash | HEAD |
+    | `-A, --ahead` | Commits ahead of upstream | Count |
+    | `-B, --behind` | Commits behind upstream | Count |
+    | `-C, --counts` | Combined ahead/behind | `ahead behind` |
+    | `-I, --ignored` | Ignored file count | |
+    | `-K, --untracked` | Untracked file count | |
+    | `-S, --staged` | Staged file count | |
+    | `-U, --unstaged` | Unstaged file count | |
+    | `--conflicted` | Conflicted (unmerged) file count | Long-only |
+    | `--ball` | State emoji | Encodes repo state |
+    | `-z, --null` | NUL separator | Use with other query flags |
+    | `--json` | Full JSON output | Mutually exclusive with query flags |
+
+    Query flags are mutually exclusive with `--json`. Combine freely:
+    ```
+    hug s -r                    # URL of tracking remote
+    hug s -b -r -u              # Branch, remote URL, upstream (tab-separated)
+    hug s --conflicted          # Count of conflicted (unmerged) files
+    hug s -z -b -H | xargs -0  # NUL-separated for unusual names
+    ```
+    :::
 
 - `hug sl`: **S**tatus + **L**ist
     - **Description**: Status with a list of *uncommitted* tracked files (mirrors plain `git status`).
@@ -81,6 +118,34 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
     - **Description**: Status plus ignored and untracked files to surface items in `.gitignore`.
     - **Example**: `hug sli`
     - **Safety**: ✅ Read-only (great for spotting generated artifacts).
+
+- `hug sls`: **S**tatus + **L**ist **S**taged
+    - **Description**: Status with staged files only.
+    - **Example**: `hug sls`
+    - **Safety**: ✅ Read-only.
+
+- `hug slu`: **S**tatus + **L**ist **U**nstaged
+    - **Description**: Status with unstaged files only (includes conflicted files, marked `Cnflt`).
+    - **Example**: `hug slu`
+    - **Safety**: ✅ Read-only.
+
+- `hug slk`: **S**tatus + **L**ist untrac**K**ed
+    - **Description**: Status with untracked files only.
+    - **Example**: `hug slk`
+    - **Safety**: ✅ Read-only.
+
+- `hug slc`: **S**tatus + **L**ist **C**onflicts
+    - **Description**: Status with conflicted (unmerged) files only — the native equivalent of `git diff --name-only --diff-filter=U`. Use `-q` for plain paths (scripting); `--json` emits the unified status envelope with a `summary.conflicted` count. Pathspecs scope the text listing (`--json` ignores them).
+    - **Example**: `hug slc`, `hug slc -c` (count of conflicts)
+    - **Safety**: ✅ Read-only.
+
+> [!NOTE] `-c/--count` on the `sl*` family
+> Every `sl*` listing command (`sl`, `sla`, `sls`, `slu`, `slk`, `sli`, `slc`) accepts `-c/--count`: it prints only the number of matching files — a single integer on stdout, `0` when none, exit `0` (the `grep -c` idiom). It composes with pathspecs (`hug slc -c <path>` counts conflicts under `<path>`), suppresses the trailing `hug s` summary, and is **mutually exclusive with `--json`** (like `hug wtl`'s `--json --path-only` error). Counts are NUL-safe (a filename containing a newline counts once) and deduplicated (a file both staged and unstaged counts once in `hug sl -c`). `-q` is accepted alongside `-c` but redundant (the count is already bare).
+> ```
+> hug slc -c          # count conflicts (0 → clean, proceed)
+> hug slu -c src/     # count unstaged files under src/
+> if [[ $(hug slc -c) -gt 0 ]]; then ...; fi
+> ```
 
 > **Related:** After inspecting status, jump to [Detailed Patches](#detailed-patches) for inline diffs or hop over to [Working Directory (w*)](working-dir) to clean up files you find.
 
@@ -137,13 +202,69 @@ Show diffs inline for better inspection.
 > **Task:** Review your commit before amending.  
 > **Flow:** Run `hug ss` to verify staged fixes, then `hug su` to ensure no leftovers remain before `hug caa`.
 
+## Visual diff: `hug dd`
+
+`hug dd` opens a **visual side-by-side difftool** (e.g. kitty diff) instead of printing a text patch. It's the **visual-diff gateway**: the `s`/`u`/`w` subcommands mirror the working-tree text family `ss`/`su`/`sw`, while a **committish / range / N** shows commit-history diffs — the visual counterpart to `shp`/`shcp` (also reachable under the show-family name `hug shv`).
+
+| Command | Shows | Compares |
+| --- | --- | --- |
+| `hug dd s` | Staged | index vs HEAD |
+| `hug dd u` | Unstaged | worktree vs index |
+| `hug dd w` (or bare `hug dd`) | All uncommitted (net) | worktree vs HEAD |
+| `hug dd <committish>` / `hug dd N` | That commit's **introduced** diff | commit vs its first parent (root → empty tree) |
+| `hug dd <range>` / `hug dd -N` | A range (cumulative) | endpoints, e.g. `HEAD~3..HEAD` |
+
+```sh
+hug dd s              # staged changes, visual
+hug dd u              # unstaged changes, visual
+hug dd w              # ALL uncommitted changes (same as bare `hug dd`)
+hug dd HEAD           # the patch HEAD introduced (= hug shp HEAD, visual)
+hug dd 3              # the patch of the commit 3 back (HEAD~3)
+hug dd -3             # cumulative diff of the last 3 commits (HEAD~3..HEAD)
+hug dd v1.0..HEAD     # cumulative diff across a range
+hug dd w -- src/      # scope to a path
+hug dd --             # pick files interactively, then one difftool window
+```
+
+> [!NOTE]
+> A **committish** means *that commit's own patch* (like `git show`), so `hug dd HEAD`
+> shows HEAD's changes — distinct from bare `hug dd`, which shows your *uncommitted*
+> work. (`hug dd HEAD` ≡ `hug shp HEAD`, just visual.) A **range** (or `-N`) shows the
+> cumulative endpoint diff like `hug shcp`; a merge is diffed against its first parent.
+> Numbers use the same `N`/`-N` convention as `hug sh`.
+
+### Net view vs the two-section split
+
+Git holds your work as a chain of three snapshots:
+
+```
+HEAD (last commit)  →  index (staging area)  →  working tree (files on disk)
+```
+
+`hug sw` (text) shows this chain as **two diffs**: a *staged* section (`HEAD → index`) and an *unstaged* section (`index → worktree`). `hug dd w` shows only the **endpoints** as a single diff (`HEAD → worktree`) — it must, because `git difftool --dir-diff` opens the tool once on two snapshots and can't render two sections without launching it twice (poor UX).
+
+Collapsing the middle means the two steps can cancel out. Example — `config.txt` is `port = 80` at HEAD:
+
+1. Change it to `port = 8080` and **stage** it (index = `8080`).
+2. Then edit the working file **back** to `port = 80`.
+
+| View | Shows |
+| --- | --- |
+| `hug sw` | **two** changes: staged `80 → 8080`, unstaged `8080 → 80` |
+| `hug dd w` | **nothing** — HEAD (`80`) and worktree (`80`) are identical → `No changes.` |
+
+This is intentional, not a bug. `dd w` answers *"what does my tree look like vs my last commit?"* (the common case). When you need the exact staged-vs-unstaged split, use **`hug dd s` + `hug dd u`** (each diffs one link of the chain) or the text view **`hug sw`**.
+
+> [!TIP]
+> `hug dd` needs a difftool configured in git (`diff.tool` + `difftool.<name>.cmd`). It is interactive/TTY-only and refuses to run in a pipe — for pipe-safe patch output use `hug ss` / `hug su` / `hug sw`.
+
 ## Staging Commands (a*)
 
 - `hug a [files...]`: **A**dd tracked
-    - **Description**: Stage tracked changes (or specific files if provided). If no args, stages updates only. Use `--` to trigger interactive file selection UI.
+    - **Description**: Stage tracked changes (or specific files if provided). If no args, stages modifications and deletions of tracked files, but not new/untracked files (use `hug aa` for those). Use `--` to trigger interactive file selection UI.
     - **Example**:
       ```
-      hug a                     # Stage all tracked updates
+      hug a                     # Stage all tracked changes (modifications + deletions)
       hug a src/                # Stage directory, including non-tracked files
       hug a --                  # Interactive file selection (requires gum)
       ```

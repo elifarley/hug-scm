@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["statistics"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # git-stats-author - Author contribution statistics
 # Part of the Hug tool suite
 
@@ -186,7 +191,9 @@ if [ -n "$author" ]; then
     # Date range
     if [ "$commit_count" -gt 0 ]; then
       first_date=$(git log --author="$author" --format='%ai' "${git_opts[@]}" | tail -1 | cut -d' ' -f1)
-      last_date=$(git log --author="$author" --format='%ai' "${git_opts[@]}" | head -1 | cut -d' ' -f1)
+      # SIGPIPE-safe: capture-then-filter — head -1 would SIGPIPE git log under pipefail
+      _last_date_raw=$(git log --author="$author" --format='%ai' "${git_opts[@]}" 2> /dev/null) || _last_date_raw=""
+      last_date=$(head -1 <<< "$_last_date_raw" | cut -d' ' -f1)
       info ""
       info "Time span:"
       info "  First: $first_date"
@@ -201,7 +208,7 @@ if [ -n "$author" ]; then
         printf "  Added:   +%d lines\n", added;
         printf "  Deleted: -%d lines\n", deleted;
         printf "  Net:     %+d lines\n", added-deleted
-      }'
+      }' >&2
 
     # Files touched
     info ""
@@ -226,7 +233,9 @@ fi
 if $json_output; then
   # JSON array of authors
   echo "["
-  git shortlog -sn --all "${git_opts[@]}" | head -"$top_n" |
+  # SIGPIPE-safe: capture-then-filter — head -"$top_n" would SIGPIPE git shortlog under pipefail
+  _shortlog_raw=$(git shortlog -sn --all "${git_opts[@]}" 2> /dev/null) || _shortlog_raw=""
+  head -"$top_n" <<< "$_shortlog_raw" |
     awk -v first=1 '{
       if (!first) print ",";
       first=0;
@@ -243,7 +252,9 @@ else
   info "Top $top_n contributors:"
   info ""
 
-  git shortlog -sn --all "${git_opts[@]}" | head -"$top_n" | nl |
+  # SIGPIPE-safe: capture-then-filter — head -"$top_n" would SIGPIPE git shortlog under pipefail
+  _shortlog_human_raw=$(git shortlog -sn --all "${git_opts[@]}" 2> /dev/null) || _shortlog_human_raw=""
+  head -"$top_n" <<< "$_shortlog_human_raw" | nl |
     while read rank count author; do
       # Get line stats for this author
       stats=$(git log --all --author="$author" --numstat --format= "${git_opts[@]}" |

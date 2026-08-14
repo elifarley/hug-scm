@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+_hug_category='["committing"]'
+test "${1:-}" = '--search-meta' && {
+  printf 'category = %s\n' "$_hug_category"
+  exit 0
+}
 # Assume HUG_HOME is set (exported by hug or environment)
 # shellcheck source=git-config/lib/hug-common
 . "$HUG_HOME/git-config/lib/hug-common"
@@ -33,7 +38,7 @@ DESCRIPTION:
   of the source commit without applying its actual changes. This is useful when you
   want to apply similar changes to different content or create a template commit.
 
-  After cherry-picking, you can edit the new commit message with 'hug cm' if needed.
+  After cherry-picking, you can edit the new commit message with 'hug cmod' if needed.
   Note: Cherry-picking can lead to conflicts; resolve them with 'hug s' (status) and 'hug caa' (commit all).
 
 EXAMPLES:
@@ -114,7 +119,7 @@ if [[ "$husk_mode" == true ]]; then
     exit 0
   fi
 
-  printf "Staging %d file(s) from commit %s...\n" "${#files[@]}" "$source_commit"
+  printf "Staging %d file(s) from commit %s...\n" "${#files[@]}" "$source_commit" >&2
 
   # Stage the files (but only if they exist in the working directory)
   files_to_stage=()
@@ -134,7 +139,7 @@ if [[ "$husk_mode" == true ]]; then
   # Stage the files
   git add "${files_to_stage[@]}"
 
-  printf "Creating commit with message from %s...\n" "$source_commit"
+  printf "Creating commit with message from %s...\n" "$source_commit" >&2
   # Use git's native commit message reuse
   exec git commit -C "$source_commit"
 fi
@@ -149,5 +154,5 @@ for arg in "$@"; do
   validate_commitish "ccp argument" "$arg"
 done
 
-printf "Copying %s onto current branch...\n" "$*"
+printf "Copying %s onto current branch...\n" "$*" >&2
 exec git cherry-pick -x "${git_options[@]}" "$@"

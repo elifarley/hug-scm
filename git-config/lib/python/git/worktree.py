@@ -17,9 +17,10 @@ Supports:
 """
 
 import argparse
+import os
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -32,6 +33,10 @@ class WorktreeInfo:
         commit: Short commit hash (7 characters), empty if unavailable
         is_dirty: True if worktree has uncommitted changes
         is_locked: True if worktree is locked
+        missing: True if the worktree directory no longer exists on disk
+        dirty_details: Tuple of dirty-category labels, e.g. ("unstaged", "untracked").
+            Empty tuple when clean or missing. Uses tuple (not list) to avoid the
+            mutable-default-argument pitfall.
     """
 
     path: str
@@ -39,6 +44,38 @@ class WorktreeInfo:
     commit: str
     is_dirty: bool
     is_locked: bool
+    missing: bool = False
+    dirty_details: tuple = ()
+
+
+def format_indicators(is_dirty: bool, is_locked: bool) -> str:
+    """Build 2-char indicator string for worktree display.
+
+    Column layout: + #
+      + = dirty (uncommitted changes present)
+      # = locked (git worktree lock)
+      . = inactive (placeholder for visual alignment)
+
+    The * (current) and @ (detached) indicators are no longer columns --
+    they are part of the branch display in the calling code (format_display_rows).
+
+    WHY 2 columns instead of 4: The * and @ indicators convey branch context,
+    not worktree state. Embedding them in the branch display keeps the indicator
+    block focused on state flags and makes each row easier to scan at a glance.
+
+    Args:
+        is_dirty: True if the worktree has uncommitted changes.
+        is_locked: True if the worktree is locked via git worktree lock.
+
+    Returns:
+        A 2-character string like "+#" or "..".
+    """
+    return "".join(
+        [
+            "+" if is_dirty else ".",
+            "#" if is_locked else ".",
+        ]
+    )
 
 
 @dataclass
@@ -54,6 +91,10 @@ class WorktreeList:
         commits: List of commit hashes (parallel to paths)
         dirty_status: List of "true"/"false" strings for bash (parallel to paths)
         locked_status: List of "true"/"false" strings for bash (parallel to paths)
+        missing_status: List of "true"/"false" strings (parallel to paths).
+            Not exposed in to_bash_declare — Bash derives (gone) from [[ -d ]].
+        dirty_details_list: List of tuple[str, ...] (parallel to paths).
+            Each tuple is a subset of ("staged", "unstaged", "untracked").
     """
 
     paths: list[str]
@@ -61,6 +102,8 @@ class WorktreeList:
     commits: list[str]
     dirty_status: list[str]
     locked_status: list[str]
+    missing_status: list[str] = field(default_factory=list)
+    dirty_details_list: list[tuple] = field(default_factory=list)
 
     def to_bash_declare(self) -> str:
         """Format as bash variable declarations.
@@ -95,6 +138,74 @@ class WorktreeList:
 
         return "\n".join(lines)
 
+    def to_json(self, current_worktree: str = "") -> str:
+        """Serialize to JSON format for API consumption.
+
+        WHY: Replaces manual JSON construction in Bash output_worktree_json().
+        Python's json module handles proper string escaping (quotes, backslashes,
+        unicode) that Bash printf cannot safely do, preventing malformed JSON.
+
+        Output format matches the existing contract:
+        {"worktrees": [...], "current": "<path>", "count": <n>}
+
+        Args:
+            current_worktree: Absolute path of the current worktree for marking
+                the "current" field in the JSON output.
+
+        Returns:
+            JSON string with worktree array and metadata.
+        """
+        import json
+
+        worktrees = []
+        for i, path in enumerate(self.paths):
+            worktrees.append(
+                {
+                    "path": path,
+                    "branch": self.branches[i],
+                    "commit": self.commits[i],
+                    "dirty": self.dirty_status[i] == "true",
+                    "locked": self.locked_status[i] == "true",
+                    "current": path == current_worktree,
+                    "missing": self.missing_status[i] == "true"
+                    if i < len(self.missing_status)
+                    else False,
+                    "dirty_details": list(self.dirty_details_list[i])
+                    if i < len(self.dirty_details_list)
+                    else [],
+                }
+            )
+
+        return json.dumps(
+            {
+                "worktrees": worktrees,
+                "current": current_worktree,
+                "count": len(worktrees),
+            }
+        )
+
+
+@dataclass
+class WorktreeDirtyInfo:
+    """Categorized dirty status for a worktree.
+
+    Provides detailed breakdown of uncommitted changes, enabling user-friendly
+    messages like "unstaged changes, untracked files" instead of just "dirty".
+
+    Attributes:
+        is_dirty: True if any uncommitted changes exist
+        has_unstaged: True if working directory has modified tracked files
+        has_staged: True if index has files ready to commit
+        has_untracked: True if new files exist that aren't in git
+        details: Human-readable summary (e.g., "unstaged changes, untracked files")
+    """
+
+    is_dirty: bool
+    has_unstaged: bool
+    has_staged: bool
+    has_untracked: bool
+    details: str
+
 
 def _bash_escape(s: str) -> str:
     """Escape string for safe bash declare usage.
@@ -127,6 +238,36 @@ def _check_worktree_dirty(worktree_path: str) -> bool:
     Returns:
         True if worktree has any uncommitted changes, False otherwise
     """
+    info = _check_worktree_dirty_details(worktree_path)
+    return info.is_dirty
+
+
+def _check_worktree_dirty_details(worktree_path: str) -> WorktreeDirtyInfo:
+    """Check if a worktree has uncommitted changes and categorize them.
+
+    Uses git subprocess calls to check for three types of changes:
+    - Unstaged changes: modified tracked files in working directory
+    - Staged changes: files in index ready to commit
+    - Untracked files: new files not in git
+
+    Args:
+        worktree_path: Path to the worktree directory
+
+    Returns:
+        WorktreeDirtyInfo with detailed breakdown of changes
+    """
+    # WHY: Stale worktrees (directory deleted externally) cause all three
+    # git subprocess calls to fail with exit code 128. Without this guard,
+    # each call takes up to 5 seconds (timeout) before failing — wasting
+    # ~15 seconds per stale entry in listing commands.
+    if not os.path.isdir(worktree_path):
+        return WorktreeDirtyInfo(
+            is_dirty=False,
+            has_unstaged=False,
+            has_staged=False,
+            has_untracked=False,
+            details="",
+        )
     try:
         # Check for unstaged changes
         result = subprocess.run(
@@ -153,10 +294,59 @@ def _check_worktree_dirty(worktree_path: str) -> bool:
         )
         has_untracked = bool(result.stdout.strip())
 
-        return has_unstaged or has_staged or has_untracked
+        # Build human-readable details
+        parts = []
+        if has_unstaged:
+            parts.append("unstaged changes")
+        if has_staged:
+            parts.append("staged changes")
+        if has_untracked:
+            parts.append("untracked files")
+        details = ", ".join(parts)
+
+        is_dirty = has_unstaged or has_staged or has_untracked
+
+        return WorktreeDirtyInfo(
+            is_dirty=is_dirty,
+            has_unstaged=has_unstaged,
+            has_staged=has_staged,
+            has_untracked=has_untracked,
+            details=details,
+        )
     except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
-        # On error, assume not dirty to avoid false positives
-        return False
+        # On error, assume clean to avoid false positives
+        return WorktreeDirtyInfo(
+            is_dirty=False,
+            has_unstaged=False,
+            has_staged=False,
+            has_untracked=False,
+            details="",
+        )
+
+
+def _dirty_detail_labels(info: WorktreeDirtyInfo) -> tuple[str, ...]:
+    """Extract machine-readable dirty-category labels from a WorktreeDirtyInfo.
+
+    WHY: JSON consumers and structured output need categorized labels
+    ("staged", "unstaged", "untracked") rather than the human-readable
+    comma-separated string in WorktreeDirtyInfo.details. This helper keeps
+    the categorization logic DRY between parse_worktree_list (JSON enrichment)
+    and the dirty subcommand.
+
+    Args:
+        info: WorktreeDirtyInfo from _check_worktree_dirty_details.
+
+    Returns:
+        Tuple of matching labels, e.g. ("unstaged", "untracked"). Empty if clean.
+    """
+    parts: list[str] = []
+    if info.has_staged:
+        parts.append("staged")
+    if info.has_unstaged:
+        parts.append("unstaged")
+    if info.has_untracked:
+        parts.append("untracked")
+    return tuple(parts)
 
 
 def parse_worktree_list(
@@ -222,8 +412,12 @@ def parse_worktree_list(
                     should_include = False
 
                 if should_include:
-                    # Check dirty status via subprocess
-                    is_dirty = _check_worktree_dirty(current_path)
+                    # WHY: Call _check_worktree_dirty_details directly (not the
+                    # thin _check_worktree_dirty wrapper) so we get both the dirty
+                    # boolean AND the categorized labels in a single subprocess
+                    # round-trip.  Avoids 3 extra git invocations per worktree.
+                    dirty_info = _check_worktree_dirty_details(current_path)
+                    missing = not os.path.isdir(current_path)
 
                     # Shorten commit to 7 characters if present
                     short_commit = current_commit[:7] if current_commit else ""
@@ -233,8 +427,10 @@ def parse_worktree_list(
                             path=current_path,
                             branch=current_branch,
                             commit=short_commit,
-                            is_dirty=is_dirty,
+                            is_dirty=dirty_info.is_dirty,
                             is_locked=current_locked,
+                            missing=missing,
+                            dirty_details=_dirty_detail_labels(dirty_info),
                         )
                     )
 
@@ -270,7 +466,8 @@ def parse_worktree_list(
             should_include = False
 
         if should_include:
-            is_dirty = _check_worktree_dirty(current_path)
+            dirty_info = _check_worktree_dirty_details(current_path)
+            missing = not os.path.isdir(current_path)
             short_commit = current_commit[:7] if current_commit else ""
 
             worktrees.append(
@@ -278,12 +475,123 @@ def parse_worktree_list(
                     path=current_path,
                     branch=current_branch,
                     commit=short_commit,
-                    is_dirty=is_dirty,
+                    is_dirty=dirty_info.is_dirty,
                     is_locked=current_locked,
+                    missing=missing,
+                    dirty_details=_dirty_detail_labels(dirty_info),
                 )
             )
 
     return worktrees
+
+
+def filter_by_branch(
+    worktrees: list[WorktreeInfo],
+    branch_filters: list[str],
+) -> list[WorktreeInfo]:
+    """Filter worktrees by exact branch name match (OR logic).
+
+    When multiple branch filters are provided, a worktree matches if its branch
+    equals ANY of the filters (OR logic). This matches the behavior of
+    `hug wtl --branch f1 --branch f2`.
+
+    Empty filter list returns all worktrees (no filtering).
+
+    Args:
+        worktrees: Candidate worktrees to filter.
+        branch_filters: List of exact branch names to match against.
+
+    Returns:
+        Worktrees whose branch exactly matches at least one filter.
+    """
+    if not branch_filters:
+        return list(worktrees)
+    filter_set = set(branch_filters)
+    return [wt for wt in worktrees if wt.branch in filter_set]
+
+
+def filter_by_search(
+    worktrees: list[WorktreeInfo],
+    search_terms: list[str],
+) -> list[WorktreeInfo]:
+    """Filter worktrees by substring match on path or branch (OR logic).
+
+    Each term in search_terms is checked independently (OR logic). For each
+    worktree, if ANY term matches (case-insensitive) against EITHER the path
+    OR the branch, the worktree is included.
+
+    Empty or whitespace-only terms are stripped; if no terms remain after
+    stripping, all worktrees are returned (no filtering).
+
+    Args:
+        worktrees: Candidate worktrees to filter.
+        search_terms: List of individual search terms (one per --search flag).
+
+    Returns:
+        Worktrees matching at least one search term in path or branch.
+    """
+    if not search_terms:
+        return list(worktrees)
+    terms = [t.lower() for t in search_terms if t.strip()]
+    if not terms:
+        return list(worktrees)
+    result = []
+    for wt in worktrees:
+        path_lower = wt.path.lower()
+        branch_lower = (wt.branch or "").lower()
+        for term in terms:
+            if term in path_lower or term in branch_lower:
+                result.append(wt)
+                break
+    return result
+
+
+def filter_by_existing(worktrees: list[WorktreeInfo]) -> list[WorktreeInfo]:
+    """Filter out worktrees whose directory no longer exists on disk.
+
+    WHY: Stale worktrees (directory deleted externally but not pruned from git)
+    should be excludable via --existing. The check is os.path.isdir which is
+    fast (no subprocess) and matches the Bash [[ -d "$path" ]] semantics.
+
+    Args:
+        worktrees: Candidate worktrees to filter.
+
+    Returns:
+        Worktrees whose path directories still exist.
+    """
+    return [wt for wt in worktrees if os.path.isdir(wt.path)]
+
+
+def filter_worktrees_by_criteria(
+    worktrees: list[WorktreeInfo],
+    branch_filters: list[str],
+    search_terms: list[str],
+    existing_only: bool = False,
+) -> list[WorktreeInfo]:
+    """Apply branch, search, and optional existing filters (AND logic between stages).
+
+    Stage 1: branch filter (exact match, OR between branches)
+    Stage 2: search filter (substring match, OR between terms)
+    Stage 3: existing filter (exclude stale directories) — only if existing_only=True
+
+    All stages must pass (AND logic). This matches the semantics of:
+    `hug wtl --branch main /home -e` — branch is "main" AND path contains "/home"
+    AND directory still exists.
+
+    Args:
+        worktrees: Candidate worktrees to filter.
+        branch_filters: Exact branch names (OR logic within stage).
+        search_terms: Individual search terms (OR logic within stage).
+        existing_only: If True, exclude worktrees whose directories don't exist.
+
+    Returns:
+        Worktrees passing all filter stages.
+    """
+    result = filter_by_branch(worktrees, branch_filters)
+    result = filter_by_search(result, search_terms)
+    if existing_only:
+        result = filter_by_existing(result)
+    return result
 
 
 def to_worktree_list(worktrees: list[WorktreeInfo]) -> WorktreeList:
@@ -300,6 +608,8 @@ def to_worktree_list(worktrees: list[WorktreeInfo]) -> WorktreeList:
     commits = []
     dirty_status = []
     locked_status = []
+    missing_status = []
+    dirty_details_list = []
 
     for wt in worktrees:
         paths.append(wt.path)
@@ -307,6 +617,8 @@ def to_worktree_list(worktrees: list[WorktreeInfo]) -> WorktreeList:
         commits.append(wt.commit)
         dirty_status.append("true" if wt.is_dirty else "false")
         locked_status.append("true" if wt.is_locked else "false")
+        missing_status.append("true" if wt.missing else "false")
+        dirty_details_list.append(wt.dirty_details)
 
     return WorktreeList(
         paths=paths,
@@ -314,6 +626,8 @@ def to_worktree_list(worktrees: list[WorktreeInfo]) -> WorktreeList:
         commits=commits,
         dirty_status=dirty_status,
         locked_status=locked_status,
+        missing_status=missing_status,
+        dirty_details_list=dirty_details_list,
     )
 
 
@@ -363,85 +677,200 @@ def main():
 
     Usage:
         python3 worktree.py list [options]
+        python3 worktree.py dirty <path>
 
     Commands:
         list    List worktrees and output bash variable declarations
+        dirty   Check dirty status of a worktree and output categorized details
 
-    Options:
+    Options (for 'list'):
         --include-main    Include main repository in output (default: false)
 
     The command auto-detects the main repo path via git rev-parse --show-toplevel.
     Outputs bash variable declarations via to_bash_declare().
     Returns exit code 1 on error.
-
-    Example:
-        $ python3 worktree.py list
-        declare -a worktree_paths=('/path/to/feature')
-        declare -a worktree_branches=('feature')
-        declare -a worktree_commits=('abc1234')
-        declare -a worktree_dirty_status=('false')
-        declare -a worktree_locked_status=('false')
     """
-    parser = argparse.ArgumentParser(description="List git worktrees for Hug SCM")
-    parser.add_argument(
-        "command", choices=["list"], help="Command to run (currently only 'list' supported)"
-    )
-    parser.add_argument(
+    # Use subparsers for different commands
+    parser = argparse.ArgumentParser(description="Git worktree helpers for Hug SCM")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # 'list' subcommand
+    list_parser = subparsers.add_parser("list", help="List worktrees")
+    list_parser.add_argument(
         "--include-main",
         action="store_true",
         help="Include main repository in output (default: false)",
     )
-    parser.add_argument(
+    list_parser.add_argument(
         "--main-repo-path",
         default="",
         help="Main repository path (auto-detected if not provided)",
     )
 
+    # 'dirty' subcommand
+    dirty_parser = subparsers.add_parser("dirty", help="Check worktree dirty status")
+    dirty_parser.add_argument(
+        "path",
+        help="Worktree path to check",
+    )
+
+    # 'json' subcommand
+    json_parser = subparsers.add_parser(
+        "json",
+        help="Output worktree list as JSON",
+    )
+    json_parser.add_argument(
+        "--include-main",
+        action="store_true",
+        help="Include main repository in output (default: false)",
+    )
+    json_parser.add_argument(
+        "--main-repo-path",
+        default="",
+        help="Main repository path (auto-detected if not provided)",
+    )
+    json_parser.add_argument(
+        "--current",
+        default="",
+        help="Current worktree path for marking in JSON output",
+    )
+    json_parser.add_argument(
+        "-b",
+        "--branch",
+        action="append",
+        default=[],
+        help="Filter by exact branch name (repeatable, OR logic).",
+    )
+    json_parser.add_argument(
+        "--search",
+        action="append",
+        default=[],
+        help="Search term (substring match on path/branch, repeatable, OR logic).",
+    )
+    json_parser.add_argument(
+        "-e",
+        "--existing",
+        action="store_true",
+        default=False,
+        help="Exclude worktrees whose directory doesn't exist on disk.",
+    )
+
     args = parser.parse_args()
 
     try:
-        # Get main repo path (from argument or auto-detect)
-        if args.main_repo_path:
-            main_repo_path = args.main_repo_path
-        else:
-            main_repo_path = _get_main_repo_path()
-            if not main_repo_path:
-                print("Error: Not in a git repository", file=sys.stderr)
-                sys.exit(1)
-
-        # Get porcelain output
-        porcelain_output = _get_worktree_porcelain()
-        if not porcelain_output:
-            # No worktrees or error - output empty arrays
-            result = WorktreeList(
-                paths=[],
-                branches=[],
-                commits=[],
-                dirty_status=[],
-                locked_status=[],
-            )
-            print(result.to_bash_declare())
-            return
-
-        # Parse worktrees
-        worktrees = parse_worktree_list(
-            porcelain_output=porcelain_output,
-            main_repo_path=main_repo_path,
-            include_main=args.include_main,
-        )
-
-        # Convert to WorktreeList
-        result = to_worktree_list(worktrees)
-
-        # Output bash declarations
-        print(result.to_bash_declare())
-
+        if args.command == "list":
+            _handle_list_command(args)
+        elif args.command == "dirty":
+            _handle_dirty_command(args.path)
+        elif args.command == "json":
+            _handle_json_command(args)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"Unexpected error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def _handle_list_command(args):
+    """Handle the 'list' subcommand."""
+    # Get main repo path (from argument or auto-detect)
+    if args.main_repo_path:
+        main_repo_path = args.main_repo_path
+    else:
+        main_repo_path = _get_main_repo_path()
+        if not main_repo_path:
+            print("Error: Not in a git repository", file=sys.stderr)
+            sys.exit(1)
+
+    # Get porcelain output
+    porcelain_output = _get_worktree_porcelain()
+    if not porcelain_output:
+        # No worktrees or error - output empty arrays
+        result = WorktreeList(
+            paths=[],
+            branches=[],
+            commits=[],
+            dirty_status=[],
+            locked_status=[],
+        )
+        print(result.to_bash_declare())
+        return
+
+    # Parse worktrees
+    worktrees = parse_worktree_list(
+        porcelain_output=porcelain_output,
+        main_repo_path=main_repo_path,
+        include_main=args.include_main,
+    )
+
+    # Convert to WorktreeList
+    result = to_worktree_list(worktrees)
+
+    # Output bash declarations
+    print(result.to_bash_declare())
+
+
+def _handle_dirty_command(path: str):
+    """Handle the 'dirty' subcommand.
+
+    Outputs bash declare statements for:
+        _wt_dirty        - "true" or "false"
+        _wt_dirty_details - human-readable details string
+    """
+    info = _check_worktree_dirty_details(path)
+    print(f"_wt_dirty={'true' if info.is_dirty else 'false'}")
+    print(f"_wt_dirty_details='{info.details}'")
+
+
+def _handle_json_command(args):
+    """Handle the 'json' subcommand.
+
+    Loads worktrees, applies optional branch/search filters, and outputs JSON.
+    WHY: Replaces manual JSON construction in Bash output_worktree_json().
+    Python's json module ensures proper escaping of special characters.
+    """
+    import json
+
+    # Get main repo path
+    if args.main_repo_path:
+        main_repo_path = args.main_repo_path
+    else:
+        main_repo_path = _get_main_repo_path()
+        if not main_repo_path:
+            print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))
+            return
+
+    # Get porcelain output
+    porcelain_output = _get_worktree_porcelain()
+    if not porcelain_output:
+        print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))
+        return
+
+    # Parse worktrees
+    worktrees = parse_worktree_list(
+        porcelain_output=porcelain_output,
+        main_repo_path=main_repo_path,
+        include_main=args.include_main,
+    )
+
+    if not worktrees:
+        print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))
+        return
+
+    # Apply filters if provided
+    if args.branch or args.search or args.existing:
+        worktrees = filter_worktrees_by_criteria(
+            worktrees, args.branch, args.search, existing_only=args.existing
+        )
+
+    if not worktrees:
+        print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))
+        return
+
+    # Convert to JSON
+    result = to_worktree_list(worktrees)
+    print(result.to_json(args.current))
 
 
 if __name__ == "__main__":

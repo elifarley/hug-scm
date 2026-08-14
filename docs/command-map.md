@@ -19,16 +19,16 @@ This table is the **authoritative source** for Hug's command organization. All c
 | `h*` | HEAD Operations | Undo, rewind, and inspect commits without losing work | `hug h back`, `hug h undo`, `hug h files`, `hug h steps` | **H**EAD |
 | `w*` | Working Directory | Manage local changes: discard, clean, restore, park/unpark work | `hug w get`, `hug w wip`, `hug w zap`, `hug w purge` | **W**orking dir |
 | `wt*` | Worktree Management | Create, switch, list, remove worktrees for parallel development | `hug wt`, `hug wtc`, `hug wtl`, `hug wtll`, `hug wtdel` | **WT**orktree |
-| `s*` | Status & Staging | View repo state: summaries, diffs, staged/unstaged changes | `hug ss`, `hug su`, `hug sw`, `hug sx` | **S**tatus |
+| `s*` | Status & Staging | View repo state: summaries, diffs, staged/unstaged changes | `hug ss`, `hug su`, `hug sw`, `hug dd`, `hug sx` | **S**tatus |
 | `a*` | Staging | Stage changes for commit: tracked, all, or interactive | `hug a`, `hug aa`, `hug ai`, `hug ap` | **A**dd/stage |
 | `b*` | Branching | Create, switch, list, delete, sync branches | `hug b`, `hug bc`, `hug bl`, `hug br` | **B**ranch |
-| `c*` | Commits | Create and amend commits | `hug c`, `hug ca`, `hug cm`, `hug caa` | **C**ommit |
+| `c*` | Commits | Create and amend commits | `hug c`, `hug ca`, `hug cmod`, `hug caa` | **C**ommit |
 | `l*` | Logging & History | Search and view history: messages, code, authors, files | `hug l`, `hug lc`, `hug lf`, `hug lu` | **L**og |
 | `f*` | File Inspection | Analyze file history: blame, contributors, origin | `hug fa`, `hug fb`, `hug fcon`, `hug fborn` | **F**ile |
 | `t*` | Tagging | Manage tags for releases and milestones | `hug t`, `hug tc`, `hug ta`, `hug ts` | **T**ag |
 | `r*` | Rebase | Interactive history editing and rebasing | `hug rb`, `hug rbi`, `hug rbc`, `hug rba` | **R**ebase |
 | `m*` | Merge | Integrate branches with various strategies | `hug m`, `hug ma`, `hug mff`, `hug mkeep` | **M**erge |
-| `analyze*` | Advanced Analysis | Advanced repository analysis and insights | `hug analyze deps`, `hug analyze expert`, `hug analyze activity`, `hug analyze co-changes` | **ANALYZE** |
+| `analyze*` | Advanced Analysis | Advanced repository analysis and insights | `hug analyze deps`, `hug analyze expert`, `hug analyze activity`, `hug analyze co-changes <file>` | **ANALYZE** |
 | `stats*` | Repository Statistics | Quick repository statistics and metrics | `hug stats file`, `hug stats author`, `hug stats branch` | **STATS** |
 | `(no prefix)` | Utilities | Helper commands: init, clone, remote management, object inspection | `hug init`, `hug clone`, `hug remote2ssh`, `hug type`, `hug dump` | **UTILITY** |
 
@@ -71,10 +71,15 @@ Hug Commands
 │   ├── s            # Quick status
 │   ├── sl           # Status + List tracked
 │   ├── sla          # Status + List all (untracked)
+│   ├── sls          # Status + List staged
+│   ├── slu          # Status + List unstaged
+│   ├── slk          # Status + List untracked
+│   ├── slc          # Status + List conflicted (unmerged)
 │   ├── sli          # Status + List inc. ignored
 │   ├── ss           # Status + Staged diff
 │   ├── su           # Status + Unstaged diff
 │   ├── sw           # Status + Working dir diff (both unstaged and staged)
+│   ├── dd           # Visual difftool: s/u/w (working) | committish/N (commit's patch) | range/-N (cumulative)
 │   └── sx           # eXtended summary
 ├── a* (Staging: Prepare Commit)
 │   ├── a            # Add tracked
@@ -111,12 +116,12 @@ Hug Commands
 │   ├── c            # Commit staged
 │   ├── ca           # Commit All tracked
 │   ├── caa          # Commit Add All (tracked+untracked)
-│   ├── cm           # Commit Modify last (staged)
-│   ├── cma          # Commit Modify last (all tracked)
+│   ├── cmod         # Commit Modify (amend staged)
+│   ├── cmoda        # Commit Modify All (amend all tracked)
 │   ├── ccp          # Commit Copy (cherry-pick)
 │   ├── cii          # Commit Interactive (patch)
 │   ├── cim          # Commit Interactive Menu
-│   └── cmv          # Commit Move to branch
+│   └── cmv          # Commit Move to branch (--wt: also create/reuse its worktree)
 ├── l* (Logging: History Search)
 │   ├── l            # Oneline log
 │   ├── la           # Oneline log (all branches)
@@ -174,7 +179,7 @@ Hug Commands
 │   ├── dump           # Show Git object contents
 │   └── untrack        # Stop tracking files
 ├── analyze* (Advanced Analysis)
-│   ├── analyze co-changes  # Find files that change together
+│   ├── analyze co-changes  # Find files related to one file (`--all` for repo-wide coupling)
 │   ├── analyze activity    # Temporal commit patterns
 │   ├── analyze deps        # Commit dependency graph
 │   └── analyze expert      # Code ownership and expertise
