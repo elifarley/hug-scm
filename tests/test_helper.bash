@@ -155,6 +155,16 @@ create_test_repo() {
       echo "Failed to cd to $test_repo" >&2
       exit 1
     }
+    # `cd ""` is a silent no-op in bash (CWD unchanged). If temp-dir
+    # resolution ever fails and test_repo comes back empty, the unguarded
+    # helper re-inits and commits fixtures into whatever repo hosts CWD —
+    # the worktree-contamination incident (junk "Initial commit" landed on
+    # the branch under test, authored "Hug Test"). Verifying arrival makes
+    # that failure loud instead of destructive.
+    [[ "$PWD" == "$test_repo" ]] || {
+      echo "repo helper: cd arrived at '$PWD', expected '$test_repo' — aborting to protect the host repo" >&2
+      exit 1
+    }
     git init -q --initial-branch=main
     git config --local user.email "test@hug-scm.test"
     git config --local user.name "Hug Test"
@@ -867,6 +877,16 @@ create_test_hg_repo() {
   (
     cd "$test_repo" || {
       echo "Failed to cd to $test_repo" >&2
+      exit 1
+    }
+    # `cd ""` is a silent no-op in bash (CWD unchanged). If temp-dir
+    # resolution ever fails and test_repo comes back empty, the unguarded
+    # helper re-inits and commits fixtures into whatever repo hosts CWD —
+    # the worktree-contamination incident (junk "Initial commit" landed on
+    # the branch under test, authored "Hug Test"). Verifying arrival makes
+    # that failure loud instead of destructive.
+    [[ "$PWD" == "$test_repo" ]] || {
+      echo "repo helper: cd arrived at '$PWD', expected '$test_repo' — aborting to protect the host repo" >&2
       exit 1
     }
     hg init
