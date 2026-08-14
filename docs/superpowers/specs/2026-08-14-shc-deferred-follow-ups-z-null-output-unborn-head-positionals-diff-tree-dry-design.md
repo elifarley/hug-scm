@@ -69,9 +69,12 @@ emoji, and error policy stay at call sites (exactly as the issue sketches).
 # Parameters:
 #   --null   - Optional, FIRST arg: NUL-separated output (--name-only only).
 #   $1       - Format: --name-only | --stat. Anything else is a caller bug.
-#   $2       - Commit ref, range, or anything is_range() recognizes (resolved
-#              by the CALLER — this function does not call resolve_commit_ref,
-#              keeping it a thin, independently testable plumbing layer).
+#   $2       - resolved_ref: an ALREADY-RESOLVED commit ref or range (anything
+#              is_range() recognizes). N/-N shorthand resolution is the CALLER's
+#              job (resolve_commit_ref) — this function does not call it, keeping
+#              pinned_diff a thin, independently testable plumbing layer. Named
+#              resolved_ref, not "target", so it cannot be confused with the raw
+#              user input that show_changed_file_names accepts.
 #   $3..     - Optional pathspecs (already-exploded args, passed as-is).
 # Output:
 #   Git's own --name-only / --stat stream on stdout. With --null, paths are
@@ -112,7 +115,13 @@ the name-only branch):
 pinned_diff() {
     local null_mode=false
     [[ "${1:-}" == "--null" ]] && { null_mode=true; shift; }
-    local format="$1" target="$2"
+    # Arg-count guard BEFORE any positional read: under set -u, touching $1/$2 with
+    # too few args dies as "unbound variable" (exit 1) — a caller bug must surface
+    # as error_usage (exit 2), not a raw bash trace.
+    if [[ $# -lt 2 ]]; then
+        error_usage "pinned_diff: expected [--null] <format> <resolved_ref> [pathspec...]"
+    fi
+    local format="$1" resolved_ref="$2"
     shift 2
     local -a path_args=()
     [[ $# -gt 0 ]] && path_args=(-- "$@")
@@ -126,32 +135,34 @@ pinned_diff() {
         error_usage "pinned_diff: --null is only valid with --name-only"
     fi
 
-    if is_range "$target"; then
+    if is_range "$resolved_ref"; then
         git -c core.quotePath=false -c diff.relative=false \
-            diff "$format" "${zflag[@]}" --find-renames --ignore-submodules=none \
-            "$target" "${path_args[@]+"${path_args[@]}"}"
+            diff "$format" "${zflag[@]+"${zflag[@]}"}" --find-renames --ignore-submodules=none \
+            "$resolved_ref" "${path_args[@]+"${path_args[@]}"}"
     else
         git -c core.quotePath=false -c diff.relative=false \
-            diff-tree --no-commit-id "$format" -r --root "${zflag[@]}" \
+            diff-tree --no-commit-id "$format" -r --root "${zflag[@]+"${zflag[@]}"}" \
             --find-renames --ignore-submodules=none \
-            "$target" "${path_args[@]+"${path_args[@]}"}"
+            "$resolved_ref" "${path_args[@]+"${path_args[@]}"}"
     fi
 }
 ```
 
 **Reachability (verified):** `hug-git-diff` is loaded by `hug-git-kit`, and every
 `hug-file-input` consumer sources `hug-git-kit` before `hug-file-input` (git-a,
-git-untrack, git-us, git-ccp). `git-shc` sources the kit directly. No new sourcing edges.
-`error_usage`/`is_range` are already available at every call site (hug-common and
-hug-git-repo respectively).
+git-untrack, git-us, git-ccp). `git-shc` sources the kit directly. No new sourcing
+edges. Belt-and-braces: `hug-common` itself lists `hug-git-diff` in `_hug_common_libs`,
+so every standard-template script already carries it. `error_usage`/`is_range` are
+already available at every call site (`error_usage` is defined in `hug-output`, loaded
+transitively via hug-common's lib list; `is_range` is defined in hug-git-repo).
 
 ### 2. Call-site changes — three thin wrappers
 
 | Site | Before | After |
 |---|---|---|
-| `hug-git-show: show_changed_file_names` (line ~196) | own git calls; pins duplicated across its range/single branches | resolve ref → `pinned_diff ${z:+"--null"} --name-only "$resolved" "$@"`; doc contract unchanged (exit-128 propagation, no HUG_QUIET) |
+| `hug-git-show: show_changed_file_names` (line ~183) | own git calls; pins duplicated across its range/single branches | resolve ref → `pinned_diff ${z:+"--null"} --name-only "$resolved" "$@"`; doc contract unchanged (exit-128 propagation, no HUG_QUIET) |
 | `git-shc` stats path (line ~201) | two unpinned branches (`git diff --stat` / `git diff-tree --stat`) | one `stats_output=$(pinned_diff --stat "$commit_ref" …)`; emoji headers stay in the script, keyed off `is_range` |
-| `hug-file-input: extract_files_from_commit` (line ~141) | unpinned `git diff-tree --no-commit-id --name-only -r --root` | same rev-parse guard + `pinned_diff --name-only "$commit" 2>/dev/null \|\| true` — the swallow policy stays AT the call site |
+| `hug-file-input: extract_files_from_commit` (line ~141) | unpinned `git diff-tree --no-commit-id --name-only -r --root` | same rev-parse guard + `pinned_diff --name-only "$commit" 2>/dev/null \|\| true` — the swallow policy stays AT the call site. Post-refactor the swallow ALSO masks exit 127 (an unsourced `pinned_diff`), not just git's 128: document that dependency in hug-file-input's header comment and in the swallow comment itself. Not a live bug — every current consumer loads hug-git-diff via hug-common's lib list — but a future consumer that drops hug-common inherits a silently-empty file list |
 
 `show_changed_file_names` gains an optional leading `-z`/`--null` (mirrors the CLI
 vocabulary; `pinned_diff` itself takes only the long form):
@@ -164,7 +175,7 @@ show_changed_file_names() {
     ...
     local -a zflag=()
     $null_mode && zflag=(--null)
-    pinned_diff "${zflag[@]}" --name-only "$resolved" "$@"
+    pinned_diff "${zflag[@]+"${zflag[@]}"}" --name-only "$resolved" "$@"
 }
 ```
 
@@ -250,6 +261,11 @@ stats_output=$(pinned_diff --stat "$commit_ref" "${_pathspec_pathspecs[@]+"${_pa
 
 with the existing `is_range`-keyed stderr headers, no-match hint, and HUG_QUIET behavior
 untouched. Command substitution is safe here: `--stat` output contains no NUL bytes.
+
+The `pathspec_args` builder (git-shc:178-181) is DELETED in this change: its only
+consumers are the two git calls this single `pinned_diff` call replaces (git-shc:193,
+201), and the `-n` path already uses `_pathspec_pathspecs` directly (git-shc:171). Name
+the deletion explicitly so the implementer doesn't ship a dead builder.
 
 ## Registered behavior deltas (deliberate — D4, "pins everywhere")
 
