@@ -130,6 +130,7 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
 - List changed files (`list_changed_files_in_range`, `count_changed_files_in_range`)
 - Print commit lists (`print_commit_list_in_range`)
 - Preview helpers (`print_preview_summary`, `print_commit_list_header`)
+- Amend safety guards (`guard_content_null_amend`, `amend_args_message_intent`, `amend_editor_is_noop`) -- `cmod`/`cmoda` call these to refuse a content-null amend (no staged/modified content AND no message change) with exit 3 instead of silently rewriting HEAD's hash; `-f`/`HUG_FORCE` is the deliberate re-hash hatch. `amend_args_message_intent` is a three-way classifier (0 KEEP / 1 CHANGE / 2 EDITOR decides; capture with `rc=0; fn ... || rc=$?` -- under `set -e` a bare call returning 1/2 kills the script) and fail-opens on non-decidable inputs (`--pathspec-from-file`, a rewrite-capable commit-msg hook). Call `guard_content_null_amend` BARE, never via `$(...)` -- the refusal must exit the script, not a subshell. It also sets the caller global `_amend_content_null` so the command picks an honest info line (computed once, used twice).
 
 #### hug-git-upstream
 - Handle upstream operations (`handle_upstream_operation`) -- takes a required `tier` parameter (warn/danger) for the upstream confirmation path. This closes the inverted confirmation gradient: previously every upstream path was gated at warn regardless of the operation's actual danger level.
