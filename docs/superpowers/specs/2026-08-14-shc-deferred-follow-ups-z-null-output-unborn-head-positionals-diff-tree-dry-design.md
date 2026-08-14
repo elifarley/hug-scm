@@ -11,9 +11,16 @@ items deliberately deferred when `shc --name-only` landed
 The adversarial review of `shc --name-only` surfaced four weaknesses, judged and deferred
 so the flag itself would land deterministic and tested:
 
-1. **`shc -n` is one-path-per-line.** A filename containing a literal newline splits into
-   two bogus lines — path-injection into line-based consumers when inspecting an untrusted
-   repo. The help text documents the assumption; a NUL-separated mode is the real fix.
+1. **`shc -n` cannot round-trip every filename.** Git C-quotes structural characters
+   (newline, backslash, quote, tab) in line mode regardless of config — probe-verified on
+   git 2.34.1: a newline path arrives as ONE C-quoted line (`"we\nird"`), safe for
+   line-based consumers but not the path itself, so `-n` violates its own raw-path
+   contract on such names. No released hug ever split a newline filename into bogus
+   lines — git's line mode never emits raw newlines, and the quotePath pin shipped
+   together with `-n` in v1.9.0 (elifarley/hug-scm#270) — so this corrects the earlier
+   path-injection framing, which described behavior that never existed. The real defect:
+   line mode cannot round-trip structural-char paths raw. A NUL-separated mode (`-z`) is
+   git's raw, unambiguous machine contract and the real fix.
 2. **Unborn HEAD leaks a raw git fatal.** In a freshly `init`ed repo, `hug shc -n` (and the
    stats mode) emit `fatal: ambiguous argument 'HEAD'` with exit 128 — not house style for
    a command advertised as scriptable.
@@ -78,7 +85,10 @@ emoji, and error policy stay at call sites (exactly as the issue sketches).
 # Pins (every invocation, immune to user/server config — the determinism
 # contract from the shc --name-only adversarial review, now protecting ALL
 # call sites instead of one of three):
-#   -c core.quotePath=false        paths print raw, never C-quoted
+#   -c core.quotePath=false        non-ASCII bytes (> 0x7f) print raw. Git STILL
+#                                  C-quotes structural chars (newline, backslash, quote,
+#                                  tab) in line mode regardless of this config — -z is
+#                                  the only fully-raw stream (probe-verified, git 2.34.1)
 #   -c diff.relative=false         paths stay repo-relative
 #   --find-renames                 a rename lists the new path only, in BOTH
 #                                  dispatch branches (diff-tree without -M
@@ -159,9 +169,11 @@ show_changed_file_names() {
 ```
 
 Its doc-comment "keep them in sync with hug-file-input" note is deleted — replaced by
-"delegates to `pinned_diff`, the single canonical invocation". With `-z`, its Output
-contract becomes: paths NUL-terminated, never C-quoted, never captured (callers pipe to
-`xargs -0` / `read -d ''`).
+"delegates to `pinned_diff`, the single canonical invocation". Output contracts:
+line mode — paths raw for non-ASCII bytes, while git C-quotes structural chars (one
+quoted token per line — safe, but not the path; the pin changes nothing here); with
+`-z` — paths NUL-terminated and fully raw (including structural chars), never captured
+(callers pipe to `xargs -0` / `read -d ''`).
 
 **Blast radius (verified by grep):** `show_changed_file_names` has exactly one bin caller
 (git-shc) + tests. `extract_files_from_commit` has four (git-a, git-ccp, git-untrack,
@@ -246,11 +258,22 @@ All deltas are tested and cited in the PR body as intended changes.
 
 | Site | Delta | Old → New |
 |---|---|---|
-| stats (`shc` default mode) | special-char paths | C-quoted (`"back\\slash.txt"`) → raw (`back\slash.txt`) |
 | stats | rename | two lines (del old + add new) → one `{old => new}` line |
 | stats | submodules | honored user `diff.ignoreSubmodules` → always shown (`=none` resets it) |
-| `extract_files_from_commit` (git-a, git-ccp, git-untrack, git-us) | same three classes | config-dependent output → raw, rename-collapsed (new path only), submodule-deterministic |
+| `extract_files_from_commit` (git-a, git-ccp, git-untrack, git-us) | non-ASCII paths, rename, submodules | config-dependent output → non-ASCII raw (quotePath pin; structural chars STAY C-quoted in line mode — git's behavior, not a hug delta), rename-collapsed (new path only), submodule-deterministic |
 | all sites | `diff.relative` | paths always repo-relative even if a user sets `diff.relative=true` (belt-and-braces for tree-to-tree diffs; uniformity is the win) |
+
+**Probe-refuted delta (dropped from this table):** "stats special-char paths:
+C-quoted → raw" does NOT exist — probe on git 2.34.1 shows `--stat` output
+byte-identical with and without `-c core.quotePath=false` on BOTH dispatch branches
+(diff-tree single-commit, diff range). The pin governs only bytes > 0x7f, and `--stat`
+ignores it entirely (control: the pin demonstrably works for `--name-only` non-ASCII —
+`café.txt` prints raw vs `"caf\303\251.txt"`). The pin stays in the set for uniformity,
+documented as inert for `--stat`. Consequences: no "stats now prints raw paths" claim in
+the PR body/changelog, and the stats special-char test asserts byte-identity pinned vs
+unpinned, not rawness. Newer gits changed `--stat` quoting/width handling as late as
+2.54, so CI's git gets its own probe before commit 2 lands its changelog claims (probe
+item 6 below).
 
 Non-deltas (regression safety): for plain-ASCII paths with default-ish config, output is
 byte-identical to today — that expectation is itself a test. Merge-commit parity
@@ -259,17 +282,29 @@ unchanged.
 
 ## Correctness evidence to gather during implementation (probe before trusting)
 
-The prior spec's "probe-verified" discipline — these git behaviors must be confirmed on
-the repo's minimum supported git before the plan is written:
+The prior spec's "probe-verified" discipline — these git behaviors must be confirmed
+before the plan is written on the project's git floor: **2.34** (Ubuntu 22.04 LTS class
+— the platform this spec's own probes ran on, git 2.34.1). Commit 3 also declares the
+floor in README prerequisites. CI's git (ubuntu-latest, currently newer) gets its own
+re-confirmation where an item says so — "verified on the floor" does not imply
+"verified on CI":
 
-1. `git diff-tree -z --name-only -r --root HEAD` emits exactly `path\0` per entry, final
-   entry NUL-terminated, **no trailing newline**.
+1. `git diff-tree --no-commit-id -z --name-only -r --root HEAD` emits exactly `path\0`
+   per entry, final entry NUL-terminated, **no trailing newline**. `--no-commit-id` is
+   load-bearing: without it, the commit hash is emitted as the first NUL entry
+   (probe-verified). The `pinned_diff` invocation already carries it.
 2. `--find-renames` + `-z` + `--name-only` on a rename → new path only (consistent with
    the line-mode contract).
-3. `-z` also disables C-quoting natively (so the `core.quotePath=false` pin is redundant
-  -but-harmless in `-z` mode — keep it for uniformity, document the redundancy).
+3. `-z` disables C-quoting entirely — INCLUDING the structural chars that line mode
+   always quotes (probe-verified: `back\slash.txt` and `we\nird` print raw,
+   NUL-terminated) — so the `core.quotePath=false` pin is redundant-but-harmless in `-z`
+   mode; keep it for uniformity, document the redundancy.
 4. A bad ref through `pinned_diff` propagates exit 128 + git's fatal (no swallowing).
 5. `--stat` output for ASCII paths is byte-identical pinned vs unpinned.
+6. `--stat` output for special-char paths under `-c core.quotePath=false` vs default —
+   BOTH dispatch branches, on the floor git AND CI's git. Already probed on 2.34.1:
+   byte-identical — the pin is inert for `--stat` (this is what dropped delta row 1);
+   re-confirm on CI's git before commit 2 lands its changelog claims.
 
 ## Help text additions (in `git-shc` show_help)
 
@@ -281,8 +316,11 @@ OPTIONS:
                     xargs -0 / read -d ''. Without -n: usage error.
 ```
 
-- `-n` entry: "Assumes filenames contain no newlines" → "…newlines (use `-z` for that
-  case)".
+- `-n` entry: "Assumes filenames contain no newlines" → "Paths print raw for non-ASCII
+  bytes (core.quotePath=false pin); git still C-quotes structural characters (newline,
+  backslash, quote, tab) in line mode — use `-z` for a fully raw, NUL-separated stream."
+  The old wording implied newlines break `-n`; they don't — the path arrives as one
+  C-quoted token. The truthful contract is what makes `-z` the honest fix.
 - `ARGUMENTS`: add "At most one positional (commit ref or range) is accepted; a second is
   a usage error."
 - `CAPTURING OUTPUT`: add `hug shc -n -z main..HEAD | xargs -0 <cmd>` and the NUL-safety
@@ -295,7 +333,7 @@ OPTIONS:
 | File | Covers |
 |---|---|
 | `tests/lib/test_hug_git_diff.bats` **(new)** | `pinned_diff`: range/single dispatch; `--name-only`/`--stat`; `--null` NUL output; `--null`+`--stat` → exit 2; unknown format → exit 2; pins honored under hostile config (test repo sets `core.quotePath=true`, `diff.renames=false`, `diff.ignoreSubmodules=all` → output still raw / rename-collapsed / submodules shown); pathspec passthrough; bad ref → exit 128 |
-| `tests/unit/test_sh.bats` (shc section) | `shc -n -z`: NUL-separated (od/xxd assertion), incl. filename with embedded newline (`$'we\nird'`) — the exact case from the issue; `shc -z` w/o `-n` → exit 2 + usage message; second positional → exit 2 naming both tokens (stats mode AND `-n` mode); unborn HEAD (`git init` only) → branded message, exit 1, no raw `fatal:` (all ref forms: none, `1`, `-3`, `main..HEAD`); stats deltas (raw special-char path, rename collapse); existing `-n` line-mode tests stay green |
+| `tests/unit/test_sh.bats` (shc section) | `shc -n -z`: NUL-separated (od/xxd assertion), incl. filename with embedded newline (`$'we\nird'`) — line mode asserts ONE C-quoted line `"we\nird"` (the actual before-behavior — git never split it), `-z` mode asserts raw bytes + NUL terminator; `shc -z` w/o `-n` → exit 2 + usage message; second positional → exit 2 naming both tokens (stats mode AND `-n` mode); unborn HEAD (`git init` only) → branded message, exit 1, no raw `fatal:` (all ref forms: none, `1`, `-3`, `main..HEAD`); stats deltas (rename collapse; special-char paths stay C-quoted → byte-identity pinned vs unpinned per the probe-refuted-delta note); existing `-n` line-mode tests stay green |
 | `tests/lib/test_hug-file-input.bats` | `extract_files_from_commit`: raw paths under `core.quotePath=true`; rename → new path only |
 | `tests/lib/test_hug_git_show.bats` | `show_changed_file_names` regression (thin-wrapper refactor keeps line-mode byte-identical); `-z` leading-token passthrough |
 
