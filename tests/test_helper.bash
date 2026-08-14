@@ -159,6 +159,13 @@ create_test_repo() {
     git config --local user.email "test@hug-scm.test"
     git config --local user.name "Hug Test"
 
+    # Hermetic hooks: a developer-machine global core.hooksPath would redirect
+    # every repo's hooks away from .git/hooks/, silently breaking tests that
+    # install their own hooks (e.g. the commit-msg rejection test in
+    # test_commit.bats). Pin each test repo to its own hooks dir so the suite
+    # behaves identically with or without a global override (elifarley/hug-scm#184).
+    git config --local core.hooksPath "$(git rev-parse --absolute-git-dir)/hooks"
+
     # Configure git aliases needed by hug commands
     # These are from git-config/.gitconfig
     git config --local alias.ll "log --graph --pretty=log1 --date=short"
