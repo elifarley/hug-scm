@@ -300,7 +300,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
     { name = "thefuzz", marker = "extra == 'search'", specifier = ">=0.22.0" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.0" },
-    { name = "tomli-w", specifier = ">=1.0.0" },
+    { name = "tomli-w", specifier = ">=1.2.0" },
 ]
 provides-extras = ["dev", "search", "enhanced"]
 

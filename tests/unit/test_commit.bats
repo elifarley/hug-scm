@@ -2173,3 +2173,294 @@ HOOK
   cleanup_test_worktrees "$repo"
   rm -rf "$repo"
 }
+
+@test "hug cmod: refuses content-null amend with --no-edit (exit 3)" {
+  # create_test_repo_with_changes has staged.txt staged — unstage everything first
+  git restore --staged .
+  run hug cmod --no-edit
+  [ "$status" -eq 3 ]
+  assert_output --partial "Nothing to amend"
+}
+
+@test "hug cmod: -f bypasses the guard (hash churn with forced date)" {
+  git restore --staged .
+  local head_before
+  head_before=$(git rev-parse HEAD)
+  GIT_COMMITTER_DATE='2030-01-01T00:00:00Z' run hug cmod --no-edit -f
+  assert_success
+  assert_output --partial "(--force: no content change"   # honest info line
+  [ "$(git rev-parse HEAD)" != "$head_before" ]
+  [ "$(git show -s --format=%T)" = "$(git rev-parse HEAD^{tree})" ]  # tree unchanged
+}
+
+@test "hug cmod: HUG_FORCE=true env bypass parity" {
+  git restore --staged .
+  local head_before
+  head_before=$(git rev-parse HEAD)
+  HUG_FORCE=true GIT_COMMITTER_DATE='2030-01-01T00:00:00Z' run hug cmod --no-edit
+  assert_success
+  [ "$(git rev-parse HEAD)" != "$head_before" ]
+}
+
+@test "hug cmod: -m with a new message proceeds" {
+  git restore --staged .
+  run hug cmod -m "new msg"
+  assert_success
+  assert_output --partial "message change only"   # honest info line
+  [ "$(git log -1 --format=%s)" = "new msg" ]
+}
+
+@test "hug cmod: staged changes + --no-edit proceeds (no regression)" {
+  # setup already has staged.txt staged
+  run hug cmod --no-edit
+  assert_success
+  assert_output --partial "Amending last commit with staged changes"
+}
+
+@test "hug cmod: untracked-only tree + --no-edit → exit 3 + untracked note" {
+  git restore --staged .
+  run hug cmod --no-edit
+  [ "$status" -eq 3 ]
+  assert_output --partial "untracked file"
+}
+
+@test "hug cmod: -y does NOT bypass the guard" {
+  git restore --staged .
+  run hug cmod --no-edit -y
+  [ "$status" -eq 3 ]
+}
+
+@test "hug cmod: -a re-mode — dirty tree proceeds, clean tree refuses" {
+  git restore --staged .
+  # dirty tree: README.md has unstaged changes (from setup)
+  run hug cmod --no-edit -a
+  assert_success
+
+  # clean tree
+  git restore .
+  run hug cmod --no-edit -a
+  [ "$status" -eq 3 ]
+}
+
+@test "hug cmod: pathspec --only folds worktree content (proceeds when modified)" {
+  git restore --staged .
+  echo "modified" >> README.md
+  run hug cmod --no-edit -- README.md
+  assert_success
+  assert_output --partial "named paths"
+}
+
+@test "hug cmod: pathspec matching HEAD refuses (exit 3)" {
+  git restore --staged .
+  git restore .   # README.md must match HEAD: --only folds worktree content, so a modified worktree would legitimately proceed
+  run hug cmod --no-edit -- README.md
+  [ "$status" -eq 3 ]
+}
+
+@test "hug cmod: bare trailing path (no --) is a pathspec" {
+  git restore --staged .
+  echo "modified" >> README.md
+  run hug cmod --no-edit README.md
+  assert_success
+}
+
+@test "hug cmoda: refuses content-null amend on clean tree (exit 3)" {
+  git restore --staged .
+  git restore .
+  run hug cmoda --no-edit
+  [ "$status" -eq 3 ]
+  assert_output --partial "Nothing to amend"
+}
+
+@test "hug cmoda: -f bypasses (hash churn, forced date)" {
+  git restore --staged .
+  git restore .
+  local head_before
+  head_before=$(git rev-parse HEAD)
+  GIT_COMMITTER_DATE='2030-01-01T00:00:00Z' run hug cmoda --no-edit -f
+  assert_success
+  [ "$(git rev-parse HEAD)" != "$head_before" ]
+}
+
+@test "hug cmoda: dirty tree + --no-edit proceeds (no regression)" {
+  # setup has unstaged README.md change
+  run hug cmoda --no-edit
+  assert_success
+}
+
+@test "hug cmoda: -a re-mode — clean tree refuses" {
+  git restore --staged .
+  git restore .
+  run hug cmoda --no-edit -a
+  [ "$status" -eq 3 ]
+}
+
+@test "hug cmoda: -m new message on clean tree proceeds (message-only)" {
+  git restore --staged .
+  git restore .
+  run hug cmoda -m "new msg"
+  assert_success
+  [ "$(git log -1 --format=%s)" = "new msg" ]
+}
+
+@test "hug cmoda: pathspec re-insertion — git's -a+paths rejection still fires" {
+  # cmoda pre-parses `-- <path>` and MUST re-insert the pathspecs into the
+  # final `git commit -a --amend -- <paths>` call. If the re-insertion were
+  # lost, `-a` would silently amend ALL tracked changes. With a worktree-
+  # modified named path, the guard proceeds (content exists) and git itself
+  # must refuse "-a with paths does not make sense".
+  git restore --staged .
+  git restore .
+  echo "modified" >> README.md
+  local head_before
+  head_before=$(git rev-parse HEAD)
+  run hug cmoda --no-edit -- README.md
+  assert_failure
+  assert_output --partial "-a does not make sense"
+  [ "$(git rev-parse HEAD)" = "$head_before" ]
+}
+
+@test "hug cmoda: -y does NOT bypass the guard (clean tree)" {
+  git restore --staged .
+  git restore .
+  run hug cmoda --no-edit -y
+  [ "$status" -eq 3 ]
+  assert_output --partial "Nothing to amend"
+}
+
+@test "hug cmod: bare (no flags) proceeds with editor info line" {
+  # Classifier returns 2 (EDITOR decides) and the guard must return 0, so a
+  # bare cmod with no staged changes and no message flag reaches the editor.
+  # The info line proves the classifier/guard path, not just a commit.
+  git restore --staged .
+  git restore .
+  local fake_editor
+  fake_editor=$(mktemp)
+  cat > "$fake_editor" <<'EDITORSCRIPT'
+#!/bin/bash
+echo "Bare cmod editor message" > "$1"
+EDITORSCRIPT
+  chmod +x "$fake_editor"
+  GIT_COMMITTER_DATE='2030-01-01T00:00:00Z' GIT_EDITOR="$fake_editor" run hug cmod
+  assert_success
+  assert_output --partial "the editor decides the message"
+  run git log -1 --format=%s
+  assert_output "Bare cmod editor message"
+  rm -f "$fake_editor"
+}
+
+@test "hug cmod: -m equal to HEAD after cleanup normalization still refuses" {
+  # Red-team probe: git applies --cleanup=whitespace to -m sources, so a
+  # candidate differing only by a trailing space/newline commits to HEAD's
+  # exact message — a content-null amend. The classifier must compare
+  # NORMALIZED forms (git stripspace) and the guard must refuse.
+  git restore --staged .
+  local subj
+  subj=$(git log -1 --format=%s)
+  run hug cmod --no-edit -m "$subj "
+  [ "$status" -eq 3 ]
+  assert_output --partial "Nothing to amend"
+}
+
+@test "hug cmod: refusal names the tracked scope for -a mode" {
+  # scope_label must describe the check ACTUALLY run (tracked), not the
+  # caller's default mode (staged) — and the refusal output must not carry
+  # the stray "3: " line the old error() renderer leaked.
+  git restore --staged .
+  git restore .
+  run hug cmod --no-edit -a
+  [ "$status" -eq 3 ]
+  assert_output --partial "no tracked changes"
+  refute_output --partial "no staged changes"
+  refute_output --partial "3: "
+}
+
+@test "hug cmod: --include with staged content proceeds (index kept in check)" {
+  # -i/--include content = staged PLUS named paths; a paths-only check drops
+  # the index and falsely refuses (red-team probe). file.txt is committed and
+  # clean, staged.txt carries the staged content.
+  echo keep > file.txt
+  git add file.txt
+  git commit -q -m "add file.txt"
+  run hug cmod --no-edit --include file.txt
+  assert_success
+}
+
+@test "hug cmod: --pathspec-from-file proceeds (content not statically decidable)" {
+  # Content arrives from a file — the guard must not claim "nothing to
+  # amend" about uninspected content; git folds the listed path's worktree
+  # change into the amend.
+  git restore --staged .
+  echo "README.md" > pathspec-list.txt
+  run hug cmod --no-edit --pathspec-from-file=pathspec-list.txt
+  assert_success
+  rm -f pathspec-list.txt
+}
+
+@test "hug cmod: GIT_EDITOR=true makes a bare content-null amend refuse" {
+  # Agent/CI norm: a no-op editor cannot change the message, so "editor
+  # decides" is decidable — the bare amend is content-null and must refuse
+  # instead of silently re-hashing HEAD (red-team probe).
+  git restore --staged .
+  local head_before
+  head_before=$(git rev-parse HEAD)
+  GIT_EDITOR=true run hug cmod
+  [ "$status" -eq 3 ]
+  [ "$(git rev-parse HEAD)" = "$head_before" ]   # nothing rewritten
+}
+
+@test "hug cmoda: -m message-only amend prints the honest info line" {
+  # Mirrors cmod's five-state info line (spec §3) — a message-only amend on
+  # a clean tree must not claim "all tracked changes".
+  git restore --staged .
+  git restore .
+  run hug cmoda -m "new msg"
+  assert_success
+  assert_output --partial "message change only — no tracked changes"
+  [ "$(git log -1 --format=%s)" = "new msg" ]
+}
+
+@test "hug cmoda: staged-only tree proceeds (tracked check sees the index)" {
+  # The tracked check is `git diff HEAD` (worktree+index vs HEAD): staged
+  # content with a clean worktree must be VISIBLE — a mutated
+  # `git diff --quiet` (index-vs-worktree) would miss it and refuse.
+  git restore --staged .
+  git restore .
+  echo "more" >> README.md
+  git add README.md          # staged-only: worktree clean again
+  run hug cmoda --no-edit
+  assert_success
+}
+
+@test "hug cmod: clustered -am with staged content proceeds (stock git idiom)" {
+  # Round-2 adversarial probe: the guard misread the -am message value as a
+  # bare pathspec and refused a legitimate staged amend (exit 3, "no changes
+  # for the named paths") while native git amends. Clusters now fail open.
+  run hug cmod --no-edit -am "clustered message"
+  assert_success
+  [ "$(git log -1 --format=%s)" = "clustered message" ]
+}
+
+@test "hug cmod: commit-msg hook proceed prints the honest hook line" {
+  # The hook fail-open is the only path to msg_rc==0 + content-null + no
+  # force; the info line must not claim an editor will run under --no-edit.
+  git restore --staged .
+  git restore .
+  local hooks_dir
+  hooks_dir=$(git rev-parse --absolute-git-dir)/hooks
+  mkdir -p "$hooks_dir"
+  printf '#!/bin/sh\nexit 0\n' > "$hooks_dir/commit-msg"
+  chmod +x "$hooks_dir/commit-msg"
+  run hug cmod --no-edit
+  assert_success
+  assert_output --partial "a commit-msg hook may rewrite the message"
+}
+
+@test "hug cmod: -e with -m under no-op editor amends the source message" {
+  # GIT_EDITOR=true must not turn -e into "message stays HEAD's" — git
+  # commits the -m source (round-2 probe NATIVE A).
+  git restore --staged .
+  GIT_EDITOR=true run hug cmod -e -m "edited source msg"
+  assert_success
+  [ "$(git log -1 --format=%s)" = "edited source msg" ]
+}

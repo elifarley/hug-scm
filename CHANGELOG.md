@@ -4,6 +4,17 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-08-14
+
+### Fixed
+
+- **`cmod`/`cmoda` refuse content-null amends** — `cmod --no-edit` with nothing staged (or `cmoda` in a clean tree) now exits 3 instead of silently rewriting HEAD's hash (same tree, same message) and printing the misleading "Amending last commit with staged changes" line. Stage changes or pass `-m`; `-f` only for a deliberate re-hash/re-date. `-y` does NOT bypass (semantic guard, not confirmation) (elifarley/hug-scm#263).
+- **The guard cannot be silently bypassed** — a `-m`/`-F` message differing only by trailing whitespace (git trims it before committing), a no-op editor (`GIT_EDITOR=true`, the CI/agent norm), a trailing value-flag, or a commit-msg hook that rewrites the message: each is classified honestly — refuse, fail open, or proceed — never a silent hash rewrite (elifarley/hug-scm#263 review hardening).
+- **No false refusals** — `--pathspec-from-file` and `-i/--include` amends proceed (their content is not statically decidable / includes the index alongside the named paths), and the refusal names the check actually run (staged / tracked / named paths) instead of the caller's default.
+- **Honest amend info lines** — `cmoda` now states "message change only — no tracked changes" / "(--force: no content change)" / "the editor decides the message" like `cmod`, instead of always claiming "all tracked changes".
+- **Clean blocked-operation output** — the stray "3: " line is gone from every refusal (error rendering no longer includes the exit code); `w-unwip` failure messages name the branch inline and exit 1 instead of 255.
+- **Test suites are hermetic on hook-configured machines** — test repos pin their own `core.hooksPath` (elifarley/hug-scm#184), and repo helpers abort loudly when `cd` fails to arrive at the temp dir instead of committing fixtures into the host repository.
+
 ## [1.8.0] - 2026-08-13
 
 ### Added
