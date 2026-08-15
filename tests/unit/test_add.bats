@@ -16,7 +16,7 @@ load '../test_helper'
   run hug a new_file.txt
   assert_success
   assert_output --partial "Staged 1 file."
-  assert_output --partial "Index now has 1 file(s) staged total."
+  assert_output --partial "1 staged total now."
 }
 
 @test "hug a: summary reflects cumulative index state" {
@@ -29,7 +29,7 @@ load '../test_helper'
   run hug a b.txt
   assert_success
   assert_output --partial "Staged 1 file."
-  assert_output --partial "Index now has 2 file(s) staged total."
+  assert_output --partial "2 staged total now."
 }
 
 @test "hug a: with no args, counts all newly-staged modifications" {
@@ -41,7 +41,7 @@ load '../test_helper'
   assert_success
   # Should report at least 1 newly-staged file
   assert_output --partial "Staged"
-  assert_output --partial "file(s) staged total."
+  assert_output --partial "staged total now."
 }
 
 @test "hug a: --quiet suppresses the index summary" {
@@ -50,7 +50,7 @@ load '../test_helper'
   run hug a quiet_file.txt --quiet
   assert_success
   refute_output --partial "Staged"
-  refute_output --partial "file(s) staged total."
+  refute_output --partial "staged total now."
 }
 
 @test "hug a: empty stage still prints summary" {

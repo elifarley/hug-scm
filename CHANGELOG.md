@@ -2,6 +2,12 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [1.10.0.1] - 2026-08-15
+
+### Fixed
+
+- **`hug a` post-stage summary tightened** — dropped "Index now has" jargon and lazy `(s)` plurals. Output goes from `Staged 1 file. Index now has 1 file(s) staged total.` to `Staged 1 file. 1 staged total now.` (elifarley/hug-scm#278)
+
 ## [1.10.0] - 2026-08-15
 
 ### Added
@@ -151,7 +157,7 @@ All notable changes to the Hug SCM project will be documented in this file.
 ### Added
 
 - **`hug c` pre-commit staged-file preview** (closes #207) — between the staged-changes check and `git commit`, `hug c` now renders a capped (10-item) preview of staged filenames to stderr, pointing at `hug sls` for the full list. HONEST framing: this is a RECOVERY/TRANSPARENCY aid, not a gate (the time window is too short for interactive humans; agents see it post-commit). Suppressed by `--quiet`/`HUG_QUIET` via call-site gate. Skipped for `--allow-empty` with no staged files.
-- **`hug a` post-stage index summary** (closes #207 root cause) — after every successful `git add`, `hug a` prints `Staged N file(s). Index now has M file(s) staged total.` to stderr. The cumulative count `M` is the prevention signal: an agent running `hug a file.txt` after a soft-reset immediately sees the index was already populated. Suppressed by `--quiet`/`HUG_QUIET`. Also fixes a pre-existing bug where `--quiet` leaked through to `git add` (exit 129).
+- **`hug a` post-stage index summary** (closes #207 root cause) — after every successful `git add`, `hug a` prints `Staged N file(s). M staged total now.` to stderr. The cumulative count `M` is the prevention signal: an agent running `hug a file.txt` after a soft-reset immediately sees the index was already populated. Suppressed by `--quiet`/`HUG_QUIET`. Also fixes a pre-existing bug where `--quiet` leaked through to `git add` (exit 129).
 - **`print_list --cap N` and `--more-hint "<text>"` API** in `hug-arrays` — opt-in list truncation with overflow line. Default behavior unchanged for the 17 existing callers. Cap bounded to 6 digits to prevent bash arithmetic overflow; octal trap (`08`) defused via `$((10#$_cap_raw))`; `--` delimiter for leading-dash titles; explicit error messages for missing value, non-integer, overflow, and missing title. `print_list` deliberately does NOT honor `HUG_QUIET` (it's data for dry-run callers like `hug w discard --dry-run`); callers gate at the call site.
 
 ### Fixed
@@ -162,7 +168,7 @@ All notable changes to the Hug SCM project will be documented in this file.
 ### Changed
 
 - **`hug c` stderr chatter string changed** from `Committing staged changes...` to `Committing staged file(s) (N):` (followed by file names). Any external script grepping `hug c` stderr for the old string will need to update its pattern. The new string is richer (count + names) and arrives BEFORE the commit lands, enabling recovery.
-- **`hug a` adds a new stderr line** (`Staged N file(s). Index now has M file(s) staged total.`) after every successful stage. External scripts parsing `hug a` stderr may see the new line; stdout is unchanged.
+- **`hug a` adds a new stderr line** (`Staged N file(s). M staged total now.`) after every successful stage. External scripts parsing `hug a` stderr may see the new line; stdout is unchanged.
 
 ### Fixed
 
