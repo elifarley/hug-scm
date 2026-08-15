@@ -230,6 +230,10 @@ See [hg-config/README.md](hg-config/README.md) for full Mercurial documentation.
 
 Check the [Installation Guide](https://elifarley.github.io/hug-scm/installation.html)
 
+Requirements:
+
+- git ≥ 2.34 (minimum supported; determinism pins and quoting contracts are probe-verified on this floor)
+
 ---
 
 ## Quick Start Tips
@@ -543,7 +547,7 @@ hug sl                # Status: List (without untracked files)
 hug sla               # Status: List All (Full status with untracked files)
 hug sh [commit]       # SHow [commit] (with stat; default: last)
 hug shp [commit]      # SHow: with Patch (commit with patch)
-hug shc [N|commit|range] [-n] [-- <path>...] # SHow: Changed files (cumulative stats, or -n for paths only)
+hug shc [N|commit|range] [-n] [-z] [-- <path>...] # SHow: Changed files (cumulative stats, -n for paths only, -z NUL-separated with -n)
 hug shcp [N|commit|range] [-- <path>...] # SHow: Cumulative with Patch (diff + stats, optionally filtered by path)
 hug shv [N|commit|range] [-- <path>...]  # SHow: Visual (shp/shcp in a difftool; commit's patch or range's cumulative diff)
 hug shf <file> [commit] # SHow: File at [commit] (File diff in commit)

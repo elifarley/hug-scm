@@ -274,7 +274,10 @@ forms (`@`, `@~N`, `@^…`, `@{N}`), which pass through resolution unchanged.
 `@{-N}` (previous checkout) is deliberately exempt: it reads the HEAD reflog,
 which does not exist while HEAD is unborn (probe on 2.34.1: `git rev-parse
 @{-1}` in an orphan repo → exit 128), so it can only be unresolvable here and
-keeps the raw fatal like any invalid explicit ref (D5). Explicit refs
+keeps the raw fatal like any invalid explicit ref (D5). Post-review, `@{u}`/
+`@{upstream}` join it as deliberate D5 escapees (same probe → exit 128 in an
+unborn repo; the digit-guarded `'@{'[0-9]*` arm does not match the `u`).
+Explicit refs
 (branches, tags, SHAs) keep today's behavior exactly: they work in orphan state and
 die with the raw exit-128 fatal when invalid (D5 unchanged):
 
@@ -290,12 +293,18 @@ die with the raw exit-128 fatal when invalid (D5 unchanged):
 # is unborn (probe: rev-parse @{-1} in an orphan repo → exit 128), so it is
 # just an unresolvable ref and keeps git's raw fatal.
 # Invalid explicit refs keep git's raw exit-128 fatal (show_changed_file_names
-# doc contract). Known false positive: a ref literally named like `A-HEAD` in
-# an unborn repo — acceptable, documented here.
+# doc contract). REVISED post-review: the *HEAD* substring also sweeps refs
+# that RESOLVE while HEAD is unborn — origin/HEAD, FETCH_HEAD (and ORIG_HEAD/
+# MERGE_HEAD when present), even a real branch literally named `A-HEAD` — so
+# the body rescues: verify the REF first, only then fall back to HEAD. The
+# branded path fires only for refs unresolvable while HEAD is unborn; this
+# supersedes the original registration of `A-HEAD` as an acceptable false
+# positive.
 case "$commit_ref" in
   *HEAD* | @ | @~* | @^* | '@{'[0-9]*)
-    git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
-      error "no commits yet (unborn HEAD) — nothing to show; make a commit first"   # exit 1
+    git rev-parse --verify -q "$commit_ref" >/dev/null 2>&1 ||
+      { git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
+          error "no commits yet (unborn HEAD) — nothing to show; make a commit first"; }   # exit 1
     ;;
 esac
 ```

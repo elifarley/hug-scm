@@ -213,7 +213,7 @@ The `--rewind`+dirty escalation is deliberate: `git reset --hard` destroys uncom
 ## Tips
 - Preview impact with `hug h files` (or `hug h files -u` for local-only, or `hug h files -t "3 days ago"` for time-based) before any HEAD movement (e.g., `hug h files 2` then `hug h back 2`).
 - Preview cumulative file changes before squashing: `hug shc HEAD~3..HEAD` shows all files that would be affected by squashing the last 3 commits.
-- List just the affected file paths (scriptable, repo-relative): `hug shc -n HEAD~3..HEAD`.
+- List just the affected file paths (scriptable, repo-relative): `hug shc -n HEAD~3..HEAD`. For filenames containing newlines/backslashes use `hug shc -n -z` (NUL-separated — pair with `xargs -0 -r`); at most one positional is accepted.
 - Sync to remote after local dev: `hug h squash -u` (all local-only commits squashed into 1), `hug h undo -u` (unstaged) etc.
 - Work with time-based ranges: `hug h back -t "1 week ago"` (move HEAD to a week ago), `hug h squash -t "3 days ago"` (squash last 3 days of work).
 - For quick squashing: `hug h squash N` (HEAD goes back + auto-commit with top-most message).
