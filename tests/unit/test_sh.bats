@@ -774,45 +774,30 @@ teardown() {
 @test "hug shc: orphan repo — valid HEAD-containing RANGE with resolving endpoints works (endpoint verification)" {
   # `git rev-parse --verify` cannot resolve a RANGE as one object, so a naive
   # guard brands every HEAD-containing range even when both endpoints resolve.
-  # origin/HEAD..origin/master in an orphan repo is the regression: pre-fix it
-  # died with the branded unborn-HEAD error despite fully resolvable endpoints.
-  local src_repo
-  src_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-range-src-XXXXXX")
-  (
-    cd "$src_repo"
-    git init -q --initial-branch=master
-    git config user.email t@t.tld && git config user.name t
-    echo x > remote-file.txt && git add -A && git commit -qm src-c1
-    echo y >> remote-file.txt && git commit -qam src-c2
-  )
-  local orphan_repo
-  orphan_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-range-orphan-XXXXXX")
-  cd "$orphan_repo"
+  # The regression: a range whose name contains "HEAD" with two resolvable,
+  # distinct endpoints died with the branded unborn-HEAD error pre-fix. The
+  # guard's `*HEAD*` arm is substring-based and name-agnostic, so a LOCAL
+  # branch named `A-HEAD` exercises the identical range-rescue path without a
+  # remote-fetch symref. (git 2.54 opportunistically creates an `origin/HEAD`
+  # symref on fetch and `update-ref` follows it instead of repinning — a
+  # CI-only fragility not worth fighting here; the single-ref `origin/HEAD`
+  # rescue test covers the remote-ref case.)
+  local repo
+  repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-range-XXXXXX")
+  cd "$repo"
   git init -q --initial-branch=master
   git config user.email t@t.tld && git config user.name t
-  git remote add origin "$src_repo"
-  git fetch -q origin
-  # A symref origin/HEAD → origin/master would make the range EMPTY (both
-  # endpoints identical). Newer git (CI runners) opportunistically CREATES
-  # that symref during fetch, and `git update-ref refs/remotes/origin/HEAD
-  # <sha>` FOLLOWS an existing symref — moving origin/master instead of
-  # repinning origin/HEAD (observed in CI as identical endpoint SHAs). Delete
-  # any auto-created ref first, then pin a PLAIN ref to the FIRST remote
-  # commit: resolvable, symref-proof, and the range spans src-c1..src-c2.
-  # The SHA comes from the SRC repo (master~1 traverses locally and reliably);
-  # `git rev-parse origin/master~1` against the fetched remote-tracking ref was
-  # fragile on CI (git 2.54) — resolve the parent where the history is local.
-  git update-ref -d refs/remotes/origin/HEAD 2>/dev/null || true
-  git update-ref refs/remotes/origin/HEAD "$(git -C "$src_repo" rev-parse master~1)"
-  # Local commit uses a DIFFERENT file than the src repo, so asserting
-  # remote-file.txt proves the range resolved REMOTE refs, not local ones.
-  echo x > local-file.txt && git add -A && git commit -qm c1
+  echo a > file-a.txt && git add -A && git commit -qm c1
+  echo b > file-b.txt && git add -A && git commit -qm c2
+  # A-HEAD = c1 (plain ref, "HEAD" in the name → the *HEAD* guard arm fires);
+  # master = c2. Both local, both resolve — no symref, no fetch, no protocol.
+  git update-ref refs/heads/A-HEAD "$(git rev-parse master~1)"
   git switch -q --orphan fresh
   # Non-vacuousness gate: EACH endpoint must resolve — AND they must differ,
   # else the range is empty and the assertion below is meaningless.
-  git rev-parse --verify -q origin/HEAD
-  git rev-parse --verify -q origin/master
-  [[ "$(git rev-parse origin/HEAD)" != "$(git rev-parse origin/master)" ]]
+  git rev-parse --verify -q A-HEAD
+  git rev-parse --verify -q master
+  [[ "$(git rev-parse A-HEAD)" != "$(git rev-parse master)" ]]
   # run ! (Bats >= 1.5) instead of a bare `!`: shellcheck SC2314 — in Bats a
   # bare `!` line's failure is not a reliable test failure. $status keeps the
   # command's REAL exit code (the ! only inverts run's pass criterion), so the
@@ -821,9 +806,9 @@ teardown() {
   bats_require_minimum_version 1.5.0
   run ! git rev-parse --verify -q HEAD   # HEAD must be unborn — the guard arm must fire
   assert_failure
-  run hug shc 'origin/HEAD..origin/master'
+  run hug shc 'A-HEAD..master'
   assert_success
-  assert_output --partial 'remote-file.txt'
+  assert_output --partial 'file-b.txt'
   refute_output --partial 'no commits yet'
   cd - >/dev/null
 }
