@@ -793,18 +793,23 @@ teardown() {
   git remote add origin "$src_repo"
   git fetch -q origin
   # A symref origin/HEAD → origin/master would make the range EMPTY (both
-  # endpoints identical), so pin origin/HEAD to the FIRST remote commit —
-  # still a resolvable ref, and the range now spans src-c1..src-c2.
+  # endpoints identical). Newer git (CI runners) opportunistically CREATES
+  # that symref during fetch, and `git update-ref refs/remotes/origin/HEAD
+  # <sha>` FOLLOWS an existing symref — moving origin/master instead of
+  # repinning origin/HEAD (observed in CI as identical endpoint SHAs). Delete
+  # any auto-created ref first, then pin a PLAIN ref to the FIRST remote
+  # commit: resolvable, symref-proof, and the range spans src-c1..src-c2.
+  git update-ref -d refs/remotes/origin/HEAD 2>/dev/null || true
   git update-ref refs/remotes/origin/HEAD "$(git rev-parse origin/master~1)"
   # Local commit uses a DIFFERENT file than the src repo, so asserting
   # remote-file.txt proves the range resolved REMOTE refs, not local ones.
   echo x > local-file.txt && git add -A && git commit -qm c1
   git switch -q --orphan fresh
-  # Non-vacuousness gate: EACH endpoint must resolve — endpoint verification
-  # only rescues ranges whose both sides resolve, so a failing probe here
-  # would make the assertion below meaningless.
+  # Non-vacuousness gate: EACH endpoint must resolve — AND they must differ,
+  # else the range is empty and the assertion below is meaningless.
   git rev-parse --verify -q origin/HEAD
   git rev-parse --verify -q origin/master
+  [[ "$(git rev-parse origin/HEAD)" != "$(git rev-parse origin/master)" ]]
   # run ! (Bats >= 1.5) instead of a bare `!`: shellcheck SC2314 — in Bats a
   # bare `!` line's failure is not a reliable test failure. $status keeps the
   # command's REAL exit code (the ! only inverts run's pass criterion), so the
