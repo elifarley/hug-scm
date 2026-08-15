@@ -191,7 +191,7 @@ table).
 |---|---|---|
 | `hug-git-show: show_changed_file_names` (line ~183) | own git calls; pins duplicated across its range/single branches | resolve ref → `pinned_diff "${zflag[@]+"${zflag[@]}"}" --name-only "$resolved" "$@"` (zflag array, the same idiom pinned_diff itself uses — sketches get transcribed, so no ad-hoc expansion forms); doc contract unchanged (exit-128 propagation, no HUG_QUIET) |
 | `git-shc` stats path (line ~201) | two unpinned branches (`git diff --stat` / `git diff-tree --stat`) | one `stats_output=$(pinned_diff --stat "$commit_ref" …)`; emoji headers stay in the script, keyed off `is_range` |
-| `hug-file-input: extract_files_from_commit` (line ~141) | unpinned `git diff-tree --no-commit-id --name-only -r --root` | same rev-parse guard + `pinned_diff --no-renames --name-only "$commit" 2>/dev/null \|\| true` — ACTION-LIST contract: renames keep BOTH sides, output byte-identical to today (probe receipt in the delta table). The swallow policy stays AT the call site. Post-refactor the swallow ALSO masks exit 127 (an unsourced `pinned_diff`), not just git's 128: document that dependency in hug-file-input's header comment and in the swallow comment itself. Not a live bug — every current consumer loads hug-git-diff via hug-common's lib list — but a future consumer that drops hug-common inherits a silently-empty file list |
+| `hug-file-input: extract_files_from_commit` (line ~141) | unpinned `git diff-tree --no-commit-id --name-only -r --root` | same rev-parse guard + `pinned_diff --no-renames --name-only "$commit" 2>/dev/null \|\| true` — ACTION-LIST contract: renames keep BOTH sides, output byte-identical to today (probe receipt in the delta table). The swallow policy stays AT the call site. Post-refactor the swallow ALSO masks exit 127 (an unsourced `pinned_diff`) and exit 2 (`pinned_diff`'s own error_usage guards) — not just git's 128: document that dependency in hug-file-input's header comment and in the swallow comment itself. Not a live bug — every current consumer loads hug-git-diff via hug-common's lib list — but a future consumer that drops hug-common inherits a silently-empty file list |
 
 `show_changed_file_names` gains an optional leading `-z`/`--null` (mirrors the CLI
 vocabulary; `pinned_diff` itself takes only the long form):
@@ -213,7 +213,7 @@ Its doc-comment "keep them in sync with hug-file-input" note is deleted — repl
 line mode — paths raw for non-ASCII bytes, while git C-quotes structural chars (one
 quoted token per line — safe, but not the path; the pin changes nothing here); with
 `-z` — paths NUL-terminated and fully raw (including structural chars), never captured
-(callers pipe to `xargs -0` / `read -d ''`).
+(callers pipe to `xargs -0 -r` / `read -d ''`).
 
 **Blast radius (verified by grep):** `show_changed_file_names` has exactly one bin caller
 (git-shc) + tests. `extract_files_from_commit` has four (git-a, git-ccp, git-untrack,
@@ -426,7 +426,9 @@ OPTIONS:
     ...
     -z, --null      With -n only: separate paths with NUL (\0) instead of
                     newline. Handles filenames containing newlines; pair with
-                    xargs -0 / read -d ''. Without -n: usage error.
+                    xargs -0 -r / read -d ''. Without -n: usage error.
+                    (-r matters: GNU xargs otherwise runs the command ONCE,
+                    operand-less, on empty input — e.g. a no-match `| xargs -0 rm`.)
 ```
 
 - `-n` entry: "Assumes filenames contain no newlines" → "Paths print raw for non-ASCII
@@ -436,8 +438,9 @@ OPTIONS:
   C-quoted token. The truthful contract is what makes `-z` the honest fix.
 - `ARGUMENTS`: add "At most one positional (commit ref or range) is accepted; a second is
   a usage error."
-- `CAPTURING OUTPUT`: add `hug shc -n -z main..HEAD | xargs -0 <cmd>` and the NUL-safety
-  note.
+- `CAPTURING OUTPUT`: add `hug shc -n -z main..HEAD | xargs -0 -r <cmd>` and the
+  NUL-safety note (the `-r` is not optional in the example — empty matches are a
+  legitimate exit-0 case, and operand-less `<cmd>` is the foot-gun).
 - `GIT EQUIVALENTS`: add the `-z` line (`git diff-tree -z --no-commit-id --name-only -r
   --root HEAD → hug shc -n -z HEAD`).
 - Stale internal-caller claims in the same help block (git-shc:52-54: "used internally
@@ -452,7 +455,7 @@ OPTIONS:
 
 | File | Covers |
 |---|---|
-| `tests/lib/test_hug_git_diff.bats` **(new)** | `pinned_diff`: range/single dispatch; `--name-only`/`--stat`; `--null` NUL output; `--null`+`--stat` → exit 2; unknown format → exit 2; pins honored under hostile config (test repo sets `core.quotePath=true`, `diff.renames=false`, `diff.ignoreSubmodules=all` → output still raw / rename-collapsed / submodules shown); `--no-renames`: both rename sides listed, overriding hostile `diff.renames=true` on the range branch; pathspec passthrough; bad ref → exit 128 |
+| `tests/lib/test_hug_git_diff.bats` **(new)** | `pinned_diff`: range/single dispatch; `--name-only`/`--stat`; `--null` NUL output; `--null`+`--stat` → exit 2; unknown format → exit 2; pins honored under hostile config (test repo sets `core.quotePath=true`, `diff.renames=false`, `diff.ignoreSubmodules=all`, `diff.relative=true` → output still raw / rename-collapsed / submodules shown / repo-relative, the relative case asserted from a subdirectory); `pinned_diff --name-only` (missing ref, the too-few-args guard) → exit 2; `--no-renames`: both rename sides listed, overriding hostile `diff.renames=true` on the range branch; pathspec passthrough; bad ref → exit 128 |
 | `tests/unit/test_sh.bats` (shc section) | `shc -n -z`: NUL-separated (od/xxd assertion), incl. filename with embedded newline (`$'we\nird'`) — line mode asserts ONE C-quoted line `"we\nird"` (the actual before-behavior — git never split it), `-z` mode asserts raw bytes + NUL terminator; `shc -z` w/o `-n` → exit 2 + usage message; second positional → exit 2 naming both tokens (stats mode AND `-n` mode); unborn HEAD (`git init` only) → branded message, exit 1, no raw `fatal:` (all HEAD-derived ref forms: none, `1`, `-3`, `main..HEAD`); orphan repo (`git switch --orphan` after a commit) → explicit ref (`master`) WORKS unchanged, HEAD-derived forms → branded exit 1; stats rename delta on a SINGLE-COMMIT fixture (two lines → one `{old => new}` line); range-branch rename asserted UNCHANGED at default config (already collapses — the pin's range effect is hostile-config-only: pinned vs `-c diff.renames=false`); non-ASCII stats path flips C-quoted → raw (literal byte oracle: `café.txt | 1 +`); structural-char stats paths stay C-quoted both ways (byte-identity pinned vs unpinned); existing `-n` line-mode tests stay green |
 | `tests/lib/test_hug-file-input.bats` | PREREQUISITE: add `load '../../git-config/lib/hug-git-repo'` — hug-common does not load it, and without it `is_range` exits 127 inside the `2>/dev/null \|\| true` swallow → empty output, existing tests break (see Reachability). Harness quirk: this file overrides `error()` to `return 1` (no exit), so `pinned_diff`'s exit-2 guards do NOT exit here — assert guard paths on output, not exit codes. Then: `extract_files_from_commit`: raw paths under `core.quotePath=true`; rename → BOTH sides listed, byte-identical with today (the action contract; a comment explains why action lists must not collapse renames) |
 | `tests/lib/test_hug_git_show.bats` | `show_changed_file_names` regression (thin-wrapper refactor keeps line-mode byte-identical); `-z` leading-token passthrough |
@@ -512,3 +515,7 @@ verified step, not an assumption.
 - Branding invalid-ref errors in born repos (exit-128 contract stays).
 - Merge-commit parity ([elifarley/hug-scm#268](https://github.com/elifarley/hug-scm/issues/268))
   — pre-existing, deliberately preserved.
+- The `xargs -0`-without-`-r` shape at git-s:84 (`hug s -z -b -H | xargs -0`) — same
+  foot-gun, different command; fixing it here would leave the family half-fixed and
+  expand this PR's blast radius. Separate pass over the `-z` consumers once `-r`
+  guidance lands here.
