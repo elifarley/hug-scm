@@ -636,8 +636,16 @@ _diff_invoke_combined() { show_combined_diff "$@"; }
 #     parity with the stats mode, see elifarley/hug-scm#268.
 pinned_diff() {
     local null_mode=false no_renames=false
-    [[ "${1:-}" == "--null" ]] && { null_mode=true; shift; }
-    [[ "${1:-}" == "--no-renames" ]] && { no_renames=true; shift; }
+    # Consume leading flags in a LOOP, not two positional checks: the old
+    # `[[ --null ]] then [[ --no-renames ]]` sequence only parsed ONE order,
+    # so `pinned_diff --no-renames --null --name-only HEAD` (a valid combo)
+    # died with the misleading "unknown format '--null'" — the second flag
+    # fell through to the format slot. Any order, any subset parses now.
+    # set -u/-e safe: the condition reads ${1:-} (exempt), the body always shifts.
+    while [[ "${1:-}" == "--null" || "${1:-}" == "--no-renames" ]]; do
+        if [[ "$1" == "--null" ]]; then null_mode=true; else no_renames=true; fi
+        shift
+    done
     # Arg-count guard BEFORE any positional read: under set -u, touching $1/$2 with
     # too few args dies as "unbound variable" (exit 1) — a caller bug must surface
     # as error_usage (exit 2), not a raw bash trace.

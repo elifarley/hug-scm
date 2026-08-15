@@ -71,6 +71,17 @@ _make_fixture() {
   assert_output --partial '--null is only valid with --name-only'
 }
 
+@test "pinned_diff: leading flags parse in any order (--no-renames before --null)" {
+  _make_fixture
+  # Order-independence lock: the original two-sequential-checks parser treated
+  # a --null arriving AFTER --no-renames as the FORMAT token → misleading
+  # "unknown format '--null'" (exit 2). The combo is valid: renames expand to
+  # both sides AND paths are NUL-terminated. Oracle probed on git 2.34.1 —
+  # tree order (café.txt, plain.txt deleted, renamed.txt added), so this
+  # assertion fails against the old parser (empty stream from exit 2).
+  [[ "$(pinned_diff --no-renames --null --name-only HEAD | od -An -c | tr -d ' \n')" == 'caf303251.txt\0plain.txt\0renamed.txt\0' ]]
+}
+
 @test "pinned_diff: unknown format is rejected (exit 2)" {
   _make_fixture
   run pinned_diff --patch HEAD
