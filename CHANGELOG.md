@@ -2,6 +2,12 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [1.10.0.1] - 2026-08-15
+
+### Fixed
+
+- **`hug a` post-stage summary tightened** — dropped "Index now has" jargon and lazy `(s)` plurals. Output goes from `Staged 1 file. Index now has 1 file(s) staged total.` to `Staged 1 file. 1 staged total now.` (elifarley/hug-scm#278)
+
 ## [1.10.0] - 2026-08-15
 
 ### Added
