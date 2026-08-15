@@ -106,7 +106,13 @@ _make_fixture() {
 
 @test "pinned_diff: --null emits NUL-terminated raw paths (pipe assertion, never \$output)" {
   _make_fixture
-  pinned_diff --null --name-only HEAD | od -An -c | tr -d ' \n' | grep -q 'renamed.txt\\0café.txt\\0'
+  # od -c renders non-ASCII bytes as octal escapes (é → 303 251) and NUL as \0;
+  # emission order is tree order (café.txt before renamed.txt). Full-stream
+  # equality pins order, NUL termination, no trailing newline, and rawness —
+  # C-quoted output would render as "caf\303\251.txt" (visible backslashes),
+  # a different string. Fixtures here avoid od's `*` line-dedup (streams
+  # under 16 bytes/line or with distinct lines only).
+  [[ "$(pinned_diff --null --name-only HEAD | od -An -c | tr -d ' \n')" == 'caf303251.txt\0renamed.txt\0' ]]
 }
 
 @test "pinned_diff: --null with --stat is rejected (exit 2)" {
@@ -157,7 +163,7 @@ _make_fixture() {
 
 @test "pinned_diff: rename stance — default collapses, --no-renames expands both sides" {
   _make_fixture
-  run pinned_diff --name-only --no-renames HEAD
+  run pinned_diff --no-renames --name-only HEAD
   assert_success
   assert_line 'plain.txt'                   # deleted side back in the list
   assert_line 'renamed.txt'
@@ -166,7 +172,7 @@ _make_fixture() {
 @test "pinned_diff: --no-renames overrides hostile diff.renames=true on the range branch" {
   _make_fixture
   git config diff.renames true
-  run pinned_diff --name-only --no-renames 'HEAD~1..HEAD'
+  run pinned_diff --no-renames --name-only 'HEAD~1..HEAD'
   assert_success
   assert_line 'plain.txt'
   assert_line 'renamed.txt'
@@ -449,8 +455,9 @@ In `tests/lib/test_hug_git_show.bats`, append inside the `# show_changed_file_na
   echo a > a.txt
   echo b > b.txt
   git add -A && git commit -qm init
-  # NUL assertion via pipe — BATS run/$output strips NUL bytes
-  show_changed_file_names -z "HEAD" | od -An -c | tr -d ' \n' | grep -q 'a.txt\\0b.txt\\0'
+  # NUL assertion via pipe — BATS run/$output strips NUL bytes. od -c renders
+  # NUL as \0 (two chars); single-backslash literals below are exact bytes.
+  [[ "$(show_changed_file_names -z "HEAD" | od -An -c | tr -d ' \n')" == 'a.txt\0b.txt\0' ]]
 }
 ```
 
@@ -641,7 +648,7 @@ EOF
 - [ ] `hug shc -n -z` emits NUL-separated raw paths (od-pipe asserted, incl. `$'we\nird'` fixture: line mode one C-quoted line, `-z` raw bytes)
 - [ ] `hug shc -z` without `-n` → exit 2 usage error
 - [ ] Second positional → exit 2 naming both tokens (stats mode AND `-n` mode, both orderings)
-- [ ] Unborn HEAD (`git init` only) → branded exit-1 message, no raw `fatal:` — for forms: none, `1`, `-3`, `main..HEAD`, `@`, `@~2`
+- [ ] Unborn HEAD (`git init` only) → branded exit-1 message, no raw `fatal:` — for forms: none, `1`, `-3`, `main..HEAD`, `@`, `@~2`, `@{1}`; `@{-1}` (unresolvable unborn) keeps the raw exit-128 fatal per D5
 - [ ] Orphan repo (`git switch --orphan` after a commit): `hug shc master` WORKS unchanged
 - [ ] Help: `-n` truthful quoting contract, `-z` entry with `xargs -0 -r`, ARGUMENTS one-positional rule, stale internal-caller claims replaced, CAPTURING + GIT EQUIVALENTS `-z` lines
 - [ ] Docs: head.md tip, README synopsis `-z` + minimum git 2.34, completion-ref entry, CHANGELOG entry
@@ -661,20 +668,25 @@ EOF
 @test "hug shc -n -z: NUL-separated paths, final entry NUL-terminated, no trailing newline" {
   echo x > a.txt && echo y > b.txt
   git add -A && git commit -qm add-ab
-  # NUL assertions via pipe — run/$output strips NUL bytes (project learning)
-  hug shc -n -z HEAD | od -An -c | tr -d ' \n' | grep -q 'a.txt\\0b.txt\\0$'
+  # NUL assertions via pipe — run/$output strips NUL bytes (project learning).
+  # od -c renders NUL as \0 (two chars); full-stream equality also pins the
+  # no-trailing-newline contract.
+  [[ "$(hug shc -n -z HEAD | od -An -c | tr -d ' \n')" == 'a.txt\0b.txt\0' ]]
 }
 
 @test "hug shc -n -z: structural-char filename — line mode one C-quoted line, -z raw bytes" {
   printf 'z\n' > $'we\nird' && printf 'z\n' > 'back\slash.txt'
   git add -A && git commit -qm weird-names
-  # BEFORE-behavior (line mode): ONE C-quoted token per path — git never split it
+  # BEFORE-behavior (line mode): ONE C-quoted token per path — git never split it.
+  # Real enclosing quotes; C-quoting doubles the backslash inside the token.
   run hug shc -n HEAD
   assert_success
-  assert_output '"back\\slash.txt"
-\"we\nird\""
-  # AFTER-behavior (-z): raw bytes, NUL-terminated
-  hug shc -n -z HEAD | od -An -c | tr -d ' \n' | grep -q 'back\\slash.txt\\0we\\nird\\0$'
+  assert_line '"back\\slash.txt"'
+  assert_line '"we\nird"'
+  # AFTER-behavior (-z): raw bytes, NUL-terminated, tree order
+  # (back\slash.txt sorts before we\nird). Single backslashes below are exact
+  # bytes — od prints one backslash per byte, no escaping at this layer.
+  [[ "$(hug shc -n -z HEAD | od -An -c | tr -d ' \n')" == 'back\slash.txt\0we\nird\0' ]]
 }
 
 @test "hug shc -z without -n is a usage error (exit 2)" {
@@ -703,7 +715,7 @@ EOF
   local empty_repo=$(mktemp -d)
   cd "$empty_repo"
   git init -q && git config user.email t@t.tld && git config user.name t
-  for ref in "" "1" "-3" "main..HEAD" "@" "@~2"; do
+  for ref in "" "1" "-3" "main..HEAD" "@" "@~2" "@{1}"; do
     if [[ -z "$ref" ]]; then
       run hug shc -n
     else
@@ -713,6 +725,11 @@ EOF
     refute_output --partial 'fatal:'
     assert_output --partial 'no commits yet (unborn HEAD)'
   done
+  # @{-1} (previous checkout) reads the HEAD reflog, which does not exist while
+  # HEAD is unborn — an unresolvable explicit ref keeps git's raw fatal (D5).
+  run hug shc -n '@{-1}'
+  assert_failure 128
+  assert_output --partial 'fatal'
   cd - >/dev/null
 }
 
@@ -751,8 +768,6 @@ EOF
   refute_output --partial 'caf\303\251'
 }
 ```
-
-**Note on the multi-line `assert_output`** in the structural-chars test: BATS `assert_output` with an embedded literal newline works when the string is quoted across lines; if the runner's quoting fights it, compare via `printf '%s\n'` of the expected into `diff - <(hug shc -n HEAD)` — the contract (exactly two lines, both C-quoted) is what must be asserted, never `$output` NUL content.
 
 - [ ] **Step 2: Run to verify failures** — `make test-unit TEST_FILE=test_sh.bats` → all new shc tests fail (`-z` rejected by the flag loop; second positional silently last-wins; unborn raw fatal).
 
@@ -811,15 +826,17 @@ commit_ref=$(resolve_commit_ref "$commit_ref" "HEAD")
 # HEAD-unborn does not mean commit-less. resolve_commit_ref maps the default
 # to HEAD and N/-N to HEAD~N[..HEAD] (pure string mapping, no git calls), so
 # running this AFTER resolution, `*HEAD*` plus the `@` arms is the complete
-# set of HEAD-dependent forms — `@` is git's alias for HEAD and resolves
-# through unchanged (probe: unborn `diff-tree @` → raw fatal 128; without the
-# `@` arms, `hug shc @` would keep the raw fatal while `hug shc HEAD` gets
-# branded — same commit, different spelling, inconsistent).
+# set of HEAD-dependent forms: `@` (alias), `@~N`, `@^…`, `@{N}` (HEAD
+# reflog). `@{-N}` (previous checkout) is deliberately NOT matched: it reads
+# the HEAD reflog, which does not exist while HEAD is unborn (probe on 2.34.1:
+# `git rev-parse @{-1}` in an orphan repo → exit 128), so it can only be an
+# unresolvable ref here and keeps git's raw fatal like any invalid explicit
+# ref (D5). A broad `@*` arm would brand it, contradicting D5.
 # Invalid explicit refs keep git's raw exit-128 fatal (show_changed_file_names
-# doc contract). Known false positives: a ref literally named like `A-HEAD` or
-# `@stable` in an unborn repo — acceptable, documented in the spec.
+# doc contract). Known false positive: a ref literally named like `A-HEAD` in
+# an unborn repo — acceptable, documented in the spec.
 case "$commit_ref" in
-  *HEAD* | @ | @*)
+  *HEAD* | @ | @~* | @^* | '@{'[0-9]*)
     git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
       error "no commits yet (unborn HEAD) — nothing to show; make a commit first"   # exit 1
     ;;

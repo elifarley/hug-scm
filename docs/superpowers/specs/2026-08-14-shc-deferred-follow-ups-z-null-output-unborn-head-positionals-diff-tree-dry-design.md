@@ -270,7 +270,11 @@ mode dispatch, scoped to HEAD-DERIVED ref forms only. Premise correction (probe,
 with a factually wrong "make a commit first" message. The guard therefore fires only
 when the RESOLVED ref still mentions HEAD — the empty default (`HEAD`), `N`
 (`HEAD~N`), `-N` (`HEAD~N..HEAD`), explicit `HEAD…` forms, and git's `@` alias
-(`@`, `@~2`), which passes through resolution unchanged. Explicit refs
+forms (`@`, `@~N`, `@^…`, `@{N}`), which pass through resolution unchanged.
+`@{-N}` (previous checkout) is deliberately exempt: it reads the HEAD reflog,
+which does not exist while HEAD is unborn (probe on 2.34.1: `git rev-parse
+@{-1}` in an orphan repo → exit 128), so it can only be unresolvable here and
+keeps the raw fatal like any invalid explicit ref (D5). Explicit refs
 (branches, tags, SHAs) keep today's behavior exactly: they work in orphan state and
 die with the raw exit-128 fatal when invalid (D5 unchanged):
 
@@ -279,16 +283,17 @@ die with the raw exit-128 fatal when invalid (D5 unchanged):
 # check would mis-block `hug shc master` in a git-switch --orphan repo —
 # HEAD-unborn does not mean commit-less. resolve_commit_ref maps the default
 # to HEAD and N/-N to HEAD~N[..HEAD] (pure string mapping, no git calls), so
-# running this AFTER resolution, `*HEAD*` plus the `@` arms is the complete
-# set of HEAD-dependent forms — `@` is git's alias for HEAD and resolves
-# through unchanged (probe: unborn `diff-tree @` → raw fatal 128; without the
-# `@` arms, `hug shc @` would keep the raw fatal while `hug shc HEAD` gets
-# branded — same commit, different spelling, inconsistent).
+# running this AFTER resolution, `*HEAD*` plus the narrow `@` arms is the
+# complete set of HEAD-dependent forms: @ (alias), @~N, @^…, @{N} (HEAD
+# reflog). A broad `@*` arm would also catch @{-N} (previous checkout) —
+# wrong per D5: @{-N} reads the HEAD reflog, which does not exist while HEAD
+# is unborn (probe: rev-parse @{-1} in an orphan repo → exit 128), so it is
+# just an unresolvable ref and keeps git's raw fatal.
 # Invalid explicit refs keep git's raw exit-128 fatal (show_changed_file_names
-# doc contract). Known false positives: a ref literally named like `A-HEAD` or
-# `@stable` in an unborn repo — acceptable, documented here.
+# doc contract). Known false positive: a ref literally named like `A-HEAD` in
+# an unborn repo — acceptable, documented here.
 case "$commit_ref" in
-  *HEAD* | @ | @*)
+  *HEAD* | @ | @~* | @^* | '@{'[0-9]*)
     git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
       error "no commits yet (unborn HEAD) — nothing to show; make a commit first"   # exit 1
     ;;
@@ -465,7 +470,7 @@ OPTIONS:
 | File | Covers |
 |---|---|
 | `tests/lib/test_hug_git_diff.bats` **(new)** | `pinned_diff`: range/single dispatch; `--name-only`/`--stat`; `--null` NUL output; `--null`+`--stat` → exit 2; unknown format → exit 2; pins honored under hostile config (test repo sets `core.quotePath=true`, `diff.renames=false`, `diff.ignoreSubmodules=all`, `diff.relative=true` → output still raw / rename-collapsed / submodules shown / repo-relative, the relative case asserted from a subdirectory); `pinned_diff --name-only` (missing ref, the too-few-args guard) → exit 2; `--no-renames`: both rename sides listed, overriding hostile `diff.renames=true` on the range branch; pathspec passthrough; bad ref → exit 128 |
-| `tests/unit/test_sh.bats` (shc section) | `shc -n -z`: NUL-separated (od/xxd assertion), incl. filename with embedded newline (`$'we\nird'`) — line mode asserts ONE C-quoted line `"we\nird"` (the actual before-behavior — git never split it), `-z` mode asserts raw bytes + NUL terminator; `shc -z` w/o `-n` → exit 2 + usage message; second positional → exit 2 naming both tokens (stats mode AND `-n` mode); unborn HEAD (`git init` only) → branded message, exit 1, no raw `fatal:` (all HEAD-derived ref forms: none, `1`, `-3`, `main..HEAD`, `@`, `@~2`); orphan repo (`git switch --orphan` after a commit) → explicit ref (`master`) WORKS unchanged, HEAD-derived forms → branded exit 1; stats rename delta on a SINGLE-COMMIT fixture (two lines → one `{old => new}` line); range-branch rename asserted UNCHANGED at default config (already collapses — the pin's range effect is hostile-config-only: pinned vs `-c diff.renames=false`); non-ASCII stats path flips C-quoted → raw (literal byte oracle: `café.txt | 1 +`); structural-char stats paths stay C-quoted both ways (byte-identity pinned vs unpinned); existing `-n` line-mode tests stay green |
+| `tests/unit/test_sh.bats` (shc section) | `shc -n -z`: NUL-separated (od/xxd assertion), incl. filename with embedded newline (`$'we\nird'`) — line mode asserts ONE C-quoted line `"we\nird"` (the actual before-behavior — git never split it), `-z` mode asserts raw bytes + NUL terminator; `shc -z` w/o `-n` → exit 2 + usage message; second positional → exit 2 naming both tokens (stats mode AND `-n` mode); unborn HEAD (`git init` only) → branded message, exit 1, no raw `fatal:` (all HEAD-derived ref forms: none, `1`, `-3`, `main..HEAD`, `@`, `@~2`, `@{1}`; `@{-1}` is unresolvable unborn and keeps the raw exit-128 fatal per D5); orphan repo (`git switch --orphan` after a commit) → explicit ref (`master`) WORKS unchanged, HEAD-derived forms → branded exit 1; stats rename delta on a SINGLE-COMMIT fixture (two lines → one `{old => new}` line); range-branch rename asserted UNCHANGED at default config (already collapses — the pin's range effect is hostile-config-only: pinned vs `-c diff.renames=false`); non-ASCII stats path flips C-quoted → raw (literal byte oracle: `café.txt | 1 +`); structural-char stats paths stay C-quoted both ways (byte-identity pinned vs unpinned); existing `-n` line-mode tests stay green |
 | `tests/lib/test_hug-file-input.bats` | PREREQUISITE: add `load '../../git-config/lib/hug-git-repo'` — hug-common does not load it, and without it `is_range` exits 127 inside the `2>/dev/null \|\| true` swallow → empty output, existing tests break (see Reachability). Harness quirk: this file overrides `error()` to `return 1` (no exit), so `pinned_diff`'s exit-2 guards do NOT exit here — assert guard paths on output, not exit codes. Then: `extract_files_from_commit`: raw paths under `core.quotePath=true`; rename → BOTH sides listed, byte-identical with today (the action contract; a comment explains why action lists must not collapse renames) |
 | `tests/lib/test_hug_git_show.bats` | `show_changed_file_names` regression (thin-wrapper refactor keeps line-mode byte-identical); `-z` leading-token passthrough |
 
