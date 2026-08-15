@@ -2,7 +2,27 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
-## [Unreleased]
+## [1.10.0] - 2026-08-15
+
+### Added
+- `hug shc -z/--null` (with `-n`): NUL-separated changed-file paths — the only
+  mode fully raw for every filename (line mode still C-quotes structural
+  characters). Pair with `xargs -0 -r` (GNU xargs; BSD/macOS needs no `-r`)
+  / `read -d ''`.
+- `pinned_diff()` in `hug-git-diff`: the single canonical pinned changed-files
+  invocation, with an explicit rename contract — `--find-renames` for display,
+  `--no-renames` for action lists (both rename sides).
+
+### Changed
+- `hug shc` stats: non-ASCII paths print raw instead of C-quoted (both dispatch
+  branches); renames collapse to one `{old => new}` line on the single-commit
+  branch; submodules always shown. Output is now deterministic under hostile
+  `core.quotePath` / `diff.renames` / `diff.relative` / `diff.ignoreSubmodules`.
+- `hug a/us/untrack/ccp --from-commit`: deterministic path lists (non-ASCII raw,
+  submodules shown); rename lists keep BOTH sides — behavior preserved.
+- `hug shc`: a second positional is now a usage error (exit 2); unborn HEAD
+  (HEAD-derived refs, incl. `@`) gives a branded exit-1 message instead of a raw
+  git fatal; explicit refs in orphan repos keep working.
 
 ## [1.9.0] - 2026-08-14
 

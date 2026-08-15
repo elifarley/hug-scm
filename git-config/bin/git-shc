@@ -24,13 +24,24 @@ ARGUMENTS:
     <commit-ref>    Single commit reference (default: HEAD)
     <range>         Commit range like HEAD~3..HEAD or main..feature
 
+    At most one positional (commit ref or range) is accepted; a second is a
+    usage error (pathspecs go after --).
+
 OPTIONS:
     -q, --quiet     Suppress header line (also honors HUG_QUIET env var)
     -n, --name-only Print ONLY changed file paths (repo-relative), one per line.
                     No stats, no header on stdout, no elision. Exit 0 even on
                     zero matches (detect via empty stdout). Machine-parseable:
-                    paths print raw (no C-quoting) and renames list the new
-                    path only. Assumes filenames contain no newlines.
+                    paths print raw for non-ASCII bytes (core.quotePath=false
+                    pin); git still C-quotes structural characters (newline,
+                    backslash, quote, tab) in line mode — use -z for a fully
+                    raw, NUL-separated stream. Renames list the new path only.
+    -z, --null      With -n only: separate paths with NUL (\0) instead of
+                    newline. Handles filenames containing newlines; pair with
+                    xargs -0 -r / read -d ''. Without -n: usage error.
+                    (-r matters: GNU xargs otherwise runs the command ONCE,
+                    operand-less, on empty input — e.g. a no-match
+                    `| xargs -0 rm`.)
     -h, --help      Show this help
 
 PATH FILTERING:
@@ -50,8 +61,9 @@ DESCRIPTION:
     For ranges, shows cumulative file changes across all commits in the range.
 
     This command is the canonical source for file statistics display.
-    It is used internally by other Hug commands (sh, shp, shcp, h files,
-    h squash, lol, cmv) via HUG_QUIET=T to provide consistent stats output.
+    It is used internally by other Hug commands (h files, h squash, shcp,
+    and via hug-git-show/hug-git-commit by sh, shp and commit-range flows)
+    — most pass HUG_QUIET=T; h squash redirects the header to stderr.
 
     Use 'hug sh' for full commit details including message.
 
@@ -76,6 +88,9 @@ CAPTURING OUTPUT:
     hug shc -n main..HEAD            # Paths only (repo-relative, pipe-safe)
     files=$(hug shc -n -3)           # Capture changed-file list to a variable
     hug shc -n main..HEAD -- '*.py'  # Paths only, filtered to Python files
+    hug shc -n -z main..HEAD | xargs -0 -r <cmd>   # NUL-separated: safe for
+                                                   # ANY filename (the -r is
+                                                   # not optional — see -z)
 
 EXAMPLES:
     hug shc                  # Files changed in last commit (HEAD)
@@ -102,10 +117,12 @@ GIT EQUIVALENTS:
     git diff --stat HEAD~3..HEAD          →  hug shc -3
     git diff --stat main..HEAD -- '*.py'  →  hug shc main..HEAD -- '*.py'
     git diff --name-only main..HEAD  →  hug shc -n main..HEAD
-    git diff-tree --no-commit-id --name-only -r --root HEAD  →  hug shc -n HEAD
-    # The full diff-tree invocation (--no-commit-id -r --root) is what hug uses
-    # internally; dropping those flags would prepend the commit hash and break
-    # the one-path-per-line contract.
+    git diff-tree --no-commit-id --name-only -r --root --find-renames HEAD  →  hug shc -n HEAD
+    git diff-tree -z --no-commit-id --name-only -r --root --find-renames HEAD  →  hug shc -n -z HEAD
+    # The full diff-tree invocation (--no-commit-id -r --root --find-renames)
+    # is what hug uses internally; dropping those flags would prepend the
+    # commit hash and break the one-path-per-line contract, and without
+    # --find-renames a rename lists BOTH sides instead of the new path only.
 
 SEE ALSO:
     hug sh       : Show commit info with file stats
@@ -133,11 +150,22 @@ eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
 # the old last-wins extraction silently swallowed unknown tokens like -nq and
 # the command ran in --stat mode. See the spec's "Bundled-flag hazard" section.
 name_only=false
+null_sep=false
+# saw_positional, not `[[ -n "$commit_ref" ]]`, is the saw-a-positional
+# sentinel: an EMPTY-STRING positional (`hug shc "" typo`) would leave
+# commit_ref at "" and silently last-win the next token (probed: exit 128
+# resolving typo) — the empty assignment must still count as "one positional
+# seen".
+saw_positional=false
 commit_ref=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
   -n | --name-only)
     name_only=true
+    shift
+    ;;
+  -z | --null)
+    null_sep=true
     shift
     ;;
   -*)
@@ -147,15 +175,23 @@ while [[ $# -gt 0 ]]; do
     # && block here would skip the shift on a non-zero return, spinning this
     # loop forever on the same token.
     reject_flag_ref "$1"
+    $saw_positional && error_usage "unexpected second argument '$1' — commit ref is already '$commit_ref' (pathspecs go after --)"
     commit_ref="$1"
+    saw_positional=true
     shift
     ;;
   *)
+    $saw_positional && error_usage "unexpected second argument '$1' — commit ref is already '$commit_ref' (pathspecs go after --)"
     commit_ref="$1"
+    saw_positional=true
     shift
     ;;
   esac
 done
+
+if $null_sep && ! $name_only; then
+  error_usage "-z/--null is only valid with -n/--name-only"
+fi
 
 commit_ref="${commit_ref:-HEAD}"
 
@@ -164,42 +200,82 @@ check_git_repo
 # Resolve N/-N using unified N/-N syntax convention
 commit_ref=$(resolve_commit_ref "$commit_ref" "HEAD")
 
+# Unborn HEAD, HEAD-derived refs only (issue #274 item 2). An unconditional
+# check would mis-block `hug shc master` in a git-switch --orphan repo —
+# HEAD-unborn does not mean commit-less. resolve_commit_ref maps the default
+# to HEAD and N/-N to HEAD~N[..HEAD] (pure string mapping, no git calls), so
+# running this AFTER resolution, `*HEAD*` plus the `@` arms is the complete
+# set of HEAD-dependent forms: `@` (alias), `@~N`, `@^…`, `@{N}` (HEAD
+# reflog). `@{-N}` (previous checkout) and `@{u}`/`@{upstream}` are
+# deliberately NOT matched: `@{-N}` reads the HEAD reflog and `@{u}` the
+# branch's upstream config, neither of which exists while HEAD is unborn
+# (probe on 2.34.1: `git rev-parse @{-1}` / `@{u}` in an unborn repo → exit
+# 128), so they can only be unresolvable refs here and keep git's raw fatal
+# like any invalid explicit ref (D5). A broad `@*` arm would brand them,
+# contradicting D5.
+# The `*HEAD*` arm is substring-based, so it also sweeps stock refs that DO
+# resolve while HEAD is unborn — origin/HEAD, FETCH_HEAD (and ORIG_HEAD/
+# MERGE_HEAD when present), even a real branch literally named `A-HEAD`. The
+# rescue clause below (verify the REF first, only then fall back to HEAD)
+# lets every resolvable ref proceed; the branded message fires only for refs
+# that are unresolvable while HEAD is unborn. This supersedes the spec's
+# original registration of `A-HEAD` as an acceptable false positive.
+# Invalid explicit refs keep git's raw exit-128 fatal (show_changed_file_names
+# doc contract): ref unresolvable + HEAD born → both checks fall through and
+# the dispatch surfaces git's own error.
+# Ranges never verify as a single object (rev-parse can only resolve ONE
+# rev per argument), so the body verifies each ENDPOINT separately — a range
+# whose endpoints both resolve (origin/HEAD..origin/master in an orphan repo)
+# proceeds instead of falling to the HEAD check and getting misbranded.
+case "$commit_ref" in
+*HEAD* | @ | @~* | @^* | '@{'[0-9]*)
+  if is_range "$commit_ref"; then
+    # Ranges never verify as one object — check each endpoint instead.
+    # Both resolve (e.g. origin/HEAD..origin/master in an orphan repo) → proceed;
+    # any endpoint unresolvable → the HEAD check below (HEAD-dependent ranges
+    # like main..HEAD stay branded while HEAD is unborn; born repos fall
+    # through to git's raw fatal per D5).
+    _range_left="${commit_ref%%..*}"
+    _range_right="${commit_ref##*..}"
+    git rev-parse --verify -q "$_range_left" > /dev/null 2>&1 &&
+      git rev-parse --verify -q "$_range_right" > /dev/null 2>&1 ||
+      { git rev-parse --verify -q HEAD > /dev/null 2>&1 ||
+        error "no commits yet (unborn HEAD) — nothing to show; make a commit first"; } # exit 1
+  else
+    git rev-parse --verify -q "$commit_ref" > /dev/null 2>&1 ||
+      { git rev-parse --verify -q HEAD > /dev/null 2>&1 ||
+        error "no commits yet (unborn HEAD) — nothing to show; make a commit first"; } # exit 1
+  fi
+  ;;
+esac
+
 # --name-only mode: print repo-relative paths only, no stats/header.
 # Pure data output (no HUG_QUIET coupling, no no-match hint) by design —
 # callers detect empty via stdout. See spec "No-match hint" section.
 if $name_only; then
-  show_changed_file_names "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
+  if $null_sep; then
+    show_changed_file_names -z "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
+  else
+    show_changed_file_names "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
+  fi
   exit 0
 fi
 
-# Build pathspec args for git commands: empty-array-safe under set -u.
-# When pathspecs are present, produces: -- <path1> <path2> ...
-# When absent, produces nothing (no args).
-pathspec_args=()
-if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
-  pathspec_args=(-- "${_pathspec_pathspecs[@]}")
-fi
-
 # Show changed files with stats, optionally filtered by pathspecs.
-# Detect if argument is a range (contains ..) or a single commit.
-stats_output=""
-if is_range "$commit_ref"; then
-  # Range: use git diff --stat
-  if [[ ${HUG_QUIET:-} != T ]]; then
+# pinned_diff owns the invocation + determinism pins; the emoji headers stay
+# here, keyed off is_range (display policy, not data policy).
+if [[ ${HUG_QUIET:-} != T ]]; then
+  if is_range "$commit_ref"; then
     commit_emoji="$(_diff_emoji commit)"
     stats_emoji="$(_diff_emoji stats)"
     printf '%s %s Changed files in range %s:\n' "$commit_emoji" "$stats_emoji" "$commit_ref" >&2
-  fi
-  stats_output=$(git diff --stat "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}")
-else
-  # Single commit: use git diff-tree
-  if [[ ${HUG_QUIET:-} != T ]]; then
+  else
     commit_emoji="$(_diff_emoji commit)"
     stats_emoji="$(_diff_emoji stats)"
     printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji" >&2
   fi
-  stats_output=$(git diff-tree --no-commit-id --stat -r --root "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}")
 fi
+stats_output=$(pinned_diff --stat "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}")
 
 printf '%s\n' "$stats_output"
 

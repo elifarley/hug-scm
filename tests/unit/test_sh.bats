@@ -558,6 +558,297 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
+# hug shc -z / positional / unborn-HEAD (issue #274)
+# -----------------------------------------------------------------------------
+
+@test "hug shc -n -z: NUL-separated paths, final entry NUL-terminated, no trailing newline" {
+  echo x > a.txt && echo y > b.txt
+  git add -A && git commit -qm add-ab
+  # NUL assertions via pipe — run/$output strips NUL bytes (project learning).
+  # od -c renders NUL as \0 (two chars); full-stream equality also pins the
+  # no-trailing-newline contract.
+  [[ "$(hug shc -n -z HEAD | od -An -c | tr -d ' \n')" == 'a.txt\0b.txt\0' ]]
+}
+
+@test "hug shc -n -z: structural-char filename — line mode one C-quoted line, -z raw bytes" {
+  printf 'z\n' > $'we\nird' && printf 'z\n' > 'back\slash.txt'
+  git add -A && git commit -qm weird-names
+  # BEFORE-behavior (line mode): ONE C-quoted token per path — git never split it.
+  # Real enclosing quotes; C-quoting doubles the backslash inside the token.
+  run hug shc -n HEAD
+  assert_success
+  assert_line '"back\\slash.txt"'
+  assert_line '"we\nird"'
+  # AFTER-behavior (-z): raw bytes, NUL-terminated, tree order
+  # (back\slash.txt sorts before we\nird). Single backslashes below are exact
+  # bytes — od prints one backslash per byte, no escaping at this layer.
+  [[ "$(hug shc -n -z HEAD | od -An -c | tr -d ' \n')" == 'back\slash.txt\0we\nird\0' ]]
+}
+
+@test "hug shc -z without -n is a usage error (exit 2)" {
+  run hug shc -z
+  assert_failure 2
+  assert_output --partial 'only valid with -n'
+}
+
+@test "hug shc -n -z: range (git diff branch) NUL stream" {
+  # The range dispatches to `git diff`, a different -z code path than the
+  # diff-tree single-commit branch above. Two commits so the oracle is
+  # discriminating: the range spans ONLY the b.txt commit.
+  echo x > a.txt && git add -A && git commit -qm add-a
+  echo y > b.txt && git add -A && git commit -qm add-b
+  [[ "$(hug shc -n -z HEAD~1..HEAD | od -An -c | tr -d ' \n')" == 'b.txt\0' ]]
+}
+
+@test "hug shc -n --null: long form behaves as -z" {
+  echo x > a.txt && echo y > b.txt && git add -A && git commit -qm ab
+  [[ "$(hug shc -n --null HEAD | od -An -c | tr -d ' \n')" == 'a.txt\0b.txt\0' ]]
+}
+
+@test "hug shc -n -z: pathspec filters the NUL stream" {
+  echo x > a.txt && echo y > b.txt && git add -A && git commit -qm ab
+  [[ "$(hug shc -n -z HEAD -- 'a.txt' | od -An -c | tr -d ' \n')" == 'a.txt\0' ]]
+}
+
+@test "hug shc -n -z: no-match pathspec exits 0 with zero-byte stdout (xargs -0 -r contract)" {
+  # Zero-byte (not one-empty-line) stdout is what makes `xargs -0 -r` skip the
+  # command entirely — the reason -r exists for GNU xargs.
+  echo x > a.txt && git add -A && git commit -qm a
+  run hug shc -n -z HEAD -- '*.nomatch'
+  assert_success
+  assert_output ""
+  refute_output --partial "No files matching"
+}
+
+@test "hug shc: empty-string positional counts as the one positional (no silent last-win)" {
+  # An explicit "" must still claim the one-positional slot. A `[[ -n ]]`
+  # sentinel instead of saw_positional would let `typo` silently WIN the slot
+  # and run as a ref (the pre-#274 last-win hazard, resurfaced via "").
+  run hug shc "" typo
+  assert_failure 2
+  assert_output --partial "unexpected second argument 'typo'"
+  run hug shc -n "" typo
+  assert_failure 2
+  assert_output --partial "unexpected second argument 'typo'"
+}
+
+@test "hug shc stats: invalid ref propagates git exit 128 + fatal" {
+  # Pre-existing hole now routed through pinned_diff: stats mode must not
+  # swallow or rebrand git's own error (D5 — mirrors the -n-mode test above).
+  run hug shc no-such-ref
+  assert_failure 128
+  assert_output --partial 'fatal'
+}
+
+@test "hug shc: second positional rejected in stats mode (exit 2, names both tokens)" {
+  run hug shc HEAD extra
+  assert_failure 2
+  assert_output --partial "unexpected second argument 'extra'"
+  assert_output --partial "already 'HEAD'"
+}
+
+@test "hug shc: second positional rejected in -n mode, both orderings" {
+  run hug shc -n main..HEAD typo
+  assert_failure 2
+  assert_output --partial "unexpected second argument 'typo'"
+  run hug shc -n typo main..HEAD
+  assert_failure 2
+  assert_output --partial "unexpected second argument 'main..HEAD'"
+}
+
+@test "hug shc: second positional rejected when it is a -N flag token (-* arm)" {
+  run hug shc main..HEAD -3
+  assert_failure 2
+  assert_output --partial "unexpected second argument '-3'"
+  assert_output --partial "already 'main..HEAD'"
+}
+
+@test "hug shc: unborn HEAD gives branded error for every HEAD-derived ref form" {
+  # Anchored under BATS_TEST_TMPDIR (auto-cleaned per test) — a bare mktemp -d
+  # in /tmp leaked the repo on every run.
+  local empty_repo
+  empty_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-unborn-XXXXXX")
+  cd "$empty_repo"
+  git init -q && git config user.email t@t.tld && git config user.name t
+  for ref in "" "1" "-3" "main..HEAD" "@" "@~2" "@^" "@{1}"; do
+    if [[ -z "$ref" ]]; then
+      run hug shc -n
+    else
+      run hug shc -n "$ref"
+    fi
+    assert_failure 1
+    refute_output --partial 'fatal:'
+    assert_output --partial 'no commits yet (unborn HEAD)'
+  done
+  # @{-1} (previous checkout) reads the HEAD reflog, which does not exist while
+  # HEAD is unborn — an unresolvable explicit ref keeps git's raw fatal (D5).
+  run hug shc -n '@{-1}'
+  assert_failure 128
+  assert_output --partial 'fatal'
+  # @{u} reads the branch's upstream config — an explicit non-HEAD-derived ref;
+  # unresolvable here, keeps git's raw fatal (D5), same as @{-1}.
+  run hug shc -n '@{u}'
+  assert_failure 128
+  assert_output --partial 'fatal'
+  cd - >/dev/null
+}
+
+@test "hug shc: orphan repo — explicit ref works, HEAD-derived forms branded" {
+  local orphan_repo
+  orphan_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-orphan-XXXXXX")
+  cd "$orphan_repo"
+  git init -q && git config user.email t@t.tld && git config user.name t
+  echo x > f.txt && git add -A && git commit -qm c1
+  git branch -m master
+  git switch --orphan fresh
+  run hug shc master        # explicit ref: keeps working (probe-backed contract)
+  assert_success
+  assert_output --partial 'f.txt'
+  run hug shc               # HEAD-derived: branded, not a raw fatal
+  assert_failure 1
+  assert_output --partial 'no commits yet (unborn HEAD)'
+  cd - >/dev/null
+}
+
+@test "hug shc: orphan repo — origin/HEAD keeps working (rescue: resolvable refs proceed)" {
+  # The *HEAD* guard substring also sweeps stock refs that RESOLVE while HEAD
+  # is unborn. origin/HEAD is the regression that motivated the rescue clause:
+  # pre-rescue it was branded in orphan repos despite resolving fine.
+  local src_repo
+  src_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-rescue-src-XXXXXX")
+  (
+    cd "$src_repo"
+    git init -q --initial-branch=master
+    git config user.email t@t.tld && git config user.name t
+    echo x > remote-file.txt && git add -A && git commit -qm src-c1
+  )
+  local orphan_repo
+  orphan_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-rescue-orphan-XXXXXX")
+  cd "$orphan_repo"
+  git init -q --initial-branch=master
+  git config user.email t@t.tld && git config user.name t
+  git remote add origin "$src_repo"
+  git fetch -q origin
+  git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/master
+  # Local commit uses a DIFFERENT file than the src repo, so asserting
+  # remote-file.txt proves origin/HEAD resolved to the REMOTE commit, not to
+  # local master by accident.
+  echo x > local-file.txt && git add -A && git commit -qm c1
+  git switch -q --orphan fresh
+  # Non-vacuousness gate: the fixture's origin/HEAD must actually resolve —
+  # the rescue only fires for resolvable refs, so this probe failing would
+  # make the assertion below meaningless.
+  git rev-parse --verify -q origin/HEAD
+  run hug shc origin/HEAD
+  assert_success
+  assert_output --partial 'remote-file.txt'
+  refute_output --partial 'no commits yet'
+  cd - >/dev/null
+}
+
+@test "hug shc: unborn repo — FETCH_HEAD keeps working after a fetch (rescue)" {
+  # FETCH_HEAD matches the guard's *HEAD* substring and resolves after a
+  # fetch into a never-committed repo — must proceed, not get branded.
+  local src_repo
+  src_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-fetch-src-XXXXXX")
+  (
+    cd "$src_repo"
+    git init -q --initial-branch=master
+    git config user.email t@t.tld && git config user.name t
+    echo x > fetched-file.txt && git add -A && git commit -qm src-c1
+  )
+  local unborn_repo
+  unborn_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-fetch-unborn-XXXXXX")
+  cd "$unborn_repo"
+  git init -q --initial-branch=main
+  git config user.email t@t.tld && git config user.name t
+  git fetch -q "$src_repo" master
+  # Non-vacuousness gate: FETCH_HEAD must resolve in this unborn fixture.
+  git rev-parse --verify -q FETCH_HEAD
+  run hug shc FETCH_HEAD
+  assert_success
+  assert_output --partial 'fetched-file.txt'
+  cd - >/dev/null
+}
+
+@test "hug shc: orphan repo — valid HEAD-containing RANGE with resolving endpoints works (endpoint verification)" {
+  # `git rev-parse --verify` cannot resolve a RANGE as one object, so a naive
+  # guard brands every HEAD-containing range even when both endpoints resolve.
+  # The regression: a range whose name contains "HEAD" with two resolvable,
+  # distinct endpoints died with the branded unborn-HEAD error pre-fix. The
+  # guard's `*HEAD*` arm is substring-based and name-agnostic, so a LOCAL
+  # branch named `A-HEAD` exercises the identical range-rescue path without a
+  # remote-fetch symref. (git 2.54 opportunistically creates an `origin/HEAD`
+  # symref on fetch and `update-ref` follows it instead of repinning — a
+  # CI-only fragility not worth fighting here; the single-ref `origin/HEAD`
+  # rescue test covers the remote-ref case.)
+  local repo
+  repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-range-XXXXXX")
+  cd "$repo"
+  git init -q --initial-branch=master
+  git config user.email t@t.tld && git config user.name t
+  echo a > file-a.txt && git add -A && git commit -qm c1
+  echo b > file-b.txt && git add -A && git commit -qm c2
+  # A-HEAD = c1 (plain ref, "HEAD" in the name → the *HEAD* guard arm fires);
+  # master = c2. Both local, both resolve — no symref, no fetch, no protocol.
+  git update-ref refs/heads/A-HEAD "$(git rev-parse master~1)"
+  git switch -q --orphan fresh
+  # Non-vacuousness gate: EACH endpoint must resolve — AND they must differ,
+  # else the range is empty and the assertion below is meaningless.
+  git rev-parse --verify -q A-HEAD
+  git rev-parse --verify -q master
+  [[ "$(git rev-parse A-HEAD)" != "$(git rev-parse master)" ]]
+  # run ! (Bats >= 1.5) instead of a bare `!`: shellcheck SC2314 — in Bats a
+  # bare `!` line's failure is not a reliable test failure. $status keeps the
+  # command's REAL exit code (the ! only inverts run's pass criterion), so the
+  # companion assert is assert_failure — it bites if the fixture ever has a
+  # born HEAD.
+  bats_require_minimum_version 1.5.0
+  run ! git rev-parse --verify -q HEAD   # HEAD must be unborn — the guard arm must fire
+  assert_failure
+  run hug shc 'A-HEAD..master'
+  assert_success
+  assert_output --partial 'file-b.txt'
+  refute_output --partial 'no commits yet'
+  cd - >/dev/null
+}
+
+@test "hug shc: unborn repo — HEAD-dependent range stays branded (endpoint verification)" {
+  # Endpoint verification must not LOOSEN the guard: with an endpoint that
+  # cannot resolve (main does not exist in a never-committed repo) and HEAD
+  # unborn, the range is HEAD-dependent and keeps the branded error.
+  local empty_repo
+  empty_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-range-unborn-XXXXXX")
+  cd "$empty_repo"
+  git init -q
+  git config user.email t@t.tld && git config user.name t
+  run hug shc -n 'main..HEAD'
+  assert_failure 1
+  refute_output --partial 'fatal:'
+  assert_output --partial 'no commits yet (unborn HEAD)'
+  cd - >/dev/null
+}
+
+@test "hug shc stats: rename collapses on single-commit branch; range unchanged at default config" {
+  echo a > old.txt && git add -A && git commit -qm init
+  git mv old.txt new.txt && git commit -qm rename
+  run hug shc HEAD
+  assert_success
+  assert_output --partial 'old.txt => new.txt'    # single branch: collapsed (delta)
+  run hug shc 'HEAD~1..HEAD'
+  assert_success
+  assert_output --partial 'old.txt => new.txt'    # range: already collapsed today (no delta)
+}
+
+@test "hug shc stats: non-ASCII path prints raw (registered delta, byte oracle)" {
+  echo a > 'café.txt' && git add -A && git commit -qm cafe
+  run hug shc HEAD
+  assert_success
+  assert_output --partial 'café.txt | 1'
+  refute_output --partial 'caf\303\251'
+}
+
+# -----------------------------------------------------------------------------
 # hug shcp tests (show cumulative diff with stats)
 # -----------------------------------------------------------------------------
 

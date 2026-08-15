@@ -12,6 +12,8 @@
 #   - diff_has_staged_changes: Check if staged changes exist
 #   - diff_has_unstaged_changes: Check if unstaged changes exist
 #   - diff_has_working_changes: Check if net working-tree changes exist (vs HEAD)
+#   - pinned_diff: The canonical pinned changed-files invocation for a commit
+#     or range — the one flag set all changed-files call sites delegate to
 
 ################################################################################
 # Idempotent Guards
@@ -574,3 +576,113 @@ _diff_cmd_setup() {
 _diff_invoke_unstaged() { show_unstaged_diff "$@"; }
 _diff_invoke_staged() { show_staged_diff "$@"; }
 _diff_invoke_combined() { show_combined_diff "$@"; }
+
+################################################################################
+# pinned_diff — the canonical pinned changed-files invocation
+################################################################################
+
+# Runs the canonical pinned changed-files invocation for a commit or range.
+# Usage: pinned_diff [--null] [--no-renames] <format> <resolved_ref> [pathspec...]
+# Parameters:
+#   --null       - Optional leading flag: NUL-separated output (--name-only only).
+#   --no-renames - Optional leading flag: renames list BOTH sides — the ACTION-LIST
+#                  contract (staging/untrack lists need the deleted side). Default is
+#                  the DISPLAY contract (--find-renames: new path only / collapsed
+#                  `{old => new}` stat line). Both stances are explicit and
+#                  config-immune — neither depends on the user's diff.renames.
+#   $1       - Format: --name-only | --stat. Anything else is a caller bug.
+#   $2       - resolved_ref: an ALREADY-RESOLVED commit ref or range (anything
+#              is_range() recognizes). N/-N shorthand resolution is the CALLER's
+#              job (resolve_commit_ref) — this function does not call it, keeping
+#              pinned_diff a thin, independently testable plumbing layer. Named
+#              resolved_ref, not "target", so it cannot be confused with the raw
+#              user input that show_changed_file_names accepts.
+#   $3..     - Optional pathspecs (already-exploded args, passed as-is).
+# Output:
+#   Git's own --name-only / --stat stream on stdout. Rename stance per the flags
+#   above (one path per rename by default; two with --no-renames). With --null,
+#   paths are NUL-terminated and never C-quoted (git's -z semantics — output must
+#   NEVER be captured into a shell variable; bash strips NUL bytes).
+# Exit codes:
+#   2    - usage errors this function rejects itself: too few core args,
+#          unknown format, --null with --stat (all via error_usage — which
+#          exits; an `||` fallback never sees them).
+#   Else - the underlying git command's (0 on success; 128 + git's fatal on
+#          a bad ref). Nothing is swallowed here; callers own error policy
+#          (2>/dev/null, || true, branding).
+# Environment:
+#   None read; does NOT honor HUG_QUIET (pure data by design).
+# Pins (every invocation, immune to user/server config — the determinism
+# contract from the shc --name-only adversarial review, now protecting ALL
+# call sites instead of one of three):
+#   -c core.quotePath=false        non-ASCII bytes (> 0x7f) print raw, in BOTH
+#                                  --name-only and --stat output. Git STILL C-quotes
+#                                  structural chars (newline, backslash, quote, tab)
+#                                  in line-oriented output regardless of this config —
+#                                  -z is the only fully-raw stream (probe-verified,
+#                                  git 2.34.1)
+#   -c diff.relative=false         paths stay repo-relative
+#   --find-renames / --no-renames  the rename CONTRACT, pinned explicitly in both
+#                                  directions (see Parameters above)
+#   --ignore-submodules=none       defeats a user's diff.ignoreSubmodules
+#   NOT pinned, deliberately: diff.renameLimit (a user limit that degrades
+#   rename detection; degrades gracefully — both paths listed, stderr warning —
+#   accepted in spec probe item 8) and diff.orderFile (reorders output, never
+#   corrupts data).
+# Notes:
+#   - Dispatch: is_range <resolved_ref> → `git diff <format> <pins> <resolved_ref>`;
+#     else → `git diff-tree --no-commit-id <format> -r --root <pins> <resolved_ref>`.
+#     (--no-commit-id is load-bearing under -z: without it the commit hash is
+#     emitted as the first NUL entry.)
+#   - --null with --stat is rejected via error_usage (NUL is a --name-only
+#     contract; --stat is human-formatted).
+#   - Merge-commit single-commit shows nothing (diff-tree without -m) — known
+#     parity with the stats mode, see elifarley/hug-scm#268.
+pinned_diff() {
+    local null_mode=false no_renames=false
+    # Consume leading flags in a LOOP, not two positional checks: the old
+    # `[[ --null ]] then [[ --no-renames ]]` sequence only parsed ONE order,
+    # so `pinned_diff --no-renames --null --name-only HEAD` (a valid combo)
+    # died with the misleading "unknown format '--null'" — the second flag
+    # fell through to the format slot. Any order, any subset parses now.
+    # set -u/-e safe: the condition reads ${1:-} (exempt), the body always shifts.
+    while [[ "${1:-}" == "--null" || "${1:-}" == "--no-renames" ]]; do
+        if [[ "$1" == "--null" ]]; then null_mode=true; else no_renames=true; fi
+        shift
+    done
+    # Arg-count guard BEFORE any positional read: under set -u, touching $1/$2 with
+    # too few args dies as "unbound variable" (exit 1) — a caller bug must surface
+    # as error_usage (exit 2), not a raw bash trace.
+    if [[ $# -lt 2 ]]; then
+        error_usage "pinned_diff: expected [--null] [--no-renames] <format> <resolved_ref> [pathspec...]"
+    fi
+    local format="$1" resolved_ref="$2"
+    shift 2
+    local -a path_args=()
+    [[ $# -gt 0 ]] && path_args=(-- "$@")
+    local -a zflag=()
+    $null_mode && zflag=(-z)
+    # Rename stance is a never-empty scalar, so plain "$rename_flag" is set -u-safe
+    # without the + guard the possibly-empty arrays need. Explicit BOTH ways — the
+    # invocation never inherits the user's diff.renames config.
+    local rename_flag=--find-renames
+    $no_renames && rename_flag=--no-renames
+
+    if [[ "$format" != "--name-only" && "$format" != "--stat" ]]; then
+        error_usage "pinned_diff: unknown format '$format' (expected --name-only or --stat)"
+    fi
+    if $null_mode && [[ "$format" != "--name-only" ]]; then
+        error_usage "pinned_diff: --null is only valid with --name-only"
+    fi
+
+    if is_range "$resolved_ref"; then
+        git -c core.quotePath=false -c diff.relative=false \
+            diff "$format" "${zflag[@]+"${zflag[@]}"}" "$rename_flag" --ignore-submodules=none \
+            "$resolved_ref" "${path_args[@]+"${path_args[@]}"}"
+    else
+        git -c core.quotePath=false -c diff.relative=false \
+            diff-tree --no-commit-id "$format" -r --root "${zflag[@]+"${zflag[@]}"}" \
+            "$rename_flag" --ignore-submodules=none \
+            "$resolved_ref" "${path_args[@]+"${path_args[@]}"}"
+    fi
+}

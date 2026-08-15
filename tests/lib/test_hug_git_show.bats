@@ -641,3 +641,30 @@ teardown() {
   run show_changed_file_names "nonexistent123abc"
   assert_failure
 }
+
+@test "show_changed_file_names: thin-wrapper keeps line-mode output identical (regression)" {
+  local test_repo=$(create_test_repo)
+  cd "$test_repo"
+  echo a > plain.txt
+  echo b > 'café.txt'
+  git add -A && git commit -qm init
+  git mv plain.txt renamed.txt
+  echo c >> 'café.txt'
+  git add -A && git commit -qm second
+  run show_changed_file_names "HEAD"
+  assert_success
+  assert_line "renamed.txt"   # display contract: new path only
+  refute_line "plain.txt"   # display contract: old path must NOT appear
+  assert_line "café.txt"      # non-ASCII raw (quotePath pin)
+}
+
+@test "show_changed_file_names: -z leading token threads through to NUL output" {
+  local test_repo=$(create_test_repo)
+  cd "$test_repo"
+  echo a > a.txt
+  echo b > b.txt
+  git add -A && git commit -qm init
+  # NUL assertion via pipe — BATS run/$output strips NUL bytes. od -c renders
+  # NUL as \0 (two chars); single-backslash literals below are exact bytes.
+  [[ "$(show_changed_file_names -z "HEAD" | od -An -c | tr -d ' \n')" == 'a.txt\0b.txt\0' ]]
+}

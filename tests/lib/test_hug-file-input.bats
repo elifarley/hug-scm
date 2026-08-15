@@ -5,6 +5,7 @@ load '../test_helper'
 
 # Source the library and dependencies
 load '../../git-config/lib/hug-common'
+load '../../git-config/lib/hug-git-repo' # is_range for pinned_diff — hug-common does NOT load it
 load '../../git-config/lib/hug-file-input'
 
 # Override error function for library testing
@@ -388,6 +389,33 @@ file3.txt"
   # We added main-only.txt on main before merging, so it might appear
   # Or it might be empty for pure merge commits, which is also valid
   # Both are acceptable behaviors
+}
+
+@test "extract_files_from_commit: rename lists BOTH sides (action contract, byte-identical with today)" {
+  local test_repo=$(create_test_repo)
+  cd "$test_repo"
+  echo a > old.txt
+  git add -A && git commit -qm init
+  git mv old.txt new.txt
+  git commit -qm rename
+  run extract_files_from_commit HEAD
+  assert_success
+  # Both sides: staging/untrack lists need the deleted side (--no-renames).
+  # A display pin here would silently drop old.txt — rejected in review:
+  # hug a --from-commit was working; a consolidation must not shrink action lists.
+  assert_line "old.txt"
+  assert_line "new.txt"
+}
+
+@test "extract_files_from_commit: non-ASCII path prints raw under hostile quotePath" {
+  local test_repo=$(create_test_repo)
+  cd "$test_repo"
+  git config core.quotePath true
+  echo a > 'café.txt'
+  git add -A && git commit -qm add
+  run extract_files_from_commit HEAD
+  assert_success
+  assert_line "café.txt"
 }
 
 #=== Integration Tests ===
