@@ -74,7 +74,7 @@ hug_add_with_summary() {
 
   # Print summary to stderr, suppressed by HUG_QUIET.
   if [[ -z "${HUG_QUIET:-}" ]]; then
-    printf 'Staged %d file%s. Index now has %d file(s) staged total.\n' \
+    printf 'Staged %d file%s. %d staged total now.\n' \
       "$_staged" "$([[ $_staged -eq 1 ]] && echo '' || echo 's')" "$_index_after" >&2
   fi
 }
