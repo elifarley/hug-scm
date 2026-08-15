@@ -799,8 +799,11 @@ teardown() {
   # repinning origin/HEAD (observed in CI as identical endpoint SHAs). Delete
   # any auto-created ref first, then pin a PLAIN ref to the FIRST remote
   # commit: resolvable, symref-proof, and the range spans src-c1..src-c2.
+  # The SHA comes from the SRC repo (master~1 traverses locally and reliably);
+  # `git rev-parse origin/master~1` against the fetched remote-tracking ref was
+  # fragile on CI (git 2.54) — resolve the parent where the history is local.
   git update-ref -d refs/remotes/origin/HEAD 2>/dev/null || true
-  git update-ref refs/remotes/origin/HEAD "$(git rev-parse origin/master~1)"
+  git update-ref refs/remotes/origin/HEAD "$(git -C "$src_repo" rev-parse master~1)"
   # Local commit uses a DIFFERENT file than the src repo, so asserting
   # remote-file.txt proves the range resolved REMOTE refs, not local ones.
   echo x > local-file.txt && git add -A && git commit -qm c1
