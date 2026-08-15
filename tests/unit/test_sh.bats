@@ -717,6 +717,64 @@ teardown() {
   cd - >/dev/null
 }
 
+@test "hug shc: orphan repo — valid HEAD-containing RANGE with resolving endpoints works (endpoint verification)" {
+  # `git rev-parse --verify` cannot resolve a RANGE as one object, so a naive
+  # guard brands every HEAD-containing range even when both endpoints resolve.
+  # origin/HEAD..origin/master in an orphan repo is the regression: pre-fix it
+  # died with the branded unborn-HEAD error despite fully resolvable endpoints.
+  local src_repo
+  src_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-range-src-XXXXXX")
+  (
+    cd "$src_repo"
+    git init -q --initial-branch=master
+    git config user.email t@t.tld && git config user.name t
+    echo x > remote-file.txt && git add -A && git commit -qm src-c1
+    echo y >> remote-file.txt && git commit -qam src-c2
+  )
+  local orphan_repo
+  orphan_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-range-orphan-XXXXXX")
+  cd "$orphan_repo"
+  git init -q --initial-branch=master
+  git config user.email t@t.tld && git config user.name t
+  git remote add origin "$src_repo"
+  git fetch -q origin
+  # A symref origin/HEAD → origin/master would make the range EMPTY (both
+  # endpoints identical), so pin origin/HEAD to the FIRST remote commit —
+  # still a resolvable ref, and the range now spans src-c1..src-c2.
+  git update-ref refs/remotes/origin/HEAD "$(git rev-parse origin/master~1)"
+  # Local commit uses a DIFFERENT file than the src repo, so asserting
+  # remote-file.txt proves the range resolved REMOTE refs, not local ones.
+  echo x > local-file.txt && git add -A && git commit -qm c1
+  git switch -q --orphan fresh
+  # Non-vacuousness gate: EACH endpoint must resolve — endpoint verification
+  # only rescues ranges whose both sides resolve, so a failing probe here
+  # would make the assertion below meaningless.
+  git rev-parse --verify -q origin/HEAD
+  git rev-parse --verify -q origin/master
+  ! git rev-parse --verify -q HEAD   # HEAD must be unborn — the guard arm must fire
+  run hug shc 'origin/HEAD..origin/master'
+  assert_success
+  assert_output --partial 'remote-file.txt'
+  refute_output --partial 'no commits yet'
+  cd - >/dev/null
+}
+
+@test "hug shc: unborn repo — HEAD-dependent range stays branded (endpoint verification)" {
+  # Endpoint verification must not LOOSEN the guard: with an endpoint that
+  # cannot resolve (main does not exist in a never-committed repo) and HEAD
+  # unborn, the range is HEAD-dependent and keeps the branded error.
+  local empty_repo
+  empty_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-range-unborn-XXXXXX")
+  cd "$empty_repo"
+  git init -q
+  git config user.email t@t.tld && git config user.name t
+  run hug shc -n 'main..HEAD'
+  assert_failure 1
+  refute_output --partial 'fatal:'
+  assert_output --partial 'no commits yet (unborn HEAD)'
+  cd - >/dev/null
+}
+
 @test "hug shc stats: rename collapses on single-commit branch; range unchanged at default config" {
   echo a > old.txt && git add -A && git commit -qm init
   git mv old.txt new.txt && git commit -qm rename

@@ -222,11 +222,29 @@ commit_ref=$(resolve_commit_ref "$commit_ref" "HEAD")
 # Invalid explicit refs keep git's raw exit-128 fatal (show_changed_file_names
 # doc contract): ref unresolvable + HEAD born → both checks fall through and
 # the dispatch surfaces git's own error.
+# Ranges never verify as a single object (rev-parse can only resolve ONE
+# rev per argument), so the body verifies each ENDPOINT separately — a range
+# whose endpoints both resolve (origin/HEAD..origin/master in an orphan repo)
+# proceeds instead of falling to the HEAD check and getting misbranded.
 case "$commit_ref" in
 *HEAD* | @ | @~* | @^* | '@{'[0-9]*)
-  git rev-parse --verify -q "$commit_ref" > /dev/null 2>&1 ||
-    { git rev-parse --verify -q HEAD > /dev/null 2>&1 ||
-      error "no commits yet (unborn HEAD) — nothing to show; make a commit first"; } # exit 1
+  if is_range "$commit_ref"; then
+    # Ranges never verify as one object — check each endpoint instead.
+    # Both resolve (e.g. origin/HEAD..origin/master in an orphan repo) → proceed;
+    # any endpoint unresolvable → the HEAD check below (HEAD-dependent ranges
+    # like main..HEAD stay branded while HEAD is unborn; born repos fall
+    # through to git's raw fatal per D5).
+    _range_left="${commit_ref%%..*}"
+    _range_right="${commit_ref##*..}"
+    git rev-parse --verify -q "$_range_left" >/dev/null 2>&1 &&
+      git rev-parse --verify -q "$_range_right" >/dev/null 2>&1 ||
+      { git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
+        error "no commits yet (unborn HEAD) — nothing to show; make a commit first"; } # exit 1
+  else
+    git rev-parse --verify -q "$commit_ref" >/dev/null 2>&1 ||
+      { git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
+        error "no commits yet (unborn HEAD) — nothing to show; make a commit first"; } # exit 1
+  fi
   ;;
 esac
 
