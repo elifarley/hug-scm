@@ -197,7 +197,12 @@ _make_fixture() {
     && echo x > sub.txt && git add -A && git commit -qm subinit )
   git -c protocol.file.allow=always submodule add -q "$child" sub
   git commit -qm addsub
-  ( cd sub && echo y > sub.txt && git add -A && git commit -qm childchange )
+  # The submodule worktree is a SEPARATE repo (.git/modules/sub): it inherits
+  # neither the parent's local identity nor any global one (CI runners have
+  # none) — configure it before committing there, same as the child repo above.
+  ( cd sub \
+    && git config user.email t@t.tld && git config user.name t \
+    && echo y > sub.txt && git add -A && git commit -qm childchange )
   git add sub && git commit -qm bumpsub
   git config diff.ignoreSubmodules all
   run pinned_diff --name-only 'HEAD~1..HEAD'
