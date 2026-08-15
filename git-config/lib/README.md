@@ -148,6 +148,18 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
 - Resolve current conflict (`rebase_pick`)
 - Auto-resolve all remaining conflicts (`rebase_finish_all`)
 
+#### hug-git-diff
+- Run the canonical pinned changed-files invocation (`pinned_diff`) — the ONE
+  flag set for commit/range file listing: determinism pins
+  (`core.quotePath=false`, `diff.relative=false`, `--ignore-submodules=none`)
+  on every call, range/single dispatch, and `--null` NUL mode.
+- Rename contract is two-valued and explicit: default `--find-renames` is the
+  DISPLAY stance (new path only / collapsed `{old => new}` stat line — use for
+  human-facing output); `--no-renames` is the ACTION-LIST stance (both sides —
+  use when the list feeds staging/untrack/add operations).
+- Call `show_changed_file_names` (hug-git-show) instead when you need N/-N
+  shorthand resolution — it resolves then delegates here.
+
 ### hug-json
 
 JSON serialization and validation utilities (pure Bash).

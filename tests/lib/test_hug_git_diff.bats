@@ -145,6 +145,16 @@ _make_fixture() {
   assert_line 'sub/deep.txt'                # repo-relative, not deep.txt
 }
 
+@test "pinned_diff: paths stay repo-relative under hostile diff.relative=true on the RANGE branch" {
+  _make_fixture
+  mkdir -p sub && echo x > sub/deep.txt && git add -A && git commit -qm c3
+  git config diff.relative true
+  cd sub
+  run pinned_diff --name-only 'HEAD~1..HEAD'
+  assert_success
+  assert_line 'sub/deep.txt'                # repo-relative, not deep.txt
+}
+
 @test "pinned_diff: submodule pin defeats hostile diff.ignoreSubmodules=all" {
   local child="$BATS_TEST_TMPDIR/child-$$"
   git init -q "$child"
@@ -159,9 +169,33 @@ _make_fixture() {
   assert_line 'sub'                         # shown despite hostile config
 }
 
+@test "pinned_diff: submodule pin defeats hostile diff.ignoreSubmodules=all on the RANGE branch" {
+  local child="$BATS_TEST_TMPDIR/child-$$"
+  git init -q "$child"
+  ( cd "$child" \
+    && git config user.email t@t.tld && git config user.name t \
+    && echo x > sub.txt && git add -A && git commit -qm subinit )
+  git -c protocol.file.allow=always submodule add -q "$child" sub
+  git commit -qm addsub
+  ( cd sub && echo y > sub.txt && git add -A && git commit -qm childchange )
+  git add sub && git commit -qm bumpsub
+  git config diff.ignoreSubmodules all
+  run pinned_diff --name-only 'HEAD~1..HEAD'
+  assert_success
+  assert_line 'sub'                         # shown despite hostile config
+}
+
 @test "pinned_diff: pathspec passthrough filters output" {
   _make_fixture
   run pinned_diff --name-only HEAD -- 'renamed.txt'
+  assert_success
+  assert_line 'renamed.txt'
+  refute_line 'café.txt'
+}
+
+@test "pinned_diff: pathspec passthrough filters output on the RANGE branch" {
+  _make_fixture
+  run pinned_diff --name-only 'HEAD~1..HEAD' -- 'renamed.txt'
   assert_success
   assert_line 'renamed.txt'
   refute_line 'café.txt'

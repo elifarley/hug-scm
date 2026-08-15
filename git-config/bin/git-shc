@@ -133,6 +133,10 @@ eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
 # the old last-wins extraction silently swallowed unknown tokens like -nq and
 # the command ran in --stat mode. See the spec's "Bundled-flag hazard" section.
 name_only=false
+# Forward-wiring for -z (Task 3): initialized here so the $null_sep reference
+# in the -n dispatch below is set -u-safe the moment it becomes reachable —
+# `hug shc -n` today already executes that branch's guard.
+null_sep=false
 commit_ref=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -168,38 +172,29 @@ commit_ref=$(resolve_commit_ref "$commit_ref" "HEAD")
 # Pure data output (no HUG_QUIET coupling, no no-match hint) by design —
 # callers detect empty via stdout. See spec "No-match hint" section.
 if $name_only; then
-  show_changed_file_names "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
+  if $null_sep; then
+    show_changed_file_names -z "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
+  else
+    show_changed_file_names "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
+  fi
   exit 0
 fi
 
-# Build pathspec args for git commands: empty-array-safe under set -u.
-# When pathspecs are present, produces: -- <path1> <path2> ...
-# When absent, produces nothing (no args).
-pathspec_args=()
-if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
-  pathspec_args=(-- "${_pathspec_pathspecs[@]}")
-fi
-
 # Show changed files with stats, optionally filtered by pathspecs.
-# Detect if argument is a range (contains ..) or a single commit.
-stats_output=""
-if is_range "$commit_ref"; then
-  # Range: use git diff --stat
-  if [[ ${HUG_QUIET:-} != T ]]; then
+# pinned_diff owns the invocation + determinism pins; the emoji headers stay
+# here, keyed off is_range (display policy, not data policy).
+if [[ ${HUG_QUIET:-} != T ]]; then
+  if is_range "$commit_ref"; then
     commit_emoji="$(_diff_emoji commit)"
     stats_emoji="$(_diff_emoji stats)"
     printf '%s %s Changed files in range %s:\n' "$commit_emoji" "$stats_emoji" "$commit_ref" >&2
-  fi
-  stats_output=$(git diff --stat "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}")
-else
-  # Single commit: use git diff-tree
-  if [[ ${HUG_QUIET:-} != T ]]; then
+  else
     commit_emoji="$(_diff_emoji commit)"
     stats_emoji="$(_diff_emoji stats)"
     printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji" >&2
   fi
-  stats_output=$(git diff-tree --no-commit-id --stat -r --root "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}")
 fi
+stats_output=$(pinned_diff --stat "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}")
 
 printf '%s\n' "$stats_output"
 

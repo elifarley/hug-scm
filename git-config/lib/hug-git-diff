@@ -12,6 +12,8 @@
 #   - diff_has_staged_changes: Check if staged changes exist
 #   - diff_has_unstaged_changes: Check if unstaged changes exist
 #   - diff_has_working_changes: Check if net working-tree changes exist (vs HEAD)
+#   - pinned_diff: The canonical pinned changed-files invocation for a commit
+#     or range — the one flag set all changed-files call sites delegate to
 
 ################################################################################
 # Idempotent Guards
@@ -603,7 +605,8 @@ _diff_invoke_combined() { show_combined_diff "$@"; }
 #   NEVER be captured into a shell variable; bash strips NUL bytes).
 # Exit codes:
 #   2    - usage errors this function rejects itself: too few core args,
-#          unknown format, --null with --stat (all via error_usage).
+#          unknown format, --null with --stat (all via error_usage — which
+#          exits; an `||` fallback never sees them).
 #   Else - the underlying git command's (0 on success; 128 + git's fatal on
 #          a bad ref). Nothing is swallowed here; callers own error policy
 #          (2>/dev/null, || true, branding).
