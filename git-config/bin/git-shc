@@ -117,11 +117,12 @@ GIT EQUIVALENTS:
     git diff --stat HEAD~3..HEAD          →  hug shc -3
     git diff --stat main..HEAD -- '*.py'  →  hug shc main..HEAD -- '*.py'
     git diff --name-only main..HEAD  →  hug shc -n main..HEAD
-    git diff-tree --no-commit-id --name-only -r --root HEAD  →  hug shc -n HEAD
-    git diff-tree -z --no-commit-id --name-only -r --root HEAD  →  hug shc -n -z HEAD
-    # The full diff-tree invocation (--no-commit-id -r --root) is what hug uses
-    # internally; dropping those flags would prepend the commit hash and break
-    # the one-path-per-line contract.
+    git diff-tree --no-commit-id --name-only -r --root --find-renames HEAD  →  hug shc -n HEAD
+    git diff-tree -z --no-commit-id --name-only -r --root --find-renames HEAD  →  hug shc -n -z HEAD
+    # The full diff-tree invocation (--no-commit-id -r --root --find-renames)
+    # is what hug uses internally; dropping those flags would prepend the
+    # commit hash and break the one-path-per-line contract, and without
+    # --find-renames a rename lists BOTH sides instead of the new path only.
 
 SEE ALSO:
     hug sh       : Show commit info with file stats
@@ -236,13 +237,13 @@ case "$commit_ref" in
     # through to git's raw fatal per D5).
     _range_left="${commit_ref%%..*}"
     _range_right="${commit_ref##*..}"
-    git rev-parse --verify -q "$_range_left" >/dev/null 2>&1 &&
-      git rev-parse --verify -q "$_range_right" >/dev/null 2>&1 ||
-      { git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
+    git rev-parse --verify -q "$_range_left" > /dev/null 2>&1 &&
+      git rev-parse --verify -q "$_range_right" > /dev/null 2>&1 ||
+      { git rev-parse --verify -q HEAD > /dev/null 2>&1 ||
         error "no commits yet (unborn HEAD) — nothing to show; make a commit first"; } # exit 1
   else
-    git rev-parse --verify -q "$commit_ref" >/dev/null 2>&1 ||
-      { git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
+    git rev-parse --verify -q "$commit_ref" > /dev/null 2>&1 ||
+      { git rev-parse --verify -q HEAD > /dev/null 2>&1 ||
         error "no commits yet (unborn HEAD) — nothing to show; make a commit first"; } # exit 1
   fi
   ;;

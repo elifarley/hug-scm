@@ -625,6 +625,10 @@ _diff_invoke_combined() { show_combined_diff "$@"; }
 #   --find-renames / --no-renames  the rename CONTRACT, pinned explicitly in both
 #                                  directions (see Parameters above)
 #   --ignore-submodules=none       defeats a user's diff.ignoreSubmodules
+#   NOT pinned, deliberately: diff.renameLimit (a user limit that degrades
+#   rename detection; degrades gracefully — both paths listed, stderr warning —
+#   accepted in spec probe item 8) and diff.orderFile (reorders output, never
+#   corrupts data).
 # Notes:
 #   - Dispatch: is_range <resolved_ref> → `git diff <format> <pins> <resolved_ref>`;
 #     else → `git diff-tree --no-commit-id <format> -r --root <pins> <resolved_ref>`.

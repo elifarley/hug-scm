@@ -7,7 +7,8 @@ All notable changes to the Hug SCM project will be documented in this file.
 ### Added
 - `hug shc -z/--null` (with `-n`): NUL-separated changed-file paths — the only
   mode fully raw for every filename (line mode still C-quotes structural
-  characters). Pair with `xargs -0 -r` / `read -d ''`.
+  characters). Pair with `xargs -0 -r` (GNU xargs; BSD/macOS needs no `-r`)
+  / `read -d ''`.
 - `pinned_diff()` in `hug-git-diff`: the single canonical pinned changed-files
   invocation, with an explicit rename contract — `--find-renames` for display,
   `--no-renames` for action lists (both rename sides).

@@ -7,6 +7,7 @@ It's designed to be installed directly from its Github repository, and doesn't r
 ## Prerequisites
 
 - **Git or Mercurial**: Hug requires an underlying SCM tool. It works with both Git and Mercurial (Hg), so you must have at least one installed and available in your `PATH`.
+- git ≥ 2.34 (minimum supported; determinism pins and quoting contracts are probe-verified on this floor)
 - **Bash shell**: Hug is a Bash-based tool and requires Bash 4.0 or higher. 
 
 ## Installation Steps

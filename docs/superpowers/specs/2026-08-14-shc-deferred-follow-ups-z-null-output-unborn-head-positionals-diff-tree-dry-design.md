@@ -299,12 +299,28 @@ die with the raw exit-128 fatal when invalid (D5 unchanged):
 # the body rescues: verify the REF first, only then fall back to HEAD. The
 # branded path fires only for refs unresolvable while HEAD is unborn; this
 # supersedes the original registration of `A-HEAD` as an acceptable false
-# positive.
+# positive. REVISED again (ship review): a RANGE never verifies as a single
+# object, so the body verifies each ENDPOINT separately — ranges whose both
+# endpoints resolve (origin/HEAD..origin/master in an orphan repo) proceed.
 case "$commit_ref" in
   *HEAD* | @ | @~* | @^* | '@{'[0-9]*)
-    git rev-parse --verify -q "$commit_ref" >/dev/null 2>&1 ||
-      { git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
-          error "no commits yet (unborn HEAD) — nothing to show; make a commit first"; }   # exit 1
+    if is_range "$commit_ref"; then
+      # Ranges never verify as one object — check each endpoint instead.
+      # Both resolve (e.g. origin/HEAD..origin/master in an orphan repo) → proceed;
+      # any endpoint unresolvable → the HEAD check below (HEAD-dependent ranges
+      # like main..HEAD stay branded while HEAD is unborn; born repos fall
+      # through to git's raw fatal per D5).
+      _range_left="${commit_ref%%..*}"
+      _range_right="${commit_ref##*..}"
+      git rev-parse --verify -q "$_range_left" >/dev/null 2>&1 &&
+        git rev-parse --verify -q "$_range_right" >/dev/null 2>&1 ||
+        { git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
+          error "no commits yet (unborn HEAD) — nothing to show; make a commit first"; } # exit 1
+    else
+      git rev-parse --verify -q "$commit_ref" >/dev/null 2>&1 ||
+        { git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
+          error "no commits yet (unborn HEAD) — nothing to show; make a commit first"; } # exit 1
+    fi
     ;;
 esac
 ```
@@ -434,6 +450,8 @@ re-confirmation where an item says so — "verified on the floor" does not imply
    (stderr-only, informative) or pin `-c diff.renameLimit=<higher>` into the flag set.
    Probe with a fixture over the limit on the floor git — the default limit is
    version-dependent, so measure, don't assume.
+   Disposition (ship review): accept — graceful degradation, stderr-only; orderFile
+   likewise unpinned (reorder, no corruption).
 9. Rename-contract mechanics (pre-probed on 2.34.1, receipts baked into the delta
    table; re-confirm on the floor): `--no-renames` is accepted by BOTH `git diff-tree`
    and `git diff` (exit 0); `diff.renames` config does NOT affect diff-tree plumbing
