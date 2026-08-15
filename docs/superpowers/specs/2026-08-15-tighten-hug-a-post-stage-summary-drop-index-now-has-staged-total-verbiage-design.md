@@ -55,4 +55,5 @@ Update assertions to match new wording. Tests should assert on the presence of t
 
 - One format string in `git-config/bin/git-a`
 - Four assertion updates in `tests/unit/test_add.bats`
+- Two CHANGELOG entries updated in `CHANGELOG.md:134,145` to reflect new output format
 - No new features, no behavioral changes beyond message text
