@@ -805,7 +805,14 @@ teardown() {
   # would make the assertion below meaningless.
   git rev-parse --verify -q origin/HEAD
   git rev-parse --verify -q origin/master
-  ! git rev-parse --verify -q HEAD   # HEAD must be unborn — the guard arm must fire
+  # run ! (Bats >= 1.5) instead of a bare `!`: shellcheck SC2314 — in Bats a
+  # bare `!` line's failure is not a reliable test failure. $status keeps the
+  # command's REAL exit code (the ! only inverts run's pass criterion), so the
+  # companion assert is assert_failure — it bites if the fixture ever has a
+  # born HEAD.
+  bats_require_minimum_version 1.5.0
+  run ! git rev-parse --verify -q HEAD   # HEAD must be unborn — the guard arm must fire
+  assert_failure
   run hug shc 'origin/HEAD..origin/master'
   assert_success
   assert_output --partial 'remote-file.txt'
