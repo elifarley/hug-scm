@@ -223,7 +223,9 @@ path handling. These are ACTION-LIST consumers (git-a:181 `mapfile < <(extract_f
 `hug_add_with_summary`; git-us/git-untrack same shape around their `--from-commit` paths;
 git-ccp: `mapfile < <(extract_files_from_commit "$source_commit")`), so they call
 `pinned_diff --no-renames`: both sides of a rename keep listing and their behavior is
-byte-identical to today (probe: `diff` clean against the unpinned invocation). The
+byte-identical to today for the rename axis and ASCII paths (probe: `diff` clean against
+the unpinned invocation on the ASCII rename fixture); the registered non-ASCII flip
+(C-quoted → raw) applies to these consumers too — see the delta table. The
 rename axis is the ONE pin that is a contract rather than a constant — display callers
 pin collapse, action callers pin expansion — and it is explicit in both directions, so
 no call site ever inherits the user's `diff.renames` config.
@@ -267,7 +269,8 @@ mode dispatch, scoped to HEAD-DERIVED ref forms only. Premise correction (probe,
 (`diff-tree master` exit 0). An unconditional guard would block valid explicit refs
 with a factually wrong "make a commit first" message. The guard therefore fires only
 when the RESOLVED ref still mentions HEAD — the empty default (`HEAD`), `N`
-(`HEAD~N`), `-N` (`HEAD~N..HEAD`), and explicit `HEAD…` forms. Explicit refs
+(`HEAD~N`), `-N` (`HEAD~N..HEAD`), explicit `HEAD…` forms, and git's `@` alias
+(`@`, `@~2`), which passes through resolution unchanged. Explicit refs
 (branches, tags, SHAs) keep today's behavior exactly: they work in orphan state and
 die with the raw exit-128 fatal when invalid (D5 unchanged):
 
@@ -276,12 +279,16 @@ die with the raw exit-128 fatal when invalid (D5 unchanged):
 # check would mis-block `hug shc master` in a git-switch --orphan repo —
 # HEAD-unborn does not mean commit-less. resolve_commit_ref maps the default
 # to HEAD and N/-N to HEAD~N[..HEAD] (pure string mapping, no git calls), so
-# running this AFTER resolution makes `*HEAD*` the complete set of
-# HEAD-dependent forms. Invalid explicit refs keep git's raw exit-128 fatal
-# (show_changed_file_names doc contract). Known false positive: a ref literally
-# named like `A-HEAD` in an unborn repo — acceptable, documented here.
+# running this AFTER resolution, `*HEAD*` plus the `@` arms is the complete
+# set of HEAD-dependent forms — `@` is git's alias for HEAD and resolves
+# through unchanged (probe: unborn `diff-tree @` → raw fatal 128; without the
+# `@` arms, `hug shc @` would keep the raw fatal while `hug shc HEAD` gets
+# branded — same commit, different spelling, inconsistent).
+# Invalid explicit refs keep git's raw exit-128 fatal (show_changed_file_names
+# doc contract). Known false positives: a ref literally named like `A-HEAD` or
+# `@stable` in an unborn repo — acceptable, documented here.
 case "$commit_ref" in
-  *HEAD*)
+  *HEAD* | @ | @*)
     git rev-parse --verify -q HEAD >/dev/null 2>&1 ||
       error "no commits yet (unborn HEAD) — nothing to show; make a commit first"   # exit 1
     ;;
@@ -390,7 +397,9 @@ re-confirmation where an item says so — "verified on the floor" does not imply
    NUL-terminated) — so the `core.quotePath=false` pin is redundant-but-harmless in `-z`
    mode; keep it for uniformity, document the redundancy.
 4. A bad ref through `pinned_diff` propagates exit 128 + git's fatal (no swallowing).
-5. `--stat` output for ASCII paths is byte-identical pinned vs unpinned.
+5. `--stat` output for ASCII paths is byte-identical pinned vs unpinned — on a fixture
+   with NO renames (a rename flips it: the registered single-branch collapse delta;
+   same fixture discipline as item 6, applied to this item after round 4 of review).
 6. `--stat` output under `-c core.quotePath=false` vs default, with a fixture containing
    BOTH a non-ASCII and a structural-char path — BOTH dispatch branches, on the floor
    git AND CI's git. Probed on 2.34.1: non-ASCII flips raw (`café.txt | 1 +` vs
@@ -456,7 +465,7 @@ OPTIONS:
 | File | Covers |
 |---|---|
 | `tests/lib/test_hug_git_diff.bats` **(new)** | `pinned_diff`: range/single dispatch; `--name-only`/`--stat`; `--null` NUL output; `--null`+`--stat` → exit 2; unknown format → exit 2; pins honored under hostile config (test repo sets `core.quotePath=true`, `diff.renames=false`, `diff.ignoreSubmodules=all`, `diff.relative=true` → output still raw / rename-collapsed / submodules shown / repo-relative, the relative case asserted from a subdirectory); `pinned_diff --name-only` (missing ref, the too-few-args guard) → exit 2; `--no-renames`: both rename sides listed, overriding hostile `diff.renames=true` on the range branch; pathspec passthrough; bad ref → exit 128 |
-| `tests/unit/test_sh.bats` (shc section) | `shc -n -z`: NUL-separated (od/xxd assertion), incl. filename with embedded newline (`$'we\nird'`) — line mode asserts ONE C-quoted line `"we\nird"` (the actual before-behavior — git never split it), `-z` mode asserts raw bytes + NUL terminator; `shc -z` w/o `-n` → exit 2 + usage message; second positional → exit 2 naming both tokens (stats mode AND `-n` mode); unborn HEAD (`git init` only) → branded message, exit 1, no raw `fatal:` (all HEAD-derived ref forms: none, `1`, `-3`, `main..HEAD`); orphan repo (`git switch --orphan` after a commit) → explicit ref (`master`) WORKS unchanged, HEAD-derived forms → branded exit 1; stats rename delta on a SINGLE-COMMIT fixture (two lines → one `{old => new}` line); range-branch rename asserted UNCHANGED at default config (already collapses — the pin's range effect is hostile-config-only: pinned vs `-c diff.renames=false`); non-ASCII stats path flips C-quoted → raw (literal byte oracle: `café.txt | 1 +`); structural-char stats paths stay C-quoted both ways (byte-identity pinned vs unpinned); existing `-n` line-mode tests stay green |
+| `tests/unit/test_sh.bats` (shc section) | `shc -n -z`: NUL-separated (od/xxd assertion), incl. filename with embedded newline (`$'we\nird'`) — line mode asserts ONE C-quoted line `"we\nird"` (the actual before-behavior — git never split it), `-z` mode asserts raw bytes + NUL terminator; `shc -z` w/o `-n` → exit 2 + usage message; second positional → exit 2 naming both tokens (stats mode AND `-n` mode); unborn HEAD (`git init` only) → branded message, exit 1, no raw `fatal:` (all HEAD-derived ref forms: none, `1`, `-3`, `main..HEAD`, `@`, `@~2`); orphan repo (`git switch --orphan` after a commit) → explicit ref (`master`) WORKS unchanged, HEAD-derived forms → branded exit 1; stats rename delta on a SINGLE-COMMIT fixture (two lines → one `{old => new}` line); range-branch rename asserted UNCHANGED at default config (already collapses — the pin's range effect is hostile-config-only: pinned vs `-c diff.renames=false`); non-ASCII stats path flips C-quoted → raw (literal byte oracle: `café.txt | 1 +`); structural-char stats paths stay C-quoted both ways (byte-identity pinned vs unpinned); existing `-n` line-mode tests stay green |
 | `tests/lib/test_hug-file-input.bats` | PREREQUISITE: add `load '../../git-config/lib/hug-git-repo'` — hug-common does not load it, and without it `is_range` exits 127 inside the `2>/dev/null \|\| true` swallow → empty output, existing tests break (see Reachability). Harness quirk: this file overrides `error()` to `return 1` (no exit), so `pinned_diff`'s exit-2 guards do NOT exit here — assert guard paths on output, not exit codes. Then: `extract_files_from_commit`: raw paths under `core.quotePath=true`; rename → BOTH sides listed, byte-identical with today (the action contract; a comment explains why action lists must not collapse renames) |
 | `tests/lib/test_hug_git_show.bats` | `show_changed_file_names` regression (thin-wrapper refactor keeps line-mode byte-identical); `-z` leading-token passthrough |
 
@@ -519,3 +528,9 @@ verified step, not an assumption.
   foot-gun, different command; fixing it here would leave the family half-fixed and
   expand this PR's blast radius. Separate pass over the `-z` consumers once `-r`
   guidance lands here.
+- Skills-guide `-z` adoption (docs/skills/hug-repo-analysis: SKILL.md:114,289,
+  guides/bug-hunting.md:105, guides/pre-commit-review.md:311 recommend `hug shc -n`
+  for piping into other tools) — their claims are correct today (line mode never split
+  filenames; verified), but piping-for-tools is exactly what `-z` is for, so these four
+  snippets are the highest-value adoption surface once the flag lands. File a
+  follow-up issue when the PR merges; not a change-set addition.
