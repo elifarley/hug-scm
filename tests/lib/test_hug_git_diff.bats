@@ -64,6 +64,15 @@ _make_fixture() {
   [[ "$(pinned_diff --null --name-only HEAD | od -An -c | tr -d ' \n')" == 'caf303251.txt\0renamed.txt\0' ]]
 }
 
+@test "pinned_diff: --null on the RANGE branch emits NUL-terminated raw paths" {
+  _make_fixture
+  # Companion to the single-commit --null test above: the range dispatches to
+  # `git diff` (NOT diff-tree), a different git code path for -z — no commit-id
+  # entry either way, and renames still collapse to the new path. Oracle
+  # probed on git 2.34.1; same od-pipe discipline (never $output — NUL).
+  [[ "$(pinned_diff --null --name-only 'HEAD~1..HEAD' | od -An -c | tr -d ' \n')" == 'caf303251.txt\0renamed.txt\0' ]]
+}
+
 @test "pinned_diff: --null with --stat is rejected (exit 2)" {
   _make_fixture
   run pinned_diff --null --stat HEAD

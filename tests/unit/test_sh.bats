@@ -591,6 +591,55 @@ teardown() {
   assert_output --partial 'only valid with -n'
 }
 
+@test "hug shc -n -z: range (git diff branch) NUL stream" {
+  # The range dispatches to `git diff`, a different -z code path than the
+  # diff-tree single-commit branch above. Two commits so the oracle is
+  # discriminating: the range spans ONLY the b.txt commit.
+  echo x > a.txt && git add -A && git commit -qm add-a
+  echo y > b.txt && git add -A && git commit -qm add-b
+  [[ "$(hug shc -n -z HEAD~1..HEAD | od -An -c | tr -d ' \n')" == 'b.txt\0' ]]
+}
+
+@test "hug shc -n --null: long form behaves as -z" {
+  echo x > a.txt && echo y > b.txt && git add -A && git commit -qm ab
+  [[ "$(hug shc -n --null HEAD | od -An -c | tr -d ' \n')" == 'a.txt\0b.txt\0' ]]
+}
+
+@test "hug shc -n -z: pathspec filters the NUL stream" {
+  echo x > a.txt && echo y > b.txt && git add -A && git commit -qm ab
+  [[ "$(hug shc -n -z HEAD -- 'a.txt' | od -An -c | tr -d ' \n')" == 'a.txt\0' ]]
+}
+
+@test "hug shc -n -z: no-match pathspec exits 0 with zero-byte stdout (xargs -0 -r contract)" {
+  # Zero-byte (not one-empty-line) stdout is what makes `xargs -0 -r` skip the
+  # command entirely — the reason -r exists for GNU xargs.
+  echo x > a.txt && git add -A && git commit -qm a
+  run hug shc -n -z HEAD -- '*.nomatch'
+  assert_success
+  assert_output ""
+  refute_output --partial "No files matching"
+}
+
+@test "hug shc: empty-string positional counts as the one positional (no silent last-win)" {
+  # An explicit "" must still claim the one-positional slot. A `[[ -n ]]`
+  # sentinel instead of saw_positional would let `typo` silently WIN the slot
+  # and run as a ref (the pre-#274 last-win hazard, resurfaced via "").
+  run hug shc "" typo
+  assert_failure 2
+  assert_output --partial "unexpected second argument 'typo'"
+  run hug shc -n "" typo
+  assert_failure 2
+  assert_output --partial "unexpected second argument 'typo'"
+}
+
+@test "hug shc stats: invalid ref propagates git exit 128 + fatal" {
+  # Pre-existing hole now routed through pinned_diff: stats mode must not
+  # swallow or rebrand git's own error (D5 — mirrors the -n-mode test above).
+  run hug shc no-such-ref
+  assert_failure 128
+  assert_output --partial 'fatal'
+}
+
 @test "hug shc: second positional rejected in stats mode (exit 2, names both tokens)" {
   run hug shc HEAD extra
   assert_failure 2
@@ -621,7 +670,7 @@ teardown() {
   empty_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-unborn-XXXXXX")
   cd "$empty_repo"
   git init -q && git config user.email t@t.tld && git config user.name t
-  for ref in "" "1" "-3" "main..HEAD" "@" "@~2" "@{1}"; do
+  for ref in "" "1" "-3" "main..HEAD" "@" "@~2" "@^" "@{1}"; do
     if [[ -z "$ref" ]]; then
       run hug shc -n
     else
@@ -634,6 +683,11 @@ teardown() {
   # @{-1} (previous checkout) reads the HEAD reflog, which does not exist while
   # HEAD is unborn — an unresolvable explicit ref keeps git's raw fatal (D5).
   run hug shc -n '@{-1}'
+  assert_failure 128
+  assert_output --partial 'fatal'
+  # @{u} reads the branch's upstream config — an explicit non-HEAD-derived ref;
+  # unresolvable here, keeps git's raw fatal (D5), same as @{-1}.
+  run hug shc -n '@{u}'
   assert_failure 128
   assert_output --partial 'fatal'
   cd - >/dev/null
