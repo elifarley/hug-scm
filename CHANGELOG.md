@@ -2,7 +2,7 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
-## [Unreleased]
+## [1.10.0] - 2026-08-15
 
 ### Added
 - `hug shc -z/--null` (with `-n`): NUL-separated changed-file paths — the only
