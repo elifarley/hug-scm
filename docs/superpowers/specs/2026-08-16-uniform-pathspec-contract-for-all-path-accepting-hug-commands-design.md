@@ -2,7 +2,7 @@
 
 **Date**: 2026-08-16
 **PRD**: [elifarley/hug-scm#292](https://github.com/elifarley/hug-scm/issues/292) (user-ratified 2026-08-16)
-**Audit**: `mgmt/superpowers/specs/pathscoping-audit.md` (2026-08-15, branch `pathscoping-report`)
+**Audit**: `mgmt/superpowers/specs/pathscoping-audit.md` (2026-08-15; landed on this branch — commit `852b601`, cherry-picked from `pathscoping-report` — so the conformance row set and the Pattern A/B vocabulary resolve on-branch, not off a dangling reference)
 **Branch**: `292-uniform-pathspec-contract-for-all-path-accepting-hug-commands`
 **Delivery**: ladder of 3 PRs (A/B/C) off `origin/main`, this spec shared by all three
 
@@ -45,7 +45,8 @@ Every path-accepting hug command obeys exactly these rules:
 4. **Globs must be quoted** (`hug sla -- '*.md'`). Stated once, canonically, in
    `hug help :pathspec`; each command's help carries a pointer block, not a copy.
 5. **Single-file commands** (`fa`, `fb`, `fblame`, `fborn`, `fcon`, `llf`,
-     `h-steps`) reject more than one file with a clear, command-naming error.
+     `h-steps`, `stats-file`) reject more than one file with a clear,
+     command-naming error.
 6. **Git magic pathspecs** (`:(glob)`, `:(icase)`, `:(exclude)`) pass through to
    git verbatim — documented and smoke-tested, never re-validated or reimplemented.
 7. **stdout/stderr discipline** holds on every touched command: data on stdout,
@@ -97,10 +98,20 @@ ones; adding a command later is a one-line row):
 | Column | Asserts |
 |---|---|
 | `--help` | shows help (contains `USAGE:`), exit 0 |
-| `-- <path>` | filters output as expected (scoped fixture repo) |
-| quoted glob | filters correctly (`'*.md'`-style) |
+| `-- <path>` | filters output — per-test fixture repo via `create_test_repo` with a known file set, so each row's expectation (matching files present, non-matching absent) is derivable from the fixture |
+| quoted glob | filters correctly (`'*.md'`-style, same fixture) |
+| trailing `--` | **listing commands**: output equals the unfiltered run, exit 0, no picker; **action commands** (`a`, `ss`, `su`, `sw`, `lc`, `lcr`, `lf`): regular output absent (picker arm), via the no-TTY technique proven at `tests/unit/test_status_staging.bats:1500-1517` |
 | cardinality | single-file commands reject 2 files with the error naming the command |
+| unknown flag | `hug <cmd> -xX` exits non-zero naming the flag — no silent `*) → pathspecs+=(...)` swallow |
 | magic passthrough | `:(glob)` / `:(icase)` / `:(exclude)` smoke-level |
+
+The trailing-`--` column is load-bearing: the unified helper exports
+`HUG_INTERACTIVE_FILE_SELECTION` unconditionally on a trailing bare `--`, and
+that variable already crosses an exec boundary from a listing command today
+(`git-slc:123` ends with `exec hug s`; seven scripts read it — `git-a`,
+`git-h-files`, `git-lc`, `git-lcr`, `git-lf`, `git-w-get`, `git-wtsh`).
+Without the inert arm, a migrated listing that honors the exported variable
+launches a picker and still scores green on every other column.
 
 Testing decisions (from the PRD):
 
@@ -135,6 +146,22 @@ by the `--upstream`-exclusivity guard (`git-w-get:389-390`).
 Fix: when `use_upstream=true`, skip target extraction — all remaining
 positionals are files.
 
+Two consequences, stated deliberately:
+
+- The old `-u` + commit/integer combination guard (`git-w-get:389-390`) has no
+  subject anymore: under `-u` every positional is a file, so
+  `hug w get -u 2` restores a file literally named `2` from upstream. If no
+  such file exists, git's "pathspec '2' did not match" error is the loud
+  failure — replacing the old combination message.
+- `hug w get -u` with **no** files restores **all** files — the semantics the
+  help already documents ("Reset ALL files to the upstream branch state").
+  Today this documented form actually errors: the flag is consumed by the
+  custom-flag loop, so target extraction finds nothing and the commit-oriented
+  "Missing target" error fires (`git-w-get:371-375`), leaving the
+  `target_identifier == "-u"` branch at `git-w-get:379-381` unreachable for
+  leading flags. Under the fix, the missing-target error applies only when
+  `-u` is absent.
+
 ### 5.3 BUG-4 — `w get` restore missing `--`
 
 `git-w-get:324`: `git restore --source="$commit" --worktree "${files_to_reset[@]}"`
@@ -165,19 +192,39 @@ Migration (one batch, after the conformance suite exists):
 - Adopt `parse_common_flags_with_pathspecs`; parse each script's custom flags
   (`--json`, `-c/--count`, `-q`, plus statusbase's `--long`/`-u`/`-uno`) from
   pre-args in the script's own loop.
+- The own-loops must **reject unknown flag tokens loudly** (consistent with §8
+  and the conformance `unknown flag` column) — today's silent
+  `*) → pathspecs+=("$arg")` swallow (`git-sls:38-41`) is what lets `-x`
+  masquerade as a pathspec.
 - Pathspecs flow to `list_files_with_status` / `run_count_mode` after the split
   (no bare `--` ever reaches git as a pathspec).
 - Trailing bare `--` = inert separator → full listing (git norms).
 - Each gains `show_help()` with the PATH FILTERING pointer block (§7).
+- **`us` joins the batch** (staging sibling, Pattern A per the audit): same
+  helper adoption so `--` stops being an accidental pathspec. Trailing bare
+  `--` is inert — no picker: the PRD's picker list is exhaustive, and an
+  `hug us --` picker is a follow-up candidate, out of scope here.
 
 Batch rather than incremental: they share plumbing, and the suite makes the batch
 safe while incremental would churn the same tests repeatedly.
 
 ### 5.6 Cardinality adoption
 
-`fa`, `fb`, `fblame`, `fborn`, `fcon`, `llf`, `h-steps` adopt
-`reject_multiple_files` (currently they pass multiple files to git where
-`--follow` breaks silently).
+`fa`, `fb`, `fblame`, `fborn`, `fcon`, `llf`, `h-steps`, **and `stats-file`**
+adopt `reject_multiple_files` (currently they pass multiple files to git where
+`--follow` breaks silently; `stats-file` has its own collect-all loop at
+`git-stats-file:115` and delegates to nothing, so nothing else can catch it).
+
+Closure over the audit's remaining SINGLE rows, so §4's "all of them" matrix
+assigns every row:
+
+- `llfp` / `llfs` inherit the rejection via their `exec hug llf` delegation
+  (`git-llfp:61`) — no direct change needed.
+- `shp` already warns on multiple files; the suite asserts the existing
+  warning.
+- `lc` / `lcr` / `lf` are **multi-pathspec delegators by design** (PRD story
+  6: they delegate to `ll`, which handles pathspecs natively). The audit's
+  SINGLE mark reflects their documented `<file>` shape, not the contract.
 
 ## 6. Features
 
@@ -195,17 +242,38 @@ both the JSON path (`batch_log_output`, `git-llu:150-154`) and the human path
 (`git log --graph ... @{u}..HEAD`, `git-llu:158`). Use case: "what is about to
 be pushed for this subtree?"
 
+The early-exit guard becomes pathspec-aware too, or the feature's flagship
+path breaks: with 2 outgoing commits that don't touch `docs/`,
+`hug llu -- docs/` would pass the unfiltered count check
+(`git-llu:126`), print an empty log, then dump the full-repo status via
+`exec hug s`. Instead: the count query becomes
+`git rev-list --count @{u}..HEAD -- "${pathspecs[@]}"` (with the §10
+empty-array guard); at zero matches with pathspecs present, emit a scoped
+message ("📭 No outgoing commits touching \<paths\>") and exit — never the
+full-repo status dump after an empty log. Without pathspecs, current behavior
+is unchanged.
+
 ## 7. Documentation layer
 
 - **New article** `git-config/lib/python/articles/pathspec.md` → served as
   `hug help :pathspec` (same mechanism as `agents.md`/`hug-101.md`/`worktree.md`).
   Single source of truth: pathspec syntax, quoting rules and why they matter,
   the positional `--` duality (trailing-bare vs mid-stream), magic-pathspec
-  passthrough, per-command support matrix.
+  passthrough, per-command support matrix, and the edge cases: a second `--`
+  becomes a phantom (harmless) pathspec under git's OR semantics; a file
+  literally named `--` or `--help` is unreachable as a pathspec before the
+  separator (git norm — after the separator it is path data, verbatim).
 - **PATH FILTERING pointer block** (two lines + examples, `git-sw:42-47` style)
   in every path-accepting command's help — points to the article rather than
   duplicating it. `cmod`/`cmoda` help gains it (their pathspec support is
   currently undocumented).
+- **`README.md` quick reference**: the `sl`, `sla`, `sh`, and `llu` rows gain
+  the `[-- <path>...]` surface — `README.md:546-548` currently omit it while
+  their neighbors `shc`/`shcp`/`shv` at :550-552 already show it.
+- **`docs/git-to-hug.md` translation table**: add
+  `git show <commit> -- <path>` → `hug sh <commit> -- <path>` and
+  `git log @{u}..HEAD -- <path>` → `hug llu -- <path>` (the `git show` rows at
+  `docs/git-to-hug.md:50-51` currently map only to `shp`/`shv`).
 - **Category descriptions** for `@status`, `@show`, `@history` mention path
   filtering (help_search.py metadata) so scoping is discoverable while browsing.
 - **`git-config/lib/README.md`**: document the parsing-order rule now that it is
@@ -233,7 +301,7 @@ worktree, atomic story-telling commits, and a green conformance suite:
 
 | PR | Contents | Exit criteria |
 |---|---|---|
-| **A — contract core** | Conformance suite (full matrix + characterization rows) · `parse_common_flags_with_pathspecs` · `reject_multiple_files` + cardinality adoption (§5.6) · BUG-2 (§5.1) · BUG-3/4 (§5.2/5.3) · `sh` loud-rejection (§5.4) | Suite green for already-correct commands; every defect red→green; zero behavior change elsewhere |
+| **A — contract core** | Conformance suite (full matrix + characterization rows) · **lands the audit matrix** (`mgmt/superpowers/specs/pathscoping-audit.md`, so "all of them" and Pattern A/B resolve from the delivery base) · `parse_common_flags_with_pathspecs` · `reject_multiple_files` + cardinality adoption (§5.6) · BUG-2 (§5.1) · BUG-3/4 (§5.2/5.3) · `sh` loud-rejection (§5.4) | Suite green for already-correct commands; every defect red→green; zero *unintended* behavior change (the intended ones being cardinality rejection §5.6, `sh` loud rejection §5.4, and the `w get -u` dispositions §5.2) |
 | **B — migration + docs** | `sl*` batch migration (§5.5) · `:pathspec` article + help blocks + category/README/completion updates (§7) | Bare `--` on listings = inert (deliberate test flip); docs complete; suite green |
 | **C — convergence + features** | `w-*` two-stage convergence (§8) · `sh` pathspec (§6.1) · `llu` pathspec (§6.2) | Position-independent flags + loud unknown-flag rejection; both features filter correctly; suite green |
 
@@ -247,6 +315,11 @@ worktree, atomic story-telling commits, and a green conformance suite:
 - **SCM boundary** → new helpers are pure argument surgery; no git calls.
 - **Empty-array expansions under `set -u`** → use the repo's
   `"${arr[@]+…}"`-style guard at re-injection sites.
+- **Exported picker flag crossing exec boundaries** → the helper exports
+  `HUG_INTERACTIVE_FILE_SELECTION` unconditionally on a trailing bare `--`,
+  and that variable already crosses an exec boundary from a listing command
+  today (`git-slc:123` `exec hug s`). Listing commands must never read it —
+  enforced structurally by the trailing-`--` inert-arm conformance column.
 - **Doc perimeter is wider than command help** (lesson from the slc roast):
   articles, `docs/git-to-hug.md` translation tables, README code blocks, and the
   completion reference all enumerate command behavior and go stale — sweep them
@@ -279,5 +352,6 @@ worktree, atomic story-telling commits, and a green conformance suite:
    hijacked by a ref named `src/`.
 5. Single-file commands teach immediately (`fa` rejects 2 files, naming itself).
 6. `hug llu -- src/` and `hug sh HEAD -- src/` filter as documented.
-7. A maintainer adding a new path-accepting command gets contract coverage by
-   adding one table row — and cannot sequence parsing wrong by accident.
+7. A maintainer adding a new path-accepting command gets **full-contract**
+   coverage (all seven columns, rule 3's duality included) by adding one
+   table row — and cannot sequence parsing wrong by accident.
