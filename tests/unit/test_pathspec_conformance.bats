@@ -88,8 +88,9 @@ PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
 # "<cmd> accepts only one file.") instead of git fatals or silent ignores.
 #   SINGLEFILE_ROWS       — one-word commands guarded directly via
 #                          reject_multiple_files (loop-able as `hug $cmd`)
-#   SINGLEFILE_DELEGATE_ROWS — commands delegating to llf (inherit its guard;
-#                              the error names "hug llf", the delegate target)
+#   SINGLEFILE_DELEGATE_ROWS — commands delegating to llf; the delegation
+#                              inserts a flag before the extras, so post-flag
+#                              extras fall through to git (see dedicated test)
 # Multi-word commands (h steps, stats file) get dedicated tests below —
 # they don't fit the one-word loop.
 PATHSPEC_SINGLEFILE_ROWS=(fa fb fblame fborn fcon llf)
@@ -1039,6 +1040,22 @@ psx_install_stub_gum() {
   assert_output --partial "base"
   psx_reset
 
+  # Value-taking log flags are the sharp edge: `-S <term>`, `--author <name>`
+  # etc. take their value as a SEPARATE word, and that value token is
+  # indistinguishable from a file name by shape alone. The guard must cut at
+  # the FIRST flag: everything after it is opaque log-backend args. src/a.py
+  # gained "py1" in "base", so -S py1 must still surface that commit.
+  psx_setup
+  run hug llf src/a.py -S py1
+  assert_success
+  assert_output --partial "base"
+  psx_reset
+
+  psx_setup
+  run hug llf src/a.py --author nobody
+  assert_success
+  psx_reset
+
   # ...while a second FILE — flag before or after — still rejects.
   psx_setup
   run hug llf src/a.py docs/note.md -1
@@ -1047,18 +1064,22 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "single-file cardinality: llfp/llfs inherit llf's guard via delegation (Task 10)" {
+@test "single-file cardinality: llfp/llfs post-flag extras fall through to git (Task 10 boundary)" {
   # llfp/llfs delegate via `exec hug llf "$file" -p|--stat "$@"` — no direct
-  # guard of their own. Probed: `hug llfp a b` reaches llf as `a -p b`, the
-  # -p flag is skipped by the non-flag counter, b counts as the second file
-  # → rejection naming "hug llf" (the delegate target), exit 1.
+  # guard of their own. The delegation inserts the flag BETWEEN file and
+  # remaining args, so `hug llfp a b` reaches llf as `a -p b` — and since the
+  # llf guard cuts at the FIRST flag (flag VALUES like `-S py`'s term are
+  # shape-identical to files; see the llf boundary test above), b is post-flag
+  # and flows to git log, which fataled with "bad revision" (probed, exit 128)
+  # exactly as it did before the Task 10 guard. Accepted trade-off: the
+  # delegate could only keep its clean rejection by counting post-flag
+  # positionals — the very thing that broke `hug llf <file> -S <term>`.
   local cmd
   for cmd in "${PATHSPEC_SINGLEFILE_DELEGATE_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" src/a.py docs/note.md
-    assert_equal 1 "$status"
-    assert_output --partial "hug llf accepts only one file."
-    refute_output --partial "fatal:"
+    assert_equal 128 "$status"
+    assert_output --partial "fatal:"
     psx_reset
   done
 }
