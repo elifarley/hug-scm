@@ -573,7 +573,10 @@ list_files_with_status() {
 }
 
 # Advanced interactive file selection with multiple file types support
-# Usage: select_files_with_status [OPTIONS]
+# Usage: select_files_with_status [OPTIONS] [--] [pathspecs...]
+# Parameters:
+#   pathspecs - Optional git pathspecs; restrict candidates to matching files
+#               (forwarded to the list_*_files helpers, git-style)
 # Options:
 #   --multi              Allow multiple file selection (default: true)
 #   --single             Single file selection (default: multi)
@@ -611,10 +614,21 @@ Install: https://github.com/charmbracelet/gum"
   local no_status=false
   local scope_cwd=false
   local prompt="Select file(s)..."
-  
+  local -a pathspecs=()
+
   # Parse arguments
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      # Dedicated separator arm: everything after '--' is verbatim pathspec
+      # data. WHY not collect '--' via the bare '*)' arm below: that would
+      # make '--' itself a literal pathspec AND keep option-parsing alive for
+      # post-separator args — a file literally named '--staged' passed after
+      # '--' must not be eaten as the --staged option.
+      --)
+        shift
+        pathspecs+=("$@")
+        break
+        ;;
       --multi)
         multi=true
         shift
@@ -652,7 +666,10 @@ Install: https://github.com/charmbracelet/gum"
         shift 2
         ;;
       *)
-        error "Unknown option for select_files_with_status: $1"
+        # Positional arguments are pathspecs, forwarded to the list_*_files
+        # helpers (which accept them as trailing positionals, git-style).
+        pathspecs+=("$1")
+        shift
         ;;
     esac
   done
@@ -687,7 +704,7 @@ Install: https://github.com/charmbracelet/gum"
   fi
   
   if ! $has_includes; then
-    mapfile -t files < <(list_tracked_files "${list_flags[@]}")
+    mapfile -t files < <(list_tracked_files "${list_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
     mapfile -t formatted_options < <(printf '%s\n' "${files[@]}")
   else
   
@@ -706,9 +723,9 @@ Install: https://github.com/charmbracelet/gum"
         IFS=' ' read -r status_text status_code <<< "$(parse_tab_delimited_status "$(_format_staged_status "$status")")"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
-      done < <(list_staged_files "${status_flags[@]}")
+      done < <(list_staged_files "${status_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
     else
-      mapfile -t staged_files < <(list_staged_files "${list_flags[@]}")
+      mapfile -t staged_files < <(list_staged_files "${list_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
       files+=("${staged_files[@]}")
       formatted_options+=("${staged_files[@]}")
     fi
@@ -728,16 +745,16 @@ Install: https://github.com/charmbracelet/gum"
         IFS=' ' read -r status_text status_code <<< "$(parse_tab_delimited_status "$(_format_unstaged_status "$status")")"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
-      done < <(list_unstaged_files "${status_flags[@]}")
+      done < <(list_unstaged_files "${status_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
     else
-      mapfile -t unstaged_files < <(list_unstaged_files "${list_flags[@]}")
+      mapfile -t unstaged_files < <(list_unstaged_files "${list_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
       files+=("${unstaged_files[@]}")
       formatted_options+=("${unstaged_files[@]}")
     fi
   fi
   
   if $include_untracked; then
-    mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}")
+    mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
     for file in "${untracked_files[@]}"; do
       [[ -z "$file" ]] && continue
       local status_text status_code
@@ -752,7 +769,7 @@ Install: https://github.com/charmbracelet/gum"
   fi
   
   if $include_ignored; then
-    mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}")
+    mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
     for file in "${ignored_files[@]}"; do
       [[ -z "$file" ]] && continue
       local status_text status_code

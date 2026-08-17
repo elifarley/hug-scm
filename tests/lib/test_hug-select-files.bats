@@ -951,3 +951,79 @@ create_merge_conflict() {
   assert_failure
   assert_output --partial "unknown state 'bogus-state'"
 }
+
+################################################################################
+# Tests for pathspec support in select_files_with_status (#292)
+################################################################################
+
+# Fixture: BOTH src/a.py and docs/note.md are staged, so a pathspec-scoped
+# selector must show src/a.py while an unscoped one would show both — this is
+# what makes the pathspec forwarding observable rather than coincidental.
+create_pathspec_fixture() {
+  mkdir -p src docs
+  echo "a" > src/a.py
+  echo "note" > docs/note.md
+  git add -A
+  git commit -q -m "base"
+
+  echo "mod-a" >> src/a.py
+  echo "mod-note" >> docs/note.md
+  git add src/a.py docs/note.md
+}
+
+# Mock gum so the interactive picker becomes observable and controllable:
+# the candidate list piped into gum lands in $SELECT_CAPTURE, and gum
+# "returns" the first candidate (a deterministic single selection).
+mock_gum() {
+  SELECT_CAPTURE="$(mktemp)"
+  gum_available() { return 0; }
+  gum() {
+    cat > "$SELECT_CAPTURE"
+    head -1 "$SELECT_CAPTURE"
+  }
+}
+
+@test "select_files_with_status: pathspec after -- scopes staged candidates" {
+  create_pathspec_fixture
+  mock_gum
+
+  run select_files_with_status --staged -- src/a.py
+  assert_success
+  refute_output --partial "Unknown option"
+
+  local candidates
+  candidates=$(cat "$SELECT_CAPTURE")
+  [[ "$candidates" =~ src/a\.py ]]
+  [[ ! "$candidates" =~ docs/note\.md ]]
+}
+
+@test "select_files_with_status: literal '--staged' filename after -- is pathspec data, not an option" {
+  create_pathspec_fixture
+  # A file literally named '--staged': if the parser lacked a dedicated '--'
+  # arm, this arg would be eaten as the --staged option (or rejected).
+  printf 'untracked\n' > ./--staged
+  mock_gum
+
+  run select_files_with_status --untracked -- --staged
+  assert_success
+  refute_output --partial "Unknown option"
+
+  local candidates
+  candidates=$(cat "$SELECT_CAPTURE")
+  [[ "$candidates" == *"--staged"* ]]
+}
+
+@test "select_files_with_status: command substitution yields a scoped selection, not a silent empty result" {
+  # Swallow hazard (#292): callers capture the selector via $(...). A parsing
+  # regression that turns '--' into an error would surface here as an empty
+  # $file or a cancelled (exit 1) picker — both silently break the caller.
+  create_pathspec_fixture
+  mock_gum
+
+  local file=""
+  if ! file=$(select_files_with_status --single --staged -- src/); then
+    fail "expected a selection, got cancellation/empty: '$file'"
+  fi
+  [[ -n "$file" ]]
+  [[ "$file" == src/* ]]
+}
