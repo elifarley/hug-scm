@@ -840,6 +840,28 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "contract sh: empty first positional + path still rejected loudly (BUG-6, review fix)" {
+  # Contract (added after dual review): the guard must count POSITIONALS,
+  # not ref content. `hug sh "" src/` (realistic: `hug sh "$ref" -- "$path"`
+  # with an unset/empty ref) previously slipped past the -n guard, let the
+  # path overwrite the empty ref, and died with the old confusing
+  # "Invalid commit reference". Must get the named rejection instead.
+  # Companion invariant: `hug sh ""` ALONE still defaults to HEAD (probed).
+  psx_setup
+  run hug sh "" src/
+  assert_failure
+  assert_output --partial "unexpected extra argument"
+  assert_output --partial "src/"
+  refute_output --partial "Invalid commit reference"
+  psx_reset
+
+  psx_setup
+  run hug sh ""
+  assert_success
+  assert_output --partial "Commit info"
+  psx_reset
+}
+
 @test "characterization llu: -- rejected loudly by flags-only parser (flip: PR-C)" {
   # characterization: flip target PR-C — probed: git-llu's flags-only loop
   # (git-llu:104) rejects the separator it should honor: "Unknown option:
