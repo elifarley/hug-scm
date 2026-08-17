@@ -154,7 +154,7 @@ All remaining args forwarded verbatim to `git log` / `git commit`. Git handles `
 |---------|:--------:|:-------:|:------------:|:---------:|:-------:|-------|
 | `hug a` | YES | A (positional) | **CONFLICT** | YES | NO | `--` = interactive selection, NOT pathspec separator |
 | `hug aa` | NO | N/A | N/A | YES | N/A | Explicitly rejects args |
-| `hug us` | YES | A | N/A | YES | NO | No `--` separator needed; positional args |
+| `hug us` | YES | two-stage, loud unknown-flag reject | **errors loudly** on `--` today | YES | NO | Demands ≥1 path; zero args → interactive selector over staged files (git-us:144-158). *(Amended 2026-08-16 — originally mismarked "A / N/A"; `--` hits the `-*` error case at git-us:92-94, it is not a silent catch-all. See the pathspec-contract design spec §5.5.)* |
 
 ### File Commands
 
