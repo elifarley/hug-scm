@@ -28,6 +28,9 @@ OPTIONS:
                     uncommitted changes. (Routine-confirm flag; not a force substitute.)
     -u, --upstream  Use the head of the upstream branch as the target commit.
                     With no files given, resets ALL files (see EXAMPLES).
+                    NOTE: files named like a branch, tag, or 1-2 digit number are
+                    rejected under -u (mistyped-target guard); use the non -u form
+                    or pass ./<name> for such files.
     --dry-run       Preview what would be reset without making any changes.
     --browse-root   Browse full repository scope in file selector UI (default: current directory)
     <target>        Either an integer 0 <= N < 100 or a COMMIT hash

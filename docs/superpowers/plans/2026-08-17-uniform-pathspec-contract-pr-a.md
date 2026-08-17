@@ -199,7 +199,7 @@ reject_multiple_files() {
 
 **Acceptance Criteria:**
 - [ ] Fixture builder creates a repo with a KNOWN file set (per spec §4: expectations derivable): `src/a.py` + `src/BIG.py` (case-variant for `:(icase)`), `docs/note.md`, `other.txt`; one commit; then stage `src/a.py` mod, leave `docs/note.md` mod unstaged, add untracked `new.txt`
-- [ ] Contract rows exist and PASS for: `sw`, `ss`, `su`, `shc`, `shcp`, `shp`, `l`, `ll`, `cmod`, `cmoda`, `us` (per-row: `--help` shows USAGE; `-- <path>` filters; quoted glob filters; unknown-flag loud where applicable; magic smoke; `--json` where present)
+- [ ] Contract rows exist and PASS for: `sw`, `ss`, `su`, `shc`, `shcp`, `shp`, `l`, `ll`, `cmod`, `cmoda` (per-row: `--help` shows USAGE; `-- <path>` filters; quoted glob filters; unknown-flag loud where applicable; magic smoke; `--json` where present)
 - [ ] Table-driven: one bash-array row per command; adding a command is one line
 - [ ] JSON column is two-sided: parses via `python3 -m json.tool`, no file outside pathspecs AND at least one inside
 - [ ] Magic observables: `:(icase)` matches `src/BIG.py` when queried as `src/big.py`; `:(exclude)` omits a file the base pathspec includes
