@@ -63,6 +63,11 @@ PATHSPEC_HISTORY_ROWS=(cmod cmoda)
 # never before. Do NOT move a command into the contract arrays above until
 # its migration lands.
 #
+# NOTE: unlike the contract classes (exactly-one-class membership above),
+# char rows are COLUMN-SCOPED and MAY span arrays — e.g. sls appears in
+# FILTER/ SWALLOW/ HELP-rows because different columns probe different
+# defects. The overlap is intentional; do not "fix" it.
+#
 #   CHAR_SL_FILTER_ROWS   — sl family where `-- src/` coincidentally filters
 #                           (phantom `--` pathspec OR-ed away by git)
 #   CHAR_SL_EMPTY_ROWS    — sl family where `-- src/` yields empty output;
@@ -168,6 +173,23 @@ psx_inert_args() {
   shc | shcp | shp) echo "HEAD~1" ;;
   *)
     echo "psx_inert_args: unknown row '$1' — add it to the case arms" >&2
+    echo "__PSX_UNKNOWN_ROW__"
+    ;;
+  esac
+}
+
+# sl-variant → file-kind noun used by the "No <kind> files matching ..."
+# info message. Shared by the EMPTY and SWALLOW characterization tests so
+# the mapping lives once (a wrong noun would otherwise fail two tests
+# identically before anyone notices the duplication).
+psx_sl_kind() {
+  case "$1" in
+  sls) echo "staged" ;;
+  slu) echo "unstaged" ;;
+  slk) echo "untracked" ;;
+  sli) echo "ignored" ;;
+  *)
+    echo "psx_sl_kind: unknown row '$1' — add it to the case arms" >&2
     echo "__PSX_UNKNOWN_ROW__"
     ;;
   esac
@@ -511,11 +533,7 @@ psx_inert_args() {
   # found." — the '--' listed AS a filter is the defect's fingerprint).
   local kind
   for cmd in "${PATHSPEC_CHAR_SL_EMPTY_ROWS[@]}"; do
-    case "$cmd" in
-    slu) kind="unstaged" ;;
-    slk) kind="untracked" ;;
-    sli) kind="ignored" ;;
-    esac
+    kind=$(psx_sl_kind "$cmd")
     psx_setup
     run hug "$cmd" -- src/
     assert_success
@@ -533,12 +551,7 @@ psx_inert_args() {
   # ZERO — pinned here so the PR-B flip is a deliberate red.
   local kind
   for cmd in "${PATHSPEC_CHAR_SL_SWALLOW_ROWS[@]}"; do
-    case "$cmd" in
-    sls) kind="staged" ;;
-    slu) kind="unstaged" ;;
-    slk) kind="untracked" ;;
-    sli) kind="ignored" ;;
-    esac
+    kind=$(psx_sl_kind "$cmd")
     psx_setup
     run hug "$cmd" -xX
     assert_success
@@ -556,7 +569,7 @@ psx_inert_args() {
   for cmd in "${PATHSPEC_CHAR_SL_HELP_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" --help
-    assert_failure
+    assert_equal 16 "$status"
     refute_output --partial "USAGE:"
     psx_reset
   done
@@ -583,7 +596,7 @@ psx_inert_args() {
   done
 }
 
-@test "characterization us: bare/trailing -- rejected loudly; positional pathspec unstages" {
+@test "characterization us: bare/trailing -- rejected loudly" {
   # characterization: flip target PR-B — probed: git-us's flag loop hits the
   # `-*` arm and errors on `--` BEFORE any pathspec logic ("Unknown option:
   # --. See 'hug us --help'.", exit 1) for BOTH `us --` and `us -- src/`.
@@ -607,6 +620,7 @@ psx_inert_args() {
   # (probed: exit 0, "Unstaged 1 file", and hug sls no longer lists it).
   psx_setup
   run hug sls
+  assert_success
   assert_output --partial "src/a.py"
   run hug us src/a.py
   assert_success
