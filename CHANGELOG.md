@@ -2,6 +2,31 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [1.11.0.0] - 2026-08-17
+
+PR-A of the uniform pathspec contract (elifarley/hug-scm#292): `-- <path>...`
+now means the same thing across commands, with a conformance suite enforcing it.
+
+### Added
+
+- **Uniform pathspec parsing** — new shared helper gives every adopting command the same `-- <path>...` semantics: flags and refs before the separator, pathspecs after it, verbatim (including git magic pathspecs like `:(glob)` and `:(exclude)`).
+- **Scoped interactive pickers** — `hug su -- src/ --` (also `ss`/`sw`, and `lc`/`lf`/`lcr`) now offers only files matching your pathspecs; previously the scope was silently discarded.
+- **Pathspec-conformance test suite** — a 62-test table-driven suite pinning the `--` contract (help surface, filtering, globs, JSON scope, picker scoping, cardinality, magic passthrough) across the audited command matrix, so regressions turn tests red instead of surprising users.
+- **`hug w get -u <file>`** — restore specific files from upstream; the documented `hug w get -u` reset-all form now works too (previously both errored).
+
+### Fixed
+
+- **`lc`/`lf`/`lcr` no longer drop the `--` separator** — searching with a branch or tag named like a path used to die with git's "ambiguous argument" fatal; the JSON output of `--json` searches is now pathspec-scoped like the human output (was silently whole-repo).
+- **`hug sh HEAD -- src/`** — stray arguments after the commit ref are rejected with a clear message naming the argument (was a confusing "Invalid commit reference").
+- **Single-file commands reject multiple files clearly** — `fa`, `fb`, `fblame`, `fborn`, `fcon`, `llf`, `h steps`, `stats file` now say "`hug <cmd>` accepts only one file." instead of raw git fatals or silently ignoring extras.
+- **Numeric paths after `--`** — `hug ll`-family commands no longer reinterpret a path named `5` as `HEAD~5` when it follows the separator.
+- **Picker options can't be spoofed by filenames** — a file literally named `--staged` passed after `--` is treated as a path, not as a picker option.
+
+### Changed
+
+- `hug w get -u` with no files resets all files to upstream (preview + confirmation intact); `-u` combined with a commit or number fails with an explicit message.
+- Interactive file selection accepts pathspecs (`select_files_with_status --staged -- src/` scopes the candidate list).
+
 ## [1.10.0.1] - 2026-08-15
 
 ### Fixed
