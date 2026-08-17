@@ -84,6 +84,14 @@ for arg in "$@"; do
     show_no_stat=true
     ;;
   *)
+    # Lesson from BUG-6 (#292): a catch-all here silently let the LAST
+    # positional win as the ref, so `hug sh HEAD -- src/` validated "src/"
+    # as a committish and died with a confusing "Invalid commit reference".
+    # Reject the second positional loudly, naming the stray argument.
+    if [[ -n "$commit_ref" ]]; then
+      error "hug sh accepts one commit reference; unexpected extra argument: '$arg'.
+Path filtering ('hug sh <ref> -- <path>...') lands in a later PR."
+    fi
     commit_ref="$arg"
     ;;
   esac

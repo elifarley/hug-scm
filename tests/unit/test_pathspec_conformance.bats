@@ -817,22 +817,26 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization sh: trailing positional overwrites the ref, loud error (BUG-6, flip: Task 9)" {
-  # characterization: flip target THIS PR (Task 9) — probed: `sh HEAD -- src/`
-  # and `sh HEAD src/` BOTH fail with "Invalid commit reference: src/"
-  # (exit 1): the LAST positional wins as the ref, so the path is validated
-  # as a committish. Loud rejection exists today; the fix must keep rejecting
-  # while treating the path as a pathspec filter.
+@test "contract sh: second positional rejected loudly, naming the argument (BUG-6 fixed, Task 9)" {
+  # Contract (was characterization, flipped by Task 9): `sh HEAD -- src/`
+  # and `sh HEAD src/` are rejected because hug sh accepts ONE commit
+  # reference. The error must name the stray argument ("unexpected extra
+  # argument: 'src/'") and must NOT fall back to the old confusing
+  # "Invalid commit reference" ref-validation failure.
   psx_setup
   run hug sh HEAD -- src/
   assert_failure
-  assert_output --partial "Invalid commit reference: src/"
+  assert_output --partial "unexpected extra argument"
+  assert_output --partial "src/"
+  refute_output --partial "Invalid commit reference"
   psx_reset
 
   psx_setup
   run hug sh HEAD src/
   assert_failure
-  assert_output --partial "Invalid commit reference: src/"
+  assert_output --partial "unexpected extra argument"
+  assert_output --partial "src/"
+  refute_output --partial "Invalid commit reference"
   psx_reset
 }
 
