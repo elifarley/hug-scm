@@ -27,7 +27,7 @@
 ### Two pathspec-handling patterns
 
 **Pattern A — Ad-hoc `*` catch-all**
-Used by: `statusbase`, `sls`, `slu`, `slk`, `sli`, `slc`, `shv`
+Used by: `statusbase`, `sls`, `slu`, `slk`, `sli`, `slc` *(amended 2026-08-16: `shv` removed — it has its own hand-rolled `--` split and passes pathspecs through to `dd_commit_diff … -- "${pathspecs[@]}"`; ad-hoc but `--`-proper, not a silent catch-all)*
 
 ```bash
 pathspecs=()
