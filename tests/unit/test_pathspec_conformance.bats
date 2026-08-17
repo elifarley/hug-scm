@@ -1625,3 +1625,119 @@ psx_install_stub_gum() {
   assert_output --partial "Nothing to zap"
   psx_reset
 }
+
+@test "w get: -u parses order-independently after common flags (review)" {
+  # Review fix: '-u' used to be consumed only by a LEADING custom loop, so
+  # 'hug w get -f -u <file>' (documented flag order) left '-u' for the
+  # common parser, which reclassified it as the target — dying on
+  # "Invalid commitish for --target: -u". The custom flag is now extracted
+  # wherever it appears BEFORE the '--' separator; after it, '-u' is a file.
+  local upstream_and_clean_setup='
+    git branch up-ref HEAD~1
+    git branch --set-upstream-to=up-ref
+    git add -A
+    git commit -q -m divergence'
+
+  # Cell 1 — common flag BEFORE -u: same restore as the leading-(-u) cell.
+  psx_setup
+  eval "$upstream_and_clean_setup"
+  run hug w get -f -u src/a.py
+  assert_success
+  assert_output --partial "Files reset to"
+  assert_equal "py1" "$(cat src/a.py)"
+  psx_reset
+
+  # Cell 2 — '--dry-run' before '-u': reset-all preview still reachable.
+  psx_setup
+  eval "$upstream_and_clean_setup"
+  run hug w get --dry-run -u
+  assert_success
+  assert_output --partial "Dry run — no files were modified."
+  psx_reset
+
+  # Cell 3 — '-u' AFTER the separator is a FILE name, not the flag: the
+  # non-upstream specific-files restore proceeds for a file literally
+  # named '-u' (same shape as the '-weird' regression cell).
+  psx_setup
+  echo ubase > ./-u
+  git add -- -u
+  git commit -q -m "add file named -u"
+  echo udiverged > ./-u
+  git commit -q -am "diverge -u"
+  run hug w get HEAD~1 -- -u
+  assert_success
+  assert_equal "ubase" "$(cat ./-u)"
+  psx_reset
+}
+
+@test "contract lc/lf: picker selection restricts the delegated search to the chosen file (review)" {
+  # Review fix: the picker delegation used to forward the user's pathspecs
+  # AND the picked file under one '--' — but git UNIONS positive pathspecs,
+  # so 'll ... -- . src/a.py' kept matching every file in scope and the
+  # selection restricted nothing. The picked file now REPLACES the scope
+  # (the pathspecs already did their job: scoping the candidate list).
+  #
+  # Stub gum SELECTS (prints) the candidate line matching $GUM_PICK instead
+  # of cancelling — the driver then execs the delegated search, whose output
+  # is the oracle: only the chosen file's commit may appear.
+  local cmd
+  for cmd in lc lf; do
+    psx_setup
+    # 'pickterm' appears in BOTH content (lc pickaxe) and messages (lf
+    # grep) so one fixture serves both commands.
+    echo pickterm > sel-a.py
+    git add sel-a.py
+    git commit -q -m "chosen pickterm commit"
+    echo pickterm > sel-b.py
+    git add sel-b.py
+    git commit -q -m "other pickterm commit"
+    echo dirty >> sel-a.py # both dirty so both are picker candidates
+    echo dirty >> sel-b.py
+
+    local stub_dir="$BATS_TEST_TMPDIR/stub"
+    mkdir -p "$stub_dir"
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'if [[ "${1:-}" == filter ]]; then' \
+      '  sed $'"'"'s/\033\\[[0-9;]*m//g'"'"' | tee "$GUM_CANDIDATES_FILE" | grep -F "$GUM_PICK" | head -1' \
+      'fi' \
+      'exit 0' > "$stub_dir/gum"
+    chmod +x "$stub_dir/gum"
+    GUM_CANDIDATES_FILE="$BATS_TEST_TMPDIR/gum-candidates.txt"
+    GUM_PICK="sel-a.py"
+    export GUM_CANDIDATES_FILE GUM_PICK HUG_TEST_MODE=true
+    PATH="$stub_dir:$PATH"
+    : > "$GUM_CANDIDATES_FILE"
+
+    if [[ "$cmd" == lc ]]; then
+      run hug lc pickterm -- . --
+    else
+      run hug lf pickterm -- . --
+    fi
+    assert_success
+    assert_output --partial "chosen pickterm commit"
+    refute_output --partial "other pickterm commit"
+    psx_reset
+  done
+}
+
+@test "contract lf --json: option-named pathspec after -- stays a pathspec (review)" {
+  # Review fix: batch_commit_search/batch_code_search used to interpret
+  # EVERY '--no-body'/'--no-files' token as their private flag — a pathspec
+  # literally named '--no-body' was consumed (dropping the scope AND
+  # flipping body formatting). The parsers are now separator-aware.
+  psx_setup
+  printf 'jsonterm\n' > --no-body 2>/dev/null || { printf 'jsonterm\n' > './--no-body'; }
+  git add -- --no-body
+  git commit -q -m "commit with jsonterm in --no-body"
+  printf 'jsonterm\n' > plain.txt
+  git add plain.txt
+  git commit -q -m "commit with jsonterm in plain"
+
+  # Scoped to the file named '--no-body': exactly the one commit.
+  run hug lf --json jsonterm -- --no-body
+  assert_success
+  assert_output --partial "commit with jsonterm in --no-body"
+  refute_output --partial "commit with jsonterm in plain"
+  psx_reset
+}

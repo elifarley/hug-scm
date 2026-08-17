@@ -348,18 +348,27 @@ main() {
   local commit=""
   local target_identifier=""
 
-  # 1. Parse custom flag first (-u|--upstream)
+  # 1. Extract the custom flag (-u|--upstream) wherever it appears BEFORE
+  # the '--' separator (review fix: 'hug w get -f -u <file>' used to leave
+  # '-u' behind for the common parser, which reclassified it as the target —
+  # 'Invalid commitish for --target: -u'). After '--', '-u' is a file name.
+  local -a pre_common=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
     -u | --upstream)
       use_upstream=true
-      shift
       ;;
-    *)
+    --)
+      pre_common+=("$@")
       break
       ;;
+    *)
+      pre_common+=("$1")
+      ;;
     esac
+    shift
   done
+  set -- ${pre_common[@]+"${pre_common[@]}"}
 
   # 2. Parse common flags (--browse-root, -f|--force, -h|--help, --)
   eval "$(parse_common_flags "$@")"

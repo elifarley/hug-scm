@@ -558,3 +558,59 @@ setup_repo_with_new_gitlink() {
   output=$(list_conflicted_files)
   [[ -z "$output" ]]
 }
+
+@test "list helpers: '--' separator keeps option-shaped pathspecs as data (review)" {
+  # Review fix (#292 PR-A): the list-helper parsers used to interpret EVERY
+  # '--status'/'--cwd' token as their own flag — a pathspec literally named
+  # like a flag had its scope silently discarded. A '--' now ends flag
+  # parsing; everything after it is a pathspec, verbatim.
+  local test_repo
+  test_repo=$(create_test_repo_with_structure)
+  (
+    cd "$test_repo" || exit 1
+    # A tracked file literally named '--cwd' and a staged one named '--status'.
+    echo cwdfile > ./--cwd
+    git add -- --cwd
+    echo statusfile > ./--status
+    git add -- --status
+    git commit -q -m "add option-named files"
+
+    # Unstaged change to scope against.
+    echo more >> root2.txt
+
+    # list_tracked_files: the separator is stripped, not treated as a
+    # pathspec (a literal '--' pathspec would match nothing).
+    run list_tracked_files --cwd -- src/
+    assert_success
+    assert_output --partial "src/components/ComponentA.js"
+    refute_output --partial "root1.txt"
+    refute_output --partial "root2.txt"
+
+    # list_staged_files: after '--', '--status' is a PATHSPEC, not the flag.
+    # (Nothing is staged in this state, so scope to the tracked file that
+    # matches by staging a fresh change first.)
+    echo st >> ./--status
+    git add -- --status
+    run list_staged_files -- --status
+    assert_success
+    assert_output --partial "--status"
+
+    # The flag still works BEFORE the separator (status formatting on).
+    run list_staged_files --status -- --status
+    assert_success
+    assert_output --partial "--status"
+
+    # list_unstaged_files: '--cwd' after '--' scopes instead of toggling.
+    echo u >> ./--cwd
+    run list_unstaged_files -- --cwd
+    assert_success
+    assert_output --partial "--cwd"
+    refute_output --partial "root2.txt"
+
+    # And plain unstaged listing still sees root2.txt (guard against a
+    # vacuous pass above).
+    run list_unstaged_files
+    assert_success
+    assert_output --partial "root2.txt"
+  )
+}

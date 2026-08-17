@@ -176,12 +176,14 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
 
     file=""
     if file=$(select_files_with_status "${select_opts[@]}"); then
-      # The picked file joins the user's pathspecs under ONE separator: a
-      # second `--` after a first would become a path literally named '--'.
+      # The picked file REPLACES the user's pathspecs: git unions positive
+      # pathspecs, so 'll ... -- src/ src/a.py' would keep matching every
+      # file under src/ and the selection would restrict nothing (review
+      # fix). The pathspecs already did their job — scoping the candidates.
       if $with_files; then
-        exec hug ll --grep="$search_term" --name-status "$@" -- ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"} "$file"
+        exec hug ll --grep="$search_term" --name-status "$@" -- "$file"
       else
-        exec hug ll --grep="$search_term" "$@" -- ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"} "$file"
+        exec hug ll --grep="$search_term" "$@" -- "$file"
       fi
     else
       info "Cancelled."

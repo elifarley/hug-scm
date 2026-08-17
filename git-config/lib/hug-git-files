@@ -42,6 +42,16 @@ list_staged_files() {
                 scope_cwd=true
                 shift
                 ;;
+            --)
+                # Everything after the separator is a pathspec — even a token
+                # shaped like one of our own flags (a file literally named
+                # '--cwd' must scope, not toggle the scoping flag).
+                shift
+                while [[ $# -gt 0 ]]; do
+                    pathspecs+=("$1")
+                    shift
+                done
+                ;;
             *)
                 # Treat remaining arguments as pathspecs
                 pathspecs+=("$1")
@@ -122,6 +132,16 @@ list_unstaged_files() {
             --cwd)
                 scope_cwd=true
                 shift
+                ;;
+            --)
+                # Everything after the separator is a pathspec — even a token
+                # shaped like one of our own flags (a file literally named
+                # '--cwd' must scope, not toggle the scoping flag).
+                shift
+                while [[ $# -gt 0 ]]; do
+                    pathspecs+=("$1")
+                    shift
+                done
                 ;;
             *)
                 # Treat remaining arguments as pathspecs
@@ -221,6 +241,16 @@ list_conflicted_files() {
                 scope_cwd=true
                 shift
                 ;;
+            --)
+                # Everything after the separator is a pathspec — even a token
+                # shaped like one of our own flags (a file literally named
+                # '--cwd' must scope, not toggle the scoping flag).
+                shift
+                while [[ $# -gt 0 ]]; do
+                    pathspecs+=("$1")
+                    shift
+                done
+                ;;
             *)
                 # Treat remaining arguments as pathspecs
                 pathspecs+=("$1")
@@ -290,6 +320,16 @@ list_untracked_files() {
                 scope_cwd=true
                 shift
                 ;;
+            --)
+                # Everything after the separator is a pathspec — even a token
+                # shaped like one of our own flags (a file literally named
+                # '--cwd' must scope, not toggle the scoping flag).
+                shift
+                while [[ $# -gt 0 ]]; do
+                    pathspecs+=("$1")
+                    shift
+                done
+                ;;
             *)
                 # Treat remaining arguments as pathspecs
                 pathspecs+=("$1")
@@ -346,6 +386,16 @@ list_ignored_files() {
                 scope_cwd=true
                 shift
                 ;;
+            --)
+                # Everything after the separator is a pathspec — even a token
+                # shaped like one of our own flags (a file literally named
+                # '--cwd' must scope, not toggle the scoping flag).
+                shift
+                while [[ $# -gt 0 ]]; do
+                    pathspecs+=("$1")
+                    shift
+                done
+                ;;
             *)
                 # Treat remaining arguments as pathspecs
                 pathspecs+=("$1")
@@ -401,6 +451,10 @@ list_tracked_files() {
         scope_cwd=true
         shift
     fi
+    # A leading '--' ends flag parsing: the selector forwards one to keep
+    # option-shaped pathspecs (a file literally named '--cwd') out of our
+    # flag slot. Strip it — everything after is a pathspec.
+    [[ "${1:-}" == "--" ]] && shift
 
     check_git_repo
 

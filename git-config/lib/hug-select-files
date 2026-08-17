@@ -406,7 +406,7 @@ list_files_with_status() {
           formatted_options+=("${status_text} ${file}")
         fi
         status_codes+=("$status_code")
-      done < <(list_staged_files "${status_flags[@]}" "${pathspecs[@]}")
+      done < <(list_staged_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     fi
 
     if $include_unstaged; then
@@ -424,7 +424,7 @@ list_files_with_status() {
           formatted_options+=("${status_text} ${file}")
         fi
         status_codes+=("$status_code")
-      done < <(list_unstaged_files "${status_flags[@]}" "${pathspecs[@]}")
+      done < <(list_unstaged_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     fi
 
     if $include_conflicts; then
@@ -442,11 +442,11 @@ list_files_with_status() {
           formatted_options+=("${status_text} ${file}")
         fi
         status_codes+=("$status_code")
-      done < <(list_conflicted_files "${status_flags[@]}" "${pathspecs[@]}")
+      done < <(list_conflicted_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     fi
 
     if $include_untracked; then
-      mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}" "${pathspecs[@]}")
+      mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
       for file in "${untracked_files[@]}"; do
         [[ -z "$file" ]] && continue
         local status_text status_code
@@ -462,7 +462,7 @@ list_files_with_status() {
     fi
 
     if $include_ignored; then
-      mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}" "${pathspecs[@]}")
+      mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
       for file in "${ignored_files[@]}"; do
         [[ -z "$file" ]] && continue
         local status_text status_code
@@ -730,7 +730,7 @@ Install: https://github.com/charmbracelet/gum"
     # NOTE: the "${pathspecs[@]+...}" idiom expands the array only when set —
     # a plain "${pathspecs[@]}" would trip set -u on Bash < 4.4 when it is
     # empty. Same idiom at every forwarding site below.
-    mapfile -t files < <(list_tracked_files "${list_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
+    mapfile -t files < <(list_tracked_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     mapfile -t formatted_options < <(printf '%s\n' "${files[@]}")
   else
   
@@ -749,9 +749,9 @@ Install: https://github.com/charmbracelet/gum"
         IFS=' ' read -r status_text status_code <<< "$(parse_tab_delimited_status "$(_format_staged_status "$status")")"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
-      done < <(list_staged_files "${status_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
+      done < <(list_staged_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     else
-      mapfile -t staged_files < <(list_staged_files "${list_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
+      mapfile -t staged_files < <(list_staged_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
       files+=("${staged_files[@]}")
       formatted_options+=("${staged_files[@]}")
     fi
@@ -771,16 +771,16 @@ Install: https://github.com/charmbracelet/gum"
         IFS=' ' read -r status_text status_code <<< "$(parse_tab_delimited_status "$(_format_unstaged_status "$status")")"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
-      done < <(list_unstaged_files "${status_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
+      done < <(list_unstaged_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     else
-      mapfile -t unstaged_files < <(list_unstaged_files "${list_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
+      mapfile -t unstaged_files < <(list_unstaged_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
       files+=("${unstaged_files[@]}")
       formatted_options+=("${unstaged_files[@]}")
     fi
   fi
   
   if $include_untracked; then
-    mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
+    mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     for file in "${untracked_files[@]}"; do
       [[ -z "$file" ]] && continue
       local status_text status_code
@@ -795,7 +795,7 @@ Install: https://github.com/charmbracelet/gum"
   fi
   
   if $include_ignored; then
-    mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
+    mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     for file in "${ignored_files[@]}"; do
       [[ -z "$file" ]] && continue
       local status_text status_code
