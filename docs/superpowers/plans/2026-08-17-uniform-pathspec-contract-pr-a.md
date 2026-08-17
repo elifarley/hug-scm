@@ -30,6 +30,7 @@
 - [ ] With `--picker` and trailing bare `--`, `HUG_INTERACTIVE_FILE_SELECTION=true` is exported
 - [ ] `-h/--help` in pre-args emits the show_help/exit path (parse_common_flags behavior, unchanged)
 - [ ] Empty-args and empty-pathspec cases are `set -u`-safe (guarded expansions)
+- [ ] `--picker` is a reserved FIRST token: a pathspec literally named `--picker` must be written after the separator (`-- --picker`); a pre-separator `--picker` is consumed as the mode token. Post-migration this collision is loud (unknown-flag rejection) or documented (the `:pathspec` article's edge list, PR-B). Cover with a unit test asserting `parse_common_flags_with_pathspecs -- --picker` yields `_pathspec_pathspecs=(--picker)`
 - [ ] No git invocations; no change to `parse_pathspecs`/`parse_common_flags` themselves
 
 **Verify:** `make test-lib TEST_FILE=test_hug-cli-flags.bats` → all pass, including the new cases
@@ -231,7 +232,9 @@ setup_pathspec_fixture() {
 
 # Row table: cmd|help|filter_probe|extra (extra: class-specific cells)
 # Contract rows (green today, must STAY green):
-#   sw ss su shc shcp shp l ll cmod cmoda us
+#   sw ss su shc shcp shp l ll cmod cmoda
+# NOT here: us — `hug us -- src/` errors loudly today (git-us:92-94), so its
+# rows are CHARACTERIZATION (Task 4) until PR-B migrates it.
 CONFORMANCE_ROWS=(
   "sw"
   "ss"
@@ -308,7 +311,7 @@ Execute as a loop pattern (BATS-friendly): write one `@test` per column that ite
         ;;
 ```
 
-- [ ] Pathspecs are forwarded through the selector's ACTUAL list calls — `select_files_with_status` invokes `list_tracked_files`, `list_staged_files`, `list_unstaged_files`, `list_untracked_files`, and `list_ignored_files` directly (`hug-select-files:690-755`; it does NOT call `list_files_with_status` — that is the separate non-interactive function at `:312`). Append `"${pathspecs[@]+…}"` at each of the five sites; each `list_*_files` already accepts trailing pathspecs (same pattern as `list_files_with_status:409-465`)
+- [ ] Pathspecs are forwarded through the selector's ACTUAL list calls — `select_files_with_status` invokes `list_tracked_files`, `list_staged_files`, `list_unstaged_files`, `list_untracked_files`, and `list_ignored_files` directly (`hug-select-files:690-755`, seven call lines; it does NOT call `list_files_with_status` — that is the separate non-interactive function at `:312`). Append `"${pathspecs[@]+…}"` at each call line; each `list_*_files` already accepts trailing pathspecs (same pattern as `list_files_with_status:409-465`)
 - [ ] Flags-only invocation is unchanged (regression: existing selector tests stay green)
 - [ ] Spec §3.1's swallow hazard is covered by a test: a caller capturing via `if file=$(select_files_with_status --staged -- src/)` gets a scoped, working selection (mock gum per the suite's existing mock pattern) — not "Cancelled."
 
@@ -328,7 +331,7 @@ Execute as a loop pattern (BATS-friendly): write one `@test` per column that ite
 }
 ```
 
-- [ ] **Step 2:** Verify FAIL (current: "Unknown option … select_files_with_status"), then **implement**: add `local -a pathspecs=()` to the locals block (`hug-select-files:606-614`), change the `*)` case to collect (`pathspecs+=("$1"); shift`), and append `"${pathspecs[@]+"${pathspecs[@]}"}"` to the internal `list_files_with_status` call.
+- [ ] **Step 2:** Verify FAIL (current: "Unknown option … select_files_with_status"), then **implement**: add `local -a pathspecs=()` to the locals block (`hug-select-files:606-614`), add the dedicated separator arm and change the `*)` case to collect (code in the acceptance criteria above), and append `"${pathspecs[@]+"${pathspecs[@]}"}"` at EACH of the selector's `list_*_files` call lines (`hug-select-files:690-755` — seven lines: `list_tracked_files`, `list_staged_files` ×2, `list_unstaged_files` ×2, `list_untracked_files`, `list_ignored_files`). There is no `list_files_with_status` call inside the selector — that is the separate non-interactive function at `:312`.
 - [ ] **Step 3:** Verify PASS + full file green; commit: `feat(select-files): select_files_with_status accepts pathspecs — scoped picker foundation (#292 PR-A)`
 
 ---

@@ -84,6 +84,10 @@ export-leak class (a listing's delegation crossing `exec hug s` with the
 variable set, `git-statusbase:106`) is deleted by construction rather than
 guarded by an `unset` every listing must remember. The §4 inert-arm column
 stays as the enforcement that listings were migrated without `--picker`.
+`--picker` is a reserved first token: a pathspec literally named `--picker`
+is unreachable before the separator (write `-- --picker`) — the same
+git-norm reservation the article documents for files named `--` and
+`--help`.
 
 Step 1 strips only the trailing `--` token; step 2 still splits any mid-stream
 `--`, so `_pathspec_pathspecs` survives alongside the picker flag. Callers
