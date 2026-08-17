@@ -474,3 +474,37 @@ teardown() {
 
   assert_equal "${HUG_YES:-}" "true"
 }
+
+# -----------------------------------------------------------------------------
+# parse_common_flags_with_pathspecs tests (fixed-order parsing + picker export)
+# -----------------------------------------------------------------------------
+
+@test "hug-cli-flags: parse_common_flags_with_pathspecs: splits pathspecs and parses pre-args" {
+  eval "$(parse_common_flags_with_pathspecs --dry-run HEAD --stat -- '*.java' 'src/')" || return 1
+  [[ "${_pathspec_pathspecs[0]}" == '*.java' ]]
+  [[ "${_pathspec_pathspecs[1]}" == 'src/' ]]
+  [[ "${dry_run:-}" == true ]]
+}
+
+@test "hug-cli-flags: parse_common_flags_with_pathspecs: without --picker, trailing bare -- is inert" {
+  unset HUG_INTERACTIVE_FILE_SELECTION || true
+  eval "$(parse_common_flags_with_pathspecs --)" || return 1
+  [[ -z "${HUG_INTERACTIVE_FILE_SELECTION:-}" ]]
+  [[ ${#_pathspec_pathspecs[@]} -eq 0 ]]
+}
+
+@test "hug-cli-flags: parse_common_flags_with_pathspecs: with --picker, trailing bare -- exports the flag" {
+  unset HUG_INTERACTIVE_FILE_SELECTION || true
+  eval "$(parse_common_flags_with_pathspecs --picker --)" || return 1
+  [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" == true ]]
+}
+
+@test "hug-cli-flags: parse_common_flags_with_pathspecs: empty args are set -u safe" {
+  eval "$(parse_common_flags_with_pathspecs)" || return 1
+  [[ ${#_pathspec_pathspecs[@]} -eq 0 ]]
+}
+
+@test "hug-cli-flags: parse_common_flags_with_pathspecs: --picker is a reserved first token" {
+  eval "$(parse_common_flags_with_pathspecs -- --picker)" || return 1
+  [[ "${_pathspec_pathspecs[0]}" == '--picker' ]]
+}
