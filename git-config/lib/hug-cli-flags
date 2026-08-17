@@ -347,6 +347,8 @@ parse_common_flags_with_pathspecs() {
 # Note:
 #   Empty-string arguments are ignored (not counted as files), so callers
 #   can pass through optional-position variables without pre-filtering.
+# Effects:
+#   Exits with error if more than one non-empty file argument is given
 reject_multiple_files() {
   local cmd_name="$1"; shift
   local -a files=()

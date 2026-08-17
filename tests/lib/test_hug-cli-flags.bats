@@ -504,9 +504,10 @@ teardown() {
 }
 
 @test "hug-cli-flags: parse_common_flags_with_pathspecs: empty args are set -u safe" {
-  # Actually exercise set -u: unset-parameter expansion inside would abort the subshell
-  ( set -u; eval "$(parse_common_flags_with_pathspecs)" )
-  [[ ${#_pathspec_pathspecs[@]} -eq 0 ]]
+  # Actually exercise set -u: unset-parameter expansion inside would abort the subshell.
+  # The assertion must live INSIDE the subshell — assignments there don't escape it,
+  # so asserting outside would inspect an untouched array and pass vacuously.
+  ( set -u; eval "$(parse_common_flags_with_pathspecs)"; [[ ${#_pathspec_pathspecs[@]} -eq 0 ]] )
 }
 
 @test "hug-cli-flags: parse_common_flags_with_pathspecs: --picker is a reserved first token" {
@@ -514,9 +515,12 @@ teardown() {
   [[ "${_pathspec_pathspecs[0]}" == '--picker' ]]
 }
 
-@test "hug-cli-flags: parse_common_flags_with_pathspecs: exotic filename round-trips through %q quoting" {
-  eval "$(parse_common_flags_with_pathspecs -- 'file with spaces.txt')"
+@test "hug-cli-flags: parse_common_flags_with_pathspecs: exotic filenames and leading-dash round-trip" {
+  # '-f' after -- is a FILENAME, not a flag: it must land in the pathspec array
+  # verbatim (this is what %q quoting + the -- separator guarantee together).
+  eval "$(parse_common_flags_with_pathspecs -- 'file with spaces.txt' -f)"
   [[ "${_pathspec_pathspecs[0]}" == 'file with spaces.txt' ]]
+  [[ "${_pathspec_pathspecs[1]}" == '-f' ]]
 }
 
 # -----------------------------------------------------------------------------
