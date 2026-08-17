@@ -480,31 +480,71 @@ teardown() {
 # -----------------------------------------------------------------------------
 
 @test "hug-cli-flags: parse_common_flags_with_pathspecs: splits pathspecs and parses pre-args" {
-  eval "$(parse_common_flags_with_pathspecs --dry-run HEAD --stat -- '*.java' 'src/')" || return 1
+  eval "$(parse_common_flags_with_pathspecs --dry-run HEAD --stat -- '*.java' 'src/')"
   [[ "${_pathspec_pathspecs[0]}" == '*.java' ]]
   [[ "${_pathspec_pathspecs[1]}" == 'src/' ]]
   [[ "${dry_run:-}" == true ]]
+  # The caller's "$@" holds the remaining pre-args (flags consumed, pathspecs split off)
+  [[ "$#" -eq 2 ]]
+  [[ "$1" == "HEAD" ]]
+  [[ "$2" == "--stat" ]]
 }
 
 @test "hug-cli-flags: parse_common_flags_with_pathspecs: without --picker, trailing bare -- is inert" {
   unset HUG_INTERACTIVE_FILE_SELECTION || true
-  eval "$(parse_common_flags_with_pathspecs --)" || return 1
+  eval "$(parse_common_flags_with_pathspecs --)"
   [[ -z "${HUG_INTERACTIVE_FILE_SELECTION:-}" ]]
   [[ ${#_pathspec_pathspecs[@]} -eq 0 ]]
 }
 
 @test "hug-cli-flags: parse_common_flags_with_pathspecs: with --picker, trailing bare -- exports the flag" {
   unset HUG_INTERACTIVE_FILE_SELECTION || true
-  eval "$(parse_common_flags_with_pathspecs --picker --)" || return 1
+  eval "$(parse_common_flags_with_pathspecs --picker --)"
   [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" == true ]]
 }
 
 @test "hug-cli-flags: parse_common_flags_with_pathspecs: empty args are set -u safe" {
-  eval "$(parse_common_flags_with_pathspecs)" || return 1
+  # Actually exercise set -u: unset-parameter expansion inside would abort the subshell
+  ( set -u; eval "$(parse_common_flags_with_pathspecs)" )
   [[ ${#_pathspec_pathspecs[@]} -eq 0 ]]
 }
 
 @test "hug-cli-flags: parse_common_flags_with_pathspecs: --picker is a reserved first token" {
-  eval "$(parse_common_flags_with_pathspecs -- --picker)" || return 1
+  eval "$(parse_common_flags_with_pathspecs -- --picker)"
   [[ "${_pathspec_pathspecs[0]}" == '--picker' ]]
+}
+
+@test "hug-cli-flags: parse_common_flags_with_pathspecs: exotic filename round-trips through %q quoting" {
+  eval "$(parse_common_flags_with_pathspecs -- 'file with spaces.txt')"
+  [[ "${_pathspec_pathspecs[0]}" == 'file with spaces.txt' ]]
+}
+
+# -----------------------------------------------------------------------------
+# reject_multiple_files tests (single-file cardinality guard)
+# -----------------------------------------------------------------------------
+
+@test "reject_multiple_files: rejects two files naming the command" {
+  # Act - full-sourcing subshell: error() depends on gum_log from hug-gum,
+  # which this test file does not load at top level
+  run bash -c "
+    cd '$BATS_TEST_DIRNAME/../..'
+    source 'git-config/lib/hug-terminal'
+    source 'git-config/lib/hug-gum'
+    source 'git-config/lib/hug-output'
+    source 'git-config/lib/hug-cli-flags'
+    reject_multiple_files 'hug fa' a.txt b.txt
+  "
+
+  # Assert
+  assert_failure
+  assert_output --partial "hug fa accepts only one file."
+}
+
+@test "reject_multiple_files: one file, zero files, and empty strings pass" {
+  run reject_multiple_files "hug fa" a.txt
+  assert_success
+  run reject_multiple_files "hug fa"
+  assert_success
+  run reject_multiple_files "hug fa" a.txt ""
+  assert_success
 }
