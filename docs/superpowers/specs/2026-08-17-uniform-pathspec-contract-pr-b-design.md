@@ -14,9 +14,9 @@ Six stages, atomic commits each; every stage leaves the full suite green:
 1. **#298 refactors + coverage** (pure moves, no behavior change):
    - picker-forwarding DRY helper — one shared function for the `--`+pathspecs forwarding idiom repeated across `hug-select-files`, `hug-git-diff`, and the `lc`/`lf`/`lcr` pickers;
    - contract-comment dedup — one canonical parsing-order/pathspec comment in `hug-cli-flags`, referenced (not duplicated) at call sites;
-   - non-flag-filter helper — the "count positionals only up to the first flag" cut currently encoded 3× (`w-get` shape guard, `llf`, `stats-file`);
-   - cross-module `_pathspec_pathspecs` accessor;
-   - nullsafe-idiom consistency sweep (bare `"${arr[@]}"` → `${arr[@]+…}` at reachable-empty sites);
+   - non-flag-filter helper — the "count positionals only up to the first flag" cut currently encoded 2× (`llf`, `stats-file`); `w-get`'s shape guard is a DIFFERENT cut (rev-parse/integer classification of each arg under `-u`) and stays command-owned — it shares the helper only if the helper parameterizes the classifier, which is not required;
+   - cross-module `_pathspec_pathspecs` accessor — deliverable defined: a getter in `hug-cli-flags` (e.g. `pathspec_pathspecs()` printing the collected pathspecs null-delimited, or populating a caller-named nameref) so modules other than the parsing script (`hug-select-files` forwarding, delegation sinks) read the split through one function instead of touching the global array directly;
+   - nullsafe-idiom consistency sweep of PRE-EXISTING reachable-empty sites (bare `"${arr[@]}"` → `${arr[@]+…}`) — and stages 2–4 use the idiom at write time for every NEW array site they create;
    - the 3 remaining combo-gap tests: `--cwd`+pathspec on `list_tracked_files`, ignored-files pathspec forwarding, fblame churn-mode guard. (GAP-1, the lf picker cell, closed in PR-A `4f730e7`.)
 2. **`sl*` + `us` batch migration** (§5.5) — onto the stage-1 helpers.
 3. **`output_json_status` pathspec plumbing** + the pinned flips.
@@ -45,8 +45,14 @@ Split hoisted above `us`'s custom loop. Mid-stream `--` error → filter. Traili
 ### 3.3 `output_json_status` plumbing + flips
 
 - `output_json_status`'s parse-loop catch-all (`*) shift ;;`, `output_json_status:45-47`) becomes a pathspec collector; pathspecs plumb through `output_json_status_unified` into the Python layer, reaching git after a protective `--` (PR-A's data/option-boundary invariant — a pathspec named like a JSON flag is data).
-- Flip `tests/unit/test_status_staging.bats:1855` ("hug slc --json: pathspecs are ignored") to assert scoping.
-- Remove `git-slc:31`'s "(ignores pathspecs)" help line in the same commit — help must not contradict the new behavior.
+- Flip `tests/unit/test_status_staging.bats:1855` ("hug slc --json: pathspecs are ignored") to assert scoping, **in the same commit as the behavior change** (a green-but-stale test asserting the old contract is a false oracle).
+- **Claim-flip table** — every artifact asserting the old "slc --json ignores pathspecs" contract flips in that same commit (a deletion sweep, not a spot fix; help must not contradict the new behavior):
+
+  | Artifact | Stale identifier | Edit |
+  |---|---|---|
+  | `git-config/bin/git-slc:31` | help flag line "(ignores pathspecs)" | remove the parenthetical |
+  | `git-config/bin/git-slc:38-39` | help DESCRIPTION "with --json they are ignored by contract — the envelope always describes the full conflicted state" | rewrite: the envelope is pathspec-scoped |
+  | `docs/commands/status-staging.md:138` | "`--json` emits the unified status envelope … Pathspecs scope the text listing (`--json` ignores them)" | rewrite the parenthetical to scoped |
 - Two-sided JSON tests per migrated command: parses via `python3 -m json.tool`, no file outside the pathspecs AND at least one inside; `summary.*` counts must match the scoped array (the v1.7.0 comma-fragment lesson).
 
 ### 3.4 #297 — `hug a -- <file>`
@@ -60,7 +66,7 @@ Route `git-a` through the helper's split: pre-`--` behavior byte-identical; post
 - README `sl`/`sla` rows gain `[-- <path>...]` (`sh` row + new `llu` row are PR-C's, per parent §7).
 - `docs/commands/status-staging.md`: inert trailing `--`, new `--help`, `us` flips land here.
 - `docs/git-to-hug.md` translation rows; category TOMLs (`status`/`show`/`history`) mention path filtering; `git-config/lib/README.md` documents the parsing-order rule; `docs/meta/hug-completion-reference.md` re-grepped wherever flag surfaces changed; completions re-grepped at `completions/hug-completion.bash` + `completions/hug.fish`.
-- CHANGELOG entry at release (repo norm), incl. the deliberate flips: listings' inert trailing `--`, `us` flips, `slc --json` scoping, `a -- <file>` fix.
+- CHANGELOG entry at release (repo norm), incl. the deliberate flips: listings' inert trailing `--`, **unknown-flag swallow → loud rejection across `sl*`** (a silent-to-loud flip on the most-used family — unlisted, it is indistinguishable from a regression at triage time), `us` flips, `slc --json` scoping, `a -- <file>` fix.
 
 ## 4. Testing strategy
 
@@ -70,7 +76,7 @@ Route `git-a` through the helper's split: pre-`--` behavior byte-identical; post
 
 ## 5. Exit criteria (parent §9 PR-B, verbatim)
 
-Bare `--` on listings = inert; `us`: mid-stream `--` error→filter, trailing error→zero-args dispatch; `hug sls --json -- src/` scoped correctly; all deliberate test flips against true baselines; docs complete; suite green. Plus: #298 checklist fully closed, #297 closed, `hug a -- <file>` stages exactly the named files.
+Bare `--` on listings = inert; unknown flag tokens on `sl*` rejected loudly (was: silent pathspec swallow); `us`: mid-stream `--` error→filter, trailing error→zero-args dispatch; `hug sls --json -- src/` scoped correctly; all deliberate test flips land in the same commit as their behavior change, against true baselines; the §3.3 claim-flip table fully swept; docs complete; suite green. Plus: #298 checklist fully closed, #297 closed, `hug a -- <file>` stages exactly the named files.
 
 ## 6. Out of scope (unchanged from parent §11)
 
