@@ -366,7 +366,23 @@ main() {
   : "${force:=false}"
   : "${dry_run:=false}"
 
-  # 3-5. Get the target from the first non-flag argument — UNLESS -u/--upstream
+  # 3. Shape guard under --upstream (review fix, #292 PR-A): every remaining
+  # argument is supposed to be a FILE, but a 1-2 digit integer or a token
+  # that resolves as a commitish is far more likely a mistyped
+  # `hug w get <N|commit>` than a file name — and reclassifying user
+  # mistakes as file names is only loud when the file happens not to exist
+  # (otherwise the confusing "File 'HEAD~5' does not exist"). Fail with the
+  # OLD explicit message BEFORE anything prints. Trade-off (deliberate): a
+  # file literally named e.g. '2' is unreachable under -u.
+  if $use_upstream && [ $# -gt 0 ]; then
+    for arg in "$@"; do
+      if [[ "$arg" =~ ^[0-9]{1,2}$ ]] || git rev-parse --verify -q "$arg" > /dev/null 2>&1; then
+        error "Cannot specify --upstream with a specific commit or integer N."
+      fi
+    done
+  fi
+
+  # 4. Get the target from the first non-flag argument — UNLESS -u/--upstream
   # was given: with --upstream there is NO target positional; every remaining
   # argument is a FILE (#292 spec §5.2, BUG-3). Extracting a target anyway used
   # to eat the first file (dying on the old exclusivity guard with "Cannot
@@ -397,7 +413,7 @@ main() {
   # subjects cannot exist. A nonexistent file under -u still fails loudly via
   # check_file_in_commit.
 
-  # 7. Determine the target commit
+  # 5. Determine the target commit
   if $use_upstream; then
     commit=$(get_upstream_commit)
   elif $use_integer_N; then
@@ -409,10 +425,10 @@ main() {
     exit 1
   fi
 
-  # 8. Validate commit
+  # 6. Validate commit
   validate_commitish "--target" "$commit"
 
-  # 9. Check if user wants interactive file selection via --
+  # 7. Check if user wants interactive file selection via --
   if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     # Interactive file selection
     declare -a select_opts=("--multi" "--staged" "--unstaged" "--untracked")

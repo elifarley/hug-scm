@@ -92,7 +92,12 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     # hug-git-diff): without this, the picker offers out-of-scope files and
     # silently discards the requested scope (#292).
     if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
-      select_opts+=("${_pathspec_pathspecs[@]}")
+      # Protective separator (#292 review, conf 6): a pathspec literally
+      # named like a picker option ('--staged', '--prompt', ...) appended
+      # RAW would be eaten as that OPTION — the scope silently discarded.
+      # select_files_with_status's dedicated '--' arm drains everything
+      # after it verbatim, exactly as its comment promises.
+      select_opts+=("--" "${_pathspec_pathspecs[@]}")
     fi
 
     file=""

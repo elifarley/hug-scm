@@ -80,7 +80,10 @@ while [[ $# -gt 0 ]]; do
     ;;
   esac
 done
-reject_multiple_files "hug h steps" "$file" "${extra_files[@]}"
+# Nullsafe expansion (Bash 4.3 set -u crash mode — the PR's own convention):
+# ${arr[@]+"${arr[@]}"} expands to nothing when extra_files is empty, so no
+# lone unbound-variable fatal on the happy single-file path.
+reject_multiple_files "hug h steps" "$file" ${extra_files[@]+"${extra_files[@]}"}
 
 # If no file provided, show interactive selection or help
 if [[ -z "$file" ]]; then

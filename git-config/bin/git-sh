@@ -95,8 +95,10 @@ for arg in "$@"; do
     # path overwrite it. Counting positionals catches that too, while
     # `hug sh ""` alone still defaults to HEAD (commit_ref stays empty).
     if [[ "$saw_positional" == true ]]; then
-      error "hug sh accepts one commit reference; unexpected extra argument: '$arg'.
-Path filtering ('hug sh <ref> -- <path>...') lands in a later PR."
+      # Path filtering ('hug sh <ref> -- <path>...') lands in a later PR —
+      # roadmap note kept HERE, not in the runtime error (review fix: the
+      # temporal second sentence told the user about our plans, not theirs).
+      error "hug sh accepts one commit reference; unexpected extra argument: '$arg'."
     fi
     commit_ref="$arg"
     saw_positional=true

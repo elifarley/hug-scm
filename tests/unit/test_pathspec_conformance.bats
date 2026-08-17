@@ -679,8 +679,14 @@ psx_install_stub_gum() {
   for cmd in "${PATHSPEC_CHAR_SL_HELP_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" --help
-    assert_equal 16 "$status"
+    # Review fix (pre-landing): pin only FAILURE + no-USAGE. The exact 16 is
+    # git's man-routing exit and only holds where man(1) exists; on hosts
+    # without it git still fails (nonzero) but with a different code.
+    assert_failure
     refute_output --partial "USAGE:"
+    if command -v man >/dev/null 2>&1; then
+      assert_equal 16 "$status"
+    fi
     psx_reset
   done
 }
@@ -784,9 +790,15 @@ psx_install_stub_gum() {
   run hug w get -u no-such-file
   assert_failure
   assert_output --partial "does not exist in commit"
+  # Review fix (pre-landing): a 1-2 digit arg under -u is now rejected by
+  # the restored shape guard (see the next test) — a file literally named
+  # `2` is UNREACHABLE under -u, deliberately: `-u 2` is far more likely a
+  # mistyped `w get 2` than a file name, and the old flow's only signal was
+  # the misleading "File '2' does not exist" when the file happened to be
+  # absent. Cell flipped from the Task-8 assert_success accordingly.
   run hug w get -u 2
-  assert_success
-  assert_equal "base-2" "$(cat -- 2)"
+  assert_failure
+  assert_output --partial "Cannot specify --upstream with a specific commit or integer N."
   psx_reset
 
   # Cell 3 — `-u` alone with NO upstream: get_upstream_commit's loud error
@@ -832,6 +844,19 @@ psx_install_stub_gum() {
   assert_output --partial "Files to be reset:"
   assert_output --partial "src/a.py"
   grep -q py2 src/a.py
+  psx_reset
+
+  # Cell 7 — review fix (pre-landing): under -u, a remaining arg that LOOKS
+  # like a commit (resolves via rev-parse) or an integer N (1-2 digits) is
+  # rejected with the OLD explicit message BEFORE anything prints — the
+  # confusing "File 'HEAD~5' does not exist" reclassification is gone.
+  psx_setup
+  git branch up-ref HEAD~1
+  git branch --set-upstream-to=up-ref
+  run hug w get -u HEAD~1
+  assert_failure
+  assert_output --partial "Cannot specify --upstream with a specific commit or integer N."
+  refute_output --partial "Will reset"
   psx_reset
 }
 
@@ -1012,6 +1037,81 @@ psx_install_stub_gum() {
   done
 }
 
+@test "contract ll/lc/llf: post-'--' bare numbers stay pathspecs, never HEAD~N (review conf 9)" {
+  # Review fix (pre-landing, conf 9 — verified repro): git-ll's arg loop
+  # used to resolve bare numbers as HEAD~N revisions EVEN AFTER the '--'
+  # separator, so the synthesized '-1 HEAD~N' tokens landed post-separator
+  # as bogus pathspecs. Probed red in the fixture shape below:
+  #   hug lc needle -- 5    → silently EMPTY (pathspecs '-1' and 'HEAD~5')
+  #   hug ll -S needle -- 5 → same silent empty
+  #   hug llf 5             → 'fatal: --follow requires exactly one
+  #                           pathspec' (exit 128) — llf execs ll with
+  #                           '--follow -- 5' and ll mangled the 5
+  # Post-'--' tokens are pathspecs by git's own grammar: append verbatim.
+  # Fixture: a tracked file literally named 5 whose adding commit is the
+  # ONLY pickaxe hit for 'needle' (two-sided: present + exit 0).
+  psx_setup
+  echo needle > 5
+  git add -- 5
+  git commit -q -m "add file five"
+
+  run hug lc needle -- 5
+  assert_success
+  assert_output --partial "add file five"
+  refute_output --partial "fatal:"
+  psx_reset
+
+  psx_setup
+  echo needle > 5
+  git add -- 5
+  git commit -q -m "add file five"
+  run hug ll -S needle -- 5
+  assert_success
+  assert_output --partial "add file five"
+  refute_output --partial "fatal:"
+  psx_reset
+
+  # llf 5: --follow gets exactly one pathspec → the commit that added the
+  # file named 5 IS shown (probed observable: log1 line "add file five").
+  psx_setup
+  echo needle > 5
+  git add -- 5
+  git commit -q -m "add file five"
+  run hug llf 5
+  assert_success
+  assert_output --partial "add file five"
+  refute_output --partial "--follow requires exactly one pathspec"
+  psx_reset
+}
+
+@test "contract sw: picker forwarding shields pathspecs named like options (review conf 6)" {
+  # Review fix (pre-landing, conf 6 — verified repro): the four picker-
+  # forwarding sites (hug-git-diff, lc, lf, lcr) appended the user's
+  # pathspecs to select_opts RAW, so a pathspec literally named like a
+  # picker option was eaten as an OPTION. Probed red with a staged file
+  # named '--staged' and `hug sw -- --staged --`: candidates were
+  #   S:Add --staged / S:Mod src/a.py / U:Mod docs/note.md
+  # — the requested scope was silently discarded and out-of-scope files
+  # leaked in. The sites now append the protective '--' first;
+  # select_files_with_status's dedicated separator arm (which exists for
+  # exactly this, per its own comment) drains the pathspecs verbatim.
+  # One cell proves the round trip (sw carries the shared driver; lc/lf/
+  # lcr share the identical select_opts construction).
+  psx_setup
+  echo x > ./--staged
+  git add -- --staged # staged: sw's combined (staged+unstaged) mode lists it
+  psx_install_stub_gum
+  run hug sw -- --staged --
+  assert_success
+  local candidates
+  candidates=$(sed $'s/\033\\[[0-9;]*m//g' "$GUM_CANDIDATES_FILE")
+  grep -qF -- "--staged" <<< "$candidates"
+  if grep -qF "src/a.py" <<< "$candidates" || grep -qF "docs/note.md" <<< "$candidates"; then
+    fail "out-of-scope candidate leaked into sw picker: pathspec '--staged' was eaten as an option"
+  fi
+  psx_reset
+}
+
 @test "single-file cardinality: two files → hug rejection, not git fatal (Task 10)" {
   # FLIPPED (Task 10, spec §3.2/§5.6): these commands used to pass BOTH
   # paths straight to git, which fataled (exit 128) with "--follow requires
@@ -1171,8 +1271,12 @@ psx_install_stub_gum() {
 
   psx_setup
   run hug shv --help
-  assert_equal 16 "$status"
+  # Exact-16 only where man(1) exists (review fix — see sl-family note).
+  assert_failure
   refute_output --partial "USAGE:"
+  if command -v man >/dev/null 2>&1; then
+    assert_equal 16 "$status"
+  fi
   psx_reset
 }
 
@@ -1224,8 +1328,12 @@ psx_install_stub_gum() {
 
   psx_setup
   run hug dd --help
-  assert_equal 16 "$status"
+  # Exact-16 only where man(1) exists (review fix — see sl-family note).
+  assert_failure
   refute_output --partial "USAGE:"
+  if command -v man >/dev/null 2>&1; then
+    assert_equal 16 "$status"
+  fi
   psx_reset
 }
 
@@ -1326,6 +1434,70 @@ psx_install_stub_gum() {
   assert_equal 129 "$status"
   assert_output --partial "unknown switch"
   psx_reset
+}
+
+@test "characterization f-family: '-- <file>' filters exactly that file (fa fb fborn fcon)" {
+  # characterization (mirror of the a-command cells): probed — the f-family
+  # shares parse_common_flags, so `-- <file>` reaches the exec'd git command
+  # as the (sole) pathspec: exit 0, output scoped to src/a.py, no fatal.
+  # Per-command observable: fa → the `uniq -c` author tally for src/a.py
+  # (one commit in the fixture: a single " 1 <author>" line); fb → blame
+  # porcelain for src/a.py; fborn → the "base" commit line; fcon → the
+  # author line. Flip target PR-B (uniform pathspec contract).
+  psx_setup
+  run hug fa -- src/a.py
+  assert_success
+  assert_output --regexp '^[[:space:]]*1 '
+  refute_output --partial "fatal:"
+  psx_reset
+
+  psx_setup
+  run hug fb -- src/a.py
+  assert_success
+  refute_output --partial "fatal:"
+  psx_reset
+
+  psx_setup
+  run hug fborn -- src/a.py
+  assert_success
+  assert_output --partial "base"
+  refute_output --partial "fatal:"
+  psx_reset
+
+  psx_setup
+  run hug fcon -- src/a.py
+  assert_success
+  refute_output --partial "fatal:"
+  psx_reset
+}
+
+@test "characterization f-family: bare trailing '--' opens the picker, never a file (fa fb fborn fcon)" {
+  # characterization (mirror of the a-command cells' duality exception —
+  # which PARTIALLY holds here): probed per command in the BATS env (gum
+  # present, headless): a bare trailing '--' is stripped by
+  # parse_common_flags, leaving $# == 0, and then the commands DIVERGE:
+  #   fa/fb/fcon — no-file arm opens the PICKER; headless TTY probe fails
+  #     → "No file selected or cancelled.", exit 0 (with gum absent the
+  #     same arm errors "File argument required...", exit 1 — probed);
+  #   fborn — has NO gum branch at all: "File argument required." exit 1
+  #     in every environment (probed).
+  # Either way NO file argument is consumed: the '--' is a mode trigger,
+  # not a pathspec, here. Flip target PR-B: the bare-'--' duality is
+  # inconsistent across commands (contrast slu/slk, where '--' was a
+  # phantom pathspec).
+  local cmd
+  for cmd in fa fb fborn fcon; do
+    psx_setup
+    run hug "$cmd" --
+    if [[ "$cmd" == "fborn" ]] || ! command -v gum >/dev/null 2>&1; then
+      assert_failure
+      assert_output --partial "File argument required"
+    else
+      assert_success
+      assert_output --partial "No file selected or cancelled."
+    fi
+    psx_reset
+  done
 }
 
 @test "characterization w discard: pathspec filter + proper '--' (dry-run cells)" {

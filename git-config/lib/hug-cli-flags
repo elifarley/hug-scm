@@ -289,6 +289,21 @@ parse_common_flags() {
 # the separator ('hug cmd -- --picker' treats it as pathspec data, as the
 # test suite verifies) — the price of an unambiguous mode token.
 #
+# TWO reservations, stated explicitly (doc contract, #292 review):
+#   1. A trailing bare '--' is ALWAYS consumed — even for callers that do
+#      NOT pass '--picker'. Non-picker callers must therefore never depend
+#      on parse_common_flags' own trailing-'--' interactive trigger: this
+#      helper strips the token before parse_common_flags ever sees it, so
+#      HUG_INTERACTIVE_FILE_SELECTION is only ever set through the
+#      '--picker' + trailing-'--' path described above.
+#   2. The first-token '--picker' reservation also collides with a
+#      first-positional SEARCH TERM literally named '--picker' (lc/lf/lcr
+#      take the term as $1). Such a term is unreachable — 'hug lc -- --picker'
+#      is a PATHSPEC named '--picker', not a term. Documented, not
+#      redesigned: an unambiguous mode token cannot coexist with a
+#      same-named leading positional, and no realistic search term is
+#      '--picker'.
+#
 # Pure argument surgery: performs NO git invocations, and leaves
 # parse_pathspecs / parse_common_flags themselves untouched.
 #

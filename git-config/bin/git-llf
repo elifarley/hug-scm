@@ -82,6 +82,9 @@ for arg in "$@"; do
   *) extra_positionals+=("$arg") ;;
   esac
 done
-reject_multiple_files "hug llf" "$file" "${extra_positionals[@]}"
+# Nullsafe expansion (Bash 4.3 set -u crash mode — the PR's own convention):
+# empty extra_positionals must expand to nothing, not an unbound-variable
+# fatal on the single-file happy path.
+reject_multiple_files "hug llf" "$file" ${extra_positionals[@]+"${extra_positionals[@]}"}
 
 exec hug ll "$@" --follow -- "$file"

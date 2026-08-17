@@ -97,8 +97,20 @@ json_output=false
 with_stats=false
 no_body=false
 git_args=()
+saw_separator=false
 
 while [ $# -gt 0 ]; do
+  # Post-'--' tokens are PATHSPECS by git's own grammar — never revisions.
+  # The number-resolution arms below must not fire once the separator has
+  # been seen: they synthesize '-1 HEAD~N' pairs that would land AFTER the
+  # '--' as bogus pathspecs, so `hug lc one -- 5` silently returned empty
+  # and `hug llf 5` (a file named 5) died on '--follow requires exactly one
+  # pathspec' (#292 PR-A review, conf 9). Append verbatim instead.
+  if $saw_separator; then
+    git_args+=("$1")
+    shift
+    continue
+  fi
   case "$1" in
   -h | --help)
     show_help
@@ -118,6 +130,13 @@ while [ $# -gt 0 ]; do
     ;;
   --all)
     git_args+=("--all")
+    shift
+    ;;
+  --)
+    # End-of-options separator: everything after this is verbatim pathspec
+    # data (see the saw_separator guard at the top of the loop).
+    saw_separator=true
+    git_args+=("$1")
     shift
     ;;
   -[0-9]*)

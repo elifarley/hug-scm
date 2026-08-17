@@ -138,7 +138,10 @@ for arg in "${remaining_args[@]}"; do
   *) stats_file_positionals+=("$arg") ;;
   esac
 done
-reject_multiple_files "hug stats file" "${stats_file_positionals[@]}"
+# Nullsafe expansion (Bash 4.3 set -u crash mode — the PR's own convention):
+# empty stats_file_positionals must expand to nothing, not an unbound-variable
+# fatal on the single-file happy path.
+reject_multiple_files "hug stats file" ${stats_file_positionals[@]+"${stats_file_positionals[@]}"}
 
 check_git_repo
 

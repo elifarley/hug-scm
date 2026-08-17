@@ -149,18 +149,55 @@ teardown() {
 
 @test "list_tracked_files: paths are relative to current directory" {
   cd src
-  
+
   # Without --cwd, all files should be listed with paths relative to src/
   mapfile -t files < <(list_tracked_files)
-  
+
   # Files in current directory should have no prefix
   [[ " ${files[*]} " =~ " utils/helper.js " ]]
-  
+
   # Files in parent directory should have ../ prefix
   [[ " ${files[*]} " =~ " ../root1.txt " ]]
-  
+
   # Files in sibling directory should have ../ prefix
   [[ " ${files[*]} " =~ " ../docs/README.md " ]]
+}
+
+@test "list_tracked_files: pathspec from repo root filters" {
+  # Pathspec support (#292): a trailing pathspec is forwarded to
+  # `git ls-files -- <pathspec>` git-style, so a repo-root invocation lists
+  # ONLY matching files (two-sided: src/ files present, root/docs absent).
+  mapfile -t files < <(list_tracked_files src/)
+
+  [[ " ${files[*]} " =~ " src/components/ComponentA.js " ]]
+  [[ " ${files[*]} " =~ " src/utils/helper.js " ]]
+  [[ ! " ${files[*]} " =~ " root1.txt " ]]
+  [[ ! " ${files[*]} " =~ " docs/README.md " ]]
+}
+
+@test "list_tracked_files: pathspec REPLACES the --cwd '.' scope, not intersects" {
+  cd src
+
+  # Contract (probed): with a pathspec present, the '.' scope is DROPPED —
+  # git pathspecs are already cwd-relative, so `--cwd ../docs` must list
+  # the docs tree (outside the old '.' scope) rather than intersect to
+  # nothing.
+  mapfile -t files < <(list_tracked_files --cwd ../docs)
+
+  [[ " ${files[*]} " =~ " ../docs/README.md " ]]
+  [[ ! " ${files[*]} " =~ " utils/helper.js " ]]
+}
+
+@test "list_tracked_files: pathspec from a subdirectory keeps cwd-relative output" {
+  cd src
+
+  # Output contract is unchanged by the pathspec: paths stay relative to
+  # the CURRENT directory (probed: `git ls-files -- utils` from src/ emits
+  # `utils/helper.js`, no src/ prefix, no repo-root absolutism).
+  mapfile -t files < <(list_tracked_files utils)
+
+  [[ "${#files[@]}" -eq 1 ]]
+  [[ " ${files[*]} " == " utils/helper.js " ]]
 }
 
 ################################################################################
