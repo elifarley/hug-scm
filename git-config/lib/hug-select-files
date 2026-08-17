@@ -672,6 +672,17 @@ Install: https://github.com/charmbracelet/gum"
         prompt="$2"
         shift 2
         ;;
+      -*)
+        # A dashed token that reached here is NEITHER a known option NOR
+        # post-separator data (the dedicated '--' arm above already drained
+        # everything after the separator verbatim). Collecting it as a
+        # pathspec would turn a typo'd flag into a quiet "no files found"
+        # exit — the #292 Task 5 regression; this arm restores the
+        # pre-Task-5 loud rejection (same message, same exit-1).
+        # ORDER MATTERS: it must sit AFTER the '--' arm (so `-- --flag`
+        # stays data) and BEFORE the bare '*)' pathspec collector.
+        error "Unknown option for select_files_with_status: $1"
+        ;;
       *)
         # Positional arguments are pathspecs, forwarded to the list_*_files
         # helpers (which accept them as trailing positionals, git-style).

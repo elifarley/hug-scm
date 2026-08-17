@@ -1071,3 +1071,34 @@ mock_gum() {
   assert_success
   [[ "$(cat "$SELECT_CAPTURE")" =~ src/a\.py ]]
 }
+
+@test "select_files_with_status: unknown dashed option BEFORE -- is loudly rejected" {
+  # Task 5 regression guard (#292 closing fix): the pathspec-collecting '*)'
+  # arm had silently absorbed typo'd flags — '--bogus' became a pathspec and
+  # the caller saw a quiet "no files found" exit instead of an error. The
+  # restored '-*)' arm (positioned AFTER the '--' arm, BEFORE the '*)'
+  # collector) brings back the pre-Task-5 loud rejection.
+  create_pathspec_fixture
+  mock_gum
+
+  run select_files_with_status --staged --bogus
+  assert_failure
+  assert_output --partial "Unknown option for select_files_with_status: --bogus"
+  # Rejection happens in the parse loop — the picker must never run.
+  [[ ! -s "$SELECT_CAPTURE" ]]
+}
+
+@test "select_files_with_status: dashed token AFTER -- is pathspec data, never an option error" {
+  # Companion to the cell above (probed): the SAME token past the separator
+  # is DATA — a file literally named '--bogus' is listable and selectable,
+  # with no "Unknown option" rejection. Proves the '-*)' arm does not
+  # over-reach post-separator args.
+  create_pathspec_fixture
+  printf 'untracked-bogus\n' > ./--bogus
+  mock_gum
+
+  run select_files_with_status --untracked -- --bogus
+  assert_success
+  refute_output --partial "Unknown option"
+  [[ "$(cat "$SELECT_CAPTURE")" == *"--bogus"* ]]
+}
