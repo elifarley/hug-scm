@@ -68,6 +68,7 @@ eval "$(parse_common_flags "$@")"
 
 # Parse remaining arguments
 commit_ref=""
+saw_positional=false
 show_llm=false
 show_stats_explicit=false
 show_no_stat=false
@@ -84,7 +85,23 @@ for arg in "$@"; do
     show_no_stat=true
     ;;
   *)
+    # Lesson from BUG-6 (#292): a catch-all here silently let the LAST
+    # positional win as the ref, so `hug sh HEAD -- src/` validated "src/"
+    # as a committish and died with a confusing "Invalid commit reference".
+    # Reject the second positional loudly, naming the stray argument.
+    # Guard on POSITIONAL COUNT, not ref content: an empty first positional
+    # (`hug sh "" src/`, e.g. `hug sh "$ref" -- "$path"` with unset $ref)
+    # leaves commit_ref empty, so a `-n "$commit_ref"` test would let the
+    # path overwrite it. Counting positionals catches that too, while
+    # `hug sh ""` alone still defaults to HEAD (commit_ref stays empty).
+    if [[ "$saw_positional" == true ]]; then
+      # Path filtering ('hug sh <ref> -- <path>...') lands in a later PR —
+      # roadmap note kept HERE, not in the runtime error (review fix: the
+      # temporal second sentence told the user about our plans, not theirs).
+      error "hug sh accepts one commit reference; unexpected extra argument: '$arg'."
+    fi
     commit_ref="$arg"
+    saw_positional=true
     ;;
   esac
 done

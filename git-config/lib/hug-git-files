@@ -42,6 +42,16 @@ list_staged_files() {
                 scope_cwd=true
                 shift
                 ;;
+            --)
+                # Everything after the separator is a pathspec — even a token
+                # shaped like one of our own flags (a file literally named
+                # '--cwd' must scope, not toggle the scoping flag).
+                shift
+                while [[ $# -gt 0 ]]; do
+                    pathspecs+=("$1")
+                    shift
+                done
+                ;;
             *)
                 # Treat remaining arguments as pathspecs
                 pathspecs+=("$1")
@@ -122,6 +132,16 @@ list_unstaged_files() {
             --cwd)
                 scope_cwd=true
                 shift
+                ;;
+            --)
+                # Everything after the separator is a pathspec — even a token
+                # shaped like one of our own flags (a file literally named
+                # '--cwd' must scope, not toggle the scoping flag).
+                shift
+                while [[ $# -gt 0 ]]; do
+                    pathspecs+=("$1")
+                    shift
+                done
                 ;;
             *)
                 # Treat remaining arguments as pathspecs
@@ -221,6 +241,16 @@ list_conflicted_files() {
                 scope_cwd=true
                 shift
                 ;;
+            --)
+                # Everything after the separator is a pathspec — even a token
+                # shaped like one of our own flags (a file literally named
+                # '--cwd' must scope, not toggle the scoping flag).
+                shift
+                while [[ $# -gt 0 ]]; do
+                    pathspecs+=("$1")
+                    shift
+                done
+                ;;
             *)
                 # Treat remaining arguments as pathspecs
                 pathspecs+=("$1")
@@ -290,6 +320,16 @@ list_untracked_files() {
                 scope_cwd=true
                 shift
                 ;;
+            --)
+                # Everything after the separator is a pathspec — even a token
+                # shaped like one of our own flags (a file literally named
+                # '--cwd' must scope, not toggle the scoping flag).
+                shift
+                while [[ $# -gt 0 ]]; do
+                    pathspecs+=("$1")
+                    shift
+                done
+                ;;
             *)
                 # Treat remaining arguments as pathspecs
                 pathspecs+=("$1")
@@ -346,6 +386,16 @@ list_ignored_files() {
                 scope_cwd=true
                 shift
                 ;;
+            --)
+                # Everything after the separator is a pathspec — even a token
+                # shaped like one of our own flags (a file literally named
+                # '--cwd' must scope, not toggle the scoping flag).
+                shift
+                while [[ $# -gt 0 ]]; do
+                    pathspecs+=("$1")
+                    shift
+                done
+                ;;
             *)
                 # Treat remaining arguments as pathspecs
                 pathspecs+=("$1")
@@ -380,14 +430,18 @@ list_ignored_files() {
 }
 
 # Lists all tracked files (in the index)
-# Usage: mapfile -t files < <(list_tracked_files [--cwd])
+# Usage: mapfile -t files < <(list_tracked_files [--cwd] [--] [pathspecs...])
 # Parameters:
 #   --cwd - If provided, scopes listing to current directory and subdirectories only
+#   pathspecs - Optional git pathspecs to filter files (wildcards, directories, file patterns)
 # Output:
 #   File paths relative to current directory (one per line)
 # Notes:
 #   When --cwd is NOT specified, lists all files in repository by running from repo root.
 #   When --cwd IS specified, lists files in current directory and subdirectories.
+#   Pathspecs REPLACE the '.' cwd scope, not AND with it — git pathspecs are
+#   already cwd-relative, so forwarding them verbatim preserves the
+#   cwd-relative output contract while honoring the requested scope.
 #   Uses git ls-files to list index contents (excludes untracked).
 #   Includes unchanged tracked files.
 #   Empty output if no tracked files (new repo).
@@ -397,13 +451,27 @@ list_tracked_files() {
         scope_cwd=true
         shift
     fi
+    # A leading '--' ends flag parsing: the selector forwards one to keep
+    # option-shaped pathspecs (a file literally named '--cwd') out of our
+    # flag slot. Strip it — everything after is a pathspec.
+    [[ "${1:-}" == "--" ]] && shift
 
     check_git_repo
-    
+
+    # Optional trailing pathspecs (git-style, #292): when present they
+    # REPLACE the cwd '.' scope — git pathspecs are already cwd-relative,
+    # so forwarding them verbatim keeps the output contract (cwd-relative
+    # paths) intact while honoring the requested scope.
+    local -a scopes=()
+    if [[ $# -gt 0 ]]; then
+        scopes=("$@")
+    elif $scope_cwd; then
+        scopes=(".")
+    fi
+
     local -a paths=()
-    if $scope_cwd; then
-        # Scope to current directory: run ls-files with -- .
-        mapfile -t paths < <(git ls-files -- . 2>/dev/null || true)
+    if [[ ${#scopes[@]} -gt 0 ]]; then
+        mapfile -t paths < <(git ls-files -- "${scopes[@]}" 2>/dev/null || true)
     else
         # Browse full repository: run ls-files from repo root
         local repo_root

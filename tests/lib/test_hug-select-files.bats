@@ -48,6 +48,12 @@ setup() {
 }
 
 teardown() {
+  # mock_gum's capture file lives outside the test repo — clean it explicitly
+  # or every pathspec test leaks a tmp file. (if-wrap: a bare `[[ ]] && rm`
+  # list would trip BATS's set -e when the var is unset.)
+  if [[ -n "${SELECT_CAPTURE:-}" ]]; then
+    rm -f "$SELECT_CAPTURE"
+  fi
   cleanup_test_repo
 }
 
@@ -950,4 +956,149 @@ create_merge_conflict() {
   run count_files_with_status bogus-state
   assert_failure
   assert_output --partial "unknown state 'bogus-state'"
+}
+
+################################################################################
+# Tests for pathspec support in select_files_with_status (#292)
+################################################################################
+
+# Fixture: BOTH src/a.py and docs/note.md are staged, so a pathspec-scoped
+# selector must show src/a.py while an unscoped one would show both — this is
+# what makes the pathspec forwarding observable rather than coincidental.
+create_pathspec_fixture() {
+  mkdir -p src docs
+  echo "a" > src/a.py
+  echo "note" > docs/note.md
+  git add -A
+  git commit -q -m "base"
+
+  echo "mod-a" >> src/a.py
+  echo "mod-note" >> docs/note.md
+  git add src/a.py docs/note.md
+}
+
+# Mock gum so the interactive picker becomes observable and controllable:
+# the candidate list piped into gum lands in $SELECT_CAPTURE, and gum
+# "returns" the first candidate (a deterministic single selection).
+# ONLY 'gum filter' is intercepted — other subcommands (notably gum_log's
+# 'gum log', which renders error()/warning() output) pass through to the
+# real gum or a printf fallback, so error text stays visible to assertions.
+mock_gum() {
+  SELECT_CAPTURE="$(mktemp)"
+  gum_available() { return 0; }
+  gum() {
+    if [[ "${1:-}" != "filter" ]]; then
+      if command -v gum >/dev/null 2>&1 && command gum "$@"; then
+        return 0
+      fi
+      # Mirror gum_log's fallback branch: "<prefix> <message>" to stderr,
+      # with the message as the last argument of 'gum log --prefix=X -- msg'.
+      local prefix="" message="${@: -1}" arg
+      for arg in "$@"; do
+        [[ "$arg" == --prefix=* ]] && prefix="${arg#--prefix=}"
+      done
+      printf '%s %s\n' "$prefix" "$message" >&2
+      return 0
+    fi
+    cat > "$SELECT_CAPTURE"
+    head -1 "$SELECT_CAPTURE"
+  }
+}
+
+@test "select_files_with_status: pathspec after -- scopes staged candidates" {
+  create_pathspec_fixture
+  mock_gum
+
+  run select_files_with_status --staged -- src/a.py
+  assert_success
+  refute_output --partial "Unknown option"
+
+  local candidates
+  candidates=$(cat "$SELECT_CAPTURE")
+  [[ "$candidates" =~ src/a\.py ]]
+  [[ ! "$candidates" =~ docs/note\.md ]]
+}
+
+@test "select_files_with_status: literal '--staged' filename after -- is pathspec data, not an option" {
+  create_pathspec_fixture
+  # A file literally named '--staged': if the parser lacked a dedicated '--'
+  # arm, this arg would be eaten as the --staged option (or rejected).
+  printf 'untracked\n' > ./--staged
+  mock_gum
+
+  run select_files_with_status --untracked -- --staged
+  assert_success
+  refute_output --partial "Unknown option"
+
+  local candidates
+  candidates=$(cat "$SELECT_CAPTURE")
+  [[ "$candidates" == *"--staged"* ]]
+}
+
+@test "select_files_with_status: command substitution yields a scoped selection, not a silent empty result" {
+  # Swallow hazard (#292): callers capture the selector via $(...). A parsing
+  # regression that turns '--' into an error would surface here as an empty
+  # $file or a cancelled (exit 1) picker — both silently break the caller.
+  create_pathspec_fixture
+  mock_gum
+
+  local file=""
+  if ! file=$(select_files_with_status --single --staged -- src/); then
+    fail "expected a selection, got cancellation/empty: '$file'"
+  fi
+  [[ -n "$file" ]]
+  [[ "$file" == src/* ]]
+}
+
+@test "select_files_with_status: flag-less call with pathspecs scopes the listing" {
+  # Contract (was guard characterization, flipped by #292 Task 7):
+  # list_tracked_files now consumes trailing pathspecs, so a flag-less call
+  # with pathspecs LISTS THE SCOPED TRACKED FILES instead of erroring —
+  # the tracked-file pickers (lc/lf/lcr) forward user pathspecs here and
+  # depend on the scoping (spec: "pathspecs are never silently discarded").
+  create_pathspec_fixture
+  mock_gum
+
+  run select_files_with_status -- src/
+  assert_success
+  [[ "$(cat "$SELECT_CAPTURE")" =~ src/a\.py ]]
+  # Out-of-scope tracked file must NOT leak into the candidates
+  [[ ! "$(cat "$SELECT_CAPTURE")" =~ docs/note\.md ]]
+
+  # Flag-less WITHOUT pathspecs keeps working (repository-wide by design):
+  # tracked-file pickers (lf/lc/fb/...) depend on this branch.
+  run select_files_with_status
+  assert_success
+  [[ "$(cat "$SELECT_CAPTURE")" =~ src/a\.py ]]
+}
+
+@test "select_files_with_status: unknown dashed option BEFORE -- is loudly rejected" {
+  # Task 5 regression guard (#292 closing fix): the pathspec-collecting '*)'
+  # arm had silently absorbed typo'd flags — '--bogus' became a pathspec and
+  # the caller saw a quiet "no files found" exit instead of an error. The
+  # restored '-*)' arm (positioned AFTER the '--' arm, BEFORE the '*)'
+  # collector) brings back the pre-Task-5 loud rejection.
+  create_pathspec_fixture
+  mock_gum
+
+  run select_files_with_status --staged --bogus
+  assert_failure
+  assert_output --partial "Unknown option for select_files_with_status: --bogus"
+  # Rejection happens in the parse loop — the picker must never run.
+  [[ ! -s "$SELECT_CAPTURE" ]]
+}
+
+@test "select_files_with_status: dashed token AFTER -- is pathspec data, never an option error" {
+  # Companion to the cell above (probed): the SAME token past the separator
+  # is DATA — a file literally named '--bogus' is listable and selectable,
+  # with no "Unknown option" rejection. Proves the '-*)' arm does not
+  # over-reach post-separator args.
+  create_pathspec_fixture
+  printf 'untracked-bogus\n' > ./--bogus
+  mock_gum
+
+  run select_files_with_status --untracked -- --bogus
+  assert_success
+  refute_output --partial "Unknown option"
+  [[ "$(cat "$SELECT_CAPTURE")" == *"--bogus"* ]]
 }

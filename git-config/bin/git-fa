@@ -78,4 +78,10 @@ Install gum: https://github.com/charmbracelet/gum"
   fi
 fi
 
+# Cardinality guard (pathspec contract §3.2): fa analyzes ONE file — two
+# paths used to fall through to git, which fataled with the cryptic
+# "--follow requires exactly one pathspec". Reject with a command-naming
+# error instead (#292).
+reject_multiple_files "hug fa" "$@"
+
 exec git log --follow --format='%an' -- "$@" | sort | uniq -c | sort -rn

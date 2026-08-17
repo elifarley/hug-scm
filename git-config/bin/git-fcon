@@ -77,4 +77,9 @@ Install gum: https://github.com/charmbracelet/gum"
   fi
 fi
 
+# Cardinality guard (pathspec contract §3.2): fcon lists contributors to ONE
+# file — two paths used to fall through to git's "--follow requires exactly
+# one pathspec" fatal. Reject with a command-naming error instead (#292).
+reject_multiple_files "hug fcon" "$@"
+
 exec git log --follow --pretty=format:'%an <%ae>' -- "$@" | sort -u

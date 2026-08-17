@@ -7,6 +7,10 @@
 # Functions:
 #   - parse_pathspecs: split args at first -- into pre_args and pathspecs.
 #   - parse_common_flags: expand shared flags into shell assignments.
+#   - parse_common_flags_with_pathspecs: fixed-order combo — pathspec split
+#     first, then common-flag parsing on the pre-args only.
+#   - reject_multiple_files: enforce single-file cardinality for
+#     one-file commands (uniform pathspec contract, spec §3.2/§5.6).
 #   - require_args: enforce minimum argument counts.
 #
 # Implementation:
@@ -250,6 +254,125 @@ parse_common_flags() {
     printf '\n'
   else
     printf 'set --\n'
+  fi
+}
+
+# Combines pathspec splitting and common-flag parsing in ONE structurally
+# fixed order, so every path-accepting hug command parses arguments the
+# same way (uniform pathspec contract, spec §3.1).
+#
+# The order is NOT negotiable, and previously lived only in comments:
+#   (1) consume an optional leading '--picker' mode token
+#   (2) detect a trailing bare '--' and strip it
+#   (3) split at the first '--' via parse_pathspecs
+#   (4) delegate common-flag parsing to parse_common_flags on the pre-args
+#
+# WHY a helper: parse_common_flags intercepts a trailing '--' itself and
+# exports HUG_INTERACTIVE_FILE_SELECTION=true. For listings that must never
+# leak that export, this helper OWNS the trailing-'--' lifecycle: it strips
+# the trailing '--' BEFORE parse_pathspecs can treat it as a separator, and
+# re-exports HUG_INTERACTIVE_FILE_SELECTION=true ONLY when the caller passed
+# '--picker' AND a trailing bare '--' was consumed. Call it without
+# '--picker' and nothing is ever exported.
+#
+# Usage: eval "$(parse_common_flags_with_pathspecs [--picker] "$@")"
+# Caller-scope effects of the eval'd output:
+#   - "$@" becomes the remaining separator-free pre-args (the inner
+#     parse_common_flags 'set --' applies to the CALLER's scope because
+#     this helper re-establishes "$@" before delegating)
+#   - _pathspec_pathspecs array is set (pathspec data after the first --)
+#   - export HUG_INTERACTIVE_FILE_SELECTION=true only under the
+#     --picker + trailing '--' condition described above
+#
+# Reserved token: '--picker' is consumed ONLY as the literal FIRST
+# argument. A pathspec literally named '--picker' is unreachable before
+# the separator ('hug cmd -- --picker' treats it as pathspec data, as the
+# test suite verifies) — the price of an unambiguous mode token.
+#
+# TWO reservations, stated explicitly (doc contract, #292 review):
+#   1. A trailing bare '--' is ALWAYS consumed — even for callers that do
+#      NOT pass '--picker'. Non-picker callers must therefore never depend
+#      on parse_common_flags' own trailing-'--' interactive trigger: this
+#      helper strips the token before parse_common_flags ever sees it, so
+#      HUG_INTERACTIVE_FILE_SELECTION is only ever set through the
+#      '--picker' + trailing-'--' path described above.
+#   2. The first-token '--picker' reservation also collides with a
+#      first-positional SEARCH TERM literally named '--picker' (lc/lf/lcr
+#      take the term as $1). Such a term is unreachable — 'hug lc -- --picker'
+#      is a PATHSPEC named '--picker', not a term. Documented, not
+#      redesigned: an unambiguous mode token cannot coexist with a
+#      same-named leading positional, and no realistic search term is
+#      '--picker'.
+#
+# Pure argument surgery: performs NO git invocations, and leaves
+# parse_pathspecs / parse_common_flags themselves untouched.
+#
+# Example:
+#   parse_common_flags_with_pathspecs --dry-run HEAD -- '*.java'
+#   → caller: dry_run=true, "$@"=(HEAD), _pathspec_pathspecs=('*.java')
+parse_common_flags_with_pathspecs() {
+  local picker_mode=false
+  if [[ "${1:-}" == "--picker" ]]; then
+    picker_mode=true
+    shift
+  fi
+
+  local trailing_picker=false
+  if [[ $# -gt 0 && "${!#}" = "--" ]]; then
+    $picker_mode && trailing_picker=true
+    set -- "${@:1:$(($# - 1))}"
+  fi
+
+  # Split at the first '--' (function-local; re-emitted for the caller below)
+  eval "$(parse_pathspecs "$@")"
+
+  {
+    # Restore pre-args as the caller's "$@", then delegate common-flag parsing
+    # (its 'set --' therefore applies to the CALLER's scope).
+    printf 'set -- '
+    if [[ ${#_pathspec_pre_args[@]} -gt 0 ]]; then
+      printf '%q ' "${_pathspec_pre_args[@]}"
+    fi
+    printf '\n'
+    # shellcheck disable=SC2016
+    # WHY single quotes: the text must survive to the caller's eval unexpanded —
+    # the caller's "$@", not this function's, is what parse_common_flags must see.
+    printf 'eval "$(parse_common_flags "$@")"\n'
+
+    printf '_pathspec_pathspecs=('
+    if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+      printf ' %q' "${_pathspec_pathspecs[@]}"
+    fi
+    printf ' )\n'
+
+    if $trailing_picker; then
+      printf 'export HUG_INTERACTIVE_FILE_SELECTION=true\n'
+    fi
+  }
+}
+
+# Cardinality guard for single-file commands (spec §3.2 / §5.6 of the
+# pathspec-contract design). Rejects more than one file argument with a
+# clear, command-naming error instead of git's raw fatals or silent ignores.
+#
+# Usage: reject_multiple_files "<cmd-name>" [file...]
+# Parameters:
+#   $1 - Command name for the error message (e.g. "hug fa")
+#   $@ - Remaining args are the candidate file arguments
+# Note:
+#   Empty-string arguments are ignored (not counted as files), so callers
+#   can pass through optional-position variables without pre-filtering.
+# Effects:
+#   Exits with error if more than one non-empty file argument is given
+reject_multiple_files() {
+  local cmd_name="$1"; shift
+  local -a files=()
+  local f
+  for f in "$@"; do
+    [[ -n "$f" ]] && files+=("$f")
+  done
+  if [[ ${#files[@]} -gt 1 ]]; then
+    error "${cmd_name} accepts only one file."
   fi
 }
 

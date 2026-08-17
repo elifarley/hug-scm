@@ -91,6 +91,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Cardinality guard (pathspec contract §3.2): fblame analyzes ONE file —
+# two paths used to reach git as "bad revision '<second file>'". Placed
+# after the flag loop (positionals collected in remaining_args) and before
+# the churn/blame fork, so BOTH modes are guarded (#292).
+reject_multiple_files "hug fblame" "${remaining_args[@]}"
+
 check_git_repo
 
 # Churn mode - delegate to Python

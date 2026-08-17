@@ -406,7 +406,7 @@ list_files_with_status() {
           formatted_options+=("${status_text} ${file}")
         fi
         status_codes+=("$status_code")
-      done < <(list_staged_files "${status_flags[@]}" "${pathspecs[@]}")
+      done < <(list_staged_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     fi
 
     if $include_unstaged; then
@@ -424,7 +424,7 @@ list_files_with_status() {
           formatted_options+=("${status_text} ${file}")
         fi
         status_codes+=("$status_code")
-      done < <(list_unstaged_files "${status_flags[@]}" "${pathspecs[@]}")
+      done < <(list_unstaged_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     fi
 
     if $include_conflicts; then
@@ -442,11 +442,11 @@ list_files_with_status() {
           formatted_options+=("${status_text} ${file}")
         fi
         status_codes+=("$status_code")
-      done < <(list_conflicted_files "${status_flags[@]}" "${pathspecs[@]}")
+      done < <(list_conflicted_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     fi
 
     if $include_untracked; then
-      mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}" "${pathspecs[@]}")
+      mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
       for file in "${untracked_files[@]}"; do
         [[ -z "$file" ]] && continue
         local status_text status_code
@@ -462,7 +462,7 @@ list_files_with_status() {
     fi
 
     if $include_ignored; then
-      mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}" "${pathspecs[@]}")
+      mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
       for file in "${ignored_files[@]}"; do
         [[ -z "$file" ]] && continue
         local status_text status_code
@@ -573,7 +573,17 @@ list_files_with_status() {
 }
 
 # Advanced interactive file selection with multiple file types support
-# Usage: select_files_with_status [OPTIONS]
+# Usage: select_files_with_status [OPTIONS] [--] [pathspecs...]
+# Parameters:
+#   pathspecs - Optional git pathspecs; restrict candidates to matching files
+#               (forwarded to the list_*_files helpers, git-style).
+#               With pathspecs and NO state flag, the selection scopes to
+#               tracked files matching the pathspecs (forwarded to
+#               list_tracked_files); without pathspecs, flag-less selection
+#               remains repository-wide.
+#   NOTE: --prompt consumes the NEXT argument — keep the canonical order
+#   '--prompt <text> -- <pathspecs>'; a bare '--prompt --' would swallow '--'
+#   as the prompt text.
 # Options:
 #   --multi              Allow multiple file selection (default: true)
 #   --single             Single file selection (default: multi)
@@ -611,10 +621,21 @@ Install: https://github.com/charmbracelet/gum"
   local no_status=false
   local scope_cwd=false
   local prompt="Select file(s)..."
-  
+  local -a pathspecs=()
+
   # Parse arguments
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      # Dedicated separator arm: everything after '--' is verbatim pathspec
+      # data. WHY not collect '--' via the bare '*)' arm below: that would
+      # make '--' itself a literal pathspec AND keep option-parsing alive for
+      # post-separator args — a file literally named '--staged' passed after
+      # '--' must not be eaten as the --staged option.
+      --)
+        shift
+        pathspecs+=("$@")
+        break
+        ;;
       --multi)
         multi=true
         shift
@@ -651,8 +672,22 @@ Install: https://github.com/charmbracelet/gum"
         prompt="$2"
         shift 2
         ;;
-      *)
+      -*)
+        # A dashed token that reached here is NEITHER a known option NOR
+        # post-separator data (the dedicated '--' arm above already drained
+        # everything after the separator verbatim). Collecting it as a
+        # pathspec would turn a typo'd flag into a quiet "no files found"
+        # exit — the #292 Task 5 regression; this arm restores the
+        # pre-Task-5 loud rejection (same message, same exit-1).
+        # ORDER MATTERS: it must sit AFTER the '--' arm (so `-- --flag`
+        # stays data) and BEFORE the bare '*)' pathspec collector.
         error "Unknown option for select_files_with_status: $1"
+        ;;
+      *)
+        # Positional arguments are pathspecs, forwarded to the list_*_files
+        # helpers (which accept them as trailing positionals, git-style).
+        pathspecs+=("$1")
+        shift
         ;;
     esac
   done
@@ -687,7 +722,15 @@ Install: https://github.com/charmbracelet/gum"
   fi
   
   if ! $has_includes; then
-    mapfile -t files < <(list_tracked_files "${list_flags[@]}")
+    # Flag-less selection lists tracked files; pathspecs (when given) now
+    # scope that listing via list_tracked_files's trailing-pathspec support
+    # (#292, Task 7 — the old loud-refusal guard existed only because
+    # list_tracked_files could not consume pathspecs; it can now, and the
+    # tracked-file pickers lc/lf/lcr rely on this scoping).
+    # NOTE: the "${pathspecs[@]+...}" idiom expands the array only when set —
+    # a plain "${pathspecs[@]}" would trip set -u on Bash < 4.4 when it is
+    # empty. Same idiom at every forwarding site below.
+    mapfile -t files < <(list_tracked_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     mapfile -t formatted_options < <(printf '%s\n' "${files[@]}")
   else
   
@@ -706,9 +749,9 @@ Install: https://github.com/charmbracelet/gum"
         IFS=' ' read -r status_text status_code <<< "$(parse_tab_delimited_status "$(_format_staged_status "$status")")"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
-      done < <(list_staged_files "${status_flags[@]}")
+      done < <(list_staged_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     else
-      mapfile -t staged_files < <(list_staged_files "${list_flags[@]}")
+      mapfile -t staged_files < <(list_staged_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
       files+=("${staged_files[@]}")
       formatted_options+=("${staged_files[@]}")
     fi
@@ -728,16 +771,16 @@ Install: https://github.com/charmbracelet/gum"
         IFS=' ' read -r status_text status_code <<< "$(parse_tab_delimited_status "$(_format_unstaged_status "$status")")"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
-      done < <(list_unstaged_files "${status_flags[@]}")
+      done < <(list_unstaged_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     else
-      mapfile -t unstaged_files < <(list_unstaged_files "${list_flags[@]}")
+      mapfile -t unstaged_files < <(list_unstaged_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
       files+=("${unstaged_files[@]}")
       formatted_options+=("${unstaged_files[@]}")
     fi
   fi
   
   if $include_untracked; then
-    mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}")
+    mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     for file in "${untracked_files[@]}"; do
       [[ -z "$file" ]] && continue
       local status_text status_code
@@ -752,7 +795,7 @@ Install: https://github.com/charmbracelet/gum"
   fi
   
   if $include_ignored; then
-    mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}")
+    mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
     for file in "${ignored_files[@]}"; do
       [[ -z "$file" ]] && continue
       local status_text status_code

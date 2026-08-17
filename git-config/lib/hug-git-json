@@ -437,19 +437,27 @@ batch_commit_search() {
   local search_term="$1"
   shift
 
-  # Parse flags
+  # Parse flags. Separator-aware (#292 PR-A review): once a '--' is seen,
+  # every remaining token is git data — a pathspec literally named
+  # '--no-body' must scope the search, not toggle body formatting.
   local with_files=true
   local no_body=false
+  local seen_separator=false
   local -a git_args=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+    --)
+      seen_separator=true
+      git_args+=("$1")
+      shift
+      ;;
     --no-files)
-      with_files=false
+      if $seen_separator; then git_args+=("$1"); else with_files=false; fi
       shift
       ;;
     --no-body)
-      no_body=true
+      if $seen_separator; then git_args+=("$1"); else no_body=true; fi
       shift
       ;;
     *)
@@ -480,19 +488,27 @@ batch_code_search() {
   local search_pattern="$1"
   shift
 
-  # Parse flags
+  # Parse flags. Separator-aware (#292 PR-A review): once a '--' is seen,
+  # every remaining token is git data — a pathspec literally named
+  # '--no-body' must scope the search, not toggle body formatting.
   local with_files=true
   local no_body=false
+  local seen_separator=false
   local -a git_args=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+    --)
+      seen_separator=true
+      git_args+=("$1")
+      shift
+      ;;
     --no-files)
-      with_files=false
+      if $seen_separator; then git_args+=("$1"); else with_files=false; fi
       shift
       ;;
     --no-body)
-      no_body=true
+      if $seen_separator; then git_args+=("$1"); else no_body=true; fi
       shift
       ;;
     *)

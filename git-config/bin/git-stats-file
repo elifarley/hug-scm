@@ -118,6 +118,31 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Cardinality guard (pathspec contract §3.2): stats file analyzes ONE file
+# — `hug stats file a b` used to churn-analyze ONLY a and silently drop
+# the extras. Count NON-FLAG positionals and reject extras with a
+# command-naming error (#292).
+#
+# WHY stop at the FIRST flag: a value-taking flag that reaches this loop
+# unrecognized (known ones like `--since <date>` are consumed above WITH
+# their value) passes through with its value as a separate word, and that
+# value token is shape-identical to a file name. The first-flag boundary is
+# the only safe cut: tokens before it are files, everything after is opaque
+# passthrough. Defensive today — no documented stats-file flag takes a
+# separate-word value here — but it keeps the guard uniform with git-llf's
+# should one be added.
+declare -a stats_file_positionals=()
+for arg in "${remaining_args[@]}"; do
+  case "$arg" in
+  -*) break ;; # first flag: stop collecting; the rest is passthrough
+  *) stats_file_positionals+=("$arg") ;;
+  esac
+done
+# Nullsafe expansion (Bash 4.3 set -u crash mode — the PR's own convention):
+# empty stats_file_positionals must expand to nothing, not an unbound-variable
+# fatal on the single-file happy path.
+reject_multiple_files "hug stats file" ${stats_file_positionals[@]+"${stats_file_positionals[@]}"}
+
 check_git_repo
 
 # Get file argument
