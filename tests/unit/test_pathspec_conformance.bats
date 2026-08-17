@@ -385,9 +385,15 @@ psx_sl_kind() {
 # bypasses gum_available's TTY probe so the stub is actually invoked in CI.
 
 # Installs a stub gum that records picker candidates to $GUM_CANDIDATES_FILE.
-# The `filter`-only guard matters: every info/error message ALSO shells out to
-# `gum log …`, and an unconditional `cat >` there would clobber the capture
-# AFTER the picker ran (found while probing — the file kept ending up empty).
+# MUST be called once per loop iteration, right before `run` — it truncates
+# the capture file so a picker that never fires (scoped list empty →
+# _handle_no_files_found short-circuits BEFORE gum runs) yields an EMPTY
+# capture, not the previous iteration's content (stale-capture false-green;
+# same lesson class as the psx_inert_args process-substitution swallow).
+# The `filter`-only guard matters: every info/error message ALSO shells out
+# to `gum log …`, and an unconditional `cat >` there would clobber the
+# capture AFTER the picker ran (found while probing — the file kept ending
+# up empty).
 psx_install_stub_gum() {
   local stub_dir="$BATS_TEST_TMPDIR/stub"
   mkdir -p "$stub_dir"
@@ -398,12 +404,15 @@ psx_install_stub_gum() {
   chmod +x "$stub_dir/gum"
   GUM_CANDIDATES_FILE="$BATS_TEST_TMPDIR/gum-candidates.txt"
   export GUM_CANDIDATES_FILE
+  # Bypass gum_available's TTY probe so the stub is actually invoked in CI.
+  export HUG_TEST_MODE=true
   PATH="$stub_dir:$PATH"
+  : > "$GUM_CANDIDATES_FILE"
 }
 
 @test "column scoped-picker: -- src/ -- restricts picker candidates (picker rows)" {
   # Two-sided per spec §4: every captured candidate must match the scope
-  # (contains src/) AND the out-of-scope marker must be ABSENT. The base
+  # (contains $filter) AND the out-of-scope marker must be ABSENT. The base
   # fixture only stages src/a.py and leaves docs/note.md unstaged, so each
   # command's mode needs its own probe state (see the case arms):
   #   su — needs an UNSTAGED change under src/ (echo >> src/BIG.py) beside
@@ -412,11 +421,19 @@ psx_install_stub_gum() {
   #        the fixture's staged src/a.py
   #   sw — combined mode: staged src/a.py + unstaged docs/note.md is already
   #        two-sided out of the box
-  local present="src/" absent="docs/note.md" candidates
+  local filter="src/" absent="docs/note.md" present candidates
   for cmd in "${PATHSPEC_PICKER_ROWS[@]}"; do
+    present="$filter"
     case "$cmd" in
     su) present="src/BIG.py" ;;
     ss | sw) present="src/a.py" ;;
+    *)
+      # Sentinel pattern (psx_inert_args/psx_sl_kind): a future picker row
+      # without a case arm must fail with a breadcrumb, not "empty
+      # candidates" three assertions later.
+      echo "psx scoped-picker: unknown row '$cmd' — add it to the case arms" >&2
+      present="__PSX_UNKNOWN_ROW__"
+      ;;
     esac
     psx_setup
     case "$cmd" in
@@ -425,7 +442,7 @@ psx_install_stub_gum() {
     esac
 
     psx_install_stub_gum
-    run env HUG_TEST_MODE=true PATH="$PATH" hug "$cmd" -- src/ --
+    run hug "$cmd" -- "$filter" --
     assert_success
     assert_output --partial "available or cancelled"
 
@@ -442,7 +459,7 @@ psx_install_stub_gum() {
     fi
     # … and EVERY candidate line matches the scope.
     local stray
-    stray=$(grep -v 'src/' <<< "$candidates" || true)
+    stray=$(grep -v "$filter" <<< "$candidates" || true)
     [[ -z "$stray" ]]
     psx_reset
   done
