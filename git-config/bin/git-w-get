@@ -321,7 +321,9 @@ reset_specific_files() {
   if ! $force; then
     printf "Resetting files...\n" >&2
   fi
-  git restore --source="$commit" --worktree "${files_to_reset[@]}"
+  # BUG-4 (#292): the explicit `--` ends option parsing so a file literally
+  # named like a flag (e.g. `-weird`) is never misread as one.
+  git restore --source="$commit" --worktree -- "${files_to_reset[@]}"
   success "Files reset to $commit_short"
 }
 
@@ -362,34 +364,36 @@ main() {
   : "${force:=false}"
   : "${dry_run:=false}"
 
-  # 3. Get target identifier (first non-flag argument)
-  if [[ $# -gt 0 ]]; then
-    target_identifier="$1"
-    shift
-  fi
-  # 4. Check for missing target
-  if [[ -z "$target_identifier" ]]; then
-    error "Missing target argument.
+  # 3-5. Get the target from the first non-flag argument — UNLESS -u/--upstream
+  # was given: with --upstream there is NO target positional; every remaining
+  # argument is a FILE (#292 spec §5.2, BUG-3). Extracting a target anyway used
+  # to eat the first file (dying on the old exclusivity guard with "Cannot
+  # specify --upstream with a specific commit or integer N") and `-u` alone hit
+  # "Missing target argument" even though help documents `hug w get -u` as the
+  # reset-all form. The former `target_identifier == "-u"` arm was dead code:
+  # leading flags are already consumed by the custom-flag loop in step 1.
+  if ! $use_upstream; then
+    if [[ $# -gt 0 ]]; then
+      target_identifier="$1"
+      shift
+    fi
+    if [[ -z "$target_identifier" ]]; then
+      error "Missing target argument.
        Usage: hug w get <commit> [file...]
        Use 'hug w get --help' for more information"
-    exit 1
+      exit 1
+    fi
+    if [[ "$target_identifier" =~ ^([0-9]|[1-9][0-9]?)$ ]]; then
+      use_integer_N=true
+      integer_N="$target_identifier"
+    else
+      commit="$target_identifier"
+    fi
   fi
-
-  # 5. Process the isolated target
-  if [[ "$target_identifier" == "-u" || "$target_identifier" == "--upstream" ]]; then
-    use_upstream=true
-  elif [[ "$target_identifier" =~ ^([0-9]|[1-9][0-9]?)$ ]]; then
-    use_integer_N=true
-    integer_N="$target_identifier"
-  else
-    commit="$target_identifier"
-  fi
-
-  # 6. Validate argument combinations
-  if $use_upstream && ($use_integer_N || [[ -n "$commit" ]]); then
-    error "Cannot specify --upstream with a specific commit or integer N."
-    exit 1
-  fi
+  # NOTE: the old "-u + commit / -u + integer N" exclusivity guard is gone BY
+  # CONSTRUCTION — under -u no target classification ever runs, so its two
+  # subjects cannot exist. A nonexistent file under -u still fails loudly via
+  # check_file_in_commit.
 
   # 7. Determine the target commit
   if $use_upstream; then

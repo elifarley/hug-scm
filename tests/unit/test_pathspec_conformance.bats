@@ -723,23 +723,92 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization w get: -u with a path / -u alone both error (flip: Task 8)" {
-  # characterization: flip target THIS PR (Task 8) — probed: with `-u`, the
-  # first non-flag arg becomes the TARGET IDENTIFIER, so the file is mistaken
-  # for a commit ("Cannot specify --upstream with a specific commit or
-  # integer N.", exit 1 — git-w-get:389-390). And `-u` alone dies on the
-  # missing-target check ("Missing target argument", exit 1 — the documented
-  # `hug w get -u` reset-all form is broken today, git-w-get:371-375).
+@test "w get: -u treats positionals as files; -u alone runs documented reset-all (Task 8)" {
+  # FLIPPED (Task 8, spec §5.2): with `-u` there is NO target positional —
+  # every remaining argument is a FILE (BUG-3). Before the fix, `-u <file>`
+  # died on the exclusivity guard ("Cannot specify --upstream with a specific
+  # commit or integer N.") and `-u` alone on "Missing target argument", even
+  # though help documents `hug w get -u` as reset-all.
+  #
+  # Upstream fixture: `git branch --set-upstream-to=<local>` — @{u} resolves
+  # local branches too, so no remote is needed (probed: get_upstream_commit's
+  # `git rev-parse --verify @{u}` accepts it). Each cell that needs a working
+  # restore also commits the fixture's dirty state so the tree is CLEAN
+  # (3-state gate: dirty would refuse, correctly, before any restore).
+  local upstream_setup='
+    git branch up-ref HEAD~1
+    git branch --set-upstream-to=up-ref
+    git add -A
+    git commit -q -m divergence'
+
+  # Cell 1 — `-u <file>` restores that file from upstream (BUG-3 observable).
   psx_setup
+  eval "$upstream_setup"
   run hug w get -u src/a.py
-  assert_failure
-  assert_output --partial "Cannot specify --upstream with a specific commit or integer N."
+  assert_success
+  assert_output --partial "Files reset to"
+  assert_equal "py1" "$(cat src/a.py)" # reverted to upstream (base) version
   psx_reset
 
+  # Cell 2 — `-u 2` restores a file literally named `2`: the old "-u +
+  # integer" guard has no subject anymore (the integer regex never runs under
+  # -u). A nonexistent path still fails loudly via check_file_in_commit.
+  psx_setup
+  echo base-2 > 2
+  git add -- 2
+  git commit -q -m "file named 2 at base"
+  git branch up-ref # upstream HAS file 2 with the base content
+  echo diverged-2 > 2
+  git commit -q -am "diverge file 2"
+  git branch --set-upstream-to=up-ref
+  run hug w get -u 2
+  assert_success
+  assert_equal "base-2" "$(cat -- 2)"
+  psx_reset
+
+  # Cell 3 — `-u` alone with NO upstream: get_upstream_commit's loud error
+  # (spec §5.2 lists the no-upstream case explicitly).
   psx_setup
   run hug w get -u
   assert_failure
-  assert_output --partial "Missing target argument"
+  assert_output --partial "No upstream branch configured"
+  psx_reset
+
+  # Cell 4 — `-u` alone WITH upstream: the documented reset-all runs, preview
+  # shows the reset_all_files category shape, and --dry-run changes nothing.
+  psx_setup
+  eval "$upstream_setup"
+  run hug w get -u --dry-run
+  assert_success
+  assert_output --partial "Files that will be MODIFIED:"
+  assert_output --partial "src/a.py"
+  assert_output --partial "Dry run — no files were modified."
+  grep -q py2 src/a.py # unchanged by the dry run
+  psx_reset
+
+  # Cell 5 — BUG-4: a file literally named `-weird` restores safely (the
+  # restore gains an explicit `--` so dash-leading paths are never flags).
+  psx_setup
+  echo wbase > ./-weird
+  git add -- -weird
+  git commit -q -m "add -weird"
+  echo wdiverged > ./-weird
+  git commit -q -am "diverge -weird"
+  run hug w get HEAD~1 -weird
+  assert_success
+  assert_equal "wbase" "$(cat ./-weird)"
+  psx_reset
+
+  # Cell 6 — regression: NON-`-u` behavior unchanged. `w get <commit> <file>`
+  # on a clean tree still previews the specific-files shape (spec §5.2).
+  psx_setup
+  git add -A
+  git commit -q -m divergence
+  run hug w get HEAD~1 --dry-run src/a.py
+  assert_success
+  assert_output --partial "Files to be reset:"
+  assert_output --partial "src/a.py"
+  grep -q py2 src/a.py
   psx_reset
 }
 
