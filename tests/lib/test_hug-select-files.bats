@@ -1050,18 +1050,20 @@ mock_gum() {
   [[ "$file" == src/* ]]
 }
 
-@test "select_files_with_status: flag-less call with pathspecs errors loudly" {
-  # The flag-less fallback lists ALL tracked files and list_tracked_files
-  # ignores pathspecs — the guard must turn the silent scope-drop into a
-  # loud error instead of returning a repository-wide candidate list.
+@test "select_files_with_status: flag-less call with pathspecs scopes the listing" {
+  # Contract (was guard characterization, flipped by #292 Task 7):
+  # list_tracked_files now consumes trailing pathspecs, so a flag-less call
+  # with pathspecs LISTS THE SCOPED TRACKED FILES instead of erroring —
+  # the tracked-file pickers (lc/lf/lcr) forward user pathspecs here and
+  # depend on the scoping (spec: "pathspecs are never silently discarded").
   create_pathspec_fixture
   mock_gum
 
-  run select_files_with_status -- src/a.py
-  assert_failure
-  assert_output --partial "pathspecs require a state flag"
-  # stdout stays clean: no candidate leaked around the error
-  [[ ! "$(cat "$SELECT_CAPTURE")" =~ src/a\.py ]]
+  run select_files_with_status -- src/
+  assert_success
+  [[ "$(cat "$SELECT_CAPTURE")" =~ src/a\.py ]]
+  # Out-of-scope tracked file must NOT leak into the candidates
+  [[ ! "$(cat "$SELECT_CAPTURE")" =~ docs/note\.md ]]
 
   # Flag-less WITHOUT pathspecs keeps working (repository-wide by design):
   # tracked-file pickers (lf/lc/fb/...) depend on this branch.

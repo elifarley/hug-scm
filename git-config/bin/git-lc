@@ -54,8 +54,14 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (handles --browse-root, --, etc.)
-eval "$(parse_common_flags "$@")"
+# Parse common flags + split pathspecs at the first '--' (uniform pathspec
+# contract, #292). '--picker' opts into the trailing-bare-'--' interactive
+# flow: the helper owns that lifecycle and re-exports
+# HUG_INTERACTIVE_FILE_SELECTION only for '--picker' + trailing '--'.
+# Caller-scope effects: "$@" = separator-free pre-args; _pathspec_pathspecs =
+# pathspec data after the first '--'. browse_root is still set by the
+# delegated parse_common_flags (only when --browse-root is present).
+eval "$(parse_common_flags_with_pathspecs --picker "$@")"
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
@@ -115,6 +121,12 @@ if $json_output; then
 
   # Add remaining git log arguments
   search_args+=("$@")
+  # Re-inject the separator BUG-2 dropped (#292): without it, git log cannot
+  # disambiguate a path from a same-named branch ("fatal: ambiguous
+  # argument") and this JSON sink silently loses the requested scope.
+  # Nullsafe: with an empty array, `search_args+=("--")` alone would make
+  # git log treat everything after it as paths — guard on the element count.
+  (( ${#_pathspec_pathspecs[@]} )) && search_args+=("--" "${_pathspec_pathspecs[@]}")
 
   # Output unified JSON response with metadata
   search_results=$(batch_code_search "$search_term" "${search_args[@]}")
@@ -145,12 +157,21 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
 
     select_opts+=("--prompt" "Select file to restrict search...")
 
+    # Forward the user's pathspecs to the picker (same idiom as
+    # hug-git-diff): without this, the picker offers out-of-scope files and
+    # silently discards the requested scope (#292).
+    if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+      select_opts+=("${_pathspec_pathspecs[@]}")
+    fi
+
     file=""
     if file=$(select_files_with_status "${select_opts[@]}"); then
+      # The picked file joins the user's pathspecs under ONE separator: a
+      # second `--` after a first would become a path literally named '--'.
       if $with_files; then
-        exec hug ll -S "$search_term" --name-status "$@" -- "$file"
+        exec hug ll -S "$search_term" --name-status "$@" -- ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"} "$file"
       else
-        exec hug ll -S "$search_term" "$@" -- "$file"
+        exec hug ll -S "$search_term" "$@" -- ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"} "$file"
       fi
     else
       info "Cancelled."
@@ -163,9 +184,11 @@ Install gum: https://github.com/charmbracelet/gum"
   fi
 fi
 
-# Execute with or without files listing
+# Execute with or without files listing. Re-inject the separator nullsafe
+# (#292 BUG-2): `${arr[@]+...}` expands to nothing for an empty array, so
+# no lone `--` is added when the user passed no pathspecs.
 if $with_files; then
-  exec hug ll -S "$search_term" --name-status "$@"
+  exec hug ll -S "$search_term" --name-status "$@" ${_pathspec_pathspecs[@]+"--" "${_pathspec_pathspecs[@]}"}
 else
-  exec hug ll -S "$search_term" "$@"
+  exec hug ll -S "$search_term" "$@" ${_pathspec_pathspecs[@]+"--" "${_pathspec_pathspecs[@]}"}
 fi

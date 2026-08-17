@@ -773,12 +773,12 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization lc/lf/lcr: mid-stream -- consumed yet filter still applies (BUG-2, flip: Task 7)" {
-  # characterization: flip target THIS PR (Task 7) — probed: `lc py -- src/`
-  # (and lcr, and `lf guide -- src/`) exit 0 and filter to src/ commits —
-  # BUT the separator itself is consumed (BUG-2: it never reaches git), so
-  # the two-sided cells still discriminate: lc/lcr keep "base"; lf's term
-  # matches the docs-only commit, which the src/ filter must exclude.
+@test "contract lc/lf/lcr: mid-stream -- preserved and filter applies two-sided (BUG-2 fixed, Task 7)" {
+  # Contract (was characterization, flipped by Task 7): `lc py -- src/` (and
+  # lcr, and `lf guide -- src/`) exit 0 and filter to src/ commits — now via
+  # a PRESERVED separator (parse_common_flags_with_pathspecs splits, the
+  # exec sinks re-inject). Two-sided cells discriminate: lc/lcr keep "base";
+  # lf's term matches the docs-only commit, which the src/ filter excludes.
   local cmd
   for cmd in lc lcr; do
     psx_setup
@@ -796,29 +796,91 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization lc/lf/lcr: branch named like the path hijacks (BUG-2, flip: Task 7)" {
-  # characterization: flip target THIS PR (Task 7) — the actual BUG-2 defect
-  # surface, probed: with a BRANCH named `src/a.py` in the repo, `lc py --
-  # src/a.py` (same for lf/lcr) dies with git's "fatal: ambiguous argument
-  # 'src/a.py': both revision and filename" (exit 128) — because the mid-
-  # stream `--` was consumed, git cannot disambiguate rev-vs-path. Control
-  # in the same repo: `lc py -- src/` still filters fine (no rev collision).
+@test "contract lc/lf/lcr: branch named like the path no longer hijacks (BUG-2 fixed, Task 7)" {
+  # Contract (was characterization, flipped by Task 7): with a BRANCH named
+  # `src/a.py`, `lc py -- src/a.py` (same for lf/lcr) now FILTERS (exit 0,
+  # src-scoped results) instead of git's "fatal: ambiguous argument"
+  # (exit 128) — the re-injected separator lets git disambiguate rev-vs-path.
   local cmd
-  for cmd in lc lf lcr; do
+  for cmd in lc lcr; do
     psx_setup
     git branch 'src/a.py'
     run hug "$cmd" py -- src/a.py
-    assert_equal 128 "$status"
-    assert_output --partial "fatal: ambiguous argument 'src/a.py'"
+    assert_success
+    assert_output --partial "base"
+    refute_output --partial "fatal: ambiguous argument"
     psx_reset
   done
 
+  # lf's term matches ONLY the docs-only commit; the src/a.py filter must
+  # exclude it — observable: exit 0 with EMPTY results (previously the
+  # ambiguous-argument fatal, exit 128).
+  psx_setup
+  git branch 'src/a.py'
+  run hug lf guide -- src/a.py
+  assert_success
+  refute_output --partial "fatal:"
+  refute_output --partial "docs guide only"
+  psx_reset
+
+  # Control in the same repo: directory pathspec still filters fine.
   psx_setup
   git branch 'src/a.py'
   run hug lc py -- src/
   assert_success
   assert_output --partial "base"
   psx_reset
+}
+
+@test "contract lc/lf --json: pathspec reaches the JSON sink two-sided (BUG-2 fixed, Task 7)" {
+  # The JSON sink is the trap this task exists to close: batch_*_search
+  # feeds search_args straight to `git log`, so a dropped separator silently
+  # unscopes the JSON results (no fatal to notice). --with-files exposes the
+  # per-commit file list so the scope is observable INSIDE the JSON.
+  local names
+  psx_setup
+  run hug lc --json py --with-files -- src/
+  assert_success
+  echo "$output" | jq -e . >/dev/null
+  names=$(echo "$output" | jq -r '[.data.results[].files[].filename] | join("\n")')
+  grep -qF "src/" <<< "$names"
+  if grep -qF "docs/note.md" <<< "$names"; then
+    fail "out-of-scope file leaked into lc --json results: docs/note.md"
+  fi
+  psx_reset
+
+  # lf discrimination: the term matches the docs-only commit, the src/
+  # filter must leave ZERO results (count lives in the metadata envelope).
+  psx_setup
+  run hug lf --json guide --with-files -- src/
+  assert_success
+  echo "$output" | jq -e . >/dev/null
+  [[ "$(echo "$output" | jq '.data.results | length')" == "0" ]]
+  [[ "$(echo "$output" | jq '.data.search.results_count')" == "0" ]]
+  psx_reset
+}
+
+@test "contract lc/lcr: scoped picker — 'py -- src/ --' restricts candidates (Task 7)" {
+  # Trailing bare '--' after a pathspec opens the picker SCOPED to that
+  # pathspec (helper --picker mode + select_files_with_status pathspecs).
+  # Stub gum cancels after capturing candidates (same harness as the
+  # picker-rows column). lcr shares the picker code path; lf omitted to
+  # keep the cell cheap (identical select_opts construction).
+  local cmd candidates
+  for cmd in lc lcr; do
+    psx_setup
+    psx_install_stub_gum
+    run hug "$cmd" py -- src/ --
+    assert_success
+    assert_output --partial "Cancelled."
+    candidates=$(sed $'s/\033\\[[0-9;]*m//g' "$GUM_CANDIDATES_FILE")
+    [[ -n "$candidates" ]]
+    grep -qF "src/" <<< "$candidates"
+    if grep -qF "docs/note.md" <<< "$candidates"; then
+      fail "out-of-scope candidate leaked into $cmd picker: docs/note.md"
+    fi
+    psx_reset
+  done
 }
 
 @test "characterization single-file commands: two files → git FATAL 128 (flip: Task 10)" {

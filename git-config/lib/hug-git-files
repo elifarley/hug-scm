@@ -399,11 +399,21 @@ list_tracked_files() {
     fi
 
     check_git_repo
-    
+
+    # Optional trailing pathspecs (git-style, #292): when present they
+    # REPLACE the cwd '.' scope — git pathspecs are already cwd-relative,
+    # so forwarding them verbatim keeps the output contract (cwd-relative
+    # paths) intact while honoring the requested scope.
+    local -a scopes=()
+    if [[ $# -gt 0 ]]; then
+        scopes=("$@")
+    elif $scope_cwd; then
+        scopes=(".")
+    fi
+
     local -a paths=()
-    if $scope_cwd; then
-        # Scope to current directory: run ls-files with -- .
-        mapfile -t paths < <(git ls-files -- . 2>/dev/null || true)
+    if [[ ${#scopes[@]} -gt 0 ]]; then
+        mapfile -t paths < <(git ls-files -- "${scopes[@]}" 2>/dev/null || true)
     else
         # Browse full repository: run ls-files from repo root
         local repo_root

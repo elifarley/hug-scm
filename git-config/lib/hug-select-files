@@ -710,13 +710,11 @@ Install: https://github.com/charmbracelet/gum"
   fi
   
   if ! $has_includes; then
-    # Guard (#292 review): list_tracked_files (the flag-less engine) does not
-    # consume pathspecs, so honoring this call would silently list the ENTIRE
-    # repository while the caller asked for a scope. Flag-less selection is
-    # repository-wide by design — refuse the mix loudly instead.
-    if [[ ${#pathspecs[@]} -gt 0 ]]; then
-      error "select_files_with_status: pathspecs require a state flag (--staged/--unstaged/--untracked/--ignored); flag-less selection is repository-wide by design."
-    fi
+    # Flag-less selection lists tracked files; pathspecs (when given) now
+    # scope that listing via list_tracked_files's trailing-pathspec support
+    # (#292, Task 7 — the old loud-refusal guard existed only because
+    # list_tracked_files could not consume pathspecs; it can now, and the
+    # tracked-file pickers lc/lf/lcr rely on this scoping).
     # NOTE: the "${pathspecs[@]+...}" idiom expands the array only when set —
     # a plain "${pathspecs[@]}" would trip set -u on Bash < 4.4 when it is
     # empty. Same idiom at every forwarding site below.
