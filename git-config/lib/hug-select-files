@@ -576,7 +576,13 @@ list_files_with_status() {
 # Usage: select_files_with_status [OPTIONS] [--] [pathspecs...]
 # Parameters:
 #   pathspecs - Optional git pathspecs; restrict candidates to matching files
-#               (forwarded to the list_*_files helpers, git-style)
+#               (forwarded to the list_*_files helpers, git-style).
+#               Require a state flag (--staged/--unstaged/--untracked/--ignored):
+#               flag-less selection is repository-wide by design and errors
+#               loudly rather than silently ignoring the scope.
+#   NOTE: --prompt consumes the NEXT argument — keep the canonical order
+#   '--prompt <text> -- <pathspecs>'; a bare '--prompt --' would swallow '--'
+#   as the prompt text.
 # Options:
 #   --multi              Allow multiple file selection (default: true)
 #   --single             Single file selection (default: multi)
@@ -704,6 +710,16 @@ Install: https://github.com/charmbracelet/gum"
   fi
   
   if ! $has_includes; then
+    # Guard (#292 review): list_tracked_files (the flag-less engine) does not
+    # consume pathspecs, so honoring this call would silently list the ENTIRE
+    # repository while the caller asked for a scope. Flag-less selection is
+    # repository-wide by design — refuse the mix loudly instead.
+    if [[ ${#pathspecs[@]} -gt 0 ]]; then
+      error "select_files_with_status: pathspecs require a state flag (--staged/--unstaged/--untracked/--ignored); flag-less selection is repository-wide by design."
+    fi
+    # NOTE: the "${pathspecs[@]+...}" idiom expands the array only when set —
+    # a plain "${pathspecs[@]}" would trip set -u on Bash < 4.4 when it is
+    # empty. Same idiom at every forwarding site below.
     mapfile -t files < <(list_tracked_files "${list_flags[@]}" "${pathspecs[@]+"${pathspecs[@]}"}")
     mapfile -t formatted_options < <(printf '%s\n' "${files[@]}")
   else

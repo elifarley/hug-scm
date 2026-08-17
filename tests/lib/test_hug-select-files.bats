@@ -48,6 +48,12 @@ setup() {
 }
 
 teardown() {
+  # mock_gum's capture file lives outside the test repo — clean it explicitly
+  # or every pathspec test leaks a tmp file. (if-wrap: a bare `[[ ]] && rm`
+  # list would trip BATS's set -e when the var is unset.)
+  if [[ -n "${SELECT_CAPTURE:-}" ]]; then
+    rm -f "$SELECT_CAPTURE"
+  fi
   cleanup_test_repo
 }
 
@@ -974,10 +980,26 @@ create_pathspec_fixture() {
 # Mock gum so the interactive picker becomes observable and controllable:
 # the candidate list piped into gum lands in $SELECT_CAPTURE, and gum
 # "returns" the first candidate (a deterministic single selection).
+# ONLY 'gum filter' is intercepted — other subcommands (notably gum_log's
+# 'gum log', which renders error()/warning() output) pass through to the
+# real gum or a printf fallback, so error text stays visible to assertions.
 mock_gum() {
   SELECT_CAPTURE="$(mktemp)"
   gum_available() { return 0; }
   gum() {
+    if [[ "${1:-}" != "filter" ]]; then
+      if command -v gum >/dev/null 2>&1 && command gum "$@"; then
+        return 0
+      fi
+      # Mirror gum_log's fallback branch: "<prefix> <message>" to stderr,
+      # with the message as the last argument of 'gum log --prefix=X -- msg'.
+      local prefix="" message="${@: -1}" arg
+      for arg in "$@"; do
+        [[ "$arg" == --prefix=* ]] && prefix="${arg#--prefix=}"
+      done
+      printf '%s %s\n' "$prefix" "$message" >&2
+      return 0
+    fi
     cat > "$SELECT_CAPTURE"
     head -1 "$SELECT_CAPTURE"
   }
@@ -1026,4 +1048,24 @@ mock_gum() {
   fi
   [[ -n "$file" ]]
   [[ "$file" == src/* ]]
+}
+
+@test "select_files_with_status: flag-less call with pathspecs errors loudly" {
+  # The flag-less fallback lists ALL tracked files and list_tracked_files
+  # ignores pathspecs — the guard must turn the silent scope-drop into a
+  # loud error instead of returning a repository-wide candidate list.
+  create_pathspec_fixture
+  mock_gum
+
+  run select_files_with_status -- src/a.py
+  assert_failure
+  assert_output --partial "pathspecs require a state flag"
+  # stdout stays clean: no candidate leaked around the error
+  [[ ! "$(cat "$SELECT_CAPTURE")" =~ src/a\.py ]]
+
+  # Flag-less WITHOUT pathspecs keeps working (repository-wide by design):
+  # tracked-file pickers (lf/lc/fb/...) depend on this branch.
+  run select_files_with_status
+  assert_success
+  [[ "$(cat "$SELECT_CAPTURE")" =~ src/a\.py ]]
 }
