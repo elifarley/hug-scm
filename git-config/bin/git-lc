@@ -126,7 +126,7 @@ if $json_output; then
   # argument") and this JSON sink silently loses the requested scope.
   # Nullsafe: with an empty array, `search_args+=("--")` alone would make
   # git log treat everything after it as paths — guard on the element count.
-  (( ${#_pathspec_pathspecs[@]} )) && search_args+=("--" "${_pathspec_pathspecs[@]}")
+  ((${#_pathspec_pathspecs[@]})) && search_args+=("--" "${_pathspec_pathspecs[@]}")
 
   # Output unified JSON response with metadata
   search_results=$(batch_code_search "$search_term" "${search_args[@]}")

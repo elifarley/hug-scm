@@ -839,6 +839,17 @@ psx_install_stub_gum() {
   # per-commit file list so the scope is observable INSIDE the JSON.
   local names
   psx_setup
+  # Discriminating fixture (probed, review item 3): `git log -S py
+  # --numstat` lists ONLY files whose occurrence count of the term changed,
+  # so the base fixture alone can never leak docs/note.md — the negative
+  # assertion below would be vacuously green. A commit where the docs file
+  # ITSELF pickaxe-matches "py" makes it listable; only the src/ pathspec
+  # reaching the JSON sink keeps it out of files[]. Scoped to this cell so
+  # the shared fixture (and every other row) is unaffected.
+  echo py3 >> src/a.py
+  echo "see py usage" >> docs/note.md
+  git add src/a.py docs/note.md
+  git commit -q -m "pickaxe hits src and docs"
   run hug lc --json py --with-files -- src/
   assert_success
   echo "$output" | jq -e . >/dev/null

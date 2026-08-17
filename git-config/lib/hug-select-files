@@ -577,9 +577,10 @@ list_files_with_status() {
 # Parameters:
 #   pathspecs - Optional git pathspecs; restrict candidates to matching files
 #               (forwarded to the list_*_files helpers, git-style).
-#               Require a state flag (--staged/--unstaged/--untracked/--ignored):
-#               flag-less selection is repository-wide by design and errors
-#               loudly rather than silently ignoring the scope.
+#               With pathspecs and NO state flag, the selection scopes to
+#               tracked files matching the pathspecs (forwarded to
+#               list_tracked_files); without pathspecs, flag-less selection
+#               remains repository-wide.
 #   NOTE: --prompt consumes the NEXT argument — keep the canonical order
 #   '--prompt <text> -- <pathspecs>'; a bare '--prompt --' would swallow '--'
 #   as the prompt text.
