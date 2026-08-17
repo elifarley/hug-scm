@@ -90,9 +90,14 @@ Step 1 strips only the trailing `--` token; step 2 still splits any mid-stream
 that act on the picker must pass those pathspecs into their selection call —
 the scoped-picker clause of §2 rule 3. NOTE: `select_files_with_status`
 **errors on positionals today** (`hug-select-files:654-655`, `error()` exits
-1) — it must be **extended** to accept pathspecs and append them to its
-internal `list_files_with_status` call (which already accepts them, per the
-audit appendix). This extension is load-bearing: via `git-lc:149`'s
+1) — it must be **extended** to accept pathspecs: a dedicated `--)` arm
+consumes everything after the separator verbatim, and the collected
+pathspecs are forwarded through the selector's actual list calls — it
+invokes `list_tracked_files`/`list_staged_files`/`list_unstaged_files`/
+`list_untracked_files`/`list_ignored_files` directly
+(`hug-select-files:690-755`; it does NOT call `list_files_with_status`,
+which is the separate non-interactive function). This extension is
+load-bearing: via `git-lc:149`'s
 `if file=$(select_files_with_status ...)` the failure would otherwise be
 silently swallowed as "Cancelled." with exit 0 — a no-op picker on the exact
 command the scoped-picker feature exists for.
@@ -136,7 +141,7 @@ ones; adding a command later is a one-line row):
 | unknown flag | `hug <cmd> -xX` exits non-zero naming the flag — no silent `*) → pathspecs+=(...)` swallow |
 | magic passthrough | `:(glob)` / `:(icase)` / `:(exclude)` smoke-level with named observables: `:(icase)` matches a case-variant file the bare glob does not; `:(exclude)` omits a file the base pathspec includes — "smoke-level" alone cannot fail a regression that mangles the magic into a literal while exiting 0 |
 | `--json` + pathspec | where the command has `--json` (sl\* family, `lc`, `lf`, `llu`): parsed JSON on stdout (`python3 -m json.tool`) contains no file outside the pathspecs **and at least one file inside them** (the fixture guarantees matches exist) — two-sided, mirroring the `-- <path>` column; absence-only passes vacuously on an empty-but-valid envelope, the exact under-inclusive regression class |
-| scoped picker | action commands (`a`, `ss`, `su`, `sw`, `lc`, `lcr`, `lf`): with pathspecs + trailing `--`, a stub `gum` first on PATH records its argv to a file; assert **two-sided**: every recorded file matches the pathspec scope AND at least one matching file is present (`argv ⊆ matching(files) ∧ \|argv\| ≥ 1`). External-behavior (process boundary), no internal variables — an "includes the pathspecs" assertion passes for the unscoped superset too, which is the pathspec-dropping regression this column exists to catch |
+| scoped picker | action commands (`a`, `ss`, `su`, `sw`, `lc`, `lcr`, `lf`): with pathspecs + trailing `--`, a stub `gum` first on PATH captures the candidate list it receives on **stdin** to a file (candidates flow via stdin, `hug-select-files:811`; gum's argv carries only filter/presentation flags and cannot observe scoping); assert **two-sided**: every captured candidate matches the pathspec scope AND at least one matching candidate is present (`candidates ⊆ matching(files) ∧ \|candidates\| ≥ 1`). External-behavior (process boundary), no internal variables — an "includes the pathspecs" assertion passes for the unscoped superset too, which is the pathspec-dropping regression this column exists to catch |
 
 **Row staging** (the reconciliation between "all of them" and per-PR green):
 each PR lands contract rows only for commands whose contract behavior it

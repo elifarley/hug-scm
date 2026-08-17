@@ -272,7 +272,7 @@ Execute as a loop pattern (BATS-friendly): write one `@test` per column that ite
 - Modify: `tests/unit/test_pathspec_conformance.bats`
 
 **Acceptance Criteria:**
-- [ ] Characterization rows (marked `# characterization:`) for: `sl`, `sla`, `sls`, `slu`, `slk`, `sli`, `slc` (current: bare `--` collected as pathspec — full listing by coincidence; `sls/slu/slk/sli` `--help` swallowed), `us` (`hug us -- src/` errors "Unknown option: --"; `hug us --` errors), `w get` (`-u <file>` errors "Cannot specify --upstream…"), `sh` (stray positional silently overwrites ref — assert `hug sh HEAD -- src/` shows `src/`-filtered output, BUG-6 baseline), `llu` (flags-only; `-- src/` → "Unknown option: --"), `lc`/`lf` (mid-stream `--` dropped: filtered result WITHOUT separator — assert the current filtered-but-separatorless behavior), `lcr`, `fa`/`fb`/`fblame`/`fborn`/`fcon`/`llf`/`h-steps` (2 files → git fatal, exit ≠ 0), `stats-file` (2 files → silent ignore, exit 0)
+- [ ] Characterization rows (marked `# characterization:`) for: `sl`, `sla`, `sls`, `slu`, `slk`, `sli`, `slc` (current: bare `--` collected as pathspec — full listing by coincidence; `sls/slu/slk/sli` `--help` swallowed), `us` (`hug us -- src/` errors "Unknown option: --"; `hug us --` errors), `w get` (`-u <file>` errors "Cannot specify --upstream…"), `sh` (stray positional silently overwrites ref — assert `hug sh HEAD -- src/` shows `src/`-filtered output, BUG-6 baseline), `llu` (flags-only; `-- src/` → "Unknown option: --"), `lc`/`lf` (mid-stream `--` dropped: filtered result WITHOUT separator — assert the current filtered-but-separatorless behavior), `lcr`, `fa`/`fb`/`fblame`/`fborn`/`fcon`/`llf` (2 files → git fatal, exit ≠ 0), `h-steps` (2 files → SILENT IGNORE of the second file, exit as with one file — `git-h-steps:62-73` stores the first and `break`s on the second; the second never reaches git), `stats-file` (2 files → silent ignore, exit 0)
 - [ ] Every characterization row documents the CONTRACT row it will become (comment: `# flips in PR-B|PR-C to: …`)
 
 **Verify:** `make test-unit TEST_FILE=test_pathspec_conformance.bats` → all green (characterizations assert CURRENT behavior)
@@ -294,8 +294,21 @@ Execute as a loop pattern (BATS-friendly): write one `@test` per column that ite
 - Test: `tests/lib/test_hug-select-files.bats`
 
 **Acceptance Criteria:**
-- [ ] Positional arguments are collected as pathspecs (no more "Unknown option" error for them)
-- [ ] Pathspecs are appended to the internal `list_files_with_status` invocation (grep inside `hug-select-files` for its list call — the append site), so the candidate list is scoped
+- [ ] The parse loop gains a dedicated separator arm that treats everything after `--` as verbatim pathspec data (a bare `*)` collector would make `--` itself a literal pathspec and keep option-parsing alive for post-separator args — a file literally named `--staged` must not be eaten as an option):
+
+```bash
+      --)
+        shift
+        pathspecs+=("$@")
+        break
+        ;;
+      *)
+        pathspecs+=("$1")
+        shift
+        ;;
+```
+
+- [ ] Pathspecs are forwarded through the selector's ACTUAL list calls — `select_files_with_status` invokes `list_tracked_files`, `list_staged_files`, `list_unstaged_files`, `list_untracked_files`, and `list_ignored_files` directly (`hug-select-files:690-755`; it does NOT call `list_files_with_status` — that is the separate non-interactive function at `:312`). Append `"${pathspecs[@]+…}"` at each of the five sites; each `list_*_files` already accepts trailing pathspecs (same pattern as `list_files_with_status:409-465`)
 - [ ] Flags-only invocation is unchanged (regression: existing selector tests stay green)
 - [ ] Spec §3.1's swallow hazard is covered by a test: a caller capturing via `if file=$(select_files_with_status --staged -- src/)` gets a scoped, working selection (mock gum per the suite's existing mock pattern) — not "Cancelled."
 
@@ -337,14 +350,14 @@ Execute as a loop pattern (BATS-friendly): write one `@test` per column that ite
     fi
 ```
 
-- [ ] Scoped-picker conformance cell (two-sided, spec §4): a stub `gum` first on PATH records its argv to a file; assert every recorded file matches `src/` AND at least one matching file is present
+- [ ] Scoped-picker conformance cell (two-sided, spec §4): a stub `gum` first on PATH captures its STDIN to a file (`cat > "$GUM_CANDIDATES_FILE"; exit 1` — candidates flow to gum via stdin, `hug-select-files:811`; gum's argv carries only filter/presentation flags, so argv cannot observe scoping); assert every captured candidate line matches `src/` AND at least one matching candidate is present
 - [ ] Bare `hug su --` (no pathspecs) behavior unchanged (existing no-TTY test stays green)
 
 **Verify:** `make test-unit TEST_FILE=test_pathspec_conformance.bats` + `make test-unit TEST_FILE=test_status_staging.bats` → green
 
 **Steps:**
 
-- [ ] **Step 1:** Write the scoped-picker stub-gum test (stub script: `#!/usr/bin/env bash; printf '%s\n' "$@" > "$GUM_ARGV_FILE"; exit 1` on PATH first; run `hug su -- src/ --`; assert file contents ⊆ `src/*` and non-empty).
+- [ ] **Step 1:** Write the scoped-picker stub-gum test (stub script: `#!/usr/bin/env bash; cat > "$GUM_CANDIDATES_FILE"; exit 1` on PATH first — it captures the candidate list gum receives on stdin (`hug-select-files:811`); run `hug su -- src/ --`; assert captured lines ⊆ `src/*` and non-empty).
 - [ ] **Step 2:** Verify FAIL (today the picker ignores pathspecs — argv contains files outside `src/`).
 - [ ] **Step 3:** Apply the 3-line change above; verify both files green.
 - [ ] **Step 4:** Commit: `feat(diff): scoped interactive picker — pathspecs are never silently discarded (#292 PR-A)`
