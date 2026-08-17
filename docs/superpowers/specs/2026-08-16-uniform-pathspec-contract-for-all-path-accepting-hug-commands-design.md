@@ -60,7 +60,14 @@ Every path-accepting hug command obeys exactly these rules:
    - **`us` is the exception that proves the taxonomy**: its selector is the
      zero-args fallback (it demands ≥1 path), not a `--` trigger — the
      trailing bare `--` is a no-op token for `us` in every position (§5.5).
-   - `hug a --` interactive semantics are untouched.
+   - `hug a --` interactive semantics are untouched. **PR-A probe finding**
+     (characterization row, 2026-08-17): the PRD premise that `a -- <file>`
+     was "verified already git-compatible" is REFUTED — `hug a -- new.txt`
+     silently drops the pathspec and runs `git add -u`, staging files the
+     user never named (git-a's loop breaks at the first `--` with empty
+     remaining args). Pinned as a characterization row; fix (adopt the
+     helper, keep the bare-`--` picker) filed as its own issue and slated
+     for the PR-B migration batch.
 4. **Globs must be quoted** (`hug sla -- '*.md'`). Stated once, canonically, in
    `hug help :pathspec`; each command's help carries a pointer block, not a copy.
 5. **Single-file commands** (`fa`, `fb`, `fblame`, `fborn`, `fcon`, `llf`,

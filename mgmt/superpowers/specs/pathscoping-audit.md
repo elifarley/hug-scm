@@ -164,7 +164,7 @@ All remaining args forwarded verbatim to `git log` / `git commit`. Git handles `
 | `hug fb` | SINGLE | C | PROPER | YES | NO | Direct `-- "$@"` |
 | `hug fblame` | SINGLE | C | PROPER | YES | NO | Via `remaining_args` |
 | `hug fborn` | SINGLE | C | PROPER | YES | NO | Direct `-- "$@"` |
-| `hug fcat` | TARGET+PATH | C | N/A (`:` syntax) | YES | N/A | `git show "$commit:$path"` |
+| `hug fcat` | TARGET+PATH | C | N/A (`:` syntax) | YES | N/A | `git show "$commit:$path"` *(amended 2026-08-17: the CLI surface is positional `hug fcat <commit> <path>`; the `:` form is the internal git-show syntax this row describes — probe: `hug fcat HEAD:src/a.py` errors "Missing arguments")* |
 | `hug fcon` | SINGLE | C | PROPER | YES | NO | Direct `-- "$@"` |
 
 ### Working-Directory Commands
