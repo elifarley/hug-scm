@@ -55,6 +55,29 @@ PATHSPEC_SHOW_ROWS=(shc shcp shp)
 PATHSPEC_INERT_ROWS=("${PATHSPEC_LOG_ROWS[@]}" "${PATHSPEC_SHOW_ROWS[@]}")
 PATHSPEC_HISTORY_ROWS=(cmod cmoda)
 
+# Characterization rows (Task 4) — assertions of TODAY's behavior for the
+# commands later PRs migrate (#292 PR-A Tasks 7-10, PR-B, PR-C). Every row
+# was PROBED in the fixture before writing (see each test). These commands
+# do NOT conform to the contract yet: when a migration flips one, the
+# corresponding test here goes red ON PURPOSE — update it in the same PR,
+# never before. Do NOT move a command into the contract arrays above until
+# its migration lands.
+#
+#   CHAR_SL_FILTER_ROWS   — sl family where `-- src/` coincidentally filters
+#                           (phantom `--` pathspec OR-ed away by git)
+#   CHAR_SL_EMPTY_ROWS    — sl family where `-- src/` yields empty output;
+#                           the info message NAMES the phantom '--'
+#   CHAR_SL_SWALLOW_ROWS  — sl family with no flag parser: unknown flags
+#                           become pathspecs (exit 0)
+#   CHAR_SL_HELP_ROWS     — whole sl family: `--help` never reaches the
+#                           script (git man routing)
+#   CHAR_FATAL_ROWS       — single-file commands: two files → git FATAL
+PATHSPEC_CHAR_SL_FILTER_ROWS=(sl sla sls)
+PATHSPEC_CHAR_SL_EMPTY_ROWS=(slu slk sli)
+PATHSPEC_CHAR_SL_SWALLOW_ROWS=(sls slu slk sli)
+PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
+PATHSPEC_CHAR_FATAL_ROWS=(fa fb fblame fborn fcon llf)
+
 # -----------------------------------------------------------------------------
 # Fixture + harness helpers
 # -----------------------------------------------------------------------------
@@ -132,11 +155,21 @@ teardown() {
 # Per-row invocation prefix for the inert rows: log commands take no
 # committish, show commands diff against HEAD~1 ("base"). Prints the args
 # one per line for the caller to read into an array (word-splitting-free).
+#
+# LESSON (Task 3 review): callers consume this via process substitution
+# (`mapfile -t args < <(psx_inert_args "$cmd")`), which SWALLOWS the exit
+# status — the old `*) return 1` left args empty and an unknown row would
+# run WITHOUT its committish: wrong-but-green. The guard therefore emits a
+# stdout sentinel that flows into the hug invocation (failing the column
+# test loudly) plus a stderr breadcrumb naming the row.
 psx_inert_args() {
   case "$1" in
   l | ll) : ;;
   shc | shcp | shp) echo "HEAD~1" ;;
-  *) return 1 ;;
+  *)
+    echo "psx_inert_args: unknown row '$1' — add it to the case arms" >&2
+    echo "__PSX_UNKNOWN_ROW__"
+    ;;
   esac
 }
 
@@ -436,4 +469,297 @@ psx_inert_args() {
   # does). The --json column activates fully in the Task 4 / PR-B rows
   # (sl* family, lc, lf, llu — spec §4).
   skip "N/A in this row table: no --json flag on these commands (activates in Task 4/PR-B rows)"
+}
+
+# =============================================================================
+# CHARACTERIZATION ROWS (Task 4) — TODAY's behavior for un-migrated commands
+# =============================================================================
+# Every test below pins what the PROBE observed, not what the contract wants.
+# Flip targets are named per test; when a later PR migrates a command, its
+# test here must be updated red→green IN THAT PR (deliberate, never silent).
+# =============================================================================
+
+@test "helper guard: psx_inert_args fails loudly on unknown row" {
+  # Task 3 review follow-up: process substitution swallows exit statuses, so
+  # the guard's contract is a stdout sentinel (flows into the hug invocation
+  # and fails the column test) + a stderr breadcrumb naming the row.
+  run psx_inert_args totally-bogus-row
+  assert_output --partial "unknown row 'totally-bogus-row'"
+  assert_output --partial "__PSX_UNKNOWN_ROW__"
+}
+
+@test "characterization sl-family: -- src/ filters by coincidence (sl sla sls)" {
+  # characterization: flip target PR-B — after migration the `--` is consumed
+  # by a real parser and these keep passing for the RIGHT reason; today the
+  # bare `--` is collected as a pathspec and git ORs the phantom away
+  # (probed: exit 0, staged src/a.py shown, unstaged docs/note.md filtered
+  # out even on sl/sla which would otherwise list it).
+  for cmd in "${PATHSPEC_CHAR_SL_FILTER_ROWS[@]}"; do
+    psx_setup
+    run hug "$cmd" -- src/
+    assert_success
+    assert_output --partial "src/a.py"
+    refute_output --partial "docs/note.md"
+    psx_reset
+  done
+}
+
+@test "characterization sl-family: -- src/ empty + message names phantom '--' (slu slk sli)" {
+  # characterization: flip target PR-B — these variants have NO file matching
+  # src/, so the phantom `--` pathspec becomes visible in the info message
+  # (probed: exit 0, empty stdout, "No <kind> files matching '--' 'src/'
+  # found." — the '--' listed AS a filter is the defect's fingerprint).
+  local kind
+  for cmd in "${PATHSPEC_CHAR_SL_EMPTY_ROWS[@]}"; do
+    case "$cmd" in
+    slu) kind="unstaged" ;;
+    slk) kind="untracked" ;;
+    sli) kind="ignored" ;;
+    esac
+    psx_setup
+    run hug "$cmd" -- src/
+    assert_success
+    refute_output --partial "docs/note.md"
+    refute_output --partial "new.txt"
+    assert_output --partial "No ${kind} files matching '--' 'src/' found."
+    psx_reset
+  done
+}
+
+@test "characterization sl-family: unknown flag swallowed as pathspec, exit 0 (sls slu slk sli)" {
+  # characterization: flip target PR-B — these commands have no flag parser,
+  # so `-xX` silently becomes a pathspec (probed: exit 0 + "No <kind> files
+  # matching '-xX' found."). Contract column 6 requires non-zero; today it is
+  # ZERO — pinned here so the PR-B flip is a deliberate red.
+  local kind
+  for cmd in "${PATHSPEC_CHAR_SL_SWALLOW_ROWS[@]}"; do
+    case "$cmd" in
+    sls) kind="staged" ;;
+    slu) kind="unstaged" ;;
+    slk) kind="untracked" ;;
+    sli) kind="ignored" ;;
+    esac
+    psx_setup
+    run hug "$cmd" -xX
+    assert_success
+    assert_output --partial "No ${kind} files matching '-xX' found."
+    psx_reset
+  done
+}
+
+@test "characterization sl-family: --help hits git man routing, no USAGE (all six)" {
+  # characterization: flip target PR-B — `--help` never reaches the script:
+  # the dispatcher execs `git <cmd> --help` and git routes to man (probed:
+  # exit 16, "No manual entry for git-<cmd>" — or, for the aliased sl/sla,
+  # "'sl' is aliased to 'statusbase -uno'" first). NOTE: this contradicts
+  # the audited spec's "swallowed as a pathspec" reading — the probe wins.
+  for cmd in "${PATHSPEC_CHAR_SL_HELP_ROWS[@]}"; do
+    psx_setup
+    run hug "$cmd" --help
+    assert_failure
+    refute_output --partial "USAGE:"
+    psx_reset
+  done
+}
+
+@test "characterization sl-family: only slc has real -h help; sl/sla -h swallowed" {
+  # characterization: flip target PR-B — probed: `slc -h` shows USAGE on
+  # stdout (exit 0). `sl`/`sla` are gitconfig aliases to statusbase, which
+  # has no -h handling: the flag is swallowed as a pathspec (exit 0 +
+  # "matching '-h' found"). The audited spec's "sl/sla have help" holds only
+  # for `--help`-adjacent docs, not for the runtime `-h` surface.
+  psx_setup
+  run hug slc -h
+  assert_success
+  assert_output --partial "USAGE:"
+  psx_reset
+
+  for cmd in sl sla; do
+    psx_setup
+    run hug "$cmd" -h
+    assert_success
+    assert_output --partial "matching '-h' found."
+    psx_reset
+  done
+}
+
+@test "characterization us: bare/trailing -- rejected loudly; positional pathspec unstages" {
+  # characterization: flip target PR-B — probed: git-us's flag loop hits the
+  # `-*` arm and errors on `--` BEFORE any pathspec logic ("Unknown option:
+  # --. See 'hug us --help'.", exit 1) for BOTH `us --` and `us -- src/`.
+  # Contract column 4 (trailing `--` = picker/inert) does not hold today.
+  psx_setup
+  run hug us -- src/
+  assert_failure
+  assert_output --partial "Unknown option: --. See 'hug us --help'."
+  psx_reset
+
+  psx_setup
+  run hug us --
+  assert_failure
+  assert_output --partial "Unknown option: --. See 'hug us --help'."
+  psx_reset
+}
+
+@test "characterization us: positional pathspec unstages (works today)" {
+  # characterization: flip target PR-B — the POSITIVE arm that must survive
+  # the migration: `us src/a.py` (no separator) unstages exactly that file
+  # (probed: exit 0, "Unstaged 1 file", and hug sls no longer lists it).
+  psx_setup
+  run hug sls
+  assert_output --partial "src/a.py"
+  run hug us src/a.py
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  assert_output --partial "src/a.py"
+  run hug sls
+  refute_output --partial "src/a.py"
+  psx_reset
+}
+
+@test "characterization w get: -u with a path / -u alone both error (flip: Task 8)" {
+  # characterization: flip target THIS PR (Task 8) — probed: with `-u`, the
+  # first non-flag arg becomes the TARGET IDENTIFIER, so the file is mistaken
+  # for a commit ("Cannot specify --upstream with a specific commit or
+  # integer N.", exit 1 — git-w-get:389-390). And `-u` alone dies on the
+  # missing-target check ("Missing target argument", exit 1 — the documented
+  # `hug w get -u` reset-all form is broken today, git-w-get:371-375).
+  psx_setup
+  run hug w get -u src/a.py
+  assert_failure
+  assert_output --partial "Cannot specify --upstream with a specific commit or integer N."
+  psx_reset
+
+  psx_setup
+  run hug w get -u
+  assert_failure
+  assert_output --partial "Missing target argument"
+  psx_reset
+}
+
+@test "characterization sh: trailing positional overwrites the ref, loud error (BUG-6, flip: Task 9)" {
+  # characterization: flip target THIS PR (Task 9) — probed: `sh HEAD -- src/`
+  # and `sh HEAD src/` BOTH fail with "Invalid commit reference: src/"
+  # (exit 1): the LAST positional wins as the ref, so the path is validated
+  # as a committish. Loud rejection exists today; the fix must keep rejecting
+  # while treating the path as a pathspec filter.
+  psx_setup
+  run hug sh HEAD -- src/
+  assert_failure
+  assert_output --partial "Invalid commit reference: src/"
+  psx_reset
+
+  psx_setup
+  run hug sh HEAD src/
+  assert_failure
+  assert_output --partial "Invalid commit reference: src/"
+  psx_reset
+}
+
+@test "characterization llu: -- rejected loudly by flags-only parser (flip: PR-C)" {
+  # characterization: flip target PR-C — probed: git-llu's flags-only loop
+  # (git-llu:104) rejects the separator it should honor: "Unknown option:
+  # --" + usage hint, exit 1. Pathspec filtering is unreachable today.
+  psx_setup
+  run hug llu -- src/
+  assert_failure
+  assert_output --partial "Unknown option: --"
+  psx_reset
+}
+
+@test "characterization lc/lf/lcr: mid-stream -- consumed yet filter still applies (BUG-2, flip: Task 7)" {
+  # characterization: flip target THIS PR (Task 7) — probed: `lc py -- src/`
+  # (and lcr, and `lf guide -- src/`) exit 0 and filter to src/ commits —
+  # BUT the separator itself is consumed (BUG-2: it never reaches git), so
+  # the two-sided cells still discriminate: lc/lcr keep "base"; lf's term
+  # matches the docs-only commit, which the src/ filter must exclude.
+  local cmd
+  for cmd in lc lcr; do
+    psx_setup
+    run hug "$cmd" py -- src/
+    assert_success
+    assert_output --partial "base"
+    refute_output --partial "docs guide only"
+    psx_reset
+  done
+
+  psx_setup
+  run hug lf guide -- src/
+  assert_success
+  refute_output --partial "docs guide only"
+  psx_reset
+}
+
+@test "characterization lc/lf/lcr: branch named like the path hijacks (BUG-2, flip: Task 7)" {
+  # characterization: flip target THIS PR (Task 7) — the actual BUG-2 defect
+  # surface, probed: with a BRANCH named `src/a.py` in the repo, `lc py --
+  # src/a.py` (same for lf/lcr) dies with git's "fatal: ambiguous argument
+  # 'src/a.py': both revision and filename" (exit 128) — because the mid-
+  # stream `--` was consumed, git cannot disambiguate rev-vs-path. Control
+  # in the same repo: `lc py -- src/` still filters fine (no rev collision).
+  local cmd
+  for cmd in lc lf lcr; do
+    psx_setup
+    git branch 'src/a.py'
+    run hug "$cmd" py -- src/a.py
+    assert_equal 128 "$status"
+    assert_output --partial "fatal: ambiguous argument 'src/a.py'"
+    psx_reset
+  done
+
+  psx_setup
+  git branch 'src/a.py'
+  run hug lc py -- src/
+  assert_success
+  assert_output --partial "base"
+  psx_reset
+}
+
+@test "characterization single-file commands: two files → git FATAL 128 (flip: Task 10)" {
+  # characterization: flip target THIS PR (Task 10) — probed: every one of
+  # these passes BOTH paths straight to git, which fatals (exit 128) with
+  # one of two messages: "--follow requires exactly one pathspec" (fa,
+  # fborn, fcon) or "bad revision '<second file>'" (fb, fblame, llf). We
+  # assert the uniform observable (exit 128 + stderr "fatal:"); Task 10
+  # replaces it with hug's own "accepts only one file" rejection.
+  for cmd in "${PATHSPEC_CHAR_FATAL_ROWS[@]}"; do
+    psx_setup
+    run hug "$cmd" src/a.py docs/note.md
+    assert_equal 128 "$status"
+    assert_output --partial "fatal:"
+    psx_reset
+  done
+}
+
+@test "characterization h steps: extra files silently ignored (flip: Task 10)" {
+  # characterization: flip target THIS PR (Task 10) — probed: git-h-steps
+  # keeps the FIRST positional only (git-h-steps:62-73): with two files the
+  # output is byte-identical to the single-file run (exit 0). Silent ignore
+  # pinned via assert_equal so any drift names both sides.
+  local single
+  psx_setup
+  run hug h steps src/a.py
+  assert_success
+  single="$output"
+  run hug h steps src/a.py docs/note.md
+  assert_success
+  assert_equal "$single" "$output"
+  psx_reset
+}
+
+@test "characterization stats file: extra files silently ignored (flip: Task 10)" {
+  # characterization: flip target THIS PR (Task 10) — probed: `hug stats
+  # file a b` churn-analyzes ONLY a (output identical to the single-file
+  # run, exit 0); the extras vanish without a word.
+  local single
+  psx_setup
+  run hug stats file src/a.py
+  assert_success
+  assert_output --partial "Churn analysis for: src/a.py"
+  single="$output"
+  run hug stats file src/a.py docs/note.md
+  assert_success
+  assert_equal "$single" "$output"
+  refute_output --partial "docs/note.md"
+  psx_reset
 }
