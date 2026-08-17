@@ -19,21 +19,23 @@ USAGE:
     hug w get [-f/--force] <target> [file1] [file2] ...
     hug w get [-f/--force] <target> --
     hug w get [-f/--force] <target> --browse-root
+    hug w get [-f/--force] -u [file1] [file2] ...
 
 OPTIONS:
     -f, --force     Force overwrite, ignoring any uncommitted changes and running non-interactively.
     -y, --yes       Has NO effect on the clean path (which needs no flag) and does NOT
                     override the dirty-path refusal — only -f/--force overwrites
                     uncommitted changes. (Routine-confirm flag; not a force substitute.)
+    -u, --upstream  Use the head of the upstream branch as the target commit.
+                    With no files given, resets ALL files (see EXAMPLES).
     --dry-run       Preview what would be reset without making any changes.
     --browse-root   Browse full repository scope in file selector UI (default: current directory)
-    <target>        Either an integer 0 <= N < 100, a COMMIT hash, or -u / --upstream
+    <target>        Either an integer 0 <= N < 100 or a COMMIT hash
         N               Specifies how many commits to go back from a file's last change.
                         N=0 resets to the file's state in HEAD.
                         N=1 resets to its state before the last change.
                         N=2 resets to its state before the second-to-last change.
         COMMIT          Target commit hash, branch, or reference.
-        -u, --upstream  Use the head of the upstream branch as the target commit.
     [file...]       Specific files to reset (optional)
                     If omitted, ALL files will be reset.
     --              Trigger interactive file selection UI (current directory scope)

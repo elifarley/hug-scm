@@ -735,7 +735,7 @@ psx_install_stub_gum() {
   # `git rev-parse --verify @{u}` accepts it). Each cell that needs a working
   # restore also commits the fixture's dirty state so the tree is CLEAN
   # (3-state gate: dirty would refuse, correctly, before any restore).
-  local upstream_setup='
+  local upstream_and_clean_setup='
     git branch up-ref HEAD~1
     git branch --set-upstream-to=up-ref
     git add -A
@@ -743,7 +743,7 @@ psx_install_stub_gum() {
 
   # Cell 1 — `-u <file>` restores that file from upstream (BUG-3 observable).
   psx_setup
-  eval "$upstream_setup"
+  eval "$upstream_and_clean_setup"
   run hug w get -u src/a.py
   assert_success
   assert_output --partial "Files reset to"
@@ -761,6 +761,11 @@ psx_install_stub_gum() {
   echo diverged-2 > 2
   git commit -q -am "diverge file 2"
   git branch --set-upstream-to=up-ref
+  # Probed: check_file_in_commit exits 1 with "File '<path>' does not exist
+  # in commit <sha>" — backs the claim in the comment above.
+  run hug w get -u no-such-file
+  assert_failure
+  assert_output --partial "does not exist in commit"
   run hug w get -u 2
   assert_success
   assert_equal "base-2" "$(cat -- 2)"
@@ -777,7 +782,7 @@ psx_install_stub_gum() {
   # Cell 4 — `-u` alone WITH upstream: the documented reset-all runs, preview
   # shows the reset_all_files category shape, and --dry-run changes nothing.
   psx_setup
-  eval "$upstream_setup"
+  eval "$upstream_and_clean_setup"
   run hug w get -u --dry-run
   assert_success
   assert_output --partial "Files that will be MODIFIED:"
