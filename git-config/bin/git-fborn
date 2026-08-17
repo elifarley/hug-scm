@@ -76,4 +76,9 @@ Usage: hug fborn <file>"
   fi
 fi
 
+# Cardinality guard (pathspec contract §3.2): fborn shows the birth of ONE
+# file — two paths used to fall through to git's "--follow requires exactly
+# one pathspec" fatal. Reject with a command-naming error instead (#292).
+reject_multiple_files "hug fborn" "$@"
+
 exec git log --pretty=logbody --follow --diff-filter=A --find-renames=40% -- "$@"

@@ -59,18 +59,28 @@ eval "$(parse_common_flags "$@")"
 # Parse custom flags
 file=""
 raw=false
+extra_files=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --raw)
     raw=true
     shift
     ;;
-  *) if [[ -z "$file" ]]; then
-    file="$1"
+  *)
+    # Cardinality contract (#292, spec §3.2): the OLD loop silently broke on
+    # the second positional — `hug h steps a b` analyzed `a` and vanished
+    # `b` without a word. Keep collecting so reject_multiple_files can name
+    # the mistake instead of hiding it.
+    if [[ -z "$file" ]]; then
+      file="$1"
+    else
+      extra_files+=("$1")
+    fi
     shift
-  else break; fi ;;
+    ;;
   esac
 done
+reject_multiple_files "hug h steps" "$file" "${extra_files[@]}"
 
 # If no file provided, show interactive selection or help
 if [[ -z "$file" ]]; then

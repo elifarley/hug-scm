@@ -118,6 +118,20 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Cardinality guard (pathspec contract §3.2): stats file analyzes ONE file
+# — `hug stats file a b` used to churn-analyze ONLY a and silently drop
+# the extras. Count NON-FLAG positionals (unknown flags also land in
+# remaining_args; known flags were consumed above with their values) and
+# reject extras with a command-naming error (#292).
+declare -a stats_file_positionals=()
+for arg in "${remaining_args[@]}"; do
+  case "$arg" in
+  -*) ;; # unrecognized flag: keep prior pass-through semantics
+  *) stats_file_positionals+=("$arg") ;;
+  esac
+done
+reject_multiple_files "hug stats file" "${stats_file_positionals[@]}"
+
 check_git_repo
 
 # Get file argument

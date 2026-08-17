@@ -60,4 +60,19 @@ fi
 file="$1"
 shift
 
+# Cardinality guard (pathspec contract §3.2): llf logs ONE file, but flags
+# (-N, -p, --stat, ...) may legitimately follow it (`hug llf <file> -5` is
+# documented). reject_multiple_files counts everything it receives, so
+# pre-filter to ADDITIONAL NON-FLAG positionals only: flags keep flowing to
+# the log backend, a second file rejects with a command-naming error
+# instead of git's "bad revision" fatal (#292).
+declare -a extra_positionals=()
+for arg in "$@"; do
+  case "$arg" in
+  -*) ;; # flag: belongs to the log backend, not a file
+  *) extra_positionals+=("$arg") ;;
+  esac
+done
+reject_multiple_files "hug llf" "$file" "${extra_positionals[@]}"
+
 exec hug ll "$@" --follow -- "$file"

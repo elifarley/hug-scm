@@ -79,4 +79,9 @@ Install gum: https://github.com/charmbracelet/gum"
   fi
 fi
 
+# Cardinality guard (pathspec contract §3.2): fb blames ONE file — two
+# paths used to reach git as "bad revision '<second file>'". Reject with a
+# command-naming error instead (#292).
+reject_multiple_files "hug fb" "$@"
+
 exec git blame -w -C -C -C --line-porcelain -- "$@"

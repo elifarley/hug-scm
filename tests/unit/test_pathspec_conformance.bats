@@ -77,11 +77,23 @@ PATHSPEC_HISTORY_ROWS=(cmod cmoda)
 #   CHAR_SL_HELP_ROWS     — whole sl family: `--help` never reaches the
 #                           script (git man routing)
 #   CHAR_FATAL_ROWS       — single-file commands: two files → git FATAL
+#                           (RETIRED by Task 10 → PATHSPEC_SINGLEFILE_ROWS)
 PATHSPEC_CHAR_SL_FILTER_ROWS=(sl sla sls)
 PATHSPEC_CHAR_SL_EMPTY_ROWS=(slu slk sli)
 PATHSPEC_CHAR_SL_SWALLOW_ROWS=(sls slu slk sli)
 PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
-PATHSPEC_CHAR_FATAL_ROWS=(fa fb fblame fborn fcon llf)
+
+# Single-file cardinality rows (migrated by Task 10, spec §3.2/§5.6): these
+# commands take exactly ONE file; two files → hug's own rejection (exit 1,
+# "<cmd> accepts only one file.") instead of git fatals or silent ignores.
+#   SINGLEFILE_ROWS       — one-word commands guarded directly via
+#                          reject_multiple_files (loop-able as `hug $cmd`)
+#   SINGLEFILE_DELEGATE_ROWS — commands delegating to llf (inherit its guard;
+#                              the error names "hug llf", the delegate target)
+# Multi-word commands (h steps, stats file) get dedicated tests below —
+# they don't fit the one-word loop.
+PATHSPEC_SINGLEFILE_ROWS=(fa fb fblame fborn fcon llf)
+PATHSPEC_SINGLEFILE_DELEGATE_ROWS=(llfp llfs)
 
 # -----------------------------------------------------------------------------
 # Fixture + harness helpers
@@ -994,51 +1006,76 @@ psx_install_stub_gum() {
   done
 }
 
-@test "characterization single-file commands: two files → git FATAL 128 (flip: Task 10)" {
-  # characterization: flip target THIS PR (Task 10) — probed: every one of
-  # these passes BOTH paths straight to git, which fatals (exit 128) with
-  # one of two messages: "--follow requires exactly one pathspec" (fa,
-  # fborn, fcon) or "bad revision '<second file>'" (fb, fblame, llf). We
-  # assert the uniform observable (exit 128 + stderr "fatal:"); Task 10
-  # replaces it with hug's own "accepts only one file" rejection.
-  for cmd in "${PATHSPEC_CHAR_FATAL_ROWS[@]}"; do
+@test "single-file cardinality: two files → hug rejection, not git fatal (Task 10)" {
+  # FLIPPED (Task 10, spec §3.2/§5.6): these commands used to pass BOTH
+  # paths straight to git, which fataled (exit 128) with "--follow requires
+  # exactly one pathspec" (fa, fborn, fcon) or "bad revision" (fb, fblame,
+  # llf). They now enforce the one-file contract themselves with hug's own
+  # clear, command-naming error (exit 1).
+  for cmd in "${PATHSPEC_SINGLEFILE_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" src/a.py docs/note.md
-    assert_equal 128 "$status"
-    assert_output --partial "fatal:"
+    assert_equal 1 "$status"
+    assert_output --partial "hug $cmd accepts only one file."
+    refute_output --partial "fatal:"
     psx_reset
   done
 }
 
-@test "characterization h steps: extra files silently ignored (flip: Task 10)" {
-  # characterization: flip target THIS PR (Task 10) — probed: git-h-steps
-  # keeps the FIRST positional only (git-h-steps:62-73): with two files the
-  # output is byte-identical to the single-file run (exit 0). Silent ignore
-  # pinned via assert_equal so any drift names both sides.
-  local single
+@test "single-file cardinality: llf keeps flags flowing after the file (Task 10)" {
+  # llf documents `hug llf <file> -N [log options]` — the cardinality guard
+  # must count only additional NON-FLAG positionals, so flags after the
+  # file keep flowing to the log backend. src/a.py's last touching commit
+  # is "base", so that subject must appear (proves the log actually ran
+  # rather than the guard eating a valid invocation).
   psx_setup
-  run hug h steps src/a.py
+  run hug llf src/a.py -1
   assert_success
-  single="$output"
-  run hug h steps src/a.py docs/note.md
-  assert_success
-  assert_equal "$single" "$output"
+  assert_output --partial "base"
+  psx_reset
+
+  # ...while a second FILE — flag before or after — still rejects.
+  psx_setup
+  run hug llf src/a.py docs/note.md -1
+  assert_equal 1 "$status"
+  assert_output --partial "hug llf accepts only one file."
   psx_reset
 }
 
-@test "characterization stats file: extra files silently ignored (flip: Task 10)" {
-  # characterization: flip target THIS PR (Task 10) — probed: `hug stats
-  # file a b` churn-analyzes ONLY a (output identical to the single-file
-  # run, exit 0); the extras vanish without a word.
-  local single
+@test "single-file cardinality: llfp/llfs inherit llf's guard via delegation (Task 10)" {
+  # llfp/llfs delegate via `exec hug llf "$file" -p|--stat "$@"` — no direct
+  # guard of their own. Probed: `hug llfp a b` reaches llf as `a -p b`, the
+  # -p flag is skipped by the non-flag counter, b counts as the second file
+  # → rejection naming "hug llf" (the delegate target), exit 1.
+  local cmd
+  for cmd in "${PATHSPEC_SINGLEFILE_DELEGATE_ROWS[@]}"; do
+    psx_setup
+    run hug "$cmd" src/a.py docs/note.md
+    assert_equal 1 "$status"
+    assert_output --partial "hug llf accepts only one file."
+    refute_output --partial "fatal:"
+    psx_reset
+  done
+}
+
+@test "single-file cardinality: h steps rejects extra files (Task 10)" {
+  # FLIPPED (Task 10): git-h-steps used to keep the FIRST positional only
+  # (silent ignore of the second). Now two files → exit 1 + rejection
+  # naming the command exactly as invoked.
   psx_setup
-  run hug stats file src/a.py
-  assert_success
-  assert_output --partial "Churn analysis for: src/a.py"
-  single="$output"
+  run hug h steps src/a.py docs/note.md
+  assert_equal 1 "$status"
+  assert_output --partial "hug h steps accepts only one file."
+  psx_reset
+}
+
+@test "single-file cardinality: stats file rejects extra files (Task 10)" {
+  # FLIPPED (Task 10): `hug stats file a b` used to churn-analyze ONLY a;
+  # the extras vanished without a word. Now two files → exit 1 + rejection.
+  psx_setup
   run hug stats file src/a.py docs/note.md
-  assert_success
-  assert_equal "$single" "$output"
-  refute_output --partial "docs/note.md"
+  assert_equal 1 "$status"
+  assert_output --partial "hug stats file accepts only one file."
+  refute_output --partial "Churn analysis"
   psx_reset
 }
