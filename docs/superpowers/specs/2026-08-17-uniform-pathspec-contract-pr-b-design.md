@@ -15,7 +15,7 @@ Six stages, atomic commits each; every stage leaves the full suite green:
    - picker-forwarding DRY helper — one shared function for the `--`+pathspecs forwarding idiom repeated across `hug-select-files`, `hug-git-diff`, and the `lc`/`lf`/`lcr` pickers;
    - contract-comment dedup — one canonical parsing-order/pathspec comment in `hug-cli-flags`, referenced (not duplicated) at call sites;
    - non-flag-filter helper — the "count positionals only up to the first flag" cut currently encoded 2× (`llf`, `stats-file`); `w-get`'s shape guard is a DIFFERENT cut (rev-parse/integer classification of each arg under `-u`) and stays command-owned — it shares the helper only if the helper parameterizes the classifier, which is not required;
-   - cross-module `_pathspec_pathspecs` accessor — deliverable defined: a getter in `hug-cli-flags` (e.g. `pathspec_pathspecs()` printing the collected pathspecs null-delimited, or populating a caller-named nameref) so modules other than the parsing script (`hug-select-files` forwarding, delegation sinks) read the split through one function instead of touching the global array directly;
+   - cross-module `_pathspec_pathspecs` accessor — ONE API, not alternatives: `pathspec_pathspecs_into <nameref>` in `hug-cli-flags`, populating a caller-named array nameref (empty array when none collected), so modules other than the parsing script (`hug-select-files` forwarding, delegation sinks) read the split through one function instead of touching the global array directly;
    - nullsafe-idiom consistency sweep of PRE-EXISTING reachable-empty sites (bare `"${arr[@]}"` → `${arr[@]+…}`) — and stages 2–4 use the idiom at write time for every NEW array site they create;
    - the 3 remaining combo-gap tests: `--cwd`+pathspec on `list_tracked_files`, ignored-files pathspec forwarding, fblame churn-mode guard. (GAP-1, the lf picker cell, closed in PR-A `4f730e7`.)
 2. **`sl*` + `us` batch migration** (§5.5) — onto the stage-1 helpers.
@@ -34,17 +34,29 @@ Affected: `statusbase`, `sl`, `sla` (via statusbase), `sls`, `slu`, `slk`, `sli`
 
 - Adopt `parse_common_flags_with_pathspecs`; each script's own loop keeps its custom flags (`--json`, `-c/--count`, `-q`, statusbase's `--long`/`-u`/`-uno`) parsed from pre-args.
 - Own-loops **reject unknown flag tokens loudly** — today's `*) → pathspecs+=("$arg")` swallow (`git-sls:38-41`) is what lets `-x` masquerade as a pathspec.
-- Pathspecs flow to **all three sinks**: human listing (`list_files_with_status`), `-c` count (`run_count_mode`), and `--json` (`output_json_status` — stage 3.3).
+- Pathspecs flow to **all four sinks** — the original three plus the trailing summary:
+  1. human listing (`list_files_with_status`),
+  2. `-c` count (`run_count_mode`),
+  3. `--json` (`output_json_status` — stage 3.3),
+  4. **the trailing `exec hug s` summary** (`git-statusbase:106`, `git-sls:81`): `git-s` has no pathspec support, so a scoped listing would end with a WHOLE-REPO summary ball — decided: **the summary is suppressed when pathspecs are active** (an unscoped ball after a scoped listing misleads; suppression matches the existing `-q`/count-mode precedent of no trailing summary). Conformance row asserts the summary's absence under pathspecs.
 - Trailing bare `--` = inert separator → full listing. Migrated listings call the helper **without** `--picker`, so nothing exports and the `exec hug s` summary boundary is safe by construction.
 - No trailing bare `--` ever reaches git as a pathspec.
 
 ### 3.2 `us` migration (§5.5)
 
-Split hoisted above `us`'s custom loop. Mid-stream `--` error → filter. Trailing bare `--` becomes a no-op token in every position: alone → stripped, dispatches identically to zero args (the existing staged-file selector; `us` demands ≥1 path so it is NOT on the scoped-picker list); after pathspecs → paths win. Both `files_to_unstage` branches (plain + from-file/from-commit concat, `git-us:112-124`) fed by the split. Conformance row: `hug us --` ≡ `hug us` output equality, pinned per gum-presence.
+Split hoisted above `us`'s custom loop. Mid-stream `--` error → filter. Trailing bare `--` becomes a no-op token in every position: alone → stripped, dispatches identically to zero args (the existing staged-file selector; `us` demands ≥1 path so it is NOT on the scoped-picker list); after pathspecs → paths win. Both `files_to_unstage` branches (plain `git-us:129-133` + from-file/from-commit concat `git-us:117-126`) fed by the split. Conformance row: `hug us --` ≡ `hug us` output equality, pinned per gum-presence.
 
 ### 3.3 `output_json_status` plumbing + flips
 
-- `output_json_status`'s parse-loop catch-all (`*) shift ;;`, `output_json_status:45-47`) becomes a pathspec collector; pathspecs plumb through `output_json_status_unified` into the Python layer, reaching git after a protective `--` (PR-A's data/option-boundary invariant — a pathspec named like a JSON flag is data).
+- The status-JSON chain is **pure Bash end to end** (`output_json_status` → `output_json_status_unified` → `collect_git_files_json` → `list_*_files`) — there is no Python layer to plumb into. Sink table (the parent's discipline; every discard point gets a `--`-aware collector, mirroring `list_staged_files`' `--)` arm at `hug-git-files:40-49`):
+
+  | Sink | Where | Pathspec status today | Fix |
+  |---|---|---|---|
+  | `output_json_status` parse loop | catch-all `*) shift ;;` (`output_json_status:45-47`) | discarded | collect pathspecs; own a `--` arm |
+  | `output_json_status_unified` parse loop | unnamed catch-all `*) shift ;;` (`hug-git-json:141-144`) | discarded | same: `--` arm + collector |
+  | `collect_git_files_json` → `list_*_files` | list calls | `--`-capable since PR-A | forward collected pathspecs after a protective `--` |
+
+  The call boundary carries the same contract: `hug sls --json -- --cwd` (a file named `--cwd`) must scope, not toggle the scope flag — PR-A's data/option-boundary invariant applied to this chain.
 - Flip `tests/unit/test_status_staging.bats:1855` ("hug slc --json: pathspecs are ignored") to assert scoping, **in the same commit as the behavior change** (a green-but-stale test asserting the old contract is a false oracle).
 - **Claim-flip table** — every artifact asserting the old "slc --json ignores pathspecs" contract flips in that same commit (a deletion sweep, not a spot fix; help must not contradict the new behavior):
 
@@ -53,11 +65,14 @@ Split hoisted above `us`'s custom loop. Mid-stream `--` error → filter. Traili
   | `git-config/bin/git-slc:31` | help flag line "(ignores pathspecs)" | remove the parenthetical |
   | `git-config/bin/git-slc:38-39` | help DESCRIPTION "with --json they are ignored by contract — the envelope always describes the full conflicted state" | rewrite: the envelope is pathspec-scoped |
   | `docs/commands/status-staging.md:138` | "`--json` emits the unified status envelope … Pathspecs scope the text listing (`--json` ignores them)" | rewrite the parenthetical to scoped |
+  | `docs/superpowers/plans/2026-08-06-slc-conflicted-files.md:672` | unchecked box "Pathspec scoping works in text mode; `--json` ignores pathspecs (documented contract)" | check the box and annotate: flipped by PR-B (elifarley/hug-scm#298), scoping now applies to `--json` too |
 - Two-sided JSON tests per migrated command: parses via `python3 -m json.tool`, no file outside the pathspecs AND at least one inside; `summary.*` counts must match the scoped array (the v1.7.0 comma-fragment lesson).
 
 ### 3.4 #297 — `hug a -- <file>`
 
 Route `git-a` through the helper's split: pre-`--` behavior byte-identical; post-`--` positionals stage as explicit paths (`git add -- <paths>` with the protective separator); bare trailing `--` alone → the existing picker, unchanged. Red baseline: today `hug a -- file` stages `-u` (tracked-modified) instead — characterization row flips red→green. The post-stage summary line (`Staged N file(s). M staged total now.`) continues to print the TRUE count of what was staged.
+
+**Scoped-picker arm (roast round 2 — the fourth arm §3.4 originally omitted):** `hug a -- src/ --` must open the picker SCOPED to `src/` (parent §2 rule 3 — `a` is on the picker list, and it is the highest-traffic command). Today `git-a`'s picker branch (`git-a:203-222`) builds `select_opts` without pathspecs, so the mixed arm opens an unscoped picker and silently discards `src/`. Fix: the picker branch forwards `_pathspec_pathspecs` into `select_opts` behind a protective `--` (the stage-1 DRY helper), and `a` joins `PATHSPEC_PICKER_ROWS` in the conformance suite (`tests/unit/test_pathspec_conformance.bats:52`, currently `(sw ss su)`) with a scoped-picker row — the roster under-transcription failure mode is this project's recorded PR-A lesson, so the row IS the deliverable, not an afterthought.
 
 ### 3.5 Doc perimeter (§7)
 
