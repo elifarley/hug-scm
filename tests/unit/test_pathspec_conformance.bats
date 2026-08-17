@@ -374,6 +374,81 @@ psx_sl_kind() {
 }
 
 # =============================================================================
+# COLUMN 4b — scoped picker: `-- <pathspec> --` scopes the interactive picker
+# (spec §2 rule 3 — "pathspecs are never silently discarded")
+# =============================================================================
+# Technique: a stub gum on PATH captures the candidate list it receives on
+# STDIN (hug-select-files pipes candidates into `gum filter`; gum's argv
+# carries only filter flags and cannot observe scoping — hence stdin, never
+# argv). The stub exits 1 (cancelled), so the driver prints "No … available
+# or cancelled." and exits 0 — same observable as COLUMN 4. HUG_TEST_MODE=true
+# bypasses gum_available's TTY probe so the stub is actually invoked in CI.
+
+# Installs a stub gum that records picker candidates to $GUM_CANDIDATES_FILE.
+# The `filter`-only guard matters: every info/error message ALSO shells out to
+# `gum log …`, and an unconditional `cat >` there would clobber the capture
+# AFTER the picker ran (found while probing — the file kept ending up empty).
+psx_install_stub_gum() {
+  local stub_dir="$BATS_TEST_TMPDIR/stub"
+  mkdir -p "$stub_dir"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if [[ "${1:-}" == filter ]]; then cat > "$GUM_CANDIDATES_FILE"; fi' \
+    'exit 1' > "$stub_dir/gum"
+  chmod +x "$stub_dir/gum"
+  GUM_CANDIDATES_FILE="$BATS_TEST_TMPDIR/gum-candidates.txt"
+  export GUM_CANDIDATES_FILE
+  PATH="$stub_dir:$PATH"
+}
+
+@test "column scoped-picker: -- src/ -- restricts picker candidates (picker rows)" {
+  # Two-sided per spec §4: every captured candidate must match the scope
+  # (contains src/) AND the out-of-scope marker must be ABSENT. The base
+  # fixture only stages src/a.py and leaves docs/note.md unstaged, so each
+  # command's mode needs its own probe state (see the case arms):
+  #   su — needs an UNSTAGED change under src/ (echo >> src/BIG.py) beside
+  #        the fixture's unstaged docs/note.md
+  #   ss — needs a STAGED non-src candidate (git add docs/note.md) beside
+  #        the fixture's staged src/a.py
+  #   sw — combined mode: staged src/a.py + unstaged docs/note.md is already
+  #        two-sided out of the box
+  local present="src/" absent="docs/note.md" candidates
+  for cmd in "${PATHSPEC_PICKER_ROWS[@]}"; do
+    case "$cmd" in
+    su) present="src/BIG.py" ;;
+    ss | sw) present="src/a.py" ;;
+    esac
+    psx_setup
+    case "$cmd" in
+    su) echo big2 >> src/BIG.py ;;
+    ss) git add docs/note.md ;;
+    esac
+
+    psx_install_stub_gum
+    run env HUG_TEST_MODE=true PATH="$PATH" hug "$cmd" -- src/ --
+    assert_success
+    assert_output --partial "available or cancelled"
+
+    # Strip ANSI status coloring before matching (candidate lines are
+    # "<colored status> <plain filename>").
+    candidates=$(sed $'s/\033\\[[0-9;]*m//g' "$GUM_CANDIDATES_FILE")
+    [[ -n "$candidates" ]]
+    grep -qF "$present" <<< "$candidates"
+    # Out-of-scope file absent from the candidate list … (NOT `! grep`:
+    # commands prepended with ! are exempt from errexit, so BATS would never
+    # see the failure — bats file-wide gotcha, probed in the red run)
+    if grep -qF "$absent" <<< "$candidates"; then
+      fail "out-of-scope candidate leaked into picker: $absent"
+    fi
+    # … and EVERY candidate line matches the scope.
+    local stray
+    stray=$(grep -v 'src/' <<< "$candidates" || true)
+    [[ -z "$stray" ]]
+    psx_reset
+  done
+}
+
+# =============================================================================
 # COLUMN 5 — cardinality (spec §2 rule 5)
 # =============================================================================
 

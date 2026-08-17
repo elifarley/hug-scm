@@ -513,6 +513,14 @@ _diff_cmd_setup() {
     fi
     select_opts+=("--prompt" "$prompt")
 
+    # Forward the user's pathspecs to the picker: without this, the picker
+    # fires before step-7 path building and silently discards the requested
+    # scope — the exact regression the spec's scoped-picker column exists
+    # to catch (#292: "pathspecs are never silently discarded").
+    if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+      select_opts+=("${_pathspec_pathspecs[@]}")
+    fi
+
     local -a files=()
     mapfile -t files < <(select_files_with_status "${select_opts[@]}" || true)
     if [[ ${#files[@]} -eq 0 ]]; then
