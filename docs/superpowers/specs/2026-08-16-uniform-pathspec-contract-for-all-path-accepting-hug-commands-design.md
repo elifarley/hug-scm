@@ -15,7 +15,10 @@ command, `--` is a pathspec separator, an interactive-picker trigger, a
 silently-discarded token, or — accidentally — a search for a file literally named
 `--`. `--help` is swallowed as a pathspec on part of the status-listing family.
 `hug w get -u <file>` errors out. Search commands (`lc`/`lcr`/`lf`) drop the `--`
-separator before delegating, so a branch or tag named like a path can hijack the
+separator before delegating, so when a branch or tag is named like a path the
+invocation dies with git's "ambiguous argument … both revision and filename"
+fatal (exit 128) instead of filtering (probe-verified: the failure is a loud
+fatal, not a silent redirect — the consumed `--` is still the root cause)
 query. Single-file commands accept multiple files and then fail confusingly —
 mostly with raw git fatals, and on `stats-file` silently — instead of a clear,
 command-naming error. Pathspec support is largely undiscoverable.
@@ -34,10 +37,16 @@ Every path-accepting hug command obeys exactly these rules:
 1. **`-- <path>...` filters output** with git-compatible semantics. The first `--`
    splits flags/refs from pathspecs; everything after it is path data, passed
    through verbatim.
-2. **`--help` / `-h` always shows help** — never swallowed as a pathspec
-   *before the separator* (after it, `--help` is path data by design, rule 1
-   — git norm). Consequence: every path-accepting command has a
-   `show_help()`; `statusbase`, `sls`, `slu`, `slk`, `sli` gain one.
+2. **`-h` always shows help** — never swallowed as a pathspec *before the
+   separator* (after it, `-h`/`--help` is path data by design, rule 1 — git
+   norm). Consequence: every path-accepting command has a `show_help()`;
+   `statusbase`, `sls`, `slu`, `slk`, `sli` gain one. **Scope note
+   (probe-verified in PR-A's characterization)**: the `--help` LONG FORM on
+   script-backed commands routes through git's man mechanism (exit 16, "No
+   manual entry for git-<cmd>") — the guaranteed help surfaces are `-h` and
+   `hug help <cmd>` (the repo's own CLAUDE.md documents this workaround).
+   The conformance column asserts the `-h` surface; making `--help` print
+   help directly would be a dispatcher-level change, out of scope here.
 3. **Trailing bare `--` is position-disambiguated:**
    - on **action commands with a meaningful downstream pick** (`a`, `ss`, `su`,
      `sw`, `lc`, `lcr`, `lf`) → interactive file selection (unchanged behavior);
@@ -263,11 +272,14 @@ Two consequences, stated deliberately:
 becomes `... -- "${files_to_reset[@]}"` so files starting with `-` are never
 misread as flags.
 
-### 5.4 BUG-6 — `hug sh` silently overwrites the commit ref
+### 5.4 BUG-6 — `hug sh` overwrites the commit ref with stray positionals
 
 `git-sh:86-88`'s `*` catch-all assigns every stray positional to `commit_ref`
-(last one wins), so `hug sh HEAD -- src/` shows `src/`'s history instead of
-erroring.
+(last one wins). Probe-verified observable (PR-A characterization): `hug sh
+HEAD -- src/` exits 1 with "Invalid commit reference: src/" — LOUD but
+confusing: the user asked for HEAD scoped to `src/`, and the error names
+their path as a bad ref. (The original audit's "silently shows the wrong
+history" framing was wrong: ref validation catches the overwrite.)
 
 Fix in two steps (matching the delivery ladder):
 - **PR-A (defect)**: stray positionals after the ref are rejected loudly.
@@ -280,7 +292,12 @@ Fix in two steps (matching the delivery ladder):
 Affected: `statusbase`, `sl`, `sla` (via statusbase), `sls`, `slu`, `slk`, `sli`,
 `slc`. Pattern A today: no `--` case in the arg loop (`git-statusbase:29-51`,
 `git-sls:27-43`), no `show_help()` (except `slc`), `--help` swallowed as a
-pathspec.
+pathspec. Probe nuances (PR-A characterization): the "filters by coincidence"
+framing holds for `sl`/`sla`/`sls`; `slu`/`slk`/`sli` with `-- <path>` yield
+empty output whose info message names the phantom pathspec ("No unstaged
+files matching '--' 'src/' found.") — same root cause, different observable.
+And the `--help` long form never reaches these scripts at all (git man
+routing, rule 2); `-h` is the swallowed form.
 
 Migration (one batch, after the conformance suite exists):
 
@@ -544,7 +561,9 @@ characterization rows that flip red→green in the migrating PR.
 3. `hug sla -- '*.md'` works first try; `hug help :pathspec` explains why the
    quotes matter.
 4. `hug w get -u <file>` restores from upstream; `hug lc "x" -- src/` cannot be
-   hijacked by a ref named `src/`.
+   hijacked by a ref named `src/` — probe-verified shape: git fatals with
+   "ambiguous argument 'src/a.py': both revision and filename" (exit 128),
+   a broken invocation the separator preservation removes.
 5. Single-file commands teach immediately (`fa` rejects 2 files, naming itself).
 6. `hug llu -- src/` and `hug sh HEAD -- src/` filter as documented.
 7. A maintainer adding a new path-accepting command gets **full-contract**
