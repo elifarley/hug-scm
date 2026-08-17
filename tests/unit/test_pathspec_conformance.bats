@@ -166,6 +166,11 @@ psx_reset() {
 }
 
 teardown() {
+  # dd/shv argv cells install the git shim (see those tests); a cell that
+  # fails mid-run must not leave the shim dir + shim-FIRST PATH behind for
+  # the next test (the shim logs EVERY `git difftool`, so a stale shim would
+  # poison unrelated cells' git calls).
+  teardown_git_shim 2>/dev/null || true
   cleanup_test_repo
 }
 
@@ -1077,5 +1082,353 @@ psx_install_stub_gum() {
   assert_equal 1 "$status"
   assert_output --partial "hug stats file accepts only one file."
   refute_output --partial "Churn analysis"
+  psx_reset
+}
+
+# =============================================================================
+# CHARACTERIZATION ROWS (closing fix, whole-implementation review) — the 8
+# audit-matrix rows the suite was missing (spec §4: ALL matrix rows must have
+# a row): shv, dd, fcat, a, w discard, w purge, w wipe, w zap.
+#
+# Same rules as the Task 4 rows: every cell pins PROBED behavior (probes ran
+# in a scratch copy of this file's fixture); flip targets named per cell.
+# Destructive commands are characterized ONLY through --dry-run / arg-surface
+# invocations — no real destructive op ever runs against the fixture.
+#
+# dd/shv argv cells invoke git-dd/git-shv DIRECTLY (not via the hug
+# dispatcher): `hug` execs `git dd …`, and git prepends its own exec-path to
+# PATH when spawning the dashed external — the inner `git difftool` then
+# resolves git-core's git, bypassing the PATH shim (probed; same harness
+# reason test_shv.bats/test_dd.bats call the scripts directly).
+# =============================================================================
+
+@test "characterization shv: -- <path> forwarded verbatim; scoped-empty → no launch" {
+  # characterization: shv's hand-rolled `--` split is PROPER (audit row) —
+  # probed: difftool argv carries the resolved endpoints AND the pathspecs
+  # verbatim. HEAD~1 is "base" (introduced src/); two-sided via
+  # refute_shim_logged_exact "docs/" (a dropped separator would show the
+  # unscoped diff... and a swallowed pathspec would omit the src/ line).
+  psx_setup
+  configure_fake_difftool "$PWD"
+  setup_git_shim
+  run git-shv HEAD~1 -- src/
+  assert_success
+  assert_shim_logged_exact "HEAD~1"
+  assert_shim_logged_exact "--"
+  assert_shim_logged_exact "src/"
+  refute_shim_logged_exact "docs/"
+  psx_reset
+
+  # Scoped-empty: HEAD is "docs guide only" — no src changes → the
+  # no-changes guard fires and the tool is NEVER invoked (probed).
+  psx_setup
+  configure_fake_difftool "$PWD"
+  run git-shv HEAD -- src/
+  assert_success
+  assert_output --partial "No changes introduced"
+  assert_fake_tool_not_invoked
+  psx_reset
+}
+
+@test "characterization shv: second token rejected loudly; -xX → usage; --help → man routing" {
+  # characterization: probed — `shv HEAD src/` (no separator) names the stray
+  # token (exit 1); `-xX` hits reject_flag_ref's usage banner (exit 2, same
+  # profile as shc/shcp/shp); `--help` via the dispatcher never reaches the
+  # script (git man routing, exit 16 — the suite-wide characterization).
+  psx_setup
+  run hug shv HEAD src/
+  assert_failure
+  assert_output --partial "takes a single commit/range"
+  assert_output --partial "src/"
+  psx_reset
+
+  psx_setup
+  run hug shv -xX
+  assert_equal 2 "$status"
+  assert_output --partial "USAGE:"
+  psx_reset
+
+  psx_setup
+  run hug shv --help
+  assert_equal 16 "$status"
+  refute_output --partial "USAGE:"
+  psx_reset
+}
+
+@test "characterization dd: -- <path> forwarded verbatim (ref, mode, bare forms)" {
+  # characterization: dd_dispatch's manual split is PROPER — probed argv:
+  #   dd HEAD~1 -- src/ → <empty-tree> HEAD~1 -- src/
+  #   dd s -- src/      → --cached -- src/
+  #   dd -- src/        → HEAD -- src/   (bare defaults to working mode)
+  psx_setup
+  configure_fake_difftool "$PWD"
+  setup_git_shim
+  run git-dd HEAD~1 -- src/
+  assert_success
+  assert_shim_logged_exact "HEAD~1"
+  assert_shim_logged_exact "--"
+  assert_shim_logged_exact "src/"
+  refute_shim_logged_exact "docs/"
+  psx_reset
+
+  psx_setup
+  configure_fake_difftool "$PWD"
+  setup_git_shim
+  run git-dd s -- src/
+  assert_success
+  assert_shim_logged_exact "--cached"
+  assert_shim_logged_exact "src/"
+  psx_reset
+
+  psx_setup
+  configure_fake_difftool "$PWD"
+  setup_git_shim
+  run git-dd -- src/
+  assert_success
+  assert_shim_logged_exact "HEAD"
+  assert_shim_logged_exact "src/"
+  refute_shim_logged_exact "--cached"
+  psx_reset
+}
+
+@test "characterization dd: unknown flag → usage banner; --help → man routing" {
+  # characterization: probed — `-xX` is rejected as a flag-ref (exit 2 +
+  # dd's usage banner, NOT a silent "no ref" launch); `--help` via the
+  # dispatcher hits git man routing (exit 16) like every other row.
+  psx_setup
+  run hug dd -xX
+  assert_equal 2 "$status"
+  assert_output --partial "USAGE:"
+  psx_reset
+
+  psx_setup
+  run hug dd --help
+  assert_equal 16 "$status"
+  refute_output --partial "USAGE:"
+  psx_reset
+}
+
+@test "characterization fcat: <commit> <path> works; '-- ' form equivalent" {
+  # characterization: fcat's DOCUMENTED interface is two positionals
+  # (audit "TARGET+PATH" = the internal `git show commit:path`, not CLI
+  # colon syntax). Probed: `fcat HEAD src/a.py` prints HEAD's content (py1);
+  # the `--` separator form is equivalent (parse_common_flags consumes it).
+  psx_setup
+  run hug fcat HEAD src/a.py
+  assert_success
+  assert_output "py1"
+  psx_reset
+
+  psx_setup
+  run hug fcat HEAD -- src/a.py
+  assert_success
+  assert_output "py1"
+  psx_reset
+}
+
+@test "characterization fcat: colon syntax rejected; unknown flag dies as ref error" {
+  # characterization: probed — `fcat HEAD:src/a.py` (single colon-arg) is
+  # NOT the CLI form: loud "Missing arguments" (exit 1). `-xX` is collected
+  # as a positional target and dies in ref resolution (exit 1, "Unable to
+  # resolve reference '-xX'") — loud but not flag-naming; flip target:
+  # #292 follow-up (column 6 wants a flag-naming rejection).
+  psx_setup
+  run hug fcat HEAD:src/a.py
+  assert_failure
+  assert_output --partial "Missing arguments"
+  psx_reset
+
+  psx_setup
+  run hug fcat -xX src/a.py
+  assert_failure
+  assert_output --partial "Unable to resolve reference '-xX'"
+  psx_reset
+}
+
+@test "characterization a: positional pathspec stages exactly that file" {
+  # characterization: the POSITIVE arm — probed: `hug a new.txt` stages only
+  # new.txt ("Staged 1 file"; porcelain shows `A`), docs/note.md untouched.
+  psx_setup
+  run hug a new.txt
+  assert_success
+  assert_output --partial "Staged 1 file"
+  run git status --porcelain -- new.txt
+  [[ "$output" == A* ]]
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
+
+@test "characterization a: '-- <file>' DROPS the pathspec, stages all tracked (flip: #292)" {
+  # characterization — the duality's dark corner. Probed: `hug a -- new.txt`
+  # neither stages new.txt NOR opens the picker: git-a's loop breaks at the
+  # FIRST '--' with remaining_args EMPTY, so the no-args arm runs
+  # `git add -u` — the pathspec after '--' is silently DISCARDED and other
+  # files (the never-named unstaged docs/note.md) get staged instead.
+  # NOTE: this contradicts the audit spec's open-questions reading ("opens
+  # interactive selection") — the probe wins. Flip target: #292 follow-up
+  # (contract §2 rule 1: pathspecs are never silently discarded).
+  psx_setup
+  run hug a -- new.txt
+  assert_success
+  assert_output --partial "Staged 1 file"
+  # new.txt itself must remain untracked (its pathspec was dropped)...
+  run git status --porcelain -- new.txt
+  [[ "$output" == "??"* ]]
+  # ...while docs/note.md — never named on the command line — got staged.
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == M* ]]
+  psx_reset
+}
+
+@test "characterization a: bare trailing '--' opens the picker (duality exception)" {
+  # characterization: the CONTRACT-SANCTIONED duality (audit staging row):
+  # a BARE trailing '--' is the interactive picker trigger, not a separator.
+  # Headless observable (probed in BOTH gum branches — gum installed: TTY
+  # failure; gum absent: install-pointer error): exit 0 + "No files
+  # selected.", and the stage-all arm must NOT run (docs/note.md stays
+  # unstaged).
+  psx_setup
+  run hug a --
+  assert_success
+  assert_output --partial "No files selected."
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
+
+@test "characterization a: unknown flag passes through to git add (exit 129)" {
+  # characterization: probed — `-xX` reaches `git add` verbatim and git
+  # rejects it (exit 129, "unknown switch"): pass-through-loud, no swallow.
+  psx_setup
+  run hug a -xX
+  assert_equal 129 "$status"
+  assert_output --partial "unknown switch"
+  psx_reset
+}
+
+@test "characterization w discard: pathspec filter + proper '--' (dry-run cells)" {
+  # characterization: probed — default (unstaged) scope + `-- docs/` previews
+  # exactly docs/note.md; the separator form is equivalent; `-s -- src/`
+  # discriminates the staged set (src/a.py, no docs leak). Flip target for
+  # full contract conformance: #292 Pattern-A migration follow-up.
+  psx_setup
+  run hug w discard --dry-run docs/
+  assert_success
+  assert_output --partial "Unstaged paths"
+  assert_output --partial "docs/note.md"
+  refute_output --partial "src/a.py"
+  psx_reset
+
+  psx_setup
+  run hug w discard --dry-run -- docs/
+  assert_success
+  assert_output --partial "docs/note.md"
+  psx_reset
+
+  psx_setup
+  run hug w discard -s --dry-run src/
+  assert_success
+  assert_output --partial "Staged paths"
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  psx_reset
+}
+
+@test "characterization w discard: unknown flag swallowed (exit 0); bare '--' opens picker" {
+  # characterization — column-6 defect: probed — `-xX` becomes a pathspec in
+  # parse_common_flags' fallback loop, matches nothing, exit 0 "Nothing to
+  # discard" (silent swallow; flip target: #292). The picker arm matches the
+  # `a`/sw family: exit 0 + "No files selected."
+  psx_setup
+  run hug w discard -xX
+  assert_success
+  assert_output --partial "Nothing to discard"
+  psx_reset
+
+  psx_setup
+  run hug w discard --
+  assert_success
+  assert_output --partial "No files selected."
+  psx_reset
+}
+
+@test "characterization w purge: untracked pathspec filter + loud tracked-path refusal" {
+  # characterization: probed — `--dry-run new.txt` previews exactly the
+  # untracked file (separator form equivalent); a pathspec COVERING a tracked
+  # file ('.') is refused loudly (exit 1, "tracked or has staged changes");
+  # `-xX` is swallowed as a path (exit 0 "Nothing to purge"; flip: #292).
+  psx_setup
+  run hug w purge --dry-run new.txt
+  assert_success
+  assert_output --partial "Untracked (1)"
+  assert_output --partial "new.txt"
+  psx_reset
+
+  psx_setup
+  run hug w purge --dry-run -- new.txt
+  assert_success
+  assert_output --partial "new.txt"
+  psx_reset
+
+  psx_setup
+  run hug w purge --dry-run .
+  assert_failure
+  assert_output --partial "tracked or has staged changes"
+  psx_reset
+
+  psx_setup
+  run hug w purge -xX
+  assert_success
+  assert_output --partial "Nothing to purge"
+  psx_reset
+}
+
+@test "characterization w wipe: delegation to discard — filter + swallow inherit" {
+  # characterization: probed — wipe = `w discard -u -s "$@`, so the pathspec
+  # filter and the "-xX → Nothing to discard" swallow are BOTH inherited
+  # from discard (flip: #292, with discard).
+  psx_setup
+  run hug w wipe --dry-run docs/
+  assert_success
+  assert_output --partial "Unstaged paths"
+  assert_output --partial "docs/note.md"
+  assert_output --partial "Both staged and unstaged would be fully discarded"
+  refute_output --partial "src/a.py"
+  psx_reset
+
+  psx_setup
+  run hug w wipe -xX
+  assert_success
+  assert_output --partial "Nothing to discard"
+  psx_reset
+}
+
+@test "characterization w zap: combined preview, scoped filter, and swallow" {
+  # characterization: probed — `zap --dry-run .` previews all three buckets
+  # (staged src/a.py, unstaged docs/note.md, untracked new.txt); a scoped
+  # pathspec narrows to that file only; `-xX` is swallowed (exit 0 "Nothing
+  # to zap"; flip: #292).
+  psx_setup
+  run hug w zap --dry-run .
+  assert_success
+  assert_output --partial "src/a.py"
+  assert_output --partial "docs/note.md"
+  assert_output --partial "Untracked (1)"
+  assert_output --partial "new.txt"
+  psx_reset
+
+  psx_setup
+  run hug w zap --dry-run new.txt
+  assert_success
+  assert_output --partial "new.txt"
+  refute_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  psx_reset
+
+  psx_setup
+  run hug w zap -xX
+  assert_success
+  assert_output --partial "Nothing to zap"
   psx_reset
 }
