@@ -197,8 +197,11 @@ Substitute each script's real custom flags from its pre-migration loop; keep the
 # Sink 4 (#298): the trailing whole-repo 'hug s' summary is suppressed
 # iff pathspecs are active (array-non-empty, NOT '--'-seen — the inert
 # bare '--' must keep summary parity with the unfiltered run).
-local -a __psx=(); pathspec_pathspecs_into __psx
-if [[ ${#__psx[@]} -eq 0 ]]; then
+# NOTE: script scope — NO 'local' (Bash: "can only be used in a
+# function"; under set -e that error kills every non-quiet listing).
+__psx_summary_scope=()
+pathspec_pathspecs_into __psx_summary_scope
+if [[ ${#__psx_summary_scope[@]} -eq 0 ]]; then
   exec hug s
 fi
 ```
@@ -229,11 +232,18 @@ for arg in "$@"; do   # replaced by the split below
 done
 # ↓ becomes:
 eval "$(parse_common_flags_with_pathspecs "$@")"
+# Rehydrate quiet AFTER the split: parse_common_flags CONSUMES -q/--quiet
+# (its getopt has 'q') and exports HUG_QUIET — the own-loop below never
+# sees the flag, and the script's top-of-file 'quiet=false' init ran
+# before the user's env carried HUG_QUIET. Without this, 'hug slk -q'
+# loses --suppress-status and prints status prefixes (review P2).
+[[ ${HUG_QUIET:-} == T ]] && quiet=true
 for arg in "$@"; do   # pre-args only now
   case "$arg" in
   --json) json_output=true ;;
   -c | --count) count_only=true ;;
-  -q | --quiet) quiet=true ;;
+  -q | --quiet) quiet=true ;;   # unreachable via the split (consumed
+                                # above) — kept for direct callers only
   -*) error "Unknown option: $arg (see 'hug sls -h')"; exit 2 ;;
   *) error "unexpected positional '$arg' — put pathspecs after '--'"; exit 2 ;;
   esac
@@ -332,7 +342,7 @@ Note: positionals before `--` were previously collected as pathspecs-by-coincide
 **Steps:**
 
 - [ ] **Step 1:** Red-first: flip `a`'s characterization row (pathspec-drop) and add the scoped-picker row; arm the 4 loops' sentinels; run → FAIL.
-- [ ] **Step 2:** Replace `git-a`'s ad-hoc handling: adopt `parse_common_flags_with_pathspecs "$@" --picker` (a IS on the picker list — the helper owns the export lifecycle); post-split positionals after `--` stage as explicit paths via `hug_add_with_summary "${paths[@]}"` (defined in `git-a:40` — it snapshots then `git add`s its args; VERIFY its internal `git add` call carries a protective `--` so a post-separator file named `-u` stays data, and add one if missing); the picker branch gains the two helper calls.
+- [ ] **Step 2:** Replace `git-a`'s ad-hoc handling: adopt `parse_common_flags_with_pathspecs --picker "$@"` — the mode flag MUST be the literal FIRST argument (the helper checks `${1:-}` only; appending it after `"$@"` makes `--picker` pathspec data and stages a file by that name). a IS on the picker list — the helper owns the export lifecycle; post-split positionals after `--` stage as explicit paths via `hug_add_with_summary "${paths[@]}"` (defined in `git-a:40` — it snapshots then `git add`s its args; VERIFY its internal `git add` call carries a protective `--` so a post-separator file named `-u` stays data, and add one if missing); the picker branch gains the two helper calls.
 - [ ] **Step 3:** Green; full `make test-unit` (the `a` surface is high-traffic — run the whole unit tier, not just the conformance file). Commit: `feat: hug a honors pathspecs after --; scoped picker (#297)`
 
 ### Task 10: Doc perimeter
