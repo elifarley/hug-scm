@@ -668,3 +668,61 @@ teardown() {
   run reject_multiple_files "hug fa" a.txt ""
   assert_success
 }
+
+# -----------------------------------------------------------------------------
+# count_positional_args_before_flags tests (shared cardinality-guard helper,
+# PR-B #298): the count that feeds single-file guards like llf's and
+# stats-file's. Contract: count LEADING non-flag args; the FIRST flag-looking
+# token ends the count (its separate-word VALUE is not a file); '--' itself
+# is a flag-looking token, so post-'--' pathspec data counts as zero
+# command positionals.
+# -----------------------------------------------------------------------------
+
+@test "count_positional_args_before_flags: counts leading positionals" {
+  run count_positional_args_before_flags a b
+  assert_success
+  assert_output "2"
+}
+
+@test "count_positional_args_before_flags: first flag ends the count" {
+  # The PR-A regression this encodes: 'llf a --staged' has ONE file — the
+  # flag VALUE must not be counted as a second positional.
+  run count_positional_args_before_flags a --staged b
+  assert_success
+  assert_output "1"
+}
+
+@test "count_positional_args_before_flags: leading flag yields zero" {
+  run count_positional_args_before_flags -x a
+  assert_success
+  assert_output "0"
+}
+
+@test "count_positional_args_before_flags: no args yields zero" {
+  run count_positional_args_before_flags
+  assert_success
+  assert_output "0"
+}
+
+@test "count_positional_args_before_flags: '--' ends the count" {
+  # Post-'--' tokens are pathspec DATA, not command positionals.
+  run count_positional_args_before_flags -- a b
+  assert_success
+  assert_output "0"
+}
+
+@test "count_positional_args_before_flags: flag VALUE is not a positional" {
+  # The documented regression driver: 'llf a -S py' has ONE file — the
+  # separate-word VALUE of -S must not be counted as a second positional.
+  run count_positional_args_before_flags a -S py
+  assert_success
+  assert_output "1"
+}
+
+@test "count_positional_args_before_flags: empty string tallies as a positional" {
+  # Tally pin: the helper COUNTS tokens, it does not judge file-ness —
+  # reject_multiple_files owns the empty-string-ignoring rule.
+  run count_positional_args_before_flags "" a
+  assert_success
+  assert_output "2"
+}

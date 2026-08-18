@@ -60,31 +60,14 @@ fi
 file="$1"
 shift
 
-# Cardinality guard (pathspec contract §3.2): llf logs ONE file, but flags
-# (-N, -p, --stat, ...) may legitimately follow it (`hug llf <file> -5` is
-# documented). reject_multiple_files counts everything it receives, so
-# pre-filter to ADDITIONAL NON-FLAG positionals only: flags keep flowing to
-# the log backend, a second file rejects with a command-naming error
-# instead of git's "bad revision" fatal (#292).
-#
-# WHY stop at the FIRST flag: many git-log flags take their value as a
-# separate word (`-S <term>`, `--author <name>`, `--since <date>`), and
-# such a value token is shape-identical to a file name. Counting non-dashed
-# tokens past the first flag would reject documented invocations like
-# `hug llf src/a.py -S py`. The first-flag boundary is the only safe cut:
-# everything before it is ours to validate, everything after is opaque
-# log-backend args (git-log convention — post-flag positionals were passed
-# through unchanged before this guard existed too).
-declare -a extra_positionals=()
-for arg in "$@"; do
-  case "$arg" in
-  -*) break ;; # first flag: stop collecting; the rest is log-backend args
-  *) extra_positionals+=("$arg") ;;
-  esac
-done
-# Nullsafe expansion (Bash 4.3 set -u crash mode — the PR's own convention):
-# empty extra_positionals must expand to nothing, not an unbound-variable
-# fatal on the single-file happy path.
-reject_multiple_files "hug llf" "$file" ${extra_positionals[@]+"${extra_positionals[@]}"}
+# Cardinality guard (pathspec contract §3.2): llf logs ONE file; flags may
+# legitimately follow it. Any leading positional AFTER the file is a second
+# file — first flag ends the count, WHY in count_positional_args_before_flags.
+# Gate is -ge 1 (not -gt 1) because $file was already shifted out of "$@".
+# The GATE is authoritative; reject_multiple_files' tally only triggers the
+# same message — do not "simplify" the gate away (#292/#298).
+if [ "$(count_positional_args_before_flags "$@")" -ge 1 ]; then
+  reject_multiple_files "hug llf" "$file" "$@"
+fi
 
 exec hug ll "$@" --follow -- "$file"

@@ -406,6 +406,32 @@ forward_pathspecs_to_picker() {
   fi
 }
 
+# Count LEADING positional arguments only — the first flag-looking token
+# ends the count (#298). Cardinality guards (llf, stats-file, ...) use this
+# so a flag's separate-word VALUE is never miscounted as a second file
+# ('llf a --staged' has ONE file, not two — the PR-A regression this
+# idiom encodes). '--' itself ends the count: post-'--' tokens are
+# pathspec data, not command positionals.
+#
+# Usage: count_positional_args_before_flags [args...]
+# Parameters:
+#   $@ - Raw CLI args to scan (safe to pass an empty/unset-arg list)
+# Effects:
+#   Prints the count of leading non-'-*' args to stdout. Pure computation:
+#   no git, no exit on any input. Callers capture via $(...) — command
+#   substitution strips the trailing newline, so the result is a clean
+#   integer even under 'set -euo pipefail'.
+count_positional_args_before_flags() {
+  local n=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+    -*) break ;;
+    *) n=$((n + 1)) ;;
+    esac
+  done
+  printf '%s\n' "$n"
+}
+
 # Cardinality guard for single-file commands (spec §3.2 / §5.6 of the
 # pathspec-contract design). Rejects more than one file argument with a
 # clear, command-naming error instead of git's raw fatals or silent ignores.
