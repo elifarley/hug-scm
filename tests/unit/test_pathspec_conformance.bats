@@ -882,12 +882,17 @@ psx_install_stub_gum() {
   # slu/slk/sli have NO matching file, and their empty-info message now says
   # matching 'src/' WITHOUT the phantom '--' — the "No unstaged files
   # matching '--' 'src/'" fingerprint (probed pre-migration) is gone.
+  # Sink 4 (spec §3.1, family-wide — fix landed post-Task-10 spec review):
+  # a scoped run also suppresses the trailing whole-repo `hug s` summary —
+  # it would misdescribe the scope. The inert bare `--` KEEPS the summary
+  # (byte-identical parity, pinned by the next test).
   psx_setup
   run hug sls -- src/
   assert_success
   assert_output --partial "src/a.py"
   refute_output --partial "docs/note.md"
   refute_output --partial "matching '--'"
+  refute_output --partial "HEAD:"
   psx_reset
 
   local kind
@@ -900,6 +905,7 @@ psx_install_stub_gum() {
     refute_output --partial "new.txt"
     assert_output --partial "No ${kind} files matching 'src/' found."
     refute_output --partial "matching '--'"
+    refute_output --partial "HEAD:"
     psx_reset
   done
 }

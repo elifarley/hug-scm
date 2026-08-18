@@ -158,8 +158,14 @@ else
     fi
   fi
 
-  # Show summary line (unless quiet mode)
-  if ! $quiet; then
+  # Sink 4 (#292 spec §3.1, family-wide): the trailing whole-repo `hug s`
+  # summary is suppressed iff pathspecs are active (array-non-empty, NOT
+  # '--'-seen — the inert bare '--' keeps summary parity with the
+  # unfiltered run: a scoped run's whole-repo summary would misdescribe
+  # the scope). Same gate as git-statusbase (~:196). Script scope — no
+  # 'local' here (Bash: "can only be used in a function"; under set -e
+  # that error kills every non-quiet listing).
+  if ! $quiet && [[ ${#pathspecs[@]} -eq 0 ]]; then
     exec hug s
   fi
 fi
