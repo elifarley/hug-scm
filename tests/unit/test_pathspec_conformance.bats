@@ -1388,25 +1388,37 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization a: '-- <file>' DROPS the pathspec, stages all tracked (flip: #292)" {
-  # characterization — the duality's dark corner. Probed: `hug a -- new.txt`
-  # neither stages new.txt NOR opens the picker: git-a's loop breaks at the
-  # FIRST '--' with remaining_args EMPTY, so the no-args arm runs
-  # `git add -u` — the pathspec after '--' is silently DISCARDED and other
-  # files (the never-named unstaged docs/note.md) get staged instead.
-  # NOTE: this contradicts the audit spec's open-questions reading ("opens
-  # interactive selection") — the probe wins. Flip target: #292 follow-up
+@test "contract a: '-- <file>' stages exactly that file (#297, was characterization)" {
+  # FLIPPED (#297 fast-follow, delta-spec §3.4): post-'--' positionals are
+  # FILES. Before the fix, git-a's loop broke at the FIRST '--' with
+  # remaining_args EMPTY, so the no-args arm ran `git add -u` — the
+  # pathspec silently discarded and never-named files staged instead
   # (contract §2 rule 1: pathspecs are never silently discarded).
   psx_setup
   run hug a -- new.txt
   assert_success
   assert_output --partial "Staged 1 file"
-  # new.txt itself must remain untracked (its pathspec was dropped)...
   run git status --porcelain -- new.txt
-  [[ "$output" == "??"* ]]
-  # ...while docs/note.md — never named on the command line — got staged.
+  [[ "$output" == A* ]]
+  # docs/note.md — never named on the command line — must stay unstaged.
   run git status --porcelain -- docs/note.md
-  [[ "$output" == M* ]]
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
+
+@test "contract a: '-- -A' stages a file literally named -A, nothing else (#297)" {
+  # The data/option boundary on a MUTATOR: without the protective '--' in
+  # hug_add_with_summary's `git add`, a post-separator file named -A would
+  # stage the WHOLE TREE (git add -A) — the highest-stakes spoof in the PR.
+  psx_setup
+  echo dashA > ./-A
+  run hug a -- -A
+  assert_success
+  run git status --porcelain -- -A
+  [[ "$output" == A* ]]
+  # the never-named unstaged file must remain unstaged
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
   psx_reset
 }
 

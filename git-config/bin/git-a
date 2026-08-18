@@ -51,8 +51,17 @@ hug_add_with_summary() {
   } |
     sort)
 
-  # Run the actual git add (forward all args, honor errors under set -e)
-  git add "$@"
+  # Run the actual git add (forward all args, honor errors under set -e).
+  # The CALL SITES carry the protective '--' for FILE lists (#297): a
+  # post-separator file literally named '-A'/'-u' must stay data — without
+  # it, 'hug a -- -A' would stage the WHOLE TREE (git add -A) on a mutator.
+  # The first-arg guard below is only a backstop (and keeps the zero-args
+  # '-u' arm flowing through unchanged).
+  if [[ "${1:-}" == -* ]]; then
+    git add "$@"
+  else
+    git add -- "$@"
+  fi
 
   _pool_after=$({
     git diff-files --name-only 2> /dev/null
@@ -166,6 +175,20 @@ done
 # Parse common flags (handles --, --browse-root, etc.)
 eval "$(parse_common_flags "$@")"
 
+# #297 fix: post-'--' positionals are FILES. The custom loop above breaks at
+# the FIRST '--' without collecting what follows; parse_common_flags emits the
+# post-separator operands as the residual "$@". Re-collect them SEPARATELY
+# (not into remaining_args) or 'hug a -- file' falls through to the zero-args
+# arm — silently staging 'git add -u' (everything tracked-modified) instead
+# of the named file. Kept separate because the two arms keep different
+# contracts: pre-'--' positionals preserve today's loud pass-through
+# ('hug a -xX' → git's exit-129 unknown switch, pinned by a characterization
+# row), while post-'--' positionals are pure data behind a protective '--'.
+post_separator_args=()
+if [[ $# -gt 0 ]]; then
+  post_separator_args=("$@")
+fi
+
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
 
@@ -183,15 +206,17 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     mapfile -t files_from_source < <(read_files_from_source "$from_file")
   fi
 
-  # Add any remaining arguments
-  files+=("${files_from_source[@]}" "${remaining_args[@]}")
+  # Add any remaining arguments (pre- and post-separator alike — under a
+  # source flag every positional is a file; the '--' at the call site keeps
+  # dash-named ones data)
+  files+=("${files_from_source[@]}" "${remaining_args[@]}" ${post_separator_args[@]+"${post_separator_args[@]}"})
 
   if [[ ${#files[@]} -eq 0 ]]; then
     info "No files to stage."
     exit 0
   fi
 
-  hug_add_with_summary "${files[@]}"
+  hug_add_with_summary -- ${files[@]+"${files[@]}"}
   exit 0
 fi
 
@@ -218,14 +243,21 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     exit 0
   fi
 
-  hug_add_with_summary "${files[@]}"
+  hug_add_with_summary -- ${files[@]+"${files[@]}"}
   exit 0
 fi
 
 # Check if no arguments - stage all tracked modified files
-if [[ ${#remaining_args[@]} -eq 0 ]]; then
+if [[ ${#remaining_args[@]} -eq 0 && ${#post_separator_args[@]} -eq 0 ]]; then
   hug_add_with_summary -u
   exit 0
 fi
 
-hug_add_with_summary "${remaining_args[@]}"
+if [[ ${#post_separator_args[@]} -gt 0 ]]; then
+  # A separator was used: ALL positionals are data (git's own grammar)
+  hug_add_with_summary -- ${remaining_args[@]+"${remaining_args[@]}"} ${post_separator_args[@]+"${post_separator_args[@]}"}
+else
+  # No separator: preserve today's verbatim pass-through (unknown dash
+  # tokens reach git add and fail LOUD — exit 129, characterization-pinned)
+  hug_add_with_summary ${remaining_args[@]+"${remaining_args[@]}"}
+fi
