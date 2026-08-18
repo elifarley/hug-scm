@@ -13,6 +13,8 @@
 #     caller-named array (the single read path for the split).
 #   - forward_pathspecs_to_picker: append the collected pathspecs to a
 #     picker option array behind a protective '--' (nullsafe).
+#   - drain_pathspecs_after_separator: the `--)` arm of a separator-aware
+#     option loop — append all post-separator tokens to a nameref'd array.
 #   - reject_multiple_files: enforce single-file cardinality for
 #     one-file commands (uniform pathspec contract, spec §3.2/§5.6).
 #   - require_args: enforce minimum argument counts.
@@ -20,12 +22,25 @@
 # Implementation:
 #   Uses GNU getopt for robust option parsing (required dependency).
 
+# Double-load guard (#292 PR-B Task 7): downstream libs source this module
+# at THEIR file scope (hug-git-json, output_json_status — for the drain
+# helper below), and some of those are themselves sourced LAZILY, mid-flow,
+# AFTER the caller's split parse (git-lc/git-lf source hug-git-json inside
+# their JSON arms). Without the guard, each such re-source re-ran the
+# `declare -ga _pathspec_pathspecs=()` below and silently WIPED the
+# collected split — probed: lc/lf --json pathspec scoping broke exactly
+# this way when the drain extraction first added the sourcing edge. The
+# guard turns re-sourcing into a no-op, eliminating the old HAZARD.
+if [[ -n "${_HUG_CLI_FLAGS_LOADED:-}" ]]; then
+  return 0 2>/dev/null || :
+fi
+_HUG_CLI_FLAGS_LOADED=1
+
 # Nounset safety (#298): the pathspec global is declared at LOAD time so the
 # accessor/forwarder below work before any parse (set -u would kill the shell
 # on an unset array expansion). Plain assignment from the parsers' eval'd
-# output later just repopulates it.
-# HAZARD: re-sourcing this lib AFTER a parse silently wipes the collected
-# split (this declare resets the array to empty) — source it once, up front.
+# output later just repopulates it. (Re-sourcing no longer wipes it — the
+# guard above returns before reaching this declare on any second load.)
 declare -ga _pathspec_pathspecs=()
 
 ################################################################################
@@ -418,6 +433,38 @@ forward_pathspecs_to_picker() {
   if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
     __fps_opts+=("--" ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"})
   fi
+}
+
+# Post-separator drain (#292 PR-B Task 7): the `--)` arm of a
+# separator-aware option loop. The caller has MATCHED '--', so every
+# remaining token is verbatim pathspec DATA — even one spelled like the
+# loop's own flags (a file literally named '--cwd' must scope the query,
+# not toggle the scope flag). Extracted from the inner-while drain
+# copy-pasted across output_json_status, output_json_status_unified,
+# collect_git_files_json (hug-git-json), the selector loops in
+# hug-select-files, and the five list_*_files arms in hug-git-files —
+# ONE named contract instead of ten clones; an eleventh copy would have
+# been one more place to forget the break. All sites adopted.
+#
+# Usage (inside the option loop's `--)` arm — the shift+break are the
+# CALLER's job: this helper cannot consume the caller's "$@", a function
+# only ever sees a copy):
+#   --)
+#     shift                                # consume the separator itself
+#     drain_pathspecs_after_separator pathspecs "$@"
+#     break                                # the rest is data — stop parsing
+#     ;;
+#
+# Pure argument surgery: appends its arguments to the nameref'd array, no
+# git, no output, no separator re-emission (the exact-one-'--' rule is the
+# CALLER's: this layer CONSUMES the separator it matched and the next
+# boundary re-appends exactly one — see output_json_status).
+drain_pathspecs_after_separator() {
+  # Reserved prefix __dps_ — see pathspec_pathspecs_into's nameref note
+  # (Bash >= 4.3 floor, same as the existing local -n uses).
+  local -n __dps_out="$1"
+  shift
+  __dps_out+=("$@")
 }
 
 # Count LEADING positional arguments only — the first flag-looking token

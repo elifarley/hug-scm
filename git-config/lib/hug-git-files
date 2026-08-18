@@ -45,12 +45,12 @@ list_staged_files() {
             --)
                 # Everything after the separator is a pathspec — even a token
                 # shaped like one of our own flags (a file literally named
-                # '--cwd' must scope, not toggle the scoping flag).
+                # '--cwd' must scope, not toggle the scoping flag). Drained
+                # via the shared helper (hug-cli-flags — #292 PR-B Task 7;
+                # available here through hug-common's load order).
                 shift
-                while [[ $# -gt 0 ]]; do
-                    pathspecs+=("$1")
-                    shift
-                done
+                drain_pathspecs_after_separator pathspecs "$@"
+                break
                 ;;
             *)
                 # Treat remaining arguments as pathspecs
@@ -136,12 +136,12 @@ list_unstaged_files() {
             --)
                 # Everything after the separator is a pathspec — even a token
                 # shaped like one of our own flags (a file literally named
-                # '--cwd' must scope, not toggle the scoping flag).
+                # '--cwd' must scope, not toggle the scoping flag). Drained
+                # via the shared helper (hug-cli-flags — #292 PR-B Task 7;
+                # available here through hug-common's load order).
                 shift
-                while [[ $# -gt 0 ]]; do
-                    pathspecs+=("$1")
-                    shift
-                done
+                drain_pathspecs_after_separator pathspecs "$@"
+                break
                 ;;
             *)
                 # Treat remaining arguments as pathspecs
@@ -244,12 +244,12 @@ list_conflicted_files() {
             --)
                 # Everything after the separator is a pathspec — even a token
                 # shaped like one of our own flags (a file literally named
-                # '--cwd' must scope, not toggle the scoping flag).
+                # '--cwd' must scope, not toggle the scoping flag). Drained
+                # via the shared helper (hug-cli-flags — #292 PR-B Task 7;
+                # available here through hug-common's load order).
                 shift
-                while [[ $# -gt 0 ]]; do
-                    pathspecs+=("$1")
-                    shift
-                done
+                drain_pathspecs_after_separator pathspecs "$@"
+                break
                 ;;
             *)
                 # Treat remaining arguments as pathspecs
@@ -323,12 +323,12 @@ list_untracked_files() {
             --)
                 # Everything after the separator is a pathspec — even a token
                 # shaped like one of our own flags (a file literally named
-                # '--cwd' must scope, not toggle the scoping flag).
+                # '--cwd' must scope, not toggle the scoping flag). Drained
+                # via the shared helper (hug-cli-flags — #292 PR-B Task 7;
+                # available here through hug-common's load order).
                 shift
-                while [[ $# -gt 0 ]]; do
-                    pathspecs+=("$1")
-                    shift
-                done
+                drain_pathspecs_after_separator pathspecs "$@"
+                break
                 ;;
             *)
                 # Treat remaining arguments as pathspecs
@@ -389,12 +389,12 @@ list_ignored_files() {
             --)
                 # Everything after the separator is a pathspec — even a token
                 # shaped like one of our own flags (a file literally named
-                # '--cwd' must scope, not toggle the scoping flag).
+                # '--cwd' must scope, not toggle the scoping flag). Drained
+                # via the shared helper (hug-cli-flags — #292 PR-B Task 7;
+                # available here through hug-common's load order).
                 shift
-                while [[ $# -gt 0 ]]; do
-                    pathspecs+=("$1")
-                    shift
-                done
+                drain_pathspecs_after_separator pathspecs "$@"
+                break
                 ;;
             *)
                 # Treat remaining arguments as pathspecs

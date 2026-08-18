@@ -14,6 +14,9 @@ CMD_BASE="$(readlink -f "${BASH_SOURCE[0]}" 2> /dev/null || greadlink -f "${BASH
 CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/hug-json"
 . "$CMD_BASE/hug-git-files"
+# Argument-surgery helpers (drain_pathspecs_after_separator — #292 PR-B
+# Task 7 extraction; the parse loops below call it in their `--)` arms).
+. "$CMD_BASE/hug-cli-flags"
 
 # Map Git status code to JSON status type
 git_status_to_json_type() {
@@ -96,10 +99,8 @@ collect_git_files_json() {
     case "$1" in
     --)
       shift
-      while [[ $# -gt 0 ]]; do
-        pathspecs+=("$1")
-        shift
-      done
+      drain_pathspecs_after_separator pathspecs "$@"
+      break
       ;;
     *)
       list_flags+=("$1")
@@ -183,10 +184,8 @@ output_json_status_unified() {
       ;;
     --)
       shift
-      while [[ $# -gt 0 ]]; do
-        pathspecs+=("$1")
-        shift
-      done
+      drain_pathspecs_after_separator pathspecs "$@"
+      break
       ;;
     *)
       shift

@@ -2,7 +2,7 @@
 # Library: HUG interactive file selection
 #
 # Implements gum-powered file selection with git status annotations.
-# Depends on: hug-gum, hug-output, hug-terminal, hug-git-files (for list_* functions), hug-git-priorities, hug-git-repo (for check_git_repo, used by count_files_with_status).
+# Depends on: hug-gum, hug-output, hug-terminal, hug-git-files (for list_* functions), hug-git-priorities, hug-git-repo (for check_git_repo, used by count_files_with_status), hug-cli-flags (for drain_pathspecs_after_separator — loaded by hug-common BEFORE this module).
 # Functions:
 #   - list_files_with_status: list staged/unstaged/untracked files with color-coded status (non-interactive).
 #   - select_files_with_status: filter staged/unstaged/untracked files interactively.
@@ -378,12 +378,11 @@ list_files_with_status() {
         # filter set, emptying ':(exclude)'-only scoping) while an
         # option-named pathspec STILL toggled the matching flag — the worst
         # of both. Callers now append '--' before pathspecs (mirroring the
-        # 12 forwarding sites below, which already do); drain the rest.
+        # 12 forwarding sites below, which already do); drain the rest
+        # (shared drain helper, hug-cli-flags — #292 PR-B Task 7).
         shift
-        while [[ $# -gt 0 ]]; do
-          pathspecs+=("$1")
-          shift
-        done
+        drain_pathspecs_after_separator pathspecs "$@"
+        break
         ;;
       *)
         # Treat remaining arguments as pathspecs
@@ -659,7 +658,7 @@ Install: https://github.com/charmbracelet/gum"
       # '--' must not be eaten as the --staged option.
       --)
         shift
-        pathspecs+=("$@")
+        drain_pathspecs_after_separator pathspecs "$@"
         break
         ;;
       --multi)

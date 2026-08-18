@@ -6,6 +6,13 @@
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/../lib/hug-json"
+# Argument-surgery helpers (drain_pathspecs_after_separator — #292 PR-B
+# Task 7 extraction). Loaded at FILE scope so the parse loop inside
+# output_json_status can call the drain before the lazy hug-git-json source
+# further down. Re-sourcing is safe: hug-cli-flags' _HUG_CLI_FLAGS_LOADED
+# guard makes a second load a no-op (it MUST — a re-source would otherwise
+# wipe _pathspec_pathspecs, breaking any caller that already parsed).
+. "$CMD_BASE/../lib/hug-cli-flags"
 
 output_json_status() {
   local include_staged=false
@@ -51,10 +58,8 @@ output_json_status() {
       ;;
     --)
       shift
-      while [[ $# -gt 0 ]]; do
-        pathspecs+=("$1")
-        shift
-      done
+      drain_pathspecs_after_separator pathspecs "$@"
+      break
       ;;
     *)
       shift

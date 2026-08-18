@@ -1927,20 +1927,38 @@ create_slc_conflict_fixture() {
   assert_output --partial "inner"
 }
 
-@test "hug slc --json: pathspecs are ignored (documented contract)" {
+@test "hug slc --json: pathspecs scope the envelope (PR-B #298)" {
   local repo
   repo=$(create_slc_conflict_fixture)
   cd "$repo"
   run hug mkeep side -m "merge side"
   assert_failure
 
-  # A pathspec that matches nothing must NOT filter the JSON output
-  run hug slc --json no-such-file.txt
+  # FLIPPED by PR-B (uniform pathspec contract): this test used to pin the
+  # OLD contract ("--json ignores pathspecs" — a non-matching pathspec left
+  # the envelope describing the FULL conflicted state). Pathspecs now scope
+  # the envelope exactly like the text listing, and an empty scope keeps the
+  # envelope SHAPE (zero-length "conflicted" array present, summary 0) —
+  # the machine contract must not change shape with scope.
+
+  # Matching pathspec: the conflicted file stays, count matches the array
+  run hug slc --json -- conflict.txt
   assert_success
   local json_out="$output"
   run python3 -c "import json,sys; print(json.loads(sys.argv[1])['summary']['conflicted'])" "$json_out"
   assert_output "1"
   [[ "$json_out" == *'"conflict.txt"'* ]]
+
+  # Non-matching pathspec (positional spelling — no separator needed): EMPTY
+  # scope, shape kept
+  run hug slc --json no-such-file.txt
+  assert_success
+  json_out="$output"
+  run python3 -c "import json,sys; print(json.loads(sys.argv[1])['summary']['conflicted'])" "$json_out"
+  assert_output "0"
+  [[ "$json_out" != *'"conflict.txt"'* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['conflicted'])" "$json_out"
+  assert_output "[]"
 }
 
 @test "hug slc: HUG_QUIET=T prints plain paths, no summary" {

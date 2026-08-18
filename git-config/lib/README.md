@@ -39,6 +39,14 @@ Command-line flag parsing utilities using GNU getopt (required).
   - Special handling for trailing `--` (interactive file selection)
 - Argument validation (`require_args`)
 - Flag conflict detection (`check_browse_root_no_paths`)
+- Uniform pathspec contract helpers (#292): `parse_common_flags_with_pathspecs`
+  (split args at the first `--` into pre-args + pathspecs, then parse common
+  flags on the pre-args only), `pathspec_pathspecs_into` (read the collected
+  pathspecs into a caller-named array), `forward_pathspecs_to_picker`
+  (append them to a picker option array behind a protective `--`), and
+  `drain_pathspecs_after_separator` (the shared `--)` arm for
+  separator-aware option loops — used by output_json_status, hug-git-json,
+  and hug-select-files)
 
 **Requirements:**
 - GNU getopt (provided by util-linux package on most Linux distributions)

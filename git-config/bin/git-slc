@@ -28,15 +28,22 @@ OPTIONS:
                     Suppresses the trailing summary. Mutually exclusive
                     with --json.
   -q, --quiet       Print plain paths only (no status column, no summary).
-  --json            Output the unified JSON envelope (ignores pathspecs).
+  --json            Output the unified JSON envelope (pathspecs scope the
+                    envelope; an empty scope keeps the envelope shape with
+                    zero counts).
+  -- <path>...       Pathspecs scope the listing (git magic pathspecs like
+                    ':(exclude)src/' work); positionals also work — `--` is
+                    only needed for paths starting with '-'. A trailing
+                    bare `--` alone is inert (same output as no arguments).
   -h, --help        Show this help message and exit.
 
 DESCRIPTION:
   Lists each conflicted (unmerged) file with the Cnflt prefix — the same
   primitive as `git diff --diff-filter=U`, which lists every unmerged file
   exactly once (no dedup needed) and surfaces unmerged gitlinks.
-  Pathspecs scope the text listing; with --json they are ignored by
-  contract — the envelope always describes the full conflicted state.
+  Positional arguments are pathspecs, exactly like `git status --
+  <pathspec>...`: files matching no pathspec are filtered out — from the
+  text listing AND from the --json envelope.
 EOF
 }
 
@@ -49,10 +56,31 @@ EOF
 json_output=false
 quiet=false
 count_only=false
-if [[ ${HUG_QUIET:-} == T ]]; then
-  quiet=true
-fi
 pathspecs=()
+
+# Uniform pathspec split (#292 PR-B): flags before '--', pathspecs after it —
+# see parse_common_flags_with_pathspecs in hug-cli-flags for the contract.
+# WITHOUT --picker on purpose: slc is a listing, so a trailing bare '--'
+# must stay inert (summary parity), never open an interactive picker.
+# -h/--help route to show_help from HERE (parse_common_flags emits the
+# show_help dispatch), keeping slc's pre-contract both-spellings behavior.
+eval "$(parse_common_flags_with_pathspecs "$@")"
+
+# parse_common_flags CONSUMED -q and exported HUG_QUIET — rehydrate the local
+# AFTER the split (also covers a pre-set HUG_QUIET environment). Without
+# this, `hug slc -q` (and HUG_QUIET=T) would print the trailing summary —
+# the own-loop below never sees the flag (the split already ate it).
+[[ ${HUG_QUIET:-} == T ]] && quiet=true
+
+# Seed the ONE pathspec collection with the split's post-'--' data first;
+# pre-arg positionals join it in the own-loop below (git unions pathspecs;
+# ONE array so every sink — listing, count, --json — reads the same scope).
+pathspec_pathspecs_into pathspecs
+
+# Own-loop over the pre-args only: slc's accepted pre-'--' grammar.
+# Unknown tokens are ONLY the -* class — bare positionals collect as
+# pathspecs (git parity: 'hug slc src/' filters today and keeps filtering;
+# SAME rule as statusbase/sls — one rule for the whole sl* family).
 for arg in "$@"; do
   case "$arg" in
   --json)
@@ -62,14 +90,14 @@ for arg in "$@"; do
     count_only=true
     ;;
   -q | --quiet)
-    quiet=true
+    quiet=true # UNREACHABLE via the split (it consumes every pre-'--' -q unconditionally); kept for family-template symmetry
     ;;
-  -h | --help)
-    show_help
-    exit 0
+  -*)
+    # Loud by contract (was: silent pathspec swallow — '-xX' used to become a
+    # filter matching nothing, exit 0). exit 2 = HUG_EX_USAGE.
+    error_usage "Unknown option: $arg (see 'hug slc -h'; to pass a path starting with '-', use 'hug slc -- <path>'; see hug help :pathspec)"
     ;;
   *)
-    # Treat remaining arguments as pathspecs
     pathspecs+=("$arg")
     ;;
   esac
@@ -87,19 +115,23 @@ if $quiet; then
   list_opts+=("--suppress-status")
 fi
 
-# Add pathspecs if provided
+# Add pathspecs behind the protective '--'. The selector-level loop in
+# list_files_with_status is separator-aware (Task 5 lib surgery), so this
+# '--' is HONORED: a pathspec spelled like an option ('--cwd') stays data,
+# and the separator itself is consumed — never a phantom positive pathspec.
 if [[ ${#pathspecs[@]} -gt 0 ]]; then
-  list_opts+=("${pathspecs[@]}")
+  list_opts+=("--" "${pathspecs[@]}")
 fi
 
 # Count mode: -c/--count dispatch (see run_count_mode in hug-select-files).
 # --json passed only when $json_output is true (the codebase stores booleans as
 # true/false strings; ${json_output:+--json} would ALWAYS expand — see run_count_mode).
+# The protective '--' feeds the separator-aware count_files_with_status.
 if $count_only; then
   if $json_output; then
-    run_count_mode --json conflicted ${pathspecs[@]+"${pathspecs[@]}"}
+    run_count_mode --json conflicted ${pathspecs[@]+"--" "${pathspecs[@]}"}
   else
-    run_count_mode conflicted ${pathspecs[@]+"${pathspecs[@]}"}
+    run_count_mode conflicted ${pathspecs[@]+"--" "${pathspecs[@]}"}
   fi
 fi
 

@@ -54,6 +54,7 @@ A thin script mirroring `git-sli` (the single-status-type family precedent — s
 - **Colors**: `Cnflt` prefix rendered via `_format_unstaged_status U`; plain text when piped, like the family.
 - **Not in a repo** → `check_git_repo` exits, family pattern.
 - **`--json` ignores pathspecs — explicit contract**: the unified JSON pipeline's parse loop drops unknown args (`output_json_status:40-42`), family-consistent with `sli`/`slu`/`slk` today. `hug slc --json <path>` returns **all** conflicted files, unfiltered, exit 0. Stated here and pinned by a §8.1 test — deliberately **not** plumbed, because fixing it would change existing family commands' JSON behavior and break the purely-additive constraint. (The roast's alternative — plumb pathspecs through `collect_git_files_json` — is recorded in §10 as rejected.)
+  - **SUPERSEDED (PR-B, 2026-08-18)**: flipped by [elifarley/hug-scm#298](https://github.com/elifarley/hug-scm/pull/298) under the uniform pathspec contract ([elifarley/hug-scm#292](https://github.com/elifarley/hug-scm/issues/292) §5.5) — pathspecs now scope `--json`, and the §10 rejection this bullet cites is overturned by the parent PRD's §5.5 decision. Historical text kept verbatim above.
 - **`-q` + exotic filenames**: output is line-based, so `hug slc -q | xargs …` splits on filenames containing spaces/newlines. Family-inherited (all sl* are line-based); a NUL-terminated mode is future work, not part of this change.
 - `--` literal: not special-cased (family doesn't; git tolerates it in pathspec position — probed: `hug slc --` yields empty result, exit 0).
 
@@ -129,6 +130,7 @@ git diff --name-only|--name-status --diff-filter=U [--] [pathspecs...]
 6. **`-q` suppresses the trailing `hug s`**; non-quiet shows it (stderr).
 7. **Gitlink conflict**: `UU inner` via the embedded-repo recipe — add the inner repo path with `git add` and commit divergent pointer bumps on both branches (probe-verified). **No `git submodule add`**: that fixture fails on git ≥2.38 (`transport 'file' not allowed` without `-c protocol.file.allow=always`), and the embedded-repo recipe avoids the file protocol entirely. `hug slc` lists `inner`.
 8. **`--json` ignores pathspecs** (pinned contract, §3): `hug slc --json <path>` returns ALL conflicted files, unfiltered — assert the full set, not the scoped one.
+   - **SUPERSEDED (PR-B, 2026-08-18)**: flipped by [elifarley/hug-scm#298](https://github.com/elifarley/hug-scm/pull/298) ([elifarley/hug-scm#292](https://github.com/elifarley/hug-scm/issues/292) §5.5) — pathspecs now scope `--json`; the live test asserts the SCOPED set. Historical text kept verbatim above.
 9. **`HUG_QUIET=T`**: plain paths, no trailing summary (mirrors `git-sli:22-24`).
 10. **`hug slc --json -q`**: JSON wins — output parses via `python3 -m json.tool`, `-q` ignored.
 

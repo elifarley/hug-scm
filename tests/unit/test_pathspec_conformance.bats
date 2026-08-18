@@ -169,6 +169,38 @@ psx_setup_optnamed_cwd_file() {
   git add -- ./--cwd # staged mod: visible to sl AND sls
 }
 
+# Conflict fixture for the slc rows (Task 7): two conflicted files in
+# DIFFERENT dirs (src/c.txt, docs/c.txt) so every scope assertion is
+# two-sided — 'src/' keeps one and must drop the other. Built from a CLEAN
+# repo, NOT psx_setup: the standard fixture's staged mod would BLOCK the
+# merge (git >= 2.34 refuses to merge with a dirty index — see
+# create_slc_conflict_fixture's GOTCHA note in test_status_staging.bats).
+# hug mkeep exits nonzero BECAUSE of the conflicts — that failure is the
+# fixture's point, so it is tolerated, not asserted here.
+psx_setup_conflict() {
+  require_hug
+  TEST_REPO=$(create_test_repo)
+  cd "$TEST_REPO" || return 1
+  (
+    mkdir -p src docs
+    echo base > src/c.txt
+    echo base > docs/c.txt
+    git add -A
+    git commit -q -m "conflict base"
+    git switch -q -c side
+    echo side > src/c.txt
+    echo side > docs/c.txt
+    git add -A
+    git commit -q -m "side edits"
+    git switch -q main
+    echo main > src/c.txt
+    echo main > docs/c.txt
+    git add -A
+    git commit -q -m "main edits"
+  )
+  hug mkeep side -m "merge side" >/dev/null 2>&1 || :
+}
+
 # Mid-test reset: leave the repo (cleanup needs a valid cwd), drop it, clear
 # the handle — the three-line incantation every loop iteration needs before
 # psx_setup can build the next fresh fixture. Extracted so a fix to the reset
@@ -669,17 +701,9 @@ psx_install_stub_gum() {
   done
 }
 
-@test "characterization sl-family: slc -h shows USAGE" {
-  # characterization (sl/sla arm FLIPPED by PR-B Task 4 — see the statusbase
-  # conformance tests below): probed: `slc -h` shows USAGE on stdout (exit 0).
-  # The former sl/sla arm asserted the swallow ("matching '-h' found."),
-  # which statusbase's show_help + uniform parse replaced.
-  psx_setup
-  run hug slc -h
-  assert_success
-  assert_output --partial "USAGE:"
-  psx_reset
-}
+# slc's rows live in the SLC CONFORMANCE section (Task 7): it needs the
+# dedicated conflict fixture, so it cannot ride the shared sl-family loops
+# (its former "-h shows USAGE" characterization row moved there too).
 
 # =============================================================================
 # STATUSBASE CONFORMANCE (PR-B Task 4, #292/#298) — sl/sla flipped rows
@@ -902,6 +926,106 @@ psx_install_stub_gum() {
   assert_success
   [[ "$json_out" != *"docs/note.md"* ]]
   run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print('unstaged' in d, d['unstaged'], d['summary']['unstaged'])" "$json_out"
+  assert_output "True [] 0"
+  psx_reset
+}
+
+# =============================================================================
+# SLC CONFORMANCE (PR-B Task 7, #292/#298) — conflicted-files listing flipped
+# =============================================================================
+# slc migrates last of the sl* family (it already had show_help; only its
+# flag loop was pre-contract): unknown flags were silently swallowed as
+# pathspecs, and --json dropped pathspecs BY DOCUMENTED CONTRACT (the
+# 2026-08-06 slc design spec — since superseded, see the claim-flip sweep).
+# Rows run on the dedicated two-dir conflict fixture (psx_setup_conflict)
+# so every scope assertion is two-sided: 'src/' keeps src/c.txt and must
+# drop docs/c.txt.
+# =============================================================================
+
+@test "conformance slc (Task 7): -h shows USAGE" {
+  # PIN (moved from the characterization section): slc keeps its show_help
+  # and the uniform split routes -h/--help to it BEFORE check_git_repo, so
+  # help works from any cwd. Post-flip the help text no longer contradicts
+  # the behavior: the --json flag line and DESCRIPTION both state scoping.
+  psx_setup
+  run hug slc -h
+  assert_success
+  assert_output --partial "USAGE:"
+  refute_output --partial "ignores pathspecs"
+  psx_reset
+}
+
+@test "conformance slc (Task 7): unknown flag loud, exit 2" {
+  # FLIPPED (Task 7): flag-shaped unknown tokens error instead of silently
+  # becoming pathspecs. Before (probed shape, same defect as the sls
+  # family): exit 0 + "No conflicted files matching '-xX' found." — a
+  # typo'd flag looked like an empty answer. Exit 2 = HUG_EX_USAGE,
+  # family-wide error template.
+  psx_setup_conflict
+  run hug slc -xX
+  assert_failure
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  assert_output --partial "see 'hug slc -h'"
+  psx_reset
+}
+
+@test "conformance slc (Task 7): -- src/ filters two-sided, no phantom '--'" {
+  # PIN + hardening (Task 7): filtering already worked by accident of the
+  # Task 5 selector surgery (slc's old loop passed '--' through as a
+  # pathspec and the separator-aware lib consumed it); the migration makes
+  # it contract — the split owns the separator, so it can never ride into
+  # the empty-info message as a phantom filter.
+  psx_setup_conflict
+  run hug slc -- src/
+  assert_success
+  assert_output --partial "src/c.txt"
+  refute_output --partial "docs/c.txt"
+  refute_output --partial "matching '--'"
+  psx_reset
+}
+
+@test "conformance slc (Task 7): bare -- inert with summary parity" {
+  # PIN (Task 7): a trailing bare '--' is stripped by the split and is
+  # fully inert — byte-identical output to the unfiltered run INCLUDING
+  # the summary (both runs share ONE fixture; the summary embeds the HEAD
+  # short hash).
+  psx_setup_conflict
+  run hug slc
+  assert_success
+  unfiltered="$output"
+  run hug slc --
+  assert_success
+  assert_equal "$unfiltered" "$output"
+  assert_output --partial "HEAD:"
+  psx_reset
+}
+
+@test "conformance slc (Task 7): --json honors pathspecs, empty scope keeps shape" {
+  # FLIPPED (Task 7): slc now forwards its collected pathspecs into the
+  # --json sink chain (output_json_status → … → list_*_files, made
+  # pathspec-aware in Task 6) — this is the row that was RED before the
+  # migration: the envelope used to describe the FULL conflicted state
+  # regardless of pathspecs. Two-sided: src/c.txt in, docs/c.txt out;
+  # summary.conflicted matches the scoped array; empty scope keeps the
+  # envelope shape (zero-length "conflicted" array present, count 0).
+  psx_setup_conflict
+  run hug slc --json -- src/
+  assert_success
+  local json_out="$output"
+  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
+  assert_success
+  [[ "$json_out" == *"src/c.txt"* ]]
+  [[ "$json_out" != *"docs/c.txt"* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(len(d['conflicted']), d['summary']['conflicted'])" "$json_out"
+  assert_output "1 1"
+  psx_reset
+
+  psx_setup_conflict
+  run hug slc --json -- nomatch/
+  assert_success
+  json_out="$output"
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print('conflicted' in d, d['conflicted'], d['summary']['conflicted'])" "$json_out"
   assert_output "True [] 0"
   psx_reset
 }
