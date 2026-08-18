@@ -9,12 +9,24 @@
 #   - parse_common_flags: expand shared flags into shell assignments.
 #   - parse_common_flags_with_pathspecs: fixed-order combo — pathspec split
 #     first, then common-flag parsing on the pre-args only.
+#   - pathspec_pathspecs_into: copy the collected pathspecs into a
+#     caller-named array (the single read path for the split).
+#   - forward_pathspecs_to_picker: append the collected pathspecs to a
+#     picker option array behind a protective '--' (nullsafe).
 #   - reject_multiple_files: enforce single-file cardinality for
 #     one-file commands (uniform pathspec contract, spec §3.2/§5.6).
 #   - require_args: enforce minimum argument counts.
 #
 # Implementation:
 #   Uses GNU getopt for robust option parsing (required dependency).
+
+# Nounset safety (#298): the pathspec global is declared at LOAD time so the
+# accessor/forwarder below work before any parse (set -u would kill the shell
+# on an unset array expansion). Plain assignment from the parsers' eval'd
+# output later just repopulates it.
+# HAZARD: re-sourcing this lib AFTER a parse silently wipes the collected
+# split (this declare resets the array to empty) — source it once, up front.
+declare -ga _pathspec_pathspecs=()
 
 ################################################################################
 # Command Pattern Helpers
@@ -349,6 +361,49 @@ parse_common_flags_with_pathspecs() {
       printf 'export HUG_INTERACTIVE_FILE_SELECTION=true\n'
     fi
   }
+}
+
+# Accessor for the collected pathspecs (#298): downstream modules read the
+# split through this function instead of touching the _pathspec_pathspecs
+# global directly — one read path, so the representation can change later.
+#
+# Usage: pathspec_pathspecs_into <nameref>
+# Effects:
+#   Assigns the caller-named array variable to the current contents of
+#   _pathspec_pathspecs (empty array when none were collected). Works from
+#   any sourced module in the same shell — the global is shell-wide.
+#
+# Reserved prefix __psx_ — a caller variable with this name circulars the
+# nameref (documented; Bash >= 4.3, same floor as the 107 existing
+# local -n uses in git-config/lib).
+pathspec_pathspecs_into() {
+  local -n __psx_out="$1"
+  # ${arr[@]+x} guard: under set -u an UNSET global (helper used before any
+  # parse — the exact cross-module case) must not kill the shell.
+  __psx_out=(${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"})
+}
+
+# Picker-forwarding helper (#298): the ONE place that appends the collected
+# pathspecs to a picker's option array behind a protective '--' — a pathspec
+# literally named like a picker option ('--staged') must stay data, and a
+# missing pathspec list must never leave a bare '--'. Replaces the idiom
+# previously repeated across hug-select-files, hug-git-diff, lc/lf/lcr.
+#
+# Usage: forward_pathspecs_to_picker <select_opts_nameref>
+# Effects:
+#   Appends nothing when no pathspecs were collected; exactly
+#   '--' <pathspec...> when some were. Pure argument/array surgery — no git.
+#   Call at most ONCE per opts array: a second call would append a second
+#   '--' <pathspecs> group (harmless to most pickers, but not idempotent).
+forward_pathspecs_to_picker() {
+  # Reserved prefix __fps_ — see pathspec_pathspecs_into's note.
+  local -n __fps_opts="$1"
+  # ${arr[*]+x} probe ([*], not [@]: shellcheck SC2199; identical set-ness
+  # for a +x test): under set -u an UNSET global (helper used before any
+  # parse — the exact cross-module case) must not kill the shell.
+  if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+    __fps_opts+=("--" ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"})
+  fi
 }
 
 # Cardinality guard for single-file commands (spec §3.2 / §5.6 of the
