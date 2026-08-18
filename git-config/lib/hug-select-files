@@ -64,6 +64,17 @@ count_files_with_status() {
   check_git_repo   # Parity with list_*_files: clean HUG error from any context (#259)
   local state="$1"
   shift
+  # Separator-aware (#292 PR-B Task 5): honor a protective '--' right after
+  # the state enum. Callers (run_count_mode sites in the sl* scripts) append
+  # it before forwarding pathspecs so a pathspec literally spelled '--json'
+  # stays data; consuming it here keeps it from riding into the git calls
+  # below as a phantom positive pathspec (which would empty ':(exclude)'-
+  # only scoping — the probed failure mode documented at the git boundary).
+  # `if` form, not `[[ ]] && shift`: under set -e a false && chain as the
+  # function's last-status path must not leak a nonzero return.
+  if [[ "${1:-}" == "--" ]]; then
+    shift
+  fi
   local -a pathspecs=("$@")
   local count=0
 
@@ -358,6 +369,21 @@ list_files_with_status() {
       --suppress-status)
         suppress_status=true
         shift
+        ;;
+      --)
+        # Separator-aware (#292 PR-B Task 5): everything after '--' is a
+        # PATHSPEC, even when it spells '--cwd'/'--staged'. Before this arm
+        # the loop was separator-blind: a caller-side protective '--' was
+        # collected as a phantom positive pathspec (git ORs it into the
+        # filter set, emptying ':(exclude)'-only scoping) while an
+        # option-named pathspec STILL toggled the matching flag — the worst
+        # of both. Callers now append '--' before pathspecs (mirroring the
+        # 12 forwarding sites below, which already do); drain the rest.
+        shift
+        while [[ $# -gt 0 ]]; do
+          pathspecs+=("$1")
+          shift
+        done
         ;;
       *)
         # Treat remaining arguments as pathspecs

@@ -70,17 +70,16 @@ PATHSPEC_HISTORY_ROWS=(cmod cmoda)
 #
 #   CHAR_SL_FILTER_ROWS   — sl family where `-- src/` coincidentally filters
 #                           (phantom `--` pathspec OR-ed away by git)
-#   CHAR_SL_EMPTY_ROWS    — sl family where `-- src/` yields empty output;
-#                           the info message NAMES the phantom '--'
-#   CHAR_SL_SWALLOW_ROWS  — sl family with no flag parser: unknown flags
-#                           become pathspecs (exit 0)
 #   CHAR_SL_HELP_ROWS     — whole sl family: `--help` never reaches the
 #                           script (git man routing)
 #   CHAR_FATAL_ROWS       — single-file commands: two files → git FATAL
 #                           (RETIRED by Task 10 → PATHSPEC_SINGLEFILE_ROWS)
-PATHSPEC_CHAR_SL_FILTER_ROWS=(sl sla sls)
-PATHSPEC_CHAR_SL_EMPTY_ROWS=(slu slk sli)
-PATHSPEC_CHAR_SL_SWALLOW_ROWS=(sls slu slk sli)
+# RETIRED by Task 5 (sls/slu/slk/sli migration): CHAR_SL_EMPTY_ROWS and
+# CHAR_SL_SWALLOW_ROWS pinned the phantom-'--' info message and the silent
+# unknown-flag swallow; both defects are gone, so the rows moved to the
+# sls-family conformance section below (never re-add a pin for a fixed
+# defect — the conformance rows ARE the pin).
+PATHSPEC_CHAR_SL_FILTER_ROWS=(sl sla)
 PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
 
 # Single-file cardinality rows (migrated by Task 10, spec §3.2/§5.6): these
@@ -154,6 +153,20 @@ psx_setup() {
   require_hug
   TEST_REPO=$(setup_pathspec_fixture)
   cd "$TEST_REPO" || return 1
+}
+
+# Fixture extension for the separator-aware lib probe: a tracked file
+# LITERALLY named '--cwd' carrying a STAGED modification, so the token is
+# visible to sl AND sls. `git add -- ./--cwd` (separator form) is mandatory —
+# a bare `git add ./--cwd` would parse the filename as a flag. Used by the
+# Task 5 conformance rows at three sinks (sls listing, sl listing, count).
+psx_setup_optnamed_cwd_file() {
+  psx_setup
+  echo cwdone > ./--cwd
+  git add -- ./--cwd
+  git commit -q -m "file literally named --cwd"
+  echo cwdtwo >> ./--cwd
+  git add -- ./--cwd # staged mod: visible to sl AND sls
 }
 
 # Mid-test reset: leave the repo (cleanup needs a valid cwd), drop it, clear
@@ -620,53 +633,17 @@ psx_install_stub_gum() {
   assert_output --partial "__PSX_UNKNOWN_ROW__"
 }
 
-@test "characterization sl-family: -- src/ filters by coincidence (sl sla sls)" {
+@test "characterization sl-family: -- src/ filters by coincidence (sl sla)" {
   # characterization: flip target PR-B — sl/sla (statusbase) were migrated by
   # PR-B Task 4 and now filter for the RIGHT reason (the split consumes the
-  # separator; see the statusbase conformance tests); sls still filters by
-  # COINCIDENCE — the bare `--` is collected as a pathspec and git ORs the
-  # phantom away (probed: exit 0, staged src/a.py shown, unstaged
-  # docs/note.md filtered out even on sls which would otherwise list it).
+  # separator; see the statusbase conformance tests). sls was retired from
+  # this row by Task 5 (migrated — see the sls-family conformance tests).
   for cmd in "${PATHSPEC_CHAR_SL_FILTER_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" -- src/
     assert_success
     assert_output --partial "src/a.py"
     refute_output --partial "docs/note.md"
-    psx_reset
-  done
-}
-
-@test "characterization sl-family: -- src/ empty + message names phantom '--' (slu slk sli)" {
-  # characterization: flip target PR-B — these variants have NO file matching
-  # src/, so the phantom `--` pathspec becomes visible in the info message
-  # (probed: exit 0, empty stdout, "No <kind> files matching '--' 'src/'
-  # found." — the '--' listed AS a filter is the defect's fingerprint).
-  local kind
-  for cmd in "${PATHSPEC_CHAR_SL_EMPTY_ROWS[@]}"; do
-    kind=$(psx_sl_kind "$cmd")
-    psx_setup
-    run hug "$cmd" -- src/
-    assert_success
-    refute_output --partial "docs/note.md"
-    refute_output --partial "new.txt"
-    assert_output --partial "No ${kind} files matching '--' 'src/' found."
-    psx_reset
-  done
-}
-
-@test "characterization sl-family: unknown flag swallowed as pathspec, exit 0 (sls slu slk sli)" {
-  # characterization: flip target PR-B — these commands have no flag parser,
-  # so `-xX` silently becomes a pathspec (probed: exit 0 + "No <kind> files
-  # matching '-xX' found."). Contract column 6 requires non-zero; today it is
-  # ZERO — pinned here so the PR-B flip is a deliberate red.
-  local kind
-  for cmd in "${PATHSPEC_CHAR_SL_SWALLOW_ROWS[@]}"; do
-    kind=$(psx_sl_kind "$cmd")
-    psx_setup
-    run hug "$cmd" -xX
-    assert_success
-    assert_output --partial "No ${kind} files matching '-xX' found."
     psx_reset
   done
 }
@@ -776,6 +753,184 @@ psx_install_stub_gum() {
     psx_reset
   done
 }
+
+# =============================================================================
+# SLS-FAMILY CONFORMANCE (PR-B Task 5, #292/#298) — sls/slu/slk/sli flipped
+# =============================================================================
+# The four filtered listings migrated to the uniform pathspec contract
+# (split + own-loop), and the shared selector loops in hug-select-files
+# (list_files_with_status / count_files_with_status) became separator-aware,
+# so a protective '--' at the script→lib boundary is now HONORED: everything
+# after it is a pathspec even when it spells '--cwd'/'--staged'.
+# =============================================================================
+
+@test "conformance sls-family (Task 5): -h shows USAGE" {
+  # FLIPPED (Task 5): the four scripts define show_help and parse via
+  # parse_common_flags_with_pathspecs BEFORE check_git_repo, so -h reaches
+  # show_help from any cwd. Before (probed): -h was swallowed as a pathspec
+  # (exit 0 + "No <kind> files matching '-h' found.").
+  for cmd in sls slu slk sli; do
+    psx_setup
+    run hug "$cmd" -h
+    assert_success
+    assert_output --partial "USAGE:"
+    psx_reset
+  done
+}
+
+@test "conformance sls-family (Task 5): unknown flag loud, exit 2" {
+  # FLIPPED (Task 5): flag-shaped unknown tokens error instead of silently
+  # becoming pathspecs. Before (probed): exit 0 + "No <kind> files matching
+  # '-xX' found.". Exit 2 = HUG_EX_USAGE, family-wide error template
+  # (same shape as statusbase's, naming the fix).
+  local kind
+  for cmd in sls slu slk sli; do
+    kind=$(psx_sl_kind "$cmd")
+    psx_setup
+    run hug "$cmd" -xX
+    assert_failure
+    assert_equal 2 "$status"
+    assert_output --partial "Unknown option: -xX"
+    assert_output --partial "see 'hug $cmd -h'"
+    psx_reset
+  done
+}
+
+@test "conformance sls-family (Task 5): -- src/ filters; phantom '--' gone from message" {
+  # FLIPPED (Task 5): the split consumes the separator, so it never rides in
+  # the pathspec list. sls filters two-sided (staged src/a.py is in scope);
+  # slu/slk/sli have NO matching file, and their empty-info message now says
+  # matching 'src/' WITHOUT the phantom '--' — the "No unstaged files
+  # matching '--' 'src/'" fingerprint (probed pre-migration) is gone.
+  psx_setup
+  run hug sls -- src/
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "matching '--'"
+  psx_reset
+
+  local kind
+  for cmd in slu slk sli; do
+    kind=$(psx_sl_kind "$cmd")
+    psx_setup
+    run hug "$cmd" -- src/
+    assert_success
+    refute_output --partial "docs/note.md"
+    refute_output --partial "new.txt"
+    assert_output --partial "No ${kind} files matching 'src/' found."
+    refute_output --partial "matching '--'"
+    psx_reset
+  done
+}
+
+@test "conformance sls-family (Task 5): bare -- inert with summary parity" {
+  # FLIPPED (Task 5): a trailing bare '--' is stripped by the split and is
+  # fully inert — byte-identical output to the unfiltered run INCLUDING the
+  # summary. Before (probed): the bare '--' became a phantom pathspec
+  # matching nothing ("No <kind> files matching '--' found."). Both runs
+  # share ONE fixture (the summary embeds the HEAD short hash).
+  for cmd in sls slu slk sli; do
+    psx_setup
+    run hug "$cmd"
+    assert_success
+    unfiltered="$output"
+    run hug "$cmd" --
+    assert_success
+    assert_equal "$unfiltered" "$output"
+    assert_output --partial "HEAD:"
+    psx_reset
+  done
+}
+
+@test "conformance sls-family (Task 5): scoped × quiet keeps scope, drops summary" {
+  # Mode interaction: -q is consumed by the split (as HUG_QUIET) and
+  # rehydrated after it — scoped quiet keeps the pathspec filter and drops
+  # BOTH the summary and (slk) the status column. Non-empty scope (sls) and
+  # empty scope (slu: no unstaged file under src/) both pinned.
+  psx_setup
+  run hug sls -q -- src/
+  assert_success
+  assert_output --partial "S:"
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "HEAD:"
+  psx_reset
+
+  psx_setup
+  # Empty scope + quiet: the info message itself is quieted (HUG_QUIET
+  # silences info chatter) — an empty stdout IS the pinned behavior.
+  run hug slu -q -- src/
+  assert_success
+  assert_output ""
+  psx_reset
+}
+
+@test "conformance sls-family (Task 5): scoped × count non-empty and empty" {
+  # Mode interaction: count mode is fed from the collected pathspecs (the
+  # run_count_mode sink carries the protective '--', honored by the now
+  # separator-aware count_files_with_status). count mode also suppresses the
+  # trailing summary (run_count_mode exits after printing the number).
+  psx_setup
+  run hug sls -c -- src/
+  assert_success
+  assert_output "1"
+  refute_output --partial "HEAD:"
+  psx_reset
+
+  psx_setup
+  run hug slu -c -- src/
+  assert_success
+  assert_output "0"
+  refute_output --partial "HEAD:"
+  psx_reset
+}
+
+@test "characterization sls-family: --json ignores pathspecs (Task 6 flip target)" {
+  # PINNED (Task 5 → Task 6): the --json sink (output_json_status) still
+  # drops pathspecs on the floor — `slu --json -- src/` reports the
+  # out-of-scope docs/note.md anyway. That is the fingerprint Task 6's
+  # output_json_status chain plumbing must flip; do NOT relax this row
+  # before that task lands.
+  psx_setup
+  run hug slu --json -- src/
+  assert_success
+  echo "$output" | python3 -m json.tool >/dev/null
+  assert_output --partial "docs/note.md"
+  psx_reset
+}
+
+@test "conformance separator-aware lib (Task 5): pathspec spelled '--cwd' scopes, not toggles" {
+  # Lib-surgery acceptance probe (amended Task 4 AC): a file LITERALLY named
+  # '--cwd', staged, must be listed/scoped-to by the sl family — the
+  # selector-level loops in hug-select-files now honor the protective '--'
+  # the scripts append, so the token is DATA, not the scope-to-cwd flag.
+  # Before (probed): '--cwd' toggled scope_cwd and the run listed EVERYTHING
+  # (the whole-repo, cwd-relative listing — src/a.py included).
+  # Covers both boundaries: the listing sink (sl, sls) and the count sink
+  # (sls -c → run_count_mode → count_files_with_status).
+  psx_setup_optnamed_cwd_file
+  run hug sls -- --cwd
+  assert_success
+  [[ "$output" == *"--cwd"* ]]
+  [[ "$output" != *"src/a.py"* ]] # still staged in the fixture — must be filtered out
+  psx_reset
+
+  psx_setup_optnamed_cwd_file
+  run hug sl -- --cwd
+  assert_success
+  [[ "$output" == *"--cwd"* ]]
+  refute_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  psx_reset
+
+  psx_setup_optnamed_cwd_file
+  run hug sls -c -- --cwd
+  assert_success
+  assert_output "1"
+  psx_reset
+}
+
 
 @test "characterization us: bare/trailing -- rejected loudly" {
   # characterization: flip target PR-B — probed: git-us's flag loop hits the

@@ -13,17 +13,74 @@ set -euo pipefail
 
 # Show only staged files, then summary
 
-# Early exit if not in Git repo
-check_git_repo
+show_help() {
+  cat << 'EOF'
+hug sls: List STAGED files only, then a summary line.
 
-# Parse arguments
+USAGE:
+  hug sls [OPTIONS] [pathspec...]
+
+OPTIONS:
+  -c, --count                Print only the number of matching files (mutually
+                             exclusive with --json; count mode also suppresses
+                             the trailing summary)
+  --json                     Output the unified JSON envelope (currently
+                             ignores pathspecs — plumbing lands with the
+                             --json chain rework)
+  -q, --quiet                Suppress informational output and the trailing
+                             summary line
+  -- <path>...               Pathspecs scope the listing (git magic pathspecs
+                             like ':(exclude)src/' work); positionals also
+                             work — `--` is only needed for paths starting
+                             with '-'. A trailing bare `--` alone is inert
+                             (same output as no arguments).
+  -h                         Show this help (`--help` routes to git's man
+                             page — parent-spec dispatcher behavior)
+
+DESCRIPTION:
+  Lists staged files with color-coded status prefixes (S:Add, S:Mod, ...),
+  then prints the one-line `hug s` summary. Positional arguments are
+  pathspecs, exactly like `git status -- <pathspec>...`: files matching no
+  pathspec are filtered out.
+
+EXAMPLES:
+  hug sls                     # staged files, then summary
+  hug sls -- src/             # only staged files under src/
+  hug sls -c                  # just the staged file count
+  hug sls -q                  # listing only, no summary line
+EOF
+}
+
+# Parse arguments.
+# NOTE: parsing runs BEFORE check_git_repo so `-h` works from any cwd and
+# help_search.py can index this script (`<script> --help` → show_help,
+# exit 0) — same ordering as git-statusbase / git-slc.
 json_output=false
 quiet=false
 count_only=false
-if [[ ${HUG_QUIET:-} == T ]]; then
-  quiet=true
-fi
 pathspecs=()
+
+# Uniform pathspec split (#292 PR-B): flags before '--', pathspecs after it —
+# see parse_common_flags_with_pathspecs in hug-cli-flags for the contract.
+# WITHOUT --picker on purpose: sls is a listing, so a trailing bare '--'
+# must stay inert (summary parity), never open an interactive picker.
+eval "$(parse_common_flags_with_pathspecs "$@")"
+
+# parse_common_flags CONSUMED -q and exported HUG_QUIET — rehydrate the local
+# AFTER the split (also covers a pre-set HUG_QUIET environment). Without
+# this, `hug sls -q` (and HUG_QUIET=T) would print the trailing summary —
+# the own-loop below never sees the flag (the split already ate it).
+[[ ${HUG_QUIET:-} == T ]] && quiet=true
+
+# Seed the ONE pathspec collection with the split's post-'--' data first;
+# pre-arg positionals join it in the own-loop below (git unions pathspecs;
+# ONE array so every sink reads the same scope).
+pathspec_pathspecs_into pathspecs
+
+# Own-loop over the pre-args only: sls's accepted pre-'--' grammar.
+# Unknown tokens are ONLY the -* class — bare positionals collect as
+# pathspecs (git parity: 'hug sls src/' filters today and keeps filtering;
+# SAME rule as statusbase — one rule for the whole sl* family).
 for arg in "$@"; do
   case "$arg" in
   --json)
@@ -33,31 +90,42 @@ for arg in "$@"; do
     count_only=true
     ;;
   -q | --quiet)
-    quiet=true
+    quiet=true # UNREACHABLE via the split (it consumes every pre-'--' -q unconditionally); kept for family-template symmetry
+    ;;
+  -*)
+    # Loud by contract (was: silent pathspec swallow — '-xX' used to become a
+    # filter matching nothing, exit 0). exit 2 = HUG_EX_USAGE.
+    error_usage "Unknown option: $arg (see 'hug sls -h'; to pass a path starting with '-', use 'hug sls -- <path>'; see hug help :pathspec)"
     ;;
   *)
-    # Treat remaining arguments as pathspecs
     pathspecs+=("$arg")
     ;;
   esac
 done
 
+# Early exit if not in Git repo (after parsing — see show_help note above)
+check_git_repo
+
 # Build list_files_with_status options for staged files only
 list_opts=("--staged")
 
-# Add pathspecs if provided
+# Add pathspecs behind the protective '--'. The selector-level loop in
+# list_files_with_status is separator-aware (Task 5 lib surgery), so this
+# '--' is HONORED: a pathspec spelled like an option ('--cwd') stays data,
+# and the separator itself is consumed — never a phantom positive pathspec.
 if [[ ${#pathspecs[@]} -gt 0 ]]; then
-  list_opts+=("${pathspecs[@]}")
+  list_opts+=("--" "${pathspecs[@]}")
 fi
 
 # Count mode: -c/--count dispatch (see run_count_mode in hug-select-files).
 # --json passed only when $json_output is true (the codebase stores booleans as
 # true/false strings; ${json_output:+--json} would ALWAYS expand — see run_count_mode).
+# The protective '--' feeds the separator-aware count_files_with_status.
 if $count_only; then
   if $json_output; then
-    run_count_mode --json staged ${pathspecs[@]+"${pathspecs[@]}"}
+    run_count_mode --json staged ${pathspecs[@]+"--" "${pathspecs[@]}"}
   else
-    run_count_mode staged ${pathspecs[@]+"${pathspecs[@]}"}
+    run_count_mode staged ${pathspecs[@]+"--" "${pathspecs[@]}"}
   fi
 fi
 

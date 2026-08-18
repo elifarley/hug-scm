@@ -125,19 +125,18 @@ if $include_untracked; then
   list_opts+=("--untracked")
 fi
 
-# Add pathspecs if provided — RAW, no local protective '--'.
-# LESSON (#292 PR-B review, probed): list_files_with_status itself inserts
-# the protective '--' when it forwards to git (hug-select-files:
-# ${pathspecs[@]+"--" "${pathspecs[@]}"}), and its option loop is
-# separator-BLIND — a '--' we add here neither protects (the loop still
-# matches a pathspec named '--cwd' as an option) NOR is inert: it becomes a
-# phantom positive pathspec that git ORs into the filter set, which empties
-# ':(exclude)'-only scoping ('git status -- -- ":(exclude)src/"' matches
-# nothing — verified against the git oracle). The separator-aware fix for
-# option-named pathspecs belongs in list_files_with_status's own loop
-# (Task 5 lib surgery, shared with sls/slu/slk/sli) — not duplicated here.
+# Add pathspecs behind the protective '--' (Task 5 lib surgery landed).
+# HISTORY (#292 PR-B review, probed): this site used to pass pathspecs RAW —
+# list_files_with_status's option loop was separator-BLIND, so a caller-side
+# '--' neither protected (the loop still matched a pathspec named '--cwd'
+# as an option) NOR was inert (it became a phantom positive pathspec that
+# emptied ':(exclude)'-only scoping, verified against the git oracle). The
+# Task 5 surgery made the selector-level loop separator-aware, so the
+# protective '--' is now the CORRECT spelling: honored as a separator,
+# consumed (never a phantom), and a pathspec spelled like an option stays
+# data (`hug sl -- --cwd` scopes to a file literally named '--cwd').
 if [[ ${#pathspecs[@]} -gt 0 ]]; then
-  list_opts+=("${pathspecs[@]}")
+  list_opts+=("--" "${pathspecs[@]}")
 fi
 
 # TODO list files sorted by reverse status text (so that `S:*` files appear last, closer to the cursor line after the command has finished printing a lot of lines. The second field to sort should be the file path.
@@ -147,14 +146,14 @@ fi
 # true/false strings; ${json_output:+--json} would ALWAYS expand — see run_count_mode).
 if $count_only; then
   if $include_untracked; then _slc_state=all+untracked; else _slc_state=all; fi
-  # Pathspecs RAW here too (see the list_opts LESSON above): count_files_with_
-  # status inserts the protective '--' at its own git boundary; a second one
-  # here becomes the phantom pathspec that breaks ':(exclude)'-only scoping.
+  # Protective '--' here too (Task 5 lib surgery): count_files_with_status
+  # now HONORS a separator right after its state enum, so the '--' is
+  # consumed rather than riding into git as a phantom positive pathspec.
   # Nullsafe ${arr[@]+...} form: expands to nothing when the array is empty.
   if $json_output; then
-    run_count_mode --json "$_slc_state" ${pathspecs[@]+"${pathspecs[@]}"}
+    run_count_mode --json "$_slc_state" ${pathspecs[@]+"--" "${pathspecs[@]}"}
   else
-    run_count_mode "$_slc_state" ${pathspecs[@]+"${pathspecs[@]}"}
+    run_count_mode "$_slc_state" ${pathspecs[@]+"--" "${pathspecs[@]}"}
   fi
 fi
 
