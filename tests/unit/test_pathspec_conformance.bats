@@ -1388,25 +1388,37 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization a: '-- <file>' DROPS the pathspec, stages all tracked (flip: #292)" {
-  # characterization — the duality's dark corner. Probed: `hug a -- new.txt`
-  # neither stages new.txt NOR opens the picker: git-a's loop breaks at the
-  # FIRST '--' with remaining_args EMPTY, so the no-args arm runs
-  # `git add -u` — the pathspec after '--' is silently DISCARDED and other
-  # files (the never-named unstaged docs/note.md) get staged instead.
-  # NOTE: this contradicts the audit spec's open-questions reading ("opens
-  # interactive selection") — the probe wins. Flip target: #292 follow-up
+@test "contract a: '-- <file>' stages exactly that file (#297, was characterization)" {
+  # FLIPPED (#297 fast-follow, delta-spec §3.4): post-'--' positionals are
+  # FILES. Before the fix, git-a's loop broke at the FIRST '--' with
+  # remaining_args EMPTY, so the no-args arm ran `git add -u` — the
+  # pathspec silently discarded and never-named files staged instead
   # (contract §2 rule 1: pathspecs are never silently discarded).
   psx_setup
   run hug a -- new.txt
   assert_success
   assert_output --partial "Staged 1 file"
-  # new.txt itself must remain untracked (its pathspec was dropped)...
   run git status --porcelain -- new.txt
-  [[ "$output" == "??"* ]]
-  # ...while docs/note.md — never named on the command line — got staged.
+  [[ "$output" == A* ]]
+  # docs/note.md — never named on the command line — must stay unstaged.
   run git status --porcelain -- docs/note.md
-  [[ "$output" == M* ]]
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
+
+@test "contract a: '-- -A' stages a file literally named -A, nothing else (#297)" {
+  # The data/option boundary on a MUTATOR: without the protective '--' in
+  # hug_add_with_summary's `git add`, a post-separator file named -A would
+  # stage the WHOLE TREE (git add -A) — the highest-stakes spoof in the PR.
+  psx_setup
+  echo dashA > ./-A
+  run hug a -- -A
+  assert_success
+  run git status --porcelain -- -A
+  [[ "$output" == A* ]]
+  # the never-named unstaged file must remain unstaged
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
   psx_reset
 }
 
@@ -1739,5 +1751,62 @@ psx_install_stub_gum() {
   assert_success
   assert_output --partial "commit with jsonterm in --no-body"
   refute_output --partial "commit with jsonterm in plain"
+  psx_reset
+}
+
+@test "characterization a: option after a path keeps git semantics (foo -A)" {
+  # Review fix (#3800343262): 'hug a foo -A' must match raw git — probed:
+  # 'git add new.txt -A' exits 0 and treats -A as an OPTION scoped to the
+  # given path (docs/note.md stays UNSTAGED; untracked stays untracked) —
+  # NOT as a pathspec and not repo-wide. Before the review fix, a first-arg
+  # heuristic inserted '--', making '-A' a filename and changing the staged
+  # set (or erroring on a nonexistent pathspec).
+  psx_setup
+  run hug a new.txt -A
+  assert_success
+  refute_output --partial "did not match"   # -A was not a pathspec
+  run git status --porcelain -- new.txt
+  [[ "$output" == A* ]]                      # the NAMED path did stage (roast F-003)
+  # git-parity: -A is an option scoped to new.txt — the never-named
+  # tracked file must remain UNSTAGED (probed on raw git)
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
+
+@test "contract a: from-file list line named -A is data, never git-add -A (#297 roast)" {
+  # Roast F-001 live repro class: a --from-file list containing the line
+  # '-A' used to run 'git add -A' (whole tree staged). Source-derived lines
+  # are CLASSIFIED data — they stage after the protective separator.
+  psx_setup
+  echo dashA > ./-A
+  printf '%s\n' -A > list.txt
+  git add -- list.txt
+  git commit -q -m "add list"
+  run hug a --from-file list.txt
+  assert_success
+  run git status --porcelain -- -A
+  [[ "$output" == A* ]]
+  # the never-named unstaged file must remain unstaged
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
+
+@test "contract a: --browse-root opens the picker, paths error loudly (#297 roast)" {
+  # Roast F-002: --browse-root was documented but DEAD (the custom loop
+  # swallowed it; 'git add --browse-root' died exit 129). Now: alone → the
+  # full-repo picker (headless observable: "No files selected." / cancel);
+  # with an explicit path → parse_common_flags' parity error.
+  psx_setup
+  run hug a --browse-root
+  assert_success
+  assert_output --partial "No files selected."
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
+
+  run hug a --browse-root new.txt
+  assert_failure
+  assert_output --partial "--browse-root cannot be used with explicit paths"
   psx_reset
 }
