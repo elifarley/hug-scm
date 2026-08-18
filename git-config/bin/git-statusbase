@@ -13,42 +13,106 @@ set -euo pipefail                                                               
 
 # Enhanced status: shows detailed file list with color-coded status, then summary
 
-# Early exit if not in Git repo
-check_git_repo
+show_help() {
+  cat << 'EOF'
+hug statusbase: Enhanced status — detailed file list, then a summary line.
+Reached as `hug sl` (without untracked files) and `hug sla` (with untracked
+files) via gitconfig aliases; running `hug statusbase` directly behaves
+like `hug sl`.
 
-# Parse arguments to determine what to show
+USAGE:
+  hug statusbase [OPTIONS] [pathspec...]
+
+OPTIONS:
+  --long                     Include untracked files (the `sla` alias's flag)
+  -u, --untracked-files=all  Same as --long (git-status spelling)
+  -uno, --untracked-files=no Exclude untracked files (the `sl` alias's flag)
+  -c, --count                Print only the number of matching files
+  --json                     Output the unified JSON envelope
+  -q, --quiet                Suppress the trailing summary line
+  -- <path>...               Pathspecs scope the listing (git magic pathspecs
+                             like ':(exclude)src/' work). A scoped run also
+                             suppresses the summary: it describes the whole
+                             repo, not your scope. A trailing bare `--` alone
+                             is inert (same output as no arguments).
+  -h                         Show this help (`--help` routes to git's man
+                             page — parent-spec dispatcher behavior)
+
+DESCRIPTION:
+  Lists staged and unstaged files with color-coded status prefixes
+  (S:Mod, U:Del, ...), optionally untracked files, then prints the
+  one-line `hug s` summary. Positional arguments are pathspecs, exactly
+  like `git status -- <pathspec>...`: files matching no pathspec are
+  filtered out.
+
+EXAMPLES:
+  hug sl                         # staged + unstaged, then summary
+  hug sla                        # also list untracked files
+  hug sl -- src/                 # only src/, no trailing summary
+  hug sl -- ':(exclude)src/'     # everything EXCEPT src/
+  hug sla -c                     # just the matching file count
+  hug statusbase --long -- docs/ # untracked included, docs/ only
+EOF
+}
+
+# Parse arguments to determine what to show.
+# NOTE: parsing runs BEFORE check_git_repo so `-h` works from any cwd and
+# help_search.py can index this script (`<script> --help` → show_help,
+# exit 0) — same ordering as git-slc / git-w-wip.
 include_untracked=false
 json_output=false
 quiet=false
 count_only=false
-if [[ ${HUG_QUIET:-} == T ]]; then
-  quiet=true
-fi
 pathspecs=()
 
+# Uniform pathspec split (#292 PR-B): flags before '--', pathspecs after it —
+# see parse_common_flags_with_pathspecs in hug-cli-flags for the contract.
+# WITHOUT --picker on purpose: statusbase is a listing, so a trailing bare
+# '--' must stay inert (summary parity), never open an interactive picker.
+eval "$(parse_common_flags_with_pathspecs "$@")"
+
+# parse_common_flags CONSUMED -q and exported HUG_QUIET — rehydrate the local
+# AFTER the split (also covers a pre-set HUG_QUIET environment).
+[[ ${HUG_QUIET:-} == T ]] && quiet=true
+
+# Seed the ONE pathspec collection with the split's post-'--' data first;
+# pre-arg positionals join it in the own-loop below. Order is irrelevant —
+# git unions pathspecs — but there must be exactly ONE array so the summary
+# suppression and every sink read the same scope.
+pathspec_pathspecs_into pathspecs
+
+# Own-loop over the pre-args only: statusbase's accepted pre-'--' grammar.
+# The gitconfig aliases (`sl = statusbase -uno`, `sla = statusbase --long`)
+# arrive here as pre-args, so -uno/--long MUST stay in this grammar.
+# Unknown tokens are ONLY the -* class — bare positionals collect as
+# pathspecs (git parity: 'hug sl src/' filters today and keeps filtering).
 for arg in "$@"; do
   case "$arg" in
-  --json)
-    json_output=true
-    ;;
-  -c | --count)
-    count_only=true
-    ;;
   --long | -u | --untracked-files=all)
     include_untracked=true
     ;;
   -uno | --untracked-files=no)
     include_untracked=false
     ;;
-  -q | --quiet)
-    quiet=true
+  --json)
+    json_output=true
+    ;;
+  -c | --count)
+    count_only=true
+    ;;
+  -*)
+    # Loud by contract (was: silent pathspec swallow — '-xX' used to become a
+    # filter matching nothing, exit 0). exit 2 = HUG_EX_USAGE.
+    error_usage "Unknown option: $arg (see 'hug statusbase -h'; to pass a path starting with '-', use 'hug statusbase -- <path>'; see hug help :pathspec)"
     ;;
   *)
-    # Treat remaining arguments as pathspecs
     pathspecs+=("$arg")
     ;;
   esac
 done
+
+# Early exit if not in Git repo (after parsing — see show_help note above)
+check_git_repo
 
 # Build list_files_with_status options
 list_opts=("--staged" "--unstaged")
@@ -56,7 +120,17 @@ if $include_untracked; then
   list_opts+=("--untracked")
 fi
 
-# Add pathspecs if provided
+# Add pathspecs if provided — RAW, no local protective '--'.
+# LESSON (#292 PR-B review, probed): list_files_with_status itself inserts
+# the protective '--' when it forwards to git (hug-select-files:
+# ${pathspecs[@]+"--" "${pathspecs[@]}"}), and its option loop is
+# separator-BLIND — a '--' we add here neither protects (the loop still
+# matches a pathspec named '--cwd' as an option) NOR is inert: it becomes a
+# phantom positive pathspec that git ORs into the filter set, which empties
+# ':(exclude)'-only scoping ('git status -- -- ":(exclude)src/"' matches
+# nothing — verified against the git oracle). The separator-aware fix for
+# option-named pathspecs belongs in list_files_with_status's own loop
+# (Task 5 lib surgery, shared with sls/slu/slk/sli) — not duplicated here.
 if [[ ${#pathspecs[@]} -gt 0 ]]; then
   list_opts+=("${pathspecs[@]}")
 fi
@@ -68,6 +142,10 @@ fi
 # true/false strings; ${json_output:+--json} would ALWAYS expand — see run_count_mode).
 if $count_only; then
   if $include_untracked; then _slc_state=all+untracked; else _slc_state=all; fi
+  # Pathspecs RAW here too (see the list_opts LESSON above): count_files_with_
+  # status inserts the protective '--' at its own git boundary; a second one
+  # here becomes the phantom pathspec that breaks ':(exclude)'-only scoping.
+  # Nullsafe ${arr[@]+...} form: expands to nothing when the array is empty.
   if $json_output; then
     run_count_mode --json "$_slc_state" ${pathspecs[@]+"${pathspecs[@]}"}
   else
@@ -101,8 +179,13 @@ else
     fi
   fi
 
-  # Show summary line (unless quiet mode)
-  if ! $quiet; then
+  # Sink 4 (#298): the trailing whole-repo 'hug s' summary is suppressed iff
+  # pathspecs are active (array-non-empty, NOT '--'-seen — the inert bare '--'
+  # keeps summary parity with the unfiltered run: a scoped run's whole-repo
+  # summary would misdescribe the scope). Script scope — NO 'local' here
+  # (Bash: "can only be used in a function"; under set -e that error kills
+  # every non-quiet listing).
+  if ! $quiet && [[ ${#pathspecs[@]} -eq 0 ]]; then
     exec hug s
   fi
 fi

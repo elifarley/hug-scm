@@ -621,11 +621,12 @@ psx_install_stub_gum() {
 }
 
 @test "characterization sl-family: -- src/ filters by coincidence (sl sla sls)" {
-  # characterization: flip target PR-B — after migration the `--` is consumed
-  # by a real parser and these keep passing for the RIGHT reason; today the
-  # bare `--` is collected as a pathspec and git ORs the phantom away
-  # (probed: exit 0, staged src/a.py shown, unstaged docs/note.md filtered
-  # out even on sl/sla which would otherwise list it).
+  # characterization: flip target PR-B — sl/sla (statusbase) were migrated by
+  # PR-B Task 4 and now filter for the RIGHT reason (the split consumes the
+  # separator; see the statusbase conformance tests); sls still filters by
+  # COINCIDENCE — the bare `--` is collected as a pathspec and git ORs the
+  # phantom away (probed: exit 0, staged src/a.py shown, unstaged
+  # docs/note.md filtered out even on sls which would otherwise list it).
   for cmd in "${PATHSPEC_CHAR_SL_FILTER_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" -- src/
@@ -691,23 +692,87 @@ psx_install_stub_gum() {
   done
 }
 
-@test "characterization sl-family: only slc has real -h help; sl/sla -h swallowed" {
-  # characterization: flip target PR-B — probed: `slc -h` shows USAGE on
-  # stdout (exit 0). `sl`/`sla` are gitconfig aliases to statusbase, which
-  # has no -h handling: the flag is swallowed as a pathspec (exit 0 +
-  # "matching '-h' found"). The audited spec's "sl/sla have help" holds only
-  # for `--help`-adjacent docs, not for the runtime `-h` surface.
+@test "characterization sl-family: slc -h shows USAGE" {
+  # characterization (sl/sla arm FLIPPED by PR-B Task 4 — see the statusbase
+  # conformance tests below): probed: `slc -h` shows USAGE on stdout (exit 0).
+  # The former sl/sla arm asserted the swallow ("matching '-h' found."),
+  # which statusbase's show_help + uniform parse replaced.
   psx_setup
   run hug slc -h
   assert_success
   assert_output --partial "USAGE:"
   psx_reset
+}
 
+# =============================================================================
+# STATUSBASE CONFORMANCE (PR-B Task 4, #292/#298) — sl/sla flipped rows
+# =============================================================================
+# `sl`/`sla` are gitconfig aliases (`sl = statusbase -uno`,
+# `sla = statusbase --long`) — invoking them IS the smoke test that the
+# migrated statusbase code is reached with the alias-passed pre-args.
+# =============================================================================
+
+@test "conformance statusbase (Task 4): sl/sla -h shows USAGE" {
+  # FLIPPED (Task 4): statusbase defines show_help and parses via
+  # parse_common_flags_with_pathspecs, so -h reaches show_help through BOTH
+  # aliases' pre-args (-uno / --long). Before: -h was swallowed as a pathspec
+  # (probed: exit 0 + "No staged or unstaged files matching '-h' found.").
   for cmd in sl sla; do
     psx_setup
     run hug "$cmd" -h
     assert_success
-    assert_output --partial "matching '-h' found."
+    assert_output --partial "USAGE:"
+    psx_reset
+  done
+}
+
+@test "conformance statusbase (Task 4): unknown flag loud, exit 2" {
+  # FLIPPED (Task 4): flag-shaped unknown tokens error instead of silently
+  # becoming pathspecs. Before (probed): exit 0 + "matching '-xX' found." +
+  # summary. Exit code 2 = HUG_EX_USAGE (usage error), matching the
+  # family-wide error template.
+  for cmd in sl sla; do
+    psx_setup
+    run hug "$cmd" -xX
+    assert_failure
+    assert_equal 2 "$status"
+    assert_output --partial "Unknown option: -xX"
+    psx_reset
+  done
+}
+
+@test "conformance statusbase (Task 4): -- src/ filters and suppresses summary" {
+  # FLIPPED (Task 4): the separator is consumed by the split (no phantom
+  # '--' pathspec) and the trailing whole-repo `hug s` summary is suppressed
+  # iff a real pathspec is active. Before (probed): the listing filtered but
+  # the summary line ("HEAD: ...") still printed.
+  for cmd in sl sla; do
+    psx_setup
+    run hug "$cmd" -- src/
+    assert_success
+    assert_output --partial "src/a.py"
+    refute_output --partial "docs/note.md"
+    refute_output --partial "HEAD:"
+    psx_reset
+  done
+}
+
+@test "conformance statusbase (Task 4): bare -- inert with summary parity" {
+  # FLIPPED (Task 4): a trailing bare '--' is stripped by the split and is
+  # fully inert — byte-identical output to the unfiltered run INCLUDING the
+  # summary. Before (probed): the bare '--' became a phantom pathspec
+  # matching nothing ("No staged or unstaged files matching '--' found.").
+  # Both runs share ONE fixture: the summary embeds the HEAD short hash,
+  # which differs across fixtures.
+  for cmd in sl sla; do
+    psx_setup
+    run hug "$cmd"
+    assert_success
+    unfiltered="$output"
+    run hug "$cmd" --
+    assert_success
+    assert_equal "$unfiltered" "$output"
+    assert_output --partial "HEAD:"
     psx_reset
   done
 }
