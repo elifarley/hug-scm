@@ -27,11 +27,16 @@ OPTIONS:
   --long                     Include untracked files (the `sla` alias's flag)
   -u, --untracked-files=all  Same as --long (git-status spelling)
   -uno, --untracked-files=no Exclude untracked files (the `sl` alias's flag)
-  -c, --count                Print only the number of matching files
+  -c, --count                Print only the number of matching files (mutually
+                             exclusive with --json; count mode also suppresses
+                             the trailing summary)
   --json                     Output the unified JSON envelope
-  -q, --quiet                Suppress the trailing summary line
+  -q, --quiet                Suppress informational output and the trailing
+                             summary line
   -- <path>...               Pathspecs scope the listing (git magic pathspecs
-                             like ':(exclude)src/' work). A scoped run also
+                             like ':(exclude)src/' work); positionals also
+                             work — `--` is only needed for paths starting
+                             with '-'. A scoped run also
                              suppresses the summary: it describes the whole
                              repo, not your scope. A trailing bare `--` alone
                              is inert (same output as no arguments).
