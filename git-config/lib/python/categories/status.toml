@@ -2,5 +2,5 @@ label       = "Working tree state"
 description = """
 View the working tree state.
 Show staged, unstaged, untracked, and ignored files; full or
-compact summary.
+compact summary. Scope any listing with pathspecs (-- <path>...).
 """

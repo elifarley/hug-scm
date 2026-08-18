@@ -44,6 +44,14 @@ DESCRIPTION:
   Positional arguments are pathspecs, exactly like `git status --
   <pathspec>...`: files matching no pathspec are filtered out — from the
   text listing AND from the --json envelope.
+
+PATH FILTERING:
+  Append -- <path>... to restrict output to matching paths.
+  Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+  hug slc -- src/                 # only conflicts under src/
+  hug slc --json -- ':(glob)src/**/*.py'  # scoped JSON envelope
+
 EOF
 }
 
@@ -95,7 +103,7 @@ for arg in "$@"; do
   -*)
     # Loud by contract (was: silent pathspec swallow — '-xX' used to become a
     # filter matching nothing, exit 0). exit 2 = HUG_EX_USAGE.
-    error_usage "Unknown option: $arg (see 'hug slc -h'; to pass a path starting with '-', use 'hug slc -- <path>'; see hug help :pathspec)"
+    error_usage "Unknown option: $arg. Pathspecs beginning with '-' require '--': hug slc -- $arg. See 'hug help :pathspec'."
     ;;
   *)
     pathspecs+=("$arg")

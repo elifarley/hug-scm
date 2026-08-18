@@ -48,6 +48,19 @@ Command-line flag parsing utilities using GNU getopt (required).
   separator-aware option loops — used by output_json_status, hug-git-json,
   and hug-select-files)
 
+**The parsing-order rule (structural, #292):** the pathspec split runs
+BEFORE any other argument inspection — a command adopting the contract
+calls `parse_common_flags_with_pathspecs` first, then its own loop sees
+only pre-`--` args. Consequences every command script must preserve:
+(1) a trailing bare `--` never survives the split (picker callers opt in
+via `--picker`; everyone else gets it consumed inertly), (2) the
+own-loop's `-*` arm is the loud unknown-option rejection — bare
+positionals collect as pathspecs (git parity), and (3) post-`--` data is
+verbatim pathspec data, so any forwarding to git or a picker goes behind
+a protective second `--` (see `forward_pathspecs_to_picker`). The
+user-facing contract this implements is documented in
+`hug help :pathspec` (`git-config/lib/python/articles/pathspec.md`).
+
 **Requirements:**
 - GNU getopt (provided by util-linux package on most Linux distributions)
 

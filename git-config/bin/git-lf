@@ -41,6 +41,13 @@ DESCRIPTION:
     By default, interactive selection is scoped to the current directory and
     subdirectories. Use --browse-root to browse the entire repository.
 
+PATH FILTERING:
+    Append -- <path>... to restrict output to matching paths.
+    Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+    hug lf "todo" -- src/             # message search scoped to src/
+    hug lf "release" -- '*.md'       # search only Markdown files
+
 EXAMPLES:
     hug lf "bug fix"            # Search for "bug fix" in commit messages
     hug lf "feature" -i         # Case-insensitive search

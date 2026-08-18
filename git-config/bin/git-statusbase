@@ -50,6 +50,13 @@ DESCRIPTION:
   like `git status -- <pathspec>...`: files matching no pathspec are
   filtered out.
 
+PATH FILTERING:
+  Append -- <path>... to restrict output to matching paths.
+  Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+  hug sl -- src/                 # only tracked changes under src/
+  hug sla -- '*.md'              # tracked + untracked Markdown files
+
 EXAMPLES:
   hug sl                         # staged + unstaged, then summary
   hug sla                        # also list untracked files
@@ -108,7 +115,10 @@ for arg in "$@"; do
   -*)
     # Loud by contract (was: silent pathspec swallow — '-xX' used to become a
     # filter matching nothing, exit 0). exit 2 = HUG_EX_USAGE.
-    error_usage "Unknown option: $arg (see 'hug statusbase -h'; to pass a path starting with '-', use 'hug statusbase -- <path>'; see hug help :pathspec)"
+    # The remedy names `hug sl`, not this script: users reach this loop as
+    # `hug sl`/`hug sla` (gitconfig aliases), and `hug sl -- <tok>` is the
+    # spelling they can actually type — same family template as git-sls.
+    error_usage "Unknown option: $arg. Pathspecs beginning with '-' require '--': hug sl -- $arg. See 'hug help :pathspec'."
     ;;
   *)
     pathspecs+=("$arg")

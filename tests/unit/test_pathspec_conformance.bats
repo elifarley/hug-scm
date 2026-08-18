@@ -871,7 +871,7 @@ psx_install_stub_gum() {
     assert_failure
     assert_equal 2 "$status"
     assert_output --partial "Unknown option: -xX"
-    assert_output --partial "see 'hug $cmd -h'"
+    assert_output --partial "Pathspecs beginning with '-' require '--': hug $cmd -- -xX"
     psx_reset
   done
 }
@@ -1022,7 +1022,7 @@ psx_install_stub_gum() {
   assert_failure
   assert_equal 2 "$status"
   assert_output --partial "Unknown option: -xX"
-  assert_output --partial "see 'hug slc -h'"
+  assert_output --partial "Pathspecs beginning with '-' require '--': hug slc -- -xX"
   psx_reset
 }
 
@@ -1193,8 +1193,8 @@ psx_install_stub_gum() {
   psx_setup
   run hug us -xX
   assert_equal 2 "$status"
-  assert_output --partial "Unknown option: -xX (see 'hug us -h'"
-  assert_output --partial "use 'hug us -- <path>'"
+  assert_output --partial "Unknown option: -xX. Pathspecs"
+  assert_output --partial "hug us -- -xX"
   psx_reset
 }
 

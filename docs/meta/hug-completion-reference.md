@@ -48,13 +48,13 @@ These are top-level commands defined as Git aliases. Complete them as static wor
 - `fborn <file>`: When file was added. Args: `<file>` (required).
 
 ### Staging (a*)
-- `a [<files>...]`: Stage tracked files or specifics. Args: `[<files>...]` (optional; if none, stage updates).
+- `a [<files>...]`: Stage tracked files or specifics. Args: `[<files>...]` (optional; if none, stage updates); `-- <path>...` stages exactly the given paths; bare trailing `--` opens the picker (pathspecs before it scope it).
 - `aa`: Stage everything (tracked + untracked + deletions). No args.
 - `ai`: Interactive add menu. No args.
 - `ap`: Interactive patch add. No args.
 
 ### Unstaging (us*)
-- `us <files...>`: Unstage specific files. Args: `<files...>` (required, at least one).
+- `us <files...>`: Unstage specific files. Args: `<files...>` or `-- <path>...` (pathspec scope); a trailing bare `--` behaves like no args (staged-file selector).
 - `usa`: Unstage all. No args.
 - `untrack <files...>`: Stop tracking files (keep locally). Args: `<files...>` (required).
 
@@ -221,7 +221,7 @@ Subcommands (gateway to specific scripts):
 - `sx [--no-color]`: Summary of changes. Options: `--no-color`, `-h|--help`.
 
 ### statusbase (Enhanced Status, via git-statusbase)
-- `statusbase [git-status-opts]`: Status + latest commit. Args: Git status options.
+- `statusbase [git-status-opts]`: Status + latest commit. Args: Git status options, pathspecs (`-- <path>...`; reached as `hug sl`/`hug sla`).
 
 ### remote2ssh (Remote Switch, via git-remote2ssh)
 - `remote2ssh [<remote>]`: Switch to SSH URL. Args: `[<remote>]` (optional, default origin). No options.

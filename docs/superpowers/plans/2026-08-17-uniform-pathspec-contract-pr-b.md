@@ -369,24 +369,24 @@ Note: positionals before `--` keep filtering (git parity, decision 7) — the ON
 - Modify: per the pinned roster — PATH FILTERING blocks in `git-config/bin/git-{statusbase,sls,slu,slk,sli,slc,us,a,lc,lf,lcr,cmod,cmoda}` (NOTE: `sl`/`sla` have NO binaries — their help text comes from `git-statusbase` + the gitconfig aliases; the block lands in statusbase only, and the task states where `hug sl --help` / `hug sla --help` text is sourced); `README.md` (`sl`/`sla` rows); `docs/commands/status-staging.md`; `docs/git-to-hug.md`; `git-config/lib/python/categories/{status,show,history}.toml`; `git-config/lib/README.md`; `docs/meta/hug-completion-reference.md`; `completions/hug-completion.bash` + `completions/hug.fish` (re-grep only)
 
 **Acceptance Criteria:**
-- [ ] `hug help :pathspec` serves the article (mechanism as `agents.md` — verify via an existing article's registration path if not automatic)
-- [ ] Article covers: syntax, quoting + why, the `--` duality, magic passthrough, per-command support matrix, the edge cases from spec §7 (mid-stream second `--` phantom; trailing never phantom; `--`/`--help`-named files unreachable pre-separator; picker = separator spelling only); does NOT document `HUG_INTERACTIVE_FILE_SELECTION`
-- [ ] All roster commands show the pointer block; single-file + PR-C commands NOT enrolled
-- [ ] Canonical FIRST example pinned in README + article opener: `hug sla -- '*.md'` (+ the no-separator form `hug sla '*.md'` + a "quote your globs" note)
-- [ ] Error template standardized family-wide (incl. statusbase): `Unknown option: <tok>. Pathspecs beginning with '-' require '--': hug <cmd> -- <tok>. See 'hug help :pathspec'.`
-- [ ] Article carries a compact command-class table FIRST-SCREEN (listing / mutating-explicit-path / mutating-picker behavior for trailing `--`) and a "Breaking changes / script migration" section: before/after semantics, exit-status and JSON-scope implications, safe rewrites — the mutation changes (`a -- file`, `us -- src/`) called out prominently
-- [ ] Docs smoke test: `hug help`, `hug help :`, `hug sla --help`, `hug help :pathspec` all reachable and non-empty (`-h` is the tested form; `--help` long form routes to git's man page by parent-spec rule 2 — that is documented behavior, not a regression)
-- [ ] README `sl`/`sla` rows show `[-- <path>...]`; categories mention path filtering; `make docs-build` passes
-- [ ] **CHANGELOG.md entry per flipped behavior, with before/after command lines** (DX finding 2 — decision 4 wired into an AC): swallow→exit 2 (`hug sls -x`), unscoped→scoped `--json` (jq-level before/after), `a --` drop→stages, listings' inert trailing `--`, `us` flips
-- [ ] `:pathspec` article states the two escape hatches in one line each: omit pathspecs for full-state JSON; scoped listings omit the summary — `hug s` restores it. Article's support matrix carries explicit **not-yet rows** for PR-C commands (`w-*`/`sh`/`llu`) so readers don't assume `hug w -- src/` works
+- [x] `hug help :pathspec` serves the article (mechanism as `agents.md` — verify via an existing article's registration path if not automatic)
+- [x] Article covers: syntax, quoting + why, the `--` duality, magic passthrough, per-command support matrix, the edge cases from spec §7 (mid-stream second `--` phantom; trailing never phantom; `--`/`--help`-named files unreachable pre-separator; picker = separator spelling only); does NOT document `HUG_INTERACTIVE_FILE_SELECTION`
+- [x] All roster commands show the pointer block; single-file + PR-C commands NOT enrolled
+- [x] Canonical FIRST example pinned in README + article opener: `hug sla -- '*.md'` (+ the no-separator form `hug sla '*.md'` + a "quote your globs" note)
+- [x] Error template standardized family-wide (incl. statusbase): `Unknown option: <tok>. Pathspecs beginning with '-' require '--': hug <cmd> -- <tok>. See 'hug help :pathspec'.`
+- [x] Article carries a compact command-class table FIRST-SCREEN (listing / mutating-explicit-path / mutating-picker behavior for trailing `--`) and a "Breaking changes / script migration" section: before/after semantics, exit-status and JSON-scope implications, safe rewrites — the mutation changes (`a -- file`, `us -- src/`) called out prominently
+- [x] Docs smoke test: `hug help`, `hug help :`, `hug sla --help`, `hug help :pathspec` all reachable and non-empty (`-h` is the tested form; `--help` long form routes to git's man page by parent-spec rule 2 — that is documented behavior, not a regression)
+- [x] README `sl`/`sla` rows show `[-- <path>...]`; categories mention path filtering; `make docs-build` passes
+- [x] **CHANGELOG.md entry per flipped behavior, with before/after command lines** (DX finding 2 — decision 4 wired into an AC): swallow→exit 2 (`hug sls -x`), unscoped→scoped `--json` (jq-level before/after), `a --` drop→stages, listings' inert trailing `--`, `us` flips
+- [x] `:pathspec` article states the two escape hatches in one line each: omit pathspecs for full-state JSON; scoped listings omit the summary — `hug s` restores it. Article's support matrix carries explicit **not-yet rows** for PR-C commands (`w-*`/`sh`/`llu`) so readers don't assume `hug w -- src/` works
 
 **Verify:** `make docs-build` + `hug help :pathspec` (manual smoke) → article renders, build green
 
 **Steps:**
 
-- [ ] **Step 1:** Write the article (content outline = spec §7 first bullet; ~150 lines).
-- [ ] **Step 2:** Sweep the roster's help blocks (2 lines + example, `git-sw:42-47` style).
-- [ ] **Step 3:** Remaining doc edits per Files list. Commit: `docs: :pathspec article + full PR-B doc perimeter (#292, #298)`
+- [x] **Step 1:** Write the article (content outline = spec §7 first bullet; ~150 lines).
+- [x] **Step 2:** Sweep the roster's help blocks (2 lines + example, `git-sw:42-47` style).
+- [x] **Step 3:** Remaining doc edits per Files list. Commit: `docs: :pathspec article + full PR-B doc perimeter (#292, #298)`
 
 ### Task 11: Full-suite validation + #298/#297 closure
 

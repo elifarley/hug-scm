@@ -122,6 +122,13 @@ DESCRIPTION:
   The --from-commit flag directly extracts files from a commit's changes,
   providing an optimized workflow for staging the same files as a previous commit.
 
+PATH FILTERING:
+  Append -- <path>... to restrict output to matching paths.
+  Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+  hug a -- file.txt              # stage exactly this file
+  hug a -- src/ --               # interactive picker scoped to src/
+
 EXAMPLES:
   hug a --from-file files.txt          # Stage files from list
   hug a --from-commit HEAD~1           # Stage files from previous commit

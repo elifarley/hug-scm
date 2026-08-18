@@ -37,6 +37,13 @@ DESCRIPTION:
     By default, interactive selection is scoped to the current directory and
     subdirectories. Use --browse-root to browse the entire repository.
 
+PATH FILTERING:
+    Append -- <path>... to restrict output to matching paths.
+    Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+    hug lc "getUserById" -- '*.py'    # search scope: Python files
+    hug lc "config" -- ':(exclude)tests/'  # search everywhere but tests/
+
 EXAMPLES:
     hug lc "getUserById"            # Find commits changing this function
     hug lc "getUserById" -i         # Case-insensitive search

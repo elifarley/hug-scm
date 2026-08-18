@@ -61,6 +61,13 @@ DESCRIPTION:
     The --from-commit flag directly extracts files from a commit's changes,
     providing an optimized workflow for unstaging the same files as a previous commit.
 
+PATH FILTERING:
+    Append -- <path>... to restrict output to matching paths.
+    Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+    hug us -- src/                    # unstage only files under src/
+    hug us -- ':(exclude)docs/'      # unstage everything EXCEPT docs/
+
 EXAMPLES:
     hug us                              # Interactive: select files to unstage
     hug us file.txt                     # Unstage single file
@@ -122,7 +129,7 @@ while [[ $# -gt 0 ]]; do
   -*)
     # Loud by contract (was: exit 1 with a bare message). exit 2 =
     # HUG_EX_USAGE; family template — see the sls/slu post-Task-5 rows.
-    error_usage "Unknown option: $1 (see 'hug us -h'; to pass a path starting with '-', use 'hug us -- <path>'; see hug help :pathspec)"
+    error_usage "Unknown option: $1. Pathspecs beginning with '-' require '--': hug us -- $1. See 'hug help :pathspec'."
     ;;
   *)
     pathspecs+=("$1")

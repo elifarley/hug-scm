@@ -47,6 +47,9 @@ See what's changed in your repository.
 | `git diff --staged` | `hug ss` | **S**tatus + **S**taged | Consistent naming, auto stats |
 | `git diff HEAD` | `hug sw` | **S**tatus + **W**orking | Combined view of all changes |
 | `git diff --name-only --diff-filter=U` | `hug slc` | **S**tatus + **L**ist **C**onflicts | Conflicted (unmerged) files only |
+| `git status -- <path>` | `hug sl -- <path>` (or `hug sla -- <path>`) | **S**tatus + **L**ist | Same separator spelling; pathspecs scope listing, `-c` count, and `--json` alike |
+| `git diff -- <path>` | `hug su -- <path>` | **S**tatus + **U**nstaged | Pathspecs scope the patch; a bare trailing `--` opens the interactive picker |
+| `git diff --staged -- <path>` | `hug ss -- <path>` | **S**tatus + **S**taged | Same pathspec contract as `su` |
 | `git show <commit>` | `hug shp <commit>` | **SH**ow + **P**atch | A commit's patch (text), with stats |
 | `git show <commit>` (visual) | `hug shv <commit>` / `hug dd <commit>` | **SH**ow **V**isual | A commit's introduced patch, side-by-side in a difftool |
 | `git difftool` | `hug dd` (`s`/`u`/`w`) | **D**ir-**D**iff | Working-tree changes, visual side-by-side |
@@ -62,6 +65,8 @@ Prepare changes for commit.
 | `git add <files>` | `hug a` | **A**dd tracked | Stages tracked only (safer default) |
 | `git add -A` | `hug aa` | **A**dd **A**ll | Clear intent, shorter to type |
 | `git add -p` | `hug ap` | **A**dd + **P**atch | Consistent prefix, easier to remember |
+| `git add -- <path>` | `hug a -- <path>` | **A**dd tracked | Files after the separator are staged exactly, git-style |
+| `git restore --staged -- <path>` | `hug us -- <path>` | **U**n**S**tage | Pathspecs scope the unstaging (`--from-commit` lists intersect with the scope) |
 | `git reset <files>` | `hug us <files>` | **U**n**S**tage | Clear unstage operation |
 | `git reset` | `hug usa` | **U**n**S**tage **A**ll | Explicit unstage all |
 

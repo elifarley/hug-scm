@@ -43,6 +43,13 @@ DESCRIPTION:
   pathspecs, exactly like `git status -- <pathspec>...`: files matching no
   pathspec are filtered out.
 
+PATH FILTERING:
+  Append -- <path>... to restrict output to matching paths.
+  Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+  hug sls -- src/                 # only staged files under src/
+  hug sls -c -- '*.java'          # count staged Java files
+
 EXAMPLES:
   hug sls                     # staged files, then summary
   hug sls -- src/             # only staged files under src/
@@ -95,7 +102,7 @@ for arg in "$@"; do
   -*)
     # Loud by contract (was: silent pathspec swallow — '-xX' used to become a
     # filter matching nothing, exit 0). exit 2 = HUG_EX_USAGE.
-    error_usage "Unknown option: $arg (see 'hug sls -h'; to pass a path starting with '-', use 'hug sls -- <path>'; see hug help :pathspec)"
+    error_usage "Unknown option: $arg. Pathspecs beginning with '-' require '--': hug sls -- $arg. See 'hug help :pathspec'."
     ;;
   *)
     pathspecs+=("$arg")

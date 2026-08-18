@@ -45,6 +45,13 @@ DESCRIPTION:
   like '*.log' work), exactly like `git status --ignored --
   <pathspec>...`: files matching no pathspec are filtered out.
 
+PATH FILTERING:
+  Append -- <path>... to restrict output to matching paths.
+  Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+  hug sli -- build/               # only ignored files under build/
+  hug sli -- ':(glob)**/*.tmp'    # ignored temp files anywhere
+
 EXAMPLES:
   hug sli                     # ignored files, then summary
   hug sli -- src/             # only ignored files under src/
@@ -96,7 +103,7 @@ for arg in "$@"; do
   -*)
     # Loud by contract (was: silent pathspec swallow — '-xX' used to become a
     # filter matching nothing, exit 0). exit 2 = HUG_EX_USAGE.
-    error_usage "Unknown option: $arg (see 'hug sli -h'; to pass a path starting with '-', use 'hug sli -- <path>'; see hug help :pathspec)"
+    error_usage "Unknown option: $arg. Pathspecs beginning with '-' require '--': hug sli -- $arg. See 'hug help :pathspec'."
     ;;
   *)
     pathspecs+=("$arg")

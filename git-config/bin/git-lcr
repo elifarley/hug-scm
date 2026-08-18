@@ -36,6 +36,13 @@ DESCRIPTION:
     By default, interactive selection is scoped to the current directory and
     subdirectories. Use --browse-root to browse the entire repository.
 
+PATH FILTERING:
+    Append -- <path>... to restrict output to matching paths.
+    Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+    hug lcr "term" -- src/            # regex search scoped to src/
+    hug lcr "term" -- '*.java'      # search only Java files
+
 EXAMPLES:
     hug lcr "function.*User"        # Find commits with function definitions
     hug lcr "TODO|FIXME" -i         # Case-insensitive pattern search

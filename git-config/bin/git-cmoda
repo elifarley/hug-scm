@@ -64,6 +64,13 @@ DESCRIPTION:
     - To re-hash/re-date HEAD anyway, re-run with -f/--force.
     - -y does NOT bypass the guard (it is not a confirmation).
 
+PATH FILTERING:
+  Append -- <path>... to restrict output to matching paths.
+  Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+  hug cmoda -- src/               # amend-all scoped to src/
+  hug cmoda -m "Fix" -- lib/     # scoped amend-all, new message
+
 EXAMPLES:
   hug cmoda --no-edit                    # Amend all tracked, same message
   hug cmoda -m "Fixed typo"              # Amend with all tracked changes, new message
