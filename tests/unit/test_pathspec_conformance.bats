@@ -1062,28 +1062,30 @@ psx_install_stub_gum() {
 }
 
 
-@test "characterization us: bare/trailing -- rejected loudly" {
-  # characterization: flip target PR-B — probed: git-us's flag loop hits the
-  # `-*` arm and errors on `--` BEFORE any pathspec logic ("Unknown option:
-  # --. See 'hug us --help'.", exit 1) for BOTH `us --` and `us -- src/`.
-  # Contract column 4 (trailing `--` = picker/inert) does not hold today.
+@test "conformance us (PR-B Task 8): -- src/ filters unstaging, two-sided" {
+  # FLIPPED (Task 8, spec §3.1): mid-stream '--' is a pathspec separator —
+  # was: "Unknown option: --. See 'hug us --help'." exit 1 (probed).
+  # Two-sided: staged mods in BOTH dirs; the 'src/' scope must unstage
+  # src/a.py ONLY — docs/note.md (staged, OUT of scope) must survive.
   psx_setup
+  git add docs/note.md # second staged file, outside the src/ scope
   run hug us -- src/
-  assert_failure
-  assert_output --partial "Unknown option: --. See 'hug us --help'."
-  psx_reset
-
-  psx_setup
-  run hug us --
-  assert_failure
-  assert_output --partial "Unknown option: --. See 'hug us --help'."
+  assert_success
+  # The report echoes the given pathspec (git restore consumes it natively —
+  # dir pathspecs, globs and magic keep git semantics); the behavioral
+  # asserts below are the load-bearing two-sided proof.
+  assert_output --partial "Unstaged 1 file"
+  assert_output --partial "src/"
+  run hug sls
+  refute_output --partial "src/a.py" # in-scope: unstaged
+  assert_output --partial "docs/note.md" # out-of-scope: still staged
   psx_reset
 }
 
-@test "characterization us: positional pathspec unstages (works today)" {
-  # characterization: flip target PR-B — the POSITIVE arm that must survive
-  # the migration: `us src/a.py` (no separator) unstages exactly that file
-  # (probed: exit 0, "Unstaged 1 file", and hug sls no longer lists it).
+@test "conformance us (PR-B Task 8): positional pathspec unstages exactly as today" {
+  # Carried over VERBATIM from the characterization row (probed: exit 0,
+  # "Unstaged 1 file", and hug sls no longer lists it): the documented
+  # no-separator invocation must keep working through the migration.
   psx_setup
   run hug sls
   assert_success
@@ -1094,6 +1096,120 @@ psx_install_stub_gum() {
   assert_output --partial "src/a.py"
   run hug sls
   refute_output --partial "src/a.py"
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): bare trailing -- inert, zero-args dispatch parity" {
+  # FLIPPED (Task 8): a trailing bare '--' is a no-op token — `hug us --`
+  # ≡ `hug us` (output equality + exit equality). The split runs WITHOUT
+  # --picker (us's selector is the zero-args fallback, not the picker arm),
+  # so the consumed '--' leaves NO pathspecs and NO positionals → identical
+  # dispatch.
+  #
+  # Headless observable (per gum-presence — same two-branch technique as the
+  # picker-rows column): with gum INSTALLED, `run` still has no TTY, so gum
+  # filter fails and the selector lands on "No files selected." (exit 0);
+  # with gum ABSENT, gum_available fails → "Interactive mode requires 'gum'"
+  # (exit 1). The branch differs by machine — the INVARIANT under test is
+  # the `--` parity, so accept either branch marker and then pin equality.
+  # The fixture pins ≥1 staged file (src/a.py): both branch markers prove
+  # the selector ran — NOT the "No staged files" early exit, so the equality
+  # is non-vacuous (an empty staging area would trivially pass).
+  psx_setup
+  run hug us
+  local baseline_status=$status
+  local baseline_output="$output"
+  [[ "$baseline_output" == *"No files selected"* || "$baseline_output" == *"Interactive mode requires 'gum'"* ]]
+  psx_reset
+
+  psx_setup
+  run hug us --
+  assert_equal "$baseline_status" "$status"
+  assert_equal "$baseline_output" "$output"
+  refute_output --partial "Unknown option"
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): unknown -* loud, exit 2 (family template)" {
+  # FLIPPED (Task 8): unknown dash-tokens exit 2 (HUG_EX_USAGE) with the
+  # family error template — was: exit 1, "Unknown option: -xX. See
+  # 'hug us --help'." (probed).
+  psx_setup
+  run hug us -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX (see 'hug us -h'"
+  assert_output --partial "use 'hug us -- <path>'"
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): -- -foo.txt unstages a file literally named -foo.txt" {
+  # Spec-review finding 1 (MEDIUM): the help PROMISES 'hug us -- <path>' for
+  # dash-paths — the validation probe must honor it. Was: 'git ls-files
+  # --error-unmatch "$file"' without a separator parsed '-foo.txt' as an
+  # OPTION → false "File '-foo.txt' is not tracked by git." exit 1 (reviewer
+  # probed with a tracked file named -foo.txt). Two-sided: docs/note.md
+  # (also staged) must survive.
+  psx_setup
+  echo dashfile > ./-foo.txt
+  git add -- ./-foo.txt # separator form is mandatory — the name looks like a flag
+  git commit -q -m "file literally named -foo.txt"
+  echo dash2 >> ./-foo.txt
+  git add -- ./-foo.txt # staged mod on the dash-named file
+  git add docs/note.md # second staged file, must survive
+  run hug us -- -foo.txt
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  assert_output --partial "-foo.txt"
+  run hug sls
+  refute_output --partial "-foo.txt" # in-scope: unstaged
+  assert_output --partial "docs/note.md" # out-of-scope: still staged
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): empty intersection with scope is a no-match message, never the selector" {
+  # Spec-review finding 2 (MINOR, safety): when the pathspec scope empties
+  # the from-source list, falling through to the zero-args selector would
+  # (TTY+gum) offer the FULL staged list, silently ignoring the scope.
+  # Contract: scoped-but-empty → family no-match info message, exit 0.
+  # Headless observable: the selector NEVER opens (no gum-branch markers).
+  psx_setup
+  run hug us --from-commit HEAD -- nonexistent/
+  assert_success
+  assert_output --partial "No files matching 'nonexistent/' to unstage."
+  refute_output --partial "Interactive mode requires 'gum'"
+  refute_output --partial "No files selected"
+  run hug sls # staged state untouched
+  assert_output --partial "src/a.py"
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): --from-commit INTERSECTS with pathspecs (not concat)" {
+  # FLIPPED (Task 8, contract §3.1): from-source files ∩ scope. Concat is a
+  # UNION and would unstage docs/y.txt too — OUTSIDE the 'src/' scope, the
+  # exact opposite of the contract (probed union shape: `us --from-commit
+  # HEAD` unstages every staged file the commit mentions). Two-sided:
+  # src/x.txt unstaged, docs/y.txt stays staged.
+  psx_setup
+  # LESSON (same as the fixture header): the psx fixture arrives with
+  # src/a.py STAGED — any naive commit sweeps it in. Unstage it first, build
+  # the discriminating commit (src/x.txt + docs/y.txt ONLY), then re-stage
+  # all three mods so the scope assertion is two-sided in BOTH dirs.
+  git restore --staged src/a.py
+  echo x1 > src/x.txt
+  echo y1 > docs/y.txt
+  git add src/x.txt docs/y.txt
+  git commit -q -m "touch src/x docs/y"
+  echo x2 >> src/x.txt
+  echo y2 >> docs/y.txt
+  git add src/a.py src/x.txt docs/y.txt
+  run hug us --from-commit HEAD -- src/
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  assert_output --partial "src/x.txt"
+  refute_output --partial "docs/y.txt"
+  run hug sls
+  assert_output --partial "docs/y.txt"
+  refute_output --partial "src/x.txt"
   psx_reset
 }
 

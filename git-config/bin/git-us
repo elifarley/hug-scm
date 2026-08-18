@@ -16,19 +16,30 @@ set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-  cat << EOF
+  # Quoted delimiter: the pathspec contract text mentions `--` in backticks,
+  # and an UNQUOTED heredoc would run them as command substitutions
+  # ("--: command not found" before every -h). Nothing here needs expansion.
+  cat << 'EOF'
 hug us: UnStage one or more files
 
 USAGE:
-    hug us [<file>...] [--from-file <file>] [--from-commit <commit>] [--dry-run] [-f, --force] [--quiet] [-h, --help]
+    hug us [OPTIONS] [<pathspec>...]
 
 ARGUMENTS:
-    <file>...          One or more file paths to unstage
+    <pathspec>...      One or more file paths / pathspecs to unstage
                        If not provided, shows interactive list for selection
 
 OPTIONS:
     --from-file <file>    Read file list from file or stdin (use '-' for stdin)
     --from-commit <commit> Use files changed in the specified commit
+                           (INTERSECTED with any pathspecs given — the
+                           pathspecs are a scope, so only in-scope source
+                           files are unstaged)
+    -- <path>...          Pathspecs scope the unstaging (git magic pathspecs
+                          like ':(exclude)src/' work); positionals also
+                          work — `--` is only needed for paths starting
+                          with '-'. A trailing bare `--` alone is inert
+                          (same as no arguments: opens the selector).
     --dry-run          Preview the unstage operation without applying changes
     -f, --force        Skip confirmation prompts (sets HUG_FORCE=true)
     --quiet            Suppress output (sets HUG_QUIET=T)
@@ -66,42 +77,65 @@ SEE ALSO:
 EOF
 }
 
-# Parse custom flags first
+# Uniform pathspec split (#292 PR-B Task 8): flags before '--', pathspecs
+# after it — see parse_common_flags_with_pathspecs in hug-cli-flags for the
+# contract. WITHOUT --picker on purpose: us's interactive selector is the
+# ZERO-ARGS fallback (the gum staged-file filter in hug_us below), not the
+# picker arm, so a trailing bare '--' is consumed inertly and
+# `hug us --` ≡ `hug us` (same dispatch, same output).
 from_file=""
 from_commit=""
-remaining_args=()
+pathspecs=()
 
+eval "$(parse_common_flags_with_pathspecs "$@")"
+
+# NOTE: parse_common_flags (inside the split) CONSUMED -q/--quiet and
+# exported HUG_QUIET — us has no local quiet variable to rehydrate (the
+# info/success helpers read HUG_QUIET directly), hence no -q arm below.
+# -h/--help need no arm either: the split routes them to show_help + exit 0.
+
+# Seed the ONE pathspec collection with the split's post-'--' data first;
+# pre-arg positionals join it in the own-loop below (git unions pathspecs;
+# ONE array so every sink — the plain unstage list AND the from-source
+# filter — reads the same scope).
+pathspec_pathspecs_into pathspecs
+
+# Own-loop over the pre-args only (common flags already consumed by the
+# split): us's accepted pre-'--' grammar. Value-taking flags carry the
+# post-#300 value guard (git-a style): '--from-file' alone at argv end
+# must die loudly as a usage error, not silently unstage nothing.
+# Unknown tokens are ONLY the -* class — bare positionals collect as
+# pathspecs (git parity: 'hug us src/a.py' works today and keeps working;
+# same rule as the sl* family post-Task-5).
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --from-file)
+    [[ $# -ge 2 ]] || error "--from-file requires a value." "$HUG_EX_USAGE"
     from_file="$2"
     shift 2
     ;;
   --from-commit)
+    [[ $# -ge 2 ]] || error "--from-commit requires a value." "$HUG_EX_USAGE"
     from_commit="$2"
     shift 2
     ;;
-  -h | --help)
-    show_help
-    exit 0
-    ;;
-  --dry-run | --force | -f | --quiet)
-    # These will be handled by parse_common_flags
-    remaining_args+=("$1")
-    shift
-    ;;
   -*)
-    error "Unknown option: $1. See 'hug us --help'."
+    # Loud by contract (was: exit 1 with a bare message). exit 2 =
+    # HUG_EX_USAGE; family template — see the sls/slu post-Task-5 rows.
+    error_usage "Unknown option: $1 (see 'hug us -h'; to pass a path starting with '-', use 'hug us -- <path>'; see hug help :pathspec)"
     ;;
   *)
-    remaining_args+=("$1")
+    pathspecs+=("$1")
     shift
     ;;
   esac
 done
 
-# Parse common flags with remaining arguments
-eval "$(parse_common_flags ${remaining_args[@]+"${remaining_args[@]}"})"
+# Repo check comes BEFORE the from-source branch now: the intersection
+# filter below runs `git ls-files`, and extract_files_from_commit already
+# ran git before this point anyway (parsing/-h still precede it, so
+# `hug us -h` keeps working from any cwd).
+check_git_repo
 
 # Handle file input flags
 if [[ -n "$from_file" || -n "$from_commit" ]]; then
@@ -113,29 +147,46 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     mapfile -t files_from_source < <(read_files_from_source "$from_file")
   fi
 
-  # Filter out any common flags from remaining_args to get just files
-  files_to_unstage=()
-  for arg in ${remaining_args[@]+"${remaining_args[@]}"}; do
-    case "$arg" in
-    --dry-run | --force | -f | --quiet) ;;
-    *) files_to_unstage+=("$arg") ;;
-    esac
-  done
+  # INTERSECTION, never concat (contract §3.1): the pathspecs are a SCOPE —
+  # a union (`files_from_source += pathspecs`) would unstage source files
+  # OUTSIDE it, the opposite of what the user asked. Filter the source list
+  # through git's own pathspec engine (`git ls-files --full-name --` = the
+  # tracked set in scope) so git magic pathspecs behave here exactly as in
+  # the listings. An EMPTY scope (no pathspecs given) keeps today's
+  # behavior: the full source list, unfiltered.
+  if [[ ${#pathspecs[@]} -gt 0 ]]; then
+    scope_files=()
+    mapfile -t scope_files < <(git ls-files --full-name -- ${pathspecs[@]+"${pathspecs[@]}"})
+    # O(n+m) membership filter (assoc array), not an O(n·m) nested scan —
+    # a from-commit touching thousands of files meets a wide-scope listing.
+    declare -A in_scope=()
+    for s in ${scope_files[@]+"${scope_files[@]}"}; do in_scope["$s"]=1; done
+    filtered_source=()
+    for f in ${files_from_source[@]+"${files_from_source[@]}"}; do
+      if [[ -n "${in_scope[$f]:-}" ]]; then
+        filtered_source+=("$f")
+      fi
+    done
+    files_from_source=(${filtered_source[@]+"${filtered_source[@]}"})
 
-  # Add files from source
-  files_to_unstage+=(${files_from_source[@]+"${files_from_source[@]}"})
+    # Scoped-but-empty is a NO-MATCH, never a selector fall-through
+    # (spec-review finding 2): the zero-args selector offers the FULL
+    # staged list, which would silently ignore — and with TTY+gum actively
+    # unstage OUTSIDE — the scope the user asked for. Same INTENT as
+    # git-shc's no-match hint (its shape differs: shc is a stderr printf
+    # over raw pathspecs; us uses the info helper with quoted pathspecs).
+    if [[ ${#files_from_source[@]} -eq 0 ]]; then
+      pathspec_list=""
+      printf -v pathspec_list "'%s' " "${pathspecs[@]}"
+      info "No files matching ${pathspec_list% } to unstage."
+      exit 0
+    fi
+  fi
+
+  files_to_unstage=(${files_from_source[@]+"${files_from_source[@]}"})
 else
-  # Filter out any common flags from remaining_args to get just files
-  files_to_unstage=()
-  for arg in ${remaining_args[@]+"${remaining_args[@]}"}; do
-    case "$arg" in
-    --dry-run | --force | -f | --quiet) ;;
-    *) files_to_unstage+=("$arg") ;;
-    esac
-  done
+  files_to_unstage=(${pathspecs[@]+"${pathspecs[@]}"})
 fi
-
-check_git_repo
 
 # --- Main function for 'hug us' ---
 hug_us() {
@@ -215,7 +266,11 @@ hug_us() {
 
   # Validate that files exist and are staged
   for file in "${files_to_unstage[@]}"; do
-    if ! git ls-files --error-unmatch "$file" > /dev/null 2>&1; then
+    # The '--' is load-bearing (spec-review finding 1): a staged file
+    # literally named '-foo.txt' would otherwise be parsed as an OPTION by
+    # git → false "not tracked" error, breaking the 'hug us -- <path>'
+    # promise the help text makes.
+    if ! git ls-files --error-unmatch -- "$file" > /dev/null 2>&1; then
       error "File '$file' is not tracked by git."
     fi
 
