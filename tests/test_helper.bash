@@ -626,6 +626,19 @@ assert_file_not_contains() {
   fi
 }
 
+# Assert that a STRING is valid JSON: the whole payload must parse with zero
+# non-JSON bytes (json.tool sees everything — a trailing chatter line fails).
+# Usage: assert_valid_json "$json_out"
+# GOTCHA (why not a plain `echo | json.tool` pipe): bats `run` overrides the
+# command's redirections, and shell redirections on a `run` call are no-ops —
+# the `_` is the $0 placeholder for the inner `bash -c`, keeping "$1" clean.
+# Do NOT copy this idiom onto a direct `python3 -c` call: there `_` would
+# land in sys.argv[1] and json.loads('_') fails at char 0.
+assert_valid_json() {
+  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$1"
+  assert_success
+}
+
 # Assert that git status is clean
 assert_git_clean() {
   local status

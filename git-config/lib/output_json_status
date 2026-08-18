@@ -14,8 +14,15 @@ output_json_status() {
   local include_ignored=false
   local include_conflicts=false
   local scope_cwd=false
+  local -a pathspecs=()
 
   # Parse arguments
+  # Separator-aware (#292 Task 6): everything after '--' is a pathspec — a
+  # token shaped like one of our own flags (a file literally named '--cwd')
+  # is DATA and must scope the listing, never toggle the flag above. Mirrors
+  # list_staged_files' '--' arm (hug-git-files). Exact-one-'--' rule: this
+  # layer CONSUMES the separator it receives and re-appends exactly one at
+  # the output_json_status_unified boundary below.
   while [[ $# -gt 0 ]]; do
     case "$1" in
     --staged)
@@ -41,6 +48,13 @@ output_json_status() {
     --cwd)
       scope_cwd=true
       shift
+      ;;
+    --)
+      shift
+      while [[ $# -gt 0 ]]; do
+        pathspecs+=("$1")
+        shift
+      done
       ;;
     *)
       shift
@@ -81,6 +95,13 @@ output_json_status() {
 
   if $scope_cwd; then
     unified_args+=("--cwd-only")
+  fi
+
+  # Re-append exactly ONE separator before the collected pathspecs (the one
+  # the caller sent was consumed by the parse loop above). Nullsafe: a bare
+  # trailing '--' with no pathspecs forwards nothing.
+  if [[ ${#pathspecs[@]} -gt 0 ]]; then
+    unified_args+=("--" "${pathspecs[@]}")
   fi
 
   # Call unified function

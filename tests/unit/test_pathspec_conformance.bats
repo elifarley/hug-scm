@@ -886,17 +886,23 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization sls-family: --json ignores pathspecs (Task 6 flip target)" {
-  # PINNED (Task 5 → Task 6): the --json sink (output_json_status) still
-  # drops pathspecs on the floor — `slu --json -- src/` reports the
-  # out-of-scope docs/note.md anyway. That is the fingerprint Task 6's
-  # output_json_status chain plumbing must flip; do NOT relax this row
-  # before that task lands.
+@test "conformance sls-family (Task 6): --json honors pathspecs, empty scope keeps shape" {
+  # FLIPPED (Task 6): the --json sink chain (output_json_status →
+  # output_json_status_unified → collect_git_files_json → list_*_files)
+  # now forwards pathspecs collected after the protective '--'. The
+  # out-of-scope unstaged docs/note.md must be ABSENT, and the empty scope
+  # (no unstaged file under src/) must keep the envelope shape — zero-length
+  # "unstaged" array present, summary count 0. The machine contract must not
+  # change shape with scope.
   psx_setup
   run hug slu --json -- src/
   assert_success
-  echo "$output" | python3 -m json.tool >/dev/null
-  assert_output --partial "docs/note.md"
+  local json_out="$output"
+  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
+  assert_success
+  [[ "$json_out" != *"docs/note.md"* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print('unstaged' in d, d['unstaged'], d['summary']['unstaged'])" "$json_out"
+  assert_output "True [] 0"
   psx_reset
 }
 

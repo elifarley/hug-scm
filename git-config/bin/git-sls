@@ -24,9 +24,9 @@ OPTIONS:
   -c, --count                Print only the number of matching files (mutually
                              exclusive with --json; count mode also suppresses
                              the trailing summary)
-  --json                     Output the unified JSON envelope (currently
-                             ignores pathspecs — plumbing lands with the
-                             --json chain rework)
+  --json                     Output the unified JSON envelope (pathspecs
+                             scope the envelope; an empty scope keeps the
+                             envelope shape with zero counts)
   -q, --quiet                Suppress informational output and the trailing
                              summary line
   -- <path>...               Pathspecs scope the listing (git magic pathspecs

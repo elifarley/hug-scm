@@ -805,6 +805,83 @@ create_slc_conflict_fixture() {
   assert_output --partial '"untracked"'
 }
 
+# =============================================================================
+# --json pathspec scoping (Task 6, #292 PR-B): the JSON sink chain
+# (output_json_status → output_json_status_unified → collect_git_files_json
+# → list_*_files) honors the protective '--'. Two-sided per envelope: parses
+# via python3 -m json.tool, no file outside the pathspecs AND ≥1 inside,
+# summary.* counts match the scoped array.
+# =============================================================================
+
+@test "hug sls --json: pathspecs scope the envelope (two-sided)" {
+  # Fixture adds staged src/a.py + other.txt next to the helper's staged.txt:
+  # the 'src/' scope must keep src/a.py and drop BOTH out-of-scope rows.
+  mkdir -p src
+  echo py1 > src/a.py
+  echo other > other.txt
+  git add src/a.py other.txt
+
+  run hug sls --json -- src/
+  assert_success
+  local json_out="$output"
+  assert_valid_json "$json_out"
+  [[ "$json_out" == *'"src/a.py"'* ]]
+  [[ "$json_out" != *'"staged.txt"'* ]]
+  [[ "$json_out" != *'"other.txt"'* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['summary']['staged'], len(d['staged']))" "$json_out"
+  assert_output "1 1"
+}
+
+@test "hug slu --json: empty scope keeps the envelope shape" {
+  # No UNSTAGED file under src/ (the fixture's unstaged file is README.md at
+  # the root): the scoped answer must keep the machine contract — same keys,
+  # zero-length arrays, summary counts 0.
+  mkdir -p src
+  echo py1 > src/a.py
+
+  run hug slu --json -- src/
+  assert_success
+  local json_out="$output"
+  assert_valid_json "$json_out"
+  [[ "$json_out" != *'"README.md"'* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print('unstaged' in d, d['unstaged'], d['summary']['unstaged'])" "$json_out"
+  assert_output "True [] 0"
+}
+
+@test "hug slk --json: pathspecs scope the envelope (two-sided)" {
+  # A fully-untracked directory collapses to the dir itself in porcelain
+  # output (git's untracked-files=normal default), so the in-scope row is
+  # "src/" — not src/new.py. The scope is still two-sided: the out-of-scope
+  # untracked.txt (fixture root) must be absent.
+  mkdir -p src
+  echo untracked > src/new.py
+
+  run hug slk --json -- src/
+  assert_success
+  local json_out="$output"
+  assert_valid_json "$json_out"
+  [[ "$json_out" == *'"src/"'* ]]
+  [[ "$json_out" != *'"untracked.txt"'* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['summary']['untracked'], len(d['untracked']))" "$json_out"
+  assert_output "1 1"
+}
+
+@test "hug sls --json: pathspec spelled '--cwd' scopes, does not toggle" {
+  # A file LITERALLY named '--cwd' is data after the separator: it must scope
+  # the listing, never toggle the (JSON-internal) scope-to-cwd flag.
+  echo cwd1 > ./--cwd
+  git add -- ./--cwd
+
+  run hug sls --json -- --cwd
+  assert_success
+  local json_out="$output"
+  assert_valid_json "$json_out"
+  [[ "$json_out" == *'"--cwd"'* ]]
+  [[ "$json_out" != *'"staged.txt"'* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['summary']['staged'])" "$json_out"
+  assert_output "1"
+}
+
 @test "hug sli: shows only ignored files" {
   # Create a .gitignore file and some ignored content
   echo "*.log" > .gitignore
@@ -1720,8 +1797,7 @@ create_slc_conflict_fixture() {
   local json_out="$output"
 
   # Zero non-JSON bytes: json.tool must parse the whole output
-  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
-  assert_success
+  assert_valid_json "$json_out"
 
   # Spec contract: all-zero summary, INCLUDING conflicted and total
   run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['summary']['conflicted'], d['summary']['total'])" "$json_out"
@@ -1746,8 +1822,7 @@ create_slc_conflict_fixture() {
   local json_out="$output"
 
   # Zero non-JSON bytes: json.tool must parse the whole output
-  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
-  assert_success
+  assert_valid_json "$json_out"
 
   run python3 -c "import json,sys; print(json.loads(sys.argv[1])['summary']['conflicted'])" "$json_out"
   assert_output "1"
@@ -1890,8 +1965,7 @@ create_slc_conflict_fixture() {
   run hug slc --json -q
   assert_success
   local json_out="$output"
-  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
-  assert_success
+  assert_valid_json "$json_out"
   [[ "$json_out" == *'"conflict.txt"'* ]]
 }
 
