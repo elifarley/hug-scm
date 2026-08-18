@@ -141,12 +141,29 @@ remaining_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --from-file)
+    [[ $# -ge 2 ]] || {
+      error "--from-file requires a value."
+      exit 2
+    }
     from_file="$2"
     shift 2
     ;;
   --from-commit)
+    [[ $# -ge 2 ]] || {
+      error "--from-commit requires a value."
+      exit 2
+    }
     from_commit="$2"
     shift 2
+    ;;
+  --browse-root)
+    # Roast F-002: this flag was documented but DEAD — the catch-all below
+    # collected it into remaining_args and 'git add --browse-root' died
+    # (exit 129). Replicates parse_common_flags' semantics here because the
+    # custom loop consumes args it must not re-forward.
+    browse_root=true
+    export HUG_INTERACTIVE_FILE_SELECTION=true
+    shift
     ;;
   -h | --help)
     show_help
@@ -187,6 +204,14 @@ fi
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
 
+# --browse-root parity with parse_common_flags: explicit paths are an error
+if $browse_root; then
+  if [[ ${#remaining_args[@]} -gt 0 || ${#post_separator_args[@]} -gt 0 ]]; then
+    error "--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection."
+    exit 1
+  fi
+fi
+
 # Early exit if not in Git repo
 check_git_repo
 
@@ -201,17 +226,17 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     mapfile -t files_from_source < <(read_files_from_source "$from_file")
   fi
 
-  # Add any remaining arguments (pre- and post-separator alike — under a
-  # source flag every positional is a file; the '--' at the call site keeps
-  # dash-named ones data)
-  files+=("${files_from_source[@]}" "${remaining_args[@]}" ${post_separator_args[@]+"${post_separator_args[@]}"})
-
-  if [[ ${#files[@]} -eq 0 ]]; then
+  # Compose git's grammar exactly (roast F-001 + review #3800343262 compose):
+  # pre-separator pass-through args keep option reachability BEFORE the
+  # separator; source-derived lines and post-separator args are CLASSIFIED
+  # DATA after it — a from-file list line literally named '-A' must stage
+  # that file, never run 'git add -A' over the whole tree.
+  if [[ ${#files_from_source[@]} -eq 0 && ${#remaining_args[@]} -eq 0 && ${#post_separator_args[@]} -eq 0 ]]; then
     info "No files to stage."
     exit 0
   fi
 
-  hug_add_with_summary ${files[@]+"${files[@]}"}
+  hug_add_with_summary ${remaining_args[@]+"${remaining_args[@]}"} -- ${files_from_source[@]+"${files_from_source[@]}"} ${post_separator_args[@]+"${post_separator_args[@]}"}
   exit 0
 fi
 
@@ -238,7 +263,9 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     exit 0
   fi
 
-  hug_add_with_summary ${files[@]+"${files[@]}"}
+  # Selector output is classified data (a picked file named '-A' is a
+  # filename, never git add's --all) — one separator, no heuristic.
+  hug_add_with_summary -- ${files[@]+"${files[@]}"}
   exit 0
 fi
 

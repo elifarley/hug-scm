@@ -1765,9 +1765,48 @@ psx_install_stub_gum() {
   run hug a new.txt -A
   assert_success
   refute_output --partial "did not match"   # -A was not a pathspec
+  run git status --porcelain -- new.txt
+  [[ "$output" == A* ]]                      # the NAMED path did stage (roast F-003)
   # git-parity: -A is an option scoped to new.txt — the never-named
   # tracked file must remain UNSTAGED (probed on raw git)
   run git status --porcelain -- docs/note.md
   [[ "$output" == " M"* ]]
+  psx_reset
+}
+
+@test "contract a: from-file list line named -A is data, never git-add -A (#297 roast)" {
+  # Roast F-001 live repro class: a --from-file list containing the line
+  # '-A' used to run 'git add -A' (whole tree staged). Source-derived lines
+  # are CLASSIFIED data — they stage after the protective separator.
+  psx_setup
+  echo dashA > ./-A
+  printf '%s\n' -A > list.txt
+  git add -- list.txt
+  git commit -q -m "add list"
+  run hug a --from-file list.txt
+  assert_success
+  run git status --porcelain -- -A
+  [[ "$output" == A* ]]
+  # the never-named unstaged file must remain unstaged
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
+
+@test "contract a: --browse-root opens the picker, paths error loudly (#297 roast)" {
+  # Roast F-002: --browse-root was documented but DEAD (the custom loop
+  # swallowed it; 'git add --browse-root' died exit 129). Now: alone → the
+  # full-repo picker (headless observable: "No files selected." / cancel);
+  # with an explicit path → parse_common_flags' parity error.
+  psx_setup
+  run hug a --browse-root
+  assert_success
+  assert_output --partial "No files selected."
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
+
+  run hug a --browse-root new.txt
+  assert_failure
+  assert_output --partial "--browse-root cannot be used with explicit paths"
   psx_reset
 }
