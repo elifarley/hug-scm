@@ -27,6 +27,14 @@ now means the same thing across commands, with a conformance suite enforcing it.
 - `hug w get -u` with no files resets all files to upstream (preview + confirmation intact); `-u` combined with a commit or number fails with an explicit message.
 - Interactive file selection accepts pathspecs (`select_files_with_status --staged -- src/` scopes the candidate list).
 
+## [1.11.1.0] - 2026-08-18
+
+### Fixed
+
+- **`hug a -- <file>` stages exactly the named files** — it used to silently run `git add -u`, staging every tracked-modified file you never named (elifarley/hug-scm#297). The data/option boundary now sits exactly where git puts it: pre-separator positionals keep raw-git option semantics (`hug a foo -A` is git-legal; unknown dash tokens still fail loud, exit 129), post-separator paths are data behind one protective separator (`hug a -- -A` stages a file literally named `-A`, never the whole tree). The same boundary covers the `--from-file`/`--from-commit` lists (a list line named `-A` is a filename) and the interactive picker's selection.
+- **`hug a --browse-root` works again** — the flag was documented but dead (the parse loop swallowed it; `git add --browse-root` died exit 129). Alone it opens the full-repo picker; with explicit paths it errors loudly, matching the common-flag contract.
+- **Valueless `--from-file`/`--from-commit` now error loudly** (exit 2) instead of dying on an unbound variable.
+
 ## [1.10.0.1] - 2026-08-15
 
 ### Fixed
