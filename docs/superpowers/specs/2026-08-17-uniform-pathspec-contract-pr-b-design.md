@@ -5,6 +5,7 @@
 ## 1. Scope decisions (user-ratified this session)
 
 - **Full batch**: parent §9's PR-B row + all of #298 (review follow-ups, coverage combo-gaps, nullsafe sweep) + #297, in one PR. One review cycle; the conformance suite carries the safety.
+- **ERRATUM (autoplan gate, 2026-08-17 — user decision):** the #297 FIX itself moves to a small fast-follow PR off main (both review models challenged batching a live bug behind the migration; user accepted). This spec's §3.4 semantics still govern that PR; PR-B keeps `a`'s scoped-picker arm + roster enrollment (its Task 9 CHANGED accordingly).
 - **#297 semantics — pinned**: `hug a -- <file>` stages exactly the post-`--` positionals (git-compatible data/option boundary, matching the PR-A review invariant); a bare trailing `--` alone keeps today's `HUG_INTERACTIVE_FILE_SELECTION` picker unchanged. Parent §11 excludes changing `a`'s interactive semantics — respected: the picker trigger is untouched; only the silent drop (≡ `git add -u`) is fixed.
 
 ## 2. Commit order (refactor-first)
