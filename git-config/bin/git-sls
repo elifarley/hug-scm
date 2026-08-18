@@ -52,7 +52,6 @@ PATH FILTERING:
 
 EXAMPLES:
   hug sls                     # staged files, then summary
-  hug sls -- src/             # only staged files under src/
   hug sls -c                  # just the staged file count
   hug sls -q                  # listing only, no summary line
 EOF

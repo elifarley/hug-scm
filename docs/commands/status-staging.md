@@ -269,7 +269,7 @@ This is intentional, not a bug. `dd w` answers *"what does my tree look like vs 
       ```
       hug a                     # Stage all tracked changes (modifications + deletions)
       hug a src/                # Stage directory, including non-tracked files
-      hug a -- file.txt         # Stage EXACTLY this file (post--- data boundary)
+      hug a -- file.txt         # Stage EXACTLY this file (paths after -- are staged verbatim)
       hug a --                  # Interactive file selection (requires gum)
       hug a -- src/ --          # Interactive selection scoped to src/
       ```

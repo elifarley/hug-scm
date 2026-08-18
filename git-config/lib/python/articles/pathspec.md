@@ -131,7 +131,7 @@ Single-file commands (`fa`, `fb`, `fblame`, `fborn`, `fcon`, `llf`,
 If you script hug, these PR-B flips change observable behavior:
 
 1. **Unknown dash-tokens on the `sl*` family and `us` now fail loudly.**
-   Before: `hug sls -x` exit 0 with `No staged files matching '-xX' found.`
+   Before: `hug sls -xX` exit 0 with `No staged files matching '-xX' found.`
    — a typo'd flag looked like an empty answer. After: exit 2 with
    `Unknown option: -xX. Pathspecs beginning with '-' require '--': hug sls -- -xX. See 'hug help :pathspec'.`
    Safe rewrite: if a file named `-xX` was genuinely meant, `hug sls -- -xX`.

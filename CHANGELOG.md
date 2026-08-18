@@ -9,8 +9,8 @@ PR-B of the uniform pathspec contract (elifarley/hug-scm#292, checklist elifarle
 ### Changed
 
 - **Unknown dash-tokens on the `sl*` listings and `us` now fail loudly (exit 2)** — was a silent pathspec swallow that looked like an empty answer:
-  - before: `hug sls -x` → exit 0, `No staged files matching '-xX' found.`
-  - after: `hug sls -x` → exit 2, `Unknown option: -xX. Pathspecs beginning with '-' require '--': hug sls -- -xX. See 'hug help :pathspec'.`
+  - before: `hug sls -xX` → exit 0, `No staged files matching '-xX' found.`
+  - after: `hug sls -xX` → exit 2, `Unknown option: -xX. Pathspecs beginning with '-' require '--': hug sls -- -xX. See 'hug help :pathspec'.`
   - safe rewrite when a file literally named `-xX` was meant: `hug sls -- -xX`
 - **`--json` is now pathspec-scoped across the `sl*` family** — was the whole-repo envelope even with pathspecs (a documented contract, now flipped):
   - before: `hug slc --json -- src/ | jq .summary.conflicted` → the whole repo's conflict count

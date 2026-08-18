@@ -69,13 +69,13 @@ PATH FILTERING:
     hug us -- ':(exclude)docs/'      # unstage everything EXCEPT docs/
 
 EXAMPLES:
-    hug us                              # Interactive: select files to unstage
-    hug us file.txt                     # Unstage single file
-    hug us src/main.js tests/test.js    # Unstage multiple files
-    hug us --from-file files.txt        # Unstage files from list
-    hug us --from-commit HEAD~1         # Unstage files from previous commit
+    hug us                               # Interactive: select files to unstage
+    hug us file.txt                      # Unstage single file
+    hug us src/main.js tests/test.js     # Unstage multiple files
+    hug us --from-file files.txt         # Unstage files from list
+    hug us --from-commit HEAD~1          # Unstage files from previous commit
     hug sh HEAD~2 | hug us --from-file - # Unstage files from hug sh output
-    hug us --dry-run                    # Preview which files would be unstaged
+    hug us --dry-run                     # Preview which files would be unstaged
 
 SEE ALSO:
     hug a          Stage tracked files

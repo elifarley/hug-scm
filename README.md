@@ -543,7 +543,7 @@ hug remote2ssh [<remote>]  # Convert remote URL from HTTPS to SSH (default: orig
 
 ```shell
 hug s                 # Status
-hug sl [-- <path>...] # Status: List (without untracked files)
+hug sl [-- <path>...]  # Status: List (without untracked files)
 hug sla [-- <path>...] # Status: List All (Full status with untracked files)
 hug sla -- '*.md'     # Pathspec filtering — quote your globs! ('hug sla "*.md"' also works;
                       #   see `hug help :pathspec` for the full pathspec contract)

@@ -69,7 +69,7 @@ PATH FILTERING:
   Globs must be quoted; see 'hug help :pathspec' for the full contract.
 
   hug cmoda -- src/               # amend-all scoped to src/
-  hug cmoda -m "Fix" -- lib/     # scoped amend-all, new message
+  hug cmoda -m "Fix" -- lib/      # scoped amend-all, new message
 
 EXAMPLES:
   hug cmoda --no-edit                    # Amend all tracked, same message

@@ -1038,12 +1038,16 @@ psx_install_stub_gum() {
   # pathspec and the separator-aware lib consumed it); the migration makes
   # it contract — the split owns the separator, so it can never ride into
   # the empty-info message as a phantom filter.
+  # Sink 4 (spec §3.1, family-wide — gate added post-doc-review): a scoped
+  # run also suppresses the trailing whole-repo `hug s` summary; the inert
+  # bare '--' KEEPS it (pinned by the next test).
   psx_setup_conflict
   run hug slc -- src/
   assert_success
   assert_output --partial "src/c.txt"
   refute_output --partial "docs/c.txt"
   refute_output --partial "matching '--'"
+  refute_output --partial "HEAD:"
   psx_reset
 }
 

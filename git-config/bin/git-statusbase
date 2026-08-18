@@ -193,7 +193,7 @@ else
     fi
   fi
 
-  # Sink 4 (#298): the trailing whole-repo 'hug s' summary is suppressed iff
+  # Sink 4 (#292 spec §3.1, family-wide): the trailing whole-repo 'hug s' summary is suppressed iff
   # pathspecs are active (array-non-empty, NOT '--'-seen — the inert bare '--'
   # keeps summary parity with the unfiltered run: a scoped run's whole-repo
   # summary would misdescribe the scope). Script scope — NO 'local' here
