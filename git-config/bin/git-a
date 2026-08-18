@@ -94,6 +94,7 @@ USAGE:
   hug a .              # Stage current directory
   hug a <file>         # Stage specific files
   hug a --             # Interactive file selection (current directory scope)
+  hug a -- <path>... -- # Interactive file selection, scoped to the given pathspecs
   hug a --browse-root  # Interactive file selection (full repository scope)
   hug a --from-file <file>     # Stage files from list file or stdin
   hug a --from-commit <commit> # Stage files changed in specified commit
@@ -184,22 +185,28 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Parse common flags (handles --, --browse-root, etc.)
-eval "$(parse_common_flags "$@")"
+# Parse common flags via the uniform pathspec contract (#292/#298 Task 9):
+# parse_common_flags_with_pathspecs owns BOTH the trailing-bare-'--' picker
+# trigger (--picker mode) and the first-'--' split, so the picker arm below
+# can scope its candidates via forward_pathspecs_to_picker. Equivalence with
+# the pre-Task-9 parse_common_flags call (judged by reading both parsers):
+# the custom loop above breaks at the FIRST '--', so the helper only ever
+# sees the tail beginning there — its split carries exactly what the old
+# residual "$@" carried in every shape ('-- f', '-- f --', bare '--',
+# 'f --', no-separator).
+eval "$(parse_common_flags_with_pathspecs --picker "$@")"
 
-# #297 fix: post-'--' positionals are FILES. The custom loop above breaks at
-# the FIRST '--' without collecting what follows; parse_common_flags emits the
-# post-separator operands as the residual "$@". Re-collect them SEPARATELY
+# #297 fix: post-'--' positionals are FILES. Re-collect them SEPARATELY
 # (not into remaining_args) or 'hug a -- file' falls through to the zero-args
 # arm — silently staging 'git add -u' (everything tracked-modified) instead
-# of the named file. Kept separate because the two arms keep different
-# contracts: pre-'--' positionals preserve today's loud pass-through
-# ('hug a -xX' → git's exit-129 unknown switch, pinned by a characterization
-# row), while post-'--' positionals are pure data behind a protective '--'.
+# of the named file. The two-arm dispatch keeps different contracts:
+# pre-'--' positionals still live in remaining_args (custom loop), preserving
+# today's loud pass-through ('hug a -xX' → git's exit-129 unknown switch,
+# pinned by a characterization row), while post-'--' positionals are pure
+# data behind a protective '--', read through pathspec_pathspecs_into (the
+# single read path for the split).
 post_separator_args=()
-if [[ $# -gt 0 ]]; then
-  post_separator_args=("$@")
-fi
+pathspec_pathspecs_into post_separator_args
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
@@ -251,6 +258,15 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   fi
 
   select_opts+=("--prompt" "Select files to stage...")
+
+  # Scoped picker (#292/#298 Task 9): pathspecs between the FIRST '--' and
+  # the trailing picker '--' ('hug a -- src/ --') scope the candidate list —
+  # previously they were silently discarded here (contract §2 rule 1). The
+  # helper appends them behind a protective '--' so a pathspec spelled like
+  # a picker option ('--cwd') stays data. Post-pick rule: the picked files
+  # REPLACE the pathspecs on the git add line below — git unions positive
+  # pathspecs, so keeping both would widen the scope back out.
+  forward_pathspecs_to_picker select_opts
 
   files=()
   if ! mapfile -t files < <(select_files_with_status "${select_opts[@]}"); then

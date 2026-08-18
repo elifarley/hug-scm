@@ -49,7 +49,13 @@ PATHSPEC_CONFORMANCE_ROWS=(sw ss su shc shcp shp l ll cmod cmoda)
 #                    pass-through/inert for all of them.
 #   HISTORY_ROWS   — cmod/cmoda AMEND history: no dry-run exists, so their
 #                    filter columns are scoped to help-only (see column tests)
-PATHSPEC_PICKER_ROWS=(sw ss su)
+# `a` (Task 9) is the roster's MUTATOR: the filter columns observe it via the
+# stage-count summary + porcelain state (each cell's probe state adds an
+# unstaged src file so the scope is two-sided), while the capture columns
+# (stub gum) are read-only by construction — the cancelling stub stages
+# nothing. `a`'s SELECTION semantics get a dedicated standalone test below
+# (selecting stub), not a shared-column cell.
+PATHSPEC_PICKER_ROWS=(sw ss su a)
 PATHSPEC_LOG_ROWS=(l ll)
 PATHSPEC_SHOW_ROWS=(shc shcp shp)
 PATHSPEC_INERT_ROWS=("${PATHSPEC_LOG_ROWS[@]}" "${PATHSPEC_SHOW_ROWS[@]}")
@@ -291,11 +297,27 @@ psx_sl_kind() {
   for cmd in "${PATHSPEC_PICKER_ROWS[@]}"; do
     # ss sees the STAGED set (src/a.py); su/sw see the UNSTAGED set
     # (docs/note.md). The non-matching marker is the other command's file.
+    # a is the roster's MUTATOR: the observable is the stage-count summary —
+    # scoped `hug a -- src/` stages ONLY the in-scope unstaged src/BIG.py
+    # ("Staged 1 file"); a dropped pathspec would fall back to `git add -u`
+    # and stage docs/note.md as well ("Staged 2 files." — the absent
+    # marker), so the cell stays two-sided through the count itself.
     case "$cmd" in
     ss) filter="src/" present="src/a.py" absent="docs/note.md" ;;
     su | sw) filter="docs/" present="docs/note.md" absent="src/a.py" ;;
+    a) filter="src/" present="Staged 1 file" absent="Staged 2 files" ;;
+    *)
+      # Sentinel pattern (psx_inert_args): the breadcrumb alone is the
+      # contract — an un-armed future row fails HERE with the row named,
+      # never as a subtle scope leak three assertions later.
+      echo "psx pathspec-filter: unknown row '$cmd' — add it to the case arms" >&2
+      return 1
+      ;;
     esac
     psx_setup
+    # a-probe: an UNSTAGED tracked file under src/ so the staging scope is
+    # two-sided (same shape as su's probe in the scoped-picker column).
+    case "$cmd" in a) echo big2 >> src/BIG.py ;; esac
     run hug "$cmd" -- "$filter"
     assert_success
     assert_output --partial "$present"
@@ -344,11 +366,21 @@ psx_sl_kind() {
 @test "column glob-filter: diff commands (picker rows)" {
   local glob present absent
   for cmd in "${PATHSPEC_PICKER_ROWS[@]}"; do
+    # a (mutator): same count-observable as the pathspec-filter column, but
+    # through a GLOB — 'src/*.py' stages only the in-scope unstaged
+    # src/BIG.py; an unscoped fallback would also stage docs/note.md.
     case "$cmd" in
     ss) glob='*.py' present="src/a.py" absent="docs/note.md" ;;
     su | sw) glob='*.md' present="docs/note.md" absent="src/a.py" ;;
+    a) glob='src/*.py' present="Staged 1 file" absent="Staged 2 files" ;;
+    *)
+      # Sentinel pattern: breadcrumb + hard fail (see pathspec-filter note).
+      echo "psx glob-filter: unknown row '$cmd' — add it to the case arms" >&2
+      return 1
+      ;;
     esac
     psx_setup
+    case "$cmd" in a) echo big2 >> src/BIG.py ;; esac
     run hug "$cmd" -- "$glob"
     assert_success
     assert_output --partial "$present"
@@ -391,23 +423,31 @@ psx_sl_kind() {
 @test "column trailing-dashdash: picker arm for action commands (picker rows)" {
   # Technique from tests/unit/test_status_staging.bats:1500-1517: in CI (no
   # TTY) the picker arm must NOT print the regular diff markers. We also
-  # assert the POSITIVE observable — the diff driver's "No … available or
-  # cancelled." message — because absence-only passes on a crash. Probed:
-  # exit 0 with that message on stderr in BOTH gum branches (gum installed →
-  # TTY failure; gum absent → gum-missing error, same message after). The
-  # message assert is deliberately loose (--partial "available or cancelled")
-  # so a UI copy tweak breaks one place, not three cells.
-  local refute_marker
+  # assert the POSITIVE observable — the driver's cancel message — because
+  # absence-only passes on a crash. Probed: exit 0 with that message on
+  # stderr in BOTH gum branches (gum installed → TTY failure; gum absent →
+  # gum-missing error, same message after). a's cancel wording differs
+  # ("No files selected." — its own picker branch), so the positive marker
+  # is per-row; the negative marker for a is ANY staging (the stage-all arm
+  # must never run behind the picker trigger). Both asserts stay deliberately
+  # loose (--partial) so a UI copy tweak breaks one place, not N cells.
+  local refute_marker cancel_msg
   for cmd in "${PATHSPEC_PICKER_ROWS[@]}"; do
     case "$cmd" in
-    ss) refute_marker="Staged diff" ;;
-    su | sw) refute_marker="Unstaged diff" ;;
+    ss) refute_marker="Staged diff" cancel_msg="available or cancelled" ;;
+    su | sw) refute_marker="Unstaged diff" cancel_msg="available or cancelled" ;;
+    a) refute_marker="Staged " cancel_msg="No files selected" ;;
+    *)
+      # Sentinel pattern: breadcrumb + hard fail (see pathspec-filter note).
+      echo "psx trailing-dashdash: unknown row '$cmd' — add it to the case arms" >&2
+      return 1
+      ;;
     esac
     psx_setup
     run hug "$cmd" --
     assert_success
     refute_output --partial "$refute_marker"
-    assert_output --partial "available or cancelled"
+    assert_output --partial "$cancel_msg"
     psx_reset
   done
 }
@@ -484,12 +524,18 @@ psx_install_stub_gum() {
   #        the fixture's staged src/a.py
   #   sw — combined mode: staged src/a.py + unstaged docs/note.md is already
   #        two-sided out of the box
-  local filter="src/" absent="docs/note.md" present candidates
+  #   a  — picker lists UNSTAGED+UNTRACKED (no staged): same probe as su.
+  #        Under the cancelling stub nothing stages — the cell is read-only
+  #        by construction; a's SELECTION semantics live in the dedicated
+  #        selecting-stub test below, not this shared column.
+  local filter="src/" absent="docs/note.md" present candidates cancel_msg
   for cmd in "${PATHSPEC_PICKER_ROWS[@]}"; do
     present="$filter"
+    cancel_msg="available or cancelled"
     case "$cmd" in
     su) present="src/BIG.py" ;;
     ss | sw) present="src/a.py" ;;
+    a) present="src/BIG.py" cancel_msg="No files selected" ;;
     *)
       # Sentinel pattern (psx_inert_args/psx_sl_kind): a future picker row
       # without a case arm must fail with a breadcrumb, not "empty
@@ -500,14 +546,14 @@ psx_install_stub_gum() {
     esac
     psx_setup
     case "$cmd" in
-    su) echo big2 >> src/BIG.py ;;
+    su | a) echo big2 >> src/BIG.py ;;
     ss) git add docs/note.md ;;
     esac
 
     psx_install_stub_gum
     run hug "$cmd" -- "$filter" --
     assert_success
-    assert_output --partial "available or cancelled"
+    assert_output --partial "$cancel_msg"
 
     # Strip ANSI status coloring before matching (candidate lines are
     # "<colored status> <plain filename>").
@@ -571,13 +617,23 @@ psx_install_stub_gum() {
 
 @test "column magic-pathspec: diff commands (picker rows)" {
   # :(icase) positive: case-variant spellings still match the changed files.
+  # a (mutator): ':(icase)SRC/BIG.PY' stages the in-scope unstaged src/BIG.py
+  # ("Staged 1 file"); an unscoped fallback would also stage docs/note.md
+  # ("Staged 2 files") and fail the present assert.
   local icase present
   for cmd in "${PATHSPEC_PICKER_ROWS[@]}"; do
     case "$cmd" in
     ss) icase=':(icase)SRC/A.PY' present="src/a.py" ;;
     su | sw) icase=':(icase)DOCS/NOTE.MD' present="docs/note.md" ;;
+    a) icase=':(icase)SRC/BIG.PY' present="Staged 1 file" ;;
+    *)
+      # Sentinel pattern: breadcrumb + hard fail (see pathspec-filter note).
+      echo "psx magic-pathspec: unknown row '$cmd' — add it to the case arms" >&2
+      return 1
+      ;;
     esac
     psx_setup
+    case "$cmd" in a) echo big2 >> src/BIG.py ;; esac
     run hug "$cmd" -- "$icase"
     assert_success
     assert_output --partial "$present"
@@ -2217,6 +2273,50 @@ psx_install_stub_gum() {
     refute_output --partial "other pickterm commit"
     psx_reset
   done
+}
+
+@test "contract a: picker selection stages the chosen file only (Task 9)" {
+  # a's SELECTION semantics, standalone by design (Task 9): the shared
+  # columns prove SCOPING with a CANCELLING stub (read-only by construction);
+  # this cell proves the mutating half with a SELECTING stub (same model as
+  # the lc/lf "chosen file" test above) — one candidate is picked from the
+  # scoped list and ONLY that file stages. Two-sided: sel-b.py (offered
+  # beside the pick) must stay untracked, and the never-named docs/note.md
+  # must stay unstaged. Post-pick rule (forward_pathspecs_to_picker
+  # contract): the picked file REPLACES the user's pathspecs on the exec
+  # line — the '.' scope's job ended at scoping the candidates, and git
+  # would union positive pathspecs if both rode along.
+  psx_setup
+  echo pick > sel-a.py # untracked: a's picker lists --unstaged --untracked
+  echo pick > sel-b.py
+  local stub_dir="$BATS_TEST_TMPDIR/stub"
+  mkdir -p "$stub_dir"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if [[ "${1:-}" == filter ]]; then' \
+    '  sed $'"'"'s/\033\\[[0-9;]*m//g'"'"' | tee "$GUM_CANDIDATES_FILE" | grep -F "$GUM_PICK" | head -1' \
+    'fi' \
+    'exit 0' > "$stub_dir/gum"
+  chmod +x "$stub_dir/gum"
+  GUM_CANDIDATES_FILE="$BATS_TEST_TMPDIR/gum-candidates.txt"
+  GUM_PICK="sel-a.py"
+  export GUM_CANDIDATES_FILE GUM_PICK HUG_TEST_MODE=true
+  PATH="$stub_dir:$PATH"
+  : > "$GUM_CANDIDATES_FILE"
+
+  run hug a -- . --
+  assert_success
+  assert_output --partial "Staged 1 file"
+  # The picked file staged …
+  run git status --porcelain -- sel-a.py
+  [[ "$output" == A* ]]
+  # … the offered sibling did NOT …
+  run git status --porcelain -- sel-b.py
+  [[ "$output" == "??"* ]]
+  # … and the never-named unstaged file stays unstaged.
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
+  psx_reset
 }
 
 @test "contract lf --json: option-named pathspec after -- stays a pathspec (review)" {
