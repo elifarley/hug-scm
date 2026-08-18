@@ -55,9 +55,9 @@ fi
 # true/false strings; ${json_output:+--json} would ALWAYS expand — see run_count_mode).
 if $count_only; then
   if $json_output; then
-    run_count_mode --json staged "${pathspecs[@]}"
+    run_count_mode --json staged ${pathspecs[@]+"${pathspecs[@]}"}
   else
-    run_count_mode staged "${pathspecs[@]}"
+    run_count_mode staged ${pathspecs[@]+"${pathspecs[@]}"}
   fi
 fi
 

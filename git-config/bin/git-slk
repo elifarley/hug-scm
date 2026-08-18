@@ -60,9 +60,9 @@ fi
 # true/false strings; ${json_output:+--json} would ALWAYS expand — see run_count_mode).
 if $count_only; then
   if $json_output; then
-    run_count_mode --json untracked "${pathspecs[@]}"
+    run_count_mode --json untracked ${pathspecs[@]+"${pathspecs[@]}"}
   else
-    run_count_mode untracked "${pathspecs[@]}"
+    run_count_mode untracked ${pathspecs[@]+"${pathspecs[@]}"}
   fi
 fi
 

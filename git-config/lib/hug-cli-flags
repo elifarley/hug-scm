@@ -316,6 +316,15 @@ parse_common_flags() {
 #      same-named leading positional, and no realistic search term is
 #      '--picker'.
 #
+# NULLSAFE IDIOM (canonical form, #298): at a site where an array can be
+# empty, expand it as ${arr[@]+"${arr[@]}"} — a bare "${arr[@]}" raises
+# "unbound variable" under set -u on the Bash 4.0–4.3 floor this repo
+# supports (docs/installation.md; fixed in Bash 4.4), and after a
+# zero-line mapfile the array may be unset or empty. Sites that are
+# provably non-empty (seeded at declaration, or guarded by a ${#arr[@]}
+# check directly above) keep the plain form. Call sites repeat only the
+# pointer, never this explanation.
+#
 # Pure argument surgery: performs NO git invocations, and leaves
 # parse_pathspecs / parse_common_flags themselves untouched.
 #
@@ -395,6 +404,11 @@ pathspec_pathspecs_into() {
 #   '--' <pathspec...> when some were. Pure argument/array surgery — no git.
 #   Call at most ONCE per opts array: a second call would append a second
 #   '--' <pathspecs> group (harmless to most pickers, but not idempotent).
+#
+# Post-pick rule (part of this contract): the picked file REPLACES the
+# user's pathspecs on the exec line that follows a selection — git unions
+# positive pathspecs, so keeping both would widen the scope back out. The
+# pathspecs' job ends at scoping the picker candidates.
 forward_pathspecs_to_picker() {
   # Reserved prefix __fps_ — see pathspec_pathspecs_into's note.
   local -n __fps_opts="$1"

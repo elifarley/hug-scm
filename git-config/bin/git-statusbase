@@ -69,9 +69,9 @@ fi
 if $count_only; then
   if $include_untracked; then _slc_state=all+untracked; else _slc_state=all; fi
   if $json_output; then
-    run_count_mode --json "$_slc_state" "${pathspecs[@]}"
+    run_count_mode --json "$_slc_state" ${pathspecs[@]+"${pathspecs[@]}"}
   else
-    run_count_mode "$_slc_state" "${pathspecs[@]}"
+    run_count_mode "$_slc_state" ${pathspecs[@]+"${pathspecs[@]}"}
   fi
 fi
 

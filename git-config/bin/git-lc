@@ -88,7 +88,7 @@ for arg in "$@"; do
     ;;
   esac
 done
-set -- "${remaining_args[@]}"
+set -- ${remaining_args[@]+"${remaining_args[@]}"}
 
 # Check if in git repo, handle errors appropriately
 if ! check_git_repo 2> /dev/null; then
@@ -124,12 +124,11 @@ if $json_output; then
   # Re-inject the separator BUG-2 dropped (#292): without it, git log cannot
   # disambiguate a path from a same-named branch ("fatal: ambiguous
   # argument") and this JSON sink silently loses the requested scope.
-  # Nullsafe: with an empty array, `search_args+=("--")` alone would make
-  # git log treat everything after it as paths — guard on the element count.
+  # Nullsafe idiom: see parse_common_flags_with_pathspecs in hug-cli-flags.
   ((${#_pathspec_pathspecs[@]})) && search_args+=("--" "${_pathspec_pathspecs[@]}")
 
   # Output unified JSON response with metadata
-  search_results=$(batch_code_search "$search_term" "${search_args[@]}")
+  search_results=$(batch_code_search "$search_term" ${search_args[@]+"${search_args[@]}"})
 
   # Build command name with flags for output
   cmd_name="hug lc --json"
@@ -157,24 +156,19 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
 
     select_opts+=("--prompt" "Select file to restrict search...")
 
-    # Forward the user's pathspecs to the picker (same idiom as
-    # hug-git-diff): without this, the picker offers out-of-scope files and
-    # silently discards the requested scope (#292).
+    # Forward the user's pathspecs to the picker behind the protective '--'
+    # — contract in forward_pathspecs_to_picker (hug-cli-flags). Without
+    # this, the picker offers out-of-scope files and silently discards the
+    # requested scope (#292).
     if [[ ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
-      # Protective separator (#292 review, conf 6): a pathspec literally
-      # named like a picker option ('--staged', '--prompt', ...) appended
-      # RAW would be eaten as that OPTION — the scope silently discarded.
-      # select_files_with_status's dedicated '--' arm drains everything
-      # after it verbatim, exactly as its comment promises.
       select_opts+=("--" "${_pathspec_pathspecs[@]}")
     fi
 
     file=""
     if file=$(select_files_with_status "${select_opts[@]}"); then
-      # The picked file REPLACES the user's pathspecs: git unions positive
-      # pathspecs, so 'll ... -- src/ src/a.py' would keep matching every
-      # file under src/ and the selection would restrict nothing (review
-      # fix). The pathspecs already did their job — scoping the candidates.
+      # The picked file REPLACES the user's pathspecs (git unions positive
+      # pathspecs — post-pick rule in forward_pathspecs_to_picker,
+      # hug-cli-flags).
       if $with_files; then
         exec hug ll -S "$search_term" --name-status "$@" -- "$file"
       else
@@ -192,8 +186,7 @@ Install gum: https://github.com/charmbracelet/gum"
 fi
 
 # Execute with or without files listing. Re-inject the separator nullsafe
-# (#292 BUG-2): `${arr[@]+...}` expands to nothing for an empty array, so
-# no lone `--` is added when the user passed no pathspecs.
+# (#292 BUG-2) — nullsafe idiom per the contract in hug-cli-flags.
 if $with_files; then
   exec hug ll -S "$search_term" --name-status "$@" ${_pathspec_pathspecs[@]+"--" "${_pathspec_pathspecs[@]}"}
 else

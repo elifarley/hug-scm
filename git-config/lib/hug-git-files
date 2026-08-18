@@ -102,7 +102,7 @@ list_staged_files() {
         mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
         # Always convert to current-dir relative paths
         convert_to_relative_paths paths
-        printf '%s\n' "${paths[@]}"
+        printf '%s\n' ${paths[@]+"${paths[@]}"}
     fi
 }
 
@@ -205,7 +205,7 @@ list_unstaged_files() {
         mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
         # Always convert to current-dir relative paths
         convert_to_relative_paths paths
-        printf '%s\n' "${paths[@]}"
+        printf '%s\n' ${paths[@]+"${paths[@]}"}
     fi
 }
 
@@ -279,7 +279,7 @@ list_conflicted_files() {
     if $with_status; then
         local -a lines=()
         mapfile -t lines < <("${git_cmd_base[@]}" 2>/dev/null || true)
-        for line in "${lines[@]}"; do
+        for line in ${lines[@]+"${lines[@]}"}; do
             [[ -z "$line" ]] && continue
             local status file
             IFS=$'\t' read -r status file <<< "$line"
@@ -293,7 +293,7 @@ list_conflicted_files() {
         mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
         # Always convert to current-dir relative paths
         convert_to_relative_paths paths
-        printf '%s\n' "${paths[@]}"
+        printf '%s\n' ${paths[@]+"${paths[@]}"}
     fi
 }
 
@@ -360,7 +360,7 @@ list_untracked_files() {
 
     # Always convert to current-dir relative paths
     convert_to_relative_paths paths
-    printf '%s\n' "${paths[@]}"
+    printf '%s\n' ${paths[@]+"${paths[@]}"}
 }
 
 # Lists ignored files (matched by .gitignore)
@@ -426,7 +426,7 @@ list_ignored_files() {
 
     # Always convert to current-dir relative paths
     convert_to_relative_paths paths
-    printf '%s\n' "${paths[@]}"
+    printf '%s\n' ${paths[@]+"${paths[@]}"}
 }
 
 # Lists all tracked files (in the index)
@@ -481,5 +481,5 @@ list_tracked_files() {
         convert_to_relative_paths paths
     fi
 
-    printf '%s\n' "${paths[@]}"
+    printf '%s\n' ${paths[@]+"${paths[@]}"}
 }

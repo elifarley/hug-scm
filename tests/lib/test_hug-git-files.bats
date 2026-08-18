@@ -200,6 +200,29 @@ teardown() {
   [[ " ${files[*]} " == " utils/helper.js " ]]
 }
 
+@test "list_tracked_files: --cwd with an explicit leading -- strips it and scopes to the pathspec" {
+  # Combo gap (#298 Task 3a): the selector forwards `--cwd -- <pathspecs>`
+  # (one separator to keep option-shaped pathspecs out of the flag slot), so
+  # list_tracked_files must strip that leading '--' (#292 PR-A) and treat
+  # everything after as pathspec data. Two-sided: src/ files present,
+  # out-of-scope sibling absent.
+  cd src
+
+  mapfile -t files < <(list_tracked_files --cwd -- utils)
+
+  [[ "${#files[@]}" -eq 1 ]]
+  [[ " ${files[*]} " == " utils/helper.js " ]]
+  [[ ! " ${files[*]} " =~ " components/ComponentA.js " ]]
+
+  # The strip's discriminating cell: a BARE '--' after --cwd must leave the
+  # argument list empty so the '.' cwd scope applies — without the strip,
+  # '--' itself would become the only pathspec and match nothing.
+  mapfile -t files < <(list_tracked_files --cwd --)
+  [[ "${#files[@]}" -gt 0 ]]
+  [[ " ${files[*]} " =~ " utils/helper.js " ]]
+  [[ " ${files[*]} " =~ " components/ComponentA.js " ]]
+}
+
 ################################################################################
 # list_staged_files TESTS
 ################################################################################

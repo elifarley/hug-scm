@@ -1206,6 +1206,26 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "single-file cardinality: fblame churn mode is guarded too (combo gap, #298 Task 3c)" {
+  # fblame's guard sits BEFORE the churn/blame fork (#292), so --churn must
+  # not open a bypass: two files under --churn → the same hug rejection the
+  # blame mode gets (NOT churn.py silently analyzing only the first file).
+  psx_setup
+  run hug fblame --churn src/a.py docs/note.md
+  assert_equal 1 "$status"
+  assert_output --partial "hug fblame accepts only one file."
+  refute_output --partial "Churn analysis"
+  psx_reset
+
+  # One file under --churn keeps working: the Python churn backend runs and
+  # names the file (proves the guard did not over-reject the valid form).
+  psx_setup
+  run hug fblame --churn src/a.py
+  assert_success
+  assert_output --partial "src/a.py"
+  psx_reset
+}
+
 # =============================================================================
 # CHARACTERIZATION ROWS (closing fix, whole-implementation review) — the 8
 # audit-matrix rows the suite was missing (spec §4: ALL matrix rows must have

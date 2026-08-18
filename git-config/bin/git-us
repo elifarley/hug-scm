@@ -101,7 +101,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Parse common flags with remaining arguments
-eval "$(parse_common_flags "${remaining_args[@]}")"
+eval "$(parse_common_flags ${remaining_args[@]+"${remaining_args[@]}"})"
 
 # Handle file input flags
 if [[ -n "$from_file" || -n "$from_commit" ]]; then
@@ -115,7 +115,7 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
 
   # Filter out any common flags from remaining_args to get just files
   files_to_unstage=()
-  for arg in "${remaining_args[@]}"; do
+  for arg in ${remaining_args[@]+"${remaining_args[@]}"}; do
     case "$arg" in
     --dry-run | --force | -f | --quiet) ;;
     *) files_to_unstage+=("$arg") ;;
@@ -123,11 +123,11 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
   done
 
   # Add files from source
-  files_to_unstage+=("${files_from_source[@]}")
+  files_to_unstage+=(${files_from_source[@]+"${files_from_source[@]}"})
 else
   # Filter out any common flags from remaining_args to get just files
   files_to_unstage=()
-  for arg in "${remaining_args[@]}"; do
+  for arg in ${remaining_args[@]+"${remaining_args[@]}"}; do
     case "$arg" in
     --dry-run | --force | -f | --quiet) ;;
     *) files_to_unstage+=("$arg") ;;
@@ -254,4 +254,4 @@ hug_us() {
   done
 }
 
-hug_us "${files_to_unstage[@]}"
+hug_us ${files_to_unstage[@]+"${files_to_unstage[@]}"}
