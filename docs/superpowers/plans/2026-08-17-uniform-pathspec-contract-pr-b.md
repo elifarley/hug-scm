@@ -335,16 +335,18 @@ Note: positionals before `--` keep filtering (git parity, decision 7) — the ON
 - [ ] **Step 2:** Hoist the split above the custom loop; feed both branches via `pathspec_pathspecs_into`; trailing bare `--` detected by the helper is simply not a positional (zero args → selector fallback, existing `git-us:144-158` path).
 - [ ] **Step 3:** Green. Commit: `feat: us adopts the uniform pathspec contract (#292)`
 
-### Task 9: `a` fix (#297) + scoped-picker arm + roster enrollment
+### Task 9: `a` contract completion — scoped picker + roster (CHANGED at autoplan gate)
 
-**Goal:** `hug a -- <file>` stages exactly those files; bare trailing `--` keeps the picker; the picker is scoped when pathspecs precede it.
+**GATE DECISION (user, 2026-08-17): the #297 bug fix (`hug a -- <file>` staging exactly those files) MOVES to a small fast-follow PR off main** so the live bug lands without waiting on this batch. Task 9 retains ONLY what depends on PR-B's stage-1 helpers: the scoped-picker arm and roster enrollment. The fast-follow PR carries: the split adoption (`--picker` first-arg), post-`--` positional staging, the `hug a -- -A` separator test, and pre-`--` byte-parity tests. When it lands BEFORE PR-B, this task shrinks to the picker-forwarding + sentinel work; if PR-B lands first, fold its commits here.
+
+**Goal:** `hug a`'s picker is scoped when pathspecs precede the trailing `--`; `a` joins the conformance roster with sentinel-armed column loops.
 
 **Files:**
 - Modify: `git-config/bin/git-a` (split at :132-167; picker branch :199-222)
 - Test: `tests/unit/test_pathspec_conformance.bats` (flip `a` rows; arm the 4 sentinel-less loops at `:252/:305/:356/:532`; add `a` to `PATHSPEC_PICKER_ROWS:52`)
 
 **Acceptance Criteria:**
-- [ ] `hug a -- file.txt` stages exactly `file.txt` (red baseline: today ≡ `git add -u`); pre-`--` behavior byte-identical (existing `a` tests untouched and green)
+- [ ] (moved to the #297 fast-follow PR) `hug a -- file.txt` stages exactly `file.txt`; pre-`--` behavior byte-identical (existing `a` tests untouched and green)
 - [ ] Bare `hug a --` → picker unchanged (HUG_INTERACTIVE_FILE_SELECTION path)
 - [ ] Picker branch reads pathspecs via `pathspec_pathspecs_into` + `forward_pathspecs_to_picker`; `hug a -- src/ --` offers only `src/` candidates (cancelling stub — read-only by construction)
 - [ ] `a`'s SELECTION semantics get a dedicated standalone test (mutating — not a shared-column cell)
