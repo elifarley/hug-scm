@@ -51,17 +51,12 @@ hug_add_with_summary() {
   } |
     sort)
 
-  # Run the actual git add (forward all args, honor errors under set -e).
-  # The CALL SITES carry the protective '--' for FILE lists (#297): a
-  # post-separator file literally named '-A'/'-u' must stay data — without
-  # it, 'hug a -- -A' would stage the WHOLE TREE (git add -A) on a mutator.
-  # The first-arg guard below is only a backstop (and keeps the zero-args
-  # '-u' arm flowing through unchanged).
-  if [[ "${1:-}" == -* ]]; then
-    git add "$@"
-  else
-    git add -- "$@"
-  fi
+  # Run the actual git add (forward all args VERBATIM, honor errors under
+  # set -e). NO separator heuristic here (review #3800343262): a first-arg
+  # guard cannot know whether '-A' is an option the user meant ('hug a foo
+  # -A' — git-legal, options may follow paths) or a filename; only a call
+  # site that has CLASSIFIED its arguments as data may insert '--'.
+  git add "$@"
 
   _pool_after=$({
     git diff-files --name-only 2> /dev/null
@@ -216,7 +211,7 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     exit 0
   fi
 
-  hug_add_with_summary -- ${files[@]+"${files[@]}"}
+  hug_add_with_summary ${files[@]+"${files[@]}"}
   exit 0
 fi
 
@@ -243,7 +238,7 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     exit 0
   fi
 
-  hug_add_with_summary -- ${files[@]+"${files[@]}"}
+  hug_add_with_summary ${files[@]+"${files[@]}"}
   exit 0
 fi
 
@@ -254,10 +249,14 @@ if [[ ${#remaining_args[@]} -eq 0 && ${#post_separator_args[@]} -eq 0 ]]; then
 fi
 
 if [[ ${#post_separator_args[@]} -gt 0 ]]; then
-  # A separator was used: ALL positionals are data (git's own grammar)
-  hug_add_with_summary -- ${remaining_args[@]+"${remaining_args[@]}"} ${post_separator_args[@]+"${post_separator_args[@]}"}
+  # A separator was used — git's own grammar 'git add [<options>] [--]
+  # <pathspec>...': pre-separator positionals keep their option
+  # reachability (a '-A' BEFORE '--' is an option, as in raw git), and the
+  # classified post-separator data follows ONE '--' (a '-A' AFTER '--' is
+  # a filename — 'hug a -- -A' stages that file, never the whole tree).
+  hug_add_with_summary ${remaining_args[@]+"${remaining_args[@]}"} -- "${post_separator_args[@]}"
 else
-  # No separator: preserve today's verbatim pass-through (unknown dash
-  # tokens reach git add and fail LOUD — exit 129, characterization-pinned)
+  # No separator: verbatim pass-through (options stay options — 'hug a foo
+  # -A' is git-add-legal; unknown dash tokens fail LOUD, exit 129, pinned)
   hug_add_with_summary ${remaining_args[@]+"${remaining_args[@]}"}
 fi

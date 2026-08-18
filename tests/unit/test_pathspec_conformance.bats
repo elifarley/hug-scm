@@ -1753,3 +1753,21 @@ psx_install_stub_gum() {
   refute_output --partial "commit with jsonterm in plain"
   psx_reset
 }
+
+@test "characterization a: option after a path keeps git semantics (foo -A)" {
+  # Review fix (#3800343262): 'hug a foo -A' must match raw git — probed:
+  # 'git add new.txt -A' exits 0 and treats -A as an OPTION scoped to the
+  # given path (docs/note.md stays UNSTAGED; untracked stays untracked) —
+  # NOT as a pathspec and not repo-wide. Before the review fix, a first-arg
+  # heuristic inserted '--', making '-A' a filename and changing the staged
+  # set (or erroring on a nonexistent pathspec).
+  psx_setup
+  run hug a new.txt -A
+  assert_success
+  refute_output --partial "did not match"   # -A was not a pathspec
+  # git-parity: -A is an option scoped to new.txt — the never-named
+  # tracked file must remain UNSTAGED (probed on raw git)
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
