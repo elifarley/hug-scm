@@ -3,6 +3,7 @@
 
 load '../test_helper'
 load '../../git-config/lib/hug-output'
+load '../../git-config/lib/hug-gum'
 load '../../git-config/lib/hug-cli-flags'
 
 setup() {
@@ -725,4 +726,77 @@ teardown() {
   run count_positional_args_before_flags "" a
   assert_success
   assert_output "2"
+}
+
+###############################################################################
+# parse_scoped_own_flags (#292 PR-C Task 5) — the shared own-flag loop +
+# misordered-flag matcher of the scoped destructive family (w discard /
+# purge / zap). These rows pin the HELPER's contract directly; the
+# conformance suite (tests/unit/test_pathspec_conformance.bats) proves the
+# three commands ride it byte-identically.
+###############################################################################
+
+@test "parse_scoped_own_flags: own spelling sets its var and flags_explicit" {
+  flags_explicit=false
+  target_unstaged=false
+  target_staged=false
+  pathspecs=(post-data)
+  parse_scoped_own_flags "hug w discard" \
+    "-u:--unstaged:target_unstaged -s:--staged:target_staged" \
+    pathspecs src/ --unstaged
+  # Both spellings arm the own-flag case; positional joins the collection.
+  assert_equal "true" "$target_unstaged"
+  assert_equal "true" "$flags_explicit"
+  assert_equal "false" "$target_staged"
+  assert_equal 2 "${#pathspecs[@]}"
+  assert_equal "post-data" "${pathspecs[0]}"
+  assert_equal "src/" "${pathspecs[1]}"
+}
+
+@test "parse_scoped_own_flags: unknown -* pre-'--' is loud, exit 2" {
+  pathspecs=()
+  run parse_scoped_own_flags "hug w zap" "" pathspecs -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  assert_output --partial "hug w zap -- -xX"
+}
+
+@test "parse_scoped_own_flags: post-'--' OWN spelling rejected, exit 2" {
+  # The spec's every spelling is a matcher arm — the sync-guard invariant
+  # (matcher = own ∪ common) is structural: the same spec feeds both.
+  pathspecs=(-u --staged)
+  run parse_scoped_own_flags "hug w discard" \
+    "-u:--unstaged:target_unstaged -s:--staged:target_staged" pathspecs
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w discard -u"
+}
+
+@test "parse_scoped_own_flags: post-'--' COMMON spelling rejected, exit 2" {
+  # One spelling per common flag class — the fixed half of the invariant:
+  # this list must track parse_common_flags' accepted flags.
+  local f
+  for f in --dry-run -f --force -y --yes --browse-root -q --quiet -h --help; do
+    pathspecs=("$f")
+    run parse_scoped_own_flags "hug w purge" \
+      "-u:--untracked:target_untracked -i:--ignored:target_ignored" pathspecs
+    assert_equal 2 "$status"
+    assert_output --partial "Flags must precede '--': hug w purge $f"
+  done
+}
+
+@test "parse_scoped_own_flags: EXACT spellings only — ./--dry-run is data" {
+  pathspecs=(./--dry-run)
+  parse_scoped_own_flags "hug w zap" "" pathspecs
+  assert_equal 1 "${#pathspecs[@]}"
+  assert_equal "./--dry-run" "${pathspecs[0]}"
+}
+
+@test "parse_scoped_own_flags: empty spec = pure rejection + collection" {
+  # w-zap's shape: no own flags, so the helper provides only the loud -*
+  # arm and the common-spelling matcher — positionals still collected.
+  pathspecs=()
+  parse_scoped_own_flags "hug w zap" "" pathspecs src/ docs/
+  assert_equal 2 "${#pathspecs[@]}"
+  assert_equal "src/" "${pathspecs[0]}"
+  assert_equal "docs/" "${pathspecs[1]}"
 }

@@ -78,49 +78,18 @@ eval "$(parse_common_flags_with_pathspecs --picker "$@")"
 # is purged).
 pathspec_pathspecs_into pathspecs
 
-# Own-loop over the pre-args only: w-purge's accepted pre-'--' grammar.
-# Unknown -* tokens are rejected LOUD (was: silently swallowed as a
-# pathspec — `hug w purge -xX` used to answer "Nothing to purge",
-# exit 0, hiding the typo). exit 2 = HUG_EX_USAGE.
-for arg in "$@"; do
-  case "$arg" in
-  -u | --untracked)
-    target_untracked=true
-    flags_explicit=true
-    ;;
-  -i | --ignored)
-    target_ignored=true
-    flags_explicit=true
-    ;;
-  -*)
-    error_usage "Unknown option: $arg. Pathspecs beginning with '-' require '--': hug w purge -- $arg. See 'hug help :pathspec'."
-    ;;
-  *)
-    pathspecs+=("$arg")
-    ;;
-  esac
-done
-
-# Post-'--' EXACT-SPELLING flag rejection: a token after '--' that spells
-# one of this command's own flags is a misordered flag, not data (was:
-# `hug w purge -- src/ --dry-run` silently became pathspecs
-# 'src/ --dry-run' and answered a false "Nothing to purge"; same class for
-# '-- --help'/'-- -h', probed). EXACT spellings only — './--dry-run' is a
-# filename, not a spelling, and stays a valid pathspec.
-#
-# SYNC-GUARD INVARIANT: this spelling list = (own-loop flags above) ∪
-# (flags parse_common_flags accepts: -h/--help, -f/--force, -q/--quiet,
-# --dry-run, -y/--yes, --browse-root). Add a flag to either side → add its
-# every spelling HERE in the same commit, or post-'--' it silently
-# regresses to the pathspec swallow this matcher exists to kill (the
-# conformance sync-guard row fails first, not the user).
-for p in ${pathspecs[@]+"${pathspecs[@]}"}; do
-  case "$p" in
-  --dry-run | -f | --force | -y | --yes | -u | --untracked | -i | --ignored | --browse-root | -h | --help | -q | --quiet)
-    error_usage "Flags must precede '--': hug w purge $p -- <path>.... See 'hug help :pathspec'."
-    ;;
-  esac
-done
+# Own-loop + misordered-flag matcher via the shared family helper (#292
+# PR-C Task 5, rule-of-three extraction): w-purge's own flags (-u/-i,
+# pre-'--' only), the LOUD unknown -* rejection (was: silently swallowed
+# as a pathspec — `hug w purge -xX` answered "Nothing to purge", exit 0,
+# hiding the typo), and the post-'--' EXACT-SPELLING rejection (was:
+# `-- src/ --dry-run` silently became pathspecs and answered a false
+# "Nothing to purge"). The SYNC-GUARD INVARIANT (matcher = own ∪ common
+# spellings) lives in the helper now — ONE place instead of one per
+# command. exit 2 = HUG_EX_USAGE everywhere.
+parse_scoped_own_flags "hug w purge" \
+  "-u:--untracked:target_untracked -i:--ignored:target_ignored" \
+  pathspecs "$@"
 
 if ! $flags_explicit; then
   target_untracked=true

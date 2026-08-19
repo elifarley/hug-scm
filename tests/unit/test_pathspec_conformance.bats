@@ -3070,12 +3070,17 @@ psx_install_stub_gum() {
   # spelled './--dry-run' after the separator, is DATA — the preview lists
   # it, no rejection. (Untracked, not tracked: purge's engine refuses
   # pathspecs covering tracked files — see the OQ-2 refusal cell below.)
+  # Oracle strength (Task 4 review): the bare '--dry-run' substring alone
+  # is weak — it also appears inside the rejection message. 'Untracked (1)'
+  # is the preview's bucket header: it proves the token was LISTED as data.
   psx_setup
   echo dr1 > ./--dry-run
   run hug w purge --dry-run -- ./--dry-run
   assert_success
+  assert_output --partial "Untracked (1)"
   assert_output --partial "--dry-run"
   refute_output --partial "Flags must precede"
+  refute_output --partial "Nothing to purge"
   psx_reset
 
   psx_setup
@@ -3087,6 +3092,10 @@ psx_install_stub_gum() {
   # mods live there; a purge exclude-scope must carve those out explicitly
   # (probe receipt: single-exclude ':(exclude)gen/' alone → exit 2
   # "path 'docs/note.md' is tracked or has staged changes").
+  # FIXTURE COUPLING: this exclude list mirrors setup_pathspec_fixture's
+  # dirty tracked dirs (src/, docs/) — extend the exclude list if the
+  # fixture gains another dirty tracked dir, or this cell starts dying on
+  # the OQ-2 refusal instead of previewing.
   # (Flag BEFORE the separator — the AC's literal '-- <spec> --dry-run'
   # spelling is exactly the misordered-flag form rejected above.)
   mkdir -p gen
