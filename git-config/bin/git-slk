@@ -74,6 +74,9 @@ pathspecs=()
 # WITHOUT --picker on purpose: slk is a listing, so a trailing bare '--'
 # must stay inert (summary parity), never open an interactive picker.
 eval "$(parse_common_flags_with_pathspecs "$@")"
+# Action flags are meaningless on a listing — reject loudly (codex P2),
+# never silently accept and print an unscoped listing.
+reject_action_flags "hug slk"
 
 # parse_common_flags CONSUMED -q and exported HUG_QUIET — rehydrate the local
 # AFTER the split (also covers a pre-set HUG_QUIET environment). Without

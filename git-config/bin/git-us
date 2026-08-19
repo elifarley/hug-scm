@@ -219,7 +219,14 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     scope_tracked=$(git ls-files --full-name -- ${pathspecs[@]+"${pathspecs[@]}"}) ||
       error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
     scope_deleted=""
-    scope_deleted=$(git diff --cached --name-only --diff-filter=D -- ${pathspecs[@]+"${pathspecs[@]}"}) ||
+    # --no-renames (codex P1): with rename detection ON (git's default in
+    # newer configs), a staged 'git mv old new' is ONE R-status change — the
+    # --diff-filter=D side never emits 'old', the old path misses the
+    # membership set, and 'us --from-commit HEAD -- .' answers "No files
+    # matching '.'" exit 0 with the rename still staged. --no-renames splits
+    # the rename into its D half so the old path joins the set exactly like
+    # an ordinary staged deletion.
+    scope_deleted=$(git diff --cached --name-only --diff-filter=D --no-renames -- ${pathspecs[@]+"${pathspecs[@]}"}) ||
       error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
     # Join the two captures WITHOUT a trailing blank line: '<<<' appends its
     # own newline, so gluing an empty second capture with \n would give

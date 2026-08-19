@@ -522,6 +522,23 @@ reject_multiple_files() {
   fi
 }
 
+# reject_action_flags <cmd-name> — for LISTING commands whose only common
+# flags are -q and help (codex P2 on statusbase): parse_common_flags happily
+# consumes -f/--force, -y/--yes, --dry-run and --browse-root, so a listing
+# would silently accept an action flag and print a normal unscoped listing —
+# the exact silent-accept class this contract exists to kill. Call it
+# immediately after 'eval "$(parse_common_flags_with_pathspecs ...)"': the
+# eval'd assignments (dry_run/force/browse_root) and the HUG_YES export are
+# visible at the caller's scope. Action commands (us, a, ...) must NOT call
+# this — those flags are their contract.
+reject_action_flags() {
+  if ${dry_run:-false} || ${force:-false} || ${browse_root:-false} || [[ -n ${HUG_YES:-} ]]; then
+    # error_usage: exit 2, the usage-error family code (unknown dash-tokens,
+    # malformed pathspecs, cardinality violations).
+    error_usage "$1 is a listing: action flags (-f/--force, -y/--yes, --dry-run, --browse-root) do not apply. See 'hug help :pathspec'."
+  fi
+}
+
 # Validates minimum number of arguments
 # Usage: require_args N ["error message"]
 # Parameters:

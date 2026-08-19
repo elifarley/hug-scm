@@ -170,3 +170,24 @@ setup() {
   [[ "$status" -eq 2 ]]
   assert_output --partial "Invalid pathspec"
 }
+
+@test "hug us: --from-commit includes a rename's old path in the scope (codex P1)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo old > old.txt
+  hug a -- old.txt
+  hug c -m "add old" >/dev/null 2>&1
+  git mv old.txt new.txt
+
+  # Rename detection collapses 'git mv old new' into one R-status change, so
+  # the --diff-filter=D membership query missed the old path — "No files
+  # matching '.'" exit 0 with the rename still staged. --no-renames splits
+  # the D half out so the old path joins the set like any staged deletion.
+  run hug us --from-commit HEAD -- .
+  assert_success
+  assert_output --partial "old.txt"
+  # The rename's delete side is unstaged: old.txt back to HEAD in the index.
+  run git diff --cached --name-only --diff-filter=D
+  refute_output --partial "old.txt"
+}

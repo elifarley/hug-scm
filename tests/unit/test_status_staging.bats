@@ -2134,3 +2134,29 @@ create_slc_conflict_fixture() {
   assert_success
   assert_output "3"
 }
+
+@test "hug sl* listings reject action-only common flags (codex P2)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo a > a.txt
+  hug a -- a.txt
+
+  # parse_common_flags consumes -f/-y/--dry-run/--browse-root before the
+  # scripts' own unknown-option branch sees them — these used to be silently
+  # accepted and produce a normal unscoped listing. A listing's only common
+  # flags are -q and help; everything else is a usage error (exit 2).
+  for cmd in sls slu slk sli slc; do
+    for flag in --dry-run -f -y --browse-root; do
+      run hug "$cmd" "$flag"
+      [[ "$status" -eq 2 ]]
+      assert_output --partial "action flags"
+    done
+  done
+  # statusbase serves sl/sla
+  run hug sl --dry-run
+  [[ "$status" -eq 2 ]]
+  # -q (the supported quiet flag) still works
+  run hug sls -q
+  assert_success
+}

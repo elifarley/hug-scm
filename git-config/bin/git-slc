@@ -73,6 +73,9 @@ pathspecs=()
 # -h/--help route to show_help from HERE (parse_common_flags emits the
 # show_help dispatch), keeping slc's pre-contract both-spellings behavior.
 eval "$(parse_common_flags_with_pathspecs "$@")"
+# Action flags are meaningless on a listing — reject loudly (codex P2),
+# never silently accept and print an unscoped listing.
+reject_action_flags "hug slc"
 
 # parse_common_flags CONSUMED -q and exported HUG_QUIET — rehydrate the local
 # AFTER the split (also covers a pre-set HUG_QUIET environment). Without
