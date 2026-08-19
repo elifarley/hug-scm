@@ -74,11 +74,13 @@ DESCRIPTION:
     - -y does NOT bypass the guard (it is not a confirmation).
 
 PATH FILTERING:
-  Append -- <path>... to restrict output to matching paths.
+  Append -- <path>... to amend only the named paths' changes (verified:
+  out-of-scope worktree changes stay uncommitted in the working tree).
   Globs must be quoted; see 'hug help :pathspec' for the full contract.
+  (cmoda — the -a variant — cannot scope: git rejects paths with -a.)
 
   hug cmod --no-edit -- src/      # amend only changes under src/
-  hug cmod -m "Fix" -- lib/      # amend lib/ with a new message
+  hug cmod -m "Fix" -- lib/       # amend lib/ with a new message
 
 EXAMPLES:
   hug a file.txt && hug cmod --no-edit  # Stage file, amend keeping message

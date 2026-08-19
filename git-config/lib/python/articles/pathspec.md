@@ -23,7 +23,7 @@ the whole tree. This is why every example here quotes its pathspecs.
 | Class | Commands | Pathspecs scope… | Trailing bare `--` |
 |---|---|---|---|
 | Listings | `sl` `sla` `sls` `slu` `slk` `sli` `slc` | the listing, `-c` count, AND the `--json` envelope | Inert — identical to no arguments |
-| Mutating, explicit-path | `a` `us` `cmod` `cmoda` | which files are staged / unstaged / committed | `a`: opens the picker (scoped to any given pathspecs); `us`: opens the staged-file selector (same as no arguments); `cmod`/`cmoda`: inert |
+| Mutating, explicit-path | `a` `us` `cmod` | which files are staged / unstaged / committed | `a`: opens the picker (scoped to any given pathspecs); `us`: opens the staged-file selector (same as no arguments); `cmod`: same as no pathspecs (the amend runs unscoped). `cmoda` is NOT in this class — see below |
 | Diff & search pickers | `ss` `su` `sw` `lc` `lf` `lcr` | the diff / search output | Opens the interactive picker, scoped to any given pathspecs |
 
 (`shp` `shcp` `shc` `dd` also accept pathspecs — they scope the shown diff;
@@ -118,7 +118,8 @@ hug sla -- ':(glob)docs/**/*.md' ':(exclude)docs/drafts/'
 | `lc` / `lf` / `lcr` | ✅ | ✅ | picker (scoped) |
 | `a` | ✅ (post-`--` = exact files) | — | picker (scoped) |
 | `us` | ✅ | — | staged-file selector |
-| `cmod` / `cmoda` | ✅ | — | inert |
+| `cmod` | ✅ (scoped amend: out-of-scope changes stay in the working tree) | — | same as no pathspecs (unscoped amend) |
+| `cmoda` | ❌ — `-a` amends ALL tracked changes; git itself rejects paths with `-a` (`paths ... with -a does not make sense`, loud fatal, HEAD untouched). Use `hug cmod -- <path>...` for a scoped amend | — | same as no pathspecs (unscoped amend) |
 | `sh` | ❌ not yet | — | — |
 | `llu` | ❌ not yet | — | — |
 | `w`, `w-discard`, `w-get`, other `w-*` | ❌ not yet | — | — |
