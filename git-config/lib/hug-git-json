@@ -115,7 +115,7 @@ collect_git_files_json() {
   "staged" | "unstaged" | "conflicted")
     # --status MUST precede the re-appended '--' or it would land after the
     # separator and become a phantom pathspec in the list_* option loop.
-    local -a status_flags=("${list_flags[@]}" "--status")
+    local -a status_flags=(${list_flags[@]+"${list_flags[@]}"} "--status")
     if [[ ${#pathspecs[@]} -gt 0 ]]; then
       status_flags+=("--" "${pathspecs[@]}")
     fi
@@ -130,13 +130,15 @@ collect_git_files_json() {
     ;;
   "untracked" | "ignored")
     local list_func="list_${file_type}_files"
-    local -a list_args=("${list_flags[@]}")
+    local -a list_args=(${list_flags[@]+"${list_flags[@]}"})
     if [[ ${#pathspecs[@]} -gt 0 ]]; then
       list_args+=("--" "${pathspecs[@]}")
     fi
     local -a temp_files
-    mapfile -t temp_files < <("$list_func" "${list_args[@]}")
-    for file in "${temp_files[@]}"; do
+    mapfile -t temp_files < <("$list_func" ${list_args[@]+"${list_args[@]}"})
+    # Nullsafe idiom (Task 3 inventory policy): after a zero-line mapfile
+    # the array may be unset under set -u on the Bash 4.0-4.3 floor.
+    for file in ${temp_files[@]+"${temp_files[@]}"}; do
       [[ -z "$file" ]] && continue
       _items+=("$(to_json_object "path" "$file" "status" "$file_type")")
     done

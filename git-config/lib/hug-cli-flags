@@ -514,7 +514,11 @@ reject_multiple_files() {
     [[ -n "$f" ]] && files+=("$f")
   done
   if [[ ${#files[@]} -gt 1 ]]; then
-    error "${cmd_name} accepts only one file."
+    # error_usage (exit 2, code-roast alignment): a cardinality violation
+    # is a USAGE error — the migrated pathspec family rejects unknown
+    # options with the same code; exit 1 made scripts unable to
+    # distinguish "bad invocation" from "command failed".
+    error_usage "${cmd_name} accepts only one file."
   fi
 }
 

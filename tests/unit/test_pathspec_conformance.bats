@@ -89,8 +89,10 @@ PATHSPEC_CHAR_SL_FILTER_ROWS=(sl sla)
 PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
 
 # Single-file cardinality rows (migrated by Task 10, spec §3.2/§5.6): these
-# commands take exactly ONE file; two files → hug's own rejection (exit 1,
+# commands take exactly ONE file; two files → hug's own rejection (exit 2,
 # "<cmd> accepts only one file.") instead of git fatals or silent ignores.
+# (Exit flipped 1→2 by the code-roast round: reject_multiple_files now uses
+# error_usage — the family's usage-error code.)
 #   SINGLEFILE_ROWS       — one-word commands guarded directly via
 #                          reject_multiple_files (loop-able as `hug $cmd`)
 #   SINGLEFILE_DELEGATE_ROWS — commands delegating to llf; the delegation
@@ -1334,6 +1336,54 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "conformance us (roast): unresolvable from-file lines fail loud, never silent no-match" {
+  # Code-roast MAJOR: from src/, a from-file list with ROOT-relative
+  # spellings + a scope — the batch canonicalization silently dropped the
+  # unresolvable line: "No files matching '.' to unstage." exit 0 while
+  # src/a.py stayed staged (probed red). The NO-scope variant of the same
+  # bad list fails loud; the scoped variant must mirror that shape.
+  psx_setup
+  cd src || return 1
+  printf 'src/a.py\n' > root-spell.txt
+  run hug us --from-file root-spell.txt -- .
+  assert_failure
+  assert_output --partial "File 'src/a.py' is not tracked by git."
+  refute_output --partial "No files matching"
+  cd "$TEST_REPO" || return 1
+  run git diff --cached --name-only
+  assert_output --partial "src/a.py" # untouched — nothing was silently unstaged
+  psx_reset
+}
+
+@test "conformance us (roast): report lists RESOLVED files, not the raw pathspec" {
+  # Code-roast MINOR: ':(exclude)docs/' matched the staged set minus
+  # docs/, but the report echoed the pathspec itself ("Unstaged 1 file:
+  # ✓ :(exclude)docs/", probed red) — wrong noun and a useless line. The
+  # report must name the resolved restore targets.
+  psx_setup
+  git add docs/note.md # second staged file, excluded by the magic spec
+  run hug us -- ':(exclude)docs/'
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  assert_output --partial "src/a.py" # the RESOLVED target
+  refute_output --partial "✓ :(exclude)docs/"
+  psx_reset
+}
+
+@test "conformance us (roast): unreadable --from-file source is fatal, never falls through" {
+  # Code-roast MINOR: read_files_from_source's error() exits only the
+  # process-substitution SUBSHELL — mapfile saw empty and the flow fell
+  # through to the zero-args selector (probed red: gum error AFTER the
+  # source error). The failure must stop the command.
+  psx_setup
+  run hug us --from-file nonexistent.txt
+  assert_failure
+  assert_output --partial "not a valid file or '-' for stdin"
+  refute_output --partial "Interactive mode requires 'gum'" # selector never opened
+  refute_output --partial "No files selected"
+  psx_reset
+}
+
 @test "w get: -u treats positionals as files; -u alone runs documented reset-all (Task 8)" {
   # FLIPPED (Task 8, spec §5.2): with `-u` there is NO target positional —
   # every remaining argument is a FILE (BUG-3). Before the fix, `-u <file>`
@@ -1704,11 +1754,12 @@ psx_install_stub_gum() {
   # paths straight to git, which fataled (exit 128) with "--follow requires
   # exactly one pathspec" (fa, fborn, fcon) or "bad revision" (fb, fblame,
   # llf). They now enforce the one-file contract themselves with hug's own
-  # clear, command-naming error (exit 1).
+  # clear, command-naming error (exit 2 — flipped from 1 by the code-roast
+  # round: reject_multiple_files now uses error_usage, the family code).
   for cmd in "${PATHSPEC_SINGLEFILE_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" src/a.py docs/note.md
-    assert_equal 1 "$status"
+    assert_equal 2 "$status"
     assert_output --partial "hug $cmd accepts only one file."
     refute_output --partial "fatal:"
     psx_reset
@@ -1746,7 +1797,7 @@ psx_install_stub_gum() {
   # ...while a second FILE — flag before or after — still rejects.
   psx_setup
   run hug llf src/a.py docs/note.md -1
-  assert_equal 1 "$status"
+  assert_equal 2 "$status"
   assert_output --partial "hug llf accepts only one file."
   psx_reset
 }
@@ -1777,7 +1828,7 @@ psx_install_stub_gum() {
   # naming the command exactly as invoked.
   psx_setup
   run hug h steps src/a.py docs/note.md
-  assert_equal 1 "$status"
+  assert_equal 2 "$status"
   assert_output --partial "hug h steps accepts only one file."
   psx_reset
 }
@@ -1787,7 +1838,7 @@ psx_install_stub_gum() {
   # the extras vanished without a word. Now two files → exit 1 + rejection.
   psx_setup
   run hug stats file src/a.py docs/note.md
-  assert_equal 1 "$status"
+  assert_equal 2 "$status"
   assert_output --partial "hug stats file accepts only one file."
   refute_output --partial "Churn analysis"
   psx_reset
@@ -1799,7 +1850,7 @@ psx_install_stub_gum() {
   # blame mode gets (NOT churn.py silently analyzing only the first file).
   psx_setup
   run hug fblame --churn src/a.py docs/note.md
-  assert_equal 1 "$status"
+  assert_equal 2 "$status"
   assert_output --partial "hug fblame accepts only one file."
   refute_output --partial "Churn analysis"
   psx_reset

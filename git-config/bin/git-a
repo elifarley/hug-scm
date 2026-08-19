@@ -237,7 +237,15 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
   if [[ -n "$from_commit" ]]; then
     mapfile -t files_from_source < <(extract_files_from_commit "$from_commit")
   elif [[ -n "$from_file" ]]; then
-    mapfile -t files_from_source < <(read_files_from_source "$from_file")
+    # Command substitution, NOT '< <(…)' (code-roast MINOR): the process
+    # substitution swallowed read_files_from_source's exit — its error()
+    # exited only the SUBSHELL and the caller continued with an empty
+    # list. '$(…) || exit $?' keeps the failure fatal.
+    from_source_out=""
+    from_source_out=$(read_files_from_source "$from_file") || exit $?
+    if [[ -n "$from_source_out" ]]; then
+      mapfile -t files_from_source <<< "$from_source_out"
+    fi
   fi
 
   # Compose git's grammar exactly (roast F-001 + review #3800343262 compose):
