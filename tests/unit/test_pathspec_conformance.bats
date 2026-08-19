@@ -3014,17 +3014,62 @@ psx_install_stub_gum() {
   assert_output --partial "Invalid pathspec"
   refute_output --partial "Nothing to discard"
   run git status --porcelain -- src/a.py
-  [[ "$output" == M* ]] # nothing discarded
+  [[ "$output" == "M "* ]] # nothing discarded (staged mod intact — 'M ' porcelain form)
   psx_reset
 
   psx_setup
   # Post-'--' flag rejection: '--dry-run' after the separator is a
   # misordered flag, not data (was: silently became a pathspec and the
   # preview answered a false "Nothing to discard"). EXACT spellings only —
-  # './--dry-run' stays a filename.
+  # './--dry-run' stays a filename (pinned in the row below).
   run hug w discard -- src/ --dry-run
   assert_equal 2 "$status"
   assert_output --partial "Flags must precede '--'"
+  psx_reset
+
+  # -h/--help post-'--' (review IMPORTANT): same silent-swallow class —
+  # 'hug w discard -- --help' used to answer "Nothing to discard" exit 0,
+  # hiding the misordered flag entirely.
+  psx_setup
+  run hug w discard -- --help
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  refute_output --partial "Nothing to discard"
+  psx_reset
+
+  psx_setup
+  run hug w discard -- -h
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  refute_output --partial "Nothing to discard"
+  psx_reset
+
+  # Sync-guard (review MINOR): one spelling per flag class dies exit 2
+  # post-'--' — own-loop flags (-u/--staged), common flags
+  # (-f/--dry-run/-y/--browse-root/-q), and help (-h/--help). The matcher's
+  # invariant (see git-w-discard): this list = own-loop flags ∪
+  # parse_common_flags accepted flags — update both together.
+  local f
+  for f in -u --staged -f --dry-run -y --browse-root -q -h --help; do
+    psx_setup
+    run hug w discard -- "$f"
+    assert_equal 2 "$status"
+    assert_output --partial "Flags must precede '--'"
+    psx_reset
+  done
+
+  # EXACT spellings only (review MINOR — the claim was asserted nowhere):
+  # a tracked file literally named '--dry-run', spelled './--dry-run' after
+  # the separator, is DATA — the preview lists it, no rejection.
+  psx_setup
+  echo dr1 > ./--dry-run
+  git add -- ./--dry-run
+  git commit -q -m "file named --dry-run" -- ./--dry-run
+  echo dr2 >> ./--dry-run
+  run hug w discard --dry-run -- ./--dry-run
+  assert_success
+  assert_output --partial "--dry-run"
+  refute_output --partial "Flags must precede"
   psx_reset
 
   psx_setup
