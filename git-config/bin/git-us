@@ -199,26 +199,33 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     if git rev-parse --verify -q HEAD > /dev/null 2>&1; then
       tree_opt=(--with-tree=HEAD)
     fi
-    # Per-line resolution (code-roast MAJOR): a BATCH 'git ls-files --
-    # <all sources>' silently IGNORES unmatched pathspecs, so a list line
-    # unresolvable from the CWD (e.g. ROOT-relative spellings used from
-    # src/) just vanished — "No files matching '.' to unstage." exit 0
-    # with the staged file left staged, a silent misleading success (the
-    # NO-scope variant of the same bad list fails loud). Resolving per
-    # line lets us KEEP the unresolvable spelling: it flows into hug_us's
-    # validation below and fails LOUD with the exact no-scope shape
-    # ("File 'X' is not tracked by git.") instead of vanishing.
+    # ORIGIN-BASED normalization FIRST (Codex P1): the two sources are
+    # NOT the same base. from-commit lists are ROOT-relative BY
+    # CONSTRUCTION (extract_files_from_commit diffs from the repo root),
+    # so they are already canonical — resolving them against the CWD
+    # wrongly rejected the legitimate case (from sub/, 'us
+    # --from-commit HEAD -- .' → "No files matching '.'"). from-file
+    # lists are user-supplied and commonly CWD-relative, so THEY get the
+    # per-line resolution (code-roast MAJOR): a batch 'git ls-files --
+    # <all>' silently IGNORES unmatched pathspecs, and a list line
+    # unresolvable from the CWD must fail LOUD (it flows into hug_us's
+    # validation below with the exact no-scope shape, "File 'X' is not
+    # tracked by git."), never vanish into a misleading no-match.
     canonical_source=()
     unresolved_source=()
-    for f in ${files_from_source[@]+"${files_from_source[@]}"}; do
-      resolved_line=()
-      mapfile -t resolved_line < <(git ls-files --full-name ${tree_opt[@]+"${tree_opt[@]}"} -- "$f")
-      if [[ ${#resolved_line[@]} -eq 0 ]]; then
-        unresolved_source+=("$f")
-      else
-        canonical_source+=(${resolved_line[@]+"${resolved_line[@]}"})
-      fi
-    done
+    if [[ -n "$from_commit" ]]; then
+      canonical_source=(${files_from_source[@]+"${files_from_source[@]}"})
+    else
+      for f in ${files_from_source[@]+"${files_from_source[@]}"}; do
+        resolved_line=()
+        mapfile -t resolved_line < <(git ls-files --full-name ${tree_opt[@]+"${tree_opt[@]}"} -- "$f")
+        if [[ ${#resolved_line[@]} -eq 0 ]]; then
+          unresolved_source+=("$f")
+        else
+          canonical_source+=(${resolved_line[@]+"${resolved_line[@]}"})
+        fi
+      done
+    fi
     filtered_source=()
     for f in ${canonical_source[@]+"${canonical_source[@]}"}; do
       if [[ -n "${in_scope[$f]:-}" ]]; then
@@ -227,23 +234,32 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     done
 
     # ...and BACK to CWD-relative for the downstream consumers (hug_us's
-    # validation + 'git restore' resolve pathspecs against the CWD —
-    # P2's mirror image: root-relative names would miss from sub/). The
+    # validation + 'git restore' resolve pathspecs against the CWD). The
     # plain branch already feeds CWD-relative user spellings, so CWD is
-    # the ONE downstream base. Every in-scope file starts with the
-    # prefix (the scope set was built from CWD-relative pathspecs), so
-    # the strip is total; 'git rev-parse --show-prefix' is '' at root.
-    # Unresolved spellings are ALREADY CWD-relative (the user's own) —
-    # appended untouched after the strip.
+    # the ONE downstream base. Conversion must be a REAL relpath (Codex
+    # P2): prefix-STRIPPING alone assumed every match lives under the
+    # CWD — a ':(top)root.txt' scope from sub/ leaves root.txt
+    # unprefixed and subdir validation read sub/root.txt (false
+    # failure). Strip the prefix when present; otherwise climb ('../')
+    # one level per prefix component. 'git rev-parse --show-prefix' is
+    # '' at the root (identity conversion). Unresolved spellings are
+    # ALREADY CWD-relative (the user's own) — appended untouched.
     cwd_prefix=$(git rev-parse --show-prefix)
-    if [[ -n $cwd_prefix ]]; then
-      cwd_source=()
-      for f in ${filtered_source[@]+"${filtered_source[@]}"}; do
+    climb=""
+    tmp="${cwd_prefix%/}"
+    while [[ -n $tmp ]]; do
+      climb+="../"
+      if [[ "$tmp" == */* ]]; then tmp="${tmp#*/}"; else tmp=""; fi
+    done
+    cwd_source=()
+    for f in ${filtered_source[@]+"${filtered_source[@]}"}; do
+      if [[ -n $cwd_prefix && $f == "$cwd_prefix"* ]]; then
         cwd_source+=("${f#"$cwd_prefix"}")
-      done
-      filtered_source=(${cwd_source[@]+"${cwd_source[@]}"})
-    fi
-    files_from_source=(${filtered_source[@]+"${filtered_source[@]}"} ${unresolved_source[@]+"${unresolved_source[@]}"})
+      else
+        cwd_source+=("$climb$f")
+      fi
+    done
+    files_from_source=(${cwd_source[@]+"${cwd_source[@]}"} ${unresolved_source[@]+"${unresolved_source[@]}"})
 
     # Scoped-but-empty is a NO-MATCH, never a selector fall-through
     # (spec-review finding 2): the zero-args selector offers the FULL

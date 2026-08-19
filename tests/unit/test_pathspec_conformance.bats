@@ -1384,6 +1384,61 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "conformance us (Codex P1): from-commit sources are ROOT-relative, work from a subdir" {
+  # Codex P1: extract_files_from_commit yields ROOT-relative paths by
+  # construction, but the canonicalization resolved sources against the
+  # CWD — from sub/, 'us --from-commit HEAD -- .' wrongly reported
+  # "No files matching '.' to unstage." with sub/a.txt still staged
+  # (probed red). This is the LEGITIMATE root-relative case: it must
+  # UNSTAGE, not error. Source normalization is origin-based.
+  psx_setup
+  git restore --staged src/a.py
+  mkdir sub
+  echo a1 > sub/a.txt
+  git add sub/a.txt
+  git commit -q -m "add sub/a"
+  echo a2 >> sub/a.txt
+  git add sub/a.txt
+  cd sub || return 1
+  run hug us --from-commit HEAD -- .
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  refute_output --partial "No files matching"
+  cd "$TEST_REPO" || return 1
+  run git diff --cached --name-only
+  refute_output --partial "sub/a.txt" # unstaged
+  psx_reset
+}
+
+@test "conformance us (Codex P2): :(top) scope from a subdir unstages out-of-CWD files" {
+  # Codex P2: the CWD-prefix STRIP assumed every match lives under the
+  # CWD — a ':(top)root.txt' scope from sub/ matched root.txt (no
+  # prefix), left it spelled 'root.txt', and subdir validation read
+  # sub/root.txt → false failure (probed red: "No files matching" with
+  # root.txt still staged). Matches must convert to REAL cwd-relative
+  # paths ('../root.txt' climbs out of the subdir).
+  psx_setup
+  git restore --staged src/a.py
+  mkdir sub
+  echo a1 > sub/a.txt
+  echo r1 > root.txt
+  git add sub/a.txt root.txt
+  git commit -q -m "add sub/a + root"
+  echo a2 >> sub/a.txt
+  echo r2 >> root.txt
+  git add sub/a.txt root.txt
+  cd sub || return 1
+  run hug us --from-commit HEAD -- ':(top)root.txt'
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  refute_output --partial "No files matching"
+  cd "$TEST_REPO" || return 1
+  run git diff --cached --name-only
+  refute_output --partial "root.txt" # unstaged
+  assert_output --partial "sub/a.txt" # out of scope: still staged
+  psx_reset
+}
+
 @test "w get: -u treats positionals as files; -u alone runs documented reset-all (Task 8)" {
   # FLIPPED (Task 8, spec §5.2): with `-u` there is NO target positional —
   # every remaining argument is a FILE (BUG-3). Before the fix, `-u <file>`
