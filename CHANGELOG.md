@@ -2,7 +2,7 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
-## [Unreleased]
+## [1.12.0.0] - 2026-08-18
 
 PR-B of the uniform pathspec contract (elifarley/hug-scm#292, checklist elifarley/hug-scm#298): the `sl*` family, `us`, and `a` join the contract — `-- <path>...` now means the same thing on every path-accepting command. Full contract, support matrix, and migration notes: `hug help :pathspec`.
 
