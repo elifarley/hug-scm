@@ -135,15 +135,27 @@ PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
 PATHSPEC_SINGLEFILE_ROWS=(fa fb fblame fborn fcon llf)
 PATHSPEC_SINGLEFILE_DELEGATE_ROWS=(llfp llfs)
 
-# PR-C rosters (spec §5): ONE roster per behavioral class; the MASTER
-# list is the single enrollment point — a PR-C command missing from every
-# column below fails the membership-diff row (PR-C section, bottom of file).
-# Names are ROSTER IDENTIFIERS (script suffixes), not invocation strings —
-# e.g. w-discard runs as `hug w discard` through the w gateway.
+# PR-C rosters (spec §5): ONE roster per behavioral class; a PR-C command
+# missing from every column below fails the membership-diff row (PR-C
+# section, bottom of file). Names are ROSTER IDENTIFIERS (script suffixes),
+# not invocation strings — e.g. w-discard runs as `hug w discard` via the
+# w gateway.
 PATHSPEC_W_DESTRUCTIVE_ROWS=(w-discard w-purge w-zap w-wipe)
 PATHSPEC_W_ALL_ROWS=(w-discard-all w-purge-all w-zap-all w-wipe-all)
 PATHSPEC_WIP_ROWS=(w-wip w-unwip w-wipdel)
-PATHSPEC_PRC_MASTER=("${PATHSPEC_W_DESTRUCTIVE_ROWS[@]}" "${PATHSPEC_W_ALL_ROWS[@]}" "${PATHSPEC_WIP_ROWS[@]}" w-get sh llu)
+# The MASTER is a HAND-WRITTEN LITERAL of all 14 PR-C commands — NEVER
+# derived from the class arrays above. LESSON (review round 1): a derived
+# master makes the membership diff TAUTOLOGICAL — the test's `enrolled` union
+# consumes the same class arrays, so deleting a command from its roster
+# removes it from BOTH sides and the row stays green (verified red-check:
+# deleting w-zap from its roster failed the row by name only AFTER this
+# fix). The expected set must be independent of the arrays it checks.
+PATHSPEC_PRC_MASTER=(
+  w-discard w-purge w-zap w-wipe
+  w-discard-all w-purge-all w-zap-all w-wipe-all
+  w-wip w-unwip w-wipdel
+  w-get sh llu
+)
 # `sh` and `llu` are enrolled via the SHOW/LOG rosters above (two-phase:
 # pending until Tasks 11/10 migrate them).
 
@@ -2979,16 +2991,26 @@ psx_install_stub_gum() {
 #  done
 #}
 
-# FLIPS-IN-TASK-5: w-wip/w-unwip/w-wipdel unknown flags exit 2 with the
+# FLIPS-IN-TASK-8: w-wip/w-unwip/w-wipdel unknown flags exit 2 with the
 # family template (today: w-wip exit 1 + full help dump; w-unwip/w-wipdel
 # exit 1 with "Branch '-xX' does not exist." — flag-shaped tokens must be
-# rejected as flags before branch resolution).
-#@test "contract wip family (Task 5): -xX loud, exit 2" {
+# rejected as flags before branch resolution, for ALL THREE commands).
+#@test "contract wip family (Task 8): -xX loud, exit 2 (wip unwip wipdel)" {
+#  local cmd
+#  for cmd in wip unwip wipdel; do
+#    psx_setup
+#    run hug w "$cmd" -xX
+#    assert_equal 2 "$status"
+#    assert_output --partial "Unknown option: -xX"
+#    refute_output --partial "does not exist" # not misread as a branch name
+#    psx_reset
+#  done
+#  # w-wip's current failure mode is a FULL help dump — the contract error is
+#  # the one-line family template, not the manual.
 #  psx_setup
 #  run hug w wip -xX
 #  assert_equal 2 "$status"
-#  assert_output --partial "Unknown option"
-#  refute_output --partial "USAGE:" # the full help dump is not the contract
+#  refute_output --partial "USAGE:"
 #  psx_reset
 #}
 
@@ -3027,17 +3049,23 @@ psx_install_stub_gum() {
 #  psx_reset
 #}
 
-@test "PR-C staged red rows: block present, markers reference tasks 3-11" {
-  # Loss guard: the commented FLIPS rows above are the migration tasks'
-  # homework — if the block is deleted or a marker drifts outside 3-11, this
-  # fails. Grep-based, green now by construction.
+@test "PR-C staged red rows: exact marker set (3 4 6 8 10 11)" {
+  # Loss guard, EXACT form: an existence-only check stays green when ONE
+  # task's staged rows are deleted (review round 1 finding). The observed
+  # marker set must equal the literal expectation — built via a loop over
+  # task NUMBERS so the expected strings never literally appear in this file
+  # (a literal 'FLIPS-IN-TASK-3' here would be grep-matched too, making the
+  # check self-fulfilling). Failing output names both sides.
   local self="${BATS_TEST_FILENAME}"
-  local markers bad
-  markers=$(grep -oE 'FLIPS-IN-TASK-[0-9]+' "$self" | sort -u)
-  [[ -n "$markers" ]] || fail "no staged FLIPS markers found — the PR-C red rows were lost"
-  bad=$(grep -oE 'FLIPS-IN-TASK-[0-9]+' "$self" | sort -u |
-    grep -vE '^FLIPS-IN-TASK-(3|4|5|6|7|8|9|10|11)$' || true)
-  [[ -z "$bad" ]] || fail "staged marker outside tasks 3-11: $bad"
+  local expected actual
+  expected=$(for n in 3 4 6 8 10 11; do printf 'FLIPS-IN-TASK-%s\n' "$n"; done | sort)
+  actual=$(grep -oE 'FLIPS-IN-TASK-[0-9]+' "$self" | sort -u)
+  [[ -n "$actual" ]] || fail "no staged FLIPS markers found — the PR-C red rows were lost"
+  if [[ "$actual" != "$expected" ]]; then
+    fail "staged FLIPS marker set drifted — expected vs actual:
+$(printf '%s\n' "$expected" | tr '\n' ' ')
+$(printf '%s\n' "$actual" | tr '\n' ' ')"
+  fi
   grep -q "RED rows staged for PR-C migrations" "$self" ||
     fail "staged block header comment missing"
 }
