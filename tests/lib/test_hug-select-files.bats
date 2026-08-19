@@ -920,6 +920,7 @@ create_merge_conflict() {
 
   run --separate-stderr run_count_mode --json staged
   assert_failure
+  [[ "$status" -eq 2 ]]   # usage error: same exit family as unknown dash-tokens (F-001)
   [[ "$stderr" == *"mutually exclusive"* ]]
   [[ -z "$output" ]]   # no count printed on the mutex-violation path
 }

@@ -32,12 +32,14 @@
 #           conflicted|all|all+untracked).
 # Encapsulates the -c dispatch previously duplicated (near-verbatim) across the 6 sl*
 # scripts (git-sls/slu/slk/sli/slc/statusbase):
-#   (1) --json is mutually exclusive with -c -> error + exit (like hug wtl's
-#       --json --path-only error),
+#   (1) --json is mutually exclusive with -c -> usage error, exit 2 (the
+#       family's usage-error code, same as unknown dash-tokens and malformed
+#       pathspecs — a mutual-exclusion violation IS a usage error; it exited 1
+#       before, code-roast F-001),
 #   (2) delegate to count_files_with_status (which itself enforces the repo
 #       precondition -- #259),
 #   (3) exit 0.
-# TERMINATING: calls `exit 0` (and `error`->exit 1 on the --json violation), so it
+# TERMINATING: calls `exit 0` (and `error`->exit 2 on the --json violation), so it
 #   NEVER returns -- a caller running it inside `if $count_only; then ...; fi` never
 #   reaches code below the block. Callers pass `--json` only when their json flag is
 #   true, e.g. `if $json_output; then run_count_mode --json <state> ...; else
@@ -54,7 +56,9 @@ run_count_mode() {
   local state="${1:?run_count_mode: <state> required}"; shift
   local -a pathspecs=("$@")
   if $json; then
-    error "-c/--count and --json are mutually exclusive"
+    # Exit 2 (usage), not 1: the PR-B contract reserves exit 2 for usage errors
+    # (unknown dash-tokens, malformed pathspecs) and mutual exclusion is one.
+    error "-c/--count and --json are mutually exclusive" "${HUG_EX_USAGE:-2}"
   fi
   count_files_with_status "$state" ${pathspecs[@]+"${pathspecs[@]}"}
   exit 0

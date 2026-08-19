@@ -245,6 +245,12 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     # unresolvable from the CWD must fail LOUD (it flows into hug_us's
     # validation below with the exact no-scope shape, "File 'X' is not
     # tracked by git."), never vanish into a misleading no-match.
+    # Record whether the SOURCE list is empty BEFORE the intersection
+    # (code-roast F-004): an empty result downstream is then attributable —
+    # an empty source never excluded anything, so blaming the pathspec
+    # ("No files matching 'src/'") misattributes the cause.
+    source_list_empty=false
+    [[ ${#files_from_source[@]} -eq 0 ]] && source_list_empty=true
     canonical_source=()
     unresolved_source=()
     if [[ -n "$from_commit" ]]; then
@@ -304,9 +310,13 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     # NOTE: unresolved lines are NOT empty-intersection material — when
     # present they skip this arm and die in validation (loud), above.
     if [[ ${#files_from_source[@]} -eq 0 ]]; then
-      pathspec_list=""
-      printf -v pathspec_list "'%s' " "${pathspecs[@]}"
-      info "No files matching ${pathspec_list% } to unstage."
+      if $source_list_empty; then
+        info "Source list is empty - nothing to unstage."
+      else
+        pathspec_list=""
+        printf -v pathspec_list "'%s' " "${pathspecs[@]}"
+        info "No files matching ${pathspec_list% } to unstage."
+      fi
       exit 0
     fi
   fi
@@ -330,10 +340,17 @@ else
   # under the CWD), and an unresolvable line must keep dying LOUD in hug_us's
   # validation (pinned: "File 'src/a.py' is not tracked by git.").
   if [[ ${#files_to_unstage[@]} -gt 0 ]]; then
+    # Command substitution, NOT '< <(…)' (code-roast F-002): same shape the
+    # #298 MAJOR-1 fix converted three blocks above — the process substitution
+    # swallows git's nonzero exit, and a repo-level failure would read as the
+    # "No files matching …" no-match below. Empty output must NOT reach mapfile
+    # via <<< (a phantom empty element follows); guard with -n.
+    # No 'local' here: script scope.
+    staged_scope_matches_out=""
+    staged_scope_matches_out=$(git diff --cached --name-only -- ${files_to_unstage[@]+"${files_to_unstage[@]}"}) ||
+      error "git failed listing staged files for the unstage scope."
     staged_scope_matches=()
-    mapfile -t staged_scope_matches < <(
-      git diff --cached --name-only -- ${files_to_unstage[@]+"${files_to_unstage[@]}"}
-    )
+    [[ -n "$staged_scope_matches_out" ]] && mapfile -t staged_scope_matches <<< "$staged_scope_matches_out"
     if [[ ${#staged_scope_matches[@]} -eq 0 ]]; then
       has_literal_file=false
       for scope_arg in ${files_to_unstage[@]+"${files_to_unstage[@]}"}; do
@@ -474,10 +491,15 @@ hug_us() {
   # ✓ :(exclude)docs/" (code-roast MINOR): wrong count-noun and a useless
   # line. Plain names resolve to themselves, so this is display-only;
   # files_to_unstage still drives validation and 'git restore' above.
+  # Command substitution, NOT '< <(…)' (code-roast F-002): the exit-swap
+  # shape the #298 MAJOR-1 fix eliminated elsewhere in this file. A failure
+  # here would silently fall back to echoing the raw pathspecs below —
+  # restoring the "Unstaged 1 file: ✓ :(exclude)docs/" bug one git error away.
+  local report_targets_out=""
+  report_targets_out=$(git diff --cached --name-only -- ${files_to_unstage[@]+"${files_to_unstage[@]}"}) ||
+    error "git failed listing staged files for the unstage report."
   local -a report_targets=()
-  mapfile -t report_targets < <(
-    git diff --cached --name-only -- ${files_to_unstage[@]+"${files_to_unstage[@]}"}
-  )
+  [[ -n "$report_targets_out" ]] && mapfile -t report_targets <<< "$report_targets_out"
   if [[ ${#report_targets[@]} -eq 0 ]]; then
     report_targets=(${files_to_unstage[@]+"${files_to_unstage[@]}"})
   fi

@@ -2052,7 +2052,29 @@ create_slc_conflict_fixture() {
   # -c and --json are incompatible (like hug wtl's --json --path-only error)
   run hug slc -c --json
   assert_failure
+  [[ "$status" -eq 2 ]]   # usage-error exit family (F-001), not a generic 1
   assert_output --partial "mutually exclusive"
+}
+
+@test "hug us: empty --from-file + scope blames the source, not the pathspec" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo a > a.txt
+  hug a -- a.txt
+  : > "$BATS_TEST_TMPDIR/empty-list.txt"
+
+  # Empty SOURCE list: the scope never excluded anything — the message must
+  # not claim "No files matching <scope>" (code-roast F-004 misattribution).
+  run hug us --from-file "$BATS_TEST_TMPDIR/empty-list.txt" -- src/
+  assert_success
+  assert_output --partial "Source list is empty"
+
+  # Non-empty source fully excluded by scope keeps the no-match wording.
+  echo "a.txt" > "$BATS_TEST_TMPDIR/one.txt"
+  run hug us --from-file "$BATS_TEST_TMPDIR/one.txt" -- docs/
+  assert_success
+  assert_output --partial "No files matching 'docs/'"
 }
 
 @test "hug slk -c: counts a newline-containing filename once (NUL-safe)" {
