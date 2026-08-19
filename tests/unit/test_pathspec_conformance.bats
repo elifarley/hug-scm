@@ -1279,6 +1279,61 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "conformance us (PR-B Task 8): staged deletion in scope is unstaged too (Codex P1)" {
+  # Codex review P1: 'git ls-files' misses index-removed (staged-DELETED)
+  # entries, so the intersection silently dropped them while reporting
+  # success (probed red: "Unstaged 1 file: ✓ src/keep.txt" with
+  # 'D src/del.txt' left staged). The scope set must union staged-deletion
+  # paths, and the validation probe must accept them (they are in HEAD,
+  # just not in the index — also fixes unstaging a deletion BY NAME).
+  psx_setup
+  git restore --staged src/a.py # commit-sweep lesson: keep the commit discriminating
+  echo del > src/del.txt
+  echo keep > src/keep.txt
+  git add src/del.txt src/keep.txt
+  git commit -q -m "add del+keep"
+  git rm -q src/del.txt # staged deletion of del.txt
+  echo keep2 >> src/keep.txt
+  git add src/keep.txt # staged mod of keep.txt
+  run hug us --from-commit HEAD -- src/
+  assert_success
+  assert_output --partial "Unstaged 2 files"
+  run git status --porcelain
+  refute_output --partial "D  src/del.txt" # staged deletion: GONE
+  assert_output --partial " D src/del.txt" # now an UNSTAGED deletion only
+  assert_output --partial " M src/keep.txt" # mod unstaged too
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): from-file CWD-relative names match from a subdirectory (Codex P2)" {
+  # Codex review P2: from-file lists are commonly CWD-relative ('a.txt'
+  # written inside sub/), while the scope set is root-relative — the
+  # exact-string membership emptied and 'us --from-file files.txt -- .'
+  # reported "No files matching '.' to unstage." (probed red) with
+  # sub/a.txt left staged. Sources are canonicalized to root-relative now.
+  psx_setup
+  git restore --staged src/a.py
+  mkdir sub
+  echo a1 > sub/a.txt
+  git add sub/a.txt
+  git commit -q -m "add sub/a"
+  echo a2 >> sub/a.txt
+  git add sub/a.txt
+  printf 'a.txt\n' > sub/files.txt # CWD-relative name
+  cd sub || return 1
+  run hug us --from-file files.txt -- .
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  # The report echoes the CWD-relative spelling (same base as the plain
+  # branch echoing the user's own spelling); the behavioral assert below
+  # is the load-bearing proof.
+  assert_output --partial "a.txt"
+  cd "$TEST_REPO" || return 1
+  run git diff --cached --name-only
+  refute_output --partial "sub/a.txt" # unstaged
+  psx_reset
+}
+
 @test "w get: -u treats positionals as files; -u alone runs documented reset-all (Task 8)" {
   # FLIPPED (Task 8, spec §5.2): with `-u` there is NO target positional —
   # every remaining argument is a FILE (BUG-3). Before the fix, `-u <file>`

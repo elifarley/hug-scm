@@ -162,19 +162,60 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
   # the listings. An EMPTY scope (no pathspecs given) keeps today's
   # behavior: the full source list, unfiltered.
   if [[ ${#pathspecs[@]} -gt 0 ]]; then
+    # BOTH collections are ROOT-relative — two Codex-review bugs (PR-B)
+    # shaped this block:
+    # - P1: `git ls-files` lists index entries, but a staged DELETION
+    #   removes the entry — union the staged-deletion paths
+    #   (`git diff --cached --name-only --diff-filter=D`, probed
+    #   root-relative) or `us --from-commit <c> -- src/` silently leaves
+    #   'D src/x' staged while reporting success.
+    # - P2: from-file lists are commonly CWD-relative ('a.txt' written
+    #   inside sub/) while the scope set is root-relative — exact-string
+    #   membership then empties. Canonicalize the SOURCE list through
+    #   `git ls-files --full-name` (probed: resolves CWD-relative input
+    #   to root-relative output); --with-tree=HEAD, guarded because an
+    #   unborn HEAD makes it fatal, also resolves staged deletions.
     scope_files=()
-    mapfile -t scope_files < <(git ls-files --full-name -- ${pathspecs[@]+"${pathspecs[@]}"})
+    mapfile -t scope_files < <(
+      git ls-files --full-name -- ${pathspecs[@]+"${pathspecs[@]}"}
+      git diff --cached --name-only --diff-filter=D -- ${pathspecs[@]+"${pathspecs[@]}"}
+    )
     # O(n+m) membership filter (assoc array), not an O(n·m) nested scan —
     # a from-commit touching thousands of files meets a wide-scope listing.
     declare -A in_scope=()
     for s in ${scope_files[@]+"${scope_files[@]}"}; do in_scope["$s"]=1; done
+
+    tree_opt=()
+    if git rev-parse --verify -q HEAD > /dev/null 2>&1; then
+      tree_opt=(--with-tree=HEAD)
+    fi
+    canonical_source=()
+    mapfile -t canonical_source < <(
+      git ls-files --full-name ${tree_opt[@]+"${tree_opt[@]}"} -- ${files_from_source[@]+"${files_from_source[@]}"}
+    )
     filtered_source=()
-    for f in ${files_from_source[@]+"${files_from_source[@]}"}; do
+    for f in ${canonical_source[@]+"${canonical_source[@]}"}; do
       if [[ -n "${in_scope[$f]:-}" ]]; then
         filtered_source+=("$f")
       fi
     done
     files_from_source=(${filtered_source[@]+"${filtered_source[@]}"})
+
+    # ...and BACK to CWD-relative for the downstream consumers (hug_us's
+    # validation + 'git restore' resolve pathspecs against the CWD —
+    # P2's mirror image: root-relative names would miss from sub/). The
+    # plain branch already feeds CWD-relative user spellings, so CWD is
+    # the ONE downstream base. Every in-scope file starts with the
+    # prefix (the scope set was built from CWD-relative pathspecs), so
+    # the strip is total; 'git rev-parse --show-prefix' is '' at root.
+    cwd_prefix=$(git rev-parse --show-prefix)
+    if [[ -n $cwd_prefix ]]; then
+      cwd_source=()
+      for f in ${files_from_source[@]+"${files_from_source[@]}"}; do
+        cwd_source+=("${f#"$cwd_prefix"}")
+      done
+      files_from_source=(${cwd_source[@]+"${cwd_source[@]}"})
+    fi
 
     # Scoped-but-empty is a NO-MATCH, never a selector fall-through
     # (spec-review finding 2): the zero-args selector offers the FULL
@@ -271,13 +312,23 @@ hug_us() {
     done
   fi
 
+  # Tracked-check options: --with-tree=HEAD (probed) accepts STAGED
+  # DELETIONS as tracked — the index entry is gone but the file lives in
+  # HEAD — without accepting truly untracked paths. Without it, unstaging
+  # a deletion (by name OR via the from-source intersection) is impossible
+  # ("not tracked" false negative, Codex P1). Guarded: an unborn HEAD
+  # makes --with-tree fatal, and an unborn repo has staged entries but no
+  # tree to consult.
+  local -a tracked_check=(--error-unmatch)
+  git rev-parse --verify -q HEAD > /dev/null 2>&1 && tracked_check+=(--with-tree=HEAD)
+
   # Validate that files exist and are staged
   for file in "${files_to_unstage[@]}"; do
     # The '--' is load-bearing (spec-review finding 1): a staged file
     # literally named '-foo.txt' would otherwise be parsed as an OPTION by
     # git → false "not tracked" error, breaking the 'hug us -- <path>'
     # promise the help text makes.
-    if ! git ls-files --error-unmatch -- "$file" > /dev/null 2>&1; then
+    if ! git ls-files "${tracked_check[@]}" -- "$file" > /dev/null 2>&1; then
       error "File '$file' is not tracked by git."
     fi
 
