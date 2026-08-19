@@ -2754,3 +2754,21 @@ psx_install_stub_gum() {
   [[ "$output" == " M"* ]]
   psx_reset
 }
+
+@test "gateway w: --help / -h print usage and exit 0 (#292 PR-C review)" {
+  # Review catch: the new unknown-subcommand exit-2 arm also catches
+  # -h/--help. Every hug command documents help at exit 0, and the OLD
+  # fall-through was exit 0 — help must stay in the success family.
+  # GOTCHA: invoked through `hug w`, git itself intercepts `--help`
+  # (runs `man git-w`, exit 16 — probed, unchanged by this PR), so the
+  # gateway's help arm is only reachable by direct script invocation —
+  # hence $HUG_BIN here, matching how test_helper pins the worktree.
+  psx_setup
+  run "$HUG_BIN/git-w" --help
+  [[ "$status" -eq 0 ]]
+  assert_output --partial "Usage: hug w <command>"
+  run "$HUG_BIN/git-w" -h
+  [[ "$status" -eq 0 ]]
+  assert_output --partial "Usage: hug w <command>"
+  psx_reset
+}
