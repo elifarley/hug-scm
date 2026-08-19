@@ -70,7 +70,11 @@ wip)
   ;;
 wips)
   shift
-  dispatch_w_subcommand "wip" "$@" --stay
+  # LESSON (#292 pathspec contract): flags the gateway INJECTS belong in the
+  # flag zone, BEFORE the user's args. Appending '--stay' after "$@" lands
+  # past the user's own '--' separator, so w-wip's loop swallowed it as
+  # message text (branch WIP/….draftstay, stay semantics never applied).
+  dispatch_w_subcommand "wip" --stay "$@"
   ;;
 unwip)
   shift
@@ -96,5 +100,8 @@ wipdel)
   printf '  wips         Park changes on new WIP branch, stay on it\n' >&2
   printf '  unwip        Unpark WIP: squash-merge to current + delete\n' >&2
   printf '  wipdel       Delete WIP branch (no integration)\n' >&2
+  # Usage errors exit 2 (HUG_EX_USAGE family) — a bare fall-through exits 0
+  # with the last printf's status, silently "succeeding" at doing nothing.
+  exit 2
   ;;
 esac

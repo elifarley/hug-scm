@@ -2704,3 +2704,53 @@ psx_install_stub_gum() {
   assert_output --partial "No files matching 'src/' to unstage."
   psx_reset
 }
+
+###############################################################################
+# PR-C Task 1 (#292): the `w` GATEWAY is a contract pass-through, not a
+# pathspec command itself — but its wips arm INJECTED a flag after the user's
+# args, past their `--`, so 'w wips -- "draft"' drained the injected --stay
+# into the message (branch WIP/….draftstay, stay never applied). Post-
+# migration that same order would exit 2 on a flag hug itself injected.
+# Gateway rule: injected flags belong in the FLAG ZONE, before the user's
+# data. The unknown-subcommand arm printed usage but fell through to exit 0.
+###############################################################################
+
+@test "gateway w: wips prepends --stay so post--- data stays the message (#292 PR-C)" {
+  psx_setup
+  # Fixture has pending changes (staged src/a.py + unstaged docs/note.md),
+  # so w-wip has work to park.
+  run hug w wips -- "draft"
+  assert_success
+  refute_output --partial "draftstay"
+  # Branch slug carries ONLY the user's message...
+  run git branch --list "WIP/*"
+  assert_output --partial "draft"
+  refute_output --partial "stay"
+  # ...and stay semantics applied: we REMAIN on the WIP branch (probed:
+  # pre-fix the gateway's trailing --stay was swallowed as message text and
+  # w-wip switched back to the original branch).
+  [[ "$(git branch --show-current)" == WIP/* ]]
+  psx_reset
+}
+
+@test "gateway w: unknown subcommand exits 2, not 0 (#292 PR-C)" {
+  psx_setup
+  run hug w badcmd
+  [[ "$status" -eq 2 ]]
+  assert_output --partial "Usage: hug w <command>"
+  psx_reset
+}
+
+@test "gateway w: discard -- <path> passes through to w-discard untouched (#292 PR-C)" {
+  psx_setup
+  # Characterization: the gateway forwards args verbatim; the pathspec
+  # reaches w-discard's listing (non-TTY cancels before mutating, so the
+  # unstaged mod survives as the two-sided witness).
+  run hug w discard -- docs/note.md
+  assert_failure
+  assert_output --partial "docs/note.md"
+  assert_output --partial "Cancelled."
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
