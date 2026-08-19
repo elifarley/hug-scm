@@ -2342,8 +2342,12 @@ psx_install_stub_gum() {
 @test "characterization w purge: untracked pathspec filter + loud tracked-path refusal" {
   # characterization: probed — `--dry-run new.txt` previews exactly the
   # untracked file (separator form equivalent); a pathspec COVERING a tracked
-  # file ('.') is refused loudly (exit 1, "tracked or has staged changes");
-  # `-xX` is swallowed as a path (exit 0 "Nothing to purge"; flip: #292).
+  # file ('.') is refused loudly ("tracked or has staged changes"; exit
+  # flipped 1→2 by the Task 4 migration, family usage-error template).
+  # `-xX` FLIPPED in Task 4 (#292 PR-C, with the w-purge migration): used
+  # to become a pathspec in parse_common_flags' fallback loop, matching
+  # nothing, exit 0 "Nothing to purge" (silent swallow). The own-loop's
+  # loud -* arm now rejects it, exit 2 family template.
   psx_setup
   run hug w purge --dry-run new.txt
   assert_success
@@ -2365,8 +2369,9 @@ psx_install_stub_gum() {
 
   psx_setup
   run hug w purge -xX
-  assert_success
-  assert_output --partial "Nothing to purge"
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Nothing to purge"
   psx_reset
 }
 
@@ -2979,25 +2984,161 @@ psx_install_stub_gum() {
   done
 }
 
-# FLIPS-IN-TASK-3 (remainder, staged for the w-purge/w-zap migrations):
-# same rejection, same template — purge/zap still swallow '-xX' as a
-# pathspec today (exit 0 "Nothing to purge"/"Nothing to zap"). Uncomment
-# in the SAME commit as each command's migration.
-#@test "contract w-destructive (Task 3, purge+zap): -xX loud, exit 2, never a pathspec" {
-#  local cmd msg
-#  for cmd in purge zap; do
-#    case "$cmd" in
-#    zap) msg="Nothing to zap" ;;
-#    purge) msg="Nothing to purge" ;;
-#    esac
-#    psx_setup
-#    run hug w "$cmd" -xX
-#    assert_equal 2 "$status"
-#    assert_output --partial "Unknown option: -xX"
-#    refute_output --partial "$msg"
-#    psx_reset
-#  done
+# FLIPS-IN-TASK-3 remainder (purge landed in Task 4, #292 PR-C, with the
+# w-purge migration): same rejection, same template — purge used to
+# swallow '-xX' as a pathspec (exit 0 "Nothing to purge").
+@test "contract w-destructive (Task 4, purge): -xX loud, exit 2, never a pathspec" {
+  psx_setup
+  run hug w purge -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Nothing to purge"
+  psx_reset
+}
+
+# zap remains staged for its own migration (still swallows '-xX' as a
+# pathspec today, exit 0 "Nothing to zap").
+#@test "contract w-destructive (Task 3 remainder, zap): -xX loud, exit 2, never a pathspec" {
+#  psx_setup
+#  run hug w zap -xX
+#  assert_equal 2 "$status"
+#  assert_output --partial "Unknown option: -xX"
+#  refute_output --partial "Nothing to zap"
+#  psx_reset
 #}
+
+@test "contract w-purge (Task 4): scoped purge — validation, separator, two-sided scope, OQ cells" {
+  # Full contract adoption (#292 PR-C Task 4, family template on
+  # git-w-discard, the canonical Task 3 migration): loud typo'd magic,
+  # post-'--' flag rejection, scoped exclude dry-run two-sided, and the
+  # OQ-1/OQ-2 cells. Excluded dir is 'gen/' not 'build/' — the developer's
+  # global gitignore ignores build/ (Task 3 LESSON).
+  psx_setup
+  # Typo'd magic prefix: git's own fatal + hug usage remedy, exit 2 — never
+  # a silent "Nothing to purge" (was: exit 0, a silent empty purge set
+  # hiding the typo entirely).
+  run hug w purge -- ':(exlude)x/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  refute_output --partial "Nothing to purge"
+  run git status --porcelain -- new.txt
+  [[ "$output" == "??"* ]] # nothing removed (untracked file intact)
+  psx_reset
+
+  psx_setup
+  # Post-'--' flag rejection: '--dry-run' after the separator is a
+  # misordered flag, not data (was: silently became a pathspec and the
+  # preview answered a false "Nothing to purge"). EXACT spellings only —
+  # './--dry-run' stays a filename (pinned in the row below).
+  run hug w purge -- src/ --dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  psx_reset
+
+  # -h/--help post-'--' (same silent-swallow class — 'hug w purge --
+  # --help' used to answer "Nothing to purge" exit 0, hiding the
+  # misordered flag entirely).
+  psx_setup
+  run hug w purge -- --help
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  refute_output --partial "Nothing to purge"
+  psx_reset
+
+  psx_setup
+  run hug w purge -- -h
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  refute_output --partial "Nothing to purge"
+  psx_reset
+
+  # Sync-guard: one spelling per flag class dies exit 2 post-'--' —
+  # own-loop flags (-u/--untracked, -i/--ignored), common flags
+  # (-f/--force/--dry-run/-y/--yes/--browse-root/-q), and help (-h/--help).
+  # The matcher's invariant (see git-w-purge): this list = own-loop flags ∪
+  # parse_common_flags accepted flags — update both together.
+  local f
+  for f in -u --untracked -i --ignored -f --force --dry-run -y --yes --browse-root -q --quiet -h --help; do
+    psx_setup
+    run hug w purge -- "$f"
+    assert_equal 2 "$status"
+    assert_output --partial "Flags must precede '--'"
+    psx_reset
+  done
+
+  # EXACT spellings only: an UNTRACKED file literally named '--dry-run',
+  # spelled './--dry-run' after the separator, is DATA — the preview lists
+  # it, no rejection. (Untracked, not tracked: purge's engine refuses
+  # pathspecs covering tracked files — see the OQ-2 refusal cell below.)
+  psx_setup
+  echo dr1 > ./--dry-run
+  run hug w purge --dry-run -- ./--dry-run
+  assert_success
+  assert_output --partial "--dry-run"
+  refute_output --partial "Flags must precede"
+  psx_reset
+
+  psx_setup
+  # Scoped exclude-magic dry-run, two-sided: with untracked junk inside
+  # gen/ and new.txt outside it, ':(exclude)gen/' previews ONLY the outside
+  # file. src/ and docs/ are ALSO excluded — purge's tracked-path refusal
+  # (OQ-2 cell below) fires for ANY pathspec covering a tracked file with
+  # changes, and the fixture's staged src/a.py / unstaged docs/note.md
+  # mods live there; a purge exclude-scope must carve those out explicitly
+  # (probe receipt: single-exclude ':(exclude)gen/' alone → exit 2
+  # "path 'docs/note.md' is tracked or has staged changes").
+  # (Flag BEFORE the separator — the AC's literal '-- <spec> --dry-run'
+  # spelling is exactly the misordered-flag form rejected above.)
+  mkdir -p gen
+  echo g1 > gen/g.txt
+  run hug w purge --dry-run -- ':(exclude)gen/' ':(exclude)src/' ':(exclude)docs/'
+  assert_success
+  assert_output --partial "new.txt"
+  refute_output --partial "gen/g.txt"
+  psx_reset
+
+  # OQ-1 cell (probed, pinned): a trailing bare '--' opens the picker arm
+  # — non-TTY it answers "Non-interactive mode: Provide files as
+  # arguments.", exit 1, IDENTICAL to bare `hug w purge` (the --picker
+  # split mode preserves the trigger; the bare '--' never becomes a
+  # phantom pathspec).
+  psx_setup
+  run hug w purge --
+  assert_equal 1 "$status"
+  assert_output --partial "Non-interactive mode"
+  refute_output --partial "Nothing to purge"
+  psx_reset
+
+  # OQ-2 cell (-i + pathspec on the purge engine, probed): ignored scope
+  # intersects the pathspec — cache/x.pyc is removed, the out-of-scope
+  # y.pyc survives.
+  psx_setup
+  echo '*.pyc' >.gitignore
+  git add .gitignore
+  # Path-limited commit: the fixture's staged src/a.py mod must NOT be
+  # swept into this commit (the setup_pathspec_fixture LESSON).
+  git commit -q -m gitignore -- .gitignore
+  mkdir -p cache
+  touch cache/x.pyc y.pyc
+  run hug w purge -i -f -- cache/
+  assert_success
+  assert_output --partial "cache/x.pyc"
+  [[ ! -e cache/x.pyc ]] # in-scope ignored file removed
+  [[ -e y.pyc ]]         # out-of-scope ignored file survives
+  psx_reset
+
+  # OQ-2 refusal cell (probed): a pathspec COVERING a tracked file (the
+  # staged src/a.py mod under src/) is a scope mistake — the family
+  # usage-error template, exit 2 (was exit 1 pre-migration), and nothing
+  # has been removed when it fires (staged mod intact).
+  psx_setup
+  run hug w purge -i -- src/
+  assert_equal 2 "$status"
+  assert_output --partial "tracked or has staged changes"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # staged mod intact — nothing discarded
+  psx_reset
+}
 
 @test "contract w-discard (Task 3): scoped destruction — validation, separator, two-sided scope" {
   # Full contract adoption (#292 PR-C Task 3, family template on git-sls):

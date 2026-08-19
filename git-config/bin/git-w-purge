@@ -51,40 +51,76 @@ EOF
 target_untracked=false
 target_ignored=false
 flags_explicit=false
+pathspecs=()
 
-# Parse custom flags first (non-common flags)
-# We need to process these before parse_common_flags
-declare -a temp_args=()
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-  -u | --untracked)
-    target_untracked=true
-    flags_explicit=true
-    shift
-    ;;
-  -i | --ignored)
-    target_ignored=true
-    flags_explicit=true
-    shift
-    ;;
-  *)
-    # Keep other args for parse_common_flags
-    temp_args+=("$1")
-    shift
-    ;;
-  esac
-done
-
-# Restore args for parse_common_flags
-set -- "${temp_args[@]}"
-
-# Parse common flags (--browse-root, --dry-run, -f|--force, -h|--help, --)
-eval "$(parse_common_flags "$@")"
+# Uniform pathspec split (#292 PR-C Task 4, family template — modeled on
+# git-w-discard, the canonical Task 3 migration): flags before '--',
+# pathspecs after it, ONE validated ${pathspecs[@]} feeding every
+# downstream sink (dry-run preview, confirm list, git status scan, the
+# git clean destructive calls) behind a protective '--'.
+#
+# WITH --picker on purpose: w-purge's no-paths arm is an interactive file
+# selector, and a trailing bare '--' triggers it today (OQ-1 cell, probed:
+# `hug w purge --` non-TTY → "Non-interactive mode: Provide files as
+# arguments.", exit 1 — identical to bare `hug w purge`). The --picker mode
+# preserves that trigger exactly — the bare '--' opens the picker, it
+# never becomes a phantom pathspec.
+eval "$(parse_common_flags_with_pathspecs --picker "$@")"
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
 : "${dry_run:=false}"
 : "${force:=false}"
+
+# Seed the ONE pathspec collection with the split's post-'--' data first;
+# pre-arg positionals join it in the own-loop below (git unions pathspecs;
+# ONE array so every sink reads the same scope — what was previewed is what
+# is purged).
+pathspec_pathspecs_into pathspecs
+
+# Own-loop over the pre-args only: w-purge's accepted pre-'--' grammar.
+# Unknown -* tokens are rejected LOUD (was: silently swallowed as a
+# pathspec — `hug w purge -xX` used to answer "Nothing to purge",
+# exit 0, hiding the typo). exit 2 = HUG_EX_USAGE.
+for arg in "$@"; do
+  case "$arg" in
+  -u | --untracked)
+    target_untracked=true
+    flags_explicit=true
+    ;;
+  -i | --ignored)
+    target_ignored=true
+    flags_explicit=true
+    ;;
+  -*)
+    error_usage "Unknown option: $arg. Pathspecs beginning with '-' require '--': hug w purge -- $arg. See 'hug help :pathspec'."
+    ;;
+  *)
+    pathspecs+=("$arg")
+    ;;
+  esac
+done
+
+# Post-'--' EXACT-SPELLING flag rejection: a token after '--' that spells
+# one of this command's own flags is a misordered flag, not data (was:
+# `hug w purge -- src/ --dry-run` silently became pathspecs
+# 'src/ --dry-run' and answered a false "Nothing to purge"; same class for
+# '-- --help'/'-- -h', probed). EXACT spellings only — './--dry-run' is a
+# filename, not a spelling, and stays a valid pathspec.
+#
+# SYNC-GUARD INVARIANT: this spelling list = (own-loop flags above) ∪
+# (flags parse_common_flags accepts: -h/--help, -f/--force, -q/--quiet,
+# --dry-run, -y/--yes, --browse-root). Add a flag to either side → add its
+# every spelling HERE in the same commit, or post-'--' it silently
+# regresses to the pathspec swallow this matcher exists to kill (the
+# conformance sync-guard row fails first, not the user).
+for p in ${pathspecs[@]+"${pathspecs[@]}"}; do
+  case "$p" in
+  --dry-run | -f | --force | -y | --yes | -u | --untracked | -i | --ignored | --browse-root | -h | --help | -q | --quiet)
+    error_usage "Flags must precede '--': hug w purge $p -- <path>.... See 'hug help :pathspec'."
+    ;;
+  esac
+done
 
 if ! $flags_explicit; then
   target_untracked=true
@@ -93,8 +129,15 @@ fi
 # Early exit if not in Git repo
 check_git_repo
 
-# Handle interactive file selection when no paths provided
-if [[ $# -lt 1 ]]; then
+# Loud one-time pathspec validation before any destructive arm runs (see
+# validate_pathspecs_or_die in hug-git-files for the WHY): a typo'd magic
+# prefix must die as a usage error, never preview/purge a silent empty
+# set. The git status capture below suppresses stderr — this is the one
+# unsuppressed gate.
+validate_pathspecs_or_die ${pathspecs[@]+"${pathspecs[@]}"}
+
+# Handle interactive file selection when no pathspecs provided
+if [[ ${#pathspecs[@]} -eq 0 ]]; then
   # Check for conflicting flags
   if $browse_root; then
     # --browse-root without explicit paths is valid (triggers UI with full scope)
@@ -137,10 +180,13 @@ Usage: hug w purge <file>..."
     exit 0
   fi
 else
-  # Explicit paths provided - check for conflicting flags
+  # Explicit pathspecs provided - check for conflicting flags
   check_browse_root_no_paths "$browse_root" true
 
-  paths=("$@")
+  # THE ONE scope: every sink below (git status scan, dry-run preview,
+  # confirm list, git clean engines) reads this validated array behind a
+  # protective '--' — preview and destruction can never diverge.
+  paths=(${pathspecs[@]+"${pathspecs[@]}"})
 fi
 
 declare -a untracked_paths=()
@@ -158,8 +204,13 @@ while IFS= read -r -d '' entry; do
     ignored_paths+=("$path")
     ;;
   *)
-    error "path '$path' is tracked or has staged changes; purge operates on untracked/ignored only"
-    exit 1
+    # Tracked-path refusal (#292 PR-C OQ-2 cell): a pathspec COVERING a
+    # tracked file is a scope mistake, i.e. a usage error — the family
+    # template's exit 2 (was: exit 1; probed before flip: `hug w purge -i
+    # -- src/` → "path 'src/a.py' is tracked or has staged changes").
+    # exit 2 keeps it distinguishable from runtime failures while the
+    # message teaches the fix. Nothing has been removed at this point.
+    error_usage "path '$path' is tracked or has staged changes; purge operates on untracked/ignored only"
     ;;
   esac
 done < <(git status --porcelain=v1 --ignored=matching -z -- "${paths[@]}" 2> /dev/null || true)
