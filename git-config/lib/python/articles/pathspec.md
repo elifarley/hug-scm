@@ -83,6 +83,14 @@ semantics (including `:(exclude)` needing something to exclude FROM) apply:
 hug sla -- ':(glob)docs/**/*.md' ':(exclude)docs/drafts/'
 ```
 
+A MALFORMED magic pathspec (`:(bogus)src/`) fails loudly: git's own
+`fatal: Invalid pathspec magic ...` reaches stderr, hug adds
+`Invalid pathspec: ':(bogus)src/'. See 'hug help :pathspec'.` and the command
+exits 2 (usage error) — the same class as an unknown option. A typo never
+looks like an empty answer: listings print nothing on stdout, `--json`
+commands emit NO envelope. This holds across the `sl*` family and `us`
+(both the plain and the `--from-commit`/`--from-file` scopes).
+
 ## Edge cases
 
 - **A file named `--` or `--help`** is unreachable as a pathspec BEFORE the

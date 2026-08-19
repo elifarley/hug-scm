@@ -2567,3 +2567,130 @@ psx_install_stub_gum() {
   assert_output --partial "--browse-root cannot be used with explicit paths"
   psx_reset
 }
+
+###############################################################################
+# Roast round 2 (PR-B review, #298): malformed magic pathspecs fail LOUDLY,
+# and us scoped-empty has ONE exit contract.
+#
+# MAJOR 1: ':(bogus)src/' used to be swallowed by every suppressed capture
+# in the family — sls answered "No staged files matching ':(bogus)src/'
+# found." exit 0, slu --json emitted a zero-count envelope (a machine API
+# silently lying), us --from-commit printed git's fatal AND a contradictory
+# "No files matching" info. Contract now: git's fatal lands on stderr, hug
+# adds "Invalid pathspec: ... See 'hug help :pathspec'." and exits 2
+# (HUG_EX_USAGE — same class as the unknown '-*' rejection).
+###############################################################################
+
+@test "roast2 M1: sls rejects malformed magic pathspec loudly (exit 2, no empty answer)" {
+  psx_setup
+  run hug sls -- ':(bogus)src/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  assert_output --partial "hug help :pathspec"
+  refute_output --partial "No staged files matching"
+  psx_reset
+}
+
+@test "roast2 M1: whole sl* family + count + json reject malformed magic pathspecs" {
+  psx_setup
+  local cmd
+  for cmd in sls slu slk sli slc sl; do
+    run hug $cmd -- ':(bogus)src/'
+    assert_equal 2 "$status"
+    assert_output --partial "Invalid pathspec"
+    assert_output --partial "hug help :pathspec"
+  done
+  run hug sls -c -- ':(bogus)src/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  psx_reset
+}
+
+@test "roast2 M1: --json emits NOTHING on stdout for a malformed magic pathspec" {
+  psx_setup
+  # zero non-JSON bytes rule: on failure stdout must carry no envelope at
+  # all. Separated streams (run merges them, so probe manually).
+  local json_out status=0
+  json_out=$(hug slu --json -- ':(bogus)src/' 2>/dev/null) || status=$?
+  assert_equal 2 "$status"
+  assert_equal "" "$json_out"
+  psx_reset
+}
+
+@test "roast2 M1: us --from-commit with malformed magic pathspec: single loud error, staging untouched" {
+  psx_setup
+  run hug us --from-commit HEAD -- ':(bogus)src/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  refute_output --partial "No files matching" # the contradictory info is gone
+  run hug sls
+  assert_output --partial "src/a.py" # staging untouched
+  psx_reset
+}
+
+@test "roast2 M1: us plain arm rejects malformed magic pathspec loudly" {
+  psx_setup
+  run hug us -- ':(bogus)src/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  run hug sls
+  assert_output --partial "src/a.py" # staging untouched
+  psx_reset
+}
+
+@test "roast2 M1: valid magic pathspecs and the unscoped run are unchanged" {
+  psx_setup
+  run hug sls -- ':(exclude)docs/'
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/"
+  run hug us -- ':(top)src/a.py'
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  # Unscoped + bare '--' stay byte-identical (no validation chatter)
+  run hug sls
+  local plain="$output"
+  run hug sls --
+  assert_equal "$plain" "$output"
+  psx_reset
+}
+
+###############################################################################
+# MAJOR 2: us scoped-empty had TWO exit contracts — a pathspec-shaped scope
+# matching nothing staged answered the loud "File 'nonexistent/' is not
+# tracked by git." exit 1 (wrong noun, wrong class), while the from-source
+# arm answered "No files matching ... to unstage." exit 0. One condition,
+# one answer: scope-shaped no-match → info + exit 0. The loud error stays
+# for LITERAL file arguments (the safety check that names a real file the
+# user explicitly asked to unstage).
+###############################################################################
+
+@test "roast2 M2: us scoped-empty on a pathspec-shaped scope is a no-match info, exit 0" {
+  psx_setup
+  run hug us -- nonexistent/
+  assert_success
+  assert_output --partial "No files matching 'nonexistent/' to unstage."
+  refute_output --partial "is not tracked by git"
+  run hug sls
+  assert_output --partial "src/a.py" # staging untouched
+  psx_reset
+}
+
+@test "roast2 M2: us literal tracked-but-unstaged file keeps the loud safety error" {
+  psx_setup
+  # docs/note.md is tracked with an UNSTAGED mod — a literal file the user
+  # named; the confusing-silent-no-op safety check must survive unchanged.
+  run hug us docs/note.md
+  assert_failure
+  assert_output --partial "is not staged"
+  psx_reset
+}
+
+@test "roast2 M2: us directory scope with nothing staged under it is a no-match info" {
+  psx_setup
+  git restore --staged src/a.py # nothing staged under src/ anymore
+  run hug us -- src/
+  assert_success
+  assert_output --partial "No files matching 'src/' to unstage."
+  psx_reset
+}

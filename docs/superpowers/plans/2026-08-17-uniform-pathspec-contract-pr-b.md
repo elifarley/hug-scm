@@ -442,7 +442,7 @@ CURRENT: 8 commands non-conformant; `--json` silently unscoped; `a --` drops pat
 | Codepath | Failure | Rescued? | User sees |
 |---|---|---|---|
 | own-loop unknown flag | `-x` | Y (planned exit 2 + message) | loud error naming flag |
-| JSON chain w/ bad pathspec | git exit ≠ 0 | N → propagates (git norm) | git error, non-zero exit |
+| JSON chain w/ bad pathspec | git exit ≠ 0 | Y (#298 roast MAJOR 1 — was planned as "propagates (git norm)", but every capture suppressed git's exit; implemented as the entry-gate `validate_pathspecs_or_die`: git fatal on stderr + hug error, exit 2, NO envelope on stdout) | git fatal + "Invalid pathspec: … See 'hug help :pathspec'.", exit 2 |
 | picker with empty scoped list | no candidates | Y (`_handle_no_files_found`) | "No … available" |
 | quiet rehydration missed | silent status prefixes | guarded by slk -q row | test-pinned |
 | eval payload corruption | quoting bug | N ← bounded by exotic tests (decision 1) | wrong scope or error |

@@ -129,6 +129,12 @@ done
 # Early exit if not in Git repo (after parsing — see show_help note above)
 check_git_repo
 
+# Loud one-time pathspec validation (#298 roast MAJOR 1): must run HERE, at
+# the command entry — the listing arm below suppresses stderr and the JSON
+# arm collects in a subshell, so an error raised deeper never reaches the
+# user intact. See validate_pathspecs_or_die (hug-git-files) for the WHY.
+validate_pathspecs_or_die ${pathspecs[@]+"${pathspecs[@]}"}
+
 # Build list_files_with_status options
 list_opts=("--staged" "--unstaged")
 if $include_untracked; then

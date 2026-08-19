@@ -144,6 +144,14 @@ done
 # `hug us -h` keeps working from any cwd).
 check_git_repo
 
+# Loud one-time pathspec validation (#298 roast MAJOR 1): a malformed magic
+# pathspec used to reach the suppressed git captures below, which answered
+# the EMPTY result ("No files matching … to unstage.", exit 0) while git's
+# fatal vanished — a typo looked like a no-match. Must run at this command
+# entry: both downstream sinks suppress or subshell the failure away. See
+# validate_pathspecs_or_die (hug-git-files) for the contract.
+validate_pathspecs_or_die ${pathspecs[@]+"${pathspecs[@]}"}
+
 # Handle file input flags
 if [[ -n "$from_file" || -n "$from_commit" ]]; then
   files_from_source=()
@@ -186,10 +194,36 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     #   to root-relative output); --with-tree=HEAD, guarded because an
     #   unborn HEAD makes it fatal, also resolves staged deletions.
     scope_files=()
-    mapfile -t scope_files < <(
-      git ls-files --full-name -- ${pathspecs[@]+"${pathspecs[@]}"}
-      git diff --cached --name-only --diff-filter=D -- ${pathspecs[@]+"${pathspecs[@]}"}
-    )
+    # Command substitution, NOT '< <(…)' (#298 roast MAJOR 1): the process
+    # substitution swallowed git's nonzero exit — a malformed pathspec here
+    # printed git's fatal AND then "No files matching … to unstage." on the
+    # SAME run (contradictory signals, exit 0). '$(…) || error' keeps the
+    # failure fatal, exactly like read_files_from_source above. Belt-and-
+    # braces: the entry-point validation already rejects malformed specs,
+    # this guard keeps the capture honest even if a future caller bypasses
+    # it. NOTE: mapfile REPLACES an array (does not append), so the two
+    # captures are joined into one newline-joined string first.
+    scope_tracked=""
+    scope_tracked=$(git ls-files --full-name -- ${pathspecs[@]+"${pathspecs[@]}"}) ||
+      error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
+    scope_deleted=""
+    scope_deleted=$(git diff --cached --name-only --diff-filter=D -- ${pathspecs[@]+"${pathspecs[@]}"}) ||
+      error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
+    # Join the two captures WITHOUT a trailing blank line: '<<<' appends its
+    # own newline, so gluing an empty second capture with \n would give
+    # mapfile a phantom EMPTY element — and `in_scope[""]=1` is a bad array
+    # subscript under set -u (probed).
+    # No 'local' here: script scope (same Bash rule noted near the summary
+    # suppression in git-sls — "local: can only be used in a function").
+    scope_joined=""
+    if [[ -n "$scope_tracked" && -n "$scope_deleted" ]]; then
+      scope_joined="${scope_tracked}"$'\n'"${scope_deleted}"
+    else
+      scope_joined="${scope_tracked}${scope_deleted}"
+    fi
+    if [[ -n "$scope_joined" ]]; then
+      mapfile -t scope_files <<< "$scope_joined"
+    fi
     # O(n+m) membership filter (assoc array), not an O(n·m) nested scan —
     # a from-commit touching thousands of files meets a wide-scope listing.
     declare -A in_scope=()
@@ -280,6 +314,42 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
   files_to_unstage=(${files_from_source[@]+"${files_from_source[@]}"})
 else
   files_to_unstage=(${pathspecs[@]+"${pathspecs[@]}"})
+
+  # ONE scoped-empty contract (#298 roast MAJOR 2): a pathspec-shaped scope
+  # matching nothing staged used to hit hug_us's per-file safety check and
+  # answer "❌ File 'nonexistent/' is not tracked by git." exit 1 — while the
+  # from-source branch answered the SAME condition with "No files matching …
+  # to unstage." exit 0. Two answers for one condition. Rule: when the scope
+  # is pathspec-shaped (directory / glob / magic spelling — anything that is
+  # not an existing file on disk) and nothing staged matches it, route to the
+  # SAME info + exit-0 arm. LITERAL file arguments (test -f) keep the loud
+  # per-file error inside hug_us — that is the safety check preventing a
+  # confusing silent no-op when the user names a real file.
+  # Deliberately NOT applied to the from-source arm: its list lines are
+  # user-supplied FILENAMES (often root-relative spellings that do not exist
+  # under the CWD), and an unresolvable line must keep dying LOUD in hug_us's
+  # validation (pinned: "File 'src/a.py' is not tracked by git.").
+  if [[ ${#files_to_unstage[@]} -gt 0 ]]; then
+    staged_scope_matches=()
+    mapfile -t staged_scope_matches < <(
+      git diff --cached --name-only -- ${files_to_unstage[@]+"${files_to_unstage[@]}"}
+    )
+    if [[ ${#staged_scope_matches[@]} -eq 0 ]]; then
+      has_literal_file=false
+      for scope_arg in ${files_to_unstage[@]+"${files_to_unstage[@]}"}; do
+        if [[ -f "$scope_arg" ]]; then
+          has_literal_file=true
+          break
+        fi
+      done
+      if ! $has_literal_file; then
+        pathspec_list=""
+        printf -v pathspec_list "'%s' " "${files_to_unstage[@]}"
+        info "No files matching ${pathspec_list% } to unstage."
+        exit 0
+      fi
+    fi
+  fi
 fi
 
 # --- Main function for 'hug us' ---
@@ -370,17 +440,28 @@ hug_us() {
 
   # Validate that files exist and are staged
   for file in "${files_to_unstage[@]}"; do
+    # Noun accuracy (#298 roast MAJOR 2): this loop is normally reached only
+    # with literal file arguments (the command-level gate above routes
+    # scope-shaped no-matches to the info arm), but a MIXED list
+    # ('hug us real.txt some/dir/') still lands here when nothing staged
+    # matches. Call a directory/glob/magic spelling a "Path", not a "File" —
+    # "File 'src/' is not staged" was the probed misleading message.
+    local noun="File"
+    if [[ "$file" == */ || "$file" == *'('* || "$file" == *'*' || "$file" == *'?' || "$file" == *'[' ]]; then
+      noun="Path"
+    fi
+
     # The '--' is load-bearing (spec-review finding 1): a staged file
     # literally named '-foo.txt' would otherwise be parsed as an OPTION by
     # git → false "not tracked" error, breaking the 'hug us -- <path>'
     # promise the help text makes.
     if ! git ls-files "${tracked_check[@]}" -- "$file" > /dev/null 2>&1; then
-      error "File '$file' is not tracked by git."
+      error "$noun '$file' is not tracked by git."
     fi
 
     # Check if file is actually staged
     if git diff --cached --quiet -- "$file" 2> /dev/null; then
-      error "File '$file' is not staged."
+      error "$noun '$file' is not staged."
     fi
   done
 
