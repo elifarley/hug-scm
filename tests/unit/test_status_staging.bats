@@ -2159,4 +2159,16 @@ create_slc_conflict_fixture() {
   # -q (the supported quiet flag) still works
   run hug sls -q
   assert_success
+
+  # INHERITED HUG_YES must not reject an innocent listing (codex follow-up):
+  # sequence automation exports the documented confirmation variable for a
+  # whole hug command line — only a -y consumed by THIS parse is a violation.
+  # The detector is the parse-local yes_flag, never the HUG_YES export.
+  HUG_YES=true run hug sls -q
+  assert_success
+  HUG_YES=false run hug sls
+  assert_success
+  # ...while an explicit -y on THIS invocation stays a usage error
+  run hug sls -y
+  [[ "$status" -eq 2 ]]
 }

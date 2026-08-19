@@ -162,6 +162,11 @@ parse_common_flags() {
           shift
           ;;
         -y|--yes)
+          # yes_flag (parse-local) alongside the export: HUG_YES may be
+          # INHERITED from the environment (documented sequence-automation
+          # variable), so it cannot evidence that THIS invocation passed -y
+          # (codex P2 on reject_action_flags).
+          echo "yes_flag=true"
           echo "export HUG_YES=true"
           shift
           ;;
@@ -231,6 +236,9 @@ parse_common_flags() {
         shift
         ;;
       -y|--yes)
+        # yes_flag (parse-local): see the getopt-branch note — HUG_YES may
+        # be inherited, only yes_flag evidences THIS invocation passed -y.
+        echo "yes_flag=true"
         echo "export HUG_YES=true"
         shift
         ;;
@@ -528,11 +536,14 @@ reject_multiple_files() {
 # would silently accept an action flag and print a normal unscoped listing —
 # the exact silent-accept class this contract exists to kill. Call it
 # immediately after 'eval "$(parse_common_flags_with_pathspecs ...)"': the
-# eval'd assignments (dry_run/force/browse_root) and the HUG_YES export are
-# visible at the caller's scope. Action commands (us, a, ...) must NOT call
-# this — those flags are their contract.
+# eval'd assignments (dry_run/force/browse_root/yes_flag) are visible at the
+# caller's scope. yes_flag, NOT HUG_YES: the export may be inherited from the
+# environment (sequence automation exports it for a whole hug command line),
+# and inherited state must not reject an innocent listing (codex P2).
+# Action commands (us, a, ...) must NOT call this — those flags are their
+# contract.
 reject_action_flags() {
-  if ${dry_run:-false} || ${force:-false} || ${browse_root:-false} || [[ -n ${HUG_YES:-} ]]; then
+  if ${dry_run:-false} || ${force:-false} || ${browse_root:-false} || ${yes_flag:-false}; then
     # error_usage: exit 2, the usage-error family code (unknown dash-tokens,
     # malformed pathspecs, cardinality violations).
     error_usage "$1 is a listing: action flags (-f/--force, -y/--yes, --dry-run, --browse-root) do not apply. See 'hug help :pathspec'."
