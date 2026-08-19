@@ -281,6 +281,13 @@ if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
   # a picker option ('--cwd') stays data. Post-pick rule: the picked files
   # REPLACE the pathspecs on the git add line below — git unions positive
   # pathspecs, so keeping both would widen the scope back out.
+  #
+  # Validate BEFORE the picker (codex P2): the picker's listing helpers
+  # suppress git's failure, so a malformed magic pathspec ('a -- :(bogus)src/ --')
+  # becomes an empty candidate list — exit 0, nothing staged, no diagnosis —
+  # while the direct (no-picker) arm propagates git's own fatal. Loud here
+  # too. No-ops on an empty list (helper contract, hug-git-files).
+  validate_pathspecs_or_die ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}
   forward_pathspecs_to_picker select_opts
 
   files=()

@@ -135,3 +135,38 @@ setup() {
   assert_failure
   assert_output --partial "requires a source commit"
 }
+@test "hug us: --from-commit <bogus> fails loudly with AND without a scope (codex P2)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo a > a.txt
+  hug a -- a.txt
+
+  # The old 'mapfile < <(extract_files_from_commit …)' swallowed the exit:
+  # the commit error PRINTED and both arms then answered a friendly no-match
+  # with exit 0 — automation read a failed unstage as success.
+  run hug us --from-commit DOES_NOT_EXIST -- .
+  assert_failure
+  assert_output --partial "Commit 'DOES_NOT_EXIST' does not exist"
+  refute_output --partial "Source list is empty"
+  refute_output --partial "No files matching"
+
+  run hug us --from-commit DOES_NOT_EXIST
+  assert_failure
+  assert_output --partial "Commit 'DOES_NOT_EXIST' does not exist"
+  refute_output --partial "No staged files to unstage"
+}
+
+@test "hug a: scoped picker rejects malformed magic pathspec before the picker (codex P2)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo a > a.txt
+
+  # The picker's listing helpers suppress git's failure — without entry
+  # validation a malformed spec became an empty candidate list, exit 0.
+  run hug a -- ':(bogus)src/' --
+  assert_failure
+  [[ "$status" -eq 2 ]]
+  assert_output --partial "Invalid pathspec"
+}

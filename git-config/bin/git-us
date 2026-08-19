@@ -157,7 +157,19 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
   files_from_source=()
 
   if [[ -n "$from_commit" ]]; then
-    mapfile -t files_from_source < <(extract_files_from_commit "$from_commit")
+    # Command substitution, NOT '< <(…)' (codex P2 — same exit-swap class
+    # as the from_file conversion below): extract_files_from_commit errors
+    # loudly itself ("Commit 'X' does not exist"), but the process
+    # substitution swallowed that exit — the error PRINTED and both
+    # downstream arms then answered a friendly no-match ("Source list is
+    # empty …" with a scope, "No staged files to unstage." without) with
+    # exit 0: automation read a failed unstage as success. '$(…) || exit $?'
+    # keeps the failure fatal, exactly like read_files_from_source.
+    from_source_out=""
+    from_source_out=$(extract_files_from_commit "$from_commit") || exit $?
+    if [[ -n "$from_source_out" ]]; then
+      mapfile -t files_from_source <<< "$from_source_out"
+    fi
   elif [[ -n "$from_file" ]]; then
     # Command substitution, NOT '< <(…)' (code-roast MINOR): the process
     # substitution swallowed read_files_from_source's exit — its error()
