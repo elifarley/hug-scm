@@ -2,7 +2,7 @@
 # Library: HUG interactive file selection
 #
 # Implements gum-powered file selection with git status annotations.
-# Depends on: hug-gum, hug-output, hug-terminal, hug-git-files (for list_* functions), hug-git-priorities, hug-git-repo (for check_git_repo, used by count_files_with_status).
+# Depends on: hug-gum, hug-output, hug-terminal, hug-git-files (for list_* functions), hug-git-priorities, hug-git-repo (for check_git_repo, used by count_files_with_status), hug-cli-flags (for drain_pathspecs_after_separator — loaded by hug-common BEFORE this module).
 # Functions:
 #   - list_files_with_status: list staged/unstaged/untracked files with color-coded status (non-interactive).
 #   - select_files_with_status: filter staged/unstaged/untracked files interactively.
@@ -32,12 +32,14 @@
 #           conflicted|all|all+untracked).
 # Encapsulates the -c dispatch previously duplicated (near-verbatim) across the 6 sl*
 # scripts (git-sls/slu/slk/sli/slc/statusbase):
-#   (1) --json is mutually exclusive with -c -> error + exit (like hug wtl's
-#       --json --path-only error),
+#   (1) --json is mutually exclusive with -c -> usage error, exit 2 (the
+#       family's usage-error code, same as unknown dash-tokens and malformed
+#       pathspecs — a mutual-exclusion violation IS a usage error; it exited 1
+#       before, code-roast F-001),
 #   (2) delegate to count_files_with_status (which itself enforces the repo
 #       precondition -- #259),
 #   (3) exit 0.
-# TERMINATING: calls `exit 0` (and `error`->exit 1 on the --json violation), so it
+# TERMINATING: calls `exit 0` (and `error`->exit 2 on the --json violation), so it
 #   NEVER returns -- a caller running it inside `if $count_only; then ...; fi` never
 #   reaches code below the block. Callers pass `--json` only when their json flag is
 #   true, e.g. `if $json_output; then run_count_mode --json <state> ...; else
@@ -54,9 +56,11 @@ run_count_mode() {
   local state="${1:?run_count_mode: <state> required}"; shift
   local -a pathspecs=("$@")
   if $json; then
-    error "-c/--count and --json are mutually exclusive"
+    # Exit 2 (usage), not 1: the PR-B contract reserves exit 2 for usage errors
+    # (unknown dash-tokens, malformed pathspecs) and mutual exclusion is one.
+    error "-c/--count and --json are mutually exclusive" "${HUG_EX_USAGE:-2}"
   fi
-  count_files_with_status "$state" "${pathspecs[@]}"
+  count_files_with_status "$state" ${pathspecs[@]+"${pathspecs[@]}"}
   exit 0
 }
 
@@ -64,18 +68,29 @@ count_files_with_status() {
   check_git_repo   # Parity with list_*_files: clean HUG error from any context (#259)
   local state="$1"
   shift
+  # Separator-aware (#292 PR-B Task 5): honor a protective '--' right after
+  # the state enum. Callers (run_count_mode sites in the sl* scripts) append
+  # it before forwarding pathspecs so a pathspec literally spelled '--json'
+  # stays data; consuming it here keeps it from riding into the git calls
+  # below as a phantom positive pathspec (which would empty ':(exclude)'-
+  # only scoping — the probed failure mode documented at the git boundary).
+  # `if` form, not `[[ ]] && shift`: under set -e a false && chain as the
+  # function's last-status path must not leak a nonzero return.
+  if [[ "${1:-}" == "--" ]]; then
+    shift
+  fi
   local -a pathspecs=("$@")
   local count=0
 
   case "$state" in
   conflicted)
-    count=$(git diff --diff-filter=U --name-only -z -- "${pathspecs[@]}" 2>/dev/null | tr -cd '\0' | wc -c)
+    count=$(git diff --diff-filter=U --name-only -z -- ${pathspecs[@]+"${pathspecs[@]}"} 2>/dev/null | tr -cd '\0' | wc -c)
     ;;
   untracked)
-    count=$(git ls-files --others --exclude-standard -z -- "${pathspecs[@]}" 2>/dev/null | tr -cd '\0' | wc -c)
+    count=$(git ls-files --others --exclude-standard -z -- ${pathspecs[@]+"${pathspecs[@]}"} 2>/dev/null | tr -cd '\0' | wc -c)
     ;;
   ignored)
-    count=$(git ls-files --others --exclude-standard --ignored -z -- "${pathspecs[@]}" 2>/dev/null | tr -cd '\0' | wc -c)
+    count=$(git ls-files --others --exclude-standard --ignored -z -- ${pathspecs[@]+"${pathspecs[@]}"} 2>/dev/null | tr -cd '\0' | wc -c)
     ;;
   staged | unstaged | all | all+untracked)
     # git status --porcelain -z emits "XY<tab>path\0" (X=index, Y=worktree).
@@ -98,7 +113,7 @@ count_files_with_status() {
       porcelain_opts+=(--untracked-files=all)
     fi
 
-    count=$(git status "${porcelain_opts[@]}" -- "${pathspecs[@]}" 2>/dev/null | while IFS= read -r -d '' rec; do
+    count=$(git status "${porcelain_opts[@]}" -- ${pathspecs[@]+"${pathspecs[@]}"} 2>/dev/null | while IFS= read -r -d '' rec; do
       [[ -z "$rec" ]] && continue
       # IMPORTANT: assumes porcelain v1 (`--porcelain -z` defaults to v1). Do
       # NOT switch to `--porcelain=v2 -z`: v2's record layout
@@ -359,6 +374,20 @@ list_files_with_status() {
         suppress_status=true
         shift
         ;;
+      --)
+        # Separator-aware (#292 PR-B Task 5): everything after '--' is a
+        # PATHSPEC, even when it spells '--cwd'/'--staged'. Before this arm
+        # the loop was separator-blind: a caller-side protective '--' was
+        # collected as a phantom positive pathspec (git ORs it into the
+        # filter set, emptying ':(exclude)'-only scoping) while an
+        # option-named pathspec STILL toggled the matching flag — the worst
+        # of both. Callers now append '--' before pathspecs (mirroring the
+        # 12 forwarding sites below, which already do); drain the rest
+        # (shared drain helper, hug-cli-flags — #292 PR-B Task 7).
+        shift
+        drain_pathspecs_after_separator pathspecs "$@"
+        break
+        ;;
       *)
         # Treat remaining arguments as pathspecs
         pathspecs+=("$1")
@@ -384,15 +413,15 @@ list_files_with_status() {
 
   if ! $has_includes; then
     # No specific includes, list all tracked files plainly
-    mapfile -t files < <(list_tracked_files "${list_flags[@]}")
-    for file in "${files[@]}"; do
+    mapfile -t files < <(list_tracked_files ${list_flags[@]+"${list_flags[@]}"})
+    for file in ${files[@]+"${files[@]}"}; do
       [[ -z "$file" ]] && continue
       printf '%s\n' "$file"
     done
   else
     # Collect files based on requested types
     if $include_staged; then
-      local -a status_flags=("${list_flags[@]}" "--status")
+      local -a status_flags=(${list_flags[@]+"${list_flags[@]}"} "--status")
       while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         local status file
@@ -406,11 +435,11 @@ list_files_with_status() {
           formatted_options+=("${status_text} ${file}")
         fi
         status_codes+=("$status_code")
-      done < <(list_staged_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
+      done < <(list_staged_files ${status_flags[@]+"${status_flags[@]}"} ${pathspecs[@]+"--" "${pathspecs[@]}"})
     fi
 
     if $include_unstaged; then
-      local -a status_flags=("${list_flags[@]}" "--status")
+      local -a status_flags=(${list_flags[@]+"${list_flags[@]}"} "--status")
       while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         local status file
@@ -424,11 +453,11 @@ list_files_with_status() {
           formatted_options+=("${status_text} ${file}")
         fi
         status_codes+=("$status_code")
-      done < <(list_unstaged_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
+      done < <(list_unstaged_files ${status_flags[@]+"${status_flags[@]}"} ${pathspecs[@]+"--" "${pathspecs[@]}"})
     fi
 
     if $include_conflicts; then
-      local -a status_flags=("${list_flags[@]}" "--status")
+      local -a status_flags=(${list_flags[@]+"${list_flags[@]}"} "--status")
       while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         local status file
@@ -442,12 +471,12 @@ list_files_with_status() {
           formatted_options+=("${status_text} ${file}")
         fi
         status_codes+=("$status_code")
-      done < <(list_conflicted_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
+      done < <(list_conflicted_files ${status_flags[@]+"${status_flags[@]}"} ${pathspecs[@]+"--" "${pathspecs[@]}"})
     fi
 
     if $include_untracked; then
-      mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
-      for file in "${untracked_files[@]}"; do
+      mapfile -t untracked_files < <(list_untracked_files ${list_flags[@]+"${list_flags[@]}"} ${pathspecs[@]+"--" "${pathspecs[@]}"})
+      for file in ${untracked_files[@]+"${untracked_files[@]}"}; do
         [[ -z "$file" ]] && continue
         local status_text status_code
         IFS=$'\t' read -r status_text status_code <<< "$(_format_untracked_status)"
@@ -462,8 +491,8 @@ list_files_with_status() {
     fi
 
     if $include_ignored; then
-      mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
-      for file in "${ignored_files[@]}"; do
+      mapfile -t ignored_files < <(list_ignored_files ${list_flags[@]+"${list_flags[@]}"} ${pathspecs[@]+"--" "${pathspecs[@]}"})
+      for file in ${ignored_files[@]+"${ignored_files[@]}"}; do
         [[ -z "$file" ]] && continue
         local status_text status_code
         IFS=$'\t' read -r status_text status_code <<< "$(_format_ignored_status)"
@@ -480,7 +509,7 @@ list_files_with_status() {
     # Validate suppression is safe if requested
     # If suppression was requested but not safe (e.g., staged+unstaged), rebuild with status
     if $suppress_status; then
-      if ! _can_suppress_status "$include_staged" "$include_unstaged" "$include_untracked" "$include_ignored" "$include_conflicts" "${status_codes[@]}"; then
+      if ! _can_suppress_status "$include_staged" "$include_unstaged" "$include_untracked" "$include_ignored" "$include_conflicts" ${status_codes[@]+"${status_codes[@]}"}; then
         # Fallback to showing status if suppression not safe
         suppress_status=false
         # Rebuild formatted_options with status prefixes
@@ -544,7 +573,7 @@ list_files_with_status() {
     local -A seen=()
     local -a unique_files=()
     local -a unique_formatted=()
-    for entry in "${sorted_entries[@]}"; do
+    for entry in ${sorted_entries[@]+"${sorted_entries[@]}"}; do
       # Split fields on \x1f; formatted is the RAW remainder (a filename may
       # contain \x1f — never split it)
       IFS=$'\x1f' read -r -a fields <<< "$entry"
@@ -633,7 +662,7 @@ Install: https://github.com/charmbracelet/gum"
       # '--' must not be eaten as the --staged option.
       --)
         shift
-        pathspecs+=("$@")
+        drain_pathspecs_after_separator pathspecs "$@"
         break
         ;;
       --multi)
@@ -727,16 +756,16 @@ Install: https://github.com/charmbracelet/gum"
     # (#292, Task 7 — the old loud-refusal guard existed only because
     # list_tracked_files could not consume pathspecs; it can now, and the
     # tracked-file pickers lc/lf/lcr rely on this scoping).
-    # NOTE: the "${pathspecs[@]+...}" idiom expands the array only when set —
-    # a plain "${pathspecs[@]}" would trip set -u on Bash < 4.4 when it is
-    # empty. Same idiom at every forwarding site below.
-    mapfile -t files < <(list_tracked_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
-    mapfile -t formatted_options < <(printf '%s\n' "${files[@]}")
+    # Nullsafe forwarding idiom (${arr[@]+"${arr[@]}"}): see
+    # parse_common_flags_with_pathspecs in hug-cli-flags for the canonical
+    # contract — same idiom at every forwarding site below.
+    mapfile -t files < <(list_tracked_files ${list_flags[@]+"${list_flags[@]}"} ${pathspecs[@]+"--" "${pathspecs[@]}"})
+    mapfile -t formatted_options < <(printf '%s\n' ${files[@]+"${files[@]}"})
   else
   
   # Collect files based on requested types
   if $include_staged; then
-    local -a status_flags=("${list_flags[@]}")
+    local -a status_flags=(${list_flags[@]+"${list_flags[@]}"})
     if $use_status_formatting; then
       status_flags+=("--status")
     fi
@@ -749,16 +778,16 @@ Install: https://github.com/charmbracelet/gum"
         IFS=' ' read -r status_text status_code <<< "$(parse_tab_delimited_status "$(_format_staged_status "$status")")"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
-      done < <(list_staged_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
+      done < <(list_staged_files ${status_flags[@]+"${status_flags[@]}"} ${pathspecs[@]+"--" "${pathspecs[@]}"})
     else
-      mapfile -t staged_files < <(list_staged_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
-      files+=("${staged_files[@]}")
-      formatted_options+=("${staged_files[@]}")
+      mapfile -t staged_files < <(list_staged_files ${list_flags[@]+"${list_flags[@]}"} ${pathspecs[@]+"--" "${pathspecs[@]}"})
+      files+=(${staged_files[@]+"${staged_files[@]}"})
+      formatted_options+=(${staged_files[@]+"${staged_files[@]}"})
     fi
   fi
   
   if $include_unstaged; then
-    local -a status_flags=("${list_flags[@]}")
+    local -a status_flags=(${list_flags[@]+"${list_flags[@]}"})
     if $use_status_formatting; then
       status_flags+=("--status")
     fi
@@ -771,17 +800,17 @@ Install: https://github.com/charmbracelet/gum"
         IFS=' ' read -r status_text status_code <<< "$(parse_tab_delimited_status "$(_format_unstaged_status "$status")")"
         files+=("$file")
         formatted_options+=("${status_text} ${file}")
-      done < <(list_unstaged_files "${status_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
+      done < <(list_unstaged_files ${status_flags[@]+"${status_flags[@]}"} ${pathspecs[@]+"--" "${pathspecs[@]}"})
     else
-      mapfile -t unstaged_files < <(list_unstaged_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
-      files+=("${unstaged_files[@]}")
-      formatted_options+=("${unstaged_files[@]}")
+      mapfile -t unstaged_files < <(list_unstaged_files ${list_flags[@]+"${list_flags[@]}"} ${pathspecs[@]+"--" "${pathspecs[@]}"})
+      files+=(${unstaged_files[@]+"${unstaged_files[@]}"})
+      formatted_options+=(${unstaged_files[@]+"${unstaged_files[@]}"})
     fi
   fi
   
   if $include_untracked; then
-    mapfile -t untracked_files < <(list_untracked_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
-    for file in "${untracked_files[@]}"; do
+    mapfile -t untracked_files < <(list_untracked_files ${list_flags[@]+"${list_flags[@]}"} ${pathspecs[@]+"--" "${pathspecs[@]}"})
+    for file in ${untracked_files[@]+"${untracked_files[@]}"}; do
       [[ -z "$file" ]] && continue
       local status_text status_code
       if $use_status_formatting; then
@@ -795,8 +824,8 @@ Install: https://github.com/charmbracelet/gum"
   fi
   
   if $include_ignored; then
-    mapfile -t ignored_files < <(list_ignored_files "${list_flags[@]}" ${pathspecs[@]+"--" "${pathspecs[@]}"})
-    for file in "${ignored_files[@]}"; do
+    mapfile -t ignored_files < <(list_ignored_files ${list_flags[@]+"${list_flags[@]}"} ${pathspecs[@]+"--" "${pathspecs[@]}"})
+    for file in ${ignored_files[@]+"${ignored_files[@]}"}; do
       [[ -z "$file" ]] && continue
       local status_text status_code
       if $use_status_formatting; then

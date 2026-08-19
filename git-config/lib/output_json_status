@@ -6,6 +6,13 @@
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/../lib/hug-json"
+# Argument-surgery helpers (drain_pathspecs_after_separator — #292 PR-B
+# Task 7 extraction). Loaded at FILE scope so the parse loop inside
+# output_json_status can call the drain before the lazy hug-git-json source
+# further down. Re-sourcing is safe: hug-cli-flags' _HUG_CLI_FLAGS_LOADED
+# guard makes a second load a no-op (it MUST — a re-source would otherwise
+# wipe _pathspec_pathspecs, breaking any caller that already parsed).
+. "$CMD_BASE/../lib/hug-cli-flags"
 
 output_json_status() {
   local include_staged=false
@@ -14,8 +21,15 @@ output_json_status() {
   local include_ignored=false
   local include_conflicts=false
   local scope_cwd=false
+  local -a pathspecs=()
 
   # Parse arguments
+  # Separator-aware (#292 Task 6): everything after '--' is a pathspec — a
+  # token shaped like one of our own flags (a file literally named '--cwd')
+  # is DATA and must scope the listing, never toggle the flag above. Mirrors
+  # list_staged_files' '--' arm (hug-git-files). Exact-one-'--' rule: this
+  # layer CONSUMES the separator it receives and re-appends exactly one at
+  # the output_json_status_unified boundary below.
   while [[ $# -gt 0 ]]; do
     case "$1" in
     --staged)
@@ -41,6 +55,11 @@ output_json_status() {
     --cwd)
       scope_cwd=true
       shift
+      ;;
+    --)
+      shift
+      drain_pathspecs_after_separator pathspecs "$@"
+      break
       ;;
     *)
       shift
@@ -81,6 +100,13 @@ output_json_status() {
 
   if $scope_cwd; then
     unified_args+=("--cwd-only")
+  fi
+
+  # Re-append exactly ONE separator before the collected pathspecs (the one
+  # the caller sent was consumed by the parse loop above). Nullsafe: a bare
+  # trailing '--' with no pathspecs forwards nothing.
+  if [[ ${#pathspecs[@]} -gt 0 ]]; then
+    unified_args+=("--" "${pathspecs[@]}")
   fi
 
   # Call unified function

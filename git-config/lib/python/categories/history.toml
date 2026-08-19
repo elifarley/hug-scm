@@ -1,6 +1,6 @@
 label       = "Commit history"
 description = """
 View commit logs and diffs across the repository.
-Filter by file, author, range, or content; format compactly or
-in detail.
+Filter by file, author, range, or content; scope searches by
+pathspec (-- <path>...); format compactly or in detail.
 """

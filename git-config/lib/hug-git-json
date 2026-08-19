@@ -14,6 +14,9 @@ CMD_BASE="$(readlink -f "${BASH_SOURCE[0]}" 2> /dev/null || greadlink -f "${BASH
 CMD_BASE="$(dirname "$CMD_BASE")"
 . "$CMD_BASE/hug-json"
 . "$CMD_BASE/hug-git-files"
+# Argument-surgery helpers (drain_pathspecs_after_separator — #292 PR-B
+# Task 7 extraction; the parse loops below call it in their `--)` arms).
+. "$CMD_BASE/hug-cli-flags"
 
 # Map Git status code to JSON status type
 git_status_to_json_type() {
@@ -59,9 +62,16 @@ parse_file_to_json() {
 }
 
 # Collect files of specific type as JSON objects
-# Usage: mapfile -t files < <(collect_git_files_json "$type" [flags...])
+# Usage: mapfile -t files < <(collect_git_files_json "$type" [flags...] [-- pathspec...])
 #   - "$type": one of staged|unstaged|untracked|ignored|conflicted (unknown types error)
 #   - flags: passed through to the underlying list_* function
+#   - '--' + pathspecs: forwarded to EVERY list_* call after a protective
+#     (nullsafe) separator — a pathspec spelled like a flag ('--cwd') stays
+#     data (#292 Task 6, exact-one-'--' rule: consumed here, ONE re-appended
+#     at the list boundary — never a second forwarded into git). A pathspec
+#     that is ITSELF a bare '--' is treated as a pathspec, mirroring
+#     `git ls-files -- -- x` (verified: git accepts a later '--' as a
+#     pathspec matching the file literally named '--', exit 0)
 # Prints one JSON object PER LINE to stdout; empty output when none.
 # The object count IS the line count (a newline in a filename is escaped to
 # the two-char sequence \n by json_escape, so each object is exactly one line).
@@ -78,12 +88,37 @@ parse_file_to_json() {
 collect_git_files_json() {
   local file_type="$1"
   shift
-  local -a list_flags=("$@")
+
+  # Split flags from pathspecs at the separator (exact-one-'--' rule): flags
+  # keep flowing to the list_* option loop, pathspecs are re-emitted after a
+  # single protective '--' so an option-shaped pathspec never toggles one of
+  # the list_* flags (--cwd, --status).
+  local -a list_flags=()
+  local -a pathspecs=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --)
+      shift
+      drain_pathspecs_after_separator pathspecs "$@"
+      break
+      ;;
+    *)
+      list_flags+=("$1")
+      shift
+      ;;
+    esac
+  done
+
   local -a _items=()
 
   case "$file_type" in
   "staged" | "unstaged" | "conflicted")
-    local -a status_flags=("${list_flags[@]}" "--status")
+    # --status MUST precede the re-appended '--' or it would land after the
+    # separator and become a phantom pathspec in the list_* option loop.
+    local -a status_flags=(${list_flags[@]+"${list_flags[@]}"} "--status")
+    if [[ ${#pathspecs[@]} -gt 0 ]]; then
+      status_flags+=("--" "${pathspecs[@]}")
+    fi
     local list_func="list_${file_type}_files"
 
     while IFS= read -r line; do
@@ -95,9 +130,15 @@ collect_git_files_json() {
     ;;
   "untracked" | "ignored")
     local list_func="list_${file_type}_files"
+    local -a list_args=(${list_flags[@]+"${list_flags[@]}"})
+    if [[ ${#pathspecs[@]} -gt 0 ]]; then
+      list_args+=("--" "${pathspecs[@]}")
+    fi
     local -a temp_files
-    mapfile -t temp_files < <("$list_func" "${list_flags[@]}")
-    for file in "${temp_files[@]}"; do
+    mapfile -t temp_files < <("$list_func" ${list_args[@]+"${list_args[@]}"})
+    # Nullsafe idiom (Task 3 inventory policy): after a zero-line mapfile
+    # the array may be unset under set -u on the Bash 4.0-4.3 floor.
+    for file in ${temp_files[@]+"${temp_files[@]}"}; do
       [[ -z "$file" ]] && continue
       _items+=("$(to_json_object "path" "$file" "status" "$file_type")")
     done
@@ -117,13 +158,18 @@ collect_git_files_json() {
 }
 
 # Unified JSON status output function
-# Usage: output_json_status_unified [--include-empty] [--filter TYPES] [--cwd-only]
+# Usage: output_json_status_unified [--include-empty] [--filter TYPES] [--cwd-only] [-- pathspec...]
 output_json_status_unified() {
   local include_empty=false
   local filter_types="staged,unstaged,untracked,ignored"
   local scope_cwd=false
+  local -a pathspecs=()
 
   # Parse arguments
+  # Separator-aware (#292 Task 6): everything after '--' is a pathspec — a
+  # token shaped like one of our own flags is DATA. Exact-one-'--' rule:
+  # this layer CONSUMES the separator it receives and re-appends exactly one
+  # at the collect_git_files_json boundary below.
   while [[ $# -gt 0 ]]; do
     case "$1" in
     --include-empty)
@@ -138,16 +184,32 @@ output_json_status_unified() {
       scope_cwd=true
       shift
       ;;
+    --)
+      shift
+      drain_pathspecs_after_separator pathspecs "$@"
+      break
+      ;;
     *)
       shift
       ;;
     esac
   done
 
+  # Empty-scope shape contract (#292 Task 6): a scoped query answers with
+  # the SAME envelope shape as an unscoped one — zero-length arrays present,
+  # summary counts 0. The machine contract must not change shape with scope.
+  local force_arrays=false
+  [[ ${#pathspecs[@]} -gt 0 ]] && force_arrays=true
+
   # Build flag array for list functions
   local -a list_flags=()
   if $scope_cwd; then
     list_flags+=("--cwd")
+  fi
+  # Re-append exactly ONE separator before the collected pathspecs (the one
+  # the caller sent was consumed by the parse loop above). Nullsafe.
+  if [[ ${#pathspecs[@]} -gt 0 ]]; then
+    list_flags+=("--" "${pathspecs[@]}")
   fi
 
   # Collect files based on filter.
@@ -216,7 +278,9 @@ output_json_status_unified() {
     shift
     local -a array_items=("$@")
 
-    if $include_empty || [ ${#array_items[@]} -gt 0 ]; then
+    # force_arrays: scoped runs keep the envelope shape even when an array
+    # is empty (see the empty-scope shape contract above).
+    if $include_empty || $force_arrays || [ ${#array_items[@]} -gt 0 ]; then
       if ! $arrays_added; then
         # First array - remove closing brace and add comma
         json="${json%\}}"

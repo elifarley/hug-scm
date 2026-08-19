@@ -524,6 +524,122 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
+# pathspec_pathspecs_into / forward_pathspecs_to_picker tests (#298)
+# -----------------------------------------------------------------------------
+
+@test "hug-cli-flags: pathspec_pathspecs_into populates caller nameref, empty when none" {
+  eval "$(parse_common_flags_with_pathspecs -- src/a.py 'b c')"
+  local -a out=(sentinel)
+  pathspec_pathspecs_into out
+  assert_equal "${#out[@]}" "2"
+  assert_equal "${out[0]}" "src/a.py"
+  assert_equal "${out[1]}" "b c"
+
+  # A later parse with no pathspecs resets the global — the accessor must
+  # reflect that (sentinel gone, zero elements), not keep stale data.
+  eval "$(parse_common_flags_with_pathspecs x)"
+  local -a out2=(sentinel)
+  pathspec_pathspecs_into out2
+  assert_equal "${#out2[@]}" "0"
+}
+
+@test "hug-cli-flags: pathspec_pathspecs_into is empty and set -u safe before any parse" {
+  # Simulate the cross-module case: lib freshly sourced, no parse ran yet —
+  # including the harsher variant where the global is entirely UNSET (not
+  # just empty). Assertions live INSIDE the subshell: assignments there
+  # don't escape it, so asserting outside would pass vacuously.
+  (
+    set -u
+    unset _pathspec_pathspecs
+    local -a out=(sentinel)
+    pathspec_pathspecs_into out
+    [[ ${#out[@]} -eq 0 ]]
+  )
+}
+
+@test "hug-cli-flags: pathspec_pathspecs_into round-trips exotic pathspecs exactly" {
+  # Element-by-element equality against the ORIGINAL array — not output
+  # substrings — is the contract: whatever the user typed after -- must
+  # survive parse + eval + accessor byte-for-byte.
+  local -a want=(
+    $'line1\nline2'
+    'has "double" quotes'
+    'back\slash'
+    '$(echo not-executed)'
+    'tick`id`tock'
+    '*.[ch]?'
+    '-f'
+    '--staged'
+  )
+  eval "$(parse_common_flags_with_pathspecs -- "${want[@]}")"
+  local -a out=()
+  pathspec_pathspecs_into out
+  assert_equal "${#out[@]}" "${#want[@]}"
+  local i
+  for i in "${!want[@]}"; do
+    assert_equal "${out[$i]}" "${want[$i]}"
+  done
+}
+
+@test "hug-cli-flags: forward_pathspecs_to_picker appends nothing when empty" {
+  eval "$(parse_common_flags_with_pathspecs --)"
+  local -a opts=("--staged")
+  forward_pathspecs_to_picker opts
+  assert_equal "${#opts[@]}" "1"
+  assert_equal "${opts[*]}" "--staged"
+}
+
+@test "hug-cli-flags: forward_pathspecs_to_picker appends -- and pathspecs when set" {
+  local -a opts=("--staged")
+  eval "$(parse_common_flags_with_pathspecs -- src/)"
+  forward_pathspecs_to_picker opts
+  assert_equal "${#opts[@]}" "3"
+  assert_equal "${opts[0]}" "--staged"
+  assert_equal "${opts[1]}" "--"
+  assert_equal "${opts[2]}" "src/"
+}
+
+@test "hug-cli-flags: forward_pathspecs_to_picker keeps option-like pathspecs as data" {
+  # '--staged' after the separator is a PATHSPEC; the protective emitted
+  # '--' is what keeps it data when the picker array is consumed later.
+  local -a opts=()
+  eval "$(parse_common_flags_with_pathspecs -- --staged 'a b')"
+  forward_pathspecs_to_picker opts
+  assert_equal "${#opts[@]}" "3"
+  assert_equal "${opts[0]}" "--"
+  assert_equal "${opts[1]}" "--staged"
+  assert_equal "${opts[2]}" "a b"
+}
+
+@test "hug-cli-flags: forward_pathspecs_to_picker is set -u safe with unset global" {
+  # Helper used before any parse AND before the load-time declare could
+  # matter (e.g. re-sourced in a subshell that unset the global) — must not
+  # kill the shell under set -u, and must append nothing.
+  (
+    set -u
+    unset _pathspec_pathspecs
+    local -a opts=("--staged")
+    forward_pathspecs_to_picker opts
+    [[ ${#opts[@]} -eq 1 && "${opts[0]}" == "--staged" ]]
+  )
+}
+
+@test "hug-cli-flags: pathspec_pathspecs_into fails loudly on colliding __psx_ caller name" {
+  # A caller variable named __psx_out circulars the nameref; Bash must say so
+  # (circular name reference) instead of silently misbehaving. The reserved
+  # __psx_ prefix is what makes this collision impossible for real callers.
+  run bash -c "
+    cd '$BATS_TEST_DIRNAME/../..'
+    source 'git-config/lib/hug-output'
+    source 'git-config/lib/hug-cli-flags'
+    eval \"\$(parse_common_flags_with_pathspecs -- src/)\"
+    __psx_out=()
+    pathspec_pathspecs_into __psx_out
+  "
+  assert_output --partial "circular name reference"
+}
+
+# -----------------------------------------------------------------------------
 # reject_multiple_files tests (single-file cardinality guard)
 # -----------------------------------------------------------------------------
 
@@ -551,4 +667,62 @@ teardown() {
   assert_success
   run reject_multiple_files "hug fa" a.txt ""
   assert_success
+}
+
+# -----------------------------------------------------------------------------
+# count_positional_args_before_flags tests (shared cardinality-guard helper,
+# PR-B #298): the count that feeds single-file guards like llf's and
+# stats-file's. Contract: count LEADING non-flag args; the FIRST flag-looking
+# token ends the count (its separate-word VALUE is not a file); '--' itself
+# is a flag-looking token, so post-'--' pathspec data counts as zero
+# command positionals.
+# -----------------------------------------------------------------------------
+
+@test "count_positional_args_before_flags: counts leading positionals" {
+  run count_positional_args_before_flags a b
+  assert_success
+  assert_output "2"
+}
+
+@test "count_positional_args_before_flags: first flag ends the count" {
+  # The PR-A regression this encodes: 'llf a --staged' has ONE file — the
+  # flag VALUE must not be counted as a second positional.
+  run count_positional_args_before_flags a --staged b
+  assert_success
+  assert_output "1"
+}
+
+@test "count_positional_args_before_flags: leading flag yields zero" {
+  run count_positional_args_before_flags -x a
+  assert_success
+  assert_output "0"
+}
+
+@test "count_positional_args_before_flags: no args yields zero" {
+  run count_positional_args_before_flags
+  assert_success
+  assert_output "0"
+}
+
+@test "count_positional_args_before_flags: '--' ends the count" {
+  # Post-'--' tokens are pathspec DATA, not command positionals.
+  run count_positional_args_before_flags -- a b
+  assert_success
+  assert_output "0"
+}
+
+@test "count_positional_args_before_flags: flag VALUE is not a positional" {
+  # The documented regression driver: 'llf a -S py' has ONE file — the
+  # separate-word VALUE of -S must not be counted as a second positional.
+  run count_positional_args_before_flags a -S py
+  assert_success
+  assert_output "1"
+}
+
+@test "count_positional_args_before_flags: empty string tallies as a positional" {
+  # Tally pin: the helper COUNTS tokens, it does not judge file-ness —
+  # reject_multiple_files owns the empty-string-ignoring rule.
+  run count_positional_args_before_flags "" a
+  assert_success
+  assert_output "2"
 }

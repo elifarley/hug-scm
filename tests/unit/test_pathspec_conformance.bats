@@ -49,7 +49,13 @@ PATHSPEC_CONFORMANCE_ROWS=(sw ss su shc shcp shp l ll cmod cmoda)
 #                    pass-through/inert for all of them.
 #   HISTORY_ROWS   — cmod/cmoda AMEND history: no dry-run exists, so their
 #                    filter columns are scoped to help-only (see column tests)
-PATHSPEC_PICKER_ROWS=(sw ss su)
+# `a` (Task 9) is the roster's MUTATOR: the filter columns observe it via the
+# stage-count summary + porcelain state (each cell's probe state adds an
+# unstaged src file so the scope is two-sided), while the capture columns
+# (stub gum) are read-only by construction — the cancelling stub stages
+# nothing. `a`'s SELECTION semantics get a dedicated standalone test below
+# (selecting stub), not a shared-column cell.
+PATHSPEC_PICKER_ROWS=(sw ss su a)
 PATHSPEC_LOG_ROWS=(l ll)
 PATHSPEC_SHOW_ROWS=(shc shcp shp)
 PATHSPEC_INERT_ROWS=("${PATHSPEC_LOG_ROWS[@]}" "${PATHSPEC_SHOW_ROWS[@]}")
@@ -70,22 +76,23 @@ PATHSPEC_HISTORY_ROWS=(cmod cmoda)
 #
 #   CHAR_SL_FILTER_ROWS   — sl family where `-- src/` coincidentally filters
 #                           (phantom `--` pathspec OR-ed away by git)
-#   CHAR_SL_EMPTY_ROWS    — sl family where `-- src/` yields empty output;
-#                           the info message NAMES the phantom '--'
-#   CHAR_SL_SWALLOW_ROWS  — sl family with no flag parser: unknown flags
-#                           become pathspecs (exit 0)
 #   CHAR_SL_HELP_ROWS     — whole sl family: `--help` never reaches the
 #                           script (git man routing)
 #   CHAR_FATAL_ROWS       — single-file commands: two files → git FATAL
 #                           (RETIRED by Task 10 → PATHSPEC_SINGLEFILE_ROWS)
-PATHSPEC_CHAR_SL_FILTER_ROWS=(sl sla sls)
-PATHSPEC_CHAR_SL_EMPTY_ROWS=(slu slk sli)
-PATHSPEC_CHAR_SL_SWALLOW_ROWS=(sls slu slk sli)
+# RETIRED by Task 5 (sls/slu/slk/sli migration): CHAR_SL_EMPTY_ROWS and
+# CHAR_SL_SWALLOW_ROWS pinned the phantom-'--' info message and the silent
+# unknown-flag swallow; both defects are gone, so the rows moved to the
+# sls-family conformance section below (never re-add a pin for a fixed
+# defect — the conformance rows ARE the pin).
+PATHSPEC_CHAR_SL_FILTER_ROWS=(sl sla)
 PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
 
 # Single-file cardinality rows (migrated by Task 10, spec §3.2/§5.6): these
-# commands take exactly ONE file; two files → hug's own rejection (exit 1,
+# commands take exactly ONE file; two files → hug's own rejection (exit 2,
 # "<cmd> accepts only one file.") instead of git fatals or silent ignores.
+# (Exit flipped 1→2 by the code-roast round: reject_multiple_files now uses
+# error_usage — the family's usage-error code.)
 #   SINGLEFILE_ROWS       — one-word commands guarded directly via
 #                          reject_multiple_files (loop-able as `hug $cmd`)
 #   SINGLEFILE_DELEGATE_ROWS — commands delegating to llf; the delegation
@@ -156,6 +163,52 @@ psx_setup() {
   cd "$TEST_REPO" || return 1
 }
 
+# Fixture extension for the separator-aware lib probe: a tracked file
+# LITERALLY named '--cwd' carrying a STAGED modification, so the token is
+# visible to sl AND sls. `git add -- ./--cwd` (separator form) is mandatory —
+# a bare `git add ./--cwd` would parse the filename as a flag. Used by the
+# Task 5 conformance rows at three sinks (sls listing, sl listing, count).
+psx_setup_optnamed_cwd_file() {
+  psx_setup
+  echo cwdone > ./--cwd
+  git add -- ./--cwd
+  git commit -q -m "file literally named --cwd"
+  echo cwdtwo >> ./--cwd
+  git add -- ./--cwd # staged mod: visible to sl AND sls
+}
+
+# Conflict fixture for the slc rows (Task 7): two conflicted files in
+# DIFFERENT dirs (src/c.txt, docs/c.txt) so every scope assertion is
+# two-sided — 'src/' keeps one and must drop the other. Built from a CLEAN
+# repo, NOT psx_setup: the standard fixture's staged mod would BLOCK the
+# merge (git >= 2.34 refuses to merge with a dirty index — see
+# create_slc_conflict_fixture's GOTCHA note in test_status_staging.bats).
+# hug mkeep exits nonzero BECAUSE of the conflicts — that failure is the
+# fixture's point, so it is tolerated, not asserted here.
+psx_setup_conflict() {
+  require_hug
+  TEST_REPO=$(create_test_repo)
+  cd "$TEST_REPO" || return 1
+  (
+    mkdir -p src docs
+    echo base > src/c.txt
+    echo base > docs/c.txt
+    git add -A
+    git commit -q -m "conflict base"
+    git switch -q -c side
+    echo side > src/c.txt
+    echo side > docs/c.txt
+    git add -A
+    git commit -q -m "side edits"
+    git switch -q main
+    echo main > src/c.txt
+    echo main > docs/c.txt
+    git add -A
+    git commit -q -m "main edits"
+  )
+  hug mkeep side -m "merge side" >/dev/null 2>&1 || :
+}
+
 # Mid-test reset: leave the repo (cleanup needs a valid cwd), drop it, clear
 # the handle — the three-line incantation every loop iteration needs before
 # psx_setup can build the next fresh fixture. Extracted so a fix to the reset
@@ -194,6 +247,16 @@ psx_inert_args() {
     echo "__PSX_UNKNOWN_ROW__"
     ;;
   esac
+}
+
+# Relative timestamps ("2 seconds ago") rendered by log/show commands change
+# when two captures of the same command straddle a second boundary. The
+# inert-rows test below compares two such captures byte-for-byte and flaked
+# in CI exactly this way (run 32247705110: "1 second ago" vs "0 seconds
+# ago"). Normalizing both sides keeps the byte-identity claim about the
+# trailing `--`'s inertness, not about the clock.
+psx_strip_reltime() {
+  sed -E 's/[0-9]+ (second|minute|hour|day|month|year)s? ago/<reltime> ago/g'
 }
 
 # sl-variant → file-kind noun used by the "No <kind> files matching ..."
@@ -246,11 +309,27 @@ psx_sl_kind() {
   for cmd in "${PATHSPEC_PICKER_ROWS[@]}"; do
     # ss sees the STAGED set (src/a.py); su/sw see the UNSTAGED set
     # (docs/note.md). The non-matching marker is the other command's file.
+    # a is the roster's MUTATOR: the observable is the stage-count summary —
+    # scoped `hug a -- src/` stages ONLY the in-scope unstaged src/BIG.py
+    # ("Staged 1 file"); a dropped pathspec would fall back to `git add -u`
+    # and stage docs/note.md as well ("Staged 2 files." — the absent
+    # marker), so the cell stays two-sided through the count itself.
     case "$cmd" in
     ss) filter="src/" present="src/a.py" absent="docs/note.md" ;;
     su | sw) filter="docs/" present="docs/note.md" absent="src/a.py" ;;
+    a) filter="src/" present="Staged 1 file" absent="Staged 2 files" ;;
+    *)
+      # Sentinel pattern (psx_inert_args): the breadcrumb alone is the
+      # contract — an un-armed future row fails HERE with the row named,
+      # never as a subtle scope leak three assertions later.
+      echo "psx pathspec-filter: unknown row '$cmd' — add it to the case arms" >&2
+      return 1
+      ;;
     esac
     psx_setup
+    # a-probe: an UNSTAGED tracked file under src/ so the staging scope is
+    # two-sided (same shape as su's probe in the scoped-picker column).
+    case "$cmd" in a) echo big2 >> src/BIG.py ;; esac
     run hug "$cmd" -- "$filter"
     assert_success
     assert_output --partial "$present"
@@ -299,11 +378,21 @@ psx_sl_kind() {
 @test "column glob-filter: diff commands (picker rows)" {
   local glob present absent
   for cmd in "${PATHSPEC_PICKER_ROWS[@]}"; do
+    # a (mutator): same count-observable as the pathspec-filter column, but
+    # through a GLOB — 'src/*.py' stages only the in-scope unstaged
+    # src/BIG.py; an unscoped fallback would also stage docs/note.md.
     case "$cmd" in
     ss) glob='*.py' present="src/a.py" absent="docs/note.md" ;;
     su | sw) glob='*.md' present="docs/note.md" absent="src/a.py" ;;
+    a) glob='src/*.py' present="Staged 1 file" absent="Staged 2 files" ;;
+    *)
+      # Sentinel pattern: breadcrumb + hard fail (see pathspec-filter note).
+      echo "psx glob-filter: unknown row '$cmd' — add it to the case arms" >&2
+      return 1
+      ;;
     esac
     psx_setup
+    case "$cmd" in a) echo big2 >> src/BIG.py ;; esac
     run hug "$cmd" -- "$glob"
     assert_success
     assert_output --partial "$present"
@@ -346,23 +435,31 @@ psx_sl_kind() {
 @test "column trailing-dashdash: picker arm for action commands (picker rows)" {
   # Technique from tests/unit/test_status_staging.bats:1500-1517: in CI (no
   # TTY) the picker arm must NOT print the regular diff markers. We also
-  # assert the POSITIVE observable — the diff driver's "No … available or
-  # cancelled." message — because absence-only passes on a crash. Probed:
-  # exit 0 with that message on stderr in BOTH gum branches (gum installed →
-  # TTY failure; gum absent → gum-missing error, same message after). The
-  # message assert is deliberately loose (--partial "available or cancelled")
-  # so a UI copy tweak breaks one place, not three cells.
-  local refute_marker
+  # assert the POSITIVE observable — the driver's cancel message — because
+  # absence-only passes on a crash. Probed: exit 0 with that message on
+  # stderr in BOTH gum branches (gum installed → TTY failure; gum absent →
+  # gum-missing error, same message after). a's cancel wording differs
+  # ("No files selected." — its own picker branch), so the positive marker
+  # is per-row; the negative marker for a is ANY staging (the stage-all arm
+  # must never run behind the picker trigger). Both asserts stay deliberately
+  # loose (--partial) so a UI copy tweak breaks one place, not N cells.
+  local refute_marker cancel_msg
   for cmd in "${PATHSPEC_PICKER_ROWS[@]}"; do
     case "$cmd" in
-    ss) refute_marker="Staged diff" ;;
-    su | sw) refute_marker="Unstaged diff" ;;
+    ss) refute_marker="Staged diff" cancel_msg="available or cancelled" ;;
+    su | sw) refute_marker="Unstaged diff" cancel_msg="available or cancelled" ;;
+    a) refute_marker="Staged " cancel_msg="No files selected" ;;
+    *)
+      # Sentinel pattern: breadcrumb + hard fail (see pathspec-filter note).
+      echo "psx trailing-dashdash: unknown row '$cmd' — add it to the case arms" >&2
+      return 1
+      ;;
     esac
     psx_setup
     run hug "$cmd" --
     assert_success
     refute_output --partial "$refute_marker"
-    assert_output --partial "available or cancelled"
+    assert_output --partial "$cancel_msg"
     psx_reset
   done
 }
@@ -378,10 +475,10 @@ psx_sl_kind() {
     psx_setup
     run hug "$cmd" "${args[@]}"
     assert_success
-    plain="$output"
+    plain="$(printf '%s' "$output" | psx_strip_reltime)"
     run hug "$cmd" "${args[@]}" --
     assert_success
-    assert_equal "$plain" "$output"
+    assert_equal "$plain" "$(printf '%s' "$output" | psx_strip_reltime)"
     psx_reset
   done
 }
@@ -439,12 +536,18 @@ psx_install_stub_gum() {
   #        the fixture's staged src/a.py
   #   sw — combined mode: staged src/a.py + unstaged docs/note.md is already
   #        two-sided out of the box
-  local filter="src/" absent="docs/note.md" present candidates
+  #   a  — picker lists UNSTAGED+UNTRACKED (no staged): same probe as su.
+  #        Under the cancelling stub nothing stages — the cell is read-only
+  #        by construction; a's SELECTION semantics live in the dedicated
+  #        selecting-stub test below, not this shared column.
+  local filter="src/" absent="docs/note.md" present candidates cancel_msg
   for cmd in "${PATHSPEC_PICKER_ROWS[@]}"; do
     present="$filter"
+    cancel_msg="available or cancelled"
     case "$cmd" in
     su) present="src/BIG.py" ;;
     ss | sw) present="src/a.py" ;;
+    a) present="src/BIG.py" cancel_msg="No files selected" ;;
     *)
       # Sentinel pattern (psx_inert_args/psx_sl_kind): a future picker row
       # without a case arm must fail with a breadcrumb, not "empty
@@ -455,14 +558,14 @@ psx_install_stub_gum() {
     esac
     psx_setup
     case "$cmd" in
-    su) echo big2 >> src/BIG.py ;;
+    su | a) echo big2 >> src/BIG.py ;;
     ss) git add docs/note.md ;;
     esac
 
     psx_install_stub_gum
     run hug "$cmd" -- "$filter" --
     assert_success
-    assert_output --partial "available or cancelled"
+    assert_output --partial "$cancel_msg"
 
     # Strip ANSI status coloring before matching (candidate lines are
     # "<colored status> <plain filename>").
@@ -526,13 +629,23 @@ psx_install_stub_gum() {
 
 @test "column magic-pathspec: diff commands (picker rows)" {
   # :(icase) positive: case-variant spellings still match the changed files.
+  # a (mutator): ':(icase)SRC/BIG.PY' stages the in-scope unstaged src/BIG.py
+  # ("Staged 1 file"); an unscoped fallback would also stage docs/note.md
+  # ("Staged 2 files") and fail the present assert.
   local icase present
   for cmd in "${PATHSPEC_PICKER_ROWS[@]}"; do
     case "$cmd" in
     ss) icase=':(icase)SRC/A.PY' present="src/a.py" ;;
     su | sw) icase=':(icase)DOCS/NOTE.MD' present="docs/note.md" ;;
+    a) icase=':(icase)SRC/BIG.PY' present="Staged 1 file" ;;
+    *)
+      # Sentinel pattern: breadcrumb + hard fail (see pathspec-filter note).
+      echo "psx magic-pathspec: unknown row '$cmd' — add it to the case arms" >&2
+      return 1
+      ;;
     esac
     psx_setup
+    case "$cmd" in a) echo big2 >> src/BIG.py ;; esac
     run hug "$cmd" -- "$icase"
     assert_success
     assert_output --partial "$present"
@@ -620,52 +733,17 @@ psx_install_stub_gum() {
   assert_output --partial "__PSX_UNKNOWN_ROW__"
 }
 
-@test "characterization sl-family: -- src/ filters by coincidence (sl sla sls)" {
-  # characterization: flip target PR-B — after migration the `--` is consumed
-  # by a real parser and these keep passing for the RIGHT reason; today the
-  # bare `--` is collected as a pathspec and git ORs the phantom away
-  # (probed: exit 0, staged src/a.py shown, unstaged docs/note.md filtered
-  # out even on sl/sla which would otherwise list it).
+@test "characterization sl-family: -- src/ filters by coincidence (sl sla)" {
+  # characterization: flip target PR-B — sl/sla (statusbase) were migrated by
+  # PR-B Task 4 and now filter for the RIGHT reason (the split consumes the
+  # separator; see the statusbase conformance tests). sls was retired from
+  # this row by Task 5 (migrated — see the sls-family conformance tests).
   for cmd in "${PATHSPEC_CHAR_SL_FILTER_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" -- src/
     assert_success
     assert_output --partial "src/a.py"
     refute_output --partial "docs/note.md"
-    psx_reset
-  done
-}
-
-@test "characterization sl-family: -- src/ empty + message names phantom '--' (slu slk sli)" {
-  # characterization: flip target PR-B — these variants have NO file matching
-  # src/, so the phantom `--` pathspec becomes visible in the info message
-  # (probed: exit 0, empty stdout, "No <kind> files matching '--' 'src/'
-  # found." — the '--' listed AS a filter is the defect's fingerprint).
-  local kind
-  for cmd in "${PATHSPEC_CHAR_SL_EMPTY_ROWS[@]}"; do
-    kind=$(psx_sl_kind "$cmd")
-    psx_setup
-    run hug "$cmd" -- src/
-    assert_success
-    refute_output --partial "docs/note.md"
-    refute_output --partial "new.txt"
-    assert_output --partial "No ${kind} files matching '--' 'src/' found."
-    psx_reset
-  done
-}
-
-@test "characterization sl-family: unknown flag swallowed as pathspec, exit 0 (sls slu slk sli)" {
-  # characterization: flip target PR-B — these commands have no flag parser,
-  # so `-xX` silently becomes a pathspec (probed: exit 0 + "No <kind> files
-  # matching '-xX' found."). Contract column 6 requires non-zero; today it is
-  # ZERO — pinned here so the PR-B flip is a deliberate red.
-  local kind
-  for cmd in "${PATHSPEC_CHAR_SL_SWALLOW_ROWS[@]}"; do
-    kind=$(psx_sl_kind "$cmd")
-    psx_setup
-    run hug "$cmd" -xX
-    assert_success
-    assert_output --partial "No ${kind} files matching '-xX' found."
     psx_reset
   done
 }
@@ -691,49 +769,401 @@ psx_install_stub_gum() {
   done
 }
 
-@test "characterization sl-family: only slc has real -h help; sl/sla -h swallowed" {
-  # characterization: flip target PR-B — probed: `slc -h` shows USAGE on
-  # stdout (exit 0). `sl`/`sla` are gitconfig aliases to statusbase, which
-  # has no -h handling: the flag is swallowed as a pathspec (exit 0 +
-  # "matching '-h' found"). The audited spec's "sl/sla have help" holds only
-  # for `--help`-adjacent docs, not for the runtime `-h` surface.
-  psx_setup
-  run hug slc -h
-  assert_success
-  assert_output --partial "USAGE:"
-  psx_reset
+# slc's rows live in the SLC CONFORMANCE section (Task 7): it needs the
+# dedicated conflict fixture, so it cannot ride the shared sl-family loops
+# (its former "-h shows USAGE" characterization row moved there too).
 
+# =============================================================================
+# STATUSBASE CONFORMANCE (PR-B Task 4, #292/#298) — sl/sla flipped rows
+# =============================================================================
+# `sl`/`sla` are gitconfig aliases (`sl = statusbase -uno`,
+# `sla = statusbase --long`) — invoking them IS the smoke test that the
+# migrated statusbase code is reached with the alias-passed pre-args.
+# =============================================================================
+
+@test "conformance statusbase (Task 4): sl/sla -h shows USAGE" {
+  # FLIPPED (Task 4): statusbase defines show_help and parses via
+  # parse_common_flags_with_pathspecs, so -h reaches show_help through BOTH
+  # aliases' pre-args (-uno / --long). Before: -h was swallowed as a pathspec
+  # (probed: exit 0 + "No staged or unstaged files matching '-h' found.").
   for cmd in sl sla; do
     psx_setup
     run hug "$cmd" -h
     assert_success
-    assert_output --partial "matching '-h' found."
+    assert_output --partial "USAGE:"
     psx_reset
   done
 }
 
-@test "characterization us: bare/trailing -- rejected loudly" {
-  # characterization: flip target PR-B — probed: git-us's flag loop hits the
-  # `-*` arm and errors on `--` BEFORE any pathspec logic ("Unknown option:
-  # --. See 'hug us --help'.", exit 1) for BOTH `us --` and `us -- src/`.
-  # Contract column 4 (trailing `--` = picker/inert) does not hold today.
+@test "conformance statusbase (Task 4): unknown flag loud, exit 2" {
+  # FLIPPED (Task 4): flag-shaped unknown tokens error instead of silently
+  # becoming pathspecs. Before (probed): exit 0 + "matching '-xX' found." +
+  # summary. Exit code 2 = HUG_EX_USAGE (usage error), matching the
+  # family-wide error template.
+  for cmd in sl sla; do
+    psx_setup
+    run hug "$cmd" -xX
+    assert_failure
+    assert_equal 2 "$status"
+    assert_output --partial "Unknown option: -xX"
+    psx_reset
+  done
+}
+
+@test "conformance statusbase (Task 4): -- src/ filters and suppresses summary" {
+  # FLIPPED (Task 4): the separator is consumed by the split (no phantom
+  # '--' pathspec) and the trailing whole-repo `hug s` summary is suppressed
+  # iff a real pathspec is active. Before (probed): the listing filtered but
+  # the summary line ("HEAD: ...") still printed.
+  for cmd in sl sla; do
+    psx_setup
+    run hug "$cmd" -- src/
+    assert_success
+    assert_output --partial "src/a.py"
+    refute_output --partial "docs/note.md"
+    refute_output --partial "HEAD:"
+    psx_reset
+  done
+}
+
+@test "conformance statusbase (Task 4): bare -- inert with summary parity" {
+  # FLIPPED (Task 4): a trailing bare '--' is stripped by the split and is
+  # fully inert — byte-identical output to the unfiltered run INCLUDING the
+  # summary. Before (probed): the bare '--' became a phantom pathspec
+  # matching nothing ("No staged or unstaged files matching '--' found.").
+  # Both runs share ONE fixture: the summary embeds the HEAD short hash,
+  # which differs across fixtures.
+  for cmd in sl sla; do
+    psx_setup
+    run hug "$cmd"
+    assert_success
+    unfiltered="$output"
+    run hug "$cmd" --
+    assert_success
+    assert_equal "$unfiltered" "$output"
+    assert_output --partial "HEAD:"
+    psx_reset
+  done
+}
+
+# =============================================================================
+# SLS-FAMILY CONFORMANCE (PR-B Task 5, #292/#298) — sls/slu/slk/sli flipped
+# =============================================================================
+# The four filtered listings migrated to the uniform pathspec contract
+# (split + own-loop), and the shared selector loops in hug-select-files
+# (list_files_with_status / count_files_with_status) became separator-aware,
+# so a protective '--' at the script→lib boundary is now HONORED: everything
+# after it is a pathspec even when it spells '--cwd'/'--staged'.
+# =============================================================================
+
+@test "conformance sls-family (Task 5): -h shows USAGE" {
+  # FLIPPED (Task 5): the four scripts define show_help and parse via
+  # parse_common_flags_with_pathspecs BEFORE check_git_repo, so -h reaches
+  # show_help from any cwd. Before (probed): -h was swallowed as a pathspec
+  # (exit 0 + "No <kind> files matching '-h' found.").
+  for cmd in sls slu slk sli; do
+    psx_setup
+    run hug "$cmd" -h
+    assert_success
+    assert_output --partial "USAGE:"
+    psx_reset
+  done
+}
+
+@test "conformance sls-family (Task 5): unknown flag loud, exit 2" {
+  # FLIPPED (Task 5): flag-shaped unknown tokens error instead of silently
+  # becoming pathspecs. Before (probed): exit 0 + "No <kind> files matching
+  # '-xX' found.". Exit 2 = HUG_EX_USAGE, family-wide error template
+  # (same shape as statusbase's, naming the fix).
+  local kind
+  for cmd in sls slu slk sli; do
+    kind=$(psx_sl_kind "$cmd")
+    psx_setup
+    run hug "$cmd" -xX
+    assert_failure
+    assert_equal 2 "$status"
+    assert_output --partial "Unknown option: -xX"
+    assert_output --partial "Pathspecs beginning with '-' require '--': hug $cmd -- -xX"
+    psx_reset
+  done
+}
+
+@test "conformance sls-family (Task 5): -- src/ filters; phantom '--' gone from message" {
+  # FLIPPED (Task 5): the split consumes the separator, so it never rides in
+  # the pathspec list. sls filters two-sided (staged src/a.py is in scope);
+  # slu/slk/sli have NO matching file, and their empty-info message now says
+  # matching 'src/' WITHOUT the phantom '--' — the "No unstaged files
+  # matching '--' 'src/'" fingerprint (probed pre-migration) is gone.
+  # Sink 4 (spec §3.1, family-wide — fix landed post-Task-10 spec review):
+  # a scoped run also suppresses the trailing whole-repo `hug s` summary —
+  # it would misdescribe the scope. The inert bare `--` KEEPS the summary
+  # (byte-identical parity, pinned by the next test).
   psx_setup
-  run hug us -- src/
-  assert_failure
-  assert_output --partial "Unknown option: --. See 'hug us --help'."
+  run hug sls -- src/
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "matching '--'"
+  refute_output --partial "HEAD:"
+  psx_reset
+
+  local kind
+  for cmd in slu slk sli; do
+    kind=$(psx_sl_kind "$cmd")
+    psx_setup
+    run hug "$cmd" -- src/
+    assert_success
+    refute_output --partial "docs/note.md"
+    refute_output --partial "new.txt"
+    assert_output --partial "No ${kind} files matching 'src/' found."
+    refute_output --partial "matching '--'"
+    refute_output --partial "HEAD:"
+    psx_reset
+  done
+}
+
+@test "conformance sls-family (Task 5): bare -- inert with summary parity" {
+  # FLIPPED (Task 5): a trailing bare '--' is stripped by the split and is
+  # fully inert — byte-identical output to the unfiltered run INCLUDING the
+  # summary. Before (probed): the bare '--' became a phantom pathspec
+  # matching nothing ("No <kind> files matching '--' found."). Both runs
+  # share ONE fixture (the summary embeds the HEAD short hash).
+  for cmd in sls slu slk sli; do
+    psx_setup
+    run hug "$cmd"
+    assert_success
+    unfiltered="$output"
+    run hug "$cmd" --
+    assert_success
+    assert_equal "$unfiltered" "$output"
+    assert_output --partial "HEAD:"
+    psx_reset
+  done
+}
+
+@test "conformance sls-family (Task 5): scoped × quiet keeps scope, drops summary" {
+  # Mode interaction: -q is consumed by the split (as HUG_QUIET) and
+  # rehydrated after it — scoped quiet keeps the pathspec filter and drops
+  # BOTH the summary and (slk) the status column. Non-empty scope (sls) and
+  # empty scope (slu: no unstaged file under src/) both pinned.
+  psx_setup
+  run hug sls -q -- src/
+  assert_success
+  assert_output --partial "S:"
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "HEAD:"
   psx_reset
 
   psx_setup
-  run hug us --
-  assert_failure
-  assert_output --partial "Unknown option: --. See 'hug us --help'."
+  # Empty scope + quiet: the info message itself is quieted (HUG_QUIET
+  # silences info chatter) — an empty stdout IS the pinned behavior.
+  run hug slu -q -- src/
+  assert_success
+  assert_output ""
   psx_reset
 }
 
-@test "characterization us: positional pathspec unstages (works today)" {
-  # characterization: flip target PR-B — the POSITIVE arm that must survive
-  # the migration: `us src/a.py` (no separator) unstages exactly that file
-  # (probed: exit 0, "Unstaged 1 file", and hug sls no longer lists it).
+@test "conformance sls-family (Task 5): scoped × count non-empty and empty" {
+  # Mode interaction: count mode is fed from the collected pathspecs (the
+  # run_count_mode sink carries the protective '--', honored by the now
+  # separator-aware count_files_with_status). count mode also suppresses the
+  # trailing summary (run_count_mode exits after printing the number).
+  psx_setup
+  run hug sls -c -- src/
+  assert_success
+  assert_output "1"
+  refute_output --partial "HEAD:"
+  psx_reset
+
+  psx_setup
+  run hug slu -c -- src/
+  assert_success
+  assert_output "0"
+  refute_output --partial "HEAD:"
+  psx_reset
+}
+
+@test "conformance sls-family (Task 6): --json honors pathspecs, empty scope keeps shape" {
+  # FLIPPED (Task 6): the --json sink chain (output_json_status →
+  # output_json_status_unified → collect_git_files_json → list_*_files)
+  # now forwards pathspecs collected after the protective '--'. The
+  # out-of-scope unstaged docs/note.md must be ABSENT, and the empty scope
+  # (no unstaged file under src/) must keep the envelope shape — zero-length
+  # "unstaged" array present, summary count 0. The machine contract must not
+  # change shape with scope.
+  psx_setup
+  run hug slu --json -- src/
+  assert_success
+  local json_out="$output"
+  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
+  assert_success
+  [[ "$json_out" != *"docs/note.md"* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print('unstaged' in d, d['unstaged'], d['summary']['unstaged'])" "$json_out"
+  assert_output "True [] 0"
+  psx_reset
+}
+
+# =============================================================================
+# SLC CONFORMANCE (PR-B Task 7, #292/#298) — conflicted-files listing flipped
+# =============================================================================
+# slc migrates last of the sl* family (it already had show_help; only its
+# flag loop was pre-contract): unknown flags were silently swallowed as
+# pathspecs, and --json dropped pathspecs BY DOCUMENTED CONTRACT (the
+# 2026-08-06 slc design spec — since superseded, see the claim-flip sweep).
+# Rows run on the dedicated two-dir conflict fixture (psx_setup_conflict)
+# so every scope assertion is two-sided: 'src/' keeps src/c.txt and must
+# drop docs/c.txt.
+# =============================================================================
+
+@test "conformance slc (Task 7): -h shows USAGE" {
+  # PIN (moved from the characterization section): slc keeps its show_help
+  # and the uniform split routes -h/--help to it BEFORE check_git_repo, so
+  # help works from any cwd. Post-flip the help text no longer contradicts
+  # the behavior: the --json flag line and DESCRIPTION both state scoping.
+  psx_setup
+  run hug slc -h
+  assert_success
+  assert_output --partial "USAGE:"
+  refute_output --partial "ignores pathspecs"
+  psx_reset
+}
+
+@test "conformance slc (Task 7): unknown flag loud, exit 2" {
+  # FLIPPED (Task 7): flag-shaped unknown tokens error instead of silently
+  # becoming pathspecs. Before (probed shape, same defect as the sls
+  # family): exit 0 + "No conflicted files matching '-xX' found." — a
+  # typo'd flag looked like an empty answer. Exit 2 = HUG_EX_USAGE,
+  # family-wide error template.
+  psx_setup_conflict
+  run hug slc -xX
+  assert_failure
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  assert_output --partial "Pathspecs beginning with '-' require '--': hug slc -- -xX"
+  psx_reset
+}
+
+@test "conformance slc (Task 7): -- src/ filters two-sided, no phantom '--'" {
+  # PIN + hardening (Task 7): filtering already worked by accident of the
+  # Task 5 selector surgery (slc's old loop passed '--' through as a
+  # pathspec and the separator-aware lib consumed it); the migration makes
+  # it contract — the split owns the separator, so it can never ride into
+  # the empty-info message as a phantom filter.
+  # Sink 4 (spec §3.1, family-wide — gate added post-doc-review): a scoped
+  # run also suppresses the trailing whole-repo `hug s` summary; the inert
+  # bare '--' KEEPS it (pinned by the next test).
+  psx_setup_conflict
+  run hug slc -- src/
+  assert_success
+  assert_output --partial "src/c.txt"
+  refute_output --partial "docs/c.txt"
+  refute_output --partial "matching '--'"
+  refute_output --partial "HEAD:"
+  psx_reset
+}
+
+@test "conformance slc (Task 7): bare -- inert with summary parity" {
+  # PIN (Task 7): a trailing bare '--' is stripped by the split and is
+  # fully inert — byte-identical output to the unfiltered run INCLUDING
+  # the summary (both runs share ONE fixture; the summary embeds the HEAD
+  # short hash).
+  psx_setup_conflict
+  run hug slc
+  assert_success
+  unfiltered="$output"
+  run hug slc --
+  assert_success
+  assert_equal "$unfiltered" "$output"
+  assert_output --partial "HEAD:"
+  psx_reset
+}
+
+@test "conformance slc (Task 7): --json honors pathspecs, empty scope keeps shape" {
+  # FLIPPED (Task 7): slc now forwards its collected pathspecs into the
+  # --json sink chain (output_json_status → … → list_*_files, made
+  # pathspec-aware in Task 6) — this is the row that was RED before the
+  # migration: the envelope used to describe the FULL conflicted state
+  # regardless of pathspecs. Two-sided: src/c.txt in, docs/c.txt out;
+  # summary.conflicted matches the scoped array; empty scope keeps the
+  # envelope shape (zero-length "conflicted" array present, count 0).
+  psx_setup_conflict
+  run hug slc --json -- src/
+  assert_success
+  local json_out="$output"
+  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
+  assert_success
+  [[ "$json_out" == *"src/c.txt"* ]]
+  [[ "$json_out" != *"docs/c.txt"* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(len(d['conflicted']), d['summary']['conflicted'])" "$json_out"
+  assert_output "1 1"
+  psx_reset
+
+  psx_setup_conflict
+  run hug slc --json -- nomatch/
+  assert_success
+  json_out="$output"
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print('conflicted' in d, d['conflicted'], d['summary']['conflicted'])" "$json_out"
+  assert_output "True [] 0"
+  psx_reset
+}
+
+@test "conformance separator-aware lib (Task 5): pathspec spelled '--cwd' scopes, not toggles" {
+  # Lib-surgery acceptance probe (amended Task 4 AC): a file LITERALLY named
+  # '--cwd', staged, must be listed/scoped-to by the sl family — the
+  # selector-level loops in hug-select-files now honor the protective '--'
+  # the scripts append, so the token is DATA, not the scope-to-cwd flag.
+  # Before (probed): '--cwd' toggled scope_cwd and the run listed EVERYTHING
+  # (the whole-repo, cwd-relative listing — src/a.py included).
+  # Covers both boundaries: the listing sink (sl, sls) and the count sink
+  # (sls -c → run_count_mode → count_files_with_status).
+  psx_setup_optnamed_cwd_file
+  run hug sls -- --cwd
+  assert_success
+  [[ "$output" == *"--cwd"* ]]
+  [[ "$output" != *"src/a.py"* ]] # still staged in the fixture — must be filtered out
+  psx_reset
+
+  psx_setup_optnamed_cwd_file
+  run hug sl -- --cwd
+  assert_success
+  [[ "$output" == *"--cwd"* ]]
+  refute_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  psx_reset
+
+  psx_setup_optnamed_cwd_file
+  run hug sls -c -- --cwd
+  assert_success
+  assert_output "1"
+  psx_reset
+}
+
+
+@test "conformance us (PR-B Task 8): -- src/ filters unstaging, two-sided" {
+  # FLIPPED (Task 8, spec §3.1): mid-stream '--' is a pathspec separator —
+  # was: "Unknown option: --. See 'hug us --help'." exit 1 (probed).
+  # Two-sided: staged mods in BOTH dirs; the 'src/' scope must unstage
+  # src/a.py ONLY — docs/note.md (staged, OUT of scope) must survive.
+  psx_setup
+  git add docs/note.md # second staged file, outside the src/ scope
+  run hug us -- src/
+  assert_success
+  # The report echoes the given pathspec (git restore consumes it natively —
+  # dir pathspecs, globs and magic keep git semantics); the behavioral
+  # asserts below are the load-bearing two-sided proof.
+  assert_output --partial "Unstaged 1 file"
+  assert_output --partial "src/"
+  run hug sls
+  refute_output --partial "src/a.py" # in-scope: unstaged
+  assert_output --partial "docs/note.md" # out-of-scope: still staged
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): positional pathspec unstages exactly as today" {
+  # Carried over VERBATIM from the characterization row (probed: exit 0,
+  # "Unstaged 1 file", and hug sls no longer lists it): the documented
+  # no-separator invocation must keep working through the migration.
   psx_setup
   run hug sls
   assert_success
@@ -744,6 +1174,278 @@ psx_install_stub_gum() {
   assert_output --partial "src/a.py"
   run hug sls
   refute_output --partial "src/a.py"
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): bare trailing -- inert, zero-args dispatch parity" {
+  # FLIPPED (Task 8): a trailing bare '--' is a no-op token — `hug us --`
+  # ≡ `hug us` (output equality + exit equality). The split runs WITHOUT
+  # --picker (us's selector is the zero-args fallback, not the picker arm),
+  # so the consumed '--' leaves NO pathspecs and NO positionals → identical
+  # dispatch.
+  #
+  # Headless observable (per gum-presence — same two-branch technique as the
+  # picker-rows column): with gum INSTALLED, `run` still has no TTY, so gum
+  # filter fails and the selector lands on "No files selected." (exit 0);
+  # with gum ABSENT, gum_available fails → "Interactive mode requires 'gum'"
+  # (exit 1). The branch differs by machine — the INVARIANT under test is
+  # the `--` parity, so accept either branch marker and then pin equality.
+  # The fixture pins ≥1 staged file (src/a.py): both branch markers prove
+  # the selector ran — NOT the "No staged files" early exit, so the equality
+  # is non-vacuous (an empty staging area would trivially pass).
+  psx_setup
+  run hug us
+  local baseline_status=$status
+  local baseline_output="$output"
+  [[ "$baseline_output" == *"No files selected"* || "$baseline_output" == *"Interactive mode requires 'gum'"* ]]
+  psx_reset
+
+  psx_setup
+  run hug us --
+  assert_equal "$baseline_status" "$status"
+  assert_equal "$baseline_output" "$output"
+  refute_output --partial "Unknown option"
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): unknown -* loud, exit 2 (family template)" {
+  # FLIPPED (Task 8): unknown dash-tokens exit 2 (HUG_EX_USAGE) with the
+  # family error template — was: exit 1, "Unknown option: -xX. See
+  # 'hug us --help'." (probed).
+  psx_setup
+  run hug us -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX. Pathspecs"
+  assert_output --partial "hug us -- -xX"
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): -- -foo.txt unstages a file literally named -foo.txt" {
+  # Spec-review finding 1 (MEDIUM): the help PROMISES 'hug us -- <path>' for
+  # dash-paths — the validation probe must honor it. Was: 'git ls-files
+  # --error-unmatch "$file"' without a separator parsed '-foo.txt' as an
+  # OPTION → false "File '-foo.txt' is not tracked by git." exit 1 (reviewer
+  # probed with a tracked file named -foo.txt). Two-sided: docs/note.md
+  # (also staged) must survive.
+  psx_setup
+  echo dashfile > ./-foo.txt
+  git add -- ./-foo.txt # separator form is mandatory — the name looks like a flag
+  git commit -q -m "file literally named -foo.txt"
+  echo dash2 >> ./-foo.txt
+  git add -- ./-foo.txt # staged mod on the dash-named file
+  git add docs/note.md # second staged file, must survive
+  run hug us -- -foo.txt
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  assert_output --partial "-foo.txt"
+  run hug sls
+  refute_output --partial "-foo.txt" # in-scope: unstaged
+  assert_output --partial "docs/note.md" # out-of-scope: still staged
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): empty intersection with scope is a no-match message, never the selector" {
+  # Spec-review finding 2 (MINOR, safety): when the pathspec scope empties
+  # the from-source list, falling through to the zero-args selector would
+  # (TTY+gum) offer the FULL staged list, silently ignoring the scope.
+  # Contract: scoped-but-empty → family no-match info message, exit 0.
+  # Headless observable: the selector NEVER opens (no gum-branch markers).
+  psx_setup
+  run hug us --from-commit HEAD -- nonexistent/
+  assert_success
+  assert_output --partial "No files matching 'nonexistent/' to unstage."
+  refute_output --partial "Interactive mode requires 'gum'"
+  refute_output --partial "No files selected"
+  run hug sls # staged state untouched
+  assert_output --partial "src/a.py"
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): --from-commit INTERSECTS with pathspecs (not concat)" {
+  # FLIPPED (Task 8, contract §3.1): from-source files ∩ scope. Concat is a
+  # UNION and would unstage docs/y.txt too — OUTSIDE the 'src/' scope, the
+  # exact opposite of the contract (probed union shape: `us --from-commit
+  # HEAD` unstages every staged file the commit mentions). Two-sided:
+  # src/x.txt unstaged, docs/y.txt stays staged.
+  psx_setup
+  # LESSON (same as the fixture header): the psx fixture arrives with
+  # src/a.py STAGED — any naive commit sweeps it in. Unstage it first, build
+  # the discriminating commit (src/x.txt + docs/y.txt ONLY), then re-stage
+  # all three mods so the scope assertion is two-sided in BOTH dirs.
+  git restore --staged src/a.py
+  echo x1 > src/x.txt
+  echo y1 > docs/y.txt
+  git add src/x.txt docs/y.txt
+  git commit -q -m "touch src/x docs/y"
+  echo x2 >> src/x.txt
+  echo y2 >> docs/y.txt
+  git add src/a.py src/x.txt docs/y.txt
+  run hug us --from-commit HEAD -- src/
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  assert_output --partial "src/x.txt"
+  refute_output --partial "docs/y.txt"
+  run hug sls
+  assert_output --partial "docs/y.txt"
+  refute_output --partial "src/x.txt"
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): staged deletion in scope is unstaged too (Codex P1)" {
+  # Codex review P1: 'git ls-files' misses index-removed (staged-DELETED)
+  # entries, so the intersection silently dropped them while reporting
+  # success (probed red: "Unstaged 1 file: ✓ src/keep.txt" with
+  # 'D src/del.txt' left staged). The scope set must union staged-deletion
+  # paths, and the validation probe must accept them (they are in HEAD,
+  # just not in the index — also fixes unstaging a deletion BY NAME).
+  psx_setup
+  git restore --staged src/a.py # commit-sweep lesson: keep the commit discriminating
+  echo del > src/del.txt
+  echo keep > src/keep.txt
+  git add src/del.txt src/keep.txt
+  git commit -q -m "add del+keep"
+  git rm -q src/del.txt # staged deletion of del.txt
+  echo keep2 >> src/keep.txt
+  git add src/keep.txt # staged mod of keep.txt
+  run hug us --from-commit HEAD -- src/
+  assert_success
+  assert_output --partial "Unstaged 2 files"
+  run git status --porcelain
+  refute_output --partial "D  src/del.txt" # staged deletion: GONE
+  assert_output --partial " D src/del.txt" # now an UNSTAGED deletion only
+  assert_output --partial " M src/keep.txt" # mod unstaged too
+  psx_reset
+}
+
+@test "conformance us (PR-B Task 8): from-file CWD-relative names match from a subdirectory (Codex P2)" {
+  # Codex review P2: from-file lists are commonly CWD-relative ('a.txt'
+  # written inside sub/), while the scope set is root-relative — the
+  # exact-string membership emptied and 'us --from-file files.txt -- .'
+  # reported "No files matching '.' to unstage." (probed red) with
+  # sub/a.txt left staged. Sources are canonicalized to root-relative now.
+  psx_setup
+  git restore --staged src/a.py
+  mkdir sub
+  echo a1 > sub/a.txt
+  git add sub/a.txt
+  git commit -q -m "add sub/a"
+  echo a2 >> sub/a.txt
+  git add sub/a.txt
+  printf 'a.txt\n' > sub/files.txt # CWD-relative name
+  cd sub || return 1
+  run hug us --from-file files.txt -- .
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  # The report echoes the CWD-relative spelling (same base as the plain
+  # branch echoing the user's own spelling); the behavioral assert below
+  # is the load-bearing proof.
+  assert_output --partial "a.txt"
+  cd "$TEST_REPO" || return 1
+  run git diff --cached --name-only
+  refute_output --partial "sub/a.txt" # unstaged
+  psx_reset
+}
+
+@test "conformance us (roast): unresolvable from-file lines fail loud, never silent no-match" {
+  # Code-roast MAJOR: from src/, a from-file list with ROOT-relative
+  # spellings + a scope — the batch canonicalization silently dropped the
+  # unresolvable line: "No files matching '.' to unstage." exit 0 while
+  # src/a.py stayed staged (probed red). The NO-scope variant of the same
+  # bad list fails loud; the scoped variant must mirror that shape.
+  psx_setup
+  cd src || return 1
+  printf 'src/a.py\n' > root-spell.txt
+  run hug us --from-file root-spell.txt -- .
+  assert_failure
+  assert_output --partial "File 'src/a.py' is not tracked by git."
+  refute_output --partial "No files matching"
+  cd "$TEST_REPO" || return 1
+  run git diff --cached --name-only
+  assert_output --partial "src/a.py" # untouched — nothing was silently unstaged
+  psx_reset
+}
+
+@test "conformance us (roast): report lists RESOLVED files, not the raw pathspec" {
+  # Code-roast MINOR: ':(exclude)docs/' matched the staged set minus
+  # docs/, but the report echoed the pathspec itself ("Unstaged 1 file:
+  # ✓ :(exclude)docs/", probed red) — wrong noun and a useless line. The
+  # report must name the resolved restore targets.
+  psx_setup
+  git add docs/note.md # second staged file, excluded by the magic spec
+  run hug us -- ':(exclude)docs/'
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  assert_output --partial "src/a.py" # the RESOLVED target
+  refute_output --partial "✓ :(exclude)docs/"
+  psx_reset
+}
+
+@test "conformance us (roast): unreadable --from-file source is fatal, never falls through" {
+  # Code-roast MINOR: read_files_from_source's error() exits only the
+  # process-substitution SUBSHELL — mapfile saw empty and the flow fell
+  # through to the zero-args selector (probed red: gum error AFTER the
+  # source error). The failure must stop the command.
+  psx_setup
+  run hug us --from-file nonexistent.txt
+  assert_failure
+  assert_output --partial "not a valid file or '-' for stdin"
+  refute_output --partial "Interactive mode requires 'gum'" # selector never opened
+  refute_output --partial "No files selected"
+  psx_reset
+}
+
+@test "conformance us (Codex P1): from-commit sources are ROOT-relative, work from a subdir" {
+  # Codex P1: extract_files_from_commit yields ROOT-relative paths by
+  # construction, but the canonicalization resolved sources against the
+  # CWD — from sub/, 'us --from-commit HEAD -- .' wrongly reported
+  # "No files matching '.' to unstage." with sub/a.txt still staged
+  # (probed red). This is the LEGITIMATE root-relative case: it must
+  # UNSTAGE, not error. Source normalization is origin-based.
+  psx_setup
+  git restore --staged src/a.py
+  mkdir sub
+  echo a1 > sub/a.txt
+  git add sub/a.txt
+  git commit -q -m "add sub/a"
+  echo a2 >> sub/a.txt
+  git add sub/a.txt
+  cd sub || return 1
+  run hug us --from-commit HEAD -- .
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  refute_output --partial "No files matching"
+  cd "$TEST_REPO" || return 1
+  run git diff --cached --name-only
+  refute_output --partial "sub/a.txt" # unstaged
+  psx_reset
+}
+
+@test "conformance us (Codex P2): :(top) scope from a subdir unstages out-of-CWD files" {
+  # Codex P2: the CWD-prefix STRIP assumed every match lives under the
+  # CWD — a ':(top)root.txt' scope from sub/ matched root.txt (no
+  # prefix), left it spelled 'root.txt', and subdir validation read
+  # sub/root.txt → false failure (probed red: "No files matching" with
+  # root.txt still staged). Matches must convert to REAL cwd-relative
+  # paths ('../root.txt' climbs out of the subdir).
+  psx_setup
+  git restore --staged src/a.py
+  mkdir sub
+  echo a1 > sub/a.txt
+  echo r1 > root.txt
+  git add sub/a.txt root.txt
+  git commit -q -m "add sub/a + root"
+  echo a2 >> sub/a.txt
+  echo r2 >> root.txt
+  git add sub/a.txt root.txt
+  cd sub || return 1
+  run hug us --from-commit HEAD -- ':(top)root.txt'
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  refute_output --partial "No files matching"
+  cd "$TEST_REPO" || return 1
+  run git diff --cached --name-only
+  refute_output --partial "root.txt" # unstaged
+  assert_output --partial "sub/a.txt" # out of scope: still staged
   psx_reset
 }
 
@@ -1117,11 +1819,12 @@ psx_install_stub_gum() {
   # paths straight to git, which fataled (exit 128) with "--follow requires
   # exactly one pathspec" (fa, fborn, fcon) or "bad revision" (fb, fblame,
   # llf). They now enforce the one-file contract themselves with hug's own
-  # clear, command-naming error (exit 1).
+  # clear, command-naming error (exit 2 — flipped from 1 by the code-roast
+  # round: reject_multiple_files now uses error_usage, the family code).
   for cmd in "${PATHSPEC_SINGLEFILE_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" src/a.py docs/note.md
-    assert_equal 1 "$status"
+    assert_equal 2 "$status"
     assert_output --partial "hug $cmd accepts only one file."
     refute_output --partial "fatal:"
     psx_reset
@@ -1159,7 +1862,7 @@ psx_install_stub_gum() {
   # ...while a second FILE — flag before or after — still rejects.
   psx_setup
   run hug llf src/a.py docs/note.md -1
-  assert_equal 1 "$status"
+  assert_equal 2 "$status"
   assert_output --partial "hug llf accepts only one file."
   psx_reset
 }
@@ -1190,7 +1893,7 @@ psx_install_stub_gum() {
   # naming the command exactly as invoked.
   psx_setup
   run hug h steps src/a.py docs/note.md
-  assert_equal 1 "$status"
+  assert_equal 2 "$status"
   assert_output --partial "hug h steps accepts only one file."
   psx_reset
 }
@@ -1200,9 +1903,29 @@ psx_install_stub_gum() {
   # the extras vanished without a word. Now two files → exit 1 + rejection.
   psx_setup
   run hug stats file src/a.py docs/note.md
-  assert_equal 1 "$status"
+  assert_equal 2 "$status"
   assert_output --partial "hug stats file accepts only one file."
   refute_output --partial "Churn analysis"
+  psx_reset
+}
+
+@test "single-file cardinality: fblame churn mode is guarded too (combo gap, #298 Task 3c)" {
+  # fblame's guard sits BEFORE the churn/blame fork (#292), so --churn must
+  # not open a bypass: two files under --churn → the same hug rejection the
+  # blame mode gets (NOT churn.py silently analyzing only the first file).
+  psx_setup
+  run hug fblame --churn src/a.py docs/note.md
+  assert_equal 2 "$status"
+  assert_output --partial "hug fblame accepts only one file."
+  refute_output --partial "Churn analysis"
+  psx_reset
+
+  # One file under --churn keeps working: the Python churn backend runs and
+  # names the file (proves the guard did not over-reject the valid form).
+  psx_setup
+  run hug fblame --churn src/a.py
+  assert_success
+  assert_output --partial "src/a.py"
   psx_reset
 }
 
@@ -1733,6 +2456,50 @@ psx_install_stub_gum() {
   done
 }
 
+@test "contract a: picker selection stages the chosen file only (Task 9)" {
+  # a's SELECTION semantics, standalone by design (Task 9): the shared
+  # columns prove SCOPING with a CANCELLING stub (read-only by construction);
+  # this cell proves the mutating half with a SELECTING stub (same model as
+  # the lc/lf "chosen file" test above) — one candidate is picked from the
+  # scoped list and ONLY that file stages. Two-sided: sel-b.py (offered
+  # beside the pick) must stay untracked, and the never-named docs/note.md
+  # must stay unstaged. Post-pick rule (forward_pathspecs_to_picker
+  # contract): the picked file REPLACES the user's pathspecs on the exec
+  # line — the '.' scope's job ended at scoping the candidates, and git
+  # would union positive pathspecs if both rode along.
+  psx_setup
+  echo pick > sel-a.py # untracked: a's picker lists --unstaged --untracked
+  echo pick > sel-b.py
+  local stub_dir="$BATS_TEST_TMPDIR/stub"
+  mkdir -p "$stub_dir"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if [[ "${1:-}" == filter ]]; then' \
+    '  sed $'"'"'s/\033\\[[0-9;]*m//g'"'"' | tee "$GUM_CANDIDATES_FILE" | grep -F "$GUM_PICK" | head -1' \
+    'fi' \
+    'exit 0' > "$stub_dir/gum"
+  chmod +x "$stub_dir/gum"
+  GUM_CANDIDATES_FILE="$BATS_TEST_TMPDIR/gum-candidates.txt"
+  GUM_PICK="sel-a.py"
+  export GUM_CANDIDATES_FILE GUM_PICK HUG_TEST_MODE=true
+  PATH="$stub_dir:$PATH"
+  : > "$GUM_CANDIDATES_FILE"
+
+  run hug a -- . --
+  assert_success
+  assert_output --partial "Staged 1 file"
+  # The picked file staged …
+  run git status --porcelain -- sel-a.py
+  [[ "$output" == A* ]]
+  # … the offered sibling did NOT …
+  run git status --porcelain -- sel-b.py
+  [[ "$output" == "??"* ]]
+  # … and the never-named unstaged file stays unstaged.
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
+
 @test "contract lf --json: option-named pathspec after -- stays a pathspec (review)" {
   # Review fix: batch_commit_search/batch_code_search used to interpret
   # EVERY '--no-body'/'--no-files' token as their private flag — a pathspec
@@ -1808,5 +2575,132 @@ psx_install_stub_gum() {
   run hug a --browse-root new.txt
   assert_failure
   assert_output --partial "--browse-root cannot be used with explicit paths"
+  psx_reset
+}
+
+###############################################################################
+# Roast round 2 (PR-B review, #298): malformed magic pathspecs fail LOUDLY,
+# and us scoped-empty has ONE exit contract.
+#
+# MAJOR 1: ':(bogus)src/' used to be swallowed by every suppressed capture
+# in the family — sls answered "No staged files matching ':(bogus)src/'
+# found." exit 0, slu --json emitted a zero-count envelope (a machine API
+# silently lying), us --from-commit printed git's fatal AND a contradictory
+# "No files matching" info. Contract now: git's fatal lands on stderr, hug
+# adds "Invalid pathspec: ... See 'hug help :pathspec'." and exits 2
+# (HUG_EX_USAGE — same class as the unknown '-*' rejection).
+###############################################################################
+
+@test "roast2 M1: sls rejects malformed magic pathspec loudly (exit 2, no empty answer)" {
+  psx_setup
+  run hug sls -- ':(bogus)src/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  assert_output --partial "hug help :pathspec"
+  refute_output --partial "No staged files matching"
+  psx_reset
+}
+
+@test "roast2 M1: whole sl* family + count + json reject malformed magic pathspecs" {
+  psx_setup
+  local cmd
+  for cmd in sls slu slk sli slc sl; do
+    run hug $cmd -- ':(bogus)src/'
+    assert_equal 2 "$status"
+    assert_output --partial "Invalid pathspec"
+    assert_output --partial "hug help :pathspec"
+  done
+  run hug sls -c -- ':(bogus)src/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  psx_reset
+}
+
+@test "roast2 M1: --json emits NOTHING on stdout for a malformed magic pathspec" {
+  psx_setup
+  # zero non-JSON bytes rule: on failure stdout must carry no envelope at
+  # all. Separated streams (run merges them, so probe manually).
+  local json_out status=0
+  json_out=$(hug slu --json -- ':(bogus)src/' 2>/dev/null) || status=$?
+  assert_equal 2 "$status"
+  assert_equal "" "$json_out"
+  psx_reset
+}
+
+@test "roast2 M1: us --from-commit with malformed magic pathspec: single loud error, staging untouched" {
+  psx_setup
+  run hug us --from-commit HEAD -- ':(bogus)src/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  refute_output --partial "No files matching" # the contradictory info is gone
+  run hug sls
+  assert_output --partial "src/a.py" # staging untouched
+  psx_reset
+}
+
+@test "roast2 M1: us plain arm rejects malformed magic pathspec loudly" {
+  psx_setup
+  run hug us -- ':(bogus)src/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  run hug sls
+  assert_output --partial "src/a.py" # staging untouched
+  psx_reset
+}
+
+@test "roast2 M1: valid magic pathspecs and the unscoped run are unchanged" {
+  psx_setup
+  run hug sls -- ':(exclude)docs/'
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/"
+  run hug us -- ':(top)src/a.py'
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  # Unscoped + bare '--' stay byte-identical (no validation chatter)
+  run hug sls
+  local plain="$output"
+  run hug sls --
+  assert_equal "$plain" "$output"
+  psx_reset
+}
+
+###############################################################################
+# MAJOR 2: us scoped-empty had TWO exit contracts — a pathspec-shaped scope
+# matching nothing staged answered the loud "File 'nonexistent/' is not
+# tracked by git." exit 1 (wrong noun, wrong class), while the from-source
+# arm answered "No files matching ... to unstage." exit 0. One condition,
+# one answer: scope-shaped no-match → info + exit 0. The loud error stays
+# for LITERAL file arguments (the safety check that names a real file the
+# user explicitly asked to unstage).
+###############################################################################
+
+@test "roast2 M2: us scoped-empty on a pathspec-shaped scope is a no-match info, exit 0" {
+  psx_setup
+  run hug us -- nonexistent/
+  assert_success
+  assert_output --partial "No files matching 'nonexistent/' to unstage."
+  refute_output --partial "is not tracked by git"
+  run hug sls
+  assert_output --partial "src/a.py" # staging untouched
+  psx_reset
+}
+
+@test "roast2 M2: us literal tracked-but-unstaged file keeps the loud safety error" {
+  psx_setup
+  # docs/note.md is tracked with an UNSTAGED mod — a literal file the user
+  # named; the confusing-silent-no-op safety check must survive unchanged.
+  run hug us docs/note.md
+  assert_failure
+  assert_output --partial "is not staged"
+  psx_reset
+}
+
+@test "roast2 M2: us directory scope with nothing staged under it is a no-match info" {
+  psx_setup
+  git restore --staged src/a.py # nothing staged under src/ anymore
+  run hug us -- src/
+  assert_success
+  assert_output --partial "No files matching 'src/' to unstage."
   psx_reset
 }

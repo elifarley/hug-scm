@@ -84,8 +84,8 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
     :::
 
 - `hug sl`: **S**tatus + **L**ist
-    - **Description**: Status with a list of *uncommitted* tracked files (mirrors plain `git status`).
-    - **Example**: `hug sl`
+    - **Description**: Status with a list of *uncommitted* tracked files (mirrors plain `git status`). Accepts pathspecs to scope the listing: `hug sl -- src/` (a trailing bare `--` alone is inert — identical to no arguments; a scoped run omits the trailing summary line).
+    - **Example**: `hug sl`, `hug sl -- src/`
     - **Safety**: ✅ Read-only.
     
     ::: details Visual Examples: hug sl in Different States
@@ -110,32 +110,32 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 
 
 - `hug sla`: **S**tatus + **L**ist **A**ll
-    - **Description**: Full status including **untracked** files so you can see new additions.
-    - **Example**: `hug sla`
+    - **Description**: Full status including **untracked** files so you can see new additions. Accepts pathspecs: `hug sla -- '*.md'` lists only Markdown files — **quote your globs** or your shell expands them first.
+    - **Example**: `hug sla`, `hug sla -- '*.md'`
     - **Safety**: ✅ Read-only (includes untracked context only).
 
 - `hug sli`: **S**tatus + **L**ist **I**gnored
-    - **Description**: Status plus ignored and untracked files to surface items in `.gitignore`.
-    - **Example**: `hug sli`
+    - **Description**: Status plus ignored and untracked files to surface items in `.gitignore`. Accepts pathspecs: `hug sli -- build/` lists only ignored files under `build/`.
+    - **Example**: `hug sli`, `hug sli -- build/`
     - **Safety**: ✅ Read-only (great for spotting generated artifacts).
 
 - `hug sls`: **S**tatus + **L**ist **S**taged
-    - **Description**: Status with staged files only.
-    - **Example**: `hug sls`
+    - **Description**: Status with staged files only. Accepts pathspecs: `hug sls -- src/` lists only staged files under `src/` (composes with `-c` and `--json`).
+    - **Example**: `hug sls`, `hug sls -- src/`
     - **Safety**: ✅ Read-only.
 
 - `hug slu`: **S**tatus + **L**ist **U**nstaged
-    - **Description**: Status with unstaged files only (includes conflicted files, marked `Cnflt`).
-    - **Example**: `hug slu`
+    - **Description**: Status with unstaged files only (includes conflicted files, marked `Cnflt`). Accepts pathspecs: `hug slu -- docs/` lists only unstaged files under `docs/`.
+    - **Example**: `hug slu`, `hug slu -- docs/`
     - **Safety**: ✅ Read-only.
 
 - `hug slk`: **S**tatus + **L**ist untrac**K**ed
-    - **Description**: Status with untracked files only.
-    - **Example**: `hug slk`
+    - **Description**: Status with untracked files only. Accepts pathspecs: `hug slk -- src/` lists only untracked files under `src/`.
+    - **Example**: `hug slk`, `hug slk -- src/`
     - **Safety**: ✅ Read-only.
 
 - `hug slc`: **S**tatus + **L**ist **C**onflicts
-    - **Description**: Status with conflicted (unmerged) files only — the native equivalent of `git diff --name-only --diff-filter=U`. Use `-q` for plain paths (scripting); `--json` emits the unified status envelope with a `summary.conflicted` count. Pathspecs scope the text listing (`--json` ignores them).
+    - **Description**: Status with conflicted (unmerged) files only — the native equivalent of `git diff --name-only --diff-filter=U`. Use `-q` for plain paths (scripting); `--json` emits the unified status envelope with a `summary.conflicted` count. Pathspecs scope both the text listing and the `--json` envelope.
     - **Example**: `hug slc`, `hug slc -c` (count of conflicts)
     - **Safety**: ✅ Read-only.
 
@@ -146,6 +146,9 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
 > hug slu -c src/     # count unstaged files under src/
 > if [[ $(hug slc -c) -gt 0 ]]; then ...; fi
 > ```
+
+> [!NOTE] Pathspec filtering on the `sl*` family
+> Every `sl*` listing accepts `-- <path>...` (git pathspecs, magic included): the listing, the `-c` count, and the `--json` envelope are all scoped to the matching paths (an empty scope keeps the envelope shape with zero counts). A **trailing bare `--` is inert** — `hug sls --` is byte-identical to `hug sls`, summary included. A **scoped run omits the trailing `hug s` summary** (it describes the whole repo, not your scope); run `hug s` separately when you want it. Unknown dash-tokens fail loudly with exit 2 — a path that starts with `-` needs the separator: `hug sls -- -weird-file`. Full contract: `hug help :pathspec`.
 
 > **Related:** After inspecting status, jump to [Detailed Patches](#detailed-patches) for inline diffs or hop over to [Working Directory (w*)](working-dir) to clean up files you find.
 
@@ -261,12 +264,14 @@ This is intentional, not a bug. `dd w` answers *"what does my tree look like vs 
 ## Staging Commands (a*)
 
 - `hug a [files...]`: **A**dd tracked
-    - **Description**: Stage tracked changes (or specific files if provided). If no args, stages modifications and deletions of tracked files, but not new/untracked files (use `hug aa` for those). Use `--` to trigger interactive file selection UI.
+    - **Description**: Stage tracked changes (or specific files if provided). If no args, stages modifications and deletions of tracked files, but not new/untracked files (use `hug aa` for those). The `--` separator is the data/option boundary: files after it are staged **exactly** (`hug a -- file.txt` never stages anything else); a bare trailing `--` alone triggers interactive file selection, and pathspecs before it scope the picker (`hug a -- src/ --`).
     - **Example**:
       ```
       hug a                     # Stage all tracked changes (modifications + deletions)
       hug a src/                # Stage directory, including non-tracked files
+      hug a -- file.txt         # Stage EXACTLY this file (paths after -- are staged verbatim)
       hug a --                  # Interactive file selection (requires gum)
+      hug a -- src/ --          # Interactive selection scoped to src/
       ```
     - **Safety**: ✅ Safe staging (reversible with `hug us`).
 
@@ -293,8 +298,8 @@ This is intentional, not a bug. `dd w` answers *"what does my tree look like vs 
 
 ## Unstaging
 - `hug us <files...>`: **U**n**S**tage specifics
-    - **Description**: Unstage specific files.
-    - **Example**: `hug us file.js`
+    - **Description**: Unstage specific files. Accepts pathspecs as a scope: `hug us -- src/` unstages only files under `src/` (`--from-commit` file lists are intersected with the scope). A bare trailing `--` alone behaves exactly like no arguments (opens the staged-file selector).
+    - **Example**: `hug us file.js`, `hug us -- src/`
     - **Safety**: ✅ Only affects the index; your working tree stays untouched.
 
 - `hug usa`: **U**n**S**tage **A**ll

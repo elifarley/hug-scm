@@ -39,6 +39,27 @@ Command-line flag parsing utilities using GNU getopt (required).
   - Special handling for trailing `--` (interactive file selection)
 - Argument validation (`require_args`)
 - Flag conflict detection (`check_browse_root_no_paths`)
+- Uniform pathspec contract helpers (#292): `parse_common_flags_with_pathspecs`
+  (split args at the first `--` into pre-args + pathspecs, then parse common
+  flags on the pre-args only), `pathspec_pathspecs_into` (read the collected
+  pathspecs into a caller-named array), `forward_pathspecs_to_picker`
+  (append them to a picker option array behind a protective `--`), and
+  `drain_pathspecs_after_separator` (the shared `--)` arm for
+  separator-aware option loops — used by output_json_status, hug-git-json,
+  and hug-select-files)
+
+**The parsing-order rule (structural, #292):** the pathspec split runs
+BEFORE any other argument inspection — a command adopting the contract
+calls `parse_common_flags_with_pathspecs` first, then its own loop sees
+only pre-`--` args. Consequences every command script must preserve:
+(1) a trailing bare `--` never survives the split (picker callers opt in
+via `--picker`; everyone else gets it consumed inertly), (2) the
+own-loop's `-*` arm is the loud unknown-option rejection — bare
+positionals collect as pathspecs (git parity), and (3) post-`--` data is
+verbatim pathspec data, so any forwarding to git or a picker goes behind
+a protective second `--` (see `forward_pathspecs_to_picker`). The
+user-facing contract this implements is documented in
+`hug help :pathspec` (`git-config/lib/python/articles/pathspec.md`).
 
 **Requirements:**
 - GNU getopt (provided by util-linux package on most Linux distributions)
@@ -206,12 +227,13 @@ Git-specific JSON output helpers (uses hug-json).
   - Input: `"M\tfile.txt"` from git's --name-status
   - Output: `{"path": "file.txt", "status": "modified"}`
   - Handles renamed/copied files: `"R100\told.txt\tnew.txt"` → `{"path": "new.txt", "status": "renamed"}`
-- `collect_git_files_json "$type" [flags...]` - Collect files of a type as JSON objects
+- `collect_git_files_json "$type" [flags...] [-- pathspec...]` - Collect files of a type as JSON objects
   - `$type`: `staged`|`unstaged`|`untracked`|`ignored`|`conflicted` (unknown types error)
   - Prints one JSON object PER LINE to stdout (empty when none); `mapfile -t files < <(collect_git_files_json "$type")` yields the objects AND the file count (the array length)
   - Line-per-object keeps the count truthful — a newline in a filename is escaped to `\n` by `json_escape`, so each line is exactly one object (regression pin: #247)
   - Bash-4.0-safe: no nameref, no comma-split
   - Supports `--cwd` flag for scoping
+  - `-- pathspec...` scopes every underlying `list_*` call (protective separator; option-shaped pathspecs like a file named `--cwd` stay data — #292)
 - `count_files_with_status <state> [pathspec...]` - Count files by state (the sl* `-c` engine)
   - `<state>`: `staged`|`unstaged`|`untracked`|`ignored`|`conflicted`|`all`|`all+untracked`
   - Prints an integer (0 when none, exit 0). NUL-safe (newline filenames count once) and Bash 4.0-safe (no nameref).
@@ -319,6 +341,10 @@ output_json_status_unified --include-empty --filter "staged,unstaged,untracked,i
 
 # Include only specific types, exclude empty arrays
 output_json_status_unified --filter "staged,unstaged" --cwd-only
+
+# Scoped: pathspecs after -- filter every list call; empty scopes keep the
+# envelope shape (zero-length arrays, summary counts 0)
+output_json_status_unified --filter "staged" -- src/
 
 # JSON status output with backward compatibility
 # Bin version (includes empty arrays)

@@ -64,6 +64,14 @@ DESCRIPTION:
     - To re-hash/re-date HEAD anyway, re-run with -f/--force.
     - -y does NOT bypass the guard (it is not a confirmation).
 
+PATH FILTERING:
+  NOT supported: cmoda amends with -a (ALL tracked changes), and git
+  rejects paths combined with -a ("paths ... with -a does not make
+  sense") — loudly, with HEAD untouched (a pinned safety property: the
+  pathspecs are re-inserted so -a can never silently swallow a scope).
+  For a scoped amend use 'hug cmod -- <path>...'.
+  See 'hug help :pathspec' for the full contract.
+
 EXAMPLES:
   hug cmoda --no-edit                    # Amend all tracked, same message
   hug cmoda -m "Fixed typo"              # Amend with all tracked changes, new message

@@ -9,12 +9,39 @@
 #   - parse_common_flags: expand shared flags into shell assignments.
 #   - parse_common_flags_with_pathspecs: fixed-order combo — pathspec split
 #     first, then common-flag parsing on the pre-args only.
+#   - pathspec_pathspecs_into: copy the collected pathspecs into a
+#     caller-named array (the single read path for the split).
+#   - forward_pathspecs_to_picker: append the collected pathspecs to a
+#     picker option array behind a protective '--' (nullsafe).
+#   - drain_pathspecs_after_separator: the `--)` arm of a separator-aware
+#     option loop — append all post-separator tokens to a nameref'd array.
 #   - reject_multiple_files: enforce single-file cardinality for
 #     one-file commands (uniform pathspec contract, spec §3.2/§5.6).
 #   - require_args: enforce minimum argument counts.
 #
 # Implementation:
 #   Uses GNU getopt for robust option parsing (required dependency).
+
+# Double-load guard (#292 PR-B Task 7): downstream libs source this module
+# at THEIR file scope (hug-git-json, output_json_status — for the drain
+# helper below), and some of those are themselves sourced LAZILY, mid-flow,
+# AFTER the caller's split parse (git-lc/git-lf source hug-git-json inside
+# their JSON arms). Without the guard, each such re-source re-ran the
+# `declare -ga _pathspec_pathspecs=()` below and silently WIPED the
+# collected split — probed: lc/lf --json pathspec scoping broke exactly
+# this way when the drain extraction first added the sourcing edge. The
+# guard turns re-sourcing into a no-op, eliminating the old HAZARD.
+if [[ -n "${_HUG_CLI_FLAGS_LOADED:-}" ]]; then
+  return 0 2>/dev/null || :
+fi
+_HUG_CLI_FLAGS_LOADED=1
+
+# Nounset safety (#298): the pathspec global is declared at LOAD time so the
+# accessor/forwarder below work before any parse (set -u would kill the shell
+# on an unset array expansion). Plain assignment from the parsers' eval'd
+# output later just repopulates it. (Re-sourcing no longer wipes it — the
+# guard above returns before reaching this declare on any second load.)
+declare -ga _pathspec_pathspecs=()
 
 ################################################################################
 # Command Pattern Helpers
@@ -135,6 +162,11 @@ parse_common_flags() {
           shift
           ;;
         -y|--yes)
+          # yes_flag (parse-local) alongside the export: HUG_YES may be
+          # INHERITED from the environment (documented sequence-automation
+          # variable), so it cannot evidence that THIS invocation passed -y
+          # (codex P2 on reject_action_flags).
+          echo "yes_flag=true"
           echo "export HUG_YES=true"
           shift
           ;;
@@ -204,6 +236,9 @@ parse_common_flags() {
         shift
         ;;
       -y|--yes)
+        # yes_flag (parse-local): see the getopt-branch note — HUG_YES may
+        # be inherited, only yes_flag evidences THIS invocation passed -y.
+        echo "yes_flag=true"
         echo "export HUG_YES=true"
         shift
         ;;
@@ -304,6 +339,15 @@ parse_common_flags() {
 #      same-named leading positional, and no realistic search term is
 #      '--picker'.
 #
+# NULLSAFE IDIOM (canonical form, #298): at a site where an array can be
+# empty, expand it as ${arr[@]+"${arr[@]}"} — a bare "${arr[@]}" raises
+# "unbound variable" under set -u on the Bash 4.0–4.3 floor this repo
+# supports (docs/installation.md; fixed in Bash 4.4), and after a
+# zero-line mapfile the array may be unset or empty. Sites that are
+# provably non-empty (seeded at declaration, or guarded by a ${#arr[@]}
+# check directly above) keep the plain form. Call sites repeat only the
+# pointer, never this explanation.
+#
 # Pure argument surgery: performs NO git invocations, and leaves
 # parse_pathspecs / parse_common_flags themselves untouched.
 #
@@ -351,6 +395,112 @@ parse_common_flags_with_pathspecs() {
   }
 }
 
+# Accessor for the collected pathspecs (#298): downstream modules read the
+# split through this function instead of touching the _pathspec_pathspecs
+# global directly — one read path, so the representation can change later.
+#
+# Usage: pathspec_pathspecs_into <nameref>
+# Effects:
+#   Assigns the caller-named array variable to the current contents of
+#   _pathspec_pathspecs (empty array when none were collected). Works from
+#   any sourced module in the same shell — the global is shell-wide.
+#
+# Reserved prefix __psx_ — a caller variable with this name circulars the
+# nameref (documented; Bash >= 4.3, same floor as the 107 existing
+# local -n uses in git-config/lib).
+pathspec_pathspecs_into() {
+  local -n __psx_out="$1"
+  # ${arr[@]+x} guard: under set -u an UNSET global (helper used before any
+  # parse — the exact cross-module case) must not kill the shell.
+  __psx_out=(${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"})
+}
+
+# Picker-forwarding helper (#298): the ONE place that appends the collected
+# pathspecs to a picker's option array behind a protective '--' — a pathspec
+# literally named like a picker option ('--staged') must stay data, and a
+# missing pathspec list must never leave a bare '--'. Replaces the idiom
+# previously repeated across hug-select-files, hug-git-diff, lc/lf/lcr.
+#
+# Usage: forward_pathspecs_to_picker <select_opts_nameref>
+# Effects:
+#   Appends nothing when no pathspecs were collected; exactly
+#   '--' <pathspec...> when some were. Pure argument/array surgery — no git.
+#   Call at most ONCE per opts array: a second call would append a second
+#   '--' <pathspecs> group (harmless to most pickers, but not idempotent).
+#
+# Post-pick rule (part of this contract): the picked file REPLACES the
+# user's pathspecs on the exec line that follows a selection — git unions
+# positive pathspecs, so keeping both would widen the scope back out. The
+# pathspecs' job ends at scoping the picker candidates.
+forward_pathspecs_to_picker() {
+  # Reserved prefix __fps_ — see pathspec_pathspecs_into's note.
+  local -n __fps_opts="$1"
+  # ${arr[*]+x} probe ([*], not [@]: shellcheck SC2199; identical set-ness
+  # for a +x test): under set -u an UNSET global (helper used before any
+  # parse — the exact cross-module case) must not kill the shell.
+  if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+    __fps_opts+=("--" ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"})
+  fi
+}
+
+# Post-separator drain (#292 PR-B Task 7): the `--)` arm of a
+# separator-aware option loop. The caller has MATCHED '--', so every
+# remaining token is verbatim pathspec DATA — even one spelled like the
+# loop's own flags (a file literally named '--cwd' must scope the query,
+# not toggle the scope flag). Extracted from the inner-while drain
+# copy-pasted across output_json_status, output_json_status_unified,
+# collect_git_files_json (hug-git-json), the selector loops in
+# hug-select-files, and the five list_*_files arms in hug-git-files —
+# ONE named contract instead of ten clones; an eleventh copy would have
+# been one more place to forget the break. All sites adopted.
+#
+# Usage (inside the option loop's `--)` arm — the shift+break are the
+# CALLER's job: this helper cannot consume the caller's "$@", a function
+# only ever sees a copy):
+#   --)
+#     shift                                # consume the separator itself
+#     drain_pathspecs_after_separator pathspecs "$@"
+#     break                                # the rest is data — stop parsing
+#     ;;
+#
+# Pure argument surgery: appends its arguments to the nameref'd array, no
+# git, no output, no separator re-emission (the exact-one-'--' rule is the
+# CALLER's: this layer CONSUMES the separator it matched and the next
+# boundary re-appends exactly one — see output_json_status).
+drain_pathspecs_after_separator() {
+  # Reserved prefix __dps_ — see pathspec_pathspecs_into's nameref note
+  # (Bash >= 4.3 floor, same as the existing local -n uses).
+  local -n __dps_out="$1"
+  shift
+  __dps_out+=("$@")
+}
+
+# Count LEADING positional arguments only — the first flag-looking token
+# ends the count (#298). Cardinality guards (llf, stats-file, ...) use this
+# so a flag's separate-word VALUE is never miscounted as a second file
+# ('llf a --staged' has ONE file, not two — the PR-A regression this
+# idiom encodes). '--' itself ends the count: post-'--' tokens are
+# pathspec data, not command positionals.
+#
+# Usage: count_positional_args_before_flags [args...]
+# Parameters:
+#   $@ - Raw CLI args to scan (safe to pass an empty/unset-arg list)
+# Effects:
+#   Prints the count of leading non-'-*' args to stdout. Pure computation:
+#   no git, no exit on any input. Callers capture via $(...) — command
+#   substitution strips the trailing newline, so the result is a clean
+#   integer even under 'set -euo pipefail'.
+count_positional_args_before_flags() {
+  local n=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+    -*) break ;;
+    *) n=$((n + 1)) ;;
+    esac
+  done
+  printf '%s\n' "$n"
+}
+
 # Cardinality guard for single-file commands (spec §3.2 / §5.6 of the
 # pathspec-contract design). Rejects more than one file argument with a
 # clear, command-naming error instead of git's raw fatals or silent ignores.
@@ -372,7 +522,31 @@ reject_multiple_files() {
     [[ -n "$f" ]] && files+=("$f")
   done
   if [[ ${#files[@]} -gt 1 ]]; then
-    error "${cmd_name} accepts only one file."
+    # error_usage (exit 2, code-roast alignment): a cardinality violation
+    # is a USAGE error — the migrated pathspec family rejects unknown
+    # options with the same code; exit 1 made scripts unable to
+    # distinguish "bad invocation" from "command failed".
+    error_usage "${cmd_name} accepts only one file."
+  fi
+}
+
+# reject_action_flags <cmd-name> — for LISTING commands whose only common
+# flags are -q and help (codex P2 on statusbase): parse_common_flags happily
+# consumes -f/--force, -y/--yes, --dry-run and --browse-root, so a listing
+# would silently accept an action flag and print a normal unscoped listing —
+# the exact silent-accept class this contract exists to kill. Call it
+# immediately after 'eval "$(parse_common_flags_with_pathspecs ...)"': the
+# eval'd assignments (dry_run/force/browse_root/yes_flag) are visible at the
+# caller's scope. yes_flag, NOT HUG_YES: the export may be inherited from the
+# environment (sequence automation exports it for a whole hug command line),
+# and inherited state must not reject an innocent listing (codex P2).
+# Action commands (us, a, ...) must NOT call this — those flags are their
+# contract.
+reject_action_flags() {
+  if ${dry_run:-false} || ${force:-false} || ${browse_root:-false} || ${yes_flag:-false}; then
+    # error_usage: exit 2, the usage-error family code (unknown dash-tokens,
+    # malformed pathspecs, cardinality violations).
+    error_usage "$1 is a listing: action flags (-f/--force, -y/--yes, --dry-run, --browse-root) do not apply. See 'hug help :pathspec'."
   fi
 }
 

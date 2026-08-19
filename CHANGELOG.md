@@ -2,6 +2,32 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [1.12.0.0] - 2026-08-18
+
+PR-B of the uniform pathspec contract (elifarley/hug-scm#292, checklist elifarley/hug-scm#298): the `sl*` family, `us`, and `a` join the contract — `-- <path>...` now means the same thing on every path-accepting command. Full contract, support matrix, and migration notes: `hug help :pathspec`.
+
+### Changed
+
+- **Unknown dash-tokens on the `sl*` listings and `us` now fail loudly (exit 2)** — was a silent pathspec swallow that looked like an empty answer:
+  - before: `hug sls -xX` → exit 0, `No staged files matching '-xX' found.`
+  - after: `hug sls -xX` → exit 2, `Unknown option: -xX. Pathspecs beginning with '-' require '--': hug sls -- -xX. See 'hug help :pathspec'.`
+  - safe rewrite when a file literally named `-xX` was meant: `hug sls -- -xX`
+- **`--json` is now pathspec-scoped across the `sl*` family** — was the whole-repo envelope even with pathspecs (a documented contract, now flipped):
+  - before: `hug slc --json -- src/ | jq .summary.conflicted` → the whole repo's conflict count
+  - after: the same command → the count under `src/` only; an empty scope keeps the envelope shape with zero counts
+- **A trailing bare `--` on the listings is inert** — was a phantom pathspec matching nothing:
+  - before: `hug sl --` → `No staged or unstaged files matching '--' found.`
+  - after: `hug sls --` → byte-identical to `hug sls`, summary included
+- **Scoped listings omit the trailing one-line `hug s` summary** (it describes the whole repo, not your scope). Omit pathspecs for the full picture, or run `hug s` separately.
+- **`us` flips**: a mid-stream `--` is now the pathspec separator — was `Unknown option: --`, exit 1:
+  - before: `hug us -- src/` → error, exit 1
+  - after: `hug us -- src/` unstages only files under `src/` (`--from-commit` file lists are intersected with the scope); a trailing bare `--` behaves exactly like no arguments (the staged-file selector)
+
+### Added
+
+- **`hug help :pathspec`** — the contract article: syntax, quoting rules, the trailing-vs-mid-stream `--` duality, magic pathspec passthrough, a per-command support matrix (with explicit not-yet rows for `sh`, `llu`, and the `w-*` family), edge cases, and a script-migration section covering every flip above. PATH FILTERING pointer blocks now appear in every path-accepting command's help (`sl*`, `us`, `a`, `ss`/`su`/`sw`, `shc`/`shcp`/`shp`/`dd`, `lc`/`lf`/`lcr`, `cmod`/`cmoda`); README `sl`/`sla` rows show the `[-- <path>...]` surface.
+- **`hug a -- src/ --` opens the interactive picker scoped to `src/`** — the scope used to be silently discarded. (For `hug a -- <file>` staging exactly the named files, see the 1.11.1.0 entry — elifarley/hug-scm#300; that behavior is unchanged here.)
+
 ## [1.11.0.0] - 2026-08-17
 
 PR-A of the uniform pathspec contract (elifarley/hug-scm#292): `-- <path>...`

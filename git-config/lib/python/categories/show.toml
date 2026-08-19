@@ -1,4 +1,5 @@
 label       = "Show details"
 description = """
 Show details for commits, patches, and objects.
+Scope patches by pathspec (-- <path>...).
 """

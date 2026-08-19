@@ -12,6 +12,52 @@
 # and follow consistent patterns for error handling and user feedback.
 
 ################################################################################
+# Pathspec Validation
+################################################################################
+
+# validate_pathspecs_or_die [pathspec...]
+# Loud one-time gate for user-supplied pathspecs (#298 roast MAJOR 1).
+#
+# WHY this exists: git rejects a malformed magic pathspec (e.g. ':(bogus)src/')
+# with a fatal + nonzero exit, but every list_*_files capture below suppresses
+# stderr and coerces failure to an empty list — the family then presented the
+# EMPTY ANSWER ("No staged files matching ':(bogus)src/' found.", exit 0; a
+# zero-count JSON envelope) while silently discarding git's fatal. A typo in
+# the magic prefix was indistinguishable from a legitimate no-match.
+#
+# Contract: run ONE unsuppressed `git ls-files -- <specs>` so git's own fatal
+# lands on stderr (the precise diagnosis: which magic, which spec), then
+# convert the failure into the family's usage-error shape — exit 2
+# (HUG_EX_USAGE) + a pointer to 'hug help :pathspec', mirroring the unknown
+# '-*' option rejection template.
+#
+# WHERE to call it: ONCE per invocation, at the COMMAND entry (right after
+# check_git_repo), never inside list_*_files / count_files_with_status /
+# output_json_status_unified. Two verified traps make the lib level wrong:
+#   1. the sl* listing arm calls `list_files_with_status ... 2>/dev/null` —
+#      an error() inside would have its message EATEN by the redirect;
+#   2. the --json chain collects via `mapfile < <(collect_git_files_json …)`
+#      — an error() exits only the process-substitution subshell and the
+#      envelope is still printed on stdout.
+# Both sinks sit BELOW the command entry, so the entry is the one place the
+# exit propagates and stderr stays unsuppressed.
+#
+# Empty argument list (unscoped run) is byte-identical to today: no git call,
+# no output, return 0. A VALID spec set costs exactly one extra git process —
+# the price of never answering a typo with a silent empty list.
+validate_pathspecs_or_die() {
+    [[ $# -gt 0 ]] || return 0
+    if ! git ls-files -- "$@" > /dev/null; then
+        # git's "fatal: Invalid pathspec magic ..." already reached stderr
+        # above (stdout redirected, stderr deliberately unsuppressed) — add
+        # only the hug-level remedy, not a duplicate diagnosis.
+        local spec_list=""
+        printf -v spec_list "'%s' " "$@"
+        error_usage "Invalid pathspec: ${spec_list% }. See 'hug help :pathspec'."
+    fi
+}
+
+################################################################################
 # Working Tree File Listing Functions
 ################################################################################
 
@@ -45,12 +91,12 @@ list_staged_files() {
             --)
                 # Everything after the separator is a pathspec — even a token
                 # shaped like one of our own flags (a file literally named
-                # '--cwd' must scope, not toggle the scoping flag).
+                # '--cwd' must scope, not toggle the scoping flag). Drained
+                # via the shared helper (hug-cli-flags — #292 PR-B Task 7;
+                # available here through hug-common's load order).
                 shift
-                while [[ $# -gt 0 ]]; do
-                    pathspecs+=("$1")
-                    shift
-                done
+                drain_pathspecs_after_separator pathspecs "$@"
+                break
                 ;;
             *)
                 # Treat remaining arguments as pathspecs
@@ -102,7 +148,7 @@ list_staged_files() {
         mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
         # Always convert to current-dir relative paths
         convert_to_relative_paths paths
-        printf '%s\n' "${paths[@]}"
+        printf '%s\n' ${paths[@]+"${paths[@]}"}
     fi
 }
 
@@ -136,12 +182,12 @@ list_unstaged_files() {
             --)
                 # Everything after the separator is a pathspec — even a token
                 # shaped like one of our own flags (a file literally named
-                # '--cwd' must scope, not toggle the scoping flag).
+                # '--cwd' must scope, not toggle the scoping flag). Drained
+                # via the shared helper (hug-cli-flags — #292 PR-B Task 7;
+                # available here through hug-common's load order).
                 shift
-                while [[ $# -gt 0 ]]; do
-                    pathspecs+=("$1")
-                    shift
-                done
+                drain_pathspecs_after_separator pathspecs "$@"
+                break
                 ;;
             *)
                 # Treat remaining arguments as pathspecs
@@ -205,7 +251,7 @@ list_unstaged_files() {
         mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
         # Always convert to current-dir relative paths
         convert_to_relative_paths paths
-        printf '%s\n' "${paths[@]}"
+        printf '%s\n' ${paths[@]+"${paths[@]}"}
     fi
 }
 
@@ -244,12 +290,12 @@ list_conflicted_files() {
             --)
                 # Everything after the separator is a pathspec — even a token
                 # shaped like one of our own flags (a file literally named
-                # '--cwd' must scope, not toggle the scoping flag).
+                # '--cwd' must scope, not toggle the scoping flag). Drained
+                # via the shared helper (hug-cli-flags — #292 PR-B Task 7;
+                # available here through hug-common's load order).
                 shift
-                while [[ $# -gt 0 ]]; do
-                    pathspecs+=("$1")
-                    shift
-                done
+                drain_pathspecs_after_separator pathspecs "$@"
+                break
                 ;;
             *)
                 # Treat remaining arguments as pathspecs
@@ -279,7 +325,7 @@ list_conflicted_files() {
     if $with_status; then
         local -a lines=()
         mapfile -t lines < <("${git_cmd_base[@]}" 2>/dev/null || true)
-        for line in "${lines[@]}"; do
+        for line in ${lines[@]+"${lines[@]}"}; do
             [[ -z "$line" ]] && continue
             local status file
             IFS=$'\t' read -r status file <<< "$line"
@@ -293,7 +339,7 @@ list_conflicted_files() {
         mapfile -t paths < <("${git_cmd_base[@]}" 2>/dev/null || true)
         # Always convert to current-dir relative paths
         convert_to_relative_paths paths
-        printf '%s\n' "${paths[@]}"
+        printf '%s\n' ${paths[@]+"${paths[@]}"}
     fi
 }
 
@@ -323,12 +369,12 @@ list_untracked_files() {
             --)
                 # Everything after the separator is a pathspec — even a token
                 # shaped like one of our own flags (a file literally named
-                # '--cwd' must scope, not toggle the scoping flag).
+                # '--cwd' must scope, not toggle the scoping flag). Drained
+                # via the shared helper (hug-cli-flags — #292 PR-B Task 7;
+                # available here through hug-common's load order).
                 shift
-                while [[ $# -gt 0 ]]; do
-                    pathspecs+=("$1")
-                    shift
-                done
+                drain_pathspecs_after_separator pathspecs "$@"
+                break
                 ;;
             *)
                 # Treat remaining arguments as pathspecs
@@ -360,7 +406,7 @@ list_untracked_files() {
 
     # Always convert to current-dir relative paths
     convert_to_relative_paths paths
-    printf '%s\n' "${paths[@]}"
+    printf '%s\n' ${paths[@]+"${paths[@]}"}
 }
 
 # Lists ignored files (matched by .gitignore)
@@ -389,12 +435,12 @@ list_ignored_files() {
             --)
                 # Everything after the separator is a pathspec — even a token
                 # shaped like one of our own flags (a file literally named
-                # '--cwd' must scope, not toggle the scoping flag).
+                # '--cwd' must scope, not toggle the scoping flag). Drained
+                # via the shared helper (hug-cli-flags — #292 PR-B Task 7;
+                # available here through hug-common's load order).
                 shift
-                while [[ $# -gt 0 ]]; do
-                    pathspecs+=("$1")
-                    shift
-                done
+                drain_pathspecs_after_separator pathspecs "$@"
+                break
                 ;;
             *)
                 # Treat remaining arguments as pathspecs
@@ -426,7 +472,7 @@ list_ignored_files() {
 
     # Always convert to current-dir relative paths
     convert_to_relative_paths paths
-    printf '%s\n' "${paths[@]}"
+    printf '%s\n' ${paths[@]+"${paths[@]}"}
 }
 
 # Lists all tracked files (in the index)
@@ -481,5 +527,5 @@ list_tracked_files() {
         convert_to_relative_paths paths
     fi
 
-    printf '%s\n' "${paths[@]}"
+    printf '%s\n' ${paths[@]+"${paths[@]}"}
 }

@@ -135,3 +135,59 @@ setup() {
   assert_failure
   assert_output --partial "requires a source commit"
 }
+@test "hug us: --from-commit <bogus> fails loudly with AND without a scope (codex P2)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo a > a.txt
+  hug a -- a.txt
+
+  # The old 'mapfile < <(extract_files_from_commit …)' swallowed the exit:
+  # the commit error PRINTED and both arms then answered a friendly no-match
+  # with exit 0 — automation read a failed unstage as success.
+  run hug us --from-commit DOES_NOT_EXIST -- .
+  assert_failure
+  assert_output --partial "Commit 'DOES_NOT_EXIST' does not exist"
+  refute_output --partial "Source list is empty"
+  refute_output --partial "No files matching"
+
+  run hug us --from-commit DOES_NOT_EXIST
+  assert_failure
+  assert_output --partial "Commit 'DOES_NOT_EXIST' does not exist"
+  refute_output --partial "No staged files to unstage"
+}
+
+@test "hug a: scoped picker rejects malformed magic pathspec before the picker (codex P2)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo a > a.txt
+
+  # The picker's listing helpers suppress git's failure — without entry
+  # validation a malformed spec became an empty candidate list, exit 0.
+  run hug a -- ':(bogus)src/' --
+  assert_failure
+  [[ "$status" -eq 2 ]]
+  assert_output --partial "Invalid pathspec"
+}
+
+@test "hug us: --from-commit includes a rename's old path in the scope (codex P1)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo old > old.txt
+  hug a -- old.txt
+  hug c -m "add old" >/dev/null 2>&1
+  git mv old.txt new.txt
+
+  # Rename detection collapses 'git mv old new' into one R-status change, so
+  # the --diff-filter=D membership query missed the old path — "No files
+  # matching '.'" exit 0 with the rename still staged. --no-renames splits
+  # the D half out so the old path joins the set like any staged deletion.
+  run hug us --from-commit HEAD -- .
+  assert_success
+  assert_output --partial "old.txt"
+  # The rename's delete side is unstaged: old.txt back to HEAD in the index.
+  run git diff --cached --name-only --diff-filter=D
+  refute_output --partial "old.txt"
+}

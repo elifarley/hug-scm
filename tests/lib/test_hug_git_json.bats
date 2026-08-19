@@ -227,3 +227,117 @@ source_hug_json_libs() {
   # Pin the array emission path (add_file_array) — otherwise untested.
   echo "$output" | grep -q '"conflicted": \['
 }
+
+# =============================================================================
+# Pathspec plumbing through the JSON chain (Task 6, #292 PR-B)
+# =============================================================================
+# Contract: output_json_status → output_json_status_unified →
+# collect_git_files_json → list_*_files must forward pathspecs collected
+# after a protective '--', consuming the separator at each layer and
+# re-appending exactly ONE at its own list/git boundary (the exact-one-'--'
+# rule landed with Task 5's separator-aware selector loops). A pathspec
+# spelled like one of our own flags ('--cwd') is DATA — it scopes, never
+# toggles.
+
+# Fixture: staged src/a.py + staged other.txt, so a 'src/' scope
+# discriminates (one file in, one file out).
+setup_json_pathspec_fixture() {
+  local repo
+  repo=$(create_test_repo)
+  mkdir -p "$repo/src"
+  cd "$repo" || return 1
+  echo py1 > src/a.py
+  echo other > other.txt
+  git add src/a.py other.txt
+}
+
+@test "output_json_status_unified: pathspecs after -- scope the envelope (two-sided)" {
+  local TEST_REPO
+  source_hug_json_libs  # Source libraries before cd
+  setup_json_pathspec_fixture
+
+  run output_json_status_unified --filter staged -- src/
+  assert_success
+  local json_out="$output"
+  assert_valid_json "$json_out"
+  [[ "$json_out" == *'"src/a.py"'* ]]
+  [[ "$json_out" != *'"other.txt"'* ]]
+  # summary counts must match the scoped array
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['summary']['staged'], len(d['staged']))" "$json_out"
+  assert_output "1 1"
+}
+
+@test "output_json_status_unified: empty scope keeps the envelope shape" {
+  # Machine contract: a scoped query answers with the SAME envelope shape —
+  # zero-length arrays present, summary counts 0. The shape must not change
+  # just because the scope matched nothing.
+  local TEST_REPO
+  source_hug_json_libs  # Source libraries before cd
+  setup_json_pathspec_fixture
+
+  run output_json_status_unified --filter staged -- docs/none/
+  assert_success
+  local json_out="$output"
+  assert_valid_json "$json_out"
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print('staged' in d, d['staged'], d['summary']['staged'], d['summary']['total'])" "$json_out"
+  assert_output "True [] 0 0"
+}
+
+@test "output_json_status_unified: pathspec spelled '--cwd' scopes, does not toggle" {
+  local TEST_REPO
+  source_hug_json_libs  # Source libraries before cd
+  setup_json_pathspec_fixture
+  echo cwd1 > ./--cwd
+  git add -- ./--cwd
+
+  run output_json_status_unified --filter staged -- --cwd
+  assert_success
+  local json_out="$output"
+  assert_valid_json "$json_out"
+  [[ "$json_out" == *'"--cwd"'* ]]
+  [[ "$json_out" != *'"src/a.py"'* ]]
+  [[ "$json_out" != *'"other.txt"'* ]]
+}
+
+@test "collect_git_files_json: forwards pathspecs after -- (staged, two-sided)" {
+  local TEST_REPO
+  source_hug_json_libs  # Source libraries before cd
+  setup_json_pathspec_fixture
+
+  local -a files=()
+  mapfile -t files < <(collect_git_files_json "staged" -- src/)
+  [[ ${#files[@]} -eq 1 ]]
+  local joined="${files[*]:-}"
+  echo "$joined" | grep -q '"path".*"src/a.py"'
+  [[ "$joined" != *"other.txt"* ]]
+}
+
+@test "collect_git_files_json: forwards pathspecs after -- (untracked, two-sided)" {
+  local TEST_REPO
+  source_hug_json_libs  # Source libraries before cd
+  setup_json_pathspec_fixture
+  echo untracked > src/new.txt
+  echo untracked > root-new.txt
+
+  local -a files=()
+  mapfile -t files < <(collect_git_files_json "untracked" -- src/)
+  [[ ${#files[@]} -eq 1 ]]
+  local joined="${files[*]:-}"
+  echo "$joined" | grep -q '"path".*"src/new.txt"'
+  [[ "$joined" != *"root-new.txt"* ]]
+}
+
+@test "collect_git_files_json: pathspec spelled '--cwd' stays data" {
+  local TEST_REPO
+  source_hug_json_libs  # Source libraries before cd
+  setup_json_pathspec_fixture
+  echo cwd1 > ./--cwd
+  git add -- ./--cwd
+
+  local -a files=()
+  mapfile -t files < <(collect_git_files_json "staged" -- --cwd)
+  [[ ${#files[@]} -eq 1 ]]
+  local joined="${files[*]:-}"
+  echo "$joined" | grep -q '"path".*"--cwd"'
+  [[ "$joined" != *"src/a.py"* ]]
+}

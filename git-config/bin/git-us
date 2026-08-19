@@ -16,19 +16,30 @@ set -euo pipefail # Exit on error, undefined vars, pipe failures
 # Part of the Hug tool suite
 
 show_help() {
-  cat << EOF
+  # Quoted delimiter: the pathspec contract text mentions `--` in backticks,
+  # and an UNQUOTED heredoc would run them as command substitutions
+  # ("--: command not found" before every -h). Nothing here needs expansion.
+  cat << 'EOF'
 hug us: UnStage one or more files
 
 USAGE:
-    hug us [<file>...] [--from-file <file>] [--from-commit <commit>] [--dry-run] [-f, --force] [--quiet] [-h, --help]
+    hug us [OPTIONS] [<pathspec>...]
 
 ARGUMENTS:
-    <file>...          One or more file paths to unstage
+    <pathspec>...      One or more file paths / pathspecs to unstage
                        If not provided, shows interactive list for selection
 
 OPTIONS:
     --from-file <file>    Read file list from file or stdin (use '-' for stdin)
     --from-commit <commit> Use files changed in the specified commit
+                           (INTERSECTED with any pathspecs given — the
+                           pathspecs are a scope, so only in-scope source
+                           files are unstaged)
+    -- <path>...          Pathspecs scope the unstaging (git magic pathspecs
+                          like ':(exclude)src/' work); positionals also
+                          work — `--` is only needed for paths starting
+                          with '-'. A trailing bare `--` alone is inert
+                          (same as no arguments: opens the selector).
     --dry-run          Preview the unstage operation without applying changes
     -f, --force        Skip confirmation prompts (sets HUG_FORCE=true)
     --quiet            Suppress output (sets HUG_QUIET=T)
@@ -50,14 +61,21 @@ DESCRIPTION:
     The --from-commit flag directly extracts files from a commit's changes,
     providing an optimized workflow for unstaging the same files as a previous commit.
 
+PATH FILTERING:
+    Append -- <path>... to restrict output to matching paths.
+    Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+    hug us -- src/                    # unstage only files under src/
+    hug us -- ':(exclude)docs/'      # unstage everything EXCEPT docs/
+
 EXAMPLES:
-    hug us                              # Interactive: select files to unstage
-    hug us file.txt                     # Unstage single file
-    hug us src/main.js tests/test.js    # Unstage multiple files
-    hug us --from-file files.txt        # Unstage files from list
-    hug us --from-commit HEAD~1         # Unstage files from previous commit
+    hug us                               # Interactive: select files to unstage
+    hug us file.txt                      # Unstage single file
+    hug us src/main.js tests/test.js     # Unstage multiple files
+    hug us --from-file files.txt         # Unstage files from list
+    hug us --from-commit HEAD~1          # Unstage files from previous commit
     hug sh HEAD~2 | hug us --from-file - # Unstage files from hug sh output
-    hug us --dry-run                    # Preview which files would be unstaged
+    hug us --dry-run                     # Preview which files would be unstaged
 
 SEE ALSO:
     hug a          Stage tracked files
@@ -66,76 +84,309 @@ SEE ALSO:
 EOF
 }
 
-# Parse custom flags first
+# Uniform pathspec split (#292 PR-B Task 8): flags before '--', pathspecs
+# after it — see parse_common_flags_with_pathspecs in hug-cli-flags for the
+# contract. WITHOUT --picker on purpose: us's interactive selector is the
+# ZERO-ARGS fallback (the gum staged-file filter in hug_us below), not the
+# picker arm, so a trailing bare '--' is consumed inertly and
+# `hug us --` ≡ `hug us` (same dispatch, same output).
 from_file=""
 from_commit=""
-remaining_args=()
+pathspecs=()
 
+eval "$(parse_common_flags_with_pathspecs "$@")"
+
+# NOTE: parse_common_flags (inside the split) CONSUMED -q/--quiet and
+# exported HUG_QUIET — us has no local quiet variable to rehydrate (the
+# info/success helpers read HUG_QUIET directly), hence no -q arm below.
+# -h/--help need no arm either: the split routes them to show_help + exit 0.
+
+# Seed the ONE pathspec collection with the split's post-'--' data first;
+# pre-arg positionals join it in the own-loop below (git unions pathspecs;
+# ONE array so every sink — the plain unstage list AND the from-source
+# filter — reads the same scope).
+pathspec_pathspecs_into pathspecs
+
+# Own-loop over the pre-args only (common flags already consumed by the
+# split): us's accepted pre-'--' grammar. Value-taking flags carry the
+# post-#300 value guard (git-a style): '--from-file' alone at argv end
+# must die loudly as a usage error, not silently unstage nothing.
+# Unknown tokens are ONLY the -* class — bare positionals collect as
+# pathspecs (git parity: 'hug us src/a.py' works today and keeps working;
+# same rule as the sl* family post-Task-5).
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --from-file)
+    [[ $# -ge 2 ]] || error "--from-file requires a value." "$HUG_EX_USAGE"
     from_file="$2"
     shift 2
     ;;
   --from-commit)
+    [[ $# -ge 2 ]] || error "--from-commit requires a value." "$HUG_EX_USAGE"
     from_commit="$2"
     shift 2
     ;;
-  -h | --help)
-    show_help
-    exit 0
-    ;;
-  --dry-run | --force | -f | --quiet)
-    # These will be handled by parse_common_flags
-    remaining_args+=("$1")
-    shift
-    ;;
   -*)
-    error "Unknown option: $1. See 'hug us --help'."
+    # Loud by contract (was: exit 1 with a bare message). exit 2 =
+    # HUG_EX_USAGE; family template — see the sls/slu post-Task-5 rows.
+    error_usage "Unknown option: $1. Pathspecs beginning with '-' require '--': hug us -- $1. See 'hug help :pathspec'."
     ;;
   *)
-    remaining_args+=("$1")
+    pathspecs+=("$1")
     shift
     ;;
   esac
 done
 
-# Parse common flags with remaining arguments
-eval "$(parse_common_flags "${remaining_args[@]}")"
+# Repo check comes BEFORE the from-source branch now: the intersection
+# filter below runs `git ls-files`, and extract_files_from_commit already
+# ran git before this point anyway (parsing/-h still precede it, so
+# `hug us -h` keeps working from any cwd).
+check_git_repo
+
+# Loud one-time pathspec validation (#298 roast MAJOR 1): a malformed magic
+# pathspec used to reach the suppressed git captures below, which answered
+# the EMPTY result ("No files matching … to unstage.", exit 0) while git's
+# fatal vanished — a typo looked like a no-match. Must run at this command
+# entry: both downstream sinks suppress or subshell the failure away. See
+# validate_pathspecs_or_die (hug-git-files) for the contract.
+validate_pathspecs_or_die ${pathspecs[@]+"${pathspecs[@]}"}
 
 # Handle file input flags
 if [[ -n "$from_file" || -n "$from_commit" ]]; then
   files_from_source=()
 
   if [[ -n "$from_commit" ]]; then
-    mapfile -t files_from_source < <(extract_files_from_commit "$from_commit")
+    # Command substitution, NOT '< <(…)' (codex P2 — same exit-swap class
+    # as the from_file conversion below): extract_files_from_commit errors
+    # loudly itself ("Commit 'X' does not exist"), but the process
+    # substitution swallowed that exit — the error PRINTED and both
+    # downstream arms then answered a friendly no-match ("Source list is
+    # empty …" with a scope, "No staged files to unstage." without) with
+    # exit 0: automation read a failed unstage as success. '$(…) || exit $?'
+    # keeps the failure fatal, exactly like read_files_from_source.
+    from_source_out=""
+    from_source_out=$(extract_files_from_commit "$from_commit") || exit $?
+    if [[ -n "$from_source_out" ]]; then
+      mapfile -t files_from_source <<< "$from_source_out"
+    fi
   elif [[ -n "$from_file" ]]; then
-    mapfile -t files_from_source < <(read_files_from_source "$from_file")
+    # Command substitution, NOT '< <(…)' (code-roast MINOR): the process
+    # substitution swallowed read_files_from_source's exit — its error()
+    # exited only the SUBSHELL, mapfile saw an empty list, and the flow
+    # fell through to the zero-args selector with a printed-but-ignored
+    # error. '$(…) || exit $?' keeps the failure fatal; mapfile splits
+    # the captured multi-line string exactly like the old stream.
+    from_source_out=""
+    from_source_out=$(read_files_from_source "$from_file") || exit $?
+    if [[ -n "$from_source_out" ]]; then
+      mapfile -t files_from_source <<< "$from_source_out"
+    fi
   fi
 
-  # Filter out any common flags from remaining_args to get just files
-  files_to_unstage=()
-  for arg in "${remaining_args[@]}"; do
-    case "$arg" in
-    --dry-run | --force | -f | --quiet) ;;
-    *) files_to_unstage+=("$arg") ;;
-    esac
-  done
+  # INTERSECTION, never concat (contract §3.1): the pathspecs are a SCOPE —
+  # a union (`files_from_source += pathspecs`) would unstage source files
+  # OUTSIDE it, the opposite of what the user asked. Filter the source list
+  # through git's own pathspec engine (`git ls-files --full-name --` = the
+  # tracked set in scope) so git magic pathspecs behave here exactly as in
+  # the listings. An EMPTY scope (no pathspecs given) keeps today's
+  # behavior: the full source list, unfiltered.
+  if [[ ${#pathspecs[@]} -gt 0 ]]; then
+    # BOTH collections are ROOT-relative — two Codex-review bugs (PR-B)
+    # shaped this block:
+    # - P1: `git ls-files` lists index entries, but a staged DELETION
+    #   removes the entry — union the staged-deletion paths
+    #   (`git diff --cached --name-only --diff-filter=D`, probed
+    #   root-relative) or `us --from-commit <c> -- src/` silently leaves
+    #   'D src/x' staged while reporting success.
+    # - P2: from-file lists are commonly CWD-relative ('a.txt' written
+    #   inside sub/) while the scope set is root-relative — exact-string
+    #   membership then empties. Canonicalize the SOURCE list through
+    #   `git ls-files --full-name` (probed: resolves CWD-relative input
+    #   to root-relative output); --with-tree=HEAD, guarded because an
+    #   unborn HEAD makes it fatal, also resolves staged deletions.
+    scope_files=()
+    # Command substitution, NOT '< <(…)' (#298 roast MAJOR 1): the process
+    # substitution swallowed git's nonzero exit — a malformed pathspec here
+    # printed git's fatal AND then "No files matching … to unstage." on the
+    # SAME run (contradictory signals, exit 0). '$(…) || error' keeps the
+    # failure fatal, exactly like read_files_from_source above. Belt-and-
+    # braces: the entry-point validation already rejects malformed specs,
+    # this guard keeps the capture honest even if a future caller bypasses
+    # it. NOTE: mapfile REPLACES an array (does not append), so the two
+    # captures are joined into one newline-joined string first.
+    scope_tracked=""
+    scope_tracked=$(git ls-files --full-name -- ${pathspecs[@]+"${pathspecs[@]}"}) ||
+      error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
+    scope_deleted=""
+    # --no-renames (codex P1): with rename detection ON (git's default in
+    # newer configs), a staged 'git mv old new' is ONE R-status change — the
+    # --diff-filter=D side never emits 'old', the old path misses the
+    # membership set, and 'us --from-commit HEAD -- .' answers "No files
+    # matching '.'" exit 0 with the rename still staged. --no-renames splits
+    # the rename into its D half so the old path joins the set exactly like
+    # an ordinary staged deletion.
+    scope_deleted=$(git diff --cached --name-only --diff-filter=D --no-renames -- ${pathspecs[@]+"${pathspecs[@]}"}) ||
+      error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
+    # Join the two captures WITHOUT a trailing blank line: '<<<' appends its
+    # own newline, so gluing an empty second capture with \n would give
+    # mapfile a phantom EMPTY element — and `in_scope[""]=1` is a bad array
+    # subscript under set -u (probed).
+    # No 'local' here: script scope (same Bash rule noted near the summary
+    # suppression in git-sls — "local: can only be used in a function").
+    scope_joined=""
+    if [[ -n "$scope_tracked" && -n "$scope_deleted" ]]; then
+      scope_joined="${scope_tracked}"$'\n'"${scope_deleted}"
+    else
+      scope_joined="${scope_tracked}${scope_deleted}"
+    fi
+    if [[ -n "$scope_joined" ]]; then
+      mapfile -t scope_files <<< "$scope_joined"
+    fi
+    # O(n+m) membership filter (assoc array), not an O(n·m) nested scan —
+    # a from-commit touching thousands of files meets a wide-scope listing.
+    declare -A in_scope=()
+    for s in ${scope_files[@]+"${scope_files[@]}"}; do in_scope["$s"]=1; done
 
-  # Add files from source
-  files_to_unstage+=("${files_from_source[@]}")
+    tree_opt=()
+    if git rev-parse --verify -q HEAD > /dev/null 2>&1; then
+      tree_opt=(--with-tree=HEAD)
+    fi
+    # ORIGIN-BASED normalization FIRST (Codex P1): the two sources are
+    # NOT the same base. from-commit lists are ROOT-relative BY
+    # CONSTRUCTION (extract_files_from_commit diffs from the repo root),
+    # so they are already canonical — resolving them against the CWD
+    # wrongly rejected the legitimate case (from sub/, 'us
+    # --from-commit HEAD -- .' → "No files matching '.'"). from-file
+    # lists are user-supplied and commonly CWD-relative, so THEY get the
+    # per-line resolution (code-roast MAJOR): a batch 'git ls-files --
+    # <all>' silently IGNORES unmatched pathspecs, and a list line
+    # unresolvable from the CWD must fail LOUD (it flows into hug_us's
+    # validation below with the exact no-scope shape, "File 'X' is not
+    # tracked by git."), never vanish into a misleading no-match.
+    # Record whether the SOURCE list is empty BEFORE the intersection
+    # (code-roast F-004): an empty result downstream is then attributable —
+    # an empty source never excluded anything, so blaming the pathspec
+    # ("No files matching 'src/'") misattributes the cause.
+    source_list_empty=false
+    [[ ${#files_from_source[@]} -eq 0 ]] && source_list_empty=true
+    canonical_source=()
+    unresolved_source=()
+    if [[ -n "$from_commit" ]]; then
+      canonical_source=(${files_from_source[@]+"${files_from_source[@]}"})
+    else
+      for f in ${files_from_source[@]+"${files_from_source[@]}"}; do
+        resolved_line=()
+        mapfile -t resolved_line < <(git ls-files --full-name ${tree_opt[@]+"${tree_opt[@]}"} -- "$f")
+        if [[ ${#resolved_line[@]} -eq 0 ]]; then
+          unresolved_source+=("$f")
+        else
+          canonical_source+=(${resolved_line[@]+"${resolved_line[@]}"})
+        fi
+      done
+    fi
+    filtered_source=()
+    for f in ${canonical_source[@]+"${canonical_source[@]}"}; do
+      if [[ -n "${in_scope[$f]:-}" ]]; then
+        filtered_source+=("$f")
+      fi
+    done
+
+    # ...and BACK to CWD-relative for the downstream consumers (hug_us's
+    # validation + 'git restore' resolve pathspecs against the CWD). The
+    # plain branch already feeds CWD-relative user spellings, so CWD is
+    # the ONE downstream base. Conversion must be a REAL relpath (Codex
+    # P2): prefix-STRIPPING alone assumed every match lives under the
+    # CWD — a ':(top)root.txt' scope from sub/ leaves root.txt
+    # unprefixed and subdir validation read sub/root.txt (false
+    # failure). Strip the prefix when present; otherwise climb ('../')
+    # one level per prefix component. 'git rev-parse --show-prefix' is
+    # '' at the root (identity conversion). Unresolved spellings are
+    # ALREADY CWD-relative (the user's own) — appended untouched.
+    cwd_prefix=$(git rev-parse --show-prefix)
+    climb=""
+    tmp="${cwd_prefix%/}"
+    while [[ -n $tmp ]]; do
+      climb+="../"
+      if [[ "$tmp" == */* ]]; then tmp="${tmp#*/}"; else tmp=""; fi
+    done
+    cwd_source=()
+    for f in ${filtered_source[@]+"${filtered_source[@]}"}; do
+      if [[ -n $cwd_prefix && $f == "$cwd_prefix"* ]]; then
+        cwd_source+=("${f#"$cwd_prefix"}")
+      else
+        cwd_source+=("$climb$f")
+      fi
+    done
+    files_from_source=(${cwd_source[@]+"${cwd_source[@]}"} ${unresolved_source[@]+"${unresolved_source[@]}"})
+
+    # Scoped-but-empty is a NO-MATCH, never a selector fall-through
+    # (spec-review finding 2): the zero-args selector offers the FULL
+    # staged list, which would silently ignore — and with TTY+gum actively
+    # unstage OUTSIDE — the scope the user asked for. Same INTENT as
+    # git-shc's no-match hint (its shape differs: shc is a stderr printf
+    # over raw pathspecs; us uses the info helper with quoted pathspecs).
+    # NOTE: unresolved lines are NOT empty-intersection material — when
+    # present they skip this arm and die in validation (loud), above.
+    if [[ ${#files_from_source[@]} -eq 0 ]]; then
+      if $source_list_empty; then
+        info "Source list is empty - nothing to unstage."
+      else
+        pathspec_list=""
+        printf -v pathspec_list "'%s' " "${pathspecs[@]}"
+        info "No files matching ${pathspec_list% } to unstage."
+      fi
+      exit 0
+    fi
+  fi
+
+  files_to_unstage=(${files_from_source[@]+"${files_from_source[@]}"})
 else
-  # Filter out any common flags from remaining_args to get just files
-  files_to_unstage=()
-  for arg in "${remaining_args[@]}"; do
-    case "$arg" in
-    --dry-run | --force | -f | --quiet) ;;
-    *) files_to_unstage+=("$arg") ;;
-    esac
-  done
-fi
+  files_to_unstage=(${pathspecs[@]+"${pathspecs[@]}"})
 
-check_git_repo
+  # ONE scoped-empty contract (#298 roast MAJOR 2): a pathspec-shaped scope
+  # matching nothing staged used to hit hug_us's per-file safety check and
+  # answer "❌ File 'nonexistent/' is not tracked by git." exit 1 — while the
+  # from-source branch answered the SAME condition with "No files matching …
+  # to unstage." exit 0. Two answers for one condition. Rule: when the scope
+  # is pathspec-shaped (directory / glob / magic spelling — anything that is
+  # not an existing file on disk) and nothing staged matches it, route to the
+  # SAME info + exit-0 arm. LITERAL file arguments (test -f) keep the loud
+  # per-file error inside hug_us — that is the safety check preventing a
+  # confusing silent no-op when the user names a real file.
+  # Deliberately NOT applied to the from-source arm: its list lines are
+  # user-supplied FILENAMES (often root-relative spellings that do not exist
+  # under the CWD), and an unresolvable line must keep dying LOUD in hug_us's
+  # validation (pinned: "File 'src/a.py' is not tracked by git.").
+  if [[ ${#files_to_unstage[@]} -gt 0 ]]; then
+    # Command substitution, NOT '< <(…)' (code-roast F-002): same shape the
+    # #298 MAJOR-1 fix converted three blocks above — the process substitution
+    # swallows git's nonzero exit, and a repo-level failure would read as the
+    # "No files matching …" no-match below. Empty output must NOT reach mapfile
+    # via <<< (a phantom empty element follows); guard with -n.
+    # No 'local' here: script scope.
+    staged_scope_matches_out=""
+    staged_scope_matches_out=$(git diff --cached --name-only -- ${files_to_unstage[@]+"${files_to_unstage[@]}"}) ||
+      error "git failed listing staged files for the unstage scope."
+    staged_scope_matches=()
+    [[ -n "$staged_scope_matches_out" ]] && mapfile -t staged_scope_matches <<< "$staged_scope_matches_out"
+    if [[ ${#staged_scope_matches[@]} -eq 0 ]]; then
+      has_literal_file=false
+      for scope_arg in ${files_to_unstage[@]+"${files_to_unstage[@]}"}; do
+        if [[ -f "$scope_arg" ]]; then
+          has_literal_file=true
+          break
+        fi
+      done
+      if ! $has_literal_file; then
+        pathspec_list=""
+        printf -v pathspec_list "'%s' " "${files_to_unstage[@]}"
+        info "No files matching ${pathspec_list% } to unstage."
+        exit 0
+      fi
+    fi
+  fi
+fi
 
 # --- Main function for 'hug us' ---
 hug_us() {
@@ -213,25 +464,69 @@ hug_us() {
     done
   fi
 
+  # Tracked-check options: --with-tree=HEAD (probed) accepts STAGED
+  # DELETIONS as tracked — the index entry is gone but the file lives in
+  # HEAD — without accepting truly untracked paths. Without it, unstaging
+  # a deletion (by name OR via the from-source intersection) is impossible
+  # ("not tracked" false negative, Codex P1). Guarded: an unborn HEAD
+  # makes --with-tree fatal, and an unborn repo has staged entries but no
+  # tree to consult.
+  local -a tracked_check=(--error-unmatch)
+  git rev-parse --verify -q HEAD > /dev/null 2>&1 && tracked_check+=(--with-tree=HEAD)
+
   # Validate that files exist and are staged
   for file in "${files_to_unstage[@]}"; do
-    if ! git ls-files --error-unmatch "$file" > /dev/null 2>&1; then
-      error "File '$file' is not tracked by git."
+    # Noun accuracy (#298 roast MAJOR 2): this loop is normally reached only
+    # with literal file arguments (the command-level gate above routes
+    # scope-shaped no-matches to the info arm), but a MIXED list
+    # ('hug us real.txt some/dir/') still lands here when nothing staged
+    # matches. Call a directory/glob/magic spelling a "Path", not a "File" —
+    # "File 'src/' is not staged" was the probed misleading message.
+    local noun="File"
+    if [[ "$file" == */ || "$file" == *'('* || "$file" == *'*' || "$file" == *'?' || "$file" == *'[' ]]; then
+      noun="Path"
+    fi
+
+    # The '--' is load-bearing (spec-review finding 1): a staged file
+    # literally named '-foo.txt' would otherwise be parsed as an OPTION by
+    # git → false "not tracked" error, breaking the 'hug us -- <path>'
+    # promise the help text makes.
+    if ! git ls-files "${tracked_check[@]}" -- "$file" > /dev/null 2>&1; then
+      error "$noun '$file' is not tracked by git."
     fi
 
     # Check if file is actually staged
     if git diff --cached --quiet -- "$file" 2> /dev/null; then
-      error "File '$file' is not staged."
+      error "$noun '$file' is not staged."
     fi
   done
 
   # Set dry_run default if not already set by parse_common_flags
   local dry_run="${dry_run:-false}"
 
+  # Report targets = the RESOLVED staged files (git's own answer for what
+  # these pathspecs unstage: the staged set matching them), NOT the raw
+  # pathspecs. A magic spec used to be echoed verbatim — "Unstaged 1 file:
+  # ✓ :(exclude)docs/" (code-roast MINOR): wrong count-noun and a useless
+  # line. Plain names resolve to themselves, so this is display-only;
+  # files_to_unstage still drives validation and 'git restore' above.
+  # Command substitution, NOT '< <(…)' (code-roast F-002): the exit-swap
+  # shape the #298 MAJOR-1 fix eliminated elsewhere in this file. A failure
+  # here would silently fall back to echoing the raw pathspecs below —
+  # restoring the "Unstaged 1 file: ✓ :(exclude)docs/" bug one git error away.
+  local report_targets_out=""
+  report_targets_out=$(git diff --cached --name-only -- ${files_to_unstage[@]+"${files_to_unstage[@]}"}) ||
+    error "git failed listing staged files for the unstage report."
+  local -a report_targets=()
+  [[ -n "$report_targets_out" ]] && mapfile -t report_targets <<< "$report_targets_out"
+  if [[ ${#report_targets[@]} -eq 0 ]]; then
+    report_targets=(${files_to_unstage[@]+"${files_to_unstage[@]}"})
+  fi
+
   # Preview mode
   if [[ "${dry_run}" == "true" ]]; then
-    info "Dry run: Would unstage ${#files_to_unstage[@]} file(s):"
-    for file in "${files_to_unstage[@]}"; do
+    info "Dry run: Would unstage ${#report_targets[@]} file(s):"
+    for file in "${report_targets[@]}"; do
       printf "  - %s\n" "$file" >&2
     done
     print_dry_run_preview "unstage the listed files"
@@ -244,14 +539,14 @@ hug_us() {
   fi
 
   # Report results
-  local count=${#files_to_unstage[@]}
+  local count=${#report_targets[@]}
   local file_word="file"
   [[ $count -gt 1 ]] && file_word="files"
 
   success "Unstaged $count $file_word:"
-  for file in "${files_to_unstage[@]}"; do
+  for file in "${report_targets[@]}"; do
     printf "  ✓ %s\n" "$file" >&2
   done
 }
 
-hug_us "${files_to_unstage[@]}"
+hug_us ${files_to_unstage[@]+"${files_to_unstage[@]}"}

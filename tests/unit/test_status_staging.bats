@@ -805,6 +805,83 @@ create_slc_conflict_fixture() {
   assert_output --partial '"untracked"'
 }
 
+# =============================================================================
+# --json pathspec scoping (Task 6, #292 PR-B): the JSON sink chain
+# (output_json_status → output_json_status_unified → collect_git_files_json
+# → list_*_files) honors the protective '--'. Two-sided per envelope: parses
+# via python3 -m json.tool, no file outside the pathspecs AND ≥1 inside,
+# summary.* counts match the scoped array.
+# =============================================================================
+
+@test "hug sls --json: pathspecs scope the envelope (two-sided)" {
+  # Fixture adds staged src/a.py + other.txt next to the helper's staged.txt:
+  # the 'src/' scope must keep src/a.py and drop BOTH out-of-scope rows.
+  mkdir -p src
+  echo py1 > src/a.py
+  echo other > other.txt
+  git add src/a.py other.txt
+
+  run hug sls --json -- src/
+  assert_success
+  local json_out="$output"
+  assert_valid_json "$json_out"
+  [[ "$json_out" == *'"src/a.py"'* ]]
+  [[ "$json_out" != *'"staged.txt"'* ]]
+  [[ "$json_out" != *'"other.txt"'* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['summary']['staged'], len(d['staged']))" "$json_out"
+  assert_output "1 1"
+}
+
+@test "hug slu --json: empty scope keeps the envelope shape" {
+  # No UNSTAGED file under src/ (the fixture's unstaged file is README.md at
+  # the root): the scoped answer must keep the machine contract — same keys,
+  # zero-length arrays, summary counts 0.
+  mkdir -p src
+  echo py1 > src/a.py
+
+  run hug slu --json -- src/
+  assert_success
+  local json_out="$output"
+  assert_valid_json "$json_out"
+  [[ "$json_out" != *'"README.md"'* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print('unstaged' in d, d['unstaged'], d['summary']['unstaged'])" "$json_out"
+  assert_output "True [] 0"
+}
+
+@test "hug slk --json: pathspecs scope the envelope (two-sided)" {
+  # A fully-untracked directory collapses to the dir itself in porcelain
+  # output (git's untracked-files=normal default), so the in-scope row is
+  # "src/" — not src/new.py. The scope is still two-sided: the out-of-scope
+  # untracked.txt (fixture root) must be absent.
+  mkdir -p src
+  echo untracked > src/new.py
+
+  run hug slk --json -- src/
+  assert_success
+  local json_out="$output"
+  assert_valid_json "$json_out"
+  [[ "$json_out" == *'"src/"'* ]]
+  [[ "$json_out" != *'"untracked.txt"'* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['summary']['untracked'], len(d['untracked']))" "$json_out"
+  assert_output "1 1"
+}
+
+@test "hug sls --json: pathspec spelled '--cwd' scopes, does not toggle" {
+  # A file LITERALLY named '--cwd' is data after the separator: it must scope
+  # the listing, never toggle the (JSON-internal) scope-to-cwd flag.
+  echo cwd1 > ./--cwd
+  git add -- ./--cwd
+
+  run hug sls --json -- --cwd
+  assert_success
+  local json_out="$output"
+  assert_valid_json "$json_out"
+  [[ "$json_out" == *'"--cwd"'* ]]
+  [[ "$json_out" != *'"staged.txt"'* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['summary']['staged'])" "$json_out"
+  assert_output "1"
+}
+
 @test "hug sli: shows only ignored files" {
   # Create a .gitignore file and some ignored content
   echo "*.log" > .gitignore
@@ -1720,8 +1797,7 @@ create_slc_conflict_fixture() {
   local json_out="$output"
 
   # Zero non-JSON bytes: json.tool must parse the whole output
-  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
-  assert_success
+  assert_valid_json "$json_out"
 
   # Spec contract: all-zero summary, INCLUDING conflicted and total
   run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['summary']['conflicted'], d['summary']['total'])" "$json_out"
@@ -1746,8 +1822,7 @@ create_slc_conflict_fixture() {
   local json_out="$output"
 
   # Zero non-JSON bytes: json.tool must parse the whole output
-  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
-  assert_success
+  assert_valid_json "$json_out"
 
   run python3 -c "import json,sys; print(json.loads(sys.argv[1])['summary']['conflicted'])" "$json_out"
   assert_output "1"
@@ -1852,20 +1927,38 @@ create_slc_conflict_fixture() {
   assert_output --partial "inner"
 }
 
-@test "hug slc --json: pathspecs are ignored (documented contract)" {
+@test "hug slc --json: pathspecs scope the envelope (PR-B #298)" {
   local repo
   repo=$(create_slc_conflict_fixture)
   cd "$repo"
   run hug mkeep side -m "merge side"
   assert_failure
 
-  # A pathspec that matches nothing must NOT filter the JSON output
-  run hug slc --json no-such-file.txt
+  # FLIPPED by PR-B (uniform pathspec contract): this test used to pin the
+  # OLD contract ("--json ignores pathspecs" — a non-matching pathspec left
+  # the envelope describing the FULL conflicted state). Pathspecs now scope
+  # the envelope exactly like the text listing, and an empty scope keeps the
+  # envelope SHAPE (zero-length "conflicted" array present, summary 0) —
+  # the machine contract must not change shape with scope.
+
+  # Matching pathspec: the conflicted file stays, count matches the array
+  run hug slc --json -- conflict.txt
   assert_success
   local json_out="$output"
   run python3 -c "import json,sys; print(json.loads(sys.argv[1])['summary']['conflicted'])" "$json_out"
   assert_output "1"
   [[ "$json_out" == *'"conflict.txt"'* ]]
+
+  # Non-matching pathspec (positional spelling — no separator needed): EMPTY
+  # scope, shape kept
+  run hug slc --json no-such-file.txt
+  assert_success
+  json_out="$output"
+  run python3 -c "import json,sys; print(json.loads(sys.argv[1])['summary']['conflicted'])" "$json_out"
+  assert_output "0"
+  [[ "$json_out" != *'"conflict.txt"'* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['conflicted'])" "$json_out"
+  assert_output "[]"
 }
 
 @test "hug slc: HUG_QUIET=T prints plain paths, no summary" {
@@ -1890,8 +1983,7 @@ create_slc_conflict_fixture() {
   run hug slc --json -q
   assert_success
   local json_out="$output"
-  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
-  assert_success
+  assert_valid_json "$json_out"
   [[ "$json_out" == *'"conflict.txt"'* ]]
 }
 
@@ -1960,7 +2052,29 @@ create_slc_conflict_fixture() {
   # -c and --json are incompatible (like hug wtl's --json --path-only error)
   run hug slc -c --json
   assert_failure
+  [[ "$status" -eq 2 ]]   # usage-error exit family (F-001), not a generic 1
   assert_output --partial "mutually exclusive"
+}
+
+@test "hug us: empty --from-file + scope blames the source, not the pathspec" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo a > a.txt
+  hug a -- a.txt
+  : > "$BATS_TEST_TMPDIR/empty-list.txt"
+
+  # Empty SOURCE list: the scope never excluded anything — the message must
+  # not claim "No files matching <scope>" (code-roast F-004 misattribution).
+  run hug us --from-file "$BATS_TEST_TMPDIR/empty-list.txt" -- src/
+  assert_success
+  assert_output --partial "Source list is empty"
+
+  # Non-empty source fully excluded by scope keeps the no-match wording.
+  echo "a.txt" > "$BATS_TEST_TMPDIR/one.txt"
+  run hug us --from-file "$BATS_TEST_TMPDIR/one.txt" -- docs/
+  assert_success
+  assert_output --partial "No files matching 'docs/'"
 }
 
 @test "hug slk -c: counts a newline-containing filename once (NUL-safe)" {
@@ -2019,4 +2133,42 @@ create_slc_conflict_fixture() {
   run hug sla -c
   assert_success
   assert_output "3"
+}
+
+@test "hug sl* listings reject action-only common flags (codex P2)" {
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo a > a.txt
+  hug a -- a.txt
+
+  # parse_common_flags consumes -f/-y/--dry-run/--browse-root before the
+  # scripts' own unknown-option branch sees them — these used to be silently
+  # accepted and produce a normal unscoped listing. A listing's only common
+  # flags are -q and help; everything else is a usage error (exit 2).
+  for cmd in sls slu slk sli slc; do
+    for flag in --dry-run -f -y --browse-root; do
+      run hug "$cmd" "$flag"
+      [[ "$status" -eq 2 ]]
+      assert_output --partial "action flags"
+    done
+  done
+  # statusbase serves sl/sla
+  run hug sl --dry-run
+  [[ "$status" -eq 2 ]]
+  # -q (the supported quiet flag) still works
+  run hug sls -q
+  assert_success
+
+  # INHERITED HUG_YES must not reject an innocent listing (codex follow-up):
+  # sequence automation exports the documented confirmation variable for a
+  # whole hug command line — only a -y consumed by THIS parse is a violation.
+  # The detector is the parse-local yes_flag, never the HUG_YES export.
+  HUG_YES=true run hug sls -q
+  assert_success
+  HUG_YES=false run hug sls
+  assert_success
+  # ...while an explicit -y on THIS invocation stays a usage error
+  run hug sls -y
+  [[ "$status" -eq 2 ]]
 }

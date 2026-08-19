@@ -112,3 +112,51 @@ teardown() {
   # The top-level help must advertise the : sigil so users can discover articles.
   assert_output --partial "hug help :"
 }
+
+# --- Docs smoke (#292 PR-B Task 10): help surface reachable end-to-end ---
+#
+# Covers the four entry points the doc perimeter depends on. `-h` is the
+# tested help form: the long `--help` form is intercepted by the parent-spec
+# dispatcher rule 2 (git exec → man git-<cmd> routing) — documented behavior,
+# not a regression (see tests/unit/test_pathspec_conformance.bats
+# "--help via dispatcher hits git man routing").
+
+@test "docs smoke: hug help and hug help : are reachable and non-empty" {
+  cd "$TEST_TEMP_DIR"
+  run hug help
+  assert_success
+  [[ -n "$output" ]]
+  run hug help :
+  assert_success
+  [[ -n "$output" ]]
+  # The listing must carry the pathspec article alongside the others.
+  assert_output --partial ":pathspec"
+}
+
+@test "docs smoke: hug sla -h shows USAGE and the PATH FILTERING pointer" {
+  # The hug dispatcher itself demands a repo before delegating (the
+  # statusbase script would answer -h from any cwd, but it never gets the
+  # chance) — so smoke-test from inside one.
+  git init -q "$TEST_TEMP_DIR"
+  cd "$TEST_TEMP_DIR"
+  # sl/sla have no binaries of their own: this help text is served by
+  # git-statusbase's show_help (reached via the gitconfig aliases
+  # `sl = statusbase -uno` / `sla = statusbase --long`).
+  run hug sla -h
+  assert_success
+  assert_output --partial "USAGE"
+  assert_output --partial "PATH FILTERING"
+  assert_output --partial "hug help :pathspec"
+}
+
+@test "docs smoke: hug help :pathspec serves the contract article" {
+  cd "$TEST_TEMP_DIR"
+  run hug help :pathspec
+  assert_success
+  # H1 confirms the article body rendered (not just a listing slug line).
+  assert_output --partial "# Pathspecs"
+  # Canonical first example is pinned in the article opener.
+  assert_output --partial "hug sla -- '*.md'"
+  # The env-var escape hatch is deliberately NOT documented (spec §7).
+  refute_output --partial "HUG_INTERACTIVE_FILE_SELECTION"
+}

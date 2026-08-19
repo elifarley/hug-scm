@@ -920,6 +920,7 @@ create_merge_conflict() {
 
   run --separate-stderr run_count_mode --json staged
   assert_failure
+  [[ "$status" -eq 2 ]]   # usage error: same exit family as unknown dash-tokens (F-001)
   [[ "$stderr" == *"mutually exclusive"* ]]
   [[ -z "$output" ]]   # no count printed on the mutex-violation path
 }
@@ -1070,6 +1071,31 @@ mock_gum() {
   run select_files_with_status
   assert_success
   [[ "$(cat "$SELECT_CAPTURE")" =~ src/a\.py ]]
+}
+
+@test "select_files_with_status: pathspec after -- scopes ignored-files candidates" {
+  # Combo gap (#298 Task 3b): every existing pathspec cell probes staged/
+  # untracked/flag-less-tracked modes — never --ignored, whose forwarding
+  # path (list_ignored_files behind the selector's '--' arm) is distinct
+  # code. An out-of-scope ignored file must not leak into the picker.
+  create_pathspec_fixture
+  # .gitignore must be TRACKED for `git status --ignored=matching` to report
+  # the .log files (same lesson as the count_files_with_status fixture).
+  printf '*.log\n' > .gitignore
+  git add .gitignore
+  git commit -q -m "ignore logs"
+  printf 'ignored\n' > src/in-scope.log
+  printf 'ignored\n' > docs/out-of-scope.log
+  mock_gum
+
+  run select_files_with_status --ignored -- src/
+  assert_success
+  refute_output --partial "Unknown option"
+
+  local candidates
+  candidates=$(cat "$SELECT_CAPTURE")
+  [[ "$candidates" == *"src/in-scope.log"* ]]
+  [[ "$candidates" != *"docs/out-of-scope.log"* ]]
 }
 
 @test "select_files_with_status: unknown dashed option BEFORE -- is loudly rejected" {

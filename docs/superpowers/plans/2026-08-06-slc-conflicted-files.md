@@ -669,7 +669,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 - [ ] `hug slc -q` prints plain paths only (no prefix, no summary)
 - [ ] No conflicts → empty stdout, exit 0, `info` on stderr only
 - [ ] `hug slc --json` parses; `summary.conflicted` correct; entries `"status": "conflict"`
-- [ ] Pathspec scoping works in text mode; `--json` ignores pathspecs (documented contract)
+- [x] Pathspec scoping works in text mode; `--json` ignores pathspecs (documented contract)
+  - **Flipped by PR-B** ([elifarley/hug-scm#298](https://github.com/elifarley/hug-scm/pull/298), uniform pathspec contract [elifarley/hug-scm#292](https://github.com/elifarley/hug-scm/issues/292)): scoping now applies to `--json` too — the text above records the contract as ratified at design time (2026-08-06), kept for history.
 - [ ] `-q` suppresses trailing `hug s`; non-quiet shows it (stderr)
 - [ ] `HUG_QUIET=T` → plain paths, no summary
 - [ ] `hug slc --json -q` → JSON wins
@@ -877,6 +878,11 @@ Append to `tests/unit/test_status_staging.bats` (after the existing sl-family te
   assert_output --partial "inner"
 }
 
+# [PR-B ANNOTATION 2026-08-18] HISTORICAL QUOTE — do not edit below.
+# This embedded test is the pre-PR-B verbatim copy of the
+# test_status_staging.bats row; flipped by PR-B (elifarley/hug-scm#298,
+# uniform pathspec contract): pathspecs now scope `--json`. Kept verbatim
+# as the record of the original contract.
 @test "hug slc --json: pathspecs are ignored (documented contract)" {
   local repo
   repo=$(create_slc_conflict_fixture)

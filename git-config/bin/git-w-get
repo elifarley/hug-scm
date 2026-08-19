@@ -260,7 +260,7 @@ reset_specific_files() {
   # check was batched into the state gate below).
   local files_to_reset=()
   local file
-  for file in "${files[@]}"; do
+  for file in ${files[@]+"${files[@]}"}; do
     if ! $force; then
       printf "Checking %s...\n" "$file" >&2
     fi
