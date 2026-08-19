@@ -249,6 +249,16 @@ psx_inert_args() {
   esac
 }
 
+# Relative timestamps ("2 seconds ago") rendered by log/show commands change
+# when two captures of the same command straddle a second boundary. The
+# inert-rows test below compares two such captures byte-for-byte and flaked
+# in CI exactly this way (run 32247705110: "1 second ago" vs "0 seconds
+# ago"). Normalizing both sides keeps the byte-identity claim about the
+# trailing `--`'s inertness, not about the clock.
+psx_strip_reltime() {
+  sed -E 's/[0-9]+ (second|minute|hour|day|month|year)s? ago/<reltime> ago/g'
+}
+
 # sl-variant → file-kind noun used by the "No <kind> files matching ..."
 # info message. Shared by the EMPTY and SWALLOW characterization tests so
 # the mapping lives once (a wrong noun would otherwise fail two tests
@@ -465,10 +475,10 @@ psx_sl_kind() {
     psx_setup
     run hug "$cmd" "${args[@]}"
     assert_success
-    plain="$output"
+    plain="$(printf '%s' "$output" | psx_strip_reltime)"
     run hug "$cmd" "${args[@]}" --
     assert_success
-    assert_equal "$plain" "$output"
+    assert_equal "$plain" "$(printf '%s' "$output" | psx_strip_reltime)"
     psx_reset
   done
 }
