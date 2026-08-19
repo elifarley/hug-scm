@@ -54,43 +54,85 @@ EOF
 target_unstaged=false
 target_staged=false
 flags_explicit=false
+pathspecs=()
 
-# Parse custom flags first (non-common flags)
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-  -u | --unstaged)
-    target_unstaged=true
-    flags_explicit=true
-    shift
-    ;;
-  -s | --staged)
-    target_staged=true
-    flags_explicit=true
-    shift
-    ;;
-  *)
-    break
-    ;;
-  esac
-done
-
-# Parse common flags (--browse-root, --dry-run, -f|--force, -h|--help, --)
-eval "$(parse_common_flags "$@")"
+# Uniform pathspec split (#292 PR-C Task 3, family template — modeled on
+# git-sls): flags before '--', pathspecs after it, ONE validated
+# ${pathspecs[@]} feeding every downstream sink (dry-run preview, confirm
+# list, the destructive calls) behind a protective '--'.
+#
+# WITH --picker on purpose: w-discard's no-paths arm is an interactive file
+# selector, and a trailing bare '--' triggers it today (OQ-1 cell, probed:
+# `hug w discard --` → picker → non-TTY cancel, exit 0 "No files
+# selected."). The --picker mode preserves that trigger exactly — the bare
+# '--' opens the picker, it never becomes a phantom pathspec.
+eval "$(parse_common_flags_with_pathspecs --picker "$@")"
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
 : "${dry_run:=false}"
 : "${force:=false}"
 
+# Seed the ONE pathspec collection with the split's post-'--' data first;
+# pre-arg positionals join it in the own-loop below (git unions pathspecs;
+# ONE array so every sink reads the same scope — what was previewed is what
+# is discarded).
+pathspec_pathspecs_into pathspecs
+
+# Own-loop over the pre-args only: w-discard's accepted pre-'--' grammar.
+# Unknown -* tokens are rejected LOUD (was: silently swallowed as a
+# pathspec — `hug w discard -xX` used to answer "Nothing to discard",
+# exit 0, hiding the typo). exit 2 = HUG_EX_USAGE.
+for arg in "$@"; do
+  case "$arg" in
+  -u | --unstaged)
+    target_unstaged=true
+    flags_explicit=true
+    ;;
+  -s | --staged)
+    target_staged=true
+    flags_explicit=true
+    ;;
+  -*)
+    error_usage "Unknown option: $arg. Pathspecs beginning with '-' require '--': hug w discard -- $arg. See 'hug help :pathspec'."
+    ;;
+  *)
+    pathspecs+=("$arg")
+    ;;
+  esac
+done
+
+# Post-'--' EXACT-SPELLING flag rejection: a token after '--' that spells
+# one of this command's own flags is a misordered flag, not data (was:
+# `hug w discard -- src/ --dry-run` silently became pathspecs
+# 'src/ --dry-run' and answered a false "Nothing to discard"). EXACT
+# spellings only — './--dry-run' is a filename, not a spelling, and stays
+# a valid pathspec.
+for p in ${pathspecs[@]+"${pathspecs[@]}"}; do
+  case "$p" in
+  --dry-run | -f | --force | -y | --yes | -u | --unstaged | -s | --staged | --browse-root)
+    error_usage "Flags must precede '--': hug w discard $p -- <path>.... See 'hug help :pathspec'."
+    ;;
+  esac
+done
+
 if ! $flags_explicit; then
   target_unstaged=true
 fi
 
 check_git_repo
+
+# Loud one-time pathspec validation before any destructive arm runs (see
+# validate_pathspecs_or_die in hug-git-files for the WHY): a typo'd magic
+# prefix must die as a usage error, never preview/discard a silent empty
+# set. Callers' git-diff captures below suppress stderr — this is the one
+# unsuppressed gate.
+validate_pathspecs_or_die ${pathspecs[@]+"${pathspecs[@]}"}
+
 repo_root="$(git rev-parse --show-toplevel)"
 
-# Handle interactive file selection when no paths provided
-if [[ $# -lt 1 ]]; then
+# Handle interactive file selection when no pathspecs provided
+if [[ ${#pathspecs[@]} -eq 0 ]]; then
   # Check for conflicting flags
   if $browse_root; then
     # --browse-root without explicit paths is valid (triggers UI with full scope)
@@ -128,10 +170,13 @@ if [[ $# -lt 1 ]]; then
     exit 0
   fi
 else
-  # Explicit paths provided - check for conflicting flags
+  # Explicit pathspecs provided - check for conflicting flags
   check_browse_root_no_paths "$browse_root" true
 
-  paths=("$@")
+  # THE ONE scope: every sink below (diff captures, dry-run preview,
+  # confirm list, discard engines) reads this validated array behind a
+  # protective '--' — preview and destruction can never diverge.
+  paths=(${pathspecs[@]+"${pathspecs[@]}"})
 fi
 
 declare -a unstaged_paths=()
@@ -216,6 +261,13 @@ if ! $force; then
 fi
 
 # Handle both targets: Simple full discard to HEAD for union of affected paths
+#
+# NOTE (no trailing `hug s` summary, by design): unlike the sl* listing
+# family, w-discard has NEVER printed a post-run whole-repo summary — each
+# destructive branch reports exactly what it discarded. Adding one would
+# change unscoped output byte-for-byte, so the contract's "suppress the
+# summary when scoped" gate is inapplicable here (probed before/after on
+# the same fixture: identical output).
 if $target_staged && $target_unstaged; then
   declare -a affected_paths=("${unstaged_paths[@]}")
   for path in "${staged_paths[@]}"; do

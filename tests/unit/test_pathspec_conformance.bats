@@ -2319,15 +2319,17 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization w discard: unknown flag swallowed (exit 0); bare '--' opens picker" {
-  # characterization — column-6 defect: probed — `-xX` becomes a pathspec in
-  # parse_common_flags' fallback loop, matches nothing, exit 0 "Nothing to
-  # discard" (silent swallow; flip target: #292). The picker arm matches the
-  # `a`/sw family: exit 0 + "No files selected."
+@test "characterization w discard: unknown flag loud (exit 2); bare '--' opens picker" {
+  # FLIPPED in Task 3 (#292 PR-C, with the w-discard migration): `-xX` used
+  # to become a pathspec in parse_common_flags' fallback loop, matching
+  # nothing, exit 0 "Nothing to discard" (silent swallow). The own-loop's
+  # loud -* arm now rejects it, exit 2 family template. The picker arm
+  # keeps matching the `a`/sw family: exit 0 + "No files selected."
   psx_setup
   run hug w discard -xX
-  assert_success
-  assert_output --partial "Nothing to discard"
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Nothing to discard"
   psx_reset
 
   psx_setup
@@ -2368,10 +2370,11 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization w wipe: delegation to discard — filter + swallow inherit" {
+@test "characterization w wipe: delegation to discard — filter + loud rejection inherit" {
   # characterization: probed — wipe = `w discard -u -s "$@`, so the pathspec
-  # filter and the "-xX → Nothing to discard" swallow are BOTH inherited
-  # from discard (flip: #292, with discard).
+  # filter is inherited from discard, and (FLIPPED in Task 3, #292 PR-C) the
+  # "-xX → Nothing to discard" swallow inherited the loud exit-2 rejection
+  # the same way.
   psx_setup
   run hug w wipe --dry-run docs/
   assert_success
@@ -2383,8 +2386,9 @@ psx_install_stub_gum() {
 
   psx_setup
   run hug w wipe -xX
-  assert_success
-  assert_output --partial "Nothing to discard"
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Nothing to discard"
   psx_reset
 }
 
@@ -2958,16 +2962,33 @@ psx_install_stub_gum() {
 # characterization llu / contract sh rows.
 ###############################################################################
 
-# FLIPS-IN-TASK-3: w-discard/w-purge/w-zap/w-wipe unknown flag must exit 2
-# with the family template (today: silently swallowed as a pathspec —
-# "Nothing to discard"/"Nothing to zap"/"Nothing to purge", exit 0).
-#@test "contract w-destructive (Task 3): -xX loud, exit 2, never a pathspec" {
+# FLIPS-IN-TASK-3 (landed, w-discard migration): w-discard/w-wipe unknown
+# flag must exit 2 with the family template (was: silently swallowed as a
+# pathspec — "Nothing to discard", exit 0). w-wipe flips by delegation
+# (wipe = `w discard -u -s "$@"`).
+@test "contract w-destructive (Task 3, discard+wipe): -xX loud, exit 2, never a pathspec" {
+  local cmd msg
+  for cmd in discard wipe; do
+    msg="Nothing to discard"
+    psx_setup
+    run hug w "$cmd" -xX
+    assert_equal 2 "$status"
+    assert_output --partial "Unknown option: -xX"
+    refute_output --partial "$msg"
+    psx_reset
+  done
+}
+
+# FLIPS-IN-TASK-3 (remainder, staged for the w-purge/w-zap migrations):
+# same rejection, same template — purge/zap still swallow '-xX' as a
+# pathspec today (exit 0 "Nothing to purge"/"Nothing to zap"). Uncomment
+# in the SAME commit as each command's migration.
+#@test "contract w-destructive (Task 3, purge+zap): -xX loud, exit 2, never a pathspec" {
 #  local cmd msg
-#  for cmd in discard purge zap wipe; do
+#  for cmd in purge zap; do
 #    case "$cmd" in
 #    zap) msg="Nothing to zap" ;;
 #    purge) msg="Nothing to purge" ;;
-#    *) msg="Nothing to discard" ;;
 #    esac
 #    psx_setup
 #    run hug w "$cmd" -xX
@@ -2977,6 +2998,79 @@ psx_install_stub_gum() {
 #    psx_reset
 #  done
 #}
+
+@test "contract w-discard (Task 3): scoped destruction — validation, separator, two-sided scope" {
+  # Full contract adoption (#292 PR-C Task 3, family template on git-sls):
+  # loud typo'd magic, post-'--' flag rejection, scoped dry-run two-sided,
+  # and the OQ-2 cells (-s/-u scoped destruction). Excluded dir is 'gen/'
+  # not 'build/' — the developer's global gitignore ignores build/, and a
+  # tracked-file fixture there would be rejected by the pre-commit hook.
+  psx_setup
+  # Typo'd magic prefix: git's own fatal + hug usage remedy, exit 2 — never
+  # a silent "Nothing to discard" (was: exit 0, nothing discarded, user
+  # none the wiser whether the scope matched).
+  run hug w discard -- ':(exlude)x/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  refute_output --partial "Nothing to discard"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == M* ]] # nothing discarded
+  psx_reset
+
+  psx_setup
+  # Post-'--' flag rejection: '--dry-run' after the separator is a
+  # misordered flag, not data (was: silently became a pathspec and the
+  # preview answered a false "Nothing to discard"). EXACT spellings only —
+  # './--dry-run' stays a filename.
+  run hug w discard -- src/ --dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  psx_reset
+
+  psx_setup
+  # Scoped exclude-magic dry-run, two-sided: with an unstaged mod inside
+  # gen/ and one outside, ':(exclude)gen/' previews ONLY the outside file.
+  # (Flag BEFORE the separator — the AC's literal '-- <spec> --dry-run'
+  # spelling is exactly the misordered-flag form rejected above.)
+  mkdir -p gen
+  echo g1 > gen/g.txt
+  git add gen/g.txt
+  # Path-limited commit: the fixture's staged src/a.py mod must NOT be
+  # swept into this commit (the same LESSON setup_pathspec_fixture encodes).
+  git commit -q -m gen -- gen/g.txt
+  echo g2 >> gen/g.txt
+  run hug w discard --dry-run -- ':(exclude)gen/'
+  assert_success
+  assert_output --partial "docs/note.md"
+  refute_output --partial "gen/g.txt"
+  refute_output --partial "src/a.py"
+  psx_reset
+
+  # OQ-2 cell (-s + pathspec on the discard engine, probed): staged-only
+  # scope intersects the pathspec — src/a.py's staged delta is discarded,
+  # the unstaged docs/note.md mod and untracked new.txt survive, and the
+  # file content returns to its committed state.
+  psx_setup
+  run hug w discard -s -f -- src/
+  assert_success
+  assert_output --partial "src/a.py"
+  assert_equal "py1" "$(cat src/a.py)"
+  run git status --porcelain -- src/a.py
+  [[ -z "$output" ]] # staged delta gone, no residual unstaged mod
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]] # outside scope untouched
+  psx_reset
+
+  # OQ-2 cell (-u + pathspec): unstaged scope intersects likewise — only
+  # the unstaged mod under src/ goes, the staged delta there survives.
+  psx_setup
+  echo py3 >> src/a.py # unstaged mod on top of the staged one
+  run hug w discard -u -f -- src/
+  assert_success
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # staged delta preserved, unstaged mod gone
+  psx_reset
+}
 
 # FLIPS-IN-TASK-4: w-*-all unknown flag exits 2 (today: already loud but
 # exit 1, "unknown option: -xX" — unify on HUG_EX_USAGE with the family).
