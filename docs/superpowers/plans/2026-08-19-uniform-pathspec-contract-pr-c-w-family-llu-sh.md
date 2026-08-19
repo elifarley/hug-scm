@@ -128,25 +128,27 @@ PATHSPEC_PRC_MASTER=("${PATHSPEC_W_DESTRUCTIVE_ROWS[@]}" "${PATHSPEC_W_ALL_ROWS[
   # The PR-A under-transcription trap, closed by rule (spec §5): a command
   # that migrated silently untested. Each column loop below consumes one
   # roster; this row diffs master vs consumed and names the orphan.
-  local enrolled
-  enrolled="$(cat <<'EOF'
-w-discard w-purge w-zap w-wipe
-w-discard-all w-purge-all w-zap-all w-wipe-all
-w-wip w-unwip w-wipdel
-w-get
-sh
-llu
-EOF
-)"
+  # enrolled is DERIVED from the SAME arrays the column tests consume
+  # (codex #3815936629) — a hard-coded copy stays green when a command
+  # falls out of its column roster; the derivation cannot.
+  local -a enrolled=("${PATHSPEC_W_DESTRUCTIVE_ROWS[@]}"
+                     "${PATHSPEC_W_ALL_ROWS[@]}"
+                     "${PATHSPEC_WIP_ROWS[@]}"
+                     "${PATHSPEC_SHOW_ROWS[@]}"
+                     "${PATHSPEC_LOG_ROWS[@]}"
+                     w-get)
+  local -A seen=()
+  local c
+  for c in "${enrolled[@]}"; do seen["$c"]=1; done
   local orphan=()
   for cmd in "${PATHSPEC_PRC_MASTER[@]}"; do
-    grep -qw "$cmd" <<<"$enrolled" || orphan+=("$cmd")
+    [[ -n "${seen[$cmd]:-}" ]] || orphan+=("$cmd")
   done
   [[ ${#orphan[@]} -eq 0 ]] || fail "PR-C roster orphan(s): ${orphan[*]} — enroll in a column loop"
 }
 ```
 
-(When the real column loops exist per later tasks, replace the heredoc with the actual rosters the loops consume — the invariant is the diff, not the heredoc.)
+MAINTENANCE RULE for Tasks 3-11: when a task adds or renames a column loop, the loop must consume one of the arrays above BY NAME (never an inline literal list) — that is what keeps this diff non-vacuous. Task 13's membership re-check runs this row, so it inherits the guarantee.
 
 - [ ] Characterization rows per the acceptance list (use `create_test_repo` fixtures; `run hug <cmd>` + `assert_*`; model after the existing inert/characterization blocks).
 - [ ] `make sanitize`, commit: `test: PR-C rosters, membership diff, and characterization rows (#292 PR-C)`.
@@ -342,6 +344,7 @@ fi
 - [ ] `hug llu -- src/` → only commits touching src/ in the outgoing range (two-sided: a commit touching only docs/ is absent; one touching src/ present — fixture with two commits)
 - [ ] Flips the receipt: today "Unknown option: --" exit 1 → scoped list exit 0
 - [ ] `hug llu --json -- src/` → valid JSON envelope scoped (counts reflect the scope; empty-envelope shape on zero matches — umbrella §6.2; validate `| python3 -m json.tool`)
+- [ ] Scoped summary gate (codex #3815936636): git-llu has THREE trailing `exec hug s` sites (~lines 120, 134, 161) — a scoped invocation must NOT print a whole-repo status after a scoped outgoing list. Gate every site on an empty pathspec array (`if ! $quiet && [[ ${#pathspecs[@]} -eq 0 ]]; then exec hug s; fi` — probe whether the unscoped path honors `-q` today and match it). Rows: scoped `llu -- src/` output contains NO status summary; bare trailing `--` (inert, empty array) KEEPS the summary
 - [ ] `hug llu -- ':(bogus)x/'` → exit 2; `hug llu -xX` → exit 2; outgoing RANGE computation unchanged (characterization: unscoped output byte-identical on the same fixture)
 
 **Verify:** conformance rows green.
@@ -354,17 +357,18 @@ fi
 
 **Goal:** `hug sh <ref> -- src/a.py` shows the commit's details filtered to the path; range syntax (`-3`) stays DATA.
 
-**Files:** Modify `git-config/bin/git-sh`; conformance rows (sh enrolled in SHOW rows per Task 2).
+**Files:** Modify `git-config/bin/git-sh` AND `git-config/lib/hug-git-show` (codex #3815936643: `show_commits` takes a single `file_path` at `${5:-}`, hug-git-show:43-78 — the multi-path contract needs an array-compatible interface); conformance rows (sh enrolled in SHOW rows per Task 2).
 
 **Acceptance Criteria:**
 - [ ] Flips the receipt: `sh HEAD -- src/` today "accepts one commit reference" exit 1 → ref + scoped details exit 0
-- [ ] `hug sh HEAD src/a.py` bare positional ≡ scoped form (compat rule)
+- [ ] `hug sh HEAD src/a.py` bare positional ≡ scoped form (compat rule). DISAMBIGUATION RULE (codex #3815936650): ALL tokens after the first ref are pathspecs — no syntactic distinction between "a second ref" and "a typo'd pathspec" exists, so none is attempted; the one-reference error fires ONLY when the FIRST positional is not a resolvable ref/range
 - [ ] `hug sh -3 -- src/` works: `-3` is range DATA, never eaten by the `-*` rejection (the one PR-C command with legal dash-data — spec Class 3; pin with a row)
-- [ ] Malformed magic → exit 2; second non-path positional → the one-reference error at exit 2 (registry row); unscoped `sh HEAD` byte-identical
+- [ ] Malformed magic → exit 2; unscoped `sh HEAD` byte-identical
+- [ ] Multi-path support (codex #3815936643): `hug sh HEAD -- src/ docs/` filters to BOTH paths. Requires the library pass below. Two-sided conformance row: commits touching either path appear; a commit touching only an excluded third path does not
 
-**Verify:** conformance rows green; run existing sh suites (`grep -rl "hug sh " tests/unit | xargs -I{} make test-unit TEST_FILE={}`).
+**Verify:** conformance rows green; run existing sh suites (`grep -rl "hug sh " tests/unit | xargs -I{} make test-unit TEST_FILE={}`); sibling callers of `show_commits` (shc/shcp/shp/shv) byte-identical (characterization rows).
 
-**Steps:** template with an explicit data-arm for `-N`/`N` committish spellings BEFORE the `-*` rejection arm (probe `git-sh --help` and its current ref parsing; keep the existing detail renderer verbatim; append `"${pathspecs[@]}"` behind `--` to the underlying git show/diff calls). Red rows first. Sanitize, commit `feat(sh): commit details gain uniform pathspec filtering (#292 PR-C)`.
+**Steps:** LIBRARY PASS FIRST (codex #3815936643 — verified: `show_commits` in git-config/lib/hug-git-show:43-78 takes a SINGLE `file_path` at `${5:-}`, so multi-path specs silently lose all but the first): convert the interface to array-compatible — `shift 4; local -a pathspecs=("$@")` — and forward `${pathspecs[@]+"${pathspecs[@]}"}` behind `--` at every downstream `git rev-list`/diff/stats call in hug-git-show; pin each sibling caller byte-identical (they pass 0 or 1 entries, so the change is backward-compatible for them — probe each). THEN git-sh adopts the template with an explicit data-arm for `-N`/`N` committish spellings BEFORE the `-*` rejection arm (probe `git-sh --help` and its current ref parsing) and passes its collected array through to the new interface. Red rows first (including the two-path row). Sanitize, commit `feat(sh): commit details gain uniform pathspec filtering (#292 PR-C)`.
 
 ---
 
