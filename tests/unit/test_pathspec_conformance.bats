@@ -56,9 +56,41 @@ PATHSPEC_CONFORMANCE_ROWS=(sw ss su shc shcp shp l ll cmod cmoda)
 # nothing. `a`'s SELECTION semantics get a dedicated standalone test below
 # (selecting stub), not a shared-column cell.
 PATHSPEC_PICKER_ROWS=(sw ss su a)
-PATHSPEC_LOG_ROWS=(l ll)
-PATHSPEC_SHOW_ROWS=(shc shcp shp)
-PATHSPEC_INERT_ROWS=("${PATHSPEC_LOG_ROWS[@]}" "${PATHSPEC_SHOW_ROWS[@]}")
+# FULL enrollment rosters (membership truth): `llu` and `sh` are enrolled
+# here from PR-C Task 2 on — the master membership-diff row (PR-C section,
+# bottom of file) counts enrollment via THESE arrays.
+PATHSPEC_LOG_ROWS=(l ll llu)
+PATHSPEC_SHOW_ROWS=(shc shcp shp sh)
+# TWO-PHASE ENROLLMENT (PR-C Tasks 10-11): llu/sh are enrolled above but NOT
+# yet migrated, and the column loops below run their assertions for every
+# roster member TODAY — probed, both would fail:
+#   hug sh  HEAD~1 -- src/ → exit 1, "unexpected extra argument" (sh accepts
+#                            ONE commit ref; see the contract-sh tests)
+#   hug llu -- src/        → exit 1, "Unknown option: --" (flags-only parser;
+#                            see the characterization llu test)
+# So until a command's migration task lands, the loops consume the ACTIVE
+# (migrated-only) derivative; the migration task deletes the command from its
+# PENDING list and the loops pick it up with ZERO further edits here. The
+# derivation is subtractive on the full roster — never a hand-coded copy (a
+# copy stays green when a command falls out of its column; codex #3815936629).
+PATHSPEC_LOG_PENDING_ROWS=(llu) # flips in Task 10
+PATHSPEC_SHOW_PENDING_ROWS=(sh) # flips in Task 11
+PATHSPEC_LOG_ACTIVE_ROWS=()
+for _row in "${PATHSPEC_LOG_ROWS[@]}"; do
+  if [[ " ${PATHSPEC_LOG_PENDING_ROWS[*]} " != *" $_row "* ]]; then
+    PATHSPEC_LOG_ACTIVE_ROWS+=("$_row")
+  fi
+done
+PATHSPEC_SHOW_ACTIVE_ROWS=()
+for _row in "${PATHSPEC_SHOW_ROWS[@]}"; do
+  if [[ " ${PATHSPEC_SHOW_PENDING_ROWS[*]} " != *" $_row "* ]]; then
+    PATHSPEC_SHOW_ACTIVE_ROWS+=("$_row")
+  fi
+done
+unset _row
+# Inert rows ride the ACTIVE derivatives: a pending member in the inert loop
+# would hit psx_inert_args' unknown-row sentinel before its migration.
+PATHSPEC_INERT_ROWS=("${PATHSPEC_LOG_ACTIVE_ROWS[@]}" "${PATHSPEC_SHOW_ACTIVE_ROWS[@]}")
 PATHSPEC_HISTORY_ROWS=(cmod cmoda)
 
 # Characterization rows (Task 4) — assertions of TODAY's behavior for the
@@ -102,6 +134,18 @@ PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
 # they don't fit the one-word loop.
 PATHSPEC_SINGLEFILE_ROWS=(fa fb fblame fborn fcon llf)
 PATHSPEC_SINGLEFILE_DELEGATE_ROWS=(llfp llfs)
+
+# PR-C rosters (spec §5): ONE roster per behavioral class; the MASTER
+# list is the single enrollment point — a PR-C command missing from every
+# column below fails the membership-diff row (PR-C section, bottom of file).
+# Names are ROSTER IDENTIFIERS (script suffixes), not invocation strings —
+# e.g. w-discard runs as `hug w discard` through the w gateway.
+PATHSPEC_W_DESTRUCTIVE_ROWS=(w-discard w-purge w-zap w-wipe)
+PATHSPEC_W_ALL_ROWS=(w-discard-all w-purge-all w-zap-all w-wipe-all)
+PATHSPEC_WIP_ROWS=(w-wip w-unwip w-wipdel)
+PATHSPEC_PRC_MASTER=("${PATHSPEC_W_DESTRUCTIVE_ROWS[@]}" "${PATHSPEC_W_ALL_ROWS[@]}" "${PATHSPEC_WIP_ROWS[@]}" w-get sh llu)
+# `sh` and `llu` are enrolled via the SHOW/LOG rosters above (two-phase:
+# pending until Tasks 11/10 migrate them).
 
 # -----------------------------------------------------------------------------
 # Fixture + harness helpers
@@ -339,7 +383,7 @@ psx_sl_kind() {
 }
 
 @test "column pathspec-filter: log commands (log rows)" {
-  for cmd in "${PATHSPEC_LOG_ROWS[@]}"; do
+  for cmd in "${PATHSPEC_LOG_ACTIVE_ROWS[@]}"; do
     psx_setup
     # The docs-only commit is the non-matching marker: it must vanish under
     # `-- src/` while the base commit (which touched src/) stays.
@@ -352,7 +396,7 @@ psx_sl_kind() {
 }
 
 @test "column pathspec-filter: show commands (show rows)" {
-  for cmd in "${PATHSPEC_SHOW_ROWS[@]}"; do
+  for cmd in "${PATHSPEC_SHOW_ACTIVE_ROWS[@]}"; do
     psx_setup
     # HEAD~1 is "base" (touched src/); filter to src/, docs/note.md is the
     # non-matching marker.
@@ -402,7 +446,7 @@ psx_sl_kind() {
 }
 
 @test "column glob-filter: log commands (log rows)" {
-  for cmd in "${PATHSPEC_LOG_ROWS[@]}"; do
+  for cmd in "${PATHSPEC_LOG_ACTIVE_ROWS[@]}"; do
     psx_setup
     # '*.py' matches base's src files; the docs-only commit has none.
     run hug "$cmd" -- '*.py'
@@ -414,7 +458,7 @@ psx_sl_kind() {
 }
 
 @test "column glob-filter: show commands (show rows)" {
-  for cmd in "${PATHSPEC_SHOW_ROWS[@]}"; do
+  for cmd in "${PATHSPEC_SHOW_ACTIVE_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" HEAD~1 -- '*.md'
     assert_success
@@ -672,7 +716,7 @@ psx_install_stub_gum() {
 }
 
 @test "column magic-pathspec: show commands (show rows)" {
-  for cmd in "${PATHSPEC_SHOW_ROWS[@]}"; do
+  for cmd in "${PATHSPEC_SHOW_ACTIVE_ROWS[@]}"; do
     psx_setup
     # :(icase): 'src/big.py' must match src/BIG.py in the base commit.
     run hug "$cmd" HEAD~1 -- ':(icase)src/big.py'
@@ -2771,4 +2815,229 @@ psx_install_stub_gum() {
   [[ "$status" -eq 0 ]]
   assert_output --partial "Usage: hug w <command>"
   psx_reset
+}
+
+###############################################################################
+# PR-C ENROLLMENT (Task 2, #292): the w family + llu + sh join the suite
+# BEFORE any of them migrates (Tasks 3-11). Two artifacts live here:
+#   1. the master membership diff — closes the PR-A under-transcription trap
+#      (8 commands silently untested) by RULE: `enrolled` is DERIVED from the
+#      same arrays the column loops consume, never a hand-coded copy (a copy
+#      stays green when a command falls out of its column; codex #3815936629);
+#   2. characterization rows pinning TODAY's correct behavior (green now),
+#      plus the staged RED rows at the very bottom (commented out — each
+#      migration task uncomments its own rows in ITS commit, so CI never
+#      carries a red row).
+###############################################################################
+
+@test "PR-C master roster: every command enrolled in >=1 column" {
+  # Derived, never copied: the enrolled set is the union of the SAME arrays
+  # the column tests above consume (plus w-get's dedicated rows). A PR-C
+  # command that falls out of every column fails HERE by name.
+  local -a enrolled=("${PATHSPEC_W_DESTRUCTIVE_ROWS[@]}"
+                     "${PATHSPEC_W_ALL_ROWS[@]}"
+                     "${PATHSPEC_WIP_ROWS[@]}"
+                     "${PATHSPEC_SHOW_ROWS[@]}"
+                     "${PATHSPEC_LOG_ROWS[@]}"
+                     w-get)
+  local -A seen=()
+  local c
+  for c in "${enrolled[@]}"; do seen["$c"]=1; done
+  local orphan=()
+  for cmd in "${PATHSPEC_PRC_MASTER[@]}"; do
+    [[ -n "${seen[$cmd]:-}" ]] || orphan+=("$cmd")
+  done
+  [[ ${#orphan[@]} -eq 0 ]] || fail "PR-C roster orphan(s): ${orphan[*]} — enroll in a column loop"
+}
+
+@test "characterization PR-C: w wipe <file> non-TTY confirm-cancel keeps the file (#292)" {
+  # Probed: non-interactive `w wipe root.txt` previews the scoped unstaged
+  # path, then cancels (exit 1) — the destructive op NEVER runs. The cancel
+  # wording differs by gum branch (gum installed: gum's TTY failure +
+  # "Cancelled."; gum absent: "Non-interactive environment: cancelled.") —
+  # the shared stem "ancelled" pins BOTH. Two-sided: root.txt survives as an
+  # unstaged mod.
+  psx_setup
+  echo r1 > root.txt
+  git add root.txt
+  git commit -q -m "add root.txt"
+  echo r2 >> root.txt
+  run hug w wipe root.txt
+  assert_failure
+  assert_output --partial "Unstaged paths"
+  assert_output --partial "root.txt"
+  assert_output --partial "ancelled"
+  run git status --porcelain -- root.txt
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
+
+@test "characterization PR-C: w wip -- '-fix' keeps the message a message (#292)" {
+  # Probed: the separator protects the dash-leading MESSAGE from flag
+  # parsing — the WIP branch slug ends in '.fix' (slugified '-fix'), exit 0.
+  # If the '--' were dropped, '-fix' would die as an unknown option instead.
+  psx_setup
+  run hug w wip -- "-fix"
+  assert_success
+  run git branch --list 'WIP/*' --format='%(refname:short)'
+  [[ "$output" == WIP/*.fix ]]
+  psx_reset
+}
+
+@test "characterization PR-C: w unwip -- WIP/... receives the branch name (#292)" {
+  # Probed: create a WIP first (`w wip -- unit`), then the separator form
+  # delivers the WIP/ branch name as the POSITIONAL (not a flag): the unpark
+  # preview names the exact branch and, non-interactively, refuses to apply
+  # (exit 1) leaving the WIP branch in place. A dropped '--' would instead
+  # error "Branch '-' does not exist"-style or print help.
+  psx_setup
+  hug w wip -- "unit" >/dev/null 2>&1
+  local br
+  br=$(git branch --list 'WIP/*' --format='%(refname:short)')
+  [[ -n "$br" ]]
+  run hug w unwip -- "$br"
+  assert_failure
+  assert_output --partial "Unparking"
+  assert_output --partial "$br"
+  run git branch --list 'WIP/*' --format='%(refname:short)'
+  [[ "$output" == *"$br"* ]] # not deleted — the cancel path
+  psx_reset
+}
+
+@test "characterization PR-C: w get HEAD -- src/ scoped flow names scope and target (#292)" {
+  # Probed: the separator form runs the scoped restore flow — "Will reset
+  # files to commit HEAD" names the target, the scope check names ONLY
+  # src/a.py (docs/note.md, out of scope, never appears), and the dirty-tree
+  # guard refuses (exit 1) before mutating anything.
+  psx_setup
+  run hug w get HEAD -- src/
+  assert_failure
+  assert_output --partial "Will reset files to commit HEAD"
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M"* ]] # staging state untouched by the refusal
+  psx_reset
+}
+
+@test "characterization PR-C: w zap src/ --dry-run honors the flag after the pathspec (#292)" {
+  # Probed: position-independent --dry-run — the flag AFTER the positional
+  # pathspec is still parsed as a flag (not a second pathspec): dry-run
+  # preview scoped to src/ (staged src/a.py only), exit 0, tree untouched.
+  psx_setup
+  run hug w zap src/ --dry-run
+  assert_success
+  assert_output --partial "Dry run"
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "new.txt"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M"* ]]
+  psx_reset
+}
+
+###############################################################################
+# RED rows staged for PR-C migrations (Tasks 3-11) — DO NOT uncomment here.
+# Each row lands in the SAME commit as the migration that flips it (landing
+# it now would break CI). Every row is prefixed FLIPS-IN-TASK-N; the guard
+# test below keeps the block from being lost. Current (probed, pre-migration)
+# behavior for each is already pinned green by the characterization rows in
+# the closing-fix section above (w discard/purge/zap/wipe) and the
+# characterization llu / contract sh rows.
+###############################################################################
+
+# FLIPS-IN-TASK-3: w-discard/w-purge/w-zap/w-wipe unknown flag must exit 2
+# with the family template (today: silently swallowed as a pathspec —
+# "Nothing to discard"/"Nothing to zap"/"Nothing to purge", exit 0).
+#@test "contract w-destructive (Task 3): -xX loud, exit 2, never a pathspec" {
+#  local cmd msg
+#  for cmd in discard purge zap wipe; do
+#    case "$cmd" in
+#    zap) msg="Nothing to zap" ;;
+#    purge) msg="Nothing to purge" ;;
+#    *) msg="Nothing to discard" ;;
+#    esac
+#    psx_setup
+#    run hug w "$cmd" -xX
+#    assert_equal 2 "$status"
+#    assert_output --partial "Unknown option: -xX"
+#    refute_output --partial "$msg"
+#    psx_reset
+#  done
+#}
+
+# FLIPS-IN-TASK-4: w-*-all unknown flag exits 2 (today: already loud but
+# exit 1, "unknown option: -xX" — unify on HUG_EX_USAGE with the family).
+#@test "contract w-all (Task 4): -xX exits 2 with usage code" {
+#  local cmd
+#  for cmd in discard-all purge-all zap-all wipe-all; do
+#    psx_setup
+#    run hug w "$cmd" -xX
+#    assert_equal 2 "$status"
+#    assert_output --partial "unknown option"
+#    psx_reset
+#  done
+#}
+
+# FLIPS-IN-TASK-5: w-wip/w-unwip/w-wipdel unknown flags exit 2 with the
+# family template (today: w-wip exit 1 + full help dump; w-unwip/w-wipdel
+# exit 1 with "Branch '-xX' does not exist." — flag-shaped tokens must be
+# rejected as flags before branch resolution).
+#@test "contract wip family (Task 5): -xX loud, exit 2" {
+#  psx_setup
+#  run hug w wip -xX
+#  assert_equal 2 "$status"
+#  assert_output --partial "Unknown option"
+#  refute_output --partial "USAGE:" # the full help dump is not the contract
+#  psx_reset
+#}
+
+# FLIPS-IN-TASK-6: w-get unknown flag rejected as a flag (today: reclassified
+# as the --target positional — "Invalid commitish for --target: -xX", exit 1).
+#@test "contract w-get (Task 6): -xX is a flag error, not a bad commitish" {
+#  psx_setup
+#  run hug w get -xX
+#  assert_equal 2 "$status"
+#  assert_output --partial "Unknown option: -xX"
+#  refute_output --partial "Invalid commitish"
+#  psx_reset
+#}
+
+# FLIPS-IN-TASK-10: llu honors the separator and filters two-sided (today:
+# flags-only parser rejects it — "Unknown option: --", exit 1; pinned green
+# in the characterization llu row above, which flips in the same task).
+#@test "contract llu (Task 10): -- src/ filters two-sided" {
+#  psx_setup
+#  run hug llu -- src/
+#  assert_success
+#  assert_output --partial "base"
+#  refute_output --partial "docs guide only"
+#  psx_reset
+#}
+
+# FLIPS-IN-TASK-11: sh accepts pathspecs after the separator (today: ONE
+# commit ref only — "unexpected extra argument: 'src/'", exit 1; the two
+# contract-sh BUG-6 rows above flip in the SAME task per the flip rule).
+#@test "contract sh (Task 11): HEAD~1 -- src/ filters two-sided" {
+#  psx_setup
+#  run hug sh HEAD~1 -- src/
+#  assert_success
+#  assert_output --partial "src/a.py"
+#  refute_output --partial "docs/note.md"
+#  psx_reset
+#}
+
+@test "PR-C staged red rows: block present, markers reference tasks 3-11" {
+  # Loss guard: the commented FLIPS rows above are the migration tasks'
+  # homework — if the block is deleted or a marker drifts outside 3-11, this
+  # fails. Grep-based, green now by construction.
+  local self="${BATS_TEST_FILENAME}"
+  local markers bad
+  markers=$(grep -oE 'FLIPS-IN-TASK-[0-9]+' "$self" | sort -u)
+  [[ -n "$markers" ]] || fail "no staged FLIPS markers found — the PR-C red rows were lost"
+  bad=$(grep -oE 'FLIPS-IN-TASK-[0-9]+' "$self" | sort -u |
+    grep -vE '^FLIPS-IN-TASK-(3|4|5|6|7|8|9|10|11)$' || true)
+  [[ -z "$bad" ]] || fail "staged marker outside tasks 3-11: $bad"
+  grep -q "RED rows staged for PR-C migrations" "$self" ||
+    fail "staged block header comment missing"
 }
