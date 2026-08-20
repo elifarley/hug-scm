@@ -3486,7 +3486,7 @@ psx_install_stub_gum() {
     assert_equal 2 "$status"
     assert_output --partial "Unknown option: -xX"
     assert_output --partial "hug w $cmd is whole-tree; use the scoped form to filter: hug w $scoped -- <path>..."
-    refute_output --partial "USAGE:" # one-line family template, not a help dump
+    refute_output --partial "Usage:" # one-line family template, not a help dump
     psx_reset
   done
 }
@@ -3561,28 +3561,28 @@ psx_install_stub_gum() {
   done
 }
 
-# FLIPS-IN-TASK-8: w-wip/w-unwip/w-wipdel unknown flags exit 2 with the
-# family template (today: w-wip exit 1 + full help dump; w-unwip/w-wipdel
-# exit 1 with "Branch '-xX' does not exist." — flag-shaped tokens must be
-# rejected as flags before branch resolution, for ALL THREE commands).
-#@test "contract wip family (Task 8): -xX loud, exit 2 (wip unwip wipdel)" {
-#  local cmd
-#  for cmd in wip unwip wipdel; do
-#    psx_setup
-#    run hug w "$cmd" -xX
-#    assert_equal 2 "$status"
-#    assert_output --partial "Unknown option: -xX"
-#    refute_output --partial "does not exist" # not misread as a branch name
-#    psx_reset
-#  done
-#  # w-wip's current failure mode is a FULL help dump — the contract error is
-#  # the one-line family template, not the manual.
-#  psx_setup
-#  run hug w wip -xX
-#  assert_equal 2 "$status"
-#  refute_output --partial "USAGE:"
-#  psx_reset
-#}
+@test "contract wip family (Task 8): -xX loud, exit 2 (wip unwip wipdel)" {
+  # Landed (Task 8, #292 PR-C): the wip family keeps its `--` DATA semantics
+  # (message for wip, branch for unwip/wipdel — spec §2 Class 2b) and only
+  # the unknown-option path joined the exit-2 family: flag-shaped tokens are
+  # rejected as flags before message/branch resolution.
+  local cmd
+  for cmd in wip unwip wipdel; do
+    psx_setup
+    run hug w "$cmd" -xX
+    assert_equal 2 "$status"
+    assert_output --partial "Unknown option: -xX"
+    refute_output --partial "does not exist" # not misread as a branch name
+    psx_reset
+  done
+  # w-wip's pre-migration failure mode was a FULL help dump — the contract
+  # error is the one-line family template, not the manual.
+  psx_setup
+  run hug w wip -xX
+  assert_equal 2 "$status"
+  refute_output --partial "USAGE:"
+  psx_reset
+}
 
 # FLIPS-IN-TASK-6: w-get unknown flag rejected as a flag (today: reclassified
 # as the --target positional — "Invalid commitish for --target: -xX", exit 1).
@@ -3619,7 +3619,7 @@ psx_install_stub_gum() {
 #  psx_reset
 #}
 
-@test "PR-C staged red rows: exact marker set (3 4 5 6 8 10 11)" {
+@test "PR-C staged red rows: exact marker set (3 4 5 6 10 11)" {
   # Loss guard, EXACT form: an existence-only check stays green when ONE
   # task's staged rows are deleted (review round 1 finding). The observed
   # marker set must equal the literal expectation — built via a loop over
@@ -3631,7 +3631,7 @@ psx_install_stub_gum() {
   # pending-work list.
   local self="${BATS_TEST_FILENAME}"
   local expected actual
-  expected=$(for n in 3 4 5 6 8 10 11; do printf 'FLIPS-IN-TASK-%s\n' "$n"; done | sort)
+  expected=$(for n in 3 4 5 6 10 11; do printf 'FLIPS-IN-TASK-%s\n' "$n"; done | sort)
   actual=$(grep -oE 'FLIPS-IN-TASK-[0-9]+' "$self" | sort -u)
   [[ -n "$actual" ]] || fail "no staged FLIPS markers found — the PR-C red rows were lost"
   if [[ "$actual" != "$expected" ]]; then

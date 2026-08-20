@@ -76,7 +76,11 @@ while (($#)); do
     break
     ;;
   -*)
-    usage_error "Unknown option '$1'."
+    # Exit-2 usage family (#292). The separator here introduces the WIP
+    # BRANCH name, not a pathspec, so the remedy shows a placeholder instead
+    # of echoing the flag-shaped token back — a token like -xX is a typo,
+    # not a branch the user wants to unpark/delete.
+    error_usage "Unknown option: $1. Branch names beginning with '-' require '--': hug w wipdel -- <branch>. See 'hug help :pathspec'."
     ;;
   *)
     if [ -n "$branch_arg" ]; then
