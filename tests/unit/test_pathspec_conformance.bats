@@ -61,19 +61,13 @@ PATHSPEC_PICKER_ROWS=(sw ss su a)
 # bottom of file) counts enrollment via THESE arrays.
 PATHSPEC_LOG_ROWS=(l ll llu)
 PATHSPEC_SHOW_ROWS=(shc shcp shp sh)
-# TWO-PHASE ENROLLMENT (PR-C Tasks 10-11): sh is enrolled above but NOT yet
-# migrated (llu graduated in Task 10 — its PENDING subtraction is gone and
-# the LOG column loops now cover it). The column loops below run their
-# assertions for every ACTIVE roster member TODAY; probed, sh would fail:
-#   hug sh  HEAD~1 -- src/ → exit 1, "unexpected extra argument" (sh accepts
-#                            ONE commit ref; see the contract-sh tests)
-# So until a command's migration task lands, the loops consume the ACTIVE
-# (migrated-only) derivative; the migration task deletes the command from its
-# PENDING list and the loops pick it up with ZERO further edits here. The
-# derivation is subtractive on the full roster — never a hand-coded copy (a
-# copy stays green when a command falls out of its column; codex #3815936629).
+# TWO-PHASE ENROLLMENT (PR-C Tasks 10-11): llu graduated in Task 10 and sh
+# in Task 11 — both PENDING subtractions are gone, so the LOG and SHOW
+# column loops below now cover every roster member. The PENDING mechanism
+# itself stays (it cost zero edits per graduation: the migration task just
+# empties its list and the subtractive derivation picks it up).
 PATHSPEC_LOG_PENDING_ROWS=() # (landed, Task 10: llu migrated, #292 PR-C)
-PATHSPEC_SHOW_PENDING_ROWS=(sh) # flips in Task 11
+PATHSPEC_SHOW_PENDING_ROWS=() # (landed, Task 11: sh migrated, #292 PR-C)
 PATHSPEC_LOG_ACTIVE_ROWS=()
 for _row in "${PATHSPEC_LOG_ROWS[@]}"; do
   if [[ " ${PATHSPEC_LOG_PENDING_ROWS[*]} " != *" $_row "* ]]; then
@@ -156,7 +150,7 @@ PATHSPEC_PRC_MASTER=(
   w-get sh llu
 )
 # `sh` and `llu` are enrolled via the SHOW/LOG rosters above (two-phase:
-# llu ACTIVE since Task 10; sh pending until Task 11 migrates it).
+# llu ACTIVE since Task 10, sh ACTIVE since Task 11).
 
 # -----------------------------------------------------------------------------
 # Fixture + harness helpers
@@ -308,7 +302,7 @@ teardown() {
 psx_inert_args() {
   case "$1" in
   l | ll | llu) : ;;
-  shc | shcp | shp) echo "HEAD~1" ;;
+  shc | shcp | shp | sh) echo "HEAD~1" ;;
   *)
     echo "psx_inert_args: unknown row '$1' — add it to the case arms" >&2
     echo "__PSX_UNKNOWN_ROW__"
@@ -1639,42 +1633,44 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "contract sh: second positional rejected loudly, naming the argument (BUG-6 fixed, Task 9)" {
-  # Contract (was characterization, flipped by Task 9): `sh HEAD -- src/`
-  # and `sh HEAD src/` are rejected because hug sh accepts ONE commit
-  # reference. The error must name the stray argument ("unexpected extra
-  # argument: 'src/'") and must NOT fall back to the old confusing
-  # "Invalid commit reference" ref-validation failure.
+@test "contract sh (Task 11): pathspecs after the ref scope the details (BUG-6 rows flipped)" {
+  # Contract (was the Task-9 BUG-6 rejection, flipped by Task 11, #292
+  # PR-C): `sh HEAD~1 -- src/` and the bare-positional spelling
+  # `sh HEAD~1 src/` are EQUIVALENT and scope the run — ref + details
+  # filtered to the path (two-sided: base's src/a.py in, its docs/note.md
+  # out). Was: "hug sh accepts one commit reference; unexpected extra
+  # argument: 'src/'", exit 1.
   psx_setup
-  run hug sh HEAD -- src/
-  assert_failure
-  assert_output --partial "unexpected extra argument"
-  assert_output --partial "src/"
-  refute_output --partial "Invalid commit reference"
+  run hug sh HEAD~1 -- src/
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "unexpected extra argument"
   psx_reset
 
   psx_setup
-  run hug sh HEAD src/
-  assert_failure
-  assert_output --partial "unexpected extra argument"
-  assert_output --partial "src/"
-  refute_output --partial "Invalid commit reference"
+  run hug sh HEAD~1 src/
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "unexpected extra argument"
   psx_reset
 }
 
-@test "contract sh: empty first positional + path still rejected loudly (BUG-6, review fix)" {
-  # Contract (added after dual review): the guard must count POSITIONALS,
-  # not ref content. `hug sh "" src/` (realistic: `hug sh "$ref" -- "$path"`
-  # with an unset/empty ref) previously slipped past the -n guard, let the
-  # path overwrite the empty ref, and died with the old confusing
-  # "Invalid commit reference". Must get the named rejection instead.
-  # Companion invariant: `hug sh ""` ALONE still defaults to HEAD (probed).
+@test "contract sh (Task 11): empty first positional defaults to HEAD, path still scopes (BUG-6 review-fix row flipped)" {
+  # Contract (was the BUG-6 review-fix rejection, flipped by Task 11): the
+  # positional-COUNT guard lesson survives as bookkeeping only — `hug sh ""
+  # src/` (realistic: `hug sh "$ref" -- "$path"` with an unset/empty ref)
+  # keeps the EMPTY ref (→ HEAD default via resolve_commit_ref) AND
+  # collects the path. HEAD here is the docs-only commit, so a src/ scope
+  # leaves its stats empty — pinned honestly: subject present, the
+  # out-of-scope docs/guide.md absent.
   psx_setup
   run hug sh "" src/
-  assert_failure
-  assert_output --partial "unexpected extra argument"
-  assert_output --partial "src/"
-  refute_output --partial "Invalid commit reference"
+  assert_success
+  assert_output --partial "docs guide only"
+  refute_output --partial "docs/guide.md"
+  refute_output --partial "unexpected extra argument"
   psx_reset
 
   psx_setup
@@ -3786,17 +3782,115 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-# FLIPS-IN-TASK-11: sh accepts pathspecs after the separator (today: ONE
-# commit ref only — "unexpected extra argument: 'src/'", exit 1; the two
-# contract-sh BUG-6 rows above flip in the SAME task per the flip rule).
-#@test "contract sh (Task 11): HEAD~1 -- src/ filters two-sided" {
-#  psx_setup
-#  run hug sh HEAD~1 -- src/
-#  assert_success
-#  assert_output --partial "src/a.py"
-#  refute_output --partial "docs/note.md"
-#  psx_reset
-#}
+# FLIPS-IN-TASK-11 (landed, #292 PR-C): sh accepts pathspecs after the
+# separator — was: ONE commit ref only ("unexpected extra argument:
+# 'src/'", exit 1; the two contract-sh BUG-6 rows above flipped in the
+# SAME task per the flip rule). The rows below pin the parts the shared
+# SHOW column loops cannot express: multi-path union, the -N DATA arm
+# (sh is the one PR-C command with legal dash-data, spec Class 3), the
+# disambiguation rule (ALL tokens after the first ref are pathspecs), and
+# the loud exit-2 rejections.
+
+@test "contract sh (Task 11): HEAD~1 -- src/ filters two-sided" {
+  psx_setup
+  run hug sh HEAD~1 -- src/
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  psx_reset
+}
+
+@test "contract sh (Task 11): two pathspecs union — BOTH paths, third path excluded" {
+  # codex #3815936643: base (HEAD~1) touched src/, docs/ AND other.txt —
+  # a multi-path call must show the UNION (src + docs) and drop the
+  # third path. With the old single-file_path library interface this row
+  # is red: only the FIRST path survived.
+  psx_setup
+  run hug sh HEAD~1 -- src/ docs/
+  assert_success
+  assert_output --partial "src/a.py"
+  assert_output --partial "docs/note.md"
+  refute_output --partial "other.txt"
+  psx_reset
+}
+
+@test "contract sh (Task 11): -N range spellings are DATA — never eaten by the -* rejection" {
+  # Spec Class 3: sh is the one PR-C command with legal dash-data. The
+  # explicit data-arm sits BEFORE the -* rejection arm, so '-3' reaches
+  # resolve_commit_ref as HEAD~3..HEAD (not "Unknown flag: -3", exit 2).
+  # Fixture depth: base + docs-only + two tests-only commits = 4, so
+  # HEAD~3..HEAD spans docs, tests1, tests2; scoped to {src/, docs/} the
+  # union keeps ONLY the docs-only commit — the two tests-only commits
+  # (third path) must vanish. Two-sided through the range filter itself.
+  psx_setup
+  mkdir -p tests
+  echo t1 > tests/one.t
+  git add tests/one.t
+  # Path-scoped commit (with -- tests/): the fixture's STAGED src/a.py mod
+  # must NOT be swept into the tests-only commit — the setup's own LESSON
+  # (see setup_pathspec_fixture), which applies to extensions too: an
+  # unscoped `git commit` here would make "tests one" touch src/ and the
+  # src/∪docs/ union would legitimately keep it, breaking the row.
+  git commit -q -m "tests one" -- tests/one.t
+  echo t2 > tests/two.t
+  git add tests/two.t
+  git commit -q -m "tests two" -- tests/two.t
+  run hug sh -3 -- src/ docs/
+  assert_success
+  assert_output --partial "docs guide only"
+  refute_output --partial "tests one"
+  refute_output --partial "tests two"
+  refute_output --partial "Unknown flag"
+  psx_reset
+}
+
+@test "contract sh (Task 11): disambiguation — every token after the first ref is a pathspec" {
+  # codex #3815936650: no syntactic second-ref detection exists, so none
+  # is attempted. `sh HEAD~1 other.txt docs/note.md` treats BOTH trailing
+  # tokens as pathspecs (union: other.txt + docs/note.md in, src/a.py
+  # out) and exits 0 with whatever matches — pinned honestly.
+  psx_setup
+  run hug sh HEAD~1 other.txt docs/note.md
+  assert_success
+  assert_output --partial "other.txt"
+  assert_output --partial "docs/note.md"
+  refute_output --partial "src/a.py"
+  psx_reset
+}
+
+@test "contract sh (Task 11): loud rejections — unknown dash token and malformed magic, exit 2" {
+  # '-xX' (non-numeric dash) → the family usage error, help + exit 2
+  # (pre-migration this already exited 2 via show_single_commit's
+  # reject_flag_ref — now at the entry loop, same observable). '-3' is
+  # immune (data arm, row above). ':(bogus)' → validate_pathspecs_or_die.
+  psx_setup
+  run hug sh -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown flag: -xX"
+  psx_reset
+
+  psx_setup
+  run hug sh HEAD~1 -- ':(bogus)x/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  psx_reset
+}
+
+@test "contract sh (Task 11): unscoped run and trailing bare -- byte-identical" {
+  # Unscoped `hug sh HEAD~1` output must be unchanged by the migration,
+  # and a trailing bare '--' inert (sh is a viewer, no picker arm) —
+  # asserted as byte-identity between the two invocations of ONE fixture
+  # (relative-time normalized: the clock ticks between captures).
+  psx_setup
+  run hug sh HEAD~1
+  assert_success
+  local unfiltered
+  unfiltered=$(printf '%s' "$output" | psx_strip_reltime)
+  run hug sh HEAD~1 --
+  assert_success
+  assert_equal "$unfiltered" "$(printf '%s' "$output" | psx_strip_reltime)"
+  psx_reset
+}
 
 @test "PR-C staged red rows: exact marker set (3 4 5 6 10 11)" {
   # Loss guard, EXACT form: an existence-only check stays green when ONE
