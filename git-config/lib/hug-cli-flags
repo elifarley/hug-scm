@@ -557,11 +557,17 @@ reject_action_flags() {
 # destructive family (#292 PR-C Task 5, rule-of-three extraction from
 # git-w-discard/git-w-purge; git-w-zap was the third copy that tripped it).
 #
-# Call it AFTER 'eval "$(parse_common_flags_with_pathspecs --picker "$@")"'
-# and AFTER seeding the caller's pathspec array with the split's post-'--'
-# data via pathspec_pathspecs_into: "$@" then holds only the separator-free
-# pre-args (common flags already consumed), which are exactly this helper's
-# [pre-args...].
+# Call it AFTER 'eval "$(parse_common_flags_with_pathspecs --picker "$@")"':
+# "$@" then holds only the separator-free pre-args (common flags already
+# consumed), which are exactly this helper's [pre-args...].
+#
+# SELF-CONTAINED (quality-review hardening): the caller does NOT need to
+# pre-initialize flags_explicit (self-inited below, set -u safe) NOR to seed
+# its array via pathspec_pathspecs_into first — the helper reads the
+# shell-wide _pathspec_pathspecs itself and completes the caller's array
+# idempotently (no duplicates when the caller DID seed). A fourth consumer
+# therefore cannot silently skip post-'--' matching by calling the helper
+# "too early": the matcher's view is complete by construction.
 #
 # Provides (the three things every family member copy-pasted):
 #   1. OWN-FLAG ARMS — each spec match sets its caller variable true and
@@ -594,7 +600,29 @@ parse_scoped_own_flags() {
   local cmd_label="$1" own_spec="$2" arr_name="$3"
   shift 3
   local -n __pso_out="$arr_name"
-  local arg spec short long var matched p
+  local arg spec short long var matched p e found
+
+  # Self-init (hardening 1): a consumer that forgets to pre-initialize
+  # flags_explicit must not die under set -u on the own-flag arm's write.
+  printf -v flags_explicit %s "${flags_explicit:-false}"
+
+  # Internal seeding (hardening 2): pull the split's post-'--' data from
+  # the shell-wide global so the matcher's view — and the caller's engine
+  # array — are complete even without a prior pathspec_pathspecs_into call.
+  # Idempotent by membership probe: an already-seeded array is left as-is
+  # (engines read this array verbatim; duplicates would be noise).
+  local -a __pso_split=()
+  pathspec_pathspecs_into __pso_split
+  for e in ${__pso_split[@]+"${__pso_split[@]}"}; do
+    found=false
+    for p in ${__pso_out[@]+"${__pso_out[@]}"}; do
+      if [[ "$p" == "$e" ]]; then
+        found=true
+        break
+      fi
+    done
+    $found || __pso_out+=("$e")
+  done
 
   for arg in "$@"; do
     matched=false

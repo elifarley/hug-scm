@@ -800,3 +800,73 @@ teardown() {
   assert_equal "src/" "${pathspecs[0]}"
   assert_equal "docs/" "${pathspecs[1]}"
 }
+
+###############################################################################
+# parse_scoped_own_flags hardening (Task 5 quality review): self-contained
+# init + internal seeding — a future consumer cannot die on an uninitialized
+# flags_explicit, and cannot silently skip post-'--' matching by calling the
+# helper before seeding its array.
+###############################################################################
+
+@test "parse_scoped_own_flags: needs no caller pre-init (set -u safe) nor prior seed" {
+  unset flags_explicit || true
+  _pathspec_pathspecs=(--dry-run)
+  pathspecs=()
+  run parse_scoped_own_flags "hug w newcmd" "" pathspecs
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w newcmd --dry-run"
+}
+
+@test "parse_scoped_own_flags: internal seeding completes the caller array, no duplicates" {
+  _pathspec_pathspecs=(src/)
+  pathspecs=()
+  parse_scoped_own_flags "hug w newcmd" "" pathspecs docs/
+  assert_equal 2 "${#pathspecs[@]}"
+  assert_equal "src/" "${pathspecs[0]}"
+  assert_equal "docs/" "${pathspecs[1]}"
+
+  # Idempotent: a caller that DID seed via pathspec_pathspecs_into gets the
+  # same array — no duplicated entries (engines read this array verbatim).
+  pathspecs=(src/)
+  parse_scoped_own_flags "hug w newcmd" "" pathspecs
+  assert_equal 1 "${#pathspecs[@]}"
+}
+
+@test "parse_scoped_own_flags: COMMON matcher set ≡ parse_common_flags accepted set" {
+  # Structural sync-guard (quality review): the tri-command conformance row
+  # proves the helper against ITSELF — this row ties the helper's fixed
+  # COMMON alternation to parse_common_flags' actual getopt set, derived
+  # from source so a new common flag added there but forgotten in the
+  # matcher fails HERE first, not as a user's silent pathspec swallow.
+  local lib="${BATS_TEST_DIRNAME}/../../git-config/lib/hug-cli-flags"
+  local -a matcher=() accepted=() long_arr
+  local line t opts longs i
+
+  line="$(grep -m1 -E -- '--dry-run \| -f \| --force' "$lib")"
+  [[ -n "$line" ]] || fail "COMMON matcher alternation line not found in hug-cli-flags"
+  line="${line%%)*}"
+  for t in ${line//|/ }; do matcher+=("$t"); done
+
+  opts="$(grep -m1 -oE -- '--options [a-z]+' "$lib")"; opts="${opts#--options }"
+  longs="$(grep -m1 -oE -- '--longoptions [a-z,-]+' "$lib")"; longs="${longs#--longoptions }"
+  [[ -n "$opts$longs" ]] || fail "parse_common_flags getopt option lists not found"
+  for ((i = 0; i < ${#opts}; i++)); do accepted+=("-${opts:i:1}"); done
+  IFS=',' read -ra long_arr <<<"$longs"
+  for t in "${long_arr[@]}"; do accepted+=("--$t"); done
+
+  local -a missing_in_matcher=() phantom_in_matcher=()
+  local -A acc_map=() mat_map=()
+  for t in "${accepted[@]}"; do acc_map[$t]=1; done
+  for t in "${matcher[@]}"; do mat_map[$t]=1; done
+  for t in "${matcher[@]}"; do
+    [[ -n "${acc_map[$t]:-}" ]] || phantom_in_matcher+=("$t")
+  done
+  for t in "${accepted[@]}"; do
+    [[ -n "${mat_map[$t]:-}" ]] || missing_in_matcher+=("$t")
+  done
+  # Why both directions: a PHANTOM spelling rejects files that spell like a
+  # retired flag; a MISSING spelling is the silent-swallow regression this
+  # row exists to catch.
+  ((${#phantom_in_matcher[@]} == 0)) || fail "matcher spellings not accepted by parse_common_flags: ${phantom_in_matcher[*]}"
+  ((${#missing_in_matcher[@]} == 0)) || fail "parse_common_flags accepts these but the COMMON matcher misses them (post-'--' they would silently become pathspecs): ${missing_in_matcher[*]}"
+}
