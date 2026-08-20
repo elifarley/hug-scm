@@ -3045,7 +3045,10 @@ psx_install_stub_gum() {
 # RED rows staged for PR-C migrations (Tasks 3-11) — each row lands in the
 # SAME commit as the migration that flips it (landing it early would break
 # CI). Landed so far: Task 3 (w-discard; w-wipe flips by delegation), Task
-# 4 (w-purge), Task 5 (w-zap, on the shared parse_scoped_own_flags helper).
+# 4 (w-purge), Task 5 (w-zap, on the shared parse_scoped_own_flags
+# helper), Task 7 (the w-*-all whole-tree family — own-loop hygiene, no
+# pathspec collection; wipe-all gets its OWN loop so its rejections name
+# wipe, not the discard-all engine it execs).
 # Remaining staged rows keep the FLIPS-IN-TASK-N prefix; the guard test
 # below keeps the block from being lost. Current (probed, pre-migration)
 # behavior for each is already pinned green by the characterization rows in
@@ -3466,18 +3469,97 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-# FLIPS-IN-TASK-4: w-*-all unknown flag exits 2 (today: already loud but
-# exit 1, "unknown option: -xX" — unify on HUG_EX_USAGE with the family).
-#@test "contract w-all (Task 4): -xX exits 2 with usage code" {
-#  local cmd
-#  for cmd in discard-all purge-all zap-all wipe-all; do
-#    psx_setup
-#    run hug w "$cmd" -xX
-#    assert_equal 2 "$status"
-#    assert_output --partial "unknown option"
-#    psx_reset
-#  done
-#}
+# FLIPS-IN-TASK-4 (landed in Task 7 with the whole w-*-all family): the
+# four -all variants join the usage-error family — exit 2 (HUG_EX_USAGE) +
+# the family template carrying the WHOLE-TREE pointer (was: exit 1
+# "unknown option: -xX" per command — zap-all even reported only the first
+# char "-x" via its char-splitting loop; `-- src/` and bare `--` alike died
+# as "unknown option: --", exit 1). Design note (Task 5 quality review):
+# the -all variants REJECT positionals — parse_scoped_own_flags does NOT
+# apply (they collect no pathspecs); their pass is own-loop hygiene only.
+@test "contract w-all (Task 7): -xX loud, exit 2, family template + whole-tree pointer" {
+  local cmd scoped
+  for cmd in discard-all purge-all zap-all wipe-all; do
+    scoped="${cmd%-all}"
+    psx_setup
+    run hug w "$cmd" -xX
+    assert_equal 2 "$status"
+    assert_output --partial "Unknown option: -xX"
+    assert_output --partial "hug w $cmd is whole-tree; use the scoped form to filter: hug w $scoped -- <path>..."
+    refute_output --partial "USAGE:" # one-line family template, not a help dump
+    psx_reset
+  done
+}
+
+@test "contract w-all (Task 7): -- <path> rejected with the whole-tree pointer" {
+  # THE receipt that named this task (probed pre-migration: `purge-all --
+  # src/` and `zap-all --` died "unknown option: --", exit 1): a pathspec
+  # after the separator is a filter the whole-tree form cannot honor —
+  # rejected exit 2, pointing at the scoped sibling with the user's own
+  # pathspec echoed back.
+  local cmd scoped
+  for cmd in discard-all purge-all zap-all wipe-all; do
+    scoped="${cmd%-all}"
+    psx_setup
+    run hug w "$cmd" -- src/
+    assert_equal 2 "$status"
+    assert_output --partial "hug w $cmd is whole-tree; use the scoped form to filter: hug w $scoped -- src/."
+    assert_output --partial "See 'hug help :pathspec'"
+    psx_reset
+  done
+}
+
+@test "contract w-all (Task 7): post-'--' known-flag spellings get the same whole-tree rejection" {
+  # They are not paths here (the -all variants collect no pathspecs), so a
+  # flag spelling after the separator is the SAME whole-tree rejection —
+  # never the scoped family's "Flags must precede '--'" remedy, which would
+  # advise reordering a filter the command cannot take anyway.
+  local cmd
+  for cmd in discard-all purge-all zap-all wipe-all; do
+    psx_setup
+    run hug w "$cmd" -- --dry-run
+    assert_equal 2 "$status"
+    assert_output --partial "is whole-tree"
+    psx_reset
+  done
+}
+
+@test "contract w-all (Task 7): bare trailing -- inert (status + output parity)" {
+  # Probed pre-migration: bare `--` died "unknown option: --", exit 1 on all
+  # four. Contract: the bare separator is consumed and inert — `hug w
+  # <cmd>-all --dry-run --` ≡ `hug w <cmd>-all --dry-run` byte-for-byte
+  # (the --dry-run sides keep the comparison deterministic headless).
+  local base_status base_output
+  for cmd in discard-all purge-all zap-all wipe-all; do
+    psx_setup
+    run hug w "$cmd" --dry-run
+    assert_success
+    base_status=$status
+    base_output=$output
+    run hug w "$cmd" --dry-run --
+    assert_equal "$base_status" "$status"
+    assert_equal "$base_output" "$output"
+    psx_reset
+  done
+}
+
+@test "contract w-all (Task 7): bare positional rejected with the whole-tree pointer (wipe-all names WIPE)" {
+  # Positionals are pathspecs without the separator — same whole-tree
+  # rejection (was: exit 1 "positional arguments are not accepted"). The
+  # wipe-all cell is the wrong-name hazard pin: wipe-all used to delegate
+  # its whole parse to discard-all and its rejection said "use 'git w
+  # discard'" — the WRONG scoped sibling. Own-loop hygiene: every -all
+  # command names its OWN scoped form.
+  local cmd scoped
+  for cmd in discard-all purge-all zap-all wipe-all; do
+    scoped="${cmd%-all}"
+    psx_setup
+    run hug w "$cmd" src/
+    assert_equal 2 "$status"
+    assert_output --partial "hug w $cmd is whole-tree; use the scoped form to filter: hug w $scoped -- src/."
+    psx_reset
+  done
+}
 
 # FLIPS-IN-TASK-8: w-wip/w-unwip/w-wipdel unknown flags exit 2 with the
 # family template (today: w-wip exit 1 + full help dump; w-unwip/w-wipdel

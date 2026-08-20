@@ -4,10 +4,14 @@ test "${1:-}" = '--search-meta' && {
   printf 'category = %s\n' "$_hug_category"
   exit 0
 }
-set -euo pipefail
+CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
+CMD_BASE="$(dirname "$CMD_BASE")"
+for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
 
-# Show help if requested
-test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+# Part of the Hug tool suite
+
+show_help() {
   cat << 'EOF'
 hug w wipe-all: Wipe all staged and unstaged changes across repository
 
@@ -20,7 +24,7 @@ DESCRIPTION:
   combines:
     hug w discard-all -u  (all unstaged changes)
     hug w discard-all -s  (all staged changes)
-  
+
   Does not affect untracked or ignored files.
 
 EXAMPLES:
@@ -31,6 +35,8 @@ EXAMPLES:
 OPTIONS:
   --dry-run    Preview what would be wiped without making changes
   -f, --force  Skip confirmation prompts
+  -y, --yes    Skip confirmation prompts (keeps safe semantics)
+  -h, --help   Show this help
 
 SEE ALSO:
   hug w wipe         # Wipe changes for specific files
@@ -41,8 +47,58 @@ SAFETY:
   Removes all uncommitted work from tracked files. Use --dry-run first.
   This is a destructive operation - make sure you want to lose all changes.
 EOF
+}
+
+# Show help if requested (fast path — kept for parity with the old script)
+test "${1:-}" = '-h' -o "${1:-}" = '--help' && {
+  show_help
   exit 0
 }
 
+# Own-loop hygiene (#292 PR-C Task 7). WHY a loop at all: wipe-all used to
+# `exec hug w discard-all -u -s "$@"` with the args UNVALIDATED, so every
+# usage error was composed by the discard-all engine and named the WRONG
+# command ("positional arguments are not accepted (use 'git w discard')").
+# Validating the pass-through surface HERE keeps every rejection naming
+# wipe/wipe-all — no HUG_CALLER_LABEL mechanism needed for this pair.
+# NO pathspec collection: the -all variants are whole-tree, so
+# parse_scoped_own_flags does not apply — only the loud arms of the family.
+declare -a pass=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --dry-run | -f | --force | -y | --yes)
+    # Validated pass-through spellings — forwarded verbatim to the engine.
+    pass+=("$1")
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  --)
+    # Bare trailing separator: inert (consumed). Anything after it is a
+    # filter this whole-tree form cannot honor → exit 2 with the
+    # whole-tree pointer to the scoped sibling (was: discard-all's
+    # "unknown option: --", exit 1).
+    shift
+    if [[ $# -gt 0 ]]; then
+      error_usage "hug w wipe-all is whole-tree; use the scoped form to filter: hug w wipe -- $1. See 'hug help :pathspec'."
+    fi
+    ;;
+  -*)
+    # Family template (was: discard-all's exit-1 "unknown option" + help
+    # dump): one line, exit 2 (HUG_EX_USAGE), remedy included.
+    error_usage "Unknown option: $1. hug w wipe-all is whole-tree; use the scoped form to filter: hug w wipe -- <path>.... See 'hug help :pathspec'."
+    ;;
+  *)
+    # Positionals are pathspecs without the separator — same whole-tree
+    # pointer, echoing the user's own token (was: discard-all's message
+    # pointing at 'git w discard', the wrong scoped sibling).
+    error_usage "hug w wipe-all is whole-tree; use the scoped form to filter: hug w wipe -- $1. See 'hug help :pathspec'."
+    ;;
+  esac
+done
+
 # Convenience alias: wipe-all == discard-all staged + unstaged repo-wide
-exec hug w discard-all -u -s "$@"
+# (args now validated above, so the engine only ever sees its own flags)
+exec hug w discard-all -u -s ${pass[@]+"${pass[@]}"}
