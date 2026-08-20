@@ -312,6 +312,11 @@ hug w zap-all [-u|-s|-i]          # Complete repo cleanup
 
 # Utility
 hug w get <commit> [files]        # Restore files from specific commit
+
+# Scoped destruction (uniform pathspec contract; narrowing only — see `hug help :pathspec`)
+hug w discard -- src/             # Discard tracked changes under src/ only (preview: --dry-run)
+hug w purge -i -- build/          # Remove ignored files under build/ only
+hug w zap -- ':(exclude)docs/'    # Cleanup everything except docs/
 ```
 
 #### Parking Work (WIP)
@@ -530,6 +535,7 @@ hug clone <url> --depth 1                       # Pass options to underlying VCS
 
 # Other utilities
 hug lol [<remote-branch>] # Log Outgoing Long: Show outgoing changes (what will be pushed; optional remote branch target, e.g., origin/dev)
+hug llu [<remote-branch>] [-- <path>...] # Log Outgoing (compact; pathspecs scope it: `hug llu -- src/` lists outgoing commits touching src/ — see `hug help :pathspec`)
 hug w wip "<msg>"     # Park all changes on WIP branch
 hug w unwip [wip]     # Unpark WIP: squash-merge to current branch + delete
 hug w wipdel [wip]    # Delete WIP branch without integration
@@ -547,7 +553,8 @@ hug sl [-- <path>...]  # Status: List (without untracked files)
 hug sla [-- <path>...] # Status: List All (Full status with untracked files)
 hug sla -- '*.md'     # Pathspec filtering — quote your globs! ('hug sla "*.md"' also works;
                       #   see `hug help :pathspec` for the full pathspec contract)
-hug sh [commit]       # SHow [commit] (with stat; default: last)
+hug sh [commit] [-- <path>...] # SHow [commit] (with stat; default: last; pathspecs scope the stats)
+hug sh HEAD -- src/a.py        # SHow scoped to a path (see `hug help :pathspec`)
 hug shp [commit]      # SHow: with Patch (commit with patch)
 hug shc [N|commit|range] [-n] [-z] [-- <path>...] # SHow: Changed files (cumulative stats, -n for paths only, -z NUL-separated with -n)
 hug shcp [N|commit|range] [-- <path>...] # SHow: Cumulative with Patch (diff + stats, optionally filtered by path)

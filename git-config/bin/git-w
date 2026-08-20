@@ -46,6 +46,9 @@ print_w_usage() {
   printf '  wips         Park changes on new WIP branch, stay on it\n' >&2
   printf '  unwip        Unpark WIP: squash-merge to current + delete\n' >&2
   printf '  wipdel       Delete WIP branch (no integration)\n' >&2
+  printf '\nPathspec contract: discard/wipe/purge/zap/get accept -- <path>...\n' >&2
+  printf 'as a narrowing scope; the -all forms are whole-tree; wip/unwip/wipdel\n' >&2
+  printf "keep '--' for the message/branch. See 'hug help :pathspec'.\n" >&2
 }
 
 case "${1:-}" in

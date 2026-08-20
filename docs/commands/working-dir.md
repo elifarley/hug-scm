@@ -120,6 +120,43 @@ Combines wipe + purge for full reset.
   - **Description**: Complete repo reset - tracked to clean, untracked/ignored removed.
   - **Safety**: Always previews and confirms; use with caution.
 
+### Scoped Destruction (`-- <path>...`)
+
+`w discard`, `w purge`, `w zap`, `w wipe`, and `w get` accept the uniform
+pathspec contract (`hug help :pathspec`): everything after `--` is the
+**scope of destruction**, handed to git verbatim (magic pathspecs like
+`:(exclude)` work).
+
+**Narrowing-only safety property**: a scope never widens what the unscoped
+command would touch — it can only shrink the blast radius. The `--dry-run`
+preview, the confirmation list, and the destructive call all flow through
+the ONE validated pathspec set, so what was previewed is provably what is
+destroyed. Category flags intersect the scope (`-s -- src/` = staged
+changes under `src/`, not all staged changes).
+
+```shell
+hug w discard --dry-run -- src/   # PREVIEW: discard tracked changes under src/ only
+hug w discard -s -- src/          # staged changes under src/ only
+hug w purge -i -- build/          # ignored files under build/ only
+hug w zap -- ':(exclude)docs/'    # full cleanup everywhere except docs/
+hug w wipe -- file.js             # staged+unstaged changes on file.js
+hug w get HEAD~2 -- src/          # restore src/ to its HEAD~2 state
+```
+
+Guard rails (exit 2, nothing touched): unknown dash-tokens
+(`hug w discard -xX`), a known flag spelled after `--`
+(`hug w zap -- src/ --dry-run` — the flag would be silently skipped
+before), and malformed magic (`:(bogus)src/`). A scope matching nothing is
+an info, exit 0: `Nothing to discard; repository already clean for the
+specified paths.`
+
+The `-all` variants (`discard-all`, `purge-all`, `zap-all`, `wipe-all`) are
+the whole-tree escape hatch — they take NO pathspecs; a pathspec after `--`
+exits 2 with a pointer to the scoped form (`use the scoped form to filter:
+hug w zap -- src/`). The WIP commands (`w wip`, `w unwip`, `w wipdel`)
+keep `--` as a data separator for the message/branch name — only their
+error exit discipline joined the family (unknown dash-tokens now exit 2).
+
 ### Utilities
 - `hug w get <commit> [files...]`
   - **Description**: Restore files from a specific commit to working directory. Use `--` to trigger interactive file selection UI (requires gum).
@@ -127,6 +164,7 @@ Combines wipe + purge for full reset.
     ```shell
     hug w get HEAD~2 README.md    # Gets from 2 commits ago
     hug w get HEAD~2 --           # Interactive file selection from HEAD~2
+    hug w get HEAD~2 -- src/      # Scoped restore: only files under src/
     ```
 
 ### The WIP Workflow: A Better Way to Manage Temporary Work {#wip-workflow}

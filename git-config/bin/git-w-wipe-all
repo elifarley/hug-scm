@@ -38,6 +38,11 @@ OPTIONS:
   -y, --yes    Skip confirmation prompts (keeps safe semantics)
   -h, --help   Show this help
 
+PATH FILTERING:
+  Whole-tree by design — no pathspecs here. To scope, use the non-all
+  form: hug w wipe -- <path>.... A pathspec after '--' exits 2 with a
+  pointer to the scoped form. See 'hug help :pathspec'.
+
 SEE ALSO:
   hug w wipe         # Wipe changes for specific files
   hug w discard-all  # Discard unstaged OR staged changes repo-wide

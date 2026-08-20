@@ -45,6 +45,11 @@ EXAMPLES:
 TIPS:
   - Resume later with: hug b WIP/YY-MM-DD/HHmm.slug
   - Clean up when finished: hug w unwip WIP/YY-MM-DD/HHmm.slug
+
+PATH FILTERING:
+  No pathspecs here — '--' keeps its DATA meaning: the WIP message.
+  hug w wip -- "-fix"   # the message is "-fix"
+  See 'hug help :pathspec' for which commands accept -- <path>....
 EOF
 }
 

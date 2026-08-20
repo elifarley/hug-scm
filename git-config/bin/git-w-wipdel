@@ -44,6 +44,10 @@ EXAMPLES:
 TIPS:
   - If unsure, inspect the branch with 'hug l <wip_branch>' before deleting.
   - If you pushed the WIP branch, delete it remotely with 'hug bdelr <wip_branch>'.
+
+PATH FILTERING:
+  No pathspecs here — '--' keeps its DATA meaning: the WIP branch name.
+  See 'hug help :pathspec' for which commands accept -- <path>....
 EOF
 }
 

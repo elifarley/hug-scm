@@ -2,6 +2,33 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [Unreleased]
+
+PR-C of the uniform pathspec contract (elifarley/hug-scm#292) — the final rung: the `w-*` family, `llu`, and `sh` join the contract. After this PR the `:pathspec` article's support matrix has zero `not yet` rows. Full contract, support matrix, and migration notes: `hug help :pathspec`.
+
+### Script migration — observable flips
+
+Every flip below was probed red-first before migration; entries carry the spec's flip table (spec §6) corrected to the shipped behavior where the implementation deviated honestly (deviations are called out inline).
+
+| Observable flip | Before | After |
+|---|---|---|
+| Unknown dash-token on `w-discard`/`w-wipe`/`w-purge` (and `zap`) | silent path, exit 0 (`Nothing to discard … from the specified paths`) | exit 2 family template: `Unknown option: -xX. Pathspecs beginning with '-' require '--': hug w discard -- -xX. See 'hug help :pathspec'.` |
+| Known flag after `--` on the `w-*` family | swallowed as path/commitish/message (worst receipt: `hug w zap -- src/ --dry-run` silently SKIPPED the dry-run preview; `hug w get -- --dry-run` died `Invalid commitish for --target: --dry-run` exit 1) | exit 2: `Flags must precede '--': hug w zap --dry-run -- <path>.... See 'hug help :pathspec'.` — **deviation:** the spec claimed this for "any PR-C command"; `sh`/`llu` treat a post-`--` flag spelling as inert pathspec data (never honored, never rejected) |
+| Malformed magic on any PR-C command | silent no-match / unvalidated flow-through | exit 2 `Invalid pathspec: ':(bogus)src/'. See 'hug help :pathspec'.` (nothing touched) |
+| Scope matches nothing on a destructive | (varied per command) | info, exit 0 — **deviation:** shipped text is `Nothing to discard; repository already clean for the specified paths.` (per-verb), not the spec's planned `No files matching '<specs>' to <verb>.` |
+| `w-wip`/`w-unwip`/`w-wipdel` unknown dash-token | exit 1 | exit 2 family template — **deviation:** the remedy names the real payload, not "Pathspecs": `Messages beginning with '-' require '--': hug w wip -- "<message>".` (wip) / `Branch names beginning with '-' require '--': hug w unwip -- <branch>.` (unwip/wipdel) |
+| `-all` command + pathspec after `--` | `unknown option: --` exit 1 | exit 2 whole-tree pointer: `hug w zap-all is whole-tree; use the scoped form to filter: hug w zap -- src/. See 'hug help :pathspec'.`; a bare trailing `--` is inert |
+| `hug llu -- <path>` | `Unknown option: --` exit 1 | scoped outgoing list, exit 0 (scoped runs omit the trailing `hug s` summary; `--json` scopes the envelope) |
+| `hug sh <ref> [path]` | `accepts one commit reference; unexpected …` exit 1 | ref + scoped details, exit 0 (bare positionals are pathspecs — git parity; range spellings like `-3` are data; `shp` still filters a single file, first path + warning) |
+| `hug w wips -- <msg>` | branch-name pollution (`WIP/….draftSTAY`), stay never applied | composes `wip --stay -- <msg>` — the gateway prepends its injected flag |
+| `hug w <unknown-subcommand>` | usage printed, exit 0 | usage printed, exit 2 |
+
+### Added
+
+- **Scoped destruction across the `w-*` family** — `hug w discard|purge|zap|wipe -- <path>...` narrows the blast radius (never widens it); the `--dry-run` preview, the confirmation list, and the destructive call all flow through the ONE validated pathspec set; category flags (`-s`, `-i`, `-u`) intersect the scope; `w get <target> -- <path>...` scopes the restore.
+- **`hug llu -- src/` / `hug sh HEAD -- src/a.py`** — outgoing-log and commit-details pathspec filtering (umbrella user stories 16–17), `--json` scoped on `llu`.
+- **PATH FILTERING pointer blocks** in every migrated command's help (the `w-*` family, `llu`, `sh`) — PR-B deferred "their blocks land with their features"; this is that landing.
+
 ## [1.12.0.0] - 2026-08-18
 
 PR-B of the uniform pathspec contract (elifarley/hug-scm#292, checklist elifarley/hug-scm#298): the `sl*` family, `us`, and `a` join the contract — `-- <path>...` now means the same thing on every path-accepting command. Full contract, support matrix, and migration notes: `hug help :pathspec`.

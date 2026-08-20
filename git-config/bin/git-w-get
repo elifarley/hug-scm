@@ -64,6 +64,13 @@ SAFETY REQUIREMENTS:
     • Affected files must have no staged or unstaged changes
     • Files must exist in the target commit
 
+PATH FILTERING:
+    Append -- <path>... to restrict the restore to matching paths
+    (narrowing only). Globs must be quoted; see 'hug help :pathspec'
+    for the full contract.
+
+    hug w get HEAD~2 -- src/      Restore only files under src/
+
 SEE ALSO:
     hug w discard       Discard unstaged changes
 

@@ -27,6 +27,11 @@ Semantics:
   • ALL uncommitted changes (staged or unstaged) will be wiped (as in `hug wipe-all`).
   • ALL untracked and ignored files will be gone for good (as in `hug purge-all -ui`).
   • It's the same as `hug wipe-all; hug purge-all -ui`.
+
+PATH FILTERING:
+  Whole-tree by design — no pathspecs here. To scope, use the non-all
+  form: hug w zap -- <path>.... A pathspec after '--' exits 2 with a
+  pointer to the scoped form. See 'hug help :pathspec'.
 EOF
 }
 

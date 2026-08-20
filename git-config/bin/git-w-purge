@@ -42,6 +42,13 @@ Examples:
   hug w purge --browse-root       # Interactive UI, full repository scope
   hug w purge file.txt            # Purge specific file (CWD-relative)
 
+PATH FILTERING:
+  Append -- <path>... to restrict removal to matching paths
+  (narrowing only; category flags like -i INTERSECT the scope).
+  Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+  hug w purge -i -- build/        # ignored files under build/ only
+
 See also:
   • `w purge-all` (purge across entire repository without UI)
 EOF

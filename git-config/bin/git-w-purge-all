@@ -28,6 +28,11 @@ Options:
 Notes:
   • Combine -u and -i to remove both untracked and ignored content.
   • Without flags, only untracked files are removed.
+
+PATH FILTERING:
+  Whole-tree by design — no pathspecs here. To scope, use the non-all
+  form: hug w purge -- <path>.... A pathspec after '--' exits 2 with a
+  pointer to the scoped form. See 'hug help :pathspec'.
 EOF
 }
 

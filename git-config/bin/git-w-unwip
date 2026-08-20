@@ -47,6 +47,10 @@ TIPS:
   - Ensure you're on the target branch (e.g., main) before unparking.
   - Resume editing first with 'hug b <wip>', add commits, then 'hug bs && hug w unwip <wip>'.
   - After unpark, run 'hug s' to check status and 'hug bpush' if ready to push.
+
+PATH FILTERING:
+  No pathspecs here — '--' keeps its DATA meaning: the WIP branch name.
+  See 'hug help :pathspec' for which commands accept -- <path>....
 EOF
 }
 

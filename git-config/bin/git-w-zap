@@ -40,6 +40,13 @@ Examples:
   hug w zap                       # Interactive UI, current directory scope
   hug w zap --browse-root         # Interactive UI, full repository scope
   hug w zap dir/                  # Zap everything in dir/ (CWD-relative)
+
+PATH FILTERING:
+  Append -- <path>... to restrict the cleanup to matching paths
+  (narrowing only; magic pathspecs pass through verbatim).
+  Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+  hug w zap --dry-run -- ':(exclude)docs/'   # PREVIEW: everything except docs/
 EOF
 }
 

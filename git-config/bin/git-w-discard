@@ -44,6 +44,15 @@ Examples:
   hug w discard file.txt           # Discard changes to file.txt (CWD-relative)
   hug w discard src/main.js        # Discard changes to src/main.js (CWD-relative)
 
+PATH FILTERING:
+  Append -- <path>... to restrict destruction to matching paths
+  (narrowing only — the scope never widens the blast radius; the
+  --dry-run preview and the destructive call share the ONE scope).
+  Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+  hug w discard --dry-run -- src/  # PREVIEW: discard changes under src/ only
+  hug w discard -s -- src/         # staged changes under src/ only
+
 See also:
   • `w wipe` (to discard both staged and unstaged uncommitted changes)
   • `w discard-all` (to discard across entire repository without UI)
