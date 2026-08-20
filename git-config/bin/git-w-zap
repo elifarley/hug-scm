@@ -43,19 +43,54 @@ Examples:
 EOF
 }
 
-# Parse common flags (--browse-root, --dry-run, -f|--force, -h|--help, --)
-eval "$(parse_common_flags "$@")"
+# Uniform pathspec split (#292 PR-C Task 5, family template — modeled on
+# git-w-discard/git-w-purge): flags before '--', pathspecs after it, ONE
+# validated ${pathspecs[@]} feeding every downstream sink (status scan,
+# wipe/purge engine delegations) behind a protective '--'.
+#
+# WITH --picker on purpose: w-zap's no-paths arm is an interactive file
+# selector, and a trailing bare '--' triggers it today (OQ-1 cell, probed:
+# `hug w zap --` non-TTY → "Non-interactive mode: Provide files as
+# arguments.", exit 1 — identical to bare `hug w zap`). The --picker mode
+# preserves that trigger exactly — the bare '--' opens the picker, it
+# never becomes a phantom pathspec.
+pathspecs=()
+eval "$(parse_common_flags_with_pathspecs --picker "$@")"
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
 : "${dry_run:=false}"
 : "${force:=false}"
 
+# Seed the ONE pathspec collection with the split's post-'--' data first;
+# pre-arg positionals join it inside the helper (git unions pathspecs;
+# ONE array so every sink reads the same scope — what was previewed is
+# what is zapped).
+pathspec_pathspecs_into pathspecs
+
+# Own-loop + misordered-flag matcher via the shared family helper (#292
+# PR-C Task 5): w-zap has NO own flags (empty spec — common flags only),
+# so this provides the LOUD unknown -* rejection (was: silently swallowed
+# as a pathspec — `hug w zap -xX` answered "Nothing to zap", exit 0,
+# hiding the typo) and the post-'--' EXACT-SPELLING rejection (was:
+# `hug w zap -- src/ --dry-run` silently became pathspecs and skipped the
+# dry-run preview ENTIRELY — probed: it ran the destructive confirm path,
+# non-TTY cancel exit 1 the only thing that saved the tree). exit 2 =
+# HUG_EX_USAGE everywhere.
+parse_scoped_own_flags "hug w zap" "" pathspecs "$@"
+
 # Early exit if not in Git repo
 check_git_repo
 
-# Handle interactive file selection when no paths provided
-if [[ $# -lt 1 ]]; then
+# Loud one-time pathspec validation before any destructive arm runs (see
+# validate_pathspecs_or_die in hug-git-files for the WHY): a typo'd magic
+# prefix must die as a usage error, never preview/zap a silent empty set.
+# The status capture below suppresses stderr — this is the one
+# unsuppressed gate.
+validate_pathspecs_or_die ${pathspecs[@]+"${pathspecs[@]}"}
+
+# Handle interactive file selection when no pathspecs provided
+if [[ ${#pathspecs[@]} -eq 0 ]]; then
   # Check for conflicting flags
   if $browse_root; then
     # --browse-root without explicit paths is valid (triggers UI with full scope)
@@ -90,10 +125,13 @@ Usage: hug w zap <file>..."
     exit 0
   fi
 else
-  # Explicit paths provided - check for conflicting flags
+  # Explicit pathspecs provided - check for conflicting flags
   check_browse_root_no_paths "$browse_root" true
 
-  paths=("$@")
+  # THE ONE scope: the status scan and both engine delegations below
+  # read this validated array behind a protective '--' — preview and
+  # destruction can never diverge.
+  paths=(${pathspecs[@]+"${pathspecs[@]}"})
 fi
 
 # Separate tracked/changed files from untracked/ignored files

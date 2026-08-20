@@ -2397,11 +2397,14 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization w zap: combined preview, scoped filter, and swallow" {
+@test "characterization w zap: combined preview, scoped filter, and loud rejection" {
   # characterization: probed — `zap --dry-run .` previews all three buckets
   # (staged src/a.py, unstaged docs/note.md, untracked new.txt); a scoped
-  # pathspec narrows to that file only; `-xX` is swallowed (exit 0 "Nothing
-  # to zap"; flip: #292).
+  # pathspec narrows to that file only. `-xX` FLIPPED in Task 5 (#292
+  # PR-C, with the w-zap migration): used to become a pathspec in
+  # parse_common_flags' fallback loop, matching nothing, exit 0 "Nothing
+  # to zap" (silent swallow). The shared helper's loud -* arm now rejects
+  # it, exit 2 family template.
   psx_setup
   run hug w zap --dry-run .
   assert_success
@@ -2421,8 +2424,9 @@ psx_install_stub_gum() {
 
   psx_setup
   run hug w zap -xX
-  assert_success
-  assert_output --partial "Nothing to zap"
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Nothing to zap"
   psx_reset
 }
 
@@ -2958,10 +2962,12 @@ psx_install_stub_gum() {
 }
 
 ###############################################################################
-# RED rows staged for PR-C migrations (Tasks 3-11) — DO NOT uncomment here.
-# Each row lands in the SAME commit as the migration that flips it (landing
-# it now would break CI). Every row is prefixed FLIPS-IN-TASK-N; the guard
-# test below keeps the block from being lost. Current (probed, pre-migration)
+# RED rows staged for PR-C migrations (Tasks 3-11) — each row lands in the
+# SAME commit as the migration that flips it (landing it early would break
+# CI). Landed so far: Task 3 (w-discard; w-wipe flips by delegation), Task
+# 4 (w-purge), Task 5 (w-zap, on the shared parse_scoped_own_flags helper).
+# Remaining staged rows keep the FLIPS-IN-TASK-N prefix; the guard test
+# below keeps the block from being lost. Current (probed, pre-migration)
 # behavior for each is already pinned green by the characterization rows in
 # the closing-fix section above (w discard/purge/zap/wipe) and the
 # characterization llu / contract sh rows.
@@ -2996,16 +3002,148 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-# zap remains staged for its own migration (still swallows '-xX' as a
-# pathspec today, exit 0 "Nothing to zap").
-#@test "contract w-destructive (Task 3 remainder, zap): -xX loud, exit 2, never a pathspec" {
-#  psx_setup
-#  run hug w zap -xX
-#  assert_equal 2 "$status"
-#  assert_output --partial "Unknown option: -xX"
-#  refute_output --partial "Nothing to zap"
-#  psx_reset
-#}
+# FLIPS-IN-TASK-5 (landed, w-zap migration): zap used to swallow '-xX'
+# as a pathspec (exit 0 "Nothing to zap") — the shared helper's loud -*
+# arm rejects it, same family template.
+@test "contract w-destructive (Task 5, zap): -xX loud, exit 2, never a pathspec" {
+  psx_setup
+  run hug w zap -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Nothing to zap"
+  psx_reset
+}
+
+@test "contract w-zap (Task 5): scoped zap — validation, separator, two-sided scope, OQ cells" {
+  # Full contract adoption (#292 PR-C Task 5, on the shared
+  # parse_scoped_own_flags helper — w-zap has NO own flags, so the helper
+  # provides only the loud -* arm and the common-spelling matcher): loud
+  # typo'd magic, post-'--' flag rejection (THE dangerous receipt: the
+  # dry-run used to be silently swallowed and zap ran the DESTRUCTIVE
+  # confirm path — probed pre-migration: exit 1 non-TTY cancel was the
+  # only thing that saved the tree), scoped two-sided destruction, and
+  # the OQ-1 cell.
+  psx_setup
+  # Typo'd magic prefix: git's own fatal + hug usage remedy, exit 2 — never
+  # a silent "Nothing to zap" (was: exit 0, a silent empty zap set hiding
+  # the typo entirely). Nothing removed (untracked file intact).
+  run hug w zap -- ':(exlude)x/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  refute_output --partial "Nothing to zap"
+  run git status --porcelain -- new.txt
+  [[ "$output" == "??"* ]]
+  psx_reset
+
+  psx_setup
+  # THE dangerous receipt: '--dry-run' after the separator is a misordered
+  # flag, not data. Pre-migration probe: `hug w zap -- src/ --dry-run`
+  # silently became pathspecs 'src/ --dry-run', dry_run stayed FALSE, and
+  # zap ran the WIPE engine's destructive confirm preview (non-TTY cancel,
+  # exit 1) — the preview was not merely skipped, the DESTRUCTIVE path
+  # ran. Now: exit 2 before anything touches the tree.
+  run hug w zap -- src/ --dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # staged mod intact
+  psx_reset
+
+  # -h/--help post-'--' (same silent-swallow class — 'hug w zap -- --help'
+  # used to answer "Nothing to zap" exit 0, probed).
+  psx_setup
+  run hug w zap -- --help
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  refute_output --partial "Nothing to zap"
+  psx_reset
+
+  psx_setup
+  run hug w zap -- -h
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  refute_output --partial "Nothing to zap"
+  psx_reset
+
+  # EXACT spellings only — composed-contract cell (probed): an untracked
+  # file literally named '--dry-run', spelled './--dry-run' after the
+  # separator, is DATA at zap's own parse layer (no rejection there), but
+  # git porcelain normalizes it to the bare '--dry-run' spelling before
+  # the purge-engine delegation — and the ENGINE's matcher (same helper,
+  # same invariant) refuses that exact spelling, exit 2, nothing removed.
+  # Fail-closed by construction: delegation cannot smuggle a flag-spelled
+  # filename past an engine's own matcher.
+  psx_setup
+  echo dr1 > ./--dry-run
+  run hug w zap --dry-run -- ./--dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w purge --dry-run"
+  [[ -e ./--dry-run ]] # nothing removed
+  psx_reset
+
+  psx_setup
+  # Scoped dry-run preview, two-sided: 'src/' narrows to the staged mod;
+  # the unstaged docs/note.md and untracked new.txt never appear.
+  run hug w zap --dry-run -- src/
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "new.txt"
+  psx_reset
+
+  psx_setup
+  # Two-sided scoped DESTRUCTION: 'docs/' carries an unstaged mod and an
+  # untracked file — `zap -f -- docs/` wipes BOTH in-scope buckets (note.md
+  # back to its committed content, junk gone) while EVERY out-of-scope
+  # change survives (untracked new.txt, staged src/a.py). Both engines
+  # (wipe via discard, purge) read the ONE validated pathspec array.
+  echo junk > docs/junk.txt
+  run hug w zap -f -- docs/
+  assert_success
+  run cat docs/note.md
+  assert_output "note1" # unstaged mod wiped, committed content restored
+  [[ ! -e docs/junk.txt ]] # in-scope untracked purged
+  [[ -e new.txt ]] # out-of-scope untracked survives
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # out-of-scope staged mod survives
+  psx_reset
+
+  # OQ-1 cell (probed, pinned): a trailing bare '--' opens the picker arm
+  # — non-TTY it answers "Non-interactive mode: Provide files as
+  # arguments.", exit 1, IDENTICAL to bare `hug w zap` (the --picker
+  # split mode preserves the trigger; the bare '--' never becomes a
+  # phantom pathspec).
+  psx_setup
+  run hug w zap --
+  assert_equal 1 "$status"
+  assert_output --partial "Non-interactive mode"
+  refute_output --partial "Nothing to zap"
+  psx_reset
+}
+
+@test "contract w-destructive (Task 5, helper): sync-guard across discard/purge/zap" {
+  # ONE row set proving the shared parse_scoped_own_flags matcher for all
+  # three family commands (supersedes the per-command sync-guard loops —
+  # the matcher is helper-owned now, so the invariant is proven at the
+  # helper level, once per command): every spelling of own ∪ common flags
+  # dies exit 2 post-'--'. w-zap has NO own flags — common set only.
+  local cmd f
+  local -a spellings
+  for cmd in discard purge zap; do
+    spellings=(--dry-run -f --force -y --yes --browse-root -q --quiet -h --help)
+    case "$cmd" in
+    discard) spellings+=(-u --unstaged -s --staged) ;;
+    purge) spellings+=(-u --untracked -i --ignored) ;;
+    esac
+    for f in "${spellings[@]}"; do
+      psx_setup
+      run hug w "$cmd" -- "$f"
+      assert_equal 2 "$status"
+      assert_output --partial "Flags must precede '--'"
+      psx_reset
+    done
+  done
+}
 
 @test "contract w-purge (Task 4): scoped purge — validation, separator, two-sided scope, OQ cells" {
   # Full contract adoption (#292 PR-C Task 4, family template on
@@ -3052,19 +3190,11 @@ psx_install_stub_gum() {
   refute_output --partial "Nothing to purge"
   psx_reset
 
-  # Sync-guard: one spelling per flag class dies exit 2 post-'--' —
-  # own-loop flags (-u/--untracked, -i/--ignored), common flags
-  # (-f/--force/--dry-run/-y/--yes/--browse-root/-q), and help (-h/--help).
-  # The matcher's invariant (see git-w-purge): this list = own-loop flags ∪
-  # parse_common_flags accepted flags — update both together.
-  local f
-  for f in -u --untracked -i --ignored -f --force --dry-run -y --yes --browse-root -q --quiet -h --help; do
-    psx_setup
-    run hug w purge -- "$f"
-    assert_equal 2 "$status"
-    assert_output --partial "Flags must precede '--'"
-    psx_reset
-  done
+  # Per-command sync-guard loop RETIRED (Task 5): the matcher is
+  # helper-owned now (parse_scoped_own_flags) — the invariant is proven
+  # once for all three family commands by the tri-command row
+  # "contract w-destructive (Task 5, helper): sync-guard across
+  # discard/purge/zap" above.
 
   # EXACT spellings only: an UNTRACKED file literally named '--dry-run',
   # spelled './--dry-run' after the separator, is DATA — the preview lists
@@ -3194,19 +3324,8 @@ psx_install_stub_gum() {
   refute_output --partial "Nothing to discard"
   psx_reset
 
-  # Sync-guard (review MINOR): one spelling per flag class dies exit 2
-  # post-'--' — own-loop flags (-u/--staged), common flags
-  # (-f/--dry-run/-y/--browse-root/-q), and help (-h/--help). The matcher's
-  # invariant (see git-w-discard): this list = own-loop flags ∪
-  # parse_common_flags accepted flags — update both together.
-  local f
-  for f in -u --staged -f --dry-run -y --browse-root -q -h --help; do
-    psx_setup
-    run hug w discard -- "$f"
-    assert_equal 2 "$status"
-    assert_output --partial "Flags must precede '--'"
-    psx_reset
-  done
+  # Per-command sync-guard loop RETIRED (Task 5): superseded by the
+  # tri-command helper row — see the purge row's retirement note.
 
   # EXACT spellings only (review MINOR — the claim was asserted nowhere):
   # a tracked file literally named '--dry-run', spelled './--dry-run' after
@@ -3338,16 +3457,19 @@ psx_install_stub_gum() {
 #  psx_reset
 #}
 
-@test "PR-C staged red rows: exact marker set (3 4 6 8 10 11)" {
+@test "PR-C staged red rows: exact marker set (3 4 5 6 8 10 11)" {
   # Loss guard, EXACT form: an existence-only check stays green when ONE
   # task's staged rows are deleted (review round 1 finding). The observed
   # marker set must equal the literal expectation — built via a loop over
   # task NUMBERS so the expected strings never literally appear in this file
   # (a literal 'FLIPS-IN-TASK-3' here would be grep-matched too, making the
   # check self-fulfilling). Failing output names both sides.
+  # Landed tasks (3 discard, 4 purge, 5 zap) keep their markers in the
+  # "(landed, ...)" comment lines — the set is the drift alarm, not the
+  # pending-work list.
   local self="${BATS_TEST_FILENAME}"
   local expected actual
-  expected=$(for n in 3 4 6 8 10 11; do printf 'FLIPS-IN-TASK-%s\n' "$n"; done | sort)
+  expected=$(for n in 3 4 5 6 8 10 11; do printf 'FLIPS-IN-TASK-%s\n' "$n"; done | sort)
   actual=$(grep -oE 'FLIPS-IN-TASK-[0-9]+' "$self" | sort -u)
   [[ -n "$actual" ]] || fail "no staged FLIPS markers found — the PR-C red rows were lost"
   if [[ "$actual" != "$expected" ]]; then
