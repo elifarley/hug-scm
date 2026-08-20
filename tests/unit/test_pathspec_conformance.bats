@@ -2897,6 +2897,86 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "contract w-wipe (Task 6): delegation end-to-end — misordered flag, exact spelling, scoped glob, bare--- disposition (#292)" {
+  # wipe is PURE delegation: `exec hug w discard -u -s "$@"`
+  # (git-config/bin/git-w-wipe:46) — every arg path flows to discard, so
+  # Task 3's discard migration carries wipe's contract flips for free.
+  # These rows pin the DELEGATION boundary itself (probed, 152fdf63):
+  # discard's parse layer fires with discard's own name in the remedy —
+  # RATIFIED note-and-accept (#292 PR-C): the delegation is honest, the
+  # message correctly names the command whose parser rejected the input.
+
+  psx_setup
+  # Misordered flag: '--dry-run' after the separator is a flag, not data —
+  # the message names `hug w discard` (the delegate's parser), pinned as
+  # probed. Pre-contract this silently became pathspecs and ran the
+  # destructive confirm path (same class as zap's cell above).
+  run hug w wipe -- src/ --dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w discard --dry-run"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # staged mod intact — nothing touched
+  psx_reset
+
+  psx_setup
+  # EXACT spellings only — a tracked file literally named '--dry-run',
+  # spelled './--dry-run' after the separator, is DATA: the preview lists
+  # it (discard's row pins the same for discard itself; this proves the
+  # delegation does not smuggle it into the engine's flag matcher).
+  echo dr1 > ./--dry-run
+  git add -- ./--dry-run
+  git commit -q -m "file named --dry-run" -- ./--dry-run
+  echo dr2 >> ./--dry-run
+  run hug w wipe --dry-run -- ./--dry-run
+  assert_success
+  assert_output --partial "--dry-run"
+  refute_output --partial "Flags must precede"
+  psx_reset
+
+  psx_setup
+  # Scoped GLOB two-sided DESTRUCTION: ':(glob)src/**.py' narrows the wipe
+  # to src/a.py — BOTH its deltas (staged + unstaged) go, content returns
+  # to committed 'py1', src/ is clean; every out-of-scope change survives
+  # (unstaged docs/note.md mod, untracked new.txt).
+  run hug w wipe -f -- ':(glob)src/**.py'
+  assert_success
+  assert_output --partial "src/a.py"
+  assert_equal "py1" "$(cat src/a.py)"
+  run git status --porcelain -- src/
+  [[ -z "$output" ]] # both buckets wiped, no residue
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]] # out-of-scope unstaged mod survives
+  [[ -e new.txt ]] # out-of-scope untracked survives
+  psx_reset
+
+  psx_setup
+  # Separator-form scoped preview: '--dry-run -- docs/' previews ONLY the
+  # unstaged docs/note.md; the staged src/a.py never appears.
+  run hug w wipe --dry-run -- docs/
+  assert_success
+  assert_output --partial "docs/note.md"
+  refute_output --partial "src/a.py"
+  psx_reset
+
+  # No-args arm and trailing bare '--' share ONE disposition (probed):
+  # both open discard's picker; non-TTY the picker yields no selection —
+  # "No files selected." (stem covers the cancel branch "or cancelled."),
+  # exit 0, tree untouched. The bare '--' never becomes a phantom pathspec
+  # and never fires the misordered-flag matcher (contrast the row above).
+  psx_setup
+  run hug w wipe
+  assert_success
+  assert_output --partial "No files selected"
+  run hug w wipe --
+  assert_success
+  assert_output --partial "No files selected"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # staged mod intact
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]] # unstaged mod intact
+  psx_reset
+}
+
 @test "characterization PR-C: w wip -- '-fix' keeps the message a message (#292)" {
   # Probed: the separator protects the dash-leading MESSAGE from flag
   # parsing — the WIP branch slug ends in '.fix' (slugified '-fix'), exit 0.
