@@ -27,7 +27,7 @@ dependencies = [
     # <2 cap: mcp 2.0.0 (2026-07-28) removed the low-level Server decorator
     # API this server uses (@app.list_tools/@app.call_tool); 1.29.0 verified
     # working. Drop the cap once ported to the 2.x API — elifarley/hug-scm#276.
-    "mcp>=1.27.0,<2",
+    "mcp>=1.27.0,<3",
 ]
 
 [project.optional-dependencies]
