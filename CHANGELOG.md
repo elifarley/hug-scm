@@ -2,7 +2,7 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
-## [Unreleased]
+## [1.13.0.0] - 2026-08-20
 
 PR-C of the uniform pathspec contract (elifarley/hug-scm#292) — the final rung: the `w-*` family, `llu`, and `sh` join the contract. After this PR the `:pathspec` article's support matrix has zero `not yet` rows. Full contract, support matrix, and migration notes: `hug help :pathspec`.
 
