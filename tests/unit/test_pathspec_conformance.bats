@@ -61,19 +61,18 @@ PATHSPEC_PICKER_ROWS=(sw ss su a)
 # bottom of file) counts enrollment via THESE arrays.
 PATHSPEC_LOG_ROWS=(l ll llu)
 PATHSPEC_SHOW_ROWS=(shc shcp shp sh)
-# TWO-PHASE ENROLLMENT (PR-C Tasks 10-11): llu/sh are enrolled above but NOT
-# yet migrated, and the column loops below run their assertions for every
-# roster member TODAY — probed, both would fail:
+# TWO-PHASE ENROLLMENT (PR-C Tasks 10-11): sh is enrolled above but NOT yet
+# migrated (llu graduated in Task 10 — its PENDING subtraction is gone and
+# the LOG column loops now cover it). The column loops below run their
+# assertions for every ACTIVE roster member TODAY; probed, sh would fail:
 #   hug sh  HEAD~1 -- src/ → exit 1, "unexpected extra argument" (sh accepts
 #                            ONE commit ref; see the contract-sh tests)
-#   hug llu -- src/        → exit 1, "Unknown option: --" (flags-only parser;
-#                            see the characterization llu test)
 # So until a command's migration task lands, the loops consume the ACTIVE
 # (migrated-only) derivative; the migration task deletes the command from its
 # PENDING list and the loops pick it up with ZERO further edits here. The
 # derivation is subtractive on the full roster — never a hand-coded copy (a
 # copy stays green when a command falls out of its column; codex #3815936629).
-PATHSPEC_LOG_PENDING_ROWS=(llu) # flips in Task 10
+PATHSPEC_LOG_PENDING_ROWS=() # (landed, Task 10: llu migrated, #292 PR-C)
 PATHSPEC_SHOW_PENDING_ROWS=(sh) # flips in Task 11
 PATHSPEC_LOG_ACTIVE_ROWS=()
 for _row in "${PATHSPEC_LOG_ROWS[@]}"; do
@@ -157,7 +156,7 @@ PATHSPEC_PRC_MASTER=(
   w-get sh llu
 )
 # `sh` and `llu` are enrolled via the SHOW/LOG rosters above (two-phase:
-# pending until Tasks 11/10 migrate them).
+# llu ACTIVE since Task 10; sh pending until Task 11 migrates it).
 
 # -----------------------------------------------------------------------------
 # Fixture + harness helpers
@@ -201,6 +200,18 @@ setup_pathspec_fixture() {
     git add src/a.py
     echo note2 >> docs/note.md
     echo new > new.txt
+
+    # Upstream anchor for llu (Task 10): a parentless empty-tree commit on a
+    # local branch set as @{u}, UNRELATED to HEAD's history, so @{u}..HEAD =
+    # exactly the fixture's two commits (base + "docs guide only") — llu's
+    # outgoing set, and the log-filter rows stay two-sided through it (the
+    # docs-only commit must vanish under `-- src/`). Same set-upstream-to-
+    # <local-branch> technique as the w-get rows below (probed: @{u} resolves
+    # local branches; an unrelated anchor counts EVERYTHING reachable from
+    # HEAD as outgoing).
+    anchor=$(git commit-tree "$(git hash-object -w -t tree /dev/null)" -m "upstream anchor")
+    git branch llu-anchor "$anchor"
+    git branch --set-upstream-to=llu-anchor >/dev/null
   ) >/dev/null 2>"$log"; then
     echo "psx fixture setup FAILED (repo: $repo) — stderr log: $log" >&2
     cat "$log" >&2
@@ -296,7 +307,7 @@ teardown() {
 # test loudly) plus a stderr breadcrumb naming the row.
 psx_inert_args() {
   case "$1" in
-  l | ll) : ;;
+  l | ll | llu) : ;;
   shc | shcp | shp) echo "HEAD~1" ;;
   *)
     echo "psx_inert_args: unknown row '$1' — add it to the case arms" >&2
@@ -1560,8 +1571,11 @@ psx_install_stub_gum() {
   psx_reset
 
   # Cell 3 — `-u` alone with NO upstream: get_upstream_commit's loud error
-  # (spec §5.2 lists the no-upstream case explicitly).
+  # (spec §5.2 lists the no-upstream case explicitly). The shared fixture
+  # gained an upstream anchor for llu (Task 10), so "no upstream" is now an
+  # explicit precondition of this cell, not the fixture default.
   psx_setup
+  git branch --unset-upstream
   run hug w get -u
   assert_failure
   assert_output --partial "No upstream branch configured"
@@ -1670,14 +1684,24 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization llu: -- rejected loudly by flags-only parser (flip: PR-C)" {
-  # characterization: flip target PR-C — probed: git-llu's flags-only loop
-  # (git-llu:104) rejects the separator it should honor: "Unknown option:
-  # --" + usage hint, exit 1. Pathspec filtering is unreachable today.
+@test "contract llu (Task 10): loud rejections — unknown flag and malformed magic, exit 2" {
+  # Contract (was characterization, flipped by Task 10, #292 PR-C): the old
+  # flags-only loop rejected EVERYTHING it did not know with exit 1 — the
+  # separator ("Unknown option: --"), typo'd flags AND malformed magic
+  # pathspecs indistinguishably. Now: unknown -* → family usage template
+  # (exit 2); ':(bogus)' → validate_pathspecs_or_die (exit 2, "Invalid
+  # pathspec"), matching the sl* family shape.
   psx_setup
-  run hug llu -- src/
-  assert_failure
-  assert_output --partial "Unknown option: --"
+  run hug llu -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  assert_output --partial "hug llu -- -xX"
+  psx_reset
+
+  psx_setup
+  run hug llu -- ':(bogus)x/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
   psx_reset
 }
 
@@ -3696,17 +3720,71 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-# FLIPS-IN-TASK-10: llu honors the separator and filters two-sided (today:
-# flags-only parser rejects it — "Unknown option: --", exit 1; pinned green
-# in the characterization llu row above, which flips in the same task).
-#@test "contract llu (Task 10): -- src/ filters two-sided" {
-#  psx_setup
-#  run hug llu -- src/
-#  assert_success
-#  assert_output --partial "base"
-#  refute_output --partial "docs guide only"
-#  psx_reset
-#}
+# FLIPS-IN-TASK-10 (landed, #292 PR-C): llu honors the separator and filters
+# two-sided — was: flags-only parser rejected it ("Unknown option: --", exit
+# 1; the characterization llu row above flipped in the same task). The
+# fixture's upstream anchor (setup_pathspec_fixture) makes base + "docs guide
+# only" exactly the outgoing set, so the rows below are two-sided THROUGH the
+# outgoing semantics, not just through path filtering.
+
+@test "contract llu (Task 10): -- src/ filters two-sided, summary suppressed" {
+  # Scoped outgoing list: the src commit (base) stays, the docs-only commit
+  # vanishes. Summary gate (codex #3815936636): a scoped run must NOT print
+  # the whole-repo status after the scoped list.
+  psx_setup
+  run hug llu -- src/
+  assert_success
+  assert_output --partial "base"
+  refute_output --partial "docs guide only"
+  refute_output --partial "HEAD:"
+  psx_reset
+}
+
+@test "contract llu (Task 10): bare trailing -- inert with summary parity" {
+  # The inert duality (llu is a listing, NOT a picker): a trailing bare '--'
+  # alone is fully inert — byte-identical to the unfiltered run INCLUDING the
+  # summary (both runs share ONE fixture; the summary embeds the HEAD short
+  # hash). Proves the summary suppression above is scope-driven, not a
+  # blanket removal.
+  psx_setup
+  run hug llu
+  assert_success
+  local unfiltered="$output"
+  assert_output --partial "HEAD:"
+  run hug llu --
+  assert_success
+  assert_equal "$unfiltered" "$output"
+  psx_reset
+}
+
+@test "contract llu (Task 10): --json honors pathspecs; empty scope keeps envelope" {
+  # Scoped JSON: zero non-JSON bytes (whole payload parses), two-sided
+  # through the outgoing semantics (base in, docs-only commit out), and the
+  # summary count reflects the SCOPE (1, not the unscoped 2 — the JSON sink
+  # must not describe the whole outgoing range). Empty scope keeps the
+  # envelope shape (umbrella §6.2: zero-length commits array, count 0).
+  psx_setup
+  run hug llu --json -- src/
+  assert_success
+  local json_out="$output"
+  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
+  assert_success
+  [[ "$json_out" == *"base"* ]]
+  [[ "$json_out" != *"docs guide only"* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(len(d['commits']), d['summary']['total_commits'])" "$json_out"
+  assert_output "1 1"
+  psx_reset
+
+  psx_setup
+  run hug llu --json -- nomatch/
+  assert_success
+  json_out="$output"
+  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
+  assert_success
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print('commits' in d, d['commits'], d['summary']['total_commits'])" "$json_out"
+  assert_output "True [] 0"
+  psx_reset
+}
 
 # FLIPS-IN-TASK-11: sh accepts pathspecs after the separator (today: ONE
 # commit ref only — "unexpected extra argument: 'src/'", exit 1; the two
