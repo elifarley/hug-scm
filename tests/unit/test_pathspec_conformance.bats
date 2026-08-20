@@ -1579,8 +1579,12 @@ psx_install_stub_gum() {
   grep -q py2 src/a.py # unchanged by the dry run
   psx_reset
 
-  # Cell 5 — BUG-4: a file literally named `-weird` restores safely (the
-  # restore gains an explicit `--` so dash-leading paths are never flags).
+  # Cell 5 — BUG-4 (flipped by the uniform pathspec contract, #292 PR-C):
+  # the restore KEEPS its explicit `--` so dash-leading PATHS stay data,
+  # but a pre-'--' dash token is now a LOUD unknown-option error (exit 2),
+  # never a silently-accepted file name — reach such files via the
+  # separator form. (Was: `w get HEAD~1 -weird` restored directly, and a
+  # TYPO'd flag in that slot was indistinguishable from a file name.)
   psx_setup
   echo wbase > ./-weird
   git add -- -weird
@@ -1588,6 +1592,9 @@ psx_install_stub_gum() {
   echo wdiverged > ./-weird
   git commit -q -am "diverge -weird"
   run hug w get HEAD~1 -weird
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -weird"
+  run hug w get HEAD~1 -- -weird
   assert_success
   assert_equal "wbase" "$(cat ./-weird)"
   psx_reset
@@ -2459,9 +2466,11 @@ psx_install_stub_gum() {
   assert_output --partial "Dry run — no files were modified."
   psx_reset
 
-  # Cell 3 — '-u' AFTER the separator is a FILE name, not the flag: the
-  # non-upstream specific-files restore proceeds for a file literally
-  # named '-u' (same shape as the '-weird' regression cell).
+  # Cell 3 — '-u' AFTER the separator (flipped by the uniform pathspec
+  # contract, #292 PR-C): an EXACT own-flag spelling post-'--' is a
+  # misordered flag, not data — exit 2 with the family template. (Was:
+  # restored a file literally named '-u'; such a file remains reachable
+  # ONLY as './-u', the exact-spelling rule's documented escape hatch.)
   psx_setup
   echo ubase > ./-u
   git add -- -u
@@ -2469,6 +2478,10 @@ psx_install_stub_gum() {
   echo udiverged > ./-u
   git commit -q -am "diverge -u"
   run hug w get HEAD~1 -- -u
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w get -u"
+  refute_output --partial "Will reset"
+  run hug w get HEAD~1 -- ./-u
   assert_success
   assert_equal "ubase" "$(cat ./-u)"
   psx_reset
@@ -3048,7 +3061,9 @@ psx_install_stub_gum() {
 # 4 (w-purge), Task 5 (w-zap, on the shared parse_scoped_own_flags
 # helper), Task 7 (the w-*-all whole-tree family — own-loop hygiene, no
 # pathspec collection; wipe-all gets its OWN loop so its rejections name
-# wipe, not the discard-all engine it execs).
+# wipe, not the discard-all engine it execs), the w-get migration (PR-C
+# plan Task 9; its staged marker below is numbered 6 and KEEPS that number
+# so the guard set {3 4 5 6 10 11} stays stable).
 # Remaining staged rows keep the FLIPS-IN-TASK-N prefix; the guard test
 # below keeps the block from being lost. Current (probed, pre-migration)
 # behavior for each is already pinned green by the characterization rows in
@@ -3584,16 +3599,102 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-# FLIPS-IN-TASK-6: w-get unknown flag rejected as a flag (today: reclassified
-# as the --target positional — "Invalid commitish for --target: -xX", exit 1).
-#@test "contract w-get (Task 6): -xX is a flag error, not a bad commitish" {
-#  psx_setup
-#  run hug w get -xX
-#  assert_equal 2 "$status"
-#  assert_output --partial "Unknown option: -xX"
-#  refute_output --partial "Invalid commitish"
-#  psx_reset
-#}
+# FLIPS-IN-TASK-6 (landed, w-get migration, #292 PR-C plan Task 9): w-get's
+# commitish-target slot used to swallow unknown dash tokens — probed
+# pre-migration: `w get -xX` → "Invalid commitish for --target: -xX", exit 1
+# — and post-'--' flag spellings became file names (`w get HEAD --
+# --dry-run` → "File '--dry-run' does not exist in commit", exit 1). The
+# family template now rejects both as usage errors (exit 2).
+@test "contract w-get (Task 9): -xX is a flag error, not a bad commitish" {
+  psx_setup
+  run hug w get -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Invalid commitish"
+  psx_reset
+}
+
+@test "contract w-get (Task 9): misordered post-'--' flags and malformed magic are usage errors (#292)" {
+  # Probed pre-migration (all exit 1, all mis-diagnosed):
+  #   w get -- --dry-run      → "Invalid commitish for --target: --dry-run"
+  #                             (the flag fell into the EMPTY commitish slot)
+  #   w get HEAD -- --dry-run → "File '--dry-run' does not exist in commit"
+  #   w get HEAD~1 -- -u      → "File '-u' does not exist in commit"
+  #   w get HEAD -- ':(bogus)src/' → "File ':(bogus)src/' does not exist"
+  #                             (malformed pathspec magic died as a missing
+  #                             FILE; ':bogus(' without parens is a LITERAL
+  #                             path to git, which is why the fixture uses
+  #                             the ':(bogus)src/' form the family shares)
+  psx_setup
+  run hug w get -- --dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w get --dry-run"
+  refute_output --partial "Invalid commitish"
+  psx_reset
+
+  psx_setup
+  run hug w get HEAD -- --dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w get --dry-run"
+  psx_reset
+
+  psx_setup
+  run hug w get HEAD~1 -- -u
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w get -u"
+  psx_reset
+
+  # Entry pathspec validation (validate_pathspecs_or_die, post-check_git_repo):
+  # a typo'd magic prefix dies as a usage error BEFORE any "Will reset"
+  # chatter or missing-file confusion downstream.
+  psx_setup
+  run hug w get HEAD -- ':(bogus)src/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  refute_output --partial "does not exist in commit"
+  refute_output --partial "Will reset"
+  psx_reset
+}
+
+@test "contract w-get (Task 9): trailing bare '--' keeps the picker; action flags stay position-independent (#292)" {
+  # OQ-1 (probed): `w get HEAD --` opens the interactive selector — under
+  # BATS (no TTY; gum absent or cancelling) it lands on "No files
+  # selected..." exit 0. The --picker split mode preserves that trigger: a
+  # bare trailing '--' never becomes a phantom pathspec, so the reset-all
+  # arm is NOT reached (refuted by "Will reset"/"Files that will be").
+  psx_setup
+  run hug w get HEAD --
+  assert_success
+  assert_output --partial "No files selected"
+  refute_output --partial "Will reset"
+  refute_output --partial "Files that will be"
+  psx_reset
+
+  # Action flags remain position-independent around the target and files
+  # (byte-identical to the pre-migration parser, which getopt-permuted
+  # them). --dry-run BEFORE the target: same specific-files dry-run shape
+  # as the existing HEAD~1 --dry-run cell.
+  psx_setup
+  git add -A
+  git commit -q -m divergence
+  run hug w get --dry-run HEAD~1 src/a.py
+  assert_success
+  assert_output --partial "Files to be reset:"
+  assert_output --partial "src/a.py"
+  assert_output --partial "Dry run — no files were modified."
+  grep -q py2 src/a.py
+  psx_reset
+
+  # -y is accepted alongside (a routine-confirm flag, not a force
+  # substitute — see help); on the clean path it changes nothing.
+  psx_setup
+  git add -A
+  git commit -q -m divergence
+  run hug w get -y --dry-run HEAD~1 src/a.py
+  assert_success
+  assert_output --partial "Dry run — no files were modified."
+  psx_reset
+}
 
 # FLIPS-IN-TASK-10: llu honors the separator and filters two-sided (today:
 # flags-only parser rejects it — "Unknown option: --", exit 1; pinned green

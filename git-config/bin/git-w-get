@@ -348,37 +348,83 @@ main() {
   local commit=""
   local target_identifier=""
 
-  # 1. Extract the custom flag (-u|--upstream) wherever it appears BEFORE
-  # the '--' separator (review fix: 'hug w get -f -u <file>' used to leave
-  # '-u' behind for the common parser, which reclassified it as the target —
-  # 'Invalid commitish for --target: -u'). After '--', '-u' is a file name.
-  local -a pre_common=()
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-    -u | --upstream)
-      use_upstream=true
-      ;;
-    --)
-      pre_common+=("$@")
-      break
-      ;;
-    *)
-      pre_common+=("$1")
-      ;;
-    esac
-    shift
-  done
-  set -- ${pre_common[@]+"${pre_common[@]}"}
-
-  # 2. Parse common flags (--browse-root, -f|--force, -h|--help, --)
-  eval "$(parse_common_flags "$@")"
+  # 1. Uniform pathspec split (#292 PR-C, w-get migration — plan Task 9):
+  # flags before '--', pathspecs after it, ONE validated ${pathspecs[@]}
+  # feeding every downstream sink (specific-files restore, the N-back
+  # per-file counting, the picker's empty-set trigger).
+  #
+  # WITH --picker on purpose: a trailing bare '--' is w-get's documented
+  # interactive-selection trigger (OQ-1 probed: `w get HEAD --` → picker →
+  # non-TTY "No files selected..." exit 0). The --picker mode preserves
+  # that trigger exactly; the bare '--' never becomes a phantom pathspec,
+  # so the reset-all arm keeps its empty-scope semantics.
+  #
+  # NOTE: "--target" is NOT a flag of this command — it is only the error
+  # CONTEXT LABEL inside validate_commitish (hug-git-repo). The probed
+  # "Invalid commitish for --target: --dry-run" receipt was the TARGET
+  # SLOT swallowing a flag, which the contract below kills.
+  eval "$(parse_common_flags_with_pathspecs --picker "$@")"
 
   # Initialize common flag variables if not set by parse_common_flags
   : "${browse_root:=false}"
   : "${force:=false}"
   : "${dry_run:=false}"
 
-  # 3. Shape guard under --upstream (review fix, #292 PR-A): every remaining
+  # 2. w-get is the family's ONE command with a commitish TARGET positional,
+  # which parse_scoped_own_flags's all-positionals-are-pathspecs grammar
+  # cannot express — so a small hand-rolled PRE-PASS runs first (this is
+  # the documented, deliberate partial adoption of the helper):
+  #   • extract the order-independent -u/--upstream wherever it appears
+  #     among the pre-args (pinned: 'w get -f -u src/a.py'); under -u every
+  #     positional is a FILE (#292 spec §5.2, BUG-3), so the target slot
+  #     must not be decided until -u detection is complete;
+  #   • split the remaining pre-args into the optional target (first
+  #     positional, only when NOT under -u) and the file positionals;
+  #   • stray dash tokens are NOT handled here — they pass through to the
+  #     family helper below, whose loud -* arm rejects them with the
+  #     uniform template. (Was: the target slot swallowed them —
+  #     "Invalid commitish for --target: -xX", exit 1.)
+  local -a own_dash=() positionals=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    -u | --upstream)
+      use_upstream=true
+      ;;
+    -*)
+      own_dash+=("$1")
+      ;;
+    *)
+      positionals+=("$1")
+      ;;
+    esac
+    shift
+  done
+  local -a file_args=()
+  if ! $use_upstream && [ ${#positionals[@]} -gt 0 ]; then
+    target_identifier="${positionals[0]}"
+    file_args=("${positionals[@]:1}")
+  else
+    file_args=("${positionals[@]}")
+  fi
+
+  # 3. Family helper (#292 PR-C Task 5), partial adoption as documented
+  # above: completes the ONE pathspecs array from the split (post-'--'
+  # data) ∪ the file positionals, rejects unknown pre-'--' dash tokens
+  # loudly (arm 2), and rejects post-'--' EXACT spellings of this
+  # command's flags (arm 3; own spec -u/--upstream included —
+  # 'w get HEAD~1 -- -u' is a misordered flag, not a file; './-u' is the
+  # documented escape hatch for a file literally named '-u').
+  local -a pathspecs=()
+  parse_scoped_own_flags "hug w get" "-u:--upstream:use_upstream" \
+    pathspecs ${own_dash[@]+"${own_dash[@]}"} ${file_args[@]+"${file_args[@]}"}
+
+  # Loud one-time pathspec validation before any arm runs (see
+  # validate_pathspecs_or_die in hug-git-files for the WHY): a typo'd
+  # magic prefix must die as a usage error, never as a confusing
+  # "File ':bogus(' does not exist" downstream.
+  validate_pathspecs_or_die ${pathspecs[@]+"${pathspecs[@]}"}
+
+  # 4. Shape guard under --upstream (review fix, #292 PR-A): every remaining
   # argument is supposed to be a FILE, but a 1-2 digit integer or a token
   # that resolves as a commitish is far more likely a mistyped
   # `hug w get <N|commit>` than a file name — and reclassifying user
@@ -386,27 +432,20 @@ main() {
   # (otherwise the confusing "File 'HEAD~5' does not exist"). Fail with the
   # OLD explicit message BEFORE anything prints. Trade-off (deliberate): a
   # file literally named e.g. '2' is unreachable under -u.
-  if $use_upstream && [ $# -gt 0 ]; then
-    for arg in "$@"; do
+  if $use_upstream && [ ${#file_args[@]} -gt 0 ]; then
+    for arg in "${file_args[@]}"; do
       if [[ "$arg" =~ ^[0-9]{1,2}$ ]] || git rev-parse --verify -q "$arg" > /dev/null 2>&1; then
         error "Cannot specify --upstream with a specific commit or integer N."
       fi
     done
   fi
 
-  # 4. Get the target from the first non-flag argument — UNLESS -u/--upstream
-  # was given: with --upstream there is NO target positional; every remaining
-  # argument is a FILE (#292 spec §5.2, BUG-3). Extracting a target anyway used
-  # to eat the first file (dying on the old exclusivity guard with "Cannot
-  # specify --upstream with a specific commit or integer N") and `-u` alone hit
-  # "Missing target argument" even though help documents `hug w get -u` as the
-  # reset-all form. The former `target_identifier == "-u"` arm was dead code:
-  # leading flags are already consumed by the custom-flag loop in step 1.
+  # 5. Classify the target — UNLESS -u/--upstream was given: with --upstream
+  # there is NO target positional (its subjects cannot exist, which is why
+  # the old "-u + commit / -u + integer N" exclusivity guard stays gone BY
+  # CONSTRUCTION; a nonexistent file under -u still fails loudly via
+  # check_file_in_commit).
   if ! $use_upstream; then
-    if [[ $# -gt 0 ]]; then
-      target_identifier="$1"
-      shift
-    fi
     if [[ -z "$target_identifier" ]]; then
       error "Missing target argument.
        Usage: hug w get <commit> [file...]
@@ -420,27 +459,24 @@ main() {
       commit="$target_identifier"
     fi
   fi
-  # NOTE: the old "-u + commit / -u + integer N" exclusivity guard is gone BY
-  # CONSTRUCTION — under -u no target classification ever runs, so its two
-  # subjects cannot exist. A nonexistent file under -u still fails loudly via
-  # check_file_in_commit.
 
-  # 5. Determine the target commit
+  # 6. Determine the target commit
   if $use_upstream; then
     commit=$(get_upstream_commit)
   elif $use_integer_N; then
-    # Pass the remaining arguments (files) to the helper
-    commit=$(get_commit_n_back "$integer_N" "$@")
+    # Pass the collected file scope to the helper (N counts commits that
+    # touch the files in scope)
+    commit=$(get_commit_n_back "$integer_N" ${pathspecs[@]+"${pathspecs[@]}"})
   elif [[ -z "$commit" ]]; then
     # This case should not be reached due to earlier checks, but as a fallback
     error "Internal error: Could not determine target commit."
     exit 1
   fi
 
-  # 6. Validate commit
+  # 7. Validate commit
   validate_commitish "--target" "$commit"
 
-  # 7. Check if user wants interactive file selection via --
+  # 8. Check if user wants interactive file selection via --
   if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     # Interactive file selection
     declare -a select_opts=("--multi" "--staged" "--unstaged" "--untracked")
@@ -468,13 +504,18 @@ main() {
     exit 0
   fi
 
-  # 10. Determine operation mode and execute
-  if [ $# -eq 0 ]; then
+  # 9. Determine operation mode and execute — the ONE ${pathspecs[@]} is
+  # the file scope everywhere: empty → reset-all, else specific-files.
+  # (No trailing status summary exists to suppress on the scoped path —
+  # probed: both arms end at their success/info line, w-get never prints
+  # the `hug s`-style summary line, same disposition Task 3 documented for
+  # w-discard.)
+  if [ ${#pathspecs[@]} -eq 0 ]; then
     # Reset ALL files
     reset_all_files "$commit" "$force" "$dry_run"
   else
     # Reset specific files
-    reset_specific_files "$commit" "$force" "$dry_run" "$@"
+    reset_specific_files "$commit" "$force" "$dry_run" ${pathspecs[@]+"${pathspecs[@]}"}
   fi
 }
 
