@@ -535,7 +535,7 @@ hug clone <url> --depth 1                       # Pass options to underlying VCS
 
 # Other utilities
 hug lol [<remote-branch>] # Log Outgoing Long: Show outgoing changes (what will be pushed; optional remote branch target, e.g., origin/dev)
-hug llu [<remote-branch>] [-- <path>...] # Log Outgoing (compact; pathspecs scope it: `hug llu -- src/` lists outgoing commits touching src/ — see `hug help :pathspec`)
+hug llu [-- <path>...] # Log Outgoing (compact; pathspecs scope it: `hug llu -- src/` lists outgoing commits touching src/ — see `hug help :pathspec`)
 hug w wip "<msg>"     # Park all changes on WIP branch
 hug w unwip [wip]     # Unpark WIP: squash-merge to current branch + delete
 hug w wipdel [wip]    # Delete WIP branch without integration

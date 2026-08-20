@@ -483,6 +483,51 @@ main() {
   # 7. Validate commit
   validate_commitish "--target" "$commit"
 
+  # 7.5 Expand MAGIC pathspecs against the target tree (codex P2
+  # #3820511903): validate_pathspecs_or_die only checks magic SYNTAX, but
+  # everything below (check_file_in_commit, per-file preview, per-file
+  # restore, the per-file dirty/untracked gate) is LITERAL — a magic spec
+  # used to flow through verbatim and die on "File ':(glob)...' does not
+  # exist in commit". Expansion: when ANY spec is magic (leading ':'),
+  # resolve the WHOLE set against the target commit's tree and replace it
+  # with the concrete in-commit files, so git's full pathspec semantics
+  # (glob ∪ literal positives, minus excludes) apply as ONE set — expanding
+  # the magic subset alone would wrongly widen a mixed 'src/ :!docs/'
+  # scope to the whole tree minus docs. NON-magic invocations never take
+  # this branch: literal spellings (files, directories, and the missing
+  # file's loud exit-1 error) stay byte-identical.
+  #
+  # Primitive WHY: `git ls-tree -- <magic spec>` REJECTS magic ("pathspec
+  # magic not supported by this command" — probed), while ls-files honors
+  # it: --with-tree=<commit> pretends the target tree into the index, and
+  # the comm -12 intersection with ls-tree drops index-only paths so only
+  # files that exist IN THE COMMIT survive (probed edge: a file staged for
+  # deletion still resolves; both comm inputs are sorted, which comm
+  # REQUIRES). --full-name on both sides keeps paths repo-root-relative
+  # from any subdirectory, matching the cd-to-root right below.
+  local has_magic=false spec
+  for spec in ${pathspecs[@]+"${pathspecs[@]}"}; do
+    [[ "$spec" == :* ]] && has_magic=true && break
+  done
+  if $has_magic; then
+    local -a expanded=()
+    mapfile -t expanded < <(comm -12 \
+      <(git ls-files --full-name --with-tree="$commit" -- ${pathspecs[@]+"${pathspecs[@]}"} | sort -u) \
+      <(git ls-tree -r --name-only --full-name "$commit" | sort))
+    if [ ${#expanded[@]} -eq 0 ]; then
+      info "No files in $(git rev-parse --short "$commit") match: ${pathspecs[*]}"
+      exit 0
+    fi
+    pathspecs=("${expanded[@]}")
+    # The expanded literals are repo-root-relative; git pathspecs issued
+    # from a subdirectory are CWD-relative, so re-anchor before the
+    # per-file workflow (restore/dirty checks) or a subdir invocation
+    # would miss every file. The non-magic branch never gets this cd.
+    local repo_root
+    repo_root="$(git rev-parse --show-toplevel)"
+    cd "$repo_root"
+  fi
+
   # 8. Check if user wants interactive file selection via --
   if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]]; then
     # Interactive file selection

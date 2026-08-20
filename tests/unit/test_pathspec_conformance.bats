@@ -3676,6 +3676,62 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "contract w-get (P2 #3820511903): magic pathspecs expand to in-commit files, never flow literally (#292)" {
+  # Probed pre-fix: `w get HEAD -- ':(glob)*.py'` passed entry validation
+  # (syntax OK) then flowed LITERALLY into the per-file workflow —
+  # "File ':(glob)*.py' does not exist in commit HEAD", exit 1. The fix
+  # resolves the pathspec set against the TARGET commit's tree and feeds
+  # the concrete files into the existing check/preview/restore flow.
+  # NON-magic spellings are untouched by construction (byte-identity).
+
+  # Cell 1 — glob magic restores its matches (two-sided scope), preview
+  # per-FILE (the expansion yields src/a.py, not the magic text).
+  psx_setup
+  git add -A
+  git commit -q -m divergence
+  run hug w get --dry-run HEAD~1 -- ':(glob)**/*.py'
+  assert_success
+  assert_output --partial "Checking src/a.py"
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/"
+  refute_output --partial ":(glob)"
+  run hug w get HEAD~1 -- ':(glob)**/*.py'
+  assert_success
+  assert_equal "py1" "$(cat src/a.py)" # restored to the base version
+  psx_reset
+
+  # Cell 2 — exclude magic restores everything-but (the whole tree minus
+  # docs/), still through the specific-files preview shape.
+  psx_setup
+  git add -A
+  git commit -q -m divergence
+  run hug w get --dry-run HEAD~1 -- ':!docs/'
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/"
+  psx_reset
+
+  # Cell 3 — empty expansion is the honest no-match info (exit 0), not a
+  # missing-file error and not a silent success-with-nothing.
+  psx_setup
+  run hug w get HEAD~1 -- ':(glob)**/*.nomatch'
+  assert_success
+  assert_output --partial "No files in"
+  assert_output --partial "match"
+  refute_output --partial "does not exist in commit"
+  refute_output --partial "Will reset"
+  psx_reset
+
+  # Cell 4 — byte-identity guard: a LITERAL missing file keeps today's
+  # loud per-file error (exit 1) — only magic spellings take the
+  # expansion branch.
+  psx_setup
+  run hug w get HEAD no-such-file
+  assert_equal 1 "$status"
+  assert_output --partial "File 'no-such-file' does not exist in commit"
+  psx_reset
+}
+
 @test "contract w-get (Task 9): trailing bare '--' keeps the picker; action flags stay position-independent (#292)" {
   # OQ-1 (probed): `w get HEAD --` opens the interactive selector — under
   # BATS (no TTY; gum absent or cancelling) it lands on "No files
