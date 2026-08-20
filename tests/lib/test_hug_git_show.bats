@@ -512,6 +512,83 @@ teardown() {
   assert_output --partial "Invalid commit reference"
 }
 
+################################################################################
+# show_commits PATHSPEC-ARRAY TESTS (#292 PR-C Task 11, library pass)
+################################################################################
+# The interface takes EVERY argument after the four fixed ones as a pathspec
+# (array-compatible, codex #3815936643). Was: a single `file_path` at ${5:-}
+# — a multi-path call silently lost all but the FIRST path. Sibling callers
+# (git-sh passes 0 entries, git-shp passes 1) keep byte-identical output;
+# the single-path characterization row below pins that half, the multi-path
+# rows pin the new union semantics (git unions pathspecs: commits touching
+# EITHER path appear; per-commit diff/stats scope to the union).
+################################################################################
+
+# Local fixture: a base commit spanning three dirs (src/, docs/, other/) so
+# every multi-path assertion is two-sided through the third path.
+setup_show_pathspec_fixture() {
+  mkdir -p src docs other
+  echo py1 > src/a.py
+  echo note1 > docs/note.md
+  echo o1 > other/x.txt
+  git add -A
+  git commit -q -m "base three dirs"
+  echo py2 >> src/a.py
+  git add -A
+  git commit -q -m "src only follow-up"
+}
+
+@test "show_commits pathspecs: multi-path union filters range stats to BOTH paths" {
+  setup_show_pathspec_fixture
+  run show_commits "-2" false standard true src/ docs/
+  assert_success
+  assert_output --partial "src/a.py"
+  assert_output --partial "docs/note.md"
+  refute_output --partial "other/x.txt"
+}
+
+@test "show_commits pathspecs: single pathspec keeps first-path-only scoping (sibling char)" {
+  # Characterization of the 0/1-entry call shape git-shp uses — the
+  # array-compatible interface must be byte-compatible with the old ${5:-}
+  # behavior for these callers (probed pre-change; see git-shp:112).
+  setup_show_pathspec_fixture
+  run show_commits "-2" false standard true src/
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "other/x.txt"
+}
+
+@test "show_commits pathspecs: zero pathspecs unscoped (sibling char, git-sh shape)" {
+  # git-sh calls show_commits with exactly 4 args — the fixed-arg tail must
+  # stay empty and the output identical to the pre-change call.
+  setup_show_pathspec_fixture
+  run show_commits "-2" false standard true
+  assert_success
+  assert_output --partial "src/a.py"
+  assert_output --partial "docs/note.md"
+  assert_output --partial "other/x.txt"
+}
+
+@test "show_commits pathspecs: multi-path union scopes the patch sink" {
+  setup_show_pathspec_fixture
+  run show_commits "-2" true standard true src/ docs/
+  assert_success
+  assert_output --partial "+py2"
+  assert_output --partial "docs/note.md"
+  refute_output --partial "other/x.txt"
+}
+
+@test "show_commits pathspecs: multi-path union scopes the LLM sink" {
+  setup_show_pathspec_fixture
+  run show_commits "-2" false llm true src/ docs/
+  assert_success
+  assert_output --partial "<commit"
+  assert_output --partial "src/a.py"
+  assert_output --partial "docs/note.md"
+  refute_output --partial "other/x.txt"
+}
+
 @test "resolve_commit_ref: treats leading zeros as numbers" {
   # Numbers with leading zeros match the 0-999 regex
   # so they are treated as numbers (007 = 7)

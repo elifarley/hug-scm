@@ -10,7 +10,7 @@ Logging commands in Hug provide powerful ways to view, search, and inspect commi
 | `hug lu`   | **L**og after **U**pstream            | Log commits after the last Upstream commit |
 | `hug la`   | **L**og **A**ll                       | Oneline log across all branches            |
 | `hug ll`   | **L**og **L**ong                      | Detailed log with full messages            |
-| `hug llu`  | **L**og **L**ong after **U**pstream   | Log commits after the last Upstream commit |
+| `hug llu`  | **L**og **L**ong after **U**pstream   | Log commits after the last Upstream commit (pathspec-scopable: `hug llu -- src/`) |
 | `hug lla`  | **L**og **L**ong **A**ll              | Detailed log across all branches           |
 | `hug lp`   | **L**og **P**atch                     | Log with diffs for each commit             |
 | `hug lo`   | **L**og **O**utgoing                  | Quiet preview of commits not yet on upstream |
@@ -225,5 +225,31 @@ These commands help you review what will be pushed to the remote (upstream) bran
     ```
 
 **Tip**: Use `hug lo` for a quick check or `hug lol` for a full review. Once you're confident, use `hug bpush` to push them safely.
+
+## Pathspec Scoping (`llu`, `sh`)
+
+The log viewers accept the uniform pathspec contract (`hug help :pathspec`):
+flags and refs before `--`, pathspecs after it (bare positionals work too —
+git parity).
+
+```shell
+hug llu -- src/            # outgoing commits touching src/ only
+hug llu --json -- src/     # scoped JSON envelope (empty shape on zero matches)
+hug sh HEAD -- src/a.py    # commit details, file stats filtered to the path
+hug sh -3 -- src/          # range spellings (-3) are data, not flags
+```
+
+Notes:
+
+- `llu`'s outgoing-range computation is unchanged; pathspecs only filter
+  which commits are shown. A scoped run omits the trailing `hug s` summary
+  line (a scoped answer is the answer — run `hug s` separately for the full
+  picture).
+- `sh` keeps its FIRST positional as the commit reference; everything after
+  it is pathspecs. `shp` filters a single file — given several pathspecs it
+  uses the first and warns.
+- Malformed magic (`:(bogus)src/`) exits 2 with `Invalid pathspec …`. A flag
+  spelling after `--` (`hug llu -- src/ --json`) is pathspec DATA — never
+  honored as a flag; put flags before the separator.
 
 Pair logging with [Status & Staging](status-staging) to inspect changes, or [HEAD Operations](head) to undo based on history.

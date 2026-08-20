@@ -326,9 +326,15 @@ Ready for more? These commands are useful for power users.
 | Git Command | Hug Equivalent | Memory Hook | Why Hug is Better |
 |-------------|----------------|-------------|-------------------|
 | `git checkout -- file` | `hug w discard <file>` | **W**orking dir **Discard** | Consistent `w*` prefix |
+| `git checkout -- src/` | `hug w discard -- src/` | **W**orking dir **Discard** | Scoped destruction, narrowing only; `--dry-run` preview flows through the same scope |
 | `git reset --hard` | `hug w wipe-all` | **W**orking dir **Wipe** **A**ll | Progressive danger level |
 | `git clean -fd` | `hug w purge <path>` | **W**orking dir **P**urge | Consistent prefix, scoped |
+| `git clean -fdx build/` | `hug w purge -i -- build/` | **W**orking dir **P**urge | Category flags intersect the scope (ignored files under build/ only) |
 | `git reset --hard && git clean -fd` | `hug w zap <path>` | **W**orking dir **Z**ap | Single command, explicit danger |
+| `git reset --hard && git clean -fd` (scoped) | `hug w zap -- ':(exclude)docs/'` | **W**orking dir **Z**ap | Magic pathspecs pass through verbatim |
+| `git checkout <commit> -- src/` | `hug w get <commit> -- src/` | **W**orking dir **Get** | Scoped restore; flags before `--` are enforced |
+| `git log @{u}..HEAD -- src/` | `hug llu -- src/` | **L**og **L**ong after **U**pstream | Outgoing commits touching the scope; `--json` scopes too |
+| `git show HEAD -- src/a.py` | `hug sh HEAD -- src/a.py` | **SH**ow | Ref stays a ref; everything after is pathspecs |
 
 **Progressive destructiveness**: `discard` < `wipe` < `purge` < `zap` < `rewind`
 

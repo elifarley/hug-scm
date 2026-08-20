@@ -16,13 +16,22 @@ show_help() {
 hug sh: Show commit(s) with file statistics.
 
 USAGE:
-    hug sh [N|-N|<commit-ref>|<range>] [OPTIONS]
+    hug sh [N|-N|<commit-ref>|<range>] [OPTIONS] [-- <path>...]
 
 ARGUMENTS:
     N               Steps back from HEAD (0-999) → shows commit at HEAD~N (0 → HEAD)
     -N              Range of N commits (1-999) → shows HEAD~N..HEAD
     <commit-ref>    Commit reference (default: HEAD)
     <range>         Commit range (e.g., main..HEAD)
+    <path>...       Pathspecs after the FIRST reference scope the diff and
+                    file stats (git unions them — commits touching EITHER
+                    path appear in range runs). A bare positional after the
+                    ref is EQUIVALENT: 'hug sh HEAD src/' ≡ 'hug sh HEAD --
+                    src/'; the '--' is only needed for paths starting with
+                    '-'. ALL tokens after the first ref are pathspecs — no
+                    second reference is detected (a typo'd path never
+                    hijacks the ref slot). A trailing bare '--' alone is
+                    inert (same output as no arguments).
 
 OPTIONS:
     -q, --quiet     Suppress headers (also honors HUG_QUIET env var)
@@ -46,6 +55,18 @@ DESCRIPTION:
     - -N (1-999) → Range of N commits (HEAD~N..HEAD)
     - Numbers ≥ 1000 pass through as refs
 
+    NOTE: '-N' spellings are DATA, not flags — sh is one of the few hug
+    commands with legal dash-data, so '-3' is never rejected as an unknown
+    option (only non-numeric dash tokens are, loudly, with exit 2).
+
+PATH FILTERING:
+    Append -- <path>... to restrict the diff and file stats.
+    Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+    hug sh HEAD -- src/a.py        # Details of HEAD scoped to one file
+    hug sh -3 -- src/ docs/        # Last 3 commits touching EITHER path
+    hug sh HEAD~1 src/             # Bare positional ≡ the '--' form
+
 EXAMPLES:
     hug sh                  # Show last commit with stats
     hug sh 2                # Show commit two steps back (HEAD~2) with stats
@@ -63,8 +84,21 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (-q/--quiet, -h/--help)
-eval "$(parse_common_flags "$@")"
+# Pre-parse pathspecs BEFORE parse_common_flags, which intercepts a
+# trailing -- for interactive file selection (uniform pathspec contract,
+# #292 PR-C Task 11). sh is a VIEWER, not a picker: a trailing bare '--'
+# is inert here (byte-identical to the unscoped run), so no --picker arm.
+# Caller-scope effects: _pathspec_pre_args = separator-free args;
+# _pathspec_pathspecs = data after the FIRST '--' (verbatim, even tokens
+# spelled like flags).
+eval "$(parse_pathspecs "$@")"
+eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
+
+# ONE pathspec collection (git unions pathspecs; every downstream sink in
+# show_commits reads the same array): seed with the split's post-'--'
+# data, then collect bare positionals in the own-loop below.
+pathspecs=()
+pathspec_pathspecs_into pathspecs
 
 # Parse remaining arguments
 commit_ref=""
@@ -84,24 +118,54 @@ for arg in "$@"; do
   --no-stat)
     show_no_stat=true
     ;;
-  *)
-    # Lesson from BUG-6 (#292): a catch-all here silently let the LAST
-    # positional win as the ref, so `hug sh HEAD -- src/` validated "src/"
-    # as a committish and died with a confusing "Invalid commit reference".
-    # Reject the second positional loudly, naming the stray argument.
-    # Guard on POSITIONAL COUNT, not ref content: an empty first positional
-    # (`hug sh "" src/`, e.g. `hug sh "$ref" -- "$path"` with unset $ref)
-    # leaves commit_ref empty, so a `-n "$commit_ref"` test would let the
-    # path overwrite it. Counting positionals catches that too, while
-    # `hug sh ""` alone still defaults to HEAD (commit_ref stays empty).
+    # DATA ARM — BEFORE the -* rejection (spec Class 3): sh is the one PR-C
+    # command with legal dash-data. '-N' is the last-N-commits range
+    # shorthand (resolve_commit_ref maps it to HEAD~N..HEAD) and must NEVER
+    # be eaten by the unknown-flag arm below. Exact spellings only
+    # (1-3 digits) — '-3x' stays a loud usage error via the -* arm.
+  -[0-9] | -[0-9][0-9] | -[0-9][0-9][0-9])
     if [[ "$saw_positional" == true ]]; then
-      # Path filtering ('hug sh <ref> -- <path>...') lands in a later PR —
-      # roadmap note kept HERE, not in the runtime error (review fix: the
-      # temporal second sentence told the user about our plans, not theirs).
-      error "hug sh accepts one commit reference; unexpected extra argument: '$arg'."
+      pathspecs+=("$arg")
+    else
+      commit_ref="$arg"
+      saw_positional=true
     fi
-    commit_ref="$arg"
-    saw_positional=true
+    ;;
+  -*)
+    # Any other dash-led token is a loud usage error (exit 2 via
+    # reject_flag_ref: help + "Unknown flag"). Probed pre-migration:
+    # `hug sh -xX` already died exactly this way (show_single_commit's
+    # reject_flag_ref); promoting the rejection to the entry loop keeps
+    # the same observable while making '-N' data-arm-safe.
+    reject_flag_ref "$arg"
+    # reject_flag_ref only RETURNS for -N — impossible here (the data arm
+    # above matched those first). Defensive fallthrough treats any
+    # survivor as positional data, never a silent swallow.
+    if [[ "$saw_positional" == true ]]; then
+      pathspecs+=("$arg")
+    else
+      commit_ref="$arg"
+      saw_positional=true
+    fi
+    ;;
+  *)
+    # DISAMBIGUATION RULE (codex #3815936650): ALL tokens after the first
+    # ref are pathspecs — no syntactic second-ref detection exists ("a
+    # second ref" and "a typo'd pathspec" are indistinguishable), so none
+    # is attempted. The one-reference error of BUG-6 (#292) is GONE: it
+    # fired on positional COUNT, which is exactly the wrong signal under
+    # the contract. The ref slot is validated downstream instead
+    # (show_commits → "Invalid commit reference" for a bad FIRST ref).
+    # saw_positional — not `-n $commit_ref` — still guards the first-slot
+    # bookkeeping (the BUG-6 review-fix lesson): an EMPTY first positional
+    # (`hug sh "" src/`, i.e. `hug sh "$ref" -- "$path"` with unset $ref)
+    # must keep the empty ref (→ HEAD default) and still collect the path.
+    if [[ "$saw_positional" == true ]]; then
+      pathspecs+=("$arg")
+    else
+      commit_ref="$arg"
+      saw_positional=true
+    fi
     ;;
   esac
 done
@@ -129,7 +193,14 @@ else
   fi
 fi
 
-# Use hug-git-show library for commit display
-show_commits "$commit_ref" false "$output_format" "$show_stats"
+# Loud one-time pathspec validation (see validate_pathspecs_or_die in
+# hug-git-files for the WHY: a typo'd magic prefix must die as a usage
+# error HERE — exit 2, "Invalid pathspec" — not surface as an empty
+# answer downstream, where show_commits' sinks would swallow git's fatal).
+validate_pathspecs_or_die ${pathspecs[@]+"${pathspecs[@]}"}
+
+# Use hug-git-show library for commit display — the full pathspec array
+# (array-compatible interface, same commit's library pass).
+show_commits "$commit_ref" false "$output_format" "$show_stats" ${pathspecs[@]+"${pathspecs[@]}"}
 
 exit 0

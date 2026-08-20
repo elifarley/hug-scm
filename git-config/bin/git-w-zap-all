@@ -27,6 +27,11 @@ Semantics:
   • ALL uncommitted changes (staged or unstaged) will be wiped (as in `hug wipe-all`).
   • ALL untracked and ignored files will be gone for good (as in `hug purge-all -ui`).
   • It's the same as `hug wipe-all; hug purge-all -ui`.
+
+PATH FILTERING:
+  Whole-tree by design — no pathspecs here. To scope, use the non-all
+  form: hug w zap -- <path>.... A pathspec after '--' exits 2 with a
+  pointer to the scoped form. See 'hug help :pathspec'.
 EOF
 }
 
@@ -51,24 +56,28 @@ while [[ $# -gt 0 ]]; do
     show_help
     exit 0
     ;;
-  -*)
-    opt=${1#-}
+  --)
+    # Uniform pathspec contract (#292 PR-C Task 7): the -all variants are
+    # WHOLE-TREE — they collect no pathspecs, so parse_scoped_own_flags does
+    # not apply. A bare trailing separator is inert (consumed here); any
+    # token after it is a filter this form cannot honor → exit 2 with the
+    # whole-tree pointer to the scoped sibling (was: "unknown option: --",
+    # exit 1).
     shift
-    for ((i = 0; i < ${#opt}; ++i)); do
-      char=${opt:i:1}
-      case "$char" in
-      *)
-        error "unknown option: -$char"
-        show_help >&2
-        exit 2
-        ;;
-      esac
-    done
+    if [[ $# -gt 0 ]]; then
+      error_usage "hug w zap-all is whole-tree; use the scoped form to filter: hug w zap -- $1. See 'hug help :pathspec'."
+    fi
+    ;;
+  -*)
+    # Family template (was: exit 1 + char-by-char explosion that reported
+    # only "-x" for "-xX" + a full help dump): one line, exit 2
+    # (HUG_EX_USAGE), the WHOLE token named, remedy included.
+    error_usage "Unknown option: $1. hug w zap-all is whole-tree; use the scoped form to filter: hug w zap -- <path>.... See 'hug help :pathspec'."
     ;;
   *)
-    error "positional arguments are not accepted (zap-all affects the entire repository)"
-    show_help >&2
-    exit 2
+    # Positionals are pathspecs without the separator — same whole-tree
+    # pointer, echoing the user's own token (was: exit 1).
+    error_usage "hug w zap-all is whole-tree; use the scoped form to filter: hug w zap -- $1. See 'hug help :pathspec'."
     ;;
   esac
 done

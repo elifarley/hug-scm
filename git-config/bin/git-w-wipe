@@ -31,6 +31,13 @@ OPTIONS:
   --dry-run    Preview what would be wiped without making changes
   -f, --force  Skip confirmation prompts
 
+PATH FILTERING:
+  Append -- <path>... to restrict the wipe to matching paths
+  (narrowing only — same contract as 'hug w discard', which wipe
+  delegates to). Globs must be quoted; see 'hug help :pathspec'.
+
+  hug w wipe -- file.js           # staged+unstaged changes on file.js only
+
 SEE ALSO:
   hug w wipe-all    # Wipe changes across entire repository
   hug w discard     # Discard unstaged OR staged changes

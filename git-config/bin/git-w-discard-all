@@ -30,6 +30,11 @@ Notes:
   • Without flags, only unstaged changes are discarded (staged changes preserved).
   • Use --staged to discard only staged changes (unstaged changes preserved).
   • Combine -u and -s to discard both staged and unstaged changes.
+PATH FILTERING:
+  Whole-tree by design — no pathspecs here. To scope, use the non-all
+  form: hug w discard -- <path>.... A pathspec after '--' exits 2 with a
+  pointer to the scoped form. See 'hug help :pathspec'.
+
 See also:
   • `w wipe-all` (to discard both staged and unstaged uncommitted changes)
 EOF
@@ -69,15 +74,28 @@ while [[ $# -gt 0 ]]; do
     show_help
     exit 0
     ;;
+  --)
+    # Uniform pathspec contract (#292 PR-C Task 7): the -all variants are
+    # WHOLE-TREE — they collect no pathspecs, so parse_scoped_own_flags does
+    # not apply. A bare trailing separator is inert (consumed here); any
+    # token after it is a filter this form cannot honor → exit 2 with the
+    # whole-tree pointer to the scoped sibling (was: "unknown option: --",
+    # exit 1 — a usage error that never said what to do instead).
+    shift
+    if [[ $# -gt 0 ]]; then
+      error_usage "hug w discard-all is whole-tree; use the scoped form to filter: hug w discard -- $1. See 'hug help :pathspec'."
+    fi
+    ;;
   -*)
-    error "unknown option: $1"
-    show_help >&2
-    exit 2
+    # Family template (was: exit 1 + full help dump): one line, exit 2
+    # (HUG_EX_USAGE), remedy included.
+    error_usage "Unknown option: $1. hug w discard-all is whole-tree; use the scoped form to filter: hug w discard -- <path>.... See 'hug help :pathspec'."
     ;;
   *)
-    error "positional arguments are not accepted (use 'git w discard' for path-specific)"
-    show_help >&2
-    exit 2
+    # Positionals are pathspecs without the separator — same whole-tree
+    # pointer, echoing the user's own token (was: exit 1, and the message
+    # pointed at 'git w discard', not the hug form).
+    error_usage "hug w discard-all is whole-tree; use the scoped form to filter: hug w discard -- $1. See 'hug help :pathspec'."
     ;;
   esac
 done

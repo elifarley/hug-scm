@@ -45,6 +45,11 @@ EXAMPLES:
 TIPS:
   - Resume later with: hug b WIP/YY-MM-DD/HHmm.slug
   - Clean up when finished: hug w unwip WIP/YY-MM-DD/HHmm.slug
+
+PATH FILTERING:
+  No pathspecs here — '--' keeps its DATA meaning: the WIP message.
+  hug w wip -- "-fix"   # the message is "-fix"
+  See 'hug help :pathspec' for which commands accept -- <path>....
 EOF
 }
 
@@ -88,7 +93,11 @@ while (($#)); do
     break
     ;;
   -*)
-    usage_error "Unknown option '$1'."
+    # Exit-2 usage family (#292). Unlike the pathspec commands, the separator
+    # here introduces the MESSAGE, so the remedy shows a placeholder instead
+    # of echoing the flag-shaped token back — a token like -xX is a typo, not
+    # a message the user wants parked.
+    error_usage "Unknown option: $1. Messages beginning with '-' require '--': hug w wip -- \"<message>\". See 'hug help :pathspec'."
     ;;
   *)
     message_parts+=("$1")

@@ -56,9 +56,34 @@ PATHSPEC_CONFORMANCE_ROWS=(sw ss su shc shcp shp l ll cmod cmoda)
 # nothing. `a`'s SELECTION semantics get a dedicated standalone test below
 # (selecting stub), not a shared-column cell.
 PATHSPEC_PICKER_ROWS=(sw ss su a)
-PATHSPEC_LOG_ROWS=(l ll)
-PATHSPEC_SHOW_ROWS=(shc shcp shp)
-PATHSPEC_INERT_ROWS=("${PATHSPEC_LOG_ROWS[@]}" "${PATHSPEC_SHOW_ROWS[@]}")
+# FULL enrollment rosters (membership truth): `llu` and `sh` are enrolled
+# here from PR-C Task 2 on — the master membership-diff row (PR-C section,
+# bottom of file) counts enrollment via THESE arrays.
+PATHSPEC_LOG_ROWS=(l ll llu)
+PATHSPEC_SHOW_ROWS=(shc shcp shp sh)
+# TWO-PHASE ENROLLMENT (PR-C Tasks 10-11): llu graduated in Task 10 and sh
+# in Task 11 — both PENDING subtractions are gone, so the LOG and SHOW
+# column loops below now cover every roster member. The PENDING mechanism
+# itself stays (it cost zero edits per graduation: the migration task just
+# empties its list and the subtractive derivation picks it up).
+PATHSPEC_LOG_PENDING_ROWS=() # (landed, Task 10: llu migrated, #292 PR-C)
+PATHSPEC_SHOW_PENDING_ROWS=() # (landed, Task 11: sh migrated, #292 PR-C)
+PATHSPEC_LOG_ACTIVE_ROWS=()
+for _row in "${PATHSPEC_LOG_ROWS[@]}"; do
+  if [[ " ${PATHSPEC_LOG_PENDING_ROWS[*]} " != *" $_row "* ]]; then
+    PATHSPEC_LOG_ACTIVE_ROWS+=("$_row")
+  fi
+done
+PATHSPEC_SHOW_ACTIVE_ROWS=()
+for _row in "${PATHSPEC_SHOW_ROWS[@]}"; do
+  if [[ " ${PATHSPEC_SHOW_PENDING_ROWS[*]} " != *" $_row "* ]]; then
+    PATHSPEC_SHOW_ACTIVE_ROWS+=("$_row")
+  fi
+done
+unset _row
+# Inert rows ride the ACTIVE derivatives: a pending member in the inert loop
+# would hit psx_inert_args' unknown-row sentinel before its migration.
+PATHSPEC_INERT_ROWS=("${PATHSPEC_LOG_ACTIVE_ROWS[@]}" "${PATHSPEC_SHOW_ACTIVE_ROWS[@]}")
 PATHSPEC_HISTORY_ROWS=(cmod cmoda)
 
 # Characterization rows (Task 4) — assertions of TODAY's behavior for the
@@ -103,6 +128,30 @@ PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
 PATHSPEC_SINGLEFILE_ROWS=(fa fb fblame fborn fcon llf)
 PATHSPEC_SINGLEFILE_DELEGATE_ROWS=(llfp llfs)
 
+# PR-C rosters (spec §5): ONE roster per behavioral class; a PR-C command
+# missing from every column below fails the membership-diff row (PR-C
+# section, bottom of file). Names are ROSTER IDENTIFIERS (script suffixes),
+# not invocation strings — e.g. w-discard runs as `hug w discard` via the
+# w gateway.
+PATHSPEC_W_DESTRUCTIVE_ROWS=(w-discard w-purge w-zap w-wipe)
+PATHSPEC_W_ALL_ROWS=(w-discard-all w-purge-all w-zap-all w-wipe-all)
+PATHSPEC_WIP_ROWS=(w-wip w-unwip w-wipdel)
+# The MASTER is a HAND-WRITTEN LITERAL of all 14 PR-C commands — NEVER
+# derived from the class arrays above. LESSON (review round 1): a derived
+# master makes the membership diff TAUTOLOGICAL — the test's `enrolled` union
+# consumes the same class arrays, so deleting a command from its roster
+# removes it from BOTH sides and the row stays green (verified red-check:
+# deleting w-zap from its roster failed the row by name only AFTER this
+# fix). The expected set must be independent of the arrays it checks.
+PATHSPEC_PRC_MASTER=(
+  w-discard w-purge w-zap w-wipe
+  w-discard-all w-purge-all w-zap-all w-wipe-all
+  w-wip w-unwip w-wipdel
+  w-get sh llu
+)
+# `sh` and `llu` are enrolled via the SHOW/LOG rosters above (two-phase:
+# llu ACTIVE since Task 10, sh ACTIVE since Task 11).
+
 # -----------------------------------------------------------------------------
 # Fixture + harness helpers
 # -----------------------------------------------------------------------------
@@ -145,6 +194,18 @@ setup_pathspec_fixture() {
     git add src/a.py
     echo note2 >> docs/note.md
     echo new > new.txt
+
+    # Upstream anchor for llu (Task 10): a parentless empty-tree commit on a
+    # local branch set as @{u}, UNRELATED to HEAD's history, so @{u}..HEAD =
+    # exactly the fixture's two commits (base + "docs guide only") — llu's
+    # outgoing set, and the log-filter rows stay two-sided through it (the
+    # docs-only commit must vanish under `-- src/`). Same set-upstream-to-
+    # <local-branch> technique as the w-get rows below (probed: @{u} resolves
+    # local branches; an unrelated anchor counts EVERYTHING reachable from
+    # HEAD as outgoing).
+    anchor=$(git commit-tree "$(git hash-object -w -t tree /dev/null)" -m "upstream anchor")
+    git branch llu-anchor "$anchor"
+    git branch --set-upstream-to=llu-anchor >/dev/null
   ) >/dev/null 2>"$log"; then
     echo "psx fixture setup FAILED (repo: $repo) — stderr log: $log" >&2
     cat "$log" >&2
@@ -240,8 +301,8 @@ teardown() {
 # test loudly) plus a stderr breadcrumb naming the row.
 psx_inert_args() {
   case "$1" in
-  l | ll) : ;;
-  shc | shcp | shp) echo "HEAD~1" ;;
+  l | ll | llu) : ;;
+  shc | shcp | shp | sh) echo "HEAD~1" ;;
   *)
     echo "psx_inert_args: unknown row '$1' — add it to the case arms" >&2
     echo "__PSX_UNKNOWN_ROW__"
@@ -339,7 +400,7 @@ psx_sl_kind() {
 }
 
 @test "column pathspec-filter: log commands (log rows)" {
-  for cmd in "${PATHSPEC_LOG_ROWS[@]}"; do
+  for cmd in "${PATHSPEC_LOG_ACTIVE_ROWS[@]}"; do
     psx_setup
     # The docs-only commit is the non-matching marker: it must vanish under
     # `-- src/` while the base commit (which touched src/) stays.
@@ -352,7 +413,7 @@ psx_sl_kind() {
 }
 
 @test "column pathspec-filter: show commands (show rows)" {
-  for cmd in "${PATHSPEC_SHOW_ROWS[@]}"; do
+  for cmd in "${PATHSPEC_SHOW_ACTIVE_ROWS[@]}"; do
     psx_setup
     # HEAD~1 is "base" (touched src/); filter to src/, docs/note.md is the
     # non-matching marker.
@@ -402,7 +463,7 @@ psx_sl_kind() {
 }
 
 @test "column glob-filter: log commands (log rows)" {
-  for cmd in "${PATHSPEC_LOG_ROWS[@]}"; do
+  for cmd in "${PATHSPEC_LOG_ACTIVE_ROWS[@]}"; do
     psx_setup
     # '*.py' matches base's src files; the docs-only commit has none.
     run hug "$cmd" -- '*.py'
@@ -414,7 +475,7 @@ psx_sl_kind() {
 }
 
 @test "column glob-filter: show commands (show rows)" {
-  for cmd in "${PATHSPEC_SHOW_ROWS[@]}"; do
+  for cmd in "${PATHSPEC_SHOW_ACTIVE_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" HEAD~1 -- '*.md'
     assert_success
@@ -672,7 +733,7 @@ psx_install_stub_gum() {
 }
 
 @test "column magic-pathspec: show commands (show rows)" {
-  for cmd in "${PATHSPEC_SHOW_ROWS[@]}"; do
+  for cmd in "${PATHSPEC_SHOW_ACTIVE_ROWS[@]}"; do
     psx_setup
     # :(icase): 'src/big.py' must match src/BIG.py in the base commit.
     run hug "$cmd" HEAD~1 -- ':(icase)src/big.py'
@@ -1504,8 +1565,11 @@ psx_install_stub_gum() {
   psx_reset
 
   # Cell 3 — `-u` alone with NO upstream: get_upstream_commit's loud error
-  # (spec §5.2 lists the no-upstream case explicitly).
+  # (spec §5.2 lists the no-upstream case explicitly). The shared fixture
+  # gained an upstream anchor for llu (Task 10), so "no upstream" is now an
+  # explicit precondition of this cell, not the fixture default.
   psx_setup
+  git branch --unset-upstream
   run hug w get -u
   assert_failure
   assert_output --partial "No upstream branch configured"
@@ -1523,8 +1587,12 @@ psx_install_stub_gum() {
   grep -q py2 src/a.py # unchanged by the dry run
   psx_reset
 
-  # Cell 5 — BUG-4: a file literally named `-weird` restores safely (the
-  # restore gains an explicit `--` so dash-leading paths are never flags).
+  # Cell 5 — BUG-4 (flipped by the uniform pathspec contract, #292 PR-C):
+  # the restore KEEPS its explicit `--` so dash-leading PATHS stay data,
+  # but a pre-'--' dash token is now a LOUD unknown-option error (exit 2),
+  # never a silently-accepted file name — reach such files via the
+  # separator form. (Was: `w get HEAD~1 -weird` restored directly, and a
+  # TYPO'd flag in that slot was indistinguishable from a file name.)
   psx_setup
   echo wbase > ./-weird
   git add -- -weird
@@ -1532,6 +1600,9 @@ psx_install_stub_gum() {
   echo wdiverged > ./-weird
   git commit -q -am "diverge -weird"
   run hug w get HEAD~1 -weird
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -weird"
+  run hug w get HEAD~1 -- -weird
   assert_success
   assert_equal "wbase" "$(cat ./-weird)"
   psx_reset
@@ -1562,42 +1633,44 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "contract sh: second positional rejected loudly, naming the argument (BUG-6 fixed, Task 9)" {
-  # Contract (was characterization, flipped by Task 9): `sh HEAD -- src/`
-  # and `sh HEAD src/` are rejected because hug sh accepts ONE commit
-  # reference. The error must name the stray argument ("unexpected extra
-  # argument: 'src/'") and must NOT fall back to the old confusing
-  # "Invalid commit reference" ref-validation failure.
+@test "contract sh (Task 11): pathspecs after the ref scope the details (BUG-6 rows flipped)" {
+  # Contract (was the Task-9 BUG-6 rejection, flipped by Task 11, #292
+  # PR-C): `sh HEAD~1 -- src/` and the bare-positional spelling
+  # `sh HEAD~1 src/` are EQUIVALENT and scope the run — ref + details
+  # filtered to the path (two-sided: base's src/a.py in, its docs/note.md
+  # out). Was: "hug sh accepts one commit reference; unexpected extra
+  # argument: 'src/'", exit 1.
   psx_setup
-  run hug sh HEAD -- src/
-  assert_failure
-  assert_output --partial "unexpected extra argument"
-  assert_output --partial "src/"
-  refute_output --partial "Invalid commit reference"
+  run hug sh HEAD~1 -- src/
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "unexpected extra argument"
   psx_reset
 
   psx_setup
-  run hug sh HEAD src/
-  assert_failure
-  assert_output --partial "unexpected extra argument"
-  assert_output --partial "src/"
-  refute_output --partial "Invalid commit reference"
+  run hug sh HEAD~1 src/
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "unexpected extra argument"
   psx_reset
 }
 
-@test "contract sh: empty first positional + path still rejected loudly (BUG-6, review fix)" {
-  # Contract (added after dual review): the guard must count POSITIONALS,
-  # not ref content. `hug sh "" src/` (realistic: `hug sh "$ref" -- "$path"`
-  # with an unset/empty ref) previously slipped past the -n guard, let the
-  # path overwrite the empty ref, and died with the old confusing
-  # "Invalid commit reference". Must get the named rejection instead.
-  # Companion invariant: `hug sh ""` ALONE still defaults to HEAD (probed).
+@test "contract sh (Task 11): empty first positional defaults to HEAD, path still scopes (BUG-6 review-fix row flipped)" {
+  # Contract (was the BUG-6 review-fix rejection, flipped by Task 11): the
+  # positional-COUNT guard lesson survives as bookkeeping only — `hug sh ""
+  # src/` (realistic: `hug sh "$ref" -- "$path"` with an unset/empty ref)
+  # keeps the EMPTY ref (→ HEAD default via resolve_commit_ref) AND
+  # collects the path. HEAD here is the docs-only commit, so a src/ scope
+  # leaves its stats empty — pinned honestly: subject present, the
+  # out-of-scope docs/guide.md absent.
   psx_setup
   run hug sh "" src/
-  assert_failure
-  assert_output --partial "unexpected extra argument"
-  assert_output --partial "src/"
-  refute_output --partial "Invalid commit reference"
+  assert_success
+  assert_output --partial "docs guide only"
+  refute_output --partial "docs/guide.md"
+  refute_output --partial "unexpected extra argument"
   psx_reset
 
   psx_setup
@@ -1607,14 +1680,24 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization llu: -- rejected loudly by flags-only parser (flip: PR-C)" {
-  # characterization: flip target PR-C — probed: git-llu's flags-only loop
-  # (git-llu:104) rejects the separator it should honor: "Unknown option:
-  # --" + usage hint, exit 1. Pathspec filtering is unreachable today.
+@test "contract llu (Task 10): loud rejections — unknown flag and malformed magic, exit 2" {
+  # Contract (was characterization, flipped by Task 10, #292 PR-C): the old
+  # flags-only loop rejected EVERYTHING it did not know with exit 1 — the
+  # separator ("Unknown option: --"), typo'd flags AND malformed magic
+  # pathspecs indistinguishably. Now: unknown -* → family usage template
+  # (exit 2); ':(bogus)' → validate_pathspecs_or_die (exit 2, "Invalid
+  # pathspec"), matching the sl* family shape.
   psx_setup
-  run hug llu -- src/
-  assert_failure
-  assert_output --partial "Unknown option: --"
+  run hug llu -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  assert_output --partial "hug llu -- -xX"
+  psx_reset
+
+  psx_setup
+  run hug llu -- ':(bogus)x/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
   psx_reset
 }
 
@@ -2263,15 +2346,17 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization w discard: unknown flag swallowed (exit 0); bare '--' opens picker" {
-  # characterization — column-6 defect: probed — `-xX` becomes a pathspec in
-  # parse_common_flags' fallback loop, matches nothing, exit 0 "Nothing to
-  # discard" (silent swallow; flip target: #292). The picker arm matches the
-  # `a`/sw family: exit 0 + "No files selected."
+@test "characterization w discard: unknown flag loud (exit 2); bare '--' opens picker" {
+  # FLIPPED in Task 3 (#292 PR-C, with the w-discard migration): `-xX` used
+  # to become a pathspec in parse_common_flags' fallback loop, matching
+  # nothing, exit 0 "Nothing to discard" (silent swallow). The own-loop's
+  # loud -* arm now rejects it, exit 2 family template. The picker arm
+  # keeps matching the `a`/sw family: exit 0 + "No files selected."
   psx_setup
   run hug w discard -xX
-  assert_success
-  assert_output --partial "Nothing to discard"
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Nothing to discard"
   psx_reset
 
   psx_setup
@@ -2284,8 +2369,12 @@ psx_install_stub_gum() {
 @test "characterization w purge: untracked pathspec filter + loud tracked-path refusal" {
   # characterization: probed — `--dry-run new.txt` previews exactly the
   # untracked file (separator form equivalent); a pathspec COVERING a tracked
-  # file ('.') is refused loudly (exit 1, "tracked or has staged changes");
-  # `-xX` is swallowed as a path (exit 0 "Nothing to purge"; flip: #292).
+  # file ('.') is refused loudly ("tracked or has staged changes"; exit
+  # flipped 1→2 by the Task 4 migration, family usage-error template).
+  # `-xX` FLIPPED in Task 4 (#292 PR-C, with the w-purge migration): used
+  # to become a pathspec in parse_common_flags' fallback loop, matching
+  # nothing, exit 0 "Nothing to purge" (silent swallow). The own-loop's
+  # loud -* arm now rejects it, exit 2 family template.
   psx_setup
   run hug w purge --dry-run new.txt
   assert_success
@@ -2307,15 +2396,17 @@ psx_install_stub_gum() {
 
   psx_setup
   run hug w purge -xX
-  assert_success
-  assert_output --partial "Nothing to purge"
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Nothing to purge"
   psx_reset
 }
 
-@test "characterization w wipe: delegation to discard — filter + swallow inherit" {
+@test "characterization w wipe: delegation to discard — filter + loud rejection inherit" {
   # characterization: probed — wipe = `w discard -u -s "$@`, so the pathspec
-  # filter and the "-xX → Nothing to discard" swallow are BOTH inherited
-  # from discard (flip: #292, with discard).
+  # filter is inherited from discard, and (FLIPPED in Task 3, #292 PR-C) the
+  # "-xX → Nothing to discard" swallow inherited the loud exit-2 rejection
+  # the same way.
   psx_setup
   run hug w wipe --dry-run docs/
   assert_success
@@ -2327,16 +2418,20 @@ psx_install_stub_gum() {
 
   psx_setup
   run hug w wipe -xX
-  assert_success
-  assert_output --partial "Nothing to discard"
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Nothing to discard"
   psx_reset
 }
 
-@test "characterization w zap: combined preview, scoped filter, and swallow" {
+@test "characterization w zap: combined preview, scoped filter, and loud rejection" {
   # characterization: probed — `zap --dry-run .` previews all three buckets
   # (staged src/a.py, unstaged docs/note.md, untracked new.txt); a scoped
-  # pathspec narrows to that file only; `-xX` is swallowed (exit 0 "Nothing
-  # to zap"; flip: #292).
+  # pathspec narrows to that file only. `-xX` FLIPPED in Task 5 (#292
+  # PR-C, with the w-zap migration): used to become a pathspec in
+  # parse_common_flags' fallback loop, matching nothing, exit 0 "Nothing
+  # to zap" (silent swallow). The shared helper's loud -* arm now rejects
+  # it, exit 2 family template.
   psx_setup
   run hug w zap --dry-run .
   assert_success
@@ -2356,8 +2451,9 @@ psx_install_stub_gum() {
 
   psx_setup
   run hug w zap -xX
-  assert_success
-  assert_output --partial "Nothing to zap"
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Nothing to zap"
   psx_reset
 }
 
@@ -2390,9 +2486,11 @@ psx_install_stub_gum() {
   assert_output --partial "Dry run — no files were modified."
   psx_reset
 
-  # Cell 3 — '-u' AFTER the separator is a FILE name, not the flag: the
-  # non-upstream specific-files restore proceeds for a file literally
-  # named '-u' (same shape as the '-weird' regression cell).
+  # Cell 3 — '-u' AFTER the separator (flipped by the uniform pathspec
+  # contract, #292 PR-C): an EXACT own-flag spelling post-'--' is a
+  # misordered flag, not data — exit 2 with the family template. (Was:
+  # restored a file literally named '-u'; such a file remains reachable
+  # ONLY as './-u', the exact-spelling rule's documented escape hatch.)
   psx_setup
   echo ubase > ./-u
   git add -- -u
@@ -2400,6 +2498,10 @@ psx_install_stub_gum() {
   echo udiverged > ./-u
   git commit -q -am "diverge -u"
   run hug w get HEAD~1 -- -u
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w get -u"
+  refute_output --partial "Will reset"
+  run hug w get HEAD~1 -- ./-u
   assert_success
   assert_equal "ubase" "$(cat ./-u)"
   psx_reset
@@ -2703,4 +2805,1169 @@ psx_install_stub_gum() {
   assert_success
   assert_output --partial "No files matching 'src/' to unstage."
   psx_reset
+}
+
+###############################################################################
+# PR-C Task 1 (#292): the `w` GATEWAY is a contract pass-through, not a
+# pathspec command itself — but its wips arm INJECTED a flag after the user's
+# args, past their `--`, so 'w wips -- "draft"' drained the injected --stay
+# into the message (branch WIP/….draftstay, stay never applied). Post-
+# migration that same order would exit 2 on a flag hug itself injected.
+# Gateway rule: injected flags belong in the FLAG ZONE, before the user's
+# data. The unknown-subcommand arm printed usage but fell through to exit 0.
+###############################################################################
+
+@test "gateway w: wips prepends --stay so post--- data stays the message (#292 PR-C)" {
+  psx_setup
+  # Fixture has pending changes (staged src/a.py + unstaged docs/note.md),
+  # so w-wip has work to park.
+  run hug w wips -- "draft"
+  assert_success
+  refute_output --partial "draftstay"
+  # Branch slug carries ONLY the user's message...
+  run git branch --list "WIP/*"
+  assert_output --partial "draft"
+  refute_output --partial "stay"
+  # ...and stay semantics applied: we REMAIN on the WIP branch (probed:
+  # pre-fix the gateway's trailing --stay was swallowed as message text and
+  # w-wip switched back to the original branch).
+  [[ "$(git branch --show-current)" == WIP/* ]]
+  psx_reset
+}
+
+@test "gateway w: unknown subcommand exits 2, not 0 (#292 PR-C)" {
+  psx_setup
+  run hug w badcmd
+  [[ "$status" -eq 2 ]]
+  assert_output --partial "Usage: hug w <command>"
+  psx_reset
+}
+
+@test "gateway w: discard -- <path> passes through to w-discard untouched (#292 PR-C)" {
+  psx_setup
+  # Characterization: the gateway forwards args verbatim; the pathspec
+  # reaches w-discard's listing (non-TTY cancels before mutating, so the
+  # unstaged mod survives as the two-sided witness).
+  run hug w discard -- docs/note.md
+  assert_failure
+  assert_output --partial "docs/note.md"
+  assert_output --partial "Cancelled."
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
+
+@test "gateway w: --help / -h print usage and exit 0 (#292 PR-C review)" {
+  # Review catch: the new unknown-subcommand exit-2 arm also catches
+  # -h/--help. Every hug command documents help at exit 0, and the OLD
+  # fall-through was exit 0 — help must stay in the success family.
+  # GOTCHA: invoked through `hug w`, git itself intercepts `--help`
+  # (runs `man git-w`, exit 16 — probed, unchanged by this PR), so the
+  # gateway's help arm is only reachable by direct script invocation —
+  # hence $HUG_BIN here, matching how test_helper pins the worktree.
+  psx_setup
+  run "$HUG_BIN/git-w" --help
+  [[ "$status" -eq 0 ]]
+  assert_output --partial "Usage: hug w <command>"
+  run "$HUG_BIN/git-w" -h
+  [[ "$status" -eq 0 ]]
+  assert_output --partial "Usage: hug w <command>"
+  psx_reset
+}
+
+###############################################################################
+# PR-C ENROLLMENT (Task 2, #292): the w family + llu + sh join the suite
+# BEFORE any of them migrates (Tasks 3-11). Two artifacts live here:
+#   1. the master membership diff — closes the PR-A under-transcription trap
+#      (8 commands silently untested) by RULE: `enrolled` is DERIVED from the
+#      same arrays the column loops consume, never a hand-coded copy (a copy
+#      stays green when a command falls out of its column; codex #3815936629);
+#   2. characterization rows pinning TODAY's correct behavior (green now),
+#      plus the staged RED rows at the very bottom (commented out — each
+#      migration task uncomments its own rows in ITS commit, so CI never
+#      carries a red row).
+###############################################################################
+
+@test "PR-C master roster: every command enrolled in >=1 column" {
+  # Derived, never copied: the enrolled set is the union of the SAME arrays
+  # the column tests above consume (plus w-get's dedicated rows). A PR-C
+  # command that falls out of every column fails HERE by name.
+  local -a enrolled=("${PATHSPEC_W_DESTRUCTIVE_ROWS[@]}"
+                     "${PATHSPEC_W_ALL_ROWS[@]}"
+                     "${PATHSPEC_WIP_ROWS[@]}"
+                     "${PATHSPEC_SHOW_ROWS[@]}"
+                     "${PATHSPEC_LOG_ROWS[@]}"
+                     w-get)
+  local -A seen=()
+  local c
+  for c in "${enrolled[@]}"; do seen["$c"]=1; done
+  local orphan=()
+  for cmd in "${PATHSPEC_PRC_MASTER[@]}"; do
+    [[ -n "${seen[$cmd]:-}" ]] || orphan+=("$cmd")
+  done
+  [[ ${#orphan[@]} -eq 0 ]] || fail "PR-C roster orphan(s): ${orphan[*]} — enroll in a column loop"
+}
+
+@test "characterization PR-C: w wipe <file> non-TTY confirm-cancel keeps the file (#292)" {
+  # Probed: non-interactive `w wipe root.txt` previews the scoped unstaged
+  # path, then cancels (exit 1) — the destructive op NEVER runs. The cancel
+  # wording differs by gum branch (gum installed: gum's TTY failure +
+  # "Cancelled."; gum absent: "Non-interactive environment: cancelled.") —
+  # the shared stem "ancelled" pins BOTH. Two-sided: root.txt survives as an
+  # unstaged mod.
+  psx_setup
+  echo r1 > root.txt
+  git add root.txt
+  git commit -q -m "add root.txt"
+  echo r2 >> root.txt
+  run hug w wipe root.txt
+  assert_failure
+  assert_output --partial "Unstaged paths"
+  assert_output --partial "root.txt"
+  assert_output --partial "ancelled"
+  run git status --porcelain -- root.txt
+  [[ "$output" == " M"* ]]
+  psx_reset
+}
+
+@test "contract w-wipe (Task 6): delegation end-to-end — misordered flag, exact spelling, scoped glob, bare--- disposition (#292)" {
+  # wipe is PURE delegation: `exec hug w discard -u -s "$@"`
+  # (git-config/bin/git-w-wipe:46) — every arg path flows to discard, so
+  # Task 3's discard migration carries wipe's contract flips for free.
+  # These rows pin the DELEGATION boundary itself (probed, 152fdf63):
+  # discard's parse layer fires with discard's own name in the remedy —
+  # RATIFIED note-and-accept (#292 PR-C): the delegation is honest, the
+  # message correctly names the command whose parser rejected the input.
+
+  psx_setup
+  # Misordered flag: '--dry-run' after the separator is a flag, not data —
+  # the message names `hug w discard` (the delegate's parser), pinned as
+  # probed. Pre-contract this silently became pathspecs and ran the
+  # destructive confirm path (same class as zap's cell above).
+  run hug w wipe -- src/ --dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w discard --dry-run"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # staged mod intact — nothing touched
+  psx_reset
+
+  psx_setup
+  # EXACT spellings only — a tracked file literally named '--dry-run',
+  # spelled './--dry-run' after the separator, is DATA: the preview lists
+  # it (discard's row pins the same for discard itself; this proves the
+  # delegation does not smuggle it into the engine's flag matcher).
+  echo dr1 > ./--dry-run
+  git add -- ./--dry-run
+  git commit -q -m "file named --dry-run" -- ./--dry-run
+  echo dr2 >> ./--dry-run
+  run hug w wipe --dry-run -- ./--dry-run
+  assert_success
+  assert_output --partial "--dry-run"
+  refute_output --partial "Flags must precede"
+  psx_reset
+
+  psx_setup
+  # Scoped GLOB two-sided DESTRUCTION: ':(glob)src/**.py' narrows the wipe
+  # to src/a.py — BOTH its deltas (staged + unstaged) go, content returns
+  # to committed 'py1', src/ is clean; every out-of-scope change survives
+  # (unstaged docs/note.md mod, untracked new.txt).
+  run hug w wipe -f -- ':(glob)src/**.py'
+  assert_success
+  assert_output --partial "src/a.py"
+  assert_equal "py1" "$(cat src/a.py)"
+  run git status --porcelain -- src/
+  [[ -z "$output" ]] # both buckets wiped, no residue
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]] # out-of-scope unstaged mod survives
+  [[ -e new.txt ]] # out-of-scope untracked survives
+  psx_reset
+
+  psx_setup
+  # Separator-form scoped preview: '--dry-run -- docs/' previews ONLY the
+  # unstaged docs/note.md; the staged src/a.py never appears.
+  run hug w wipe --dry-run -- docs/
+  assert_success
+  assert_output --partial "docs/note.md"
+  refute_output --partial "src/a.py"
+  psx_reset
+
+  # No-args arm and trailing bare '--' share ONE disposition (probed):
+  # both open discard's picker; non-TTY the picker yields no selection —
+  # "No files selected." (stem covers the cancel branch "or cancelled."),
+  # exit 0, tree untouched. The bare '--' never becomes a phantom pathspec
+  # and never fires the misordered-flag matcher (contrast the row above).
+  psx_setup
+  run hug w wipe
+  assert_success
+  assert_output --partial "No files selected"
+  run hug w wipe --
+  assert_success
+  assert_output --partial "No files selected"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # staged mod intact
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]] # unstaged mod intact
+  psx_reset
+}
+
+@test "characterization PR-C: w wip -- '-fix' keeps the message a message (#292)" {
+  # Probed: the separator protects the dash-leading MESSAGE from flag
+  # parsing — the WIP branch slug ends in '.fix' (slugified '-fix'), exit 0.
+  # If the '--' were dropped, '-fix' would die as an unknown option instead.
+  psx_setup
+  run hug w wip -- "-fix"
+  assert_success
+  run git branch --list 'WIP/*' --format='%(refname:short)'
+  [[ "$output" == WIP/*.fix ]]
+  psx_reset
+}
+
+@test "characterization PR-C: w unwip -- WIP/... receives the branch name (#292)" {
+  # Probed: create a WIP first (`w wip -- unit`), then the separator form
+  # delivers the WIP/ branch name as the POSITIONAL (not a flag): the unpark
+  # preview names the exact branch and, non-interactively, refuses to apply
+  # (exit 1) leaving the WIP branch in place. A dropped '--' would instead
+  # error "Branch '-' does not exist"-style or print help.
+  psx_setup
+  hug w wip -- "unit" >/dev/null 2>&1
+  local br
+  br=$(git branch --list 'WIP/*' --format='%(refname:short)')
+  [[ -n "$br" ]]
+  run hug w unwip -- "$br"
+  assert_failure
+  assert_output --partial "Unparking"
+  assert_output --partial "$br"
+  run git branch --list 'WIP/*' --format='%(refname:short)'
+  [[ "$output" == *"$br"* ]] # not deleted — the cancel path
+  psx_reset
+}
+
+@test "characterization PR-C: w get HEAD -- src/ scoped flow names scope and target (#292)" {
+  # Probed: the separator form runs the scoped restore flow — "Will reset
+  # files to commit HEAD" names the target, the scope check names ONLY
+  # src/a.py (docs/note.md, out of scope, never appears), and the dirty-tree
+  # guard refuses (exit 1) before mutating anything.
+  psx_setup
+  run hug w get HEAD -- src/
+  assert_failure
+  assert_output --partial "Will reset files to commit HEAD"
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M"* ]] # staging state untouched by the refusal
+  psx_reset
+}
+
+@test "characterization PR-C: w zap src/ --dry-run honors the flag after the pathspec (#292)" {
+  # Probed: position-independent --dry-run — the flag AFTER the positional
+  # pathspec is still parsed as a flag (not a second pathspec): dry-run
+  # preview scoped to src/ (staged src/a.py only), exit 0, tree untouched.
+  psx_setup
+  run hug w zap src/ --dry-run
+  assert_success
+  assert_output --partial "Dry run"
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "new.txt"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M"* ]]
+  psx_reset
+}
+
+###############################################################################
+# RED rows staged for PR-C migrations (Tasks 3-11) — each row lands in the
+# SAME commit as the migration that flips it (landing it early would break
+# CI). Landed so far: Task 3 (w-discard; w-wipe flips by delegation), Task
+# 4 (w-purge), Task 5 (w-zap, on the shared parse_scoped_own_flags
+# helper), Task 7 (the w-*-all whole-tree family — own-loop hygiene, no
+# pathspec collection; wipe-all gets its OWN loop so its rejections name
+# wipe, not the discard-all engine it execs), the w-get migration (PR-C
+# plan Task 9; its staged marker below is numbered 6 and KEEPS that number
+# so the guard set {3 4 5 6 10 11} stays stable).
+# Remaining staged rows keep the FLIPS-IN-TASK-N prefix; the guard test
+# below keeps the block from being lost. Current (probed, pre-migration)
+# behavior for each is already pinned green by the characterization rows in
+# the closing-fix section above (w discard/purge/zap/wipe) and the
+# characterization llu / contract sh rows.
+###############################################################################
+
+# FLIPS-IN-TASK-3 (landed, w-discard migration): w-discard/w-wipe unknown
+# flag must exit 2 with the family template (was: silently swallowed as a
+# pathspec — "Nothing to discard", exit 0). w-wipe flips by delegation
+# (wipe = `w discard -u -s "$@"`).
+@test "contract w-destructive (Task 3, discard+wipe): -xX loud, exit 2, never a pathspec" {
+  local cmd msg
+  for cmd in discard wipe; do
+    msg="Nothing to discard"
+    psx_setup
+    run hug w "$cmd" -xX
+    assert_equal 2 "$status"
+    assert_output --partial "Unknown option: -xX"
+    refute_output --partial "$msg"
+    psx_reset
+  done
+}
+
+# FLIPS-IN-TASK-3 remainder (purge landed in Task 4, #292 PR-C, with the
+# w-purge migration): same rejection, same template — purge used to
+# swallow '-xX' as a pathspec (exit 0 "Nothing to purge").
+@test "contract w-destructive (Task 4, purge): -xX loud, exit 2, never a pathspec" {
+  psx_setup
+  run hug w purge -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Nothing to purge"
+  psx_reset
+}
+
+# FLIPS-IN-TASK-5 (landed, w-zap migration): zap used to swallow '-xX'
+# as a pathspec (exit 0 "Nothing to zap") — the shared helper's loud -*
+# arm rejects it, same family template.
+@test "contract w-destructive (Task 5, zap): -xX loud, exit 2, never a pathspec" {
+  psx_setup
+  run hug w zap -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Nothing to zap"
+  psx_reset
+}
+
+@test "contract w-zap (Task 5): scoped zap — validation, separator, two-sided scope, OQ cells" {
+  # Full contract adoption (#292 PR-C Task 5, on the shared
+  # parse_scoped_own_flags helper — w-zap has NO own flags, so the helper
+  # provides only the loud -* arm and the common-spelling matcher): loud
+  # typo'd magic, post-'--' flag rejection (THE dangerous receipt: the
+  # dry-run used to be silently swallowed and zap ran the DESTRUCTIVE
+  # confirm path — probed pre-migration: exit 1 non-TTY cancel was the
+  # only thing that saved the tree), scoped two-sided destruction, and
+  # the OQ-1 cell.
+  psx_setup
+  # Typo'd magic prefix: git's own fatal + hug usage remedy, exit 2 — never
+  # a silent "Nothing to zap" (was: exit 0, a silent empty zap set hiding
+  # the typo entirely). Nothing removed (untracked file intact).
+  run hug w zap -- ':(exlude)x/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  refute_output --partial "Nothing to zap"
+  run git status --porcelain -- new.txt
+  [[ "$output" == "??"* ]]
+  psx_reset
+
+  psx_setup
+  # THE dangerous receipt: '--dry-run' after the separator is a misordered
+  # flag, not data. Pre-migration probe: `hug w zap -- src/ --dry-run`
+  # silently became pathspecs 'src/ --dry-run', dry_run stayed FALSE, and
+  # zap ran the WIPE engine's destructive confirm preview (non-TTY cancel,
+  # exit 1) — the preview was not merely skipped, the DESTRUCTIVE path
+  # ran. Now: exit 2 before anything touches the tree.
+  run hug w zap -- src/ --dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # staged mod intact
+  psx_reset
+
+  # -h/--help post-'--' (same silent-swallow class — 'hug w zap -- --help'
+  # used to answer "Nothing to zap" exit 0, probed).
+  psx_setup
+  run hug w zap -- --help
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  refute_output --partial "Nothing to zap"
+  psx_reset
+
+  psx_setup
+  run hug w zap -- -h
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  refute_output --partial "Nothing to zap"
+  psx_reset
+
+  # EXACT spellings only — composed-contract cell (probed): an untracked
+  # file literally named '--dry-run', spelled './--dry-run' after the
+  # separator, is DATA at zap's own parse layer (no rejection there), but
+  # git porcelain normalizes it to the bare '--dry-run' spelling before
+  # the purge-engine delegation — and the ENGINE's matcher (same helper,
+  # same invariant) refuses that exact spelling, exit 2, nothing removed.
+  # Fail-closed by construction: delegation cannot smuggle a flag-spelled
+  # filename past an engine's own matcher.
+  psx_setup
+  echo dr1 > ./--dry-run
+  run hug w zap --dry-run -- ./--dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w purge --dry-run"
+  [[ -e ./--dry-run ]] # nothing removed
+  psx_reset
+
+  psx_setup
+  # Scoped dry-run preview, two-sided: 'src/' narrows to the staged mod;
+  # the unstaged docs/note.md and untracked new.txt never appear.
+  run hug w zap --dry-run -- src/
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  refute_output --partial "new.txt"
+  psx_reset
+
+  psx_setup
+  # Two-sided scoped DESTRUCTION: 'docs/' carries an unstaged mod and an
+  # untracked file — `zap -f -- docs/` wipes BOTH in-scope buckets (note.md
+  # back to its committed content, junk gone) while EVERY out-of-scope
+  # change survives (untracked new.txt, staged src/a.py). Both engines
+  # (wipe via discard, purge) read the ONE validated pathspec array.
+  echo junk > docs/junk.txt
+  run hug w zap -f -- docs/
+  assert_success
+  run cat docs/note.md
+  assert_output "note1" # unstaged mod wiped, committed content restored
+  [[ ! -e docs/junk.txt ]] # in-scope untracked purged
+  [[ -e new.txt ]] # out-of-scope untracked survives
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # out-of-scope staged mod survives
+  psx_reset
+
+  # OQ-1 cell (probed, pinned): a trailing bare '--' opens the picker arm
+  # — non-TTY it answers "Non-interactive mode: Provide files as
+  # arguments.", exit 1, IDENTICAL to bare `hug w zap` (the --picker
+  # split mode preserves the trigger; the bare '--' never becomes a
+  # phantom pathspec).
+  psx_setup
+  run hug w zap --
+  assert_equal 1 "$status"
+  assert_output --partial "Non-interactive mode"
+  refute_output --partial "Nothing to zap"
+  psx_reset
+}
+
+@test "contract w-destructive (Task 5, helper): sync-guard across discard/purge/zap" {
+  # ONE row set proving the shared parse_scoped_own_flags matcher for all
+  # three family commands (supersedes the per-command sync-guard loops —
+  # the matcher is helper-owned now, so the invariant is proven at the
+  # helper level, once per command): every spelling of own ∪ common flags
+  # dies exit 2 post-'--'. w-zap has NO own flags — common set only.
+  local cmd f
+  local -a spellings
+  for cmd in discard purge zap; do
+    spellings=(--dry-run -f --force -y --yes --browse-root -q --quiet -h --help)
+    case "$cmd" in
+    discard) spellings+=(-u --unstaged -s --staged) ;;
+    purge) spellings+=(-u --untracked -i --ignored) ;;
+    esac
+    for f in "${spellings[@]}"; do
+      psx_setup
+      run hug w "$cmd" -- "$f"
+      assert_equal 2 "$status"
+      assert_output --partial "Flags must precede '--'"
+      psx_reset
+    done
+  done
+}
+
+@test "contract w-purge (Task 4): scoped purge — validation, separator, two-sided scope, OQ cells" {
+  # Full contract adoption (#292 PR-C Task 4, family template on
+  # git-w-discard, the canonical Task 3 migration): loud typo'd magic,
+  # post-'--' flag rejection, scoped exclude dry-run two-sided, and the
+  # OQ-1/OQ-2 cells. Excluded dir is 'gen/' not 'build/' — the developer's
+  # global gitignore ignores build/ (Task 3 LESSON).
+  psx_setup
+  # Typo'd magic prefix: git's own fatal + hug usage remedy, exit 2 — never
+  # a silent "Nothing to purge" (was: exit 0, a silent empty purge set
+  # hiding the typo entirely).
+  run hug w purge -- ':(exlude)x/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  refute_output --partial "Nothing to purge"
+  run git status --porcelain -- new.txt
+  [[ "$output" == "??"* ]] # nothing removed (untracked file intact)
+  psx_reset
+
+  psx_setup
+  # Post-'--' flag rejection: '--dry-run' after the separator is a
+  # misordered flag, not data (was: silently became a pathspec and the
+  # preview answered a false "Nothing to purge"). EXACT spellings only —
+  # './--dry-run' stays a filename (pinned in the row below).
+  run hug w purge -- src/ --dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  psx_reset
+
+  # -h/--help post-'--' (same silent-swallow class — 'hug w purge --
+  # --help' used to answer "Nothing to purge" exit 0, hiding the
+  # misordered flag entirely).
+  psx_setup
+  run hug w purge -- --help
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  refute_output --partial "Nothing to purge"
+  psx_reset
+
+  psx_setup
+  run hug w purge -- -h
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  refute_output --partial "Nothing to purge"
+  psx_reset
+
+  # Per-command sync-guard loop RETIRED (Task 5): the matcher is
+  # helper-owned now (parse_scoped_own_flags) — the invariant is proven
+  # once for all three family commands by the tri-command row
+  # "contract w-destructive (Task 5, helper): sync-guard across
+  # discard/purge/zap" above.
+
+  # EXACT spellings only: an UNTRACKED file literally named '--dry-run',
+  # spelled './--dry-run' after the separator, is DATA — the preview lists
+  # it, no rejection. (Untracked, not tracked: purge's engine refuses
+  # pathspecs covering tracked files — see the OQ-2 refusal cell below.)
+  # Oracle strength (Task 4 review): the bare '--dry-run' substring alone
+  # is weak — it also appears inside the rejection message. 'Untracked (1)'
+  # is the preview's bucket header: it proves the token was LISTED as data.
+  psx_setup
+  echo dr1 > ./--dry-run
+  run hug w purge --dry-run -- ./--dry-run
+  assert_success
+  assert_output --partial "Untracked (1)"
+  assert_output --partial "--dry-run"
+  refute_output --partial "Flags must precede"
+  refute_output --partial "Nothing to purge"
+  psx_reset
+
+  psx_setup
+  # Scoped exclude-magic dry-run, two-sided: with untracked junk inside
+  # gen/ and new.txt outside it, ':(exclude)gen/' previews ONLY the outside
+  # file. src/ and docs/ are ALSO excluded — purge's tracked-path refusal
+  # (OQ-2 cell below) fires for ANY pathspec covering a tracked file with
+  # changes, and the fixture's staged src/a.py / unstaged docs/note.md
+  # mods live there; a purge exclude-scope must carve those out explicitly
+  # (probe receipt: single-exclude ':(exclude)gen/' alone → exit 2
+  # "path 'docs/note.md' is tracked or has staged changes").
+  # FIXTURE COUPLING: this exclude list mirrors setup_pathspec_fixture's
+  # dirty tracked dirs (src/, docs/) — extend the exclude list if the
+  # fixture gains another dirty tracked dir, or this cell starts dying on
+  # the OQ-2 refusal instead of previewing.
+  # (Flag BEFORE the separator — the AC's literal '-- <spec> --dry-run'
+  # spelling is exactly the misordered-flag form rejected above.)
+  mkdir -p gen
+  echo g1 > gen/g.txt
+  run hug w purge --dry-run -- ':(exclude)gen/' ':(exclude)src/' ':(exclude)docs/'
+  assert_success
+  assert_output --partial "new.txt"
+  refute_output --partial "gen/g.txt"
+  psx_reset
+
+  # OQ-1 cell (probed, pinned): a trailing bare '--' opens the picker arm
+  # — non-TTY it answers "Non-interactive mode: Provide files as
+  # arguments.", exit 1, IDENTICAL to bare `hug w purge` (the --picker
+  # split mode preserves the trigger; the bare '--' never becomes a
+  # phantom pathspec).
+  psx_setup
+  run hug w purge --
+  assert_equal 1 "$status"
+  assert_output --partial "Non-interactive mode"
+  refute_output --partial "Nothing to purge"
+  psx_reset
+
+  # OQ-2 cell (-i + pathspec on the purge engine, probed): ignored scope
+  # intersects the pathspec — cache/x.pyc is removed, the out-of-scope
+  # y.pyc survives.
+  psx_setup
+  echo '*.pyc' >.gitignore
+  git add .gitignore
+  # Path-limited commit: the fixture's staged src/a.py mod must NOT be
+  # swept into this commit (the setup_pathspec_fixture LESSON).
+  git commit -q -m gitignore -- .gitignore
+  mkdir -p cache
+  touch cache/x.pyc y.pyc
+  run hug w purge -i -f -- cache/
+  assert_success
+  assert_output --partial "cache/x.pyc"
+  [[ ! -e cache/x.pyc ]] # in-scope ignored file removed
+  [[ -e y.pyc ]]         # out-of-scope ignored file survives
+  psx_reset
+
+  # OQ-2 refusal cell (probed): a pathspec COVERING a tracked file (the
+  # staged src/a.py mod under src/) is a scope mistake — the family
+  # usage-error template, exit 2 (was exit 1 pre-migration), and nothing
+  # has been removed when it fires (staged mod intact).
+  psx_setup
+  run hug w purge -i -- src/
+  assert_equal 2 "$status"
+  assert_output --partial "tracked or has staged changes"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # staged mod intact — nothing discarded
+  psx_reset
+}
+
+@test "contract w-discard (Task 3): scoped destruction — validation, separator, two-sided scope" {
+  # Full contract adoption (#292 PR-C Task 3, family template on git-sls):
+  # loud typo'd magic, post-'--' flag rejection, scoped dry-run two-sided,
+  # and the OQ-2 cells (-s/-u scoped destruction). Excluded dir is 'gen/'
+  # not 'build/' — the developer's global gitignore ignores build/, and a
+  # tracked-file fixture there would be rejected by the pre-commit hook.
+  psx_setup
+  # Typo'd magic prefix: git's own fatal + hug usage remedy, exit 2 — never
+  # a silent "Nothing to discard" (was: exit 0, nothing discarded, user
+  # none the wiser whether the scope matched).
+  run hug w discard -- ':(exlude)x/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  refute_output --partial "Nothing to discard"
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # nothing discarded (staged mod intact — 'M ' porcelain form)
+  psx_reset
+
+  psx_setup
+  # Post-'--' flag rejection: '--dry-run' after the separator is a
+  # misordered flag, not data (was: silently became a pathspec and the
+  # preview answered a false "Nothing to discard"). EXACT spellings only —
+  # './--dry-run' stays a filename (pinned in the row below).
+  run hug w discard -- src/ --dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  psx_reset
+
+  # -h/--help post-'--' (review IMPORTANT): same silent-swallow class —
+  # 'hug w discard -- --help' used to answer "Nothing to discard" exit 0,
+  # hiding the misordered flag entirely.
+  psx_setup
+  run hug w discard -- --help
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  refute_output --partial "Nothing to discard"
+  psx_reset
+
+  psx_setup
+  run hug w discard -- -h
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--'"
+  refute_output --partial "Nothing to discard"
+  psx_reset
+
+  # Per-command sync-guard loop RETIRED (Task 5): superseded by the
+  # tri-command helper row — see the purge row's retirement note.
+
+  # EXACT spellings only (review MINOR — the claim was asserted nowhere):
+  # a tracked file literally named '--dry-run', spelled './--dry-run' after
+  # the separator, is DATA — the preview lists it, no rejection.
+  psx_setup
+  echo dr1 > ./--dry-run
+  git add -- ./--dry-run
+  git commit -q -m "file named --dry-run" -- ./--dry-run
+  echo dr2 >> ./--dry-run
+  run hug w discard --dry-run -- ./--dry-run
+  assert_success
+  assert_output --partial "--dry-run"
+  refute_output --partial "Flags must precede"
+  psx_reset
+
+  psx_setup
+  # Scoped exclude-magic dry-run, two-sided: with an unstaged mod inside
+  # gen/ and one outside, ':(exclude)gen/' previews ONLY the outside file.
+  # (Flag BEFORE the separator — the AC's literal '-- <spec> --dry-run'
+  # spelling is exactly the misordered-flag form rejected above.)
+  mkdir -p gen
+  echo g1 > gen/g.txt
+  git add gen/g.txt
+  # Path-limited commit: the fixture's staged src/a.py mod must NOT be
+  # swept into this commit (the same LESSON setup_pathspec_fixture encodes).
+  git commit -q -m gen -- gen/g.txt
+  echo g2 >> gen/g.txt
+  run hug w discard --dry-run -- ':(exclude)gen/'
+  assert_success
+  assert_output --partial "docs/note.md"
+  refute_output --partial "gen/g.txt"
+  refute_output --partial "src/a.py"
+  psx_reset
+
+  # OQ-2 cell (-s + pathspec on the discard engine, probed): staged-only
+  # scope intersects the pathspec — src/a.py's staged delta is discarded,
+  # the unstaged docs/note.md mod and untracked new.txt survive, and the
+  # file content returns to its committed state.
+  psx_setup
+  run hug w discard -s -f -- src/
+  assert_success
+  assert_output --partial "src/a.py"
+  assert_equal "py1" "$(cat src/a.py)"
+  run git status --porcelain -- src/a.py
+  [[ -z "$output" ]] # staged delta gone, no residual unstaged mod
+  run git status --porcelain -- docs/note.md
+  [[ "$output" == " M"* ]] # outside scope untouched
+  psx_reset
+
+  # OQ-2 cell (-u + pathspec): unstaged scope intersects likewise — only
+  # the unstaged mod under src/ goes, the staged delta there survives.
+  psx_setup
+  echo py3 >> src/a.py # unstaged mod on top of the staged one
+  run hug w discard -u -f -- src/
+  assert_success
+  run git status --porcelain -- src/a.py
+  [[ "$output" == "M "* ]] # staged delta preserved, unstaged mod gone
+  psx_reset
+}
+
+# FLIPS-IN-TASK-4 (landed in Task 7 with the whole w-*-all family): the
+# four -all variants join the usage-error family — exit 2 (HUG_EX_USAGE) +
+# the family template carrying the WHOLE-TREE pointer (was: exit 1
+# "unknown option: -xX" per command — zap-all even reported only the first
+# char "-x" via its char-splitting loop; `-- src/` and bare `--` alike died
+# as "unknown option: --", exit 1). Design note (Task 5 quality review):
+# the -all variants REJECT positionals — parse_scoped_own_flags does NOT
+# apply (they collect no pathspecs); their pass is own-loop hygiene only.
+@test "contract w-all (Task 7): -xX loud, exit 2, family template + whole-tree pointer" {
+  local cmd scoped
+  for cmd in discard-all purge-all zap-all wipe-all; do
+    scoped="${cmd%-all}"
+    psx_setup
+    run hug w "$cmd" -xX
+    assert_equal 2 "$status"
+    assert_output --partial "Unknown option: -xX"
+    assert_output --partial "hug w $cmd is whole-tree; use the scoped form to filter: hug w $scoped -- <path>..."
+    refute_output --partial "Usage:" # one-line family template, not a help dump
+    psx_reset
+  done
+}
+
+@test "contract w-all (Task 7): -- <path> rejected with the whole-tree pointer" {
+  # THE receipt that named this task (probed pre-migration: `purge-all --
+  # src/` and `zap-all --` died "unknown option: --", exit 1): a pathspec
+  # after the separator is a filter the whole-tree form cannot honor —
+  # rejected exit 2, pointing at the scoped sibling with the user's own
+  # pathspec echoed back.
+  local cmd scoped
+  for cmd in discard-all purge-all zap-all wipe-all; do
+    scoped="${cmd%-all}"
+    psx_setup
+    run hug w "$cmd" -- src/
+    assert_equal 2 "$status"
+    assert_output --partial "hug w $cmd is whole-tree; use the scoped form to filter: hug w $scoped -- src/."
+    assert_output --partial "See 'hug help :pathspec'"
+    psx_reset
+  done
+}
+
+@test "contract w-all (Task 7): post-'--' known-flag spellings get the same whole-tree rejection" {
+  # They are not paths here (the -all variants collect no pathspecs), so a
+  # flag spelling after the separator is the SAME whole-tree rejection —
+  # never the scoped family's "Flags must precede '--'" remedy, which would
+  # advise reordering a filter the command cannot take anyway.
+  local cmd
+  for cmd in discard-all purge-all zap-all wipe-all; do
+    psx_setup
+    run hug w "$cmd" -- --dry-run
+    assert_equal 2 "$status"
+    assert_output --partial "is whole-tree"
+    psx_reset
+  done
+}
+
+@test "contract w-all (Task 7): bare trailing -- inert (status + output parity)" {
+  # Probed pre-migration: bare `--` died "unknown option: --", exit 1 on all
+  # four. Contract: the bare separator is consumed and inert — `hug w
+  # <cmd>-all --dry-run --` ≡ `hug w <cmd>-all --dry-run` byte-for-byte
+  # (the --dry-run sides keep the comparison deterministic headless).
+  local base_status base_output
+  for cmd in discard-all purge-all zap-all wipe-all; do
+    psx_setup
+    run hug w "$cmd" --dry-run
+    assert_success
+    base_status=$status
+    base_output=$output
+    run hug w "$cmd" --dry-run --
+    assert_equal "$base_status" "$status"
+    assert_equal "$base_output" "$output"
+    psx_reset
+  done
+}
+
+@test "contract w-all (Task 7): bare positional rejected with the whole-tree pointer (wipe-all names WIPE)" {
+  # Positionals are pathspecs without the separator — same whole-tree
+  # rejection (was: exit 1 "positional arguments are not accepted"). The
+  # wipe-all cell is the wrong-name hazard pin: wipe-all used to delegate
+  # its whole parse to discard-all and its rejection said "use 'git w
+  # discard'" — the WRONG scoped sibling. Own-loop hygiene: every -all
+  # command names its OWN scoped form.
+  local cmd scoped
+  for cmd in discard-all purge-all zap-all wipe-all; do
+    scoped="${cmd%-all}"
+    psx_setup
+    run hug w "$cmd" src/
+    assert_equal 2 "$status"
+    assert_output --partial "hug w $cmd is whole-tree; use the scoped form to filter: hug w $scoped -- src/."
+    psx_reset
+  done
+}
+
+@test "contract wip family (Task 8): -xX loud, exit 2 (wip unwip wipdel)" {
+  # Landed (Task 8, #292 PR-C): the wip family keeps its `--` DATA semantics
+  # (message for wip, branch for unwip/wipdel — spec §2 Class 2b) and only
+  # the unknown-option path joined the exit-2 family: flag-shaped tokens are
+  # rejected as flags before message/branch resolution.
+  local cmd
+  for cmd in wip unwip wipdel; do
+    psx_setup
+    run hug w "$cmd" -xX
+    assert_equal 2 "$status"
+    assert_output --partial "Unknown option: -xX"
+    refute_output --partial "does not exist" # not misread as a branch name
+    psx_reset
+  done
+  # w-wip's pre-migration failure mode was a FULL help dump — the contract
+  # error is the one-line family template, not the manual.
+  psx_setup
+  run hug w wip -xX
+  assert_equal 2 "$status"
+  refute_output --partial "USAGE:"
+  psx_reset
+}
+
+# FLIPS-IN-TASK-6 (landed, w-get migration, #292 PR-C plan Task 9): w-get's
+# commitish-target slot used to swallow unknown dash tokens — probed
+# pre-migration: `w get -xX` → "Invalid commitish for --target: -xX", exit 1
+# — and post-'--' flag spellings became file names (`w get HEAD --
+# --dry-run` → "File '--dry-run' does not exist in commit", exit 1). The
+# family template now rejects both as usage errors (exit 2).
+@test "contract w-get (Task 9): -xX is a flag error, not a bad commitish" {
+  psx_setup
+  run hug w get -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  refute_output --partial "Invalid commitish"
+  psx_reset
+}
+
+@test "contract w-get (Task 9): misordered post-'--' flags and malformed magic are usage errors (#292)" {
+  # Probed pre-migration (all exit 1, all mis-diagnosed):
+  #   w get -- --dry-run      → "Invalid commitish for --target: --dry-run"
+  #                             (the flag fell into the EMPTY commitish slot)
+  #   w get HEAD -- --dry-run → "File '--dry-run' does not exist in commit"
+  #   w get HEAD~1 -- -u      → "File '-u' does not exist in commit"
+  #   w get HEAD -- ':(bogus)src/' → "File ':(bogus)src/' does not exist"
+  #                             (malformed pathspec magic died as a missing
+  #                             FILE; ':bogus(' without parens is a LITERAL
+  #                             path to git, which is why the fixture uses
+  #                             the ':(bogus)src/' form the family shares)
+  psx_setup
+  run hug w get -- --dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w get --dry-run"
+  refute_output --partial "Invalid commitish"
+  psx_reset
+
+  psx_setup
+  run hug w get HEAD -- --dry-run
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w get --dry-run"
+  psx_reset
+
+  psx_setup
+  run hug w get HEAD~1 -- -u
+  assert_equal 2 "$status"
+  assert_output --partial "Flags must precede '--': hug w get -u"
+  psx_reset
+
+  # Entry pathspec validation (validate_pathspecs_or_die, post-check_git_repo):
+  # a typo'd magic prefix dies as a usage error BEFORE any "Will reset"
+  # chatter or missing-file confusion downstream.
+  psx_setup
+  run hug w get HEAD -- ':(bogus)src/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  refute_output --partial "does not exist in commit"
+  refute_output --partial "Will reset"
+  psx_reset
+}
+
+@test "contract w-get (P2 #3820511903): magic pathspecs expand to in-commit files, never flow literally (#292)" {
+  # Probed pre-fix: `w get HEAD -- ':(glob)*.py'` passed entry validation
+  # (syntax OK) then flowed LITERALLY into the per-file workflow —
+  # "File ':(glob)*.py' does not exist in commit HEAD", exit 1. The fix
+  # resolves the pathspec set against the TARGET commit's tree and feeds
+  # the concrete files into the existing check/preview/restore flow.
+  # NON-magic spellings are untouched by construction (byte-identity).
+
+  # Cell 1 — glob magic restores its matches (two-sided scope), preview
+  # per-FILE (the expansion yields src/a.py, not the magic text).
+  psx_setup
+  git add -A
+  git commit -q -m divergence
+  run hug w get --dry-run HEAD~1 -- ':(glob)**/*.py'
+  assert_success
+  assert_output --partial "Checking src/a.py"
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/"
+  refute_output --partial ":(glob)"
+  run hug w get HEAD~1 -- ':(glob)**/*.py'
+  assert_success
+  assert_equal "py1" "$(cat src/a.py)" # restored to the base version
+  psx_reset
+
+  # Cell 2 — exclude magic restores everything-but (the whole tree minus
+  # docs/), still through the specific-files preview shape.
+  psx_setup
+  git add -A
+  git commit -q -m divergence
+  run hug w get --dry-run HEAD~1 -- ':!docs/'
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/"
+  psx_reset
+
+  # Cell 3 — empty expansion is the honest no-match info (exit 0), not a
+  # missing-file error and not a silent success-with-nothing.
+  psx_setup
+  run hug w get HEAD~1 -- ':(glob)**/*.nomatch'
+  assert_success
+  assert_output --partial "No files in"
+  assert_output --partial "match"
+  refute_output --partial "does not exist in commit"
+  refute_output --partial "Will reset"
+  psx_reset
+
+  # Cell 4 — byte-identity guard: a LITERAL missing file keeps today's
+  # loud per-file error (exit 1) — only magic spellings take the
+  # expansion branch.
+  psx_setup
+  run hug w get HEAD no-such-file
+  assert_equal 1 "$status"
+  assert_output --partial "File 'no-such-file' does not exist in commit"
+  psx_reset
+}
+
+@test "contract w-get (Task 9): trailing bare '--' keeps the picker; action flags stay position-independent (#292)" {
+  # OQ-1 (probed): `w get HEAD --` opens the interactive selector — under
+  # BATS (no TTY; gum absent or cancelling) it lands on "No files
+  # selected..." exit 0. The --picker split mode preserves that trigger: a
+  # bare trailing '--' never becomes a phantom pathspec, so the reset-all
+  # arm is NOT reached (refuted by "Will reset"/"Files that will be").
+  psx_setup
+  run hug w get HEAD --
+  assert_success
+  assert_output --partial "No files selected"
+  refute_output --partial "Will reset"
+  refute_output --partial "Files that will be"
+  psx_reset
+
+  # Action flags remain position-independent around the target and files
+  # (byte-identical to the pre-migration parser, which getopt-permuted
+  # them). --dry-run BEFORE the target: same specific-files dry-run shape
+  # as the existing HEAD~1 --dry-run cell.
+  psx_setup
+  git add -A
+  git commit -q -m divergence
+  run hug w get --dry-run HEAD~1 src/a.py
+  assert_success
+  assert_output --partial "Files to be reset:"
+  assert_output --partial "src/a.py"
+  assert_output --partial "Dry run — no files were modified."
+  grep -q py2 src/a.py
+  psx_reset
+
+  # -y is accepted alongside (a routine-confirm flag, not a force
+  # substitute — see help); on the clean path it changes nothing.
+  psx_setup
+  git add -A
+  git commit -q -m divergence
+  run hug w get -y --dry-run HEAD~1 src/a.py
+  assert_success
+  assert_output --partial "Dry run — no files were modified."
+  psx_reset
+}
+
+# FLIPS-IN-TASK-10 (landed, #292 PR-C): llu honors the separator and filters
+# two-sided — was: flags-only parser rejected it ("Unknown option: --", exit
+# 1; the characterization llu row above flipped in the same task). The
+# fixture's upstream anchor (setup_pathspec_fixture) makes base + "docs guide
+# only" exactly the outgoing set, so the rows below are two-sided THROUGH the
+# outgoing semantics, not just through path filtering.
+
+@test "contract llu (Task 10): -- src/ filters two-sided, summary suppressed" {
+  # Scoped outgoing list: the src commit (base) stays, the docs-only commit
+  # vanishes. Summary gate (codex #3815936636): a scoped run must NOT print
+  # the whole-repo status after the scoped list.
+  psx_setup
+  run hug llu -- src/
+  assert_success
+  assert_output --partial "base"
+  refute_output --partial "docs guide only"
+  refute_output --partial "HEAD:"
+  psx_reset
+}
+
+@test "contract llu (Task 10): bare trailing -- inert with summary parity" {
+  # The inert duality (llu is a listing, NOT a picker): a trailing bare '--'
+  # alone is fully inert — byte-identical to the unfiltered run INCLUDING the
+  # summary (both runs share ONE fixture; the summary embeds the HEAD short
+  # hash). Proves the summary suppression above is scope-driven, not a
+  # blanket removal.
+  psx_setup
+  run hug llu
+  assert_success
+  local unfiltered="$output"
+  assert_output --partial "HEAD:"
+  run hug llu --
+  assert_success
+  assert_equal "$unfiltered" "$output"
+  psx_reset
+}
+
+@test "contract llu (Task 10): --json honors pathspecs; empty scope keeps envelope" {
+  # Scoped JSON: zero non-JSON bytes (whole payload parses), two-sided
+  # through the outgoing semantics (base in, docs-only commit out), and the
+  # summary count reflects the SCOPE (1, not the unscoped 2 — the JSON sink
+  # must not describe the whole outgoing range). Empty scope keeps the
+  # envelope shape (umbrella §6.2: zero-length commits array, count 0).
+  psx_setup
+  run hug llu --json -- src/
+  assert_success
+  local json_out="$output"
+  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
+  assert_success
+  [[ "$json_out" == *"base"* ]]
+  [[ "$json_out" != *"docs guide only"* ]]
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(len(d['commits']), d['summary']['total_commits'])" "$json_out"
+  assert_output "1 1"
+  psx_reset
+
+  psx_setup
+  run hug llu --json -- nomatch/
+  assert_success
+  json_out="$output"
+  run bash -c "printf '%s' \"\$1\" | python3 -m json.tool > /dev/null" _ "$json_out"
+  assert_success
+  run python3 -c "import json,sys; d=json.loads(sys.argv[1]); print('commits' in d, d['commits'], d['summary']['total_commits'])" "$json_out"
+  assert_output "True [] 0"
+  psx_reset
+}
+
+# FLIPS-IN-TASK-11 (landed, #292 PR-C): sh accepts pathspecs after the
+# separator — was: ONE commit ref only ("unexpected extra argument:
+# 'src/'", exit 1; the two contract-sh BUG-6 rows above flipped in the
+# SAME task per the flip rule). The rows below pin the parts the shared
+# SHOW column loops cannot express: multi-path union, the -N DATA arm
+# (sh is the one PR-C command with legal dash-data, spec Class 3), the
+# disambiguation rule (ALL tokens after the first ref are pathspecs), and
+# the loud exit-2 rejections.
+
+@test "contract sh (Task 11): HEAD~1 -- src/ filters two-sided" {
+  psx_setup
+  run hug sh HEAD~1 -- src/
+  assert_success
+  assert_output --partial "src/a.py"
+  refute_output --partial "docs/note.md"
+  psx_reset
+}
+
+@test "contract sh (Task 11): two pathspecs union — BOTH paths, third path excluded" {
+  # codex #3815936643: base (HEAD~1) touched src/, docs/ AND other.txt —
+  # a multi-path call must show the UNION (src + docs) and drop the
+  # third path. With the old single-file_path library interface this row
+  # is red: only the FIRST path survived.
+  psx_setup
+  run hug sh HEAD~1 -- src/ docs/
+  assert_success
+  assert_output --partial "src/a.py"
+  assert_output --partial "docs/note.md"
+  refute_output --partial "other.txt"
+  psx_reset
+}
+
+@test "contract sh (Task 11): -N range spellings are DATA — never eaten by the -* rejection" {
+  # Spec Class 3: sh is the one PR-C command with legal dash-data. The
+  # explicit data-arm sits BEFORE the -* rejection arm, so '-3' reaches
+  # resolve_commit_ref as HEAD~3..HEAD (not "Unknown flag: -3", exit 2).
+  # Fixture depth: base + docs-only + two tests-only commits = 4, so
+  # HEAD~3..HEAD spans docs, tests1, tests2; scoped to {src/, docs/} the
+  # union keeps ONLY the docs-only commit — the two tests-only commits
+  # (third path) must vanish. Two-sided through the range filter itself.
+  psx_setup
+  mkdir -p tests
+  echo t1 > tests/one.t
+  git add tests/one.t
+  # Path-scoped commit (with -- tests/): the fixture's STAGED src/a.py mod
+  # must NOT be swept into the tests-only commit — the setup's own LESSON
+  # (see setup_pathspec_fixture), which applies to extensions too: an
+  # unscoped `git commit` here would make "tests one" touch src/ and the
+  # src/∪docs/ union would legitimately keep it, breaking the row.
+  git commit -q -m "tests one" -- tests/one.t
+  echo t2 > tests/two.t
+  git add tests/two.t
+  git commit -q -m "tests two" -- tests/two.t
+  run hug sh -3 -- src/ docs/
+  assert_success
+  assert_output --partial "docs guide only"
+  refute_output --partial "tests one"
+  refute_output --partial "tests two"
+  refute_output --partial "Unknown flag"
+  psx_reset
+}
+
+@test "contract sh (Task 11): disambiguation — every token after the first ref is a pathspec" {
+  # codex #3815936650: no syntactic second-ref detection exists, so none
+  # is attempted. `sh HEAD~1 other.txt docs/note.md` treats BOTH trailing
+  # tokens as pathspecs (union: other.txt + docs/note.md in, src/a.py
+  # out) and exits 0 with whatever matches — pinned honestly.
+  psx_setup
+  run hug sh HEAD~1 other.txt docs/note.md
+  assert_success
+  assert_output --partial "other.txt"
+  assert_output --partial "docs/note.md"
+  refute_output --partial "src/a.py"
+  psx_reset
+}
+
+@test "contract sh (Task 11): loud rejections — unknown dash token and malformed magic, exit 2" {
+  # '-xX' (non-numeric dash) → the family usage error, help + exit 2
+  # (pre-migration this already exited 2 via show_single_commit's
+  # reject_flag_ref — now at the entry loop, same observable). '-3' is
+  # immune (data arm, row above). ':(bogus)' → validate_pathspecs_or_die.
+  psx_setup
+  run hug sh -xX
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown flag: -xX"
+  psx_reset
+
+  psx_setup
+  run hug sh HEAD~1 -- ':(bogus)x/'
+  assert_equal 2 "$status"
+  assert_output --partial "Invalid pathspec"
+  psx_reset
+}
+
+@test "contract sh (Task 11): unscoped run and trailing bare -- byte-identical" {
+  # Unscoped `hug sh HEAD~1` output must be unchanged by the migration,
+  # and a trailing bare '--' inert (sh is a viewer, no picker arm) —
+  # asserted as byte-identity between the two invocations of ONE fixture
+  # (relative-time normalized: the clock ticks between captures).
+  psx_setup
+  run hug sh HEAD~1
+  assert_success
+  local unfiltered
+  unfiltered=$(printf '%s' "$output" | psx_strip_reltime)
+  run hug sh HEAD~1 --
+  assert_success
+  assert_equal "$unfiltered" "$(printf '%s' "$output" | psx_strip_reltime)"
+  psx_reset
+}
+
+@test "PR-C staged red rows: exact marker set (3 4 5 6 10 11)" {
+  # Loss guard, EXACT form: an existence-only check stays green when ONE
+  # task's staged rows are deleted (review round 1 finding). The observed
+  # marker set must equal the literal expectation — built via a loop over
+  # task NUMBERS so the expected strings never literally appear in this file
+  # (a literal 'FLIPS-IN-TASK-3' here would be grep-matched too, making the
+  # check self-fulfilling). Failing output names both sides.
+  # Landed tasks (3 discard, 4 purge, 5 zap) keep their markers in the
+  # "(landed, ...)" comment lines — the set is the drift alarm, not the
+  # pending-work list.
+  local self="${BATS_TEST_FILENAME}"
+  local expected actual
+  expected=$(for n in 3 4 5 6 10 11; do printf 'FLIPS-IN-TASK-%s\n' "$n"; done | sort)
+  actual=$(grep -oE 'FLIPS-IN-TASK-[0-9]+' "$self" | sort -u)
+  [[ -n "$actual" ]] || fail "no staged FLIPS markers found — the PR-C red rows were lost"
+  if [[ "$actual" != "$expected" ]]; then
+    fail "staged FLIPS marker set drifted — expected vs actual:
+$(printf '%s\n' "$expected" | tr '\n' ' ')
+$(printf '%s\n' "$actual" | tr '\n' ' ')"
+  fi
+  grep -q "RED rows staged for PR-C migrations" "$self" ||
+    fail "staged block header comment missing"
 }

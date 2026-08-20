@@ -14,12 +14,18 @@ show_help() {
 hug llu: Log commits ahead of upstream (outgoing commits).
 
 USAGE:
-    hug llu [options]
+    hug llu [options] [pathspec...]
 
 OPTIONS:
     --json         Output as JSON (machine-readable)
     --with-stats   Include file change statistics (JSON mode only)
     --no-body      Omit commit message body (JSON mode only)
+    -q, --quiet    Suppress the trailing repository status summary
+    -- <path>...   Pathspecs scope the outgoing list (git magic pathspecs
+                   like ':(exclude)docs/' work); positionals also work —
+                   `--` is only needed for paths starting with '-'. A
+                   trailing bare `--` alone is inert (same output as no
+                   arguments).
     -h, --help     Show this help
 
 DESCRIPTION:
@@ -30,8 +36,19 @@ DESCRIPTION:
     If there is no upstream branch or no outgoing commits, shows an informative
     message instead.
 
+    A scoped run suppresses the trailing whole-repo status summary — it would
+    misdescribe the scope (uniform pathspec contract, #292).
+
+PATH FILTERING:
+    Append -- <path>... to restrict output to matching paths.
+    Globs must be quoted; see 'hug help :pathspec' for the full contract.
+
+    hug llu -- src/                     # outgoing commits touching src/
+    hug llu --json -- ':(exclude)docs/' # JSON, everything but docs/
+
 EXAMPLES:
     hug llu                         # Show outgoing commits
+    hug llu -- src/                 # Outgoing commits touching src/ only
     hug llu --json                  # Output as JSON
     hug llu --json --with-stats     # JSON with file change stats
     hug llu --json --no-body        # JSON with subject only (faster)
@@ -77,38 +94,68 @@ SEE ALSO:
 EOF
 }
 
-# Parse flags
+# Parse common flags + split pathspecs at the first '--' (uniform pathspec
+# contract, #292 PR-C Task 10). WITHOUT --picker on purpose: llu is a
+# listing, so a trailing bare '--' must stay inert (summary parity), never
+# open an interactive picker. Caller-scope effects: "$@" = separator-free
+# pre-args; _pathspec_pathspecs = pathspec data after the first '--'.
+# Parsing runs BEFORE check_git_repo so `-h` works from any cwd.
 json_output=false
 with_stats=false
 no_body=false
+quiet=false
+pathspecs=()
 
-while [ $# -gt 0 ]; do
-  case "$1" in
-  -h | --help)
-    show_help
-    exit 0
-    ;;
+eval "$(parse_common_flags_with_pathspecs "$@")"
+# Action flags are meaningless on a listing — reject loudly (codex P2),
+# never silently accept and print an unscoped listing.
+reject_action_flags "hug llu"
+
+# parse_common_flags CONSUMED -q and exported HUG_QUIET — rehydrate the local
+# AFTER the split (also covers a pre-set HUG_QUIET environment); see the
+# identical note in git-sls (the family template).
+[[ ${HUG_QUIET:-} == T ]] && quiet=true
+
+# Seed the ONE pathspec collection with the split's post-'--' data first;
+# pre-arg positionals join it in the own-loop below (git unions pathspecs;
+# ONE array so every sink — human and JSON — reads the same scope).
+pathspec_pathspecs_into pathspecs
+
+# Own-loop over the pre-args only: llu's accepted pre-'--' grammar (flags
+# only — llu takes no revisions). Bare positionals collect as pathspecs
+# (git parity with the sl* family: 'hug llu src/' filters without the '--').
+# Unknown -* tokens are a LOUD usage error (exit 2 = HUG_EX_USAGE), never a
+# silently-swallowed filter — was: exit 1 "Unknown option" for everything.
+for arg in "$@"; do
+  case "$arg" in
   --json)
     json_output=true
-    shift
     ;;
   --with-stats)
     with_stats=true
-    shift
     ;;
   --no-body)
     no_body=true
-    shift
+    ;;
+  -q | --quiet)
+    quiet=true # UNREACHABLE via the split (it consumes every pre-'--' -q unconditionally); kept for family-template symmetry
+    ;;
+  -*)
+    error_usage "Unknown option: $arg. Pathspecs beginning with '-' require '--': hug llu -- $arg. See 'hug help :pathspec'."
     ;;
   *)
-    echo "Unknown option: $1" >&2
-    echo "Use -h or --help for usage information" >&2
-    exit 1
+    pathspecs+=("$arg")
     ;;
   esac
 done
 
 check_git_repo
+
+# Loud one-time pathspec validation (see validate_pathspecs_or_die in
+# hug-git-files for the WHY: a typo'd magic prefix must die as a usage
+# error here, not surface as an empty answer downstream — both sinks below
+# would otherwise swallow git's fatal).
+validate_pathspecs_or_die ${pathspecs[@]+"${pathspecs[@]}"}
 
 # Check if upstream is configured
 if ! upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2> /dev/null); then
@@ -116,13 +163,21 @@ if ! upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2> /dev/n
     echo '{"commits":[],"summary":{"total_commits":0,"error":"no_upstream"}}'
   else
     info "📭 No upstream branch configured for current branch"
-    # Show summary line anyway
-    exec hug s
+    # Summary gate (#292, codex #3815936636): a scoped run never prints the
+    # whole-repo status after an scoped answer — and neither does a quiet
+    # one (-q). Bare/unscoped runs keep the summary (byte-identical to the
+    # pre-migration behavior).
+    if ! $quiet && [[ ${#pathspecs[@]} -eq 0 ]]; then
+      exec hug s
+    fi
   fi
   exit 0
 fi
 
-# Check if there are any outgoing commits
+# Check if there are any outgoing commits.
+# RANGE COMPUTATION UNCHANGED by the pathspec migration (#292): the count is
+# the UNSCOPED @{u}..HEAD size — a scope only ever shrinks the LISTED set,
+# never the range, and --max stays an upper bound for the JSON batcher.
 commit_count=$(git rev-list --count @{u}..HEAD 2> /dev/null || echo "0")
 
 if [ "$commit_count" -eq 0 ]; then
@@ -130,8 +185,10 @@ if [ "$commit_count" -eq 0 ]; then
     echo '{"commits":[],"summary":{"total_commits":0}}'
   else
     info "📭 No outgoing commits (branch is up to date with ${upstream})"
-    # Show summary line anyway
-    exec hug s
+    # Same summary gate as the no-upstream site above.
+    if ! $quiet && [[ ${#pathspecs[@]} -eq 0 ]]; then
+      exec hug s
+    fi
   fi
   exit 0
 fi
@@ -149,14 +206,28 @@ if $json_output; then
   # Add the revision range for outgoing commits
   log_args+=("@{u}..HEAD")
 
+  # Pathspecs reach the JSON sink behind a protective '--' (#292): without
+  # it, git log cannot tell a path from a same-named branch and the JSON
+  # envelope silently loses the requested scope. Nullsafe idiom: see
+  # parse_common_flags_with_pathspecs in hug-cli-flags.
+  ((${#pathspecs[@]})) && log_args+=("--" "${pathspecs[@]}")
+
   # Use normal mode (array format) for better compatibility
   # batch_log_output returns the full JSON from log_json.py which includes commits and summary
   batch_log_output --max "${commit_count}" "${log_args[@]}"
 
 else
-  # Human-readable output
-  git log --graph --pretty=log1 --date=short @{u}..HEAD
+  # Human-readable output. Pathspecs append behind a protective '--' — a
+  # pathspec spelled like a log option stays data (same rule as the JSON
+  # sink; nullsafe idiom per hug-cli-flags).
+  git log --graph --pretty=log1 --date=short @{u}..HEAD ${pathspecs[@]+"--" "${pathspecs[@]}"}
 
-  # Show summary line
-  exec hug s
+  # Summary gate: the trailing whole-repo `hug s` prints iff the run is
+  # unscoped (array-non-empty, NOT '--'-seen — the inert bare '--' keeps
+  # summary parity with the unfiltered run: a scoped run's whole-repo
+  # summary would misdescribe the scope). Same gate as git-sls (~:169).
+  # Script scope — no 'local' here (Bash: "can only be used in a function").
+  if ! $quiet && [[ ${#pathspecs[@]} -eq 0 ]]; then
+    exec hug s
+  fi
 fi

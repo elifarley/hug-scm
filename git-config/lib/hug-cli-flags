@@ -18,6 +18,8 @@
 #   - reject_multiple_files: enforce single-file cardinality for
 #     one-file commands (uniform pathspec contract, spec §3.2/§5.6).
 #   - require_args: enforce minimum argument counts.
+#   - parse_scoped_own_flags: own-flag loop + misordered-flag matcher for
+#     the scoped destructive family (w discard/purge/zap).
 #
 # Implementation:
 #   Uses GNU getopt for robust option parsing (required dependency).
@@ -548,6 +550,121 @@ reject_action_flags() {
     # malformed pathspecs, cardinality violations).
     error_usage "$1 is a listing: action flags (-f/--force, -y/--yes, --dry-run, --browse-root) do not apply. See 'hug help :pathspec'."
   fi
+}
+
+# parse_scoped_own_flags <cmd-label> <own-flag-spec> <pathspecs-array-name> [pre-args...]
+# — the shared own-flag loop + misordered-flag matcher of the scoped
+# destructive family (#292 PR-C Task 5, rule-of-three extraction from
+# git-w-discard/git-w-purge; git-w-zap was the third copy that tripped it).
+#
+# Call it AFTER 'eval "$(parse_common_flags_with_pathspecs --picker "$@")"':
+# "$@" then holds only the separator-free pre-args (common flags already
+# consumed), which are exactly this helper's [pre-args...].
+#
+# SELF-CONTAINED (quality-review hardening): the caller does NOT need to
+# pre-initialize flags_explicit (self-inited below, set -u safe) NOR to seed
+# its array via pathspec_pathspecs_into first — the helper reads the
+# shell-wide _pathspec_pathspecs itself and completes the caller's array
+# idempotently (no duplicates when the caller DID seed). A fourth consumer
+# therefore cannot silently skip post-'--' matching by calling the helper
+# "too early": the matcher's view is complete by construction.
+#
+# Provides (the three things every family member copy-pasted):
+#   1. OWN-FLAG ARMS — each spec match sets its caller variable true and
+#      flags_explicit=true (dynamic scope: assigns the caller's sentinel).
+#   2. LOUD -* REJECTION — an unknown dash token pre-'--' is a usage error
+#      (exit 2), never a silently-swallowed pathspec.
+#   3. POST-'--' EXACT-SPELLING REJECTION — a collected pathspec that
+#      exactly spells one of this command's flags is a misordered flag,
+#      not data. Spellings = own-spec ∪ the COMMON flags parse_common_flags
+#      accepts (--dry-run, -f/--force, -y/--yes, --browse-root, -q/--quiet,
+#      -h/--help). EXACT spellings only: './--dry-run' is a filename.
+#
+# SYNC-GUARD INVARIANT (lives HERE now, one place instead of N copies):
+#   the matcher's spelling set = own-spec ∪ parse_common_flags' accepted
+#   flags. Add a flag to either side → add its every spelling to the
+#   COMMON_SPELLINGS case below in the same commit, or post-'--' it
+#   silently regresses to the pathspec swallow this matcher exists to kill
+#   (the conformance sync-guard row fails first, not the user).
+#
+# own-flag-spec format: whitespace-separated triples 'short:long:var', e.g.
+#   "-u:--unstaged:target_unstaged -s:--staged:target_staged"
+# (short WITH its leading dash — spellings are matched verbatim)
+# Both spellings of a triple arm the own-flag case; a command with NO own
+# flags (w-zap) passes an empty string and gets arms 2 and 3 only.
+#
+# Effects: appends positional pre-args to the nameref'd pathspec array;
+# error_usage (exit 2) on either rejection. Pure argument surgery — no git.
+# Reserved prefix __pso_ (see pathspec_pathspecs_into's nameref note).
+parse_scoped_own_flags() {
+  local cmd_label="$1" own_spec="$2" arr_name="$3"
+  shift 3
+  local -n __pso_out="$arr_name"
+  local arg spec short long var matched p e found
+
+  # Self-init (hardening 1): a consumer that forgets to pre-initialize
+  # flags_explicit must not die under set -u on the own-flag arm's write.
+  printf -v flags_explicit %s "${flags_explicit:-false}"
+
+  # Internal seeding (hardening 2): pull the split's post-'--' data from
+  # the shell-wide global so the matcher's view — and the caller's engine
+  # array — are complete even without a prior pathspec_pathspecs_into call.
+  # Idempotent by membership probe: an already-seeded array is left as-is
+  # (engines read this array verbatim; duplicates would be noise).
+  local -a __pso_split=()
+  pathspec_pathspecs_into __pso_split
+  for e in ${__pso_split[@]+"${__pso_split[@]}"}; do
+    found=false
+    for p in ${__pso_out[@]+"${__pso_out[@]}"}; do
+      if [[ "$p" == "$e" ]]; then
+        found=true
+        break
+      fi
+    done
+    $found || __pso_out+=("$e")
+  done
+
+  for arg in "$@"; do
+    matched=false
+    # Deliberately UNQUOTED ${own_spec}: the spec is whitespace-separated
+    # triples; word splitting is the parsing mechanism, not a bug.
+    for spec in ${own_spec}; do
+      IFS=':' read -r short long var <<<"$spec"
+      if [[ "$arg" == "$short" || "$arg" == "$long" ]]; then
+        printf -v "$var" true
+        flags_explicit=true # dynamic scope: the caller's defaulting sentinel
+        matched=true
+        break
+      fi
+    done
+    $matched && continue
+    case "$arg" in
+    -*)
+      error_usage "Unknown option: $arg. Pathspecs beginning with '-' require '--': $cmd_label -- $arg. See 'hug help :pathspec'."
+      ;;
+    *)
+      __pso_out+=("$arg")
+      ;;
+    esac
+  done
+
+  # Arm 3 over the FULL collection (post-'--' data + pre-arg positionals):
+  # exact spellings only, common case first, own-spec loop second — message
+  # identical either way, matching the pre-extraction inline matchers
+  # byte-for-byte (their conformance rows are the proof).
+  for p in ${__pso_out[@]+"${__pso_out[@]}"}; do
+    case "$p" in
+    --dry-run | -f | --force | -y | --yes | --browse-root | -h | --help | -q | --quiet)
+      error_usage "Flags must precede '--': $cmd_label $p -- <path>.... See 'hug help :pathspec'."
+      ;;
+    esac
+    for spec in ${own_spec}; do
+      IFS=':' read -r short long var <<<"$spec"
+      if [[ "$p" == "$short" || "$p" == "$long" ]]; then
+        error_usage "Flags must precede '--': $cmd_label $p -- <path>.... See 'hug help :pathspec'."
+      fi
+    done
+  done
 }
 
 # Validates minimum number of arguments
