@@ -50,11 +50,28 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (handles --browse-root, --quiet, -h|--help, etc.)
-eval "$(parse_common_flags "$@")"
+# Parse common flags + split at -- (uniform pathspec contract, #302 C-004)
+# WITHOUT --picker (h-steps is not a picker) but the split still owns the
+# separator so a dash-leading file via -- is visible as pathspec data.
+eval "$(parse_common_flags_with_pathspecs "$@")"
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
+
+# saw_separator: true iff a -- separator was consumed and left pathspec data
+# (infer from the shell-wide _pathspec_pathspecs populated by the split above;
+# trailing bare -- alone is stripped before the split and leaves it empty).
+saw_separator=false
+if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  saw_separator=true
+fi
+# Merge pre-args ($@ holds them post-split) and separator-protected pathspecs
+# into one argument stream for the own-loop. --raw is consumed here before any
+# guard, so 'hug h steps README.md --raw' (help:44) is not misread as an
+# unknown flag; a dash-leading file that arrived via -- stays data.
+if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  set -- "$@" ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}
+fi
 
 # Parse custom flags
 file=""
@@ -80,10 +97,33 @@ while [[ $# -gt 0 ]]; do
     ;;
   esac
 done
-# Nullsafe expansion (Bash 4.3 set -u crash mode — the PR's own convention):
-# ${arr[@]+"${arr[@]}"} expands to nothing when extra_files is empty, so no
-# lone unbound-variable fatal on the happy single-file path.
-reject_multiple_files "hug h steps" "$file" ${extra_files[@]+"${extra_files[@]}"}
+# Cardinality + unknown-flag guard (#302 C-004, codex #3829676849, #3830105470):
+# h-steps's own-loop *) arm collects unknown -* tokens (parse_common_flags
+# passes them through) into file/extra_files, so 'hug h steps a --bogus'
+# used to be miscounted as a file and fire the cardinality guard. Filtering it
+# from the tally alone would have turned a typo into silent success, violating
+# the path-command contract that unknown flags must fail (exit 2).
+# NOT the pre-loop slice (collect_positional_args_before_flags): --raw
+# legitimately follows the file ('hug h steps README.md --raw', help:44) and
+# is consumed by the own-loop's --raw arm first, so the loop must run in full.
+# Fix: (1) loud unknown-flag check first — EXEMPT a dash-leading file that
+# arrived via -- (hug h steps -- -foo.txt creates _pathspec_pathspecs[-foo.txt]
+# after parse_common_flags_with_pathspecs; the separator-protected file is not
+# an "unknown option"), then (2) cardinality on files-only.
+for f in ${extra_files[@]+"${extra_files[@]}"}; do
+  if [[ "$f" == -* ]]; then
+    error_usage "Unknown option: $f. See 'hug help :pathspec'."
+  fi
+done
+if [[ -n "${file:-}" && "$file" == -* && "${saw_separator:-false}" != true ]]; then
+  error_usage "Unknown option: $file. See 'hug help :pathspec'."
+fi
+reject_files=()
+[[ -n "${file:-}" ]] && reject_files+=("$file")
+for f in ${extra_files[@]+"${extra_files[@]}"}; do
+  reject_files+=("$f")
+done
+reject_multiple_files "hug h steps" ${reject_files[@]+"${reject_files[@]}"}
 
 # If no file provided, show interactive selection or help
 if [[ -z "$file" ]]; then

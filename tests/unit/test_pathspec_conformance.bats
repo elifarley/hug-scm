@@ -2035,6 +2035,37 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "single-file cardinality: h steps trailing unknown flag is a loud error, not a false single-file count (#302)" {
+  # #302 C-004, codex #3829676849: h-steps's own-loop *) arm collects unknown
+  # -* tokens into extra_files (parse_common_flags passes them through), so
+  # 'hug h steps a --bogus' used to miscount the flag as a file and fire the
+  # cardinality guard. Filtering it from the tally alone would have converted a
+  # typo into silent success. The fix is loud: unknown -* after the file is a
+  # usage error (path-command contract, exit 2). --raw is consumed by its own
+  # arm and is exempted.
+  psx_setup
+  run hug h steps src/a.py --bogus
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bogus"
+  refute_output --partial "accepts only one file"
+  psx_reset
+}
+
+@test "single-file cardinality: h steps dash-leading file via -- is NOT rejected as unknown flag (#302 codex #3830105470)" {
+  # Conformance pin: hug h steps -- -foo.txt creates _pathspec_pathspecs[-foo.txt]
+  # via parse_common_flags_with_pathspecs — the separator-protected file is
+  # pathspec data, not an "unknown option". Must NOT be rejected.
+  psx_setup
+  echo pin > ./-foo.txt
+  git add -- ./-foo.txt
+  git commit -q -m "file literally named -foo.txt"
+  run hug h steps -- -foo.txt --raw
+  assert_success
+  # step count is numeric — proves the path was consumed as a file, not rejected
+  [[ "$output" =~ ^[0-9]+$ ]]
+  psx_reset
+}
+
 # =============================================================================
 # CHARACTERIZATION ROWS (closing fix, whole-implementation review) — the 8
 # audit-matrix rows the suite was missing (spec §4: ALL matrix rows must have
