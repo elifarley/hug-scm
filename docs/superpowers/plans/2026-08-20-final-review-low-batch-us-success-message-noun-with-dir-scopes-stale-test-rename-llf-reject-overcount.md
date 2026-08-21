@@ -348,10 +348,10 @@ Delete the old `# The GATE is authoritative; reject_multiple_files' tally only t
 
 - [ ] **Step 2: Run red** — `make test-unit TEST_FILE=test_pathspec_conformance.bats TEST_FILTER="h steps trailing flag"` → FAIL (current code either falsely rejects with `accepts only one file` or — after a tally-filter-only fix — would silently succeed; the new proof expects exit 2 `Unknown option`).
 
-- [ ] **Step 3: Make h-steps loud on unknown flags, correct the tally** in `git-config/bin/git-h-steps`, replacing the reject line at :86. Two guards, order matters — `--raw` is already consumed above, so only unknown flags remain:
+- [ ] **Step 3: Make h-steps loud on unknown flags, correct the tally** in `git-config/bin/git-h-steps`. Two guards, order matters — `--raw` is already consumed above, so only unknown flags remain. The loud check must NOT fire on a dash-leading file that was protected by `--` (`hug h steps -- -foo.txt`, codex #3830105470): the fix therefore detects whether `parse_common_flags` saw a `--` separator before the file and exempts that single file when present. Since `parse_common_flags "$@"` handles ` --` internally but `git-h-steps` currently calls it as `parse_common_flags "$@"` (no split helper), the simplest path that preserves `--` visibility is to switch to `parse_common_flags_with_pathspecs "$@"` for the split and read the separator flag from the shared `_pathspec_pathspecs` state (or capture a local `saw_separator` before the common-flag parse). If `saw_separator` is set and `file` is that first pathspec, `file` is NOT an unknown flag.
 
 ```bash
-# Cardinality + unknown-flag guard (#302 C-004, codex #3829676849):
+# Cardinality + unknown-flag guard (#302 C-004, codex #3829676849, #3830105470):
 # h-steps's own-loop *) arm collects unknown -* tokens (parse_common_flags
 # passes them through) into file/extra_files, so 'hug h steps a --bogus'
 # used to be miscounted as a file and fire the cardinality guard. Filtering it
@@ -360,15 +360,26 @@ Delete the old `# The GATE is authoritative; reject_multiple_files' tally only t
 # NOT the pre-loop slice (collect_positional_args_before_flags): --raw
 # legitimately follows the file ('hug h steps README.md --raw', help:44) and
 # is consumed by the own-loop's --raw arm first, so the loop must run in full.
-# Fix: (1) loud unknown-flag check first, then (2) cardinality on files-only.
+# Fix: (1) loud unknown-flag check first — EXEMPT a dash-leading file that
+# arrived via -- (hug h steps -- -foo.txt creates _pathspec_pathspecs[-foo.txt]
+# after parse_common_flags_with_pathspecs; the separator-protected file is not
+# an "unknown option"), then (2) cardinality on files-only.
+# NOTE: migrate git-h-steps to parse_common_flags_with_pathspecs "$@" so the
+# separator is visible; file still populated by the own-loop (now over _pathspec_pre_args + _pathspec_pathspecs), but
+# with a saw_separator-aware exemption in the unknown-flag loop.
 for f in ${extra_files[@]+"${extra_files[@]}"}; do
   if [[ "$f" == -* ]]; then
     error_usage "Unknown option: $f. See 'hug help :pathspec'."
   fi
 done
-if [[ -n "${file:-}" && "$file" == -* ]]; then
+if [[ -n "${file:-}" && "$file" == -* && "${saw_separator:-false}" != true ]]; then
   error_usage "Unknown option: $file. See 'hug help :pathspec'."
 fi
+# Above: exempt only when the dash-leading value WAS the separator-protected single file; for the
+# concrete h-steps shape, every extra_files entry is post-file and therefore never separator-protected,
+# so any -* there is genuinely unknown. If the design instead keeps parse_common_flags "$@" as-is,
+# preserve the separator by checking _pathspec_pathspecs: a dash-leading file that equals
+# _pathspec_pathspecs[0] is pathspec data, not an option.
 reject_files=()
 [[ -n "${file:-}" ]] && reject_files+=("$file")
 for f in ${extra_files[@]+"${extra_files[@]}"}; do
@@ -378,7 +389,7 @@ reject_multiple_files "hug h steps" ${reject_files[@]+"${reject_files[@]}"}
 ```
 
 On a second pass, collapse the two reject_files loops (the first already rejects every `-*`, so the second need not filter) — kept expanded in the recipe so the "reject then cardinality" split is reviewable.
-For the actual commit, the file-state guard below (`check_git_repo` / `[ ! -e "$file" ]`) stays untouched; unknown `-*` never reaches it.
+For the actual commit, the file-state guard below (`check_git_repo` / `[ ! -e "$file" ]`) stays untouched; unknown `-*` never reaches it. Add a conformance pin proving `hug h steps -- -foo.txt` is NOT rejected (file literally named `-foo.txt` via `--`, codex #3830105470).
 
 - [ ] **Step 4: Run green** — `make test-unit TEST_FILE=test_pathspec_conformance.bats` → green (`hug h steps src/a.py --bogus` now loud unknown-flag exit 2; `src/a.py docs/note.md` still cardinality `(got 2 files)`; `README.md --raw` still consumed).
 
@@ -493,11 +504,11 @@ For the actual commit, the file-state guard below (`check_git_repo` / `[ ! -e "$
 # — no second command needs it yet).
 is_scope_shaped() {
   local arg="$1"
-  [[ "$arg" == */ || "$arg" == *'('* || "$arg" == *'*' || "$arg" == *'?' || "$arg" == *'[' ]]
+  [[ "$arg" == */ || "$arg" == *'('* || "$arg" == *'*'* || "$arg" == *'?'* || "$arg" == *'['* ]]
 }
 ```
 
-In `hug_us`, replace the inline noun test at :485-488:
+In `hug_us`, apply the fix at BOTH sites — extract `is_scope_shaped` at script scope and replace the inline noun test at :485-488 (wildcard arms must be *anywhere*, not trailing-only: `*'*'*`/`*'?'*`/`*'['*`, codex #3830105463 — otherwise `src/*.py`/`foo?.txt`/`src/[ab].py` are misclassified as literal files):
 ```bash
     local noun="File"
     is_scope_shaped "$file" && noun="Path"
