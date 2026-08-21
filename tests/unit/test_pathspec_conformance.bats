@@ -1992,6 +1992,17 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "single-file cardinality: stats file trailing flag not counted (Task 10/#302)" {
+  # #302 overcount: stats-file's own-loop *) arm collects unknown -* tokens
+  # into remaining_args; 'hug stats file a b --bogus' tallied 3. The slice fixes it.
+  psx_setup
+  run hug stats file src/a.py docs/note.md --bogus
+  assert_equal 2 "$status"
+  assert_output --partial "hug stats file accepts only one file (got 2 files)."
+  refute_output --partial "got 3 files"
+  psx_reset
+}
+
 @test "single-file cardinality: fblame churn mode is guarded too (combo gap, #298 Task 3c)" {
   # fblame's guard sits BEFORE the churn/blame fork (#292), so --churn must
   # not open a bypass: two files under --churn → the same hug rejection the
