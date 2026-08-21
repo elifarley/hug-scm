@@ -658,7 +658,7 @@ teardown() {
 
   # Assert
   assert_failure
-  assert_output --partial "hug fa accepts only one file."
+  assert_output --partial "hug fa accepts only one file (got 2 files)."
 }
 
 @test "reject_multiple_files: one file, zero files, and empty strings pass" {

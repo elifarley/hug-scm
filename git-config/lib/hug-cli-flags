@@ -514,7 +514,10 @@ count_positional_args_before_flags() {
 # Usage: reject_multiple_files "<cmd-name>" [file...]
 # Parameters:
 #   $1 - Command name for the error message (e.g. "hug fa")
-#   $@ - Remaining args are the candidate file arguments
+#   $@ - Remaining args are the candidate FILE arguments
+# Caller contract (#302): pass candidate FILE arguments ONLY, never flags.
+# The truthful "(got N files)" count is only correct for file-only collections
+# — see git-llf/git-stats-file/git-h-steps, which slice/filter before calling.
 # Note:
 #   Empty-string arguments are ignored (not counted as files), so callers
 #   can pass through optional-position variables without pre-filtering.
@@ -531,8 +534,9 @@ reject_multiple_files() {
     # error_usage (exit 2, code-roast alignment): a cardinality violation
     # is a USAGE error — the migrated pathspec family rejects unknown
     # options with the same code; exit 1 made scripts unable to
-    # distinguish "bad invocation" from "command failed".
-    error_usage "${cmd_name} accepts only one file."
+    # distinguish "bad invocation" from "command failed". The truthful
+    # count (#302) makes the overcount class observable/mutation-testable.
+    error_usage "${cmd_name} accepts only one file (got ${#files[@]} files)."
   fi
 }
 

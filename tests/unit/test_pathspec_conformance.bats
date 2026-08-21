@@ -115,7 +115,7 @@ PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
 
 # Single-file cardinality rows (migrated by Task 10, spec §3.2/§5.6): these
 # commands take exactly ONE file; two files → hug's own rejection (exit 2,
-# "<cmd> accepts only one file.") instead of git fatals or silent ignores.
+# "<cmd> accepts only one file (got N files).") instead of git fatals or silent ignores.
 # (Exit flipped 1→2 by the code-roast round: reject_multiple_files now uses
 # error_usage — the family's usage-error code.)
 #   SINGLEFILE_ROWS       — one-word commands guarded directly via
@@ -1908,7 +1908,7 @@ psx_install_stub_gum() {
     psx_setup
     run hug "$cmd" src/a.py docs/note.md
     assert_equal 2 "$status"
-    assert_output --partial "hug $cmd accepts only one file."
+    assert_output --partial "hug $cmd accepts only one file (got 2 files)."
     refute_output --partial "fatal:"
     psx_reset
   done
@@ -1946,7 +1946,7 @@ psx_install_stub_gum() {
   psx_setup
   run hug llf src/a.py docs/note.md -1
   assert_equal 2 "$status"
-  assert_output --partial "hug llf accepts only one file."
+  assert_output --partial "hug llf accepts only one file (got 2 files)."
   psx_reset
 }
 
@@ -1977,7 +1977,7 @@ psx_install_stub_gum() {
   psx_setup
   run hug h steps src/a.py docs/note.md
   assert_equal 2 "$status"
-  assert_output --partial "hug h steps accepts only one file."
+  assert_output --partial "hug h steps accepts only one file (got 2 files)."
   psx_reset
 }
 
@@ -1987,7 +1987,7 @@ psx_install_stub_gum() {
   psx_setup
   run hug stats file src/a.py docs/note.md
   assert_equal 2 "$status"
-  assert_output --partial "hug stats file accepts only one file."
+  assert_output --partial "hug stats file accepts only one file (got 2 files)."
   refute_output --partial "Churn analysis"
   psx_reset
 }
@@ -1999,7 +1999,7 @@ psx_install_stub_gum() {
   psx_setup
   run hug fblame --churn src/a.py docs/note.md
   assert_equal 2 "$status"
-  assert_output --partial "hug fblame accepts only one file."
+  assert_output --partial "hug fblame accepts only one file (got 2 files)."
   refute_output --partial "Churn analysis"
   psx_reset
 
@@ -2009,6 +2009,18 @@ psx_install_stub_gum() {
   run hug fblame --churn src/a.py
   assert_success
   assert_output --partial "src/a.py"
+  psx_reset
+}
+
+@test "single-file cardinality: llf trailing flag not counted in the reject tally (Task 10/#302)" {
+  # #302 overcount: 'hug llf a b -1' used to pass "$file" "$@" to
+  # reject_multiple_files, tallying the -1 flag as a 3rd "file". The slice
+  # (collect_positional_args_before_flags) makes the tally files-only.
+  psx_setup
+  run hug llf src/a.py docs/note.md -1
+  assert_equal 2 "$status"
+  assert_output --partial "hug llf accepts only one file (got 2 files)."
+  refute_output --partial "got 3 files"
   psx_reset
 }
 
