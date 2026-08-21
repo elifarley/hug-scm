@@ -794,11 +794,13 @@ psx_install_stub_gum() {
   assert_output --partial "__PSX_UNKNOWN_ROW__"
 }
 
-@test "characterization sl-family: -- src/ filters by coincidence (sl sla)" {
-  # characterization: flip target PR-B — sl/sla (statusbase) were migrated by
-  # PR-B Task 4 and now filter for the RIGHT reason (the split consumes the
-  # separator; see the statusbase conformance tests). sls was retired from
-  # this row by Task 5 (migrated — see the sls-family conformance tests).
+@test "contract sl-family: -- src/ filters via the split (sl sla; was characterization)" {
+  # FLIPPED by PR-B Task 4 (was characterization): sl/sla (statusbase) were
+  # migrated onto parse_common_flags_with_pathspecs, so the split consumes the
+  # separator and the row now asserts the CONTRACT (filtering via the split),
+  # not the pre-PR-B coincidence. See the statusbase conformance tests. sls was
+  # retired from this row by Task 5 (migrated — see the sls-family conformance
+  # tests).
   for cmd in "${PATHSPEC_CHAR_SL_FILTER_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" -- src/
