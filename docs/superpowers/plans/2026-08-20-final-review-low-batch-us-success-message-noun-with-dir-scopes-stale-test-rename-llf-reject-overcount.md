@@ -316,10 +316,10 @@ Delete the old `# The GATE is authoritative; reject_multiple_files' tally only t
 - Modify: `tests/unit/test_pathspec_conformance.bats` (new proof row near :1980)
 
 **Acceptance Criteria:**
-- [ ] `hug h steps src/a.py --bogus` succeeds (exit 0, analysis of `src/a.py`) — pre-fix it falsely rejected with `accepts only one file` (and post-Task 2 `(got 2 files)`)
-- [ ] `hug h steps src/a.py docs/note.md` still rejects (two files → `(got 2 files)`)
-- [ ] `hug h steps README.md --raw` still works (`--raw` consumed by its own arm, not counted)
-- [ ] new conformance proof row; mutation receipt: revert the filter → false reject returns red
+- [ ] `hug h steps src/a.py --bogus` fails loud `Unknown option: --bogus. See 'hug help :pathspec'.` (exit 2) — pre-fix it was counted as a file and falsely hit the cardinality guard; filtering it from the tally alone would have silently analyzed `src/a.py` and masked the typo; the path-command contract (codex review #3829676849) requires unknown `-*` after the file to be loud, not silently skipped.
+- [ ] `hug h steps src/a.py docs/note.md` still rejects with `accepts only one file (got 2 files)` (the ordinary two-files case, unchanged)
+- [ ] `hug h steps README.md --raw` still works (`--raw` consumed by its own arm before any guard, not flagged)
+- [ ] new conformance proof row asserts the loud unknown-flag path, not silent success; mutation receipt: drop the guard → silent success returns red
 - [ ] `make test-unit TEST_FILE=test_pathspec_conformance.bats` green
 
 **Verify:** `make test-unit TEST_FILE=test_pathspec_conformance.bats TEST_FILTER="h steps"` → green including the new proof row.
@@ -329,51 +329,62 @@ Delete the old `# The GATE is authoritative; reject_multiple_files' tally only t
 - [ ] **Step 1: Write the proof row (red first)** in `tests/unit/test_pathspec_conformance.bats`:
 
 ```bash
-@test "single-file cardinality: h steps trailing flag not counted, not a false reject (#302)" {
-  # #302 C-004: h-steps's own-loop *) arm collects unknown -* tokens into
-  # extra_files (parse_common_flags passes them through), so 'hug h steps
-  # a --bogus' fired the reject on 1 file + 1 flag (a false count the
-  # Task-2 message change made observable). The tally-filter excludes -* from
-  # the reject input; the flag no longer triggers a false reject. --raw is
-  # consumed by its own arm and is unaffected.
+@test "single-file cardinality: h steps trailing unknown flag is a loud error, not a false single-file count (#302)" {
+  # #302 C-004, codex #3829676849: h-steps's own-loop *) arm collects unknown
+  # -* tokens into extra_files (parse_common_flags passes them through), so
+  # 'hug h steps a --bogus' used to miscount the flag as a file and fire the
+  # cardinality guard. Filtering it from the tally alone would have converted a
+  # typo into silent success. The fix is loud: unknown -* after the file is a
+  # usage error (path-command contract, exit 2). --raw is consumed by its own
+  # arm and is exempted.
   psx_setup
   run hug h steps src/a.py --bogus
-  assert_success
-  assert_output --partial "src/a.py"
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bogus"
   refute_output --partial "accepts only one file"
   psx_reset
 }
 ```
 
-- [ ] **Step 2: Run red** — `make test-unit TEST_FILE=test_pathspec_conformance.bats TEST_FILTER="h steps trailing flag"` → FAIL (current code falsely rejects `src/a.py --bogus` with `accepts only one file (got 2 files).`).
+- [ ] **Step 2: Run red** — `make test-unit TEST_FILE=test_pathspec_conformance.bats TEST_FILTER="h steps trailing flag"` → FAIL (current code either falsely rejects with `accepts only one file` or — after a tally-filter-only fix — would silently succeed; the new proof expects exit 2 `Unknown option`).
 
-- [ ] **Step 3: Add the tally-filter** in `git-config/bin/git-h-steps`, replacing the reject line at :86:
+- [ ] **Step 3: Make h-steps loud on unknown flags, correct the tally** in `git-config/bin/git-h-steps`, replacing the reject line at :86. Two guards, order matters — `--raw` is already consumed above, so only unknown flags remain:
 
 ```bash
-# Cardinality guard (#302 C-004): h-steps's own-loop *) arm collects unknown
-# -* tokens (parse_common_flags passes them through) into file/extra_files,
-# so 'hug h steps a --bogus' used to reject on 1 file + 1 flag — a false count
-# the reject_multiple_files "(got N files)" message (Task 2) makes observable.
+# Cardinality + unknown-flag guard (#302 C-004, codex #3829676849):
+# h-steps's own-loop *) arm collects unknown -* tokens (parse_common_flags
+# passes them through) into file/extra_files, so 'hug h steps a --bogus'
+# used to be miscounted as a file and fire the cardinality guard. Filtering it
+# from the tally alone would have turned a typo into silent success, violating
+# the path-command contract that unknown flags must fail (exit 2).
 # NOT the pre-loop slice (collect_positional_args_before_flags): --raw
 # legitimately follows the file ('hug h steps README.md --raw', help:44) and
 # is consumed by the own-loop's --raw arm first, so the loop must run in full.
-# Post-loop tally-filter: feed reject_multiple_files only the non-* tokens
-# from $file + extra_files. h-steps's unknown-flag disposition (silent) is
-# pre-existing and untouched — migrating it to the loud contract is a
-# separate task (see plan spec §8).
-reject_files=()
-[[ -n "${file:-}" && "${file:-}" != -* ]] && reject_files+=("$file")
+# Fix: (1) loud unknown-flag check first, then (2) cardinality on files-only.
 for f in ${extra_files[@]+"${extra_files[@]}"}; do
-  [[ "$f" != -* ]] && reject_files+=("$f")
+  if [[ "$f" == -* ]]; then
+    error_usage "Unknown option: $f. See 'hug help :pathspec'."
+  fi
+done
+if [[ -n "${file:-}" && "$file" == -* ]]; then
+  error_usage "Unknown option: $file. See 'hug help :pathspec'."
+fi
+reject_files=()
+[[ -n "${file:-}" ]] && reject_files+=("$file")
+for f in ${extra_files[@]+"${extra_files[@]}"}; do
+  reject_files+=("$f")
 done
 reject_multiple_files "hug h steps" ${reject_files[@]+"${reject_files[@]}"}
 ```
 
-- [ ] **Step 4: Run green** — `make test-unit TEST_FILE=test_pathspec_conformance.bats` → green (the two-files shape `hug h steps src/a.py docs/note.md` still rejects with `(got 2 files)`; `src/a.py --bogus` now succeeds; `--raw` still consumed).
+On a second pass, collapse the two reject_files loops (the first already rejects every `-*`, so the second need not filter) — kept expanded in the recipe so the "reject then cardinality" split is reviewable.
+For the actual commit, the file-state guard below (`check_git_repo` / `[ ! -e "$file" ]`) stays untouched; unknown `-*` never reaches it.
 
-- [ ] **Step 5: Mutation receipt** — drop the `[[ "$f" != -* ]]` filter (revert), re-run the proof row → false reject returns red. Restore.
+- [ ] **Step 4: Run green** — `make test-unit TEST_FILE=test_pathspec_conformance.bats` → green (`hug h steps src/a.py --bogus` now loud unknown-flag exit 2; `src/a.py docs/note.md` still cardinality `(got 2 files)`; `README.md --raw` still consumed).
 
-- [ ] **Step 6: Commit** — `hug a git-config/bin/git-h-steps tests/unit/test_pathspec_conformance.bats && hug c -m "fix(h-steps): post-loop tally-filter excludes flags from the reject tally (#302 C-004)"`
+- [ ] **Step 5: Mutation receipt** — drop the unknown-flag loop (revert to just `reject_multiple_files "hug h steps" "$file" ${extra_files[@]+"${extra_files[@]}"}`), re-run the proof row → either false cardinality or silent success instead of loud `Unknown option` → red. Restore.
+
+- [ ] **Step 6: Commit** — `hug a git-config/bin/git-h-steps tests/unit/test_pathspec_conformance.bats && hug c -m "fix(h-steps): loud unknown-flag rejection instead of silently filtering flags from the tally (#302 C-004)"`
 
 ---
 
@@ -439,14 +450,21 @@ reject_multiple_files "hug h steps" ${reject_files[@]+"${reject_files[@]}"}
 }
 
 @test "conformance us (#302): -- invariance — clause identical with and without the separator" {
+  # Codex #3829676857: the previous draft captured $output but never compared it, so a bare invocation that
+  # diverged from the -- form still passed. Compare both outputs (status + first-line clause) so the
+  # stated -- -invariance property is actually pinned.
   psx_setup
   run hug us src/
-  local bare=$output
+  assert_success
+  local bare_out="$output"
+  local bare_status="$status"
+  assert_output --partial "matching 'src/':"
   psx_reset
   psx_setup
   run hug us -- src/
-  assert_output --partial "matching 'src/':"
-  # Same clause either way
+  assert_success
+  assert_equal "$bare_status" "$status"
+  assert_equal "$bare_out" "$output"
   psx_reset
 }
 
