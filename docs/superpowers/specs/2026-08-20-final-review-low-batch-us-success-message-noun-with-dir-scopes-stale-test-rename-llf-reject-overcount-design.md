@@ -33,7 +33,7 @@ All claims below were verified at HEAD (d01fe10c) by reading the cited sites and
 | reject helper + message | hug-cli-flags:510-533 (`reject_multiple_files`, message at :531) |
 | llf gate + reject | git-llf:63-73 |
 | stats-file gate + reject | git-stats-file:121-134 (own-loop `*)` collects `remaining_args`; gate `-gt 1`) |
-| h-steps files-only collection | git-h-steps:60-86 (`extra_files` pattern) |
+| h-steps own-loop (collects unknown `-*` into `file`/`extra_files`) | git-h-steps:60-86 (`--raw` arm + `*)` catch-all; parse_common_flags passes unknown flags through, hug-cli-flags:150-223) |
 | f-family reject sites | git-fa:85, git-fb:85, git-fborn:82, git-fcon:83, git-fblame:98 |
 | rename target | test_pathspec_conformance.bats:797 |
 | resolved-report pin | test_pathspec_conformance.bats:1429 |
@@ -142,7 +142,7 @@ Matches are reported root-relative (`✓ src/deep/z.py` from inside `src/`): it 
 |---|---|---|
 | git-llf:70 | `"$file" "$@"` — `$@` includes flags | **OVERCOUNTS** — fixed (§4.3) |
 | git-stats-file:133 | `remaining_args` — own-loop `*)` also collects unknown `-*` tokens | **OVERCOUNTS** (shape `hug stats file a b --bogus` → tally 3, files 2) — fixed (§4.3) |
-| git-h-steps:86 | `"$file" + extra_files` — files only | correct — no change |
+| git-h-steps:86 | `"$file" + extra_files` — own-loop `*)` collects unknown `-*` tokens (parse_common_flags passes them through, hug-cli-flags:150-223) | **OVERCOUNTS** (verified live: `hug h steps a.txt --bogus` fires the reject on 1 file + 1 flag) — fixed (§4.3) |
 | git-fa:85 / git-fb:85 / git-fborn:82 / git-fcon:83 / git-fblame:98 | `"$@"` / `remaining_args` — every member flows to git after `--` as pathspec data | correct BY SEMANTICS (every token IS a candidate file there) — no change, message gains the truthful count via §4.2 |
 
 ### 4.2 Helper changes (hug-cli-flags)
@@ -154,13 +154,19 @@ Matches are reported root-relative (`✓ src/deep/z.py` from inside `src/`): it 
 ### 4.3 Call-site adoptions
 
 - **git-llf:** `extra_files=()` ← `collect_positional_args_before_flags extra_files "$@"`; gate `${#extra_files[@]} -ge 1` (same semantics: `$file` already shifted out); reject with `"$file"` + the slice only (nullsafe `${extra_files[@]+...}`). The `exec hug ll "$@" --follow -- "$file"` path is untouched — flags keep flowing to the log backend. The gate comment's "tally only triggers" caveat is deleted: gate and tally are now the SAME collection.
-- **git-stats-file:** same pattern over `remaining_args`; gate stays `-gt 1` (its first file is still inside the array).
+- **git-stats-file:** same slice pattern over `remaining_args`; gate stays `-gt 1` (its first file is still inside the array). **Delete its twin "tally only triggers" comment at git-stats-file:127-128** (F-004) — same rationale as llf: after the slice, gate and tally are the same collection there too, so the "do not simplify the gate away" comment's premise is false.
+- **git-h-steps:** NOT the pre-loop slice — `--raw` legitimately follows the file (`hug h steps README.md --raw`, help:44) and is consumed by the own-loop's `--raw` arm, so the loop must run in full. Instead a **post-loop tally-filter**: after the own-loop, build the reject input excluding `-*` tokens from BOTH `$file` and `extra_files` (`reject_files=(); [[ -n "$file" && "$file" != -* ]] && reject_files+=("$file"); for f in ${extra_files[@]+"${extra_files[@]}"}; do [[ "$f" != -* ]] && reject_files+=("$f"); done; reject_multiple_files "hug h steps" ${reject_files[@]+"${reject_files[@]}"}`). This fixes the tally — `hug h steps a.txt --bogus` no longer counts `--bogus` — without touching h-steps's pre-existing unknown-flag disposition (silent; migrating it to the loud contract is a separate task). The `-- -foo.txt` and `--bogus a.txt` edge shapes are pre-existing h-steps grammar issues (file-slot ambiguity), orthogonal to the tally fix and out of scope.
 
 ### 4.4 Deliberate pin flips (red→green, named in the commit body)
 
 The message change turns six existing partial-match assertions red (the old trailing `.` stops being a substring): test_pathspec_conformance.bats:1911, 1949, 1980, 1990, 2002 and tests/lib/test_hug-cli-flags.bats:661. Each flips to the counted form, e.g. `assert_output --partial "hug llf accepts only one file (got 2 files)."`.
 
-**Proof row (the mutation test for the finding itself):** the llf shape with a trailing flag — `hug llf src/a.py docs/note.md -1` — asserts `(got 2 files)`. Neuter the fix (pass `"$@"` again) and the message prints `(got 3 files)` → red. Observable by construction; the pre-fix code had no observable surface for this finding at all (no count anywhere, gate alone decided firing) — which is why the message change is part of the fix, not scope creep.
+**Proof rows (the mutation tests for the finding — one per overcount site, so each fix is independently neuter-testable):**
+- **llf:** `hug llf src/a.py docs/note.md -1` asserts `(got 2 files)`. Neuter (pass `"$@"` again) → `(got 3 files)` → red.
+- **stats-file:** `hug stats file src/a.py docs/note.md --bogus` asserts `(got 2 files)`. Neuter (pass raw `remaining_args`) → `(got 3 files)` → red. (F-002 — the original spec had only the llf proof row; stats-file's identical-class fix was untestable in isolation.)
+- **h-steps:** `hug h steps src/a.py --bogus` asserts SUCCESS (exit 0, analysis of `src/a.py`) — pre-fix it falsely rejects `accepts only one file` (and post-§4.2 `(got 2 files)`). Neuter (drop the tally-filter) → false reject returns → red.
+
+Observable by construction; the pre-fix code had no observable surface for this finding at all (no count anywhere, gate alone decided firing) — which is why the message change is part of the fix, not scope creep.
 
 ### 4.5 New lib tests
 
@@ -180,11 +186,13 @@ The message change turns six existing partial-match assertions red (the old trai
 2. Finding 3: lib tests red first, then helper + call-site adoptions; the six pin flips land in the same commit as the message change.
 3. Finding 2: rename + comment rewrite; receipt = suite green + zero grep hits for the old name.
 
-**Mutation receipts:** revert the clause → clause pins red; revert llf to `"$@"` → proof row red (`got 3 files`); rename has no mutation analog (framing change — suite green + grep is the receipt).
+**Mutation receipts:** revert the clause → clause pins red; revert llf to `"$@"` → llf proof row red (`got 3 files`); revert stats-file to raw `remaining_args` → stats-file proof row red (`got 3 files`); revert h-steps tally-filter → h-steps proof row red (false reject returns); rename has no mutation analog (framing change — suite green + grep is the receipt).
 
 **Verification (Makefile targets only, per project CLAUDE.md):** `make test-unit TEST_FILE=test_pathspec_conformance.bats`, `make test-lib TEST_FILE=test_hug-cli-flags.bats`, `make test-unit TEST_FILE=test_status_staging.bats`, then full `make test` before commit.
 
-**Docs perimeter:** grep `accepts only one file` across `docs/`, the completions reference, AND in-suite prose (the repo-wide grep at design time hit one prose site besides the six assertions: the section-header comment at test_pathspec_conformance.bats:118); any hit flips in the same commit. CHANGELOG entry under the message fix (user-visible on the usage-error path of all 8 guarded commands).
+**Docs perimeter — Finding 3 (`accepts only one file`):** the repo-wide grep at d01fe10c hits, besides the six living assertions (conformance 1911/1949/1980/1990/2002 + lib 661), one in-suite prose site (conformance:118 section-header comment) and eight FROZEN historical records: CHANGELOG.md:74, docs/superpowers/plans/2026-08-17-…-pr-a.md:142/156/182/474, docs/superpowers/specs/2026-08-16-…-design.md:142, mgmt/superpowers/specs/pathscoping-audit.md:567. Policy: **living artifacts (the test suite) flip in the same commit**; **frozen records (CHANGELOG entries for shipped versions, ratified specs/plans, the audit) stay as-written** — rewriting them is churn on history that records what was true at the time. A NEW CHANGELOG entry documents the message change forward. (F-001 — the original spec's "one prose site" claim was based on a grep scoped to `git-config/`+`tests/` only; corrected.)
+
+**Docs perimeter — Finding 1 (`Unstaged N files` / `Would unstage` message shapes):** grep across `docs/`, README, and tapes — zero stale hits at d01fe10c (every `Unstaged ` hit is the concept/flag, not the message form; no hug-us tape exists). (F-003 — receipt recorded; the perimeter is clean, this is record-keeping discipline for the next message-shape change.)
 
 ## 7. Error handling, stdout discipline, performance
 
@@ -199,6 +207,7 @@ The message change turns six existing partial-match assertions red (the old trai
 - stats-file's downstream handling of unknown flags that survive its gate (`hug stats file a --bogus`) — pre-existing, orthogonal to the reject tally.
 - Pre-existing classifier divergence in git-us: the scoped-empty GATE tests disk existence (`-f`, git-us:376), the NOUN/CLAUSE test shape chars. They diverge only for a file literally named with glob chars (e.g. existing `foo*`): gate treats it as a literal file (correct for safety), the clause names it as a scope (correct for intent — the spelling IS glob-shaped). Documented boundary, not resolved here.
 - Clause ordering for mixed placement — post-`--` entries first (array order, §2.2); deterministic, no sort logic.
+- h-steps file-slot ambiguity for dash-leading/unknown-flag-first shapes (`hug h steps --bogus a.txt`, `hug h steps -- -foo.txt`) — pre-existing grammar issues, orthogonal to the tally fix (§4.3); migrating h-steps to the loud-unknown-flag contract is a separate task.
 
 ## 9. Approach rationale (ratified)
 
