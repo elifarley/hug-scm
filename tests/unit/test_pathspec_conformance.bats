@@ -1510,6 +1510,73 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "conformance us (#302): scope-shaped success names the full scope set" {
+  psx_setup
+  git add docs/note.md   # + src/a.py, src/b.py already staged via psx_setup
+  run hug us -- src/
+  assert_success
+  assert_output --partial "matching 'src/':"
+  psx_reset
+}
+
+@test "conformance us (#302): literal file keeps the bare noun (no clause)" {
+  psx_setup
+  run hug us -- src/a.py
+  assert_success
+  assert_output --partial "Unstaged 1 file:"
+  refute_output --partial "matching"
+  psx_reset
+}
+
+@test "conformance us (#302): mixed list names the full set (union semantics)" {
+  psx_setup
+  git add docs/note.md
+  run hug us docs/note.md src/
+  assert_success
+  assert_output --partial "matching 'docs/note.md' 'src/':"
+  psx_reset
+}
+
+@test "conformance us (#302): dry-run mirrors the clause" {
+  psx_setup
+  run hug us --dry-run src/
+  assert_success
+  assert_output --partial "Would unstage"   # exact: "Dry run: Would unstage N file(s) matching 'src/':"
+  assert_output --partial "matching 'src/':"
+  psx_reset
+}
+
+@test "conformance us (#302): -- invariance — clause identical with and without the separator" {
+  # Codex #3829676857: the previous draft captured $output but never compared it, so a bare invocation that
+  # diverged from the -- form still passed. Compare both outputs (status + first-line clause) so the
+  # stated -- -invariance property is actually pinned.
+  psx_setup
+  run hug us src/
+  assert_success
+  local bare_out="$output"
+  local bare_status="$status"
+  assert_output --partial "matching 'src/':"
+  psx_reset
+  psx_setup
+  run hug us -- src/
+  assert_success
+  assert_equal "$bare_status" "$status"
+  assert_equal "$bare_out" "$output"
+  psx_reset
+}
+
+@test "conformance us (F-005): subdir run keeps root-relative spelling, clause echoes user spelling" {
+  psx_setup
+  mkdir -p src/deep && echo z > src/deep/z.py && git add src/deep/z.py
+  cd src
+  run hug us -- deep/
+  assert_success
+  assert_output --partial "matching 'deep/':"
+  assert_output --partial "src/deep/z.py"   # root-relative ✓ line
+  cd - >/dev/null
+  psx_reset
+}
+
 @test "w get: -u treats positionals as files; -u alone runs documented reset-all (Task 8)" {
   # FLIPPED (Task 8, spec §5.2): with `-u` there is NO target positional —
   # every remaining argument is a FILE (BUG-3). Before the fix, `-u <file>`
