@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bash (git-config/bin + git-config/lib), BATS (tests/unit + tests/lib), GNU getopt (existing). Mercurial parity (`hg-config`) is unaffected — the changed commands are Git-only.
 
-**Spec:** `docs/superpowers/specs/2026-08-20-final-review-low-batch-us-success-message-noun-with-dir-scopes-stale-test-rename-llf-reject-overcount-design.md` (committed `025f2e27`, roast round 1 applied `e2682f34`).
+**Spec:** `docs/superpowers/specs/2026-08-20-final-review-low-batch-us-success-message-noun-with-dir-scopes-stale-test-rename-llf-reject-overcount-design.md` (roast round 1 applied in `389f1acc`; the pre-rebase spec commits originally cited here are unreachable from any ref — cite files or branch-tip commits, never mid-rebase hashes).
 
 **Commit note:** the spec said "three implementation commits" (one per finding) as an approximation; this plan refines to seven atomic TDD commits. Two of the six existing `accepts only one file.` pins are the overcount shape (conformance:1949 is `hug llf … -1`, a trailing-flag shape) and flip with their call-site fix, not the message commit — the plan keeps every commit green.
 
