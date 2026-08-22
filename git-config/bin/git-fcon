@@ -82,6 +82,16 @@ Install gum: https://github.com/charmbracelet/gum"
   fi
 fi
 
+# --browse-root excludes explicit paths (same regression class codex
+# #3834674453 caught on h-steps, ship-review coverage audit found here):
+# the split hides post-'--' paths from parse_common_flags' enforcement, so
+# '<cmd> --browse-root -- src/a.py' analyzed the file with the flag silently
+# ignored where main rejected loudly. Message/exit mirror the lib's own
+# rejection; fires before the guards below (main's precedence).
+if $browse_root && { [[ $# -gt 0 ]] || { [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; }; }; then
+  error "--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection."
+fi
+
 # Cardinality + unknown-option guard (#310 thread #3834674457): two-stream
 # tally, same design as git-fa — see that file's comment block for the full
 # WHY. Surviving candidate re-pointed onto "$@" for the exec line.

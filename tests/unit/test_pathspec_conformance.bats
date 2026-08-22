@@ -2250,6 +2250,21 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "single-file cardinality: f-family browse-root still excludes explicit paths post-split (#310 ship review)" {
+  # Same regression class as the h-steps pin above, found by the coverage
+  # audit when fa/fb/fborn/fcon adopted the split WITHOUT the backstop:
+  # 'fa --browse-root -- src/a.py' silently analyzed where main rejected
+  # exit 1 (probed both sides before fixing).
+  for cmd in fa fb fborn fcon; do
+    psx_setup
+    run hug "$cmd" --browse-root -- src/a.py
+    assert_equal 1 "$status"
+    assert_output --partial "--browse-root cannot be used with explicit paths."
+    refute_output --partial "tester"   # no analysis output leaks
+    psx_reset
+  done
+}
+
 @test "conformance us (#310 #3834674455): short-form magic pathspecs name the scope clause" {
   # Git accepts ':!path' / ':^path' exclusion spellings; the classifier only
   # knew '(' magic, so the dry-run/success clause went missing while git
