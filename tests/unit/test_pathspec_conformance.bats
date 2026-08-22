@@ -2190,18 +2190,49 @@ psx_install_stub_gum() {
   # Post-'--' tokens are DATA by contract: a second dash-named candidate via
   # '--' must hit the cardinality message (truthful tally), never an option-
   # parse complaint; a single dash-named file must still analyze.
+  # Parameterized over all four copied guard blocks (ship review: a
+  # copy-paste divergence in one of them previously stayed green).
+  for cmd in fa fb fborn fcon; do
+    psx_setup
+    run hug "$cmd" -- ./-foo.txt ./-bar.txt
+    assert_equal 2 "$status"
+    assert_output --partial "hug $cmd accepts only one file (got 2 files)."
+    refute_output --partial "Unknown option"
+    psx_reset
+
+    psx_setup
+    echo pin > ./-baz.txt
+    git add -- ./-baz.txt
+    run hug "$cmd" -- ./-baz.txt
+    assert_success
+    psx_reset
+  done
+}
+
+@test "single-file cardinality: fblame separator data reaches the truthful guard; lone dash is a filename (#310 ship review)" {
+  # fblame's own-loop gained '--)' (drain) and ')' (lone dash = filename
+  # candidate) arms; without these pins a revert of either arm stays green.
   psx_setup
-  run hug fa -- ./-foo.txt ./-bar.txt
-  assert_equal 2 "$status"
-  assert_output --partial "hug fa accepts only one file (got 2 files)."
+  echo pin > ./-baz.txt
+  git add -- ./-baz.txt
+  run hug fblame -- ./-baz.txt
+  assert_success
   refute_output --partial "Unknown option"
   psx_reset
 
   psx_setup
-  echo pin > ./-baz.txt
-  git add -- ./-baz.txt
-  run hug fa -- ./-baz.txt
+  run hug fblame -- ./-foo.txt ./-bar.txt
+  assert_equal 2 "$status"
+  assert_output --partial "hug fblame accepts only one file (got 2 files)."
+  refute_output --partial "Unknown option"
+  psx_reset
+
+  psx_setup
+  echo lone > ./-
+  git add -- ./-
+  run hug fblame ./-
   assert_success
+  refute_output --partial "Unknown option"
   psx_reset
 }
 
@@ -2233,6 +2264,36 @@ psx_install_stub_gum() {
   run hug us --dry-run -- ':^docs/note.md'
   assert_success
   assert_output --partial "matching ':^docs/note.md':"
+  psx_reset
+}
+
+@test "conformance us (#310 ship review): glob and bracket pathspecs classify as scope" {
+  # is_scope_shaped's wildcard arms ('*', '?', '[') had no pin exercising
+  # them — a misclassification regression (clause silently missing, noun
+  # wrong on the error path) stayed green. One clause-level pin per arm
+  # class; the error-path noun rides the same classifier.
+  psx_setup
+  run hug us --dry-run -- 'src/*.py'
+  assert_success
+  assert_output --partial "matching 'src/*.py':"
+  psx_reset
+
+  psx_setup
+  # 'src/??.py' matches nothing staged → the scoped-empty gate answers the
+  # no-match message; the CLASSIFIER assertion is that the scope spelling is
+  # echoed verbatim (a misclassification as a literal file would instead
+  # produce "File 'src/??.py' is not staged." exit 1).
+  run hug us --dry-run -- 'src/??.py'
+  assert_success
+  assert_output --partial "'src/??.py'"
+  refute_output --partial "is not staged"
+  psx_reset
+
+  psx_setup
+  # 'src/[ab].py' DOES match the fixture (a.py) — full clause assertion.
+  run hug us --dry-run -- 'src/[ab].py'
+  assert_success
+  assert_output --partial "matching 'src/[ab].py':"
   psx_reset
 }
 

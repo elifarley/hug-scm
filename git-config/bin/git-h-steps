@@ -129,12 +129,7 @@ if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
   done
 fi
 
-reject_files=()
-[[ -n "${file:-}" ]] && reject_files+=("$file")
-for f in ${extra_files[@]+"${extra_files[@]}"}; do
-  reject_files+=("$f")
-done
-reject_multiple_files "hug h steps" ${reject_files[@]+"${reject_files[@]}"}
+reject_multiple_files "hug h steps" "$file" ${extra_files[@]+"${extra_files[@]}"}
 
 # If no file provided, show interactive selection or help
 if [[ -z "$file" ]]; then

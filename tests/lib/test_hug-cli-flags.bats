@@ -896,6 +896,10 @@ teardown() {
 }
 
 @test "count_positional_args_before_flags: parity with collect length" {
+  # Literal pin FIRST (ship review): the derived comparison below cannot
+  # detect a revert of the delegation refactor (any implementation returning
+  # 2 for 'a b -1' passes it) — the wrapper's output is pinned independently.
+  [[ "$(count_positional_args_before_flags a b -1)" -eq 2 ]]
   local -a c=()
   collect_positional_args_before_flags c a b -1
   [[ "$(count_positional_args_before_flags a b -1)" -eq "${#c[@]}" ]]
