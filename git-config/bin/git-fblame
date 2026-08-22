@@ -84,6 +84,26 @@ while [ $# -gt 0 ]; do
     show_help
     exit 0
     ;;
+  --)
+    # Separator: everything after is verbatim DATA (a dash-named file via
+    # '--' must stay a file candidate), per drain_pathspecs_after_separator.
+    # MUST precede the -* arm: '-' patterns match '--' too, and case takes
+    # the FIRST matching arm.
+    shift
+    drain_pathspecs_after_separator remaining_args "$@"
+    break
+    ;;
+  -)
+    # A lone '-' is a FILENAME candidate (stdin-style spelling), not a flag.
+    remaining_args+=("$1")
+    shift
+    ;;
+  -*)
+    # Unknown options are loud (#310 thread #3834674457): the catch-all used
+    # to collect them into remaining_args, so 'hug fblame src/a.py --bogus'
+    # reported "got 2 files" — a false count naming a typo a file.
+    error_usage "Unknown option: $1. See 'hug help :pathspec'."
+    ;;
   *)
     remaining_args+=("$1")
     shift

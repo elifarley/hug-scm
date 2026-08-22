@@ -120,17 +120,18 @@ done
 
 # Cardinality guard (pathspec contract §3.2): stats file analyzes ONE file
 # — `hug stats file a b` used to churn-analyze ONLY a and silently drop the
-# extras. First flag ends the count, WHY in count_positional_args_before_flags
-# (defensive here: known value-taking flags like --since are consumed above
-# WITH their value). Gate is -gt 1 (not -ge 1) because this command's file
-# is still INSIDE remaining_args, unlike llf where it was shifted out.
-# The GATE is authoritative; reject_multiple_files' tally only triggers the
-# same message — do not "simplify" the gate away (#292/#298).
-# ${remaining_args[@]+...} nullsafe expansion (Bash 4.3 set -u crash mode):
-# empty remaining_args must expand to nothing, not an unbound-variable
-# fatal on the interactive-selection path.
-if [ "$(count_positional_args_before_flags ${remaining_args[@]+"${remaining_args[@]}"})" -gt 1 ]; then
-  reject_multiple_files "hug stats file" ${remaining_args[@]+"${remaining_args[@]}"}
+# extras. First flag ends the count, WHY in collect_positional_args_before_flags
+# (the single-engine slice, #302). Gate is -gt 1 (not -ge 1) because this
+# command's file is still INSIDE the collected args, unlike llf where it was
+# shifted out. The slice also drops unknown -* tokens (e.g. --bogus) so they
+# no longer inflate the tally (the #302 overcount: 'hug stats file a b
+# --bogus' tallied 3). The GATE is authoritative; reject_multiple_files'
+# tally now feeds it the SAME files-only collection.
+# ${file_args[@]+...} nullsafe expansion (Bash 4.3 set -u crash mode).
+file_args=()
+collect_positional_args_before_flags file_args ${remaining_args[@]+"${remaining_args[@]}"}
+if [ ${#file_args[@]} -gt 1 ]; then
+  reject_multiple_files "hug stats file" ${file_args[@]+"${file_args[@]}"}
 fi
 
 check_git_repo

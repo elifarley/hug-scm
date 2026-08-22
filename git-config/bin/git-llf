@@ -61,13 +61,17 @@ file="$1"
 shift
 
 # Cardinality guard (pathspec contract §3.2): llf logs ONE file; flags may
-# legitimately follow it. Any leading positional AFTER the file is a second
-# file — first flag ends the count, WHY in count_positional_args_before_flags.
-# Gate is -ge 1 (not -gt 1) because $file was already shifted out of "$@".
-# The GATE is authoritative; reject_multiple_files' tally only triggers the
-# same message — do not "simplify" the gate away (#292/#298).
-if [ "$(count_positional_args_before_flags "$@")" -ge 1 ]; then
-  reject_multiple_files "hug llf" "$file" "$@"
+# legitimately follow it. Collect ONLY the leading positional args (the slice
+# — count_positional_args_before_flags' single-engine companion, #302) so the
+# reject tally counts files, never trailing flags like '-1' (the #302
+# overcount: 'hug llf a b -1' used to pass "$file" "$@" and tally the -1 as a
+# 3rd "file"). Gate is -ge 1 because $file was already shifted out of "$@".
+# The GATE is authoritative; reject_multiple_files' tally now feeds it the
+# SAME files-only collection.
+extra_files=()
+collect_positional_args_before_flags extra_files "$@"
+if [ ${#extra_files[@]} -ge 1 ]; then
+  reject_multiple_files "hug llf" "$file" ${extra_files[@]+"${extra_files[@]}"}
 fi
 
 exec hug ll "$@" --follow -- "$file"

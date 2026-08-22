@@ -388,6 +388,22 @@ else
   fi
 fi
 
+# is_scope_shaped (#302 finding 1): classifies whether an argument is a
+# directory/glob/magic scope — the f2771623 noun rule. One classifier shared by
+# the error-path noun (below) and the success/dry-run scope clause, so the two
+# sites classify identically by construction. Stays git-us-local (rule of three
+# — no second command needs it yet).
+# Short-form magic (#310 codex #3834674455): git also accepts ':!path' / ':^path'
+# exclusion and ':/text' top-of-tree spellings — a leading ':' followed by a
+# non-digit char (':0'-' :9' are stage numbers, not magic). Without these arms
+# the clause went missing for 'us --dry-run -- :!docs/note.md' while git still
+# scoped by it (probed).
+is_scope_shaped() {
+  local arg="$1"
+  [[ "$arg" == */ || "$arg" == *'('* || "$arg" == *'*'* || "$arg" == *'?'* || "$arg" == *'['* ||
+    "$arg" == ':'[!0-9]* ]]
+}
+
 # --- Main function for 'hug us' ---
 hug_us() {
   local -a files_to_unstage=("$@")
@@ -483,9 +499,7 @@ hug_us() {
     # matches. Call a directory/glob/magic spelling a "Path", not a "File" —
     # "File 'src/' is not staged" was the probed misleading message.
     local noun="File"
-    if [[ "$file" == */ || "$file" == *'('* || "$file" == *'*' || "$file" == *'?' || "$file" == *'[' ]]; then
-      noun="Path"
-    fi
+    is_scope_shaped "$file" && noun="Path"
 
     # The '--' is load-bearing (spec-review finding 1): a staged file
     # literally named '-foo.txt' would otherwise be parsed as an OPTION by
@@ -523,9 +537,30 @@ hug_us() {
     report_targets=(${files_to_unstage[@]+"${files_to_unstage[@]}"})
   fi
 
+  # Scope clause (#302 finding 1): name the FULL scope set when any pathspec is
+  # scope-shaped. Git unions pathspecs, so "matching 'X' 'Y'" = matching any of
+  # the set = exactly what the count counts. Literal-only invocations get no
+  # clause (the ✓ lines already say everything). Reads the converged `pathspecs`
+  # array (script scope), NEVER files_to_unstage (the from-source arm holds
+  # filtered source FILENAMES, not the user's scope). Built once; consumed by
+  # both success and dry-run so they cannot diverge.
+  local has_scope=false spec
+  for spec in ${pathspecs[@]+"${pathspecs[@]}"}; do
+    is_scope_shaped "$spec" && {
+      has_scope=true
+      break
+    }
+  done
+  local scope_clause=""
+  if $has_scope; then
+    local scope_list=""
+    printf -v scope_list "'%s' " ${pathspecs[@]+"${pathspecs[@]}"}
+    scope_clause=" matching ${scope_list% }"
+  fi
+
   # Preview mode
   if [[ "${dry_run}" == "true" ]]; then
-    info "Dry run: Would unstage ${#report_targets[@]} file(s):"
+    info "Dry run: Would unstage ${#report_targets[@]} file(s)${scope_clause}:"
     for file in "${report_targets[@]}"; do
       printf "  - %s\n" "$file" >&2
     done
@@ -543,7 +578,7 @@ hug_us() {
   local file_word="file"
   [[ $count -gt 1 ]] && file_word="files"
 
-  success "Unstaged $count $file_word:"
+  success "Unstaged $count $file_word${scope_clause}:"
   for file in "${report_targets[@]}"; do
     printf "  ✓ %s\n" "$file" >&2
   done
