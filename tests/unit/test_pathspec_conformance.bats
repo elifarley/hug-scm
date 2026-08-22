@@ -2124,14 +2124,42 @@ psx_install_stub_gum() {
   # Conformance pin: hug h steps -- -foo.txt creates _pathspec_pathspecs[-foo.txt]
   # via parse_common_flags_with_pathspecs — the separator-protected file is
   # pathspec data, not an "unknown option". Must NOT be rejected.
+  # (Roast round on #310 dropped the trailing '--raw' this pin used to carry:
+  # post-'--' tokens are DATA by the uniform pathspec contract, so
+  # 'h steps -- -foo.txt --raw' is TWO file candidates and rejects with the
+  # cardinality message — pinned by the row below.)
   psx_setup
   echo pin > ./-foo.txt
   git add -- ./-foo.txt
   git commit -q -m "file literally named -foo.txt"
-  run hug h steps -- -foo.txt --raw
+  run hug h steps -- -foo.txt
   assert_success
-  # step count is numeric — proves the path was consumed as a file, not rejected
-  [[ "$output" =~ ^[0-9]+$ ]]
+  refute_output --partial "Unknown option"
+  psx_reset
+}
+
+@test "single-file cardinality: h steps treats ALL post-'--' tokens as data — flag-shaped second candidate hits the cardinality guard (#310 F-002)" {
+  # Roast F-002/C-001/C-002: the first draft exempted only the FIRST
+  # separator-protected token from the unknown-flag check, so both
+  # 'h steps -- -foo.txt -bar.txt' and 'h steps -- README.md --bogus' died
+  # with "Unknown option" exit 2 even though every post-'--' token is data by
+  # the uniform pathspec contract (#292: the separator changes delivery, never
+  # meaning). The truthful answer is the cardinality reject: two candidates,
+  # one slot.
+  psx_setup
+  echo pin > ./-foo.txt
+  git add -- ./-foo.txt
+  run hug h steps -- -foo.txt -bar.txt
+  assert_equal 2 "$status"
+  assert_output --partial "hug h steps accepts only one file (got 2 files)."
+  refute_output --partial "Unknown option"
+  psx_reset
+
+  psx_setup
+  run hug h steps -- README.md --bogus
+  assert_equal 2 "$status"
+  assert_output --partial "hug h steps accepts only one file (got 2 files)."
+  refute_output --partial "Unknown option"
   psx_reset
 }
 

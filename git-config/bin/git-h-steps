@@ -58,22 +58,17 @@ eval "$(parse_common_flags_with_pathspecs "$@")"
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
 
-# saw_separator: true iff a -- separator was consumed and left pathspec data
-# (infer from the shell-wide _pathspec_pathspecs populated by the split above;
-# trailing bare -- alone is stripped before the split and leaves it empty).
-saw_separator=false
-if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
-  saw_separator=true
-fi
-# Merge pre-args ($@ holds them post-split) and separator-protected pathspecs
-# into one argument stream for the own-loop. --raw is consumed here before any
-# guard, so 'hug h steps README.md --raw' (help:44) is not misread as an
-# unknown flag; a dash-leading file that arrived via -- stays data.
-if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
-  set -- "$@" ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}
-fi
-
-# Parse custom flags
+# Two-stream design (roast F-002 on #310): post-'--' tokens stay SEPARATE from
+# the pre-arg stream — the separator changes delivery, never meaning (#292), so
+# they are file candidates by definition and must never be re-parsed as options.
+# (The earlier draft merged _pathspec_pathspecs back onto "$@" before the own-
+# loop; that destroyed per-token origin, so only the FIRST pathspec could be
+# exempted from the unknown-flag check and 'hug h steps -- -foo.txt -bar.txt'
+# rejected the second dash-named file as "Unknown option" — probed.)
+# Pre-args keep their own loop: unknown -* there stays a loud usage error
+# ('hug h steps src/a.py --bogus' must not silently succeed, #302 C-004);
+# --raw is consumed here before any guard ('hug h steps README.md --raw',
+# help:44).
 file=""
 raw=false
 extra_files=()
@@ -84,10 +79,8 @@ while [[ $# -gt 0 ]]; do
     shift
     ;;
   *)
-    # Cardinality contract (#292, spec §3.2): the OLD loop silently broke on
-    # the second positional — `hug h steps a b` analyzed `a` and vanished
-    # `b` without a word. Keep collecting so reject_multiple_files can name
-    # the mistake instead of hiding it.
+    # Cardinality contract (#292, spec §3.2): collect extras instead of
+    # silently dropping them — reject_multiple_files names the mistake.
     if [[ -z "$file" ]]; then
       file="$1"
     else
@@ -97,27 +90,34 @@ while [[ $# -gt 0 ]]; do
     ;;
   esac
 done
-# Cardinality + unknown-flag guard (#302 C-004, codex #3829676849, #3830105470):
-# h-steps's own-loop *) arm collects unknown -* tokens (parse_common_flags
-# passes them through) into file/extra_files, so 'hug h steps a --bogus'
-# used to be miscounted as a file and fire the cardinality guard. Filtering it
-# from the tally alone would have turned a typo into silent success, violating
-# the path-command contract that unknown flags must fail (exit 2).
-# NOT the pre-loop slice (collect_positional_args_before_flags): --raw
-# legitimately follows the file ('hug h steps README.md --raw', help:44) and
-# is consumed by the own-loop's --raw arm first, so the loop must run in full.
-# Fix: (1) loud unknown-flag check first — EXEMPT a dash-leading file that
-# arrived via -- (hug h steps -- -foo.txt creates _pathspec_pathspecs[-foo.txt]
-# after parse_common_flags_with_pathspecs; the separator-protected file is not
-# an "unknown option"), then (2) cardinality on files-only.
+
+# Unknown PRE-'--' flags are loud: filtering them from the tally alone would
+# have turned a typo into silent success (the path-command contract, exit 2).
+# This check MUST run before the separator candidates below join the tally —
+# at this point file/extra_files hold pre-arg tokens only, so any -* there is
+# genuinely an unknown option; post-'--' data is exempt by construction.
 for f in ${extra_files[@]+"${extra_files[@]}"}; do
   if [[ "$f" == -* ]]; then
     error_usage "Unknown option: $f. See 'hug help :pathspec'."
   fi
 done
-if [[ -n "${file:-}" && "$file" == -* && "${saw_separator:-false}" != true ]]; then
+if [[ -n "$file" && "$file" == -* ]]; then
   error_usage "Unknown option: $file. See 'hug help :pathspec'."
 fi
+
+# Separator-protected candidates: EVERY token after '--' is data (even one
+# spelled like a flag). Feed them straight into the cardinality tally — no
+# option re-parse, no exemption logic to forget.
+if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  for sep_file in ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}; do
+    if [[ -z "$file" ]]; then
+      file="$sep_file"
+    else
+      extra_files+=("$sep_file")
+    fi
+  done
+fi
+
 reject_files=()
 [[ -n "${file:-}" ]] && reject_files+=("$file")
 for f in ${extra_files[@]+"${extra_files[@]}"}; do
