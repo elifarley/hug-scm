@@ -2,7 +2,9 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
-## [Unreleased]
+## [1.13.1.0] - 2026-08-22
+
+PR-B follow-up of the #302 final-review LOW batch (elifarley/hug-scm#310): truthful single-file cardinality counts, `us` scope naming, and loud unknown-option rejection across the single-file command family. Includes the roast + codex review fixes (separator data protection, browse-root post-split backstops, short-form magic scope classification).
 
 ### Fixed
 
