@@ -2163,6 +2163,79 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "single-file cardinality: f-family unknown option is loud, not counted as a file (#310 #3834674457)" {
+  # The counted message made latent overcounts observable — and exposed that
+  # fa/fb/fborn/fcon (raw "$@") and fblame (catch-all *) arm) tallied unknown
+  # -* tokens as FILES: 'hug fa src/a.py --bogus' claimed "got 2 files" for
+  # one file + one typo. Loud reject per the path-command contract; the
+  # truthful count stays correct for genuinely-file-only collections.
+  for cmd in fa fb fborn fcon; do
+    psx_setup
+    run hug "$cmd" src/a.py --bogus
+    assert_equal 2 "$status"
+    assert_output --partial "Unknown option: --bogus"
+    refute_output --partial "got 2 files"
+    psx_reset
+  done
+
+  psx_setup
+  run hug fblame --churn src/a.py --bogus
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bogus"
+  refute_output --partial "got 2 files"
+  psx_reset
+}
+
+@test "single-file cardinality: f-family separator data reaches the truthful guard (#310 #3834674457)" {
+  # Post-'--' tokens are DATA by contract: a second dash-named candidate via
+  # '--' must hit the cardinality message (truthful tally), never an option-
+  # parse complaint; a single dash-named file must still analyze.
+  psx_setup
+  run hug fa -- ./-foo.txt ./-bar.txt
+  assert_equal 2 "$status"
+  assert_output --partial "hug fa accepts only one file (got 2 files)."
+  refute_output --partial "Unknown option"
+  psx_reset
+
+  psx_setup
+  echo pin > ./-baz.txt
+  git add -- ./-baz.txt
+  run hug fa -- ./-baz.txt
+  assert_success
+  psx_reset
+}
+
+@test "single-file cardinality: h steps browse-root still excludes explicit paths post-split (#310 #3834674453)" {
+  # Regression pin: the pathspec split hid post-'--' paths from
+  # parse_common_flags' --browse-root exclusion, so 'h steps --browse-root --
+  # src/a.py' analyzed the file with the flag silently ignored (main rejects
+  # this loudly; probed both sides). The command-level check must see the
+  # separator data too.
+  psx_setup
+  run hug h steps --browse-root -- src/a.py
+  assert_equal 1 "$status"
+  assert_output --partial "--browse-root cannot be used with explicit paths."
+  refute_output --partial "steps back from HEAD"
+  psx_reset
+}
+
+@test "conformance us (#310 #3834674455): short-form magic pathspecs name the scope clause" {
+  # Git accepts ':!path' / ':^path' exclusion spellings; the classifier only
+  # knew '(' magic, so the dry-run/success clause went missing while git
+  # still scoped by the spec. ':<digit>' is a stage number, NOT magic.
+  psx_setup
+  run hug us --dry-run -- ':!docs/note.md'
+  assert_success
+  assert_output --partial "matching ':!docs/note.md':"
+  psx_reset
+
+  psx_setup
+  run hug us --dry-run -- ':^docs/note.md'
+  assert_success
+  assert_output --partial "matching ':^docs/note.md':"
+  psx_reset
+}
+
 # =============================================================================
 # CHARACTERIZATION ROWS (closing fix, whole-implementation review) — the 8
 # audit-matrix rows the suite was missing (spec §4: ALL matrix rows must have

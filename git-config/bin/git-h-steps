@@ -105,6 +105,17 @@ if [[ -n "$file" && "$file" == -* ]]; then
   error_usage "Unknown option: $file. See 'hug help :pathspec'."
 fi
 
+# --browse-root excludes explicit paths (#310 codex #3830105477-adjacent,
+# thread #3834674453): parse_common_flags enforces this invariant, but the
+# pathspec split HIDES post-'--' paths from it — 'h steps --browse-root --
+# src/a.py' analyzed the file with the flag silently ignored (a regression
+# vs main's loud reject; probed). The check must see the separator data too.
+# Message/exit mirror parse_common_flags' own rejection (error, exit 1) and
+# main's precedence (this check fires before the cardinality guard).
+if $browse_root && [[ -n "$file" || ${#extra_files[@]} -gt 0 || ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  error "--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection."
+fi
+
 # Separator-protected candidates: EVERY token after '--' is data (even one
 # spelled like a flag). Feed them straight into the cardinality tally — no
 # option re-parse, no exemption logic to forget.
