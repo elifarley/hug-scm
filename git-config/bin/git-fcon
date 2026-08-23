@@ -95,14 +95,32 @@ fi
 # Cardinality + unknown-option guard (#310 thread #3834674457): two-stream
 # tally, same design as git-fa — see that file's comment block for the full
 # WHY. Surviving candidate re-pointed onto "$@" for the exec line.
+# Pre-'--' stream: collect, then LOUDLY check — BEFORE any separator data
+# joins (adversarial F2: checking post-merge misclassified separator DATA
+# spelled '-name' as an option; 'fa -- -dash.txt' must analyze, matching
+# h-steps and fblame). Empty-string positionals are usage errors too
+# (adversarial F1: 'fa "" extra' silently analyzed nothing, exit 0).
 file_candidates=()
 for f in "$@"; do
+  if [[ -z "$f" ]]; then
+    error_usage "Empty file argument."
+  fi
   if [[ -z "${file:-}" ]]; then
     file="$f"
   else
     file_candidates+=("$f")
   fi
 done
+for f in ${file_candidates[@]+"${file_candidates[@]}"}; do
+  if [[ "$f" == -* ]]; then
+    error_usage "Unknown option: $f. See 'hug help :pathspec'."
+  fi
+done
+if [[ -n "${file:-}" && "$file" == -* ]]; then
+  error_usage "Unknown option: $file. See 'hug help :pathspec'."
+fi
+
+# Post-'--' stream: EVERY token is DATA by contract — no option re-parse.
 if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
   for f in ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}; do
     if [[ -z "${file:-}" ]]; then
@@ -111,14 +129,6 @@ if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
       file_candidates+=("$f")
     fi
   done
-fi
-for f in ${file_candidates[@]+"${file_candidates[@]}"}; do
-  if [[ "$f" == -* ]]; then
-    error_usage "Unknown option: $f. See 'hug help :pathspec'."
-  fi
-done
-if [[ -n "${file:-}" && "$file" == -* ]]; then
-  error_usage "Unknown option: $file. See 'hug help :pathspec'."
 fi
 reject_multiple_files "hug fcon" "$file" ${file_candidates[@]+"${file_candidates[@]}"}
 set -- ${file:+"$file"}

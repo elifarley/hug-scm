@@ -2064,11 +2064,21 @@ psx_install_stub_gum() {
 @test "single-file cardinality: stats file trailing flag not counted (Task 10/#302)" {
   # #302 overcount: stats-file's own-loop *) arm collects unknown -* tokens
   # into remaining_args; 'hug stats file a b --bogus' tallied 3. The slice fixes it.
+  # FLIPPED again (#310 adversarial F3): the unknown -* token is now a LOUD
+  # usage error (exit 2, same family contract as fa/fb/fborn/fcon/fblame) —
+  # the tally never sees it at all.
   psx_setup
   run hug stats file src/a.py docs/note.md --bogus
   assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bogus"
+  refute_output --partial "accepts only one file"
+  psx_reset
+
+  # Two real files still hit the truthful cardinality guard.
+  psx_setup
+  run hug stats file src/a.py docs/note.md
+  assert_equal 2 "$status"
   assert_output --partial "hug stats file accepts only one file (got 2 files)."
-  refute_output --partial "got 3 files"
   psx_reset
 }
 
@@ -2192,9 +2202,14 @@ psx_install_stub_gum() {
   # parse complaint; a single dash-named file must still analyze.
   # Parameterized over all four copied guard blocks (ship review: a
   # copy-paste divergence in one of them previously stayed green).
+  # BARE '-name' spelling (no ./): adversarial F2 — the first cut ran the
+  # unknown-option check post-merge and rejected exactly this shape while
+  # the './-name' fixtures sailed through, keeping CI green.
+  # Empty-string positionals are usage errors (adversarial F1: 'fa "" extra'
+  # silently analyzed nothing with exit 0).
   for cmd in fa fb fborn fcon; do
     psx_setup
-    run hug "$cmd" -- ./-foo.txt ./-bar.txt
+    run hug "$cmd" -- -foo.txt -bar.txt
     assert_equal 2 "$status"
     assert_output --partial "hug $cmd accepts only one file (got 2 files)."
     refute_output --partial "Unknown option"
@@ -2203,8 +2218,15 @@ psx_install_stub_gum() {
     psx_setup
     echo pin > ./-baz.txt
     git add -- ./-baz.txt
-    run hug "$cmd" -- ./-baz.txt
+    run hug "$cmd" -- -baz.txt
     assert_success
+    refute_output --partial "Unknown option"
+    psx_reset
+
+    psx_setup
+    run hug "$cmd" "" extra
+    assert_equal 2 "$status"
+    assert_output --partial "Empty file argument."
     psx_reset
   done
 }
@@ -2309,6 +2331,26 @@ psx_install_stub_gum() {
   run hug us --dry-run -- 'src/[ab].py'
   assert_success
   assert_output --partial "matching 'src/[ab].py':"
+  psx_reset
+}
+
+@test "single-file cardinality: stats file unknown option is loud; separator data analyzes (#310 adversarial F3)" {
+  # The slice silently swallowed unknown flags ('stats file star1.txt
+  # --bogus' analyzed with exit 0); its own loop now rejects -* loudly and
+  # drains post-'--' tokens as data (was: "File not found: --").
+  # star1.txt lives at repo ROOT — the fixture seeds src/ and docs/ only,
+  # so a src/-relative spelling would be "File not found".
+  psx_setup
+  run hug stats file star1.txt --bogus
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bogus"
+  refute_output --partial "Churn analysis"
+  psx_reset
+
+  psx_setup
+  run hug stats file -- other.txt
+  assert_success
+  assert_output --partial "Churn analysis for: other.txt"
   psx_reset
 }
 
