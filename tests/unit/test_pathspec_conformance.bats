@@ -128,6 +128,11 @@ PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
 PATHSPEC_SINGLEFILE_ROWS=(fa fb fblame fborn fcon llf)
 PATHSPEC_SINGLEFILE_DELEGATE_ROWS=(llfp llfs)
 
+# TARGET+PATH class (#311): two-positional interface — a <N|commit> target
+# plus EXACTLY ONE path from either side of the separator; trailing bare
+# '--' opens the picker. Dedicated rows live in the fcat contract section.
+PATHSPEC_TARGETPLUSFILE_ROWS=(fcat)
+
 # PR-C rosters (spec §5): ONE roster per behavioral class; a PR-C command
 # missing from every column below fails the membership-diff row (PR-C
 # section, bottom of file). Names are ROSTER IDENTIFIERS (script suffixes),
@@ -136,7 +141,7 @@ PATHSPEC_SINGLEFILE_DELEGATE_ROWS=(llfp llfs)
 PATHSPEC_W_DESTRUCTIVE_ROWS=(w-discard w-purge w-zap w-wipe)
 PATHSPEC_W_ALL_ROWS=(w-discard-all w-purge-all w-zap-all w-wipe-all)
 PATHSPEC_WIP_ROWS=(w-wip w-unwip w-wipdel)
-# The MASTER is a HAND-WRITTEN LITERAL of all 14 PR-C commands — NEVER
+# The MASTER is a HAND-WRITTEN LITERAL of all 15 PR-C commands — NEVER
 # derived from the class arrays above. LESSON (review round 1): a derived
 # master makes the membership diff TAUTOLOGICAL — the test's `enrolled` union
 # consumes the same class arrays, so deleting a command from its roster
@@ -147,10 +152,12 @@ PATHSPEC_PRC_MASTER=(
   w-discard w-purge w-zap w-wipe
   w-discard-all w-purge-all w-zap-all w-wipe-all
   w-wip w-unwip w-wipdel
-  w-get sh llu
+  w-get sh llu fcat
 )
 # `sh` and `llu` are enrolled via the SHOW/LOG rosters above (two-phase:
-# llu ACTIVE since Task 10, sh ACTIVE since Task 11).
+# llu ACTIVE since Task 10, sh ACTIVE since Task 11). `fcat` is enrolled
+# via PATHSPEC_TARGETPLUSFILE_ROWS (#311 Task 4 — contract rows already
+# ACTIVE from Task 1).
 
 # -----------------------------------------------------------------------------
 # Fixture + harness helpers
@@ -2272,6 +2279,22 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "contract h steps: bare '--' routes to the picker (gum disabled → help fallback, exit 1)" {
+  # Probed: a trailing bare '--' contributes NO file candidate, so the
+  # zero-file arm fires — with gum available that is the interactive picker;
+  # with HUG_DISABLE_GUM it degrades to show_help on stdout + exit 1 (never
+  # an attempt to analyze a file literally named '--').
+  # HUG_DISABLE_GUM, NOT a `command -v gum` skip: test_helper.bash exports
+  # HUG_TEST_MODE=true, which makes gum_available() succeed even with no gum
+  # binary (hug-gum:22-24) — under a skip guard this row would enter the
+  # picker and treat the failed invocation as cancellation (exit 0).
+  psx_setup
+  export HUG_DISABLE_GUM=true
+  run hug h steps --
+  assert_equal 1 "$status"; assert_output --partial "hug h steps: Show commit steps"
+  psx_reset
+}
+
 @test "single-file cardinality: f-family browse-root still excludes explicit paths post-split (#310 ship review)" {
   # Same regression class as the h-steps pin above, found by the coverage
   # audit when fa/fb/fborn/fcon adopted the split WITHOUT the backstop:
@@ -2354,6 +2377,21 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "contract stats file: bare '--' routes to the picker (gum disabled → clean error)" {
+  # Probed: a trailing bare '--' strips to zero args, which the '--' arm
+  # routes to the zero-args picker path — with gum disabled that lands in
+  # the same "File argument required." usage error as a bare 'stats file'.
+  # HUG_DISABLE_GUM, NOT a `command -v gum` skip: test_helper.bash exports
+  # HUG_TEST_MODE=true, which makes gum_available() succeed even with no gum
+  # binary (hug-gum:22-24) — under a skip guard this row would enter the
+  # picker and treat the failed invocation as cancellation.
+  psx_setup
+  export HUG_DISABLE_GUM=true
+  run hug stats file --
+  assert_equal 1 "$status"; assert_output --partial "File argument required"
+  psx_reset
+}
+
 # =============================================================================
 # CHARACTERIZATION ROWS (closing fix, whole-implementation review) — the 8
 # audit-matrix rows the suite was missing (spec §4: ALL matrix rows must have
@@ -2397,6 +2435,20 @@ psx_install_stub_gum() {
   assert_output --partial "No changes introduced"
   assert_fake_tool_not_invoked
   psx_reset
+
+  # Bare '--' through the new parser (review fix): the shared eval strips the
+  # trailing separator, "$@" empties, token defaults to HEAD — the SAME
+  # observable as the no-arg bare default (test_shv.bats' bare-default row):
+  # HEAD^1/HEAD endpoints. Without the row, a parser change that treated the
+  # lone separator as a stray token (exit 1 `Unexpected`) would go unpinned.
+  psx_setup
+  configure_fake_difftool "$PWD"
+  setup_git_shim
+  run git-shv --
+  assert_success
+  assert_shim_logged_exact "HEAD^1"
+  assert_shim_logged_exact "HEAD"
+  psx_reset
 }
 
 @test "characterization shv: second token rejected loudly; -xX → usage; --help → man routing" {
@@ -2425,6 +2477,61 @@ psx_install_stub_gum() {
   if command -v man >/dev/null 2>&1; then
     assert_equal 16 "$status"
   fi
+  psx_reset
+}
+
+@test "contract shv: flag-classification guard kills silent consumption" {
+  # #311 spec §2: the shared parser's GNU getopt would CONSUME -q/-f/-y/
+  # --dry-run/--browse-root (and combined shorts like -fq) and silently
+  # launch a difftool on HEAD — the guard routes every flag-shaped pre-'--'
+  # token through reject_flag_ref instead (USAGE banner + exit 2, the same
+  # profile today's engine rejection gives `shv -xX`).
+  psx_setup
+  run hug shv -q
+  assert_equal 2 "$status"
+  assert_output --partial "USAGE:"
+  assert_output --partial "Unknown flag: -q"
+  run hug shv -fq
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown flag: -fq"
+  # DELIBERATE FLIP (#311 spec §2, the ONE authorized observable change):
+  # a flag AFTER the positional used to die as a second bare token (exit 1
+  # `Unexpected: '-q'`); the position-independent guard converges it to the
+  # exit-2 flag-naming family.
+  run hug shv 3 -q
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown flag: -q"
+  # SECOND deliberate flip, pinned per spec §2 ("either current error is
+  # acceptable; the row pins whichever ships"): `--browse-root 3` used to die
+  # as `Unexpected: '3'` exit 1; the guard rejects `--browse-root` itself.
+  run hug shv --browse-root 3
+  assert_equal 2 "$status"
+  assert_output --partial "USAGE:"
+  assert_output --partial "Unknown flag: --browse-root"
+  # `--browse-root` alone already died in reject_flag_ref today — unchanged.
+  run hug shv --browse-root
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown flag: --browse-root"
+  # Micro-flip (Task 2 quality review): 'shv -h -q' used to reach the eval's
+  # -h arm and exit 0 with help; the position-independent guard now rejects
+  # -q FIRST (banner, then exit 2) — help cannot shadow a sibling flag error.
+  run hug shv -h -q
+  assert_equal 2 "$status"
+  assert_output --partial "USAGE:"
+  assert_output --partial "Unknown flag: -q"
+  psx_reset
+}
+
+@test "contract shv: long-digit range data passes the guard to the engine" {
+  # reject_flag_ref exempts ^-[0-9]+$ at ANY length, so -1234 is range DATA:
+  # it clears the guard, survives getopt's unknown-option fallback, reaches
+  # dd_commit_diff and dies THERE — probed today: exit 1 `Not a valid
+  # commit: '-1234'.` (the N convention caps at 3 digits; 1234 back does not
+  # resolve). The row pins that exact today-observable.
+  psx_setup
+  run hug shv -1234
+  assert_equal 1 "$status"
+  assert_output --partial "Not a valid commit: '-1234'."
   psx_reset
 }
 
@@ -2503,22 +2610,231 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization fcat: colon syntax rejected; unknown flag dies as ref error" {
-  # characterization: probed — `fcat HEAD:src/a.py` (single colon-arg) is
-  # NOT the CLI form: loud "Missing arguments" (exit 1). `-xX` is collected
-  # as a positional target and dies in ref resolution (exit 1, "Unable to
-  # resolve reference '-xX'") — loud but not flag-naming; flip target:
-  # #292 follow-up (column 6 wants a flag-naming rejection).
+@test "contract fcat: colon syntax rejected; unknown flag dies as usage error" {
+  # contract (flipped from characterization, #311): `fcat HEAD:src/a.py`
+  # (single colon-arg) is NOT the CLI form — the target slot consumes it,
+  # zero file candidates remain, and the loud usage error is now
+  # "File argument required" (was "Missing arguments"). `-xX` is rejected
+  # by parse_scoped_own_flags arm 2 as a usage error exit 2 with the
+  # flag-naming template (was: collected as the target, dying in ref
+  # resolution exit 1 — loud but not flag-naming).
   psx_setup
   run hug fcat HEAD:src/a.py
-  assert_failure
-  assert_output --partial "Missing arguments"
+  assert_equal 1 "$status"
+  assert_output --partial "File argument required"
   psx_reset
 
   psx_setup
   run hug fcat -xX src/a.py
-  assert_failure
-  assert_output --partial "Unable to resolve reference '-xX'"
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: -xX"
+  psx_reset
+}
+
+@test "contract fcat: bare and target-only → loud usage errors" {
+  psx_setup
+  run hug fcat
+  assert_equal 1 "$status"; assert_output --partial "Missing target"
+  run hug fcat 3
+  assert_equal 1 "$status"; assert_output --partial "File argument required"
+  run hug fcat --
+  assert_equal 1 "$status"; assert_output --partial "Missing target"
+  psx_reset
+}
+
+@test "contract fcat: cardinality — two candidates exit 2, either side of '--'" {
+  psx_setup
+  run hug fcat 1 src/a.py docs/note.md
+  assert_equal 2 "$status"; assert_output --partial "accepts only one file"
+  run hug fcat 1 -- src/a.py docs/note.md
+  assert_equal 2 "$status"; assert_output --partial "accepts only one file"
+  # Mixed sides (review fix): one candidate BEFORE and one AFTER the separator
+  # must total 2 and hit the same guard — the union, not per-side counting.
+  run hug fcat HEAD src/a.py -- docs/note.md
+  assert_equal 2 "$status"; assert_output --partial "accepts only one file"
+  psx_reset
+}
+
+@test "contract fcat: picker arm — gum disabled → clean error; empty arg → file required" {
+  psx_setup
+  # HUG_DISABLE_GUM, NOT a `command -v gum` skip: test_helper.bash exports
+  # HUG_TEST_MODE=true, which makes gum_available() succeed even with no gum
+  # binary (hug-gum:27-28) — under a skip guard this row would enter the
+  # picker and treat the failed invocation as cancellation (exit 0).
+  export HUG_DISABLE_GUM=true
+  run hug fcat 3 --
+  assert_equal 1 "$status"; assert_output --partial "File argument required"
+  run hug fcat 3 -- ''
+  assert_equal 1 "$status"; assert_output --partial "File argument required"
+  psx_reset
+}
+
+@test "contract fcat: picker + no gum + single candidate degrades to the datum" {
+  # Task 1 quality review: 'fcat HEAD src/a.py --' scopes the picker to the
+  # pathspec (the row above), and when gum is unavailable the single-candidate
+  # picker DEGRADES to using the candidate outright — user intent (that file,
+  # that version) is fully satisfied without the UI, so content flows and the
+  # exit is 0. Probed: prints the file's HEAD content ('py1').
+  # HEAD arm, NOT N: the fixture's src/a.py has one commit, so any N>=1 dies
+  # earlier in get_commit_n_back ("Could not find N commits in the history").
+  psx_setup
+  export HUG_DISABLE_GUM=true
+  run hug fcat HEAD src/a.py --
+  assert_equal 0 "$status"; assert_output --partial "py1"
+  psx_reset
+}
+
+@test "contract fcat: empty-string args are not candidates — filtered at the source (review)" {
+  # Review fix R1: step 5 used to count '' into candidates while
+  # reject_multiple_files filtered empties — `fcat HEAD '' src/a.py` saw 2
+  # candidates, dodged the cardinality guard, then died "File argument
+  # required" despite exactly ONE valid file. With the source filter the
+  # empty is invisible everywhere: the datum arm succeeds outright…
+  psx_setup
+  run hug fcat HEAD '' src/a.py
+  assert_success
+  assert_output "py1"
+  psx_reset
+
+  # …and the picker arm scopes to the REAL candidate only — the same
+  # cancel-observable and scoping assertions as the 'fcat <N> <path> --'
+  # scoped-picker row (stub records stdin, exits 1 = cancelled). Pre-fix,
+  # '' rode along:
+  # `git ls-files -- '' src/a.py` fatal'd (swallowed) → zero candidates →
+  # a SILENT cancel indistinguishable from an empty repo.
+  psx_setup
+  psx_install_stub_gum
+  run hug fcat HEAD '' src/a.py --
+  assert_success
+  assert_output --partial "No file selected or cancelled"
+  candidates=$(sed $'s/\033\\[[0-9;]*m//g' "$GUM_CANDIDATES_FILE")
+  grep -qF "src/a.py" <<< "$candidates"
+  if grep -qF "docs/note.md" <<< "$candidates"; then
+    fail "out-of-scope candidate leaked into picker: docs/note.md"
+  fi
+  psx_reset
+}
+
+@test "contract fcat: scoped picker with zero matches cancels cleanly, no bash-error noise (review)" {
+  # Review fix R2: `fcat HEAD nope.txt --` (pathspec matches nothing) used to
+  # leak "bad array subscript" bash errors on stderr before the cancel —
+  # list_tracked_files emitted a stray BLANK LINE for the empty result,
+  # mapfile made it files=(''), and select_files_with_status's dedup keyed
+  # its associative array on the empty string. Fixed at BOTH defense layers
+  # (hug-git-files emits nothing on empty; hug-select-files skips empties).
+  # `run` merges stderr, so refuting the subscript noise on $output covers
+  # it (the suite's refute-on-combined-output idiom).
+  psx_setup
+  psx_install_stub_gum
+  run hug fcat HEAD no-such.txt --
+  assert_success
+  assert_output --partial "No file selected or cancelled"
+  refute_output --partial "bad array subscript"
+  psx_reset
+}
+
+@test "contract fcat: range rejection unchanged; post-'--' flag spelling exits 2" {
+  psx_setup
+  run hug fcat -3 src/a.py
+  assert_equal 1 "$status"; assert_output --partial "Ranges are not supported"
+  run hug fcat 3 -- -q
+  assert_equal 2 "$status"; assert_output --partial "Flags must precede '--'"
+  # PINNED FLIP (review fix R3): target-less range spellings. The step-3
+  # range check reads pre-args[0] before any path guard, so `fcat -3` (no
+  # path) now reports the RANGE rejection — was the old collector's generic
+  # "Missing arguments". The new outcome is the truthful one (names the
+  # actual mistake) and the step-3 ordering is intentional (see the script's
+  # `sh` DATA-arm note), so this row pins it as the contract.
+  run hug fcat -3
+  assert_equal 1 "$status"; assert_output --partial "Ranges are not supported"
+  run hug fcat -3 --
+  assert_equal 1 "$status"; assert_output --partial "Ranges are not supported"
+  psx_reset
+}
+
+@test "contract fcat: quoted glob stays literal; --browse-root compositions" {
+  psx_setup
+  # HEAD (commit arm), not N: with N the resolution order dies earlier in
+  # get_commit_n_back ("Could not find N commits in the history of") before
+  # check_file_in_commit ever sees the literal path — the commit arm is the
+  # one that proves the glob stays a LITERAL file path end-to-end (spec §1a
+  # Glob note).
+  run hug fcat HEAD -- 'src/*.py'
+  assert_equal 1 "$status"; assert_output --partial "does not exist"
+  run hug fcat --browse-root 3
+  assert_equal 1 "$status"   # parse_common_flags explicit-paths error
+  run hug fcat --browse-root
+  assert_equal 1 "$status"; assert_output --partial "Missing target"
+  run hug fcat --browse-root --
+  assert_equal 1 "$status"; assert_output --partial "Missing target"
+  psx_reset
+}
+
+@test "contract fcat: 'fcat <N> <path> --' scopes the picker to the path" {
+  psx_setup
+  # psx_install_stub_gum (bats:573), NOT an argv-recording shim: candidates
+  # reach `gum filter` on STDIN — argv carries only filter options, so an
+  # argv capture can never see the pathspec. The stub records stdin to
+  # $GUM_CANDIDATES_FILE and exits 1 (cancelling picker).
+  psx_install_stub_gum
+  run hug fcat 1 src/a.py --
+  assert_success
+  assert_output --partial "No file selected or cancelled"
+  # Strip ANSI status coloring before matching (suite pattern).
+  candidates=$(sed $'s/\033\\[[0-9;]*m//g' "$GUM_CANDIDATES_FILE")
+  grep -qF "src/a.py" <<< "$candidates"
+  if grep -qF "docs/note.md" <<< "$candidates"; then
+    fail "out-of-scope candidate leaked into picker: docs/note.md"
+  fi
+  psx_reset
+}
+
+@test "contract fcat: picker SELECTS — bare '--' cwd-scoped arm yields the chosen file" {
+  # Review fix (TWO findings, one row): every picker row above either
+  # CANCELS (stub exit 1) or DEGRADES (no gum) — the SELECTS arm had zero
+  # coverage. This row also covers the cwd-scoped ZERO-pathspec-candidate
+  # arm: bare `fcat HEAD --` passes no scope at all (candidates=()), so the
+  # picker lists tracked files cwd-wide and the PICK alone determines the
+  # file. Selecting-stub model = the lc/lf and `a` rows (bats:3067/3128):
+  # grep $GUM_PICK from the candidate stdin, echo it, exit 0 — the driver
+  # then resolves HEAD and `git show` prints the picked file's content (py1).
+  psx_setup
+  local stub_dir="$BATS_TEST_TMPDIR/stub"
+  mkdir -p "$stub_dir"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if [[ "${1:-}" == filter ]]; then' \
+    '  sed $'"'"'s/\033\\[[0-9;]*m//g'"'"' | tee "$GUM_CANDIDATES_FILE" | grep -F "$GUM_PICK" | head -1' \
+    'fi' \
+    'exit 0' > "$stub_dir/gum"
+  chmod +x "$stub_dir/gum"
+  GUM_CANDIDATES_FILE="$BATS_TEST_TMPDIR/gum-candidates.txt"
+  GUM_PICK="src/a.py"
+  export GUM_CANDIDATES_FILE GUM_PICK HUG_TEST_MODE=true
+  PATH="$stub_dir:$PATH"
+  : > "$GUM_CANDIDATES_FILE"
+
+  run hug fcat HEAD --
+  assert_success
+  assert_output "py1"
+  psx_reset
+}
+
+@test "contract fcat: dash-leading filename is literal data via '--' (datum arm)" {
+  # spec §1a: `fcat <N|commit> -- -weird.txt` — the separator keeps a
+  # dash-leading filename DATA (vs. the pre-'--' spelling, which arm 2
+  # rejects as an unknown option). psx_setup has no dash-named file, so
+  # create one in-test (the `w get` datum-row pattern, bats:1663-1676):
+  # `git add --` is MANDATORY — a bare `git add ./-weird.txt` would parse
+  # the filename as a flag. HEAD (commit arm): an N target would need a
+  # second file-specific commit before N=1 resolves.
+  psx_setup
+  echo weird1 > ./-weird.txt
+  git add -- -weird.txt
+  git commit -q -m "add -weird.txt"
+  run hug fcat HEAD -- -weird.txt
+  assert_success
+  assert_output "weird1"
   psx_reset
 }
 
@@ -3239,6 +3555,7 @@ psx_install_stub_gum() {
                      "${PATHSPEC_WIP_ROWS[@]}"
                      "${PATHSPEC_SHOW_ROWS[@]}"
                      "${PATHSPEC_LOG_ROWS[@]}"
+                     "${PATHSPEC_TARGETPLUSFILE_ROWS[@]}"
                      w-get)
   local -A seen=()
   local c
@@ -3248,6 +3565,23 @@ psx_install_stub_gum() {
     [[ -n "${seen[$cmd]:-}" ]] || orphan+=("$cmd")
   done
   [[ ${#orphan[@]} -eq 0 ]] || fail "PR-C roster orphan(s): ${orphan[*]} — enroll in a column loop"
+}
+
+@test "TARGET+PATH roster: every member rejects a bare invocation loudly (#311)" {
+  # Membership-consumption cell for PATHSPEC_TARGETPLUSFILE_ROWS: the master
+  # orphan check above only proves enrollment if the class array is consumed
+  # by a REAL column, not just the union. The discriminating behaviors —
+  # picker arm, one-file cardinality, flag-naming template — already live in
+  # fcat's dedicated contract rows (Task 1), so this cell stays minimal: the
+  # one invariant every class member shares regardless of internals — a bare
+  # invocation is a LOUD usage error, never a silent success.
+  for cmd in "${PATHSPEC_TARGETPLUSFILE_ROWS[@]}"; do
+    psx_setup
+    run hug "$cmd"
+    assert_failure
+    assert_output --partial "Missing target"
+    psx_reset
+  done
 }
 
 @test "characterization PR-C: w wipe <file> non-TTY confirm-cancel keeps the file (#292)" {

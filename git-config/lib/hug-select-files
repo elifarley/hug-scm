@@ -846,6 +846,13 @@ Install: https://github.com/charmbracelet/gum"
   local i
   for i in "${!files[@]}"; do
     local file="${files[$i]}"
+    # Empty elements are NOT files (review fix R2, defense layer 2): a
+    # listing helper emitting a stray blank line (mapfile makes it '') must
+    # not reach the dedup — the empty string poisons the associative-array
+    # keying ("bad array subscript") and would surface as a phantom
+    # candidate. Skipping it lets the zero-real-files path fall through to
+    # _handle_no_files_found below.
+    [[ -z "$file" ]] && continue
     if [[ -z "${seen[$file]+_}" ]]; then
       seen["$file"]=1
       unique_files+=("$file")

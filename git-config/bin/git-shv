@@ -68,40 +68,35 @@ SEE ALSO:
 EOF
 }
 
-# --help / -h before any guard (help is documentation, not a tool launch).
-# Scan only up to the first '--' (a '--help' AFTER '--' is a pathspec).
+# Flag-classification guard (#311 spec §2): shv has NO legal flags before
+# '--'. GNU getopt (inside parse_common_flags) would CONSUME -q/-f/-y/
+# --dry-run/--browse-root — and combined shorts like -fq (mechanically
+# verified: getopt emits ' -f -q --' rc=0) — then silently launch a
+# difftool on HEAD. Routing through reject_flag_ref preserves today's
+# exact behavior: help banner FIRST, then `Unknown flag: <tok>` exit 2
+# (the characterization row asserts the USAGE banner). reject_flag_ref
+# already exempts -N ranges at ANY length (^-[0-9]+$), so -1234 passes;
+# only -h/--help need our own exemption (the eval handles them).
 for _arg in "$@"; do
+  [[ "$_arg" == "--" ]] && break
   case "$_arg" in
-  -h | --help)
-    show_help
-    exit 0
-    ;;
-  --) break ;;
+  -h | --help) ;;
+  *) reject_flag_ref "$_arg" ;;
   esac
 done
+unset _arg
 
-# Split args into a single leading token (committish / N / range) and pathspecs.
-# Everything after the first '--' is a pathspec; the token defaults to HEAD.
-token=""
-pathspecs=()
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-  --)
-    shift
-    pathspecs=("$@")
-    break
-    ;;
-  *)
-    if [[ -z "$token" ]]; then
-      token="$1"
-    else
-      # shv shows ONE commit/range — a second bare token is a usage error.
-      error "hug shv takes a single commit/range, then optional '-- <path>...'. Unexpected: '$1'"
-    fi
-    shift
-    ;;
-  esac
-done
+# Split via the shared parser (no --picker: shv launches a difftool, not a
+# file picker). "$@" becomes the separator-free pre-args. Family tradeoff
+# (ratified #292, reservation 1): a trailing bare '--' is stripped, so a
+# pathspec literally named '--' is dropped — same as every family member.
+eval "$(parse_common_flags_with_pathspecs "$@")"
+
+if [[ $# -gt 1 ]]; then
+  # shv shows ONE commit/range — a second bare token is a usage error.
+  error "hug shv takes a single commit/range, then optional '-- <path>...'. Unexpected: '$2'"
+fi
+token="${1:-HEAD}"
 
 # shv is commit-history only — redirect the working-tree subcommands so a user
 # who typed `shv s` gets a pointer instead of a confusing "not a valid commit".
@@ -113,14 +108,15 @@ s | u | w)
   ;;
 esac
 
-[[ -z "$token" ]] && token="HEAD"
-
 check_git_repo
 
-# Delegate to the shared engine: it handles flag-rejection (e.g. `shv --stat`),
-# N/-N resolution, endpoint computation (C^1 C / empty-tree / range), the
-# exit-code-safe no-changes guard, the lazy TTY + difftool-preflight guards, and
-# the single batched difftool launch. One source of truth with `hug dd`.
+# Delegate to the shared engine: it handles flag-rejection (e.g. `shv --stat`
+# AFTER the separator — a pathspec-shaped flag is pathspec DATA), N/-N
+# resolution, endpoint computation (C^1 C / empty-tree / range), the
+# exit-code-safe no-changes guard, the lazy TTY + difftool-preflight guards,
+# and the single batched difftool launch. One source of truth with `hug dd`.
+# Pathspecs flow through the contract accessor, never the _pathspec_* global.
+pathspec_pathspecs_into pathspecs
 if [[ ${#pathspecs[@]} -gt 0 ]]; then
   dd_commit_diff "$token" -- "${pathspecs[@]}"
 else
