@@ -2513,13 +2513,13 @@ psx_install_stub_gum() {
   # resolution exit 1 — loud but not flag-naming).
   psx_setup
   run hug fcat HEAD:src/a.py
-  assert_failure
+  assert_equal 1 "$status"
   assert_output --partial "File argument required"
   psx_reset
 
   psx_setup
   run hug fcat -xX src/a.py
-  assert_failure
+  assert_equal 2 "$status"
   assert_output --partial "Unknown option: -xX"
   psx_reset
 }
@@ -2527,20 +2527,20 @@ psx_install_stub_gum() {
 @test "contract fcat: bare and target-only → loud usage errors" {
   psx_setup
   run hug fcat
-  assert_failure; assert_output --partial "Missing target"
+  assert_equal 1 "$status"; assert_output --partial "Missing target"
   run hug fcat 3
-  assert_failure; assert_output --partial "File argument required"
+  assert_equal 1 "$status"; assert_output --partial "File argument required"
   run hug fcat --
-  assert_failure; assert_output --partial "Missing target"
+  assert_equal 1 "$status"; assert_output --partial "Missing target"
   psx_reset
 }
 
 @test "contract fcat: cardinality — two candidates exit 2, either side of '--'" {
   psx_setup
   run hug fcat 1 src/a.py docs/note.md
-  assert_failure; assert_output --partial "accepts only one file"
+  assert_equal 2 "$status"; assert_output --partial "accepts only one file"
   run hug fcat 1 -- src/a.py docs/note.md
-  assert_failure; assert_output --partial "accepts only one file"
+  assert_equal 2 "$status"; assert_output --partial "accepts only one file"
   psx_reset
 }
 
@@ -2552,18 +2552,18 @@ psx_install_stub_gum() {
   # picker and treat the failed invocation as cancellation (exit 0).
   export HUG_DISABLE_GUM=true
   run hug fcat 3 --
-  assert_failure; assert_output --partial "File argument required"
+  assert_equal 1 "$status"; assert_output --partial "File argument required"
   run hug fcat 3 -- ''
-  assert_failure; assert_output --partial "File argument required"
+  assert_equal 1 "$status"; assert_output --partial "File argument required"
   psx_reset
 }
 
 @test "contract fcat: range rejection unchanged; post-'--' flag spelling exits 2" {
   psx_setup
   run hug fcat -3 src/a.py
-  assert_failure; assert_output --partial "Ranges are not supported"
+  assert_equal 1 "$status"; assert_output --partial "Ranges are not supported"
   run hug fcat 3 -- -q
-  assert_failure; assert_output --partial "Flags must precede '--'"
+  assert_equal 2 "$status"; assert_output --partial "Flags must precede '--'"
   psx_reset
 }
 
@@ -2575,13 +2575,13 @@ psx_install_stub_gum() {
   # one that proves the glob stays a LITERAL file path end-to-end (spec §1a
   # Glob note).
   run hug fcat HEAD -- 'src/*.py'
-  assert_failure; assert_output --partial "does not exist"
+  assert_equal 1 "$status"; assert_output --partial "does not exist"
   run hug fcat --browse-root 3
-  assert_failure   # parse_common_flags explicit-paths error, exit 1
+  assert_equal 1 "$status"   # parse_common_flags explicit-paths error
   run hug fcat --browse-root
-  assert_failure; assert_output --partial "Missing target"
+  assert_equal 1 "$status"; assert_output --partial "Missing target"
   run hug fcat --browse-root --
-  assert_failure; assert_output --partial "Missing target"
+  assert_equal 1 "$status"; assert_output --partial "Missing target"
   psx_reset
 }
 
@@ -2601,6 +2601,24 @@ psx_install_stub_gum() {
   if grep -qF "docs/note.md" <<< "$candidates"; then
     fail "out-of-scope candidate leaked into picker: docs/note.md"
   fi
+  psx_reset
+}
+
+@test "contract fcat: dash-leading filename is literal data via '--' (datum arm)" {
+  # spec §1a: `fcat <N|commit> -- -weird.txt` — the separator keeps a
+  # dash-leading filename DATA (vs. the pre-'--' spelling, which arm 2
+  # rejects as an unknown option). psx_setup has no dash-named file, so
+  # create one in-test (the `w get` datum-row pattern, bats:1663-1676):
+  # `git add --` is MANDATORY — a bare `git add ./-weird.txt` would parse
+  # the filename as a flag. HEAD (commit arm): an N target would need a
+  # second file-specific commit before N=1 resolves.
+  psx_setup
+  echo weird1 > ./-weird.txt
+  git add -- -weird.txt
+  git commit -q -m "add -weird.txt"
+  run hug fcat HEAD -- -weird.txt
+  assert_success
+  assert_output "weird1"
   psx_reset
 }
 
