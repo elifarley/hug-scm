@@ -193,9 +193,13 @@ pathspecs. A scoped `llu` omits the trailing `hug s` summary; a scoped
 | `w-get` | ✅ (the scope of the restore; `--target`/ref before `--`) | — | interactive selection arm |
 | `w-discard-all` / `w-purge-all` / `w-zap-all` / `w-wipe-all` | ❌ by design — whole-tree escape hatch (like `aa` vs `a`); a pathspec after `--` fails with a pointer to the scoped form (`hug w zap-all is whole-tree; use the scoped form to filter: hug w zap -- src/.`), a bare trailing `--` is inert | — | inert |
 | `w-wip` / `w-unwip` / `w-wipdel` | ❌ by design — `--` keeps its DATA meaning (message / WIP-branch name). Exit discipline only: unknown dash-tokens now exit 2 with the family template (`Messages beginning with '-' require '--'` / `Branch names beginning with '-'…`) | — | data (message / branch) |
+| `fcat` | ✅ (the `<N\|commit>` target; takes exactly ONE path — from either side of the separator; two paths exit 2) | — | picker (scoped) |
+| `shv` | ✅ (single commit/range token + scoped paths; `-N` is DATA at any digit length; flag-shaped tokens exit 2 with the family template) | — | inert |
 
 Single-file commands (`fa`, `fb`, `fblame`, `fborn`, `fcon`, `llf`,
-`h steps`, `stats file`) take a file ARGUMENT, not pathspecs.
+`h steps`, `stats file`) take a file ARGUMENT, not pathspecs — and they
+reject extra files with exit 2 (`<cmd> accepts only one file`); a bare
+trailing `--` routes to the picker where the command has one.
 
 ## Breaking changes / script migration
 
@@ -271,6 +275,12 @@ If you script hug, these PR-B and PR-C flips change observable behavior:
     gateway used to append `--stay` AFTER your args, polluting the branch
     name (`WIP/….draftSTAY`) and never applying stay.
 16. **`hug w <unknown-subcommand>` exits 2** — was usage printed, exit 0.
+17. **`hug fcat` joins the contract** — `hug fcat <N|commit> --` opens the
+    interactive file picker (pick-file-first; `fcat <N> <path> --` scopes it);
+    two paths exit 2 (`accepts only one file`) — was silent first-wins; unknown
+    dash-tokens exit 2 with the flag-naming template — was a ref-resolution
+    error; flags-after-positional on `shv` converge to the same exit-2 family
+    — was exit 1 `Unexpected`.
 
 Exit statuses: usage errors (unknown dash-token, valueless value-flags) are
 exit 2 (`HUG_EX_USAGE`). Scoped vs unscoped `--json` never changes exit

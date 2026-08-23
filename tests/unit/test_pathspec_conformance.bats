@@ -128,6 +128,11 @@ PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
 PATHSPEC_SINGLEFILE_ROWS=(fa fb fblame fborn fcon llf)
 PATHSPEC_SINGLEFILE_DELEGATE_ROWS=(llfp llfs)
 
+# TARGET+PATH class (#311): two-positional interface — a <N|commit> target
+# plus EXACTLY ONE path from either side of the separator; trailing bare
+# '--' opens the picker. Dedicated rows live in the fcat contract section.
+PATHSPEC_TARGETPLUSFILE_ROWS=(fcat)
+
 # PR-C rosters (spec §5): ONE roster per behavioral class; a PR-C command
 # missing from every column below fails the membership-diff row (PR-C
 # section, bottom of file). Names are ROSTER IDENTIFIERS (script suffixes),
@@ -136,7 +141,7 @@ PATHSPEC_SINGLEFILE_DELEGATE_ROWS=(llfp llfs)
 PATHSPEC_W_DESTRUCTIVE_ROWS=(w-discard w-purge w-zap w-wipe)
 PATHSPEC_W_ALL_ROWS=(w-discard-all w-purge-all w-zap-all w-wipe-all)
 PATHSPEC_WIP_ROWS=(w-wip w-unwip w-wipdel)
-# The MASTER is a HAND-WRITTEN LITERAL of all 14 PR-C commands — NEVER
+# The MASTER is a HAND-WRITTEN LITERAL of all 15 PR-C commands — NEVER
 # derived from the class arrays above. LESSON (review round 1): a derived
 # master makes the membership diff TAUTOLOGICAL — the test's `enrolled` union
 # consumes the same class arrays, so deleting a command from its roster
@@ -147,10 +152,12 @@ PATHSPEC_PRC_MASTER=(
   w-discard w-purge w-zap w-wipe
   w-discard-all w-purge-all w-zap-all w-wipe-all
   w-wip w-unwip w-wipdel
-  w-get sh llu
+  w-get sh llu fcat
 )
 # `sh` and `llu` are enrolled via the SHOW/LOG rosters above (two-phase:
-# llu ACTIVE since Task 10, sh ACTIVE since Task 11).
+# llu ACTIVE since Task 10, sh ACTIVE since Task 11). `fcat` is enrolled
+# via PATHSPEC_TARGETPLUSFILE_ROWS (#311 Task 4 — contract rows already
+# ACTIVE from Task 1).
 
 # -----------------------------------------------------------------------------
 # Fixture + harness helpers
@@ -3440,6 +3447,7 @@ psx_install_stub_gum() {
                      "${PATHSPEC_WIP_ROWS[@]}"
                      "${PATHSPEC_SHOW_ROWS[@]}"
                      "${PATHSPEC_LOG_ROWS[@]}"
+                     "${PATHSPEC_TARGETPLUSFILE_ROWS[@]}"
                      w-get)
   local -A seen=()
   local c
@@ -3449,6 +3457,23 @@ psx_install_stub_gum() {
     [[ -n "${seen[$cmd]:-}" ]] || orphan+=("$cmd")
   done
   [[ ${#orphan[@]} -eq 0 ]] || fail "PR-C roster orphan(s): ${orphan[*]} — enroll in a column loop"
+}
+
+@test "TARGET+PATH roster: every member rejects a bare invocation loudly (#311)" {
+  # Membership-consumption cell for PATHSPEC_TARGETPLUSFILE_ROWS: the master
+  # orphan check above only proves enrollment if the class array is consumed
+  # by a REAL column, not just the union. The discriminating behaviors —
+  # picker arm, one-file cardinality, flag-naming template — already live in
+  # fcat's dedicated contract rows (Task 1), so this cell stays minimal: the
+  # one invariant every class member shares regardless of internals — a bare
+  # invocation is a LOUD usage error, never a silent success.
+  for cmd in "${PATHSPEC_TARGETPLUSFILE_ROWS[@]}"; do
+    psx_setup
+    run hug "$cmd"
+    assert_failure
+    assert_output --partial "Missing target"
+    psx_reset
+  done
 }
 
 @test "characterization PR-C: w wipe <file> non-TTY confirm-cancel keeps the file (#292)" {
