@@ -115,7 +115,7 @@ PATHSPEC_CHAR_SL_HELP_ROWS=(sl sla sls slu slk sli)
 
 # Single-file cardinality rows (migrated by Task 10, spec §3.2/§5.6): these
 # commands take exactly ONE file; two files → hug's own rejection (exit 2,
-# "<cmd> accepts only one file.") instead of git fatals or silent ignores.
+# "<cmd> accepts only one file (got N files).") instead of git fatals or silent ignores.
 # (Exit flipped 1→2 by the code-roast round: reject_multiple_files now uses
 # error_usage — the family's usage-error code.)
 #   SINGLEFILE_ROWS       — one-word commands guarded directly via
@@ -794,11 +794,13 @@ psx_install_stub_gum() {
   assert_output --partial "__PSX_UNKNOWN_ROW__"
 }
 
-@test "characterization sl-family: -- src/ filters by coincidence (sl sla)" {
-  # characterization: flip target PR-B — sl/sla (statusbase) were migrated by
-  # PR-B Task 4 and now filter for the RIGHT reason (the split consumes the
-  # separator; see the statusbase conformance tests). sls was retired from
-  # this row by Task 5 (migrated — see the sls-family conformance tests).
+@test "contract sl-family: -- src/ filters via the split (sl sla; was characterization)" {
+  # FLIPPED by PR-B Task 4 (was characterization): sl/sla (statusbase) were
+  # migrated onto parse_common_flags_with_pathspecs, so the split consumes the
+  # separator and the row now asserts the CONTRACT (filtering via the split),
+  # not the pre-PR-B coincidence. See the statusbase conformance tests. sls was
+  # retired from this row by Task 5 (migrated — see the sls-family conformance
+  # tests).
   for cmd in "${PATHSPEC_CHAR_SL_FILTER_ROWS[@]}"; do
     psx_setup
     run hug "$cmd" -- src/
@@ -1510,6 +1512,73 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "conformance us (#302): scope-shaped success names the full scope set" {
+  psx_setup
+  git add docs/note.md   # + src/a.py, src/b.py already staged via psx_setup
+  run hug us -- src/
+  assert_success
+  assert_output --partial "matching 'src/':"
+  psx_reset
+}
+
+@test "conformance us (#302): literal file keeps the bare noun (no clause)" {
+  psx_setup
+  run hug us -- src/a.py
+  assert_success
+  assert_output --partial "Unstaged 1 file:"
+  refute_output --partial "matching"
+  psx_reset
+}
+
+@test "conformance us (#302): mixed list names the full set (union semantics)" {
+  psx_setup
+  git add docs/note.md
+  run hug us docs/note.md src/
+  assert_success
+  assert_output --partial "matching 'docs/note.md' 'src/':"
+  psx_reset
+}
+
+@test "conformance us (#302): dry-run mirrors the clause" {
+  psx_setup
+  run hug us --dry-run src/
+  assert_success
+  assert_output --partial "Would unstage"   # exact: "Dry run: Would unstage N file(s) matching 'src/':"
+  assert_output --partial "matching 'src/':"
+  psx_reset
+}
+
+@test "conformance us (#302): -- invariance — clause identical with and without the separator" {
+  # Codex #3829676857: the previous draft captured $output but never compared it, so a bare invocation that
+  # diverged from the -- form still passed. Compare both outputs (status + first-line clause) so the
+  # stated -- -invariance property is actually pinned.
+  psx_setup
+  run hug us src/
+  assert_success
+  local bare_out="$output"
+  local bare_status="$status"
+  assert_output --partial "matching 'src/':"
+  psx_reset
+  psx_setup
+  run hug us -- src/
+  assert_success
+  assert_equal "$bare_status" "$status"
+  assert_equal "$bare_out" "$output"
+  psx_reset
+}
+
+@test "conformance us (F-005): subdir run keeps root-relative spelling, clause echoes user spelling" {
+  psx_setup
+  mkdir -p src/deep && echo z > src/deep/z.py && git add src/deep/z.py
+  cd src
+  run hug us -- deep/
+  assert_success
+  assert_output --partial "matching 'deep/':"
+  assert_output --partial "src/deep/z.py"   # root-relative ✓ line
+  cd - >/dev/null
+  psx_reset
+}
+
 @test "w get: -u treats positionals as files; -u alone runs documented reset-all (Task 8)" {
   # FLIPPED (Task 8, spec §5.2): with `-u` there is NO target positional —
   # every remaining argument is a FILE (BUG-3). Before the fix, `-u <file>`
@@ -1908,7 +1977,7 @@ psx_install_stub_gum() {
     psx_setup
     run hug "$cmd" src/a.py docs/note.md
     assert_equal 2 "$status"
-    assert_output --partial "hug $cmd accepts only one file."
+    assert_output --partial "hug $cmd accepts only one file (got 2 files)."
     refute_output --partial "fatal:"
     psx_reset
   done
@@ -1946,7 +2015,7 @@ psx_install_stub_gum() {
   psx_setup
   run hug llf src/a.py docs/note.md -1
   assert_equal 2 "$status"
-  assert_output --partial "hug llf accepts only one file."
+  assert_output --partial "hug llf accepts only one file (got 2 files)."
   psx_reset
 }
 
@@ -1977,7 +2046,7 @@ psx_install_stub_gum() {
   psx_setup
   run hug h steps src/a.py docs/note.md
   assert_equal 2 "$status"
-  assert_output --partial "hug h steps accepts only one file."
+  assert_output --partial "hug h steps accepts only one file (got 2 files)."
   psx_reset
 }
 
@@ -1987,8 +2056,29 @@ psx_install_stub_gum() {
   psx_setup
   run hug stats file src/a.py docs/note.md
   assert_equal 2 "$status"
-  assert_output --partial "hug stats file accepts only one file."
+  assert_output --partial "hug stats file accepts only one file (got 2 files)."
   refute_output --partial "Churn analysis"
+  psx_reset
+}
+
+@test "single-file cardinality: stats file trailing flag not counted (Task 10/#302)" {
+  # #302 overcount: stats-file's own-loop *) arm collects unknown -* tokens
+  # into remaining_args; 'hug stats file a b --bogus' tallied 3. The slice fixes it.
+  # FLIPPED again (#310 adversarial F3): the unknown -* token is now a LOUD
+  # usage error (exit 2, same family contract as fa/fb/fborn/fcon/fblame) —
+  # the tally never sees it at all.
+  psx_setup
+  run hug stats file src/a.py docs/note.md --bogus
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bogus"
+  refute_output --partial "accepts only one file"
+  psx_reset
+
+  # Two real files still hit the truthful cardinality guard.
+  psx_setup
+  run hug stats file src/a.py docs/note.md
+  assert_equal 2 "$status"
+  assert_output --partial "hug stats file accepts only one file (got 2 files)."
   psx_reset
 }
 
@@ -1999,7 +2089,7 @@ psx_install_stub_gum() {
   psx_setup
   run hug fblame --churn src/a.py docs/note.md
   assert_equal 2 "$status"
-  assert_output --partial "hug fblame accepts only one file."
+  assert_output --partial "hug fblame accepts only one file (got 2 files)."
   refute_output --partial "Churn analysis"
   psx_reset
 
@@ -2009,6 +2099,258 @@ psx_install_stub_gum() {
   run hug fblame --churn src/a.py
   assert_success
   assert_output --partial "src/a.py"
+  psx_reset
+}
+
+@test "single-file cardinality: llf trailing flag not counted in the reject tally (Task 10/#302)" {
+  # #302 overcount: 'hug llf a b -1' used to pass "$file" "$@" to
+  # reject_multiple_files, tallying the -1 flag as a 3rd "file". The slice
+  # (collect_positional_args_before_flags) makes the tally files-only.
+  psx_setup
+  run hug llf src/a.py docs/note.md -1
+  assert_equal 2 "$status"
+  assert_output --partial "hug llf accepts only one file (got 2 files)."
+  refute_output --partial "got 3 files"
+  psx_reset
+}
+
+@test "single-file cardinality: h steps trailing unknown flag is a loud error, not a false single-file count (#302)" {
+  # #302 C-004, codex #3829676849: h-steps's own-loop *) arm collects unknown
+  # -* tokens into extra_files (parse_common_flags passes them through), so
+  # 'hug h steps a --bogus' used to miscount the flag as a file and fire the
+  # cardinality guard. Filtering it from the tally alone would have converted a
+  # typo into silent success. The fix is loud: unknown -* after the file is a
+  # usage error (path-command contract, exit 2). --raw is consumed by its own
+  # arm and is exempted.
+  psx_setup
+  run hug h steps src/a.py --bogus
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bogus"
+  refute_output --partial "accepts only one file"
+  psx_reset
+}
+
+@test "single-file cardinality: h steps dash-leading file via -- is NOT rejected as unknown flag (#302 codex #3830105470)" {
+  # Conformance pin: hug h steps -- -foo.txt creates _pathspec_pathspecs[-foo.txt]
+  # via parse_common_flags_with_pathspecs — the separator-protected file is
+  # pathspec data, not an "unknown option". Must NOT be rejected.
+  # (Roast round on #310 dropped the trailing '--raw' this pin used to carry:
+  # post-'--' tokens are DATA by the uniform pathspec contract, so
+  # 'h steps -- -foo.txt --raw' is TWO file candidates and rejects with the
+  # cardinality message — pinned by the row below.)
+  psx_setup
+  echo pin > ./-foo.txt
+  git add -- ./-foo.txt
+  git commit -q -m "file literally named -foo.txt"
+  run hug h steps -- -foo.txt
+  assert_success
+  refute_output --partial "Unknown option"
+  psx_reset
+}
+
+@test "single-file cardinality: h steps treats ALL post-'--' tokens as data — flag-shaped second candidate hits the cardinality guard (#310 F-002)" {
+  # Roast F-002/C-001/C-002: the first draft exempted only the FIRST
+  # separator-protected token from the unknown-flag check, so both
+  # 'h steps -- -foo.txt -bar.txt' and 'h steps -- README.md --bogus' died
+  # with "Unknown option" exit 2 even though every post-'--' token is data by
+  # the uniform pathspec contract (#292: the separator changes delivery, never
+  # meaning). The truthful answer is the cardinality reject: two candidates,
+  # one slot.
+  psx_setup
+  echo pin > ./-foo.txt
+  git add -- ./-foo.txt
+  run hug h steps -- -foo.txt -bar.txt
+  assert_equal 2 "$status"
+  assert_output --partial "hug h steps accepts only one file (got 2 files)."
+  refute_output --partial "Unknown option"
+  psx_reset
+
+  psx_setup
+  run hug h steps -- README.md --bogus
+  assert_equal 2 "$status"
+  assert_output --partial "hug h steps accepts only one file (got 2 files)."
+  refute_output --partial "Unknown option"
+  psx_reset
+}
+
+@test "single-file cardinality: f-family unknown option is loud, not counted as a file (#310 #3834674457)" {
+  # The counted message made latent overcounts observable — and exposed that
+  # fa/fb/fborn/fcon (raw "$@") and fblame (catch-all *) arm) tallied unknown
+  # -* tokens as FILES: 'hug fa src/a.py --bogus' claimed "got 2 files" for
+  # one file + one typo. Loud reject per the path-command contract; the
+  # truthful count stays correct for genuinely-file-only collections.
+  for cmd in fa fb fborn fcon; do
+    psx_setup
+    run hug "$cmd" src/a.py --bogus
+    assert_equal 2 "$status"
+    assert_output --partial "Unknown option: --bogus"
+    refute_output --partial "got 2 files"
+    psx_reset
+  done
+
+  psx_setup
+  run hug fblame --churn src/a.py --bogus
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bogus"
+  refute_output --partial "got 2 files"
+  psx_reset
+}
+
+@test "single-file cardinality: f-family separator data reaches the truthful guard (#310 #3834674457)" {
+  # Post-'--' tokens are DATA by contract: a second dash-named candidate via
+  # '--' must hit the cardinality message (truthful tally), never an option-
+  # parse complaint; a single dash-named file must still analyze.
+  # Parameterized over all four copied guard blocks (ship review: a
+  # copy-paste divergence in one of them previously stayed green).
+  # BARE '-name' spelling (no ./): adversarial F2 — the first cut ran the
+  # unknown-option check post-merge and rejected exactly this shape while
+  # the './-name' fixtures sailed through, keeping CI green.
+  # Empty-string positionals are usage errors (adversarial F1: 'fa "" extra'
+  # silently analyzed nothing with exit 0).
+  for cmd in fa fb fborn fcon; do
+    psx_setup
+    run hug "$cmd" -- -foo.txt -bar.txt
+    assert_equal 2 "$status"
+    assert_output --partial "hug $cmd accepts only one file (got 2 files)."
+    refute_output --partial "Unknown option"
+    psx_reset
+
+    psx_setup
+    echo pin > ./-baz.txt
+    git add -- ./-baz.txt
+    run hug "$cmd" -- -baz.txt
+    assert_success
+    refute_output --partial "Unknown option"
+    psx_reset
+
+    psx_setup
+    run hug "$cmd" "" extra
+    assert_equal 2 "$status"
+    assert_output --partial "Empty file argument."
+    psx_reset
+  done
+}
+
+@test "single-file cardinality: fblame separator data reaches the truthful guard; lone dash is a filename (#310 ship review)" {
+  # fblame's own-loop gained '--)' (drain) and ')' (lone dash = filename
+  # candidate) arms; without these pins a revert of either arm stays green.
+  psx_setup
+  echo pin > ./-baz.txt
+  git add -- ./-baz.txt
+  run hug fblame -- ./-baz.txt
+  assert_success
+  refute_output --partial "Unknown option"
+  psx_reset
+
+  psx_setup
+  run hug fblame -- ./-foo.txt ./-bar.txt
+  assert_equal 2 "$status"
+  assert_output --partial "hug fblame accepts only one file (got 2 files)."
+  refute_output --partial "Unknown option"
+  psx_reset
+
+  psx_setup
+  echo lone > ./-
+  git add -- ./-
+  run hug fblame ./-
+  assert_success
+  refute_output --partial "Unknown option"
+  psx_reset
+}
+
+@test "single-file cardinality: h steps browse-root still excludes explicit paths post-split (#310 #3834674453)" {
+  # Regression pin: the pathspec split hid post-'--' paths from
+  # parse_common_flags' --browse-root exclusion, so 'h steps --browse-root --
+  # src/a.py' analyzed the file with the flag silently ignored (main rejects
+  # this loudly; probed both sides). The command-level check must see the
+  # separator data too.
+  psx_setup
+  run hug h steps --browse-root -- src/a.py
+  assert_equal 1 "$status"
+  assert_output --partial "--browse-root cannot be used with explicit paths."
+  refute_output --partial "steps back from HEAD"
+  psx_reset
+}
+
+@test "single-file cardinality: f-family browse-root still excludes explicit paths post-split (#310 ship review)" {
+  # Same regression class as the h-steps pin above, found by the coverage
+  # audit when fa/fb/fborn/fcon adopted the split WITHOUT the backstop:
+  # 'fa --browse-root -- src/a.py' silently analyzed where main rejected
+  # exit 1 (probed both sides before fixing).
+  for cmd in fa fb fborn fcon; do
+    psx_setup
+    run hug "$cmd" --browse-root -- src/a.py
+    assert_equal 1 "$status"
+    assert_output --partial "--browse-root cannot be used with explicit paths."
+    refute_output --partial "tester"   # no analysis output leaks
+    psx_reset
+  done
+}
+
+@test "conformance us (#310 #3834674455): short-form magic pathspecs name the scope clause" {
+  # Git accepts ':!path' / ':^path' exclusion spellings; the classifier only
+  # knew '(' magic, so the dry-run/success clause went missing while git
+  # still scoped by the spec. ':<digit>' is a stage number, NOT magic.
+  psx_setup
+  run hug us --dry-run -- ':!docs/note.md'
+  assert_success
+  assert_output --partial "matching ':!docs/note.md':"
+  psx_reset
+
+  psx_setup
+  run hug us --dry-run -- ':^docs/note.md'
+  assert_success
+  assert_output --partial "matching ':^docs/note.md':"
+  psx_reset
+}
+
+@test "conformance us (#310 ship review): glob and bracket pathspecs classify as scope" {
+  # is_scope_shaped's wildcard arms ('*', '?', '[') had no pin exercising
+  # them — a misclassification regression (clause silently missing, noun
+  # wrong on the error path) stayed green. One clause-level pin per arm
+  # class; the error-path noun rides the same classifier.
+  psx_setup
+  run hug us --dry-run -- 'src/*.py'
+  assert_success
+  assert_output --partial "matching 'src/*.py':"
+  psx_reset
+
+  psx_setup
+  # 'src/??.py' matches nothing staged → the scoped-empty gate answers the
+  # no-match message; the CLASSIFIER assertion is that the scope spelling is
+  # echoed verbatim (a misclassification as a literal file would instead
+  # produce "File 'src/??.py' is not staged." exit 1).
+  run hug us --dry-run -- 'src/??.py'
+  assert_success
+  assert_output --partial "'src/??.py'"
+  refute_output --partial "is not staged"
+  psx_reset
+
+  psx_setup
+  # 'src/[ab].py' DOES match the fixture (a.py) — full clause assertion.
+  run hug us --dry-run -- 'src/[ab].py'
+  assert_success
+  assert_output --partial "matching 'src/[ab].py':"
+  psx_reset
+}
+
+@test "single-file cardinality: stats file unknown option is loud; separator data analyzes (#310 adversarial F3)" {
+  # The slice silently swallowed unknown flags ('stats file star1.txt
+  # --bogus' analyzed with exit 0); its own loop now rejects -* loudly and
+  # drains post-'--' tokens as data (was: "File not found: --").
+  # star1.txt lives at repo ROOT — the fixture seeds src/ and docs/ only,
+  # so a src/-relative spelling would be "File not found".
+  psx_setup
+  run hug stats file star1.txt --bogus
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bogus"
+  refute_output --partial "Churn analysis"
+  psx_reset
+
+  psx_setup
+  run hug stats file -- other.txt
+  assert_success
+  assert_output --partial "Churn analysis for: other.txt"
   psx_reset
 }
 

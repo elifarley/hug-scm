@@ -658,7 +658,7 @@ teardown() {
 
   # Assert
   assert_failure
-  assert_output --partial "hug fa accepts only one file."
+  assert_output --partial "hug fa accepts only one file (got 2 files)."
 }
 
 @test "reject_multiple_files: one file, zero files, and empty strings pass" {
@@ -869,4 +869,38 @@ teardown() {
   # row exists to catch.
   ((${#phantom_in_matcher[@]} == 0)) || fail "matcher spellings not accepted by parse_common_flags: ${phantom_in_matcher[*]}"
   ((${#missing_in_matcher[@]} == 0)) || fail "parse_common_flags accepts these but the COMMON matcher misses them (post-'--' they would silently become pathspecs): ${missing_in_matcher[*]}"
+}
+
+@test "collect_positional_args_before_flags: collects leading positionals, cuts at first flag" {
+  local -a out=()
+  collect_positional_args_before_flags out a b -1 c
+  [[ "${#out[@]}" -eq 2 && "${out[0]}" == a && "${out[1]}" == b ]]
+}
+
+@test "collect_positional_args_before_flags: '--' ends the count (it matches -*)" {
+  local -a out=()
+  collect_positional_args_before_flags out a -- b
+  [[ "${#out[@]}" -eq 1 && "${out[0]}" == a ]]
+}
+
+@test "collect_positional_args_before_flags: empty input yields empty array" {
+  local -a out=()
+  collect_positional_args_before_flags out
+  [[ ${#out[@]} -eq 0 ]]
+}
+
+@test "collect_positional_args_before_flags: dash token after a flag is NOT collected" {
+  local -a out=()
+  collect_positional_args_before_flags out a -x --bogus c
+  [[ "${#out[@]}" -eq 1 && "${out[0]}" == a ]]
+}
+
+@test "count_positional_args_before_flags: parity with collect length" {
+  # Literal pin FIRST (ship review): the derived comparison below cannot
+  # detect a revert of the delegation refactor (any implementation returning
+  # 2 for 'a b -1' passes it) — the wrapper's output is pinned independently.
+  [[ "$(count_positional_args_before_flags a b -1)" -eq 2 ]]
+  local -a c=()
+  collect_positional_args_before_flags c a b -1
+  [[ "$(count_positional_args_before_flags a b -1)" -eq "${#c[@]}" ]]
 }

@@ -42,16 +42,21 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (handles --browse-root, etc.)
-eval "$(parse_common_flags "$@")"
+# Parse common flags + split at -- (#310 thread #3834674457): same contract
+# as git-fa — separator data stays data; unknown pre-'--' options get the
+# loud check below instead of being tallied as files.
+eval "$(parse_common_flags_with_pathspecs "$@")"
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
 
 check_git_repo
 
-# If no file provided, show interactive selection or error
-if [ $# -eq 0 ]; then
+# If no file provided, show interactive selection or error.
+# Separator-aware (#310 #3834674457): post-'--' candidates live in
+# _pathspec_pathspecs, not "$@" — count them too, or 'fa -- README.md'
+# would wrongly take the no-args branch.
+if [ $# -eq 0 ] && ! { [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; }; then
   # Only show interactive selection if gum is available AND we have a TTY
   if gum_available && [ -t 0 ]; then
     declare -a select_opts=("--single")
@@ -76,9 +81,55 @@ Usage: hug fborn <file>"
   fi
 fi
 
-# Cardinality guard (pathspec contract §3.2): fborn shows the birth of ONE
-# file — two paths used to fall through to git's "--follow requires exactly
-# one pathspec" fatal. Reject with a command-naming error instead (#292).
-reject_multiple_files "hug fborn" "$@"
+# --browse-root excludes explicit paths (same regression class codex
+# #3834674453 caught on h-steps, ship-review coverage audit found here):
+# the split hides post-'--' paths from parse_common_flags' enforcement, so
+# '<cmd> --browse-root -- src/a.py' analyzed the file with the flag silently
+# ignored where main rejected loudly. Message/exit mirror the lib's own
+# rejection; fires before the guards below (main's precedence).
+if $browse_root && { [[ $# -gt 0 ]] || { [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; }; }; then
+  error "--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection."
+fi
+
+# Cardinality + unknown-option guard (#310 thread #3834674457): two-stream
+# tally, same design as git-fa — see that file's comment block for the full
+# WHY. Surviving candidate re-pointed onto "$@" for the exec line.
+# Pre-'--' stream: collect, then LOUDLY check — BEFORE any separator data
+# joins (adversarial F2: checking post-merge misclassified separator DATA
+# spelled '-name' as an option; 'fa -- -dash.txt' must analyze, matching
+# h-steps and fblame). Empty-string positionals are usage errors too
+# (adversarial F1: 'fa "" extra' silently analyzed nothing, exit 0).
+file_candidates=()
+for f in "$@"; do
+  if [[ -z "$f" ]]; then
+    error_usage "Empty file argument."
+  fi
+  if [[ -z "${file:-}" ]]; then
+    file="$f"
+  else
+    file_candidates+=("$f")
+  fi
+done
+for f in ${file_candidates[@]+"${file_candidates[@]}"}; do
+  if [[ "$f" == -* ]]; then
+    error_usage "Unknown option: $f. See 'hug help :pathspec'."
+  fi
+done
+if [[ -n "${file:-}" && "$file" == -* ]]; then
+  error_usage "Unknown option: $file. See 'hug help :pathspec'."
+fi
+
+# Post-'--' stream: EVERY token is DATA by contract — no option re-parse.
+if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  for f in ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}; do
+    if [[ -z "${file:-}" ]]; then
+      file="$f"
+    else
+      file_candidates+=("$f")
+    fi
+  done
+fi
+reject_multiple_files "hug fborn" "$file" ${file_candidates[@]+"${file_candidates[@]}"}
+set -- ${file:+"$file"}
 
 exec git log --pretty=logbody --follow --diff-filter=A --find-renames=40% -- "$@"

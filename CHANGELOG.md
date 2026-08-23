@@ -2,6 +2,15 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [1.13.1.0] - 2026-08-22
+
+PR-B follow-up of the #302 final-review LOW batch (elifarley/hug-scm#310): truthful single-file cardinality counts, `us` scope naming, and loud unknown-option rejection across the single-file command family. Includes the roast + codex review fixes (separator data protection, browse-root post-split backstops, short-form magic scope classification).
+
+### Fixed
+
+- **Single-file cardinality messages report a truthful count** — `hug <cmd> accepts only one file (got N files).` instead of a count-less rejection; `llf`, `stats file`, `h steps`, `fa`, `fb`, `fborn`, `fcon`, and `fblame` no longer count trailing or unknown flags as extra files (unknown options now fail loudly as usage errors across the single-file family).
+- **`hug us` success/dry-run summaries name the scope** — `Unstaged 2 files matching 'src/':` when a directory/glob/magic pathspec is given, so the count no longer implies a file argument was passed.
+
 ## [1.13.0.0] - 2026-08-20
 
 PR-C of the uniform pathspec contract (elifarley/hug-scm#292) — the final rung: the `w-*` family, `llu`, and `sh` join the contract. After this PR the `:pathspec` article's support matrix has zero `not yet` rows. Full contract, support matrix, and migration notes: `hug help :pathspec`.

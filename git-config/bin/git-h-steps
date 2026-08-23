@@ -50,13 +50,25 @@ SEE ALSO:
 EOF
 }
 
-# Parse common flags (handles --browse-root, --quiet, -h|--help, etc.)
-eval "$(parse_common_flags "$@")"
+# Parse common flags + split at -- (uniform pathspec contract, #302 C-004)
+# WITHOUT --picker (h-steps is not a picker) but the split still owns the
+# separator so a dash-leading file via -- is visible as pathspec data.
+eval "$(parse_common_flags_with_pathspecs "$@")"
 
 # Initialize common flag variables if not set by parse_common_flags
 : "${browse_root:=false}"
 
-# Parse custom flags
+# Two-stream design (roast F-002 on #310): post-'--' tokens stay SEPARATE from
+# the pre-arg stream — the separator changes delivery, never meaning (#292), so
+# they are file candidates by definition and must never be re-parsed as options.
+# (The earlier draft merged _pathspec_pathspecs back onto "$@" before the own-
+# loop; that destroyed per-token origin, so only the FIRST pathspec could be
+# exempted from the unknown-flag check and 'hug h steps -- -foo.txt -bar.txt'
+# rejected the second dash-named file as "Unknown option" — probed.)
+# Pre-args keep their own loop: unknown -* there stays a loud usage error
+# ('hug h steps src/a.py --bogus' must not silently succeed, #302 C-004);
+# --raw is consumed here before any guard ('hug h steps README.md --raw',
+# help:44).
 file=""
 raw=false
 extra_files=()
@@ -67,10 +79,8 @@ while [[ $# -gt 0 ]]; do
     shift
     ;;
   *)
-    # Cardinality contract (#292, spec §3.2): the OLD loop silently broke on
-    # the second positional — `hug h steps a b` analyzed `a` and vanished
-    # `b` without a word. Keep collecting so reject_multiple_files can name
-    # the mistake instead of hiding it.
+    # Cardinality contract (#292, spec §3.2): collect extras instead of
+    # silently dropping them — reject_multiple_files names the mistake.
     if [[ -z "$file" ]]; then
       file="$1"
     else
@@ -80,9 +90,45 @@ while [[ $# -gt 0 ]]; do
     ;;
   esac
 done
-# Nullsafe expansion (Bash 4.3 set -u crash mode — the PR's own convention):
-# ${arr[@]+"${arr[@]}"} expands to nothing when extra_files is empty, so no
-# lone unbound-variable fatal on the happy single-file path.
+
+# Unknown PRE-'--' flags are loud: filtering them from the tally alone would
+# have turned a typo into silent success (the path-command contract, exit 2).
+# This check MUST run before the separator candidates below join the tally —
+# at this point file/extra_files hold pre-arg tokens only, so any -* there is
+# genuinely an unknown option; post-'--' data is exempt by construction.
+for f in ${extra_files[@]+"${extra_files[@]}"}; do
+  if [[ "$f" == -* ]]; then
+    error_usage "Unknown option: $f. See 'hug help :pathspec'."
+  fi
+done
+if [[ -n "$file" && "$file" == -* ]]; then
+  error_usage "Unknown option: $file. See 'hug help :pathspec'."
+fi
+
+# --browse-root excludes explicit paths (#310 codex #3830105477-adjacent,
+# thread #3834674453): parse_common_flags enforces this invariant, but the
+# pathspec split HIDES post-'--' paths from it — 'h steps --browse-root --
+# src/a.py' analyzed the file with the flag silently ignored (a regression
+# vs main's loud reject; probed). The check must see the separator data too.
+# Message/exit mirror parse_common_flags' own rejection (error, exit 1) and
+# main's precedence (this check fires before the cardinality guard).
+if $browse_root && [[ -n "$file" || ${#extra_files[@]} -gt 0 || ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  error "--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection."
+fi
+
+# Separator-protected candidates: EVERY token after '--' is data (even one
+# spelled like a flag). Feed them straight into the cardinality tally — no
+# option re-parse, no exemption logic to forget.
+if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+  for sep_file in ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}; do
+    if [[ -z "$file" ]]; then
+      file="$sep_file"
+    else
+      extra_files+=("$sep_file")
+    fi
+  done
+fi
+
 reject_multiple_files "hug h steps" "$file" ${extra_files[@]+"${extra_files[@]}"}
 
 # If no file provided, show interactive selection or help

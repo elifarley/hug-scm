@@ -477,30 +477,34 @@ drain_pathspecs_after_separator() {
   __dps_out+=("$@")
 }
 
-# Count LEADING positional arguments only — the first flag-looking token
-# ends the count (#298). Cardinality guards (llf, stats-file, ...) use this
-# so a flag's separate-word VALUE is never miscounted as a second file
-# ('llf a --staged' has ONE file, not two — the PR-A regression this
-# idiom encodes). '--' itself ends the count: post-'--' tokens are
-# pathspec data, not command positionals.
+# Collect LEADING positional arguments into a nameref array, stopping at the
+# first flag-looking token ('--' included — it matches -*). Single engine for
+# the cut rule (#302): count_positional_args_before_flags delegates here so the
+# classification lives in one place (the #298 extraction's whole point).
+# Reserved prefix __cpaf_ — nameref collision guard (Bash >= 4.3 floor, same
+# discipline as drain_pathspecs_after_separator's __dps_).
 #
-# Usage: count_positional_args_before_flags [args...]
-# Parameters:
-#   $@ - Raw CLI args to scan (safe to pass an empty/unset-arg list)
-# Effects:
-#   Prints the count of leading non-'-*' args to stdout. Pure computation:
-#   no git, no exit on any input. Callers capture via $(...) — command
-#   substitution strips the trailing newline, so the result is a clean
-#   integer even under 'set -euo pipefail'.
-count_positional_args_before_flags() {
-  local n=0 arg
+# Usage: collect_positional_args_before_flags <out-array-name> [args...]
+collect_positional_args_before_flags() {
+  local -n __cpaf_out="$1"
+  shift
+  __cpaf_out=()
+  local arg
   for arg in "$@"; do
     case "$arg" in
     -*) break ;;
-    *) n=$((n + 1)) ;;
+    *) __cpaf_out+=("$arg") ;;
     esac
   done
-  printf '%s\n' "$n"
+}
+
+# Count LEADING positional arguments only — now a thin wrapper over
+# collect_positional_args_before_flags (single cut-rule engine, #302).
+# Pure computation: no git, no exit on any input. Callers capture via $(...).
+count_positional_args_before_flags() {
+  local -a __cpaf_count=()
+  collect_positional_args_before_flags __cpaf_count "$@"
+  printf '%s\n' "${#__cpaf_count[@]}"
 }
 
 # Cardinality guard for single-file commands (spec §3.2 / §5.6 of the
@@ -510,7 +514,10 @@ count_positional_args_before_flags() {
 # Usage: reject_multiple_files "<cmd-name>" [file...]
 # Parameters:
 #   $1 - Command name for the error message (e.g. "hug fa")
-#   $@ - Remaining args are the candidate file arguments
+#   $@ - Remaining args are the candidate FILE arguments
+# Caller contract (#302): pass candidate FILE arguments ONLY, never flags.
+# The truthful "(got N files)" count is only correct for file-only collections
+# — see git-llf/git-stats-file/git-h-steps, which slice/filter before calling.
 # Note:
 #   Empty-string arguments are ignored (not counted as files), so callers
 #   can pass through optional-position variables without pre-filtering.
@@ -527,8 +534,9 @@ reject_multiple_files() {
     # error_usage (exit 2, code-roast alignment): a cardinality violation
     # is a USAGE error — the migrated pathspec family rejects unknown
     # options with the same code; exit 1 made scripts unable to
-    # distinguish "bad invocation" from "command failed".
-    error_usage "${cmd_name} accepts only one file."
+    # distinguish "bad invocation" from "command failed". The truthful
+    # count (#302) makes the overcount class observable/mutation-testable.
+    error_usage "${cmd_name} accepts only one file (got ${#files[@]} files)."
   fi
 }
 
