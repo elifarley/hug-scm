@@ -208,9 +208,10 @@ Suite (`tests/unit/test_pathspec_conformance.bats`):
   text) and the `-xX` row (bats:2519, ref-error → exit-2 flag-naming template)
   — plus NEW rows for everything the shape table adds: `fcat 3 --` (picker),
   `fcat 1 a b` (exit 2), `fcat --`, `fcat <N> <path> --` (scoped picker —
-  STUB `select_files_with_status` and assert the forwarded opts contain the
-  pathspec, the suite's existing git/difftool-argv technique, so the row
-  discriminates scoping even without gum), quoted-glob literal failure,
+  STUB gum via the suite's `psx_install_stub_gum` and assert the picker's
+  STDIN candidates contain the pathspec and no out-of-scope file (candidates
+  reach `gum filter` on stdin; argv holds only filter options), so the row
+  discriminates scoping in CI), quoted-glob literal failure,
   `fcat --browse-root`, `fcat --browse-root --`, `fcat --browse-root 3`,
   the empty-string arg, the post-`--` flag-spelling arm (`fcat 3 -- -q` →
   exit 2, `Flags must precede '--'`), and the three §1a rows no existing row

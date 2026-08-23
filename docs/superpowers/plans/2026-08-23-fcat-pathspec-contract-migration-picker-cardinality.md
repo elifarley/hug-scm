@@ -27,7 +27,7 @@
 - [ ] `fcat -xX src/a.py` → exit 2, `Unknown option: -xX. Pathspecs beginning with '-' require '--'`
 - [ ] `fcat -3 <path>` → unchanged range-unsupported text, exit 1
 - [ ] `fcat HEAD:src/a.py` → exit 1, `File argument required` (flipped partial)
-- [ ] `fcat 3 a.py --` with stubbed gum → picker receives `a.py` as scope (asserted via argv recording)
+- [ ] `fcat 3 a.py --` with stubbed gum → picker's stdin candidates contain `a.py` and no out-of-scope file (via `psx_install_stub_gum` / `$GUM_CANDIDATES_FILE`)
 - [ ] `fcat` bare / `fcat <N>` target-only / `fcat 3 -- ''` / `fcat 3 -- -q` rows all pass per §1a
 - [ ] Legacy `fcat HEAD src/a.py` and `fcat HEAD -- src/a.py` rows still pass byte-for-byte
 
@@ -60,9 +60,13 @@
   psx_reset
 }
 
-@test "contract fcat: picker arm — no gum → clean error; empty arg → file required" {
+@test "contract fcat: picker arm — gum disabled → clean error; empty arg → file required" {
   psx_setup
-  command -v gum >/dev/null && skip "deterministic only without gum"
+  # HUG_DISABLE_GUM, NOT a `command -v gum` skip: test_helper.bash exports
+  # HUG_TEST_MODE=true, which makes gum_available() succeed even with no gum
+  # binary (hug-gum:27-28) — under a skip guard this row would enter the
+  # picker and treat the failed invocation as cancellation (exit 0).
+  export HUG_DISABLE_GUM=true
   run hug fcat 3 --
   assert_failure; assert_output --partial "File argument required"
   run hug fcat 3 -- ''
@@ -94,17 +98,20 @@
 
 @test "contract fcat: 'fcat <N> <path> --' scopes the picker to the path" {
   psx_setup
-  # Fake gum: records argv, "selects" src/a.py. Reuse the suite's existing
-  # gum-stub technique if one exists (grep 'stub' near the `a` selection test);
-  # otherwise this PATH-shim is the pattern.
-  stub_bin="$PSX_TMP/bin"; mkdir -p "$stub_bin"
-  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" > "$GUM_ARGV_FILE"\necho src/a.py\n' \
-    > "$stub_bin/gum" && chmod +x "$stub_bin/gum"
-  GUM_ARGV_FILE="$PSX_TMP/gum.argv" PATH="$stub_bin:$PATH" \
-    run hug fcat 1 src/a.py --
+  # psx_install_stub_gum (bats:573), NOT an argv-recording shim: candidates
+  # reach `gum filter` on STDIN — argv carries only filter options, so an
+  # argv capture can never see the pathspec. The stub records stdin to
+  # $GUM_CANDIDATES_FILE and exits 1 (cancelling picker).
+  psx_install_stub_gum
+  run hug fcat 1 src/a.py --
   assert_success
-  assert_output "py1"
-  grep -q 'src/a.py' "$PSX_TMP/gum.argv"   # the picker SAW the scope
+  assert_output --partial "No file selected or cancelled"
+  # Strip ANSI status coloring before matching (suite pattern).
+  candidates=$(sed $'s/\033\\[[0-9;]*m//g' "$GUM_CANDIDATES_FILE")
+  grep -qF "src/a.py" <<< "$candidates"
+  if grep -qF "docs/note.md" <<< "$candidates"; then
+    fail "out-of-scope candidate leaked into picker: docs/note.md"
+  fi
   psx_reset
 }
 ```
@@ -307,9 +314,10 @@ fi
 - [ ] **Step 2: Add rows** (skip-without-gum pattern from Task 1; if `h steps --` misbehaves, migrate its parser arm minimally — same steps 1-8 shape, own flags preserved — before pinning):
 
 ```bash
-@test "contract stats file: bare '--' routes to the picker (no gum → clean error)" {
+@test "contract stats file: bare '--' routes to the picker (gum disabled → clean error)" {
   psx_setup
-  command -v gum >/dev/null && skip "deterministic only without gum"
+  export HUG_DISABLE_GUM=true   # NOT a `command -v gum` skip — HUG_TEST_MODE
+                                # makes gum_available succeed regardless (PR #314 review)
   run hug stats file --
   assert_failure; assert_output --partial "File argument required"
   psx_reset
@@ -317,7 +325,7 @@ fi
 
 @test "contract h steps: bare '--' routes to the picker" {
   psx_setup
-  command -v gum >/dev/null && skip "deterministic only without gum"
+  export HUG_DISABLE_GUM=true
   run hug h steps --
   assert_failure; assert_output --partial "File argument required"   # adjust to probe outcome
   psx_reset
