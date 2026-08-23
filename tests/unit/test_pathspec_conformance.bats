@@ -2503,22 +2503,104 @@ psx_install_stub_gum() {
   psx_reset
 }
 
-@test "characterization fcat: colon syntax rejected; unknown flag dies as ref error" {
-  # characterization: probed — `fcat HEAD:src/a.py` (single colon-arg) is
-  # NOT the CLI form: loud "Missing arguments" (exit 1). `-xX` is collected
-  # as a positional target and dies in ref resolution (exit 1, "Unable to
-  # resolve reference '-xX'") — loud but not flag-naming; flip target:
-  # #292 follow-up (column 6 wants a flag-naming rejection).
+@test "contract fcat: colon syntax rejected; unknown flag dies as usage error" {
+  # contract (flipped from characterization, #311): `fcat HEAD:src/a.py`
+  # (single colon-arg) is NOT the CLI form — the target slot consumes it,
+  # zero file candidates remain, and the loud usage error is now
+  # "File argument required" (was "Missing arguments"). `-xX` is rejected
+  # by parse_scoped_own_flags arm 2 as a usage error exit 2 with the
+  # flag-naming template (was: collected as the target, dying in ref
+  # resolution exit 1 — loud but not flag-naming).
   psx_setup
   run hug fcat HEAD:src/a.py
   assert_failure
-  assert_output --partial "Missing arguments"
+  assert_output --partial "File argument required"
   psx_reset
 
   psx_setup
   run hug fcat -xX src/a.py
   assert_failure
-  assert_output --partial "Unable to resolve reference '-xX'"
+  assert_output --partial "Unknown option: -xX"
+  psx_reset
+}
+
+@test "contract fcat: bare and target-only → loud usage errors" {
+  psx_setup
+  run hug fcat
+  assert_failure; assert_output --partial "Missing target"
+  run hug fcat 3
+  assert_failure; assert_output --partial "File argument required"
+  run hug fcat --
+  assert_failure; assert_output --partial "Missing target"
+  psx_reset
+}
+
+@test "contract fcat: cardinality — two candidates exit 2, either side of '--'" {
+  psx_setup
+  run hug fcat 1 src/a.py docs/note.md
+  assert_failure; assert_output --partial "accepts only one file"
+  run hug fcat 1 -- src/a.py docs/note.md
+  assert_failure; assert_output --partial "accepts only one file"
+  psx_reset
+}
+
+@test "contract fcat: picker arm — gum disabled → clean error; empty arg → file required" {
+  psx_setup
+  # HUG_DISABLE_GUM, NOT a `command -v gum` skip: test_helper.bash exports
+  # HUG_TEST_MODE=true, which makes gum_available() succeed even with no gum
+  # binary (hug-gum:27-28) — under a skip guard this row would enter the
+  # picker and treat the failed invocation as cancellation (exit 0).
+  export HUG_DISABLE_GUM=true
+  run hug fcat 3 --
+  assert_failure; assert_output --partial "File argument required"
+  run hug fcat 3 -- ''
+  assert_failure; assert_output --partial "File argument required"
+  psx_reset
+}
+
+@test "contract fcat: range rejection unchanged; post-'--' flag spelling exits 2" {
+  psx_setup
+  run hug fcat -3 src/a.py
+  assert_failure; assert_output --partial "Ranges are not supported"
+  run hug fcat 3 -- -q
+  assert_failure; assert_output --partial "Flags must precede '--'"
+  psx_reset
+}
+
+@test "contract fcat: quoted glob stays literal; --browse-root compositions" {
+  psx_setup
+  # HEAD (commit arm), not N: with N the resolution order dies earlier in
+  # get_commit_n_back ("Could not find N commits in the history of") before
+  # check_file_in_commit ever sees the literal path — the commit arm is the
+  # one that proves the glob stays a LITERAL file path end-to-end (spec §1a
+  # Glob note).
+  run hug fcat HEAD -- 'src/*.py'
+  assert_failure; assert_output --partial "does not exist"
+  run hug fcat --browse-root 3
+  assert_failure   # parse_common_flags explicit-paths error, exit 1
+  run hug fcat --browse-root
+  assert_failure; assert_output --partial "Missing target"
+  run hug fcat --browse-root --
+  assert_failure; assert_output --partial "Missing target"
+  psx_reset
+}
+
+@test "contract fcat: 'fcat <N> <path> --' scopes the picker to the path" {
+  psx_setup
+  # psx_install_stub_gum (bats:573), NOT an argv-recording shim: candidates
+  # reach `gum filter` on STDIN — argv carries only filter options, so an
+  # argv capture can never see the pathspec. The stub records stdin to
+  # $GUM_CANDIDATES_FILE and exits 1 (cancelling picker).
+  psx_install_stub_gum
+  run hug fcat 1 src/a.py --
+  assert_success
+  assert_output --partial "No file selected or cancelled"
+  # Strip ANSI status coloring before matching (suite pattern).
+  candidates=$(sed $'s/\033\\[[0-9;]*m//g' "$GUM_CANDIDATES_FILE")
+  grep -qF "src/a.py" <<< "$candidates"
+  if grep -qF "docs/note.md" <<< "$candidates"; then
+    fail "out-of-scope candidate leaked into picker: docs/note.md"
+  fi
   psx_reset
 }
 

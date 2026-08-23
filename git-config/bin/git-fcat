@@ -26,6 +26,8 @@ hug fcat: View file content at a specific commit (read-only).
 USAGE:
     hug fcat <N> <path>           File content N file-specific commits back
     hug fcat <commit> <path>      File content at specific commit
+    hug fcat <N|commit> -- <path> Separator form (same as legacy)
+    hug fcat <N|commit> --        Interactive file selection (cwd-scoped)
     hug fcat -h, --help           Show this help
 
 ARGUMENTS:
@@ -60,28 +62,43 @@ SEE ALSO:
     hug w get    : Restore file to commit state (destructive)
     hug shp -- <path> : Show diff for specific file in a commit
     hug fb       : File blame (who changed each line)
+    hug help :pathspec : Uniform pathspec contract
 EOF
 }
 
-# Parse common flags (-h/--help)
-eval "$(parse_common_flags "$@")"
+# ── Uniform pathspec contract (#311) — spec §1 steps 1-8; the sink table in
+# the spec is normative for who-writes/who-reads each representation. ──
+# Step 1: an inherited export must not fire the picker (parse_common_flags'
+# --browse-root arm exports the same variable, hug-cli-flags:278-279).
+unset HUG_INTERACTIVE_FILE_SELECTION
+
+# Step 2: ONE eval — strips the trailing bare '--' (hug-cli-flags:366-370),
+# splits at the first '--', consumes common flags; "$@" becomes the
+# separator-free pre-args.
+eval "$(parse_common_flags_with_pathspecs --picker "$@")"
 
 check_git_repo
 
-# Collect positional arguments (skip already-handled flags)
-declare -a args=()
-for arg in "$@"; do
-  case "$arg" in
-  -h | --help | -q | --quiet) ;; # Handled by parse_common_flags
-  *)
-    args+=("$arg")
-    ;;
-  esac
-done
+# Step 3: range check reads pre-args[0] DIRECTLY, before the helper's arm 2 —
+# else `fcat -3 <path>` flips to the generic unknown-option exit 2 instead of
+# this dedicated message (the `sh` DATA-arm pattern, git-sh:121-126).
+# Regex catches -03, -3, -99, etc. but NOT -h or --help (already handled).
+if [[ "${1:-}" =~ ^-[0-9]+$ ]]; then
+  error "Ranges are not supported. Use a single commit ref.
+  hug fcat <commit> <path>   View file at specific commit
+  hug fcat <N> <path>        View file N changes back (single commit)"
+fi
 
-# Validate argument count: need exactly <target> <path>
-if [[ ${#args[@]} -lt 2 ]]; then
-  error "Missing arguments. USAGE: hug fcat <N|commit> <path>
+# Step 4: LOUD unknown dash-tokens (any pre-args position, incl. the target
+# slot) + post-'--' exact-spelling rejection — the git-w-discard:100 pattern.
+# The helper completes its own array (arm 3 reads it for `fcat 3 -- -q`);
+# fcat's cardinality does NOT use it (the target would be miscounted).
+pathspec_pathspecs_into _fcat_guard
+parse_scoped_own_flags "hug fcat" "" _fcat_guard "$@"
+
+# Step 5: target + candidates from the UNTOUCHED "$@" ∪ pathspecs.
+if [[ $# -eq 0 ]]; then
+  error "Missing target. USAGE: hug fcat <N|commit> <path>
 
 ARGUMENTS:
     <N|commit>    Number (0-99) or commit reference
@@ -89,16 +106,39 @@ ARGUMENTS:
 
 Run 'hug help fcat' for details."
 fi
+target="$1"
+candidates=("${@:2}" ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"})
 
-target="${args[0]}"
-file_path="${args[1]}"
+# Step 6: materialize the union so forward_pathspecs_to_picker (which reads
+# ONLY _pathspec_pathspecs, hug-cli-flags:437-446) sees pre-args-side
+# candidates: `fcat 3 a.py --` must scope the picker to a.py, never open it
+# cwd-wide.
+_pathspec_pathspecs=(${candidates[@]+"${candidates[@]}"})
 
-# Reject ranges (-N) — file content is per-commit, not a range.
-# Regex catches -03, -3, -99, etc. but NOT -h or --help (already handled).
-if [[ "$target" =~ ^-[0-9]+$ ]]; then
-  error "Ranges are not supported. Use a single commit ref.
-  hug fcat <commit> <path>   View file at specific commit
-  hug fcat <N> <path>        View file N changes back (single commit)"
+# Step 7: cardinality — exactly one file candidate in total, from either side
+# of the separator. reject_multiple_files ignores empty strings, so
+# `fcat 3 -- ''` falls through to the 0-candidates arm in step 8.
+if [[ ${#candidates[@]} -gt 1 ]]; then
+  reject_multiple_files "hug fcat" ${candidates[@]+"${candidates[@]}"}
+fi
+
+# Step 8: picker on the parse-local export; pick-file-FIRST, then resolve the
+# target (N counts file-specific commits). Cancel → info + exit 0
+# (stats-file precedent). cwd-scoped only; --browse-root has no reachable
+# composition (spec Vestigial note).
+file_path=""
+if [[ "${HUG_INTERACTIVE_FILE_SELECTION:-}" = "true" ]] && gum_available; then
+  declare -a select_opts=("--single" "--cwd" "--prompt" "Select file to view...")
+  forward_pathspecs_to_picker select_opts
+  if ! file_path=$(select_files_with_status "${select_opts[@]}"); then
+    info "No file selected or cancelled."
+    exit 0
+  fi
+elif [[ ${#candidates[@]} -eq 1 && -n "${candidates[0]}" ]]; then
+  file_path="${candidates[0]}"
+else
+  error "File argument required.
+USAGE: hug fcat <N|commit> <path>"
 fi
 
 # Resolve the target commit
