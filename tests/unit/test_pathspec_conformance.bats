@@ -2435,6 +2435,20 @@ psx_install_stub_gum() {
   assert_output --partial "No changes introduced"
   assert_fake_tool_not_invoked
   psx_reset
+
+  # Bare '--' through the new parser (review fix): the shared eval strips the
+  # trailing separator, "$@" empties, token defaults to HEAD — the SAME
+  # observable as the no-arg bare default (test_shv.bats' bare-default row):
+  # HEAD^1/HEAD endpoints. Without the row, a parser change that treated the
+  # lone separator as a stray token (exit 1 `Unexpected`) would go unpinned.
+  psx_setup
+  configure_fake_difftool "$PWD"
+  setup_git_shim
+  run git-shv --
+  assert_success
+  assert_shim_logged_exact "HEAD^1"
+  assert_shim_logged_exact "HEAD"
+  psx_reset
 }
 
 @test "characterization shv: second token rejected loudly; -xX → usage; --help → man routing" {
@@ -2634,6 +2648,10 @@ psx_install_stub_gum() {
   assert_equal 2 "$status"; assert_output --partial "accepts only one file"
   run hug fcat 1 -- src/a.py docs/note.md
   assert_equal 2 "$status"; assert_output --partial "accepts only one file"
+  # Mixed sides (review fix): one candidate BEFORE and one AFTER the separator
+  # must total 2 and hit the same guard — the union, not per-side counting.
+  run hug fcat HEAD src/a.py -- docs/note.md
+  assert_equal 2 "$status"; assert_output --partial "accepts only one file"
   psx_reset
 }
 
@@ -2709,6 +2727,37 @@ psx_install_stub_gum() {
   if grep -qF "docs/note.md" <<< "$candidates"; then
     fail "out-of-scope candidate leaked into picker: docs/note.md"
   fi
+  psx_reset
+}
+
+@test "contract fcat: picker SELECTS — bare '--' cwd-scoped arm yields the chosen file" {
+  # Review fix (TWO findings, one row): every picker row above either
+  # CANCELS (stub exit 1) or DEGRADES (no gum) — the SELECTS arm had zero
+  # coverage. This row also covers the cwd-scoped ZERO-pathspec-candidate
+  # arm: bare `fcat HEAD --` passes no scope at all (candidates=()), so the
+  # picker lists tracked files cwd-wide and the PICK alone determines the
+  # file. Selecting-stub model = the lc/lf and `a` rows (bats:3067/3128):
+  # grep $GUM_PICK from the candidate stdin, echo it, exit 0 — the driver
+  # then resolves HEAD and `git show` prints the picked file's content (py1).
+  psx_setup
+  local stub_dir="$BATS_TEST_TMPDIR/stub"
+  mkdir -p "$stub_dir"
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'if [[ "${1:-}" == filter ]]; then' \
+    '  sed $'"'"'s/\033\\[[0-9;]*m//g'"'"' | tee "$GUM_CANDIDATES_FILE" | grep -F "$GUM_PICK" | head -1' \
+    'fi' \
+    'exit 0' > "$stub_dir/gum"
+  chmod +x "$stub_dir/gum"
+  GUM_CANDIDATES_FILE="$BATS_TEST_TMPDIR/gum-candidates.txt"
+  GUM_PICK="src/a.py"
+  export GUM_CANDIDATES_FILE GUM_PICK HUG_TEST_MODE=true
+  PATH="$stub_dir:$PATH"
+  : > "$GUM_CANDIDATES_FILE"
+
+  run hug fcat HEAD --
+  assert_success
+  assert_output "py1"
   psx_reset
 }
 

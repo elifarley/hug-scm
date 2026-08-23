@@ -91,9 +91,13 @@ fi
 
 # Step 4: LOUD unknown dash-tokens (any pre-args position, incl. the target
 # slot) + post-'--' exact-spelling rejection — the git-w-discard:100 pattern.
-# The helper completes its own array (arm 3 reads it for `fcat 3 -- -q`);
-# fcat's cardinality does NOT use it (the target would be miscounted).
-pathspec_pathspecs_into _fcat_guard
+# NO pathspec_pathspecs_into pre-seed: parse_scoped_own_flags SELF-SEEDS its
+# array from the shell-wide _pathspec_pathspecs ("Internal seeding (hardening
+# 2)", hug-cli-flags) — the nameref target only needs to exist, which the
+# helper's own `local -n` + `+=` guarantees under set -u. Unlike the family
+# callers (w-discard/w-purge/w-zap), which seed because they READ their array
+# afterward, fcat never consumes _fcat_guard post-call — its cardinality
+# counts "$@" ∪ pathspecs directly (the target would be miscounted otherwise).
 parse_scoped_own_flags "hug fcat" "" _fcat_guard "$@"
 
 # Step 5: target + candidates from the UNTOUCHED "$@" ∪ pathspecs.
