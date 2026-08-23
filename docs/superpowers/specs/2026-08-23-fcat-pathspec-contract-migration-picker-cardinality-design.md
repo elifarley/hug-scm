@@ -23,8 +23,9 @@ bare `--` silently, and the positional collector then dies at the `< 2` guard
 
 Additional gaps: `fcat` and `shv` have no rows in the `hug help :pathspec` support
 matrix (`git-config/lib/python/articles/pathspec.md`); `stats file` and `h steps`
-are listed as single-file commands in the article but have no conformance-suite
-rows pinning that behavior.
+already have cardinality and unknown-flag conformance rows (bats:2042-2173,
+2261, 2337-2354 — the #310/#302 batches) but NO bare-`--` picker-path row —
+that is the only genuinely missing pin for them.
 
 `shv` is conformant but hand-rolls its `--` split (`git-shv:83-104`) — the last
 bespoke parser in the show family.
@@ -62,6 +63,7 @@ hug fcat <N|commit> <path> --       # picker SCOPED to the path candidates
 | `fcat --browse-root 3` | error exit 1: `--browse-root` cannot be used with explicit paths (existing `parse_common_flags` behavior, pinned with a row) |
 | `fcat --browse-root` / `fcat --browse-root --` | error exit 1: target required — `--browse-root` composes with no other pre-arg, and zero pre-args hits the target-required rule; there is NO reachable repo-scoped fcat picker (see Vestigial note) |
 | `fcat 3 -- ''` (empty-string arg) | error exit 1: file argument required — `reject_multiple_files` ignores empty strings (hug-cli-flags:531), so the 0-candidates check fires, not cardinality |
+| `fcat <N> -- -q` (flag spelling after `--`) | exit 2, `Flags must precede '--'` — `parse_scoped_own_flags` arm 3 exact-spelling rejection (hug-cli-flags:663-675); the family tradeoff noted above |
 | picker, no gum available | clean error exit 1: file argument required (same as `stats file`) |
 
 **Glob note (YAGNI):** the issue never asked for glob resolution, and unquoted
@@ -88,28 +90,32 @@ step is load-bearing; see the sink table below for who writes/reads what):
 2. `eval "$(parse_common_flags_with_pathspecs --picker "$@")"` — one eval,
    uniform order; the trailing bare `--` is stripped BEFORE the split
    (hug-cli-flags:366-370), and `$@` becomes the separator-free pre-args.
-3. `parse_scoped_own_flags "hug fcat" "" ...` over ALL pre-args (`"$@"`), the
+3. Range check FIRST, reading pre-args[0] directly (`[[ "${1:-}" =~
+   ^-[0-9]+$ ]]` → the existing range-unsupported rejection, unchanged text).
+   This must fire BEFORE step 4's helper — otherwise `fcat -3 src/a.py` flips
+   to arm 2's generic unknown-option exit 2 instead of the shape table's
+   unchanged exit-1 text (the `sh` DATA-arm pattern, `git-sh:121-126`).
+4. `parse_scoped_own_flags "hug fcat" "" ...` over ALL pre-args (`"$@"`), the
    `git-w-discard:100` pattern — arm 2 then rejects ANY dash token including
    one at position 0 (`-xX` becomes the target only if this step is skipped).
-   The existing `-N`-range rejection (ranges unsupported) stays, ordered
-   BEFORE this call (the `sh` DATA-arm pattern, `git-sh:121-126`). The
-   helper's own output array is write-only noise for fcat — ignored.
-4. Target and candidates are computed from the untouched `$@` and
+   The helper's output array is read by its own arm 3 (post-`--`
+   exact-spelling rejection) and otherwise ignored by fcat.
+5. Target and candidates are computed from the untouched `$@` and
    `_pathspec_pathspecs` directly, NOT from the helper's array:
    `target="${@:1:1}"` (zero pre-args → target-required error);
    `candidates=("${@:2}" ∪ _pathspec_pathspecs)`.
-5. **Materialize the union into `_pathspec_pathspecs`** (append `"${@:2}"`)
+6. **Materialize the union into `_pathspec_pathspecs`** (append `"${@:2}"`)
    BEFORE any picker forwarding — `forward_pathspecs_to_picker`
    (hug-cli-flags:437-446) reads ONLY that global, and for
    `fcat 3 a.py --` the path sits in pre-args (the trailing `--` was stripped
    pre-split), so without this step the picker opens unscoped and CI without
    gum cannot tell the difference.
-6. Cardinality: >1 candidate → `reject_multiple_files "hug fcat"` (exit 2,
+7. Cardinality: >1 candidate → `reject_multiple_files "hug fcat"` (exit 2,
    family template "accepts only one file", hug-cli-flags:526 — ignores empty
    strings, so `fcat 3 -- ''` falls through to the 0-candidates check). Also
    fixes the legacy form's silent first-wins. 0 candidates and no picker →
    file-argument-required error (exit 1).
-7. Picker (on the parse-local export): `select_files_with_status --single`
+8. Picker (on the parse-local export): `select_files_with_status --single`
    (cwd-scoped only — see Vestigial note), scoped to the candidates via
    `forward_pathspecs_to_picker`; cancel → info, exit 0 (stats-file
    precedent). Picker-first solves the N chicken-and-egg: the file is chosen,
@@ -121,10 +127,10 @@ step is load-bearing; see the sink table below for who writes/reads what):
 
 | Representation | Written by | Read by | When |
 |---|---|---|---|
-| `$@` (pre-args) | the eval (step 2) | `parse_scoped_own_flags` (step 3), target/candidate slice (step 4) | immediately after eval |
-| `_pathspec_pathspecs` | the eval; step 5 appends pre-args[1:] | `forward_pathspecs_to_picker` (step 7), cardinality (step 6) | after materialization |
-| `HUG_INTERACTIVE_FILE_SELECTION` | the eval (trailing-bare-`--` condition only) | picker trigger (step 7) | unset first (step 1) |
-| helper's output array | `parse_scoped_own_flags` | NOBODY (write-only for fcat) | never |
+| `$@` (pre-args) | the eval (step 2) | range check (step 3), `parse_scoped_own_flags` (step 4), target/candidate slice (step 5) | immediately after eval |
+| `_pathspec_pathspecs` | the eval; step 6 appends pre-args[1:] | `forward_pathspecs_to_picker` (step 8), cardinality (step 7) | after materialization |
+| `HUG_INTERACTIVE_FILE_SELECTION` | the eval (trailing-bare-`--` condition only) | picker trigger (step 8) | unset first (step 1) |
+| helper's output array | `parse_scoped_own_flags` (step 4) | the helper's OWN arm 3 (post-`--` exact-spelling rejection, hug-cli-flags:663-675) — otherwise ignored by fcat | during step 4 |
 
 - Colon syntax (`fcat HEAD:src/a.py`) stays rejected — see the shape table for
   the row's `--partial` flip.
@@ -135,14 +141,15 @@ step is load-bearing; see the sink table below for who writes/reads what):
 
 ### 2. shv rewrite onto the shared parser (behavior-preserving)
 
-Retire `shv`'s hand-rolled `--` split with ONE deliberate observable change:
-flags spelled AFTER the positional converge to the exit-2 flag-naming family —
-today `hug shv 3 -q` dies exit 1 as a second bare token (`Unexpected: '-q'`,
-git-shv:99; `error()` exits 1), post-rewrite the position-independent guard
-fires `Unknown flag: -q` exit 2. That is the contract-aligned direction and is
-pinned as a NEW row; everything else is preserved byte-for-byte via the guard
-below. The characterization rows (`test_pathspec_conformance.bats:2374-2429`)
-must keep passing, and new rows cover the spellings those rows miss.
+Retire `shv`'s hand-rolled `--` split with ONE deliberate observable change
+(plus one ultra-edge family tradeoff, noted below): flags spelled AFTER the
+positional converge to the exit-2 flag-naming family — today `hug shv 3 -q`
+dies exit 1 as a second bare token (`Unexpected: '-q'`, git-shv:99; `error()`
+exits 1), post-rewrite the position-independent guard fires `Unknown flag:
+-q` exit 2. That is the contract-aligned direction and is pinned as a NEW row;
+everything else is preserved byte-for-byte via the guard below. The
+characterization rows (`test_pathspec_conformance.bats:2374-2429`) must keep
+passing, and new rows cover the spellings those rows miss.
 
 - Replace the hand-rolled loop + `-h` pre-scan with
   `parse_common_flags_with_pathspecs` (no `--picker` — `shv` launches a
@@ -156,11 +163,21 @@ must keep passing, and new rows cover the spellings those rows miss.
   Without a guard, `hug shv -q` (and `shv -fq`) would silently strip the flag
   and LAUNCH a difftool on HEAD. Guard: shv has NO legal flags before `--`, so
   the guard CLASSIFIES instead of spell-matching: BEFORE the eval, reject
-  every pre-`--` token matching `-[^0-9]*` or `--*` (anything `reject_flag_ref`
-  would classify as a flag) with the engine's current `Unknown flag: <tok>`
-  exit-2 error — exempting only `-[0-9]{1,3}` range data and `-h/--help`
-  (handled earlier). Classification subsumes combined shorts, `--flag=value`
-  spellings, and any future common flag; no enumeration to keep in sync.
+  every pre-`--` token matching `-[^0-9]*` or `--*` with the engine's current
+  `Unknown flag: <tok>` exit-2 error — exempting only `-[0-9]+` range data
+  (ANY length, matching `reject_flag_ref`'s `^-[0-9]+$` exemption exactly, so
+  `shv -1234` keeps today's range-data handling) and `-h/--help` (handled
+  earlier). The guard routes THROUGH `reject_flag_ref` itself (or prints help
+  before erroring the same way) so the USAGE banner the characterization row
+  asserts (bats:2417) is preserved. Classification subsumes combined shorts,
+  `--flag=value` spellings, and any future common flag; no enumeration to keep
+  in sync.
+- **Family tradeoff, `shv -- --`:** the shared helper's reservation 1 strips
+  the trailing bare `--` unconditionally, so a pathspec literally named `--`
+  is dropped (today it reaches the engine and the No-changes guard fires).
+  Post-rewrite that ultra-edge input launches an unscoped HEAD diff — the
+  same reservation-1 tradeoff every `--picker` command in the family already
+  ratified in #292; accepted and noted here, not redesigned.
 - After the split: pre-args hold 0 or 1 token (committish/N/range; default
   `HEAD`). A second bare token keeps the exact current error (`takes a single
   commit/range … Unexpected: '$1'`).
@@ -194,12 +211,16 @@ Suite (`tests/unit/test_pathspec_conformance.bats`):
   STUB `select_files_with_status` and assert the forwarded opts contain the
   pathspec, the suite's existing git/difftool-argv technique, so the row
   discriminates scoping even without gum), quoted-glob literal failure,
-  `fcat --browse-root`, `fcat --browse-root --`, `fcat --browse-root 3`, and
-  the empty-string arg.
-- Enroll `stats file` + `h steps` as single-file-adjacent rows: bare `--` →
-  picker path, two files → exit 2, unknown dash-token → exit 2. `h steps` gets
-  probed first; if probing reveals gaps, the fix lands in this PR, and the rows
-  pin whatever conformant shape ships.
+  `fcat --browse-root`, `fcat --browse-root --`, `fcat --browse-root 3`,
+  the empty-string arg, the post-`--` flag-spelling arm (`fcat 3 -- -q` →
+  exit 2, `Flags must precede '--'`), and the three §1a rows no existing row
+  pins: `fcat` bare (target required), `fcat <N|commit>` target-only (file
+  argument required), `fcat -3 <path>` (range-unsupported rejection,
+  unchanged text).
+- Enroll `stats file` + `h steps` with ONLY the bare-`--` picker-path row each
+  — their cardinality and unknown-flag rows already exist (bats:2042-2173,
+  2261, 2337-2354); new work must not duplicate them. `h steps`'s bare-`--`
+  arm gets probed first; if the probe reveals a gap, the fix lands in this PR.
 - `shv` characterization rows stay as-is — they are the rewrite's regression
   gate — PLUS new rows for the spellings the shared parser would silently
   consume or flip: `shv -q`, `shv -fq` (combined short), `shv 3 -q`
