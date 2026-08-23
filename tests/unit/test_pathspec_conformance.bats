@@ -2428,6 +2428,54 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "contract shv: flag-classification guard kills silent consumption" {
+  # #311 spec §2: the shared parser's GNU getopt would CONSUME -q/-f/-y/
+  # --dry-run/--browse-root (and combined shorts like -fq) and silently
+  # launch a difftool on HEAD — the guard routes every flag-shaped pre-'--'
+  # token through reject_flag_ref instead (USAGE banner + exit 2, the same
+  # profile today's engine rejection gives `shv -xX`).
+  psx_setup
+  run hug shv -q
+  assert_equal 2 "$status"
+  assert_output --partial "USAGE:"
+  assert_output --partial "Unknown flag: -q"
+  run hug shv -fq
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown flag: -fq"
+  # DELIBERATE FLIP (#311 spec §2, the ONE authorized observable change):
+  # a flag AFTER the positional used to die as a second bare token (exit 1
+  # `Unexpected: '-q'`); the position-independent guard converges it to the
+  # exit-2 flag-naming family.
+  run hug shv 3 -q
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown flag: -q"
+  # SECOND deliberate flip, pinned per spec §2 ("either current error is
+  # acceptable; the row pins whichever ships"): `--browse-root 3` used to die
+  # as `Unexpected: '3'` exit 1; the guard rejects `--browse-root` itself.
+  run hug shv --browse-root 3
+  assert_equal 2 "$status"
+  assert_output --partial "USAGE:"
+  assert_output --partial "Unknown flag: --browse-root"
+  # `--browse-root` alone already died in reject_flag_ref today — unchanged.
+  run hug shv --browse-root
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown flag: --browse-root"
+  psx_reset
+}
+
+@test "contract shv: long-digit range data passes the guard to the engine" {
+  # reject_flag_ref exempts ^-[0-9]+$ at ANY length, so -1234 is range DATA:
+  # it clears the guard, survives getopt's unknown-option fallback, reaches
+  # dd_commit_diff and dies THERE — probed today: exit 1 `Not a valid
+  # commit: '-1234'.` (the N convention caps at 3 digits; 1234 back does not
+  # resolve). The row pins that exact today-observable.
+  psx_setup
+  run hug shv -1234
+  assert_equal 1 "$status"
+  assert_output --partial "Not a valid commit: '-1234'."
+  psx_reset
+}
+
 @test "characterization dd: -- <path> forwarded verbatim (ref, mode, bare forms)" {
   # characterization: dd_dispatch's manual split is PROPER — probed argv:
   #   dd HEAD~1 -- src/ → <empty-tree> HEAD~1 -- src/
