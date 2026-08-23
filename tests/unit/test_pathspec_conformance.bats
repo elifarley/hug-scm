@@ -2272,6 +2272,22 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "contract h steps: bare '--' routes to the picker (gum disabled → help fallback, exit 1)" {
+  # Probed: a trailing bare '--' contributes NO file candidate, so the
+  # zero-file arm fires — with gum available that is the interactive picker;
+  # with HUG_DISABLE_GUM it degrades to show_help on stdout + exit 1 (never
+  # an attempt to analyze a file literally named '--').
+  # HUG_DISABLE_GUM, NOT a `command -v gum` skip: test_helper.bash exports
+  # HUG_TEST_MODE=true, which makes gum_available() succeed even with no gum
+  # binary (hug-gum:22-24) — under a skip guard this row would enter the
+  # picker and treat the failed invocation as cancellation (exit 0).
+  psx_setup
+  export HUG_DISABLE_GUM=true
+  run hug h steps --
+  assert_equal 1 "$status"; assert_output --partial "hug h steps: Show commit steps"
+  psx_reset
+}
+
 @test "single-file cardinality: f-family browse-root still excludes explicit paths post-split (#310 ship review)" {
   # Same regression class as the h-steps pin above, found by the coverage
   # audit when fa/fb/fborn/fcon adopted the split WITHOUT the backstop:
@@ -2351,6 +2367,21 @@ psx_install_stub_gum() {
   run hug stats file -- other.txt
   assert_success
   assert_output --partial "Churn analysis for: other.txt"
+  psx_reset
+}
+
+@test "contract stats file: bare '--' routes to the picker (gum disabled → clean error)" {
+  # Probed: a trailing bare '--' strips to zero args, which the '--' arm
+  # routes to the zero-args picker path — with gum disabled that lands in
+  # the same "File argument required." usage error as a bare 'stats file'.
+  # HUG_DISABLE_GUM, NOT a `command -v gum` skip: test_helper.bash exports
+  # HUG_TEST_MODE=true, which makes gum_available() succeed even with no gum
+  # binary (hug-gum:22-24) — under a skip guard this row would enter the
+  # picker and treat the failed invocation as cancellation.
+  psx_setup
+  export HUG_DISABLE_GUM=true
+  run hug stats file --
+  assert_equal 1 "$status"; assert_output --partial "File argument required"
   psx_reset
 }
 
@@ -2460,6 +2491,13 @@ psx_install_stub_gum() {
   run hug shv --browse-root
   assert_equal 2 "$status"
   assert_output --partial "Unknown flag: --browse-root"
+  # Micro-flip (Task 2 quality review): 'shv -h -q' used to reach the eval's
+  # -h arm and exit 0 with help; the position-independent guard now rejects
+  # -q FIRST (banner, then exit 2) — help cannot shadow a sibling flag error.
+  run hug shv -h -q
+  assert_equal 2 "$status"
+  assert_output --partial "USAGE:"
+  assert_output --partial "Unknown flag: -q"
   psx_reset
 }
 
@@ -2603,6 +2641,21 @@ psx_install_stub_gum() {
   assert_equal 1 "$status"; assert_output --partial "File argument required"
   run hug fcat 3 -- ''
   assert_equal 1 "$status"; assert_output --partial "File argument required"
+  psx_reset
+}
+
+@test "contract fcat: picker + no gum + single candidate degrades to the datum" {
+  # Task 1 quality review: 'fcat HEAD src/a.py --' scopes the picker to the
+  # pathspec (the row above), and when gum is unavailable the single-candidate
+  # picker DEGRADES to using the candidate outright — user intent (that file,
+  # that version) is fully satisfied without the UI, so content flows and the
+  # exit is 0. Probed: prints the file's HEAD content ('py1').
+  # HEAD arm, NOT N: the fixture's src/a.py has one commit, so any N>=1 dies
+  # earlier in get_commit_n_back ("Could not find N commits in the history").
+  psx_setup
+  export HUG_DISABLE_GUM=true
+  run hug fcat HEAD src/a.py --
+  assert_equal 0 "$status"; assert_output --partial "py1"
   psx_reset
 }
 
