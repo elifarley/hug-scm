@@ -2,6 +2,27 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [1.14.0.0] - 2026-08-23
+
+Closes elifarley/hug-scm#311: `hug fcat` joins the uniform pathspec contract (elifarley/hug-scm#292) and `hug shv` moves onto the shared parser behind a flag-classification guard — the last bespoke argument parsers in the f*/show families are gone. Spec roast-converged over three rounds; every observable flip is pinned by a conformance row.
+
+### Added
+
+- **`hug fcat <N|commit> --` opens the interactive file picker** — pick-file-first, then N resolves (N counts file-specific commits, so the file must be chosen before the target). With a path before the separator (`hug fcat 3 src/a.py --`) the picker is scoped to that path. Without gum: a clean `File argument required` error instead of the old `Missing arguments`.
+- **`fcat` and `shv` rows in the `hug help :pathspec` support matrix** — the article's headline promise ("one `-- <path>...` contract across every path-accepting command") is now verifiable for both.
+
+### Changed
+
+- **`hug fcat` takes exactly one path, loudly** — two paths (either side of `--`) exit 2 with `hug fcat accepts only one file` (was: silent first-wins, exit 0).
+- **Target-less range spellings (`hug fcat -3`) now report the range rejection** — `Ranges are not supported` with the two-form usage hint (was: the generic missing-arguments error, because the old collector hit its `<2 args` guard first). The range message names the actual mistake; pinned by a conformance row.
+- **Unknown dash-tokens on `fcat` exit 2 with the flag-naming template** — `Unknown option: -xX. Pathspecs beginning with '-' require '--'` (was: a confusing `Unable to resolve reference '-xX'`).
+- **`hug shv` rejects every flag-shaped token before `--`** with the family's USAGE banner + exit 2 — including combined shorts like `-fq`, which GNU getopt would have silently consumed before launching a difftool on HEAD, and flags after the positional (exit 1 `Unexpected` → exit 2, the one deliberate convergence). `shv --browse-root 3` converges the same way. `-N` range spellings at any digit length keep their data meaning.
+
+### Fixed
+
+- **`hug fcat 3 --` no longer errors** — the trailing bare `--` now routes to the picker instead of dying `Missing arguments` (the #311 reproduction).
+- **Conformance suite owns the membership**: new `PATHSPEC_TARGETPLUSFILE_ROWS` roster class (master roster now 15), bare-`--` picker pins for `stats file` and `h steps`, and full shape×outcome coverage for `fcat` — deleting the command from its roster now fails the suite by name.
+
 ## [1.13.1.0] - 2026-08-22
 
 PR-B follow-up of the #302 final-review LOW batch (elifarley/hug-scm#310): truthful single-file cardinality counts, `us` scope naming, and loud unknown-option rejection across the single-file command family. Includes the roast + codex review fixes (separator data protection, browse-root post-split backstops, short-form magic scope classification).

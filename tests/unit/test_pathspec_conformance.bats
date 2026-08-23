@@ -2684,12 +2684,71 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "contract fcat: empty-string args are not candidates — filtered at the source (review)" {
+  # Review fix R1: step 5 used to count '' into candidates while
+  # reject_multiple_files filtered empties — `fcat HEAD '' src/a.py` saw 2
+  # candidates, dodged the cardinality guard, then died "File argument
+  # required" despite exactly ONE valid file. With the source filter the
+  # empty is invisible everywhere: the datum arm succeeds outright…
+  psx_setup
+  run hug fcat HEAD '' src/a.py
+  assert_success
+  assert_output "py1"
+  psx_reset
+
+  # …and the picker arm scopes to the REAL candidate only — the same
+  # cancel-observable and scoping assertions as the 'fcat <N> <path> --'
+  # scoped-picker row (stub records stdin, exits 1 = cancelled). Pre-fix,
+  # '' rode along:
+  # `git ls-files -- '' src/a.py` fatal'd (swallowed) → zero candidates →
+  # a SILENT cancel indistinguishable from an empty repo.
+  psx_setup
+  psx_install_stub_gum
+  run hug fcat HEAD '' src/a.py --
+  assert_success
+  assert_output --partial "No file selected or cancelled"
+  candidates=$(sed $'s/\033\\[[0-9;]*m//g' "$GUM_CANDIDATES_FILE")
+  grep -qF "src/a.py" <<< "$candidates"
+  if grep -qF "docs/note.md" <<< "$candidates"; then
+    fail "out-of-scope candidate leaked into picker: docs/note.md"
+  fi
+  psx_reset
+}
+
+@test "contract fcat: scoped picker with zero matches cancels cleanly, no bash-error noise (review)" {
+  # Review fix R2: `fcat HEAD nope.txt --` (pathspec matches nothing) used to
+  # leak "bad array subscript" bash errors on stderr before the cancel —
+  # list_tracked_files emitted a stray BLANK LINE for the empty result,
+  # mapfile made it files=(''), and select_files_with_status's dedup keyed
+  # its associative array on the empty string. Fixed at BOTH defense layers
+  # (hug-git-files emits nothing on empty; hug-select-files skips empties).
+  # `run` merges stderr, so refuting the subscript noise on $output covers
+  # it (the suite's refute-on-combined-output idiom).
+  psx_setup
+  psx_install_stub_gum
+  run hug fcat HEAD no-such.txt --
+  assert_success
+  assert_output --partial "No file selected or cancelled"
+  refute_output --partial "bad array subscript"
+  psx_reset
+}
+
 @test "contract fcat: range rejection unchanged; post-'--' flag spelling exits 2" {
   psx_setup
   run hug fcat -3 src/a.py
   assert_equal 1 "$status"; assert_output --partial "Ranges are not supported"
   run hug fcat 3 -- -q
   assert_equal 2 "$status"; assert_output --partial "Flags must precede '--'"
+  # PINNED FLIP (review fix R3): target-less range spellings. The step-3
+  # range check reads pre-args[0] before any path guard, so `fcat -3` (no
+  # path) now reports the RANGE rejection — was the old collector's generic
+  # "Missing arguments". The new outcome is the truthful one (names the
+  # actual mistake) and the step-3 ordering is intentional (see the script's
+  # `sh` DATA-arm note), so this row pins it as the contract.
+  run hug fcat -3
+  assert_equal 1 "$status"; assert_output --partial "Ranges are not supported"
+  run hug fcat -3 --
+  assert_equal 1 "$status"; assert_output --partial "Ranges are not supported"
   psx_reset
 }
 

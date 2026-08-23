@@ -111,7 +111,21 @@ ARGUMENTS:
 Run 'hug help fcat' for details."
 fi
 target="$1"
-candidates=("${@:2}" ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"})
+# Step 5b: filter empty strings AT THE SOURCE (review fix R1). The old
+# `candidates=("${@:2}" ${_pathspec_pathspecs[@]+...})` counted '' as a
+# candidate while reject_multiple_files filters empties — a split worldview:
+# `fcat 3 '' src/a.py` saw 2 candidates, dodged the cardinality guard, then
+# died "File argument required" despite exactly one valid file; and
+# `fcat 3 '' src/a.py --` forwarded '' to the picker, whose
+# `git ls-files -- ''` fatal is swallowed → zero candidates → silent cancel
+# exit 0. One filtered view feeds cardinality, picker scoping, AND the
+# 0/1-candidate arms; `fcat 3 -- ''` therefore has ZERO candidates and falls
+# through to step 8's arms (the old step-7 empties note, moved here).
+candidates=()
+for _c in "${@:2}" ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}; do
+  if [[ -n "$_c" ]]; then candidates+=("$_c"); fi
+done
+unset _c
 
 # Step 6: materialize the union so forward_pathspecs_to_picker (which reads
 # ONLY _pathspec_pathspecs, hug-cli-flags:437-446) sees pre-args-side
@@ -120,8 +134,8 @@ candidates=("${@:2}" ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"})
 _pathspec_pathspecs=(${candidates[@]+"${candidates[@]}"})
 
 # Step 7: cardinality — exactly one file candidate in total, from either side
-# of the separator. reject_multiple_files ignores empty strings, so
-# `fcat 3 -- ''` falls through to the 0-candidates arm in step 8.
+# of the separator. Empties were already dropped in step 5b, so every count
+# here is of REAL files only.
 if [[ ${#candidates[@]} -gt 1 ]]; then
   reject_multiple_files "hug fcat" ${candidates[@]+"${candidates[@]}"}
 fi

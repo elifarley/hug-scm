@@ -527,5 +527,13 @@ list_tracked_files() {
         convert_to_relative_paths paths
     fi
 
-    printf '%s\n' ${paths[@]+"${paths[@]}"}
+    # Empty-result guard (review fix R2, defense layer 1): a bare
+    # `printf '%s\n' ${paths[@]+...}` still emits ONE BLANK LINE when paths
+    # is set-but-empty — the caller's mapfile then yields files=('') and the
+    # downstream dedup keys its associative array on the empty string
+    # ("bad array subscript" noise; a phantom blank picker candidate).
+    # Output contract: one line per file — zero files must mean zero lines.
+    if [[ ${#paths[@]} -gt 0 ]]; then
+        printf '%s\n' "${paths[@]}"
+    fi
 }
