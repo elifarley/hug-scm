@@ -510,7 +510,9 @@ error_unknown_option() {
 # The two-stream single-file guard (#313, spec §Design): ONE contract for the
 # ~40-line block copy-pasted across git-fa/-fb/-fborn/-fcon. Semantics are
 # the pre-extraction inline behavior, verified by the parameterized
-# conformance rows (test_pathspec_conformance.bats:2183/:2206/:2298):
+# conformance rows "f-family unknown option…", "f-family separator data…",
+# "f-family browse-root…" in tests/unit/test_pathspec_conformance.bats:
+# (row titles cited over line numbers — lines drift as rows are inserted).
 #   1. Pre-'--' stream over [pre-args...]: an EMPTY STRING is a loud usage
 #      error (adversarial F1 — 'fa "" extra' must not silently analyze
 #      nothing); first token becomes the survivor, the rest are tallied.

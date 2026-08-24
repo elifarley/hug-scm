@@ -927,7 +927,9 @@ teardown() {
 
 @test "guard_single_file_candidates: no candidates leaves the named var empty" {
   eval "$(parse_pathspecs)"
-  file=""
+  # Seed a stale value so the write is observable: a skipped printf -v on
+  # zero candidates would leave 'stale-value' behind and fail this assert.
+  file="stale-value"
   guard_single_file_candidates "hug t" file
   assert_equal "$file" ""
 }
