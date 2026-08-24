@@ -904,3 +904,78 @@ teardown() {
   collect_positional_args_before_flags c a b -1
   [[ "$(count_positional_args_before_flags a b -1)" -eq "${#c[@]}" ]]
 }
+
+@test "pathspecs_nonempty: false when empty, true once the split collects data" {
+  eval "$(parse_pathspecs)" # reset shell-wide global to empty
+  refute pathspecs_nonempty
+  eval "$(parse_pathspecs -- x.txt y.txt)"
+  assert pathspecs_nonempty
+}
+
+@test "error_unknown_option: short-form template, exit 2" {
+  run error_unknown_option --bogus
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bogus. See 'hug help :pathspec'."
+}
+
+@test "guard_single_file_candidates: single candidate lands in the named var" {
+  eval "$(parse_pathspecs)"
+  unset file || true
+  guard_single_file_candidates "hug t" file src/a.py
+  assert_equal "$file" "src/a.py"
+}
+
+@test "guard_single_file_candidates: no candidates leaves the named var empty" {
+  eval "$(parse_pathspecs)"
+  file=""
+  guard_single_file_candidates "hug t" file
+  assert_equal "$file" ""
+}
+
+@test "guard_single_file_candidates: empty positional is loud (F1)" {
+  eval "$(parse_pathspecs)"
+  run guard_single_file_candidates "hug t" file "" extra
+  assert_equal 2 "$status"
+  assert_output --partial "Empty file argument."
+}
+
+@test "guard_single_file_candidates: pre-'--' unknown flag is loud, not a file" {
+  eval "$(parse_pathspecs)"
+  run guard_single_file_candidates "hug t" file src/a.py --bogus
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bogus"
+  refute_output --partial "got 2 files"
+}
+
+@test "guard_single_file_candidates: separator data stays data; second dash-named candidate hits cardinality (F2)" {
+  eval "$(parse_pathspecs -- -foo.txt -bar.txt)"
+  run guard_single_file_candidates "hug t" file
+  assert_equal 2 "$status"
+  assert_output --partial "hug t accepts only one file (got 2 files)."
+  refute_output --partial "Unknown option"
+}
+
+@test "guard_single_file_candidates: lone dash-named file via -- survives" {
+  eval "$(parse_pathspecs -- -baz.txt)"
+  unset file || true
+  guard_single_file_candidates "hug t" file
+  assert_equal "$file" "-baz.txt"
+}
+
+@test "guard_single_file_candidates: mixed streams — pre flag rejected even when separator data exists" {
+  eval "$(parse_pathspecs -- ok.txt)"
+  run guard_single_file_candidates "hug t" file src/a.py --typo
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --typo"
+  refute_output --partial "got 2 files"
+}
+
+@test "guard_single_file_candidates: two unknown flags report the LAST one (precedence parity)" {
+  # Byte-order parity with the pre-extraction blocks (pr-fix round 1,
+  # codex P2 #3843743270): they scan extras FIRST, survivor LAST, so
+  # 'hug fa --bad1 --bad2' names --bad2. This row pins that order.
+  eval "$(parse_pathspecs)"
+  run guard_single_file_candidates "hug t" file --bad1 --bad2
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bad2"
+}
