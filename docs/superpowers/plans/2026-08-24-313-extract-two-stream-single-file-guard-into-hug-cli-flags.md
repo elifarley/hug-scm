@@ -106,6 +106,16 @@ Append to `tests/lib/test_hug-cli-flags.bats`:
   assert_output --partial "Unknown option: --typo"
   refute_output --partial "got 2 files"
 }
+
+@test "guard_single_file_candidates: two unknown flags report the LAST one (precedence parity)" {
+  # Byte-order parity with the pre-extraction blocks (pr-fix round 1,
+  # codex P2 #3843743270): they scan extras FIRST, survivor LAST, so
+  # 'hug fa --bad1 --bad2' names --bad2. This row pins that order.
+  eval "$(parse_pathspecs)"
+  run guard_single_file_candidates "hug t" file --bad1 --bad2
+  assert_equal 2 "$status"
+  assert_output --partial "Unknown option: --bad2"
+}
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -160,9 +170,11 @@ error_unknown_option() {
 #   1. Pre-'--' stream over [pre-args...]: an EMPTY STRING is a loud usage
 #      error (adversarial F1 — 'fa "" extra' must not silently analyze
 #      nothing); first token becomes the survivor, the rest are tallied.
-#   2. LOUD unknown-option check on the pre-'--' stream ONLY — survivor
-#      first, extras second — BEFORE any separator data joins (adversarial
-#      F2: checking post-merge misclassified separator DATA spelled '-name'
+#   2. LOUD unknown-option check on the pre-'--' stream ONLY — EXTRAS
+#      first, SURVIVOR last, mirroring the inline blocks' scan order so
+#      'fa --bad1 --bad2' names --bad2 exactly as before (pr-fix round 1,
+#      codex P2) — and BEFORE any separator data joins (adversarial F2:
+#      checking post-merge misclassified separator DATA spelled '-name'
 #      as an option).
 #   3. Post-'--' stream: EVERY _pathspec_pathspecs token merges into the
 #      tally VERBATIM (data by contract, never re-parsed as options).
@@ -204,15 +216,18 @@ guard_single_file_candidates() {
     fi
   done
 
-  # F2: loud option check BEFORE separator data joins
-  if [[ -n "$survivor" && "$survivor" == -* ]]; then
-    error_unknown_option "$survivor"
-  fi
+  # F2: loud option check BEFORE separator data joins.
+  # Scan order = extras FIRST, survivor LAST — byte-order parity with the
+  # inline blocks this replaces (codex P2 #3843743270: 'fa --bad1 --bad2'
+  # must keep naming --bad2).
   for f in ${__gsfc_extras[@]+"${__gsfc_extras[@]}"}; do
     if [[ "$f" == -* ]]; then
       error_unknown_option "$f"
     fi
   done
+  if [[ -n "$survivor" && "$survivor" == -* ]]; then
+    error_unknown_option "$survivor"
+  fi
 
   # Stream 2: post-'--' tokens are DATA by contract — no option re-parse
   local -a __gsfc_sep=()
@@ -360,7 +375,13 @@ EOF
 Keep the surrounding comments; change only the calls/conditions:
 - Line ~101: `error_usage "Unknown option: $f. See 'hug help :pathspec'."` → `error_unknown_option "$f"`
 - Line ~105: `error_usage "Unknown option: $file. See 'hug help :pathspec'."` → `error_unknown_option "$file"`
-- Line ~115 (browse-root compound): `… || ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then` → `… || pathspecs_nonempty ]]; then` (full condition becomes `if $browse_root && [[ -n "$file" || ${#extra_files[@]} -gt 0 || pathspecs_nonempty ]]; then`)
+- Line ~115 (browse-root compound): replace ONLY the third operand — `… || ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then` → `… || pathspecs_nonempty ]]; then`, giving:
+
+```bash
+if $browse_root && { [[ -n "$file" || ${#extra_files[@]} -gt 0 ]] || pathspecs_nonempty; }; then
+```
+
+⚠️ The function call must sit OUTSIDE `[[ ]]` (pr-fix round 1, codex P2 #3843743263): inside `[[ … ]]` Bash treats `pathspecs_nonempty` as a literal string (always truthy), so bare `h steps --browse-root` would always take the error branch and break interactive root-browsing. The `{ A || B; }` grouping preserves the original precedence `(file‖extras‖sepdata)` → `(file‖extras) ‖ sepdata`.
 - Line ~122: `if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then` → `if pathspecs_nonempty; then`
 
 Do NOT touch: the `--raw` consuming loop, the check ordering (browse-root sits between unknown-option check and separator merge here — observable and pinned by row 2268), or the `extra_files` naming (this file is NOT part of the four-clone standardization).
@@ -379,6 +400,25 @@ Expected: ALL PASS (rows 2124 trailing-flag-loud, 2141 dash-leading-via-`--`, 22
 
 Run: `make test-unit TEST_FILE=test_pathspec_conformance.bats TEST_FILTER="stats file"`
 Expected: ALL PASS (rows include trailing-flag-not-counted, unknown-option-loud F3, bare-`--` picker routing).
+
+Add this pin row (the bot-noted coverage gap — no existing row drives `h steps --browse-root` alone) to the h-steps section of `test_pathspec_conformance.bats`, then re-run the filter above:
+
+```bash
+@test "single-file cardinality: h steps --browse-root ALONE still opens interactive browse (pr-fix round 1 pin)" {
+  # Codex P2 #3843743263: a [[ ]] -embedded pathspecs_nonempty call would
+  # be a constant-truthy string and reject exactly this invocation. The
+  # pre-existing rows only cover --browse-root WITH an explicit path.
+  psx_setup
+  HUG_DISABLE_GUM=true run hug h steps --browse-root
+  assert_failure
+  refute_output --partial "--browse-root cannot be used with explicit paths."
+  psx_reset
+}
+```
+
+(The row asserts the failure is gum's "argument required" class, NOT the
+mis-grouped browse-root rejection; with `HUG_DISABLE_GUM=true` the command
+errors cleanly without entering the picker.)
 
 Run: `make test-unit TEST_FILE=test_pathspec_conformance.bats TEST_FILTER="fblame"`
 Expected: ALL PASS (churn-mode cardinality 2092, separator/lone-dash 2222).
