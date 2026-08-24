@@ -29,12 +29,17 @@ Structural variants of the same contract exist in:
 - `git-config/bin/git-fblame` (lines 65–118): bespoke `--churn/--since/--json` own-flag loop.
 - `git-config/bin/git-stats-file`: `collect_positional_args_before_flags` + slice-before-tally variant.
 
-Repeated strings/conditions:
+Repeated strings/conditions (counts grep-backed; roast F-001):
 
-- `Unknown option: … See 'hug help :pathspec'.` — 9 occurrences.
+- Short-form template `Unknown option: <tok>. See 'hug help :pathspec'.` —
+  10 call sites in bin (fa/fb/fborn/fcon ×2, h-steps ×2), plus 2 `$1` variants
+  (fblame:105, stats-file:125) → 12 total.
 - The nullsafe separator-aware emptiness condition
   `[[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]`
-  (and its negation in the no-args branch) — 4+ occurrences in the fa-family alone.
+  (and its negation in the no-args branch) — 14 occurrences in bin
+  (fa/fb/fborn/fcon ×3 each, h-steps ×2). Every one of the 14 is inside a site
+  listed in the migration table below, so adopting `pathspecs_nonempty`
+  single-sources the idiom everywhere it appears.
 
 This exceeds the rule of three by 4x. Every future single-file command copies ~40
 lines and can silently drop one of the adversarial-hardening invariants
@@ -109,6 +114,7 @@ is the deliberate contract.
 | `git-h-steps` | adopts `error_unknown_option` + `pathspecs_nonempty`; `--raw` loop and check ordering untouched |
 | `git-fblame` | adopts `error_unknown_option` (its `-*` arm); bespoke loop untouched |
 | `git-stats-file` | adopts `error_unknown_option`; collection flow untouched |
+| `git-config/lib/README.md` | extend the hug-cli-flags Features list with the three new functions (one line each) — roast F-002: the README enumerates every existing lib function by name; shipping the new ones undocumented would hide the guard from the doc that teaches the extraction pattern |
 
 Browse-root checks stay put at each site (precedence differences are observable and
 pinned by conformance rows).
@@ -147,4 +153,5 @@ Pure behavior-preserving refactor:
 2. Unit rows red→green against the lib only.
 3. Migrate the four clone sites; run the conformance suite (expect zero diffs).
 4. Adopt small helpers in h-steps, fblame, stats-file.
-5. Mutation receipts; `make sanitize` gate before commit.
+5. Extend `git-config/lib/README.md`'s hug-cli-flags section with the three new functions.
+6. Mutation receipts; `make sanitize` gate before commit.
