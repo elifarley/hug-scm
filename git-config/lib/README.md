@@ -46,7 +46,13 @@ Command-line flag parsing utilities using GNU getopt (required).
   (append them to a picker option array behind a protective `--`), and
   `drain_pathspecs_after_separator` (the shared `--)` arm for
   separator-aware option loops — used by output_json_status, hug-git-json,
-  and hug-select-files)
+  and hug-select-files), `pathspecs_nonempty` (predicate — true iff the split collected
+  post-`--` pathspec data), `error_unknown_option` (the short-form
+  unknown-option usage rejection, exit 2), and
+  `guard_single_file_candidates` (the two-stream single-file guard:
+  loud empty-positional + pre-`--` unknown-option checks, verbatim
+  post-`--` data merge, truthful cardinality, survivor written to a
+  caller-named variable — used by git-fa/-fb/-fborn/-fcon)
 
 **The parsing-order rule (structural, #292):** the pathspec split runs
 BEFORE any other argument inspection — a command adopting the contract
