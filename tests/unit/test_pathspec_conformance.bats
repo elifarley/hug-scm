@@ -2295,6 +2295,17 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "single-file cardinality: h steps --browse-root ALONE still opens interactive browse (pr-fix round 1 pin)" {
+  # Codex P2 #3843743263: a [[ ]] -embedded pathspecs_nonempty call would
+  # be a constant-truthy string and reject exactly this invocation. The
+  # pre-existing rows only cover --browse-root WITH an explicit path.
+  psx_setup
+  HUG_DISABLE_GUM=true run hug h steps --browse-root
+  assert_failure
+  refute_output --partial "--browse-root cannot be used with explicit paths."
+  psx_reset
+}
+
 @test "single-file cardinality: f-family browse-root still excludes explicit paths post-split (#310 ship review)" {
   # Same regression class as the h-steps pin above, found by the coverage
   # audit when fa/fb/fborn/fcon adopted the split WITHOUT the backstop:

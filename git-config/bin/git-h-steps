@@ -98,11 +98,11 @@ done
 # genuinely an unknown option; post-'--' data is exempt by construction.
 for f in ${extra_files[@]+"${extra_files[@]}"}; do
   if [[ "$f" == -* ]]; then
-    error_usage "Unknown option: $f. See 'hug help :pathspec'."
+    error_unknown_option "$f"
   fi
 done
 if [[ -n "$file" && "$file" == -* ]]; then
-  error_usage "Unknown option: $file. See 'hug help :pathspec'."
+  error_unknown_option "$file"
 fi
 
 # --browse-root excludes explicit paths (#310 codex #3830105477-adjacent,
@@ -112,14 +112,14 @@ fi
 # vs main's loud reject; probed). The check must see the separator data too.
 # Message/exit mirror parse_common_flags' own rejection (error, exit 1) and
 # main's precedence (this check fires before the cardinality guard).
-if $browse_root && [[ -n "$file" || ${#extra_files[@]} -gt 0 || ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+if $browse_root && { [[ -n "$file" || ${#extra_files[@]} -gt 0 ]] || pathspecs_nonempty; }; then
   error "--browse-root cannot be used with explicit paths. Use --browse-root alone for interactive file selection."
 fi
 
 # Separator-protected candidates: EVERY token after '--' is data (even one
 # spelled like a flag). Feed them straight into the cardinality tally — no
 # option re-parse, no exemption logic to forget.
-if [[ ${_pathspec_pathspecs[*]+x} && ${#_pathspec_pathspecs[@]} -gt 0 ]]; then
+if pathspecs_nonempty; then
   for sep_file in ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}; do
     if [[ -z "$file" ]]; then
       file="$sep_file"
