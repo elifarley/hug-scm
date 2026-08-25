@@ -2310,6 +2310,19 @@ psx_install_stub_gum() {
   psx_reset
 }
 
+@test "single-file cardinality: h steps --browse-root with PRE-separator path is rejected (round-1 precedence pin)" {
+  # The pr-fix round-1 regrouping (#3843743263) also fixed the pre-separator
+  # case: the OLD single-[[ ]] form evaluated as ((file||extras||set) && count>0),
+  # which collapsed to false with NO separator data — 'hug h steps
+  # --browse-root src/a.py' silently analyzed. The braced form rejects it.
+  # Ship adversarial review asked for this exact shape to be pinned.
+  psx_setup
+  run hug h steps --browse-root src/a.py
+  assert_failure
+  assert_output --partial "--browse-root cannot be used with explicit paths."
+  psx_reset
+}
+
 @test "single-file cardinality: f-family browse-root still excludes explicit paths post-split (#310 ship review)" {
   # Same regression class as the h-steps pin above, found by the coverage
   # audit when fa/fb/fborn/fcon adopted the split WITHOUT the backstop:

@@ -561,6 +561,13 @@ error_unknown_option() {
 guard_single_file_candidates() {
   local __gsfc_cmd_label="$1" __gsfc_file_var="$2"
   shift 2
+  # Reserved-prefix firewall (ship adversarial review): a caller passing an
+  # __gsfc_* out-var name would collide with these very internals — the
+  # same dynamic-scoping shadow the prefix exists to prevent. Fail loud;
+  # this is a developer bug, never a user input.
+  case "$__gsfc_file_var" in
+    __gsfc_*) error "guard_single_file_candidates: reserved out-var name '$__gsfc_file_var'" ;;
+  esac
   local __gsfc_survivor="" __gsfc_f
   local -a __gsfc_extras=()
 

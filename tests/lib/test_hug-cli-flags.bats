@@ -1008,6 +1008,16 @@ teardown() {
   assert_output --partial "hug t accepts only one file (got 2 files)."
 }
 
+@test "guard_single_file_candidates: reserved __gsfc_* out-var name is a loud developer error" {
+  # Ship adversarial review: a caller passing an __gsfc_* name would collide
+  # with the helper's own internals — the exact shadow the prefix prevents.
+  # Fail loud instead of silently writing a helper local.
+  eval "$(parse_pathspecs)"
+  run guard_single_file_candidates "hug t" __gsfc_survivor src/a.py
+  assert_failure
+  assert_output --partial "reserved out-var name '__gsfc_survivor'"
+}
+
 @test "guard_single_file_candidates: two unknown flags report the LAST one (precedence parity)" {
   # Byte-order parity with the pre-extraction blocks (pr-fix round 1,
   # codex P2 #3843743270): they scan extras FIRST, survivor LAST, so
