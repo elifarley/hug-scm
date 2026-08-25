@@ -44,11 +44,37 @@ Builds the ROOT-relative scope set for `<out_arr>`:
 Canonicalizes source-list lines (from `--from-file` / `--from-commit`) to root-relative paths.
 
 - `--from-commit`: lines pass through untouched (root-relative BY CONSTRUCTION — `extract_files_from_commit` diffs from the repo root). Resolving them against CWD wrongly rejected the legitimate case `us --from-commit HEAD -- .` run from sub/.
-- `--from-file` (default): **THE F-003 FIX** — ONE batched call:
-  `git ls-files -z --full-name ${tree_opt[@]+"${tree_opt[@]}"} -- <all lines>`
-  collected via NUL-delimited mapfile. One git process regardless of list size.
-- Unresolved-line detection is a SET DIFFERENCE against the input lines (batched `ls-files` silently IGNORES unmatched specs — naive batching would lose today's loud failure). Unresolved lines land in `<out_unresolved>` so they still die loud downstream ("File 'X' is not tracked by git."), never vanish into a misleading no-match.
-- Duplicate input lines dedupe naturally through the batch result; callers that care about order re-walk their own input.
+- `--from-file` (default): **THE F-003 FIX** — the list resolves through ONE
+  batched call, `git ls-files -z --full-name ${tree_opt[@]+"${tree_opt[@]}"}`
+  with the input lines as its pathspec arguments, collected via NUL-delimited
+  mapfile (the reference strategy below adds per-line calls ONLY for
+  directory/glob-shaped lines). Plain-filename lists: one git process total.
+  The collector DROPS empty records (a trailing
+  NUL yields a final empty element under bash's NUL-delimited read; an empty
+  element would become `in_scope[""]` / "File '' is not tracked" — the exact
+  phantom-subscript class git-us already guards at lines 238–245).
+- **Unresolved-line detection is a SET DIFFERENCE over RAW INPUT LINES, not over
+  git's output paths** — this representation choice is load-bearing (roast C-001,
+  probed on git 2.43.1): one input line can produce MANY output paths (a
+  directory spec `docs/` fans out to every file under it; a glob line expands),
+  and duplicate input lines collapse to one output line (`git ls-files --full-name
+  -- tracked.txt tracked.txt` emits one). A difference computed against OUTPUT
+  paths would mark legitimately-resolving directory/glob lines "unresolved" —
+  resurrecting false failures on exactly the scoped-input forms PR-B fought for.
+  Implementation contract: feed the lines as pathspec arguments of the ONE
+  batched call; a line is RESOLVED iff it contributes ≥1 output path, UNRESOLVED
+  otherwise; unresolved lines land in `<out_unresolved>` so they still die loud
+  downstream ("File 'X' is not tracked by git."), never vanish into a misleading
+  no-match. Git attributes outputs to pathspecs nowhere in its porcelain output,
+  so per-line attribution needs a strategy chosen at implementation time; the
+  reference strategy keeps the common case at ONE git call: classify each line
+  locally as LITERAL-SHAPED (no glob metachars `*?[`, not a directory spelling,
+  normalized spelling — strip `./`, collapse `//`) or FREE (everything else);
+  LITERAL lines resolve-by-membership against the batched NUL-delimited output
+  set (zero extra processes); FREE lines (directory/glob spellings — rare in
+  from-file lists) keep today's per-line `git ls-files --full-name` call so their
+  fan-out resolves exactly as now. A list of 1000 plain filenames = exactly one
+  git invocation plus local set lookups.
 
 #### `root_to_cwd_relpath <path>`
 
@@ -79,7 +105,8 @@ New `tests/lib/test_hug-pathspec.bats` covering:
 
 - deletion union: staged `rm` appears in scope set; `--no-renames` splits a staged rename's D half
 - unborn HEAD: build works, no `--with-tree` fatal
-- batched canonicalization: mixed resolvable/unresolvable lines split correctly; 500-line list triggers exactly ONE real `git ls-files` call (assert via a PATH-stub `git` wrapper that increments a counter file, delegating to the real git)
+- batched canonicalization: mixed resolvable/unresolvable lines split correctly; a 500-line list of PLAIN FILENAMES triggers exactly ONE real `git ls-files` call (assert via a PATH-stub `git` wrapper that increments a counter file, delegating to the real git)
+- representation pins (roast C-001): a directory-spec line (`docs/`) and a glob line (`docs/*.md`) RESOLVE (never land in `<out_unresolved>`); an unknown literal file lands unresolved; trailing-NUL/empty-record input yields no empty array elements
 - `root_to_cwd_relpath`: strip case, climb case (`:(top)` spelling from sub/), identity at root
 - invalid pathspec dies with usage error
 
@@ -95,21 +122,23 @@ New file `git-config/lib/hug-status-listing` exporting ONE function plus its pri
 sl_family_main <mode> <display_name> "$@"
 ```
 
-The five scripts' shared skeleton moves in verbatim: pathspec split (`parse_common_flags_with_pathspecs`), `reject_action_flags "<display_name>"`, quiet rehydrate (`[[ ${HUG_QUIET:-} == T ]] && quiet=true`), `pathspec_pathspecs_into`, the own-loop (`--json` / `-c|--count` / unreachable-but-symmetric `-q` / loud `-*` rejection using `<display_name>`), `check_git_repo`, `validate_pathspecs_or_die`, count dispatch (`run_count_mode [--json] <count_token> ${pathspecs[@]+"--" ...}`), JSON vs listing arm (`output_json_status` / `list_files_with_status`), no-match messages, summary gate (`exec hug s` when not quiet and no pathspecs).
+The five scripts' shared skeleton moves into `sl_family_main` step-for-step, with the per-mode deltas expressed as table columns (see below) rather than left as hand-copies: pathspec split (`parse_common_flags_with_pathspecs`), `reject_action_flags "<display_name>"`, quiet rehydrate (`[[ ${HUG_QUIET:-} == T ]] && quiet=true`), `pathspec_pathspecs_into`, the own-loop (`--json` / `-c|--count` / unreachable-but-symmetric `-q` / loud `-*` rejection using `<display_name>`), `check_git_repo`, `validate_pathspecs_or_die`, the quiet-extra list_opts mutation (table column), count dispatch (`run_count_mode [--json] <count_token> ${pathspecs[@]+"--" ...}`), JSON vs listing arm (`output_json_status` / `list_files_with_status`), no-match messages, summary gate (`exec hug s` when not quiet and no pathspecs).
 
 `show_help` resolves from the caller's script scope at call time — `-h` keeps working because each script still defines its own `show_help`.
 
 ### Mode table
 
-| `<mode>` | list flag | count token | no-match noun |
-|---|---|---|---|
-| `staged` | `--staged` | `staged` | staged |
-| `unstaged` | `--unstaged` | `unstaged` | unstaged |
-| `untracked` | `--untracked` | `untracked` | untracked |
-| `ignored` | `--ignored` | `ignored` | ignored |
-| `conflicts` | `--conflicts` | `conflicted` | conflicted |
+| `<mode>` | list flag | count token | no-match noun | quiet extra |
+|---|---|---|---|---|
+| `staged` | `--staged` | `staged` | staged | (none) |
+| `unstaged` | `--unstaged` | `unstaged` | unstaged | (none) |
+| `untracked` | `--untracked` | `untracked` | untracked | append `--suppress-status` to list_opts when quiet |
+| `ignored` | `--ignored` | `ignored` | ignored | append `--suppress-status` to list_opts when quiet |
+| `conflicts` | `--conflicts` | `conflicted` | conflicted | append `--suppress-status` to list_opts when quiet |
 
-The last row encodes today's asymmetry explicitly (slc lists with `--conflicts` but counts/says `conflicted`) — pinned as data, not lost as a comment. Unknown `<mode>` is a programming error → `error` loudly.
+The table is the COMPLETE behavioral contract for LIB-side per-mode variance (roast C-003/C-004): it pins today's flag-vs-noun asymmetry (`--conflicts` lists, `conflicted` counts/says) and the quiet-column suppression that slk/sli/slc implement today (`git-slk:129–132` appends `--suppress-status`; sls/slu do not — their help texts promise the status prefixes stay). The quiet-extra column is what keeps the migration honest: an implementer following only the first four columns would silently drop `hug slk -q`'s status-column suppression — pinned byte-for-byte by red-first tests BEFORE migration.
+
+Script-local surfaces (roast C-005/C-008), pinned here so none is rediscovered or lost, but NEVER entering the lib: `_hug_category` and the whole `--search-meta` block stay in each script preamble exactly as today; slc ALONE additionally carries `_hug_keywords='["conflict","unmerged","merge","rebase"]'` and prints a `keywords = …` line from its `--search-meta` arm (verified: `grep -l _hug_keywords` matches only git-slc among the five). Unknown `<mode>` is a programming error → `error` loudly.
 
 ### Script shape after (~35 lines each)
 
@@ -124,6 +153,8 @@ Zero behavioral change: every message byte-identical (the `-*` rejection text in
 ### Tests (Part 2)
 
 - Audit existing coverage first: `tests/unit/test_status_staging.bats`, `test_status_json.bats`, `test_status_query_flags.bats`, and the conformance suite already characterize the family. Add missing pins red-first BEFORE migrating (each variant × {plain, scoped, count, json, quiet, unknown-flag exit 2}).
+- Quiet-column pins (roast C-003/C-004): `hug slk -q`, `hug sli -q`, AND `hug slc -q` suppress the status column (`--suppress-status`); `hug sls -q` / `hug slu -q` PRESERVE status prefixes — byte-pinned both directions before any migration.
+- Search-meta pin (roast C-005/C-008): `git slc --search-meta` prints category AND keywords lines; the other four print category only.
 - Drift guard: assert each sl\* script contains `sl_family_main` and contains no own-loop marker (e.g. the `for arg in "$@"` pattern), so nobody reintroduces a hand-copy.
 
 ## Sequencing & risk
