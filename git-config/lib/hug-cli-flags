@@ -542,23 +542,29 @@ error_unknown_option() {
 # NOTE: <file-var-name> is dereferenced dynamically (printf -v); a typo'd
 # name fails SILENTLY (no set -u protection possible) — the unit row
 # "single candidate lands in the named var" pins visibility; keep it green.
-# Internal arrays carry the reserved __gsfc_ prefix (same collision
-# discipline as drain_pathspecs_after_separator's __dps_).
+# EVERY internal local carries the reserved __gsfc_ prefix — scalars
+# included, not just arrays. WHY: printf -v targets the caller's variable
+# through dynamic scoping, so an unprefixed local like a plain `survivor`
+# would SHADOW a caller that legitimately names its out-var "survivor"
+# (guard_single_file_candidates "hug t" survivor …) — the write would land
+# in the helper's local and the caller's variable would stay untouched,
+# silently (codex P2 #3848518920). Same collision discipline as
+# drain_pathspecs_after_separator's __dps_.
 guard_single_file_candidates() {
-  local cmd_label="$1" file_var="$2"
+  local __gsfc_cmd_label="$1" __gsfc_file_var="$2"
   shift 2
-  local survivor="" f
+  local __gsfc_survivor="" __gsfc_f
   local -a __gsfc_extras=()
 
   # Stream 1: pre-'--' tokens from the caller's "$@"
-  for f in "$@"; do
-    if [[ -z "$f" ]]; then
+  for __gsfc_f in "$@"; do
+    if [[ -z "$__gsfc_f" ]]; then
       error_usage "Empty file argument."
     fi
-    if [[ -z "$survivor" ]]; then
-      survivor="$f"
+    if [[ -z "$__gsfc_survivor" ]]; then
+      __gsfc_survivor="$__gsfc_f"
     else
-      __gsfc_extras+=("$f")
+      __gsfc_extras+=("$__gsfc_f")
     fi
   done
 
@@ -566,29 +572,29 @@ guard_single_file_candidates() {
   # Scan order = extras FIRST, survivor LAST — byte-order parity with the
   # inline blocks this replaces (codex P2 #3843743270: 'fa --bad1 --bad2'
   # must keep naming --bad2).
-  for f in ${__gsfc_extras[@]+"${__gsfc_extras[@]}"}; do
-    if [[ "$f" == -* ]]; then
-      error_unknown_option "$f"
+  for __gsfc_f in ${__gsfc_extras[@]+"${__gsfc_extras[@]}"}; do
+    if [[ "$__gsfc_f" == -* ]]; then
+      error_unknown_option "$__gsfc_f"
     fi
   done
-  if [[ -n "$survivor" && "$survivor" == -* ]]; then
-    error_unknown_option "$survivor"
+  if [[ -n "$__gsfc_survivor" && "$__gsfc_survivor" == -* ]]; then
+    error_unknown_option "$__gsfc_survivor"
   fi
 
   # Stream 2: post-'--' tokens are DATA by contract — no option re-parse
   local -a __gsfc_sep=()
   pathspec_pathspecs_into __gsfc_sep
-  for f in ${__gsfc_sep[@]+"${__gsfc_sep[@]}"}; do
-    if [[ -z "$survivor" ]]; then
-      survivor="$f"
+  for __gsfc_f in ${__gsfc_sep[@]+"${__gsfc_sep[@]}"}; do
+    if [[ -z "$__gsfc_survivor" ]]; then
+      __gsfc_survivor="$__gsfc_f"
     else
-      __gsfc_extras+=("$f")
+      __gsfc_extras+=("$__gsfc_f")
     fi
   done
 
-  reject_multiple_files "$cmd_label" "$survivor" \
+  reject_multiple_files "$__gsfc_cmd_label" "$__gsfc_survivor" \
     ${__gsfc_extras[@]+"${__gsfc_extras[@]}"}
-  printf -v "$file_var" %s "$survivor"
+  printf -v "$__gsfc_file_var" %s "$__gsfc_survivor"
 }
 
 # Collect LEADING positional arguments into a nameref array, stopping at the

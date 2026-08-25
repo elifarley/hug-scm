@@ -925,6 +925,16 @@ teardown() {
   assert_equal "$file" "src/a.py"
 }
 
+@test "guard_single_file_candidates: out-var may collide with any internal name (reserved __gsfc_ prefix)" {
+  eval "$(parse_pathspecs)"
+  # Regression for codex P2 #3848518920: before internals were __gsfc_-prefixed,
+  # dynamic scoping made printf -v write the helper's LOCAL 'survivor' when the
+  # caller named its out-var 'survivor' — the caller's variable stayed empty.
+  unset survivor f cmd_label file_var || true
+  guard_single_file_candidates "hug t" survivor src/a.py
+  assert_equal "$survivor" "src/a.py"
+}
+
 @test "guard_single_file_candidates: no candidates leaves the named var empty" {
   eval "$(parse_pathspecs)"
   # Seed a stale value so the write is observable: a skipped printf -v on
