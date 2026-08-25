@@ -52,7 +52,12 @@ Command-line flag parsing utilities using GNU getopt (required).
   `guard_single_file_candidates` (the two-stream single-file guard:
   loud empty-positional + pre-`--` unknown-option checks, verbatim
   post-`--` data merge, truthful cardinality, survivor written to a
-  caller-named variable — used by git-fa/-fb/-fborn/-fcon)
+  caller-named variable — used by git-fa/-fb/-fborn/-fcon; calling
+  contract: `guard_single_file_candidates "<cmd label>" <file-var> "$@"`
+  followed by the trailing `set -- ${file:+"$file"}` idiom — the helper is
+  in-process by design, so it cannot re-point the caller's `$@`; all
+  internals use the reserved `__gsfc_` prefix, so any caller variable name
+  is safe)
 
 **The parsing-order rule (structural, #292):** the pathspec split runs
 BEFORE any other argument inspection — a command adopting the contract

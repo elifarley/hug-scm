@@ -4,13 +4,13 @@ All notable changes to the Hug SCM project will be documented in this file.
 
 ## [1.15.0.0] - 2026-08-25
 
-Closes elifarley/hug-scm#313 (via elifarley/hug-scm#316): the two-stream single-file guard that `fa`/`fb`/`fborn`/`fcon` each carried as a byte-identical ~40-line inline block now lives once in `hug-cli-flags`. Pure refactor — zero user-visible behavior change; every observable behavior is pinned by conformance rows.
+Closes elifarley/hug-scm#313 (via elifarley/hug-scm#316): the two-stream single-file guard that `fa`/`fb`/`fborn`/`fcon` each carried as a near-identical ~40-line inline block (identical modulo command label) now lives once in `hug-cli-flags`. Pure refactor — zero user-visible behavior change; every observable behavior is pinned by conformance rows.
 
 ### Added
 
 - **`guard_single_file_candidates` in the shared `hug-cli-flags` library** — the one-file-or-error contract (`accepts only one file`) with two-stream semantics: pre-`--` tokens are option-checked loudly (last offending flag named), post-`--` tokens are data by contract. New public API for future single-file commands.
-- **Small helpers `pathspecs_nonempty` and `error_unknown_option`** — the nullsafe "did the separator stream carry data?" predicate and the family's uniform unknown-option template, now single-sourced for `h-steps`, `fblame`, and `stats file` too.
-- **Library docs**: the three helpers are documented in `git-config/lib/README.md` with mutation-receipt evidence.
+- **Small helpers `pathspecs_nonempty` and `error_unknown_option`** — the nullsafe "did the separator stream carry data?" predicate and the family's uniform unknown-option template, now single-sourced — `error_unknown_option` adopted by `h-steps`/`fblame`/`stats file`, `pathspecs_nonempty` by `h-steps`.
+- **Library docs**: the three helpers are documented in `git-config/lib/README.md` with usage and consumer lists; behavior is pinned by the conformance rows (the mutation receipts).
 
 ### Changed
 

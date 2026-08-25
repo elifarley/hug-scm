@@ -268,7 +268,7 @@ Hug commands are organized by **semantic prefixes** that make them easy to disco
 | `stats*` | Repository Statistics | `hug stats file`, `hug stats author` |
 
 > 📖 **[View Complete Command Map](https://elifarley.github.io/hug-scm/command-map)** -
-> Full table with all command families, memory hooks, and visual structure (13 families, 139 commands).
+> Full table with all command families, memory hooks, and visual structure (15 families).
 >
 > 🏁 **[Quick Reference Cheat Sheet](https://elifarley.github.io/hug-scm/cheat-sheet)** -
 > Scenario-based commands for daily workflows.
