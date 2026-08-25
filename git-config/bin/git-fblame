@@ -102,7 +102,7 @@ while [ $# -gt 0 ]; do
     # Unknown options are loud (#310 thread #3834674457): the catch-all used
     # to collect them into remaining_args, so 'hug fblame src/a.py --bogus'
     # reported "got 2 files" — a false count naming a typo a file.
-    error_usage "Unknown option: $1. See 'hug help :pathspec'."
+    error_unknown_option "$1"
     ;;
   *)
     remaining_args+=("$1")

@@ -122,7 +122,7 @@ while [ $# -gt 0 ]; do
     # Unknown options are loud (#310 adversarial F3): the catch-all used to
     # collect them into remaining_args, where the slice silently dropped
     # them — 'stats file star1.txt --bogus' analyzed with exit 0.
-    error_usage "Unknown option: $1. See 'hug help :pathspec'."
+    error_unknown_option "$1"
     ;;
   *)
     remaining_args+=("$1")
