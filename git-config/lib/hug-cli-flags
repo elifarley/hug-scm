@@ -542,6 +542,14 @@ error_unknown_option() {
 # NOTE: <file-var-name> is dereferenced dynamically (printf -v); a typo'd
 # name fails SILENTLY (no set -u protection possible) — the unit row
 # "single candidate lands in the named var" pins visibility; keep it green.
+# CONTRACT DIVERGENCE from the pre-extraction inline blocks (deliberate,
+# ship red-team review): the out-var is ALWAYS overwritten — the helper
+# seeds its survivor from "" and never reads the caller's pre-existing
+# value, whereas the old inline loops seeded from the caller's $file
+# ([[ -z "${file:-}" ]]). Parity holds because every current caller
+# reaches the guard with the out-var unset (the gum no-args branch
+# exec/exits first). Do NOT pre-seed the out-var before calling; feed a
+# picked file through the pre-args stream instead.
 # EVERY internal local carries the reserved __gsfc_ prefix — scalars
 # included, not just arrays. WHY: printf -v targets the caller's variable
 # through dynamic scoping, so an unprefixed local like a plain `survivor`

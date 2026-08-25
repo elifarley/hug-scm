@@ -426,7 +426,7 @@ Expected: ALL PASS (churn-mode cardinality 2092, separator/lone-dash 2222).
 - [ ] **Step 4: Verify the template is now single-source**
 
 Run: `grep -rn "See 'hug help :pathspec'\.'$" git-config/bin | grep 'Unknown option'`
-Expected: ZERO hits in bin — every unknown-option emission flows through `error_unknown_option` (the lib itself holds the literal once). Any hit = a missed site.
+Expected: ZERO hits **for the SHORT-form template** (`Unknown option: <tok>. See 'hug help :pathspec'.` — the exact literal `error_unknown_option` emits). The grep as written also matches ~10 LONG-form emitters (`git-sli`, `git-sls`, `git-slu`, `git-slc`, `git-statusbase`, `git-llu`, `git-us`, `git-slk`, `git-w-wipe-all`, `git-w-discard-all`) that carry the extra `Pathspecs beginning with '-' require '--'` sentence — those are deliberately NOT migrated here (Task-1 note). Anchor the check to the short form or treat those sites as expected matches.
 
 - [ ] **Step 5: Commit**
 

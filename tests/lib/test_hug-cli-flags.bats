@@ -912,6 +912,21 @@ teardown() {
   assert pathspecs_nonempty
 }
 
+@test "pathspecs_nonempty: UNSET global under set -u is false, not a crash" {
+  # The design doc promises unset-variable safety; the row above only
+  # covers set-empty and non-empty (the lib declares the global at load,
+  # so the unset state needs an explicit unset). The ${arr[*]+x} probe is
+  # the only guard against an unbound-variable crash — a future
+  # 'simplification' to a bare ${#arr[@]} check would error under set -u
+  # in bash <4.4 and must redden here (ship testing-specialist review).
+  (
+    unset _pathspec_pathspecs
+    set -u
+    refute pathspecs_nonempty
+    set +u
+  )
+}
+
 @test "error_unknown_option: short-form template, exit 2" {
   run error_unknown_option --bogus
   assert_equal 2 "$status"
@@ -980,6 +995,17 @@ teardown() {
   assert_equal 2 "$status"
   assert_output --partial "Unknown option: --typo"
   refute_output --partial "got 2 files"
+}
+
+@test "guard_single_file_candidates: two VALID candidates across streams hit cardinality (merge is not skipped)" {
+  # Ship testing-specialist review: no row drove one valid pre-'--'
+  # positional PLUS one valid post-'--' token through the merge. A
+  # regression that drops the separator merge when a survivor already
+  # exists would silently analyze one file and stay green elsewhere.
+  eval "$(parse_pathspecs -- sep.txt)"
+  run guard_single_file_candidates "hug t" file pre.txt
+  assert_equal 2 "$status"
+  assert_output --partial "hug t accepts only one file (got 2 files)."
 }
 
 @test "guard_single_file_candidates: two unknown flags report the LAST one (precedence parity)" {

@@ -2302,6 +2302,10 @@ psx_install_stub_gum() {
   psx_setup
   HUG_DISABLE_GUM=true run hug h steps --browse-root
   assert_failure
+  # Positive pin (ship testing-specialist review): assert_failure + refute
+  # alone would pass on ANY unrelated failure. The expected path is the
+  # no-gum fallback into show_help — same marker the bare '--' row pins.
+  assert_output --partial "hug h steps: Show commit steps"
   refute_output --partial "--browse-root cannot be used with explicit paths."
   psx_reset
 }

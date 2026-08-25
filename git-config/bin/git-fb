@@ -56,7 +56,7 @@ check_git_repo
 
 # If no file provided, show interactive selection or error.
 # Separator-aware (#310 #3834674457): post-'--' candidates live in
-# _pathspec_pathspecs, not "$@" — count them too, or 'fa -- README.md'
+# _pathspec_pathspecs, not "$@" — count them too, or 'fb -- README.md'
 # would wrongly take the no-args branch.
 if [ $# -eq 0 ] && ! pathspecs_nonempty; then
   # Only show interactive selection if gum is available

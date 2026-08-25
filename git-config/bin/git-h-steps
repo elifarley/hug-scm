@@ -118,9 +118,15 @@ fi
 
 # Separator-protected candidates: EVERY token after '--' is data (even one
 # spelled like a flag). Feed them straight into the cardinality tally — no
-# option re-parse, no exemption logic to forget.
+# option re-parse, no exemption logic to forget. Read the split through the
+# accessor (pathspec_pathspecs_into), never the _pathspec_pathspecs global
+# directly — the lib's one-read-path contract (a representation change
+# behind the accessor must not miss this site; ship red-team review).
 if pathspecs_nonempty; then
-  for sep_file in ${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}; do
+  # Top-level scope: plain reserved-prefix name, not `local` (invalid here).
+  __hsteps_sep=()
+  pathspec_pathspecs_into __hsteps_sep
+  for sep_file in ${__hsteps_sep[@]+"${__hsteps_sep[@]}"}; do
     if [[ -z "$file" ]]; then
       file="$sep_file"
     else
