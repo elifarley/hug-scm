@@ -2172,3 +2172,45 @@ create_slc_conflict_fixture() {
   run hug sls -y
   [[ "$status" -eq 2 ]]
 }
+
+# --- Characterization pins (#303 Part 2, pre sl_family_main migration) ---
+# These rows pin TODAY's behavior of the sl* family BEFORE Tasks 6–7 collapse
+# the five sibling scripts onto a shared template. Any byte-drift during the
+# templating must fail loudly here. Do NOT "fix" these by changing production
+# code — they describe current behavior by design.
+
+# PIN ADJUSTMENT vs sketch: slc's real _hug_category is ["status"] (git-slc:2),
+# not ["status", "staging"] — the sketch mis-read it; expected fixed from the
+# actual script content.
+@test "hug slc --search-meta: prints category AND keywords lines" {
+  run hug slc --search-meta
+  assert_success
+  assert_output --partial 'category = ["status"]'
+  assert_output --partial 'keywords = ["conflict","unmerged","merge","rebase"]'
+}
+
+@test "hug sls --search-meta: prints category only (no keywords)" {
+  run hug sls --search-meta
+  assert_success
+  assert_output --partial 'category'
+  refute_output --partial 'keywords'
+}
+
+@test "hug slk -q: suppresses the status column (--suppress-status)" {
+  local repo; repo=$(create_test_repo); cd "$repo"
+  echo x > stray.txt   # untracked: visible to slk
+  run hug slk -q
+  assert_success
+  assert_output --partial "stray.txt"
+  refute_output --partial "??"        # status column suppressed
+}
+
+@test "hug slu -q: PRESERVES status prefixes" {
+  local repo; repo=$(create_test_repo); cd "$repo"
+  echo mod > tracked.txt; git add tracked.txt >/dev/null 2>&1 || hug a -- tracked.txt >/dev/null
+  hug c -m base >/dev/null 2>&1 || true
+  echo changed >> tracked.txt
+  run hug slu -q
+  assert_success
+  assert_output --partial "U:Mod"     # unstaged prefixes stay under -q
+}
