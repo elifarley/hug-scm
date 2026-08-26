@@ -31,7 +31,15 @@ root_to_cwd_relpath() {
   # Already CWD-relative (explicit ../… climb spelling): consume as-is.
   # Prepending the computed climb would double-count ("../" + "../x").
   [[ $f == ../* ]] && { printf '%s\n' "$f"; return 0; }
-  cwd_prefix="${2:-$(git rev-parse --show-prefix)}"
+  # Presence check via $#, NOT ${2:-…}: at the repo ROOT the supplied
+  # prefix is the LEGITIMATE empty string, and `:-` would treat it as
+  # omitted — re-probing `git rev-parse` per file and reintroducing the
+  # per-file subprocess cost the hoist exists to remove (PR #318 review).
+  if [[ $# -ge 2 ]]; then
+    cwd_prefix="$2"
+  else
+    cwd_prefix=$(git rev-parse --show-prefix)
+  fi
   climb=""
   tmp="${cwd_prefix%/}"
   while [[ -n $tmp ]]; do

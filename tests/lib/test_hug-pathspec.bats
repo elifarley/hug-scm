@@ -58,6 +58,38 @@ relpath_from_sub() {
   assert_output "deep/f.txt"
 }
 
+@test "relpath: SUPPLIED empty prefix (repo root) makes ZERO git calls" {
+  # `${2:-…}` treats the legitimate empty root prefix as omitted and
+  # re-probes `git rev-parse` per file — reintroducing the per-file
+  # subprocess cost the hoist removes (PR #318 review). Presence must be
+  # judged by $#: an explicitly supplied "" prefix is honored as-is.
+  local repo; repo=$(mktemp -d)
+  git -C "$repo" init -q
+  echo x > "$repo/top.txt"
+  git -C "$repo" add -A; git -C "$repo" commit -qm base
+  COUNT_STUB_COUNTER="$(mktemp)"; export COUNT_STUB_COUNTER
+  COUNT_STUB_ALL="$(mktemp)"; export COUNT_STUB_ALL
+  : > "$COUNT_STUB_COUNTER"; : > "$COUNT_STUB_ALL"
+  local bindir; bindir=$(counting_git_stub)
+  run env PATH="$bindir:$PATH" bash -c '
+    run_main() {
+      cd "$1" || exit 1
+      unset _HUG_PATHSPEC_LOADED
+      . "$2/git-config/lib/hug-common" >/dev/null 2>&1 || true
+      . "$2/git-config/lib/hug-git-kit"
+      root_to_cwd_relpath top.txt ""   # explicit EMPTY prefix: honored
+      root_to_cwd_relpath top.txt      # omitted: probed (1 git call)
+    }
+    run_main "$1" "$2"
+  ' _ "$repo" "$REPO_ROOT"
+  assert_success
+  assert_line --index 0 "top.txt"   # supplied-empty call: identity spelling
+  assert_line --index 1 "top.txt"   # omitted-arg call: same result, via probe
+  [[ $(wc -l < "$COUNT_STUB_ALL") -eq 1 ]] || {
+    echo "expected 1 total git call (probe for the omitted case only), got $(wc -l < "$COUNT_STUB_ALL")"; return 1; }
+  rm -rf "$bindir" "$COUNT_STUB_COUNTER" "$COUNT_STUB_ALL" "$repo"
+}
+
 # Helper: fresh scratch repo with one committed file
 new_scratch_repo() {
   local repo; repo=$(mktemp -d)
