@@ -79,7 +79,10 @@ call_build_scope_set() {           # <repo-cd-dir> <out-var> <pathspecs...>
     . "$REPO_ROOT/git-config/lib/hug-common" >/dev/null 2>&1 || true
     . "$REPO_ROOT/git-config/lib/hug-git-kit"
     build_scope_set "$outvar" "$@"
-    eval "printf '%s\n' \${$outvar[@]+\"\${$outvar[@]}\"}"
+    # Nameref indirection (no eval): static parsers follow the reference,
+    # so ${arr[@]+"${arr[@]}"} stays shellcheck-clean.
+    local -n _barr="$outvar"
+    [[ ${#_barr[@]} -gt 0 ]] && printf '%s\n' "${_barr[@]}"
   )
 }
 
