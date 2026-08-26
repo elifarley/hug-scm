@@ -192,78 +192,12 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
   # the listings. An EMPTY scope (no pathspecs given) keeps today's
   # behavior: the full source list, unfiltered.
   if [[ ${#pathspecs[@]} -gt 0 ]]; then
-    # BOTH collections are ROOT-relative — two Codex-review bugs (PR-B)
-    # shaped this block:
-    # - P1: `git ls-files` lists index entries, but a staged DELETION
-    #   removes the entry — union the staged-deletion paths
-    #   (`git diff --cached --name-only --diff-filter=D`, probed
-    #   root-relative) or `us --from-commit <c> -- src/` silently leaves
-    #   'D src/x' staged while reporting success.
-    # - P2: from-file lists are commonly CWD-relative ('a.txt' written
-    #   inside sub/) while the scope set is root-relative — exact-string
-    #   membership then empties. Canonicalize the SOURCE list through
-    #   `git ls-files --full-name` (probed: resolves CWD-relative input
-    #   to root-relative output); --with-tree=HEAD, guarded because an
-    #   unborn HEAD makes it fatal, also resolves staged deletions.
     scope_files=()
-    # Command substitution, NOT '< <(…)' (#298 roast MAJOR 1): the process
-    # substitution swallowed git's nonzero exit — a malformed pathspec here
-    # printed git's fatal AND then "No files matching … to unstage." on the
-    # SAME run (contradictory signals, exit 0). '$(…) || error' keeps the
-    # failure fatal, exactly like read_files_from_source above. Belt-and-
-    # braces: the entry-point validation already rejects malformed specs,
-    # this guard keeps the capture honest even if a future caller bypasses
-    # it. NOTE: mapfile REPLACES an array (does not append), so the two
-    # captures are joined into one newline-joined string first.
-    scope_tracked=""
-    scope_tracked=$(git ls-files --full-name -- ${pathspecs[@]+"${pathspecs[@]}"}) ||
-      error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
-    scope_deleted=""
-    # --no-renames (codex P1): with rename detection ON (git's default in
-    # newer configs), a staged 'git mv old new' is ONE R-status change — the
-    # --diff-filter=D side never emits 'old', the old path misses the
-    # membership set, and 'us --from-commit HEAD -- .' answers "No files
-    # matching '.'" exit 0 with the rename still staged. --no-renames splits
-    # the rename into its D half so the old path joins the set exactly like
-    # an ordinary staged deletion.
-    scope_deleted=$(git diff --cached --name-only --diff-filter=D --no-renames -- ${pathspecs[@]+"${pathspecs[@]}"}) ||
-      error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
-    # Join the two captures WITHOUT a trailing blank line: '<<<' appends its
-    # own newline, so gluing an empty second capture with \n would give
-    # mapfile a phantom EMPTY element — and `in_scope[""]=1` is a bad array
-    # subscript under set -u (probed).
-    # No 'local' here: script scope (same Bash rule noted near the summary
-    # suppression in git-sls — "local: can only be used in a function").
-    scope_joined=""
-    if [[ -n "$scope_tracked" && -n "$scope_deleted" ]]; then
-      scope_joined="${scope_tracked}"$'\n'"${scope_deleted}"
-    else
-      scope_joined="${scope_tracked}${scope_deleted}"
-    fi
-    if [[ -n "$scope_joined" ]]; then
-      mapfile -t scope_files <<< "$scope_joined"
-    fi
-    # O(n+m) membership filter (assoc array), not an O(n·m) nested scan —
-    # a from-commit touching thousands of files meets a wide-scope listing.
+    build_scope_set scope_files ${pathspecs[@]+"${pathspecs[@]}"}
+    # O(n+m) membership filter (assoc array), not O(n·m) — unchanged glue.
     declare -A in_scope=()
     for s in ${scope_files[@]+"${scope_files[@]}"}; do in_scope["$s"]=1; done
 
-    tree_opt=()
-    if git rev-parse --verify -q HEAD > /dev/null 2>&1; then
-      tree_opt=(--with-tree=HEAD)
-    fi
-    # ORIGIN-BASED normalization FIRST (Codex P1): the two sources are
-    # NOT the same base. from-commit lists are ROOT-relative BY
-    # CONSTRUCTION (extract_files_from_commit diffs from the repo root),
-    # so they are already canonical — resolving them against the CWD
-    # wrongly rejected the legitimate case (from sub/, 'us
-    # --from-commit HEAD -- .' → "No files matching '.'"). from-file
-    # lists are user-supplied and commonly CWD-relative, so THEY get the
-    # per-line resolution (code-roast MAJOR): a batch 'git ls-files --
-    # <all>' silently IGNORES unmatched pathspecs, and a list line
-    # unresolvable from the CWD must fail LOUD (it flows into hug_us's
-    # validation below with the exact no-scope shape, "File 'X' is not
-    # tracked by git."), never vanish into a misleading no-match.
     # Record whether the SOURCE list is empty BEFORE the intersection
     # (code-roast F-004): an empty result downstream is then attributable —
     # an empty source never excluded anything, so blaming the pathspec
@@ -273,50 +207,29 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     canonical_source=()
     unresolved_source=()
     if [[ -n "$from_commit" ]]; then
-      canonical_source=(${files_from_source[@]+"${files_from_source[@]}"})
+      canonicalize_source_lines canonical_source unresolved_source --from-commit \
+        ${files_from_source[@]+"${files_from_source[@]}"}
     else
-      for f in ${files_from_source[@]+"${files_from_source[@]}"}; do
-        resolved_line=()
-        mapfile -t resolved_line < <(git ls-files --full-name ${tree_opt[@]+"${tree_opt[@]}"} -- "$f")
-        if [[ ${#resolved_line[@]} -eq 0 ]]; then
-          unresolved_source+=("$f")
-        else
-          canonical_source+=(${resolved_line[@]+"${resolved_line[@]}"})
-        fi
-      done
+      canonicalize_source_lines canonical_source unresolved_source \
+        ${files_from_source[@]+"${files_from_source[@]}"}
     fi
     filtered_source=()
+    # INTERSECTION, never concat (PR #318 review, codex P1 — restores
+    # git-us's original contract §3.1): the pathspecs are a SCOPE. A source
+    # list ['a.txt','b.txt'] against scope 'a.txt' must forward ONLY a.txt;
+    # copying all canonical entries would unstage b.txt OUTSIDE the scope.
     for f in ${canonical_source[@]+"${canonical_source[@]}"}; do
       if [[ -n "${in_scope[$f]:-}" ]]; then
         filtered_source+=("$f")
       fi
     done
-
-    # ...and BACK to CWD-relative for the downstream consumers (hug_us's
-    # validation + 'git restore' resolve pathspecs against the CWD). The
-    # plain branch already feeds CWD-relative user spellings, so CWD is
-    # the ONE downstream base. Conversion must be a REAL relpath (Codex
-    # P2): prefix-STRIPPING alone assumed every match lives under the
-    # CWD — a ':(top)root.txt' scope from sub/ leaves root.txt
-    # unprefixed and subdir validation read sub/root.txt (false
-    # failure). Strip the prefix when present; otherwise climb ('../')
-    # one level per prefix component. 'git rev-parse --show-prefix' is
-    # '' at the root (identity conversion). Unresolved spellings are
-    # ALREADY CWD-relative (the user's own) — appended untouched.
-    cwd_prefix=$(git rev-parse --show-prefix)
-    climb=""
-    tmp="${cwd_prefix%/}"
-    while [[ -n $tmp ]]; do
-      climb+="../"
-      if [[ "$tmp" == */* ]]; then tmp="${tmp#*/}"; else tmp=""; fi
-    done
+    # ...and BACK to CWD-relative for downstream consumers (validation +
+    # git restore resolve against the CWD). Real relpath, not prefix-strip:
+    # see root_to_cwd_relpath. Unresolved spellings are ALREADY
+    # CWD-relative (the user's own) — appended untouched.
     cwd_source=()
     for f in ${filtered_source[@]+"${filtered_source[@]}"}; do
-      if [[ -n $cwd_prefix && $f == "$cwd_prefix"* ]]; then
-        cwd_source+=("${f#"$cwd_prefix"}")
-      else
-        cwd_source+=("$climb$f")
-      fi
+      cwd_source+=("$(root_to_cwd_relpath "$f")")
     done
     files_from_source=(${cwd_source[@]+"${cwd_source[@]}"} ${unresolved_source[@]+"${unresolved_source[@]}"})
 

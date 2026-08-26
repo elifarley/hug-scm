@@ -57,7 +57,9 @@ build_scope_set() {
     joined="${scope_tracked}${scope_deleted}"   # no phantom blank line
   fi
   _bss_out=()
-  [[ -n "$joined" ]] && mapfile -t _bss_out <<< "$joined"
+  if [[ -n "$joined" ]]; then
+    mapfile -t _bss_out <<< "$joined"
+  fi
 }
 
 # Canonicalize source-list lines (--from-file/--from-commit payloads) to

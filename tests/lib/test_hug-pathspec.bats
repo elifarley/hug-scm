@@ -128,6 +128,25 @@ call_build_scope_set() {           # <repo-cd-dir> <out-var> <pathspecs...>
   rm -rf "$repo"
 }
 
+@test "build_scope_set: empty scope returns 0 (set -e safe)" {
+  # Track a file OUTSIDE the queried pathspec so ls-files returns empty.
+  local repo; repo=$(mktemp -d)
+  git -C "$repo" init -q
+  echo x > "$repo/outside.txt"; git -C "$repo" add outside.txt
+  (
+    cd "$repo"
+    unset _HUG_PATHSPEC_LOADED
+    . "$REPO_ROOT/git-config/lib/hug-common" >/dev/null 2>&1 || true
+    . "$REPO_ROOT/git-config/lib/hug-git-kit"
+    out=()
+    set -e
+    build_scope_set out nosuchdir/
+    [[ ${#out[@]} -eq 0 ]]
+  )
+  [[ $status -eq 0 ]]
+  rm -rf "$repo"
+}
+
 # Counting git stub: ONLY `git ls-files …` invocations are counted;
 # every other git subcommand (rev-parse, etc.) delegates to the real
 # binary so environment probes (e.g. --show-prefix, --verify -q HEAD)
