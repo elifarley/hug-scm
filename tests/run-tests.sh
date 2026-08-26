@@ -63,11 +63,40 @@ install_test_deps() {
 }
 
 # Check if BATS is installed
+# Minimum BATS version the suite requires. Keep in sync with the
+# bats_require_minimum_version call in tests/test_helper.bash (the
+# per-file floor that silences BW02 and hard-fails old runners).
+BATS_MINIMUM_VERSION="1.14.0"
+
+# True when the resolved bats is >= BATS_MINIMUM_VERSION (sort -V compare).
+bats_version_ok() {
+  local have
+  have=$(bats --version 2> /dev/null | awk '{print $NF}')
+  [[ -n "$have" ]] || return 1
+  [[ "$(printf '%s\n' "$BATS_MINIMUM_VERSION" "$have" | sort -V | head -1)" == "$BATS_MINIMUM_VERSION" ]]
+}
+
 check_bats() {
   if command -v bats > /dev/null; then
     bats --version
-    echo -e "${GREEN}✓ BATS is installed${NC}"
-    return
+    # Version floor with SELF-HEAL: a cached/stale ~/.hug-deps (CI caches
+    # it keyed on this file's hash) must not pin the suite to an old bats —
+    # update the clone, re-resolve, and only then fail hard.
+    if ! bats_version_ok; then
+      echo -e "${YELLOW}⚠ BATS < $BATS_MINIMUM_VERSION, updating local deps...${NC}"
+      install_test_deps
+      # Prefer the freshly updated local clone over a stale system bats.
+      if [[ -x "$BATS_BIN" ]]; then
+        PATH="$BATS_CORE_DIR/bin:$PATH"
+        export PATH
+      fi
+    fi
+    if bats_version_ok; then
+      echo -e "${GREEN}✓ BATS is installed${NC}"
+      return
+    fi
+    echo -e "${RED}❌ Error: BATS >= $BATS_MINIMUM_VERSION required (got $(bats --version 2> /dev/null | awk '{print $NF}')). Run 'make dev-test-deps-install'.${NC}"
+    exit 1
   fi
 
   if [[ ! -x "$BATS_BIN" ]]; then

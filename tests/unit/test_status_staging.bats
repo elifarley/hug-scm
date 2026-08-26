@@ -7,7 +7,6 @@ load '../test_helper'
 # run --separate-stderr is used below (bats >= 1.5) to assert stdout/stderr
 # discipline. GOTCHA: shell redirections like `2>/dev/null` on a `run` call are
 # NO-OPs — bats' run overrides them and merges both streams into $output.
-bats_require_minimum_version 1.5.0
 
 setup() {
   require_hug

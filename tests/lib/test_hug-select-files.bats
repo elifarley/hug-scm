@@ -9,7 +9,6 @@ load '../../git-config/lib/hug-select-files'
 
 # run --separate-stderr is used below (bats >= 1.5) to assert stdout/stderr
 # independently for the non-repo parity test (#259).
-bats_require_minimum_version 1.5.0
 
 # Helper to create test repo with files in subdirectories
 create_test_repo_for_selection() {

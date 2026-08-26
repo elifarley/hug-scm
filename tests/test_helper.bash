@@ -2,6 +2,14 @@
 # Test helper utilities for Hug SCM tests
 # This file is sourced by all BATS test files
 
+# BATS version floor (PR #318): the suite uses `run` flags
+# (--separate-stderr, `run !`) and counts on post-1.5 semantics. Declaring
+# the floor HERE (single source of truth, executes per file via `load`)
+# silences BW02 for every file and hard-fails older runners with an
+# actionable message instead of flag-parse noise. Keep in sync with
+# tests/run-tests.sh's check_bats floor. Latest bats-core at declaration: 1.14.0.
+bats_require_minimum_version 1.14.0
+
 declare -ga HUG_TEST_REMOTE_REPOS=()
 
 # Load deterministic git helpers for reproducible commit hashes
