@@ -1,0 +1,37 @@
+# shellcheck shell=bash
+# Library: hug-pathspec — pathspec scope-set construction, source-list
+# canonicalization, and root↔CWD relpath conversion (#303).
+# Depends on: hug-output (error_usage), hug-git-files conventions; callers
+# reach those via hug-common's bundle (loaded before hug-git-kit everywhere
+# the kit is sourced).
+# Functions:
+#   - root_to_cwd_relpath <path>: print the CWD-relative spelling of a
+#     ROOT-relative path (prefix-strip under cwd, else ../climb; identity
+#     at repo root).
+
+# Prevent double-loading
+[[ -n "${_HUG_PATHSPEC_LOADED:-}" ]] && return 0
+readonly _HUG_PATHSPEC_LOADED=1
+
+# Print the CWD-relative spelling of a root-relative path.
+# Usage: root_to_cwd_relpath <root-relative-path>
+# Pure over (path, $(git rev-parse --show-prefix)) — unit-testable.
+root_to_cwd_relpath() {
+  local f="$1"
+  local cwd_prefix climb tmp
+  # Already CWD-relative (explicit ../… climb spelling): consume as-is.
+  # Prepending the computed climb would double-count ("../" + "../x").
+  [[ $f == ../* ]] && { printf '%s\n' "$f"; return 0; }
+  cwd_prefix=$(git rev-parse --show-prefix)
+  climb=""
+  tmp="${cwd_prefix%/}"
+  while [[ -n $tmp ]]; do
+    climb+="../"
+    if [[ "$tmp" == */* ]]; then tmp="${tmp#*/}"; else tmp=""; fi
+  done
+  if [[ -n $cwd_prefix && $f == "$cwd_prefix"* ]]; then
+    printf '%s\n' "${f#"$cwd_prefix"}"
+  else
+    printf '%s%s\n' "$climb" "$f"
+  fi
+}

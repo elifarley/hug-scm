@@ -75,6 +75,15 @@ user-facing contract this implements is documented in
 **Requirements:**
 - GNU getopt (provided by util-linux package on most Linux distributions)
 
+### hug-pathspec
+
+Pathspec scope-set construction, source-list canonicalization, and root↔CWD relpath conversion (#303).
+
+**Features:**
+- `root_to_cwd_relpath <path>` — print the CWD-relative spelling of a root-relative path
+- `build_scope_set <out_arr> <pathspec…>` — tracked ∪ staged-deletions, root-relative (Task 3)
+- `canonicalize_source_lines <out_resolved> <out_unresolved> [--from-commit] <line…>` — batched F-003 canonicalization (Task 4)
+
 ### hug-gum
 
 Interactive selection and filtering with charmbracelet/gum integration.
