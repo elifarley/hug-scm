@@ -515,9 +515,30 @@ call_canonicalize() {               # <repo> <extra-env-assignments...> -- <line
   local repo; repo=$(new_scratch_repo)
   run call_canonicalize "$repo" -- 'docs/' 'docs/*.md'
   assert_success
-  assert_line "R:docs/a.md"
+  assert_line "R:docs/a.md"          # ROOT-relative git spelling, not the input form
   refute_line "U:docs/"
   refute_line "U:docs/*.md"
+  rm -rf "$repo"
+}
+
+@test "canonicalize: CWD-relative literal from subdir lifts to root spelling (PR #318 review)" {
+  # hug us --from-file run from sub/ with line 'a.txt': git emits
+  # 'sub/a.txt'; membership must probe the lifted root spelling and push
+  # it resolved — 'a.txt' alone never matches the root-relative set.
+  local repo; repo=$(new_scratch_repo)
+  run bash -c "
+    mkdir -p '$repo/sub'
+    cd '$repo/sub'
+    unset _HUG_PATHSPEC_LOADED
+    . '$REPO_ROOT/git-config/lib/hug-common' >/dev/null 2>&1 || true
+    . '$REPO_ROOT/git-config/lib/hug-git-kit'
+    local -a res=() unres=()
+    canonicalize_source_lines res unres ../docs/a.md
+    printf 'R:%s\n' \${res[@]+\"\${res[@]}\"}
+    printf 'U:%s\n' \${unres[@]+\"\${unres[@]}\"}
+  "
+  assert_line "R:docs/a.md"
+  refute_line "U:../docs/a.md"
   rm -rf "$repo"
 }
 
@@ -559,13 +580,13 @@ Append to `git-config/lib/hug-pathspec`:
 #   canonicalize_source_lines <out_resolved> <out_unresolved> \
 #     [--from-commit] <line...>
 # Representation contract (roast C-001): a line is RESOLVED iff it
-# contributes >=1 output path. Git attributes outputs to pathspecs nowhere,
-# so attribution is by SHAPE: LITERAL-SHAPED lines (no glob metachars *?[,
-# not a dir spelling, normalized) resolve BY MEMBERSHIP against the batched
-# NUL output set — zero extra processes. FREE lines (dir/glob spellings)
-# keep today's per-line `git ls-files --full-name` (rare in from-file lists;
-# fan-out must resolve exactly as before). Plain-filename lists: ONE git
-# call total — THE F-003 FIX (was: one process PER LINE).
+# contributes >=1 output path. Fast path: probe the line's ROOT-relative
+# spelling against the batched NUL output set (zero extra processes).
+# ANY miss (dir spellings, globs, odd forms, unknown files) falls back to
+# today's per-line `git ls-files --full-name` so fan-out and failure
+# semantics stay byte-identical with pre-extraction behavior. Plain-
+# filename lists: ONE git call total — THE F-003 FIX (was: one process
+# PER LINE).
 canonicalize_source_lines() {
   local -n _csl_resolved=$1
   local -n _csl_unresolved=$2
@@ -592,63 +613,114 @@ canonicalize_source_lines() {
     tree_opt=(--with-tree=HEAD)
   fi
 
-  # THE batched call: every NON-EMPTY line rides as a pathspec argument.
-  # (An empty string as a git pathspec is FATAL — 'empty string as a
-  # pathspec' — and an empty list line means nothing to resolve anyway.)
+  # Every NON-EMPTY line rides the batched call as a pathspec argument.
+  # (An empty string is a FATAL git pathspec and resolves nothing anyway;
+  # empty list lines resolve to nothing.)
   local -a specs=() line0
   for line0 in ${1+"$@"}; do
     [[ -n "$line0" ]] && specs+=("$line0")
   done
 
-  local batch_out=""
-  batch_out=$(git ls-files -z --full-name ${tree_opt[@]+"${tree_opt[@]}"} -- ${specs[@]+"${specs[@]}"}) ||
-    error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
-
-  # NUL-delimited collect; DROP EMPTY RECORDS (trailing NUL yields a final
-  # empty element under bash's delimited read; an empty element would become
-  # in_scope[""] / "File '' is not tracked" — the phantom-subscript class
-  # git-us guards at :238-245).
+  # THE batched call — NUL output MUST NOT pass through command
+  # substitution: bash variables cannot contain NUL bytes, $(...) strips
+  # the delimiters and concatenates every pathname into one record, which
+  # empties `seen` and marks every valid literal unresolved (PR #318
+  # review, codex P1). Transport is a temp FILE: NUL-safe AND the exit
+  # status survives the round-trip, keeping failures loud (the house
+  # `$(…) || error` idiom is unavailable for binary-clean output).
   local -a batch_paths=() rec
-  while IFS= read -r -d '' rec; do
-    [[ -n "$rec" ]] && batch_paths+=("$rec")
-  done < <(printf '%s' "$batch_out")
+  local batch_ok=0 tmp_nul
+  if [[ ${#specs[@]} -gt 0 ]]; then
+    tmp_nul="$(mktemp "${TMPDIR:-/tmp}/hug-csl.XXXXXX")" || tmp_nul=""
+    if [[ -n "$tmp_nul" ]] &&
+      git ls-files -z --full-name ${tree_opt[@]+"${tree_opt[@]}"} \
+        -- ${specs[@]+"${specs[@]}"} > "$tmp_nul"; then
+      batch_ok=1
+      while IFS= read -r -d '' rec; do
+        [[ -n "$rec" ]] && batch_paths+=("$rec")   # drop empty records:
+        # a trailing NUL yields a final empty element under bash's delimited
+        # read — the phantom-subscript class git-us guards at :238-245.
+      done < "$tmp_nul"
+    fi
+    [[ -n "${tmp_nul:-}" ]] && rm -f "$tmp_nul"
+  fi
 
-  declare -A seen=()
-  local p
-  for p in ${batch_paths[@]+"${batch_paths[@]}"}; do seen["$p"]=1; done
+  if [[ $batch_ok -eq 1 ]]; then
+    declare -A seen=()
+    local p
+    for p in ${batch_paths[@]+"${batch_paths[@]}"}; do seen["$p"]=1; done
+  else
+    # Batch failed (malformed magic spelling poisons the WHOLE invocation)
+    # or nothing to batch: fall back to today's per-line loop for ALL
+    # lines, byte-for-byte — the bad line must die in hug_us naming ITS
+    # OWN line ("File 'X' is not tracked"), never take its valid siblings
+    # down with a poisoned batch.
+    _csl_resolved=()
+    _csl_unresolved=()
+    for line0 in ${specs[@]+"${specs[@]}"}; do
+      local -a one_hits=()
+      while IFS= read -r -d '' rec; do
+        [[ -n "$rec" ]] && one_hits+=("$rec")
+      done < <(git ls-files -z --full-name ${tree_opt[@]+"${tree_opt[@]}"} -- "$line0")
+      if [[ ${#one_hits[@]} -gt 0 ]]; then
+        local oh
+        for oh in ${one_hits[@]+"${one_hits[@]}"}; do _csl_resolved+=("$oh"); done
+      else
+        _csl_unresolved+=("$line0")
+      fi
+    done
+    return 0
+  fi
 
   _csl_resolved=()
   _csl_unresolved=()
   local line
   for line in ${1+"$@"}; do
     [[ -n "$line" ]] || continue   # empty input lines resolve to nothing
-    # Normalize the shape test: strip leading ./, collapse duplicate slashes.
+    # Normalize the CWD-relative spelling: strip leading ./, collapse
+    # duplicate slashes.
     local norm="$line"
     norm="${norm#./}"
     while [[ "$norm" == *//* ]]; do norm="${norm//\/\//\/}"; done
-    if [[ -n "${seen[$norm]:-}" ]]; then
-      _csl_resolved+=("$norm")
-    elif [[ "$norm" == */ || "$norm" == *[\*\?\[]* ]]; then
-      # FREE shape (dir/glob): today's per-line resolution preserves fan-out.
-      local -a free_hits=()
-      mapfile -d '' -t free_hits < <(
-        git ls-files -z --full-name ${tree_opt[@]+"${tree_opt[@]}"} -- "$line"
-      )
-      local fh any=0
-      for fh in ${free_hits[@]+"${free_hits[@]}"}; do
-        [[ -n "$fh" ]] || continue
-        _csl_resolved+=("$fh")
-        any=1
+    # Probe in GIT's representation: ls-files --full-name emits
+    # ROOT-relative paths, so a CWD-relative literal ('a.txt' from sub/)
+    # must be lifted to its root spelling ('sub/a.txt') BEFORE the lookup,
+    # and the ROOT spelling is what gets pushed (PR #318 review, codex P1:
+    # the downstream root_to_cwd_relpath consumes root-relative input).
+    local root_spell="$norm"
+    if [[ $norm != /* ]]; then
+      local prefix base
+      prefix=$(git rev-parse --show-prefix)
+      base="${prefix%/}"
+      root_spell="$norm"
+      while [[ "$root_spell" == ../* ]]; do
+        root_spell="${root_spell#../}"
+        if [[ "$base" == */* ]]; then base="${base%/*}"; else base=""; fi
       done
-      [[ $any -eq 1 ]] || _csl_unresolved+=("$line")
+      root_spell="${base:+$base/}${root_spell#./}"
+    fi
+    if [[ -n "${seen[$root_spell]:-}" ]]; then
+      _csl_resolved+=("$root_spell")
     else
-      _csl_unresolved+=("$line")
+      # Miss: dir spellings, globs, absolute paths, unknown files —
+      # today's per-line resolution decides (fan-out preserved; empty
+      # result => unresolved, dying loud downstream exactly as before).
+      local -a free_hits=()
+      while IFS= read -r -d '' rec; do
+        [[ -n "$rec" ]] && free_hits+=("$rec")
+      done < <(git ls-files -z --full-name ${tree_opt[@]+"${tree_opt[@]}"} -- "$line")
+      if [[ ${#free_hits[@]} -gt 0 ]]; then
+        local fh
+        for fh in ${free_hits[@]+"${free_hits[@]}"}; do _csl_resolved+=("$fh"); done
+      else
+        _csl_unresolved+=("$line")
+      fi
     fi
   done
 }
 ```
 
-NOTE on `mapfile -d`: bash ≥4.4. Verify the repo floor supports it — run `bash --version | head -1`; if the project targets older bash, substitute the read-loop collector used for `batch_paths` in BOTH places (same pattern, proven below). Prefer the read-loop everywhere for consistency unless a maintainer says otherwise.
+(All NUL collection uses the `read -r -d ''` loop pattern above — no `mapfile -d` anywhere, staying inside the repo's proven bash surface.)
 
 - [ ] **Step 3: Run tests until green**
 
@@ -665,12 +737,14 @@ representation contract (#303)
 
 One `git ls-files -z --full-name` call carries ALL list lines as
 pathspecs (was: one process per line — 1000-line list cost 1000
-subprocesses). Attribution follows roast C-001: a line is resolved iff it
-contributes >=1 output; LITERAL-shaped lines resolve by membership
-against the NUL output set (zero extra processes); dir/glob lines keep
-per-line resolution so fan-out is byte-preserved. Empty records drop at
-collection (trailing-NUL phantom element). Unresolved lines surface loud
-downstream exactly as today.
+subprocesses). NUL output streams to a temp FILE, never through command
+substitution (bash variables cannot hold NUL; $(...) would concatenate
+every pathname into one record and mark every valid literal unresolved).
+Attribution follows roast C-001: membership probes run against the line's
+ROOT-relative spelling (git emits root-relative; a CWD-relative literal
+from sub/ lifts before lookup), any miss falls back to today's per-line
+call so fan-out and loud-failure semantics stay byte-identical. Empty
+records drop at collection (trailing-NUL phantom element).
 
 Co-authored-by: CommandCodeBot <noreply@commandcode.ai>
 EOF
@@ -722,7 +796,16 @@ Replace the `source_list_empty=` assignment (keep it — it predates extraction 
       canonicalize_source_lines canonical_source unresolved_source \
         ${files_from_source[@]+"${files_from_source[@]}"}
     fi
-    filtered_source=(${canonical_source[@]+"${canonical_source[@]}"})
+    filtered_source=()
+    # INTERSECTION, never concat (PR #318 review, codex P1 — restores
+    # git-us's original contract §3.1): the pathspecs are a SCOPE. A source
+    # list ['a.txt','b.txt'] against scope 'a.txt' must forward ONLY a.txt;
+    # copying all canonical entries would unstage b.txt OUTSIDE the scope.
+    for f in ${canonical_source[@]+"${canonical_source[@]}"}; do
+      if [[ -n "${in_scope[$f]:-}" ]]; then
+        filtered_source+=("$f")
+      fi
+    done
     # ...and BACK to CWD-relative for downstream consumers (validation +
     # git restore resolve against the CWD). Real relpath, not prefix-strip:
     # see root_to_cwd_relpath. Unresolved spellings are ALREADY
