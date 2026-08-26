@@ -2,19 +2,28 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
-## [Unreleased]
+## [1.15.1.0] - 2026-08-26
 
-### Refactored
+Closes elifarley/hug-scm#303 (via elifarley/hug-scm#318): git-us's inline scope-intersection block now lives in a testable `hug-pathspec` library, and the five hand-copied sl* listings collapse onto one `sl_family_main` entrypoint.
 
-- **`hug-pathspec` library (new)** — git-us's inline scope-intersection machinery
-  (tracked ∪ staged-deletion scope sets, source-list canonicalization, root↔CWD
-  relpath conversion) extracted for direct unit testing. Includes the F-003 fix:
-  `us --from-file` lists now resolve via one batched `git ls-files` call instead
-  of one subprocess per line. Zero behavior change.
-- **`hug-status-listing` library (new) + `sl_family_main`** — the five sl*
-  listings (`sls`/`slu`/`slk`/`sli`/`slc`) collapse onto one shared main body;
-  per-mode variance lives in a mode table. Future family members are born on the
-  template. Zero behavior change.
+### Added
+
+- **`hug-pathspec` library (new)** — pathspec scope-set construction (`build_scope_set`), source-list canonicalization (`canonicalize_source_lines`), and root↔CWD relpath conversion (`root_to_cwd_relpath`), extracted from git-us for direct unit testing.
+- **`hug-status-listing` library (new) + `sl_family_main`** — the shared main body for the sl* listing family; per-mode variance lives in a mode table, so future family members are born on the template instead of hand-copying ~130 lines of skeleton.
+
+### Changed
+
+- **`us --from-file` resolves lists in ONE batched `git ls-files` call** (the F-003 fix) — a 1000-line list no longer spawns one subprocess per line; plain-filename lists cost exactly one git invocation.
+
+### Fixed
+
+- **`us --from-file` from a subdirectory with a mixed list** (a `../`-prefixed line followed by plain names) no longer silently skips the intended files — a review-found regression that answered "No files matching …" with exit 0 while leaving files staged (or, under a `:(top)` scope, could unstage the wrong file).
+- **`us --from-file … -- <scope>` now works with unicode filenames** (e.g. `héllo.txt`) — a representation mismatch made such files silently miss the scope; they now unstage correctly (pre-extraction code failed loudly instead).
+- **Test suite hardening** — the `slk -q` quiet pin now refutes the real column spelling, the batch-failure fallback path in `canonicalize_source_lines` gained its first coverage, and the F-003 gate now counts every git invocation (not just `ls-files`) so per-file subprocess regressions can't hide.
+
+### Dependencies
+
+- **bats-core ≥ 1.14.0 now required** (declared once in `tests/test_helper.bash`) — the version gate self-heals a stale dependency cache, and the BW02 `run`-flags warning is gone from every run.
 
 ## [1.15.0.0] - 2026-08-25
 
