@@ -128,7 +128,8 @@ while [[ $# -gt 0 ]]; do
     ;;
   -*)
     # Loud by contract (was: exit 1 with a bare message). exit 2 =
-    # HUG_EX_USAGE; family template — see the sls/slu post-Task-5 rows.
+    # HUG_EX_USAGE; family template — see sl_family_main's unknown-option
+    # arm in hug-status-listing.
     error_usage "Unknown option: $1. Pathspecs beginning with '-' require '--': hug us -- $1. See 'hug help :pathspec'."
     ;;
   *)
@@ -225,11 +226,14 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
     done
     # ...and BACK to CWD-relative for downstream consumers (validation +
     # git restore resolve against the CWD). Real relpath, not prefix-strip:
-    # see root_to_cwd_relpath. Unresolved spellings are ALREADY
+    # see root_to_cwd_relpath. The prefix is HOISTED once for the whole
+    # list (PR #318 review, red-team: per-file rev-parse was measured at
+    # one git subprocess per file). Unresolved spellings are ALREADY
     # CWD-relative (the user's own) — appended untouched.
+    cwd_prefix=$(git rev-parse --show-prefix)
     cwd_source=()
     for f in ${filtered_source[@]+"${filtered_source[@]}"}; do
-      cwd_source+=("$(root_to_cwd_relpath "$f")")
+      cwd_source+=("$(root_to_cwd_relpath "$f" "$cwd_prefix")")
     done
     files_from_source=(${cwd_source[@]+"${cwd_source[@]}"} ${unresolved_source[@]+"${unresolved_source[@]}"})
 

@@ -2077,6 +2077,30 @@ create_slc_conflict_fixture() {
   assert_output --partial "No files matching 'docs/'"
 }
 
+@test "hug us: scoped --from-file unstage WORKS for a unicode filename (raw vs C-quoted, PR #318 review)" {
+  # The scope set was captured without -z (git C-quoting: 'héllo.txt' as
+  # "h\303\251llo.txt") while the source side resolved RAW — membership
+  # never matched and this flow answered a SILENT "No files matching '.'"
+  # exit 0 with the file left staged (pre-extraction failed loudly). The
+  # -z transport on both sides makes the unstage actually happen.
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  printf 'base\n' > 'héllo.txt'
+  hug a -- 'héllo.txt'
+  hug c -m base >/dev/null
+  printf 'mod\n' >> 'héllo.txt'
+  hug a -- 'héllo.txt'
+  printf 'héllo.txt\n' > "$BATS_TEST_TMPDIR/uni-list.txt"
+
+  run hug us --from-file "$BATS_TEST_TMPDIR/uni-list.txt" -- .
+  assert_success
+  assert_output --partial "Unstaged 1 file"
+  # The behavioral assert: nothing left staged under the scope.
+  run git diff --cached --name-only
+  refute_output --partial "llo.txt"
+}
+
 @test "hug slk -c: counts a newline-containing filename once (NUL-safe)" {
   local repo
   repo=$(create_test_repo)
@@ -2202,7 +2226,10 @@ create_slc_conflict_fixture() {
   run hug slk -q
   assert_success
   assert_output --partial "stray.txt"
-  refute_output --partial "??"        # status column suppressed
+  # The untracked column is spelled 'untrcK' (hug-select-files
+  # _format_untracked_status) — '??' never appears in slk output, so
+  # refuting it would be unfalsifiable (PR #318 review, testing specialist).
+  refute_output --partial "untrcK"   # status column suppressed
 }
 
 @test "hug slu -q: PRESERVES status prefixes" {

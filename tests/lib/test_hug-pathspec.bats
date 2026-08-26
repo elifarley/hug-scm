@@ -136,30 +136,40 @@ call_build_scope_set() {           # <repo-cd-dir> <out-var> <pathspecs...>
   local repo; repo=$(mktemp -d)
   git -C "$repo" init -q
   echo x > "$repo/outside.txt"; git -C "$repo" add outside.txt
-  (
-    cd "$repo"
-    unset _HUG_PATHSPEC_LOADED
-    . "$REPO_ROOT/git-config/lib/hug-common" >/dev/null 2>&1 || true
-    . "$REPO_ROOT/git-config/lib/hug-git-kit"
-    out=()
-    set -e
-    build_scope_set out nosuchdir/
-    [[ ${#out[@]} -eq 0 ]]
-  )
-  [[ $status -eq 0 ]]
+  # `run` is LOAD-BEARING: $status exists only after bats run — a plain
+  # subshell statement discards its exit code and the assert becomes a
+  # tautology that every code path satisfies (PR #318 review, testing
+  # specialist). Args cross the bash -c boundary via argv, not splicing.
+  run bash -c '
+    run_main() {
+      cd "$1" || exit 1
+      unset _HUG_PATHSPEC_LOADED
+      . "$2/git-config/lib/hug-common" >/dev/null 2>&1 || true
+      . "$2/git-config/lib/hug-git-kit"
+      out=()
+      set -e
+      build_scope_set out nosuchdir/
+      [[ ${#out[@]} -eq 0 ]]
+    }
+    run_main "$1" "$2"
+  ' _ "$repo" "$REPO_ROOT"
+  assert_success
   rm -rf "$repo"
 }
 
-# Counting git stub: ONLY `git ls-files …` invocations are counted;
-# every other git subcommand (rev-parse, etc.) delegates to the real
-# binary so environment probes (e.g. --show-prefix, --verify -q HEAD)
-# keep working. The F-003 contract is "ONE `git ls-files` invocation",
-# NOT "one git invocation of any kind".
+# Counting git stub: `git ls-files …` invocations are counted to
+# COUNT_STUB_COUNTER; EVERY git invocation is counted to COUNT_STUB_ALL.
+# Two gates: the F-003 contract is "ONE `git ls-files` invocation" for an
+# all-literal list, and the total-exec gate (bound, not exact) catches a
+# per-line/per-file subprocess explosion from ANY git subcommand — the
+# ls-files-only gate was myopic (PR #318 review, red team: a per-file
+# rev-parse regression was invisible to it).
 counting_git_stub() {
   local bin_dir; bin_dir=$(mktemp -d)
   local real_git; real_git=$(command -v git)
   cat > "$bin_dir/git" <<STUB
 #!/usr/bin/env bash
+printf 'a\n' >> '${COUNT_STUB_ALL:-/dev/null}'
 if [[ "\$1" == "ls-files" ]]; then
   printf 'x\n' >> '${COUNT_STUB_COUNTER}'
 fi
@@ -202,25 +212,32 @@ call_canonicalize() {               # <repo> <extra-env-assignments...> -- <line
   COUNT_STUB_COUNTER="$(mktemp)"; export COUNT_STUB_COUNTER
   : > "$COUNT_STUB_COUNTER"
   local bindir; bindir=$(counting_git_stub)
-  local -i calls_before
-  # count baseline: repo setup already ran; measure DELTA across the call
   run env PATH="$bindir:$PATH" bash -c '
-    cd "'"$repo"'"
-    unset _HUG_PATHSPEC_LOADED
-    . "'"$REPO_ROOT"'/git-config/lib/hug-common" >/dev/null 2>&1 || true
-    . "'"$REPO_ROOT"'/git-config/lib/hug-git-kit"
-    local -a res=() unres=()
-    canonicalize_source_lines res unres docs/a.md root.txt nope.txt
-  '
-  # 500-line variant drives the real assertion; single call suffices here
+    run_main() {
+      cd "$1"
+      unset _HUG_PATHSPEC_LOADED
+      . "$2/git-config/lib/hug-common" >/dev/null 2>&1 || true
+      . "$2/git-config/lib/hug-git-kit"
+      local -a res=() unres=()
+      canonicalize_source_lines res unres docs/a.md root.txt
+    }
+    run_main "$1" "$2"
+  ' _ "$repo" "$REPO_ROOT"
   assert_success
-  rm -rf "$bindir" "$repo"
+  # F-003 gate at small scale: an all-resolvable literal list costs exactly
+  # ONE git ls-files invocation. (An UNKNOWN literal would add a second,
+  # per-line probe by design — that case is pinned by the dedicated
+  # "unknown literal lands in unresolved" test, which does not count calls.)
+  [[ $(wc -l < "$COUNT_STUB_COUNTER") -eq 1 ]] || {
+    echo "expected 1 git ls-files call, got $(wc -l < "$COUNT_STUB_COUNTER")"; return 1; }
+  rm -rf "$bindir" "$COUNT_STUB_COUNTER" "$repo"
 }
 
 @test "canonicalize: 500 plain filenames => exactly one git ls-files invocation" {
   local repo; repo=$(new_scratch_repo)
   COUNT_STUB_COUNTER="$(mktemp)"; export COUNT_STUB_COUNTER
-  : > "$COUNT_STUB_COUNTER"
+  COUNT_STUB_ALL="$(mktemp)"; export COUNT_STUB_ALL
+  : > "$COUNT_STUB_COUNTER"; : > "$COUNT_STUB_ALL"
   local bindir; bindir=$(counting_git_stub)
   local -a big=()
   local i; for ((i=1;i<=500;i++)); do big+=("docs/a.md"); done   # dupes fine
@@ -251,7 +268,13 @@ call_canonicalize() {               # <repo> <extra-env-assignments...> -- <line
   # are environment probes, not the batched call).
   [[ $(wc -l < "$COUNT_STUB_COUNTER") -eq 1 ]] || {
     echo "expected 1 git ls-files call, got $(wc -l < "$COUNT_STUB_COUNTER")"; return 1; }
-  rm -rf "$bindir" "$COUNT_STUB_COUNTER" "$repo" "$specfile"
+  # Total-exec gate (bound, not exact): the whole call must stay at a
+  # HANDFUL of git invocations — a per-line or per-file subprocess loop
+  # (any subcommand) explodes past this bound even when the ls-files
+  # count above stays at 1.
+  [[ $(wc -l < "$COUNT_STUB_ALL") -le 5 ]] || {
+    echo "expected <=5 total git calls, got $(wc -l < "$COUNT_STUB_ALL")"; return 1; }
+  rm -rf "$bindir" "$COUNT_STUB_COUNTER" "$COUNT_STUB_ALL" "$repo" "$specfile"
 }
 
 @test "canonicalize: dir spec and glob RESOLVE (never marked unresolved)" {
@@ -269,17 +292,25 @@ call_canonicalize() {               # <repo> <extra-env-assignments...> -- <line
   # 'sub/a.txt'; membership must probe the lifted root spelling and push
   # it resolved — 'a.txt' alone never matches the root-relative set.
   local repo; repo=$(new_scratch_repo)
-  run bash -c "
-    mkdir -p '$repo/sub'
-    cd '$repo/sub'
-    unset _HUG_PATHSPEC_LOADED
-    . '$REPO_ROOT/git-config/lib/hug-common' >/dev/null 2>&1 || true
-    . '$REPO_ROOT/git-config/lib/hug-git-kit'
-    local -a res=() unres=()
-    canonicalize_source_lines res unres ../docs/a.md
-    printf 'R:%s\n' \${res[@]+\"\${res[@]}\"}
-    printf 'U:%s\n' \${unres[@]+\"\${unres[@]}\"}
-  "
+  # run_main wrapper: `local` is only legal inside a function — at bash -c
+  # top level the declaration errors ("can only be used in a function"),
+  # the namerefs silently become globals, and the noise line rides $output
+  # unrefuted (red-team finding). Args pass $repo/$REPO_ROOT cleanly.
+  run bash -c '
+    run_main() {
+      mkdir -p "$1/sub"
+      cd "$1/sub" || exit 1
+      unset _HUG_PATHSPEC_LOADED
+      . "$2/git-config/lib/hug-common" >/dev/null 2>&1 || true
+      . "$2/git-config/lib/hug-git-kit"
+      local -a res=() unres=()
+      canonicalize_source_lines res unres ../docs/a.md
+      printf "R:%s\n" ${res[@]+"${res[@]}"}
+      printf "U:%s\n" ${unres[@]+"${unres[@]}"}
+    }
+    run_main "$1" "$2"
+  ' _ "$repo" "$REPO_ROOT"
+  refute_line --partial "local: can only be used in a function"
   assert_line "R:docs/a.md"
   refute_line "U:../docs/a.md"
   rm -rf "$repo"
@@ -326,16 +357,20 @@ call_canonicalize() {               # <repo> <extra-env-assignments...> -- <line
   : > "$COUNT_STUB_COUNTER"
   local bindir; bindir=$(counting_git_stub)
   run env PATH="$bindir:$PATH" bash -c '
-    cd "'"$repo"'/sub"
-    unset _HUG_PATHSPEC_LOADED
-    . "'"$REPO_ROOT"'/git-config/lib/hug-common" >/dev/null 2>&1 || true
-    . "'"$REPO_ROOT"'/git-config/lib/hug-git-kit"
-    local -a res=() unres=()
-    canonicalize_source_lines res unres a.txt
-    if [[ ${#res[@]} -gt 0 ]]; then printf "R:%s\n" "${res[@]}"; fi
-    if [[ ${#unres[@]} -gt 0 ]]; then printf "U:%s\n" "${unres[@]}"; fi
-  '
+    run_main() {
+      cd "$1/sub" || exit 1
+      unset _HUG_PATHSPEC_LOADED
+      . "$2/git-config/lib/hug-common" >/dev/null 2>&1 || true
+      . "$2/git-config/lib/hug-git-kit"
+      local -a res=() unres=()
+      canonicalize_source_lines res unres a.txt
+      if [[ ${#res[@]} -gt 0 ]]; then printf "R:%s\n" "${res[@]}"; fi
+      if [[ ${#unres[@]} -gt 0 ]]; then printf "U:%s\n" "${unres[@]}"; fi
+    }
+    run_main "$1" "$2"
+  ' _ "$repo" "$REPO_ROOT"
   assert_success
+  refute_line --partial "local: can only be used in a function"
   assert_line "R:sub/a.txt"
   refute_line "U:a.txt"
   refute_line "U:"
@@ -344,4 +379,116 @@ call_canonicalize() {               # <repo> <extra-env-assignments...> -- <line
   [[ $(wc -l < "$COUNT_STUB_COUNTER") -eq 1 ]] || {
     echo "expected 1 git ls-files call (batch), got $(wc -l < "$COUNT_STUB_COUNTER")"; return 1; }
   rm -rf "$bindir" "$COUNT_STUB_COUNTER" "$repo"
+}
+
+@test "canonicalize: ../-prefixed line does NOT corrupt later lines' lift (PR #318 review)" {
+  # The ../-climb once consumed the SHARED hoisted base, so a leading
+  # '../a.txt' permanently shrank it and a later plain 'a.txt' (meaning
+  # sub/a.txt from sub/) lifted to the ROOT spelling — silent no-match or
+  # wrong-file unstage downstream (end-to-end repro'd vs merge-base).
+  local repo; repo=$(mktemp -d)
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@t; git -C "$repo" config user.name t
+  mkdir -p "$repo/sub"
+  printf 'root\n' > "$repo/a.txt"; printf 'sub\n' > "$repo/sub/a.txt"
+  git -C "$repo" add -A; git -C "$repo" commit -qm base
+  run bash -c '
+    run_main() {
+      cd "$1/sub" || exit 1
+      unset _HUG_PATHSPEC_LOADED
+      . "$2/git-config/lib/hug-common" >/dev/null 2>&1 || true
+      . "$2/git-config/lib/hug-git-kit"
+      local -a res=() unres=()
+      canonicalize_source_lines res unres ../a.txt a.txt
+      [[ ${#res[@]} -gt 0 ]] && printf "R:%s\n" "${res[@]}"
+      [[ ${#unres[@]} -gt 0 ]] && printf "U:%s\n" "${unres[@]}"
+      return 0   # a false guard as the LAST command would exit 1
+    }
+    run_main "$1" "$2"
+  ' _ "$repo" "$REPO_ROOT"
+  assert_success
+  assert_line "R:a.txt"          # ../a.txt lifted to the ROOT spelling
+  assert_line "R:sub/a.txt"      # plain a.txt STILL lifts under sub/ —
+                                 # the leak used to produce 'a.txt' here
+  refute_line --partial "U:"
+  rm -rf "$repo"
+}
+
+@test "build_scope_set: NUL transport keeps unicode spellings RAW (PR #318 review)" {
+  # Non-NUL captures store git's C-QUOTED spellings ('héllo.txt' arrives
+  # as "h\303\251llo.txt") while canonicalize_source_lines emits RAW -z
+  # bytes — the membership filter downstream never matched and scoped
+  # from-file unstages answered a silent "No files matching …" exit 0
+  # (security review; repro'd — pre-extraction failed LOUDLY instead).
+  local repo; repo=$(mktemp -d)
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@t; git -C "$repo" config user.name t
+  printf 'base\n' > "$repo/héllo.txt"
+  git -C "$repo" add -A; git -C "$repo" commit -qm base
+  run bash -c '
+    run_main() {
+      cd "$1" || exit 1
+      unset _HUG_PATHSPEC_LOADED
+      . "$2/git-config/lib/hug-common" >/dev/null 2>&1 || true
+      . "$2/git-config/lib/hug-git-kit"
+      local -a out=()
+      build_scope_set out .
+      printf "S:%s\n" ${out[@]+"${out[@]}"}
+    }
+    run_main "$1" "$2"
+  ' _ "$repo" "$REPO_ROOT"
+  assert_success
+  assert_line "S:héllo.txt"                 # RAW bytes, not C-quoted
+  refute_line --partial 'h\303\251'         # the quoted spelling must NOT ride the set
+  rm -rf "$repo"
+}
+
+@test "canonicalize: poisoned batch falls back per-line — bad line unresolved, siblings resolve" {
+  # One malformed magic line kills the WHOLE batched ls-files (exit 128,
+  # probed) — the batch_ok=0 fallback then resolves EVERY line per-line:
+  # valid siblings still resolve, the bad line lands unresolved so it
+  # dies downstream naming ITS OWN line, never poisons its siblings.
+  # This branch had zero coverage before (PR #318 review, testing
+  # specialist).
+  local repo; repo=$(new_scratch_repo)
+  run call_canonicalize "$repo" -- 'docs/a.md' ':(' 'root.txt'
+  assert_success
+  assert_line "R:docs/a.md"
+  assert_line "R:root.txt"
+  assert_line "U::("
+  refute_line "U:docs/a.md"
+  refute_line "U:root.txt"
+  rm -rf "$repo"
+}
+
+@test "canonicalize: glob line that ALSO literal-names a tracked file keeps its fan-out" {
+  # A tracked file literally named 'a*.txt' makes the literal probe HIT,
+  # which used to push ONLY the literal and silently drop the glob's
+  # fan-out ('abbb.txt'). The LITERAL/FREE classification now routes any
+  # glob/magic/dir spelling to the per-line path, restoring pre-extraction
+  # fan-out semantics (spec contract; PR #318 review, adversarial pass).
+  local repo; repo=$(mktemp -d)
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@t; git -C "$repo" config user.name t
+  printf 'base\n' > "$repo/a*.txt"; printf 'base\n' > "$repo/abbb.txt"
+  git -C "$repo" add -A; git -C "$repo" commit -qm base
+  run bash -c '
+    run_main() {
+      cd "$1" || exit 1
+      unset _HUG_PATHSPEC_LOADED
+      . "$2/git-config/lib/hug-common" >/dev/null 2>&1 || true
+      . "$2/git-config/lib/hug-git-kit"
+      local -a res=() unres=()
+      canonicalize_source_lines res unres "a*.txt"
+      [[ ${#res[@]} -gt 0 ]] && printf "R:%s\n" "${res[@]}"
+      [[ ${#unres[@]} -gt 0 ]] && printf "U:%s\n" "${unres[@]}"
+      return 0   # a false guard as the LAST command would exit 1
+    }
+    run_main "$1" "$2"
+  ' _ "$repo" "$REPO_ROOT"
+  assert_success
+  assert_line "R:a*.txt"      # the literal file itself
+  assert_line "R:abbb.txt"    # AND the glob's fan-out — never dropped
+  refute_line --partial "U:"
+  rm -rf "$repo"
 }

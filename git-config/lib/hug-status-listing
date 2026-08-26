@@ -5,7 +5,9 @@
 # lib-side contract — quiet-extra included).
 #
 # Script-local FOREVER (never enter this lib): _hug_category, the whole
-# --search-meta block, and slc's _hug_keywords line.
+# --search-meta block, slc's _hug_keywords line, and each script's own
+# show_help — the -h dispatch calls show_help BY NAME from caller scope,
+# so a family member that defines none prints nothing and exits 0 on -h.
 #
 # Depends on (reached via the sourcing script's preamble — same bundle the
 # five scripts load today: hug-common hug-git-kit hug-select-files
@@ -31,7 +33,6 @@ readonly _HUG_STATUS_LISTING_LOADED=1
 # Shared main for the sl* family.
 # Usage: sl_family_main <mode> <display_name> [args...]
 # Modes: staged | unstaged | untracked | ignored | conflicts
-#   (Tasks 6 lands staged/unstaged; Task 7 lands untracked/ignored/conflicts.)
 #
 # Behavioral contract (pinned by the Task-1 conformance suites +
 # tests/unit/test_sl_family_template.bats — drift-guard):
@@ -76,10 +77,13 @@ sl_family_main() {
     *) error "sl_family_main: unknown mode '$mode'" 1 ;;  # programming error
   esac
 
+  # local: these five are consumed only inside this function; without it
+  # they'd leak into caller scope the day anyone wraps sl_family_main.
+  local json_output quiet count_only
+  local -a pathspecs=()
   json_output=false
   quiet=false
   count_only=false
-  pathspecs=()
 
   # Uniform pathspec split (#292 PR-B): flags before '--', pathspecs after.
   # WITHOUT --picker on purpose: sl* is a listing family, so a trailing bare
@@ -175,7 +179,7 @@ sl_family_main() {
     # Show <kind> files
     if ! list_files_with_status "${list_opts[@]}" 2> /dev/null; then
       if [[ ${#pathspecs[@]} -gt 0 ]]; then
-        pathspec_list=""
+        local pathspec_list=""
         printf -v pathspec_list "'%s' " "${pathspecs[@]}"
         info "No ${noun} files matching ${pathspec_list% } found."
       else

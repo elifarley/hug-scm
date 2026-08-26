@@ -80,13 +80,13 @@ user-facing contract this implements is documented in
 Pathspec scope-set construction, source-list canonicalization, and root↔CWD relpath conversion (#303).
 
 **Features:**
-- `root_to_cwd_relpath <path>` — print the CWD-relative spelling of a root-relative path
+- `root_to_cwd_relpath <path> [<cwd_prefix>]` — print the CWD-relative spelling of a root-relative path (list callers hoist `$(git rev-parse --show-prefix)` once and pass it as `<cwd_prefix>`; omitted → probed per call)
 - `build_scope_set <out_arr> <pathspec…>` — tracked ∪ staged-deletions, root-relative (Task 3)
 - `canonicalize_source_lines <out_resolved> <out_unresolved> [--from-commit] <line…>` — batched F-003 canonicalization (Task 4)
 
 ### hug-status-listing
 
-Shared main body for the sl* listing family (`git-sls`, `git-slu`, plus `git-slk`/`git-sli`/`git-slc` after Task 7) (#303). One function, five modes; per-mode variance lives in the private mode table inside `sl_family_main`.
+Shared main body for the sl* listing family (`git-sls`, `git-slu`, `git-slk`, `git-sli`, `git-slc`) (#303). One function, five modes; per-mode variance lives in the private mode table inside `sl_family_main`.
 
 **Features:**
 - `sl_family_main <mode> <display_name> [args…]` — the unified body for the sl* family

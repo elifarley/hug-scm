@@ -8,21 +8,30 @@
 #   - root_to_cwd_relpath <path>: print the CWD-relative spelling of a
 #     ROOT-relative path (prefix-strip under cwd, else ../climb; identity
 #     at repo root).
+#   - build_scope_set <out_arr> <pathspec...>: ROOT-relative tracked ∪
+#     staged-deletions scope set (see git-config/lib/README.md).
+#   - canonicalize_source_lines <out_resolved> <out_unresolved>
+#     [--from-commit] <line...>: batched F-003 canonicalization.
 
 # Prevent double-loading
 [[ -n "${_HUG_PATHSPEC_LOADED:-}" ]] && return 0
 readonly _HUG_PATHSPEC_LOADED=1
 
 # Print the CWD-relative spelling of a root-relative path.
-# Usage: root_to_cwd_relpath <root-relative-path>
-# Pure over (path, $(git rev-parse --show-prefix)) — unit-testable.
+# Usage: root_to_cwd_relpath <root-relative-path> [<cwd_prefix>]
+# <cwd_prefix> = a precomputed `$(git rev-parse --show-prefix)` — callers
+# converting a LIST must hoist it once and pass it (PR #318 review,
+# red-team: the default per-call rev-parse cost one git subprocess PER
+# FILE — measured 12→53 git calls on a 41-file from-commit before the
+# hoist). Omitted → probed here (single-shot callers keep the simple form).
+# Pure over (path, prefix) — unit-testable.
 root_to_cwd_relpath() {
   local f="$1"
   local cwd_prefix climb tmp
   # Already CWD-relative (explicit ../… climb spelling): consume as-is.
   # Prepending the computed climb would double-count ("../" + "../x").
   [[ $f == ../* ]] && { printf '%s\n' "$f"; return 0; }
-  cwd_prefix=$(git rev-parse --show-prefix)
+  cwd_prefix="${2:-$(git rev-parse --show-prefix)}"
   climb=""
   tmp="${cwd_prefix%/}"
   while [[ -n $tmp ]]; do
@@ -46,20 +55,32 @@ root_to_cwd_relpath() {
 build_scope_set() {
   local -n _bss_out=$1
   shift
-  local scope_tracked="" scope_deleted="" joined=""
-  scope_tracked=$(git ls-files --full-name -- "$@") ||
-    error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
-  scope_deleted=$(git diff --cached --name-only --diff-filter=D --no-renames -- "$@") ||
-    error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
-  if [[ -n "$scope_tracked" && -n "$scope_deleted" ]]; then
-    joined="${scope_tracked}"$'\n'"${scope_deleted}"
+  local -a bss_paths=()
+  local bss_rec bss_tmp
+  # WHY -z (PR #318 review, security): non-NUL captures store git's
+  # C-QUOTED spellings (core.quotePath — 'héllo.txt' arrives as
+  # "h\303\251llo.txt") while canonicalize_source_lines emits RAW -z
+  # bytes; the downstream membership filter then never matches and
+  # `us --from-file <list> -- <scope>` answered "No files matching …"
+  # exit 0 with the file left staged (repro'd; pre-extraction code failed
+  # LOUDLY). NUL transport keeps both sides RAW. Trailing-NUL empty
+  # records are dropped — `in_scope[""]` is a bad subscript under set -u.
+  # Domain noun is overridable so a future second consumer doesn't print
+  # a message claiming the user ran 'us' (byte-identical default).
+  local bss_ctx="${_HUG_PATHSPEC_CONTEXT:-unstage scope}"
+  bss_tmp="$(mktemp "${TMPDIR:-/tmp}/hug-bss.XXXXXX")" || bss_tmp=""
+  if [[ -n "$bss_tmp" ]] &&
+    git ls-files -z --full-name -- "$@" > "$bss_tmp" &&
+    git diff --cached --name-only -z --diff-filter=D --no-renames -- "$@" >> "$bss_tmp"; then
+    while IFS= read -r -d '' bss_rec; do
+      [[ -n "$bss_rec" ]] && bss_paths+=("$bss_rec")
+    done < "$bss_tmp"
+    rm -f "$bss_tmp"
   else
-    joined="${scope_tracked}${scope_deleted}"   # no phantom blank line
+    [[ -n "${bss_tmp:-}" ]] && rm -f "$bss_tmp"
+    error_usage "Invalid pathspec in ${bss_ctx}. See 'hug help :pathspec'."
   fi
-  _bss_out=()
-  if [[ -n "$joined" ]]; then
-    mapfile -t _bss_out <<< "$joined"
-  fi
+  _bss_out=(${bss_paths[@]+"${bss_paths[@]}"})
 }
 
 # Canonicalize source-list lines (--from-file/--from-commit payloads) to
@@ -115,7 +136,9 @@ canonicalize_source_lines() {
   # review, codex P1). Transport is a temp FILE: NUL-safe AND the exit
   # status survives the round-trip, keeping failures loud (the house
   # `$(…) || error` idiom is unavailable for binary-clean output).
-  local -a batch_paths=() rec
+  local -a batch_paths=()
+  local rec   # scalar read target for `read -r -d ''` (an array decl would
+              # still work via element 0 but misleads — keep it scalar)
   local batch_ok=0 tmp_nul
   if [[ ${#specs[@]} -gt 0 ]]; then
     tmp_nul="$(mktemp "${TMPDIR:-/tmp}/hug-csl.XXXXXX")" || tmp_nul=""
@@ -126,7 +149,8 @@ canonicalize_source_lines() {
       while IFS= read -r -d '' rec; do
         [[ -n "$rec" ]] && batch_paths+=("$rec")   # drop empty records:
         # a trailing NUL yields a final empty element under bash's delimited
-        # read — the phantom-subscript class git-us guards at :238-245.
+        # read — the phantom-subscript class git-us guards wherever it
+        # mapfiles a captured list (its staged-scope and report captures).
       done < "$tmp_nul"
     fi
     [[ -n "${tmp_nul:-}" ]] && rm -f "$tmp_nul"
@@ -139,9 +163,11 @@ canonicalize_source_lines() {
   else
     # Batch failed (malformed magic spelling poisons the WHOLE invocation)
     # or nothing to batch: fall back to today's per-line loop for ALL
-    # lines, byte-for-byte — the bad line must die in hug_us naming ITS
-    # OWN line ("File 'X' is not tracked"), never take its valid siblings
-    # down with a poisoned batch.
+    # lines — same resolution shape as pre-extraction (the NUL-read
+    # transport here is a strict improvement for newline-named files) —
+    # the bad line must die in hug_us naming ITS OWN line ("File 'X' is
+    # not tracked"), never take its valid siblings down with a poisoned
+    # batch.
     _csl_resolved=()
     _csl_unresolved=()
     for line0 in ${specs[@]+"${specs[@]}"}; do
@@ -168,6 +194,12 @@ canonicalize_source_lines() {
   local prefix base
   prefix=$(git rev-parse --show-prefix)
   base="${prefix%/}"
+  # `base` is READ-ONLY from here on: each line's ../-climb consumes a
+  # LOCAL copy (lbase) in the loop below. Letting one ../-prefixed line
+  # shrink the shared hoist corrupted every LATER line's lift (PR #318
+  # review: list ['../a.txt','a.txt'] from sub/ lifted the second line to
+  # the ROOT 'a.txt' — silent no-match, or wrong-file unstage under a
+  # :(top) scope; end-to-end repro'd against merge-base behavior).
 
   _csl_resolved=()
   _csl_unresolved=()
@@ -184,16 +216,27 @@ canonicalize_source_lines() {
     # must be lifted to its root spelling ('sub/a.txt') BEFORE the lookup,
     # and the ROOT spelling is what gets pushed (PR #318 review, codex P1:
     # the downstream root_to_cwd_relpath consumes root-relative input).
+    # LITERAL vs FREE classification (spec contract): only glob-free,
+    # magic-free, non-directory spellings may ride the fast path. A glob
+    # line that ALSO literal-names a tracked file would otherwise probe
+    # its literal spelling, HIT, and push ONLY the literal — silently
+    # dropping the glob's fan-out (masked end-to-end today only because
+    # `git restore --` re-globs downstream; classified per spec anyway).
+    local literal_shaped=true
+    case "$norm" in
+      *\**|*\?*|*\[*|:*|*/) literal_shaped=false ;;
+    esac
     local root_spell="$norm"
     if [[ $norm != /* ]]; then
       root_spell="$norm"
+      local lbase="$base"   # per-line copy — the ../-climb must not leak
       while [[ "$root_spell" == ../* ]]; do
         root_spell="${root_spell#../}"
-        if [[ "$base" == */* ]]; then base="${base%/*}"; else base=""; fi
+        if [[ "$lbase" == */* ]]; then lbase="${lbase%/*}"; else lbase=""; fi
       done
-      root_spell="${base:+$base/}${root_spell#./}"
+      root_spell="${lbase:+$lbase/}${root_spell#./}"
     fi
-    if [[ -n "${seen[$root_spell]:-}" ]]; then
+    if $literal_shaped && [[ -n "${seen[$root_spell]:-}" ]]; then
       _csl_resolved+=("$root_spell")
     else
       # Miss: dir spellings, globs, absolute paths, unknown files —
