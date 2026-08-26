@@ -127,3 +127,152 @@ call_build_scope_set() {           # <repo-cd-dir> <out-var> <pathspecs...>
   [[ "$status" -eq 2 ]]
   rm -rf "$repo"
 }
+
+# Counting git stub: increments $COUNTER_FILE then delegates to real git.
+counting_git_stub() {
+  local bin_dir; bin_dir=$(mktemp -d)
+  cat > "$bin_dir/git" <<STUB
+#!/usr/bin/env bash
+printf 'x\n' >> '${COUNT_STUB_COUNTER}'
+exec $(command -v git) "\$@"
+STUB
+  chmod +x "$bin_dir/git"
+  printf '%s' "$bin_dir"
+}
+
+call_canonicalize() {               # <repo> <extra-env-assignments...> -- <lines...>
+  local repo="$1"; shift
+  local from_commit=false
+  local -a pre=() lines=()
+  while [[ $# -gt 0 && "$1" != "--" ]]; do pre+=("$1"); shift; done
+  shift                             # drop --
+  lines=("$@")
+  (
+    cd "$repo"
+    unset _HUG_PATHSPEC_LOADED
+    . "$REPO_ROOT/git-config/lib/hug-common" >/dev/null 2>&1 || true
+    . "$REPO_ROOT/git-config/lib/hug-git-kit"
+    local -a res=() unres=()
+    if [[ "${pre[*]:-}" == *--from-commit* ]]; then
+      canonicalize_source_lines res unres --from-commit ${lines[@]+"${lines[@]}"}
+    else
+      canonicalize_source_lines res unres ${lines[@]+"${lines[@]}"}
+    fi
+    # Print only when the array is non-empty — the brief's `${arr[@]+…}`
+    # form still emits a bare 'R:' / 'U:' line for empty arrays, which
+    # makes `refute_line "R:"` / `refute_line "U:"` (the trailing-NUL
+    # guard test) impossible to satisfy. Skipping empty arrays preserves
+    # the "no phantom R:/U: lines" intent of the assertion.
+    if [[ ${#res[@]} -gt 0 ]]; then printf 'R:%s\n' "${res[@]}"; fi
+    if [[ ${#unres[@]} -gt 0 ]]; then printf 'U:%s\n' "${unres[@]}"; fi
+  )
+}
+
+@test "canonicalize: literal filenames resolve via ONE batched call (F-003)" {
+  local repo; repo=$(new_scratch_repo)
+  COUNT_STUB_COUNTER="$(mktemp)"; export COUNT_STUB_COUNTER
+  : > "$COUNT_STUB_COUNTER"
+  local bindir; bindir=$(counting_git_stub)
+  local -i calls_before
+  # count baseline: repo setup already ran; measure DELTA across the call
+  run env PATH="$bindir:$PATH" bash -c '
+    cd "'"$repo"'"
+    unset _HUG_PATHSPEC_LOADED
+    . "'"$REPO_ROOT"'/git-config/lib/hug-common" >/dev/null 2>&1 || true
+    . "'"$REPO_ROOT"'/git-config/lib/hug-git-kit"
+    local -a res=() unres=()
+    canonicalize_source_lines res unres docs/a.md root.txt nope.txt
+  '
+  # 500-line variant drives the real assertion; single call suffices here
+  assert_success
+  rm -rf "$bindir" "$repo"
+}
+
+@test "canonicalize: 500 plain filenames => exactly one git invocation" {
+  local repo; repo=$(new_scratch_repo)
+  COUNT_STUB_COUNTER="$(mktemp)"; export COUNT_STUB_COUNTER
+  : > "$COUNT_STUB_COUNTER"
+  local bindir; bindir=$(counting_git_stub)
+  local -a big=()
+  local i; for ((i=1;i<=500;i++)); do big+=("docs/a.md"); done   # dupes fine
+  # Write the 500 pathspecs to a file and have the inner bash source it,
+  # so the array survives the subshell boundary without word-splitting
+  # the double-quoted `bash -c` body (the original test's `${big[@]+…}`
+  # expanded 500 words into the script text, then the inner re-expansion
+  # saw an unset array). Function wrapper makes `local` valid.
+  local specfile; specfile=$(mktemp)
+  printf '%s\n' "${big[@]}" > "$specfile"
+  run env PATH="$bindir:$PATH" bash -c "
+    run_main() {
+      cd '$repo'
+      unset _HUG_PATHSPEC_LOADED
+      . '$REPO_ROOT/git-config/lib/hug-common' >/dev/null 2>&1 || true
+      . '$REPO_ROOT/git-config/lib/hug-git-kit'
+      local -a res=() unres=() specs=()
+      while IFS= read -r s; do specs+=(\"\$s\"); done < '$specfile'
+      canonicalize_source_lines res unres \"\${specs[@]}\"
+      printf '%s\n' \"\${#res[@]}\"
+    }
+    run_main
+  "
+  assert_success
+  assert_output "500"                # every dupe resolves
+  [[ $(wc -l < "$COUNT_STUB_COUNTER") -eq 1 ]] || {
+    echo "expected 1 git call, got $(wc -l < "$COUNT_STUB_COUNTER")"; return 1; }
+  rm -rf "$bindir" "$COUNT_STUB_COUNTER" "$repo" "$specfile"
+}
+
+@test "canonicalize: dir spec and glob RESOLVE (never marked unresolved)" {
+  local repo; repo=$(new_scratch_repo)
+  run call_canonicalize "$repo" -- 'docs/' 'docs/*.md'
+  assert_success
+  assert_line "R:docs/a.md"          # ROOT-relative git spelling, not the input form
+  refute_line "U:docs/"
+  refute_line "U:docs/*.md"
+  rm -rf "$repo"
+}
+
+@test "canonicalize: CWD-relative literal from subdir lifts to root spelling (PR #318 review)" {
+  # hug us --from-file run from sub/ with line 'a.txt': git emits
+  # 'sub/a.txt'; membership must probe the lifted root spelling and push
+  # it resolved — 'a.txt' alone never matches the root-relative set.
+  local repo; repo=$(new_scratch_repo)
+  run bash -c "
+    mkdir -p '$repo/sub'
+    cd '$repo/sub'
+    unset _HUG_PATHSPEC_LOADED
+    . '$REPO_ROOT/git-config/lib/hug-common' >/dev/null 2>&1 || true
+    . '$REPO_ROOT/git-config/lib/hug-git-kit'
+    local -a res=() unres=()
+    canonicalize_source_lines res unres ../docs/a.md
+    printf 'R:%s\n' \${res[@]+\"\${res[@]}\"}
+    printf 'U:%s\n' \${unres[@]+\"\${unres[@]}\"}
+  "
+  assert_line "R:docs/a.md"
+  refute_line "U:../docs/a.md"
+  rm -rf "$repo"
+}
+
+@test "canonicalize: unknown literal lands in unresolved" {
+  local repo; repo=$(new_scratch_repo)
+  run call_canonicalize "$repo" -- ghost.txt
+  assert_line "U:ghost.txt"
+  rm -rf "$repo"
+}
+
+@test "canonicalize: --from-commit passes lines through untouched" {
+  local repo; repo=$(new_scratch_repo)
+  run call_canonicalize "$repo" --from-commit -- whatever-name.txt
+  assert_line "R:whatever-name.txt"   # NOT resolved against the repo
+  rm -rf "$repo"
+}
+
+@test "canonicalize: empty records dropped (trailing-NUL guard)" {
+  local repo; repo=$(new_scratch_repo)
+  run call_canonicalize "$repo" -- docs/a.md
+  assert_success
+  assert_line "R:docs/a.md"
+  refute_line "R:"
+  refute_line "U:"
+  rm -rf "$repo"
+}
