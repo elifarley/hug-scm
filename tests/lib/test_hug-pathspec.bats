@@ -128,13 +128,20 @@ call_build_scope_set() {           # <repo-cd-dir> <out-var> <pathspecs...>
   rm -rf "$repo"
 }
 
-# Counting git stub: increments $COUNTER_FILE then delegates to real git.
+# Counting git stub: ONLY `git ls-files …` invocations are counted;
+# every other git subcommand (rev-parse, etc.) delegates to the real
+# binary so environment probes (e.g. --show-prefix, --verify -q HEAD)
+# keep working. The F-003 contract is "ONE `git ls-files` invocation",
+# NOT "one git invocation of any kind".
 counting_git_stub() {
   local bin_dir; bin_dir=$(mktemp -d)
+  local real_git; real_git=$(command -v git)
   cat > "$bin_dir/git" <<STUB
 #!/usr/bin/env bash
-printf 'x\n' >> '${COUNT_STUB_COUNTER}'
-exec $(command -v git) "\$@"
+if [[ "\$1" == "ls-files" ]]; then
+  printf 'x\n' >> '${COUNT_STUB_COUNTER}'
+fi
+exec '${real_git}' "\$@"
 STUB
   chmod +x "$bin_dir/git"
   printf '%s' "$bin_dir"
@@ -188,7 +195,7 @@ call_canonicalize() {               # <repo> <extra-env-assignments...> -- <line
   rm -rf "$bindir" "$repo"
 }
 
-@test "canonicalize: 500 plain filenames => exactly one git invocation" {
+@test "canonicalize: 500 plain filenames => exactly one git ls-files invocation" {
   local repo; repo=$(new_scratch_repo)
   COUNT_STUB_COUNTER="$(mktemp)"; export COUNT_STUB_COUNTER
   : > "$COUNT_STUB_COUNTER"
@@ -217,8 +224,11 @@ call_canonicalize() {               # <repo> <extra-env-assignments...> -- <line
   "
   assert_success
   assert_output "500"                # every dupe resolves
+  # F-003 gate: exactly one `git ls-files` invocation (other git
+  # subcommands — rev-parse --show-prefix, rev-parse --verify -q HEAD —
+  # are environment probes, not the batched call).
   [[ $(wc -l < "$COUNT_STUB_COUNTER") -eq 1 ]] || {
-    echo "expected 1 git call, got $(wc -l < "$COUNT_STUB_COUNTER")"; return 1; }
+    echo "expected 1 git ls-files call, got $(wc -l < "$COUNT_STUB_COUNTER")"; return 1; }
   rm -rf "$bindir" "$COUNT_STUB_COUNTER" "$repo" "$specfile"
 }
 
@@ -275,4 +285,41 @@ call_canonicalize() {               # <repo> <extra-env-assignments...> -- <line
   refute_line "R:"
   refute_line "U:"
   rm -rf "$repo"
+}
+
+@test "canonicalize: plain CWD-relative literal rides the batch (lift preserved)" {
+  # From sub/, 'a.txt' is a CWD-relative literal: ls-files --full-name
+  # emits 'sub/a.txt', so the lift must compute show-prefix ONCE (hoisted)
+  # and prepend 'sub/' before probing the batch. With the prior deviation
+  # (base hardcoded to ""), this would fall through to the per-line
+  # fallback — verified here: the ls-files counter reads 1, meaning
+  # the BATCH resolved it.
+  local repo; repo=$(new_scratch_repo)
+  mkdir -p "$repo/sub"
+  # Add a second tracked file at sub/ so the repo isn't identical to root.
+  echo s > "$repo/sub/a.txt"
+  git -C "$repo" add -A
+  git -C "$repo" commit -q -m subfile
+  COUNT_STUB_COUNTER="$(mktemp)"; export COUNT_STUB_COUNTER
+  : > "$COUNT_STUB_COUNTER"
+  local bindir; bindir=$(counting_git_stub)
+  run env PATH="$bindir:$PATH" bash -c '
+    cd "'"$repo"'/sub"
+    unset _HUG_PATHSPEC_LOADED
+    . "'"$REPO_ROOT"'/git-config/lib/hug-common" >/dev/null 2>&1 || true
+    . "'"$REPO_ROOT"'/git-config/lib/hug-git-kit"
+    local -a res=() unres=()
+    canonicalize_source_lines res unres a.txt
+    if [[ ${#res[@]} -gt 0 ]]; then printf "R:%s\n" "${res[@]}"; fi
+    if [[ ${#unres[@]} -gt 0 ]]; then printf "U:%s\n" "${unres[@]}"; fi
+  '
+  assert_success
+  assert_line "R:sub/a.txt"
+  refute_line "U:a.txt"
+  refute_line "U:"
+  # F-003: the batched ls-files call resolved it — counter == 1 means
+  # no per-line fallback happened.
+  [[ $(wc -l < "$COUNT_STUB_COUNTER") -eq 1 ]] || {
+    echo "expected 1 git ls-files call (batch), got $(wc -l < "$COUNT_STUB_COUNTER")"; return 1; }
+  rm -rf "$bindir" "$COUNT_STUB_COUNTER" "$repo"
 }

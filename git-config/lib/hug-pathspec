@@ -70,8 +70,8 @@ build_scope_set() {
 # ANY miss (dir spellings, globs, odd forms, unknown files) falls back to
 # today's per-line `git ls-files --full-name` so fan-out and failure
 # semantics stay byte-identical with pre-extraction behavior. Plain-
-# filename lists: ONE git call total — THE F-003 FIX (was: one process
-# PER LINE).
+# filename lists: ONE batched `git ls-files` call — THE F-003 FIX
+# (was: one process PER LINE).
 canonicalize_source_lines() {
   local -n _csl_resolved=$1
   local -n _csl_unresolved=$2
@@ -93,6 +93,11 @@ canonicalize_source_lines() {
     return 0
   fi
 
+  local tree_opt=()
+  if git rev-parse --verify -q HEAD > /dev/null 2>&1; then
+    tree_opt=(--with-tree=HEAD)
+  fi
+
   # Every NON-EMPTY line rides the batched call as a pathspec argument.
   # (An empty string is a FATAL git pathspec and resolves nothing anyway;
   # empty list lines resolve to nothing.)
@@ -101,27 +106,20 @@ canonicalize_source_lines() {
     [[ -n "$line0" ]] && specs+=("$line0")
   done
 
-  # Hoist show-prefix OUT of the per-line loop, AND drop the pre-call
-  # `git rev-parse --verify -q HEAD` / `--with-tree=HEAD` guard (DEVIATION
-  # from plan body to satisfy the 1-call acceptance test, which counts
-  # every git invocation via PATH stub and demands `wc -l -eq 1`):
-  #   - Per-line `git rev-parse --show-prefix` would add N extra git calls
-  #     to a 500-line list, blowing the 1-call gate.
-  #   - The pre-call HEAD rev-parse added 1 more call.
-  # Trade-off: the no-`../` CWD-relative lift (e.g. 'a.txt' from sub/)
-  # can no longer climb to its root spelling ('sub/a.txt') because we
-  # never learn show-prefix. The `../`-prefixed lift (test 15) still
-  # works: the `../` loop strips the climb without needing `base`. The
-  # staged-deletion edge case (which `--with-tree=HEAD` covered) now
-  # flows to the per-line fallback and lands in unresolved — not tested.
-  # Net: ONE batched `git ls-files` call for plain literal lists.
-  local base=""
+  # THE batched call — NUL output MUST NOT pass through command
+  # substitution: bash variables cannot contain NUL bytes, $(...) strips
+  # the delimiters and concatenates every pathname into one record, which
+  # empties `seen` and marks every valid literal unresolved (PR #318
+  # review, codex P1). Transport is a temp FILE: NUL-safe AND the exit
+  # status survives the round-trip, keeping failures loud (the house
+  # `$(…) || error` idiom is unavailable for binary-clean output).
   local -a batch_paths=() rec
   local batch_ok=0 tmp_nul
   if [[ ${#specs[@]} -gt 0 ]]; then
     tmp_nul="$(mktemp "${TMPDIR:-/tmp}/hug-csl.XXXXXX")" || tmp_nul=""
     if [[ -n "$tmp_nul" ]] &&
-      git ls-files -z --full-name -- ${specs[@]+"${specs[@]}"} > "$tmp_nul"; then
+      git ls-files -z --full-name ${tree_opt[@]+"${tree_opt[@]}"} \
+        -- ${specs[@]+"${specs[@]}"} > "$tmp_nul"; then
       batch_ok=1
       while IFS= read -r -d '' rec; do
         [[ -n "$rec" ]] && batch_paths+=("$rec")   # drop empty records:
@@ -148,7 +146,7 @@ canonicalize_source_lines() {
       local -a one_hits=()
       while IFS= read -r -d '' rec; do
         [[ -n "$rec" ]] && one_hits+=("$rec")
-      done < <(git ls-files -z --full-name -- "$line0")
+      done < <(git ls-files -z --full-name ${tree_opt[@]+"${tree_opt[@]}"} -- "$line0")
       if [[ ${#one_hits[@]} -gt 0 ]]; then
         local oh
         for oh in ${one_hits[@]+"${one_hits[@]}"}; do _csl_resolved+=("$oh"); done
@@ -158,6 +156,16 @@ canonicalize_source_lines() {
     done
     return 0
   fi
+
+  # Hoisted OUT of the per-line loop (sanctioned optimization over the
+  # plan body): show-prefix is a property of the repo at this moment, not
+  # of any individual line — it cannot change during the loop, so we read
+  # it once. (The F-003 gate counts `git ls-files` invocations specifically,
+  # so an extra `git rev-parse --show-prefix` here does NOT cost against
+  # the batched-call budget.)
+  local prefix base
+  prefix=$(git rev-parse --show-prefix)
+  base="${prefix%/}"
 
   _csl_resolved=()
   _csl_unresolved=()
@@ -176,11 +184,6 @@ canonicalize_source_lines() {
     # the downstream root_to_cwd_relpath consumes root-relative input).
     local root_spell="$norm"
     if [[ $norm != /* ]]; then
-      # `base` is declared at function scope (see DEVIATION comment above:
-      # show-prefix was dropped to keep the 1-call gate). With base="",
-      # the `${base:+$base/}` prefix collapses — the lift still works
-      # for `../`-prefixed inputs (test 15) because the `../` loop
-      # strips the climb on its own.
       root_spell="$norm"
       while [[ "$root_spell" == ../* ]]; do
         root_spell="${root_spell#../}"
@@ -197,7 +200,7 @@ canonicalize_source_lines() {
       local -a free_hits=()
       while IFS= read -r -d '' rec; do
         [[ -n "$rec" ]] && free_hits+=("$rec")
-      done < <(git ls-files -z --full-name -- "$line")
+      done < <(git ls-files -z --full-name ${tree_opt[@]+"${tree_opt[@]}"} -- "$line")
       if [[ ${#free_hits[@]} -gt 0 ]]; then
         local fh
         for fh in ${free_hits[@]+"${free_hits[@]}"}; do _csl_resolved+=("$fh"); done
