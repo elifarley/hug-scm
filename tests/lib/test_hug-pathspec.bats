@@ -57,3 +57,73 @@ relpath_from_sub() {
   run relpath_from_sub a/b a/b/deep/f.txt
   assert_output "deep/f.txt"
 }
+
+# Helper: fresh scratch repo with one committed file
+new_scratch_repo() {
+  local repo; repo=$(mktemp -d)
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@t; git -C "$repo" config user.name t
+  mkdir -p "$repo/docs"
+  echo a > "$repo/docs/a.md"
+  echo r > "$repo/root.txt"
+  git -C "$repo" add -A
+  git -C "$repo" commit -q -m base
+  printf '%s' "$repo"
+}
+
+call_build_scope_set() {           # <repo-cd-dir> <out-var> <pathspecs...>
+  local dir="$1"; local outvar="$2"; shift 2
+  (
+    cd "$dir"
+    unset _HUG_PATHSPEC_LOADED
+    . "$REPO_ROOT/git-config/lib/hug-common" >/dev/null 2>&1 || true
+    . "$REPO_ROOT/git-config/lib/hug-git-kit"
+    build_scope_set "$outvar" "$@"
+    eval "printf '%s\n' \${$outvar[@]+\"\${$outvar[@]}\"}"
+  )
+}
+
+@test "build_scope_set: tracked files in scope" {
+  local repo; repo=$(new_scratch_repo)
+  run call_build_scope_set "$repo" out
+  assert_success
+  assert_line "docs/a.md"
+  assert_line "root.txt"
+  rm -rf "$repo"
+}
+
+@test "build_scope_set: union includes STAGED DELETIONS (index entry gone)" {
+  local repo; repo=$(new_scratch_repo)
+  git -C "$repo" rm -q --cached docs/a.md   # staged deletion
+  run call_build_scope_set "$repo" out
+  assert_success
+  assert_line "docs/a.md"             # present VIA the D-filter half
+  rm -rf "$repo"
+}
+
+@test "build_scope_set: --no-renames splits a staged rename's D side" {
+  local repo; repo=$(new_scratch_repo)
+  git -C "$repo" mv docs/a.md docs/b.md      # staged rename
+  run call_build_scope_set "$repo" out
+  assert_success
+  assert_line "docs/a.md"             # old path joins via --no-renames
+  assert_line "docs/b.md"
+  rm -rf "$repo"
+}
+
+@test "build_scope_set: unborn HEAD does not fatal" {
+  local repo; repo=$(mktemp -d)
+  git -C "$repo" init -q
+  echo x > "$repo/x.txt"; git -C "$repo" add x.txt
+  run call_build_scope_set "$repo" out
+  assert_success
+  assert_line "x.txt"
+  rm -rf "$repo"
+}
+
+@test "build_scope_set: invalid pathspec dies with usage error (exit 2)" {
+  local repo; repo=$(new_scratch_repo)
+  run call_build_scope_set "$repo" out ':('
+  [[ "$status" -eq 2 ]]
+  rm -rf "$repo"
+}

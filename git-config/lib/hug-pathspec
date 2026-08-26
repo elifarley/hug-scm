@@ -35,3 +35,27 @@ root_to_cwd_relpath() {
     printf '%s%s\n' "$climb" "$f"
   fi
 }
+
+# Build the ROOT-relative scope set: tracked ∪ staged-deletions.
+# Usage: build_scope_set <out_arr> <pathspec...>
+# WHY the union (PR-B Codex P1): `ls-files` lists INDEX entries; a staged
+# deletion removes the entry, so without the D-half union,
+# `us --from-commit <c> -- src/` silently leaves 'D src/x' staged.
+# WHY --no-renames: rename detection ON collapses `mv old new` to one
+# R-status whose D side never emits old; splitting restores old.
+build_scope_set() {
+  local -n _bss_out=$1
+  shift
+  local scope_tracked="" scope_deleted="" joined=""
+  scope_tracked=$(git ls-files --full-name -- "$@") ||
+    error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
+  scope_deleted=$(git diff --cached --name-only --diff-filter=D --no-renames -- "$@") ||
+    error_usage "Invalid pathspec in unstage scope. See 'hug help :pathspec'."
+  if [[ -n "$scope_tracked" && -n "$scope_deleted" ]]; then
+    joined="${scope_tracked}"$'\n'"${scope_deleted}"
+  else
+    joined="${scope_tracked}${scope_deleted}"   # no phantom blank line
+  fi
+  _bss_out=()
+  [[ -n "$joined" ]] && mapfile -t _bss_out <<< "$joined"
+}
