@@ -33,7 +33,14 @@ install_test_deps() {
     local repo_url="$1" target_dir="$2"
     if [[ -d "$target_dir/.git" ]]; then
       echo "Updating $(basename "$target_dir")..."
-      git -C "$target_dir" pull --ff-only
+      # pull can FAIL on stale/diverged shallow caches (CI restores old
+      # depth-1 clones); a broken cache must self-repair, not hard-fail
+      # the whole suite under set -e.
+      if ! git -C "$target_dir" pull --ff-only; then
+        echo "  pull failed (stale cache?) — recloning"
+        rm -rf "$target_dir"
+        git clone --depth 1 "$repo_url" "$target_dir"
+      fi
     else
       echo "Installing $(basename "$target_dir")..."
       git clone --depth 1 "$repo_url" "$target_dir"
@@ -77,45 +84,61 @@ bats_version_ok() {
 }
 
 check_bats() {
-  if command -v bats > /dev/null; then
-    bats --version
-    # Version floor with SELF-HEAL: a cached/stale ~/.hug-deps (CI caches
-    # it keyed on this file's hash) must not pin the suite to an old bats —
-    # update the clone, re-resolve, and only then fail hard.
-    if ! bats_version_ok; then
-      echo -e "${YELLOW}⚠ BATS < $BATS_MINIMUM_VERSION, updating local deps...${NC}"
-      install_test_deps
-      # Prefer the freshly updated local clone over a stale system bats.
-      if [[ -x "$BATS_BIN" ]]; then
-        PATH="$BATS_CORE_DIR/bin:$PATH"
-        export PATH
-      fi
-    fi
-    if bats_version_ok; then
-      echo -e "${GREEN}✓ BATS is installed${NC}"
-      return
-    fi
-    echo -e "${RED}❌ Error: BATS >= $BATS_MINIMUM_VERSION required (got $(bats --version 2> /dev/null | awk '{print $NF}')). Run 'make dev-test-deps-install'.${NC}"
-    exit 1
-  fi
-
-  if [[ ! -x "$BATS_BIN" ]]; then
-    echo -e "${YELLOW}⚠ BATS not found, installing locally...${NC}"
-    install_test_deps
-  fi
-
-  if [[ -x "$BATS_BIN" ]]; then
-    PATH="$BATS_CORE_DIR/bin:$PATH"
-    export PATH
-  fi
-
+  # Resolve bats first — system PATH, else the local deps clone (installing
+  # it if absent). Resolution and version gating are SEPARATE steps: gating
+  # only the system-bats path let a stale cached ~/.hug-deps clone run
+  # unchecked, and every test file's floor then failed at load (CI red:
+  # "BATS_VERSION=1.13.0 does not meet required minimum 1.14.0").
   if ! command -v bats > /dev/null; then
-    echo -e "${RED}❌ Error: BATS installation failed${NC}"
-    exit 1
+    if [[ ! -x "$BATS_BIN" ]]; then
+      echo -e "${YELLOW}⚠ BATS not found, installing locally...${NC}"
+      install_test_deps
+    fi
+
+    if [[ -x "$BATS_BIN" ]]; then
+      PATH="$BATS_CORE_DIR/bin:$PATH"
+      export PATH
+    fi
+
+    if ! command -v bats > /dev/null; then
+      echo -e "${RED}❌ Error: BATS installation failed${NC}"
+      exit 1
+    fi
+
+    bats --version
+    echo -e "${GREEN}✓ Using local BATS from $BATS_CORE_DIR${NC}"
+  else
+    bats --version
   fi
 
-  bats --version
-  echo -e "${GREEN}✓ Using local BATS from $BATS_CORE_DIR${NC}"
+  # Version floor with SELF-HEAL — for BOTH resolution paths. A stale or
+  # cached ~/.hug-deps (CI caches it keyed on this file's hash) must not
+  # pin the suite to an old bats: update the deps, prefer the refreshed
+  # local clone over any stale system bats, and only then fail hard.
+  if ! bats_version_ok; then
+    echo -e "${YELLOW}⚠ BATS < $BATS_MINIMUM_VERSION, updating local deps...${NC}"
+    install_test_deps
+    if [[ -x "$BATS_BIN" ]]; then
+      PATH="$BATS_CORE_DIR/bin:$PATH"
+      export PATH
+    fi
+    # Still old? `git pull` can exit 0 without moving the checkout (a
+    # tag/detached or stale shallow clone says "Already up to date" while
+    # holding an old bats). The guaranteed fix is a fresh clone.
+    if ! bats_version_ok && [[ -d "$BATS_CORE_DIR/.git" ]]; then
+      echo -e "${YELLOW}  still < $BATS_MINIMUM_VERSION — recloning bats-core${NC}"
+      rm -rf "$BATS_CORE_DIR"
+      git clone --depth 1 https://github.com/bats-core/bats-core.git "$BATS_CORE_DIR"
+    fi
+  fi
+
+  if bats_version_ok; then
+    echo -e "${GREEN}✓ BATS $(bats --version 2> /dev/null | awk '{print $NF}') ready${NC}"
+    return
+  fi
+
+  echo -e "${RED}❌ Error: BATS >= $BATS_MINIMUM_VERSION required (got $(bats --version 2> /dev/null | awk '{print $NF}')). Run 'make dev-test-deps-install'.${NC}"
+  exit 1
 }
 
 # Check if helper libraries are available
