@@ -2,6 +2,20 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [Unreleased]
+
+### Refactored
+
+- **`hug-pathspec` library (new)** — git-us's inline scope-intersection machinery
+  (tracked ∪ staged-deletion scope sets, source-list canonicalization, root↔CWD
+  relpath conversion) extracted for direct unit testing. Includes the F-003 fix:
+  `us --from-file` lists now resolve via one batched `git ls-files` call instead
+  of one subprocess per line. Zero behavior change.
+- **`hug-status-listing` library (new) + `sl_family_main`** — the five sl*
+  listings (`sls`/`slu`/`slk`/`sli`/`slc`) collapse onto one shared main body;
+  per-mode variance lives in a mode table. Future family members are born on the
+  template. Zero behavior change.
+
 ## [1.15.0.0] - 2026-08-25
 
 Closes elifarley/hug-scm#313 (via elifarley/hug-scm#316): the two-stream single-file guard that `fa`/`fb`/`fborn`/`fcon` each carried as a near-identical ~40-line inline block (identical modulo command label) now lives once in `hug-cli-flags`. Pure refactor — zero user-visible behavior change; every observable behavior is pinned by conformance rows.
