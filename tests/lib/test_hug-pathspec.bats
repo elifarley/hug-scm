@@ -65,6 +65,10 @@ relpath_from_sub() {
   # judged by $#: an explicitly supplied "" prefix is honored as-is.
   local repo; repo=$(mktemp -d)
   git -C "$repo" init -q
+  # Identity is REQUIRED: CI runners have no global git identity and the
+  # commit below dies with exit 128 ("empty ident name") without it —
+  # local machines mask this via their global config (PR #318 CI red).
+  git -C "$repo" config user.email t@t; git -C "$repo" config user.name t
   echo x > "$repo/top.txt"
   git -C "$repo" add -A; git -C "$repo" commit -qm base
   COUNT_STUB_COUNTER="$(mktemp)"; export COUNT_STUB_COUNTER
