@@ -84,6 +84,25 @@ Pathspec scope-set construction, source-list canonicalization, and root↔CWD re
 - `build_scope_set <out_arr> <pathspec…>` — tracked ∪ staged-deletions, root-relative (Task 3)
 - `canonicalize_source_lines <out_resolved> <out_unresolved> [--from-commit] <line…>` — batched F-003 canonicalization (Task 4)
 
+### hug-status-listing
+
+Shared main body for the sl* listing family (`git-sls`, `git-slu`, plus `git-slk`/`git-sli`/`git-slc` after Task 7) (#303). One function, five modes; per-mode variance lives in the private mode table inside `sl_family_main`.
+
+**Features:**
+- `sl_family_main <mode> <display_name> [args…]` — the unified body for the sl* family
+  - `<mode>`: `staged` | `unstaged` | `untracked` | `ignored` | `conflicts`
+  - Encodes the family-wide skeleton: pathspec split (`parse_common_flags_with_pathspecs`) → action-flag rejection (`reject_action_flags`) → quiet rehydrate from `HUG_QUIET` → own-loop over pre-`--` args → `check_git_repo` → `validate_pathspecs_or_die` → count/json/listing dispatch → summary gate (`exec hug s` iff un-scoped AND not quiet)
+  - `quiet-extra`: single-status kinds (`untracked`/`ignored`/`conflicts`) append `--suppress-status` to `list_opts` when quiet, dropping the redundant status column for those listings
+  - `-h` is NOT handled here: `parse_common_flags_with_pathspecs` routes it to the caller's `show_help` (the caller's scope owns the help body — bytes-frozen per the Task-1 conformance suites)
+  - Unknown `-*` tokens in the own-loop are rejected with `error_usage` (exit 2) — `display_name` is interpolated so the message identifies the calling command
+  - The summary gate (#292 spec §3.1) is suppressed iff pathspecs are active or the run is quiet; a trailing inert bare `--` keeps summary parity (pathspecs[] stays empty)
+  - The count arm (`run_count_mode`) is terminating (exit 0) — never call it via `$(…)`
+  - Script-local FOREVER (never enter this lib): `_hug_category`, the whole `--search-meta` block, and slc's `_hug_keywords` line — those are per-command, not family-shared
+
+**Family contract pinned by:**
+- `tests/unit/test_sl_family_template.bats` — drift guard (every migrated sl* script must call `sl_family_main` and must NOT carry an own-loop)
+- The four pre-existing status suites (`test_status_staging.bats`, `test_status_json.bats`, `test_status_query_flags.bats`, `test_pathspec_conformance.bats`) — byte-parity pins
+
 ### hug-gum
 
 Interactive selection and filtering with charmbracelet/gum integration.

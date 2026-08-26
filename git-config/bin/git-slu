@@ -6,7 +6,7 @@ test "${1:-}" = '--search-meta' && {
 }
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit hug-select-files output_json_status; do . "$CMD_BASE/../lib/$f"; done
+for f in hug-common hug-git-kit hug-select-files output_json_status hug-status-listing; do . "$CMD_BASE/../lib/$f"; done
 set -euo pipefail
 
 # Part of the Hug tool suite
@@ -59,116 +59,4 @@ EXAMPLES:
 EOF
 }
 
-# Parse arguments.
-# NOTE: parsing runs BEFORE check_git_repo so `-h` works from any cwd and
-# help_search.py can index this script (`<script> --help` → show_help,
-# exit 0) — same ordering as git-statusbase / git-slc.
-json_output=false
-quiet=false
-count_only=false
-pathspecs=()
-
-# Uniform pathspec split (#292 PR-B): flags before '--', pathspecs after it —
-# see parse_common_flags_with_pathspecs in hug-cli-flags for the contract.
-# WITHOUT --picker on purpose: slu is a listing, so a trailing bare '--'
-# must stay inert (summary parity), never open an interactive picker.
-eval "$(parse_common_flags_with_pathspecs "$@")"
-# Action flags are meaningless on a listing — reject loudly (codex P2),
-# never silently accept and print an unscoped listing.
-reject_action_flags "hug slu"
-
-# parse_common_flags CONSUMED -q and exported HUG_QUIET — rehydrate the local
-# AFTER the split (also covers a pre-set HUG_QUIET environment). Without
-# this, `hug slu -q` (and HUG_QUIET=T) would print the trailing summary —
-# the own-loop below never sees the flag (the split already ate it).
-[[ ${HUG_QUIET:-} == T ]] && quiet=true
-
-# Seed the ONE pathspec collection with the split's post-'--' data first;
-# pre-arg positionals join it in the own-loop below (git unions pathspecs;
-# ONE array so every sink reads the same scope).
-pathspec_pathspecs_into pathspecs
-
-# Own-loop over the pre-args only: slu's accepted pre-'--' grammar.
-# Unknown tokens are ONLY the -* class — bare positionals collect as
-# pathspecs (git parity; SAME rule as statusbase — one rule family-wide).
-for arg in "$@"; do
-  case "$arg" in
-  --json)
-    json_output=true
-    ;;
-  -c | --count)
-    count_only=true
-    ;;
-  -q | --quiet)
-    quiet=true # UNREACHABLE via the split (it consumes every pre-'--' -q unconditionally); kept for family-template symmetry
-    ;;
-  -*)
-    # Loud by contract (was: silent pathspec swallow — '-xX' used to become a
-    # filter matching nothing, exit 0). exit 2 = HUG_EX_USAGE.
-    error_usage "Unknown option: $arg. Pathspecs beginning with '-' require '--': hug slu -- $arg. See 'hug help :pathspec'."
-    ;;
-  *)
-    pathspecs+=("$arg")
-    ;;
-  esac
-done
-
-# Early exit if not in Git repo (after parsing — see show_help note above)
-check_git_repo
-
-# Loud one-time pathspec validation (#298 roast MAJOR 1): must run HERE, at
-# the command entry — the listing arm below suppresses stderr and the JSON
-# arm collects in a subshell, so an error raised deeper never reaches the
-# user intact. See validate_pathspecs_or_die (hug-git-files) for the WHY.
-validate_pathspecs_or_die ${pathspecs[@]+"${pathspecs[@]}"}
-
-# Build list_files_with_status options for unstaged files only
-list_opts=("--unstaged")
-
-# Add pathspecs behind the protective '--'. The selector-level loop in
-# list_files_with_status is separator-aware (Task 5 lib surgery), so this
-# '--' is HONORED: a pathspec spelled like an option ('--cwd') stays data,
-# and the separator itself is consumed — never a phantom positive pathspec
-# (which is what used to print "No unstaged files matching '--' 'src/'").
-if [[ ${#pathspecs[@]} -gt 0 ]]; then
-  list_opts+=("--" "${pathspecs[@]}")
-fi
-
-# Count mode: -c/--count dispatch (see run_count_mode in hug-select-files).
-# --json passed only when $json_output is true (the codebase stores booleans as
-# true/false strings; ${json_output:+--json} would ALWAYS expand — see run_count_mode).
-# The protective '--' feeds the separator-aware count_files_with_status.
-if $count_only; then
-  if $json_output; then
-    run_count_mode --json unstaged ${pathspecs[@]+"--" "${pathspecs[@]}"}
-  else
-    run_count_mode unstaged ${pathspecs[@]+"--" "${pathspecs[@]}"}
-  fi
-fi
-
-# JSON output mode
-if $json_output; then
-  output_json_status "${list_opts[@]}"
-else
-  # Show unstaged files
-  if ! list_files_with_status "${list_opts[@]}" 2> /dev/null; then
-    if [[ ${#pathspecs[@]} -gt 0 ]]; then
-      pathspec_list=""
-      printf -v pathspec_list "'%s' " "${pathspecs[@]}"
-      info "No unstaged files matching ${pathspec_list% } found."
-    else
-      info "No unstaged files."
-    fi
-  fi
-
-  # Sink 4 (#292 spec §3.1, family-wide): the trailing whole-repo `hug s`
-  # summary is suppressed iff pathspecs are active (array-non-empty, NOT
-  # '--'-seen — the inert bare '--' keeps summary parity with the
-  # unfiltered run: a scoped run's whole-repo summary would misdescribe
-  # the scope). Same gate as git-statusbase (~:196). Script scope — no
-  # 'local' here (Bash: "can only be used in a function"; under set -e
-  # that error kills every non-quiet listing).
-  if ! $quiet && [[ ${#pathspecs[@]} -eq 0 ]]; then
-    exec hug s
-  fi
-fi
+sl_family_main unstaged "hug slu" "$@"
