@@ -1,0 +1,200 @@
+# shellcheck shell=bash
+# Library: hug-status-listing — shared main body for the sl* listing
+# family (#303). One function, five modes; per-mode variance lives in the
+# private mode table below (roast C-003/C-004: the table is the COMPLETE
+# lib-side contract — quiet-extra included).
+#
+# Script-local FOREVER (never enter this lib): _hug_category, the whole
+# --search-meta block, slc's _hug_keywords line, and each script's own
+# show_help — the -h dispatch calls show_help BY NAME from caller scope,
+# so a family member that defines none prints nothing and exits 0 on -h.
+#
+# Depends on (reached via the sourcing script's preamble — same bundle the
+# five scripts load today: hug-common hug-git-kit hug-select-files
+# output_json_status):
+#   - parse_common_flags_with_pathspecs  hug-cli-flags
+#   - reject_action_flags                hug-cli-flags
+#   - pathspec_pathspecs_into            hug-cli-flags
+#   - check_git_repo                     hug-git-repo
+#   - validate_pathspecs_or_die          hug-git-files
+#   - run_count_mode                     hug-select-files
+#   - list_files_with_status             hug-select-files
+#   - output_json_status                 output_json_status
+#   - info, error_usage                  hug-output / hug-cli-flags
+#
+# Sourced directly by the five scripts' own source loop (per the brief);
+# NOT registered in hug-git-kit (unlike hug-pathspec, this lib is family-
+# internal and the listing scripts' preamble is the only entry point).
+
+# Prevent double-loading
+[[ -n "${_HUG_STATUS_LISTING_LOADED:-}" ]] && return 0
+readonly _HUG_STATUS_LISTING_LOADED=1
+
+# Shared main for the sl* family.
+# Usage: sl_family_main <mode> <display_name> [args...]
+# Modes: staged | unstaged | untracked | ignored | conflicts
+#
+# Behavioral contract (pinned by the Task-1 conformance suites +
+# tests/unit/test_sl_family_template.bats — drift-guard):
+#   - shows caller-scope `show_help` for -h (parse_common_flags_with_pathspecs
+#     routes the call; we do NOT add a -h arm here)
+#   - own-loop over pre-'--' args: --json, -c/--count, -* unknown
+#     (exit 2 via error_usage), bare positionals become pathspecs
+#   - post-'--' data fed via pathspec_pathspecs_into (the split's
+#     canonical read path)
+#   - count mode (run_count_mode) is TERMINATING (exit 0); it never
+#     returns. --json vs non-json thread is a literal if/else on the
+#     boolean (do NOT use ${json_output:+--json} — see run_count_mode)
+#   - listing mode (list_files_with_status) appends '--' <pathspec...>
+#     when pathspecs are non-empty; the selector-level loop is
+#     separator-aware (Task 5)
+#   - quiet-extra: single-status kinds (untracked/ignored/conflicts) pass
+#     --suppress-status when quiet — drops the redundant status column
+#   - summary gate (#292 spec §3.1): the trailing whole-repo `hug s`
+#     summary is suppressed iff scoped or quiet; bare inert `--` keeps
+#     summary parity (pathspecs[] stays empty)
+#   - HUG_QUIET=T environment is rehydrated AFTER the split (parse_common_flags
+#     consumed -q, exported HUG_QUIET — the own-loop never sees the flag)
+#   - errors and validation: reject_action_flags (action flag rejection,
+#     exit 2), check_git_repo (post-parse, so -h works from any cwd —
+#     same ordering as statusbase / the five sl* scripts), and
+#     validate_pathspecs_or_die (loud once here — the listing arm
+#     suppresses stderr and the JSON arm collects in a subshell, so an
+#     error raised deeper never reaches the user intact; #298 roast MAJOR 1)
+sl_family_main() {
+  local mode="$1"; shift
+  local display_name="$1"; shift
+
+  # Mode table — the COMPLETE lib-side behavioral contract.
+  # Fields: list_flag | count token | no-match noun | quiet-extra flag
+  local list_flag count_token noun quiet_extra=""
+  case "$mode" in
+    staged)    list_flag="--staged";    count_token="staged";     noun="staged" ;;
+    unstaged)  list_flag="--unstaged";  count_token="unstaged";   noun="unstaged" ;;
+    untracked) list_flag="--untracked"; count_token="untracked";  noun="untracked";  quiet_extra="--suppress-status" ;;
+    ignored)   list_flag="--ignored";   count_token="ignored";    noun="ignored";    quiet_extra="--suppress-status" ;;
+    conflicts) list_flag="--conflicts"; count_token="conflicted"; noun="conflicted"; quiet_extra="--suppress-status" ;;
+    *) error "sl_family_main: unknown mode '$mode'" 1 ;;  # programming error
+  esac
+
+  # local: these five are consumed only inside this function; without it
+  # they'd leak into caller scope the day anyone wraps sl_family_main.
+  local json_output quiet count_only
+  local -a pathspecs=()
+  json_output=false
+  quiet=false
+  count_only=false
+
+  # Uniform pathspec split (#292 PR-B): flags before '--', pathspecs after.
+  # WITHOUT --picker on purpose: sl* is a listing family, so a trailing bare
+  # '--' must stay inert (summary parity), never open an interactive picker.
+  eval "$(parse_common_flags_with_pathspecs "$@")"
+  # Action flags are meaningless on a listing — reject loudly (codex P2),
+  # never silently accept and print an unscoped listing.
+  reject_action_flags "$display_name"
+
+  # parse_common_flags CONSUMED -q and exported HUG_QUIET — rehydrate the
+  # local AFTER the split (also covers a pre-set HUG_QUIET environment).
+  # Without this, `hug sls -q` (and HUG_QUIET=T) would print the trailing
+  # summary — the own-loop below never sees the flag (the split already
+  # ate it). Single-status kinds ALSO need this rehydration: it gates the
+  # quiet-extra --suppress-status appended to list_opts below — without
+  # rehydration, `hug slk -q` (and HUG_QUIET=T) would lose --suppress-
+  # status and print status prefixes — the exact review-P2 regression
+  # the plan flags.
+  [[ ${HUG_QUIET:-} == T ]] && quiet=true
+
+  # Seed the ONE pathspec collection with the split's post-'--' data first;
+  # pre-arg positionals join it in the own-loop below (git unions pathspecs;
+  # ONE array so every sink reads the same scope).
+  pathspec_pathspecs_into pathspecs
+
+  # Own-loop over the pre-args only: sl*'s accepted pre-'--' grammar.
+  # Unknown tokens are ONLY the -* class — bare positionals collect as
+  # pathspecs (git parity: 'hug sls src/' filters today and keeps filtering;
+  # SAME rule as statusbase — one rule for the whole sl* family).
+  for arg in "$@"; do
+    case "$arg" in
+    --json)
+      json_output=true
+      ;;
+    -c | --count)
+      count_only=true
+      ;;
+    -q | --quiet)
+      quiet=true # UNREACHABLE via the split (it consumes every pre-'--' -q unconditionally); kept for family-template symmetry
+      ;;
+    -*)
+      # Loud by contract (was: silent pathspec swallow — '-xX' used to become a
+      # filter matching nothing, exit 0). exit 2 = HUG_EX_USAGE.
+      error_usage "Unknown option: $arg. Pathspecs beginning with '-' require '--': $display_name -- $arg. See 'hug help :pathspec'."
+      ;;
+    *)
+      pathspecs+=("$arg")
+      ;;
+    esac
+  done
+
+  # Early exit if not in Git repo (after parsing — see show_help note above)
+  check_git_repo
+
+  # Loud one-time pathspec validation (#298 roast MAJOR 1): must run HERE, at
+  # the command entry — the listing arm below suppresses stderr and the JSON
+  # arm collects in a subshell, so an error raised deeper never reaches the
+  # user intact. See validate_pathspecs_or_die (hug-git-files) for the WHY.
+  validate_pathspecs_or_die ${pathspecs[@]+"${pathspecs[@]}"}
+
+  # Build list_files_with_status options for this mode.
+  # QUOTED: list_opts+=("--" "${pathspecs[@]}") — byte-for-byte with the
+  # pre-extraction git-sls:132 / git-slu:134 (the sketch's unquoted form
+  # would subject the pathspecs to glob/IFS splitting and silently
+  # misroute a path with whitespace).
+  local -a list_opts=("$list_flag")
+  if $quiet && [[ -n "$quiet_extra" ]]; then
+    list_opts+=("$quiet_extra")
+  fi
+  if [[ ${#pathspecs[@]} -gt 0 ]]; then
+    list_opts+=("--" "${pathspecs[@]}")
+  fi
+
+  # Count mode: -c/--count dispatch (see run_count_mode in hug-select-files).
+  # --json passed only when $json_output is true (the codebase stores booleans as
+  # true/false strings; ${json_output:+--json} would ALWAYS expand — see run_count_mode).
+  # The protective '--' feeds the separator-aware count_files_with_status.
+  # WORD-BUNDLE (-- + pathspecs) copied VERBATIM from the pre-extraction
+  # git-slu:143,146 — the count site uses the unprotected form because
+  # count_files_with_status strips a leading '--' itself (see hug-select-files).
+  if $count_only; then
+    if $json_output; then
+      run_count_mode --json "$count_token" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+    else
+      run_count_mode "$count_token" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+    fi
+  fi
+
+  # JSON output mode
+  if $json_output; then
+    output_json_status "${list_opts[@]}"
+  else
+    # Show <kind> files
+    if ! list_files_with_status "${list_opts[@]}" 2> /dev/null; then
+      if [[ ${#pathspecs[@]} -gt 0 ]]; then
+        local pathspec_list=""
+        printf -v pathspec_list "'%s' " "${pathspecs[@]}"
+        info "No ${noun} files matching ${pathspec_list% } found."
+      else
+        info "No ${noun} files."
+      fi
+    fi
+
+    # Summary gate (#292 spec §3.1, family-wide): the trailing whole-repo
+    # `hug s` summary is suppressed iff pathspecs are active (array-non-
+    # empty, NOT '--'-seen — the inert bare '--' keeps summary parity with
+    # the unfiltered run: a scoped run's whole-repo summary would
+    # misdescribe the scope). Same gate as statusbase (~:196) and the five
+    # pre-extraction sl* scripts.
+    if ! $quiet && [[ ${#pathspecs[@]} -eq 0 ]]; then
+      exec hug s
+    fi
+  fi
+}

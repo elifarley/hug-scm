@@ -803,7 +803,6 @@ teardown() {
   # command's REAL exit code (the ! only inverts run's pass criterion), so the
   # companion assert is assert_failure — it bites if the fixture ever has a
   # born HEAD.
-  bats_require_minimum_version 1.5.0
   run ! git rev-parse --verify -q HEAD   # HEAD must be unborn — the guard arm must fire
   assert_failure
   run hug shc 'A-HEAD..master'

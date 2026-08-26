@@ -91,7 +91,6 @@ teardown() {
   # on stdout for the diverged case (the contract: empty + distinct exit code),
   # but git's rev-list may write to stderr; --separate-stderr keeps $output =
   # stdout ONLY so we assert the real contract.
-  bats_require_minimum_version 1.5.0
   run --separate-stderr commit_offset side HEAD
   [ "$status" -eq 2 ]
   assert_output ""
@@ -100,7 +99,6 @@ teardown() {
 @test "commit_offset: invalid ref -> empty stdout, exit 3 (never a fake 0)" {
   # STRICT: an unresolvable ref is exit 3 with EMPTY stdout — the lossy
   # `|| echo 0` swallow of Defect 2 is gone by construction.
-  bats_require_minimum_version 1.5.0
   run --separate-stderr commit_offset NO_SUCH_REF HEAD
   [ "$status" -eq 3 ]
   assert_output ""
@@ -160,7 +158,6 @@ teardown() {
 ################################################################################
 
 @test "count_commits_in_range: invalid start -> non-zero, empty stdout (strict, no swallow)" {
-  bats_require_minimum_version 1.5.0
   run --separate-stderr count_commits_in_range NO_SUCH_REF HEAD
   assert_failure
   assert_output ""        # stdout empty (git's fatal: is on stderr, deliberately uncaptured)
@@ -196,7 +193,6 @@ teardown() {
   # stderr into $output, which would make `assert_output "0"` see that 3-line diagnostic + "0".
   # The contract under test is stdout == "0" + exit 0, so split stderr out (same house pattern
   # as the strict invalid-ref tests above; --separate-stderr needs bats >= 1.5).
-  bats_require_minimum_version 1.5.0
   run --separate-stderr count_commits_in_range_or_zero NO_SUCH_REF HEAD
   assert_success
   assert_output "0"

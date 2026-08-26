@@ -96,12 +96,18 @@ Hug SCM uses a **hybrid architecture** for test repository creation, optimized f
 Run once (or whenever you need an update):
 
 ```bash
-make test-deps-install
+make dev-test-deps-install
 ```
 
 This installs **both BATS and Python test dependencies**:
 - BATS and helper libraries for Bash testing (installed to `$HOME/.hug-deps`)
 - pytest, coverage, and Python dev dependencies for Python library tests
+
+**BATS version requirement:** the suite requires **bats-core ≥ 1.14.0**
+(the floor is declared once in `tests/test_helper.bash` via
+`bats_require_minimum_version` and enforced by `tests/run-tests.sh`, which
+self-updates a stale `~/.hug-deps` clone). Older runners fail fast with an
+actionable message instead of `run`-flag warnings (BW02) or flag-parse errors.
 
 The installation handles both dependency types automatically with graceful fallbacks if installation fails.
 
