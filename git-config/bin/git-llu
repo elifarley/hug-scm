@@ -33,8 +33,13 @@ DESCRIPTION:
     branch (i.e., commits that would be pushed). Shows detailed formatting with
     graph, date, author, and message, followed by a repository status summary.
 
-    If there is no upstream branch or no outgoing commits, shows an informative
-    message instead.
+    If there is no upstream branch, or there are no outgoing commits, shows an
+    informative message instead. With no outgoing commits the message is
+    truthful about the direction: "already synced to <upstream>" when in sync,
+    "branch is behind <upstream> by N commits — pull or rebase to catch up"
+    when behind, or "sync state with <upstream> could not be determined" when
+    it cannot be determined. The message always describes the whole branch,
+    even on a scoped (pathspec-filtered) run.
 
     A scoped run suppresses the trailing whole-repo status summary — it would
     misdescribe the scope (uniform pathspec contract, #292).
@@ -85,6 +90,14 @@ JSON OUTPUT (GitHub-compatible + Hug enhancements):
         "date_range": {"earliest": "...", "latest": "..."}
       }
     }
+
+    Empty envelope (no outgoing commits) - one of three shapes:
+
+      {"commits":[],"summary":{"total_commits":0,"state":"in_sync","behind_count":0}}
+      {"commits":[],"summary":{"total_commits":0,"state":"behind","behind_count":189}}
+      {"commits":[],"summary":{"total_commits":0,"error":"sync_state_unknown"}}
+
+    No upstream configured: {"commits":[],"summary":{"total_commits":0,"error":"no_upstream"}}
 
 SEE ALSO:
     hug ll       : Log commits with detailed formatting

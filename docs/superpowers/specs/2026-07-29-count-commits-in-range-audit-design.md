@@ -177,6 +177,15 @@ count_commits_in_range_or_zero() {
 
 > Note: `git-h-restore` is **not** in this table — it does not call `count_commits_in_range`; it has its own local SHA-equality check (Defect 1, same idiom, different mechanism). It is migrated to `is_aligned` in §5 Sites 3a/3b for DRY consistency.
 
+> **Superseded (2026-08-28), message dimension only:** the SAFE verdicts below
+> for `git-log-outgoing:92` and `git-h-files:122` addressed **exit-code
+> propagation** and remain valid on that dimension. Their claim that
+> `== 0` is the correct "already synced" semantic is **false for message
+> truthfulness**: a behind-only branch also yields `== 0` (verified by
+> execution). Superseded by
+> `2026-08-28-truthful-sync-state-messages-for-llu-lol-h-files-design.md` and
+> elifarley/hug-scm#237/#238.
+
 | Site | Current `== 0` semantics | Class — the REAL invariant | Required change |
 |---|---|---|---|
 | `hug-git-upstream:107` `handle_standard_operation` | alignment/no-op | **UNSAFE (Defect 1)** — `== 0` is not alignment | **→ `is_aligned`** (§5 Site 1) |
