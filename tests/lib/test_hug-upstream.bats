@@ -375,3 +375,32 @@ advance_remote() {
   assert_output ""
   [[ -z "$stderr" ]]
 }
+
+@test "sync_state_of: missing target ref -> hard guard abort (never a state value)" {
+  # The ${1:?} guard is a shell EXIT (rc=1, message on stderr): the function's
+  # contract is "returns 0 always, the state is the VALUE" — so a stateless call
+  # must abort, never default. A defaulted ref (e.g. a future ${1:-HEAD}) would
+  # INVENT sync truth by silently measuring against an arbitrary target.
+  run sync_state_of
+  assert_failure
+  assert_output --partial "sync_state_of: target ref required"
+  refute_output --partial "in_sync"
+  refute_output --partial "unknown"
+}
+
+@test "report_empty_outgoing: missing args -> hard guard abort on each position" {
+  # All three ${N:?} guards, one invocation per position (each `run` resets
+  # $output/$status, so assert immediately after each). Guards fire before any
+  # git call — pure argument-contract enforcement, no repo state involved.
+  run report_empty_outgoing
+  assert_failure
+  assert_output --partial "report_empty_outgoing: noun required"
+
+  run report_empty_outgoing "No outgoing changes"
+  assert_failure
+  assert_output --partial "report_empty_outgoing: upstream display required"
+
+  run report_empty_outgoing "No outgoing changes" "origin/main"
+  assert_failure
+  assert_output --partial "report_empty_outgoing: target ref required"
+}
