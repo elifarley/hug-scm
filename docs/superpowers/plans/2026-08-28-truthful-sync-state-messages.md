@@ -651,8 +651,8 @@ EOF
 - [ ] `hug llu -h` documents behind + unknown and the three empty JSON envelopes
 - [ ] The 2026-07-29 audit doc carries a superseded-note scoping its SAFE verdicts to exit-code propagation
 - [ ] The 2026-08-16 uniform-pathspec spec's stale empty-envelope sentence (~:428) carries an update pointer to this design's §3 three-state contract
-- [ ] Gate 1 (mechanical): the live-code grep over the three fixed scripts returns nothing (exit 1)
-- [ ] Gate 2 (perimeter audit): the docs/superpowers/-excluded grep returns only the lib docstring, `git-wtsh`/`git-stats-branch` correct-code hits, and the two test partials
+- [ ] Gate 1 (mechanical): the live-code grep over the three fixed scripts returns AT MOST the single mandated show_help quote line (`git-config/bin/git-llu:38`, quoting the NEW truthful runtime message) — any other hit is a FAIL
+- [ ] Gate 2 (perimeter audit): the docs/superpowers/-excluded grep returns only CATEGORY-EXPECTED hits — new truthful runtime/docstring strings (`hug-git-upstream` fn block, `git-llu:38`), test assertions/refutes of both old partials and new messages, `git-wtsh`/`git-stats-branch`/`branch-analysis.md:295` correct-code hits — and nothing else
 - [ ] `make test` green; `make docs-build` green
 
 **Verify:** `make test TEST_SHOW_ALL_RESULTS=0` → all green; `make docs-build` → exit 0.
@@ -715,16 +715,14 @@ and extend the JSON OUTPUT section's summary description with:
 
 - [ ] **Step 4: Verification greps (two gates)** —
 
-Gate 1 is the mechanical pass/fail: the three fixed sites must contain NEITHER phrase after Tasks 1-4 (before the fix, each contains one).
+Gate 1 is the mechanical pass/fail: the three fixed sites must contain NEITHER phrase as LIVE code after Tasks 1-4 (before the fix, each contains one). The single sanctioned exception is the show_help quote of the NEW truthful runtime message (a doc line, not a live claim).
 
 ```bash
-# Gate 1 — live code, mechanical: any hit = FAIL (review fix: the original single
-# grep searched docs/ (which this PR fills with intentional spec/plan occurrences)
-# and skipped tests/, so its stated expectation was unreachable).
+# Gate 1 — live code, mechanical: any hit other than the sanctioned help quote = FAIL.
 grep -rn "up to date with\|already synced" \
   git-config/bin/git-llu git-config/bin/git-log-outgoing git-config/bin/git-h-files
 ```
-Expected: no output, exit 1.
+Expected: exactly one line, `git-config/bin/git-llu:38` (the show_help quote added in Step 1). Nothing else.
 
 Gate 2 is the informational perimeter audit (human-reviewed residual set — historical design docs under `docs/superpowers/` are excluded wholesale: the new spec, this plan, and the audit doc all quote the phrases intentionally, and the audit doc's superseding note scopes its SAFE rows).
 
