@@ -208,3 +208,34 @@ teardown() {
 @test "hug bl: multi-term search with single term still works" {
   skip "hug bl temporarily disabled during migration - use hug bll"
 }
+
+@test "hug bll: --newest lists most recently committed branch first" {
+  # Setup creates all four branch tips within the same wall-clock second on
+  # fast machines, which ties under committerdate. Backdate the three older
+  # branches' tips via update-ref so docs/api is unambiguously the newest.
+  local ts="2001-01-01T00:00:00"
+  for b in feature/login feature/signup bugfix/auth; do
+    (
+      # work on a throwaway clone of the ref so the branch tip gets a new,
+      # distinctly-dated commit without touching the working tree
+      cd "$TEST_REPO"
+      old=$(git rev-parse "$b")
+      new=$(
+        GIT_AUTHOR_DATE="$ts" GIT_COMMITTER_DATE="$ts" \
+          git commit-tree "$old^{tree}" -p "$old^" -m "backdated tip for $b"
+      )
+      git update-ref "refs/heads/$b" "$new"
+    )
+  done
+
+  run hug bll --newest
+  assert_success
+  first_branch=$(echo "${lines[0]}" | awk '{print $3}')
+  [[ "$first_branch" == "docs/api" ]] || fail "expected docs/api first, got $first_branch"
+
+  # Default (no --newest) must stay flipped: docs/api last.
+  run hug bll
+  assert_success
+  last_branch=$(echo "${lines[-1]}" | awk '{print $3}')
+  [[ "$last_branch" == "docs/api" ]] || fail "expected docs/api last in default view, got $last_branch"
+}

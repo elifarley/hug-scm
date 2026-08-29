@@ -1000,3 +1000,135 @@ teardown() {
   assert_output --partial '"dirty_details"'
   assert_output --partial '"untracked"'
 }
+# ── --sort flag ──────────────────────────────────────────────────────────────
+# Fixture date topology: main's tip is the newest commit (created last, wall
+# clock); feature-1 and hotfix-1 are backdated below so they sort distinctly
+# under recency modes. Main must stay FIRST under every mode.
+
+_backdate_branch_tip() {
+  # Backdate a branch's tip commit so recency sorts are deterministic.
+  # $2 is the branch's linked worktree path — amending inside it avoids the
+  # "already checked out" refusal plain `git switch` hits in the main repo,
+  # and updates the committer date without changing the tree.
+  local wt_path="$1" ts="$2"
+  (
+    cd "$wt_path"
+    GIT_AUTHOR_DATE="$ts" GIT_COMMITTER_DATE="$ts" \
+      git commit -q --amend --no-edit
+  )
+}
+
+@test "hug wtl: --sort recent orders newest worktree first, main pinned first" {
+  _backdate_branch_tip "$FEATURE_WT" "2001-01-01T00:00:00"
+  _backdate_branch_tip "$HOTFIX_WT" "2002-01-01T00:00:00"
+
+  cd "$TEST_REPO"
+  run git-wtl -q --sort recent 2>/dev/null
+
+  assert_success
+  # main is pinned first even though its tip is also the newest commit
+  [[ "${lines[0]}" == *"main"* ]] || fail "expected main first, got: ${lines[0]}"
+  # non-main tail: hotfix-1 (2002) newer than feature-1 (2001)
+  [[ "${lines[1]}" == *"hotfix-1"* ]] || fail "expected hotfix-1 second, got: ${lines[1]}"
+  [[ "${lines[2]}" == *"feature-1"* ]] || fail "expected feature-1 third, got: ${lines[2]}"
+}
+
+@test "hug wtl: --sort oldest orders oldest worktree first, main pinned first" {
+  _backdate_branch_tip "$FEATURE_WT" "2001-01-01T00:00:00"
+  _backdate_branch_tip "$HOTFIX_WT" "2002-01-01T00:00:00"
+
+  cd "$TEST_REPO"
+  run git-wtl -q --sort oldest 2>/dev/null
+
+  assert_success
+  [[ "${lines[0]}" == *"main"* ]] || fail "expected main first, got: ${lines[0]}"
+  [[ "${lines[1]}" == *"feature-1"* ]] || fail "expected feature-1 second, got: ${lines[1]}"
+  [[ "${lines[2]}" == *"hotfix-1"* ]] || fail "expected hotfix-1 third, got: ${lines[2]}"
+}
+
+@test "hug wtl: default --sort name keeps alphabetical order" {
+  cd "$TEST_REPO"
+  run git-wtl -q 2>/dev/null
+
+  assert_success
+  [[ "${lines[0]}" == *"main"* ]] || fail "expected main first, got: ${lines[0]}"
+  [[ "${lines[1]}" == *"feature-1"* ]] || fail "expected feature-1 second, got: ${lines[1]}"
+  [[ "${lines[2]}" == *"hotfix-1"* ]] || fail "expected hotfix-1 third, got: ${lines[2]}"
+}
+
+@test "hug wtl: --sort recency applies to filtered listing too" {
+  _backdate_branch_tip "$FEATURE_WT" "2001-01-01T00:00:00"
+  _backdate_branch_tip "$HOTFIX_WT" "2002-01-01T00:00:00"
+
+  cd "$TEST_REPO"
+  # Filter on the linked-worktree infix so exactly feature-1 and hotfix-1
+  # remain — never main, and immune to digits appearing in the tmp path.
+  run git-wtl -q --sort recent .WT. 2>/dev/null
+
+  assert_success
+  [[ "${lines[0]}" == *"hotfix-1"* ]] || fail "expected hotfix-1 first, got: ${lines[0]}"
+  [[ "${lines[1]}" == *"feature-1"* ]] || fail "expected feature-1 second, got: ${lines[1]}"
+}
+
+@test "hug wtl: --sort rejects invalid values with exit 2" {
+  cd "$TEST_REPO"
+  run git-wtl --sort bogus
+  assert_failure 2
+  assert_output --partial "Invalid --sort value"
+}
+
+@test "hug wtl: --sort requires a value" {
+  cd "$TEST_REPO"
+  run git-wtl --sort
+  assert_failure 2
+  assert_output --partial "--sort requires a value"
+}
+
+@test "hug wtl: --json exposes commit_date and applies --sort" {
+  _backdate_branch_tip "$FEATURE_WT" "2001-01-01T00:00:00"
+  _backdate_branch_tip "$HOTFIX_WT" "2002-01-01T00:00:00"
+
+  cd "$TEST_REPO"
+  run bash -c "git-wtl -q --sort oldest --json 2>/dev/null"
+  assert_success
+  assert_valid_json
+  assert_json_has_key '.worktrees[0].commit_date'
+  # oldest mode: main pinned first, then feature-1 (2001) before hotfix-1 (2002)
+  assert_json_value '.worktrees[0].branch' 'main'
+  assert_json_value '.worktrees[1].branch' 'feature-1'
+  assert_json_value '.worktrees[2].branch' 'hotfix-1'
+  # Relative epoch order proves the backdate took effect (absolute value is
+  # timezone-dependent because git normalizes ISO dates into the local zone).
+  run bash -c "git-wtl -q --json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); dates={w[\"branch\"]: w[\"commit_date\"] for w in d[\"worktrees\"]}; print(dates[\"feature-1\"] < dates[\"hotfix-1\"])'"
+  assert_output "True"
+}
+
+@test "hug wtll: --sort recent orders newest worktree first, main pinned first" {
+  _backdate_branch_tip "$FEATURE_WT" "2001-01-01T00:00:00"
+  _backdate_branch_tip "$HOTFIX_WT" "2002-01-01T00:00:00"
+
+  cd "$TEST_REPO"
+  # wtll data rows carry the 2-char indicator column (.. / +. / ++); subject
+  # and status lines never start with it, so ^[.+][.+] selects rows only.
+  run bash -c "git-wtll -q --sort recent 2>/dev/null | grep -E '^[.+][.+] '"
+
+  assert_success
+  [[ "${lines[0]}" == *"main"* ]] || fail "expected main first, got: ${lines[0]}"
+  [[ "${lines[1]}" == *"hotfix-1"* ]] || fail "expected hotfix-1 second, got: ${lines[1]}"
+  [[ "${lines[2]}" == *"feature-1"* ]] || fail "expected feature-1 third, got: ${lines[2]}"
+}
+
+@test "hug wtll: --sort usage errors exit 2 like wtl (not 1)" {
+  cd "$TEST_REPO"
+  run git-wtll --sort bogus
+  assert_failure 2
+  assert_output --partial "Invalid --sort value"
+
+  run git-wtll --sort
+  assert_failure 2
+  assert_output --partial "--sort requires a value"
+
+  run git-wtll --bogus
+  assert_failure 2
+  assert_output --partial "Unknown option"
+}

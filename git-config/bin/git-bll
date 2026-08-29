@@ -21,10 +21,12 @@ USAGE:
 OPTIONS:
   -h, --help     Show this help message and exit.
   --json         Output in JSON format instead of human-readable text.
+  --newest       Sort by commit date with the most recent FIRST (default: most
+                 recent at bottom). Matches 'hug wtl --sort recent' semantics.
 
 DESCRIPTION:
-  Displays each local branch sorted by commit date (oldest first, most recent at bottom).
-  The current branch is highlighted in green and marked with an asterisk (*).
+  Displays each local branch sorted by commit date (oldest first, most recent at bottom;
+  see --newest to flip). The current branch is highlighted in green and marked with an asterisk (*).
   Each entry shows: branch name (short hash YYYY-MM-DD) [upstream tracking info, e.g., origin/main ahead 2].
   The commit message title follows.
   Remote tracking information is shown just as in 'git branch -vv'.
@@ -32,8 +34,9 @@ DESCRIPTION:
   If a search term is provided, only branches containing the term (case-insensitive substring match on branch name) are displayed.
 
 EXAMPLES:
-  hug bll          # List all local branches in long format
-  hug bll fix      # List branches containing "fix"
+  hug bll           # List all local branches in long format (most recent at bottom)
+  hug bll --newest  # Most recent branch first
+  hug bll fix       # List branches containing "fix"
 
 SEE ALSO:
   hug bl : For listing local branches in short form
@@ -43,10 +46,15 @@ EOF
 
 # Parse arguments
 json_output=false
+newest_first=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --json)
     json_output=true
+    shift
+    ;;
+  --newest)
+    newest_first=true
     shift
     ;;
   -h | --help)
@@ -70,12 +78,17 @@ check_git_repo
 if $json_output; then
   # Get current branch for JSON
   current_branch=$(git branch --show-current 2> /dev/null || echo "detached HEAD")
+  # --newest must reach JSON too, so both output modes agree on ordering.
+  $newest_first && output_json_branch_list "$current_branch" newest && exit 0
   output_json_branch_list "$current_branch"
   exit 0
 fi
 
-# Get branch details from Python module (ascending: oldest first, recent at bottom)
-if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local --ascending)"; then
+# Get branch details from Python module. Default ascending (oldest first,
+# recent at bottom); --newest flips to descending (most recent first).
+sort_flag=--ascending
+$newest_first && sort_flag=--sort-context=gum-multi
+if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local "$sort_flag")"; then
   printf "No local branches found.\n" >&2
   exit 1
 fi
