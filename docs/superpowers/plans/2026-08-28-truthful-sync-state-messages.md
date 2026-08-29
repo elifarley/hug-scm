@@ -644,11 +644,13 @@ EOF
 **Files:**
 - Modify: `git-config/bin/git-llu` (show_help text only)
 - Modify: `docs/superpowers/specs/2026-07-29-count-commits-in-range-audit-design.md` (superseding note near :182-186)
+- Modify: `docs/superpowers/specs/2026-08-16-uniform-pathspec-contract-for-all-path-accepting-hug-commands-design.md` (stale empty-envelope prose at ~:428 — found by Task 4's quality review)
 - Modify: `docs/commands/logging.md` (~:237, the "(empty shape on zero matches)" aside)
 
 **Acceptance Criteria:**
 - [ ] `hug llu -h` documents behind + unknown and the three empty JSON envelopes
 - [ ] The 2026-07-29 audit doc carries a superseded-note scoping its SAFE verdicts to exit-code propagation
+- [ ] The 2026-08-16 uniform-pathspec spec's stale empty-envelope sentence (~:428) carries an update pointer to this design's §3 three-state contract
 - [ ] Gate 1 (mechanical): the live-code grep over the three fixed scripts returns nothing (exit 1)
 - [ ] Gate 2 (perimeter audit): the docs/superpowers/-excluded grep returns only the lib docstring, `git-wtsh`/`git-stats-branch` correct-code hits, and the two test partials
 - [ ] `make test` green; `make docs-build` green
@@ -707,6 +709,10 @@ and extend the JSON OUTPUT section's summary description with:
 
 - [ ] **Step 3: Touch up `docs/commands/logging.md`** — change `(empty shape on zero matches)` to `(empty envelope with a `state`/`error` marker on zero matches — see `hug help llu`)`.
 
+- [ ] **Step 3b: Update the 2026-08-16 pathspec spec's stale envelope sentence** — in `docs/superpowers/specs/2026-08-16-uniform-pathspec-contract-for-all-path-accepting-hug-commands-design.md` (~:428), immediately after the sentence stating `JSON mode keeps its existing empty envelope ({"commits":[],"summary":{"total_commits":0}}`, append:
+
+  > **Updated 2026-08-28:** the empty envelope is now three-state — `state` `in_sync`|`behind` with `behind_count`, or `error:"sync_state_unknown"` — see `2026-08-28-truthful-sync-state-messages-for-llu-lol-h-files-design.md` §3.
+
 - [ ] **Step 4: Verification greps (two gates)** —
 
 Gate 1 is the mechanical pass/fail: the three fixed sites must contain NEITHER phrase after Tasks 1-4 (before the fix, each contains one).
@@ -734,7 +740,7 @@ Expected residual set (nothing else): the lib docstring (`hug-git-upstream:29`),
 - [ ] **Step 6: Commit**
 
 ```bash
-hug a git-config/bin/git-llu docs/superpowers/specs/2026-07-29-count-commits-in-range-audit-design.md docs/commands/logging.md
+hug a git-config/bin/git-llu docs/superpowers/specs/2026-07-29-count-commits-in-range-audit-design.md docs/superpowers/specs/2026-08-16-uniform-pathspec-contract-for-all-path-accepting-hug-commands-design.md docs/commands/logging.md
 hug c -F - <<'EOF'
 docs: truthful sync-state help text + superseding note for the 2026-07-29 audit
 
