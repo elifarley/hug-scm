@@ -86,8 +86,10 @@ fi
 
 # Get branch details from Python module. Default ascending (oldest first,
 # recent at bottom); --newest flips to descending (most recent first).
+# Use the explicit --descending direction flag rather than borrowing the
+# gum-multi sort-context (a menu concern) for this static listing.
 sort_flag=--ascending
-$newest_first && sort_flag=--sort-context=gum-multi
+$newest_first && sort_flag=--descending
 if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local "$sort_flag")"; then
   printf "No local branches found.\n" >&2
   exit 1
