@@ -731,7 +731,7 @@ Gate 2 is the informational perimeter audit (human-reviewed residual set — his
 grep -rn "up to date with\|already synced" \
   README.md docs/ git-config/ hg-config/ tests/ | grep -v "docs/superpowers/"
 ```
-Expected residual set (nothing else): the lib docstring (`hug-git-upstream:29`), `git-wtsh` + `git-stats-branch` correct-code hits (they compute both directions; `git-stats-branch:78` is help-text example, not live logic), the natural-language guide heading `docs/skills/hug-repo-analysis/guides/branch-analysis.md:295`, and the two surviving test partials (`test_log_outgoing.bats:65,118`).
+Expected residual set (categories, not line numbers — line-number allowlists rot; `git-wtsh` never matched, its literal is `" (up to date)"` with no " with"): (i) new truthful runtime/docstring strings — the `hug-git-upstream` function block and the `git-llu:38` show_help quote; (ii) test assertions/refutes of the old partials and the new messages — `test_log_outgoing.bats:65,133` + the behind test, `test_llu.bats:28,38`, the `test_head.bats` h-files block, `test_hug-upstream.bats:325,330,340`; (iii) correct-code/guide hits — `git-stats-branch:78` (help-text example) and `docs/skills/hug-repo-analysis/guides/branch-analysis.md:295`; plus gitignored `docs/.vitepress/dist/` build artifacts after `make docs-build`.
 
 - [ ] **Step 5: Full verification** — `make test` (BATS + pytest) → green; `make docs-build` → exit 0.
 
