@@ -404,3 +404,21 @@ advance_remote() {
   assert_failure
   assert_output --partial "report_empty_outgoing: target ref required"
 }
+
+@test "report_empty_outgoing: empty 4th arg omits the catch-up hint (custom targets)" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  advance_remote 1
+  run report_empty_outgoing "No outgoing changes" "origin/dev" "$(git rev-parse '@{u}')" ""
+  assert_success
+  assert_output --partial "behind origin/dev by 1 commit)"
+  refute_output --partial "pull or rebase"
+}
+
+@test "report_unknown_sync: self-contained fallback, composes with any noun" {
+  create_test_repo_with_history
+  run report_unknown_sync "📭 No outgoing commits" "origin/main"
+  assert_success
+  assert_output --partial "📭 No outgoing commits (sync state with origin/main could not be determined)"
+  refute_output --partial "📭 No outgoing commits (📭"
+}

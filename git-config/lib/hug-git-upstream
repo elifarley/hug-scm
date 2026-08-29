@@ -320,15 +320,33 @@ sync_state_of() {
     fi
 }
 
+# Report the unknown-state fallback WITHOUT measuring (shared wording home).
+# Used by report_empty_outgoing's unknown arm and by callers whose OWN gate
+# already proved the state undeterminable (e.g. llu's ahead-count failure) —
+# in that case a second measurement would be an unverified gamble that could
+# render a false sync claim.
+# Usage: report_unknown_sync <noun> <upstream_display>
+# Prints to stderr (via info):
+#   "<noun> (sync state with <upstream_display> could not be determined)"
+# Returns: 0 always.
+report_unknown_sync() {
+    local noun="${1:?report_unknown_sync: noun required}"
+    local display="${2:?report_unknown_sync: upstream display required}"
+    info "$noun (sync state with $display could not be determined)"
+}
+
 # Human message for the empty-outgoing path (0 commits ahead): the one wording
 # authority shared by git-llu, git-log-outgoing, and git-h-files.
 #
-# Usage: report_empty_outgoing <noun> <upstream_display> <target_ref>
+# Usage: report_empty_outgoing <noun> <upstream_display> <target_ref> [<hint>]
 #   <noun>             Caller's sentence start ("No outgoing commits"); any
 #                      emoji is part of the noun (caller-owned).
-#   <upstream_display> What humans should see ("origin/main", short hash, or
-#                      the resolved upstream branch name).
+#   <upstream_display> What humans should see ("origin/main", a branch name,
+#                      or a short hash).
 #   <target_ref>       Ref measured against (forwarded to sync_state_of).
+#   [<hint>]           Optional trailing advice; default "pull or rebase to
+#                      catch up". Pass "" to omit — a custom target is not the
+#                      configured upstream, so that advice would misdirect.
 # Prints to stderr (via info) exactly one of:
 #   "<noun> (already synced to <upstream_display>)"
 #   "<noun> (branch is behind <upstream_display> by N commit[s] — pull or rebase to catch up)"
@@ -352,12 +370,13 @@ report_empty_outgoing() {
         info "$noun (already synced to $display)"
         ;;
     behind\ *)
-        local n="${state#behind }" word="commits"
+        local n="${state#behind }" word="commits" hint=" — pull or rebase to catch up"
         if [ "$n" -eq 1 ]; then word="commit"; fi
-        info "$noun (branch is behind $display by $n $word — pull or rebase to catch up)"
+        if [ $# -ge 4 ] && [ -z "${4:-}" ]; then hint=""; fi
+        info "$noun (branch is behind $display by $n $word$hint)"
         ;;
     *)
-        info "$noun (sync state with $display could not be determined)"
+        report_unknown_sync "$noun" "$display"
         ;;
     esac
 }
