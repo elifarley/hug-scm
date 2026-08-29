@@ -297,8 +297,15 @@ emit_head_recovery_hint() {
 #   capture stays errexit-safe (the commit_offset lesson, hug-git-commit:270-277).
 #
 # The count capture is the failure-testing form ON PURPOSE: the `|| echo "0"`
-# swallow idiom modeled at git-llu:181 / git-wtsh:137-138 would map "failed"
-# onto 0 => in_sync — the exact false-sync claim this function exists to kill.
+# swallow idiom modeled at git-llu:194 (llu's commit_count capture) and
+# git-wtsh:137-138 would map "failed" onto 0 => in_sync — the exact
+# false-sync claim this function exists to kill.
+#
+# Deliberately NOT built on commit_offset (hug-git-commit:295): the callers
+# gate on 0-ahead first, so a diverged pair is unreachable here and
+# commit_offset's diverged exit-2 would be dead scaffolding. Cross-ref:
+# handle_upstream_operation (:51-68) classifies the same states via
+# commit_offset for the h* family.
 sync_state_of() {
     local target_ref="${1:?sync_state_of: target ref required}"
     local behind
@@ -331,7 +338,9 @@ sync_state_of() {
 # Returns: 0 always — message-only; the caller owns the exit code.
 # The fallback parenthetical is self-contained so it composes with any noun
 # without repeating it, and it is the SAFETY NET for the swallowed ahead-count
-# at git-llu:181 — do not delete it if :181 is ever fixed to propagate.
+# at git-llu:194 — do not delete it if that capture is ever fixed to propagate.
+# Scope: wording authority for the EMPTY-OUTGOING family (llu/lol/h-files);
+# handle_upstream_operation (:59-68) keeps its own h*-family dialect.
 report_empty_outgoing() {
     local noun="${1:?report_empty_outgoing: noun required}"
     local display="${2:?report_empty_outgoing: upstream display required}"

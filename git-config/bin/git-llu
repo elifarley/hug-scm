@@ -197,7 +197,8 @@ if [ "$commit_count" -eq 0 ]; then
   if $json_output; then
     # Machine truth surface: the PRIMITIVE (not the message wrapper) so a
     # failed count renders as an error marker — never as in_sync. The unknown
-    # envelope reuses the no_upstream error-marker convention (see :163).
+    # envelope reuses the no_upstream error-marker convention (the no_upstream
+    # echo in the upstream-check branch above).
     state=$(sync_state_of "$upstream")
     case "$state" in
     in_sync)

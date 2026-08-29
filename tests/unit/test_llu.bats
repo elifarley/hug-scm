@@ -96,6 +96,35 @@ make_behind() {
   refute_output --partial "HEAD:"
 }
 
+@test "hug llu --json: no upstream -> error no_upstream envelope" {
+  local repo
+  repo=$(create_test_repo) # no remote, no upstream
+  cd "$repo"
+  run hug llu --json
+  assert_success
+  assert_output --partial '"error":"no_upstream"'
+  refute_output --partial '"state"'
+  echo "$output" | python3 -m json.tool > /dev/null
+}
+
+@test "hug llu: no upstream -> message + trailing summary (unscoped)" {
+  local repo
+  repo=$(create_test_repo) # no remote, no upstream
+  cd "$repo"
+  run hug llu
+  assert_success
+  assert_output --partial "No upstream branch configured for current branch"
+  assert_output --partial "HEAD:" # unscoped runs still end with the whole-repo summary
+}
+
+@test "hug llu: behind upstream, scoped run -> whole-branch message, no summary" {
+  make_behind
+  run hug llu -- .
+  assert_success
+  assert_output --partial "branch is behind origin/main by 1 commit"
+  refute_output --partial "HEAD:"
+}
+
 @test "hug llu --json -q: JSON unaffected by quiet (machine data stays on stdout)" {
   run hug llu --json -q
   assert_success
