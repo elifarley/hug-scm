@@ -6,33 +6,92 @@ test "${1:-}" = '--search-meta' && {
 }
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 CMD_BASE="$(dirname "$CMD_BASE")"
-for f in hug-common hug-git-kit; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
-set -euo pipefail                                                 # Exit on error, undefined vars, pipe failures
+for f in hug-common hug-git-kit hug-arrays; do . "$CMD_BASE/../lib/$f"; done # Load common constants and functions
+set -euo pipefail                                                            # Exit on error, undefined vars, pipe failures
 
 # Part of the Hug tool suite
 
 show_help() {
   cat << 'EOF'
-hug bl: TEMPORARILY DISABLED
+hug bl: List local branches in short format (names only). The current branch is
+marked with an asterisk (*) and highlighted in green.
 
-The short branch list format is temporarily disabled during migration to the
-new Python-based implementation with date display support.
+USAGE:
+  hug bl [OPTIONS] [SEARCH_TERM...]
 
-Please use:
-  hug bll  - For long format branch listing (includes dates)
-  hug b    - For interactive branch switching
+OPTIONS:
+  -h, --help     Show this help message and exit.
+  --newest       Sort by commit date with the most recent FIRST (default: most
+                 recent at bottom). Matches 'hug bll --newest' semantics.
 
-This command will be re-enabled once the migration is complete.
+DESCRIPTION:
+  Displays each local branch name, one per line, sorted by commit date (oldest
+  first, most recent at bottom; see --newest to flip). This is the short
+  counterpart to 'hug bll' (which adds hash, date, tracking, and subject).
+
+  If search terms are provided, only branches whose NAME contains a term
+  (case-insensitive substring, multi-term OR logic) are displayed. Tracking
+  info is never matched, avoiding false positives.
+
+EXAMPLES:
+  hug bl                # List all local branches (most recent at bottom)
+  hug bl --newest       # Most recently committed branch first
+  hug bl feature        # Branches containing "feature"
+  hug bl feature auth   # Branches with "feature" OR "auth"
+
+SEE ALSO:
+  hug bll : For the long format (hash, date, tracking, subject)
+  hug b   : For interactive branch switching
 EOF
 }
 
-# Parse common flags
-eval "$(parse_common_flags "$@")"
+# Parse arguments
+newest_first=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --newest)
+    newest_first=true
+    shift
+    ;;
+  -h | --help)
+    show_help
+    exit 0
+    ;;
+  *)
+    # Treat remaining arguments as search terms
+    break
+    ;;
+  esac
+done
 
-# Show help or error message
-if [[ "${SHOW_HELP:-false}" == "true" ]]; then
-  show_help
-  exit 0
+# Capture search terms
+search_terms="$*"
+
+# Early exit if not in Git repo
+check_git_repo
+
+# Get branch names from the Python module. Default ascending (oldest first,
+# recent at bottom); --newest flips to descending (most recent first) via the
+# explicit direction flag (not a gum-menu sort-context).
+sort_flag=--ascending
+$newest_first && sort_flag=--descending
+if ! eval "$(python3 "$CMD_BASE/../lib/python/hug_git_branch.py" local "$sort_flag")"; then
+  printf "No local branches found.\n" >&2
+  exit 1
 fi
 
-error "hug bl: TEMPORARILY DISABLED - Use 'hug bll' for long format listing"
+# Print the short list: current branch green + '*', others plain. Filter by
+# branch NAME only (never tracking info), case-insensitive, multi-term OR.
+for i in "${!branches[@]}"; do
+  branch="${branches[i]}"
+
+  if [[ -n "$search_terms" ]] && ! search_items_by_fields "$search_terms" OR "$branch"; then
+    continue
+  fi
+
+  if [ "$branch" = "$current_branch" ]; then
+    printf "${GREEN}* %s${NC}\n" "$branch"
+  else
+    printf "  %s\n" "$branch"
+  fi
+done

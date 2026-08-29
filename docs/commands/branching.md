@@ -65,10 +65,11 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 - ![hug b example with "perform" search term](img/hug-b-perform.png)
 
 ### `hug bl [term]`
-- **Description**: List local branches in short format, sorted alphabetically. The current branch is marked with an asterisk (*). Supports optional case-insensitive search filtering by branch name with multi-term OR logic.
+- **Description**: List local branches in short format (names only), sorted by commit date (oldest first, most recent at bottom; see `--newest` to flip). The current branch is marked with an asterisk (*) and highlighted in green. Supports optional case-insensitive search filtering by branch name with multi-term OR logic.
 - **Examples**:
   ```shell
-  hug bl           # List all local branches
+  hug bl           # List all local branches (most recent at bottom)
+  hug bl --newest  # Most recently committed branch first
   hug bl feature   # List branches containing "feature"
   hug bl feature auth  # List branches with "feature" OR "auth"
   hug bl bug fix    # List branches with "bug" OR "fix"

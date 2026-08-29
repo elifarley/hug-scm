@@ -31,35 +31,110 @@ teardown() {
 
 # -----------------------------------------------------------------------------
 # hug bl (Short List) Tests
-# TEMPORARILY DISABLED during migration to Python implementation
 # -----------------------------------------------------------------------------
 
 @test "hug bl: lists all local branches by default" {
-  skip "hug bl temporarily disabled during migration - use hug bll"
+  run hug bl
+  assert_success
+  assert_output --partial "feature/login"
+  assert_output --partial "feature/signup"
+  assert_output --partial "bugfix/auth"
+  assert_output --partial "docs/api"
+  assert_output --partial "main"
 }
 
 @test "hug bl: marks current branch with asterisk" {
-  skip "hug bl temporarily disabled during migration - use hug bll"
+  run hug bl
+  assert_success
+  assert_output --partial "* main"
 }
 
 @test "hug bl <term>: filters branches by NAME only (not tracking info)" {
-  skip "hug bl temporarily disabled during migration - use hug bll"
+  run hug bl "bugfix"
+  assert_success
+  assert_output --partial "bugfix/auth"
+  refute_output --partial "feature/login"
 }
 
 @test "hug bl <term>: does NOT match tracking info (avoids false positives)" {
-  skip "hug bl temporarily disabled during migration - use hug bll"
+  # 'origin' appears in tracking info but in no branch name here, so a
+  # name-only filter must return nothing rather than matching every branch
+  # that has an upstream.
+  run hug bl "origin"
+  assert_success
+  refute_output --partial "feature/login"
+  refute_output --partial "bugfix/auth"
 }
 
 @test "hug bl <term>: is case-insensitive" {
-  skip "hug bl temporarily disabled during migration - use hug bll"
+  run hug bl "FEATURE"
+  assert_success
+  assert_output --partial "feature/login"
+  assert_output --partial "feature/signup"
 }
 
 @test "hug bl <term>: handles no matches gracefully" {
-  skip "hug bl temporarily disabled during migration - use hug bll"
+  run hug bl "zzz-no-such-branch"
+  assert_success
+  refute_output --partial "feature/login"
+  refute_output --partial "main"
 }
 
 @test "hug bl <term>: matches partial strings" {
-  skip "hug bl temporarily disabled during migration - use hug bll"
+  run hug bl "sign"
+  assert_success
+  assert_output --partial "feature/signup"
+  refute_output --partial "feature/login"
+}
+
+# Backdate a branch's tip commit so recency sorts are deterministic. The
+# fixture commits all land in the same second, so date order is a tie without
+# this. Amending inside the branch updates the committer date without
+# changing the tree.
+_bl_backdate_tip() {
+  local branch="$1" ts="$2"
+  git checkout -q "$branch"
+  # --allow-empty: the fixture branches are empty commits, so a no-change amend
+  # would otherwise be refused ("would make it empty").
+  GIT_AUTHOR_DATE="$ts" GIT_COMMITTER_DATE="$ts" git commit -q --amend --no-edit --allow-empty
+  git checkout -q main
+}
+
+# Index of the line containing branch $1 in the last `run` output.
+_bl_line_index() {
+  local i
+  for i in "${!lines[@]}"; do
+    [[ "${lines[$i]}" == *"$1"* ]] && { echo "$i"; return 0; }
+  done
+  return 1
+}
+
+@test "hug bl --newest: orders most recently committed branch first" {
+  # Other branches keep their setup (today) dates, so assert the RELATIVE
+  # order of the two backdated branches rather than absolute positions.
+  _bl_backdate_tip "feature/login" "2001-01-01T00:00:00"
+  _bl_backdate_tip "docs/api" "2002-01-01T00:00:00"
+
+  run hug bl --newest
+  assert_success
+  # Descending: docs/api (2002) must appear before feature/login (2001).
+  local di fi
+  di=$(_bl_line_index "docs/api")
+  fi=$(_bl_line_index "feature/login")
+  [ "$di" -lt "$fi" ] || fail "expected docs/api before feature/login under --newest (di=$di fi=$fi)"
+}
+
+@test "hug bl: default order is oldest first (most recent at bottom)" {
+  _bl_backdate_tip "feature/login" "2001-01-01T00:00:00"
+  _bl_backdate_tip "docs/api" "2002-01-01T00:00:00"
+
+  run hug bl
+  assert_success
+  # Ascending: feature/login (2001) must appear before docs/api (2002).
+  local di fi
+  di=$(_bl_line_index "docs/api")
+  fi=$(_bl_line_index "feature/login")
+  [ "$fi" -lt "$di" ] || fail "expected feature/login before docs/api by default (fi=$fi di=$di)"
 }
 
 # -----------------------------------------------------------------------------
@@ -120,7 +195,11 @@ teardown() {
 # -----------------------------------------------------------------------------
 
 @test "hug bl: handles special characters in search" {
-  skip "hug bl temporarily disabled during migration - use hug bll"
+  # A term with regex metacharacters must be treated literally, not as a pattern.
+  run hug bl "feature/login"
+  assert_success
+  assert_output --partial "feature/login"
+  refute_output --partial "feature/signup"
 }
 
 @test "hug bll: preserves color codes when filtering" {
@@ -139,7 +218,11 @@ teardown() {
 # NEW MULTI-TERM SEARCH TESTS
 
 @test "hug bl: supports multi-term search (OR logic)" {
-  skip "hug bl temporarily disabled during migration - use hug bll"
+  run hug bl login auth
+  assert_success
+  assert_output --partial "feature/login"
+  assert_output --partial "bugfix/auth"
+  refute_output --partial "docs/api"
 }
 
 @test "hug bll: supports multi-term search (OR logic)" {
