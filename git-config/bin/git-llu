@@ -182,9 +182,25 @@ commit_count=$(git rev-list --count @{u}..HEAD 2> /dev/null || echo "0")
 
 if [ "$commit_count" -eq 0 ]; then
   if $json_output; then
-    echo '{"commits":[],"summary":{"total_commits":0}}'
+    # Machine truth surface: the PRIMITIVE (not the message wrapper) so a
+    # failed count renders as an error marker — never as in_sync. The unknown
+    # envelope reuses the no_upstream error-marker convention (see :163).
+    state=$(sync_state_of "$upstream")
+    case "$state" in
+    in_sync)
+      echo '{"commits":[],"summary":{"total_commits":0,"state":"in_sync","behind_count":0}}'
+      ;;
+    behind\ *)
+      echo "{\"commits\":[],\"summary\":{\"total_commits\":0,\"state\":\"behind\",\"behind_count\":${state#behind }}}"
+      ;;
+    *)
+      echo '{"commits":[],"summary":{"total_commits":0,"error":"sync_state_unknown"}}'
+      ;;
+    esac
   else
-    info "📭 No outgoing commits (branch is up to date with ${upstream})"
+    # 0 ahead != synced — the wrapper distinguishes synced from behind-by-N
+    # (spec: docs/superpowers/specs/2026-08-28-truthful-sync-state-messages-for-llu-lol-h-files-design.md).
+    report_empty_outgoing "📭 No outgoing commits" "$upstream" "$upstream"
     # Same summary gate as the no-upstream site above.
     if ! $quiet && [[ ${#pathspecs[@]} -eq 0 ]]; then
       exec hug s
