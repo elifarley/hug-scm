@@ -50,6 +50,8 @@ from git.worktree import (
     filter_worktrees_by_criteria,
     format_indicators,
     parse_worktree_list,
+    populate_commit_dates,
+    sort_worktrees,
     to_worktree_list,
 )
 
@@ -373,6 +375,7 @@ def _cmd_filter(
     options: WorktreeFilterOptions,
     branch_filters: list[str],
     search_terms: list[str],
+    sort_mode: str = "name",
 ) -> str:
     """Filter worktrees by branch and/or search criteria.
 
@@ -388,6 +391,9 @@ def _cmd_filter(
         options: Inclusion/exclusion criteria (include_main, exclude_current).
         branch_filters: Exact branch names to match (OR logic).
         search_terms: Substring search terms (OR logic).
+        sort_mode: Ordering for the surviving rows — "name" (alphabetical,
+            default), "recent" (HEAD committer date, newest first), or
+            "oldest". The main worktree always stays first.
 
     Returns:
         Bash declare statements for filtered worktree arrays.
@@ -419,6 +425,11 @@ def _cmd_filter(
         return WorktreeList(
             paths=[], branches=[], commits=[], dirty_status=[], locked_status=[]
         ).to_bash_declare()
+
+    # Stage 3: order the survivors (dates only needed for recency modes)
+    if sort_mode != "name":
+        populate_commit_dates(filtered)
+    filtered = sort_worktrees(filtered, sort_mode, main_path)
 
     return to_worktree_list(filtered).to_bash_declare()
 
@@ -570,6 +581,12 @@ def main(argv: list[str] | None = None) -> None:
         default=[],
         help="Search term (substring match on path/branch, repeatable, OR logic).",
     )
+    filter_parser.add_argument(
+        "--sort",
+        choices=["name", "recent", "oldest"],
+        default="name",
+        help="Sort order for non-main worktrees (default: name).",
+    )
 
     sel_parser = sub.add_parser("select", parents=[common], help="Numbered-list selection.")
     sel_parser.add_argument(
@@ -593,7 +610,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.command == "prepare":
             output = _cmd_prepare(opts)
         elif args.command == "filter":
-            output = _cmd_filter(opts, args.branch, args.search)
+            output = _cmd_filter(opts, args.branch, args.search, sort_mode=args.sort)
         else:
             output = _cmd_select(opts, args.prompt, test_selection=args.selection)
         print(output)

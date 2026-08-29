@@ -65,10 +65,11 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 - ![hug b example with "perform" search term](img/hug-b-perform.png)
 
 ### `hug bl [term]`
-- **Description**: List local branches in short format, sorted alphabetically. The current branch is marked with an asterisk (*). Supports optional case-insensitive search filtering by branch name with multi-term OR logic.
+- **Description**: List local branches in short format (names only), sorted by commit date (oldest first, most recent at bottom; see `--newest` to flip). The current branch is marked with an asterisk (*) and highlighted in green. Supports optional case-insensitive search filtering by branch name with multi-term OR logic.
 - **Examples**:
   ```shell
-  hug bl           # List all local branches
+  hug bl           # List all local branches (most recent at bottom)
+  hug bl --newest  # Most recently committed branch first
   hug bl feature   # List branches containing "feature"
   hug bl feature auth  # List branches with "feature" OR "auth"
   hug bl bug fix    # List branches with "bug" OR "fix"
@@ -98,7 +99,8 @@ These commands are implemented as Git aliases and scripts in the Hug tool suite,
 - **Description**: List local branches in long format with details: short commit hash, upstream tracking info (e.g., ahead/behind counts), and the latest commit message title. Current branch is highlighted in green and marked with *. Branches are left-aligned for readability. Supports optional case-insensitive search filtering by branch name with multi-term OR logic.
 - **Examples**:
   ```shell
-  hug bll          # Detailed local branch listing
+  hug bll          # Detailed local branch listing (oldest first, most recent at bottom)
+  hug bll --newest # Same listing with the most recently committed branch first
   hug bll fix      # List branches containing "fix"
   hug bll fix bug  # List branches with "fix" OR "bug"
   hug bll feature auth  # List branches with "feature" OR "auth"

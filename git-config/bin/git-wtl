@@ -28,10 +28,13 @@ OPTIONS:
   -p, --path-only     Print only absolute paths (one per line). Exit 1 if 0 matches.
                         (output mode — unlike wtc/wtdel, where -p PATH targets a path)
   -e, --existing      Exclude worktrees whose directory doesn't exist on disk.
+  --sort MODE         Order non-main worktrees by: name (alphabetical, default),
+                        recent (HEAD commit date, most recent first), oldest
+                        (most recent last). The main checkout always stays first.
 
 DESCRIPTION:
-  Displays each worktree sorted alphabetically. The current worktree is
-  highlighted and marked with an asterisk (*).
+  Displays each worktree sorted alphabetically (see --sort for other orders).
+  The current worktree is highlighted and marked with an asterisk (*).
 
   Indicators:
     *  current worktree
@@ -66,6 +69,7 @@ EXAMPLES:
   hug wtl -p                       # All worktrees, paths only
   hug wtl -b main -p               # Path for exact branch
   hug wtl feat -p -e               # Substring match, existing only, paths
+  hug wtl --sort recent            # Most recently active worktree at the top
 
 EXIT CODES:
   0  success (including empty --json result)
@@ -88,6 +92,7 @@ declare -a branch_filters=()
 declare -a search_terms=()
 path_only=false
 existing_only=false
+sort_mode=name
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --json)
@@ -108,6 +113,16 @@ while [[ $# -gt 0 ]]; do
   -e | --existing)
     existing_only=true
     shift
+    ;;
+  --sort)
+    if [[ -z "${2:-}" ]]; then
+      error_usage "Option --sort requires a value: name, recent, or oldest."
+    fi
+    case "$2" in
+    name | recent | oldest) sort_mode="$2" ;;
+    *) error_usage "Invalid --sort value: $2 (expected name, recent, or oldest)." ;;
+    esac
+    shift 2
     ;;
   --)
     shift
@@ -135,14 +150,14 @@ fi
 # JSON output mode
 if $json_output; then
   current_worktree=$(get_current_worktree_path)
-  output_worktree_json "$current_worktree" search_terms branch_filters "$existing_only"
+  output_worktree_json "$current_worktree" search_terms branch_filters "$existing_only" "$sort_mode"
   exit 0
 fi
 
 # ── Path-only output mode ──────────────────────────────────────────────────
 if $path_only; then
   declare -a wt_paths=() wt_branches=() wt_commits=() wt_dirty=() wt_locked=()
-  if ! get_all_worktrees_including_main wt_paths wt_branches wt_commits wt_dirty wt_locked; then
+  if ! get_all_worktrees_including_main wt_paths wt_branches wt_commits wt_dirty wt_locked "$sort_mode"; then
     printf "No worktrees found.\n" >&2
     exit 1
   fi
@@ -151,7 +166,7 @@ if $path_only; then
   declare -a out_paths=()
   if [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
     declare -a f_branches=() f_commits=() f_dirty=() f_locked=()
-    if ! filter_worktrees out_paths f_branches f_commits f_dirty f_locked branch_filters search_terms; then
+    if ! filter_worktrees out_paths f_branches f_commits f_dirty f_locked branch_filters search_terms "$sort_mode"; then
       # filter_worktrees already printed the error
       exit 1
     fi
@@ -194,7 +209,7 @@ fi
 
 # Get worktree data
 declare -a worktree_paths=() branches=() commits=() status_dirty=() locked_status=()
-if ! get_all_worktrees_including_main worktree_paths branches commits status_dirty locked_status; then
+if ! get_all_worktrees_including_main worktree_paths branches commits status_dirty locked_status "$sort_mode"; then
   printf "No worktrees found.\n" >&2
   exit 1
 fi
@@ -209,7 +224,7 @@ print_worktree_legend
 if [[ ${#branch_filters[@]} -gt 0 || ${#search_terms[@]} -gt 0 ]]; then
   declare -a filtered_paths=() filtered_branches=() filtered_commits=()
   declare -a filtered_dirty=() filtered_locked=()
-  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked branch_filters search_terms; then
+  if ! filter_worktrees filtered_paths filtered_branches filtered_commits filtered_dirty filtered_locked branch_filters search_terms "$sort_mode"; then
     exit 1
   fi
 
