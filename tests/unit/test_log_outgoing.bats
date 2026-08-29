@@ -66,6 +66,35 @@ teardown() {
   refute_output --partial "commits since"
 }
 
+@test "hug lol: behind upstream -> truthful behind message (never 'already synced')" {
+  # Make origin/main 1 ahead: push a commit (updates the local remote-tracking
+  # ref), then move local main back. No fetch needed after a push.
+  git commit -q --allow-empty -m "upstream-only commit"
+  git push -q origin main
+  git reset -q --hard HEAD~1
+
+  run hug lol
+  assert_success
+  # Display is the resolved upstream BRANCH name (actionable), not a hash.
+  assert_output --partial "No outgoing changes (branch is behind origin/main by 1 commit — pull or rebase to catch up)"
+  refute_output --partial "already synced"
+}
+
+@test "hug lol: behind custom target -> names the target, no misdirected hint" {
+  # Advance origin/dev by 1 with zero outgoing: push HEAD to a new remote
+  # branch, then move local main back onto the pre-commit state.
+  git commit -q --allow-empty -m "dev-only commit"
+  git push -q origin HEAD:refs/heads/dev
+  git reset -q --hard HEAD~1
+
+  run hug lol origin/dev
+  assert_success
+  assert_output --partial "No outgoing changes (branch is behind origin/dev by 1 commit)"
+  # The catch-up hint would point at the CONFIGURED upstream, not origin/dev.
+  refute_output --partial "pull or rebase"
+  refute_output --partial "already synced"
+}
+
 @test "hug lol: uses custom remote-branch when provided" {
   # Use a different remote branch (assuming origin/main exists as upstream, test origin/feature if needed, but use main)
   # First, create a feature commit on main for outgoing

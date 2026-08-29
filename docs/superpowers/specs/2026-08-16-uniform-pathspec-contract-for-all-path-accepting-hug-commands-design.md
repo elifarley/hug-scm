@@ -431,6 +431,10 @@ pathspecs, current behavior is unchanged. `hug llu --` (bare trailing) is
 inert — `llu` is a listing, so the migrated script unsets the picker export
 before its `exec hug s` (`git-llu:161`) exactly like the sl\* family.
 
+> **Updated 2026-08-28:** the empty envelope is now three-state — `state`
+> `in_sync`|`behind` with `behind_count`, or `error:"sync_state_unknown"` —
+> see `2026-08-28-truthful-sync-state-messages-for-llu-lol-h-files-design.md` §3.
+
 ## 7. Documentation layer
 
 - **New article** `git-config/lib/python/articles/pathspec.md` → served as

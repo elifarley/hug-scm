@@ -2,6 +2,23 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [1.16.0.0] - 2026-08-29
+
+### Fixed
+
+- `hug llu`, `hug lol`, and `hug h files -u` no longer tell you a behind branch is "up to date" or "already synced". With no outgoing commits you now get the truth: `already synced to <target>` when in sync, or `branch is behind <target> by N commit(s) — pull or rebase to catch up` when behind (singular-correct). `hug lol` names the branch instead of a hash, including custom targets — and drops the pull advice there, since it would point at the configured upstream rather than the target you named.
+- A failed upstream count can no longer masquerade as "in sync" in either output channel: `llu`'s empty path reports the state as unknown whenever its own count fails, instead of gambling on a second read.
+
+### Added
+
+- `hug llu --json` empty envelope now carries the sync state: `"state": "in_sync" | "behind"` plus `"behind_count"`, or `"error": "sync_state_unknown"` when the state cannot be determined (e.g. unborn HEAD with upstream configured). All empty envelopes validate as pure JSON on stdout, including under `--quiet`.
+- Shared sync-state primitives in `hug-git-upstream` (`sync_state_of`, `report_empty_outgoing`, `report_unknown_sync`), so the three commands' detection and wording cannot drift apart.
+
+### Changed
+
+- **Migration note for scripts:** the retired output strings — `(branch is up to date with …)` from `llu`, `; already synced to upstream.` from `h files`, and `lol`'s hash display on the empty path — no longer appear anywhere, and the old bare empty JSON envelope `{"commits":[],"summary":{"total_commits":0}}` is now one of the three shapes above. Re-anchor text matches on `(already synced to` / `"state"`. JSON remains additive: stdout purity and every pre-existing key are unchanged.
+- `hug llu -h` documents all three truthful messages (whole-branch semantics, even on scoped runs) and all four JSON envelope shapes; `docs/commands/logging.md` updated; superseding notes added to the 2026-07-29 count-commits-in-range audit and the 2026-08-16 uniform-pathspec spec where this work supersedes their verdicts.
+
 ## [1.15.1.0] - 2026-08-26
 
 Closes elifarley/hug-scm#303 (via elifarley/hug-scm#318): git-us's inline scope-intersection block now lives in a testable `hug-pathspec` library, and the five hand-copied sl* listings collapse onto one `sl_family_main` entrypoint.

@@ -33,8 +33,13 @@ DESCRIPTION:
     branch (i.e., commits that would be pushed). Shows detailed formatting with
     graph, date, author, and message, followed by a repository status summary.
 
-    If there is no upstream branch or no outgoing commits, shows an informative
-    message instead.
+    If there is no upstream branch, or there are no outgoing commits, shows an
+    informative message instead. With no outgoing commits the message is
+    truthful about the direction: "already synced to <upstream>" when in sync,
+    "branch is behind <upstream> by N commits — pull or rebase to catch up"
+    when behind, or "sync state with <upstream> could not be determined" when
+    it cannot be determined. The message always describes the whole branch,
+    even on a scoped (pathspec-filtered) run.
 
     A scoped run suppresses the trailing whole-repo status summary — it would
     misdescribe the scope (uniform pathspec contract, #292).
@@ -85,6 +90,14 @@ JSON OUTPUT (GitHub-compatible + Hug enhancements):
         "date_range": {"earliest": "...", "latest": "..."}
       }
     }
+
+    Empty envelope (no outgoing commits) - one of three shapes:
+
+      {"commits":[],"summary":{"total_commits":0,"state":"in_sync","behind_count":0}}
+      {"commits":[],"summary":{"total_commits":0,"state":"behind","behind_count":189}}
+      {"commits":[],"summary":{"total_commits":0,"error":"sync_state_unknown"}}
+
+    No upstream configured: {"commits":[],"summary":{"total_commits":0,"error":"no_upstream"}}
 
 SEE ALSO:
     hug ll       : Log commits with detailed formatting
@@ -178,13 +191,49 @@ fi
 # RANGE COMPUTATION UNCHANGED by the pathspec migration (#292): the count is
 # the UNSCOPED @{u}..HEAD size — a scope only ever shrinks the LISTED set,
 # never the range, and --max stays an upper bound for the JSON batcher.
-commit_count=$(git rev-list --count @{u}..HEAD 2> /dev/null || echo "0")
+# NO SWALLOW on purpose: a failed ahead-count must never masquerade as
+# 0/synced (a mid-run upstream reconfiguration can fail this read while the
+# behind measurement below would still succeed). Failure falls through to the
+# empty path and reports the state as unknown — both channels skip the second
+# read rather than gamble it into a sync claim.
+ahead_count_failed=false
+if ! commit_count=$(git rev-list --count @{u}..HEAD 2> /dev/null); then
+  commit_count=0
+  ahead_count_failed=true
+fi
 
 if [ "$commit_count" -eq 0 ]; then
   if $json_output; then
-    echo '{"commits":[],"summary":{"total_commits":0}}'
+    # Machine truth surface: the PRIMITIVE (not the message wrapper) so a
+    # failed count renders as an error marker — never as in_sync. The unknown
+    # envelope reuses the no_upstream error-marker convention (the no_upstream
+    # echo in the upstream-check branch above).
+    if $ahead_count_failed; then
+      state="unknown" # the gate's own read failed — do not re-measure
+    else
+      state=$(sync_state_of "$upstream")
+    fi
+    case "$state" in
+    in_sync)
+      echo '{"commits":[],"summary":{"total_commits":0,"state":"in_sync","behind_count":0}}'
+      ;;
+    behind\ *)
+      echo "{\"commits\":[],\"summary\":{\"total_commits\":0,\"state\":\"behind\",\"behind_count\":${state#behind }}}"
+      ;;
+    *)
+      echo '{"commits":[],"summary":{"total_commits":0,"error":"sync_state_unknown"}}'
+      ;;
+    esac
   else
-    info "📭 No outgoing commits (branch is up to date with ${upstream})"
+    # 0 ahead != synced — the wrapper distinguishes synced from behind-by-N
+    # (spec: docs/superpowers/specs/2026-08-28-truthful-sync-state-messages-for-llu-lol-h-files-design.md).
+    # When the ahead-count itself failed, report unknown directly (shared
+    # wording) — the wrapper's own measurement would be an unverified gamble.
+    if $ahead_count_failed; then
+      report_unknown_sync "📭 No outgoing commits" "$upstream"
+    else
+      report_empty_outgoing "📭 No outgoing commits" "$upstream" "$upstream"
+    fi
     # Same summary gate as the no-upstream site above.
     if ! $quiet && [[ ${#pathspecs[@]} -eq 0 ]]; then
       exec hug s

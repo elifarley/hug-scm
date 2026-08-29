@@ -278,3 +278,105 @@ emit_head_recovery_hint() {
   printf '\nℹ️  HEAD moved. Recover with:\n    hug h restore %s --%s -y\n' \
     "$pre_op_head" "$op" >&2
 }
+
+################################################################################
+# Empty-Outgoing Sync-State Reporting (truthful sync-state messages)
+################################################################################
+
+# Classifies how far HEAD is from <target_ref>. Does NOT assume @{u}: callers
+# pass custom targets (a full hash, origin/main, a local anchor branch).
+#
+# Usage: state=$(sync_state_of <target_ref>)
+# Prints exactly one of:
+#   "in_sync"      — target is an ancestor of (or equal to) HEAD
+#   "behind <N>"   — HEAD is N commits behind the target (N >= 1)
+#   "unknown"      — the count failed (e.g. unborn HEAD); NEVER "in_sync"
+# in_sync says nothing about the AHEAD direction — callers must have
+# established 0-ahead (the empty-outgoing gate) for in_sync to mean "synced".
+# Returns: 0 always — the state is the VALUE, not the exit code, so a bare
+#   capture stays errexit-safe (the commit_offset lesson, hug-git-commit:270-277).
+#
+# The count capture is the failure-testing form ON PURPOSE: the `|| echo "0"`
+# swallow idiom modeled at git-llu:194 (llu's commit_count capture) and
+# git-wtsh:137-138 would map "failed" onto 0 => in_sync — the exact
+# false-sync claim this function exists to kill.
+#
+# Deliberately NOT built on commit_offset (hug-git-commit:295): the callers
+# gate on 0-ahead first, so a diverged pair is unreachable here and
+# commit_offset's diverged exit-2 would be dead scaffolding. Cross-ref:
+# handle_upstream_operation (:51-68) classifies the same states via
+# commit_offset for the h* family.
+sync_state_of() {
+    local target_ref="${1:?sync_state_of: target ref required}"
+    local behind
+    if ! behind=$(git rev-list --count "HEAD..$target_ref" 2> /dev/null); then
+        echo "unknown"
+        return 0
+    fi
+    if [ "$behind" -eq 0 ]; then
+        echo "in_sync"
+    else
+        echo "behind $behind"
+    fi
+}
+
+# Report the unknown-state fallback WITHOUT measuring (shared wording home).
+# Used by report_empty_outgoing's unknown arm and by callers whose OWN gate
+# already proved the state undeterminable (e.g. llu's ahead-count failure) —
+# in that case a second measurement would be an unverified gamble that could
+# render a false sync claim.
+# Usage: report_unknown_sync <noun> <upstream_display>
+# Prints to stderr (via info):
+#   "<noun> (sync state with <upstream_display> could not be determined)"
+# Returns: 0 always.
+report_unknown_sync() {
+    local noun="${1:?report_unknown_sync: noun required}"
+    local display="${2:?report_unknown_sync: upstream display required}"
+    info "$noun (sync state with $display could not be determined)"
+}
+
+# Human message for the empty-outgoing path (0 commits ahead): the one wording
+# authority shared by git-llu, git-log-outgoing, and git-h-files.
+#
+# Usage: report_empty_outgoing <noun> <upstream_display> <target_ref> [<hint>]
+#   <noun>             Caller's sentence start ("No outgoing commits"); any
+#                      emoji is part of the noun (caller-owned).
+#   <upstream_display> What humans should see ("origin/main", a branch name,
+#                      or a short hash).
+#   <target_ref>       Ref measured against (forwarded to sync_state_of).
+#   [<hint>]           Optional trailing advice; default "pull or rebase to
+#                      catch up". Pass "" to omit — a custom target is not the
+#                      configured upstream, so that advice would misdirect.
+# Prints to stderr (via info) exactly one of:
+#   "<noun> (already synced to <upstream_display>)"
+#   "<noun> (branch is behind <upstream_display> by N commit[s] — pull or rebase to catch up)"
+#   "<noun> (sync state with <upstream_display> could not be determined)"
+# Suppressed under HUG_QUIET=T — this is human-facing chatter, mirroring the
+# gum_log quiet guard (hug-gum:42) per the stdout/stderr discipline.
+# Returns: 0 always — message-only; the caller owns the exit code.
+# The fallback parenthetical is self-contained so it composes with any noun
+# without repeating it, and it is the SAFETY NET for the swallowed ahead-count
+# at git-llu:194 — do not delete it if that capture is ever fixed to propagate.
+# Scope: wording authority for the EMPTY-OUTGOING family (llu/lol/h-files);
+# handle_upstream_operation (:59-68) keeps its own h*-family dialect.
+report_empty_outgoing() {
+    local noun="${1:?report_empty_outgoing: noun required}"
+    local display="${2:?report_empty_outgoing: upstream display required}"
+    local target_ref="${3:?report_empty_outgoing: target ref required}"
+    local state
+    state=$(sync_state_of "$target_ref")
+    case "$state" in
+    in_sync)
+        info "$noun (already synced to $display)"
+        ;;
+    behind\ *)
+        local n="${state#behind }" word="commits" hint=" — pull or rebase to catch up"
+        if [ "$n" -eq 1 ]; then word="commit"; fi
+        if [ $# -ge 4 ] && [ -z "${4:-}" ]; then hint=""; fi
+        info "$noun (branch is behind $display by $n $word$hint)"
+        ;;
+    *)
+        report_unknown_sync "$noun" "$display"
+        ;;
+    esac
+}

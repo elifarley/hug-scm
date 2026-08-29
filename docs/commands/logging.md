@@ -234,7 +234,7 @@ git parity).
 
 ```shell
 hug llu -- src/            # outgoing commits touching src/ only
-hug llu --json -- src/     # scoped JSON envelope (empty shape on zero matches)
+hug llu --json -- src/     # scoped JSON envelope (empty envelope with a `state`/`error` marker when the branch has no outgoing commits — see `hug help llu`)
 hug sh HEAD -- src/a.py    # commit details, file stats filtered to the path
 hug sh -3 -- src/          # range spellings (-3) are data, not flags
 ```

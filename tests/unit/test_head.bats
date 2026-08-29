@@ -1637,11 +1637,36 @@ EOF
   # At initial commit, going back 0 means no changes
   local initial_commit
   initial_commit=$(git rev-list --max-parents=0 HEAD)
-  
+
   run hug h files "$initial_commit"
   assert_success
   # Should show both features
   assert_output --partial "feature"
+}
+
+@test "hug h files -u: behind upstream -> truthful message naming the branch" {
+  # Local anchor branch 1 ahead of main, set as @{u}: h-files' empty path with
+  # no bare remote needed (same technique as the pathspec-conformance fixture).
+  git checkout -q -b hfiles-anchor
+  git commit -q --allow-empty -m "anchor ahead commit"
+  git checkout -q - # back to main (exactly one switch happened)
+  git branch --set-upstream-to=hfiles-anchor > /dev/null
+
+  run hug h files -u
+  assert_success
+  assert_output --partial "No local-only commits (branch is behind hfiles-anchor by 1 commit — pull or rebase to catch up)"
+  refute_output --partial "already synced"
+}
+
+@test "hug h files -u: synced upstream -> new synced wording" {
+  # Anchor at the SAME commit as HEAD: fully aligned, empty path, so the
+  # wrapper's synced branch renders here (site-level pin of the new wording).
+  git branch hfiles-anchor
+  git branch --set-upstream-to=hfiles-anchor > /dev/null
+
+  run hug h files -u
+  assert_success
+  assert_output --partial "No local-only commits (already synced to hfiles-anchor)"
 }
 
 # ----------------------------------------------------------------------------

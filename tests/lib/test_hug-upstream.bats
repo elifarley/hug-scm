@@ -293,3 +293,132 @@ advance_remote() {
   refute_output --partial "Already synced"
   refute_output --partial "behind upstream"
 }
+
+################################################################################
+# sync_state_of / report_empty_outgoing: truthful empty-outgoing reporting
+################################################################################
+
+@test "sync_state_of: synced repo -> in_sync" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  run sync_state_of "$(git rev-parse '@{u}')"
+  assert_success
+  assert_output "in_sync"
+}
+
+@test "sync_state_of: behind-by-2 -> 'behind 2'" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  advance_remote 2
+  run sync_state_of "$(git rev-parse '@{u}')"
+  assert_success
+  assert_output "behind 2"
+}
+
+@test "sync_state_of: failing target ref -> unknown (never in_sync)" {
+  create_test_repo_with_history
+  run sync_state_of "definitely-not-a-ref"
+  assert_success
+  assert_output "unknown"
+}
+
+@test "report_empty_outgoing: synced -> '(already synced to …)'" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  run report_empty_outgoing "📭 No outgoing commits" "origin/main" "$(git rev-parse '@{u}')"
+  assert_success
+  assert_output --partial "📭 No outgoing commits (already synced to origin/main)"
+}
+
+@test "report_empty_outgoing: behind-by-2 -> truthful count + catch-up hint" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  advance_remote 2
+  run report_empty_outgoing "📭 No outgoing commits" "origin/main" "$(git rev-parse '@{u}')"
+  assert_success
+  assert_output --partial "📭 No outgoing commits (branch is behind origin/main by 2 commits — pull or rebase to catch up)"
+  refute_output --partial "already synced"
+}
+
+@test "report_empty_outgoing: behind-by-1 -> singular 'commit'" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  advance_remote 1
+  run report_empty_outgoing "No outgoing changes" "a1b2c3d" "$(git rev-parse '@{u}')"
+  assert_success
+  assert_output --partial "behind a1b2c3d by 1 commit —"
+  refute_output --partial "1 commits"
+}
+
+@test "report_empty_outgoing: failure -> self-contained fallback (no noun repeat)" {
+  create_test_repo_with_history
+  run report_empty_outgoing "No outgoing changes" "definitely-not-a-ref" "definitely-not-a-ref"
+  assert_success
+  assert_output --partial "No outgoing changes (sync state with definitely-not-a-ref could not be determined)"
+  refute_output --partial "No outgoing changes (No outgoing changes"
+}
+
+@test "report_empty_outgoing: message routes to stderr (stdout stays empty)" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  run --separate-stderr report_empty_outgoing "No outgoing changes" "origin/main" "$(git rev-parse '@{u}')"
+  assert_success
+  assert_output ""
+  [[ -n "$stderr" ]]
+}
+
+@test "report_empty_outgoing: suppressed under HUG_QUIET=T" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  HUG_QUIET=T run --separate-stderr report_empty_outgoing "No outgoing changes" "origin/main" "$(git rev-parse '@{u}')"
+  assert_success
+  assert_output ""
+  [[ -z "$stderr" ]]
+}
+
+@test "sync_state_of: missing target ref -> hard guard abort (never a state value)" {
+  # The ${1:?} guard is a shell EXIT (rc=1, message on stderr): the function's
+  # contract is "returns 0 always, the state is the VALUE" — so a stateless call
+  # must abort, never default. A defaulted ref (e.g. a future ${1:-HEAD}) would
+  # INVENT sync truth by silently measuring against an arbitrary target.
+  run sync_state_of
+  assert_failure
+  assert_output --partial "sync_state_of: target ref required"
+  refute_output --partial "in_sync"
+  refute_output --partial "unknown"
+}
+
+@test "report_empty_outgoing: missing args -> hard guard abort on each position" {
+  # All three ${N:?} guards, one invocation per position (each `run` resets
+  # $output/$status, so assert immediately after each). Guards fire before any
+  # git call — pure argument-contract enforcement, no repo state involved.
+  run report_empty_outgoing
+  assert_failure
+  assert_output --partial "report_empty_outgoing: noun required"
+
+  run report_empty_outgoing "No outgoing changes"
+  assert_failure
+  assert_output --partial "report_empty_outgoing: upstream display required"
+
+  run report_empty_outgoing "No outgoing changes" "origin/main"
+  assert_failure
+  assert_output --partial "report_empty_outgoing: target ref required"
+}
+
+@test "report_empty_outgoing: empty 4th arg omits the catch-up hint (custom targets)" {
+  create_test_repo_with_history
+  setup_synced_upstream
+  advance_remote 1
+  run report_empty_outgoing "No outgoing changes" "origin/dev" "$(git rev-parse '@{u}')" ""
+  assert_success
+  assert_output --partial "behind origin/dev by 1 commit)"
+  refute_output --partial "pull or rebase"
+}
+
+@test "report_unknown_sync: self-contained fallback, composes with any noun" {
+  create_test_repo_with_history
+  run report_unknown_sync "📭 No outgoing commits" "origin/main"
+  assert_success
+  assert_output --partial "📭 No outgoing commits (sync state with origin/main could not be determined)"
+  refute_output --partial "📭 No outgoing commits (📭"
+}
