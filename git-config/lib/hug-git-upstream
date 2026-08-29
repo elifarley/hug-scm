@@ -278,3 +278,77 @@ emit_head_recovery_hint() {
   printf '\nℹ️  HEAD moved. Recover with:\n    hug h restore %s --%s -y\n' \
     "$pre_op_head" "$op" >&2
 }
+
+################################################################################
+# Empty-Outgoing Sync-State Reporting (truthful sync-state messages)
+################################################################################
+
+# Classifies how far HEAD is from <target_ref>. Does NOT assume @{u}: callers
+# pass custom targets (a full hash, origin/main, a local anchor branch).
+#
+# Usage: state=$(sync_state_of <target_ref>)
+# Prints exactly one of:
+#   "in_sync"      — target is an ancestor of (or equal to) HEAD
+#   "behind <N>"   — HEAD is N commits behind the target (N >= 1)
+#   "unknown"      — the count failed (e.g. unborn HEAD); NEVER "in_sync"
+# in_sync says nothing about the AHEAD direction — callers must have
+# established 0-ahead (the empty-outgoing gate) for in_sync to mean "synced".
+# Returns: 0 always — the state is the VALUE, not the exit code, so a bare
+#   capture stays errexit-safe (the commit_offset lesson, hug-git-commit:270-277).
+#
+# The count capture is the failure-testing form ON PURPOSE: the `|| echo "0"`
+# swallow idiom modeled at git-llu:181 / git-wtsh:137-138 would map "failed"
+# onto 0 => in_sync — the exact false-sync claim this function exists to kill.
+sync_state_of() {
+    local target_ref="${1:?sync_state_of: target ref required}"
+    local behind
+    if ! behind=$(git rev-list --count "HEAD..$target_ref" 2> /dev/null); then
+        echo "unknown"
+        return 0
+    fi
+    if [ "$behind" -eq 0 ]; then
+        echo "in_sync"
+    else
+        echo "behind $behind"
+    fi
+}
+
+# Human message for the empty-outgoing path (0 commits ahead): the one wording
+# authority shared by git-llu, git-log-outgoing, and git-h-files.
+#
+# Usage: report_empty_outgoing <noun> <upstream_display> <target_ref>
+#   <noun>             Caller's sentence start ("No outgoing commits"); any
+#                      emoji is part of the noun (caller-owned).
+#   <upstream_display> What humans should see ("origin/main", short hash, or
+#                      the resolved upstream branch name).
+#   <target_ref>       Ref measured against (forwarded to sync_state_of).
+# Prints to stderr (via info) exactly one of:
+#   "<noun> (already synced to <upstream_display>)"
+#   "<noun> (branch is behind <upstream_display> by N commit[s] — pull or rebase to catch up)"
+#   "<noun> (sync state with <upstream_display> could not be determined)"
+# Suppressed under HUG_QUIET=T — this is human-facing chatter, mirroring the
+# gum_log quiet guard (hug-gum:42) per the stdout/stderr discipline.
+# Returns: 0 always — message-only; the caller owns the exit code.
+# The fallback parenthetical is self-contained so it composes with any noun
+# without repeating it, and it is the SAFETY NET for the swallowed ahead-count
+# at git-llu:181 — do not delete it if :181 is ever fixed to propagate.
+report_empty_outgoing() {
+    local noun="${1:?report_empty_outgoing: noun required}"
+    local display="${2:?report_empty_outgoing: upstream display required}"
+    local target_ref="${3:?report_empty_outgoing: target ref required}"
+    local state
+    state=$(sync_state_of "$target_ref")
+    case "$state" in
+    in_sync)
+        info "$noun (already synced to $display)"
+        ;;
+    behind\ *)
+        local n="${state#behind }" word="commits"
+        if [ "$n" -eq 1 ]; then word="commit"; fi
+        info "$noun (branch is behind $display by $n $word — pull or rebase to catch up)"
+        ;;
+    *)
+        info "$noun (sync state with $display could not be determined)"
+        ;;
+    esac
+}
