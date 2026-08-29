@@ -649,7 +649,8 @@ EOF
 **Acceptance Criteria:**
 - [ ] `hug llu -h` documents behind + unknown and the three empty JSON envelopes
 - [ ] The 2026-07-29 audit doc carries a superseded-note scoping its SAFE verdicts to exit-code propagation
-- [ ] `grep -rn "up to date with\|already synced" README.md docs/ git-config/bin/ | grep -v 2026-07-29` returns only the two legitimate synced-message partials in tests and no live-code false claim
+- [ ] Gate 1 (mechanical): the live-code grep over the three fixed scripts returns nothing (exit 1)
+- [ ] Gate 2 (perimeter audit): the docs/superpowers/-excluded grep returns only the lib docstring, `git-wtsh`/`git-stats-branch` correct-code hits, and the two test partials
 - [ ] `make test` green; `make docs-build` green
 
 **Verify:** `make test TEST_SHOW_ALL_RESULTS=0` → all green; `make docs-build` → exit 0.
@@ -706,12 +707,27 @@ and extend the JSON OUTPUT section's summary description with:
 
 - [ ] **Step 3: Touch up `docs/commands/logging.md`** — change `(empty shape on zero matches)` to `(empty envelope with a `state`/`error` marker on zero matches — see `hug help llu`)`.
 
-- [ ] **Step 4: Verification greps** —
+- [ ] **Step 4: Verification greps (two gates)** —
+
+Gate 1 is the mechanical pass/fail: the three fixed sites must contain NEITHER phrase after Tasks 1-4 (before the fix, each contains one).
 
 ```bash
-grep -rn "up to date with\|already synced" README.md docs/ git-config/ | grep -v "2026-07-29-count-commits"
+# Gate 1 — live code, mechanical: any hit = FAIL (review fix: the original single
+# grep searched docs/ (which this PR fills with intentional spec/plan occurrences)
+# and skipped tests/, so its stated expectation was unreachable).
+grep -rn "up to date with\|already synced" \
+  git-config/bin/git-llu git-config/bin/git-log-outgoing git-config/bin/git-h-files
 ```
-Expected: only the lib docstring (`hug-git-upstream:29`), the two surviving test partials (`test_log_outgoing.bats:65,118`), the superseded-note text itself, and `git-wtsh`/`git-stats-branch` correct-code hits — NO live `llu`/`lol`/`h-files` false claim.
+Expected: no output, exit 1.
+
+Gate 2 is the informational perimeter audit (human-reviewed residual set — historical design docs under `docs/superpowers/` are excluded wholesale: the new spec, this plan, and the audit doc all quote the phrases intentionally, and the audit doc's superseding note scopes its SAFE rows).
+
+```bash
+# Gate 2 — everything else that ships the phrases must be on this allowlist
+grep -rn "up to date with\|already synced" \
+  README.md docs/ git-config/ hg-config/ tests/ | grep -v "docs/superpowers/"
+```
+Expected residual set (nothing else): the lib docstring (`hug-git-upstream:29`), `git-wtsh` + `git-stats-branch` correct-code hits (they compute both directions; `git-stats-branch:78` is help-text example, not live logic), the natural-language guide heading `docs/skills/hug-repo-analysis/guides/branch-analysis.md:295`, and the two surviving test partials (`test_log_outgoing.bats:65,118`).
 
 - [ ] **Step 5: Full verification** — `make test` (BATS + pytest) → green; `make docs-build` → exit 0.
 
