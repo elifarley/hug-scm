@@ -73,11 +73,25 @@ teardown() {
   git push -q origin main
   git reset -q --hard HEAD~1
 
-  local upstream_short
-  upstream_short=$(git rev-parse --short '@{u}')
   run hug lol
   assert_success
-  assert_output --partial "No outgoing changes (branch is behind $upstream_short by 1 commit — pull or rebase to catch up)"
+  # Display is the resolved upstream BRANCH name (actionable), not a hash.
+  assert_output --partial "No outgoing changes (branch is behind origin/main by 1 commit — pull or rebase to catch up)"
+  refute_output --partial "already synced"
+}
+
+@test "hug lol: behind custom target -> names the target, no misdirected hint" {
+  # Advance origin/dev by 1 with zero outgoing: push HEAD to a new remote
+  # branch, then move local main back onto the pre-commit state.
+  git commit -q --allow-empty -m "dev-only commit"
+  git push -q origin HEAD:refs/heads/dev
+  git reset -q --hard HEAD~1
+
+  run hug lol origin/dev
+  assert_success
+  assert_output --partial "No outgoing changes (branch is behind origin/dev by 1 commit)"
+  # The catch-up hint would point at the CONFIGURED upstream, not origin/dev.
+  refute_output --partial "pull or rebase"
   refute_output --partial "already synced"
 }
 

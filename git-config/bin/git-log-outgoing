@@ -97,7 +97,16 @@ local_commits=$(count_commits_in_range "$target" HEAD) || exit 1
 
 if [ "$local_commits" -eq 0 ]; then
   # Truthful sync state: 0 ahead also covers "behind by N" (#237/#238 pattern).
-  report_empty_outgoing "No outgoing changes" "$target_short" "$target"
+  # Display the BRANCH name, not a hash — "behind <hash>" is not actionable.
+  # For a custom target the catch-up hint would point at the CONFIGURED
+  # upstream rather than the named target, so it is omitted (empty hint arg).
+  if [[ -n $remote_branch ]]; then
+    report_empty_outgoing "No outgoing changes" "$remote_branch" "$target" ""
+  else
+    report_empty_outgoing "No outgoing changes" \
+      "$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref HEAD)" 2> /dev/null || echo "upstream")" \
+      "$target"
+  fi
   exit 0
 fi
 
