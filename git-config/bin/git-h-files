@@ -124,7 +124,14 @@ if $upstream; then
   # do NOT add 'local' here; 'local' outside a function is a fatal error.
   local_commits=$(count_commits_in_range "$start_point" HEAD) || exit 1
   if [ "$local_commits" -eq 0 ]; then
-    info "No local-only commits; already synced to upstream."
+    # Name the actual branch: a behind-by-N answer must say WHICH upstream
+    # (same idiom as handle_upstream_operation, hug-git-upstream:66; like the
+    # sibling, the "upstream" fallback is inert — get_upstream_commit already
+    # requires an attached HEAD, so symbolic-ref cannot fail here). Do NOT
+    # reuse $upstream — that is this script's boolean flag variable.
+    upstream_name=$(git for-each-ref --format='%(upstream:short)' \
+      "$(git symbolic-ref HEAD)" 2> /dev/null || echo "upstream")
+    report_empty_outgoing "No local-only commits" "$upstream_name" "$start_point"
     exit 0
   fi
 elif [[ -n "$temporal_spec" ]]; then
