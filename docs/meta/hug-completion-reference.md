@@ -28,8 +28,8 @@ These are top-level commands defined as Git aliases. Complete them as static wor
 - `l [git-log-opts]`: `log --oneline --graph --decorate --color`. Args: Git log options.
 - `ll [git-log-opts]`: `log --graph --pretty=log1 --date=short`. Args: Git log options.
 - `la [git-log-opts]`: Log all branches. Args: Git log options.
-- `lo`: Log outgoing changes (quiet mode, alias for `log-outgoing --quiet`). No args.
-- `lol`: Log outgoing changes (verbose mode, alias for `log-outgoing`). No args.
+- `lo [<remote-branch>]`: Log outgoing changes (quiet mode, alias for `log-outgoing --quiet`). Args: `[<remote-branch>]` (optional target, e.g. `origin/dev`, instead of the tracked upstream).
+- `lol [<remote-branch>]`: Log outgoing changes (verbose mode, alias for `log-outgoing`). Args: `[<remote-branch>]` (optional target, e.g. `origin/dev`, instead of the tracked upstream).
 - `llf <file> [-p] [git-log-opts]`: Log commits to a file (with optional patches). Args: `<file>` (required), `[-p]` (show patches), Git log options.
 - `llfp <file> [git-log-opts]`: Log file with patches. Args: `<file>` (required), Git log options.
 - `llfs <file> [git-log-opts]`: Log file stats. Args: `<file>` (required), Git log options.

@@ -196,6 +196,7 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
 - Handle upstream operations (`handle_upstream_operation`) -- takes a required `tier` parameter (warn/danger) for the upstream confirmation path. This closes the inverted confirmation gradient: previously every upstream path was gated at warn regardless of the operation's actual danger level.
 - Handle standard operations (`handle_standard_operation`) -- aligned-target gating uses `has_uncommitted_tracked_changes` (tracked-only) for the skip-when-aligned decision. Alignment itself is tested with `is_same_commit` (exact SHA equality), NEVER a one-directional `count_commits_in_range … == 0` -- see the "Range counting" subsection. Callers invoke this helper BARE (not via `$(…)`) so its aligned-path `exit 0` terminates the mover.
 - Recovery hint helper (`emit_head_recovery_hint`) -- emits the `hug h restore <SHA> --<op> -y` recovery command to stderr after a successful warn-tier HEAD-mover. Suppressed under `HUG_QUIET=T`. Used by h-back, h-undo, h-rollback, h-rewind (warn), and h-squash.
+- Truthful empty-outgoing sync state (`sync_state_of`, `report_empty_outgoing`, `report_unknown_sync`) -- the single wording authority for llu/lol/h-files' empty-outgoing path, so the three commands cannot drift apart. `sync_state_of <target_ref>` prints `in_sync` / `behind <N>` / `unknown` and returns 0 ALWAYS (the state is the VALUE, not the exit code, so a bare capture stays errexit-safe); a failed behind-count renders as `unknown`, never as in_sync. Callers must gate on 0-ahead first -- `in_sync` says nothing about the AHEAD direction. `report_empty_outgoing <noun> <display> <target_ref> [<hint>]` prints the human message to stderr (via `info`, `HUG_QUIET`-respected); pass an empty 4th arg to drop the pull/rebase hint when the target is not the configured upstream. Scope: the EMPTY-OUTGOING family only -- `handle_upstream_operation` keeps its own h*-family dialect.
 - See also: `git-h-restore` -- the recovery primitive that `emit_head_recovery_hint` prints. Uses exact-SHA no-op (never the range-count gate) so it can move HEAD forward to a descendant commit.
 
 #### hug-git-backup
@@ -538,6 +539,11 @@ print_commit_list_in_range "origin/main" "HEAD"
   here `<pipe><pipe>` stands for the shell OR operator, written obfuscatedly so this README
   doesn't itself trip the canary -- the real command greps for that operator immediately
   followed by `echo 0`).
+- **`sync_state_of "target_ref"`** (hug-git-upstream) -- the MESSAGE-side behind-count for the
+  empty-outgoing gate: prints `in_sync` / `behind <N>` / `unknown`, where a failed `rev-list`
+  maps to `unknown` (NEVER to `0`/in_sync — the false-sync claim this primitive exists to
+  kill). Still one-directional: `in_sync` means "target is not ahead of HEAD" — pair it with
+  a 0-ahead gate before reading it as "synced." Returns 0 always; branch on the VALUE.
 
 ### Operation Handlers
 
