@@ -96,7 +96,8 @@ fi
 local_commits=$(count_commits_in_range "$target" HEAD) || exit 1
 
 if [ "$local_commits" -eq 0 ]; then
-  info "No outgoing changes (already synced to $target_short)."
+  # Truthful sync state: 0 ahead also covers "behind by N" (#237/#238 pattern).
+  report_empty_outgoing "No outgoing changes" "$target_short" "$target"
   exit 0
 fi
 
