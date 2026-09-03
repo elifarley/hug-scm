@@ -132,7 +132,8 @@ operand-less, on empty input (a no-match `| xargs -0 rm` would still run
 the filename (default `core.quotePath`):
 
 ```bash
-printf 'x\n' > $'weird\nname.txt' && git add -A && git commit -qm t
+printf 'x\n' > normal.txt && printf 'x\n' > $'weird\nname.txt'
+git add -A && git commit -qm t
 
 hug shc -n HEAD                        # line mode: C-quoted, unpipeable
 # normal.txt
@@ -318,7 +319,7 @@ hug shp <commit-hash>        # full diff
 hug shc <commit-hash>        # files changed
 hug shc -n <commit-hash>     # paths only — human display
 hug shc -n -z <commit-hash> | xargs -0 -r <cmd>  # pipe to tools (-z = raw
-                             # NUL-separated paths; see "Piping `shc -n`" above)
+                                                 # NUL-separated paths; see "Piping `shc -n`" above)
 
 # 5. Check related changes
 hug h files <commit-hash>    # what else changed with it?
