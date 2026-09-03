@@ -308,12 +308,19 @@ Each commit should be atomic (single logical change):
 ```bash
 # Check files in commit
 hug shc HEAD
-hug shc -n HEAD               # paths only — scriptable pre-commit file list
+hug shc -n HEAD               # paths only — human display (line mode C-quotes
+                              # structural-char filenames)
+hug shc -n -z HEAD | xargs -0 -r <cmd>   # scripting it? -z = NUL-separated raw paths
 
 # If too many unrelated files, consider splitting
 hug h back  # undo commit
 # Then stage and commit separately
 ```
+
+Line mode C-quotes filenames containing structural characters (newline,
+backslash, quote, tab), so only the `-z` stream is safe to feed to other
+tools. Keep `-r` on GNU xargs — without it, xargs runs the command once
+operand-less on empty input; BSD/macOS xargs needs no `-r`.
 
 ## Common Mistakes to Avoid
 
