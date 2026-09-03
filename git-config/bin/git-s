@@ -81,7 +81,7 @@ CAPTURING OUTPUT:
     branch=$(hug s -b)          # Capture branch name
     hug s -C -S -U              # "ahead behind staged unstaged"
     hug s --conflicted          # Count of conflicted (unmerged) files
-    hug s -z -b -H | xargs -0  # NUL-separated for unusual names
+    hug s -z -b -H | xargs -0 -r <cmd>  # -r matters: GNU xargs otherwise runs <cmd> ONCE, operand-less, on empty input
 
 EXAMPLES:
   hug s                         # Colored summary line (default mode)
