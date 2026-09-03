@@ -110,8 +110,38 @@ hug sh
 hug shp
 
 # Show files changed in specific commit
-hug shc a1b2c3d
-hug shc -n <commit-hash>      # files changed, paths only (pipe-safe)
+hug shc a1b2c3d               # human display, with stats
+hug shc -n a1b2c3d            # paths only — display (line mode C-quotes
+                              # structural-char names: newline, tab, quote, backslash)
+```
+
+**Piping `shc -n` output to another tool? Add `-z`.** Line mode cannot
+round-trip filenames containing structural characters (git C-quotes them), so
+the piped command receives a quoted, mangled path. `-z` (requires `-n`) emits
+fully raw, NUL-separated paths that survive any filename:
+
+```bash
+hug shc -n -z <commit-hash> | xargs -0 -r <cmd>   # e.g. xargs -0 -r wc -l
+# or split it yourself:
+hug shc -n -z <commit-hash> | while IFS= read -r -d '' f; do echo "$f"; done
+```
+
+Keep the `-r` on GNU xargs: without it, xargs runs the command ONCE,
+operand-less, on empty input (a no-match `| xargs -0 rm` would still run
+`rm`). BSD/macOS xargs needs no `-r`. Verified round-trip with a newline in
+the filename (default `core.quotePath`):
+
+```bash
+printf 'x\n' > $'weird\nname.txt' && git add -A && git commit -qm t
+
+hug shc -n HEAD                        # line mode: C-quoted, unpipeable
+# normal.txt
+# "weird\nname.txt"
+
+hug shc -n -z HEAD | xargs -0 -r wc -l  # -z: every path round-trips
+# 1 normal.txt
+# 1 'weird'$'\n''name.txt'   <- wc's own display quoting; the real file WAS read
+# 2 total
 ```
 
 ### 3. Finding When Things Changed
@@ -286,7 +316,9 @@ hug llf <file>               # see all commits
 # 4. Examine suspect commits
 hug shp <commit-hash>        # full diff
 hug shc <commit-hash>        # files changed
-hug shc -n <commit-hash>      # files changed, paths only (pipe-safe)
+hug shc -n <commit-hash>     # paths only — human display
+hug shc -n -z <commit-hash> | xargs -0 -r <cmd>  # pipe to tools (-z = raw
+                             # NUL-separated paths; see "Piping `shc -n`" above)
 
 # 5. Check related changes
 hug h files <commit-hash>    # what else changed with it?
