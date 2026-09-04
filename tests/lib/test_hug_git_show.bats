@@ -745,3 +745,35 @@ setup_show_pathspec_fixture() {
   # NUL as \0 (two chars); single-backslash literals below are exact bytes.
   [[ "$(show_changed_file_names -z "HEAD" | od -An -c | tr -d ' \n')" == 'a.txt\0b.txt\0' ]]
 }
+
+@test "show_changed_file_names: --no-renames threads through — rename lists BOTH sides" {
+  # ACTION-LIST contract at the library level (#283): the deleted side of a
+  # rename must be visible to action consumers (rm/restore). Default stays
+  # DISPLAY (new path only) — pinned by the thin-wrapper regression test above.
+  # Order is TREE order of the independent D+A pair, not "old then new".
+  local test_repo=$(create_test_repo)
+  cd "$test_repo"
+  echo a > plain.txt
+  git add -A && git commit -qm init
+  git mv plain.txt renamed.txt
+  git commit -qm rename
+  run show_changed_file_names "HEAD"
+  assert_output "renamed.txt" # default: new path only (DISPLAY stance)
+  [[ "$(show_changed_file_names --no-renames -z "HEAD" | od -An -c | tr -d ' \n')" == 'plain.txt\0renamed.txt\0' ]]
+}
+
+@test "show_changed_file_names: leading flags parse in any order (loop, not single case)" {
+  # The old single `case` accepted ONE flag in ONE slot — composing two flags
+  # fed the second into the target slot. Must stay order-independent like
+  # pinned_diff's parser (leading flags only; a trailing token is a pathspec
+  # by contract).
+  local test_repo=$(create_test_repo)
+  cd "$test_repo"
+  echo a > a.txt
+  echo b > b.txt
+  git add -A && git commit -qm init
+  local p1 p2
+  p1="$(show_changed_file_names --no-renames -z "HEAD" | od -An -c | tr -d ' \n')"
+  p2="$(show_changed_file_names -z --no-renames "HEAD" | od -An -c | tr -d ' \n')"
+  [[ "$p1" == 'a.txt\0b.txt\0' && "$p1" == "$p2" ]]
+}
