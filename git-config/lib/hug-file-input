@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # hug-file-input.sh - Library for reading file lists from various sources
 # Supports both simple file lists and hug sh output parsing
+#
+# Dependency + transport note (elifarley/hug-scm#285):
+# extract_files_from_commit delegates to pinned_diff (hug-git-diff, loaded
+# via hug-common's lib list) and its stdout is RAW NUL-TERMINATED records
+# (-z semantics, never C-quoted). Consume that stream ONLY through
+# extract_files_from_commit_into — never `$(…)`/`mapfile <<<`, which strip
+# NUL bytes (bash strings cannot hold them) or collect C-quoted line-mode
+# tokens. See each function's doc comment for the details.
 
 # Read files from various sources (file, stdin, or commit)
 # Usage: read_files_from_source <source>
@@ -127,13 +135,25 @@ extract_simple_file_list() {
 
 # Extract files directly from a commit using optimized git command
 # Usage: extract_files_from_commit <commit>
-# Outputs filenames one per line to stdout
+# STDOUT CONTRACT (elifarley/hug-scm#285): RAW NUL-TERMINATED records
+# (-z semantics via pinned_diff --null), never C-quoted — structural-char
+# filenames (backslash, newline, quote, tab) survive byte-exact, where
+# every line-oriented mode C-quotes them and the collected tokens
+# ("back\slash.txt", "we\nird") are not paths. NEVER capture this stdout
+# into a shell variable: bash strings strip NUL bytes. Read it back from a
+# FILE — the sanctioned reader is extract_files_from_commit_into below.
 # Depends on: pinned_diff (hug-git-diff) — every current consumer loads it via
 # hug-common's lib list — and transitively `is_range` (hug-git-repo), loaded
 # by consumers via hug-git-kit; hug-common does NOT provide is_range. NOTE:
-# the `2>/dev/null || true` below masks exit 127 (an unsourced pinned_diff or
-# is_range) and exit 2 (pinned_diff's own error_usage guards), not just git's
-# 128 — a consumer missing either lib inherits a silently-empty file list.
+# the `2>/dev/null || true` below masks git's 128 and an unsourced
+# pinned_diff/is_range (127) — a consumer missing either lib inherits a
+# silently-empty file list — but pinned_diff's error_usage guards EXIT
+# outright (exit 2), so no `||` fallback ever sees them. The NUL stream is
+# under the same swallow policy: a failed pinned_diff stream is
+# indistinguishable from an empty commit; the rev-parse guard's exit, in
+# contrast, is forwarded intact by extract_files_from_commit_into.
+# ACTION-LIST contract (--no-renames): both sides of a rename keep listing —
+# staging/untrack consumers (git-a/us/untrack/ccp) need the deleted side too.
 extract_files_from_commit() {
   local commit="$1"
 
@@ -145,8 +165,61 @@ extract_files_from_commit() {
 
   # ACTION-LIST contract (--no-renames): both sides of a rename keep listing —
   # staging/untrack consumers (git-a/us/untrack/ccp) need the deleted side too.
-  # Byte-identical with the previous unpinned output on ASCII fixtures.
-  pinned_diff --no-renames --name-only "$commit" 2> /dev/null || true
+  # --null (-z): raw records; ASCII records byte-identical with the previous
+  # line-mode output modulo the terminator (pinned by test).
+  pinned_diff --no-renames --null --name-only "$commit" 2> /dev/null || true
+}
+
+# NUL-safe reader for extract_files_from_commit: fills <out_arr> with one
+# RAW record per changed file. THE sanctioned consumer of the NUL stream.
+# Usage: extract_files_from_commit_into <out_arr> <commit>
+# Returns: 0 on success (an empty commit just leaves the array empty); 1
+# when the rev-parse guard rejects <commit> (or mktemp fails).
+# GUARD CONTRACT: FATAL in every consumer — git-a/untrack/ccp and git-us
+# all spell it `|| exit $?`, the lib helper composes with `|| return $?`.
+# Production error() EXITS the process, so the guard is fatal regardless;
+# `|| exit $?` makes that explicit and keeps it correct under non-exiting
+# error overrides (test harnesses). Pre-#285 the process-substitution
+# subshell ACCIDENTALLY contained that exit — `hug a --from-commit
+# <bogus>` answered "No files to stage." with exit 0, the exact
+# automation-reads-failure-as-success bug class codex P2 fixed for git-us.
+# WHY validate BEFORE mktemp: production error() exits BETWEEN mktemp and
+# the cleanup rm would run — an inner guard failure would leak the temp
+# file. The small rev-parse duplication with extract_files_from_commit
+# buys a leak-free failure path; the inner guard remains as a backstop
+# (reachable only under non-exiting error overrides).
+# WHY a temp FILE, not `mapfile -d '' < <(…)` or `$(…)`:
+#   - `$()` strips NUL bytes (bash strings cannot hold them) and
+#     concatenates every record into one string — the #285 corruption
+#     class, one level up;
+#   - a process substitution DETACHES the exit status: the guard's
+#     failure would die in the subshell while the caller sailed on with
+#     an empty list. Only a real child (`> "$efci_tmp"`) forwards the
+#     status to the caller.
+# House pattern: build_scope_set (hug-pathspec) — same temp-file transport,
+# same reasoning documented there.
+extract_files_from_commit_into() {
+  local -n _efci_out=$1
+  local commit="$2"
+  _efci_out=()
+  # Guard FIRST — before mktemp (see leak note above).
+  if ! git rev-parse --verify "$commit" > /dev/null 2>&1; then
+    error "Commit '$commit' does not exist"
+    return 1
+  fi
+  local efci_tmp
+  efci_tmp="$(mktemp "${TMPDIR:-/tmp}/hug-efci.XXXXXX")" || return 1
+  local efci_status=0
+  extract_files_from_commit "$commit" > "$efci_tmp" || efci_status=$?
+  if [[ $efci_status -ne 0 ]]; then
+    rm -f "$efci_tmp"
+    return "$efci_status"
+  fi
+  local efci_rec
+  while IFS= read -r -d '' efci_rec; do
+    _efci_out+=("$efci_rec")
+  done < "$efci_tmp"
+  rm -f "$efci_tmp"
 }
 
 # Parse --from-file and --from-commit flags from command line arguments
@@ -189,7 +262,13 @@ collect_files_from_args() {
 
   # Handle --from-commit flag (optimized path)
   if [[ -n "$from_commit" ]]; then
-    mapfile -t files_from_source < <(extract_files_from_commit "$from_commit")
+    # NUL transport (elifarley/hug-scm#285): raw records via the sanctioned
+    # reader. Guard failure is FATAL (function, so `return $?` composes):
+    # production error() exits the process; `|| return $?` makes that
+    # explicit and correct under non-exiting error overrides. Pre-#285 the
+    # process-substitution subshell accidentally swallowed the exit — the
+    # codex-P2 bug class (automation read a failed run as success).
+    extract_files_from_commit_into files_from_source "$from_commit" || return $?
     collected_files=("${files_from_source[@]}" "${remaining_args[@]}")
 
   # Handle --from-file flag
