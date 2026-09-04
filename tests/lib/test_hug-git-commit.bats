@@ -232,6 +232,112 @@ teardown() {
 }
 
 ################################################################################
+# list_/count_changed_files_in_range — pinned_diff consolidation TESTS (#282)
+################################################################################
+
+# Fixture (the #282 recorded probe): c1 adds plain.txt, beta.txt, sub/gamma.txt;
+# c2 renames plain.txt → renamed.txt, appends to beta.txt, adds delta.txt,
+# deletes sub/gamma.txt; c3 appends to renamed.txt.
+_make_range_fixture() {
+  echo a > plain.txt; echo b > beta.txt; mkdir sub; echo c > sub/gamma.txt
+  git add -A && git commit -qm c1
+  git mv plain.txt renamed.txt; echo more >> beta.txt; echo d > delta.txt
+  git rm -q sub/gamma.txt
+  git add -A && git commit -qm c2
+  echo e >> renamed.txt; git add -A && git commit -qm c3
+}
+
+# Companion fixture for the non-ASCII pin: café.txt added (c1) then modified
+# (c2). Under hostile core.quotePath=true the pre-consolidation raw invocation
+# C-quoted the path; pinned_diff's core.quotePath=false pin must keep the raw
+# bytes. Mirrors the café.txt half of test_hug_git_diff.bats's _make_fixture.
+_make_unicode_fixture() {
+  echo a > 'café.txt'
+  git add -A && git commit -qm c1
+  echo b >> 'café.txt'
+  git add -A && git commit -qm c2
+}
+
+@test "list_changed_files_in_range: byte-identical sorted list at default config (rename collapsed)" {
+  # Byte-identity regression (#282): these are the recorded bytes of the
+  # pre-consolidation `git diff --name-only … | sort -u` — the pinned_diff
+  # delegation must reproduce them EXACTLY at default config. Asserting the
+  # full stream (not individual lines) is deliberate, but this test does NOT
+  # prove the `sort -u` load-bearing: git's stream order happens to coincide
+  # with sorted order on this fixture (probe-verified, git 2.34.1). The
+  # orderFile test below is what makes the sort structurally load-bearing.
+  _make_range_fixture
+  run list_changed_files_in_range HEAD~2 HEAD
+  assert_success
+  assert_output "beta.txt
+delta.txt
+renamed.txt
+sub/gamma.txt"
+}
+
+@test "list_changed_files_in_range: hostile diff.orderFile cannot leak stream order (sort -u load-bearing)" {
+  # The byte-identity test above pins the recorded bytes but cannot expose a
+  # dropped `sort -u` on this fixture (git's stream order happens to coincide
+  # with sorted order there). This test makes the sort STRUCTURALLY
+  # load-bearing: diff.orderFile is deliberately NOT pinned by pinned_diff,
+  # so it reorders the upstream stream (verified: renamed.txt, sub/gamma.txt,
+  # beta.txt, delta.txt) — only the function's `sort -u` stands between that
+  # order and the documented sorted-unique contract. The 4-path HEAD~2 range
+  # is REQUIRED: HEAD~1..HEAD changes a single path, where any order is
+  # trivially sorted and a dropped sort would pass unnoticed. Locale-
+  # independent, unlike fixture-ordering tricks.
+  _make_range_fixture
+  printf 'renamed.txt\nsub/gamma.txt\nbeta.txt\ndelta.txt\n' > .orderfile
+  git config diff.orderFile .orderfile
+  run list_changed_files_in_range HEAD~2 HEAD
+  assert_success
+  assert_output "beta.txt
+delta.txt
+renamed.txt
+sub/gamma.txt"
+}
+
+@test "list_changed_files_in_range: hostile core.quotePath=true still emits raw café.txt" {
+  # TDD red pre-consolidation (verified): the raw invocation inherited the
+  # user's quotePath and emitted the C-quoted "caf\303\251.txt" form.
+  # pinned_diff pins core.quotePath=false, so the raw bytes survive the
+  # hostile config.
+  _make_unicode_fixture
+  git config core.quotePath true
+  run list_changed_files_in_range HEAD~1 HEAD
+  assert_success
+  assert_line "café.txt"
+  refute_line --partial 'caf\303\251'
+}
+
+@test "list_changed_files_in_range: hostile diff.renames=false still collapses the rename (DISPLAY stance)" {
+  # TDD red pre-consolidation (verified): with diff.renames=false the raw
+  # invocation expanded the rename to plain.txt + renamed.txt (5 paths).
+  # pinned_diff pins --find-renames — the DISPLAY contract, chosen because
+  # the sole caller (git-h-files) is a read-only preview and pinned
+  # --find-renames matches git's default diff.renames=true, so default-config
+  # output is unchanged — making the collapse config-immune.
+  _make_range_fixture
+  git config diff.renames false
+  run list_changed_files_in_range HEAD~2 HEAD
+  assert_success
+  assert_output "beta.txt
+delta.txt
+renamed.txt
+sub/gamma.txt"
+}
+
+@test "count_changed_files_in_range: hostile diff.renames=false still counts 4 (rename collapsed)" {
+  # Companion to the list test above — the count must share the DISPLAY
+  # stance: 4 collapsed paths, never the 5-path rename expansion.
+  _make_range_fixture
+  git config diff.renames false
+  run count_changed_files_in_range HEAD~2 HEAD
+  assert_success
+  assert_output "4"
+}
+
+################################################################################
 # resolve_temporal_to_commit TESTS
 ################################################################################
 
