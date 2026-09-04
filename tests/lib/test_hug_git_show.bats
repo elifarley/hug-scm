@@ -741,7 +741,5 @@ setup_show_pathspec_fixture() {
   echo a > a.txt
   echo b > b.txt
   git add -A && git commit -qm init
-  # NUL assertion via pipe — BATS run/$output strips NUL bytes. od -c renders
-  # NUL as \0 (two chars); single-backslash literals below are exact bytes.
-  [[ "$(show_changed_file_names -z "HEAD" | od -An -c | tr -d ' \n')" == 'a.txt\0b.txt\0' ]]
+  show_changed_file_names -z "HEAD" | assert_bytes_eq 'a.txt\0b.txt\0'
 }

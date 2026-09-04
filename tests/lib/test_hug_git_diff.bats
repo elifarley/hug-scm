@@ -55,13 +55,11 @@ _make_fixture() {
 
 @test "pinned_diff: --null emits NUL-terminated raw paths (pipe assertion, never \$output)" {
   _make_fixture
-  # od -c renders non-ASCII bytes as octal escapes (é → 303 251) and NUL as \0;
-  # emission order is tree order (café.txt before renamed.txt). Full-stream
+  # Emission order is tree order (café.txt before renamed.txt). Full-stream
   # equality pins order, NUL termination, no trailing newline, and rawness —
   # C-quoted output would render as "caf\303\251.txt" (visible backslashes),
-  # a different string. Fixtures here avoid od's `*` line-dedup (streams
-  # under 16 bytes/line or with distinct lines only).
-  [[ "$(pinned_diff --null --name-only HEAD | od -An -c | tr -d ' \n')" == 'caf303251.txt\0renamed.txt\0' ]]
+  # a different string.
+  pinned_diff --null --name-only HEAD | assert_bytes_eq 'caf303251.txt\0renamed.txt\0'
 }
 
 @test "pinned_diff: --null on the RANGE branch emits NUL-terminated raw paths" {
@@ -69,8 +67,8 @@ _make_fixture() {
   # Companion to the single-commit --null test above: the range dispatches to
   # `git diff` (NOT diff-tree), a different git code path for -z — no commit-id
   # entry either way, and renames still collapse to the new path. Oracle
-  # probed on git 2.34.1; same od-pipe discipline (never $output — NUL).
-  [[ "$(pinned_diff --null --name-only 'HEAD~1..HEAD' | od -An -c | tr -d ' \n')" == 'caf303251.txt\0renamed.txt\0' ]]
+  # probed on git 2.34.1; same NUL-pipe discipline.
+  pinned_diff --null --name-only 'HEAD~1..HEAD' | assert_bytes_eq 'caf303251.txt\0renamed.txt\0'
 }
 
 @test "pinned_diff: --null with --stat is rejected (exit 2)" {
@@ -88,7 +86,7 @@ _make_fixture() {
   # both sides AND paths are NUL-terminated. Oracle probed on git 2.34.1 —
   # tree order (café.txt, plain.txt deleted, renamed.txt added), so this
   # assertion fails against the old parser (empty stream from exit 2).
-  [[ "$(pinned_diff --no-renames --null --name-only HEAD | od -An -c | tr -d ' \n')" == 'caf303251.txt\0plain.txt\0renamed.txt\0' ]]
+  pinned_diff --no-renames --null --name-only HEAD | assert_bytes_eq 'caf303251.txt\0plain.txt\0renamed.txt\0'
 }
 
 @test "pinned_diff: unknown format is rejected (exit 2)" {
@@ -177,9 +175,8 @@ _make_fixture() {
 
 @test "pinned_diff: submodule pin defeats hostile diff.ignoreSubmodules=all" {
   local child="$BATS_TEST_TMPDIR/child-$$"
-  git init -q "$child"
+  _init_repo_at "$child"
   ( cd "$child" \
-    && git config user.email t@t.tld && git config user.name t \
     && echo x > sub.txt && git add -A && git commit -qm subinit )
   git -c protocol.file.allow=always submodule add -q "$child" sub
   git commit -qm addsub
@@ -191,9 +188,8 @@ _make_fixture() {
 
 @test "pinned_diff: submodule pin defeats hostile diff.ignoreSubmodules=all on the RANGE branch" {
   local child="$BATS_TEST_TMPDIR/child-$$"
-  git init -q "$child"
+  _init_repo_at "$child"
   ( cd "$child" \
-    && git config user.email t@t.tld && git config user.name t \
     && echo x > sub.txt && git add -A && git commit -qm subinit )
   git -c protocol.file.allow=always submodule add -q "$child" sub
   git commit -qm addsub
@@ -201,7 +197,7 @@ _make_fixture() {
   # neither the parent's local identity nor any global one (CI runners have
   # none) — configure it before committing there, same as the child repo above.
   ( cd sub \
-    && git config user.email t@t.tld && git config user.name t \
+    && _git_test_identity \
     && echo y > sub.txt && git add -A && git commit -qm childchange )
   git add sub && git commit -qm bumpsub
   git config diff.ignoreSubmodules all
