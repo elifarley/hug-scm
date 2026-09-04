@@ -21,6 +21,23 @@ create_test_file() {
   echo -e "$content" > "$filename"
 }
 
+# Read NUL-separated records from <file> into the array named <out_arr>
+# (house NUL-transport read, mirroring build_scope_set in hug-pathspec).
+# WHY a helper: extract_files_from_commit emits RAW NUL-terminated records
+# (-z semantics, elifarley/hug-scm#285), and `run`/`$output` strip NUL
+# bytes — bash strings cannot hold them — so the stream's byte-level truth
+# is invisible to assert_line. The NUL itself is the delimiter (filenames
+# can never contain NUL), so records arrive NUL-free and array-safe.
+read_nul_records() {
+  local -n _rnr_out=$1
+  local _rnr_file="$2"
+  _rnr_out=()
+  local _rnr_rec
+  while IFS= read -r -d '' _rnr_rec; do
+    _rnr_out+=("$_rnr_rec")
+  done < "$_rnr_file"
+}
+
 #=== read_files_from_source Tests ===
 
 @test "read_files_from_source: reads from simple file list" {
@@ -300,8 +317,15 @@ file3.txt"
 }
 
 #=== extract_files_from_commit Tests ===
+#
+# NUL-STREAM CONTRACT (elifarley/hug-scm#285): extract_files_from_commit
+# emits RAW NUL-terminated records (-z semantics, never C-quoted). `run`
+# strips NUL bytes from $output, so NO test below may assert this function's
+# stdout through $output/assert_line — every data assertion captures stdout
+# to a temp file, then either cmp -s's the whole stream or reads records
+# with read_nul_records.
 
-@test "extract_files_from_commit: extracts files from valid commit" {
+@test "extract_files_from_commit: ASCII records byte-identical with old line-mode output (regression pin)" {
   # Arrange
   local test_repo=$(create_test_repo)
   cd "$test_repo"
@@ -312,21 +336,61 @@ file3.txt"
   git add file1.txt file2.txt
   git commit -m "Add files"
 
-  # Act
-  run extract_files_from_commit HEAD
+  # Act — capture the NUL stream to a file ($output would strip NULs)
+  local out_file="$BATS_TMPDIR/efci_ascii.$$"
+  extract_files_from_commit HEAD > "$out_file"
 
-  # Assert
+  # Assert — full stream byte-equal to the pre-change line-mode records,
+  # NUL-terminated (tree order: file1.txt before file2.txt). Embeds the old
+  # happy-path bytes so the -z switch provably changes nothing for plain
+  # ASCII: same records, only the terminator/newline differs.
+  printf 'file1.txt\0file2.txt\0' > "$BATS_TMPDIR/efci_ascii_expected.$$"
+  run cmp -s "$out_file" "$BATS_TMPDIR/efci_ascii_expected.$$"
   assert_success
-  assert_line "file1.txt"
-  assert_line "file2.txt"
+  local records=()
+  read_nul_records records "$out_file"
+  assert_equal ${#records[@]} 2
+  assert_equal "${records[0]}" "file1.txt"
+  assert_equal "${records[1]}" "file2.txt"
+  rm -f "$out_file" "$BATS_TMPDIR/efci_ascii_expected.$$"
 }
 
-@test "extract_files_from_commit: handles commit with no files changed" {
+@test "extract_files_from_commit: structural-char filenames arrive RAW via NUL (core of #285)" {
+  # Arrange — a literal backslash (C-quoted as "back\slash.txt" in line
+  # mode) and a literal newline (C-quoted as "we\nird"). Line-mode output
+  # made mapfile collect the QUOTED tokens, which are not paths — the
+  # action list silently named files that do not exist.
+  local test_repo=$(create_test_repo)
+  cd "$test_repo"
+  echo a > 'back\slash.txt'
+  echo b > $'we\nird'
+  git add -A && git commit -qm weird
+
+  # Act
+  local out_file="$BATS_TMPDIR/efci_weird.$$"
+  extract_files_from_commit HEAD > "$out_file"
+
+  # Assert — BYTE-EXACT oracle: raw backslash, raw newline byte, NUL
+  # terminators, tree order (back\slash.txt before we\nird). Any C-quoting
+  # anywhere in the stream fails this cmp.
+  printf 'back\\slash.txt\0we\nird\0' > "$BATS_TMPDIR/efci_weird_expected.$$"
+  run cmp -s "$out_file" "$BATS_TMPDIR/efci_weird_expected.$$"
+  assert_success
+
+  # Record count + exact per-record bytes through the NUL-safe reader.
+  local records=()
+  read_nul_records records "$out_file"
+  assert_equal ${#records[@]} 2
+  assert_equal "${records[0]}" 'back\slash.txt'
+  assert_equal "${records[1]}" $'we\nird'
+  rm -f "$out_file" "$BATS_TMPDIR/efci_weird_expected.$$"
+}
+
+@test "extract_files_from_commit: empty commit yields an empty stream (zero records)" {
   # Arrange
   local test_repo=$(create_test_repo)
   cd "$test_repo"
 
-  # Create and commit files
   echo "content" > file.txt
   git add file.txt
   git commit -m "Add file"
@@ -335,11 +399,18 @@ file3.txt"
   git commit --allow-empty -m "Empty commit"
 
   # Act
-  run extract_files_from_commit HEAD
+  local out_file="$BATS_TMPDIR/efci_empty.$$"
+  local status=0
+  extract_files_from_commit HEAD > "$out_file" || status=$?
 
-  # Assert
-  assert_success
-  assert_output ""
+  # Assert — zero records, and the file holds ZERO bytes (not even a
+  # newline): the NUL contract emits no separator for an empty set.
+  assert_equal "$status" 0
+  assert_equal "$(wc -c < "$out_file")" 0
+  local records=()
+  read_nul_records records "$out_file"
+  assert_equal ${#records[@]} 0
+  rm -f "$out_file"
 }
 
 @test "extract_files_from_commit: fails on invalid commit" {
@@ -391,31 +462,111 @@ file3.txt"
   # Both are acceptable behaviors
 }
 
-@test "extract_files_from_commit: rename lists BOTH sides (action contract, byte-identical with today)" {
+@test "extract_files_from_commit: rename lists BOTH sides as NUL records (action contract)" {
   local test_repo=$(create_test_repo)
   cd "$test_repo"
   echo a > old.txt
   git add -A && git commit -qm init
   git mv old.txt new.txt
   git commit -qm rename
-  run extract_files_from_commit HEAD
-  assert_success
+
+  local out_file="$BATS_TMPDIR/efci_rename.$$"
+  extract_files_from_commit HEAD > "$out_file"
+
   # Both sides: staging/untrack lists need the deleted side (--no-renames).
   # A display pin here would silently drop old.txt — rejected in review:
   # hug a --from-commit was working; a consolidation must not shrink action lists.
-  assert_line "old.txt"
-  assert_line "new.txt"
+  # Tree order: new.txt before old.txt.
+  printf 'new.txt\0old.txt\0' > "$BATS_TMPDIR/efci_rename_expected.$$"
+  run cmp -s "$out_file" "$BATS_TMPDIR/efci_rename_expected.$$"
+  assert_success
+  local records=()
+  read_nul_records records "$out_file"
+  assert_equal ${#records[@]} 2
+  assert_equal "${records[0]}" "new.txt"
+  assert_equal "${records[1]}" "old.txt"
+  rm -f "$out_file" "$BATS_TMPDIR/efci_rename_expected.$$"
 }
 
-@test "extract_files_from_commit: non-ASCII path prints raw under hostile quotePath" {
+@test "extract_files_from_commit: non-ASCII path stays raw bytes in the NUL stream under hostile quotePath" {
   local test_repo=$(create_test_repo)
   cd "$test_repo"
   git config core.quotePath true
   echo a > 'café.txt'
   git add -A && git commit -qm add
-  run extract_files_from_commit HEAD
+
+  local out_file="$BATS_TMPDIR/efci_cafe.$$"
+  extract_files_from_commit HEAD > "$out_file"
+
+  # Raw UTF-8 bytes, NUL-terminated — quotePath C-quoting ("caf\303\251.txt")
+  # would fail this cmp even though pinned_diff defeats the config in line
+  # mode too; -z is the only mode where structural chars are raw as well.
+  printf 'café.txt\0' > "$BATS_TMPDIR/efci_cafe_expected.$$"
+  run cmp -s "$out_file" "$BATS_TMPDIR/efci_cafe_expected.$$"
   assert_success
-  assert_line "café.txt"
+  local records=()
+  read_nul_records records "$out_file"
+  assert_equal ${#records[@]} 1
+  assert_equal "${records[0]}" "café.txt"
+  rm -f "$out_file" "$BATS_TMPDIR/efci_cafe_expected.$$"
+}
+
+#=== extract_files_from_commit_into Tests ===
+
+@test "extract_files_from_commit_into: fills the array with raw structural-char records" {
+  # Arrange
+  local test_repo=$(create_test_repo)
+  cd "$test_repo"
+  echo a > 'back\slash.txt'
+  echo b > $'we\nird'
+  git add -A && git commit -qm weird
+
+  # Act — the NUL-safe reader: no shell-variable capture, no process
+  # substitution (both would mangle NULs or lose the guard's exit).
+  local files=()
+  extract_files_from_commit_into files HEAD
+
+  # Assert
+  assert_equal ${#files[@]} 2
+  assert_equal "${files[0]}" 'back\slash.txt'
+  assert_equal "${files[1]}" $'we\nird'
+}
+
+@test "extract_files_from_commit_into: invalid commit returns 1 and empties the array (guard exit survives)" {
+  # Arrange
+  local test_repo=$(create_test_repo)
+  cd "$test_repo"
+  echo a > a.txt
+  git add -A && git commit -qm init
+
+  # Act — the guard contract is FATAL in every consumer (a/us/untrack/ccp
+  # spell `|| exit $?`; the lib helper composes `|| return $?`), so the
+  # guard's exit must REACH the caller: the function may not detach it in a
+  # process substitution, leak its temp file on this path, or let set -e
+  # abort first.
+  local files=("pre-existing")
+  local status=0
+  extract_files_from_commit_into files DOES_NOT_EXIST || status=$?
+
+  # Assert
+  assert_equal "$status" 1
+  assert_equal ${#files[@]} 0
+}
+
+@test "extract_files_from_commit_into: empty commit leaves an empty array" {
+  # Arrange
+  local test_repo=$(create_test_repo)
+  cd "$test_repo"
+  echo a > a.txt
+  git add -A && git commit -qm init
+  git commit --allow-empty -qm empty
+
+  # Act
+  local files=("sentinel")
+  extract_files_from_commit_into files HEAD
+
+  # Assert — zero records; empty array flows on (set -u safe).
+  assert_equal ${#files[@]} 0
 }
 
 #=== Integration Tests ===
@@ -431,13 +582,14 @@ file3.txt"
   git add config.json .env
   git commit -m "Add config files"
 
-  # Act - Test extracting files from commit
-  run extract_files_from_commit HEAD
+  # Act - extract through the NUL-safe reader (the path consumers use)
+  local files=()
+  extract_files_from_commit_into files HEAD
 
-  # Assert
-  assert_success
-  assert_line "config.json"
-  assert_line ".env"
+  # Assert — exact records in tree order (.env before config.json)
+  assert_equal ${#files[@]} 2
+  assert_equal "${files[0]}" ".env"
+  assert_equal "${files[1]}" "config.json"
 }
 
 @test "integration: end-to-end workflow" {
