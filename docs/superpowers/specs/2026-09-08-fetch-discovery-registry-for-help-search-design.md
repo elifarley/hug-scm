@@ -2,15 +2,16 @@
 
 - **Date:** 2026-09-08
 - **Branch:** `fetch-discovery-registry-for-help-search`
-- **Status:** Approved (brainstorming session, Approach A); roast rounds 1–3
-  applied. Round 3: `bs` BATS contradiction repointed (`brr` + positive bs
-  card case), branch ① invocation pinned `$dir/`-prefixed, exit contract
-  given its own test matrix, uv promoted to a REQUIRED dependency
-  (user-directed; install.sh + README), Full-flags derivation pinned to the
-  alias target, merge made an explicit `cmd_meta` param, cache peek keyed by
-  `git-<name>`, catch-all scoped to `Exception` with BrokenPipe/Ctrl-C
-  handled, corpus cite corrected. All findings verified against live code
-  before adoption.
+- **Status:** Approved (brainstorming session, Approach A); roast rounds 1–4
+  applied. Round 4: BrokenPipeError contract made deliverable (devnull
+  redirect / `os._exit(0)` for the shutdown-flush case — a bare suppress
+  exits 120 outside any catch), flag-like help names guarded out of the card
+  chain (`-*` bash guard + `card -- "$prefix"` + BATS pin), the actively-
+  wrong `docs/meta/hug-completion-reference.md` added to the change-set
+  (teaches `bpull` = rebase today) with three more true-hit docs folded into
+  the deferred list, and drift test 1 strengthened from alias existence to
+  alias semantics (`git_equivalent` token-subset). All findings verified
+  against live code before adoption.
 
 ## Problem
 
@@ -183,7 +184,7 @@ New strict chain:
    prevent. Behavior change vs today, accepted: for git-core-named names, the
    hug card + "Full flags: git help fetch" line replaces git's man page dump.
 2. **Registry has `$prefix`** → `uv run --directory "$dir/../lib/python"
-   --extra search help_search.py card "$prefix"` — **no `exec`** (an `exec`
+   --extra search help_search.py card -- "$prefix"` — **no `exec`** (an `exec`
    replaces the shell, making the exit-1 fall-through below impossible and
    killing every non-registry alias's help, e.g. `hug help brr` which today
    prints alias help + listing, exit 0). Exit-code contract — THIS TABLE IS THE
@@ -197,9 +198,25 @@ New strict chain:
      to ≥2 with the traceback on stderr — without it, every card bug would
      masquerade as a miss and silently degrade to legacy help, exit 0.
      The catch-all must NOT swallow benign signals: `KeyboardInterrupt` and
-     `SystemExit` re-raise unwrapped (Ctrl-C exits 130, no traceback), and
-     `BrokenPipeError` is quiet success (suppress, exit 0 — help is the most
-     piped output a CLI has; `hug help fetch | head` must not read as a bug).
+     `SystemExit` re-raise unwrapped (Ctrl-C exits 130, no traceback).
+     `BrokenPipeError` is quiet success — with the canonical mitigation, not
+     a bare suppress: for card-sized output the pipe error typically fires at
+     interpreter-SHUTDOWN flush, after and outside the guarded body (probed:
+     exit 120 + "Exception ignored in: <_io.TextIOWrapper ...> BrokenPipeError"
+     — and 120 would land in this loud branch, the exact "reads as a bug"
+     outcome forbidden here). On BrokenPipeError (caught in-body or as
+     shutdown flush), point stdout at devnull before exiting:
+     `os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())` then
+     `sys.exit(0)` (equivalently flush + `os._exit(0)`) — help is the most
+     piped output a CLI has; `hug help fetch | head` must not read as a bug.
+   - **Flag-like `$prefix` never reaches ① or ②.** A `-`-prefixed prefix is
+     not a command name; bash guards the chain (`[[ "$prefix" == -* ]] &&
+     skip to ③/④`), preserving today's behavior for `hug help -h` (prefix
+     listing, exit 0). Defense-in-depth: the card invocation passes the name
+     after `--` (`help_search.py card -- "$prefix"`), so argparse can never
+     intercept `-h`/`--help` as HelpAction (which would print generic usage
+     to stdout, exit 0 — misread by bash as "card printed") or swallow
+     `--all`/`--explain` into an accidental empty-query miss.
    - `≥2` → loud failure, never fall-through: registry missing/corrupt
      (message + exit 2 — `main()`'s `sys.exit(1)` categories posture is
      deliberately NOT copied into card mode, for the reason above), the
@@ -352,13 +369,21 @@ convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:56):
   bucket: corrupted `commands.toml` in card mode → exit ≥2, stderr carries the
   registry error, output does NOT contain "Commands starting with"; forced
   render failure (test-only entry whose render raises) → exit ≥2, never 1;
-  `BrokenPipeError` (piped reader closes) → quiet exit 0; `KeyboardInterrupt`
-  → exit 130, no traceback.
+  `BrokenPipeError` (piped reader closes) → quiet exit 0 via the devnull
+  redirect — assert BOTH the in-body raise (large output) and a shutdown-flush
+  shape; `KeyboardInterrupt` → exit 130, no traceback; flag-like name behind
+  the guard → unit-level `card -- -h` is an ordinary miss (exit 1, no usage
+  on stdout) and `card -- --bogus` is ≥2.
 
 ### Drift tests (the two consistency guarantees)
 
-1. **Alias resolution:** every `kind = "alias"` entry resolves via
-   `git config --file git-config/.gitconfig --get alias.<name>` (non-empty).
+1. **Alias resolution AND semantics:** every `kind = "alias"` entry resolves
+   via `git config --file git-config/.gitconfig --get alias.<name>`
+   (non-empty), AND each entry's `git_equivalent` tokens appear in the
+   resolved alias body (token-subset assertion — also matches the
+   `!f() { … }` shell-function forms of `tpull`/`tpullf`). Existence alone
+   would let a `.gitconfig` body edit keep every artifact green while cards
+   teach stale semantics.
 2. **No hug-bin shadowing + PATH-free branch ①:**
    (a) for each registry name N, no hug bin script `git-config/bin/git-N`
    exists;
@@ -382,6 +407,9 @@ convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:56):
 - `hug help fetch` → card (contains "git passthrough"); does NOT contain
   "Commands starting with"; does NOT contain the GIT-FETCH man-page banner.
 - `hug help bpullr` → card; does NOT contain git's raw `usage: git pull` banner.
+- `hug help -h` (flag-like prefix) → bash guard skips ①②; prefix listing,
+  exit 0, no card, no argparse usage on stdout (pin for the flag-like-name
+  row of the exit contract).
 - `hug help brr` (non-registry alias) → alias help + prefix listing still work,
   exit 0 (regression pin for the no-`exec` fall-through contract; `brr` is
   deliberately excluded from the registry per non-goals, `.gitconfig:364`).
@@ -428,14 +456,21 @@ convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:56):
    actually read).
 3. `docs/command-map.md`: add `fetch` to the push/pull tree beside
    `bpull`/`bpullr` (passthrough note).
-4. `README.md` command reference: add `hug fetch` row beside the existing
+4. `docs/meta/hug-completion-reference.md` — **actively wrong today** and
+   agent-facing: its Pull section teaches "`bpull`: Pull with rebase"
+   (reality: `bpull = pull --ff-only`, `.gitconfig:514` — rebase is
+   `bpullr`, which has zero rows there) and phrases `pullall` as the exact
+   "pulls every branch" misconception the registry corrects. Fix the `bpull`
+   row, add `bpullr`, align `pullall`'s phrasing with the registry
+   description.
+5. `README.md` command reference: add `hug fetch` row beside the existing
    `bpull`/`bpullr` rows.
-5. **uv promoted to a required hug dependency** (user-directed 2026-09-08):
+6. **uv promoted to a required hug dependency** (user-directed 2026-09-08):
    `install.sh` provisions/validates uv (it currently installs none —
    verified: zero uv mentions in install.sh and README), and `README.md`
    documents it under requirements. This is what licenses the never-fall-
    through ≥2 posture of the card exit contract.
-6. Authoring homes for the registry (so the second contributor knows where
+7. Authoring homes for the registry (so the second contributor knows where
    metadata lives):
    - `git-config/bin/CLAUDE.md`: extend the `_hug_keywords` note — bin scripts
      declare keywords in `_hug_keywords`; non-script commands declare them in
@@ -446,9 +481,12 @@ convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:56):
 Consciously deferred (consistency debt — none of these become false; they name
 bpull/tpull without claiming fetch coverage): `docs/cheat-sheet.md`,
 `docs/workflows.md`, `docs/practical-workflows.md`, `docs/cookbook.md`,
-`docs/commands/branching.md`, `docs/commands/tagging.md`, and
-`docs/skills/hug-workflow/SKILL.md`. Fold their fetch rows into the systematic
-coverage pass in [elifarley/hug-scm#338](https://github.com/elifarley/hug-scm/issues/338).
+`docs/commands/branching.md`, `docs/commands/tagging.md`,
+`docs/commands/worktree.md`, `docs/commands/rebase.md`,
+`docs/skills/hug-workflow/SKILL.md`, and
+`docs/skills/hug-repo-analysis/guides/branch-analysis.md`. Fold their fetch
+rows into the systematic coverage pass in
+[elifarley/hug-scm#338](https://github.com/elifarley/hug-scm/issues/338).
 
 No new docs pages; no VitePress sidebar changes.
 
