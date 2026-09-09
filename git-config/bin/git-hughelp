@@ -31,6 +31,16 @@ test $# -eq 0 && {
 prefix="$1"
 dir=$(dirname "$0")
 
+# Shared body of the script-help arms (① hug's own script, and the same
+# branch for non-registry names further down): blank-line framed --help.
+# `script_help_shown` stays at the call sites — the flag records WHICH arm
+# printed, not that printing happened.
+show_script_help() {
+  echo
+  "$dir/git-$1" --help
+  echo
+}
+
 # Topic search dispatch — /keyword, @category, !intent, :article
 # WHY uv run + --extra search: resolves venv + dependencies (thefuzz) without relying on system python3
 # Extra args after the sigil-prefixed query (--all, --explain, etc.) forward
@@ -53,9 +63,7 @@ if [[ "$prefix" != -* ]]; then
   # (/usr/lib/git-core) sits at PATH position 1 and its git-fetch hardlink
   # would win, dumping the GIT-FETCH(1) man page instead of hug's answer.
   if [[ -x "$dir/git-$prefix" ]]; then
-    echo
-    "$dir/git-$prefix" --help
-    echo
+    show_script_help "$prefix"
     script_help_shown=1
   else
     # ② Registry card. Exit contract (single owner — spec "Exit-code contract"):
@@ -83,9 +91,7 @@ if [[ "$prefix" != -* ]]; then
     esac
   fi
 elif [[ -x "$dir/git-$prefix" ]]; then
-  echo
-  "$dir/git-$prefix" --help
-  echo
+  show_script_help "$prefix"
   script_help_shown=1
 fi
 

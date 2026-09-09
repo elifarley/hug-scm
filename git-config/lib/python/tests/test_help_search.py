@@ -1504,7 +1504,11 @@ def test_card_found_render(capsys):
     assert "(git passthrough)" in out and "Usage:" in out
     assert "Git equivalent: git fetch" in out
     assert "Full flags: git help fetch" in out
-    assert "hug bpull" in out  # related
+    # Related summaries must come from the REGISTRY branch (`hug <rel> —
+    # <summary>`), not the prose of fetch's own description nor the
+    # degraded bare hint — assert the em-dash + summary prefix.
+    assert "hug bpull — Fast-forward-only pull" in out
+    assert "hug bpullr — Pull with rebase" in out
 
 
 def test_card_fullflags_uses_alias_target(capsys):
@@ -1570,6 +1574,25 @@ def test_card_cache_peek_uses_git_name_key(tmp_path, capsys):
     )
     render_card("fetch", registry=_cmd_meta(), cache_dir=tmp_path)
     assert "outgoing commits" in capsys.readouterr().out
+
+
+def test_card_cache_hint_strips_ansi_and_control_bytes(tmp_path, capsys):
+    # The peeked hint is the ONLY card text sourced outside this repo
+    # (search-meta.cache) — hostile or merely stale cache contents must not
+    # drive the terminal: C0/DEL bytes and ANSI escape sequences (CSI
+    # clear-screen + cursor move; an OSC 52 clipboard write, BEL-terminated)
+    # are stripped, while the sanitized tail still renders. Registry
+    # summaries are first-party prose and intentionally skip the sanitizer.
+    (tmp_path / "search-meta.cache").write_text(
+        json.dumps({"git-llu": {"description": "\x1b[2J\x1b[3H\x1b]52;c;aGVsbG8=\x07clean hint"}})
+    )
+    render_card("fetch", registry=_cmd_meta(), cache_dir=tmp_path)
+    out = capsys.readouterr().out
+    assert "clean hint" in out  # sanitized text survives
+    assert "\x1b" not in out and "\x07" not in out  # no escape/BEL reaches stdout
+    # Zero control bytes except the card's own line structure (\n from the
+    # join/print — legitimate layout, not cache content).
+    assert not any((ord(ch) < 32 and ch != "\n") or ord(ch) == 127 for ch in out)
 
 
 def test_card_cache_peek_nonstring_hint_degrades_to_bare(tmp_path, capsys):
@@ -1660,7 +1683,7 @@ def test_card_keyboardinterrupt_unwrapped():
         render_card("fetch", registry=_InterruptRegistry(), cache_dir=None)
 
 
-def test_module_guard_dead_pipe_exits_zero():
+def test_module_guard_dead_pipe_exits_zero(tmp_path):
     # Subprocess-level probe of the __main__ guard. Mechanism: the pipe's
     # read end is closed BEFORE spawn, so the first flush of card-sized
     # output (well under the 8KB block buffer) deterministically raises
@@ -1671,8 +1694,26 @@ def test_module_guard_dead_pipe_exits_zero():
     # the search-mode invocation (`@` with no query, main() returns
     # normally) exercises the guard's OWN flush line. Both must end at
     # devnull + exit 0 with zero traceback/"Exception ignored" noise.
+    # Hermetic pipeline: a one-script stub bin + empty cache + real
+    # categories (the test_search_pipeline_oserror_loud_end_to_end pattern)
+    # so the `@` arm never scans the ~200-script real bin and no test run
+    # writes the shared /tmp cache. Flags precede the positionals: after
+    # `--`, argparse would treat them as extra positionals.
     script = PY_DIR / "help_search.py"
-    for argv in (["card", "--", "fetch"], ["@"]):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    probe = bin_dir / "git-probe"
+    probe.write_text("#!/bin/sh\nexit 0\n")
+    probe.chmod(0o755)
+    hermetic = [
+        "--bin-dir",
+        str(bin_dir),
+        "--cache-dir",
+        str(tmp_path / "cache"),
+        "--categories-dir",
+        str(CATS),
+    ]
+    for argv in (["card", *hermetic, "--", "fetch"], ["@", *hermetic]):
         r, w = os.pipe()
         os.close(r)  # reader gone: any pipe write raises EPIPE
         proc = subprocess.Popen(
@@ -1769,3 +1810,22 @@ def test_search_pipeline_oserror_loud_end_to_end(tmp_path):
     assert proc.returncode != 0  # LOUD — the regression was a silent 0
     assert proc.stdout == b""  # never results-as-success
     assert b"Traceback" in proc.stderr
+
+
+def test_article_mode_skips_registry_load(tmp_path, monkeypatch, capsys):
+    # ":" mode renders prose from articles_loader and never reads the
+    # registry, so it must not pay the TOML parse + alias scan. The
+    # monkeypatched load_commands RAISES: if the guard were missing, the
+    # load would surface as the loud search-mode exit 1 (or an escaping
+    # RegistryError) — this test passes only when the load is SKIPPED.
+    (tmp_path / "cats").mkdir()
+    monkeypatch.setattr("sys.argv", ["help_search.py", ":"])
+
+    def _boom(*_args, **_kwargs):
+        raise RegistryError("corrupt registry probe")
+
+    monkeypatch.setattr("command_meta.load_commands", _boom)
+    main()  # must return normally — no SystemExit, no escaping RegistryError
+    cap = capsys.readouterr()
+    assert "corrupt registry probe" not in cap.err  # the load never ran
+    assert cap.err != ""  # article-listing header (chatter) still reaches stderr

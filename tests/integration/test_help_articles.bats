@@ -206,6 +206,47 @@ teardown() {
   assert_output --partial "(none)"
 }
 
+# --- Loud card arms pinned at the bash layer (spec Integration 2): a stub
+# --- `uv` first on PATH simulates launcher outcomes without touching the
+# --- real toolchain. Every arm must be LOUD — none may fall through to the
+# --- alias/listing output, which is what a miss (rc=4) alone is allowed.
+
+@test "hug help fetch with failing uv (rc=1) fails loud: environment failure" {
+  cd "$TEST_TEMP_DIR"
+  local stub="$TEST_TEMP_DIR/stub-uv-1"
+  mkdir -p "$stub"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$stub/uv"
+  chmod +x "$stub/uv"
+  run env PATH="$stub:$PATH" hug help fetch
+  assert_failure
+  assert_output --partial "help card environment failure"
+  refute_output --partial "Commands starting with"
+}
+
+@test "hug help fetch with uv-missing stub (rc=127) fails loud: install hint" {
+  cd "$TEST_TEMP_DIR"
+  local stub="$TEST_TEMP_DIR/stub-uv-127"
+  mkdir -p "$stub"
+  printf '#!/usr/bin/env bash\nexit 127\n' > "$stub/uv"
+  chmod +x "$stub/uv"
+  run env PATH="$stub:$PATH" hug help fetch
+  assert_failure
+  assert_output --partial "uv is required"
+  refute_output --partial "Commands starting with"
+}
+
+@test "hug help fetch with crashing uv (rc=3) fails loud: card failed" {
+  cd "$TEST_TEMP_DIR"
+  local stub="$TEST_TEMP_DIR/stub-uv-3"
+  mkdir -p "$stub"
+  printf '#!/usr/bin/env bash\nexit 3\n' > "$stub/uv"
+  chmod +x "$stub/uv"
+  run env PATH="$stub:$PATH" hug help fetch
+  assert_failure
+  assert_output --partial "help card failed (rc=3)"
+  refute_output --partial "Commands starting with"
+}
+
 @test "hug help s still hits the script help (precedence)" {
   cd "$TEST_TEMP_DIR"
   run hug help s

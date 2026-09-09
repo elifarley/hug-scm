@@ -1,9 +1,9 @@
 """Loader for commands.toml — the registry of non-script hug commands.
 
 Mirrors category_meta.py's structure: frozen dataclass, loud validation,
-derive_summary reuse. Paths resolve __file__-relative (the
-_DEFAULT_BIN_DIR pattern, help_search.py:109) so both repo and installed
-layouts work. A missing or corrupt registry is a LOUD error — silent-empty
+derive_summary reuse. Paths resolve __file__-relative (help_search's
+_DEFAULT_BIN_DIR pattern) so both repo and installed layouts work. A
+missing or corrupt registry is a LOUD error — silent-empty
 would shrink the index and the corpus (the exact failure the loader exists
 to prevent).
 """

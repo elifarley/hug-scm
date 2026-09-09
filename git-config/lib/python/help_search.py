@@ -109,6 +109,9 @@ MIN_CATEGORY_SCORE = 60
 _DEFAULT_BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "bin")
 _DEFAULT_CACHE_DIR = "/tmp/cache/hug"
 _DEFAULT_CATEGORIES_DIR = os.path.join(os.path.dirname(__file__), "categories")
+# The one metadata cache file, by its write path (collect_metadata) and its
+# read-only peek path (render_card) — a literal in either would drift.
+_CACHE_FILENAME = "search-meta.cache"
 
 
 @dataclass
@@ -380,7 +383,7 @@ def collect_metadata(
     = no merge, mirroring `cat_meta` so mock-dir tests stay hermetic.
     """
     bin_path = Path(bin_dir)
-    cache_file = Path(cache_dir) / "search-meta.cache"
+    cache_file = Path(cache_dir) / _CACHE_FILENAME
 
     # Load cache
     cache = _load_cache(cache_file) if use_cache else {}
@@ -752,22 +755,50 @@ def format_category_list(
     return "\n".join(lines)
 
 
+def _silence_stdout() -> None:
+    """Point fd 1 at devnull so no later stdout write can fail.
+
+    The shared mitigation behind every quiet stdout-failure path: buffered
+    leftovers and the interpreter-shutdown flush become harmless. Exit
+    semantics stay at the call sites (os._exit(0) in the flush guard and
+    the __main__ guard; return 0 in render_card's BrokenPipeError handler).
+    """
+    os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+
+
 def _flush_stdout_quietly() -> None:
     """Flush stdout; on write failure end the process quietly at exit 0.
 
     BrokenPipeError (dead pipe) AND other stdout write failures (/dev/full →
-    ENOSPC) share this posture: redirect fd 1 to devnull so the interpreter's
-    shutdown flush is harmless, then os._exit(0). SCOPE IS DELIBERATE: only
-    the flush is guarded. Pipeline failures elsewhere in main() (unwritable
-    cache dir, ...) are NOT caught here — the __main__ guard stays
-    BrokenPipeError-only so they propagate loudly (exit 1); this helper runs
-    solely for an actual stdout flush failure.
+    ENOSPC) share this posture: silence stdout, then os._exit(0). SCOPE IS
+    DELIBERATE: only the flush is guarded. Pipeline failures elsewhere in
+    main() (unwritable cache dir, ...) are NOT caught here — the __main__
+    guard stays BrokenPipeError-only so they propagate loudly (exit 1);
+    this helper runs solely for an actual stdout flush failure.
     """
     try:
         sys.stdout.flush()
     except OSError:
-        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        _silence_stdout()
         os._exit(0)
+
+
+# Cache-sourced text is UNTRUSTED INPUT: strip ANSI escape sequences (CSI —
+# cursor/color/etc.; OSC including OSC 52 clipboard writes, terminated by
+# BEL or ST) and C0 control bytes + DEL before any of it reaches a terminal.
+# First-party registry prose never passes through here.
+# LESSON (alternation order): the escape-sequence alternatives MUST come
+# before the bare control class — a leading [\x00-\x1f] matches the ESC
+# byte alone, consuming it before the CSI/OSC arms can see the sequence and
+# leaving "[2J"-style tails behind (caught by the sanitizer test).
+_UNTRUSTED_TEXT_RE = re.compile(
+    r"(\x1b\[[0-9;:]*[a-zA-Z])|(\x1b\][^\x07\x1b]*(\x07|\x1b\\))|[\x00-\x1f\x7f]"
+)
+
+
+def _strip_control_chars(text: str) -> str:
+    """Strip control bytes and ANSI CSI/OSC escape sequences from text."""
+    return _UNTRUSTED_TEXT_RE.sub("", text)
 
 
 def render_card(
@@ -831,7 +862,7 @@ def render_card(
         # Read-only peek for best-effort related summaries. Keyed by script
         # FILENAME `git-<name>` — the same key _save_cache writes; never
         # written here (a card must not mutate the cache it reads).
-        peek = _load_cache(Path(cache_dir) / "search-meta.cache") if cache_dir is not None else {}
+        peek = _load_cache(Path(cache_dir) / _CACHE_FILENAME) if cache_dir is not None else {}
         for rel in cmd.related:
             rel_meta = registry.get(rel)
             if rel_meta:  # registry-owned related: use the loaded summary
@@ -841,11 +872,14 @@ def render_card(
             # Cache values are untrusted JSON — only a non-empty STRING may
             # be rendered; anything else (number, null, "") degrades to the
             # bare hint instead of leaking junk into the card or turning a
-            # render into a loud exit.
+            # render into a loud exit. The hint is also the ONLY card text
+            # originating outside this repo, so control bytes and ANSI
+            # escapes are stripped (registry summaries above are first-party
+            # prose and skip the sanitizer).
             cached = peek.get(f"git-{rel}")
             hint = cached.get("description") if isinstance(cached, dict) else None
             if isinstance(hint, str) and hint:
-                lines.append(f"  hug {rel} — {hint}")
+                lines.append(f"  hug {rel} — {_strip_control_chars(hint)}")
             else:
                 lines.append(f"  hug {rel}")
         print("\n".join(lines))
@@ -853,7 +887,7 @@ def render_card(
     except BrokenPipeError:
         # In-body raises are handled here; the shutdown-flush case is handled
         # by the module-level guard below (both end at devnull + exit 0).
-        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        _silence_stdout()
         return 0
     except KeyboardInterrupt:
         raise  # unwrapped: the shell sees 130 — never the exit-3 catch-all
@@ -943,14 +977,18 @@ def main():
     # defaults resolve identically in repo and installed layouts — the same
     # shipped file this module's _DEFAULT_* constants anchor to. A corrupt
     # registry is loud, same posture as categories: silent-empty would shrink
-    # the index and every search answer with it.
-    from command_meta import RegistryError, load_commands
+    # the index and every search answer with it. Article mode (":") renders
+    # prose from articles_loader and never reads the registry, so it skips
+    # this block entirely — no TOML parse, no alias-scan subprocess.
+    cmd_registry = None
+    if args.mode != ":":
+        from command_meta import RegistryError, load_commands
 
-    try:
-        cmd_registry = load_commands()
-    except RegistryError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        sys.exit(1)  # search-mode posture: mirrors the categories sys.exit(1)
+        try:
+            cmd_registry = load_commands()
+        except RegistryError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)  # search-mode posture: mirrors the categories sys.exit(1)
 
     commands = collect_metadata(
         args.bin_dir, cache_dir=args.cache_dir, cat_meta=cat_meta, cmd_meta=cmd_registry
@@ -1101,5 +1139,5 @@ if __name__ == "__main__":
         # MUST propagate loudly (exit 1 + traceback, the pre-existing posture).
         # Only an in-body EPIPE — output bigger than the stdout buffer, raised
         # mid-main — lands here; smaller ones fail the helper's flush above.
-        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        _silence_stdout()
         os._exit(0)

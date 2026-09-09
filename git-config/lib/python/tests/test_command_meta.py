@@ -261,4 +261,9 @@ def test_drift2a_no_hug_bin_shadowing(registry):
 def test_drift2b_branch1_is_pathfree_source():
     src = HUGHELP.read_text()
     assert '-x "$dir/git-$prefix"' in src  # existence test on hug's bin dir
-    assert '"$dir/git-$prefix" --help' in src  # $dir/-prefixed invocation
+    # $dir/-prefixed invocation: since the show_script_help() dedup, ALL
+    # script-help invocations route through the helper, which receives the
+    # prefix as $1 — the PATH-free guarantee is the "$dir/git-" stem, not
+    # which positional carries the name.
+    assert '"$dir/git-$1" --help' in src
+    assert '"$dir/git-$prefix" --help' not in src  # no un-deduped copy resurrects
