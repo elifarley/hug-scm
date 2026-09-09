@@ -233,6 +233,7 @@ Check the [Installation Guide](https://elifarley.github.io/hug-scm/installation.
 Requirements:
 
 - git ≥ 2.34 (minimum supported; determinism pins and quoting contracts are probe-verified on this floor)
+- `uv` (required — powers `hug help` discovery and help cards): `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
 ---
 

@@ -3,6 +3,16 @@ CMD_BASE="$(readlink -f "$0" 2>/dev/null || greadlink -f "$0")" || CMD_BASE="$0"
 HUG_HOME="$CMD_BASE"
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
+# uv is a REQUIRED dependency (help discovery sigils + exact-name help cards
+# run through `uv run`). Validate loudly; this installer never silently
+# installs toolchains.
+if [[ "${HUG_SKIP_UV_CHECK:-}" != "1" ]] && ! command -v uv > /dev/null 2>&1; then
+  echo "ERROR: uv is required by Hug SCM but was not found on PATH." >&2
+  echo "Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+  echo "Then re-run this installer. (HUG_SKIP_UV_CHECK=1 bypasses for hg-only installs.)" >&2
+  exit 1
+fi
+
 HUG_CONFIG="$HOME"/.hug-scm
 
 test ! -e "$HUG_CONFIG" && echo "Creating '$HUG_CONFIG'..." && echo "HUG_HOME=$HUG_HOME" > "$HUG_CONFIG"
