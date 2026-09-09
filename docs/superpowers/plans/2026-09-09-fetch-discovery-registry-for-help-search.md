@@ -513,7 +513,7 @@ Simpler and exact — use this instead:
 - [ ] `card -- bpullr` exits 1 (miss for non-registry name `zzz` too), no partial card
 - [ ] Corrupt registry in card mode → exit ≥2, message on stderr, nothing on stdout
 - [ ] `card -- -h` / `card -- --bogus` → miss (1) / ≥2 — argparse never intercepts behind `--`
-- [ ] BrokenPipeError → exit 0 via devnull redirect (both in-body and shutdown-flush shapes); KeyboardInterrupt → 130 no traceback
+- [ ] BrokenPipeError → exit 0 via devnull redirect (both in-body and shutdown-flush shapes); KeyboardInterrupt → exit 130 (CPython prints the traceback; the invariant is that KI is never swallowed)
 - [ ] Card never calls `collect_metadata`; related summaries peek `search-meta.cache` with key `git-<name>` via `_load_cache`, never `_save_cache`
 
 **Verify:** `cd git-config/lib/python && uv run --extra search help_search.py card -- fetch; echo rc=$?` → card + `rc=0`; `… card -- zzz; echo rc=$?` → `rc=1`; `pytest tests/test_help_search.py -q` green

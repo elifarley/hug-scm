@@ -752,10 +752,125 @@ def format_category_list(
     return "\n".join(lines)
 
 
+def _flush_stdout_quietly() -> None:
+    """Flush stdout; on write failure end the process quietly at exit 0.
+
+    BrokenPipeError (dead pipe) AND other stdout write failures (/dev/full →
+    ENOSPC) share this posture: redirect fd 1 to devnull so the interpreter's
+    shutdown flush is harmless, then os._exit(0). SCOPE IS DELIBERATE: only
+    the flush is guarded. Pipeline failures elsewhere in main() (unwritable
+    cache dir, ...) are NOT caught here — the __main__ guard stays
+    BrokenPipeError-only so they propagate loudly (exit 1); this helper runs
+    solely for an actual stdout flush failure.
+    """
+    try:
+        sys.stdout.flush()
+    except OSError:
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        os._exit(0)
+
+
+def render_card(
+    name: str,
+    registry: dict | None = None,
+    commands_path: str | Path | None = None,
+    cache_dir: str | Path | None = None,
+) -> int:
+    """Render the hug card for a registry-owned name.
+
+    Exit contract: 0 card | 1 miss (EXCLUSIVELY) | >=2 loud. Python exits 1
+    on any bare crash — the same code as a miss — so EVERY unexpected
+    exception is caught and re-mapped to 3 with a stderr message: a card bug
+    must never masquerade as a registry miss (that confusion is what would
+    silently degrade `hug help <name>` to legacy help).
+
+    Pure function over the loaded registry + a READ-ONLY cache peek. Card
+    rendering never calls collect_metadata — no per-script metadata queries,
+    no cache writes (_save_cache is forbidden here); the one registry load
+    itself does a single alias scan — so `hug help <name>` stays fast and
+    side-effect-free.
+    """
+    try:
+        if registry is None:
+            # Lazy import mirrors main()'s pattern: keeps help_search
+            # importable even if command_meta has an issue.
+            from command_meta import RegistryError, load_commands
+
+            try:
+                registry = load_commands(path=commands_path)
+            except RegistryError as exc:
+                # Corrupt/missing registry is loud, and >=2 so it can never
+                # be misread as the exit-1 miss.
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
+        cmd = registry.get(name)
+        if cmd is None:
+            return 1  # miss — this is the ONLY path allowed to exit 1
+
+        # Full flags point at git_equivalent's LEADING command, not the hug
+        # name: `git help bpullr` prints an alias notice, `git help pull` is
+        # what actually documents the flags.
+        parts = cmd.git_equivalent.split()
+        full_flags_target = parts[1] if parts[:1] == ["git"] else cmd.git_equivalent
+        lines = [
+            f"hug {name} — (git {cmd.kind})",
+            "",
+            cmd.summary,
+            "",
+            cmd.description,
+            "",
+            f"Usage: {cmd.usage}",
+            f"Git equivalent: {cmd.git_equivalent}",
+            f"Full flags: git help {full_flags_target}",
+            "",
+            "Related:",
+        ]
+        # Read-only peek for best-effort related summaries. Keyed by script
+        # FILENAME `git-<name>` — the same key _save_cache writes; never
+        # written here (a card must not mutate the cache it reads).
+        peek = _load_cache(Path(cache_dir) / "search-meta.cache") if cache_dir is not None else {}
+        for rel in cmd.related:
+            rel_meta = registry.get(rel)
+            if rel_meta:  # registry-owned related: use the loaded summary
+                lines.append(f"  hug {rel} — {rel_meta.summary}")
+                continue
+            # Script/alias related: cached description if one is present.
+            # Cache values are untrusted JSON — only a non-empty STRING may
+            # be rendered; anything else (number, null, "") degrades to the
+            # bare hint instead of leaking junk into the card or turning a
+            # render into a loud exit.
+            cached = peek.get(f"git-{rel}")
+            hint = cached.get("description") if isinstance(cached, dict) else None
+            if isinstance(hint, str) and hint:
+                lines.append(f"  hug {rel} — {hint}")
+            else:
+                lines.append(f"  hug {rel}")
+        print("\n".join(lines))
+        return 0
+    except BrokenPipeError:
+        # In-body raises are handled here; the shutdown-flush case is handled
+        # by the module-level guard below (both end at devnull + exit 0).
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 0
+    except KeyboardInterrupt:
+        raise  # unwrapped: the shell sees 130 — never the exit-3 catch-all
+    except Exception as exc:
+        # Python exits 1 on a bare crash — that code is RESERVED for miss, so
+        # map ANY unexpected exception to >=2 loudly.
+        print(f"error: card render failed: {exc}", file=sys.stderr)
+        return 3
+
+
 def main():
     parser = argparse.ArgumentParser(description="Hug help topic search")
-    parser.add_argument("mode", choices=["/", "@", "!", ":"], help="Search mode")
-    parser.add_argument("query", nargs="?", default="", help="Search query")
+    parser.add_argument("mode", choices=["/", "@", "!", ":", "card"], help="Search mode")
+    # Card mode carries the command name in this same positional — argparse's
+    # greedy left-to-right match gives the FIRST optional positional every
+    # value, so a separate trailing `name` positional could never receive one
+    # (probed: `card -- fetch` yields query='fetch', name=None).
+    parser.add_argument(
+        "query", nargs="?", default="", help="Search query (card mode: exact command name)"
+    )
     parser.add_argument("--bin-dir", default=_DEFAULT_BIN_DIR, help="Directory with git-* scripts")
     parser.add_argument("--cache-dir", default=_DEFAULT_CACHE_DIR, help="Cache directory")
     parser.add_argument(
@@ -779,6 +894,23 @@ def main():
         help="Annotate each result with the matching field and score.",
     )
     args = parser.parse_args()
+
+    if args.mode == "card":
+        # Card bypasses the search pipeline below entirely: no categories
+        # load, no script scan, NO collect_metadata — it renders from the
+        # registry + a read-only cache peek alone. It also owns a DIFFERENT
+        # exit posture (miss=1, anything broken >=2 via render_card), so the
+        # search modes' loud-but-exit-1 handling must never see card
+        # failures. The name rides in `query` (see the positional above).
+        rc = render_card(args.query, commands_path=None, cache_dir=args.cache_dir)
+        # Quiet-flush BEFORE sys.exit: SystemExit would skip the __main__
+        # guard's flush line, and card-sized output usually fits the stdout
+        # buffer — the failure would then surface only at interpreter
+        # finalization (probed: exit 120) where no except can see it. The
+        # helper owns the write-failure posture (devnull + exit 0) so a dead
+        # pipe AND /dev/full both stay a quiet 0.
+        _flush_stdout_quietly()
+        sys.exit(rc)
 
     # HUG_HELP_EXPLAIN=1 enables --explain via env var (handy when wrapping
     # `hug help` in shell aliases or scripts that can't easily pass flags).
@@ -950,4 +1082,20 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        rc = main()
+        _flush_stdout_quietly()  # LOAD-BEARING: for buffered (card-sized) output
+        # the EPIPE fires only here (or at interpreter finalization, which no
+        # except can see — probed exit 120). Flushing INSIDE the try via the
+        # helper surfaces it to the quiet path; the subsequent shutdown flush
+        # writes an empty buffer to devnull-safe stdout.
+        sys.exit(rc)
+    except BrokenPipeError:
+        # BrokenPipeError ONLY — never OSError. A broad `except OSError` here
+        # (review regression) converted search-mode pipeline failures (probed:
+        # unwritable cache dir → rc 0, EMPTY output) into silent success; those
+        # MUST propagate loudly (exit 1 + traceback, the pre-existing posture).
+        # Only an in-body EPIPE — output bigger than the stdout buffer, raised
+        # mid-main — lands here; smaller ones fail the helper's flush above.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        os._exit(0)

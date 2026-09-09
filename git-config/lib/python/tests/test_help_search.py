@@ -1,6 +1,10 @@
 """Tests for help_search.py — topic search for hug help."""
 
 import json
+import os
+import subprocess
+import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -18,6 +22,7 @@ from help_search import (
     list_categories,
     main,
     parse_description_from_help,
+    render_card,
     run_search,
     search_category,
     search_intent,
@@ -1462,3 +1467,239 @@ def test_main_threads_registry_into_search(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "hug fetch" in out
     assert "(git passthrough)" in out  # marker flows through main() too
+
+
+# --- Card mode (Task 3) -------------------------------------------------------
+# Exit contract: 0 card | 1 miss (EXCLUSIVELY) | >=2 loud. render_card is a
+# pure function over the registry + a READ-ONLY cache peek (keyed by script
+# FILENAME `git-<name>`) — never collect_metadata, never _save_cache.
+
+
+def test_card_found_render(capsys):
+    rc = render_card("fetch", registry=_cmd_meta(), cache_dir=None)
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "(git passthrough)" in out and "Usage:" in out
+    assert "Git equivalent: git fetch" in out
+    assert "Full flags: git help fetch" in out
+    assert "hug bpull" in out  # related
+
+
+def test_card_fullflags_uses_alias_target(capsys):
+    # Full flags derive from git_equivalent's LEADING command, not the name:
+    # `git help bpullr` prints an alias notice, not flag docs.
+    render_card("bpullr", registry=_cmd_meta(), cache_dir=None)
+    out = capsys.readouterr().out
+    assert "Full flags: git help pull" in out  # NOT git help bpullr
+
+
+def test_card_bs_targets_switch(capsys):
+    render_card("bs", registry=_cmd_meta(), cache_dir=None)
+    assert "Full flags: git help switch" in capsys.readouterr().out
+
+
+def test_card_miss_exit1(capsys):
+    assert render_card("zzz", registry=_cmd_meta(), cache_dir=None) == 1
+    out = capsys.readouterr().out
+    assert "Usage:" not in out  # no partial card on miss
+
+
+def test_card_corrupt_registry_loud(tmp_path, capsys):
+    # Corrupt registry in card mode is LOUD and >=2 — never the exit-1 miss
+    # (which would silently degrade `hug help <name>` to legacy help). The
+    # loader's missing-required-field check fires before the kind check, so
+    # this minimal fixture dies on `description`; a bad kind dies the same
+    # loud way (command_meta's own tests pin the kind path).
+    (tmp_path / "commands.toml").write_text("[fetch]\nkind = 'bogus'\n")
+    rc = render_card(
+        "fetch", registry=None, commands_path=tmp_path / "commands.toml", cache_dir=None
+    )
+    cap = capsys.readouterr()  # ONE capture: a second call resets to empty
+    assert rc >= 2 and cap.err and not cap.out
+
+
+def test_card_cache_peek_uses_git_name_key(tmp_path, capsys):
+    # related summary for script `llu` resolves from a cache keyed by FILENAME
+    (tmp_path / "search-meta.cache").write_text(
+        json.dumps({"git-llu": {"description": "outgoing commits"}})
+    )
+    render_card("fetch", registry=_cmd_meta(), cache_dir=tmp_path)
+    assert "outgoing commits" in capsys.readouterr().out
+
+
+def test_card_flaglike_name_is_not_help(monkeypatch, capsys):
+    # `-h` behind `--` is a NAME, never argparse help: argparse strips the
+    # end-of-options marker and treats what follows as positionals, so the
+    # flag-like miss exits 1 with zero usage text on stdout.
+    monkeypatch.setattr("sys.argv", ["help_search.py", "card", "--", "-h"])
+    with pytest.raises(SystemExit) as ei:
+        main()
+    assert ei.value.code == 1  # flag-like name is a plain registry miss, never argparse usage
+    assert "usage: help_search.py" not in capsys.readouterr().out
+
+
+def test_card_unexpected_exception_maps_to_3_not_1(capsys):
+    # The exit contract's reason to exist: Python exits 1 on ANY bare crash —
+    # the same code as a miss — so render_card must remap unexpected
+    # exceptions to 3 with a loud stderr message. A poisoned registry entry
+    # (git_equivalent=None breaks .split()) simulates any card bug.
+    reg = dict(_cmd_meta())
+    reg["fetch"] = replace(reg["fetch"], git_equivalent=None)
+    rc = render_card("fetch", registry=reg, cache_dir=None)
+    cap = capsys.readouterr()  # ONE capture: a second call resets to empty
+    assert rc == 3  # NEVER 1 — a card bug must not masquerade as a miss
+    assert "card render failed" in cap.err and cap.out == ""
+
+
+def test_card_brokenpipe_inbody_returns_zero_with_fd1_on_devnull(monkeypatch):
+    # In-body EPIPE shape: a stdout whose write() hits a dead pipe on the
+    # first flush (line-buffered stdout, or a card larger than the 8KB block
+    # buffer). render_card must catch BrokenPipeError, redirect fd 1 to
+    # devnull (interpreter-later flushes become harmless), and return 0 — a
+    # dead pipe is not a card bug. The stub's fileno() reports the REAL fd 1
+    # so the handler's dup2 redirects the actual stdout; fd 1 is saved and
+    # restored around the probe to keep pytest's fd capture intact.
+
+    class _DeadPipeStdout:
+        def write(self, _s):
+            raise BrokenPipeError
+
+        def fileno(self):
+            return 1
+
+        def flush(self):
+            raise BrokenPipeError
+
+    saved = os.dup(1)
+    monkeypatch.setattr(sys, "stdout", _DeadPipeStdout())
+    try:
+        rc = render_card("fetch", registry=_cmd_meta(), cache_dir=None)
+        assert os.fstat(1).st_rdev == os.stat(os.devnull).st_rdev  # redirected
+    finally:
+        os.dup2(saved, 1)
+        os.close(saved)
+    assert rc == 0
+
+
+def test_card_keyboardinterrupt_unwrapped():
+    # KeyboardInterrupt is BaseException, not Exception — but the contract
+    # demands it explicitly: a Ctrl-C during render must PROPAGATE (shell
+    # sees 130), never be remapped to the exit-3 catch-all or swallowed.
+
+    class _InterruptRegistry(dict):
+        def get(self, _name, _default=None):
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        render_card("fetch", registry=_InterruptRegistry(), cache_dir=None)
+
+
+def test_module_guard_dead_pipe_exits_zero():
+    # Subprocess-level probe of the __main__ guard. Mechanism: the pipe's
+    # read end is closed BEFORE spawn, so the first flush of card-sized
+    # output (well under the 8KB block buffer) deterministically raises
+    # EPIPE at a point inside the guard's try — never at interpreter
+    # finalization (for card mode that shape is unreachable BY DESIGN: the
+    # card branch flushes before sys.exit, which is the fix for the probed
+    # exit-120 hole). `card` exercises the card branch's pre-exit flush;
+    # the search-mode invocation (`@` with no query, main() returns
+    # normally) exercises the guard's OWN flush line. Both must end at
+    # devnull + exit 0 with zero traceback/"Exception ignored" noise.
+    script = PY_DIR / "help_search.py"
+    for argv in (["card", "--", "fetch"], ["@"]):
+        r, w = os.pipe()
+        os.close(r)  # reader gone: any pipe write raises EPIPE
+        proc = subprocess.Popen(
+            [sys.executable, str(script), *argv],
+            stdout=w,
+            stderr=subprocess.PIPE,
+            cwd=str(PY_DIR),
+        )
+        os.close(w)  # parent drops its copy or the child never sees EPIPE
+        _out, err = proc.communicate(timeout=60)
+        assert proc.returncode == 0, (argv, proc.returncode, err)
+        assert b"Traceback" not in err and b"Exception ignored" not in err
+
+
+@pytest.mark.skipif(not os.path.exists("/dev/full"), reason="/dev/full not available")
+def test_card_devfull_stays_quiet_zero():
+    # Pin the card side of the quiet-flush contract: writing the card to
+    # /dev/full (ENOSPC — an OSError that is NOT BrokenPipeError) must stay
+    # a quiet exit 0 via _flush_stdout_quietly. No traceback noise, no 120.
+    with open("/dev/full", "wb") as devfull:
+        proc = subprocess.run(
+            [sys.executable, str(PY_DIR / "help_search.py"), "card", "--", "fetch"],
+            stdout=devfull,
+            stderr=subprocess.PIPE,
+            cwd=str(PY_DIR),
+            timeout=60,
+        )
+    assert proc.returncode == 0
+    assert proc.stderr == b""
+
+
+def test_search_pipeline_oserror_stays_loud(tmp_path, monkeypatch, capsys):
+    # REGRESSION PIN (re-review): the __main__ guard once caught OSError
+    # around rc = main(), which converted search-mode pipeline failures into
+    # SILENT exit-0 (probed: unwritable cache dir → rc 0, empty output). The
+    # guard is BrokenPipeError-only again, so a pipeline OSError must
+    # propagate out of main() — loud — never vanish into the quiet-flush
+    # helper. In-process: monkeypatch the cache write to raise.
+    def _boom(_cache_file, _data):
+        raise PermissionError(13, "unwritable cache dir probe")
+
+    monkeypatch.setattr("help_search._save_cache", _boom)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "help_search.py",
+            "/",
+            "fetch",
+            "--bin-dir",
+            str(BIN),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--categories-dir",
+            str(CATS),
+        ],
+    )
+    with pytest.raises(PermissionError):
+        main()
+    assert capsys.readouterr().out == ""  # no results printed as success
+
+
+def test_search_pipeline_oserror_loud_end_to_end(tmp_path):
+    # Same regression pinned at the boundary the in-process test cannot see:
+    # the __main__ guard itself. A cache-dir that CANNOT be created (its
+    # parent is a regular FILE → mkdir raises FileExistsError, an OSError,
+    # uid-independently) must exit LOUD — nonzero, traceback on stderr,
+    # nothing on stdout — never the silent-0 the broad OSError clause once
+    # produced. A one-script bin dir keeps the pipeline scan fast.
+    script = PY_DIR / "help_search.py"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    probe = bin_dir / "git-probe"
+    probe.write_text("#!/bin/sh\nexit 0\n")
+    probe.chmod(0o755)
+    cache_dir = tmp_path / "blocker"
+    cache_dir.write_text("a file, not a directory")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "/",
+            "fetch",
+            "--bin-dir",
+            str(bin_dir),
+            "--cache-dir",
+            str(cache_dir),
+            "--categories-dir",
+            str(CATS),
+        ],
+        capture_output=True,
+        cwd=str(PY_DIR),
+        timeout=60,
+    )
+    assert proc.returncode != 0  # LOUD — the regression was a silent 0
+    assert proc.stdout == b""  # never results-as-success
+    assert b"Traceback" in proc.stderr

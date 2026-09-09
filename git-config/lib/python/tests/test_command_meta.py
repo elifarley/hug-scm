@@ -75,6 +75,18 @@ def test_missing_required_field_is_loud(tmp_path):
         load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
 
 
+def test_empty_git_equivalent_is_loud(tmp_path):
+    # Presence-only validation would let `git_equivalent = ""` reach the card
+    # as `Full flags: git help ` at exit 0 — the loader must reject it loudly
+    # (consumer-facing: card mode maps RegistryError to exit >=2). Pins the
+    # non-empty-string check on git_equivalent; `usage` shares the same loop.
+    src = (PY_DIR / "commands.toml").read_text()
+    bad = tmp_path / "commands.toml"
+    bad.write_text(src.replace('git_equivalent = "git fetch"', 'git_equivalent = ""', 1))
+    with pytest.raises(RegistryError, match="git_equivalent"):
+        load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+
+
 def test_related_resolves_forward_to_later_table(tmp_path):
     # Regression for order-dependent `related` validation (it used to see
     # only processed-so-far registry entries): an entry referencing a LATER

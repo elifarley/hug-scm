@@ -140,6 +140,14 @@ def load_commands(
                     list_field,
                     f"must be a TOML array of strings, got {type(value).__name__}",
                 )
+        # Presence-only validation would let `git_equivalent = ""` through to
+        # render `Full flags: git help ` at exit 0 (same for a blank usage
+        # line) — the card's core pointers must be loadable-or-loud, same
+        # posture as description.
+        for str_field in ("git_equivalent", "usage"):
+            value = entry[str_field]
+            if not isinstance(value, str) or not value.strip():
+                raise _fail(path, name, str_field, "must be a non-empty string")
         kind = entry["kind"]
         if kind not in VALID_KINDS:
             raise _fail(path, name, "kind", f"must be one of {sorted(VALID_KINDS)}")
