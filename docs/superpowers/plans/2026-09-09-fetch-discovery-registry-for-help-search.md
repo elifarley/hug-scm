@@ -203,7 +203,9 @@ def test_drift1_alias_resolution_and_semantics(registry):
 
 
 def test_drift2a_no_hug_bin_shadowing(registry):
-    scripts = {p.stem for p in BIN.glob("git-*")}
+    # strip the git- prefix: stem alone yields 'git-bpush', never matching
+    # registry keys ('bpush') — the intersection would be vacuously empty.
+    scripts = {p.stem.removeprefix("git-") for p in BIN.glob("git-*")}
     assert not (set(registry) & scripts)
 
 
@@ -247,7 +249,7 @@ from category_meta import derive_summary
 DEFAULT_PATH = Path(__file__).resolve().parent / "commands.toml"
 DEFAULT_CATEGORIES_DIR = Path(__file__).resolve().parent / "categories"
 DEFAULT_BIN_DIR = Path(__file__).resolve().parents[2] / "bin"
-DEFAULT_GITCONFIG = Path(__file__).resolve().parents[3] / ".gitconfig"
+DEFAULT_GITCONFIG = Path(__file__).resolve().parents[2] / ".gitconfig"
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 VALID_KINDS = {"alias", "passthrough"}
@@ -471,6 +473,26 @@ Simpler and exact — use this instead:
 
 (with `cmd.summary` being whatever summary variable that render site already computes; add `kind="…"` to the two new `CommandInfo` constructions' fields. Registry rows carry their summary via the existing derive-from-description flow in `main()`'s hydrate — `hydrate_category_fields` fills category summaries; the FIRST-SENTENCE summary for search scoring comes from `description` via the scorer's description path, matching how the corpus simulation passed with plain `CommandInfo(description=…)` rows.)
 
+5. **Wire the live search path** (review elifarley/hug-scm#339 thread: without
+   this, Task 2's param exists but `main()` never passes it — the live
+   `/fetch`, `/pull`, `@push-pull` paths stay registry-blind while every test
+   passes). In `main()`, load the registry once and thread it through:
+
+```python
+    from command_meta import RegistryError, load_commands
+    try:
+        cmd_registry = load_commands()
+    except RegistryError as exc:
+        print(f"hug help: registry failure: {exc}", file=sys.stderr)
+        sys.exit(1)  # search-mode posture: mirrors the categories sys.exit(1)
+    cmds = collect_metadata(bin_dir, use_cache=args.use_cache,
+                            cat_meta=cat_meta, cmd_meta=cmd_registry)
+```
+
+   (Card mode keeps its own lazy load inside `render_card` — Task 3. The
+   exit-1-on-registry-failure posture for search modes is the spec's
+   Error-handling contract; card mode maps the same failure to ≥2.)
+
 - [ ] **Step 4: Run → PASS** (same command as Step 1, plus the full lib suite: `uv run --extra search pytest tests/ -q` → 957+ green).
 
 - [ ] **Step 5: Commit** (`hug a git-config/lib/python/help_search.py git-config/lib/python/tests/test_help_search.py && hug c`)
@@ -622,7 +644,13 @@ with `main()` returning the int, and wrap `sys.exit(rc)` in the same `BrokenPipe
 ```python
 if __name__ == "__main__":
     try:
-        sys.exit(main())
+        rc = main()
+        sys.stdout.flush()  # LOAD-BEARING: for buffered (card-sized) output the
+        # EPIPE fires only here (or at interpreter finalization, which no
+        # except can see — probed exit 120). Flushing INSIDE the try surfaces
+        # it to the handler; the subsequent shutdown flush then writes an
+        # empty buffer to devnull-safe stdout.
+        sys.exit(rc)
     except BrokenPipeError:
         import os
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
