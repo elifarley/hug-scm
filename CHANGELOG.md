@@ -2,6 +2,22 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [1.17.0.0] - 2026-09-09
+
+### Added
+
+- Fetch is finally discoverable. `hug help /fetch`, `hug help /pull`, and `hug help /bs` now return the commands you were looking for instead of `(none)` — the help index covers the sync aliases (`bpull`, `bpullr`, `pullall`, `tpull`, `tpullf`), the `bs` previous-branch hop, and the `fetch` passthrough, searchable by keyword and by intent (try `hug help '!update my repo from the remote'`). `@push-pull` now lists them too, so the category's "fetch updates, pull and rebase" promise matches its contents.
+- Exact-name help got a hug accent: `hug help fetch`, `hug help bpullr`, and `hug help bs` render a card — what it does, usage, the git equivalent, where the full flags live (derived from the real target: `git help pull`, not the alias notice), and related commands. Previously `hug help fetch` dumped git's 37KB man page and `hug help bpullr` printed raw `git pull` usage.
+- `hug help bpull` and friends beat the alias expansion: the card wins over `'bpull' is aliased to ...` dumps, while non-registry aliases (`brr`, `bs`-style helpers not in the registry) keep their old alias help.
+- `uv` is now a declared, validated requirement: `install.sh` fails fast with the install one-liner when uv is missing (escape hatch `HUG_SKIP_UV_CHECK=1` for hg-only installs), and README documents it. A broken uv environment during help now fails loudly, naming the failing layer — never silently degrading to the old listing.
+- The quality corpus pins the discovery: `/fetch`, `/pull`, `/bs` and two intent queries are regression tests against the real index, so future index tuning can't quietly un-teach fetch.
+
+### Changed
+
+- `hug help <name>` precedence is now strict and tested: hug script help → registry card → alias help → listing. The lookup no longer resolves through PATH (where git's exec-path wins — that's why `hug help fetch` used to print the man page), flag-like inputs (`hug help -h`) keep the plain listing, and script∧alias names (e.g. `wtwp`) print their help exactly once.
+- Help-card robustness: piped help (`| head`) and full-disk stdout stay quiet exit 0; Ctrl-C exits 130 without hijacking; a broken help environment fails loudly instead of looking like "no such command"; search-mode failures stay loud while card-only rendering bugs get their own distinct exit code.
+- Registry-driven docs refreshed everywhere agents read: the git-to-hug translation guide and `:agents` article teach `git fetch → hug fetch` (with a fetch-before-worktree-base reminder), the command map lists `fetch`, and the completion reference no longer teaches `bpull` as "Pull with rebase" (that's `bpullr`; `bpull` is fast-forward-only).
+
 ## [1.16.0.0] - 2026-08-29
 
 ### Fixed
