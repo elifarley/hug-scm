@@ -11,6 +11,7 @@ Hug is a direct replacement for git. It supports any git command AND ADDITIONAL 
 | git command             | hug equivalent   |
 |-------------------------|------------------|
 | `git push`              | `hug bpush`      |
+| `git fetch`             | `hug fetch` (passthrough — downloads refs, no merge) |
 | `git add`               | `hug a`          |
 | `git status`            | `hug s`          |
 | `git log`               | `hug ll`         |
@@ -212,6 +213,14 @@ Force-push variants exist, but default to the safe one:
 
 - `hug bpush -f` — force-with-lease (safe; aborts if upstream moved)
 - `hug bpush-unsafe` — unconditional force push; avoid unless you mean it
+
+
+## Fetching & pulling
+
+- `hug fetch`: download new commits/refs from remotes — never merges. Safe to run anytime; run it before `hug wtc <branch> --base origin/main` so the base is up to date.
+- `hug bpull`: fast-forward-only pull (safe default; fails if a merge/rebase would be needed).
+- `hug bpullr`: pull with rebase (linear history).
+- `hug tpull` / `hug tpullf`: fetch tags / force-fetch + prune stale tags.
 
 
 ## Worktrees — never `git worktree`

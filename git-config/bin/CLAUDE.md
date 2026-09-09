@@ -13,3 +13,8 @@ keywords gracefully fall back to description-only scoring.
 
 Example: `git-w-wip` declares `_hug_keywords='["save","shelve","stash"]'`;
 `git-w-wipdel` (destructive) does NOT include `save` or `stash`.
+
+Non-script commands (git-aliases, passthroughs) have no script to annotate —
+their keywords/summaries live in `../lib/python/commands.toml` (registry),
+loaded by `command_meta.py`. Keep the two surfaces consistent: a keyword that
+would fit a destructive sibling stays out of BOTH.

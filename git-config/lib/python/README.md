@@ -33,6 +33,8 @@ python/
 ├── activity.py            # Temporal activity analysis
 ├── ownership.py           # Code ownership/expertise detection
 ├── churn.py               # File/line churn analysis
+├── command_meta.py        # Loads commands.toml (non-script command registry); validates schema, derives summaries
+├── commands.toml          # The registry itself (fetch, bpull, bpullr, pullall, tpull, tpullf, bs)
 └── requirements.txt       # Python dependencies
 ```
 

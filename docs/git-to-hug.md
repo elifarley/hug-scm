@@ -132,6 +132,7 @@ Push and pull changes.
 | Git Command | Hug Equivalent | Memory Hook | Why Hug is Better |
 |-------------|----------------|-------------|-------------------|
 | `git push -u` | `hug bpush` | **B**ranch **Push** | Sets upstream automatically |
+| `git fetch` | `hug fetch` | **Fetch** (passthrough) | Downloads refs only — never merges or touches your working tree |
 | `git pull` | `hug bpull` | **B**ranch **Pull** | Fast-forward only (safer, rejects merge commits) |
 | `git pull --rebase` | `hug bpullr` | **B**ranch **Pull** **R**ebase | Linear history, explicit intent |
 | `git push --force` | `hug bpushf` | **B**ranch **Push** **F**orce | Safer force-push (requires --force-with-lease equivalent) |
@@ -437,6 +438,7 @@ Print this out for your desk until you build muscle memory:
 | Show diff | `git diff` | `hug su` |
 | Show staged diff | `git diff --staged` | `hug ss` |
 | Push | `git push -u` | `hug bpush` |
+| Fetch (download only) | `git fetch` | `hug fetch` |
 | Pull (ff-only) | `git pull` | `hug bpull` |
 | Park work | `git stash` | `hug wip` |
 | Undo last commit (keep staged) | `git reset --soft HEAD~1` | `hug h back` |
