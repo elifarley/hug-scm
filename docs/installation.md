@@ -8,6 +8,7 @@ It's designed to be installed directly from its Github repository, and doesn't r
 
 - **Git or Mercurial**: Hug requires an underlying SCM tool. It works with both Git and Mercurial (Hg), so you must have at least one installed and available in your `PATH`.
 - git ≥ 2.34 (minimum supported; determinism pins and quoting contracts are probe-verified on this floor)
+- **`uv`** (required — powers `hug help` discovery and help cards): `curl -LsSf https://astral.sh/uv/install.sh | sh`. The installer fails fast if `uv` is missing; set `HUG_SKIP_UV_CHECK=1` to bypass the check for Mercurial-only installs.
 - **Bash shell**: Hug is a Bash-based tool and requires Bash 4.0 or higher. 
 
 ## Installation Steps

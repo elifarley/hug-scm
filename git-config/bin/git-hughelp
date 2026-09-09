@@ -29,7 +29,19 @@ test $# -eq 0 && {
   exit 0
 }
 prefix="$1"
-dir=$(dirname "$0")
+# readlink-resolved per the repo command template: a symlinked install must
+# still find its sibling bin/lib, not the symlink's directory.
+dir=$(dirname "$(readlink -f "$0" 2> /dev/null || greadlink -f "$0" 2> /dev/null || echo "$0")")
+
+# Shared body of the script-help arms (① hug's own script, and the same
+# branch for non-registry names further down): blank-line framed --help.
+# `script_help_shown` stays at the call sites — the flag records WHICH arm
+# printed, not that printing happened.
+show_script_help() {
+  echo
+  "$dir/git-$1" --help
+  echo
+}
 
 # Topic search dispatch — /keyword, @category, !intent, :article
 # WHY uv run + --extra search: resolves venv + dependencies (thefuzz) without relying on system python3
@@ -42,12 +54,60 @@ case "$prefix" in
 :*) exec uv run --directory "$dir/../lib/python" --extra search help_search.py ":" "${prefix#:}" "${@:2}" ;;
 esac
 
-# Show help for exact command if exists (script preferred over alias)
-if command -v "git-$prefix" > /dev/null 2>&1; then
-  echo
-  "git-$prefix" --help
-  echo
-elif [ -n "$(git config --get "alias.$prefix" 2> /dev/null)" ]; then
+# Exact help: hug's own script → registry card → alias. Precedence is
+# CONTRACT (spec Integration 2): scripts beat cards. Flag-like prefixes are
+# not command names — they skip ①② entirely (argparse behind -- would
+# otherwise intercept -h as HelpAction usage-on-stdout).
+script_help_shown=""
+if [[ "$prefix" != -* ]]; then
+  # ① hug's own script. Existence test AND invocation are $dir/-prefixed —
+  # NEVER `command -v git-$prefix`: inside git's dispatch the exec-path
+  # (/usr/lib/git-core) sits at PATH position 1 and its git-fetch hardlink
+  # would win, dumping the GIT-FETCH(1) man page instead of hug's answer.
+  if [[ -x "$dir/git-$prefix" ]]; then
+    show_script_help "$prefix"
+    script_help_shown=1
+  else
+    # ② Registry card. Exit contract (single owner — spec "Exit-code contract"):
+    #   0 → card printed; stop.  4 → miss; fall through to alias/listing.
+    #   1 → uv launcher failure (env creation/update can exit 1 BEFORE the
+    #     script runs): LOUD, never fall-through.  127 → uv missing (REQUIRED
+    #     dependency): loud hint.  >=2 → loud failure.
+    card_rc=0
+    # No --extra search: card mode never fuzzy-scores, and help_search's
+    # thefuzz import is try/except-guarded (HAS_THEFUZZ + fallback scorers),
+    # so the base project env suffices — a cheaper card path.
+    uv run --directory "$dir/../lib/python" help_search.py card -- "$prefix" || card_rc=$?
+    case $card_rc in
+    0) exit 0 ;;
+    4) : ;; # registry miss — fall through
+    1)
+      echo "hug: help card environment failure for '$prefix' (uv rc=1)." >&2
+      exit 1
+      ;;
+    127)
+      echo "hug: uv is required for 'hug help $prefix'. Install: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+      exit 127
+      ;;
+    *)
+      echo "hug: help card failed (rc=$card_rc): $prefix" >&2
+      exit "$card_rc"
+      ;;
+    esac
+  fi
+elif [[ -x "$dir/git-$prefix" ]]; then
+  show_script_help "$prefix"
+  script_help_shown=1
+fi
+
+# ③ Alias help — the UNCHANGED fallback (spec Integration 2): reached by
+# registry misses AND flag-like prefixes, but suppressed when ① already
+# printed script help — names that are both script and alias (stock: wtwp;
+# personal aliases) must not see their help twice. The ④ prefix listing
+# below then always follows. NOTE: `git $prefix -h` is deliberately
+# unquoted — $prefix is a git alias NAME here, not a word to protect;
+# quoting it would break aliases whose definition carries flags.
+if [[ -z "$script_help_shown" ]] && [ -n "$(git config --get "alias.$prefix" 2> /dev/null)" ]; then
   git $prefix -h
   echo
 fi

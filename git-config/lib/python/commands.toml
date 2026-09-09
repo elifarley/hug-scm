@@ -1,0 +1,75 @@
+# Registry of non-script hug commands (git-aliases + dispatcher passthroughs).
+# Loaded by command_meta.py; merged into help_search's CommandInfo index.
+# Contract: docs/superpowers/specs/2026-09-08-fetch-discovery-registry-for-help-search-design.md
+# Rules: name matches ^[a-z][a-z0-9]*(-[a-z0-9]+)*$; kind is "alias"|"passthrough";
+# categories must exist under categories/; related must resolve (registry|script|alias);
+# summary is DERIVED from description's first sentence — no summary field.
+
+[fetch]
+kind = "passthrough"
+description = """Download new commits and refs from remotes without merging.
+Does not touch your working tree or local branches — follow with hug bpull,
+hug bpullr, or hug mff to integrate. Fetches before basing new work on
+origin/main (see hug help :worktree)."""
+keywords = ["fetch", "download", "sync", "update", "remote", "refs"]
+categories = ["push-pull"]
+git_equivalent = "git fetch"
+usage = "hug fetch [--tags] [--prune] [<remote> [<refspec>...]]"
+related = ["bpull", "bpullr", "tpull", "llu"]
+
+[bpull]
+kind = "alias"
+description = """Fast-forward-only pull; fails if a merge or rebase would be needed.
+The safe default for integrating upstream when your branch has no local commits
+diverged from upstream."""
+keywords = ["pull", "update", "integrate"]
+categories = ["push-pull"]
+git_equivalent = "git pull --ff-only"
+usage = "hug bpull"
+related = ["fetch", "bpullr", "mff"]
+
+[bpullr]
+kind = "alias"
+description = """Pull with rebase: replay local commits on upstream for linear history."""
+keywords = ["pull", "rebase", "update", "integrate"]
+categories = ["push-pull"]
+git_equivalent = "git pull --rebase"
+usage = "hug bpullr"
+related = ["fetch", "bpull", "rb"]
+
+[pullall]
+kind = "alias"
+description = """Fetch from all remotes, then update the current branch's upstream.
+Does NOT pull every branch — only the current branch integrates."""
+keywords = ["all", "every", "remote"]
+categories = ["push-pull"]
+git_equivalent = "git pull --all"
+usage = "hug pullall"
+related = ["fetch", "bpull"]
+
+[tpull]
+kind = "alias"
+description = """Fetch tags from the remote."""
+keywords = ["tag", "download"]
+categories = ["push-pull", "tags"]
+git_equivalent = "git fetch --tags"
+usage = "hug tpull"
+related = ["fetch", "tpullf", "t"]
+
+[tpullf]
+kind = "alias"
+description = """Force fetch tags and prune stale ones."""
+keywords = ["tag", "prune", "force"]
+categories = ["push-pull", "tags"]
+git_equivalent = "git fetch --tags --prune --prune-tags --force"
+usage = "hug tpullf"
+related = ["tpull", "fetch"]
+
+[bs]
+kind = "alias"
+description = """Switch back to the previous branch."""
+keywords = ["previous", "back", "toggle", "last"]
+categories = ["branching"]
+git_equivalent = "git switch -"
+usage = "hug bs"
+related = ["b", "bc"]

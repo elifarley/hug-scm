@@ -233,6 +233,7 @@ Check the [Installation Guide](https://elifarley.github.io/hug-scm/installation.
 Requirements:
 
 - git ≥ 2.34 (minimum supported; determinism pins and quoting contracts are probe-verified on this floor)
+- `uv` (required — powers `hug help` discovery and help cards): `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
 ---
 
@@ -513,8 +514,10 @@ hug ma                # Abort merge
 hug bpush             # Branch: Push (Push current branch)
 hug bpushf            # Branch: Push-Force (Force push with lease)
 hug bpush-unsafe      # Branch: Push-unsafe (Unsafe force push)
-hug bpull             # Pull with rebase
-hug pullall           # Pull from all remotes
+hug fetch             # Fetch from remote(s) — no merge, working tree untouched
+hug bpull             # Fast-forward-only pull (fails if diverged)
+hug bpullr            # Pull with rebase (linear history)
+hug pullall           # Fetch all remotes, update current branch's upstream
 ```
 
 #### Utilities

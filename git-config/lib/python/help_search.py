@@ -109,6 +109,9 @@ MIN_CATEGORY_SCORE = 60
 _DEFAULT_BIN_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "bin")
 _DEFAULT_CACHE_DIR = "/tmp/cache/hug"
 _DEFAULT_CATEGORIES_DIR = os.path.join(os.path.dirname(__file__), "categories")
+# The one metadata cache file, by its write path (collect_metadata) and its
+# read-only peek path (render_card) — a literal in either would drift.
+_CACHE_FILENAME = "search-meta.cache"
 
 
 @dataclass
@@ -119,6 +122,9 @@ class CommandInfo:
     (per-command, NOT inherited from the category — see /autoplan F3).
     `category_desc` is hydrated at search time from CategoryMeta.description
     so it can be matched as a search field without re-loading the TOML.
+    `kind` is set only for registry rows merged from commands.toml (Task 2):
+    "alias" | "passthrough". None (= script) is the default, so every
+    pre-existing construction — all keyword-based — is untouched.
     """
 
     command: str = ""
@@ -126,6 +132,7 @@ class CommandInfo:
     categories: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
     category_desc: str = ""
+    kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -336,6 +343,32 @@ def _query_script(script_path: Path) -> dict | None:
     }
 
 
+# Cache-sourced text is UNTRUSTED INPUT: strip ANSI escape sequences (CSI —
+# cursor/color/etc.; OSC including OSC 52 clipboard writes, terminated by
+# BEL or ST) and control bytes (C0, DEL, and the C1 range — raw 0x9B is the
+# 8-bit CSI on terminals that accept it, so ESC-prefixed patterns alone
+# would miss it) before any of it reaches a terminal. First-party registry
+# prose never passes through here.
+# LESSON (alternation order): the escape-sequence alternatives MUST come
+# before the bare control class — a leading [\x00-\x1f] matches the ESC
+# byte alone, consuming it before the CSI/OSC arms can see the sequence and
+# leaving "[2J"-style tails behind (caught by the sanitizer test).
+_UNTRUSTED_TEXT_RE = re.compile(
+    r"(\x1b\[[0-9;:]*[a-zA-Z])|(\x1b\][^\x07\x1b]*(\x07|\x1b\\))|[\x00-\x1f\x7f-\x9f]"
+)
+
+
+def _strip_control_chars(text: str) -> str:
+    """Strip control bytes and ANSI CSI/OSC escape sequences from text."""
+    return _UNTRUSTED_TEXT_RE.sub("", text)
+
+
+def _clean_cached(value):
+    """Sanitize one cache-sourced string; non-strings pass through (the
+    loader owns element-TYPE validation — this boundary owns bytes)."""
+    return _strip_control_chars(value) if isinstance(value, str) else value
+
+
 def _load_cache(cache_file: Path) -> dict:
     """Load the metadata cache from disk."""
     if not cache_file.exists():
@@ -348,9 +381,21 @@ def _load_cache(cache_file: Path) -> dict:
 
 
 def _save_cache(cache_file: Path, data: dict) -> None:
-    """Save the metadata cache to disk."""
+    """Save the metadata cache ATOMICALLY: sibling temp + os.replace.
+
+    A crash mid-write can no longer leave torn JSON behind (the reader
+    tolerates it, but there is no reason to write it). A failed replace is
+    skipped SILENTLY — the cache is a pure optimization and the next run
+    re-queries scripts; the temp-write failures above the try still
+    propagate LOUD (the posture the pipeline-OSError tests pin).
+    """
     cache_file.parent.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(data, indent=2))
+    tmp = cache_file.with_suffix(cache_file.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    try:
+        os.replace(tmp, cache_file)
+    except OSError:
+        tmp.unlink(missing_ok=True)
 
 
 def collect_metadata(
@@ -358,6 +403,7 @@ def collect_metadata(
     cache_dir: str | Path = _DEFAULT_CACHE_DIR,
     use_cache: bool = True,
     cat_meta: dict | None = None,
+    cmd_meta: dict | None = None,
 ) -> list[CommandInfo]:
     """Collect metadata from all git-* scripts, using cache when possible.
 
@@ -365,9 +411,17 @@ def collect_metadata(
     hydrated from CategoryMeta.description for scoring against by the
     `@cat-desc` spec. Pass None to skip hydration (tests that don't need
     category descriptions, or environments where the manifests aren't loaded).
+
+    When `cmd_meta` is supplied (a command_meta.load_commands() registry of
+    non-script commands), each entry is merged as a CommandInfo row with
+    `kind` set. The merge runs AFTER the cache build — registry rows never
+    enter search-meta.cache, so a warm cache still yields them — and BEFORE
+    the sort, so the returned list is one alphabetical run rather than a
+    sorted script block followed by an appended registry block. Default None
+    = no merge, mirroring `cat_meta` so mock-dir tests stay hermetic.
     """
     bin_path = Path(bin_dir)
-    cache_file = Path(cache_dir) / "search-meta.cache"
+    cache_file = Path(cache_dir) / _CACHE_FILENAME
 
     # Load cache
     cache = _load_cache(cache_file) if use_cache else {}
@@ -401,19 +455,42 @@ def collect_metadata(
     if updated:
         _save_cache(cache_file, cache)
 
-    # Build CommandInfo list from cache
+    # Build CommandInfo list from cache. UNTRUSTED-INPUT BOUNDARY: every row
+    # materializes from the cache — disk content written by any prior run
+    # (mirroring script --search-meta output) — so untrusted strings are
+    # stripped ONCE here and every downstream renderer (format_results, the
+    # @category page, --explain) inherits clean text. render_card's per-hint
+    # strip becomes redundant-but-harmless defense in depth.
     commands = []
     for _name, data in cache.items():
         if not data.get("categories") or not data.get("description"):
             continue
         commands.append(
             CommandInfo(
-                command=data["command"],
-                description=data["description"],
-                categories=data["categories"],
-                keywords=data.get("keywords", []),
+                command=_clean_cached(data["command"]),
+                description=_clean_cached(data["description"]),
+                categories=[_clean_cached(c) for c in data["categories"]],
+                keywords=[_clean_cached(k) for k in data.get("keywords", [])],
             )
         )
+
+    if cmd_meta:
+        for name, meta in cmd_meta.items():
+            # command="hug <name>" is the pinned merge format — the same
+            # hug-prefixed string derive_command_name produces for scripts,
+            # so the sort key and every rendered line agree (spec C-003).
+            # Descriptions are TOML multi-line prose; flatten whitespace so
+            # a row renders as ONE listing line (format layers never wrap)
+            # while the full prose stays available to fuzzy scoring.
+            commands.append(
+                CommandInfo(
+                    command=f"hug {name}",
+                    description=" ".join(meta.description.split()),
+                    keywords=list(meta.keywords),
+                    categories=list(meta.categories),
+                    kind=meta.kind,
+                )
+            )
 
     commands = sorted(commands, key=lambda c: c.command)
     if cat_meta:
@@ -559,6 +636,20 @@ def list_categories(commands: list[CommandInfo]) -> list[str]:
     return sorted(cats)
 
 
+def _display_description(cmd: CommandInfo) -> str:
+    """Listing text for one command: description plus the registry kind marker.
+
+    Shared by every render site (format_results, format_category_page — and
+    Task 3's card related-lines) so a registry row self-explains why `-h`
+    isn't hug-flavored identically everywhere. The marker is a render-time
+    suffix; descriptions stay pure prose in the TOML.
+    """
+    desc = cmd.description or "(no description)"
+    if cmd.kind:  # registry rows only; scripts keep kind=None
+        desc = f"{desc} (git {cmd.kind})"
+    return desc
+
+
 def format_results(
     commands: list[CommandInfo],
     total: int | None = None,
@@ -583,8 +674,7 @@ def format_results(
             detail_map[id(item)] = (score, spec)
     lines = []
     for cmd in commands:
-        desc = cmd.description or "(no description)"
-        line = f"  {cmd.command:24s} - {desc}"
+        line = f"  {cmd.command:24s} - {_display_description(cmd)}"
         if explain and id(cmd) in detail_map:
             score, spec = detail_map[id(cmd)]
             line += f"   [{spec.label}, {score}]"
@@ -659,8 +749,7 @@ def format_category_page(
 
     data_lines: list[str] = []
     for cmd in commands:
-        desc = cmd.description or "(no description)"
-        data_lines.append(f"  {cmd.command:24s} - {desc}")
+        data_lines.append(f"  {cmd.command:24s} - {_display_description(cmd)}")
 
     footer = ["", "Tip: `hug help <command>` for full help on any command."]
 
@@ -709,10 +798,141 @@ def format_category_list(
     return "\n".join(lines)
 
 
+def _silence_stdout() -> None:
+    """Point fd 1 at devnull so no later stdout write can fail.
+
+    The shared mitigation behind every quiet stdout-failure path: buffered
+    leftovers and the interpreter-shutdown flush become harmless. Exit
+    semantics stay at the call sites (os._exit(0) in the flush guard and
+    the __main__ guard; return 0 in render_card's BrokenPipeError handler).
+    """
+    os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+
+
+def _flush_stdout_quietly() -> None:
+    """Flush stdout; on write failure end the process quietly at exit 0.
+
+    BrokenPipeError (dead pipe) AND other stdout write failures (/dev/full →
+    ENOSPC) share this posture: silence stdout, then os._exit(0). SCOPE IS
+    DELIBERATE: only the flush is guarded. Pipeline failures elsewhere in
+    main() (unwritable cache dir, ...) are NOT caught here — the __main__
+    guard stays BrokenPipeError-only so they propagate loudly (exit 1);
+    this helper runs solely for an actual stdout flush failure.
+    """
+    try:
+        sys.stdout.flush()
+    except OSError:
+        _silence_stdout()
+        os._exit(0)
+
+
+def render_card(
+    name: str,
+    registry: dict | None = None,
+    commands_path: str | Path | None = None,
+    cache_dir: str | Path | None = None,
+) -> int:
+    """Render the hug card for a registry-owned name.
+
+    Exit contract: 0 card | 4 miss (EXCLUSIVELY) | >=2 loud. WHY 4, not 1:
+    uv itself can exit 1 BEFORE this script runs (environment creation or
+    update failure — offline first run, dependency/build error), so exit 1
+    must mean LOUD for the bash caller and never be read as a miss. Python
+    also exits 1 on any bare crash — the same code — so EVERY unexpected
+    exception is caught and re-mapped to 3 with a stderr message: a card bug
+    must never masquerade as a registry miss (that confusion is what would
+    silently degrade `hug help <name>` to legacy help).
+
+    Pure function over the loaded registry + a READ-ONLY cache peek. Card
+    rendering never calls collect_metadata — no per-script metadata queries,
+    no cache writes (_save_cache is forbidden here); the one registry load
+    itself does a single alias scan — so `hug help <name>` stays fast and
+    side-effect-free.
+    """
+    try:
+        if registry is None:
+            # Lazy import mirrors main()'s pattern: keeps help_search
+            # importable even if command_meta has an issue.
+            from command_meta import RegistryError, load_commands
+
+            try:
+                registry = load_commands(path=commands_path)
+            except RegistryError as exc:
+                # Corrupt/missing registry is loud, and >=2 so it can never
+                # be misread as the exit-4 miss.
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
+        cmd = registry.get(name)
+        if cmd is None:
+            return 4  # miss — EXCLUSIVELY 4; 1 is loud (uv can exit 1 before we run)
+
+        # Full flags point at git_equivalent's LEADING command, not the hug
+        # name: `git help bpullr` prints an alias notice, `git help pull` is
+        # what actually documents the flags.
+        parts = cmd.git_equivalent.split()
+        full_flags_target = parts[1] if parts[:1] == ["git"] else cmd.git_equivalent
+        lines = [
+            f"hug {name} — (git {cmd.kind})",
+            "",
+            cmd.summary,
+            "",
+            cmd.description,
+            "",
+            f"Usage: {cmd.usage}",
+            f"Git equivalent: {cmd.git_equivalent}",
+            f"Full flags: git help {full_flags_target}",
+            "",
+            "Related:",
+        ]
+        # Read-only peek for best-effort related summaries. Keyed by script
+        # FILENAME `git-<name>` — the same key _save_cache writes; never
+        # written here (a card must not mutate the cache it reads).
+        peek = _load_cache(Path(cache_dir) / _CACHE_FILENAME) if cache_dir is not None else {}
+        for rel in cmd.related:
+            rel_meta = registry.get(rel)
+            if rel_meta:  # registry-owned related: use the loaded summary
+                lines.append(f"  hug {rel} — {rel_meta.summary}")
+                continue
+            # Script/alias related: cached description if one is present.
+            # Cache values are untrusted JSON — only a non-empty STRING may
+            # be rendered; anything else (number, null, "") degrades to the
+            # bare hint instead of leaking junk into the card or turning a
+            # render into a loud exit. The hint is also the ONLY card text
+            # originating outside this repo, so control bytes and ANSI
+            # escapes are stripped (registry summaries above are first-party
+            # prose and skip the sanitizer).
+            cached = peek.get(f"git-{rel}")
+            hint = cached.get("description") if isinstance(cached, dict) else None
+            if isinstance(hint, str) and hint:
+                lines.append(f"  hug {rel} — {_strip_control_chars(hint)}")
+            else:
+                lines.append(f"  hug {rel}")
+        print("\n".join(lines))
+        return 0
+    except BrokenPipeError:
+        # In-body raises are handled here; the shutdown-flush case is handled
+        # by the module-level guard below (both end at devnull + exit 0).
+        _silence_stdout()
+        return 0
+    except KeyboardInterrupt:
+        raise  # unwrapped: the shell sees 130 — never the exit-3 catch-all
+    except Exception as exc:
+        # Python exits 1 on a bare crash — that code is RESERVED for miss, so
+        # map ANY unexpected exception to >=2 loudly.
+        print(f"error: card render failed: {exc}", file=sys.stderr)
+        return 3
+
+
 def main():
     parser = argparse.ArgumentParser(description="Hug help topic search")
-    parser.add_argument("mode", choices=["/", "@", "!", ":"], help="Search mode")
-    parser.add_argument("query", nargs="?", default="", help="Search query")
+    parser.add_argument("mode", choices=["/", "@", "!", ":", "card"], help="Search mode")
+    # Card mode carries the command name in this same positional — argparse's
+    # greedy left-to-right match gives the FIRST optional positional every
+    # value, so a separate trailing `name` positional could never receive one
+    # (probed: `card -- fetch` yields query='fetch', name=None).
+    parser.add_argument(
+        "query", nargs="?", default="", help="Search query (card mode: exact command name)"
+    )
     parser.add_argument("--bin-dir", default=_DEFAULT_BIN_DIR, help="Directory with git-* scripts")
     parser.add_argument("--cache-dir", default=_DEFAULT_CACHE_DIR, help="Cache directory")
     parser.add_argument(
@@ -737,6 +957,24 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.mode == "card":
+        # Card bypasses the search pipeline below entirely: no categories
+        # load, no script scan, NO collect_metadata — it renders from the
+        # registry + a read-only cache peek alone. It also owns a DIFFERENT
+        # exit posture (miss=4, anything broken >=2 via render_card — 1 is
+        # reserved for uv's own launcher failures), so the search modes'
+        # loud-but-exit-1 handling must never see card failures. The name
+        # rides in `query` (see the positional above).
+        rc = render_card(args.query, commands_path=None, cache_dir=args.cache_dir)
+        # Quiet-flush BEFORE sys.exit: SystemExit would skip the __main__
+        # guard's flush line, and card-sized output usually fits the stdout
+        # buffer — the failure would then surface only at interpreter
+        # finalization (probed: exit 120) where no except can see it. The
+        # helper owns the write-failure posture (devnull + exit 0) so a dead
+        # pipe AND /dev/full both stay a quiet 0.
+        _flush_stdout_quietly()
+        sys.exit(rc)
+
     # HUG_HELP_EXPLAIN=1 enables --explain via env var (handy when wrapping
     # `hug help` in shell aliases or scripts that can't easily pass flags).
     explain = args.explain or os.environ.get("HUG_HELP_EXPLAIN") == "1"
@@ -759,12 +997,36 @@ def main():
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    commands = collect_metadata(args.bin_dir, cache_dir=args.cache_dir, cat_meta=cat_meta)
+    # Load the non-script command registry (commands.toml). WHY bare defaults:
+    # the CLI exposes no registry flag, and command_meta's __file__-relative
+    # defaults resolve identically in repo and installed layouts — the same
+    # shipped file this module's _DEFAULT_* constants anchor to. A corrupt
+    # registry is loud, same posture as categories: silent-empty would shrink
+    # the index and every search answer with it. Article mode (":") renders
+    # prose from articles_loader and never reads the registry, so it skips
+    # this block entirely — no TOML parse, no alias-scan subprocess.
+    cmd_registry = None
+    if args.mode != ":":
+        from command_meta import RegistryError, load_commands
+
+        try:
+            cmd_registry = load_commands()
+        except RegistryError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)  # search-mode posture: mirrors the categories sys.exit(1)
+
+    commands = collect_metadata(
+        args.bin_dir, cache_dir=args.cache_dir, cat_meta=cat_meta, cmd_meta=cmd_registry
+    )
 
     # Strict validation: every category referenced by a script MUST have a
     # manifest. Catches the most likely drift mode (a contributor adds a
     # category to a script without bootstrapping the corresponding TOML).
-    used_categories = {c for cmd in commands for c in cmd.categories}
+    # Script rows only (kind is None): registry categories were already
+    # validated at load time against the canonical categories/ dir, and
+    # dragging them in here would fail fixture invocations whose
+    # --categories-dir legitimately holds a partial manifest set.
+    used_categories = {c for cmd in commands if cmd.kind is None for c in cmd.categories}
     errors = validate_against_scripts(cat_meta, used_categories)
     if errors:
         for err in errors:
@@ -887,4 +1149,20 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        rc = main()
+        _flush_stdout_quietly()  # LOAD-BEARING: for buffered (card-sized) output
+        # the EPIPE fires only here (or at interpreter finalization, which no
+        # except can see — probed exit 120). Flushing INSIDE the try via the
+        # helper surfaces it to the quiet path; the subsequent shutdown flush
+        # writes an empty buffer to devnull-safe stdout.
+        sys.exit(rc)
+    except BrokenPipeError:
+        # BrokenPipeError ONLY — never OSError. A broad `except OSError` here
+        # (review regression) converted search-mode pipeline failures (probed:
+        # unwritable cache dir → rc 0, EMPTY output) into silent success; those
+        # MUST propagate loudly (exit 1 + traceback, the pre-existing posture).
+        # Only an in-body EPIPE — output bigger than the stdout buffer, raised
+        # mid-main — lands here; smaller ones fail the helper's flush above.
+        _silence_stdout()
+        os._exit(0)

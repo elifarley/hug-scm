@@ -156,8 +156,9 @@ These map to custom scripts (see Section 2).
 - `ma`: Abort merge. No args.
 
 ### Pull
-- `bpull`: Pull with rebase. No args.
-- `pullall`: Pull all remotes. No args.
+- `bpull`: Fast-forward-only pull. No args.
+- `bpullr`: Pull with rebase. No args.
+- `pullall`: Fetch all remotes, update current branch's upstream. No args.
 
 ### Utilities
 - `type <object>`: Object type. Args: `<object>` (required).

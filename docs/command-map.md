@@ -30,7 +30,7 @@ This table is the **authoritative source** for Hug's command organization. All c
 | `m*` | Merge | Integrate branches with various strategies | `hug m`, `hug ma`, `hug mff`, `hug mkeep` | **M**erge |
 | `analyze*` | Advanced Analysis | Advanced repository analysis and insights | `hug analyze deps`, `hug analyze expert`, `hug analyze activity`, `hug analyze co-changes <file>` | **ANALYZE** |
 | `stats*` | Repository Statistics | Quick repository statistics and metrics | `hug stats file`, `hug stats author`, `hug stats branch` | **STATS** |
-| `(no prefix)` | Utilities | Helper commands: init, clone, remote management, object inspection | `hug init`, `hug clone`, `hug remote2ssh`, `hug type`, `hug dump` | **UTILITY** |
+| `(no prefix)` | Utilities | Helper commands: init, clone, remote management, object inspection | `hug init`, `hug clone`, `hug fetch`, `hug remote2ssh`, `hug type`, `hug dump` | **UTILITY** |
 
 ## Visual Command Tree
 
@@ -105,6 +105,7 @@ Hug Commands
 │   ├── bdelr        # Branch Delete remote
 │   ├── bpull        # Branch Pull (ff-only)
 │   ├── bpullr       # Branch Pull with rebase
+│   ├── fetch        # Fetch from remote(s) — passthrough (no merge)
 │   ├── bpush        # Branch Push & upstream
 │   ├── bpushf       # Branch Safe force push
 │   ├── bwc          # Branch Which Contain

@@ -1,23 +1,43 @@
 """Tests for help_search.py — topic search for hug help."""
 
 import json
+import os
+import subprocess
+import sys
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
+from category_meta import CategoryMeta, load_categories
+from command_meta import RegistryError, load_commands
 from help_search import (
     CommandInfo,
     MatchSpec,
+    _save_cache,
     collect_metadata,
     derive_command_name,
     format_category_list,
+    format_category_page,
     format_results,
     list_categories,
+    main,
     parse_description_from_help,
+    render_card,
     run_search,
     search_category,
     search_intent,
     search_keyword,
 )
+
+# Real-repo anchors for the registry-merge tests (Task 2). Mirrors
+# test_command_meta.py — the registry and the script bin it must not shadow
+# live in this repo, and the merge tests exercise the REAL corpus.
+REPO = Path(__file__).resolve().parents[4]
+PY_DIR = REPO / "git-config" / "lib" / "python"
+CATS = PY_DIR / "categories"
+GITCONFIG = REPO / "git-config" / ".gitconfig"
+BIN = REPO / "git-config" / "bin"
 
 
 class TestDeriveCommandName:
@@ -1297,3 +1317,577 @@ class TestArticleMode:
         out = capsys.readouterr()
         assert "no article named" in out.err
         assert ":hug-101" in out.err
+
+
+# ── Registry merge (Task 2) ───────────────────────────────────────────────
+# commands.toml rows flow into the CommandInfo index as ordinary rows with
+# `kind` set; script rows keep kind=None. The merge happens AFTER the cache
+# build and BEFORE the sort, so the registry never enters search-meta.cache
+# and the returned list is one alphabetical run.
+
+
+def _cmd_meta():
+    return load_commands(bin_dir=BIN, gitconfig=GITCONFIG)
+
+
+def test_merge_interleaves_and_sorts(tmp_path):
+    cmds = collect_metadata(
+        BIN,
+        cache_dir=tmp_path / "cache",
+        use_cache=False,
+        cat_meta=load_categories(CATS),
+        cmd_meta=_cmd_meta(),
+    )
+    names = [c.command for c in cmds]
+    assert names == sorted(names)  # ONE alphabetical run, not script-block + registry-block
+    by_name = {c.command: c for c in cmds}
+    assert by_name["hug bpullr"].kind == "alias"
+    assert by_name["hug fetch"].kind == "passthrough"
+    assert by_name["hug bpush"].kind is None  # scripts keep kind=None
+
+
+def test_merge_survives_warm_cache(tmp_path):
+    cache_dir = tmp_path / "cache"
+    registry = _cmd_meta()
+    one = collect_metadata(
+        BIN,
+        cache_dir=cache_dir,
+        use_cache=True,
+        cat_meta=load_categories(CATS),
+        cmd_meta=registry,
+    )
+    two = collect_metadata(
+        BIN,
+        cache_dir=cache_dir,
+        use_cache=True,
+        cat_meta=load_categories(CATS),
+        cmd_meta=registry,
+    )
+    # Call 1 cold-populates the PRIVATE cache; call 2 takes the mtime-hit
+    # path for every script, yet must still yield every registry row — the
+    # merge is cache-independent because rows never enter search-meta.cache.
+    # (A shared production cache would make both calls identical and the
+    # assertion vacuous, so this test owns its cache.)
+    expected = {f"hug {name}" for name in registry}
+    assert expected <= {c.command for c in one if c.kind}  # cold
+    assert expected == {c.command for c in two if c.kind}  # warm: full set
+    assert "hug fetch" in expected  # the regression's namesake, explicit
+
+
+def test_no_cmd_meta_is_hermetic(tmp_path):
+    # Default cmd_meta=None must not touch the real registry: mock-dir tests
+    # stay hermetic (the explicit-param precedent of cat_meta).
+    cmds = collect_metadata(
+        BIN, cache_dir=tmp_path / "cache", use_cache=False, cat_meta=load_categories(CATS)
+    )
+    assert all(c.kind is None for c in cmds)
+    # `fetch` is registry-only (drift2a forbids a git-fetch bin script).
+    assert not any(c.command == "hug fetch" for c in cmds)
+
+
+def test_merge_flattens_multiline_descriptions(tmp_path):
+    # coverage audit: the merge flattens TOML multi-line prose with
+    # `" ".join(description.split())` so a row renders as ONE listing line;
+    # the substring assertions in test_main_threads_registry_into_search
+    # cannot see a regression (both fragments survive embedded newlines).
+    # fetch's description is hard-wrapped across four TOML lines — the pin.
+    cmds = collect_metadata(
+        BIN,
+        cache_dir=tmp_path / "cache",
+        use_cache=False,
+        cat_meta=load_categories(CATS),
+        cmd_meta=_cmd_meta(),
+    )
+    registry_rows = [c for c in cmds if c.kind is not None]
+    assert registry_rows  # the merge actually ran
+    for cmd in registry_rows:
+        assert "\n" not in cmd.description, cmd.command
+        assert "  " not in cmd.description, cmd.command
+
+
+def test_format_marker_renders_kind():
+    row = CommandInfo(
+        command="hug bpullr",
+        description="Pull with rebase",
+        categories=["push-pull"],
+        kind="alias",
+    )
+    out = format_results([row])
+    assert "(git alias)" in out
+
+
+def test_format_category_page_marker_renders_kind():
+    # Same render-time marker on the @category page — the AC names BOTH
+    # format layers, not just /keyword results.
+    meta = CategoryMeta(
+        name="push-pull",
+        label="Push & pull",
+        description="Sync work with remotes.",
+        summary="Sync work with remotes.",
+    )
+    row = CommandInfo(
+        command="hug bpullr",
+        description="Pull with rebase",
+        categories=["push-pull"],
+        kind="alias",
+    )
+    out = format_category_page(meta, [row], width=72)
+    assert "(git alias)" in out
+
+
+def test_main_registry_failure_exits_1(tmp_path, monkeypatch, capsys):
+    # Search-mode posture: a corrupt registry is LOUD — message on stderr,
+    # exit 1 — mirroring the categories loader. Silent-empty would shrink
+    # the index and every answer with it.
+    (tmp_path / "cats").mkdir()  # empty manifests: fine, validation runs later
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "help_search.py",
+            "/",
+            "fetch",
+            "--bin-dir",
+            str(tmp_path),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--categories-dir",
+            str(tmp_path / "cats"),
+        ],
+    )
+
+    def _corrupt(*_args, **_kwargs):
+        raise RegistryError("corrupt registry probe")
+
+    monkeypatch.setattr("command_meta.load_commands", _corrupt)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    assert "corrupt registry probe" in capsys.readouterr().err
+
+
+def test_main_threads_registry_into_search(tmp_path, monkeypatch, capsys):
+    # Pins the LIVE wiring: main() must pass cmd_meta into collect_metadata.
+    # Without it, /fetch stays registry-blind in production while every
+    # unit-level test stays green — the exact gap the plan review caught.
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "help_search.py",
+            "/",
+            "fetch",
+            "--bin-dir",
+            str(BIN),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--categories-dir",
+            str(CATS),
+        ],
+    )
+    main()
+    out = capsys.readouterr().out
+    assert "hug fetch" in out
+    assert "(git passthrough)" in out  # marker flows through main() too
+
+
+# --- Card mode (Task 3) -------------------------------------------------------
+# Exit contract: 0 card | 4 miss (EXCLUSIVELY) | >=2 loud. Miss is 4, NOT 1:
+# uv itself can exit 1 on environment failure BEFORE this script runs, so
+# exit 1 must mean loud for the bash caller. render_card is a pure function
+# over the registry + a READ-ONLY cache peek (keyed by script FILENAME
+# `git-<name>`) — never collect_metadata, never _save_cache.
+
+
+def test_card_found_render(capsys):
+    rc = render_card("fetch", registry=_cmd_meta(), cache_dir=None)
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "(git passthrough)" in out and "Usage:" in out
+    assert "Git equivalent: git fetch" in out
+    assert "Full flags: git help fetch" in out
+    # Related summaries must come from the REGISTRY branch (`hug <rel> —
+    # <summary>`), not the prose of fetch's own description nor the
+    # degraded bare hint — assert the em-dash + summary prefix.
+    assert "hug bpull — Fast-forward-only pull" in out
+    assert "hug bpullr — Pull with rebase" in out
+
+
+def test_card_fullflags_uses_alias_target(capsys):
+    # Full flags derive from git_equivalent's LEADING command, not the name:
+    # `git help bpullr` prints an alias notice, not flag docs.
+    render_card("bpullr", registry=_cmd_meta(), cache_dir=None)
+    out = capsys.readouterr().out
+    assert "Full flags: git help pull" in out  # NOT git help bpullr
+
+
+def test_card_bs_targets_switch(capsys):
+    render_card("bs", registry=_cmd_meta(), cache_dir=None)
+    assert "Full flags: git help switch" in capsys.readouterr().out
+
+
+def test_card_fullflags_non_git_fallback(capsys):
+    # coverage audit: render_card's `parts[:1] == ["git"]` guard had no
+    # reachable case in shipped data (all seven entries are git-prefixed);
+    # a non-git leading command must fall back to the WHOLE git_equivalent.
+    reg = dict(_cmd_meta())
+    reg["fetch"] = replace(reg["fetch"], git_equivalent="hg pull --update")
+    render_card("fetch", registry=reg, cache_dir=None)
+    assert "Full flags: git help hg pull --update" in capsys.readouterr().out
+
+
+def test_card_miss_exits_4(capsys):
+    # 4, NOT 1: uv itself can exit 1 on environment failure before the
+    # script runs — bash maps 1 to loud, so the miss needs its own code.
+    assert render_card("zzz", registry=_cmd_meta(), cache_dir=None) == 4
+    out = capsys.readouterr().out
+    assert "Usage:" not in out  # no partial card on miss
+
+
+def test_card_miss_propagates_4_through_main(monkeypatch, capsys):
+    # The bash contract consumes main()'s code, not render_card's return:
+    # the card dispatch must propagate the miss as 4 (bash falls through),
+    # while uv's own exit 1 stays LOUD one layer out (git-hughelp case arm).
+    monkeypatch.setattr("sys.argv", ["help_search.py", "card", "--", "zzz"])
+    with pytest.raises(SystemExit) as ei:
+        main()
+    assert ei.value.code == 4
+    assert capsys.readouterr().out == ""
+
+
+def test_card_corrupt_registry_loud(tmp_path, capsys):
+    # Corrupt registry in card mode is LOUD and >=2 — never the exit-4 miss
+    # (which would silently degrade `hug help <name>` to legacy help). The
+    # loader's missing-required-field check fires before the kind check, so
+    # this minimal fixture dies on `description`; a bad kind dies the same
+    # loud way (command_meta's own tests pin the kind path).
+    (tmp_path / "commands.toml").write_text("[fetch]\nkind = 'bogus'\n")
+    rc = render_card(
+        "fetch", registry=None, commands_path=tmp_path / "commands.toml", cache_dir=None
+    )
+    cap = capsys.readouterr()  # ONE capture: a second call resets to empty
+    assert rc >= 2 and cap.err and not cap.out
+
+
+def test_card_cache_peek_uses_git_name_key(tmp_path, capsys):
+    # related summary for script `llu` resolves from a cache keyed by FILENAME
+    (tmp_path / "search-meta.cache").write_text(
+        json.dumps({"git-llu": {"description": "outgoing commits"}})
+    )
+    render_card("fetch", registry=_cmd_meta(), cache_dir=tmp_path)
+    assert "outgoing commits" in capsys.readouterr().out
+
+
+def test_card_cache_hint_strips_ansi_and_control_bytes(tmp_path, capsys):
+    # The peeked hint is the ONLY card text sourced outside this repo
+    # (search-meta.cache) — hostile or merely stale cache contents must not
+    # drive the terminal: C0/DEL bytes and ANSI escape sequences (CSI
+    # clear-screen + cursor move; an OSC 52 clipboard write, BEL-terminated)
+    # are stripped, while the sanitized tail still renders. Registry
+    # summaries are first-party prose and intentionally skip the sanitizer.
+    (tmp_path / "search-meta.cache").write_text(
+        json.dumps({"git-llu": {"description": "\x1b[2J\x1b[3H\x1b]52;c;aGVsbG8=\x07clean hint"}})
+    )
+    render_card("fetch", registry=_cmd_meta(), cache_dir=tmp_path)
+    out = capsys.readouterr().out
+    assert "clean hint" in out  # sanitized text survives
+    assert "\x1b" not in out and "\x07" not in out  # no escape/BEL reaches stdout
+    # Zero control bytes except the card's own line structure (\n from the
+    # join/print — legitimate layout, not cache content).
+    assert not any((ord(ch) < 32 and ch != "\n") or ord(ch) == 127 for ch in out)
+
+
+def test_card_cache_hint_strips_raw_c1_controls(tmp_path, capsys):
+    # C1 (0x80-0x9f): raw 0x9B is the 8-bit CSI on terminals that accept it —
+    # an ESC-prefixed payload cannot catch this shape, so the hostile
+    # sequence here carries NO ESC at all. The control class must extend
+    # through 0x9f or these bytes drive the terminal.
+    (tmp_path / "search-meta.cache").write_text(
+        json.dumps({"git-llu": {"description": "\x9b2J\x9b3H\x9bclean hint"}})
+    )
+    render_card("fetch", registry=_cmd_meta(), cache_dir=tmp_path)
+    out = capsys.readouterr().out
+    assert "clean hint" in out
+    assert "\x9b" not in out
+    assert not any((ord(ch) < 32 and ch != "\n") or 127 <= ord(ch) <= 159 for ch in out)
+
+
+def test_collect_metadata_sanitizes_cache_sourced_text(tmp_path):
+    # BOUNDARY pin (the sibling sink): search modes materialize every row
+    # from the cache and format_results prints descriptions raw — so the
+    # strip must happen ONCE at materialization, not only in render_card's
+    # hint branch. command/description/keywords/categories are all covered.
+    (tmp_path / "search-meta.cache").write_text(
+        json.dumps(
+            {
+                "git-hostile": {
+                    "command": "hug hostile\x1b[3H",
+                    "description": "Clean start\x1b[2J with ESC mid-prose",
+                    "categories": ["head\x1b[31m"],
+                    "keywords": ["probe\x1b[31m"],
+                    "mtime": 1,
+                }
+            }
+        )
+    )
+    cmds = collect_metadata(tmp_path, cache_dir=tmp_path, use_cache=True, cat_meta=None)
+    (row,) = [c for c in cmds if c.command.startswith("hug hostile")]
+    assert row.command == "hug hostile"
+    assert row.description == "Clean start with ESC mid-prose"
+    assert row.keywords == ["probe"]
+    assert row.categories == ["head"]
+
+
+def test_save_cache_failed_replace_is_silent(tmp_path, monkeypatch):
+    # Atomic write: sibling temp + os.replace, with a failed replace skipped
+    # SILENTLY (the cache is a pure optimization — the next run re-queries);
+    # temp-write failures above the try stay LOUD, pinned by the
+    # pipeline-OSError tests.
+    cache_file = tmp_path / "search-meta.cache"
+    cache_file.write_text("old")
+
+    def _boom(_src, _dst):
+        raise OSError(18, "cross-device link probe")
+
+    monkeypatch.setattr(os, "replace", _boom)
+    _save_cache(cache_file, {"a": 1})
+    assert cache_file.read_text() == "old"  # failed replace left the old file
+    assert not list(tmp_path.glob("*.tmp"))  # temp cleaned up, no litter
+
+
+def test_card_cache_peek_nonstring_hint_degrades_to_bare(tmp_path, capsys):
+    # coverage audit: cache JSON is untrusted — a NON-STRING description
+    # (number/null) must degrade to the bare `hug <rel>` hint, never leak
+    # repr junk into the card and never turn a render into a loud exit.
+    (tmp_path / "search-meta.cache").write_text(json.dumps({"git-llu": {"description": 123}}))
+    render_card("fetch", registry=_cmd_meta(), cache_dir=tmp_path)
+    out = capsys.readouterr().out
+    assert "hug llu" in out
+    assert "123" not in out
+
+
+def test_card_flaglike_name_is_not_help(monkeypatch, capsys):
+    # `-h` behind `--` is a NAME, never argparse help: argparse strips the
+    # end-of-options marker and treats what follows as positionals, so the
+    # flag-like miss exits 4 with zero usage text on stdout.
+    monkeypatch.setattr("sys.argv", ["help_search.py", "card", "--", "-h"])
+    with pytest.raises(SystemExit) as ei:
+        main()
+    assert ei.value.code == 4  # flag-like name is a plain registry miss, never argparse usage
+    assert "usage: help_search.py" not in capsys.readouterr().out
+
+
+def test_card_bogus_flag_name_is_miss_too(monkeypatch, capsys):
+    # `--bogus` behind `--` is likewise a NAME (argparse never intercepts
+    # option-like strings after the end-of-options marker) → miss → 4.
+    monkeypatch.setattr("sys.argv", ["help_search.py", "card", "--", "--bogus"])
+    with pytest.raises(SystemExit) as ei:
+        main()
+    assert ei.value.code == 4
+    assert "usage: help_search.py" not in capsys.readouterr().out
+
+
+def test_card_unexpected_exception_maps_to_3_not_1(capsys):
+    # The exit contract's reason to exist: Python exits 1 on ANY bare crash —
+    # the same code as a miss — so render_card must remap unexpected
+    # exceptions to 3 with a loud stderr message. A poisoned registry entry
+    # (git_equivalent=None breaks .split()) simulates any card bug.
+    reg = dict(_cmd_meta())
+    reg["fetch"] = replace(reg["fetch"], git_equivalent=None)
+    rc = render_card("fetch", registry=reg, cache_dir=None)
+    cap = capsys.readouterr()  # ONE capture: a second call resets to empty
+    assert rc == 3  # NEVER 1 — a card bug must not masquerade as a miss
+    assert "card render failed" in cap.err and cap.out == ""
+
+
+def test_card_brokenpipe_inbody_returns_zero_with_fd1_on_devnull(monkeypatch):
+    # In-body EPIPE shape: a stdout whose write() hits a dead pipe on the
+    # first flush (line-buffered stdout, or a card larger than the 8KB block
+    # buffer). render_card must catch BrokenPipeError, redirect fd 1 to
+    # devnull (interpreter-later flushes become harmless), and return 0 — a
+    # dead pipe is not a card bug. The stub's fileno() reports the REAL fd 1
+    # so the handler's dup2 redirects the actual stdout; fd 1 is saved and
+    # restored around the probe to keep pytest's fd capture intact.
+
+    class _DeadPipeStdout:
+        def write(self, _s):
+            raise BrokenPipeError
+
+        def fileno(self):
+            return 1
+
+        def flush(self):
+            raise BrokenPipeError
+
+    saved = os.dup(1)
+    monkeypatch.setattr(sys, "stdout", _DeadPipeStdout())
+    try:
+        rc = render_card("fetch", registry=_cmd_meta(), cache_dir=None)
+        assert os.fstat(1).st_rdev == os.stat(os.devnull).st_rdev  # redirected
+    finally:
+        os.dup2(saved, 1)
+        os.close(saved)
+    assert rc == 0
+
+
+def test_card_keyboardinterrupt_unwrapped():
+    # KeyboardInterrupt is BaseException, not Exception — but the contract
+    # demands it explicitly: a Ctrl-C during render must PROPAGATE (shell
+    # sees 130), never be remapped to the exit-3 catch-all or swallowed.
+
+    class _InterruptRegistry(dict):
+        def get(self, _name, _default=None):
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        render_card("fetch", registry=_InterruptRegistry(), cache_dir=None)
+
+
+def test_module_guard_dead_pipe_exits_zero(tmp_path):
+    # Subprocess-level probe of the __main__ guard. Mechanism: the pipe's
+    # read end is closed BEFORE spawn, so the first flush of card-sized
+    # output (well under the 8KB block buffer) deterministically raises
+    # EPIPE at a point inside the guard's try — never at interpreter
+    # finalization (for card mode that shape is unreachable BY DESIGN: the
+    # card branch flushes before sys.exit, which is the fix for the probed
+    # exit-120 hole). `card` exercises the card branch's pre-exit flush;
+    # the search-mode invocation (`@` with no query, main() returns
+    # normally) exercises the guard's OWN flush line. Both must end at
+    # devnull + exit 0 with zero traceback/"Exception ignored" noise.
+    # Hermetic pipeline: a one-script stub bin + empty cache + real
+    # categories (the test_search_pipeline_oserror_loud_end_to_end pattern)
+    # so the `@` arm never scans the ~200-script real bin and no test run
+    # writes the shared /tmp cache. Flags precede the positionals: after
+    # `--`, argparse would treat them as extra positionals.
+    script = PY_DIR / "help_search.py"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    probe = bin_dir / "git-probe"
+    probe.write_text("#!/bin/sh\nexit 0\n")
+    probe.chmod(0o755)
+    hermetic = [
+        "--bin-dir",
+        str(bin_dir),
+        "--cache-dir",
+        str(tmp_path / "cache"),
+        "--categories-dir",
+        str(CATS),
+    ]
+    # Positional BEFORE the optionals: on Python ≤3.11 argparse drops a
+    # nargs='?' positional that follows optionals ("unrecognized arguments:
+    # fetch") — the product path (git-hughelp passes no optionals) is immune.
+    for argv in (["card", "fetch", *hermetic], ["@", *hermetic]):
+        r, w = os.pipe()
+        os.close(r)  # reader gone: any pipe write raises EPIPE
+        proc = subprocess.Popen(
+            [sys.executable, str(script), *argv],
+            stdout=w,
+            stderr=subprocess.PIPE,
+            cwd=str(PY_DIR),
+        )
+        os.close(w)  # parent drops its copy or the child never sees EPIPE
+        _out, err = proc.communicate(timeout=60)
+        assert proc.returncode == 0, (argv, proc.returncode, err)
+        assert b"Traceback" not in err and b"Exception ignored" not in err
+
+
+@pytest.mark.skipif(not os.path.exists("/dev/full"), reason="/dev/full not available")
+def test_card_devfull_stays_quiet_zero():
+    # Pin the card side of the quiet-flush contract: writing the card to
+    # /dev/full (ENOSPC — an OSError that is NOT BrokenPipeError) must stay
+    # a quiet exit 0 via _flush_stdout_quietly. No traceback noise, no 120.
+    with open("/dev/full", "wb") as devfull:
+        proc = subprocess.run(
+            [sys.executable, str(PY_DIR / "help_search.py"), "card", "--", "fetch"],
+            stdout=devfull,
+            stderr=subprocess.PIPE,
+            cwd=str(PY_DIR),
+            timeout=60,
+        )
+    assert proc.returncode == 0
+    assert proc.stderr == b""
+
+
+def test_search_pipeline_oserror_stays_loud(tmp_path, monkeypatch, capsys):
+    # REGRESSION PIN (re-review): the __main__ guard once caught OSError
+    # around rc = main(), which converted search-mode pipeline failures into
+    # SILENT exit-0 (probed: unwritable cache dir → rc 0, empty output). The
+    # guard is BrokenPipeError-only again, so a pipeline OSError must
+    # propagate out of main() — loud — never vanish into the quiet-flush
+    # helper. In-process: monkeypatch the cache write to raise.
+    def _boom(_cache_file, _data):
+        raise PermissionError(13, "unwritable cache dir probe")
+
+    monkeypatch.setattr("help_search._save_cache", _boom)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "help_search.py",
+            "/",
+            "fetch",
+            "--bin-dir",
+            str(BIN),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--categories-dir",
+            str(CATS),
+        ],
+    )
+    with pytest.raises(PermissionError):
+        main()
+    assert capsys.readouterr().out == ""  # no results printed as success
+
+
+def test_search_pipeline_oserror_loud_end_to_end(tmp_path):
+    # Same regression pinned at the boundary the in-process test cannot see:
+    # the __main__ guard itself. A cache-dir that CANNOT be created (its
+    # parent is a regular FILE → mkdir raises FileExistsError, an OSError,
+    # uid-independently) must exit LOUD — nonzero, traceback on stderr,
+    # nothing on stdout — never the silent-0 the broad OSError clause once
+    # produced. A one-script bin dir keeps the pipeline scan fast.
+    script = PY_DIR / "help_search.py"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    probe = bin_dir / "git-probe"
+    probe.write_text("#!/bin/sh\nexit 0\n")
+    probe.chmod(0o755)
+    cache_dir = tmp_path / "blocker"
+    cache_dir.write_text("a file, not a directory")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "/",
+            "fetch",
+            "--bin-dir",
+            str(bin_dir),
+            "--cache-dir",
+            str(cache_dir),
+            "--categories-dir",
+            str(CATS),
+        ],
+        capture_output=True,
+        cwd=str(PY_DIR),
+        timeout=60,
+    )
+    assert proc.returncode != 0  # LOUD — the regression was a silent 0
+    assert proc.stdout == b""  # never results-as-success
+    assert b"Traceback" in proc.stderr
+
+
+def test_article_mode_skips_registry_load(tmp_path, monkeypatch, capsys):
+    # ":" mode renders prose from articles_loader and never reads the
+    # registry, so it must not pay the TOML parse + alias scan. The
+    # monkeypatched load_commands RAISES: if the guard were missing, the
+    # load would surface as the loud search-mode exit 1 (or an escaping
+    # RegistryError) — this test passes only when the load is SKIPPED.
+    (tmp_path / "cats").mkdir()
+    monkeypatch.setattr("sys.argv", ["help_search.py", ":"])
+
+    def _boom(*_args, **_kwargs):
+        raise RegistryError("corrupt registry probe")
+
+    monkeypatch.setattr("command_meta.load_commands", _boom)
+    main()  # must return normally — no SystemExit, no escaping RegistryError
+    cap = capsys.readouterr()
+    assert "corrupt registry probe" not in cap.err  # the load never ran
+    assert cap.err != ""  # article-listing header (chatter) still reaches stderr

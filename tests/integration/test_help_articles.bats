@@ -160,3 +160,112 @@ teardown() {
   # The env-var escape hatch is deliberately NOT documented (spec §7).
   refute_output --partial "HUG_INTERACTIVE_FILE_SELECTION"
 }
+
+# --- Exact-name chain (Task 4): script → registry card → alias → listing ---
+
+@test "hug help fetch renders the registry card, not git's man page" {
+  cd "$TEST_TEMP_DIR"
+  run hug help fetch
+  assert_success
+  assert_output --partial "git passthrough"
+  assert_output --partial "Full flags: git help fetch"
+  refute_output --partial "Commands starting with"
+  refute_output --partial "GIT-FETCH"
+}
+
+@test "hug help bs renders the card (7th registry entry)" {
+  cd "$TEST_TEMP_DIR"
+  run hug help bs
+  assert_success
+  assert_output --partial "(git alias)"
+  # Card renders the registry description with its original capitalization.
+  assert_output --partial "Switch back"
+  refute_output --partial "Commands starting with"
+}
+
+@test "hug help brr keeps alias fall-through + listing" {
+  cd "$TEST_TEMP_DIR"
+  run hug help brr
+  assert_success
+  assert_output --partial "aliased to"
+  assert_output --partial "Commands starting with"
+}
+
+@test "hug help -h never renders a card or argparse usage" {
+  cd "$TEST_TEMP_DIR"
+  run hug help -h
+  assert_success
+  refute_output --partial "git passthrough"
+  refute_output --partial "usage: help_search.py"
+}
+
+@test "hug help zzz keeps the prefix listing" {
+  cd "$TEST_TEMP_DIR"
+  run hug help zzz
+  assert_success
+  assert_output --partial "(none)"
+}
+
+# --- Loud card arms pinned at the bash layer (spec Integration 2): a stub
+# --- `uv` first on PATH simulates launcher outcomes without touching the
+# --- real toolchain. Every arm must be LOUD — none may fall through to the
+# --- alias/listing output, which is what a miss (rc=4) alone is allowed.
+
+@test "hug help fetch with failing uv (rc=1) fails loud: environment failure" {
+  cd "$TEST_TEMP_DIR"
+  local stub="$TEST_TEMP_DIR/stub-uv-1"
+  mkdir -p "$stub"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$stub/uv"
+  chmod +x "$stub/uv"
+  run env PATH="$stub:$PATH" hug help fetch
+  assert_failure
+  assert_output --partial "help card environment failure"
+  refute_output --partial "Commands starting with"
+}
+
+@test "hug help fetch with uv-missing stub (rc=127) fails loud: install hint" {
+  cd "$TEST_TEMP_DIR"
+  local stub="$TEST_TEMP_DIR/stub-uv-127"
+  mkdir -p "$stub"
+  printf '#!/usr/bin/env bash\nexit 127\n' > "$stub/uv"
+  chmod +x "$stub/uv"
+  run env PATH="$stub:$PATH" hug help fetch
+  assert_failure
+  assert_output --partial "uv is required"
+  refute_output --partial "Commands starting with"
+}
+
+@test "hug help fetch with crashing uv (rc=3) fails loud: card failed" {
+  cd "$TEST_TEMP_DIR"
+  local stub="$TEST_TEMP_DIR/stub-uv-3"
+  mkdir -p "$stub"
+  printf '#!/usr/bin/env bash\nexit 3\n' > "$stub/uv"
+  chmod +x "$stub/uv"
+  run env PATH="$stub:$PATH" hug help fetch
+  assert_failure
+  assert_output --partial "help card failed (rc=3)"
+  refute_output --partial "Commands starting with"
+}
+
+@test "hug help s still hits the script help (precedence)" {
+  cd "$TEST_TEMP_DIR"
+  run hug help s
+  assert_success
+  refute_output --partial "git passthrough"
+}
+
+# Names that are BOTH a hug script and a git alias: branch ① wins and ③ must
+# stay suppressed (the pre-chain elif did this for free; the standalone ③ if
+# needs the guard). Count the help blocks — the duplicate is the same script
+# help re-printed via the alias chain, not an "aliased to" notice.
+@test "hug help wtwp shows script help exactly once when name is script AND alias" {
+  cd "$TEST_TEMP_DIR"
+  run hug help wtwp
+  assert_success
+  assert_output --partial "List worktrees filtered by exact branch names"
+  local usage_blocks
+  usage_blocks="$(grep -c 'USAGE:' <<<"$output" || true)"
+  assert_equal "$usage_blocks" "1"
+  # Listing still follows a script hit (unchanged legacy behavior).
+  assert_output --partial "Commands starting with 'wtwp':"
+}

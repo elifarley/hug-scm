@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from category_meta import load_categories
+from command_meta import load_commands
 from help_search import collect_metadata, search_intent, search_keyword
 
 # Path math: __file__ is .../<repo>/git-config/lib/python/tests/<this>.
@@ -31,13 +32,25 @@ from help_search import collect_metadata, search_intent, search_keyword
 REPO = Path(__file__).resolve().parents[4]
 BIN = REPO / "git-config" / "bin"
 CATS = REPO / "git-config" / "lib" / "python" / "categories"
+GITCONFIG = REPO / "git-config" / ".gitconfig"
 
 
 @pytest.fixture(scope="module")
 def commands():
-    """Real repo commands, hydrated with real category metadata."""
+    """Real repo commands, hydrated with real category + registry metadata.
+
+    cmd_meta threads the commands.toml registry (Task 2 merge) so corpus
+    rows exercise the same index `hug help /query` and `hug help !query`
+    serve in production — without it, registry-only commands (fetch,
+    bpull, bs, ...) would be invisible to every assertion below.
+    """
     cats = load_categories(CATS)
-    cmds = collect_metadata(BIN, use_cache=False, cat_meta=cats)
+    cmds = collect_metadata(
+        BIN,
+        use_cache=False,
+        cat_meta=cats,
+        cmd_meta=load_commands(bin_dir=BIN, gitconfig=GITCONFIG),
+    )
     return cmds
 
 
@@ -62,6 +75,11 @@ def commands():
         # Direct name / description matches
         ("worktree", ["hug wtc"]),
         ("branch", ["hug b", "hug bc"]),
+        # Registry-only commands (the reported complaint: "agents search for
+        # fetch, the help system finds nothing") — these rows ARE that net.
+        ("fetch", ["hug fetch", "hug tpull", "hug tpullf"]),
+        ("pull", ["hug bpull", "hug bpullr", "hug pullall"]),
+        ("bs", ["hug bs"]),
     ],
 )
 def test_keyword_corpus(commands, query, expected_in_top5):
@@ -83,6 +101,10 @@ def test_keyword_corpus(commands, query, expected_in_top5):
         ("save my work in progress", ["hug w wip"]),
         # "push to remote" — direct match via keyword + description.
         ("push to remote", ["hug bpush"]),
+        # Natural-language phrasings of the same complaint: intent mode must
+        # surface the registry rows too (fetch / bpull / bpullr / bs).
+        ("update my repo from the remote", ["hug fetch", "hug bpull", "hug bpullr"]),
+        ("go back to the previous branch", ["hug bs"]),
     ],
 )
 def test_intent_corpus(commands, query, expected_in_top5):
