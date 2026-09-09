@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from command_meta import RegistryError, load_commands
+from command_meta import REQUIRED_FIELDS, RegistryError, load_commands
 
 REPO = Path(__file__).resolve().parents[4]
 PY_DIR = REPO / "git-config" / "lib" / "python"
@@ -20,6 +20,10 @@ HUGHELP = REPO / "git-config" / "bin" / "git-hughelp"
 BIN = REPO / "git-config" / "bin"
 
 REQUIRED = {"kind", "description", "keywords", "categories", "git_equivalent", "usage", "related"}
+# The literal set above must EXACTLY mirror the loader's REQUIRED_FIELDS —
+# a new loader field must consciously update this pin (and its truthiness
+# row below), never drift silently.
+assert set(REQUIRED_FIELDS) == REQUIRED
 
 
 @pytest.fixture(scope="module")
@@ -34,9 +38,12 @@ def test_loads_seven_entries(registry):
 def test_every_entry_has_required_fields(registry):
     # String fields must be TRUTHY (catches 'usage = ""'-style regressions);
     # list fields must be non-empty lists (catches silently emptied arrays).
+    # "summary" is DERIVED from description (not a REQUIRED_FIELDS member),
+    # but it is the card/listing line — so it is truthiness-checked too via
+    # the REQUIRED | {"summary"} iteration.
     strings = {"kind", "description", "summary", "git_equivalent", "usage"}
     for name, cmd in registry.items():
-        for field in REQUIRED:
+        for field in REQUIRED | {"summary"}:
             value = getattr(cmd, field)
             if field in strings:
                 assert isinstance(value, str) and value.strip(), (name, field)
@@ -153,6 +160,75 @@ def test_unknown_category_rejected(tmp_path):
     bad = tmp_path / "commands.toml"
     bad.write_text(src.replace('categories = ["push-pull"]', 'categories = ["nope"]', 1))
     with pytest.raises(RegistryError, match="categor"):
+        load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+
+
+def test_corrupt_toml_is_loud(tmp_path):
+    # coverage audit: the unparsable-TOML branch had no pin — only the
+    # missing-file path was probed. A syntax-broken registry must die loudly
+    # with 'unparsable' context, never degrade to a silent-empty index.
+    bad = tmp_path / "commands.toml"
+    bad.write_text("[[[not toml\n")
+    with pytest.raises(RegistryError, match="unparsable"):
+        load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+
+
+def test_non_table_entry_is_loud(tmp_path):
+    # coverage audit: a top-level scalar key (valid TOML, valid command
+    # grammar — no underscore) reaches the isinstance(entry, dict) guard and
+    # must be a RegistryError with table context, not a mystery downstream.
+    src = (PY_DIR / "commands.toml").read_text()
+    bad = tmp_path / "commands.toml"
+    bad.write_text("scalar = 1\n\n" + src)
+    with pytest.raises(RegistryError, match="table"):
+        load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+
+
+def test_list_field_string_not_array_is_loud(tmp_path):
+    # coverage audit: element-type checks were pinned (int/bool/nested) but
+    # the field-level isinstance(value, list) guard was not — the code
+    # comment's own hazard (`keywords = "tag"` silently ['t','a','g']) was
+    # unpinned. bpull's keywords line is unique (bpullr's differs).
+    src = (PY_DIR / "commands.toml").read_text()
+    bad = tmp_path / "commands.toml"
+    bad.write_text(
+        src.replace('keywords = ["pull", "update", "integrate"]', 'keywords = "pull"', 1)
+    )
+    with pytest.raises(RegistryError, match=r"keywords.*got str"):
+        load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+
+
+def test_invalid_kind_value_is_loud(tmp_path):
+    # coverage audit: only the MISSING-kind path was pinned (which also
+    # guards entry["kind"] KeyError). The kind not-in-VALID_KINDS branch —
+    # claimed pinned by test_help_search's card-corrupt comment, but that
+    # fixture dies earlier on description — gets its own all-fields-valid
+    # probe here. [bs]'s kind line is unique enough via its table prefix.
+    src = (PY_DIR / "commands.toml").read_text()
+    bad = tmp_path / "commands.toml"
+    bad.write_text(src.replace('[bs]\nkind = "alias"\n', '[bs]\nkind = "transparent"\n', 1))
+    with pytest.raises(RegistryError, match="kind"):
+        load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+
+
+def test_dangling_related_is_loud(tmp_path):
+    # coverage audit: the FORWARD-resolution happy path was pinned, but the
+    # rejection branch (related name resolving to no registry entry, bin
+    # script, or alias) had no test — the loader's core drift guard.
+    src = (PY_DIR / "commands.toml").read_text()
+    bad = tmp_path / "commands.toml"
+    bad.write_text(src.replace('related = ["b", "bc"]', 'related = ["ghost-cmd"]', 1))
+    with pytest.raises(RegistryError, match="related"):
+        load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+
+
+def test_empty_registry_is_loud(tmp_path):
+    # coverage audit: `if not registry` forbids silent-empty — the exact
+    # failure the loader exists to prevent — yet was never probed. A
+    # comment-only TOML parses fine and must still die loudly.
+    bad = tmp_path / "commands.toml"
+    bad.write_text("# nothing but comments\n")
+    with pytest.raises(RegistryError, match="empty"):
         load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
 
 

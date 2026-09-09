@@ -1384,6 +1384,26 @@ def test_no_cmd_meta_is_hermetic(tmp_path):
     assert not any(c.command == "hug fetch" for c in cmds)
 
 
+def test_merge_flattens_multiline_descriptions(tmp_path):
+    # coverage audit: the merge flattens TOML multi-line prose with
+    # `" ".join(description.split())` so a row renders as ONE listing line;
+    # the substring assertions in test_main_threads_registry_into_search
+    # cannot see a regression (both fragments survive embedded newlines).
+    # fetch's description is hard-wrapped across four TOML lines — the pin.
+    cmds = collect_metadata(
+        BIN,
+        cache_dir=tmp_path / "cache",
+        use_cache=False,
+        cat_meta=load_categories(CATS),
+        cmd_meta=_cmd_meta(),
+    )
+    registry_rows = [c for c in cmds if c.kind is not None]
+    assert registry_rows  # the merge actually ran
+    for cmd in registry_rows:
+        assert "\n" not in cmd.description, cmd.command
+        assert "  " not in cmd.description, cmd.command
+
+
 def test_format_marker_renders_kind():
     row = CommandInfo(
         command="hug bpullr",
@@ -1500,6 +1520,16 @@ def test_card_bs_targets_switch(capsys):
     assert "Full flags: git help switch" in capsys.readouterr().out
 
 
+def test_card_fullflags_non_git_fallback(capsys):
+    # coverage audit: render_card's `parts[:1] == ["git"]` guard had no
+    # reachable case in shipped data (all seven entries are git-prefixed);
+    # a non-git leading command must fall back to the WHOLE git_equivalent.
+    reg = dict(_cmd_meta())
+    reg["fetch"] = replace(reg["fetch"], git_equivalent="hg pull --update")
+    render_card("fetch", registry=reg, cache_dir=None)
+    assert "Full flags: git help hg pull --update" in capsys.readouterr().out
+
+
 def test_card_miss_exits_4(capsys):
     # 4, NOT 1: uv itself can exit 1 on environment failure before the
     # script runs — bash maps 1 to loud, so the miss needs its own code.
@@ -1540,6 +1570,17 @@ def test_card_cache_peek_uses_git_name_key(tmp_path, capsys):
     )
     render_card("fetch", registry=_cmd_meta(), cache_dir=tmp_path)
     assert "outgoing commits" in capsys.readouterr().out
+
+
+def test_card_cache_peek_nonstring_hint_degrades_to_bare(tmp_path, capsys):
+    # coverage audit: cache JSON is untrusted — a NON-STRING description
+    # (number/null) must degrade to the bare `hug <rel>` hint, never leak
+    # repr junk into the card and never turn a render into a loud exit.
+    (tmp_path / "search-meta.cache").write_text(json.dumps({"git-llu": {"description": 123}}))
+    render_card("fetch", registry=_cmd_meta(), cache_dir=tmp_path)
+    out = capsys.readouterr().out
+    assert "hug llu" in out
+    assert "123" not in out
 
 
 def test_card_flaglike_name_is_not_help(monkeypatch, capsys):
