@@ -514,8 +514,10 @@ hug ma                # Abort merge
 hug bpush             # Branch: Push (Push current branch)
 hug bpushf            # Branch: Push-Force (Force push with lease)
 hug bpush-unsafe      # Branch: Push-unsafe (Unsafe force push)
-hug bpull             # Pull with rebase
-hug pullall           # Pull from all remotes
+hug fetch             # Fetch from remote(s) — no merge, working tree untouched
+hug bpull             # Fast-forward-only pull (fails if diverged)
+hug bpullr            # Pull with rebase (linear history)
+hug pullall           # Fetch all remotes, update current branch's upstream
 ```
 
 #### Utilities
