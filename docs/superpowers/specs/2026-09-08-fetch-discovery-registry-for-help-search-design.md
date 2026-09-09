@@ -3,8 +3,11 @@
 - **Date:** 2026-09-08
 - **Branch:** `fetch-discovery-registry-for-help-search`
 - **Status:** Approved (brainstorming session, Approach A); roast round 1
-  applied (C-001..C-006 chain redesign + de-exec, F-001..F-007; all findings
-  verified against live code before adoption)
+  applied (C-001..C-006 chain redesign + de-exec, F-001..F-007); roast round 2
+  applied (C-001/C-004 drift-test + Property rewrite to the holdable invariant,
+  C-002 card exit-code contract made single-owned with exit 1 = miss only,
+  C-003 merge format pinned + corpus rows prefixed). All findings verified
+  against live code before adoption.
 
 ## Problem
 
@@ -61,6 +64,10 @@ integration branch") is precisely the one the help system cannot surface.
   push would be a footgun); `brr` (branch helper `b -R`, `.gitconfig:364`, not a sync
   primitive — may appear in a Related block); naked `pull` (can merge unexpectedly;
   the `bpull*` cards teach the safe forms).
+- Known limitation, accepted: prefix listings (`hug help f`) stay registry-blind —
+  Goal 1 scopes coverage to the four sigils. The six sync aliases already surface
+  in prefix listings via the existing alias loop (git-hughelp:57-63); `fetch` is
+  the one entry absent there (it is not an alias).
 
 ## Architecture (Approach A: static registry + loader)
 
@@ -105,6 +112,13 @@ Field rules:
   `git config --file … --get-regexp '^alias\.'` call per load, not per name).
   A dead `hug <name>` hint on a card is the same discovery dead-end this
   feature fixes.
+- **Merge format (pinned):** registry rows enter the index as
+  `CommandInfo(command="hug <table-name>", …)` — the same hug-prefixed string
+  `derive_command_name` produces for scripts (help_search.py:331). The sort
+  key (help_search.py:418), every rendered line (`format_results` prints
+  `cmd.command` verbatim), the corpus rows, and the BATS assertions all
+  consume the prefixed form; a bare table name would fail the corpus, break
+  the BATS rows, and reorder the merged index in one stroke.
 
 ### New: `git-config/lib/python/command_meta.py`
 
@@ -113,13 +127,17 @@ Loader mirroring `category_meta.py`: frozen dataclass, schema validation
 `related` resolvability), derives the listing summary from `description` via
 `category_meta.derive_summary`, and raises loudly on a missing or corrupt
 `commands.toml` (same failure posture as `categories/` — the file ships with the
-repo; silent-empty would silently break the corpus).
+repo; silent-empty would silently break the corpus). Paths the loader needs
+beyond its own directory — the `.gitconfig` for `related` validation, hug's bin
+dir — resolve `__file__`-relative (the existing `_DEFAULT_BIN_DIR` pattern,
+help_search.py:109), which works identically in-repo and installed.
 
 ### Integration 1 — `help_search.py` index merge
 
 `collect_metadata()` merges registry entries as `CommandInfo` rows after the
-script-cache load and **before** the `sorted(...)` that closes the function
-(help_search.py:418) — so the returned list is one uniformly sorted index.
+script-cache load and **before** the `sorted(...)` at help_search.py:418
+(`hydrate_category_fields` runs immediately after the sort) — so the returned
+list is one uniformly sorted index.
 Appending after the sort would leave script rows sorted and registry rows
 appended; `@push-pull`'s page renders in input order, so it would list four
 push scripts, then the six sync entries, instead of one alphabetical list.
@@ -153,21 +171,34 @@ New strict chain:
    --extra search help_search.py card "$prefix"` — **no `exec`** (an `exec`
    replaces the shell, making the exit-1 fall-through below impossible and
    killing every non-registry alias's help, e.g. `hug help bs` which today
-   prints alias help + listing, exit 0). Exit-code contract:
+   prints alias help + listing, exit 0). Exit-code contract — THIS TABLE IS THE
+   SINGLE OWNER of card-mode exit semantics; every other section defers to it:
    - `0` → card printed; exit 0 (the card's Related block replaces the
      prefix listing).
-   - `1` → name not owned by the registry; fall through to ③/④.
-   - `≥2` → environment failure (uv missing, venv broken): print a loud error
-     and exit with that code — never silently degrade to legacy behavior.
+   - `1` → name not owned by the registry; fall through to ③/④. **Exit 1 is
+     reserved EXCLUSIVELY for a registry miss.** Python exits 1 on any
+     unhandled exception by default, so card mode wraps its whole body
+     (registry load + render) in a catch-all mapping ANY unexpected exception
+     to ≥2 with the traceback on stderr — without it, every card bug would
+     masquerade as a miss and silently degrade to legacy help, exit 0.
+   - `≥2` → loud failure, never fall-through: registry missing/corrupt
+     (message + exit 2 — `main()`'s `sys.exit(1)` categories posture is
+     deliberately NOT copied into card mode, for the reason above), uv/venv
+     failure (including uv's exit 127 for a missing binary), or the
+     catch-all. (Bounded misclassification: argparse's unknown-mode exit 2
+     also lands here, with its own invalid-choice message.)
 3. Alias exists → `git $prefix -h` (unchanged fallback).
 4. Prefix listing (unchanged).
 
-Property: registry names are never executable scripts anywhere branch ① or git's
-exec-path can see (enforced by drift test 2), so branch ② only ever claims names
-that no `git-*` executable owns. If hug ever ships a real `git-fetch` script, it
-lands in branch ①'s bin dir and the card is shadowed automatically — the desired
-direction (scripts beat cards). Bash stays a thin dispatcher (per
-`git-config/bin/CLAUDE.md`).
+Property (the invariants that actually hold): ① no registry name collides with a
+hug bin script (drift test 2a), so branch ② only claims names no hug script
+owns; ② branch ① is PATH-free — it tests `-x` on hug's own bin dir, so git-core
+dashed executables CANNOT shadow the card no matter what PATH holds. The flip
+side, accepted by design: a git-core executable MAY share a registry name
+(`fetch` does — `/usr/lib/git-core/git-fetch`), and the card deliberately
+outranks it. If hug ever ships a real `git-fetch` script, it lands in branch ①'s
+bin dir and the card is shadowed in turn — the desired direction (scripts beat
+cards). Bash stays a thin dispatcher (per `git-config/bin/CLAUDE.md`).
 
 Accepted cost: every non-script exact-help lookup (registry miss → ③) now pays
 one `uv run` venv resolution before falling through — pure bash today. The sigil
@@ -180,8 +211,10 @@ a human-interactive path.
 exits 1 otherwise (bash falls through to ③/④); exits ≥2 with a loud message on
 environment failure. The card is a **pure function over the loaded registry
 dict** — it must NOT run `collect_metadata()`. Related lines resolve their
-one-line summaries from (in order): the registry itself, a **read-only** peek at
-`search-meta.cache`; if neither has the name, render the bare `hug <name>` hint.
+one-line summaries from (in order): the registry itself, a **read-only** peek
+at `search-meta.cache` via `_load_cache` (card mode must NEVER call
+`_save_cache` — peek, never populate); if neither has the name, render the
+bare `hug <name>` hint.
 Rationale: `collect_metadata` scans/execs every script on a cold cache, so an
 exact-name card would pay a 107-script sweep per call — a discovery win with a
 performance footgun.
@@ -247,11 +280,15 @@ current branch's upstream (per `git help pull`) — the description must not tea
 `git-config/lib/python/tests/test_quality_corpus.py` gains rows in the existing
 top-N-membership style:
 
-- `/fetch` top-5 ⊇ {fetch, tpull, tpullf}
-- `/pull` top-5 ⊇ {bpull, bpullr, pullall}
-- `/bs` top-5 ⊇ {bs}
-- intent `update my repo from the remote` top-5 ⊇ {fetch, bpull, bpullr}
-- intent `go back to the previous branch` top-5 ⊇ {bs}
+Expected entries are the hug-prefixed `command` strings (the existing corpus
+convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:60):
+
+- `/fetch` top-5 ⊇ {"hug fetch", "hug tpull", "hug tpullf"}
+- `/pull` top-5 ⊇ {"hug bpull", "hug bpullr", "hug pullall"}
+- `/bs` top-5 ⊇ {"hug bs"}
+- intent `update my repo from the remote` top-5 ⊇ {"hug fetch", "hug bpull",
+  "hug bpullr"}
+- intent `go back to the previous branch` top-5 ⊇ {"hug bs"}
 - Destructive-sibling guard style: `/fetch` must NOT surface `h-rewind`/
   `w-zap`-class commands (inherits the corpus's F3 guarantee pattern).
 
@@ -275,13 +312,19 @@ top-N-membership style:
 
 1. **Alias resolution:** every `kind = "alias"` entry resolves via
    `git config --file git-config/.gitconfig --get alias.<name>` (non-empty).
-2. **No shadowing (full scope):** for each registry name N, assert N matches
-   NEITHER a hug bin script (`git-config/bin/git-N`) NOR any dashed executable
-   git dispatch could put on branch ①'s lookup path — check
-   `$(git --exec-path)/git-N` and `command -v git-N` in the test environment.
-   Scope note: checking only hug's bin dir would pass `fetch` today while
-   `/usr/lib/git-core/git-fetch` exists — the exact shadowing this test exists
-   to catch. This keeps the chain's "scripts beat cards" property honest.
+2. **No hug-bin shadowing + PATH-free branch ①:**
+   (a) for each registry name N, no hug bin script `git-config/bin/git-N`
+   exists;
+   (b) branch ① never consults PATH — assert at the source level that script
+   existence is resolved with `-x` on git-hughelp's own directory, and
+   behaviorally that `hug help fetch` renders the card even with git's
+   exec-path prepended to PATH (the BATS card case already pins this end to
+   end).
+   Deliberately NOT probed: `$(git --exec-path)/git-N` / `command -v git-N`
+   collisions. Registry names MAY collide with git-core dashed executables
+   (`fetch` does, by design) — a PATH/exec-path non-collision assertion would
+   be red on day one on every Debian/Ubuntu box and asserts the one invariant
+   this design rejects.
 
 ### BATS integration (`tests/integration/test_help_articles.bats` + additions)
 
@@ -299,19 +342,23 @@ top-N-membership style:
 
 ## Error handling
 
-- **One contract: registry failure is loud everywhere.** A bad or missing
-  `commands.toml` exits 1 with a clear message in EVERY mode — `/keyword`,
-  `!intent`, `@category`, and card alike — mirroring how `help_search.main()`
-  hard-fails on `categories/` errors. No catch-and-continue: silent degradation
-  would quietly shrink the index and the corpus, the exact outcome the loader
-  exists to prevent.
+- **Registry failure is loud everywhere — with one mode-scoped exit code.**
+  Search modes (`/keyword`, `!intent`, `@category`): a bad or missing
+  `commands.toml` exits 1 with a clear message on stderr, mirroring
+  `help_search.main()`'s `sys.exit(1)` categories posture (help_search.py
+  757/760/772). Card mode: the SAME failure exits **≥2** per Integration 2's
+  contract table — exit 1 is reserved for a registry miss, so copying the
+  search-mode code would make a corrupt registry fall through to legacy help
+  with exit 0. No catch-and-continue in any mode: silent degradation would
+  quietly shrink the index and the corpus, the exact outcome the loader exists
+  to prevent.
 - Cache integrity (the narrow sense of "script search survives"): registry rows
   never enter `search-meta.cache` and are merged only after the cache is read,
   so a corrupt registry cannot alter or invalidate cached script metadata — but
   the process still exits 1 before printing anything.
-- Card mode for a name owned by BOTH registry and an executable script cannot
-  happen (drift test 2's full PATH ∪ exec-path scope); if it somehow does, bash
-  branch ① still wins — scripts beat cards.
+- Card mode for a name owned by BOTH registry and a hug script cannot happen
+  (drift test 2a: no registry name matches `git-config/bin/git-N`); if it
+  somehow did, bash branch ① still wins — scripts beat cards.
 
 ## Docs change-set (per DOCS_ORGANIZATION.md)
 
@@ -336,6 +383,13 @@ top-N-membership style:
      `commands.toml`.
    - `git-config/lib/python/README.md` (Module Organization): add
      `command_meta.py` / `commands.toml`.
+
+Consciously deferred (consistency debt — none of these become false; they name
+bpull/tpull without claiming fetch coverage): `docs/cheat-sheet.md`,
+`docs/workflows.md`, `docs/practical-workflows.md`, `docs/cookbook.md`,
+`docs/commands/branching.md`, `docs/commands/tagging.md`, and
+`docs/skills/hug-workflow/SKILL.md`. Fold their fetch rows into the systematic
+coverage pass in [elifarley/hug-scm#338](https://github.com/elifarley/hug-scm/issues/338).
 
 No new docs pages; no VitePress sidebar changes.
 
