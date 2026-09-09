@@ -2,12 +2,15 @@
 
 - **Date:** 2026-09-08
 - **Branch:** `fetch-discovery-registry-for-help-search`
-- **Status:** Approved (brainstorming session, Approach A); roast round 1
-  applied (C-001..C-006 chain redesign + de-exec, F-001..F-007); roast round 2
-  applied (C-001/C-004 drift-test + Property rewrite to the holdable invariant,
-  C-002 card exit-code contract made single-owned with exit 1 = miss only,
-  C-003 merge format pinned + corpus rows prefixed). All findings verified
-  against live code before adoption.
+- **Status:** Approved (brainstorming session, Approach A); roast rounds 1–3
+  applied. Round 3: `bs` BATS contradiction repointed (`brr` + positive bs
+  card case), branch ① invocation pinned `$dir/`-prefixed, exit contract
+  given its own test matrix, uv promoted to a REQUIRED dependency
+  (user-directed; install.sh + README), Full-flags derivation pinned to the
+  alias target, merge made an explicit `cmd_meta` param, cache peek keyed by
+  `git-<name>`, catch-all scoped to `Exception` with BrokenPipe/Ctrl-C
+  handled, corpus cite corrected. All findings verified against live code
+  before adoption.
 
 ## Problem
 
@@ -134,6 +137,13 @@ help_search.py:109), which works identically in-repo and installed.
 
 ### Integration 1 — `help_search.py` index merge
 
+The registry reaches `collect_metadata()` as an explicit `cmd_meta` parameter,
+default `None` = no merge — mirroring the `cat_meta: dict | None = None`
+precedent (help_search.py:360-367). Auto-loading inside the function would
+couple every existing mock-dir unit test in `test_help_search.py` to the real
+repo's TOML validity; the explicit param keeps them hermetic. `main()` passes
+the loaded registry; the corpus fixture passes the real one.
+
 `collect_metadata()` merges registry entries as `CommandInfo` rows after the
 script-cache load and **before** the `sorted(...)` at help_search.py:418
 (`hydrate_category_fields` runs immediately after the sort) — so the returned
@@ -157,9 +167,14 @@ entries with zero search-engine changes**.
 Current resolution (lines 46–53): script `--help`, else raw alias expansion.
 New strict chain:
 
-1. **Hug's own script exists** → run `git-$prefix --help`.
-   The existence test MUST be `[[ -x "$dir/git-$prefix" ]]` (the directory
-   git-hughelp itself lives in) — **not** the current `command -v "git-$prefix"`.
+1. **Hug's own script exists** → run `"$dir/git-$prefix" --help` — the
+   `$dir/`-prefixed invocation is load-bearing: inside a git-dispatched script
+   PATH position 1 is git's exec-path (probed: `/usr/lib/git-core`), so a bare
+   `git-$prefix` would re-resolve through PATH and, on the future day hug
+   ships a script named like a git builtin, execute GIT's builtin instead of
+   hug's. The existence test MUST be `[[ -x "$dir/git-$prefix" ]]` (the
+   directory git-hughelp itself lives in) — **not** the current
+   `command -v "git-$prefix"`.
    WHY: when git dispatches an external subcommand it prepends its exec-path to
    PATH, and Debian/Ubuntu-family git ships dashed builtins there
    (`/usr/lib/git-core/git-fetch` on git 2.34.1 — verified live: `hug help fetch`
@@ -170,7 +185,7 @@ New strict chain:
 2. **Registry has `$prefix`** → `uv run --directory "$dir/../lib/python"
    --extra search help_search.py card "$prefix"` — **no `exec`** (an `exec`
    replaces the shell, making the exit-1 fall-through below impossible and
-   killing every non-registry alias's help, e.g. `hug help bs` which today
+   killing every non-registry alias's help, e.g. `hug help brr` which today
    prints alias help + listing, exit 0). Exit-code contract — THIS TABLE IS THE
    SINGLE OWNER of card-mode exit semantics; every other section defers to it:
    - `0` → card printed; exit 0 (the card's Related block replaces the
@@ -178,14 +193,22 @@ New strict chain:
    - `1` → name not owned by the registry; fall through to ③/④. **Exit 1 is
      reserved EXCLUSIVELY for a registry miss.** Python exits 1 on any
      unhandled exception by default, so card mode wraps its whole body
-     (registry load + render) in a catch-all mapping ANY unexpected exception
+     (registry load + render) in a catch-all mapping ANY unexpected `Exception`
      to ≥2 with the traceback on stderr — without it, every card bug would
      masquerade as a miss and silently degrade to legacy help, exit 0.
+     The catch-all must NOT swallow benign signals: `KeyboardInterrupt` and
+     `SystemExit` re-raise unwrapped (Ctrl-C exits 130, no traceback), and
+     `BrokenPipeError` is quiet success (suppress, exit 0 — help is the most
+     piped output a CLI has; `hug help fetch | head` must not read as a bug).
    - `≥2` → loud failure, never fall-through: registry missing/corrupt
      (message + exit 2 — `main()`'s `sys.exit(1)` categories posture is
-     deliberately NOT copied into card mode, for the reason above), uv/venv
-     failure (including uv's exit 127 for a missing binary), or the
-     catch-all. (Bounded misclassification: argparse's unknown-mode exit 2
+     deliberately NOT copied into card mode, for the reason above), the
+     catch-all, and — per the user-directed promotion of uv to a REQUIRED
+     dependency — bash's exit 127 for a missing `uv` binary, which prints an
+     actionable "uv is required for hug help; install.sh provisions it"
+     message. There is deliberately NO fall-through on 127: on a properly
+     provisioned install the path cannot trigger, and on a broken one, loud
+     beats silent. (Bounded misclassification: argparse's unknown-mode exit 2
      also lands here, with its own invalid-choice message.)
 3. Alias exists → `git $prefix -h` (unchanged fallback).
 4. Prefix listing (unchanged).
@@ -200,10 +223,15 @@ outranks it. If hug ever ships a real `git-fetch` script, it lands in branch ①
 bin dir and the card is shadowed in turn — the desired direction (scripts beat
 cards). Bash stays a thin dispatcher (per `git-config/bin/CLAUDE.md`).
 
-Accepted cost: every non-script exact-help lookup (registry miss → ③) now pays
-one `uv run` venv resolution before falling through — pure bash today. The sigil
-modes already require `uv run`, so this adds no new dependency, only latency on
-a human-interactive path.
+Dependency change, owned honestly (user-directed 2026-09-08): exact-name help
+is pure bash today (git-hughelp:46–63; `install.sh` installs no uv, README
+never mentions uv). This design **promotes uv to a required hug dependency**
+— `install.sh` provisions/validates it and README documents it — rather than
+degrading help when it is absent. Consequence: every non-script exact-help
+lookup (registry miss → ③) pays one `uv run` venv resolution before falling
+through (latency on a human-interactive path; the sigil modes already require
+it), and on an improperly provisioned install the 127 branch above fails
+LOUDLY with an install hint instead of silently returning weaker help.
 
 ### Integration 3 — card mode in `help_search.py`
 
@@ -213,7 +241,10 @@ environment failure. The card is a **pure function over the loaded registry
 dict** — it must NOT run `collect_metadata()`. Related lines resolve their
 one-line summaries from (in order): the registry itself, a **read-only** peek
 at `search-meta.cache` via `_load_cache` (card mode must NEVER call
-`_save_cache` — peek, never populate); if neither has the name, render the
+`_save_cache` — peek, never populate). The cache is keyed by script FILENAME
+(help_search.py:383-395: `name = script_path.name`), so the peek derives the
+key `git-<name>` (registry names are grammar-validated single tokens — no
+gateway forms to map); if neither source has the name, render the
 bare `hug <name>` hint.
 Rationale: `collect_metadata` scans/execs every script on a cold cache, so an
 exact-name card would pay a 107-script sweep per call — a discovery win with a
@@ -241,6 +272,15 @@ Related:
 Related lines pull each entry's/script's one-line summary where available; kind
 shown as `(git alias)` or `(git passthrough)`.
 
+**Full-flags derivation (pinned):** `git help <name>` for `kind = "passthrough"`,
+`git help <target-command-of-alias>` for `kind = "alias"` — derived from
+`git_equivalent`'s leading command, NOT from the registry name. Rationale:
+probed live, `git help bpullr` exits 0 but prints an alias notice
+(`'bpullr' is aliased to 'pull --rebase'`), not flags — a name-derived hint is
+a dead-end of exactly the class this feature removes. So `bpull`/`bpullr`/
+`pullall` → `git help pull`; `tpull`/`tpullf` → `git help fetch`; `bs` →
+`git help switch`; `fetch` → `git help fetch`.
+
 ### Display markers
 
 In `@category` pages and `/keyword` / `!intent` results, registry rows render a
@@ -259,15 +299,15 @@ generalizes beyond one category. Systematic coverage of the remaining non-script
 commands (index or consciously exclude, per command) is tracked in
 [elifarley/hug-scm#338](https://github.com/elifarley/hug-scm/issues/338).
 
-| name | kind | description's first sentence (= derived listing summary) | extra keywords | related |
-|---|---|---|---|---|
-| `fetch` | passthrough | download commits/refs from remotes, no merge | download, sync, update, remote, refs | bpull, bpullr, tpull, llu |
-| `bpull` | alias | fast-forward-only pull; fails if merge/rebase needed | update, integrate | fetch, bpullr, mff |
-| `bpullr` | alias | pull with rebase (linear history) | rebase, update, integrate | fetch, bpull, rb |
-| `pullall` | alias | fetch from all remotes, then update the current branch's upstream | all, every, remote | fetch, bpull |
-| `tpull` | alias | fetch tags from the remote | tag, download | fetch, tpullf, t |
-| `tpullf` | alias | force fetch + prune stale tags | tag, prune, force | tpull, fetch |
-| `bs` | alias | switch back to the previous branch | previous, back, toggle, last | b, bc |
+| name | kind | description's first sentence (= derived listing summary) | extra keywords | related | usage · git_equivalent (→ full-flags) |
+|---|---|---|---|---|---|
+| `fetch` | passthrough | download commits/refs from remotes, no merge | download, sync, update, remote, refs | bpull, bpullr, tpull, llu | `hug fetch [--tags] [--prune] [<remote> [<refspec>...]]` · `git fetch` → `git help fetch` |
+| `bpull` | alias | fast-forward-only pull; fails if merge/rebase needed | update, integrate | fetch, bpullr, mff | `hug bpull` · `git pull --ff-only` → `git help pull` |
+| `bpullr` | alias | pull with rebase (linear history) | rebase, update, integrate | fetch, bpull, rb | `hug bpullr` · `git pull --rebase` → `git help pull` |
+| `pullall` | alias | fetch from all remotes, then update the current branch's upstream | all, every, remote | fetch, bpull | `hug pullall` · `git pull --all` → `git help pull` |
+| `tpull` | alias | fetch tags from the remote | tag, download | fetch, tpullf, t | `hug tpull` · `git fetch --tags` → `git help fetch` |
+| `tpullf` | alias | force fetch + prune stale tags | tag, prune, force | tpull, fetch | `hug tpullf` · `git fetch --tags --prune --prune-tags --force` → `git help fetch` |
+| `bs` | alias | switch back to the previous branch | previous, back, toggle, last | b, bc | `hug bs` · `git switch -` → `git help switch` |
 
 Note on `pullall`: `git pull --all` fetches all remotes but integrates only the
 current branch's upstream (per `git help pull`) — the description must not teach
@@ -281,7 +321,7 @@ current branch's upstream (per `git help pull`) — the description must not tea
 top-N-membership style:
 
 Expected entries are the hug-prefixed `command` strings (the existing corpus
-convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:60):
+convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:56):
 
 - `/fetch` top-5 ⊇ {"hug fetch", "hug tpull", "hug tpullf"}
 - `/pull` top-5 ⊇ {"hug bpull", "hug bpullr", "hug pullall"}
@@ -304,9 +344,16 @@ convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:60):
   script rows keep `kind=None`; the merged list is fully sorted (registry names
   interleaved alphabetically, not appended); cache still bypasses registry
   (second call with warm cache still includes registry rows).
-- Card: found name → card text contains kind, git-equivalent, related, usage;
-  unknown name → exit 1, no partial card; related summary resolution order
-  (registry → read-only cache → bare hint).
+- Card: found name → card text contains kind, git-equivalent, related, usage,
+  and the correctly derived Full-flags hint (alias → target command, not the
+  registry name); unknown name → exit 1, no partial card; related summary
+  resolution order (registry → read-only `git-<name>` cache key → bare hint).
+- Card anti-masquerade — the exit contract's own test matrix, one row per
+  bucket: corrupted `commands.toml` in card mode → exit ≥2, stderr carries the
+  registry error, output does NOT contain "Commands starting with"; forced
+  render failure (test-only entry whose render raises) → exit ≥2, never 1;
+  `BrokenPipeError` (piped reader closes) → quiet exit 0; `KeyboardInterrupt`
+  → exit 130, no traceback.
 
 ### Drift tests (the two consistency guarantees)
 
@@ -315,11 +362,14 @@ convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:60):
 2. **No hug-bin shadowing + PATH-free branch ①:**
    (a) for each registry name N, no hug bin script `git-config/bin/git-N`
    exists;
-   (b) branch ① never consults PATH — assert at the source level that script
-   existence is resolved with `-x` on git-hughelp's own directory, and
-   behaviorally that `hug help fetch` renders the card even with git's
-   exec-path prepended to PATH (the BATS card case already pins this end to
-   end).
+   (b) branch ① never consults PATH — assert at the source level BOTH halves:
+   script existence resolved with `-x` on git-hughelp's own directory AND the
+   invocation in the `$dir/git-$prefix`-prefixed form (a bare `git-$prefix`
+   invocation would re-resolve through PATH, where git's exec-path sits at
+   position 1, and silently reintroduce the man-page dump the day hug ships a
+   git-builtin-colliding script name); plus behaviorally that `hug help fetch`
+   renders the card even with git's exec-path prepended to PATH (the BATS card
+   case already pins this end to end).
    Deliberately NOT probed: `$(git --exec-path)/git-N` / `command -v git-N`
    collisions. Registry names MAY collide with git-core dashed executables
    (`fetch` does, by design) — a PATH/exec-path non-collision assertion would
@@ -332,8 +382,12 @@ convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:60):
 - `hug help fetch` → card (contains "git passthrough"); does NOT contain
   "Commands starting with"; does NOT contain the GIT-FETCH man-page banner.
 - `hug help bpullr` → card; does NOT contain git's raw `usage: git pull` banner.
-- `hug help bs` (non-registry alias) → alias help + prefix listing still work,
-  exit 0 (regression pin for the no-`exec` fall-through contract).
+- `hug help brr` (non-registry alias) → alias help + prefix listing still work,
+  exit 0 (regression pin for the no-`exec` fall-through contract; `brr` is
+  deliberately excluded from the registry per non-goals, `.gitconfig:364`).
+- `hug help bs` (registry entry) → card contains "(git alias)" and "switch
+  back", exit 0, no "Commands starting with" (positive pin for the
+  user-directed 7th entry).
 - `hug help zzz` (unknown name) → prefix listing "(none)", exit 0.
 - `hug help s` → unchanged script help (precedence regression: branch ① wins).
 - `hug help '@push-pull'` → lists `bpull`, `bpullr`, `fetch` with kind markers,
@@ -376,7 +430,12 @@ convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:60):
    `bpull`/`bpullr` (passthrough note).
 4. `README.md` command reference: add `hug fetch` row beside the existing
    `bpull`/`bpullr` rows.
-5. Authoring homes for the registry (so the second contributor knows where
+5. **uv promoted to a required hug dependency** (user-directed 2026-09-08):
+   `install.sh` provisions/validates uv (it currently installs none —
+   verified: zero uv mentions in install.sh and README), and `README.md`
+   documents it under requirements. This is what licenses the never-fall-
+   through ≥2 posture of the card exit contract.
+6. Authoring homes for the registry (so the second contributor knows where
    metadata lives):
    - `git-config/bin/CLAUDE.md`: extend the `_hug_keywords` note — bin scripts
      declare keywords in `_hug_keywords`; non-script commands declare them in
