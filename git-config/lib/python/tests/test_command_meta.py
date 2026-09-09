@@ -154,7 +154,6 @@ def test_drift2a_no_hug_bin_shadowing(registry):
     assert not (set(registry) & scripts)
 
 
-@pytest.mark.xfail(reason="Task 4 wires the chain", strict=True)
 def test_drift2b_branch1_is_pathfree_source():
     src = HUGHELP.read_text()
     assert '-x "$dir/git-$prefix"' in src  # existence test on hug's bin dir

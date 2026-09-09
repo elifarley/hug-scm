@@ -42,12 +42,55 @@ case "$prefix" in
 :*) exec uv run --directory "$dir/../lib/python" --extra search help_search.py ":" "${prefix#:}" "${@:2}" ;;
 esac
 
-# Show help for exact command if exists (script preferred over alias)
-if command -v "git-$prefix" > /dev/null 2>&1; then
+# Exact help: hug's own script → registry card → alias. Precedence is
+# CONTRACT (spec Integration 2): scripts beat cards. Flag-like prefixes are
+# not command names — they skip ①② entirely (argparse behind -- would
+# otherwise intercept -h as HelpAction usage-on-stdout).
+script_help_shown=""
+if [[ "$prefix" != -* ]]; then
+  # ① hug's own script. Existence test AND invocation are $dir/-prefixed —
+  # NEVER `command -v git-$prefix`: inside git's dispatch the exec-path
+  # (/usr/lib/git-core) sits at PATH position 1 and its git-fetch hardlink
+  # would win, dumping the GIT-FETCH(1) man page instead of hug's answer.
+  if [[ -x "$dir/git-$prefix" ]]; then
+    echo
+    "$dir/git-$prefix" --help
+    echo
+    script_help_shown=1
+  else
+    # ② Registry card. Exit contract (single owner — spec "Exit-code contract"):
+    #   0 → card printed; stop.  1 → miss; fall through to alias/listing.
+    #   127 → uv missing (REQUIRED dependency): loud hint.  >=2 → loud failure.
+    uv run --directory "$dir/../lib/python" --extra search help_search.py card -- "$prefix"
+    card_rc=$?
+    case $card_rc in
+    0) exit 0 ;;
+    1) : ;; # registry miss — fall through
+    127)
+      echo "hug: uv is required for 'hug help $prefix' (install.sh provisions it)." >&2
+      exit 127
+      ;;
+    *)
+      echo "hug: help card failed (rc=$card_rc): $prefix" >&2
+      exit "$card_rc"
+      ;;
+    esac
+  fi
+elif [[ -x "$dir/git-$prefix" ]]; then
   echo
-  "git-$prefix" --help
+  "$dir/git-$prefix" --help
   echo
-elif [ -n "$(git config --get "alias.$prefix" 2> /dev/null)" ]; then
+  script_help_shown=1
+fi
+
+# ③ Alias help — the UNCHANGED fallback (spec Integration 2): reached by
+# registry misses AND flag-like prefixes, but suppressed when ① already
+# printed script help — names that are both script and alias (stock: wtwp;
+# personal aliases) must not see their help twice. The ④ prefix listing
+# below then always follows. NOTE: `git $prefix -h` is deliberately
+# unquoted — $prefix is a git alias NAME here, not a word to protect;
+# quoting it would break aliases whose definition carries flags.
+if [[ -z "$script_help_shown" ]] && [ -n "$(git config --get "alias.$prefix" 2> /dev/null)" ]; then
   git $prefix -h
   echo
 fi
