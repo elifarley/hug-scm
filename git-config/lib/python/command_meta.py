@@ -140,6 +140,18 @@ def load_commands(
                     list_field,
                     f"must be a TOML array of strings, got {type(value).__name__}",
                 )
+            for i, element in enumerate(value):
+                # ELEMENTS need their own guard: [1, true] would pollute
+                # search via str-coercion downstream, and a nested array
+                # escapes as an uncontextualized TypeError in set() — both
+                # must die as RegistryError with table+field+index context.
+                if not isinstance(element, str):
+                    raise _fail(
+                        path,
+                        name,
+                        list_field,
+                        f"element {i} must be a string, got {type(element).__name__}",
+                    )
         # Presence-only validation would let `git_equivalent = ""` through to
         # render `Full flags: git help ` at exit 0 (same for a blank usage
         # line) — the card's core pointers must be loadable-or-loud, same

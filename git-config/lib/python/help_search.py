@@ -778,8 +778,11 @@ def render_card(
 ) -> int:
     """Render the hug card for a registry-owned name.
 
-    Exit contract: 0 card | 1 miss (EXCLUSIVELY) | >=2 loud. Python exits 1
-    on any bare crash — the same code as a miss — so EVERY unexpected
+    Exit contract: 0 card | 4 miss (EXCLUSIVELY) | >=2 loud. WHY 4, not 1:
+    uv itself can exit 1 BEFORE this script runs (environment creation or
+    update failure — offline first run, dependency/build error), so exit 1
+    must mean LOUD for the bash caller and never be read as a miss. Python
+    also exits 1 on any bare crash — the same code — so EVERY unexpected
     exception is caught and re-mapped to 3 with a stderr message: a card bug
     must never masquerade as a registry miss (that confusion is what would
     silently degrade `hug help <name>` to legacy help).
@@ -800,12 +803,12 @@ def render_card(
                 registry = load_commands(path=commands_path)
             except RegistryError as exc:
                 # Corrupt/missing registry is loud, and >=2 so it can never
-                # be misread as the exit-1 miss.
+                # be misread as the exit-4 miss.
                 print(f"error: {exc}", file=sys.stderr)
                 return 2
         cmd = registry.get(name)
         if cmd is None:
-            return 1  # miss — this is the ONLY path allowed to exit 1
+            return 4  # miss — EXCLUSIVELY 4; 1 is loud (uv can exit 1 before we run)
 
         # Full flags point at git_equivalent's LEADING command, not the hug
         # name: `git help bpullr` prints an alias notice, `git help pull` is
@@ -899,9 +902,10 @@ def main():
         # Card bypasses the search pipeline below entirely: no categories
         # load, no script scan, NO collect_metadata — it renders from the
         # registry + a read-only cache peek alone. It also owns a DIFFERENT
-        # exit posture (miss=1, anything broken >=2 via render_card), so the
-        # search modes' loud-but-exit-1 handling must never see card
-        # failures. The name rides in `query` (see the positional above).
+        # exit posture (miss=4, anything broken >=2 via render_card — 1 is
+        # reserved for uv's own launcher failures), so the search modes'
+        # loud-but-exit-1 handling must never see card failures. The name
+        # rides in `query` (see the positional above).
         rc = render_card(args.query, commands_path=None, cache_dir=args.cache_dir)
         # Quiet-flush BEFORE sys.exit: SystemExit would skip the __main__
         # guard's flush line, and card-sized output usually fits the stdout

@@ -185,18 +185,25 @@ New strict chain:
    hug card + "Full flags: git help fetch" line replaces git's man page dump.
 2. **Registry has `$prefix`** → `uv run --directory "$dir/../lib/python"
    --extra search help_search.py card -- "$prefix"` — **no `exec`** (an `exec`
-   replaces the shell, making the exit-1 fall-through below impossible and
+   replaces the shell, making the exit-4 fall-through below impossible and
    killing every non-registry alias's help, e.g. `hug help brr` which today
    prints alias help + listing, exit 0). Exit-code contract — THIS TABLE IS THE
    SINGLE OWNER of card-mode exit semantics; every other section defers to it:
    - `0` → card printed; exit 0 (the card's Related block replaces the
      prefix listing).
-   - `1` → name not owned by the registry; fall through to ③/④. **Exit 1 is
-     reserved EXCLUSIVELY for a registry miss.** Python exits 1 on any
-     unhandled exception by default, so card mode wraps its whole body
-     (registry load + render) in a catch-all mapping ANY unexpected `Exception`
-     to ≥2 with the traceback on stderr — without it, every card bug would
-     masquerade as a miss and silently degrade to legacy help, exit 0.
+   - `1` → **uv launcher failure** — `uv run` itself can exit 1 BEFORE
+     help_search.py runs (environment creation/update: offline first run,
+     dependency/build failure). Bash maps this to a LOUD exit: "hug: help
+     card environment failure for '$prefix' (uv rc=1)" and `exit 1` — never
+     fall-through, an environment failure must not masquerade as a miss.
+   - `4` → name not owned by the registry; fall through to ③/④. **Exit 4 is
+     reserved EXCLUSIVELY for a registry miss.** Why not 1: uv's own
+     environment failures exit 1 (see the row above), so 1 must mean loud,
+     never miss. Python also exits 1 on any unhandled exception by default,
+     so card mode wraps its whole body (registry load + render) in a
+     catch-all mapping ANY unexpected `Exception` to ≥2 with the traceback
+     on stderr — without it, every card bug would masquerade as a miss and
+     silently degrade to legacy help, exit 0.
      The catch-all must NOT swallow benign signals: `KeyboardInterrupt` and
      `SystemExit` re-raise unwrapped (Ctrl-C exits 130, no traceback).
      `BrokenPipeError` is quiet success — with the canonical mitigation, not
@@ -363,7 +370,7 @@ convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:56):
   (second call with warm cache still includes registry rows).
 - Card: found name → card text contains kind, git-equivalent, related, usage,
   and the correctly derived Full-flags hint (alias → target command, not the
-  registry name); unknown name → exit 1, no partial card; related summary
+  registry name); unknown name → exit 4, no partial card; related summary
   resolution order (registry → read-only `git-<name>` cache key → bare hint).
 - Card anti-masquerade — the exit contract's own test matrix, one row per
   bucket: corrupted `commands.toml` in card mode → exit ≥2, stderr carries the
@@ -372,8 +379,9 @@ convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:56):
   `BrokenPipeError` (piped reader closes) → quiet exit 0 via the devnull
   redirect — assert BOTH the in-body raise (large output) and a shutdown-flush
   shape; `KeyboardInterrupt` → exit 130, no traceback; flag-like name behind
-  the guard → unit-level `card -- -h` is an ordinary miss (exit 1, no usage
-  on stdout) and `card -- --bogus` is ≥2.
+  the guard → unit-level `card -- -h` is an ordinary miss (exit 4, no usage
+  on stdout) and `card -- --bogus` likewise resolves to the miss code 4
+  (argparse treats what follows `--` as positionals).
 
 ### Drift tests (the two consistency guarantees)
 
@@ -428,10 +436,11 @@ convention, e.g. `("push", ["hug bpush"])` at test_quality_corpus.py:56):
   Search modes (`/keyword`, `!intent`, `@category`): a bad or missing
   `commands.toml` exits 1 with a clear message on stderr, mirroring
   `help_search.main()`'s `sys.exit(1)` categories posture (help_search.py
-  757/760/772). Card mode: the SAME failure exits **≥2** per Integration 2's
-  contract table — exit 1 is reserved for a registry miss, so copying the
-  search-mode code would make a corrupt registry fall through to legacy help
-  with exit 0. No catch-and-continue in any mode: silent degradation would
+  936/939/953/971). Card mode: the SAME failure exits **≥2** per Integration 2's
+  contract table — exit 4 is reserved for a registry miss, so copying the
+  search-mode code would make a corrupt registry masquerade as a miss (fall
+  through to legacy help with exit 0). No catch-and-continue in any mode:
+  silent degradation would
   quietly shrink the index and the corpus, the exact outcome the loader exists
   to prevent.
 - Cache integrity (the narrow sense of "script search survives"): registry rows

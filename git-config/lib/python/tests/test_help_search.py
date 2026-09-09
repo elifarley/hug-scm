@@ -1470,9 +1470,11 @@ def test_main_threads_registry_into_search(tmp_path, monkeypatch, capsys):
 
 
 # --- Card mode (Task 3) -------------------------------------------------------
-# Exit contract: 0 card | 1 miss (EXCLUSIVELY) | >=2 loud. render_card is a
-# pure function over the registry + a READ-ONLY cache peek (keyed by script
-# FILENAME `git-<name>`) — never collect_metadata, never _save_cache.
+# Exit contract: 0 card | 4 miss (EXCLUSIVELY) | >=2 loud. Miss is 4, NOT 1:
+# uv itself can exit 1 on environment failure BEFORE this script runs, so
+# exit 1 must mean loud for the bash caller. render_card is a pure function
+# over the registry + a READ-ONLY cache peek (keyed by script FILENAME
+# `git-<name>`) — never collect_metadata, never _save_cache.
 
 
 def test_card_found_render(capsys):
@@ -1498,14 +1500,27 @@ def test_card_bs_targets_switch(capsys):
     assert "Full flags: git help switch" in capsys.readouterr().out
 
 
-def test_card_miss_exit1(capsys):
-    assert render_card("zzz", registry=_cmd_meta(), cache_dir=None) == 1
+def test_card_miss_exits_4(capsys):
+    # 4, NOT 1: uv itself can exit 1 on environment failure before the
+    # script runs — bash maps 1 to loud, so the miss needs its own code.
+    assert render_card("zzz", registry=_cmd_meta(), cache_dir=None) == 4
     out = capsys.readouterr().out
     assert "Usage:" not in out  # no partial card on miss
 
 
+def test_card_miss_propagates_4_through_main(monkeypatch, capsys):
+    # The bash contract consumes main()'s code, not render_card's return:
+    # the card dispatch must propagate the miss as 4 (bash falls through),
+    # while uv's own exit 1 stays LOUD one layer out (git-hughelp case arm).
+    monkeypatch.setattr("sys.argv", ["help_search.py", "card", "--", "zzz"])
+    with pytest.raises(SystemExit) as ei:
+        main()
+    assert ei.value.code == 4
+    assert capsys.readouterr().out == ""
+
+
 def test_card_corrupt_registry_loud(tmp_path, capsys):
-    # Corrupt registry in card mode is LOUD and >=2 — never the exit-1 miss
+    # Corrupt registry in card mode is LOUD and >=2 — never the exit-4 miss
     # (which would silently degrade `hug help <name>` to legacy help). The
     # loader's missing-required-field check fires before the kind check, so
     # this minimal fixture dies on `description`; a bad kind dies the same
@@ -1530,11 +1545,21 @@ def test_card_cache_peek_uses_git_name_key(tmp_path, capsys):
 def test_card_flaglike_name_is_not_help(monkeypatch, capsys):
     # `-h` behind `--` is a NAME, never argparse help: argparse strips the
     # end-of-options marker and treats what follows as positionals, so the
-    # flag-like miss exits 1 with zero usage text on stdout.
+    # flag-like miss exits 4 with zero usage text on stdout.
     monkeypatch.setattr("sys.argv", ["help_search.py", "card", "--", "-h"])
     with pytest.raises(SystemExit) as ei:
         main()
-    assert ei.value.code == 1  # flag-like name is a plain registry miss, never argparse usage
+    assert ei.value.code == 4  # flag-like name is a plain registry miss, never argparse usage
+    assert "usage: help_search.py" not in capsys.readouterr().out
+
+
+def test_card_bogus_flag_name_is_miss_too(monkeypatch, capsys):
+    # `--bogus` behind `--` is likewise a NAME (argparse never intercepts
+    # option-like strings after the end-of-options marker) → miss → 4.
+    monkeypatch.setattr("sys.argv", ["help_search.py", "card", "--", "--bogus"])
+    with pytest.raises(SystemExit) as ei:
+        main()
+    assert ei.value.code == 4
     assert "usage: help_search.py" not in capsys.readouterr().out
 
 

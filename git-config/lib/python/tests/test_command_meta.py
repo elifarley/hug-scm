@@ -87,6 +87,34 @@ def test_empty_git_equivalent_is_loud(tmp_path):
         load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
 
 
+def test_array_elements_must_be_strings(tmp_path):
+    # `keywords = [1, true]` passes an isinstance(list) check but would
+    # pollute search via str-coercion downstream; every element must be a
+    # string, rejected with table+field+element-index context.
+    src = (PY_DIR / "commands.toml").read_text()
+    bad = tmp_path / "commands.toml"
+    bad.write_text(
+        src.replace(
+            'keywords = ["fetch", "download", "sync", "update", "remote", "refs"]',
+            "keywords = [1, true]",
+            1,
+        )
+    )
+    with pytest.raises(RegistryError, match=r"keywords.*element 0.*got int"):
+        load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+
+
+def test_nested_array_element_is_loud_not_typeerror(tmp_path):
+    # A nested `categories = [["x"]]` used to escape as an uncontextualized
+    # TypeError inside set() — it must be a RegistryError instead (the loader
+    # fires the element check BEFORE any set()-based category validation).
+    src = (PY_DIR / "commands.toml").read_text()
+    bad = tmp_path / "commands.toml"
+    bad.write_text(src.replace('categories = ["push-pull"]', 'categories = [["x"]]', 1))
+    with pytest.raises(RegistryError, match=r"categories.*element 0.*got list"):
+        load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+
+
 def test_related_resolves_forward_to_later_table(tmp_path):
     # Regression for order-dependent `related` validation (it used to see
     # only processed-so-far registry entries): an entry referencing a LATER
