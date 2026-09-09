@@ -1772,7 +1772,10 @@ def test_module_guard_dead_pipe_exits_zero(tmp_path):
         "--categories-dir",
         str(CATS),
     ]
-    for argv in (["card", *hermetic, "--", "fetch"], ["@", *hermetic]):
+    # Positional BEFORE the optionals: on Python ≤3.11 argparse drops a
+    # nargs='?' positional that follows optionals ("unrecognized arguments:
+    # fetch") — the product path (git-hughelp passes no optionals) is immune.
+    for argv in (["card", "fetch", *hermetic], ["@", *hermetic]):
         r, w = os.pipe()
         os.close(r)  # reader gone: any pipe write raises EPIPE
         proc = subprocess.Popen(
