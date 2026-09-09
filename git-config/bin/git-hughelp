@@ -29,7 +29,9 @@ test $# -eq 0 && {
   exit 0
 }
 prefix="$1"
-dir=$(dirname "$0")
+# readlink-resolved per the repo command template: a symlinked install must
+# still find its sibling bin/lib, not the symlink's directory.
+dir=$(dirname "$(readlink -f "$0" 2> /dev/null || greadlink -f "$0" 2> /dev/null || echo "$0")")
 
 # Shared body of the script-help arms (① hug's own script, and the same
 # branch for non-registry names further down): blank-line framed --help.
@@ -72,7 +74,10 @@ if [[ "$prefix" != -* ]]; then
     #     script runs): LOUD, never fall-through.  127 → uv missing (REQUIRED
     #     dependency): loud hint.  >=2 → loud failure.
     card_rc=0
-    uv run --directory "$dir/../lib/python" --extra search help_search.py card -- "$prefix" || card_rc=$?
+    # No --extra search: card mode never fuzzy-scores, and help_search's
+    # thefuzz import is try/except-guarded (HAS_THEFUZZ + fallback scorers),
+    # so the base project env suffices — a cheaper card path.
+    uv run --directory "$dir/../lib/python" help_search.py card -- "$prefix" || card_rc=$?
     case $card_rc in
     0) exit 0 ;;
     4) : ;; # registry miss — fall through

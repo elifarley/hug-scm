@@ -122,6 +122,28 @@ def test_nested_array_element_is_loud_not_typeerror(tmp_path):
         load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
 
 
+def test_unhashable_kind_is_registryerror_not_typeerror(tmp_path):
+    # kind = ["alias"] is unhashable: a bare `kind not in VALID_KINDS`
+    # exploded as TypeError inside the set-membership check. The isinstance
+    # guard must fire first so the failure carries table+field context.
+    src = (PY_DIR / "commands.toml").read_text()
+    bad = tmp_path / "commands.toml"
+    bad.write_text(src.replace('kind = "passthrough"', 'kind = ["alias"]', 1))
+    with pytest.raises(RegistryError, match=r"kind.*must be a string"):
+        load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+
+
+def test_single_token_git_equivalent_rejected(tmp_path):
+    # git_equivalent = "git" passes the non-empty-string check but
+    # IndexErrors every card render at parts[1] of the Full-flags
+    # derivation — the loader must demand "git <command> ..." up front.
+    src = (PY_DIR / "commands.toml").read_text()
+    bad = tmp_path / "commands.toml"
+    bad.write_text(src.replace('git_equivalent = "git fetch"', 'git_equivalent = "git"', 1))
+    with pytest.raises(RegistryError, match=r"git_equivalent.*git <command>"):
+        load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+
+
 def test_related_resolves_forward_to_later_table(tmp_path):
     # Regression for order-dependent `related` validation (it used to see
     # only processed-so-far registry entries): an entry referencing a LATER

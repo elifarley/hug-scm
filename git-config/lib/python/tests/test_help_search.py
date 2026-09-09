@@ -14,6 +14,7 @@ from command_meta import RegistryError, load_commands
 from help_search import (
     CommandInfo,
     MatchSpec,
+    _save_cache,
     collect_metadata,
     derive_command_name,
     format_category_list,
@@ -1593,6 +1594,64 @@ def test_card_cache_hint_strips_ansi_and_control_bytes(tmp_path, capsys):
     # Zero control bytes except the card's own line structure (\n from the
     # join/print — legitimate layout, not cache content).
     assert not any((ord(ch) < 32 and ch != "\n") or ord(ch) == 127 for ch in out)
+
+
+def test_card_cache_hint_strips_raw_c1_controls(tmp_path, capsys):
+    # C1 (0x80-0x9f): raw 0x9B is the 8-bit CSI on terminals that accept it —
+    # an ESC-prefixed payload cannot catch this shape, so the hostile
+    # sequence here carries NO ESC at all. The control class must extend
+    # through 0x9f or these bytes drive the terminal.
+    (tmp_path / "search-meta.cache").write_text(
+        json.dumps({"git-llu": {"description": "\x9b2J\x9b3H\x9bclean hint"}})
+    )
+    render_card("fetch", registry=_cmd_meta(), cache_dir=tmp_path)
+    out = capsys.readouterr().out
+    assert "clean hint" in out
+    assert "\x9b" not in out
+    assert not any((ord(ch) < 32 and ch != "\n") or 127 <= ord(ch) <= 159 for ch in out)
+
+
+def test_collect_metadata_sanitizes_cache_sourced_text(tmp_path):
+    # BOUNDARY pin (the sibling sink): search modes materialize every row
+    # from the cache and format_results prints descriptions raw — so the
+    # strip must happen ONCE at materialization, not only in render_card's
+    # hint branch. command/description/keywords/categories are all covered.
+    (tmp_path / "search-meta.cache").write_text(
+        json.dumps(
+            {
+                "git-hostile": {
+                    "command": "hug hostile\x1b[3H",
+                    "description": "Clean start\x1b[2J with ESC mid-prose",
+                    "categories": ["head\x1b[31m"],
+                    "keywords": ["probe\x1b[31m"],
+                    "mtime": 1,
+                }
+            }
+        )
+    )
+    cmds = collect_metadata(tmp_path, cache_dir=tmp_path, use_cache=True, cat_meta=None)
+    (row,) = [c for c in cmds if c.command.startswith("hug hostile")]
+    assert row.command == "hug hostile"
+    assert row.description == "Clean start with ESC mid-prose"
+    assert row.keywords == ["probe"]
+    assert row.categories == ["head"]
+
+
+def test_save_cache_failed_replace_is_silent(tmp_path, monkeypatch):
+    # Atomic write: sibling temp + os.replace, with a failed replace skipped
+    # SILENTLY (the cache is a pure optimization — the next run re-queries);
+    # temp-write failures above the try stay LOUD, pinned by the
+    # pipeline-OSError tests.
+    cache_file = tmp_path / "search-meta.cache"
+    cache_file.write_text("old")
+
+    def _boom(_src, _dst):
+        raise OSError(18, "cross-device link probe")
+
+    monkeypatch.setattr(os, "replace", _boom)
+    _save_cache(cache_file, {"a": 1})
+    assert cache_file.read_text() == "old"  # failed replace left the old file
+    assert not list(tmp_path.glob("*.tmp"))  # temp cleaned up, no litter
 
 
 def test_card_cache_peek_nonstring_hint_degrades_to_bare(tmp_path, capsys):

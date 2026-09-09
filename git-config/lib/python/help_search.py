@@ -343,6 +343,32 @@ def _query_script(script_path: Path) -> dict | None:
     }
 
 
+# Cache-sourced text is UNTRUSTED INPUT: strip ANSI escape sequences (CSI —
+# cursor/color/etc.; OSC including OSC 52 clipboard writes, terminated by
+# BEL or ST) and control bytes (C0, DEL, and the C1 range — raw 0x9B is the
+# 8-bit CSI on terminals that accept it, so ESC-prefixed patterns alone
+# would miss it) before any of it reaches a terminal. First-party registry
+# prose never passes through here.
+# LESSON (alternation order): the escape-sequence alternatives MUST come
+# before the bare control class — a leading [\x00-\x1f] matches the ESC
+# byte alone, consuming it before the CSI/OSC arms can see the sequence and
+# leaving "[2J"-style tails behind (caught by the sanitizer test).
+_UNTRUSTED_TEXT_RE = re.compile(
+    r"(\x1b\[[0-9;:]*[a-zA-Z])|(\x1b\][^\x07\x1b]*(\x07|\x1b\\))|[\x00-\x1f\x7f-\x9f]"
+)
+
+
+def _strip_control_chars(text: str) -> str:
+    """Strip control bytes and ANSI CSI/OSC escape sequences from text."""
+    return _UNTRUSTED_TEXT_RE.sub("", text)
+
+
+def _clean_cached(value):
+    """Sanitize one cache-sourced string; non-strings pass through (the
+    loader owns element-TYPE validation — this boundary owns bytes)."""
+    return _strip_control_chars(value) if isinstance(value, str) else value
+
+
 def _load_cache(cache_file: Path) -> dict:
     """Load the metadata cache from disk."""
     if not cache_file.exists():
@@ -355,9 +381,21 @@ def _load_cache(cache_file: Path) -> dict:
 
 
 def _save_cache(cache_file: Path, data: dict) -> None:
-    """Save the metadata cache to disk."""
+    """Save the metadata cache ATOMICALLY: sibling temp + os.replace.
+
+    A crash mid-write can no longer leave torn JSON behind (the reader
+    tolerates it, but there is no reason to write it). A failed replace is
+    skipped SILENTLY — the cache is a pure optimization and the next run
+    re-queries scripts; the temp-write failures above the try still
+    propagate LOUD (the posture the pipeline-OSError tests pin).
+    """
     cache_file.parent.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(data, indent=2))
+    tmp = cache_file.with_suffix(cache_file.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    try:
+        os.replace(tmp, cache_file)
+    except OSError:
+        tmp.unlink(missing_ok=True)
 
 
 def collect_metadata(
@@ -417,17 +455,22 @@ def collect_metadata(
     if updated:
         _save_cache(cache_file, cache)
 
-    # Build CommandInfo list from cache
+    # Build CommandInfo list from cache. UNTRUSTED-INPUT BOUNDARY: every row
+    # materializes from the cache — disk content written by any prior run
+    # (mirroring script --search-meta output) — so untrusted strings are
+    # stripped ONCE here and every downstream renderer (format_results, the
+    # @category page, --explain) inherits clean text. render_card's per-hint
+    # strip becomes redundant-but-harmless defense in depth.
     commands = []
     for _name, data in cache.items():
         if not data.get("categories") or not data.get("description"):
             continue
         commands.append(
             CommandInfo(
-                command=data["command"],
-                description=data["description"],
-                categories=data["categories"],
-                keywords=data.get("keywords", []),
+                command=_clean_cached(data["command"]),
+                description=_clean_cached(data["description"]),
+                categories=[_clean_cached(c) for c in data["categories"]],
+                keywords=[_clean_cached(k) for k in data.get("keywords", [])],
             )
         )
 
@@ -781,24 +824,6 @@ def _flush_stdout_quietly() -> None:
     except OSError:
         _silence_stdout()
         os._exit(0)
-
-
-# Cache-sourced text is UNTRUSTED INPUT: strip ANSI escape sequences (CSI —
-# cursor/color/etc.; OSC including OSC 52 clipboard writes, terminated by
-# BEL or ST) and C0 control bytes + DEL before any of it reaches a terminal.
-# First-party registry prose never passes through here.
-# LESSON (alternation order): the escape-sequence alternatives MUST come
-# before the bare control class — a leading [\x00-\x1f] matches the ESC
-# byte alone, consuming it before the CSI/OSC arms can see the sequence and
-# leaving "[2J"-style tails behind (caught by the sanitizer test).
-_UNTRUSTED_TEXT_RE = re.compile(
-    r"(\x1b\[[0-9;:]*[a-zA-Z])|(\x1b\][^\x07\x1b]*(\x07|\x1b\\))|[\x00-\x1f\x7f]"
-)
-
-
-def _strip_control_chars(text: str) -> str:
-    """Strip control bytes and ANSI CSI/OSC escape sequences from text."""
-    return _UNTRUSTED_TEXT_RE.sub("", text)
 
 
 def render_card(

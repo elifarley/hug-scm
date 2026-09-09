@@ -160,9 +160,17 @@ def load_commands(
             value = entry[str_field]
             if not isinstance(value, str) or not value.strip():
                 raise _fail(path, name, str_field, "must be a non-empty string")
+        # A single token ("git") would pass every other check and then
+        # IndexError every card render at parts[1] — the Full-flags
+        # derivation needs at least "git <command>".
+        if len(entry["git_equivalent"].split()) < 2:
+            raise _fail(path, name, "git_equivalent", 'must be "git <command> ..."')
         kind = entry["kind"]
-        if kind not in VALID_KINDS:
-            raise _fail(path, name, "kind", f"must be one of {sorted(VALID_KINDS)}")
+        # isinstance first: a list-valued kind (["alias"]) is unhashable and
+        # would explode as TypeError inside the `in` check instead of dying
+        # as a contextual RegistryError.
+        if not isinstance(kind, str) or kind not in VALID_KINDS:
+            raise _fail(path, name, "kind", f"must be a string, one of {sorted(VALID_KINDS)}")
         unknown = set(entry["categories"]) - known_cats
         if unknown:
             raise _fail(path, name, "categories", f"unknown categories {sorted(unknown)}")
