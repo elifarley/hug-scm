@@ -1,23 +1,37 @@
 """Tests for help_search.py — topic search for hug help."""
 
 import json
+from pathlib import Path
 
 import pytest
 
+from category_meta import CategoryMeta, load_categories
+from command_meta import RegistryError, load_commands
 from help_search import (
     CommandInfo,
     MatchSpec,
     collect_metadata,
     derive_command_name,
     format_category_list,
+    format_category_page,
     format_results,
     list_categories,
+    main,
     parse_description_from_help,
     run_search,
     search_category,
     search_intent,
     search_keyword,
 )
+
+# Real-repo anchors for the registry-merge tests (Task 2). Mirrors
+# test_command_meta.py — the registry and the script bin it must not shadow
+# live in this repo, and the merge tests exercise the REAL corpus.
+REPO = Path(__file__).resolve().parents[4]
+PY_DIR = REPO / "git-config" / "lib" / "python"
+CATS = PY_DIR / "categories"
+GITCONFIG = REPO / "git-config" / ".gitconfig"
+BIN = REPO / "git-config" / "bin"
 
 
 class TestDeriveCommandName:
@@ -1297,3 +1311,154 @@ class TestArticleMode:
         out = capsys.readouterr()
         assert "no article named" in out.err
         assert ":hug-101" in out.err
+
+
+# ── Registry merge (Task 2) ───────────────────────────────────────────────
+# commands.toml rows flow into the CommandInfo index as ordinary rows with
+# `kind` set; script rows keep kind=None. The merge happens AFTER the cache
+# build and BEFORE the sort, so the registry never enters search-meta.cache
+# and the returned list is one alphabetical run.
+
+
+def _cmd_meta():
+    return load_commands(bin_dir=BIN, gitconfig=GITCONFIG)
+
+
+def test_merge_interleaves_and_sorts(tmp_path):
+    cmds = collect_metadata(
+        BIN,
+        cache_dir=tmp_path / "cache",
+        use_cache=False,
+        cat_meta=load_categories(CATS),
+        cmd_meta=_cmd_meta(),
+    )
+    names = [c.command for c in cmds]
+    assert names == sorted(names)  # ONE alphabetical run, not script-block + registry-block
+    by_name = {c.command: c for c in cmds}
+    assert by_name["hug bpullr"].kind == "alias"
+    assert by_name["hug fetch"].kind == "passthrough"
+    assert by_name["hug bpush"].kind is None  # scripts keep kind=None
+
+
+def test_merge_survives_warm_cache(tmp_path):
+    cache_dir = tmp_path / "cache"
+    registry = _cmd_meta()
+    one = collect_metadata(
+        BIN,
+        cache_dir=cache_dir,
+        use_cache=True,
+        cat_meta=load_categories(CATS),
+        cmd_meta=registry,
+    )
+    two = collect_metadata(
+        BIN,
+        cache_dir=cache_dir,
+        use_cache=True,
+        cat_meta=load_categories(CATS),
+        cmd_meta=registry,
+    )
+    # Call 1 cold-populates the PRIVATE cache; call 2 takes the mtime-hit
+    # path for every script, yet must still yield every registry row — the
+    # merge is cache-independent because rows never enter search-meta.cache.
+    # (A shared production cache would make both calls identical and the
+    # assertion vacuous, so this test owns its cache.)
+    expected = {f"hug {name}" for name in registry}
+    assert expected <= {c.command for c in one if c.kind}  # cold
+    assert expected == {c.command for c in two if c.kind}  # warm: full set
+    assert "hug fetch" in expected  # the regression's namesake, explicit
+
+
+def test_no_cmd_meta_is_hermetic(tmp_path):
+    # Default cmd_meta=None must not touch the real registry: mock-dir tests
+    # stay hermetic (the explicit-param precedent of cat_meta).
+    cmds = collect_metadata(
+        BIN, cache_dir=tmp_path / "cache", use_cache=False, cat_meta=load_categories(CATS)
+    )
+    assert all(c.kind is None for c in cmds)
+    # `fetch` is registry-only (drift2a forbids a git-fetch bin script).
+    assert not any(c.command == "hug fetch" for c in cmds)
+
+
+def test_format_marker_renders_kind():
+    row = CommandInfo(
+        command="hug bpullr",
+        description="Pull with rebase",
+        categories=["push-pull"],
+        kind="alias",
+    )
+    out = format_results([row])
+    assert "(git alias)" in out
+
+
+def test_format_category_page_marker_renders_kind():
+    # Same render-time marker on the @category page — the AC names BOTH
+    # format layers, not just /keyword results.
+    meta = CategoryMeta(
+        name="push-pull",
+        label="Push & pull",
+        description="Sync work with remotes.",
+        summary="Sync work with remotes.",
+    )
+    row = CommandInfo(
+        command="hug bpullr",
+        description="Pull with rebase",
+        categories=["push-pull"],
+        kind="alias",
+    )
+    out = format_category_page(meta, [row], width=72)
+    assert "(git alias)" in out
+
+
+def test_main_registry_failure_exits_1(tmp_path, monkeypatch, capsys):
+    # Search-mode posture: a corrupt registry is LOUD — message on stderr,
+    # exit 1 — mirroring the categories loader. Silent-empty would shrink
+    # the index and every answer with it.
+    (tmp_path / "cats").mkdir()  # empty manifests: fine, validation runs later
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "help_search.py",
+            "/",
+            "fetch",
+            "--bin-dir",
+            str(tmp_path),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--categories-dir",
+            str(tmp_path / "cats"),
+        ],
+    )
+
+    def _corrupt(*_args, **_kwargs):
+        raise RegistryError("corrupt registry probe")
+
+    monkeypatch.setattr("command_meta.load_commands", _corrupt)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    assert "corrupt registry probe" in capsys.readouterr().err
+
+
+def test_main_threads_registry_into_search(tmp_path, monkeypatch, capsys):
+    # Pins the LIVE wiring: main() must pass cmd_meta into collect_metadata.
+    # Without it, /fetch stays registry-blind in production while every
+    # unit-level test stays green — the exact gap the plan review caught.
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "help_search.py",
+            "/",
+            "fetch",
+            "--bin-dir",
+            str(BIN),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--categories-dir",
+            str(CATS),
+        ],
+    )
+    main()
+    out = capsys.readouterr().out
+    assert "hug fetch" in out
+    assert "(git passthrough)" in out  # marker flows through main() too

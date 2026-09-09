@@ -119,6 +119,9 @@ class CommandInfo:
     (per-command, NOT inherited from the category — see /autoplan F3).
     `category_desc` is hydrated at search time from CategoryMeta.description
     so it can be matched as a search field without re-loading the TOML.
+    `kind` is set only for registry rows merged from commands.toml (Task 2):
+    "alias" | "passthrough". None (= script) is the default, so every
+    pre-existing construction — all keyword-based — is untouched.
     """
 
     command: str = ""
@@ -126,6 +129,7 @@ class CommandInfo:
     categories: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
     category_desc: str = ""
+    kind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -358,6 +362,7 @@ def collect_metadata(
     cache_dir: str | Path = _DEFAULT_CACHE_DIR,
     use_cache: bool = True,
     cat_meta: dict | None = None,
+    cmd_meta: dict | None = None,
 ) -> list[CommandInfo]:
     """Collect metadata from all git-* scripts, using cache when possible.
 
@@ -365,6 +370,14 @@ def collect_metadata(
     hydrated from CategoryMeta.description for scoring against by the
     `@cat-desc` spec. Pass None to skip hydration (tests that don't need
     category descriptions, or environments where the manifests aren't loaded).
+
+    When `cmd_meta` is supplied (a command_meta.load_commands() registry of
+    non-script commands), each entry is merged as a CommandInfo row with
+    `kind` set. The merge runs AFTER the cache build — registry rows never
+    enter search-meta.cache, so a warm cache still yields them — and BEFORE
+    the sort, so the returned list is one alphabetical run rather than a
+    sorted script block followed by an appended registry block. Default None
+    = no merge, mirroring `cat_meta` so mock-dir tests stay hermetic.
     """
     bin_path = Path(bin_dir)
     cache_file = Path(cache_dir) / "search-meta.cache"
@@ -414,6 +427,24 @@ def collect_metadata(
                 keywords=data.get("keywords", []),
             )
         )
+
+    if cmd_meta:
+        for name, meta in cmd_meta.items():
+            # command="hug <name>" is the pinned merge format — the same
+            # hug-prefixed string derive_command_name produces for scripts,
+            # so the sort key and every rendered line agree (spec C-003).
+            # Descriptions are TOML multi-line prose; flatten whitespace so
+            # a row renders as ONE listing line (format layers never wrap)
+            # while the full prose stays available to fuzzy scoring.
+            commands.append(
+                CommandInfo(
+                    command=f"hug {name}",
+                    description=" ".join(meta.description.split()),
+                    keywords=list(meta.keywords),
+                    categories=list(meta.categories),
+                    kind=meta.kind,
+                )
+            )
 
     commands = sorted(commands, key=lambda c: c.command)
     if cat_meta:
@@ -559,6 +590,20 @@ def list_categories(commands: list[CommandInfo]) -> list[str]:
     return sorted(cats)
 
 
+def _display_description(cmd: CommandInfo) -> str:
+    """Listing text for one command: description plus the registry kind marker.
+
+    Shared by every render site (format_results, format_category_page — and
+    Task 3's card related-lines) so a registry row self-explains why `-h`
+    isn't hug-flavored identically everywhere. The marker is a render-time
+    suffix; descriptions stay pure prose in the TOML.
+    """
+    desc = cmd.description or "(no description)"
+    if cmd.kind:  # registry rows only; scripts keep kind=None
+        desc = f"{desc} (git {cmd.kind})"
+    return desc
+
+
 def format_results(
     commands: list[CommandInfo],
     total: int | None = None,
@@ -583,8 +628,7 @@ def format_results(
             detail_map[id(item)] = (score, spec)
     lines = []
     for cmd in commands:
-        desc = cmd.description or "(no description)"
-        line = f"  {cmd.command:24s} - {desc}"
+        line = f"  {cmd.command:24s} - {_display_description(cmd)}"
         if explain and id(cmd) in detail_map:
             score, spec = detail_map[id(cmd)]
             line += f"   [{spec.label}, {score}]"
@@ -659,8 +703,7 @@ def format_category_page(
 
     data_lines: list[str] = []
     for cmd in commands:
-        desc = cmd.description or "(no description)"
-        data_lines.append(f"  {cmd.command:24s} - {desc}")
+        data_lines.append(f"  {cmd.command:24s} - {_display_description(cmd)}")
 
     footer = ["", "Tip: `hug help <command>` for full help on any command."]
 
@@ -759,12 +802,32 @@ def main():
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    commands = collect_metadata(args.bin_dir, cache_dir=args.cache_dir, cat_meta=cat_meta)
+    # Load the non-script command registry (commands.toml). WHY bare defaults:
+    # the CLI exposes no registry flag, and command_meta's __file__-relative
+    # defaults resolve identically in repo and installed layouts — the same
+    # shipped file this module's _DEFAULT_* constants anchor to. A corrupt
+    # registry is loud, same posture as categories: silent-empty would shrink
+    # the index and every search answer with it.
+    from command_meta import RegistryError, load_commands
+
+    try:
+        cmd_registry = load_commands()
+    except RegistryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(1)  # search-mode posture: mirrors the categories sys.exit(1)
+
+    commands = collect_metadata(
+        args.bin_dir, cache_dir=args.cache_dir, cat_meta=cat_meta, cmd_meta=cmd_registry
+    )
 
     # Strict validation: every category referenced by a script MUST have a
     # manifest. Catches the most likely drift mode (a contributor adds a
     # category to a script without bootstrapping the corresponding TOML).
-    used_categories = {c for cmd in commands for c in cmd.categories}
+    # Script rows only (kind is None): registry categories were already
+    # validated at load time against the canonical categories/ dir, and
+    # dragging them in here would fail fixture invocations whose
+    # --categories-dir legitimately holds a partial manifest set.
+    used_categories = {c for cmd in commands if cmd.kind is None for c in cmd.categories}
     errors = validate_against_scripts(cat_meta, used_categories)
     if errors:
         for err in errors:
