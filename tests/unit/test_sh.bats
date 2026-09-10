@@ -620,6 +620,68 @@ teardown() {
   refute_output --partial "No files matching"
 }
 
+# -----------------------------------------------------------------------------
+# hug shc --no-renames: ACTION stance for -n/-z consumers (issue #283)
+# -----------------------------------------------------------------------------
+
+@test "hug shc -n -z --no-renames: rename emits BOTH paths NUL-terminated (action stance)" {
+  # DISPLAY default (first oracle) lists only the NEW path — a consumer wiring
+  # the documented `| xargs -0 -r` pipeline to rm/restore "everything this
+  # commit touched" silently misses the OLD side. --no-renames switches the
+  # stream to the ACTION-LIST contract: both sides. Order is TREE order of the
+  # independent D+A pair (feature2.txt sorts before renamed.txt), NOT
+  # "old then new" — a reverse-alphabetical rename flips it.
+  git mv feature2.txt renamed.txt
+  git commit -qm "rename feature2"
+  [[ "$(hug shc -n -z HEAD | od -An -c | tr -d ' \n')" == 'renamed.txt\0' ]]
+  [[ "$(hug shc -n -z --no-renames HEAD | od -An -c | tr -d ' \n')" == 'feature2.txt\0renamed.txt\0' ]]
+}
+
+@test "hug shc -n --no-renames: line mode lists both sides, one per line" {
+  git mv feature2.txt renamed.txt
+  git commit -qm "rename feature2"
+  run hug shc -n --no-renames HEAD
+  assert_success
+  assert_line "feature2.txt"
+  assert_line "renamed.txt"
+}
+
+@test "hug shc --no-renames: flag order is irrelevant across leading slots" {
+  # Parsing must stay order-independent like -n/-z are: leading flags land in
+  # any order (a positional can't be sandwiched between flags — same contract
+  # as -z). All permutations must produce the identical byte stream.
+  git mv feature2.txt renamed.txt
+  git commit -qm "rename feature2"
+  local p1 p2 p3
+  p1="$(hug shc --no-renames -n -z HEAD | od -An -c | tr -d ' \n')"
+  p2="$(hug shc -n -z --no-renames HEAD | od -An -c | tr -d ' \n')"
+  p3="$(hug shc -z -n --no-renames HEAD | od -An -c | tr -d ' \n')"
+  [[ "$p1" == 'feature2.txt\0renamed.txt\0' && "$p1" == "$p2" && "$p2" == "$p3" ]]
+}
+
+@test "hug shc -z --no-renames without -n is a usage error (exit 2)" {
+  # Same coupling guard as -z: without -n there is no machine-readable stream
+  # to re-arm, whatever other flags accompany it.
+  run hug shc -z --no-renames HEAD
+  assert_failure 2
+  assert_output --partial 'only valid with -n'
+}
+
+@test "hug shc --no-renames without -n (stats mode) is a usage error (exit 2)" {
+  run hug shc --no-renames HEAD
+  assert_failure 2
+  assert_output --partial 'only valid with -n'
+}
+
+@test "hug shc -n -z --no-renames: plain (non-rename) commit output is byte-identical" {
+  # No behavioral drift when no rename is present — the flag only changes
+  # rename presentation.
+  echo x > a.txt && echo y > b.txt
+  git add -A && git commit -qm add-ab
+  [[ "$(hug shc -n -z HEAD | od -An -c | tr -d ' \n')" == 'a.txt\0b.txt\0' ]]
+  [[ "$(hug shc -n -z --no-renames HEAD | od -An -c | tr -d ' \n')" == 'a.txt\0b.txt\0' ]]
+}
+
 @test "hug shc: empty-string positional counts as the one positional (no silent last-win)" {
   # An explicit "" must still claim the one-positional slot. A `[[ -n ]]`
   # sentinel instead of saw_positional would let `typo` silently WIN the slot

@@ -35,13 +35,23 @@ OPTIONS:
                     paths print raw for non-ASCII bytes (core.quotePath=false
                     pin); git still C-quotes structural characters (newline,
                     backslash, quote, tab) in line mode — use -z for a fully
-                    raw, NUL-separated stream. Renames list the new path only.
+                    raw, NUL-separated stream. Renames list the new path only
+                    (DISPLAY stance — see --no-renames for the both-sides
+                    ACTION stance).
     -z, --null      With -n only: separate paths with NUL (\0) instead of
                     newline. Handles filenames containing newlines; pair with
                     xargs -0 -r / read -d ''. Without -n: usage error.
                     (-r matters: GNU xargs otherwise runs the command ONCE,
                     operand-less, on empty input — e.g. a no-match
-                    `| xargs -0 rm`.)
+                    `| xargs -0 rm`.) Default stance is DISPLAY: a rename
+                    emits only the NEW path. Consumers feeding an action list
+                    ("everything this commit touched") to rm, restore, or
+                    similar must pass --no-renames so the OLD path is
+                    emitted too.
+    --no-renames    With -n only: renames list BOTH sides (new AND old path) —
+                    the ACTION-LIST contract for consumers that act on every
+                    path a commit touched. Default (and stats mode) is the
+                    DISPLAY contract: new path only. Without -n: usage error.
     -h, --help      Show this help
 
 PATH FILTERING:
@@ -90,7 +100,14 @@ CAPTURING OUTPUT:
     hug shc -n main..HEAD -- '*.py'  # Paths only, filtered to Python files
     hug shc -n -z main..HEAD | xargs -0 -r <cmd>   # NUL-separated: safe for
                                                    # ANY filename (the -r is
-                                                   # not optional — see -z)
+                                                   # not optional — see -z).
+                                                   # DISPLAY stance: a rename
+                                                   # lists only the new path
+    hug shc -n -z --no-renames main..HEAD | xargs -0 -r <cmd>  # ACTION stance:
+                                                   # a rename lists BOTH paths
+                                                   # (old + new) — for consumers
+                                                   # acting on every touched
+                                                   # path (rm, restore, ...)
 
 EXAMPLES:
     hug shc                  # Files changed in last commit (HEAD)
@@ -119,6 +136,7 @@ GIT EQUIVALENTS:
     git diff --name-only main..HEAD  →  hug shc -n main..HEAD
     git diff-tree --no-commit-id --name-only -r --root --find-renames HEAD  →  hug shc -n HEAD
     git diff-tree -z --no-commit-id --name-only -r --root --find-renames HEAD  →  hug shc -n -z HEAD
+    git diff-tree -z --no-commit-id --name-only -r --root --no-renames HEAD  →  hug shc -n -z --no-renames HEAD
     # The full diff-tree invocation (--no-commit-id -r --root --find-renames)
     # is what hug uses internally; dropping those flags would prepend the
     # commit hash and break the one-path-per-line contract, and without
@@ -151,6 +169,7 @@ eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
 # the command ran in --stat mode. See the spec's "Bundled-flag hazard" section.
 name_only=false
 null_sep=false
+no_renames=false
 # saw_positional, not `[[ -n "$commit_ref" ]]`, is the saw-a-positional
 # sentinel: an EMPTY-STRING positional (`hug shc "" typo`) would leave
 # commit_ref at "" and silently last-win the next token (probed: exit 128
@@ -166,6 +185,10 @@ while [[ $# -gt 0 ]]; do
     ;;
   -z | --null)
     null_sep=true
+    shift
+    ;;
+  --no-renames)
+    no_renames=true
     shift
     ;;
   -*)
@@ -191,6 +214,14 @@ done
 
 if $null_sep && ! $name_only; then
   error_usage "-z/--null is only valid with -n/--name-only"
+fi
+
+# Same coupling as -z (#283): --no-renames exists solely to re-arm the
+# machine-readable -n stream with the ACTION stance (both rename sides).
+# Stats mode is a human display (collapsed `{old => new}` line) where the
+# flag would be silently meaningless — reject loud instead of ignoring.
+if $no_renames && ! $name_only; then
+  error_usage "--no-renames is only valid with -n/--name-only"
 fi
 
 commit_ref="${commit_ref:-HEAD}"
@@ -252,12 +283,15 @@ esac
 # --name-only mode: print repo-relative paths only, no stats/header.
 # Pure data output (no HUG_QUIET coupling, no no-match hint) by design —
 # callers detect empty via stdout. See spec "No-match hint" section.
+# Both stance flags thread as LEADING flags in any order (the library's
+# parser is a loop, mirroring pinned_diff's); a plain array — not `local`,
+# which is function-only — keeps this script-top-level code set -u-safe via
+# the house `${arr[@]+…}` nullsafe idiom.
 if $name_only; then
-  if $null_sep; then
-    show_changed_file_names -z "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
-  else
-    show_changed_file_names "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
-  fi
+  stance_flags=()
+  $null_sep && stance_flags+=(--null)
+  $no_renames && stance_flags+=(--no-renames)
+  show_changed_file_names "${stance_flags[@]+"${stance_flags[@]}"}" "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
   exit 0
 fi
 

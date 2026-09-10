@@ -102,7 +102,7 @@ These map to custom scripts (see Section 2).
 ### Show (sh*)
 - `sh [<commit>]`: Show commit with files. Args: `[<commit>]` (optional, default HEAD).
 - `shp [<commit>]`: Show commit patch. Args: as above.
-- `shc [<commit>]`: Files changed in commit. Args: `[<commit>]` (optional, default HEAD; also `N`/`-N` and ranges; at most ONE positional — a second is a usage error), `[-n|--name-only]` (optional: paths only, one per line), `[-z|--null]` (optional: with -n only, NUL-separated), `[-- <path>...]` (optional pathspecs).
+- `shc [<commit>]`: Files changed in commit. Args: `[<commit>]` (optional, default HEAD; also `N`/`-N` and ranges; at most ONE positional — a second is a usage error), `[-n|--name-only]` (optional: paths only, one per line), `[-z|--null]` (optional: with -n only, NUL-separated), `[--no-renames]` (optional: with -n only; renames list BOTH sides — the action stance for consumers acting on every touched path), `[-- <path>...]` (optional pathspecs).
 - `shf <file> [git-show-opts]`: File diff in commit. Args: `<file>` (required), Git show options.
 
 ### Tags (t*)
