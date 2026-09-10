@@ -614,8 +614,10 @@ _diff_invoke_combined() { show_combined_diff "$@"; }
 #   NEVER be captured into a shell variable; bash strips NUL bytes).
 # Exit codes:
 #   2    - usage errors this function rejects itself: too few core args,
-#          unknown format, --null with --stat (all via error_usage — which
-#          exits; an `||` fallback never sees them).
+#          unknown format, --null with --stat, a `-`-prefixed token in the
+#          <format> or <resolved_ref> slot, or a `-`-prefixed pathspec
+#          candidate appearing before any `--` separator (all via error_usage
+#          — which exits; an `||` fallback never sees them).
 #   Else - the underlying git command's (0 on success; 128 + git's fatal on
 #          a bad ref). Nothing is swallowed here; callers own error policy
 #          (2>/dev/null, || true, branding).
@@ -645,6 +647,15 @@ _diff_invoke_combined() { show_combined_diff "$@"; }
 #     emitted as the first NUL entry.)
 #   - --null with --stat is rejected via error_usage (NUL is a --name-only
 #     contract; --stat is human-formatted).
+#   - Misplaced leading flags are rejected loudly (exit 2), never silently
+#     bound as pathspecs: `pinned_diff --name-only HEAD --null` used to return
+#     empty output with exit 0 (--null became a pathspec literally named
+#     "--null") — the worst failure class for an action-list builder, which
+#     would skip every action (elifarley/hug-scm#284). The `--` separator
+#     remains the escape hatch: everything after it is pathspec DATA,
+#     preserving `hug shc HEAD -- -- <path>` (parse_pathspecs passes a second
+#     `--` through as a literal candidate) and pathspecs named like flags
+#     (-weird.txt).
 #   - Merge-commit single-commit shows nothing (diff-tree without -m) — known
 #     parity with the stats mode, see elifarley/hug-scm#268.
 pinned_diff() {
@@ -665,10 +676,47 @@ pinned_diff() {
     if [[ $# -lt 2 ]]; then
         error_usage "pinned_diff: expected [--null] [--no-renames] <format> <resolved_ref> [pathspec...]"
     fi
+    # Misplaced-flag guard, BEFORE any positional read (set -u ordering: $1/$2 are
+    # guaranteed only past the count guard above). Two rejection classes
+    # (elifarley/hug-scm#284):
+    #   - A `-`-prefixed token in the resolved_ref slot (`--name-only --null HEAD`)
+    #     used to reach git as the tree-ish → raw git usage dump (129/128-class).
+    #     No ref or range starts with '-' (git check-ref-format refuses it), so a
+    #     dash here is ALWAYS a misplaced flag, never a real ref.
+    #   - A `-`-prefixed NON-format token in the format slot (--patch) reads as a
+    #     misplaced flag, not an "unknown format" — same actionable message.
+    # Both become this function's coherent exit-2 instead of failing later in git.
+    if [[ "$1" == -* && "$1" != "--name-only" && "$1" != "--stat" ]]; then
+        error_usage "pinned_diff: leading flags must precede <format> <resolved_ref> (got '$1')"
+    fi
+    if [[ "$2" == -* ]]; then
+        error_usage "pinned_diff: leading flags must precede <format> <resolved_ref> (got '$2')"
+    fi
     local format="$1" resolved_ref="$2"
     shift 2
     local -a path_args=()
-    [[ $# -gt 0 ]] && path_args=(-- "$@")
+    if [[ $# -gt 0 ]]; then
+        # A `-`-prefixed candidate BEFORE any literal `--` is a misplaced flag bound
+        # as a PATHSPEC (`--name-only HEAD --null` → pathspec literally named
+        # "--null" → git diffs nothing, empty stdout, exit 0 — the silent-empty
+        # trap, worst failure class for an action-list builder; elifarley/hug-scm#284).
+        # The scan STOPS at the first literal `--` element: that is the documented
+        # escape hatch — parse_pathspecs passes a SECOND `--` through as a literal
+        # candidate (hug shc HEAD -- -- foo.txt → candidates=(-- foo.txt)), and git
+        # tracks files literally named like flags (-weird.txt). Everything after a
+        # `--` is pathspec DATA, never a flag. if-statements (not `[[ ]] && cmd`)
+        # so set -e can't misfire on a false condition.
+        local cand
+        for cand in "$@"; do
+            if [[ "$cand" == "--" ]]; then
+                break
+            fi
+            if [[ "$cand" == -* ]]; then
+                error_usage "pinned_diff: leading flags must precede <format> <resolved_ref> (got '$cand')"
+            fi
+        done
+        path_args=(-- "$@")
+    fi
     local -a zflag=()
     $null_mode && zflag=(-z)
     # Rename stance is a never-empty scalar, so plain "$rename_flag" is set -u-safe

@@ -93,7 +93,11 @@ _make_fixture() {
 
 @test "pinned_diff: unknown format is rejected (exit 2)" {
   _make_fixture
-  run pinned_diff --patch HEAD
+  # The bogus format is a NON-dash token on purpose: a `-`-prefixed token in
+  # the format slot (--patch) is classified as a MISPLACED LEADING FLAG
+  # ("leading flags must precede", elifarley/hug-scm#284) — this test pins the
+  # remaining class, a garbage non-dash format, which stays "unknown format".
+  run pinned_diff patch HEAD
   assert_failure 2
   assert_output --partial 'unknown format'
 }
@@ -103,6 +107,54 @@ _make_fixture() {
   run pinned_diff --name-only
   assert_failure 2
   assert_output --partial 'expected'
+}
+
+@test "pinned_diff: misplaced flag in pathspec position is rejected (exit 2, not silent-empty)" {
+  _make_fixture
+  # THE silent-empty trap (elifarley/hug-scm#284): `--null` arriving after the
+  # resolved_ref is bound as a PATHSPEC literally named "--null" — git diffs
+  # nothing, prints nothing, exits 0. For an action-list builder an empty
+  # stdout + exit 0 is the worst failure class: every downstream action is
+  # silently skipped. Must be a loud exit-2 usage error naming the expected
+  # argument order instead.
+  run pinned_diff --name-only HEAD --null
+  assert_failure 2
+  assert_output --partial 'leading flags must precede'
+  assert_output --partial "(got '--null')"
+}
+
+@test "pinned_diff: misplaced flag in resolved_ref position is rejected (exit 2, not raw git usage)" {
+  _make_fixture
+  # The loud sibling (elifarley/hug-scm#284): a flag in the resolved_ref slot
+  # used to die as git's own usage dump (exit 129/128-class) — incoherent for
+  # hug callers expecting the library's exit-2 usage contract. Now rejected
+  # BEFORE any git invocation, with the same order-naming message. (No ref or
+  # range can start with '-': git check-ref-format refuses it — so a dash
+  # token in this slot is always a misplaced flag, never a real ref.)
+  run pinned_diff --name-only --null HEAD
+  assert_failure 2
+  assert_output --partial 'leading flags must precede'
+  assert_output --partial "(got '--null')"
+}
+
+@test "pinned_diff: post--- pathspecs named like flags still work (escape hatch)" {
+  # Regression guard for the guard itself: a `-`-prefixed token AFTER a `--`
+  # separator is pathspec DATA, never a flag. Two escape-hatch stances pinned:
+  # (1) git tracks files literally named like flags (-weird.txt);
+  # (2) parse_pathspecs passes a SECOND `--` through as a literal candidate
+  #     element (hug shc HEAD -- -- foo.txt → candidates=(-- foo.txt)), so a
+  #     leading `--` element in the candidate list must STOP the guard scan,
+  #     not reject. Own fixture: _make_fixture's rename would muddy the
+  #     single-commit pathspec story here.
+  echo a > plain.txt
+  echo a > ./-weird.txt
+  git add -A && git commit -qm c1
+  run pinned_diff --name-only HEAD -- '-weird.txt'
+  assert_success
+  assert_line '-weird.txt'
+  run pinned_diff --name-only HEAD -- -- '-weird.txt'
+  assert_success
+  assert_line '-weird.txt'
 }
 
 @test "pinned_diff: quotePath pin defeats hostile core.quotePath=true (non-ASCII raw)" {
