@@ -64,9 +64,10 @@ DESCRIPTION:
     For ranges, shows cumulative file changes across all commits in the range.
 
     Exception — merge commits: git suppresses merge diffs by default,
-    so a merge commit lists NO changes in ANY mode (empty output,
-    exit 0). Use 'git show --stat <merge-commit>' for the first-parent
-    view instead.
+    so a merge commit as the single-commit argument lists NO changes
+    (empty stdout, exit 0; the stderr header still prints). Ranges are
+    unaffected — a range spanning a merge lists its files. Use
+    'git show --stat <merge-commit>' for the first-parent view.
 
     This command is the canonical source for file statistics display.
     It is used internally by other Hug commands (h files, h squash, shcp,
@@ -131,6 +132,8 @@ GIT EQUIVALENTS:
     # is what hug uses internally; dropping those flags would prepend the
     # commit hash and break the one-path-per-line contract, and without
     # --find-renames a rename lists BOTH sides instead of the new path only.
+    # Merge commits are the one divergence: git show --stat lists their files,
+    # hug shc lists none — see the merge exception in DESCRIPTION above.
 
 SEE ALSO:
     hug sh       : Show commit info with file stats

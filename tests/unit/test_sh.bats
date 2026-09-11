@@ -428,9 +428,12 @@ teardown() {
   refute_output --regexp 'git diff --stat HEAD[[:space:]]+→'
   assert_output --partial "git show --stat HEAD"
   # Merge commits list nothing today (git suppresses merge diffs; issue 268) —
-  # the help must say so instead of letting exit-0 emptiness look like success.
+  # the help must say so, stdout-scoped and single-commit-scoped, instead of
+  # letting exit-0 emptiness look like success.
   assert_output --partial "suppresses merge diffs"
   assert_output --partial "git show --stat <merge-commit>"
+  assert_output --partial "empty stdout, exit 0"
+  assert_output --partial "a range spanning a merge lists its files"
 }
 
 @test "hug shc -n: prints repo-relative paths only for single commit" {
@@ -568,6 +571,22 @@ teardown() {
   git checkout -q main
   git merge -q --no-ff side -m "Merge side" >/dev/null 2>&1
   run hug shc -n HEAD
+  assert_success
+  assert_output ""
+}
+
+@test "hug shc: merge commit shows nothing in default --stat mode (contract behind the help caveat, issue 268)" {
+  git checkout -q -b side-stat HEAD~1
+  echo side > side-stat.txt
+  git add side-stat.txt
+  git commit -qm "side-stat change"
+  git checkout -q main
+  git merge -q --no-ff side-stat -m "Merge side-stat" >/dev/null 2>&1
+  # Pins the CONTRACT the help caveat documents: empty stdout, exit 0. Plain
+  # `run` would merge the stderr header into $output, so --separate-stderr is
+  # load-bearing here (bats >= 1.14). When issue 268 lands the -m fix, this
+  # test and the caveat in git-shc's help must flip together.
+  run --separate-stderr hug shc HEAD
   assert_success
   assert_output ""
 }
