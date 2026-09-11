@@ -232,3 +232,52 @@ _make_fixture() {
   assert_failure 128
   assert_output --partial 'fatal'
 }
+
+# Fixture: branch `side` adds side.txt at HEAD; merge --no-ff into the main
+# line (main did NOT move → parent-2 diff is empty, so -m output lists
+# side.txt exactly once). Deterministic typical-merge shape.
+_make_merge_fixture() {
+  _make_fixture
+  git checkout -qb side
+  echo s > side.txt && git add side.txt && git commit -qm side
+  git checkout -q main
+  git merge -q --no-ff side -m "Merge side"
+}
+
+@test "pinned_diff: merge commit suppressed by default (v1 byte-identical guard)" {
+  _make_merge_fixture
+  run pinned_diff --name-only HEAD
+  assert_success
+  assert_output ""
+}
+
+@test "pinned_diff: --merge-aware lists merge changes vs each parent (-n)" {
+  _make_merge_fixture
+  run pinned_diff --merge-aware --name-only HEAD
+  assert_success
+  assert_line "side.txt"
+}
+
+@test "pinned_diff: --merge-aware --stat lists merge stats" {
+  _make_merge_fixture
+  run pinned_diff --merge-aware --stat HEAD
+  assert_success
+  assert_output --partial "side.txt"
+}
+
+@test "pinned_diff: --merge-aware is byte-identical no-op on non-merge commits" {
+  _make_fixture
+  run pinned_diff --name-only HEAD
+  [[ "$status" -eq 0 ]]
+  local plain="$output"
+  run pinned_diff --merge-aware --name-only HEAD
+  assert_success
+  [[ "$output" == "$plain" ]]
+}
+
+@test "pinned_diff: --merge-aware rejected for ranges" {
+  _make_fixture
+  run pinned_diff --merge-aware --name-only 'HEAD~1..HEAD'
+  assert_failure
+  assert_output --partial "--merge-aware is only valid for single commits"
+}
