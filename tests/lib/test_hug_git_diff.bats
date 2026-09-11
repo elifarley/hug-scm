@@ -278,6 +278,17 @@ _make_merge_fixture() {
 @test "pinned_diff: --merge-aware rejected for ranges" {
   _make_fixture
   run pinned_diff --merge-aware --name-only 'HEAD~1..HEAD'
-  assert_failure
+  assert_failure 2
   assert_output --partial "--merge-aware is only valid for single commits"
+}
+
+@test "pinned_diff: --merge-aware is a no-op on the root commit (single parent)" {
+  _make_fixture
+  root=$(git rev-list --max-parents=0 HEAD)
+  run pinned_diff --name-only "$root"
+  [[ "$status" -eq 0 ]]
+  local plain="$output"
+  run pinned_diff --merge-aware --name-only "$root"
+  assert_success
+  [[ "$output" == "$plain" ]]
 }

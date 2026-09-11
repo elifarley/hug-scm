@@ -717,9 +717,12 @@ pinned_diff() {
         # call ONLY when --merge-aware was passed; the default path pays nothing.
         # No `--` before the ref: rev-list requires a rev BEFORE `--` (anything
         # after it is a PATH) and would usage-error with exit 129.
+        # stderr silenced (2>/dev/null): on a bad ref, rev-list's own fatal
+        # would duplicate diff-tree's authoritative one — diff-tree owns the
+        # error surface, and exit 128 still propagates through it.
         local -a merge_flag=()
         if $merge_aware &&
-           [[ $(git rev-list --parents -n 1 "$resolved_ref" | wc -w) -gt 2 ]]; then
+           [[ $(git rev-list --parents -n 1 "$resolved_ref" 2>/dev/null | wc -w) -gt 2 ]]; then
             merge_flag=(-m)
         fi
         git -c core.quotePath=false -c diff.relative=false \
