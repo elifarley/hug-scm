@@ -14,6 +14,7 @@
 #   - diff_has_working_changes: Check if net working-tree changes exist (vs HEAD)
 #   - pinned_diff: The canonical pinned changed-files invocation for a commit
 #     or range — the one flag set all changed-files call sites delegate to
+#   - is_merge_commit: True iff a single-commit ref has more than one parent
 
 ################################################################################
 # Idempotent Guards
@@ -586,6 +587,21 @@ _diff_invoke_unstaged() { show_unstaged_diff "$@"; }
 _diff_invoke_staged() { show_staged_diff "$@"; }
 _diff_invoke_combined() { show_combined_diff "$@"; }
 
+# True iff <resolved_ref> is a merge commit (more than one parent).
+# Usage: is_merge_commit <resolved_ref>
+# rev-list --parents prints "<commit> <parent>..." — word count > 2 ⇔ merge.
+# GOTCHA: no `--` before the ref — rev-list treats post-`--` tokens as PATHs
+# and usage-errors (exit 129). Stderr is silenced: callers that probe
+# speculatively must not duplicate the authoritative error their diff
+# invocation will print anyway.
+# Precondition: a SINGLE-commit ref. A range is not a commit — `rev-list -n 1
+# <range>` prints the range TIP (+ its parents), so on a range this answers
+# "is the tip a merge", not "is this a merge". Callers must gate on is_range
+# first (pinned_diff rejects --merge-aware on ranges for the same reason).
+is_merge_commit() {
+    [[ $(git rev-list --parents -n 1 "$1" 2> /dev/null | wc -w) -gt 2 ]]
+}
+
 ################################################################################
 # pinned_diff — the canonical pinned changed-files invocation
 ################################################################################
@@ -712,19 +728,12 @@ pinned_diff() {
             diff "$format" "${zflag[@]+"${zflag[@]}"}" "$rename_flag" --ignore-submodules=none \
             "$resolved_ref" "${path_args[@]+"${path_args[@]}"}"
     else
-        # Merge detection: rev-list --parents prints "<commit> <parent>..." —
-        # word count > 2 ⇔ more than one parent ⇔ merge. Cost: one rev-list
-        # call ONLY when --merge-aware was passed; the default path pays nothing.
-        # No `--` before the ref: rev-list requires a rev BEFORE `--` (anything
-        # after it is a PATH) and would usage-error with exit 129.
-        # stderr silenced (2>/dev/null): on a bad ref, rev-list's own fatal
-        # would duplicate diff-tree's authoritative one — diff-tree owns the
-        # error surface, and exit 128 still propagates through it.
+        # Merge detection: is_merge_commit (above) owns the rev-list probe.
+        # Cost: one rev-list call ONLY when --merge-aware was passed; the
+        # default path pays nothing. Reachable only for non-ranges — the
+        # usage guard above rejects --merge-aware + range first.
         local -a merge_flag=()
-        if $merge_aware &&
-           [[ $(git rev-list --parents -n 1 "$resolved_ref" 2>/dev/null | wc -w) -gt 2 ]]; then
-            merge_flag=(-m)
-        fi
+        $merge_aware && is_merge_commit "$resolved_ref" && merge_flag=(-m)
         git -c core.quotePath=false -c diff.relative=false \
             diff-tree --no-commit-id "$format" -r --root "${merge_flag[@]+"${merge_flag[@]}"}" \
             "${zflag[@]+"${zflag[@]}"}" "$rename_flag" --ignore-submodules=none \

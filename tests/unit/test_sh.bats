@@ -418,7 +418,7 @@ teardown() {
   assert_output --partial "Show files changed"
 }
 
-@test "hug shc -h: equivalents use git show; merge-commit silence documented" {
+@test "hug shc -h: equivalents use git show; merge per-parent diffs documented" {
   run hug shc -h
   assert_success
   # 'git diff --stat HEAD' is the WORKING-TREE-vs-HEAD diff (empty on a clean
@@ -427,18 +427,10 @@ teardown() {
   # (no space between HEAD and ~) out of this refutation.
   refute_output --regexp 'git diff --stat HEAD[[:space:]]+→'
   assert_output --partial "git show --stat HEAD"
-  # Merge commits list nothing today (git suppresses merge diffs; issue 268) —
-  # the help must say so, stdout-scoped and single-commit-scoped, instead of
-  # letting exit-0 emptiness look like success.
-  assert_output --partial "suppresses merge diffs"
-  assert_output --partial "git show --stat <merge-commit>"
-  assert_output --partial "empty stdout, exit 0"
-  assert_output --partial "a range spanning a merge lists its files"
-  # Round-3 precision: header is -q/HUG_QUIET-scoped; the pathspec hint
-  # actively misreports; the equivalents comment no longer says "one".
-  assert_output --partial "without -q or HUG_QUIET"
-  assert_output --partial 'the "No files matching" hint is'
-  assert_output --partial "notable divergence"
+  # Merge contract (issue 268 FIXED): help documents per-parent diffs.
+  assert_output --partial "against EACH parent"
+  assert_output --partial "once per parent diff"
+  assert_output --partial "first-parent-only view"
 }
 
 @test "hug shc -n: prints repo-relative paths only for single commit" {
@@ -568,7 +560,7 @@ teardown() {
   assert_output "renamed.txt"
 }
 
-@test "hug shc -n: merge commit shows nothing (parity with --stat, issue 268)" {
+@test "hug shc -n: merge commit lists merged files (parity with --stat, issue 268)" {
   git checkout -q -b side HEAD~1
   echo side > side.txt
   git add side.txt
@@ -577,23 +569,43 @@ teardown() {
   git merge -q --no-ff side -m "Merge side" >/dev/null 2>&1
   run hug shc -n HEAD
   assert_success
-  assert_output ""
+  assert_line "side.txt"
 }
 
-@test "hug shc: merge commit shows nothing in default --stat mode (contract behind the help caveat, issue 268)" {
+@test "hug shc: merge commit lists changes vs each parent (--stat, issue 268)" {
   git checkout -q -b side-stat HEAD~1
   echo side > side-stat.txt
   git add side-stat.txt
   git commit -qm "side-stat change"
   git checkout -q main
   git merge -q --no-ff side-stat -m "Merge side-stat" >/dev/null 2>&1
-  # Pins the CONTRACT the help caveat documents: empty stdout, exit 0. Plain
-  # `run` would merge the stderr header into $output, so --separate-stderr is
-  # load-bearing here (bats >= 1.14). When issue 268 lands the -m fix, this
-  # test and the caveat in git-shc's help must flip together.
+  # Issue 268 FIXED: per-parent diff (git -m). The side branch is cut from
+  # HEAD~1, so it lacks feature2.txt — feature2.txt can only appear via the
+  # PARENT-2 diff, making it the discriminator that BOTH parents were diffed
+  # (a first-parent-only view would list side-stat.txt alone). Stat form is
+  # not bare lines, so assertions are --partial (this file's --stat idiom).
+  # --separate-stderr stays: stdout-only assertions.
   run --separate-stderr hug shc HEAD
   assert_success
-  assert_output ""
+  assert_output --partial "side-stat.txt"
+  assert_output --partial "feature2.txt"
+}
+
+@test "hug shc -n: range whose tip is a merge keeps working (no --merge-aware leak)" {
+  # is_merge_commit probes a SINGLE commit; for a range, `rev-list -n 1` prints
+  # the range TIP (+ its parents), so an unguarded probe would answer "is the
+  # tip a merge" and leak --merge-aware into pinned_diff — which usage-errors
+  # (exit 2) on ranges. The wiring gates on is_range; this pins that gate.
+  git checkout -q -b side-range HEAD~1
+  echo side > side-range.txt
+  git add side-range.txt
+  git commit -qm "side-range change"
+  git checkout -q main
+  git merge -q --no-ff side-range -m "Merge side-range" >/dev/null 2>&1
+  run hug shc -n HEAD~2..HEAD
+  assert_success
+  assert_line "side-range.txt"
+  assert_line "feature2.txt"
 }
 
 # -----------------------------------------------------------------------------
