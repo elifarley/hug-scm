@@ -11,6 +11,9 @@ set -euo pipefail
 
 # Part of the Hug tool suite
 
+# NOTE: merge commits currently print NOTHING (git suppresses merge diffs
+# without -m/-c/--cc; test-pinned in tests/unit/test_sh.bats "issue 268").
+# The help text documents this caveat — update both together when #268 lands.
 show_help() {
   cat << 'EOF'
 hug shc: Show files changed in a commit or range with statistics.
@@ -59,6 +62,11 @@ DESCRIPTION:
     For -N (1-999), shows cumulative file changes in last N commits.
     For single commits, shows files changed in that commit.
     For ranges, shows cumulative file changes across all commits in the range.
+
+    Exception — merge commits: git suppresses merge diffs by default,
+    so a merge commit lists NO changes in ANY mode (empty output,
+    exit 0). Use 'git show --stat <merge-commit>' for the first-parent
+    view instead.
 
     This command is the canonical source for file statistics display.
     It is used internally by other Hug commands (h files, h squash, shcp,
@@ -112,7 +120,7 @@ EXAMPLES:
     hug h files -3                 # Preview files touched (no stats)
 
 GIT EQUIVALENTS:
-    git diff --stat HEAD                  →  hug shc
+    git show --stat HEAD                  →  hug shc
     git diff-tree --stat -r HEAD          →  hug shc HEAD
     git diff --stat HEAD~3..HEAD          →  hug shc -3
     git diff --stat main..HEAD -- '*.py'  →  hug shc main..HEAD -- '*.py'

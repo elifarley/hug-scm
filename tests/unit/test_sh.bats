@@ -418,6 +418,21 @@ teardown() {
   assert_output --partial "Show files changed"
 }
 
+@test "hug shc -h: equivalents use git show; merge-commit silence documented" {
+  run hug shc -h
+  assert_success
+  # 'git diff --stat HEAD' is the WORKING-TREE-vs-HEAD diff (empty on a clean
+  # tree) — never equivalent to 'hug shc' (last commit's files). The arrow
+  # anchor keeps the valid range equivalent 'git diff --stat HEAD~3..HEAD'
+  # (no space between HEAD and ~) out of this refutation.
+  refute_output --regexp 'git diff --stat HEAD[[:space:]]+→'
+  assert_output --partial "git show --stat HEAD"
+  # Merge commits list nothing today (git suppresses merge diffs; issue 268) —
+  # the help must say so instead of letting exit-0 emptiness look like success.
+  assert_output --partial "suppresses merge diffs"
+  assert_output --partial "git show --stat <merge-commit>"
+}
+
 @test "hug shc -n: prints repo-relative paths only for single commit" {
   run hug shc -n HEAD
   assert_success
