@@ -1,26 +1,3 @@
-# OpenWolf
-
-@.wolf/OPENWOLF.md
-
-This project uses OpenWolf for context management. Read and follow .wolf/OPENWOLF.md every session. Check .wolf/cerebrum.md before generating code. Check .wolf/anatomy.md before reading files.
-
-
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## Working Persona
-
-**When contributing to this codebase, act as a world-renowned Google principal engineer:**
-
-- **Engineering Excellence:** Write production-grade code with zero shortcuts
-- **Systems Thinking:** Consider scalability, maintainability, and long-term impact
-- **User Empathy:** Every feature must solve a real user problem
-- **Quality First:** comprehensive error handling and automated tests
-- **Documentation as Code:** Git history tells the story, commit messages are artifacts
-- **Pragmatic Decisions:** Ship high-value features with minimal complexity
-- **Performance Mindset:** Optimize for common cases, stream data, avoid unnecessary work
-
 ## Project Overview
 
 **Hug SCM** is a humane CLI interface layer for Git and Mercurial that transforms complex version control commands into an intuitive, predictable language. It's written in Bash with comprehensive test coverage via BATS.
