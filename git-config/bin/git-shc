@@ -14,6 +14,8 @@ set -euo pipefail
 # NOTE: merge commits currently print NOTHING (git suppresses merge diffs
 # without -m/-c/--cc; test-pinned in tests/unit/test_sh.bats "issue 268").
 # The help text documents this caveat — update both together when #268 lands.
+# sh and shp share the same silence (empty "File stats" section for merges)
+# but document none of it — their help needs the same caveat pass in #268.
 show_help() {
   cat << 'EOF'
 hug shc: Show files changed in a commit or range with statistics.
@@ -65,9 +67,11 @@ DESCRIPTION:
 
     Exception — merge commits: git suppresses merge diffs by default,
     so a merge commit as the single-commit argument lists NO changes
-    (empty stdout, exit 0; the stderr header still prints). Ranges are
-    unaffected — a range spanning a merge lists its files. Use
-    'git show --stat <merge-commit>' for the first-parent view.
+    (empty stdout, exit 0; without -q or HUG_QUIET the stderr header
+    still prints). With a pathspec, the "No files matching" hint is
+    misleading — it reports the merge silence, not your filter.
+    Ranges are unaffected — a range spanning a merge lists its files.
+    Use 'git show --stat <merge-commit>' for the first-parent view.
 
     This command is the canonical source for file statistics display.
     It is used internally by other Hug commands (h files, h squash, shcp,
@@ -132,8 +136,9 @@ GIT EQUIVALENTS:
     # is what hug uses internally; dropping those flags would prepend the
     # commit hash and break the one-path-per-line contract, and without
     # --find-renames a rename lists BOTH sides instead of the new path only.
-    # Merge commits are the one divergence: git show --stat lists their files,
-    # hug shc lists none — see the merge exception in DESCRIPTION above.
+    # Merge commits are the notable divergence: git show --stat lists their
+    # files, hug shc lists none — see the merge exception in DESCRIPTION above.
+    # (Output may also differ in quoting: hug pins core.quotePath=false.)
 
 SEE ALSO:
     hug sh       : Show commit info with file stats

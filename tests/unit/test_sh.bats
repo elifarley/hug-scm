@@ -434,6 +434,11 @@ teardown() {
   assert_output --partial "git show --stat <merge-commit>"
   assert_output --partial "empty stdout, exit 0"
   assert_output --partial "a range spanning a merge lists its files"
+  # Round-3 precision: header is -q/HUG_QUIET-scoped; the pathspec hint
+  # actively misreports; the equivalents comment no longer says "one".
+  assert_output --partial "without -q or HUG_QUIET"
+  assert_output --partial 'the "No files matching" hint is'
+  assert_output --partial "notable divergence"
 }
 
 @test "hug shc -n: prints repo-relative paths only for single commit" {
