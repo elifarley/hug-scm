@@ -260,6 +260,13 @@ case "$commit_ref" in
   ;;
 esac
 
+# Fail loudly if the ambient lib predates issue-268: a stale HUG_HOME makes
+# the load-guard skip this checkout's hug-git-diff, leaving is_merge_commit
+# undefined — the if-condition below would swallow that and silently degrade
+# to v1 merge suppression.
+command -v is_merge_commit > /dev/null 2>&1 ||
+  { error "shc: is_merge_commit missing — HUG_HOME (${HUG_HOME:-unset}) predates this lib; re-activate this checkout"; } # exit 1
+
 # Issue 268: a merge commit's plain diff-tree output is EMPTY (git suppresses
 # merge diffs without -m). Opt into per-parent diffs ONLY for merges — every
 # other shape keeps byte-identical output. Detection runs ONCE here so both

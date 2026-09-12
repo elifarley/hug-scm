@@ -393,3 +393,18 @@ _make_octopus_fixture() {
   assert_failure
   assert_output ""
 }
+
+@test "pinned_diff: --merge-aware keeps the rename DISPLAY stance (merged rename lists new path only)" {
+  # Mirrors the single-commit rename tests above, but on a MERGE: the
+  # per-parent diff must keep the default collapse-to-new-path display even
+  # with --merge-aware threaded in (a flag interaction no other test covers).
+  _make_fixture
+  git checkout -qb ren
+  git mv renamed.txt moved.txt && git commit -qm renamed-on-side
+  git checkout -q main
+  git merge -q --no-ff ren -m "Merge ren"
+  run pinned_diff --merge-aware --name-only HEAD
+  assert_success
+  assert_line "moved.txt"
+  refute_line "renamed.txt"
+}

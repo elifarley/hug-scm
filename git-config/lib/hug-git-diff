@@ -696,7 +696,7 @@ pinned_diff() {
     # too few args dies as "unbound variable" (exit 1) — a caller bug must surface
     # as error_usage (exit 2), not a raw bash trace.
     if [[ $# -lt 2 ]]; then
-        error_usage "pinned_diff: expected [--null] [--no-renames] <format> <resolved_ref> [pathspec...]"
+        error_usage "pinned_diff: expected [--null] [--no-renames] [--merge-aware] <format> <resolved_ref> [pathspec...]"
     fi
     local format="$1" resolved_ref="$2"
     shift 2

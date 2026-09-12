@@ -20,6 +20,18 @@ teardown() {
   cleanup_test_repo
 }
 
+# One-argument merge fixture: branch <name> from HEAD~1 adds <name>.txt,
+# merges --no-ff back into main (mirrors _make_merge_fixture in the lib tests).
+_setup_merge_fixture() {
+  local b="$1"
+  git checkout -q -b "$b" HEAD~1
+  echo "$b" > "$b.txt"
+  git add "$b.txt"
+  git commit -qm "$b change"
+  git checkout -q main
+  git merge -q --no-ff "$b" -m "Merge $b" >/dev/null 2>&1
+}
+
 # -----------------------------------------------------------------------------
 # hug sh tests (show commit with file stats)
 # -----------------------------------------------------------------------------
@@ -62,6 +74,8 @@ teardown() {
   assert_success
   assert_output --partial "USAGE:"
   assert_output --partial "Show commit(s) with file statistics"
+  # Merge caveat (issue 268): sh inherits shc's per-parent stats contract.
+  assert_output --partial "once per parent"
 }
 
 @test "hug sh: handles HEAD~ notation" {
@@ -132,6 +146,8 @@ teardown() {
   assert_success
   assert_output --partial "USAGE:"
   assert_output --partial "Show commit(s) with patch and file statistics"
+  # Merge caveat (issue 268): shp inherits shc's per-parent stats contract.
+  assert_output --partial "once per parent"
 }
 
 @test "hug shp: handles HEAD~ notation" {
@@ -570,12 +586,7 @@ teardown() {
 }
 
 @test "hug shc -n: merge commit lists merged files (parity with --stat, issue 268)" {
-  git checkout -q -b side HEAD~1
-  echo side > side.txt
-  git add side.txt
-  git commit -qm "side change"
-  git checkout -q main
-  git merge -q --no-ff side -m "Merge side" >/dev/null 2>&1
+  _setup_merge_fixture side
   run hug shc -n HEAD
   assert_success
   assert_line "side.txt"
@@ -587,12 +598,7 @@ teardown() {
 }
 
 @test "hug shc: merge commit lists changes vs each parent (--stat, issue 268)" {
-  git checkout -q -b side-stat HEAD~1
-  echo side > side-stat.txt
-  git add side-stat.txt
-  git commit -qm "side-stat change"
-  git checkout -q main
-  git merge -q --no-ff side-stat -m "Merge side-stat" >/dev/null 2>&1
+  _setup_merge_fixture side-stat
   # Issue 268 FIXED: per-parent diff (git -m). The side branch is cut from
   # HEAD~1, so it lacks feature2.txt — feature2.txt can only appear via the
   # PARENT-2 diff, making it the discriminator that BOTH parents were diffed
@@ -610,12 +616,7 @@ teardown() {
   # the range TIP (+ its parents), so an unguarded probe would answer "is the
   # tip a merge" and leak --merge-aware into pinned_diff — which usage-errors
   # (exit 2) on ranges. The wiring gates on is_range; this pins that gate.
-  git checkout -q -b side-range HEAD~1
-  echo side > side-range.txt
-  git add side-range.txt
-  git commit -qm "side-range change"
-  git checkout -q main
-  git merge -q --no-ff side-range -m "Merge side-range" >/dev/null 2>&1
+  _setup_merge_fixture side-range
   run hug shc -n HEAD~2..HEAD
   assert_success
   assert_line "side-range.txt"
@@ -623,12 +624,7 @@ teardown() {
 }
 
 @test "hug sh: merge commit File stats list merged files (shc delegation, issue 268)" {
-  git checkout -q -b side-sh HEAD~1
-  echo side > side-sh.txt
-  git add side-sh.txt
-  git commit -qm "side-sh change"
-  git checkout -q main
-  git merge -q --no-ff side-sh -m "Merge side-sh" >/dev/null 2>&1
+  _setup_merge_fixture side-sh
   # hug-git-show delegates stats via `HUG_QUIET=T git shc` — shc's merge
   # awareness (issue 268) must surface here without any sh-specific merge
   # code. Issue 268 FIXED: per-parent diff (git -m). The side branch is cut
@@ -647,13 +643,8 @@ teardown() {
   refute_output --partial "Changed files"
 }
 
-@test "hug-file-input: merge stays suppressed (no --merge-aware opt-in — deliberate boundary)" {
-  git checkout -q -b side-fi HEAD~1
-  echo side > side-fi.txt
-  git add side-fi.txt
-  git commit -qm "side-fi change"
-  git checkout -q main
-  git merge -q --no-ff side-fi -m "Merge side-fi" >/dev/null 2>&1
+@test "pinned_diff: merge stays suppressed without --merge-aware — the boundary hug-file-input relies on" {
+  _setup_merge_fixture side-fi
   # Pinned so an accidental default-on flip of pinned_diff is caught:
   # only explicit --merge-aware callers may see merge diffs (the two-valued
   # contract a shared helper owes its call sites). hug-file-input calls
@@ -679,12 +670,7 @@ teardown() {
   # exact single-line match proves the flag reached the git invocation with
   # the pathspec intact (a dropped -m yields empty; a mangled arg list
   # yields a git fatal).
-  git checkout -q -b side-ps HEAD~1
-  echo side > side-ps.txt
-  git add side-ps.txt
-  git commit -qm "side-ps change"
-  git checkout -q main
-  git merge -q --no-ff side-ps -m "Merge side-ps" >/dev/null 2>&1
+  _setup_merge_fixture side-ps
   run hug shc -n HEAD -- 'feature2.txt'
   assert_success
   assert_output "feature2.txt"
@@ -696,12 +682,7 @@ teardown() {
   # section (git show, no -m): on a clean merge it stays empty while stats
   # list files, and that contrast is the pin — it proves stats merge-
   # awareness did NOT leak into the patch side (elifarley/hug-scm#346).
-  git checkout -q -b side-shp HEAD~1
-  echo side > side-shp.txt
-  git add side-shp.txt
-  git commit -qm "side-shp change"
-  git checkout -q main
-  git merge -q --no-ff side-shp -m "Merge side-shp" >/dev/null 2>&1
+  _setup_merge_fixture side-shp
   run hug shp HEAD
   assert_success
   # Mixed-stream run (same idiom as the sh merge test): the "File stats:"
@@ -725,12 +706,7 @@ teardown() {
   # from LLM output entirely. The fix makes merges capture stats, so the
   # section must now appear — a consumer-visible format change that no
   # other test covered.
-  git checkout -q -b side-llm HEAD~1
-  echo side > side-llm.txt
-  git add side-llm.txt
-  git commit -qm "side-llm change"
-  git checkout -q main
-  git merge -q --no-ff side-llm -m "Merge side-llm" >/dev/null 2>&1
+  _setup_merge_fixture side-llm
   run hug sh --llm HEAD
   assert_success
   assert_output --partial "<stats>"
@@ -738,6 +714,36 @@ teardown() {
   assert_output --partial "side-llm.txt"
   # Both-parents discriminator: a first-parent-only regression would drop
   # feature2.txt from the stats and this fails.
+  assert_output --partial "feature2.txt"
+}
+
+@test "hug shc -n: merge with a file changed on BOTH sides lists it once per parent (help contract)" {
+  # The shc -h caveat promises "a file touched on both sides appears once per
+  # parent" — this pins it at the shc level (the lib pin lives in
+  # test_hug_git_diff.bats). Unlike the _setup_merge_fixture shape, BOTH
+  # parents modify shared.txt in disjoint regions, so the auto-merge is
+  # clean and shared.txt surfaces in the per-parent diff of EACH parent.
+  printf 'a\nshared\n' > shared.txt && git add shared.txt && git commit -qm shared-base
+  git checkout -qb theirs
+  printf 'a\nshared\ntheirs\n' > shared.txt && git commit -qam theirs-edit
+  git checkout -q main
+  printf 'b\nshared\n' > shared.txt && git commit -qam ours-edit
+  git merge -q --no-ff theirs -m merged
+  run hug shc -n HEAD
+  assert_success
+  [[ "$(printf '%s\n' "$output" | grep -cx 'shared.txt')" -eq 2 ]]
+}
+
+@test "hug shcp: merge stats list merged files (git shc delegation, issue 268)" {
+  # Third leg of the delegation contract: sh and shp had pins, shcp did not.
+  # Same delegation as its siblings (HUG_QUIET=T git shc), so merge-aware
+  # stats must surface here too — feature2.txt is the both-parents
+  # discriminator (see the sh merge test above).
+  _setup_merge_fixture side-shcp
+  run hug shcp HEAD
+  assert_success
+  assert_output --partial "File stats:"
+  assert_output --partial "side-shcp.txt"
   assert_output --partial "feature2.txt"
 }
 
@@ -1084,6 +1090,8 @@ teardown() {
   assert_success
   assert_output --partial "USAGE:"
   assert_output --partial "Show cumulative diff and file statistics"
+  # Merge caveat (issue 268): shcp inherits shc's per-parent stats contract.
+  assert_output --partial "once per parent"
 }
 
 @test "hug shcp: handles non-existent commit gracefully" {
