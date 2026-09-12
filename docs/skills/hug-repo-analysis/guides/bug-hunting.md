@@ -102,11 +102,19 @@ hug shp <commit-hash>
 
 # See what files changed together
 hug shc <commit-hash>
-hug shc -n <commit-hash>      # paths only, for piping into other tools
+hug shc -n <commit-hash>      # paths only — human display (line mode C-quotes
+                              # structural-char names; not pipe-safe)
+hug shc -n -z <commit-hash> | xargs -0 -r <cmd>   # for piping: NUL-separated raw paths
 
 # See all files in that timeframe
 hug h files <commit-hash>
 ```
+
+When piping `shc -n` into other tools, always add `-z`: line mode C-quotes
+filenames containing structural characters (newline, backslash, quote, tab),
+and only the `-z` stream is fully raw. Keep `-r` on GNU xargs — without it,
+xargs runs the command once operand-less on empty input; BSD/macOS xargs
+needs no `-r`.
 
 ### Phase 5: Understand the Context
 
