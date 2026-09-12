@@ -712,12 +712,13 @@ EOF
 - [ ] `git-dd:75-77` no longer derives a dd-vs-shp contrast from shp's combined diff.
 - [ ] `docs/commands/head.md:217` no longer says patch sections stay empty.
 - [ ] The `:634` test comment no longer describes #346 as open.
-- [ ] Sweep: `grep -rnE "stays? empty on clean merges|combined diff" docs/ README.md git-config/ tests/ CHANGELOG.md | grep -v ".vitepress/dist" | grep -v "superpowers/"` returns EXACTLY these five allowlisted residuals, each for a stated reason (census re-derived on the post-edit tree — do not trust prior rounds' lists):
+- [ ] Sweep: `grep -rnE "stays? empty on clean merges|combined diff" docs/ README.md git-config/ tests/ CHANGELOG.md | grep -v ".vitepress/dist" | grep -v "superpowers/"` returns EXACTLY these SIX allowlisted residuals, each for a stated reason (census re-derived on the post-edit tree — including the lines this plan's own new tests introduce; do not trust prior rounds' lists):
   1. `CHANGELOG.md:421` — released history carrying the dying dd-vs-shp contrast (stays; superseded by the next release note).
   2. `git-config/bin/git-dd:76` — the reworded line still contains dd's own accurate "(not a combined diff)" half (dd's difftool diff is a plain two-tree diff, never `--cc`).
   3. `docs/practical-workflows.md:39` — "combined diff" describes `hug sw` (staged+unstaged combined view) — accurate, unrelated feature.
   4. `tests/unit/test_status_staging.bats:388` — `sw --stat` test name using sw's "combined diff" — accurate, unrelated feature.
   5. `tests/unit/test_status_staging.bats:1693` — same, sw pathspec test name.
+  6. `tests/unit/test_shv.bats:192` — the shv `-h` probe's own `refute_output --partial "combined diff"` (added by Task 4): an accurate assertion-of-absence pin, the same semantic class as entry 2.
   `CHANGELOG.md:10` (the v1.18.0.0 note) is deliberately NOT on this list: its word order ("on clean merges stay empty") never matches the pattern — it is released history, allowed unconditionally and superseded by the next release note. Any hit outside the list is a missed edit — fix the edit, not the list.
 - [ ] `make test-bash` passes; `make docs-build` succeeds.
 
@@ -766,7 +767,7 @@ Patch sections on merges show the FIRST-PARENT diff — what the merge brought i
 - [ ] **Step 4: Run the sweep and audit against the allowlist**
 
 Run: `grep -rnE "stays? empty on clean merges|combined diff" docs/ README.md git-config/ tests/ CHANGELOG.md | grep -v ".vitepress/dist" | grep -v "superpowers/"`
-Expected: EXACTLY the five allowlisted residuals from the AC above (`CHANGELOG.md:421`, `git-config/bin/git-dd:76`, `docs/practical-workflows.md:39`, `tests/unit/test_status_staging.bats:388`, `tests/unit/test_status_staging.bats:1693`). Any other hit is a missed edit in Tasks 1–5 — fix the edit, never widen the allowlist to absorb it.
+Expected: EXACTLY the six allowlisted residuals from the AC above (`CHANGELOG.md:421`, `git-config/bin/git-dd:76`, `docs/practical-workflows.md:39`, `tests/unit/test_status_staging.bats:388`, `tests/unit/test_status_staging.bats:1693`, `tests/unit/test_shv.bats:192`). Any other hit is a missed edit in Tasks 1–5 — fix the edit, never widen the allowlist to absorb it.
 
 - [ ] **Step 5: Full validation**
 
