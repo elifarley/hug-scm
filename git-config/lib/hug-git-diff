@@ -603,6 +603,40 @@ is_merge_commit() {
 }
 
 ################################################################################
+# merge_first_parent_patch — the shared first-parent MERGE patch primitive
+################################################################################
+
+# Prints the first-parent patch for a MERGE commit.
+# Usage: merge_first_parent_patch <merge_commit> [git-arg...]
+# Parameters:
+#   $1     - a MERGE commit (caller MUST gate with is_merge_commit; calling
+#            this on a non-merge diffs against its single parent, which is
+#            NOT the contract the `git show` call sites want — they keep
+#            `git show` off-merge to preserve rename rendering).
+#   $2..   - optional extra git args (e.g. `-- <pathspec>...`), passed
+#            through verbatim AFTER the two trees.
+# Output:
+#   `git diff-tree -p --no-commit-id -r --root "$merge^1" "$merge"` on stdout.
+# WHY the two-tree form (probe-verified, git 2.34.1): `diff-tree -m
+# --first-parent` emits the per-parent CONCATENATION — `--first-parent` is
+# a history-traversal option and single-rev diff-tree does not traverse, so
+# it cannot restrict `-m` pairing. `git show` (log family) honors the pair,
+# but its output is git-version-sensitive (no enforced repo floor — only
+# ADR-001's test-strategy 2.23+ is documented) — the two-tree form is
+# version-insensitive by construction and byte-identical
+# to `git show -m --first-parent` on merges whose first-parent diff has no
+# renames (show renders `rename from/to`, diff-tree delete+add).
+# Note: diff-tree defaults to no rename detection (plumbing), unlike
+# `git show` (porcelain `diff.renames` default on), so merge patches render
+# renames as delete+add — consistent with shcp's existing non-merge patch
+# semantics.
+merge_first_parent_patch() {
+    local merge="$1"
+    shift
+    git diff-tree -p --no-commit-id -r --root "$merge^1" "$merge" ${1+"$@"}
+}
+
+################################################################################
 # pinned_diff — the canonical pinned changed-files invocation
 ################################################################################
 
