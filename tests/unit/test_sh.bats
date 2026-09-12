@@ -747,6 +747,39 @@ _setup_merge_fixture() {
   assert_output --partial "feature2.txt"
 }
 
+@test "hug shcp: merge patch shows the first-parent diff (issue 346)" {
+  # Patch contract: parent 1 only (the hug dd rule). side-shcp-patch.txt is
+  # the parent-1-side file; feature2.txt exists only on main (parent 1's
+  # history line is where it lives, but the MERGE introduced it relative to
+  # parent 2 — it must appear in stats (per-parent) yet NOT as a patch hunk,
+  # because it is identical to parent 1).
+  _setup_merge_fixture side-shcp-patch
+  run hug shcp HEAD
+  assert_success
+  assert_output --partial "diff --git a/side-shcp-patch.txt b/side-shcp-patch.txt"
+  refute_output --partial "diff --git a/feature2.txt"
+  # Stats stay per-parent (issue 268 contract, unchanged).
+  assert_output --partial "File stats:"
+  assert_output --partial "feature2.txt"
+}
+
+@test "hug shcp: range whose tip is a merge keeps the endpoint diff" {
+  # Ranges have no merge semantics (two-endpoint diff). Pins that the new
+  # merge gate does not leak into the range branch.
+  _setup_merge_fixture side-shcp-range
+  run hug shcp HEAD~2..HEAD
+  assert_success
+  assert_output --partial "diff --git a/side-shcp-range.txt b/side-shcp-range.txt"
+  assert_output --partial "diff --git a/feature2.txt b/feature2.txt"
+}
+
+@test "hug shcp -h: documents the first-parent merge patch contract" {
+  run hug shcp -h
+  assert_success
+  assert_output --partial "FIRST-PARENT"
+  refute_output --partial "stays empty"
+}
+
 # -----------------------------------------------------------------------------
 # hug shc -z / positional / unborn-HEAD (issue #274)
 # -----------------------------------------------------------------------------
