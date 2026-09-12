@@ -559,7 +559,7 @@ hug sla -- '*.md'     # Pathspec filtering — quote your globs! ('hug sla "*.md
 hug sh [commit] [-- <path>...] # SHow [commit] (with stat; default: last; pathspecs scope the stats)
 hug sh HEAD -- src/a.py        # SHow scoped to a path (see `hug help :pathspec`)
 hug shp [commit]      # SHow: with Patch (commit with patch)
-hug shc [N|commit|range] [-n] [-z] [-- <path>...] # SHow: Changed files (cumulative stats, -n for paths only, -z NUL-separated with -n)
+hug shc [N|commit|range] [-n] [-z] [-- <path>...] # SHow: Changed files (cumulative stats, -n for paths only, -z NUL-separated with -n; merge commits list changes per parent)
 hug shcp [N|commit|range] [-- <path>...] # SHow: Cumulative with Patch (diff + stats, optionally filtered by path)
 hug shv [N|commit|range] [-- <path>...]  # SHow: Visual (shp/shcp in a difftool; commit's patch or range's cumulative diff)
 hug shf <file> [commit] # SHow: File at [commit] (File diff in commit)

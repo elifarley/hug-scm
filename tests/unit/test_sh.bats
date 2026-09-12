@@ -3,6 +3,12 @@
 
 # Load test helpers
 load '../test_helper'
+# Lib functions invoked directly by the hug-file-input boundary pin below:
+# hug-common transitively sources hug-output (error_usage) and hug-git-diff
+# (pinned_diff); hug-git-repo provides is_range — hug-common does NOT load it.
+# Same pattern as tests/lib/test_hug_git_diff.bats.
+load '../../git-config/lib/hug-common'
+load '../../git-config/lib/hug-git-repo'
 
 setup() {
   require_hug
@@ -12,6 +18,18 @@ setup() {
 
 teardown() {
   cleanup_test_repo
+}
+
+# One-argument merge fixture: branch <name> from HEAD~1 adds <name>.txt,
+# merges --no-ff back into main (mirrors _make_merge_fixture in the lib tests).
+_setup_merge_fixture() {
+  local b="$1"
+  git checkout -q -b "$b" HEAD~1
+  echo "$b" > "$b.txt"
+  git add "$b.txt"
+  git commit -qm "$b change"
+  git checkout -q main
+  git merge -q --no-ff "$b" -m "Merge $b" >/dev/null 2>&1
 }
 
 # -----------------------------------------------------------------------------
@@ -56,6 +74,8 @@ teardown() {
   assert_success
   assert_output --partial "USAGE:"
   assert_output --partial "Show commit(s) with file statistics"
+  # Merge caveat (issue 268): sh inherits shc's per-parent stats contract.
+  assert_output --partial "once per parent"
 }
 
 @test "hug sh: handles HEAD~ notation" {
@@ -126,6 +146,8 @@ teardown() {
   assert_success
   assert_output --partial "USAGE:"
   assert_output --partial "Show commit(s) with patch and file statistics"
+  # Merge caveat (issue 268): shp inherits shc's per-parent stats contract.
+  assert_output --partial "once per parent"
 }
 
 @test "hug shp: handles HEAD~ notation" {
@@ -418,6 +440,24 @@ teardown() {
   assert_output --partial "Show files changed"
 }
 
+@test "hug shc -h: equivalents use git show; merge per-parent diffs documented" {
+  run hug shc -h
+  assert_success
+  # 'git diff --stat HEAD' is the WORKING-TREE-vs-HEAD diff (empty on a clean
+  # tree) — never equivalent to 'hug shc' (last commit's files). The arrow
+  # anchor keeps the valid range equivalent 'git diff --stat HEAD~3..HEAD'
+  # (no space between HEAD and ~) out of this refutation.
+  refute_output --regexp 'git diff --stat HEAD[[:space:]]+→'
+  assert_output --partial "git show --stat HEAD"
+  # Merge contract (issue 268 FIXED): help documents per-parent diffs.
+  assert_output --partial "against EACH parent"
+  assert_output --partial "once per parent diff"
+  assert_output --partial "first-parent-only view"
+  # ...and the OLD silence wording must stay gone — a re-addition fails here.
+  refute_output --partial "suppresses merge diffs"
+  refute_output --partial "notable divergence"
+}
+
 @test "hug shc -n: prints repo-relative paths only for single commit" {
   run hug shc -n HEAD
   assert_success
@@ -545,16 +585,166 @@ teardown() {
   assert_output "renamed.txt"
 }
 
-@test "hug shc -n: merge commit shows nothing (parity with --stat, issue 268)" {
-  git checkout -q -b side HEAD~1
-  echo side > side.txt
-  git add side.txt
-  git commit -qm "side change"
-  git checkout -q main
-  git merge -q --no-ff side -m "Merge side" >/dev/null 2>&1
+@test "hug shc -n: merge commit lists merged files (parity with --stat, issue 268)" {
+  _setup_merge_fixture side
   run hug shc -n HEAD
   assert_success
+  assert_line "side.txt"
+  # -z: raw NUL-separated paths (no C-quoting) — proves --merge-aware threads
+  # through show_changed_file_names with the flag. A quoting regression
+  # C-quotes the token and a dropped flag empties the stream; either way the
+  # embedded 'side.txt\0' fails to match (od literal style of the -z tests).
+  [[ "$(hug shc -n -z HEAD | od -An -c | tr -d ' \n')" == *'side.txt\0'* ]]
+}
+
+@test "hug shc: merge commit lists changes vs each parent (--stat, issue 268)" {
+  _setup_merge_fixture side-stat
+  # Issue 268 FIXED: per-parent diff (git -m). The side branch is cut from
+  # HEAD~1, so it lacks feature2.txt — feature2.txt can only appear via the
+  # PARENT-2 diff, making it the discriminator that BOTH parents were diffed
+  # (a first-parent-only view would list side-stat.txt alone). Stat form is
+  # not bare lines, so assertions are --partial (this file's --stat idiom).
+  # --separate-stderr stays: stdout-only assertions.
+  run --separate-stderr hug shc HEAD
+  assert_success
+  assert_output --partial "side-stat.txt"
+  assert_output --partial "feature2.txt"
+}
+
+@test "hug shc -n: range whose tip is a merge keeps working (no --merge-aware leak)" {
+  # is_merge_commit probes a SINGLE commit; for a range, `rev-list -n 1` prints
+  # the range TIP (+ its parents), so an unguarded probe would answer "is the
+  # tip a merge" and leak --merge-aware into pinned_diff — which usage-errors
+  # (exit 2) on ranges. The wiring gates on is_range; this pins that gate.
+  _setup_merge_fixture side-range
+  run hug shc -n HEAD~2..HEAD
+  assert_success
+  assert_line "side-range.txt"
+  assert_line "feature2.txt"
+}
+
+@test "hug sh: merge commit File stats list merged files (shc delegation, issue 268)" {
+  _setup_merge_fixture side-sh
+  # hug-git-show delegates stats via `HUG_QUIET=T git shc` — shc's merge
+  # awareness (issue 268) must surface here without any sh-specific merge
+  # code. Issue 268 FIXED: per-parent diff (git -m). The side branch is cut
+  # from HEAD~1, so it lacks feature2.txt — feature2.txt can only appear via
+  # the PARENT-2 diff, making it the discriminator that BOTH parents were
+  # diffed (a first-parent-only view would list side-sh.txt alone).
+  # (sh's PATCH section stays empty on clean merges — patch parity is
+  # elifarley/hug-scm#346, deliberately not pinned here.)
+  run hug sh HEAD
+  assert_success
+  assert_output --partial "File stats:"
+  assert_output --partial "side-sh.txt"
+  assert_output --partial "feature2.txt"
+  # The delegation must stay HUG_QUIET=T: shc's "Changed files" header is
+  # stderr chatter — a dropped env prefix would leak it into hug sh output.
+  refute_output --partial "Changed files"
+}
+
+@test "pinned_diff: merge stays suppressed without --merge-aware — the boundary hug-file-input relies on" {
+  _setup_merge_fixture side-fi
+  # Pinned so an accidental default-on flip of pinned_diff is caught:
+  # only explicit --merge-aware callers may see merge diffs (the two-valued
+  # contract a shared helper owes its call sites). hug-file-input calls
+  # pinned_diff --no-renames --name-only with NO flag and must keep the
+  # byte-identical v1 behavior — merges list nothing.
+  run pinned_diff --no-renames --name-only HEAD
+  assert_success
   assert_output ""
+  # Non-vacuousness control: the SAME ref WITH the flag DOES list the merged
+  # file — so the empty stream above is the missing flag's doing, not an
+  # empty fixture. (A merge that silently failed would leave HEAD on the
+  # linear main tip, whose own diff lists feature2.txt — non-empty, so the
+  # suppression assertion above would fail too.)
+  run pinned_diff --merge-aware --no-renames --name-only HEAD
+  assert_success
+  assert_line "side-fi.txt"
+}
+
+@test "hug shc -n: merge commit + pathspec filters the per-parent diffs" {
+  # -m + pathspec threading: diff-tree -m runs one diff PER PARENT, each
+  # scoped to the pathspec. feature2.txt exists only on main (parent 1's
+  # line of history), so it can only surface via the parent-2 diff — an
+  # exact single-line match proves the flag reached the git invocation with
+  # the pathspec intact (a dropped -m yields empty; a mangled arg list
+  # yields a git fatal).
+  _setup_merge_fixture side-ps
+  run hug shc -n HEAD -- 'feature2.txt'
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shp: merge stats list merged files while the patch stays empty (delegation, issue 268)" {
+  # git-shc's NOTE documents that sh/shp/shcp inherit merge-aware STATS via
+  # their git shc delegation — but only `sh` had a pin. shp adds the PATCH
+  # section (git show, no -m): on a clean merge it stays empty while stats
+  # list files, and that contrast is the pin — it proves stats merge-
+  # awareness did NOT leak into the patch side (elifarley/hug-scm#346).
+  _setup_merge_fixture side-shp
+  run hug shp HEAD
+  assert_success
+  # Mixed-stream run (same idiom as the sh merge test): the "File stats:"
+  # header is stderr chatter, so stdout-only assertions can't see it.
+  # Stats side: merge-aware via delegation. feature2.txt is the
+  # both-parents discriminator (see the sh merge test above).
+  assert_output --partial "File stats:"
+  assert_output --partial "side-shp.txt"
+  assert_output --partial "feature2.txt"
+  # Chatter containment: shc runs under HUG_QUIET=T inside shp too — its
+  # "Changed files" header must not surface in either stream.
+  refute_output --partial "Changed files"
+  # Patch side: git show without -m is empty on a clean merge — no diff
+  # body may appear between the commit header and the stat block.
+  refute_output --partial "diff --git"
+}
+
+@test "hug sh --llm: merge commit emits a <stats> section (previously omitted when stats were empty)" {
+  # _show_commit_llm wraps stats in `<stats>` ONLY when the shc capture is
+  # non-empty; pre-268 merges captured nothing, so the section vanished
+  # from LLM output entirely. The fix makes merges capture stats, so the
+  # section must now appear — a consumer-visible format change that no
+  # other test covered.
+  _setup_merge_fixture side-llm
+  run hug sh --llm HEAD
+  assert_success
+  assert_output --partial "<stats>"
+  assert_output --partial "</stats>"
+  assert_output --partial "side-llm.txt"
+  # Both-parents discriminator: a first-parent-only regression would drop
+  # feature2.txt from the stats and this fails.
+  assert_output --partial "feature2.txt"
+}
+
+@test "hug shc -n: merge with a file changed on BOTH sides lists it once per parent (help contract)" {
+  # The shc -h caveat promises "a file touched on both sides appears once per
+  # parent" — this pins it at the shc level (the lib pin lives in
+  # test_hug_git_diff.bats). Unlike the _setup_merge_fixture shape, BOTH
+  # parents modify shared.txt in disjoint regions, so the auto-merge is
+  # clean and shared.txt surfaces in the per-parent diff of EACH parent.
+  printf 'a\nshared\n' > shared.txt && git add shared.txt && git commit -qm shared-base
+  git checkout -qb theirs
+  printf 'a\nshared\ntheirs\n' > shared.txt && git commit -qam theirs-edit
+  git checkout -q main
+  printf 'b\nshared\n' > shared.txt && git commit -qam ours-edit
+  git merge -q --no-ff theirs -m merged
+  run hug shc -n HEAD
+  assert_success
+  [[ "$(printf '%s\n' "$output" | grep -cx 'shared.txt')" -eq 2 ]]
+}
+
+@test "hug shcp: merge stats list merged files (git shc delegation, issue 268)" {
+  # Third leg of the delegation contract: sh and shp had pins, shcp did not.
+  # Same delegation as its siblings (HUG_QUIET=T git shc), so merge-aware
+  # stats must surface here too — feature2.txt is the both-parents
+  # discriminator (see the sh merge test above).
+  _setup_merge_fixture side-shcp
+  run hug shcp HEAD
+  assert_success
+  assert_output --partial "File stats:"
+  assert_output --partial "side-shcp.txt"
+  assert_output --partial "feature2.txt"
 }
 
 # -----------------------------------------------------------------------------
@@ -900,6 +1090,8 @@ teardown() {
   assert_success
   assert_output --partial "USAGE:"
   assert_output --partial "Show cumulative diff and file statistics"
+  # Merge caveat (issue 268): shcp inherits shc's per-parent stats contract.
+  assert_output --partial "once per parent"
 }
 
 @test "hug shcp: handles non-existent commit gracefully" {

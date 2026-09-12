@@ -2,6 +2,20 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [1.18.0.0] - 2026-09-12
+
+### Added
+
+- Merge commits finally answer "what did this change?": `hug shc <merge>` now lists the changes against EACH parent (git's `-m` mode) instead of printing nothing with exit 0. A file touched on both sides of the merge appears once per parent, and `hug shc -n` / `-n -z` list the paths too.
+- The show family follows: `hug sh`, `hug shp`, and `hug shcp` File-stats sections list merge changes via their `hug shc` delegation, and their help now says so. Patch sections on clean merges stay empty — that's git's own suppression, tracked separately.
+- New shared-helper contract: `pinned_diff --merge-aware` opts into per-parent merge diffs; without the flag, every existing caller behaves exactly as before (byte-identical), and `--merge-aware` + a range is a usage error. `is_merge_commit` is the shared predicate. Both are documented in `git-config/lib/README.md`.
+- `hug shc` fails loudly instead of silently degrading when your `HUG_HOME` points at an older install that lacks the new helper.
+
+### Fixed
+
+- `hug shc <merge-commit>` (and the sh-family File-stats sections) no longer return empty output for merge commits — `git diff-tree` suppresses merge diffs by default, which hugged commands faithfully echoed as nothing. See each command's `-h` for the per-parent contract.
+- The `hug shc -h` GIT EQUIVALENTS block no longer teaches `git diff --stat HEAD` (a working-tree diff) as the equivalent of `hug shc`; it's `git show --stat HEAD`.
+
 ## [1.17.0.0] - 2026-09-09
 
 ### Added

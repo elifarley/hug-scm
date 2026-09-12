@@ -59,6 +59,11 @@ DESCRIPTION:
     commands with legal dash-data, so '-3' is never rejected as an unknown
     option (only non-numeric dash tokens are, loudly, with exit 2).
 
+    Merge commits: File stats list changes vs EACH parent (a file touched
+    on both sides appears once per parent) — see 'hug shc -h' for the
+    full contract. (sh shows no patch; shp/shcp patches stay empty on
+    clean merges.)
+
 PATH FILTERING:
     Append -- <path>... to restrict the diff and file stats.
     Globs must be quoted; see 'hug help :pathspec' for the full contract.

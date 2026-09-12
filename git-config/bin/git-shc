@@ -11,6 +11,12 @@ set -euo pipefail
 
 # Part of the Hug tool suite
 
+# NOTE: since the issue-268 fix, merge commits list per-parent diffs (git -m);
+# the contract is test-pinned in tests/unit/test_sh.bats. sh, shp and shcp
+# inherit merge-aware STATS via their git shc delegation, but their PATCH
+# sections (git show / diff-tree -p, no -m) stay empty on clean merges —
+# patch parity is tracked as elifarley/hug-scm#346. hug-file-input does NOT pass
+# --merge-aware and stays suppressed (deliberate boundary).
 show_help() {
   cat << 'EOF'
 hug shc: Show files changed in a commit or range with statistics.
@@ -59,6 +65,9 @@ DESCRIPTION:
     For -N (1-999), shows cumulative file changes in last N commits.
     For single commits, shows files changed in that commit.
     For ranges, shows cumulative file changes across all commits in the range.
+    For merge commits, shc diffs against EACH parent (git's -m mode):
+    a two-parent merge shows what each side contributed — a file changed
+    on both sides appears once per parent diff.
 
     This command is the canonical source for file statistics display.
     It is used internally by other Hug commands (h files, h squash, shcp,
@@ -112,7 +121,7 @@ EXAMPLES:
     hug h files -3                 # Preview files touched (no stats)
 
 GIT EQUIVALENTS:
-    git diff --stat HEAD                  →  hug shc
+    git show --stat HEAD                  →  hug shc
     git diff-tree --stat -r HEAD          →  hug shc HEAD
     git diff --stat HEAD~3..HEAD          →  hug shc -3
     git diff --stat main..HEAD -- '*.py'  →  hug shc main..HEAD -- '*.py'
@@ -123,6 +132,8 @@ GIT EQUIVALENTS:
     # is what hug uses internally; dropping those flags would prepend the
     # commit hash and break the one-path-per-line contract, and without
     # --find-renames a rename lists BOTH sides instead of the new path only.
+    # Merge commits: hug shc diffs against EACH parent (-m) — for the
+    # first-parent-only view, use 'git show --stat <merge-commit>'.
 
 SEE ALSO:
     hug sh       : Show commit info with file stats
@@ -249,14 +260,40 @@ case "$commit_ref" in
   ;;
 esac
 
+# Fail loudly if the ambient lib predates issue-268: a stale HUG_HOME makes
+# the load-guard skip this checkout's hug-git-diff, leaving is_merge_commit
+# undefined — the if-condition below would swallow that and silently degrade
+# to v1 merge suppression.
+command -v is_merge_commit > /dev/null 2>&1 ||
+  { error "shc: is_merge_commit missing — HUG_HOME (${HUG_HOME:-unset}) predates this lib; re-activate this checkout"; } # exit 1
+
+# Issue 268: a merge commit's plain diff-tree output is EMPTY (git suppresses
+# merge diffs without -m). Opt into per-parent diffs ONLY for merges — every
+# other shape keeps byte-identical output. Detection runs ONCE here so both
+# the -n and --stat modes stay in contract. Cost: O(1) — one rev-list probe
+# per single-commit invocation; on a merge, pinned_diff re-probes internally
+# by design (each call site's flags must be self-contained), so two rev-list
+# calls on a merge are expected, not a bug. The is_range gate is load-bearing,
+# not cosmetic: for a range, `rev-list -n 1` prints the range TIP (+ parents),
+# so is_merge_commit would answer "is the tip a merge" and leak --merge-aware
+# into pinned_diff — which by contract usage-errors (exit 2) on ranges.
+# Ranges already list merge files via the two-dot diff; they need no flag.
+# Plain global, NOT `local` — this is script scope (top-level code), where
+# `local` errors out under every shc invocation; the "${diff_flags[@]+...}"
+# guards at the call sites make the possibly-empty array set -u-safe.
+diff_flags=()
+if ! is_range "$commit_ref" && is_merge_commit "$commit_ref"; then
+  diff_flags=(--merge-aware)
+fi
+
 # --name-only mode: print repo-relative paths only, no stats/header.
 # Pure data output (no HUG_QUIET coupling, no no-match hint) by design —
 # callers detect empty via stdout. See spec "No-match hint" section.
 if $name_only; then
   if $null_sep; then
-    show_changed_file_names -z "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
+    show_changed_file_names -z "${diff_flags[@]+"${diff_flags[@]}"}" "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
   else
-    show_changed_file_names "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
+    show_changed_file_names "${diff_flags[@]+"${diff_flags[@]}"}" "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}"
   fi
   exit 0
 fi
@@ -275,7 +312,7 @@ if [[ ${HUG_QUIET:-} != T ]]; then
     printf '%s %s Changed files:\n' "$commit_emoji" "$stats_emoji" >&2
   fi
 fi
-stats_output=$(pinned_diff --stat "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}")
+stats_output=$(pinned_diff "${diff_flags[@]+"${diff_flags[@]}"}" --stat "$commit_ref" "${_pathspec_pathspecs[@]+"${_pathspec_pathspecs[@]}"}")
 
 printf '%s\n' "$stats_output"
 

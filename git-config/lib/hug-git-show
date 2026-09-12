@@ -164,12 +164,20 @@ show_single_commit() {
 # Prints the repo-relative paths of files changed in a commit or range, one per
 # line — the --name-only equivalent of git-shc's --stat output.
 #
-# Usage: show_changed_file_names [-z|--null] "commit_or_range" [pathspec...]
+# Usage: show_changed_file_names [-z|--null] [--merge-aware] "commit_or_range" [pathspec...]
 # Parameters:
-#   $1   - Optional -z/--null, then a commit ref, range, or N/-N form (resolved
-#          internally via resolve_commit_ref, so the function is independently
-#          testable without the script wrapper).
-#   $2.. - Optional pathspecs (already-exploded args, passed as-is).
+#   $1.. - Optional LEADING FLAGS, any order (loop-parsed, mirroring
+#          pinned_diff):
+#     -z | --null    NUL-separated output.
+#     --merge-aware  Single commits ONLY: on a merge commit, diff against EACH
+#                    parent (pinned_diff -m) instead of git's default
+#                    suppression; byte-identical no-op on non-merges; a usage
+#                    error (exit 2) on ranges — gate on is_range before
+#                    forwarding (issue elifarley/hug-scm#268).
+#   then - a commit ref, range, or N/-N form (resolved internally via
+#          resolve_commit_ref, so the function is independently testable
+#          without the script wrapper).
+#   then - Optional pathspecs (already-exploded args, passed as-is).
 # Output:
 #   Line mode: repo-relative file paths, one per line; raw for non-ASCII bytes
 #   (core.quotePath=false pin), but git still C-quotes structural chars
@@ -188,23 +196,28 @@ show_single_commit() {
 # Notes:
 #   - Delegates to pinned_diff (hug-git-diff), the single canonical pinned
 #     changed-files invocation — the former near-copy of its flag set is gone.
-#   - Merge-commit single-commit shows nothing (same as --stat) — known parity,
-#     see elifarley/hug-scm#268.
+#   - Merge-commit single-commit: per-parent diffs ONLY when the caller passes
+#     --merge-aware; the default stays suppressed (issue elifarley/hug-scm#268).
 #   - Bundled-flag handling lives in the git-shc script wrapper, NOT here.
 show_changed_file_names() {
-    local null_mode=false
-    case "${1:-}" in
-    -z | --null) null_mode=true; shift ;;
-    esac
+    local null_mode=false merge_aware=false
+    while [[ "${1:-}" == "-z" || "${1:-}" == "--null" || "${1:-}" == "--merge-aware" ]]; do
+        case "$1" in
+        -z | --null) null_mode=true ;;
+        --merge-aware) merge_aware=true ;;
+        esac
+        shift
+    done
     local target="${1:-HEAD}"
     shift || true
 
     local resolved
     resolved=$(resolve_commit_ref "$target" "HEAD")
 
-    local -a zflag=()
+    local -a zflag=() maflag=()
     $null_mode && zflag=(--null)
-    pinned_diff "${zflag[@]+"${zflag[@]}"}" --name-only "$resolved" "$@"
+    $merge_aware && maflag=(--merge-aware)
+    pinned_diff "${maflag[@]+"${maflag[@]}"}" "${zflag[@]+"${zflag[@]}"}" --name-only "$resolved" "$@"
 }
 
 ################################################################################

@@ -218,6 +218,13 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
   DISPLAY stance (new path only / collapsed `{old => new}` stat line — use for
   human-facing output); `--no-renames` is the ACTION-LIST stance (both sides —
   use when the list feeds staging/untrack/add operations).
+- `--merge-aware` — opt into per-parent diffs (`-m`) for MERGE commits, whose
+  plain diff-tree output is empty (git suppresses merge diffs); a file
+  changed against both parents lists once per parent diff. Default:
+  byte-identical v1 behavior for every caller — only explicit opt-in callers
+  see merge diffs. Ranges + the flag are a usage error (exit 2). Companion
+  predicate: `is_merge_commit <ref>` (true iff the ref has more than one
+  parent).
 - Call `show_changed_file_names` (hug-git-show) instead when you need N/-N
   shorthand resolution — it resolves then delegates here.
 

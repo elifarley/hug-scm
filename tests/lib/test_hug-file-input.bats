@@ -385,10 +385,12 @@ file3.txt"
 
   # Assert
   assert_success
-  # The merge commit should show files that were different between branches
-  # We added main-only.txt on main before merging, so it might appear
-  # Or it might be empty for pure merge commits, which is also valid
-  # Both are acceptable behaviors
+  # Issue 268 contract: extract_files_from_commit calls pinned_diff WITHOUT
+  # --merge-aware, so merge output stays suppressed by design — the stats
+  # side (git shc) is the only merge-aware consumer. This file list feeds
+  # staging/untrack ACTION flows, so an accidental default-on flip of
+  # pinned_diff would surface here; empty is the pinned, decided behavior.
+  assert_output ""
 }
 
 @test "extract_files_from_commit: rename lists BOTH sides (action contract, byte-identical with today)" {

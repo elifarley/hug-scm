@@ -14,6 +14,7 @@
 #   - diff_has_working_changes: Check if net working-tree changes exist (vs HEAD)
 #   - pinned_diff: The canonical pinned changed-files invocation for a commit
 #     or range — the one flag set all changed-files call sites delegate to
+#   - is_merge_commit: True iff a single-commit ref has more than one parent
 
 ################################################################################
 # Idempotent Guards
@@ -586,12 +587,27 @@ _diff_invoke_unstaged() { show_unstaged_diff "$@"; }
 _diff_invoke_staged() { show_staged_diff "$@"; }
 _diff_invoke_combined() { show_combined_diff "$@"; }
 
+# True iff <resolved_ref> is a merge commit (more than one parent).
+# Usage: is_merge_commit <resolved_ref>
+# rev-list --parents prints "<commit> <parent>..." — word count > 2 ⇔ merge.
+# GOTCHA: no `--` before the ref — rev-list treats post-`--` tokens as PATHs
+# and usage-errors (exit 129). Stderr is silenced: callers that probe
+# speculatively must not duplicate the authoritative error their diff
+# invocation will print anyway.
+# Precondition: a SINGLE-commit ref. A range is not a commit — `rev-list -n 1
+# <range>` prints the range TIP (+ its parents), so on a range this answers
+# "is the tip a merge", not "is this a merge". Callers must gate on is_range
+# first (pinned_diff rejects --merge-aware on ranges for the same reason).
+is_merge_commit() {
+    [[ $(git rev-list --parents -n 1 "$1" 2> /dev/null | wc -w) -gt 2 ]]
+}
+
 ################################################################################
 # pinned_diff — the canonical pinned changed-files invocation
 ################################################################################
 
 # Runs the canonical pinned changed-files invocation for a commit or range.
-# Usage: pinned_diff [--null] [--no-renames] <format> <resolved_ref> [pathspec...]
+# Usage: pinned_diff [--null] [--no-renames] [--merge-aware] <format> <resolved_ref> [pathspec...]
 # Parameters:
 #   --null       - Optional leading flag: NUL-separated output (--name-only only).
 #   --no-renames - Optional leading flag: renames list BOTH sides — the ACTION-LIST
@@ -599,6 +615,13 @@ _diff_invoke_combined() { show_combined_diff "$@"; }
 #                  the DISPLAY contract (--find-renames: new path only / collapsed
 #                  `{old => new}` stat line). Both stances are explicit and
 #                  config-immune — neither depends on the user's diff.renames.
+#   --merge-aware - Optional leading flag: single commits ONLY (ranges are a
+#                  usage error). On a merge commit, diff against EACH parent
+#                  (diff-tree -m) instead of git's default suppression; output
+#                  may list a file once per parent it changed against. On a
+#                  non-merge commit it is a byte-identical no-op. Opt-in only —
+#                  the default keeps v1 behavior, so existing callers are
+#                  untouched (issue elifarley/hug-scm#268).
 #   $1       - Format: --name-only | --stat. Anything else is a caller bug.
 #   $2       - resolved_ref: an ALREADY-RESOLVED commit ref or range (anything
 #              is_range() recognizes). N/-N shorthand resolution is the CALLER's
@@ -614,8 +637,9 @@ _diff_invoke_combined() { show_combined_diff "$@"; }
 #   NEVER be captured into a shell variable; bash strips NUL bytes).
 # Exit codes:
 #   2    - usage errors this function rejects itself: too few core args,
-#          unknown format, --null with --stat (all via error_usage — which
-#          exits; an `||` fallback never sees them).
+#          unknown format, --null with --stat, --merge-aware with a range
+#          (all via error_usage — which exits; an `||` fallback never sees
+#          them).
 #   Else - the underlying git command's (0 on success; 128 + git's fatal on
 #          a bad ref). Nothing is swallowed here; callers own error policy
 #          (2>/dev/null, || true, branding).
@@ -645,25 +669,34 @@ _diff_invoke_combined() { show_combined_diff "$@"; }
 #     emitted as the first NUL entry.)
 #   - --null with --stat is rejected via error_usage (NUL is a --name-only
 #     contract; --stat is human-formatted).
-#   - Merge-commit single-commit shows nothing (diff-tree without -m) — known
-#     parity with the stats mode, see elifarley/hug-scm#268.
+#   - Merge-commit single-commit shows nothing by default (diff-tree without
+#     -m); pass --merge-aware to opt into per-parent output — issue
+#     elifarley/hug-scm#268.
 pinned_diff() {
-    local null_mode=false no_renames=false
-    # Consume leading flags in a LOOP, not two positional checks: the old
-    # `[[ --null ]] then [[ --no-renames ]]` sequence only parsed ONE order,
-    # so `pinned_diff --no-renames --null --name-only HEAD` (a valid combo)
-    # died with the misleading "unknown format '--null'" — the second flag
-    # fell through to the format slot. Any order, any subset parses now.
+    local null_mode=false no_renames=false merge_aware=false
+    # Consume leading flags in a LOOP, not two positional checks (any order,
+    # any subset — see history below). --merge-aware is the explicit
+    # issue-268 contract: opt into per-parent diffs (-m) for merge commits;
+    # WITHOUT it, output is byte-identical to v1 for every caller — the
+    # two-valued contract a shared helper owes its call sites.
+    # History: the original `[[ --null ]] then [[ --no-renames ]]` sequence
+    # only parsed ONE order, so `pinned_diff --no-renames --null --name-only
+    # HEAD` (a valid combo) died with the misleading "unknown format
+    # '--null'" — the second flag fell through to the format slot.
     # set -u/-e safe: the condition reads ${1:-} (exempt), the body always shifts.
-    while [[ "${1:-}" == "--null" || "${1:-}" == "--no-renames" ]]; do
-        if [[ "$1" == "--null" ]]; then null_mode=true; else no_renames=true; fi
+    while [[ "${1:-}" == "--null" || "${1:-}" == "--no-renames" || "${1:-}" == "--merge-aware" ]]; do
+        case "$1" in
+        --null) null_mode=true ;;
+        --no-renames) no_renames=true ;;
+        --merge-aware) merge_aware=true ;;
+        esac
         shift
     done
     # Arg-count guard BEFORE any positional read: under set -u, touching $1/$2 with
     # too few args dies as "unbound variable" (exit 1) — a caller bug must surface
     # as error_usage (exit 2), not a raw bash trace.
     if [[ $# -lt 2 ]]; then
-        error_usage "pinned_diff: expected [--null] [--no-renames] <format> <resolved_ref> [pathspec...]"
+        error_usage "pinned_diff: expected [--null] [--no-renames] [--merge-aware] <format> <resolved_ref> [pathspec...]"
     fi
     local format="$1" resolved_ref="$2"
     shift 2
@@ -683,15 +716,27 @@ pinned_diff() {
     if $null_mode && [[ "$format" != "--name-only" ]]; then
         error_usage "pinned_diff: --null is only valid with --name-only"
     fi
+    # -m is a diff-tree-only concept (per-parent); `git diff` on a range has no
+    # parent axis to diff against, so the flag is meaningless there — reject it
+    # as a usage error rather than let it leak into the git invocation.
+    if $merge_aware && is_range "$resolved_ref"; then
+        error_usage "pinned_diff: --merge-aware is only valid for single commits, not ranges"
+    fi
 
     if is_range "$resolved_ref"; then
         git -c core.quotePath=false -c diff.relative=false \
             diff "$format" "${zflag[@]+"${zflag[@]}"}" "$rename_flag" --ignore-submodules=none \
             "$resolved_ref" "${path_args[@]+"${path_args[@]}"}"
     else
+        # Merge detection: is_merge_commit (above) owns the rev-list probe.
+        # Cost: one rev-list call ONLY when --merge-aware was passed; the
+        # default path pays nothing. Reachable only for non-ranges — the
+        # usage guard above rejects --merge-aware + range first.
+        local -a merge_flag=()
+        $merge_aware && is_merge_commit "$resolved_ref" && merge_flag=(-m)
         git -c core.quotePath=false -c diff.relative=false \
-            diff-tree --no-commit-id "$format" -r --root "${zflag[@]+"${zflag[@]}"}" \
-            "$rename_flag" --ignore-submodules=none \
+            diff-tree --no-commit-id "$format" -r --root "${merge_flag[@]+"${merge_flag[@]}"}" \
+            "${zflag[@]+"${zflag[@]}"}" "$rename_flag" --ignore-submodules=none \
             "$resolved_ref" "${path_args[@]+"${path_args[@]}"}"
     fi
 }

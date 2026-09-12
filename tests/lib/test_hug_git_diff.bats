@@ -232,3 +232,179 @@ _make_fixture() {
   assert_failure 128
   assert_output --partial 'fatal'
 }
+
+# Fixture: branch `side` adds side.txt at HEAD; merge --no-ff into the main
+# line (main did NOT move → parent-2 diff is empty, so -m output lists
+# side.txt exactly once). Deterministic typical-merge shape.
+_make_merge_fixture() {
+  _make_fixture
+  git checkout -qb side
+  echo s > side.txt && git add side.txt && git commit -qm side
+  git checkout -q main
+  git merge -q --no-ff side -m "Merge side"
+}
+
+@test "pinned_diff: merge commit suppressed by default (v1 byte-identical guard)" {
+  _make_merge_fixture
+  run pinned_diff --name-only HEAD
+  assert_success
+  assert_output ""
+}
+
+@test "pinned_diff: --merge-aware lists merge changes vs each parent (-n)" {
+  _make_merge_fixture
+  run pinned_diff --merge-aware --name-only HEAD
+  assert_success
+  assert_line "side.txt"
+}
+
+@test "pinned_diff: --merge-aware --stat lists merge stats" {
+  _make_merge_fixture
+  run pinned_diff --merge-aware --stat HEAD
+  assert_success
+  assert_output --partial "side.txt"
+}
+
+@test "pinned_diff: --merge-aware is byte-identical no-op on non-merge commits" {
+  _make_fixture
+  run pinned_diff --name-only HEAD
+  [[ "$status" -eq 0 ]]
+  local plain="$output"
+  run pinned_diff --merge-aware --name-only HEAD
+  assert_success
+  [[ "$output" == "$plain" ]]
+}
+
+@test "pinned_diff: --merge-aware rejected for ranges" {
+  _make_fixture
+  run pinned_diff --merge-aware --name-only 'HEAD~1..HEAD'
+  assert_failure 2
+  assert_output --partial "--merge-aware is only valid for single commits"
+}
+
+@test "pinned_diff: --merge-aware is a no-op on the root commit (single parent)" {
+  _make_fixture
+  root=$(git rev-list --max-parents=0 HEAD)
+  run pinned_diff --name-only "$root"
+  [[ "$status" -eq 0 ]]
+  local plain="$output"
+  run pinned_diff --merge-aware --name-only "$root"
+  assert_success
+  [[ "$output" == "$plain" ]]
+}
+
+# Fixture: BOTH parents modify shared.txt in different regions (auto-merge
+# succeeds without conflict) — the shape behind the documented help contract
+# "a file changed on both sides appears once per parent diff". Built on
+# _make_fixture (same pattern as _make_merge_fixture) so the repo/branch
+# layout matches setup().
+_make_both_sides_fixture() {
+  _make_fixture
+  # shared.txt is committed on main BEFORE branching so the merge BASE
+  # contains it — creating it independently on both sides is an add/add
+  # conflict, not an auto-merge. After the branch: theirs appends line 3,
+  # main changes ONLY line 1 — disjoint regions, auto-resolves.
+  printf 'a\nshared\n' > shared.txt && git add shared.txt && git commit -qm shared-base
+  git checkout -qb theirs
+  printf 'a\nshared\ntheirs\n' > shared.txt && git commit -qam theirs-edit
+  git checkout -q main
+  printf 'b\nshared\n' > shared.txt && git commit -qam ours-edit
+  git merge -q --no-ff theirs -m merged
+}
+
+@test "pinned_diff: --merge-aware lists a both-parents-modified file ONCE PER PARENT (help contract)" {
+  _make_both_sides_fixture
+  # Default stays suppressed (v1 guard, re-pinned for THIS shape — the
+  # existing suppression test only covers a side-only merge).
+  run pinned_diff --name-only HEAD
+  assert_success
+  assert_output ""
+  # git-shc help + lib/README document the duplication: -m emits one diff per
+  # parent, so shared.txt (changed against both) lists exactly twice. A
+  # future switch to first-parent-only (-m → first parent) or to dedup'd
+  # output breaks this count and MUST update the help text in the same PR.
+  run pinned_diff --merge-aware --name-only HEAD
+  assert_success
+  [[ "$(printf '%s\n' "$output" | grep -cx 'shared.txt')" -eq 2 ]]
+}
+
+# Fixture: true octopus — ONE merge commit with 3 parents (o1/o2/o3 each add
+# an independent file off the same base; octopus strategy merges cleanly).
+_make_octopus_fixture() {
+  _make_fixture
+  for b in o1 o2 o3; do
+    git checkout -qb "$b"
+    echo "$b" > "$b.txt" && git add "$b.txt" && git commit -qm "$b"
+    git checkout -q main
+  done
+  git merge -q --no-ff o1 o2 o3 -m octo >/dev/null 2>&1
+}
+
+@test "pinned_diff: --merge-aware handles an octopus merge (3 parents, each side listed)" {
+  _make_octopus_fixture
+  # is_merge_commit's word-count probe must hold beyond 2 parents
+  # (rev-list --parents prints 4+ words for a 3-parent commit).
+  run is_merge_commit HEAD
+  assert_success
+  # Default stays suppressed even on an octopus.
+  run pinned_diff --name-only HEAD
+  assert_success
+  assert_output ""
+  # -m diffs against EACH parent: all three sides surface.
+  run pinned_diff --merge-aware --name-only HEAD
+  assert_success
+  assert_line "o1.txt"
+  assert_line "o2.txt"
+  assert_line "o3.txt"
+}
+
+@test "pinned_diff: --merge-aware combines with --null in REVERSED flag order" {
+  _make_merge_fixture
+  # The flag loop was born from an order-permutation bug (the old two-check
+  # parser died on the second flag). The branch's own pins always pass
+  # --merge-aware FIRST; this pins the loop consuming it SECOND. NUL bytes
+  # never survive $output — od pipe discipline (same idiom as the --null
+  # tests above). _make_merge_fixture's parent-2 diff is empty, so the
+  # stream is exactly one entry.
+  [[ "$(pinned_diff --null --merge-aware --name-only HEAD | od -An -c | tr -d ' \n')" == 'side.txt\0' ]]
+}
+
+@test "is_merge_commit: merge true; linear, root, and bad refs false (bad-ref stderr silenced)" {
+  # ONE _make_merge_fixture serves every case (it builds its own
+  # _make_fixture — calling both in one repo would re-run git mv onto an
+  # existing destination). History: c1 → c2 → side commit → merge.
+  _make_merge_fixture
+  run is_merge_commit HEAD
+  assert_success
+  # Linear commits (side tip, pre-merge main tip) → 2 words → false.
+  run is_merge_commit HEAD~1
+  assert_failure
+  run is_merge_commit HEAD~2
+  assert_failure
+  # Root commit prints alone (no parent line) → 1 word → false.
+  root=$(git rev-list --max-parents=0 HEAD)
+  run is_merge_commit "$root"
+  assert_failure
+  # Bad ref: rev-list fails, stderr is silenced (callers probe speculatively
+  # and must not duplicate the diff invocation's authoritative fatal), and
+  # the predicate answers false so the flag stays off and git's own fatal
+  # fires from pinned_diff.
+  run is_merge_commit no-such-ref
+  assert_failure
+  assert_output ""
+}
+
+@test "pinned_diff: --merge-aware keeps the rename DISPLAY stance (merged rename lists new path only)" {
+  # Mirrors the single-commit rename tests above, but on a MERGE: the
+  # per-parent diff must keep the default collapse-to-new-path display even
+  # with --merge-aware threaded in (a flag interaction no other test covers).
+  _make_fixture
+  git checkout -qb ren
+  git mv renamed.txt moved.txt && git commit -qm renamed-on-side
+  git checkout -q main
+  git merge -q --no-ff ren -m "Merge ren"
+  run pinned_diff --merge-aware --name-only HEAD
+  assert_success
+  assert_line "moved.txt"
+  refute_line "renamed.txt"
+}
