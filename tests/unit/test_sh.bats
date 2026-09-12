@@ -3,6 +3,12 @@
 
 # Load test helpers
 load '../test_helper'
+# Lib functions invoked directly by the hug-file-input boundary pin below:
+# hug-common transitively sources hug-output (error_usage) and hug-git-diff
+# (pinned_diff); hug-git-repo provides is_range — hug-common does NOT load it.
+# Same pattern as tests/lib/test_hug_git_diff.bats.
+load '../../git-config/lib/hug-common'
+load '../../git-config/lib/hug-git-repo'
 
 setup() {
   require_hug
@@ -614,6 +620,49 @@ teardown() {
   assert_success
   assert_line "side-range.txt"
   assert_line "feature2.txt"
+}
+
+@test "hug sh: merge commit File stats list merged files (shc delegation, issue 268)" {
+  git checkout -q -b side-sh HEAD~1
+  echo side > side-sh.txt
+  git add side-sh.txt
+  git commit -qm "side-sh change"
+  git checkout -q main
+  git merge -q --no-ff side-sh -m "Merge side-sh" >/dev/null 2>&1
+  # hug-git-show delegates stats via `HUG_QUIET=T git shc` — shc's merge
+  # awareness (issue 268) must surface here without any sh-specific merge
+  # code. The branch is cut from HEAD~1, so side-sh.txt exists ONLY in the
+  # merge's second parent: its presence proves the merged tree was diffed,
+  # not just the first-parent commit. (sh's PATCH section stays empty on
+  # clean merges — patch parity is issue 346, deliberately not pinned here.)
+  run hug sh HEAD
+  assert_success
+  assert_output --partial "File stats:"
+  assert_output --partial "side-sh.txt"
+}
+
+@test "hug-file-input: merge stays suppressed (no --merge-aware opt-in — deliberate boundary)" {
+  git checkout -q -b side-fi HEAD~1
+  echo side > side-fi.txt
+  git add side-fi.txt
+  git commit -qm "side-fi change"
+  git checkout -q main
+  git merge -q --no-ff side-fi -m "Merge side-fi" >/dev/null 2>&1
+  # Pinned so an accidental default-on flip of pinned_diff is caught:
+  # only explicit --merge-aware callers may see merge diffs (the two-valued
+  # contract a shared helper owes its call sites). hug-file-input calls
+  # pinned_diff --no-renames --name-only with NO flag and must keep the
+  # byte-identical v1 behavior — merges list nothing.
+  run pinned_diff --no-renames --name-only HEAD
+  assert_success
+  assert_output ""
+  # Non-vacuousness control: the SAME ref WITH the flag DOES list the merged
+  # file — so the empty stream above is the missing flag's doing, not an
+  # empty fixture. (A merge that silently failed would put HEAD on a linear
+  # commit, making this very line appear and failing the test.)
+  run pinned_diff --merge-aware --no-renames --name-only HEAD
+  assert_success
+  assert_line "side-fi.txt"
 }
 
 # -----------------------------------------------------------------------------
