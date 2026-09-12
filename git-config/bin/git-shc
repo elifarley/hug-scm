@@ -15,7 +15,7 @@ set -euo pipefail
 # the contract is test-pinned in tests/unit/test_sh.bats. sh, shp and shcp
 # inherit merge-aware STATS via their git shc delegation, but their PATCH
 # sections (git show / diff-tree -p, no -m) stay empty on clean merges —
-# patch parity is tracked as issue 346. hug-file-input does NOT pass
+# patch parity is tracked as elifarley/hug-scm#346. hug-file-input does NOT pass
 # --merge-aware and stays suppressed (deliberate boundary).
 show_help() {
   cat << 'EOF'

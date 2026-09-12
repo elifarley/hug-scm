@@ -631,14 +631,20 @@ teardown() {
   git merge -q --no-ff side-sh -m "Merge side-sh" >/dev/null 2>&1
   # hug-git-show delegates stats via `HUG_QUIET=T git shc` — shc's merge
   # awareness (issue 268) must surface here without any sh-specific merge
-  # code. The branch is cut from HEAD~1, so side-sh.txt exists ONLY in the
-  # merge's second parent: its presence proves the merged tree was diffed,
-  # not just the first-parent commit. (sh's PATCH section stays empty on
-  # clean merges — patch parity is issue 346, deliberately not pinned here.)
+  # code. Issue 268 FIXED: per-parent diff (git -m). The side branch is cut
+  # from HEAD~1, so it lacks feature2.txt — feature2.txt can only appear via
+  # the PARENT-2 diff, making it the discriminator that BOTH parents were
+  # diffed (a first-parent-only view would list side-sh.txt alone).
+  # (sh's PATCH section stays empty on clean merges — patch parity is
+  # elifarley/hug-scm#346, deliberately not pinned here.)
   run hug sh HEAD
   assert_success
   assert_output --partial "File stats:"
   assert_output --partial "side-sh.txt"
+  assert_output --partial "feature2.txt"
+  # The delegation must stay HUG_QUIET=T: shc's "Changed files" header is
+  # stderr chatter — a dropped env prefix would leak it into hug sh output.
+  refute_output --partial "Changed files"
 }
 
 @test "hug-file-input: merge stays suppressed (no --merge-aware opt-in — deliberate boundary)" {
@@ -658,8 +664,9 @@ teardown() {
   assert_output ""
   # Non-vacuousness control: the SAME ref WITH the flag DOES list the merged
   # file — so the empty stream above is the missing flag's doing, not an
-  # empty fixture. (A merge that silently failed would put HEAD on a linear
-  # commit, making this very line appear and failing the test.)
+  # empty fixture. (A merge that silently failed would leave HEAD on the
+  # linear main tip, whose own diff lists feature2.txt — non-empty, so the
+  # suppression assertion above would fail too.)
   run pinned_diff --merge-aware --no-renames --name-only HEAD
   assert_success
   assert_line "side-fi.txt"
