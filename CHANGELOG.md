@@ -2,6 +2,25 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [1.19.0.0] - 2026-09-12
+
+### Added
+
+- Merge patches have arrived: `hug shp <merge>` and `hug shcp <merge>` now show the FIRST-PARENT diff — what the merge brought in — directly above the per-parent file stats (which keep their each-parent contract). `hug shp --llm` carries the same patch in its `<diff>` section. Merges that introduce nothing vs parent 1 (e.g. `-s ours`) keep an empty patch section by definition.
+- New shared primitive `merge_first_parent_patch` (hug-git-diff): the two-tree first-parent merge diff, version-insensitive by construction; callers gate with `is_merge_commit`. Non-merge and root-commit patch output is byte-identical to before, and `git show`'s rename rendering survives on non-merges (regression-pinned).
+- Fail-loud guards: `hug shp` / `hug shcp` error with recovery instructions instead of silently degrading when your `HUG_HOME` points at a lib that predates this release.
+
+### Changed
+
+- Dirty merges (conflict resolutions) now show the full first-parent diff instead of git's combined `--cc` hunks — the resolution edits are a subset of that diff.
+- Merge patches render renames as delete+add (diff-tree semantics, matching `hug dd`); the help texts say so, and `shv` / `shp` help now agree that both tools diff merges against parent 1.
+- Family-wide contract wording: `shc` / `sh` / `shp` / `shcp` / `shv` / `dd` help, `docs/commands/head.md`, and the hug-git-diff NOTE all state the same rule — patch = parent 1, stats = each parent. (Supersedes the v1.18.0.0 "patch sections stay empty" note and the older dd-vs-shp contrast in these release notes.)
+
+### Fixed
+
+- Docs no longer label `hug shc -n` line output "pipe-safe" — only `-z` is the fully-raw stream, and four doc sites now say so.
+- `hug shcp` keeps working for ref expressions like `:/regex` on merges: those resolve as revs but cannot compose with a `^1` suffix directly, so the merge gate now resolves them once up front.
+
 ## [1.18.0.0] - 2026-09-12
 
 ### Added
