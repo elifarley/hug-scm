@@ -52,8 +52,9 @@ RELATIONSHIP TO dd:
     A single commit is diffed against its FIRST parent, so `shv <merge>` and
     `shp <merge>` both show the parent-1 diff on merges (shv in a difftool
     window with rename detection; shp as text, rendering renames as
-    delete+add), and a root commit shows every file as added. A range / -N shows the cumulative endpoint diff
-    (like shcp), not one tool window per commit.
+    delete+add), and a root commit shows every file as added. A range / -N
+    shows the cumulative endpoint diff (like shcp), not one tool window per
+    commit.
 
 CAPTURING OUTPUT:
     shv is interactive and visual (a blocking GUI); it is TTY-guarded and must

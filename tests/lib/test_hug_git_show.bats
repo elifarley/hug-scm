@@ -6,8 +6,8 @@ load '../../git-config/lib/hug-common'
 load '../../git-config/lib/hug-git-repo'
 # hug-git-diff: _show_commit_standard/_show_commit_llm call _diff_emoji and
 # (since #346) gate merge patches on is_merge_commit/merge_first_parent_patch.
-# Script callers get it transitively (hug-git-kit loads it); this file must
-# load it explicitly or the merge gate silently falls to the git show branch.
+# hug-common bootstraps it transitively today; loaded explicitly so this file
+# declares its direct dependency.
 load '../../git-config/lib/hug-git-diff'
 load '../../git-config/lib/hug-git-show'
 

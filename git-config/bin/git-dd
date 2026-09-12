@@ -73,9 +73,9 @@ DESCRIPTION:
       Full walkthrough: docs/commands/status-staging.md ("Visual diff").
 
     MERGES & RANGES:
-      A merge commit is diffed against its FIRST parent (not a combined diff),
-      so 'dd <merge>' can differ from 'shp <merge>'. A range / -N shows the
-      cumulative endpoint diff (like 'hug shcp'), not one tool window per commit.
+      A merge commit is diffed against its FIRST parent (not a combined diff) —
+      the same parent-1 rule 'shp <merge>' follows on merges. A range / -N shows
+      the cumulative endpoint diff (like 'hug shcp'), not one tool window per commit.
 
 PATH FILTERING:
     Append -- <path>... to restrict the diff to matching paths.

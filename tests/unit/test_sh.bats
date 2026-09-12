@@ -642,8 +642,8 @@ _setup_merge_fixture() {
   # from HEAD~1, so it lacks feature2.txt — feature2.txt can only appear via
   # the PARENT-2 diff, making it the discriminator that BOTH parents were
   # diffed (a first-parent-only view would list side-sh.txt alone).
-  # (sh's PATCH section stays empty on clean merges — patch parity is
-  # elifarley/hug-scm#346, deliberately not pinned here.)
+  # (sh has no patch section; shp/shcp patches diff against parent 1 on
+  # merges — elifarley/hug-scm#346.)
   run hug sh HEAD
   assert_success
   assert_output --partial "File stats:"
@@ -821,7 +821,8 @@ _setup_merge_fixture() {
 
 @test "hug shcp: merge patch shows the first-parent diff (issue 346)" {
   # Patch contract: parent 1 only (the hug dd rule). side-shcp-patch.txt is
-  # the parent-1-side file; feature2.txt exists only on main (parent 1's
+  # the file the FIRST-PARENT diff surfaces (born on parent 2's line of
+  # history, absent from parent 1); feature2.txt exists only on main (parent 1's
   # history line is where it lives, but the MERGE introduced it relative to
   # parent 2 — it must appear in stats (per-parent) yet NOT as a patch hunk,
   # because it is identical to parent 1).
