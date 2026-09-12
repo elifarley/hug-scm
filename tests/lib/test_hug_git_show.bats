@@ -631,6 +631,36 @@ _setup_show_merge_fixture() {
   refute_output --partial "diff --git a/feature2.txt"
 }
 
+@test "_show_commit_standard: merge + pathspec scopes the first-parent patch" {
+  # The merge branch must thread pathspecs into the helper exactly like the
+  # non-merge branch threads them into `git show` — dropping the nullsafe
+  # expansion there would silently UN-filter `hug shp <merge> -- <path>`
+  # (every other merge pin passes no pathspecs, so only this test catches it).
+  # feature2.txt lives in the merge tree but has no parent-1 hunk: filtering
+  # to it must empty the patch section, while the unfiltered run above
+  # still prints the side.txt hunk.
+  _setup_show_merge_fixture
+  run _show_commit_standard HEAD true true side.txt
+  assert_success
+  assert_output --partial "diff --git a/side.txt b/side.txt"
+  run _show_commit_standard HEAD true true feature2.txt
+  assert_success
+  refute_output --partial "diff --git"
+}
+
+@test "_show_commit_llm: merge + pathspec scopes the <diff> CDATA" {
+  # Same threading pin as the standard sink, on the LLM sink (hug shp --llm
+  # surface): the nullsafe expansion sits in its own merge branch.
+  _setup_show_merge_fixture
+  run _show_commit_llm HEAD true true side.txt
+  assert_success
+  assert_output --partial "<diff><![CDATA["
+  assert_output --partial "diff --git a/side.txt b/side.txt"
+  run _show_commit_llm HEAD true true feature2.txt
+  assert_success
+  refute_output --partial "diff --git"
+}
+
 @test "resolve_commit_ref: treats leading zeros as numbers" {
   # Numbers with leading zeros match the 0-999 regex
   # so they are treated as numbers (007 = 7)

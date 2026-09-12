@@ -307,7 +307,10 @@ _make_merge_fixture() {
   _make_merge_fixture
   local ours ref
   ours=$(merge_first_parent_patch HEAD)
-  ref=$(git show -m --first-parent HEAD --pretty=format:)
+  # Hermetic reference: pins protect against ambient config drift too —
+  # color.ui=always would colorize only the porcelain side (diff-tree never
+  # colorizes) and diff.renames could flip its rename rendering.
+  ref=$(git -c color.ui=never -c diff.renames=false show -m --first-parent HEAD --pretty=format:)
   # TRIAGE if this fails after a git upgrade: diff both sides and decide
   # which moved. The CONTRACT is first-parent content (pinned by the test
   # above); `git show -m --first-parent` is only a cross-form reference,
@@ -318,6 +321,20 @@ _make_merge_fixture() {
   # rename from/to (porcelain diff.renames default) while the two-tree
   # form renders delete+add — see the helper's WHY note.
   [[ "$ours" == "$ref" ]]
+}
+
+@test "merge_first_parent_patch: octopus merge yields ONE parent-1 patch, not per-parent concatenation" {
+  # 3-parent shape (main + o1 + o2 + o3): main is parent 1, so the
+  # first-parent diff surfaces exactly the three side files as ONE section
+  # each — a regression to the per-parent concatenation form would emit
+  # many more sections. Same discriminator class as the both-sides test.
+  _make_octopus_fixture
+  run is_merge_commit HEAD
+  assert_success
+  run merge_first_parent_patch HEAD
+  assert_success
+  [[ $(printf '%s\n' "$output" | grep -c '^diff --git') -eq 3 ]]
+  assert_output --partial "diff --git a/o1.txt b/o1.txt"
 }
 
 @test "merge_first_parent_patch: pathspecs thread after the two trees" {

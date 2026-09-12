@@ -104,6 +104,15 @@ EOF
 eval "$(parse_pathspecs "$@")"
 eval "$(parse_common_flags "${_pathspec_pre_args[@]}")"
 
+# Fail loudly if the ambient lib predates issue-346: a stale HUG_HOME makes
+# the load-guard skip this checkout's hug-git-diff, leaving the merge-patch
+# helper undefined — the if-condition below would swallow that and silently
+# resurrect the empty-merge-patch bug. Same armor git-shc wears for
+# is_merge_commit. Placed AFTER flag parsing so `-h` still works in the
+# degraded environment (help is the recovery instructions).
+command -v merge_first_parent_patch > /dev/null 2>&1 ||
+  { error "shcp: merge_first_parent_patch missing — HUG_HOME (${HUG_HOME:-unset}) predates this lib; re-activate this checkout"; } # exit 1
+
 # Extract commit_ref from pre_args (NOT from original "$@")
 commit_ref=""
 for arg in "${_pathspec_pre_args[@]}"; do
@@ -152,9 +161,15 @@ else
   # (probed: it concatenates per-parent diffs), hence the gate + helper.
   # Non-merges keep the single-rev form byte-identical (--root covers
   # root commits, which have no ^1).
+  # Resolve once for the merge gate: ref expressions like :/regex resolve
+  # as revs but do NOT compose with any suffix (^1 OR ^{commit}) — rev-list
+  # is the one resolver that handles them, and it is exactly what
+  # is_merge_commit already probes with. Ordinary refs keep their spelling
+  # for the header/stats — only the gate uses the resolved SHA.
+  gate_commit=$(git rev-list -n 1 "$commit_ref" 2> /dev/null || echo "$commit_ref")
   printf '%s %s Diff for %s:\n' "$commit_emoji" "$diff_emoji" "$commit_ref"
-  if is_merge_commit "$commit_ref"; then
-    merge_first_parent_patch "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}"
+  if is_merge_commit "$gate_commit"; then
+    merge_first_parent_patch "$gate_commit" "${pathspec_args[@]+"${pathspec_args[@]}"}"
   else
     git diff-tree -p --no-commit-id -r --root "$commit_ref" "${pathspec_args[@]+"${pathspec_args[@]}"}"
   fi

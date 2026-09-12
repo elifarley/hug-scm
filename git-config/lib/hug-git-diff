@@ -15,6 +15,8 @@
 #   - pinned_diff: The canonical pinned changed-files invocation for a commit
 #     or range — the one flag set all changed-files call sites delegate to
 #   - is_merge_commit: True iff a single-commit ref has more than one parent
+#   - merge_first_parent_patch: Print the first-parent patch for a MERGE
+#     commit (two-tree diff-tree; caller must gate with is_merge_commit)
 
 ################################################################################
 # Idempotent Guards
@@ -617,6 +619,8 @@ is_merge_commit() {
 #            through verbatim AFTER the two trees.
 # Output:
 #   `git diff-tree -p --no-commit-id -r --root "$merge^1" "$merge"` on stdout.
+#   (--root is carried for symmetry with the single-rev call sites; it is
+#   inert in the two-tree form — a merge always has a parent 1.)
 # WHY the two-tree form (probe-verified, git 2.34.1): `diff-tree -m
 # --first-parent` emits the per-parent CONCATENATION — `--first-parent` is
 # a history-traversal option and single-rev diff-tree does not traverse, so

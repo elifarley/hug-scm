@@ -224,7 +224,9 @@ The main `hug-git-kit` file sources all these modules to maintain backward compa
   byte-identical v1 behavior for every caller — only explicit opt-in callers
   see merge diffs. Ranges + the flag are a usage error (exit 2). Companion
   predicate: `is_merge_commit <ref>` (true iff the ref has more than one
-  parent).
+  parent). Patch-side counterpart: `merge_first_parent_patch <merge>
+  [args...]` — the shared first-parent MERGE patch primitive (two-tree
+  diff-tree form); callers gate with `is_merge_commit`.
 - Call `show_changed_file_names` (hug-git-show) instead when you need N/-N
   shorthand resolution — it resolves then delegates here.
 

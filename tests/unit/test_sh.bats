@@ -772,6 +772,38 @@ _setup_merge_fixture() {
   assert_output --partial "rename to renamed1.txt"
 }
 
+@test "hug shp: range containing a merge shows the first-parent patch per merge commit" {
+  # The shp help promises the FIRST-PARENT patch "for every merge commit
+  # displayed (ranges included)" — show_commits iterates ranges per-commit,
+  # so the merge commit's section must carry the first-parent patch while
+  # the linear commits keep their own. Mirrors the shcp range regression
+  # pin (which pins the OPPOSITE contract: one cumulative endpoint diff).
+  _setup_merge_fixture side-shp-range
+  run hug shp HEAD~2..HEAD
+  assert_success
+  assert_output --partial "diff --git a/side-shp-range.txt b/side-shp-range.txt"
+  refute_output --partial "diff --cc"
+}
+
+@test "hug shp: merge carrying a rename renders delete+add (diff-tree stance)" {
+  # The help documents shp's merge-patch rename stance: diff-tree ignores
+  # diff.renames, so a rename inside the first-parent diff renders as
+  # delete+add, NOT rename from/to. Repo-local diff.renames=true makes the
+  # refute discriminating: a swap to `git show -m --first-parent` would
+  # print "rename from" and fail. (Closes the review gap filed as
+  # elifarley/hug-scm#348.)
+  git config diff.renames true
+  git checkout -qb ren-side HEAD~1
+  git mv feature1.txt fe1-renamed.txt && git commit -qm ren-side
+  git checkout -q main
+  git merge -q --no-ff ren-side -m "Merge ren-side"
+  run hug shp HEAD
+  assert_success
+  refute_output --partial "rename from"
+  assert_output --partial "deleted file mode"
+  assert_output --partial "fe1-renamed.txt"
+}
+
 @test "hug sh --llm: merge commit emits a <stats> section (previously omitted when stats were empty)" {
   # _show_commit_llm wraps stats in `<stats>` ONLY when the shc capture is
   # non-empty; pre-268 merges captured nothing, so the section vanished
@@ -833,6 +865,38 @@ _setup_merge_fixture() {
   refute_output --partial "diff --git a/feature2.txt"
   # Stats stay per-parent (issue 268 contract, unchanged).
   assert_output --partial "File stats:"
+  assert_output --partial "feature2.txt"
+}
+
+@test "hug shcp: :/regex ref resolves through the merge gate (issue 346 regression)" {
+  # :/regex resolves as a rev but does NOT compose with the helper's ^1
+  # suffix — pre-#346 this input printed an empty patch with exit 0, and an
+  # unguarded gate would now die mid-stream with a raw git fatal (rev-list
+  # resolves :/regex; only the ^1 composition fails). The pre-gate SHA
+  # resolution keeps the class working; feature2.txt is the both-parents
+  # discriminator, so its hunk must stay absent from the first-parent patch.
+  _setup_merge_fixture side-regex
+  run hug shcp ':/Merge side-regex'
+  assert_success
+  assert_output --partial "diff --git a/side-regex.txt b/side-regex.txt"
+  refute_output --partial "diff --git a/feature2.txt"
+}
+
+@test "hug shcp: merge + pathspec scopes the first-parent patch (issue 346)" {
+  # The shcp merge branch must thread pathspec_args into the helper like the
+  # non-merge branch threads them into diff-tree — dropping the array
+  # expansion there would silently UN-filter `hug shcp <merge> -- <path>`
+  # (the lib tests pin the helper's own pathspec handling, not this call
+  # site). feature2.txt has no parent-1 hunk, so filtering to it must empty
+  # the patch section while per-parent stats still list it.
+  _setup_merge_fixture side-shcp-ps
+  run hug shcp HEAD -- side-shcp-ps.txt
+  assert_success
+  assert_output --partial "diff --git a/side-shcp-ps.txt b/side-shcp-ps.txt"
+  refute_output --partial "diff --git a/feature2.txt"
+  run hug shcp HEAD -- feature2.txt
+  assert_success
+  refute_output --partial "diff --git"
   assert_output --partial "feature2.txt"
 }
 
