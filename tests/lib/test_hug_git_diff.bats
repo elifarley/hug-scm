@@ -311,8 +311,8 @@ _make_merge_fixture() {
   # TRIAGE if this fails after a git upgrade: diff both sides and decide
   # which moved. The CONTRACT is first-parent content (pinned by the test
   # above); `git show -m --first-parent` is only a cross-form reference,
-  # and its byte shape is the version-sensitive side (no documented repo
-  # git floor). Re-pin deliberately, never silently.
+  # and its byte shape is the version-sensitive side (no enforced repo
+  # git floor — only ADR-001 test-strategy 2.23+ is documented). Re-pin deliberately, never silently.
   # This equality also depends on the fixture staying rename-free: on a
   # rename-carrying merge, git show -m --first-parent renders
   # rename from/to (porcelain diff.renames default) while the two-tree
