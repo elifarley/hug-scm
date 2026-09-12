@@ -4,11 +4,11 @@
 
 **Goal:** Make `shp`/`shcp` (and `shp --llm`) show a first-parent patch on merge commits (spec: [elifarley/hug-scm#346](https://github.com/elifarley/hug-scm/issues/346)) and drop the inaccurate "pipe-safe" label from `shc -n` docs ([elifarley/hug-scm#329](https://github.com/elifarley/hug-scm/issues/329)).
 
-**Architecture:** One shared lib helper (`merge_first_parent_patch` in hug-git-diff) emits the probe-verified two-tree diff `git diff-tree -p --no-commit-id -r --root "$m^1" "$m"` for merges. Both call sites gate on the existing `is_merge_commit` predicate and keep today's invocation for non-merges/root — byte-identity is structural, not probe-best-effort. Help texts state one contract sentence: *patch = parent 1 (the `hug dd` rule, empty for `-s ours` merges); stats = each parent (issue-268 contract, untouched)*.
+**Architecture:** One shared lib helper (`merge_first_parent_patch` in hug-git-diff) emits the probe-verified two-tree diff `git diff-tree -p --no-commit-id -r --root "$merge^1" "$merge"` for merges. Both call sites gate on the existing `is_merge_commit` predicate and keep today's invocation for non-merges/root — byte-identity is structural, not probe-best-effort. Help texts state one contract sentence: *patch = parent 1 (the `hug dd` rule, empty for `-s ours` merges); stats = each parent (issue-268 contract, untouched)*.
 
 **Tech Stack:** Bash (command scripts + lib), BATS (bats-assert), GNU make targets, VitePress docs.
 
-**Spec:** `docs/superpowers/specs/2026-09-12-sh-merge-patch-parity-and-shc-n-pipe-safe-wording-design.md` (Rev 2). Worktree: `~/src/hug-scm.WT.346-sh-merge-patch-parity-and-shc-n-pipe-safe-wording`. **Repo rule: use `hug` commands, never raw `git`/`git worktree`, for all repo operations in these steps.** Test fixtures inside `.bats` files use plain `git` (that is existing convention there).
+**Spec:** `docs/superpowers/specs/2026-09-12-sh-merge-patch-parity-and-shc-n-pipe-safe-wording-design.md` (Rev 4). Worktree: `~/src/hug-scm.WT.346-sh-merge-patch-parity-and-shc-n-pipe-safe-wording`. **Repo rule: use `hug` commands, never raw `git`/`git worktree`, for all repo operations in these steps.** Test fixtures inside `.bats` files use plain `git` (that is existing convention there).
 
 **Key probe facts this plan relies on (git 2.34.1, all reproduced):**
 - `git diff-tree -p -m --first-parent <merge>` emits the per-parent concatenation (BOTH flag orders) — never use it.
@@ -177,7 +177,7 @@ Expected: FAIL — `merge_first_parent_patch: command not found` (or empty-outpu
 #   $2..   - optional extra git args (e.g. `-- <pathspec>...`), passed
 #            through verbatim AFTER the two trees.
 # Output:
-#   `git diff-tree -p --no-commit-id -r --root "$m^1" "$m"` on stdout.
+#   `git diff-tree -p --no-commit-id -r --root "$merge^1" "$merge"` on stdout.
 # WHY the two-tree form (probe-verified, git 2.34.1): `diff-tree -m
 # --first-parent` emits the per-parent CONCATENATION — `--first-parent` is
 # a history-traversal option and single-rev diff-tree does not traverse, so
@@ -213,7 +213,7 @@ the obvious flag pair is wrong: probed on git 2.34.1, `diff-tree -m
 is a traversal option and single-rev diff-tree does not traverse.
 
 WHAT: merge_first_parent_patch <merge> [args...] emits the two-tree diff
-`git diff-tree -p --no-commit-id -r --root "$m^1" "$m"` — probe-verified
+`git diff-tree -p --no-commit-id -r --root "$merge^1" "$merge"` — probe-verified
 byte-identical to `git show -m --first-parent` on merges and version-
 insensitive by construction (no documented repo git floor).
 
@@ -238,7 +238,7 @@ EOF
 **Goal:** `hug shcp <merge>` shows the first-parent patch above its per-parent stats; non-merge/range paths untouched; shcp help states the contract.
 
 **Files:**
-- Modify: `git-config/bin/git-shcp:143-150` (single-commit else-branch) and `:49-51` (help text)
+- Modify: `git-config/bin/git-shcp:145-152` (single-commit else-branch) and `:49-51` (help text)
 - Test: `tests/unit/test_sh.bats` (new tests near the existing `hug shcp: merge stats` test)
 
 **Acceptance Criteria:**
@@ -291,9 +291,9 @@ EOF
 - [ ] **Step 2: Run to red**
 
 Run: `make test-unit TEST_FILE=test_sh.bats TEST_FILTER="shcp"`
-Expected: the two new merge/range patch tests FAIL (`feature2.txt` refute fails on the merge test because today's output is empty — actually the assert for the side hunk fails first: today the patch section is empty). The `-h` probe fails on "FIRST-PARENT".
+Expected: the merge-patch test FAILS (today the patch section is empty — the `diff --git a/side-shcp-patch.txt` assert fails first) and the `-h` probe FAILS on "FIRST-PARENT". The range regression pin PASSES at red and must still pass at green — it pins the range branch, which this task never touches; if it fails, the edit leaked into the range branch, not the test.
 
-- [ ] **Step 3: Implement — gate the single-commit branch** (replace the `else` block at `git-shcp:143-150`)
+- [ ] **Step 3: Implement — gate the single-commit branch** (replace the `else` block at `git-shcp:145-152` — the whole block through the `git shc` stats line at `:151` and its closing `fi`; a line-range replace stopping early would drop the stats delegation)
 
 ```bash
 else
@@ -375,8 +375,8 @@ EOF
 **Goal:** `hug shp <merge>` and `shp --llm` `<diff>` show the first-parent patch; non-merges keep `git show` byte-identical (rename rendering preserved); sh/shp/shv help state the contract.
 
 **Files:**
-- Modify: `git-config/lib/hug-git-show` — `_show_commit_standard` patch invocation (~`:287`) and `_show_commit_llm` `<diff>` CDATA invocation (~`:345`)
-- Modify: `git-config/bin/git-sh:63-65`, `git-config/bin/git-shp:42-44`, `git-config/bin/git-shv:52-54` (help texts)
+- Modify: `git-config/lib/hug-git-show` — `_show_commit_standard` patch invocation (`:274`; the `HUG_QUIET=T git shc` stats delegation at `:287` is NOT the patch site) and `_show_commit_llm` `<diff>` CDATA invocation (`:345`)
+- Modify: `git-config/bin/git-sh:62-65`, `git-config/bin/git-shp:42-44`, `git-config/bin/git-shv:52-54` (help texts)
 - Test: `tests/lib/test_hug_git_show.bats` (add lib-level merge pin), `tests/unit/test_sh.bats` (flip `:679`, add pins), `tests/unit/test_shv.bats` (add help probe)
 
 **Acceptance Criteria:**
@@ -581,7 +581,7 @@ Expected: new tests pass EXCEPT any help probe added below; the flipped `:679` t
 
 - [ ] **Step 7: Update sh, shp, shv help texts**
 
-`git-config/bin/git-sh:63-65` — replace:
+`git-config/bin/git-sh:62-65` — replace:
 ```
     Merge commits: File stats list changes vs EACH parent (a file touched
     on both sides appears once per parent) — see 'hug shc -h' for the
@@ -712,13 +712,13 @@ EOF
 - [ ] `git-dd:75-77` no longer derives a dd-vs-shp contrast from shp's combined diff.
 - [ ] `docs/commands/head.md:217` no longer says patch sections stay empty.
 - [ ] The `:634` test comment no longer describes #346 as open.
-- [ ] Sweep: `grep -rnE "stays? empty on clean merges|combined diff" docs/ README.md git-config/ tests/ CHANGELOG.md | grep -v ".vitepress/dist" | grep -v "superpowers/"` returns EXACTLY these five allowlisted residuals, each for a stated reason:
-  1. `CHANGELOG.md:10` — released v1.18.0.0 history (stays; superseded by the next release note).
-  2. `CHANGELOG.md:421` — released history carrying the dying dd-vs-shp contrast (stays; same supersession).
+- [ ] Sweep: `grep -rnE "stays? empty on clean merges|combined diff" docs/ README.md git-config/ tests/ CHANGELOG.md | grep -v ".vitepress/dist" | grep -v "superpowers/"` returns EXACTLY these five allowlisted residuals, each for a stated reason (census re-derived on the post-edit tree — do not trust prior rounds' lists):
+  1. `CHANGELOG.md:421` — released history carrying the dying dd-vs-shp contrast (stays; superseded by the next release note).
+  2. `git-config/bin/git-dd:76` — the reworded line still contains dd's own accurate "(not a combined diff)" half (dd's difftool diff is a plain two-tree diff, never `--cc`).
   3. `docs/practical-workflows.md:39` — "combined diff" describes `hug sw` (staged+unstaged combined view) — accurate, unrelated feature.
   4. `tests/unit/test_status_staging.bats:388` — `sw --stat` test name using sw's "combined diff" — accurate, unrelated feature.
   5. `tests/unit/test_status_staging.bats:1693` — same, sw pathspec test name.
-  Any hit outside this list is a missed edit — fix the edit, not the list.
+  `CHANGELOG.md:10` (the v1.18.0.0 note) is deliberately NOT on this list: its word order ("on clean merges stay empty") never matches the pattern — it is released history, allowed unconditionally and superseded by the next release note. Any hit outside the list is a missed edit — fix the edit, not the list.
 - [ ] `make test-bash` passes; `make docs-build` succeeds.
 
 **Verify:** `make test-bash` → all pass; `make docs-build` → success.
@@ -766,7 +766,7 @@ Patch sections on merges show the FIRST-PARENT diff — what the merge brought i
 - [ ] **Step 4: Run the sweep and audit against the allowlist**
 
 Run: `grep -rnE "stays? empty on clean merges|combined diff" docs/ README.md git-config/ tests/ CHANGELOG.md | grep -v ".vitepress/dist" | grep -v "superpowers/"`
-Expected: EXACTLY the five allowlisted residuals from the AC above (`CHANGELOG.md:10`, `CHANGELOG.md:421`, `docs/practical-workflows.md:39`, `tests/unit/test_status_staging.bats:388`, `tests/unit/test_status_staging.bats:1693`). Any other hit is a missed edit in Tasks 1–5 — fix the edit, never widen the allowlist to absorb it.
+Expected: EXACTLY the five allowlisted residuals from the AC above (`CHANGELOG.md:421`, `git-config/bin/git-dd:76`, `docs/practical-workflows.md:39`, `tests/unit/test_status_staging.bats:388`, `tests/unit/test_status_staging.bats:1693`). Any other hit is a missed edit in Tasks 1–5 — fix the edit, never widen the allowlist to absorb it.
 
 - [ ] **Step 5: Full validation**
 
@@ -798,11 +798,15 @@ explicitly (recorded in the PR body).
 HOW: Wording-only. The sweep
 (grep -rnE "stays? empty on clean merges|combined diff" over docs/,
 README.md, git-config/, tests/, CHANGELOG.md) surfaces exactly five
-residuals, all allowlisted with reasons: the two released CHANGELOG
-entries (history; superseded by the next release note) and three
-accurate "combined diff" uses about the unrelated `hug sw` feature
-(practical-workflows.md:39, test_status_staging.bats:388/:1693). No
-remaining hit describes sh/shp/shcp/shv/dd merge-patch behavior.
+residuals, all allowlisted with reasons: CHANGELOG.md:421 (released
+history; superseded by the next release note), git-dd:76 (dd's own
+accurate "(not a combined diff)" half — dd's difftool diff is never
+--cc), and three accurate "combined diff" uses about the unrelated
+`hug sw` feature (practical-workflows.md:39,
+test_status_staging.bats:388/:1693). CHANGELOG.md:10 is released
+history that the pattern's word order never matches; it is superseded
+by the next release note. No remaining hit describes
+sh/shp/shcp/shv/dd merge-patch behavior.
 
 IMPACT: No user-facing or maintainer-facing text claims merge patches
 stay empty, that shp renders a combined diff, or that dd and shp differ
