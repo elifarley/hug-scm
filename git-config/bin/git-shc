@@ -94,7 +94,7 @@ CAPTURING OUTPUT:
     files=$(hug shc -3)          # Capture changed files to variable
     hug shc -q | wc -l           # Count changed files (quiet mode)
     hug shc 2>/dev/null          # Suppress header only
-    hug shc -n main..HEAD            # Paths only (repo-relative, pipe-safe)
+    hug shc -n main..HEAD            # Paths only (repo-relative)
     files=$(hug shc -n -3)           # Capture changed-file list to a variable
     hug shc -n main..HEAD -- '*.py'  # Paths only, filtered to Python files
     hug shc -n -z main..HEAD | xargs -0 -r <cmd>   # NUL-separated: safe for
