@@ -49,9 +49,10 @@ RELATIONSHIP TO dd:
     "visual shp / shcp". For WORKING-TREE diffs use `hug dd s|u|w` — shv is
     commit-history only.
 
-    A single commit is diffed against its FIRST parent, so `shv <merge>` can
-    differ from `shp <merge>` (which renders a combined diff), and a root commit
-    shows every file as added. A range / -N shows the cumulative endpoint diff
+    A single commit is diffed against its FIRST parent, so `shv <merge>` and
+    `shp <merge>` both show the parent-1 diff on merges (shv in a difftool
+    window with rename detection; shp as text, rendering renames as
+    delete+add), and a root commit shows every file as added. A range / -N shows the cumulative endpoint diff
     (like shcp), not one tool window per commit.
 
 CAPTURING OUTPUT:

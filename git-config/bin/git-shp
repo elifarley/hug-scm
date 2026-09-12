@@ -40,8 +40,11 @@ DESCRIPTION:
     path after -- is used; additional paths trigger a warning.
 
     Merge commits: File stats list changes vs EACH parent (a file touched
-    on both sides appears once per parent); the patch section stays empty
-    on clean merges — see 'hug shc -h' for the full contract.
+    on both sides appears once per parent); the patch section shows the
+    FIRST-PARENT diff for every merge commit displayed (ranges included) —
+    what the merge brought in (same rule as `hug dd`; empty when the merge
+    introduces nothing vs parent 1, e.g. -s ours) — see 'hug shc -h' for
+    the full stats contract.
 
 PATH FILTERING:
     Append -- <path> to filter to a single file.

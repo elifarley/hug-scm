@@ -4,6 +4,11 @@
 load '../test_helper'
 load '../../git-config/lib/hug-common'
 load '../../git-config/lib/hug-git-repo'
+# hug-git-diff: _show_commit_standard/_show_commit_llm call _diff_emoji and
+# (since #346) gate merge patches on is_merge_commit/merge_first_parent_patch.
+# Script callers get it transitively (hug-git-kit loads it); this file must
+# load it explicitly or the merge gate silently falls to the git show branch.
+load '../../git-config/lib/hug-git-diff'
 load '../../git-config/lib/hug-git-show'
 
 setup() {
@@ -587,6 +592,43 @@ setup_show_pathspec_fixture() {
   assert_output --partial "src/a.py"
   assert_output --partial "docs/note.md"
   refute_output --partial "other/x.txt"
+}
+
+################################################################################
+# MERGE PATCH TESTS (issue 346: first-parent patch on merges)
+################################################################################
+
+# Fixture: branch `side` adds side.txt at HEAD~1; merge --no-ff back into
+# main (same shape as tests/unit/test_sh.bats _setup_merge_fixture and the
+# lib _make_merge_fixture in test_hug_git_diff.bats). main tip carries
+# feature2.txt from earlier commits — the both-parents discriminator.
+_setup_show_merge_fixture() {
+  git checkout -qb side HEAD~1
+  echo s > side.txt && git add side.txt && git commit -qm side
+  git checkout -q main
+  git merge -q --no-ff side -m "Merge side"
+}
+
+@test "_show_commit_standard: merge emits the first-parent patch (issue 346)" {
+  # NO lib-level merge pin existed before this test (grep "merge" was zero
+  # hits) — the unit test at test_sh.bats covered the command surface only.
+  _setup_show_merge_fixture
+  run _show_commit_standard HEAD true true
+  assert_success
+  # Patch side (stdout): parent-1 hunk only — feature2.txt is identical to
+  # parent 1, so it must NOT render as a patch (it still appears in stats).
+  assert_output --partial "diff --git a/side.txt b/side.txt"
+  refute_output --partial "diff --git a/feature2.txt"
+  assert_output --partial "feature2.txt"
+}
+
+@test "_show_commit_llm: merge <diff> CDATA carries the first-parent patch" {
+  _setup_show_merge_fixture
+  run _show_commit_llm HEAD true true
+  assert_success
+  assert_output --partial "<diff>"
+  assert_output --partial "diff --git a/side.txt b/side.txt"
+  refute_output --partial "diff --git a/feature2.txt"
 }
 
 @test "resolve_commit_ref: treats leading zeros as numbers" {

@@ -185,3 +185,10 @@ teardown() {
   assert_output --partial "SEE ALSO"
   [[ "$output" =~ shp|shcp ]] || fail "SEE ALSO should reference shp/shcp"
 }
+
+@test "hug shv -h: shv and shp agree on merges (no combined-diff contrast)" {
+  run hug shv -h
+  assert_success
+  refute_output --partial "combined diff"
+  assert_output --partial "FIRST parent"
+}

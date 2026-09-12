@@ -268,10 +268,20 @@ _show_commit_standard() {
         if [[ "${HUG_QUIET:-}" != "T" ]]; then
             printf '\n%s %s Commit diff:\n' "$commit_emoji" "$diff_emoji" >&2
         fi
-        # Show the patch diff (suppress commit info from git show)
+        # Show the patch diff (suppress commit info from git show).
         # When pathspecs are given, restrict diff to them (nullsafe idiom —
         # expands to nothing when empty, `-- p...` otherwise)
-        git show "$commit" --pretty=format:"" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+        # Merge commits: two-tree first-parent diff (the `hug dd` rule).
+        # diff-tree's -m --first-parent does NOT restrict diff-tree to
+        # parent 1 (probed), and `git show -m --first-parent` is version-
+        # sensitive — hence the gate + shared helper. NON-merges keep
+        # `git show` byte-identical: it honors diff.renames (renders
+        # `rename from/to`) while diff-tree does not.
+        if is_merge_commit "$commit"; then
+            merge_first_parent_patch "$commit" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+        else
+            git show "$commit" --pretty=format:"" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+        fi
     fi
 
     # Show file stats if requested
@@ -342,7 +352,13 @@ _show_commit_llm() {
     if [[ "$show_patch" == "true" ]]; then
         printf '<diff><![CDATA[\n'
         # When pathspecs are given, restrict diff to them (nullsafe idiom)
-        git show "$commit" --pretty=format:"" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+        # Same merge gate as _show_commit_standard: first-parent patch on
+        # merges, byte-identical `git show` otherwise (rename rendering).
+        if is_merge_commit "$commit"; then
+            merge_first_parent_patch "$commit" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+        else
+            git show "$commit" --pretty=format:"" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+        fi
         printf ']]></diff>\n'
     fi
 

@@ -458,6 +458,17 @@ _setup_merge_fixture() {
   refute_output --partial "notable divergence"
 }
 
+@test "hug sh/shp -h: merge patch contract is first-parent, not empty" {
+  run hug sh -h
+  assert_success
+  assert_output --partial "FIRST-PARENT"
+  refute_output --partial "stay empty"
+  run hug shp -h
+  assert_success
+  assert_output --partial "FIRST-PARENT"
+  refute_output --partial "stays empty"
+}
+
 @test "hug shc -n: prints repo-relative paths only for single commit" {
   run hug shc -n HEAD
   assert_success
@@ -676,28 +687,89 @@ _setup_merge_fixture() {
   assert_output "feature2.txt"
 }
 
-@test "hug shp: merge stats list merged files while the patch stays empty (delegation, issue 268)" {
+@test "hug shp: merge patch shows the first-parent diff; stats stay per-parent (issue 346)" {
   # git-shc's NOTE documents that sh/shp/shcp inherit merge-aware STATS via
-  # their git shc delegation — but only `sh` had a pin. shp adds the PATCH
-  # section (git show, no -m): on a clean merge it stays empty while stats
-  # list files, and that contrast is the pin — it proves stats merge-
-  # awareness did NOT leak into the patch side (elifarley/hug-scm#346).
+  # their git shc delegation. The PATCH side used to stay empty (issue 268's
+  # deliberate boundary); #346 flips it: the patch is the FIRST-PARENT diff
+  # (the hug dd rule). The old pin refuted "diff --git" — inverted here.
   _setup_merge_fixture side-shp
   run hug shp HEAD
   assert_success
-  # Mixed-stream run (same idiom as the sh merge test): the "File stats:"
-  # header is stderr chatter, so stdout-only assertions can't see it.
-  # Stats side: merge-aware via delegation. feature2.txt is the
+  # Stats side: merge-aware via delegation, unchanged. feature2.txt is the
   # both-parents discriminator (see the sh merge test above).
   assert_output --partial "File stats:"
   assert_output --partial "side-shp.txt"
   assert_output --partial "feature2.txt"
-  # Chatter containment: shc runs under HUG_QUIET=T inside shp too — its
-  # "Changed files" header must not surface in either stream.
+  # Chatter containment: shc runs under HUG_QUIET=T inside shp too.
   refute_output --partial "Changed files"
-  # Patch side: git show without -m is empty on a clean merge — no diff
-  # body may appear between the commit header and the stat block.
+  # Patch side: FIRST-PARENT only. feature2.txt is identical to parent 1,
+  # so it appears in stats but must NOT render as a patch hunk (targeted
+  # refute — a bare "feature2.txt" refutation would wrongly fail on the
+  # stats section).
+  assert_output --partial "diff --git a/side-shp.txt b/side-shp.txt"
+  refute_output --partial "diff --git a/feature2.txt"
+}
+
+@test "hug shp --llm: merge <diff> CDATA carries the first-parent patch (issue 346)" {
+  # The existing sh --llm merge pin covers <stats> (sh has no patch). shp is
+  # the patch-bearing LLM surface: the CDATA must carry the parent-1 patch.
+  _setup_merge_fixture side-llm2
+  run hug shp --llm HEAD
+  assert_success
+  assert_output --partial "<diff>"
+  assert_output --partial "diff --git a/side-llm2.txt b/side-llm2.txt"
+  refute_output --partial "diff --git a/feature2.txt"
+}
+
+@test "hug shp: dirty merge shows the full first-parent diff (not combined hunks)" {
+  # Pre-#346, git show rendered a combined --cc diff on dirty merges
+  # (resolution hunks only). The first-parent contract shows the whole
+  # parent-1 diff — a superset that includes the resolution (probe-checked:
+  # diff --cc c.txt -> diff --git a/c.txt b/c.txt). Deliberate change, pinned.
+  printf 'a\n' > c.txt && git add c.txt && git commit -qm c-base
+  git checkout -qb dirty-side
+  printf 'a\nside\n' > c.txt && git commit -qam side-edit
+  git checkout -q main
+  printf 'a\nmain\n' > c.txt && git commit -qam main-edit
+  git merge --no-ff dirty-side >/dev/null 2>&1 || true # conflict expected
+  printf 'a\nresolved\n' > c.txt && git add c.txt && git commit -qm resolved
+  # FAIL-LOUD guard: the || true above swallows ANY merge failure, and a
+  # single-parent HEAD would pass both assertions below vacuously. Pin that
+  # a real 2-parent merge exists before trusting them (repo idiom:
+  # rev-list --parents; 3 words = HEAD + 2 parents).
+  [[ $(git rev-list --parents -n 1 HEAD | wc -w) -eq 3 ]]
+  run hug shp HEAD
+  assert_success
+  assert_output --partial "diff --git a/c.txt b/c.txt"
+  refute_output --partial "diff --cc"
+}
+
+@test "hug shp: ours-strategy merge keeps an empty patch section (legitimate)" {
+  # -s ours: the merge result equals parent 1, so the FIRST-PARENT diff is
+  # empty by construction. The help contract promises parent-1 content, not
+  # non-empty content — this pin guards that wording (O-002 in the spec).
+  git checkout -qb ours-side HEAD~1
+  echo o > ours-side.txt && git add ours-side.txt && git commit -qm ours-side
+  git checkout -q main
+  git merge -q -s ours ours-side -m "Ours merge"
+  run hug shp HEAD
+  assert_success
   refute_output --partial "diff --git"
+  assert_output --partial "File stats:"
+  assert_output --partial "feature2.txt"
+}
+
+@test "hug shp: non-merge rename commit still renders rename entries (git show kept off-merge)" {
+  # Guards the merge gate's off-branch: swapping `git show` for diff-tree
+  # wholesale would silently turn renames into delete+add on EVERY non-merge
+  # patch (diff-tree does not honor diff.renames; git show does). Repo-local
+  # config keeps the pin deterministic against exotic global configs.
+  git config diff.renames true
+  git mv feature1.txt renamed1.txt && git commit -qm rename1
+  run hug shp HEAD
+  assert_success
+  assert_output --partial "rename from feature1.txt"
+  assert_output --partial "rename to renamed1.txt"
 }
 
 @test "hug sh --llm: merge commit emits a <stats> section (previously omitted when stats were empty)" {
