@@ -431,6 +431,9 @@ teardown() {
   assert_output --partial "against EACH parent"
   assert_output --partial "once per parent diff"
   assert_output --partial "first-parent-only view"
+  # ...and the OLD silence wording must stay gone — a re-addition fails here.
+  refute_output --partial "suppresses merge diffs"
+  refute_output --partial "notable divergence"
 }
 
 @test "hug shc -n: prints repo-relative paths only for single commit" {
@@ -570,6 +573,11 @@ teardown() {
   run hug shc -n HEAD
   assert_success
   assert_line "side.txt"
+  # -z: raw NUL-separated paths (no C-quoting) — proves --merge-aware threads
+  # through show_changed_file_names with the flag. A quoting regression
+  # C-quotes the token and a dropped flag empties the stream; either way the
+  # embedded 'side.txt\0' fails to match (od literal style of the -z tests).
+  [[ "$(hug shc -n -z HEAD | od -An -c | tr -d ' \n')" == *'side.txt\0'* ]]
 }
 
 @test "hug shc: merge commit lists changes vs each parent (--stat, issue 268)" {

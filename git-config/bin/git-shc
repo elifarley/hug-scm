@@ -12,9 +12,11 @@ set -euo pipefail
 # Part of the Hug tool suite
 
 # NOTE: since the issue-268 fix, merge commits list per-parent diffs (git -m);
-# the contract is test-pinned in tests/unit/test_sh.bats. sh and shp inherit
-# this via their HUG_QUIET=T git shc delegation (hug-git-show); hug-file-input
-# does NOT pass --merge-aware and stays suppressed (deliberate boundary).
+# the contract is test-pinned in tests/unit/test_sh.bats. sh, shp and shcp
+# inherit merge-aware STATS via their git shc delegation, but their PATCH
+# sections (git show / diff-tree -p, no -m) stay empty on clean merges —
+# patch parity is a tracked follow-up. hug-file-input does NOT pass
+# --merge-aware and stays suppressed (deliberate boundary).
 show_help() {
   cat << 'EOF'
 hug shc: Show files changed in a commit or range with statistics.
@@ -261,7 +263,10 @@ esac
 # Issue 268: a merge commit's plain diff-tree output is EMPTY (git suppresses
 # merge diffs without -m). Opt into per-parent diffs ONLY for merges — every
 # other shape keeps byte-identical output. Detection runs ONCE here so both
-# the -n and --stat modes stay in contract. The is_range gate is load-bearing,
+# the -n and --stat modes stay in contract. Cost: O(1) — one rev-list probe
+# per single-commit invocation; on a merge, pinned_diff re-probes internally
+# by design (each call site's flags must be self-contained), so two rev-list
+# calls on a merge are expected, not a bug. The is_range gate is load-bearing,
 # not cosmetic: for a range, `rev-list -n 1` prints the range TIP (+ parents),
 # so is_merge_commit would answer "is the tip a merge" and leak --merge-aware
 # into pinned_diff — which by contract usage-errors (exit 2) on ranges.
