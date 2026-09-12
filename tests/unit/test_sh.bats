@@ -672,6 +672,75 @@ teardown() {
   assert_line "side-fi.txt"
 }
 
+@test "hug shc -n: merge commit + pathspec filters the per-parent diffs" {
+  # -m + pathspec threading: diff-tree -m runs one diff PER PARENT, each
+  # scoped to the pathspec. feature2.txt exists only on main (parent 1's
+  # line of history), so it can only surface via the parent-2 diff — an
+  # exact single-line match proves the flag reached the git invocation with
+  # the pathspec intact (a dropped -m yields empty; a mangled arg list
+  # yields a git fatal).
+  git checkout -q -b side-ps HEAD~1
+  echo side > side-ps.txt
+  git add side-ps.txt
+  git commit -qm "side-ps change"
+  git checkout -q main
+  git merge -q --no-ff side-ps -m "Merge side-ps" >/dev/null 2>&1
+  run hug shc -n HEAD -- 'feature2.txt'
+  assert_success
+  assert_output "feature2.txt"
+}
+
+@test "hug shp: merge stats list merged files while the patch stays empty (delegation, issue 268)" {
+  # git-shc's NOTE documents that sh/shp/shcp inherit merge-aware STATS via
+  # their git shc delegation — but only `sh` had a pin. shp adds the PATCH
+  # section (git show, no -m): on a clean merge it stays empty while stats
+  # list files, and that contrast is the pin — it proves stats merge-
+  # awareness did NOT leak into the patch side (elifarley/hug-scm#346).
+  git checkout -q -b side-shp HEAD~1
+  echo side > side-shp.txt
+  git add side-shp.txt
+  git commit -qm "side-shp change"
+  git checkout -q main
+  git merge -q --no-ff side-shp -m "Merge side-shp" >/dev/null 2>&1
+  run hug shp HEAD
+  assert_success
+  # Mixed-stream run (same idiom as the sh merge test): the "File stats:"
+  # header is stderr chatter, so stdout-only assertions can't see it.
+  # Stats side: merge-aware via delegation. feature2.txt is the
+  # both-parents discriminator (see the sh merge test above).
+  assert_output --partial "File stats:"
+  assert_output --partial "side-shp.txt"
+  assert_output --partial "feature2.txt"
+  # Chatter containment: shc runs under HUG_QUIET=T inside shp too — its
+  # "Changed files" header must not surface in either stream.
+  refute_output --partial "Changed files"
+  # Patch side: git show without -m is empty on a clean merge — no diff
+  # body may appear between the commit header and the stat block.
+  refute_output --partial "diff --git"
+}
+
+@test "hug sh --llm: merge commit emits a <stats> section (previously omitted when stats were empty)" {
+  # _show_commit_llm wraps stats in `<stats>` ONLY when the shc capture is
+  # non-empty; pre-268 merges captured nothing, so the section vanished
+  # from LLM output entirely. The fix makes merges capture stats, so the
+  # section must now appear — a consumer-visible format change that no
+  # other test covered.
+  git checkout -q -b side-llm HEAD~1
+  echo side > side-llm.txt
+  git add side-llm.txt
+  git commit -qm "side-llm change"
+  git checkout -q main
+  git merge -q --no-ff side-llm -m "Merge side-llm" >/dev/null 2>&1
+  run hug sh --llm HEAD
+  assert_success
+  assert_output --partial "<stats>"
+  assert_output --partial "</stats>"
+  assert_output --partial "side-llm.txt"
+  # Both-parents discriminator: a first-parent-only regression would drop
+  # feature2.txt from the stats and this fails.
+  assert_output --partial "feature2.txt"
+}
+
 # -----------------------------------------------------------------------------
 # hug shc -z / positional / unborn-HEAD (issue #274)
 # -----------------------------------------------------------------------------
