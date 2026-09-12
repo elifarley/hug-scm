@@ -43,8 +43,8 @@ DESCRIPTION:
     on both sides appears once per parent); the patch section shows the
     FIRST-PARENT diff for every merge commit displayed (ranges included) —
     what the merge brought in (same rule as `hug dd`; empty when the merge
-    introduces nothing vs parent 1, e.g. -s ours) — see 'hug shc -h' for
-    the full stats contract.
+    introduces nothing vs parent 1, e.g. -s ours; renames render as
+    delete+add) — see 'hug shc -h' for the full stats contract.
 
 PATH FILTERING:
     Append -- <path> to filter to a single file.
