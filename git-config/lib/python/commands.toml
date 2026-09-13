@@ -73,3 +73,41 @@ categories = ["branching"]
 git_equivalent = "git switch -"
 usage = "hug bs"
 related = ["b", "bc"]
+
+# ── Merge family (elifarley/hug-scm#343) ─────────────────────────────────
+# mff is NOT here by design: it is a bin script (git-mff), and the loader's
+# no-shadow drift guarantee (test_drift2a_no_hug_bin_shadowing) forbids
+# registry rows colliding with bin scripts — scripts beat cards. mff gets
+# its search vocabulary from its own --search-meta _hug_keywords instead.
+
+[m]
+kind = "alias"
+description = """Squash-merge a branch: stage its changes, with no merge commit.
+Follow with hug c to commit the squashed result. The branch's individual
+commits are collapsed into one staged batch, keeping history linear."""
+keywords = ["merge", "squash", "combine"]
+categories = ["merge"]
+git_equivalent = "git merge --squash"
+usage = "hug m <branch>"
+related = ["c", "mkeep", "mff", "ma"]
+
+[mkeep]
+kind = "alias"
+description = """Merge with a merge commit, even when fast-forward is possible.
+Preserves the branched shape in history — reach for hug mff when you want
+the linear fast-forward instead."""
+keywords = ["merge", "no-ff", "fast-forward", "combine", "commit"]
+categories = ["merge"]
+git_equivalent = "git merge --no-ff"
+usage = "hug mkeep <branch>"
+related = ["m", "mff", "ma"]
+
+[ma]
+kind = "alias"
+description = """Abort the current merge and restore the pre-merge state.
+Use when a merge has conflicts you do not want to resolve right now."""
+keywords = ["merge", "abort", "cancel", "conflict"]
+categories = ["merge"]
+git_equivalent = "git merge --abort"
+usage = "hug ma"
+related = ["m", "mkeep", "mff"]

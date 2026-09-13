@@ -86,7 +86,15 @@ def commands():
         # because the length penalty on "Fast-forward " out-weighed the direct
         # hit, while slc's COINCIDENTAL "un**merged**" substring passed at 81.
         # A direct prose hit must never lose to a coincidental one.
-        ("merge", ["hug mff", "hug slc"]),
+        #
+        # Merge family onboarding (elifarley/hug-scm#343): the aliases carry
+        # "merge" as a curated keyword (95) and mff via desc= booster (90),
+        # so the whole family outranks the coincidental 90-club (bpull,
+        # fetch, slc, w unwip — all containing "merge" in their prose).
+        ("merge", ["hug m", "hug ma", "hug mff", "hug mkeep", "hug slc"]),
+        # Single-letter command discoverability: /squash must surface the
+        # squash-merge alias beside the HEAD-operation classic.
+        ("squash", ["hug h squash", "hug m"]),
     ],
 )
 def test_keyword_corpus(commands, query, expected_in_top5):
@@ -112,6 +120,11 @@ def test_keyword_corpus(commands, query, expected_in_top5):
         # surface the registry rows too (fetch / bpull / bpullr / bs).
         ("update my repo from the remote", ["hug fetch", "hug bpull", "hug bpullr"]),
         ("go back to the previous branch", ["hug bs"]),
+        # Merge family intent (elifarley/hug-scm#343): "combine" appears in
+        # no command description — the curated "combine" keyword on m/mkeep
+        # is what lets this phrasing find the merge family at all.
+        ("merge my feature branch", ["hug m", "hug mkeep"]),
+        ("combine my feature branch", ["hug m", "hug mkeep"]),
     ],
 )
 def test_intent_corpus(commands, query, expected_in_top5):

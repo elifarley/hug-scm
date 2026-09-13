@@ -31,8 +31,23 @@ def registry():
     return load_commands(categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
 
 
-def test_loads_seven_entries(registry):
-    assert set(registry) == {"fetch", "bpull", "bpullr", "pullall", "tpull", "tpullf", "bs"}
+def test_loads_ten_entries(registry):
+    # Merge family (m, mkeep, ma) joined in elifarley/hug-scm#343. mff is
+    # deliberately ABSENT: it is a bin script, and drift 2a forbids registry
+    # rows shadowing bin scripts — its search vocabulary lives in the
+    # script's own --search-meta _hug_keywords.
+    assert set(registry) == {
+        "fetch",
+        "bpull",
+        "bpullr",
+        "pullall",
+        "tpull",
+        "tpullf",
+        "bs",
+        "m",
+        "mkeep",
+        "ma",
+    }
 
 
 def test_every_entry_has_required_fields(registry):
