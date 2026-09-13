@@ -73,6 +73,42 @@ def test_summary_derived_from_first_sentence(registry):
     assert len(registry["bs"].summary) <= 70
 
 
+def test_registry_summary_truncation_branch(tmp_path):
+    # coverage audit (#341): derive_summary's >70-char truncation was pinned
+    # only at the unit level (test_category_meta.TestDeriveSummary) — the
+    # REGISTRY path's derive_summary call was not. A row whose first sentence
+    # blows the 70-char budget must come out truncated (word boundary +
+    # U+2026), because this summary is exactly what card summaries and
+    # related-lines render.
+    src = (PY_DIR / "commands.toml").read_text()
+    bad = tmp_path / "commands.toml"
+    long_first = (
+        "This first sentence keeps going well past the seventy character budget before it ends."
+    )
+    bad.write_text(
+        src
+        + (
+            "\n[zz-long]\n"
+            'kind = "alias"\n'
+            f'description = """{long_first} Second sentence."""\n'
+            'keywords = ["probe"]\n'
+            'categories = ["branching"]\n'
+            'git_equivalent = "git status"\n'
+            'usage = "hug zz-long"\n'
+            "related = []\n"
+        )
+    )
+    out = load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+    summary = out["zz-long"].summary
+    assert len(summary) <= 70
+    assert summary.endswith("…")
+    # derive_summary's contract: cut on a word boundary of the FIRST
+    # sentence only — the pre-ellipsis text is a prefix of it, and the
+    # second sentence never leaks into the summary.
+    assert long_first.startswith(summary[:-1])
+    assert "Second sentence" not in summary
+
+
 def test_name_grammar_rejects_bad_names(tmp_path):
     src = (PY_DIR / "commands.toml").read_text()
     bad = tmp_path / "commands.toml"

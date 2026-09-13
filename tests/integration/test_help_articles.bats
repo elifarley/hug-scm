@@ -206,6 +206,69 @@ teardown() {
   assert_output --partial "(none)"
 }
 
+# --- Registry search-layer pins (spec "BATS integration" rows that landed
+# --- as follow-up polish, elifarley/hug-scm#341). The card rows above pin
+# --- the exact-name chain; these pin the OTHER discovery surfaces the
+# --- registry feeds: keyword search, category pages, and script precedence.
+
+@test "hug help /fetch surfaces the fetch family via keyword search" {
+  cd "$TEST_TEMP_DIR"
+  run hug help /fetch
+  assert_success
+  # Registry rows must be searchable, not just card-addressable — the
+  # corpus pins this at pytest level; this is the e2e pin.
+  assert_output --partial "hug fetch"
+  assert_output --partial "hug tpull"
+}
+
+@test "hug help bpullr renders the card, not git's raw pull banner" {
+  cd "$TEST_TEMP_DIR"
+  run hug help bpullr
+  assert_success
+  assert_output --partial "(git alias)"
+  assert_output --partial "Full flags: git help pull"
+  # git's own `git pull -h` banner ("usage: git pull ...") must never leak
+  # through the card path — that leak is the regression this row guards.
+  refute_output --partial "usage: git pull"
+  refute_output --partial "Commands starting with"
+}
+
+@test "hug help @push-pull interleaves scripts and registry rows in one run" {
+  cd "$TEST_TEMP_DIR"
+  # Data lines go to stdout (stdout/stderr discipline); drop stderr so
+  # line-order assertions see only the command list. LESSON: go through
+  # `run` — assert_success reads $output, which a bare command substitution
+  # never sets (crashes under bats' `set -u`).
+  run bash -c "hug help '@push-pull' 2>/dev/null"
+  assert_success
+  local bp bpr fe bpush_line
+  # ^-anchored (2-space indent): descriptions on OTHER lines mention these
+  # names too (fetch's prose says "hug bpullr") — an unanchored grep would
+  # capture two line numbers and wreck the arithmetic below.
+  bp="$(grep -n '^  hug bpull  ' <<<"$output" | cut -d: -f1)"
+  bpr="$(grep -n '^  hug bpullr ' <<<"$output" | cut -d: -f1)"
+  fe="$(grep -n '^  hug fetch ' <<<"$output" | cut -d: -f1)"
+  bpush_line="$(grep -n '^  hug bpush ' <<<"$output" | cut -d: -f1)"
+  # All four present...
+  [[ -n "$bp" && -n "$bpr" && -n "$fe" && -n "$bpush_line" ]]
+  # ...and in ONE alphabetical run: the script row bpush sits between the
+  # registry rows bpullr and fetch — no script-block-then-registry-block split.
+  (( bp < bpr && bpr < bpush_line && bpush_line < fe ))
+  # Kind markers explain why -h differs across the run.
+  assert_output --partial "(git passthrough)"
+  assert_output --partial "(git alias)"
+}
+
+@test "hug help bpush is unaffected by the registry (script precedence)" {
+  cd "$TEST_TEMP_DIR"
+  run hug help bpush
+  assert_success
+  # Script help, not a card: the bpush one-liner shows, no registry markers.
+  assert_output --partial "hug bpush: Push the current branch"
+  refute_output --partial "git passthrough"
+  refute_output --partial "Full flags:"
+}
+
 # --- Loud card arms pinned at the bash layer (spec Integration 2): a stub
 # --- `uv` first on PATH simulates launcher outcomes without touching the
 # --- real toolchain. Every arm must be LOUD — none may fall through to the

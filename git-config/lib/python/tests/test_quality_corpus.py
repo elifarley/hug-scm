@@ -149,6 +149,10 @@ def test_intent_corpus(commands, query, expected_in_top5):
         ("stash", ["hug w wipdel", "hug w purge"]),
         # `undo` should find h-undo / h-rollback, not destructive purge.
         ("undo", ["hug w wipdel", "hug w purge", "hug h rewind"]),
+        # `fetch` is network-READ-only — the registry row the #339 corpus
+        # gained must never drag destructive undo/purge siblings along
+        # (elifarley/hug-scm#341: the family's missing negative row).
+        ("fetch", ["hug w wipdel", "hug w purge", "hug h rewind"]),
     ],
 )
 def test_keyword_destructive_isolation(commands, query, must_not_appear):

@@ -683,10 +683,13 @@ def list_categories(commands: list[CommandInfo]) -> list[str]:
 def _display_description(cmd: CommandInfo) -> str:
     """Listing text for one command: description plus the registry kind marker.
 
-    Shared by every render site (format_results, format_category_page — and
-    Task 3's card related-lines) so a registry row self-explains why `-h`
-    isn't hug-flavored identically everywhere. The marker is a render-time
-    suffix; descriptions stay pure prose in the TOML.
+    Shared by the search/browse render sites (format_results,
+    format_category_page) so a registry row self-explains why `-h` isn't
+    hug-flavored identically everywhere. Deliberately NOT shared with the
+    card's related-lines: render_card renders plain rel_meta.summary there
+    (no kind marker) — the card layout spec keeps related hints compact, and
+    the card header itself already carries the kind. The marker is a
+    render-time suffix; descriptions stay pure prose in the TOML.
     """
     desc = cmd.description or "(no description)"
     if cmd.kind:  # registry rows only; scripts keep kind=None
