@@ -12,8 +12,10 @@ import pytest
 from category_meta import CategoryMeta, load_categories
 from command_meta import RegistryError, load_commands
 from help_search import (
+    KEYWORD_SPECS,
     CommandInfo,
     MatchSpec,
+    _exact_substring,
     _save_cache,
     collect_metadata,
     derive_command_name,
@@ -549,6 +551,63 @@ class TestKeywordSpecs:
         # If this fails, the 0.95 weight tune may be too aggressive.
         results = search_keyword(commands, "wip")
         assert any(r.command == "hug w wip" for r in results)
+
+    def test_exact_substring_booster_clears_desc_floor(self):
+        # The mff shape from elifarley/hug-scm#344: the query appears
+        # verbatim in the summary, but WRatio's length penalty ("Fast-forward
+        # " prefix) scores it 60 — below the 80 desc floor. The desc= booster
+        # (100 × 0.90 = 90) must cross that floor where fuzzy desc cannot.
+        cmds = [
+            CommandInfo(
+                command="hug mff",
+                description="Fast-forward merge or move branch pointer",
+                categories=["merge"],
+            ),
+        ]
+        results = search_keyword(cmds, "merge")
+        assert [r.command for r in results] == ["hug mff"]
+
+    def test_exact_substring_booster_is_case_insensitive(self):
+        # Registry prose capitalizes mid-sentence; the query must not care.
+        cmds = [
+            CommandInfo(
+                command="hug mkeep",
+                description="Merge with a merge commit, even when fast-forward is possible.",
+                categories=["merge"],
+            ),
+        ]
+        assert any(r.command == "hug mkeep" for r in search_keyword(cmds, "MERGE"))
+
+    def test_exact_substring_booster_gate_rejects_short_queries(self):
+        # "st" IS a substring of "Stage ..." — without the MIN_EXACT_QUERY_LEN
+        # gate (4) the booster would flood every staging command into /st.
+        # The gate keeps it reserved for deliberate word-like queries.
+        assert _exact_substring("st", "Stage tracked files.") == 0
+        assert _exact_substring("tag", "Fetch tags from the remote.") == 0
+        # Same targets, query at the gate boundary: fires.
+        assert _exact_substring("stag", "Stage tracked files.") == 100
+
+    def test_exact_substring_booster_scores_zero_on_miss(self):
+        # Binary signal: a miss falls through to the fuzzy specs instead of
+        # polluting the best-spec-per-item race (run_search skips 0 < floor).
+        assert _exact_substring("rebase", "Fast-forward merge or move branch pointer") == 0
+
+    def test_booster_does_not_outrank_name_or_curated_keyword(self):
+        # Floor-crossing, not ranking-dominance: bpush matches "push" via
+        # name~ (100 × 0.95 = 95) AND via desc substring (90). The name
+        # signal must keep the higher score — the booster only rescues
+        # commands nothing stronger already matched.
+        cmds = [
+            CommandInfo(
+                command="hug bpush",
+                description="Push the current branch to its upstream remote.",
+                keywords=["push"],
+            ),
+        ]
+        results = search_keyword(cmds, "push")
+        assert [r.command for r in results] == ["hug bpush"]
+        detail = run_search("push", cmds, KEYWORD_SPECS)
+        assert detail[0][0] == 95  # name~ wins, not the desc= booster's 90
 
 
 class TestHydrateCategoryFields:

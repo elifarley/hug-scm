@@ -215,6 +215,47 @@ def run_search(
 #   category_desc — joined CategoryMeta.description; WRatio for prose
 #   keywords      — per-command curated terms; ratio for exact-ish only
 #                   (each keyword is a separate match unit, see _read_field)
+#
+# desc= (exact-substring booster, elifarley/hug-scm#344): WRatio's
+# length-difference penalty can push a DIRECT substring hit below the desc
+# floor while a coincidental substring passes. Verified against the live
+# index with query "merge" (floor 80 ×0.90):
+#
+#   command | summary                                    | WRatio | verdict
+#   ------- + ------------------------------------------ + ------ + -------
+#   slc     | "Show only conflicted (unmerged) files."   |  90    | passes —
+#           |                                            |        | via the
+#           |                                            |        | coincidental
+#           |                                            |        | "unmerged"
+#           |                                            |        | substring
+#   mff     | "Fast-forward merge or move branch pointer"|  60    | FAILS —
+#           |                                            |        | despite the
+#           |                                            |        | literal "merge"
+#
+# The booster is a floor-crossing mechanism, not a ranking-dominance one:
+# a binary 100 × the same 0.90 desc weight → 90, which clears the floor but
+# never outranks name matches or curated keywords (all ≥95 at their max, and
+# earlier specs win ties). Because run_search keeps the best spec per item,
+# a 0 score simply falls through to the fuzzy specs — no bypass needed.
+# Lowering the desc floor instead was REJECTED: it degrades precision
+# globally rather than rewarding exact hits specifically.
+MIN_EXACT_QUERY_LEN = 4
+
+
+def _exact_substring(query: str, target: str) -> int:
+    """100 iff the query is a case-insensitive substring of the target.
+
+    Pure string matching (no thefuzz), so it behaves identically on the
+    real-scorer and fallback paths. Queries shorter than MIN_EXACT_QUERY_LEN
+    score 0: "st" or "tag" is a substring of half the index and would flood
+    results with weak coincidences — the gate keeps the booster reserved for
+    deliberate, word-like queries. Needs no fuzzy library, so it lives
+    outside the try/except that binds the thefuzz/fallback scorer pairs.
+    """
+    q = query.strip().lower()
+    return 100 if len(q) >= MIN_EXACT_QUERY_LEN and q in target.lower() else 0
+
+
 KEYWORD_SPECS = [
     MatchSpec(field="command", scorer=_ratio, weight=1.00, min_threshold=90, label="name="),
     # name~ weight tuned 0.85→0.95 during T3: at 0.85 a typo like "undoo"
@@ -223,6 +264,9 @@ KEYWORD_SPECS = [
     # ("partial is fuzzier than ratio") while maintaining typo tolerance:
     # 89×0.95 ≈ 84.5 ≥ 80 passes; partial_ratio<84 still rejected.
     MatchSpec(field="command", scorer=_partial, weight=0.95, min_threshold=80, label="name~"),
+    MatchSpec(
+        field="description", scorer=_exact_substring, weight=0.90, min_threshold=80, label="desc="
+    ),
     MatchSpec(field="description", scorer=_wratio, weight=0.90, min_threshold=80, label="desc"),
     MatchSpec(
         field="category_desc", scorer=_wratio, weight=0.80, min_threshold=80, label="@cat-desc"

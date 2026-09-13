@@ -80,6 +80,13 @@ def commands():
         ("fetch", ["hug fetch", "hug tpull", "hug tpullf"]),
         ("pull", ["hug bpull", "hug bpullr", "hug pullall"]),
         ("bs", ["hug bs"]),
+        # Exact-substring booster (elifarley/hug-scm#344): "merge" appears
+        # verbatim in mff's summary ("Fast-forward merge or move branch
+        # pointer"), yet plain WRatio scored it 60 — below the 80 desc floor —
+        # because the length penalty on "Fast-forward " out-weighed the direct
+        # hit, while slc's COINCIDENTAL "un**merged**" substring passed at 81.
+        # A direct prose hit must never lose to a coincidental one.
+        ("merge", ["hug mff", "hug slc"]),
     ],
 )
 def test_keyword_corpus(commands, query, expected_in_top5):
