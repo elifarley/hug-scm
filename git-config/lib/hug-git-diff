@@ -618,9 +618,14 @@ is_merge_commit() {
 #   $2..   - optional extra git args (e.g. `-- <pathspec>...`), passed
 #            through verbatim AFTER the two trees.
 # Output:
-#   `git diff-tree -p --no-commit-id -r --root "$merge^1" "$merge"` on stdout.
+#   `git diff-tree -p --no-commit-id -r --root --textconv "$merge^1" "$merge"`
+#   on stdout.
 #   (--root is carried for symmetry with the single-rev call sites; it is
 #   inert in the two-tree form — a merge always has a parent 1.)
+#   --textconv keeps textconv'd files (.gitattributes diff drivers) readable
+#   in merge patches: plumbing does not run the converter by default, and
+#   without the flag `hug shp <merge>` would print "Binary files ... differ"
+#   where the non-merge branch (`git show`) shows the transformed hunk.
 # WHY the two-tree form (probe-verified, git 2.34.1): `diff-tree -m
 # --first-parent` emits the per-parent CONCATENATION — `--first-parent` is
 # a history-traversal option and single-rev diff-tree does not traverse, so
@@ -637,7 +642,7 @@ is_merge_commit() {
 merge_first_parent_patch() {
     local merge="$1"
     shift
-    git diff-tree -p --no-commit-id -r --root "$merge^1" "$merge" ${1+"$@"}
+    git diff-tree -p --no-commit-id -r --root --textconv "$merge^1" "$merge" ${1+"$@"}
 }
 
 ################################################################################

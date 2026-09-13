@@ -337,6 +337,30 @@ _make_merge_fixture() {
   assert_output --partial "diff --git a/o1.txt b/o1.txt"
 }
 
+@test "merge_first_parent_patch: textconv driver keeps merge patches readable" {
+  # Plumbing diff-tree does not run textconv unless asked (--textconv);
+  # without it, a textconv'd file (PDFs/office docs via .gitattributes)
+  # renders as "Binary files ... differ" in merge patches while the
+  # non-merge branch (git show, porcelain) shows the transformed hunk.
+  # Hermetic driver: an upcasing converter on .txt, so the transformed hunk
+  # (-HELLO/+HELLO WORLD) is unambiguous against the raw form. tr reads
+  # stdin only — the trailing '<' takes git's appended temp-file path as a
+  # redirect.
+  printf 'hello\n' > conv.txt && git add conv.txt && git commit -qm conv-base
+  printf '*.txt diff=up\n' > .gitattributes
+  git config diff.up.textconv 'tr a-z A-Z <'
+  git add .gitattributes && git commit -qm attrs
+  git checkout -qb conv-side
+  printf 'hello world\n' > conv.txt && git commit -qam conv-edit
+  git checkout -q main
+  git merge -q --no-ff conv-side -m conv-merge
+  run merge_first_parent_patch HEAD
+  assert_success
+  assert_output --partial "-HELLO"
+  assert_output --partial "+HELLO WORLD"
+  refute_output --partial "+hello world"
+}
+
 @test "merge_first_parent_patch: pathspecs thread after the two trees" {
   _make_merge_fixture
   run merge_first_parent_patch HEAD -- side.txt
