@@ -15,6 +15,8 @@
 #   - pinned_diff: The canonical pinned changed-files invocation for a commit
 #     or range — the one flag set all changed-files call sites delegate to
 #   - is_merge_commit: True iff a single-commit ref has more than one parent
+#   - merge_first_parent_patch: Print the first-parent patch for a MERGE
+#     commit (two-tree diff-tree; caller must gate with is_merge_commit)
 
 ################################################################################
 # Idempotent Guards
@@ -600,6 +602,47 @@ _diff_invoke_combined() { show_combined_diff "$@"; }
 # first (pinned_diff rejects --merge-aware on ranges for the same reason).
 is_merge_commit() {
     [[ $(git rev-list --parents -n 1 "$1" 2> /dev/null | wc -w) -gt 2 ]]
+}
+
+################################################################################
+# merge_first_parent_patch — the shared first-parent MERGE patch primitive
+################################################################################
+
+# Prints the first-parent patch for a MERGE commit.
+# Usage: merge_first_parent_patch <merge_commit> [git-arg...]
+# Parameters:
+#   $1     - a MERGE commit (caller MUST gate with is_merge_commit; calling
+#            this on a non-merge diffs against its single parent, which is
+#            NOT the contract the `git show` call sites want — they keep
+#            `git show` off-merge to preserve rename rendering).
+#   $2..   - optional extra git args (e.g. `-- <pathspec>...`), passed
+#            through verbatim AFTER the two trees.
+# Output:
+#   `git diff-tree -p --no-commit-id -r --root --textconv "$merge^1" "$merge"`
+#   on stdout.
+#   (--root is carried for symmetry with the single-rev call sites; it is
+#   inert in the two-tree form — a merge always has a parent 1.)
+#   --textconv keeps textconv'd files (.gitattributes diff drivers) readable
+#   in merge patches: plumbing does not run the converter by default, and
+#   without the flag `hug shp <merge>` would print "Binary files ... differ"
+#   where the non-merge branch (`git show`) shows the transformed hunk.
+# WHY the two-tree form (probe-verified, git 2.34.1): `diff-tree -m
+# --first-parent` emits the per-parent CONCATENATION — `--first-parent` is
+# a history-traversal option and single-rev diff-tree does not traverse, so
+# it cannot restrict `-m` pairing. `git show` (log family) honors the pair,
+# but its output is git-version-sensitive (no enforced repo floor — only
+# ADR-001's test-strategy 2.23+ is documented) — the two-tree form is
+# version-insensitive by construction and byte-identical
+# to `git show -m --first-parent` on merges whose first-parent diff has no
+# renames (show renders `rename from/to`, diff-tree delete+add).
+# Note: diff-tree defaults to no rename detection (plumbing), unlike
+# `git show` (porcelain `diff.renames` default on), so merge patches render
+# renames as delete+add — consistent with shcp's existing non-merge patch
+# semantics.
+merge_first_parent_patch() {
+    local merge="$1"
+    shift
+    git diff-tree -p --no-commit-id -r --root --textconv "$merge^1" "$merge" ${1+"$@"}
 }
 
 ################################################################################

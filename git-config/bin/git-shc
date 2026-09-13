@@ -13,9 +13,12 @@ set -euo pipefail
 
 # NOTE: since the issue-268 fix, merge commits list per-parent diffs (git -m);
 # the contract is test-pinned in tests/unit/test_sh.bats. sh, shp and shcp
-# inherit merge-aware STATS via their git shc delegation, but their PATCH
-# sections (git show / diff-tree -p, no -m) stay empty on clean merges —
-# patch parity is tracked as elifarley/hug-scm#346. hug-file-input does NOT pass
+# inherit merge-aware STATS via their git shc delegation. Patch parity is DONE
+# (elifarley/hug-scm#346): patches show the FIRST-PARENT diff on merges (the
+# hug dd rule; empty when the merge introduces nothing vs parent 1, e.g.
+# -s ours) — shp for every merge commit it displays (ranges included), shcp
+# in single-commit mode (a shcp range keeps the cumulative endpoint diff).
+# Patch = parent 1, stats = each parent. hug-file-input does NOT pass
 # --merge-aware and stays suppressed (deliberate boundary).
 show_help() {
   cat << 'EOF'
@@ -94,7 +97,7 @@ CAPTURING OUTPUT:
     files=$(hug shc -3)          # Capture changed files to variable
     hug shc -q | wc -l           # Count changed files (quiet mode)
     hug shc 2>/dev/null          # Suppress header only
-    hug shc -n main..HEAD            # Paths only (repo-relative, pipe-safe)
+    hug shc -n main..HEAD            # Paths only (repo-relative)
     files=$(hug shc -n -3)           # Capture changed-file list to a variable
     hug shc -n main..HEAD -- '*.py'  # Paths only, filtered to Python files
     hug shc -n -z main..HEAD | xargs -0 -r <cmd>   # NUL-separated: safe for

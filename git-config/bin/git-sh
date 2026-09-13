@@ -61,8 +61,10 @@ DESCRIPTION:
 
     Merge commits: File stats list changes vs EACH parent (a file touched
     on both sides appears once per parent) — see 'hug shc -h' for the
-    full contract. (sh shows no patch; shp/shcp patches stay empty on
-    clean merges.)
+    full contract. (sh shows no patch; shp/shcp patches show the
+    FIRST-PARENT diff on merges — shp for every merge commit it displays,
+    shcp in single-commit mode; empty when the merge introduces nothing
+    vs parent 1, e.g. -s ours.)
 
 PATH FILTERING:
     Append -- <path>... to restrict the diff and file stats.

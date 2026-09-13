@@ -9,6 +9,19 @@
 # - Standard human-readable format (with emoji indicators)
 # - LLM-friendly XML-tagged format (for AI/LLM consumption)
 #
+# DEPENDS ON: is_merge_commit / merge_first_parent_patch (hug-git-diff) and
+# _diff_emoji — hug-common/hug-git-kit load hug-git-diff transitively for
+# every current consumer; do not source this library standalone.
+
+# Fail loudly when the merge-patch helpers are missing (a stale HUG_HOME lib
+# predating #346): an undefined function inside an if-condition evaluates
+# false silently and would resurrect the empty-merge-patch bug. Same armor
+# git-shc wears for is_merge_commit.
+_require_merge_patch_helpers() {
+    command -v is_merge_commit > /dev/null 2>&1 &&
+        command -v merge_first_parent_patch > /dev/null 2>&1 && return 0
+    error "hug-git-show: merge-patch helpers missing — HUG_HOME (${HUG_HOME:-unset}) predates this lib; re-activate this checkout"
+}
 # N/-N SYNTAX CONVENTION:
 # - N (0-999) → Single commit HEAD~N (0 → HEAD)
 # - -N (1-999) → Range HEAD~N..HEAD (cumulative last N commits)
@@ -268,10 +281,21 @@ _show_commit_standard() {
         if [[ "${HUG_QUIET:-}" != "T" ]]; then
             printf '\n%s %s Commit diff:\n' "$commit_emoji" "$diff_emoji" >&2
         fi
-        # Show the patch diff (suppress commit info from git show)
+        # Show the patch diff (suppress commit info from git show).
         # When pathspecs are given, restrict diff to them (nullsafe idiom —
         # expands to nothing when empty, `-- p...` otherwise)
-        git show "$commit" --pretty=format:"" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+        # Merge commits: two-tree first-parent diff (the `hug dd` rule).
+        # diff-tree's -m --first-parent does NOT restrict diff-tree to
+        # parent 1 (probed), and `git show -m --first-parent` is version-
+        # sensitive — hence the gate + shared helper. NON-merges keep
+        # `git show` byte-identical: it honors diff.renames (renders
+        # `rename from/to`) while diff-tree does not.
+        _require_merge_patch_helpers
+        if is_merge_commit "$commit"; then
+            merge_first_parent_patch "$commit" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+        else
+            git show "$commit" --pretty=format:"" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+        fi
     fi
 
     # Show file stats if requested
@@ -342,7 +366,14 @@ _show_commit_llm() {
     if [[ "$show_patch" == "true" ]]; then
         printf '<diff><![CDATA[\n'
         # When pathspecs are given, restrict diff to them (nullsafe idiom)
-        git show "$commit" --pretty=format:"" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+        # Same merge gate as _show_commit_standard: first-parent patch on
+        # merges, byte-identical `git show` otherwise (rename rendering).
+        _require_merge_patch_helpers
+        if is_merge_commit "$commit"; then
+            merge_first_parent_patch "$commit" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+        else
+            git show "$commit" --pretty=format:"" ${pathspecs[@]+"--" "${pathspecs[@]}"}
+        fi
         printf ']]></diff>\n'
     fi
 

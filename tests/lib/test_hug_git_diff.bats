@@ -293,6 +293,97 @@ _make_merge_fixture() {
   [[ "$output" == "$plain" ]]
 }
 
+@test "merge_first_parent_patch: merge emits the parent-1 patch (two-tree diff-tree)" {
+  _make_merge_fixture
+  run merge_first_parent_patch HEAD
+  assert_success
+  assert_output --partial "diff --git a/side.txt b/side.txt"
+  # On THIS fixture every merge form coincides (the parent-2 diff is empty
+  # by design), so it pins first-parent CONTENT, not form — the
+  # DISCRIMINATING form pin is the both-sides test below.
+}
+
+@test "merge_first_parent_patch: byte-identical to git show -m --first-parent" {
+  _make_merge_fixture
+  local ours ref
+  ours=$(merge_first_parent_patch HEAD)
+  # Hermetic reference: pins protect against ambient config drift too —
+  # color.ui=always would colorize only the porcelain side (diff-tree never
+  # colorizes) and diff.renames could flip its rename rendering.
+  ref=$(git -c color.ui=never -c diff.renames=false show -m --first-parent HEAD --pretty=format:)
+  # TRIAGE if this fails after a git upgrade: diff both sides and decide
+  # which moved. The CONTRACT is first-parent content (pinned by the test
+  # above); `git show -m --first-parent` is only a cross-form reference,
+  # and its byte shape is the version-sensitive side (no enforced repo
+  # git floor — only ADR-001 test-strategy 2.23+ is documented). Re-pin deliberately, never silently.
+  # This equality also depends on the fixture staying rename-free: on a
+  # rename-carrying merge, git show -m --first-parent renders
+  # rename from/to (porcelain diff.renames default) while the two-tree
+  # form renders delete+add — see the helper's WHY note.
+  [[ "$ours" == "$ref" ]]
+}
+
+@test "merge_first_parent_patch: octopus merge yields ONE parent-1 patch, not per-parent concatenation" {
+  # 3-parent shape (main + o1 + o2 + o3): main is parent 1, so the
+  # first-parent diff surfaces exactly the three side files as ONE section
+  # each — a regression to the per-parent concatenation form would emit
+  # many more sections. Same discriminator class as the both-sides test.
+  _make_octopus_fixture
+  run is_merge_commit HEAD
+  assert_success
+  run merge_first_parent_patch HEAD
+  assert_success
+  [[ $(printf '%s\n' "$output" | grep -c '^diff --git') -eq 3 ]]
+  assert_output --partial "diff --git a/o1.txt b/o1.txt"
+}
+
+@test "merge_first_parent_patch: textconv driver keeps merge patches readable" {
+  # Plumbing diff-tree does not run textconv unless asked (--textconv);
+  # without it, a textconv'd file (PDFs/office docs via .gitattributes)
+  # renders as "Binary files ... differ" in merge patches while the
+  # non-merge branch (git show, porcelain) shows the transformed hunk.
+  # Hermetic driver: an upcasing converter on .txt, so the transformed hunk
+  # (-HELLO/+HELLO WORLD) is unambiguous against the raw form. tr reads
+  # stdin only — the trailing '<' takes git's appended temp-file path as a
+  # redirect.
+  printf 'hello\n' > conv.txt && git add conv.txt && git commit -qm conv-base
+  printf '*.txt diff=up\n' > .gitattributes
+  git config diff.up.textconv 'tr a-z A-Z <'
+  git add .gitattributes && git commit -qm attrs
+  git checkout -qb conv-side
+  printf 'hello world\n' > conv.txt && git commit -qam conv-edit
+  git checkout -q main
+  git merge -q --no-ff conv-side -m conv-merge
+  run merge_first_parent_patch HEAD
+  assert_success
+  assert_output --partial "-HELLO"
+  assert_output --partial "+HELLO WORLD"
+  refute_output --partial "+hello world"
+}
+
+@test "merge_first_parent_patch: pathspecs thread after the two trees" {
+  _make_merge_fixture
+  run merge_first_parent_patch HEAD -- side.txt
+  assert_success
+  assert_output --partial "diff --git a/side.txt b/side.txt"
+  run merge_first_parent_patch HEAD -- no-such.txt
+  assert_success
+  assert_output ""
+}
+
+@test "merge_first_parent_patch: both-sides fixture — one section, not per-parent concatenation" {
+  # The DISCRIMINATING fixture: both parents modify shared.txt, so the
+  # per-parent forms (diff-tree -m, with or without --first-parent) emit
+  # TWO shared.txt sections while the two-tree form emits exactly ONE.
+  # On _make_merge_fixture (empty parent-2 diff) all forms coincide, so
+  # this is the pin that catches a regression to the concatenation form.
+  _make_both_sides_fixture
+  run merge_first_parent_patch HEAD
+  assert_success
+  [[ $(printf '%s\n' "$output" | grep -c '^diff --git') -eq 1 ]]
+  assert_output --partial "diff --git a/shared.txt b/shared.txt"
+}
+
 # Fixture: BOTH parents modify shared.txt in different regions (auto-merge
 # succeeds without conflict) — the shape behind the documented help contract
 # "a file changed on both sides appears once per parent diff". Built on
