@@ -255,7 +255,8 @@ hug fborn <file>  # finds original creation even if renamed
 **Solution**: Check merge commits specifically:
 ```bash
 hug l --merges --since="1 week ago"
-hug shp <merge-commit>  # shows full merge diff
+hug shp <merge-commit>  # shows what the merge brought in (first-parent diff)
+hug shc <merge-commit>  # file stats against EACH parent
 ```
 
 ## Integration with Code Execution (MCP)
