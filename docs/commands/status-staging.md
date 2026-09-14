@@ -79,7 +79,7 @@ These enhance Git's `status` and `add` with colored summaries, patches, and smar
     hug s -r                    # URL of tracking remote
     hug s -b -r -u              # Branch, remote URL, upstream (tab-separated)
     hug s --conflicted          # Count of conflicted (unmerged) files
-    hug s -z -b -H | xargs -0  # NUL-separated for unusual names
+    hug s -z -b -H | xargs -0 -r <cmd>  # -r matters: GNU xargs otherwise runs <cmd> ONCE, operand-less, on empty input
     ```
     :::
 

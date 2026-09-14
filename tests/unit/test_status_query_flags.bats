@@ -52,6 +52,19 @@ teardown() {
   assert_output --partial "QUERY FLAGS"
 }
 
+@test "hug s help: piped xargs example carries the GNU -r empty-input guard" {
+  # elifarley/hug-scm#281: the CAPTURING OUTPUT pipeline is copy-pasted by
+  # users; bare `xargs -0` lets GNU xargs run the consumer once, operand-less,
+  # on empty input (hug s query mode emits zero bytes when a requested field
+  # is empty: -b on detached HEAD, -u/-r with no upstream). Mirrors the guard
+  # documented in `hug shc` help.
+  run hug s -h
+  assert_success
+  assert_output --partial "xargs -0 -r"
+  # No bare `xargs -0` (not followed by another flag) anywhere in the help.
+  refute_output --regexp "xargs -0 [^-]"
+}
+
 # ---------------------------------------------------------------------------
 # Flag conflict detection
 # ---------------------------------------------------------------------------
