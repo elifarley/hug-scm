@@ -18,3 +18,10 @@ Non-script commands (git-aliases, passthroughs) have no script to annotate —
 their keywords/summaries live in `../lib/python/commands.toml` (registry),
 loaded by `command_meta.py`. Keep the two surfaces consistent: a keyword that
 would fit a destructive sibling stays out of BOTH.
+
+The discovery layer also invokes scripts directly from NON-REPO cwds — both
+`--search-meta` and `-h/--help` must work there (an installed layout may have
+no `.git` at all). Dispatch `eval "$(parse_common_flags "$@")"` BEFORE
+`check_git_repo`, or the guard locks users out of the very help that explains
+recovery (see git-mff, git-shc).
+
