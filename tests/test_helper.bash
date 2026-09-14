@@ -422,6 +422,24 @@ create_test_repo_with_dated_commits() {
   echo "$test_repo"
 }
 
+# _git_test_identity [dir]: configure the standard throwaway identity
+# (user.email t@t.tld, user.name t) in the repo at <dir> (default: CWD).
+_git_test_identity() {
+  git -C "${1:-.}" config user.email t@t.tld
+  git -C "${1:-.}" config user.name t
+}
+
+# _init_repo_at <path> [--initial-branch=<name>]: create a fresh git repo at
+# <path> (any path, e.g. under BATS_TEST_TMPDIR — create_test_repo cannot
+# serve repos at arbitrary paths) and configure the standard test identity.
+# Additional flags are passed through to `git init` verbatim.
+_init_repo_at() {
+  local path="$1"
+  shift
+  git init -q "$@" "$path"
+  _git_test_identity "$path"
+}
+
 # Clean up test repository
 cleanup_test_repo() {
   # CRITICAL: Exit any test repo directory first to prevent getcwd errors
@@ -685,6 +703,31 @@ assert_git_status_not_contains() {
     echo "Did not expect git status --porcelain=2 to contain: $unexpected"
     echo "Actual status:"
     printf '%s\n' "$status"
+    return 1
+  fi
+}
+
+# assert_bytes_eq <expected>: assert a byte stream (on stdin) equals <expected>.
+# Usage:   <cmd emitting bytes> | assert_bytes_eq 'a.txt\0b.txt\0'
+# <expected> is the output of `od -An -c | tr -d ' \n'` over the stream.
+# This is the ONE authoritative copy of the NUL-assertion tribal knowledge:
+# - Assert through the pipe, never via $output: BATS `run`/`$output` strips
+#   NUL bytes, so a NUL-terminated stream can never be compared from $output.
+# - od -c renders each NUL as the two characters \0; single backslashes in
+#   <expected> are exact bytes — od prints one backslash per byte, no
+#   escaping at this layer.
+# - od -c renders non-ASCII bytes as octal escapes (é → 303 251).
+# - Full-stream equality also pins NUL termination and the absence of a
+#   trailing newline.
+# - Fixture caution: avoid od's `*` line-dedup by keeping streams under
+#   16 bytes per line or with distinct lines only.
+assert_bytes_eq() {
+  local expected="$1" actual
+  actual="$(od -An -c | tr -d ' \n')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Byte streams differ (od -An -c | tr -d ' \n' canonical form)"
+    echo "Expected: $expected"
+    echo "Actual:   $actual"
     return 1
   fi
 }

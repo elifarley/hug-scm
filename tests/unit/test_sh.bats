@@ -924,10 +924,7 @@ _setup_merge_fixture() {
 @test "hug shc -n -z: NUL-separated paths, final entry NUL-terminated, no trailing newline" {
   echo x > a.txt && echo y > b.txt
   git add -A && git commit -qm add-ab
-  # NUL assertions via pipe — run/$output strips NUL bytes (project learning).
-  # od -c renders NUL as \0 (two chars); full-stream equality also pins the
-  # no-trailing-newline contract.
-  [[ "$(hug shc -n -z HEAD | od -An -c | tr -d ' \n')" == 'a.txt\0b.txt\0' ]]
+  hug shc -n -z HEAD | assert_bytes_eq 'a.txt\0b.txt\0'
 }
 
 @test "hug shc -n -z: structural-char filename — line mode one C-quoted line, -z raw bytes" {
@@ -940,9 +937,8 @@ _setup_merge_fixture() {
   assert_line '"back\\slash.txt"'
   assert_line '"we\nird"'
   # AFTER-behavior (-z): raw bytes, NUL-terminated, tree order
-  # (back\slash.txt sorts before we\nird). Single backslashes below are exact
-  # bytes — od prints one backslash per byte, no escaping at this layer.
-  [[ "$(hug shc -n -z HEAD | od -An -c | tr -d ' \n')" == 'back\slash.txt\0we\nird\0' ]]
+  # (back\slash.txt sorts before we\nird).
+  hug shc -n -z HEAD | assert_bytes_eq 'back\slash.txt\0we\nird\0'
 }
 
 @test "hug shc -z without -n is a usage error (exit 2)" {
@@ -957,17 +953,17 @@ _setup_merge_fixture() {
   # discriminating: the range spans ONLY the b.txt commit.
   echo x > a.txt && git add -A && git commit -qm add-a
   echo y > b.txt && git add -A && git commit -qm add-b
-  [[ "$(hug shc -n -z HEAD~1..HEAD | od -An -c | tr -d ' \n')" == 'b.txt\0' ]]
+  hug shc -n -z HEAD~1..HEAD | assert_bytes_eq 'b.txt\0'
 }
 
 @test "hug shc -n --null: long form behaves as -z" {
   echo x > a.txt && echo y > b.txt && git add -A && git commit -qm ab
-  [[ "$(hug shc -n --null HEAD | od -An -c | tr -d ' \n')" == 'a.txt\0b.txt\0' ]]
+  hug shc -n --null HEAD | assert_bytes_eq 'a.txt\0b.txt\0'
 }
 
 @test "hug shc -n -z: pathspec filters the NUL stream" {
   echo x > a.txt && echo y > b.txt && git add -A && git commit -qm ab
-  [[ "$(hug shc -n -z HEAD -- 'a.txt' | od -An -c | tr -d ' \n')" == 'a.txt\0' ]]
+  hug shc -n -z HEAD -- 'a.txt' | assert_bytes_eq 'a.txt\0'
 }
 
 @test "hug shc -n -z: no-match pathspec exits 0 with zero-byte stdout (xargs -0 -r contract)" {
@@ -1029,7 +1025,7 @@ _setup_merge_fixture() {
   local empty_repo
   empty_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-unborn-XXXXXX")
   cd "$empty_repo"
-  git init -q && git config user.email t@t.tld && git config user.name t
+  _init_repo_at "$empty_repo"
   for ref in "" "1" "-3" "main..HEAD" "@" "@~2" "@^" "@{1}"; do
     if [[ -z "$ref" ]]; then
       run hug shc -n
@@ -1057,7 +1053,7 @@ _setup_merge_fixture() {
   local orphan_repo
   orphan_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-orphan-XXXXXX")
   cd "$orphan_repo"
-  git init -q && git config user.email t@t.tld && git config user.name t
+  _init_repo_at "$orphan_repo"
   echo x > f.txt && git add -A && git commit -qm c1
   git branch -m master
   git switch --orphan fresh
@@ -1078,15 +1074,13 @@ _setup_merge_fixture() {
   src_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-rescue-src-XXXXXX")
   (
     cd "$src_repo"
-    git init -q --initial-branch=master
-    git config user.email t@t.tld && git config user.name t
+    _init_repo_at "$src_repo" --initial-branch=master
     echo x > remote-file.txt && git add -A && git commit -qm src-c1
   )
   local orphan_repo
   orphan_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-rescue-orphan-XXXXXX")
   cd "$orphan_repo"
-  git init -q --initial-branch=master
-  git config user.email t@t.tld && git config user.name t
+  _init_repo_at "$orphan_repo" --initial-branch=master
   git remote add origin "$src_repo"
   git fetch -q origin
   git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/master
@@ -1113,15 +1107,13 @@ _setup_merge_fixture() {
   src_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-fetch-src-XXXXXX")
   (
     cd "$src_repo"
-    git init -q --initial-branch=master
-    git config user.email t@t.tld && git config user.name t
+    _init_repo_at "$src_repo" --initial-branch=master
     echo x > fetched-file.txt && git add -A && git commit -qm src-c1
   )
   local unborn_repo
   unborn_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-fetch-unborn-XXXXXX")
   cd "$unborn_repo"
-  git init -q --initial-branch=main
-  git config user.email t@t.tld && git config user.name t
+  _init_repo_at "$unborn_repo" --initial-branch=main
   git fetch -q "$src_repo" master
   # Non-vacuousness gate: FETCH_HEAD must resolve in this unborn fixture.
   git rev-parse --verify -q FETCH_HEAD
@@ -1145,8 +1137,7 @@ _setup_merge_fixture() {
   local repo
   repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-range-XXXXXX")
   cd "$repo"
-  git init -q --initial-branch=master
-  git config user.email t@t.tld && git config user.name t
+  _init_repo_at "$repo" --initial-branch=master
   echo a > file-a.txt && git add -A && git commit -qm c1
   echo b > file-b.txt && git add -A && git commit -qm c2
   # A-HEAD = c1 (plain ref, "HEAD" in the name → the *HEAD* guard arm fires);
@@ -1179,8 +1170,7 @@ _setup_merge_fixture() {
   local empty_repo
   empty_repo=$(mktemp -d -p "$BATS_TEST_TMPDIR" -t "shc-range-unborn-XXXXXX")
   cd "$empty_repo"
-  git init -q
-  git config user.email t@t.tld && git config user.name t
+  _init_repo_at "$empty_repo"
   run hug shc -n 'main..HEAD'
   assert_failure 1
   refute_output --partial 'fatal:'
