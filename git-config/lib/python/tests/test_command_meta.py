@@ -31,8 +31,23 @@ def registry():
     return load_commands(categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
 
 
-def test_loads_seven_entries(registry):
-    assert set(registry) == {"fetch", "bpull", "bpullr", "pullall", "tpull", "tpullf", "bs"}
+def test_loads_ten_entries(registry):
+    # Merge family (m, mkeep, ma) joined in elifarley/hug-scm#343. mff is
+    # deliberately ABSENT: it is a bin script, and drift 2a forbids registry
+    # rows shadowing bin scripts — its search vocabulary lives in the
+    # script's own --search-meta _hug_keywords.
+    assert set(registry) == {
+        "fetch",
+        "bpull",
+        "bpullr",
+        "pullall",
+        "tpull",
+        "tpullf",
+        "bs",
+        "m",
+        "mkeep",
+        "ma",
+    }
 
 
 def test_every_entry_has_required_fields(registry):
@@ -56,6 +71,39 @@ def test_summary_derived_from_first_sentence(registry):
         "Download new commits and refs from remotes without merging"
     )
     assert len(registry["bs"].summary) <= 70
+
+
+def test_registry_summary_truncation_branch(tmp_path):
+    # coverage audit (#341): derive_summary's >70-char truncation was pinned
+    # only at the unit level (test_category_meta.TestDeriveSummary) — the
+    # REGISTRY path's derive_summary call was not. A row whose first sentence
+    # blows the 70-char budget must come out truncated (word boundary +
+    # U+2026), because this summary is exactly what card summaries and
+    # related-lines render.
+    bad = tmp_path / "commands.toml"
+    long_first = (
+        "This first sentence keeps going well past the seventy character budget before it ends."
+    )
+    # All-valid synthetic row (shared template) + appended after the real
+    # registry body: the truncation branch is a pure derive_summary call on
+    # the loaded row, so the surrounding real rows must load cleanly too.
+    src = (PY_DIR / "commands.toml").read_text()
+    bad.write_text(
+        src
+        + _registry_entry(
+            "zz-long",
+            description=f"{long_first} Second sentence.",
+        )
+    )
+    out = load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
+    summary = out["zz-long"].summary
+    assert len(summary) <= 70
+    assert summary.endswith("…")
+    # derive_summary's contract: cut on a word boundary of the FIRST
+    # sentence only — the pre-ellipsis text is a prefix of it, and the
+    # second sentence never leaks into the summary.
+    assert long_first.startswith(summary[:-1])
+    assert "Second sentence" not in summary
 
 
 def test_name_grammar_rejects_bad_names(tmp_path):
@@ -144,27 +192,39 @@ def test_single_token_git_equivalent_rejected(tmp_path):
         load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
 
 
+def _registry_entry(
+    name: str,
+    kind: str = "alias",
+    description: str = "Order-dependence regression probe.",
+    related: str = "[]",
+) -> str:
+    """One valid synthetic registry row, shared by the tmp-path probes.
+
+    Hoisted (was inline in the forward-resolution test) so the synthetic-row
+    shape lives in ONE place: a REQUIRED_FIELDS addition or field-format
+    change must only ever need to update this template.
+    """
+    return (
+        f"[{name}]\n"
+        f'kind = "{kind}"\n'
+        f'description = """{description}"""\n'
+        'keywords = ["probe"]\n'
+        'categories = ["branching"]\n'
+        'git_equivalent = "git status"\n'
+        f'usage = "hug {name}"\n'
+        f"related = {related}\n\n"
+    )
+
+
 def test_related_resolves_forward_to_later_table(tmp_path):
     # Regression for order-dependent `related` validation (it used to see
     # only processed-so-far registry entries): an entry referencing a LATER
     # table — a passthrough, which has no alias and no bin script — must
     # load cleanly. Probe names use hyphens: the grammar forbids '_'.
     bad = tmp_path / "commands.toml"
-
-    def entry(name: str, kind: str, related: str) -> str:
-        return (
-            f"[{name}]\n"
-            f'kind = "{kind}"\n'
-            'description = "Order-dependence regression probe."\n'
-            'keywords = ["probe"]\n'
-            'categories = ["branching"]\n'
-            'git_equivalent = "git status"\n'
-            f'usage = "hug {name}"\n'
-            f"related = {related}\n\n"
-        )
-
     bad.write_text(
-        entry("aaa-first", "alias", '["zzz-later"]') + entry("zzz-later", "passthrough", "[]")
+        _registry_entry("aaa-first", related='["zzz-later"]')
+        + _registry_entry("zzz-later", "passthrough")
     )
     out = load_commands(path=bad, categories_dir=CATS, bin_dir=BIN, gitconfig=GITCONFIG)
     assert set(out) == {"aaa-first", "zzz-later"}

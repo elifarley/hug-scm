@@ -288,10 +288,14 @@ hug m feature/complex      # Try merge again
 
 - **Check before merge**: Always run `hug lol` before merging to see what you're about to integrate. Run `hug sl` to ensure your working tree is clean.
 
-- **Preview with `--dry-run`**: While Hug's merge doesn't have dry-run mode, you can check what would merge by running:
+- **Preview with `--dry-run`**: `hug mff` supports `--dry-run` — it previews the fast-forward without moving the branch:
   ```shell
-  hug lol <branch-name>    # See all commits that would merge
-  git diff --stat HEAD..branch-name  # See file changes summary
+  hug mff feature --dry-run  # "Would fast-forward current branch to 'feature'" — nothing moves
+  ```
+  For squash merges (`hug m`) and merge commits (`hug mkeep`), check what would merge first:
+  ```shell
+  hug lol feature            # See all commits that would merge
+  git diff --stat HEAD..feature  # See file changes summary
   ```
 
 - **Prefer squash for linear history**: Teams that prefer clean, atomic commits on main use `hug m` almost exclusively. Use `hug mkeep` only for major milestone merges you want to record as events.

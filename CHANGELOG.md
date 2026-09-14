@@ -2,6 +2,18 @@
 
 All notable changes to the Hug SCM project will be documented in this file.
 
+## [1.20.0.0] - 2026-09-13
+
+### Added
+
+- The merge family is discoverable: `hug help /merge` now leads with `hug m`, `hug ma`, `hug mff`, and `hug mkeep`; `hug help m` / `mkeep` / `ma` render authored cards (usage, git equivalent, related commands) instead of raw `git merge -h` output; `hug help @merge` lists the family in one alphabetical run. Natural-language intent queries (`!merge my feature branch`, `!combine my feature branch`) find the family via curated keywords.
+- `hug help` keyword search gains an exact-substring rescue: a command whose description contains your query verbatim can no longer be hidden by fuzzy-scoring length penalties. The rescue lands exactly at the relevance floor and never reorders results that already matched — see the KEYWORD_SPECS notes for the measured trade-offs.
+
+### Fixed
+
+- `hug mff --help` (and the search-index metadata that keeps `mff` discoverable) now works outside a git repository and in installed layouts without a `.git` directory; previously the repo check ran before help dispatch and silently dropped `mff` from `hug help` search results in those layouts.
+- Real-index keyword pins for the merge family (`ff-only`, `no-ff`, `fast-forward`, `abort`), registry summary truncation, and search-layer BATS coverage for `@push-pull` interleave, `bpullr`'s card, and `/fetch` — closing the discovery layer's integration-pin gaps.
+
 ## [1.19.0.0] - 2026-09-12
 
 ### Added

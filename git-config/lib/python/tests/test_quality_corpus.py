@@ -71,7 +71,6 @@ def commands():
         ("amend", ["hug cmod"]),
         ("rollback", ["hug h rollback"]),
         ("rewind", ["hug h rewind"]),
-        ("squash", ["hug h squash"]),
         # Direct name / description matches
         ("worktree", ["hug wtc"]),
         ("branch", ["hug b", "hug bc"]),
@@ -80,6 +79,21 @@ def commands():
         ("fetch", ["hug fetch", "hug tpull", "hug tpullf"]),
         ("pull", ["hug bpull", "hug bpullr", "hug pullall"]),
         ("bs", ["hug bs"]),
+        # Merge family discovery (elifarley/hug-scm#343 + #344), verified
+        # live with --explain: the family surfaces via curated keywords —
+        # m/ma/mff/mkeep at 95, and slc also carries a curated "merge"
+        # keyword (it is NOT surfacing via its "unmerged" prose). The desc=
+        # exact-substring booster (#344) is the CLASS net behind this row:
+        # it rescues commands whose description contains the query verbatim
+        # but whose WRatio sinks below the floor on length penalty (mff at
+        # WRatio 60 was the filed instance, pre-keywords). The booster
+        # scales to exactly the floor and rides after the fuzzy desc spec,
+        # so it is strictly additive — see KEYWORD_SPECS for the measured
+        # reason a stronger constant was reverted.
+        ("merge", ["hug m", "hug ma", "hug mff", "hug mkeep", "hug slc"]),
+        # Single-letter command discoverability: /squash must surface the
+        # squash-merge alias beside the HEAD-operation classic.
+        ("squash", ["hug h squash", "hug m"]),
     ],
 )
 def test_keyword_corpus(commands, query, expected_in_top5):
@@ -105,6 +119,11 @@ def test_keyword_corpus(commands, query, expected_in_top5):
         # surface the registry rows too (fetch / bpull / bpullr / bs).
         ("update my repo from the remote", ["hug fetch", "hug bpull", "hug bpullr"]),
         ("go back to the previous branch", ["hug bs"]),
+        # Merge family intent (elifarley/hug-scm#343): "combine" appears in
+        # no command description — the curated "combine" keyword on m/mkeep
+        # is what lets this phrasing find the merge family at all.
+        ("merge my feature branch", ["hug m", "hug mkeep"]),
+        ("combine my feature branch", ["hug m", "hug mkeep"]),
     ],
 )
 def test_intent_corpus(commands, query, expected_in_top5):
@@ -129,6 +148,10 @@ def test_intent_corpus(commands, query, expected_in_top5):
         ("stash", ["hug w wipdel", "hug w purge"]),
         # `undo` should find h-undo / h-rollback, not destructive purge.
         ("undo", ["hug w wipdel", "hug w purge", "hug h rewind"]),
+        # `fetch` is network-READ-only — the registry row the #339 corpus
+        # gained must never drag destructive undo/purge siblings along
+        # (elifarley/hug-scm#341: the family's missing negative row).
+        ("fetch", ["hug w wipdel", "hug w purge", "hug h rewind"]),
     ],
 )
 def test_keyword_destructive_isolation(commands, query, must_not_appear):

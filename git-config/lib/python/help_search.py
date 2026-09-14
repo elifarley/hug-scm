@@ -215,6 +215,66 @@ def run_search(
 #   category_desc — joined CategoryMeta.description; WRatio for prose
 #   keywords      — per-command curated terms; ratio for exact-ish only
 #                   (each keyword is a separate match unit, see _read_field)
+#
+# desc= (exact-substring booster, elifarley/hug-scm#344): WRatio's
+# length-difference penalty can push a DIRECT substring hit below the desc
+# floor while other commands pass via stronger signals. Verified against
+# the live index with query "merge":
+#
+#   command | summary                                     | best pre-#344 signal
+#   ------- + ------------------------------------------- + --------------------
+#   mff     | "Fast-forward merge or move branch pointer" | WRatio 60 → FAILS
+#           |                                             | the 80 floor despite
+#           |                                             | the literal "merge"
+#   slc     | "Show only conflicted (unmerged) files."    | passed via its
+#           |                                             | curated "merge"
+#           |                                             | keyword at 95 —
+#           |                                             | NOT via prose
+#
+# SEMANTICS (shaped by the /ship red-team + adversarial reviews): the
+# booster scales to EXACTLY the floor (100 × 0.80 = 80) and sits AFTER the
+# fuzzy desc spec, so it is strictly ADDITIVE recall — it rescues only
+# descriptions the fuzzy spec rejected, and can never reorder, inflate, or
+# displace a result that already passed. An earlier draft scaled to 90
+# ("floor-crossing but stronger"), which flattened every substring match
+# into one tie band ordered only alphabetically: measured live, /stage
+# crowd-outs ss/su/us behind "hug m" and /branch dropped "hug bs" — the
+# booster was ranking-dominant over its own field, not just floor-crossing.
+# If you raise the weight, re-run the quality corpus AND probe common-verb
+# queries (/stage /branch /commit /show) for displaced regulars.
+#
+# KNOWN CAP INTERACTION (accepted): additive recall enlarges the candidate
+# pool, and the default top-10 cap + per-category diversify can push a
+# previously-visible marginal entry (e.g. "hug bs" at desc 81 under
+# /branch) past the cap when flatter 80s from OTHER categories fill slots.
+# Every such entry keeps its score and remains discoverable via its own
+# stronger query (bs answers /bs at name~ 95). The quality corpus, not
+# byte-parity of capped views, is the contract here.
+#
+# F3 note: destructive-class commands legitimately surface when their own
+# help prose contains the query verb (e.g. h rewind's help says "discard");
+# the F3 guarantee is scoped to the save/stash/undo family, where
+# per-command keywords prevent destructive siblings from inheriting query
+# terms. The negative corpus rows pin that scoped guarantee.
+MIN_EXACT_QUERY_LEN = 4
+
+
+def _exact_substring(query: str, target: str) -> int:
+    """100 iff the query is a case-insensitive substring of the target.
+
+    Pure string matching (no thefuzz), so it behaves identically on the
+    real-scorer and fallback paths. Queries shorter than MIN_EXACT_QUERY_LEN
+    score 0: "st" or "tag" is a substring of half the index and would flood
+    results with weak coincidences — the gate keeps the booster reserved for
+    deliberate, word-like queries. ("" is a substring of EVERYTHING in
+    Python; the strip+length gate is the only defense against it.) Needs no
+    fuzzy library, so it lives outside the try/except that binds the
+    thefuzz/fallback scorer pairs.
+    """
+    q = query.strip().lower()
+    return 100 if len(q) >= MIN_EXACT_QUERY_LEN and q in target.lower() else 0
+
+
 KEYWORD_SPECS = [
     MatchSpec(field="command", scorer=_ratio, weight=1.00, min_threshold=90, label="name="),
     # name~ weight tuned 0.85→0.95 during T3: at 0.85 a typo like "undoo"
@@ -224,6 +284,13 @@ KEYWORD_SPECS = [
     # 89×0.95 ≈ 84.5 ≥ 80 passes; partial_ratio<84 still rejected.
     MatchSpec(field="command", scorer=_partial, weight=0.95, min_threshold=80, label="name~"),
     MatchSpec(field="description", scorer=_wratio, weight=0.90, min_threshold=80, label="desc"),
+    # desc= rides AFTER fuzzy desc on purpose: with both scaled ≥ 80, the
+    # higher score (or, on an exact tie, the earlier spec) wins, so a
+    # passing fuzzy match always outranks the flat 80 — see the booster
+    # semantics note above for why a stronger constant was reverted.
+    MatchSpec(
+        field="description", scorer=_exact_substring, weight=0.80, min_threshold=80, label="desc="
+    ),
     MatchSpec(
         field="category_desc", scorer=_wratio, weight=0.80, min_threshold=80, label="@cat-desc"
     ),
@@ -587,8 +654,9 @@ def search_keyword(
 ) -> list[CommandInfo]:
     """Precision search via KEYWORD_SPECS (per-field scorers + thresholds).
 
-    Each command is scored against five fields: command name (ratio + partial),
-    description, category description, and per-command keywords. The best
+    Each command is scored against five fields via six specs: command name
+    (ratio + partial), description (fuzzy WRatio + exact-substring desc=
+    booster), category description, and per-command keywords. The best
     spec wins per command; results sort by score descending, then are
     diversified + capped to top 10 (override with `all_results=True`).
     """
@@ -639,10 +707,13 @@ def list_categories(commands: list[CommandInfo]) -> list[str]:
 def _display_description(cmd: CommandInfo) -> str:
     """Listing text for one command: description plus the registry kind marker.
 
-    Shared by every render site (format_results, format_category_page — and
-    Task 3's card related-lines) so a registry row self-explains why `-h`
-    isn't hug-flavored identically everywhere. The marker is a render-time
-    suffix; descriptions stay pure prose in the TOML.
+    Shared by the search/browse render sites (format_results,
+    format_category_page) so a registry row self-explains why `-h` isn't
+    hug-flavored identically everywhere. Deliberately NOT shared with the
+    card's related-lines: render_card renders plain rel_meta.summary there
+    (no kind marker) — the card layout spec keeps related hints compact, and
+    the card header itself already carries the kind. The marker is a
+    render-time suffix; descriptions stay pure prose in the TOML.
     """
     desc = cmd.description or "(no description)"
     if cmd.kind:  # registry rows only; scripts keep kind=None

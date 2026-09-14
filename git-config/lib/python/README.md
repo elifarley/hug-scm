@@ -28,13 +28,24 @@ This directory contains Python implementations for computationally intensive or 
 ```
 python/
 ├── README.md              # This file
-├── hug_analysis.py        # Main analysis library
+├── help_search.py         # `hug help` topic search — fuzzy + exact-substring scoring over command metadata
+├── command_meta.py        # Loads commands.toml (non-script command registry); validates schema, derives summaries
+├── category_meta.py       # Loads categories/*.toml (per-category labels + descriptions for `hug help @<cat>`)
+├── articles_loader.py     # Loads articles/*.md mini-guides for `hug help :<slug>`
+├── commands.toml          # The registry itself (fetch, bpull, bpullr, pullall, tpull, tpullf, bs, m, mkeep, ma)
+├── categories/            # Per-category TOML metadata (one file per `hug help @<category>`)
+├── articles/              # Terminal mini-guides rendered by `hug help :<slug>`
 ├── co_changes.py          # Co-change matrix calculation
 ├── activity.py            # Temporal activity analysis
 ├── ownership.py           # Code ownership/expertise detection
 ├── churn.py               # File/line churn analysis
-├── command_meta.py        # Loads commands.toml (non-script command registry); validates schema, derives summaries
-├── commands.toml          # The registry itself (fetch, bpull, bpullr, pullall, tpull, tpullf, bs)
+├── deps.py                # Commit dependency graph analysis
+├── hug_git_branch.py      # Python branch operations library
+├── log_json.py            # Parses git log --numstat output into JSON
+├── json_transform.py      # JSON transformation utilities
+├── git/                   # Subpackage: branch/tag/worktree selection + search helpers
+├── tests/                 # pytest suite (make test-lib-py)
+├── pyproject.toml         # Package metadata + tool configuration
 └── requirements.txt       # Python dependencies
 ```
 
