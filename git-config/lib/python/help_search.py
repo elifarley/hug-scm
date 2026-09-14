@@ -248,7 +248,7 @@ def run_search(
 # previously-visible marginal entry (e.g. "hug bs" at desc 81 under
 # /branch) past the cap when flatter 80s from OTHER categories fill slots.
 # Every such entry keeps its score and remains discoverable via its own
-# stronger query (bs answers /bs at name= 95). The quality corpus, not
+# stronger query (bs answers /bs at name~ 95). The quality corpus, not
 # byte-parity of capped views, is the contract here.
 #
 # F3 note: destructive-class commands legitimately surface when their own

@@ -579,7 +579,8 @@ class TestKeywordSpecs:
         # that reorders results alphabetically. "Stage changes." passes
         # fuzzy at 81 (WRatio 90 × 0.90), so desc= must not take over.
         # (Contrast: the LONG "Stage tracked files, or specific files..."
-        # fails fuzzy at 78 — THERE the booster is the legitimate carrier.)
+        # fails the fuzzy floor — WRatio 60 × 0.90 = 54 — THERE the booster
+        # is the legitimate carrier.)
         cmds = [
             CommandInfo(
                 command="hug a",
