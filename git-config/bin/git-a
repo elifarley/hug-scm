@@ -235,7 +235,14 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
   files_from_source=()
 
   if [[ -n "$from_commit" ]]; then
-    mapfile -t files_from_source < <(extract_files_from_commit "$from_commit")
+    # NUL transport (elifarley/hug-scm#285): raw records via the sanctioned
+    # reader — no C-quoting, no shell-variable capture. Guard failure is
+    # fatal: production error() exits the process; `|| exit $?` makes that
+    # explicit and correct under non-exiting error overrides. (Pre-#285 the
+    # process-substitution subshell accidentally swallowed it — `hug a`
+    # answered "No files to stage." exit 0 on an invalid commit, the
+    # codex-P2 bug class.)
+    extract_files_from_commit_into files_from_source "$from_commit" || exit $?
   elif [[ -n "$from_file" ]]; then
     # Command substitution, NOT '< <(…)' (code-roast MINOR): the process
     # substitution swallowed read_files_from_source's exit — its error()

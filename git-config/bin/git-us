@@ -158,19 +158,16 @@ if [[ -n "$from_file" || -n "$from_commit" ]]; then
   files_from_source=()
 
   if [[ -n "$from_commit" ]]; then
-    # Command substitution, NOT '< <(…)' (codex P2 — same exit-swap class
-    # as the from_file conversion below): extract_files_from_commit errors
-    # loudly itself ("Commit 'X' does not exist"), but the process
-    # substitution swallowed that exit — the error PRINTED and both
-    # downstream arms then answered a friendly no-match ("Source list is
-    # empty …" with a scope, "No staged files to unstage." without) with
-    # exit 0: automation read a failed unstage as success. '$(…) || exit $?'
-    # keeps the failure fatal, exactly like read_files_from_source.
-    from_source_out=""
-    from_source_out=$(extract_files_from_commit "$from_commit") || exit $?
-    if [[ -n "$from_source_out" ]]; then
-      mapfile -t files_from_source <<< "$from_source_out"
-    fi
+    # NUL transport (elifarley/hug-scm#285): extract_files_from_commit now
+    # emits RAW NUL-terminated records, and extract_files_from_commit_into
+    # forwards the rev-parse guard's exit — `|| exit $?` keeps the
+    # guard-fatal contract pinned by the codex P2 test (a bogus commit
+    # fails loudly, never a friendly no-match; the same exit-swap class
+    # the from_file conversion below guards). The old `$(…) || exit $?` +
+    # `mapfile <<< "$from_source_out"` capture is gone: bash variables
+    # strip NUL bytes, so the capture itself was the residual corruption
+    # for structural-char names; an empty array now simply flows on.
+    extract_files_from_commit_into files_from_source "$from_commit" || exit $?
   elif [[ -n "$from_file" ]]; then
     # Command substitution, NOT '< <(…)' (code-roast MINOR): the process
     # substitution swallowed read_files_from_source's exit — its error()
