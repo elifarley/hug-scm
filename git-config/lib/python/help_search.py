@@ -218,27 +218,44 @@ def run_search(
 #
 # desc= (exact-substring booster, elifarley/hug-scm#344): WRatio's
 # length-difference penalty can push a DIRECT substring hit below the desc
-# floor while a coincidental substring passes. Verified against the live
-# index with query "merge" (floor 80 ×0.90):
+# floor while other commands pass via stronger signals. Verified against
+# the live index with query "merge":
 #
-#   command | summary                                    | WRatio | verdict
-#   ------- + ------------------------------------------ + ------ + -------
-#   slc     | "Show only conflicted (unmerged) files."   |  90    | passes —
-#           |                                            |        | via the
-#           |                                            |        | coincidental
-#           |                                            |        | "unmerged"
-#           |                                            |        | substring
-#   mff     | "Fast-forward merge or move branch pointer"|  60    | FAILS —
-#           |                                            |        | despite the
-#           |                                            |        | literal "merge"
+#   command | summary                                     | best pre-#344 signal
+#   ------- + ------------------------------------------- + --------------------
+#   mff     | "Fast-forward merge or move branch pointer" | WRatio 60 → FAILS
+#           |                                             | the 80 floor despite
+#           |                                             | the literal "merge"
+#   slc     | "Show only conflicted (unmerged) files."    | passed via its
+#           |                                             | curated "merge"
+#           |                                             | keyword at 95 —
+#           |                                             | NOT via prose
 #
-# The booster is a floor-crossing mechanism, not a ranking-dominance one:
-# a binary 100 × the same 0.90 desc weight → 90, which clears the floor but
-# never outranks name matches or curated keywords (all ≥95 at their max, and
-# earlier specs win ties). Because run_search keeps the best spec per item,
-# a 0 score simply falls through to the fuzzy specs — no bypass needed.
-# Lowering the desc floor instead was REJECTED: it degrades precision
-# globally rather than rewarding exact hits specifically.
+# SEMANTICS (shaped by the /ship red-team + adversarial reviews): the
+# booster scales to EXACTLY the floor (100 × 0.80 = 80) and sits AFTER the
+# fuzzy desc spec, so it is strictly ADDITIVE recall — it rescues only
+# descriptions the fuzzy spec rejected, and can never reorder, inflate, or
+# displace a result that already passed. An earlier draft scaled to 90
+# ("floor-crossing but stronger"), which flattened every substring match
+# into one tie band ordered only alphabetically: measured live, /stage
+# crowd-outs ss/su/us behind "hug m" and /branch dropped "hug bs" — the
+# booster was ranking-dominant over its own field, not just floor-crossing.
+# If you raise the weight, re-run the quality corpus AND probe common-verb
+# queries (/stage /branch /commit /show) for displaced regulars.
+#
+# KNOWN CAP INTERACTION (accepted): additive recall enlarges the candidate
+# pool, and the default top-10 cap + per-category diversify can push a
+# previously-visible marginal entry (e.g. "hug bs" at desc 81 under
+# /branch) past the cap when flatter 80s from OTHER categories fill slots.
+# Every such entry keeps its score and remains discoverable via its own
+# stronger query (bs answers /bs at name= 95). The quality corpus, not
+# byte-parity of capped views, is the contract here.
+#
+# F3 note: destructive-class commands legitimately surface when their own
+# help prose contains the query verb (e.g. h rewind's help says "discard");
+# the F3 guarantee is scoped to the save/stash/undo family, where
+# per-command keywords prevent destructive siblings from inheriting query
+# terms. The negative corpus rows pin that scoped guarantee.
 MIN_EXACT_QUERY_LEN = 4
 
 
@@ -249,8 +266,10 @@ def _exact_substring(query: str, target: str) -> int:
     real-scorer and fallback paths. Queries shorter than MIN_EXACT_QUERY_LEN
     score 0: "st" or "tag" is a substring of half the index and would flood
     results with weak coincidences — the gate keeps the booster reserved for
-    deliberate, word-like queries. Needs no fuzzy library, so it lives
-    outside the try/except that binds the thefuzz/fallback scorer pairs.
+    deliberate, word-like queries. ("" is a substring of EVERYTHING in
+    Python; the strip+length gate is the only defense against it.) Needs no
+    fuzzy library, so it lives outside the try/except that binds the
+    thefuzz/fallback scorer pairs.
     """
     q = query.strip().lower()
     return 100 if len(q) >= MIN_EXACT_QUERY_LEN and q in target.lower() else 0
@@ -264,10 +283,14 @@ KEYWORD_SPECS = [
     # ("partial is fuzzier than ratio") while maintaining typo tolerance:
     # 89×0.95 ≈ 84.5 ≥ 80 passes; partial_ratio<84 still rejected.
     MatchSpec(field="command", scorer=_partial, weight=0.95, min_threshold=80, label="name~"),
-    MatchSpec(
-        field="description", scorer=_exact_substring, weight=0.90, min_threshold=80, label="desc="
-    ),
     MatchSpec(field="description", scorer=_wratio, weight=0.90, min_threshold=80, label="desc"),
+    # desc= rides AFTER fuzzy desc on purpose: with both scaled ≥ 80, the
+    # higher score (or, on an exact tie, the earlier spec) wins, so a
+    # passing fuzzy match always outranks the flat 80 — see the booster
+    # semantics note above for why a stronger constant was reverted.
+    MatchSpec(
+        field="description", scorer=_exact_substring, weight=0.80, min_threshold=80, label="desc="
+    ),
     MatchSpec(
         field="category_desc", scorer=_wratio, weight=0.80, min_threshold=80, label="@cat-desc"
     ),
@@ -631,8 +654,9 @@ def search_keyword(
 ) -> list[CommandInfo]:
     """Precision search via KEYWORD_SPECS (per-field scorers + thresholds).
 
-    Each command is scored against five fields: command name (ratio + partial),
-    description, category description, and per-command keywords. The best
+    Each command is scored against five fields via six specs: command name
+    (ratio + partial), description (fuzzy WRatio + exact-substring desc=
+    booster), category description, and per-command keywords. The best
     spec wins per command; results sort by score descending, then are
     diversified + capped to top 10 (override with `all_results=True`).
     """

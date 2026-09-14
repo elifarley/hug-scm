@@ -556,7 +556,8 @@ class TestKeywordSpecs:
         # The mff shape from elifarley/hug-scm#344: the query appears
         # verbatim in the summary, but WRatio's length penalty ("Fast-forward
         # " prefix) scores it 60 — below the 80 desc floor. The desc= booster
-        # (100 × 0.90 = 90) must cross that floor where fuzzy desc cannot.
+        # (100 × 0.80 = 80, exactly the floor) must cross that floor where
+        # fuzzy desc cannot.
         cmds = [
             CommandInfo(
                 command="hug mff",
@@ -566,6 +567,28 @@ class TestKeywordSpecs:
         ]
         results = search_keyword(cmds, "merge")
         assert [r.command for r in results] == ["hug mff"]
+        # The booster, not fuzzy desc, carries the match — and only lands
+        # at the floor (80), never above it.
+        score, _cmd, spec = run_search("merge", cmds, KEYWORD_SPECS)[0]
+        assert (score, spec.label) == (80, "desc=")
+
+    def test_booster_never_inflates_a_passing_fuzzy_match(self):
+        # Strictly-additive semantics (the /ship red-team finding): a
+        # description the fuzzy spec already passes must keep its fuzzy
+        # score — the flat floor score must not inflate it into a tie band
+        # that reorders results alphabetically. "Stage changes." passes
+        # fuzzy at 81 (WRatio 90 × 0.90), so desc= must not take over.
+        # (Contrast: the LONG "Stage tracked files, or specific files..."
+        # fails fuzzy at 78 — THERE the booster is the legitimate carrier.)
+        cmds = [
+            CommandInfo(
+                command="hug a",
+                description="Stage changes.",
+                categories=["staging"],
+            ),
+        ]
+        score, _cmd, spec = run_search("stage", cmds, KEYWORD_SPECS)[0]
+        assert (score, spec.label) == (81, "desc")  # fuzzy, not the booster's 80
 
     def test_exact_substring_booster_is_case_insensitive(self):
         # Registry prose capitalizes mid-sentence; the query must not care.
@@ -594,9 +617,10 @@ class TestKeywordSpecs:
 
     def test_booster_does_not_outrank_name_or_curated_keyword(self):
         # Floor-crossing, not ranking-dominance: bpush matches "push" via
-        # name~ (100 × 0.95 = 95) AND via desc substring (90). The name
-        # signal must keep the higher score — the booster only rescues
-        # commands nothing stronger already matched.
+        # name~ (100 × 0.95 = 95) AND via keywords AND via desc substring
+        # (80). The strongest signal must win AND be labeled — the label pin
+        # holds in both thefuzz and fallback envs, so deleting the booster
+        # can never flip it.
         cmds = [
             CommandInfo(
                 command="hug bpush",
@@ -606,8 +630,8 @@ class TestKeywordSpecs:
         ]
         results = search_keyword(cmds, "push")
         assert [r.command for r in results] == ["hug bpush"]
-        detail = run_search("push", cmds, KEYWORD_SPECS)
-        assert detail[0][0] == 95  # name~ wins, not the desc= booster's 90
+        score, _cmd, spec = run_search("push", cmds, KEYWORD_SPECS)[0]
+        assert (score, spec.label) == (95, "name~")
 
 
 class TestHydrateCategoryFields:

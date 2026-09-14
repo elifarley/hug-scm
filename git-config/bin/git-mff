@@ -51,12 +51,18 @@ FURTHER READING:
 EOF
 }
 
-check_git_repo
-
 # Parse common flags (-f/--force, --dry-run, -q/--quiet, -h/--help)
 # parse_common_flags exports HUG_FORCE=true and sets dry_run=true,
 # so downstream code (e.g. confirmation prompts) sees the exported variable.
+# BEFORE the repo guard on purpose: parse_common_flags dispatches -h/--help
+# (show_help + exit 0), and that must work outside any repository — the
+# discovery layer renders this help from non-repo cwds, and an installed
+# layout has no .git at all. A guard before the -h dispatch locks the user
+# out of the help that explains recovery (same ordering lesson as git-shc's
+# fail-loud guards; caught by the /ship adversarial review of #349).
 eval "$(parse_common_flags "$@")"
+
+check_git_repo
 
 # Collect remaining positional arguments
 declare -a args=()

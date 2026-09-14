@@ -71,7 +71,6 @@ def commands():
         ("amend", ["hug cmod"]),
         ("rollback", ["hug h rollback"]),
         ("rewind", ["hug h rewind"]),
-        ("squash", ["hug h squash"]),
         # Direct name / description matches
         ("worktree", ["hug wtc"]),
         ("branch", ["hug b", "hug bc"]),
@@ -80,17 +79,17 @@ def commands():
         ("fetch", ["hug fetch", "hug tpull", "hug tpullf"]),
         ("pull", ["hug bpull", "hug bpullr", "hug pullall"]),
         ("bs", ["hug bs"]),
-        # Exact-substring booster (elifarley/hug-scm#344): "merge" appears
-        # verbatim in mff's summary ("Fast-forward merge or move branch
-        # pointer"), yet plain WRatio scored it 60 — below the 80 desc floor —
-        # because the length penalty on "Fast-forward " out-weighed the direct
-        # hit, while slc's COINCIDENTAL "un**merged**" substring passed at 81.
-        # A direct prose hit must never lose to a coincidental one.
-        #
-        # Merge family onboarding (elifarley/hug-scm#343): the aliases carry
-        # "merge" as a curated keyword (95) and mff via desc= booster (90),
-        # so the whole family outranks the coincidental 90-club (bpull,
-        # fetch, slc, w unwip — all containing "merge" in their prose).
+        # Merge family discovery (elifarley/hug-scm#343 + #344), verified
+        # live with --explain: the family surfaces via curated keywords —
+        # m/ma/mff/mkeep at 95, and slc also carries a curated "merge"
+        # keyword (it is NOT surfacing via its "unmerged" prose). The desc=
+        # exact-substring booster (#344) is the CLASS net behind this row:
+        # it rescues commands whose description contains the query verbatim
+        # but whose WRatio sinks below the floor on length penalty (mff at
+        # WRatio 60 was the filed instance, pre-keywords). The booster
+        # scales to exactly the floor and rides after the fuzzy desc spec,
+        # so it is strictly additive — see KEYWORD_SPECS for the measured
+        # reason a stronger constant was reverted.
         ("merge", ["hug m", "hug ma", "hug mff", "hug mkeep", "hug slc"]),
         # Single-letter command discoverability: /squash must surface the
         # squash-merge alias beside the HEAD-operation classic.
