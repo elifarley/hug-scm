@@ -328,11 +328,26 @@ print_commit_list_in_range() {
 #   $2 - (Optional) End commit (inclusive), defaults to HEAD
 # Output:
 #   Sorted unique list of changed file paths to stdout
+# Note:
+#   Delegates to pinned_diff (hug-git-diff — always in scope: loaded by
+#   hug-common and by hug-git-kit's module loop BEFORE this library) for the
+#   determinism pins (core.quotePath=false, diff.relative=false,
+#   --ignore-submodules=none). Rename stance is the DISPLAY contract
+#   (pinned_diff's --find-renames default, NOT --no-renames): the sole caller
+#   (git-h-files) is a read-only preview, and pinned --find-renames matches
+#   git's default diff.renames=true, so default-config output is
+#   byte-for-byte unchanged — while a hostile diff.renames=false is now
+#   defeated instead of silently expanding the rename.
+#   The trailing `sort -u` is preserved on top of pinned_diff's git-stream
+#   order (not a sorted contract) for byte-compat and deterministic order;
+#   the -u dedupe is
+#   belt-and-braces (a two-tree --name-only diff emits each path at most
+#   once). Pipeline exit status is sort's — same error policy as before.
 list_changed_files_in_range() {
     local start="$1"
     local end="${2:-HEAD}"
 
-    git diff --name-only "$start..$end" | sort -u
+    pinned_diff --name-only "$start..$end" | sort -u
 }
 
 # Counts changed files in a commit range
@@ -342,11 +357,16 @@ list_changed_files_in_range() {
 #   $2 - (Optional) End commit (inclusive), defaults to HEAD
 # Output:
 #   Number of unique changed files to stdout
+# Note:
+#   Same pinned_diff DISPLAY stance as list_changed_files_in_range (see that
+#   function) — kept in lockstep so the pair cannot drift back apart (the
+#   raw-invocation drift this consolidation closes). Zero production callers
+#   today; consolidated alongside for the same class of risk.
 count_changed_files_in_range() {
     local start="$1"
     local end="${2:-HEAD}"
 
-    git diff --name-only "$start..$end" | wc -l
+    pinned_diff --name-only "$start..$end" | wc -l
 }
 
 # Gets the first (oldest) commit in a range
