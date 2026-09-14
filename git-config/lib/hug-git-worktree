@@ -110,6 +110,8 @@ get_all_worktrees_including_main() {
     local -n commits_ref="$3"
     local -n status_ref="$4"
     local -n locked_ref="$5"
+    # Optional 6th arg: name|recent|oldest (main always stays first).
+    local sort_mode="${6:-name}"
 
     # Clear output arrays
     paths_ref=()
@@ -131,7 +133,8 @@ get_all_worktrees_including_main() {
 
     if ! eval "$(python3 "$HUG_HOME/git-config/lib/python/git/worktree.py" list \
               --include-main \
-              --main-repo-path "$main_repo_path")"; then
+              --main-repo-path "$main_repo_path" \
+              --sort "$sort_mode")"; then
         return 1
     fi
 
@@ -1275,18 +1278,21 @@ get_worktree_commit_time() {
 }
 
 # Output worktree information in JSON format
-# Usage: output_worktree_json "$current_worktree" search_terms_ref branch_filters_ref [existing_only]
+# Usage: output_worktree_json "$current_worktree" search_terms_ref branch_filters_ref [existing_only] [sort_mode]
 # Parameters:
 #   $1 - Current worktree path
 #   $2 - Nameref: search_terms array (substring matching, one --search per element)
 #   $3 - Nameref: branch_filters array (exact matching, one --branch per element)
 #   $4 - (optional) "true" to exclude worktrees whose directory doesn't exist
+#   $5 - (optional) sort mode: name (default), recent (newest HEAD activity
+#        first), oldest (newest last). Main worktree always stays first.
 # Returns: JSON formatted worktree data
 output_worktree_json() {
     local _oj_current="$1"
     local -n _oj_search_ref="$2"
     local -n _oj_branch_ref="$3"
     local _oj_existing="${4:-false}"
+    local _oj_sort="${5:-name}"
 
     # WHY: Delegate to Python for JSON output (DRY — single source of truth).
     # Python's json module handles proper string escaping (quotes, backslashes,
@@ -1314,6 +1320,7 @@ output_worktree_json() {
     python3 "$HUG_HOME/git-config/lib/python/git/worktree.py" json \
         --current "$_oj_current" \
         --include-main \
+        --sort "$_oj_sort" \
         "${_oj_existing_flag[@]}" \
         "${_oj_args[@]}"
 }
@@ -1446,7 +1453,7 @@ branch_matches_any() {
 }
 
 # Filter worktrees by branch and/or search terms via Python
-# Usage: filter_worktrees paths_ref branches_ref commits_ref dirty_ref locked_ref branch_filters_ref search_terms_ref
+# Usage: filter_worktrees paths_ref branches_ref commits_ref dirty_ref locked_ref branch_filters_ref search_terms_ref [sort_mode]
 # Parameters (namerefs for output arrays, then namerefs for filter arrays):
 #   $1 - Nameref: array to receive filtered worktree paths
 #   $2 - Nameref: array to receive filtered branch names
@@ -1455,6 +1462,8 @@ branch_matches_any() {
 #   $5 - Nameref: array to receive filtered locked status (true/false)
 #   $6 - Nameref: branch_filters array (exact match, OR logic). Empty = no filter.
 #   $7 - Nameref: search_terms array (substring match, OR logic). Empty = no filter.
+#   $8 - Optional sort mode: name (default), recent (newest HEAD activity first),
+#        oldest (newest last). Main worktree always stays first.
 # Returns:
 #   0 if matches found, 1 if no matches (prints error to stderr)
 #
@@ -1478,9 +1487,10 @@ filter_worktrees() {
     local -n _fw_locked_ref="$5"
     local -n _fw_branch_filters_ref="$6"
     local -n _fw_search_ref="$7"
+    local _fw_sort_mode="${8:-name}"
 
     # Build args by iterating arrays (one flag per element)
-    local -a _fw_python_args=()
+    local -a _fw_python_args=(--sort "$_fw_sort_mode")
     local _fw_b
     for _fw_b in "${_fw_branch_filters_ref[@]}"; do
         _fw_python_args+=(--branch "$_fw_b")

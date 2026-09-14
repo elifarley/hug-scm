@@ -546,6 +546,8 @@ def main():
         --json            Output JSON instead of bash declarations
         --pattern PATTERN Ref pattern for WIP branches (default: refs/heads/WIP/)
         --ascending       Sort ascending (oldest first, recent at bottom)
+        --descending      Sort descending (newest first). Explicit direction flag for
+                          non-interactive callers; mutually exclusive with --ascending.
         --sort-context    Sort context: gum-single (ascending), gum-multi (descending),
                          static (ascending, default)
 
@@ -569,10 +571,16 @@ def main():
         default="refs/heads/WIP/",
         help="Ref pattern for WIP branches (default: refs/heads/WIP/)",
     )
-    parser.add_argument(
+    direction = parser.add_mutually_exclusive_group()
+    direction.add_argument(
         "--ascending",
         action="store_true",
         help="Sort ascending (oldest first, recent at bottom)",
+    )
+    direction.add_argument(
+        "--descending",
+        action="store_true",
+        help="Sort descending (newest first). Explicit direction for non-interactive callers.",
     )
     parser.add_argument(
         "--sort-context",
@@ -588,9 +596,11 @@ def main():
     # gum-multi: descending (newest first) - cursor at top without --reverse
     # static: ascending (oldest first) - terminal output, newest at bottom
     # None (default): descending (newest first) - original behavior for backward compatibility
-    # --ascending flag overrides context for backward compatibility
+    # Explicit direction flags (--ascending/--descending) override --sort-context.
     if args.ascending:
         sort_ascending = True
+    elif args.descending:
+        sort_ascending = False
     elif args.sort_context == "gum-single" or args.sort_context == "static":
         sort_ascending = True
     else:
