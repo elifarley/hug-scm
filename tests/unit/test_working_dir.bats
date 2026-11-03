@@ -1631,7 +1631,7 @@ EOF
 }
 
 # ---- Concern 1: clean path needs no flag; dirty path refuses unless -f ----
-# Every case pins `< /dev/null` (no-TTY) per tests/CLAUDE.md.
+# Every case pins `< /dev/null` (no-TTY) per tests/AGENTS.md.
 # Background: git-w-get used to call a bespoke `confirm()` (a raw `read -p`
 # loop) for the specific-files path; that loop ignored HUG_YES/HUG_FORCE and
 # exited 1 under no-TTY, so even a CLEAN restore demanded `-f`. An agent

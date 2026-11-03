@@ -585,7 +585,7 @@ Use conventional commit prefixes:
 - Review documentation in `docs/`
 - Consult TESTING.md for detailed testing guide
 - See README.md for command philosophy and structure
-- Check CLAUDE.md for comprehensive development guidance
+- Check AGENTS.md for comprehensive development guidance
 
 ## Quick Reference
 

@@ -582,7 +582,7 @@ These provide important context for major architectural decisions.
 
 - **Not consulting `docs/DOCS_ORGANIZATION.md`** - Read it first to understand placement
 - Forgetting to update README.md command reference
-- Creating documentation in wrong location (use decision tree in CLAUDE.md)
+- Creating documentation in wrong location (use decision tree in AGENTS.md)
 - Breaking VitePress syntax (test with `make docs-build`)
 - Inconsistent examples (use realistic, practical examples)
 - Duplicating existing documentation (consolidate to single source of truth)

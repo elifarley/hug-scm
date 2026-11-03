@@ -6,7 +6,7 @@
 # user-visible behaviors: listing, rendering, pipe-safety (stdout/stderr split),
 # typo-suggestion, exit codes, and the top-level tip line.
 #
-# STDOUT/STDERR CONTRACT (see CLAUDE.md "Stdout/Stderr Discipline"):
+# STDOUT/STDERR CONTRACT (see AGENTS.md "Stdout/Stderr Discipline"):
 #   - stdout = machine-consumable data (slug lines, markdown body)
 #   - stderr = human-facing chatter (headers, tips, error messages)
 #

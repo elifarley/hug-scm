@@ -1,4 +1,4 @@
-# CLAUDE.md - Testing Guidelines and Best Practices
+# AGENTS.md - Testing Guidelines and Best Practices
 
 This document provides guidance to Claude Code when working with tests in the Hug SCM repository.
 
