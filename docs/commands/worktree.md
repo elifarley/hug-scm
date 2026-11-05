@@ -68,6 +68,7 @@ hug wtl [OPTIONS] [SEARCH_TERMS...]
 - `--json`: Output in JSON format
 - `-q, --quiet`: Suppress legend line
 - `-b, --branch NAME`: Filter by exact branch name (repeatable, OR logic)
+- `--sort MODE`: Order the non-main worktrees by `name` (alphabetical, default), `recent` (HEAD commit date, most recent first), or `oldest` (most recent last). The main checkout always stays first.
 
 **Filtering:**
 - Positional args: substring match on path or branch (case-insensitive, OR logic)
@@ -83,6 +84,8 @@ hug wtl -b main                      # Exact branch "main" only
 hug wtl -b main -b dev               # Exact: "main" OR "dev"
 hug wtl feat -b main                 # Substring "feat" AND exact branch "main"
 hug wtl --json                       # Output in JSON format
+hug wtl --sort recent                # Most recently active worktree right after main
+hug wtl --sort oldest                # Least recently active first (main still first)
 ```
 
 **Output Format:**
@@ -107,10 +110,13 @@ hug wtll [OPTIONS] [SEARCH_TERMS...]
 - `-h, --help`: Show help message
 - `--json`: Output in JSON format
 - `-b, --branch NAME`: Filter by exact branch name (repeatable, OR logic)
+- `--sort MODE`: Same semantics as `hug wtl --sort` (name | recent | oldest; main checkout always first).
 
 **Examples:**
+
 ```bash
 hug wtll                             # List all worktrees with details
+hug wtll --sort recent               # Details, most recently active worktree after main
 hug wtll feature                     # Substring: worktrees containing "feature"
 hug wtll feature auth                # Substring: "feature" OR "auth"
 hug wtll -b main                     # Exact branch "main" only
@@ -371,6 +377,7 @@ hug wtprune --verbose                     # Detailed output with progress
       "path": "/home/user/project",
       "branch": "main",
       "commit": "1b87e92",
+      "commit_date": 1724000000,
       "dirty": true,
       "locked": false,
       "current": true,
@@ -406,6 +413,7 @@ hug wtprune --verbose                     # Detailed output with progress
 Fields unique to JSON (not shown in human output):
 - `missing`: `true` when the worktree directory was deleted externally (stale metadata)
 - `dirty_details`: Human-readable breakdown of dirty state (e.g. `"2 staged, 3 unstaged"`)
+- `commit_date`: Unix timestamp of the HEAD commit (committer date; `0` when unknown). Combined with `--sort recent|oldest` this lets API consumers mirror or customize the CLI ordering without a second git run.
 
 ### wtc --json
 

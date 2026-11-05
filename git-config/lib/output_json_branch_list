@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Helper function for JSON branch list output
-# Usage: output_json_branch_list "current_branch_name"
+# Usage: output_json_branch_list "current_branch_name" [date_sort]
+#   $2 - (optional) "newest" to sort branches newest-committed-first, "oldest"
+#        for oldest-first; empty/other = git default (refname) order.
 
 # Load JSON utilities
 CMD_BASE="$(readlink -f "$0" 2> /dev/null || greadlink -f "$0")" || CMD_BASE="$0"
@@ -9,6 +11,7 @@ CMD_BASE="$(dirname "$CMD_BASE")"
 
 output_json_branch_list() {
   local current_branch="${1:-}"
+  local date_sort="${2:-}"
 
   # Get current branch name
   if [[ -z "$current_branch" ]]; then
@@ -62,7 +65,14 @@ output_json_branch_list() {
 
     # Add completed branch object to array
     branch_data+=("$branch_object")
-  done < <(git for-each-ref --format='%(refname)%09%(objectname:short)%09%(upstream:short)%09%(contents:subject)' refs/heads/ 2> /dev/null)
+  done < <(
+    local -a sort_args=()
+    case "$date_sort" in
+    newest) sort_args=(--sort=-committerdate) ;;
+    oldest) sort_args=(--sort=committerdate) ;;
+    esac
+    git for-each-ref "${sort_args[@]}" --format='%(refname)%09%(objectname:short)%09%(upstream:short)%09%(contents:subject)' refs/heads/ 2> /dev/null
+  )
 
   # Build final JSON output
   local json_output

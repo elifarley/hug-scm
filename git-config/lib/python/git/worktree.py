@@ -37,6 +37,10 @@ class WorktreeInfo:
         dirty_details: Tuple of dirty-category labels, e.g. ("unstaged", "untracked").
             Empty tuple when clean or missing. Uses tuple (not list) to avoid the
             mutable-default-argument pitfall.
+        commit_date: Unix timestamp of the HEAD commit (committer date), 0 when
+            unknown (detached HEAD lookup failure, missing commit object, etc.).
+            Populated only when the caller requests recency data — see
+            populate_commit_dates() and parse_worktree_list(include_dates=True).
     """
 
     path: str
@@ -46,6 +50,7 @@ class WorktreeInfo:
     is_locked: bool
     missing: bool = False
     dirty_details: tuple = ()
+    commit_date: int = 0
 
 
 def format_indicators(is_dirty: bool, is_locked: bool) -> str:
@@ -104,6 +109,7 @@ class WorktreeList:
     locked_status: list[str]
     missing_status: list[str] = field(default_factory=list)
     dirty_details_list: list[tuple] = field(default_factory=list)
+    commit_dates: list[int] = field(default_factory=list)
 
     def to_bash_declare(self) -> str:
         """Format as bash variable declarations.
@@ -164,6 +170,7 @@ class WorktreeList:
                     "path": path,
                     "branch": self.branches[i],
                     "commit": self.commits[i],
+                    "commit_date": self.commit_dates[i] if i < len(self.commit_dates) else 0,
                     "dirty": self.dirty_status[i] == "true",
                     "locked": self.locked_status[i] == "true",
                     "current": path == current_worktree,
@@ -349,10 +356,225 @@ def _dirty_detail_labels(info: WorktreeDirtyInfo) -> tuple[str, ...]:
     return tuple(parts)
 
 
+def _fetch_branch_commit_dates() -> dict[str, int]:
+    """Fetch HEAD committer dates for all local branches in one git call.
+
+    Uses 'git for-each-ref' with null-separated fields so branch names
+    containing unusual characters survive parsing. Returns a mapping of
+    short branch name -> committer date (unix seconds). On any failure
+    (not a repo, git missing, timeout) an empty mapping is returned and
+    callers degrade to date=0, which sort_worktrees() orders last.
+
+    WHY one batch call: a naive per-branch 'git show -s' costs one
+    subprocess per worktree. Worktree counts are small, but the batch
+    call is one subprocess total and is the same idiom hug_git_branch.py
+    already uses for bll listings.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "for-each-ref",
+                "--format=%(refname:strip=2)%00%(committerdate:unix)%00",
+                "refs/heads/",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return {}
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return {}
+
+    dates: dict[str, int] = {}
+    parts = result.stdout.split("\0")
+    # Fields arrive in (name, ts, name, ts, ...) order; trailing empty
+    # string from the final %00 is skipped by the range bound.
+    for i in range(0, len(parts) - 1, 2):
+        name = parts[i].strip()
+        ts_raw = parts[i + 1].strip()
+        if not name:
+            continue
+        try:
+            dates[name] = int(ts_raw)
+        except ValueError:
+            dates[name] = 0
+    return dates
+
+
+def _fetch_detached_commit_dates(worktrees: list[WorktreeInfo]) -> dict[str, int]:
+    """Fetch committer dates for detached-HEAD worktrees, keyed by short hash.
+
+    Detached worktrees have no branch ref, so for-each-ref cannot date them.
+    Exactly TWO git subprocesses date the whole set regardless of count:
+      1. `git cat-file --batch-check` filters the short hashes down to the
+         objects that actually exist (missing/corrupt hashes come back as
+         "missing" lines, not errors).
+      2. one `git show -s --format=%ct` call resolves all surviving hashes
+         (git prints one %ct line per rev, in argument order).
+    Any failure — missing hash, batch error, timeout — maps to date 0 so a
+    single bad ref never breaks the listing, and the aggregate latency of a
+    listing stays bounded at two subprocess invocations.
+
+    Note: WorktreeInfo.commit holds the short hash, and git show accepts it,
+    so we can resolve directly from the parsed data.
+    """
+    unique_commits = sorted({wt.commit for wt in worktrees if not wt.branch and wt.commit})
+    if not unique_commits:
+        return {}
+    missing: dict[str, int] = dict.fromkeys(unique_commits, 0)
+
+    # Stage 1: existence check for the whole batch in one call.
+    try:
+        check = subprocess.run(
+            ["git", "cat-file", "--batch-check"],
+            input="\n".join(unique_commits) + "\n",
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return missing
+    if check.returncode != 0:
+        return missing
+
+    existing = [
+        line.split()[0][:7]
+        for line in check.stdout.splitlines()
+        if line.strip() and not line.rstrip().endswith(" missing")
+    ]
+    if not existing:
+        return missing
+
+    # Stage 2: date all existing hashes in one git show call.
+    try:
+        result = subprocess.run(
+            ["git", "--no-pager", "show", "-s", "--format=%ct"] + existing,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return missing
+    if result.returncode != 0:
+        return missing
+
+    # One %ct line per rev, in argument order.
+    for short_hash, line in zip(existing, result.stdout.splitlines(), strict=False):
+        try:
+            missing[short_hash] = int(line.strip())
+        except ValueError:
+            missing[short_hash] = 0
+    return missing
+
+
+def main_worktree_path_from_porcelain(porcelain_output: str) -> str:
+    """Return the main checkout's path: the first block of `worktree list --porcelain`.
+
+    Git guarantees the main worktree is listed first. Deriving the pin from
+    the porcelain itself is robust against the CWD trap: when hug runs inside
+    a LINKED worktree, `git rev-parse --show-toplevel` returns that worktree,
+    not the main checkout — so any main-path computed from the CWD is wrong
+    there. Empty string when there is no worktree block.
+    """
+    for line in porcelain_output.splitlines():
+        if line.startswith("worktree "):
+            return line[len("worktree ") :].strip()
+    return ""
+
+
+def populate_commit_dates(worktrees: list[WorktreeInfo]) -> list[WorktreeInfo]:
+    """Fill in commit_date on each WorktreeInfo (mutates in place, returns arg).
+
+    Branch worktrees resolve via one batch for-each-ref call; detached
+    worktrees resolve per unique commit hash. Unknown dates stay 0.
+    Only call this when a date-aware feature (--sort recent, JSON) needs it —
+    it spawns one extra git subprocess.
+    """
+    branch_dates = _fetch_branch_commit_dates()
+    detached_dates = _fetch_detached_commit_dates(worktrees)
+    for wt in worktrees:
+        if wt.branch:
+            wt.commit_date = branch_dates.get(wt.branch, 0)
+        else:
+            wt.commit_date = detached_dates.get(wt.commit, 0)
+    return worktrees
+
+
+def sort_worktrees(
+    worktrees: list[WorktreeInfo],
+    mode: str,
+    pinned_path: str,
+) -> list[WorktreeInfo]:
+    """Return worktrees reordered per mode; the pinned worktree always stays first.
+
+    pinned_path is normally the MAIN checkout path (see
+    main_worktree_path_from_porcelain — do NOT derive it from the CWD via
+    `rev-parse --show-toplevel`, which points at a linked worktree when hug
+    runs inside one). Callers may also pin a different path — e.g.
+    worktree_select.py pins the CURRENT worktree so interactive menus keep
+    the user's own checkout first; pass "" to pin nothing.
+
+    Modes:
+        name    — alphabetical by branch (fallback: path). This matches the
+                  documented behavior of wtl/wtll and the de-facto order of
+                  `git worktree list` (paths sort lexicographically, and hug's
+                  canonical <repo>.WT.<branch> naming makes path order == branch
+                  order for all hug-created worktrees).
+        recent  — descending HEAD committer date (most recently active first).
+        oldest  — ascending HEAD committer date (most recently active last),
+                  mirroring git-bll's static-listing convention.
+
+    The pinned worktree is exempted from reordering: when present it is pulled
+    out of the list, the rest are sorted, and it is reinserted at the front.
+    When the pinned path is NOT in the list (e.g. a filtered view whose search
+    terms exclude the main checkout), no pinning occurs and the whole list is
+    sorted uniformly — pinning an entry the user explicitly filtered out would
+    resurrect it at a position it never earned. Entries with an unknown date
+    (0) sink to the bottom under both recency orders; Python's stable sort
+    preserves their relative name order.
+    """
+
+    # Unknown dates (0) sort last in both directions: under "recent" the
+    # sentinel flag makes them the largest key (negated 0 is still 0, so a
+    # bare negative cannot push them down); under "oldest" 0 is naturally
+    # smallest, so the flag pushes them last. Python's sort is stable, so
+    # unknown-date entries keep their relative name order from the tail.
+    def _recency_key(w: WorktreeInfo) -> tuple:
+        if mode == "recent":
+            return (w.commit_date == 0, -w.commit_date)
+        return (w.commit_date == 0, w.commit_date)
+
+    if mode == "name":
+        # Byte-order (NOT lowercased): this must reproduce the pre-sort
+        # porcelain emission order exactly, which sorts linked-worktree
+        # paths in byte order (uppercase before lowercase). Lowercasing
+        # here reorders mixed-case branch names and silently churns the
+        # default listing vs older builds.
+        def key(w: WorktreeInfo):
+            return w.branch or w.path
+    else:
+        key = _recency_key
+
+    # Extract the pinned entry wherever it sits (unfiltered listings put main
+    # first, but a filtered view may leave it mid-list or absent entirely).
+    pinned: list[WorktreeInfo] = []
+    rest: list[WorktreeInfo] = []
+    for w in worktrees:
+        if pinned_path and w.path == pinned_path and not pinned:
+            pinned.append(w)
+        else:
+            rest.append(w)
+
+    return pinned + sorted(rest, key=key)
+
+
 def parse_worktree_list(
     porcelain_output: str,
     main_repo_path: str,
     include_main: bool = False,
+    include_dates: bool = False,
 ) -> list[WorktreeInfo]:
     """Parse git worktree list --porcelain output into WorktreeInfo objects.
 
@@ -368,6 +590,9 @@ def parse_worktree_list(
             include_main=False)
         include_main: If True, include the main repository worktree in results.
             If False, only additional worktrees are returned. Default: False.
+        include_dates: If True, populate commit_date on each entry via
+            populate_commit_dates(). Costs one batch git subprocess; enable
+            only when the caller needs recency data. Default: False.
 
     Returns:
         List of WorktreeInfo objects. Empty list if no worktrees match criteria.
@@ -481,6 +706,9 @@ def parse_worktree_list(
                     dirty_details=_dirty_detail_labels(dirty_info),
                 )
             )
+
+    if include_dates:
+        populate_commit_dates(worktrees)
 
     return worktrees
 
@@ -610,6 +838,7 @@ def to_worktree_list(worktrees: list[WorktreeInfo]) -> WorktreeList:
     locked_status = []
     missing_status = []
     dirty_details_list = []
+    commit_dates = []
 
     for wt in worktrees:
         paths.append(wt.path)
@@ -619,6 +848,7 @@ def to_worktree_list(worktrees: list[WorktreeInfo]) -> WorktreeList:
         locked_status.append("true" if wt.is_locked else "false")
         missing_status.append("true" if wt.missing else "false")
         dirty_details_list.append(wt.dirty_details)
+        commit_dates.append(wt.commit_date)
 
     return WorktreeList(
         paths=paths,
@@ -628,6 +858,7 @@ def to_worktree_list(worktrees: list[WorktreeInfo]) -> WorktreeList:
         locked_status=locked_status,
         missing_status=missing_status,
         dirty_details_list=dirty_details_list,
+        commit_dates=commit_dates,
     )
 
 
@@ -706,6 +937,16 @@ def main():
         default="",
         help="Main repository path (auto-detected if not provided)",
     )
+    list_parser.add_argument(
+        "--sort",
+        choices=["name", "recent", "oldest"],
+        default="name",
+        help=(
+            "Sort order for non-main worktrees: name (alphabetical, default), "
+            "recent (HEAD committer date, newest first), oldest (newest last). "
+            "The main worktree always stays first."
+        ),
+    )
 
     # 'dirty' subcommand
     dirty_parser = subparsers.add_parser("dirty", help="Check worktree dirty status")
@@ -754,6 +995,16 @@ def main():
         default=False,
         help="Exclude worktrees whose directory doesn't exist on disk.",
     )
+    json_parser.add_argument(
+        "--sort",
+        choices=["name", "recent", "oldest"],
+        default="name",
+        help=(
+            "Sort order for non-main worktrees: name (alphabetical, default), "
+            "recent (HEAD committer date, newest first), oldest (newest last). "
+            "The main worktree always stays first."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -797,12 +1048,18 @@ def _handle_list_command(args):
         print(result.to_bash_declare())
         return
 
-    # Parse worktrees
+    # Parse worktrees (dates only needed for recency-aware sort modes)
     worktrees = parse_worktree_list(
         porcelain_output=porcelain_output,
         main_repo_path=main_repo_path,
         include_main=args.include_main,
+        include_dates=args.sort != "name",
     )
+
+    # Pin the MAIN checkout (first porcelain block — CWD-independent) so the
+    # primary worktree stays first regardless of sort mode.
+    main_wt_path = main_worktree_path_from_porcelain(porcelain_output)
+    worktrees = sort_worktrees(worktrees, args.sort, main_wt_path)
 
     # Convert to WorktreeList
     result = to_worktree_list(worktrees)
@@ -847,11 +1104,13 @@ def _handle_json_command(args):
         print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))
         return
 
-    # Parse worktrees
+    # Parse worktrees. Dates are always populated for JSON: the commit_date
+    # field is part of the JSON contract so consumers can re-sort cheaply.
     worktrees = parse_worktree_list(
         porcelain_output=porcelain_output,
         main_repo_path=main_repo_path,
         include_main=args.include_main,
+        include_dates=True,
     )
 
     if not worktrees:
@@ -863,6 +1122,10 @@ def _handle_json_command(args):
         worktrees = filter_worktrees_by_criteria(
             worktrees, args.branch, args.search, existing_only=args.existing
         )
+
+    # Pin the MAIN checkout (first porcelain block — CWD-independent).
+    main_wt_path = main_worktree_path_from_porcelain(porcelain_output)
+    worktrees = sort_worktrees(worktrees, args.sort, main_wt_path)
 
     if not worktrees:
         print(json.dumps({"worktrees": [], "current": args.current, "count": 0}))
