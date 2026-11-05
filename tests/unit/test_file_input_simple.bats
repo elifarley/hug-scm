@@ -49,6 +49,54 @@ setup() {
   assert_output --partial "file2.txt"
 }
 
+@test "hug a: --from-commit stages RAW structural-char filenames end-to-end (NUL transport, #285)" {
+  # Structural-char fixture: line-mode extraction C-quoted these names
+  # ("back\slash.txt", "we\nird"), so hug a staged the QUOTED tokens — the
+  # real files never got staged. Acceptance oracle is byte-level: after the
+  # run, the index must list the RAW paths exactly as git's own -z
+  # name-only stream reports them (tree order: b < p < w).
+  echo x > 'back\slash.txt'
+  echo y > $'we\nird'
+  echo z > plain.txt
+  git add -A
+  git commit -qm weird
+
+  # Re-staging files identical to HEAD is a no-op (empty index diff), so
+  # modify contents first — same observable-staging pattern as the test
+  # above.
+  echo x2 > 'back\slash.txt'
+  echo y2 > $'we\nird'
+  echo z2 > plain.txt
+
+  run hug a --from-commit HEAD
+  assert_success
+
+  # Byte-level oracle, immune to $output's NUL stripping.
+  git diff --cached --name-only -z > "$BATS_TMPDIR/staged_weird.$$"
+  printf 'back\\slash.txt\0plain.txt\0we\nird\0' > "$BATS_TMPDIR/staged_weird_expected.$$"
+  run cmp -s "$BATS_TMPDIR/staged_weird.$$" "$BATS_TMPDIR/staged_weird_expected.$$"
+  assert_success
+  rm -f "$BATS_TMPDIR/staged_weird.$$" "$BATS_TMPDIR/staged_weird_expected.$$"
+}
+
+@test "hug a: --from-commit <bogus> fails loudly (guard-fatal contract, #285)" {
+  # Pre-#285 the process-substitution subshell contained error()'s exit:
+  # the commit error PRINTED, then `hug a` answered "No files to stage."
+  # with exit 0 — automation read a failed stage as success (the same bug
+  # class codex P2 fixed for `hug us`). The guard contract is now fatal in
+  # every --from-commit consumer.
+  local repo
+  repo=$(create_test_repo)
+  cd "$repo"
+  echo a > a.txt
+
+  run hug a --from-commit DOES_NOT_EXIST
+  assert_failure
+  [[ "$status" -eq 1 ]]
+  assert_output --partial "does not exist"
+  refute_output --partial "No files to stage."
+}
+
 @test "hug us: supports --from-file flag" {
   # Stage some files
   echo "content1" > file1.txt

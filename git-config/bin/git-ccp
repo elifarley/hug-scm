@@ -112,7 +112,14 @@ if [[ "$husk_mode" == true ]]; then
 
   # Get list of files from source commit
   files=()
-  mapfile -t files < <(extract_files_from_commit "$source_commit")
+  # NUL transport (elifarley/hug-scm#285): raw records via the sanctioned
+  # reader — no C-quoting, no shell-variable capture. Guard failure is
+  # fatal: production error() exits the process; `|| exit $?` makes that
+  # explicit and correct under non-exiting error overrides. (validate_
+  # commitish above already rejects a bogus commit, so the guard is
+  # normally unreachable here; on main the process substitution would have
+  # swallowed it regardless — the codex-P2 bug class.)
+  extract_files_from_commit_into files "$source_commit" || exit $?
 
   if [ ${#files[@]} -eq 0 ]; then
     info "No files changed in commit '$source_commit'."
